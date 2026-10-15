@@ -1,0 +1,121 @@
+# Tour rides
+
+The four original tour rides (Jurassic Tours `jungle/rides/tourride`, Flightmare Tours `hallow/rides/tourride`, Star Tours `space/rides/scitour`, Tweety Tours
+`fantasy/rides/twetours`) take and release riders through the `TOUR` opcode. Rules are traced from the Windows `tp.exe` (`TPW-EXE`, through the shared REA
+session over the decrypted executable); every approximation carries a `TOUR-` ID in [the register](FIDELITY-REGISTER.md).
+
+Code: `source/OpenTPW/World/Tours/` (`TourController`, `TourCar`, `TourWorld`, `TourSave`), the `TOUR` routing in `OriginalObjectRuntime.Tours.cs`, the launch pad in
+`OriginalObject.ComputeTourStation`, `Level.Tours.cs`.
+
+## What a tour ride is (Q1)
+
+There is **no track and no build tool**. The ride is placed like any ride; its `.sam` has `Bumper.WhichTrackType 0` and `Info.RunsContinuously 1`. The controller
+is the flying-car module (`FLY_`): the dispatcher at `[BIN:TPW-EXE:0x005542FE]` reaches a 99-slot table of 0x122C-byte controllers (`0x008791F8`), each holding 20 cars
+of 0xE4 bytes. A car is a free-flying vehicle (the ride's supplemental mesh 0: a bird, balloon, craft or kite carrying the riders on its head nodes 1..9) that lifts off from the
+ride's launch pad (model node of class 0x800, number 99), flies a random walk over the park's lattice for the ride's duration at a height that clears the ground, comes
+back, circles the station until the landing slot is free and lands. Everything is integer maths on 3000 units per cell (300 per model unit) and 4096 angle units per turn,
+with a 4096-entry sine table (`0.5 + 1024 sin`, truncated) and fixed flight bounds x 70000..190000, z 30000..140000.
+
+## TOUR commands (Q2)
+
+Jump table `0x005569D0`, command − 1 indexes it; the first argument of every handler is the controller id kept in the script's +0x9C.
+
+| Cmd | Handler | Meaning |
+| --- | --- | --- |
+| 1 | 0x0055A620 | create the controller and its first car (the script operand is the "small" flag, always 0) |
+| 2 | 0x0055D3D0 | destroy |
+| 3 | 0x0055D830 | board a guest id into the car standing at the station (state 1, count not negative) |
+| 4 | 0x0055D610 | hand out the next rider of the station car that is unloading, newest seat first; 0 when none (output variable and flags) |
+| 5 | 0x0055DCF0 | number of cars requested (applies at once while open) |
+| 8 | 0x0055D950 | flight duration: operand x 1000 / 64 ticks; running flights are cut to it |
+| 9 | 0x0055DA70 | condition 1 fine, 2 worn, 3 broken (first car breaks, flight ends), 4 as 3 and flying riders thrown off |
+| 10 | 0x0055DD20 | **ready test**: a car stands at the station (flags) |
+| 11 | 0x0055DD80 | **depart**: needs a ready car and an open ride, riders or several cars; clears ready |
+| 12 | 0x0055DDD0 | approach mode (the scripts set 1: take off and land along the station heading) |
+| 14 | 0x0055D9F0 | open / close (close: one car wanted, flights end, a station car with riders starts unloading) |
+| 15 | 0x0055DD40 | the first car is broken and standing at the station |
+| 16 | 0x0055DE30 | running: anybody aboard, no car ready, or more than one car (output variable and flags) |
+| 17 / 18 | 0x0055DDF0 / 0x0055DE10 | car-avoidance scale and bank scale (1024 = 1.0; Flightmare sets 2048) |
+| 6, 7, 13 | | refused with a log line; no script issues them |
+
+## Cars, boarding, end of a run (Q3)
+
+The per-tick state machine is `[BIN:TPW-EXE:0x0055ABF0]`, called from `0x0054F5EF` on **every second** world step: the world loop (`0x0054E360`) advances its clock by 31 ms and counts the
+steps (`[0x00877D34]`, raised at `0x0054F4D3`), and the tour tick sits behind `test al, 1` on that counter (`0x0054F5D7`), so it runs once per 62 ms. The draw divides the time since that tick by the
+same 62 ms (`0x00700F90` is 1/62), and TOUR 8's `operand x 1000 / 64` ticks are about `operand` seconds at that rate. `TourController.TickSeconds` is 0.062. Car states: 1 docked (loading, or unloading when its
+rider count is negative), 2 take-off, 3 tour, 4 return, 5 staging (fixed approach), 6 approach, 7 landing, 8 patrol, 9 leaving. A new car appears outside the flight area and
+circles the station (state 8) until the landing slot (+0x2C) is free. The first car of a ride is created docked and sets the ready flag.
+
+A run: the script waits for `TOUR 10`, unloads with `TOUR 4` (`WALKOFF`/`WALKGET` on Star and Tweety), loads with `TOUR 3` until the car is full or ten seconds passed since the last
+boarding, then `TOUR 11` and `TOUR 8`. The car takes off (the first target 20000 units along the heading at least 14000 up), flies lattice targets (`0x0055C350`: continue
+the direction, turn aside when the ground ahead is above the car, targets height max(12000, ground + 5000)) until its timer ends, returns, patrols the four corners 25000 units out
+(`0x0055C270`), claims the landing slot, flies the approach line and descends; on landing the rider count turns negative and the script unloads. Cars avoid each other (slower car
+loses a sixteenth of its speed, the lower one climbs) and clear stations by 30000. The ground they clear is the original's cell lookup `0x00452AE0`: the height map of the object that
+owns the cell (the `.hmp` byte x 100/255 plus the object's base height, see below), otherwise the terrain.
+
+**Closing the ride (TOUR 14 0)** touches only the wanted count, the flight timers, a station car's rider count (it turns negative) and the open word (`0x0055D9F0`); the ready flag is left as it
+was. A departure the script had ordered (TOUR 11 clears ready) that the closing stops before the lift-off therefore leaves the sole car docked with its riders aboard and ready clear
+(`0x0055ABF0` state 1 lifts a car only with ready clear, no breakdown and, for the first car of a one-car ride, an open ride): TOUR 10 reads 0 and the script waits. When the ride reopens the car flies
+once more with its negative count, lands (ready set, only positive counts are negated) and the script unloads it. OpenTPW does the same; the riders are not stranded for good: reopening
+releases them, and deleting the ride releases everybody through the visitor bridge (`RideVisitorBridge.ReleaseAll`).
+
+**Stale slot words (TOUR-009).** Car creation (`0x0055A720`) does not write a slot's heading, patrol corner, seat ids or approach heading (only the ride's first car takes the station's heading), so a new car in a
+reused slot starts from the last car's values. OpenTPW keeps them: they are saved (every seat word of a live car, and a `FreeSlots` list for free slots that hold a non-zero word) and hashed, so
+a saved and an uninterrupted run agree. A handed-out or thrown-off seat keeps its id too (`0x0055D610` and `0x0055D720` read the slot without clearing it).
+
+## Saves (Q4)
+
+The original saves the module as the `FLYR` block (`FLY_`, the active word, the 400-byte controller pointer table, the four bounds, six padding words, the controller size 0x122C and
+every controller raw: 452 bytes when empty). OpenTPW's park-resume envelope gets an optional `Tours` part (`TourWorldSaveData`: every live controller, its cars and riders by attraction
+id), validated on load and restored onto the rides; the canonical digest includes the module only while a controller exists, so every park without a tour ride keeps its pins. An older
+save without the part restores each live tour ride with a fresh controller (`[EXT:legacy-tour-save]`, was TOUR-006: the original's save always carries `FLYR`, so this is OpenTPW's save-compatibility
+decision). Bridge walkers carry an optional ready time (`WalkingOffReady`, absent for other rides). The tick clock of a saved controller may hold up to one tick (`TourController.MaximumSavedRemainder`, 62 ms);
+a save from the 31 ms clock holds less than 31 ms and restores unchanged (the value is elapsed seconds, so the first advance runs it off). The `FreeSlots` and the full seat lists are trailing optional
+parts: a save without them restores with zero stale words. No schema version moved: the canonical digest still includes the tour module only while a controller exists.
+
+## Not done
+
+Sounds and effects (TOUR-004), the car animations and shadow (TOUR-008), the pad's live-instance read and rotation identity (TOUR-003), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
+
+## Drawing
+
+`TourRenderer` draws every live car as the ride's supplemental mesh 0 (`Bird.md2`, balloon, craft, kite) and the riders hang from the mesh's head dummies through the ride-head renderer, like the go-karts' riders.
+The pose is the original's draw pass `[BIN:TPW-EXE:0x0055CE60]` (`TourPose`):
+
+- Target: position `previous + (current - previous) x f` over 300 (model units), heading and roll by the shortest way round (the difference masked to 12 bits, `0xFFF` taken off from `0x800`; the original's
+  constant is `0xFFF`, not `0x1000`), with `f` the time since the last tick over 62 ms, at most 2. A car's first draw snaps to its current pose.
+- Smoothing: drawn = (target + 3 x drawn) / 4 for the position (a float), heading and roll, and (target + 7 x drawn) / 8 for the pitch, the angles truncated and masked to 12 bits. OpenTPW does this once
+  per simulation step (60 Hz), with `f` from the tick clock's remainder, so the drawing is the same on every machine.
+- Rotation: the helper `0x0046F6F0` with mode 0xE (`"ZXY"`, string `0x0074DA7C`) reads three angles: roll about Z, pitch about X, yaw about Y. Each helper (`0x0046F5C0`, `0x0046F350`, `0x0046F650`)
+  post-multiplies the instance matrix, whose translation is row 3 (`+0x40..+0x48`), so a model vertex v maps to v x Rz x Rx x Ry, exactly System.Numerics' row-vector products.
+  The angles are roll `-r x 2pi/4096`, pitch `-p x 2pi/1024` (so the pitch counts **four times** finer than the heading and roll) and yaw `pi/2 - h x 2pi/4096`.
+- Axis: with the car moving along `(cos h, sin h)` on the module's two ground axes (the model frame's x and z, y up), the yaw `pi/2 - h` carries the model's **+Z** axis onto the velocity, so the
+  car mesh's nose is +Z (the old drawing assumed +X). The original reads a sine table for its angles; OpenTPW uses exact sines.
+- Heads: TOUR 3 (`0x0055D830`) hangs rider i (0-based) on head node `((random + i + 1) mod heads) + 1`, with `random` the car's own random word (`+0xD8`, drawn at creation and saved) and `heads` the
+  count of consecutively numbered head nodes of the car mesh (`+0xDC`, counted at `0x0055AA2D`); more riders than nodes share nodes. `TourPose.HeadNode` is a presentation function of that word:
+  it draws nothing, so the simulation's random stream is untouched.
+
+## Object ground (TOUR-005)
+
+The original's `.hmp` is the height map of every object (loaded beside its mesh by `0x00451640`, whose header words +0xC, +0x10 and +0x14 become pointers; +8 is the width in cells). The lookup `0x00452AE0` for
+a map cell takes its owner object (`0x0053BF30`, else the object of a type-3 thing on the cell) and, when that object has a map, returns the byte of the per-cell maxima table x 100/255 (`0x006FE408`) plus the
+object's height (`+0x44` of its instance matrix). The table index is `width x row + column`, with row and column the truncated tenths of the cell corner's offset from the instance position,
+turned by the instance rotation (0, 90, 180, 270 swap and reflect the two offsets, the `+10` terms being a cell's width). `ObjectHeightMaps` reads `<mesh>.hmp` of the catalogue entry and does the same
+from OpenTPW's placement: the instance position is the model-to-engine translation, the rotation the placement's. All 274 catalogue objects ship their map and every footprint cell of every one of
+them lies inside it at all four rotations (`TourAssetTests`, `TourRegisterRoundTests.TheMapIndexFollowsThePlacementsRotation`), which fixes the orientation. Still terrain: cells whose owner
+the original finds through the track redirect or a type-3 thing, and objects whose map the original rebuilds from the mesh (`0x00451880`). RIDES-014's base height stays the footprint mean.
+
+## Register changes (October 15 round)
+
+- Retired: TOUR-001 (the tick is 62 ms; the wall-clock catch-up, its 2 s clamp and the parity phase against the script loop are a determinism decision, `[EXT:tour-fixed-step]`), TOUR-009 (stale slot words kept and saved) and
+  TOUR-010 (the Ready override on closing is gone, see Q3).
+- Reclassified: TOUR-006 is `[EXT:legacy-tour-save]`.
+- Narrowed: TOUR-002 (the original drops thrown-off riders: the script never releases them, so **thrown-off riders inflate the ride's rider count**, VAR_ONRIDE, for ever; OpenTPW hands them out through TOUR 4
+  and lowers it; the guest-side consequence of a boarded guest nobody releases is the guest owner's), TOUR-003 (formula verified, only the rest-pose read and the rotation identity remain), TOUR-004 (all
+  triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-007 (the walk-off duration is `ftol(distance between the walker's two slot nodes) x 100` ms, 100 ms for 0, `0x005571A0`;
+  OpenTPW's WALKON keeps no walk nodes, so this stays at 1 s until the walk owner supplies them: **note for the walk owner**, evidence needed: the nodes a WALKON slot holds when WALKOFF runs), TOUR-008 (animations and
+  shadow only).
+
+## Verification
+
+The native jungle smoke places Jurassic Tours through the build path, sends two real guests to it, and when a car flies with riders freezes the world and reads back the GPU pixels with the cars shown and hidden (they differ); the run goes on until the car landed and both riders were handed back through `TOUR 4`, then removes the ride. The park-resume smoke with `OPENTPW_SMOKE_TOUR=1` (both phases) buys the ride with a golden ticket, saves with a car in flight, restores through the menu load and matches the 600 continuation ticks of canonical hashes. The saved car is empty in that run; riders in flight are covered by the unit round trip and the asset test. The asset test closes each real tour script's ride after ten minutes and accepts both original outcomes (everything unloaded, or the TOUR-010 car docked with its riders), then deletes the ride and requires every boarded guest released.

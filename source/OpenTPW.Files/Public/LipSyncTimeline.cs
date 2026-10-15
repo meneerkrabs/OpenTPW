@@ -5,9 +5,8 @@ namespace OpenTPW;
 /// marks (see docs/LIPS.md). Marks are microseconds from the start of the paired speech
 /// sample. The advisor is talking from 0 until the first mark; every mark toggles the
 /// state, so with the odd mark count found in every original file the last mark closes the
-/// mouth. This reading is inferred from the decoded speech audio (talking intervals are
-/// ≈31 dB louder than silent ones; the fit peaks at exactly 1 µs per unit), not from the
-/// original runtime, and it does not select a particular mouth shape.
+/// mouth. The talking flag's start value is the original's (see <see cref="IsTalking(long)"/>); it
+/// does not select a particular mouth shape.
 /// </summary>
 public sealed class LipSyncTimeline
 {
@@ -50,7 +49,8 @@ public sealed class LipSyncTimeline
 	/// </summary>
 	public bool IsTalking( long microseconds )
 	{
-		// [APPROX:ADVISOR-013] µs unit and "talking from 0, toggle per mark" inferred from decoded audio (31 dB talking/silent contrast, fit peaks at 1 µs/unit) — evidence needed: original runtime LIP consumer (binary or trace)
+		// [BIN:STP-PPC:0x10007434 advisor update] marks are read in order until -1, divided by 1000 (µs to the ms speech clock) and each one flips the talking flag
+		// [BIN:TPW-EXE:0x00599880 advisor update] the talking flag is set to 1 at LIP load (0x59930B), cleared on the delayed-start path (0x59943E), set again when the speech starts (0x599987); each mark then flips it once the clock is strictly past it, one flip per update
 		if ( microseconds < 0 || Marks.Count == 0 )
 			return false;
 		var low = 0;

@@ -1,16 +1,40 @@
 namespace OpenTPW;
 
 /// <summary>
-/// Simulation speed. Only <see cref="Paused"/> is evidenced by the original data (UITEXT 403
-/// "PAUSED", <c>paused.MD2</c>); the faster speeds are an OpenTPW convenience.
+/// Simulation speed: the factor of the simulation clock. The original has one clock scale for everything that runs on its
+/// scheduler (park turns and with them the guests, rides and economy, ride scripts, animation): 1.0 at the start, stepped by
+/// 1.25 within 0.25 .. 2.0 by three key actions (ORACLE.md F32). The four speeds here are OpenTPW's buttons; each sets the
+/// scale (<see cref="GameSpeedScale"/>), which <c>Level</c> applies to the whole simulation. Pause is UITEXT 403 "PAUSED".
 /// </summary>
 public enum GameSpeed
 {
 	Paused = 0,
 	Normal = 1,
-	// [APPROX:ECON-004] Fast x2 and Fastest x4 speeds (only pause is evidenced) — evidence needed: original speed controls, if any
+	// [BIN:TPW-EXE:0x40c3b0 speed actions] the key table at 0x7480a0 maps VK_SUBTRACT (0x6D) to 0x40c3b0 (rate × 0.8, 0x403340), VK_ADD (0x6B) to 0x40c3c0 (rate × 1.25, 0x4032f0) and VK_MULTIPLY (0x6A) to 0x40c3d0 (rate 1.0, 0x4032d0); both steps clamp to 0.25..2.0 (0x6fd648 / 0x6fd650) on the clock 0x785970 +0x20
+	// [EXT:speed-buttons] Fast ×2 and Fastest ×4 are OpenTPW's speeds: the original has no fixed speeds and no on-screen speed control, only the numpad keys of the game key table (0x7480a0) that scale its clock rate by 0.8 and 1.25 within 0.25..2 and reset it to 1
 	Fast = 2,
 	Fastest = 4
+}
+
+/// <summary>The simulation clock's scale for a <see cref="GameSpeed"/>.</summary>
+public static class GameSpeedScale
+{
+	/// <summary>0 when paused, else 1, 2 or 4: the factor applied to the elapsed real time of the whole simulation (guests, rides, scripts and economy alike).</summary>
+	// [BIN:STP-PPC:0x10E844 scheduler clock] the scheduler adds each raw millisecond gap times its scale (+24, 1.0 by default) to its accumulator (0x127CD0); park turns, script waits and animation all read it, so a scale of 2.0 doubles every one of them (oracle F32)
+	public static float Of( GameSpeed speed ) => speed == GameSpeed.Paused ? 0f : (int)speed;
+}
+
+/// <summary>The date fields the original's calendar keeps from its last update: month 0-based (+16), day 1-based (+20) and year (+24).</summary>
+public readonly record struct CalendarFields( int Month, int Day, int Year );
+
+/// <summary>What a calendar update found changed.</summary>
+[Flags]
+public enum CalendarChange
+{
+	None = 0,
+	Day = 1,
+	Month = 2,
+	Year = 4
 }
 
 /// <summary>A point on the park calendar (1-based year, month and day; hour 0–23).</summary>
@@ -20,35 +44,105 @@ public readonly record struct ParkDate( int Year, int Month, int Day, int Hour )
 }
 
 /// <summary>
-/// The park calendar. The original data counts in days (challenge targets, weather, ride age),
-/// months (wages are paid "at the end of the month", loans, bankruptcy) and years (scrap value,
-/// end-of-year summary) and its clock script reads hours (<c>Clock.RSE</c>: <c>HOUR</c> mod 12).
-/// The lengths are <b>approximations</b>: the original day length and month lengths are unknown, so
-/// a day is <see cref="TicksPerDay"/> fixed 60 Hz ticks (4 s at normal speed) and every month has
-/// <see cref="DaysPerMonth"/> days.
+/// The park calendar, as in the Mac binary: the world counts park turns (<c>mGameTick</c>), one per
+/// 248 ms of scaled time, and the date is 2000-01-01 00:00 plus turn × 15000 / 4 = 3750 seconds,
+/// converted through the operating system's (Gregorian) calendar. A game day is therefore 23.04
+/// turns, about 5.7 s at normal speed, and months have their civil lengths. OpenTPW samples turns
+/// from its fixed 60 Hz clock. The conversion and the day, month and year detection run in the
+/// PowerPC oracle (docs/reverse/ORACLE.md F30: <c>calendar-date</c>, <c>calendar-update</c>).
 /// </summary>
 public static class ParkCalendar
 {
 	public const int TicksPerSecond = FixedStepClock.TicksPerSecond;
-	// [APPROX:ECON-001] one game day = 240 fixed ticks (4 s at normal speed) — evidence needed: capture of the original clock against wall time
-	public const int TicksPerDay = 4 * TicksPerSecond;
-	// [APPROX:ECON-003] 24 hours per day (Clock.RSE only shows HOUR is used mod 12) — evidence needed: original HOUR range (binary or Clock.RSE trace)
+	// [BIN:STP-PPC:0x101C22E0 scheduler] eight 31 ms substeps make one park turn (248 ms of scaled time); the turn counter is world +0x1DA70C (0x10105398)
+	public const int TurnMilliseconds = 248;
+	// [BIN:STP-PPC:0x100E4394 calendar conversion] seconds = turn × mFunnySecsPerRealSec (15000, set by 0x100E3C90) / 4
+	public const long SecondsPerTurn = 15000 / 4;
+	// [BIN:STP-PPC:0x100E4348 calendar start] TbTimeStamp::SetTime( 2000, 1, 1, 0, 0, 0, 0 )
+	public static readonly DateTime Epoch = new( 2000, 1, 1, 0, 0, 0, DateTimeKind.Unspecified );
+	// [BIN:TPW-EXE:0x54e360 park frame] case 10: the backlog over the scaled millisecond clock (0x4031e0) is cut to 2000 ms, each substep adds 31 ms, every eighth substep is a park turn (0x516380, 8 × 31 = 248 ms) while fewer than three ran this frame (DAT_00879064, reset after the loop)
+	// [BIN:TPW-EXE:0x5f5e80 clock route] the raw millisecond clock (0x5f5f10) reads QueryPerformanceCounter, (count − base) / counts per ms + the base time, whenever the constructor found QueryPerformanceFrequency / 1000 in 10..32,000,000 counts per ms, else timeGetTime
+	// [APPROX:ECON-001] OpenTPW's fixed 60 Hz clock is sampled into 248 ms park turns (4.03 a second at normal speed) without the original's 31 ms substeps; under load the two differ: OpenTPW runs at most 16 ticks (266.7 ms) a frame for the whole simulation and drops the rest, where the original's world substeps catch up a backlog of up to 2000 ms but at most three park turns run a frame (further due turns in that frame are skipped, not deferred) — evidence needed: none for the rules (read: the clock route 0x5F5E80 / 0x5F5F10 and the frame loop 0x54E360 case 10); a timed run of the original only for the size of the drift under load
+	private const long TickTurnNumerator = 1000;
+	private const long TickTurnDenominator = (long)TicksPerSecond * TurnMilliseconds;
+	// [BIN:STP-PPC:0x101C5C4C TbTimeStamp::GetTime] the hour comes from the OS LongDateRec hour field (0–23)
 	public const int HoursPerDay = 24;
-	public const int TicksPerHour = TicksPerDay / HoursPerDay;
-	// [APPROX:ECON-002] every month has 30 days, 12 months per year — evidence needed: original calendar (binary or captured date display)
-	public const int DaysPerMonth = 30;
 	public const int MonthsPerYear = 12;
-	public const int DaysPerYear = DaysPerMonth * MonthsPerYear;
+	public const long SecondsPerHour = 3600;
+	public const long SecondsPerDay = 86400;
 
-	public static long DayIndex( long tick ) => tick / TicksPerDay;
-	public static long MonthIndex( long tick ) => DayIndex( tick ) / DaysPerMonth;
+	/// <summary>The park turn reached at a fixed tick.</summary>
+	public static long Turn( long tick ) => tick * TickTurnNumerator / TickTurnDenominator;
+
+	/// <summary>The first fixed tick at which <paramref name="turn"/> is reached.</summary>
+	public static long TickOfTurn( long turn ) => (turn * TickTurnDenominator + TickTurnNumerator - 1) / TickTurnNumerator;
+
+	/// <summary>Park-clock seconds since the 2000-01-01 epoch at a fixed tick.</summary>
+	public static long Seconds( long tick ) => Turn( tick ) * SecondsPerTurn;
+
+	/// <summary>The first fixed tick whose park-clock time is at least <paramref name="seconds"/>.</summary>
+	public static long TickAtSeconds( long seconds ) => TickOfTurn( (seconds + SecondsPerTurn - 1) / SecondsPerTurn );
+
+	// [BIN:TPW-EXE:0x4f85a0 park date] the date is the FILETIME of 2000-01-01 (0x4f7e80, rate 15000 at +0x1c) plus floor(turn × 15000 / 4) × 10^7, decoded by FileTimeToSystemTime (0x5fc660, IAT 0x6fd0bc): the proleptic Gregorian calendar in UTC, with no locale calendar and no time zone
+	// [BIN:STP-PPC:0x100E4394 calendar conversion] the date of a park turn is the 2000-01-01 start plus floor(turn x 15000 / 4) seconds (oracle F30: 647 turns and rates agree)
+	public static DateTime DateAtTurn( long turn ) => Epoch.AddSeconds( turn * SecondsPerTurn );
+
+	public static DateTime DateTimeAt( long tick ) => DateAtTurn( Turn( tick ) );
+
+	/// <summary>The date fields at a park turn, as the original's calendar stores them after an update.</summary>
+	public static CalendarFields FieldsAtTurn( long turn )
+	{
+		var date = DateAtTurn( turn );
+		return new CalendarFields( date.Month - 1, date.Day, date.Year );
+	}
+
+	/// <summary>
+	/// The calendar update (0x100E3F0C): compares the day of the month, the month (0-based) and the year of the date at
+	/// <paramref name="turn"/> with the stored ones, stores the new fields and reports which of them differ. It posts a
+	/// single message per kind however many days have passed, so it is called once per turn.
+	/// </summary>
+	// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year messages when the extracted field differs from the stored one; the original's constructor stores day -1 and year 0, so its first update also posts a day and a year message (OpenTPW starts synchronised: no first-update messages)
+	public static CalendarChange Update( ref CalendarFields stored, long turn )
+	{
+		var now = FieldsAtTurn( turn );
+		var changes = CalendarChange.None;
+		if ( now.Day != stored.Day )
+			changes |= CalendarChange.Day;
+		if ( now.Month != stored.Month )
+			changes |= CalendarChange.Month;
+		if ( now.Year != stored.Year )
+			changes |= CalendarChange.Year;
+		stored = now;
+		return changes;
+	}
+
+	public static long HourIndex( long tick ) => Seconds( tick ) / SecondsPerHour;
+	public static long DayIndex( long tick ) => Seconds( tick ) / SecondsPerDay;
+
+	public static long MonthIndex( long tick )
+	{
+		var date = DateTimeAt( tick );
+		return (date.Year - Epoch.Year) * MonthsPerYear + date.Month - 1;
+	}
+
+	/// <summary>The first fixed tick of a calendar day (0 = 2000-01-01).</summary>
+	public static long TickAtDay( long dayIndex ) => TickAtSeconds( dayIndex * SecondsPerDay );
+
+	/// <summary>The first fixed tick of a calendar month (0 = January 2000).</summary>
+	public static long TickAtMonth( long monthIndex )
+	{
+		var start = Epoch.AddMonths( checked((int)monthIndex) );
+		return TickAtSeconds( (long)(start - Epoch).TotalSeconds );
+	}
+
+	/// <summary>Fixed ticks that <paramref name="hours"/> park-clock hours take at normal speed (at least one).</summary>
+	public static long TicksForHours( double hours ) => Math.Max( 1, (long)Math.Round( hours * SecondsPerHour / SecondsPerTurn * TurnMilliseconds * TicksPerSecond / 1000 ) );
 
 	public static ParkDate ToDate( long tick )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( tick );
-		var day = DayIndex( tick );
-		var month = day / DaysPerMonth;
-		return new ParkDate( (int)(month / MonthsPerYear) + 1, (int)(month % MonthsPerYear) + 1, (int)(day % DaysPerMonth) + 1, (int)(tick % TicksPerDay / TicksPerHour) );
+		var date = DateTimeAt( tick );
+		return new ParkDate( date.Year - Epoch.Year + 1, date.Month, date.Day, date.Hour );
 	}
 
 	/// <summary>Converts a duration the original files give in seconds to ticks at normal speed.</summary>
@@ -56,6 +150,7 @@ public static class ParkCalendar
 }
 
 /// <summary>SplitMix64: a small deterministic generator whose whole state is one saved integer.</summary>
+// [APPROX:DET-015] the economy draws from its own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG (staff candidates 0xf5b64, staff gates) — evidence needed: DET-I2 port of WorldRng (docs/reverse/DET-plan.md §2.3, §4.3)
 public sealed class DeterministicRandom
 {
 	public DeterministicRandom( ulong state ) => State = state;

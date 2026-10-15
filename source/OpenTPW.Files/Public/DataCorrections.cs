@@ -60,9 +60,9 @@ public static class DataCorrections
 		var offset = SignFile.HeaderBytes + slot * SignFile.SlotBytes;
 		if ( offset + SignFile.SlotBytes > data.Length )
 			throw new InvalidDataException( "Sign file is too short for the corrected slot." );
-		WriteFixed( data, offset + 4, 64, faceName );
-		WriteFixed( data, offset + 68, 260, fileName );
-		WriteFixed( data, offset + 364, 32, faceName );
+		WriteFixed( data, offset, 64, faceName );
+		WriteFixed( data, offset + 64, 260, fileName );
+		WriteFixed( data, offset + 360, 32, faceName );
 		return data;
 	}
 

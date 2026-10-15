@@ -1,10 +1,13 @@
 namespace OpenTPW;
 
 /// <summary>
-/// Connects real guests to an original RSE script. The host side follows the corpus protocol
-/// (docs/GUESTS.md): between slices, outside CRIT_LOCK, the host writes the front guest's id to
-/// VAR_LETMEON when it is 0, and when the script puts a guest id in VAR_LETMEOFF the host releases that
-/// guest at the exit and writes 0 back. The visitor opcodes (HUSH, WALKON, HOP, WALKOFF, WALKGET, LIMBO,
+/// Connects real guests to an original RSE script and owns the attraction's queue (docs/GUESTS.md,
+/// docs/reverse/QUEUE-plan.md). The queue is the original's per-ride state: front cell, cached back cell,
+/// size in cells and a doubly linked list of guest ids with one called ("pending") visitor. Between
+/// slices, outside CRIT_LOCK, the host calls the front guest forward when the original admission gates
+/// hold; the guest walks to the stand point and writes its id to VAR_LETMEON when that is 0; it stays in
+/// the list until the script consumes it. When the script puts a guest id in VAR_LETMEOFF the host
+/// releases that guest at the exit and writes 0 back. The visitor opcodes (HUSH, WALKON, HOP, WALKOFF, WALKGET, LIMBO,
 /// UNLIMBO, FORCEUNLIMBO, INLIMBO, LIMBOSPACE, BOUNCE, UNBOUNCE, FORCEUNBOUNCE, BOUNCING, ADDHEAD,
 /// DELHEAD) operate on the guests the script holds. Semantics are inferred from corpus control flow,
 /// not traced from the original executable; walk animations along ride nodes are not simulated (WALKON
@@ -14,16 +17,37 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 {
 	/// <summary>BOUNCE with a zero duration (VAR_DURATION has no source yet) keeps a guest this long. Approximation.</summary>
 	public const double DefaultBounceSeconds = 10;
+	/// <summary>Guests per queue cell (positions 0..3 along the cell).</summary>
+	// [BIN:STP-PPC:0x100DDD2C queue coordinates] four positions per queue cell; the walk subtracts 4 per followed link
+	public const int PositionsPerCell = 4;
+	/// <summary>Queue limit of objects without <c>Info.HasQueue</c> (shops, toilets and sideshows: the virtual queue).</summary>
+	// [BIN:STP-PPC:0x100DCB74 queue limit] ride +46 & 0x8 (Info.HasQueue, set by the ride build 0x100DAB6C) clear gives limit 100; set gives trunc(max(QWTC × (SPEED/InitSpeed × CAP) / DUR, 4)) as a u32
+	public const uint NoQueueLimit = 100;
+	/// <summary>Excitement difference at which a guest refuses to join (<see cref="QueueJoinRules.Gate"/>).</summary>
+	// [BIN:STP-PPC:0x100ECCB0 join excitement gate] |difference| ≥ 45 leaves with "ride is not exciting enough!" / "ride is too exciting!"
+	public const int ExcitementGate = QueueJoinRules.Gate;
+	/// <summary>Iteration guard of the back-of-queue walk ("GetBackOfQueue() crashed!").</summary>
+	public const int QueueWalkGuard = 1000;
 
-	private readonly List<int> queue = new();
+	private readonly Dictionary<int, (int Next, int Previous)> links = new(); // guest +552/+554
+	private int head; // ride +56
+	private int tail;
 	private readonly List<int> onRide = new();          // boarded, in boarding order
 	private readonly Queue<int> walkingOff = new();     // WALKOFF done, waiting for WALKGET
+	private readonly Queue<double> walkingOffReady = new(); // the script time at which WALKGET may hand the guest out (parallel to walkingOff)
 	private readonly HashSet<int> hopped = new();
 	private readonly List<(int Guest, double Until)> limbo = new();
-	private readonly List<(int Guest, double Until)> bouncing = new();
+	private readonly List<(int Guest, double Until, double Start)> bouncing = new(); // BOUNCE slot table in index order: visitor (0 = free), deadline, start; trailing free slots are trimmed
+	private readonly List<(int X, int Y)> queueCells = new();
 	private RideVM? vm;
-	private int offered;
-	private Func<bool> isOpen = () => true;
+	private int called;       // ride +104: the pending visitor
+	private bool letMeOnWritten;
+	private long lastAdmissionTurn = long.MinValue;
+	private long calledTurn = -1;
+	private Func<bool> isOpen = () => true;     // the ride's open word (+0x68)
+	private Func<bool> takesGuests = () => true; // the coaster and track tests of the choice (0x00441970, the track word +0x2C of track types 1 and 2)
+	private Func<bool> refusesQueue = () => false; // the queue's own test (0x00500612: a coaster failing 0x00441970, or track type 1 with +0x2C at 0)
+	private readonly int excitementLevel;
 
 	public RideVisitorBridge( int attractionId, string name, RideVisitorKind kind, int capacity, int excitementLevel, int attractionValue,
 		GuestNeeds satisfies = GuestNeeds.None, int price = 0 )
@@ -31,10 +55,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( attractionId <= 0 )
 			throw new ArgumentOutOfRangeException( nameof( attractionId ) );
 		AttractionId = attractionId;
+		TypeId = attractionId;
 		Name = name;
 		Kind = kind;
 		Capacity = Math.Max( 1, capacity );
-		ExcitementLevel = excitementLevel;
+		this.excitementLevel = excitementLevel;
 		AttractionValue = attractionValue;
 		Satisfies = satisfies;
 		Price = price;
@@ -43,46 +68,699 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int AttractionId { get; }
 	public string Name { get; }
 	public RideVisitorKind Kind { get; }
-	public int Capacity { get; }
-	public int ExcitementLevel { get; }
+	public int Capacity { get; private set; }
+	// Catalogue fallback only: existing occupied rider/head tables are never resized or cleared.
+	internal void SetCatalogueFallbackCapacity( int capacity ) => Capacity = Math.Max( 1, capacity );
+	/// <summary>The excitement shown to the HUD and used by the attraction score: the coaster's guest value when there is a source, else the .sam level.</summary>
+	public int ExcitementLevel => ExcitementSource?.Invoke() ?? excitementLevel;
+	/// <summary>The type's <c>UsageInfo.ExcitementLevel</c> word (type <c>+316</c>); its low byte decides whether guests are tested at all.</summary>
+	public int StaticExcitementLevel => excitementLevel;
+	/// <summary>Replaces the .sam excitement with a live value (a coaster's rating, <c>0xdff70</c>), or null.</summary>
+	public Func<int>? ExcitementSource { get; set; }
+	/// <summary>
+	/// A ride with a controller behind it (a water ride's bump controller, docs/TRACKS.md) turns the data level into its excitement base before the speed and
+	/// duration ratios scale it (60 % of the level plus up to 40 from the circuit's piece counts); null for every other ride.
+	/// </summary>
+	public Func<int, int>? ExcitementBase { get; set; }
+	/// <summary>The sideshow's goods, price and win chance, read by <see cref="LiveExcitement"/>; the level mirrors them from the economy each tick.</summary>
+	public SideshowTerms Sideshow
+	{
+		get => sideshow;
+		set
+		{
+			sideshow = value;
+			HasSideshowTerms = true;
+		}
+	}
+
+	private SideshowTerms sideshow;
+
+	/// <summary>True once <see cref="Sideshow"/> was set: all-zero terms (a free visit) are then live terms, not missing ones.</summary>
+	public bool HasSideshowTerms { get; private set; }
+	/// <summary>The wear gauge (ride <c>+64</c>, the state of repair 0–100) the relief predicate reads; the level mirrors it from the economy.</summary>
+	public double WearGauge { get; set; } = 100;
+	/// <summary>The ride's head table for ADDHEAD/DELHEAD, null when its model has no head records (see <see cref="RideHeadSpace"/>).</summary>
+	// [BIN:TPW-EXE:0x00558D2B script init] only the root script gets a table: the init stores the thing id (+0xAC) and, when it is 0, skips the head-id lookup and the table allocation (0x558D2B–0x558E0B), and SPAWNCHILD (0x555081) and SPAWNSOUND (0x5551AB) create their script with thing id 0 and copy the parent's thing id only afterwards (0x555168–0x55519A)
+	public RideHeadSpace? Heads { get; set; }
+
+	/// <summary>The head table of the script that runs a head opcode: the root's; none for a child or sound script, whose ADDHEAD and DELHEAD do nothing.</summary>
+	// [BIN:TPW-EXE:0x00554C3E ADDHEAD] the handler exits when the table pointer (+0x30) is NULL (0x554C89), and DELHEAD does the same (0x554D6F), so head opcodes in child and sound scripts have no effect
+	private RideHeadSpace? HeadTableFor( RideVM vm ) => vm.Parent == null ? Heads : null;
+
+	/// <summary>Appends the visitors with a head up and the model node each hangs from, without allocating.</summary>
+	public void CollectHungHeads( List<(int Visitor, int Node)> into ) => Heads?.AppendHung( into );
+
+	/// <summary>Visitors with a head up and the model node each hangs from (allocates; for tests and the smoke test).</summary>
+	public IEnumerable<(int Visitor, int Node)> HungHeads()
+	{
+		var list = new List<(int Visitor, int Node)>();
+		CollectHungHeads( list );
+		return list;
+	}
+
 	public int AttractionValue { get; }
+	/// <summary>Type <c>UsageInfo.ThirstEffect</c> (<c>+324</c>).</summary>
+	public int ThirstEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.HungerEffect</c> (<c>+328</c>).</summary>
+	public int HungerEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.VomitEffect</c> (<c>+332</c>).</summary>
+	public int VomitEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.InitCostOfGoods</c> (<c>+320</c>).</summary>
+	public int InitCostOfGoods { get; set; }
+	/// <summary>Type <c>UsageInfo.RipOffOK</c> (tp.exe type <c>+0x16C</c>).</summary>
+	public int RipOffOk { get; set; }
+	/// <summary>Type <c>UsageInfo.FatigueEffect</c> (tp.exe type <c>+0xE8</c>).</summary>
+	public int FatigueEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>).</summary>
+	public int HappinessEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.LitterEffect</c> (tp.exe type <c>+0x154</c>).</summary>
+	public int LitterEffect { get; set; }
+	/// <summary>Type <c>UsageInfo.GoldenTicketCost</c> (<c>+196</c>).</summary>
+	public int GoldenTicketCost { get; set; }
+	/// <summary>Type <c>Upgrades[0].CostOfUpgrade</c> (<c>+440</c>).</summary>
+	public int UpgradeCost { get; set; }
+	/// <summary>Type <c>UsageInfo.ISIndoors</c> (<c>+276</c>).</summary>
+	public bool IsIndoors { get; set; }
+	/// <summary>The object type (<c>Info.Id</c>); defaults to the attraction's own id (every attraction its own type).</summary>
+	public int TypeId { get; set; }
+	/// <summary>Days since the attraction was bought, mirrored from the economy each tick; <see cref="uint.MaxValue"/> (not new) until then.</summary>
+	public uint AgeDays { get; set; } = uint.MaxValue;
 	public GuestNeeds Satisfies { get; }
 	public int Price { get; }
+	/// <summary>The type's <c>UsageInfo.SpecialIngredient</c> (<c>+344</c>); 4 (Sugar) makes a visit raise the guest's speed boost.</summary>
+	public int SpecialIngredient { get; set; }
+	/// <summary>The type's <c>UsageInfo.AppearanceEffect</c> (tp.exe <c>+0x15C</c>): 1 gives the guest a balloon, 2 puts on or returns a costume.</summary>
+	public int AppearanceEffect { get; set; }
+	/// <summary>The ride's amount of the special ingredient (Mac <c>+404</c>, PC <c>+0x198</c> beside the price per use at <c>+0x194</c>; the serializer <c>0x004DB7D0</c> names it <c>mAmountOfSpecialIngredient</c>), 50 when the ride is built.</summary>
+	// [APPROX:WALK-001] the amount of the special ingredient stays at the ride build's 50 (tp.exe 0x4db090 stores 0x32 at +0x198, 0x4db3b3), so a Sugar visit adds 3 (0x4fe5f8: trunc(6 x amount / 100)); the original's shop window shows a 0..100 amount slider for ingredient shops only (range set at 0x4b06d2; refresh 0x4b0950 hides controls 0xc086/0xc084 unless the type's ingredient is 1..4), writes it to the object (0x4b0aa0) or to every object of that type (0x4b0ae0) and saves it as mAmountOfSpecialIngredient (0x4db7d0); OpenTPW has no slider, its save does not store the amount and the original-save import skips it — still open: no slider or save field in OpenTPW
+	// Only tests change it: nothing in play sets +404 and it is neither saved nor hashed, so a public setter would make state the save loses.
+	public int IngredientAmount { get; internal set; } = GuestSpeed.DefaultIngredientAmount;
+	/// <summary>Toilets (<c>UsageInfo.ProvidesRelief</c>): queueing guests do not leave for the toilet.</summary>
+	public bool ProvidesRelief => Satisfies.HasFlag( GuestNeeds.Toilet );
+	/// <summary>Walkable path cell the queue falls back to when the entrance's outside cell is neither a queue nor a path cell.</summary>
 	public (int X, int Y) EntranceCell { get; set; }
 	public (int X, int Y) ExitCell { get; set; }
+	public (float X, float Y) EntryCellStandPos { get; set; } = (0.5f, 0.5f);
+	public int Rotation { get; set; }
 	public bool HasCells { get; set; }
-	public int QueueLength => queue.Count;
-	/// <summary>Approximation: 4 × capacity (the .sam QueueWaitTimeConstant is not understood).</summary>
-	public int MaximumQueueLength { get; set; }
+	/// <summary>Queue rules from the object's .sam data (<see cref="QueueParameters"/>); defaults describe a queue-less object.</summary>
+	public QueueParameters Parameters { get; set; } = QueueParameters.Default;
+	public bool HasQueue => Parameters.HasQueue;
 	public IRideVisitorHost? Host { get; set; }
-	public bool IsOpen => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting) && isOpen();
-	public int OfferedGuest => offered;
-	public IReadOnlyList<int> Queue => queue;
+	public bool IsOpen => ScriptRuns && isOpen() && takesGuests();
+	/// <summary>
+	/// The ride's script runs and its coaster or track takes guests (<see cref="Attach"/>); unlike <see cref="IsOpen"/> it ignores the open word and the
+	/// breakdown, which the original's join (state 10, <c>0x004FFBC0</c>) does not read either.
+	/// </summary>
+	public bool AcceptsJoins => ScriptRuns && takesGuests();
+	/// <summary>The coaster or track refuses guests (the original's state 11 sends a queued guest away with thought 13, <c>0x004FFFF0</c>).</summary>
+	public bool TrackRefusesGuests => vm != null && refusesQueue();
+	private bool ScriptRuns => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting);
+	/// <summary>
+	/// The ride script reports a breakdown (<c>VAR_BROKEN</c>, which the original's ride update turns into ride state 1, or 4 when
+	/// the life gauge is 0): the ride dismisses its queue head first, one guest per park turn, and takes nobody (ORACLE.md F15).
+	/// </summary>
+	public bool IsBroken => vm != null && Get( RideVariables.VAR_BROKEN ) != 0;
+	/// <summary>
+	/// The ride is in state 1 (broken down; 4 when condemned is not told apart): entered by the ride update that reads <c>VAR_BROKEN</c>, left only when
+	/// the ride is opened again (a repair, an upgrade's end or the open button: <c>SetState(0)</c>), whatever the script does to <c>VAR_BROKEN</c> meanwhile.
+	/// </summary>
+	// The repair (0xdf4d4) and the other openers write the open word 1 and VAR_RIDECLOSED 0 together with SetState(0), so an opened ride has left state 1
+	public bool IsBrokenDown => brokenDown && (!isOpen() || vm == null || Get( RideVariables.VAR_RIDECLOSED ) != 0);
+	private bool brokenDown;
+	/// <summary>The original's ride-failure predicate <c>0xdfe34</c> (ORACLE.md F15): a relief object whose wear gauge, truncated to a byte, is below 25.</summary>
+	public bool ReliefWornOut => QueueJoinRules.ReliefFailed( ProvidesRelief, (float)WearGauge );
+	public bool IsRunning => vm != null && Get( RideVariables.VAR_RUNNING ) != 0;
+	public int RidersOnBoard => vm != null ? Get( RideVariables.VAR_ONRIDE ) : 0;
+	/// <summary>The operating speed: InitSpeed of the ride record (see <see cref="QueueParameters"/>).</summary>
+	public int Speed => Parameters.Speed;
+	/// <summary>The guest called forward (ride <c>+104</c>), 0 when none.</summary>
+	public int CalledGuest => called;
+	/// <summary>Compatibility name of <see cref="CalledGuest"/>.</summary>
+	public int OfferedGuest => called;
+	/// <summary>Guests in the queue, front first (the called guest included until the script takes it).</summary>
+	public IReadOnlyList<int> Queue
+	{
+		get
+		{
+			var list = new List<int>( links.Count );
+			for ( var guest = head; guest != 0; guest = links[guest].Next )
+				list.Add( guest );
+			return list;
+		}
+	}
+	public int QueueLength => links.Count;
 	/// <summary>Guests the script holds (boarded and not yet released).</summary>
 	public IReadOnlyList<int> Riders => onRide;
 	public int BoardedTotal { get; private set; }
 	public int ReleasedTotal { get; private set; }
 
-	/// <summary>Binds the bridge to the script it serves; <paramref name="open"/> reports whether the owner opened the ride.</summary>
-	public void Attach( RideVM script, Func<bool> open )
+	/// <summary>Queue and rider state for <see cref="WorldStateHash"/>.</summary>
+	internal void AddCanonicalState( StateHasher hash )
+	{
+		void AddList( IReadOnlyCollection<int> values )
+		{
+			hash.Add( values.Count );
+			foreach ( var value in values )
+				hash.Add( value );
+		}
+		void AddTimed( List<(int Guest, double Until)> values )
+		{
+			hash.Add( values.Count );
+			foreach ( var (guest, until) in values )
+			{
+				hash.Add( guest );
+				hash.Add( until );
+			}
+		}
+		hash.Add( MaximumQueueLength );
+		hash.Add( called );
+		hash.Add( BoardedTotal );
+		hash.Add( ReleasedTotal );
+		AddList( Queue );
+		AddList( onRide );
+		AddList( walkingOff );
+		if ( WalkOffMilliseconds > 0 )
+		{
+			hash.Add( WalkOffMilliseconds );
+			foreach ( var ready in walkingOffReady )
+				hash.Add( ready );
+		}
+		AddList( hopped.Order().ToArray() );
+		AddTimed( limbo );
+		hash.Add( bouncing.Count );
+		foreach ( var (guest, until, start) in bouncing )
+		{
+			hash.Add( guest );
+			hash.Add( until );
+			hash.Add( start );
+		}
+		hash.Add( letMeOnWritten );
+		hash.Add( lastAdmissionTurn );
+		hash.Add( brokenDown );
+		hash.Add( QueueFrontCell is { } front ? front.X : -1 );
+		hash.Add( QueueFrontCell is { } frontCell ? frontCell.Y : -1 );
+		hash.Add( QueueEntranceDirection );
+		hash.Add( queueCells.Count );
+		foreach ( var (x, y) in queueCells )
+		{
+			hash.Add( x );
+			hash.Add( y );
+		}
+		hash.Add( JoinCell is { } join ? join.X : -1 );
+		hash.Add( JoinCell is { } joinCell ? joinCell.Y : -1 );
+		hash.Add( QueueEditCount );
+		hash.Add( calledTurn );
+		hash.Add( HeadNotReadyStreak );
+		hash.Add( MaximumHeadNotReadyStreak );
+		hash.Add( CalledAgeTurns );
+		hash.Add( MaximumCalledAgeTurns );
+	}
+
+	// ---- Snapshots (park save/load) -------------------------------------------------------------
+
+	/// <summary>
+	/// Captures the queue and rider bookkeeping as a typed deep copy: the guest-id linked list front first, the
+	/// script-held guests with their timers, the computed queue geometry and the admission counters. The script, the
+	/// open delegate and the placement's cells metadata (entrance/exit, stand position, queue parameters) are owned by
+	/// the object/script slices and are re-attached around a restore, not captured.
+	/// </summary>
+	public RideVisitorBridgeSnapshot CaptureSnapshot() => new()
+	{
+		AttractionId = AttractionId,
+		Queue = Queue.ToArray(),
+		OnRide = onRide.ToArray(),
+		WalkingOff = walkingOff.ToArray(),
+		WalkingOffReady = WalkOffMilliseconds > 0 ? walkingOffReady.ToArray() : null,
+		Hopped = hopped.Order().ToArray(),
+		Limbo = limbo.ToArray(),
+		Bounce = bouncing.ToArray(),
+		CalledGuest = called,
+		LetMeOnWritten = letMeOnWritten,
+		LastAdmissionTurn = lastAdmissionTurn,
+		BrokenDown = brokenDown,
+		CalledTurn = calledTurn,
+		QueueCells = queueCells.ToArray(),
+		QueueEditCount = QueueEditCount,
+		JoinCell = JoinCell,
+		HeadNotReadyStreak = HeadNotReadyStreak,
+		MaximumHeadNotReadyStreak = MaximumHeadNotReadyStreak,
+		CalledAgeTurns = CalledAgeTurns,
+		MaximumCalledAgeTurns = MaximumCalledAgeTurns,
+		LastAdmissionCheck = LastAdmissionCheck,
+		BoardedTotal = BoardedTotal,
+		ReleasedTotal = ReleasedTotal
+	};
+
+	/// <summary>
+	/// Bridge-local snapshot checks that need no park context: positive and unique guest ids, the called guest in the
+	/// queue, rider subsets, finite timers and bounded counters. A list the file lost (a JSON null) is named as a
+	/// problem instead of crashing. Whether the referenced guests exist — and each is queued or aboard at exactly one
+	/// attraction — is validated by <see cref="GuestSimulation.ValidateSnapshot"/>.
+	/// </summary>
+	public static IReadOnlyList<string> ValidateSnapshot( RideVisitorBridgeSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		var errors = new List<string>();
+		void Error( string message ) => errors.Add( message );
+		// Name every list a corrupt file nulled out before anything dereferences them; a snapshot without its
+		// tables cannot be checked structurally.
+		var listsMissing = false;
+		void Require<T>( T[]? list, string name )
+		{
+			if ( list == null )
+			{
+				Error( $"the {name} is missing." );
+				listsMissing = true;
+			}
+		}
+		Require( snapshot.Queue, "queue list" );
+		Require( snapshot.OnRide, "rider list" );
+		Require( snapshot.WalkingOff, "walking-off list" );
+		Require( snapshot.Hopped, "hopped set" );
+		Require( snapshot.Limbo, "limbo table" );
+		Require( snapshot.Bounce, "bounce table" );
+		Require( snapshot.QueueCells, "queue cell list" );
+		if ( listsMissing )
+			return errors;
+		var riders = new HashSet<int>( snapshot.OnRide );
+		if ( riders.Count != snapshot.OnRide.Length )
+			Error( "the rider list repeats a guest." );
+		foreach ( var guestId in snapshot.Queue )
+			if ( guestId <= 0 )
+				Error( $"the queue holds guest id {guestId}." );
+		if ( snapshot.Queue.Distinct().Count() != snapshot.Queue.Length )
+			Error( "the queue repeats a guest." );
+		if ( snapshot.Queue.Length > PositionsPerCell * Math.Max( 1, snapshot.QueueCells.Length ) )
+			Error( $"the queue holds {snapshot.Queue.Length} guests beyond the physical room of its {snapshot.QueueCells.Length} cells." );
+		if ( snapshot.QueueCells.Length == 0 )
+			Error( "the queue has no cells." );
+		if ( snapshot.CalledGuest < 0 )
+			Error( $"the called guest id {snapshot.CalledGuest} is negative." );
+		if ( snapshot.CalledGuest != 0 && !snapshot.Queue.Contains( snapshot.CalledGuest ) )
+			Error( $"the called guest {snapshot.CalledGuest} is not in the queue." );
+		if ( snapshot.LetMeOnWritten && snapshot.CalledGuest == 0 )
+			Error( "VAR_LETMEON is marked written without a called guest." );
+		foreach ( var guestId in snapshot.OnRide )
+			if ( guestId <= 0 )
+				Error( $"the rider list holds guest id {guestId}." );
+		foreach ( var guestId in snapshot.WalkingOff )
+			if ( !riders.Contains( guestId ) )
+				Error( $"walking-off guest {guestId} is not aboard." );
+		if ( snapshot.WalkingOff.Distinct().Count() != snapshot.WalkingOff.Length )
+			Error( "the walking-off list repeats a guest." );
+		if ( snapshot.WalkingOffReady != null && (snapshot.WalkingOffReady.Length != snapshot.WalkingOff.Length || snapshot.WalkingOffReady.Any( ready => !double.IsFinite( ready ) )) )
+			Error( "the walking-off times do not match the walking-off list." );
+		foreach ( var guestId in snapshot.Hopped )
+			if ( !riders.Contains( guestId ) )
+				Error( $"hopped guest {guestId} is not aboard." );
+		if ( snapshot.Hopped.Distinct().Count() != snapshot.Hopped.Length )
+			Error( "the hopped set repeats a guest." );
+		var limboGuests = new HashSet<int>();
+		foreach ( var (guestId, until) in snapshot.Limbo )
+		{
+			if ( !riders.Contains( guestId ) )
+				Error( $"limbo guest {guestId} is not aboard." );
+			if ( !limboGuests.Add( guestId ) )
+				Error( $"limbo holds guest {guestId} twice." );
+			if ( !double.IsFinite( until ) )
+				Error( $"limbo guest {guestId} has a deadline that is not finite." );
+		}
+		var bouncingGuests = new HashSet<int>();
+		for ( var index = 0; index < snapshot.Bounce.Length; index++ )
+		{
+			var (guestId, until, start) = snapshot.Bounce[index];
+			if ( guestId < 0 )
+				Error( $"bounce slot {index} holds guest id {guestId}." );
+			if ( guestId != 0 && !bouncingGuests.Add( guestId ) )
+				Error( $"the bounce table repeats guest {guestId}." );
+			if ( guestId != 0 && !riders.Contains( guestId ) )
+				Error( $"bouncing guest {guestId} is not aboard." );
+			if ( !double.IsFinite( until ) || !double.IsFinite( start ) )
+				Error( $"bounce slot {index} has a time that is not finite." );
+		}
+		if ( snapshot.Bounce.Length > 0 && snapshot.Bounce[^1].Guest == 0 )
+			Error( "the bounce table keeps trailing free slots." );
+		if ( snapshot.QueueEditCount < 0 )
+			Error( $"the queue edit count {snapshot.QueueEditCount} is negative." );
+		if ( snapshot.HeadNotReadyStreak < 0 || snapshot.MaximumHeadNotReadyStreak < snapshot.HeadNotReadyStreak )
+			Error( $"the head-not-ready streaks ({snapshot.HeadNotReadyStreak}, {snapshot.MaximumHeadNotReadyStreak}) are negative or inverted." );
+		if ( snapshot.CalledAgeTurns < 0 || snapshot.MaximumCalledAgeTurns < snapshot.CalledAgeTurns )
+			Error( $"the called-age turns ({snapshot.CalledAgeTurns}, {snapshot.MaximumCalledAgeTurns}) are negative or inverted." );
+		if ( snapshot.CalledTurn < -1 )
+			Error( $"the called turn {snapshot.CalledTurn} is negative." );
+		if ( snapshot.BoardedTotal < snapshot.OnRide.Length )
+			Error( $"only {snapshot.BoardedTotal} guests boarded, but {snapshot.OnRide.Length} are aboard." );
+		if ( snapshot.ReleasedTotal < 0 )
+			Error( $"the released total {snapshot.ReleasedTotal} is negative." );
+		return errors;
+	}
+
+	/// <summary>
+	/// Restores a validated queue snapshot into this bridge: the linked list is rebuilt front first from
+	/// <see cref="RideVisitorBridgeSnapshot.Queue"/>, and the rider lists, timers, queue geometry and admission
+	/// counters are copied. Bridge-local problems throw <see cref="InvalidDataException"/> before anything is touched;
+	/// whether the guest ids exist in the park is the caller's check (see
+	/// <see cref="GuestSimulation.RestoreSnapshot"/>, which runs it first). The attached script's VAR_LETMEON must be
+	/// restored with the value <see cref="RideVisitorBridgeSnapshot.LetMeOnWritten"/> describes — the script slice
+	/// owns that variable — and <see cref="Attach"/> must already point at the restored script.
+	/// </summary>
+	public void RestoreSnapshot( RideVisitorBridgeSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		if ( snapshot.AttractionId != AttractionId )
+			throw new InvalidDataException( $"The queue snapshot describes attraction {snapshot.AttractionId}, not {AttractionId} ('{Name}')." );
+		var problems = ValidateSnapshot( snapshot );
+		if ( problems.Count > 0 )
+			throw new InvalidDataException( $"Attraction {AttractionId} ('{Name}') queue snapshot does not restore: " + string.Join( " ", problems ) );
+		// Candidates first; the live tables are only replaced once everything is parsed.
+		var queue = snapshot.Queue;
+		var linksCandidate = new Dictionary<int, (int Next, int Previous)>( queue.Length );
+		for ( var index = 0; index < queue.Length; index++ )
+			linksCandidate.Add( queue[index], (index + 1 < queue.Length ? queue[index + 1] : 0, index > 0 ? queue[index - 1] : 0) );
+		var headCandidate = queue.Length > 0 ? queue[0] : 0;
+		var tailCandidate = queue.Length > 0 ? queue[^1] : 0;
+		links.Clear();
+		foreach ( var (guestId, link) in linksCandidate )
+			links.Add( guestId, link );
+		head = headCandidate;
+		tail = tailCandidate;
+		onRide.Clear();
+		onRide.AddRange( snapshot.OnRide );
+		walkingOff.Clear();
+		walkingOffReady.Clear();
+		for ( var index = 0; index < snapshot.WalkingOff.Length; index++ )
+		{
+			walkingOff.Enqueue( snapshot.WalkingOff[index] );
+			walkingOffReady.Enqueue( snapshot.WalkingOffReady?[index] ?? 0 );
+		}
+		hopped.Clear();
+		hopped.UnionWith( snapshot.Hopped );
+		limbo.Clear();
+		limbo.AddRange( snapshot.Limbo );
+		bouncing.Clear();
+		bouncing.AddRange( snapshot.Bounce );
+		called = snapshot.CalledGuest;
+		letMeOnWritten = snapshot.LetMeOnWritten;
+		lastAdmissionTurn = snapshot.LastAdmissionTurn;
+		brokenDown = snapshot.BrokenDown;
+		calledTurn = snapshot.CalledTurn;
+		queueCells.Clear();
+		queueCells.AddRange( snapshot.QueueCells );
+		QueueEditCount = snapshot.QueueEditCount;
+		JoinCell = snapshot.JoinCell;
+		HeadNotReadyStreak = snapshot.HeadNotReadyStreak;
+		MaximumHeadNotReadyStreak = snapshot.MaximumHeadNotReadyStreak;
+		CalledAgeTurns = snapshot.CalledAgeTurns;
+		MaximumCalledAgeTurns = snapshot.MaximumCalledAgeTurns;
+		LastAdmissionCheck = snapshot.LastAdmissionCheck;
+		BoardedTotal = snapshot.BoardedTotal;
+		ReleasedTotal = snapshot.ReleasedTotal;
+	}
+
+	// ---- Queue geometry ----------------------------------------------------------------------
+
+	/// <summary>The entrance's outside cell (the original front cell), or null to use <see cref="EntranceCell"/>.</summary>
+	public (int X, int Y)? QueueFrontCell { get; set; }
+	/// <summary><see cref="GuestPathGrid.Directions"/> index from the front cell toward the ride's entrance cell, or −1.</summary>
+	public int QueueEntranceDirection { get; set; } = -1;
+	/// <summary>Queue cells from the front (index 0) to the back; the front may be a path cell.</summary>
+	public IReadOnlyList<(int X, int Y)> QueueCells => queueCells.Count > 0 ? queueCells : new[] { EntranceCell };
+	/// <summary>Cached back-of-queue cell (ride <c>+54</c>).</summary>
+	public (int X, int Y) QueueBackCell => QueueCells[^1];
+	/// <summary>Queue size in cells (ride <c>+60</c>), at least 1.</summary>
+	public int QueueSizeInCells => Math.Max( 1, queueCells.Count );
+	/// <summary>Walkable path cell where guests step onto the back of the queue, or null when the back is not connected to a path.</summary>
+	public (int X, int Y)? JoinCell { get; private set; }
+	/// <summary>Physical room: four guests per queue cell.</summary>
+	public int QueueRoom => PositionsPerCell * QueueSizeInCells;
+	/// <summary>The data limit (<see cref="ComputeQueueLimit"/>).</summary>
+	public uint QueueLimit => ComputeQueueLimit( Parameters );
+	/// <summary>Most guests that can be queued now: min(<see cref="QueueRoom"/>, <see cref="QueueLimit"/>).</summary>
+	public int MaximumQueueLength => (int)Math.Min( (uint)QueueRoom, QueueLimit );
+	/// <summary>Incremented whenever a recompute changed the queue cells (the original "queue edited" event).</summary>
+	public int QueueEditCount { get; private set; }
+
+	// ---- Admission signal (M3 gate) ------------------------------------------------------------
+
+	/// <summary>The last admission evaluation (one per park turn).</summary>
+	public AdmissionCheck LastAdmissionCheck { get; private set; }
+	/// <summary>
+	/// Consecutive admission evaluations, up to the last one, whose gates held with a head guest that did not yet stand
+	/// at position 0 (<see cref="AdmissionCheck.HeadNotReady"/>); 0 once the head is called or a gate fails.
+	/// </summary>
+	public long HeadNotReadyStreak { get; private set; }
+	/// <summary>Longest <see cref="HeadNotReadyStreak"/> so far.</summary>
+	public long MaximumHeadNotReadyStreak { get; private set; }
+	/// <summary>
+	/// Park turns since the current <see cref="CalledGuest"/> was called without having boarded (or been withdrawn), as of
+	/// the last admission evaluation; 0 when nobody is called or the host has no park turn.
+	/// </summary>
+	public long CalledAgeTurns { get; private set; }
+	/// <summary>Largest <see cref="CalledAgeTurns"/> so far.</summary>
+	public long MaximumCalledAgeTurns { get; private set; }
+	/// <summary>Raised after every admission evaluation.</summary>
+	public event Action<RideVisitorBridge, AdmissionCheck>? AdmissionChecked;
+
+	/// <summary>
+	/// The queue limit of <c>0xdcb74</c>: 100 for objects without <c>Info.HasQueue</c>, and for HasQueue rides
+	/// trunc(max(QWTC × (G × CAP) / DUR, 4)) in single precision with G = SPEED / InitSpeed (1 when SPEED is 0);
+	/// a NaN quotient gives 4. Unsigned 32-bit like the original: SPEED is read as an unsigned word and the quotient
+	/// saturates at 2³² − 1.
+	/// </summary>
+	public static uint ComputeQueueLimit( QueueParameters parameters )
+	{
+		if ( !parameters.HasQueue )
+			return NoQueueLimit;
+		// [BIN:STP-PPC:0x100DCBB8 queue limit] SPEED is the unsigned word at ride +84; 0x101C3FBC converts the quotient to a u32, saturating at 2^32 − 1
+		var speed = (uint)parameters.Speed;
+		var g = speed == 0 ? 1f : speed / (float)parameters.InitSpeed;
+		var quotient = parameters.QueueWaitTimeConstant * (g * parameters.Capacity) / parameters.Duration;
+		if ( float.IsNaN( quotient ) )
+			return 4;
+		quotient = MathF.Max( quotient, 4f );
+		return quotient >= 4294967296f ? uint.MaxValue : (uint)quotient;
+	}
+
+	/// <summary>
+	/// Binds the bridge to the script it serves; <paramref name="open"/> reports whether the owner opened the ride (the open word +0x68),
+	/// <paramref name="takes"/> whether its coaster or track takes guests for the choice (null: always), <paramref name="refuses"/> whether the
+	/// queue's own test sends queued guests away (null: when <paramref name="takes"/> fails).
+	/// </summary>
+	public void Attach( RideVM script, Func<bool> open, Func<bool>? takes = null, Func<bool>? refuses = null )
 	{
 		vm = script;
 		isOpen = open;
-		if ( MaximumQueueLength <= 0 )
-			MaximumQueueLength = Capacity * 4;
+		takesGuests = takes ?? (() => true);
+		refusesQueue = refuses ?? (() => !takesGuests());
 	}
 
-	public bool TryJoinQueue( int guestId )
+	/// <summary>
+	/// Recomputes the front, back and size of the queue from the grid (<c>0xdd43c</c>): start at the front
+	/// cell and follow queue cells whose link points back at the current cell, at most
+	/// <see cref="QueueWalkGuard"/> steps. Returns true when the cells changed (a queue edit).
+	/// </summary>
+	public bool RecomputeQueue( GuestPathGrid grid )
 	{
-		if ( guestId <= 0 || !IsOpen || queue.Count >= MaximumQueueLength || queue.Contains( guestId ) || Holds( guestId ) )
+		var previous = queueCells.ToArray();
+		queueCells.Clear();
+		var front = QueueFrontCell ?? EntranceCell;
+		// A front cell that is neither a queue nor a path cell falls back to EntranceCell, the nearest walkable path cell (RIDES-028 in Level.Objects), as a one-cell queue.
+		if ( !grid.IsQueue( front.X, front.Y ) && !grid.IsWalkable( front.X, front.Y ) )
+			front = EntranceCell;
+		queueCells.Add( front );
+		var current = front;
+		for ( var step = 0; step < QueueWalkGuard; step++ )
+		{
+			var next = NextQueueCell( grid, current );
+			if ( next == null || queueCells.Contains( next.Value ) )
+				break;
+			queueCells.Add( next.Value );
+			current = next.Value;
+		}
+		JoinCell = FindJoinCell( grid );
+		if ( previous.SequenceEqual( queueCells ) )
 			return false;
-		queue.Add( guestId );
+		QueueEditCount++;
 		return true;
 	}
 
-	public int GetQueuePosition( int guestId ) => queue.IndexOf( guestId );
+	/// <summary>The queue cell behind (x, y): a neighbour of type 3 whose link points back at (x, y) (<c>0xdda18</c>).</summary>
+	// [BIN:TPW-EXE:0x004DE670 queue predecessor] the neighbours are tried −Y (its link 16), +Y (link 1), +X (link 64), −X (link 4), through the run-time table 0x007CDBA0 (entries 0, 1, 5, 6); the first queue cell (type 3, not 9) whose link points back is taken
+	private static readonly int[] PredecessorOrder = { 0, 2, 1, 3 };   // Directions indices: −Y, +Y, +X, −X
 
-	public bool LeaveQueue( int guestId ) => queue.Remove( guestId );
+	public static (int X, int Y)? NextQueueCell( GuestPathGrid grid, (int X, int Y) cell )
+	{
+		foreach ( var direction in PredecessorOrder )
+		{
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			var (nx, ny) = (cell.X + dx, cell.Y + dy);
+			if ( grid.IsQueue( nx, ny ) && GuestPathGrid.LinkDirection( grid.GetQueueLink( nx, ny ) ) == ((direction + 2) & 3) )
+				return (nx, ny);
+		}
+		return null;
+	}
+
+	// [APPROX:QUEUE-003] guests walk to OpenTPW's join cell, the back cell's first walkable 4-neighbour in Directions order (−Y, +X, +Y, −X, the links 1, 4, 16, 64) with no connection test, and join from there; with none the ride cannot be joined. In tp.exe the state-10 join (0x004FFBC0) needs the guest's own cell to be the back queue cell (0x004DE110 → 0x004DE130, else "The back of the queue has moved"), and the first neighbour in that order whose bit is set in the back cell's connection byte +0x0C (0x00522770) and which is a path cell (type 1, 0x00536310) is used only for the axis of the back cell's fourth place (0x004DE840; none: the log "No path attached to end of queue" and the cell's own link +0x0D). OpenTPW keeps no connection bits for queue cells (QUEUE-012..014) — evidence needed: the queue tool's writes of +0x0C and +0x0D, and the route (0x004FA5F0) that walks a guest onto a queue cell
+	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
+	{
+		var back = queueCells[^1];
+		if ( grid.IsWalkable( back.X, back.Y ) )
+			return back;
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			var cell = (back.X + dx, back.Y + dy);
+			if ( grid.IsWalkable( cell.Item1, cell.Item2 ) && !queueCells.Contains( cell ) )
+				return cell;
+		}
+		return null;
+	}
+
+	/// <summary>Direction from queue cell <paramref name="index"/> toward its predecessor (the previous cell, or the ride entrance for the front).</summary>
+	public int DirectionTowardsFront( int index )
+	{
+		var cells = QueueCells;
+		if ( index > 0 && index < cells.Count )
+			return GuestPathGrid.DirectionBetween( cells[index].X, cells[index].Y, cells[index - 1].X, cells[index - 1].Y );
+		if ( QueueEntranceDirection is >= 0 and < 4 )
+			return QueueEntranceDirection;
+		// No known entrance side: face away from the second cell, else −Y.
+		if ( cells.Count > 1 )
+			return (GuestPathGrid.DirectionBetween( cells[0].X, cells[0].Y, cells[1].X, cells[1].Y ) + 2) & 3;
+		return 0;
+	}
+
+	// ---- Guest list --------------------------------------------------------------------------
+
+	public bool TryJoinQueue( int guestId ) => JoinQueue( guestId ) == QueueJoinResult.Joined;
+
+	/// <summary>
+	/// The joining checks of state 10 at the back cell (<c>0xeccb0</c>), in the original order: physical room
+	/// (count &lt; 4 × cells), the excitement gate, then the limit. <paramref name="preferredExcitement"/> is the guest's
+	/// preferred excitement (<c>PeepTypes[n].PreferredExcitement</c>); null skips the gate.
+	/// </summary>
+	public QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null )
+	{
+		// [BIN:TPW-EXE:0x004FFBC0 state-10 join] the join reads neither the ride's state (+0x19C) nor its open word (+0x68): after the walk step 0x004FA2A0 it tests the guest's cell against the back cell (0x004DE110), the room 0x004DDA20, the excitement gate 0x004FD4E0 / 0x004E0860(1) and the limit 0x004DDB60, then appends (0x004DDB90); a guest joining a closed or broken ride is sent away when it reaches the head (HostStep: 0x004E1220 → 0x004E0450, states 1, 2 and 4 through 0x004E0E00). Only the choice's counts-test 0x004DD920 refuses them. A ride whose script does not run takes nobody (OpenTPW's teardown), nor does a coaster or track that refuses guests (COAST-024)
+		if ( guestId <= 0 || !AcceptsJoins )
+			return QueueJoinResult.Closed;
+		if ( links.ContainsKey( guestId ) || Holds( guestId ) )
+			return QueueJoinResult.AlreadyQueued;
+		var count = links.Count;
+		// [BIN:STP-PPC:0x100DC988 queue room] a guest may join only while count < 4 × queue size in cells (+60)
+		if ( count >= QueueRoom )
+			return QueueJoinResult.NoRoom;
+		// [BIN:STP-PPC:0x100ECD6C join gate] 0xe9a84 then 0xe02ec(ride, 1) and the 45 test; executed in the oracle (ORACLE.md F16, queue-join-gate)
+		// [BIN:TPW-EXE:0x004E0560 live excitement] a ride with a controller behind it (thing +0x28) has the base level × 60 / 100 + clamp(3 × crossings + longest straight run + 2 × corners, 0, 40) from the section counts 0x00545310 (BumpController.ExcitementBase); water rides have one
+		// [APPROX:QUEUE-004] the controller base comes from OpenTPW's BumpController (BumperTemplates.ForRide: water and kart rides of their own family, and the bumper cars −1, −6, −11, −14); tp.exe's placement 0x00529E10 builds a controller through 0x00545890 for any nonzero type word +0xA0 (taken to be Bumper.BumperType), including the types −2 and −3 and a type of the other family, and 0x004E0560 then scores 60 % of the level plus the counts — evidence needed: whether a shipped ride uses BumperType −2 or −3 or a mixed pair, and whether a loaded ride keeps its controller handle
+		if ( preferredExcitement is { } preferred && ExcitementRefusal( preferred ) is { } refusal )
+			return refusal;
+		if ( count >= QueueLimit )
+			return QueueJoinResult.QueueTooLong;
+		// [BIN:STP-PPC:0x100DCD34 queue append] the guest is appended at the tail of the ride's linked list
+		links[guestId] = (0, tail);
+		if ( tail != 0 )
+			links[tail] = (guestId, links[tail].Previous);
+		else
+			head = guestId;
+		tail = guestId;
+		return QueueJoinResult.Joined;
+	}
+
+	/// <summary>
+	/// The live excitement of <c>0xe02ec(ride, 0)</c> (<c>0xdff70</c>): 0 when the data level is 0, else the sideshow formula,
+	/// a coaster's guest value, or the data level scaled by the speed and duration ratios (<see cref="QueueJoinRules"/>).
+	/// </summary>
+	public int LiveExcitement
+	{
+		get
+		{
+			if ( excitementLevel == 0 )
+				return 0;
+			if ( Kind == RideVisitorKind.Sideshow )
+				return QueueJoinRules.SideshowExcitement( Sideshow );
+			if ( ExcitementSource is { } source )
+				return source();
+			// [APPROX:QUEUE-022] a bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object, every original object has them) is read at its design speed and duration; tp.exe's 0x004E0560 divides with no zero guard and its clamps take the 0.75 floor for a NaN ratio (FCOM against 0.75 sets C0 when unordered: 0x004E07D2, 0x004E0802), so 0/0 gives trunc(0.5625 × level), and QueueJoinRules.ClampRatio lets NaN through — evidence needed: none, no original object lacks them (the Mac reading, NaN → excitement 0, is not re-checked here)
+			var level = ExcitementBase?.Invoke( excitementLevel ) ?? excitementLevel;
+			if ( Parameters is { Speed: 0, InitSpeed: 0, Duration: 0, InitDuration: null or 0 } )
+				return level;
+			return QueueJoinRules.ScaledExcitement( level, Parameters.Speed, Parameters.InitSpeed, Parameters.Duration, Parameters.InitDuration ?? Parameters.Duration );
+		}
+	}
+
+	/// <summary><c>0xe9a84</c>: 100 while <see cref="ReliefWornOut"/>, else <c>clamp(live excitement − preferred, −50, 50)</c> over bytes.</summary>
+	public int JoinDifference( int preferredExcitement ) =>
+		QueueJoinRules.Difference( ReliefWornOut, ReliefWornOut ? 0 : LiveExcitement, preferredExcitement );
+
+	/// <summary>
+	/// The excitement gate of <see cref="JoinQueue"/> (<see cref="QueueJoinRules.Refusal"/>): only when the low byte of the type's
+	/// <c>ExcitementLevel</c> is nonzero, and then |<see cref="JoinDifference"/>| ≥ 45 refuses: a negative difference is "not exciting
+	/// enough" (bored), otherwise "too exciting" (scared). Null when the guest may join.
+	/// </summary>
+	public QueueJoinResult? ExcitementRefusal( int preferredExcitement ) =>
+		QueueJoinRules.Refusal( excitementLevel, JoinDifference( preferredExcitement ) );
+
+	/// <summary>0-based list position (<c>0xdd144</c>), or −1.</summary>
+	public int GetQueuePosition( int guestId )
+	{
+		if ( !links.ContainsKey( guestId ) )
+			return -1;
+		var position = 0;
+		for ( var guest = head; guest != guestId; guest = links[guest].Next )
+			position++;
+		return position;
+	}
+
+	public bool LeaveQueue( int guestId )
+	{
+		if ( !Unlink( guestId ) )
+			return false;
+		if ( called == guestId )
+			Withdraw();
+		return true;
+	}
+
+	private bool Unlink( int guestId )
+	{
+		if ( !links.Remove( guestId, out var link ) )
+			return false;
+		if ( link.Previous != 0 )
+			links[link.Previous] = (link.Next, links[link.Previous].Previous);
+		else
+			head = link.Next;
+		if ( link.Next != 0 )
+			links[link.Next] = (links[link.Next].Next, link.Previous);
+		else
+			tail = link.Previous;
+		return true;
+	}
+
+	private void Withdraw()
+	{
+		if ( letMeOnWritten && Get( RideVariables.VAR_LETMEON ) == called )
+			Set( RideVariables.VAR_LETMEON, 0 );
+		called = 0;
+		letMeOnWritten = false;
+	}
+
+	/// <summary>
+	/// The called guest reached the stand point (state 13, admission method <c>0xe03d0</c>): its id is written
+	/// to VAR_LETMEON only while that is 0. True when written (the guest then waits for the script).
+	/// </summary>
+	public bool PresentForBoarding( int guestId )
+	{
+		if ( guestId == 0 || guestId != called || vm == null )
+			return false;
+		if ( letMeOnWritten )
+			return true;
+		if ( vm.InCriticalSection || Get( RideVariables.VAR_LETMEON ) != 0 )
+			return false;
+		Set( RideVariables.VAR_LETMEON, guestId );
+		letMeOnWritten = true;
+		return true;
+	}
 
 	// Scripts declare different variable subsets (e.g. features without VAR_LETMEOFF), so access by name.
 	private int Get( RideVariables variable )
@@ -98,7 +776,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			vm!.Variables[index] = value;
 	}
 
-	private bool Holds( int guestId ) => guestId == offered || onRide.Contains( guestId );
+	private bool Holds( int guestId ) => onRide.Contains( guestId );
 
 	/// <summary>Host side of the protocol; call once per tick before the script advances.</summary>
 	public void HostStep()
@@ -120,48 +798,127 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			Release( off );
 		}
 
-		if ( offered != 0 && Get( RideVariables.VAR_LETMEON ) != offered )
-		{
-			var guest = offered;
-			offered = 0;
-			MarkBoarded( guest );
-		}
+		// State 14 (0xe05c8): the guest stays in the list until the script has consumed VAR_LETMEON.
+		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
+			MarkBoarded( called );
 
-		if ( offered != 0 && !isOpen() )
+		// [BIN:TPW-EXE:0x00516380 park turn walk] the park update runs once per park turn (the main loop calls it when its 31 ms substep counter & 7 == 0, 0x0054F668) and dispatches every live-list thing whose pointer is set and whose byte +3 is 0 (0x005163F0..0x005163F7, no type, state or id test; the whole walk is skipped while world mode +0x1DA738 is 4, the turn still counting, 0x00516395, DET-plan §2.1) to 0x0050B360: a ride (type 3) runs 0x004E0B90, then the state dispatch 0x004E0E00, whose state 0 runs the admission 0x004E1220 once (0x004E14E0); a guest (type 1) runs 0x00501650, then 0x005019F0, whose state 11 is 0x004FFFF0; OpenTPW's lastAdmissionTurn and LastQueueUpdateTurn guards give the same once-per-turn cadence
+		var turn = Host?.ParkTurn ?? -1;
+		if ( turn >= 0 && turn == lastAdmissionTurn )
+			return;
+		lastAdmissionTurn = turn;
+		// [BIN:STP-PPC:0x100E0AEC ride update, states 1, 2 and 4] while the ride is broken (state 1; 4 when condemned) every update removes the head guest from the queue and sends it away (0xdcebc, 0xee804) unless the script has already taken it; the rest wait their turn, so a queue drains one guest per park turn. Static reading (ORACLE.md F15): the dispatch is exercised in the oracle target queue-ride-update
+		// [BIN:STP-PPC:0x100E1864 breakdown noticed] in state 0 the ride update runs the admission (0xe1404) first and only then reads VAR_BROKEN and enters state 1 (4 when the life gauge is 0): SetState(1) runs the head step once, zeroes the pending visitor and writes VAR_RIDECLOSED = 1 with the open word 0 (the oracle target ride-set-state executes it, ORACLE.md F27)
+		// [BIN:TPW-EXE:0x4e0e00 ride state dispatch] state 0 runs 0x4e14e0 (VAR_BROKEN, script slot 7: SetState(1), or 4 when the life gauge +0x48 truncates to 0); states 1, 2 and 4 run the head step 0x4e0450 and the script dismiss 0x4e1410; nothing in states 1, 2 or 4 reads VAR_BROKEN
+		// [APPROX:QUEUE-019] OpenTPW keeps state 1 in the bridge (state 2, upgrading, is the economy's closed ride, ECON-023): it is left when the ride is opened again (the repair 0x4df8f0 opens the ride and calls SetState(0); the reopen guard 0x4df290 refuses states 1, 2 and 4); state 4 (0x4e14e0: the life gauge +0x48 truncates to 0) is not told apart from 1, while the guest's state 11 holds its place only in state 1 (0x4e0370 at 0x00500523) and walks on in state 4 — evidence needed: the life gauge in the bridge
+		if ( brokenDown )
 		{
-			// The script never took the guest before closing; give it back.
-			Set( RideVariables.VAR_LETMEON, 0 );
-			var guest = offered;
-			offered = 0;
-			Host?.OnVisitorTurnedAway( this, guest );
-		}
-
-		if ( !isOpen() )
-		{
-			foreach ( var guest in queue.ToArray() )
+			if ( IsBrokenDown )
 			{
-				queue.Remove( guest );
-				Host?.OnVisitorTurnedAway( this, guest );
+				DismissHead();
+				return;
 			}
+			brokenDown = false;
+		}
+		// [BIN:TPW-EXE:0x004E1220 closed ride admission] state 0 runs the admission first (0x004E14E0); with the open word +0x68 at 0 it only runs the head step 0x004E0450, which unlinks the queue head (0x004DDD20) and dismisses it (0x005012F0), so a closed ride sends away one head per park turn and the others wait (a head the script has already taken was boarded above: 0x004E0450's "forcing him onto ride" case, 0x00500870)
+		if ( !isOpen() )
+			DismissHead();
+		if ( IsBroken )
+		{
+			// State 0 reads VAR_BROKEN whether or not the ride is open (0x4e0e00 → 0x4e14e0), so a closed ride enters state 1 too, after the admission's own
+			// head step: a closed ride dismisses two heads on that turn. A park save keeps no bridge state: a ride still broken after a load enters state 1 again here.
+			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 && !refusesQueue() )
+				CheckAdmission( turn );
+			EnterBrokenState();
 			return;
 		}
+		// COAST-024: a coaster or track that refuses guests calls nobody forward; its queued guests leave by themselves (state 11, thought 13)
+		if ( isOpen() && !refusesQueue() )
+			CheckAdmission( turn );
+	}
 
-		if ( offered == 0 && Get( RideVariables.VAR_LETMEON ) == 0 && queue.Count > 0 )
+	/// <summary>
+	/// <c>SetState(1)</c> (<c>0xe0ec4</c>): the head-guest step runs once, the pending visitor (ride <c>+104</c>) is zeroised and the open word and
+	/// VAR_RIDECLOSED are written 0 and 1. The ride then counts as closed, so the ride update dismisses one head guest per turn from here on.
+	/// </summary>
+	private void EnterBrokenState()
+	{
+		brokenDown = true;
+		DismissHead();
+		if ( called != 0 )
+			Withdraw();
+		Set( RideVariables.VAR_RIDECLOSED, 1 );
+	}
+
+	/// <summary>
+	/// The ride update of a broken ride (<c>0xe0aec</c>): the head guest leaves the queue (<c>0xdcebc</c>) and is sent away
+	/// (<c>0xee804</c>), which also withdraws the pending visitor and VAR_LETMEON when they name it. A head the script has
+	/// already taken is not here any more (<see cref="MarkBoarded"/> removed it above), which is the original's "forcing him onto
+	/// the ride" (<c>0xeda04</c>) case.
+	/// </summary>
+	private void DismissHead()
+	{
+		if ( head == 0 )
+			return;
+		var guest = head;
+		LeaveQueue( guest );
+		Dismissed++;
+		Host?.OnVisitorDismissed( this, guest );
+	}
+
+	/// <summary>Guests a broken ride has sent away.</summary>
+	public int Dismissed { get; private set; }
+
+	/// <summary>
+	/// The ride update's admission (<c>0xe1864 → 0xe1404</c>): call the head forward when VAR_LETMEON is 0,
+	/// VAR_ONRIDE &lt; VAR_CAPACITY (skipped for track types 2/3), VAR_RUNNING is 0 or the ride runs
+	/// continuously, nobody is pending, and the head stands in state 11 at recorded position 0.
+	/// </summary>
+	// [BIN:STP-PPC:0x100E1404 LetMeOn admission] LETMEON == 0, ONRIDE < CAPACITY, RUNNING == 0 or RunsContinuously (+46 & 0x100), no pending visitor, head in state 11 at +497 == 0; then head +504 = 1 and ride +104 = head
+	private void CheckAdmission( long turn )
+	{
+		// Original objects always have VAR_CAPACITY written by the host; synthetic scripts without it use the bridge capacity.
+		var capacity = Get( RideVariables.VAR_CAPACITY );
+		if ( capacity <= 0 )
+			capacity = Capacity;
+		var conditions = Get( RideVariables.VAR_LETMEON ) == 0
+			&& (Parameters.SkipsCapacityTest || Get( RideVariables.VAR_ONRIDE ) < capacity)
+			&& (Get( RideVariables.VAR_RUNNING ) == 0 || Parameters.RunsContinuously)
+			&& called == 0
+			&& head != 0;
+		var front = head;
+		var atFront = front != 0 && (Host?.IsStandingAtFront( this, front ) ?? true);
+		var calledNow = 0;
+		if ( conditions && atFront )
 		{
-			offered = queue[0];
-			queue.RemoveAt( 0 );
-			Set( RideVariables.VAR_LETMEON, offered );
-			Host?.OnVisitorOffered( this, offered );
+			called = head;
+			calledTurn = turn;
+			letMeOnWritten = false;
+			calledNow = head;
+			Host?.OnVisitorOffered( this, head );
+			// Hosts that do not simulate the walk to the stand point present the guest at once.
+			if ( Host?.WalksToBoard != true && called == calledNow )
+				PresentForBoarding( calledNow );
 		}
+		var check = new AdmissionCheck( turn, conditions, front, atFront, calledNow );
+		HeadNotReadyStreak = check.HeadNotReady ? HeadNotReadyStreak + 1 : 0;
+		MaximumHeadNotReadyStreak = Math.Max( MaximumHeadNotReadyStreak, HeadNotReadyStreak );
+		CalledAgeTurns = called != 0 && turn >= 0 && calledTurn >= 0 ? turn - calledTurn : 0;
+		MaximumCalledAgeTurns = Math.Max( MaximumCalledAgeTurns, CalledAgeTurns );
+		LastAdmissionCheck = check;
+		AdmissionChecked?.Invoke( this, check );
 	}
 
 	private void MarkBoarded( int guest )
 	{
 		if ( guest <= 0 || onRide.Contains( guest ) )
 			return;
-		if ( guest == offered )
-			offered = 0;
-		queue.Remove( guest );
+		if ( guest == called )
+		{
+			called = 0;
+			letMeOnWritten = false;
+		}
+		Unlink( guest );
 		onRide.Add( guest );
 		BoardedTotal++;
 		Host?.OnVisitorBoarded( this, guest );
@@ -171,9 +928,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	{
 		if ( !onRide.Remove( guest ) )
 			return;
+		// Host cleanup: do not leave a presentation slot on the previous ride after release.
+		Heads?.Remove( guest );
 		hopped.Remove( guest );
 		limbo.RemoveAll( entry => entry.Guest == guest );
-		bouncing.RemoveAll( entry => entry.Guest == guest );
+		for ( var index = 0; index < bouncing.Count; index++ )
+			if ( bouncing[index].Guest == guest )
+				FreeBounceSlot( bouncing, index );
 		ReleasedTotal++;
 		Host?.OnVisitorReleased( this, guest );
 	}
@@ -181,21 +942,34 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Releases every held guest and turns the queue away (ride removed or script stopped).</summary>
 	public void ReleaseAll()
 	{
-		if ( offered != 0 )
+		// Host teardown, not a claim about the original script destructor: clear even orphaned head ids.
+		Heads?.Clear();
+		if ( called != 0 )
 		{
-			var guest = offered;
-			offered = 0;
-			if ( vm != null && Get( RideVariables.VAR_LETMEON ) == guest )
-				Set( RideVariables.VAR_LETMEON, 0 );
+			var guest = called;
+			if ( vm != null )
+				Withdraw();
+			called = 0;
+			letMeOnWritten = false;
+			Unlink( guest );
 			Host?.OnVisitorTurnedAway( this, guest );
 		}
-		foreach ( var guest in queue.ToArray() )
+		foreach ( var guest in Queue )
+		{
+			Unlink( guest );
 			Host?.OnVisitorTurnedAway( this, guest );
-		queue.Clear();
+		}
 		foreach ( var guest in onRide.ToArray() )
 			Release( guest );
 		walkingOff.Clear();
+		walkingOffReady.Clear();
 	}
+
+	/// <summary>
+	/// How long a guest takes to walk off after WALKOFF before WALKGET hands it out, in script milliseconds; 0 (the default) completes at once. The tour rides set
+	/// it: their unload loops count walkers and leave the loop when WALKGET returns the walker immediately (docs/TOURS.md, TOUR-007).
+	/// </summary>
+	public int WalkOffMilliseconds { get; set; }
 
 	/// <summary>Performs a visitor opcode; false for opcodes the bridge does not own.</summary>
 	public bool TryPerform( RideEffectCall call, out int result )
@@ -222,11 +996,16 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				{
 					hopped.Add( guest );
 					walkingOff.Enqueue( guest );
+					walkingOffReady.Enqueue( now + WalkOffMilliseconds );
 				}
 				return true;
 			}
 			case Opcode.WALKGET:
-				result = walkingOff.Count > 0 ? walkingOff.Dequeue() : 0;
+				if ( walkingOff.Count > 0 && walkingOffReady.Peek() <= now )
+				{
+					result = walkingOff.Dequeue();
+					walkingOffReady.Dequeue();
+				}
 				return true;
 			case Opcode.LIMBO:
 			{
@@ -254,29 +1033,91 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				MarkBoarded( guest );
 				var seconds = call.Argument( 1 ) > 0 ? call.Argument( 1 ) : DefaultBounceSeconds;
 				if ( onRide.Contains( guest ) && !bouncing.Any( entry => entry.Guest == guest ) )
-					bouncing.Add( (guest, now + seconds * 1000.0) );
+					TakeBounceSlot( bouncing, call.VM.Script.BounceSize, guest, now + seconds * 1000.0, now );
 				return true;
 			}
 			case Opcode.UNBOUNCE:
 			case Opcode.FORCEUNBOUNCE:
 			{
 				// Corpus: `TEST VAR_LETMEOFF; BRANCH_NZ; UNBOUNCE VAR_LETMEOFF` writes the leaving guest into LETMEOFF.
-				var guest = TakeExpired( bouncing, now, call.Opcode == Opcode.FORCEUNBOUNCE );
+				var guest = TakeUnbounced( bouncing, now, call.Opcode == Opcode.FORCEUNBOUNCE );
 				if ( call.IsVariable( 0 ) )
 					call.SetOutput( 0, guest );
 				result = guest;
 				return true;
 			}
 			case Opcode.BOUNCING:
-				result = bouncing.Count;
+				result = bouncing.Count( entry => entry.Guest != 0 );
 				return true;
 			case Opcode.ADDHEAD:
+				// [BIN:STP-PPC:0x100B0E9C ADDHEAD] no register write; the head is drawn by RideHeadRenderer from the table
+				HeadTableFor( call.VM )?.Add( call.Argument( 0 ) );
+				return true;
 			case Opcode.DELHEAD:
-				// Head sprites (Info.DoHeadProcessing) are cosmetic; on-ride guests are not drawn yet.
+				// [BIN:STP-PPC:0x100B0F90 DELHEAD] no register write
+				HeadTableFor( call.VM )?.Remove( call.Argument( 0 ) );
 				return true;
 			default:
 				return false;
 		}
+	}
+
+	/// <summary>
+	/// BOUNCE (<c>0xadf40</c>, BOARD-plan §5): the first free slot (visitor 0) of the script's table of
+	/// <paramref name="capacity"/> slots (the header bounce size) gets the visitor, its deadline and its start.
+	/// With every slot taken nothing is stored and the visitor is not bouncing.
+	/// </summary>
+	// [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing; the deadline comes from one clock call (0xadfb0) and the start from a second (0xadfcc)
+	// [APPROX:QUEUE-020] one script-clock reading stands for both of BOUNCE's clock calls: OpenTPW's clock does not advance inside an opcode; tp.exe's BOUNCE 0x00555674 calls the clock 0x00402D70 (timer 0x00785970) once for the deadline (0x00555753, + 1000 × dur) and again for the start (0x00555770), so a millisecond tick between them puts the start 1 ms after the deadline's base and moves UNBOUNCE's 200 ms window by 1 ms — evidence needed: none for the reading; a stepped clock cannot reproduce a live tick
+	internal static bool TakeBounceSlot( List<(int Guest, double Until, double Start)> slots, int capacity, int guest, double until, double now )
+	{
+		for ( var index = 0; index < capacity; index++ )
+		{
+			if ( index == slots.Count )
+			{
+				slots.Add( (guest, until, now) );
+				return true;
+			}
+			if ( slots[index].Guest == 0 )
+			{
+				slots[index] = (guest, until, now);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>Clears slot <paramref name="index"/>; free slots at the end of the table are dropped, so a table without holes keeps its length.</summary>
+	private static void FreeBounceSlot( List<(int Guest, double Until, double Start)> slots, int index )
+	{
+		slots[index] = default;
+		while ( slots.Count > 0 && slots[^1].Guest == 0 )
+			slots.RemoveAt( slots.Count - 1 );
+	}
+
+	/// <summary>
+	/// UNBOUNCE (<c>0xae020</c>, BOARD-plan §5): the first occupied slot whose deadline has passed (deadline &lt; now,
+	/// strict) inside the first 200 ms of each second since the guest bounced, trunc(((now − start) mod 1000) / 200) == 0
+	/// with a C remainder and 32-bit times in whole milliseconds. FORCEUNBOUNCE takes the first occupied slot. The slot
+	/// is cleared in place, so a later BOUNCE fills it first.
+	/// </summary>
+	// [BIN:STP-PPC:0x100AE020 UNBOUNCE] slots in index order; release needs deadline < now (cmpw, 0x100AE088) and ((now − start) mod 1000) / 200 == 0 (0x100AE040..0x100AE0B0)
+	internal static int TakeUnbounced( List<(int Guest, double Until, double Start)> list, double now, bool force )
+	{
+		var clock = (long)Math.Floor( now );
+		for ( var index = 0; index < list.Count; index++ )
+		{
+			var (guest, until, start) = list[index];
+			if ( guest == 0 )
+				continue;
+			var elapsed = unchecked( (int)(clock - (long)Math.Floor( start )) );
+			if ( force || ((long)Math.Floor( until ) < clock && elapsed % 1000 / 200 == 0) )
+			{
+				FreeBounceSlot( list, index );
+				return guest;
+			}
+		}
+		return 0;
 	}
 
 	private static int TakeExpired( List<(int Guest, double Until)> list, double now, bool force )
@@ -294,8 +1135,22 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	}
 }
 
-/// <summary>Routes visitor opcodes to a <see cref="RideVisitorBridge"/> and everything else to <paramref name="inner"/>.</summary>
-public sealed class VisitorRideScriptEffects( RideVisitorBridge bridge, IRideScriptEffects inner ) : IRideScriptEffects
+/// <summary>
+/// Routes visitor opcodes to a <see cref="RideVisitorBridge"/> and everything else to <paramref name="inner"/>, including
+/// TRIGWAITANIM's AnimID query: the script has an object exactly when <paramref name="inner"/> answers it.
+/// </summary>
+public sealed class VisitorRideScriptEffects( RideVisitorBridge bridge, IRideScriptEffects inner ) : IRideScriptEffects, IRideAnimationQuery
 {
 	public int Perform( RideEffectCall call ) => bridge.TryPerform( call, out var result ) ? result : inner.Perform( call );
+
+	public int GetAnimationId( RideVM vm, int channel ) =>
+		((IRideAnimationQuery)this).TryGetAnimationId( vm, channel, out var animationId ) ? animationId : ObjectAnimator.NoAnimation;
+
+	bool IRideAnimationQuery.TryGetAnimationId( RideVM vm, int channel, out int animationId )
+	{
+		if ( inner is IRideAnimationQuery query )
+			return query.TryGetAnimationId( vm, channel, out animationId );
+		animationId = ObjectAnimator.NoAnimation;
+		return false;
+	}
 }

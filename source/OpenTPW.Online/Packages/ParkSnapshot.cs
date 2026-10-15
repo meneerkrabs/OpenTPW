@@ -52,7 +52,7 @@ public interface IParkSnapshotSink
 /// <summary>[EXT:ONLINE-004] Compatibility flags written by OpenTPW.</summary>
 public static class CompatibilityFlags
 {
-	/// <summary>Package is meant for read-only visits (always set for version 1).</summary>
+	/// <summary>Package is meant for read-only visits (always set).</summary>
 	public const string ReadOnlyVisit = "read-only-visit";
 	/// <summary>Payload has no economy/simulation state (money, guests, staff, research).</summary>
 	public const string NoEconomy = "no-economy";

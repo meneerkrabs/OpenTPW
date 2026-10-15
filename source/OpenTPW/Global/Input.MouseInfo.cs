@@ -1,5 +1,4 @@
-﻿using Newtonsoft.Json.Linq;
-using Veldrid.Sdl2;
+﻿using Veldrid.Sdl2;
 
 namespace OpenTPW;
 
@@ -12,6 +11,7 @@ public static partial class Input
 
 		public bool Left;
 		public bool Right;
+		public bool Middle;
 
 		public float Wheel;
 

@@ -12,9 +12,9 @@ namespace OpenTPW.Tests;
 [TestClass]
 public class OnlineIntegrationTests
 {
-	private static OnlineFolders Folders() => new( Path.Combine( Path.GetTempPath(), "opentpw-online-" + Guid.NewGuid().ToString( "N" ) ) );
+	internal static OnlineFolders Folders() => new( Path.Combine( Path.GetTempPath(), "opentpw-online-" + Guid.NewGuid().ToString( "N" ) ) );
 
-	private static async Task PumpUntilIdle( OnlineSession session )
+	internal static async Task PumpUntilIdle( OnlineSession session )
 	{
 		var until = DateTime.UtcNow.AddSeconds( 10 );
 		while ( session.Busy > 0 && DateTime.UtcNow < until )
@@ -24,6 +24,82 @@ public class OnlineIntegrationTests
 		}
 		session.Pump();
 		Assert.AreEqual( 0, session.Busy, session.Status );
+	}
+
+	[TestMethod]
+	public async Task SessionWalksAChatParkAndReportsBuddyEntries()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		try
+		{
+			// Two full sessions against one server: the movement of one player reaches the other, and a buddy
+			// is told which park their buddy entered.
+			var ann = new OnlineSession( Folders() );
+			var bob = new OnlineSession( Folders() );
+			ann.UseServer( server.Url.ToString(), "Ann" );
+			bob.UseServer( server.Url.ToString(), "Bob" );
+			ann.Register( "Ann", "correct horse" );
+			await PumpUntilIdle( ann );
+			bob.Register( "Bob", "correct horse" );
+			await PumpUntilIdle( bob );
+			ann.ConnectChat();
+			await PumpUntilIdle( ann );
+			bob.ConnectChat();
+			await PumpUntilIdle( bob );
+			Assert.IsTrue( ann.IsLoggedIn && bob.IsLoggedIn, $"{ann.Status} / {bob.Status}" );
+
+			var satellite = ChatProtocol.SatelliteRoom( 1 );
+			ann.JoinRoom( satellite );
+			bob.JoinRoom( satellite );
+			await PumpUntilIdle( ann );
+			await PumpUntilIdle( bob );
+			// A player's first movement asks the park where everyone stands; afterwards every step is relayed.
+			bob.MoveTo( 0.5f, 0.5f );
+			await PumpUntilIdle( bob );
+			ann.MoveTo( 0.3f, 0.7f );
+			await PumpUntilIdle( ann );
+			Assert.IsTrue( await Until( bob, () => bob.RoomPositions.TryGetValue( "Ann", out var place ) && place == (0.3f, 0.7f) ),
+				"Bob never saw Ann's relayed position." );
+			// The roster of the chat park names both players.
+			Assert.IsTrue( await Until( bob, () => bob.RoomPlayers.Contains( "Ann" ) && bob.RoomPlayers.Contains( "Bob" ) ) );
+
+			ann.SendChatLine( "/buddy Bob" );
+			await PumpUntilIdle( ann );
+			bob.JoinRoom( ChatProtocol.SatelliteRoom( 2 ) );
+			await PumpUntilIdle( bob );
+			Assert.IsTrue( await Until( ann, () => ann.ChatLines.Any( line => line.Contains( "has entered" ) ) ),
+				"Ann was not told that her buddy entered a park: " + string.Join( " | ", ann.ChatLines ) );
+
+			ann.Dispose();
+			bob.Dispose();
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	/// <summary>Pumps <paramref name="session"/> until <paramref name="condition"/> holds, or ten seconds pass.</summary>
+	private static async Task<bool> Until( OnlineSession session, Func<bool> condition )
+	{
+		var until = DateTime.UtcNow.AddSeconds( 10 );
+		while ( DateTime.UtcNow < until )
+		{
+			session.Pump();
+			if ( condition() )
+				return true;
+			await Task.Delay( 10 );
+		}
+		return condition();
+	}
+
+	[TestMethod]
+	public void ChatLinesFormatBuddyEntriesAndPositions()
+	{
+		// A buddy entry (APPROX:ONLINE-024) reads as one line naming the buddy and the park.
+		var entered = ChatFormatter.Format( new ChatEvent( ChatEventKind.System, Text: "buddy-enters", Args: new[] { "Ann", "The Fairground" } ),
+			null, _ => "Online World", OnlineStrings.Get );
+		Assert.AreEqual( "Your buddy Ann has entered The Fairground", entered );
 	}
 
 	[TestMethod]
@@ -103,9 +179,13 @@ public class OnlineIntegrationTests
 			Assert.AreEqual( 1, folders.List( folders.Sent ).Count );
 			Assert.AreEqual( 1, (await recipient.GetInboxAsync()).Postcards.Count );
 			await recipient.SendPostcardAsync( Postcard.Create( "Bobby", new[] { "Alice" }, "Reply", "Hello", "English" ) );
+			// Two cards that reuse one card id (a sender's choice) must both arrive instead of blocking the inbox.
+			var reused = Guid.NewGuid();
+			await recipient.SendPostcardAsync( Postcard.Create( "Bobby", new[] { "Alice" }, "One", "first", "English", cardId: reused ) );
+			await recipient.SendPostcardAsync( Postcard.Create( "Bobby", new[] { "Alice" }, "Two", "second", "English", cardId: reused ) );
 			session.FetchInbox();
 			await PumpUntilIdle( session );
-			Assert.AreEqual( 1, folders.List( folders.Inbox ).Count );
+			Assert.AreEqual( 3, folders.List( folders.Inbox ).Count, session.Status );
 			Assert.AreEqual( 0, (await session.Client!.GetInboxAsync()).Postcards.Count );
 			Assert.IsFalse( File.ReadAllText( folders.SettingsFile ).Contains( "correct horse" ) );
 			session.ConnectChat();
@@ -122,6 +202,54 @@ public class OnlineIntegrationTests
 			Assert.IsTrue( session.ChatLines.Any( line => line.Contains( "hello from the game session" ) ) );
 		}
 		finally { Directory.Delete( folders.Root, true ); server.DeleteData(); }
+	}
+
+	[TestMethod]
+	public async Task ChatReconnectsToItsRoomAfterTheServerRestarts()
+	{
+		var server = await LoopbackServer.StartAsync();
+		var directory = server.Directory;
+		var url = server.Url;
+		var folders = Folders();
+		try
+		{
+			using var owner = await server.LoginAsync( "Bobby" );
+			var park = await owner.UploadParkAsync( OnlineFormatTests.Package() );
+			using var session = new OnlineSession( folders );
+			session.UseServer( url.ToString(), "Alice" );
+			session.Register( "Alice", "correct horse" );
+			await PumpUntilIdle( session );
+			session.RefreshParks( null );
+			await PumpUntilIdle( session );
+			session.ConnectChat();
+			await PumpUntilIdle( session );
+			var room = ChatProtocol.ParkRoom( park.Id );
+			session.JoinRoom( room );
+			await PumpUntil( session, () => session.CurrentRoom == room );
+
+			await server.DisposeAsync();
+			await using var restarted = await LoopbackServer.StartAsync( directory: directory, url: url );
+			await PumpUntil( session, () => session.ChatLines.Any( line => line == OnlineStrings.Get( OnlineLabel.ChatReconnected ) ), seconds: 20 );
+			Assert.IsTrue( session.IsLoggedIn, "the session survived the restart" );
+			await PumpUntil( session, () => session.Chat != null && session.CurrentRoom == room );
+		}
+		finally
+		{
+			Directory.Delete( folders.Root, true );
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
+		}
+	}
+
+	private static async Task PumpUntil( OnlineSession session, Func<bool> done, int seconds = 10 )
+	{
+		var until = DateTime.UtcNow.AddSeconds( seconds );
+		while ( !done() && DateTime.UtcNow < until )
+		{
+			session.Pump();
+			await Task.Delay( 20 );
+		}
+		Assert.IsTrue( done(), session.Status );
 	}
 
 	[TestMethod]
@@ -171,5 +299,15 @@ public class OnlineIntegrationTests
 		foreach ( var url in new[] { "file:///tmp/server", "https://user:pass@example.test", "https://example.test/?token=a", "https://example.test/#other" } )
 			Assert.ThrowsException<ArgumentException>( () => OnlineClient.ValidateServerUrl( new Uri( url ) ) );
 		Assert.AreEqual( "https://example.test/sub/", OnlineClient.ValidateServerUrl( new Uri( "https://example.test/sub" ) ).ToString() );
+	}
+
+	[TestMethod]
+	public void PlainHttpIsOnlyForThisComputerAndTheLocalNetwork()
+	{
+		foreach ( var url in new[] { "http://localhost:8080", "http://127.0.0.1:5000", "http://[::1]:8080", "http://dev.localhost", "http://192.168.1.20",
+			"http://10.0.0.5", "http://172.20.1.1", "http://[fd00::5]", "http://[fe80::1]" } )
+			Assert.AreEqual( "http", OnlineClient.ValidateServerUrl( new Uri( url ) ).Scheme, url );
+		foreach ( var url in new[] { "http://play.opentpw.io", "http://example.test", "http://8.8.8.8", "http://172.32.0.1", "http://[2001:db8::1]", "http://localhost.evil.test", "http://nas.local" } )
+			Assert.ThrowsException<ArgumentException>( () => OnlineClient.ValidateServerUrl( new Uri( url ) ), url );
 	}
 }

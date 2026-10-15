@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Collections.Concurrent;
+using System.Text;
 
 namespace OpenTPW;
 
@@ -12,6 +13,39 @@ public class BaseFileSystem
 	{
 		basePath = Path.GetFullPath( NormalizeSeparators( relativePath ) );
 		Directory.CreateDirectory( basePath );
+	}
+
+	/// <summary>
+	/// Remembers path lookups (the case correction of <see cref="GetAbsolutePath"/> and the archive search behind every read and
+	/// listing) until <see cref="InvalidateLookups"/>. Each lookup otherwise lists the directories along the path; with many small
+	/// files in archives that was a tenth of a park start in the browser (docs/BROWSER-PERFORMANCE.md). Only for a root whose files do
+	/// not change behind its back (the game data): whoever adds files there calls <see cref="InvalidateLookups"/>, and writes through
+	/// <see cref="OpenWrite"/> do so themselves. Lookups may run on several threads: each answer carries the generation it was found
+	/// in, and one found before an invalidation is neither returned nor kept after it.
+	/// </summary>
+	public bool CacheLookups { get; init; }
+	private readonly ConcurrentDictionary<string, (int Generation, string Value)> absoluteLookups = new();
+	private readonly ConcurrentDictionary<(string Path, bool ExplicitRoot), (int Generation, (string ArchivePath, string InternalPath) Value)> archiveLookups = new();
+	private int lookupGeneration;
+
+	/// <summary>Forgets the remembered lookups (<see cref="CacheLookups"/>): call after files are added below the root.</summary>
+	public void InvalidateLookups()
+	{
+		Interlocked.Increment( ref lookupGeneration );
+		absoluteLookups.Clear();
+		archiveLookups.Clear();
+	}
+
+	/// <summary>The remembered answer for <paramref name="key"/> of this generation, else a fresh one, kept only if no invalidation came between.</summary>
+	private TValue Remembered<TKey, TValue>( ConcurrentDictionary<TKey, (int Generation, TValue Value)> lookups, TKey key, Func<TKey, TValue> find ) where TKey : notnull
+	{
+		var generation = Volatile.Read( ref lookupGeneration );
+		if ( lookups.TryGetValue( key, out var known ) && known.Generation == generation )
+			return known.Value;
+		var value = find( key );
+		if ( Volatile.Read( ref lookupGeneration ) == generation )
+			lookups[key] = (generation, value);
+		return value;
 	}
 
 	/// <summary>
@@ -64,6 +98,8 @@ public class BaseFileSystem
 
 	public Stream OpenWrite( string relativePath )
 	{
+		if ( CacheLookups )
+			InvalidateLookups();
 		var absolutePath = GetAbsolutePath( relativePath );
 		var (archivePath, _) = FindArchivePath( absolutePath );
 
@@ -178,7 +214,10 @@ public class BaseFileSystem
 		return null;
 	}
 
-	private (string ArchivePath, string InternalPath) FindArchivePath( string path, bool includeExplicitRoot = false )
+	private (string ArchivePath, string InternalPath) FindArchivePath( string path, bool includeExplicitRoot = false ) =>
+		CacheLookups ? Remembered( archiveLookups, (Path: path, ExplicitRoot: includeExplicitRoot), key => SearchArchivePath( key.Item1, key.Item2 ) ) : SearchArchivePath( path, includeExplicitRoot );
+
+	private (string ArchivePath, string InternalPath) SearchArchivePath( string path, bool includeExplicitRoot )
 	{
 		path = ValidateAbsolutePath( path );
 		var parts = Path.GetRelativePath( basePath, path ).Split( Path.DirectorySeparatorChar );
@@ -212,7 +251,10 @@ public class BaseFileSystem
 		return (string.Empty, path);
 	}
 
-	public string GetAbsolutePath( string relativePath )
+	public string GetAbsolutePath( string relativePath ) =>
+		CacheLookups ? Remembered( absoluteLookups, relativePath, ResolveAbsolutePath ) : ResolveAbsolutePath( relativePath );
+
+	private string ResolveAbsolutePath( string relativePath )
 	{
 		var normalizedPath = NormalizeSeparators( relativePath );
 		var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
@@ -221,7 +263,44 @@ public class BaseFileSystem
 			return ValidateAbsolutePath( normalizedPath );
 
 		var path = normalizedPath.TrimStart( Path.DirectorySeparatorChar );
-		return ValidateAbsolutePath( Path.Combine( basePath, path ) );
+		return MatchCase( ValidateAbsolutePath( Path.Combine( basePath, path ) ) );
+	}
+
+	/// <summary>
+	/// On case-sensitive hosts (Linux, case-sensitive macOS volumes) the original data mixes
+	/// spellings (<c>Data/global/Speech</c> on the install, <c>data/global/speech</c> on the CD)
+	/// while code requests one fixed spelling. Corrects every existing segment below the root to
+	/// its on-disk spelling; an exact match wins, and the first missing segment and everything
+	/// after it (e.g. a path inside an archive) stay as requested. Windows is case-insensitive.
+	/// </summary>
+	private string MatchCase( string absolutePath )
+	{
+		if ( OperatingSystem.IsWindows() || File.Exists( absolutePath ) || Directory.Exists( absolutePath ) )
+			return absolutePath;
+		var relativePath = Path.GetRelativePath( basePath, absolutePath );
+		if ( relativePath == "." )
+			return absolutePath;
+		var parts = relativePath.Split( Path.DirectorySeparatorChar );
+		var current = basePath;
+		for ( var index = 0; index < parts.Length; index++ )
+		{
+			var exact = Path.Combine( current, parts[index] );
+			if ( File.Exists( exact ) || Directory.Exists( exact ) )
+			{
+				current = exact;
+				continue;
+			}
+			var match = Directory.Exists( current )
+				? Directory.EnumerateFileSystemEntries( current )
+					.Where( entry => string.Equals( Path.GetFileName( entry ), parts[index], StringComparison.OrdinalIgnoreCase ) )
+					.OrderBy( entry => entry, StringComparer.Ordinal )
+					.FirstOrDefault()
+				: null;
+			if ( match == null )
+				return Path.Combine( [current, .. parts[index..]] );
+			current = match;
+		}
+		return current;
 	}
 
 	public string GetRelativePath( string absolutePath )
@@ -254,6 +333,11 @@ public class BaseFileSystem
 		return !string.IsNullOrEmpty( archivePath );
 	}
 
+	/// <summary>
+	/// A watcher for the directory, not yet started: subscribe to its events, then set
+	/// <see cref="FileSystemWatcher.EnableRaisingEvents"/>. On macOS starting a watcher calls <c>sync()</c>, which
+	/// waits for every mounted file system, so it should only happen where watching is actually wanted.
+	/// </summary>
 	public FileSystemWatcher CreateWatcher( string relativeDir, string filter )
 	{
 		var directoryName = GetAbsolutePath( relativeDir );
@@ -267,8 +351,6 @@ public class BaseFileSystem
 							 | NotifyFilters.LastWrite
 							 | NotifyFilters.Security
 							 | NotifyFilters.Size;
-
-		watcher.EnableRaisingEvents = true;
 
 		return watcher;
 	}

@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "scope": "synthetic reference primitives, sampled-motion scalars and topology ordering prerequisites; no production controllers, decoder, admission or full motion",
+  "tests": [
+    "empty ring and missing release boundary",
+    "allocated capacity and held-count full guard",
+    "cursor wrapping with observed boundaries",
+    "configured capacity reductions retain native room floor",
+    "capacity 3/3/4 and eligible car separation",
+    "per-vehicle and total rider counts",
+    "BUMP64 guard without invented allocation",
+    "reverse TOUR departure slots",
+    "all command operand/accumulator directions",
+    "unavailable effect is not a zero response",
+    "typed COS, direction and seat schema diagnostics",
+    "path sample endpoints and XYZ interpolation",
+    "height-dependent uphill downhill and floor",
+    "height target retains single fused rounding",
+    "mixed single double sampled distance",
+    "unsupported motion and exceptional scalar domains",
+    "auxiliary ordering requires filtered prefix",
+    "visible prefix would precede loader auxiliary read",
+    "exactly one ordinal2 auxiliary node is required"
+  ],
+  "contractCount": 39,
+  "vehicleCapProof": "BUMP only; COAST implicit64 unsupported"
+}

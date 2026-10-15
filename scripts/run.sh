@@ -12,17 +12,23 @@ if [[ "$(uname -s)" == Darwin && -z "$runtime" ]]; then
   fi
 fi
 if ! command -v "$dotnet_command" >/dev/null 2>&1 && [[ ! -x "$dotnet_command" ]]; then
-  if [[ "$runtime" == osx-x64 && -x "$HOME/.local/share/opentpw-dotnet-x64/dotnet" ]]; then
+  if [[ -n "${DOTNET:-}" ]]; then
+    printf '%s\n' 'The explicit DOTNET executable is unavailable.' >&2
+    exit 1
+  fi
+  if [[ "$runtime" != osx-x64 && -x "$HOME/.local/share/opentpw-dotnet10/dotnet" ]]; then
+    dotnet_command="$HOME/.local/share/opentpw-dotnet10/dotnet"
+  elif [[ "$runtime" == osx-x64 && -x "$HOME/.local/share/opentpw-dotnet-x64/dotnet" ]]; then
     dotnet_command="$HOME/.local/share/opentpw-dotnet-x64/dotnet"
   elif [[ -x "$HOME/.local/share/opentpw-dotnet/dotnet" ]]; then
     dotnet_command="$HOME/.local/share/opentpw-dotnet/dotnet"
   else
-    printf '%s\n' 'Install .NET 8 SDK or set DOTNET to its executable.' >&2
+    printf '%s\n' 'Install the .NET 10 SDK or set DOTNET to its executable.' >&2
     exit 1
   fi
 fi
 build_arguments=(build source/OpenTPW/OpenTPW.csproj --nologo)
-output_directory=source/OpenTPW/bin/Debug/net8.0
+output_directory=source/OpenTPW/bin/Debug/net10.0
 if [[ -n "$runtime" ]]; then
   build_arguments+=(-r "$runtime")
   output_directory+="/$runtime"

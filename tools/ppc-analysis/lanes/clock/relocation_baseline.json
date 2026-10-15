@@ -1,0 +1,98 @@
+[
+  {
+    "file": "SimThemePark.data",
+    "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+    "relocations": 17393,
+    "relocation_metadata_sha256": "1b65d861e2a04813834fdd26ae61ef4abcb7faa808e95b50f8159cad63364757"
+  },
+  {
+    "file": "libraries/bullfrog_shared.data",
+    "sha256": "b67b56b7b2b75962b8b34559e20fd97b623b2d0f7f08a0035f82072ffbf4ec06",
+    "relocations": 3146,
+    "relocation_metadata_sha256": "c5cc9fadd30f9023b0121bd9ba956e1941941fb0555ffeabc3714445ae544c8d"
+  },
+  {
+    "file": "libraries/c_c++_shared.data",
+    "sha256": "5e04f9c00c922dc78a787d1b93067c75d37a3e65b0a0202e50c2f449f131b27f",
+    "relocations": 3593,
+    "relocation_metadata_sha256": "22a72c3fcbc77cf83ec9e41a9f47b24bbe13d2bdd10d8aa0c6327213dcf66697"
+  },
+  {
+    "file": "libraries/engine_shared.data",
+    "sha256": "c549123f647dcf33c3e2c3d515bffe2cfcb19d11680f743f02ca42bb09dbd73b",
+    "relocations": 1493,
+    "relocation_metadata_sha256": "bbf74c6bf7c28f6513234c8adfb2d9979e66b2424988ab10f7aa08175ad6c185"
+  },
+  {
+    "file": "libraries/indirectx_shared.data",
+    "sha256": "cb5473b799b4c6d4effd11e00a8eaa8fdc6aae87a00caaadd4368de5d56574a4",
+    "relocations": 602,
+    "relocation_metadata_sha256": "05657c5c591b3e58666879588746244a8fccf7d4a0e7daafac3cd1e218f6506e"
+  },
+  {
+    "file": "libraries/libjpeg_shared.data",
+    "sha256": "72603ebc8a31b5cf17a611410228a95538c63c3faa6d50b13fff6353594057eb",
+    "relocations": 846,
+    "relocation_metadata_sha256": "912f2bd2fa6c24572c21715a9201704382677e1c33f5528c813a48e09982dead"
+  },
+  {
+    "file": "libraries/ltms_shared.data",
+    "sha256": "2b0f7ac92c1f8b67761d271dd5832fca1bd19a8dd8d494b7b89b6ffa693e6ee8",
+    "relocations": 851,
+    "relocation_metadata_sha256": "ebbee945f3ca59759ab789aa0175d01054e0bbc1141f3c94da0dd5255d841ddc"
+  },
+  {
+    "file": "libraries/macdoze_shared.data",
+    "sha256": "ba11331a70bce77140ae6e7fe73145fe4e13cce5f042707a494cb77654b32f0d",
+    "relocations": 1032,
+    "relocation_metadata_sha256": "f14f7020b425a4a96470e3c0d448d59817026d47ad9628ddd09f316a204517ee"
+  },
+  {
+    "file": "libraries/mail_shared.data",
+    "sha256": "c27a22a457469077e5c832e2f29424ba3b79fa815c62a37d0f34e337f327ba67",
+    "relocations": 151,
+    "relocation_metadata_sha256": "3f1e724cce6d17882255b3ced610b50f4d6f0123467ad9fe11e4a27652144106"
+  },
+  {
+    "file": "libraries/more_files_shared.data",
+    "sha256": "27f3e7c03e97ee1bc305cd767ce07bb04199574c2d64a84b9b7e3904767bf506",
+    "relocations": 475,
+    "relocation_metadata_sha256": "b57054b15baa8d5301cf599371c2aefc9528b56a6abd9a5a7b3007d222b4a8af"
+  },
+  {
+    "file": "libraries/online_shared.data",
+    "sha256": "05c21d2eda5fa4b800859a874ab986433adae2e303de230476329df6c019b2cb",
+    "relocations": 591,
+    "relocation_metadata_sha256": "b1a5c0221c9ba1764b0e1edc968912cfbc92edebbcea508e46969a53ad724b2f"
+  },
+  {
+    "file": "libraries/runtime_shared.data",
+    "sha256": "18af42bc9ffce8a11c0a03815ada9518386f7634dc09e860799093974ebc974d",
+    "relocations": 229,
+    "relocation_metadata_sha256": "95ad269792c183449214ea6d01f1f0a065dfebf13fb3feb72f761ed934fcdcce"
+  },
+  {
+    "file": "libraries/sams_utils_shared.data",
+    "sha256": "1959a54b2280c95ddcc25ec77c070b4d609dcca7b7e59683b460c92c7297bcd6",
+    "relocations": 2911,
+    "relocation_metadata_sha256": "207f07087e56322cfb71e55c935a2a110be2ecfb7acc35fadc4ddf08731c4469"
+  },
+  {
+    "file": "libraries/sound_shared.data",
+    "sha256": "7132c2f1d772de25b458b9c6e0303e130e6c536d7650a9d2cde5c8cacd6bb94f",
+    "relocations": 3915,
+    "relocation_metadata_sha256": "d6e6d95d3f269a6032dfec32b40b6d422156ec36f0135eef9dc33b3504809a52"
+  },
+  {
+    "file": "libraries/winsock_shared.data",
+    "sha256": "459f84d3980c3abe89b058472779424afea6ad4c42e6985c17f914f93c0dc55b",
+    "relocations": 646,
+    "relocation_metadata_sha256": "ab493ccc137422177e044a179ff287b92c94be9ad8ca0fc37576038c41f477e3"
+  },
+  {
+    "file": "libraries/zlib_shared.data",
+    "sha256": "b5f3195f1e5d0022af5453b8c721f24e9aa4156d02b2323bb62ecf65dd52a895",
+    "relocations": 198,
+    "relocation_metadata_sha256": "c3296b7f3d6f4616323b8fe6376a34cbe409eac75a61b2bf33dd002254f59183"
+  }
+]

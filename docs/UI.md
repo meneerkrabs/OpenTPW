@@ -3,10 +3,13 @@
 October 9, 2026. Status: an original-style front end (3D lobby + menus), in-game HUD,
 options screen and pause menu are implemented with original UI models, textures, BF4
 fonts and string tables, and run by default. They are **approximations** of the
-original screens: the original layout code is inside the encrypted executable
-(`TP.ICD` has no readable strings), so only what the data files show is
-original; everything else below is marked as an OpenTPW choice. No original
+original screens. Windows `TP.ICD` remains encrypted, but static analysis of
+the identified Feral Mac executable now supplies original layout tables,
+widget allocation and model binding evidence (see [PPC UI findings](reverse/PPC-ui.md)).
+Most screen/controller/rendering choices below remain OpenTPW approximations. No original
 captures were compared, so visual fidelity is **not verified**.
+
+The CD's autorun launcher window is documented separately in [AUTORUN.md](AUTORUN.md).
 
 ## Inventory
 
@@ -18,13 +21,36 @@ All counts from read-only listings of the installed English data.
 | `lobby.wad` | `lobby.txt`, `jungle/fantasy/hallow/space.txt`; `terrain/` 38 MD2 (Base heightfield + sea, four `*_isle`/`*_gate` with `M1..M3` animations, butterflies, bats, golden ticket) + 4 `.sgn` + 167 textures; `globe/` 6 MD2 (online world globe, plane, pins) + 28 textures | 3D front end |
 | `ui/cursors` | `C???.tga` 4-frame strips + Windows `.ani`/`.cur` | not drawn yet (system cursor) |
 | `Init/<400..1024>` | per-resolution splash/legal/welcome TGAs per language | not used |
-| `postcard/`, `2dmap/` | postcard art, map sprites | not used |
+| `postcard/`, `2dmap/` | postcard art, map sprites | the per-theme `2dmap.tga` is the map terrain image; sprite layers are not drawn yet |
 | `Language/<lang>/` | `UITEXT.str` (473), `UIHELPTEXT.str` (589 popup help lines), `THEMENAMES.str` (4), `OBJECT_NAMES.str`, 33 BF4 fonts | all text |
 | level `rides/<ride>.wad` | `P<name>.MD2` preview model (Rides.sam `Info.PreviewAnimType "m"`, `PreviewAnimNum 1`) | build-menu icons |
 | `Rides.sam` | `Info.WhichUIType` 0 rides, 1 shops, 2 sideshows, 3 features | build categories |
 
-No `.sam` or text layout files for screens exist; there is no UI layout data
-outside the models themselves.
+No loose `.sam` or text layout files for these screens were found. The Mac
+executable contains embedded layout command tables; 55 identified tables have
+been decoded as metadata, independently of the currently authored screens.
+
+### Original drawing model registry
+
+`UiModels` now resolves original drawing keys from each decoded model's actual
+root-node name: signed-byte XOR followed by multiplication by 47, modulo 2^32.
+Root names retain case and spaces. For example, `mainpanel.MD2` binds `base`,
+`panel.MD2` binds `pan_money`, and `f_optpanel2.MD2` binds `optpanel2`. The filename
+is an explicit presentation asset alias, not an original drawing key.
+
+The 278-model corpus has 277 ordinary bindings: both `shadow1.MD2` and
+`w_small_shadow.MD2` store `wshadow1`. The original loader has an exclusion for
+`w_small_shadow.md2`, compared with case-sensitive `strcmp`; whether its input
+was lowercased first remains untraced. The selected-corpus registry applies that
+specific exclusion, and the asset stays available through explicit lookup. Other duplicate
+root hashes fail with both conflicting assets named; filename aliases also fail
+when ambiguous instead of selecting whichever member appears first. Existing
+widgets can still request unambiguous filename aliases, so this change does not
+rewrite screen layouts or alter custom resolutions, upscaling or interface scale.
+
+Verification: a differing-filename/root regression failed before the fix; eight
+binder cases plus the all-278-model corpus test now pass. The complete UI suite
+passes 56 tests with zero skips. Original visual fidelity remains unverified.
 
 ### The UI model coordinate space (resolves the MD2-MODELS.md open question)
 
@@ -79,11 +105,14 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   distance to an anchor edge, so corner HUD parts stay in corners on wide
   screens (4:3 reproduces the authored layout exactly). BF4 fonts come in SMALL,
   MED and BIG versions; the tier is chosen by scale (< 0.36, < 0.6, larger) and
-  text is point-sampled at an integer scale (≥ 2 only above ~4K). Both are
-  inferences from the shipped files.
+  text is drawn at an integer scale (2 on HiDPI and from 2560×1440). Both are
+  inferences from the shipped files. Above 1× each glyph is magnified with
+  Catmull-Rom and its edge tightened with a contrast curve instead of doubling
+  pixels, which turns the fonts' anti-aliased edges into staircases (`FontSmoothing`,
+  `[EXT:hidpi-glyphs]`, a design decision: the original only drew its fonts at 1×); at 1× the original coverage is drawn unchanged.
 - **Rendering**: `UiBatch` (CPU triangle list) → `UiRenderer` (one alpha-blended
   pipeline; images linear filtered with the pink key bled to neighbour colours,
-  font atlases point sampled). Model frames are stretched into element rects.
+  font atlases point sampled at one texel per pixel after smoothing). Model frames are stretched into element rects.
 - **Input**: hover focuses, press+release on the same element activates
   (buttons react on release), wheel/arrows change option rows, Up/Down move
   focus, Enter activates, Escape goes back/opens the pause menu, P pauses.
@@ -103,43 +132,158 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   turned by the ISLAND angle; the camera orbits the selected island at
   SPINRADIUS/VERTICALOFFSET and glides between islands; the sky is SKYCOLOUR.
   Not rendered: flying meshes, rain, lightning, island/gate animations, globe.
-- Menu: `islandlobby` panel + `f_lobbutbg` with the theme name (THEMENAMES) and
-  previous / enter / next island buttons (`b_lobleft`, `b_entpark`,
-  `b_lobright`, tooltips UIHELPTEXT 343–345); the TPW logo model and "Theme Park
-  World" (UITEXT 421) title; Load (3), Options (6), Quit Game (8) as text buttons
-  on the original `purple_button` art. Positions inside the panel and of the
-  right-hand buttons are approximations.
+- Menu: the `islandlobby` panel + `f_lobbutbg` and the globe (`b_worldview`, 346; opens the online
+  world), enter (`b_entpark`, 345), previous and next (`b_lobleft`, `b_lobright`, 343, 344) buttons at the
+  rectangles of the original lobby table (tp.exe `0x757f60`, generated into `UI/Original/OriginalLayoutTables.cs`
+  by `tools/ppc-analysis/lanes/ui/tpw_exe_layouts.py`), and the island name (THEMENAMES, large yellow) in the
+  field (477,1282)-(1571,1457) of the companion table `0x757d88`. The original lobby has no logo, no title and no
+  right-hand menu column (UI-014 retired): Escape opens its menu, a frameless list of cyan text lines (Go Online,
+  Resume Game, Options, Quit Game as in the original's lobby menu, plus Load Park, `[EXT:lobby-load]`; there are no
+  player profiles, so no Select New Player). Choosing Go Online, Load or Options closes the menu before opening
+  its screen.
 - Enter park → Game Mode window (239; Instant Action 240 / Full Simulation 241,
-  tooltips 358/359) → loads the original level of the island
-  (`--load-original-level` equivalent). Both modes currently play the same.
-- Load Park (202): original Easymode parks (read-only) and the OpenTPW sandbox
-  save. Quit asks with the original confirmation (9).
+  tooltips 358/359) → starts a new park on the original level of the island.
+  Instant Action adds the `Easy_` balance layer and the shipped `Easymode.TPWI`
+  seed where the level has them and gates tickets, challenges, loans, the
+  research lab and upgrades; Full Simulation starts with the standard balance
+  and no seed (traced in the Mac binary, see reverse/FINDINGS.md and
+  docs/ECONOMY.md, "Game modes"). `--load-original-level` and the Load Park
+  entry keep the read-only reference start (shipped save, Full Simulation rules)
+  whatever mode was chosen before (UI-041).
+  The original fixes the mode per player and resumes each theme's autosave; OpenTPW has no player
+  profiles, so every entry starts a new park (`[EXT:no-player-profiles]`, a design decision; the original's
+  GameType is derived from flag bits 0x2000000/0x1000000 of 0x7a1a8c, tp.exe `0x550ca0`). The enter-park sound
+  (`cat_globallobbysfx` 4) plays when the park starts, except in Instant Action (game type 2, UI-942).
+- Load Park (202): own saved parks, original Easymode parks (read-only) and the
+  OpenTPW sandbox save. The shared lobby/pause chooser shows eight rows at once
+  in the existing scroll-list widget, retaining every supplied entry. The wheel
+  scrolls; Left/Right selects and keeps that row visible. A first click selects,
+  Enter, a second click or the localized Load Park button activates that exact
+  entry; Back closes without loading. Reopening starts with fresh entries and
+  selection. This navigation is OpenTPW's UI (`[EXT:load-chooser]`), not an original-game pagination claim.
+  `LoadChooserScrollTests` cover actual chooser and HUD pause input, beyond-eight
+  selection, 0/1/8/9/17 boundaries, entry metadata, cancellation and fresh state.
+  Quit asks with the original confirmation (9).
 - Not implemented: player profiles (Create/Select New Player), online world,
-  golden tickets/keys, credits, intro movies before the lobby.
+  golden tickets/keys, credits. (The start-up movies now play before the lobby: docs/TGQ-MOVIES.md.)
+
+### Button text fitting
+
+Button labels shrink to fit their button (`UiTextFit`, `[EXT:fit-button-text]`). The candidates are the
+role's font and the smaller sizes of the same BF4 family (`MENUBIG` → `MENUMED` → `MENUSMALL`, `TITLE…`,
+`SESH…`, `GAME12AA` → `GAME10AA` → `GAME8AA`, `GAMEBOLD12` → `GAMEBOLD10`), each at every whole text
+scale up to the current one so glyphs stay pixel-exact; the largest that fits wins. Only when none fits
+is the label wrapped in the smallest size.
+
+Fitting uses the drawn pixels, not the BF4 line box: glyph offsets put ink above and below the line box,
+so a label measured by its line box could hang out of the button. Horizontally the label's own ink is
+centred; vertically the font's letter box (capitals, ascenders, descenders) is centred, so neighbouring
+buttons share a baseline. The `purple_button` texture holds two button ends, not two whole buttons: the upper half is a bar with
+a rounded left end (normal), the lower half a lighter bar with a rounded right end (focused/pressed);
+each bar fills 48 of the half's 64 rows and is cut flat at the other end. A button is drawn as that
+piece plus its mirror image, rounded caps at their own aspect and the body stretched to meet in the
+middle (UI-008), so both ends are rounded. The label is fitted inside the bar with a margin off the rim
+and the rounded ends.
 
 ### Options (Game Options, 314)
 
-Original rows: Screen resolution (318, values 340–346 where the size matches,
-otherwise the same " W x H" format, sizes from `IDisplaySettings.GetResolutions`),
-Sound effects / Music / Speech / Movie volume (320–323, 0–10), Popup help (326,
-Yes/No). OpenTPW rows in the same style: Window mode (windowed / borderless /
-exclusive "Full screen"), Upscaling (Native/Linear/Nearest), Render scale
-(Native, presets 77/67/59/50 %, other values labelled with the original
-" Custom"), Interface scale (Automatic or 1x–8x, the display's integer UI scale),
-Language, plus the effective internal/output size and fallback reason. Each row
-is the original `f_optpanel2` bar with `b_sleft`/`b_sright` arrows inside the
-original `w_med` window; OK is `b_okay`.
+The page follows the options table of the Mac build (authored 2048x1536 coordinates, 57
+controls; `OptionsScreen`). The `f_screen` root (frame plus tiled wave background) covers the
+4:3 area; all elements are centre-anchored, so wider outputs show the lobby beside it. The
+title (UITEXT 314) is in the yellow title font. Labels are small dark text
+([UI-037]) inside the light-green bars, left aligned, label and value in one string
+without shadow, fitted to the bar (`UiLabel.Fit`, so long translations shrink).
 
-The rows edit a pending copy of the display settings; Back/Escape discards it and
-restores the volumes. OK saves the volumes to `save/opentpw-options.json` and
-binds to the display slice's `IDisplaySettings.Instance` (the renderer):
-size/window-mode changes use `ApplyWithConfirmation` (15 s) with the original
-UITEXT 400 question showing the display's own countdown — Yes → `Confirm`, No →
-`Revert`, and on No or the display's timeout the original 401 message; upscaling,
-render scale and UI scale use `Apply`. A language change is stored for the next
-start and shows UITEXT 402 (RESTART GAME). `StubDisplaySettings` is only for
-tests/headless use. Audio code should read volumes from `GameOptions.Current`
-(`GameOptions.Gain`).
+| Row (panel model) | Control | Wired to |
+| --- | --- | --- |
+| 3D card rendering (`f_optpanel`, 120008) | `b_on2`, disabled | fixed: OpenTPW always renders on the GPU (`[EXT:options-fixed-rows]`: the PC lets players change it, disabling it is OpenTPW scope) |
+| Videocard: Primary (`f_optpanel`, 120010) | `b_on2`, disabled | fixed (`[EXT:options-fixed-rows]`) |
+| Screen resolution (`f_optpanel3`, 120021) | slider over `IDisplaySettings.GetResolutions` | pending display size; OK applies it with the keep-or-revert flow |
+| Graphics quality (120022) | slider over `IGraphicsSettings.Presets` | Low/Medium/High, then Enhanced (OpenTPW extension, `[EXT:COMPAT-GFX-ENHANCED]`, last step), Custom only while current; applied on OK, restart notice when `RestartRequired` |
+| Audio quality (120032) | slider, disabled at 100 % | fixed (`[EXT:options-fixed-rows]`): OpenTPW has no audio quality setting |
+| Sound effects / Music / Speech / Movie volume (`f_optpanel2`, 120024-120030) | slider 0..100 (percent, shown as " %d %%"; defaults 75/60/75/100; the 1 % step is the original slider's granularity, tp.exe `0x66b47d`) + `b_on` mute toggle | `GameOptions` volume and `*On`; `GameOptions.*Gain` is 0 while off |
+| Advisor, Tutorial, Popup help, Confirmations, RMB cancel (`f_optpanel`, 120011-120015) | `b_on` toggle | `GameOptions` bools |
+| Rotation (Smooth / 90 degs), Scroll (Pushscroll / Right button) (120016, 120017) | `b_on2` cycle button | `GameOptions.Rotation`, `Scroll` |
+| OK (`b_okay`), Cancel (`b_exit`) on `!f_plain` (120031) | buttons | OK applies, Cancel/Escape/right click discard |
+
+`b_on` draws its normal and highlight frames as ON (upper indicator lit) and the down frame
+as OFF, so a toggle is a `UiButton` with `Selected = () => !isOn`. `UiSlider` draws the
+`b_scroller` ball on the track; clicking or dragging inside the hit region sets the value
+from the mouse x, the wheel and Left/Right step it (UI-036).
+
+Wired today: every row has its effect — volumes and mute toggles set the audio
+mixer's channel gains, Advisor and Tutorial gate the automatic advisor, popup help
+gates the hover help, Confirmations gates the delete/dismiss dialogs, RMB cancel
+gates the tool right-click cancel, Rotation and Scroll feed the park camera, and
+movie volume its mute toggle the start-up movies; screen resolution/size and
+graphics preset apply on OK. Options files from older versions get the
+defaults (all on, 90 degs, pushscroll).
+
+Option labels share one size per page (`UiLabelGroup`, UI-039): the family size and whole text
+scale whose letter box (capitals, ascenders, descenders) is closest to 58 % of the label
+rectangle height without exceeding it - the capture's labels are about 26 of 1536 units tall in
+45-unit rectangles. A label uses it when the widest text it can show (all values of its row,
+in the current language) fits its rectangle, so the size does not change while a value changes;
+only a label that does not fit drops, alone, to the largest smaller size that does (in
+English every label has the page size, in German only a few long ones are smaller). The title
+keeps its own font.
+
+The "OpenTPW" button (purple text button left of the OK panel, `[EXT:opentpw-page]`) opens a
+second page built from the same original pieces: an `f_screen` page titled "OpenTPW"
+(title font and position of 120020) with `f_optpanel` bars in two columns (left x 57..690, right
+x 1331..1964, rows every 156 units from y 167, the authored right column's panel size and pitch),
+each with a dark label in the shared size and a `b_on2` cycle button. The left column holds the
+four display rows, window mode (windowed / borderless / exclusive "Full screen"), upscaling
+(Native/Linear/Nearest), render scale (Native, presets 77/67/59/50 %, others labelled with the
+original " Custom") and the frame rate limit (the original " Off", 30 or 60 fps; `FrameLimiter`
+caps drawing only, the simulation keeps its fixed clock); the right column interface scale
+(Automatic or 1x-8x), enhanced textures (see below), language and the enhanced interface. Clicking the button or wheel up/Right cycles
+forward, wheel down/Left backward, both wrapping. The effective internal/output size and
+fallback reason are small dark text below the rows. Game files is a purple button where the
+main page has its OpenTPW button, and Back is the `b_okay` button in the OK place on the
+`!f_plain` panel (Escape and right click also go back). It edits the same pending state: Back
+returns to the original page with the edits still pending, and OK on the original page applies
+both pages; Cancel/Escape there discards everything.
+
+The enhanced-textures row (`enhancedTextures`, `[EXT:texture-pack]`) cycles "Original" (the game's own textures),
+"Enhanced" (the default: the HD interface art shipped in `content/hero-art` plus the local `enhanced` pack
+when one is built), then every other installed texture pack (a directory under `<config>/texture-packs` with a
+valid `pack.json`; see TEXTURE-PACKS.md): `detailed` is labelled "Detailed" (translated in all six languages),
+other pack names are shown as they are. Its popup help explains the choice and that switching runs in the
+background. The choice is applied on OK, without a restart and without a loading screen: the options close
+and the game loop swaps the textures of the running game in place while the player keeps playing; a
+non-blocking line at the top centre ("Updating textures in the background... n / total" with a thin bar,
+`OptionsScreen.DrawTextureSwitchProgress`) shows the progress and disappears when the switch is done. No
+restart notice appears for a texture pack.
+
+A park chosen in the front end, loaded or visited is built over several frames while the lobby (or
+the park being left) keeps drawing and playing, and input waits (`[EXT:park-build-over-frames]`,
+BROWSER-PERFORMANCE.md). The same kind of line shows "Building the park..." (in all six languages)
+with the construction's progress.
+
+OK saves `save/opentpw-options.json`. Size/window-mode changes use
+`ApplyWithConfirmation` (15 s) with the original UITEXT 400 question showing the display's
+countdown - Yes -> `Confirm`, No -> `Revert`, and on No or the timeout the original 401
+message; upscaling, render scale, UI scale and the frame cap use `Apply`. A language change (and a
+graphics change that needs a restart) shows UITEXT 402 (RESTART GAME). `StubDisplaySettings`
+is only for tests/headless use. Audio code reads volumes via `GameOptions.Current`
+(`MovieGain` etc.).
+
+### Local art overrides
+
+`UiArtOverrides` (`[EXT:art-override]`) lets a player replace an original UI element with their own
+sharper art: a PNG at `<config>/art/<name>.png` (on macOS `~/Library/Application Support/OpenTPW/art`).
+Nothing uses it now that the lobby has no logo (the original lobby has none, UI-014); the lobby logo used `tpw_logo.png` is drawn, aspect-fitted, in the `tpwlogo` model's box
+instead of the model, whose 128×128 texture holds the logo in about 90×28 pixels. OpenTPW ships no
+override art; without a file the original is drawn. The CD's autorun archive (`Autorun/general.tre`)
+holds a sharper copy of the logo (about 215 pixels wide) in data players already own.
+
+### Lobby button panel
+
+`f_lobbutbg` maps `ipan`, an opaque texture with a black background, through a texture slot with flag
+0x2; `w_dialog` and `f_train` map the same texture without the flag and draw it opaque. Of the 185 ui.wad
+slots with flag 0x2, the other 184 textures carry their own alpha, so the flag reads as "transparent":
+for a fully opaque texture on such a slot black is keyed out (UI-034), leaving the panel's blue edge.
 
 ### Resolution independence
 
@@ -159,7 +303,7 @@ as its logical size with every glyph texel a pixel-exact 2×2 block (verified wi
 ### OpenTPW supplementary strings
 
 Labels the original tables lack (window mode, upscaling, render/interface scale,
-language, back, date format, read-only/save/build messages, "not simulated yet")
+frame rate limit, language, back, date format, read-only/save/build messages, "not simulated yet")
 are in `UI/Original/SupplementaryStrings.cs`: repository-owned, clearly OpenTPW
 additions, translated for English, Danish, Dutch, French, German and Swedish
 (native-language names for the language row). They render with the original BF4
@@ -169,42 +313,166 @@ glyph in all 14 UI fonts of each language.
 ### In-game HUD
 
 - Placed originals at their authored places (anchored bottom-left):
-  `mainpanel`, `gauge` (tooltip 477), `date` display with the date (478), the
-  bank balance (465; UITEXT 448 "$ " prefix, which French and German leave
-  empty; digits grouped with commas — an OpenTPW choice), the `f_tagl/m/r`
-  message area (up to three recent messages, 8 s), and the `panel` arms
-  (`pan_buy`, `pan_info`) with `b_retract` (481) at its authored place.
-- Panel buttons `b_buy` (469), `b_info` (470), `b_money` (471), `b_resrch` (472),
-  `b_map` (473): their places on the panel are approximations; only Buy works,
-  the others show their disabled frame.
-- Build arm: `b_srides/b_sshop/b_sshow/b_sfeature` category buttons (521–524),
-  the category title (119–122) and three-slot pages with previous/next arrows.
-  Every buildable object in the current theme is accessible, ordered by Info.Id,
-  with a turning preview of
-  the original `P<name>.MD2` (CPU orthographic projection, 30° tilt, painter
-  sorted — not the original 3D draw), the object name and the economy catalogue
-  price; unresearched items are greyed and refused. Choosing an item starts
-  placement (message UIHELPTEXT 440). `Level.PlaceObject` checks the footprint,
-  purchases through `ParkEconomy.TryBuild`, creates the original object and links
-  its guest accounting; the HUD never charges again. Removing it through the
-  level's object collection sells it once for its economy scrap value. Tools,
-  fixed items and standalone upgrades are excluded by `ObjectCatalog.Buildable`.
-  Official bonus objects use their original names, but their separate-root
-  preview icons are omitted; items absent from the economy catalogue stay
-  unavailable in original levels.
-- Info arm for the selected original object (picked by occupied grid cell): name (OBJECT_NAMES), Excitement (the original
+  `mainpanel`, `gauge` (tooltip 477 "Happiness of the park visitors"), `date` display with the date (478), the
+  bank balance (465; the bare absolute balance as the original's `swprintf "%d"` shows it, without grouping or prefix, in a colour that steps from red to white with the balance (table `0x752e30`); `i_dollar` carries the sign), the `f_tagl/m/r`
+  message tube with its slide-out panel (UI-025, `Hud/ParkHud.MessageTube.cs`: pending messages stack as icons in a red tube left of the panel, a left click opens one in the panel drawn from `messagel/m/r` at the rectangles of table `0x7501a0`, a right click deletes it; the panel's `mb_erase` button and up to two action buttons with the `mb_locate`, `mb_callmech`, `mb_resrch`, `mb_buy`, `mb_accept` or `mb_decline` art of their action's kind, none of which an OpenTPW message uses yet; OpenTPW's own feedback lines are a separate status line above the help box), and the object window (below).
+- Panel buttons at the original rectangles of the Mac main HUD table (`data:0x4ab38`, controls 38-43),
+  staggered along the panel's curve: `b_buy` (469), `b_info` (470), `b_money` (471), `b_resrch` (472),
+  `b_map` (473) and `b_camera` (474). Buy, Info, Finance, Research and Map open their windows; the
+  camera button (474) opens the slide-out panel of table `0x751720` with the camcorder (`b_1person`, 479) and postcard (`b_postcard`, 480) buttons and a third `b_camera` button that cycles the host Standard/Close/Overview views (`[EXT:camera-view-cycle]`; UI-042). Buy is disabled in a read-only
+  visit; the others stay available (their windows are read-only views there).
+- The date text is drawn in black inside the date region (182,1061)-(383,1103) (table control 32), in the
+  date font slot 3 (`DATETINY/SMALL/MED` by tier; only official Patch 2 and the Mac version ship these, the
+  1999 data falls back to the Small font, which is the same file as `DATESMALL`). The bank
+  balance is not on the panel: the table puts it at the top left of the screen (control 47,
+  (258,60)-(720,260), white cash font slot 1, drawn with the shipped `CASHSMALL/MED/BIG` fonts; the original then resizes the box to the width of "999999999" and the text height + 16, centred on `i_dollar`, `0x4a2082`, which the HUD does every frame). Beside it the same table
+  places the `i_dollar` icon (50), the change text (48, yellow, right-aligned under the balance) with the `cashtrend`
+  model (root `green_up`, 49) shown for 4 s after a balance change; the yellow text under the balance (control 48) is the cost of the build action under way (held blueprint price, path or queue line so far, coaster segment), hidden outside the build tools (UI-047), and at the top right the golden
+  ticket (`gtick`, 53) and key (`gkey`, 52) icons with their counts (55, 54). The ticket count is the park economy's unspent
+  golden tickets; each counter shows only above zero as `n ×`, and keys are the earned tickets / 3 (UI-051).
+- The Mac build has 55 such layout tables, including Buy (`data:0x4cd94`), Financial Information
+  (`data:0x49ee4`), Available/Outstanding Loans (`data:0x4a79c`), the money arm (`data:0x496c4`),
+  Research (`data:0x4c652`), the staff list (`data:0x4a1e0`), the map screen (`data:0x5265e`),
+  coaster tools and ride windows. The named
+  screens were identified by matching table drawing keys to `ui.wad` model root names.
+- Financial Information (`ParkHud.FinanceWindow.cs`) places `w_park`, `f_graph`, eight `b_ltoggle`
+  series buttons, three `b_stoggle` period buttons and the right-side controls at their Mac table
+  rectangles. The series use `ParkLedger` closed months plus its current month: bank balance,
+  park value, money in, gate/shop/sideshow takings, money out and staff costs. Money in includes
+  loan proceeds, and money out includes repayments. Bank balance and park value are exclusive
+  with each other and with the six cash-flow series, as in the original control handler.
+  The 1/3/12-year controls limit the displayed
+  months. The graph's line style, colours, scale and initial selection are OpenTPW choices
+  (UI-060). The Loans button opens the separate bank window when loans are available; the entry
+  and staff-cost detail buttons open their management screens (`ParkHud.Management.cs`), disabled
+  while no park economy runs (UI-061).
+- The Loans window (`ParkHud.LoansWindow.cs`) uses the Mac `w_big`/`f_loans` table, six columns,
+  Available/Outstanding tabs, a scroll control and the four summary cells. Offers and outstanding
+  accounts come directly from `ParkEconomy`. Borrowing and repayment use its existing methods,
+  only where the game mode permits loans. Lender names come from the selected language's
+  `LOANNAMES.str`; a missing entry uses a numbered fallback, which the shipped data never reaches (`LOANNAMES.str` has 18 entries and every `Lendername` is 0..17). The seven list rows and scroll travel are
+  inferred from the table's content bounds; the summary uses tracked ledger data whose scope
+  differs from the original lifetime counters (UI-063).
+- Research (`ParkHud.ResearchWindow.cs`) places `w_res`, five `res_panel` rows and effort sliders
+  in the table's visual order: rides, upgrades, shops, sideshows, features. Item names, progress
+  and effort come from `ParkResearch`; changing effort calls `ParkEconomy.SetResearchEffort` only
+  in modes that support the research panel; Instant Action shows its original unavailable message.
+  The main workload knob adjusts the tracked percentage by drag and keyboard
+  with inferred linear travel (UI-064). The five effort sliders are the original's generic slider with
+  SetRange(0,100) (`0x4aa6bd`): a drag position is truncated to its value, not rounded (`0x66afc9`). The
+  fluid progress fill (UI-066) is a presentation approximation. The item-navigation
+  arrows move the category's current target through `ParkResearch.MoveCurrent`
+  when more than one item is selectable (tested in `ManagementUiTests`).
+- Buy window (`ParkHud.BuyWindow.cs`, Mac buy table `data:0x4cd94`): the Buy button opens the original window as a modal
+  screen over the park (it dims the park like other windows and does not pause the game). Every element sits at its authored
+  rectangle (`Anchor.Center`): `w_big` (root `window4`) with two `!frame` panels (the turning preview, and the stats
+  frame), the `f_buyitem` list frame, title text (UITEXT 119-122 per category), the item name above the preview, the
+  four category buttons `b_sride/b_sshow/b_sshop/b_sfeature` (help 140-143; the chosen one is drawn in its down frame),
+  `b_up`/`b_down` and the `b_scroller` ball on the `!slider` track, and `b_exit` (help 2, also Escape and right click).
+  `b_allstaff` (help 153) opens the staff window. The list has the three table columns: name,
+  price (the economy catalogue price) and a third column holding a tick box, ticked when the park owns one (UI-050). Click a row to select it
+  and show its preview (the original `P<name>.MD2` or the main model, CPU projection, UI-026), name and stats; click the selected row again,
+  press Enter or double-click it to buy: the window closes and placement starts (`Level.PlaceObject` checks the footprint and
+  charges through `ParkEconomy.TryBuild` exactly once). The table has no OK button, so that is OpenTPW's choice. Unresearched
+  items are greyed and refused with the "not available" message. The wheel scrolls the list anywhere over the window; Up/Down
+  move the selection. The Name and Price header buttons sort (the original's header sort `0x665a44`; the sort is kept for the session, `0x4ac9dd`). Control 512 beside the title shows the cash balance as UITEXT `0x1ca` "Cash $ N" (`0x1cb` with the magnitude when negative, tp.exe `0x4acdae`), like the hire window's control 9366. The stats frame rows are the table's five label/value rows:
+  rides show Number owned (UITEXT 125), Excitement (126), Safe capacity (127), Reliability (128) and Working life (129);
+  shops 130, sideshows 131/132 and features 133 show fewer rows (UI-046). Items are the buildable objects of the theme
+  by `Info.WhichUIType`, ordered by name as the original list inserts its rows (ordinal, `0x10178768`). Items without a `P<name>.MD2` preview model (shops, among others) show their
+  main model, as the original's preview does (`0x10059F00`). Tools, fixed items and standalone upgrades are excluded (`ObjectCatalog.Buildable`); items absent
+  from the economy catalogue stay unavailable in original levels.
+- Staff window (`ParkHud.Staff.cs`, Mac table `data:0x4a1e0`): `b_allstaff` opens the `w_big` window over the buy window.
+  The authored `f_staffpic`, `f_staffinfo`, `f_balance` and `hirestaff` frames initially show applicants from
+  `ParkEconomy.Staff.Candidates`. The five role buttons filter applicants (help 154–158), the name and wage headers sort
+  them (help 159/160; the sort is kept for the session), hovering a name selects it (the details follow the pointer, as in the video; the employee view, an extension, only highlights) and a left click on a name hires the
+  applicant through `ParkEconomy.Hire` (help 161; list message 0x400 → `0x49b988`, which here starts the Place tool;
+  Enter hires too, `[EXT:staff-enter-hire]`). The video never shows a click on a name; the original's own advisor line ("click on the name of the person you want to hire", 11:54) and the list's 0x400 message (`0x6655a2`/`0x6656fa`) settle the trigger, so UI-083 is retired. The list scrolls (UI-080); the details are a Vaardigheid gauge and a mini balance that includes the selected candidate (hovering a name selects it, a left click hires; UI-081), the portrait is text (UI-082).
+  Control 9366 is the plain cash label ("Cash $ N", UITEXT `0x1ca`/`0x1cb`). A labelled extension button (`[EXT:staff-employee-view]`) toggles to employed staff, showing tracked state, wage, skill and happiness (the original's employee list is the separate All Staff window, S key). An explicitly
+  labelled Dismiss button there confirms with the localized prompt (only while the Confirmations option is on, as the original's `[0x78d90f]` gate) before calling `ParkEconomy.Fire` (UI-092). The pick-up button is the original's `b_pick` model with help 88 (UI-098), and
+  `b_allthings` returns to Buy (help 162). The
+  nearby `data:0x4e45c` staff and visitor locate buttons use their authored positions; each is
+  enabled while a live actor of its role (or any visible visitor) can be focused, and the click
+  focuses the host park camera on that actor's world position (UI-091). The keyboard locators
+  Ctrl+S and Ctrl+V cycle the same targets (UI-904).
+- The All Attractions and All Visitors windows' lists (attribute 0x291) follow the original's list control: the pointer
+  highlights the hovered row (the original selects it), a left click selects it and opens the row's info panel (the info arm for an attraction, the window's detail
+  rows for a visitor) and keeps the list, a right click centres the camera on the row and closes the window
+  (list messages 0x400 and 0x402, tp.exe `0x6655a2`/`0x66563d`; button index 0 is taken as the left button, UI-910).
+  Enter and the select/go-to buttons keep the older select-and-close behaviour (`[EXT:overview-select-button]`).
+  A release is a click only within 500 ms of its press with at most 6 px of movement on each axis (`0x65f6d1`,
+  `0x65fa33`; `UiInputSource`); a longer press or a drag is no click. Each list keeps its last sort for the session
+  (`ListSortMemory`, the original's global sort words, `0x6659af`).
+- Map window (`ParkHud.Map.cs`, Mac table `data:0x5265e`): the HUD `b_map` button opens `map_win` with its table-positioned
+  pan, zoom, object-category, layer and close controls. The shipped per-theme `levels/<theme>/2dmap.tga` supplies the
+  terrain image. Current path and queue cells and placed-object footprints are drawn above it. Each category button toggles its own layer (independent bits, each category drawn from its own bit; UI-086 keeps the colours and the initial layer assignment); zoom steps half a unit within 1.0–3.0 and a pan moves the centre one map cell, independent of zoom (UI-085). The generic sandbox draws its grid
+  and heights in place of theme art (`[EXT:sandbox-map]`, OpenTPW content); a missing original theme image is reported. Track, visitor, staff and metric
+  layer buttons draw live coaster cells, actor positions and observations (provisional host overlays). Escape, right click and `b_okay` close the map.
+  The map window pauses the park while it is open, as the original's `0x5f0b40` calls the game pause (`0x4092a0`; UI-096).
+- Object window for the selected original object (picked by occupied grid cell): the window of the original ride, shop or
+  sideshow table (tp.exe `0x755150`, `0x755908`, `0x755e80`; UI-024): `w_med` frame (248,30)-(1800,1007), the name in
+  yellow, a preview, the stats frame with white labels and values (Users last month, Excitement (the original
   default `UsageInfo.ExcitementLevel`, 70 for the Totem), Reliability, State of
-  repair, Remaining life ("Not simulated yet"), open/close (`b_door`) and
-  delete (`b_erase`). Open/close is disabled for non-attractions; fixed items
+  repair, Remaining life ("Not simulated yet"), Scrap value; the Age row has no value), the round buttons open/close (`b_door`),
+  delete (`b_erase`), call mechanic (`b_callmech`), upgrades (`b_upgrade`), Ride it! (`b_ride it!`, rides that can be ridden), the
+  arrows (`b_arup`, `b_ardown`) that step through the objects of the type, the list button (`b_allthings`, All Attractions) and the tick that closes the window.
+  The queue (`b_queue`), track (`b_track`) and apply-all (`b_applyall`) buttons start the queue tool, the coaster or water track tool, and copy the price to every object of the type; the sliders and `b_move` of the tables are not drawn. Escape, and the right click with RMBCancelOn, close the window. Open/close is disabled for non-attractions; fixed items
   cannot be deleted. Unknown statistics remain labelled as not simulated.
+  The developer prototype's repair gauge follows its linked economy instance,
+  including wear and mechanic repair, in both the info arm and the attractions
+  overview. Without a linked economy record, the bridge retains its last gauge.
   Read-only visits disable build, open/close, delete and Save; callbacks also
   reject direct mutation attempts using the existing localized online message.
 - Speed control (OpenTPW addition, bottom-right): pause, ×1, ×2, ×4 set the
   economy's `GameSpeed` (its clock runs Speed ticks per fixed tick); pause also
   stops rides and guests (`Level.SimulationTimeScale`).
-- Pause menu (Escape): PAUSED (403) with Resume (7), Save (4), Load (3), Options
-  (6), Exit To Lobby (12), Quit Game (8, confirmation 9). Original parks cannot
-  be saved (message); the sandbox saves its OpenTPW JSON.
+- Happiness gauge: the `gauge` model is only the empty dish (one `thoughts2`-textured
+  quad); the HUD samples the visitors' mean happiness twice a second
+  (`GuestStatistics.AverageHappiness`) and draws it as a rising red→yellow→green
+  fill in the dish, empty while no visitor is in the park (UI-901). Sampled in
+  `ParkHud.SampleHappiness`, drawn by the `gaugeFill` element; pure mapping in
+  `ParkHud.GaugeFill`/`GaugeColour` (tested in `HudScreenShortcutTests`).
+- Original keyboard shortcuts (`ParkHud.ScreenShortcuts.cs`): the game's key table
+  (the `InputButton` defaults; the research and map tooltips themselves say
+  "(R)" and "(Space)") opens the HUD windows: B buy, I park info, F finance,
+  R research, Space map, L loans, T staff training budgets, G entry price,
+  H staff applicants and V all visitors. Space activates no hovered button
+  (Enter does, as for a text field) so the map key never co-fires with the panel
+  under the pointer. The All Staff key S and All Attractions key A stay
+  unhandled: the host camera pans with S and A (WASD), and one press cannot be
+  both; the All Attractions window opens through a round button above All Staff
+  in the buy window (and one in the staff window) instead, wearing the window's rides tab icon
+  `b_srides` with "All Rides" as its popup help: the shipped `b_allthinginfo` art has no texture,
+  and a text label does not fit the round slot. A second press of a window key closes the
+  window (`[EXT:window-key-toggle]`); dialogs and the pause menu keep the keys. The shortcut letters come from the
+  language's `KEYBOARD.str` (21 entries, `Input.ApplyKeyboardStrings`; the Dutch buy key is K and research is O),
+  except a plain letter that is a camera-pan key (W, A, S, D), which keeps its default, and in the browser build the Ctrl+W/T/N chords the browser reserves (`[EXT:browser-reserved-chords]`); a plain shortcut never fires while Ctrl is held (Dutch research O vs Ctrl+O) (the Dutch hire letter A, UI-012). The time keys
+  (numpad +/−/*) step and reset the four-speed clock model (`[EXT:time-key-speeds]`; the original scales the clock by ×0.8/×1.25 within 0.25–2.0 and * resets to 1.0),
+  comma adds 90° to the pending blueprint's angle (one `Level.RotateBuild` step) and full stop adds 270° (three steps; tp.exe `0x40c120`/`0x40c150`),
+  holding exactly Ctrl at the placing click keeps the build tool armed (Escape or a right click leaves it) and leaving the tool resets the angle to 0 (`0x5253b8`, `0x52f3b6`; UI-031),
+  and Ctrl+S / Ctrl+V run the staff and visitor locators (UI-904). The keys wait
+  while a menu, dialog, text field or the ride view owns the input; window keys
+  keep acting over their own window. Camcorder terrain-walk ingress and postcard ingress use their dedicated full-frame
+  actions below. Ctrl+H flips the global Popup help option (options byte +0x36, tp.exe `0x40c5d0` → `0x4817f0` stores `0x78d90e`) for every screen
+  and the host persists it; it never activates the H staff window. Both Ctrl keys
+  work, held chords toggle once, and input owners consume blocked presses.
+  The help box is the fixed rectangle (574,1520-h)-(1474,1520) drawn with `f_helpbg` (tp.exe `0x492180`, UI-010 retired); its height follows the small font.
+  Both physical and injected taps accept either Ctrl key. `ParkHudHelpTests`
+  checks actual input dispatch and synthetic hover-help draws without original
+  assets or a GPU.
+  Mapping and gating are pure functions (`ParkHud.ShortcutFor`,
+  `WindowShortcutsAllowed`, `SteppedSpeed`), tested in `HudScreenShortcutTests`
+  and `OverviewWindowTests`. The native smoke test presses the real keys:
+  `Input.InjectKeyDown` queues a physical key for the next frame's button
+  rebuild only (`Input.UpdateButtons`), so V and B run through
+  `Input.Pressed` and every gate above exactly like a keyboard tap — the
+  injection never enters the persistent keyboard state or the WASD pan axes
+  (`InputInjectionTests`). Cancellation belongs to the returned scope, so
+  disposing a consumed tap cannot cancel a later tap of the same key.
+- Pause menu (Escape): a frameless list of cyan text lines (white while focused) in the original order: Load (3), Save (4),
+  Restart Park (10; only for an Instant Action park of a theme, `[EXT:pause-menu-restart]`), Publish Park (5; the online publish flow), Options
+  (6), Go Online (1, `[EXT:pause-menu-go-online]`), Resume Game (7), Exit To Lobby (12), Quit Game (8, confirmation 9). Confirmations are the window of table `0x7583e8` with the tick and X buttons stacked at its right (UI-013). Save writes the owning
+  game flow's park save (the own-format world save for sandbox and front-end
+  started original-level parks; a read-only visit has no Save entry).
 - `--load-original-level` and `--sandbox` keep the ImGui developer panel and the
   sandbox BF4 panel next to the HUD; games started from the front end hide them.
 
@@ -216,9 +484,17 @@ glyph in all 14 UI fonts of each language.
 | `Hud.IBuildCatalog` (`BuildItem`: category = WhichUIType, OBJECT_NAMES index, cost, preview model, texture dirs) | rides/objects | `OriginalBuildCatalog` adapts `Level.Objects.Catalog`, with original names, preview models and `Upgrades[0].CostOfUpgrade`; `TotemBuildCatalog` remains a test fixture |
 | `Hud.ObjectInfo`/`ObjectStat` for the info arm | rides/guests/economy | `ParkHud.SelectedInfo` follows `OriginalObject` |
 | `IDisplaySettings` (real: the renderer) | display | `StubDisplaySettings` (tests only) |
-| `GameOptions.Current` volumes | audio | — |
+| `GameOptions.Current` volumes, mute toggles and gameplay switches | audio, camera, tutorial/advisor | movie volume only; the rest is stored (see Options) |
 
 `GameFlow.StartLevel` binds the HUD; guest admissions reach the balance through the economy's guest bridge.
+
+### Coaster tool panel
+
+While the coaster tool is active the HUD shows the original's slide-out panel (tp.exe table `0x751530`, click handler `0x4982a0`, docs/COASTERS.md "The tool panel"): the green drawer art
+(`panel`) with two `!f_plain` boxes and nine buttons of the `cb_*` models (`cb_track`, `cb_loop`, `cb_move`, `cb_loft`, `cb_swapup`, `cb_rotate`, `cb_incline`, `cb_swapdown`, `cb_dellast`) at the
+table's rectangles, offset by the window position measured from the video (`(−372, +232)`, `APPROX`). The selected button shows its pressed frame, a disabled one its grey frame (the enable mask
+`0x445910`); the tooltips are help 564, 565, 296, 297, 302, 300, 569, 303 and 304 and a click on build, loop, move or demolish shows help `0x125`, `0x126`/`0x127`, `0x121` or `0x124`. The panel appears
+at once (the original slides it out), and the park's pointer handling (press, drag, release on pylons, the blueprint-marker cursor and placement area) is `ParkHud.CoasterPanel.cs`.
 
 ## Verification
 
@@ -241,16 +517,117 @@ glyph in all 14 UI fonts of each language.
   purchase (−3,250; research marked complete as smoke setup) with one paid
   economy object linked to guests, info arm, economy pause, sale (+1,625),
   a second naturally researched catalogue object, exact charges, overlap refusal
-  without a charge, selected-object open/close, pause menu, refused save, lobby;
+  without a charge, selected-object open/close, the developer prototype Totem
+  listed beside the catalogue rides in All Attractions (status following its
+  door, row activation, delete through the prototype removal with the economy
+  record gone and the selection healed), the window keys V and B pressed as
+  real keyboard taps through `Input.InjectKeyDown`, pause menu, own-format world save
+  (verified on disk), lobby;
   a prepared read-only visit verifies disabled build/open/delete/save controls
-  and their direct callbacks without mutating the park or writing a save. The earlier UI flow
+  and their direct callbacks without mutating the park or writing a save; the visit
+  exits to the lobby and jungle starts again in Instant Action (seed imported, no
+  staff invented, research unchanged over 60 days, loans/research effort/upgrades
+  refused, bank balance read back; English, 1280×720, 288 frames). The earlier UI flow
   passed in all six languages; the economy integration was verified in English
   (1280×720, UI scale 1) and, before reference-fit limiting, Dutch at
   1920×932 drawable/UI scale 2 with nearest upscaling at 50% render scale
   (the desktop clamps the requested 1920×1080 window). The smaller 1280×720 Dutch/nearest/50% case with requested UI
   scale 2 also verifies the explicit 1× fallback and full glyph readback. Captures: `artifacts/native-smoke-<language>-*.png`.
 
-## Approximation register
+## Control inventory
+
+Every visible control of the original-style HUD, its windows and the front end,
+against its handler (October 2026 audit from the code, not the historical matrix).
+"Test" names the suite that exercises the action end-to-end or its model effect;
+the native front-end smoke test (`FrontEndSmokeTest`) covers the click flows with
+the real assets. Approximation tags refer to the register below.
+
+### Main HUD (`Hud/ParkHud.cs`)
+
+| Control | Action | Status | Test |
+| --- | --- | --- | --- |
+| `b_buy` panel button (469), key B | opens/closes the buy window; disabled in a read-only visit | wired | `FrontEndSmokeTest`, `HudScreenShortcutTests` |
+| `b_info` panel button (470), key I | opens/closes the park information window | wired | `FrontEndSmokeTest` |
+| `b_money` panel button (471), key F | opens/closes the financial information window | wired | `FinanceWindowTests` |
+| `b_resrch` panel button (472), key R | opens/closes research; Instant Action shows its original unavailable message | wired | `ManagementUiTests` |
+| `b_map` panel button (473), key Space | opens/closes the map window | wired | `MapViewStateTests` |
+| `b_camera` panel button (474) | opens the camera slide-out panel: camcorder (C), postcard (Ctrl-P) and the host view cycle (`[EXT:camera-view-cycle]`, UI-042) | wired (host approx) | `CameraControlTests` |
+| speed buttons (pause/×1/×2/×4), numpad +/−/* | set/step/reset the park clock scale (`[EXT:speed-buttons]`, `[EXT:time-key-speeds]`) | wired | `HudScreenShortcutTests` |
+| happiness gauge (477) | shows the visitors' mean happiness (UI-901) | wired (host approx) | `HudScreenShortcutTests` |
+| date display (478), balance (465), cash change, golden tickets/keys | live economy readouts | wired | `FrontEndSmokeTest` |
+| park clicks | select the object of the clicked grid cell; selection opens the object window | wired | `FrontEndSmokeTest` |
+| comma / full stop while a blueprint is pending | add 90° / 270° to the build angle (one / three `RotateBuild` steps) | wired | `UiRegisterRound2Tests` |
+| Ctrl+S / Ctrl+V | cycle staff roles / visitors and focus the camera (UI-904, UI-091) | wired | `MapStaffControlTests` |
+| key V | opens/closes the All Visitors window (plain V pans nothing; Ctrl+V stays the locator) | wired | `OverviewWindowTests` |
+
+### Object window (selected object)
+
+| Control | Action | Status | Test |
+| --- | --- | --- | --- |
+| name and stat rows | live catalogue values; unknown statistics say "not simulated" | wired | `FrontEndSmokeTest` |
+| `b_door` open/close (12) | closes/opens the attraction through the reopening guard; disabled for non-attractions and read-only visits | wired | `FrontEndSmokeTest` |
+| `b_erase` delete (15) | sells and removes the object (confirmation when enabled); fixed items and read-only visits cannot | wired | `FrontEndSmokeTest` |
+| `b_okay` tick (1) | closes the window | wired | `FrontEndSmokeTest` |
+| `b_ride it!` (16) | enters/leaves the first-person ride view of a rideable ride (UI-094/95; the E key is `[EXT:ride-view-key]`) | wired | `FrontEndSmokeTest` |
+| `b_arup` / `b_ardown` (21, 20), `b_allthings` (17) | step through the objects of the type; open All Attractions | wired | `OriginalLayoutTablesTests` |
+
+### Ride view (camcorder on a ride)
+
+Source: `World/RideCameraMode.cs`, `World/RideSeat.cs`, `Hud/ParkHud.RideView.cs`, `World/Level.RideView.cs`. Traced in tp.exe (UI-093/094/095):
+
+- **Eye.** The first dummy-attribute record whose type has bit 0x1000 and whose value is 1 (0x44b220 through the ride camera 0x42a560); its node's world translation is the eye, copied exactly. About 58 object models carry one (rides, but also the security cameras, gates and End features, which are not attractions and cannot be ridden here). A coaster uses the seat of its first train's front car model (`CoasterCarRig.CameraSeat`).
+- **Orientation.** The per-frame camera update 0x42b1c0 blends the three rotation rows of the seat matrix with the seat's matrix of the previous frame: `a = (1000 - clamp(dt_ms, 1, 1000)) * 0.0005` (about 0.48 at 30 frames a second), `row = node * (1 - a) + previousNode * a`, and stores the node's matrix (not the blend) for the next frame, so it is a one-frame average, not an accumulating ease. The frame time is the millisecond clock difference of two frames.
+- **Free look.** The pointer's offset from the view centre (-1..1 over the window, Y up) turns the view: yaw `(x -/+ 0.2) * 3.5` radians outside a dead zone of 0.2, pitch `(0.2 - y) * 1.2` above 0.2 and `-y - 0.4` below -0.4 (rotation about X, then about Y, axis string "XY" at 0x74daa4). There is no easing in the look itself; a pointer at the screen edge turns about 160 degrees. The directions (right and down turn right and down) come from the video.
+- **Screen.** The viewfinder model at (170,170)-(1878,1366) and the b_eject button at (1916,1404)-(2018,1506) (table 0x74fa98, help 468), the HUD hidden (the ride screen hides the screens below), the crosshair pointer drawn as a yellow plus, and 0.33 s of full-screen TV static on entry and on exit.
+- **Exits.** Escape (no modifier), the C key, the eject button, and a right click only when "right click cancels" is on and more than 2 s have passed since the view opened (0x48a7bd). E also leaves ([EXT:ride-view-key]).
+- **Leaving.** The park camera's target moves to the cell centre of the object under it (0x42a1d0; the yaw rule is not applied, see UI-095); the camcorder walk restores the exact previous camera.
+- **Not original or not traced.** The static and the crosshair are generated ([EXT:ride-static], [EXT:ride-crosshair]: no static art or CCro.tga exists in the data); the field of view is 55 (UI-094); the car 0x436880 selects is not decoded; a coaster seat that faces the car's -Z (the mine cart) is turned half a circle because OpenTPW's cars drive along +Z (COAST-034). `--debug-hud "ride:<name>"` and `ride:look:x,y` (Debug builds) board a ride and hold the look pointer for captures.
+
+### Pause menu (Escape)
+
+| Control | Action | Status | Test |
+| --- | --- | --- | --- |
+| Resume Game | closes every stacked screen | wired | `FrontEndSmokeTest` |
+| Restart Park / Publish Park | restarts an Instant Action park after its confirmation / opens the online publish flow; disabled without their host action | wired (host) | `HudScreenShortcutTests` |
+| Save | writes the owning game flow's park save (own-format world save); a read-only visit has no Save entry | wired | `FrontEndSmokeTest` |
+| Load | opens the Load Park screen; disabled when the host provides none | wired | `HudScreenShortcutTests` (entry enable logic) |
+| Options | opens the options screen; disabled when the host provides none | wired | `OriginalUiTests` |
+| Go Online | opens the online screens when built | wired | online suite |
+| Exit To Lobby / Quit Game (confirmation) | leave the park / quit | wired | `FrontEndSmokeTest` |
+| (open menu) | stops the park simulation while the menu or a screen opened from it is open, as the original's pause menu pauses the game (Mac `0x10198514` → `0x10110518`); the speed setting is kept, so the park resumes at the same speed (UI-096 covers the other pausing screens) | wired | `ParkPauseTests`, `FrontEndSmokeTest` |
+
+### Windows
+
+| Window | Controls | Status | Test |
+| --- | --- | --- | --- |
+| Buy (`ParkHud.BuyWindow.cs`) | list select/sort/scroll, category buttons, purchase via row activation, staff button, all-attractions button, exit/Back | wired | `BuyWindowTests`, `FrontEndSmokeTest` |
+| Staff (`ParkHud.Staff.cs`) | role filters, name/wage sort, hire on a left click (hover highlights), pick-up button (`b_pick`), employee view (`[EXT:staff-employee-view]`), dismiss with confirmation (UI-092), scroll, locators, all-visitors and all-attractions buttons, exit | wired | `ManagementUiTests`, `MapStaffControlTests`, `FrontEndSmokeTest` |
+| Attractions (`ParkHud.AttractionsWindow.cs`) | category tabs, list select/name-sort/scroll, live status and per-category detail rows (UI-905, `[EXT:overview-detail-rows]`), a left click opens the info panel and keeps the list, a right click locates and closes, delete with the original category confirmations, exit/Back; the sandbox developer Totem is listed beside the catalogue rides and its delete goes through the prototype removal | wired | `OverviewWindowTests`, `FrontEndSmokeTest` (list/activation/sell, prototype list/activation/remove with healed selection, visit open + read-only refusal) |
+| Visitors (`ParkHud.VisitorWindow.cs`) | list select/number-sort/scroll, live visitor detail rows (UI-907, `[EXT:overview-detail-rows]`), a left click selects (detail rows), a right click locates and closes, exit/Back, V key | wired | `OverviewWindowTests`, `HudScreenShortcutTests`, `FrontEndSmokeTest` (list/scroll/sort/Enter-locate) |
+| Map (`ParkHud.Map.cs`) | pan, zoom, four category filters, track/visitor/staff/metric layer toggles, close | wired | `MapViewStateTests`, `MapStaffControlTests` |
+| Finance (`ParkHud.FinanceWindow.cs`) | 1/3/12-year periods, eight series toggles (bank balance/park value exclusive), loans/staff-cost/entry detail buttons, exit | wired | `FinanceWindowTests` |
+| Loans (`ParkHud.LoansWindow.cs`) | Available/Outstanding tabs, six sortable columns, list select/scroll, take/repay with confirmations and balance checks, summary rows, navigation buttons | wired | `FrontEndSmokeTest` (loan flow), model in economy suite |
+| Research (`ParkHud.ResearchWindow.cs`) | per-category effort sliders, workload knob (UI-064), item previous/next when selectable, exit | wired | `ManagementUiTests` |
+| Entry price / staff costs (`ParkHud.Management.cs`) | ± adjustments, park door toggle (b_door), exit; read-only visits cannot change | wired | `ManagementUiTests` |
+| Park information (`ParkHud.InfoWindow.cs`) | live statistics (published statistics in a visit), close | wired | `FrontEndSmokeTest` |
+
+### Front end (`FrontEnd/FrontEndMenu.cs`)
+
+| Control | Action | Status | Test |
+| --- | --- | --- | --- |
+| previous / enter / next island buttons (343-345) | wrap through the theme islands; enter asks for the game mode | wired | `OriginalUiTests` |
+| Game Mode dialog (Instant Action / Full Simulation, 358/359) | starts the park in that mode | wired | `OriginalUiTests` |
+| Load (202) | lists shipped and own saves and loads them | wired | `OriginalUiTests` |
+| Options | opens the options screen | wired | `OriginalUiTests` |
+| Go Online | opens the online screens when built | wired | online suite |
+| Quit Game (confirmation 9) | quits | wired | `OriginalUiTests` |
+
+Not implemented (no screen exists; their keys stay unhandled): F1 advisor help speech,
+player profiles, online world, golden keys. The All Attractions (A) and All
+Staff (S) keys stay with the camera's WASD pan by policy; the attractions
+window opens from both the buy window and the staff window's visitor corner
+(so it stays reachable in a read-only visit, where the buy window is
+disabled), the visitors window from the staff window and the V key.
 
 Project rule: every UI value or rule that is not original data or hard evidence is
 tagged at its site with `// [APPROX:UI-NNN] … — evidence needed: …` and logged once
@@ -261,39 +638,64 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 
 | Id | Site(s) | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| UI-001 | `UI/Original/UiCanvas.cs:45` | non-4:3 outputs keep each element at its authored distance from the nearest edge (anchors) | original widescreen behaviour (none in 1999) / design decision |
 | UI-002 | `UI/Original/UiCanvas.cs:41`, `UI/Original/UiText.cs:57` | BF4 font size tier (SMALL/MED/BIG) chosen by logical scale thresholds 0.36 and 0.6 | binary: font selection per screen mode |
-| UI-003 | `UI/Original/UiModel.cs:60` | button/arm state frames drawn at the root node pose; child translations ignored | binary: UI model drawing code |
+| UI-003 | `UI/Original/UiModel.cs:60` | button/arm state frames drawn at the root node pose; child translations ignored | the PC UI mesh draw (the selected state mesh → local matrix → ancestor composition, not located in the PC round), or a capture of a button whose state child is offset |
 | UI-004 | `UI/Original/UiModel.cs:124` | UI model triangles drawn back to front by Z, grouped per texture | binary or capture of overlapping UI parts |
 | UI-005 | `UI/Original/UiImages.cs:34` | pink (255,0,255) key with neighbour colour bleed; linear filtering of UI images | capture of edges at non-native resolutions |
-| UI-006 | `UI/Original/UiText.cs:102` | text colours (white, yellow highlight/title, green values, grey disabled), shadow and backdrop colours | captures of original screens |
+| UI-006 | `UI/Original/UiText.cs:102` | text colours: window titles and the lobby island name yellow, the object windows' labels and values white, the pause menu's lines cyan (white while focused), green values elsewhere, grey disabled, shadow and backdrop colours (the video's 720p chroma is good to about +-15 per channel) | exact palette values from a lossless capture, the disabled grey, the shadow and backdrop colours |
 | UI-007 | `UI/Original/UiWidgets.cs:96` | one-pixel (×UI scale) drop shadow under UI text | captures of original screens |
-| UI-008 | `UI/Original/UiWidgets.cs:252` | text buttons on purple_button art: top half normal, bottom half focused/pressed | capture of the original front-end buttons |
-| UI-009 | `UI/Original/UiWidgets.cs:290` | option rows: label to 58%, value between arrows at 58.5%..97.5% of the f_optpanel2 frame | capture of the original options screen |
-| UI-010 | `UI/Original/UiScreen.cs:174` | popup help box at the top centre with a dark blue backdrop | capture of original popup help (helpbg art exists) |
-| UI-011 | `UI/Original/UiScreen.cs:164` | modal screens dim what is below | captures of original dialogs |
-| UI-012 | `UI/Original/UiInput.cs:49`, `UI/Original/UiScreen.cs:59` | hover focuses, release activates, arrows/Enter/Escape navigate, P pauses, right click backs out of modal screens | binary: input handling; KEYBOARD.str meaning |
-| UI-013 | `UI/Original/Options/OptionsScreen.cs:92`, `UI/Original/UiDialogs.cs:9` | window sizes and inner layout of options, game mode, load, pause and message dialogs | captures of original dialogs |
-| UI-014 | `FrontEnd/FrontEndMenu.cs:76`, `FrontEnd/FrontEndMenu.cs:92` | positions inside the lobby panel (island name, prev/enter/next), logo/title placement, right-hand Load/Options/Quit column | capture of the original lobby screen |
-| UI-015 | `FrontEnd/FrontEndMenu.cs:120` | front-end flow without player profiles; Game Mode is asked when entering a park; both modes play the same | binary/manual: original player and mode flow |
+| UI-008 | `UI/Original/UiWidgets.cs` | text buttons on purple_button art: each half is one end cap drawn with its mirror image; upper half normal, lower half focused/pressed | capture of the original front-end buttons |
+| UI-012 | `UI/Original/UiInput.cs:49`, `UI/Original/UiScreen.cs:59` | dialog arrow/Enter/Tab/Space navigation is OpenTPW's ([EXT:ui-key-navigation]; none of the original's six key groups 0x747f38-0x748378 contains it), shortcut letters follow KEYBOARD.str (0x40cb80, table 0x3fc) except a plain letter that is a camera-pan key (W, A, S, D: the Dutch hire letter A keeps H), the help texts of the Dutch video name (M) gate window, (T) training budgets, (O) research, (Ctrl-A) postcard, (Ctrl-W) staff locate and (C) camcorder exit (video 8:00-8:40, 41:00), so the letters are per language, shortcuts fire on press where the original's callbacks sit in the release-side slot, the 500 ms / 6 px click rule (0x65f6d1) applies to every UI control, and the right click leaves a modal screen, the object window and the ride view only with the RMBCancelOn option (+0x39; the readers traced are the camcorder 0x488aa1 and the ride-view screens 0x48a7ab and 0x48aadb, the ride view also waiting 2000 ms after it opened); the other windows are taken to read the option too, and the camcorder walk's own right click is not gated (reader 0x4881ae not examined) | which other screens read RMBCancelOn and what 0x4881ae does |
+| UI-013 | `UI/Original/UiDialogs.cs:9` | the window sizes of the game-mode and load screens and of OpenTPW's own windows; the confirm dialog follows table 0x7583e8 and the lobby's and the park's pause menus the original's lines, whose exact rectangles are read off video 27:42 only | the load dialog's window and inner layout (not in the capture), the game-mode screen's table (0x753f50 holds the original choice) and the pause-menu text rectangles |
 | UI-016 | `FrontEnd/LobbyDefinition.cs:79` | lobby ISLAND angle = island yaw in degrees, height = camera target height | binary: lobby script interpretation or capture |
 | UI-017 | `World/LobbyCameraMode.cs:25` | lobby camera: SPINSPEED read as radians per 0.1 s, vertical field of view 60, 3/s glide between islands, ISLANDFOV unused | binary or capture of the lobby camera |
-| UI-018 | `Client/GameFlow.cs:223`, `World/Lobby/LobbyScene.cs:14` | lobby sky drawn as a flat SKYCOLOUR backdrop; flying meshes, rain, lightning, animations not drawn | binary/capture of the lobby |
-| UI-019 | `FrontEnd/LobbyDefinition.cs:92` | fallback island position (400 + index × 200, 400) when lobby.txt has none | none needed if lobby.txt is complete |
-| UI-020 | `Hud/ParkHud.cs:119` | positions of buy/info/finance/research/map buttons on the main panel (shared authored centre) | capture of the original HUD |
-| UI-021 | `Hud/ParkHud.cs:115`, `Hud/ParkHud.cs:80` | positions and fonts of the date and bank balance text; money grouped with ',' digits | capture of the original HUD; locale number format |
-| UI-022 | `Hud/HudStubs.cs:88`, `Hud/HudStubs.cs:47`, `Hud/ParkHud.cs:126` | speed control (pause, ×1, ×2, ×4) bottom-right; faster speeds only speed up the economy clock, not rides/guests | binary: original game speed options (pause only is known) |
-| UI-023 | `Hud/HudStubs.cs:9` | test-only stub calendar (2 s/day); the game shows the economy clock (see ECON tags) | none for the game path |
-| UI-024 | `Hud/ParkHud.cs:144`, `Hud/ParkHud.cs:171`, `Hud/ParkHud.cs:207`, `Hud/HudStubs.cs:108`, `Hud/ParkHud.cs:581` | layout inside the build and info arms (category buttons, title, three-slot pages/arrows sorted by Info.Id, adaptive preview size to fit translated names/prices, stat rows, door/erase buttons) | captures of the original arms |
-| UI-025 | `Hud/ParkHud.cs:28` | message area keeps up to 3 messages for 8 s in the f_tag frame | binary/capture of the original message system |
-| UI-026 | `Hud/ParkHud.cs:586`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of P<name>.MD2 with 30° tilt, 0.8 rad/s turn, painter sorting | capture of the original build menu |
-| UI-027 | `Hud/ParkHud.cs:481` | a park click selects the original object occupying its grid cell | binary: original picking |
-| UI-028 | `Hud/ParkHud.cs:283` | excitement shown as '<ExcitementLevel>%'; reliability, repair and life shown as not simulated | capture of the original ride info; simulation |
-| UI-029 | `Hud/ParkHud.cs:207` | b_door 'down' frames mean the ride is closed; b_erase used as the delete button | capture of the original ride panel |
-| UI-030 | `UI/Original/Options/GameOptions.cs:16` | volumes in 0..10 steps, default 8; popup help default on | capture/registry defaults of the original options |
-| UI-031 | `Hud/ParkHud.cs:350` | one placement per menu selection; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | original build-tool continuation |
+| UI-018 | `Client/GameFlow.cs:238`, `World/Lobby/LobbyScene.cs:14` | lobby sky eases toward the nearest island's SKYCOLOUR without the original's red-toward-blue quirk and its settings gate (untested); the cloud layer, the flying meshes (bats, butterflies), the island and gate animations and the key-unlock and enter-zoom sequences are not drawn; the lightning flash is not drawn (the capture shows none) | the cloud layer's source, the flying-mesh and animation systems, the key-unlock and enter-zoom sequences |
+| UI-024 | `Hud/ParkHud.cs`, `Hud/ParkHud.BuyWindow.cs` | the object windows (tables 0x755150, 0x755908, 0x755e80) draw the frame, title, preview, the stat rows of their own table (the ride's seven, the shop's seven, the sideshow's eight), door, erase, tick, arrows, list, Ride it!, call, upgrade, queue, track and apply-all buttons at the table rectangles; their sliders (speed, capacity, duration, price, quality, sugar, salt, ice, fat, chance of winning) and b_move are not drawn (ride settings and the move tool are not simulated), apply-all copies only the price, and the shop price editor stands in for the price slider; the shop and sideshow rows' labels follow the consecutive UITEXT 32-37 against the traced fill routines and the sideshow's second row stays empty; the build window lists unresearched items under their own names where the original uses UITEXT 137 and fits the preview size to translated names and prices | the move tool, the ride settings behind the sliders, the labels of the shop and sideshow rows and the sideshow row-1 gauge routine 0x4e1f20 |
+| UI-025 | `Hud/ParkHud.MessageTube.cs` | the message tube holds up to five messages (not saved with the park) (the most the video shows) and drops the oldest on overflow; its red body is drawn as rectangles and its white icons as discs, the tube's growth per message (77 units) and rectangles are read off the video; the panel's rectangles are table 0x7501a0; its action buttons take the mb_ model of their kind, but no OpenTPW message carries an action yet and which original message uses which mb_ model is not traced; only the strike messages (TAG_SYSTEM.str) use the tube, OpenTPW's own feedback lines stay in a status line ([EXT:status-line]) | the original message queue (capacity, overflow, the events that post messages), the mb_ model per message type and the tube art |
+| UI-026 | `Hud/ParkHud.cs:586`, `Hud/PreviewIcon.cs:14` | build icons: CPU orthographic projection of the preview model (P<name>.MD2, else the main model) with 30° tilt, 0.8 rad/s turn, painter sorting; sign faces use the object's rendered sign textures (ObjectSigns) | capture of the original build menu |
+| UI-027 | `Hud/ParkHud.cs:481` | a park click selects the original object occupying its grid cell | binary: the park-view mouse-down object hit test (the 0x5234d0/0x524960 region, large), or a capture of clicks on overhanging objects |
+| UI-028 | `Hud/ParkHud.cs` | the info arm's excitement, reliability, repair and remaining-life rows are red-to-green gauges as in the original; their fills are the authored excitement / 100, 1 - WearRate / 10, and the live economy record's repair and life gauge (the owner's published repair in a visit), the original's fill formulas being unreadable from 720p video | the ride window's gauge refresh handler |
+| UI-029 | `Hud/ParkHud.cs:207` | b_door 'down' frames mean the ride is closed (the table gives help 13 to the up state and 12 to the down state); b_erase is the delete button | which b_door state frame is closed |
+| UI-031 | `Hud/ParkHud.cs:350` | exactly Ctrl at the placing click keeps the build tool armed (0x5253b8) and at the last click of a ride's queue re-arms it, the tool's angle returns to 0 when it is left (0x52f3b6); the coaster and water-track tools, whose original sub-modes are not traced, end the build tool whatever the modifier, and the Ctrl tests at 0x5259e2/0x5259f4 are not mapped to an OpenTPW action; Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits | what 0x52fab0 tests (an entrance or queue, medium confidence) and the coaster and track sub-modes' continuation |
 | UI-032 | `UI/Original/UiWidgets.cs:179`, `Hud/ParkHud.cs:590` | longer labels fall back to the small font; catalogue names greedily wrap in their slots | captures of translated original screens |
-| UI-033 | `Hud/HudStubs.cs:130` | test-only Totem catalogue falls back to price 3,250 when Totem.sam cannot be read; the game uses ObjectCatalog | none if the data is present |
+| UI-034 | `UI/Original/UiImages.cs` | a fully opaque texture on a transparent (flag 0x2) model slot keys out black; only `ipan` in the lobby `f_lobbutbg` panel | the original's render state for flagged texture slots |
+| UI-036 | `UI/Original/UiWidgets.cs` | options slider: ball centre moves linearly over the track for value index 0..steps-1; click/drag sets the nearest step | capture of the original slider ends or binary slider code |
+| UI-037 | `UI/Original/UiText.cs` | option bar label colour (16,16,48), no drop shadow | exact label colour from a capture or the font palette |
+| UI-039 | `UI/Original/UiWidgets.cs` | option label size: letter box about 58 % of the label rectangle height, shared per page; a label whose widest value does not fit drops alone to the largest size that does | capture of the original option labels in several languages |
+| UI-041 | `Client/GameFlow.cs:147` | Load Park opens a shipped park as the reference start (its own balance, Full Simulation rules) whatever Game Mode was last chosen; GameType is derived from flag bits 0x2000000/0x1000000 of 0x7a1a8c (0x550ca0), set by a front-end toggle (0x4bbf63), and OpenTPW has no player profiles | whether a park file can carry the game type (not traced) |
+| UI-042 | `Hud/ParkHud.cs` | the camera button opens the slide-out panel of table 0x751720 with the camcorder and postcard buttons, without the slide and its sound 0x131; the camcorder button arms the C-key walk ([EXT:camcorder-first-person]), the postcard button opens the host composer (the video's postcard window, 8:42, is not ported) and the view cycle is a third button ([EXT:camera-view-cycle]); the camcorder walk's movement and look controls are not traced (the original's eye is terrain + 5 units) | the camcorder mode object (0x46cff0), the postcard window and the walk's controls |
+| UI-044 | `Hud/ParkHud.BuyWindow.cs` | buy window list rows are 41.4 units high (measured at 720p, +-1 unit; the original's pitch is the list font's text height, 0x663718), ten rows show and the wheel scrolls one row | whether the pitch follows the font height |
+| UI-046 | `Hud/ParkHud.BuyWindow.cs` | buy window stats: excitement gauge = UsageInfo.ExcitementLevel/100, reliability gauge = 1 - Upgrades[0].WearRate/10, safe capacity = Upgrades[0].InitCapacity, working life empty; the gauges are the red-to-green gradient of UiGauge whose stops are read off the video, not the original's gauge art | the original gauge art and the buy window's fill formulas |
+| UI-047 | `Hud/ParkHud.cs` | which OpenTPW tool state corresponds to the mode-object types that show control 48: type 3 (the tool-mode object) wraps every build tool, so the held blueprint's price, the path or queue line's cost so far and the coaster track segment under the cursor show it; the types 4 and 8 (8 gated by 0x447990) are not identified, and the staff and patrol tools show nothing | what the mode-object types 4 and 8 are |
+| UI-049 | `Hud/ParkHud.BuyWindow.cs` | buy window scroll ball travel: its top runs from the track's top (first row) to a ball height above the track's bottom (last row) | capture of the original scroll bar ends |
+| UI-050 | `UI/Original/UiGauge.cs` | the buy list's third column draws a tick box per row, ticked when the park owns at least one of the item; the box and the tick are drawn with rectangles and strokes in the video's colours, not the original's art (i_boxtick.MD2 holds only the empty box) | the original tick art and the unnamed control 491 |
+| UI-051 | `Hud/ParkHud.cs` | i_dollar frame 1 for a negative balance, green_up frame 1 for a decrease (the video shows a red down arrow after spending); the golden counters show only above zero as "n ×"; the key count is the park's earned tickets / 3 because the player-wide key ledger is not reachable from the HUD | a capture of the dollar sign at a negative balance and the player-wide key counter |
+| UI-060 | `Hud/ParkHud.FinanceWindow.cs` | finance graph line colours, scaling and default selected series use the tracked monthly ledger values | original financial graph capture and its sample/render handler |
+| UI-061 | `Hud/ParkHud.FinanceWindow.cs` | the entry-price window is a host layout over actual economy values (its table is not located); the training-budget window follows table 0x756400 (mini balance, five role rows, tick and the entry price, finance and loans buttons) without the rows' skill gauges, and a click changes a budget by one unit | the entry-price window's table (the G key, entryprice 0x40c570) and what the training rows' gauges show |
+| UI-063 | `Hud/ParkHud.LoansWindow.cs` | loan list has seven equal rows and inferred scrollbar travel; its summary uses the bounded monthly ledger rather than the original lifetime counters | the loans list control and handler (candidates: type-7 lists such as attribute 0x81, id 2342112), scroll handler and original lifetime finance counters |
+| UI-064 | `Hud/ParkHud.ResearchWindow.cs` | research workload is adjustable with linear 0..100 mouse/keyboard travel; native slider quantization remains unqualified | which control of the research window handler 0x4a96b0 is the workload knob (it sets controls 0xd2d12 and 0xd2d10 on message 0x1e) and its 0x800 branch |
+| UI-066 | `Hud/ParkHud.ResearchWindow.cs` | research progress is a simple fill inside the fluid model cell; the original draws no fill but animates the fluid model (0x4a95b0: (p+20)/100 in 16.16, state 3, frame limit 0x30, winding down to 0x20) | porting the fluid model animation (no further evidence needed) |
+| UI-080 | `Hud/ParkHud.Staff.cs` | staff list has ten equal rows in the table content area and the wheel moves one row | capture of the original staff list |
+| UI-081 | `Hud/ParkHud.Staff.cs` | applicant details: the skill gauge fills the candidate's skill byte over 5 (taken as the grade + 1, the video's cheapest candidate is a fifth full) and the mini balance (money in, staff costs plus the wage, other costs, balance) uses the current month's ledger samples; the field that writes the skill byte is not traced | the writer of the candidate's skill byte (candidate +8) |
+| UI-082 | `Hud/ParkHud.Staff.cs` | the portrait box shows the selected role and grade as text; the original spawns a live animated figure of the candidate's role there (0x49ba00 -> 0x475a10 with descriptor 0x74f758, animation 8 at speed 8.0; the sprite-bank character) and OpenTPW does not draw it | drawing the role's sprite-bank figure in the window (no further evidence needed) |
+| UI-085 | `Hud/ParkHud.Map.cs` | the 512 pixel theme map places five-pixel terrain cells centrally; live overlays use that mapping | original map overlay alignment capture |
+| UI-086 | `Hud/ParkHud.Map.cs` | paths, queues and placed objects use plain coloured cells over the shipped theme map image; the layer toggles are the original's independent bits (the layer word starts as 1 in the original) but their colours and the control-to-category assignment are not traced, so all four category layers start on | the original map layer colours and which category button owns which layer bit |
+| UI-091 | `Hud/ParkHud.Staff.cs` | staff and visitor locators cycle actual actor positions and focus the host park camera; the locator panels 0x4b3f60/0x4b4280 (Ctrl+S 0x40c590 → 0x481790, Ctrl+V 0x40c5a0 → 0x4817c0) are not ported, the list rows' 0x402 path (centre the camera on the cell, 0x4867b0, and close) is | porting the locator panels (per-employee cycling buttons 1293/1295, UI-904) |
+| UI-901 | `Hud/ParkHud.cs`, `Hud/ParkHud.Gauge.cs` | the happiness gauge shows the visitors' mean happiness as a rising red-yellow-green bar in the gauge model's empty dish | capture of the original gauge and its value drawing |
+| UI-904 | `Hud/ParkHud.ScreenShortcuts.cs` | the staff-locator key (Ctrl+S) cycles staff roles in the staff window's role order; the original opens the locator panel (0x481790 → 0x4b3f60, role radios 0x95e..0x964) and cycles through staff with the per-employee panel's buttons 1293/1295 (help 92/91) | porting the locator panel and the per-employee panel (no further evidence needed) |
+| UI-905 | `Hud/ParkHud.AttractionsWindow.cs` | the All Attractions window: staff/buy window geometry with the shipped list_all frame, four category tabs and name/status list columns; the decoded original tables are not ported (attractions 0x7508e0, per-category lists 0x750ab8/0x750ba0/0x750ca0, list id 400 at [266,318,1825,876]), the list behaviour (attribute 0x291) is | porting the decoded window tables |
+| UI-907 | `Hud/ParkHud.VisitorWindow.cs` | the All Visitors window: staff/buy window geometry and number/status/happiness list columns; the decoded original table is not ported (visitors 0x7506c8, six columns), the list behaviour (attribute 0x291) is | porting the decoded window table |
+| UI-910 | `Hud/ParkHud.AttractionsWindow.cs`, `Hud/ParkHud.VisitorWindow.cs` | a left click on an attractions or visitors row selects it and opens its info panel (the info arm; the visitors window's detail rows) and keeps the list, a right click selects it, centres the camera and closes (list messages 0x400 and 0x402, 0x6655a2 / 0x66563d); button index 0 of the original's click codes is taken as the left button (medium confidence) | which physical button is button 0 (the DirectInput order behind the codes 0xf0..0xf2 of 0x486ca1) |
+| UI-092 | `Hud/ParkHud.Staff.cs` | an explicit dismiss button below the portrait in the employee view; the original dismisses with b_fire (control 0x50c = 1292, rectangle (380,694)-(534,847), help 89) on the per-employee panel (0x4b6080, table 0x756f48, jump 0x4b5e5d); the confirmation (UITEXT 0x18d) follows the Confirmations option like the original's [0x78d90f] gate | porting the per-employee panel |
+| UI-093 | `Hud/ParkHud.cs` | the pause key and the park door shortcuts (Ctrl-O/Ctrl-C) are blocked while riding; the camcorder procedure 0x488a00 acts only on Escape, C and the postcard action and passes other keys to the default procedure 0x65f66e | the default procedure's key forwarding while the camcorder screen is on top |
+| UI-094 | `World/RideCameraMode.cs`, `Hud/ParkHud.RideView.cs` | the field of view is 55; the front car stands in for the car 0x436880 selects (+0x34 -> +0xc, not decoded); the signs of the free-look rotations come from the video; the static is generated ([EXT:ride-static]) and so is the crosshair ([EXT:ride-crosshair], CCro.tga is absent); the static lasts 0.33 s (video 0.30-0.35 s); a coaster seat is turned half a circle when its node faces the car's -Z (COAST-034) | the projection setup of the ride view (gui_CameraFlags 0x3c), the static's own art and timer, and the car choice at 0x436880 |
+| UI-095 | `World/Level.RideView.cs` | leaving the ride view re-centres the park camera on the cell centre of the object under its target (0x42a1d0), a stand-in for the original's type-3 thing with +0x118 == 0; the yaw rule (direction bits 0x522850 & 0x55) is not applied because its mapping to OpenTPW's yaw is not traced; the prior camera instance is restored, including the host terrain walk | which thing 0x42a340 matches and the yaw mapping |
+| UI-096 | `Hud/ParkHud.cs` | the pause menu (with the screens opened from it) and the map window stop the park simulation; the original's game pause 0x4092a0 is also called by the postcard (0x4a93d7, Ctrl+P), the generic dialog 0x47f020 (0x47f26c, probably the message box) and four unidentified screens (0x46b74c, 0x49efba, 0x49f29f, 0x4a3a6c) | which screens the callers 0x47f020, 0x46b74c, 0x49efba, 0x49f29f and 0x4a3a6c open |
+| UI-097 | `Hud/ParkHud.Staff.cs` | the advisor message 0x135 (309, place your new staff member) is not posted: its descriptor row exists (table 0x76E300 of 56-byte rows, row 309 at 0x772698: all game modes, group 1, first response 569 = speech sample 587, one pending duplicate) but its score callback 0x59e8c0 returns field +0x328 of the Advisor.sam balance object (0xfb3540), whose key is unidentified, so OpenTPW's advisor table (scored messages only) cannot hold it; the hint is an OpenTPW line of the message area shown when the Place tool starts and the queue cannot withdraw advice | the Advisor.sam key behind balance field +0x328 and the withdrawal 0x59aa70 |
+| UI-098 | `Hud/ParkHud.Staff.cs` | the pick-up button (control 0x50e of the per-employee window handled at 0x4b5cb0, which OpenTPW does not port; model b_pick, 153 × 153, help 88) sits at the right of the portrait of the embedded employee view because the original rectangle (539,694)-(692,847) belongs to that separate window; the patrol buttons (help 86/87) keep OpenTPW labels and untraced rectangles | porting the per-employee window (the patrol buttons' models and rectangles) |
+| UI-099 | `Hud/ParkHud.cs` | the cell-sized ground quad of an invalid staff cell is the blueprint's red face; the original queues square dynamic faces with 0x53c8d0 (face type 1, unit-square UVs 0x871ee8) | the texture binding of face type 1 and the staff tool's caller among 0x53c8d0's 10 callers |
+| UI-100 | `Hud/ParkHud.Cursor.cs` | the game's pointers are the four-frame colour strips of Data/ui/cursors drawn by the UI at the pointer, at 6 frames a second, instead of the .ani files as OS cursors; the system pointer is hidden only while one is drawn; the 22 ids and the tool-to-pointer rules (0x52f950) are the original's, but the conditions behind the link, end and cash pointers (0x816d60, 0x816d4c, 0x816d5c) are not traced, so they are never chosen, and the crosshair's art (CCro.tga) is not in the game data | the conditions behind the link, end and cash pointers and the crosshair art |
+| UI-942 | `Audio/GameAudio.cs`, `FrontEnd/FrontEndMenu.Continue.cs` | the globe's music and ambience (cat_globallobbysfx 2 and 3) replace the lobby's while the globe is up; the enter-park sound (event 4) skips game type 2 (Mac-traced, the PC enter action was not checked); the original's handling of the lobby's own sentences is untraced | the PC lobby/globe sound control (0x10183CC0's PC twin) |
 
 Data-backed (tagged `[DATA]`): the 2048×1536 canvas and authored rectangles of
 placed models (`ui.wad` roots/bounds), button state frames and texture order, V
@@ -309,3 +711,128 @@ online), cursor drawing, button/arm animations (`b_door` etc. have no animation
 members; arm slide-in is not reproduced), sounds, original thousands separators
 and currency handling in French/German, D3D11/Vulkan runs, captures from the
 original game for comparison.
+
+The developer prototype Totem shares the ordinary objects' per-tick economy
+synchronization: its visitor bridge receives the linked instance's wear, age
+and sideshow terms, while its script supplies open and broken status.
+`PrototypeEconomySyncTests` checks this without original assets or a GPU.
+
+The All Visitors window consumes the plain V edge only when the registered
+Ctrl+V visitor-locator chord is not down. The locator retains its existing park,
+modal and ride-view gates, while plain V retains the existing window toggle
+behavior. `HudModifierShortcutTests` checks both physical Ctrl with injected V
+and a fully injected chord through actual button rebuilding; Ctrl+S remains
+the staff locator (plain S stays unhandled here), and Ctrl+P remains excluded
+from the pause key. Global bindings and help shortcuts are unchanged by this fix.
+These are synthetic model/input checks, not rendered or original-game parity.
+
+Ctrl+P opens the existing postcard composer directly from a Theme Park World park,
+including a read-only visit. It keeps plain P as pause and follows modal, text,
+ImGui, build/removal/cell/coaster and ride-view input ownership. An unavailable
+host callback or edition sharing capability reports the existing unavailable
+message. The chord opens a form once; it never sends a message automatically.
+The existing composer, local outbox and map-thumbnail attachment are reused
+(ONLINE-022 still qualifies the photo). A simultaneous park press/release belongs
+to the opened composer, without activating a path or selecting a visitor/object.
+`PostcardShortcutIngressTests` exercises actual injected button rebuilding and
+the full HUD frame, including the GameFlow composer and a temporary local outbox.
+Original assets, native/GPU layout and network delivery are not qualified here.
+Ctrl+P does not change the selected simulation speed. The composer retains the
+existing modal pause while open; closing it removes that modal pause.
+The registered default uses left Ctrl; right Ctrl+P remains excluded from plain
+P pause but has no postcard action under the existing global bindings. Independent
+full-frame tests also cover held chords after a capture owner releases input and
+a simultaneous press over a pickable visitor, followed by release and a new click.
+
+### Visitor selection in the park view
+
+A genuine left press on a visible in-park visitor opens the existing All Visitors window and selects that visitor, scrolling its row into view. Picking uses the current guest renderer's interpolated DrawX/DrawY terrain position, selected animation frame/hotspot, mirroring, camera axes and UnitsPerPixel. Overlapping rectangles choose the nearest projected depth, then the lowest visitor id. A successful press consumes the existing tool/release latch before automatic path activation; a miss preserves ordinary path input. The roster's existing live selection healing applies when the visitor leaves.
+
+UI-930 qualifies this host rectangle policy: transparent sprite pixels and terrain/object occlusion are not tested, and partially near/far-clipped sprites are refused. No original picking geometry or GPU parity is claimed. Hidden/removed/outside-park visitors and invalid/nonfinite/behind-camera projections are refused. Overlay/HUD controls, text entry, ImGui capture, build/removal/cell/coaster tools, ride view and its exit frame own their input. Read-only visits may inspect visitors without simulation or finance mutation. The public HUD update samples native capture flags at its existing point; an internal explicit-capture overload runs the same frame body in synthetic tests.
+
+Visitor-specific cat_kids event 129 is deferred: the existing generic park press sound remains, with no new hover/held/release audio trigger. Original assets, native geometry/occlusion and rendered interactions remain unqualified.
+### Live-map legend allocation (2026-10-13)
+
+The satisfaction legend now counts the current eligible visitors directly instead
+of grouping them into cells, allocating an array, and summing it. The drawn overlay
+still uses its existing per-cell groups. Both paths share the same visibility,
+thought and coordinate predicate, and totals are recomputed on every call; no
+result cache or invalidation policy was added. Map layers, category/role controls,
+projection, clipping, zoom and pan are unchanged.
+
+`MapOverlayAllocationTests` drives the real map view and legend label through the
+CPU `UiBatch`, with 1,500 synthetic guests on a 32×32 sandbox map and visitor,
+happiness and satisfaction layers enabled. In the same Release/.NET 10 fixture,
+with tiered compilation disabled and draw buffers warmed, allocated bytes changed:
+
+| Measurement | Before | After |
+|---|---:|---:|
+| Map draw plus legend | 492,144 bytes/frame | 327,656 bytes/frame |
+| Legend alone | 165,168 bytes/call | 680 bytes/call |
+
+The allocation regression requires less than 2 KiB per legend call, with generous
+headroom above the measured result. Live tests independently check hidden guests,
+outside cells, changed thoughts, removal/return and metric toggles. Existing map
+projection/control tests remain green. These are allocation measurements, not
+wall-clock or browser/GPU/original-player performance claims; ordinary tiered-JIT
+runs can report different allocation counts. Per-cell overlay grouping remains
+an explicitly measured source of allocations for a separate bounded pass.
+
+The [independent map allocation review](MAP-ALLOCATION-REVIEW.md) records fresh
+marker/legend lifecycle coverage and matched managed red/green measurements.
+
+### Outcome-cell allocation measurement
+
+The satisfaction overlay now reuses view-owned coordinate/index and struct-count scratch collections, cleared and rebuilt from current guests on every draw (including clearing while disabled). First observed-cell encounter order, visibility/bounds/thought filtering, checked per-cell counts, colours and existing geometry remain unchanged. Scratch stores no Guest/Level references and uses tuple coordinates, with no width-linearized keys or result cache. The visitor/happiness grouping and all other map layers remain unchanged.
+
+A warmed Release .NET 10 synthetic 1500-visitor/32×32 map draw with tiered compilation disabled allocated 327,656 bytes/frame before and 176,672 after: 150,984 fewer bytes/frame. Satisfaction enabled minus disabled fell from 152,240 to 1,256 bytes/frame, while the old isolated grouping measured 150,984. Actual UiBatch output tests preserve ordered reaction rectangles/colours through live movement, thought/state/bounds changes and off/on/empty redraws. These are managed allocation measurements, not browser timing, GPU results or original overlay parity. Remaining visitor/happiness grouping allocations require a separate measured slice.
+
+Independent scratch tests compare every visitor state/thought and fixed-point edge against the prior grouping, including empty/negative and very large numeric bounds. Reordered and replaced sources, non-observed first encounters, disabled frames and empty redraws preserve fresh counts and order. The returned scratch list is borrowed for the current draw and changes at the next rebuild; its collections retain peak capacity for the view's lifetime, without retaining visitors.
+
+### Explicit theme continuation
+
+Entering a TPW theme with a readable matching application-owned world save now offers **Continue saved park**, **New park**, and **Back** (`[EXT:theme-continue]`, host UI). Continue uses the existing `opentpw-{theme}-world.json` manual slot, preserving its start kind, Full Simulation/Instant Action mode and easy-layer choice. New opens the existing mode chooser and leaves that file alone until a later explicit manual Save. A theme without a valid matching slot keeps the existing new-game mode flow. There is no autosave, profile progression/key gate or native-save writer in this ingress.
+
+The menu reads the existing own codec's structural metadata; it does not load or hash game assets. Activation re-reads the trusted generated slot and rejects missing/corrupt files or changed theme/start/mode/easy metadata. The existing `ResumePark` performs complete trusted-asset validation and builds the staged candidate before old-world retirement. Failure shows the existing-style error dialog and preserves the live world and manual slot; it never silently starts an empty park. The ordinary Load picker and native original-reference import remain separate. TPI's layout checkpoint continues to start a new experimental session and is never offered as TPW continuation.
+
+Synthetic tests drive actual Enter/Continue/New/Back dispatch with a tiny own-world file, pass its restored economy and saved clock/guest metadata through the real continuation handler, and exercise the real resume path refusing missing synthetic assets before replacement. Other-theme, deleted/corrupt, changed-mode/easy and TPI refusal controls preserve live references. Original-data/GPU/browser resume and native profile/theme-entry parity remain unqualified; retirement callback exceptions retain the existing staging limitation.
+
+The Load chooser owns its dispatch: Back/Escape or right-click cancellation wins
+over activation in the same input batch, and combined mouse release plus Enter
+loads at most once per update. Removed chooser list, Load and Back callbacks
+cannot load stale entries or remove a fresh screen. Separate valid updates and
+a retry after a refused loader remain available; selected entry references and
+metadata are unchanged. These are bounded host chooser rules (`[EXT:load-chooser]`), not
+changes to generic screen input or qualified native navigation.
+
+### Host terrain walk (C)
+
+In a Theme Park World terrain park, press plain **C**, then press the terrain to enter the host first-person inspection camera. Press **C** again or **Escape** to cancel entry or return to the exact previous park camera instance and pose. A ride entered from walking returns to that walking camera; leaving the walk then restores the original park camera. Read-only visits allow this inspection without park edits. Theme Park Inc and the terrain-free sandbox refuse entry.
+
+WASD moves in the horizontal view direction; the rotation keys turn, and holding the right mouse button and dragging looks around. Movement samples the existing bilinear heightfield and refuses outside-terrain or hole cells. Host tuning is an eye height of 1.6 engine units, speed 4 units/second, turn speed 90 degrees/second, 180 degrees of mouse look per viewport width/height and pitch limited to ±80 degrees. Frame delta is capped at 0.1 seconds. These values, flat Z=0 plane entry picking and field-of-view 55 are host choices (`[EXT:camcorder-first-person]`: the original's C key is the unported camcorder, see UI-042). Picking is not a ray/terrain intersection; the resulting X/Y is sampled on the actual terrain. There is no object/path collision, photo capture, recording, native walking physics or camera save continuation.
+
+Typing, overlays, captured mouse/keyboard input, ride view and build/removal/cell/coaster tools block entry. Both Control keys exclude C and terrain-click entry; existing Ctrl+C park closing stays separate. Blocked C holds and mouse presses are consumed through release, including current-frame injected keys and a hold spanning new HUD creation. This input snapshot is host ownership support, not native input parity. Walking owns park tool/selection clicks and the exit frame. Camera controls freeze under modal/captured input and while a replacement park is building. On level disposal, the owned camera is released without replacing another world's camera.
+
+Independent CPU controls in `FreeWalkCameraReviewTests` additionally pin nonplanar
+bilinear height sampling and hole refusal, raw snapshot stability without widening
+Ctrl bindings, RMB drag reset across capture/text/modal/focus gates, actual park
+closing and read-only refusal, and visitor press ownership with fresh-click recovery
+after walking exits. Guest canonical state remains unchanged by these camera actions.
+These synthetic controls do not qualify native terrain collision, pixel picking,
+renderer/audio behavior or original camcorder equivalence. Whole `Level.Dispose`
+remains source-reviewed because its renderer teardown needs a live renderer; the
+actual walking release and ride-return methods are covered independently.
+
+### Selected shop and sideshow price
+
+In an editable Theme Park World park, selecting a live shop or sideshow exposes **Sale price** or **Price of game** in the object information arm. Its modal editor starts with the current mapped instance price. Enter a decimal whole value from 0 through 2147483647 and press the existing OK button or Enter to apply; Escape, right click or the exit button cancels; cancellation takes priority over a simultaneous confirmation. Invalid input remains in the editor with a localized explanation. Typing and cancellation never change the price.
+
+Apply revalidates the selected object, its live Level economy-instance mapping, category, and the exact economy/record captured on opening. Deleted, remapped, replaced or read-only targets are refused. Editing changes only `Price`: no immediate payment, open/close command, quality/cost-of-goods or prize-chance change. Existing visitor-payment and economy save/restore paths consume and retain that price. Two copies of the same catalogue item remain independent. Captured input, text entry, overlays, building/removal tools and ride/non-orbit cameras block entry; a retained hidden/retracted or retired dialog action cannot apply. Theme Park Inc/no-economy inspection and rides have no price action. Ride tickets and park entrance fees are separate from this shop/sideshow API.
+
+`[EXT:shop-price-editor]` qualifies the host button/editor placement and at most ten-digit invariant decimal validation. A bounded larger text buffer preserves oversized pasted numbers for rejection instead of silently applying a truncated price. The button shares the otherwise free editable information-arm slot with the read-only ride-view button; their visibility is mutually exclusive. This implements the existing model's price interaction and does not reproduce native slider ranges, quality/prize panels or untraced original mode gates. No new price formula, balance policy or save schema is introduced.
+
+Independent CPU controls drive mouse entry and Apply for the second of two identical catalogue owners, then verify its actual visitor payment, instance statistics and ledger; an unaffordable visit leaves the ledger unchanged. Separate controls retain staged input across mouse/keyboard/text capture and retry after capture ends, and check all six localized error bindings with invariant decimal validation under a French process culture. These synthetic controls do not qualify original fonts, GPU drawing or native price controls.
+
+All Attractions now displays the existing mapped shop/sideshow customers last month, profit last month and total profit. The HUD copies these three values into the same category/frame projection as its attraction rows, keyed by attraction ID after resolving the exact economy instance; label reads do not revisit the object list or hold mutable economy records. Counts use invariant digits and profits the existing localized money formatter. Category, ownership/economy and empty-list transitions rebuild the data; sorting, selection and queue/rider rows retain their existing behavior. Read-only visits, TPI, missing economies and mismatched bindings retain the unavailable fallback. This adds no payment, monthly rollover, RNG, save fields or native accounting/UI equivalence claim.
+
+The existing money formatter computes signed integer magnitudes through exact decimal conversion so accepted signed 64-bit profit values, including the minimum, cannot overflow while being displayed. Currency labels, invariant grouping and accounting values are unchanged.

@@ -1,0 +1,10 @@
+# Build context for source/OpenTPW.Server/Dockerfile: OpenTPW sources only.
+**/bin/
+**/obj/
+.git/
+out/
+native/
+devdata/
+artifacts/
+content/textures/
+content/fonts/

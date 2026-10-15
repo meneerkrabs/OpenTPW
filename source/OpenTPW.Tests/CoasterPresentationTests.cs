@@ -1,0 +1,259 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using SVector3 = System.Numerics.Vector3;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// The coaster presentation without game data (docs/COASTERS.md): the cross sections of coaster.sam, their extrusion along the curve slices, the track under
+/// construction, the pylon height fit and the car pose. The archive models are covered by CoasterPresentationAssetTests.
+/// </summary>
+[TestClass]
+public class CoasterPresentationTests
+{
+	/// <summary>The scrolling textures move by the power factor × elapsed seconds (0x435adf..0x435b20): the same shift for every scrolling texture, wrapped, stopped by a breakdown.</summary>
+	[TestMethod]
+	public void ScrollingTexturesAdvanceByThePowerFactorTimesElapsedTime()
+	{
+		var phase = 0f;
+		for ( var frame = 0; frame < 3; frame++ )
+			phase = CoasterRenderer.AdvanceScroll( phase, 1f, 0.25f );
+		Assert.AreEqual( 0.75f, phase, 1e-6f );
+		Assert.AreEqual( 0.25f, CoasterRenderer.AdvanceScroll( phase, 1f, 0.5f ), 1e-6f, "wraps above 1" );
+		Assert.AreEqual( phase, CoasterRenderer.AdvanceScroll( phase, 0f, 10f ), "mode 64: the power factor is 0 and the texture stands still" );
+		Assert.AreEqual( 0.6f, CoasterRenderer.AdvanceScroll( 0.5f, 0.5f, 0.2f ), 1e-6f );
+	}
+
+	[TestInitialize]
+	public void Init() => Log = new();
+
+	/// <summary>A two-point, one-edge section with a winch variant: the minimum that shows points, edges, textures and the winch select.</summary>
+	private static Dictionary<string, string> SectionSettings() => new( StringComparer.OrdinalIgnoreCase )
+	{
+		["asTextureData[0].pcTextureFilename"] = "\"rail.tga\"",
+		["asTextureData[1].pcTextureFilename"] = "\"chain.tga\"",
+		["asTextureData[1].fScrollRate"] = "1.0",
+		["asCrossSectionPoints1[0].fX"] = "-2", ["asCrossSectionPoints1[0].fY"] = "0.5", ["asCrossSectionPoints1[0].fU"] = "0", ["asCrossSectionPoints1[0].fNx"] = "0", ["asCrossSectionPoints1[0].fNy"] = "1",
+		["asCrossSectionPoints1[1].fX"] = "2", ["asCrossSectionPoints1[1].fY"] = "0.5", ["asCrossSectionPoints1[1].fU"] = "1", ["asCrossSectionPoints1[1].fNx"] = "0", ["asCrossSectionPoints1[1].fNy"] = "1",
+		["asCrossSectionEdges1[0].usTexture"] = "0", ["asCrossSectionEdges1[0].usCSPoint1"] = "0", ["asCrossSectionEdges1[0].usCSPoint2"] = "1",
+		["asCrossSectionEdges2[0].usTexture"] = "1", ["asCrossSectionEdges2[0].usCSPoint1"] = "0", ["asCrossSectionEdges2[0].usCSPoint2"] = "1",
+		["asCrossSectionEdges2[1].usTexture"] = "1", ["asCrossSectionEdges2[1].usCSPoint1"] = "1", ["asCrossSectionEdges2[1].usCSPoint2"] = "0",
+		["asCrossSections[0].usCSPointBlockIndex"] = "1", ["asCrossSections[0].usCSEdgeBlockIndex"] = "1",
+		["asCrossSections[1].usCSPointBlockIndex"] = "1", ["asCrossSections[1].usCSEdgeBlockIndex"] = "2",
+		["asCrossSectionSelects[0].usCrossSectionIndex"] = "1",
+		["sCoasterType.uiWinchCrossSection"] = "2",
+		["sCoasterType.fTrackHeightAdjust"] = "-1.5"
+	};
+
+	private static CoasterSlice[] StraightSlices( int count, float roll = 0, float pitch = 0 ) =>
+		Enumerable.Range( 0, count ).Select( index => new CoasterSlice( new SVector3( 10, 20, index * 3f ), 0, pitch, roll, 0, 0 ) ).ToArray();
+
+	[TestMethod]
+	public void TheCrossSectionLoadsPointsEdgesTexturesAndTheHeightAdjust()
+	{
+		var sections = CoasterCrossSections.FromValues( SectionSettings() );
+		Assert.IsFalse( sections.IsEmpty );
+		Assert.AreEqual( 2, sections.Textures.Count );
+		Assert.AreEqual( "rail.tga", sections.Textures[0].FileName );
+		Assert.AreEqual( 1f, sections.Textures[1].ScrollRate );
+		Assert.AreEqual( 2, sections.Sections.Count );
+		var (points, edges) = sections.Resolve( 0 );
+		Assert.AreEqual( 2, points.Count );
+		Assert.AreEqual( -1f, points[0].Y, "fTrackHeightAdjust is added to every point Y (0x42d6d0)" );
+		Assert.AreEqual( 1, edges.Count );
+		Assert.AreEqual( 2, sections.Resolve( 1 ).Edges.Count );
+		Assert.AreEqual( 2, sections.WinchSection );
+	}
+
+	[TestMethod]
+	public void TheSelectUsesTheWinchSectionAndTheClimbingPitchWindow()
+	{
+		var values = SectionSettings();
+		values["asCrossSectionSelects[0].fPitchRangeMin"] = "-90";
+		values["asCrossSectionSelects[0].fPitchRangeMax"] = "-1";
+		values["asCrossSectionSelects[1].usCrossSectionIndex"] = "2";
+		var sections = CoasterCrossSections.FromValues( values );
+		Assert.AreEqual( 0, sections.SelectSection( -0.3f, winch: false ), "climbing (negative pitch) takes the first window" );
+		Assert.AreEqual( 1, sections.SelectSection( 0.3f, winch: false ), "descending falls through to the default select" );
+		Assert.AreEqual( 1, sections.SelectSection( -0.3f, winch: true ), "a chain-lift segment uses uiWinchCrossSection" );
+	}
+
+	[TestMethod]
+	public void ExtrusionEmitsAQuadPerEdgeAndSegmentAndPlacesPointsByTheSliceFrame()
+	{
+		var sections = CoasterCrossSections.FromValues( SectionSettings() );
+		var mesh = CoasterTrackMesh.Build( sections, StraightSlices( 5 ), closed: false );
+		Assert.AreEqual( 4, mesh.Segments );
+		Assert.AreEqual( 4 * 1 * 4, mesh.Vertices.Count, "four vertices per edge and segment" );
+		Assert.AreEqual( 4 * 2, mesh.TriangleCount );
+		Assert.AreEqual( 12f, mesh.Length, 1e-4f );
+		var first = mesh.Vertices[0];
+		Assert.AreEqual( 8f, first.Position.X, 1e-4f, "yaw 0: the right axis is +X, the point X = -2 lies at 10 - 2" );
+		Assert.AreEqual( 19f, first.Position.Y, 1e-4f, "Y = 20 + (0.5 - 1.5)" );
+		Assert.AreEqual( 0f, first.Position.Z, 1e-4f );
+		Assert.AreEqual( 0f, first.U );
+		Assert.AreEqual( 0f, first.V );
+		Assert.AreEqual( 3f / CoasterTrackMesh.MetersPerRepeat, mesh.Vertices[2].V, 1e-5f, "V grows by the slice distance over six" );
+		Assert.AreEqual( SVector3.UnitY, first.Normal );
+		var closed = CoasterTrackMesh.Build( sections, StraightSlices( 5 ), closed: true );
+		Assert.AreEqual( 5, closed.Segments, "a closed chain joins its last slice to the first" );
+	}
+
+	[TestMethod]
+	public void ARollTurnsTheSectionInItsPlane()
+	{
+		var (right, up) = CoasterTrackMesh.Frame( 0, 0, MathF.PI / 2 );
+		Assert.AreEqual( 0f, (right - SVector3.UnitY).Length(), 1e-5f, "a quarter roll puts the right axis up" );
+		Assert.AreEqual( 0f, (up + SVector3.UnitX).Length(), 1e-5f );
+		var sections = CoasterCrossSections.FromValues( SectionSettings() );
+		var banked = CoasterTrackMesh.Build( sections, StraightSlices( 2, roll: MathF.PI / 2 ), closed: false );
+		Assert.AreEqual( 11f, banked.Vertices[0].Position.X, 1e-4f, "the point's Y (-1) goes along the rolled up axis (-X)" );
+		Assert.AreEqual( 18f, banked.Vertices[0].Position.Y, 1e-4f, "the point's X (-2) goes along the rolled right axis (+Y)" );
+	}
+
+	[TestMethod]
+	public void TheFrameFollowsYawAndPitchLikeTheCurveOrientation()
+	{
+		var direction = SVector3.Normalize( new SVector3( 1, -0.5f, 2 ) );
+		var (yaw, pitch) = HermiteCoasterCurve.Orientation( direction );
+		var (right, up) = CoasterTrackMesh.Frame( yaw, pitch, 0 );
+		var forward = SVector3.Cross( right, up );
+		Assert.AreEqual( 0f, (forward - direction).Length(), 1e-3f, "right × up is the tangent" );
+		Assert.AreEqual( 0f, SVector3.Dot( right, direction ), 1e-3f );
+		Assert.IsTrue( up.Y > 0 );
+	}
+
+	[TestMethod]
+	public void AWinchSegmentAndAnInvalidSegmentUseTheirOwnEdges()
+	{
+		var sections = CoasterCrossSections.FromValues( SectionSettings() );
+		var slices = StraightSlices( 3 );
+		var winch = CoasterTrackMesh.Build( sections, slices, closed: false, winch: new HashSet<int> { 0 } );
+		Assert.AreEqual( 2 * 2 * 4, winch.Vertices.Count, "the winch section has two edges" );
+		Assert.IsTrue( winch.Vertices.All( vertex => vertex.Texture == 1 ) );
+		var invalid = CoasterTrackMesh.Build( sections, slices, closed: false, invalid: new HashSet<int> { 0 } );
+		Assert.IsTrue( invalid.Vertices.All( vertex => vertex.Texture == CoasterTrackMesh.InvalidTexture ) );
+	}
+
+	// ---- A track under construction ----------------------------------------------------------------
+
+	private static CoasterBuilder OpenTrack( int pylons )
+	{
+		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		builder.Height = 40;
+		for ( var index = 0; index < pylons; index++ )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + CoasterTests.Circuit[index].X, 20 + CoasterTests.Circuit[index].Y ) );
+		return builder;
+	}
+
+	[TestMethod]
+	public void AnOpenTrackIsDrawnAsTheCurveThroughItsNodesAndTheCursor()
+	{
+		var builder = OpenTrack( 3 );
+		var track = builder.Track;
+		var preview = track.BuildPreviewChain( (-4 + 20, 8 + 20), 40, false );
+		Assert.IsNotNull( preview );
+		Assert.IsFalse( preview!.Value.Closed );
+		Assert.AreEqual( track.Nodes.Count + 1, preview.Value.Chain.Count, "the ghost pylon at the cursor is the last node" );
+		var knots = track.BuildKnots( builder.Site, preview.Value.Chain, writeBanks: false );
+		var slices = HermiteCoasterCurve.Slices( knots, builder.Ride.Definition.Curviness, closed: false );
+		Assert.AreEqual( (knots.Count - 1) * HermiteCoasterCurve.SliceSegments + 1, slices.Length );
+		Assert.AreEqual( 0f, (slices[0].Position - knots[0].Position).Length(), 1e-3f, "the first slice is the first station node" );
+		Assert.AreEqual( 0f, (slices[^1].Position - knots[^1].Position).Length(), 1e-3f, "the last slice is the cursor pylon" );
+		// The curve bends: an interior slice leaves the straight chord between its two knots.
+		var first = CoasterTrack.StationNodeCount;
+		var chordMid = (knots[first].Position + knots[first + 1].Position) / 2;
+		Assert.IsTrue( (slices[first * HermiteCoasterCurve.SliceSegments + 5].Position - chordMid).Length() > 0.1f );
+		Assert.IsTrue( track.Nodes.All( node => node.Bank == 0 ), "a preview leaves the nodes' banks untouched" );
+		var mesh = CoasterTrackMesh.Build( CoasterCrossSections.FromValues( SectionSettings() ), slices, closed: false );
+		Assert.AreEqual( slices.Length - 1, mesh.Segments );
+	}
+
+	[TestMethod]
+	public void AClosedUnfinishedTrackEndsInTheStationEndNode()
+	{
+		var builder = OpenTrack( CoasterTests.Circuit.Length );
+		Assert.IsTrue( builder.Close() );
+		var preview = builder.Track.BuildPreviewChain( null, 40, false );
+		Assert.IsNotNull( preview );
+		Assert.IsTrue( preview!.Value.Closed );
+		Assert.IsTrue( preview.Value.Chain[^1].IsStationEnd );
+		Assert.AreEqual( builder.Track.Nodes.Count + 1, preview.Value.Chain.Count );
+		builder.Complete();
+		Assert.IsNull( builder.Track.BuildPreviewChain( null, 40, false ), "a completed track is drawn from the controller" );
+	}
+
+	[TestMethod]
+	public void TheClosedKnotsOfTheControllerAreUnchangedByTheOpenChainSupport()
+	{
+		var builder = OpenTrack( CoasterTests.Circuit.Length );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
+		var ride = builder.Ride;
+		var again = builder.Track.BuildKnots( builder.Site );
+		var chain = builder.Track.BuildKnots( builder.Site, builder.Track.Nodes, writeBanks: false );
+		CollectionAssert.AreEqual( again.ToArray(), chain.ToArray() );
+		Assert.IsTrue( ride.IsOperational );
+	}
+
+	// ---- Pylons and cars ------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void APylonReachesTheNodeHeightByLoftScaleOrSinking()
+	{
+		// Gorilla Thrilla's StdPylon: the tag stands 15.56 above the base at loft 0 and 95.56 at loft 1.
+		var (loft, scale, offset) = CoasterPylonRig.FitHeight( 15.558f, 95.558f, 55.558f );
+		Assert.AreEqual( 0.5f, loft, 1e-4f );
+		Assert.AreEqual( (1f, 0f), (scale, offset) );
+		var (lowLoft, lowScale, lowOffset) = CoasterPylonRig.FitHeight( 15.558f, 95.558f, 10f );
+		Assert.AreEqual( (0f, 1f), (lowLoft, lowScale), "below the loft the pylon sinks" );
+		Assert.AreEqual( -5.558f, lowOffset, 1e-3f );
+		var (topLoft, topScale, topOffset) = CoasterPylonRig.FitHeight( 15.558f, 95.558f, 100f );
+		Assert.AreEqual( (1f, 0f), (topLoft, topOffset) );
+		Assert.AreEqual( 100f / 95.558f, topScale, 1e-5f, "above the loft the pylon is stretched about its base" );
+		Assert.AreEqual( 15.558f, CoasterPylonRig.FitHeight( 15.558f, 95.558f, 15.558f ).Loft * 80f + 15.558f, 1e-3f );
+	}
+
+	[TestMethod]
+	public void ACarSitsOnTheInterpolatedSampleWithItsDirectionAndBank()
+	{
+		var samples = new[]
+		{
+			new CoasterSample { Position = new SVector3( 0, 0, 0 ), Direction = SVector3.UnitZ, Bank = 0 },
+			new CoasterSample { Position = new SVector3( 0, 0, 3 ), Direction = SVector3.UnitX, Bank = 0.4f },
+			new CoasterSample { Position = new SVector3( 3, 0, 3 ), Direction = SVector3.UnitX, Bank = 0.4f }
+		};
+		var pose = CoasterCarRig.PoseAt( samples, 0.5f );
+		Assert.AreEqual( 1.5f, pose.Position.Z, 1e-4f );
+		Assert.AreEqual( MathF.PI / 4, pose.Yaw, 1e-3f, "halfway between +Z and +X" );
+		Assert.AreEqual( 0.2f, pose.Roll, 1e-5f );
+		var wrapped = CoasterCarRig.PoseAt( samples, -0.5f );
+		Assert.IsTrue( wrapped.Position.X > 1f, "a position before the start wraps to the end of the closed track" );
+		var matrix = CoasterCarRig.Matrix( new CoasterCarPose( new SVector3( 5, 6, 7 ), 0, 0, 0 ), 0.5f );
+		Assert.AreEqual( new SVector3( 5, 6.5f, 7 ), matrix.Translation, "the height offset runs along the car's up axis" );
+		Assert.AreEqual( SVector3.UnitZ, new SVector3( matrix.M31, matrix.M32, matrix.M33 ), "row 3 is the forward axis" );
+		var pitched = CoasterCarRig.Matrix( new CoasterCarPose( SVector3.Zero, 0, 0.5f, 0 ), 0 );
+		Assert.IsTrue( pitched.M32 < 0, "a positive pitch tilts the forward axis downwards, as in the curve orientation" );
+	}
+
+	[TestMethod]
+	public void CarsAreSpacedByTheirExtentsAndTheTrainTypesFollowFrontCentreRear()
+	{
+		var offsets = CoasterCarRig.CarOffsets( new[] { (4f, 5f), (3f, 3f), (2f, 6f) } );
+		CollectionAssert.AreEqual( new[] { 0f, 8f, 13f }, offsets );
+		var types = CoasterCarTypes.FromValues( new Dictionary<string, string>
+		{
+			["asCarTypes[0].pcMeshFilename"] = "\"head\"", ["asCarTypes[0].fFrontDistanceAdd"] = "0.5", ["asCarTypes[0].fYOffset"] = "-1",
+			["asCarTypes[1].pcMeshFilename"] = "\"body\"", ["asCarTypes[2].pcMeshFilename"] = "\"tail\"", ["asCarTypes[2].bBendCar"] = "1",
+			["sTrainType.uiFrontCarTypeIndex"] = "0", ["sTrainType.uiCentreCarTypeIndex"] = "1", ["sTrainType.uiRearCarTypeIndex"] = "2"
+		} );
+		Assert.AreEqual( 3, types.Types.Count );
+		Assert.AreEqual( ("head", 0.5f, -1f), (types.Types[0].MeshName, types.Types[0].FrontAdd, types.Types[0].YOffset) );
+		Assert.IsTrue( types.Types[2].Bend );
+		CollectionAssert.AreEqual( new[] { 0, 1, 1, 2 }, Enumerable.Range( 0, 4 ).Select( car => types.TypeIndexFor( car, 4 ) ).ToArray() );
+		Assert.AreEqual( 0, types.TypeIndexFor( 0, 1 ), "a one-car train is a front car" );
+	}
+}

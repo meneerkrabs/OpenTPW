@@ -1,0 +1,251 @@
+using System.Runtime.InteropServices;
+using Veldrid;
+using SVector2 = System.Numerics.Vector2;
+using SVector3 = System.Numerics.Vector3;
+
+namespace OpenTPW;
+
+/// <summary>
+/// Draws the guests' balloons (<see cref="Guest.HasBalloon"/>) as camera-facing quads of the original balloon sprite
+/// (<c>esprites.wad/Generic/Balloons/SPR_BL</c>), the way <see cref="GuestRenderer"/> draws the kids: the balloon trails its guest, dips while the guest
+/// walks and bobs (tp.exe <c>0x004FA030</c>); a balloon that bursts shows its burst frame for a moment. Presentation only: nothing here touches the
+/// simulation, and the colours come from a presentation hash.
+/// </summary>
+public sealed class BalloonRenderer : Entity
+{
+	private const int VerticesPerSprite = 12;
+	/// <summary>How far behind its guest the balloon trails, in park turns (tp.exe data <c>0x0075C910</c>).</summary>
+	public const float TrailTurns = 0.35f;
+	/// <summary>The balloon's height above the trailing point, in original units (<c>0x0075C808</c>).</summary>
+	public const float Rise = 1f;
+	/// <summary>The trailing distance is divided by this before it lowers the balloon (<c>0x0075C90C</c>).</summary>
+	public const float DipDivisor = 0.5f;
+	/// <summary>The bob table's scale (<c>0x0075C904</c>).</summary>
+	public const float BobScale = 1.5f;
+	/// <summary>Original world units per map cell (<c>0x004F9F00</c> scales the 16.16 cell position by 10).</summary>
+	public const float UnitsPerCell = 10f;
+	/// <summary>The bob table (<c>0x0075C810</c>, 20 entries of x, y, z; only y is set): up by 0.02 a step to 0.2 and back.</summary>
+	// [BIN:TPW-EXE:0x0075C810 balloon bob] 20 entries (count 0x0075C80C) of three floats; x and z are 0, y runs 0, 0.02 .. 0.2 .. 0.02, 0
+	public static readonly float[] Bob = { 0f, 0.02f, 0.04f, 0.06f, 0.08f, 0.1f, 0.12f, 0.14f, 0.16f, 0.18f, 0.2f, 0.18f, 0.16f, 0.14f, 0.12f, 0.1f, 0.08f, 0.06f, 0.04f, 0f };
+	/// <summary>Seconds per step of the bob's shared phase. Approximation (GUEST-017).</summary>
+	public const float BobStepSeconds = 0.1f;
+	/// <summary>Steps of the burst script (0x0074F4C0: register 7 from 250 down by 20 until below 8).</summary>
+	public const int BurstSteps = 13;
+	/// <summary>Seconds per step of a sprite script. Approximation (GUEST-017).</summary>
+	public const float ScriptStepSeconds = 0.1f;
+
+	private sealed class BalloonView
+	{
+		public bool Held;
+		public int Slot;
+		public float X, Y, Lift;
+		public float LastX = float.NaN, LastY;
+		public float BurstUntil = float.NegativeInfinity;
+	}
+
+	private readonly GuestSimulation simulation;
+	private readonly ModelHeightfield field;
+	private readonly GuestSpriteAtlas? atlas;
+	private readonly int[] slots;
+	private readonly Material<ObjectUniformBuffer>? material;
+	private Texture? texture;
+	private readonly Dictionary<Guest, BalloonView> views = new( ReferenceEqualityComparer.Instance );
+	private readonly HashSet<Guest> seen = new( ReferenceEqualityComparer.Instance );
+	private readonly List<Guest> stale = new();
+	/// <summary>How many balloons have appeared, the presentation-only input of the colour pick.</summary>
+	private uint appearances;
+	private DeviceBuffer? vertexBuffer;
+	private Vertex[] vertices = Array.Empty<Vertex>();
+	private bool deleted;
+
+	public bool Visible { get; set; } = true;
+	/// <summary>Balloons drawn in the last frame, bursting ones included.</summary>
+	public int DrawnBalloons { get; private set; }
+
+	internal IReadOnlyList<Asset> OwnedAssets => (texture == null ? Array.Empty<Asset>() : new Asset[] { texture })
+		.Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
+
+	public BalloonRenderer( GuestSimulation simulation, ModelHeightfield field, IReadOnlyList<GuestSpriteAtlas> atlases )
+	{
+		this.simulation = simulation;
+		this.field = field;
+		Name = "Balloons";
+		atlas = atlases.FirstOrDefault();
+		slots = atlas == null ? [] : atlas.Animations.Animations.Where( slot => !slot.IsEmpty ).Select( slot => slot.Slot ).ToArray();
+		if ( atlas == null || slots.Length == 0 )
+			return;
+		texture = GuestRenderer.LoadAtlas( atlas );
+		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
+		material.Set( "Color", Enumerable.Repeat( texture, 8 ).ToArray() );
+		TexturePackSwitch.PackChanged += ReloadAtlas;
+		TexturePackSwitch.FilesAvailable += ReloadAtlas;
+	}
+
+	private void ReloadAtlas() => ReloadAtlas( null );
+
+	/// <summary>[EXT:texture-pack] Rebuilds the balloon atlas after a pack change or a lazy download that names it, as the guests' atlases do.</summary>
+	private void ReloadAtlas( IReadOnlyList<string>? paths )
+	{
+		if ( deleted || material == null || atlas == null || texture == null )
+			return;
+		if ( paths != null && !paths.Select( TexturePack.RelativeFileName ).Contains( TexturePack.RelativeFileName( atlas.PackKey ), StringComparer.Ordinal ) )
+			return;
+		var old = texture;
+		texture = GuestRenderer.LoadAtlas( atlas );
+		material.Set( "Color", Enumerable.Repeat( texture, 8 ).ToArray() );
+		Asset.All.Remove( old );
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			old.NativeTextureView.Dispose();
+			old.NativeTexture.Dispose();
+		} );
+	}
+
+	/// <summary>
+	/// The balloon's height above the ground at its trailing point, in original units: 1, lowered by the distance between the trailing point and the
+	/// guest (over 0.5) and raised by the bob table's entry for the guest's id and the shared phase.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA030 balloon placement] the guest's position at t − 0.35 (flag 0) and at t (flag 1) through 0x004F9F00; y = 1.0 − (|Δz| + |Δx|) / 0.5 + y of entry (id + phase 0x007CEDD4) % 20 × 1.5, x and z the trailing point plus the entry's x and z × 1.5; 0x004FE900 moves the balloon to the x and z of the call before
+	public static float Lift( float trailX, float trailY, float drawX, float drawY, int guestId, int phase )
+	{
+		var distance = (MathF.Abs( trailY - drawY ) + MathF.Abs( trailX - drawX )) * UnitsPerCell;
+		return Rise - distance / DipDivisor + Bob[(int)((uint)(guestId + phase) % (uint)Bob.Length)] * BobScale;
+	}
+
+	/// <summary>A colour for a new balloon, from the guest's id and the count of balloons that appeared before it (a multiplicative hash; never the simulation's streams).</summary>
+	public static int ColourPick( int guestId, uint appearance, int colours ) => (int)((((uint)guestId + appearance) * 2654435761u >> 16) % (uint)colours);
+
+	protected override void OnRender()
+	{
+		DrawnBalloons = 0;
+		if ( !Visible || material == null || atlas == null || deleted )
+			return;
+		var now = Time.Now;
+		// [APPROX:GUEST-017] BALLOON AND COSTUME DRAWING: a balloon's colour comes from a presentation hash of the guest and the count of balloons so far rather than the world stream reseeded with the guest's thing id (0x004FE6FC, 0x00541F70(10), 0x00541FD0; DET-014); the shared bob phase steps every 0.1 s and the balloon follows every frame, where 0x004FA030 adds 0.1 to an accumulator on each balloon placement and steps the phase on the placement after it reaches 1.0 (one step per eleven placements); the burst shows its frame for 13 sprite-script steps at 10 a second without the original's fading register; riders in costume in Fantasy and Hallow, which ship no costume heads, keep their kid head, and a guest who returns a costume keeps its kid set where the original draws a new one (0x004FE6A1, 0x00541F70(0)) — evidence needed: a costume rider's head when the costume-head group is empty, and the burst's fading register
+		var phase = (int)(now / BobStepSeconds) % Bob.Length;
+		var view = Camera.ViewMatrix;
+		var right = new SVector3( view.M11, view.M21, view.M31 );
+		var up = new SVector3( view.M12, view.M22, view.M32 );
+		var forward = -new SVector3( view.M13, view.M23, view.M33 );
+		seen.Clear();
+		var count = 0;
+		foreach ( var guest in simulation.Guests )
+		{
+			seen.Add( guest );
+			if ( !views.TryGetValue( guest, out var balloon ) )
+			{
+				if ( !guest.HasBalloon )
+					continue;
+				views[guest] = balloon = new BalloonView();
+			}
+			if ( guest.HasBalloon && !balloon.Held )
+			{
+				// A new balloon model (the shop, or back after a ride): a fresh colour (0x00541FD0) and no trail yet.
+				balloon.Held = true;
+				balloon.Slot = slots[ColourPick( guest.Id, appearances++, slots.Length )];
+				balloon.LastX = float.NaN;
+			}
+			else if ( !guest.HasBalloon && balloon.Held )
+			{
+				balloon.Held = false;
+				// A ride removes the model (0x00475550); a burst (0x004FE950) runs the burst script 0x0074F4C0 where the balloon was.
+				if ( guest.State is not (GuestState.Using or GuestState.Gone) )
+					balloon.BurstUntil = now + BurstSteps * ScriptStepSeconds;
+			}
+			if ( balloon.Held && guest.IsVisible )
+			{
+				var (trailX, trailY) = simulation.DrawPositionBefore( guest, TrailTurns );
+				balloon.Lift = Lift( trailX, trailY, guest.DrawX, guest.DrawY, guest.Id, phase );
+				(balloon.X, balloon.Y) = float.IsNaN( balloon.LastX ) ? (trailX, trailY) : (balloon.LastX, balloon.LastY);
+				(balloon.LastX, balloon.LastY) = (trailX, trailY);
+				AddSprite( ref count, atlas.GetFrame( balloon.Slot, 0, 0 ), balloon, right, up, forward );
+			}
+			else if ( now < balloon.BurstUntil )
+				AddSprite( ref count, atlas.GetFrame( balloon.Slot, 0, 1 ), balloon, right, up, forward );
+			else if ( !balloon.Held )
+				views.Remove( guest );
+		}
+		stale.Clear();
+		foreach ( var guest in views.Keys )
+			if ( !seen.Contains( guest ) )
+				stale.Add( guest );
+		foreach ( var guest in stale )
+			views.Remove( guest );
+		if ( count == 0 )
+			return;
+
+		var stride = (uint)Marshal.SizeOf<Vertex>();
+		var bytes = (uint)vertices.Length * stride;
+		if ( vertexBuffer == null || vertexBuffer.SizeInBytes < bytes )
+		{
+			var old = vertexBuffer;
+			if ( old != null )
+				global::Global.Render.ScheduleDelete( old.Dispose );
+			vertexBuffer = Device.ResourceFactory.CreateBuffer( new BufferDescription( bytes, BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
+		}
+		var commandList = global::Global.Render.CommandList;
+		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)count * stride );
+		material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
+		{
+			g_mModel = System.Numerics.Matrix4x4.Identity,
+			g_mView = Camera.ViewMatrix,
+			g_mProj = Camera.ProjMatrix,
+			g_vCameraPos = Camera.Position,
+			g_flTime = now
+		} );
+		commandList.SetVertexBuffer( 0, vertexBuffer );
+		commandList.SetPipeline( material.Pipeline );
+		var resourceSets = material.GetResourceSets();
+		for ( uint index = 0; index < resourceSets.Length; ++index )
+			commandList.SetGraphicsResourceSet( index, resourceSets[index] );
+		commandList.Draw( (uint)count );
+	}
+
+	/// <summary>One camera-facing quad with the frame's hotspot at the balloon's point (both windings, as the guests').</summary>
+	private void AddSprite( ref int count, int frameIndex, BalloonView balloon, SVector3 right, SVector3 up, SVector3 forward )
+	{
+		if ( count + VerticesPerSprite > vertices.Length )
+			Array.Resize( ref vertices, Math.Max( 64 * VerticesPerSprite, vertices.Length * 2 ) );
+		var frame = atlas!.Frames[frameIndex];
+		var anchor = GuestRenderer.CellToEngine( field, balloon.X, balloon.Y, balloon.Lift );
+		var unit = GuestRenderer.UnitsPerPixel;
+		var x0 = frame.OriginX * unit;
+		var x1 = (frame.OriginX + frame.Width) * unit;
+		var yTop = -frame.OriginY * unit;
+		var yBottom = -(frame.OriginY + frame.Height) * unit;
+		var u0 = frame.X / (float)atlas.Width;
+		var u1 = (frame.X + frame.Width) / (float)atlas.Width;
+		var v0 = frame.Y / (float)atlas.Height;
+		var v1 = (frame.Y + frame.Height) / (float)atlas.Height;
+		var topLeft = new Vertex( anchor + right * x0 + up * yTop, -forward, new SVector2( u0, v0 ) );
+		var topRight = new Vertex( anchor + right * x1 + up * yTop, -forward, new SVector2( u1, v0 ) );
+		var bottomLeft = new Vertex( anchor + right * x0 + up * yBottom, -forward, new SVector2( u0, v1 ) );
+		var bottomRight = new Vertex( anchor + right * x1 + up * yBottom, -forward, new SVector2( u1, v1 ) );
+		vertices[count++] = topLeft; vertices[count++] = topRight; vertices[count++] = bottomLeft;
+		vertices[count++] = topRight; vertices[count++] = bottomRight; vertices[count++] = bottomLeft;
+		vertices[count++] = topLeft; vertices[count++] = bottomLeft; vertices[count++] = topRight;
+		vertices[count++] = topRight; vertices[count++] = bottomLeft; vertices[count++] = bottomRight;
+		DrawnBalloons++;
+	}
+
+	protected override void OnDelete()
+	{
+		deleted = true;
+		TexturePackSwitch.PackChanged -= ReloadAtlas;
+		TexturePackSwitch.FilesAvailable -= ReloadAtlas;
+		var owned = texture;
+		texture = null;
+		if ( owned != null )
+			Asset.All.Remove( owned );
+		material?.ReleaseOwnedResources();
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			owned?.NativeTextureView.Dispose();
+			owned?.NativeTexture.Dispose();
+		} );
+		var buffer = vertexBuffer;
+		vertexBuffer = null;
+		if ( buffer != null )
+			global::Global.Render.ScheduleDelete( buffer.Dispose );
+	}
+}

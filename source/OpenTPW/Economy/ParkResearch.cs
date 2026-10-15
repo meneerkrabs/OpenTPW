@@ -10,12 +10,12 @@ public sealed record ResearchItem( int InfoId, int Level, ResearchCategory Categ
 /// (<c>ResearchCategories[n].Effort</c>), researcher ability per grade (<c>ResearchAbility</c>) and
 /// the group thresholds (<c>ResearchTech[g].PercentageForThisTech</c>). Group 0 items of the ride,
 /// shop, sideshow and feature categories start researched whatever their cost.
-/// <b>Approximations</b>: each researcher adds its grade's <c>ResearchAbility</c> points per game day,
-/// split over the categories by effort; a group opens once that percentage of the previous group of
-/// the same category is researched; items are researched cheapest first within the open groups;
-/// ride upgrade levels and add-on objects form the "upgrade" category; Instant Action research runs
-/// at one grade-2 researcher's ability without staff. <c>Research.StartingWorkLoad</c> and researcher
-/// <c>WorkDuration</c> are not used (meaning unknown).
+/// Traced in the Mac binary: every 20 park turns each researcher adds <c>ResearchAbility</c> ×
+/// effort share × <c>Research.StartingWorkLoad</c> / 100 points to every category's current item; a
+/// category's highest open group rises while the percentage of researched items in its open groups
+/// reaches the next <c>ResearchTech</c> threshold; each category researches the first open item in table order.
+/// <b>Approximations</b>: the table is in info-id order; Instant Action research runs at one grade-2 researcher's ability without staff;
+/// progress is kept in thousandths of a point. Researcher <c>WorkDuration</c> is not used.
 /// </summary>
 public sealed class ParkResearch
 {
@@ -25,26 +25,35 @@ public sealed class ParkResearch
 	private readonly HashSet<(int InfoId, int Level)> completed = new();
 	private readonly Dictionary<(int InfoId, int Level), long> progress = new();
 	private readonly int[] effort;
+	private readonly Dictionary<ResearchCategory, ResearchItem> selected = new();
 	private readonly HashSet<(int InfoId, int Level)> itemKeys = new();
 	private readonly Dictionary<ResearchCategory, List<ResearchItem>> byCategory = new();
 	private readonly Dictionary<(ResearchCategory Category, int Group), (int Count, int Done)> groupStats = new();
+	private readonly int[] highestGroup = new int[Enum.GetValues<ResearchCategory>().Length];
+	/// <summary>The original raises a category's highest open group to at most 7.</summary>
+	public const int MaximumOpenGroup = 7;
+	/// <summary>Research is added every this many park turns.</summary>
+	public const int TurnsPerResearch = 20;
 
 	public ParkResearch( BalanceSettings settings, IEconomyObjectCatalog catalog )
 	{
 		this.settings = settings;
 		effort = settings.ResearchEffort.ToArray();
+		Workload = Math.Clamp( settings.ResearchStartingWorkLoad, 0, 100 );
 		items = new List<ResearchItem>();
 		foreach ( var info in catalog.Objects.OrderBy( info => info.InfoId ) )
 		{
 			if ( !info.IsBuyable || info.Upgrades.Count == 0 )
 				continue;
-			// [APPROX:ECON-018] ride upgrade levels and add-on objects form the "upgrade" research category — evidence needed: research lab capture
-			var category = info.Kind == ParkObjectKind.Upgrade ? ResearchCategory.Upgrade : info.ResearchCategory;
-			var group = info.Kind == ParkObjectKind.Upgrade ? 0 : info.ResearchGroup;
-			items.Add( new ResearchItem( info.InfoId, 0, category, group, info.Upgrades[0].CostOfResearch, info.Kind == ParkObjectKind.Upgrade ? info.AddOnTargetId : 0 ) );
-			if ( info.Kind != ParkObjectKind.Ride )
+			// [BIN:TPW-EXE:0x005031A0 research table fill] an object's base project takes its own Research.Category (+0x17C) and Research.Group (+0x178), add-ons included
+			// (every shipped add-on declares category 4 and group 0); a category-4 project is selectable once the object its AddOn.UpgradesId names (+0x284) is researched (0x005034F0; its second test for a target with a golden-ticket cost is ECON-017)
+			var category = info.ResearchCategory;
+			items.Add( new ResearchItem( info.InfoId, 0, category, info.ResearchGroup, info.Upgrades[0].CostOfResearch, category == ResearchCategory.Upgrade ? info.AddOnTargetId : 0 ) );
+			// [BIN:TPW-EXE:0x00504580 upgrade level project] an object whose own category is not 4 gets its next level's project in category 4, group 0, once the level below is
+			// researched (levels 1 and 2; a level without research cost is researched at once); on the shipped data only rides have such levels
+			if ( category == ResearchCategory.Upgrade )
 				continue;
-			for ( var level = 1; level < info.Upgrades.Count; level++ )
+			for ( var level = 1; level < Math.Min( info.Upgrades.Count, 3 ); level++ )
 				items.Add( new ResearchItem( info.InfoId, level, ResearchCategory.Upgrade, 0, info.Upgrades[level].CostOfResearch, info.InfoId ) );
 		}
 		foreach ( var item in items )
@@ -54,14 +63,21 @@ public sealed class ParkResearch
 				byCategory[item.Category] = list = new List<ResearchItem>();
 			list.Add( item );
 		}
-		foreach ( var list in byCategory.Values )
-			list.Sort( ( a, b ) => (a.Group, a.Cost, a.InfoId, a.Level).CompareTo( (b.Group, b.Cost, b.InfoId, b.Level) ) );
 		// "Research.Group 0 = Available initially" (category files); add-ons are always group 0 but carry a research cost.
 		foreach ( var item in items.Where( item => item.Group == 0 && item.Level == 0 && item.Category != ResearchCategory.Upgrade ) )
 			completed.Add( (item.InfoId, item.Level) );
 		RebuildGroupStats();
+		OpenGroups();
 		PropagateFreeItems();
 	}
+
+	/// <summary>The lab's work load percentage (<c>Research.StartingWorkLoad</c>, 0–100).</summary>
+	public int Workload { get; private set; }
+
+	// [BIN:STP-PPC:0x100F130C research work load] the setter stores the percentage the research points are scaled by
+	public void SetWorkload( int value ) => Workload = Math.Clamp( value, 0, 100 );
+
+	public int HighestOpenGroup( ResearchCategory category ) => highestGroup[(int)category];
 
 	public IReadOnlyList<ResearchItem> Items => items;
 	public IReadOnlyCollection<(int InfoId, int Level)> Completed => completed;
@@ -97,28 +113,73 @@ public sealed class ParkResearch
 		groupStats[(item.Category, item.Group)] = (stats.Count, stats.Done + 1);
 	}
 
-	// [APPROX:ECON-016] group g opens when PercentageForThisTech % of group g-1 of the same category is researched — evidence needed: capture of new research groups appearing
-	public bool IsGroupOpen( ResearchCategory category, int group )
+	// [BIN:STP-PPC:0x100F15B4 research group opener] with h the category's highest open group, the items of groups <= h are counted; while done × 100 / count (unsigned) reaches ResearchTech[h + 1].PercentageForThisTech and h <= 6, h rises by one
+	public bool IsGroupOpen( ResearchCategory category, int group ) => group <= highestGroup[(int)category];
+
+	private void OpenGroups()
 	{
-		if ( group <= 0 )
-			return true;
-		var index = Math.Min( group, settings.ResearchTechPercentage.Count - 1 );
-		return IsGroupOpen( category, group - 1 ) && PercentResearched( category, group - 1 ) >= settings.ResearchTechPercentage[index];
+		foreach ( var category in Enum.GetValues<ResearchCategory>() )
+			OpenGroups( category );
+	}
+
+	private void OpenGroups( ResearchCategory category )
+	{
+		ref var highest = ref highestGroup[(int)category];
+		while ( highest < MaximumOpenGroup )
+		{
+			var count = 0;
+			var done = 0;
+			foreach ( var ((itemCategory, group), stats) in groupStats )
+			{
+				if ( itemCategory != category || group > highest )
+					continue;
+				count += stats.Count;
+				done += stats.Done;
+			}
+			var percent = count == 0 ? 0 : done * 100 / count;
+			// Thresholds past the data's ResearchTech entries read as 0, like the zero-filled balance block.
+			var threshold = highest + 1 < settings.ResearchTechPercentage.Count ? settings.ResearchTechPercentage[highest + 1] : 0;
+			if ( percent < threshold )
+				break;
+			highest++;
+		}
 	}
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
-	// [APPROX:ECON-017] items are researched cheapest first within open groups — evidence needed: capture of research order
+	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
+	// [APPROX:ECON-017] a new park's research table is in info-id order, where the original fills it in its object loader's order (0x5031A0 over 0x412E60 / 0x412E70, no sort on that path); the cursor steps with the arrows (0x4AA0C0 → 0x5034F0 / 0x5036A0) and moves on after a completed project (0x4AAEC0) to the next eligible project in table order with wrap, as the original's picker does, but the original appends an object's next level project to the end of the table only when the level below completes (0x503D40 → 0x504580 at 0x503D8C), where OpenTPW lists every level right after its base project, so after a level completes the two cursors can land on different projects; the picker's second test for an add-on whose target has a golden-ticket cost (+0xC4 > 0 → 0x4D4B70 over the set at 0xF7C58C) is not modelled; and the original marks an object researched at the start when its first research cost (+0x180) is 0, in any group, where OpenTPW does so for every group-0 item; the shipped Jungle lab lists its projects in another order (rides 1140, 1150, 1108, …; features 1414 before 1400), which an imported park follows for its current projects only — evidence needed: the enumeration order of the object loader 0x413930 / 0x413C10, and what the set at 0xF7C58C holds
+	// Host UI selection below retains the native default cursor; correspondence with native player selection remains unverified.
 	public ResearchItem? Current( ResearchCategory category )
 	{
-		if ( !byCategory.TryGetValue( category, out var list ) )
-			return null;
-		foreach ( var item in list )
-		{
-			if ( !completed.Contains( (item.InfoId, item.Level) ) && IsGroupOpen( category, item.Group ) && PrerequisiteMet( item ) )
-				return item;
-		}
-		return null;
+		if ( selected.TryGetValue( category, out var item ) && IsSelectable( item ) )
+			return item;
+		selected.Remove( category );
+		return byCategory.TryGetValue( category, out var list ) ? list.FirstOrDefault( IsSelectable ) : null;
 	}
+
+	/// <summary>Unfinished projects with an open group and available prerequisites, in table order.</summary>
+	public IReadOnlyList<ResearchItem> SelectableItems( ResearchCategory category ) =>
+		byCategory.TryGetValue( category, out var list ) ? list.Where( IsSelectable ).ToArray() : Array.Empty<ResearchItem>();
+
+	/// <summary>Steps the active project with wraparound, retaining every project's accumulated points.</summary>
+	public bool MoveCurrent( ResearchCategory category, int direction )
+	{
+		var choices = SelectableItems( category );
+		if ( direction == 0 || choices.Count < 2 )
+			return false;
+		var current = Current( category );
+		var index = 0;
+		while ( index < choices.Count && choices[index] != current )
+			index++;
+		var next = (int)(((long)index + direction % choices.Count + choices.Count) % choices.Count);
+		if ( choices[next] == current )
+			return false;
+		selected[category] = choices[next];
+		return true;
+	}
+
+	private bool IsSelectable( ResearchItem item ) =>
+		!completed.Contains( (item.InfoId, item.Level) ) && IsGroupOpen( item.Category, item.Group ) && PrerequisiteMet( item );
 
 	private bool PrerequisiteMet( ResearchItem item )
 	{
@@ -127,42 +188,62 @@ public sealed class ParkResearch
 		return item.RequiresInfoId == 0 || IsAvailable( item.RequiresInfoId );
 	}
 
-	/// <summary>Daily research points (×<see cref="PointScale"/>) produced by the given researchers.</summary>
-	// [APPROX:ECON-015] each researcher adds ResearchAbility points per game day, split by effort — evidence needed: capture of research progress over time
-	public long DailyPoints( IEnumerable<StaffMember> researchers, bool automatic )
-	{
-		long points = researchers.Where( member => member.State != StaffState.OnStrike ).Sum( member => (long)settings.ResearchAbility[member.Grade] );
-		if ( automatic && points == 0 )
-			// [APPROX:ECON-019] Instant Action research runs at one grade-2 researcher without staff — evidence needed: Instant Action capture
-			points = settings.ResearchAbility[2];
-		return points * PointScale;
-	}
+	/// <summary>Whether a researcher in this state does research (the original skips states 3, 4 and 5 of 0x100F4170).</summary>
+	// [BIN:TPW-EXE:0x00502960 researcher update] research is skipped in display states 3, 4 and 5 of 0x005064F0, which maps the internal state +0x19C to the STAFFSTATES index (0 Idle, 1 Patrolling, 2 and 3 Resting, 4 and 5 On strike, 7 Picked up, anything else Working); StaffState is that index, so walking to a rest area or a strike counts as Resting or On strike, as here; points come every 20th turn (the Mac 0x100F0284 and 0x100F4170)
+	public static bool CanResearch( StaffMember member ) => member.State is not (StaffState.Resting or StaffState.OnStrike or StaffState.PickedUp);
 
-	/// <summary>Advances research by one day's points; returns the items completed today.</summary>
-	public IReadOnlyList<ResearchItem> AdvanceDay( long scaledPoints )
+	/// <summary>Adds one researcher's contribution of <paramref name="ability"/> points; returns the items completed.</summary>
+	// [BIN:STP-PPC:0x100F0DF0 research points] for each category with effort and a current item: progress += (float)(ability × (effort / Σ effort of categories with an unfinished current item) × work load) / 100, in single precision
+	public IReadOnlyList<ResearchItem> AddResearcherPoints( int ability )
 	{
 		var done = new List<ResearchItem>();
+		var finished = new List<ResearchItem>();
 		var active = Enum.GetValues<ResearchCategory>().Select( category => (Category: category, Item: Current( category )) )
-			.Where( entry => entry.Item != null && effort[(int)entry.Category] > 0 ).ToList();
-		var totalEffort = active.Sum( entry => effort[(int)entry.Category] );
-		if ( scaledPoints <= 0 || totalEffort == 0 )
+			.Where( entry => entry.Item != null ).ToList();
+		var totalEffort = active.Sum( entry => (long)effort[(int)entry.Category] );
+		if ( totalEffort == 0 )
 			return done;
 		foreach ( var (category, item) in active )
 		{
+			if ( effort[(int)category] == 0 )
+				continue;
+			var points = (float)((double)((float)ability * ((float)effort[(int)category] / (float)totalEffort) * (float)Workload) / 100.0);
 			var key = (item!.InfoId, item.Level);
-			var value = progress.GetValueOrDefault( key ) + scaledPoints * effort[(int)category] / totalEffort;
+			var value = progress.GetValueOrDefault( key ) + (long)Math.Round( points * (double)PointScale );
 			if ( value >= (long)item.Cost * PointScale )
 			{
 				progress.Remove( key );
 				MarkCompleted( item );
 				done.Add( item );
+				finished.Add( item );
 			}
 			else
 				progress[key] = value;
 		}
 		if ( done.Count > 0 )
+		{
+			foreach ( var category in done.Select( item => item.Category ).Distinct() )
+				OpenGroups( category );
 			PropagateFreeItems( done );
+		}
+		foreach ( var item in finished )
+			AdvanceCursor( item );
 		return done;
+	}
+
+	/// <summary>Moves a category's cursor on from its completed project: the next selectable project after it in table order, wrapping to the first.</summary>
+	// [BIN:TPW-EXE:0x004AAEC0 research completed] the completion's message 0x11 (0x00504630) reaches the lab (0x00503D40), which opens the groups (0x00503B80) and posts
+	// message 0x12 with the category; its handler (0x0050CA50 → 0x00481520) runs the forward picker 0x005034F0 when the cursor's project is finished (0x00504040): the first
+	// eligible project after the cursor, else the first before it, else none
+	private void AdvanceCursor( ResearchItem finished )
+	{
+		selected.Remove( finished.Category );
+		if ( !byCategory.TryGetValue( finished.Category, out var list ) )
+			return;
+		var index = list.IndexOf( finished );
+		var next = list.Skip( index + 1 ).FirstOrDefault( IsSelectable ) ?? list.Take( index ).FirstOrDefault( IsSelectable );
+		if ( next != null )
+			selected[finished.Category] = next;
 	}
 
 	/// <summary>Marks items with zero research cost whose prerequisites are available (e.g. easy-mode ride upgrades).</summary>
@@ -177,6 +258,7 @@ public sealed class ParkResearch
 				if ( item.Cost == 0 && !completed.Contains( (item.InfoId, item.Level) ) && IsGroupOpen( item.Category, item.Group ) && PrerequisiteMet( item ) )
 				{
 					MarkCompleted( item );
+					OpenGroups( item.Category );
 					done?.Add( item );
 					changed = true;
 				}
@@ -185,8 +267,22 @@ public sealed class ParkResearch
 		while ( changed );
 	}
 
-	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort )
+	/// <summary>Whether the lab has an item of <paramref name="infoId"/> at <paramref name="level"/>.</summary>
+	internal bool HasItem( int infoId, int level ) => itemKeys.Contains( (infoId, level) );
+
+	/// <summary>Makes an imported project its category's current item when it may be researched now; false otherwise.</summary>
+	internal bool TrySelect( ResearchCategory category, int infoId, int level )
 	{
+		var item = items.FirstOrDefault( item => item.Category == category && item.InfoId == infoId && item.Level == level );
+		if ( item == null || !IsSelectable( item ) )
+			return false;
+		selected[category] = item;
+		return true;
+	}
+
+	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort, IEnumerable<(ResearchCategory Category, int InfoId, int Level)>? restoredCurrent = null )
+	{
+		selected.Clear();
 		completed.Clear();
 		foreach ( var key in restoredCompleted )
 		{
@@ -195,12 +291,24 @@ public sealed class ParkResearch
 			completed.Add( key );
 		}
 		RebuildGroupStats();
+		Array.Clear( highestGroup );
+		OpenGroups();
 		progress.Clear();
 		foreach ( var (key, points) in restoredProgress )
 			progress[key] = points;
 		for ( var index = 0; index < effort.Length; index++ )
 			effort[index] = Math.Clamp( restoredEffort[index], 0, 100 );
+		foreach ( var (category, infoId, level) in restoredCurrent ?? Enumerable.Empty<(ResearchCategory, int, int)>() )
+		{
+			var item = items.FirstOrDefault( item => item.Category == category && item.InfoId == infoId && item.Level == level );
+			if ( item == null || !IsSelectable( item ) || !selected.TryAdd( category, item ) )
+				throw new InvalidDataException( $"Saved research cursor refers to an invalid project {infoId} level {level}." );
+		}
 	}
+
+	internal IEnumerable<(ResearchCategory Category, int InfoId, int Level)> CurrentEntries =>
+		selected.Where( entry => IsSelectable( entry.Value ) ).OrderBy( entry => entry.Key )
+			.Select( entry => (entry.Key, entry.Value.InfoId, entry.Value.Level) );
 
 	internal IEnumerable<((int InfoId, int Level) Key, long Points)> ProgressEntries => progress.Select( pair => (pair.Key, pair.Value) );
 }

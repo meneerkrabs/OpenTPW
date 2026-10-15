@@ -24,9 +24,15 @@ internal static class EconomyTestData
 		for ( var grade = 0; grade < 5; grade++ )
 		{
 			text.Append( $"PerGradeStaffConsts[{grade}].BaseWage\t{wages[grade]}\t\t\t// Grade {grade}\n" );
+			text.Append( $"PerGradeStaffConsts[{grade}].RecuperationRate\t{new[] { "0.2", "0.3", "0.4", "0.5", "0.75" }[grade]}\t\t// Grade {grade}\n" );
+			text.Append( $"PerGradeStaffConsts[{grade}].HappinessRecuperationRate\t{new[] { 1, 2, 2, 3, 3 }[grade]}\t\t// Grade {grade}\n" );
+			text.Append( $"PerGradeStaffConsts[{grade}].IdleDuration\t{new[] { 40, 30, 20, 10, 5 }[grade]}\n" );
+			text.Append( $"HandymanConstsPerGrade[{grade}].DetectionRange\t{new[] { 2, 3, 3, 4, 5 }[grade]}\n" );
+			text.Append( $"EntertainerConstsPerGrade[{grade}].ActivationDistance\t{new[] { 3, 3, 4, 4, 5 }[grade]}\n" );
 			text.Append( $"ResearcherConstsPerGrade[{grade}].ResearchAbility\t{ability[grade]}\n" );
 			text.Append( $"ResearchTech[{grade}].PercentageForThisTech\t{tech[grade]}\n" );
 		}
+		text.Append( "AllStaffConstants.RestLevel\t1\nAllStaffConstants.HappyHitCosNoRestArea\t2\n" );
 		var effort = new[] { 100, 15, 30, 15, 10 };
 		for ( var category = 0; category < 5; category++ )
 			text.Append( $"ResearchCategories[{category}].Effort\t{effort[category]}\t\t#comment\n" );
@@ -68,17 +74,20 @@ internal static class EconomyTestData
 
 	private static IReadOnlyList<int> Scrap => new[] { 50, 30, 20, 10 };
 
-	private static UpgradeLevelInfo Level( int level, long cost, int research, int wear = 0, int duration = 0 ) => new( level, cost, research, wear, duration, Scrap );
+	private static UpgradeLevelInfo Level( int level, long cost, int research, int wear = 0, int duration = 0, int redLineSpeed = 0, int redLineCapacity = 0 ) =>
+		new( level, cost, research, wear, duration, Scrap, redLineSpeed, redLineCapacity );
 
 	public static EconomyObjectCatalog Catalog() => new( new[]
 	{
-		new EconomyObjectInfo( 1100, "Belly Bounce", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[] { Level( 0, 500, 0, 5 ), Level( 1, 400, 250, 3, 2 ), Level( 2, 500, 300, 2, 4 ) }, null, null, null, 0, 0, 0, 0, 0, 25, "rides/bouncy.wad" ),
+		// Jungle Rides.sam: UsageInfo.MaxSpeed 100, MaxCapacity 5; RedLineSpeed/RedLineCapacity 60/2, 75/3, 90/5.
+		new EconomyObjectInfo( 1100, "Belly Bounce", ParkObjectKind.Ride, ResearchCategory.Ride, 0,
+			new[] { Level( 0, 500, 0, 5, 0, 60, 2 ), Level( 1, 400, 250, 3, 2, 75, 3 ), Level( 2, 500, 300, 2, 4, 90, 5 ) }, null, null, null, 0, 0, 0, 0, 0, 25, "rides/bouncy.wad", 100, 5 ),
 		new EconomyObjectInfo( 1180, "Temple Of Gloom", ParkObjectKind.Ride, ResearchCategory.Ride, 1, new[] { Level( 0, 10000, 800, 1 ) }, null, null, null, 0, 0, 0, 0, 0, 25, "rides/minecart.wad" ),
 		new EconomyObjectInfo( 1106, "Sun God", ParkObjectKind.Ride, ResearchCategory.Ride, 2, new[] { Level( 0, 1500, 550, 5 ) }, null, null, null, 0, 0, 0, 0, 0, 20, "rides/incagod.wad" ),
 		new EconomyObjectInfo( 1203, "Drinks Shop", ParkObjectKind.Shop, ResearchCategory.Shop, 0, new[] { Level( 0, 650, 0 ) }, 30, 20, null, 4, 3, 0, 0, 50, 0, "shops/coconut.wad" ),
 		new EconomyObjectInfo( 1303, "Jungle Spray", ParkObjectKind.Sideshow, ResearchCategory.Sideshow, 0, new[] { Level( 0, 1750, 0 ) }, 20, 50, 70, 0, 0, 0, 0, 0, 0, "sideshow/junspray.wad" ),
 		new EconomyObjectInfo( 1112, "Eruption", ParkObjectKind.Ride, ResearchCategory.Ride, 0, new[] { Level( 0, 2500, 0, 5 ) }, null, null, null, 0, 0, 3, 0, 0, 25, "rides/volcano.wad" ),
-		new EconomyObjectInfo( 1402, "Small Toilet", ParkObjectKind.Feature, ResearchCategory.Feature, 0, new[] { Level( 0, 100, 0 ) }, null, null, null, 0, 0, 0, 0, 0, 10, "features/toilet.wad" ),
+		new EconomyObjectInfo( 1402, "Small Toilet", ParkObjectKind.Feature, ResearchCategory.Feature, 0, new[] { Level( 0, 100, 0 ) }, null, null, null, 0, 0, 0, 0, 0, 10, "features/toilet.wad", ProvidesRelief: true ),
 		new EconomyObjectInfo( 1601, "Gates", ParkObjectKind.FixedItem, ResearchCategory.Ride, 0, new[] { Level( 0, 0, 0 ) }, null, null, null, 0, 0, 0, 0, 0, 0, "features/gates.wad" ),
 		new EconomyObjectInfo( 1500, "Dino Karts Jump", ParkObjectKind.Upgrade, ResearchCategory.Upgrade, 0, new[] { Level( 0, 750, 1000 ) }, null, null, null, 0, 0, 0, 1180, 0, 0, "upgrades/lavajump.wad" )
 	} );
@@ -86,6 +95,25 @@ internal static class EconomyTestData
 	public static ParkEconomy Park( int initialCash = 50000, int apr = 20, ulong seed = 7, ParkGameMode mode = ParkGameMode.FullSimulation ) =>
 		new( Settings( initialCash, apr ), Catalog(), mode, seed );
 
+	/// <summary>A park whose <c>Costs.PathCell</c> and <c>Costs.QueueCell</c> are replaced (negative costs model a modified Standard.sam).</summary>
+	public static ParkEconomy CellCostPark( int initialCash, int pathCost, int queueCost ) => new(
+		new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( StandardText( initialCash )
+			.Replace( "Costs.QueueCell 75\nCosts.PathCell 20\n", $"Costs.QueueCell {queueCost}\nCosts.PathCell {pathCost}\n" ), "Standard.sam" ) } ), null, null, "jungle", false ),
+		Catalog(), ParkGameMode.FullSimulation, 7 );
+
 	public static StaffMember HireBest( ParkEconomy park, StaffType type ) =>
 		park.Hire( park.Staff.Candidates.Where( candidate => candidate.Type == type ).OrderByDescending( candidate => candidate.Grade ).ThenBy( candidate => candidate.Id ).First().Id );
+
+	/// <summary>Test stand-in for the ride scripts: a fixed <see cref="RideOperation"/> per economy object.</summary>
+	public sealed class RideOperations : IRideOperations
+	{
+		private readonly Dictionary<int, RideOperation> operations = new();
+
+		public void Set( int instanceId, RideOperation operation ) => operations[instanceId] = operation;
+
+		public bool TryGet( int instanceId, out RideOperation operation ) => operations.TryGetValue( instanceId, out operation );
+	}
+
+	/// <summary>Advances to the first tick of park turn <paramref name="turn"/>.</summary>
+	public static void AdvanceToTurn( ParkEconomy park, long turn ) => park.Advance( System.Math.Max( 0, ParkCalendar.TickOfTurn( turn ) - park.Tick ) );
 }

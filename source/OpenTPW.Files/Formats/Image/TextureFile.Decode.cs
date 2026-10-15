@@ -32,64 +32,84 @@ partial class TextureFile
 			smooth1 * coefs.IG2 + coef1 * coefs.IG3;
 	}
 
-	void D4InverseTransform( Func<int, D4Component, int> indexLookup, Func<int, D4Component, int> outputIndexLookup, ref List<float> pSrc, ref List<float> pDest, int offset, int size, D4Coefficients coefs )
+	// One inverse D4 step over a row's scale/wavelet pairs. The previous pair
+	// wraps around to the last one. Source pairs sit at stride 2, except that
+	// half-scale data halves the source index; output pairs sit at stride 2
+	// for full-scale data and stride 1 for half-scale, so half-scale output
+	// neighbours overlap by one sample.
+	void D4InverseTransformRows( float[] pSrc, float[] pDest, int offset, int size, D4Coefficients coefs, bool isHalfScale )
 	{
 		for ( int i = 0; i < size; i++ )
 		{
-			float s0, w0, s1, w1;
-			int s0i, w0i, s1i, w1i;
+			int prev = (i == 0) ? size - 1 : i - 1;
+			int srcPrev = isHalfScale ? prev / 2 : prev * 2;
+			int srcCur = isHalfScale ? i / 2 : i * 2;
+			int dst = isHalfScale ? i : i * 2;
 
-			if ( i == 0 )
-			{
-				s0i = indexLookup( size - 1, D4Component.Scale );
-				w0i = indexLookup( size - 1, D4Component.Wavelet );
-			}
-			else
-			{
-				s0i = indexLookup( i - 1, D4Component.Scale );
-				w0i = indexLookup( i - 1, D4Component.Wavelet );
-			}
+			float s0 = pSrc[srcPrev + offset];
+			float w0 = pSrc[srcPrev + 1 + offset];
+			float s1 = pSrc[srcCur + offset];
+			float w1 = pSrc[srcCur + 1 + offset];
 
-			s1i = indexLookup( i, D4Component.Scale );
-			w1i = indexLookup( i, D4Component.Wavelet );
-
-			s0 = pSrc[s0i + offset];
-			w0 = pSrc[w0i + offset];
-			s1 = pSrc[s1i + offset];
-			w1 = pSrc[w1i + offset];
-
-			int s0d = outputIndexLookup( i, D4Component.Scale );
-			int w0d = outputIndexLookup( i, D4Component.Wavelet );
-
-			pDest[s0d + offset] = ApplyScalingCoefficientsInv( s0, w0, s1, w1, coefs );
-			pDest[w0d + offset] = ApplyWaveCoefficientsInv( s0, w0, s1, w1, coefs );
+			pDest[dst + offset] = ApplyScalingCoefficientsInv( s0, w0, s1, w1, coefs );
+			pDest[dst + 1 + offset] = ApplyWaveCoefficientsInv( s0, w0, s1, w1, coefs );
 		}
 	}
 
-	private bool DecodeChannel( ref ImageDecodeState state, int size, ref byte[] pSrc, ref List<float> outputBuffer, float dequantizationScale, bool isHalfScale, bool isAlpha = false )
+	// One inverse D4 step down a single column: scale values come from row
+	// `index`, wavelet values from `index + wOffset`, and the results land in
+	// interleaved output rows two strides apart.
+	void D4InverseTransformColumns( float[] pSrc, float[] pDest, int size, D4Coefficients coefs, int col, int wOffset )
+	{
+		int count = size / 2;
+
+		for ( int i = 0; i < count; i++ )
+		{
+			int prev = (i == 0) ? count - 1 : i - 1;
+			int srcPrev = prev * size + col;
+			int srcCur = i * size + col;
+			int dst = i * 2 * size + col;
+
+			float s0 = pSrc[srcPrev];
+			float w0 = pSrc[srcPrev + wOffset];
+			float s1 = pSrc[srcCur];
+			float w1 = pSrc[srcCur + wOffset];
+
+			pDest[dst] = ApplyScalingCoefficientsInv( s0, w0, s1, w1, coefs );
+			pDest[dst + size] = ApplyWaveCoefficientsInv( s0, w0, s1, w1, coefs );
+		}
+	}
+
+	private bool DecodeChannel( ref ImageDecodeState state, int size, ref byte[] pSrc, float[] outputBuffer, float dequantizationScale, bool isHalfScale, bool isAlpha = false )
 	{
 		int count = size * (size / 2);
 		int index = 0;
+		if ( pSrc.Length < size * size )
+			throw new InvalidDataException( "Truncated WCT channel coefficients." );
 
 		//
 		// Step 1: Dequantize
 		//
 		for ( int i = 0; i < count; i++ )
 		{
+			if ( index >= pSrc.Length ) throw new InvalidDataException( "Truncated WCT channel coefficients." );
 			int val = (sbyte)pSrc[index++];
 
 			if ( val == sbyte.MinValue )
 			{
+				if ( pSrc.Length - index < sizeof( short ) ) throw new InvalidDataException( "Truncated WCT coefficient escape." );
 				val = BitConverter.ToInt16( pSrc, index );
 				index += sizeof( short );
 			}
 
 			state.DequantizationBuffer[i * 2] = (float)val;
 
+			if ( index >= pSrc.Length ) throw new InvalidDataException( "Truncated WCT channel coefficients." );
 			val = (sbyte)pSrc[index++];
 
 			if ( val == sbyte.MinValue )
 			{
+				if ( pSrc.Length - index < sizeof( short ) ) throw new InvalidDataException( "Truncated WCT coefficient escape." );
 				val = BitConverter.ToInt16( pSrc, index );
 				index += sizeof( short );
 			}
@@ -97,7 +117,7 @@ partial class TextureFile
 			state.DequantizationBuffer[i * 2 + 1] = (float)val;
 		}
 
-		Array.Copy( pSrc, index, pSrc, 0, pSrc.Length - index );
+		pSrc = pSrc[index..]; // Only unconsumed bytes belong to the next channel.
 
 		//
 		// Step 2: decode rows
@@ -106,83 +126,17 @@ partial class TextureFile
 			dequantizationScale *= MathF.PI * 1/6f;
 
 		D4Coefficients coefs = new( dequantizationScale );
+		int rowTransformSize = (isHalfScale) ? size : size / 2;
 		for ( int i = 0; i < size; i++ )
-		{
-			D4InverseTransform(
-
-			// Index lookup
-			( index, component ) =>
-			{
-				int baseIndex;
-				if ( isHalfScale )
-					baseIndex = index / 2;
-				else
-					baseIndex = index * 2;
-
-				return component switch
-				{
-					D4Component.Scale => baseIndex + 0,
-					D4Component.Wavelet => baseIndex + 1,
-					_ => throw new NotImplementedException(),
-				};
-			},
-
-			// Output index lookup
-			( index, component ) =>
-			{
-				int baseIndex;
-				if ( isHalfScale )
-					baseIndex = index;
-				else
-					baseIndex = index * 2;
-
-				return component switch
-				{
-					D4Component.Scale => baseIndex + 0,
-					D4Component.Wavelet => baseIndex + 1,
-					_ => throw new NotImplementedException(),
-				};
-			},
-			ref state.DequantizationBuffer, ref state.RowDecodeBuffer, i * size, (isHalfScale) ? size : size / 2, coefs );
-		}
+			D4InverseTransformRows( state.DequantizationBuffer, state.RowDecodeBuffer, i * size, rowTransformSize, coefs, isHalfScale );
 
 		//
 		// Step 3: decode columns
 		//
 		coefs = new( 1.0f );
+		int wOffset = isAlpha && isHalfScale ? (size * size) : size * (size / 2);
 		for ( int i = 0; i < size; ++i )
-		{
-			int sOffset = 0;
-			int wOffset = isAlpha && isHalfScale ? (size * size) : size * (size / 2);
-			int colOffset = i;
-			D4InverseTransform(
-
-			// Index lookup
-			( index, component ) =>
-			{
-				int baseIndex = index * size;
-				return component switch
-				{
-					D4Component.Scale => baseIndex + colOffset + sOffset,
-					D4Component.Wavelet => baseIndex + colOffset + wOffset,
-					_ => throw new NotImplementedException(),
-				};
-			},
-
-			// Output index lookup
-			( index, component ) =>
-			{
-				int baseIndex = index * 2 * size + colOffset;
-
-				return component switch
-				{
-					D4Component.Scale => baseIndex,
-					D4Component.Wavelet => baseIndex + size,
-					_ => throw new NotImplementedException(),
-				};
-			},
-			ref state.RowDecodeBuffer, ref outputBuffer, 0, size / 2, coefs );
-		}
+			D4InverseTransformColumns( state.RowDecodeBuffer, outputBuffer, size, coefs, i, wOffset );
 
 		return true;
 	}

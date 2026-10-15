@@ -12,25 +12,29 @@ public sealed class UiStringTable
 	private readonly string[] helpText;
 	private readonly string[] themeNames;
 	private readonly string[] objectNames;
+	private readonly string[] lenderNames;
 
-	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames )
+	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null )
 	{
 		Language = language;
 		this.uiText = uiText;
 		this.helpText = helpText;
 		this.themeNames = themeNames;
 		this.objectNames = objectNames;
+		this.lenderNames = lenderNames ?? Array.Empty<string>();
 	}
 
 	public static UiStringTable Load( GameLanguage language ) => new( language.Name,
 		language.LoadStrings( "UITEXT.str" ).Entries, language.LoadStrings( "UIHELPTEXT.str" ).Entries,
-		language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries );
+		language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries,
+		language.LoadStrings( "LOANNAMES.str" ).Entries );
 
 	public string Language { get; }
 	public string this[UIStrings id] => Get( uiText, (int)id );
 	public string Help( int index ) => Get( helpText, index );
 	public string Theme( int index ) => Get( themeNames, index );
 	public string Object( int index ) => Get( objectNames, index );
+	public string Lender( int index ) => Get( lenderNames, index );
 	public string Extra( OpenTpwText key ) => SupplementaryStrings.Get( key, Language );
 
 	/// <summary>A UITEXT entry without the leading space the original uses for option values.</summary>
@@ -61,12 +65,64 @@ public sealed class UiFonts
 			UiFontTier.Big => ("TITLEBIG", "MENUBIG", "GAME12AA", "GAME10AA", "GAMEBOLD12", "SESHBIG"),
 			_ => ("TITLEMED", "MENUMED", "GAME12AA", "GAME8AA", "GAMEBOLD12", "SESHMED"),
 		};
-		Title = load( title + ".bf4" );
-		Menu = load( menu + ".bf4" );
-		Label = load( label + ".bf4" );
-		Small = load( small + ".bf4" );
-		Cash = load( cash + ".bf4" );
-		Heading = load( heading + ".bf4" );
+		Title = Load( title );
+		Menu = Load( menu );
+		Label = Load( label );
+		Small = Load( small );
+		Cash = Load( cash );
+		Heading = Load( heading );
+		// [APPROX:UI-002] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1)
+		var balance = tier switch { UiFontTier.Small => "CASHSMALL", UiFontTier.Big => "CASHBIG", _ => "CASHMED" };
+		try { Balance = Load( balance ); }
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Balance = Cash; }
+		// [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per
+		// bank ([APPROX:UI-002] for the tier→bank pairing). Only official Patch 2 and the Mac version ship these files
+		// (docs/PATCH-2.md); the 1999 data falls back to Small, which in the Medium tier is the same file as DATESMALL.
+		var date = tier switch { UiFontTier.Small => "DATETINY", UiFontTier.Big => "DATEMED", _ => "DATESMALL" };
+		try { Date = Load( date ); }
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Date = Small; }
+	}
+
+	// Shipped BF4 families from largest to smallest; used to shrink text that does not fit (UiTextFit).
+	private static readonly string[][] Families =
+	{
+		new[] { "TITLEBIG", "TITLEMED", "TITLESMALL" },
+		new[] { "MENUBIG", "MENUMED", "MENUSMALL" },
+		new[] { "SESHBIG", "SESHMED", "SESHSMALL" },
+		new[] { "GAMEBOLD12", "GAMEBOLD10" },
+		new[] { "GAME12AA", "GAME10AA", "GAME8AA" },
+	};
+
+	private readonly Dictionary<FontAtlas, string> names = new( ReferenceEqualityComparer.Instance );
+
+	private FontAtlas Load( string name )
+	{
+		var font = load( name + ".bf4" );
+		names[font] = name;
+		return font;
+	}
+
+	/// <summary>The smaller sizes of <paramref name="font"/>'s family, largest first; missing fonts are skipped.</summary>
+	public IEnumerable<FontAtlas> Smaller( FontAtlas font )
+	{
+		if ( !names.TryGetValue( font, out var name ) )
+			yield break;
+		var family = Families.FirstOrDefault( entry => entry.Contains( name, StringComparer.OrdinalIgnoreCase ) );
+		if ( family == null )
+			yield break;
+		foreach ( var smaller in family.SkipWhile( entry => !string.Equals( entry, name, StringComparison.OrdinalIgnoreCase ) ).Skip( 1 ) )
+		{
+			FontAtlas? atlas = null;
+			try
+			{
+				atlas = Load( smaller );
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
+			{
+			}
+			if ( atlas != null )
+				yield return atlas;
+		}
 	}
 
 	public static Func<string, FontAtlas> CachedLoader( GameLanguage language )
@@ -86,6 +142,10 @@ public sealed class UiFonts
 	public FontAtlas Label { get; }
 	public FontAtlas Small { get; }
 	public FontAtlas Cash { get; }
+	/// <summary>Font of the HUD bank balance (the original's dedicated cash fonts; <see cref="Cash"/> when they are missing).</summary>
+	public FontAtlas Balance { get; }
+	/// <summary>Font of the HUD date (the original's DATE fonts; <see cref="Small"/> when they are missing).</summary>
+	public FontAtlas Date { get; }
 	public FontAtlas Heading { get; }
 
 	public IEnumerable<FontAtlas> All => new[] { Title, Menu, Label, Small, Cash, Heading };
@@ -99,7 +159,7 @@ public sealed class UiFonts
 }
 
 /// <summary>Colours used by the original-style screens (OpenTPW choices, see docs/UI.md).</summary>
-// [APPROX:UI-006] all UI text/backdrop colours — evidence needed: captures of original screens
+// [APPROX:UI-006] the UI text/backdrop colours are read off 720p video frames (+-15 per channel); the original's palette is not traced — evidence needed: lossless captures
 public static class UiColors
 {
 	public static readonly RgbaByte Text = new( 255, 255, 255, 255 );
@@ -107,7 +167,17 @@ public static class UiColors
 	public static readonly RgbaByte Disabled = new( 140, 140, 160, 255 );
 	public static readonly RgbaByte Title = new( 255, 214, 64, 255 );
 	public static readonly RgbaByte Value = new( 150, 255, 120, 255 );
+	/// <summary>The pause menu's text lines: cyan, white while focused (video 27:42).</summary>
+	public static readonly RgbaByte MenuItem = new( 0, 173, 218, 255 );
+	public static readonly RgbaByte MenuItemFocused = new( 255, 255, 255, 255 );
+	/// <summary>Red text of costs (the hire window's mini balance rows, video 12:00).</summary>
+	public static readonly RgbaByte Negative = new( 255, 40, 40, 255 );
+	/// <summary>Dark label text inside the light-green option bars (near-black navy).</summary>
+	// [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette
+	public static readonly RgbaByte OptionText = new( 16, 16, 48, 255 );
 	public static readonly RgbaByte Shadow = new( 0, 0, 40, 200 );
 	public static readonly RgbaByte Backdrop = new( 0, 0, 30, 120 );
 	public static readonly RgbaByte HelpBackground = new( 20, 30, 90, 230 );
+	/// <summary>The popup help box's backdrop: translucent black (video: about 65-70 % black over grass).</summary>
+	public static readonly RgbaByte HelpBox = new( 0, 0, 0, 170 );
 }

@@ -1,0 +1,131 @@
+using System;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// The ride's state rules of docs/reverse/ORACLE.md F27: the reopening guard 0xde654, the breakdown part of the ride update
+/// 0xe077c and what a repair 0xdef2c restores. The oracle suite executes the routines; these tests pin how OpenTPW applies them.
+/// </summary>
+[TestClass]
+public class RideStateRulesTests
+{
+	[TestMethod]
+	public void TheReopeningGuardReadsTheRideStateNotVarBroken()
+	{
+		Assert.IsTrue( RideOpening.MayOpen( RideObjectStates.Idle, false, true, 0, false ) );
+		Assert.IsTrue( RideOpening.MayOpen( RideObjectStates.NotAnAttraction, false, true, 0, false ), "state 3 does not block" );
+		foreach ( var state in new[] { RideObjectStates.BrokenDown, RideObjectStates.Upgrading, RideObjectStates.Condemned } )
+			Assert.IsFalse( RideOpening.MayOpen( state, false, true, 0, true ), $"state {state}" );
+		Assert.IsFalse( RideOpening.MayOpen( RideObjectStates.Idle, true, true, 0, true ), "the maintenance flag blocks" );
+		Assert.IsFalse( RideOpening.MayOpen( RideObjectStates.Idle, false, false, 0, true ), "a queue that no longer joins a path blocks" );
+		Assert.IsFalse( RideOpening.MayOpen( RideObjectStates.Idle, false, true, RideOpening.CoasterTrackType, false ), "a coaster needs a complete circuit" );
+		Assert.IsTrue( RideOpening.MayOpen( RideObjectStates.Idle, false, true, RideOpening.CoasterTrackType, true ) );
+		Assert.IsTrue( RideOpening.MayOpen( RideObjectStates.Idle, false, true, 1, false ), "other track types need no circuit" );
+	}
+
+	[TestMethod]
+	public void TheRideUpdateSkipsBrokenClosedAndInertRidesAndRunsOnEveryEighthTurn()
+	{
+		Assert.IsTrue( RideBreakdownRules.RunsWear( RideObjectStates.Idle, true, 64 ) );
+		Assert.IsTrue( RideBreakdownRules.RunsWear( RideObjectStates.Idle, true, 8 ) );
+		Assert.IsFalse( RideBreakdownRules.RunsWear( RideObjectStates.Idle, true, 12 ), "the world turn must be a multiple of 8" );
+		Assert.IsFalse( RideBreakdownRules.RunsWear( RideObjectStates.Idle, false, 64 ), "a closed ride (open word 0) neither wears nor breaks down" );
+		foreach ( var state in new[] { RideObjectStates.BrokenDown, RideObjectStates.NotAnAttraction, RideObjectStates.Condemned } )
+			Assert.IsFalse( RideBreakdownRules.RunsWear( state, true, 64 ), $"state {state}" );
+		Assert.IsTrue( RideBreakdownRules.SkipsUpdate( RideObjectStates.Condemned ) );
+		Assert.IsFalse( RideBreakdownRules.SkipsUpdate( RideObjectStates.BrokenDown ), "state 1 still runs the relief test, state 3 and 4 do not" );
+	}
+
+	[TestMethod]
+	public void ARideBreaksDownWhenALifeOrWearGaugeByteIsZero()
+	{
+		Assert.IsFalse( RideBreakdownRules.BreaksDown( false, 0, 100f, 100f ) );
+		Assert.IsFalse( RideBreakdownRules.BreaksDown( false, 0, 1f, 1f ) );
+		Assert.IsTrue( RideBreakdownRules.BreaksDown( false, 0, 100f, 0.99f ), "0.99 truncates to 0" );
+		Assert.IsTrue( RideBreakdownRules.BreaksDown( false, 0, 0f, 100f ) );
+		Assert.IsTrue( RideBreakdownRules.BreaksDown( false, 0, 100f, 256f ), "a gauge of 256 is the byte 0" );
+		Assert.IsTrue( RideBreakdownRules.BreaksDown( false, 0, 100f, float.NaN ), "NaN truncates to 0x80000000, byte 0" );
+		Assert.IsFalse( RideBreakdownRules.BreaksDown( true, 0, 0f, 0f ), "a relief object never breaks down" );
+		Assert.IsFalse( RideBreakdownRules.BreaksDown( false, 1, 0f, 0f ), "VAR_BREAKSTAT already announced it" );
+	}
+
+	[TestMethod]
+	public void TheLifeGaugeLosesFiveWhenTheWearGaugeRanOutFirst()
+	{
+		Assert.AreEqual( 95f, RideBreakdownRules.LifeAfterBreakdown( 100f ) );
+		Assert.AreEqual( 0f, RideBreakdownRules.LifeAfterBreakdown( 3f ), "3 - 5 clamps to 0" );
+		Assert.AreEqual( 0f, RideBreakdownRules.LifeAfterBreakdown( 0f ), "an empty gauge is announced as it is" );
+		Assert.AreEqual( 0.5f, RideBreakdownRules.LifeAfterBreakdown( 0.5f ), "a gauge byte of 0 does not pay" );
+		Assert.AreEqual( 100f, RideBreakdownRules.LifeAfterBreakdown( 300f ), "above the range it clamps to 100" );
+		Assert.IsTrue( float.IsNaN( RideBreakdownRules.LifeAfterBreakdown( float.NaN ) ) || RideBreakdownRules.GaugeByte( float.NaN ) == 0 );
+	}
+
+	[TestMethod]
+	public void ARepairWritesTheFullGaugeAndOpensTheRideExceptAnIncompleteCoaster()
+	{
+		Assert.AreEqual( 100f, RideRepair.FullGauge );
+		Assert.IsTrue( RideRepair.OpensAfterRepair( 0, false ) );
+		Assert.IsTrue( RideRepair.OpensAfterRepair( RideOpening.CoasterTrackType, true ) );
+		Assert.IsFalse( RideRepair.OpensAfterRepair( RideOpening.CoasterTrackType, false ), "the repair closes a coaster whose circuit is not complete again" );
+	}
+
+	[TestMethod]
+	public void AClosedRideWithAnEmptyLifeGaugeBreaksDownOnlyOnceItIsOpen()
+	{
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var ride );
+		ride!.LifeGauge = 0.5;
+		ride.IsOpen = false;
+		EconomyTestData.AdvanceToTurn( park, 5 * ParkEconomy.RideUpdateInterval );
+		Assert.IsFalse( ride.IsBrokenDown, "a closed ride is not updated" );
+		ride.IsOpen = true;
+		EconomyTestData.AdvanceToTurn( park, 6 * ParkEconomy.RideUpdateInterval );
+		Assert.IsTrue( ride.IsBrokenDown );
+	}
+
+	[TestMethod]
+	public void ABrokenDownRideDoesNotWearAnyFurther()
+	{
+		var park = EconomyTestData.Park();
+		var rides = new EconomyTestData.RideOperations();
+		park.RideOperations = rides;
+		park.TryBuild( 1100, out var ride );
+		ride!.Repair = 40;
+		ride.IsBrokenDown = true;
+		rides.Set( ride.Id, new RideOperation( true, 5, 50 ) );
+		EconomyTestData.AdvanceToTurn( park, 3 * ParkEconomy.WearInterval );
+		Assert.AreEqual( 40, ride.Repair, "state 1 skips the wear step" );
+	}
+
+	[TestMethod]
+	public void AMechanicAtWorkOnAnOpenRideDoesNotStopItsUpdate()
+	{
+		var park = EconomyTestData.Park();
+		var rides = new EconomyTestData.RideOperations();
+		park.RideOperations = rides;
+		park.TryBuild( 1100, out var ride );
+		ride!.MechanicId = 99; // a repair of a worn ride, not a breakdown: the ride is in state 0
+		rides.Set( ride.Id, new RideOperation( true, 5, 50 ) );
+		EconomyTestData.AdvanceToTurn( park, ParkEconomy.WearInterval );
+		Assert.IsTrue( ride.Repair < 100, "the ride still wears while the mechanic is on it" );
+	}
+
+	[TestMethod]
+	public void ARideWithAPurchasedUpgradeIsNotUpdatedUntilItIsInstalled()
+	{
+		var park = EconomyTestData.Park();
+		var rides = new EconomyTestData.RideOperations();
+		park.RideOperations = rides;
+		park.TryBuild( 1100, out var ride );
+		ride!.PendingLevel = 1;
+		rides.Set( ride.Id, new RideOperation( true, 5, 50 ) );
+		EconomyTestData.AdvanceToTurn( park, 2 * ParkEconomy.WearInterval );
+		Assert.AreEqual( 100, ride.Repair, "state 2 clears the open word, so there is no wear" );
+		Assert.AreEqual( RideObjectStates.Upgrading, ParkEconomy.ObjectState( ride ) );
+		ride.IsBrokenDown = true;
+		Assert.AreEqual( RideObjectStates.BrokenDown, ParkEconomy.ObjectState( ride ) );
+		ride.LifeGauge = 0.4;
+		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( ride ), "a life gauge byte of 0 condemns the ride" );
+	}
+}

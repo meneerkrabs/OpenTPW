@@ -4,8 +4,10 @@ namespace OpenTPW;
 /// A string table with robust lookup: the selected language's entry, else the English entry, else
 /// the caller's internal name, so a missing or empty localized string never crashes or shows blank.
 /// Each fallback is reported once in <see cref="Diagnostics"/>.
-/// [APPROX:COMPAT-011] the fallback order is an OpenTPW choice — evidence needed: original behaviour
-/// for missing strings.
+/// [EXT:locale-fallback] the fallback order is an OpenTPW robustness rule for mixed or incomplete language data: the
+/// original opens one language folder (Data\Language\&lt;selected&gt;, tp.exe 0x419710) and has no English-then-identifier chain,
+/// and its object text defaults to "MISSING STRING" (0x413600). If the missing-id result of the table lookup matters later,
+/// trace 0x6ACB70.
 /// </summary>
 public sealed class LocalizedStringTable
 {

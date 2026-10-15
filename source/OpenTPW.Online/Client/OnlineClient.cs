@@ -10,9 +10,14 @@ namespace OpenTPW.Online.Client;
 
 public sealed class OnlineException : Exception
 {
-	public OnlineException( HttpStatusCode status, string message ) : base( message ) => Status = status;
+	public OnlineException( HttpStatusCode status, string message, string? reason = null ) : base( message ) => (Status, Reason) = (status, reason);
 	public HttpStatusCode Status { get; }
+	/// <summary>The server's <see cref="ApiErrorReasons"/> value, or null.</summary>
+	public string? Reason { get; }
 }
+
+/// <summary>A login: a session, or the two-step setup the account needs first (<see cref="OnlineClient.ConfirmEnrollmentAsync"/>).</summary>
+public sealed record LoginResult( SessionToken? Session, TotpEnrollment? Enrollment );
 
 /// <summary>
 /// HTTP + WebSocket client for an OpenTPW server. The server URL is chosen by the user (opt-in);
@@ -34,27 +39,163 @@ public sealed class OnlineClient : IDisposable
 	public Uri ServerUrl { get; }
 	public SessionToken? Session { get; private set; }
 
-	/// <summary>http(s) only, no credentials or query in the URL.</summary>
+	/// <summary>
+	/// https, or http for a server on this machine or the local network (passwords and tokens would otherwise cross the
+	/// internet unencrypted); no credentials, query or fragment in the URL.
+	/// </summary>
 	public static Uri ValidateServerUrl( Uri url )
 	{
 		if ( !url.IsAbsoluteUri || url.Scheme is not ("http" or "https") || !string.IsNullOrEmpty( url.UserInfo ) || !string.IsNullOrEmpty( url.Query ) || !string.IsNullOrEmpty( url.Fragment ) )
 			throw new ArgumentException( "The server URL must be an http:// or https:// address without credentials, query or fragment." );
+		if ( url.Scheme == "http" && !IsLocalHost( url.Host ) )
+			throw new ArgumentException( "Use an https:// address: http:// is only for a server on this computer or the local network." );
 		var text = url.ToString();
 		return new Uri( text.EndsWith( '/' ) ? text : text + "/" );
 	}
 
-	public Task<ServerInfo> GetServerInfoAsync( CancellationToken cancel = default ) => GetJsonAsync<ServerInfo>( ApiRoutes.Server, cancel );
-
-	public async Task RegisterAsync( string name, string password, CancellationToken cancel = default )
+	/// <summary>
+	/// <c>localhost</c> and <c>.localhost</c> names (which always resolve to this machine) and loopback, private,
+	/// link-local or unique-local address literals. Other names, <c>.local</c> included, can resolve to a public address.
+	/// </summary>
+	public static bool IsLocalHost( string host )
 	{
-		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Accounts, Json( new Credentials( name, password ) ), cancel, authenticated: false );
+		host = host.Trim( '[', ']' ).TrimEnd( '.' );
+		if ( host.Equals( "localhost", StringComparison.OrdinalIgnoreCase ) || host.EndsWith( ".localhost", StringComparison.OrdinalIgnoreCase ) )
+			return true;
+		if ( !System.Net.IPAddress.TryParse( host, out var address ) )
+			return false;
+		if ( address.IsIPv4MappedToIPv6 )
+			address = address.MapToIPv4();
+		if ( System.Net.IPAddress.IsLoopback( address ) )
+			return true;
+		var bytes = address.GetAddressBytes();
+		if ( address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork )
+			return bytes[0] == 10 || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31) || (bytes[0] == 192 && bytes[1] == 168) || (bytes[0] == 169 && bytes[1] == 254);
+		return address.IsIPv6LinkLocal || (bytes[0] & 0xFE) == 0xFC;
 	}
 
-	public async Task<SessionToken> LoginAsync( string name, string password, CancellationToken cancel = default )
+	public Task<ServerInfo> GetServerInfoAsync( CancellationToken cancel = default ) => GetJsonAsync<ServerInfo>( ApiRoutes.Server, cancel );
+
+	/// <summary>The online world's cities, or null from a server without cities (older OpenTPW servers).</summary>
+	public async Task<CityList?> GetCitiesAsync( CancellationToken cancel = default )
 	{
-		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Sessions, Json( new Credentials( name, password ) ), cancel, authenticated: false );
+		try
+		{
+			return await GetJsonAsync<CityList>( ApiRoutes.Cities, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
+	/// <summary>The online world's chat parks with their player counts, or null from a server without them.</summary>
+	public async Task<ChatParkList?> GetChatParksAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<ChatParkList>( ApiRoutes.ChatParks, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// A player's page: their published parks with visitors, votes, publish date, current and highest rank, and their
+	/// Platinum Tickets (the original website's "My Theme Park", docs/reverse/ONLINE-SOURCES.md S1). Without a login
+	/// only parks the author shows on the website are listed.
+	/// </summary>
+	public Task<PlayerProfile> GetPlayerProfileAsync( string name, CancellationToken cancel = default ) =>
+		GetJsonAsync<PlayerProfile>( ApiRoutes.Players + "/" + Uri.EscapeDataString( name.Trim() ), cancel );
+
+	/// <summary>The public top-parks chart (the original website's Top 10 parks page, S1).</summary>
+	public Task<ChartParkList> GetChartParksAsync( CancellationToken cancel = default ) => GetJsonAsync<ChartParkList>( ApiRoutes.ChartParks, cancel );
+
+	/// <summary>The public player charts: Top 10 players by votes, or the richest by Platinum Tickets (S1).</summary>
+	public Task<ChartPlayerList> GetChartPlayersAsync( bool richest, CancellationToken cancel = default ) =>
+		GetJsonAsync<ChartPlayerList>( richest ? ApiRoutes.ChartRichest : ApiRoutes.ChartPlayers, cancel );
+
+	/// <summary>Searches players by name; the original capped the website's search at 50 results (S1).</summary>
+	public Task<PlayerSearchResult> SearchPlayersAsync( string search, CancellationToken cancel = default ) =>
+		GetJsonAsync<PlayerSearchResult>( ApiRoutes.Players + "?search=" + Uri.EscapeDataString( search.Trim() ), cancel );
+
+	/// <summary>The server's news, or null from a server without news (older OpenTPW servers).</summary>
+	public async Task<NewsInfo?> GetNewsAsync( CancellationToken cancel = default )
+	{
+		try
+		{
+			return await GetJsonAsync<NewsInfo>( ApiRoutes.News, cancel );
+		}
+		catch ( OnlineException exception ) when ( exception.Status == HttpStatusCode.NotFound )
+		{
+			return null;
+		}
+	}
+
+	/// <summary>Registers; returns the two-step setup when the server requires one (the account exists only after it), else null.</summary>
+	public async Task<TotpEnrollment?> RegisterAsync( string name, string password, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Accounts, Json( new Credentials( name, password ) ), cancel, authenticated: false );
+		return response.StatusCode == HttpStatusCode.Accepted ? ValidEnrollment( await ReadJsonAsync<TotpEnrollment>( response, cancel ) ) : null;
+	}
+
+	/// <summary>Logs in; <paramref name="code"/> is the authenticator code for accounts with two-step login.</summary>
+	public async Task<LoginResult> LoginAsync( string name, string password, string? code = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Sessions, Json( new Credentials( name, password, code ) ), cancel, authenticated: false );
+		if ( response.StatusCode == HttpStatusCode.Accepted )
+			return new LoginResult( null, ValidEnrollment( await ReadJsonAsync<TotpEnrollment>( response, cancel ) ) );
+		Session = await ReadJsonAsync<SessionToken>( response, cancel );
+		return new LoginResult( Session, null );
+	}
+
+	/// <summary>Finishes a two-step setup with the first code from the authenticator app and logs in.</summary>
+	public async Task<SessionToken> ConfirmEnrollmentAsync( TotpEnrollment enrollment, string code, string? emailCode = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.AccountConfirmation,
+			Json( new TotpConfirmation( enrollment.Name, enrollment.Ticket, code, string.IsNullOrWhiteSpace( emailCode ) ? null : emailCode.Trim() ) ), cancel, authenticated: false );
 		Session = await ReadJsonAsync<SessionToken>( response, cancel );
 		return Session;
+	}
+
+	/// <summary>Sends a code to the address the new account of <paramref name="enrollment"/> will use for recovery.</summary>
+	public async Task SendEnrollmentEmailAsync( TotpEnrollment enrollment, string email, string? language = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.AccountEmail, Json( new EnrollmentEmail( enrollment.Name, enrollment.Ticket, email.Trim(), language ) ), cancel, authenticated: false );
+	}
+
+	/// <summary>Asks for a recovery code; the server answers the same whether the name or address exists.</summary>
+	public async Task RequestRecoveryAsync( string nameOrEmail, string? language = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Recovery, Json( new RecoveryRequest( nameOrEmail.Trim(), language ) ), cancel, authenticated: false );
+	}
+
+	/// <summary>Sets a new password with the recovery code; <paramref name="resetTwoStep"/> also sets up two-step login again.</summary>
+	public async Task ConfirmRecoveryAsync( string nameOrEmail, string code, string password, bool resetTwoStep, string? language = null, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.RecoveryConfirmation,
+			Json( new RecoveryConfirmation( nameOrEmail.Trim(), code.Trim(), password, resetTwoStep, language ) ), cancel, authenticated: false );
+	}
+
+	/// <summary>A secret of plausible length in base32 and an otpauth URI that carries it.</summary>
+	private static TotpEnrollment ValidEnrollment( TotpEnrollment enrollment )
+	{
+		byte[] secret;
+		try { secret = Totp.FromBase32( enrollment.Secret ?? "" ); }
+		catch ( FormatException ) { throw new InvalidDataException( "The server sent an invalid two-step secret." ); }
+		if ( secret.Length is < 10 or > 64 || enrollment.Uri?.StartsWith( "otpauth://totp/", StringComparison.Ordinal ) != true || enrollment.Uri.Length > 512
+			|| enrollment.Ticket is not { Length: > 0 and <= 128 } )
+			throw new InvalidDataException( "The server sent an invalid two-step secret." );
+		return enrollment;
+	}
+
+	/// <summary>Deletes the logged-in account; the server asks for its name and password again.</summary>
+	public async Task DeleteAccountAsync( string name, string password, CancellationToken cancel = default )
+	{
+		using var response = await SendAsync( HttpMethod.Delete, ApiRoutes.Accounts, Json( new Credentials( name, password ) ), cancel );
+		Session = null;
 	}
 
 	public async Task LogoutAsync( CancellationToken cancel = default )
@@ -65,21 +206,26 @@ public sealed class OnlineClient : IDisposable
 		Session = null;
 	}
 
-	public Task<ParkList> ListParksAsync( string? search = null, string sort = "recent", string? author = null, CancellationToken cancel = default )
+	/// <param name="cityId">Only parks published in this city (the city lobby).</param>
+	public Task<ParkList> ListParksAsync( string? search = null, string sort = "recent", string? author = null, CancellationToken cancel = default, int? cityId = null )
 	{
 		var query = $"?sort={Uri.EscapeDataString( sort )}";
 		if ( !string.IsNullOrEmpty( search ) )
 			query += $"&search={Uri.EscapeDataString( search )}";
 		if ( !string.IsNullOrEmpty( author ) )
 			query += $"&author={Uri.EscapeDataString( author )}";
-		return GetJsonAsync<ParkList>( ApiRoutes.Parks + query, cancel );
+		if ( cityId is { } city )
+			query += $"&city={city.ToString( System.Globalization.CultureInfo.InvariantCulture )}";
+		return RequireListAsync( GetJsonAsync<ParkList>( ApiRoutes.Parks + query, cancel ), list => list.Parks, "park list" );
 	}
 
-	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default )
+	/// <param name="showOnWebsite">Lists the park on the project website (opt-in; the server's public website park list).</param>
+	/// <param name="cityId">City of the online world to publish in (0: none).</param>
+	public async Task<ParkSummary> UploadParkAsync( ParkPackage package, CancellationToken cancel = default, bool showOnWebsite = false, int cityId = 0 )
 	{
 		var content = new ByteArrayContent( package.ToBytes() );
 		content.Headers.ContentType = new MediaTypeHeaderValue( ApiRoutes.PackageMediaType );
-		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Parks, content, cancel );
+		using var response = await SendAsync( HttpMethod.Post, ApiRoutes.Parks + Query( ("website", showOnWebsite ? "true" : null), ("city", cityId > 0 ? cityId.ToString( System.Globalization.CultureInfo.InvariantCulture ) : null) ), content, cancel );
 		return await ReadJsonAsync<ParkSummary>( response, cancel );
 	}
 
@@ -87,14 +233,14 @@ public sealed class OnlineClient : IDisposable
 	{
 		using var response = await SendAsync( HttpMethod.Get, $"{ApiRoutes.Parks}/{Id( parkId )}/package", null, cancel );
 		await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-		return ParkPackage.Read( stream );
+		return ParkPackage.Read( await BoundedZip.ReadBoundedAsync( stream, ParkPackage.MaximumPackageBytes, "Park package", cancel ) );
 	}
 
 	public async Task<byte[]> DownloadThumbnailAsync( string parkId, CancellationToken cancel = default )
 	{
 		using var response = await SendAsync( HttpMethod.Get, $"{ApiRoutes.Parks}/{Id( parkId )}/thumbnail", null, cancel );
 		await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-		var png = BoundedZip.ReadBounded( stream, ParkPackage.MaximumThumbnailBytes, "Thumbnail" );
+		var png = await BoundedZip.ReadBoundedAsync( stream, ParkPackage.MaximumThumbnailBytes, "Thumbnail", cancel );
 		PngImage.Validate( png, ParkPackage.MaximumThumbnailDimension );
 		return png;
 	}
@@ -116,13 +262,27 @@ public sealed class OnlineClient : IDisposable
 		return await ReadJsonAsync<PostcardSent>( response, cancel );
 	}
 
-	public Task<PostcardInbox> GetInboxAsync( CancellationToken cancel = default ) => GetJsonAsync<PostcardInbox>( ApiRoutes.Inbox, cancel );
+	public Task<PostcardInbox> GetInboxAsync( CancellationToken cancel = default ) =>
+		RequireListAsync( GetJsonAsync<PostcardInbox>( ApiRoutes.Inbox, cancel ), inbox => inbox.Postcards, "inbox" );
+
+	/// <summary>Most items one list response may hold; servers send at most a few hundred.</summary>
+	public const int MaximumListItems = 1000;
+
+	/// <summary>Rejects a response whose list is missing, holds null entries or is implausibly long (a hostile or broken server).</summary>
+	private static async Task<T> RequireListAsync<T, TItem>( Task<T> response, Func<T, IReadOnlyList<TItem>?> items, string name ) where TItem : class
+	{
+		var value = await response;
+		var list = items( value );
+		if ( list == null || list.Count > MaximumListItems || list.Any( item => item == null ) )
+			throw new InvalidDataException( $"The server sent an invalid {name}." );
+		return value;
+	}
 
 	public async Task<Postcard> DownloadPostcardAsync( string postcardId, CancellationToken cancel = default )
 	{
 		using var response = await SendAsync( HttpMethod.Get, $"{ApiRoutes.Postcards}/{Id( postcardId )}", null, cancel );
 		await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-		return Postcard.Read( stream );
+		return Postcard.Read( await BoundedZip.ReadBoundedAsync( stream, Postcard.MaximumCardBytes, "Postcard", cancel ) );
 	}
 
 	public async Task DeletePostcardAsync( string postcardId, CancellationToken cancel = default )
@@ -140,13 +300,20 @@ public sealed class OnlineClient : IDisposable
 	{
 		var session = Session ?? throw new InvalidOperationException( "Log in before connecting to chat." );
 		var socket = new ClientWebSocket();
-		socket.Options.SetRequestHeader( "Authorization", "Bearer " + session.Token );
-		socket.Options.KeepAliveInterval = TimeSpan.FromSeconds( 30 );
+		// Browsers cannot set WebSocket headers or keep-alive; there the token is the first frame.
+		var browser = OperatingSystem.IsBrowser();
+		if ( !browser )
+		{
+			socket.Options.SetRequestHeader( "Authorization", "Bearer " + session.Token );
+			socket.Options.KeepAliveInterval = TimeSpan.FromSeconds( 30 );
+		}
 		var builder = new UriBuilder( new Uri( ServerUrl, ApiRoutes.Chat.TrimStart( '/' ) ) );
 		builder.Scheme = builder.Scheme == "https" ? "wss" : "ws";
 		try
 		{
 			await socket.ConnectAsync( builder.Uri, cancel );
+			if ( browser )
+				await socket.SendAsync( StrictJson.Serialize( ChatAuthentication.For( session.Token ) ), WebSocketMessageType.Text, true, cancel );
 		}
 		catch
 		{
@@ -168,6 +335,12 @@ public sealed class OnlineClient : IDisposable
 		var content = new ByteArrayContent( StrictJson.Serialize( value ) );
 		content.Headers.ContentType = new MediaTypeHeaderValue( "application/json" );
 		return content;
+	}
+
+	private static string Query( params (string Name, string? Value)[] parameters )
+	{
+		var present = parameters.Where( parameter => parameter.Value != null ).Select( parameter => $"{parameter.Name}={Uri.EscapeDataString( parameter.Value! )}" ).ToArray();
+		return present.Length == 0 ? "" : "?" + string.Join( "&", present );
 	}
 
 	private async Task<T> GetJsonAsync<T>( string route, CancellationToken cancel ) where T : class
@@ -193,23 +366,26 @@ public sealed class OnlineClient : IDisposable
 		using ( response )
 		{
 			var message = response.ReasonPhrase ?? "Request failed";
+			string? reason = null;
 			try
 			{
 				await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-				var body = BoundedZip.ReadBounded( stream, 16 * 1024, "Error response" );
-				message = StrictJson.Deserialize<ApiError>( body, "Error response" ).Error;
+				var body = await BoundedZip.ReadBoundedAsync( stream, 16 * 1024, "Error response", cancel );
+				var error = StrictJson.Deserialize<ApiError>( body, "Error response" );
+				message = error.Error;
+				reason = error.Reason;
 			}
 			catch ( Exception exception ) when ( exception is InvalidDataException or IOException )
 			{
 			}
-			throw new OnlineException( response.StatusCode, $"{(int)response.StatusCode}: {message}" );
+			throw new OnlineException( response.StatusCode, $"{(int)response.StatusCode}: {message}", reason );
 		}
 	}
 
 	private static async Task<T> ReadJsonAsync<T>( HttpResponseMessage response, CancellationToken cancel ) where T : class
 	{
 		await using var stream = await response.Content.ReadAsStreamAsync( cancel );
-		return StrictJson.Deserialize<T>( BoundedZip.ReadBounded( stream, MaximumJsonResponseBytes, "Server response" ), "Server response" );
+		return StrictJson.Deserialize<T>( await BoundedZip.ReadBoundedAsync( stream, MaximumJsonResponseBytes, "Server response", cancel ), "Server response" );
 	}
 
 	public void Dispose()
@@ -229,9 +405,15 @@ public sealed class ChatConnection : IAsyncDisposable, IDisposable
 
 	public bool IsOpen => socket.State == WebSocketState.Open;
 
+	/// <summary>Why the server closed the connection, once it has (<see cref="ChatProtocol.RestartingCloseStatus"/> on a restart).</summary>
+	public int? CloseStatus => socket.CloseStatus is { } status ? (int)status : null;
+
 	public Task SendAsync( ChatCommand command, string argument, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForCommand( command, argument ), cancel );
 
 	public Task JoinAsync( string room, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForJoin( room ), cancel );
+
+	/// <summary>Moves the player's avatar in the chat park: a position in the park, both axes 0 to 1.</summary>
+	public Task MoveAsync( float x, float y, CancellationToken cancel = default ) => SendAsync( ChatRequest.ForMove( x, y ), cancel );
 
 	public async Task SendAsync( ChatRequest request, CancellationToken cancel = default )
 	{
@@ -258,7 +440,18 @@ public sealed class ChatConnection : IAsyncDisposable, IDisposable
 				throw new InvalidDataException( "Chat frame exceeds the size limit." );
 			var result = await socket.ReceiveAsync( buffer.AsMemory( length ), cancel );
 			if ( result.MessageType == WebSocketMessageType.Close )
+			{
+				// Complete the close handshake at once, so a restarting server need not wait for it.
+				try
+				{
+					using var timeout = new CancellationTokenSource( TimeSpan.FromSeconds( 2 ) );
+					await socket.CloseOutputAsync( WebSocketCloseStatus.NormalClosure, "bye", timeout.Token );
+				}
+				catch ( Exception exception ) when ( exception is WebSocketException or OperationCanceledException or ObjectDisposedException )
+				{
+				}
 				return null;
+			}
 			if ( result.MessageType != WebSocketMessageType.Text )
 				throw new InvalidDataException( "Chat frames must be text." );
 			length += result.Count;

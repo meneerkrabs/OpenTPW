@@ -34,6 +34,9 @@ public sealed class StringFile : BaseFormat
 
 	public string this[int val] => Entries[val];
 
+	/// <summary>Removes entry <paramref name="index"/>, moving the later entries down by one.</summary>
+	public void RemoveEntryAt( int index ) => Entries = Entries.Where( ( _, position ) => position != index ).ToArray();
+
 	protected override void ReadFromStream( Stream stream )
 	{
 		var reader = new BFSTReader( stream, table );

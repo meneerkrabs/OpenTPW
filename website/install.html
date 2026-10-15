@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install OpenTPW · OpenTPW</title>
+<meta name="description" content="Download and start OpenTPW on Windows, macOS or Linux, or play in your browser with your own Theme Park World game files.">
+<meta name="theme-color" content="#2b1a72">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/fredoka.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="docs.css">
+<script src="a11y.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+	<div class="wrap">
+		<a class="brand" href="/"><img src="logo.svg" alt="" width="40" height="40"><span>Open<b>TPW</b></span></a>
+		<nav aria-label="Main">
+			<a href="install.html" aria-current="page">Install</a>
+			<a href="theme-park-inc.html">Theme Park Inc</a>
+			<a href="docs/">Docs</a>
+			<a href="/#download">Download</a>
+			<a href="https://play.opentpw.io">Play in the browser</a>
+			<a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>
+		</nav>
+	</div>
+</header>
+
+<main id="main" class="wrap page doc">
+	<h1>Install OpenTPW</h1>
+	<p>Bring your own copy of <strong>Theme Park World / Sim Theme Park (1999)</strong>, download OpenTPW and choose the folder with the original game files. You can also <a href="#browser">play in your browser</a>.</p>
+	<p>OpenTPW is a development preview. It already runs parks, guests, rides, sound and the original interface, but the complete original game is still being reconstructed. Check the <a href="docs/FEATURE-MATRIX.html">feature matrix</a> for current limits.</p>
+	<nav aria-label="Installation sections">
+		<ul>
+			<li><a href="#game-files">Get your game files ready</a></li>
+			<li><a href="#download">Choose a download</a></li>
+			<li><a href="#windows">Windows</a> · <a href="#macos">macOS</a> · <a href="#linux">Linux</a></li>
+			<li><a href="#first-start">First start</a> · <a href="#extra-files">CD and bonus content</a></li>
+			<li><a href="#browser">Browser</a> · <a href="#updating">Updating</a> · <a href="#troubleshooting">Troubleshooting</a></li>
+		</ul>
+	</nav>
+
+	<h2 id="game-files">1. Get your game files ready</h2>
+	<p>You need your own legal copy of the original game: an installed copy, a copy of your CD, or the mounted CD itself. OpenTPW contains none of the original game files and does not download them for you. You do not need to run the original executable.</p>
+	<p>Find the folder that contains <code>Data</code>. It should look like this; the spelling and letter case can differ:</p>
+	<pre><code>Theme Park World/
+└── Data/
+    ├── levels/
+    ├── global/
+    └── Language/
+        └── English/</code></pre>
+	<p>Choose <code>Theme Park World</code> in setup. Selecting <code>Data</code> itself also works: OpenTPW finds its parent. At least one language folder must be present.</p>
+	<p><strong>Theme Park Inc / Sim Coaster (2001) is a different game.</strong> Its files are not a replacement for Theme Park World. OpenTPW offers an experimental building-and-guests route, including an explicit browser start. Follow the <a href="theme-park-inc.html">Theme Park Inc launch guide</a> for the current desktop command, upcoming edition chooser and limitations; it does not promise the full TPI campaign or native saves. Other editions and modified folders may have compatibility differences.</p>
+
+	<h2 id="download">2. Choose a download</h2>
+	<p>These links download the latest published release. The packages include the .NET runtime, so you do not need to install .NET separately. Pick the package for your operating system and processor, then extract the whole archive.</p>
+	<div class="table-wrap">
+		<table>
+			<thead><tr><th scope="col">System</th><th scope="col">Processor</th><th scope="col">Download</th></tr></thead>
+			<tbody>
+				<tr><td>Windows</td><td>Intel or AMD, 64-bit</td><td><a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-win-x64.zip">Windows x64 (.zip)</a></td></tr>
+				<tr><td>Windows</td><td>Intel or AMD, 32-bit</td><td><a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-win-x86.zip">Windows x86 (.zip)</a></td></tr>
+				<tr><td>Windows</td><td>ARM64</td><td><a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-win-arm64.zip">Windows ARM64 (.zip)</a></td></tr>
+				<tr><td>macOS</td><td>Apple silicon (M-series)</td><td><a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-osx-arm64.tar.gz">macOS ARM64 (.tar.gz)</a></td></tr>
+				<tr><td>Linux</td><td>Intel or AMD, 64-bit</td><td><a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-linux-x64.tar.gz">Linux x64 (.tar.gz)</a></td></tr>
+				<tr><td>Linux</td><td>ARM64</td><td><a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-linux-arm64.tar.gz">Linux ARM64 (.tar.gz)</a></td></tr>
+			</tbody>
+		</table>
+	</div>
+	<p>There are currently no packaged builds for Intel Macs or 32-bit x86 Linux. Building a package is not the same as testing it on hardware: native GPU execution is locally qualified on Apple silicon; Windows and Linux GPU execution remain unqualified. See <a href="docs/RELEASES.html#qualification">release qualifications</a>.</p>
+	<p>The <a href="https://github.com/meneerkrabs/OpenTPW/releases">release page</a> has release notes, earlier versions, separately marked previews and <code>SHA256SUMS.txt</code> for checking the downloads.</p>
+
+	<h2 id="windows">Windows</h2>
+	<ol>
+		<li>Extract the downloaded ZIP into a folder you can write to, such as a folder under your user account.</li>
+		<li>Open the extracted <code>OpenTPW-win-…</code> folder and run <code>OpenTPW.exe</code>. Keep the other extracted files beside it.</li>
+		<li>Continue with <a href="#first-start">first start</a> below.</li>
+	</ol>
+	<p>The Windows build uses Direct3D 11. You do not need Parallels or another virtual machine when running the native macOS or Linux package.</p>
+
+	<h2 id="macos">macOS (Apple silicon)</h2>
+	<ol>
+		<li>Extract <code>OpenTPW-osx-arm64.tar.gz</code>. Finder can open the archive.</li>
+		<li>Open Terminal and change into the extracted folder. For example, if you extracted it in Downloads:</li>
+	</ol>
+	<pre><code>cd ~/Downloads/OpenTPW-osx-arm64
+./OpenTPW</code></pre>
+	<p>The package is unsigned and is not notarized. If macOS blocks the downloaded files, after checking that this is the OpenTPW release you downloaded, run this once from inside the extracted folder, then start it again:</p>
+	<pre><code>xattr -dr com.apple.quarantine .
+./OpenTPW</code></pre>
+	<p>The release includes SDL2 and uses Metal. Homebrew and Rosetta are not required for the Apple silicon release.</p>
+
+	<h2 id="linux">Linux</h2>
+	<p>Install your distribution's SDL2 library, Vulkan loader and graphics driver. On Debian or Ubuntu, the SDL2 and loader packages are <code>libsdl2-2.0-0</code> and <code>libvulkan1</code>. Mesa-based graphics use <code>mesa-vulkan-drivers</code>; other GPUs may need their vendor's Vulkan driver. Run OpenTPW in a desktop session.</p>
+	<p>Extract the archive for your processor and start the executable in its folder. For the x64 download:</p>
+	<pre><code>tar -xzf OpenTPW-linux-x64.tar.gz
+cd OpenTPW-linux-x64
+./OpenTPW</code></pre>
+	<p>For ARM64, replace <code>linux-x64</code> with <code>linux-arm64</code>. If the executable lost its permission when copied, use <code>chmod +x OpenTPW</code>. The build uses Vulkan.</p>
+
+	<h2 id="first-start">3. Choose the game folder</h2>
+	<ol>
+		<li>OpenTPW searches for an existing Theme Park World folder. If setup lists your copy, choose <strong>Use</strong>. Otherwise choose <strong>Choose a folder</strong>.</li>
+		<li>Browse to the folder that contains <code>Data</code>, type its path, or drag the folder onto the setup window. The window checks the files and shows any missing data.</li>
+		<li>Follow the setup window to its summary and finish. OpenTPW remembers your folder for the next start.</li>
+	</ol>
+	<p>If your files include the original CD launcher, choose <strong>Play</strong> to continue. In the game lobby, select an island to start a park. For the full setup behaviour, see <a href="docs/SETUP.html">first-run setup</a>.</p>
+	<p>To change folders later, open <strong>Options → Game files</strong>, then restart OpenTPW. To open the setup window again, start the executable with <code>--setup</code>.</p>
+	<p>You can also choose the folder directly from the command line:</p>
+	<pre><code># macOS / Linux
+./OpenTPW --game-path "/path/to/Theme Park World"
+
+# Windows PowerShell
+.\OpenTPW.exe --game-path "C:\Games\Theme Park World"</code></pre>
+
+	<h2 id="extra-files">Optional CD and bonus content</h2>
+	<p><strong>CD:</strong> if your installation lacks music or movies, select your CD or extracted CD folder in <strong>Options → Game files</strong>. A mounted CD can also be the main game folder when it has the required data. Read-only game folders use a save folder under your user configuration directory.</p>
+	<p><strong>Bonus content:</strong> extract your official bonus-content archive and choose the folder that contains its <code>levels</code> folder in the same screen. OpenTPW imports the bonus object files into its configuration directory. Restart to use them. See <a href="docs/SETUP.html#changing-the-folders-in-game">changing the folders in game</a> and <a href="docs/OBJECTS.html">objects and bonus content</a>.</p>
+
+	<h2 id="browser">Play in your browser</h2>
+	<ol>
+		<li>Open <a href="https://play.opentpw.io">play.opentpw.io</a>.</li>
+		<li>Choose your Theme Park World folder, the one that contains <code>Data</code>. The page reads the files locally into browser memory; it does not upload them.</li>
+		<li>Click or press a key to enable sound, then play. Going online is optional.</li>
+	</ol>
+	<p>The browser needs WebGL2 and WebAssembly. Parks, sound and online play run there, and saves and settings are kept in that browser between visits. You must choose the game folder again on your next visit. Movies and developer panels are not available in the browser yet. See <a href="docs/WEB.html">the browser version</a> for current limits and <a href="privacy.html">privacy</a> for storage details.</p>
+
+	<h2 id="updating">Updating OpenTPW</h2>
+	<p>Close OpenTPW, download the new archive for the same system and extract it into a new folder. Start the new executable. Your selected game folder is stored outside the release folder, so setup can reuse it. Keep your original game files and existing saves.</p>
+	<p>Settings are normally under <code>%APPDATA%\OpenTPW</code> on Windows, <code>~/Library/Application Support/OpenTPW</code> on macOS, and <code>~/.config/OpenTPW</code> on Linux (or <code>$XDG_CONFIG_HOME/OpenTPW</code> when set). A custom <code>OPENTPW_CONFIG_DIR</code> overrides this location. Moving to another browser or clearing its site data also removes that browser's saved settings and saves.</p>
+
+	<h2 id="troubleshooting">Troubleshooting</h2>
+	<details>
+		<summary>Setup cannot find the game or says files are missing</summary>
+		<p>Choose the folder manually and check for <code>Data/levels</code>, <code>Data/global</code> and at least one <code>Data/Language</code> subfolder. Extract archives before choosing them. A lone <code>TP.exe</code> is not enough. If an automatic search times out, choose an available local copy manually.</p>
+	</details>
+	<details>
+		<summary>There is no Browse dialog on Linux</summary>
+		<p>The folder dialog uses <code>zenity</code> or <code>kdialog</code>. If neither is installed, type the folder path into the setup field instead.</p>
+	</details>
+	<details>
+		<summary>OpenTPW does not start, or reports a native-library or graphics error</summary>
+		<p>Check that you downloaded the package for your processor and extracted every file. On Linux, check SDL2 and the Vulkan loader and driver. On macOS, use the Apple silicon package and the quarantine step above when needed. Start from a terminal to see the error message. See <a href="docs/RELEASES.html">release packages</a> and <a href="docs/RUNNING.html">running and diagnostics</a>.</p>
+	</details>
+	<details>
+		<summary>Movies, music or some language files are missing</summary>
+		<p>Your installation may not contain all the files from the CD. Add the CD folder under <strong>Options → Game files</strong> and restart. Browser movies are not implemented yet. See <a href="docs/LANGUAGES.html">languages</a>, <a href="docs/AUDIO.html">sound</a> and <a href="docs/TGQ-MOVIES.html">movies</a>.</p>
+	</details>
+	<details>
+		<summary>The CD launcher shows dim Install or Uninstall buttons</summary>
+		<p>OpenTPW reproduces the original launcher when its files are available. Its <strong>Play</strong>, <strong>View Read-me</strong> and <strong>Exit</strong> buttons work; it does not run the original Windows installer. Start with <code>--no-autorun</code> to skip the launcher. See <a href="docs/AUTORUN.html#in-opentpw">the CD launcher</a>.</p>
+	</details>
+	<details>
+		<summary>I found a bug or a difference from the original game</summary>
+		<p>Report it on <a href="https://github.com/meneerkrabs/OpenTPW/issues">GitHub</a> with your OpenTPW version, operating system, processor, game edition and steps to reproduce it. Include the error text if there is one. Keep original game files out of public reports.</p>
+	</details>
+	<p>Building from source? Use the pinned .NET SDK and follow <a href="docs/RUNNING.html">running the development build</a>. Hosting an online server? Follow <a href="docs/SERVER.html">server setup</a>.</p>
+</main>
+
+<footer>
+	<div class="wrap">
+		<nav aria-label="Footer">
+			<a href="/">Home</a>
+			<a href="docs/">Documentation</a>
+			<a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>
+			<a href="privacy.html">Privacy</a>
+			<a href="rules.html">Community rules</a>
+			<a href="mailto:contact@opentpw.io">contact@opentpw.io</a>
+		</nav>
+		<p>OpenTPW is free software under the MIT licence. Theme Park World is a trademark of Electronic Arts Inc. OpenTPW is an independent project and is not affiliated with or endorsed by Electronic Arts or Bullfrog Productions.</p>
+	</div>
+</footer>
+</body>
+</html>

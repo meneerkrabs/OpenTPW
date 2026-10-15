@@ -11,6 +11,7 @@ public class UiScreen
 {
 	private readonly List<UiElement> elements = new();
 	private UiElement? pressed;
+	private NVector2 lastMouse = new( -1, -1 );
 
 	public UiScreen( string name ) => Name = name;
 
@@ -25,8 +26,19 @@ public class UiScreen
 	public Action<UiContext>? DrawOverlay { get; set; }
 	/// <summary>Called every frame before input is handled.</summary>
 	public Action<UiContext>? Updating { get; set; }
+	/// <summary>Releases screen-owned pending work after removal from its stack.</summary>
+	public Action? Removed { get; set; }
 	/// <summary>Whether a modal screen dims and blocks what is below it.</summary>
 	public bool Modal { get; init; } = true;
+	/// <summary>A full screen of its own (the online globe): the screens below are not drawn or dimmed.</summary>
+	public bool HidesBelow { get; init; }
+	/// <summary>True once a stack removed this screen; it then ignores the rest of the frame's input (a click that closed it must not also act as Back on whatever it opened).</summary>
+	public bool IsRemoved { get; internal set; }
+
+	/// <summary>Whether the right click leaves a modal screen: the RMBCancelOn option (+0x39, default on) is set.</summary>
+	// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens (camcorder 0x488aa1, ride view 0x48a7ab, 0x48aadb) leave on a right click only when the option [0x78d911] is set
+	// [APPROX:UI-012] the other windows are taken to read it as well; the readers traced are the camcorder, ride-view and one more screen
+	public static bool RightCancels( UiInput input ) => input.RightPressed && GameOptions.Current.RmbCancel;
 
 	public T Add<T>( T element ) where T : UiElement
 	{
@@ -56,40 +68,94 @@ public class UiScreen
 		Modal || elements.Any( element => element.Visible && element.ScreenRect( canvas ).Contains( point ) );
 
 	/// <summary>Handles one frame of input; returns true when the input was consumed.</summary>
-	// [APPROX:UI-012] hover focus, activate on release, keyboard navigation, right click backs out — evidence needed: binary input handling
+	// [APPROX:UI-012] hover focus follows the pointer, and the right click backs out of a modal screen when the RMBCancelOn option (+0x39, default 1) is set, as the traced readers (0x488aa1, 0x48a7ab, 0x48aadb) do for theirs — evidence needed: which other screens read it, and 0x4881ae
 	public virtual bool Update( UiContext context, UiInput input )
 	{
+		if ( IsRemoved )
+			return true;
 		Updating?.Invoke( context );
+		if ( IsRemoved )
+			return true;
 		var canvas = context.Canvas;
 		var hit = HitTest( canvas, input.Mouse );
-		context.HoverHelp = hit?.Help;
-		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused) && input.Mouse.X >= 0 )
+		context.HoverHelp = hit?.CurrentHelp;
+		// A text field keeps the keyboard focus while the mouse merely passes over other elements.
+		var typing = Focused is UiTextField { Visible: true, Enabled: true };
+		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused && !typing) && input.Mouse.X >= 0 )
 			Focused = hit;
+		if ( input.LeftPressed && hit == null && typing && input.Mouse.X >= 0 )
+			Focused = null;
+		// [BIN:TPW-EXE:0x6656a0 list hover] a list with attribute 0x80 selects the row under the pointer; OpenTPW only highlights it, because the buttons beside the list act on the selection
+		// The list decides what a hover does: most only highlight (the click selects, so buttons beside the list keep their target), the hire list selects a row when the pointer moves onto it.
+		foreach ( var element in elements )
+		{
+			if ( element is IUiRowList { HoverSelects: true } hoverList )
+				hoverList.Hover( ReferenceEquals( element, hit ) && input.Mouse.X >= 0 ? hoverList.RowAt( canvas, input.Mouse ) : -1 );
+		}
+		lastMouse = input.Mouse;
 		var consumed = hit != null;
 		if ( input.LeftPressed )
 			pressed = hit;
+		// A slider follows the mouse while it is held, wherever the pointer has drifted to.
+		if ( pressed is { Enabled: true } and IUiDragTarget drag && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
+			drag.DragTo( canvas, input.Mouse );
 		if ( input.LeftReleased )
 		{
-			if ( hit != null && (pressed == null || pressed == hit) )
+			// [BIN:TPW-EXE:0x65f6d1 click rule] a release is a click only within 500 ms of its press and without the pointer straying more than 6 px (UiInputSource)
+			if ( hit != null && (pressed == null || pressed == hit) && !input.NotClick )
 				Click( canvas, hit, input.Mouse );
 			pressed = null;
+			if ( IsRemoved )
+				return true;
 		}
-		if ( hit is UiOptionRow wheelRow && input.Wheel != 0 )
-			wheelRow.Adjust( input.Wheel > 0 ? 1 : -1 );
+		// [BIN:TPW-EXE:0x66563d list click] a click of the other button selects the row and posts 0x402 to the list's owner; the list decides what that does and whether the right click also backs out
+		var rightHandled = false;
+		if ( input.RightPressed && hit is IUiRowList rightList && input.Mouse.X >= 0 && rightList.RowAt( canvas, input.Mouse ) is >= 0 and var rightRow )
+			rightHandled = rightList.RowClicked( rightRow, false );
+		if ( IsRemoved )
+			return true;
+		if ( (hit is UiOptionRow or UiSlider || hit is UiButton { Adjusted: not null, WheelAdjusts: true }) && input.Wheel != 0 )
+			hit.Adjust( input.Wheel > 0 ? 1 : -1 );
+		if ( hit is IUiRowList wheelList && input.Wheel != 0 )
+			wheelList.Scroll( input.Wheel > 0 ? -1 : 1 );
+		if ( input.Has( UiKeys.Tab ) )
+			MoveFocus( 1, element => element is UiTextField );
+		if ( Focused is UiTextField field && field.Visible && field.Enabled )
+		{
+			Input.TextEntryActive = true;
+			field.Type( input.Text, input.Backspaces );
+			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
+				field.Activate();
+			if ( IsRemoved )
+				return true;
+			if ( input.Has( UiKeys.Back ) || (RightCancels( input ) && Modal) )
+				Back?.Invoke();
+			// Typed keys belong to the field, not to navigation or to the park below.
+			return true;
+		}
+		// A focused list that takes the arrow keys moves its selection instead of the focus.
 		if ( input.Has( UiKeys.Down ) )
-			MoveFocus( 1 );
+		{
+			if ( Focused is IUiRowList { ArrowsSelect: true } rows ) rows.Select( rows.Selected + 1 ); else MoveFocus( 1 );
+		}
 		if ( input.Has( UiKeys.Up ) )
-			MoveFocus( -1 );
+		{
+			if ( Focused is IUiRowList { ArrowsSelect: true } rows ) rows.Select( rows.Selected - 1 ); else MoveFocus( -1 );
+		}
 		if ( Focused != null && Focused.Visible && Focused.Focusable )
 		{
 			if ( input.Has( UiKeys.Left ) )
 				Focused.Adjust( -1 );
 			if ( input.Has( UiKeys.Right ) )
 				Focused.Adjust( 1 );
-			if ( input.Has( UiKeys.Accept ) )
+			// Enter activates, as for a text field: Space belongs to the park's map key
+			// (the original key table; ParkHud.ScreenShortcuts), not to the hovered element.
+			if ( input.Has( UiKeys.Accept ) && !input.Has( UiKeys.Space ) )
 				Focused.Activate();
 		}
-		if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal) )
+		if ( IsRemoved )
+			return true;
+		if ( input.Has( UiKeys.Back ) || (RightCancels( input ) && Modal && !rightHandled) )
 		{
 			Back?.Invoke();
 			consumed = true;
@@ -99,6 +165,25 @@ public class UiScreen
 
 	private static void Click( UiCanvas canvas, UiElement element, NVector2 point )
 	{
+		// Clicking a text field only gives it the focus; Enter submits it.
+		if ( element is UiTextField )
+			return;
+		if ( element is IUiRowList list )
+		{
+			var index = list.RowAt( canvas, point );
+			if ( index >= 0 && list.RowClicked( index, true ) )
+				return;
+			if ( index >= 0 && index == list.Selected )
+				element.Activate();
+			else if ( index >= 0 )
+				list.Select( index );
+			return;
+		}
+		if ( element is IUiDragTarget drag )
+		{
+			drag.DragTo( canvas, point );
+			return;
+		}
 		if ( element is UiOptionRow row )
 		{
 			var (left, right) = row.ArrowRects( canvas );
@@ -108,9 +193,9 @@ public class UiScreen
 		element.Activate();
 	}
 
-	public void MoveFocus( int direction )
+	public void MoveFocus( int direction, Func<UiElement, bool>? filter = null )
 	{
-		var focusable = FocusableElements.ToList();
+		var focusable = FocusableElements.Where( element => filter == null || filter( element ) ).ToList();
 		if ( focusable.Count == 0 )
 			return;
 		var index = Focused == null ? (direction > 0 ? -1 : 0) : focusable.IndexOf( Focused );
@@ -137,12 +222,21 @@ public sealed class UiScreenStack
 	public IReadOnlyList<UiScreen> Screens => screens;
 	public UiScreen? Top => screens.Count == 0 ? null : screens[^1];
 
-	public void Push( UiScreen screen ) => screens.Add( screen );
+	public void Push( UiScreen screen )
+	{
+		screen.IsRemoved = false;
+		screens.Add( screen );
+	}
 
 	public void Pop()
 	{
 		if ( screens.Count > 0 )
+		{
+			var removed = screens[^1];
 			screens.RemoveAt( screens.Count - 1 );
+			removed.IsRemoved = true;
+			removed.Removed?.Invoke();
+		}
 	}
 
 	public void Replace( UiScreen screen )
@@ -151,35 +245,83 @@ public sealed class UiScreenStack
 		Push( screen );
 	}
 
-	public void Clear() => screens.Clear();
+	/// <summary>Removes every screen <paramref name="match"/> accepts, top-down: re-opening a details dialog replaces it.</summary>
+	public void RemoveWhere( Predicate<UiScreen> match )
+	{
+		for ( var index = screens.Count - 1; index >= 0; index-- )
+		{
+			if ( !match( screens[index] ) )
+				continue;
+			var removed = screens[index];
+			screens.RemoveAt( index );
+			removed.IsRemoved = true;
+			removed.Removed?.Invoke();
+		}
+	}
+
+	public void Clear()
+	{
+		var removed = screens.ToArray();
+		screens.Clear();
+		foreach ( var screen in removed )
+		{
+			screen.IsRemoved = true;
+			screen.Removed?.Invoke();
+		}
+	}
 
 	public bool Update( UiContext context, UiInput input ) => Top?.Update( context, input ) ?? false;
 
 	public bool Covers( UiCanvas canvas, NVector2 point ) => screens.Any( screen => screen.Covers( canvas, point ) );
 
-	public void Draw( UiContext context )
+	public void Draw( UiContext context ) => Draw( context, showHelp: null );
+
+	/// <summary>Draws with an optional owner-local help override; null follows the context option without changing it.</summary>
+	public void Draw( UiContext context, bool? showHelp )
 	{
-		for ( var index = 0; index < screens.Count; index++ )
+		var first = 0;
+		for ( var index = screens.Count - 1; index > 0; index-- )
 		{
-			// [APPROX:UI-011] modal screens dim the screens below — evidence needed: captures of original dialogs
-			if ( screens[index].Modal && index > 0 )
+			if ( screens[index].HidesBelow )
+			{
+				first = index;
+				break;
+			}
+		}
+		for ( var index = first; index < screens.Count; index++ )
+		{
+			// [DATA:video 10:00, 28:00] the pause overlay and the new-player dialog darken the scene behind them, as every modal screen does here
+			if ( screens[index].Modal && index > first )
 				context.Batch.AddRectangle( new UiRect( 0, 0, context.Canvas.Width, context.Canvas.Height ), UiColors.Backdrop );
 			screens[index].Draw( context );
 		}
-		if ( context.PopupHelp && !string.IsNullOrEmpty( context.HoverHelp ) )
+		if ( (showHelp ?? context.PopupHelp) && !string.IsNullOrEmpty( context.HoverHelp ) )
 			DrawHelp( context, context.HoverHelp! );
 	}
 
-	/// <summary>Popup help box along the top edge (placement is an OpenTPW approximation; helpbg art).</summary>
-	// [APPROX:UI-010] popup help placement/backdrop — evidence needed: capture of original popup help
+	/// <summary>
+	/// The popup help box: a fixed rectangle at the bottom, 574 to 1474 wide and ending at y 1520 of the virtual canvas, drawn with the
+	/// f_helpbg art; its height is the small font's line height scaled to the canvas, plus 10 units. The text is centred and wrapped inside.
+	/// </summary>
+	// [BIN:TPW-EXE:0x492180 help box] the help control is built with left 0x23e, right 0x5c2, bottom 0x5f0 and top 0x5f0 - h, h = (fontHeight(font 7) * 3 * 1024) / [0xfaa5c0] + 10; its art is f_helpbg and its text font slot 7, colour (255,255,255,255)
+	// [DATA:video 3:00, 3:20 help box] the box measures 569..1475 by 1436..1515 for one line and for two, grass shows through it at about 67 % black (the art's own alpha)
+	// [BIN:TPW-EXE:0x492180 help height] the divisor [0xfaa5c0] is taken as the screen height in pixels and font slot 7 as the small UI font (medium confidence); a text that wraps past the box overflows it on both sides
+	internal static UiRect HelpBoxRect( UiCanvas canvas, float lineHeightPixels )
+	{
+		var height = lineHeightPixels * 3072f / Math.Max( 1, canvas.Height ) + 10;
+		return canvas.Map( new UiRect( 574, 1520 - height, 900, height ), UiAnchor.Bottom );
+	}
+
 	private static void DrawHelp( UiContext context, string text )
 	{
-		var canvas = context.Canvas;
-		var maximum = (int)(canvas.Width * 0.6f);
-		var (width, height) = context.Measure( context.Fonts.Small, text, maximum );
-		var pad = 4 * canvas.TextScale;
-		var rect = new UiRect( (canvas.Width - width) / 2f - pad, pad, width + pad * 2, height + pad * 2 );
-		context.Batch.AddRectangle( rect, UiColors.HelpBackground );
-		context.DrawText( context.Fonts.Small, text, rect.Inflate( -pad ), UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
+		var rect = HelpBoxRect( context.Canvas, context.Fonts.Small.LineHeight * context.Canvas.TextScale );
+		if ( !context.DrawModel( "f_helpbg", 0, rect ) )
+			context.Batch.AddRectangle( rect, UiColors.HelpBox );
+		var pad = 4 * context.Canvas.TextScale;
+		var inner = rect.Inflate( -pad );
+		var height = context.Measure( context.Fonts.Small, text, (int)inner.Width ).Height;
+		// a text taller than the box is centred on it, not hung from its top edge
+		var area = height > inner.Height ? new UiRect( inner.X, inner.Y - (height - inner.Height) / 2, inner.Width, height ) : inner;
+		context.DrawText( context.Fonts.Small, text, area, UiColors.Text, UiAlign.Center, wrap: true, shadow: false );
 	}
 }

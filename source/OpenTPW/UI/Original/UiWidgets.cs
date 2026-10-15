@@ -5,29 +5,6 @@ namespace OpenTPW.UI.Original;
 
 public enum UiAlign { Left, Center, Right }
 
-/// <summary>Original UI models by name, loaded once; missing models are reported once and drawn as fallbacks.</summary>
-public sealed class UiModels
-{
-	private readonly Dictionary<string, UiModel?> models = new( StringComparer.OrdinalIgnoreCase );
-	private readonly Func<string, UiModel> load;
-
-	public UiModels( Func<string, UiModel>? load = null ) => this.load = load ?? UiModel.Load;
-
-	public UiModel? Get( string name )
-	{
-		if ( models.TryGetValue( name, out var model ) )
-			return model;
-		try { model = load( name ); }
-		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or InvalidOperationException or ArgumentException )
-		{
-			Log?.Warning( $"Original UI model {name} unavailable: {exception.Message}" );
-			model = null;
-		}
-		models[name] = model;
-		return model;
-	}
-}
-
 /// <summary>Everything a screen needs to lay out and draw one frame.</summary>
 public sealed class UiContext
 {
@@ -76,11 +53,11 @@ public sealed class UiContext
 	}
 
 	/// <summary>Draws text aligned horizontally inside <paramref name="rect"/> and centred vertically when it fits.</summary>
-	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true )
+	public void DrawText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool wrap = false, bool shadow = true, int? textScale = null )
 	{
 		if ( string.IsNullOrEmpty( text ) )
 			return;
-		var scale = Canvas.TextScale;
+		var scale = wrap ? Canvas.TextScale : textScale ?? Canvas.TextScale;
 		var layout = Layout( font, text, wrap ? (int)rect.Width : 0 );
 		var width = layout.Width * scale;
 		var height = layout.Height * scale;
@@ -99,6 +76,107 @@ public sealed class UiContext
 		Batch.AddText( font, layout, ix, iy, color, scale, text );
 	}
 
+	/// <summary>
+	/// Draws single-line text that fits <paramref name="rect"/>: the given font, else a smaller size of its family,
+	/// else a smaller whole text scale (glyphs stay pixel-exact), else wrapped in the smallest size (UiTextFit).
+	/// Fitting and placement use the drawn pixels, not the line box: BF4 glyph offsets put ink above and below
+	/// the line box. Horizontally the text's own ink is aligned; vertically the font's letter box (capitals,
+	/// ascenders and descenders) is centred, so labels on neighbouring buttons share a baseline.
+	/// </summary>
+	public void DrawFittedText( FontAtlas font, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Center, bool shadow = true )
+	{
+		if ( string.IsNullOrEmpty( text ) )
+			return;
+		var candidates = new List<FontAtlas> { font };
+		candidates.AddRange( Fonts.Smaller( font ) );
+		var boxes = candidates.Select( candidate => InkBox( candidate, text, shadow ) ).ToArray();
+		var fit = UiTextFit.Choose( Canvas.TextScale, boxes.Select( box => (box.Right - box.Left, box.Bottom - box.Top) ).ToArray(), rect.Width, rect.Height );
+		if ( fit.Wrap )
+		{
+			DrawText( candidates[fit.Index], text, rect, color, align, true, shadow );
+			return;
+		}
+		DrawTextAt( candidates[fit.Index], fit.Scale, text, rect, color, align, shadow );
+	}
+
+	/// <summary>Draws single-line text in <paramref name="chosen"/> at whole text scale <paramref name="scale"/>, placed like <see cref="DrawFittedText"/> (ink aligned horizontally, letter box centred vertically).</summary>
+	public void DrawTextAt( FontAtlas chosen, int scale, string text, UiRect rect, RgbaByte color, UiAlign align = UiAlign.Left, bool shadow = true )
+	{
+		if ( string.IsNullOrEmpty( text ) )
+			return;
+		var box = InkBox( chosen, text, shadow );
+		var width = (box.Right - box.Left) * scale;
+		var x = align switch
+		{
+			UiAlign.Center => rect.X + (rect.Width - width) / 2,
+			UiAlign.Right => rect.Right - width,
+			_ => rect.X
+		} - box.Left * scale;
+		var y = rect.Y + (rect.Height - (box.Bottom - box.Top) * scale) / 2 - box.Top * scale;
+		var layout = Layout( chosen, text );
+		var ix = (int)MathF.Round( x );
+		var iy = (int)MathF.Round( y );
+		if ( shadow )
+			Batch.AddText( chosen, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
+		Batch.AddText( chosen, layout, ix, iy, color, scale, text );
+	}
+
+	/// <summary>
+	/// Font and whole text scale for <paramref name="label"/> of <paramref name="group"/>. The page size is the family size
+	/// and scale (up to the current text scale) whose letter box is closest to <see cref="UiLabelGroup.TargetHeight"/> of
+	/// the shortest label rectangle without exceeding it. A label uses it when its widest variant text fits its rectangle;
+	/// otherwise it takes the largest smaller size that fits, or the smallest size when none does.
+	/// </summary>
+	// [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles); a label whose widest value does not fit drops alone to the largest size that does — evidence needed: capture of the original option labels in several languages
+	public (FontAtlas Font, int Scale) ChooseUniform( UiLabelGroup group, UiLabel label )
+	{
+		var members = group.Members.Where( member => member.Visible ).ToList();
+		var candidates = new List<FontAtlas> { group.Font( Fonts ) };
+		candidates.AddRange( Fonts.Smaller( candidates[0] ) );
+		var sizes = new List<(FontAtlas Font, int Scale, int Height)>();
+		foreach ( var candidate in candidates )
+		{
+			var box = InkBox( candidate, "x", false );
+			for ( var scale = Math.Max( 1, Canvas.TextScale ); scale >= 1; scale-- )
+				sizes.Add( (candidate, scale, (box.Bottom - box.Top) * scale) );
+		}
+		var heights = (members.Count == 0 ? new List<UiLabel> { label } : members).Select( member => member.ScreenRect( Canvas ).Height ).ToList();
+		var maximum = heights.Min();
+		var target = maximum * UiLabelGroup.TargetHeight;
+		var page = sizes.Where( size => size.Height <= maximum ).OrderBy( size => Math.Abs( size.Height - target ) ).ThenByDescending( size => size.Height ).Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault()
+			?? sizes.OrderBy( size => size.Height ).First();
+		var rect = label.ScreenRect( Canvas );
+		var texts = label.Variants?.Invoke().ToList() ?? new List<string> { label.Text() };
+		bool Fits( (FontAtlas Font, int Scale, int Height) size ) => texts.All( text =>
+		{
+			var box = InkBox( size.Font, text, label.Shadow );
+			return (box.Right - box.Left) * size.Scale <= rect.Width;
+		} );
+		if ( Fits( page ) )
+			return (page.Font, page.Scale);
+		var smaller = sizes.Where( size => size.Height <= page.Height ).OrderByDescending( size => size.Height ).ToList();
+		var fit = smaller.Cast<(FontAtlas Font, int Scale, int Height)?>().FirstOrDefault( size => Fits( size!.Value ) ) ?? smaller[^1];
+		return (fit.Font, fit.Scale);
+	}
+
+	private readonly Dictionary<FontAtlas, (int Top, int Bottom)> letterBoxes = new();
+
+	/// <summary>Unscaled box of <paramref name="text"/>'s drawn pixels, widened vertically to the font's letter box and by the drop shadow.</summary>
+	private (int Left, int Top, int Right, int Bottom) InkBox( FontAtlas font, string text, bool shadow )
+	{
+		if ( !letterBoxes.TryGetValue( font, out var letters ) )
+		{
+			var reference = TextLayout.Create( font, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789" );
+			letters = reference.Glyphs.Count == 0 ? (0, font.LineHeight) : (reference.InkTop, reference.InkBottom);
+			letterBoxes[font] = letters;
+		}
+		var layout = Layout( font, text );
+		var extra = shadow ? 1 : 0;
+		if ( layout.Glyphs.Count == 0 )
+			return (0, letters.Top, layout.Width + extra, letters.Bottom + extra);
+		return (layout.InkLeft, Math.Min( layout.InkTop, letters.Top ), layout.InkRight + extra, Math.Max( layout.InkBottom, letters.Bottom ) + extra);
+	}
+
 	/// <summary>Draws a model frame stretched so its bounds fill <paramref name="rect"/>.</summary>
 	public void DrawFrame( UiModelFrame frame, UiRect rect, RgbaByte? tint = null )
 	{
@@ -109,8 +187,7 @@ public sealed class UiContext
 		var color = tint ?? RgbaByte.White;
 		foreach ( var part in frame.Parts )
 		{
-			var path = part.TextureName.Length == 0 ? null : ResolveTexture( part.TextureName );
-			var texture = path == null ? UiTexture.Solid : UiTexture.Image( path );
+			var texture = TextureFor( part );
 			UiVertex Convert( int index )
 			{
 				var vertex = part.Vertices[index];
@@ -119,6 +196,13 @@ public sealed class UiContext
 			for ( var index = 0; index + 2 < part.Indices.Count; index += 3 )
 				Batch.AddTriangle( texture, Convert( part.Indices[index] ), Convert( part.Indices[index + 1] ), Convert( part.Indices[index + 2] ) );
 		}
+	}
+
+	/// <summary>The exact resource key used when drawing this model part.</summary>
+	internal UiTexture TextureFor( UiModelPart part )
+	{
+		var path = part.TextureName.Length == 0 ? null : ResolveTexture( part.TextureName );
+		return path == null ? UiTexture.Solid : UiTexture.Image( part.Transparent ? path + UiImages.BlackKeySuffix : path );
 	}
 
 	/// <summary>Draws model <paramref name="name"/> frame <paramref name="frame"/> into <paramref name="rect"/>; false if the model is missing.</summary>
@@ -155,6 +239,9 @@ public abstract class UiElement
 	public bool Enabled { get; set; } = true;
 	/// <summary>Original popup help (UIHELPTEXT) shown on hover.</summary>
 	public string? Help { get; set; }
+	/// <summary>The help read each frame when set (a text that follows the language); otherwise <see cref="Help"/>.</summary>
+	public Func<string?>? HelpSource { get; set; }
+	public string? CurrentHelp => HelpSource?.Invoke() ?? Help;
 	public virtual bool Focusable => false;
 
 	public UiRect ScreenRect( UiCanvas canvas ) => canvas.Map( Bounds, Anchor );
@@ -163,24 +250,55 @@ public abstract class UiElement
 	public virtual void Adjust( int direction ) { }
 }
 
+/// <summary>Labels that are drawn in one common size (the option labels of a page).</summary>
+public sealed class UiLabelGroup
+{
+	/// <summary>Share of the label rectangle's height the letter box (capitals, ascenders, descenders) should have.</summary>
+	public const float TargetHeight = 0.58f;
+	public List<UiLabel> Members { get; } = new();
+	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
+}
+
 public sealed class UiLabel : UiElement
 {
 	public Func<string> Text { get; set; } = () => "";
 	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Label;
 	public RgbaByte Color { get; set; } = UiColors.Text;
+	/// <summary>When set, the text colour is read from here every frame instead of <see cref="Color"/>.</summary>
+	public Func<RgbaByte>? ColorSource { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Left;
 	public bool Wrap { get; set; }
+	/// <summary>Drop shadow under the text; the dark option labels have none.</summary>
+	public bool Shadow { get; set; } = true;
+	/// <summary>Fit the single line into the rectangle (smaller font, smaller scale) instead of the small-font fallback.</summary>
+	public bool Fit { get; set; }
+	/// <summary>Labels of one group share a single font and scale (<see cref="UiContext.ChooseUniform"/>).</summary>
+	public UiLabelGroup? Group { get; set; }
+	/// <summary>Every text this label can show (so a group's size does not change while values change); null = just <see cref="Text"/>.</summary>
+	public Func<IEnumerable<string>>? Variants { get; set; }
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		var rect = ScreenRect( context.Canvas );
 		var font = Font( context.Fonts );
 		var text = Text();
+		var color = ColorSource?.Invoke() ?? Color;
+		if ( Group != null )
+		{
+			var (groupFont, scale) = context.ChooseUniform( Group, this );
+			context.DrawTextAt( groupFont, scale, text, rect, color, Align, Shadow );
+			return;
+		}
+		if ( Fit && !Wrap )
+		{
+			context.DrawFittedText( font, text, rect, color, Align, Shadow );
+			return;
+		}
 		// [APPROX:UI-032] small-font fallback and greedy wrap for long labels — evidence needed: captures of translated original screens
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
 			font = context.Fonts.Small;
-		context.DrawText( font, text, rect, Color, Align, Wrap );
+		context.DrawText( font, text, rect, color, Align, Wrap, Shadow );
 	}
 }
 
@@ -190,11 +308,83 @@ public sealed class UiModelImage : UiElement
 	public string Model { get; set; } = "";
 	public Func<int> Frame { get; set; } = () => 0;
 	public RgbaByte? Tint { get; set; }
+	/// <summary>Name of a local art override (<see cref="UiArtOverrides"/>) drawn instead of the model when present.</summary>
+	public string? ArtOverride { get; set; }
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
+		if ( ArtOverride != null && UiArtOverrides.Find( ArtOverride ) is { } art )
+		{
+			// Fit inside the model's box, keeping the image's aspect ratio.
+			var rect = ScreenRect( context.Canvas );
+			var scale = Math.Min( rect.Width / art.Width, rect.Height / art.Height );
+			var size = new NVector2( art.Width * scale, art.Height * scale );
+			context.Batch.AddQuad( UiTexture.HostImage( art.Path ), new UiRect( rect.X + (rect.Width - size.X) / 2, rect.Y + (rect.Height - size.Y) / 2, size.X, size.Y ),
+				NVector2.Zero, NVector2.One, Tint ?? RgbaByte.White );
+			return;
+		}
 		if ( !context.DrawModel( Model, Frame(), ScreenRect( context.Canvas ), Tint ) )
 			context.Batch.AddRectangle( ScreenRect( context.Canvas ), UiColors.HelpBackground );
+	}
+}
+
+/// <summary>
+/// [EXT:online-two-step] A QR code (for an authenticator app's <c>otpauth://</c> URI): black modules on a white panel with
+/// the standard four-module quiet zone, drawn as rectangles at a whole number of pixels per module so scanners read it.
+/// </summary>
+public sealed class UiQrCode : UiElement
+{
+	private string text = "";
+	private bool[,] modules = new bool[0, 0];
+
+	public string Text
+	{
+		get => text;
+		set
+		{
+			text = value;
+			modules = Modules( value );
+		}
+	}
+
+	/// <summary>The module grid of <paramref name="text"/> at medium error correction; [x, y], true is dark.</summary>
+	public static bool[,] Modules( string text )
+	{
+		if ( text.Length == 0 )
+			return new bool[0, 0];
+		var code = Net.Codecrete.QrCodeGenerator.QrCode.EncodeText( text, Net.Codecrete.QrCodeGenerator.QrCode.Ecc.Medium );
+		var grid = new bool[code.Size, code.Size];
+		for ( var y = 0; y < code.Size; y++ )
+			for ( var x = 0; x < code.Size; x++ )
+				grid[x, y] = code.GetModule( x, y );
+		return grid;
+	}
+
+	public override void Draw( UiContext context, bool focused, bool pressed )
+	{
+		var size = modules.GetLength( 0 );
+		if ( size == 0 )
+			return;
+		var rect = ScreenRect( context.Canvas );
+		var span = size + 8;
+		var module = MathF.Max( 1, MathF.Floor( MathF.Min( rect.Width, rect.Height ) / span ) );
+		var x0 = MathF.Round( rect.X + (rect.Width - module * span) / 2 );
+		var y0 = MathF.Round( rect.Y + (rect.Height - module * span) / 2 );
+		context.Batch.AddRectangle( new UiRect( x0, y0, module * span, module * span ), new RgbaByte( 255, 255, 255, 255 ) );
+		var black = new RgbaByte( 0, 0, 0, 255 );
+		for ( var y = 0; y < size; y++ )
+		{
+			for ( var x = 0; x < size; x++ )
+			{
+				if ( !modules[x, y] )
+					continue;
+				var run = 1;
+				while ( x + run < size && modules[x + run, y] )
+					run++;
+				context.Batch.AddRectangle( new UiRect( x0 + (x + 4) * module, y0 + (y + 4) * module, run * module, module ), black );
+				x += run - 1;
+			}
+		}
 	}
 }
 
@@ -220,6 +410,8 @@ public sealed class UiButton : UiElement
 	public const int DisabledFrame = 1;
 	public const int HighlightFrame = 2;
 	public const int DownFrame = 5;
+	/// <summary>Share of each purple_button half outside its bar (16 of 64 texture rows); the bar is centred in the button.</summary>
+	public const float PurpleBarGap = 0.25f;
 
 	public string? Model { get; set; }
 	public Func<string>? Text { get; set; }
@@ -227,7 +419,11 @@ public sealed class UiButton : UiElement
 	public Action? Clicked { get; set; }
 	/// <summary>Left/right keys on the focused button (e.g. turn the lobby to the next island).</summary>
 	public Action<int>? Adjusted { get; set; }
+	/// <summary>The mouse wheel over the button also calls <see cref="Adjusted"/> (OpenTPW page cycle buttons); off elsewhere, so the wheel over a lobby button does not turn the island.</summary>
+	public bool WheelAdjusts { get; set; }
 	public Func<bool>? Selected { get; set; }
+	/// <summary>Keeps the normal frame while focused, for a model whose highlight texture the game files lack (b_callmech's b_callmechg).</summary>
+	public bool KeepNormalFrameWhenFocused { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Center;
 	public override bool Focusable => Visible && Enabled;
 
@@ -235,36 +431,153 @@ public sealed class UiButton : UiElement
 
 	public override void Activate()
 	{
-		if ( Enabled )
-			Clicked?.Invoke();
+		if ( !Enabled )
+			return;
+		// [BIN:TPW-EXE:0x485780 UI message hook] a global hook, installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and never removed, is called by the dispatchers 0x658d9f and 0x658e42 for every control message before the control's own procedure (unless the control's destroyed byte +4 is set); for message 0x100 on any control it plays cat_ui 0x1F (0xBD when the control's style word +0x48 has bit 0x10, 0x4857cb), so every activated button plays it, front end included
+		// [APPROX:AUDIO-004] 0xBD plays for a control whose construction style (+0x48, tp.exe 0x65bcad arg 2) has bit 0x10; which original controls are created with it is not traced, so no OpenTPW control plays it
+		GameAudio.PlayUi( GameAudio.ClickEvent );
+		Clicked?.Invoke();
 	}
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		var rect = ScreenRect( context.Canvas );
-		var frame = !Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : focused ? HighlightFrame : NormalFrame;
+		var frame = !Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : focused && !KeepNormalFrameWhenFocused ? HighlightFrame : NormalFrame;
 		if ( Model != null && context.DrawModel( Model, frame, rect ) )
 		{
 			if ( Text != null )
-				context.DrawText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
+				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );
 			return;
 		}
-		// [APPROX:UI-008] purple_button halves for normal/focused — evidence needed: capture of the original front-end buttons
+		// [APPROX:UI-008] purple_button as a mirrored end cap, upper half normal, lower half focused/pressed — evidence needed: capture of the original front-end buttons
 		var art = context.ResolveTexture( "purple_button" );
+		var bar = rect;
 		if ( art != null )
 		{
-			var lower = focused || pressed || Selected?.Invoke() == true;
-			context.Batch.AddQuad( UiTexture.Image( art ), rect, new NVector2( 0, lower ? 0.5f : 0 ), new NVector2( 1, lower ? 1f : 0.5f ), Enabled ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
+			var lit = focused || pressed || Selected?.Invoke() == true;
+			bar = new UiRect( rect.X, rect.Y + rect.Height * PurpleBarGap / 2, rect.Width, rect.Height * (1 - PurpleBarGap) );
+			DrawPurpleBar( context, UiTexture.Image( art ), bar, lit, Enabled ? RgbaByte.White : new RgbaByte( 160, 160, 160, 255 ) );
 		}
 		else
 			context.Batch.AddRectangle( rect, focused ? UiColors.Highlight : UiColors.HelpBackground );
-		var inner = new UiRect( rect.X + rect.Height * 0.4f, rect.Y, rect.Width - rect.Height * 0.8f, rect.Height );
-		context.DrawText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
+		// Margins keep the label off the bar's rim and rounded ends.
+		var inner = new UiRect( bar.X + bar.Height * 0.5f, bar.Y + bar.Height * 0.05f, bar.Width - bar.Height, bar.Height * 0.9f );
+		context.DrawFittedText( Font( context.Fonts ), Text?.Invoke() ?? "", inner, !Enabled ? UiColors.Disabled : focused ? UiColors.Highlight : UiColors.Text, Align );
+	}
+
+	/// <summary>
+	/// Each half of the purple_button texture is one end of a button: a bar in 48 of its 64 rows with a rounded
+	/// end (left in the upper, normal half; right in the lower, lit half) and a cut end. A whole button is that
+	/// piece and its mirror image: rounded caps at their own aspect, the body stretched to meet in the middle.
+	/// The outermost texture columns at both ends are edges and stay out of the caps and the seam.
+	/// </summary>
+	private static void DrawPurpleBar( UiContext context, UiTexture texture, UiRect bar, bool lit, RgbaByte tint )
+	{
+		// The outermost column of the rounded end is a translucent grey edge that would show as a line.
+		const float EdgeU = 1.5f / 128, CapU = 0.25f, CutU = 0.96f;
+		// The bar's first row is a faint rim that also runs over the rounded corners; start below it, and stay half a
+		// texel inside so linear filtering does not pull in the neighbouring rows.
+		var (v0, v1) = lit ? (81.5f / 128, 127.5f / 128) : (1.5f / 128, 47.5f / 128);
+		// Texture u measured from the rounded end of the piece.
+		float U( float fromRound ) => lit ? 1 - fromRound : fromRound;
+		var cap = Math.Min( bar.Height * CapU * 128 / 48, bar.Width / 2 );
+		var middle = bar.X + bar.Width / 2;
+		var capEnd = cap < bar.Width / 2 ? CapU : CapU * (bar.Width / 2) / cap;
+		void Quad( float left, float right, float uLeft, float uRight )
+		{
+			if ( right > left )
+				context.Batch.AddQuad( texture, new UiRect( left, bar.Y, right - left, bar.Height ), new NVector2( uLeft, v0 ), new NVector2( uRight, v1 ), tint );
+		}
+		Quad( bar.X, bar.X + cap, U( EdgeU ), U( capEnd ) );
+		Quad( bar.X + cap, middle, U( CapU ), U( CutU ) );
+		Quad( middle, bar.Right - cap, U( CutU ), U( CapU ) );
+		Quad( bar.Right - cap, bar.Right, U( capEnd ), U( EdgeU ) );
 	}
 }
 
 /// <summary>
-/// An options row in the style of the original options panel (f_optpanel2 bar): label on the left,
+/// A horizontal slider in the style of the original options screen: a <c>b_scroller</c> ball on a track,
+/// <see cref="UiElement.Bounds"/> being the mouse hit region. Values are step indices 0..Steps-1.
+/// </summary>
+public sealed class UiSlider : UiElement, IUiDragTarget
+{
+	public const string KnobModel = "b_scroller";
+
+	/// <summary>Authored track the ball runs along.</summary>
+	public UiRect Track { get; set; }
+	/// <summary>Authored size of the ball.</summary>
+	public NVector2 KnobSize { get; set; } = new( 67, 67 );
+	/// <summary>Authored vertical position of the ball's top.</summary>
+	public float KnobTop { get; set; }
+	public Func<int> Steps { get; set; } = () => 2;
+	public Func<int> Value { get; set; } = () => 0;
+	public Action<int>? Changed { get; set; }
+	/// <summary>Truncate a drag position to its value instead of taking the nearest value (the original's slider class, used by the research effort sliders).</summary>
+	// [BIN:TPW-EXE:0x66afc9 slider drag] value = min + trunc((thumbLeft - trackLeft) * (max - min) / (trackWidth - thumbWidth)); the research effort sliders 0xd2d0b..0xd2d0f are this class with SetRange(0,100) (0x4aa6bd..0x4aa725)
+	public bool Truncates { get; set; }
+	public override bool Focusable => Visible && Enabled;
+
+	/// <summary>
+	/// Authored ball rectangle for <paramref name="value"/>: the ball's centre moves linearly from half a ball
+	/// inside the track's left end to half a ball inside its right end.
+	/// </summary>
+	// [APPROX:UI-036] linear knob travel over the track, value index 0..Steps-1 from the knob's centre — evidence needed: capture of the original slider ends / binary slider code
+	public UiRect KnobRect( int value )
+	{
+		var steps = Math.Max( 2, Steps() );
+		var fraction = Math.Clamp( value, 0, steps - 1 ) / (float)(steps - 1);
+		var left = Track.X + (Track.Width - KnobSize.X) * fraction;
+		return new UiRect( left, KnobTop, KnobSize.X, KnobSize.Y );
+	}
+
+	/// <summary>Value whose ball centre is nearest to the authored x position <paramref name="authoredX"/>.</summary>
+	public int ValueAt( float authoredX )
+	{
+		var steps = Math.Max( 2, Steps() );
+		var travel = Track.Width - KnobSize.X;
+		if ( travel <= 0 )
+			return 0;
+		var fraction = (authoredX - Track.X - KnobSize.X / 2) / travel;
+		fraction = Math.Clamp( fraction, 0f, 1f );
+		return Math.Clamp( Truncates ? (int)MathF.Floor( fraction * (steps - 1) + 1e-4f ) : (int)MathF.Round( fraction * (steps - 1) ), 0, steps - 1 );
+	}
+
+	void IUiDragTarget.DragTo( UiCanvas canvas, NVector2 point ) => SetFromMouse( canvas, point );
+
+	/// <summary>Sets the value from a mouse position in framebuffer pixels.</summary>
+	public void SetFromMouse( UiCanvas canvas, NVector2 point )
+	{
+		if ( !Enabled )
+			return;
+		var rect = ScreenRect( canvas );
+		if ( rect.Width <= 0 )
+			return;
+		Set( ValueAt( Bounds.X + (point.X - rect.X) / rect.Width * Bounds.Width ) );
+	}
+
+	private void Set( int value )
+	{
+		if ( value != Value() )
+			Changed?.Invoke( value );
+	}
+
+	public override void Adjust( int direction )
+	{
+		if ( Enabled )
+			Set( Math.Clamp( Value() + direction, 0, Math.Max( 2, Steps() ) - 1 ) );
+	}
+
+	public override void Draw( UiContext context, bool focused, bool pressed )
+	{
+		var knob = KnobRect( Value() );
+		var rect = context.Canvas.Map( knob, Anchor );
+		if ( !context.DrawModel( KnobModel, 0, rect ) )
+			context.Batch.AddRectangle( rect, UiColors.Value );
+	}
+}
+
+/// <summary>
+/// An options row of the OpenTPW page in the style of the original options panel (f_optpanel2 bar): label on the left,
 /// value on the right, cycled with the arrows (b_sleft/b_sright), the mouse wheel or left/right keys.
 /// </summary>
 public sealed class UiOptionRow : UiElement
@@ -287,7 +600,7 @@ public sealed class UiOptionRow : UiElement
 		var rect = ScreenRect( canvas );
 		var size = rect.Height * 0.8f;
 		var top = rect.Y + (rect.Height - size) / 2;
-		// [APPROX:UI-009] option-row arrow/value positions — evidence needed: capture of the original options screen
+		// [EXT:opentpw-page] option-row arrow/value positions: OpenTPW's own row style for its page (the original page uses sliders and toggles)
 		// The f_optpanel2 art: label lozenge up to ~58% of the frame width, then the value lozenges to the end.
 		var left = new UiRect( rect.X + rect.Width * 0.585f, top, size, size );
 		var right = new UiRect( rect.X + rect.Width * 0.975f - size, top, size, size );
@@ -317,7 +630,12 @@ public sealed class UiListItem : UiElement
 	public Func<string> Text { get; set; } = () => "";
 	public Action? Clicked { get; set; }
 	public override bool Focusable => Visible && Enabled;
-	public override void Activate() => Clicked?.Invoke();
+	// [BIN:TPW-EXE:0x485780 UI message hook] the hook sees every control's activation, so the front end's list lines click like its buttons
+	public override void Activate()
+	{
+		GameAudio.PlayUi( GameAudio.ClickEvent );
+		Clicked?.Invoke();
+	}
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{

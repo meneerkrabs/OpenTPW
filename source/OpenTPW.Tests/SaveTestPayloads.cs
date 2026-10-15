@@ -1,0 +1,342 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+
+namespace OpenTPW.Tests;
+
+/// <summary>
+/// Builds synthetic decoded save payloads in the original writer's layout (docs/reverse/SAVE-plan.md): action
+/// recording, World block (variables, opaque macro AI, calendar, arrivals, cell map, thing list), the 17
+/// delimiters and the UI block. Thing bodies follow the serializer widths the readers use.
+/// </summary>
+internal static class SaveTestPayloads
+{
+	public sealed record AttractionFields
+	{
+		public ushort PositionX { get; init; } = 51 * 256 + 128;
+		public ushort PositionY { get; init; } = 23 * 256 + 128;
+		public uint Angle { get; init; } = 90;
+		public ushort InfoId { get; init; } = 1100;
+		public uint[] Stamp { get; init; } = { 2000, 1, 1, 6, 15, 37, 30, 0 };
+		public uint MeshInstance { get; init; } = 110;
+		public string Line1 { get; init; } = "Belly";
+		public string Line2 { get; init; } = "Bounce";
+		public uint State { get; init; }
+		public uint RingCount { get; init; } = 30;
+		public byte RingFlag { get; init; } = 1;
+		public uint Customers { get; init; } = 7;
+		public uint WalkAways { get; init; } = 2;
+		public byte Capacity { get; init; } = 5;
+		public byte Duration { get; init; } = 30;
+		public uint Speed { get; init; } = 60;
+		public int CostOfGoods { get; init; } = 12;
+		public int Quality { get; init; } = 50;
+		public int Chance { get; init; } = 100;
+		public uint Price { get; init; } = 20;
+		public uint QueueCells { get; init; } = 4;
+		public float Gauge48 { get; init; } = 100f;
+		public float LifeGauge { get; init; } = 97f;
+		public float Repair { get; init; } = 64f;
+		public uint Costs { get; init; } = 150;
+		public uint Takings { get; init; } = 900;
+		public byte Level { get; init; } = 1;
+	}
+
+	/// <summary>An attraction body in the serializer's order (0xdaf04).</summary>
+	public static byte[] Attraction( AttractionFields fields )
+	{
+		using var stream = new MemoryStream();
+		using var writer = new BinaryWriter( stream );
+		writer.Write( fields.PositionX );
+		writer.Write( fields.PositionY );
+		writer.Write( new byte[4] );
+		writer.Write( fields.Angle );
+		writer.Write( fields.InfoId );
+		foreach ( var value in fields.Stamp )
+			writer.Write( value );
+		writer.Write( fields.MeshInstance );
+		writer.Write( (ushort)0 );
+		for ( var index = 0; index < SaveAttraction.NameCharacters; index++ )
+		{
+			writer.Write( (ushort)(index < fields.Line1.Length ? fields.Line1[index] : 0) );
+			writer.Write( (ushort)(index < fields.Line2.Length ? fields.Line2[index] : 0) );
+		}
+		writer.Write( new byte[8] );
+		writer.Write( fields.State );
+		writer.Write( new byte[24] );
+		void Ring()
+		{
+			writer.Write( 1u );
+			writer.Write( fields.RingCount );
+			writer.Write( fields.RingFlag );
+			writer.Write( 0u );
+			writer.Write( new byte[(int)Math.Min( fields.RingCount, 64 ) * 4] );
+		}
+		Ring();
+		Ring();
+		writer.Write( fields.Customers );
+		Ring();
+		writer.Write( fields.WalkAways );
+		Ring();
+		Ring();
+		Ring();
+		writer.Write( fields.Capacity );
+		writer.Write( fields.Duration );
+		writer.Write( fields.Speed );
+		writer.Write( (ushort)0 );
+		writer.Write( fields.CostOfGoods );
+		writer.Write( fields.Quality );
+		writer.Write( fields.Chance );
+		writer.Write( fields.Price );
+		writer.Write( 0u );
+		writer.Write( fields.QueueCells );
+		writer.Write( fields.Gauge48 );
+		writer.Write( fields.LifeGauge );
+		writer.Write( fields.Repair );
+		writer.Write( new byte[8] );
+		writer.Write( fields.Costs );
+		writer.Write( fields.Takings );
+		writer.Write( 0u );
+		writer.Write( fields.Level );
+		writer.Flush();
+		return stream.ToArray();
+	}
+
+	/// <summary>Bank body: base, seven words, eight loan offers (offer i: <paramref name="loans"/> or the easy defaults).</summary>
+	public static byte[] Bank( int balance = 87_987, int fee = 25, int profit = -12_013, uint withdrawals = 1, Func<int, int[]>? loans = null )
+	{
+		using var stream = new MemoryStream();
+		using var writer = new BinaryWriter( stream );
+		writer.Write( new ushort[] { 128, 128, 7, 9 }.SelectMany( BitConverter.GetBytes ).ToArray() );
+		writer.Write( fee );
+		writer.Write( balance );
+		writer.Write( 0 );
+		writer.Write( withdrawals );
+		writer.Write( balance - 200 );
+		writer.Write( 0 );
+		writer.Write( profit );
+		for ( var index = 0; index < SaveBank.LoanRecords; index++ )
+			foreach ( var word in loans?.Invoke( index ) ?? new[] { index == 3 ? 1 : 0, 10_000 * (index + 1), 0, 36, 10_000 * (index + 1) / 36, 0, 0, index } )
+				writer.Write( word );
+		writer.Flush();
+		return stream.ToArray();
+	}
+
+	/// <summary>Challenge system body: <paramref name="used"/> leading slots (type, time, value, prize), the rest 0xCD with type 0.</summary>
+	public static byte[] ChallengeSystem( IReadOnlyList<(int Type, int Time, int Value, int Prize)> used, bool gap = false )
+	{
+		var body = new byte[SaveChallengeSystem.Bytes];
+		Array.Fill( body, (byte)0xCD, 8, SaveChallengeSystem.Slots * SaveChallengeSystem.SlotBytes );
+		for ( var slot = 0; slot < SaveChallengeSystem.Slots; slot++ )
+		{
+			var offset = 8 + slot * SaveChallengeSystem.SlotBytes;
+			var index = gap && slot > 0 ? slot - 1 : slot;
+			if ( gap && slot == 0 || index >= used.Count )
+			{
+				BitConverter.GetBytes( 0 ).CopyTo( body, offset );
+				continue;
+			}
+			var (type, time, value, prize) = used[index];
+			Array.Clear( body, offset, SaveChallengeSystem.SlotBytes );
+			BitConverter.GetBytes( type ).CopyTo( body, offset );
+			BitConverter.GetBytes( time ).CopyTo( body, offset + 4 );
+			BitConverter.GetBytes( value ).CopyTo( body, offset + 8 );
+			BitConverter.GetBytes( prize ).CopyTo( body, offset + 20 );
+			body[offset + 42] = 1;
+		}
+		BitConverter.GetBytes( -1 ).CopyTo( body, 8 + SaveChallengeSystem.Slots * SaveChallengeSystem.SlotBytes );
+		return body;
+	}
+
+	public sealed record AdvisorRecordFields( ushort ThingId, uint Secondary, uint Message, int Score, byte Valid, int ResponseNo, byte Override, byte Overridden );
+
+	/// <summary>Advisor controller body: pending records (0xCD-filled and invalid past <paramref name="pending"/>), history entries by message.</summary>
+	public static byte[] AdvisorController( IReadOnlyList<AdvisorRecordFields> pending, IReadOnlyDictionary<int, (uint Tick, int Variant, byte Played, uint Slaps)> history )
+	{
+		using var stream = new MemoryStream();
+		using var writer = new BinaryWriter( stream );
+		writer.Write( new ushort[] { 128, 128, 2, 4 }.SelectMany( BitConverter.GetBytes ).ToArray() );
+		writer.Write( 0u );
+		writer.Write( 0u );
+		void Record( AdvisorRecordFields record )
+		{
+			writer.Write( record.ThingId );
+			writer.Write( record.Secondary );
+			writer.Write( record.Message );
+			writer.Write( record.Score );
+			writer.Write( record.Valid );
+			writer.Write( record.ResponseNo );
+			writer.Write( record.Override );
+			writer.Write( record.Overridden );
+		}
+		for ( var index = 0; index < SaveAdvisorController.PendingRecords; index++ )
+			Record( index < pending.Count ? pending[index] : new AdvisorRecordFields( 0xCDCD, 0xCDCDCDCD, 0xCDCDCDCD, unchecked((int)0xCDCDCDCD), 0, unchecked((int)0xCDCDCDCD), 0xCD, 0xCD ) );
+		writer.Write( new uint[] { 0, 114_820_087, 10_832 }.SelectMany( BitConverter.GetBytes ).ToArray() );
+		for ( var message = 0; message < SaveAdvisorController.HistoryEntries; message++ )
+		{
+			var (tick, variant, played, slaps) = history.TryGetValue( message, out var entry ) ? entry : (0u, -1, (byte)0, 0u);
+			writer.Write( tick );
+			writer.Write( variant );
+			writer.Write( played );
+			writer.Write( new byte[] { 0xCD, 0xCD, 0xCD } );
+			writer.Write( slaps );
+		}
+		Record( new AdvisorRecordFields( 0, 0, 346, 1000, 0, -1, 0, 0 ) );
+		writer.Write( (byte)0xCD );
+		writer.Write( 282u );
+		writer.Flush();
+		return stream.ToArray();
+	}
+
+	/// <summary>Staff body for <paramref name="model"/>: base, opaque person bytes, the staff suffix and a role suffix ending in <paramref name="roleNext"/>.</summary>
+	public static byte[] Staff( SaveThingModel model, int grade = 2, float happiness = 97, string name = "Nicholas Ricks", uint state = 1, byte percentage = 0,
+		long hired = 125_935_884_000_000_000, ushort roleNext = 0 )
+	{
+		using var stream = new MemoryStream();
+		using var writer = new BinaryWriter( stream );
+		writer.Write( new byte[SaveThingChain.PersonBytes] );
+		writer.Write( grade );
+		writer.Write( happiness );
+		writer.Write( 0u );
+		for ( var index = 0; index < 33; index++ )
+			writer.Write( (ushort)(index < name.Length ? name[index] : 0) );
+		writer.Write( 0x40000001u );
+		writer.Write( percentage );
+		writer.Write( (ushort)0 );
+		writer.Write( state );
+		writer.Write( 0u );
+		writer.Write( hired );
+		writer.Write( 93f );
+		var size = SaveThingChain.FixedBodyBytes[model];
+		writer.Write( new byte[size - (int)stream.Length - 2] );
+		writer.Write( roleNext );
+		writer.Flush();
+		return stream.ToArray();
+	}
+
+	/// <summary>A zero body of a fixed-width model.</summary>
+	public static byte[] Fixed( SaveThingModel model ) => new byte[SaveThingChain.FixedBodyBytes[model]];
+
+	/// <summary>The 64 bytes of World variables, version <paramref name="version"/>; IDs default to none.</summary>
+	public static byte[] Variables( uint version = 2, ushort bank = 0, uint gameTick = 755, uint parkClosed = 0, ushort researchLab = 0, ushort staffHq = 0,
+		ushort firstResearcher = 0, ushort firstObject = 0, uint randomSeed = 0x3F416BBA )
+	{
+		using var stream = new MemoryStream();
+		using var writer = new BinaryWriter( stream );
+		writer.Write( version );
+		writer.Write( new ushort[] { 15, 0, 0, bank, 0 }.SelectMany( BitConverter.GetBytes ).ToArray() );
+		writer.Write( gameTick );
+		writer.Write( (ushort)0 );
+		writer.Write( (ushort)0 );
+		writer.Write( parkClosed );
+		writer.Write( 0u );
+		writer.Write( (ushort)0 );
+		writer.Write( (ushort)0 );
+		writer.Write( randomSeed );
+		writer.Write( new ushort[] { researchLab, staffHq, 0, 0, 0 }.SelectMany( BitConverter.GetBytes ).ToArray() );
+		writer.Write( 0u );
+		writer.Write( new ushort[] { 0, 0, 0, 0, firstResearcher, firstObject }.SelectMany( BitConverter.GetBytes ).ToArray() );
+		writer.Flush();
+		return stream.ToArray();
+	}
+
+	/// <summary>Calendar (FunnyTimeStart 2000-01-01, rate 15000, month cache 1, day 2) and 18 arrival bytes.</summary>
+	public static byte[] CalendarAndArrivals( int rate = 15_000, int month = 1, int day = 2 )
+	{
+		using var stream = new MemoryStream();
+		using var writer = new BinaryWriter( stream );
+		writer.Write( 125_911_584_000_000_000L );
+		writer.Write( 125_850_128_932_900_000L );
+		writer.Write( month );
+		writer.Write( day );
+		writer.Write( rate );
+		writer.Write( new byte[SaveWorld.ArrivalBytes] );
+		writer.Flush();
+		return stream.ToArray();
+	}
+
+	/// <summary>Cell records X-fastest with attributes from <paramref name="map"/>.</summary>
+	public static byte[] Grid( MapFile map, Func<int, int, byte[]>? cell = null )
+	{
+		using var output = new MemoryStream();
+		for ( var y = 0; y < map.CellCountY; y++ )
+			for ( var x = 0; x < map.CellCountX; x++ )
+				output.Write( cell?.Invoke( x, y ) ?? OriginalParkImportTests.CreateCellRecord( map.GetCellAt( x, y ) ) );
+		return output.ToArray();
+	}
+
+	/// <summary>Used Thing Head, then each thing as (next ID, model, body).</summary>
+	public static byte[] Things( IReadOnlyList<(uint Id, uint Model, byte[] Body)> things )
+	{
+		using var output = new MemoryStream();
+		output.Write( BitConverter.GetBytes( things.Count == 0 ? 0u : things[0].Id ) );
+		for ( var index = 0; index < things.Count; index++ )
+		{
+			output.Write( BitConverter.GetBytes( index + 1 < things.Count ? things[index + 1].Id : 0u ) );
+			output.Write( BitConverter.GetBytes( things[index].Model ) );
+			output.Write( things[index].Body );
+		}
+		return output.ToArray();
+	}
+
+	/// <summary>World block bytes (without its delimiter).</summary>
+	public static byte[] World( byte[] variables, byte[] grid, byte[] things, int opaqueBytes = 37, byte[]? calendar = null, byte[]? opaque = null ) =>
+		variables.Concat( opaque ?? Enumerable.Repeat( (byte)0xCD, opaqueBytes ) ).Concat( calendar ?? CalendarAndArrivals() ).Concat( grid ).Concat( things ).ToArray();
+
+	/// <summary>The stored (byte-reversed) delimiter of <paramref name="tag"/>.</summary>
+	public static byte[] Stored( string tag ) => Encoding.ASCII.GetBytes( tag ).Reverse().ToArray();
+
+	/// <summary>
+	/// A full payload: a 3-byte action recording, <paramref name="world"/>, then every other block (fixed-width blocks
+	/// at their widths, an empty Coasters block, <paramref name="rideSystem"/>; <paramref name="blocks"/> overrides), with
+	/// their delimiters (<paramref name="tags"/> overrides the delimiter order) and a 4-byte UI block.
+	/// </summary>
+	public static byte[] Payload( byte[] world, byte[]? rideSystem = null, IReadOnlyDictionary<SaveBlock, byte[]>? blocks = null,
+		IEnumerable<(SaveBlock Block, string Tag)>? tags = null, uint published = 0 )
+	{
+		using var output = new MemoryStream();
+		output.Write( BitConverter.GetBytes( published ) );
+		output.Write( BitConverter.GetBytes( 3u ) );
+		output.Write( new byte[] { 1, 2, 3 } );
+		foreach ( var (block, tag) in tags ?? SavePayloadLayout.Delimiters )
+		{
+			var content = blocks != null && blocks.TryGetValue( block, out var replaced ) ? replaced : block switch
+			{
+				SaveBlock.World => world,
+				SaveBlock.RideSystem => rideSystem ?? new byte[6],
+				SaveBlock.Coasters => new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0 },
+				_ when SavePayloadLayout.FixedBlockBytes.TryGetValue( block, out var size ) => new byte[size],
+				_ => new byte[] { 0x10, (byte)block, 0x20 },
+			};
+			output.Write( content );
+			output.Write( Stored( tag ) );
+		}
+		output.Write( new byte[4] );
+		return output.ToArray();
+	}
+
+	/// <summary>
+	/// A small but complete park on <paramref name="map"/>: bank 8, challenge system 10, advisor 3, staff HQ 1, research
+	/// lab 6, researcher 30, one attraction 12 (Info.Id 1100 at cell 1, 1) and the other singleton things.
+	/// </summary>
+	public static List<(uint Id, uint Model, byte[] Body)> ParkThings() => new()
+	{
+		(30, (uint)SaveThingModel.Researcher, Staff( SaveThingModel.Researcher )),
+		(12, (uint)SaveThingModel.Attraction, Attraction( new AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90 } )),
+		(10, (uint)SaveThingModel.ChallengeSystem, ChallengeSystem( new[] { (3, 60, 30, 5000), (9, 60, 15, 3000) } )),
+		(9, (uint)SaveThingModel.UIMsgReceiver, Fixed( SaveThingModel.UIMsgReceiver )),
+		(8, (uint)SaveThingModel.Bank, Bank()),
+		(7, (uint)SaveThingModel.Weather, Fixed( SaveThingModel.Weather )),
+		(6, (uint)SaveThingModel.ResearchLab, Fixed( SaveThingModel.ResearchLab )),
+		(5, (uint)SaveThingModel.ParkAnalyser, Fixed( SaveThingModel.ParkAnalyser )),
+		(4, (uint)SaveThingModel.TagSystem, Fixed( SaveThingModel.TagSystem )),
+		(3, (uint)SaveThingModel.AdvisorController, AdvisorController( new[] { new AdvisorRecordFields( 0, 0, 128, 20, 1, -1, 0, 0 ) }, new Dictionary<int, (uint, int, byte, uint)> { [0] = (1, 0, 1, 0) } )),
+		(2, (uint)SaveThingModel.MechanicHq, Fixed( SaveThingModel.MechanicHq )),
+		(1, (uint)SaveThingModel.StaffHq, Fixed( SaveThingModel.StaffHq )),
+	};
+
+	public static byte[] ParkVariables( uint gameTick = 755, uint parkClosed = 0 ) =>
+		Variables( bank: 8, gameTick: gameTick, parkClosed: parkClosed, researchLab: 6, staffHq: 1, firstResearcher: 30, firstObject: 12 );
+}

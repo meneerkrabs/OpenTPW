@@ -116,11 +116,13 @@ public class RseScriptTests
 	[TestMethod]
 	public void CurrentVmHandlerSetIsPinned()
 	{
-		// Every opcode the corpus uses, plus SETVARINPARENT/YEAR/MONTH/DAY (documented, unused); none of the 18 other unused names.
-		var unhandled = new[] { "SETLV", "ADDOBJ_EXT", "EVENT_EXT", "GETANIM", "FLUSHANIM_CH", "WAITANIM_CH", "TRIGWAITANIM_CH", "DBGMSG",
-			"PUSH", "POP", "WAITABS", "MULT", "END", "ENABLELIGHT", "DISABLELIGHT", "SETLIGHT", "COLOURLIGHT", "GETCUSTPTCLCODE" };
+		// Every opcode the corpus uses, plus SETVARINPARENT/YEAR/MONTH/DAY (documented, unused), the four animation
+		// opcodes whose handlers were read in the Mac build (GETANIM, FLUSHANIM_CH, WAITANIM_CH, TRIGWAITANIM_CH) and
+		// WAITABS/MULT (Theme Park Inc only); none of the 12 other unused names.
+		var unhandled = new[] { "SETLV", "ADDOBJ_EXT", "EVENT_EXT", "DBGMSG",
+			"PUSH", "POP", "END", "ENABLELIGHT", "DISABLELIGHT", "SETLIGHT", "COLOURLIGHT", "GETCUSTPTCLCODE" };
 		CollectionAssert.AreEquivalent( unhandled, Enum.GetValues<Opcode>().Where( x => !RideScriptAnalysis.HandledOpcodes.Contains( x ) ).Select( x => x.ToString() ).ToArray() );
-		Assert.AreEqual( 88, RideScriptAnalysis.HandledOpcodes.Count );
+		Assert.AreEqual( 94, RideScriptAnalysis.HandledOpcodes.Count );
 		foreach ( var (opcode, definition) in RideOpcodes.Definitions )
 			if ( RideScriptAnalysis.DocumentedOperandCounts.TryGetValue( opcode, out var documented ) )
 				Assert.AreEqual( documented, definition.OperandCount, opcode.ToString() );
@@ -270,15 +272,26 @@ public class RseScriptTests
 	internal const string CorpusHistogram = "0:2,1:150,2:240,3:1243,5:74,6:396,7:172,8:644,10:235,11:113,12:20,13:527,15:17,16:74,17:547,18:210,19:133,21:4,23:63,25:1,27:15,28:56,29:70,30:33,31:725,32:787,33:943,34:55,35:84,37:277,38:1318,39:61,42:39,43:39,44:458,46:170,47:541,49:4,50:5,51:20,53:76,54:199,55:144,56:31,57:31,58:24,59:24,60:23,61:6,62:24,63:20,64:28,65:4,66:7,67:9,69:10,70:1,71:4,72:4,73:4,74:8,75:25,76:47,77:53,78:43,79:1,80:1,81:1,86:40,87:80,88:46,89:81,90:5,91:2,92:10,93:140,95:40,96:21,100:1,101:1,102:1,103:21,104:8,105:1";
 
 	[TestMethod]
+	public void TheCivilTimeOpcodesAreUsedByTheHauntedTowerClockOnly()
+	{
+		var users = LoadCorpus().Where( entry => RideScriptAnalysis.BuildInventory( new[] { entry.Value } ).OpcodeHistogram.Keys.Any( opcode => opcode is (ushort)Opcode.HOUR or (ushort)Opcode.MIN or (ushort)Opcode.SEC ) )
+			.Select( entry => entry.Key ).ToArray();
+		// HOUR, MIN and SEC are host time (tp.exe 0x5566AC, 0x5566FF, 0x55674E): only the Haunted Tower clock reads them, so only a harness that places that tower needs a fixed civil clock.
+		CollectionAssert.AreEqual( new[] { "hallow/features/tower1.wad/Clock.RSE" }, users );
+	}
+
+	[TestMethod]
 	public void AllOriginalRseMembersParseWithStableInventory()
 	{
 		var corpus = LoadCorpus();
 		Assert.AreEqual( 308, corpus.Count );
 		var inventory = RideScriptAnalysis.BuildInventory( corpus.Values );
-		Assert.AreEqual( 30094, inventory.CodeWordCount );
-		Assert.AreEqual( 11915, inventory.InstructionCount );
+		// Patch 2 removes two operand-free opcode-15 instructions from Jelly.RSE (docs/PATCH-2.md).
+		var patched = OriginalEdition.IsPatch2( StringTableTests.OriginalDataDirectory() );
+		Assert.AreEqual( patched ? 30092 : 30094, inventory.CodeWordCount );
+		Assert.AreEqual( patched ? 11913 : 11915, inventory.InstructionCount );
 		Assert.AreEqual( 84, inventory.OpcodeHistogram.Count );
-		Assert.AreEqual( CorpusHistogram, inventory.HistogramKey );
+		Assert.AreEqual( patched ? CorpusHistogram.Replace( ",15:17,", ",15:15," ) : CorpusHistogram, inventory.HistogramKey );
 		Assert.AreEqual( 0, inventory.UnknownOpcodes.Count );
 		Assert.AreEqual( 0, inventory.OperandCountMismatches.Count, string.Join( "; ", inventory.OperandCountMismatches ) );
 		Assert.AreEqual( 308, inventory.TimeSliceValues[50] );
@@ -293,7 +306,8 @@ public class RseScriptTests
 		Assert.AreEqual( 28, inventory.StringReferences[(ushort)Opcode.SPAWNSOUND]["EventMap.rse"] );
 		Assert.AreEqual( 163, inventory.EventOperands.Count );
 		Assert.AreEqual( 0, inventory.UsedWithoutHandler.Count() );
-		CollectionAssert.AreEquivalent( new[] { Opcode.SETVARINPARENT, Opcode.YEAR, Opcode.MONTH, Opcode.DAY }, inventory.HandlerWithoutCorpusUse.ToArray() );
+		// WAITABS and MULT gained handlers for the Theme Park Inc corpus; no Theme Park World script contains them.
+		CollectionAssert.AreEquivalent( new[] { Opcode.SETVARINPARENT, Opcode.YEAR, Opcode.MONTH, Opcode.DAY, Opcode.GETANIM, Opcode.FLUSHANIM_CH, Opcode.WAITANIM_CH, Opcode.TRIGWAITANIM_CH, Opcode.WAITABS, Opcode.MULT }, inventory.HandlerWithoutCorpusUse.ToArray() );
 		var dump = Environment.GetEnvironmentVariable( "OPENTPW_RSE_INVENTORY_OUT" );
 		if ( !string.IsNullOrEmpty( dump ) )
 			File.WriteAllText( dump, inventory.Format() );

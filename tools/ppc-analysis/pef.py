@@ -343,10 +343,16 @@ class PEFContainer:
             result[a] = RelocTarget("import", idx, _u32(data, a))
             state["addr"] = a + 4
 
-        # split the stream into units (1 or 2 halfwords)
+        # Keep instruction boundaries and 2-byte block offsets separately.
+        # Apple Mac OS Runtime Architectures, pp. 8-32/8-34 and GL-6:
+        # repeat blockCount counts halfwords, not variable-width instructions.
         units: list[tuple[int, ...]] = []
+        block_offsets: list[int] = []
+        instruction_at_block: dict[int, int] = {}
         k = 0
         while k < len(instrs):
+            block_offsets.append(k)
+            instruction_at_block[k] = len(units)
             ins = instrs[k]
             if ins >> 13 == 0b101:  # all 32-bit forms start with 101
                 if k + 1 >= len(instrs):
@@ -357,12 +363,25 @@ class PEFContainer:
                 units.append((ins,))
                 k += 1
 
+        def repeat_units(i: int, block_count: int) -> range:
+            start_block = block_offsets[i] - block_count
+            if start_block < 0:
+                raise PEFError("relocation repeat before start of stream")
+            if start_block not in instruction_at_block:
+                raise PEFError("relocation repeat splits an instruction boundary")
+            selected = range(instruction_at_block[start_block], i)
+            for j in selected:
+                opcode = units[j][0]
+                if opcode >> 12 == 0b1001 or opcode >> 10 == 0b101100:
+                    raise PEFError("nested relocation repeat is not permitted")
+            return selected
+
         steps = 0
 
-        def execute(i: int, depth: int = 0) -> None:
+        def execute(i: int) -> None:
             nonlocal steps
             steps += 1
-            if steps > MAX_RELOCATION_STEPS or depth > 32:
+            if steps > MAX_RELOCATION_STEPS:
                 raise PEFError("relocation execution exceeds limit")
             if not 0 <= i < len(units):
                 raise PEFError("relocation repeat before start of stream")
@@ -411,10 +430,10 @@ class PEFContainer:
             elif ins >> 12 == 0b1000:  # RelocIncrPosition
                 state["addr"] += (ins & 0xFFF) + 1
             elif ins >> 12 == 0b1001:  # RelocSmRepeat
-                block = ((ins >> 8) & 0xF) + 1
+                selected = repeat_units(i, ((ins >> 8) & 0xF) + 1)
                 for _ in range((ins & 0xFF) + 1):
-                    for j in range(i - block, i):
-                        execute(j, depth + 1)
+                    for j in selected:
+                        execute(j)
             elif ins >> 10 == 0b101000:  # RelocSetPosition
                 state["addr"] = ((ins & 0x3FF) << 16) | unit[1]
             elif ins >> 10 == 0b101001:  # RelocLgByImport
@@ -422,10 +441,10 @@ class PEFContainer:
                 by_import(idx)
                 state["imp"] = idx + 1
             elif ins >> 10 == 0b101100:  # RelocLgRepeat
-                block = ((ins >> 6) & 0xF) + 1
+                selected = repeat_units(i, ((ins >> 6) & 0xF) + 1)
                 for _ in range(((ins & 0x3F) << 16) | unit[1]):
-                    for j in range(i - block, i):
-                        execute(j, depth + 1)
+                    for j in selected:
+                        execute(j)
             elif ins >> 10 == 0b101101:  # RelocLgSetOrBySection
                 sub = (ins >> 6) & 0xF
                 idx = ((ins & 0x3F) << 16) | unit[1]

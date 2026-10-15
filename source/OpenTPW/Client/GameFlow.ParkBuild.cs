@@ -1,0 +1,191 @@
+using System.Diagnostics;
+using OpenTPW.UI.Original;
+
+namespace OpenTPW;
+
+/// <summary>
+/// [EXT:park-build-over-frames] A park chosen in the front end (or loaded, or visited) is built over several frames while the
+/// current scene keeps running, instead of in one frame of about half a second in the browser (docs/BROWSER-PERFORMANCE.md,
+/// "Building a park over frames"). The level's construction runs its steps in the same order either way; its scene is staged
+/// beside the live one (<see cref="EntityConstructionScope"/>) and replaces it once complete, in the same frame. Meanwhile the
+/// live scene draws and plays on, input waits and a progress line shows.
+/// </summary>
+internal sealed partial class GameFlow
+{
+	/// <summary>Construction time per frame (with the live scene's own couple of milliseconds still inside 60 Hz); a longer step runs whole.</summary>
+	internal const double ParkBuildBudgetMilliseconds = 12;
+
+	private sealed class ParkBuild
+	{
+		public required EntityConstructionScope Scene { get; init; }
+		public required Level Level { get; init; }
+		public required string LevelName { get; init; }
+		public required bool Original { get; init; }
+		public ParkVisitInfo? Visit { get; init; }
+		public Action<Level>? Ready { get; init; }
+		public Action<Level>? BeforeEnter { get; init; }
+		// The load profile's sections of a park built in one go, open across the frames (time between them is left out).
+		public LoadProfile.Section StartSection { get; init; }
+		public LoadProfile.Section LevelSection { get; init; }
+		public List<double> FrameMilliseconds { get; } = new();
+		public bool Constructed { get; set; }
+	}
+
+	private ParkBuild? parkBuild;
+
+	/// <summary>
+	/// The last park built over frames, for the browser harness: the construction time of each frame, the last one including
+	/// retiring the live scene and entering the park.
+	/// </summary>
+	internal IReadOnlyList<double> LastParkBuildFrames { get; private set; } = Array.Empty<double>();
+
+	/// <summary>True while a park is being built over frames.</summary>
+	public bool BuildingPark => parkBuild != null;
+
+	/// <summary>
+	/// <see cref="StartLevel(string, bool, bool, ParkVisitInfo?, ParkStartKind)"/>, built over frames when <paramref name="overFrames"/>
+	/// is set; <paramref name="ready"/> runs once the park is entered (at once when it is built in one go).
+	/// </summary>
+	private void StartLevel( string levelName, bool original, bool developerPanels, bool overFrames, ParkVisitInfo? visit = null,
+		ParkStartKind start = ParkStartKind.OriginalSaveReference, Action<Level>? ready = null, Action<Level>? beforeEnter = null )
+	{
+		RequireProgressSaved();
+		// A language chosen just before the park applies before it is built, as the tear-down of a park built in one go applies it;
+		// one whose files are still coming waits for that tear-down. (Only a language chosen inside the park being left can still be
+		// pending here; the front end applies its choice at once. That park's screens keep their strings for its last frames, and a
+		// dropped build always comes with a queued transition that replaces them too.)
+		if ( overFrames && pendingLanguage != null )
+			ApplyPendingLanguage();
+		if ( !overFrames || pendingLanguage != null )
+		{
+			if ( beforeEnter != null )
+			{
+				using var candidateScene = new EntityConstructionScope();
+				Level? candidate = null;
+				try
+				{
+					candidate = new Level( levelName, loadOriginalLevel: original, visit: visit, onlineFolders: OnlineFolders, start: start ) { ShowDeveloperPanels = developerPanels };
+					beforeEnter( candidate );
+					RequireProgressSaved();
+					candidateScene.Detach();
+					TearDown( applyPendingLanguage: false );
+					candidateScene.Activate();
+					var entered = EnterLevel( candidate, levelName, original, visit );
+					ready?.Invoke( entered );
+				}
+				catch { candidate?.Dispose(); throw; }
+				return;
+			}
+			var level = StartLevel( levelName, original, developerPanels, visit, start );
+			ready?.Invoke( level );
+			return;
+		}
+		AbandonParkBuild();
+		var startSection = LoadProfile.Measure( "start-level" );
+		var levelSection = LoadProfile.Measure( "level" );
+		var scene = new EntityConstructionScope();
+		try
+		{
+			var level = Level.BeginOverFrames( levelName, original, visit, OnlineFolders, start );
+			level.ShowDeveloperPanels = developerPanels;
+			scene.Pause();
+			parkBuild = new ParkBuild
+			{
+				Scene = scene, Level = level, LevelName = levelName, Original = original, Visit = visit, Ready = ready, BeforeEnter = beforeEnter,
+				StartSection = startSection, LevelSection = levelSection,
+			};
+			LoadProfile.Pause();
+		}
+		catch
+		{
+			scene.Dispose();
+			throw;
+		}
+	}
+
+	/// <summary>Builds the park for this frame's budget; once it is complete, retires the live scene and enters the park.</summary>
+	private void PumpParkBuild()
+	{
+		var build = parkBuild!;
+		var started = Stopwatch.GetTimestamp();
+		LoadProfile.Resume();
+		build.Scene.Resume();
+		bool OverBudget() => Stopwatch.GetElapsedTime( started ).TotalMilliseconds >= ParkBuildBudgetMilliseconds;
+		try
+		{
+			while ( !build.Constructed && !OverBudget() )
+				build.Constructed = !build.Level.Step();
+		}
+		catch ( Exception error )
+		{
+			// Only the guarded New request turns expected delayed construction refusal into its own dialog.
+			parkBuild = null;
+			if ( build.BeforeEnter != null ) build.Level.Dispose();
+			build.Scene.Dispose();
+			if ( build.BeforeEnter != null && ProgressFailure( error ) )
+			{
+				build.LevelSection.Dispose(); build.StartSection.Dispose();
+				ShowProgressFailure( error );
+				return;
+			}
+			throw;
+		}
+		// Entering (retiring the live scene, park audio, HUD, then the park's first update and draw) waits for a frame of its own
+		// when this one has used its budget.
+		if ( !build.Constructed || OverBudget() )
+		{
+			build.Scene.Pause();
+			LoadProfile.Pause();
+			build.FrameMilliseconds.Add( Stopwatch.GetElapsedTime( started ).TotalMilliseconds );
+			return;
+		}
+		parkBuild = null;
+		build.LevelSection.Dispose();
+		try
+		{
+			RequireProgressSaved();
+			build.BeforeEnter?.Invoke( build.Level );
+			build.Scene.Detach();
+			using ( LoadProfile.Measure( "tear-down" ) )
+				TearDown( applyPendingLanguage: false );
+			build.Scene.Activate();
+		}
+		catch ( Exception error )
+		{
+			// A profile precommit refusal occurs before the previous world is retired.
+			if ( build.BeforeEnter != null || error is PlayerProgressSaveException ) build.Level.Dispose();
+			build.Scene.Dispose();
+			if ( error is PlayerProgressSaveException || build.BeforeEnter != null && ProgressFailure( error ) )
+			{
+				build.StartSection.Dispose();
+				ShowProgressFailure( error );
+				return;
+			}
+			throw;
+		}
+		var level = EnterLevel( build.Level, build.LevelName, build.Original, build.Visit );
+		build.StartSection.Dispose();
+		build.Ready?.Invoke( level );
+		build.FrameMilliseconds.Add( Stopwatch.GetElapsedTime( started ).TotalMilliseconds );
+		LastParkBuildFrames = build.FrameMilliseconds;
+		Transitioned?.Invoke();
+	}
+
+	/// <summary>Drops a park still being built (another transition came after it, and the latest wins); the live scene stays current.</summary>
+	private void AbandonParkBuild()
+	{
+		if ( parkBuild is not { } build )
+			return;
+		parkBuild = null;
+		LoadProfile.Resume();
+		build.Scene.Dispose();
+		Log.Trace( $"Stopped building {build.LevelName}: another transition came first." );
+	}
+
+	/// <summary>The progress line while a park is built, in the style of the texture switch's (<see cref="OptionsScreen.DrawProgressLine"/>).</summary>
+	private void DrawParkBuildProgress()
+	{
+		if ( parkBuild is { } build )
+			OptionsScreen.DrawProgressLine( Context, Strings.Extra( OpenTpwText.BuildingPark ), build.Level.ConstructionProgress );
+	}
+}

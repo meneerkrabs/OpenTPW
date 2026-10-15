@@ -154,8 +154,12 @@ public class FontAtlasTests
 	public void EveryOriginalEnglishFontPacksAllGlyphsWithoutOverlap()
 	{
 		var directory = OriginalFontDirectory();
-		var files = Directory.GetFiles( directory ).Where( file => Path.GetExtension( file ).Equals( ".bf4", StringComparison.OrdinalIgnoreCase ) ).ToArray();
+		var patched = OriginalEdition.IsPatch2( OriginalDataDirectory() );
+		OriginalEdition.AssertPatch2Fonts( directory, patched );
+		var files = OriginalEdition.BaseFonts( directory );
 		Assert.AreEqual( 33, files.Length );
+		if ( patched )
+			files = files.Concat( OriginalEdition.Patch2Fonts.Keys.Select( name => GameLanguage.FindEntry( directory, name, false )! ) ).ToArray();
 		foreach ( var file in files )
 		{
 			using var stream = File.OpenRead( file );

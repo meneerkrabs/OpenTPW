@@ -16,6 +16,9 @@ public readonly record struct DisplayMetrics( Point2 LogicalSize, Point2 PixelSi
 		? System.Numerics.Vector2.One
 		: new( (float)PixelSize.X / LogicalSize.X, (float)PixelSize.Y / LogicalSize.Y );
 
+	/// <summary>Whole drawable pixels per logical unit (2 on Retina, 1 without HiDPI or when empty).</summary>
+	public int IntegerPixelDensity => IsEmpty ? 1 : Math.Max( 1, Math.Min( PixelSize.X / LogicalSize.X, PixelSize.Y / LogicalSize.Y ) );
+
 	public System.Numerics.Vector2 LogicalToPixel( System.Numerics.Vector2 logical ) => logical * PixelsPerLogical;
 
 	public System.Numerics.Vector2 PixelToLogical( System.Numerics.Vector2 pixel ) => pixel / PixelsPerLogical;
@@ -118,18 +121,26 @@ public static class RenderScaling
 /// <summary>
 /// BF4 UI scale policy: integer scales only, so point-sampled original fonts stay pixel-exact. The
 /// automatic scale is the largest integer at which a 1280×720 layout still fits the output pixels:
-/// 1 up to 2559×1439, 2 at 2560×1440 (and Retina 1440×900 logical), 3 at 3840×2160 (4K).
+/// 1 up to 2559×1439, 2 at 2560×1440, 3 at 3840×2160 (4K). On HiDPI outputs (integer pixel density
+/// d &gt; 1, e.g. Retina d = 2) it is at least d × the same fit measured in logical units, so a HiDPI
+/// window gets the same physical text size as a 1× window of the same logical size (a Retina window
+/// of 1216×684 points uses 2, not 1).
 /// </summary>
 public static class UiScaling
 {
 	public const int ReferenceWidth = 1280;
 	public const int ReferenceHeight = 720;
 
-	public static int Automatic( Point2 pixelSize ) =>
-		Math.Clamp( Math.Min( pixelSize.X / ReferenceWidth, pixelSize.Y / ReferenceHeight ), 1, DisplaySettings.MaximumUiScale );
+	public static int Automatic( Point2 pixelSize, int pixelDensity = 1 )
+	{
+		var density = Math.Max( 1, pixelDensity );
+		var pixelFit = Math.Min( pixelSize.X / ReferenceWidth, pixelSize.Y / ReferenceHeight );
+		var logicalFit = Math.Max( 1, Math.Min( pixelSize.X / density / ReferenceWidth, pixelSize.Y / density / ReferenceHeight ) );
+		return Math.Clamp( Math.Max( pixelFit, density * logicalFit ), 1, DisplaySettings.MaximumUiScale );
+	}
 
-	public static int Resolve( int configured, Point2 pixelSize ) =>
-		configured >= 1 && configured <= DisplaySettings.MaximumUiScale ? configured : Automatic( pixelSize );
+	public static int Resolve( int configured, Point2 pixelSize, int pixelDensity = 1 ) =>
+		configured >= 1 && configured <= DisplaySettings.MaximumUiScale ? configured : Automatic( pixelSize, pixelDensity );
 }
 
 /// <summary>Resolution list for the display settings.</summary>

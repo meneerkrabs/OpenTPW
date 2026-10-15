@@ -5,8 +5,8 @@ public readonly record struct OriginalObjectInfo( int InfoId, string Name, strin
 
 /// <summary>
 /// Read-only original level data: the terrain MAP, the base.MD2 terrain model and heightfield,
-/// and, when the level ships one, the park state imported from <c>Easymode.TPWI</c>
-/// (docs/TPWS-PAYLOAD.md). Nothing is written back to the original files.
+/// and, when available, the park state imported from <c>Easymode.TPWI</c> or
+/// Theme Park Inc's science <c>PreBuilt/prebuilt.TPWS</c>. Nothing is written back.
 /// </summary>
 public sealed class OriginalPark
 {
@@ -15,9 +15,13 @@ public sealed class OriginalPark
 	private static readonly System.Text.RegularExpressions.Regex InfoIdPattern = new( @"^\s*Info\.Id\s+(\d+)", System.Text.RegularExpressions.RegexOptions.Multiline );
 	private static readonly System.Text.RegularExpressions.Regex InfoNamePattern = new( "^\\s*Info\\.Name\\s+\"([^\"\\r\\n]*)\"", System.Text.RegularExpressions.RegexOptions.Multiline );
 
-	private OriginalPark( string levelName, MapFile map, ModelFile terrainModel, OriginalParkImport? save, IReadOnlyDictionary<int, OriginalObjectInfo> catalog )
+	/// <summary>The finished lake of a Theme Park Inc world; it fills the heightfield holes that <c>base.MD2</c> leaves open.</summary>
+	public const string LakeModelName = "dlake.MD2";
+
+	private OriginalPark( string levelName, MapFile map, ModelFile terrainModel, ModelFile? lakeModel, OriginalParkImport? save, IReadOnlyDictionary<int, OriginalObjectInfo> catalog )
 	{
 		LevelName = levelName;
+		LakeModel = lakeModel;
 		Map = map;
 		TerrainModel = terrainModel;
 		Heightfield = terrainModel.Heightfield ?? throw new InvalidDataException( $"The {levelName} terrain model has no heightfield block." );
@@ -28,6 +32,8 @@ public sealed class OriginalPark
 	public string LevelName { get; }
 	public MapFile Map { get; }
 	public ModelFile TerrainModel { get; }
+	/// <summary>Theme Park Inc's <c>dlake.MD2</c> (lake surface and bed), or null: Theme Park World has no lake model.</summary>
+	public ModelFile? LakeModel { get; }
 	public ModelHeightfield Heightfield { get; }
 	public OriginalParkImport? Save { get; }
 	public IReadOnlyDictionary<int, OriginalObjectInfo> Catalog { get; }
@@ -36,34 +42,71 @@ public sealed class OriginalPark
 
 	public string DescribeObject( int infoId ) => Catalog.TryGetValue( infoId, out var info ) ? info.Name : $"Info.Id {infoId}";
 
-	public static OriginalPark Load( string levelName )
+	/// <param name="readShippedSave">False starts the level without its shipped save (a new Full Simulation park, <see cref="ParkStart.ReadsShippedSave"/>).</param>
+	public static OriginalPark Load( string levelName, bool readShippedSave = true ) => LoadSteps( levelName, readShippedSave ).Last()!;
+
+	/// <summary>
+	/// <see cref="Load"/> in steps, for a park built over frames (docs/BROWSER-PERFORMANCE.md): null after each part of the work,
+	/// then the park.
+	/// </summary>
+	internal static IEnumerable<OriginalPark?> LoadSteps( string levelName, bool readShippedSave = true )
 	{
 		if ( string.IsNullOrWhiteSpace( levelName ) || levelName.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Original level names are plain directory names such as 'jungle'.", nameof( levelName ) );
 		var map = new MapFile( $"/levels/{levelName}/terrain/base.map" );
+		yield return null;
 		var model = new ModelFile( $"/levels/{levelName}/terrain/base.MD2" );
-		var catalog = LoadCatalog( levelName );
+		yield return null;
+		// [APPROX:COMPAT-019] Theme Park Inc's lake is mission obstacle 1703 (lake.MD2, drained by a gardener's Water Drainage in mission 1) with the drained state 1704 (dlake.MD2); this viewer always draws dlake.MD2 and ignores the obstacle state — evidence needed: Theme Park Inc's obstacle code or a capture
+		var lakePath = FileSystem.GetFiles( $"/levels/{levelName}/terrain" ).FirstOrDefault( path => string.Equals( Path.GetFileName( path ), LakeModelName, StringComparison.OrdinalIgnoreCase ) );
+		var lake = lakePath == null ? null : new ModelFile( ToRelative( lakePath ) );
+		var catalog = new Dictionary<int, OriginalObjectInfo>();
+		using ( LoadProfile.Measure( "object-catalog" ) )
+		{
+			foreach ( var _ in LoadCatalogSteps( levelName, catalog ) )
+				yield return null;
+		}
 		OriginalParkImport? save = null;
-		var savePath = FileSystem.GetFiles( $"/levels/{levelName}" )
-			.FirstOrDefault( path => string.Equals( Path.GetFileName( path ), SaveFileName, StringComparison.OrdinalIgnoreCase ) );
+		// [DATA:PreBuilt/prebuilt.TPWS:cell grid] The sole shipped Theme Park Inc prebuilt save matches science/base.map in every cell.
+		var tpiPrebuilt = GameEditions.IsThemeParkInc && levelName.Equals( "science", StringComparison.OrdinalIgnoreCase );
+		var saveDirectory = tpiPrebuilt ? "/PreBuilt" : $"/levels/{levelName}";
+		var saveName = tpiPrebuilt ? "prebuilt.TPWS" : SaveFileName;
+		var savePath = !readShippedSave || (GameEditions.IsThemeParkInc && !tpiPrebuilt) || !FileSystem.DirectoryExists( saveDirectory )
+			? null : FileSystem.GetFiles( saveDirectory )
+				.FirstOrDefault( path => string.Equals( Path.GetFileName( path ), saveName, StringComparison.OrdinalIgnoreCase ) );
+		// [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag)
 		if ( savePath != null )
 		{
-			using var stream = FileSystem.OpenRead( $"/levels/{levelName}/{Path.GetFileName( savePath )}" );
+			yield return null;
+			using var saveProfile = LoadProfile.Measure( "shipped-save" );
+			using var stream = FileSystem.OpenRead( $"{saveDirectory}/{Path.GetFileName( savePath )}" );
 			using var reader = new SaveReader( stream );
-			save = OriginalParkImport.Import( reader.ReadFile(), map );
+			var payload = reader.ReadFile();
+			save = tpiPrebuilt ? OriginalParkImport.ImportThemeParkInc( payload, map ) : OriginalParkImport.Import( payload, map );
 			foreach ( var item in save.PlacedObjects.Select( item => item.Record ).Concat( save.FixedItems ).Concat( save.UnresolvedObjects ) )
 			{
+				// [DATA:PreBuilt/prebuilt.TPWS:SYSG] Five science scene records have no archive and use the sentinel cell (0, 0).
+				if ( tpiPrebuilt && item.IsFixedItem && item.X == 0 && item.Y == 0
+					&& item.InfoId is 1702 or 1701 or 1700 or 1750 or 1798 )
+					continue;
 				if ( !catalog.ContainsKey( item.InfoId ) )
 					throw new InvalidDataException( $"Original save object {item.Index} has Info.Id {item.InfoId}, which no {levelName} object archive declares." );
 			}
 		}
-		return new OriginalPark( levelName, map, model, save, catalog );
+		yield return new OriginalPark( levelName, map, model, lake, save, catalog );
 	}
 
 	/// <summary>Reads Info.Id and Info.Name from every object archive's .sam under the level.</summary>
 	public static IReadOnlyDictionary<int, OriginalObjectInfo> LoadCatalog( string levelName )
 	{
 		var catalog = new Dictionary<int, OriginalObjectInfo>();
+		foreach ( var _ in LoadCatalogSteps( levelName, catalog ) ) { }
+		return catalog;
+	}
+
+	/// <summary><see cref="LoadCatalog"/> into <paramref name="catalog"/>, one object archive per step.</summary>
+	private static IEnumerable<bool> LoadCatalogSteps( string levelName, Dictionary<int, OriginalObjectInfo> catalog )
+	{
 		foreach ( var category in ObjectDirectories )
 		{
 			var categoryPath = $"/levels/{levelName}/{category}";
@@ -82,9 +125,9 @@ public sealed class OriginalPark
 					var name = nameMatch.Success ? nameMatch.Groups[1].Value.Trim() : Path.GetFileNameWithoutExtension( file );
 					catalog.TryAdd( id, new OriginalObjectInfo( id, name, archivePath ) );
 				}
+				yield return true;
 			}
 		}
-		return catalog;
 	}
 
 	// Entries inside archives come back data-root-relative, loose entries absolute.

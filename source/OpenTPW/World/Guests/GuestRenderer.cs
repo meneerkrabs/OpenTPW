@@ -28,8 +28,13 @@ public sealed class GuestRenderer : Entity
 	private bool deleted;
 
 	public bool Visible { get; set; } = true;
+	/// <summary>Which guests this renderer draws (null: all): the kids' renderer leaves guests in costume to the costume renderer.</summary>
+	public Func<Guest, bool>? Draws { get; init; }
 	/// <summary>Guests drawn in the last frame.</summary>
 	public int DrawnGuests { get; private set; }
+
+	/// <summary>The atlas textures, material and independently owned shader used by native lifecycle checks.</summary>
+	internal IReadOnlyList<Asset> OwnedAssets => textures.Cast<Asset>().Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
 
 	public GuestRenderer( GuestSimulation simulation, ModelHeightfield field, IReadOnlyList<GuestSpriteAtlas> atlases )
 	{
@@ -40,16 +45,86 @@ public sealed class GuestRenderer : Entity
 		if ( atlases.Count == 0 )
 			return;
 		foreach ( var atlas in atlases.Take( 8 ) )
-			textures.Add( new Texture( atlas.Pixels, atlas.Width, atlas.Height ) );
+			textures.Add( LoadAtlas( atlas ) );
 		var slots = new Texture[8];
 		for ( var index = 0; index < slots.Length; index++ )
 			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", slots );
+		TexturePackSwitch.PackChanged += ReloadAtlases;
+		TexturePackSwitch.FilesAvailable += ReloadAtlases;
+	}
+
+	/// <summary>
+	/// [EXT:texture-pack] The texture pack changed: builds the atlas textures again from the new pack (or the originals), binds
+	/// them and deletes the old GPU textures after the current frame.
+	/// </summary>
+	private void ReloadAtlases()
+	{
+		ReloadAtlases( null );
+	}
+
+	/// <summary>Rebuilds matching atlas slots after a lazy download; unrelated guest sprites keep their GPU texture.</summary>
+	private void ReloadAtlases( IReadOnlyList<string>? paths )
+	{
+		if ( deleted || material == null || textures.Count == 0 )
+			return;
+		var keys = paths?.Select( TexturePack.RelativeFileName ).ToHashSet( StringComparer.Ordinal );
+		var old = new List<Texture>();
+		for ( var index = 0; index < textures.Count; index++ )
+		{
+			if ( keys != null && !keys.Contains( TexturePack.RelativeFileName( atlases[index].PackKey ) ) )
+				continue;
+			old.Add( textures[index] );
+			textures[index] = LoadAtlas( atlases[index] );
+		}
+		if ( old.Count == 0 )
+			return;
+		var slots = new Texture[8];
+		for ( var index = 0; index < slots.Length; index++ )
+			slots[index] = textures[Math.Min( index, textures.Count - 1 )];
+		material.Set( "Color", slots );
+		foreach ( var texture in old )
+			Asset.All.Remove( texture );
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			foreach ( var texture in old )
+			{
+				texture.NativeTextureView.Dispose();
+				texture.NativeTexture.Dispose();
+			}
+		} );
+	}
+
+	/// <summary>
+	/// The atlas texture: the texture pack's upscaled atlas when there is one with the same aspect ratio (frame UVs are
+	/// relative, so a larger atlas drops in), else the original pixels.
+	/// </summary>
+	// [EXT:texture-pack] upscaled guest sprites from the optional local pack
+	internal static Texture LoadAtlas( GuestSpriteAtlas atlas )
+	{
+		if ( TexturePack.Find( atlas.PackKey ) is { } file )
+		{
+			try
+			{
+				var image = StbImageSharp.ImageResult.FromMemory( File.ReadAllBytes( file ), StbImageSharp.ColorComponents.RedGreenBlueAlpha );
+				if ( image.Width >= atlas.Width && (long)image.Width * atlas.Height == (long)image.Height * atlas.Width )
+					return new Texture( image.Data, image.Width, image.Height );
+				Log.Warning( $"Texture pack atlas {file} is {image.Width}x{image.Height}, not a multiple of {atlas.Width}x{atlas.Height}; using the original sprites." );
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidOperationException or UnauthorizedAccessException )
+			{
+				Log.Warning( $"Texture pack atlas {file} could not be read ({exception.Message}); using the original sprites." );
+			}
+		}
+		return new Texture( atlas.Pixels, atlas.Width, atlas.Height );
 	}
 
 	/// <summary>Engine position of a point in game-cell coordinates, on the heightfield (bilinear corner heights; holes keep their corner heights).</summary>
-	public static SVector3 CellToEngine( ModelHeightfield field, float cellX, float cellY )
+	public static SVector3 CellToEngine( ModelHeightfield field, float cellX, float cellY ) => CellToEngine( field, cellX, cellY, 0f );
+
+	/// <summary>The same point lifted by <paramref name="lift"/> original height units (the staff cursor sprite hangs 5 units above the ground).</summary>
+	public static SVector3 CellToEngine( ModelHeightfield field, float cellX, float cellY, float lift )
 	{
 		var x0 = Math.Clamp( (int)MathF.Floor( cellX ), 0, field.CellCountX - 1 );
 		var y0 = Math.Clamp( (int)MathF.Floor( cellY ), 0, field.CellCountZ - 1 );
@@ -57,7 +132,7 @@ public sealed class GuestRenderer : Entity
 		var fy = Math.Clamp( cellY - y0, 0, 1 );
 		var height = (field.GetCornerHeight( x0, y0 ) * (1 - fx) + field.GetCornerHeight( x0 + 1, y0 ) * fx) * (1 - fy)
 			+ (field.GetCornerHeight( x0, y0 + 1 ) * (1 - fx) + field.GetCornerHeight( x0 + 1, y0 + 1 ) * fx) * fy;
-		return OriginalParkPlacement.ToEngine( field, new SVector3( cellX * field.CellSizeX, height, cellY * field.CellSizeZ ) );
+		return OriginalParkPlacement.ToEngine( field, new SVector3( cellX * field.CellSizeX, height + lift, cellY * field.CellSizeZ ) );
 	}
 
 	/// <summary>Atlas, frame and mirroring for a guest seen with the given camera axes (engine space).</summary>
@@ -73,7 +148,7 @@ public sealed class GuestRenderer : Entity
 		if ( guest.IsMoving )
 		{
 			slot = GuestSpriteAtlas.WalkSlot;
-			step = (int)(guest.DistanceWalked * WalkFramesPerCell);
+			step = (int)(guest.DrawDistanceWalked * WalkFramesPerCell);
 		}
 		else if ( guest.State is GuestState.Queueing or GuestState.WaitingToBoard or GuestState.AtTicketBooth or GuestState.WaitingToGoHome )
 		{
@@ -87,6 +162,39 @@ public sealed class GuestRenderer : Entity
 		}
 		step %= atlas.FramesPerDirection( slot );
 		return (atlasIndex, atlas.GetFrame( slot, direction, step ), mirror);
+	}
+
+	/// <summary>Picks the current visible in-park sprite without touching render resources or simulation state.</summary>
+	internal Guest? PickVisitor(SVector2 mouse, SVector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection) =>
+		PickVisitor(mouse, viewport, view, projection, out _);
+
+	/// <summary>The picked guest and its depth, so the kids' and the costumes' renderers can be picked together.</summary>
+	internal Guest? PickVisitor(SVector2 mouse, SVector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection, out float depth)
+	{
+		depth = float.PositiveInfinity;
+		if (!Visible || deleted || material == null || atlases.Count == 0)
+			return null;
+		var right = new SVector3(view.M11, view.M21, view.M31);
+		var forward = -new SVector3(view.M13, view.M23, view.M33);
+		Guest? picked = null;
+		var best = float.PositiveInfinity;
+		foreach (var guest in simulation.Guests)
+		{
+			if (!guest.IsVisible || Draws?.Invoke(guest) == false || !simulation.IsInPark(guest) || !float.IsFinite(guest.DrawX) || !float.IsFinite(guest.DrawY) ||
+				!float.IsFinite(guest.HeadingX) || !float.IsFinite(guest.HeadingY) || !float.IsFinite(guest.DrawDistanceWalked) || guest.Type < 0)
+				continue;
+			var (atlasIndex, frameIndex, mirror) = SelectSprite(guest, right, forward);
+			var feet = CellToEngine(field, guest.DrawX, guest.DrawY);
+			if (!Hud.GuestWorldPicker.TryHit(feet, atlases[atlasIndex].Frames[frameIndex], mirror, view, projection, viewport, mouse, out var hit))
+				continue;
+			if (hit < best || (hit == best && (picked == null || guest.Id < picked.Id)))
+			{
+				best = hit;
+				picked = guest;
+			}
+		}
+		depth = best;
+		return picked;
 	}
 
 	protected override void OnRender()
@@ -104,12 +212,12 @@ public sealed class GuestRenderer : Entity
 		var count = 0;
 		foreach ( var guest in simulation.Guests )
 		{
-			if ( !guest.IsVisible )
+			if ( !guest.IsVisible || Draws?.Invoke( guest ) == false )
 				continue;
 			var (atlasIndex, frameIndex, mirror) = SelectSprite( guest, right, forward );
 			var atlas = atlases[atlasIndex];
 			var frame = atlas.Frames[frameIndex];
-			var feet = CellToEngine( field, guest.X, guest.Y );
+			var feet = CellToEngine( field, guest.DrawX, guest.DrawY );
 			var left = mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
 			var x0 = left * UnitsPerPixel;
 			var x1 = (left + frame.Width) * UnitsPerPixel;
@@ -157,7 +265,7 @@ public sealed class GuestRenderer : Entity
 		} );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		commandList.SetPipeline( material.Pipeline );
-		material.CreateEphemeralResourceSet( out var resourceSets );
+		var resourceSets = material.GetResourceSets();
 		for ( uint index = 0; index < resourceSets.Length; ++index )
 			commandList.SetGraphicsResourceSet( index, resourceSets[index] );
 		commandList.Draw( (uint)count );
@@ -166,6 +274,21 @@ public sealed class GuestRenderer : Entity
 	protected override void OnDelete()
 	{
 		deleted = true;
+		TexturePackSwitch.PackChanged -= ReloadAtlases;
+		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
+		var ownedTextures = textures.ToArray();
+		textures.Clear();
+		foreach ( var texture in ownedTextures )
+			Asset.All.Remove( texture );
+		material?.ReleaseOwnedResources();
+		global::Global.Render.ScheduleDelete( () =>
+		{
+			foreach ( var texture in ownedTextures )
+			{
+				texture.NativeTextureView.Dispose();
+				texture.NativeTexture.Dispose();
+			}
+		} );
 		var buffer = vertexBuffer;
 		vertexBuffer = null;
 		if ( buffer != null )

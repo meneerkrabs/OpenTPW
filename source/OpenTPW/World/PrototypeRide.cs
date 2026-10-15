@@ -10,7 +10,7 @@ namespace OpenTPW;
 /// </summary>
 public sealed class PrototypeRide : OriginalObject
 {
-	// [APPROX:RIDES-027] Sandbox Totem bounds check uses a 5-unit radius around its centre — evidence needed: none for gameplay (sandbox prototype)
+	// [EXT:developer-prototype] Sandbox Totem bounds check uses a 5-unit radius around its centre (no original counterpart)
 	public const float FootprintRadius = 5f;
 	public const float ModelScale = ObjectPlacement.ModelScale;
 	public const string DisplayName = "Inca Totem (prototype)";
@@ -32,7 +32,16 @@ public sealed class PrototypeRide : OriginalObject
 	private readonly int carriageNode;
 
 	public PrototypeRide( Vector3 position, RideScriptWorld? world = null )
-		: base( LoadEntry(), CreatePlacement( position ), world, seed: null, open: false )
+		: this( position, world, seed: null, open: false, attractionId: null ) { }
+
+	/// <summary>
+	/// Constructor body. The placement path draws the script seed from the world's stream and allocates the next
+	/// attraction id; a park-resume restore passes the saved ones (the runtime adopts the id and creates its VM with
+	/// the saved seed — <see cref="OriginalObjectRuntime.CreateForRestore"/>, the same restore path a placed object's
+	/// layout record takes).
+	/// </summary>
+	internal PrototypeRide( Vector3 position, RideScriptWorld? world, int? seed, bool open, int? attractionId )
+		: base( LoadEntry(), CreatePlacement( position ), world, seed, open, attractionId )
 	{
 		var carriage = Runtime.Model.Meshes.FirstOrDefault( mesh => IsCarriage( mesh.Name ) )
 			?? throw new InvalidDataException( "The original Totem model does not contain its tp_cart carriage mesh." );
@@ -91,9 +100,12 @@ public sealed class PrototypeRide : OriginalObject
 	internal static string ResolveTexturePath( BaseFileSystem fileSystem, string textureName )
 	{
 		var name = textureName.TrimEnd( '\0' );
-		foreach ( var directory in new[] { $"{ArchivePath}/textures", "/levels/jungle/sharetex" } )
+		foreach ( var directory in ObjectAssets.TextureDirectoryNames( ArchivePath, "jungle" ) )
 		{
-			var path = fileSystem.GetFiles( directory ).FirstOrDefault( entry => string.Equals( Path.GetFileNameWithoutExtension( entry ), name, StringComparison.OrdinalIgnoreCase ) );
+			string[] files;
+			try { files = fileSystem.GetFiles( directory ).ToArray(); }
+			catch ( Exception exception ) when ( exception is DirectoryNotFoundException or FileNotFoundException ) { continue; }
+			var path = files.FirstOrDefault( entry => string.Equals( Path.GetFileNameWithoutExtension( entry ), name, StringComparison.OrdinalIgnoreCase ) );
 			if ( path != null )
 				return path;
 		}

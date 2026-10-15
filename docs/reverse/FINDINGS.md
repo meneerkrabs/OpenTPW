@@ -1,7 +1,8 @@
 # Classic Mac PowerPC evidence
 
 2026-10-09. Static metadata inspection only; the original program was not run.
-The local Feral corpus is `/Users/sander/server/game-assets/mac-feral/bin`.
+The Feral corpus is referred to below as `$FERAL_BIN` (the directory holding the
+extracted `.data` files, with `libraries/` below it).
 Original `.data`, `.bin`, disk images, expanded sections and disassembly stay
 outside this repository.
 
@@ -11,9 +12,9 @@ From the repository root, with Python 3 and no third-party packages:
 
 ```sh
 python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py' -v
-python3 tools/ppc-analysis/inventory.py /Users/sander/server/game-assets/mac-feral/bin/*.data /Users/sander/server/game-assets/mac-feral/bin/libraries/*.data
-python3 tools/ppc-analysis/inventory.py --symbols UTimer /Users/sander/server/game-assets/mac-feral/bin/*.data /Users/sander/server/game-assets/mac-feral/bin/libraries/*.data
-python3 tools/ppc-analysis/inventory.py --symbols LbTime_GetClock /Users/sander/server/game-assets/mac-feral/bin/*.data /Users/sander/server/game-assets/mac-feral/bin/libraries/*.data
+python3 tools/ppc-analysis/inventory.py $FERAL_BIN/*.data $FERAL_BIN/libraries/*.data
+python3 tools/ppc-analysis/inventory.py --symbols UTimer $FERAL_BIN/*.data $FERAL_BIN/libraries/*.data
+python3 tools/ppc-analysis/inventory.py --symbols LbTime_GetClock $FERAL_BIN/*.data $FERAL_BIN/libraries/*.data
 ```
 
 The JSON inventory sorts input paths and keys and contains file identities,
@@ -107,7 +108,7 @@ interfaces and verify conversion constants against an original runtime capture.
 Run the dependency-free, identity-pinned operand verifier:
 
 ```sh
-python3 tools/ppc-analysis/timer_evidence.py /Users/sander/server/game-assets/mac-feral/bin
+python3 tools/ppc-analysis/timer_evidence.py $FERAL_BIN
 python3 -m unittest discover -s tools/ppc-analysis -p 'test_*.py' -v
 ```
 
@@ -202,3 +203,134 @@ candidate while examining `bullfrog_shared`; it attempted an out-of-range
 name read. The evidence above uses explicit exports and loader relocations
 instead. General heuristic function boundaries remain untrusted, as already
 noted in the reader limitations.
+
+## Game types and the Easy_/Online_ settings layers (2026-10-09)
+
+Static analysis of the same `SimThemePark.data` (SHA-256 `04809cd4…e295f5`,
+here the data fork of `Theme Park Data/SimTheme Park` from the Mac CD) with Ghidra
+11.4.2 headless (PEF loader, default analysis). Addresses are Ghidra's, with the
+code section at `0x10000000`; the TOC register r2 is `0x101F4AB0` at every
+function entry. Strings are reached through TOC slots holding a pool base plus an
+immediate offset; they were resolved with local scripts. Decompiler output,
+memory dumps and scripts stay outside the repository; below are descriptions in
+our own words.
+
+- **Game type** (`0x1012BBF4`, asserts "Invalid GameType in SetGameType"): three
+  values. 0 sets flag bit `0x00800000` and clears the others, 1 sets `0x01000000`,
+  2 sets `0x02000000`, in one global flag word. `0x1012BB64` derives the type back
+  from that word (bit `0x02000000` → 2, else `0x01000000` → 1, else 0).
+- **Settings layers at world setup** (`0x1010474C`):
+  - type 1 loads `data:levels:online_Standard.sam`, then the theme's
+    `online_Standard.sam`, *instead of* the two `Standard.sam` files;
+  - otherwise `data:levels:Standard.sam`, then the theme's `Standard.sam`;
+  - type 2 additionally loads the theme's `<prefix>Standard.sam`, where the prefix
+    is the engine name-table entry `Easy_`; if that file is missing the game only
+    logs "There is no Easy_standard.sam file for this theme - This is not critical".
+- **Name table** (`0x101BF60C`): a constructor of fixed engine strings, including
+  `Easy_`, `Online_`, `standard.sam`, `online_standard.sam`, `online_rides.sam`,
+  `onlineoverride.sam`, the detail presets (`low/med/high/custom.sam`) and the file
+  extensions the game uses (`.tps`, `.tpc`, `.fps`, `.fpc`, `.tgq`, `.wad`, …).
+- **Player profile** (serialiser `0x10129308`): fields `mEarnedGlobalTicket[i]`,
+  `mEarnedSecretTicket[i]`, `mSpentTickets`, `mExtraKeys`, `mEasyModeUser` (byte at
+  +0x24), `mSwearFilterOn`, `mFirstTimePlayer`.
+- **Easy-mode park copy** (`0x10137600`): creates a save directory per level and,
+  when its flag argument is set, copies the theme's file named with the engine
+  string `easymode` into it.
+- The lobby/globe code (`0x100923A8`) sets bit `0x02000000` directly; `0x1009261C`,
+  `0x10092C08` and `0x10092F94` clear it.
+
+### Game type 2 is Instant Action
+
+- The new-player dialog (`0x1015D220`) builds a radio group `0x70C` with button
+  `0x70D` (UITEXT 241 "Instant Action") and `0x70E` (UITEXT 242 "Full Simulation"),
+  next to UITEXT 239 "Please enter your name" and 243 "Type your name". UITEXT indices
+  are those of the Mac `American` table; the Windows English table is one lower
+  (UI.md lists 240/241).
+- Confirming it (`0x1015CF00`) creates the player through `0x1013741C` with the flag
+  "selected button is `0x70D`". That function stores the flag per player slot,
+  copies the level `easymode` files into the player's saves only when it is set
+  (`0x10137600`), and writes it into the profile's `mEasyModeUser` (setter
+  `0x10128F54`).
+- Selecting a player (`0x1013781C`) loads the profile and, unless the game type is
+  online, sets game type 2 when `mEasyModeUser` is set (getter `0x10128F4C`) and 0
+  otherwise.
+
+### Instant Action rules traced so far
+
+| Rule | Function | Observation |
+| --- | --- | --- |
+| Easy balance layers | `0x1010474C`, `0x10119328` | `<theme>/Easy_Standard.sam` after the two `Standard.sam` files; each object's `Easy_<file>.sam` after the object file, both only when present |
+| No loans | `0x10154AA0` | the "Available Loans" window (UITEXT 170) is only built when the type is not 2 |
+| No upgrades | `0x10165A0C` | the ride upgrade list is only filled when the type is not 2; type 2 shows UITEXT 27 "Upgrades are not available in Instant Action mode" |
+| Research message | `0x10161910` | the research panel shows UITEXT 468 "Research is automatic in Instant Action mode." in type 2 (467 "hire some researchers" otherwise) |
+| Completion message | `0x1013D708` | type 2 shows UITEXT 471 (finished Instant Action, try Full Simulation) |
+| Easymode park | `0x10137600` | copied into a player's saves only for Instant Action players |
+
+Research needs researchers in every type: the research point sink `0x100F0DF0`
+has one caller, reached only from the per-researcher cycle `0x100F0284` with the
+researcher's grade ability (docs/reverse/PPC-review.md, section 57).
+The Instant Action seed ships a researcher; SAVE-I decodes its staff record and
+imports it (docs/reverse/SAVE-plan.md), so the former stand-in `ECON-019` is
+gone. Not traced: what several type-2 branches in
+the finance, ticket-price and staff-training panels (`0x10150C54`, `0x1014EC48`,
+`0x10168D8C`) clear exactly.
+
+### Object settings layers
+
+The object loader (`0x10119328`) loads, per object: a base `.sam` named by its
+caller, then in the online type its `Online_` variant; then the object's own
+`.sam`; then `Online_<file>.sam` (online type) or `Easy_<file>.sam` (type 2) when
+that file exists. Online settings replace `Standard.sam` (`online_Standard.sam`)
+but are layered on object files.
+
+**Applied in OpenTPW:** the front end's game mode now selects the balance:
+Instant Action loads the `Easy_` layers (missing files are skipped as in the
+original) and imports the Easymode park; Full Simulation loads neither. The
+loans/upgrades rules and the layer order cite these functions with
+`[BIN:STP-PPC:…]` labels. `RIDES-009` keeps only the open question of where shared
+non-`Info.Id` `.sam` files sit in the object layer order.
+
+### User interface map
+
+[UI-MAP.md](UI-MAP.md) describes 97 screens, their controls and 570 candidate rules,
+drafted by subagents from the 242 UI functions and checked mechanically against the
+cited functions (control ids, UITEXT indices, game-type tests). It is a lead list:
+only rules that are traced and reviewed may carry a `[BIN:STP-PPC:…]` label.
+
+### Golden keys
+
+The profile's key count (`0x10128B60`) is `mExtraKeys` plus the number of earned
+tickets divided by 3 (truncated). Earned tickets are the four global ticket flags,
+the per-theme tickets and the two secret-ticket flags; `mSpentTickets` is not
+subtracted, so buying mystery items does not cost keys. This confirms the manual's
+"one key for every third ticket" (REFERENCE-MANUAL.md). The starting value of
+`mExtraKeys` is not traced, so `ECON-040` (one starting key) stays an approximation.
+
+## Advisor drawing in the Windows executable (2026-10-10)
+
+`BIN:TPW-EXE` labels cite the decrypted Windows Sim Theme Park World v2.0 `tp.exe`
+(SHA-256 `5472f97b…1b805`, docs/COMPLETION-PLAN.md), analysed statically in Ghidra. The
+Mac application links the advisor's light, not its mesh, into the scene manager and
+leaves the mesh draw path unresolved; the Windows build has the engine linked in, so the
+whole path can be followed:
+
+- `0x00429BA0` sets up both advisor slots (stride 0xB0): identity model matrix with
+  translation (0.6, −0.6, 0.2), root node scaled by (0.01125, 0.001, 0.015), parallel light
+  (26.67, −26.67, 800). `0x0045BED0` sets model flag 0x200; the model is loaded with
+  flags 0x50120, whose 0x100 sets instance bit 8, so `0x004732A0` links the mesh into
+  scene layer 0x10 when an animation starts.
+- `0x0057A260` (SetLocalMatrix) stores m · diag(1, −1, 1, 1).
+- `0x0057A750` draws a mesh with local × camera-to-screen matrix Q, except with model flag
+  0x200, where only the local matrix is used. Q = view · projection · diag(2k, −2, 1, 1)
+  (`0x005783B0`); the transform stage (`0x00579250`, SIMD `0x005F4F81`) computes v · M with
+  no divide or viewport.
+
+So the advisor is placed in the screen space that follows Q, x right and y down. The scale
+k and the consumer of the transformed vertices are not traced; OpenTPW reads that space as
+−1..1 across the screen (`ADVISOR-023`), which puts the model in the bottom right at about a
+third of the screen height (docs/LIPS.md).
+
+## See also
+
+[RIDE-WEAR.md](RIDE-WEAR.md): SAM schema records and slot layout, and the ride wear functions found with
+Ghidra in `SimThemePark.data` (ECON-023 evidence).

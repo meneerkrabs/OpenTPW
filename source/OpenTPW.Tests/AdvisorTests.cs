@@ -11,25 +11,60 @@ namespace OpenTPW.Tests;
 public class AdvisorTests
 {
 	[DataTestMethod]
-	[DataRow( 1024, 768, 16, 496, 256 )]
-	[DataRow( 512, 384, 8, 248, 128 )]
-	[DataRow( 2048, 1536, 32, 992, 512 )]
-	public void AdvisorViewportMapsLogicalPlacementIntoTheWorldTarget( int width, int height, int x, int y, int size )
+	[DataRow( 640, 480, 384, 288, 256, 192 )]
+	[DataRow( 2560, 1440, 1536, 864, 1024, 576 )]
+	public void AdvisorBoxIsTheBottomRightOfTheScreen( int width, int height, int x, int y, int boxWidth, int boxHeight )
 	{
-		var viewport = Advisor.ViewportRectangle( new Point2( 1024, 768 ), new Point2( width, height ) );
-		Assert.AreEqual( (x, y, size), viewport );
-		Assert.IsTrue( viewport.X + viewport.Size <= width && viewport.Y + viewport.Size <= height );
+		var box = Advisor.BoxRectangle( new Point2( width, height ) );
+		Assert.AreEqual( (x, y, boxWidth, boxHeight), box );
+		Assert.AreEqual( (width, height), (box.X + box.Width, box.Y + box.Height) );
+	}
+
+	[TestMethod]
+	public void AdvisorTransformMatchesTheOriginalAt4By3()
+	{
+		// Composed model point → clip space of the whole 640×480 screen (box clip × box half side + centre).
+		var transform = Advisor.ModelTransform( new Point2( 640, 480 ) );
+		System.Numerics.Vector3 Screen( System.Numerics.Vector3 point )
+		{
+			var box = System.Numerics.Vector3.Transform( point, transform );
+			return new( box.X * Advisor.BoxHalfSide + Advisor.Centre.X, box.Y * Advisor.BoxHalfSide + Advisor.Centre.Y, box.Z );
+		}
+		var origin = Screen( System.Numerics.Vector3.Zero );
+		Assert.AreEqual( 0.6f, origin.X, 1e-6f );
+		Assert.AreEqual( -0.6f, origin.Y, 1e-6f );
+		Assert.AreEqual( 0.2f, origin.Z, 1e-6f );
+		var unit = Screen( System.Numerics.Vector3.One ) - origin;
+		Assert.AreEqual( 0.015f * 0.75f, unit.X, 1e-6f );
+		Assert.AreEqual( 0.015f, unit.Y, 1e-6f );
+		Assert.AreEqual( 0.001f, unit.Z, 1e-6f );
 	}
 
 	[TestMethod]
 	public void MouthFollowsTimelineAndDefaultsClosed()
 	{
 		var timeline = new LipSyncTimeline( new uint[] { 2226893, 2812380, 4058820 } );
-		Assert.AreEqual( Advisor.TalkingMouth, Advisor.MouthFor( timeline, TimeSpan.Zero ) );
-		Assert.AreEqual( Advisor.ClosedMouth, Advisor.MouthFor( timeline, TimeSpan.FromSeconds( 2.5 ) ) );
-		Assert.AreEqual( Advisor.TalkingMouth, Advisor.MouthFor( timeline, TimeSpan.FromSeconds( 3 ) ) );
-		Assert.AreEqual( Advisor.ClosedMouth, Advisor.MouthFor( timeline, TimeSpan.FromSeconds( 4.1 ) ) );
-		Assert.AreEqual( Advisor.ClosedMouth, Advisor.MouthFor( null, TimeSpan.Zero ) );
+		Assert.IsTrue( Advisor.IsTalking( timeline, TimeSpan.Zero ) );
+		Assert.IsFalse( Advisor.IsTalking( timeline, TimeSpan.FromSeconds( 2.5 ) ) );
+		Assert.IsTrue( Advisor.IsTalking( timeline, TimeSpan.FromSeconds( 3 ) ) );
+		Assert.IsFalse( Advisor.IsTalking( timeline, TimeSpan.FromSeconds( 4.1 ) ) );
+		Assert.IsFalse( Advisor.IsTalking( null, TimeSpan.Zero ) );
+	}
+
+	[TestMethod]
+	public void TalkingPicksARandomMouthEvery100Milliseconds()
+	{
+		var mouth = new AdvisorMouth( new Random( 7 ) );
+		Assert.AreEqual( Advisor.ClosedMouth, mouth.Update( false, 0 ) );
+		var first = mouth.Update( true, 1 );
+		CollectionAssert.Contains( Advisor.Mouths, first );
+		Assert.AreEqual( first, mouth.Update( true, 50 ), "no new pick within 100 ms" );
+		Assert.AreEqual( first, mouth.Update( true, 101 ), "the next pick needs more than 100 ms" );
+		var picks = new System.Collections.Generic.HashSet<string>();
+		for ( var time = 102; time < 20000; time += 16 )
+			picks.Add( mouth.Update( true, time ) );
+		CollectionAssert.AreEquivalent( Advisor.Mouths, picks.ToArray(), "all five mouths are used while talking" );
+		Assert.AreEqual( Advisor.ClosedMouth, mouth.Update( false, 20000 ) );
 	}
 
 	[TestMethod]
@@ -37,7 +72,7 @@ public class AdvisorTests
 	{
 		// 60 Hz sampling of sp_001: open 0–2.227 s, closed to 2.812 s, open to 4.059 s.
 		var timeline = new LipSyncTimeline( new uint[] { 2226893, 2812380, 4058820 } );
-		var frames = Enumerable.Range( 0, 270 ).Select( frame => Advisor.MouthFor( timeline, TimeSpan.FromSeconds( frame / 60.0 ) ) ).ToArray();
+		var frames = Enumerable.Range( 0, 270 ).Select( frame => Advisor.IsTalking( timeline, TimeSpan.FromSeconds( frame / 60.0 ) ) ).ToArray();
 		var changes = Enumerable.Range( 1, frames.Length - 1 ).Where( frame => frames[frame] != frames[frame - 1] ).ToArray();
 		CollectionAssert.AreEqual( new[] { 134, 169, 244 }, changes );
 	}
@@ -45,7 +80,10 @@ public class AdvisorTests
 	[TestMethod]
 	public void ApproximationRegisterIsSequentialAndUnique()
 	{
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 14 ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
+		// Traced rules leave the register; their numbers are not reused.
+		// 11 (a deliberate extension), 16 (the fixed rows) and 18 (the model hides at the end of the last clip) left in the MISC round of October 14.
+		var retired = new[] { 1, 2, 3, 4, 8, 11, 13, 14, 15, 16, 18, 19, 21, 23, 24 };
+		CollectionAssert.AreEqual( Enumerable.Range( 1, 27 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
 	[DataTestMethod]
@@ -65,13 +103,6 @@ public class AdvisorTests
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => Advisor.ClipName( number ) );
 	}
 
-	[TestMethod]
-	public void ReversesTriangleWindingWithoutTouchingInput()
-	{
-		var indices = new uint[] { 0, 1, 2, 3, 4, 5 };
-		CollectionAssert.AreEqual( new uint[] { 0, 2, 1, 3, 5, 4 }, Advisor.ReverseWinding( indices ) );
-		CollectionAssert.AreEqual( new uint[] { 0, 1, 2, 3, 4, 5 }, indices );
-	}
 
 	[TestMethod]
 	public void SpeechPositionFollowsFramesTakenByTheSharedAudioOutput()
@@ -93,20 +124,92 @@ public class AdvisorTests
 	}
 
 	[TestMethod]
-	public void OriginalAdvisorClipsAreNotRigidOnly()
+	public void MutedSpeechKeepsTheWallClockWithoutOpeningADevice()
+	{
+		if ( GameAudio.Events != null )
+			Assert.Inconclusive( "Game audio was already started in this process." );
+		var enabled = GameAudio.Enabled;
+		GameAudio.Enabled = false;
+		try
+		{
+			using var player = Advisor.CreatePlayer( new Mp2Audio( 22050, 1, new short[2205], 1, 0 ) );
+			Assert.AreEqual( "wall clock (no audio device)", player.ClockSource );
+			Assert.IsNull( player.DeviceError, "no SDL device was attempted" );
+			Assert.IsNull( AudioMixer.Current );
+			player.Start();
+			Assert.IsTrue( player.Position >= TimeSpan.Zero );
+		}
+		finally
+		{
+			GameAudio.Enabled = enabled;
+		}
+	}
+
+	/// <summary>
+	/// Every record of the global and level advisor clips decodes (ANIM-plan §10: ADVISOR-006's "undecoded non-rigid
+	/// tracks" premise is stale) and plays against its model; only one level clip carries path parameters.
+	/// </summary>
+	[TestMethod]
+	public void OriginalAdvisorClipsDecodeAndPlayAgainstTheirModels()
 	{
 		using var assets = new OriginalAssets();
-		var model = new ModelFile( $"{Advisor.ArchivePath}/Advisor.MD2" );
-		for ( var index = 1; index <= 15; index++ )
+		Assert.AreEqual( "Advisorm3.MD2", Advisor.AnimationClipName( "", 3 ) );
+		Assert.AreEqual( "Advisor_FANm16.MD2", Advisor.AnimationClipName( "_FAN", 16 ) );
+		Assert.ThrowsException<ArgumentOutOfRangeException>( () => Advisor.AnimationClipName( "", 0 ) );
+		int clips = 0, withPathParameters = 0, withUv = 0;
+		foreach ( var (archive, suffix) in new[] { (Advisor.ArchivePath, ""), ("/levels/fantasy/advisor", "_FAN"), ("/levels/hallow/advisor", "_HAL"),
+			("/levels/jungle/advisor", "_JUN"), ("/levels/space/advisor", "_SPA") } )
 		{
-			var clip = new ModelFile( $"{Advisor.ArchivePath}/Advisorm{index}.MD2" ).Clip;
-			Assert.IsNotNull( clip, $"Advisorm{index}" );
-			Assert.IsTrue( clip!.Tracks.Any( track => track.HasUndecodedPayload ), $"Advisorm{index} would be playable as rigid tracks" );
+			var model = new ModelFile( $"{archive}/Advisor{suffix}.MD2" );
+			var members = FileSystem.GetFiles( archive ).Select( Path.GetFileName ).ToHashSet( StringComparer.OrdinalIgnoreCase );
+			Assert.IsTrue( members.Contains( Advisor.AnimationClipName( suffix, 1 ) ), archive );
+			for ( var index = 1; members.Contains( Advisor.AnimationClipName( suffix, index ) ); index++ )
+			{
+				var name = Advisor.AnimationClipName( suffix, index );
+				var clip = new ModelFile( $"{archive}/{name}" ).Clip!;
+				clips++;
+				var unsupported = clip.Tracks.Aggregate( 0u, ( flags, track ) => flags | track.UnsupportedFlags );
+				Assert.AreEqual( 0u, unsupported & ~ModelAnimationTrack.PathFlags, name );
+				withPathParameters += unsupported != 0 ? 1 : 0;
+				withUv += clip.Tracks.Any( track => track.UvAnimation != null ) ? 1 : 0;
+				Assert.IsTrue( clip.Tracks.All( track => track.VertexPose == null ), $"{name} has no 12-byte block" );
+				var animator = new ObjectAnimator( model );
+				animator.Play( 0, clip, name, loop: false );
+				for ( var step = 1; step <= 4; step++ )
+					animator.Advance( clip.Duration / 4.0 / animator.TicksPerSecond );
+				Assert.AreEqual( 0, animator.VertexLimitations.Count, $"{name}: {string.Join( "; ", animator.VertexLimitations )}" );
+				Assert.IsTrue( animator.NodeTransforms.All( matrix => float.IsFinite( matrix.M41 ) && float.IsFinite( matrix.M42 ) && float.IsFinite( matrix.M43 ) ), name );
+			}
 		}
-		// Advisorm13 is the only clip with tracks on the five mouth meshes (payload undecoded):
-		// the likeliest source of the original mouth-shape choice.
-		var mouths = new ModelFile( $"{Advisor.ArchivePath}/Advisorm13.MD2" ).Clip!.Tracks.Select( track => model.Nodes[track.NodeIndex].Name ).Where( name => name.StartsWith( "Mouth - " ) ).OrderBy( name => name ).ToArray();
+		Assert.IsTrue( clips >= 15 );
+		Assert.AreEqual( 1, withPathParameters, "Advisor_HALm16 is the one clip with path records" );
+		Assert.IsTrue( withUv > 0, "the level advisors carry texture-coordinate tracks" );
+
+		// The global clips' node lists set node bit 0x10 on the hats, spatula and bow tie (ADVISOR-002's hidden set).
+		var global = new ModelFile( $"{Advisor.ArchivePath}/Advisor.MD2" );
+		var listed = new ModelFile( $"{Advisor.ArchivePath}/Advisorm1.MD2" ).Clip!.NodeList.Select( node => global.Nodes[node].Name ).ToArray();
+		Assert.IsTrue( listed.Contains( "Spatula" ) && listed.Contains( "Bowler_BTie" ) && listed.All( name => !Advisor.BodyMeshes.Contains( name ) ), string.Join( ", ", listed ) );
+		// Advisorm13 is the only clip with tracks on the five mouth meshes: the likeliest source of the original mouth-shape choice.
+		var mouths = new ModelFile( $"{Advisor.ArchivePath}/Advisorm13.MD2" ).Clip!.Tracks.Select( track => global.Nodes[track.NodeIndex].Name ).Where( name => name.StartsWith( "Mouth - " ) ).OrderBy( name => name ).ToArray();
 		CollectionAssert.AreEqual( new[] { "Mouth - Aah", "Mouth - Eee", "Mouth - Normal", "Mouth - Ooh", "Mouth - Sss" }, mouths );
+	}
+
+	/// <summary>The clip lengths of the original's advisor clips come from trailer word 2 (0x474070): the global advisor's and a level advisor's.</summary>
+	[TestMethod]
+	public void OriginalAdvisorClipLengthsComeFromTheClipTrailers()
+	{
+		using var assets = new OriginalAssets();
+		var global = AdvisorClipDurations.Load( FileSystem, null )!;
+		Assert.IsNotNull( global );
+		Assert.AreEqual( AdvisorClipDurations.FromTrailer( (uint)new ModelFile( $"{Advisor.ArchivePath}/Advisorm13.MD2" ).Clip!.Duration ), global.Of( 13 ) );
+		Assert.AreEqual( 0u, global.Of( AdvisorClipDurations.StartClip ), "the entry of clip 14 is forced to 0" );
+		Assert.IsTrue( global.Of( AdvisorClipDurations.EndClip ) > 0 );
+		var jungle = AdvisorClipDurations.Load( FileSystem, "jungle" );
+		Assert.IsNotNull( jungle, "the level advisor's clips are used when loaded" );
+		var sequence = AdvisorSequences.Generate( 5000 + AdvisorSequences.BudgetSlackMilliseconds, jungle!, new AdvisorRandom().Next );
+		Assert.AreEqual( 14, sequence.Clips[0] );
+		Assert.AreEqual( 15, sequence.Clips[^1] );
+		Assert.IsTrue( AdvisorSequences.ResponseSpan( sequence, jungle! ) >= 1000 + 2 * jungle!.Of( 15 ) );
 	}
 
 	[TestMethod]
@@ -126,14 +229,25 @@ public class AdvisorTests
 		var eye = Bounds( "Left Eye" );
 		var mouth = Bounds( Advisor.ClosedMouth );
 		Assert.IsTrue( antenna.Min.Y > head.Min.Y && body.Max.Y < head.Min.Y + 1, "Y is up after composing the node hierarchy" );
-		Assert.IsTrue( eye.Max.Z < head.Min.Z && mouth.Min.Z < head.Min.Z, "the face is on the −Z side, towards the overlay camera" );
-		foreach ( var name in new[] { Advisor.TalkingMouth, "Mouth - Eee", "Mouth - Ooh", "Mouth - Sss" } )
+		Assert.IsTrue( eye.Max.Z < head.Min.Z && mouth.Min.Z < head.Min.Z, "the face is on the −Z side, towards the viewer (nearer depth)" );
+		foreach ( var name in Advisor.Mouths.Skip( 1 ) )
 		{
 			var other = Bounds( name );
 			Assert.IsTrue( NumericVector.Distance( mouth.Min, other.Min ) < 1e-3f && NumericVector.Distance( mouth.Max, other.Max ) < 1e-3f, name );
 		}
 		foreach ( var name in Advisor.BodyMeshes )
 			Assert.IsTrue( model.Meshes.Any( mesh => mesh.Name == name ), name );
+		// The whole model fits the box it is drawn in, on 4:3 and on wider screens.
+		foreach ( var output in new[] { new Point2( 640, 480 ), new Point2( 2560, 1080 ) } )
+		{
+			var transform = Advisor.ModelTransform( output );
+			foreach ( var mesh in model.Meshes )
+				foreach ( var vertex in Advisor.ConvertMesh( mesh, Advisor.NodeWorld( model, mesh.NodeIndex ) ) )
+				{
+					var box = NumericVector.Transform( vertex.Position.GetSystemVector3(), transform );
+					Assert.IsTrue( MathF.Abs( box.X ) < 1 && MathF.Abs( box.Y ) < 1 && box.Z > 0 && box.Z < 1, $"{mesh.Name} at {output.X}x{output.Y}: {box}" );
+				}
+		}
 	}
 
 	[TestMethod]
@@ -182,5 +296,22 @@ public class AdvisorTests
 		}
 
 		public void Dispose() => FileSystem = original!;
+	}
+
+	[TestMethod]
+	public void AdvisorClockStandsStillWhilePausedAndContinuesFromTheSameValue()
+	{
+		long now = 1000;
+		var clock = new PausableClock( () => now );
+		Assert.AreEqual( 1000u, clock.Milliseconds );
+		clock.SetPaused( true );
+		now = 5000;
+		Assert.AreEqual( 1000u, clock.Milliseconds, "frozen at the pause snapshot" );
+		clock.SetPaused( true );
+		now = 6000;
+		clock.SetPaused( false );
+		Assert.AreEqual( 1000u, clock.Milliseconds, "the paused 5 s are compensated" );
+		now = 6250;
+		Assert.AreEqual( 1250u, clock.Milliseconds );
 	}
 }

@@ -47,6 +47,44 @@ public class ParkEconomyOriginalDataTests
 			Assert.IsFalse( BalanceSettings.HasEasyLayer( theme ) );
 	}
 
+	// ORACLE F23 (ECON-039): every shipped theme's GoldenTicketLocal.ProfitYear is the strict signed threshold of the award, with no factor.
+	[TestMethod]
+	public void TheShippedProfitTicketThresholdsAreStrictAndUnscaled()
+	{
+		UseOriginalData();
+		foreach ( var theme in Themes )
+		{
+			var settings = BalanceSettings.Load( theme, easy: false );
+			var threshold = settings.GoldenTickets.ProfitYear;
+			Assert.IsTrue( threshold > 0, theme );
+			bool Won( long profit )
+			{
+				var park = new ParkEconomy( settings, EconomyObjectCatalog.Load( theme, easy: false ), ParkGameMode.FullSimulation, 1 );
+				return park.Objectives.CheckGoldenTickets( park.Counters, park.GuestStatistics, park.Research, profit, Array.Empty<long>() ).Contains( GoldenTicketKind.ProfitYear );
+			}
+			Assert.IsFalse( Won( threshold ), theme );
+			Assert.IsTrue( Won( threshold + 1 ), theme );
+			Assert.IsFalse( Won( threshold * 9L / 10 + 1 ), $"{theme}: 0.9 x ProfitYear is the advisor hint, not the award" );
+		}
+		Assert.AreEqual( 15000, BalanceSettings.Load( "jungle", false ).GoldenTickets.ProfitYear );
+		Assert.AreEqual( 30000, BalanceSettings.Load( "space", false ).GoldenTickets.ProfitYear );
+	}
+
+	/// <summary>The objects that spread a <c>RegionFX</c> row (GUEST-006): a small and a super toilet, a security camera per theme, and the Hallow and Space shows.</summary>
+	[TestMethod]
+	public void ToiletsCamerasAndShowsCarryTheirRegionFlags()
+	{
+		UseOriginalData();
+		foreach ( var (theme, toilets, camera, fireworks) in new[] { ("jungle", new[] { 1402, 1419 }, 1413, 0), ("hallow", new[] { 2404, 2406 }, 2403, 2415),
+			("space", new[] { 3402, 3403 }, 3413, 3416), ("fantasy", new[] { 4405, 4406 }, 4414, 0) } )
+		{
+			var catalog = EconomyObjectCatalog.Load( theme, easy: false );
+			CollectionAssert.AreEquivalent( toilets, catalog.Objects.Where( info => info.ProvidesRelief ).Select( info => info.InfoId ).ToArray(), theme );
+			CollectionAssert.AreEqual( new[] { camera }, catalog.Objects.Where( info => info.ProvidesSecurity ).Select( info => info.InfoId ).ToArray(), theme );
+			CollectionAssert.AreEqual( fireworks == 0 ? new int[0] : new[] { fireworks }, catalog.Objects.Where( info => info.IsFireworks ).Select( info => info.InfoId ).ToArray(), theme );
+		}
+	}
+
 	[TestMethod]
 	public void ObjectCatalogMergesCategoryObjectAndEasyFiles()
 	{
@@ -65,6 +103,9 @@ public class ParkEconomyOriginalDataTests
 		var spray = catalog[1303];
 		Assert.AreEqual( (20, 50, 75), (spray.PricePerUse, spray.CostOfGoods, spray.ChanceOfLosingPercent) );
 		Assert.AreEqual( ParkObjectKind.FixedItem, catalog[1601].Kind );
+		// tp.exe's buy-menu filler 0x4aaf70 never lists WhichUIType 4: per theme the six features-directory fixed items (bus, gates, seaplane, lights, ferry, end)
+		foreach ( var theme in new[] { "jungle", "hallow", "fantasy", "space" } )
+			Assert.AreEqual( 6, EconomyObjectCatalog.Load( theme, easy: false ).Objects.Count( info => info.Kind == ParkObjectKind.FixedItem && info.WhichUIType == 4 ), theme );
 		Assert.AreEqual( ParkObjectKind.LandTool, catalog[101].Kind );
 		Assert.AreEqual( 1150, catalog[1500].AddOnTargetId, "Dino Karts Jump upgrades the Dino Karts" );
 		Assert.AreEqual( 10000, catalog[1185].PurchaseCost, "coaster archive: the .sam with Info.Id, not coaster.sam" );
@@ -82,6 +123,65 @@ public class ParkEconomyOriginalDataTests
 	}
 
 	[TestMethod]
+	public void ShippedResearchDataGivesTheOriginalsUpgradeCategory()
+	{
+		// tp.exe 0x005031A0 / 0x00504580: projects take the object's own Research.Category and Research.Group, and level projects come from objects whose own
+		// category is not 4. On the shipped data that is the old kind rule: every add-on declares category 4 and group 0 and names a ride, no other object is in
+		// category 4, and only rides have levels above 0.
+		UseOriginalData();
+		foreach ( var theme in Themes )
+		{
+			foreach ( var easy in BalanceSettings.HasEasyLayer( theme ) ? new[] { false, true } : new[] { false } )
+			{
+				var catalog = EconomyObjectCatalog.Load( theme, easy );
+				var buyable = catalog.Objects.Where( info => info.IsBuyable ).ToList();
+				Assert.IsTrue( buyable.Count( info => info.Kind == ParkObjectKind.Upgrade ) > 0, theme );
+				foreach ( var info in buyable )
+				{
+					Assert.AreEqual( info.Kind == ParkObjectKind.Upgrade, info.ResearchCategory == ResearchCategory.Upgrade, $"{theme} {info.InfoId}" );
+					if ( info.Kind == ParkObjectKind.Upgrade )
+						Assert.IsTrue( info.ResearchGroup == 0 && catalog.TryGet( info.AddOnTargetId, out var target ) && target.Kind == ParkObjectKind.Ride, $"{theme} {info.InfoId}" );
+					if ( info.Kind != ParkObjectKind.Ride )
+						Assert.IsTrue( info.Upgrades.Count <= 1, $"{theme} {info.InfoId}" );
+				}
+			}
+		}
+	}
+
+	[TestMethod]
+	public void ShippedScrapRowsGiveTheOriginalsRefunds()
+	{
+		// ORACLE.md F21: the refund is Upgrades[0].CostOfUpgrade times the current level's ScrapValueYearN percentage, or the whole
+		// base price for an unused object in its first 30 days, on every shipped object.
+		UseOriginalData();
+		var checkedObjects = 0;
+		var upgraded = 0;
+		var noFullRefund = new System.Collections.Generic.List<string>();
+		foreach ( var theme in Themes )
+		{
+			var park = ParkEconomy.CreateForTheme( theme, easy: false );
+			foreach ( var info in park.Catalog.Objects.Where( info => info.IsBuyable ) )
+			{
+				Assert.IsTrue( info.Upgrades.All( level => level.ScrapValuePercentByYear.Count == 4 ), $"{theme} {info.Name}: four scrap years per level" );
+				var item = park.RegisterExisting( info.InfoId );
+				var firstYear = info.Upgrades[0].ScrapValuePercentByYear[0];
+				if ( firstYear <= 0 )
+					noFullRefund.Add( $"{theme} {info.Name}" );
+				Assert.AreEqual( firstYear > 0 ? info.PurchaseCost : info.PurchaseCost * firstYear / 100, park.ScrapValue( item ), $"{theme} {info.Name}: unused and new" );
+				park.RecordRideUse( item.Id ); park.RecordUseFinished( item.Id );
+				Assert.AreEqual( info.PurchaseCost * firstYear / 100, park.ScrapValue( item ), $"{theme} {info.Name}: used, year 1" );
+				item.Level = info.Upgrades.Count - 1;
+				Assert.AreEqual( info.PurchaseCost * info.Upgrades[^1].ScrapValuePercentByYear[0] / 100, park.ScrapValue( item ), $"{theme} {info.Name}: top level, year 1" );
+				checkedObjects++;
+				if ( info.Upgrades.Count > 1 )
+					upgraded++;
+			}
+		}
+		Console.WriteLine( $"Scrap refunds checked on {checkedObjects} shipped objects, {upgraded} with upgrade levels; no first-30-days refund (level 0 year 1 is 0) for: {string.Join( ", ", noFullRefund )}." );
+		Assert.IsTrue( checkedObjects > 100 );
+	}
+
+	[TestMethod]
 	public void EveryThemeCanResearchEverythingAndChallengesResolve()
 	{
 		UseOriginalData();
@@ -92,7 +192,7 @@ public class ParkEconomyOriginalDataTests
 			for ( var hire = 0; hire < 3; hire++ )
 			{
 				while ( !park.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Researcher ) )
-					park.Advance( ParkCalendar.TicksPerHour );
+					park.Advance( ParkCalendar.TicksForHours( 1 ) );
 				EconomyTestData.HireBest( park, StaffType.Researcher );
 			}
 			park.OpenPark();
@@ -100,7 +200,7 @@ public class ParkEconomyOriginalDataTests
 			{
 				for ( var visitor = 0; visitor < 1000; visitor++ )
 					park.TryAdmitVisitor( 100, out _ );
-				park.AdvanceDays( 30 );
+				park.AdvanceMonths( 1 );
 			}
 			Assert.IsTrue( park.Research.IsAllResearched, $"{theme}: all research done by year {park.Date.Year}" );
 			Console.WriteLine( $"{theme}: {park.Research.Items.Count} research items done in year {park.Date.Year} with three researchers, balance {park.Balance}." );
@@ -117,23 +217,35 @@ public class ParkEconomyOriginalDataTests
 	public void EasymodeSaveTablesMatchTheEasyBalanceFile()
 	{
 		UseOriginalData();
-		var payload = ReadEasymode();
-		var records = SaveEconomyRecords.Parse( payload );
-		Assert.AreEqual( 1411394, records.Loans[0].Offset );
-		CollectionAssert.AreEqual( new long[] { 100000, 50000, 25000, 10000, 18000, 30000, 80000, 65000 }, records.Loans.Select( loan => loan.Amount ).ToArray() );
+		var park = OriginalPark.Load( "jungle" );
+		var records = park.Save!.Economy;
+		Assert.AreEqual( park.Save.World.Variables.BankAccount, records.BankAccount.Id, "the bank is the thing mBankAccount names" );
+		CollectionAssert.AreEqual( new[] { 100000, 50000, 25000, 10000, 18000, 30000, 80000, 65000 }, records.Loans.Select( loan => loan.Amount ).ToArray() );
 		CollectionAssert.AreEqual( new[] { 2777, 1388, 694, 277, 750, 1000, 1666, 2166 }, records.Loans.Select( loan => loan.MonthlyRepayment ).ToArray() );
-		Assert.AreEqual( 1410409, records.Challenges[0].Offset );
+		CollectionAssert.AreEqual( new[] { false, false, false, true, false, false, false, false }, records.Loans.Select( loan => loan.Available ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 0, 8 ).ToArray(), records.Loans.Select( loan => loan.LenderNameIndex ).ToArray() );
+		Assert.IsTrue( records.Loans.All( loan => loan.AprPercent == 0 && !loan.Bought && loan.MonthsRepaid == 0 ) );
 		CollectionAssert.AreEqual( new[] { 3, 9, 13, 15, 5, 18, 19, 20 }, records.Challenges.Select( challenge => challenge.Type ).ToArray() );
-		CollectionAssert.AreEqual( new[] { 25, 87987, 0, 1, 87787, 0, -12013, 0 }, records.WordsBeforeLoans.ToArray() );
+		Assert.AreEqual( (25, 87987, 0, true, 87787, 0u, -12013), (records.Bank.AdmissionFee, records.Bank.Balance, records.Bank.BatchBalance, records.Bank.WithdrawalsEnabled,
+			records.Bank.LastBalance, records.Bank.TurnEnteredRed, records.Bank.ProfitThisYear) );
 
 		var easy = new ParkEconomy( BalanceSettings.Load( "jungle", true ), EconomyObjectCatalog.Load( "jungle", true ), ParkGameMode.FullSimulation, 1 );
-		var park = OriginalPark.Load( "jungle" );
 		var import = OriginalEconomyImport.Apply( easy, park );
 		Assert.AreEqual( 11, import.ImportedObjects );
 		Assert.AreEqual( 3, import.ImportedFixedItems );
-		Assert.AreEqual( 100000, easy.Balance, "balance stays InitialCash; the save's candidate balance is not imported" );
+		Assert.AreEqual( 87987, easy.Balance, "the bank balance is imported" );
+		Assert.AreEqual( (25, -12013L), (easy.EntranceFee, easy.Ledger.ProfitThisYear) );
+		Assert.AreEqual( 755, easy.Turn, "mGameTick is the park turn" );
+		Assert.AreEqual( new ParkDate( 1, 2, 2, 18 ), easy.Date, "the calendar's month and day caches agree with turn 755" );
+		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "agrees with that date" ) ) );
 		Assert.AreEqual( 4450, easy.Objects.Where( item => item.Kind != ParkObjectKind.FixedItem ).Sum( item => easy.Catalog.TryGet( item.InfoId, out var info ) ? info.PurchaseCost : 0 ) );
-		Assert.IsTrue( easy.Objects.All( item => item.Imported ) );
+		Assert.IsTrue( easy.Objects.All( item => item.Imported && item.Repair == 100 && item.LifeGauge == 100 && item.Level == 0 ) );
+		foreach ( var item in easy.Objects.Where( item => item.Kind is ParkObjectKind.Shop or ParkObjectKind.Sideshow ) )
+			Assert.AreEqual( park.Save.Attractions.Single( attraction => attraction.InfoId == item.InfoId ).PricePerUse, item.Price, $"Info.Id {item.InfoId} price" );
+		CollectionAssert.AreEquivalent( new[] { StaffType.Mechanic, StaffType.Handyman, StaffType.Entertainer, StaffType.Guard, StaffType.Researcher }, easy.Staff.Members.Select( member => member.Type ).ToArray() );
+		var researcher = easy.Staff.OfType( StaffType.Researcher ).Single();
+		Assert.AreEqual( (2, 97, StaffState.Patrolling), (researcher.Grade, researcher.Happiness, researcher.State) );
+		Assert.IsTrue( researcher.HiredTick > 0 && researcher.HiredTick <= easy.Tick );
 
 		var normal = new ParkEconomy( BalanceSettings.Load( "jungle", false ), EconomyObjectCatalog.Load( "jungle", false ), ParkGameMode.FullSimulation, 1 );
 		Assert.ThrowsException<InvalidDataException>( () => OriginalEconomyImport.Apply( normal, park ), "20 % APR repayments do not match the save: it was made with Easy_Standard.sam" );
@@ -148,20 +260,69 @@ public class ParkEconomyOriginalDataTests
 		var repaired = 0;
 		economy.EventRaised += item => repaired += item.Kind == ParkEventKind.RideRepaired ? 1 : 0;
 		var mechanic = EconomyTestData.HireBest( economy, StaffType.Mechanic );
-		economy.AdvanceDays( 30 );
-		Assert.AreEqual( new ParkDate( 1, 2, 1, 0 ), economy.Date );
-		Assert.AreEqual( 100000 - economy.Settings.GetMonthlyWage( StaffType.Mechanic, mechanic.Grade ), economy.Balance );
 		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );
-		Assert.AreEqual( 3, economy.Catalog.TryGet( 1100, out var info ) ? info.Upgrades[0].WearRate : 0, "Easy_Bouncy.sam wear rate" );
-		Assert.AreEqual( 1, repaired, "the worn Belly Bounce was serviced by the mechanic" );
+		Assert.IsTrue( economy.Catalog.TryGet( 1100, out var info ) );
+		Assert.AreEqual( 3, info.Upgrades[0].WearRate, "Easy_Bouncy.sam wear rate" );
+		Assert.AreEqual( (100, 10), (info.MaxSpeed, info.MaxCapacity), "UsageInfo: Rides.sam MaxSpeed, Bouncy.sam MaxCapacity" );
+		// The Belly Bounce runs full at speed 50 for the whole month; nothing else runs.
+		var rides = new EconomyTestData.RideOperations();
+		var operation = new RideOperation( true, info.MaxCapacity, 50 );
+		rides.Set( bouncy.Id, operation );
+		economy.RideOperations = rides;
+		var firstTurn = economy.Turn;
+		var balance = economy.Balance;
+		var wages = economy.Staff.TotalMonthlyWages;
+		Assert.IsTrue( economy.Staff.Members.Contains( mechanic ) && wages >= economy.Settings.GetMonthlyWage( StaffType.Mechanic, mechanic.Grade ) );
+		economy.AdvanceMonths( 1 );
+		Assert.AreEqual( new ParkDate( 1, 3, 1, 0 ), economy.Date, "the imported park starts on 2 February" );
+		Assert.AreEqual( balance - wages, economy.Balance, "the imported and the hired staff are paid" );
+		var steps = economy.Turn / ParkEconomy.WearInterval - firstTurn / ParkEconomy.WearInterval;
+		Assert.IsTrue( steps > 0 );
+		Assert.AreEqual( 100 - steps * ParkEconomy.WearAmount( info, info.Upgrades[0], operation ), bouncy.Repair, 1e-3, "one original wear step per 64 turns" );
+		Assert.AreEqual( 0, repaired, "a month of use leaves the Belly Bounce above the worn threshold" );
 		Assert.IsTrue( bouncy.StateOfRepair > ParkEconomy.WornStateOfRepair );
 	}
 
-	private static byte[] ReadEasymode()
+	[TestMethod]
+	public void GameModeSelectsBalanceLayersAndEasymodePark()
 	{
-		using var stream = FileSystem.OpenRead( "/levels/jungle/Easymode.TPWI" );
-		using var reader = new SaveReader( stream );
-		return reader.ReadFile();
+		// STP-PPC 0x1013781C/0x1010474C/0x10137600: Instant Action (game type 2) loads the Easy_
+		// layers and the Easymode park; Full Simulation loads neither.
+		UseOriginalData();
+		Log ??= new();
+		var full = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle", readShippedSave: false ), ParkStartKind.FullSimulation );
+		Assert.IsFalse( full.Economy.Settings.IsEasy );
+		Assert.AreEqual( ParkGameMode.FullSimulation, full.Economy.Mode );
+		Assert.AreEqual( 0, full.Economy.Objects.Count( item => item.Imported ) );
+		Assert.AreEqual( 0, full.Economy.Staff.Members.Count );
+		CollectionAssert.AreEqual( new[] { "/levels/Standard.sam", "/levels/jungle/Standard.sam" }, full.Economy.Settings.Standard.Sources.ToArray() );
+
+		var instant = ParkEconomyRuntime.ForOriginalLevel( OriginalPark.Load( "jungle" ), ParkStartKind.InstantAction );
+		Assert.IsTrue( instant.Economy.Settings.IsEasy );
+		Assert.AreEqual( 87987, instant.Economy.Balance, "the seed's bank balance" );
+		Assert.IsTrue( instant.Economy.Objects.Any( item => item.Imported ) );
+		Assert.IsFalse( instant.Economy.AvailableLoans.Any() );
+		Assert.AreEqual( 1, instant.Economy.Staff.OfType( StaffType.Researcher ).Count(), "the seed's researcher is imported" );
+
+		// Themes without Easy_Standard.sam still load in Instant Action, as in the original.
+		var space = BalanceSettings.Load( "space", easy: true );
+		CollectionAssert.AreEqual( new[] { "/levels/Standard.sam", "/levels/space/Standard.sam" }, space.Standard.Sources.ToArray() );
+	}
+
+	[TestMethod]
+	public void RepairTimersFollowTheShippedMechanicAndUpgradeData()
+	{
+		UseOriginalData();
+		var catalog = EconomyObjectCatalog.Load( "jungle", easy: false );
+		var work = BalanceSettings.Load( "jungle", easy: false )[StaffType.Mechanic].WorkDuration;
+		var durations = catalog[1100].Upgrades.Select( level => level.DurationOfUpgrade ).ToArray();
+		CollectionAssert.AreEqual( new[] { 80, 60, 40, 30, 20 }, work.ToArray() );
+		CollectionAssert.AreEqual( new[] { 0, 2, 4 }, durations, "Upgrades[level + 1].DurationOfUpgrade of the Belly Bounce" );
+		// ORACLE F19: a ride at 40 % repair needs 60 % of the grade's WorkDuration in park turns, whatever its level; an upgrade needs
+		// WorkDuration x the DurationOfUpgrade of the level it installs.
+		CollectionAssert.AreEqual( new long[] { 48, 36, 24, 18, 12 }, work.Select( duration => ParkEconomy.RepairTimer( duration, 40.0, null ) ).ToArray() );
+		CollectionAssert.AreEqual( new long[] { 160, 120, 80, 60, 40 }, work.Select( duration => ParkEconomy.RepairTimer( duration, 40.0, durations[1] ) ).ToArray() );
+		CollectionAssert.AreEqual( new long[] { 320, 240, 160, 120, 80 }, work.Select( duration => ParkEconomy.RepairTimer( duration, 40.0, durations[2] ) ).ToArray() );
 	}
 
 	private void UseOriginalData()

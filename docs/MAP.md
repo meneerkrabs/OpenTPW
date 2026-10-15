@@ -148,6 +148,36 @@ Unknown chunk tags raise `NotSupportedException` (none observed); other malforme
 input raises `InvalidDataException`. Caller-owned streams stay open and
 nonseekable short reads work.
 
+## Raw-preserving writer
+
+`MapFile.RawTitleSlot` retains a copied, read-only 32-byte title slot, including
+its NUL and all uninterpreted trailing bytes. `Title` remains the existing ASCII
+display value; the writer never re-encodes it. `map.Encode()` and `map.Write(output)`
+serialize the parsed model. Static `MapFile.Encode(width, height, rawTitleSlot,
+opaqueHeaderValues, cells)` and `Write(output, ...)` also accept explicitly supplied
+raw fields, validating the same reader limits before allocating the output buffer.
+
+The result is `TP2M`, the exact title slot, one `MAP ` chunk with payload size
+28 + width × height, little-endian dimensions and five opaque u32 values, every
+raw cell byte in the existing x-major order, and an empty final `END `. A caller
+may edit the existing `Cells` array; no bit masking, terrain interpretation or
+header/title default is applied. The title must be exactly 32 bytes with a NUL,
+the header must contain exactly five values, and cell count must match dimensions.
+Dimension/product/file-size arithmetic is checked against the existing bounds.
+
+All validation and encoding complete before the first stream write. Writing uses
+the caller's current position and leaves the stream open without seeking,
+truncating or flushing. A physical I/O failure propagates and may leave partial
+bytes; this stream API does not promise file replacement or rollback. There is no
+CLI, terrain-rule change, native-writer parity or original-save interoperability
+claim. Original-asset round trips were not run for this slice. Raw input lists and the mutable `Cells` array must remain stable during encoding; this API does not synchronize concurrent edits. The strict reader refuses unknown chunks, duplicate MAP chunks and nonempty/nonfinal END chunks, so no accepted unrepresented chunk payload is silently discarded.
+
+`MapFileWriterTests` locks nonsquare read/write byte equality with all raw cell
+values, high-bit title padding and opaque header words; one-cell edit/readback;
+empty/final-slot title terminators; existing maximum grid; count/shape/NUL
+preflight and allocation refusal; current-position/nonseekable ownership; and
+partial I/O propagation. These controls use synthetic containers.
+
 ## Tests
 
 `source/OpenTPW.Tests/MapFileTests.cs`: 20 synthetic cases (header, opaque values,
@@ -167,4 +197,4 @@ inconclusive without `OPENTPW_GAME_PATH`.
 - The heightfield cell-word low bits (possibly triangle split; unverified) and the
   opaque block header words.
 - The original game's actual build/path rules (runtime observation needed).
-- Sound catalog `.map` schema (separate format).
+- Sound catalog `.map` schema: decoded separately, see [AUDIO.md](AUDIO.md).

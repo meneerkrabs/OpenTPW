@@ -1,0 +1,3011 @@
+{
+  "schema": 1,
+  "scope": "PC asset structure; no machine instructions or game execution",
+  "scriptCount": 308,
+  "instructionCount": 11913,
+  "controllerCommandCounts": {
+    "53": {
+      "1": 4,
+      "3": 4,
+      "4": 4,
+      "5": 5,
+      "8": 4,
+      "9": 20,
+      "10": 4,
+      "11": 4,
+      "12": 4,
+      "14": 14,
+      "15": 4,
+      "16": 4,
+      "17": 1
+    },
+    "54": {
+      "1": 12,
+      "2": 12,
+      "3": 8,
+      "4": 13,
+      "5": 28,
+      "6": 12,
+      "7": 24,
+      "8": 24,
+      "9": 8,
+      "10": 12,
+      "11": 12,
+      "12": 4,
+      "13": 4,
+      "14": 4,
+      "16": 4,
+      "17": 18
+    },
+    "55": {
+      "1": 12,
+      "2": 12,
+      "3": 24,
+      "4": 24,
+      "5": 36,
+      "6": 12,
+      "7": 12,
+      "8": 12
+    }
+  },
+  "selectedScripts": [
+    {
+      "path": "Data/levels/fantasy/rides/b_drip.wad/EventMap.RSE",
+      "sha256": "c29ec99abb6b135d51d6f9ac92eb521cf4d34c08063984907bf5de9ba8ee22ec",
+      "CodeWordCount": 33,
+      "instructionCount": 12,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/b_drip.wad/B_DRIP.RSE",
+      "sha256": "38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230",
+      "CodeWordCount": 122,
+      "instructionCount": 52,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [],
+      "controllerUses": 12,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/gokarts.wad/EventMap.RSE",
+      "sha256": "fb0f070b72c6fa7a7ace8ef3c84ff9f999c15b18b8e6f9ce908346721d61fa9d",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/gokarts.wad/GoKarts.RSE",
+      "sha256": "7fc77ff5d43a875717f83bbbd54512767c792863fff67d385458372b41d00c0e",
+      "CodeWordCount": 267,
+      "instructionCount": 113,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 8,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 141,
+          "value": 1
+        },
+        {
+          "word": 187,
+          "value": 0
+        }
+      ],
+      "controllerUses": 17,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/twetours.wad/EventMap.RSE",
+      "sha256": "0d581660a81eb562af08d9375754e39068eccaac2df797fdf58d13640ca7b247",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+      "sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+      "CodeWordCount": 215,
+      "instructionCount": 87,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 50,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [],
+      "controllerUses": 18,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/wateride.wad/EventMap.RSE",
+      "sha256": "2448f989969c83ddf21f44957c33fb8e232586a00053907409b2e071cf686ca6",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/fantasy/rides/wateride.wad/wateride.RSE",
+      "sha256": "a3b4a09753593a7c8eff84a87d982ab2a3e851080b87f5d3504a430744dfbc18",
+      "CodeWordCount": 261,
+      "instructionCount": 99,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 61,
+          "value": 0
+        }
+      ],
+      "controllerUses": 20,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/bumper.wad/bumper.RSE",
+      "sha256": "55f4fbb9820e9a4cf401bf1dca64677b1371ca71c048550197f5033667eb1163",
+      "CodeWordCount": 254,
+      "instructionCount": 103,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 10,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 17,
+          "value": 0
+        },
+        {
+          "word": 135,
+          "value": 1
+        }
+      ],
+      "controllerUses": 12,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/bumper.wad/effects.RSE",
+      "sha256": "38bbf77c3f183143e7dbe71549125b23c412efe18e748feea597ea12d28dc2ab",
+      "CodeWordCount": 24,
+      "instructionCount": 9,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/bumper.wad/EventMap.RSE",
+      "sha256": "59844afa05a14707c3552efb80111aaf78a31e140863b2c7992de6f93f4669b2",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/gokarts.wad/EventMap.RSE",
+      "sha256": "59844afa05a14707c3552efb80111aaf78a31e140863b2c7992de6f93f4669b2",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/gokarts.wad/GoKarts.RSE",
+      "sha256": "f2fe2e15d7a4d026ab36704c62b836250fb838747d03b4fe8db83446c39114ed",
+      "CodeWordCount": 271,
+      "instructionCount": 106,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 150,
+          "value": 1
+        },
+        {
+          "word": 210,
+          "value": 0
+        }
+      ],
+      "controllerUses": 18,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/wateride.wad/EventMap.RSE",
+      "sha256": "f05bc3ef99cf5a130f69aa8271662263fb7776bef3c806e8de91736573090c73",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/hallow/rides/wateride.wad/Wateride.RSE",
+      "sha256": "d96949e925714126ac9661caa2bf8352e16a3d807da1de25770e0030e4dbb6bf",
+      "CodeWordCount": 261,
+      "instructionCount": 102,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 60,
+          "value": 0
+        }
+      ],
+      "controllerUses": 20,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/bouncy.wad/Bouncy.RSE",
+      "sha256": "7f32699cb6c511d8a9d80dd3250ae89f0b3991b2645fdfccf5cc13a68f677a35",
+      "CodeWordCount": 208,
+      "instructionCount": 90,
+      "StackSize": 3,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 10,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 109,
+          "value": 0
+        },
+        {
+          "word": 144,
+          "value": 0
+        }
+      ],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/bumper.wad/bumper.RSE",
+      "sha256": "3457da0b10b3d63dbb659fb5d4b094c3c932a968cb1e839e7078ef313763cc6a",
+      "CodeWordCount": 236,
+      "instructionCount": 96,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 23,
+          "value": 0
+        },
+        {
+          "word": 128,
+          "value": 1
+        }
+      ],
+      "controllerUses": 12,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/bumper.wad/EventMap.RSE",
+      "sha256": "d232cd517a269ffa0a2a216c134d695b95c08c5e9349db575159d40966a1149b",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/gokarts.wad/EventMap.RSE",
+      "sha256": "d232cd517a269ffa0a2a216c134d695b95c08c5e9349db575159d40966a1149b",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/gokarts.wad/GoKarts.RSE",
+      "sha256": "7446fcbee430ce633a3a26d254d7a982534d89f731a9eab4f6a4b2b1d3d994da",
+      "CodeWordCount": 213,
+      "instructionCount": 89,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 112,
+          "value": 1
+        },
+        {
+          "word": 152,
+          "value": 0
+        }
+      ],
+      "controllerUses": 17,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "CodeWordCount": 357,
+      "instructionCount": 129,
+      "StackSize": 20,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 20,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 66,
+          "value": 1
+        },
+        {
+          "word": 185,
+          "value": 0
+        }
+      ],
+      "controllerUses": 0,
+      "animationChannels": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/wateride.wad/EventMap.RSE",
+      "sha256": "00f7a8a5c1d8b6d73a3bcafd3265189a4cb05c92c092a616a487b364d8bcf160",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/jungle/rides/wateride.wad/Wateride.RSE",
+      "sha256": "0c84f043bb6ef7ff23051cd878e7cf9359940c50e00ca84534cfac1d5778df4a",
+      "CodeWordCount": 243,
+      "instructionCount": 95,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 53,
+          "value": 0
+        }
+      ],
+      "controllerUses": 20,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/bouncy.wad/Bouncy.RSE",
+      "sha256": "9002195fc92ea36e0bcf377dadac89bb0fb023091e293ac8ad2d66bf957896b4",
+      "CodeWordCount": 209,
+      "instructionCount": 90,
+      "StackSize": 3,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 12,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 109,
+          "value": 0
+        },
+        {
+          "word": 147,
+          "value": 0
+        }
+      ],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/bumper.wad/bumper.RSE",
+      "sha256": "165537740d156dd1f690425bc21d683a6ac95020f217000200d0cba83caa9a74",
+      "CodeWordCount": 281,
+      "instructionCount": 113,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 10,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 26,
+          "value": 0
+        },
+        {
+          "word": 144,
+          "value": 1
+        }
+      ],
+      "controllerUses": 12,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/bumper.wad/EventMap.RSE",
+      "sha256": "630558a1625a22056f467b3e9876aeed8950ae38af4371126b76bf2b88716cab",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/gokarts.wad/EventMap.RSE",
+      "sha256": "630558a1625a22056f467b3e9876aeed8950ae38af4371126b76bf2b88716cab",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/gokarts.wad/GoKarts.RSE",
+      "sha256": "8330710ac9195045c3beaf92e3370f59fe1ee6f41c9073fb2cd5026cb05ee125",
+      "CodeWordCount": 270,
+      "instructionCount": 110,
+      "StackSize": 5,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 131,
+          "value": 1
+        },
+        {
+          "word": 184,
+          "value": 0
+        }
+      ],
+      "controllerUses": 19,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/moonshot.wad/Moonshot.RSE",
+      "sha256": "8cc600039af76e352da92438bd62f5ba2367cb164d8686ec7f3a5554e3403e82",
+      "CodeWordCount": 131,
+      "instructionCount": 55,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [],
+      "controllerUses": 12,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/moonshot.wad/EventMap.RSE",
+      "sha256": "20eb2f18e5e4f6d004e0c81c1f652ee2a4ecc2b77e99c5c81473834e4eb05085",
+      "CodeWordCount": 33,
+      "instructionCount": 12,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/wateride.wad/EventMap.RSE",
+      "sha256": "cb83fc41dd429b54a99c9dc2debd7b79a0d4033a5c6e938fce1b9d15fbd2d622",
+      "CodeWordCount": 36,
+      "instructionCount": 13,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": -1,
+        "VAR_LETMEOFF": -1,
+        "VAR_CAPACITY": -1,
+        "VAR_DURATION": -1,
+        "VAR_ONRIDE": -1,
+        "VAR_RUNNING": -1,
+        "VAR_WORN": -1
+      },
+      "runningWrites": [],
+      "controllerUses": 0,
+      "animationChannels": []
+    },
+    {
+      "path": "Data/levels/space/rides/wateride.wad/Wateride.RSE",
+      "sha256": "c36ca044c85e60017e16a538c778fad5a192cf0464f649fe7c107d5979ec0e96",
+      "CodeWordCount": 278,
+      "instructionCount": 102,
+      "StackSize": 0,
+      "TimeSlice": 50,
+      "LimboSize": 0,
+      "BounceSize": 0,
+      "WalkSize": 0,
+      "hostVariableIndices": {
+        "VAR_LETMEON": 0,
+        "VAR_LETMEOFF": 1,
+        "VAR_CAPACITY": 2,
+        "VAR_DURATION": 3,
+        "VAR_ONRIDE": 5,
+        "VAR_RUNNING": 9,
+        "VAR_WORN": 8
+      },
+      "runningWrites": [
+        {
+          "word": 73,
+          "value": 0
+        }
+      ],
+      "controllerUses": 20,
+      "animationChannels": []
+    }
+  ],
+  "commandObservations": [
+    {
+      "commandKey": "53:01",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 14,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 53
+      }
+    },
+    {
+      "commandKey": "53:03",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 191,
+        "ParameterKind": "Variable",
+        "RawValue": 15,
+        "VariableName": "VAR_PEEPID",
+        "NextOpcode": 7
+      }
+    },
+    {
+      "commandKey": "53:04",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 119,
+        "ParameterKind": "Variable",
+        "RawValue": 13,
+        "VariableName": "VAR_TEMP",
+        "NextOpcode": 32
+      }
+    },
+    {
+      "commandKey": "53:05",
+      "count": 5,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 1
+        },
+        {
+          "kind": "Variable",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 39,
+        "ParameterKind": "Variable",
+        "RawValue": 13,
+        "VariableName": "VAR_TEMP",
+        "NextOpcode": 53
+      }
+    },
+    {
+      "commandKey": "53:08",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 210,
+        "ParameterKind": "Variable",
+        "RawValue": 3,
+        "VariableName": "VAR_DURATION",
+        "NextOpcode": 31
+      }
+    },
+    {
+      "commandKey": "53:09",
+      "count": 20,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 20
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 20,
+        "ParameterKind": "Literal",
+        "RawValue": 1,
+        "VariableName": null,
+        "NextOpcode": 53
+      }
+    },
+    {
+      "commandKey": "53:10",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 107,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 32
+      }
+    },
+    {
+      "commandKey": "53:11",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 207,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 53
+      }
+    },
+    {
+      "commandKey": "53:12",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 17,
+        "ParameterKind": "Literal",
+        "RawValue": 1,
+        "VariableName": null,
+        "NextOpcode": 53
+      }
+    },
+    {
+      "commandKey": "53:14",
+      "count": 14,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 14
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 23,
+        "ParameterKind": "Literal",
+        "RawValue": 1,
+        "VariableName": null,
+        "NextOpcode": 49
+      }
+    },
+    {
+      "commandKey": "53:15",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 64,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 32
+      }
+    },
+    {
+      "commandKey": "53:16",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/twetours.wad/twetours.RSE",
+        "Sha256": "30668366a55afd08016b702a007c1ca48c84fabe358b3e129b51c2005ba6cbbb",
+        "Word": 42,
+        "ParameterKind": "Variable",
+        "RawValue": 9,
+        "VariableName": "VAR_RUNNING",
+        "NextOpcode": 38
+      }
+    },
+    {
+      "commandKey": "53:17",
+      "count": 1,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 1
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/hallow/rides/tourride.wad/TourRide.RSE",
+        "Sha256": "cbcf6f90dc41d747b4f31afab9dbb9656a2e5c170a40b7288c7aeca9427bf5c9",
+        "Word": 26,
+        "ParameterKind": "Literal",
+        "RawValue": 2048,
+        "VariableName": null,
+        "NextOpcode": 49
+      }
+    },
+    {
+      "commandKey": "54:01",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 12
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 94,
+        "ParameterKind": "Variable",
+        "RawValue": 0,
+        "VariableName": "VAR_LETMEON",
+        "NextOpcode": 3
+      }
+    },
+    {
+      "commandKey": "54:02",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 12
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 210,
+        "ParameterKind": "Variable",
+        "RawValue": 1,
+        "VariableName": "VAR_LETMEOFF",
+        "NextOpcode": 32
+      }
+    },
+    {
+      "commandKey": "54:03",
+      "count": 8,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 8
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 125,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 38
+      }
+    },
+    {
+      "commandKey": "54:04",
+      "count": 13,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 13
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 47,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 32
+      }
+    },
+    {
+      "commandKey": "54:05",
+      "count": 28,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 28
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/gokarts.wad/GoKarts.RSE",
+        "Sha256": "7fc77ff5d43a875717f83bbbd54512767c792863fff67d385458372b41d00c0e",
+        "Word": 15,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 32
+      }
+    },
+    {
+      "commandKey": "54:06",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 12
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 132,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 38
+      }
+    },
+    {
+      "commandKey": "54:07",
+      "count": 24,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 24
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 4,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 17
+      }
+    },
+    {
+      "commandKey": "54:08",
+      "count": 24,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 15
+        },
+        {
+          "kind": "Variable",
+          "count": 9
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 156,
+        "ParameterKind": "Literal",
+        "RawValue": 1,
+        "VariableName": null,
+        "NextOpcode": 38
+      }
+    },
+    {
+      "commandKey": "54:09",
+      "count": 8,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 4
+        },
+        {
+          "kind": "Variable",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 139,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 28
+      }
+    },
+    {
+      "commandKey": "54:10",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 12
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/gokarts.wad/GoKarts.RSE",
+        "Sha256": "7fc77ff5d43a875717f83bbbd54512767c792863fff67d385458372b41d00c0e",
+        "Word": 33,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 31
+      }
+    },
+    {
+      "commandKey": "54:11",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 4
+        },
+        {
+          "kind": "Variable",
+          "count": 8
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/wateride.wad/wateride.RSE",
+        "Sha256": "a3b4a09753593a7c8eff84a87d982ab2a3e851080b87f5d3504a430744dfbc18",
+        "Word": 44,
+        "ParameterKind": "Variable",
+        "RawValue": 9,
+        "VariableName": "VAR_RUNNING",
+        "NextOpcode": 38
+      }
+    },
+    {
+      "commandKey": "54:12",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 100,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 47
+      }
+    },
+    {
+      "commandKey": "54:13",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 117,
+        "ParameterKind": "Variable",
+        "RawValue": 3,
+        "VariableName": "VAR_DURATION",
+        "NextOpcode": 3
+      }
+    },
+    {
+      "commandKey": "54:14",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/gokarts.wad/GoKarts.RSE",
+        "Sha256": "7fc77ff5d43a875717f83bbbd54512767c792863fff67d385458372b41d00c0e",
+        "Word": 135,
+        "ParameterKind": "Variable",
+        "RawValue": 3,
+        "VariableName": "VAR_DURATION",
+        "NextOpcode": 54
+      }
+    },
+    {
+      "commandKey": "54:16",
+      "count": 4,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 4
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.RSE",
+        "Sha256": "8179495de5f11909dda8a33aadbc8e824165f0bcd207797d7cb83f812b4e068c",
+        "Word": 37,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 32
+      }
+    },
+    {
+      "commandKey": "54:17",
+      "count": 18,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 18
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/wateride.wad/wateride.RSE",
+        "Sha256": "a3b4a09753593a7c8eff84a87d982ab2a3e851080b87f5d3504a430744dfbc18",
+        "Word": 41,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 54
+      }
+    },
+    {
+      "commandKey": "55:01",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 12
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/b_drip.wad/B_DRIP.RSE",
+        "Sha256": "38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230",
+        "Word": 53,
+        "ParameterKind": "Variable",
+        "RawValue": 0,
+        "VariableName": "VAR_LETMEON",
+        "NextOpcode": 3
+      }
+    },
+    {
+      "commandKey": "55:02",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 12
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/b_drip.wad/B_DRIP.RSE",
+        "Sha256": "38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230",
+        "Word": 44,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 32
+      }
+    },
+    {
+      "commandKey": "55:03",
+      "count": 24,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 24
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/b_drip.wad/B_DRIP.RSE",
+        "Sha256": "38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230",
+        "Word": 35,
+        "ParameterKind": "Variable",
+        "RawValue": 1,
+        "VariableName": "VAR_LETMEOFF",
+        "NextOpcode": 32
+      }
+    },
+    {
+      "commandKey": "55:04",
+      "count": 24,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 24
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/b_drip.wad/B_DRIP.RSE",
+        "Sha256": "38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230",
+        "Word": 74,
+        "ParameterKind": "Literal",
+        "RawValue": 1,
+        "VariableName": null,
+        "NextOpcode": 3
+      }
+    },
+    {
+      "commandKey": "55:05",
+      "count": 36,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 12
+        },
+        {
+          "kind": "Variable",
+          "count": 24
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/b_drip.wad/B_DRIP.RSE",
+        "Sha256": "38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230",
+        "Word": 10,
+        "ParameterKind": "Literal",
+        "RawValue": 1,
+        "VariableName": null,
+        "NextOpcode": 6
+      }
+    },
+    {
+      "commandKey": "55:06",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 12
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/b_drip.wad/B_DRIP.RSE",
+        "Sha256": "38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230",
+        "Word": 22,
+        "ParameterKind": "Variable",
+        "RawValue": 2,
+        "VariableName": "VAR_CAPACITY",
+        "NextOpcode": 55
+      }
+    },
+    {
+      "commandKey": "55:07",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Variable",
+          "count": 12
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/b_drip.wad/B_DRIP.RSE",
+        "Sha256": "38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230",
+        "Word": 28,
+        "ParameterKind": "Variable",
+        "RawValue": 8,
+        "VariableName": "VAR_WORN",
+        "NextOpcode": 38
+      }
+    },
+    {
+      "commandKey": "55:08",
+      "count": 12,
+      "operandKinds": [
+        {
+          "kind": "Literal",
+          "count": 12
+        }
+      ],
+      "representative": {
+        "Path": "Data/levels/fantasy/rides/b_drip.wad/B_DRIP.RSE",
+        "Sha256": "38dc4c86eedfeb45cf24be3570274724dcdef528928282b4f3a8f3682eed4230",
+        "Word": 7,
+        "ParameterKind": "Literal",
+        "RawValue": 0,
+        "VariableName": null,
+        "NextOpcode": 55
+      }
+    }
+  ],
+  "trackSettings": [
+    {
+      "path": "Data/levels/fantasy/rides/b_drip.wad/b_drip.sam",
+      "sha256": "32ad8562e639ccf0a2d4d53958e0c2e4281f069bed3f8e0500a51ae18f12ae93",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/b_drip.wad/coaster.sam",
+      "sha256": "e2d73fe4bbe2c90fe7a4ac33b7f37ae5b600dab6f6dc24edd112dd5ba3eea84b",
+      "values": [
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 1
+        },
+        {
+          "key": "sCoasterType.fAccelerationPerHeight",
+          "value": 1.2
+        },
+        {
+          "key": "sCoasterType.fFrictionMultiplier",
+          "value": 0.98
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/bbugs.wad/bbugs.sam",
+      "sha256": "9af6b1d639fd9431c4d69af2e6d626b96333cd5ffc946b06fd440cadfc2bead0",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/bigapple.wad/bigapple.sam",
+      "sha256": "3ad40b6d23a7359e6b558f85b82e636b245a407f39e74fc098c9f2da5f1d0f84",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/bugstv.wad/bugstv.sam",
+      "sha256": "48aba1ef91a5b773776bf25a96def4b2a5a4af5462371c3a878a1a433089022a",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/candy_c.wad/candy_c.sam",
+      "sha256": "d6b339575d13b0912abf3df8d045a22aea88f7f73f90d8b4a7db4ede9bdd3764",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/candy_c.wad/coaster.sam",
+      "sha256": "9720daa2c1b47ff8348e8210243a686bad9e67ab19738da634f4ecb8d285fdbd",
+      "values": [
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 3
+        },
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/cat_co.wad/cat_co.sam",
+      "sha256": "46ba653d13354a14d0fbff8af4247129a3cf01aa221ca52af571cdf72d9309a7",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/cat_co.wad/coaster.sam",
+      "sha256": "80d07a9621d48973c5cb772898383a0f2f59aa0b360b5672106900529b2a877d",
+      "values": [
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 6
+        },
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 1
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/ccride.wad/ccride.sam",
+      "sha256": "90fc1df6f51fc1cbe419f4c367ca38b50e12b527b2d4a1ac9ebc1a06716ae513",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/dragfly.wad/dragfly.sam",
+      "sha256": "74f42ad5b47c34119f554afdba81a21c660d8ca8b1cb30affe70663a6925a0f8",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/flamingo.wad/flamingo.sam",
+      "sha256": "4ed4ad8a3f6064df5ea2793af0ae53df10f81f0c50fc1bbf61d38dc8dd429584",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/flowspin.wad/flowspin.sam",
+      "sha256": "7c78f1ede7d1b26a69785b03bb860dc383fadc22ae01c9429858e88a5fe928b5",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/fwheel.wad/fwheel.sam",
+      "sha256": "da1724236a0b6fb84b2f27fb369245d9e46994234425aca5841652401ee4a7de",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/gokarts.wad/gokarts.sam",
+      "sha256": "371bcff5ae74ede11b7e57e65a459f1fe0f3f997fa5f4d166d47ca5cb7e7f882",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/twetours.wad/twetours.sam",
+      "sha256": "6b54b15623e5efbf32b8fe1735e136f9daf0cf02c4305fe51d8ed089243cc1ee",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/wateride.wad/wateride.sam",
+      "sha256": "0692a3050dfae3550c0f8a957ac32e209d4f04ab6761aa480fca002a90613791",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/fantasy/rides/welldrop.wad/welldrop.sam",
+      "sha256": "8d21fd0348085f3666202d2275727316911cf0e065244b95a1adb2b7abbba777",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/brainb.wad/brainb.sam",
+      "sha256": "73b8b73a111d3fe6eb7e7adc11d7e7154e3036a38f0d8900ed128b76c2941822",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/bug.wad/bug.sam",
+      "sha256": "49aaf2910feac9032444fcf375bdc3d29fea1232bc01d234168601c4573bf4ef",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/bumper.wad/Bumper.sam",
+      "sha256": "a57563b23dbc7d191855bc527b20a1dad64a5830559ebda9409de6ab41719898",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/c_hade.wad/coaster.sam",
+      "sha256": "371f8e18b040aaf1917be2ee8fc21736616a0614da387c9217a6778b2a7dae4f",
+      "values": [
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 1
+        },
+        {
+          "key": "sCoasterType.fAccelerationPerHeight",
+          "value": 1
+        },
+        {
+          "key": "sCoasterType.fFrictionMultiplier",
+          "value": 0.97
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/c_hade.wad/c_hade.sam",
+      "sha256": "2e4cc91a7589174550f3206ac756a867538322a341b0066b52ebec9d0e040f9b",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/c_scat.wad/c_scat.sam",
+      "sha256": "e9c60974ac4ac7b6ce29ae4c47baa02fbb916b8a7bb1ea55d05c4f0f99ea9ebb",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/c_scat.wad/coaster.sam",
+      "sha256": "f1847f524f0b8c3050d103360248cf8c76ef0cec2fe715d1f3f56352b3f9b523",
+      "values": [
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 6
+        },
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/candle.wad/Candle.sam",
+      "sha256": "a9a3f31088802110d7077788897bb941e62e4d43eefe2d87c5471b9440a69ff4",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/coasta.wad/coasta.sam",
+      "sha256": "a444c8763d8b25ec8252ef5448a771bee69e3dd610cc4d1941a83eb4d5a06b09",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/coasta.wad/coaster.sam",
+      "sha256": "86878637366708914861653e65dba396638605525cb3bc88492bd0bd1bdb7018",
+      "values": [
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 4
+        },
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/demon.wad/Demon.sam",
+      "sha256": "5b77af23317e2a27cbfb18061414ab753e870a43491f7180a3af167002ebb210",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/firepit.wad/firepit.sam",
+      "sha256": "962b1c3d56750b69937cd914ff263eba1f9b885a75f54e7029825b5abfcf3e8e",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/ghostshp.wad/ghostshp.sam",
+      "sha256": "692af6da1aed02f5770f789aa87bdf06073234875c766674e3a6570611e0e870",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/gokarts.wad/gokarts.sam",
+      "sha256": "d89e99b58e5ff69ae905a060e9ecc4f84f4bb39f3851e4f0eaabe9537d82f1dc",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/haunt.wad/haunt.sam",
+      "sha256": "ae8bb8715165b8f3ea8544a07c98df6c51bb0c01aa0a87d5862e388d6451d9c3",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/hcentro.wad/hcentro.sam",
+      "sha256": "125f95ac029d915a6f2565726c2665114862c1f7a25ddd53f761358e225d80ff",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/phantom.wad/phantom.sam",
+      "sha256": "5480340449e00edbd044f8e4e3431f2fa12a0660bc1c5a37cf849fed33cc9c38",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/pumpkin.wad/pumpkin.sam",
+      "sha256": "7af5f8653ca2c734a79dab92990579bd03917d89ee87758a2d8ba7608e17d637",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/ratrace.wad/ratrace.sam",
+      "sha256": "553e12727214f6b855dab645951fd59daf5c94b648277fb6f5e343719df86506",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/spider.wad/Spider.sam",
+      "sha256": "f015d030960231de96d004c3c1a91bdf593e72f9bd8fbff8a64349fcf3037e51",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/tourride.wad/TourRide.sam",
+      "sha256": "00a0ad40a10650dab7f3ddfbacfe934dab0e3dec47da64e42d89a11094ecf99a",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/hallow/rides/wateride.wad/Wateride.sam",
+      "sha256": "e73036a9349bd20c480a02ff42fdec1332177a5d20a3c1a311604257bcef3ac5",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/bumper.wad/Bumper.sam",
+      "sha256": "8bc8ca6b9f66d657adef71b47a37c1cad6efe5bed2bb31eb882ab79367d99a1c",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/coaster1.wad/coaster.sam",
+      "sha256": "eae3bb20b87777d8e86beb70ab689793df23f179cabf96f60b3741b367ca5db9",
+      "values": [
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 1
+        },
+        {
+          "key": "sCoasterType.fAccelerationPerHeight",
+          "value": 0.8
+        },
+        {
+          "key": "sCoasterType.fFrictionMultiplier",
+          "value": 0.95
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/coaster1.wad/coaster1.sam",
+      "sha256": "83481af24e249b8c92b2265062b99f57a0c50980095de702984595301b1d89c6",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/coaster3.wad/Coaster.sam",
+      "sha256": "940352235b24dcd4af73cc605548971cec4e68962b7e7bd91a7624c8f1e1426c",
+      "values": [
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 4
+        },
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/coaster3.wad/coaster3.sam",
+      "sha256": "2c075957ddd80706daf7f5b07d34bd28955d1a479efcc4e70504c86d6b90d781",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/gokarts.wad/GoKarts.sam",
+      "sha256": "77b2321a29279d89e28e871b061c7257480b3be3edfbc43880994c82d684fe09",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/incagod.wad/Incagod.sam",
+      "sha256": "ee478f71109fffda9157ece0dbffd8b72bc1c72a9e5cadbfa665930270855c64",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/lookout.wad/Lookout.sam",
+      "sha256": "a5954901f9684f537889a7176e1efe37c7970670462f1cf7ead17982204d7f79",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/minecart.wad/Coaster.sam",
+      "sha256": "747b00f3732b6d8f7a083ca43805e9cc68411983d82128a3d4785909dc0c60f7",
+      "values": [
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 4
+        },
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/minecart.wad/minecart.sam",
+      "sha256": "b28988246d0bc0c1b4b20e4b7a6e7c23995f327989a285c5c4dc21a6c8f17b87",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/mumbo.wad/Mumbo.sam",
+      "sha256": "73ea3ed32163e9031a6ad2bc72c2e442528ec2e63cc19a652aeeeff83eed6008",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/porkpie.wad/Porkpie.sam",
+      "sha256": "c4f6f79c1e0c14e867f3f478af997027094abd4326303cb426ec438ad5256eb1",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/spider.wad/spider.sam",
+      "sha256": "265030981f1d8ff20699759623a3b9c3a429720607be1659f0da9bf3b75c64c3",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.sam",
+      "sha256": "2775fa7cabd24a793516fc1456be0b97f8ddcbec992995b01e6d6790e9db0bfe",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/tourride.wad/tourride.sam",
+      "sha256": "25ae534d36e5923c17ebb071e9d1b4dd6b9fe957318b9809a314dc8d6967d1c2",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/tvsim.wad/TVSim.sam",
+      "sha256": "ef463da7abfd95cb9302ddbea53f617ad27ac3842b1c271d471cbebdbf34b109",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/volcano.wad/Volcano.sam",
+      "sha256": "b6c679940cd112fa031c31ca7f680575beb2251e1a6d859780c2df572d758ce7",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/jungle/rides/wateride.wad/Wateride.sam",
+      "sha256": "d689b727c38b02140a7498d5b026d5f06e226dba6ec7fa883b7dd01c2c38ac05",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/bumper.wad/Bumper.sam",
+      "sha256": "0f7bcd8694197542a3b2960f0fd99f47ea7693b2a56134d316d2b784380b27ef",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/creature.wad/creature.sam",
+      "sha256": "d9f2f104c0e6bb10801ae60d55e101b20579321535d2c2d958b21a7bdc03c30f",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/gokarts.wad/GoKarts.sam",
+      "sha256": "959d2e301157640410604ea7c0ec1609d6409009893d4008c1dba902814edfaa",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 1
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/hoverbot.wad/hoverbot.sam",
+      "sha256": "cd74d87f91e05a7143bc3038c0cc25defc587467b9d5143ae797750993bf5072",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/mbuggy.wad/mbuggy.sam",
+      "sha256": "b9959f56ac4f94bb0d94227f02723824fb78611a9d0e2465e7a1c10c8b3991b2",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/megacost.wad/coaster.sam",
+      "sha256": "95425fbadf51550e05affe23aa61c04780fad2f495d92cd9a1485fd769a6c879",
+      "values": [
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 4
+        },
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/megacost.wad/megacost.sam",
+      "sha256": "a7e2b719a1a4edfccfd0291822145a5eb5e52a1ef13a92de0ceaade097439a21",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/moonshot.wad/moonshot.sam",
+      "sha256": "94cee36c57ae0f105fa2e69e678633dd95ff32b861a0420c26bccb19a5cf3ad2",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/moonshot.wad/coaster.sam",
+      "sha256": "78d90820a823b222e91832b0a7607678b4a7612f0194c85528388f077f8d3c40",
+      "values": [
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 1
+        },
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/orbiter.wad/orbiter.sam",
+      "sha256": "b36f751dc5b51a5e73b7a382c51815cc8fab22f1b50de14a166de51bf1cd7fd8",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/rocket.wad/rocket.sam",
+      "sha256": "18469737f4dd98ab2ed905b897be543ffb6e204941dd427c17677e4382bc3ab4",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/scentro.wad/scentro.sam",
+      "sha256": "73c549d1d5351351287776427cd698263f1f7e893ff6685d8f7ae8a4de3b24bf",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/scitour.wad/scitour.sam",
+      "sha256": "f7a165968ef5241a962972da49717f0afd5bf36eb76eb3f2b05320f325ef582d",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/shocker.wad/shocker.sam",
+      "sha256": "04c382b96660ca689aa5a8290cc3c5a781e2dab7e13a17c5851abf73a078c1e3",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/shocker.wad/coaster.sam",
+      "sha256": "44fdac0de6694048374e4771dc185da2fc079d63cb6721e274df3785147721f7",
+      "values": [
+        {
+          "key": "sTrainType.uiMaxCars",
+          "value": 3
+        },
+        {
+          "key": "sTrainType.uiFrontCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiCentreCarTypeIndex",
+          "value": 0
+        },
+        {
+          "key": "sTrainType.uiRearCarTypeIndex",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/slide.wad/slide.sam",
+      "sha256": "d9f2c5b02c1535b24142c513b830f119ec14ebf80f32d1398c162e9d42abf164",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/spawheel.wad/spawheel.sam",
+      "sha256": "cef323ba88f0bc7893ea9f45f77a909c2ef185cc1aa35e4d87327864fa3b49fe",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/station.wad/station.sam",
+      "sha256": "584cf9486f7321c795540018cd3b504c5303b693b7bf4eeabb89fe07baaed909",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/tv_ride.wad/tv_ride.sam",
+      "sha256": "662f5cffa48f8b9415d8ae5faad4995d63c2f7ca73a2609bc121a4855db6cd8e",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/wateride.wad/Wateride.sam",
+      "sha256": "87147c7943fc966088647fd76f1975531adc78070377a6a59f83873976aa36cb",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/zerog.wad/zerog.sam",
+      "sha256": "caaaae6e2c417310c5db4c17c4ab08651437e65c144db811a1edadf31a9c6a6a",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/rides/zob.wad/zob.sam",
+      "sha256": "ae65ac71ed6be59ddd53d2fbc4f59beda7c86cdc797fb555bdebf949f8612f5c",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "path": "Data/levels/space/upgrades/zob2.wad/zob2.sam",
+      "sha256": "d89adc1f6361e6181679c4941b8d30ac91dd629fdecd4c863dca720f2b4876f7",
+      "values": [
+        {
+          "key": "Bumper.WhichTrackType",
+          "value": 0
+        }
+      ]
+    }
+  ],
+  "boardingAttributes": [
+    {
+      "path": "Data/levels/fantasy/rides/b_drip.wad/coaster.sam",
+      "sha256": "e2d73fe4bbe2c90fe7a4ac33b7f37ae5b600dab6f6dc24edd112dd5ba3eea84b",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "Car",
+      "modelMember": "car.MD2",
+      "modelSha256": "926483720d3fb70b2c6225c706cd8bef05f3aadd9a7e9cf786473d72944a428a",
+      "attributeCount": 3,
+      "selectedAttributeIndices": [
+        1,
+        2
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/fantasy/rides/candy_c.wad/coaster.sam",
+      "sha256": "9720daa2c1b47ff8348e8210243a686bad9e67ab19738da634f4ecb8d285fdbd",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "Car",
+      "modelMember": "car.MD2",
+      "modelSha256": "f29b90b58b18de849683410a8c17033e8fc17333f37f460a4853b91b75268c46",
+      "attributeCount": 7,
+      "selectedAttributeIndices": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/fantasy/rides/cat_co.wad/coaster.sam",
+      "sha256": "80d07a9621d48973c5cb772898383a0f2f59aa0b360b5672106900529b2a877d",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "caterhd",
+      "modelMember": "caterhd.MD2",
+      "modelSha256": "0f9d220498bce61316314371891bda336da0ed913dba0581c2a6749dc2a728fe",
+      "attributeCount": 1,
+      "selectedAttributeIndices": [],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/fantasy/rides/cat_co.wad/coaster.sam",
+      "sha256": "80d07a9621d48973c5cb772898383a0f2f59aa0b360b5672106900529b2a877d",
+      "key": "asCarTypes[1].pcMeshFilename",
+      "inputStem": "caterbd",
+      "modelMember": "caterbd.MD2",
+      "modelSha256": "64235b7fadf711b44e9508621b99e2920cfcf22746fa57e6bdfca1d0e4172d50",
+      "attributeCount": 6,
+      "selectedAttributeIndices": [
+        1,
+        2,
+        3,
+        5
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/fantasy/rides/cat_co.wad/coaster.sam",
+      "sha256": "80d07a9621d48973c5cb772898383a0f2f59aa0b360b5672106900529b2a877d",
+      "key": "asCarTypes[2].pcMeshFilename",
+      "inputStem": "catertl",
+      "modelMember": "catertl.MD2",
+      "modelSha256": "81998e45f5ad3163063ce7fd36c97c2e7e4db4cf48fcfb0e12b4d2b6ef5e8c3b",
+      "attributeCount": 1,
+      "selectedAttributeIndices": [],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/hallow/rides/c_hade.wad/coaster.sam",
+      "sha256": "371f8e18b040aaf1917be2ee8fc21736616a0614da387c9217a6778b2a7dae4f",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "maggot",
+      "modelMember": "MAGGOT.MD2",
+      "modelSha256": "054fb6cc0352a6a58bf5d7e224d8d7644d56a0343a9f080e782a19ca0c38b26e",
+      "attributeCount": 6,
+      "selectedAttributeIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/hallow/rides/c_scat.wad/coaster.sam",
+      "sha256": "f1847f524f0b8c3050d103360248cf8c76ef0cec2fe715d1f3f56352b3f9b523",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "bat",
+      "modelMember": "BAT.MD2",
+      "modelSha256": "70b263bdda031c650d686342cdc41decb386f3865b79aac994bf601d549281f3",
+      "attributeCount": 3,
+      "selectedAttributeIndices": [
+        0,
+        1,
+        2
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/hallow/rides/coasta.wad/coaster.sam",
+      "sha256": "86878637366708914861653e65dba396638605525cb3bc88492bd0bd1bdb7018",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "Cart",
+      "modelMember": "cart.MD2",
+      "modelSha256": "e6adac76d5b7c6e5a978bcf3433fb80acad9fd164ef8ea107383f3f8ef6e3853",
+      "attributeCount": 6,
+      "selectedAttributeIndices": [
+        0,
+        1,
+        3,
+        4
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/jungle/rides/coaster1.wad/coaster.sam",
+      "sha256": "eae3bb20b87777d8e86beb70ab689793df23f179cabf96f60b3741b367ca5db9",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "CrocCar",
+      "modelMember": "CrocCar.MD2",
+      "modelSha256": "64e77b4388273728e23d48300eaf85b2094108c07dbbbac832ca141c3dadbbc0",
+      "attributeCount": 8,
+      "selectedAttributeIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/jungle/rides/coaster3.wad/Coaster.sam",
+      "sha256": "940352235b24dcd4af73cc605548971cec4e68962b7e7bd91a7624c8f1e1426c",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "Ape",
+      "modelMember": "ape.MD2",
+      "modelSha256": "ff47296e0997a472e1b4d4d8d78636186f39b7f78978e953688a170fb380a87f",
+      "attributeCount": 2,
+      "selectedAttributeIndices": [
+        0,
+        1
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/jungle/rides/minecart.wad/Coaster.sam",
+      "sha256": "747b00f3732b6d8f7a083ca43805e9cc68411983d82128a3d4785909dc0c60f7",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "Cart",
+      "modelMember": "cart.MD2",
+      "modelSha256": "063c7036e164e08021d5994b21662ed0a9bb71003ab6269409b9e5d1a0e8577d",
+      "attributeCount": 8,
+      "selectedAttributeIndices": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        7
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/space/rides/megacost.wad/coaster.sam",
+      "sha256": "95425fbadf51550e05affe23aa61c04780fad2f495d92cd9a1485fd769a6c879",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "Cart",
+      "modelMember": "cart.MD2",
+      "modelSha256": "f9e8d2b0c36c52c547209ef20a74e1c1e49bfd21d46e92d2109f42c2f0c6a788",
+      "attributeCount": 8,
+      "selectedAttributeIndices": [
+        2,
+        3,
+        4,
+        6
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/space/rides/moonshot.wad/coaster.sam",
+      "sha256": "78d90820a823b222e91832b0a7607678b4a7612f0194c85528388f077f8d3c40",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "Car",
+      "modelMember": "car.MD2",
+      "modelSha256": "a666ed2b92e56b358ffd150a34998ec5eb759f2e0231a1604710c9563d8da927",
+      "attributeCount": 3,
+      "selectedAttributeIndices": [
+        0,
+        1,
+        2
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    },
+    {
+      "path": "Data/levels/space/rides/shocker.wad/coaster.sam",
+      "sha256": "44fdac0de6694048374e4771dc185da2fc079d63cb6721e274df3785147721f7",
+      "key": "asCarTypes[0].pcMeshFilename",
+      "inputStem": "Car",
+      "modelMember": "CAR.MD2",
+      "modelSha256": "520df6442b303b30178a87f1b5f3ce6408bcd85b68b3c9d17b273813071d3ebf",
+      "attributeCount": 6,
+      "selectedAttributeIndices": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "qualification": "decoded PC dummy-attribute metadata; native runtime loader/hierarchy linkage unproved"
+    }
+  ],
+  "animationOpcodeCounts": {
+    "16": 74,
+    "17": 547,
+    "18": 210,
+    "19": 133,
+    "21": 4,
+    "23": 63,
+    "25": 1,
+    "27": 15
+  },
+  "animationSpeedCalls": [
+    {
+      "path": "Data/levels/fantasy/features/gates.wad/Gates.RSE",
+      "sha256": "9be2c7035feff26046aee0778cb6a03ef5987afcb1281a276cffc13bd9d14013",
+      "word": 67,
+      "kind": "Literal",
+      "raw": 4000
+    },
+    {
+      "path": "Data/levels/hallow/features/gates.wad/Gates.RSE",
+      "sha256": "9d3d0f9cd32853a5020af09f83b70dad399fee2e8e773fa4a58db2d09937f1b5",
+      "word": 63,
+      "kind": "Literal",
+      "raw": 2000
+    },
+    {
+      "path": "Data/levels/jungle/features/gates.wad/Gates.RSE",
+      "sha256": "49cc97347e12afbacbf278073c1990656ee220475f54c65821f98a39c79fd0a2",
+      "word": 67,
+      "kind": "Literal",
+      "raw": 4000
+    },
+    {
+      "path": "Data/levels/space/features/gates.wad/Gates.RSE",
+      "sha256": "6d6a7c9eb1e61d5b50d83d8e71590602edb4c8f1db106e8a2fde92680d88e9c1",
+      "word": 112,
+      "kind": "Literal",
+      "raw": 1800
+    }
+  ],
+  "totemBindings": [
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 2,
+      "opcode": 17,
+      "category": 0,
+      "variant": 0,
+      "channel": 0,
+      "member": "totemc.MD2",
+      "memberSha256": "4c5e264e737b9efd3659e6f18c73b50397a781665544b413718a898fd2909cee"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 92,
+      "opcode": 16,
+      "category": 5,
+      "variant": 0,
+      "channel": 0,
+      "member": "totemm1.MD2",
+      "memberSha256": "6467b35faadd40fef639c2b10f3f0bb2754675f15509172778ef399b74ae76fe"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 242,
+      "opcode": 16,
+      "category": 9,
+      "variant": 0,
+      "channel": 0,
+      "member": "totemb1.MD2",
+      "memberSha256": "e76689b6fdc861448bd8e5779e435cbbad69aa3bacbc7f38925754cffc297bf9"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 283,
+      "opcode": 17,
+      "category": 10,
+      "variant": 0,
+      "channel": 0,
+      "member": "totemr.MD2",
+      "memberSha256": "5fdddd1288fbef15a8713407a855c0b410ac8e27f3ffb7c18f6d0087dc0e66d0"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 302,
+      "opcode": 23,
+      "category": 5,
+      "variant": 1,
+      "channel": 1,
+      "member": "totemm2.MD2",
+      "memberSha256": "d4f959d124f06a21175621a6dafa3ec431452bacb372281a36f954aacbe93295"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 307,
+      "opcode": 23,
+      "category": 5,
+      "variant": 4,
+      "channel": 2,
+      "member": "totemm5.MD2",
+      "memberSha256": "9e24c1c40bd963e5856ab7bad41c45c4340b90b91590ab1c8e9ee7ababf50ce9"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 312,
+      "opcode": 23,
+      "category": 5,
+      "variant": 7,
+      "channel": 3,
+      "member": "totemm8.MD2",
+      "memberSha256": "6a945c126fe581751f35268b57b8ad1a889ab8c6cdd60c8f6bd1edbf67721161"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 318,
+      "opcode": 23,
+      "category": 5,
+      "variant": 2,
+      "channel": 1,
+      "member": "totemm3.MD2",
+      "memberSha256": "42cc68b9996ac06f95e49c3fb9eb767c3b1e28bf38ae4a36803744b6c73c8594"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 323,
+      "opcode": 23,
+      "category": 5,
+      "variant": 5,
+      "channel": 2,
+      "member": "totemm6.MD2",
+      "memberSha256": "7ca4dd1d8e5a7675a0c56c67ed878ed604e53d3ba66672507e3b80f87d34cb36"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 328,
+      "opcode": 23,
+      "category": 5,
+      "variant": 8,
+      "channel": 3,
+      "member": "totemm9.MD2",
+      "memberSha256": "713c1acbb04eb0b8900e3d419e020853c2773555f84533434e3c80827d9dcdeb"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 334,
+      "opcode": 23,
+      "category": 5,
+      "variant": 3,
+      "channel": 1,
+      "member": "totemm4.MD2",
+      "memberSha256": "33e9c403a3efdc7ebc94710af205e918235aaa76c8553f17b757f1d084bd6e93"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 339,
+      "opcode": 23,
+      "category": 5,
+      "variant": 6,
+      "channel": 2,
+      "member": "totemm7.MD2",
+      "memberSha256": "f9cf1fb09019f7d55d5370a1323c493f8e3fdedde976a2949de07dd0887efc0f"
+    },
+    {
+      "path": "Data/levels/jungle/rides/totem.wad/Totem.RSE",
+      "sha256": "5e1ab461c3692c32ead298defb847eb623db24cc4068cfe9760c53dd70233aaf",
+      "word": 344,
+      "opcode": 23,
+      "category": 5,
+      "variant": 9,
+      "channel": 3,
+      "member": "totemm10.MD2",
+      "memberSha256": "d5eca10df7ad9f5898d5edf9d80b902e95118b0794c7a9486fc61c09a98ba1e2"
+    }
+  ]
+}

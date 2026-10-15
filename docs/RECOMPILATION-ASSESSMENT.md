@@ -36,3 +36,7 @@ a reference oracle; no completion percentage is assigned.
 Further work: identify reachable code/function boundaries, edition differences,
 compiler requirements and a safe runnable reference environment. Use original
 analysis selectively to resolve model/VM/map semantics regardless of a later pivot.
+
+Since October 10, 2026 the Mac PowerPC build has a differential oracle that executes
+bounded routines (docs/reverse/ORACLE.md); this file still covers only the Windows
+executables.

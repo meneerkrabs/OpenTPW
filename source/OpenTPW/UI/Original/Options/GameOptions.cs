@@ -1,29 +1,96 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OpenTPW;
 
+/// <summary>Camera rotation of the Rotation option (UITEXT 350-352).</summary>
+[JsonConverter( typeof( JsonStringEnumConverter ) )]
+public enum RotationMode { Smooth, Ninety }
+
+/// <summary>Camera scrolling of the Scroll option (UITEXT 353-355).</summary>
+[JsonConverter( typeof( JsonStringEnumConverter ) )]
+public enum ScrollMode { Pushscroll, RightButton }
+
 /// <summary>
 /// Player options from the original Game Options screen that have no home in the existing
-/// configuration: volumes (0–10 steps, the original sliders' resolution is unknown) and popup help
-/// (display options belong to <see cref="IDisplaySettings"/>). Stored as JSON next to the
-/// sandbox save (<c>save/opentpw-options.json</c>); audio code reads the volumes from here.
+/// configuration: volumes (0-10 steps, the original sliders' resolution is unknown) with their mute
+/// toggles, and the gameplay switches (display options belong to <see cref="IDisplaySettings"/>,
+/// the graphics preset to <see cref="IGraphicsSettings"/>). Stored as JSON next to the sandbox save
+/// (<c>save/opentpw-options.json</c>); files written by older versions lack the newer fields and
+/// get their defaults.
+/// Volumes and mute toggles control the mixer and movies. Advisor/tutorial/help control their
+/// respective consumers. Camera rotation and scroll modes, deletion confirmations and tool
+/// right-click cancellation are applied by the park camera and HUD.
 /// </summary>
 public sealed class GameOptions
 {
 	public const string FileName = "opentpw-options.json";
-	public const int MaximumVolume = 10;
+	/// <summary>Volumes are percentages, 0..100 ({on, percent} pairs in the original, shown as " %d %%").</summary>
+	public const int MaximumVolume = 100;
+	/// <summary>Options files written before the volumes became percentages (0..10 steps) carry no <see cref="VolumeFormat"/>.</summary>
+	public const int PercentVolumeFormat = 2;
 
-	// [APPROX:UI-030] 0..10 volume steps, default 8, popup help on — evidence needed: original options defaults
-	public int SoundEffectsVolume { get; set; } = 8;
-	public int MusicVolume { get; set; } = 8;
-	public int SpeechVolume { get; set; } = 8;
-	public int MovieVolume { get; set; } = 8;
+	/// <summary>Written with every save so a later load knows the volumes are percentages; an absent value marks the old 0..10 steps.</summary>
+	public int VolumeFormat { get; set; } = PercentVolumeFormat;
+
+	// [BIN:TPW-EXE:sound.sam DefaultVolume] defaults SFX 75, Music 60, Speech 75, Movie 100 (percent). The globals holding them are medium confidence.
+	// The movie volume is scaled by 1023 / 100 for the movie device.
+	// [BIN:TPW-EXE:0x4a4490 volume sliders] the options volume sliders get SetRange(0,100) (0x66b47d: min 0, max 100), an integer value and line and page steps of 1 (slider constructor 0x66ad77/0x66adc9), so OpenTPW's 1 % steps over 0..100 are the original's granularity.
+	public int SoundEffectsVolume { get; set; } = 75;
+	public int MusicVolume { get; set; } = 60;
+	public int SpeechVolume { get; set; } = 75;
+	public int MovieVolume { get; set; } = 100;
+	// [BIN:STP-PPC:0x10125B7C options defaults] TooltipsOn (+0x36), AdvisorOn (+0x34), TutorialOn (+0x35), ConfirmDeleteOn (+0x37) and RMBCancelOn (+0x39) are set to 1, RMBScrollOn (+0x38) to 0 (names from the serializer 0x1012653C)
 	public bool PopupHelp { get; set; } = true;
+	/// <summary>Mute toggles next to the four volume sliders; off means silent whatever the volume.</summary>
+	public bool SoundEffectsOn { get; set; } = true;
+	public bool MusicOn { get; set; } = true;
+	public bool SpeechOn { get; set; } = true;
+	public bool MovieOn { get; set; } = true;
+	// [BIN:TPW-EXE:IsometricOn rotation] rotation 0 is " Smooth", 1 is " 90 degs", default 1 (Ninety).
+	public bool Advisor { get; set; } = true;
+	public bool Tutorial { get; set; } = true;
+	public bool Confirmations { get; set; } = true;
+	public bool RmbCancel { get; set; } = true;
+	public RotationMode Rotation { get; set; } = RotationMode.Ninety;
+	// [BIN:STP-PPC:0x10125B7C options defaults] RMBScrollOn = 0: push scrolling
+	public ScrollMode Scroll { get; set; } = ScrollMode.Pushscroll;
 
 	public static GameOptions Current { get; set; } = new();
 
-	/// <summary>Volume as a 0–1 gain.</summary>
+	/// <summary>Volume as a 0-1 gain.</summary>
 	public static float Gain( int volume ) => Math.Clamp( volume, 0, MaximumVolume ) / (float)MaximumVolume;
+
+	/// <summary>Volume as a 0-1 gain; 0 while the matching sound is switched off.</summary>
+	public static float Gain( int volume, bool on ) => on ? Gain( volume ) : 0;
+
+	[JsonIgnore] public float SoundEffectsGain => Gain( SoundEffectsVolume, SoundEffectsOn );
+	[JsonIgnore] public float MusicGain => Gain( MusicVolume, MusicOn );
+	[JsonIgnore] public float SpeechGain => Gain( SpeechVolume, SpeechOn );
+	[JsonIgnore] public float MovieGain => Gain( MovieVolume, MovieOn );
+
+	/// <summary>An independent copy (the options screen restores it on Cancel).</summary>
+	public GameOptions Clone() => (GameOptions)MemberwiseClone();
+
+	/// <summary>Overwrites every field with <paramref name="other"/>'s.</summary>
+	public void CopyFrom( GameOptions other )
+	{
+		SoundEffectsVolume = other.SoundEffectsVolume;
+		MusicVolume = other.MusicVolume;
+		SpeechVolume = other.SpeechVolume;
+		MovieVolume = other.MovieVolume;
+		PopupHelp = other.PopupHelp;
+		SoundEffectsOn = other.SoundEffectsOn;
+		MusicOn = other.MusicOn;
+		SpeechOn = other.SpeechOn;
+		MovieOn = other.MovieOn;
+		Advisor = other.Advisor;
+		Tutorial = other.Tutorial;
+		Confirmations = other.Confirmations;
+		RmbCancel = other.RmbCancel;
+		Rotation = other.Rotation;
+		Scroll = other.Scroll;
+	}
 
 	public static GameOptions Load( string path )
 	{
@@ -31,7 +98,14 @@ public sealed class GameOptions
 		{
 			if ( !File.Exists( path ) )
 				return new GameOptions();
-			return JsonSerializer.Deserialize<GameOptions>( File.ReadAllText( path ) )?.Normalized() ?? new GameOptions();
+			var text = File.ReadAllText( path );
+			var loaded = JsonSerializer.Deserialize<GameOptions>( text );
+			if ( loaded == null )
+				return new GameOptions();
+			using ( var document = JsonDocument.Parse( text ) )
+				if ( document.RootElement.ValueKind == JsonValueKind.Object && !document.RootElement.TryGetProperty( nameof( VolumeFormat ), out _ ) )
+					loaded.MigrateStepVolumes( document.RootElement );
+			return loaded.Normalized();
 		}
 		catch ( Exception exception ) when ( exception is JsonException or IOException or UnauthorizedAccessException )
 		{
@@ -47,8 +121,21 @@ public sealed class GameOptions
 		File.Move( temporary, path, true );
 	}
 
+	/// <summary>Old files stored 0..10 steps of 10 %: every volume present in the file becomes its percentage; absent ones keep their defaults.</summary>
+	private void MigrateStepVolumes( JsonElement root )
+	{
+		int Percent( string name, int current ) =>
+			root.TryGetProperty( name, out var value ) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32( out var steps )
+				? Math.Clamp( steps, 0, 10 ) * 10 : current;
+		SoundEffectsVolume = Percent( nameof( SoundEffectsVolume ), SoundEffectsVolume );
+		MusicVolume = Percent( nameof( MusicVolume ), MusicVolume );
+		SpeechVolume = Percent( nameof( SpeechVolume ), SpeechVolume );
+		MovieVolume = Percent( nameof( MovieVolume ), MovieVolume );
+	}
+
 	public GameOptions Normalized()
 	{
+		VolumeFormat = PercentVolumeFormat;
 		SoundEffectsVolume = Math.Clamp( SoundEffectsVolume, 0, MaximumVolume );
 		MusicVolume = Math.Clamp( MusicVolume, 0, MaximumVolume );
 		SpeechVolume = Math.Clamp( SpeechVolume, 0, MaximumVolume );

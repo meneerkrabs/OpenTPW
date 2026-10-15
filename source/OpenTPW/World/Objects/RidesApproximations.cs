@@ -2,41 +2,36 @@ namespace OpenTPW;
 
 /// <summary>
 /// The rides slice's approximation register (docs/OBJECTS.md, "Approximation register"). Each entry is
-/// tagged <c>[APPROX:RIDES-NNN]</c> at its code site; <see cref="LogOnce"/> lists them at the first catalog load.
+/// tagged <c>[APPROX:RIDES-NNN]</c> (texture-frame application: <c>MD2-9NN</c>) at its code site;
+/// <see cref="LogOnce"/> lists them at the first catalog load.
 /// </summary>
 public static class RidesApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
-		("RIDES-001", "animation clips play at 30 ticks/s"),
-		("RIDES-002", "most recently started channel wins a node"),
-		("RIDES-003", "finished clips hold their last pose"),
-		("RIDES-004", "re-issued LOOPANIM continues the running loop"),
-		("RIDES-005", "plain animation opcodes use a channel separate from _CH channels"),
-		("RIDES-006", "GETANIM_CH returns 1 while playing"),
-		("RIDES-007", "TRIGANIMSPEED ignores its speed operand"),
-		("RIDES-008", "ANIM_* to member letter/variant mapping derived from names and scripts"),
-		("RIDES-009", ".sam layer order; Easy_/Online_ not applied"),
-		("RIDES-010", "OBJECT_NAMES bound by English name equality"),
-		("RIDES-011", "shape symbols N/E/</>/+/W inferred"),
-		("RIDES-012", "access cells open across first/last row before columns"),
+		("RIDES-003", "finished clips hold their last pose (AnimID 14 path traced; object flags 0x8/0x10 and the AnimID-14 copy-back slot untraced)"),
+		("RIDES-011", "uses of shape cell type 11 ('+', track-upgrade cells) and of the track ends '<' '>' (coaster station ends) are inferred; the symbol types and direction bits are the executable's table"),
+		("RIDES-012", "access cells open towards the compass bit of their symbol (exit: its bit, entrance: the opposite); the mapping of the bits to the local axes is medium confidence (no reader of def+0x49c/+0x4a8 traced), every corpus shape agrees"),
 		("RIDES-013", "180 degree and non-square rotations derived"),
 		("RIDES-014", "base height = mean footprint ground height"),
 		("RIDES-015", "imported and built objects start open"),
-		("RIDES-016", "VAR_DURATION = raw Upgrades[0].InitDuration"),
-		("RIDES-017", "buildable = WhichUIType 0-3, not fixed/tool/upgrade"),
 		("RIDES-018", "terrain/overlap rules without slope/path/land; Level enforces economy purchases"),
-		("RIDES-019", "levels without a save get Gates, Lights and Bus"),
-		("RIDES-020", "sandbox Totem cell blocking by model box"),
+		("RIDES-019", "the arrival vehicle is always the Bus; the original picks bus, seaplane or ferry at random per arrival (0x51a2f0), creates Gates and Lights at world setup (0x5156a0) and spawns End elsewhere (0x516b00)"),
 		("RIDES-021", "build centred on clicked cell, Z = 0 cursor plane"),
-		("RIDES-022", "texture search order archive/gtexture/sharetex"),
 		("RIDES-023", "completed cycle = VAR_RUNNING 1 -> 0"),
-		("RIDES-024", "bonus archives merge, Info.Id collisions skipped"),
-		("RIDES-025", "bonus name language fallback"),
-		("RIDES-026", "engine scale 0.2 per MD2 unit (presentation)"),
-		("RIDES-027", "sandbox Totem 5-unit bounds radius"),
+		("RIDES-024", "bonus archives merge, Info.Id collisions skipped; the original dedupes by archive name (0x41ede0) and loads Info.Id duplicates too, id lookups taking the first in directory order"),
+		("RIDES-025", "bonus name from the selected language file, then English, then the .sam name; the original reads only the selected language file (0x41f350) and the OBJECT_NAMES id table (OpenTPW extension for the fallbacks)"),
 		("RIDES-028", "non-walkable object access cells use the nearest walkable path"),
-		("RIDES-029", "developer Totem registers uncharged when the purchase is refused")
+		("RIDES-031", "shape cell types of '@' (1), 'Q' (3) and '#' (16) differ from the occupied type 4, but their placement meaning is untraced; they count as occupied here (Theme Park Inc may differ)"),
+		("RIDES-032", "every placed instance takes the callback update route; the PC list pass 0x44e410 (updates without posing via 0x473c70(inst, 0, 8)) is not modelled, as the renderer's call site of the callback at model record +0x140 is not found"),
+		("RIDES-033", "ride-settings speed changes (UI command 0x4af440 -> 0x4dd6e0) are not modelled: OpenTPW has no ride speed control"),
+		("RIDES-035", "MD2 texture-frame tracks apply to rendering; the PC writer is 0x4721f0 -> 0x470c90 (slot record at model+0x50+slot*8), the draw-path reader of a slot's current frame is not traced, so the binding follows this port's material-slot mapping (see MD2-900..902)"),
+		("RIDES-040", "Theme Park Inc fixed scene records saved at (0, 0) use their local model origin; other transform fields are not decoded"),
+		("RIDES-042", "node-state bit 0x10 (clip node lists, toggles) hides the node's mesh"),
+		("RIDES-044", "scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 per park script world; the PC clock is the app-lifetime scaled timer 0x785970 never reset for a new park (differs only in absolute GETTIME values)"),
+		("MD2-900", "texture-frame slots mix like node components: ascending channels and tracks (hyenasm1 holds two tracks on slot 15; its constant 0 loses to the face cycle), the last non-null frame wins, null before the first key keeps the previous frame (initially 0), and a slot no bound clip addresses returns to frame 0; the fixed-item pose hold is not extended to frames"),
+		("MD2-901", "texture-frame keys naming a frame outside the slot's frame-name list, or a slot the model does not have, are ignored (the one corpus case, Pmegacostm slot 12, addresses a slot its base model lacks)"),
+		("MD2-902", "a texture frame whose art no searched directory has (including Theme Park Inc tvsim slot 39 frame 3 lt1.tga) retains the effective selected frame; decoded-art availability is registered with the animator so the visible frame survives save/restore")
 	};
 
 	private static bool logged;

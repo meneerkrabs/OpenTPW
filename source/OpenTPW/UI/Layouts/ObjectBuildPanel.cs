@@ -4,8 +4,9 @@ namespace OpenTPW.UI;
 
 /// <summary>
 /// Developer build menu for every original object of the level's theme (ImGui, not an original screen):
-/// pick a catalog entry, rotate with R, click the ground to build; remove tool; open/close all rides.
-/// The frontend slice can build the original build menu from <see cref="ObjectCatalog"/> instead.
+/// pick a catalog entry, rotate with the blueprint keys (comma/full stop) or the Rotate button, click the
+/// ground to build; remove tool; open/close all rides. The frontend slice can build the original build
+/// menu from <see cref="ObjectCatalog"/> instead.
 /// </summary>
 public sealed class ObjectBuildPanel
 {
@@ -25,9 +26,8 @@ public sealed class ObjectBuildPanel
 		var objects = level.Objects;
 		if ( objects == null )
 			return;
-		if ( !ImGui.GetIO().WantCaptureKeyboard && ImGui.IsKeyPressed( ImGuiKey.R, false ) )
-			level.RotateBuild();
-
+		// No R shortcut here: R is the original research key (ParkHud.ScreenShortcuts) and would co-fire
+		// with the build rotation; rotation stays on the HUD's blueprint keys (comma/full stop) and the button.
 		ImGui.Separator();
 		ImGui.Text( $"Original objects: {objects.Objects.Count} placed, {objects.Catalog.Buildable.Count()} buildable ({objects.Catalog.Theme})" );
 		var labels = Categories.Select( item => item.ToString() ).ToArray();
@@ -49,7 +49,7 @@ public sealed class ObjectBuildPanel
 		}
 		if ( level.BuildEntry != null )
 		{
-			ImGui.TextWrapped( $"Building {level.BuildEntry.DisplayName} (Info.Id {level.BuildEntry.InfoId}), rotation {level.BuildRotation} deg. Click the ground; R rotates." );
+			ImGui.TextWrapped( $"Building {level.BuildEntry.DisplayName} (Info.Id {level.BuildEntry.InfoId}), rotation {level.BuildRotation} deg. Click the ground; comma/full stop rotates." );
 			if ( ImGui.Button( "Rotate" ) )
 				level.RotateBuild();
 			ImGui.SameLine();

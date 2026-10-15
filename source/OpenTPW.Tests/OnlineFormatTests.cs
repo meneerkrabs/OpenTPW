@@ -33,7 +33,7 @@ public class OnlineFormatTests
 
 	internal static ParkPackage Package( string name = "My Jungle", byte[]? thumbnail = null ) => ParkPackage.Create(
 		Payload().ToSnapshot( new[] { new RequiredContent( ContentKinds.Level, "jungle", new string( 'a', 64 ) ), new RequiredContent( ContentKinds.Object, "1100", null ) } ),
-		new ParkInfo( name, "Line one\nline two", "Sander", "ignored" ), new GameInfo( "Theme Park World", "English" ), thumbnail ?? Thumbnail(), FixedId, FixedTime );
+		new ParkInfo( name, "Line one\nline two", "Alice", "ignored" ), new GameInfo( "Theme Park World", "English" ), thumbnail ?? Thumbnail(), FixedId, FixedTime );
 
 	[TestMethod]
 	public void ParkPackageRoundTripsAndIsDeterministic()
@@ -54,7 +54,7 @@ public class OnlineFormatTests
 		Assert.IsNull( payload.Economy );
 	}
 
-	private static byte[] Zip( params (string Name, byte[] Data)[] entries )
+	internal static byte[] Zip( params (string Name, byte[] Data)[] entries )
 	{
 		using var output = new MemoryStream();
 		using ( var archive = new ZipArchive( output, ZipArchiveMode.Create, true ) )
@@ -132,7 +132,7 @@ public class OnlineFormatTests
 	public void RejectsHostileManifests()
 	{
 		var json = Encoding.UTF8.GetString( StrictJson.Serialize( Package().Manifest ) );
-		AssertRejected( WithManifest( json.Replace( "\"formatVersion\":1", "\"formatVersion\":2" ) ), "version 2" );
+		AssertRejected( WithManifest( json.Replace( "\"formatVersion\":2", "\"formatVersion\":3" ) ), "version 3" );
 		AssertRejected( WithManifest( json.Replace( "\"format\":\"opentpw.park\"", "\"format\":\"other\"" ) ), "not an OpenTPW park" );
 		AssertRejected( WithManifest( json.Replace( "{\"format\"", "{\"extra\":1,\"format\"" ) ), "malformed" );
 		AssertRejected( WithManifest( json.Replace( "{\"format\":\"opentpw.park\"", "{\"format\":\"opentpw.park\",\"format\":\"opentpw.park\"" ) ), "more than once" );
@@ -176,31 +176,35 @@ public class OnlineFormatTests
 		Assert.ThrowsException<InvalidDataException>( () => (good with { PrototypeRide = new PrototypeRideState( float.NaN, 0, false ) }).ToBytes() );
 		var withEconomy = Encoding.UTF8.GetString( good.ToBytes() ).Replace( "\"economy\":null", "\"economy\":{\"cash\":1}" );
 		Assert.ThrowsException<InvalidDataException>( () => MinimalParkPayload.FromBytes( Encoding.UTF8.GetBytes( withEconomy ) ) );
-		var snapshot = good.ToSnapshot( Array.Empty<RequiredContent>() ) with { PayloadVersion = 2 };
+		var snapshot = good.ToSnapshot( Array.Empty<RequiredContent>() ) with { PayloadVersion = 3 };
 		Assert.ThrowsException<InvalidDataException>( () => MinimalParkPayload.FromSnapshot( snapshot ) );
+		// A version 1 document must not use version 2 members.
+		var stated = good with { Objects = new[] { new ParkObjectRecord( 1, 1, 1, 1, 1, 0, false, Open: true ) } };
+		var version1 = new ParkSnapshot( MinimalParkPayload.Format, 1, stated.Level, StrictJson.Serialize( stated ), Array.Empty<RequiredContent>(), Array.Empty<string>() );
+		Assert.ThrowsException<InvalidDataException>( () => MinimalParkPayload.FromSnapshot( version1 ) );
 	}
 
 	[TestMethod]
 	public void PostcardRoundTripsAndRejectsHostileInput()
 	{
-		var card = Postcard.Create( "Sander", new[] { "Bob", "Ann Marie" }, "Greetings from Theme Park World!", "Come and see\nmy park", "English",
+		var card = Postcard.Create( "Alice", new[] { "Bob", "Ann Marie" }, "Greetings from Theme Park World!", "Come and see\nmy park", "English",
 			new PostcardParkReference( FixedId, "My Jungle", "jungle", "abc123" ), Thumbnail(), FixedId, FixedTime );
 		var read = Postcard.Read( card.ToBytes() );
-		Assert.AreEqual( "Sander", read.Manifest.From );
+		Assert.AreEqual( "Alice", read.Manifest.From );
 		CollectionAssert.AreEqual( new[] { "Bob", "Ann Marie" }, read.Manifest.To.ToArray() );
 		Assert.AreEqual( "Come and see\nmy park", read.Manifest.Text );
 		Assert.AreEqual( "abc123", read.Manifest.Park!.ServerParkId );
 		Assert.IsNotNull( read.Image );
-		Assert.AreEqual( "a\nb", Postcard.Create( "Sander", new[] { "Bob" }, "t", "a\r\nb", "English" ).Manifest.Text );
+		Assert.AreEqual( "a\nb", Postcard.Create( "Alice", new[] { "Bob" }, "t", "a\r\nb", "English" ).Manifest.Text );
 
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", Array.Empty<string>(), "t", "x", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob", "BOB" }, "t", "x", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", Enumerable.Range( 0, 11 ).Select( i => $"Player{i}" ), "t", "x", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", Array.Empty<string>(), "t", "x", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob", "BOB" }, "t", "x", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", Enumerable.Range( 0, 11 ).Select( i => $"Player{i}" ), "t", "x", "English" ) );
 		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "../x", new[] { "Bob" }, "t", "x", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob" }, "", "x", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob" }, "t", new string( 'x', 1025 ), "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob" }, "t", "evil\u202Etext", "English" ) );
-		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Sander", new[] { "Bob" }, "t", "x", "../English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob" }, "", "x", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob" }, "t", new string( 'x', 1025 ), "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob" }, "t", "evil\u202Etext", "English" ) );
+		Assert.ThrowsException<InvalidDataException>( () => Postcard.Create( "Alice", new[] { "Bob" }, "t", "x", "../English" ) );
 		Assert.ThrowsException<InvalidDataException>( () => Postcard.Read( Zip( ("card.json", Encoding.UTF8.GetBytes( "{}" )) ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => Postcard.Read( Zip( ("card.json", Encoding.UTF8.GetBytes( "{}" )), ("script.js", new byte[1]) ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => Postcard.Read( Encoding.ASCII.GetBytes( "PK\u0003\u0004 garbage" ) ) );
@@ -303,6 +307,23 @@ public class OnlineFormatTests
 		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"join\",\"command\":null,\"argument\":null,\"room\":\"park:../x\"}" ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"command\",\"command\":\"say\",\"argument\":\"" + new string( 'x', 300 ) + "\",\"room\":null}" ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"exec\"}" ) ) );
+	}
+
+	[TestMethod]
+	public void MovementPositionsAreBoundedAndStrict()
+	{
+		var move = ChatRequest.Parse( StrictJson.Serialize( ChatRequest.ForMove( 0.25f, 1f ) ) );
+		Assert.AreEqual( (ChatRequest.MoveType, 0.25f, 1f), (move.Type, move.X, move.Y) );
+		// Positions outside the park, non-finite numbers, or fields from other request types are refused.
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":-0.1,\"y\":0.5}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":0.5,\"y\":1.5}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":null,\"y\":0.5}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatRequest.Parse( Encoding.UTF8.GetBytes( "{\"type\":\"move\",\"x\":0.5,\"y\":0.5,\"room\":\"lobby\"}" ) ) );
+		// A movement event carries a player, a room and both position axes.
+		var moved = ChatEvent.Parse( StrictJson.Serialize( new ChatEvent( ChatEventKind.Move, "Ann", ChatProtocol.SatelliteRoom( 1 ), X: 0.75f, Y: 0.25f ) ) );
+		Assert.AreEqual( (ChatEventKind.Move, "Ann", 0.75f, 0.25f), (moved.Kind, moved.From, moved.X, moved.Y) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatEvent.Parse( Encoding.UTF8.GetBytes( "{\"kind\":5,\"from\":\"Ann\",\"room\":\"satellite:1\",\"x\":2,\"y\":0.5}" ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => ChatEvent.Parse( Encoding.UTF8.GetBytes( "{\"kind\":5,\"from\":null,\"room\":\"satellite:1\",\"x\":0.5,\"y\":0.5}" ) ) );
 	}
 
 	[TestMethod]

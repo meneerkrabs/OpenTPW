@@ -1,9 +1,9 @@
 using System.Runtime.InteropServices;
 using OpenTPW.FrontEnd;
+using OpenTPW.Online;
+using OpenTPW.Online.Api;
 using OpenTPW.Hud;
 using OpenTPW.UI.Original;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Veldrid;
 
 namespace OpenTPW;
@@ -13,17 +13,34 @@ namespace OpenTPW;
 /// front-end menu render (GPU readback with BF4 text checked texel by texel), the menu is driven
 /// with injected mouse clicks and keys (next island, options open/cancel, enter park, game mode) into
 /// the original jungle level, the HUD renders with money/date text verified in readback, a Totem is
-/// bought through the catalogue build arm and charged exactly once; a second researched object is
-/// built, opened/closed and checked for overlap refusal. The game exits to the lobby, then loads a
-/// read-only visit and checks build/open/delete/save mutation boundaries. Options are never written and saves go to a temporary directory.
+/// bought through the catalogue buy window and charged exactly once; a second researched object is
+/// built, opened/closed and checked for overlap refusal. The All Visitors window lists seeded
+/// visitors (select, wheel, sort, Enter-locate) and the All Attractions window selects, activates and
+/// sells a placed fixture with its confirmation; the sandbox developer Totem is placed beside the
+/// catalogue objects, listed as one more ride, activated like any row and removed through the
+/// prototype removal. The window keys V and B are pressed as real one-frame keyboard taps
+/// (<see cref="Input.InjectKeyDown"/>) so they run through the same dispatch and gates as a keyboard.
+/// The game exits to the lobby, then loads a read-only
+/// visit and checks build/open/delete/save mutation boundaries (the attractions window opens through
+/// the staff window there and its delete refuses at the handler), then starts jungle again in
+/// Instant Action and checks its seed and mode gates. Options are never written and saves go to a temporary directory.
 /// </summary>
-internal sealed class FrontEndSmokeTest : IDisposable
+internal sealed partial class FrontEndSmokeTest : IDisposable
 {
 	private const int MaximumFrames = 3000;
 	private readonly GameFlow flow;
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private readonly OnlineFolders? originalOnlineFolders;
 	private ParkVisitInfo? readOnlyVisit;
+	private (ulong Hash, int Entities, int Objects) builtInOneGo, builtOverFrames;
+	private int framesBuilding;
+	private (List<Entity> Entities, int Count, int Materials) lobbyBeforeAbandon;
+
+	private void RecordBuiltOverFrames()
+	{
+		if ( flow.Level is { } level )
+			builtOverFrames = (level.ComputeStateHash(), Entity.All.Count, level.Objects.Objects.Count);
+	}
 	private OriginalObject? visitedObject;
 	private bool visitedOpen;
 	private int visitedCount;
@@ -40,7 +57,20 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	private OriginalObject? totem;
 	private OriginalObject? secondObject;
 	private BuildItem? secondItem;
+	private bool queueToolAfterSecond;
+	private string[] visitBaselineFiles = Array.Empty<string>();
 	private int purchaseEvents;
+	private int smokeStaffId;
+	private Guest? locatedVisitor;
+	private OriginalObject? thirdObject;
+	private int thirdAttractionId;
+	private int visitAttractionRows;
+	private string[] visitRowNames = Array.Empty<string>();
+	private int ridesBeforePrototype;
+	private int objectsBeforePrototype;
+	private int prototypeAttractionId;
+	private RideVisitorBridge? prototypeVisitors;
+	private PrototypeRide? reviewedPrototype;
 
 	public FrontEndSmokeTest( GameFlow flow )
 	{
@@ -59,17 +89,192 @@ internal sealed class FrontEndSmokeTest : IDisposable
 
 	private UiContext Context => flow.Context;
 
+	private readonly string smokePacks = Path.Combine( Path.GetTempPath(), $"opentpw-frontend-smoke-packs-{Guid.NewGuid():N}" );
+	private string switchPath = "";
+	private (uint Width, uint Height, uint Pixel) switchOriginal;
+	private TexturePackSwitch? textureSwitch;
+	private Asset[] firstParkHeadAssets = Array.Empty<Asset>();
+	private Asset[] secondParkHeadAssets = Array.Empty<Asset>();
+	private Asset[] firstParkGuestAssets = Array.Empty<Asset>();
+	private Asset[] secondParkGuestAssets = Array.Empty<Asset>();
+
+	private static bool RendererAssetsReleased( IEnumerable<Asset> assets ) => assets.All( asset => !Asset.All.Contains( asset ) && asset switch
+	{
+		Texture texture => texture.NativeTexture.IsDisposed && AtlasViewReleased( texture ),
+		Material material => material.Pipeline.IsDisposed,
+		Shader shader => shader.ShaderProgram.All( program => program.IsDisposed ),
+		_ => false
+	} );
+
+	private static bool AtlasViewReleased( Texture texture )
+	{
+		var view = texture.NativeTextureView;
+		// Veldrid 4.9.0 MTLTextureView.Dispose does nothing for a full alias: no separate Metal object is owned,
+		// so IsDisposed stays false. Accept that exact alias only after its target texture has been disposed.
+		// https://github.com/veldrid/veldrid/blob/v4.9.0/src/Veldrid/MTL/MTLTextureView.cs#L15
+		return view.IsDisposed || (Device.BackendType == GraphicsBackend.Metal && texture.NativeTexture.IsDisposed
+			&& view.Target == texture.NativeTexture && view.BaseMipLevel == 0 && view.MipLevels == view.Target.MipLevels
+			&& view.BaseArrayLayer == 0 && view.ArrayLayers == view.Target.ArrayLayers && view.Format == view.Target.Format);
+	}
+
+	/// <summary>Real pack-change notifications replace live park head atlases without retaining the previous GPU copies.</summary>
+	private void PlanParkHeadTextureSwitch()
+	{
+		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
+			return;
+		foreach ( var name in new[] { "smoke", "" } )
+		{
+			Asset[] before = Array.Empty<Asset>();
+			Asset[] guestsBefore = Array.Empty<Asset>();
+			byte[][] beforePixels = Array.Empty<byte[]>();
+			Do( $"park head pack '{name}' begins", () =>
+			{
+				before = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
+				guestsBefore = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
+				Require( guestsBefore.Length == 10, "the park owns eight guest atlas textures, its material and shader before switching" );
+				beforePixels = before.OfType<Texture>().Select( texture => texture.ReadPixels() ).ToArray();
+				Require( before.OfType<Texture>().Count() == 8, "the park owns eight head atlases before switching" );
+				textureSwitch = TexturePackSwitch.Begin( name, new List<string>(), smokePacks );
+				Require( textureSwitch != null, "the live park texture switch starts" );
+			} );
+			steps.Enqueue( ($"park head pack '{name}' completes", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+			Wait( $"park head pack '{name}' deletion frames", 3 );
+			Do( $"park head pack '{name}' releases old atlases", () =>
+			{
+				var after = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
+				Require( before.Length == after.Length && before.OfType<Material>().Single() == after.OfType<Material>().Single(),
+					"a head atlas reload keeps the owned asset count and material stable" );
+				Device.WaitForIdle();
+				Require( RendererAssetsReleased( before.OfType<Texture>() ), "the replaced head atlases leave Asset.All and release their native resources" );
+				Require( after.All( Asset.All.Contains ), "replacement head atlases and material remain live" );
+				var afterPixels = after.OfType<Texture>().Select( texture => texture.ReadPixels() ).ToArray();
+				Require( beforePixels.Zip( afterPixels ).All( pair => pair.First.AsSpan().SequenceEqual( pair.Second ) ),
+					"a pack without head replacements reloads the same head GPU pixels" );
+				firstParkHeadAssets = after;
+				var guestsAfter = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
+				Require( guestsBefore.Length == guestsAfter.Length && guestsBefore.OfType<Material>().Single() == guestsAfter.OfType<Material>().Single(),
+					"a guest atlas reload keeps the owned asset count and material stable" );
+				Require( RendererAssetsReleased( guestsBefore.OfType<Texture>() ), "the replaced guest atlases leave Asset.All and release their native resources" );
+				Require( guestsAfter.All( Asset.All.Contains ), "replacement guest atlases and material remain live" );
+				firstParkGuestAssets = guestsAfter;
+				Log.Trace( $"Guest lifecycle: pack '{name}' released eight old atlases; {guestsAfter.Length} owned assets live." );
+				Log.Trace( $"Ride head lifecycle: pack '{name}' released eight old atlases; {after.Length} owned assets live, head GPU pixels retained." );
+			} );
+		}
+	}
+
+
+	private static uint CenterPixel( Texture texture )
+	{
+		var pixels = texture.ReadPixels();
+		return BitConverter.ToUInt32( pixels, (int)((texture.Height / 2 * texture.Width + texture.Width / 2) * 4) );
+	}
+
+	/// <summary>
+	/// [EXT:texture-pack] Switches a throw-away pack on and off while the lobby runs: a lobby texture becomes the pack's solid
+	/// 96x96 image (checked by GPU readback), then the original comes back; frames keep rendering in between.
+	/// </summary>
+	private void PlanTexturePackSwitch()
+	{
+		// A pack pinned with OPENTPW_TEXTURE_PACK (e.g. to capture screens with a pack) cannot be switched.
+		if ( !string.IsNullOrEmpty( Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" ) ) )
+		{
+			Log.Trace( "Front-end smoke test: texture pack switch skipped, a pack is pinned with OPENTPW_TEXTURE_PACK." );
+			return;
+		}
+		const uint SolidPixel = 0xFF22C80C; // little-endian RGBA bytes 0C C8 22 FF
+		// Outside temporaryDirectory: a later step checks that no .json file is written there.
+		var packs = smokePacks;
+		Do( "texture pack on", () =>
+		{
+			var target = Texture.ReloadTargets().FirstOrDefault( entry => entry.Path.Contains( "lobby", StringComparison.OrdinalIgnoreCase ) );
+			Require( target.Path != null, "the lobby loaded textures from .wct files" );
+			switchPath = target.Path;
+			var texture = Texture.FindLoaded( switchPath )!;
+			switchOriginal = (texture.Width, texture.Height, CenterPixel( texture ));
+			Require( switchOriginal.Width != 96 && switchOriginal.Pixel != SolidPixel, "the original lobby texture differs from the pack's" );
+			var pack = Path.Combine( packs, "smoke" );
+			var file = Path.Combine( pack, TexturePack.TexturesDirectoryName, TexturePack.RelativeFileName( switchPath ) );
+			Directory.CreateDirectory( Path.GetDirectoryName( file )! );
+			var solid = new byte[96 * 96 * 4];
+			for ( var index = 0; index < solid.Length; index += 4 )
+				(solid[index], solid[index + 1], solid[index + 2], solid[index + 3]) = (0x0C, 0xC8, 0x22, 0xFF);
+			using ( var stream = File.Create( file ) )
+				PngWriter.Write( stream, solid, 96, 96 );
+			File.WriteAllText( Path.Combine( pack, TexturePack.ManifestFileName ), System.Text.Json.JsonSerializer.Serialize( new TexturePackManifest { Scale = 1 } ) );
+			var diagnostics = new List<string>();
+			textureSwitch = TexturePackSwitch.Begin( "smoke", diagnostics, packs );
+			Require( textureSwitch != null && diagnostics.Count == 0 && textureSwitch.Total > 0, "the pack switch starts with the loaded textures as its work" );
+		} );
+		// The switch runs in the background with a progress line at the top; capture it while it is still running.
+		Wait( "texture switch progress frames", 2 );
+		Do( "texture switch progress", () => { if ( !textureSwitch!.Finished ) CaptureFrame( "texture-switch-progress.png" ); } );
+		steps.Enqueue( ("texture pack loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		Wait( "texture pack frames", 3 );
+		Do( "texture pack on verified", () =>
+		{
+			var texture = Texture.FindLoaded( switchPath )!;
+			Require( (texture.Width, texture.Height) == (96, 96), "the live texture now has the pack's size" );
+			Require( CenterPixel( texture ) == SolidPixel, "GPU readback shows the pack's pixels" );
+			CaptureFrame( "texture-pack-on.png" );
+			var diagnostics = new List<string>();
+			textureSwitch = TexturePackSwitch.Begin( "", diagnostics, packs );
+			Require( textureSwitch != null, "switching back starts" );
+		} );
+		steps.Enqueue( ("texture pack unloads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		Wait( "texture pack off frames", 3 );
+		Do( "texture pack off verified", () =>
+		{
+			var texture = Texture.FindLoaded( switchPath )!;
+			Require( (texture.Width, texture.Height, CenterPixel( texture )) == switchOriginal, "the original pixels came back" );
+			CaptureFrame( "texture-pack-off.png" );
+		} );
+		// Optional timing with a real pack (read only): OPENTPW_SMOKE_PACKS_DIR=<texture-packs dir> OPENTPW_SMOKE_PACK=<name>.
+		var realPacks = Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PACKS_DIR" );
+		var realPack = Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PACK" );
+		if ( !string.IsNullOrEmpty( realPacks ) && !string.IsNullOrEmpty( realPack ) )
+		{
+			var timer = new System.Diagnostics.Stopwatch();
+			long memoryBefore = 0;
+			var frames = 0;
+			foreach ( var (name, pack) in new[] { ("on", realPack), ("off", "") } )
+			{
+				Do( $"real pack {name}", () =>
+				{
+					memoryBefore = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64;
+					frames = frame;
+					timer.Restart();
+					textureSwitch = TexturePackSwitch.Begin( pack, new List<string>(), realPacks );
+					Require( textureSwitch != null, "the real pack switch starts" );
+				} );
+				steps.Enqueue( ($"real pack {name} loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; } ) );
+				Do( $"real pack {name} done", () => Log.Trace( $"Texture pack switch to '{(pack.Length == 0 ? "original" : pack)}': {textureSwitch!.Total} textures in {timer.Elapsed.TotalSeconds:F1} s over {frame - frames} frames; working set {memoryBefore / 1048576} -> {System.Diagnostics.Process.GetCurrentProcess().WorkingSet64 / 1048576} MB." ) );
+			}
+		}
+	}
+
 	private void Plan()
 	{
 		Wait( "lobby settles", 30 );
+		PlanMaterialRendering();
 		Do( "lobby renders", () =>
 		{
 			Require( flow.Lobby != null && flow.Lobby.IslandCount == 4 && flow.Lobby.PartCount > 4, "lobby scene has four islands and terrain" );
 			Require( flow.Menu != null && flow.Menu.Islands.Count == 4, "front-end menu lists four theme islands" );
 			var capture = CaptureFrame( "frontend.png" );
-			VerifyText( capture, flow.Strings[UIStrings.ThemeParkWorld], "front-end title" );
+			// [BIN:TPW-EXE:0x757f60 lobby panel] the lobby has no title and no menu column: the panel, its four buttons and the island name; Escape opens the menu
+			Require( flow.Menu!.Main.Find( "logo" ) == null && flow.Menu.Main.Find( "title" ) == null && flow.Menu.Main.Find( "quit" ) == null, "the lobby has no logo, title or menu column" );
 			VerifyText( capture, flow.Menu!.SelectedName, "island name" );
-			VerifyText( capture, flow.Strings[UIStrings.QuitGame], "Quit Game button" );
+			flow.Menu.ShowMenu();
+		} );
+		Wait( "lobby menu renders", 3 );
+		Do( "lobby menu", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "lobbyMenu", "Escape opens the lobby menu" );
+			var capture = CaptureFrame( "lobby-menu.png" );
+			VerifyText( capture, flow.Strings[UIStrings.QuitGame], "Quit Game line" );
+			VerifyText( capture, flow.Strings[UIStrings.Options], "Options line" );
+			flow.Menu.Stack.Pop();
 		} );
 		Do( "click next island", () => Click( flow.Menu!.Main, "nextIsland" ) );
 		Wait( "island changes", 3 );
@@ -80,25 +285,153 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		} );
 		Wait( "keyboard previous island", 3 );
 		Do( "jungle selected", () => Require( flow.Menu!.Selected.Level == "jungle", "left key returns to the jungle island" ) );
-		Do( "open options", () => Click( flow.Menu!.Main, "options" ) );
+		// Original-style online screens (docs/ONLINE.md): Go Online, then each screen, captured offline.
+		Do( "go online", () => Click( flow.Menu!.Main, "worldView" ) );
+		Wait( "online world opens", 3 );
+		Do( "online world renders", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "onlineWorld", "Go Online opens the online world" );
+			Require( flow.Globe is { Visible: true } && flow.Globe.PartCount > 0 && flow.Lobby is { Visible: false }, "the online world shows the globe instead of the lobby" );
+			VerifyText( CaptureFrame( "online-world.png" ), OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ), "online world title" );
+			// Offline there is no server city list; pins for a few cities exercise the flags and the picking.
+			flow.Globe.SetCities( new[]
+			{
+				new Online.Api.CityInfo( 1, GlobeScene.BullfrogCity, "", 90, 0, 3 ), new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 40 ),
+				new Online.Api.CityInfo( 3, "Timbuktu", "", 16.8f, -3, 5 ), new Online.Api.CityInfo( 4, "New York", "", 40.7f, -74, 120 ),
+			} );
+		} );
+		Wait( "globe pins render", 3 );
+		Do( "globe pins", () =>
+		{
+			var london = Camera.Position.GetSystemVector3();
+			var target = GlobeScene.Centre.GetSystemVector3() + new System.Numerics.Vector3( GlobeScene.Direction( 51.5f, -0.1f ).X, GlobeScene.Direction( 51.5f, -0.1f ).Z, GlobeScene.Direction( 51.5f, -0.1f ).Y ) * GlobeScene.PickRadius;
+			Require( flow.Globe!.Pick( london, System.Numerics.Vector3.Normalize( target - london ) )?.Name == "London", "a ray from the camera to London picks London" );
+			CaptureFrame( "online-globe-cities.png" );
+			// A city lobby with three parks: their theme islands stand at the first three slots.
+			var city = new UI.CityLobbyScreen( new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 3 ) );
+			Online.Api.ParkSummary Park( string id, string level ) => new( id, $"Park {id}", "", "Ann", level, "English", DateTimeOffset.UnixEpoch, 0, 0, false, false, 0, false, 0, 2 );
+			city.Parks = new[] { Park( "a", "jungle" ), Park( "b", "space" ), Park( "c", "hallow" ) };
+			flow.Menu!.Stack.Push( city );
+		} );
+		Wait( "city lobby renders", 3 );
+		Do( "city lobby", () =>
+		{
+			Require( flow.CityIslandCount == 3 && flow.Globe is { Visible: false }, "a city lobby shows its parks' theme islands instead of the globe" );
+			CaptureFrame( "online-city-lobby.png" );
+			flow.Menu!.Stack.Pop();
+			Click( flow.Menu.Stack.Top!, "login" );
+		} );
+		Wait( "login opens", 3 );
+		Do( "login typing", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "onlineLogin", "the login button opens the login dialog" );
+			flow.InjectedInput = UiInput.Type( "Alice" );
+		} );
+		Wait( "login renders", 3 );
+		Do( "login capture", () =>
+		{
+			var field = flow.Menu!.Stack.Top!.Find( "name" ) as UiTextField;
+			Require( field != null && field.Text == "Alice", "typing reaches the focused login name field" );
+			VerifyText( CaptureFrame( "online-login.png" ), OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), "login name label" );
+		} );
+		var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen, string? Verify)[]
+		{
+			("online-news.png", screens => screens.ShowNews(), "onlineNews", null),
+			("online-find-parks.png", screens => screens.ShowFindParks(), "findParks", null),
+			("online-send-postcard.png", screens => screens.ShowSendPostcard(), "sendPostcard", null),
+			("online-outbox.png", screens => screens.ShowOutbox(), "outbox", null),
+			("online-inbox.png", screens => screens.ShowInbox(), "inbox", null),
+			("online-chat.png", screens => screens.ShowChat(), "chat",
+				// The original chat overlay (data:0x50b2c): the park view answers a click with a walk.
+				OnlineStrings.Get( OnlineLabel.WalkHint )),
+			("online-import.png", screens => screens.ShowImport(), "import", null),
+			// A fixed example secret; the capture is checked by decoding its QR code (docs/ONLINE.md, "Two-step login").
+			("online-two-step.png", screens =>
+			{
+				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ) );
+				screens.ShowEnrollment();
+			}, "twoStepSetup", null),
+			("online-two-step-email.png", screens =>
+			{
+				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ), EmailRequired: true );
+				screens.ShowEnrollment();
+			}, "twoStepSetup", null),
+			("online-recovery.png", screens => screens.ShowRecovery( "Alice" ), "recovery", null),
+		};
+		foreach ( var shot in onlineShots )
+		{
+			Do( $"open {shot.Screen}", () => shot.Show( new UI.OnlineScreens( flow.Menu!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online } ) ) );
+			Wait( $"{shot.Screen} renders", 3 );
+			Do( $"{shot.Screen} capture", () =>
+			{
+				Require( flow.Menu!.Stack.Top?.Name == shot.Screen, $"{shot.Screen} opens" );
+				var frame = CaptureFrame( shot.Name );
+				if ( shot.Verify != null )
+					VerifyText( frame, shot.Verify, $"{shot.Screen} text" );
+				flow.Online.Enrollment = null;
+				flow.Menu.Stack.Pop();
+			} );
+		}
+		Do( "leave online", () =>
+		{
+			while ( flow.Menu!.Stack.Screens.Count > 1 )
+				flow.Menu.Stack.Pop();
+		} );
+		// Options > Game files with a throw-away setup.json.
+		Do( "open game files", () => flow.Menu!.Stack.Push( GameFilesScreen.Create( flow.Menu.Stack, flow.Strings, Path.Combine( temporaryDirectory, SetupSettings.FileName ) ) ) );
+		Wait( "game files renders", 3 );
+		Do( "game files capture", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "gameFiles", "game files screen opens" );
+			var files = CaptureFrame( "game-files.png" );
+			VerifyText( files, flow.Strings.Extra( OpenTpwText.GameFolder ), "game folder label" );
+			VerifyText( files, flow.Strings.Extra( OpenTpwText.BonusFolder ), "bonus content label" );
+			flow.Menu.Stack.Pop();
+		} );
+		PlanTexturePackSwitch();
+		PlanLanguageSwitch();
+		Do( "open lobby menu", () => flow.Menu!.ShowMenu() );
+		Wait( "lobby menu opens", 2 );
+		Do( "open options", () => Click( flow.Menu!.Stack.Top!, "options" ) );
 		Wait( "options open", 3 );
 		Do( "options render", () =>
 		{
 			Require( flow.Menu!.Stack.Top?.Name == "options", "options screen opens" );
 			var effects = GameOptions.Current.SoundEffectsVolume;
+			// A click in the middle of the slider's hit region sets the middle step.
 			Click( flow.Menu.Stack.Top!, "effects" );
 			stepState = effects;
 		} );
 		Wait( "volume changes", 3 );
 		Do( "options capture", () =>
 		{
-			Require( GameOptions.Current.SoundEffectsVolume != stepState, "clicking a volume row changes it" );
+			Require( GameOptions.Current.SoundEffectsVolume != stepState, "clicking a volume slider changes it" );
+			var options = flow.Menu!.Stack.Top!;
 			var capture = CaptureFrame( "options.png" );
 			VerifyText( capture, flow.Strings[UIStrings.GameOptions], "Game Options title" );
-			VerifyText( capture, flow.Strings[UIStrings.ScreenResolution], "screen resolution row" );
-			VerifyText( capture, flow.Strings.Extra( OpenTpwText.Upscaling ), "OpenTPW upscaling row" );
+			VerifyText( capture, ((UiLabel)options.Find( "resolutionLabel" )!).Text(), "screen resolution label" );
+			VerifyText( capture, ((UiLabel)options.Find( "effectsLabel" )!).Text(), "sound effects volume label" );
+			VerifyText( capture, ((UiLabel)options.Find( "advisorLabel" )!).Text(), "advisor label" );
+			VerifyText( capture, ((UiLabel)options.Find( "scrollLabel" )!).Text(), "scroll label" );
+			VerifyText( capture, flow.Strings.Extra( OpenTpwText.OpenTpwPage ), "OpenTPW button" );
+			Click( options, "openTpw" );
+		} );
+		Wait( "OpenTPW page opens", 3 );
+		Do( "OpenTPW page capture", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "openTpwOptions", "the OpenTPW button opens its page" );
+			var capture = CaptureFrame( "options-opentpw.png" );
+			VerifyText( capture, ((UiLabel)flow.Menu.Stack.Top.Find( "upscalingLabel" )!).Text(), "OpenTPW upscaling row" );
 			if ( Context.Canvas.TextScale < flow.Display.EffectiveUiScale )
-				VerifyText( capture, ((UiLabel)flow.Menu!.Stack.Top!.Find( "effective" )!).Text(), "effective output and interface-scale fallback" );
+				VerifyText( capture, ((UiLabel)flow.Menu.Stack.Top.Find( "effective" )!).Text(), "effective output and interface-scale fallback" );
+			flow.InjectedInput = UiInput.Key( UiKeys.Back );
+		} );
+		Wait( "OpenTPW page closes", 3 );
+		Do( "back on the original page", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "options", "Back returns to the original options page" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "options cancelled", 3 );
@@ -110,13 +443,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			flow.InjectedInput = UiInput.Key( UiKeys.Accept );
 		} );
 		Wait( "game mode opens", 3 );
-		Do( "choose game mode", () =>
-		{
-			Require( flow.Menu!.Stack.Top?.Name == "gameMode", "Enter on the focused enter-park button asks for the game mode" );
-			VerifyText( CaptureFrame( "game-mode.png" ), flow.Strings[UIStrings.InstantAction], "Instant Action button" );
-			Click( flow.Menu.Stack.Top!, "fullSimulation" );
-		} );
-		Wait( "park loads", 40 );
+		PlanFullSimulationStart( () => VerifyText( CaptureFrame( "game-mode.png" ), flow.Strings[UIStrings.InstantAction], "Instant Action button" ) );
 		Do( "park loaded", () =>
 		{
 			Require( flow.Level?.OriginalPark?.LevelName == "jungle" && flow.Hud != null, "menu loads the original jungle level with the HUD" );
@@ -125,7 +452,13 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			var capture = CaptureFrame( "hud.png" );
 			VerifyText( capture, flow.Hud!.MoneyText, "HUD bank balance" );
 			VerifyText( capture, flow.Hud.DateText, "HUD date" );
+			firstParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
+			firstParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
+			Require( firstParkGuestAssets.Length == 10, "the park owns eight guest atlas textures, its material and shader" );
+			Require( firstParkHeadAssets.Length == 10, "the park owns eight head atlas textures, its material and shader" );
 			var economy = flow.Level!.Park!.Economy;
+			Require( flow.StartKind == ParkStartKind.FullSimulation && economy.Mode == ParkGameMode.FullSimulation && !economy.Settings.IsEasy
+				&& flow.Level.OriginalPark!.Save == null && flow.Level.Park.Import == null, "Full Simulation starts with standard balance and without the Easymode seed" );
 			objectsBeforePurchase = economy.Objects.Count;
 			Require( flow.Hud.Status is EconomyParkStatus && flow.Hud.Status.Money == economy.Balance, "HUD bank balance is the park economy's" );
 			Require( flow.Hud.DateText == string.Format( flow.Strings.Extra( OpenTpwText.DateFormat ), economy.Date.Year, economy.Date.Month, economy.Date.Day ), "HUD date is the park clock" );
@@ -137,30 +470,275 @@ internal sealed class FrontEndSmokeTest : IDisposable
 						purchaseEvents++;
 					}
 			};
-			Click( flow.Hud.Screen, "buy" );
+			Click( flow.Hud.Screen, "map" );
 		} );
-		Wait( "build arm opens", 3 );
-		Do( "next build page", () => Click( flow.Hud!.Screen, "nextBuildPage" ) );
-		Wait( "next build page visible", 3 );
-		Do( "previous build page", () =>
+		PlanParkHeadTextureSwitch();
+		Wait( "map window opens", 3 );
+		Do( "map window", () =>
 		{
-			Require( flow.Hud!.BuildPage == 1, "next page button exposes later catalogue items" );
-			Click( flow.Hud.Screen, "previousBuildPage" );
+			var hud = flow.Hud!;
+			Require( hud.MapWindowOpen && hud.Stack.Top?.Name == "map", "map button opens the original map window" );
+			CaptureFrame( "map.png" );
+			Require( Context.Batch.Draws.Any( draw => draw.Texture.ImagePath == "/levels/jungle/2dmap.tga" ), "the map uses the shipped jungle image" );
+			Click( hud.Stack.Top!, "close" );
 		} );
-		Wait( "previous build page visible", 3 );
-		Do( "show Totem page", () =>
+		Wait( "map window closes", 3 );
+		Do( "buy after map", () =>
 		{
-			Require( flow.Hud!.BuildPage == 0, "previous page button returns to the first page" );
+			Require( !flow.Hud!.MapWindowOpen && flow.Hud.Stack.Top?.Name == "hud", "map close returns to the HUD" );
+			Click( flow.Hud.Screen, "finance" );
+		} );
+		Wait( "finance window opens", 3 );
+		Do( "finance window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.FinanceWindowOpen && hud.Stack.Top?.Name == "finance", "finance button opens the original financial graph" );
+			var capture = CaptureFrame( "finance.png" );
+			VerifyText( capture, flow.Strings[UIStrings.FinancialInformation], "Financial Information title" );
+			Click( hud.Stack.Top!, "loans" );
+		} );
+		Wait( "loans window opens", 3 );
+		Do( "loans window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.LoansWindowOpen && hud.Stack.Top?.Name == "loans", "finance loans button opens the original bank window" );
+			var capture = CaptureFrame( "loans.png" );
+			VerifyText( capture, flow.Strings[UIStrings.GraphAvailableLoans], "Available Loans title" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "loans window closes", 3 );
+		Do( "finance window closes", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.LoansWindowOpen && hud.Stack.Top?.Name == "finance", "loans exit returns to financial information" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "finance window closes", 3 );
+		Do( "research window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.FinanceWindowOpen && hud.Stack.Top == hud.Screen, "finance exit returns to the HUD" );
+			Click( hud.Screen, "research" );
+		} );
+		Wait( "research window opens", 3 );
+		Do( "research window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.ResearchWindowOpen && hud.Stack.Top?.Name == "research", "research button opens the original research lab" );
+			var capture = CaptureFrame( "research.png" );
+			VerifyText( capture, flow.Strings[UIStrings.ResearchLab], "Research Lab title" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "research window closes", 3 );
+		Do( "buy window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.ResearchWindowOpen && hud.Stack.Top == hud.Screen, "research exit returns to the HUD" );
+			Click( hud.Screen, "buy" );
+		} );
+		Wait( "buy window opens", 3 );
+		Do( "buy window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.BuyWindowOpen && hud.Stack.Top?.Name == "buy", "buy button opens the original buy window" );
+			Require( hud.Catalog is OriginalBuildCatalog && hud.BuyItems.Count > ParkHud.BuyVisibleRows, "the original ride catalogue spans more rows than the list shows" );
+			var capture = CaptureFrame( "buy-window.png" );
+			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
+			VerifyText( capture, flow.Strings[UIStrings.NameAttr], "Name column header" );
+			VerifyText( capture, flow.Strings[UIStrings.Price], "Price column header" );
+			Click( hud.Stack.Top!, "allStaff" );
+		} );
+		Wait( "staff window opens", 3 );
+		Do( "staff window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.StaffWindowOpen && hud.Stack.Top?.Name == "staff", "buy window staff button opens the original staff window" );
+			Require( !hud.ShowingEmployedStaff && hud.StaffCandidates.Count > 0, "the staff window opens its applicant list" );
+			smokeStaffId = hud.SelectedCandidateId;
+			Require( smokeStaffId != 0, "an applicant is selected" );
+			var capture = CaptureFrame( "staff.png" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "staffName" )!).Text(), "selected applicant name" );
+			flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 441 + ParkHud.StaffRowHeight / 2 ), UiAnchor.Center ) );
+		} );
+		Wait( "staff applicant hired", 3 );
+		Do( "employed staff view", () =>
+		{
+			var hud = flow.Hud!;
+			var level = flow.Level!;
+			var placement = level.StaffPlacement;
+			Require( placement is { Kind: StaffToolKind.Place } && !hud.StaffWindowOpen, "clicking the selected applicant closes the staff window and starts the Place tool" );
+			Require( level.Park!.Economy.Staff.Members.All( member => member.Id != smokeStaffId )
+				&& level.Park.Economy.Staff.Candidates.Any( candidate => candidate.Id == smokeStaffId ), "the applicant is not employed until the placement click" );
+			var cells = level.Guests!.Grid.Cells;
+			(int X, int Y) target = (-1, -1);
+			for ( var y = 0; y < cells.Height && target.X < 0; y++ )
+				for ( var x = 0; x < cells.Width && target.X < 0; x++ )
+					if ( placement!.IsValid( x, y ) )
+						target = (x, y);
+			Require( target.X >= 0 && placement!.Click( target.X, target.Y ) == StaffClickResult.Placed, "a click on a valid cell hires the applicant" );
+			Require( level.Park.Economy.Staff.Members.Any( member => member.Id == smokeStaffId ), "the placed applicant is employed" );
+			hud.OpenStaffWindow();
+			Click( hud.Stack.Top!, "staffViewExt" );
+		} );
+		Wait( "employed staff view opens", 3 );
+		Do( "dismiss smoke employee", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.ShowingEmployedStaff && hud.StaffItems.Count == flow.Level!.Park!.Economy.Staff.Members.Count, "the staff window lists employed staff" );
+			Require( hud.SelectedStaffId == smokeStaffId, "the hired smoke-test employee is selected" );
+			var capture = CaptureFrame( "staff-employed.png" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top!.Find( "staffName" )!).Text(), "selected employee name" );
+			VerifyText( capture, ((UiLabel)hud.Stack.Top.Find( "statValue3" )!).Text(), "selected employee happiness" );
+			Click( hud.Stack.Top!, "dismissStaff" );
+		} );
+		Wait( "dismissal confirmation opens", 3 );
+		Do( "confirm smoke employee dismissal", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDismissStaff", "dismissal asks for confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "smoke employee dismissed", 3 );
+		// The All Visitors window (UI-907..910): visitors seeded through the guest simulation's own
+		// spawn, the window opened through the staff window's shipped b_svisit button, then driven with
+		// the wheel, the sort header, a row click and Enter.
+		Do( "seed smoke visitors", () =>
+		{
+			var level = flow.Level!;
+			var guests = level.Guests!;
+			var cells = Enumerable.Range( 0, guests.Grid.CountX * guests.Grid.CountY )
+				.Select( index => (X: index % guests.Grid.CountX, Y: index / guests.Grid.CountX) )
+				.Where( cell => guests.Grid.IsWalkable( cell.X, cell.Y ) ).ToArray();
+			Require( cells.Length > 0, "the park has walkable cells to seed visitors on" );
+			for ( var index = 0; index < 14; index++ )
+				guests.SpawnInPark( cells[index % cells.Length].X, cells[index % cells.Length].Y );
+			Require( flow.Hud!.VisitorItems.Count >= 14, "the seeded visitors are in the park" );
+			Log.Trace( $"Front-end smoke: seeded 14 visitors on {cells.Length} path cells for the All Visitors window." );
+		} );
+		Do( "visitors window opens", () => Click( flow.Hud!.Stack.Top!, "allVisitors" ) );
+		Wait( "visitors window renders", 3 );
+		Do( "visitors window lists the park", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.VisitorWindowOpen && hud.Stack.Top?.Name == "visitors", "the staff window's visitors button opens the All Visitors window" );
+			var rows = hud.VisitorItems;
+			Require( rows.Count >= 14, "the window lists the park's visitors" );
+			Require( rows.Select( guest => guest.Id ).SequenceEqual( rows.Select( guest => guest.Id ).OrderBy( id => id ) ),
+				"the visitor numbers are listed in ascending order" );
+			Require( hud.SelectedVisitorId == rows[0].Id, "the first row is selected" );
+			var capture = CaptureFrame( "visitors.png" );
+			VerifyText( capture, flow.Strings[UIStrings.AllVisitors], "All Visitors title" );
+			VerifyText( capture, flow.Strings[UIStrings.HappinessVisitor], "Happiness column" );
+		} );
+		Do( "visitors wheel", () =>
+		{
+			Require( flow.Hud!.VisitorFirstRow == 0 && flow.Hud.VisitorItems.Count > ParkHud.StaffVisibleRows, "the visitor list starts scrolled to the top" );
+			flow.InjectedInput = UiInput.Idle( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 650 ), UiAnchor.Center ) ) with { Wheel = -1 };
+		} );
+		Wait( "visitors scrolled", 3 );
+		Do( "visitors wheel scrolled", () =>
+		{
+			Require( flow.Hud!.VisitorFirstRow == 1, "a wheel step scrolls the visitor list one row" );
+			Click( flow.Hud.Stack.Top!, "headerNumber" );
+		} );
+		Wait( "visitors header chosen", 3 );
+		Do( "visitors header sorted once", () => Require( flow.Hud!.VisitorItems.Count > 0, "the sorted visitor list is not empty" ) );
+		Wait( "visitors sorted", 3 );
+		Do( "visitors header sorted", () =>
+		{
+			var rows = flow.Hud!.VisitorItems;
+			Require( rows.Count >= ParkHud.StaffVisibleRows && rows.Select( guest => guest.Id ).SequenceEqual( rows.Select( guest => guest.Id ).OrderByDescending( id => id ) ),
+				"the first press on the initial column (ascending) lists the visitor numbers backwards" );
+		} );
+		Do( "click a visitor row", () =>
+		{
+			var hud = flow.Hud!;
+			var rows = hud.VisitorItems;
+			var visible = Math.Min( 3, rows.Count - hud.VisitorFirstRow - 1 );
+			locatedVisitor = rows[hud.VisitorFirstRow + visible];
+			flow.InjectedInput = UiInput.Click( Context.Canvas.Map(
+				new System.Numerics.Vector2( 1240, 441 + (visible + 0.5f) * ParkHud.StaffRowHeight ), UiAnchor.Center ) );
+		} );
+		Wait( "visitor row selected", 3 );
+		Do( "visitor row selected", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedVisitorId == locatedVisitor!.Id, "clicking a row selects that visitor" );
+			// Park the camera target in a far corner so the locate has to move it to the visitor.
+			var camera = (ParkCameraMode)Camera.Mode;
+			camera.SetPose( new Vector3( -9999, -9999, 0 ), camera.Height, camera.Yaw );
+			flow.InjectedInput = UiInput.Key( UiKeys.Accept );
+		} );
+		Wait( "visitor located", 3 );
+		Do( "visitor located and window closed", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.VisitorWindowOpen && hud.Stack.Top?.Name == "staff", "Enter on the selected row locates the visitor and closes the window over the staff one" );
+			var camera = (ParkCameraMode)Camera.Mode;
+			var position = GuestRenderer.CellToEngine( flow.Level!.OriginalPark!.Heightfield, locatedVisitor!.X, locatedVisitor!.Y );
+			var extent = Math.Max( 0, ParkCameraMode.TargetExtent );
+			var expected = new Vector3( Math.Clamp( position.X, -extent, extent ), Math.Clamp( position.Y, -extent, extent ), 0 );
+			Require( ( camera.Target - expected ).Length < 2,
+				$"the camera focuses the selected visitor's simulated position (target {camera.Target}, expected {expected})" );
+		} );
+		Do( "staff window exit", () =>
+		{
+			var hud = flow.Hud!;
+			Require( flow.Level!.Park!.Economy.Staff.Members.All( member => member.Id != smokeStaffId ), "the dismiss button removes the selected employee" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "staff window closes", 3 );
+		Do( "shops after staff", () =>
+		{
+			Require( !flow.Hud!.StaffWindowOpen && flow.Hud.BuyWindowOpen && flow.Hud.Stack.Top?.Name == "buy", "staff close returns to the buy window" );
+			Click( flow.Hud.Stack.Top!, "categoryShops" );
+		} );
+		Wait( "shops listed", 3 );
+		Do( "shops category", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Category == BuildCategory.Shops && hud.BuyItems.All( item => item.Category == BuildCategory.Shops ) && hud.SelectedBuyItem != null, "the shops button lists the shops and selects the first" );
+			var capture = CaptureFrame( "buy-window-shops.png" );
+			VerifyText( capture, flow.Strings[UIStrings.BuyShop], "Buy Shop title" );
+			VerifyText( capture, hud.ItemName( hud.SelectedBuyItem! ), "selected shop name" );
+			Click( hud.Stack.Top!, "categoryRides" );
+		} );
+		Wait( "rides listed", 3 );
+		Do( "show a ride with a sign", () =>
+		{
+			var hud = flow.Hud!;
+			var aztec = hud.Catalog.GetItems( BuildCategory.Rides ).Single( item => item.Entry != null && item.Entry.ArchiveName.Equals( "tvsim", StringComparison.OrdinalIgnoreCase ) );
+			ShowItem( aztec );
+			Require( hud.SelectedBuyItem == aztec, "Aztec Mayhem is the selected item" );
+			var icon = hud.GetIcon( aztec );
+			Require( icon != null && icon.RuntimeTextureTriangleCount > 0, "the Aztec Mayhem preview draws its sign faces with the rendered sign textures, not the placeholders" );
+			var sign = ObjectSigns.Get( aztec.Entry! );
+			Require( sign != null && sign.TextPixelCount > 0 && (sign.Line1, sign.Line2) == SignCanvas.SplitAtMiddleSpace( hud.ItemName( aztec ) ), "the Aztec Mayhem sign shows its name over two lines" );
+		} );
+		Wait( "Aztec Mayhem preview renders", 3 );
+		Do( "capture the sign preview", () =>
+		{
+			CaptureFrame( "buy-window-aztec.png" );
+			flow.Hud!.SelectBuyItem( 0 );
+			Require( flow.Hud.BuyFirstRow == 0, "selecting the first row scrolls the list back" );
+		} );
+		Do( "scroll the list", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Category == BuildCategory.Rides && hud.BuyFirstRow == 0, "the rides button returns to the rides" );
+			Click( hud.Stack.Top!, "scrollDown" );
+		} );
+		Wait( "list scrolled", 3 );
+		Do( "show Totem", () =>
+		{
+			Require( flow.Hud!.BuyFirstRow == 1, "the down button scrolls the list one row" );
 			ShowItem( TotemItem );
 		} );
-		Wait( "Totem page visible", 3 );
-		Do( "build arm", () =>
+		Wait( "Totem selected", 3 );
+		Do( "buy window with Totem", () =>
 		{
-			Require( flow.Hud!.BuildArmOpen, "buy button opens the build arm" );
-			Require( flow.Hud.Catalog is OriginalBuildCatalog && flow.Hud.BuildPageCount > 1, "the original catalogue spans build-menu pages" );
-			var capture = CaptureFrame( "build-arm.png" );
-			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
-			VerifyText( capture, flow.Hud.ItemName( TotemItem ), "Totem build item" );
+			Require( flow.Hud!.BuyWindowOpen && flow.Hud.SelectedBuyItem == TotemItem, "the Totem is the selected item" );
+			var capture = CaptureFrame( "buy-window-totem.png" );
+			VerifyText( capture, flow.Hud.ItemName( TotemItem ), "Totem name" );
 			totemLockedAtStart = !flow.Hud.Status.IsAvailable( TotemItem );
 			ClickItem( TotemItem );
 		} );
@@ -197,7 +775,7 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( economy.Objects.Count == objectsBeforePurchase + 1, "one purchased economy object is created" );
 			Require( flow.Level.Park.Guests!.TryGetInstance( totem!.Visitors.AttractionId, out var linked ) && economy.TryGetObject( linked, out var bought ) && bought.TotalSpent == builtCost, "guest payments link to the purchased ride" );
 			Log.Trace( $"HUD money: {economy.Balance} after buying the Totem for {builtCost}; park date {economy.Date}." );
-			Require( !flow.Hud.BuildArmOpen, "build arm closes after building" );
+			Require( !flow.Hud.BuyWindowOpen, "the buy window closes when placement starts" );
 			Require( purchaseEvents == 1 && flow.Level.PlacedRide == null, "catalogue purchase bypasses the developer prototype and HUD wallet" );
 			flow.Hud.SelectObject( totem );
 		} );
@@ -222,13 +800,20 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			};
 			Click( flow.Hud!.Screen, "deleteRide" );
 		} );
+		Wait( "delete confirmation opens", 3 );
+		Do( "confirm ride deletion", () =>
+		{
+			// Game Options' Confirmations is on by default, so the delete button asks first.
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDelete", "deleting a ride asks for confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
 		Wait( "ride sold", 3 );
 		Do( "ride deleted", () =>
 		{
 			Require( totem!.IsDeleted && soldFor > 0 && flow.Hud!.Status.Money == flow.Level!.Park!.Economy.Balance, $"deleting the ride sells it for its scrap value (got {soldFor})" );
 			Require( flow.Level!.Park!.Economy.Objects.Count == objectsBeforePurchase, "selling removes the purchased economy object" );
 			Log.Trace( $"HUD delete sold the Totem for {soldFor}; balance {flow.Level.Park.Economy.Balance}." );
-			flow.Hud!.SetBuildArm( true );
+			flow.Hud!.OpenBuyWindow();
 			secondItem = flow.Hud.Catalog.GetItems( BuildCategory.Rides ).First( item => item.InfoId != PrototypeRide.InfoId && flow.Hud.Status.IsAvailable( item ) );
 			ShowItem( secondItem );
 		} );
@@ -257,37 +842,464 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Click( flow.Hud.Screen, "openRide" );
 		} );
 		Wait( "second object closed", 3 );
+		// The All Attractions window (UI-905/906/910): a third fixture object is placed, the window is
+		// opened through the buy window's button, rows are clicked and activated, and the fixture is sold
+		// through the window's delete button with the original ride confirmation.
+		Do( "build the attractions fixture", () =>
+		{
+			var level = flow.Level!;
+			var item = flow.Hud!.Catalog.GetItems( BuildCategory.Rides ).First( candidate => candidate.InfoId != PrototypeRide.InfoId
+				&& candidate.InfoId != secondItem!.InfoId && flow.Hud.Status.IsAvailable( candidate ) );
+			var site = FindObjectSite( level, item.Entry! );
+			thirdObject = level.PlaceObject( item.Entry!, site.X, site.Y, level.BuildRotation );
+			thirdAttractionId = thirdObject!.Runtime.AttractionId;
+			Require( thirdObject != null, "a third catalogue object is placed for the attractions window" );
+			Log.Trace( $"Front-end smoke: placed {flow.Hud.ItemName( item )} as the attractions-window fixture." );
+		} );
+		Do( "attractions window opens", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.Stack.Top == hud.Screen, "no window is open before the attractions flow" );
+			Click( hud.Screen, "buy" );
+		} );
+		Wait( "buy window opens again", 3 );
+		Do( "open attractions", () => Click( flow.Hud!.Stack.Top!, "allAttractions" ) );
+		Wait( "attractions window renders", 3 );
+		Do( "attractions window lists the park", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionsWindowOpen && hud.Stack.Top?.Name == "attractions", "the buy window's all-attractions button opens the window" );
+			var rows = hud.AttractionItems;
+			Require( rows.All( row => row.Category == BuildCategory.Rides ) && rows.Any( row => row.AttractionId == thirdAttractionId ),
+				"the rides tab lists the park's rides, the fixture among them" );
+			Require( ParkAttractionRoster.StatusOf( rows.Single( row => row.AttractionId == secondObject!.Runtime.AttractionId ) ) == UIStrings.Closed,
+				"the closed second ride shows the original CLOSED status (UITEXT 364)" );
+			Require( ParkAttractionRoster.StatusOf( rows.Single( row => row.AttractionId == thirdAttractionId ) ) == UIStrings.Blank,
+				"the open working fixture shows no status" );
+			Require( hud.SelectedAttractionId == rows[0].AttractionId, "the first row is selected" );
+			var capture = CaptureFrame( "attractions.png" );
+			VerifyText( capture, flow.Strings[UIStrings.AllRides], "All Rides title" );
+		} );
+		Do( "click the fixture row", () => ClickAttractionRow( flow.Hud!, thirdAttractionId ) );
+		Wait( "fixture row selected", 3 );
+		Do( "fixture row selected", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedAttractionId == thirdAttractionId, "clicking a row selects that attraction" );
+			Require( hud.SelectedObject == thirdObject && hud.InfoArmOpen && hud.AttractionsWindowOpen,
+				"a left click on a row opens the object's info panel and keeps the list (list message 0x400)" );
+			// Park the camera target in a far corner so the right click has to move it to the object.
+			var camera = (ParkCameraMode)Camera.Mode;
+			camera.SetPose( new Vector3( -9999, -9999, 0 ), camera.Height, camera.Yaw );
+			ClickAttractionRow( hud, thirdAttractionId, right: true );
+		} );
+		Wait( "row located", 3 );
+		Do( "right click locates the object", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.AttractionsWindowOpen && hud.SelectedObject == thirdObject,
+				"a right click on a row centres the camera on the object and closes the list (list message 0x402)" );
+			var camera = (ParkCameraMode)Camera.Mode;
+			var extent = Math.Max( 0, ParkCameraMode.TargetExtent );
+			var expected = new Vector3( Math.Clamp( thirdObject!.Position.X, -extent, extent ), Math.Clamp( thirdObject.Position.Y, -extent, extent ), 0 );
+			Require( ( camera.Target - expected ).Length < 2, $"the camera focuses the clicked object (target {camera.Target}, expected {expected})" );
+			flow.Hud.OpenBuyWindow();
+			Click( flow.Hud.Stack.Top!, "allAttractions" );
+		} );
+		Wait( "attractions reopens", 3 );
+		Do( "attractions reopened", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionsWindowOpen, "the attractions window reopens over the buy window" );
+			var rows = hud.AttractionItems;
+			Require( rows.Any( row => row.AttractionId == thirdAttractionId ) && hud.SelectedAttractionId == rows[0].AttractionId,
+				"reopening resets the selection to the first row" );
+			ClickAttractionRow( hud, thirdAttractionId );
+		} );
+		Wait( "fixture row selected again", 3 );
+		Do( "sell through the window", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedAttractionId == thirdAttractionId, "the fixture's row is selected" );
+			Require( hud.Stack.Top!.Find( "deleteAttraction" ) is UiButton { Enabled: true }, "the delete button is enabled with a selection" );
+			Click( hud.Stack.Top!, "deleteAttraction" );
+		} );
+		Wait( "attractions delete confirmation", 3 );
+		Do( "attractions delete confirmation", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDeleteAttraction", "the window's delete asks for confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "fixture sold", 3 );
+		Do( "fixture sold and selection healed", () =>
+		{
+			var hud = flow.Hud!;
+			Require( thirdObject!.IsDeleted && flow.Level!.Park!.Economy.Objects.Count == objectsBeforePurchase + 1,
+				"the window's delete sells the fixture through the park economy (the second object remains)" );
+			var rows = hud.AttractionItems;
+			Require( rows.All( row => row.AttractionId != thirdAttractionId ) && rows.Count > 0
+				&& hud.SelectedAttractionId == rows[0].AttractionId, "the sold attraction leaves the list and the selection heals to the first row" );
+			Click( hud.Stack.Top!, "categorySideshows" );
+		} );
+		Wait( "empty sideshows tab", 3 );
+		Do( "empty category stays empty", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionItems.Count == 0 && hud.SelectedAttractionId == 0, "an empty category clears the selection" );
+			Require( hud.Stack.Top!.Find( "deleteAttraction" ) is UiButton { Enabled: false }, "the delete button disables without a selection" );
+			Click( hud.Stack.Top!, "scrollDown" );
+		} );
+		Wait( "scroll clamp", 3 );
+		Do( "attractions scroll clamps", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionFirstRow == 0, "scrolling a list that fits stays at the top" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "attractions closes", 3 );
+		// The developer prototype Totem joins the same window (Level.ListAttractions): it is placed beside the
+		// catalogue objects, listed as one more closed ride, activated like any row, and its delete goes through
+		// Level.RemoveRide — selling its economy record — instead of the object world, which does not own it.
+		Do( "attractions window opens over the prototype", () =>
+		{
+			Require( flow.Hud!.BuyWindowOpen && !flow.Hud.AttractionsWindowOpen, "the buy window is open, the attractions window closed" );
+			Click( flow.Hud.Stack.Top!, "allAttractions" );
+		} );
+		Wait( "attractions renders for the prototype", 3 );
+		Do( "back to the rides tab", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionsWindowOpen, "the attractions window is open" );
+			Click( hud.Stack.Top!, "categoryRides" );
+		} );
+		Wait( "rides tab again", 3 );
+		Do( "rides before the prototype", () =>
+		{
+			var hud = flow.Hud!;
+			var rows = hud.AttractionItems;
+			Require( rows.Count > 0 && rows.All( row => row.Category == BuildCategory.Rides ), "the rides tab lists the park's rides" );
+			ridesBeforePrototype = rows.Count;
+			objectsBeforePrototype = flow.Level!.Park!.Economy.Objects.Count;
+		} );
+		Do( "place the developer prototype", () =>
+		{
+			var level = flow.Level!;
+			PlacePrototypeAtFirstFreeSite( level );
+			Require( level.PlacedRide != null, "the developer prototype Totem is placed beside the catalogue objects" );
+			reviewedPrototype = level.PlacedRide;
+			prototypeAttractionId = level.PlacedRide.Runtime.AttractionId;
+			prototypeVisitors = level.PlacedRide.Visitors;
+			Require( level.Park!.Economy.Objects.Count == objectsBeforePrototype + 1,
+				"the prototype registers exactly one economy record (bought, or uncharged when refused)" );
+		} );
+		Wait( "the prototype joins the list", 3 );
+		Do( "the prototype is listed once", () =>
+		{
+			var hud = flow.Hud!;
+			var rows = hud.AttractionItems;
+			Require( rows.Count == ridesBeforePrototype + 1 && rows.Any( row => row.AttractionId == prototypeAttractionId ),
+				"the live list picks the placed prototype up as one more ride" );
+			Require( rows.GroupBy( row => row.AttractionId ).All( group => group.Count() == 1 ), "no attraction id is listed twice" );
+			var level = flow.Level!;
+			Require( ReferenceEquals( level.ListAttractions().Single( item => item.Runtime.AttractionId == prototypeAttractionId ), reviewedPrototype ),
+				"enumeration preserves the prototype object identity" );
+			// A different object can carry the same id in a different script world: removal must check ownership.
+			var foreign = new OriginalObject( reviewedPrototype!.Entry, reviewedPrototype.Placement,
+				new RideScriptWorld(), seed: null, open: false, attractionId: prototypeAttractionId );
+			try
+			{
+				var balance = level.Park!.Economy.Balance;
+				Require( !level.RemoveAttraction( foreign ) && !foreign.IsDeleted
+					&& ReferenceEquals( level.PlacedRide, reviewedPrototype ) && level.Park.Economy.Balance == balance,
+					"a foreign object sharing an attraction id cannot remove or sell the owned prototype" );
+			}
+			finally { foreign.Delete(); }
+			var prototype = rows.Single( row => row.AttractionId == prototypeAttractionId );
+			Require( ParkAttractionRoster.StatusOf( prototype ) == UIStrings.Closed, "the prototype starts closed (UITTEXT 364)" );
+			Require( prototype.Name == hud.ItemName( TotemItem ), "the prototype row shows the catalogue Totem name" );
+			ClickAttractionRow( hud, prototypeAttractionId );
+		} );
+		Wait( "prototype row selected", 3 );
+		Do( "the prototype's details are live", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedAttractionId == prototypeAttractionId, "the prototype's row is selected" );
+			var prototype = hud.AttractionItems.Single( row => row.AttractionId == prototypeAttractionId );
+			Require( prototype.WearPercent == 100, "the prototype's state of repair is its live wear gauge (a new ride)" );
+			flow.Level!.PlacedRide!.Start();
+		} );
+		Wait( "prototype opens", 3 );
+		Do( "the prototype's status follows its door", () =>
+		{
+			var hud = flow.Hud!;
+			Require( flow.Level!.PlacedRide!.IsOpen
+				&& ParkAttractionRoster.StatusOf( hud.AttractionItems.Single( row => row.AttractionId == prototypeAttractionId ) ) == UIStrings.Blank,
+				"opening the prototype clears its CLOSED status" );
+			flow.InjectedInput = UiInput.Key( UiKeys.Accept ); // Enter keeps the select-and-close action ([EXT:overview-select-button])
+		} );
+		Wait( "prototype row activated", 3 );
+		Do( "prototype activation selects the Totem", () =>
+		{
+			var hud = flow.Hud!;
+			Require( !hud.AttractionsWindowOpen && hud.InfoArmOpen && hud.SelectedObject == flow.Level!.PlacedRide,
+				"Enter on the prototype's row selects the Totem in the park and closes the window" );
+			Require( hud.Stack.Top == hud.Screen, "row activation returns to the HUD before riding" );
+		} );
+		Wait( "HUD before ride-view gate", 3 );
+		Do( "prototype ride view owns keyboard", () =>
+		{
+			Require( flow.Level!.EnterRideView( reviewedPrototype! ), "the live prototype can enter its ride view" );
+			Input.InjectKeyDown( Key.V, Key.B );
+		} );
+		Wait( "ride-view window key frame", 2 );
+		Do( "ride view blocks window keys", () =>
+		{
+			Require( flow.Level!.RideView != null && !flow.Hud!.VisitorWindowOpen && !flow.Hud.BuyWindowOpen,
+				"injected window keys cannot open a window during the ride view" );
+			flow.Level.ExitRideView();
+			flow.Hud.OpenBuyWindow();
+			Click( flow.Hud.Stack.Top!, "allAttractions" );
+		} );
+		Wait( "attractions reopens over the prototype", 3 );
+		Do( "select the prototype row again", () => ClickAttractionRow( flow.Hud!, prototypeAttractionId ) );
+		Wait( "prototype row selected again", 3 );
+		Do( "delete the prototype", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.SelectedAttractionId == prototypeAttractionId
+				&& hud.Stack.Top!.Find( "deleteAttraction" ) is UiButton { Enabled: true }, "the delete button is enabled for the prototype" );
+			Click( hud.Stack.Top!, "deleteAttraction" );
+		} );
+		Wait( "prototype delete confirmation", 3 );
+		Do( "window keys during prototype confirmation", () => Input.InjectKeyDown( Key.V, Key.B ) );
+		Wait( "confirmation owns keyboard", 2 );
+		Do( "confirmation blocks window keys", () =>
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDeleteAttraction" && !flow.Hud.VisitorWindowOpen,
+				"injected window keys cannot replace the delete confirmation" ) );
+		Do( "prototype delete confirmation", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "confirmDeleteAttraction", "deleting the prototype asks with the ride confirmation" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "prototype removed", 3 );
+		Do( "prototype removed through its own seam", () =>
+		{
+			var hud = flow.Hud!;
+			var level = flow.Level!;
+			Require( level.PlacedRide == null && level.IsPlacing == false, "the window's delete removes the prototype through Level.RemoveRide" );
+			Require( level.Park!.Economy.Objects.Count == objectsBeforePrototype,
+				"the prototype's economy record is sold or removed with it (the object world never owned it)" );
+			Require( level.Guests?.Attractions.Contains( prototypeVisitors! ) != true, "the prototype's guest queue is unregistered" );
+			Require( prototypeVisitors!.Host == null && level.Park.Guests?.TryGetInstance( prototypeAttractionId, out _ ) == false,
+				"the removed prototype releases its guest host and payment association" );
+			var balance = level.Park.Economy.Balance;
+			Require( reviewedPrototype!.IsDeleted && !level.RemoveAttraction( reviewedPrototype )
+				&& level.Park.Economy.Balance == balance && level.Park.Economy.Objects.Count == objectsBeforePrototype,
+				"repeated removal of the deleted prototype cannot sell it twice" );
+			var rows = hud.AttractionItems;
+			Require( rows.Count == ridesBeforePrototype && rows.All( row => row.AttractionId != prototypeAttractionId )
+				&& hud.SelectedAttractionId == rows[0].AttractionId, "the sold prototype leaves the list and the selection heals" );
+			Log.Trace( "Front-end smoke: the developer prototype Totem was listed, activated and removed through the attractions window." );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "attractions closes after the prototype", 3 );
+		Do( "buy window closes after attractions", () => Click( flow.Hud!.Stack.Top!, "exit" ) );
+		Wait( "buy closed before Escape", 3 );
+		// The window keys through the real dispatch: Input.InjectKeyDown queues a physical key, the frame's
+		// button rebuild consumes it and the HUD shortcut handler sees Input.Pressed exactly once per tap
+		// (the same path a real keyboard takes; a Wait between taps gives the one-frame release).
+		Do( "press the All Visitors key", () => Input.InjectKeyDown( Key.V ) );
+		Wait( "visitors key frame", 2 );
+		Do( "the visitors key opens the window", () =>
+			Require( flow.Hud!.VisitorWindowOpen && flow.Hud.Stack.Top?.Name == "visitors",
+				"the injected V opens the All Visitors window through Input.Pressed" ) );
+		Do( "press the All Visitors key again", () => Input.InjectKeyDown( Key.V ) );
+		Wait( "visitors key frame again", 2 );
+		Do( "the visitors key closes the window", () =>
+			Require( !flow.Hud!.VisitorWindowOpen, "a second V toggles the window closed" ) );
+		Do( "press the Buy Attractions key", () => Input.InjectKeyDown( Key.B ) );
+		Wait( "buy key frame", 2 );
+		Do( "the buy key opens the window", () =>
+			Require( flow.Hud!.BuyWindowOpen, "the injected B opens the buy window through Input.Pressed" ) );
+		Do( "press the Buy Attractions key again", () => Input.InjectKeyDown( Key.B ) );
+		Wait( "buy key frame again", 2 );
+		Do( "the buy key closes the window", () =>
+			Require( !flow.Hud!.BuyWindowOpen, "a second B toggles the buy window closed" ) );
 		Do( "closed state", () =>
 		{
 			Require( !secondObject!.IsOpen, "HUD door closes the selected original object" );
+			var tool = flow.Level!.CellTool;
+			Require( !tool.IsActive || tool.Mode == CellToolMode.Queue, "only the queue tool may follow a catalogue placement (UI-031)" );
+			queueToolAfterSecond = tool.IsActive;
+			Log.Trace( $"Front-end smoke: {flow.Hud!.ItemName( secondItem! )} {(queueToolAfterSecond ? "left the queue tool active" : "left no tool active")} after placement." );
+			flow.InjectedInput = UiInput.Key( UiKeys.Back );
+		} );
+		Wait( "first Escape", 3 );
+		Do( "Escape leaves the queue tool", () =>
+		{
+			if ( !queueToolAfterSecond )
+				return;
+			// tp.exe 0x40c180: Escape inside the path/queue tool ends the tool; only the next Escape opens the pause menu.
+			Require( !flow.Level!.CellTool.IsActive && !flow.Hud!.Paused, "Escape ends the queue tool before it opens the pause menu (tp.exe 0x40c180)" );
 			flow.InjectedInput = UiInput.Key( UiKeys.Back );
 		} );
 		Wait( "pause opens", 3 );
+		long? pausedTick = null;
+		GameSpeed? pausedSpeed = null;
+		Do( "window keys while paused", () =>
+		{
+			pausedTick = flow.Level!.Park?.Economy.Tick;
+			pausedSpeed = flow.Hud!.Status.Speed;
+			Input.InjectKeyDown( Key.V, Key.B );
+		} );
+		Wait( "pause owns keyboard", 2 );
+		Do( "pause blocks window keys", () =>
+			Require( flow.Hud!.Paused && flow.Hud.Stack.Top?.Name == "pause"
+				&& !flow.Hud.VisitorWindowOpen && !flow.Hud.BuyWindowOpen, "injected window keys leave the pause menu in control" ) );
+		// The park-resume lane cannot snapshot the advisor while a response is being spoken (the speech has no
+		// snapshot seam), so the save below waits for the end of any active advisor speech first.
+		WaitForAdvisorSpeech();
 		Do( "pause menu", () =>
 		{
 			Require( flow.Hud!.Paused, "Escape opens the pause menu" );
+			// The original's pause menu pauses the game (Mac 0x10198514 → 0x10110518): the park clock stands still, the speed setting is kept.
+			Require( flow.Level!.SimulationTimeScale == 0 && flow.Level.Park?.Economy.Tick == pausedTick && flow.Hud.Status.Speed == pausedSpeed,
+				"the pause menu stops the park simulation and keeps the speed setting" );
 			var capture = CaptureFrame( "pause.png" );
-			VerifyText( capture, flow.Strings[UIStrings.Paused], "PAUSED title" );
+			// [BIN:TPW-EXE:0x48c830 pause menu] a frameless list of text lines: no window and no title
+			Require( flow.Hud.Stack.Top!.Find( "window" ) == null && flow.Hud.Stack.Top.Find( "title" ) == null, "the pause menu has no window frame and no title" );
+			VerifyText( capture, flow.Strings[UIStrings.ResumeGame], "Resume Game" );
+			VerifyText( capture, flow.Strings[UIStrings.PublishPark], "Publish Park" );
 			VerifyText( capture, flow.Strings[UIStrings.ExitToLobby], "Exit To Lobby" );
 			Click( flow.Hud.Stack.Top!, nameof( UIStrings.Save ) );
 		} );
-		Wait( "save refused", 3 );
-		Do( "save refused", () =>
+		Wait( "save completes", 3 );
+		Do( "save completes", () =>
 		{
-			Require( !flow.Hud!.Paused && flow.Hud.Messages.Contains( flow.Strings.Extra( OpenTpwText.OriginalParkReadOnly ) ), "original parks report that they cannot be saved" );
+			// The park-resume lane saves a front-end-started original-level park as an own-format world save
+			// (GameFlow.Resume.cs SaveCurrentPark); the old read-only refusal is gone.
+			var savedPath = Path.Combine( temporaryDirectory, $"opentpw-{flow.Level!.LevelName}-world.json" );
+			Log.Trace( $"Front-end smoke: save check paused={flow.Hud!.Paused} file={File.Exists( savedPath )} ({savedPath}) messages=[{string.Join( " | ", flow.Hud.Messages )}]" );
+			Require( !flow.Hud!.Paused && File.Exists( savedPath ) && flow.Hud.Messages.Contains( flow.Strings.Extra( OpenTpwText.ParkSaved ) ),
+				"the pause-menu Save writes the own-format world save and reports it" );
 			flow.Hud.OpenPauseMenu();
 		} );
 		Wait( "pause again", 3 );
-		Do( "exit to lobby", () => Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) ) );
+		// The online globe over a park: it replaces the park and the HUD, and closing it restores the park camera.
+		CameraMode? parkCamera = null;
+		Do( "online globe in the park", () =>
+		{
+			parkCamera = Camera.Mode;
+			flow.ShowOnline( flow.Hud!.Stack );
+		} );
+		Wait( "park globe renders", 3 );
+		Do( "park globe", () =>
+		{
+			Require( flow.Globe is { Visible: true } && Camera.Mode is GlobeCameraMode, "Go Online in a park shows the globe with its camera" );
+			CaptureFrame( "online-park-globe.png" );
+			flow.Hud!.Stack.Pop();
+		} );
+		Wait( "park returns", 3 );
+		var parkLanguage = PlanLanguageInPark();
+		Do( "exit to lobby", () =>
+		{
+			Require( ReferenceEquals( Camera.Mode, parkCamera ) && flow.Globe is { Visible: false }, "closing the globe restores the park's camera" );
+			// Capture the current generations: lazy pack downloads may have replaced individual atlas textures.
+			firstParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
+			firstParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
+			Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
+		} );
 		Wait( "lobby again", 20 );
 		Do( "back in lobby", () =>
 		{
 			Require( flow.Level == null && flow.Menu != null && flow.Lobby != null, "Exit To Lobby returns to the front end" );
+			Require( RendererAssetsReleased( firstParkHeadAssets ), "exit releases every head atlas, material and shader from the first park" );
+			Require( RendererAssetsReleased( firstParkGuestAssets ), "exit releases every guest atlas, material and shader from the first park" );
+			Log.Trace( "Guest lifecycle: first park exit released all ten owned guest assets." );
+			if ( parkLanguage != null )
+				Require( string.Equals( GameLanguage.Current.Name, parkLanguage, StringComparison.OrdinalIgnoreCase ) && flow.Strings.Language == parkLanguage,
+					"a language chosen in the park applies once the park is left" );
 			Require( flow.Menu!.Selected.Level == "jungle", "lobby returns to the island of the park" );
 			CaptureFrame( "frontend-return.png" );
+			flow.StartPark( "jungle", GameMode.InstantAction );
+		} );
+		Wait( "instant action starts", 3 );
+		Do( "instant action mode before lobby", () =>
+		{
+			Require( flow.StartKind == ParkStartKind.InstantAction && flow.Level!.Park!.Economy.Mode == ParkGameMode.InstantAction,
+				"selected Instant Action reaches the park economy" );
+			secondParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
+			secondParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();
+			Require( secondParkGuestAssets.Length == 10 && secondParkGuestAssets.All( Asset.All.Contains ), "a second park owns a fresh guest atlas, material and shader set" );
+			flow.ShowFrontEnd( "jungle" );
+			Require( secondParkHeadAssets.All( asset => !Asset.All.Contains( asset ) ), "second park exit also removes every owned head asset" );
+			Require( secondParkGuestAssets.All( asset => !Asset.All.Contains( asset ) ), "second park exit also removes every owned guest asset" );
+		} );
+		Wait( "instant action returns to lobby", 3 );
+		Do( "load original park after Instant Action", () =>
+		{
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ) );
+			builtInOneGo = (flow.Level!.ComputeStateHash(), Entity.All.Count, flow.Level.Objects.Objects.Count);
+		} );
+		Wait( "original park loads", 3 );
+		Do( "loaded park is the reference start", () =>
+		{
+			Require( RendererAssetsReleased( secondParkHeadAssets ), "second park exit completes scheduled native head asset disposal" );
+			Require( RendererAssetsReleased( secondParkGuestAssets ), "second park exit completes scheduled native guest asset disposal" );
+			Log.Trace( "Guest lifecycle: second park exit released all ten owned guest assets." );
+			Require( flow.StartKind == ParkStartKind.OriginalSaveReference && flow.Level!.Park!.Economy.Mode == ParkGameMode.FullSimulation
+				&& flow.Level.Park.Economy.Settings.IsEasy && flow.Level.OriginalPark!.Save != null,
+				"Load Park opens the shipped save as the reference start whatever mode was chosen before (UI-041)" );
+			flow.ShowFrontEnd( "jungle" );
+		} );
+		Wait( "lobby before the park built over frames", 3 );
+		Do( "start a park over frames that a later transition replaces", () =>
+		{
+			lobbyBeforeAbandon = (Entity.All, Entity.All.Count, Asset.All.Count( asset => asset is Material or Shader ));
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
+		} );
+		Wait( "the replaced park is being built", 3 );
+		Do( "a transition queued during the build replaces it", () =>
+		{
+			Require( flow.BuildingPark, "the park is still being built after three frames" );
+			flow.Queue( () => flow.ShowFrontEnd( "jungle" ) );
+			Require( !flow.BuildingPark && flow.Level == null && ReferenceEquals( Entity.All, lobbyBeforeAbandon.Entities )
+				&& Entity.All.Count == lobbyBeforeAbandon.Count,
+				"dropping the build leaves the lobby's own entities current and untouched" );
+			Require( Asset.All.Count( asset => asset is Material or Shader ) == lobbyBeforeAbandon.Materials,
+				"the dropped park's materials and shaders are released" );
+		} );
+		Wait( "the queued transition runs", 3 );
+		Do( "load the original park over frames", () =>
+		{
+			flow.Transitioned += RecordBuiltOverFrames;
+			flow.LoadPark( new ParkLoadEntry( "jungle", 0, false ), overFrames: true );
+			Require( flow.BuildingPark && flow.Level == null && flow.Lobby != null, "a park built over frames leaves the lobby running" );
+		} );
+		steps.Enqueue( ("the park built over frames is entered", () =>
+		{
+			if ( flow.BuildingPark )
+			{
+				framesBuilding++;
+				Require( flow.Level == null && flow.Lobby != null && Entity.All.Count > 0, "the lobby stays current while the park is built" );
+				return false;
+			}
+			return true;
+		}) );
+		Do( "the park built over frames is the park built in one go", () =>
+		{
+			flow.Transitioned -= RecordBuiltOverFrames;
+			Require( framesBuilding >= 2, $"the park is built over several frames ({framesBuilding})" );
+			Require( builtOverFrames == builtInOneGo,
+				$"built over frames: hash, entities and objects {builtOverFrames} equal the park built in one go {builtInOneGo}" );
+			Require( flow.Level != null && flow.Hud != null && flow.Lobby == null && flow.StartKind == ParkStartKind.OriginalSaveReference,
+				"the park built over frames is entered with its HUD, and the lobby is gone" );
+			Log.Trace( $"Park built over {framesBuilding} frames: hash {builtOverFrames.Hash:X16}, {builtOverFrames.Entities} entities, {builtOverFrames.Objects} objects, as built in one go." );
 			var park = OriginalPark.Load( "jungle" );
 			var snapshot = ParkSnapshotBuilder.FromOriginal( park, null );
 			readOnlyVisit = ParkSharing.PrepareVisit( ParkSharing.CreatePackage( snapshot, "HUD read-only smoke", "", "OpenTPW", park.Map ) );
+			// The own-format world save of the earlier pause-menu Save is legitimate; the visit must add nothing.
+			visitBaselineFiles = Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).ToArray();
 			flow.StartLevel( "jungle", original: true, developerPanels: false, visit: readOnlyVisit );
 		} );
 		Wait( "read-only visit loads", 40 );
@@ -298,6 +1310,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			Require( level.IsReadOnlyVisit && level.Park == null, "visited parks have no writable economy" );
 			visitedCount = level.Objects.Objects.Count;
 			visitedObject = level.Objects.Objects.First( item => item.Runtime.IsAttraction && !item.Entry.IsFixedItem );
+			var signed = level.Objects.Objects.Where( item => item.Sign != null ).ToArray();
+			Require( signed.Length > 0 && signed.All( item => item.Sign!.TextPixelCount > 0 || item.Sign.Line1.Length == 0 ), "the visited park's rides show their own rendered sign text, not the SIGN1/SIGN2 placeholders" );
+			Log.Trace( $"Ride signs in the visited park: {string.Join( ", ", signed.Select( item => $"{item.Entry.ArchiveName}: {item.Sign!.Line1} / {item.Sign.Line2}" ) )}" );
 			visitedOpen = visitedObject.IsOpen;
 			hud.BeginPlacing( hud.Catalog.GetItems( BuildCategory.Rides ).First() );
 			Require( level.BuildEntry == null && !level.IsPlacing, "read-only HUD refuses direct placement requests" );
@@ -305,6 +1320,55 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			hud.SelectObject( visitedObject );
 		} );
 		Wait( "read-only info renders", 3 );
+		// The overview windows during a read-only visit: the buy window is disabled while visiting, so the
+		// attractions window opens through the staff window's entry (the original staff window navigated
+		// to it); the visited park is listed, sorted and scrolled, and the delete refuses at the handler.
+		Do( "visit staff window opens", () => flow.Hud!.OpenStaffWindow() );
+		Wait( "visit staff window", 3 );
+		Do( "open visit attractions", () => Click( flow.Hud!.Stack.Top!, "allAttractions" ) );
+		Wait( "visit attractions renders", 3 );
+		Do( "visit attractions lists the park", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.AttractionsWindowOpen && hud.Stack.Top?.Name == "attractions", "the staff window's all-attractions button opens the window during a visit" );
+			visitAttractionRows = hud.AttractionItems.Count;
+			visitRowNames = hud.AttractionItems.Select( row => row.Name ).ToArray();
+			// The reference save carries one scripted ride besides its features and fixed items.
+			Require( visitAttractionRows >= 1, "the visited park's rides are listed" );
+			var capture = CaptureFrame( "visit-attractions.png" );
+			VerifyText( capture, flow.Strings[UIStrings.AllRides], "All Rides title in the visit" );
+			Click( hud.Stack.Top!, "headerName" );
+		} );
+		Wait( "visit attractions header chosen", 3 );
+		Do( "visit attractions header sorted once", () => Require( flow.Hud!.AttractionItems.Count > 0, "the sorted attraction list is not empty" ) );
+		Wait( "visit attractions sorted", 3 );
+		Do( "visit attractions sorted", () =>
+		{
+			var hud = flow.Hud!;
+			var names = hud.AttractionItems.Select( row => row.Name ).ToArray();
+			Require( visitRowNames.Distinct().Count() == visitRowNames.Length
+				? names.SequenceEqual( visitRowNames.Reverse() )
+				: string.CompareOrdinal( names[0], names[^1] ) >= 0, "the first header press on the initial column reverses the list order" );
+			Click( hud.Stack.Top!, "scrollDown" );
+		} );
+		Wait( "visit attractions scrolled", 3 );
+		Do( "visit attractions read-only refusal", () =>
+		{
+			var hud = flow.Hud!;
+			Log.Trace( $"Front-end smoke: the visit's attractions list scrolled to row {hud.AttractionFirstRow} of {visitAttractionRows} rides." );
+			Require( hud.SelectedAttractionId != 0, "the visited park's list keeps a selection" );
+			Require( hud.Stack.Top!.Find( "deleteAttraction" ) is UiButton { Enabled: false }, "the delete control is disabled during a read-only visit" );
+			// Invoke the handler directly: the mutation boundary must refuse even programmatic calls.
+			Require( !flow.Level!.RemoveAttraction( visitedObject! ) && !visitedObject!.IsDeleted
+				&& flow.Level.Objects.Objects.Count == visitedCount, "the Level removal boundary refuses a read-only visit" );
+			( (UiButton)hud.Stack.Top.Find( "deleteAttraction" )! ).Clicked!();
+			Require( flow.Level!.Objects.Objects.Count == visitedCount && hud.Stack.Top?.Name == "attractions",
+				"the visit's delete handler refuses to sell and opens no confirmation" );
+			Click( hud.Stack.Top!, "exit" );
+		} );
+		Wait( "visit attractions closes", 3 );
+		Do( "visit staff closes", () => Click( flow.Hud!.Stack.Top!, "exit" ) );
+		Wait( "visit staff closed", 3 );
 		Do( "read-only object controls", () =>
 		{
 			var hud = flow.Hud!;
@@ -316,19 +1380,123 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			erase.Clicked!();
 			Require( visitedObject!.IsOpen == visitedOpen && !visitedObject.IsDeleted && flow.Level!.Objects.Objects.Count == visitedCount, "read-only callbacks neither change nor remove objects" );
 			hud.OpenPauseMenu();
-			var save = (UiButton)hud.Stack.Top!.Find( nameof( UIStrings.Save ) )!;
-			Require( !save.Enabled, "visit save control is disabled" );
-			save.Clicked!();
-			Require( hud.Messages.Contains( OnlineStrings.Get( OnlineLabel.ReadOnlyVisit ) ) && !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Any(), "read-only save callback refuses writes" );
+			// The online game type's pause menu (STP-PPC 0x10197D90) offers no Save or Load during a visit.
+			Require( hud.Stack.Top!.Find( nameof( UIStrings.Save ) ) == null && hud.Stack.Top.Find( nameof( UIStrings.Load ) ) == null, "the visit pause menu has no save or load" );
+			Require( !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Except( visitBaselineFiles ).Any(), "a visit writes no save" );
 			CaptureFrame( "read-only-visit.png" );
-			Device.WaitForIdle();
-			completed = true;
-			Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames, lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, pause menu, exit to lobby, read-only visit build/open/delete/save guards." );
-			GameFlow.Quit();
+			Click( hud.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );
+		Wait( "lobby after visit", 20 );
+		Do( "enter park again", () =>
+		{
+			Require( flow.Level == null && flow.Menu?.Selected.Level == "jungle", "the visit exits to the jungle island" );
+			Click( flow.Menu!.Main, "enterPark" );
+		} );
+		Wait( "saved park offered", 3 );
+		Do( "a saved jungle park offers to continue it", () =>
+		{
+			// The pause-menu save earlier left an own jungle save: entering the island now offers it (FrontEndMenu.ShowThemeStart).
+			Require( flow.Menu!.Stack.Top?.Name == "themeStart", "entering an island with a saved park offers to continue it" );
+			// the manual Continue, then the automatic Continue when the last exit left a checkpoint, New park and Back: New is next to last
+			var themeStart = flow.Menu.Stack.Top!;
+			var choices = Enumerable.Range( 0, 8 ).Count( index => themeStart.Find( $"choice{index}" ) != null );
+			Click( themeStart, $"choice{choices - 2}" );
+		} );
+		Wait( "game mode again", 3 );
+		Do( "choose Instant Action", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "gameMode", "enter park asks for the game mode again" );
+			Click( flow.Menu.Stack.Top!, "instantAction" );
+		} );
+		Wait( "Instant Action park loads", 40 );
+		Do( "Instant Action start", PlayInstantAction );
+	}
+
+	/// <summary>
+	/// The Instant Action start from the menu: Easy_ balance and the shipped jungle seed with its imported bank, turn
+	/// and staff (research comes from the seed's own researcher), and the loan, research effort, upgrade, ticket and
+	/// challenge gates (docs/ECONOMY.md, "Game modes").
+	/// </summary>
+	private void PlayInstantAction()
+	{
+		var level = flow.Level!;
+		var economy = level.Park!.Economy;
+		Require( flow.StartKind == ParkStartKind.InstantAction && economy.Mode == ParkGameMode.InstantAction && economy.Features == ParkModeFeatures.For( ParkGameMode.InstantAction ), "Instant Action button starts an Instant Action park" );
+		Require( economy.Settings.IsEasy && level.OriginalPark!.Save != null && level.Park.Import is { ImportedObjects: > 0 }, "Instant Action jungle uses the Easy_ balance and imports the Easymode seed" );
+		var seed = level.OriginalPark!.Save!;
+		var bank = seed.Economy.Bank;
+		// The park has run a few frames since it started: the month's opening balance and the turn show the import.
+		Require( economy.Ledger.CurrentOpeningBalance == bank.Balance && economy.EntranceFee == bank.AdmissionFee && economy.Ledger.History.Count == 0
+			&& economy.Turn >= seed.World.Variables.GameTick, "the seed's bank balance, admission fee and park turn are imported" );
+		Require( economy.Staff.Members.Count == seed.Staff.Count && economy.Staff.OfType( StaffType.Researcher ).Any(), "the seed's staff, including its researcher, are imported" );
+		var capture = CaptureFrame( "instant-action-hud.png" );
+		VerifyText( capture, flow.Hud!.MoneyText, "Instant Action HUD bank balance" );
+		Require( !economy.AvailableLoans.Any(), "Instant Action offers no loans" );
+		Refused( () => economy.TakeLoan( 0 ), "taking a loan" );
+		Refused( () => economy.SetResearchEffort( ResearchCategory.Ride, 0 ), "changing research effort" );
+		var seeded = economy.Objects.First();
+		Require( economy.TryBuyUpgrade( seeded.Id ) == ParkEconomy.PurchaseResult.NotAvailableInInstantAction, "upgrades are refused" );
+		var completedItems = economy.Research.Completed.Count;
+		var progress = economy.Research.ProgressEntries.ToArray();
+		var start = economy.Date;
+		economy.AdvanceDays( 60 );
+		Require( economy.Research.Completed.Count > completedItems || !economy.Research.ProgressEntries.SequenceEqual( progress ), "research advances through the seed's imported researcher" );
+		Require( economy.Objectives.GoldenTickets.Count == 0 && economy.Objectives.Current == null, "no golden-ticket checks or challenges in Instant Action" );
+		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
+		Device.WaitForIdle();
+		completed = true;
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({speechFrames} of them waiting for advisor speech), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
+		GameFlow.Quit();
+	}
+
+	private static void Refused( Action action, string what )
+	{
+		try
+		{
+			action();
+		}
+		catch ( InvalidOperationException )
+		{
+			return;
+		}
+		Require( false, $"{what} is refused in Instant Action" );
 	}
 
 	private int stepState;
+	// Frames spent waiting for real-time advisor speech; they do not count against MaximumFrames.
+	private int speechFrames;
+	private System.Diagnostics.Stopwatch? speechWait;
+	private TimeSpan speechAllowance;
+	// Room beyond the clip's remaining length for the audio queue to drain and the frame that notices it.
+	private static readonly TimeSpan SpeechSlack = TimeSpan.FromSeconds( 5 );
+
+	/// <summary>
+	/// Waits until no advisor response is being spoken. The speech plays in real time on the audio clock, so the
+	/// frames it takes depend on the display's refresh rate (with the frame cap off, a 120 Hz screen draws twice the
+	/// frames of a 60 Hz one during the 28.6 s English Jungle welcome line). Those frames are left out of the frame
+	/// budget, which bounds the test's own progress; the wait is bounded in time by the remaining clip instead.
+	/// </summary>
+	private void WaitForAdvisorSpeech() => steps.Enqueue( ("advisor speech ends", () =>
+	{
+		if ( flow.Advisor?.IsSpeechActive != true )
+		{
+			if ( speechWait != null )
+				Log.Trace( $"Front-end smoke: advisor speech ended after {speechWait.Elapsed.TotalSeconds:F2} s of waiting ({speechFrames} frames outside the frame budget)." );
+			speechWait = null;
+			return true;
+		}
+		if ( speechWait == null )
+		{
+			var presentation = flow.Advisor.Presentation;
+			var remaining = presentation == null ? TimeSpan.Zero : presentation.Duration - presentation.Position;
+			speechAllowance = (remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero) + SpeechSlack;
+			speechWait = System.Diagnostics.Stopwatch.StartNew();
+			Log.Trace( $"Front-end smoke: waiting {remaining.TotalSeconds:F2} s for the advisor speech ({presentation?.ClockSource ?? "no presentation"})." );
+		}
+		Require( speechWait.Elapsed < speechAllowance, $"the advisor speech ends within its remaining length plus {SpeechSlack.TotalSeconds:F0} s ({speechAllowance.TotalSeconds:F2} s)" );
+		speechFrames++;
+		return false;
+	}) );
 
 	private void Wait( string name, int frames ) => steps.Enqueue( (name, () =>
 	{
@@ -345,13 +1513,133 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
-		Require( frame < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
+		Require( frame - speechFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
 		while ( steps.Count > 0 && steps.Peek().Step() )
 		{
 			steps.Dequeue();
 			if ( flow.InjectedInput != null )
 				break;
 		}
+	}
+
+	/// <summary>
+	/// [EXT:live-language] Options → OpenTPW → language row → OK switches the language at once: the front end and the
+	/// reopened options show the other language's text, and switching back restores the first one. Skipped with one language.
+	/// </summary>
+	private void PlanLanguageSwitch()
+	{
+		var languages = GameLanguage.Choosable();
+		if ( languages.Count < 2 )
+		{
+			Log.Trace( "Front-end smoke test: language switch skipped, only one language is available." );
+			return;
+		}
+		var first = GameLanguage.Current.Name;
+		var index = languages.ToList().FindIndex( name => string.Equals( name, first, StringComparison.OrdinalIgnoreCase ) );
+		var other = languages[(index + 1) % languages.Count];
+		var firstStrings = flow.Strings;
+		foreach ( var (from, to) in new[] { (first, other), (other, first) } )
+		{
+			Do( $"language {to}: open lobby menu", () =>
+			{
+				if ( flow.Menu!.Stack.Top?.Name == "lobby" )
+					flow.Menu.ShowMenu();
+			} );
+			Wait( $"language {to}: lobby menu opens", 2 );
+			Do( $"language {to}: open options", () =>
+			{
+				if ( flow.Menu!.Stack.Top?.Name == "lobbyMenu" )
+					Click( flow.Menu.Stack.Top, "options" );
+			} );
+			Wait( $"language {to}: options open", 3 );
+			Do( $"language {to}: OpenTPW page", () => Click( flow.Menu!.Stack.Top!, "openTpw" ) );
+			Wait( $"language {to}: OpenTPW page opens", 3 );
+			// The row cycles forward: one step to the next language, the rest of the way round to come back.
+			var clicks = to == other ? 1 : languages.Count - 1;
+			for ( var click = 0; click < clicks; click++ )
+			{
+				Do( $"language {to}: cycle {click + 1}", () =>
+				{
+					var page = flow.Menu!.Stack.Top!;
+					Require( page.Name == "openTpwOptions", "the OpenTPW options page opens" );
+					var row = page.Elements.OfType<UiButton>().FirstOrDefault( element => element.Id == "language" );
+					Require( row != null, "the OpenTPW page has a language row" );
+					flow.InjectedInput = UiInput.Click( row!.ScreenRect( Context.Canvas ).Center );
+				} );
+				Wait( $"language {to}: row changes {click + 1}", 3 );
+			}
+			Do( $"language {to}: back to the original page", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+			Wait( $"language {to}: original page", 3 );
+			Do( $"language {to}: accept", () =>
+			{
+				Require( flow.Menu!.Stack.Top?.Name == "options", "Back returns to the original options page" );
+				Require( GameLanguage.Current.Name == from, "the language changes only when the options are accepted" );
+				Click( flow.Menu.Stack.Top!, "ok" );
+			} );
+			Wait( $"language {to}: switched", 5 );
+			Do( $"language {to}: verify", () =>
+			{
+				Require( string.Equals( GameLanguage.Current.Name, to, StringComparison.OrdinalIgnoreCase ), $"the language is now {to}" );
+				Require( flow.Menu!.Stack.Top?.Name == "options", "the options reopen in the new language" );
+				Require( flow.Strings.Language == GameLanguage.Current.Name, "the string table follows the language" );
+				var capture = CaptureFrame( $"language-{to.ToLowerInvariant()}.png" );
+				VerifyText( capture, flow.Strings[UIStrings.GameOptions], $"Game Options title in {to}" );
+				// The tables of the two languages must differ somewhere visible, or this check would pass on a stale table.
+				var shown = new[] { UIStrings.GameOptions, UIStrings.Options, UIStrings.ExitToLobby, UIStrings.Paused };
+				if ( to == other )
+					Require( shown.Any( id => flow.Strings[id] != firstStrings[id] ), $"{first} and {to} differ in the checked labels" );
+				flow.InjectedInput = UiInput.Key( UiKeys.Back );
+			} );
+			Wait( $"language {to}: options closed", 3 );
+		}
+		Do( "language restored", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "lobby", "the options close after the switch back" );
+			Require( string.Equals( GameLanguage.Current.Name, first, StringComparison.OrdinalIgnoreCase ), "the first language is back" );
+		} );
+	}
+
+	/// <summary>
+	/// [EXT:live-language] In a park the options keep the language until the park is left, and say so; returns the language
+	/// expected back in the lobby (null with one language).
+	/// </summary>
+	private string? PlanLanguageInPark()
+	{
+		var languages = GameLanguage.Choosable();
+		if ( languages.Count < 2 )
+			return null;
+		var first = GameLanguage.Current.Name;
+		var other = languages[(languages.ToList().FindIndex( name => string.Equals( name, first, StringComparison.OrdinalIgnoreCase ) ) + 1) % languages.Count];
+		Do( "park language: options", () => Click( flow.Hud!.Stack.Top!, nameof( UIStrings.Options ) ) );
+		Wait( "park language: options open", 3 );
+		Do( "park language: OpenTPW page", () => Click( flow.Hud!.Stack.Top!, "openTpw" ) );
+		Wait( "park language: OpenTPW page opens", 3 );
+		Do( "park language: cycle", () =>
+		{
+			var row = flow.Hud!.Stack.Top!.Elements.OfType<UiButton>().FirstOrDefault( element => element.Id == "language" );
+			Require( row != null, "the OpenTPW page has a language row in the park" );
+			flow.InjectedInput = UiInput.Click( row!.ScreenRect( Context.Canvas ).Center );
+		} );
+		Wait( "park language: row changes", 3 );
+		Do( "park language: back", () => flow.InjectedInput = UiInput.Key( UiKeys.Back ) );
+		Wait( "park language: original page", 3 );
+		Do( "park language: accept", () => Click( flow.Hud!.Stack.Top!, "ok" ) );
+		Wait( "park language: notice", 3 );
+		Do( "park language: notice shown", () =>
+		{
+			Require( flow.Hud!.Stack.Top?.Name == "languageAfterPark", "the options say the language follows when the park is left" );
+			Require( string.Equals( GameLanguage.Current.Name, first, StringComparison.OrdinalIgnoreCase ), "the park keeps its language" );
+			VerifyText( CaptureFrame( "language-after-park.png" ), flow.Strings.Extra( OpenTpwText.LanguageAfterPark ), "language notice" );
+			Click( flow.Hud.Stack.Top!, "choice0" );
+		} );
+		Wait( "park language: notice closed", 3 );
+		Do( "park language: pause menu", () =>
+		{
+			if ( flow.Hud!.Stack.Top?.Name != "pause" )
+				flow.Hud.OpenPauseMenu();
+		} );
+		Wait( "park language: pause menu again", 3 );
+		return other;
 	}
 
 	private void Click( UiScreen screen, string id )
@@ -365,21 +1653,51 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		var hud = flow.Hud!;
 		hud.SelectCategory( item.Category );
-		var index = hud.Catalog.GetItems( item.Category ).ToList().IndexOf( item );
-		hud.ChangeBuildPage( index / 3 );
+		hud.SelectBuyItem( hud.BuyItems.ToList().IndexOf( item ) );
 	}
 
+	/// <summary>Clicks the list row of <paramref name="item"/>; a click on the already selected row buys it.</summary>
 	private void ClickItem( BuildItem item )
 	{
-		var index = flow.Hud!.VisibleBuildItems.ToList().IndexOf( item );
-		Require( index >= 0, "requested catalogue item is on the visible page" );
-		Click( flow.Hud.Screen, $"item{index}" );
+		var hud = flow.Hud!;
+		Require( hud.BuyWindowOpen, "the buy window is open" );
+		hud.SelectBuyItem( hud.BuyItems.ToList().IndexOf( item ) );
+		var visible = hud.SelectedBuyIndex - hud.BuyFirstRow;
+		Require( visible >= 0 && visible < ParkHud.BuyVisibleRows, "the requested catalogue item is among the visible rows" );
+		flow.InjectedInput = UiInput.Click( Context.Canvas.Map( new System.Numerics.Vector2( 1240, 427 + (visible + 0.5f) * ParkHud.BuyRowHeight ), UiAnchor.Center ) );
+	}
+
+	/// <summary>Clicks the attractions-window row of <paramref name="attractionId"/>; a right click locates it.</summary>
+	private void ClickAttractionRow( ParkHud hud, int attractionId, bool right = false )
+	{
+		Require( hud.AttractionsWindowOpen, "the attractions window is open" );
+		var index = hud.AttractionItems.ToList().FindIndex( row => row.AttractionId == attractionId );
+		var visible = index - hud.AttractionFirstRow;
+		Require( index >= 0 && visible >= 0 && visible < ParkHud.StaffVisibleRows, "the requested attraction is among the visible rows" );
+		var point = Context.Canvas.Map( new System.Numerics.Vector2( 1240, 441 + (visible + 0.5f) * ParkHud.StaffRowHeight ), UiAnchor.Center );
+		flow.InjectedInput = right ? UiInput.Idle( point ) with { RightPressed = true } : UiInput.Click( point );
 	}
 
 	private static (int X, int Y) FindObjectSite( Level level, ObjectCatalogEntry entry ) =>
 		Enumerable.Range( 0, level.Objects.Grid.Width * level.Objects.Grid.Height )
 			.Select( index => (X: index % level.Objects.Grid.Width, Y: index / level.Objects.Grid.Width) )
 			.First( cell => level.CheckObject( entry, cell.X, cell.Y, level.BuildRotation ) == OriginalPlacementResult.Allowed );
+
+	/// <summary>
+	/// Places the developer prototype Totem at the first buildable cell centre: <see cref="Level.PlaceRide"/>
+	/// itself refuses overlapping sites, so the first call that succeeds is the site (the park keeps enough
+	/// free cells beside its catalogue objects).
+	/// </summary>
+	private static void PlacePrototypeAtFirstFreeSite( Level level )
+	{
+		var field = level.OriginalPark!.Heightfield;
+		for ( var index = 0; index < field.CellCountX * field.CellCountZ; index++ )
+		{
+			if ( level.PlaceRide( OriginalParkPlacement.GetCellCenter( field, index % field.CellCountX, index / field.CellCountX ) ) )
+				return;
+		}
+		Require( false, "no free site for the developer prototype" );
+	}
 
 	/// <summary>
 	/// Finds the glyphs drawn for <paramref name="text"/> in the last UI batch and requires every fully
@@ -389,55 +1707,43 @@ internal sealed class FrontEndSmokeTest : IDisposable
 	{
 		var batch = Context.Batch;
 		// The topmost (last drawn) occurrence: a dimmed menu button can carry the same text as a window title.
-		var drawn = batch.Texts.Where( entry => entry.Text == text ).TakeLast( 1 ).ToList();
+		var drawn = batch.TextDraws.Where( entry => entry.Text == text ).TakeLast( 1 ).ToList();
 		Require( drawn.Count > 0, $"{what} ('{text}') is drawn" );
 		var checkedTexels = 0;
 		var matching = 0;
-		foreach ( var (rect, _) in drawn )
+		foreach ( var entry in drawn )
 		{
-			foreach ( var glyph in batch.Glyphs.Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow && Overlaps( rect, glyph ) ) )
+			foreach ( var glyph in batch.Glyphs.Skip( entry.FirstGlyph ).Take( entry.GlyphCount ).Where( glyph => glyph.Color.A == 255 && glyph.Color != UiColors.Shadow ) )
 			{
-				for ( var row = 0; row < glyph.Height / glyph.Scale; row++ )
+				// The renderer draws the smoothed coverage one texel per pixel (FontSmoothing).
+				var factor = FontSmoothing.Factor( glyph.Atlas, glyph.Scale );
+				if ( factor != glyph.Scale )
+					continue;
+				var coverage = FontSmoothing.Coverage( glyph.Atlas, factor );
+				var stride = glyph.Atlas.Width * factor;
+				for ( var row = 0; row < glyph.Height; row++ )
 				{
-					for ( var column = 0; column < glyph.Width / glyph.Scale; column++ )
+					for ( var column = 0; column < glyph.Width; column++ )
 					{
-						if ( glyph.Atlas.Alpha[(glyph.AtlasY + row) * glyph.Atlas.Width + glyph.AtlasX + column] != 255 )
+						if ( coverage[(glyph.AtlasY * factor + row) * stride + glyph.AtlasX * factor + column] != 255 )
 							continue;
-						// Every output pixel of the texel's scale×scale block (pixel-exact integer scaling).
-						var inside = true;
-						var exact = true;
-						for ( var dy = 0; dy < glyph.Scale; dy++ )
-						{
-							for ( var dx = 0; dx < glyph.Scale; dx++ )
-							{
-								var x = glyph.X + column * glyph.Scale + dx;
-								var y = glyph.Y + row * glyph.Scale + dy;
-								if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
-								{
-									inside = false;
-									continue;
-								}
-								var pixel = (y * frameCapture.Width + x) * 4;
-								exact &= Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2;
-							}
-						}
-						if ( !inside )
+						var x = glyph.X + column;
+						var y = glyph.Y + row;
+						if ( x < 0 || y < 0 || x >= frameCapture.Width || y >= frameCapture.Height )
 							continue;
+						var pixel = (y * frameCapture.Width + x) * 4;
 						checkedTexels++;
-						if ( exact )
+						if ( Math.Abs( frameCapture.Pixels[pixel] - glyph.Color.B ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 1] - glyph.Color.G ) <= 2 && Math.Abs( frameCapture.Pixels[pixel + 2] - glyph.Color.R ) <= 2 )
 							matching++;
 					}
 				}
 			}
 		}
-		Log.Trace( $"UI text readback '{text}' ({what}): {matching}/{checkedTexels} opaque glyph texels match." );
+		Log.Trace( $"UI text readback '{text}' ({what}): {matching}/{checkedTexels} opaque glyph pixels match." );
 		Require( checkedTexels >= 3 && matching >= checkedTexels * 97 / 100, $"{what} text pixels match in GPU readback" );
 	}
 
-	private static bool Overlaps( UiRect rect, UiGlyphQuad glyph ) =>
-		glyph.X < rect.Right + 2 && glyph.X + glyph.Width > rect.X - 2 && glyph.Y < rect.Bottom + 2 && glyph.Y + glyph.Height > rect.Y - 2;
-
-	private static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
+	internal static (byte[] Pixels, int Width, int Height) CaptureFrame( string name )
 	{
 		var source = global::Global.Render.OutputCaptureTexture!;
 		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D( source.Width, source.Height, 1, 1, source.Format, TextureUsage.Staging ) );
@@ -463,10 +1769,9 @@ internal sealed class FrontEndSmokeTest : IDisposable
 			for ( var pixel = 0; pixel < pixels.Length && colors.Count <= 32; pixel += 4 )
 				colors.Add( BitConverter.ToUInt32( pixels, pixel ) );
 			Require( colors.Count > 32, $"{name} has image detail" );
-			using var image = Image.LoadPixelData<Bgra32>( pixels, (int)source.Width, (int)source.Height );
 			var directory = Path.GetFullPath( "artifacts" );
 			Directory.CreateDirectory( directory );
-			image.SaveAsPng( Path.Combine( directory, $"native-smoke-{GameLanguage.Current.Name.ToLowerInvariant()}-{name}" ) );
+			PngWriter.SaveBgra( Path.Combine( directory, $"native-smoke-{GameLanguage.Current.Name.ToLowerInvariant()}-{name}" ), pixels, (int)source.Width, (int)source.Height );
 			return (pixels, (int)source.Width, (int)source.Height);
 		}
 		finally
@@ -490,5 +1795,8 @@ internal sealed class FrontEndSmokeTest : IDisposable
 		flow.OnlineFolders = originalOnlineFolders;
 		try { Directory.Delete( temporaryDirectory, true ); }
 		catch ( IOException ) { }
+		try { Directory.Delete( smokePacks, true ); }
+		catch ( IOException ) { }
+		catch ( UnauthorizedAccessException ) { }
 	}
 }

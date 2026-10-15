@@ -33,6 +33,9 @@ public sealed class LobbyDefinition
 	public float SpinSpeed { get; private set; } = 0.02f;
 	public float SpinRadius { get; private set; } = 70;
 	public float VerticalOffset { get; private set; } = 20;
+	// [DATA:lobby.wad:lobby.txt GLOBERADIUSOUT/GLOBERADIUSIN] the online globe's two camera distances; defaults equal the shipped values
+	public float GlobeRadiusOut { get; private set; } = 475;
+	public float GlobeRadiusIn { get; private set; } = 200;
 	public Dictionary<int, (float X, float Z)> IslandPositions { get; } = new();
 	public List<LobbyIslandInfo> Islands { get; } = new();
 
@@ -58,6 +61,8 @@ public sealed class LobbyDefinition
 				case "SPINSPEED": SpinSpeed = Number( arguments, 0 ); break;
 				case "SPINRADIUS": SpinRadius = Number( arguments, 0 ); break;
 				case "VERTICALOFFSET": VerticalOffset = Number( arguments, 0 ); break;
+				case "GLOBERADIUSOUT": GlobeRadiusOut = Number( arguments, 0 ); break;
+				case "GLOBERADIUSIN": GlobeRadiusIn = Number( arguments, 0 ); break;
 				case "ISLANDCAMERAPOSITION" when arguments.Count >= 3:
 					IslandPositions[(int)Number( arguments, 0 )] = (Number( arguments, 1 ), Number( arguments, 2 ));
 					break;
@@ -88,9 +93,12 @@ public sealed class LobbyDefinition
 	}
 
 	/// <summary>Island centre in MD2 lobby coordinates (x, z), from ISLANDCAMERAPOSITION.</summary>
-	public (float X, float Z) PositionOf( LobbyIslandInfo island ) =>
-		// [APPROX:UI-019] fallback position when lobby.txt lacks ISLANDCAMERAPOSITION — evidence needed: none if lobby.txt is complete
-		IslandPositions.TryGetValue( island.Index, out var position ) ? position : (400 + island.Index * 200, 400);
+	public (float X, float Z) PositionOf( LobbyIslandInfo island ) => PositionOf( island.Index );
+
+	/// <summary>Centre of ISLANDCAMERAPOSITION slot <paramref name="slot"/> (0–9) in MD2 lobby coordinates (x, z).</summary>
+	public (float X, float Z) PositionOf( int slot ) =>
+		// [DATA:lobby.txt:ISLANDCAMERAPOSITION slots 0-9] every slot is defined, so this fallback is unreachable with the shipped data; kept as a defensive default
+		IslandPositions.TryGetValue( slot, out var position ) ? position : (400 + slot * 200, 400);
 
 	private static float Number( IReadOnlyList<string> arguments, int index ) =>
 		index < arguments.Count && float.TryParse( arguments[index], NumberStyles.Float, CultureInfo.InvariantCulture, out var value ) ? value : 0;

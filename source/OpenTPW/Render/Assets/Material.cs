@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using Veldrid;
+﻿using Veldrid;
 
 namespace OpenTPW;
 
@@ -11,7 +10,16 @@ public enum MaterialFlags
 	DisableDepthTest,
 	DisableDepthWrite,
 
-	DisableDepth = DisableDepthTest | DisableDepthWrite
+	DisableDepth = DisableDepthTest | DisableDepthWrite,
+
+	/// <summary>Source-alpha-over-one blending instead of the default alpha blend (the weather's rain streaks).</summary>
+	AdditiveBlend = 4,
+
+	/// <summary>No face culling, so camera-facing particles survive whichever way they wind.</summary>
+	DoubleSided = 8,
+
+	/// <summary>Plain one-plus-one additive blending (the particles' render flag 0x4); wins over <see cref="AdditiveBlend"/>.</summary>
+	OneOneBlend = 16
 }
 
 public partial class Material : Asset
@@ -23,7 +31,12 @@ public partial class Material : Asset
 
 	private Dictionary<string, BindableResource> _boundResources = new();
 
-	private ResourceLayout[] _resourceLayouts;
+	// [EXT:texture-pack] Textures can swap their GPU texture in place (a texture pack switch); the binding follows the Texture object.
+	private readonly Dictionary<string, Texture> _boundTextures = new();
+	private readonly Dictionary<string, (Texture[] Textures, string[] Names)> _boundTextureArrays = new();
+
+	private ResourceLayout[] _resourceLayouts = Array.Empty<ResourceLayout>();
+	private ResourceSet[]? resourceSets;
 
 	public Material( string shaderPath, MaterialFlags flags = MaterialFlags.None )
 	{
@@ -45,6 +58,45 @@ public partial class Material : Asset
 	}
 
 	private DeviceBuffer ScratchBuffer;
+
+	private bool released;
+
+	/// <summary>Releases a renderer-owned material after its last submitted frame, including its own shader.</summary>
+	internal void ReleaseOwnedResources()
+	{
+		if ( released )
+			return;
+		released = true;
+		ClearResourceSets();
+		Asset.All.Remove( this );
+		Shader.OnRecompile = null!;
+		DisposeOwnedResources();
+		Shader.ReleaseOwnedResources();
+	}
+
+	/// <summary>
+	/// Retires the material's own GPU objects. A failed construction can leave the pipeline, scratch
+	/// buffer or layouts unset, so every native object here is optional. With a live renderer the
+	/// objects can still be referenced by the last submitted frame; without one the material was
+	/// never drawn and is freed at once.
+	/// </summary>
+	private void DisposeOwnedResources()
+	{
+		Action dispose = () =>
+		{
+			Pipeline?.Dispose();
+			ScratchBuffer?.Dispose();
+			foreach ( var layout in _resourceLayouts )
+				layout.Dispose();
+			_boundResources.Clear();
+			_boundTextures.Clear();
+			_boundTextureArrays.Clear();
+		};
+		if ( Render is { } renderer )
+			renderer.ScheduleDelete( dispose );
+		else
+			dispose();
+	}
 
 	private static readonly Sampler[] Samplers =
 	[
@@ -99,45 +151,55 @@ public partial class Material : Asset
 		return Device.ResourceFactory.CreateSampler( samplerDescription );
 	}
 
-	private void ClearBoundResources()
-	{
-		return;
-
-		if ( _boundResources.Count > 0 )
-		{
-			_boundResources.Clear();
-		}
-	}
-
 	public void Set<T>( string name, T obj ) where T : unmanaged
 	{
-		Render.ImmediateSubmit( cmd =>
-		{
-			cmd.UpdateBuffer( ScratchBuffer, 0, [obj] );
-			_boundResources[name] = ScratchBuffer;
-		} );
-
-		Render.ScheduleDelete( ClearBoundResources );
+		Render.UpdateUniform( ScratchBuffer, obj );
+		Bind( name, ScratchBuffer );
 	}
 
-	public void Set( string name, Texture[] texture )
+	/// <summary>Binds a texture array with one shared sampler: wrapping by default; clamped for tiles whose edges must not bleed into each other.</summary>
+	public void Set( string name, Texture[] texture, SamplerType sampler = SamplerType.AnisotropicWrap )
 	{
+		var names = new string[texture.Length];
 		for ( int i = 0; i < texture.Length; i++ )
 		{
-			_boundResources[name + $"{i}"] = texture[i].NativeTexture;
+			names[i] = name + i;
+			Bind( names[i], texture[i].NativeTexture );
 		}
-
-		_boundResources["s_" + name] = Samplers[(int)SamplerType.AnisotropicWrap];
-
-		Render.ScheduleDelete( ClearBoundResources );
+		_boundTextureArrays[name] = (texture, names);
+		Bind( "s_" + name, Samplers[(int)sampler] );
 	}
 
 	public void Set( string name, Texture texture )
 	{
-		_boundResources[name] = texture.NativeTexture;
-		_boundResources["s_" + name] = Samplers[(int)texture.SamplerType];
+		_boundTextures[name] = texture;
+		Bind( name, texture.NativeTexture );
+		Bind( "s_" + name, Samplers[(int)texture.SamplerType] );
+	}
 
-		Render.ScheduleDelete( ClearBoundResources );
+	/// <summary>
+	/// Replaces one element of a texture array bound with <see cref="Set(string,Texture[],SamplerType)"/>
+	/// (an MD2 texture-frame animation swapping the frame a material slot shows). The next draw rebinds the
+	/// changed element; nothing is reallocated while the frame stays the same.
+	/// </summary>
+	public void SetTextureArrayElement( string name, int index, Texture texture )
+	{
+		if ( !_boundTextureArrays.TryGetValue( name, out var bound ) )
+			throw new ArgumentException( $"No texture array '{name}' was bound.", nameof( name ) );
+		if ( (uint)index >= (uint)bound.Textures.Length )
+			throw new ArgumentOutOfRangeException( nameof( index ) );
+		if ( ReferenceEquals( bound.Textures[index], texture ) )
+			return;
+		bound.Textures[index] = texture;
+		Bind( bound.Names[index], texture.NativeTexture );
+	}
+
+	private void Bind( string name, BindableResource resource )
+	{
+		if ( _boundResources.TryGetValue( name, out var previous ) && ReferenceEquals( previous, resource ) )
+			return;
+		_boundResources[name] = resource;
+		ClearResourceSets();
 	}
 
 	internal ResourceLayout[] CreateResourceLayouts()
@@ -145,9 +207,16 @@ public partial class Material : Asset
 		return Shader.ResourceLayouts.Select( x => Device.ResourceFactory.CreateResourceLayout( x ) ).ToArray();
 	}
 
-	internal ResourceSet[] CreateResourceSets()
+	/// <summary>Bindings are reused while their native identities and shader layouts stay unchanged.</summary>
+	internal ResourceSet[] GetResourceSets()
 	{
-		Debug.Assert( _resourceLayouts != null );
+		foreach ( var (name, texture) in _boundTextures )
+			Bind( name, texture.NativeTexture );
+		foreach ( var (_, (textures, names)) in _boundTextureArrays )
+			for ( var i = 0; i < textures.Length; i++ )
+				Bind( names[i], textures[i].NativeTexture );
+		if ( resourceSets != null )
+			return resourceSets;
 
 		List<ResourceSetDescription> resourceSetDescriptions = new();
 
@@ -177,48 +246,57 @@ public partial class Material : Asset
 			resourceSetDescriptions.Add( resourceSetDescription );
 		}
 
-		return resourceSetDescriptions.Select( x => Device.ResourceFactory.CreateResourceSet( x ) ).ToArray();
+		return resourceSets = resourceSetDescriptions.Select( x => Device.ResourceFactory.CreateResourceSet( x ) ).ToArray();
 	}
 
-	internal void CreateEphemeralResourceSet( out ResourceSet[] resourceSets )
+	/// <summary>A retiring model can clear bindings without releasing a material shared by other models.</summary>
+	internal void ClearResourceSets()
 	{
-		// Create a set
-		var newResourceSets = CreateResourceSets();
-		resourceSets = newResourceSets;
-
-		// Mark set for death
-		Render.ScheduleDelete( () => DestroyResourceSets( newResourceSets ) );
+		var old = resourceSets;
+		resourceSets = null;
+		if ( old != null )
+			Render.ScheduleDelete( () => DestroyResourceSets( old ) );
 	}
 
 	private static void DestroyResourceSets( ResourceSet[] resourceSets )
 	{
-		if ( resourceSets == null )
-		{
-			Log.Warning( $"Resource sets were marked for death, but are already dead - we can't kill what's already dead!" );
-			return;
-		}
-
 		foreach ( var item in resourceSets )
 		{
 			item.Dispose();
 		}
 	}
 
+	private static readonly BlendStateDescription OneOneBlendState = new( RgbaFloat.Clear,
+		new BlendAttachmentDescription( true, BlendFactor.One, BlendFactor.One, BlendFunction.Add, BlendFactor.One, BlendFactor.One, BlendFunction.Add ) );
+
 	private void SetupResources( MaterialFlags flags )
 	{
 		var vertexLayout = new VertexLayoutDescription( Vertex.VertexElementDescriptions );
+		ClearResourceSets();
+		var oldPipeline = Pipeline;
+		var oldBuffer = ScratchBuffer;
+		var oldLayouts = _resourceLayouts;
+		if ( oldPipeline != null )
+			Render.ScheduleDelete( () =>
+			{
+				oldPipeline.Dispose();
+				oldBuffer.Dispose();
+				foreach ( var layout in oldLayouts )
+					layout.Dispose();
+			} );
 
 		//
 		// Create resource layout - but only from what we're using/need
 		//
-		_resourceLayouts ??= CreateResourceLayouts();
+		_resourceLayouts = CreateResourceLayouts();
 
 		//
 		// Create pipeline
 		//
 		var pipelineDescription = new GraphicsPipelineDescription()
 		{
-			BlendState = BlendStateDescription.SingleAlphaBlend,
+			BlendState = flags.HasFlag( MaterialFlags.OneOneBlend ) ? OneOneBlendState
+				: flags.HasFlag( MaterialFlags.AdditiveBlend ) ? BlendStateDescription.SingleAdditiveBlend : BlendStateDescription.SingleAlphaBlend,
 
 			DepthStencilState = new DepthStencilStateDescription(
 				!flags.HasFlag( MaterialFlags.DisableDepthTest ),
@@ -227,7 +305,7 @@ public partial class Material : Asset
 			),
 
 			RasterizerState = new RasterizerStateDescription(
-				FaceCullMode.Back,
+				flags.HasFlag( MaterialFlags.DoubleSided ) ? FaceCullMode.None : FaceCullMode.Back,
 				PolygonFillMode.Solid,
 				FrontFace.Clockwise,
 				true,
@@ -245,6 +323,8 @@ public partial class Material : Asset
 
 		var bufferDescription = new BufferDescription( 16 * 128, BufferUsage.UniformBuffer | BufferUsage.Dynamic );
 		ScratchBuffer = Device.ResourceFactory.CreateBuffer( bufferDescription );
+		foreach ( var name in _boundResources.Where( pair => ReferenceEquals( pair.Value, oldBuffer ) ).Select( pair => pair.Key ).ToArray() )
+			_boundResources[name] = ScratchBuffer;
 	}
 }
 

@@ -213,7 +213,9 @@ public class FontFileTests
 	[TestMethod]
 	public void AllSelectedOriginalEnglishFontsDecodeEveryGlyph()
 	{
-		var files = Directory.GetFiles( OriginalFontDirectory() ).Where( file => Path.GetExtension( file ).Equals( ".bf4", StringComparison.OrdinalIgnoreCase ) ).ToArray();
+		var directory = OriginalFontDirectory();
+		OriginalEdition.AssertPatch2Fonts( directory, OriginalEdition.IsPatch2( StringTableTests.OriginalDataDirectory() ) );
+		var files = OriginalEdition.BaseFonts( directory );
 		Assert.AreEqual( 33, files.Length );
 		var glyphCount = 0;
 		foreach ( var filename in files )

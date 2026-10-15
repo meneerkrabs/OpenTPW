@@ -66,13 +66,17 @@ public static class ObjectAssets
 				if ( normal.LengthSquared() > 0 )
 					normal = System.Numerics.Vector3.Normalize( normal );
 			}
-			if ( !IsFinite( position ) || !IsFinite( normal ) || !float.IsFinite( mesh.TexCoords[vertexIndex].X ) || !float.IsFinite( mesh.TexCoords[vertexIndex].Y ) )
+			if ( !IsFinite( position ) || !IsFinite( normal ) )
 				throw new InvalidDataException( $"Nonfinite object mesh vertex: {mesh.Name}" );
+			// [EXT:malformed-texture-coordinates] Non-finite texture coordinates (10 vertices of the Theme Park Inc natnav "subtank") are drawn as (0, 0): the original passes the raw floats to Direct3D (undefined behaviour), so there is no rule to recover and this is OpenTPW's handling of malformed data (formerly RIDES-030)
+			var texCoords = mesh.TexCoords[vertexIndex];
+			if ( !float.IsFinite( texCoords.X ) || !float.IsFinite( texCoords.Y ) )
+				texCoords = default;
 			vertices[vertexIndex] = new Vertex
 			{
 				Position = ConvertAxes( position ),
 				Normal = ConvertAxes( normal ),
-				TexCoords = mesh.TexCoords[vertexIndex],
+				TexCoords = texCoords,
 				TexIndex = (int)sourceVertex.TextureIndex,
 				MatFlags = mesh.Materials[(int)sourceVertex.TextureIndex].Flags
 			};
@@ -83,15 +87,18 @@ public static class ObjectAssets
 	/// <summary>
 	/// Converts a mesh into drawable parts with at most 16 texture slots each (the shader's limit). Meshes with
 	/// more slots (31 large floors) are split by material: every corner carries its material, so faces never
-	/// span parts. Vertex texture indices are renumbered per part; <c>Textures</c> lists each part's slot names.
+	/// span parts. Vertex texture indices are renumbered per part; <c>Textures</c> lists each part's slot names
+	/// and <c>Slots</c> the MD2 texture-slot index each name came from (-1 for untextured materials), so a
+	/// texture-frame track of that slot can swap the rendered frame.
 	/// </summary>
-	public static IReadOnlyList<(Vertex[] Vertices, uint[] Indices, string[] Textures)> ConvertMeshParts( ModelFile.Mesh mesh, System.Numerics.Matrix4x4? bake = null )
+	public static IReadOnlyList<(Vertex[] Vertices, uint[] Indices, string[] Textures, int[] Slots)> ConvertMeshParts( ModelFile.Mesh mesh, System.Numerics.Matrix4x4? bake = null )
 	{
 		if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Materials.Length == 0 )
-			return Array.Empty<(Vertex[], uint[], string[])>();
+			return Array.Empty<(Vertex[], uint[], string[], int[])>();
 		if ( mesh.Materials.Length <= 16 )
-			return new[] { (ConvertMesh( mesh, bake ), mesh.Indices.ToArray(), mesh.Materials.Select( material => material.Name ).ToArray()) };
-		var parts = new List<(Vertex[], uint[], string[])>();
+			return new[] { (ConvertMesh( mesh, bake ), mesh.Indices.ToArray(), mesh.Materials.Select( material => material.Name ).ToArray(),
+				mesh.Materials.Select( material => material.TextureIndex ).ToArray()) };
+		var parts = new List<(Vertex[], uint[], string[], int[])>();
 		for ( var first = 0; first < mesh.Materials.Length; first += 16 )
 		{
 			var count = Math.Min( 16, mesh.Materials.Length - first );
@@ -108,20 +115,51 @@ public static class ObjectAssets
 					.SelectMany( face => mesh.Indices.Skip( face * 3 ).Take( 3 ) ).ToArray()
 			};
 			if ( chunk.Indices.Length > 0 )
-				parts.Add( (ConvertMesh( chunk, bake ), chunk.Indices, chunk.Materials.Select( material => material.Name ).ToArray()) );
+				parts.Add( (ConvertMesh( chunk, bake ), chunk.Indices, chunk.Materials.Select( material => material.Name ).ToArray(),
+					chunk.Materials.Select( material => material.TextureIndex ).ToArray()) );
 		}
 		return parts;
 	}
 
 	private static bool IsFinite( System.Numerics.Vector3 value ) => float.IsFinite( value.X ) && float.IsFinite( value.Y ) && float.IsFinite( value.Z );
 
+	/// <summary>Test hook: true/false forces the low-detail texture set on/off, null follows the graphics settings.</summary>
+	internal static bool? LowDetailTexturesOverride { get; set; }
+
+	/// <summary>
+	/// True when the active detail has TEXTUREQUALITY 0 or 1 (the Low preset's value; Medium has 2 and High 3): objects then take their
+	/// textures from the archive's <c>stexture</c> and the theme's <c>ssharete</c> instead of <c>textures</c> and <c>sharetex</c>.
+	/// Only for Theme Park World (the trace is of tp.exe; Theme Park Inc keeps its `textures` folders). The choice is made when an object's textures are looked up (the original picks once at startup); objects loaded earlier keep
+	/// their textures when the setting changes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0054DCF0 low-detail texture set] startup calls 0x4688B0(low); low = 1 selects "stexture"/"ssharete" (0x7AF650/0x7AF720). Without dialog.tcf the operand is GraphicalOptions.TEXTUREQUALITY (0x785874, option row 1 of the table at 0x7442C0) being 0 or 1; with dialog.tcf (0x78D968) it is the saved preset flag 0x800 (the Low preset, 0x44DE20); low.sam sets TEXTUREQUALITY 1, med.sam 2 and high.sam 3
+	public static bool UsesLowDetailTextures => LowDetailTexturesOverride
+		?? (GameEditions.Current == GameEdition.ThemeParkWorld && !TexturePack.Enhanced && IGraphicsSettings.Instance is { } graphics
+			&& (graphics.Current.Preset == GraphicsPreset.Custom || graphics.GetPresetValues( graphics.Current.Preset ) != null) && graphics.Detail.TextureQuality <= 1);
+
 	/// <summary>Directories searched for an object's textures: its archive, then the theme's shared textures (game data).</summary>
-	// [APPROX:RIDES-022] Texture search: archive textures, gtexture, theme sharetex (stexture/ssharete low-detail sets unused) — evidence needed: binary texture lookup order
+	// [BIN:TPW-EXE:0x0046EAD0 texture lookup] 0x461a60 → 0x46e670 sets the model directory, <dir>\textures (<dir>\stexture in the low-detail set) and <theme>\sharetex (<theme>\ssharete) (0x46e650); the lookup 0x46ead0 tries <dir>\textures\<name> as .wct then .tga, then assigns the shared texture without an existence check, else logs "Could not load texture…"; GTexture is only set by the coaster loader 0x42fad0, so the archive's gtexture (12 track-ride archives) stays in both sets
 	public static IEnumerable<(BaseFileSystem FileSystem, string Directory)> TextureDirectories( ObjectCatalogEntry entry )
 	{
-		yield return (entry.FileSystem, $"{entry.ArchivePath}/textures");
-		yield return (entry.FileSystem, $"{entry.ArchivePath}/gtexture");
-		yield return (FileSystem, $"/levels/{entry.Theme}/sharetex");
+		// The theme's shared folders live in the game data (FileSystem), the archive's own in the entry's file system.
+		foreach ( var name in TextureDirectoryNames( entry.ArchivePath, entry.Theme ) )
+			yield return (name.StartsWith( entry.ArchivePath + "/", StringComparison.Ordinal ) ? entry.FileSystem : FileSystem, name);
+	}
+
+	/// <summary>The directory names of <see cref="TextureDirectories"/> for an archive and theme, in search order.</summary>
+	public static IEnumerable<string> TextureDirectoryNames( string archivePath, string theme )
+	{
+		var low = UsesLowDetailTextures;
+		// [EXT:low-detail-texture-fallback] the low sets are searched first, then the full folders: a few objects name textures that exist only in `textures`
+		// (fantasy gokarts hivesign01/02, space gates Sen_sgn1/2, jungle totem tp_sign), where the original would find none. A selected texture pack replaces
+		// the full textures by path, so with a pack the low set is not used at all (UsesLowDetailTextures).
+		if ( low )
+			yield return $"{archivePath}/stexture";
+		yield return $"{archivePath}/textures";
+		yield return $"{archivePath}/gtexture";
+		if ( low )
+			yield return $"/levels/{theme}/ssharete";
+		yield return $"/levels/{theme}/sharetex";
 	}
 
 	/// <summary>Finds an MD2 material's texture (.wct) by name, or null when no searched directory has it.</summary>

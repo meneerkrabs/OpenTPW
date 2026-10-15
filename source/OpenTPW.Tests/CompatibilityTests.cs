@@ -67,6 +67,17 @@ public class CompatibilityTests
 	}
 
 	[TestMethod]
+	public void DefaultPresetFollowsTheOriginalMachineThresholds()
+	{
+		Assert.AreEqual( GraphicsPreset.Low, GraphicsPresets.DefaultFor( 64, 266 ), "the original's fallbacks when Gestalt fails" );
+		Assert.AreEqual( GraphicsPreset.Low, GraphicsPresets.DefaultFor( 512, 300 ) );
+		Assert.AreEqual( GraphicsPreset.Medium, GraphicsPresets.DefaultFor( 65, 301 ) );
+		Assert.AreEqual( GraphicsPreset.Medium, GraphicsPresets.DefaultFor( 191, 1000 ) );
+		Assert.AreEqual( GraphicsPreset.Medium, GraphicsPresets.DefaultFor( 4096, 449 ) );
+		Assert.AreEqual( GraphicsPreset.High, GraphicsPresets.DefaultFor( 192, 450 ) );
+	}
+
+	[TestMethod]
 	public void GraphicsServiceOffersAvailablePresetsAndGatesSimulationOptions()
 	{
 		var flags = CompatibilityFlags.Original;

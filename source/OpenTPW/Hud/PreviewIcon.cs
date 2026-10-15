@@ -14,11 +14,13 @@ namespace OpenTPW.Hud;
 // [APPROX:UI-026] orthographic CPU projection, 30° tilt, painter sorting — evidence needed: capture of the original build menu
 public sealed class PreviewIcon
 {
-	private readonly List<(NVector3 A, NVector3 B, NVector3 C, NVector2 UvA, NVector2 UvB, NVector2 UvC, string? Texture)> triangles = new();
+	private readonly List<(NVector3 A, NVector3 B, NVector3 C, NVector2 UvA, NVector2 UvB, NVector2 UvC, UiTexture? Texture)> triangles = new();
 	private readonly NVector3 center;
 	private readonly float radius;
 
-	public PreviewIcon( ModelFile model, Func<string, string?> resolveTexture )
+	/// <param name="resolveTexture">Game image path for a material name (null: untextured).</param>
+	/// <param name="resolveRuntimeTexture">Textures the game makes at run time, e.g. the object's <c>sign1</c>/<c>sign2</c> text; asked first, null means "not one".</param>
+	public PreviewIcon( ModelFile model, Func<string, string?> resolveTexture, Func<string, UiTexture?>? resolveRuntimeTexture = null )
 	{
 		var min = new NVector3( float.MaxValue );
 		var max = new NVector3( float.MinValue );
@@ -28,6 +30,8 @@ public sealed class PreviewIcon
 				continue;
 			var world = OriginalTerrain.GetWorldMatrix( model, mesh.NodeIndex );
 			var points = mesh.Vertices.Select( vertex => NVector3.Transform( vertex.Position.GetSystemVector3(), world ) ).ToArray();
+			var textures = new UiTexture?[mesh.Materials.Length];
+			var resolved = new bool[mesh.Materials.Length];
 			foreach ( var point in points )
 			{
 				min = NVector3.Min( min, point );
@@ -38,9 +42,15 @@ public sealed class PreviewIcon
 				int a = (int)mesh.Indices[index], b = (int)mesh.Indices[index + 1], c = (int)mesh.Indices[index + 2];
 				if ( a >= points.Length || b >= points.Length || c >= points.Length )
 					continue;
-				var material = mesh.Materials[(int)Math.Min( mesh.Vertices[a].TextureIndex, (uint)mesh.Materials.Length - 1 )];
-				var texture = material.TextureIndex < 0 ? null : resolveTexture( material.Name );
-				triangles.Add( (points[a], points[b], points[c], Uv( mesh, a ), Uv( mesh, b ), Uv( mesh, c ), texture) );
+				var materialIndex = (int)Math.Min( mesh.Vertices[a].TextureIndex, (uint)mesh.Materials.Length - 1 );
+				if ( !resolved[materialIndex] )
+				{
+					var material = mesh.Materials[materialIndex];
+					textures[materialIndex] = material.TextureIndex < 0 ? null : resolveRuntimeTexture?.Invoke( material.Name )
+						?? (resolveTexture( material.Name ) is { } path ? UiTexture.Image( path ) : null);
+					resolved[materialIndex] = true;
+				}
+				triangles.Add( (points[a], points[b], points[c], Uv( mesh, a ), Uv( mesh, b ), Uv( mesh, c ), textures[materialIndex]) );
 			}
 		}
 		if ( triangles.Count == 0 )
@@ -50,6 +60,8 @@ public sealed class PreviewIcon
 	}
 
 	public int TriangleCount => triangles.Count;
+	/// <summary>Triangles drawn with a texture the game makes at run time (the sign faces).</summary>
+	public int RuntimeTextureTriangleCount => triangles.Count( triangle => triangle.Texture?.Rendered != null );
 
 	private static NVector2 Uv( ModelFile.Mesh mesh, int index ) => new( mesh.TexCoords[index].X, 1 - mesh.TexCoords[index].Y );
 
@@ -74,7 +86,7 @@ public sealed class PreviewIcon
 		} ).OrderBy( entry => entry.Depth );
 		foreach ( var (_, a, b, c, triangle) in projected )
 		{
-			var texture = triangle.Texture == null ? UiTexture.Solid : UiTexture.Image( triangle.Texture );
+			var texture = triangle.Texture ?? UiTexture.Solid;
 			var color = Veldrid.RgbaByte.White;
 			batch.AddTriangle( texture, new UiVertex( a, triangle.UvA, color ), new UiVertex( b, triangle.UvB, color ), new UiVertex( c, triangle.UvC, color ) );
 		}

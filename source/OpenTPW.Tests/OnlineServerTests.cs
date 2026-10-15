@@ -36,18 +36,62 @@ internal sealed class LoopbackServer : IAsyncDisposable
 	public string Directory { get; }
 	public Uri Url { get; }
 
-	public static async Task<LoopbackServer> StartAsync( Action<ServerOptions>? configure = null, string? directory = null )
+	/// <summary>
+	/// Building, starting or stopping the server takes well under a second; a stall (once a file watcher blocked in
+	/// the OS) fails the test with a clear message instead of hanging the whole suite. Requests are bounded by
+	/// <see cref="OnlineClient"/>'s own HttpClient timeout.
+	/// </summary>
+	public static readonly TimeSpan StartStopTimeout = TimeSpan.FromSeconds( 30 );
+
+	public static async Task<LoopbackServer> StartAsync( Action<ServerOptions>? configure = null, string? directory = null, Uri? url = null, IEmailSender? emailSender = null )
 	{
 		directory ??= Path.Combine( Path.GetTempPath(), $"opentpw-server-{Guid.NewGuid():N}" );
-		var app = ServerProgram.Build( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
+		var dataDirectory = directory;
+		var build = Task.Run( () => ServerProgram.Build( new[] { "--urls", url?.GetLeftPart( UriPartial.Authority ) ?? "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning" }, options =>
 		{
-			options.DataDirectory = directory;
+			options.DataDirectory = dataDirectory;
 			options.PasswordIterations = 1000;
+			// Most tests are about other features; TwoStepLoginTests turns two-step login on.
+			options.RequireTotp = false;
 			configure?.Invoke( options );
-		} );
-		await app.StartAsync();
+		}, emailSender ) );
+		WebApplication app;
+		try
+		{
+			await Bounded( _ => build, "build" );
+			app = await build;
+		}
+		catch
+		{
+			// A build that finishes after the timeout still owns a host; dispose it whenever it arrives.
+			_ = build.ContinueWith( built => built.Result.DisposeAsync().AsTask(), TaskContinuationOptions.OnlyOnRanToCompletion );
+			throw;
+		}
+		try
+		{
+			await Bounded( app.StartAsync, "start" );
+		}
+		catch
+		{
+			await Bounded( _ => app.DisposeAsync().AsTask(), "shut down" );
+			throw;
+		}
 		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
 		return new LoopbackServer( app, directory, new Uri( address ) );
+	}
+
+	/// <summary>Runs one lifecycle step on a pool thread, so even synchronous work in it cannot outlast the timeout.</summary>
+	private static async Task Bounded( Func<CancellationToken, Task> step, string name )
+	{
+		using var cancel = new CancellationTokenSource( StartStopTimeout );
+		try
+		{
+			await Task.Run( () => step( cancel.Token ) ).WaitAsync( StartStopTimeout );
+		}
+		catch ( Exception exception ) when ( exception is TimeoutException || (exception is OperationCanceledException && cancel.IsCancellationRequested) )
+		{
+			throw new AssertFailedException( $"The loopback server did not {name} within {StartStopTimeout.TotalSeconds} seconds.", exception );
+		}
 	}
 
 	public async Task<OnlineClient> LoginAsync( string name, string password = "correct horse", bool register = true )
@@ -61,8 +105,14 @@ internal sealed class LoopbackServer : IAsyncDisposable
 
 	public async ValueTask DisposeAsync()
 	{
-		await app.StopAsync();
-		await app.DisposeAsync();
+		try
+		{
+			await Bounded( app.StopAsync, "stop" );
+		}
+		finally
+		{
+			await Bounded( _ => app.DisposeAsync().AsTask(), "shut down" );
+		}
 	}
 
 	public void DeleteData()
@@ -96,17 +146,17 @@ public class OnlineServerTests
 		{
 			using var client = new OnlineClient( server.Url );
 			var info = await client.GetServerInfoAsync();
-			Assert.AreEqual( 1, info.ProtocolVersion );
+			Assert.AreEqual( 3, info.ProtocolVersion );
 			Assert.IsFalse( info.WordFilterLoaded );
-			await client.RegisterAsync( "Sander", "correct horse" );
-			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => client.RegisterAsync( "SANDER", "another one" ) )).Status );
+			await client.RegisterAsync( "Alice", "correct horse" );
+			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => client.RegisterAsync( "ALICE", "another one" ) )).Status );
 			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => client.RegisterAsync( "x", "correct horse" ) )).Status );
 			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => client.RegisterAsync( "Shorty", "short" ) )).Status );
-			Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => client.LoginAsync( "Sander", "wrong password" ) )).Status );
+			Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => client.LoginAsync( "Alice", "wrong password" ) )).Status );
 			Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => client.LoginAsync( "Nobody", "correct horse" ) )).Status );
 			Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => client.ListParksAsync() )).Status );
-			var session = await client.LoginAsync( "sander", "correct horse" );
-			Assert.AreEqual( "Sander", session.Name );
+			var session = (await client.LoginAsync( "alice", "correct horse" )).Session!;
+			Assert.AreEqual( "Alice", session.Name );
 			Assert.AreEqual( 0, (await client.ListParksAsync()).Total );
 			var accounts = File.ReadAllText( Path.Combine( server.Directory, "accounts.json" ) );
 			Assert.IsFalse( accounts.Contains( "correct horse" ) );
@@ -116,6 +166,41 @@ public class OnlineServerTests
 			using var stale = new HttpClient();
 			stale.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue( "Bearer", session.Token );
 			Assert.AreEqual( HttpStatusCode.Unauthorized, (await stale.GetAsync( new Uri( server.Url, "api/v1/parks" ) )).StatusCode );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ServerAcceptsBothParkPackageVersions()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			// A version 2 package (the built layout) publishes, lists and downloads as itself…
+			var v2 = await owner.UploadParkAsync( SharedParkTests.LayoutPackage() );
+			var downloaded = await owner.DownloadParkAsync( v2.Id );
+			Assert.AreEqual( 2, downloaded.Manifest.FormatVersion );
+			Assert.IsTrue( MinimalParkPayload.FromSnapshot( downloaded.ToSnapshot() ).HasBuiltLayout );
+			// …and a version 1 package from an OpenTPW 0.7 client is still accepted and served unchanged.
+			var v1 = await owner.UploadParkAsync( SharedParkTests.V1Package() );
+			Assert.AreEqual( 1, (await owner.DownloadParkAsync( v1.Id )).Manifest.FormatVersion );
+			Assert.AreEqual( 2, (await owner.ListParksAsync()).Total );
+			// A container-valid package whose payload is not a park payload is refused at publish: clients
+			// check on visit, but no client could enter this park.
+			var garbage = Encoding.UTF8.GetBytes( "{\"level\":\"jungle\",\"source\":\"other\"}" );
+			var manifest = SharedParkTests.LayoutPackage().Manifest with
+			{
+				Payload = SharedParkTests.LayoutPackage().Manifest.Payload with { Length = garbage.Length, Sha256 = ParkPackage.Hash( garbage ) }
+			};
+			var hostile = ParkPackage.Read( OnlineFormatTests.Zip(
+				(ParkPackage.ManifestEntry, StrictJson.Serialize( manifest )),
+				(ParkPackage.PayloadEntry, garbage) ) );
+			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => owner.UploadParkAsync( hostile ) )).Status );
+			Assert.AreEqual( 2, (await owner.ListParksAsync()).Total );
 		}
 		finally
 		{
@@ -147,7 +232,10 @@ public class OnlineServerTests
 			CollectionAssert.AreEqual( package.Thumbnail, await visitor.DownloadThumbnailAsync( published.Id ) );
 
 			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
+			// Every visit earned the owner Platinum Tickets in the original, but re-entering the same day and visiting
+			// one's own park do not count again (ONLINE-076), so tickets cannot be farmed.
 			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
+			Assert.AreEqual( 1, (await owner.RecordVisitAsync( published.Id )).Visits );
 			var vote = await visitor.VoteAsync( published.Id );
 			Assert.AreEqual( (1, 9), (vote.Votes, vote.VotesLeftToday) );
 			Assert.AreEqual( HttpStatusCode.Conflict, (await Fails( () => visitor.VoteAsync( published.Id ) )).Status );
@@ -197,6 +285,44 @@ public class OnlineServerTests
 	}
 
 	[TestMethod]
+	public async Task PlayersCanDeleteTheirAccountAndWhatTheServerKeepsAboutThem()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var ann = await server.LoginAsync( "Ann" );
+			using var bob = await server.LoginAsync( "Bob" );
+			var park = await ann.UploadParkAsync( OnlineFormatTests.Package() );
+			await bob.SendPostcardAsync( Postcard.Create( "Bob", new[] { "Ann" }, "Hi", "Nice park", "English" ) );
+			await ann.ReportAsync( ReportKinds.Park, "abc", "Rude park name" );
+			Assert.IsTrue( File.Exists( Path.Combine( server.Directory, "parks", park.Id + ParkPackage.FileExtension ) ) );
+
+			// The password is asked again, and for the logged-in account only.
+			Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => ann.DeleteAccountAsync( "Ann", "wrong password" ) )).Status );
+			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => ann.DeleteAccountAsync( "Bob", "correct horse" ) )).Status );
+			Assert.AreEqual( 1, (await bob.ListParksAsync()).Total, "A refused deletion removes nothing." );
+
+			await ann.DeleteAccountAsync( "Ann", "correct horse" );
+			Assert.AreEqual( 0, (await bob.ListParksAsync()).Total );
+			Assert.IsFalse( File.Exists( Path.Combine( server.Directory, "parks", park.Id + ParkPackage.FileExtension ) ) );
+			Assert.IsFalse( File.ReadAllText( Path.Combine( server.Directory, "postcards.json" ) ).Contains( "\"ann\"" ), "Her inbox is gone." );
+			var reports = File.ReadAllText( Path.Combine( server.Directory, "reports.jsonl" ) );
+			Assert.IsFalse( reports.Contains( "Ann" ) );
+			StringAssert.Contains( reports, "(deleted player)" );
+			using ( var oldSession = new OnlineClient( server.Url ) )
+				Assert.AreEqual( HttpStatusCode.Unauthorized, (await Fails( () => oldSession.LoginAsync( "Ann", "correct horse" ) )).Status );
+
+			// The name is free again.
+			using var newAnn = await server.LoginAsync( "Ann", "another password" );
+			Assert.AreEqual( 0, (await newAnn.GetInboxAsync()).Postcards.Count );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
 	public async Task PostcardsAreDeliveredToInboxes()
 	{
 		await using var server = await LoopbackServer.StartAsync();
@@ -219,6 +345,239 @@ public class OnlineServerTests
 			Assert.AreEqual( HttpStatusCode.NotFound, (await Fails( () => sender.SendPostcardAsync( nobody ) )).Status );
 			await reader.DeletePostcardAsync( inbox.Postcards[0].Id );
 			Assert.AreEqual( 0, (await reader.GetInboxAsync()).Postcards.Count );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task NewsIsPublicAndFollowsTheOperatorsFiles()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var client = new OnlineClient( server.Url );
+			var empty = await client.GetNewsAsync();
+			Assert.IsNotNull( empty, "served without a session" );
+			Assert.AreEqual( ("", "", (DateTimeOffset?)null), (empty!.Game, empty.System, empty.UpdatedUtc) );
+
+			var folder = Path.Combine( server.Directory, "news" );
+			Directory.CreateDirectory( folder );
+			File.WriteAllText( Path.Combine( folder, "game.txt" ), "Version 0.5 is out.\r\n" );
+			File.WriteAllText( Path.Combine( folder, "system.txt" ), new string( 'x', NewsFeed.MaximumCharacters + 10 ) );
+			var news = await client.GetNewsAsync();
+			Assert.AreEqual( "Version 0.5 is out.", news!.Game );
+			Assert.AreEqual( NewsFeed.MaximumCharacters, news.System.Length );
+			Assert.IsNotNull( news.UpdatedUtc );
+
+			File.WriteAllText( Path.Combine( folder, "game.txt" ), "Maintenance tonight." );
+			File.SetLastWriteTimeUtc( Path.Combine( folder, "game.txt" ), DateTime.UtcNow.AddMinutes( 1 ) );
+			Assert.AreEqual( "Maintenance tonight.", (await client.GetNewsAsync())!.Game );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ServersWithoutNewsGiveNoNews()
+	{
+		// No appsettings.json watcher: on macOS starting one calls sync(2), which a stalled mounted volume blocks (see ServerProgram.Build).
+		var builder = Microsoft.AspNetCore.Builder.WebApplication.CreateBuilder( new[] { "--urls", "http://127.0.0.1:0", "--Logging:LogLevel:Default", "Warning", "--hostBuilder:reloadConfigOnChange=false" } );
+		await using var app = builder.Build();
+		await app.StartAsync();
+		var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
+		using var client = new OnlineClient( new Uri( address ) );
+		Assert.IsNull( await client.GetNewsAsync() );
+		await app.StopAsync();
+	}
+
+	[TestMethod]
+	public async Task OnlyParksWhoseAuthorsOptInAreListedForTheWebsite()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.WebsiteOrigins.Add( "https://opentpw.io" ) );
+		try
+		{
+			using var ann = await server.LoginAsync( "Ann" );
+			using var bob = await server.LoginAsync( "Bob" );
+			var shown = await ann.UploadParkAsync( OnlineFormatTests.Package( "Shown" ), showOnWebsite: true );
+			var hidden = await ann.UploadParkAsync( OnlineFormatTests.Package( "Private" ) );
+			var popular = await bob.UploadParkAsync( OnlineFormatTests.Package( "Popular" ), showOnWebsite: true );
+			await ann.VoteAsync( popular.Id );
+
+			using var http = new HttpClient { BaseAddress = server.Url };
+			var list = StrictJson.Deserialize<WebsiteParkList>( await http.GetByteArrayAsync( ApiRoutes.WebsiteParks.TrimStart( '/' ) ), "test" );
+			CollectionAssert.AreEqual( new[] { "Popular", "Shown" }, list.Parks.Select( park => park.Name ).ToArray(), "opted-in parks only, most votes first, without a session" );
+			Assert.AreEqual( "Bob", list.Parks[0].Author );
+
+			Assert.AreEqual( HttpStatusCode.NotFound, (await http.GetAsync( $"{ApiRoutes.WebsiteParks.TrimStart( '/' )}/{hidden.Id}/thumbnail" )).StatusCode, "no public picture of a park not on the website" );
+			var picture = await http.GetAsync( $"{ApiRoutes.WebsiteParks.TrimStart( '/' )}/{shown.Id}/thumbnail" );
+			Assert.AreEqual( HttpStatusCode.OK, picture.StatusCode );
+			Assert.AreEqual( "image/png", picture.Content.Headers.ContentType?.MediaType );
+			Assert.IsTrue( picture.Headers.CacheControl?.Public == true, "website pictures may be cached" );
+
+			using var allowed = new HttpRequestMessage( HttpMethod.Get, ApiRoutes.WebsiteParks.TrimStart( '/' ) );
+			allowed.Headers.Add( "Origin", "https://opentpw.io" );
+			Assert.AreEqual( "https://opentpw.io", (await http.SendAsync( allowed )).Headers.GetValues( "Access-Control-Allow-Origin" ).Single() );
+			using var other = new HttpRequestMessage( HttpMethod.Get, ApiRoutes.News.TrimStart( '/' ) );
+			other.Headers.Add( "Origin", "https://example.com" );
+			Assert.IsFalse( (await http.SendAsync( other )).Headers.Contains( "Access-Control-Allow-Origin" ) );
+			using var parks = new HttpRequestMessage( HttpMethod.Get, ApiRoutes.Parks.TrimStart( '/' ) );
+			parks.Headers.Add( "Origin", "https://opentpw.io" );
+			var guarded = await http.SendAsync( parks );
+			Assert.AreEqual( HttpStatusCode.Unauthorized, guarded.StatusCode, "the full park list still needs a session" );
+			Assert.IsFalse( guarded.Headers.Contains( "Access-Control-Allow-Origin" ) );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task DeployRequestNeedsTheTokenAndOnlyLeavesAFile()
+	{
+		await using ( var closed = await LoopbackServer.StartAsync() )
+		{
+			try
+			{
+				using var http = new HttpClient { BaseAddress = closed.Url };
+				Assert.AreEqual( HttpStatusCode.NotFound, (await http.PostAsync( ApiRoutes.Deploy.TrimStart( '/' ), null )).StatusCode, "no route without a token" );
+			}
+			finally
+			{
+				closed.DeleteData();
+			}
+		}
+		await using var server = await LoopbackServer.StartAsync( options => options.DeployToken = "release-secret" );
+		try
+		{
+			var request = Path.Combine( server.Directory, ServerProgram.DeployRequestFile );
+			using var http = new HttpClient { BaseAddress = server.Url };
+			async Task<HttpStatusCode> Post( string? token )
+			{
+				using var message = new HttpRequestMessage( HttpMethod.Post, ApiRoutes.Deploy.TrimStart( '/' ) );
+				if ( token != null )
+					message.Headers.Authorization = new AuthenticationHeaderValue( "Bearer", token );
+				return (await http.SendAsync( message )).StatusCode;
+			}
+			Assert.AreEqual( HttpStatusCode.Unauthorized, await Post( null ) );
+			Assert.AreEqual( HttpStatusCode.Unauthorized, await Post( "release-secreT" ) );
+			Assert.IsFalse( File.Exists( request ) );
+			Assert.AreEqual( HttpStatusCode.Accepted, await Post( "release-secret" ) );
+			Assert.IsTrue( File.Exists( request ) );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public void AVisitorCountsOncePerDayAndOwnersNever()
+	{
+		var directory = Path.Combine( Path.GetTempPath(), $"opentpw-visits-{Guid.NewGuid():N}" );
+		try
+		{
+			var now = DateTimeOffset.UtcNow;
+			var store = new ServerStore( new ServerOptions { DataDirectory = directory, PasswordIterations = 1000 }, () => now );
+			var owner = store.Register( "Owner", "correct horse" );
+			var visitor = store.Register( "Visitor", "correct horse" );
+			var package = OnlineFormatTests.Package( "Counted" );
+			var park = store.Publish( owner, package, package.ToBytes() );
+			Assert.AreEqual( 0, store.Visit( owner, park.Id ).Visits, "an owner's own visit does not count" );
+			Assert.AreEqual( 1, store.Visit( visitor, park.Id ).Visits );
+			Assert.AreEqual( 1, store.Visit( visitor, park.Id ).Visits, "the same visitor counts once per day" );
+			now = now.AddDays( 1 );
+			Assert.AreEqual( 2, store.Visit( visitor, park.Id ).Visits, "the next day counts again" );
+		}
+		finally
+		{
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
+		}
+	}
+
+	[TestMethod]
+	public void SessionsSurviveARestartAsHashesOnly()
+	{
+		var directory = Path.Combine( Path.GetTempPath(), $"opentpw-sessions-{Guid.NewGuid():N}" );
+		try
+		{
+			var now = DateTimeOffset.UtcNow;
+			var options = new ServerOptions { DataDirectory = directory, PasswordIterations = 1000 };
+			var first = new ServerStore( options, () => now );
+			first.Register( "Ann", "correct horse" );
+			var kept = first.Login( "Ann", "correct horse" ).Session!;
+			var loggedOut = first.Login( "Ann", "correct horse" ).Session!;
+			first.Logout( loggedOut.Token );
+			Assert.IsFalse( File.ReadAllText( Path.Combine( directory, "sessions.json" ) ).Contains( kept.Token ), "only the token hash is stored" );
+
+			var restarted = new ServerStore( options, () => now.AddMinutes( 1 ) );
+			Assert.AreEqual( "Ann", restarted.Authenticate( kept.Token )?.Name, "a restart keeps the session" );
+			Assert.IsNull( restarted.Authenticate( loggedOut.Token ) );
+			Assert.IsNull( new ServerStore( options, () => now + options.SessionLifetime + TimeSpan.FromMinutes( 1 ) ).Authenticate( kept.Token ), "expired sessions are not loaded" );
+		}
+		finally
+		{
+			if ( Directory.Exists( directory ) )
+				Directory.Delete( directory, true );
+		}
+	}
+
+	[TestMethod]
+	public async Task StoppingTheServerTellsChatClientsItRestarts()
+	{
+		var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var ann = await server.LoginAsync( "Ann" );
+			await using var chat = await ann.ConnectChatAsync();
+			await NextAsync( chat, IsNotice( ChatNotice.WelcomeThemeParkWorld ) );
+			var stopping = server.DisposeAsync().AsTask();
+			using var timeout = new CancellationTokenSource( TimeSpan.FromSeconds( 15 ) );
+			while ( await chat.ReceiveAsync( timeout.Token ) != null )
+			{
+			}
+			Assert.AreEqual( ChatProtocol.RestartingCloseStatus, chat.CloseStatus );
+			await stopping;
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task CitiesArePublicCountParksAndCanBeReplacedByTheOperator()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var anonymous = new OnlineClient( server.Url );
+			var defaults = (await anonymous.GetCitiesAsync())!.Cities;
+			Assert.AreEqual( "North Pole", defaults[0].Name, "the Bullfrog city comes first" );
+			CollectionAssert.IsSubsetOf( new[] { "Hong Kong", "Ulaanbaatar", "Timbuktu", "San Francisco" }, defaults.Select( city => city.Name ).ToArray() );
+			Assert.IsTrue( defaults.All( city => city.Name.Length <= CityDirectory.MaximumNameLength && city.Parks == 0 ) );
+
+			using var ann = await server.LoginAsync( "Ann" );
+			var timbuktu = defaults.Single( city => city.Name == "Timbuktu" ).Id;
+			await ann.UploadParkAsync( OnlineFormatTests.Package( "Sand Castle" ), cityId: timbuktu );
+			Assert.AreEqual( 1, (await anonymous.GetCitiesAsync())!.Cities.Single( city => city.Id == timbuktu ).Parks );
+			await ann.UploadParkAsync( OnlineFormatTests.Package( "Elsewhere" ) );
+			var inCity = await ann.ListParksAsync( sort: "votes", cityId: timbuktu );
+			CollectionAssert.AreEqual( new[] { "Sand Castle" }, inCity.Parks.Select( park => park.Name ).ToArray(), "the city lobby lists only that city's parks" );
+			Assert.AreEqual( timbuktu, inCity.Parks[0].CityId );
+			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => ann.UploadParkAsync( OnlineFormatTests.Package( "Nowhere" ), cityId: 999 ) )).Status );
+
+			File.WriteAllText( Path.Combine( server.Directory, "cities.json" ),
+				"[{\"id\":7,\"name\":\"A very long city name indeed\",\"description\":\"x\",\"latitude\":10,\"longitude\":20},{\"id\":8,\"name\":\"Bad\",\"latitude\":95,\"longitude\":0}]" );
+			var replaced = (await anonymous.GetCitiesAsync())!.Cities;
+			Assert.AreEqual( 1, replaced.Count, "invalid cities are left out" );
+			Assert.AreEqual( CityDirectory.MaximumNameLength, replaced[0].Name.Length );
 		}
 		finally
 		{
@@ -294,6 +653,106 @@ public class OnlineServerTests
 	}
 
 	private static Func<ChatEvent, bool> IsNotice( ChatNotice notice ) => item => item.Kind == ChatEventKind.Notice && item.Notice == (int)notice;
+
+	/// <summary>Opens the chat socket the way a browser must: no Authorization header, the token as the first frame.</summary>
+	private static async Task<System.Net.WebSockets.ClientWebSocket> ConnectWithoutHeaderAsync( LoopbackServer server, byte[] firstFrame )
+	{
+		var socket = new System.Net.WebSockets.ClientWebSocket();
+		var url = new UriBuilder( new Uri( server.Url, ApiRoutes.Chat.TrimStart( '/' ) ) ) { Scheme = "ws" }.Uri;
+		await socket.ConnectAsync( url, CancellationToken.None );
+		await socket.SendAsync( firstFrame, System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None );
+		return socket;
+	}
+
+	private static async Task<(System.Net.WebSockets.WebSocketMessageType Type, string Text)> ReceiveAsync( System.Net.WebSockets.ClientWebSocket socket )
+	{
+		using var timeout = new CancellationTokenSource( TimeSpan.FromSeconds( 15 ) );
+		var buffer = new byte[ChatProtocol.MaximumFrameBytes];
+		var result = await socket.ReceiveAsync( buffer, timeout.Token );
+		return (result.MessageType, Encoding.UTF8.GetString( buffer, 0, result.Count ));
+	}
+
+	[TestMethod]
+	public async Task ChatAcceptsTheTokenAsTheFirstFrameForBrowsers()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var client = await server.LoginAsync( "Ann" );
+			using ( var socket = await ConnectWithoutHeaderAsync( server, StrictJson.Serialize( ChatAuthentication.For( client.Session!.Token ) ) ) )
+			{
+				var (type, text) = await ReceiveAsync( socket );
+				Assert.AreEqual( System.Net.WebSockets.WebSocketMessageType.Text, type );
+				Assert.AreEqual( (int)ChatNotice.WelcomeThemeParkWorld, StrictJson.Deserialize<ChatEvent>( Encoding.UTF8.GetBytes( text ), "event" ).Notice );
+			}
+
+			// A wrong token or any other first frame closes the socket without a word.
+			foreach ( var frame in new[] {
+				StrictJson.Serialize( ChatAuthentication.For( "not-a-session" ) ),
+				StrictJson.Serialize( ChatRequest.ForJoin( ChatProtocol.LobbyRoom ) ),
+				Encoding.UTF8.GetBytes( new string( 'x', ChatAuthentication.MaximumBytes + 10 ) ) } )
+			{
+				using var socket = await ConnectWithoutHeaderAsync( server, frame );
+				var (type, _) = await ReceiveAsync( socket );
+				Assert.AreEqual( System.Net.WebSockets.WebSocketMessageType.Close, type );
+				Assert.AreEqual( System.Net.WebSockets.WebSocketCloseStatus.PolicyViolation, socket.CloseStatus );
+			}
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ServesTheBrowserGameBesideTheApi()
+	{
+		var web = Path.Combine( Path.GetTempPath(), $"opentpw-web-{Guid.NewGuid():N}" );
+		Directory.CreateDirectory( Path.Combine( web, "_framework" ) );
+		File.WriteAllText( Path.Combine( web, "index.html" ), "<!doctype html><title>OpenTPW</title>" );
+		File.WriteAllBytes( Path.Combine( web, "index.html.br" ), [0x0b, 0x01, 0x80] );
+		File.WriteAllText( Path.Combine( web, "_framework", "dotnet.js" ), "// boot" );
+		File.WriteAllBytes( Path.Combine( web, "_framework", "dotnet.native.abcde12345.wasm" ), [0, 0x61, 0x73, 0x6d] );
+		await using var server = await LoopbackServer.StartAsync( options =>
+		{
+			options.WebClientDirectory = web;
+			options.RequestsPerMinute = 3;
+		} );
+		try
+		{
+			using var http = new HttpClient( new HttpClientHandler { AutomaticDecompression = DecompressionMethods.None } ) { BaseAddress = server.Url };
+			using var page = await http.GetAsync( "/" );
+			Assert.AreEqual( HttpStatusCode.OK, page.StatusCode );
+			Assert.AreEqual( "text/html", page.Content.Headers.ContentType!.MediaType );
+			StringAssert.Contains( page.Headers.CacheControl!.ToString(), "no-cache" );
+			StringAssert.Contains( string.Join( ";", page.Headers.GetValues( "Content-Security-Policy" ) ), "'wasm-unsafe-eval'" );
+
+			using var request = new HttpRequestMessage( HttpMethod.Get, "/index.html" );
+			request.Headers.AcceptEncoding.ParseAdd( "gzip, br" );
+			using var compressed = await http.SendAsync( request );
+			Assert.AreEqual( "br", compressed.Content.Headers.ContentEncoding.Single() );
+			Assert.AreEqual( "text/html", compressed.Content.Headers.ContentType!.MediaType );
+			CollectionAssert.AreEqual( new byte[] { 0x0b, 0x01, 0x80 }, await compressed.Content.ReadAsByteArrayAsync() );
+
+			using var runtime = await http.GetAsync( "/_framework/dotnet.native.abcde12345.wasm" );
+			Assert.AreEqual( "application/wasm", runtime.Content.Headers.ContentType!.MediaType );
+			StringAssert.Contains( runtime.Headers.CacheControl!.ToString(), "immutable" );
+			using var boot = await http.GetAsync( "/_framework/dotnet.js" );
+			StringAssert.Contains( boot.Headers.CacheControl!.ToString(), "no-cache" );
+
+			// A page load fetches many files; the API's per-address limit does not count them.
+			for ( var index = 0; index < 10; index++ )
+				using ( var again = await http.GetAsync( "/_framework/dotnet.js" ) )
+					Assert.AreEqual( HttpStatusCode.OK, again.StatusCode );
+			using var info = await http.GetAsync( ApiRoutes.Server );
+			Assert.AreEqual( HttpStatusCode.OK, info.StatusCode );
+		}
+		finally
+		{
+			server.DeleteData();
+			Directory.Delete( web, true );
+		}
+	}
 
 	[TestMethod]
 	public async Task ChatRunsTheOriginalCommands()
@@ -429,4 +888,248 @@ public class OnlineServerTests
 			server.DeleteData();
 		}
 	}
+
+	[TestMethod]
+	public async Task TenParksAreTheDefaultPublishLimit()
+	{
+		await using var server = await LoopbackServer.StartAsync();
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			// The original allowed ten parks on show at once (online FAQ, docs/reverse/ONLINE-SOURCES.md S2).
+			Assert.AreEqual( 10, (await owner.GetServerInfoAsync()).MaximumParksPerPlayer );
+			for ( var index = 1; index <= 10; index++ )
+				await owner.UploadParkAsync( OnlineFormatTests.Package( $"Park {index}" ) );
+			var refused = await Fails( () => owner.UploadParkAsync( OnlineFormatTests.Package( "Eleventh" ) ) );
+			Assert.AreEqual( HttpStatusCode.Conflict, refused.Status );
+			// The original's message (UITEXT 221): the personal limit is reached, un-publish first.
+			StringAssert.Contains( refused.Message, "personal limit" );
+			var first = (await owner.ListParksAsync( sort: "name" )).Parks.Single( park => park.Name == "Park 1" );
+			await owner.UnpublishParkAsync( first.Id );
+			await owner.UploadParkAsync( OnlineFormatTests.Package( "Eleventh" ) );
+			Assert.AreEqual( 10, (await owner.ListParksAsync()).Total );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task ParkNamesAreMaskedWhereDescriptionsAreRefused()
+	{
+		var filterDirectory = Path.Combine( Path.GetTempPath(), $"opentpw-filter-{Guid.NewGuid():N}" );
+		Directory.CreateDirectory( filterDirectory );
+		File.WriteAllBytes( Path.Combine( filterDirectory, WordFilter.SwearsFileName ), WordFilter.EncodeList( new[] { "darn" } ) );
+		File.WriteAllBytes( Path.Combine( filterDirectory, WordFilter.AllowedsFileName ), WordFilter.EncodeList( new[] { "darning" } ) );
+		await using var server = await LoopbackServer.StartAsync( options => options.FilterDirectory = filterDirectory );
+		try
+		{
+			using var owner = await server.LoginAsync( "Owner" );
+			// The original showed swear words in park names as asterisks (FAQ, S2): the name is masked, not refused.
+			var masked = await owner.UploadParkAsync( OnlineFormatTests.Package( "Darn Park" ) );
+			Assert.AreEqual( "**** Park", masked.Name );
+			Assert.AreEqual( "**** Park", (await owner.ListParksAsync()).Parks.Single().Name );
+			// An allowed word inside the name survives.
+			Assert.AreEqual( "Darning Park", (await owner.UploadParkAsync( OnlineFormatTests.Package( "Darning Park" ) )).Name );
+			// Descriptions keep the refusal: an OpenTPW moderation choice, not the original's.
+			var swearing = OnlineFormatTests.Package( "Fine Park" );
+			Assert.AreEqual( HttpStatusCode.BadRequest, (await Fails( () => owner.UploadParkAsync( swearing with { Manifest = swearing.Manifest with { Park = swearing.Manifest.Park with { Description = "what a darn park" } } } ) )).Status );
+		}
+		finally
+		{
+			server.DeleteData();
+			Directory.Delete( filterDirectory, true );
+		}
+	}
+
+	[TestMethod]
+	public async Task WebsiteChartsAndPlayerPagesMirrorTheOriginalLists()
+	{
+		// The search part registers fifty-one players from one address, above the usual authentication limit.
+		await using var server = await LoopbackServer.StartAsync( options =>
+		{
+			options.AuthenticationsPerMinute = 200;
+			options.RequestsPerMinute = 600;
+		} );
+		try
+		{
+			using var annClient = await server.LoginAsync( "Ann" );
+			using var bobClient = await server.LoginAsync( "Bob" );
+			using var carolClient = await server.LoginAsync( "Carol" );
+			var shown = await annClient.UploadParkAsync( OnlineFormatTests.Package( "Shown" ), showOnWebsite: true );
+			await annClient.UploadParkAsync( OnlineFormatTests.Package( "Private" ) );
+			var popular = await bobClient.UploadParkAsync( OnlineFormatTests.Package( "Popular" ), showOnWebsite: true );
+			// A visit earns the park's owner Platinum Tickets whether or not the visitor votes (S2).
+			await carolClient.RecordVisitAsync( shown.Id );
+			await carolClient.VoteAsync( popular.Id );
+
+			using var publicClient = new OnlineClient( server.Url );
+			// Top 10 parks (S1: rank, park name, player) of the parks their authors show on the website.
+			var parks = await publicClient.GetChartParksAsync();
+			Assert.AreEqual( 2, parks.Parks.Count );
+			Assert.AreEqual( (1, "Popular", "Bob"), (parks.Parks[0].Rank, parks.Parks[0].Name, parks.Parks[0].Player) );
+			Assert.AreEqual( (2, "Shown", "Ann"), (parks.Parks[1].Rank, parks.Parks[1].Name, parks.Parks[1].Player) );
+			// Top 10 players and the richest players (S1); only players with website parks appear.
+			var players = await publicClient.GetChartPlayersAsync( richest: false );
+			Assert.AreEqual( ("Bob", "Ann"), (players.Players[0].Player, players.Players[1].Player) );
+			var richest = await publicClient.GetChartPlayersAsync( richest: true );
+			Assert.AreEqual( ("Ann", 1), (richest.Players[0].Player, richest.Players[0].Score) );
+			Assert.AreEqual( "Bob", richest.Players[1].Player );
+			// The player page (S1: park name, visitors, votes, publish date, rank, highest rank) is public for the
+			// website parks only; the Platinum Tickets of a public page count only those parks.
+			var publicPage = await publicClient.GetPlayerProfileAsync( "Ann" );
+			Assert.AreEqual( ("Ann", 1), (publicPage.Name, publicPage.PlatinumTickets) );
+			Assert.AreEqual( 1, publicPage.Parks.Count );
+			Assert.AreEqual( ("Shown", 1, 0, 2, 2),
+				(publicPage.Parks[0].Name, publicPage.Parks[0].Visits, publicPage.Parks[0].Votes, publicPage.Parks[0].Rank, publicPage.Parks[0].HighestRank) );
+			// Logged in, the page lists every published park of the player, with all their Platinum Tickets.
+			var ownPage = await annClient.GetPlayerProfileAsync( "Ann" );
+			Assert.AreEqual( 2, ownPage.Parks.Count );
+			Assert.AreEqual( 1, ownPage.PlatinumTickets );
+			// A vote re-orders the chart and the ranks follow; each park remembers its best place (Popular held
+			// rank 1 until this vote passed it).
+			await carolClient.VoteAsync( shown.Id );
+			var afterVote = await publicClient.GetPlayerProfileAsync( "Ann" );
+			Assert.AreEqual( 1, afterVote.Parks[0].Rank );
+			Assert.AreEqual( 1, afterVote.Parks[0].HighestRank );
+			var ownAfterVote = await bobClient.GetPlayerProfileAsync( "Bob" );
+			Assert.AreEqual( 2, ownAfterVote.Parks[0].Rank );
+			Assert.AreEqual( 1, ownAfterVote.Parks[0].HighestRank );
+			// Taking the leader out lifts the rest and their best places follow.
+			await bobClient.UnpublishParkAsync( popular.Id );
+			Assert.AreEqual( 1, (await publicClient.GetPlayerProfileAsync( "Ann" )).Parks[0].Rank );
+
+			// Player search by name (S1): at most fifty results, more asks for detail. Without a login only players
+			// who show a park on the website are found, so the public search cannot list every account.
+			for ( var index = 0; index < 51; index++ )
+				await publicClient.RegisterAsync( $"Crowd {index:D2}", "crowd password" );
+			var anonymous = await new OnlineClient( server.Url ).SearchPlayersAsync( "Crowd" );
+			Assert.AreEqual( 0, anonymous.Names.Count );
+			CollectionAssert.AreEqual( new[] { "Ann" }, (await new OnlineClient( server.Url ).SearchPlayersAsync( "Ann" )).Names.ToArray() );
+			var search = await annClient.SearchPlayersAsync( "Crowd" );
+			Assert.AreEqual( 50, search.Names.Count );
+			Assert.IsTrue( search.More );
+			var narrow = await annClient.SearchPlayersAsync( "Crowd 49" );
+			Assert.AreEqual( 1, narrow.Names.Count );
+			Assert.IsFalse( narrow.More );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
+	[TestMethod]
+	public async Task MovementIsNotRelayedInTheLobby()
+	{
+		await using var server = await LoopbackServer.StartAsync( options => options.ChatBurst = 50 );
+		using var annClient = await server.LoginAsync( "Ann" );
+		using var bobClient = await server.LoginAsync( "Bob" );
+		await using var ann = await annClient.ConnectChatAsync();
+		await NextAsync( ann, item => item.Kind == ChatEventKind.Room );
+		await using var bob = await bobClient.ConnectChatAsync();
+		await NextAsync( bob, item => item.Kind == ChatEventKind.Room );
+		await bob.MoveAsync( 0.5f, 0.5f );
+		await ann.MoveAsync( 0.25f, 0.75f );
+		// A chat line sent after the moves arrives with no movement before it.
+		await ann.SendAsync( ChatCommand.Say, "after" );
+		var next = await NextAsync( bob, item => item.Kind is ChatEventKind.Move or ChatEventKind.Say );
+		Assert.AreEqual( (ChatEventKind.Say, "after"), (next.Kind, next.Text) );
+	}
+
+	[TestMethod]
+	public async Task ChatParksRelayMovementPresenceAndBuddyEntries()
+	{
+		await using var server = await LoopbackServer.StartAsync( options =>
+		{
+			options.ChatBurst = 50;
+			options.MovementBurst = 3;
+			options.MovementsPerSecond = 2;
+		} );
+		try
+		{
+			using var annClient = await server.LoginAsync( "Ann" );
+			using var bobClient = await server.LoginAsync( "Bob" );
+			using var ownerClient = await server.LoginAsync( "Owner" );
+			await using var ann = await annClient.ConnectChatAsync();
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room );
+			await using var bob = await bobClient.ConnectChatAsync();
+			await NextAsync( bob, item => item.Kind == ChatEventKind.Room );
+
+			// A chat park of the globe's satellites: the joiner sees everyone, everyone sees the joiner.
+			var satellite = ChatProtocol.SatelliteRoom( 1 );
+			await ann.JoinAsync( satellite );
+			Assert.AreEqual( "Ann", string.Join( ",", (await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == satellite )).Args! ) );
+			await bob.JoinAsync( satellite );
+			Assert.AreEqual( "Ann,Bob", string.Join( ",", (await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == satellite )).Args! ) );
+			Assert.AreEqual( "Ann,Bob", string.Join( ",", (await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == satellite )).Args! ) );
+			// The player count of the satellite list includes them.
+			using var counter = new OnlineClient( server.Url );
+			Assert.AreEqual( 2, (await counter.GetChatParksAsync())!.ChatParks.Single( park => park.Id == 1 ).Players );
+
+			// Walking is relayed to everyone in the park; a client's first movement also asks for the places of
+			// everyone already there, without ever sending movement to an older client that never walked.
+			await bob.MoveAsync( 0.5f, 0.5f );
+			await ann.MoveAsync( 0.25f, 0.75f );
+			var annMoved = await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
+			Assert.AreEqual( ("Ann", satellite, 0.25f, 0.75f), (annMoved.From, annMoved.Room, annMoved.X, annMoved.Y) );
+			using var carolClient = await server.LoginAsync( "Carol" );
+			await using var carol = await carolClient.ConnectChatAsync();
+			await NextAsync( carol, item => item.Kind == ChatEventKind.Room );
+			await carol.JoinAsync( satellite );
+			await NextAsync( carol, item => item.Kind == ChatEventKind.Room && item.Room == satellite );
+			await carol.MoveAsync( 0.75f, 0.25f );
+			var carolSeesAnn = await NextAsync( carol, item => item.Kind == ChatEventKind.Move && item.From == "Ann" );
+			Assert.AreEqual( (0.25f, 0.75f), (carolSeesAnn.X, carolSeesAnn.Y) );
+			// Carol's first movement reached the park's other players as well.
+			var carolMoved = await NextAsync( bob, item => item.Kind == ChatEventKind.Move && item.From == "Carol" );
+			Assert.AreEqual( (0.75f, 0.25f), (carolMoved.X, carolMoved.Y) );
+
+			// A flood of positions is dropped, not answered and not punished: the connection stays and chat flows.
+			for ( var index = 0; index < 8; index++ )
+				await bob.MoveAsync( index / 8f, 0.5f );
+			await Task.Delay( 200 );
+			await bob.SendAsync( ChatCommand.Say, "still here" );
+			Assert.AreEqual( "still here", (await NextAsync( ann, item => item.Kind == ChatEventKind.Say )).Text );
+
+			// A parting player leaves the roster of the park for everyone who stays.
+			await carol.DisposeAsync();
+			Assert.AreEqual( "Ann,Bob", string.Join( ",", (await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == satellite && item.Args is { Count: 2 } )).Args! ) );
+
+			// Buddies are told which park their buddy entered (S5).
+			await bob.SendAsync( ChatCommand.Buddy, "Ann" );
+			await NextAsync( bob, IsNotice( ChatNotice.YouMakeBuddy ) );
+			await ann.JoinAsync( ChatProtocol.SatelliteRoom( 2 ) );
+			await NextAsync( ann, item => item.Kind == ChatEventKind.Room && item.Room == ChatProtocol.SatelliteRoom( 2 ) );
+			// The park Ann walked out of gets its roster without her.
+			Assert.AreEqual( "Bob", string.Join( ",", (await NextAsync( bob, item => item.Kind == ChatEventKind.Room && item.Room == satellite && item.Args is { Count: 1 } )).Args! ) );
+			var entered = await NextAsync( bob, item => item.Kind == ChatEventKind.System && item.Text == ChatSystemKeys.BuddyEnters );
+			Assert.AreEqual( "Ann", entered.Args![0] );
+			// The chat parks' default names (docs/SERVER.md): the notification names the park itself.
+			StringAssert.Contains( entered.Args[1], "Fairground", $"satellite 2 name was {entered.Args[1]}" );
+
+			// A page carries its message to any park: "Dan pages you: Hello" (manual p. 70, S5).
+			await bob.SendAsync( ChatCommand.Page, "Ann Hello" );
+			var paged = await NextAsync( ann, item => item.Kind == ChatEventKind.Page );
+			Assert.AreEqual( ("Bob", "Hello"), (paged.From, paged.Text) );
+			var youPage = await NextAsync( bob, IsNotice( ChatNotice.YouPage ) );
+			Assert.AreEqual( ("Ann", "Hello"), (youPage.Args![0], youPage.Args[1]) );
+
+			// Locate names the park and its city: "Halloween World in San Francisco" (manual p. 70).
+			var park = await ownerClient.UploadParkAsync( OnlineFormatTests.Package( "Halloween World" ), cityId: 5 );
+			await using var owner = await ownerClient.ConnectChatAsync();
+			await NextAsync( owner, item => item.Kind == ChatEventKind.Room );
+			await owner.JoinAsync( ChatProtocol.ParkRoom( park.Id ) );
+			await NextAsync( owner, item => item.Kind == ChatEventKind.Room && item.Room == ChatProtocol.ParkRoom( park.Id ) );
+			await bob.SendAsync( ChatCommand.Locate, "Owner" );
+			var located = await NextAsync( bob, IsNotice( ChatNotice.ThePark ) );
+			Assert.AreEqual( "Halloween World in San Francisco", located.Args![1] );
+		}
+		finally
+		{
+			server.DeleteData();
+		}
+	}
+
 }

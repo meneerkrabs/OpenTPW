@@ -11,27 +11,35 @@ namespace OpenTPW;
 /// hierarchy (parent-relative, docs/MD2-MODELS.md); MD2 (x, y-up, z) maps to engine (x, z, y-up).
 /// Flying meshes, rain, lightning and the online globe are not rendered.
 /// </summary>
-// [APPROX:UI-018] flying meshes, rain, lightning and island/gate animations are not drawn — evidence needed: binary/capture of the lobby
-public sealed class LobbyScene : Entity
+// [APPROX:UI-018] flying meshes and island/gate animations are not drawn; the sky, rain and lightning come from LobbyEffects and the weather renderer
+public sealed class LobbyScene : OriginalModelScene
 {
-	private const int MaximumTextureSlots = 16;
 	private const string TerrainDirectory = "/lobby/terrain";
-	private readonly List<ModelEntity> parts = new();
-	private readonly List<Model> models = new();
-	private readonly Dictionary<string, Texture> textures = new( StringComparer.OrdinalIgnoreCase );
 
-	public LobbyScene( LobbyDefinition definition )
+	protected override string TextureDirectory => $"{TerrainDirectory}/textures";
+
+	/// <summary>
+	/// The lobby with the four theme islands, or with <paramref name="slots"/>: the theme island to stand at each
+	/// ISLANDCAMERAPOSITION slot (the city lobby shows a city's top-10 parks by rank this way; null leaves a slot empty).
+	/// </summary>
+	// [BIN:TPW-EXE:0x005E3210 lobby island] islands are built from a theme's ISLAND entry at the caller's slot counter, at that slot's ISLANDCAMERAPOSITION and the ISLAND height and angle
+	public LobbyScene( LobbyDefinition definition, IReadOnlyList<LobbyIslandInfo?>? slots = null )
 	{
 		Definition = definition;
+		var placed = slots == null
+			? definition.Islands.Select( island => (Island: (LobbyIslandInfo?)island, Slot: island.Index) ).ToList()
+			: slots.Select( ( island, slot ) => (Island: island, Slot: slot) ).ToList();
 		try
 		{
 			var terrain = new ModelFile( $"{TerrainDirectory}/Base.MD2" );
 			AddModel( terrain, NMatrix4x4.Identity );
 			if ( terrain.Heightfield != null )
 				AddHeightfield( terrain );
-			foreach ( var island in definition.Islands )
+			foreach ( var (candidate, slot) in placed )
 			{
-				var (x, z) = definition.PositionOf( island );
+				if ( candidate is not { } island )
+					continue;
+				var (x, z) = definition.PositionOf( slot );
 				var placement = NMatrix4x4.CreateRotationY( island.Angle * MathF.PI / 180 ) * NMatrix4x4.CreateTranslation( x, 0, z );
 				foreach ( var name in new[] { island.IslandModel, island.GateModel } )
 				{
@@ -40,6 +48,7 @@ public sealed class LobbyScene : Entity
 						AddModel( new ModelFile( file ), placement );
 				}
 				IslandCount++;
+				Slots.Add( (island, slot) );
 			}
 		}
 		catch
@@ -51,12 +60,16 @@ public sealed class LobbyScene : Entity
 
 	public LobbyDefinition Definition { get; }
 	public int IslandCount { get; private set; }
-	public int PartCount => parts.Count;
+	/// <summary>The islands drawn and the slot each stands at.</summary>
+	public List<(LobbyIslandInfo Island, int Slot)> Slots { get; } = new();
 
 	/// <summary>Engine-space centre of an island's camera orbit (its position at the ISLAND height).</summary>
-	public Vector3 Target( LobbyIslandInfo island )
+	public Vector3 Target( LobbyIslandInfo island ) => Target( island, island.Index );
+
+	/// <summary>Engine-space centre of the camera orbit around <paramref name="island"/> standing at <paramref name="slot"/>.</summary>
+	public Vector3 Target( LobbyIslandInfo island, int slot )
 	{
-		var (x, z) = Definition.PositionOf( island );
+		var (x, z) = Definition.PositionOf( slot );
 		return new Vector3( x, z, island.Height );
 	}
 
@@ -72,52 +85,6 @@ public sealed class LobbyScene : Entity
 			Log?.Warning( $"Lobby model {name}: {exception.Message}" );
 			return null;
 		}
-	}
-
-	private static NVector3 ToEngine( NVector3 md2 ) => new( md2.X, md2.Z, md2.Y );
-
-	private void AddModel( ModelFile model, NMatrix4x4 placement )
-	{
-		var names = new List<string>();
-		var vertices = new List<Vertex>();
-		var indices = new List<uint>();
-		foreach ( var mesh in model.Meshes )
-		{
-			if ( mesh.Vertices.Length == 0 || mesh.Indices.Length == 0 || mesh.Materials.Length is 0 or > MaximumTextureSlots || mesh.TexCoords.Length < mesh.Vertices.Length || mesh.Normals.Length != mesh.Vertices.Length )
-				continue;
-			var meshNames = mesh.Materials.Select( material => material.TextureIndex < 0 ? "" : material.Name ).ToArray();
-			if ( names.Union( meshNames, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
-				Flush( names, vertices, indices );
-			var slots = meshNames.Select( name =>
-			{
-				var slot = names.FindIndex( existing => string.Equals( existing, name, StringComparison.OrdinalIgnoreCase ) );
-				if ( slot < 0 )
-				{
-					names.Add( name );
-					slot = names.Count - 1;
-				}
-				return slot;
-			} ).ToArray();
-			var world = OriginalTerrain.GetWorldMatrix( model, mesh.NodeIndex ) * placement;
-			var first = (uint)vertices.Count;
-			for ( var index = 0; index < mesh.Vertices.Length; index++ )
-			{
-				var source = mesh.Vertices[index];
-				var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
-				var normal = NVector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world );
-				vertices.Add( new Vertex
-				{
-					Position = ToEngine( NVector3.Transform( source.Position.GetSystemVector3(), world ) ),
-					Normal = normal.LengthSquared() > 0 ? NVector3.Normalize( ToEngine( normal ) ) : NVector3.UnitZ,
-					TexCoords = mesh.TexCoords[index],
-					TexIndex = slots[materialIndex],
-					MatFlags = mesh.Materials[materialIndex].Flags
-				} );
-			}
-			foreach ( var index in mesh.Indices )
-				indices.Add( first + index );
-		}
-		Flush( names, vertices, indices );
 	}
 
 	/// <summary>The lobby heightfield (111×110 cells) with each cell's ground texture slot, like the park terrain.</summary>
@@ -161,50 +128,4 @@ public sealed class LobbyScene : Entity
 		Flush( names, vertices, indices );
 	}
 
-	private void Flush( List<string> names, List<Vertex> vertices, List<uint> indices )
-	{
-		if ( vertices.Count > 0 )
-		{
-			var slots = new Texture[MaximumTextureSlots];
-			for ( var index = 0; index < slots.Length; index++ )
-				slots[index] = index < names.Count ? LoadTexture( names[index] ) : slots[0] ?? Texture.Missing;
-			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
-			material.Set( "Color", slots );
-			var model = new Model( vertices.ToArray(), indices.ToArray(), material );
-			models.Add( model );
-			parts.Add( new ModelEntity { Model = model, Name = $"lobby part {parts.Count}" } );
-		}
-		names.Clear();
-		vertices.Clear();
-		indices.Clear();
-	}
-
-	private Texture LoadTexture( string name )
-	{
-		if ( name.Length == 0 )
-			return Texture.Missing;
-		if ( textures.TryGetValue( name, out var texture ) )
-			return texture;
-		var path = OpenTPW.UI.Original.UiImages.Resolve( name, $"{TerrainDirectory}/textures" );
-		texture = path == null ? Texture.Missing : new Texture( path, TextureFlags.Repeat );
-		textures[name] = texture;
-		return texture;
-	}
-
-	protected override void OnDelete()
-	{
-		foreach ( var part in parts )
-			part.Delete();
-		parts.Clear();
-		foreach ( var model in models )
-		{
-			Asset.All.Remove( model );
-			global::Global.Render.ScheduleDelete( () =>
-			{
-				model.VertexBuffer.Dispose();
-				model.IndexBuffer?.Dispose();
-			} );
-		}
-		models.Clear();
-	}
 }

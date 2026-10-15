@@ -2,12 +2,14 @@
 
 October 9, 2026. Status: CPU container/audio/video decoding for the nine local
 `Data/Movies/*.tgq` files, plus streaming playback (`--play-movie <name>`)
-with audio, A/V sync and GPU presentation. Audio PCM matches an external FFmpeg
+with audio, A/V sync and GPU presentation, and the start-up movie sequence
+(`bf`, then a trailer by day of the month) before the front end. Audio PCM matches an external FFmpeg
 8.0.1 oracle bit-exactly (over the samples FFmpeg emits); video planes are
 **close but not bit-exact** (84–95 % identical samples, 56–61 dB). No in-game
-trigger is wired: the data does not say when the original plays which movie.
-The original player's colour conversion, pixel aspect and end-of-movie
-behaviour are not verified. No dependency or movie data is added.
+The triggers come from the Mac PowerPC build (see "Where the original plays
+movies"); the PC `.tgq` flow is assumed to match. The original player's colour
+conversion and end-of-movie behaviour are not verified. No dependency or movie
+data is added.
 
 Code: `source/OpenTPW.Files/Formats/Video/TgqMovieFile.cs`,
 `source/OpenTPW.Files/Formats/Video/TqiDecoder.cs`,
@@ -124,21 +126,26 @@ mid shift and the quarter-LSB bias were chosen by search; constant precision
 (9–12 bits) barely matters. The quarter-LSB bias is unexplained: the oracle
 rounds slightly downward relative to round-half-up in every variant tried.
 
-All 9,412 frames (this decoder vs the oracle):
+All 9,412 frames (this decoder vs the oracle), re-measured on the merged
+`main` for this revision. Identical samples count Y, Cb and Cr together. Per-frame
+PSNR uses all three planes with peak 255; the mean and worst are taken over the
+frames that differ (516 frames match exactly and are excluded from the PSNR
+columns). Max abs diff is over all samples:
 
 | File | Identical samples | Mean PSNR | Worst frame | Max abs diff |
 | --- | ---: | ---: | ---: | ---: |
-| `bf` | 94.6 % | 60.70 dB | 57.98 dB | 4 |
+| `bf` | 94.6 % | 60.93 dB | 57.98 dB | 4 |
 | `bub` | 88.2 % | 57.30 dB | 55.69 dB | 4 |
-| `buc` | 87.0 % | 56.90 dB | 54.53 dB | 4 |
-| `grav` | 87.2 % | 57.00 dB | 55.02 dB | 4 |
-| `jug` | 83.9 % | 55.95 dB | 54.53 dB | 4 |
-| `mir` | 90.9 % | 58.47 dB | 56.04 dB | 4 |
-| `plan` | 90.4 % | 58.22 dB | 56.49 dB | 4 |
-| `roc` | 90.0 % | 58.06 dB | 56.13 dB | 4 |
-| `roll` | 87.7 % | 57.13 dB | 54.70 dB | 4 |
+| `buc` | 87.0 % | 56.92 dB | 54.53 dB | 4 |
+| `grav` | 87.2 % | 56.98 dB | 55.02 dB | 4 |
+| `jug` | 83.9 % | 56.06 dB | 54.53 dB | 4 |
+| `mir` | 90.9 % | 58.53 dB | 56.04 dB | 4 |
+| `plan` | 90.4 % | 58.17 dB | 56.49 dB | 4 |
+| `roc` | 90.0 % | 58.02 dB | 56.13 dB | 4 |
+| `roll` | 87.7 % | 57.17 dB | 54.70 dB | 4 |
 
-(Previous float decoder over `bf`, `bub`, `mir`, `plan`, `roll`: 79–85 %
+The mean PSNR differs from the earlier table by up to 0.1 dB; the decoder is
+unchanged. (Previous float decoder over `bf`, `bub`, `mir`, `plan`, `roll`: 79–85 %
 identical, 54.6–56.2 dB, max difference 5.) **Still not bit-exact.** Evidence
 of the remaining gap: for blocks with one AC coefficient the oracle output is a
 deterministic function of the level, so the residual is IDCT rounding, not
@@ -157,6 +164,103 @@ of `bf`/`plan`): luma clips at both ends (Y = 0: 0.46 %/0.87 %, Y = 255:
 0.43 %/0.73 %) and 1.1 %/2.2 % of luma is below 16, which limited-range video
 would not show. Chroma stays within 16–240 for > 99.9 % of samples. The
 original player's conversion is still **not verified** against captures.
+
+### Original TQI decoder: static analysis of the PC executable
+
+Static reads only (`llvm-objdump`, byte reads, no execution) of the decrypted
+Sim Theme Park World v2.0 no-CD `tp.exe` that COMPLETION-PLAN.md allows for
+analysis (3,734,528 bytes, SHA-256 `5472f97b5eb28f58…`, image base `0x400000`).
+Its code **and** its initialised data are present. (An earlier review in this
+document read a damaged extraction, SHA-256 `85eef533…`, whose data sections
+were empty; its conclusions that the constants are zero or encrypted, and that
+`0x67832e` is the movie IDCT, are withdrawn.)
+
+The executable links EA's movie library: the chunk dispatcher at `0x66e5f0`
+handles `MADe`, `TGVf`, `TGVk`, `TGQp`, `pIQT`, `UV2f` and more (`pIQT` is
+frame type 4). Two separate 8×8 transforms exist:
+
+- `0x67832e` (data in section `idct_dat`, block decode `0x677c00` with an 8-bit
+  DC and table `0xfbd54c` built at `0x676bc0`) belongs to another EA codec,
+  **not TQI**. It shares the flowgraph below but rounds with the
+  `1.5·2⁵²` trick (`0xfbc028` = 6755399441055744.0).
+- **TQI** has its own copy in section `cseg` with data in `tqia_dat`.
+
+Verified TQI arithmetic:
+
+| Step | Address | What it does |
+| --- | --- | --- |
+| Block decode | `0x6f61e8` | VLC run/level decode (tables in `tqia_dat`, zigzag at `0xfbf0e4`); every coefficient, the DC included (after prediction), is `level × M[pos]` with a plain 32-bit `imul`; `M` is 64 dwords at `0xfac690` |
+| Pass 1 (rows) | `0x6f6510` | AAN butterfly, see below; if all seven AC inputs are zero, the DC is copied unchanged to all eight outputs; writes a 9-dword-stride temporary |
+| Pass 2 (columns) | `0x6f6670` | the same butterfly without the zero shortcut; **no shift between the passes** |
+| Driver | `0x6f6770` | per macroblock: decode, eight row passes, eight column passes into an integer macroblock buffer (`0xfacab0`, 256-byte rows) |
+| Output | `0x6f6db4` | each sample is `(v + 0x8000) >> 16` (round half up), used as an index into colour tables (`0xfae930`, `0xfaf930`, `0xfb0930`) that produce 16-bit RGB directly; the player never stores 8-bit YUV |
+
+The butterfly (inputs `x0`…`x7`, all 32-bit integers):
+
+- even part: `t10 = x0 + x4`, `t11 = x0 − x4`, `t13 = x2 + x6`,
+  `r = 2·hi32((x2 − x6) · 0x5A82799A)` (Q31 √2/2, `imul`, high dword doubled),
+  `e = t13 + r`; outputs combine `t10 ± e` and `t11 ± r`;
+- odd part: `z13 = x3 + x5`, `z10 = x5 − x3`, `z11 = x1 + x7`, `z12 = x1 − x7`,
+  `t7 = z11 + z13`, `t11o = 2·hi32((z11 − z13) · 0x5A82799A)`;
+  in x87: `z5 = (z10 + z12) · 0.3826834f`, `a = z10 · 0.5411961f + z5`,
+  `b = z12 · 1.3065630f − z5` (the `fsubrp` at `0x6f6586` encodes Intel
+  `FSUBP ST(2),ST(0)`: `ST(2) − ST(0)`), both converted with `fistp` in the current
+  rounding mode; then `p = round(a) + t11o`, `q = t11o + round(b)`,
+  `w = round(b) + t7`;
+- outputs (index order of the row stores): `0: (t10+e)+w`, `7: (t10+e)−w`,
+  `1: q+(t11+r)`, `6: (t11+r)−q`, `2: (t11−r)+p`, `5: (t11−r)−p`,
+  `3: (t10−e)+round(a)`, `4: (t10−e)−round(a)`.
+
+Constants (`tqia_dat`, identical in `idct_dat`): `0xfbf038` = `0x5A82799A`,
+`0xfbf03c` = 0.5411961, `0xfbf040` = 1.3065630, `0xfbf044` = 0.3826834.
+
+Still open, so the decoder is not changed yet:
+
+- **The TQI matrix builder**: no instruction writes `0xfac690` by absolute
+  address, so the code that fills `M` from the frame's quantiser was not found.
+  The sibling codec's builder (`0x676bc0`) computes
+  `M[k] = round_half_up(S[k] · ((W[k] · q) << 12) / 2¹⁶)` with the AAN prescale
+  `S` (×8192, at `0xfbc24c`), the MPEG-1 intra matrix `W` (`.rdata` `0x706fb8`) and
+  `M[0]` from `W[0] = 8` without `q`; whether TQI uses the same rule and scale is
+  unverified.
+- **x87 precision control**: the odd-part products are rounded according to the
+  FPU's precision setting at movie time (Direct3D often selects 24-bit); which
+  setting the movie player runs with is not established.
+- **Colour tables**: their builders are not read.
+
+Measured against FFmpeg: FFmpeg's TQI path approximates this transform with
+integer constants, so a faithful port is expected to differ slightly from it;
+the FFmpeg table above is a closeness measure, not the bit-exactness gate.
+
+### Mac route: no TQI decoder in the Mac build (verified, negative)
+
+The Mac build was checked as the candidate source of the original TQI
+arithmetic, because its code is readable. It is not one. Static reads only:
+the player is `0x1009B1DC` (552 bytes; its callers `0x101C0DF0` and
+`0x101C0F40` are confirmed by call references).
+
+- The player calls only QuickTime movie glue: `NewMovieFromFile` and
+  `OpenMovieFile` (glue at `0x101C6534`–`0x101C6564`), `GetGWorldDevice`,
+  `SetMovieGWorld`, `SetMovieBox`, `PrerollMovie`, `SetMovieVolume`,
+  `MoviesTask` and `StartMovie`. Its whole movie import surface is the
+  `QuickTimeLib` set (`OpenMovieFile` … `IsMovieDone`).
+- Neither `SimThemePark.data` nor the 15 shared libraries contain `TQI`, `pIQT`
+  or an EA codec string. The only IDCT in the libraries is IJG `libjpeg`'s,
+  which is unrelated to movies.
+- The Mac movies are not the `.tgq` files. The HFS volume `mac-feral/hfs.img`
+  (`Theme Park Data/data/Movies`) holds the nine `.mov` files with the same
+  names, plus `bfj.mov` and `BFj2.mov`. Their QuickTime `moov` atoms (raw in
+  `bf.mov` and `bfj.mov`, zlib-compressed `cmov` in the rest) declare `SVQ1` (Sorenson Video 1)
+  video and `ima4` audio. The `Extras` trailer is `SVQ1` with `twos` audio.
+  Sorenson decoding is Apple's QuickTime component, which is not in the game
+  data.
+- So the Mac player decodes re-encoded Sorenson video through QuickTime, never
+  an EA TQI bitstream. Nothing in the Mac build can supply the `.tgq` IDCT,
+  and no Mac arithmetic was ported. The decoder and the table above are
+  unchanged.
+
+The volume was read with a scratch HFS catalogue walker outside the repository
+(the image does not mount with `hdiutil`). Nothing from it is committed.
 
 ### Pinned hashes (SHA-256)
 
@@ -198,6 +302,55 @@ audio decodes; other variants throw `NotSupportedException`. Caller streams stay
 open; nonseekable short reads are supported. Asset tests are inconclusive (not
 passing) without `OPENTPW_GAME_PATH`; the all-frames test takes ~1 min in Debug.
 
+### Container robustness audit (2026-10-13)
+
+PT numeric tags exposed as signed `int` metadata reject values greater than
+`int.MaxValue` instead of wrapping negative (frame rate, compression/revision,
+channels and sample rate). This is OpenTPW's typed representation policy, not a
+new inferred codec limit; representable unknown metadata remains available to
+callers, whose supported-variant checks still apply. The sample count stays a
+`long` with its existing supported bound. No transform or quantizer math changed.
+
+`TgqAudioReader` advances its block ordinal only after a successful decode. A
+malformed block with a valid encoded length therefore remains the failing block
+on retry rather than being silently skipped. Reads that throw restore the complete
+entry cursor (block ordinal, cached frame count, cached position and buffer), so
+`Position` still names the samples returned by earlier successful reads. A caller
+buffer may already contain a copied prefix and must be discarded; retrying copies
+that same prefix again before reaching the malformed block. If a failed decode
+overwrote the cached PCM, the reader reconstructs its already validated block from
+the immutable movie data. EA-XA current/previous predictor arrays are local to each
+block decode and seeded from that block's header; no filter state persists between
+calls and no codec transform changes are required.
+
+Synthetic regressions failed on the unsigned-tag wraparound and failed-decode
+retry paths before the fixes. Tests preserve the largest representable metadata,
+reject every truncated prefix of a valid miniature container, and decode its
+valid patch/audio/bitstream padding. The audit also checked that chunk sizes and
+file offsets are bounded before slicing, PT extended lengths are bounded before
+copying, audio sums use `long`, and frame dimensions bound plane allocation.
+Existing file/chunk/count/dimension limits remain unchanged.
+
+Independent review target `9e56fba340a54896a26caad70f6dcab0c7d09956` against
+`72a1febf`: **ACCEPT after retry rollback correction**. A new red regression showed
+that the original block-index fix alone lost the valid prefix of a failed read
+while leaving public `Position` unchanged. Added cases exercise retry from both an
+empty cache and a partially consumed cache, including a later-frame predictor
+failure that overwrites the reused PCM buffer before throwing. Independent parser
+checks cover 1–4-byte big-endian numeric values, big-endian extended lengths,
+little-endian platform values, opaque unknown tags (including embedded terminator
+bytes), no-data tags, duplicates, malformed lengths, and nonzero post-terminator
+padding. Typed representability checks preserve `int.MaxValue` and refuse unsigned
+values from `0x80000000`; no new arbitrary format cap is imposed.
+
+Fresh independent verification: 71 synthetic container/decoder/playback/intro cases
+pass, including fourteen container robustness cases; nineteen original-data rows
+skip with the corpus environment unset. Build/typecheck, changed-file style and
+whitespace checks, CRLF-aware diff check, fidelity register check and its eleven
+Python tests pass. No original asset reads were attempted. Original corpus compatibility
+and original-player malformed-input behavior were not requalified because USBSSD
+reads are blocked. Existing codec-fidelity gates above remain open.
+
 ## Playback
 
 `bash scripts/run.sh --game-path <install> --play-movie bf` plays
@@ -231,9 +384,9 @@ and a hash of the presented planes (no window, GPU or audio device);
   original player's behaviour here is unknown.
 - **Presentation**: CPU BT.601 full-range conversion to RGBA, uploaded to a
   320×352 texture and drawn with the existing fullscreen-triangle blit shader
-  into a centred viewport with square pixels (pillarboxed in a 16:9 window).
-  The `bf.tgq` Bullfrog logo looks horizontally condensed with square pixels,
-  so the original may have displayed a different pixel aspect; unverified.
+  into a centred viewport at the original's display aspect 640:352 (the 320×352
+  frames are shown at twice their width, as the original's movie box does; see
+  below), letter/pillarboxed in other windows.
 
 Measured: headless `bf` and `plan` at 60 Hz with audio decode every frame
 (255, 1,138) with no drops and end within one update after the audio; at 12 Hz
@@ -249,27 +402,147 @@ between the two reads; it saves `artifacts/native-movie-bf-*.png`.
 
 ## Where the original plays movies
 
-Searched all 18,734 files in the data directory and its WAD/SDT archives
-(Latin-1 and UTF-16) for `tgq`, `movie`, `fmv`, `intro`, `video`, `cutscene`,
-`cinematic` and the nine movie names, and decoded every English `.str` table:
+Source: static analysis of the Mac PowerPC build (`SimThemePark`, QuickTime
+`.mov` files; Ghidra, never executed). The PC `.tgq` flow is **inferred** from
+the shared game code, not proven. Addresses are function entry points of the
+main code fragment; nothing here is decompiled text.
 
-- `sound.sam` has `DefaultVolume.MOVIE 100`; `UITEXT.str` #323 is
-  "Movie volume:". So the game plays movies with their own volume setting.
-- No file names a movie, an intro sequence or a trigger; every other hit was an
-  incidental byte match in binary data. The executable is not available.
-- Content: `bf.tgq` is the animated Bullfrog Productions logo (likely a startup
-  logo); the other eight share an identical first frame. Which screen plays
-  them, and when, is not evidenced.
+### Mechanism (proven)
 
-Therefore no startup/intro playback is wired; movies play only from the CLI.
+- One movie player routine at `0x1009B1DC` (name, target surface, x/y): it
+  resolves the file, opens it with QuickTime, binds it to the game surface,
+  sets the movie box, prerolls, sets the movie volume, runs a few
+  `MoviesTask` steps and starts it. Companions: `0x1009B404` (task + is-done),
+  `0x1009B45C` (stop and dispose), `0x1009B4D8` (`EnterMovies`, called once
+  from the start-up routine `0x101C0B28`), `0x1009B4FC` (shutdown).
+- This player has **exactly two callers** in the whole fragment (no data
+  references to it): `0x101C0DF0` (the logo) and `0x101C0F40` (the trailer).
+  Both are called from one place each, the start-up states of the main state
+  machine `0x101C1208`. No other code (theme entry, golden tickets, rides,
+  advisor) starts a movie. Indirect calls cannot be excluded statically, but no
+  movie string or QuickTime import is referenced outside this player.
+- Both callers first look the file up (`0x100036B0`); a missing movie is skipped
+  silently and the state still advances.
+
+### Start-up sequence (proven)
+
+Main state machine (`0x101C1208`, 16-entry jump table): start-up routine
+`0x101C0B28` sets state 4 when the start-up flag (bit `0x200` of the global
+flag word) is set, else state 9. State 4 continues to 5, which is the logo.
+
+| State | Does |
+|---|---|
+| 5 | if a skip input is down: go to 7; else play `Data:Movies:bf.mov` and go to 6 |
+| 6 | pump the movie; when done or a skip input is down: stop it, go to 7 |
+| 7 | if a skip input is down: go to 1 (front-end loading); else play the day trailer, go to 8 |
+| 8 | pump; when done or skip: stop it, go to 1 |
+| 1 | splash plus normal loading (game data, lobby), then on to the lobby |
+| 9 | the same loading **without** movies (flag clear), ending in the running state |
+
+- **Logo**: `bf` at every start-up (`0x101C0DF0`).
+- **Trailer** (`0x101C0F40`): `localtime()` day of the month, modulo 8, indexes
+  the eight other movies in the alphabetical order of the path table (pool
+  entries `+0x57…+0xE5` of the data block behind TOC slot `-0x3880`):
+
+| day % 8 | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| movie | bub | buc | grav | jug | mir | plan | roc | roll |
+
+  The choice is deterministic by date (days 8, 16, 24 play `bub`; days 7, 15, 23,
+  31 `roll`), not random. All nine names are the `Data:Movies:<name>.mov` strings;
+  `bf` sits at pool offset `+0x44`.
+- **Skip** (proven): the skip inputs are Esc, Space (virtual-key style codes
+  `0x1B`, `0x20`) and the mouse button (global at `0x101EDD34`, polled through
+  `0x10171DA0`), sampled by level, not by edge, both before a movie starts and
+  while it plays. A button still held when the next movie is due therefore skips
+  that movie too: a normal click usually ends the whole intro.
+- **Every start**: no first-run or "seen" flag is read on this path. Whether it
+  plays is the start-up flag, set by default in the defaults routine
+  `0x1004CAD0` (called from `0x1004CE40` just before the start-up routine) and
+  changeable by the graphics settings block field `+0x2C` (`0x1004C2BC`, values
+  0 clear, 1 set) or the developer file named "debug options" (`0x1004BFE4`,
+  resource byte 3). **Inferred**: the settings field behind `+0x2C` is not
+  identified, so whether the player can switch the intro off in a menu is
+  unknown; the shipped default plays it.
+- **Movie volume** (proven): the player sets the QuickTime movie volume from a
+  global written only by `0x1009B4AC`, called from the sound-options apply
+  routine `0x10126460`: movie sound off gives 0, otherwise the Movie volume
+  percentage `p` (0…100) becomes `p × 1023 / 100`, then `× 256 / 1023`, i.e.
+  linear 0…256 (QuickTime full volume). That routine runs from the early
+  program start-up (`0x100002DC` → `0x10000D54` → `0x10125B7C`), before the
+  start-up states (the order is **inferred** from the call chain). OpenTPW maps
+  the Movie volume option (a percentage, 0…100, default 100) linearly onto 0…1.
+- **Picture box** (proven): the movie is placed at y = screen height × 64/480
+  and sized to the screen width by screen height × 352/480, i.e. 640×352 in a
+  640×480 screen, with black above and below. The `.tgq` frames are 320×352, so
+  the original shows them horizontally doubled (non-square pixels); OpenTPW does
+  the same inside a letterboxed window. (The original stretches to the
+  window width because it only ran fixed 4:3 modes; OpenTPW runs any window size and keeps the 640:352 aspect,
+  `[EXT:movie-letterbox]`, a design decision.)
+- Corroboration from `sound.sam` (`DefaultVolume.MOVIE 100`) and the options
+  string "Movie volume:" in the data directory.
+
+### Not in the data directory
+
+No data file names a trigger (the 18,734 files, WAD and SDT archives, and all
+English `.str` tables were searched), which is why the executable was needed.
+
+### Wired in OpenTPW
+
+`IntroPlaylist` / `IntroSequence`: every normal start plays `bf`, then the day
+trailer, then opens the front end. Esc, Space or a mouse button (left, right or
+middle) skips. Before each movie the PC waits until all of those are released
+(`0x54e360` states 5-8), so input held at launch or after skipping the logo
+delays the next movie rather than skipping it, and an input held during a movie
+stops it. The order and the trailer table were confirmed in the Windows `tp.exe`
+(UI-035 is retired). A missing or unreadable movie is skipped.
+`--no-intro` or `OPENTPW_NO_INTRO=1` goes straight to the front end; smoke
+tests never play it; `--mute` silences it.
+
+## Selected CPU frame export
+
+`--export-tgq-png <local.tgq> <0-based video-frame index> <new.png>` exports
+one video frame through `TgqMovieFile.DecodeVideoFrame`, `TqiFrame.WriteRgba32`
+and the existing PNG encoder. It runs before game/profile/window initialization
+and requires no installed game. All container and frame-header checks remain;
+only the selected video payload is decoded, and audio is not decoded. A malformed
+unselected video body can therefore remain unexamined when its header is valid.
+
+The PNG has the encoded width and height, with opaque alpha and the current
+colour conversion. It does not reproduce movie display stretching or establish
+native IDCT/colour parity. Decode and PNG encoding finish before output creation;
+a privately owned CreateNew temporary file is flushed, moved without overwrite,
+and cleaned on failure. Existing output and foreign temporary files are preserved.
+
+Independent CPU controls additionally distinguish video ordinals from three
+interleaved undecodable audio chunks, reject every truncated container prefix and
+invalid unselected chunk sizes/trailing bytes, and verify actual early CLI export
+preserves renderer/asset identity without profile creation. A Darwin-only CLI
+FIFO handshake also creates a foreign destination after the initial precheck and
+before valid input is delivered: the non-overwriting move refuses, foreign bytes
+remain unchanged and the owned temporary is removed. This qualifies that controlled
+host race, not cross-platform crash durability or original movie behavior.
+
+`TgqPngExportTests` checks first/last and distinct frames, square/non-square raster
+readback against current codec pixels, invalid indices and selected payloads,
+strict unselected-header refusal, undecoded audio/unselected bodies, source-byte
+identity, output refusal/late-move cleanup and the real early `Game.Run` route.
+These are synthetic CPU tests; original movies and GPU/native-player parity were
+not exercised for this export slice.
 
 ## Remaining gates
 
-Bit-exact IDCT (only if original-player captures prove it matters), colour
-matrix/range and pixel aspect against original-player captures, what the
-original does after the last frame (`plan.tgq` audio tail), the movie-volume
-setting, and where the game triggers each movie (needs the executable or
-captures). None of these are verified.
+Bit-exact IDCT: the original's kernel is located (see "Original IDCT") but its
+constants, matrix values and final clamp are not recoverable from the local
+data, so the FFmpeg-fitted integer AAN stays. The Mac build is not a source
+(see "Mac route"; its movies are Sorenson Video). Closing it needs the
+decrypted `IDCT_DAT`/`UVA_DATA` contents or a runtime capture of the PC
+executable (not done here), colour
+matrix/range against original-player captures, what the original does after
+the last frame (`plan.tgq` audio tail), whether the PC build uses the same
+logo-plus-day-trailer sequence and `.tgq` names (PC executable not analysed),
+and which user-facing setting, if any, controls the start-up flag. None of
+these are verified.
 
 ## Sources
 

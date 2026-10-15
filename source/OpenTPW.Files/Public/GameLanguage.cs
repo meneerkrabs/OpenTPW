@@ -30,11 +30,56 @@ public sealed class GameLanguage
 	public static GameLanguage Current
 	{
 		get => current ??= Resolve( FileSystem.GetAbsolutePath( "/" ), null, null );
-		set => current = value;
+		set
+		{
+			current = value;
+			Version++;
+		}
 	}
+
+	/// <summary>
+	/// Counts language changes. Caches of language data remember the version they loaded and reload when it differs, so a
+	/// language chosen in the options applies without a restart (docs/LANGUAGES.md, "Switching languages").
+	/// </summary>
+	public static int Version { get; private set; }
+
+	/// <summary>
+	/// Resolves <paramref name="name"/> from the same data folder and the full language overlay (all CD languages), without
+	/// making it current: the caller loads its strings and fonts first and sets <see cref="Current"/> only when that worked.
+	/// </summary>
+	public static GameLanguage ResolveSwitch( string name ) =>
+		Resolve( Current.BaseDataDirectory, name, AvailableOverlay ?? Current.OverlayDataDirectory );
 
 	/// <summary>Whether a language has been selected or resolved.</summary>
 	public static bool IsSelected => current != null;
+
+	/// <summary>
+	/// The language data the player has available besides the installation (--language-data or the CD
+	/// chosen in Game files). Kept even when the selected language comes from the installation, so the
+	/// options screen can still offer the other languages.
+	/// </summary>
+	public static string? AvailableOverlay { get; set; }
+
+	/// <summary>Languages the player can choose: the installation's plus those in <see cref="AvailableOverlay"/>.</summary>
+	public static IReadOnlyList<string> Choosable() => Readable( Current.BaseDataDirectory, AvailableOverlay ?? Current.OverlayDataDirectory );
+
+	/// <summary>
+	/// The languages of <see cref="FindLanguages"/> whose character table OpenTPW can read; the Polish CD's table uses
+	/// a different layout (docs/LANGUAGES.md), so Polish is left out rather than failing when chosen.
+	/// </summary>
+	public static IReadOnlyList<string> Readable( string dataDirectory, string? overlayPath ) =>
+		FindLanguages( dataDirectory, overlayPath ).Where( name =>
+		{
+			try
+			{
+				_ = Resolve( dataDirectory, name, overlayPath ).CharacterTable;
+				return true;
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+			{
+				return false;
+			}
+		} ).ToList();
 
 	/// <summary>Language name, using the shipped capitalization (e.g. "Danish").</summary>
 	public string Name { get; }
@@ -98,10 +143,27 @@ public sealed class GameLanguage
 	/// <summary>Files directly inside the language folder.</summary>
 	public IEnumerable<string> EnumerateFiles() => System.IO.Directory.EnumerateFiles( Directory ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase );
 
-	public StringFile LoadStrings( string fileName )
+	/// <summary>UITEXT entries in the edition OpenTPW numbers its strings by (the <c>UIStrings</c> enum).</summary>
+	public const int UiTextEntries = 473;
+
+	/// <summary>
+	/// The entry that the 474-entry UITEXT edition (the European CD's languages, including its English, and the
+	/// Mac version) has in addition: a "cannot load this park, it uses rides not yet downloaded" message at 207,
+	/// which moves every later entry up by one. All other tables agree (CHAT_COMMANDS only appends entries).
+	/// </summary>
+	public const int UiTextEditionExtraEntry = 207;
+
+	/// <summary>
+	/// Loads a string table. UITEXT from the 474-entry edition is renumbered to the 473-entry one (docs/LANGUAGES.md),
+	/// so the <c>UIStrings</c> enum indexes every language alike; <paramref name="asStored"/> keeps the file's own numbering.
+	/// </summary>
+	public StringFile LoadStrings( string fileName, bool asStored = false )
 	{
 		using var stream = OpenRead( fileName );
-		return new StringFile( stream, CharacterTable );
+		var strings = new StringFile( stream, CharacterTable );
+		if ( !asStored && string.Equals( fileName, "UITEXT.str", StringComparison.OrdinalIgnoreCase ) && strings.Entries.Length == UiTextEntries + 1 )
+			strings.RemoveEntryAt( UiTextEditionExtraEntry );
+		return strings;
 	}
 
 	public FontFile LoadFont( string fileName )
@@ -174,7 +236,7 @@ public sealed class GameLanguage
 
 		var baseDirectory = FindEntry( dataDirectory, Path.Combine( "Language", name ), true );
 		if ( baseDirectory != null )
-			return new GameLanguage( name, baseDirectory, dataDirectory, null, null );
+			return new GameLanguage( name, baseDirectory, dataDirectory, null, CopiedCdMeshes( dataDirectory, name ) );
 
 		var available = FindLanguages( dataDirectory, overlayPath );
 		throw new DirectoryNotFoundException( $"Language '{name}' not found. Available: {(available.Count == 0 ? "none" : string.Join( ", ", available ))}. " +
@@ -209,6 +271,17 @@ public sealed class GameLanguage
 		return languageRoot == null ? Enumerable.Empty<string>() : System.IO.Directory.EnumerateDirectories( languageRoot )
 			.Select( directory => CanonicalName( Path.GetFileName( directory ) ) )
 			.OrderBy( name => name, StringComparer.OrdinalIgnoreCase );
+	}
+
+	/// <summary>
+	/// A game folder copied from the CD (rather than installed) keeps the banner meshes in
+	/// <c>&lt;Lang&gt;/Meshes/&lt;Lang&gt;</c> beside <c>data</c>; the installer would have copied them into the
+	/// language folder.
+	/// </summary>
+	private static string? CopiedCdMeshes( string dataDirectory, string name )
+	{
+		var root = Path.GetDirectoryName( Path.TrimEndingDirectorySeparator( dataDirectory ) );
+		return root == null ? null : FindEntry( root, Path.Combine( name, "Meshes", name ), true );
 	}
 
 	private readonly record struct OverlayLanguage( string Name, string Directory, string DataDirectory, string? MeshDirectory );

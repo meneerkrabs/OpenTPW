@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -19,6 +20,9 @@ public sealed record ObjectUpgradeLevel( int Level, IReadOnlyDictionary<string, 
 {
 	public int GetInt( string field, int fallback = 0 ) =>
 		Values.TryGetValue( field, out var value ) && int.TryParse( value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result ) ? result : fallback;
+
+	public float GetFloat( string field, float fallback = 0 ) =>
+		Values.TryGetValue( field, out var value ) && float.TryParse( value, NumberStyles.Float, CultureInfo.InvariantCulture, out var result ) ? result : fallback;
 }
 
 /// <summary>
@@ -95,6 +99,15 @@ public sealed class ObjectCatalogEntry
 	public string DisplayName { get; internal set; }
 	/// <summary>Index of the first OBJECT_NAMES entry of this object (names may span two entries), or null.</summary>
 	public int? ObjectNameIndex { get; internal set; }
+
+	/// <summary>
+	/// The archive's shared (non-Info.Id) .sam files on their own (the TrackMaster <c>coaster.sam</c> of the 12 Theme Park World track rides, and Theme Park Inc's <c>bumper.sam</c>), or null when it has none.
+	/// They are kept apart from <see cref="Settings"/> as the original's object loader does (<see cref="CoasterDefinition.FromEntry"/> reads them).
+	/// </summary>
+	public ObjectSettings? SharedSettings { get; internal set; }
+
+	/// <summary>The settings the coaster loader reads (definition, cross sections, pylons, car types): coaster.sam alone, or the object settings for an entry without shared files (synthetic ones).</summary>
+	public ObjectSettings CoasterSettings => SharedSettings ?? Settings;
 	/// <summary>Number of OBJECT_NAMES entries the name uses (1 or 2).</summary>
 	public int ObjectNameLength { get; internal set; }
 	public string ModelPath { get; }
@@ -121,10 +134,20 @@ public sealed class ObjectCatalogEntry
 	/// <summary>Shapes without occupied cells (Mystery ride, Buy Land, Clear Land) are tools, not objects.</summary>
 	public bool IsTool => !Shape.OccupiedCells.Any();
 	/// <summary>Can be placed from a build menu: shown in a UI category, not a fixed item or tool. Upgrades attach to a ride's track.</summary>
-	// [APPROX:RIDES-017] Buildable = WhichUIType 0–3, not fixed/tool/upgrade (DATA:Info.WhichUIType comment "4 = Not to be shown in UI") — evidence needed: original build-menu contents
+	// [BIN:TPW-EXE:0x004AAF70 build menu filler] the build-menu filler lists a definition when its model loaded (def+0x508 == 0), its WhichUIType (def+0x4AC, copied from +0x4C at the end of 0x413410) equals the tab, AddOn.UpgradesId (def+0x284) is 0 and the control record 0x4D3D10(id)+0x10 is non-zero (availability or research); tools and fixed items are not filtered by name, their data has WhichUIType 4, and every upgrade-category object has AddOn.UpgradesId != 0, which gives this rule on the whole corpus
 	public bool IsBuildable => WhichUIType is >= 0 and <= 3 && !IsFixedItem && !IsTool && Category != ObjectCategory.Upgrade;
 	/// <summary><c>Info.RideTypeStringIndex</c>: ITEMTYPES.str entry (e.g. 12 "Vertical Drop" for the Totem), or null.</summary>
 	public int? RideTypeIndex => Settings.Has( "Info.RideTypeStringIndex" ) ? Settings.GetInt( "Info.RideTypeStringIndex" ) : null;
+	// [BIN:TPW-EXE:0x745020 sam schema] CreateParticleEffect, DestroyParticleEffect, RepairParticleEffect and UpgradeParticleEffect follow each other in the type record (+0x60, +0x64, +0x68, +0x6C, matched by schema order and by role); 0 or an absent key starts nothing
+	// [DATA:<object>.sam:Info.CreateParticleEffect] jungle rides 79/75/51/89, shops 81/77, sideshows and upgrades 80/76, features 82/78 (no repair or upgrade key)
+	/// <summary><c>Info.CreateParticleEffect</c>: the effect started when the object is built (0: none).</summary>
+	public int CreateParticleEffect => Settings.GetInt( "Info.CreateParticleEffect", 0 );
+	/// <summary><c>Info.DestroyParticleEffect</c>: the effect started when the object is demolished (0: none).</summary>
+	public int DestroyParticleEffect => Settings.GetInt( "Info.DestroyParticleEffect", 0 );
+	/// <summary><c>Info.RepairParticleEffect</c>: the effect the script's REPAIREFFECT switches (0: none).</summary>
+	public int RepairParticleEffect => Settings.GetInt( "Info.RepairParticleEffect", 0 );
+	/// <summary><c>Info.UpgradeParticleEffect</c>: the effect started when an upgrade is installed (0: none).</summary>
+	public int UpgradeParticleEffect => Settings.GetInt( "Info.UpgradeParticleEffect", 0 );
 	public int NumSimultaneousAnimations => Math.Max( 1, Settings.GetInt( "UsageInfo.NumSimultAnims", 1 ) );
 	/// <summary>Build cost: <c>Upgrades[0].CostOfUpgrade</c> ("cash cost when buying this item").</summary>
 	// [DATA:<object>.sam:Upgrades[0].CostOfUpgrade]
@@ -182,13 +205,15 @@ public sealed class ObjectCatalog
 		("upgrades", ObjectCategory.Upgrade, "Upgrades.sam")
 	};
 
-	private static readonly Dictionary<string, ObjectCatalog> cache = new( StringComparer.OrdinalIgnoreCase );
+	// Keyed by the file system instance, not its root: entries keep the instance they were read from, and
+	// a replaced FileSystem (setup, tests) with the same root must not hand out entries of the old one.
+	private static readonly ConditionalWeakTable<BaseFileSystem, Dictionary<string, ObjectCatalog>> cache = new();
 	private static readonly Regex BonusArchive = new( @"^(?<stem>_.+)_(?<number>\d+)$", RegexOptions.CultureInvariant );
 	private static string? bonusDataRoot;
 	private static bool bonusFromEnvironment = true;
 
 	/// <summary>
-	/// Optional official bonus-content directory (read-only), from <c>--bonus-data</c> or <c>OPENTPW_BONUS_DATA</c>.
+	/// Optional official bonus-content directory (read-only), from <c>--bonus-data</c>, <c>OPENTPW_BONUS_DATA</c>, the saved setup or <c>&lt;config&gt;/bonus</c> (see <c>BonusContent.ResolveRoot</c>).
 	/// It may point at the directory containing <c>levels</c> or any parent up to two levels above it. Its
 	/// <c>levels/&lt;theme&gt;/&lt;category&gt;/_name_N.wad</c> archives are merged into the catalogs as if they were
 	/// dropped into the game's Data directories.
@@ -258,44 +283,72 @@ public sealed class ObjectCatalog
 	public ObjectCatalogEntry Get( int infoId ) => Find( infoId ) ?? throw new KeyNotFoundException( $"No {Theme} object archive declares Info.Id {infoId}." );
 
 	/// <summary>Loads (and caches per file system) the catalog of a theme; names come from the English OBJECT_NAMES when present.</summary>
-	public static ObjectCatalog Load( string theme )
+	/// <param name="easy">Instant Action: each object's <c>Easy_&lt;object file&gt;.sam</c> is layered last when present.</param>
+	public static ObjectCatalog Load( string theme, bool easy = false )
 	{
-		if ( string.IsNullOrWhiteSpace( theme ) || theme.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
-			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
-		var key = $"{FileSystem.GetAbsolutePath( "/" )}|{BonusDataRoot}|{theme}";
 		lock ( cache )
-		{
-			if ( cache.TryGetValue( key, out var cached ) )
-				return cached;
-			var entries = LoadEntries( theme, FileSystem, null );
-			var bonus = OpenBonusFileSystem();
-			if ( bonus != null )
-			{
-				foreach ( var entry in LoadEntries( theme, bonus, FileSystem ) )
-				{
-					// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; an Info.Id collision skips the bonus entry — evidence needed: original behaviour with dropped-in WADs
-					if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
-						Log?.Warning( $"Bonus object {entry.ArchivePath} reuses Info.Id {entry.InfoId}; it is skipped." );
-					else
-						entries.Add( entry );
-				}
-			}
-			var catalog = new ObjectCatalog( theme, entries );
-			RidesApproximations.LogOnce();
-			ObjectNames.Apply( catalog );
-			cache[key] = catalog;
-			return catalog;
-		}
+			return LoadSteps( theme, easy ).Last()!;
 	}
 
 	/// <summary>
-	/// Reads the archives of <paramref name="fileSystem"/>. Category defaults (Rides.sam, ...) always come from
-	/// <paramref name="defaultsFileSystem"/> (the game data) when given: bonus archives are made to be dropped
-	/// next to them. Directory names are matched case-insensitively.
+	/// <see cref="Load"/> in steps, for a park built over frames on the game thread (docs/BROWSER-PERFORMANCE.md): null after each
+	/// object archive, then the catalog. Only the cache is locked, not the steps between; a catalog another load stored meanwhile wins.
 	/// </summary>
-	private static List<ObjectCatalogEntry> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? defaultsFileSystem )
+	internal static IEnumerable<ObjectCatalog?> LoadSteps( string theme, bool easy = false )
 	{
+		if ( string.IsNullOrWhiteSpace( theme ) || theme.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
+			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
+		var fileSystem = FileSystem;
+		// The names come from the language's OBJECT_NAMES: a catalog loaded in another language is not reused.
+		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}";
+		ObjectCatalog? cached;
+		lock ( cache )
+			cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) ).TryGetValue( key, out cached );
+		if ( cached != null )
+		{
+			yield return cached;
+			yield break;
+		}
 		var entries = new List<ObjectCatalogEntry>();
+		foreach ( var _ in LoadEntries( theme, fileSystem, null, easy, entries ) )
+			yield return null;
+		var bonus = OpenBonusFileSystem();
+		if ( bonus != null )
+		{
+			var bonusEntries = new List<ObjectCatalogEntry>();
+			foreach ( var _ in LoadEntries( theme, bonus, fileSystem, easy, bonusEntries ) )
+				yield return null;
+			foreach ( var entry in bonusEntries )
+			{
+				// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; the original dedupes by archive name (0x41ede0 → 0x424cf0, _stricmp) and loads Info.Id duplicates too, its id lookups (0x412e90/0x412ef0) taking the first definition in directory order, while this port skips the later bonus entry with a taken Info.Id — evidence needed: the directory order of the original's category walk (FindFirstFile) and how a _name_N archive finds its _name.sam (the loader asks for "<name>.sam" through the name at def+0x18 from 0x41ec30)
+				if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
+					Log?.Warning( $"Bonus object {entry.ArchivePath} reuses Info.Id {entry.InfoId}; it is skipped." );
+				else
+					entries.Add( entry );
+			}
+		}
+		ObjectCatalog catalog;
+		lock ( cache )
+		{
+			var catalogs = cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) );
+			if ( !catalogs.TryGetValue( key, out catalog! ) )
+			{
+				catalog = new ObjectCatalog( theme, entries );
+				RidesApproximations.LogOnce();
+				ObjectNames.Apply( catalog );
+				catalogs[key] = catalog;
+			}
+		}
+		yield return catalog;
+	}
+
+	/// <summary>
+	/// Reads the archives of <paramref name="fileSystem"/> into <paramref name="entries"/>, one archive per step. Category defaults
+	/// (Rides.sam, ...) always come from <paramref name="defaultsFileSystem"/> (the game data) when given: bonus archives are made
+	/// to be dropped next to them. Directory names are matched case-insensitively.
+	/// </summary>
+	private static IEnumerable<bool> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? defaultsFileSystem, bool easy, List<ObjectCatalogEntry> entries )
+	{
 		var defaultsSource = defaultsFileSystem ?? fileSystem;
 		foreach ( var (directory, category, defaultsName) in CategoryDirectories )
 		{
@@ -310,25 +363,24 @@ public sealed class ObjectCatalog
 			var defaultLayer = defaults == null ? null : ObjectSettingsFile.Load( defaultsSource, defaults );
 			foreach ( var archive in fileSystem.GetDirectories( categoryPath ).Select( file => Relative( fileSystem, file ) ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ) )
 			{
-				ObjectCatalogEntry? entry;
+				ObjectCatalogEntry? entry = null;
 				try
 				{
-					entry = LoadEntry( theme, category, archive, defaultLayer, fileSystem );
+					entry = LoadEntry( theme, category, archive, defaultLayer, fileSystem, easy );
 				}
 				catch ( Exception exception ) when ( defaultsFileSystem != null && exception is InvalidDataException or IOException )
 				{
 					// A broken bonus archive must not take the game's own catalog down.
 					Log?.Warning( $"Bonus object archive {archive} is skipped: {exception.Message}" );
-					continue;
 				}
 				if ( entry != null )
 					entries.Add( entry );
+				yield return true;
 			}
 		}
 		var duplicate = entries.GroupBy( entry => entry.InfoId ).FirstOrDefault( group => group.Count() > 1 );
 		if ( duplicate != null )
 			throw new InvalidDataException( $"Info.Id {duplicate.Key} is declared by several {theme} archives." );
-		return entries;
 	}
 
 	private static string? FindDirectory( BaseFileSystem fileSystem, string parent, string name )
@@ -343,7 +395,7 @@ public sealed class ObjectCatalog
 
 	private static string Relative( BaseFileSystem fileSystem, string entry ) => fileSystem.GetRelativePath( fileSystem.GetAbsolutePath( entry ) );
 
-	private static ObjectCatalogEntry? LoadEntry( string theme, ObjectCategory category, string archive, ObjectSettingsFile? defaults, BaseFileSystem fileSystem )
+	private static ObjectCatalogEntry? LoadEntry( string theme, ObjectCategory category, string archive, ObjectSettingsFile? defaults, BaseFileSystem fileSystem, bool easy )
 	{
 		var files = fileSystem.GetFiles( archive ).Select( file => Relative( fileSystem, file ) ).ToArray();
 		var name = Path.GetFileName( archive );
@@ -356,11 +408,12 @@ public sealed class ObjectCatalog
 			name = bonusMatch.Groups["stem"].Value;
 		}
 		ObjectSettingsFile? main = null;
+		string? mainFile = null;
 		var shared = new List<ObjectSettingsFile>();
 		foreach ( var file in files.Where( file => file.EndsWith( ".sam", StringComparison.OrdinalIgnoreCase ) ) )
 		{
 			var fileName = Path.GetFileName( file );
-			// Difficulty (Easy_) and online (Online_) overlays are not part of the standard game settings.
+			// Difficulty (Easy_) and online (Online_) overlays are applied after the object file, below.
 			if ( fileName.StartsWith( "Easy_", StringComparison.OrdinalIgnoreCase ) || fileName.StartsWith( "Online_", StringComparison.OrdinalIgnoreCase ) )
 				continue;
 			var layer = ObjectSettingsFile.Load( fileSystem, file );
@@ -369,18 +422,22 @@ public sealed class ObjectCatalog
 				if ( main != null )
 					throw new InvalidDataException( $"{archive} has several .sam files with an Info.Id." );
 				main = layer;
+				mainFile = file;
 			}
 			else
 				shared.Add( layer );
 		}
 		if ( main == null )
 			return null;
-		// [APPROX:RIDES-009] Layer order category defaults → shared .sam → object .sam; Easy_/Online_ overlays not applied — evidence needed: binary .sam loading order / difficulty selection
+		// [BIN:TPW-EXE:0x00413C10 object loader] the object's settings stack is the base file the caller names, then <object>.sam, then Easy_<object>.sam in game type 2; a shared (non-Info.Id) file such as coaster.sam is never merged into it: only for track type 3 (0x4141EB) it is loaded into a separate settings object (0x41420B) that goes with the model to the TrackMaster loader 0x42FAD0 (0x4142DE)
 		var layers = new List<ObjectSettingsFile>();
 		if ( defaults != null )
 			layers.Add( defaults );
-		layers.AddRange( shared );
 		layers.Add( main );
+		// [BIN:STP-PPC:0x10119328 object loader] In Instant Action (game type 2) Easy_<object file> is layered after the object file when it exists; Online_ files belong to the online game type and are not loaded offline
+		var easyFile = easy ? files.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "Easy_" + Path.GetFileName( mainFile ), StringComparison.OrdinalIgnoreCase ) ) : null;
+		if ( easyFile != null )
+			layers.Add( ObjectSettingsFile.Load( fileSystem, easyFile ) );
 		var settings = new ObjectSettings( layers );
 		// [DATA:<object>.sam:Info.Shape]
 		var shapeRows = settings.GetBlock( "Info.Shape" );
@@ -411,6 +468,8 @@ public sealed class ObjectCatalog
 				script = candidates[0];
 		}
 		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber );
+		if ( shared.Count > 0 )
+			entry.SharedSettings = new ObjectSettings( shared );
 		if ( bonusNumber != null )
 			entry.DisplayName = BonusNames.Read( entry ) ?? entry.SettingsName;
 		return entry;
@@ -421,11 +480,9 @@ public sealed class ObjectCatalog
 }
 
 /// <summary>
-/// Binds catalog entries to OBJECT_NAMES.str. The table holds one block per theme, each ending with
-/// "Traffic Lights"; rides use two entries ("Inca", "Totem"), other objects one. No index field exists in
-/// the .sam files, so an entry is bound when its English <c>Info.Name</c> equals one entry or two
-/// consecutive entries (ignoring case, spaces and accents) inside the theme's block; the block is the one
-/// with most matches. Unmatched objects (e.g. "Loudspeaker", "Gates") keep their .sam name.
+/// Binds catalog entries to OBJECT_NAMES.str through the original's Info.Id table (<see cref="ObjectNameTable"/>): each row names
+/// the first and the second entry of an object ("Inca", "Totem"; index 1 = no second part). An object whose id is not in the table
+/// keeps its .sam name here (the original shows an empty name).
 /// </summary>
 public static class ObjectNames
 {
@@ -438,17 +495,35 @@ public static class ObjectNames
 		if ( english == null )
 			return;
 		var localized = GameLanguage.IsSelected ? TryLoadCurrent() ?? english : english;
-		foreach ( var (entry, index, length) in Match( catalog.Entries.Where( entry => !entry.IsBonus ).ToList(), english ) )
+		var entries = catalog.Entries.Where( entry => !entry.IsBonus ).ToList();
+		// The Info.Id table is tp.exe's; Theme Park Inc ships another OBJECT_NAMES.str (other order and length) and keeps the English-name matcher.
+		var bound = GameEditions.Current == GameEdition.ThemeParkWorld ? Bind( entries ) : Match( entries, english );
+		foreach ( var (entry, index, length) in bound )
 		{
 			entry.ObjectNameIndex = index;
 			entry.ObjectNameLength = length;
-			if ( index + length <= localized.Length )
-				entry.DisplayName = string.Join( " ", localized.Skip( index ).Take( length ).Where( text => text.Length > 0 ) );
+			// An empty bound name (the four End items, entry 0) keeps the .sam name as display name.
+			if ( index + length <= localized.Length && Join( localized.Skip( index ).Take( length ) ) is { Length: > 0 } name )
+				entry.DisplayName = name;
 		}
 	}
 
+	/// <summary>
+	/// The object's name from its OBJECT_NAMES entries: the texts joined by a space, empty ones dropped. A first entry that
+	/// ends in '-' is joined to the next one without the space and the dash (compound words in Danish and similar).
+	/// </summary>
+	// [BIN:STP-PPC:0x1011A08C object name builder] name = first + (" " when the second is not empty) + second; when the first ends in '-' the dash is cut and the two are concatenated
+	// [BIN:TPW-EXE:0x0041474E object name join] the PC builder agrees: a trailing '-' on the first text is cut and the texts are joined with "%s%s", otherwise "%s%s%s" with a space only when the second text is not empty
+	public static string Join( IEnumerable<string> texts )
+	{
+		var parts = texts.ToArray();
+		if ( parts.Length == 2 && parts[0].EndsWith( '-' ) )
+			return parts[0][..^1] + parts[1];
+		return string.Join( " ", parts.Where( text => text.Length > 0 ) );
+	}
+
 	/// <summary>Pure matching step, exposed for tests.</summary>
-	// [APPROX:RIDES-010] OBJECT_NAMES index bound by English name equality within the theme block — evidence needed: binary name-index table
+	// [EXT:tpi-object-name-matcher] Theme Park Inc object names: OBJECT_NAMES entries bound by English name equality within the theme block (the Info.Id table is tp.exe's; the TPI executable's own binding is not traced) — the original TPI rule is unknown
 	public static IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> Match( IReadOnlyList<ObjectCatalogEntry> entries, IReadOnlyList<string> names )
 	{
 		var blocks = new List<(int Start, int End)>();
@@ -508,6 +583,21 @@ public static class ObjectNames
 		return builder.ToString();
 	}
 
+	/// <summary>
+	/// Pure binding step, exposed for tests: the entries whose Info.Id is in the table, with the first OBJECT_NAMES index and the
+	/// number of consecutive entries (1 when the second index is the empty string, else 2; every table row's second index follows its first).
+	/// </summary>
+	public static IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> Bind( IReadOnlyList<ObjectCatalogEntry> entries )
+	{
+		var bound = new List<(ObjectCatalogEntry, int, int)>();
+		foreach ( var entry in entries )
+		{
+			if ( ObjectNameTable.TryGet( entry.InfoId, out var first, out var second ) )
+				bound.Add( (entry, first, second == ObjectNameTable.EmptyIndex ? 1 : 2) );
+		}
+		return bound.AsReadOnly();
+	}
+
 	private static string[]? TryLoad( string language )
 	{
 		var path = $"/Language/{language}/{FileName}";
@@ -542,7 +632,7 @@ public static class ObjectNames
 /// </summary>
 public static class BonusNames
 {
-	// [APPROX:RIDES-025] Bonus name: selected language file, then English, then .sam Info.Name — evidence needed: original lookup of bonus name files
+	// [APPROX:RIDES-025] The original reads only <selected language>.txt (0x41f350, language buffer 0xf7f230) from the bonus archive and falls back to the OBJECT_NAMES id table (empty for bonus ids except 3301) with no English or .sam fallback; this port also tries English and then the .sam Info.Name for a language the archive lacks (OpenTPW extension for third-party content; all 35 shipped bonus archives carry the four shipped languages)
 	public static string? Read( ObjectCatalogEntry entry, string? language = null )
 	{
 		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
@@ -566,6 +656,58 @@ public static class BonusNames
 		}
 		return null;
 	}
+
+	/// <summary>The text of an object text key its language file lacks (the default the original sets before parsing, 0x6FD880).</summary>
+	public const string MissingString = "MISSING STRING";
+
+	/// <summary>Characters a placed object keeps of each sign line (buffers of 32 characters and a terminator).</summary>
+	public const int SignLineCharacters = 32;
+
+	/// <summary>
+	/// The <c>SIGNA</c>/<c>SIGNB</c> lines of a bonus archive's selected-language file (no English fallback), or null when the
+	/// archive has no file for that language (the caller then draws the display name, not traced for NULL lines). A section the file lacks reads <see cref="MissingString"/>.
+	/// Each line is cut to <see cref="SignLineCharacters"/> characters; line 1 loses a trailing "--" (<see cref="StripTrailingDashes"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00412C65 object definition constructor] the object text is read from the selected language's file only; without that file the definition's text pointers stay NULL (0x412C65/0x412C6B); what the sign code does with a NULL line is untraced, so OpenTPW's caller (ObjectSigns.Lines) falls back to the object's display name
+	// [BIN:TPW-EXE:0x00413600 object text] before parsing, NAME, SIGNA, SIGNB and +0x500 are set to L"MISSING STRING" (0x6FD880, 0x41360D–0x41361D), so a file without a SIGNA or SIGNB key shows that string on the line
+	// [BIN:TPW-EXE:0x004E2860 sign line 1] an empty line 1 is formatted from the never-written .bss buffer 0x78A374 (the empty string), so an empty line stays empty
+	// [BIN:TPW-EXE:0x004DB6F9 placed object sign lines] a placed object copies line 1 with 0x413020 and line 2 with 0x4130B0, both reading the OBJECT_NAMES row (table 0x7488D8) when the object is listed there and otherwise def+0x4F8 (SIGNA) and def+0x4FC (SIGNB)
+	// [BIN:TPW-EXE:0x00413600 object text] the object text file's NAME, SIGNA and SIGNB sections are parsed with the default "MISSING STRING"; SIGNA/SIGNB are copied into each placed object as two 32-character lines (0x413020/0x4130B0, called at 0x4DB6F9/0x4DB70D)
+	// [BIN:TPW-EXE:0x00468500 sign rebuild] the sign rebuild of the types with flag 0x8000000 reads line 1 through 0x4E2860 (which strips a trailing "--") and line 2 through 0x4E2920
+	public static (string Line1, string Line2)? ReadSignLines( ObjectCatalogEntry entry, string? language = null )
+	{
+		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+		try
+		{
+			var files = entry.FileSystem.GetFiles( entry.ArchivePath ).Where( file => file.EndsWith( ".txt", StringComparison.OrdinalIgnoreCase ) ).ToArray();
+			var file = files.FirstOrDefault( candidate => string.Equals( Path.GetFileNameWithoutExtension( candidate ), language, StringComparison.OrdinalIgnoreCase ) );
+			if ( file != null )
+			{
+				var sections = Parse( entry.FileSystem.ReadAllBytes( entry.FileSystem.GetRelativePath( entry.FileSystem.GetAbsolutePath( file ) ) ) );
+				var first = sections.GetValueOrDefault( "SIGNA" ) ?? MissingString;
+				var second = sections.GetValueOrDefault( "SIGNB" ) ?? MissingString;
+				return (StripTrailingDashes( Truncate( first ) ), Truncate( second ));
+			}
+		}
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or DecoderFallbackException )
+		{
+			Log?.Warning( $"Bonus object {entry.ArchivePath} sign text could not be read: {exception.Message}" );
+		}
+		return null;
+	}
+
+	/// <summary>A line cut to <see cref="SignLineCharacters"/> UTF-16 units, backing off one when the cut would split a surrogate pair.</summary>
+	public static string Truncate( string line )
+	{
+		if ( line.Length <= SignLineCharacters )
+			return line;
+		var length = char.IsHighSurrogate( line[SignLineCharacters - 1] ) && char.IsLowSurrogate( line[SignLineCharacters] ) ? SignLineCharacters - 1 : SignLineCharacters;
+		return line[..length];
+	}
+
+	/// <summary>A sign's line 1 as the original's reader returns it: a trailing "--" (two hyphens, on a line of at least two characters) is dropped.</summary>
+	// [BIN:TPW-EXE:0x004E2860 sign line 1] when the line is longer than one character and ends in two '-' (0x2D), it is copied without them
+	public static string StripTrailingDashes( string line ) => line.Length > 1 && line.EndsWith( "--", StringComparison.Ordinal ) ? line[..^2] : line;
 
 	/// <summary>Sections of a bonus text file: a section name line followed by its text line(s) up to a blank line.</summary>
 	public static IReadOnlyDictionary<string, string> Parse( byte[] bytes )

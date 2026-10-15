@@ -5,8 +5,10 @@ namespace OpenTPW.UI.Original;
 
 /// <summary>
 /// Draws <see cref="UiBatch"/> triangles: original images (linear filtered, straight alpha) and BF4
-/// atlases (uploaded as white RGBA with coverage alpha, point sampled) over the scene. Several
-/// batches may be drawn per frame; each uses its own vertex buffer from a per-frame ring.
+/// atlases (uploaded as white RGBA with coverage alpha, smoothed per text scale by
+/// <see cref="FontSmoothing"/>, point sampled) over the scene. Several
+/// batches may be drawn per frame; each uses its own vertex buffer of the frame slot
+/// (<see cref="Renderer.FramesInFlight"/>), written directly rather than through the command list.
 /// </summary>
 internal sealed class UiRenderer : IDisposable
 {
@@ -22,7 +24,9 @@ internal sealed class UiRenderer : IDisposable
 	private readonly ResourceLayout resourceLayout;
 	private readonly Pipeline pipeline;
 	private readonly Dictionary<object, (Veldrid.Texture Texture, ResourceSet Set)> textures = new();
-	private readonly List<DeviceBuffer> buffers = new();
+	// Sets for textures rendered by their owners; the textures themselves are not the UI's to dispose.
+	private readonly Dictionary<Veldrid.Texture, ResourceSet> renderedSets = new();
+	private readonly List<DeviceBuffer>[] buffers = Enumerable.Range( 0, Renderer.FramesInFlight ).Select( _ => new List<DeviceBuffer>() ).ToArray();
 	private int frameBuffers;
 	private GpuVertex[] vertices = Array.Empty<GpuVertex>();
 	private readonly HashSet<string> failedImages = new( StringComparer.OrdinalIgnoreCase );
@@ -31,6 +35,8 @@ internal sealed class UiRenderer : IDisposable
 	{
 		shader = ShaderCompiler.CompileShader( Path.GetFullPath( "content/shaders/ui-batch.shader", AppContext.BaseDirectory ) );
 		resourceLayout = Device.ResourceFactory.CreateResourceLayout( shader.Reflection.ResourceLayouts.Single() );
+		TexturePackSwitch.PackChanged += ReloadImages;
+		TexturePackSwitch.FilesAvailable += ReloadImages;
 		pipeline = Device.ResourceFactory.CreateGraphicsPipeline( new GraphicsPipelineDescription(
 			BlendStateDescription.SingleAlphaBlend,
 			DepthStencilStateDescription.Disabled,
@@ -47,7 +53,9 @@ internal sealed class UiRenderer : IDisposable
 
 	public void Draw( CommandList commands, UiBatch batch, uint framebufferWidth, uint framebufferHeight )
 	{
-		var count = batch.Draws.Sum( draw => draw.Vertices.Count );
+		var count = 0;
+		foreach ( var draw in batch.Draws )
+			count += draw.Vertices.Count;
 		if ( count == 0 )
 			return;
 		if ( vertices.Length < count )
@@ -63,16 +71,18 @@ internal sealed class UiRenderer : IDisposable
 			}
 		}
 		var bytes = (uint)(count * Marshal.SizeOf<GpuVertex>());
-		if ( frameBuffers == buffers.Count )
-			buffers.Add( CreateBuffer( bytes ) );
-		else if ( buffers[frameBuffers].SizeInBytes < bytes )
+		// Written straight into GPU memory: an update recorded into the command list would end the render pass on Metal.
+		var slot = buffers[Renderer.SlotOf( Render.FrameNumber )];
+		if ( frameBuffers == slot.Count )
+			slot.Add( CreateBuffer( bytes ) );
+		else if ( slot[frameBuffers].SizeInBytes < bytes )
 		{
-			var old = buffers[frameBuffers];
+			var old = slot[frameBuffers];
 			Render.ScheduleDelete( old.Dispose );
-			buffers[frameBuffers] = CreateBuffer( bytes );
+			slot[frameBuffers] = CreateBuffer( bytes );
 		}
-		var buffer = buffers[frameBuffers++];
-		commands.UpdateBuffer( buffer, 0, ref vertices[0], bytes );
+		var buffer = slot[frameBuffers++];
+		Device.UpdateBuffer( buffer, 0, ref vertices[0], bytes );
 		commands.SetPipeline( pipeline );
 		commands.SetVertexBuffer( 0, buffer );
 		var start = 0u;
@@ -91,23 +101,42 @@ internal sealed class UiRenderer : IDisposable
 	private static DeviceBuffer CreateBuffer( uint bytes ) =>
 		Device.ResourceFactory.CreateBuffer( new BufferDescription( Math.Max( bytes * 2, 16384u ), BufferUsage.VertexBuffer | BufferUsage.Dynamic ) );
 
+	internal void PrepareImage( string path ) => GetResourceSet( UiTexture.Image( path ) );
+
 	private ResourceSet? GetResourceSet( UiTexture texture )
 	{
-		object key = (object?)texture.Atlas ?? texture.ImagePath ?? "solid";
+		if ( texture.Rendered is { } rendered )
+		{
+			if ( renderedSets.TryGetValue( rendered, out var renderedSet ) )
+				return renderedSet;
+			// A new texture usually replaces one its owner has just scheduled for disposal.
+			foreach ( var stale in renderedSets.Where( pair => pair.Key.IsDisposed ).ToList() )
+			{
+				renderedSets.Remove( stale.Key );
+				stale.Value.Dispose();
+			}
+			renderedSet = Device.ResourceFactory.CreateResourceSet( new ResourceSetDescription( resourceLayout, rendered, Device.LinearSampler ) );
+			renderedSets[rendered] = renderedSet;
+			return renderedSet;
+		}
+		var factor = texture.Atlas != null ? FontSmoothing.Factor( texture.Atlas, texture.FontScale ) : 1;
+		object key = texture.Atlas != null ? (texture.Atlas, factor) : texture.ImagePath ?? "solid";
 		if ( textures.TryGetValue( key, out var entry ) )
 			return entry.Set;
 		if ( texture.Atlas != null )
 		{
 			var atlas = texture.Atlas;
-			var rgba = new byte[atlas.Width * atlas.Height * 4];
-			for ( var index = 0; index < atlas.Alpha.Length; index++ )
+			var coverage = FontSmoothing.Coverage( atlas, factor );
+			var rgba = new byte[coverage.Length * 4];
+			for ( var index = 0; index < coverage.Length; index++ )
 			{
 				rgba[index * 4] = 255;
 				rgba[index * 4 + 1] = 255;
 				rgba[index * 4 + 2] = 255;
-				rgba[index * 4 + 3] = atlas.Alpha[index];
+				rgba[index * 4 + 3] = coverage[index];
 			}
-			entry = Create( rgba, atlas.Width, atlas.Height, Device.PointSampler );
+			// One texel per output pixel when the factor matches the scale; a capped factor is filtered.
+			entry = Create( rgba, atlas.Width * factor, atlas.Height * factor, factor == texture.FontScale ? Device.PointSampler : Device.LinearSampler );
 		}
 		else if ( texture.ImagePath != null )
 		{
@@ -115,7 +144,7 @@ internal sealed class UiRenderer : IDisposable
 				return null;
 			try
 			{
-				var (width, height, rgba) = UiImages.Load( texture.ImagePath );
+				var (width, height, rgba) = UiImages.LoadKeyed( texture.ImagePath );
 				entry = Create( rgba, width, height, Device.LinearSampler );
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException or ArgumentException or InvalidOperationException )
@@ -144,17 +173,54 @@ internal sealed class UiRenderer : IDisposable
 		return (texture, Device.ResourceFactory.CreateResourceSet( new ResourceSetDescription( resourceLayout, resources ) ));
 	}
 
+	/// <summary>
+	/// [EXT:texture-pack] The texture pack changed: forgets the cached interface images (they are decoded again on first use,
+	/// from the new pack) and deletes their GPU copies after the current frame.
+	/// </summary>
+	private void ReloadImages()
+	{
+		ReloadImages( null );
+	}
+
+	/// <summary>Invalidates only UI images in a newly available download batch.</summary>
+	private void ReloadImages( IReadOnlyList<string>? paths )
+	{
+		var keys = paths?.Select( TexturePack.RelativeFileName ).ToHashSet( StringComparer.Ordinal );
+		bool Matches( string path ) => keys == null || keys.Contains( TexturePack.RelativeFileName(
+			path.EndsWith( UiImages.BlackKeySuffix, StringComparison.Ordinal ) ? path[..^UiImages.BlackKeySuffix.Length] : path ) );
+		var old = textures.Where( entry => entry.Key is string path && Matches( path ) ).ToList();
+		foreach ( var entry in old )
+			textures.Remove( entry.Key );
+		failedImages.RemoveWhere( Matches );
+		Render.ScheduleDelete( () =>
+		{
+			foreach ( var (_, (texture, set)) in old )
+			{
+				set.Dispose();
+				texture.Dispose();
+			}
+		} );
+	}
+
 	public void Dispose()
 	{
+		TexturePackSwitch.PackChanged -= ReloadImages;
+		TexturePackSwitch.FilesAvailable -= ReloadImages;
+		foreach ( var set in renderedSets.Values )
+			set.Dispose();
+		renderedSets.Clear();
 		foreach ( var (texture, set) in textures.Values )
 		{
 			set.Dispose();
 			texture.Dispose();
 		}
 		textures.Clear();
-		foreach ( var buffer in buffers )
-			buffer.Dispose();
-		buffers.Clear();
+		foreach ( var slot in buffers )
+		{
+			foreach ( var buffer in slot )
+				buffer.Dispose();
+			slot.Clear();
+		}
 		pipeline.Dispose();
 		resourceLayout.Dispose();
 		shader.VertexShader.Dispose();

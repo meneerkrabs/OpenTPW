@@ -1,7 +1,10 @@
 # RSE VM: executing original ride scripts
 
-October 9, 2026. Status: **every opcode used by the 308 original scripts has a
-VM handler**, and all scripts that can be started run in the VM without faults.
+October 9, 2026; updated October 14, 2026 (WAITABS deadline, MIN/SEC, child head tables). Status: **every opcode
+used by the 308 original scripts has a VM handler**, and all scripts that can be
+started run in the VM without faults. The two opcodes only Theme Park Inc
+scripts contain — `WAITABS` (45) and `MULT` (48) — also have handlers now
+([below](#theme-park-inc-gap-opcodes)).
 This is VM-level execution, not original ride behaviour: the game systems the
 scripts talk to (visitors, animation playback, sounds, objects, ride-type
 controllers, park clock) are not implemented, so their effects go through a
@@ -22,14 +25,30 @@ Code: `source/OpenTPW/VM/` (`RideVM`, `Operand`, `Instruction`, `RideOpcodes`,
 | Unknown (no handler) | 0 | 0 |
 | **Corpus total** | **84** | **11,915** |
 
-Of the 22 named opcodes the corpus never uses, 4 have handlers from the
-upstream docs alone (`SETVARINPARENT`, `YEAR`, `MONTH`, `DAY`); the other 18
-stay unknown and fault the script if executed. Operand counts of every handler
-equal the upstream signature counts and the corpus counts (`CRIT_UNLOCK`: 0).
+Of the 22 named opcodes the TPW corpus never uses, 6 have handlers: 4 from the
+upstream docs alone (`SETVARINPARENT`, `YEAR`, `MONTH`, `DAY`) and
+`WAITABS`/`MULT` for the Theme Park Inc corpus
+([below](#theme-park-inc-gap-opcodes)); the other 16 stay unknown and fault the
+script if executed. Operand counts of every handler equal the upstream signature
+counts and the corpus counts (`CRIT_UNLOCK`: 0).
 
-"Implemented" means the semantics are documented upstream and/or forced by
-corpus control flow; none is verified against the original executable or
-runtime traces (no original binary was run).
+"Implemented" means the VM handles the operation; much of its behavior still
+comes from upstream notes and corpus control flow. COPY, zero-divisor DIV/MOD,
+and RAND's raw bound now have independently reviewed static evidence from the
+identified Feral Mac executable ([PPC-rides](reverse/PPC-rides.md), review
+`d0e5c75`). This does not qualify Windows runtime equivalence, native traces,
+or the host PRNG sequence. No original binary was run.
+
+Primitive proof identity: Feral `SimThemePark.data` SHA-256
+`04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5`.
+Code-section offsets: COPY case `0xaf5f0`, accumulator store `0xaf638`,
+invalid-tag sentinel `0xb234c..0xb2350`; DIV zero arm `0xb0ca8`, MOD zero arm
+`0xb0d30`, raw RAND bound `0xb07f8`. Static checks and independent review
+establish these Mac paths. PC corpus tests independently verify all 1,243
+COPY destinations are variables and all 56 RAND bounds are nonnegative
+literals, so they do not exercise the malformed COPY or variable-bound RAND
+forms. Their fault-free VM runs and the pinned Totem trace validate this
+implementation against those inputs, not equivalence to an executed PC game.
 
 ## Execution model
 
@@ -40,12 +59,16 @@ runtime traces (no original binary was run).
 - Literals are sign-extended 16-bit values. `0xFFFF` is the only literal
   ≥ `0x8000` (918 uses) and must be −1: `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z`
   and `ADD VAR_COUNT 0xFFFF; BRANCH_PV loop` are count-downs.
-- Writes to a literal operand are discarded. The corpus uses a literal `0`
-  destination when only the flags matter (`MOD 0 VAR_CAPACITY 9; BRANCH_Z`,
-  `RAND 0 1; BRANCH_Z`, `MIN 0; BRANCH_NZ`).
-- Flags: Zero = result 0, Sign = result negative. Only opcodes whose result a
-  corpus branch consumes (or the docs say set flags) update them; COPY, WAIT,
-  ENDSLICE and KILLOBJ demonstrably leave them alone. `BRANCH_PV` is
+- Literal writes are discarded by the operand accessor, with per-handler
+  rules. SUB/DIV/MOD and RAND can use a literal `0` destination when only flags
+  matter (`MOD 0 VAR_CAPACITY 9; BRANCH_Z`, `RAND 0 1; BRANCH_Z`). COPY requires
+  a variable destination: a literal destination stops the VM with PC −10000
+  and `Faulted`. The native handler leaves its source word unread, so the next
+  native dispatch diagnoses an invalid opcode tag and sets that sentinel.
+  The VM's parsed-instruction representation aborts directly; `Faulted` is its
+  mapping of that diagnostic stop, not a recovered original state enum.
+- Flags: Zero = result 0, Sign = result negative. COPY updates them from the
+  copied value; WAIT, ENDSLICE and KILLOBJ preserve them. `BRANCH_PV` is
   **strictly** positive (Sign and Zero clear).
 - Scheduling (**assumption**, not verified): each `Advance(delta)` — one
   `FixedStepClock` tick (60 Hz) in the game — adds `delta` to the script clock
@@ -57,8 +80,16 @@ runtime traces (no original binary was run).
 - Time unit is the millisecond (**inferred**: `WAIT 500…5300` around ride
   animations, `GETTIME; ADD VAR_STARTNOW 10000` passenger time-outs, animation
   durations fed into `WAIT`). Waits resume on the first tick at or after the
-  wake time, so they are quantised to 1/60 s. `GETTIME` is milliseconds since
-  the VM was created.
+  wake time, so they are quantised to 1/60 s. `GETTIME` reads the park's shared
+  scheduler clock (`RideScriptWorld.ClockMilliseconds`), as the original reads
+  `0x10e844` on the global r30 (0xaf55c, 0xaf6d8) without subtracting a creation
+  timestamp; a script created later starts at the clock's current value. The
+  WAITANIM(_CH) deadlines use the same 32-bit clock word; WAIT, SETTIMER and the
+  wake times count from the script's own creation, which only shifts their base.
+  The clock starts at 0 with the park's script world (RIDES-044): the PC clock is the app-lifetime scaled
+  timer 0x785970 (started once at 0x54DCF0, read by 0x402D70, set only by the save writer 0x4164C0 and loader
+  0x415270, never reset for a new park), so a new park's first script sees the time since program start;
+  the two differ only in absolute `GETTIME` values, as every deadline is relative.
 - `JSR`/`RETURN` use a LIFO stack limited to the header stack size (every
   script that uses JSR declares ≥ 3); the old VM used a FIFO queue.
 - Children: `SPAWNCHILD` and `SPAWNSOUND` load a script from the parent's
@@ -69,9 +100,40 @@ runtime traces (no original binary was run).
   `GETREMOTEVAR` and `SETREMOTEVAR`. A missing script (ID 0) reads 0 and ignores
   writes, because bus.RSE writes to its `FINDSCRIPTRAND "Traffic Lights"`
   result without checking it.
+- DIV/MOD with a zero divisor write result 0 and set Zero, including literal
+  destinations. Signed division truncates toward zero and remainder follows
+  the dividend's sign. `Int32.MinValue / -1` still wraps to `Int32.MinValue`
+  in this VM, with remainder 0; native signed-overflow behavior is unqualified.
+- RAND sign-extends the raw low 16 bits of its maximum operand; it does not
+  resolve a tagged variable. A variable-index-2 operand therefore bounds the
+  result by 2 regardless of variable contents. Nonnegative bounds are
+  inclusive; the host `System.Random` algorithm/seed/stream sharing remain
+  unqualified. Negative bounds retain the VM's safety fault policy.
 - Faults (script stops, `FaultMessage` set, logged): unknown opcode, RETURN
-  without JSR, stack overflow, ÷0, wrong operand kind, missing child script,
+  without JSR, stack overflow, non-variable COPY destination, negative RAND
+  bound, wrong operand kind, missing child script,
   child/parent variable index out of range, missing child or parent.
+
+## Managed root-fault containment
+
+A faulted VM freezes its own clock and stops both owned child slots before
+another child slice can run. The parent is checked again after each descendant
+advance, so a callback fault cannot run the next child slot; the current child
+slice remains the servicing boundary. A live object runtime checks its root before and
+after the root slice; a fault uses the existing object `Stop()` teardown before
+coaster or animation progression. This releases riders, unregisters scripts,
+stops owned sound chains and clears animation channels. The root's fault state
+and diagnostic remain available. Normal completion, waits and child-only faults
+do not stop the parent runtime; fixed-step pause still skips the runtime callback.
+This is OpenTPW's deterministic host safety policy, not qualified native fault
+handling, TOUR/BUMP success semantics or audio ownership equivalence.
+
+The existing stopped-runtime snapshot records the root fault message and restores
+it onto a stopped candidate. No snapshot schema changes or new support for live
+sound-chain capture are introduced. `RootVmFaultContainmentTests` uses actual
+synthetic VMs and CPU object runtimes to pin fault teardown, frozen presentation,
+stopped-fault restore, ordinary completion and no-root controls. Fresh original
+corpus, native audio and GPU checks remain deferred.
 
 ## Corrections to the upstream instruction notes
 
@@ -80,24 +142,132 @@ runtime traces (no original binary was run).
 | SUB, DIV, MOD | `<a> <b> <dest>` | destination first: `SUB VAR_TEMP VAR_TEMP 3000; WAIT VAR_TEMP`, `SUB VAR_TEMP VAR_STARTNOW VAR_TEMP; BRANCH_NV start`, `DIV VAR_TEMP VAR_CAPACITY 9` + `MOD 0 VAR_CAPACITY 9; BRANCH_Z; ADD VAR_TEMP 1` (ceiling) |
 | CMP | bitwise AND | subtraction: `RAND VAR_TEMP 10; CMP VAR_TEMP 4; BRANCH_PV; BRANCH_NZ` only makes sense as `a − b` |
 | BRANCH_PV | "positive" | excludes zero: 15× `BRANCH_PV x; BRANCH_Z x` |
-| RAND | `0..max` | inclusive: Totem's `RAND VAR_TEMP 2` has three outcomes; sets flags |
+| RAND | `0..max` | inclusive for nonnegative bounds; Mac static code sign-extends the raw bound word without variable resolution; host random sequence is not qualified |
 | UNLIMBO, FORCEUNLIMBO | visitor input | output + flags: `UNLIMBO VAR_LETMEOFF; BRANCH_Z none; ADD VAR_ONRIDE 0xFFFF` |
 | TRIGANIM | unknown operands | `animation variant duration-out`: `TRIGANIM 5 0 VAR_TEMP; SUB VAR_TEMP VAR_TEMP 3000; WAIT VAR_TEMP; …; WAIT4ANIM` |
 | SETTIMER / GETTIMER | unknown | countdown in ms; `GETTIMER dest` = remaining time, sets flags |
 
+## Theme Park Inc gap opcodes
+
+No Theme Park World script contains `WAITABS` (45) or `MULT` (48); the Theme
+Park Inc corpus uses WAITABS 34 times in 19 scripts (obstacles, litbins and
+`vegetation.RSE`) and MULT once, inside `vegetation.RSE`'s opening critical
+section. Until October 13, 2026 executing either faulted the script; both now
+have handlers. The Theme Park Inc slice's native smoke
+([RUNNING.md](RUNNING.md)) never reached them on the science level (0 of 18
+object scripts faulted even before), so this is static corpus use plus VM-level
+execution — not a claim that observed retail play exercises them.
+
+**WAITABS** keeps the traced Mac shape ([reverse/PPC-clock.md](reverse/PPC-clock.md),
+dispatch `0xb0710`) and the PC's (tp.exe `0x553828`, `0x553783` for WAIT): despite the name, the first encounter stores
+`now + operand` — a relative deadline, **without** WAIT's script-speed
+division — in the same script field WAIT uses (`+160` Mac, `+0xA0` PC), always yields (the PC rewinds the program counter by 2),
+and later encounters resume once the clock passes the deadline (unsigned compare, `jb` at `0x55386D`).
+All 34 corpus uses are positive literals (1..10000): 1 ms frame spacing between
+fire-effect ADDOBJs, 300/500 ms stage delays, a 1000 ms litbin fire-risk check
+and a 10000 ms obstacle startup delay. The deadline is the 32-bit
+scheduler clock word plus the operand as a wrapping unsigned sum, like WAITANIM's (`Scheduling.WaitAbsolute`; the VM
+turns it into a wait until the scheduler clock reaches the deadline when the sum is ahead of the clock, so the wake follows the integer clock word, not the arming time's fraction): a sum that wraps (a negative operand) or an
+operand of 0 is already past and yields once, resuming at the next servicing tick, and a sum of exactly 0 reads as not armed (the PC
+word 0 is the sentinel, cleared once a wait ends), so the next execution stores again and yields again. The VM keeps no extra word,
+so snapshots round-trip as before. VM-901 is narrowed to the one thing the double clock cannot do: a wait that spans the 2^32 ms wrap of the original's clock word.
+
+**MULT** follows the SUB/DIV/MOD family: `MULT dest a b` →
+`dest = a × b`, destination first, 32-bit wrap, flags set — the sole corpus use
+`MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` (immediately consumed by `SETTIMER`)
+matches that shape, and the upstream docs give the same three-operand signature.
+tp.exe confirms it: interpreter case 48 (`0x553eb9`, jump table `0x5567d8`) reads the
+destination word first, multiplies the two operand values with `imul` (32-bit wrap), stores
+the product in the flag word and, through the shared tail `0x555b48`, in a variable
+destination. Tests: `RideVMTests` (signed/literal/variable operands,
+wrap, flags-only literal destination, WAITABS timing/yield/variable
+operand/shared wake field/snapshot restore) and `RideVMTpiCorpusTests`
+(original-corpus execution of both, gated on `OPENTPW_TPI_PATH`).
+
 ## Effects hook
 
-Every hooked opcode calls `IRideScriptEffects.Perform(RideEffectCall)` with the
+### Host civil-time queries
+
+TPW object scripts now route `YEAR`, `MONTH`, `DAY`, `HOUR`, `MIN` and `SEC` through their
+shared script world's injected host-local clock (the system clock by default).
+Each executed instruction samples independently. The existing Feral evidence
+in [PPC-clock.md](reverse/PPC-clock.md#rse-civil-time-is-an-independent-clock-domain)
+proves C `time`/`localtime` and the fields: year minus 1900, month 1–12, day
+1–31 and hour 0–23; the PC opcodes 97–102 (`0x5567D8`, handlers `0x5565B2`, `0x556605`, `0x556659`, `0x5566AC`, `0x5566FF`, `0x55674E`) call `time`
+(`0x67D3F0`) and `localtime` (`0x67D8E0`) and store tm_year (raw), tm_mon + 1, tm_mday, tm_hour, tm_min and tm_sec, so minute and
+second are host time too (October 14, 2026). These are not `ParkCalendar` fields or scheduler elapsed
+time. Pausing prevents script execution; the next eligible query samples
+current host time, regardless of simulation speed, turn count or saved date.
+
+The provider is unavailable for worlds created under TPI or an unsupported
+edition, even if explicitly supplied. No TPI clock semantics are enabled.
+
+The destination is written only when the operand is a variable (`& 0xFF000000 == 0x40000000`); the result register (+0x48) is set
+either way and the branches test it, so a literal destination only sets the flags (tp.exe `0x556736`). VM-902 is retired: what
+remains is an OpenTPW replay design point (`[EXT:vm-host-time]`): the host sample is neither saved nor hashed, so a replay needs the same samples.
+Provider/current host input is neither snapshotted nor hashed. Previously
+returned variables and flags remain saved and hashed; future queries after
+restore may diverge unless the same external inputs are supplied. No save or
+hash schema changes. `RideCivilTimeRuntimeTests` exercises actual synthetic
+object runtimes and VM instructions without original assets or a GPU.
+
+### Effect dispatch
+
+Valid hooked operations call `IRideScriptEffects.Perform(RideEffectCall)` with the
 resolved operand values. The VM writes the returned value to the opcode's
 destination where the corpus shows one (HOP, WALKGET, UNLIMBO, LIMBOSPACE,
-GETANIM_CH, HOUR, …), sets flags where branches consume them, and uses it as
-the duration in milliseconds for TRIGANIM/WAITANIM/TRIGWAITANIM/TRIGANIMSPEED
-(waits and WAIT4ANIM). For TOUR/BUMP/COAST the direction of the second operand
-depends on the command, so the effect writes it via `SetOutput`.
+GETANIM_CH, HOUR, …), sets flags where branches consume them, and for the
+animation triggers takes it as the original trigger result in milliseconds
+(the clip length, 1000 for a missing member). The animation opcodes follow the
+Feral Mac handlers (docs/reverse/ANIM-plan.md §8): TRIGANIM, TRIGWAITANIM,
+TRIGANIMSPEED and TRIGANIM_CH store `max(ms − 300, 300)` in their out operand and
+overwrite the script's single WAIT4ANIM deadline (`now + out / script speed`, or
+`out × 1000 / operand` for TRIGANIMSPEED); WAITANIM waits
+`max(unsigned(ms − 300) / speed, 300)` (a clip under 300 ms saturates to
+`INT32_MAX` ms, as in the original) and WAITANIM_CH `max(unsigned(ms − 300), 300)`
+without the division or saturation, added to the 32-bit clock as a wrapping add,
+so a clip under 300 ms gives a deadline in the past and the script continues at
+its next slice; both and LOOPANIM(_CH) zero the deadline; LOOPANIM is a no-op while its
+script-local token is unchanged, and the plain triggers reset the token;
+TRIGWAITANIM re-executes until the channel shows the triggered AnimID;
+FLUSHANIM(_CH) clears only the deferred clip; GETANIM(_CH) return the AnimID, or
+−1 once a non-looping clip ended. Without an animation host (an unimplemented
+effect) the script has no object, and every trigger uses 0 ms as the original's
+null-object path does (`li r3,0` at 0xafb1c, 0xafc74, 0xafe88, 0xb0078, 0xb01d4,
+0xb032c, 0xb0510): the triggers write 300, WAITANIM waits `INT32_MAX` ms, and
+TRIGWAITANIM never resumes for a variable out operand; a literal out operand word 0x0000vvvv resumes once v equals the triggered AnimID (PC 0x5535c7, 0x552cd3: both compare the raw word + 1 with the token). Game objects
+always have a host (`OriginalObjectEffects`); only headless VMs reach this.
+TOUR/BUMP/COAST use the independently reviewed command
+contracts from [PPC-rides](reverse/PPC-rides.md) (`15313d2`): mutators preserve
+flags, supported queries set flags, and output queries write the effect's
+returned value to their parameter. BUMP13/14 use the captured original input
+for flags, not the controller return. No controller/admission logic or result
+is synthesized by these dispatch rules.
+
+Required-variable gates skip calls for literal parameters: BUMP1/2 and
+TOUR3/4/16. BUMP11 and COAST2/3 query with optional variable output, so a
+literal destination still permits flag-only queries. COAST7 is a native
+consumed-parameter no-op and does not call an effect. Nonliteral commands,
+unknown/default diagnostic command IDs and unqualified numeric-input tags
+fault explicitly as VM safety policy; original native diagnostic fatality
+and full invalid-host handling are not claimed equivalent.
 
 The default, `UnimplementedRideScriptEffects`, returns 0 (no visitor, no
 animation time), counts the call in `RideVM.UnimplementedEffects` and logs
-"unimplemented effect" once per script and opcode. Nothing is faked.
+"unimplemented effect" once per script and opcode. Controller queries detect
+that marker and retain prior flags/output instead of treating its placeholder 0
+as a real result. This lets the incomplete VM continue without manufacturing
+visitor/admission values; it does not establish original controller behavior.
+Other effect handlers retain their documented placeholder policy.
+
+The dispatcher implements all 39 reviewed command roles; the 37 command IDs
+used by the PC corpus are corroborated by parameter-kind/callsite metadata.
+Core dispatch now owns output writes for BUMP2/11, TOUR4/16 and COAST2/3.
+Supported admission/query values still come exclusively from the effect
+implementation. It does not create visitors, vehicles, capacities, queues,
+or success responses. Original controller systems remain unimplemented.
+
+Only the root script has a head table: on the PC the init (0x558D2B) stores the thing id and, when it is 0, skips the head-id lookup and the table allocation, and SPAWNCHILD (0x555081) and SPAWNSOUND (0x5551AB) create their script with thing id 0 and copy the parent's thing id (+0xAC) only afterwards (0x555168), so ADDHEAD (0x554C89) and DELHEAD (0x554D6F) exit on the NULL table in child and sound scripts. OpenTPW does the same (`RideVisitorBridge.HeadTableFor`; HEADS-005 retired, October 14, 2026): a child's head opcode does nothing, there is no per-child table to save, and the canonical state is unchanged (none of the 46 associated child/sound scripts in the shipped four-theme catalog uses a head opcode, so no pinned hash moved). See the full inventory and pixel proof in GUESTS.md.
 
 ## Corpus run (`RideVMCorpusTests`)
 
@@ -107,22 +277,55 @@ CreatureFX.RSE`, is an orphan copy of hoverbot's "Driod Anim Child" that reads
 its parent but is never spawned. All 263 roots run in one shared world for
 3,600 ticks (60 s), twice:
 
-1. default effects, `VAR_CAPACITY` 6, ride open: 23.8 M instructions, no
-   faults, no halts, 216 running/47 waiting at the end; 34 hooked opcodes
-   reached (e.g. WAITANIM in 229 scripts, ADDOBJ 109, LOOPANIM 105, EVENT 48);
-2. "chaos" effects (seeded random results and animation durations, random
-   pokes of LETMEON/LETMEOFF/RIDECLOSED/BREAKSTAT/WORN/TRIGGER/COMMAND):
-   no faults, no halts.
+1. default effects, `VAR_CAPACITY` 6, ride open: each script has an object
+   without clips (every animation trigger returns the missing-member 1000 ms and
+   the channel stays on AnimID 12; everything else unimplemented): 20.4 M
+   instructions, no faults, no halts, 222 running/41 waiting at the end;
+2. "chaos" effects (seeded random results and animation durations, channels
+   that show the last TRIGWAITANIM AnimID, random pokes of
+   LETMEON/LETMEOFF/RIDECLOSED/BREAKSTAT/WORN/TRIGGER/COMMAND): 14.6 M
+   instructions, no faults, no halts.
+
+Since ANIM-F a script without any host has no object and, like the original,
+waits `INT32_MAX` ms on its first WAITANIM, so the corpus run gives the default
+pass the clip-less object above; the figures below predate that change.
 
 Together the runs execute 83 of the 84 corpus opcodes (GETREMOTEVAR is never
 reached; it is covered by a synthetic test) and start all 44 child scripts.
 Set `OPENTPW_RSE_VM_REPORT_OUT=<file>` to write the full report.
 
-`TotemScriptTraceIsPinned` pins 30 s of Totem.RSE (seed 1234, capacity 6, no
-visitors): WAITANIM 0 at 16 ms, the 10 s passenger time-out, WAIT 700,
-VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 10,766 ms, TRIGANIM 5 at
-11,283 ms, the sound/object timeline to 23,350 ms, then VAR_RUNNING = 0 because
-nobody boarded. A closed Totem only emits WAITANIM 0 and idles.
+After the reviewed controller flag dispatch change, baseline default effects
+execute 23,768,180 instructions (previously 23,776,799), with 216 roots running
+and 47 waiting. Chaos effects execute 17,065,708 (previously 17,200,190), with
+202 running and 61 waiting. The verified Patch 2 corpus executes 23,768,063
+default and 17,062,282 chaos instructions. All runs remain fault/halt-free,
+and the Totem trace remains pinned. Totals changed because accumulator
+contracts, query output directions, unsupported-query policy and COAST7 no-op
+handling affect branching; they do not demonstrate original controller or PC
+runtime equivalence. Focused tests cover all 39 reviewed command roles,
+required/optional variable gates, supported outputs, unsupported markers and
+unknown-command safety faults.
+
+`TotemScriptTraceWithItsObjectIsPinned` pins 30 s of Totem.RSE run as the placed
+original object (`OriginalObjectRuntime`, seed 1234, capacity 6, no visitors), so
+the animation opcodes have their real host: WAITANIM 0 at 16 ms plays AnimID 0 and
+waits its length less 300 ms divided by the script speed (Totem's `InitSpeed` 60 gives
+1.1), then the 10 s passenger time-out, WAIT 700 (also divided by the speed),
+VAR_RUNNING = 1, a random TRIGANIM_CH set via JSR at 14,749 ms, TRIGANIM 5 at
+15,216 ms, the sound/object timeline to 26,216 ms, then WAIT4ANIM
+and VAR_RUNNING = 0 because nobody boarded. All five clip requests resolve.
+`TotemWithoutAnObjectWaitsOnItsFirstWaitAnim` pins the same script with no host:
+like the original's null-object path its first WAITANIM gets 0 ms and waits
+`INT32_MAX` ms, so nothing else happens.
+
+The script speed is `0.5 + SPEED / 100` (0x551769) with SPEED the ride's speed bias: ride init writes
+`Upgrades[0].InitSpeed` when above 0 (0x4DB51C..0x4DB54C), children copy the parent's (0x551888), the default is 50,
+and upgrade completion (0x4DF8F0) writes the new level's `InitSpeed` when above 0, in the same routine that sets capacity from
++0x198 and duration from +0x1A0 (`OriginalObjectRuntime.TryApplyCatalogueTierDefaults` with `completion`; CAP and DUR stay
+authored, QUEUE-011). A completed upgrade therefore changes the speed of every later `WAIT`, animation trigger and wait
+of that ride's scripts. Ride-settings speed changes (UI command 0x4AF440 → ride SetSpeed 0x4DD6E0) are not modelled
+(RIDES-033 narrowed): OpenTPW has no ride speed control. A TRIGANIMSPEED operand of 0 or below faults
+(`[EXT:trig-anim-speed-guard]`, formerly RIDES-038: the corpus has four uses, all literal 1800 to 4000).
 
 ## Sandbox Totem
 
@@ -132,12 +335,14 @@ is the .sam `Upgrades[0].InitCapacity` (6); `VAR_DURATION` has no source and
 stays 0 (one cycle per run). The script decides **when** the carriage moves:
 its `TRIGANIM 5` (`ANIM_Main` in the repository's ScriptDefs and the docs'
 `TRIGANIM ANIM_Main 0 0` example) plays the original `totemm1.MD2` clip once
-through `ModelAnimationPlayer` ([MD2-MODELS.md](MD2-MODELS.md)); its 430 ticks
-at the sandbox's unverified 30 ticks/s (14,333 ms) are reported back as the
-animation duration for the duration operand and WAIT4ANIM. Which Totem clip the
+through the object's channels ([MD2-MODELS.md](MD2-MODELS.md)); its 430 ticks
+at 30 ticks/s give the trigger result 14,333 ms, so the duration operand gets
+14,033 ms and WAIT4ANIM waits until that deadline. Which Totem clip the
 original binds to `ANIM_Main` is inferred (`totemm1` is the full cart/cog
 cycle), not traced. All other Totem effects (channel animations
-`totemm2…10`, sounds, objects, screams, reverb, visitors) are unimplemented.
+`totemm2…10`, objects, screams, reverb, visitors) are unimplemented; its EVENT
+instructions now play their original sounds (the type routes are traced,
+AUDIO.md).
 With no visitors, an opened Totem waits 10 s, moves once, and repeats.
 
 ## Visitors
@@ -167,9 +372,14 @@ member mapping, channels and the corpus run of all 262 object scripts are in
   TOUR/BUMP/COAST guest handling and WALKST_FLOAT/WALKFLOATSTAT/WALKFLOATSTOP
   are unimplemented.
 - Animation playback only through the objects' effects (OBJECTS.md; rigid node
-  tracks, vertex animation not decoded), no sounds/EVENT mapping,
-  no objects/particles, no ride-type controllers (TOUR/BUMP/COAST), no park
-  clock (HOUR/MIN/SEC return 0), no light opcodes.
+  tracks, vertex animation not decoded); EVENT types 3-9 and REPAIREFFECT play
+  their original sounds (the category routes are traced, AUDIO.md); repair hide (0)
+  uses the same sampled placed sound-space origin and owned-loop cleanup as EVENT
+  types 3–9, while show keeps its qualified flat family 75 path. Types
+  1/2 create particles in the original and remain unimplemented here; type 0
+  is unsupported, not a positioned sound loop. No objects/particles, no ride-type
+  controllers (TOUR/BUMP/COAST), no light opcodes. TPW YEAR/MONTH/DAY/HOUR/MIN/SEC
+  sample host civil time (an unsaved external input, `[EXT:vm-host-time]`); they do not read the park calendar.
 - What the engine does with `EventMap.rse` variables, how the host is meant to
   feed `VAR_LETMEON`/`VAR_LETMEOFF`, and the `0xFFFF` second operand of EVENT
   are unknown.
@@ -234,11 +444,11 @@ handler attributes diverge.
 | 0 | `NOP` | 2 | implemented | docs |
 | 1 | `CRIT_LOCK` | 150 | implemented | docs (locks the ride); VM: the slice budget cannot preempt inside CRIT_LOCK…CRIT_UNLOCK, hosts must not change visitor variables while `InCriticalSection` |
 | 2 | `CRIT_UNLOCK` | 240 | implemented | undocumented upstream; corpus: closes every CRIT_LOCK section (240 uses, 0 operands) |
-| 3 | `COPY` | 1243 | implemented | docs; no flags (no branch in the corpus consumes flags after COPY) |
+| 3 | `COPY` | 1243 | implemented | Mac-static: variable destination receives the resolved source and sets flags; non-variable destination aborts with PC -10000 |
 | 4 | `SETLV` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 5 | `SUB` | 74 | implemented | docs (sets flags); corpus: operand order is `SUB dest a b` → dest = a − b |
 | 6 | `ENDSLICE` | 396 | implemented | name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it |
-| 7 | `GETTIME` | 172 | implemented | docs (time the ride has been alive); milliseconds since the VM started |
+| 7 | `GETTIME` | 172 | implemented | STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted) |
 | 8 | `ADDOBJ` | 644 | hooked | docs (`type parameter id slot`) |
 | 9 | `ADDOBJ_EXT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 10 | `KILLOBJ` | 235 | hooked | docs (`slot`); does not touch flags (`ADD VAR_COUNT 0xFFFF; KILLOBJ 200; BRANCH_PV`) |
@@ -246,20 +456,20 @@ handler attributes diverge.
 | 12 | `SETOBJPARAM` | 20 | hooked | docs (`slot parameter value`) |
 | 13 | `EVENT` | 527 | hooked | docs (`type unknown event`); event names are theme-dependent and not assigned |
 | 14 | `EVENT_EXT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 15 | `FLUSHANIM` | 17 | hooked | docs (stop all animations); clears pending WAIT4ANIM time |
-| 16 | `TRIGANIM` | 74 | hooked | docs example `TRIGANIM ANIM_Main 0 0`; corpus: third operand receives the duration (`TRIGANIM 5 0 VAR_TEMP; SUB VAR_TEMP VAR_TEMP 3000; WAIT VAR_TEMP; …; WAIT4ANIM`) |
-| 17 | `WAITANIM` | 547 | hooked | docs (play and wait for the end) |
-| 18 | `LOOPANIM` | 210 | hooked | docs (loop an animation); loops are not awaited by WAIT4ANIM (assumption) |
-| 19 | `TRIGWAITANIM` | 133 | hooked | name (trigger + wait); operand layout as TRIGANIM (`TRIGWAITANIM 4 0 VAR_TEMP`) |
-| 20 | `GETANIM` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 21 | `TRIGANIMSPEED` | 4 | hooked | unknown upstream; corpus `TRIGANIMSPEED 6 0 VAR_TEMP 4000 … WAIT4ANIM`: returned duration is tracked for WAIT4ANIM, operands passed through |
-| 22 | `FLUSHANIM_CH` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 23 | `TRIGANIM_CH` | 63 | hooked | unknown upstream; corpus (Totem `TRIGANIM_CH 5 1 0 1` …, .sam `NumSimultAnims 4`) suggests animation/variant/duration/channel; passed through |
-| 24 | `WAITANIM_CH` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 25 | `LOOPANIM_CH` | 1 | hooked | unknown upstream; 1 corpus use; passed through |
-| 26 | `TRIGWAITANIM_CH` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 27 | `GETANIM_CH` | 15 | hooked | unknown upstream; corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x` → `dest channel`, result sets flags |
-| 28 | `RAND` | 56 | implemented | docs (`RAND dest max`); corpus: inclusive 0..max (Totem `RAND VAR_TEMP 2` selects one of three animation sets; `RAND 0 1; BRANCH_Z` coin flips) and sets flags |
+| 15 | `FLUSHANIM` | 17 | hooked | STP-PPC 0xafa68 → 0xa6c90: clears only channel 0's deferred clip; the playing clip and the WAIT4ANIM deadline stay |
+| 16 | `TRIGANIM` | 74 | hooked | STP-PPC 0xafa94: trigger channel 0, flags 0; out = max(ret − 300, 300); WAIT4ANIM deadline = now + out / script speed; LOOPANIM token reset |
+| 17 | `WAITANIM` | 547 | hooked | STP-PPC 0xafbbc: trigger channel 0, flags 0; waits max(unsigned(ret − 300) / script speed, 300) (a clip under 300 ms saturates to INT32_MAX ms) on a u32 deadline; zeroes the WAIT4ANIM deadline; LOOPANIM token reset |
+| 18 | `LOOPANIM` | 210 | hooked | STP-PPC 0xafd00: no-op while token anim + (sub << 16) equals script +168; else loops on channel 0 (flags 1), stores the token, zeroes the WAIT4ANIM deadline |
+| 19 | `TRIGWAITANIM` | 133 | hooked | STP-PPC 0xafd94: as TRIGANIM, then re-executes until channel 0's AnimID equals the triggered one (+188 = id + 1), yielding while it differs |
+| 20 | `GETANIM` | 0 | hooked | STP-PPC 0xaff3c: channel 0's AnimID (12 = none), −1 once its non-looping clip ended (channel flag 0x4); result sets flags |
+| 21 | `TRIGANIMSPEED` | 4 | hooked | STP-PPC 0xaffc4: trigger channel 0 at script speed × operand / 1000; out = max(ret − 300, 300); deadline = now + out × 1000 / operand (signed divw); LOOPANIM token reset |
+| 22 | `FLUSHANIM_CH` | 0 | hooked | STP-PPC 0xb00f4 → 0xa6c90: clears only the operand channel's deferred clip |
+| 23 | `TRIGANIM_CH` | 63 | hooked | STP-PPC 0xb013c: as TRIGANIM on channel operand 4 (Totem `TRIGANIM_CH 5 1 0 1`); leaves the LOOPANIM token |
+| 24 | `WAITANIM_CH` | 0 | hooked | STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline |
+| 25 | `LOOPANIM_CH` | 1 | hooked | STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline |
+| 26 | `TRIGWAITANIM_CH` | 0 | hooked | STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token |
+| 27 | `GETANIM_CH` | 15 | hooked | STP-PPC 0xb05b8: `GETANIM_CH dest channel`: the channel's AnimID, −1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`) |
+| 28 | `RAND` | 56 | implemented | Mac-static: signed raw bound word, inclusive nonnegative maximum, sets flags; host PRNG remains unqualified |
 | 29 | `JSR` | 70 | implemented | docs; corpus: every script using JSR declares stack ≥ 3, used as the return-address limit |
 | 30 | `RETURN` | 33 | implemented | docs; LIFO return stack (the old VM used a FIFO queue) |
 | 31 | `BRANCH` | 725 | implemented | docs; all 725 operands are branch words |
@@ -275,18 +485,18 @@ handler attributes diverge.
 | 41 | `POP` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 42 | `HUSH` | 39 | hooked | unknown upstream; corpus input (`HUSH VAR_LETMEON` before boarding) |
 | 43 | `HOP` | 39 | hooked | unknown upstream; corpus output (`HOP VAR_TEMP2; WALKOFF VAR_TEMP2`) |
-| 44 | `WAIT` | 458 | implemented | docs; milliseconds (inferred); flags survive it (`WAIT 300; BRANCH_NZ`) |
-| 45 | `WAITABS` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 46 | `WAIT4ANIM` | 170 | hooked | docs (wait for all playing animations); waits for the latest end time the effects layer reported |
+| 44 | `WAIT` | 458 | implemented | STP-PPC 0xb0658: milliseconds divided by the script speed (0.5 + SPEED/100), truncated; flags survive it (`WAIT 300; BRANCH_NZ`) |
+| 45 | `WAITABS` | 0 | implemented | tp.exe 0x553828 and STP-PPC 0xb0710: despite the name the first encounter stores the 32-bit clock + operand (no WAIT speed division) in the shared deadline word and yields; later encounters wait while the clock is unsigned-below it; a wrapped deadline is already past and a deadline of exactly 0 arms again (Theme Park Inc corpus: 34 uses, literals 1..10000) |
+| 46 | `WAIT4ANIM` | 170 | hooked | STP-PPC 0xb07a0: deadline 0 continues; otherwise blocks while now < deadline (re-executing), then clears it |
 | 47 | `ADD` | 541 | implemented | docs (dest += value, sets flags); corpus: 115 branches consume ADD flags, e.g. `ADD VAR_SPACELEFT 0xFFFF; BRANCH_Z` |
-| 48 | `MULT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 49 | `DIV` | 4 | implemented | docs; corpus: `DIV VAR_TEMP VAR_CAPACITY 9` + `MOD 0 VAR_CAPACITY 9` round-up idiom gives `DIV dest a b`; truncating, ÷0 faults |
-| 50 | `MOD` | 5 | implemented | docs; corpus: `MOD 0 VAR_CAPACITY 9; BRANCH_Z` and clock `MOD VAR_TEMP VAR_TEMP 12; BRANCH_NZ`; ÷0 faults |
+| 48 | `MULT` | 0 | implemented | TPW-EXE 0x553eb9: dest-first, a × b by imul (32-bit wrap), result in the flag word and a variable destination; Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE` |
+| 49 | `DIV` | 4 | implemented | corpus: `DIV dest a b`; Mac-static: signed truncation, zero divisor returns 0; signed overflow retains VM wrap policy |
+| 50 | `MOD` | 5 | implemented | corpus: `MOD dest a b`; Mac-static: signed remainder, zero divisor returns 0; signed overflow retains VM zero policy |
 | 51 | `TURBO` | 20 | hooked | docs (`value` 0..1, meaning unknown) |
 | 52 | `END` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
-| 53 | `TOUR` | 76 | hooked | docs (command list); corpus `TOUR 10 0; BRANCH_Z` → result sets flags |
-| 54 | `BUMP` | 199 | hooked | docs (command list); corpus 57 branches consume BUMP flags |
-| 55 | `COAST` | 144 | hooked | docs (COAST_* ids); corpus 36 branches consume COAST flags |
+| 53 | `TOUR` | 76 | hooked | Mac-static command roles: mutators preserve flags; supported queries set flags/output; required-variable gates skip invalid calls |
+| 54 | `BUMP` | 199 | hooked | Mac-static command roles: mutators preserve flags; queries set flags/output; duration commands set flags from original input |
+| 55 | `COAST` | 144 | hooked | Mac-static: commands 1/4/5/6/8 preserve flags; 2/3 set flags and optional output; 7 is a no-op |
 | 56 | `ADDHEAD` | 31 | hooked | docs (`visitor`) |
 | 57 | `DELHEAD` | 31 | hooked | docs (`visitor`) |
 | 58 | `LIMBO` | 24 | hooked | docs (`visitor unknown`) |
@@ -328,12 +538,12 @@ handler attributes diverge.
 | 94 | `GETCUSTPTCLCODE` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
 | 95 | `SETTIMER` | 40 | implemented | corpus: `SETTIMER 10000 … GETTIMER x; BRANCH_Z start` replaces the GETTIME time-out idiom; countdown in ms |
 | 96 | `GETTIMER` | 21 | implemented | corpus: `GETTIMER 0; BRANCH_NZ skip` staggers unloading; dest = remaining ms (≥ 0), sets flags |
-| 97 | `YEAR` | 0 | hooked | docs only (no corpus use); as HOUR |
-| 98 | `MONTH` | 0 | hooked | docs only (no corpus use); as HOUR |
-| 99 | `DAY` | 0 | hooked | docs only (no corpus use); as HOUR |
-| 100 | `HOUR` | 1 | hooked | docs (in-game hour → dest); corpus Clock.RSE `HOUR VAR_TEMP; MOD VAR_TEMP VAR_TEMP 12`; sets flags; park clock not implemented |
-| 101 | `MIN` | 1 | hooked | docs (in-game minute → dest); corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only |
-| 102 | `SEC` | 1 | hooked | docs (in-game second → dest); corpus `SEC 0; BRANCH_NZ` |
+| 97 | `YEAR` | 0 | hooked | host-local civil year minus 1900 (tm_year; tp.exe 0x5565B2 and PPC-clock.md); TPW runtime samples host time |
+| 98 | `MONTH` | 0 | hooked | host-local civil month 1..12 (tm_mon + 1; tp.exe 0x556605 and PPC-clock.md); TPW runtime samples host time |
+| 99 | `DAY` | 0 | hooked | host-local civil day 1..31 (tm_mday; tp.exe 0x556659 and PPC-clock.md); TPW runtime samples host time |
+| 100 | `HOUR` | 1 | hooked | host-local civil hour: tp.exe 0x5566AC calls time/localtime and stores tm_hour in the result register; a variable operand receives it, a literal only sets the flags; the TPW runtime samples host time (PPC-clock.md) |
+| 101 | `MIN` | 1 | hooked | host-local civil minute (tm_min), as HOUR: tp.exe 0x5566FF calls time/localtime and stores tm_min in the result register; corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only |
+| 102 | `SEC` | 1 | hooked | host-local civil second (tm_sec), as HOUR: tp.exe 0x55674E calls time/localtime and stores tm_sec in the result register; corpus `SEC 0; BRANCH_NZ` |
 | 103 | `SETREVERB` | 21 | hooked | docs (0–10) |
 | 104 | `DIPMUSIC` | 8 | hooked | docs (0/1) |
 | 105 | `SPARK` | 1 | hooked | unknown upstream; 1 corpus use (Plasma); passed through |
@@ -342,3 +552,7 @@ Sources: OpenTPW docs (`src/formats/rsse.md`, `rsse-vm.md`,
 `rsse-vm-instructions.md`), the repository's `ScriptDefs`/`RideVariables`
 enums, and static analysis of the local original scripts. No original binary
 was executed.
+
+### Independent root-fault lifecycle controls
+
+The independent review adds real synthetic coaster/visitor and sound ownership controls: a fault removes that runtime's boarded riders, trains and controller while retaining another runtime's registrations, and stops its actual scream chain while another owner remains audible. Repeated containment/Stop does not release a rider twice. A fault set before the runtime services a tick keeps the existing live VM diagnostic/capture behavior; after containment the existing stopped-fault message is retained and live-sound refusal no longer applies to the cleaned owner. These tests add no persistence schema or native audio/fault claim.

@@ -1,0 +1,489 @@
+namespace OpenTPW;
+
+/// <summary>
+/// The park's weather: the original's weather thing (model 15), one quality re-rolled each cycle. The quality alone
+/// decides the weather (<see cref="Snow"/>, <see cref="Rain"/>, <see cref="Lightning"/>), the drops ramp toward the
+/// rain's target, lightning strikes count down and thunder follows a strike a few turns later. The sound side is
+/// reproduced, and the drops, snow and bolts are drawn by the CRain port (<see cref="WeatherRenderer"/>).
+/// </summary>
+// [EXT:forecast-presentation] the PC has no forecast message: event type 2 (the forecast, built by 0x40f240 and broadcast by 0x40fb10) has a single subscriber, the weather thing itself (0x511fa9/0x511fb8, handler 0x5127a0, which only schedules or applies), and no weather text exists in the Language tables, so the forecast banner, wording and cadence are OpenTPW's own (AUDIO-905..907 are extensions); the drawn drops, snow and bolts follow the traced CRain with the approximations AUDIO-900..904
+/// <remarks>
+/// The sim advances once per park turn (248 ms, <see cref="ParkCalendar.Turn"/>), and the day is the calendar's
+/// (<see cref="ParkCalendar.DayIndex"/>). The Mac binary's weather-tick gate is not located; the turn is the cadence
+/// the fork's measured 3.99 ticks a second supports.
+/// </remarks>
+// [BIN:STP-PPC:0x10103138-0x101031ec the forecast and its apply] a forecast is posted DaysOfWarning ahead and applied when its day passes; the roll is scheduled from the last change
+// [BIN:STP-PPC:0x101031f0-0x10103298 the roll schedule] a roll happens once the day is past lastChanged + max(0, DaysBetweenChanges - DaysOfWarning)
+// [BIN:STP-PPC:0x1010386c-0x101038d4 the roll] a normal roll is Avg - Tol + rand % (2·Tol), or Avg when Tol <= 0; the exceptional branch (rand % 100 < Chance) gives rand % 100
+// [BIN:STP-PPC:0x10103998-0x10103a80 converter] snow, rain and lightning bands; when both snow and rain hold, rand & 1 decides (even: snow)
+// [BIN:STP-PPC:0x10103a90-0x10103b80 target] intensity = (q − low) × 100 / (high − low) (100 when high = low) with the snow band for snow and the rain band for rain; target drops = ((100 − intensity) × MaxRaindrops) / 100, so snow has drops too (the word the arrival group reads, ARRIVAL-002)
+// [BIN:STP-PPC:0x101030fc-0x101033c8 drop ramp] the drops move by SpeedOfChange toward the target and stop once within one step of it; a target of 0 then stops the rain
+// [BIN:STP-PPC:0x101033cc-0x101034c4 lightning] while the lightning band holds, the countdown falls by LightningCountdownSpeed each turn and a strike resets it to rand % LightningCountdownFrom; the bolt count resets outside the band
+// [BIN:STP-PPC:0x10103438-0x1010346c thunder] a strike sets the thunder countdown to max(0, ThunderStartsThisFarAway − bolts) + rand % ThunderRandomiser when it is idle (bolts fired this period, before the strike)
+// [BIN:STP-PPC:0x101034c8-0x10103518 thunder at the top] the thunder plays at the last bolt's top (x, 300, z) when its countdown ends
+// [APPROX:AUDIO-025] December is row 4 of the season roll (0x101037D4, season = month / 3): its tolerance and chance are DaysOfWarning (+0x4B8) and DaysBetweenChanges (+0x4BC), confirmed; its average is the unnamed word at +0x4B4 between the Seasons array and DaysOfWarning, which only the .sam loader writes — 4 stands for it
+// [BIN:TPW-EXE:0x51295c weather roll and apply] everything runs on game-clock timestamps (0x4f8690; the unit is 10^7 per second, 0x4f8770), not day indices: a roll happens when now >= lastChanged (+0x10) + max(0, DaysBetweenChanges - DaysOfWarning) days and no forecast is pending (flag +0x2c); the forecast handler (0x5127a0) stores the pending time now + DaysOfWarning days (+0x20), the quality (+0x28), the flag and mLastForecasted; the apply (now >= +0x20, unless mOverridden +0x64) runs the converter 0x512f00, which sets the quality and lastChanged = now (0x512f5b), and the same tick falls through to the roll test
+// [BIN:TPW-EXE:0x511f70 weather constructor] quality = the season's roll (0x512e10), lastChanged = 0, drops, target and lightning 0, wind 90/0.5; the converter 0x512f00 is not called, so the constructed quality has no effect (no rain or snow) and, because lastChanged is 0, the first update rolls a forecast at once, applied DaysOfWarning days later
+// [APPROX:AUDIO-026] the schedule runs on game seconds sampled at the park turn (ParkCalendar.Seconds), and "lastChanged = 0" is modelled by a first roll due at the first step (the park clock starts at 0, the original's is far past it); the PC's tick mapping (10^7 units per second against the park turn) is the residual
+// [EXT:weather-stream] the weather's random draws (roll, lightning and thunder countdowns) come from the park's own weather stream; the PC draws them from the world LCG 0x516330 (world +0x1da708 = ror13(s * 0x19660D + 0x3C6EF35F), the rotated value stored, |value| returned; seeded from time(NULL) at world creation 0x51586b, setter 0x516370), shared by about 139 call sites, so reproducing its draw order needs every user of that LCG (docs/DETERMINISM.md)
+public sealed class ParkWeather
+{
+	/// <summary>The height of a bolt's top (<c>FUN_00512c50</c> sky point, the fork's and the Mac's 300).</summary>
+	public const float BoltTopHeight = 300;
+
+	private readonly WeatherSettings settings;
+	private readonly DeterministicRandom random;
+	private readonly int groundX;
+	private readonly int groundZ;
+	private readonly Queue<Vector3> strikes = new();
+	private readonly Queue<Vector3> boltTops = new();
+	private bool started;
+	private long lastTurn;
+	private long lastChanged;
+	/// <summary>Game seconds (<see cref="ParkCalendar.Seconds"/>) from which the next forecast may be rolled (the original's lastChanged + max(0, DaysBetweenChanges - DaysOfWarning) days).</summary>
+	private long nextRollAt;
+	private int? pendingQuality;
+	/// <summary>Game seconds at which the pending forecast applies (the pending time +0x20: the roll's time + DaysOfWarning days).</summary>
+	private long applyAt;
+	private int lightningCountdown;
+	private int bolts;
+	private int thunderCountdown;
+	private Vector3 lastTop;
+
+	/// <summary>
+	/// Raised once for every weather the simulation creates, so a host can attach presentation (the visual
+	/// renderer) without the simulation knowing it. Not part of snapshots: the visual side is rebuilt with the weather.
+	/// </summary>
+	public static event Action<ParkWeather>? Created;
+
+	/// <summary>The park's weather keys (<c>Standard.sam</c>, layered over the global ones).</summary>
+	public ParkWeather( SamSettings standard, ulong seed, int cellsX, int cellsY )
+	{
+		settings = WeatherSettings.From( standard );
+		random = new DeterministicRandom( seed );
+		groundX = cellsX * 10;
+		groundZ = cellsY * 10;
+		Created?.Invoke( this );
+	}
+
+	/// <summary>The quality, 1 to 100 (the weather thing's <c>mQuality</c>).</summary>
+	public int Quality { get; private set; }
+	public bool Snow { get; private set; }
+	public bool Rain { get; private set; }
+	/// <summary>Whether the quality is in the lightning band (the thing's flag at +0x38).</summary>
+	public bool Lightning { get; private set; }
+	/// <summary>Drops on screen now, ramped toward the target.</summary>
+	public int CurrentDrops { get; private set; }
+	/// <summary>The drops the rain is ramping to (<c>+0x34</c>).</summary>
+	public int TargetDrops { get; private set; }
+	/// <summary>How long a drawn bolt lives, in milliseconds (<c>WeatherEffects.LightningTime</c>, 2000 in the shipped Standard.sam).</summary>
+	// [DATA:Standard.sam:WeatherEffects.LightningTime] 2000 ms in every shipped layer; presentation only, never read by the simulation
+	public int LightningTimeMilliseconds => settings.LightningTime;
+	/// <summary>The most drops the renderer may draw (<c>WeatherEffects.MaxRaindrops</c>).</summary>
+	public int MaxRaindrops => settings.MaxRaindrops;
+	/// <summary>The level-driven rain voice (0 to 100): the current drops over the cap, in any weather band until the drops reach 0
+	/// (the Mac's ramp sends it at 0x103394..0x1033a4 regardless of the band; the snow stop at 0x103ce0 ends a separate voice).</summary>
+	public int RainLevel => settings.MaxRaindrops > 0 ? Math.Clamp(CurrentDrops * 100 / settings.MaxRaindrops, 0, 100) : 0;
+
+	/// <summary>Brings the weather up to <paramref name="tick"/> of the park's clock; each new park turn is one weather step.</summary>
+	public void AdvanceTo( long tick )
+	{
+		var turn = ParkCalendar.Turn( tick );
+		if ( !started )
+		{
+			started = true;
+			lastTurn = turn;
+			CurrentDay = ParkCalendar.DayIndex( tick );
+			// [BIN:TPW-EXE:0x511f70 weather constructor] the constructed quality is the season's roll but is never converted (no rain or snow), and lastChanged is 0, so the first update rolls a forecast at once
+			Quality = Roll( tick );
+			lastChanged = 0;
+			nextRollAt = 0;
+			return;
+		}
+		while ( lastTurn < turn )
+		{
+			lastTurn++;
+			Step( ParkCalendar.TickOfTurn( lastTurn ) );
+		}
+	}
+
+	/// <summary>The quality the forecast says is coming (rolled, applied when its day comes), or null.</summary>
+	public int? Forecast => pendingQuality;
+
+	/// <summary>The day the pending forecast applies on; valid while <see cref="Forecast"/> holds one.</summary>
+	internal long ForecastApplyDay => applyAt / ParkCalendar.SecondsPerDay;
+
+	/// <summary>The day index the weather's schedule last stepped to (the forecast countdown's "now").</summary>
+	internal long CurrentDay { get; private set; }
+
+	/// <summary>The forecast's warning distance in days (<c>Weather.DaysOfWarning</c>).</summary>
+	internal int DaysOfWarning => settings.DaysOfWarning;
+
+	/// <summary>Whether the weather has taken its first step, so its schedule is valid.</summary>
+	internal bool Started => started;
+
+	/// <summary>
+	/// The bands a quality falls in, as the converter (<see cref="ApplyQuality"/>) reads them. Both precipitation
+	/// bands can hold — the forecast presentation reads this before the apply-time tie-break is drawn.
+	/// </summary>
+	internal WeatherQualityBands BandsOf( int quality ) => new(
+		quality >= settings.SnowLow && quality <= settings.SnowHigh,
+		quality >= settings.RainLow && quality <= settings.RainHigh,
+		quality >= settings.LightningLow && quality <= settings.LightningHigh );
+
+	/// <summary>
+	/// Smoke-only (<c>[EXT:debug-forecast]</c>): posts a forecast of <paramref name="quality"/> the warning
+	/// distance ahead, exactly as the natural roll would, so captures can show the forecast presentation. The
+	/// countdown, apply and the weather itself still come from the normal machinery.
+	/// </summary>
+	internal void DebugPostForecast( int quality )
+	{
+		if ( !started )
+			throw new InvalidOperationException( "The weather has not taken its first step, so a debug forecast has no day to apply on." );
+		pendingQuality = Math.Clamp( quality, 1, 100 );
+		applyAt = lastTurn * ParkCalendar.SecondsPerTurn + settings.DaysOfWarning * ParkCalendar.SecondsPerDay;
+	}
+
+	/// <summary>Takes the bolt tops whose thunder has come due since the last call (the frame plays them).</summary>
+	public IReadOnlyList<Vector3> TakeThunder()
+	{
+		var due = new List<Vector3>();
+		while ( strikes.Count > 0 )
+			due.Add( strikes.Dequeue() );
+		return due;
+	}
+
+	/// <summary>Takes the bolt tops struck since the last call, at the moment of the strike (the frame draws them).</summary>
+	public IReadOnlyList<Vector3> TakeBoltTops()
+	{
+		var struck = new List<Vector3>();
+		while ( boltTops.Count > 0 )
+			struck.Add( boltTops.Dequeue() );
+		return struck;
+	}
+
+	/// <summary>Moves the bolt tops struck since the last call into <paramref name="into"/> as System.Numerics vectors, allocating nothing.</summary>
+	internal void DrainBoltTops( List<System.Numerics.Vector3> into )
+	{
+		while ( boltTops.Count > 0 )
+			into.Add( boltTops.Dequeue().GetSystemVector3() );
+	}
+
+	/// <summary>Bound for the pending bolt tops: strikes come at most once a park turn, and hosts drain them per frame.</summary>
+	public const int MaximumPendingBoltTops = 64;
+
+	/// <summary>One bolt top with thunder already due but not yet played, in strike order.</summary>
+	public readonly record struct ThunderStrikeSnapshot( float X, float Y, float Z );
+
+	/// <summary>
+	/// The weather's own-format state for a park save: the draw stream's whole state, the sim's position in
+	/// it (started flag, last turn, change/roll/apply schedule), the current quality's converted bands and
+	/// drop target, the ramped drops, the lightning/thunder clocks and the thunder strikes still waiting to
+	/// be played. Deep-copied on capture; validated against the destination's settings before restore, so a
+	/// restore continues the same weather instead of re-rolling from the seed.
+	/// </summary>
+	public sealed record ParkWeatherSnapshot
+	{
+		public required ulong RandomState { get; init; }
+		public required bool Started { get; init; }
+		public required long LastTurn { get; init; }
+		/// <summary>Game seconds of the last applied change (0 until the first forecast applies; the schedule is in game seconds, saves from before it held day indices).</summary>
+		public required long LastChanged { get; init; }
+		/// <summary>Game seconds from which the next forecast may be rolled (0: at the first step).</summary>
+		public required long NextRollDay { get; init; }
+		/// <summary>The forecast's rolled quality, null while none is pending (<see cref="Forecast"/>).</summary>
+		public int? PendingQuality { get; init; }
+		/// <summary>The game second the pending quality applies at; 0 while none is pending.</summary>
+		public required long ApplyDay { get; init; }
+		public required int Quality { get; init; }
+		public required bool Snow { get; init; }
+		public required bool Rain { get; init; }
+		public required bool Lightning { get; init; }
+		public required int CurrentDrops { get; init; }
+		public required int TargetDrops { get; init; }
+		public required int LightningCountdown { get; init; }
+		public required int Bolts { get; init; }
+		public required int ThunderCountdown { get; init; }
+		/// <summary>The last strike's bolt top, the position the pending thunder plays at.</summary>
+		public required ThunderStrikeSnapshot LastTop { get; init; }
+		public required IReadOnlyList<ThunderStrikeSnapshot> PendingStrikes { get; init; }
+		/// <summary>Bound for <see cref="PendingStrikes"/>: at most one thunder per park turn can be due, and frames drain them.</summary>
+		public const int MaximumPendingStrikes = 4096;
+	}
+
+	/// <summary>The weather's state for a park save (the draw stream, the schedule, the bands and the lightning clocks).</summary>
+	public ParkWeatherSnapshot CaptureSnapshot() => new()
+	{
+		RandomState = random.State,
+		Started = started,
+		LastTurn = lastTurn,
+		LastChanged = lastChanged,
+		NextRollDay = nextRollAt,
+		PendingQuality = pendingQuality,
+		ApplyDay = applyAt,
+		Quality = Quality,
+		Snow = Snow,
+		Rain = Rain,
+		Lightning = Lightning,
+		CurrentDrops = CurrentDrops,
+		TargetDrops = TargetDrops,
+		LightningCountdown = lightningCountdown,
+		Bolts = bolts,
+		ThunderCountdown = thunderCountdown,
+		LastTop = new ThunderStrikeSnapshot( lastTop.X, lastTop.Y, lastTop.Z ),
+		PendingStrikes = strikes.Select( strike => new ThunderStrikeSnapshot( strike.X, strike.Y, strike.Z ) ).ToArray()
+	};
+
+	/// <summary>
+	/// Checks a snapshot against this weather's invariants without touching it. A weather that has not started
+	/// must be pristine; a started one carries a valid quality, drop counts within the settings' cap, a
+	/// non-negative schedule, and the converter's snow/rain exclusions. Uses this instance's settings, so a
+	/// snapshot is validated against the destination park's own <c>Standard.sam</c> layer.
+	/// </summary>
+	public void ValidateSnapshot( ParkWeatherSnapshot snapshot )
+	{
+		ArgumentNullException.ThrowIfNull( snapshot );
+		if ( snapshot.PendingStrikes is null )
+			throw new InvalidDataException( "Park weather snapshot is inconsistent: missing pending thunder strikes." );
+		void Require( bool condition, string message )
+		{
+			if ( !condition )
+				throw new InvalidDataException( $"Park weather snapshot is inconsistent: {message}." );
+		}
+		Require( snapshot.PendingStrikes.Count <= ParkWeatherSnapshot.MaximumPendingStrikes, "too many pending thunder strikes" );
+		Require( snapshot.PendingStrikes.All( strike => float.IsFinite( strike.X ) && float.IsFinite( strike.Y ) && float.IsFinite( strike.Z ) ), "a bolt top is not finite" );
+		Require( float.IsFinite( snapshot.LastTop.X ) && float.IsFinite( snapshot.LastTop.Y ) && float.IsFinite( snapshot.LastTop.Z ), "the last bolt top is not finite" );
+		if ( !snapshot.Started )
+		{
+			Require( snapshot.Quality == 0 && !snapshot.Snow && !snapshot.Rain && !snapshot.Lightning
+				&& snapshot.CurrentDrops == 0 && snapshot.TargetDrops == 0
+				&& snapshot.LightningCountdown == 0 && snapshot.Bolts == 0 && snapshot.ThunderCountdown == 0
+				&& snapshot.LastTurn == 0 && snapshot.LastChanged == 0 && snapshot.NextRollDay == 0 && snapshot.ApplyDay == 0
+				&& snapshot.PendingQuality is null && snapshot.PendingStrikes.Count == 0,
+				"a weather that has not started must be pristine" );
+			return;
+		}
+		Require( snapshot.Quality is >= 1 and <= 100, "quality outside 1..100" );
+		Require( !snapshot.Snow || !snapshot.Rain, "snow and rain at once (the converter keeps them apart)" );
+		Require( snapshot.CurrentDrops >= 0 && snapshot.CurrentDrops <= settings.MaxRaindrops
+			&& snapshot.TargetDrops >= 0 && snapshot.TargetDrops <= settings.MaxRaindrops,
+			$"drop counts outside 0..{settings.MaxRaindrops}" );
+		Require( snapshot.LastTurn >= 0 && snapshot.LastChanged >= 0 && snapshot.NextRollDay >= 0 && snapshot.ApplyDay >= 0, "negative schedule" );
+		Require( snapshot.NextRollDay >= snapshot.LastChanged, "the next roll precedes the last change" );
+		Require( snapshot.PendingQuality is null || snapshot.PendingQuality is >= 1 and <= 100, "pending quality outside 1..100" );
+		Require( snapshot.PendingQuality is null || snapshot.ApplyDay >= snapshot.LastChanged, "the forecast applies before the last change" );
+		Require( snapshot.LightningCountdown >= 0 && snapshot.LightningCountdown < Math.Max( 1, settings.LightningCountdownFrom ), "lightning countdown outside its band" );
+		Require( snapshot.Bolts >= 0 && snapshot.ThunderCountdown >= 0, "negative bolt or thunder count" );
+	}
+
+	/// <summary>
+	/// A save from before the timestamp schedule holds day indices in <c>LastChanged</c>, <c>NextRollDay</c> and <c>ApplyDay</c>; a current one holds game
+	/// seconds. A started weather whose park is at least a day old and whose three values all lie within the days that can have passed plus the
+	/// forecast and cycle lengths (<c>DayIndex + DaysOfWarning + DaysBetweenChanges + 1</c>) can only be day indices (game seconds that small would be
+	/// under a day after the park's start), so they are multiplied by <see cref="ParkCalendar.SecondsPerDay"/>.
+	/// </summary>
+	internal ParkWeatherSnapshot MigrateSchedule( ParkWeatherSnapshot snapshot )
+	{
+		if ( !snapshot.Started || snapshot.LastTurn < 0 || snapshot.LastTurn > long.MaxValue / ParkCalendar.SecondsPerTurn
+			|| snapshot.LastTurn * ParkCalendar.SecondsPerTurn < ParkCalendar.SecondsPerDay )
+			return snapshot;
+		var limit = ParkCalendar.DayIndex( ParkCalendar.TickOfTurn( snapshot.LastTurn ) ) + settings.DaysOfWarning + settings.DaysBetweenChanges + 1;
+		if ( Math.Max( snapshot.LastChanged, Math.Max( snapshot.NextRollDay, snapshot.ApplyDay ) ) > limit )
+			return snapshot;
+		return snapshot with
+		{
+			LastChanged = snapshot.LastChanged * ParkCalendar.SecondsPerDay,
+			NextRollDay = snapshot.NextRollDay * ParkCalendar.SecondsPerDay,
+			ApplyDay = snapshot.ApplyDay * ParkCalendar.SecondsPerDay
+		};
+	}
+
+	/// <summary>
+	/// Continues this weather (a fresh instance of the same park, seed and settings) from a validated
+	/// snapshot: the draw stream, the schedule, the converted state and the due thunder all resume instead
+	/// of re-rolling. Call before the first <see cref="AdvanceTo"/> of the restored level.
+	/// </summary>
+	public void RestoreSnapshot( ParkWeatherSnapshot snapshot )
+	{
+		snapshot = MigrateSchedule( snapshot );
+		ValidateSnapshot( snapshot );
+		random.Restore( snapshot.RandomState );
+		started = snapshot.Started;
+		lastTurn = snapshot.LastTurn;
+		// The countdown's "now" resumes with the schedule: a restore mid-warning reads its true distance
+		// on the first frame, before the next turn (248 ms) steps the day.
+		CurrentDay = ParkCalendar.DayIndex( ParkCalendar.TickOfTurn( snapshot.LastTurn ) );
+		lastChanged = snapshot.LastChanged;
+		nextRollAt = snapshot.NextRollDay;
+		pendingQuality = snapshot.PendingQuality;
+		applyAt = snapshot.ApplyDay;
+		Quality = snapshot.Quality;
+		Snow = snapshot.Snow;
+		Rain = snapshot.Rain;
+		Lightning = snapshot.Lightning;
+		CurrentDrops = snapshot.CurrentDrops;
+		TargetDrops = snapshot.TargetDrops;
+		lightningCountdown = snapshot.LightningCountdown;
+		bolts = snapshot.Bolts;
+		thunderCountdown = snapshot.ThunderCountdown;
+		lastTop = new Vector3( snapshot.LastTop.X, snapshot.LastTop.Y, snapshot.LastTop.Z );
+		strikes.Clear();
+		// The visual bolt queue is presentation-only; a restored weather starts its flashes fresh.
+		boltTops.Clear();
+		foreach ( var strike in snapshot.PendingStrikes )
+			strikes.Enqueue( new Vector3( strike.X, strike.Y, strike.Z ) );
+	}
+
+	internal void Step( long tick )
+	{
+		var now = ParkCalendar.Seconds( tick );
+		CurrentDay = ParkCalendar.DayIndex( tick );
+		// [BIN:TPW-EXE:0x5128a0 weather apply] a pending forecast applies once now reaches its time: the converter sets the quality and lastChanged = now
+		if ( pendingQuality is int next && now >= applyAt )
+		{
+			pendingQuality = null;
+			lastChanged = now;
+			ApplyQuality( next );
+			nextRollAt = lastChanged + Math.Max( 0, settings.DaysBetweenChanges - settings.DaysOfWarning ) * ParkCalendar.SecondsPerDay;
+		}
+		// [BIN:TPW-EXE:0x51295c weather roll] with no forecast pending (also in the tick that just applied one) the roll is due at lastChanged + max(0, DaysBetweenChanges - DaysOfWarning) days
+		if ( pendingQuality == null && now >= nextRollAt )
+		{
+			pendingQuality = Roll( tick );
+			applyAt = now + settings.DaysOfWarning * ParkCalendar.SecondsPerDay;
+		}
+		Ramp();
+		Bolts();
+	}
+
+	/// <summary>The season's roll (<c>sub_1037d4</c>): exceptional weather with the season's chance, otherwise the season's average and tolerance.</summary>
+	private int Roll( long tick )
+	{
+		var month = ParkCalendar.ToDate( tick ).Month;
+		var season = month / 3;
+		int average, tolerance, chance;
+		if ( season < settings.Averages.Count )
+		{
+			average = settings.Averages[season];
+			tolerance = settings.Tolerances[season];
+			chance = settings.Chances[season];
+		}
+		else
+		{
+			// [APPROX:AUDIO-025] December reads past the table (the fork's reading of the Mac row)
+			average = settings.Averages.Count;
+			tolerance = settings.DaysOfWarning;
+			chance = settings.DaysBetweenChanges;
+		}
+		int quality;
+		if ( random.Chance( chance ) )
+			quality = random.Next( 100 );
+		else
+			quality = tolerance <= 0 ? average : average - tolerance + random.Next( 2 * tolerance );
+		return Math.Clamp( quality, 1, 100 );
+	}
+
+	/// <summary>The converter (<c>sub_103910</c>): the quality's bands, the rain target and the lightning flag.</summary>
+	internal void ApplyQuality( int quality )
+	{
+		var snowBand = quality >= settings.SnowLow && quality <= settings.SnowHigh;
+		var rainBand = quality >= settings.RainLow && quality <= settings.RainHigh;
+		var snow = snowBand && (!rainBand || random.Next( 2 ) == 0);
+		Quality = quality;
+		Snow = snow;
+		Rain = rainBand && !snow;
+		Lightning = quality >= settings.LightningLow && quality <= settings.LightningHigh;
+		TargetDrops = 0;
+		// Both bands compute the target the same way from their own range (0x103a90..0x103afc snow, 0x103b18..0x103b80 rain); only rain starts the rain voice.
+		if ( Snow || Rain )
+		{
+			var low = Snow ? settings.SnowLow : settings.RainLow;
+			var width = (Snow ? settings.SnowHigh : settings.RainHigh) - low;
+			var intensity = width == 0 ? 100 : (quality - low) * 100 / width;
+			TargetDrops = Math.Min( (100 - intensity) * settings.MaxRaindrops / 100, settings.MaxRaindrops );
+		}
+	}
+
+	/// <summary>One step of the drops toward the target: a move of SpeedOfChange, none once within one step (so 588 settles at 580).</summary>
+	private void Ramp()
+	{
+		var step = settings.SpeedOfChange;
+		var difference = TargetDrops - CurrentDrops;
+		if ( Math.Abs( difference ) >= step )
+			CurrentDrops = Math.Max( 0, CurrentDrops + Math.Sign( difference ) * step );
+		else if ( TargetDrops == 0 )
+			CurrentDrops = 0;
+	}
+
+	/// <summary>The lightning countdown, the bolts, and then the thunder countdown of one step.</summary>
+	// [BIN:STP-PPC:0x101033CC weather lightning] the lightning countdown drops by LightningCountdownSpeed and strikes only below 0 (bge skips at 0); a strike arms the thunder only while its countdown is at most 0, at max(0, ThunderStartsThisFarAway - bolts) + rand % ThunderRandomiser (+0x4E8/+0x4EC)
+	// [BIN:STP-PPC:0x101034D8 weather thunder] after the lightning, every step (also outside the lightning band) the thunder countdown drops by one and the thunder plays at the stored top only when it reaches exactly 0: a computed 0 never plays, a 1 plays on the strike's own step
+	private void Bolts()
+	{
+		if ( Lightning )
+		{
+			lightningCountdown -= settings.LightningCountdownSpeed;
+			if ( lightningCountdown < 0 )
+			{
+				var x = 1 + random.Next( groundX );
+				var z = 1 + random.Next( groundZ );
+				lastTop = new Vector3( x + random.Next( 101 ) - 50, BoltTopHeight, z + random.Next( 101 ) - 50 );
+				// The bolt shows at the strike itself; its thunder follows later through the strikes queue.
+				boltTops.Enqueue( lastTop );
+				while ( boltTops.Count > MaximumPendingBoltTops )
+					boltTops.Dequeue();
+				if ( thunderCountdown <= 0 )
+					thunderCountdown = Math.Max( 0, settings.ThunderStartsThisFarAway - bolts ) + random.Next( Math.Max( 1, settings.ThunderRandomiser ) );
+				bolts++;
+				lightningCountdown = random.Next( Math.Max( 1, settings.LightningCountdownFrom ) );
+			}
+		}
+		else
+			bolts = 0;
+		// A countdown already at 0 stays there: the original's decrement would take it below 0, where it never plays either.
+		if ( thunderCountdown > 0 && --thunderCountdown == 0 )
+			strikes.Enqueue( lastTop );
+	}
+
+	/// <summary>The weather keys the sim reads, with the shipped values where a layer does not set them.</summary>
+	private sealed record WeatherSettings(
+		IReadOnlyList<int> Averages, IReadOnlyList<int> Tolerances, IReadOnlyList<int> Chances,
+		int DaysOfWarning, int DaysBetweenChanges, int SpeedOfChange,
+		int SnowLow, int SnowHigh, int RainLow, int RainHigh, int LightningLow, int LightningHigh,
+		int LightningCountdownSpeed, int LightningCountdownFrom, int ThunderStartsThisFarAway, int ThunderRandomiser, int MaxRaindrops, int LightningTime )
+	{
+		// The shipped values (the global layer of the original's Standard.sam; the jungle and the other themes restate them).
+		private static readonly int[] DefaultAverages = { 75, 80, 90, 50 };
+		private static readonly int[] DefaultTolerances = { 25, 20, 10, 15 };
+		private static readonly int[] DefaultChances = { 10, 10, 5, 10 };
+
+		public static WeatherSettings From( SamSettings standard )
+		{
+			var averages = new int[DefaultAverages.Length];
+			var tolerances = new int[DefaultTolerances.Length];
+			var chances = new int[DefaultChances.Length];
+			for ( var season = 0; season < averages.Length; season++ )
+			{
+				averages[season] = standard.GetInt( $"Seasons[{season}].AvgWeatherQuality", DefaultAverages[season], optional: true );
+				tolerances[season] = standard.GetInt( $"Seasons[{season}].NormalTolerance", DefaultTolerances[season], optional: true );
+				chances[season] = standard.GetInt( $"Seasons[{season}].ChanceForExceptionalWeather", DefaultChances[season], optional: true );
+			}
+			return new WeatherSettings( averages, tolerances, chances,
+				standard.GetInt( "Weather.DaysOfWarning", 4, optional: true ),
+				standard.GetInt( "Weather.DaysBetweenChanges", 7, optional: true ),
+				standard.GetInt( "Weather.SpeedOfChange", 20, optional: true ),
+				standard.GetInt( "WeatherEffects.QualityForSnowLow", -1, optional: true ),
+				standard.GetInt( "WeatherEffects.QualityForSnowHigh", -1, optional: true ),
+				standard.GetInt( "WeatherEffects.QualityForRainLow", 0, optional: true ),
+				standard.GetInt( "WeatherEffects.QualityForRainHigh", 40, optional: true ),
+				standard.GetInt( "WeatherEffects.QualityForLightningLow", 0, optional: true ),
+				standard.GetInt( "WeatherEffects.QualityForLightningHigh", 15, optional: true ),
+				standard.GetInt( "WeatherEffects.LightningCountdownSpeed", 10, optional: true ),
+				standard.GetInt( "WeatherEffects.LightningCountdownFrom", 500, optional: true ),
+				standard.GetInt( "WeatherEffects.ThunderStartsThisFarAway", 10, optional: true ),
+				standard.GetInt( "WeatherEffects.ThunderRandomiser", 2, optional: true ),
+				standard.GetInt( "WeatherEffects.MaxRaindrops", 600, optional: true ),
+				standard.GetInt( "WeatherEffects.LightningTime", 2000, optional: true ) );
+		}
+	}
+}

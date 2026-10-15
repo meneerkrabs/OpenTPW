@@ -1,0 +1,450 @@
+using System.Runtime.InteropServices.JavaScript;
+using System.Text.Json.Nodes;
+using OpenTPW.Hud;
+using OpenTPW.UI.Original;
+
+namespace OpenTPW;
+
+/// <summary>
+/// Hooks for the browser performance harness (tools/web-perf, docs/BROWSER-PERFORMANCE.md). They drive the game through the
+/// same public UI calls as the native front-end smoke test (a click on an element by id, a key, a buy-window selection) and read
+/// the managed memory counters; the page measures the frames. Nothing here changes what a player sees unless the harness calls it.
+/// </summary>
+public static partial class Program
+{
+	/// <summary>Where the game is: the front-end screen, the park and its HUD, the buy window and its selection, as JSON.</summary>
+	[JSExport]
+	public static string PerfState()
+	{
+		var state = new JsonObject
+		{
+			["started"] = flow != null,
+			["menu"] = flow?.Menu?.Stack.Top?.Name,
+			["island"] = flow?.Menu?.Selected.Level,
+			["level"] = flow?.Level?.OriginalPark?.LevelName,
+			["hud"] = flow?.Hud != null,
+			["hudScreen"] = flow?.Hud?.Stack.Top?.Name,
+			["buyOpen"] = flow?.Hud?.BuyWindowOpen ?? false,
+			["selected"] = flow?.Hud?.SelectedBuyItem?.Entry?.ArchiveName,
+			["turn"] = flow?.Level?.Park?.Economy.Turn,
+		};
+		return state.ToJsonString();
+	}
+
+	/// <summary>Records where textures made from bytes come from, for <see cref="PerfTextureGroups"/>.</summary>
+	[JSExport]
+	public static void PerfTrackTextureOrigins( bool enabled ) => Texture.TrackOrigins = enabled;
+
+	/// <summary>Turns the load profile (<see cref="LoadProfile"/>) on, clearing it, or off.</summary>
+	[JSExport]
+	public static void PerfProfile( bool enabled ) => LoadProfile.Enable( enabled );
+
+	/// <summary>The load profile's sections as JSON: name → total milliseconds and count, largest first.</summary>
+	[JSExport]
+	public static string PerfLoadProfile()
+	{
+		var result = new JsonObject();
+		foreach ( var (name, (milliseconds, count)) in LoadProfile.Snapshot().OrderByDescending( entry => entry.Value.Milliseconds ) )
+			result[name] = new JsonObject { ["ms"] = Math.Round( milliseconds, 1 ), ["count"] = count };
+		return result.ToJsonString();
+	}
+
+	/// <summary>Frames the renderer has drawn; a frame the cap skips leaves it unchanged, so the page can tell drawn frames from skipped calls.</summary>
+	[JSExport]
+	public static double PerfFramesDrawn() => renderer?.FramesDrawn ?? 0;
+
+	/// <summary>Clicks the centre of the visible element <paramref name="id"/> on the topmost front-end or HUD screen; false when there is none.</summary>
+	[JSExport]
+	public static bool PerfClick( string id )
+	{
+		if ( flow == null )
+			return false;
+		var screens = new[] { flow.Menu?.Stack.Top, flow.Menu?.Main, flow.Hud?.Stack.Top, flow.Hud?.Screen };
+		foreach ( var screen in screens )
+		{
+			if ( screen?.Find( id ) is { Visible: true } element )
+			{
+				flow.InjectedInput = UiInput.Click( element.ScreenRect( flow.Context.Canvas ).Center );
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/// <summary>The construction time of each frame of the last park built over frames (GameFlow.LastParkBuildFrames), as a JSON array of milliseconds.</summary>
+	[JSExport]
+	public static string PerfParkBuild() => new JsonArray( (flow?.LastParkBuildFrames ?? Array.Empty<double>() ).Select( value => (JsonNode?)Math.Round( value, 2 ) ).ToArray() ).ToJsonString();
+
+	/// <summary>Presses a UI key by its <see cref="UiKeys"/> name (Accept, Back, Left, ...); false for an unknown name.</summary>
+	[JSExport]
+	public static bool PerfKey( string key )
+	{
+		if ( flow == null || !Enum.TryParse<UiKeys>( key, ignoreCase: true, out var parsed ) )
+			return false;
+		flow.InjectedInput = UiInput.Key( parsed );
+		return true;
+	}
+
+	/// <summary>The items of a buy-window category (Rides, Shops, Sideshows, Features) as JSON: archive name and shown name.</summary>
+	[JSExport]
+	public static string PerfBuyItems( string category )
+	{
+		var items = new JsonArray();
+		if ( flow?.Hud is { } hud && Enum.TryParse<BuildCategory>( category, ignoreCase: true, out var parsed ) )
+			foreach ( var item in hud.Catalog.GetItems( parsed ) )
+				items.Add( new JsonObject { ["archive"] = item.Entry?.ArchiveName, ["name"] = hud.ItemName( item ) } );
+		return items.ToJsonString();
+	}
+
+	/// <summary>Shows the item with archive <paramref name="archive"/> in the open buy window, as a click on its category and row does; false when it is not listed.</summary>
+	[JSExport]
+	public static bool PerfShowBuyItem( string category, string archive )
+	{
+		if ( flow?.Hud is not { BuyWindowOpen: true } hud || !Enum.TryParse<BuildCategory>( category, ignoreCase: true, out var parsed ) )
+			return false;
+		var item = hud.Catalog.GetItems( parsed ).FirstOrDefault( entry => string.Equals( entry.Entry?.ArchiveName, archive, StringComparison.OrdinalIgnoreCase ) );
+		if ( item == null )
+			return false;
+		hud.SelectCategory( item.Category );
+		var index = hud.BuyItems.ToList().IndexOf( item );
+		if ( index < 0 )
+			return false;
+		hud.SelectBuyItem( index );
+		return true;
+	}
+
+	/// <summary>
+	/// Deterministic work whose result must not depend on how the runtime executes it (interpreter or AOT, docs/BROWSER-PERFORMANCE.md):
+	/// every texture of a theme decoded and hashed, and the fixed run of the original-data determinism test (the theme's park with its
+	/// guests from seed 2026, 3000 ticks at the fastest speed) reduced to its world state hash. Both durations come back too; they are
+	/// pure computation, without drawing. Needs the theme's files, so the harness calls it after the park has loaded, as its last step:
+	/// the call blocks the page for its duration (the running park drops that time, FixedStepClock) and fills the archive cache. The
+	/// fixed run covers the economy and the guests, not rides, object scripts, weather or staff.
+	/// </summary>
+	[JSExport]
+	public static string PerfDigest( string theme )
+	{
+		var result = new JsonObject();
+		var watch = System.Diagnostics.Stopwatch.StartNew();
+		var textures = new List<string>();
+		CollectTextures( $"levels/{theme}", textures );
+		// The listing mixes absolute disk paths and root-relative archive paths; both open as they are, and the key is the same for both.
+		var root = Path.TrimEndingDirectorySeparator( FileSystem.GetAbsolutePath( "/" ) ).Replace( '\\', '/' );
+		string Key( string path )
+		{
+			var normalized = path.Replace( '\\', '/' );
+			return (normalized.StartsWith( root + "/", StringComparison.Ordinal ) ? normalized[root.Length..] : normalized).TrimStart( '/' );
+		}
+		textures.Sort( ( left, right ) => string.CompareOrdinal( Key( left ), Key( right ) ) );
+		var hash = Fnv1a.Start;
+		foreach ( var path in textures )
+		{
+			hash = Fnv1a.Add( hash, System.Text.Encoding.UTF8.GetBytes( Key( path ) ) );
+			try
+			{
+				using var stream = FileSystem.OpenRead( path );
+				var data = new TextureFile( stream ).Data;
+				hash = Fnv1a.Add( Fnv1a.Add( Fnv1a.Add( hash, BitConverter.GetBytes( data.Width ) ), BitConverter.GetBytes( data.Height ) ), data.Data );
+			}
+			catch ( Exception exception )
+			{
+				// A malformed file must fail the same way in both builds.
+				hash = Fnv1a.Add( hash, System.Text.Encoding.UTF8.GetBytes( exception.GetType().Name ) );
+			}
+		}
+		result["textures"] = textures.Count;
+		result["textureHash"] = hash.ToString( "X16" );
+		result["textureMs"] = watch.ElapsedMilliseconds;
+
+		watch.Restart();
+		var seed = new WorldSeed( 2026 );
+		var original = OriginalPark.Load( theme );
+		var park = ParkEconomyRuntime.ForOriginalLevel( original, ParkStartKind.OriginalSaveReference, seed );
+		var guests = new GuestSimulation( GuestPathGrid.FromOriginal( original.Map, original.Save ), GuestSettings.Load( theme ), seed.GuestStream );
+		park.AttachGuests( guests );
+		var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream, RideScriptWorld.FixedClock ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) );
+		park.Economy.Speed = GameSpeed.Fastest;
+		for ( var tick = 0; tick < 3000; tick++ )
+		{
+			guests.Tick( 1f / FixedStepClock.TicksPerSecond );
+			park.Economy.Advance( (int)park.Economy.Speed );
+		}
+		result["simulationHash"] = streams.ComputeStateHash().ToString( "X16" );
+		result["simulationMs"] = watch.ElapsedMilliseconds;
+		return result.ToJsonString();
+	}
+
+	/// <summary>Every .wct below <paramref name="directory"/>, archives included, as the file system lists them.</summary>
+	private static void CollectTextures( string directory, List<string> found )
+	{
+		foreach ( var file in FileSystem.GetFiles( directory ) )
+			if ( file.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) )
+				found.Add( file );
+		foreach ( var child in FileSystem.GetDirectories( directory ) )
+			CollectTextures( child, found );
+	}
+
+	/// <summary>64-bit FNV-1a: enough to tell two builds' outputs apart, and available on every runtime.</summary>
+	private static class Fnv1a
+	{
+		public const ulong Start = 14695981039346656037;
+
+		public static ulong Add( ulong hash, ReadOnlySpan<byte> bytes )
+		{
+			foreach ( var value in bytes )
+				hash = unchecked( (hash ^ value) * 1099511628211 );
+			return hash;
+		}
+	}
+
+	/// <summary>A full garbage collection, so the counters that follow show live memory rather than garbage not collected yet.</summary>
+	[JSExport]
+	public static void PerfCollect()
+	{
+		GC.Collect();
+		GC.WaitForPendingFinalizers();
+		GC.Collect();
+	}
+
+	/// <summary>The textures in <see cref="Asset.All"/> grouped by the first two parts of their path (or "(no path)"), as JSON counts.</summary>
+	[JSExport]
+	public static string PerfTextureGroups()
+	{
+		var result = new JsonObject();
+		foreach ( var group in Asset.All.OfType<Texture>().GroupBy( texture => string.IsNullOrEmpty( texture.Path ) ? $"(no path) {texture.Origin ?? "?"}"
+			: string.Join( '/', texture.Path.Replace( '\\', '/' ).Split( '/', StringSplitOptions.RemoveEmptyEntries ).Take( 2 ) ) ).OrderByDescending( group => group.Count() ) )
+			result[group.Key] = group.Count();
+		return result.ToJsonString();
+	}
+
+	/// <summary>The static fields holding the most array bytes (<see cref="PerfReachability.BytesByStaticRoot"/>), as JSON.</summary>
+	[JSExport]
+	public static string PerfMemoryRoots()
+	{
+		var result = new JsonObject();
+		foreach ( var (root, bytes) in PerfReachability.BytesByStaticRoot() )
+			result[root] = root.StartsWith( "(objects" ) ? bytes : Math.Round( bytes / 1048576d, 1 );
+		return result.ToJsonString();
+	}
+
+	/// <summary>Paths from static fields to parks other than the current one (<see cref="PerfReachability"/>), as JSON.</summary>
+	[JSExport]
+	public static string PerfStaleLevelPaths()
+	{
+		var paths = new JsonArray();
+		foreach ( var path in PerfReachability.PathsToStaleLevels() )
+			paths.Add( path );
+		return paths.ToJsonString();
+	}
+
+	/// <summary>Opens the park's pause menu (its buttons are then clicked by id, Exit To Lobby among them); false without a park.</summary>
+	[JSExport]
+	public static bool PerfOpenPauseMenu()
+	{
+		if ( flow?.Hud is not { } hud )
+			return false;
+		hud.OpenPauseMenu();
+		return true;
+	}
+
+	/// <summary>
+	/// Managed memory as JSON: live bytes, the GC heap, bytes allocated since start and the collection counts, and what the largest
+	/// known holders keep: archive files read into memory, archive members kept decompressed, decoded sound samples.
+	/// </summary>
+	[JSExport]
+	public static string PerfCounters()
+	{
+		var info = GC.GetGCMemoryInfo();
+		var (archives, members) = WadArchive.MemoryInUse;
+		return new JsonObject
+		{
+			["entities"] = Entity.All.Count,
+			["levelsAlive"] = Level.AliveCount,
+			["texturesHeld"] = Asset.All.OfType<Texture>().Count(),
+			["archiveBytes"] = archives,
+			["archiveMemberBytes"] = members,
+			["decodedSampleBytes"] = GameAudio.DecodedSampleBytes,
+			["managedBytes"] = GC.GetTotalMemory( false ),
+			["heapBytes"] = info.HeapSizeBytes,
+			["allocatedBytes"] = GC.GetTotalAllocatedBytes(),
+			["gen0"] = GC.CollectionCount( 0 ),
+			["gen1"] = GC.CollectionCount( 1 ),
+			["gen2"] = GC.CollectionCount( 2 ),
+		}.ToJsonString();
+	}
+}
+
+/// <summary>
+/// A diagnostic for the browser harness's memory phase: which static fields of the game's assemblies reach a park (<see cref="Level"/>)
+/// other than the current one, by a breadth-first walk over fields, arrays, collections and delegates. Slow and approximate (roots
+/// on stacks and in the runtime are not seen); only the harness calls it, while investigating.
+/// </summary>
+internal static class PerfReachability
+{
+	/// <summary>
+	/// Bytes of the arrays reachable from each static field (an object reached from several counts for the first), largest first: an
+	/// approximate map of who holds the memory.
+	/// </summary>
+	public static List<(string Root, long Bytes)> BytesByStaticRoot( int top = 15, int maximumObjects = 30_000_000 )
+	{
+		var seen = new HashSet<object>( ReferenceEqualityComparer.Instance );
+		var totals = new List<(string Root, long Bytes)>();
+		foreach ( var (root, value) in StaticRoots() )
+		{
+			if ( !seen.Add( value ) )
+				continue;
+			long bytes = 0;
+			var queue = new Queue<object>();
+			queue.Enqueue( value );
+			while ( queue.Count > 0 && seen.Count < maximumObjects )
+			{
+				var current = queue.Dequeue();
+				if ( current is string text )
+				{
+					bytes += text.Length * 2L;
+					continue;
+				}
+				// Arrays of numbers count their bytes; arrays of structs (a dictionary's entries) are followed into their fields.
+				if ( current is Array array && array.GetType().GetElementType() is { IsPrimitive: true } element )
+				{
+					bytes += (long)array.Length * System.Runtime.InteropServices.Marshal.SizeOf( element );
+					continue;
+				}
+				foreach ( var child in Children( current, maximumObjects - seen.Count ) )
+					if ( seen.Count < maximumObjects && seen.Add( child ) )
+						queue.Enqueue( child );
+			}
+			totals.Add( (root, bytes) );
+		}
+		totals.Add( ($"(objects visited{(seen.Count >= maximumObjects ? ", cut off" : "")})", seen.Count) );
+		return totals.OrderByDescending( entry => entry.Bytes ).Take( top ).ToList();
+	}
+
+	private static IEnumerable<(string Root, object Value)> StaticRoots()
+	{
+		var assemblies = new[] { typeof( Level ).Assembly, typeof( BaseFileSystem ).Assembly, typeof( WadArchive ).Assembly }.Distinct();
+		foreach ( var type in assemblies.SelectMany( assembly => { try { return assembly.GetTypes(); } catch { return Array.Empty<Type>(); } } ) )
+		{
+			if ( type.ContainsGenericParameters )
+				continue;
+			foreach ( var field in type.GetFields( System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic ) )
+			{
+				object? value;
+				try { value = field.GetValue( null ); } catch { continue; }
+				if ( value != null && !field.FieldType.IsPrimitive )
+					yield return ($"{type.Name}.{field.Name}", value);
+			}
+		}
+	}
+
+	/// <summary>The objects <paramref name="value"/> refers to, at most <paramref name="limit"/> (a huge collection does not expand past the walk's budget).</summary>
+	private static IEnumerable<object> Children( object value, int limit )
+	{
+		static bool Skip( object child ) => child.GetType().IsPrimitive || child.GetType().IsEnum || child is Type || child is System.Reflection.MemberInfo;
+		var children = new List<object>();
+		switch ( value )
+		{
+			case Delegate @delegate:
+				foreach ( var single in @delegate.GetInvocationList() )
+					if ( single.Target != null && !Skip( single.Target ) )
+						children.Add( single.Target );
+				return children;
+			case Array array:
+				foreach ( var item in array )
+				{
+					if ( children.Count >= limit )
+						break;
+					if ( item != null && !Skip( item ) )
+						children.Add( item );
+				}
+				return children;
+		}
+		for ( var type = value.GetType(); type != null && type != typeof( object ); type = type.BaseType )
+			foreach ( var field in type.GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly ) )
+			{
+				if ( field.FieldType.IsPrimitive || field.FieldType.IsPointer )
+					continue;
+				object? child;
+				try { child = field.GetValue( value ); } catch { continue; }
+				if ( child != null && !Skip( child ) )
+					children.Add( child );
+			}
+		return children;
+	}
+
+	public static List<string> PathsToStaleLevels( int maximumObjects = 3_000_000 )
+	{
+		var found = new List<string>();
+		var seen = new HashSet<object>( ReferenceEqualityComparer.Instance );
+		var queue = new Queue<(object Value, string Path)>();
+		var assemblies = new[] { typeof( Level ).Assembly, typeof( BaseFileSystem ).Assembly, typeof( WadArchive ).Assembly }.Distinct();
+		foreach ( var type in assemblies.SelectMany( assembly => { try { return assembly.GetTypes(); } catch { return Array.Empty<Type>(); } } ) )
+		{
+			if ( type.ContainsGenericParameters )
+				continue;
+			foreach ( var field in type.GetFields( System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic ) )
+			{
+				object? value;
+				try { value = field.GetValue( null ); } catch { continue; }
+				if ( value != null && !field.FieldType.IsPrimitive && seen.Add( value ) )
+					queue.Enqueue( (value, $"{type.Name}.{field.Name}") );
+			}
+		}
+		while ( queue.Count > 0 && seen.Count < maximumObjects && found.Count < 20 )
+		{
+			var (value, path) = queue.Dequeue();
+			if ( value is Level level && !ReferenceEquals( level, Level.Current ) )
+			{
+				found.Add( path );
+				continue;
+			}
+			void Visit( object? child, string name )
+			{
+				if ( seen.Count >= maximumObjects || child == null || child is string || child.GetType().IsPrimitive || child.GetType().IsEnum || child is Type || child is System.Reflection.MemberInfo )
+					return;
+				if ( seen.Add( child ) )
+					queue.Enqueue( (child, $"{path}{name}") );
+			}
+			switch ( value )
+			{
+				case Delegate @delegate:
+					foreach ( var single in @delegate.GetInvocationList() )
+						Visit( single.Target, $" → {single.Method.DeclaringType?.Name}.{single.Method.Name}" );
+					continue;
+				case Array array when !array.GetType().GetElementType()!.IsPrimitive:
+					var index = 0;
+					foreach ( var item in array )
+						Visit( item, $"[{index++}]" );
+					continue;
+				case System.Collections.IDictionary dictionary:
+					foreach ( System.Collections.DictionaryEntry entry in dictionary )
+					{
+						Visit( entry.Key, ".key" );
+						Visit( entry.Value, $"[{entry.Key}]" );
+					}
+					break;
+				case System.Collections.IEnumerable enumerable when value is not Array:
+					var position = 0;
+					try
+					{
+						foreach ( var item in enumerable )
+							Visit( item, $"[{position++}]" );
+					}
+					catch { }
+					break;
+			}
+			for ( var type = value.GetType(); type != null && type != typeof( object ); type = type.BaseType )
+			{
+				foreach ( var field in type.GetFields( System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.DeclaredOnly ) )
+				{
+					if ( field.FieldType.IsPrimitive || field.FieldType.IsPointer )
+						continue;
+					object? child;
+					try { child = field.GetValue( value ); } catch { continue; }
+					Visit( child, $".{field.Name}" );
+				}
+			}
+		}
+		return found;
+	}
+}

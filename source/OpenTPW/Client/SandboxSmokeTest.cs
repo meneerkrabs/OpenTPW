@@ -1,6 +1,4 @@
 using System.Runtime.InteropServices;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Veldrid;
 
 namespace OpenTPW;
@@ -10,11 +8,14 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private readonly Level level;
 	private readonly BaseFileSystem originalSaveFileSystem;
 	private readonly string temporaryDirectory = Path.Combine( Path.GetTempPath(), $"opentpw-smoke-{Guid.NewGuid():N}" );
+	// The Totem limits below are measured on the ride script's own clock (the time the script actually waits), so a
+	// slow frame rate cannot fail them; the wall-clock watchdog (MaximumSeconds) still fails a run that stops advancing.
 	private const double MaximumSecondsUntilMotion = 30;
-	private readonly System.Diagnostics.Stopwatch sinceOpened = System.Diagnostics.Stopwatch.StartNew();
+	private double startScriptMilliseconds;
 	private int frame;
 	private int motionFrame;
 	private bool completed;
+	private bool sharedCoasterExported;
 	private byte[]? earlyPixels;
 	private System.Numerics.Matrix4x4[]? earlyPose;
 	private float earlyTick;
@@ -22,12 +23,14 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private int guestCaptureFrame;
 	private byte[]? guestPixels;
 	private double motionScriptMilliseconds;
-	private readonly System.Diagnostics.Stopwatch sinceMotion = new();
 	private const double MaximumSecondsUntilRelease = 60;
 
-	public SandboxSmokeTest( Level level )
+	public SandboxSmokeTest( Level level, OpenTPW.Hud.ParkHud? hud = null, OpenTPW.UI.Original.UiContext? hudContext = null, Action<OpenTPW.UI.Original.UiInput>? injectInput = null )
 	{
 		this.level = level;
+		this.injectInput = injectInput;
+		this.hud = hud;
+		this.hudContext = hudContext;
 		originalSaveFileSystem = SaveFileSystem;
 		Directory.CreateDirectory( temporaryDirectory );
 		SaveFileSystem = new BaseFileSystem( temporaryDirectory );
@@ -36,6 +39,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( level.PlaceRide( rideSite ), "place original Totem" );
 		PlaceObjects();
 		level.PlacedRide!.Start();
+		startScriptMilliseconds = level.PlacedRide.Script.TimeMilliseconds;
 		Render.CaptureOutput = true;
 		// Safety net: a smoke test that stops getting frames (e.g. paused rendering) must fail, not hang.
 		watchdog = new System.Threading.Timer( _ =>
@@ -58,7 +62,13 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			.OrderBy( cell => guests.Grid.Distance( cell.X, cell.Y, ex, ey ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ).ToArray();
 		Require( cells.Length > 0, "find path cells near the Totem entrance" );
 		for ( var index = 0; index < 10; index++ )
-			guests.SpawnInPark( cells[index % cells.Length].X, cells[index % cells.Length].Y );
+		{
+			var guest = guests.SpawnInPark( cells[index % cells.Length].X, cells[index % cells.Length].Y );
+			// Target this fixture ride, as PlaceObjects does for the imported rides. The native probe verifies
+			// navigation, queue admission and the real script boarding handshake; attraction-choice has its own tests.
+			guest.AttractionId = ride.Visitors.AttractionId;
+			guest.State = GuestState.GoingToRide;
+		}
 	}
 
 	private const int MaximumSeconds = 180;
@@ -93,6 +103,24 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
+		TrackObjectMotion();
+		TrackRideHeads();
+		if ( StepRideHeadReadback() )
+			return;
+		if ( !pathToolVerified && frame >= 3 )
+			VerifyHudPathTool();
+		if ( pathToolVerified && !coasterToolVerified && frame >= 4 )
+			VerifyHudCoasterTool();
+		if ( coasterToolVerified && !queueToolVerified && frame >= 5 )
+			VerifyHudQueueTool();
+		if ( queueToolVerified && !waterTrackVerified && frame >= 6 )
+			VerifyHudWaterTrack();
+		UpdateWaterTrackPhase();
+		UpdateTourPhase();
+		UpdateStaffPhase();
+		if ( !sharedCoasterExported && level.OriginalPark != null && smokeStation?.Runtime.Coaster is { IsOperational: true } )
+			ExportSharedCoasterFixture();
+		UpdateCoasterPhase();
 		if ( motionFrame == 0 )
 		{
 			// Totem.RSE waits up to 10 s for passengers before it triggers its main animation.
@@ -101,7 +129,6 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			{
 				motionFrame = frame;
 				motionScriptMilliseconds = level.PlacedRide.Script.TimeMilliseconds;
-				sinceMotion.Start();
 				if ( level.Guests != null && !guestsVerified )
 				{
 					var riders = level.PlacedRide.Script[RideVariables.VAR_ONRIDE];
@@ -113,7 +140,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 				}
 			}
 			else
-				Require( sinceOpened.Elapsed.TotalSeconds < MaximumSecondsUntilMotion, "original Totem script starts the ride motion" );
+				Require( level.PlacedRide.Script.TimeMilliseconds - startScriptMilliseconds < MaximumSecondsUntilMotion * 1000, "original Totem script starts the ride motion" );
 			return;
 		}
 		if ( level.Guests != null && !guestsVerified )
@@ -123,7 +150,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			{
 				// Run the animation/close/remove checks on the next ride cycle.
 				motionFrame = 0;
-				sinceOpened.Restart();
+				startScriptMilliseconds = level.PlacedRide!.Script.TimeMilliseconds;
 			}
 			return;
 		}
@@ -145,6 +172,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			VerifyPicking();
 			VerifyText( CaptureOutputFrame( level.OriginalPark == null ? "output.png" : "original-output.png" ) );
 			VerifyObjectsAnimate();
+			VerifyRideViewAndDoor();
 			if ( level.OriginalPark == null )
 				level.SaveSandbox();
 			level.PlacedRide!.Stop();
@@ -173,17 +201,34 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		}
 		if ( step >= 66 && !displayChangesDone )
 			displayChangesDone = StepDisplayChanges();
-		if ( step >= 90 && displayChangesDone && !completed )
+		if ( step >= 90 && displayChangesDone && !completed && smokeStation == null && TrackSmokesDone && TourSmokeSettled && StaffPhaseSettled )
 		{
 			if ( level.Park != null )
 				VerifyParkEconomy( level.Park, level.Guests );
 			Device.WaitForIdle();
+			if ( level.OriginalPark != null )
+				VerifyRideHeads();
 			completed = true;
 			Log.Trace( level.OriginalPark == null
 				? $"Native sandbox smoke test passed: {frame} frames, original ride and RSE script, script-triggered motion, original animation readback, close, remove, isolated save/load, BF4 text and GPU readback; {displaySummary}."
-				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, guest sprite readback, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
+				: $"Native original-level smoke test passed: {frame} frames, {level.OriginalPark.LevelName} terrain/import, MAP/save build rules, original ride and RSE script, guests boarding/riding/released by Totem.RSE, a HUD-built coaster, a hired, placed, drawn, picked-up and dropped handyman, a closed water track with a running boat, a go-kart circuit with a parked, started and finished race, a tour ride whose cars take off, fly, are read back from the GPU and land with their riders, bumper cars driving an arena and handing their riders back, guest sprite readback, isolated rider-head GPU readback on a frozen identified ADDHEAD ride, animation readback, close, remove, BF4 text, park economy and GPU readback; {displaySummary}." );
 			Render.Window.SdlWindow.Close();
 		}
+	}
+
+	/// <summary>Captures the actual HUD-built coaster before teardown for a separate fresh-world visit smoke.</summary>
+	private void ExportSharedCoasterFixture()
+	{
+		var output = Path.GetFullPath( "artifacts/native-smoke-shared-coaster.tpwpark" );
+		Directory.CreateDirectory( Path.GetDirectoryName( output )! );
+		var package = ParkSharing.ExportLevel( level, "Native coaster visit fixture", "OpenTPW smoke test" );
+		package.Save( output );
+		var payload = OpenTPW.Online.Packages.MinimalParkPayload.FromSnapshot(
+			OpenTPW.Online.Packages.ParkPackage.Load( output ).ToSnapshot() );
+		Require( payload.HasBuiltLayout && payload.Coasters?.Any( coaster => coaster.Complete ) == true,
+			"the exported visit fixture includes the actual completed HUD-built coaster" );
+		sharedCoasterExported = true;
+		Log.Trace( $"Shared coaster smoke fixture exported: {output}, digest {payload.LayoutDigest}." );
 	}
 
 	/// <summary>Checks the park clock/money on the fixed clock, a month-end wage payment and a park save round trip.</summary>
@@ -206,15 +251,17 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( candidate != null, "staff pool offers a mechanic" );
 		var mechanic = economy.Hire( candidate!.Id );
 		var wage = economy.Staff.MonthlyWage( mechanic );
-		var monthEnd = (ParkCalendar.MonthIndex( economy.Tick ) + 1) * ParkCalendar.DaysPerMonth * ParkCalendar.TicksPerDay;
+		// An imported original park brings its own staff, who are paid with the new mechanic.
+		var wages = economy.Staff.TotalMonthlyWages;
+		var monthEnd = ParkCalendar.TickAtMonth( ParkCalendar.MonthIndex( economy.Tick ) + 1 );
 		economy.Advance( monthEnd - economy.Tick );
-		Require( economy.Tick == monthEnd && economy.Date.Day == 1 && economy.Balance == startBalance - wage, "month-end wages leave the bank account" );
+		Require( economy.Tick == monthEnd && economy.Date.Day == 1 && wages >= wage && economy.Balance == startBalance - wages, "month-end wages leave the bank account" );
 		var path = SaveFileSystem.GetAbsolutePath( "opentpw-park.json" );
 		var before = ParkSaveFile.Serialize( economy );
 		park.Save( path );
 		park.Load( path );
 		Require( ParkSaveFile.Serialize( park.Economy ) == before, "park save/load round trip" );
-		Log.Trace( $"Park economy smoke: {startDate} -> {park.Economy.Date}; balance ${startBalance} -> ${park.Economy.Balance} after ${wage} mechanic wages; save/load round trip identical." );
+		Log.Trace( $"Park economy smoke: {startDate} -> {park.Economy.Date}; balance ${startBalance} -> ${park.Economy.Balance} after ${wages} wages (${wage} for the new mechanic); save/load round trip identical." );
 	}
 
 	/// <summary>
@@ -228,7 +275,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		{
 			if ( ride.Visitors.ReleasedTotal == 0 )
 			{
-				Require( sinceMotion.Elapsed.TotalSeconds < MaximumSecondsUntilRelease, "Totem.RSE releases its riders through VAR_LETMEOFF" );
+				Require( ride.Script.TimeMilliseconds - motionScriptMilliseconds < MaximumSecondsUntilRelease * 1000, "Totem.RSE releases its riders through VAR_LETMEOFF" );
 				return;
 			}
 			Require( level.GuestRenderer != null && level.GuestRenderer.DrawnGuests > 0, "draw guest sprites" );
@@ -250,7 +297,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			// Sprites are world geometry: their pixel footprint scales with the world target (render scale), not with the UI scale.
 			var minimumChanged = Math.Max( 50, 200L * (hidden.Length / 4) / (1280 * 720) );
 			Require( changed > minimumChanged, $"guest sprites change the world readback ({changed} > {minimumChanged} pixels at {Render.Scaling.Describe()})" );
-			Require( guests.Guests.Any( guest => guest.IsVisible && guests.Grid.IsWalkable( guest.Cell.X, guest.Cell.Y ) && guest.State is GuestState.WalkingAround or GuestState.GoingToRide or GuestState.ExitingRide ), "guests walk the imported paths" );
+			Require( guests.Guests.Any( guest => guest.IsVisible && guests.Grid.IsWalkable( guest.Cell.X, guest.Cell.Y ) && guest.State is GuestState.DoingNothing or GuestState.WalkingAround or GuestState.GoingToRide or GuestState.ExitingRide ), "guests walk the imported paths" );
 			Require( stats.Admissions > 0 || stats.Arriving > 0, "guests arrive from the bus stops" );
 			guestsVerified = true;
 		}
@@ -288,10 +335,9 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			for ( var pixel = 0; pixel < pixels.Length && colors.Count <= 32; pixel += 4 )
 				colors.Add( BitConverter.ToUInt32( pixels, pixel ) );
 			Require( colors.Count > 32, "terrain framebuffer retains texture detail" );
-			using var image = Image.LoadPixelData<Bgra32>( pixels, (int)source.Width, (int)source.Height );
 			var artifactDirectory = Path.GetFullPath( "artifacts" );
 			Directory.CreateDirectory( artifactDirectory );
-			image.SaveAsPng( Path.Combine( artifactDirectory, $"native-smoke-{name}" ) );
+			PngWriter.SaveBgra( Path.Combine( artifactDirectory, $"native-smoke-{name}" ), pixels, (int)source.Width, (int)source.Height );
 			return (pixels, (int)source.Width, (int)source.Height);
 		}
 		finally
@@ -346,8 +392,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		var crop = new byte[width * height * 4];
 		for ( var row = 0; row < height; ++row )
 			Array.Copy( frame.Pixels, ((y + row) * frame.Width + x) * 4, crop, row * width * 4, width * 4 );
-		using var image = Image.LoadPixelData<Bgra32>( crop, width, height );
-		image.SaveAsPng( Path.Combine( Path.GetFullPath( "artifacts" ), "native-smoke-text.png" ) );
+		PngWriter.SaveBgra( Path.Combine( Path.GetFullPath( "artifacts" ), "native-smoke-text.png" ), crop, width, height );
 	}
 
 	private string displaySummary = "";
@@ -371,7 +416,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( world.Width == scaling.InternalSize.X && world.Height == scaling.InternalSize.Y && Render.MultisampledFramebuffer.Width == world.Width, "world target has the internal size" );
 		var output = Render.OutputCaptureTexture!;
 		Require( output.Width == metrics.PixelSize.X && output.Height == metrics.PixelSize.Y, "output capture has the output size" );
-		Require( Screen.UiScale == UiScaling.Resolve( settings.UiScale, metrics.PixelSize ), "UI scale follows the output size" );
+		Require( Screen.UiScale == UiScaling.Resolve( settings.UiScale, metrics.PixelSize, metrics.IntegerPixelDensity ), "UI scale follows the output size and pixel density" );
 		displaySummary = $"output {metrics}, world {world.Width}x{world.Height} ({scaling.Mode} {scaling.EffectivePercent}%), UI scale {Screen.UiScale}";
 		Log.Trace( $"Display readback: {displaySummary}; swapchain {swapchain.Width}x{swapchain.Height}; {Render.OwnedTargetResourceCount} owned target resources." );
 	}
@@ -511,6 +556,110 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( Render.OwnedTargetResourceCount == originalResourceCount, "owned GPU targets do not grow" );
 	}
 
+	/// <summary>
+	/// The first-person ride view (Level.EnterRideView) rides the Totem and returns to the park camera, and on an
+	/// original park the door (ParkGate, via the economy's open and close) refuses admissions while closed.
+	/// </summary>
+	private void VerifyRideViewAndDoor()
+	{
+		var parkCamera = Camera.Mode;
+		VerifyParkShortcutGuards();
+		Require( level.EnterRideView( level.PlacedRide! ) && Camera.Mode is RideCameraMode, "ride the Totem in the first-person ride view" );
+		Require( !level.EnterRideView( level.PlacedRide! ), "a second ride view is refused while one is open" );
+		VerifyArmedToolsInRideView();
+		Camera.Update();
+		level.ExitRideView();
+		Require( ReferenceEquals( Camera.Mode, parkCamera ) && level.RideView == null, "leaving the ride view restores the park camera" );
+		if ( level.Park is not { } park || level.Gate == null )
+			return;
+		park.Economy.OpenPark();
+		Require( level.Gate.Gate?.GetVariableByName( ParkGate.CommandVariable ) == 1, "opening the park commands the gate open" );
+		// A refused admission books nothing, so the admissions counter still matches the economy's own ledger.
+		park.Economy.ClosePark();
+		Require( !park.Economy.TryAdmitVisitor( long.MaxValue, out _ ), "a closed park refuses admissions at the booth" );
+		Require( !level.PlacedRide!.IsOpen && !level.PlacedRide.Visitors.IsOpen, "closing the park also closes the separately owned Totem and stops its admissions" );
+		park.Economy.OpenPark();
+		Require( level.PlacedRide!.IsOpen, "reopening the park reopens the Totem" );
+	}
+
+	/// <summary>Exercise the Level world-input path with both pending placement and removal while the ride camera owns the world.</summary>
+	private void VerifyArmedToolsInRideView()
+	{
+		var viewport = new Vector2( Screen.Size.X, Screen.Size.Y );
+		// The click must land on a removable object in the park camera's view (its matrices still hold until the next
+		// Camera.Update). Which objects are on screen depends on the window's aspect, so the first object's first cell
+		// may project outside the viewport (at 1280x720 the Sun God's cell lands below the bottom edge); take a cell
+		// that is in view, picks back to itself and is occupied by that object.
+		var target = level.Objects.Objects.Where( item => !item.Entry.IsFixedItem )
+			.SelectMany( item => item.Cells.Select( cell => (Object: item, Cell: cell) ) )
+			.Select( candidate => (candidate.Object, candidate.Cell, Hits: level.TryProjectCell( candidate.Cell.X, candidate.Cell.Y, viewport, out var screen )
+				&& level.TryGetGridCell( screen, viewport, out var x, out var y ) && x == candidate.Cell.X && y == candidate.Cell.Y
+				&& ReferenceEquals( level.Objects.FindAt( x, y ), candidate.Object ), Screen: screen) )
+			.FirstOrDefault( candidate => candidate.Hits );
+		Require( target.Hits, $"the test click would hit a removable object in the park camera (no removable object's cell is in the {viewport.X}x{viewport.Y} view)" );
+		var removable = target.Object;
+		var mouse = target.Screen;
+		var oldPlacing = level.IsPlacing;
+		var oldRemoving = level.IsRemovingObjects;
+		var oldEntry = level.BuildEntry;
+		var oldCount = level.Objects.Objects.Count;
+		level.IsPlacing = true;
+		level.UpdateWorldInput( false, false, mouse, viewport );
+		level.UpdateWorldInput( true, false, mouse, viewport );
+		Require( level.IsPlacing && level.PlacedRide != null, "a pending prototype tool stays suspended while riding" );
+		level.IsPlacing = false;
+		level.BuildEntry = null;
+		level.IsRemovingObjects = true;
+		level.UpdateWorldInput( false, false, mouse, viewport );
+		level.UpdateWorldInput( true, false, mouse, viewport );
+		Require( !removable.IsDeleted && level.Objects.Objects.Count == oldCount, "a fresh uncaptured left click cannot remove an object while riding" );
+		level.UpdateWorldInput( false, false, mouse, viewport );
+		level.IsPlacing = oldPlacing;
+		level.IsRemovingObjects = oldRemoving;
+		level.BuildEntry = oldEntry;
+		Log.Trace( "Ride view: armed prototype and remove tools ignore world clicks." );
+	}
+
+	/// <summary>Actual HUD shortcut dispatch leaves the ride and park state unchanged behind a modal or ImGui keyboard capture.</summary>
+	private void VerifyParkShortcutGuards()
+	{
+		if ( hud == null || hudContext == null )
+			return;
+		var previousKeys = Input.KeysDown;
+		var previousLastKeys = Input.LastKeysDown;
+		var io = ImGuiNET.ImGui.GetIO();
+		var previousCapture = io.WantCaptureKeyboard;
+		var previousSelection = hud.SelectedObject;
+		var previousInfoArm = hud.InfoArmOpen;
+		hud.SelectObject( level.PlacedRide );
+		level.Park?.Economy.OpenPark();
+		try
+		{
+			Input.KeysDown = new() { InputButton.RideView, InputButton.ClosePark };
+			Input.LastKeysDown = new();
+			var modal = new OpenTPW.UI.Original.UiScreen( "park-shortcut-guard" ) { Modal = true };
+			hud.Stack.Push( modal );
+			try
+			{
+				hud.Update( hudContext, OpenTPW.UI.Original.UiInput.Idle( new System.Numerics.Vector2( -1, -1 ) ) );
+				Require( level.RideView == null && (level.Park?.Economy.IsParkOpen ?? true), "modal HUD blocks Ride It and close-park shortcuts" );
+			}
+			finally { hud.Stack.Pop(); }
+			io.WantCaptureKeyboard = true;
+			hud.Update( hudContext, OpenTPW.UI.Original.UiInput.Idle( new System.Numerics.Vector2( -1, -1 ) ) );
+			Require( level.RideView == null && (level.Park?.Economy.IsParkOpen ?? true), "ImGui keyboard capture blocks Ride It and close-park shortcuts" );
+			Log.Trace( "Park shortcuts: modal and ImGui keyboard capture suppress ride and door actions." );
+		}
+		finally
+		{
+			Input.KeysDown = previousKeys;
+			Input.LastKeysDown = previousLastKeys;
+			io.WantCaptureKeyboard = previousCapture;
+			hud.SelectObject( previousSelection );
+			hud.SetInfoArm( previousInfoArm );
+		}
+	}
+
 	private static bool Throws( Action action )
 	{
 		try
@@ -534,6 +683,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 
 	public void Dispose()
 	{
+		RestoreRideHeadReadback();
 		watchdog.Dispose();
 		Render.PostUpdate -= Update;
 		SaveFileSystem = originalSaveFileSystem;

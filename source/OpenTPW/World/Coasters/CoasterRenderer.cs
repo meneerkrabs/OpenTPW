@@ -1,0 +1,581 @@
+using System.Numerics;
+using SVector2 = System.Numerics.Vector2;
+using SVector3 = System.Numerics.Vector3;
+
+namespace OpenTPW;
+
+/// <summary>The riders of the coasters as head sources of <see cref="RideHeadRenderer"/>.</summary>
+internal sealed class CoasterHeadSources : IHeadSourceProvider
+{
+	private readonly CoasterRenderer renderer;
+
+	public CoasterHeadSources( CoasterRenderer renderer ) => this.renderer = renderer;
+
+	public void Collect( List<HeadSource> sources, int? onlyAttraction ) => renderer.CollectHeads( sources, onlyAttraction );
+}
+
+/// <summary>
+/// Draws the park's coasters (presentation only): each coaster's track as its <c>coaster.sam</c> cross section extruded along the curve with the track textures,
+/// the pylon models stretched to the node heights, and the train cars posed on the samples. A track still being built is drawn as the curve through its placed
+/// nodes and the build cursor. Meshes are rebuilt only when the track (or the cursor) changes; the cars move by matrix and a scrolling texture (a flume's water,
+/// a chain lift) moves by rewriting its own few vertices.
+/// </summary>
+// [BIN:TPW-EXE:0x43eb70 track rebuild] the original rebuilds the track mesh as a dynamic model when the track changes (0x43eb70 from 0x435a30/0x447d30), animates the scrolling textures by shifting the V of the faces of scrolling textures every frame (0x435a30) and poses each car from its sample coordinate (0x43ce20)
+// [BIN:TPW-EXE:0x435adf scroll shift] the per-frame tick shifts V by δ = (now − ctl+0x138)·P·0.001 for every polygon of a texture the loader flagged (definition flag 4, set when any fScrollRate is nonzero; texture flag 0x20), P the power factor at controller +0x2c; the stored fScrollRate (texture +0xc) is not read in that loop
+// [APPROX:COAST-026] see CoasterTrackMesh: the extruded mesh draws both faces and takes cross-section changes per segment and self-illuminated textures are lit like the rest; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc; the coaster MD2 models' Add-mode vertex and UV animation (TrackMaster loader 0x42fad0 keeps header flag 4: keys added to a per-update base copy, the add paths of 0x471860) is not modelled (formerly the remainder of RIDES-043)
+public sealed class CoasterRenderer : Entity
+{
+	/// <summary>
+	/// The scroll phase after a frame (<c>0x435adf..0x435b20</c>): the accumulator gains P·Δt and wraps above 1. A breakdown (power factor 0) stops the scroll.
+	/// </summary>
+	public static float AdvanceScroll( float phase, float powerFactor, float deltaSeconds )
+	{
+		var next = phase + powerFactor * deltaSeconds;
+		return next - MathF.Floor( next );
+	}
+
+	private readonly Func<IReadOnlyList<CoasterRide>> coasters;
+	private readonly Func<SVector2> origin;
+	private readonly float scale;
+	private readonly Func<CoasterRide, ObjectCatalogEntry?> entryOf;
+	private readonly Func<CoasterRide, CoasterPreview?> previewOf;
+	private readonly Func<CoasterRide, int> attractionOf;
+	private readonly List<RideView> views = new();
+	private readonly Dictionary<ObjectCatalogEntry, CoasterAssets> assets = new();
+	private bool deleted;
+
+	/// <param name="coasters">The coasters to draw.</param>
+	/// <param name="origin">Engine position of grid corner (0, 0).</param>
+	/// <param name="scale">Engine units per original world unit (0.2).</param>
+	/// <param name="entryOf">The catalogue entry (archive) of a coaster's station, or null when it has none.</param>
+	/// <param name="previewOf">The build cursor of the coaster the tool edits, or null.</param>
+	/// <param name="attractionOf">The attraction id of a coaster's station (0 when it has none), which the riders' heads are matched against.</param>
+	public CoasterRenderer( Func<IReadOnlyList<CoasterRide>> coasters, Func<SVector2> origin, float scale, Func<CoasterRide, ObjectCatalogEntry?> entryOf, Func<CoasterRide, CoasterPreview?> previewOf, Func<CoasterRide, int> attractionOf )
+	{
+		this.attractionOf = attractionOf;
+		this.coasters = coasters;
+		this.origin = origin;
+		this.scale = scale;
+		this.entryOf = entryOf;
+		this.previewOf = previewOf;
+		Name = "Coasters";
+	}
+
+	/// <summary>
+	/// The camera seat of the first train's front car in engine axes (the car model's seat node placed on the car), null when the coaster has no drawn
+	/// car yet or its car model has no seat.
+	/// </summary>
+	internal Matrix4x4? TryGetSeat( CoasterRide ride )
+	{
+		foreach ( var view in views )
+		{
+			if ( ReferenceEquals( view.Ride, ride ) )
+				return view.FrontCarSeat();
+		}
+		return null;
+	}
+
+	/// <summary>Triangles the coaster models submit (track, pylons and cars; the view may cull some of them).</summary>
+	public int DrawnTriangles { get; private set; }
+
+	/// <summary>Track and pylon models alive across the park's coasters (the cars share the type's models).</summary>
+	public int ModelCount => views.Sum( view => view.ModelCount );
+
+	protected override void OnUpdate()
+	{
+		if ( deleted )
+			return;
+		var rides = coasters();
+		for ( var index = views.Count - 1; index >= 0; index-- )
+		{
+			var present = false;
+			for ( var ride = 0; ride < rides.Count && !present; ride++ )
+				present = ReferenceEquals( rides[ride], views[index].Ride );
+			if ( present )
+				continue;
+			var gone = views[index];
+			views.RemoveAt( index );
+			gone.Dispose();
+			ReleaseAssets( gone.Assets );
+		}
+		var triangles = 0;
+		for ( var index = 0; index < rides.Count; index++ )
+		{
+			var view = ViewOf( rides[index] );
+			if ( view == null )
+				continue;
+			view.Update();
+			triangles += view.Triangles;
+		}
+		DrawnTriangles = triangles;
+	}
+
+	private RideView? ViewOf( CoasterRide ride )
+	{
+		for ( var index = 0; index < views.Count; index++ )
+		{
+			if ( ReferenceEquals( views[index].Ride, ride ) )
+				return views[index];
+		}
+		if ( entryOf( ride ) is not { } entry )
+			return null;
+		if ( !assets.TryGetValue( entry, out var shared ) )
+			assets[entry] = shared = new CoasterAssets( entry, ride.Definition );
+		shared.Users++;
+		var view = new RideView( this, ride, shared );
+		views.Add( view );
+		return view;
+	}
+
+	/// <summary>Drops a view's use of its type's assets; the models and textures are released with the last user.</summary>
+	private void ReleaseAssets( CoasterAssets shared )
+	{
+		if ( --shared.Users > 0 )
+			return;
+		shared.Dispose();
+		foreach ( var (entry, candidate) in assets )
+		{
+			if ( ReferenceEquals( candidate, shared ) )
+			{
+				assets.Remove( entry );
+				break;
+			}
+		}
+	}
+
+	protected override void OnDelete()
+	{
+		deleted = true;
+		foreach ( var view in views )
+			view.Dispose();
+		views.Clear();
+		foreach ( var shared in assets.Values )
+			shared.Dispose();
+		assets.Clear();
+	}
+
+	/// <summary>The engine matrix of original-unit geometry in the engine axis order: the 0.2 scale and the grid origin.</summary>
+	private Matrix4x4 ToEngine()
+	{
+		var corner = origin();
+		return Matrix4x4.CreateScale( scale ) * Matrix4x4.CreateTranslation( corner.X, corner.Y, 0 );
+	}
+
+	/// <summary>The engine axis order of an original-unit point (X, Z, Y).</summary>
+	internal static SVector3 Swap( SVector3 world ) => new( world.X, world.Z, world.Y );
+
+	private sealed class CarInstance
+	{
+		public required CoasterCarRig Rig { get; init; }
+		public required ModelEntity[] Parts { get; init; }
+		public required float Offset { get; init; }
+		public required float YOffset { get; init; }
+		public required int Train { get; init; }
+		public required int Car { get; init; }
+		/// <summary>The car-to-world matrix of the last update (original axes).</summary>
+		public Matrix4x4 World { get; set; } = Matrix4x4.Identity;
+	}
+
+	/// <summary>
+	/// Appends the riders of every coaster's cars as heads: rider <c>j</c> of a car hangs from the car model's head socket <c>j</c> (<see cref="CoasterCarRig.Seats"/>),
+	/// in the MD2 axes and engine scale the head presentation works in.
+	/// </summary>
+	// [BIN:TPW-EXE:0x430130 car heads] each car type counts the head sockets of its model ("Car type %s can receive %d heads"); the riders of a car take them in order
+	// [APPROX:COAST-034] rider j takes socket j modulo the sockets of its car (the original seats a guest in a random car inside the station window and then the first car with room, 0x43b600, which CoasterRide does; the seat inside the car and the car's world position written to its model, 0x43d6b2, are not traced)
+	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
+	{
+		var corner = origin();
+		var shift = Matrix4x4.CreateScale( scale ) * Matrix4x4.CreateTranslation( corner.X, 0, corner.Y );
+		foreach ( var view in views )
+			view.CollectHeads( sources, onlyAttraction, attractionOf( view.Ride ), shift );
+	}
+
+	private sealed class RideView : IDisposable
+	{
+		private readonly CoasterRenderer owner;
+		private readonly CoasterAssets assets;
+		private readonly List<ModelEntity> entities = new();
+		private readonly List<Model> models = new();
+		private readonly List<CarInstance> cars = new();
+		private (int Version, bool Operational, int Samples, CoasterPreview? Preview) built = (-1, false, -1, null);
+		private bool dirty = true;
+		private int carTrains = -1;
+		private bool carsOperational;
+		private Model? scrollModel;
+		private Vertex[] scrollVertices = Array.Empty<Vertex>();
+		private float[] scrollBase = Array.Empty<float>();
+		private float scrollPhase;
+		private float[] scrollU = Array.Empty<float>();
+		private int trackTriangles;
+		private int pylonTriangles;
+		private int carTriangles;
+		private bool disposed;
+
+		public RideView( CoasterRenderer owner, CoasterRide ride, CoasterAssets assets )
+		{
+			this.owner = owner;
+			Ride = ride;
+			this.assets = assets;
+			ride.TrackChanged += OnTrackChanged;
+		}
+
+		public CoasterRide Ride { get; }
+		public CoasterAssets Assets => assets;
+		public int Triangles => trackTriangles + pylonTriangles + carTriangles;
+		public int ModelCount => models.Count;
+
+		private void OnTrackChanged( CoasterRide ride ) => dirty = true;
+
+		public void Update()
+		{
+			if ( disposed )
+				return;
+			var preview = Ride.IsOperational ? null : owner.previewOf( Ride );
+			var key = (Ride.Track.Version, Ride.IsOperational, Ride.Samples.Count, preview);
+			if ( dirty || key != built )
+			{
+				Rebuild( preview );
+				built = key;
+				dirty = false;
+			}
+			UpdateScroll();
+			UpdateCars();
+		}
+
+		// ---- Track and pylons ----------------------------------------------------------------------
+
+		private void Rebuild( CoasterPreview? preview )
+		{
+			ClearStatic();
+			var track = Ride.Track;
+			var definition = Ride.Definition;
+			IReadOnlyList<CoasterNode>? chain;
+			bool closed;
+			if ( Ride.IsOperational )
+				(chain, closed) = (track.Nodes, true);
+			else if ( track.BuildPreviewChain( preview is { } cursor ? (cursor.X, cursor.Y) : null, preview?.Height ?? 0, preview?.Loop ?? false ) is { } open )
+				(chain, closed) = (open.Chain, open.Closed);
+			else
+				return;
+			var knots = track.BuildKnots( Ride.Site, chain, writeBanks: false );
+			var invalid = new HashSet<int>();
+			for ( var pair = 0; pair < chain.Count; pair++ )
+			{
+				var next = pair + 1;
+				if ( next < chain.Count && (chain[pair].Flags & CoasterNodeFlags.Invalid) != 0 && (chain[next].Flags & CoasterNodeFlags.Invalid) != 0 )
+					invalid.Add( pair );
+			}
+			var matrix = owner.ToEngine();
+			// A circuit the demolish button cut open is two chains: the nodes before the cut and the nodes after it (the cut ends are marked, 0x446740), each drawn on its own.
+			var cursorIndex = chain.ToList().FindIndex( node => (node.Flags & CoasterNodeFlags.Cursor) != 0 );
+			var start = 0;
+			for ( var index = 0; index < chain.Count; index++ )
+			{
+				var last = index == chain.Count - 1;
+				if ( !last && (closed || (chain[index].Flags & CoasterNodeFlags.CutEnd) == 0) )
+					continue;
+				if ( index - start >= 1 )
+					BuildChain( knots.Skip( start ).Take( index - start + 1 ).ToArray(), definition.Curviness, closed && start == 0 && last, invalid, cursorIndex == index && cursorIndex > start ? preview?.Valid ?? true : null, matrix );
+				start = index + 1;
+			}
+			BuildPylons( chain, knots, matrix );
+		}
+
+		/// <summary>
+		/// Draws one chain of knots: the track through them, and the last link as the translucent cursor ribbon when the chain ends in the build cursor's node
+		/// (<paramref name="ribbonValid"/> is whether its cell passed the validator, null when the chain has no cursor).
+		/// </summary>
+		private void BuildChain( CoasterKnot[] knots, float curviness, bool closed, IReadOnlyCollection<int> invalid, bool? ribbonValid, Matrix4x4 matrix )
+		{
+			var slices = HermiteCoasterCurve.Slices( knots, curviness, closed );
+			if ( ribbonValid is { } valid && slices.Length > HermiteCoasterCurve.SliceSegments )
+			{
+				// the pending link is the last knot pair: its slices are the ribbon, the others the track
+				var split = slices.Length - 1 - HermiteCoasterCurve.SliceSegments;
+				BuildRibbon( slices[split..], valid, matrix );
+				slices = slices[..(split + 1)];
+			}
+			BuildTrack( slices, Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), invalid, matrix );
+		}
+
+		/// <summary>The half width of the cursor ribbon (original units) and its lift above the track.</summary>
+		private const float RibbonHalfWidth = 3f, RibbonLift = 0.6f;
+
+		private void BuildRibbon( CoasterSlice[] slices, bool valid, Matrix4x4 matrix )
+		{
+			if ( slices.Length < 2 )
+				return;
+			var vertices = new List<Vertex>( slices.Length * 2 );
+			var indices = new List<uint>( slices.Length * 6 );
+			var length = 0f;
+			for ( var index = 0; index < slices.Length; index++ )
+			{
+				var slice = slices[index];
+				if ( index > 0 )
+					length += SVector3.Distance( slices[index - 1].Position, slice.Position );
+				var (right, up) = CoasterTrackMesh.Frame( slice.Yaw, slice.Pitch, slice.Roll );
+				var centre = slice.Position + up * RibbonLift;
+				vertices.Add( new Vertex( Swap( centre - right * RibbonHalfWidth ), Swap( up ), new SVector2( 0, length / CoasterTrackMesh.MetersPerRepeat ) ) { TexIndex = 0 } );
+				vertices.Add( new Vertex( Swap( centre + right * RibbonHalfWidth ), Swap( up ), new SVector2( 1, length / CoasterTrackMesh.MetersPerRepeat ) ) { TexIndex = 0 } );
+				if ( index == 0 )
+					continue;
+				var first = (uint)(vertices.Count - 4);
+				indices.Add( first );
+				indices.Add( first + 1 );
+				indices.Add( first + 3 );
+				indices.Add( first );
+				indices.Add( first + 3 );
+				indices.Add( first + 2 );
+			}
+			trackTriangles += indices.Count / 3;
+			AddModel( vertices.ToArray(), indices.ToArray(), assets.GhostSlots( valid ), matrix, doubleSided: true, dynamic: false, out _ );
+		}
+
+		private void BuildTrack( CoasterSlice[] slices, IReadOnlyCollection<int> winch, IReadOnlyCollection<int> invalid, Matrix4x4 matrix )
+		{
+			var sections = assets.Sections;
+			// The slices of a finished track end on the station end node, which stands on the first knot: the mesh needs no wrap segment.
+			var mesh = CoasterTrackMesh.Build( sections, slices, closed: false, winch, invalid );
+			trackTriangles += mesh.TriangleCount;
+			if ( mesh.TriangleCount == 0 )
+				return;
+			var fixedVertices = new List<Vertex>();
+			var fixedIndices = new List<uint>();
+			var movingVertices = new List<Vertex>();
+			var movingIndices = new List<uint>();
+			var moveBase = new List<float>();
+			var moveU = new List<float>();
+			// The mesh emits one quad (four vertices, six indices) per edge and segment, all of one texture.
+			for ( var quad = 0; quad < mesh.Vertices.Count / 4; quad++ )
+			{
+				var texture = mesh.Vertices[quad * 4].Texture;
+				var rate = texture >= 0 && texture < sections.Textures.Count ? sections.Textures[texture].ScrollRate : 0f;
+				var vertices = rate != 0 ? movingVertices : fixedVertices;
+				var indices = rate != 0 ? movingIndices : fixedIndices;
+				var first = (uint)vertices.Count;
+				for ( var corner = 0; corner < 4; corner++ )
+				{
+					var source = mesh.Vertices[quad * 4 + corner];
+					vertices.Add( new Vertex( Swap( source.Position ), Swap( source.Normal ), new SVector2( source.U, source.V ) ) { TexIndex = source.Texture == CoasterTrackMesh.InvalidTexture ? CoasterAssets.InvalidSlot : source.Texture } );
+					if ( rate != 0 )
+					{
+						moveBase.Add( source.V );
+						moveU.Add( source.U );
+					}
+				}
+				indices.Add( first );
+				indices.Add( first + 1 );
+				indices.Add( first + 2 );
+				indices.Add( first );
+				indices.Add( first + 2 );
+				indices.Add( first + 3 );
+			}
+			if ( fixedVertices.Count > 0 )
+				AddModel( fixedVertices.ToArray(), fixedIndices.ToArray(), assets.GetTrackSlots(), matrix, doubleSided: true, dynamic: false, out _ );
+			if ( movingVertices.Count > 0 )
+			{
+				scrollVertices = movingVertices.ToArray();
+				scrollBase = moveBase.ToArray();
+				scrollU = moveU.ToArray();
+				AddModel( scrollVertices, movingIndices.ToArray(), assets.GetTrackSlots(), matrix, doubleSided: true, dynamic: true, out scrollModel );
+			}
+		}
+
+		private void BuildPylons( IReadOnlyList<CoasterNode> chain, IReadOnlyList<CoasterKnot> knots, Matrix4x4 matrix )
+		{
+			var accumulators = new Dictionary<(CoasterPylonRig Rig, int Part), (List<Vertex> Vertices, List<uint> Indices, string[] Textures)>();
+			var definition = Ride.Definition;
+			for ( var index = 0; index < chain.Count; index++ )
+			{
+				var node = chain[index];
+				// the build cursor's node has no pylon of its own (the video shows only the ribbon)
+				if ( node.IsPylonless || (node.Flags & CoasterNodeFlags.Cursor) != 0 || assets.GetPylon( node.LoopPylon ) is not { } rig )
+					continue;
+				var lift = CoasterTrack.PylonHeight( definition.Pylon( node.LoopPylon ), node.T );
+				var knot = knots[index];
+				var baseHeight = knot.Position.Y - definition.TrackHeightAdjust - lift;
+				var yaw = MathF.Atan2( knot.Direction.X, knot.Direction.Z );
+				var stackedAbove = chain.Any( other => !other.IsPylonless && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
+				var parts = assets.PosePylon( node.LoopPylon, rig, lift, yaw, stackedAbove );
+				var shift = new SVector3( node.X * CoasterTrack.CellUnits, node.Y * CoasterTrack.CellUnits, baseHeight );
+				for ( var part = 0; part < parts.Count; part++ )
+				{
+					if ( !accumulators.TryGetValue( (rig, part), out var accumulator ) )
+						accumulators[(rig, part)] = accumulator = (new List<Vertex>(), new List<uint>(), parts[part].Textures);
+					var first = (uint)accumulator.Vertices.Count;
+					foreach ( var vertex in parts[part].Vertices )
+					{
+						var moved = vertex;
+						moved.Position = vertex.Position.GetSystemVector3() + shift;
+						accumulator.Vertices.Add( moved );
+					}
+					foreach ( var vertexIndex in parts[part].Indices )
+						accumulator.Indices.Add( first + vertexIndex );
+				}
+			}
+			foreach ( var (_, accumulator) in accumulators )
+			{
+				pylonTriangles += accumulator.Indices.Count / 3;
+				AddModel( accumulator.Vertices.ToArray(), accumulator.Indices.ToArray(), assets.SlotsFor( accumulator.Textures ), matrix, doubleSided: false, dynamic: false, out _ );
+			}
+		}
+
+		private void AddModel( Vertex[] vertices, uint[] indices, Texture[] slots, Matrix4x4 matrix, bool doubleSided, bool dynamic, out Model model )
+		{
+			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader", doubleSided ? MaterialFlags.DoubleSided : MaterialFlags.None );
+			material.Set( "Color", slots );
+			model = new Model( vertices, indices, material, dynamic );
+			models.Add( model );
+			entities.Add( new ModelEntity { Model = model, Name = "coaster", TransformOverride = matrix, Position = new SVector3( matrix.M41, matrix.M42, matrix.M43 ) } );
+		}
+
+		private void ClearStatic()
+		{
+			foreach ( var entity in entities )
+				entity.Delete();
+			entities.Clear();
+			foreach ( var model in models )
+			{
+				model.ReleaseBuffers();
+				model.Material.ReleaseOwnedResources();
+			}
+			models.Clear();
+			scrollModel = null;
+			scrollVertices = Array.Empty<Vertex>();
+			trackTriangles = pylonTriangles = 0;
+		}
+
+		/// <summary>Moves the scrolling textures (a flume's water and ratchet, a chain lift): V shifts by the power factor × elapsed seconds, the same for every scrolling texture.</summary>
+		private void UpdateScroll()
+		{
+			if ( scrollModel == null )
+				return;
+			scrollPhase = AdvanceScroll( scrollPhase, Ride.PowerFactor, Time.Delta );
+			for ( var index = 0; index < scrollVertices.Length; index++ )
+				scrollVertices[index].TexCoords = new SVector2( scrollU[index], scrollBase[index] - scrollPhase );
+			scrollModel.UpdateVertices( scrollVertices );
+		}
+
+		// ---- Cars ----------------------------------------------------------------------------------
+
+		private void ClearCars()
+		{
+			foreach ( var car in cars )
+			{
+				foreach ( var part in car.Parts )
+					part.Delete();
+			}
+			cars.Clear();
+			carTriangles = 0;
+		}
+
+		private void RebuildCars()
+		{
+			ClearCars();
+			carsOperational = Ride.IsOperational;
+			carTrains = Ride.Trains.Count;
+			if ( !Ride.IsOperational )
+				return;
+			var types = assets.CarTypes;
+			for ( var train = 0; train < Ride.Trains.Count; train++ )
+			{
+				var count = Ride.Trains[train].Cars.Count;
+				var rigs = new CoasterCarRig?[count];
+				var extents = new (float Front, float Rear)[count];
+				for ( var car = 0; car < count; car++ )
+				{
+					var typeIndex = types.TypeIndexFor( car, count );
+					rigs[car] = assets.GetCar( typeIndex );
+					var type = typeIndex >= 0 && typeIndex < types.Types.Count ? types.Types[typeIndex] : new CoasterCarType( "", 0, 0, 0, false );
+					extents[car] = ((rigs[car]?.FrontExtent ?? 0) + type.FrontAdd, (rigs[car]?.RearExtent ?? 0) + type.RearAdd);
+				}
+				var offsets = CoasterCarRig.CarOffsets( extents );
+				for ( var car = 0; car < count; car++ )
+				{
+					if ( rigs[car] is not { } rig )
+						continue;
+					var typeIndex = types.TypeIndexFor( car, count );
+					var carModels = assets.GetCarModels( rig );
+					var parts = new ModelEntity[carModels.Length];
+					for ( var part = 0; part < parts.Length; part++ )
+					{
+						parts[part] = new ModelEntity { Model = carModels[part], Name = "coaster car" };
+						carTriangles += rig.Parts[part].Indices.Length / 3;
+					}
+					cars.Add( new CarInstance { Rig = rig, Parts = parts, Offset = offsets[car], YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
+				}
+			}
+		}
+
+		private void UpdateCars()
+		{
+			if ( carTrains != Ride.Trains.Count || carsOperational != Ride.IsOperational )
+				RebuildCars();
+			if ( cars.Count == 0 || Ride.Spacing <= 0 )
+				return;
+			var engine = owner.ToEngine();
+			for ( var index = 0; index < cars.Count; index++ )
+			{
+				var car = cars[index];
+				if ( car.Train >= Ride.Trains.Count )
+					continue;
+				var coordinate = Ride.Trains[car.Train].Position - car.Offset / Ride.Spacing;
+				var pose = CoasterCarRig.PoseAt( Ride.Samples, coordinate );
+				car.World = CoasterCarRig.Matrix( pose, car.YOffset );
+				var transform = ObjectPlacement.SwapAxes( car.World ) * engine;
+				var position = new SVector3( transform.M41, transform.M42, transform.M43 );
+				foreach ( var part in car.Parts )
+				{
+					part.TransformOverride = transform;
+					part.Position = position;
+				}
+			}
+		}
+
+		/// <summary>The seat of the first train's first car: its model's seat node on the car's last pose, in engine axes.</summary>
+		public Matrix4x4? FrontCarSeat()
+		{
+			foreach ( var car in cars )
+			{
+				if ( car.Train == 0 && car.Car == 0 && car.Rig.CameraSeat is { } local )
+				{
+					// [APPROX:COAST-034] the cars drive along their model's +Z, but the mine cart's camera node (and so its front row) faces -Z, the original's front: the seat is turned half a circle about its own up axis so the view looks along the track
+					if ( local.M33 < 0 )
+					{
+						local.M11 = -local.M11; local.M12 = -local.M12; local.M13 = -local.M13;
+						local.M31 = -local.M31; local.M32 = -local.M32; local.M33 = -local.M33;
+					}
+					return ObjectPlacement.SwapAxes( local * car.World ) * owner.ToEngine();
+				}
+			}
+			return null;
+		}
+
+		public void CollectHeads( List<HeadSource> sources, int? onlyAttraction, int attraction, Matrix4x4 shift )
+		{
+			if ( disposed || !Ride.IsOperational || attraction == 0 || onlyAttraction is int only && only != attraction )
+				return;
+			foreach ( var car in cars )
+			{
+				if ( car.Train >= Ride.Trains.Count || car.Rig.Seats.Count == 0 || car.Car >= Ride.Trains[car.Train].Cars.Count )
+					continue;
+				var riders = Ride.Trains[car.Train].Cars[car.Car];
+				for ( var rider = 0; rider < riders.Count; rider++ )
+				{
+					var (node, local) = car.Rig.Seats[rider % car.Rig.Seats.Count];
+					sources.Add( new HeadSource( riders[rider], attraction, local * car.World * shift, car.Rig.Model.Nodes[node].Type ) );
+				}
+			}
+		}
+
+		public void Dispose()
+		{
+			if ( disposed )
+				return;
+			disposed = true;
+			Ride.TrackChanged -= OnTrackChanged;
+			ClearCars();
+			ClearStatic();
+		}
+	}
+}

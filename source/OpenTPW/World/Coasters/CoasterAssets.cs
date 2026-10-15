@@ -1,0 +1,237 @@
+namespace OpenTPW;
+
+/// <summary>
+/// The presentation assets of one coaster type (one catalogue entry): its cross sections and track textures, the pylon and car models read from its archive and the
+/// textures they use. Everything loads through the entry's file system, as the other objects' models do, so the browser build reads the same archive members.
+/// </summary>
+internal sealed class CoasterAssets : IDisposable
+{
+	/// <summary>The track texture slot of the flat red texture an invalid segment shows.</summary>
+	public const int InvalidSlot = 15;
+
+	private readonly Dictionary<string, Texture> textures = new( StringComparer.OrdinalIgnoreCase );
+	private readonly Dictionary<bool, CoasterPylonRig?> pylons = new();
+	private readonly Dictionary<int, CoasterCarRig?> cars = new();
+	private readonly Dictionary<CoasterCarRig, Model[]> carModels = new();
+	private Texture? red;
+	private bool disposed;
+
+	public CoasterAssets( ObjectCatalogEntry entry, CoasterDefinition definition )
+	{
+		Entry = entry;
+		Definition = definition;
+		Sections = CoasterCrossSections.FromSettings( entry.CoasterSettings );
+		CarTypes = CoasterCarTypes.FromSettings( entry.CoasterSettings );
+	}
+
+	public ObjectCatalogEntry Entry { get; }
+	public CoasterDefinition Definition { get; }
+	public CoasterCrossSections Sections { get; }
+	public CoasterCarTypes CarTypes { get; }
+	/// <summary>The 16 texture slots of the track mesh: the <c>asTextureData</c> files, then the red texture of invalid segments.</summary>
+	public Texture[]? TrackSlots { get; private set; }
+
+	/// <summary>The track textures, loaded on first use.</summary>
+	public Texture[] GetTrackSlots()
+	{
+		if ( TrackSlots != null )
+			return TrackSlots;
+		var slots = new Texture[16];
+		Array.Fill( slots, Texture.Missing );
+		for ( var index = 0; index < Sections.Textures.Count && index < InvalidSlot; index++ )
+		{
+			if ( Sections.Textures[index].FileName.Length > 0 )
+				slots[index] = Load( Sections.Textures[index].FileName );
+		}
+		// [APPROX:COAST-026] an invalid segment is a flat red texture; the original draws its invalid cross section (uiInvalidCrossSection)
+		red ??= new Texture( new byte[] { 210, 50, 40, 255, 210, 50, 40, 255, 210, 50, 40, 255, 210, 50, 40, 255 }, 2, 2 );
+		slots[InvalidSlot] = red;
+		return TrackSlots = slots;
+	}
+
+	private Texture? ghostBlue, ghostRed;
+
+	/// <summary>
+	/// The 16 slots of the build cursor's ribbon: translucent blue where the cursor's cell is valid, translucent red where the validator refuses it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x435d50 cursor node] the cursor node carries 0x8000 and 0x4000 when the validator refuses its cell; the video (73:20-75:58) shows the pending link as a wide translucent ribbon, blue or red
+	// [APPROX:COAST-035] the ribbon is OpenTPW's own mesh (a strip along the pending link, 6 units wide, lifted 0.6 units) in a generated translucent blue or red; the original's renderer consumers of node flags 0x8000/0x4000 and of uiInvalidCrossSection are not found — evidence needed: those consumers
+	public Texture[] GhostSlots( bool valid )
+	{
+		ghostBlue ??= new Texture( new byte[] { 70, 120, 255, 140, 70, 120, 255, 140, 70, 120, 255, 140, 70, 120, 255, 140 }, 2, 2 );
+		ghostRed ??= new Texture( new byte[] { 235, 55, 45, 140, 235, 55, 45, 140, 235, 55, 45, 140, 235, 55, 45, 140 }, 2, 2 );
+		var slots = new Texture[16];
+		Array.Fill( slots, valid ? ghostBlue : ghostRed );
+		return slots;
+	}
+
+	/// <summary>A texture of the archive by name (cached), or <see cref="Texture.Missing"/>.</summary>
+	public Texture Load( string name )
+	{
+		var key = Path.GetFileNameWithoutExtension( name.TrimEnd( '\0' ) );
+		if ( textures.TryGetValue( key, out var texture ) )
+			return texture;
+		try
+		{
+			texture = TrackRenderer.LoadTexture( Entry, name );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
+		{
+			Log?.Warning( $"A coaster texture could not be read ({name}): {exception.Message}" );
+			// An I/O failure is not remembered as a missing texture: the next load tries again.
+			if ( exception is IOException )
+				return Texture.Missing;
+			texture = Texture.Missing;
+		}
+		textures[key] = texture;
+		return texture;
+	}
+
+	/// <summary>The 16 slots of a model part's materials.</summary>
+	public Texture[] SlotsFor( IReadOnlyList<string> names )
+	{
+		var slots = new Texture[16];
+		Array.Fill( slots, Texture.Missing );
+		for ( var index = 0; index < names.Count && index < slots.Length; index++ )
+			slots[index] = Load( names[index] );
+		return slots;
+	}
+
+	/// <summary>Read failures a model gets before it is given up (an I/O error may pass; bad data never does).</summary>
+	private const int ReadAttempts = 3;
+	private readonly Dictionary<string, int> failures = new();
+
+	/// <summary>
+	/// Logs a failed model read. Bad data (<see cref="InvalidDataException"/> and the like) is final; an I/O failure is not cached as an absent model, so the
+	/// next request tries again, up to <see cref="ReadAttempts"/> times. Returns whether the failure is final.
+	/// </summary>
+	private bool Failed( string what, string name, Exception exception )
+	{
+		var key = what + ":" + name;
+		failures.TryGetValue( key, out var count );
+		failures[key] = ++count;
+		var final = exception is not IOException || count >= ReadAttempts;
+		Log?.Warning( $"A coaster {what} model could not be read ({name}): {exception.Message}{(final ? "; it is not drawn" : "; it is tried again")}" );
+		return final;
+	}
+
+	/// <summary>The pylon rig of a standard or loop pylon, or null when the archive has no such model or it cannot be used.</summary>
+	public CoasterPylonRig? GetPylon( bool loop )
+	{
+		if ( pylons.TryGetValue( loop, out var cached ) )
+			return cached;
+		CoasterPylonRig? rig = null;
+		var name = Definition.Pylon( loop ).MeshName;
+		try
+		{
+			if ( !string.IsNullOrEmpty( name ) && FindModel( name ) is { Kind: ModelFileKind.Geometry } geometry )
+			{
+				var loft = FindModel( name + "L" )?.Clip;
+				var rotate = (FindModel( name + "R" ) ?? FindModel( name + "R1" ))?.Clip;
+				rig = new CoasterPylonRig( geometry, loft, rotate, Definition.Pylon( loop ) );
+				// [BIN:TPW-EXE:0x430590 pylon capabilities] the model's animations by type: loft L, rotate R or R1, incline I, bank B and the second rotate clip R2
+				rig.Capabilities = (loft != null ? CoasterPylonCapabilities.Loft : 0) | (rotate != null ? CoasterPylonCapabilities.Rotate : 0)
+					| (FindModel( name + "I" )?.Clip != null ? CoasterPylonCapabilities.Incline : 0) | (FindModel( name + "B" )?.Clip != null ? CoasterPylonCapabilities.Bank : 0)
+					| (FindModel( name + "R2" )?.Clip != null ? CoasterPylonCapabilities.LoopTilt : 0);
+			}
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )
+		{
+			return Failed( "pylon", name, exception ) ? pylons[loop] = null : null;
+		}
+		return pylons[loop] = rig;
+	}
+
+	/// <summary>
+	/// Poses a pylon for a node. The mesh conversion happens here, after the model loaded, so a vertex the converter refuses (a nonfinite position) is caught
+	/// here: the rig is switched off for the level and the pylon is left out.
+	/// </summary>
+	public IReadOnlyList<CoasterModelPart> PosePylon( bool loop, CoasterPylonRig rig, float height, float yaw, bool stackedAbove )
+	{
+		try
+		{
+			return rig.Pose( height, yaw, stackedAbove );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or ArgumentException or IndexOutOfRangeException )
+		{
+			Failed( "pylon", Definition.Pylon( loop ).MeshName, exception );
+			pylons[loop] = null;
+			return Array.Empty<CoasterModelPart>();
+		}
+	}
+
+	/// <summary>The car rig of a car type, or null when the archive has no such model or it cannot be used.</summary>
+	public CoasterCarRig? GetCar( int typeIndex )
+	{
+		if ( cars.TryGetValue( typeIndex, out var cached ) )
+			return cached;
+		CoasterCarRig? rig = null;
+		if ( typeIndex >= 0 && typeIndex < CarTypes.Types.Count )
+		{
+			var name = CarTypes.Types[typeIndex].MeshName;
+			try
+			{
+				if ( !string.IsNullOrEmpty( name ) && FindModel( name ) is { Kind: ModelFileKind.Geometry } geometry )
+					rig = new CoasterCarRig( geometry );
+			}
+			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )
+			{
+				return Failed( "car", name, exception ) ? cars[typeIndex] = null : null;
+			}
+		}
+		return cars[typeIndex] = rig;
+	}
+
+	/// <summary>The drawable models of a car rig's parts, shared by every car of the type.</summary>
+	public Model[] GetCarModels( CoasterCarRig rig )
+	{
+		if ( carModels.TryGetValue( rig, out var cached ) )
+			return cached;
+		var list = new Model[rig.Parts.Count];
+		for ( var index = 0; index < list.Length; index++ )
+		{
+			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+			material.Set( "Color", SlotsFor( rig.Parts[index].Textures ) );
+			list[index] = new Model( rig.Parts[index].Vertices, rig.Parts[index].Indices, material, false );
+		}
+		return carModels[rig] = list;
+	}
+
+	/// <summary>
+	/// Reads an MD2 member of the archive by file stem. Null means the archive has no such member (absent); a read failure throws, so the caller can tell the two apart.
+	/// </summary>
+	private ModelFile? FindModel( string stem )
+	{
+		string[] files;
+		try
+		{
+			files = Entry.FileSystem.GetFiles( Entry.ArchivePath ).ToArray();
+		}
+		catch ( Exception exception ) when ( exception is DirectoryNotFoundException or FileNotFoundException )
+		{
+			return null;
+		}
+		var path = files.FirstOrDefault( file => file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) && string.Equals( Path.GetFileNameWithoutExtension( file ), stem, StringComparison.OrdinalIgnoreCase ) );
+		return path == null ? null : ObjectAssets.LoadModel( Entry.FileSystem, path );
+	}
+
+	/// <summary>Views using these assets; the renderer disposes them when the last view goes.</summary>
+	public int Users { get; set; }
+
+	public void Dispose()
+	{
+		if ( disposed )
+			return;
+		disposed = true;
+		foreach ( var model in carModels.Values.SelectMany( models => models ) )
+		{
+			model.ReleaseBuffers();
+			model.Material.ReleaseOwnedResources();
+		}
+		carModels.Clear();
+		foreach ( var texture in textures.Values )
+			texture.ReleaseOwned();
+		red?.ReleaseOwned();
+		textures.Clear();
+	}
+}

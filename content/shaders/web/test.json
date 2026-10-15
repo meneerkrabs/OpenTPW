@@ -1,0 +1,152 @@
+{
+  "fixClipSpaceZ": true,
+  "invertVertexOutputY": true,
+  "vertexElements": [
+    {
+      "name": "position",
+      "semantic": "TextureCoordinate",
+      "format": "Float3",
+      "offset": 0
+    },
+    {
+      "name": "normal",
+      "semantic": "TextureCoordinate",
+      "format": "Float3",
+      "offset": 0
+    },
+    {
+      "name": "texCoords",
+      "semantic": "TextureCoordinate",
+      "format": "Float2",
+      "offset": 0
+    },
+    {
+      "name": "texIndex",
+      "semantic": "TextureCoordinate",
+      "format": "Int1",
+      "offset": 0
+    },
+    {
+      "name": "matFlags",
+      "semantic": "TextureCoordinate",
+      "format": "UInt1",
+      "offset": 0
+    }
+  ],
+  "resourceLayouts": [
+    [
+      {
+        "name": "ObjectUniformBuffer",
+        "kind": "UniformBuffer",
+        "stages": "Vertex, Fragment",
+        "options": "None"
+      }
+    ],
+    [
+      {
+        "name": "Color0",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color1",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color2",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color3",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color4",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color5",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color6",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color7",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color8",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color9",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color10",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color11",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color12",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color13",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color14",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "Color15",
+        "kind": "TextureReadOnly",
+        "stages": "Fragment",
+        "options": "None"
+      },
+      {
+        "name": "s_Color",
+        "kind": "Sampler",
+        "stages": "Fragment",
+        "options": "None"
+      }
+    ]
+  ],
+  "vertex": "#version 300 es\n\nlayout(std140) uniform ObjectUniformBuffer\n{\n    mat4 g_mModel;\n    mat4 g_mView;\n    mat4 g_mProj;\n    vec3 g_vLightPos;\n    vec3 g_vLightColor;\n    vec3 g_vCameraPos;\n    float g_flTime;\n    float g_flViewDistanceScale;\n} g_oUbo;\n\nout vec2 vdspv_fsin0_vTexCoords;\nout vec3 vdspv_fsin0_vNormal;\nout vec3 vdspv_fsin0_vPosition;\nout vec3 vdspv_fsin0_vWorldPosition;\nlayout(location = 2) in vec2 texCoords;\nlayout(location = 1) in vec3 normal;\nlayout(location = 0) in vec3 position;\nflat out int vdspv_fsin5;\nlayout(location = 3) in int texIndex;\nflat out uint vdspv_fsin6;\nlayout(location = 4) in uint matFlags;\n\nvoid main()\n{\n    vdspv_fsin0_vTexCoords = texCoords;\n    vdspv_fsin0_vTexCoords.y = 1.0 - vdspv_fsin0_vTexCoords.y;\n    vdspv_fsin0_vNormal = normal;\n    vdspv_fsin0_vPosition = vec3((g_oUbo.g_mModel * vec4(position, 1.0)).xyz);\n    vec4 pos = g_oUbo.g_mModel * vec4(position, 1.0);\n    vdspv_fsin0_vWorldPosition = vec3((g_oUbo.g_mView * pos).xyz);\n    gl_Position = (g_oUbo.g_mProj * g_oUbo.g_mView) * pos;\n    vdspv_fsin5 = texIndex;\n    vdspv_fsin6 = matFlags;\n    gl_Position.z = 2.0 * gl_Position.z - gl_Position.w;\n    gl_Position.y = -gl_Position.y;\n}\n\n",
+  "fragment": "#version 300 es\nprecision mediump float;\nprecision highp int;\n\nlayout(std140) uniform ObjectUniformBuffer\n{\n    highp mat4 g_mModel;\n    highp mat4 g_mView;\n    highp mat4 g_mProj;\n    highp vec3 g_vLightPos;\n    highp vec3 g_vLightColor;\n    highp vec3 g_vCameraPos;\n    highp float g_flTime;\n    highp float g_flViewDistanceScale;\n} g_oUbo;\n\nuniform highp sampler2D Color0;\nuniform highp sampler2D Color1;\nuniform highp sampler2D Color2;\nuniform highp sampler2D Color3;\nuniform highp sampler2D Color4;\nuniform highp sampler2D Color5;\nuniform highp sampler2D Color6;\nuniform highp sampler2D Color7;\nuniform highp sampler2D Color8;\nuniform highp sampler2D Color9;\nuniform highp sampler2D Color10;\nuniform highp sampler2D Color11;\nuniform highp sampler2D Color12;\nuniform highp sampler2D Color13;\nuniform highp sampler2D Color14;\nuniform highp sampler2D Color15;\n\nin highp vec2 vdspv_fsin0_vTexCoords;\nin highp vec3 vdspv_fsin0_vNormal;\nin highp vec3 vdspv_fsin0_vPosition;\nin highp vec3 vdspv_fsin0_vWorldPosition;\nflat in int vdspv_fsin5;\nflat in uint vdspv_fsin6;\nlayout(location = 0) out highp vec4 fragColor;\n\nvoid main()\n{\n    highp vec2 finalTexCoords = vdspv_fsin0_vTexCoords;\n    highp vec3 N = normalize(vdspv_fsin0_vNormal);\n    highp vec3 L = normalize(g_oUbo.g_vLightPos - vdspv_fsin0_vWorldPosition);\n    highp vec3 vDiffuse = g_oUbo.g_vLightColor * max(dot(N, L), 0.0);\n    highp vec3 vAmbient = vec3(0.4000000059604644775390625);\n    highp vec4 vTextureSample = vec4(1.0, 0.0, 1.0, 1.0);\n    if (vdspv_fsin5 == 0)\n    {\n        vTextureSample = texture(Color0, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 1)\n    {\n        vTextureSample = texture(Color1, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 2)\n    {\n        vTextureSample = texture(Color2, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 3)\n    {\n        vTextureSample = texture(Color3, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 4)\n    {\n        vTextureSample = texture(Color4, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 5)\n    {\n        vTextureSample = texture(Color5, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 6)\n    {\n        vTextureSample = texture(Color6, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 7)\n    {\n        vTextureSample = texture(Color7, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 8)\n    {\n        vTextureSample = texture(Color8, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 9)\n    {\n        vTextureSample = texture(Color9, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 10)\n    {\n        vTextureSample = texture(Color10, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 11)\n    {\n        vTextureSample = texture(Color11, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 12)\n    {\n        vTextureSample = texture(Color12, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 13)\n    {\n        vTextureSample = texture(Color13, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 14)\n    {\n        vTextureSample = texture(Color14, finalTexCoords);\n    }\n    if (vdspv_fsin5 == 15)\n    {\n        vTextureSample = texture(Color15, finalTexCoords);\n    }\n    highp vec3 vShading = vDiffuse \u002B vAmbient;\n    highp vec3 vOutColor;\n    if ((vdspv_fsin6 \u0026 32u) != 0u)\n    {\n        vOutColor = vTextureSample.xyz * vShading;\n    }\n    else\n    {\n        vOutColor = vTextureSample.xyz * vShading;\n    }\n    if (vTextureSample.w \u003C 0.100000001490116119384765625)\n    {\n        discard;\n    }\n    fragColor = vec4(vOutColor, vTextureSample.w);\n    highp float _286;\n    if (g_oUbo.g_flViewDistanceScale \u003E 0.0)\n    {\n        _286 = g_oUbo.g_flViewDistanceScale;\n    }\n    else\n    {\n        _286 = 1.0;\n    }\n    highp float viewDistanceScale = _286;\n    highp float viewSpaceDepth = length(vdspv_fsin0_vWorldPosition) / viewDistanceScale;\n    highp float fogFactor = exp(viewSpaceDepth * 0.00999999977648258209228515625) * 0.02500000037252902984619140625;\n    fogFactor = clamp(fogFactor, 0.0, 1.0);\n    highp vec3 _315 = mix(fragColor.xyz, vec3(0.30099999904632568359375, 0.839999973773956298828125, 1.0), vec3(fogFactor));\n    fragColor = vec4(_315.x, _315.y, _315.z, fragColor.w);\n}\n\n"
+}

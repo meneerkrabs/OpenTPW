@@ -1,6 +1,7 @@
 """Synthetic PEF fixtures only: no original bytes required or stored."""
 import struct
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -87,6 +88,71 @@ class ReaderTests(unittest.TestCase):
         c = pef.PEFContainer(container(body=struct.pack(">I", 3)))
         result = c._run_relocs(0, [0x4000])
         self.assertEqual(result[0], pef.RelocTarget("section", 0, 3))
+
+    def test_repeat_counts_halfword_blocks_for_multiword_instruction(self):
+        c = pef.PEFContainer(container(body=struct.pack(">II", 3, 9), total=8, unpacked=8))
+        # RelocLgBySection occupies two blocks; repeat those two blocks once.
+        for repeat in [[0x9100], [0xb040, 1]]:
+            with self.subTest(repeat=repeat):
+                result = c._run_relocs(0, [0xb400, 0, *repeat])
+                self.assertEqual(result, {0: pef.RelocTarget("section", 0, 3),
+                                          4: pef.RelocTarget("section", 0, 9)})
+
+    def test_repeat_mixed_width_window_preserves_position_state(self):
+        c = pef.PEFContainer(container(body=struct.pack(">IIII", 0, 3, 0, 9),
+                                       total=16, unpacked=16))
+        for repeat in [[0x9200], [0xb080, 1]]:
+            with self.subTest(repeat=repeat):
+                result = c._run_relocs(0, [0x8003, 0xb400, 0, *repeat])
+                self.assertEqual(result, {4: pef.RelocTarget("section", 0, 3),
+                                          12: pef.RelocTarget("section", 0, 9)})
+
+    def test_repeat_maximum_block_window_includes_multiword_instruction(self):
+        c = pef.PEFContainer(container(body=bytes(128), total=128, unpacked=128))
+        result = c._run_relocs(0, [*[0x8003] * 14, 0xb400, 0, 0x9f00])
+        self.assertEqual(set(result), {56, 116})
+
+    def test_repeat_preserves_import_index_state(self):
+        c = pef.PEFContainer(container(body=bytes(12), total=12, unpacked=12))
+        c.imports = [pef.ImportedSymbol(i, f"synthetic{i}", 2, False) for i in range(3)]
+        result = c._run_relocs(0, [0x4a00, 0x9001])
+        self.assertEqual({offset: target.target for offset, target in result.items()},
+                         {0: 0, 4: 1, 8: 2})
+
+    def test_repeat_cannot_start_in_second_half_of_instruction(self):
+        c = pef.PEFContainer(container(body=bytes(16), total=16, unpacked=16))
+        for repeat in [[0x9000], [0xb000, 1], [0xb000, 0]]:
+            with self.subTest(repeat=repeat), self.assertRaisesRegex(pef.PEFError, "boundary"):
+                c._run_relocs(0, [0xb400, 0, *repeat])
+
+    def test_repeat_cannot_include_another_repeat(self):
+        c = pef.PEFContainer(container(body=bytes(64), total=64, unpacked=64))
+        # All small/large nesting combinations, including a zero-count outer repeat.
+        for inner, outer in [([0x9000], [0x9000]), ([0xb000, 1], [0x9100]),
+                             ([0x9000], [0xb000, 1]), ([0xb000, 1], [0xb040, 1]),
+                             ([0xb000, 1], [0xb040, 0])]:
+            with self.subTest(inner=inner, outer=outer), self.assertRaisesRegex(pef.PEFError, "nested"):
+                c._run_relocs(0, [0x4000, *inner, *outer])
+
+    def test_large_repeat_uses_actual_count_including_zero(self):
+        c = pef.PEFContainer(container(body=bytes(12), total=12, unpacked=12))
+        self.assertEqual(len(c._run_relocs(0, [0x4000, 0xb000, 0])), 1)
+        self.assertEqual(len(c._run_relocs(0, [0x4000, 0xb000, 2])), 3)
+
+    def test_repeat_checks_stream_and_output_bounds(self):
+        c = pef.PEFContainer(container())
+        for stream in [[0x9100], [0xb040, 1], [0x4000, 0x9000]]:
+            with self.subTest(stream=stream), self.assertRaises(pef.PEFError):
+                c._run_relocs(0, stream)
+
+    def test_repeat_work_limit_includes_replayed_instructions(self):
+        c = pef.PEFContainer(container())
+        with patch.object(pef, "MAX_RELOCATION_STEPS", 3):
+            with self.assertRaisesRegex(pef.PEFError, "limit"):
+                c._run_relocs(0, [0x8003, 0x9003])
+        with patch.object(pef, "MAX_RELOCATION_STEPS", 3):
+            with self.assertRaisesRegex(pef.PEFError, "limit"):
+                c._run_relocs(0, [0x8003, 0xb001, 0])
 
     def test_relocation_errors(self):
         c = pef.PEFContainer(container())

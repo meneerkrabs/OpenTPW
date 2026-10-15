@@ -12,6 +12,20 @@ public interface IGuestPayments
 	int AdmissionFee { get; }
 	/// <summary>Charges admission. False when the park is closed or the guest cannot pay.</summary>
 	bool TryPayAdmission( long guestMoney, out int feePaid );
+	/// <summary>True while the park is closed (the world variable <c>mParkClosed</c>): every guest that gets to decide heads home (<see cref="GuestLifecycle"/>).</summary>
+	bool ParkClosed => false;
 	/// <summary>Charges a shop or sideshow visit (0 for rides, which only count the use).</summary>
 	bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid );
+	/// <summary>The same, with a sideshow's result (<paramref name="won"/>, null when the payer does not play sideshows out).</summary>
+	bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid, out bool? won )
+	{
+		won = null;
+		return TryPayVisit( attraction, guestMoney, out pricePaid );
+	}
+	/// <summary>A guest has left the attraction (the original's use counter, +412, rises on release).</summary>
+	void VisitFinished( IRideVisitorBridge attraction ) { }
+	/// <summary>A guest used a relief object with this toilet meter (as a byte): the toilet's gauge wears (tp.exe 0x004E2440).</summary>
+	void ReliefUsed( IRideVisitorBridge attraction, int toiletByte ) { }
+	/// <summary>The park's litter by cell, where guests drop theirs (null: litter is not kept).</summary>
+	ParkLitter? Litter => null;
 }

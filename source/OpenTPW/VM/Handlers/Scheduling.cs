@@ -17,11 +17,39 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.ENDSLICE, RideOpcodeStatus.Implemented, "name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it" )]
 		public static void EndSlice( RideVM vm ) => vm.EndSlice();
 
-		[OpcodeHandler( Opcode.WAIT, RideOpcodeStatus.Implemented, "docs; milliseconds (inferred); flags survive it (`WAIT 300; BRANCH_NZ`)" )]
-		public static void Wait( RideVM vm, Operand time ) => vm.WaitFor( time.Value );
+		// [BIN:STP-PPC:0xb0658 WAIT] the first encounter stores now + trunc(operand / script speed) as the deadline (0xb06f8) and yields; later slices resume once now >= deadline (docs/reverse/BOARD-plan.md). The division is taken in single precision like the triggers' (TriggerDelay)
+		[OpcodeHandler( Opcode.WAIT, RideOpcodeStatus.Implemented, "STP-PPC 0xb0658: milliseconds divided by the script speed (0.5 + SPEED/100), truncated; flags survive it (`WAIT 300; BRANCH_NZ`)" )]
+		public static void Wait( RideVM vm, Operand time ) => vm.WaitFor( RideAnimationTiming.TriggerDelay( time.Value, vm.ScriptSpeed ) );
 
-		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "docs (time the ride has been alive); milliseconds since the VM started" )]
-		public static void GetTime( RideVM vm, Operand dest ) => dest.Value = (int)System.Math.Floor( vm.TimeMilliseconds );
+		// [BIN:TPW-EXE:0x00553828 WAITABS] with the deadline word (+0xA0) at 0 the handler stores clock (0x402D70 → 0x4031E0) + the operand (a variable's value, or the literal sign-extended from 16 bits) as a 32-bit word, with no script-speed division (0x5538A4–0x5538CB), rewinds the program counter by 2 and yields; with a deadline set it waits while now is unsigned-below it (jb at 0x55386D), else clears the word to 0 and continues. A deadline that wraps to exactly 0 reads as not armed and arms again
+		// [BIN:STP-PPC:0xb0710 WAITABS] the Mac handler stores now + operand in the same word and compares unsigned
+		[OpcodeHandler( Opcode.WAITABS, RideOpcodeStatus.Implemented, "tp.exe 0x553828 and STP-PPC 0xb0710: despite the name the first encounter stores the 32-bit clock + operand (no WAIT speed division) in the shared deadline word and yields; later encounters wait while the clock is unsigned-below it; a wrapped deadline is already past and a deadline of exactly 0 arms again (Theme Park Inc corpus: 34 uses, literals 1..10000)" )]
+		public static void WaitAbsolute( RideVM vm, Operand time )
+		{
+			var wait = unchecked((uint)time.Value);
+			var now = vm.ClockMilliseconds32;
+			var deadline = unchecked(now + wait);
+			if ( deadline == 0 )
+			{
+				// The word reads as "not armed": the next execution stores again.
+				vm.RepeatInstruction();
+				vm.EndSlice();
+				return;
+			}
+			// The first encounter always yields; a deadline that is not ahead of the clock (a wrapped sum, or an operand of 0) is passed at the next servicing pass.
+			if ( deadline <= now )
+				vm.WaitUntil( vm.TimeMilliseconds );
+			else
+			{
+				// The original resumes once the integer clock word reaches the deadline, so the wake is when the scheduler clock reaches it (not the arming time's fraction plus the wait).
+				// [BIN:TPW-EXE:0x553828] the test is unsigned (now <u deadline), so the remaining wait is the unsigned 32-bit difference even when the deadline is past the 2^32 ms wrap of the clock word; the clock's fraction is already spent inside the current millisecond.
+				var clock = vm.SchedulerMilliseconds;
+				vm.WaitUntil( vm.TimeMilliseconds + (double)(uint)(deadline - now) - (clock - System.Math.Floor( clock )) );
+			}
+		}
+
+		[OpcodeHandler( Opcode.GETTIME, RideOpcodeStatus.Implemented, "STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted)" )]
+		public static void GetTime( RideVM vm, Operand dest ) => dest.Value = unchecked((int)vm.ClockMilliseconds32);
 
 		[OpcodeHandler( Opcode.SETTIMER, RideOpcodeStatus.Implemented, "corpus: `SETTIMER 10000 … GETTIMER x; BRANCH_Z start` replaces the GETTIME time-out idiom; countdown in ms" )]
 		public static void SetTimer( RideVM vm, Operand time ) => vm.SetTimer( time.Value );

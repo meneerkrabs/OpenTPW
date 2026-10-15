@@ -136,6 +136,9 @@ public class StringTableTests
 		var data = File.ReadAllBytes( Path.Combine( directory, "UITEXT.str" ) );
 		var strings = new StringFile( new MemoryStream( data ), table );
 		AssertLengthsMatchLayout( data, strings.Entries );
+		// The 474-entry edition (Patch 2, the European CD) has one more message before these.
+		if ( strings.Entries.Length == GameLanguage.UiTextEntries + 1 )
+			strings.RemoveEntryAt( GameLanguage.UiTextEditionExtraEntry );
 		CollectionAssert.AreEqual( new[] { 399, 416 }, Enumerable.Range( 0, strings.Entries.Length ).Where( i => strings[i].Length > 255 ).ToArray() );
 		Assert.AreEqual( (262, 615), (strings[399].Length, strings[416].Length) );
 		StringAssert.EndsWith( strings[399], "your original setting will be restored." );

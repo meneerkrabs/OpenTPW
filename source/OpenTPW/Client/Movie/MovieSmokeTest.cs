@@ -1,6 +1,4 @@
 using System.Runtime.InteropServices;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
 using Veldrid;
 
 namespace OpenTPW;
@@ -55,7 +53,7 @@ internal sealed class MovieSmokeTest
 		var height = (int)source.Height;
 		var pixels = ReadBack( source );
 		var presenter = screen.Presenter;
-		var (left, top, fitWidth, fitHeight) = MoviePresenter.Fit( presenter.Width, presenter.Height, width, height );
+		var (left, top, fitWidth, fitHeight) = MoviePresenter.Fit( presenter.Width, presenter.Height, width, height, presenter.DisplayAspect );
 		Require( fitWidth > 0 && fitHeight > 0, "movie rectangle fits the framebuffer" );
 
 		// Mean colour inside the movie rectangle (BGRA readback) against the CPU RGBA frame; resampling keeps means.
@@ -88,10 +86,9 @@ internal sealed class MovieSmokeTest
 				Require( pixels[offset] == 0 && pixels[offset + 1] == 0 && pixels[offset + 2] == 0, $"{label} frame bars are black at {column},{row}" );
 			}
 
-		using var image = Image.LoadPixelData<Bgra32>( pixels, width, height );
 		var artifactDirectory = Path.GetFullPath( "artifacts" );
 		Directory.CreateDirectory( artifactDirectory );
-		image.SaveAsPng( Path.Combine( artifactDirectory, $"native-movie-{name}-{label}.png" ) );
+		PngWriter.SaveBgra( Path.Combine( artifactDirectory, $"native-movie-{name}-{label}.png" ), pixels, width, height );
 		return pixels;
 	}
 

@@ -13,6 +13,8 @@ public partial class Renderer : IDisplaySettings
 {
 	private long _lastFrame;
 	public CommandList CommandList = null!;
+	/// <summary>Uniform updates join this command list only between its Begin and End.</summary>
+	internal bool IsFrameRecording { get; private set; }
 
 	public Window Window;
 	public ImGuiRenderer imGuiRenderer;
@@ -66,6 +68,22 @@ public partial class Renderer : IDisplaySettings
 	private Framebuffer? outputCaptureFramebuffer;
 	private uint maximumTextureSize;
 
+	/// <summary>False with <c>--no-vsync</c>: frames are presented as fast as they are made (for measurements).</summary>
+	internal static bool SyncToVerticalBlank = true;
+	/// <summary>Set by <c>--frame-stats</c>.</summary>
+	internal FrameStats? FrameStats;
+
+	/// <summary>
+	/// Frames the CPU may record while the GPU still reads earlier ones. Data the CPU writes straight into GPU
+	/// memory during a frame (interface vertices) keeps one copy per slot; <see cref="FrameNumber"/> moves to the
+	/// next slot only once the GPU has finished the frame that used it last.
+	/// </summary>
+	public const int FramesInFlight = 3;
+	/// <summary>The frame being recorded; it counts up after each submission.</summary>
+	public long FrameNumber { get; private set; }
+	public static int SlotOf( long frameNumber ) => (int)(frameNumber % FramesInFlight);
+	private Fence[] frameFences = null!;
+
 	private Pipeline _blitPipeline = null!;
 	private ResourceSet? _blitResourceSet;
 	private ResourceLayout _blitResourceLayout = null!;
@@ -101,6 +119,8 @@ public partial class Renderer : IDisplaySettings
 		new Editor( imGuiRenderer, Device );
 
 		CommandList = Device.ResourceFactory.CreateCommandList();
+		// Slots not used yet start signaled; the first frame's own fence is reset like every later one.
+		frameFences = Enumerable.Range( 0, FramesInFlight ).Select( slot => Device.ResourceFactory.CreateFence( signaled: slot != 0 ) ).ToArray();
 		_lastFrame = Stopwatch.GetTimestamp();
 	}
 
@@ -329,7 +349,7 @@ public partial class Renderer : IDisplaySettings
 		var pixels = Window.PixelSize;
 		Metrics = new DisplayMetrics( logical, pixels );
 		Screen.UpdateFrom( logical, pixels );
-		Screen.UiScale = UiScaling.Resolve( DisplaySettings.UiScale, pixels );
+		Screen.UiScale = UiScaling.Resolve( DisplaySettings.UiScale, pixels, Metrics.IntegerPixelDensity );
 		var scaling = RenderScaling.Compute( pixels, DisplaySettings.Upscale, DisplaySettings.RenderScale, maximumTextureSize, worldScalingAllowed );
 		if ( scaling.IsPaused )
 		{
@@ -373,7 +393,21 @@ public partial class Renderer : IDisplaySettings
 		Changed?.Invoke();
 	}
 
+	/// <summary>Runs frames until the window closes, then saves changed display settings.</summary>
 	public void Run()
+	{
+		Start();
+		while ( Frame() )
+		{
+		}
+		Stop();
+	}
+
+	/// <summary>
+	/// Creates the per-run pipeline state. <see cref="Run"/> calls it; a host that drives frames
+	/// itself (the browser, from requestAnimationFrame: docs/WEB.md) calls it once before <see cref="Frame"/>.
+	/// </summary>
+	public void Start()
 	{
 		var layoutDescription = new ResourceLayoutDescription(
 			new ResourceLayoutElementDescription( "g_tInput", ResourceKind.TextureReadOnly, ShaderStages.Fragment ),
@@ -400,14 +434,34 @@ public partial class Renderer : IDisplaySettings
 
 		_blitPipeline = Device.ResourceFactory.CreateGraphicsPipeline( pipelineDescription );
 		displayDirty = true;
-
-		while ( Window.SdlWindow.Exists )
-		{
-			Update();
-		}
-
-		SaveDisplaySettings();
 	}
+
+	private readonly FrameLimiter frameLimiter = new();
+
+	/// <summary>Frames updated and drawn since start; frames the cap skipped do not count.</summary>
+	public long FramesDrawn { get; private set; }
+
+	/// <summary>
+	/// Updates and draws one frame; false once the window has closed. Under a frame cap (<see cref="DisplaySettings.FrameCap"/>) a frame that
+	/// comes too early is skipped in the browser, which calls again at its next animation frame, and waited for on the desktop.
+	/// </summary>
+	public bool Frame()
+	{
+		if ( !Window.SdlWindow.Exists )
+			return false;
+		var cap = DisplaySettings.FrameCap;
+		// The browser paces frames itself and cannot block its only thread.
+		if ( !OperatingSystem.IsBrowser() && frameLimiter.WaitSeconds( clock.Elapsed.TotalSeconds, cap ) is > 0 and var wait )
+			Thread.Sleep( TimeSpan.FromSeconds( wait ) );
+		if ( !frameLimiter.Due( clock.Elapsed.TotalSeconds, cap ) )
+			return true;
+		if ( Update() )
+			FramesDrawn++;
+		return Window.SdlWindow.Exists;
+	}
+
+	/// <summary>Ends a run started with <see cref="Start"/>.</summary>
+	public void Stop() => SaveDisplaySettings();
 
 	/// <summary>Saves the confirmed settings (a pending, unconfirmed change saves what it would revert to).</summary>
 	private void SaveDisplaySettings()
@@ -435,6 +489,7 @@ public partial class Renderer : IDisplaySettings
 		}
 
 		CommandList.Begin();
+		IsFrameRecording = true;
 	}
 
 	private void PostRender()
@@ -464,9 +519,22 @@ public partial class Renderer : IDisplaySettings
 		Editor.Instance?.Render( CommandList );
 
 		CommandList.End();
+		IsFrameRecording = false;
 
-		Device.SubmitCommands( CommandList );
+		var fence = frameFences[SlotOf( FrameNumber )];
+		Device.SubmitCommands( CommandList, fence );
 		Device.SwapBuffers();
+		FrameStats?.FrameEnded();
+		AdvanceFrame();
+	}
+
+	/// <summary>Moves to the next frame slot, waiting until the GPU no longer reads the frame that used it before.</summary>
+	private void AdvanceFrame()
+	{
+		FrameNumber++;
+		var fence = frameFences[SlotOf( FrameNumber )];
+		Device.WaitForFence( fence );
+		Device.ResetFence( fence );
 	}
 
 	private void Compose( Framebuffer target )
@@ -484,7 +552,8 @@ public partial class Renderer : IDisplaySettings
 		CommandList.PopDebugGroup();
 	}
 
-	private void Update()
+	/// <summary>One update and draw; false when the window closed or drawing is paused, so nothing was drawn.</summary>
+	private bool Update()
 	{
 		var currentFrame = Stopwatch.GetTimestamp();
 		float deltaTime = (float)Stopwatch.GetElapsedTime( _lastFrame, currentFrame ).TotalSeconds;
@@ -492,7 +561,7 @@ public partial class Renderer : IDisplaySettings
 
 		InputSnapshot inputSnapshot = Window.SdlWindow.PumpEvents();
 		if ( !Window.SdlWindow.Exists )
-			return;
+			return false;
 
 		Time.Update( deltaTime );
 		Input.UpdateFrom( inputSnapshot );
@@ -506,8 +575,10 @@ public partial class Renderer : IDisplaySettings
 			ApplyDisplayChanges();
 		if ( Scaling.IsPaused || _blitResourceSet == null )
 		{
-			Thread.Sleep( 16 );
-			return;
+			// The browser paces frames itself and cannot block its only thread.
+			if ( !OperatingSystem.IsBrowser() )
+				Thread.Sleep( 16 );
+			return false;
 		}
 
 		if ( Input.Pressed( InputButton.EditorToggle ) )
@@ -517,15 +588,22 @@ public partial class Renderer : IDisplaySettings
 		else
 			imGuiRenderer.Update( Math.Clamp( deltaTime, 0.001f, 0.1f ), inputSnapshot );
 
-		PreRender();
-		PreUpdate?.Invoke();
-
-		OnUpdate?.Invoke();
-
-		PostRender();
+		try
+		{
+			PreRender();
+			PreUpdate?.Invoke();
+			OnUpdate?.Invoke();
+			PostRender();
+		}
+		finally
+		{
+			// A failing update/draw must not send subsequent uploads to an abandoned frame.
+			IsFrameRecording = false;
+		}
 		PostUpdate?.Invoke();
 
 		ProcessDeletionQueue();
+		return true;
 	}
 
 	private static bool IsFullscreenTogglePressed( InputSnapshot snapshot )
@@ -542,25 +620,47 @@ public partial class Renderer : IDisplaySettings
 
 	private void CreateGraphicsDevice()
 	{
+		Device = CreateDevice( Window );
+		Log.Trace( $"Graphics backend: {Device.BackendType}; process: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}" );
+	}
+
+	/// <summary>Metal on macOS, Direct3D 11 on Windows, Vulkan elsewhere, with readable errors when the platform cannot start one.</summary>
+	internal static GraphicsDevice CreateDevice( Window window )
+	{
 		var options = new GraphicsDeviceOptions()
 		{
 			PreferStandardClipSpaceYDirection = true,
 			PreferDepthRangeZeroToOne = true,
 			SwapchainDepthFormat = null,
 			SwapchainSrgbFormat = false,
-			SyncToVerticalBlank = true,
+			SyncToVerticalBlank = SyncToVerticalBlank,
 			HasMainSwapchain = true
 		};
 
-		var swapchainSource = Veldrid.StartupUtilities.VeldridStartup.GetSwapchainSource( Window.SdlWindow );
-		var pixels = Window.PixelSize;
+		SwapchainSource swapchainSource;
+		try
+		{
+			swapchainSource = Veldrid.StartupUtilities.VeldridStartup.GetSwapchainSource( window.SdlWindow );
+		}
+		catch ( PlatformNotSupportedException exception ) when ( OperatingSystem.IsLinux() )
+		{
+			throw new PlatformNotSupportedException( "SDL opened no X11 or Wayland window (is DISPLAY or WAYLAND_DISPLAY set?). Headless runs need a virtual display such as xvfb-run.", exception );
+		}
+		var pixels = window.PixelSize;
 		var description = new SwapchainDescription( swapchainSource, (uint)Math.Max( 1, pixels.X ), (uint)Math.Max( 1, pixels.Y ), options.SwapchainDepthFormat, options.SyncToVerticalBlank, options.SwapchainSrgbFormat );
-		Device = OperatingSystem.IsMacOS()
-			? GraphicsDevice.CreateMetal( options, description )
-			: OperatingSystem.IsWindows()
-				? GraphicsDevice.CreateD3D11( options, description )
-				: GraphicsDevice.CreateVulkan( options, description );
-		Log.Trace( $"Graphics backend: {Device.BackendType}; process: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}" );
+		try
+		{
+			return OperatingSystem.IsMacOS()
+				? GraphicsDevice.CreateMetal( options, description )
+				: OperatingSystem.IsWindows()
+					? GraphicsDevice.CreateD3D11( options, description )
+					: GraphicsDevice.CreateVulkan( options, description );
+		}
+		catch ( Exception exception ) when ( OperatingSystem.IsLinux() && exception is TypeInitializationException { TypeName: "Vulkan.VulkanNative" } or VeldridException )
+		{
+			// No loader (libvulkan.so.1) or no installed driver/ICD (no VK_KHR_surface).
+			throw new PlatformNotSupportedException( $"Vulkan could not be started ({exception.Message}). Install the Vulkan loader and a driver, e.g. libvulkan1 and mesa-vulkan-drivers.", exception );
+		}
 	}
 
 	/// <summary>Window resize/fullscreen/DPI events: remembered and applied at the next frame boundary.</summary>
@@ -589,4 +689,17 @@ public partial class Renderer : IDisplaySettings
 
 		ScheduleDelete( commandList.Dispose );
 	}
+
+	/// <summary>Records per-draw uniforms in order, retaining immediate upload outside a frame.</summary>
+	internal void UpdateUniform<T>( DeviceBuffer buffer, T value ) where T : unmanaged
+	{
+		if ( IsFrameRecording )
+			CommandList.UpdateBuffer( buffer, 0, ref value );
+		else
+			SubmitUniform( buffer, value );
+	}
+
+	// Keep the rare immediate-upload closure out of the per-draw allocation path.
+	private void SubmitUniform<T>( DeviceBuffer buffer, T value ) where T : unmanaged =>
+		ImmediateSubmit( commands => commands.UpdateBuffer( buffer, 0, value ) );
 }

@@ -1,0 +1,3437 @@
+{
+  "baselines": [
+    {
+      "fileCount": 801,
+      "label": "TPW-Windows-baseline",
+      "memberReaderOutcomes": [
+        {
+          "count": 20,
+          "family": "M3D2",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 9,
+          "family": "RSSEQ",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 5,
+          "family": "TP2M",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 4,
+          "family": "not-read",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 8,
+          "family": "unrecognized",
+          "status": "parsed-existing-reader"
+        }
+      ],
+      "physicalReaderOutcomes": [
+        {
+          "count": 12,
+          "family": "MAP",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 50,
+          "family": "MAP",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 3,
+          "family": "MD2",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 2,
+          "family": "MD2",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 12,
+          "family": "SAM",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 43,
+          "family": "SAM",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 12,
+          "family": "SDT",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 35,
+          "family": "SDT",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 12,
+          "family": "WAD",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 300,
+          "family": "WAD",
+          "status": "unverified-limit"
+        }
+      ],
+      "probeLimits": {
+        "compressedMemberBytes": 65536,
+        "maximumFiles": 50000,
+        "memberBytes": 16777216,
+        "memberProbesPerFamily": 24,
+        "physicalParseBytes": 134217728,
+        "physicalProbesPerFamily": 12
+      },
+      "signatureCounts": {
+        "BFMU": 1,
+        "BFST": 21,
+        "DWFB": 312,
+        "M3D2": 5,
+        "unrecognized": 462
+      }
+    },
+    {
+      "fileCount": 824,
+      "label": "TPW-Windows-official-Patch2",
+      "memberReaderOutcomes": [
+        {
+          "count": 20,
+          "family": "M3D2",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 9,
+          "family": "RSSEQ",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 5,
+          "family": "TP2M",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 4,
+          "family": "not-read",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 8,
+          "family": "unrecognized",
+          "status": "parsed-existing-reader"
+        }
+      ],
+      "physicalReaderOutcomes": [
+        {
+          "count": 12,
+          "family": "MAP",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 50,
+          "family": "MAP",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 3,
+          "family": "MD2",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 2,
+          "family": "MD2",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 11,
+          "family": "PE",
+          "status": "parsed-standard-header"
+        },
+        {
+          "count": 1,
+          "family": "PE",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 12,
+          "family": "SAM",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 44,
+          "family": "SAM",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 12,
+          "family": "SDT",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 35,
+          "family": "SDT",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 12,
+          "family": "WAD",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 300,
+          "family": "WAD",
+          "status": "unverified-limit"
+        }
+      ],
+      "probeLimits": {
+        "compressedMemberBytes": 65536,
+        "maximumFiles": 50000,
+        "memberBytes": 16777216,
+        "memberProbesPerFamily": 24,
+        "physicalParseBytes": 134217728,
+        "physicalProbesPerFamily": 12
+      },
+      "signatureCounts": {
+        "BFMU": 1,
+        "BFST": 21,
+        "DWFB": 312,
+        "M3D2": 5,
+        "MZ-candidate": 12,
+        "unrecognized": 473
+      }
+    },
+    {
+      "fileCount": 1566,
+      "label": "TPI-retail-InstallShield-payload",
+      "memberReaderOutcomes": [
+        {
+          "count": 15,
+          "family": "M3D2",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 8,
+          "family": "RSSEQ",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 24,
+          "family": "SHPI",
+          "status": "unverified"
+        },
+        {
+          "count": 4,
+          "family": "TP2M",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 9,
+          "family": "not-read",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 8,
+          "family": "unrecognized",
+          "status": "parsed-existing-reader"
+        }
+      ],
+      "physicalReaderOutcomes": [
+        {
+          "count": 12,
+          "family": "FSH-unverified",
+          "status": "unverified"
+        },
+        {
+          "count": 150,
+          "family": "FSH-unverified",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 12,
+          "family": "MAP",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 26,
+          "family": "MAP",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 10,
+          "family": "MD2",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 2,
+          "family": "MD2",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 6,
+          "family": "MD2",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 12,
+          "family": "PE",
+          "status": "parsed-standard-header"
+        },
+        {
+          "count": 17,
+          "family": "PE",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 1,
+          "family": "RSE",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 12,
+          "family": "SAM",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 65,
+          "family": "SAM",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 12,
+          "family": "SDT",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 16,
+          "family": "SDT",
+          "status": "unverified-limit"
+        },
+        {
+          "count": 12,
+          "family": "WAD",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 291,
+          "family": "WAD",
+          "status": "unverified-limit"
+        }
+      ],
+      "probeLimits": {
+        "compressedMemberBytes": 65536,
+        "maximumFiles": 50000,
+        "memberBytes": 16777216,
+        "memberProbesPerFamily": 24,
+        "physicalParseBytes": 134217728,
+        "physicalProbesPerFamily": 12
+      },
+      "signatureCounts": {
+        "BFMU": 5,
+        "BFST": 185,
+        "DWFB": 303,
+        "M3D2": 18,
+        "MZ-candidate": 29,
+        "RSSEQ": 1,
+        "SHPI": 162,
+        "unrecognized": 863
+      }
+    },
+    {
+      "fileCount": 80,
+      "label": "TPI-retail-CD-coasters",
+      "memberReaderOutcomes": [],
+      "physicalReaderOutcomes": [
+        {
+          "count": 12,
+          "family": "COS",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 68,
+          "family": "COS",
+          "status": "unverified-limit"
+        }
+      ],
+      "probeLimits": {
+        "compressedMemberBytes": 65536,
+        "maximumFiles": 50000,
+        "memberBytes": 16777216,
+        "memberProbesPerFamily": 24,
+        "physicalParseBytes": 134217728,
+        "physicalProbesPerFamily": 12
+      },
+      "signatureCounts": {
+        "unrecognized": 80
+      }
+    }
+  ],
+  "cosProofs": [
+    {
+      "bytes": 14184,
+      "path": "Dutch/Ali Baba Waterbaan.cos",
+      "probeFamily": "COS",
+      "readerResult": {
+        "errorType": "InvalidDataException",
+        "modelHeaderVersion": null,
+        "reader": "COS",
+        "reason": "Unsupported save container magic 0x00000002.",
+        "status": "reader-rejected"
+      },
+      "sha256": "999b8299565a22b101509784a6103ca38015a9f2a9c7527c560021155564c4aa",
+      "signature": "unrecognized"
+    },
+    {
+      "bytes": 13500,
+      "path": "Dutch/Bergtopper.cos",
+      "probeFamily": "COS",
+      "readerResult": {
+        "errorType": "InvalidDataException",
+        "modelHeaderVersion": null,
+        "reader": "COS",
+        "reason": "Unsupported save container magic 0x00000002.",
+        "status": "reader-rejected"
+      },
+      "sha256": "0d1e2d33cc030fe9d53f57f81ca38c9c430fdd2c226d46721ab0ff01a66d001e",
+      "signature": "unrecognized"
+    },
+    {
+      "bytes": 13880,
+      "path": "Dutch/De Koning.cos",
+      "probeFamily": "COS",
+      "readerResult": {
+        "errorType": "InvalidDataException",
+        "modelHeaderVersion": null,
+        "reader": "COS",
+        "reason": "Unsupported save container magic 0x00000002.",
+        "status": "reader-rejected"
+      },
+      "sha256": "7790d60fa50e18989cc73a2b65e157912e242bac0ee18274ff322190e35fd11e",
+      "signature": "unrecognized"
+    }
+  ],
+  "executableMetadata": [
+    {
+      "filename": "Game.exe",
+      "metadata": {
+        "bytes": 7502887,
+        "coff_timestamp_raw": 979155198,
+        "entry_rva": 9261565,
+        "image_version": [
+          0,
+          0
+        ],
+        "imports": [
+          {
+            "entries": [
+              {
+                "name": "GetModuleHandleA"
+              },
+              {
+                "name": "GetProcAddress"
+              },
+              {
+                "name": "GlobalAlloc"
+              },
+              {
+                "name": "GlobalFree"
+              },
+              {
+                "name": "ExitProcess"
+              }
+            ],
+            "library": "KERNEL32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "MessageBoxA"
+              }
+            ],
+            "library": "USER32.dll"
+          }
+        ],
+        "imports_error": null,
+        "imports_status": "readable-standard-imports",
+        "limitation": "Headers/imports/type-name text do not establish engine version, executable equivalence, runtime behavior, or protection removal.",
+        "linker_version": [
+          6,
+          0
+        ],
+        "machine": 332,
+        "msvc_type_name_candidates": [],
+        "optional_magic": 267,
+        "plain_c_prefixed_name_candidates": [],
+        "plain_name_candidate_count": 0,
+        "readable_markers": {
+          "COS-text": [
+            2185714,
+            2233793,
+            5535288
+          ],
+          "RSSEQ-text": [],
+          "SafeDisc-text": [],
+          "SecuROM-text": [],
+          "TP2M-text": []
+        },
+        "sections": [
+          {
+            "name": ".text",
+            "raw_offset": 4096,
+            "raw_size": 5361664,
+            "rva": 4096,
+            "virtual_size": 5357866
+          },
+          {
+            "name": "CSEG",
+            "raw_offset": 5365760,
+            "raw_size": 114688,
+            "rva": 5365760,
+            "virtual_size": 113776
+          },
+          {
+            "name": ".rdata",
+            "raw_offset": 5480448,
+            "raw_size": 221184,
+            "rva": 5480448,
+            "virtual_size": 217251
+          },
+          {
+            "name": ".data",
+            "raw_offset": 5701632,
+            "raw_size": 598016,
+            "rva": 5701632,
+            "virtual_size": 3109792
+          },
+          {
+            "name": ".idata",
+            "raw_offset": 6299648,
+            "raw_size": 16384,
+            "rva": 8814592,
+            "virtual_size": 15637
+          },
+          {
+            "name": "DSEG",
+            "raw_offset": 6316032,
+            "raw_size": 8192,
+            "rva": 8830976,
+            "virtual_size": 5176
+          },
+          {
+            "name": "UVA_DATA",
+            "raw_offset": 6324224,
+            "raw_size": 24576,
+            "rva": 8839168,
+            "virtual_size": 23233
+          },
+          {
+            "name": "IDCT_DAT",
+            "raw_offset": 6348800,
+            "raw_size": 8192,
+            "rva": 8863744,
+            "virtual_size": 7120
+          },
+          {
+            "name": "TQIA_DAT",
+            "raw_offset": 6356992,
+            "raw_size": 4096,
+            "rva": 8871936,
+            "virtual_size": 2060
+          },
+          {
+            "name": "GRPOLY_D",
+            "raw_offset": 6361088,
+            "raw_size": 4096,
+            "rva": 8876032,
+            "virtual_size": 2464
+          },
+          {
+            "name": "LBMPEG_D",
+            "raw_offset": 6365184,
+            "raw_size": 4096,
+            "rva": 8880128,
+            "virtual_size": 1484
+          },
+          {
+            "name": ".rsrc",
+            "raw_offset": 6369280,
+            "raw_size": 16384,
+            "rva": 8884224,
+            "virtual_size": 12636
+          },
+          {
+            "name": ".reloc",
+            "raw_offset": 6385664,
+            "raw_size": 356352,
+            "rva": 8900608,
+            "virtual_size": 353435
+          },
+          {
+            "name": "stxt774",
+            "raw_offset": 6746112,
+            "raw_size": 4096,
+            "rva": 9256960,
+            "virtual_size": 2241
+          },
+          {
+            "name": "stxt371",
+            "raw_offset": 6750208,
+            "raw_size": 14336,
+            "rva": 9261056,
+            "virtual_size": 14180
+          }
+        ],
+        "sha256": "17adfde860f34375ee4986ea2b7100fefaddf8bb4f1f9bb4058fbfa8392fe29d",
+        "source_filename_candidate_count": 0,
+        "source_filename_candidates": [],
+        "type_name_candidate_count": 0
+      }
+    },
+    {
+      "filename": "IOSYS002.dll",
+      "reason": "metadata span lies outside the file",
+      "status": "unverified"
+    },
+    {
+      "filename": "drvmgt.dll",
+      "metadata": {
+        "bytes": 34304,
+        "coff_timestamp_raw": 968214001,
+        "entry_rva": 8896,
+        "image_version": [
+          0,
+          0
+        ],
+        "imports": [
+          {
+            "entries": [
+              {
+                "name": "DeleteFileA"
+              },
+              {
+                "name": "Sleep"
+              },
+              {
+                "name": "CopyFileA"
+              },
+              {
+                "name": "GetSystemDirectoryA"
+              },
+              {
+                "name": "lstrlenA"
+              },
+              {
+                "name": "CreateFileA"
+              },
+              {
+                "name": "GetLastError"
+              },
+              {
+                "name": "DeviceIoControl"
+              },
+              {
+                "name": "InitializeCriticalSection"
+              },
+              {
+                "name": "TlsFree"
+              },
+              {
+                "name": "TlsAlloc"
+              },
+              {
+                "name": "HeapAlloc"
+              },
+              {
+                "name": "SetFileAttributesA"
+              },
+              {
+                "name": "GetFileAttributesA"
+              },
+              {
+                "name": "GetCommandLineA"
+              },
+              {
+                "name": "GetVersion"
+              },
+              {
+                "name": "HeapDestroy"
+              },
+              {
+                "name": "HeapCreate"
+              },
+              {
+                "name": "VirtualFree"
+              },
+              {
+                "name": "CloseHandle"
+              },
+              {
+                "name": "DeleteCriticalSection"
+              },
+              {
+                "name": "EnterCriticalSection"
+              },
+              {
+                "name": "LeaveCriticalSection"
+              },
+              {
+                "name": "ExitProcess"
+              },
+              {
+                "name": "HeapFree"
+              },
+              {
+                "name": "VirtualAlloc"
+              },
+              {
+                "name": "GetCPInfo"
+              },
+              {
+                "name": "GetACP"
+              },
+              {
+                "name": "GetOEMCP"
+              },
+              {
+                "name": "TerminateProcess"
+              },
+              {
+                "name": "GetCurrentProcess"
+              },
+              {
+                "name": "GetCurrentThreadId"
+              },
+              {
+                "name": "TlsSetValue"
+              },
+              {
+                "name": "SetStdHandle"
+              },
+              {
+                "name": "SetFilePointer"
+              },
+              {
+                "name": "SetLastError"
+              },
+              {
+                "name": "TlsGetValue"
+              },
+              {
+                "name": "SetHandleCount"
+              },
+              {
+                "name": "GetStdHandle"
+              },
+              {
+                "name": "GetFileType"
+              },
+              {
+                "name": "GetStartupInfoA"
+              },
+              {
+                "name": "GetModuleFileNameA"
+              },
+              {
+                "name": "FreeEnvironmentStringsA"
+              },
+              {
+                "name": "MultiByteToWideChar"
+              },
+              {
+                "name": "FreeEnvironmentStringsW"
+              },
+              {
+                "name": "GetEnvironmentStrings"
+              },
+              {
+                "name": "GetEnvironmentStringsW"
+              },
+              {
+                "name": "WideCharToMultiByte"
+              },
+              {
+                "name": "WriteFile"
+              },
+              {
+                "name": "LCMapStringA"
+              },
+              {
+                "name": "LCMapStringW"
+              },
+              {
+                "name": "GetStringTypeA"
+              },
+              {
+                "name": "GetStringTypeW"
+              },
+              {
+                "name": "GetProcAddress"
+              },
+              {
+                "name": "LoadLibraryA"
+              },
+              {
+                "name": "FlushFileBuffers"
+              }
+            ],
+            "library": "KERNEL32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "wsprintfA"
+              }
+            ],
+            "library": "USER32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "RegOpenKeyExA"
+              },
+              {
+                "name": "OpenServiceA"
+              },
+              {
+                "name": "RegEnumKeyExA"
+              },
+              {
+                "name": "StartServiceA"
+              },
+              {
+                "name": "OpenSCManagerA"
+              },
+              {
+                "name": "QueryServiceStatus"
+              },
+              {
+                "name": "DeleteService"
+              },
+              {
+                "name": "CloseServiceHandle"
+              },
+              {
+                "name": "CreateServiceA"
+              },
+              {
+                "name": "GetSecurityDescriptorDacl"
+              },
+              {
+                "name": "ControlService"
+              },
+              {
+                "name": "RegCloseKey"
+              },
+              {
+                "name": "RegCreateKeyExA"
+              },
+              {
+                "name": "RegDeleteKeyA"
+              },
+              {
+                "name": "GetAclInformation"
+              },
+              {
+                "name": "QueryServiceObjectSecurity"
+              },
+              {
+                "name": "SetServiceObjectSecurity"
+              },
+              {
+                "name": "SetSecurityDescriptorDacl"
+              },
+              {
+                "name": "InitializeSecurityDescriptor"
+              },
+              {
+                "name": "GetAce"
+              }
+            ],
+            "library": "ADVAPI32.dll"
+          }
+        ],
+        "imports_error": null,
+        "imports_status": "readable-standard-imports",
+        "limitation": "Headers/imports/type-name text do not establish engine version, executable equivalence, runtime behavior, or protection removal.",
+        "linker_version": [
+          5,
+          10
+        ],
+        "machine": 332,
+        "msvc_type_name_candidates": [],
+        "optional_magic": 267,
+        "plain_c_prefixed_name_candidates": [],
+        "plain_name_candidate_count": 0,
+        "readable_markers": {
+          "COS-text": [],
+          "RSSEQ-text": [],
+          "SafeDisc-text": [],
+          "SecuROM-text": [],
+          "TP2M-text": []
+        },
+        "sections": [
+          {
+            "name": ".text",
+            "raw_offset": 1024,
+            "raw_size": 17920,
+            "rva": 4096,
+            "virtual_size": 17696
+          },
+          {
+            "name": ".rdata",
+            "raw_offset": 18944,
+            "raw_size": 3072,
+            "rva": 24576,
+            "virtual_size": 3066
+          },
+          {
+            "name": ".data",
+            "raw_offset": 22016,
+            "raw_size": 10240,
+            "rva": 28672,
+            "virtual_size": 15712
+          },
+          {
+            "name": ".reloc",
+            "raw_offset": 32256,
+            "raw_size": 2048,
+            "rva": 45056,
+            "virtual_size": 1614
+          }
+        ],
+        "sha256": "b2ab0d236b379ce73e0ee68974444990dc0bc9fd5854e5a6a12411c7bb622ed1",
+        "source_filename_candidate_count": 0,
+        "source_filename_candidates": [],
+        "type_name_candidate_count": 0
+      }
+    },
+    {
+      "filename": "secdrv.sys",
+      "metadata": {
+        "bytes": 18768,
+        "coff_timestamp_raw": 965612618,
+        "entry_rva": 16102,
+        "image_version": [
+          4,
+          0
+        ],
+        "imports": [
+          {
+            "entries": [
+              {
+                "name": "RtlEqualUnicodeString"
+              },
+              {
+                "name": "IofCompleteRequest"
+              },
+              {
+                "name": "IoDeleteDevice"
+              },
+              {
+                "name": "IoDeleteSymbolicLink"
+              },
+              {
+                "name": "RtlInitUnicodeString"
+              },
+              {
+                "name": "IoCreateSymbolicLink"
+              },
+              {
+                "name": "IoCreateDevice"
+              },
+              {
+                "name": "PsGetVersion"
+              },
+              {
+                "name": "NtBuildNumber"
+              },
+              {
+                "name": "RtlQueryRegistryValues"
+              },
+              {
+                "name": "KeTickCount"
+              },
+              {
+                "name": "MmIsAddressValid"
+              },
+              {
+                "name": "RtlUnwind"
+              }
+            ],
+            "library": "ntoskrnl.exe"
+          }
+        ],
+        "imports_error": null,
+        "imports_status": "readable-standard-imports",
+        "limitation": "Headers/imports/type-name text do not establish engine version, executable equivalence, runtime behavior, or protection removal.",
+        "linker_version": [
+          5,
+          10
+        ],
+        "machine": 332,
+        "msvc_type_name_candidates": [],
+        "optional_magic": 267,
+        "plain_c_prefixed_name_candidates": [],
+        "plain_name_candidate_count": 0,
+        "readable_markers": {
+          "COS-text": [],
+          "RSSEQ-text": [],
+          "SafeDisc-text": [],
+          "SecuROM-text": [],
+          "TP2M-text": []
+        },
+        "sections": [
+          {
+            "name": ".text",
+            "raw_offset": 608,
+            "raw_size": 15392,
+            "rva": 608,
+            "virtual_size": 15392
+          },
+          {
+            "name": ".data",
+            "raw_offset": 16000,
+            "raw_size": 32,
+            "rva": 16000,
+            "virtual_size": 16
+          },
+          {
+            "name": "INIT",
+            "raw_offset": 16032,
+            "raw_size": 1888,
+            "rva": 16032,
+            "virtual_size": 1864
+          },
+          {
+            "name": ".reloc",
+            "raw_offset": 17920,
+            "raw_size": 256,
+            "rva": 17920,
+            "virtual_size": 240
+          }
+        ],
+        "sha256": "0913892f5e61e92868449331be5a65dc88b1d56a0b9f837665edd18ad0bf8508",
+        "source_filename_candidate_count": 0,
+        "source_filename_candidates": [],
+        "type_name_candidate_count": 0
+      }
+    },
+    {
+      "filename": "TP.EXE",
+      "metadata": {
+        "bytes": 265734,
+        "coff_timestamp_raw": 944560167,
+        "entry_rva": 92256,
+        "image_version": [
+          0,
+          0
+        ],
+        "imports": [
+          {
+            "entries": [
+              {
+                "name": "FreeLibrary"
+              },
+              {
+                "name": "GetLastError"
+              },
+              {
+                "name": "CreateFileMappingA"
+              },
+              {
+                "name": "MapViewOfFile"
+              },
+              {
+                "name": "UnmapViewOfFile"
+              },
+              {
+                "name": "CloseHandle"
+              },
+              {
+                "name": "GetFileAttributesA"
+              },
+              {
+                "name": "GetLogicalDriveStringsA"
+              },
+              {
+                "name": "GetModuleFileNameA"
+              },
+              {
+                "name": "GetProfileIntA"
+              },
+              {
+                "name": "GetSystemDefaultLCID"
+              },
+              {
+                "name": "ReadFile"
+              },
+              {
+                "name": "SetFilePointer"
+              },
+              {
+                "name": "CreateFileA"
+              },
+              {
+                "name": "FlushFileBuffers"
+              },
+              {
+                "name": "GetVersionExA"
+              },
+              {
+                "name": "GetProfileStringA"
+              },
+              {
+                "name": "CopyFileA"
+              },
+              {
+                "name": "GetExitCodeProcess"
+              },
+              {
+                "name": "GetProcAddress"
+              },
+              {
+                "name": "GetDriveTypeA"
+              },
+              {
+                "name": "Sleep"
+              },
+              {
+                "name": "FileTimeToLocalFileTime"
+              },
+              {
+                "name": "GetFileTime"
+              },
+              {
+                "name": "FindClose"
+              },
+              {
+                "name": "FindNextFileA"
+              },
+              {
+                "name": "FindFirstFileA"
+              },
+              {
+                "name": "SetFileAttributesA"
+              },
+              {
+                "name": "SetThreadContext"
+              },
+              {
+                "name": "GetThreadContext"
+              },
+              {
+                "name": "ResumeThread"
+              },
+              {
+                "name": "GetCommandLineA"
+              },
+              {
+                "name": "DeviceIoControl"
+              },
+              {
+                "name": "SetEnvironmentVariableA"
+              },
+              {
+                "name": "GetEnvironmentVariableA"
+              },
+              {
+                "name": "LoadLibraryExA"
+              },
+              {
+                "name": "GetCurrentProcessId"
+              },
+              {
+                "name": "OpenFileMappingA"
+              },
+              {
+                "name": "WriteFile"
+              },
+              {
+                "name": "CreateEventA"
+              },
+              {
+                "name": "FileTimeToSystemTime"
+              },
+              {
+                "name": "LoadLibraryA"
+              },
+              {
+                "name": "VirtualFree"
+              },
+              {
+                "name": "InitializeCriticalSection"
+              },
+              {
+                "name": "DeleteCriticalSection"
+              },
+              {
+                "name": "HeapDestroy"
+              },
+              {
+                "name": "HeapCreate"
+              },
+              {
+                "name": "GetLocaleInfoA"
+              },
+              {
+                "name": "GetEnvironmentStringsW"
+              },
+              {
+                "name": "GetEnvironmentStrings"
+              },
+              {
+                "name": "FreeEnvironmentStringsW"
+              },
+              {
+                "name": "FreeEnvironmentStringsA"
+              },
+              {
+                "name": "WaitForSingleObject"
+              },
+              {
+                "name": "VirtualAlloc"
+              },
+              {
+                "name": "GetStdHandle"
+              },
+              {
+                "name": "SetHandleCount"
+              },
+              {
+                "name": "SetEndOfFile"
+              },
+              {
+                "name": "HeapReAlloc"
+              },
+              {
+                "name": "CompareStringW"
+              },
+              {
+                "name": "CompareStringA"
+              },
+              {
+                "name": "GetLocaleInfoW"
+              },
+              {
+                "name": "GetModuleHandleA"
+              },
+              {
+                "name": "GetCurrentProcess"
+              },
+              {
+                "name": "HeapFree"
+              },
+              {
+                "name": "HeapAlloc"
+              },
+              {
+                "name": "InterlockedDecrement"
+              },
+              {
+                "name": "InterlockedIncrement"
+              },
+              {
+                "name": "GetTimeZoneInformation"
+              },
+              {
+                "name": "GetSystemTime"
+              },
+              {
+                "name": "GetLocalTime"
+              },
+              {
+                "name": "ExitProcess"
+              },
+              {
+                "name": "TerminateProcess"
+              },
+              {
+                "name": "GetFileType"
+              },
+              {
+                "name": "GetStartupInfoA"
+              },
+              {
+                "name": "GetVersion"
+              },
+              {
+                "name": "RtlUnwind"
+              },
+              {
+                "name": "UnhandledExceptionFilter"
+              },
+              {
+                "name": "TlsSetValue"
+              },
+              {
+                "name": "TlsAlloc"
+              },
+              {
+                "name": "GetOEMCP"
+              },
+              {
+                "name": "EnterCriticalSection"
+              },
+              {
+                "name": "LeaveCriticalSection"
+              },
+              {
+                "name": "MultiByteToWideChar"
+              },
+              {
+                "name": "WideCharToMultiByte"
+              },
+              {
+                "name": "LCMapStringA"
+              },
+              {
+                "name": "LCMapStringW"
+              },
+              {
+                "name": "GetCurrentThreadId"
+              },
+              {
+                "name": "GetACP"
+              },
+              {
+                "name": "SetStdHandle"
+              },
+              {
+                "name": "SetLastError"
+              },
+              {
+                "name": "TlsGetValue"
+              },
+              {
+                "name": "GetStringTypeA"
+              },
+              {
+                "name": "GetStringTypeW"
+              },
+              {
+                "name": "GetCPInfo"
+              }
+            ],
+            "library": "KERNEL32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "MessageBoxA"
+              },
+              {
+                "name": "CreateWindowExA"
+              },
+              {
+                "name": "wvsprintfA"
+              },
+              {
+                "name": "WaitForInputIdle"
+              },
+              {
+                "name": "GetDesktopWindow"
+              },
+              {
+                "name": "wsprintfA"
+              },
+              {
+                "name": "MsgWaitForMultipleObjects"
+              },
+              {
+                "name": "PeekMessageA"
+              },
+              {
+                "name": "GetMessageA"
+              },
+              {
+                "name": "TranslateMessage"
+              },
+              {
+                "name": "DispatchMessageA"
+              },
+              {
+                "name": "DefWindowProcA"
+              },
+              {
+                "name": "RegisterClassA"
+              },
+              {
+                "name": "ShowWindow"
+              },
+              {
+                "name": "GetKeyboardType"
+              }
+            ],
+            "library": "USER32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "RegQueryValueExA"
+              },
+              {
+                "name": "RegOpenKeyExA"
+              },
+              {
+                "name": "RegCloseKey"
+              },
+              {
+                "name": "RegEnumKeyExA"
+              },
+              {
+                "name": "RegOpenKeyA"
+              }
+            ],
+            "library": "ADVAPI32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "GetFileVersionInfoA"
+              },
+              {
+                "name": "VerQueryValueA"
+              },
+              {
+                "name": "GetFileVersionInfoSizeA"
+              }
+            ],
+            "library": "VERSION.dll"
+          }
+        ],
+        "imports_error": null,
+        "imports_status": "readable-standard-imports",
+        "limitation": "Headers/imports/type-name text do not establish engine version, executable equivalence, runtime behavior, or protection removal.",
+        "linker_version": [
+          5,
+          0
+        ],
+        "machine": 332,
+        "msvc_type_name_candidates": [],
+        "optional_magic": 267,
+        "plain_c_prefixed_name_candidates": [
+          "CDROM",
+          "CLAPI"
+        ],
+        "plain_name_candidate_count": 2,
+        "readable_markers": {
+          "COS-text": [],
+          "RSSEQ-text": [],
+          "SafeDisc-text": [
+            158928,
+            163440
+          ],
+          "SecuROM-text": [],
+          "TP2M-text": []
+        },
+        "sections": [
+          {
+            "name": ".txt",
+            "raw_offset": 1024,
+            "raw_size": 43520,
+            "rva": 4096,
+            "virtual_size": 43520
+          },
+          {
+            "name": ".text",
+            "raw_offset": 44544,
+            "raw_size": 76288,
+            "rva": 49152,
+            "virtual_size": 76288
+          },
+          {
+            "name": ".txt2",
+            "raw_offset": 120832,
+            "raw_size": 33280,
+            "rva": 126976,
+            "virtual_size": 33280
+          },
+          {
+            "name": ".rdata",
+            "raw_offset": 154112,
+            "raw_size": 3072,
+            "rva": 163840,
+            "virtual_size": 2844
+          },
+          {
+            "name": ".data",
+            "raw_offset": 157184,
+            "raw_size": 20992,
+            "rva": 167936,
+            "virtual_size": 33728
+          },
+          {
+            "name": ".idata",
+            "raw_offset": 178176,
+            "raw_size": 3584,
+            "rva": 204800,
+            "virtual_size": 3246
+          },
+          {
+            "name": ".rsrc",
+            "raw_offset": 181760,
+            "raw_size": 59392,
+            "rva": 208896,
+            "virtual_size": 59012
+          },
+          {
+            "name": ".reloc",
+            "raw_offset": 241152,
+            "raw_size": 6656,
+            "rva": 270336,
+            "virtual_size": 6436
+          }
+        ],
+        "sha256": "fbff39b6498cdef873695a310a8543ff421176ad24140279485a0f1d4b01298e",
+        "source_filename_candidate_count": 0,
+        "source_filename_candidates": [],
+        "type_name_candidate_count": 0
+      }
+    },
+    {
+      "filename": "TP.ICD",
+      "metadata": {
+        "bytes": 3734573,
+        "coff_timestamp_raw": 953910872,
+        "entry_rva": 2616848,
+        "image_version": [
+          0,
+          0
+        ],
+        "imports": [
+          {
+            "entries": [
+              {
+                "name": "ScriptStringFree"
+              },
+              {
+                "name": "ScriptStringGetLogicalWidths"
+              },
+              {
+                "name": "ScriptStringAnalyse"
+              },
+              {
+                "name": "ScriptStringOut"
+              },
+              {
+                "name": "ScriptString_pSize"
+              }
+            ],
+            "library": "USP10.dll"
+          },
+          {
+            "entries": [],
+            "library": "KERNEL32.dll"
+          },
+          {
+            "entries": [],
+            "library": "USER32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "AddFontResourceA"
+              },
+              {
+                "name": "SetBkColor"
+              },
+              {
+                "name": "DeleteObject"
+              },
+              {
+                "name": "SetTextColor"
+              },
+              {
+                "name": "SetMapMode"
+              },
+              {
+                "name": "SelectObject"
+              },
+              {
+                "name": "CreateFontIndirectA"
+              },
+              {
+                "name": "CreateDIBSection"
+              },
+              {
+                "name": "CreateCompatibleDC"
+              },
+              {
+                "name": "GetStockObject"
+              },
+              {
+                "name": "RemoveFontResourceA"
+              },
+              {
+                "name": "DeleteDC"
+              }
+            ],
+            "library": "GDI32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "RegCloseKey"
+              },
+              {
+                "name": "RegOpenKeyA"
+              },
+              {
+                "name": "RegQueryValueExA"
+              },
+              {
+                "name": "RegCreateKeyExA"
+              }
+            ],
+            "library": "ADVAPI32.dll"
+          },
+          {
+            "entries": [
+              {
+                "ordinal": 57
+              },
+              {
+                "ordinal": 8
+              },
+              {
+                "ordinal": 14
+              },
+              {
+                "ordinal": 4
+              },
+              {
+                "ordinal": 9
+              },
+              {
+                "ordinal": 52
+              },
+              {
+                "ordinal": 10
+              },
+              {
+                "ordinal": 23
+              },
+              {
+                "ordinal": 16
+              },
+              {
+                "ordinal": 3
+              },
+              {
+                "ordinal": 6
+              },
+              {
+                "ordinal": 111
+              },
+              {
+                "ordinal": 19
+              },
+              {
+                "ordinal": 115
+              },
+              {
+                "ordinal": 116
+              },
+              {
+                "ordinal": 1
+              },
+              {
+                "ordinal": 15
+              },
+              {
+                "ordinal": 13
+              },
+              {
+                "ordinal": 2
+              },
+              {
+                "ordinal": 22
+              }
+            ],
+            "library": "WSOCK32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "DirectDrawEnumerateA"
+              },
+              {
+                "name": "DirectDrawCreate"
+              }
+            ],
+            "library": "DDRAW.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "midiOutPrepareHeader"
+              },
+              {
+                "name": "midiOutClose"
+              },
+              {
+                "name": "midiOutOpen"
+              },
+              {
+                "name": "midiOutGetDevCapsA"
+              },
+              {
+                "name": "midiOutGetNumDevs"
+              },
+              {
+                "name": "midiOutShortMsg"
+              },
+              {
+                "name": "midiOutLongMsg"
+              },
+              {
+                "name": "mmioFlush"
+              },
+              {
+                "name": "mmioSeek"
+              },
+              {
+                "name": "mmioWrite"
+              },
+              {
+                "name": "mmioRead"
+              },
+              {
+                "name": "mmioOpenA"
+              },
+              {
+                "name": "mmioSetBuffer"
+              },
+              {
+                "name": "timeGetTime"
+              },
+              {
+                "name": "mmioClose"
+              }
+            ],
+            "library": "WINMM.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "DirectInputCreateA"
+              }
+            ],
+            "library": "DINPUT.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "ImmGetCompositionStringA"
+              },
+              {
+                "name": "ImmNotifyIME"
+              },
+              {
+                "name": "ImmGetOpenStatus"
+              },
+              {
+                "name": "ImmSetOpenStatus"
+              },
+              {
+                "name": "ImmSetCompositionWindow"
+              },
+              {
+                "name": "ImmGetCandidateListA"
+              },
+              {
+                "name": "ImmDestroyContext"
+              },
+              {
+                "name": "ImmReleaseContext"
+              },
+              {
+                "name": "ImmGetContext"
+              },
+              {
+                "name": "ImmGetDescriptionA"
+              },
+              {
+                "name": "ImmGetProperty"
+              },
+              {
+                "name": "ImmCreateContext"
+              },
+              {
+                "name": "ImmSetCompositionStringA"
+              }
+            ],
+            "library": "IMM32.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "??0Vote@@QAE@XZ"
+              },
+              {
+                "name": "?Connect@Vote@@QAEHPAD0GP6GXHHPAX1@Z@Z"
+              },
+              {
+                "name": "?SetSessionInfo@Vote@@QAEXGHHPAG@Z"
+              },
+              {
+                "name": "?SendVote@Vote@@QAEKKPAU_GUID@@KPAX@Z"
+              },
+              {
+                "name": "?Release@Vote@@QAEHXZ"
+              },
+              {
+                "name": "??1Vote@@QAE@XZ"
+              }
+            ],
+            "library": "weavoter.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "??0Chat@@QAE@XZ"
+              },
+              {
+                "name": "?RoomInfo@Chat@@QAEKABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@PAX@Z"
+              },
+              {
+                "name": "?Release@Chat@@QAEHXZ"
+              },
+              {
+                "name": "?SetPlayerData@Chat@@QAEKHPAX@Z"
+              },
+              {
+                "name": "?Ignore@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@PAX@Z"
+              },
+              {
+                "name": "?AddBuddy@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@PAX@Z"
+              },
+              {
+                "name": "?Locate@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@PAX@Z"
+              },
+              {
+                "name": "?Goto@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@PAX@Z"
+              },
+              {
+                "name": "?CreatePlayer@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@HH0PAX@Z"
+              },
+              {
+                "name": "?Connect@Chat@@QAEHPADGP6GXHPAXAAV?$vector@VArgument@@V?$allocator@VArgument@@@std@@@std@@@Z0@Z"
+              },
+              {
+                "name": "?RemoveBuddy@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@PAX@Z"
+              },
+              {
+                "name": "?Blackmark@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@PAX@Z"
+              },
+              {
+                "name": "?UnIgnore@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@PAX@Z"
+              },
+              {
+                "name": "?EarmuffsOn@Chat@@QAEKPAX@Z"
+              },
+              {
+                "name": "?EarmuffsOff@Chat@@QAEKPAX@Z"
+              },
+              {
+                "name": "?RoomShout@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@_NPAX@Z"
+              },
+              {
+                "name": "?Tell@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@0_NPAX@Z"
+              },
+              {
+                "name": "?Say@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@_NPAX@Z"
+              },
+              {
+                "name": "?NotAFK@Chat@@QAEKPAX@Z"
+              },
+              {
+                "name": "?EnumPlayers@Chat@@QAEKPAX@Z"
+              },
+              {
+                "name": "?CreateRoom@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@00ABV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@3@HPAX@Z"
+              },
+              {
+                "name": "?AFK@Chat@@QAEKPAX@Z"
+              },
+              {
+                "name": "?MovePlayer@Chat@@QAEKHHHPAX@Z"
+              },
+              {
+                "name": "?Page@Chat@@QAEKABV?$basic_string@GU?$char_traits@G@std@@V?$allocator@G@2@@std@@PAX@Z"
+              },
+              {
+                "name": "?SetHearingRange@Chat@@QAEKIPAX@Z"
+              },
+              {
+                "name": "??1Chat@@QAE@XZ"
+              }
+            ],
+            "library": "weachatr.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "QSWaveMixSetSpeakerPlacement"
+              },
+              {
+                "name": "QSWaveMixSetListenerOrientation"
+              },
+              {
+                "name": "QSWaveMixSetSpeedOfSound"
+              },
+              {
+                "name": "QSWaveMixSetVolume"
+              },
+              {
+                "name": "QSWaveMixSetDistanceMapping"
+              },
+              {
+                "name": "QSWaveMixSetSourceCone"
+              },
+              {
+                "name": "QSWaveMixSetFrequency"
+              },
+              {
+                "name": "QSWaveMixSetListenerVelocity"
+              },
+              {
+                "name": "QSWaveMixSetSourcePosition"
+              },
+              {
+                "name": "QSWaveMixSetPosition"
+              },
+              {
+                "name": "QSWaveMixGetSourcePosition"
+              },
+              {
+                "name": "QSWaveMixRestartChannel"
+              },
+              {
+                "name": "QSWaveMixPauseChannel"
+              },
+              {
+                "name": "QSWaveMixStopChannel"
+              },
+              {
+                "name": "QSWaveMixConfigureChannel"
+              },
+              {
+                "name": "QSWaveMixOpenWaveEx"
+              },
+              {
+                "name": "QSWaveMixFreeWave"
+              },
+              {
+                "name": "QSWaveMixPlayEx"
+              },
+              {
+                "name": "QSWaveMixSetPanRate"
+              },
+              {
+                "name": "QSWaveMixEnableChannel"
+              },
+              {
+                "name": "QSWaveMixCloseSession"
+              },
+              {
+                "name": "QSWaveMixGetDirectSoundBuffer"
+              },
+              {
+                "name": "QSWaveMixInitEx"
+              },
+              {
+                "name": "QSWaveMixActivate"
+              },
+              {
+                "name": "QSWaveMixSetOptions"
+              },
+              {
+                "name": "QSWaveMixSetListenerPosition"
+              },
+              {
+                "name": "QSWaveMixOpenChannel"
+              }
+            ],
+            "library": "QMIXER.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "?Release@Auth@@QAEHXZ"
+              },
+              {
+                "name": "??1Auth@@QAE@XZ"
+              },
+              {
+                "name": "?Connect@Auth@@QAEHPAD0GP6GXHHPAX1@Z@Z"
+              },
+              {
+                "name": "?Login@Auth@@QAEKGPAG0PAX@Z"
+              },
+              {
+                "name": "??0Auth@@QAE@XZ"
+              }
+            ],
+            "library": "weaauthr.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "?MonitorMessage@News@@QAEKKPAH0@Z"
+              },
+              {
+                "name": "??1News@@QAE@XZ"
+              },
+              {
+                "name": "?Release@News@@QAEHXZ"
+              },
+              {
+                "name": "?GetServerNews@News@@QAEKGPAX@Z"
+              },
+              {
+                "name": "?GetGameNews@News@@QAEKGPAU_GUID@@PAX@Z"
+              },
+              {
+                "name": "?GetGameServerDetails@News@@QAEKGPAU_GUID@@PAX@Z"
+              },
+              {
+                "name": "?Connect@News@@QAEHPAD0GP6GXHHPAX1@Z@Z"
+              },
+              {
+                "name": "??0News@@QAE@XZ"
+              },
+              {
+                "name": "?GetCurrentMessage@News@@QAEKH@Z"
+              }
+            ],
+            "library": "weanewsr.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "?MonitorMessage@City@@QAEKKPAH0@Z"
+              },
+              {
+                "name": "??0City@@QAE@XZ"
+              },
+              {
+                "name": "?Release@ccParkList@@QAEXXZ"
+              },
+              {
+                "name": "??1ccCityList@@QAE@XZ"
+              },
+              {
+                "name": "??1ccParkList@@QAE@XZ"
+              },
+              {
+                "name": "?Release@City@@QAEHXZ"
+              },
+              {
+                "name": "?GetCurrentMessage@City@@QAEKH@Z"
+              },
+              {
+                "name": "?UnpublishPark@City@@QAEKPAXHH@Z"
+              },
+              {
+                "name": "??1ccCityInfo@@QAE@XZ"
+              },
+              {
+                "name": "??1ccParkInfo@@QAE@XZ"
+              },
+              {
+                "name": "??1ccServerInfo@@QAE@XZ"
+              },
+              {
+                "name": "??1ccThemeInfo@@QAE@XZ"
+              },
+              {
+                "name": "??1ccRideInfo@@QAE@XZ"
+              },
+              {
+                "name": "??1ccRideList@@QAE@XZ"
+              },
+              {
+                "name": "?Release@ccRideList@@QAEXXZ"
+              },
+              {
+                "name": "??1ccServerList@@QAE@XZ"
+              },
+              {
+                "name": "?Release@ccServerList@@QAEXXZ"
+              },
+              {
+                "name": "??1ccThemeList@@QAE@XZ"
+              },
+              {
+                "name": "?Release@ccThemeList@@QAEXXZ"
+              },
+              {
+                "name": "?MarkParkVisited@City@@QAEKPAXHH@Z"
+              },
+              {
+                "name": "?GetLogicalServerList@City@@QAEKPAXHKH@Z"
+              },
+              {
+                "name": "?Connect@City@@QAEHPAD0GP6GXHHPAX1@Z@Z"
+              },
+              {
+                "name": "?Release@ccCityList@@QAEXXZ"
+              },
+              {
+                "name": "?SetSessionInfo@City@@QAEXGHHPAG@Z"
+              },
+              {
+                "name": "??1City@@QAE@XZ"
+              },
+              {
+                "name": "?GetRideList@City@@QAEKPAXKH@Z"
+              },
+              {
+                "name": "?GetThemeList@City@@QAEKPAXKH@Z"
+              },
+              {
+                "name": "?GetParkByID@City@@QAEKPAXHKH@Z"
+              },
+              {
+                "name": "?GetParkInWorldByName@City@@QAEKPAXPAGKH@Z"
+              },
+              {
+                "name": "?GetParkInCityListTop10@City@@QAEKPAXHKH@Z"
+              },
+              {
+                "name": "?GetParkInCityList@City@@QAEKPAXHKH@Z"
+              },
+              {
+                "name": "?GetCityList@City@@QAEKPAXKH@Z"
+              }
+            ],
+            "library": "weacityr.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "?UploadParkRequest@Upload@@QAEKPADPAVccParkFileInfo@@PAX@Z"
+              },
+              {
+                "name": "?GetCurrentMessage@Upload@@QAEKH@Z"
+              },
+              {
+                "name": "?MonitorMessage@Upload@@QAEKKPAH0@Z"
+              },
+              {
+                "name": "??0Upload@@QAE@XZ"
+              },
+              {
+                "name": "?Connect@Upload@@QAEHPAD0GP6GXHHPAX1@Z@Z"
+              },
+              {
+                "name": "?SetSessionInfo@Upload@@QAEXGHHPAG@Z"
+              },
+              {
+                "name": "?UploadParkFile@Upload@@QAEKPADPAX@Z"
+              },
+              {
+                "name": "?Release@Upload@@QAEHXZ"
+              }
+            ],
+            "library": "weauploadr.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "?Initialise@Dialup@@QAEHXZ"
+              },
+              {
+                "name": "?Release@Dialup@@QAEXXZ"
+              },
+              {
+                "name": "?Connect@Dialup@@QAEHHP6GXHPAX@ZPAG20@Z"
+              },
+              {
+                "name": "?Disconnect@Dialup@@QAEXH@Z"
+              },
+              {
+                "name": "?GetDialupProperties@Dialup@@QAEHHPAUDIALUP_PROPERTIES@@@Z"
+              },
+              {
+                "name": "?GetNoDialUpConnections@Dialup@@QAEKXZ"
+              },
+              {
+                "name": "??1Dialup@@QAE@XZ"
+              },
+              {
+                "name": "??0Dialup@@QAE@XZ"
+              }
+            ],
+            "library": "wearasr.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "?DoReset@Mail@@QAEKXZ"
+              },
+              {
+                "name": "?Quit@Mail@@QAEKXZ"
+              },
+              {
+                "name": "?DoData@Mail@@QAEKPAD@Z"
+              },
+              {
+                "name": "?DoTo@Mail@@QAEKPAD@Z"
+              },
+              {
+                "name": "?Connect@Mail@@QAEHPADGP6GXHHPAEPAX@Z20@Z"
+              },
+              {
+                "name": "?DoFrom@Mail@@QAEKPAD@Z"
+              },
+              {
+                "name": "??0Mail@@QAE@XZ"
+              }
+            ],
+            "library": "weamailr.dll"
+          },
+          {
+            "entries": [
+              {
+                "ordinal": 1
+              }
+            ],
+            "library": "DSOUND.dll"
+          },
+          {
+            "entries": [
+              {
+                "name": "CoInitialize"
+              },
+              {
+                "name": "CoUninitialize"
+              },
+              {
+                "name": "CoCreateInstance"
+              }
+            ],
+            "library": "ole32.dll"
+          }
+        ],
+        "imports_error": null,
+        "imports_status": "readable-standard-imports",
+        "limitation": "Headers/imports/type-name text do not establish engine version, executable equivalence, runtime behavior, or protection removal.",
+        "linker_version": [
+          5,
+          10
+        ],
+        "machine": 332,
+        "msvc_type_name_candidates": [],
+        "optional_magic": 267,
+        "plain_c_prefixed_name_candidates": [],
+        "plain_name_candidate_count": 0,
+        "readable_markers": {
+          "COS-text": [
+            3175544
+          ],
+          "RSSEQ-text": [],
+          "SafeDisc-text": [],
+          "SecuROM-text": [],
+          "TP2M-text": []
+        },
+        "sections": [
+          {
+            "name": ".text",
+            "raw_offset": 1024,
+            "raw_size": 3038208,
+            "rva": 4096,
+            "virtual_size": 3037818
+          },
+          {
+            "name": "CSEG",
+            "raw_offset": 3039232,
+            "raw_size": 88064,
+            "rva": 3043328,
+            "virtual_size": 87730
+          },
+          {
+            "name": ".rdata",
+            "raw_offset": 3127296,
+            "raw_size": 171008,
+            "rva": 3133440,
+            "virtual_size": 170649
+          },
+          {
+            "name": ".data",
+            "raw_offset": 3298304,
+            "raw_size": 384512,
+            "rva": 3305472,
+            "virtual_size": 8969432
+          },
+          {
+            "name": "DSEG",
+            "raw_offset": 3682816,
+            "raw_size": 4608,
+            "rva": 12275712,
+            "virtual_size": 4100
+          },
+          {
+            "name": "UVA_DATA",
+            "raw_offset": 3687424,
+            "raw_size": 19456,
+            "rva": 12283904,
+            "virtual_size": 19148
+          },
+          {
+            "name": "IDCT_DAT",
+            "raw_offset": 3706880,
+            "raw_size": 6144,
+            "rva": 12304384,
+            "virtual_size": 5720
+          },
+          {
+            "name": "GRPOLY_D",
+            "raw_offset": 3713024,
+            "raw_size": 2048,
+            "rva": 12312576,
+            "virtual_size": 1840
+          },
+          {
+            "name": "TQIA_DAT",
+            "raw_offset": 3715072,
+            "raw_size": 1536,
+            "rva": 12316672,
+            "virtual_size": 1504
+          },
+          {
+            "name": "LBMPEG_D",
+            "raw_offset": 3716608,
+            "raw_size": 1024,
+            "rva": 12320768,
+            "virtual_size": 1024
+          },
+          {
+            "name": ".rsrc",
+            "raw_offset": 3717632,
+            "raw_size": 16896,
+            "rva": 12324864,
+            "virtual_size": 16862
+          }
+        ],
+        "sha256": "f5f727963bcdb1bb5da033a00a4d413c353fdb6833ae5fdc68287d5e27abcedd",
+        "source_filename_candidate_count": 0,
+        "source_filename_candidates": [],
+        "type_name_candidate_count": 0
+      }
+    }
+  ],
+  "feralMetadata": [
+    {
+      "exports": 0,
+      "filename": "SimThemePark.data",
+      "formatVersion": 1,
+      "imports": 716,
+      "libraries": [
+        {
+          "name": "winsock shared",
+          "symbols": 16
+        },
+        {
+          "name": "online shared",
+          "symbols": 71
+        },
+        {
+          "name": "mail shared",
+          "symbols": 7
+        },
+        {
+          "name": "libjpeg shared",
+          "symbols": 16
+        },
+        {
+          "name": "engine shared",
+          "symbols": 131
+        },
+        {
+          "name": "ltms shared",
+          "symbols": 33
+        },
+        {
+          "name": "bullfrog shared",
+          "symbols": 128
+        },
+        {
+          "name": "indirectx shared",
+          "symbols": 1
+        },
+        {
+          "name": "macdoze shared",
+          "symbols": 49
+        },
+        {
+          "name": "sams utils shared",
+          "symbols": 83
+        },
+        {
+          "name": "c/c++ shared",
+          "symbols": 86
+        },
+        {
+          "name": "runtime shared",
+          "symbols": 13
+        },
+        {
+          "name": "sound shared",
+          "symbols": 30
+        },
+        {
+          "name": "InterfaceLib",
+          "symbols": 17
+        },
+        {
+          "name": "MathLib",
+          "symbols": 12
+        },
+        {
+          "name": "OpenGLLibrary",
+          "symbols": 10
+        },
+        {
+          "name": "QuickTimeLib",
+          "symbols": 13
+        }
+      ],
+      "limitation": "CFM/PowerPC container metadata; no Windows executable or gameplay equivalence claim",
+      "mainEntryVector": [
+        1,
+        36168
+      ],
+      "sections": [
+        {
+          "bytes": 2014896,
+          "index": 0,
+          "kind": "code"
+        },
+        {
+          "bytes": 1428388,
+          "index": 1,
+          "kind": "pidata"
+        },
+        {
+          "bytes": 0,
+          "index": 2,
+          "kind": "loader"
+        }
+      ],
+      "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+      "timestampRaw": 3056361042
+    },
+    {
+      "exports": 198,
+      "filename": "engine_shared.data",
+      "formatVersion": 1,
+      "imports": 142,
+      "libraries": [
+        {
+          "name": "sams utils shared",
+          "symbols": 19
+        },
+        {
+          "name": "macdoze shared",
+          "symbols": 8
+        },
+        {
+          "name": "runtime shared",
+          "symbols": 11
+        },
+        {
+          "name": "c/c++ shared",
+          "symbols": 18
+        },
+        {
+          "name": "bullfrog shared",
+          "symbols": 1
+        },
+        {
+          "name": "indirectx shared",
+          "symbols": 21
+        },
+        {
+          "name": "MathLib",
+          "symbols": 6
+        },
+        {
+          "name": "OpenGLLibrary",
+          "symbols": 50
+        },
+        {
+          "name": "OpenGLUtility",
+          "symbols": 1
+        },
+        {
+          "name": "InterfaceLib",
+          "symbols": 7
+        }
+      ],
+      "limitation": "CFM/PowerPC container metadata; no Windows executable or gameplay equivalence claim",
+      "mainEntryVector": null,
+      "sections": [
+        {
+          "bytes": 285296,
+          "index": 0,
+          "kind": "code"
+        },
+        {
+          "bytes": 2506480,
+          "index": 1,
+          "kind": "pidata"
+        },
+        {
+          "bytes": 0,
+          "index": 2,
+          "kind": "loader"
+        }
+      ],
+      "sha256": "c549123f647dcf33c3e2c3d515bffe2cfcb19d11680f743f02ca42bb09dbd73b",
+      "timestampRaw": 3056327754
+    }
+  ],
+  "physicalComparisons": [
+    {
+      "changedHashes": 21,
+      "commonPaths": 801,
+      "comparison": [
+        "TPW-Windows-baseline",
+        "TPW-Windows-official-Patch2"
+      ],
+      "equalExamples": [
+        {
+          "path": "data/2dmap/esprite.tga",
+          "sha256": "88c36d45c47b7c8594b8210e04e577ea7138c3e56cf268f174acee7c059e1c06"
+        },
+        {
+          "path": "data/2dmap/gsprite.tga",
+          "sha256": "88c36d45c47b7c8594b8210e04e577ea7138c3e56cf268f174acee7c059e1c06"
+        },
+        {
+          "path": "data/2dmap/lsprite.tga",
+          "sha256": "88c36d45c47b7c8594b8210e04e577ea7138c3e56cf268f174acee7c059e1c06"
+        },
+        {
+          "path": "data/2dmap/qickload.txt",
+          "sha256": "6b8edaa068d9b20f07151969f80d94668e224a9e4c79285fc442ddb74ba0d3d2"
+        },
+        {
+          "path": "data/2dmap/rsprite.tga",
+          "sha256": "baa01e03d376300b2910bbccbe92ffb8fac8e2ace8d43b8d1cca4186c3cf9a5c"
+        },
+        {
+          "path": "data/2dmap/ssprite.tga",
+          "sha256": "f4772f675811dd8f7dc09b9fa53b7683faa266e0c75362584208da244175f4b7"
+        },
+        {
+          "path": "data/2dmap/vsprite.tga",
+          "sha256": "f4772f675811dd8f7dc09b9fa53b7683faa266e0c75362584208da244175f4b7"
+        },
+        {
+          "path": "data/advisor/advisor.sam",
+          "sha256": "e905df3d0a12ea5d7580ce87a7dd3a6c7e690e2f072b9eafef8cbfdc88f00df3"
+        },
+        {
+          "path": "data/challenges.sam",
+          "sha256": "120fff68adc08120134787cfa24e5e6851dc33388c145dd11ee8a40bc4f4edae"
+        },
+        {
+          "path": "data/debug/font.tga",
+          "sha256": "75f73fdc44d5755735c17d97636bd372f078bd1f933de98d080bba9b9d005e21"
+        },
+        {
+          "path": "data/debug/xfont.tga",
+          "sha256": "b82e3ee0852d8847b981fc09ac7479c127dbc9552cb5b1a8c198d7b0ff1e4b2a"
+        },
+        {
+          "path": "data/esprites.wad",
+          "sha256": "00e02624405005b14ebf1bb1c13d09d6fa5b7c3e6f3c76e28dc3e532728f5ade"
+        }
+      ],
+      "equalHashes": 780,
+      "limitation": "Common physical paths only; does not match renamed assets or prove runtime behavior"
+    },
+    {
+      "changedHashes": 110,
+      "commonPaths": 171,
+      "comparison": [
+        "TPW-Windows-baseline",
+        "TPI-retail-InstallShield-payload"
+      ],
+      "equalExamples": [
+        {
+          "path": "data/2dmap/esprite.tga",
+          "sha256": "88c36d45c47b7c8594b8210e04e577ea7138c3e56cf268f174acee7c059e1c06"
+        },
+        {
+          "path": "data/2dmap/gsprite.tga",
+          "sha256": "88c36d45c47b7c8594b8210e04e577ea7138c3e56cf268f174acee7c059e1c06"
+        },
+        {
+          "path": "data/2dmap/lsprite.tga",
+          "sha256": "88c36d45c47b7c8594b8210e04e577ea7138c3e56cf268f174acee7c059e1c06"
+        },
+        {
+          "path": "data/2dmap/rsprite.tga",
+          "sha256": "baa01e03d376300b2910bbccbe92ffb8fac8e2ace8d43b8d1cca4186c3cf9a5c"
+        },
+        {
+          "path": "data/2dmap/ssprite.tga",
+          "sha256": "f4772f675811dd8f7dc09b9fa53b7683faa266e0c75362584208da244175f4b7"
+        },
+        {
+          "path": "data/2dmap/vsprite.tga",
+          "sha256": "f4772f675811dd8f7dc09b9fa53b7683faa266e0c75362584208da244175f4b7"
+        },
+        {
+          "path": "data/debug/font.tga",
+          "sha256": "75f73fdc44d5755735c17d97636bd372f078bd1f933de98d080bba9b9d005e21"
+        },
+        {
+          "path": "data/debug/xfont.tga",
+          "sha256": "b82e3ee0852d8847b981fc09ac7479c127dbc9552cb5b1a8c198d7b0ff1e4b2a"
+        },
+        {
+          "path": "data/generic/defaulttexture/notfound.tga",
+          "sha256": "c4d85bd4c57ee3ebefa215525742563c2a307c4dc91d4500945e81a27a0f44d6"
+        },
+        {
+          "path": "data/generic/dynamic/garrow.md2",
+          "sha256": "d5154361929da3a835fee4a47a68ef9c717e18365e670902d423d4e8f480839f"
+        },
+        {
+          "path": "data/generic/dynamic/qickload.txt",
+          "sha256": "dd58973cbfec088f8c3343dbb192d57ecb83cb6f69556e61b49560b3f494d384"
+        },
+        {
+          "path": "data/generic/dynamic/rarrow.md2",
+          "sha256": "3e021b02eb830bcbd183286eff56775d4548ede57bf4713a7ac172395995825f"
+        }
+      ],
+      "equalHashes": 61,
+      "limitation": "Common physical paths only; does not match renamed assets or prove runtime behavior"
+    }
+  ],
+  "schema": 1,
+  "scope": "Container metadata and bounded reader outcomes; engine/runtime equivalence unverified",
+  "selectedProofs": [
+    {
+      "label": "TPW-Windows-baseline",
+      "proofs": [
+        {
+          "bytes": 20630,
+          "path": "Data/levels/Standard.sam",
+          "readerResult": {
+            "distinctKeyCount": 362,
+            "entriesSha256": "7d4bc0f46780fa7afaacb197d3af2378c252c7cb44ebad1d863a391d37838a95",
+            "entryCount": 362,
+            "limitation": "Syntactic key/value acceptance, not schema compatibility",
+            "reader": "SettingsFile/SAMParser",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "3d39433641df70dba73e6ce0f4ae576a5a334ed93e61adc1cdd570b751a8bf4b",
+          "signature": "unrecognized"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/fantasy/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 15311,
+              "1": 510,
+              "144": 48,
+              "148": 14,
+              "16": 1,
+              "17": 490,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "641b1f05fd3f47a4f0fcca551607c2f6c45b02845a8c7f4871338eaf42597368",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/hallow/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 15266,
+              "1": 556,
+              "144": 48,
+              "148": 14,
+              "17": 490,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "c74b5b1b9aa234eba8d81a20af9cf7af597055da13527805ca800879f50eb398",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/jungle/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 14889,
+              "1": 689,
+              "128": 4,
+              "144": 48,
+              "148": 14,
+              "17": 490,
+              "3": 240,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "adbc201acc29e9e81b936dfc9ffcdc403757a920f76c9ef41c435a5417d98364",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/jungle/terrain.wad!terrain.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 15579,
+              "1": 805
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "f6bcb05c1e085aeb1f085bf0cd6d672873f1681b0434ddd9babf929527ec10a1",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/space/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 15188,
+              "1": 634,
+              "144": 48,
+              "148": 14,
+              "17": 490,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "cc27092df61ef6fae42dc3c17bc49d42f2d87550d6d1f9b7cc2d40044772ec54",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 632,
+          "path": "Data/levels/fantasy/features/bus.wad!bus.RSE",
+          "readerResult": {
+            "BounceSize": 0,
+            "CodeWordCount": 124,
+            "LimboSize": 0,
+            "StackSize": 0,
+            "StringBlobLength": 19,
+            "TimeSlice": 50,
+            "VariableCount": 4,
+            "WalkSize": 0,
+            "instructionCount": 46,
+            "opcodeCounts": {
+              "10": 1,
+              "12": 5,
+              "16": 2,
+              "17": 1,
+              "3": 10,
+              "31": 1,
+              "32": 3,
+              "37": 1,
+              "38": 3,
+              "44": 8,
+              "46": 2,
+              "5": 2,
+              "6": 3,
+              "8": 1,
+              "90": 1,
+              "92": 2
+            },
+            "reader": "RideScriptFile",
+            "status": "parsed-existing-reader",
+            "variableNames": [
+              "VAR_TRIGGER",
+              "VAR_STATUS",
+              "VAR_SCRIPTID",
+              "VAR_TEMP"
+            ]
+          },
+          "sha256": "501b94bf633c461b2c1d4d12932fab54d2b8f14ebe8e406bf5404c1cab223211",
+          "signature": "RSSEQ"
+        },
+        {
+          "bytes": 705,
+          "path": "Data/levels/fantasy/features/end.wad!AnimCtrl.RSE",
+          "readerResult": {
+            "BounceSize": 0,
+            "CodeWordCount": 158,
+            "LimboSize": 0,
+            "StackSize": 10,
+            "StringBlobLength": 17,
+            "TimeSlice": 50,
+            "VariableCount": 0,
+            "WalkSize": 0,
+            "instructionCount": 43,
+            "opcodeCounts": {
+              "10": 3,
+              "17": 3,
+              "29": 8,
+              "30": 3,
+              "31": 1,
+              "37": 1,
+              "8": 24
+            },
+            "reader": "RideScriptFile",
+            "status": "parsed-existing-reader",
+            "variableNames": []
+          },
+          "sha256": "7a05cb5604523b5e7527ce464fd8167133f763390051e9bce3bd0e12e3325e2b",
+          "signature": "RSSEQ"
+        },
+        {
+          "bytes": 1669,
+          "path": "Data/generic/dynamic/garrow.MD2",
+          "readerResult": {
+            "errorType": "NotSupportedException",
+            "modelHeaderVersion": {
+              "major": 24,
+              "minor": 23
+            },
+            "reader": "MD2",
+            "reason": "Unsupported MD2 version 24.23.",
+            "status": "reader-rejected"
+          },
+          "sha256": "d5154361929da3a835fee4a47a68ef9c717e18365e670902d423d4e8f480839f",
+          "signature": "M3D2"
+        },
+        {
+          "bytes": 25205152,
+          "path": "Data/global/Speech/speechHD.SDT",
+          "readerResult": {
+            "declaredEntries": 641,
+            "headerSizes": {
+              "40": 641
+            },
+            "limitation": "Entry/header parsing only; no audio payload decode or playback",
+            "parsedEntries": 641,
+            "reader": "SdtArchive",
+            "skippedEntries": [],
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "61e2d6a34c7eecb4569bcd8495c4515227f4404a5c787bd0181e2928f2b79fe8",
+          "signature": "unrecognized"
+        }
+      ]
+    },
+    {
+      "label": "TPW-Windows-official-Patch2",
+      "proofs": [
+        {
+          "bytes": 20630,
+          "path": "Data/levels/Standard.sam",
+          "readerResult": {
+            "distinctKeyCount": 362,
+            "entriesSha256": "7d4bc0f46780fa7afaacb197d3af2378c252c7cb44ebad1d863a391d37838a95",
+            "entryCount": 362,
+            "limitation": "Syntactic key/value acceptance, not schema compatibility",
+            "reader": "SettingsFile/SAMParser",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "3d39433641df70dba73e6ce0f4ae576a5a334ed93e61adc1cdd570b751a8bf4b",
+          "signature": "unrecognized"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/fantasy/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 15311,
+              "1": 510,
+              "144": 48,
+              "148": 14,
+              "16": 1,
+              "17": 490,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "641b1f05fd3f47a4f0fcca551607c2f6c45b02845a8c7f4871338eaf42597368",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/hallow/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 15266,
+              "1": 556,
+              "144": 48,
+              "148": 14,
+              "17": 490,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "c74b5b1b9aa234eba8d81a20af9cf7af597055da13527805ca800879f50eb398",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/jungle/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 14889,
+              "1": 689,
+              "128": 4,
+              "144": 48,
+              "148": 14,
+              "17": 490,
+              "3": 240,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "adbc201acc29e9e81b936dfc9ffcdc403757a920f76c9ef41c435a5417d98364",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/jungle/terrain.wad!terrain.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 15579,
+              "1": 805
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "f6bcb05c1e085aeb1f085bf0cd6d672873f1681b0434ddd9babf929527ec10a1",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/space/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 15188,
+              "1": 634,
+              "144": 48,
+              "148": 14,
+              "17": 490,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "cc27092df61ef6fae42dc3c17bc49d42f2d87550d6d1f9b7cc2d40044772ec54",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 632,
+          "path": "Data/levels/fantasy/features/bus.wad!bus.RSE",
+          "readerResult": {
+            "BounceSize": 0,
+            "CodeWordCount": 124,
+            "LimboSize": 0,
+            "StackSize": 0,
+            "StringBlobLength": 19,
+            "TimeSlice": 50,
+            "VariableCount": 4,
+            "WalkSize": 0,
+            "instructionCount": 46,
+            "opcodeCounts": {
+              "10": 1,
+              "12": 5,
+              "16": 2,
+              "17": 1,
+              "3": 10,
+              "31": 1,
+              "32": 3,
+              "37": 1,
+              "38": 3,
+              "44": 8,
+              "46": 2,
+              "5": 2,
+              "6": 3,
+              "8": 1,
+              "90": 1,
+              "92": 2
+            },
+            "reader": "RideScriptFile",
+            "status": "parsed-existing-reader",
+            "variableNames": [
+              "VAR_TRIGGER",
+              "VAR_STATUS",
+              "VAR_SCRIPTID",
+              "VAR_TEMP"
+            ]
+          },
+          "sha256": "501b94bf633c461b2c1d4d12932fab54d2b8f14ebe8e406bf5404c1cab223211",
+          "signature": "RSSEQ"
+        },
+        {
+          "bytes": 705,
+          "path": "Data/levels/fantasy/features/end.wad!AnimCtrl.RSE",
+          "readerResult": {
+            "BounceSize": 0,
+            "CodeWordCount": 158,
+            "LimboSize": 0,
+            "StackSize": 10,
+            "StringBlobLength": 17,
+            "TimeSlice": 50,
+            "VariableCount": 0,
+            "WalkSize": 0,
+            "instructionCount": 43,
+            "opcodeCounts": {
+              "10": 3,
+              "17": 3,
+              "29": 8,
+              "30": 3,
+              "31": 1,
+              "37": 1,
+              "8": 24
+            },
+            "reader": "RideScriptFile",
+            "status": "parsed-existing-reader",
+            "variableNames": []
+          },
+          "sha256": "7a05cb5604523b5e7527ce464fd8167133f763390051e9bce3bd0e12e3325e2b",
+          "signature": "RSSEQ"
+        },
+        {
+          "bytes": 1669,
+          "path": "Data/generic/dynamic/garrow.MD2",
+          "readerResult": {
+            "errorType": "NotSupportedException",
+            "modelHeaderVersion": {
+              "major": 24,
+              "minor": 23
+            },
+            "reader": "MD2",
+            "reason": "Unsupported MD2 version 24.23.",
+            "status": "reader-rejected"
+          },
+          "sha256": "d5154361929da3a835fee4a47a68ef9c717e18365e670902d423d4e8f480839f",
+          "signature": "M3D2"
+        },
+        {
+          "bytes": 25205152,
+          "path": "Data/global/Speech/speechHD.SDT",
+          "readerResult": {
+            "declaredEntries": 641,
+            "headerSizes": {
+              "40": 641
+            },
+            "limitation": "Entry/header parsing only; no audio payload decode or playback",
+            "parsedEntries": 641,
+            "reader": "SdtArchive",
+            "skippedEntries": [],
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "61e2d6a34c7eecb4569bcd8495c4515227f4404a5c787bd0181e2928f2b79fe8",
+          "signature": "unrecognized"
+        }
+      ]
+    },
+    {
+      "label": "TPI-retail-InstallShield-payload",
+      "proofs": [
+        {
+          "bytes": 45695,
+          "path": "Data/levels/Standard.sam",
+          "readerResult": {
+            "distinctKeyCount": 796,
+            "entriesSha256": "bf77778ae6405cc17e1762bf0e9ba7ab0a671cc0e911bac4bcbb1f10dcf93de7",
+            "entryCount": 796,
+            "limitation": "Syntactic key/value acceptance, not schema compatibility",
+            "reader": "SettingsFile/SAMParser",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "8966c8647104feb1878ff3c3d43f3b2ac6dc89856570f9aa5a5a0bf040e6749e",
+          "signature": "unrecognized"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/arabian/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 14893,
+              "1": 929,
+              "144": 8,
+              "148": 124,
+              "149": 3,
+              "16": 175,
+              "17": 242,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "67bcf5bd76e70b1388ac5d8784589340c9d60001a7aa6737346e23fccb987aec",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/science/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 14998,
+              "1": 539,
+              "144": 8,
+              "145": 18,
+              "148": 124,
+              "149": 3,
+              "16": 157,
+              "17": 242,
+              "3": 285,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "bb09e3f1fd065344218e19b5b87ba12ce3ce0a6d9648e203cb7d6221b80aedee",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/wIntro/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 15315,
+              "1": 222,
+              "144": 8,
+              "145": 18,
+              "148": 125,
+              "149": 2,
+              "16": 156,
+              "17": 243,
+              "3": 285,
+              "8": 10
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "d0906b0ee2ac6c33116729db7625a038f9d65b30847a6381e736303fc68315ca",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 16464,
+          "path": "Data/levels/water/terrain.wad!base.map",
+          "readerResult": {
+            "Height": 128,
+            "OpaqueHeaderValues": [
+              8,
+              8,
+              8,
+              8,
+              8
+            ],
+            "Width": 128,
+            "cellCount": 16384,
+            "cellValueCounts": {
+              "0": 13833,
+              "1": 1990,
+              "144": 8,
+              "148": 124,
+              "149": 3,
+              "16": 20,
+              "17": 398,
+              "8": 8
+            },
+            "reader": "MapFile",
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "a01dc4d377ef75ed97791e559c0e78fda11a5753f70a60a070b8b41a63b56ba6",
+          "signature": "TP2M"
+        },
+        {
+          "bytes": 521,
+          "path": "Data/levels/arabian/features/bus.wad!bus.RSE",
+          "readerResult": {
+            "BounceSize": 0,
+            "CodeWordCount": 100,
+            "LimboSize": 0,
+            "StackSize": 0,
+            "StringBlobLength": 4,
+            "TimeSlice": 50,
+            "VariableCount": 4,
+            "WalkSize": 0,
+            "instructionCount": 38,
+            "opcodeCounts": {
+              "10": 1,
+              "12": 5,
+              "16": 1,
+              "17": 1,
+              "3": 10,
+              "31": 1,
+              "32": 3,
+              "37": 1,
+              "38": 3,
+              "44": 6,
+              "46": 1,
+              "5": 1,
+              "6": 3,
+              "8": 1
+            },
+            "reader": "RideScriptFile",
+            "status": "parsed-existing-reader",
+            "variableNames": [
+              "VAR_TRIGGER",
+              "VAR_STATUS",
+              "VAR_SCRIPTID",
+              "VAR_TEMP"
+            ]
+          },
+          "sha256": "e2eed92689dfea7a969d8ee970d3bae93c08ab212748965e3eb261f7ca9c8a1b",
+          "signature": "RSSEQ"
+        },
+        {
+          "bytes": 705,
+          "path": "Data/levels/arabian/features/end.wad!AnimCtrl.RSE",
+          "readerResult": {
+            "BounceSize": 0,
+            "CodeWordCount": 158,
+            "LimboSize": 0,
+            "StackSize": 10,
+            "StringBlobLength": 17,
+            "TimeSlice": 50,
+            "VariableCount": 0,
+            "WalkSize": 0,
+            "instructionCount": 43,
+            "opcodeCounts": {
+              "10": 3,
+              "17": 3,
+              "29": 8,
+              "30": 3,
+              "31": 1,
+              "37": 1,
+              "8": 24
+            },
+            "reader": "RideScriptFile",
+            "status": "parsed-existing-reader",
+            "variableNames": []
+          },
+          "sha256": "7a05cb5604523b5e7527ce464fd8167133f763390051e9bce3bd0e12e3325e2b",
+          "signature": "RSSEQ"
+        },
+        {
+          "bytes": 1669,
+          "path": "Data/generic/dynamic/garrow.MD2",
+          "readerResult": {
+            "errorType": "NotSupportedException",
+            "modelHeaderVersion": {
+              "major": 24,
+              "minor": 23
+            },
+            "reader": "MD2",
+            "reason": "Unsupported MD2 version 24.23.",
+            "status": "reader-rejected"
+          },
+          "sha256": "d5154361929da3a835fee4a47a68ef9c717e18365e670902d423d4e8f480839f",
+          "signature": "M3D2"
+        },
+        {
+          "bytes": 39885137,
+          "path": "Data/global/Speech/speechHD.SDT",
+          "readerResult": {
+            "declaredEntries": 1136,
+            "headerSizes": {
+              "40": 1136
+            },
+            "limitation": "Entry/header parsing only; no audio payload decode or playback",
+            "parsedEntries": 1136,
+            "reader": "SdtArchive",
+            "skippedEntries": [],
+            "status": "parsed-existing-reader"
+          },
+          "sha256": "8454708b4006b04b0bd746248989e694e48e7d8fb722324e820661729ed2a155",
+          "signature": "unrecognized"
+        }
+      ]
+    }
+  ],
+  "standardSamSchema": {
+    "afterEntryCount": 796,
+    "afterOnlyExamples": [
+      "AllStaffConstants.HappyHitCosRoomInaccessible",
+      "AllStaffConstants.HappyWageVal",
+      "AllStaffConstants.LowestWageHappiness",
+      "AllStaffConstants.MaxExperience",
+      "AllStaffConstants.MaxHappinessRecuperationRate",
+      "AllStaffConstants.MaxRecuperationRate",
+      "AllStaffConstants.MaxSpeedDifference",
+      "AllStaffConstants.MaxStaffPerStaffRoom",
+      "AllStaffConstants.MaxWage",
+      "AllStaffConstants.MinDistanceForSlacking",
+      "AllStaffConstants.MinExperienceForTraining",
+      "AllStaffConstants.MinHappinessRecuperationRate",
+      "AllStaffConstants.MinRecuperationRate",
+      "AllStaffConstants.MinStaffPerStaffRoom",
+      "AllStaffConstants.MinWage",
+      "AllStaffConstants.MotivationFactor",
+      "AllStaffConstants.PercentageForBadWageDecision",
+      "AllStaffConstants.ProgessUpperLimit",
+      "AllStaffConstants.SkillIncrement",
+      "AllStaffConstants.StaffRoomCapacity",
+      "AllStaffConstants.StaffSlackingEnergy",
+      "AllStaffConstants.TrainingExtraExperience",
+      "AllStaffConstants.UnHappyWageVal",
+      "AllStaffConstants.WageStep"
+    ],
+    "afterOnlyKeys": 554,
+    "afterSha256": "8966c8647104feb1878ff3c3d43f3b2ac6dc89856570f9aa5a5a0bf040e6749e",
+    "beforeEntryCount": 362,
+    "beforeOnlyKeys": 120,
+    "beforeSha256": "3d39433641df70dba73e6ce0f4ae576a5a334ed93e61adc1cdd570b751a8bf4b",
+    "limitation": "Existing SAMParser keeps one value token; key coverage is not complete multi-value schema or gameplay compatibility",
+    "path": "data/levels/standard.sam",
+    "sharedKeys": 242
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "alignment_hook_call": 1160152,
+  "identity_sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5",
+  "post_load_selector_comparison": 1,
+  "post_load_skip_branch": {
+    "bi": 2,
+    "bo": 12,
+    "offset": 1160144,
+    "target": 1160156
+  },
+  "skip_target": 1160156
+}

@@ -13,10 +13,16 @@ public interface IHudParkStatus
 	long Money { get; }
 	ParkDate Date { get; }
 	GameSpeed Speed { get; set; }
-	/// <summary>Multiplier for rides/guests on the fixed clock (0 when paused).</summary>
+	/// <summary>Factor on the elapsed time of the whole simulation (guests, rides, scripts, economy; 0 when paused), see <see cref="GameSpeedScale"/>.</summary>
 	float TimeScale { get; }
 	/// <summary>Advances by real seconds (stubs only; the economy runs on the level's fixed clock).</summary>
 	void Update( float realSeconds );
+	/// <summary>Golden tickets the park has earned and not spent (the HUD counter, Mac main HUD table control 55); 0 without an economy.</summary>
+	int GoldenTickets => 0;
+	/// <summary>Golden keys (control 54): one per three golden tickets earned (the original advisor says so, video 41:22); 0 without an economy.</summary>
+	int GoldenKeys => 0;
+	/// <summary>The economy the balance comes from; it changes when a save replaces it, so a balance jump is not shown as income or spending.</summary>
+	object? EconomySource => null;
 	/// <summary>Purchase price shown in the build menu, null when unknown.</summary>
 	long? PriceOf( BuildItem item );
 	/// <summary>Whether the item can be bought now (researched, in the catalogue).</summary>
@@ -29,7 +35,8 @@ public enum BuildCategory { Rides = 0, Shops = 1, Sideshows = 2, Features = 3 }
 /// <summary>A buyable object in the build menu.</summary>
 /// <param name="InfoId">Original <c>Info.Id</c> of the object (economy catalogue key).</param>
 /// <param name="ObjectNameIndex">OBJECT_NAMES.str entry of the name.</param>
-/// <param name="PreviewModel">Path of the original preview model (<c>P&lt;name&gt;.MD2</c>) drawn as the icon.</param>
+/// <param name="PreviewModel">Model drawn as the icon: the original preview model (<c>P&lt;name&gt;.MD2</c>), or the object's
+/// main model when it has none, as the original buy window does (docs/reverse/BUILD-PREVIEW.md).</param>
 /// <param name="TextureDirectories">Where the preview model's textures are looked up, in order.</param>
 /// <param name="DefaultExcitement">Original <c>UsageInfo.ExcitementLevel</c> ("average excitement level by default"), if known.</param>
 public sealed record BuildItem( string Id, int InfoId, BuildCategory Category, int ObjectNameIndex, long Cost, string? PreviewModel, IReadOnlyList<string> TextureDirectories, int? DefaultExcitement = null, ObjectCatalogEntry? Entry = null );
@@ -43,8 +50,8 @@ public interface IBuildCatalog
 	IReadOnlyList<BuildItem> GetItems( BuildCategory category );
 }
 
-/// <summary>One statistic of a selected object (label from UITEXT; null value = not simulated).</summary>
-public readonly record struct ObjectStat( UIStrings Label, string? Value );
+/// <summary>One statistic of a selected object (label from UITEXT; null value = not simulated). A gauge row (<paramref name="IsGauge"/>) is a red-to-green bar of <paramref name="Gauge"/> (0..1; null draws the empty track) instead of text.</summary>
+public readonly record struct ObjectStat( UIStrings Label, string? Value, float? Gauge = null, bool IsGauge = false );
 
 /// <summary>Info panel contents for a selected park object.</summary>
 public sealed record ObjectInfo( int ObjectNameIndex, bool IsOpen, bool CanOpen, IReadOnlyList<ObjectStat> Stats, string? DisplayName = null );

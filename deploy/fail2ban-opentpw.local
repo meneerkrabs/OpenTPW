@@ -1,0 +1,8 @@
+# fail2ban for the OpenTPW server: SSH logins (only allowed from the maintainer's addresses by the
+# Hetzner firewall; this also covers mistakes there). Five failures in ten minutes ban for a day.
+[sshd]
+enabled = true
+backend = systemd
+maxretry = 5
+findtime = 10m
+bantime = 1d

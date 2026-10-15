@@ -26,7 +26,9 @@ public class OriginalUiAssetTests
 	{
 		"mainpanel", "gauge", "date", "b_buy", "b_info", "b_money", "b_resrch", "b_map", "panel", "b_srides", "b_sshop", "b_sshow", "b_sfeature",
 		"b_retract", "b_door", "b_erase", "f_tagl", "f_tagm", "f_tagr", "islandlobby", "f_lobbutbg", "b_lobleft", "b_entpark", "b_lobright",
-		"tpwlogo", "w_med", "w_dialog", "f_optpanel2", "b_sleft", "b_sright", "b_okay"
+		"tpwlogo", "w_med", "w_dialog", "f_optpanel2", "b_sleft", "b_sright", "b_okay",
+		"w_big", "!frame", "!slider", "f_buyitem", "b_up", "b_down", "b_scroller", "b_exit", "b_allstaff", "i_dollar", "cashtrend", "gkey", "gtick",
+		"list_all", "b_svisit", "b_gopeep", "b_pick"
 	};
 
 	/// <summary>UITEXT entries drawn by the screens.</summary>
@@ -39,11 +41,19 @@ public class OriginalUiAssetTests
 		UIStrings.MovieVolume, UIStrings.PopupHelp, UIStrings.No, UIStrings.Yes, UIStrings.Custom, UIStrings.Resolution512x384,
 		UIStrings.Resolution640x480, UIStrings.Resolution800x600, UIStrings.Resolution1024x768, UIStrings.Resolution1280x1024,
 		UIStrings.Resolution1600x1200, UIStrings.Resolution400x300, UIStrings.ChangeScreenResolution, UIStrings.ChangeScreenResolutionRestored,
-		UIStrings.RestartGame, UIStrings.Paused, UIStrings.ThemeParkWorld, UIStrings.Dollar, UIStrings.NegativeDollar
+		UIStrings.RestartGame, UIStrings.Paused, UIStrings.ThemeParkWorld, UIStrings.Dollar, UIStrings.NegativeDollar,
+		// The overview windows (UI-905..910): category titles, detail labels, statuses and delete confirmations.
+		UIStrings.CurrentStatus, UIStrings.AllRides, UIStrings.AllShops, UIStrings.AllSideshows, UIStrings.AllMiscItems,
+		UIStrings.UsersLastMonthAttr, UIStrings.StateOfRepairAttr, UIStrings.RemainingLifeAttr,
+		UIStrings.CustomersLastMonthShop, UIStrings.ProfitLastMonthShop, UIStrings.TotalProfitShop, UIStrings.CustomerSatisfactionShop,
+		UIStrings.CustomersLastMonthGame, UIStrings.ExcitementGame, UIStrings.ProfitLastMonthGame, UIStrings.TotalProfitGame, UIStrings.CustomerSatisfactionGame,
+		UIStrings.AllVisitors, UIStrings.VisitorNumber, UIStrings.CashRemainingVisitor, UIStrings.TimeInParkVisitor, UIStrings.RidesRiddenVisitor,
+		UIStrings.HappinessVisitor, UIStrings.NameAttr, UIStrings.Closed, UIStrings.BrokenDown,
+		UIStrings.DeleteRide, UIStrings.DeleteShop, UIStrings.DeleteSideshow, UIStrings.DeleteItem
 	};
 
 	/// <summary>UIHELPTEXT entries used as popup help or messages.</summary>
-	public static readonly int[] UsedHelpText = { 2, 12, 15, 151, 152, 318, 343, 344, 345, 358, 359, 400, 440, 465, 469, 470, 471, 472, 473, 477, 478, 481, 521, 522, 523, 524 };
+	public static readonly int[] UsedHelpText = { 2, 12, 15, 140, 141, 142, 143, 151, 152, 153, 88, 318, 343, 344, 345, 358, 359, 400, 440, 465, 469, 470, 471, 472, 473, 477, 478, 481, 521, 522, 523, 524 };
 
 	[TestInitialize]
 	public void Initialize()
@@ -84,9 +94,31 @@ public class OriginalUiAssetTests
 			Assert.AreEqual( entry.WhichUIType, (int)item.Category );
 			Assert.AreEqual( (long)entry.BuildCost, item.Cost );
 			Assert.AreEqual( entry.ObjectNameIndex ?? -1, item.ObjectNameIndex );
-			Assert.AreEqual( entry.IsBonus ? null : entry.PreviewModelPath, item.PreviewModel );
+			Assert.AreEqual( entry.IsBonus ? null : entry.PreviewModelPath ?? entry.ModelPath, item.PreviewModel );
 			Assert.IsFalse( entry.IsFixedItem || entry.IsTool || entry.Category == ObjectCategory.Upgrade );
 		}
+	}
+
+	[TestMethod]
+	public void EveryOriginalModelHasItsStoredRootDrawingKey()
+	{
+		var models = new UiModels();
+		Assert.AreEqual( 278, models.Assets.Count );
+		Assert.AreEqual( 277, models.BindingCount, "the original ordinary loader explicitly excludes w_small_shadow.MD2" );
+		foreach ( var asset in models.Assets )
+		{
+			var source = new ModelFile( FileSystem.GetFiles( "/ui" ).Single( path => Path.GetFileNameWithoutExtension( path ) == asset.Name
+				&& path.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ) );
+			Assert.AreEqual( source.Nodes[source.RootNodeIndex].Name, asset.RootNodeName, asset.Name );
+			Assert.AreEqual( UiModels.RootNameKey( asset.RootNodeName ), asset.DrawingKey, asset.Name );
+			Assert.AreSame( asset, models.GetAsset( asset.Name ), asset.Name );
+			if ( !UiModels.IsSpecialShadowAsset( asset ) )
+				Assert.AreSame( asset, models.GetByDrawingKey( asset.DrawingKey ), asset.Name );
+		}
+		Assert.AreEqual( "base", models.GetAsset( "mainpanel" ).RootNodeName );
+		Assert.AreEqual( "pan_money", models.GetAsset( "panel" ).RootNodeName );
+		Assert.AreEqual( "optpanel2", models.GetAsset( "f_optpanel2" ).RootNodeName );
+		Assert.AreEqual( "shadow1", models.GetByRootName( "wshadow1" ).Name );
 	}
 
 	[TestMethod]
@@ -148,6 +180,51 @@ public class OriginalUiAssetTests
 		Assert.IsTrue( Enumerable.Range( 0, width * height ).Any( index => rgba[index * 4 + 3] == 0 ), "pink key becomes transparent" );
 	}
 
+	/// <summary>
+	/// The evidence behind UI-909's stand-in buttons: ui.wad ships the b_allthinginfo and b_goto models without
+	/// their textures (so the overview windows cannot use that art), while the art they do draw resolves, among it the
+	/// rides tab icon the All Attractions entry buttons wear instead of a text label too wide for their round slot.
+	/// </summary>
+	[TestMethod]
+	public void TheOverviewWindowsButtonArtEvidenceHolds()
+	{
+		foreach ( var name in new[] { "b_allthinginfo", "b_goto" } )
+		{
+			var model = UiModel.Load( name );
+			var textures = model.Frames.SelectMany( frame => frame.Parts ).Select( part => part.TextureName )
+				.Where( texture => texture.Length > 0 ).Distinct().ToArray();
+			Assert.IsTrue( textures.Length > 0, $"{name} ships a model that references textures" );
+			foreach ( var texture in textures )
+				Assert.IsNull( UiImages.Resolve( texture ),
+					$"{name}'s texture '{texture}' resolves now — UI-909's stand-in buttons can switch to the shipped art" );
+		}
+		foreach ( var name in new[] { "list_all", "b_svisit", "b_gopeep", "b_erase", ParkHud.AllAttractionsModel } )
+		{
+			var model = UiModel.Load( name );
+			var textures = model.Frames.SelectMany( frame => frame.Parts ).Select( part => part.TextureName )
+				.Where( texture => texture.Length > 0 ).Distinct().ToArray();
+			Assert.IsTrue( textures.Length > 0, $"{name} draws textured parts" );
+			foreach ( var texture in textures )
+				Assert.IsNotNull( UiImages.Resolve( texture ), $"{name} texture {texture}" );
+		}
+	}
+
+	/// <summary>The info arm's call buttons (ParkHud.Maintenance) draw the shipped art.</summary>
+	[TestMethod]
+	public void TheCallButtonArtResolves()
+	{
+		foreach ( var name in new[] { "b_callmech", "b_callhandy" } )
+		{
+			var model = UiModel.Load( name );
+			var textures = model.Frames.SelectMany( frame => frame.Parts ).Select( part => part.TextureName )
+				.Where( texture => texture.Length > 0 ).Distinct().ToArray();
+			Assert.IsTrue( textures.Length > 0, $"{name} draws textured parts" );
+			// the normal (b_callmech), pressed (…d) and disabled (…X) art resolves; the highlight (…g) is absent from ui.wad, so the button keeps its normal frame when focused
+			foreach ( var texture in textures )
+				Assert.AreEqual( !texture.EndsWith( 'g' ), UiImages.Resolve( texture ) != null, $"{name} texture {texture}" );
+		}
+	}
+
 	[TestMethod]
 	public void LobbyDefinitionHasTheFourThemeIslands()
 	{
@@ -164,6 +241,28 @@ public class OriginalUiAssetTests
 				Assert.IsTrue( FileSystem.GetFiles( "/lobby/terrain" ).Any( file => string.Equals( Path.GetFileNameWithoutExtension( file ), model, StringComparison.OrdinalIgnoreCase ) ), model );
 		}
 		Assert.IsNotNull( new ModelFile( "/lobby/terrain/Base.MD2" ).Heightfield );
+	}
+
+	[TestMethod]
+	public void LobbyDefinesEveryIslandCameraPositionSlot()
+	{
+		var lobby = LobbyDefinition.Load();
+		for ( var slot = 0; slot < 10; slot++ )
+			Assert.IsTrue( lobby.IslandPositions.ContainsKey( slot ), $"lobby.txt ISLANDCAMERAPOSITION slot {slot}: the position fallback is unreachable" );
+	}
+
+	[TestMethod]
+	public void EveryLoanLenderNameIsAnEntryOfLoanNames()
+	{
+		var names = GameLanguage.Current.LoadStrings( "LOANNAMES.str" ).Entries;
+		Assert.AreEqual( 18, names.Length, "LOANNAMES.str" );
+		foreach ( var theme in new[] { "jungle", "fantasy", "hallow", "space" } )
+			foreach ( var easy in new[] { false, true } )
+				foreach ( var loan in BalanceSettings.Load( theme, easy ).Loans )
+				{
+					Assert.IsTrue( loan.LenderNameIndex >= 0 && loan.LenderNameIndex < names.Length, $"{theme} easy={easy} loan {loan.Index} Lendername {loan.LenderNameIndex}" );
+					Assert.IsFalse( string.IsNullOrWhiteSpace( names[loan.LenderNameIndex] ), $"LOANNAMES.str[{loan.LenderNameIndex}]" );
+				}
 	}
 
 	[TestMethod]
@@ -188,6 +287,39 @@ public class OriginalUiAssetTests
 		icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), 0.5f );
 		var points = batch.Draws.SelectMany( draw => draw.Vertices ).Select( vertex => vertex.Position ).ToArray();
 		Assert.IsTrue( points.All( point => point.X >= -0.5f && point.X <= 100.5f && point.Y >= -0.5f && point.Y <= 100.5f ), "icon fits its slot" );
+	}
+
+	/// <summary>
+	/// Jungle rides without a P model (bouncy, bumper, incagod, monkey, mystery, tourride, volcano) fall back to their main
+	/// model, as the original buy window does, and that model draws inside its slot with every texture resolved.
+	/// </summary>
+	[TestMethod]
+	public void BuildItemsWithoutAPreviewModelUseTheirMainModel()
+	{
+		var original = ObjectCatalog.Load( "jungle" );
+		var items = Enum.GetValues<BuildCategory>().SelectMany( new OriginalBuildCatalog( original ).GetItems ).ToArray();
+		var fallbacks = items.Where( item => item.Entry is { IsBonus: false, PreviewModelPath: null } ).ToArray();
+		Assert.IsTrue( fallbacks.Length > 0, "the jungle has rides without a P model" );
+		Assert.IsTrue( items.Where( item => item.Entry is { IsBonus: false } ).All( item => item.PreviewModel != null ), "every non-bonus item has an icon model" );
+		foreach ( var item in fallbacks )
+		{
+			Assert.AreEqual( item.Entry!.ModelPath, item.PreviewModel, item.Id );
+			// Textures are checked through the entry's own file systems: the catalogue cache is keyed by data root, so a
+			// catalogue cached by an earlier test refers to that test's file system instance.
+			var unresolved = new List<string>();
+			var icon = new PreviewIcon( new ModelFile( item.PreviewModel! ), name =>
+			{
+				if ( ObjectAssets.ResolveTexture( item.Entry, name ) == null )
+					unresolved.Add( name );
+				return null;
+			} );
+			Assert.IsTrue( icon.TriangleCount > 0, item.Id );
+			CollectionAssert.AreEqual( Array.Empty<string>(), unresolved.Distinct().ToArray(), $"{item.Id}: {string.Join( ", ", unresolved.Distinct() )}" );
+			var batch = new UiBatch();
+			icon.Draw( batch, new UiRect( 0, 0, 100, 100 ), 0.5f );
+			var points = batch.Draws.SelectMany( draw => draw.Vertices ).Select( vertex => vertex.Position ).ToArray();
+			Assert.IsTrue( points.Length > 0 && points.All( point => point.X >= -0.5f && point.X <= 100.5f && point.Y >= -0.5f && point.Y <= 100.5f ), $"{item.Id} fits its slot" );
+		}
 	}
 
 	[TestMethod]

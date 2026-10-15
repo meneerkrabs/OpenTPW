@@ -143,6 +143,14 @@ Names and hashes below identify exact differences. HMP, MD2 and WCT changes are 
 | `Data/levels/space/rides/moonshot.wad/moonshot.sam` | 1759 → 1855 | `49dc67b6ee77d43fb319b06aa34025bc91ee80d835f8621379144a938d496fda` → `94cee36c57ae0f105fa2e69e678633dd95ff32b861a0420c26bccb19a5cf3ad2` |
 | `Data/levels/space/rides/shocker.wad/shocker.sam` | 1761 → 1857 | `2f94e58f84db1b66c9576dd5fe4c7ac67563fd36b303dc1d8d3590b79b2d1669` → `04c382b96660ca689aa5a8290cc3c5a781e2dab7e13a17c5851abf73a078c1e3` |
 
+## Use in OpenTPW
+
+OpenTPW reads both the 1999 data and Patch 2 data. The HUD draws the date in the added `DATE*` fonts
+when they are present (the Mac version's font slot 3; docs/UI.md) and falls back to the Small font
+otherwise. `DATESMALL.bf4` is byte-identical to the 1999 `GAME8AA.bf4`. Tests that pin the original
+corpus (`OPENTPW_GAME_PATH`) accept either edition: the four `DATE*` fonts are checked against the
+hashes above, and the RSE inventory allows for the two instructions Patch 2 removes from `Jelly.RSE`.
+
 ## Verification limits
 
 No rendering, native gameplay, save compatibility, network service, or patch-specific OpenTPW runtime behavior was verified by this asset comparison. STR, DAT, BF4 and TGA additions/changes are fingerprinted, without copying their original contents or assigning an unverified fix description. Comment-only changes do not constitute new gameplay behavior. The existing reader projects emit pre-existing nullable/member warnings and the existing Zio 0.17.0 low-severity NU1901 audit warning; this analysis adds no packages.

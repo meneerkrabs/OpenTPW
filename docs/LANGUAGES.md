@@ -18,6 +18,8 @@ once their data is available, but only these six are verified. Original data is 
   `.MD2` plus `.mtr` except French). The CD's case is inconsistent (`danish`,
   `french`, `speech` vs installed `Speech`, `lips.WAD`, German `sp_001.lip`,
   `French/meshes/french`), so OpenTPW matches overlay paths case-insensitively.
+  A game folder copied from the CD rather than installed has no banners in
+  `Data/Language/<Lang>`; OpenTPW then uses the `<Lang>/Meshes/<Lang>` folder beside `Data`.
   Placing the CD's banner meshes inside `Language/<Name>` matches the installed
   English layout and is an inference; the installer itself was not run.
 - The Benelux CD uses the same overlay layout for Dutch: `Dutch/data/language/Dutch/`
@@ -36,7 +38,8 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --language German --
 |---|---|---|
 | Command line | `--language <name>` | `--language-data <dir>` |
 | Environment | `OPENTPW_LANGUAGE` | `OPENTPW_LANGUAGE_DATA` |
-| Settings (`App.config` / user config) | `Language` | `LanguageDataPath` |
+| `language.json` in the OpenTPW config folder (beside `display.json`), written by Options | `Language` | `LanguageDataPath` |
+| Old .NET user settings (read only when `language.json` has no choice) | `Language` | `LanguageDataPath` |
 
 Names are case-insensitive (`german` → German). Without a name: an overlay that
 holds exactly one language selects it; otherwise English if `Data/Language/English`
@@ -50,6 +53,32 @@ an error listing the available languages. The startup log prints the choice, e.g
   full extraction of the CD, so one path serves all four languages; or
 - one `<Lang>/data` folder (`<dir>/Language/<Name>`); its sibling `Meshes/<Name>`
   is used for banners when present.
+
+Without `--language-data`, the CD folder (`--cd-data`, `OPENTPW_CD_DATA`, or the CD chosen
+under Options → Game files) serves as the language overlay when it holds more languages than
+the installed game, so its languages appear in the options' language list.
+A game folder copied from the CD rather than installed (with `Data` beside the CD's
+`<Lang>` folders) counts as such a CD folder without being chosen separately. Only languages
+whose `MBToUni.dat` OpenTPW can read are offered: the Polish CD's table has a different layout
+(a header word 1 and 329 characters, probably two-byte codes) that is not decoded, so Polish
+is left out. Italian (Benelux/Italian CD) loads but is not among the verified languages.
+Desktop and browser choose their start-up language with the same code (`LanguageStartup`); the
+browser reads `/config/language.json`, falls back to the default with a warning when the saved
+language is missing, and copies the CD languages' text and banners, and the chosen language's speech
+(docs/WEB.md, "Languages").
+
+The advisor takes both its global speech bank and `lips.wad` and the level's own `speech/speechHD.SDT`
+(the Welcome line, response 1, is a level response) and `lips` from the current language, overlay first,
+each time a line is said. Nothing is cached, so a live switch changes the voice at the next line, on the
+desktop as in the browser. Until this was found the level bank was always the installed language's.
+
+Two editions of `UITEXT.str` exist. The installed game examined here has 473 entries; the European
+CD's languages (its English included) and the Mac version have 474, with an extra message at entry
+207 ("You cannot load this park, as it uses new rides which you have not yet downloaded") that moves
+every later entry up by one. OpenTPW numbers UI strings by the 473-entry edition (`UIStrings`), so
+`GameLanguage.LoadStrings` drops entry 207 from a 474-entry UITEXT; without that, every string from
+207 on (Game Options, the option labels, Yes/No, the resolutions, …) showed its neighbour's text.
+The other 20 tables agree between the editions; `CHAT_COMMANDS.str` only appends six entries.
 
 The overlay is read-only and is never copied into the game folder or the
 repository. Files missing from the overlay fall back to the installed data.
@@ -67,11 +96,28 @@ mkdir -p /tmp/tpw-languages
 About 110 MB. Only data files are extracted; the CD's installers are not needed
 and must not be run.
 
+## Switching languages
+
+[EXT:live-language] Options → OpenTPW → *Language* switches when the options are accepted, without a
+restart. In the front end the language, its string tables and its fonts are loaded once every
+dialog is closed (a display change may still wait for confirmation), the lobby and the menu are
+rebuilt, and the options open again in the new language; a language that fails to load leaves the
+old one in place. In a park the choice waits: the options say it is used when the park is left,
+leaving the park (to the lobby or into another park) applies it, and choosing the current language
+again takes it back. The full CD overlay stays available, so every CD language remains in the list.
+Caches of language data (UITEXT through `Localization`, the online strings, the chat font, object
+names in the object catalogue) follow `GameLanguage.Version` and reload after a switch; an advisor
+line already playing finishes in the old language. The choice is saved in `language.json`, so it
+also survives a new release unpacked in another folder (the old user settings file lived in a
+folder that depends on the program's location). The front-end smoke test switches to the second
+available language and back, and switches inside a park, checking the captured text each time.
+
 ## What uses the selected language
 
 | Data | Status |
 |---|---|
 | String tables (`*.str`) | Loaded from the language folder with that folder's own `MBToUni.dat` (front end, options, HUD, popup help, sandbox text panel; see UI.md). |
+| `KEYBOARD.str` | The 21 shortcut letters of the language (Dutch buy K, hire A, research O), applied to the HUD shortcuts when the language changes (`Input.ApplyKeyboardStrings`, tp.exe `0x40cb80`); a plain letter that is a camera-pan key (W, A, S, D) keeps its default, and the Polish file's two-byte entries are not decoded. |
 | BF4 fonts (`*.bf4`) | Loaded from the language folder (UI screens in SMALL/MED/BIG tiers, sandbox text panel). |
 | Banner meshes (`bankrupt`/`congrats`/`paused.MD2`) | Resolvable via `GameLanguage.FindFile`; not drawn by the game yet. |
 | Speech banks, `lips.WAD`, level `.LIP` | Resolvable via `GameLanguage.ResolveDataFile` (overlay first). `--advisor-say N` plays global `sp_NNN` and its `lips.WAD` mark list from the selected language (see LIPS.md); level LIPs are not used. |
@@ -117,7 +163,7 @@ and its readback matches the CPU composite (max difference 0 on Metal).
 ## Not done
 
 - Original-style screens use the strings (UI.md); their layout remains an approximation. Supplementary labels come from the OpenTPW translated table.
-- No live language switch; Options stores the choice for the next startup.
+- The language switches live in the front end; inside a park it waits until the park is left (see "Switching languages").
 - The `--advisor-say` speech/lip-sync slice works; automatic gameplay triggers and banner rendering remain unimplemented.
 - `UniToMB.dat` is read and round-trip tested in all six languages (COMPATIBILITY.md); text-input UI integration remains incomplete.
 - Only the CD in `TPWORLD.ISO` was examined; other editions/patches are unverified.

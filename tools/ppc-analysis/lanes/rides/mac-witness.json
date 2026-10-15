@@ -1,0 +1,166 @@
+{
+  "animation_binding": [
+    {
+      "animation": 0,
+      "suffix": "c"
+    },
+    {
+      "animation": 1,
+      "suffix": "d"
+    },
+    {
+      "animation": 2,
+      "suffix": "i"
+    },
+    {
+      "animation": 3,
+      "suffix": "l"
+    },
+    {
+      "animation": 4,
+      "suffix": "s"
+    },
+    {
+      "animation": 5,
+      "suffix": "m"
+    },
+    {
+      "animation": 6,
+      "suffix": "e"
+    },
+    {
+      "animation": 7,
+      "suffix": "u"
+    },
+    {
+      "animation": 8,
+      "suffix": "w"
+    },
+    {
+      "animation": 9,
+      "suffix": "b"
+    },
+    {
+      "animation": 10,
+      "suffix": "r"
+    },
+    {
+      "animation": 11,
+      "suffix": "o"
+    }
+  ],
+  "channel_stride": 56,
+  "checked_instruction_count": 52,
+  "controller_case_addresses": {
+    "BUMP": [
+      749004,
+      747320,
+      747440,
+      747780,
+      747568,
+      747848,
+      747712,
+      747644,
+      747916,
+      748060,
+      748204,
+      748272,
+      748396,
+      748468,
+      748600,
+      749004,
+      748732,
+      748808
+    ],
+    "COAST": [
+      750100,
+      749292,
+      749420,
+      749544,
+      749668,
+      749792,
+      749916,
+      750040,
+      749200
+    ],
+    "TOUR": [
+      747096,
+      745276,
+      745620,
+      745632,
+      745752,
+      745880,
+      747096,
+      747096,
+      746004,
+      746132,
+      746256,
+      746328,
+      746400,
+      747096,
+      746524,
+      746648,
+      746968,
+      746720,
+      746844
+    ]
+  },
+  "entrance_offset_scale": 255,
+  "getanim_result": "current ID; -1 when state bit 4 is set",
+  "interpreter_code": 718132,
+  "known_vm_disagreements": [
+    "COPY branch accumulator",
+    "zero DIV/MOD result",
+    "GETANIM_CH ID/state",
+    "shared channel 0",
+    "TRIGANIMSPEED per-mille speed"
+  ],
+  "plain_channel": 0,
+  "schema": 1,
+  "scope": "static Feral Mac evidence; PC runtime unqualified",
+  "selected_opcode_cases": {
+    "3": 718320,
+    "5": 718416,
+    "15": 719464,
+    "16": 719508,
+    "17": 719804,
+    "18": 720128,
+    "20": 720700,
+    "21": 720836,
+    "23": 721212,
+    "27": 722360,
+    "28": 722916,
+    "32": 723188,
+    "34": 723256,
+    "35": 723324,
+    "47": 723860,
+    "49": 724056,
+    "50": 724184,
+    "53": 724600,
+    "54": 724612,
+    "55": 724624
+  },
+  "selected_opcode_names": {
+    "3": "COPY",
+    "5": "SUB",
+    "15": "FLUSHANIM",
+    "16": "TRIGANIM",
+    "17": "WAITANIM",
+    "18": "LOOPANIM",
+    "20": "GETANIM",
+    "21": "TRIGANIMSPEED",
+    "23": "TRIGANIM_CH",
+    "27": "GETANIM_CH",
+    "28": "RAND",
+    "32": "BRANCH_Z",
+    "34": "BRANCH_NV",
+    "35": "BRANCH_PV",
+    "47": "ADD",
+    "49": "DIV",
+    "50": "MOD",
+    "53": "TOUR",
+    "54": "BUMP",
+    "55": "COAST"
+  },
+  "sha256": "04809cd4ccee5433c7fb0b7c93d32f6a7aa629c1849181c0b7906415e5e295f5"
+}

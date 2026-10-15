@@ -26,6 +26,12 @@ public partial class ModelFile : BaseFormat
 	public uint VersionMinor { get; private set; }
 	public string SourceName { get; private set; } = "";
 	public uint HeaderFlags { get; private set; }
+	/// <summary>
+	/// <see cref="HeaderFlags"/> bit that makes the Feral Mac record sampler add vertex keys and
+	/// translations instead of setting them. The ride loader calls it "relative animation" and strips
+	/// it unless the ride's flag word allows it (docs/reverse/PPC-formats.md).
+	/// </summary>
+	public const uint RelativeAnimationFlag = 0x4;
 	public ModelHeaderCounts Counts { get; private set; } = null!;
 	public Vector3 BoundsMin { get; private set; }
 	public Vector3 BoundsMax { get; private set; }
@@ -46,11 +52,13 @@ public partial class ModelFile : BaseFormat
 
 	public ModelFile( Stream stream )
 	{
+		using var profile = LoadProfile.Measure( "model-parse" );
 		ReadFromStream( stream );
 	}
 
 	public ModelFile( string path )
 	{
+		using var profile = LoadProfile.Measure( "model-parse" );
 		ReadFromFile( path );
 	}
 
@@ -149,6 +157,10 @@ public partial class ModelFile : BaseFormat
 			throw new InvalidDataException( "MD2 magic is missing." );
 		VersionMajor = U32( data, 4 );
 		VersionMinor = U32( data, 8 );
+		// [BIN:STP-PPC:engine_shared 0x3fc74 MD2 loader gate] a major below 221 loads only with argument bit 0x1, which no
+		// application call site passes (0x58f00, 0x99acc/0x99ad4), so such members end as DeadMesh before any layout is read.
+		if ( VersionMajor < SupportedVersionMajor )
+			throw new NotSupportedException( $"MD2 version {VersionMajor}.{VersionMinor} is refused by the original loader too (DeadMesh: majors below {SupportedVersionMajor} need a load flag no caller passes)." );
 		if ( VersionMajor != SupportedVersionMajor || VersionMinor != SupportedVersionMinor )
 			throw new NotSupportedException( $"Unsupported MD2 version {VersionMajor}.{VersionMinor}." );
 
@@ -410,6 +422,11 @@ public partial class ModelFile : BaseFormat
 			materials += materialCount;
 			faces += faceCount;
 			normals += cornerCount + faceCount;
+			// These totals only grow: once a header count is exceeded, later meshes cannot repair it.
+			// Refuse before repeated aliased spans reserve another mesh's decoded arrays.
+			if ( vertexBlocks > counts.VertexBlockCount || uvBlocks > counts.UvBlockCount || materials > counts.MaterialCount
+				|| faces > counts.FaceCount || normals > counts.NormalCount )
+				throw new InvalidDataException( "MD2 mesh totals disagree with the header counts." );
 
 			// Positions and texture coordinates are stored as blocks of four (X×4, Y×4, Z×4 / U×4, V×4).
 			var positions = new Vector3[vertexCount];

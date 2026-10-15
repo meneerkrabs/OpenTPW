@@ -22,7 +22,7 @@ public sealed class ParkLayout
 		var original = level.OriginalPark;
 		if ( ImGui.Begin( original == null ? "OpenTPW - Jungle sandbox" : $"OpenTPW - original {original.LevelName} level (read-only import)", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize ) )
 		{
-			ImGui.TextWrapped( "Original assets. Every object runs its original RSE script and plays its original animations; visitors use the original object scripts with approximated routing and needs. Sounds, particles and ride controllers (coasters, karts, tours) are not simulated." );
+			ImGui.TextWrapped( "Original assets. Every object runs its original RSE script and plays its original animations; visitors use the original object scripts with approximated routing and needs. Sounds, particles and the kart and tour ride controllers are not simulated; coasters are built with the coaster tool (docs/COASTERS.md)." );
 			if ( original != null )
 				DrawOriginalImport( original );
 			if ( level.Park != null )
@@ -85,7 +85,7 @@ public sealed class ParkLayout
 				ImGui.TextWrapped( level.LastActionMessage );
 			ImGui.Separator();
 			displayPanel.Draw();
-			ImGui.TextWrapped( "WASD: pan | right drag: pan | wheel: zoom | Q/E: rotate | F1: editor" );
+			ImGui.TextWrapped( "WASD: pan | edges/right drag: scroll option | wheel: zoom | arrows: rotate | `: editor" );
 		}
 		ImGui.End();
 	}

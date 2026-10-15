@@ -8,7 +8,8 @@ namespace OpenTPW.UI.Original;
 public readonly record struct UiModelVertex( NVector2 Position, float Depth, NVector2 TexCoords );
 
 /// <summary>Triangles of one texture inside a <see cref="UiModelFrame"/>.</summary>
-public sealed record UiModelPart( string TextureName, IReadOnlyList<UiModelVertex> Vertices, IReadOnlyList<int> Indices );
+/// <param name="Transparent">The texture slot sets flag 0x2 (<see cref="UiImages.TransparentFlag"/>).</param>
+public sealed record UiModelPart( string TextureName, IReadOnlyList<UiModelVertex> Vertices, IReadOnlyList<int> Indices, bool Transparent = false );
 
 /// <summary>
 /// One drawable frame of an original <c>ui.wad</c> model. Frame 0 is the root mesh; further frames are
@@ -37,7 +38,12 @@ public sealed record UiModelFrame( string NodeName, IReadOnlyList<UiModelPart> P
 /// </summary>
 public sealed class UiModel
 {
+	/// <summary>Asset filename/display alias; this is not the original drawing registry key.</summary>
 	public string Name { get; }
+	/// <summary>Exact stored root-node name, including case and spaces.</summary>
+	public string RootNodeName { get; }
+	/// <summary>Original signed-byte XOR/multiply-47 drawing key.</summary>
+	public int DrawingKey { get; }
 	public IReadOnlyList<UiModelFrame> Frames { get; }
 	/// <summary>Root translation in canvas pixels (x right, y down): the authored on-screen centre.</summary>
 	public NVector2 AuthoredCenter { get; }
@@ -51,6 +57,8 @@ public sealed class UiModel
 		if ( model.Kind != ModelFileKind.Geometry || model.RootNodeIndex < 0 )
 			throw new InvalidDataException( $"UI model {name} has no geometry." );
 		var root = model.Nodes[model.RootNodeIndex];
+		RootNodeName = root.Name;
+		DrawingKey = UiModels.RootNameKey( RootNodeName );
 		AuthoredCenter = new NVector2( root.Transform.M41, -root.Transform.M42 );
 		var frames = new List<UiModelFrame>();
 		foreach ( var node in OrderedNodes( model ) )
@@ -68,13 +76,19 @@ public sealed class UiModel
 		Frames = frames;
 	}
 
-	/// <summary>Loads <c>/ui/&lt;name&gt;.MD2</c> from the game file system.</summary>
+	/// <summary>Loads an explicitly named asset; original drawing-key lookup is provided by <see cref="UiModels"/>.</summary>
 	public static UiModel Load( string name )
 	{
-		var file = FileSystem.GetFiles( "/ui" ).FirstOrDefault( path => string.Equals( Path.GetFileNameWithoutExtension( path ), name, StringComparison.OrdinalIgnoreCase )
-			&& path.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ) ?? throw new FileNotFoundException( $"Original UI model {name} is missing from ui.wad." );
-		return new UiModel( new ModelFile( file ), name );
+		var candidates = FileSystem.GetFiles( "/ui" ).Where( path => string.Equals( Path.GetFileNameWithoutExtension( path ), name, StringComparison.OrdinalIgnoreCase )
+			&& path.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ).ToArray();
+		var exact = candidates.Where( path => string.Equals( Path.GetFileNameWithoutExtension( path ), name, StringComparison.Ordinal ) ).ToArray();
+		var selected = exact.Length > 0 ? exact : candidates;
+		if ( selected.Length == 0 ) throw new FileNotFoundException( $"Original UI asset {name} is missing from ui.wad." );
+		if ( selected.Length != 1 ) throw new UiModelBindingException( $"UI asset alias '{name}' is ambiguous: {string.Join( ", ", selected.OrderBy( path => path, StringComparer.Ordinal ) )}." );
+		return LoadAssetPath( selected[0] );
 	}
+
+	internal static UiModel LoadAssetPath( string path ) => new( new ModelFile( path ), Path.GetFileNameWithoutExtension( path ) );
 
 	/// <summary>Frame for a button state; missing states fall back to the root frame.</summary>
 	public UiModelFrame GetFrame( int index ) => Frames[index >= 0 && index < Frames.Count ? index : 0];
@@ -125,6 +139,7 @@ public sealed class UiModel
 		// Group triangles by material texture and order groups back to front (lower Z first), as the
 		// panels layer flat inner faces over their bevels.
 		var groups = new Dictionary<string, List<(float Depth, int A, int B, int C)>>( StringComparer.OrdinalIgnoreCase );
+		var transparent = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
 		for ( var face = 0; face + 2 < mesh.Indices.Length; face += 3 )
 		{
 			var a = (int)mesh.Indices[face];
@@ -134,6 +149,8 @@ public sealed class UiModel
 				continue;
 			var material = mesh.Materials[(int)Math.Min( mesh.Vertices[a].TextureIndex, (uint)mesh.Materials.Length - 1 )];
 			var key = material.TextureIndex < 0 ? "" : material.Name;
+			if ( (material.Flags & UiImages.TransparentFlag) != 0 )
+				transparent.Add( key );
 			if ( !groups.TryGetValue( key, out var list ) )
 				groups[key] = list = new();
 			list.Add( ((vertices[a].Depth + vertices[b].Depth + vertices[c].Depth) / 3, a, b, c) );
@@ -142,7 +159,7 @@ public sealed class UiModel
 		{
 			var triangles = group.Value.OrderBy( triangle => triangle.Depth ).ToList();
 			return (Depth: triangles.Average( triangle => triangle.Depth ), Part: new UiModelPart( group.Key, vertices,
-				triangles.SelectMany( triangle => new[] { triangle.A, triangle.B, triangle.C } ).ToArray() ));
+				triangles.SelectMany( triangle => new[] { triangle.A, triangle.B, triangle.C } ).ToArray(), transparent.Contains( group.Key ) ));
 		} ).OrderBy( part => part.Depth ).Select( part => part.Part ).ToArray();
 		return new UiModelFrame( nodeName, parts, minX, minY, maxX, maxY );
 	}

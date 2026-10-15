@@ -11,10 +11,43 @@ public partial class Texture : Asset
 	public uint Width { get; private set; }
 	public uint Height { get; private set; }
 
-	public static Texture Missing => new Texture( [255, 255, 255, 255], 1, 1 );
+	private static readonly Lazy<Texture> missing = new( () => new Texture( [255, 255, 255, 255], 1, 1 ) );
+
+	/// <summary>
+	/// The white placeholder for a missing image: one texture shared by every user and never released (it used to be a new texture
+	/// on every call, each kept for the rest of the session).
+	/// </summary>
+	public static Texture Missing => missing.Value;
+
+	/// <summary>
+	/// Releases a texture its owner made from bytes and no one else uses: it leaves <see cref="Asset.All"/> and its GPU objects go
+	/// after the last frame that may draw them. Never for a texture loaded by path (those are shared through the cache) or for
+	/// <see cref="Missing"/>.
+	/// </summary>
+	internal void ReleaseOwned()
+	{
+		if ( ReferenceEquals( this, missing.IsValueCreated ? missing.Value : null ) || !string.IsNullOrEmpty( Path ) )
+			return;
+		Asset.All.Remove( this );
+		var (texture, view) = (NativeTexture, NativeTextureView);
+		void Dispose()
+		{
+			view?.Dispose();
+			texture?.Dispose();
+		}
+		if ( global::Global.Render is { } renderer )
+			renderer.ScheduleDelete( Dispose );
+		else
+			Dispose();
+	}
 
 	internal Veldrid.Texture NativeTexture;
 	internal TextureView NativeTextureView;
+
+	// [EXT:texture-pack] Textures made from a game `.wct` remember their source so a pack switch can reload them in place.
+	private string? wctPath;
+	private TextureFlags wctFlags;
+	private static readonly List<WeakReference<Texture>> wctTextures = new();
 
 	/// <summary>
 	/// From path on disk, or from a game resource
@@ -22,9 +55,15 @@ public partial class Texture : Asset
 	public Texture( string path, TextureFlags flags = TextureFlags.None )
 	{
 		if ( path.HasExtension( ".wct" ) )
+		{
+			wctPath = path;
+			wctFlags = flags;
+			lock ( wctTextures )
+				wctTextures.Add( new WeakReference<Texture>( this ) );
 			UpdateFromWct( path, flags );
+		}
 		else
-			UpdateFromStb( path, flags );
+			UpdateFromImage( path, flags );
 	}
 
 	/// <summary>
@@ -32,8 +71,16 @@ public partial class Texture : Asset
 	/// </summary>
 	public Texture( byte[] data, int width, int height, TextureFlags flags = TextureFlags.None )
 	{
+		if ( TrackOrigins )
+			Origin = string.Join( " < ", new System.Diagnostics.StackTrace( 1, false ).GetFrames().Take( 3 ).Select( frame => $"{frame.GetMethod()?.DeclaringType?.Name}.{frame.GetMethod()?.Name}" ) );
 		CreateTexture( "", data, (uint)width, (uint)height, flags );
 	}
+
+	/// <summary>Records where textures made from bytes come from (<see cref="Origin"/>), for the memory diagnostics of the browser harness.</summary>
+	internal static bool TrackOrigins { get; set; }
+
+	/// <summary>The methods that made this texture from bytes, when <see cref="TrackOrigins"/> was on.</summary>
+	internal string? Origin { get; private set; }
 
 	public Texture( Stream stream, TextureFlags flags = TextureFlags.None )
 	{
@@ -51,18 +98,41 @@ public partial class Texture : Asset
 	}
 
 	/// <summary>
-	/// Update from an image format supported by the STB library (jpg, png, gif, tga, etc.)
+	/// Update from a loose file, or from a game-archive member: an EA `.fsh` or an image format supported by the STB
+	/// library (jpg, png, gif, tga, etc.). A texture already made from this path is shared.
 	/// </summary>
-	private void UpdateFromStb( string path, TextureFlags flags )
+	private void UpdateFromImage( string path, TextureFlags flags )
 	{
-		var fileData = File.ReadAllBytes( path );
+		if ( TryGetCachedTexture( path, out var cached ) )
+		{
+			NativeTexture = cached!.NativeTexture;
+			NativeTextureView = cached.NativeTextureView;
+			Width = cached.Width;
+			Height = cached.Height;
+			return;
+		}
+
+		var (data, width, height) = DecodeImage( path );
+		CreateTexture( path, data, (uint)width, (uint)height, flags );
+	}
+
+	/// <summary>
+	/// Decodes a texture that is not a `.wct`: an EA `.fsh` or an stb image (png, tga, ...), from disk when the path
+	/// exists there, else from the game data (Theme Park Inc keeps `.tga` textures inside its WADs). No GPU access, so
+	/// workers may call it.
+	/// </summary>
+	// [EXT:tpi-viewer] `.fsh` textures exist only in Theme Park Inc data. Opaque 0x24 palettes: see COMPAT-014.
+	internal static (byte[] Data, int Width, int Height) DecodeImage( string path )
+	{
+		using var profile = LoadProfile.Measure( "image-decode" );
+		if ( path.HasExtension( ".fsh" ) )
+		{
+			var fsh = new FshFile( path ).Images[0];
+			return (fsh.Rgba, fsh.Width, fsh.Height);
+		}
+		var fileData = File.Exists( path ) ? File.ReadAllBytes( path ) : FileSystem.ReadAllBytes( path );
 		var image = ImageResult.FromMemory( fileData, ColorComponents.RedGreenBlueAlpha );
-
-		var data = image.Data;
-		var width = (uint)image.Width;
-		var height = (uint)image.Height;
-
-		CreateTexture( path, data, width, height, flags );
+		return (image.Data, image.Width, image.Height);
 	}
 
 	/// <summary>
@@ -70,12 +140,126 @@ public partial class Texture : Asset
 	/// </summary>
 	private void UpdateFromWct( string path, TextureFlags flags )
 	{
-		var textureFileData = new TextureFile( path ).Data;
+		if ( TryGetCachedTexture( path, out var cached ) )
+		{
+			NativeTexture = cached!.NativeTexture;
+			NativeTextureView = cached.NativeTextureView;
+			Width = cached.Width;
+			Height = cached.Height;
+			return;
+		}
 
-		CreateTexture( path, textureFileData.Data, (uint)textureFileData.Width, (uint)textureFileData.Height, flags );
+		var (data, width, height) = DecodeWct( path );
+		CreateTexture( path, data, (uint)width, (uint)height, flags );
 	}
 
-	private int CalculateMipLevels( int width, int height, int depth )
+	/// <summary>
+	/// Decodes a game texture: the active texture pack's replacement when it has one, else the original `.wct`.
+	/// No GPU access, so a pack switch may run it on a worker thread.
+	/// </summary>
+	// [EXT:texture-pack] pack lookup; a missing file falls back to the original.
+	internal static (byte[] Data, int Width, int Height) DecodeWct( string path )
+	{
+		using var profile = LoadProfile.Measure( "texture-decode" );
+		if ( TexturePack.Find( path ) is { } replacement )
+		{
+			// The browser's shipped art arrives predecoded (docs/WEB.md); it is stored unkeyed, like the original this returns.
+			if ( replacement.EndsWith( PredecodedUiArt.Extension, StringComparison.OrdinalIgnoreCase ) )
+			{
+				var (width, height, data) = PredecodedUiArt.Load( File.ReadAllBytes( replacement ) );
+				return (data, width, height);
+			}
+			var image = ImageResult.FromMemory( File.ReadAllBytes( replacement ), ColorComponents.RedGreenBlueAlpha );
+			return (image.Data, image.Width, image.Height);
+		}
+		var textureFileData = new TextureFile( path ).Data;
+		return (textureFileData.Data, textureFileData.Width, textureFileData.Height);
+	}
+
+	/// <summary>A live texture made from the `.wct` at <paramref name="path"/>, or null (smoke tests).</summary>
+	internal static Texture? FindLoaded( string path )
+	{
+		lock ( wctTextures )
+			foreach ( var reference in wctTextures )
+				if ( reference.TryGetTarget( out var texture ) && texture.wctPath == path )
+					return texture;
+		return null;
+	}
+
+	/// <summary>Mip level 0 of the GPU texture as RGBA bytes (smoke tests).</summary>
+	internal byte[] ReadPixels()
+	{
+		using var staging = Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D( Width, Height, 1, 1, PixelFormat.R8_G8_B8_A8_UNorm, TextureUsage.Staging ) );
+		using var commands = Device.ResourceFactory.CreateCommandList();
+		commands.Begin();
+		commands.CopyTexture( NativeTexture, 0, 0, 0, 0, 0, staging, 0, 0, 0, 0, 0, Width, Height, 1, 1 );
+		commands.End();
+		Device.SubmitCommands( commands );
+		Device.WaitForIdle();
+		var mapped = Device.Map( staging, MapMode.Read );
+		try
+		{
+			var rowBytes = (int)Width * 4;
+			var pixels = new byte[rowBytes * (int)Height];
+			for ( var row = 0; row < Height; row++ )
+				Marshal.Copy( IntPtr.Add( mapped.Data, (int)(row * mapped.RowPitch) ), pixels, row * rowBytes, rowBytes );
+			return pixels;
+		}
+		finally
+		{
+			Device.Unmap( staging );
+		}
+	}
+
+	/// <summary>The distinct `.wct` paths of live textures with the flags of their first creator, for a pack switch.</summary>
+	internal static List<(string Path, TextureFlags Flags)> ReloadTargets()
+	{
+		var result = new List<(string, TextureFlags)>();
+		var seen = new HashSet<string>( StringComparer.Ordinal );
+		lock ( wctTextures )
+		{
+			wctTextures.RemoveAll( reference => !reference.TryGetTarget( out _ ) );
+			foreach ( var reference in wctTextures )
+				if ( reference.TryGetTarget( out var texture ) && seen.Add( texture.wctPath! ) )
+					result.Add( (texture.wctPath!, texture.wctFlags) );
+		}
+		return result;
+	}
+
+	/// <summary>
+	/// Gives every live texture of <paramref name="path"/> new pixels (possibly another size) and schedules the old GPU
+	/// texture for deletion after the current frame. Render thread only.
+	/// </summary>
+	internal static void Reload( string path, TextureFlags flags, byte[] data, int width, int height )
+	{
+		PreprocessTextureData( ref data, flags );
+		var (texture, view) = CreateNative( data, (uint)width, (uint)height );
+		var old = new HashSet<Veldrid.Texture>();
+		var oldViews = new HashSet<TextureView>();
+		lock ( wctTextures )
+			foreach ( var reference in wctTextures )
+			{
+				if ( !reference.TryGetTarget( out var target ) || target.wctPath != path )
+					continue;
+				if ( target.NativeTexture != null )
+					old.Add( target.NativeTexture );
+				if ( target.NativeTextureView != null )
+					oldViews.Add( target.NativeTextureView );
+				target.NativeTexture = texture;
+				target.NativeTextureView = view;
+				target.Width = (uint)width;
+				target.Height = (uint)height;
+			}
+		Render.ScheduleDelete( () =>
+		{
+			foreach ( var oldView in oldViews )
+				oldView.Dispose();
+			foreach ( var oldTexture in old )
+				oldTexture.Dispose();
+		} );
+	}
+
+	private static int CalculateMipLevels( int width, int height, int depth )
 	{
 		int maxDimension = Math.Max( width, Math.Max( height, depth ) );
 		int mipLevels = (int)Math.Floor( Math.Log( maxDimension, 2 ) ) + 1;
@@ -83,7 +267,7 @@ public partial class Texture : Asset
 		return mipLevels;
 	}
 
-	private void PreprocessTextureData( ref byte[] data, ref uint width, ref uint height, TextureFlags flags )
+	private static void PreprocessTextureData( ref byte[] data, TextureFlags flags )
 	{
 		if ( flags == TextureFlags.None )
 			return;
@@ -107,15 +291,18 @@ public partial class Texture : Asset
 
 	private void CreateTexture( string debugName, byte[] data, uint width, uint height, TextureFlags flags )
 	{
+		using var profile = LoadProfile.Measure( "texture-create" );
 		if ( TryGetCachedTexture( debugName, out var cachedTexture ) )
 		{
 			NativeTexture = cachedTexture!.NativeTexture;
 			NativeTextureView = cachedTexture!.NativeTextureView;
+			Width = cachedTexture.Width;
+			Height = cachedTexture.Height;
 
 			return;
 		}
 
-		PreprocessTextureData( ref data, ref width, ref height, flags );
+		PreprocessTextureData( ref data, flags );
 
 		if ( flags.HasFlag( TextureFlags.PointFilter ) )
 			SamplerType = SamplerType.Point;
@@ -126,6 +313,19 @@ public partial class Texture : Asset
 		if ( flags.HasFlag( TextureFlags.Repeat ) )
 			SamplerType = SamplerType.AnisotropicRepeat;
 
+		var (texture, textureView) = CreateNative( data, width, height );
+
+		Path = debugName;
+		NativeTexture = texture;
+		NativeTextureView = textureView;
+		Width = width;
+		Height = height;
+
+		All.Add( this );
+	}
+
+	private static (Veldrid.Texture, TextureView) CreateNative( byte[] data, uint width, uint height )
+	{
 		uint mipLevels = (uint)CalculateMipLevels( (int)width, (int)height, 1 );
 
 		var textureDescription = TextureDescription.Texture2D(
@@ -146,17 +346,11 @@ public partial class Texture : Asset
 
 		var textureView = Device.ResourceFactory.CreateTextureView( texture );
 
-		Path = debugName;
-		NativeTexture = texture;
-		NativeTextureView = textureView;
-		Width = width;
-		Height = height;
-
 		Render.ImmediateSubmit( cmd =>
 		{
-			cmd.GenerateMipmaps( NativeTexture );
+			cmd.GenerateMipmaps( texture );
 		} );
 
-		All.Add( this );
+		return (texture, textureView);
 	}
 }

@@ -1,22 +1,41 @@
-# Example: docker compose -f OpenTPW.Server/docker-compose.example.yml up --build   (run from source/)
-# Put a TLS-terminating reverse proxy (Caddy, nginx, Traefik) in front for internet use.
+# Example: OPENTPW_DOMAIN=tpw.example.org docker compose -f source/OpenTPW.Server/docker-compose.example.yml up -d --build
+# (run from the repository root). Point the domain's DNS at this machine first: Caddy answers on
+# port 443 only (no plain HTTP) and gets the HTTPS certificate itself over it. The game, the API and the chat are then
+# all at https://tpw.example.org/ (docs/SERVER.md).
 services:
   opentpw-server:
     build:
-      context: ..
-      dockerfile: OpenTPW.Server/Dockerfile
+      context: ../..
+      dockerfile: source/OpenTPW.Server/Dockerfile
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8080:8080"
+    # Reachable only through Caddy; nothing listens on the host for it.
+    expose:
+      - "8080"
     environment:
       OpenTPW__ServerName: "My OpenTPW server"
       OpenTPW__Message: "Welcome! Be nice."
+      # Behind Caddy, let rate limits see real client addresses:
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
       # Optional word filter from YOUR OWN game installation (never shipped with the server):
       # OpenTPW__FilterDirectory: /game-language
-      # Behind a reverse proxy, let rate limits see real client addresses:
-      # ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
     volumes:
       - opentpw-data:/data
       # - "/path/to/Theme Park World/Data/Language/English:/game-language:ro"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      OPENTPW_DOMAIN: ${OPENTPW_DOMAIN:?Set OPENTPW_DOMAIN to the server's domain name}
+    volumes:
+      - ../../deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - opentpw-server
 volumes:
   opentpw-data:
+  caddy-data:
+  caddy-config:

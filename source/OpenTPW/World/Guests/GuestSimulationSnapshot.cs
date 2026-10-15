@@ -1,0 +1,249 @@
+namespace OpenTPW;
+
+/// <summary>Problems found while validating a guest snapshot against a park; empty when the snapshot restores.</summary>
+public sealed class GuestSnapshotValidation
+{
+	private readonly List<string> errors;
+
+	internal GuestSnapshotValidation( List<string> errors ) => this.errors = errors;
+
+	/// <summary>Every problem found, in validation order; empty when the snapshot is valid.</summary>
+	public IReadOnlyList<string> Errors => errors;
+
+	/// <summary>True when the snapshot has no problems and may be restored.</summary>
+	public bool IsValid => errors.Count == 0;
+}
+
+/// <summary>
+/// Typed deep copy of one guest's whole simulation state: needs, money, queue bookkeeping, walk speed, navigation
+/// buffers and timers, exactly as <see cref="Guest"/> holds them between ticks. Captured by
+/// <see cref="GuestSimulation.CaptureSnapshot"/> and restored only into a fresh <see cref="Guest"/> object; arrays are
+/// owned by the snapshot and copied again on restore.
+/// </summary>
+public sealed record GuestSnapshot
+{
+	public required int Id { get; init; }
+	public required int Type { get; init; }
+	public required GuestState State { get; init; }
+
+	// Movement and presentation (Draw*/StepFrom* are presentation-only but captured for continuity).
+	public required float HeadingX { get; init; }
+	public required float HeadingY { get; init; }
+	public required bool IsMoving { get; init; }
+	public required float DistanceWalked { get; init; }
+	public required float DrawX { get; init; }
+	public required float DrawY { get; init; }
+	public required float DrawDistanceWalked { get; init; }
+	public required float StepFromX { get; init; }
+	public required float StepFromY { get; init; }
+	public required float StepFromDistance { get; init; }
+	public required long StepTick { get; init; }
+
+	// Needs, money and thoughts.
+	public required float Hunger { get; init; }
+	public required float Thirst { get; init; }
+	public required float Toilet { get; init; }
+	public required float Energy { get; init; }
+	public required float Nausea { get; init; }
+	public required float Happiness { get; init; }
+	public required int Money { get; init; }
+	/// <summary>The exit counter as the guest holds it (an integer count). Held as a double because saves written by
+	/// schema 1 store the former seconds-based value as a fraction; the restore truncates it toward zero, and the two
+	/// units nearly agree (one count per 0.992 s, ORACLE.md F26).</summary>
+	public required double ExitLevel { get; init; }
+	/// <summary>Optional display duration in simulated seconds. Older saves omit it; null stays unknown.</summary>
+	public double? TimeInParkSeconds { get; init; }
+	public required float SecondsSinceRide { get; init; }
+	public required int RidesTaken { get; init; }
+	public required GuestThought Thought { get; init; }
+	/// <summary>The thought the bubble shows (None: no bubble). Absent before schema 7.</summary>
+	public GuestThought BubbleThought { get; init; }
+	/// <summary>The park turn of the last bubble. Absent before schema 7 (0).</summary>
+	public long BubbleTurn { get; init; }
+	/// <summary>A sideshow player's result (null otherwise). Absent before schema 7.</summary>
+	public bool? SideshowWon { get; init; }
+	public required int AttractionId { get; init; }
+	/// <summary>May name an attraction that is no longer registered (a demolished ride the guest remembers).</summary>
+	public required int LastAttractionId { get; init; }
+	/// <summary>The four attractions the guest used last, newest first (guest <c>+480..+486</c>); 0 = empty. Absent in
+	/// saves written by schema 1, which then start empty.</summary>
+	public int[]? UsedHistory { get; init; }
+	/// <summary>The four attractions the guest recently turned away from, newest first (guest <c>+488..+494</c>); 0 = empty.
+	/// Absent in saves written by schema 1, which then start empty.</summary>
+	public int[]? TemporaryHistory { get; init; }
+
+	// Queue bookkeeping (docs/reverse/QUEUE-plan.md §3.2).
+	public required int QueuePosition { get; init; }
+	public required long QueueJoinTurn { get; init; }
+	public required long LastQueueWaitTurns { get; init; }
+	public required int QueueMoveDelay { get; init; }
+	public required bool QueueCalled { get; init; }
+	public required long QueueStandingSinceTurn { get; init; }
+	public required long InterludeTurn { get; init; }
+	public required bool InQueueInterlude { get; init; }
+	/// <summary>The state-6 activity (the original's state 8), <see cref="GuestActivity.None"/> when there is none. Absent in saves
+	/// written before schema 3, which then hold none.</summary>
+	public GuestActivity Activity { get; init; }
+	/// <summary>The litter meter (0..100). Absent in saves written before schema 4, which then hold an empty meter.</summary>
+	public float Litter { get; init; }
+	/// <summary>The bin a guest in state 9 walks to (0: none). Absent before schema 4.</summary>
+	public int BinId { get; init; }
+	/// <summary>The prankery flag (0, 100, 101 or 102). Absent before schema 5: no pranksters.</summary>
+	public int PrankFlag { get; init; }
+	/// <summary>The balloon's remaining life (0..255). Absent before schema 6, which then holds no balloons.</summary>
+	public int BalloonLife { get; init; }
+	/// <summary>Whether the guest holds its balloon. Absent before schema 6.</summary>
+	public bool HasBalloon { get; init; }
+	/// <summary>Whether the guest wears a costume. Absent before schema 6.</summary>
+	public bool InCostume { get; init; }
+	public required float QueueJoinHappiness { get; init; }
+	public required int QueueCellIndex { get; init; }
+	public required int QueueTargetIndex { get; init; }
+	public required float QueueTargetX { get; init; }
+	public required float QueueTargetY { get; init; }
+	public required long LastQueueUpdateTurn { get; init; }
+
+	// Walk speed.
+	public required int BaseSpeed { get; init; }
+	public required int ToiletBonus { get; init; }
+	public required ushort Boost { get; init; }
+	public required float SmoothedSpeed { get; init; }
+	public required int MaxSpeed { get; init; }
+	public required int MaxForce { get; init; }
+
+	/// <summary>The steering state (+212), including its route and progress history.</summary>
+	public required GuestNavigationSnapshot Navigation { get; init; }
+
+	// Cells, arrival lane and timers.
+	public required int CellX { get; init; }
+	public required int CellY { get; init; }
+	public required int PreviousCellX { get; init; }
+	public required int PreviousCellY { get; init; }
+	public required bool OnGrid { get; init; }
+	public required float OffsetX { get; init; }
+	public required float OffsetY { get; init; }
+	public required bool HasWaypoint { get; init; }
+	/// <summary>The arrival lane's cells (one of the settings' lanes, copied); null while the guest is on the grid.</summary>
+	public required (int X, int Y)[]? Lane { get; init; }
+	public required int LaneIndex { get; init; }
+	public required bool LaneReversed { get; init; }
+	public required float StateTimer { get; init; }
+	/// <summary>The former seconds-based decision timer, written by schemas 1 and 2 only. State 6 now decides once per park turn
+	/// (docs/reverse/WANDER-plan.md), so the restore ignores it.</summary>
+	public float? DecisionTimer { get; init; }
+}
+
+/// <summary>Every field of <see cref="GuestNavigation"/> the next steering step reads. The waypoint buffer itself is
+/// derived (Route[Cursor..] refilled five at a time), so only Count is carried and the buffer is rebuilt on restore.</summary>
+public sealed record GuestNavigationSnapshot
+{
+	public required int X { get; init; }
+	public required int Y { get; init; }
+	public required int VelocityX { get; init; }
+	public required int VelocityY { get; init; }
+	public required int TargetX { get; init; }
+	public required int TargetY { get; init; }
+	public required bool Arrived { get; init; }
+	public required int Index { get; init; }
+	public required int Count { get; init; }
+	public required (int X, int Y)[] Route { get; init; }
+	public required int Cursor { get; init; }
+	public required int WalkCrossings { get; init; }
+	public required (int X, int Y)[] AlsoOpen { get; init; }
+	public required int History { get; init; }
+	public required int PreviousRemaining { get; init; }
+	public required bool OffGrid { get; init; }
+	public required int Reroutes { get; init; }
+}
+
+/// <summary>
+/// Queue and rider bookkeeping of one <see cref="RideVisitorBridge"/>: the guest-id linked list front first, the
+/// script-held guests and their timers. The script, the open delegate and the placement's cells metadata are owned by
+/// other slices and re-attached around the restore; the computed queue geometry (cells, join, edit count) is captured
+/// here because the bridge owns it.
+/// </summary>
+public sealed record RideVisitorBridgeSnapshot
+{
+	public required int AttractionId { get; init; }
+	/// <summary>Guests in the queue, front first; the linked list is rebuilt from this order.</summary>
+	public required int[] Queue { get; init; }
+	/// <summary>Guests the script holds, in boarding order.</summary>
+	public required int[] OnRide { get; init; }
+	/// <summary>WALKOFF guests waiting for WALKGET, in FIFO order.</summary>
+	public required int[] WalkingOff { get; init; }
+	/// <summary>The script times at which each walking-off guest may be handed out, parallel to <see cref="WalkingOff"/>; null for a ride whose WALKOFF completes at once (every ride but the tour rides).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public double[]? WalkingOffReady { get; init; }
+	/// <summary>Guests already picked by HOP, sorted.</summary>
+	public required int[] Hopped { get; init; }
+	/// <summary>LIMBO entries in slot order.</summary>
+	public required (int Guest, double Until)[] Limbo { get; init; }
+	/// <summary>BOUNCE slot table in index order; interior free slots (guest 0) keep their place.</summary>
+	public required (int Guest, double Until, double Start)[] Bounce { get; init; }
+	/// <summary>The pending visitor (ride +104), 0 when none; stays in <see cref="Queue"/> until the script takes it.</summary>
+	public required int CalledGuest { get; init; }
+	/// <summary>True when the called guest's id is written to the script's VAR_LETMEON.</summary>
+	public required bool LetMeOnWritten { get; init; }
+	public required long LastAdmissionTurn { get; init; }
+	/// <summary>The ride is in state 1 (<see cref="RideVisitorBridge.IsBrokenDown"/>); absent in older saves, which held no state: the ride update reads VAR_BROKEN again.</summary>
+	public bool BrokenDown { get; init; }
+	public required long CalledTurn { get; init; }
+	/// <summary>Computed queue cells from the front (index 0) to the back.</summary>
+	public required (int X, int Y)[] QueueCells { get; init; }
+	public required int QueueEditCount { get; init; }
+	public required (int X, int Y)? JoinCell { get; init; }
+	public required long HeadNotReadyStreak { get; init; }
+	public required long MaximumHeadNotReadyStreak { get; init; }
+	public required long CalledAgeTurns { get; init; }
+	public required long MaximumCalledAgeTurns { get; init; }
+	public required AdmissionCheck LastAdmissionCheck { get; init; }
+	public required int BoardedTotal { get; init; }
+	public required int ReleasedTotal { get; init; }
+}
+
+/// <summary>
+/// Typed deep copy of the whole guest system between ticks: the explicit <see cref="GuestRandom"/> state, tick and
+/// counters, the arrival stream, every guest in list order, and per-attraction queue state (plus the simulation's
+/// seen queue-edit counters). Economy bindings (<see cref="GuestSimulation.Payments"/>, the arrival clock and points
+/// delegates) are live references the park re-attaches after the restore; they are not captured.
+/// </summary>
+public sealed record GuestSimulationSnapshot
+{
+	/// <summary>Bumped whenever the DTO fields or their meaning change; restore refuses other versions. Version 1
+	/// (before the histories and the integer exit counter) is still accepted and converted: the missing histories start
+	/// empty and the former seconds-based <see cref="GuestSnapshot.ExitLevel"/> is truncated toward zero. Versions 1 and 2
+	/// (before the state-6 decision, WANDER-plan) restore with no activity, and their decision timer is dropped. Versions 1 to 3 (before
+	/// per-cell litter) restore with empty litter meters, versions 1 to 4 (before pranks) without pranksters, versions 1 to 5 (before balloons and costumes)
+	/// without either, versions 1 to 6 (before thought bubbles) without a bubble.</summary>
+	public const int CurrentSchemaVersion = 7;
+	/// <summary>The versions <see cref="ParkResumeSaveFile"/> accepts: 7 as written now, 6 before thought bubbles, 5 before balloons and costumes, 4 before pranks, 3 before the litter meter, 2 before the state-6 decision, 1 before F24–F26.</summary>
+	public static int[] AcceptedSchemaVersions { get; } = { 1, 2, 3, 4, 5, 6, 7 };
+
+	public required int SchemaVersion { get; init; }
+	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>
+	public required ulong Seed { get; init; }
+	public required ulong RandomState { get; init; }
+	public required long TickCount { get; init; }
+	public required double TimeSeconds { get; init; }
+	/// <summary>The next guest id the allocator hands out.</summary>
+	public required int NextGuestId { get; init; }
+	public required long Admissions { get; init; }
+	public required int Departed { get; init; }
+
+	// Arrival stream.
+	public required long ArrivalTimerStart { get; init; }
+	public required bool DeliveringArrivals { get; init; }
+	public required float SpawnTimer { get; init; }
+	public required int PendingArrivals { get; init; }
+	public required int LaneToggle { get; init; }
+	public required bool ArrivalsEnabled { get; init; }
+
+	/// <summary>The grid version the queues last synced with.</summary>
+	public required int SeenGridVersion { get; init; }
+	/// <summary>Every guest, in the simulation's update order (id ascending in live state).</summary>
+	public required GuestSnapshot[] Guests { get; init; }
+	/// <summary>Every registered attraction's queue state, in registration order (attraction id ascending).</summary>
+	public required RideVisitorBridgeSnapshot[] Attractions { get; init; }
+	/// <summary>The simulation's seen queue-edit counters, one per attraction in <see cref="Attractions"/> order.</summary>
+	public required (int AttractionId, int SeenEditCount)[] SeenQueueEdits { get; init; }
+}

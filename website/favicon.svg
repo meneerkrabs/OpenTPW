@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OpenTPW">
+  <!-- OpenTPW's own mark: a ferris wheel. Not derived from any original game artwork. -->
+  <circle cx="32" cy="28" r="21" fill="none" stroke="#ffd23f" stroke-width="4"/>
+  <g stroke="#ffd23f" stroke-width="2.5" stroke-linecap="round">
+    <line x1="32" y1="7" x2="32" y2="49"/><line x1="11" y1="28" x2="53" y2="28"/>
+    <line x1="17.2" y1="13.2" x2="46.8" y2="42.8"/><line x1="46.8" y1="13.2" x2="17.2" y2="42.8"/>
+  </g>
+  <g fill="#8be04e" stroke="#2b1d6e" stroke-width="1.5">
+    <circle cx="32" cy="7" r="5"/><circle cx="53" cy="28" r="5"/><circle cx="32" cy="49" r="5"/><circle cx="11" cy="28" r="5"/>
+  </g>
+  <g fill="#ff6fb5" stroke="#2b1d6e" stroke-width="1.5">
+    <circle cx="46.8" cy="13.2" r="4.5"/><circle cx="46.8" cy="42.8" r="4.5"/><circle cx="17.2" cy="42.8" r="4.5"/><circle cx="17.2" cy="13.2" r="4.5"/>
+  </g>
+  <circle cx="32" cy="28" r="5" fill="#ffd23f" stroke="#2b1d6e" stroke-width="1.5"/>
+  <path d="M32 28 L20 60 M32 28 L44 60" stroke="#ffd23f" stroke-width="4" stroke-linecap="round"/>
+</svg>

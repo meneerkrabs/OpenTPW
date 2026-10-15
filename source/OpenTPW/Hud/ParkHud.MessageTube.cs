@@ -1,0 +1,208 @@
+using OpenTPW.UI.Original;
+using Veldrid;
+using NVector2 = System.Numerics.Vector2;
+
+namespace OpenTPW.Hud;
+
+/// <summary>
+/// The original's message system: pending messages stack as icons in the red tube left of the HUD panel; a left click on an icon opens that message in the
+/// green panel that slides out of the HUD, a right click deletes it. A message stays in the tube until it is opened or deleted.
+/// </summary>
+public sealed partial class ParkHud
+{
+	/// <summary>How many messages the tube holds; the oldest goes when a sixth arrives.</summary>
+	// [DATA:video 15:20, 51:40, 76:03] up to about five icons are stacked in the tube at once
+	// [APPROX:UI-025] pending tube messages are not saved with the park; the capacity of five is the most the video shows, not a traced limit; the original's message queue and its overflow rule are not traced
+	public const int MessageTubeCapacity = 5;
+
+	// The tube sits left of the HUD panel above its top edge, in the BottomLeft-anchored authored coordinates of the main panel; read off the 720p frames (video 15:20 and 12:00).
+	private static readonly UiRect TubeBase = Rect( 69, 850, 157, 985 );
+	private const float TubeStep = 77f;
+	// [BIN:TPW-EXE:0x7501a0 message panel] the panel (458,1101)-(1073,1442) is drawn from the tag models messagel (458..623), messagem (623..835) and messager (835..1073); its text area is (609,1118)-(1056,1422); mb_erase sits at (486,1325)-(589,1428) and two action buttons above it, (486,1218)-(589,1320) and (486,1110)-(589,1213), whose models are not fixed by the table
+	private static readonly LayoutTable MessageTable = OriginalLayoutTables.MessagePanel;
+	private static readonly UiRect MessagePanelRect = MessageTable.Root.Rect;
+	private static readonly UiRect MessageTextRect = MessageTable.Control( 0x10D32 ).Inner!.Value;
+	private static readonly string[] MessageActionIds = { "messageAction0", "messageAction1" };
+
+	private static readonly string[] PanelButtonIds = { "messageDelete", "messageClose" };
+	private List<string>? pendingMessages;
+	private List<GameMessageAction[]>? pendingActions;
+	private string? openedMessage;
+	private GameMessageAction[] openedActions = Array.Empty<GameMessageAction>();
+	private float messageSlide;
+
+	/// <summary>The messages waiting in the tube, oldest first (the lowest icon).</summary>
+	public IReadOnlyList<string> PendingMessages => pendingMessages ?? (IReadOnlyList<string>)Array.Empty<string>();
+	/// <summary>The message the slide-out panel shows, null when it is closed.</summary>
+	public string? OpenedMessage => openedMessage;
+	/// <summary>How far the panel has slid out of the HUD, 0 (hidden) to 1 (fully out).</summary>
+	public float MessagePanelSlide => messageSlide;
+
+	/// <summary>The actions of the opened message, in the order of the panel's two action slots.</summary>
+	public IReadOnlyList<GameMessageAction> OpenedActions => openedActions;
+
+	/// <summary>
+	/// Adds a game message to the tube. It stays until it is opened or deleted. A message may carry up to two actions, drawn as the panel's action buttons with
+	/// the art of their kind.
+	/// </summary>
+	public void PostGameMessage( string text, params GameMessageAction[] actions )
+	{
+		if ( string.IsNullOrWhiteSpace( text ) )
+			return;
+		pendingMessages ??= new List<string>();
+		pendingActions ??= new List<GameMessageAction[]>();
+		pendingMessages.Add( text );
+		pendingActions.Add( actions.Take( MessageActionIds.Length ).ToArray() );
+		while ( pendingMessages.Count > MessageTubeCapacity )
+		{
+			pendingMessages.RemoveAt( 0 );
+			pendingActions.RemoveAt( 0 );
+		}
+	}
+
+	/// <summary>A left click on an icon: the message leaves the tube and the panel shows it.</summary>
+	public bool OpenPendingMessage( int index )
+	{
+		if ( pendingMessages == null || index < 0 || index >= pendingMessages.Count )
+			return false;
+		// the panel comes out where the info arm is, so opening a message puts the arm away: the opened message is always visible, and one read there is not lost
+		if ( InfoArmOpen )
+			SetInfoArm( false );
+		// the message panel and the camera panel share one slot: opening a message puts the camera panel away
+		CameraPanelOpen = false;
+		openedMessage = pendingMessages[index];
+		openedActions = pendingActions![index];
+		pendingMessages.RemoveAt( index );
+		pendingActions.RemoveAt( index );
+		return true;
+	}
+
+	/// <summary>A right click on an icon: the message is deleted without being read.</summary>
+	public bool DeletePendingMessage( int index )
+	{
+		if ( pendingMessages == null || index < 0 || index >= pendingMessages.Count )
+			return false;
+		pendingMessages.RemoveAt( index );
+		pendingActions!.RemoveAt( index );
+		return true;
+	}
+
+	/// <summary>Closes the panel (the red cross, or the bomb that deletes the opened message).</summary>
+	public void CloseMessagePanel()
+	{
+		openedMessage = null;
+		openedActions = Array.Empty<GameMessageAction>();
+	}
+
+	/// <summary>The tube's whole rectangle for <paramref name="count"/> messages: the base tube grown by one step per icon.</summary>
+	internal static UiRect TubeRect( int count ) => new( TubeBase.X, TubeBase.Y - TubeStep * count, TubeBase.Width, TubeBase.Height + TubeStep * count );
+
+	/// <summary>The rectangle of icon <paramref name="index"/> (0 = the lowest, oldest message) in the authored BottomLeft canvas.</summary>
+	internal static UiRect TubeIcon( int index ) => UiRect.FromCenter( new NVector2( TubeBase.Center.X, TubeBase.Bottom - 55 - TubeStep * index ), 62, 62 );
+
+	private void UpdateMessageTube( float delta )
+	{
+		var target = openedMessage != null && !InfoArmOpen ? 1f : 0f;
+		messageSlide = target > messageSlide ? Math.Min( target, messageSlide + delta * 4f ) : Math.Max( target, messageSlide - delta * 4f );
+		var fullyOut = messageSlide >= 1f;
+		foreach ( var id in PanelButtonIds )
+			if ( hud.Find( id ) is { } element )
+				element.Visible = fullyOut;
+		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
+		{
+			if ( hud.Find( MessageActionIds[slot] ) is not UiButton button )
+				continue;
+			button.Visible = fullyOut && slot < openedActions.Length;
+			if ( button.Visible )
+				button.Model = openedActions[slot].Kind.Model();
+		}
+		// an empty tube is hidden, so its rectangle swallows no park clicks
+		if ( hud.Find( "messageTube" ) is { } tube )
+		{
+			tube.Visible = PendingMessages.Count > 0;
+			tube.Bounds = TubeRect( PendingMessages.Count );
+		}
+	}
+
+	/// <summary>The panel slides out of the HUD to the right, drawn under the main panel so it appears from behind it.</summary>
+	private void DrawMessagePanel( UiContext context )
+	{
+		if ( openedMessage == null || messageSlide <= 0f )
+			return;
+		var canvas = context.Canvas;
+		var offset = -(1f - messageSlide) * MessagePanelRect.Width;
+		UiRect Slide( UiRect rect ) => canvas.Map( new UiRect( rect.X + offset, rect.Y, rect.Width, rect.Height ), UiAnchor.BottomLeft );
+		// the tag models side by side: the left part with the buttons, the middle and the right part with the black text box
+		foreach ( var part in MessageTable.Root.Children.Where( node => node.Model?.StartsWith( "message", StringComparison.Ordinal ) == true ) )
+			context.DrawModel( part.Model!, 0, Slide( part.Rect ) );
+		if ( messageSlide >= 1f )
+			context.DrawText( context.Fonts.Small, openedMessage, Slide( MessageTextRect ).Inflate( -6 * canvas.TextScale ), UiColors.Text, UiAlign.Left, wrap: true );
+	}
+
+	/// <summary>The tube's icons: one list row per message; left opens, right deletes.</summary>
+	private sealed class MessageTubeList( ParkHud owner ) : UiElement, IUiRowList
+	{
+		public override bool Focusable => Visible && Enabled && owner.PendingMessages.Count > 0;
+		public int Selected => -1;
+		public bool ArrowsSelect => false;
+		public int HoveredRow { get; private set; } = -1;
+		public void Hover( int index ) => HoveredRow = index;
+		public bool HoverSelects => true;
+		public void Select( int index ) { }
+		public void Scroll( int rows ) { }
+
+		public int RowAt( UiCanvas canvas, NVector2 point )
+		{
+			for ( var index = 0; index < owner.PendingMessages.Count; index++ )
+				if ( canvas.Map( TubeIcon( index ), UiAnchor.BottomLeft ).Inflate( 4 * canvas.Scale ).Contains( point ) )
+					return index;
+			return -1;
+		}
+
+		// [DATA:video 15:20 hover help] "Bericht - klik links om te openen, klik rechts om te verwijderen": a left click opens the message, a right click deletes it
+		public bool RowClicked( int index, bool left ) => left ? owner.OpenPendingMessage( index ) : owner.DeletePendingMessage( index );
+
+		public override void Draw( UiContext context, bool focused, bool pressed )
+		{
+			var count = owner.PendingMessages.Count;
+			if ( count == 0 )
+				return;
+			var canvas = context.Canvas;
+			// The tube grows upwards by one step per message over its base (the base is part of the HUD art).
+			var bodyTop = TubeBase.Y - TubeStep * count;
+			var body = canvas.Map( new UiRect( TubeBase.X + 14, bodyTop, TubeBase.Width - 28, TubeStep * count + TubeBase.Height - 12 ), UiAnchor.BottomLeft );
+			context.Batch.AddRectangle( body.Inflate( 2 ), new RgbaByte( 90, 10, 10, 255 ) );
+			context.Batch.AddRectangle( body, new RgbaByte( 215, 30, 30, 255 ) );
+			context.Batch.AddRectangle( new UiRect( body.X + body.Width * 0.18f, body.Y, body.Width * 0.18f, body.Height ), new RgbaByte( 255, 120, 110, 255 ) );
+			for ( var index = 0; index < count; index++ )
+			{
+				var icon = canvas.Map( TubeIcon( index ), UiAnchor.BottomLeft );
+				var hovered = index == HoveredRow;
+				UiDisc.Draw( context.Batch, icon.Center, icon.Width / 2, hovered ? new RgbaByte( 255, 240, 120, 255 ) : new RgbaByte( 250, 250, 250, 255 ) );
+				UiDisc.Draw( context.Batch, icon.Center + new NVector2( 0, icon.Height * 0.1f ), icon.Width * 0.18f, new RgbaByte( 60, 60, 70, 255 ) );
+			}
+		}
+	}
+}
+
+/// <summary>What a message's action button does; each kind has its own art among the ui.wad mb_ models.</summary>
+// [DATA:ui.wad mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline] the six models the panel's action buttons can take (the table gives those buttons no fixed model)
+public enum GameMessageKind { Locate, CallMechanic, Research, Buy, Accept, Decline }
+
+/// <summary>One action of a tube message: the kind picks the button's art, <paramref name="Clicked"/> runs when it is pressed.</summary>
+public readonly record struct GameMessageAction( GameMessageKind Kind, Action Clicked );
+
+public static class GameMessageKinds
+{
+	/// <summary>The ui.wad model of the action button of this kind.</summary>
+	public static string Model( this GameMessageKind kind ) => kind switch
+	{
+		GameMessageKind.Locate => "mb_locate",
+		GameMessageKind.CallMechanic => "mb_callmech",
+		GameMessageKind.Research => "mb_resrch",
+		GameMessageKind.Buy => "mb_buy",
+		GameMessageKind.Accept => "mb_accept",
+		GameMessageKind.Decline => "mb_decline",
+		_ => throw new ArgumentOutOfRangeException( nameof( kind ) )
+	};
+}

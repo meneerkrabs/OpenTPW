@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenTPW: a new engine for Theme Park World</title>
+<meta name="description" content="OpenTPW is a free, open-source engine for Theme Park World (1999). Bring your own copy of the game and play it on Windows, macOS, Linux or in your browser.">
+<meta property="og:title" content="OpenTPW: a new engine for Theme Park World">
+<meta property="og:description" content="Free and open source. Bring your own copy of Theme Park World and play it on Windows, macOS, Linux or in your browser.">
+<meta property="og:image" content="https://opentpw.io/images/og.jpg">
+<meta property="og:url" content="https://opentpw.io/">
+<meta name="theme-color" content="#2b1a72">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="fonts/fredoka.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<script src="a11y.js"></script>
+<script src="site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+	<div class="wrap">
+		<a class="brand" href="/"><img src="logo.svg" alt="" width="40" height="40"><span>Open<b>TPW</b></span></a>
+		<nav aria-label="Main">
+			<a href="#park">The game</a>
+			<a href="#status">Status</a>
+			<a href="#download">Download</a>
+			<a href="#online">Online</a>
+			<a href="install.html">Install</a>
+			<a href="theme-park-inc.html">Theme Park Inc</a>
+			<a href="docs/index.html">Docs</a>
+			<a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>
+		</nav>
+	</div>
+</header>
+
+<main id="main">
+<section class="hero">
+	<div class="wrap hero-grid">
+		<div class="hero-text">
+			<h1>Open<span>TPW</span></h1>
+			<p class="hero-lead">A new engine for <strong>Theme Park World</strong>, the 1999 Bullfrog game. You bring your own copy; OpenTPW runs it on Windows, macOS and Linux, or in a browser tab.</p>
+			<div class="buttons">
+				<a class="button green" href="https://play.opentpw.io">Play in the browser</a>
+				<a class="button yellow" id="primary-download" href="#download">Download</a>
+			</div>
+			<p class="fine">Free and open source. Needs the files of an original installation or CD. <a href="#faq">Why?</a></p>
+		</div>
+		<figure class="hero-shot frame tilt-right">
+			<img src="images/shot-queue.webp" alt="Guests queueing at the Aztec Mayhem ride in the Lost Kingdom, with the original money counter and HUD" width="1460" height="860" fetchpriority="high">
+		</figure>
+	</div>
+	<svg class="wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C120 10 240 70 360 40 S600 10 720 40 960 70 1080 40 1320 10 1440 40 V80 H0Z"/></svg>
+</section>
+
+<section id="park" class="paper">
+	<div class="wrap">
+		<h2 class="section-title"><span class="sticker pink">Now playable</span>What you can do today</h2>
+
+		<article class="feature">
+			<div class="feature-media frame tilt-left">
+				<video id="clip" muted loop playsinline preload="metadata" poster="images/clip-poster.webp" width="1280" height="720" aria-label="A short clip: guests walk the paths and queue for the rides">
+					<source src="images/clip-queue.webm" type="video/webm">
+					<source src="images/clip-queue.mp4" type="video/mp4">
+				</video>
+			</div>
+			<div class="feature-text">
+				<h3>Build a park and fill it</h3>
+				<p>Pick one of the four worlds in the lobby, lay paths and queues and place the original rides, shops and sideshows. Guests come in through the gate, queue, ride, eat and go home again. Money, loans, wages, research and staff run on the game's own settings files.</p>
+			</div>
+		</article>
+
+		<article class="feature flip">
+			<div class="feature-media frame tilt-right">
+				<img src="images/shot-coaster.webp" alt="A player-built roller coaster: a red track on grey pylons looping back into the Temple of Gloom station" width="820" height="440" loading="lazy">
+			</div>
+			<div class="feature-text">
+				<h3>Build roller coasters</h3>
+				<p>Place pylons from the station, raise them with the mouse wheel and close the circuit. Track shape, cost, rating and train motion follow the original code. The track itself is still drawn as a plain band, and go-karts and water rides are not done yet.</p>
+			</div>
+		</article>
+
+		<article class="feature">
+			<div class="feature-media frame tilt-left">
+				<img src="images/shot-advisor.webp" alt="The advisor, a round black character with big eyes, standing in the corner of the park view" width="1200" height="750" loading="lazy">
+			</div>
+			<div class="feature-text">
+				<h3>The advisor talks again</h3>
+				<p>Original speech with lip sync, for the game events traced so far, such as a new park, Instant Action and bankruptcy. The park plays its own music and moves to a busier section as guests arrive.</p>
+			</div>
+		</article>
+
+		<article class="feature flip">
+			<div class="feature-media frame tilt-right">
+				<img src="images/shot-buy.webp" alt="The original Buy Ride window listing Aztec Mayhem, Belly Bounce and other rides with prices" width="1280" height="720" loading="lazy">
+			</div>
+			<div class="feature-text">
+				<h3>The original interface, sharp</h3>
+				<p>The lobby, HUD, buy window, finance, research, staff and map screens are built from the game's own models, fonts and strings, in English, Danish, Dutch, French, German and Swedish. Any resolution or aspect ratio works, and the interface scales without blurring.</p>
+			</div>
+		</article>
+	</div>
+</section>
+
+<section class="worlds night">
+	<svg class="wave flip-wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C120 10 240 70 360 40 S600 10 720 40 960 70 1080 40 1320 10 1440 40 V0 H0Z"/></svg>
+	<div class="wrap">
+		<h2 class="section-title light">Four worlds</h2>
+		<ul class="world-strip">
+			<li><img src="images/world-jungle.webp" alt="Lost Kingdom: paths, rides and a waterfall in the jungle" width="800" height="450" loading="lazy"><span class="label green">Lost Kingdom</span></li>
+			<li><img src="images/world-fantasy.webp" alt="Wonder Land: a giant pink worm in a black hat at the entrance" width="800" height="450" loading="lazy"><span class="label pink">Wonder Land</span></li>
+			<li><img src="images/world-space.webp" alt="Space Zone: the entrance on purple alien ground" width="800" height="450" loading="lazy"><span class="label sky">Space Zone</span></li>
+			<li><img src="images/world-halloween.webp" alt="Halloween World: the entrance on grey, misty ground" width="800" height="450" loading="lazy"><span class="label yellow">Halloween World</span></li>
+		</ul>
+		<p class="caption light">Rendered by OpenTPW from the original game data, with the optional enhanced texture pack.</p>
+	</div>
+	<svg class="wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C120 10 240 70 360 40 S600 10 720 40 960 70 1080 40 1320 10 1440 40 V80 H0Z"/></svg>
+</section>
+
+<section id="status" class="paper">
+	<div class="wrap">
+		<h2 class="section-title"><span class="sticker yellow">Honest list</span>Where it stands</h2>
+		<p class="lead">OpenTPW is a development preview. The goal is the original game, not a remake: behaviour is traced from the original, and every place where OpenTPW still guesses is written down in a public <a href="docs/FIDELITY-REGISTER.html">register</a>.</p>
+		<!-- site-status:begin (generated by tools/site_status.py from tools/site_status_curated.json; do not edit) -->
+		<div class="status-grid">
+			<div class="status-card works">
+				<h3>You can</h3>
+				<ul>
+					<li>Start from the original CD launcher, watch the intro movies and walk into the 3D lobby. <a href="docs/AUTORUN.html">Details</a></li>
+					<li>Pick any of the four worlds (Lost Kingdom, Wonder Land, Space Zone, Halloween World) and build a park there, or open the jungle sandbox with --sandbox. <a href="docs/RUNNING.html">Details</a></li>
+					<li>Place any of the 274 original rides, shops, sideshows and features; they run their original scripts and animations. <a href="docs/OBJECTS.html">Details</a></li>
+					<li>Run a park with guests, staff, money, loans, research, objectives, golden tickets and keys, and save it and resume it later (the app and the browser). <a href="docs/PARK-SAVES.html">Details</a></li>
+					<li>Build your own roller coaster: pylons, closed circuits, original cost, rating and train motion. <a href="docs/COASTERS.html">Details</a></li>
+					<li>Hear the advisor, the park music and most ride, crowd and interface sounds, and play the game in six languages at any resolution. <a href="docs/AUDIO.html">Details</a></li>
+					<li>Go online: publish and visit parks, vote, send postcards and chat, on the official server or your own. <a href="docs/ONLINE.html">Details</a></li>
+				</ul>
+			</div>
+			<div class="status-card todo">
+				<h3>You cannot yet</h3>
+				<ul>
+					<li>Build go-kart tracks or water rides; the coaster track is still drawn as a plain band.</li>
+					<li>Load an original save game completely: guests and research are not imported yet. <a href="docs/TPWS-PAYLOAD.html">Details</a></li>
+					<li>Hear every sound: weather, positioned ride effects and some staff sounds are missing or not yet verified.</li>
+					<li>See other players or share a park together: a shared park is a snapshot, visits are read-only. <a href="docs/ONLINE.html">Details</a></li>
+					<li>Rely on the original&#x27;s exact numbers everywhere: some rules still use a documented approximation. <a href="docs/FIDELITY-REGISTER.html">Details</a></li>
+				</ul>
+			</div>
+		</div>
+		<p class="note-later"><strong>Later:</strong> Full Theme Park Inc / Sim Coaster support is a later goal. The experimental building-and-guests slice can already start with your own files in the browser or through the desktop world command. Campaign, economy, staff, advisor and native park saves remain unavailable. The new desktop edition chooser is a reviewed PR for a future release. <a href="docs/THEME-PARK-INC.html">Details</a></p>
+		<!-- site-status:end -->
+		<div id="live-status" class="live">
+			<h3>Live from the repository</h3>
+			<p>These figures are read from the repository when the site is built. <a href="docs/status.html">Open the full status page</a>.</p>
+		</div>
+		<p class="fine">Details per file format and feature: <a href="docs/status.html">live status</a>, <a href="docs/README.html#status">README</a>, <a href="docs/FEATURE-MATRIX.html">feature matrix</a>, <a href="docs/PROGRESS.html">progress notes</a>.</p>
+	</div>
+</section>
+
+<section id="download" class="sun">
+	<svg class="wave flip-wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C120 10 240 70 360 40 S600 10 720 40 960 70 1080 40 1320 10 1440 40 V0 H0Z"/></svg>
+	<div class="wrap">
+		<h2 class="section-title">Download</h2>
+		<p class="lead">Unpack the latest release and start OpenTPW. On the first start it asks for your Theme Park World folder. <a href="install.html">Installation instructions</a> · <a href="https://github.com/meneerkrabs/OpenTPW/releases/latest">Release notes and older versions</a></p>
+		<div class="platforms">
+			<div class="platform" data-os="windows">
+				<h3>Windows</h3>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-win-x64.zip">64-bit <span>most PCs</span></a>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-win-arm64.zip">ARM64 <span>Snapdragon</span></a>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-win-x86.zip">32-bit</a>
+			</div>
+			<div class="platform" data-os="mac">
+				<h3>macOS</h3>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-osx-arm64.tar.gz">Apple silicon <span>M1 and later</span></a>
+			</div>
+			<div class="platform" data-os="linux">
+				<h3>Linux</h3>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-linux-x64.tar.gz">x64</a>
+				<a href="https://github.com/meneerkrabs/OpenTPW/releases/latest/download/OpenTPW-linux-arm64.tar.gz">ARM64</a>
+			</div>
+			<div class="platform">
+				<h3>Browser</h3>
+				<a href="https://play.opentpw.io">play.opentpw.io <span>Chrome, Edge, Firefox, Safari</span></a>
+			</div>
+		</div>
+	</div>
+</section>
+
+<section id="online" class="lagoon">
+	<svg class="wave flip-wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C120 10 240 70 360 40 S600 10 720 40 960 70 1080 40 1320 10 1440 40 V0 H0Z"/></svg>
+	<div class="wrap split">
+		<div>
+			<h2 class="section-title light">The online world is back</h2>
+			<p class="lead light">The original ThemeParkWorld.com service closed long ago. OpenTPW has its own open server behind the same globe, and you can run one yourself.</p>
+			<ul class="ticks">
+				<li>Publish a park in a city on the globe and visit other players' parks</li>
+				<li>Vote for parks; the most-voted ones stand as islands in the city's lobby</li>
+				<li>Send postcards and chat with the original's chat commands</li>
+				<li>Delete your account, and everything of yours on the server, at any time</li>
+			</ul>
+			<div class="buttons">
+				<a class="button yellow" href="https://play.opentpw.io">Go online</a>
+				<a class="button ghost" href="docs/SERVER.html">Host a server</a>
+			</div>
+			<p class="fine light">Please read the <a href="rules.html">community rules</a> and the <a href="privacy.html">privacy statement</a>.</p>
+		</div>
+		<figure class="frame tilt-right">
+			<img src="images/shot-globe.webp" alt="The online globe with the original satellites, the navigation panel and the advisor" width="1280" height="720" loading="lazy">
+		</figure>
+	</div>
+	<svg class="wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C120 10 240 70 360 40 S600 10 720 40 960 70 1080 40 1320 10 1440 40 V80 H0Z"/></svg>
+</section>
+
+<!-- Filled by site.js from the official server (play.opentpw.io); stays hidden when it cannot be reached or has nothing to show. -->
+<section id="community" class="paper" hidden>
+	<div class="wrap">
+		<h2 class="section-title">From the server</h2>
+		<div class="community">
+			<div class="board" id="news-game-box" hidden>
+				<h3>Game news</h3>
+				<div class="news-text" id="news-game"></div>
+			</div>
+			<div class="board" id="news-system-box" hidden>
+				<h3>System news</h3>
+				<div class="news-text" id="news-system"></div>
+			</div>
+			<div class="board" id="top-parks" hidden>
+				<h3>Top parks</h3>
+				<ol class="parks" id="park-list"></ol>
+			</div>
+		</div>
+	</div>
+</section>
+
+<section id="faq" class="paper">
+	<div class="wrap narrow">
+		<h2 class="section-title">Questions</h2>
+		<details open><summary>Do I need the original game?</summary><p>Yes. OpenTPW is an engine, not the game: it contains none of the original's graphics, sounds or other files and reads them from your own copy of Theme Park World, for example the PC CD or an installed copy.</p></details>
+		<details><summary>Does the browser version upload my game files?</summary><p>No. The page copies the files it needs from the folder you choose into your browser's memory. They are never sent to a server, and they are gone when you close the page.</p></details>
+		<details><summary>Is OpenTPW made by EA or Bullfrog?</summary><p>No. OpenTPW is an independent fan project, not affiliated with or endorsed by Electronic Arts or Bullfrog Productions.</p></details>
+		<details><summary>How faithful is it?</summary><p>The aim is to behave like the original. Behaviour is traced from the original game's code and data, and every place where OpenTPW still has to guess is listed in a public register, so it can be checked and improved.</p></details>
+		<details><summary>How can I help?</summary><p>Play it and report what differs from the original, help with research into the game's files and code, or contribute code on <a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>.</p></details>
+	</div>
+</section>
+
+<section id="history" class="paper history">
+	<div class="wrap narrow">
+		<h2 class="section-title">Where OpenTPW comes from</h2>
+		<p>Alex Guthrie started OpenTPW in March 2022 at <a href="https://github.com/OpenTPW/OpenTPW">OpenTPW/OpenTPW</a>: the first file readers, a renderer and the documentation of the game's file formats, with contributions from others, such as Beneggy's work on the save format. Since October 2026 this fork at <a href="https://github.com/meneerkrabs/OpenTPW">meneerkrabs/OpenTPW</a> continues the work at a faster pace, and it would gladly work together with the original project.</p>
+		<p>The research behind it, from file formats to the ride script machine and the economy, is written up in the <a href="docs/index.html">documentation</a>.</p>
+	</div>
+</section>
+</main>
+
+<footer>
+	<div class="wrap">
+		<nav aria-label="Footer">
+			<a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>
+			<a href="install.html">Install</a>
+			<a href="docs/index.html">Documentation</a>
+			<a href="privacy.html">Privacy</a>
+			<a href="rules.html">Community rules</a>
+			<a href="mailto:contact@opentpw.io">contact@opentpw.io</a>
+		</nav>
+		<p>OpenTPW is free software under the MIT licence. Theme Park World is a trademark of Electronic Arts Inc. OpenTPW is an independent project and is not affiliated with or endorsed by Electronic Arts or Bullfrog Productions. Screenshots show OpenTPW running with original game data. Headings use <a href="fonts/OFL-Fredoka.txt">Fredoka</a> (SIL Open Font License); the reading options offer <a href="fonts/OFL-AtkinsonHyperlegible.txt">Atkinson Hyperlegible</a> and <a href="fonts/OFL-OpenDyslexic.txt">OpenDyslexic</a> (same licence).</p>
+	</div>
+</footer>
+</body>
+</html>

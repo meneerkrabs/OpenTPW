@@ -1,0 +1,639 @@
+using System.Globalization;
+using OpenTPW.UI.Original;
+using Veldrid;
+using NVector2 = System.Numerics.Vector2;
+
+namespace OpenTPW.Hud;
+
+/// <summary>The staff window from the Mac layout at <c>data:0x4a1e0</c>, in authored 2048x1536 coordinates.</summary>
+public sealed partial class ParkHud
+{
+	private static readonly UiRect StaffContent = Rect( 1043, 441, 1729, 911 );
+	private static readonly UiRect StaffScrollTrack = Rect( 1743, 398, 1802, 843 );
+	private static readonly UiRect StaffScrollKnob = Rect( 1735, 651, 1802, 718 );
+	private static readonly (StaffType Type, string Model, int Help, UiRect Rect)[] StaffRoles =
+	{
+		(StaffType.Handyman, "b_shandy", 154, Rect( 1164, 195, 1267, 297 )),
+		(StaffType.Mechanic, "b_smech", 155, Rect( 1283, 195, 1386, 297 )),
+		(StaffType.Entertainer, "b_senter", 156, Rect( 1402, 195, 1504, 297 )),
+		(StaffType.Guard, "b_sguard", 157, Rect( 1521, 195, 1623, 297 )),
+		(StaffType.Researcher, "b_sresrcher", 158, Rect( 1640, 195, 1742, 297 )),
+	};
+	private static readonly (UIStrings Label, UiRect LabelRect, UiRect ValueRect)[] StaffStatRows =
+	{
+		(UIStrings.CurrentStatusStaff, Rect( 283, 714, 679, 759 ), Rect( 722, 714, 957, 759 )),
+		(UIStrings.MonthlyWageStaff, Rect( 283, 765, 679, 810 ), Rect( 722, 765, 957, 810 )),
+		(UIStrings.SkillStaff, Rect( 283, 816, 679, 861 ), Rect( 722, 816, 957, 861 )),
+		(UIStrings.HappinessStaff, Rect( 283, 868, 679, 912 ), Rect( 722, 868, 957, 912 )),
+	};
+
+	private UiScreen? staffScreen;
+	private UiButton? dismissStaffButton;
+	private UiButton? pickUpStaffButton;
+	private UiButton? setPatrolButton;
+	private UiButton? clearPatrolButton;
+	private StaffType? staffFilter = StaffType.Handyman;
+	private bool showingEmployedStaff;
+	// [BIN:TPW-EXE:0x49b85e hire list sort word 0x7523e4] the hire window writes its sort word back on a sort change, so the order outlives the window for the session (UI-084)
+	private bool staffSortByWage { get => Sorts.StaffByWage; set => Sorts.StaffByWage = value; }
+	private bool staffSortDescending { get => Sorts.StaffDescending; set => Sorts.StaffDescending = value; }
+	private int selectedStaffId;
+	private int staffFirstRow;
+	private Dictionary<StaffType, string[]>? staffNames;
+	private string[]? staffTypes;
+	private string[]? staffStates;
+	// [APPROX:UI-080] ten equal staff rows fill the table's 470-unit content area; wheel movement is one row — evidence needed: original staff-list capture.
+	public const int StaffVisibleRows = 10;
+	public const float StaffRowHeight = 470f / StaffVisibleRows;
+
+	public bool StaffWindowOpen => staffScreen != null && Stack.Screens.Contains( staffScreen );
+	public StaffType? StaffFilter => staffFilter;
+	public bool ShowingEmployedStaff => showingEmployedStaff;
+	public int SelectedStaffId => SelectedStaff?.Id ?? 0;
+	public int SelectedCandidateId => SelectedCandidate?.Id ?? 0;
+	public int StaffFirstRow => staffFirstRow;
+	public IReadOnlyList<StaffMember> StaffItems
+	{
+		get
+		{
+			var members = (Status.EconomySource as ParkEconomy)?.Staff.Members
+				.Where( member => staffFilter == null || member.Type == staffFilter ) ?? Enumerable.Empty<StaffMember>();
+			return staffSortByWage
+				? (staffSortDescending ? members.OrderByDescending( StaffWageAmount ) : members.OrderBy( StaffWageAmount )).ThenBy( member => member.Id ).ToArray()
+				: (staffSortDescending ? members.OrderByDescending( StaffName ) : members.OrderBy( StaffName )).ThenBy( member => member.Id ).ToArray();
+		}
+	}
+	public IReadOnlyList<StaffCandidate> StaffCandidates
+	{
+		get
+		{
+			var candidates = (Status.EconomySource as ParkEconomy)?.Staff.Candidates
+				.Where( candidate => staffFilter == null || candidate.Type == staffFilter ) ?? Enumerable.Empty<StaffCandidate>();
+			return staffSortByWage
+				? (staffSortDescending ? candidates.OrderByDescending( CandidateWageAmount ) : candidates.OrderBy( CandidateWageAmount )).ThenBy( candidate => candidate.Id ).ToArray()
+				: (staffSortDescending ? candidates.OrderByDescending( CandidateName ) : candidates.OrderBy( CandidateName )).ThenBy( candidate => candidate.Id ).ToArray();
+		}
+	}
+	public StaffMember? SelectedStaff => StaffItems.FirstOrDefault( member => member.Id == selectedStaffId );
+	public StaffCandidate? SelectedCandidate => StaffCandidates.FirstOrDefault( candidate => candidate.Id == selectedStaffId );
+	private int StaffListCount => showingEmployedStaff ? StaffItems.Count : StaffCandidates.Count;
+	private int StaffMaxFirstRow => Math.Max( 0, StaffListCount - StaffVisibleRows );
+
+	public void OpenStaffWindow()
+	{
+		if ( StaffWindowOpen )
+			return;
+		staffFilter = StaffType.Handyman;
+		ShowEmployedStaff( false );
+		staffScreen ??= CreateStaffScreen();
+		Stack.Push( staffScreen );
+		staffScreen.Focus( staffScreen.Find( "staffList" ) );
+	}
+
+	public void CloseStaffWindow()
+	{
+		if ( staffScreen == null || !StaffWindowOpen )
+			return;
+		while ( Stack.Top != staffScreen && Stack.Screens.Count > 1 )
+			Stack.Pop();
+		if ( Stack.Top == staffScreen )
+			Stack.Pop();
+	}
+
+	public void FilterStaff( StaffType? type )
+	{
+		staffFilter = type;
+		staffFirstRow = 0;
+		selectedStaffId = 0;
+		EnsureStaffSelection();
+	}
+
+	/// <summary>Switches between the original applicant list and a view of existing employees.</summary>
+	// [EXT:staff-employee-view] The original hire window only lists applicants; its employee list is the separate All Staff window
+	// (table 0x750e10, screen 0x11d, S key), which OpenTPW does not port. This view of existing employees inside the hire window,
+	// reached by the labelled "staffViewExt" button, is an OpenTPW extension that also hosts the dismiss button.
+	public void ShowEmployedStaff( bool employed )
+	{
+		showingEmployedStaff = employed;
+		staffFirstRow = 0;
+		selectedStaffId = 0;
+		EnsureStaffSelection();
+	}
+
+	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending), so the first press on column 0 descends.
+	// [BIN:TPW-EXE:0x7523e4 hire list sort word] the word starts at 1 (column 0, ascending) and is written back on a change (0x49b85e); the session keeps it (ListSortMemory)
+	public void SortStaff( bool byWage )
+	{
+		staffSortDescending = staffSortByWage == byWage && !staffSortDescending;
+		staffSortByWage = byWage;
+		EnsureStaffSelection();
+		var selectedIndex = showingEmployedStaff
+			? StaffItems.ToList().FindIndex( member => member.Id == selectedStaffId )
+			: StaffCandidates.ToList().FindIndex( candidate => candidate.Id == selectedStaffId );
+		if ( selectedIndex >= 0 )
+			SelectStaff( selectedIndex );
+	}
+
+	/// <summary>
+	/// Hires the still-available selected applicant: the window closes and the Place tool starts with the applicant still in the pool; the employee
+	/// exists only after a click on a valid cell (docs/STAFF-PLACEMENT.md). Without a park view the economy hires at once.
+	/// </summary>
+	// [BIN:TPW-EXE:0x507bf0 hire] the hire creates no object, it builds the place tool; [BIN:TPW-EXE:0x49b9dd hire handler] the handler posts advisor message 0x135 and closes the window
+	// [APPROX:UI-097] the advisor message 0x135 (309, "place your new staff member") is not posted: its descriptor row exists (table 0x76E300 of 56-byte rows built by 0x5a0a50; row 309 at 0x772698: all game modes, group 1, first response 0x239 = 569 = speech sample 587, one response, one pending duplicate) but its score callback 0x59e8c0 returns field +0x328 of the Advisor.sam balance object (0xfb3540), whose key is unidentified, so OpenTPW's advisor table (scored messages only) cannot hold it; the hint is an OpenTPW line of the message area, shown when the tool starts, and the queue cannot withdraw advice — evidence needed: the Advisor.sam key behind balance field +0x328 and the advice withdrawal
+	public bool HireSelectedStaff()
+	{
+		if ( showingEmployedStaff || RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.IsBankrupt )
+			return false;
+		var candidate = SelectedCandidate;
+		if ( candidate == null || !economy.Staff.CanHire( candidate.Type ) || economy.Staff.Candidates.All( item => item.Id != candidate.Id ) )
+			return false;
+		if ( level.StaffPlacement is { } placement && ReferenceEquals( level.Park?.Economy, economy ) )
+		{
+			if ( !placement.BeginHire( candidate.Id ) )
+				return false;
+			level.EndBuildTools();
+			PostMessage( strings.Extra( OpenTpwText.PlaceStaff ) );
+			CloseStaffWindow();
+		}
+		else
+			economy.Hire( candidate.Id );
+		selectedStaffId = 0;
+		EnsureStaffSelection();
+		return true;
+	}
+
+	/// <summary>Feedback for a click that cannot hire (bankrupt, role full, read-only, no applicant): a message and the error sound instead of a silent select.</summary>
+	internal void RefuseHire()
+	{
+		if ( showingEmployedStaff )
+			return;
+		PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
+		GameAudio.PlayUi( GameAudio.ErrorEvent );
+	}
+
+	/// <summary>Whether the selected employee may be picked up now (tp.exe <c>CanBePickedUp</c> 0x505bd0, read each tick by the window).</summary>
+	public bool CanPickUpSelectedStaff => showingEmployedStaff && !level.IsReadOnlyVisit && SelectedStaff is { } member
+		&& level.StaffPlacement != null && level.Guests?.Grid.Cells is { } cells && StaffPlacementRules.CanBePickedUp( member, cells );
+
+	/// <summary>The pick-up button: puts the selected employee in the player's hand, closes the window and starts the Carry tool.</summary>
+	// [BIN:TPW-EXE:0x4b5ed9 pick-up button] control 0x50e of the staff info window runs 0x505c50 and the window closes
+	public bool PickUpSelectedStaff()
+	{
+		if ( !showingEmployedStaff || RejectReadOnlyAction() || SelectedStaff is not { } member || level.StaffPlacement is not { } placement )
+			return false;
+		if ( !placement.PickUp( member ) )
+			return false;
+		level.EndBuildTools();
+		CloseStaffWindow();
+		return true;
+	}
+
+	/// <summary>Whether the selected employee's patrol area may be set or cleared now.</summary>
+	public bool CanSetPatrolArea => showingEmployedStaff && !level.IsReadOnlyVisit && SelectedStaff != null && level.PatrolTool != null;
+
+	/// <summary>The set button: the window closes and the patrol tool starts for the selected employee (tp.exe <c>0x004B5B50</c> with 1, mouse mode 0x36).</summary>
+	// [BIN:TPW-EXE:0x004B5B50 patrol buttons] 0 clears the area (0x00506E90); 1 builds the tool's state, sets mouse mode 0x36 (0x0046C580) and closes the window
+	public bool SetSelectedStaffPatrolArea()
+	{
+		if ( !CanSetPatrolArea || RejectReadOnlyAction() || SelectedStaff is not { } member || level.PatrolTool is not { } tool )
+			return false;
+		level.EndBuildTools();
+		level.StaffPlacement?.Cancel();
+		if ( !tool.Begin( member ) )
+			return false;
+		PostMessage( strings.Extra( OpenTpwText.PatrolAreaHint ) );
+		CloseStaffWindow();
+		return true;
+	}
+
+	/// <summary>The clear button: the selected employee patrols the whole park again (tp.exe <c>0x00506E90</c>).</summary>
+	public bool ClearSelectedStaffPatrolArea()
+	{
+		if ( !CanSetPatrolArea || RejectReadOnlyAction() || SelectedStaff is not { } member )
+			return false;
+		member.ClearPatrolArea();
+		return true;
+	}
+
+	/// <summary>Dismisses the selected employee through the existing park economy operation.</summary>
+	public bool DismissSelectedStaff()
+	{
+		if ( !showingEmployedStaff || RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy )
+			return false;
+		var member = SelectedStaff;
+		if ( member == null || economy.Staff.Members.All( item => item.Id != member.Id ) )
+			return false;
+		economy.Fire( member.Id );
+		selectedStaffId = 0;
+		EnsureStaffSelection();
+		return true;
+	}
+
+	private void ConfirmDismissSelectedStaff()
+	{
+		if ( !showingEmployedStaff || SelectedStaff == null || RejectReadOnlyAction() )
+			return;
+		// [BIN:TPW-EXE:0x4b5e5d dismiss] b_fire (control 0x50c) confirms with UITEXT 0x18d only when the Confirmations option (ConfirmDeleteOn, options byte 0x78d90f = +0x37) is on
+		if ( !GameOptions.Current.Confirmations )
+		{
+			DismissSelectedStaff();
+			return;
+		}
+		var targetName = SelectedName;
+		Stack.Push( UiDialogs.Message( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee] + "\n" + targetName,
+			(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); DismissSelectedStaff(); }),
+			(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
+	}
+
+	public void SelectStaff( int index )
+	{
+		var count = StaffListCount;
+		if ( count == 0 )
+		{
+			selectedStaffId = 0;
+			return;
+		}
+		index = Math.Clamp( index, 0, count - 1 );
+		selectedStaffId = showingEmployedStaff ? StaffItems[index].Id : StaffCandidates[index].Id;
+		staffFirstRow = Math.Clamp( staffFirstRow, Math.Max( 0, index - StaffVisibleRows + 1 ), index );
+	}
+
+	public void ScrollStaff( int rows ) => SetStaffFirstRow( staffFirstRow + rows );
+	public void SetStaffFirstRow( int first ) => staffFirstRow = Math.Clamp( first, 0, StaffMaxFirstRow );
+
+	private void EnsureStaffSelection()
+	{
+		var ids = showingEmployedStaff ? StaffItems.Select( member => member.Id ) : StaffCandidates.Select( candidate => candidate.Id );
+		var visibleIds = ids.ToArray();
+		if ( visibleIds.Length == 0 )
+			selectedStaffId = 0;
+		else if ( !visibleIds.Contains( selectedStaffId ) )
+			selectedStaffId = visibleIds[0];
+		SetStaffFirstRow( staffFirstRow );
+		if ( dismissStaffButton != null )
+			dismissStaffButton.Enabled = showingEmployedStaff && selectedStaffId != 0;
+		if ( pickUpStaffButton != null )
+			pickUpStaffButton.Enabled = CanPickUpSelectedStaff;
+		if ( setPatrolButton != null )
+			setPatrolButton.Enabled = CanSetPatrolArea;
+		if ( clearPatrolButton != null )
+			clearPatrolButton.Enabled = CanSetPatrolArea && SelectedStaff is { HasPatrolArea: true };
+	}
+
+	private string StaffName( StaffMember member ) => StaffName( member.Type, member.NameIndex, member.Id );
+	private string CandidateName( StaffCandidate candidate ) => StaffName( candidate.Type, candidate.NameIndex, candidate.Id );
+	private string StaffName( StaffType type, int nameIndex, int id )
+	{
+		// [DATA:Language/*/*_NAMES.str] NameIndex is the role-specific original name-table index.
+		staffNames ??= LoadStaffNames();
+		var names = staffNames[type];
+		return nameIndex >= 0 && nameIndex < names.Length && !string.IsNullOrWhiteSpace( names[nameIndex] )
+			? names[nameIndex] : $"{type} {id}";
+	}
+
+	private static Dictionary<StaffType, string[]> LoadStaffNames()
+	{
+		var language = GameLanguage.Current;
+		return new Dictionary<StaffType, string[]>
+		{
+			[StaffType.Handyman] = language.LoadStrings( "HANDYMAN_NAMES.str" ).Entries,
+			[StaffType.Mechanic] = language.LoadStrings( "MECHANIC_NAMES.str" ).Entries,
+			[StaffType.Entertainer] = language.LoadStrings( "ENTERTAINER_NAMES.str" ).Entries,
+			[StaffType.Guard] = language.LoadStrings( "GUARD_NAMES.str" ).Entries,
+			[StaffType.Researcher] = language.LoadStrings( "RESEARCHER_NAMES.str" ).Entries,
+		};
+	}
+
+	private long StaffWageAmount( StaffMember member ) => (Status.EconomySource as ParkEconomy)?.Staff.MonthlyWage( member ) ?? 0;
+	private long CandidateWageAmount( StaffCandidate candidate ) => (Status.EconomySource as ParkEconomy)?.Settings.GetMonthlyWage( candidate.Type, candidate.Grade ) ?? 0;
+	private string StaffWage( StaffMember member ) => FormatMoney( StaffWageAmount( member ) );
+	private string CandidateWage( StaffCandidate candidate ) => FormatMoney( CandidateWageAmount( candidate ) );
+	private string StaffRole( StaffType type )
+	{
+		staffTypes ??= GameLanguage.Current.LoadStrings( "STAFF_TYPES.str" ).Entries;
+		return (int)type < staffTypes.Length && !string.IsNullOrWhiteSpace( staffTypes[(int)type] ) ? staffTypes[(int)type] : type.ToString();
+	}
+	private string StaffStatus( StaffState state )
+	{
+		staffStates ??= GameLanguage.Current.LoadStrings( "STAFFSTATES.str" ).Entries;
+		return (int)state < staffStates.Length && !string.IsNullOrWhiteSpace( staffStates[(int)state] ) ? staffStates[(int)state] : state.ToString();
+	}
+
+	private string StaffStat( StaffMember member, int row ) => row switch
+	{
+		0 => StaffStatus( member.State ),
+		1 => StaffWage( member ),
+		2 => $"{ParkStaff.StaffSkill( member )}%",
+		3 => $"{member.Happiness}%",
+		_ => ""
+	};
+	private string CandidateStat( StaffCandidate candidate, int row ) => row switch
+	{
+		0 => CandidateName( candidate ),
+		1 => CandidateWage( candidate ),
+		2 => $"{20 * candidate.Grade}%",
+		_ => ""
+	};
+
+	/// <summary>
+	/// The hire window's mini balance (control 9349) for <paramref name="candidate"/>: the current month's money in, the staff costs with the candidate's monthly wage added, the other costs
+	/// (money out minus staff costs) and what is left once the wage is paid.
+	/// </summary>
+	// [BIN:TPW-EXE:0x49b927 hire window mini balance] on a selection the staff-costs row (0x248c) shows [0x7ca2fc] + the candidate's wage (0x5077f0) and the balance row (0x2487) [0x7ca2f0] - wage - [0x7ca2fc] - [0x7ca300]; the globals are the newest samples of the finance graph's money-in (+0x1fc90), staff-costs (+0x1f7f0) and money-out (+0x1f5a0) series (0x49c53d..0x49c705), other costs [0x7ca300] being money out minus staff costs (0x49c705)
+	// [DATA:video 12:00 hire window] Inkomsten, - Werknemerskosten, - Overige kosten and Saldo; Saldo follows the selected candidate and the two cost rows are red
+	public (long Income, long StaffCosts, long OtherCosts, long Balance)? CandidateBalance( StaffCandidate? candidate )
+	{
+		if ( candidate == null || FinanceMonths() is not { Count: > 0 } months )
+			return null;
+		var month = months[^1];
+		var wage = CandidateWageAmount( candidate );
+		var moneyOut = month.MoneyOut;
+		var staff = month[LedgerCategory.StaffCosts];
+		return (month.MoneyIn, staff + wage, moneyOut - staff, month.MoneyIn - wage - moneyOut);
+	}
+
+	private string BalanceRowText( int row )
+	{
+		if ( CandidateBalance( SelectedCandidate ) is not { } balance )
+			return "";
+		return FormatMoney( row switch { 0 => balance.Income, 1 => balance.StaffCosts, 2 => balance.OtherCosts, _ => balance.Balance } );
+	}
+
+	/// <summary>The hire window's skill gauge (control 9346) as a share of the full bar: the candidate's skill byte over 5.</summary>
+	// [BIN:TPW-EXE:0x49b8c3 skill gauge] the gauge is set to the skill byte (candidate +8) × 1024 / 5 (0x49b8e2..0x49b8f5), so the byte 5 fills the bar
+	// [APPROX:UI-081] the byte is taken as the grade + 1 (the cheapest candidate's bar is about a fifth full in the video, 12:00); the field's writer is not traced
+	public static float? SkillGauge( StaffCandidate? candidate ) => candidate == null ? null : Math.Clamp( (candidate.Grade + 1) / 5f, 0f, 1f );
+
+	private string SelectedName => showingEmployedStaff
+		? SelectedStaff is { } member ? StaffName( member ) : ""
+		: SelectedCandidate is { } candidate ? CandidateName( candidate ) : "";
+	private string SelectedGrade => showingEmployedStaff
+		? SelectedStaff is { } member ? (member.Grade + 1).ToString( CultureInfo.InvariantCulture ) : ""
+		: SelectedCandidate is { } candidate ? (candidate.Grade + 1).ToString( CultureInfo.InvariantCulture ) : "";
+	private string SelectedRole => showingEmployedStaff
+		? SelectedStaff is { } member ? StaffRole( member.Type ) : ""
+		: SelectedCandidate is { } candidate ? StaffRole( candidate.Type ) : "";
+	private string SelectedStat( int row ) => showingEmployedStaff
+		? SelectedStaff is { } member ? StaffStat( member, row ) : ""
+		: SelectedCandidate is { } candidate ? CandidateStat( candidate, row ) : "";
+	/// <summary>The hire window's cash label (control 9366): UITEXT 0x1ca "Cash $ N" or 0x1cb "Cash -$ N" with the bare balance magnitude.</summary>
+	public string StaffCashText => !Status.HasEconomy ? "" : CashLabel( Status.Money );
+	/// <summary>The buy window's cash label (control 512): the same UITEXT 0x1ca/0x1cb text as the hire window's.</summary>
+	public string BuyCashText => StaffCashText;
+	private string CashLabel( long balance )
+	{
+		var template = strings[balance < 0 ? UIStrings.CashNegativeDollar : UIStrings.CashDollar];
+		var number = (balance < 0 ? -(decimal)balance : balance).ToString( CultureInfo.InvariantCulture );
+		return template.Contains( "%d" ) ? template.Replace( "%d", number ) : template + number;
+	}
+	private string HireTitle => strings[(UIStrings)( (int)UIStrings.HireCleaners + (int)( staffFilter ?? StaffType.Handyman ) )];
+	private string ListName( int index ) => showingEmployedStaff ? StaffName( StaffItems[index] ) : CandidateName( StaffCandidates[index] );
+	private string ListWage( int index ) => showingEmployedStaff ? StaffWage( StaffItems[index] ) : CandidateWage( StaffCandidates[index] );
+
+	private UiScreen CreateStaffScreen()
+	{
+		var screen = new StaffScreen( this );
+		void Model( string id, string model, UiRect rect ) => screen.Add( new UiModelImage { Id = id, Model = model, Bounds = rect, Anchor = UiAnchor.Center } );
+		// [DATA:Mac staff table 0x4a1e0:9343,9345,9348,9349,9358] Resolved ui.wad root model hashes.
+		Model( "window", "w_big", Rect( 186, 30, 2018, 1007 ) );
+		Model( "staffInfo", "f_staffinfo", Rect( 259, 521, 971, 600 ) );
+		Model( "staffPicture", "f_staffpic", Rect( 484, 179, 748, 443 ) );
+		Model( "statsFrame", "f_balance", Rect( 259, 702, 971, 930 ) );
+		Model( "listFrame", "hirestaff", Rect( 1017, 179, 1813, 930 ) );
+		screen.Add( new UiLabel { Id = "title", Text = () => showingEmployedStaff ? strings[UIStrings.AllStaff] : HireTitle, Font = fonts => fonts.Title,
+			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center } );
+		// [DATA:video 12:00 hire window] the applicant view shows no name or grade: the strip under the portrait is the Vaardigheid (skill) gauge (control 9346); the employee view (EXT) keeps name and grade there
+		screen.Add( new UiLabel { Id = "staffName", Text = () => showingEmployedStaff ? SelectedName : strings[UIStrings.SkillStaff],
+			Font = fonts => fonts.Label, Color = UiColors.Text, Align = showingEmployedStaff ? UiAlign.Center : UiAlign.Left, Fit = true,
+			Bounds = Rect( 283, 536, 679, 575 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "staffGrade", Text = () => showingEmployedStaff ? SelectedGrade : "",
+			Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right, Fit = true,
+			Bounds = Rect( 722, 536, 957, 575 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiGaugeBar { Id = "skillGauge", Value = () => showingEmployedStaff ? null : SkillGauge( SelectedCandidate ),
+			Bounds = Rect( 722, 538, 957, 573 ), Anchor = UiAnchor.Center } );
+		// [APPROX:UI-082] the portrait box shows the selected role and grade as text; the original spawns a live animated figure of the candidate's role in control 9348's rectangle (0x49ba00 -> 0x475a10 with descriptor 0x74f758, then 0x4755d0 plays animation 8 at speed 8.0; the figure is the role's sprite-bank character) - evidence needed: drawing that figure in the window (no further evidence needed)
+		screen.Add( new UiLabel { Id = "portraitText", Text = () => SelectedGrade.Length > 0 ? $"{SelectedRole}  {SelectedGrade}" : "",
+			Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true, Bounds = Rect( 513, 202, 723, 415 ), Anchor = UiAnchor.Center } );
+		for ( var row = 0; row < StaffStatRows.Length; row++ )
+		{
+			var index = row;
+			var entry = StaffStatRows[row];
+			// the applicant view's four rows are the mini balance (control 9349): UITEXT 356 money in, 357 staff costs, 358 other costs, 360 balance; the two cost rows are red
+			var balanceLabels = new[] { UIStrings.CashIn, UIStrings.StaffCosts, UIStrings.OtherCosts, UIStrings.Balance };
+			screen.Add( new UiLabel { Id = $"statLabel{row}", Text = () => strings[showingEmployedStaff ? entry.Label : balanceLabels[index]], Font = fonts => fonts.Label,
+				ColorSource = () => !showingEmployedStaff && index is 1 or 2 ? UiColors.Negative : UiColors.Text, Fit = true, Bounds = entry.LabelRect, Anchor = UiAnchor.Center } );
+			screen.Add( new UiLabel { Id = $"statValue{row}", Text = () => showingEmployedStaff ? SelectedStat( index ) : BalanceRowText( index ),
+				Font = fonts => fonts.Label, ColorSource = () => showingEmployedStaff ? UiColors.Value : index is 1 or 2 ? UiColors.Negative : UiColors.Text, Align = UiAlign.Right, Fit = true,
+				Bounds = entry.ValueRect, Anchor = UiAnchor.Center } );
+		}
+		// [DATA:Mac staff table 0x4a1e0:9360-9364] Five buttons with help 154-158 select applicants by role.
+		foreach ( var role in StaffRoles )
+		{
+			var item = role;
+			screen.Add( new UiButton { Id = $"role{item.Type}", Model = item.Model, Help = strings.Help( item.Help ),
+				Clicked = () => FilterStaff( item.Type ), Selected = () => staffFilter == item.Type,
+				Bounds = item.Rect, Anchor = UiAnchor.Center } );
+		}
+		// [DATA:Mac staff table 0x4a1e0:16,17] Help 159/160 sorts the name/wage columns.
+		screen.Add( new StaffHeader( this, false ) { Id = "headerName", Help = strings.Help( 159 ), Bounds = Rect( 1039, 331, 1460, 436 ), Anchor = UiAnchor.Center } );
+		screen.Add( new StaffHeader( this, true ) { Id = "headerWage", Help = strings.Help( 160 ), Bounds = Rect( 1471, 331, 1731, 436 ), Anchor = UiAnchor.Center } );
+		screen.Add( new StaffList( this ) { Id = "staffList", Help = strings.Help( 161 ), Bounds = StaffContent, Anchor = UiAnchor.Center } );
+		screen.Add( new StaffScrollBar( this ) { Id = "staffScroll", Bounds = StaffScrollTrack, Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollStaff( -1 ),
+			Bounds = Rect( 1742, 331, 1803, 391 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollStaff( 1 ),
+			Bounds = Rect( 1742, 850, 1803, 910 ), Anchor = UiAnchor.Center } );
+		// [DATA:Mac staff table 0x4a1e0:9365] b_allthings returns to the buy window.
+		screen.Add( new UiButton { Id = "allThings", Model = "b_allthings", Help = strings.Help( 162 ), Clicked = CloseStaffWindow,
+			Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x49b650 control 9366 is a plain cash label: handler 0x49b697 and builder 0x49bf75 format UITEXT 0x1ca "Cash $ N" or 0x1cb "Cash -$ N"]
+		screen.Add( new UiLabel { Id = "staffCash", Text = () => StaffCashText, Font = fonts => fonts.Label, Color = UiColors.Value,
+			Align = UiAlign.Right, Fit = true, Bounds = Rect( 1297, 74, 1769, 153 ), Anchor = UiAnchor.Center } );
+		// [EXT:staff-employee-view] labelled button between the staff info and stat frames toggling the employee view.
+		screen.Add( new UiButton { Id = "staffViewExt", Text = () => showingEmployedStaff ? HireTitle : strings[UIStrings.AllStaff],
+			Clicked = () => ShowEmployedStaff( !showingEmployedStaff ), Font = fonts => fonts.Label,
+			Bounds = Rect( 320, 610, 909, 690 ), Anchor = UiAnchor.Center } );
+		// [APPROX:UI-092] an explicit dismiss button below the portrait in the employee view; the original dismisses with b_fire (control 0x50c = 1292, rectangle (380,694)-(534,847), help UIHELPTEXT 89 "Left-click to dismiss the employee") on the per-employee panel (0x4b6080, table 0x756f48); the confirmation (UITEXT 0x18d) follows the Confirmations option as the original's [0x78d90f] gate does — evidence needed: porting that panel
+		dismissStaffButton = new UiButton { Id = "dismissStaff", Text = () => strings[UIStrings.DismissEmployee].Split( '\n' )[0].Trim(),
+			Clicked = ConfirmDismissSelectedStaff, Font = fonts => fonts.Label, Enabled = false,
+			Bounds = Rect( 320, 449, 909, 518 ), Anchor = UiAnchor.Center };
+		screen.Add( dismissStaffButton );
+		// [BIN:TPW-EXE:0x4b5ed9 pick-up button] control 0x50e (1294) of the per-employee window (table 0x756f48) is a type-2 model button b_pick (name hash 0x1d406292) without a text label, rectangle (539,694)-(692,847), help UIHELPTEXT 88 "Left-click to pick up the employee"; it runs 0x505c50 and the window closes
+		// [APPROX:UI-098] the employee view is embedded in the hire window, whose stat rows occupy the original rectangle (539,694)-(692,847) of the separate per-employee window, so the button keeps the original model, size (153 x 153) and help at the right of the portrait — evidence needed: porting the per-employee window
+		pickUpStaffButton = new UiButton { Id = "pickUpStaff", Model = "b_pick", Help = strings.Help( 88 ),
+			Clicked = () => PickUpSelectedStaff(), Enabled = false, Visible = true,
+			Bounds = Rect( 770, 290, 923, 443 ), Anchor = UiAnchor.Center };
+		screen.Add( pickUpStaffButton );
+		// Approximation (UI-098, registered at the pick-up button): the employee window's patrol buttons (UIHELPTEXT 86 set, 87 clear) sit on the left of the portrait with OpenTPW labels; their models and rectangles are untraced
+		setPatrolButton = new UiButton { Id = "setPatrol", Text = () => strings.Extra( OpenTpwText.SetPatrolArea ), Help = strings.Help( 86 ),
+			Clicked = () => SetSelectedStaffPatrolArea(), Font = fonts => fonts.Label, Enabled = false, Bounds = Rect( 259, 190, 470, 290 ), Anchor = UiAnchor.Center };
+		screen.Add( setPatrolButton );
+		clearPatrolButton = new UiButton { Id = "clearPatrol", Text = () => strings.Extra( OpenTpwText.ClearPatrolArea ), Help = strings.Help( 87 ),
+			Clicked = () => ClearSelectedStaffPatrolArea(), Font = fonts => fonts.Label, Enabled = false, Bounds = Rect( 259, 300, 470, 400 ), Anchor = UiAnchor.Center };
+		screen.Add( clearPatrolButton );
+		// [DATA:Mac staff-button table 0x4e45c:2397-2404] Locate-role and locate-visitor buttons at the authored HUD rectangles.
+		Model( "staffLocateFrame", "!f_plain", Rect( 526, 1191, 893, 1439 ) );
+		Model( "visitorLocateFrame", "!f_plain", Rect( 12, 1191, 379, 1439 ) );
+		// [EXT:overview-entry-buttons] the shipped b_svisit button art (the map window's visitors layer uses the same
+		// art) opens the All Visitors window from the visitor locate corner; the original opens the overview windows
+		// with the A/S/V keys and cross-navigation buttons (UI-909), whose rectangles in this window are not decoded.
+		screen.Add( new UiButton { Id = "allVisitors", Model = "b_svisit", Clicked = OpenVisitorWindow, Enabled = level.Guests != null,
+			Bounds = Rect( 24, 1207, 127, 1310 ), Anchor = UiAnchor.Center } );
+		// The original staff window navigates to the visitor and attractions windows (UI-MAP 0x1014b124:
+		// messages 0x32f and 0x330 open them with the last used category); this entry keeps the All
+		// Attractions window reachable where the buy window is closed (a read-only visit disables buy).
+		// [EXT:overview-entry-buttons] the rides tab icon b_srides with 'All Rides' as popup help: the shipped b_allthinginfo art has no texture in ui.wad.
+		screen.Add( new UiButton { Id = "allAttractions", Model = AllAttractionsModel, Help = strings[UIStrings.AllRides],
+			Clicked = OpenAttractionsWindow, Bounds = Rect( 24, 1320, 127, 1422 ), Anchor = UiAnchor.Center } );
+		// [PROVISIONAL:LOCATE] Locate controls focus live actors; role lookup prefers the selected employee, otherwise cycles IDs.
+		var locate = new (string Model, int Help, UiRect Rect)[]
+		{
+			("b_shandy", 482, Rect( 546, 1207, 649, 1310 )),
+			("b_smech", 483, Rect( 659, 1207, 761, 1310 )),
+			("b_senter", 484, Rect( 602, 1320, 705, 1422 )),
+			("b_sguard", 485, Rect( 771, 1207, 873, 1310 )),
+			("b_sresrcher", 486, Rect( 715, 1320, 817, 1422 )),
+			("b_skids", 489, Rect( 144, 1263, 247, 1366 )),
+		};
+		for ( var index = 0; index < locate.Length; index++ )
+		{
+			var button = locate[index];
+			var role = index < 5 ? StaffRoles[index].Type : (StaffType?)null;
+			screen.Add( new UiButton { Id = $"locate{index}", Model = button.Model, Help = strings.Help( button.Help ),
+				Enabled = role is { } type ? CanLocateStaff( type ) : CanLocateVisitor, Clicked = () => { if ( role is { } type ) LocateStaff( type ); else LocateVisitor(); }, Bounds = button.Rect, Anchor = UiAnchor.Center } );
+		}
+		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseStaffWindow,
+			Bounds = Rect( 1889, 818, 1972, 901 ), Anchor = UiAnchor.Center } );
+		screen.Back = CloseStaffWindow;
+		return screen;
+	}
+
+	private sealed class StaffScreen : UiScreen
+	{
+		private readonly ParkHud owner;
+		public StaffScreen( ParkHud owner ) : base( "staff" ) => this.owner = owner;
+		public override bool Update( UiContext context, UiInput input )
+		{
+			owner.EnsureStaffSelection();
+			if ( Find( "locate5" ) is UiButton visitor ) visitor.Enabled = owner.CanLocateVisitor;
+			for ( var index = 0; index < StaffRoles.Length; index++ )
+				if ( Find( $"locate{index}" ) is UiButton staff ) staff.Enabled = owner.CanLocateStaff( StaffRoles[index].Type );
+			if ( input.Wheel != 0 )
+			{
+				owner.ScrollStaff( input.Wheel > 0 ? -1 : 1 );
+				input = input with { Wheel = 0 };
+			}
+			return base.Update( context, input );
+		}
+	}
+
+	private sealed class StaffList : UiElement, IUiRowList
+	{
+		private readonly ParkHud owner;
+		public StaffList( ParkHud owner ) => this.owner = owner;
+		public override bool Focusable => Visible && Enabled;
+		public int Selected => owner.showingEmployedStaff
+			? owner.StaffItems.ToList().FindIndex( member => member.Id == owner.selectedStaffId )
+			: owner.StaffCandidates.ToList().FindIndex( candidate => candidate.Id == owner.selectedStaffId );
+		public bool ArrowsSelect => true;
+		public void Select( int index ) => owner.SelectStaff( index );
+		public void Scroll( int rows ) => owner.ScrollStaff( rows );
+		public bool HoverSelects => true;
+		public int HoveredRow { get; private set; } = -1;
+		// [BIN:TPW-EXE:0x6656a0 list hover] the applicant list selects the row under the pointer (the details, the skill gauge and the mini balance follow it, video 12:00); the employee view (EXT) only highlights, because its dismiss, pick-up and patrol buttons act on the selection
+		public void Hover( int index )
+		{
+			// only a pointer that moved to another row selects it, so the arrow keys keep the selection while the pointer rests
+			var moved = index != HoveredRow;
+			HoveredRow = index;
+			if ( moved && index >= 0 && !owner.showingEmployedStaff && index < owner.StaffCandidates.Count )
+				owner.selectedStaffId = owner.StaffCandidates[index].Id;
+		}
+		// [BIN:TPW-EXE:0x6655a2 list click, 0x49b843 hire window] the applicant list (9358, attribute 0x291) posts 0x400 on a click of button 0 (0x6655a2 on a list with attribute 0x80, and 0x6656fa on the release); the window routes it to 0x49b988: the row's item, hire 0x507bf0, advisor message 0x135, close. There is no hire button in the window, and the original's advisor says so when it opens ("click on the name of the person you want to hire", video 11:54): a left click on a name hires and the click starts the Place tool here
+		// [BIN:TPW-EXE:0x66563d list click] the other button posts 0x402, which the hire window does not handle: a right click does nothing and backs out as everywhere
+		public bool RowClicked( int index, bool left )
+		{
+			if ( !left )
+				return false;
+			Select( index );
+			if ( !owner.HireSelectedStaff() )
+				owner.RefuseHire();
+			return true;
+		}
+		// [EXT:staff-enter-hire] Enter hires the selected applicant too (no original key emits 0x400); it is the keyboard analogue of the click.
+		public override void Activate() => owner.HireSelectedStaff();
+		public override void Adjust( int direction ) => owner.SelectStaff( Math.Max( 0, Selected ) + direction );
+		public int RowAt( UiCanvas canvas, NVector2 point )
+		{
+			var content = canvas.Map( StaffContent, Anchor );
+			if ( !content.Contains( point ) )
+				return -1;
+			var visible = (int)MathF.Floor( (point.Y - content.Y) / (StaffRowHeight * canvas.Scale) );
+			var index = owner.staffFirstRow + visible;
+			return visible < 0 || visible >= StaffVisibleRows || index >= owner.StaffListCount ? -1 : index;
+		}
+		public override void Draw( UiContext context, bool focused, bool pressed )
+		{
+			var canvas = context.Canvas;
+			for ( var visible = 0; visible < StaffVisibleRows && owner.staffFirstRow + visible < owner.StaffListCount; visible++ )
+			{
+				var index = owner.staffFirstRow + visible;
+				var id = owner.showingEmployedStaff ? owner.StaffItems[index].Id : owner.StaffCandidates[index].Id;
+				var y = StaffContent.Y + visible * StaffRowHeight;
+				var row = canvas.Map( Rect( StaffContent.X, y, StaffContent.Right, y + StaffRowHeight ), Anchor );
+				if ( index == HoveredRow && id != owner.selectedStaffId )
+					context.Batch.AddRectangle( row, new RgbaByte( 60, 90, 200, 60 ) );
+				if ( id == owner.selectedStaffId )
+					context.Batch.AddRectangle( row, new RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)120 ) );
+				var color = id == owner.selectedStaffId ? UiColors.Highlight : UiColors.Text;
+				UiRect Cell( float left, float right )
+				{
+					var origin = canvas.Map( new NVector2( left, y ), Anchor );
+					return new UiRect( origin.X, origin.Y, (right - left) * canvas.Scale, StaffRowHeight * canvas.Scale );
+				}
+				context.DrawFittedText( context.Fonts.Label, owner.ListName( index ), Cell( 1043, 1456 ), color, UiAlign.Left );
+				context.DrawFittedText( context.Fonts.Label, owner.ListWage( index ), Cell( 1477, 1724 ), color, UiAlign.Right );
+			}
+		}
+	}
+
+	private sealed class StaffHeader : UiElement
+	{
+		private readonly ParkHud owner;
+		private readonly bool byWage;
+		public StaffHeader( ParkHud owner, bool byWage ) { this.owner = owner; this.byWage = byWage; }
+		public override bool Focusable => Visible && Enabled;
+		public override void Activate() => owner.SortStaff( byWage );
+		public override void Draw( UiContext context, bool focused, bool pressed ) =>
+			context.DrawFittedText( context.Fonts.Label, owner.strings[byWage ? UIStrings.MonthlyWageStaff : UIStrings.NameAttr],
+				ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+	}
+
+	private sealed class StaffScrollBar : UiElement, IUiDragTarget
+	{
+		private readonly ParkHud owner;
+		public StaffScrollBar( ParkHud owner ) => this.owner = owner;
+		public override bool Focusable => Visible && Enabled;
+		private UiRect KnobRect()
+		{
+			var travel = StaffScrollTrack.Height - StaffScrollKnob.Height;
+			var top = StaffScrollTrack.Y + (owner.StaffMaxFirstRow == 0 ? 0 : travel * owner.staffFirstRow / owner.StaffMaxFirstRow);
+			return StaffScrollKnob with { Y = top };
+		}
+		public void DragTo( UiCanvas canvas, NVector2 point )
+		{
+			var rect = ScreenRect( canvas );
+			if ( rect.Height <= 0 || owner.StaffMaxFirstRow == 0 )
+				return;
+			var y = Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
+			var fraction = Math.Clamp( (y - StaffScrollTrack.Y - StaffScrollKnob.Height / 2) / (StaffScrollTrack.Height - StaffScrollKnob.Height), 0, 1 );
+			owner.SetStaffFirstRow( (int)MathF.Round( fraction * owner.StaffMaxFirstRow ) );
+		}
+		public override void Draw( UiContext context, bool focused, bool pressed )
+		{
+			context.DrawModel( "!slider", 0, context.Canvas.Map( StaffScrollTrack, Anchor ) );
+			context.DrawModel( "b_scroller", owner.StaffMaxFirstRow == 0 ? UiButton.DisabledFrame : pressed ? UiButton.DownFrame : focused ? UiButton.HighlightFrame : UiButton.NormalFrame,
+				context.Canvas.Map( KnobRect(), Anchor ) );
+		}
+	}
+}

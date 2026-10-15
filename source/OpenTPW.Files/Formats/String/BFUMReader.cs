@@ -103,8 +103,9 @@ public sealed class GameTextCodec
 
 	/// <summary>
 	/// Encodes text. Unrepresentable characters become the codepage's '?' when it has one, otherwise
-	/// they are dropped ([APPROX:COMPAT-012] — evidence needed: binary text-input handling); they are
-	/// listed in <paramref name="unmappable"/>.
+	/// they are dropped; they are listed in <paramref name="unmappable"/>. [EXT:text-encode-helper] tp.exe never names
+	/// UniToMB.dat or MBToUni.dat: its wide-to-ANSI conversion (0x424DB0) calls WideCharToMultiByte (CP_ACP, default
+	/// replacement character), and this method has no caller outside the tests, so it is an OpenTPW tool and test helper.
 	/// </summary>
 	public byte[] Encode( string text, ICollection<char>? unmappable = null )
 	{

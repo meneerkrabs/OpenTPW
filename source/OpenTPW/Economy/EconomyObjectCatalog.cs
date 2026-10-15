@@ -15,7 +15,10 @@ public enum ParkObjectKind
 }
 
 /// <summary><c>Upgrades[n]</c> of an object: level 0 is the base purchase, levels 1 and 2 the ride upgrades.</summary>
-public sealed record UpgradeLevelInfo( int Level, long CostOfUpgrade, int CostOfResearch, int WearRate, int DurationOfUpgrade, IReadOnlyList<int> ScrapValuePercentByYear );
+/// <param name="RedLineSpeed"><c>Upgrades[n].RedLineSpeed</c>: at or above this speed a ride wears faster.</param>
+/// <param name="RedLineCapacity"><c>Upgrades[n].RedLineCapacity</c>, compared with riders / 10 in the wear step.</param>
+public sealed record UpgradeLevelInfo( int Level, long CostOfUpgrade, int CostOfResearch, int WearRate, int DurationOfUpgrade, IReadOnlyList<int> ScrapValuePercentByYear,
+	int RedLineSpeed = 0, int RedLineCapacity = 0 );
 
 /// <summary>
 /// The economy-relevant fields of one original object, merged from the category <c>.sam</c>, the
@@ -38,10 +41,35 @@ public sealed record EconomyObjectInfo(
 	int AddOnTargetId,
 	int LitterEffect,
 	int AttractionValue,
-	string ArchivePath )
+	string ArchivePath,
+	int MaxSpeed = 0,
+	int MaxCapacity = 0,
+	int NewAttractionDecayTime = 0,
+	IReadOnlyList<int>? NewBonus = null,
+	int TrackType = 0,
+	bool IsChoosable = true,
+	bool ChillsYouOut = false,
+	int WhichUIType = -1,
+	bool ProvidesRelief = false,
+	bool ProvidesSecurity = false,
+	bool IsFireworks = false )
 {
 	public long PurchaseCost => Upgrades.Count > 0 ? Upgrades[0].CostOfUpgrade : 0;
 	public bool IsBuyable => Kind is ParkObjectKind.Ride or ParkObjectKind.Shop or ParkObjectKind.Sideshow or ParkObjectKind.Feature or ParkObjectKind.Upgrade;
+
+	/// <summary>
+	/// The type record's <c>Info.WhichUIType</c> (<c>+1960</c>) the park rating counts objects by (<c>0xc7b24</c>, ORACLE.md F29): 0 ride, 1 shop, 2 sideshow, 3 feature, 4 not
+	/// shown. The shipped add-ons (the "upgrades" directory: the karts' jumps and tunnels, the racers' teleport) declare 0, so they count as rides. An object without the
+	/// key (a synthetic one) takes the value of its directory.
+	/// </summary>
+	public int RatingType => WhichUIType >= 0 ? WhichUIType : Kind switch
+	{
+		ParkObjectKind.Ride or ParkObjectKind.Upgrade => 0,
+		ParkObjectKind.Shop => 1,
+		ParkObjectKind.Sideshow => 2,
+		ParkObjectKind.Feature => 3,
+		_ => 4
+	};
 }
 
 /// <summary>Source of object prices/costs for the economy. Implemented here from the original files; other slices may substitute their own.</summary>
@@ -89,9 +117,11 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 		var kind = directoryKind;
 		if ( id is 101 or 102 )
 			kind = ParkObjectKind.LandTool;
-		else if ( directoryKind == ParkObjectKind.Feature && researchCategory != (int)ResearchCategory.Feature )
-			// [APPROX:ECON-041] features-directory objects with Research.Category != 3 are fixed (non-buyable) items — evidence needed: buy-menu capture
-			kind = ParkObjectKind.FixedItem; // gates, bus, lights, ferry, seaplane, end: Research.Category 0 in the features directory
+		// [BIN:TPW-EXE:0x4aaf70 buy-menu filler] a definition is listed only in the tab (0-3) equal to its Info.WhichUIType (+0x4ac, copied from +0x4c by 0x413410),
+		// so a WhichUIType 4 object is never offered; Research.Category is not read. In the features directory those are the six fixed items of each theme
+		// (bus, gates, seaplane, lights, ferry, end); the mystery ride (rides directory, also 4) is bought with golden tickets, not here
+		else if ( directoryKind == ParkObjectKind.Feature && settings.GetInt( "Info.WhichUIType", -1, optional: true ) == 4 )
+			kind = ParkObjectKind.FixedItem;
 		var upgrades = new List<UpgradeLevelInfo>();
 		for ( var level = 0; level < 3; level++ )
 		{
@@ -99,7 +129,8 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 				break;
 			var scrap = Enumerable.Range( 1, 4 ).Select( year => settings.GetInt( $"Upgrades[{level}].ScrapValueYear{year}", 0, optional: true ) ).ToArray();
 			upgrades.Add( new UpgradeLevelInfo( level, settings.GetLong( $"Upgrades[{level}].CostOfUpgrade", 0L ), settings.GetInt( $"Upgrades[{level}].CostOfResearch", 0, optional: true ),
-				settings.GetInt( $"Upgrades[{level}].WearRate", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].DurationOfUpgrade", 0, optional: true ), scrap ) );
+				settings.GetInt( $"Upgrades[{level}].WearRate", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].DurationOfUpgrade", 0, optional: true ), scrap,
+				settings.GetInt( $"Upgrades[{level}].RedLineSpeed", 0, optional: true ), settings.GetInt( $"Upgrades[{level}].RedLineCapacity", 0, optional: true ) ) );
 		}
 		// Shops and features list levels 1 and 2 with zero cost ("no upgrades possible"); keep only real upgrade levels.
 		while ( upgrades.Count > 1 && upgrades[^1].CostOfUpgrade == 0 && upgrades[^1].CostOfResearch == 0 )
@@ -108,12 +139,30 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 		var hasPrices = kind is ParkObjectKind.Shop or ParkObjectKind.Sideshow;
 		return new EconomyObjectInfo( id, settings.Contains( "Info.Name" ) ? settings.GetString( "Info.Name" ).Trim() : $"Info.Id {id}", kind,
 			(ResearchCategory)Math.Clamp( researchCategory, 0, 4 ), settings.GetInt( "Research.Group", 0, optional: true ), upgrades,
-			// [APPROX:ECON-042] sideshow InitCostOfGoods is the cost of a prize paid per win — evidence needed: sideshow panel capture
+			// [BIN:STP-PPC:0x100EAAF8 sideshow win] each sideshow win charges the object's cost of goods (+0x184, copied from catalogue word 0x50 = UsageInfo.InitCostOfGoods at +0x140) to its costs and the bank
 			hasPrices ? Optional( "UsageInfo.InitPricePerUse" ) : null, hasPrices ? Optional( "UsageInfo.InitCostOfGoods" ) : null,
 			kind == ParkObjectKind.Sideshow ? Optional( "UsageInfo.InitChanceOfLoosing" ) : null,
 			settings.GetInt( "UsageInfo.ShopType", 0, optional: true ), settings.GetInt( "UsageInfo.SpecialIngredient", 0, optional: true ),
 			settings.GetInt( "UsageInfo.GoldenTicketCost", 0, optional: true ), settings.GetInt( "AddOn.UpgradesId", 0, optional: true ),
-			settings.GetInt( "UsageInfo.LitterEffect", 0, optional: true ), settings.GetInt( "Info.AttractionValue", 0, optional: true ), archivePath );
+			settings.GetInt( "UsageInfo.LitterEffect", 0, optional: true ), settings.GetInt( "Info.AttractionValue", 0, optional: true ), archivePath,
+			settings.GetInt( "UsageInfo.MaxSpeed", 0, optional: true ), settings.GetInt( "UsageInfo.MaxCapacity", 0, optional: true ),
+			settings.GetInt( "Info.NewAttractionDecayTime", 0, optional: true ),
+			Enumerable.Range( 0, 3 ).Select( index => settings.GetInt( $"Attraction[{index}].NewBonus", 0, optional: true ) ).ToArray(),
+			// [DATA:<object>.sam:Bumper.WhichTrackType] type record +0x9C (0xe2fe4 tests it against 3, the coaster value): 0 none, 1 car, 2 water track
+			settings.GetInt( "Bumper.WhichTrackType", 0, optional: true ),
+			// [BIN:STP-PPC:0x100DABDC object constructor] type record +0x3C (Info.IsChoosable) nonzero sets thing +46 bit 0x4 (0x100DABDC..0x100DABF0), the first test of the park points counts-test 0x100DC834; the category files (Rides.sam, SideShow.sam, Shops.sam) declare it 1
+			// An object file that declares neither the key nor a category default is read as choosable (the shipped category files always declare it).
+			settings.GetInt( "Info.IsChoosable", 1, optional: true ) != 0,
+			// [BIN:STP-PPC:0x100DABD0 object constructor] type record +0xFC (UsageInfo.ChillsYouOut) nonzero sets thing +46 bit 0x2, the only test of the rest-area search 0x100F47A0 (ORACLE.md F22): any such object is a rest area for staff
+			settings.GetInt( "UsageInfo.ChillsYouOut", 0, optional: true ) != 0,
+			// [DATA:<object>.sam:Info.WhichUIType] type record +1960, which 0xc7b24 counts objects by
+			settings.GetInt( "Info.WhichUIType", -1, optional: true ),
+			// [DATA:<object>.sam:UsageInfo.ProvidesRelief] the relief flag (thing +0x32 bit 0 on the PC): the toilet's gauge wears with every use and handymen clean it (tp.exe 0x004E2440, 0x004D7880)
+			settings.GetInt( "UsageInfo.ProvidesRelief", 0, optional: true ) != 0,
+			// [BIN:TPW-EXE:0x004DB090 object constructor] UsageInfo.ProvidesSecurity (type +0xF0, thing +0x32 bit 0x10) adds RegionFX row 4 at the object's cell: the security cameras of all four themes
+			settings.GetInt( "UsageInfo.ProvidesSecurity", 0, optional: true ) != 0,
+			// [BIN:TPW-EXE:0x004DB090 object constructor] UsageInfo.IsFireworks (type +0x110, thing +0x32 bit 0x80) adds RegionFX row 7: Hallow's Firework Show and Space's Laser Show
+			settings.GetInt( "UsageInfo.IsFireworks", 0, optional: true ) != 0 );
 	}
 
 	/// <summary>

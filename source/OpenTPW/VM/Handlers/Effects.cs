@@ -55,22 +55,22 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.TURBO, RideOpcodeStatus.Hooked, "docs (`value` 0..1, meaning unknown)" )]
 		public static void Turbo( RideVM vm, Operand value ) => vm.Effect( Opcode.TURBO, new[] { value } );
 
-		[OpcodeHandler( Opcode.HOUR, RideOpcodeStatus.Hooked, "docs (in-game hour → dest); corpus Clock.RSE `HOUR VAR_TEMP; MOD VAR_TEMP VAR_TEMP 12`; sets flags; park clock not implemented" )]
+		[OpcodeHandler( Opcode.HOUR, RideOpcodeStatus.Hooked, "host-local civil hour: tp.exe 0x5566AC calls time/localtime and stores tm_hour in the result register; a variable operand receives it, a literal only sets the flags; the TPW runtime samples host time (PPC-clock.md)" )]
 		public static void Hour( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.HOUR, dest, dest );
 
-		[OpcodeHandler( Opcode.MIN, RideOpcodeStatus.Hooked, "docs (in-game minute → dest); corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only" )]
+		[OpcodeHandler( Opcode.MIN, RideOpcodeStatus.Hooked, "host-local civil minute (tm_min), as HOUR: tp.exe 0x5566FF calls time/localtime and stores tm_min in the result register; corpus `MIN 0; BRANCH_NZ` uses a literal dest for flags only" )]
 		public static void Minute( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.MIN, dest, dest );
 
-		[OpcodeHandler( Opcode.SEC, RideOpcodeStatus.Hooked, "docs (in-game second → dest); corpus `SEC 0; BRANCH_NZ`" )]
+		[OpcodeHandler( Opcode.SEC, RideOpcodeStatus.Hooked, "host-local civil second (tm_sec), as HOUR: tp.exe 0x55674E calls time/localtime and stores tm_sec in the result register; corpus `SEC 0; BRANCH_NZ`" )]
 		public static void Second( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.SEC, dest, dest );
 
-		[OpcodeHandler( Opcode.YEAR, RideOpcodeStatus.Hooked, "docs only (no corpus use); as HOUR" )]
+		[OpcodeHandler( Opcode.YEAR, RideOpcodeStatus.Hooked, "host-local civil year minus 1900 (tm_year; tp.exe 0x5565B2 and PPC-clock.md); TPW runtime samples host time" )]
 		public static void Year( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.YEAR, dest, dest );
 
-		[OpcodeHandler( Opcode.MONTH, RideOpcodeStatus.Hooked, "docs only (no corpus use); as HOUR" )]
+		[OpcodeHandler( Opcode.MONTH, RideOpcodeStatus.Hooked, "host-local civil month 1..12 (tm_mon + 1; tp.exe 0x556605 and PPC-clock.md); TPW runtime samples host time" )]
 		public static void Month( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.MONTH, dest, dest );
 
-		[OpcodeHandler( Opcode.DAY, RideOpcodeStatus.Hooked, "docs only (no corpus use); as HOUR" )]
+		[OpcodeHandler( Opcode.DAY, RideOpcodeStatus.Hooked, "host-local civil day 1..31 (tm_mday; tp.exe 0x556659 and PPC-clock.md); TPW runtime samples host time" )]
 		public static void Day( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.DAY, dest, dest );
 	}
 }

@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -100,9 +101,9 @@ public class ObjectSettingsTests
 	[TestMethod]
 	public void AnimationNumbersSelectSuffixLettersAndVariants()
 	{
-		var members = new[] { "/a/totem.MD2", "/a/totemc.MD2", "/a/totemm1.MD2", "/a/totemm2.MD2", "/a/totemm10.MD2", "/a/totemb1.MD2", "/a/totemr.MD2", "/a/Ptotem.MD2", "/a/totemx.MD2" };
+		var members = new[] { "/a/totem.MD2", "/a/totemc.MD2", "/a/totemm1.MD2", "/a/totemm2.MD2", "/a/totemm3.MD2", "/a/totemm4.MD2", "/a/totemm5.MD2", "/a/totemm6.MD2", "/a/totemm7.MD2", "/a/totemm8.MD2", "/a/totemm9.MD2", "/a/totemm10.MD2", "/a/totemb1.MD2", "/a/totemr.MD2", "/a/Ptotem.MD2", "/a/totemx.MD2" };
 		var animations = ObjectAnimations.Find( "totem", members );
-		Assert.AreEqual( 6, animations.Count );
+		Assert.AreEqual( 13, animations.Count );
 		Assert.AreEqual( "/a/totemm1.MD2", ObjectAnimations.Resolve( animations, 5, 0 )!.Path );
 		Assert.AreEqual( "/a/totemm10.MD2", ObjectAnimations.Resolve( animations, 5, 9 )!.Path );
 		Assert.AreEqual( "/a/totemc.MD2", ObjectAnimations.Resolve( animations, 0, 0 )!.Path );
@@ -112,6 +113,66 @@ public class ObjectSettingsTests
 		Assert.IsNull( ObjectAnimations.Resolve( animations, 2, 0 ) );
 		foreach ( var value in Enum.GetValues<ScriptDefs.Animations>() )
 			Assert.AreEqual( (int)value, ObjectAnimations.GetAnimation( ObjectAnimations.GetLetter( (int)value )!.Value ) );
+	}
+
+	/// <summary>RIDES-008 (PC 0x6fe6bc, loader 0x461f10): twelve letters C D I L S M E U W B R O by AnimID; numbered members load until the first gap; the unnumbered one only without number 1.</summary>
+	[TestMethod]
+	public void AnimationLettersFollowTheOriginalTableAndStopAtGaps()
+	{
+		Assert.AreEqual( "cdilsmeuwbro", new string( Enumerable.Range( 0, 12 ).Select( id => ObjectAnimations.GetLetter( id )!.Value ).ToArray() ) );
+		Assert.IsNull( ObjectAnimations.GetLetter( 12 ) );
+		Assert.IsNull( ObjectAnimations.GetLetter( -1 ) );
+		Assert.AreEqual( 1, ObjectAnimations.GetAnimation( 'd' ) );
+		Assert.AreEqual( 8, ObjectAnimations.GetAnimation( 'W' ) );
+		var members = new[] { "/a/xm1.MD2", "/a/xm2.MD2", "/a/xm4.MD2", "/a/xm.MD2", "/a/xd.MD2", "/a/xw2.MD2", "/a/xs.MD2", "/a/xs2.MD2" };
+		var animations = ObjectAnimations.Find( "x", members );
+		Assert.AreEqual( "/a/xm1.MD2", ObjectAnimations.Resolve( animations, 5, 0 )!.Path );
+		Assert.AreEqual( "/a/xm2.MD2", ObjectAnimations.Resolve( animations, 5, 1 )!.Path );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 5, 2 ), "m3 is missing" );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 5, 3 ), "m4 lies behind the gap" );
+		Assert.AreEqual( "/a/xd.MD2", ObjectAnimations.Resolve( animations, 1, 0 )!.Path );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 8, 0 ), "w1 is missing, so only the unnumbered w would load" );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 8, 1 ), "w2 is behind the gap" );
+		Assert.AreEqual( "/a/xs.MD2", ObjectAnimations.Resolve( animations, 4, 0 )!.Path, "no s1: the unnumbered clip plays" );
+		Assert.IsNull( ObjectAnimations.Resolve( animations, 4, 1 ), "s2 is behind the missing s1" );
+	}
+}
+
+/// <summary>Catalog cache behaviour on a synthetic data root (no game data needed).</summary>
+[TestClass]
+[DoNotParallelize]
+public class ObjectCatalogCacheTests
+{
+	[TestMethod]
+	public void ReplacingTheFileSystemWithTheSameRootLoadsEntriesFromTheNewInstance()
+	{
+		var root = Path.Combine( Path.GetTempPath(), "opentpw-catalog-" + Guid.NewGuid().ToString( "N" ) );
+		var archive = Path.Combine( root, "levels", "jungle", "rides", "totem" );
+		Directory.CreateDirectory( Path.Combine( archive, "textures" ) );
+		Directory.CreateDirectory( Path.Combine( root, "levels", "jungle", "sharetex" ) );
+		File.WriteAllText( Path.Combine( archive, "totem.sam" ), "Info.Id\t1110\nInfo.Name\t\"Inca Totem\"\nInfo.WhichUIType\t0\nUpgrades[0].CostOfUpgrade\t3250\n" );
+		File.WriteAllBytes( Path.Combine( archive, "totem.MD2" ), Array.Empty<byte>() );
+		var previous = FileSystem;
+		try
+		{
+			ObjectCatalog.BonusDataRoot = null;
+			foreach ( var pass in new[] { "first", "replaced" } )
+			{
+				// Tests and setup changes install a new instance with the same root; entries must follow it.
+				FileSystem = new BaseFileSystem( root );
+				var entry = ObjectCatalog.Load( "jungle" ).Get( 1110 );
+				Assert.AreSame( FileSystem, entry.FileSystem, $"{pass} file system" );
+				var item = new OriginalBuildCatalog( ObjectCatalog.Load( "jungle" ) ).GetItems( BuildCategory.Rides ).Single();
+				CollectionAssert.Contains( item.TextureDirectories.ToArray(), "/levels/jungle/rides/totem/textures", $"{pass} file system" );
+				CollectionAssert.Contains( item.TextureDirectories.ToArray(), "/levels/jungle/sharetex", $"{pass} file system" );
+			}
+		}
+		finally
+		{
+			FileSystem = previous;
+			ObjectCatalog.BonusDataRoot = null;
+			Directory.Delete( root, true );
+		}
 	}
 }
 
@@ -154,6 +215,63 @@ public class ObjectCatalogCorpusTests
 		if ( initialized )
 			FileSystem = originalFileSystem!;
 		ObjectCatalog.BonusDataRoot = null;
+	}
+
+	/// <summary>
+	/// WAITANIM converts <c>ms − 300</c> unsigned (0xafc88), so a member returning under 300 ms (at most 8 ticks)
+	/// would make the original script wait INT32_MAX ms. This scans every WAITANIM/WAITANIM_CH of every object script
+	/// with literal operands for such a member, counts the requests whose operands are variables, and reports both
+	/// (ANIM-plan §8, "Degenerate case").
+	/// </summary>
+	[TestMethod]
+	public void WaitAnimShortClipWrapIsReportedForTheCorpus()
+	{
+		int requests = 0, literal = 0, variable = 0, missing = 0, shortClips = 0;
+		var wraps = new List<string>();
+		foreach ( var theme in ObjectCatalog.Themes )
+		{
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
+			{
+				foreach ( var file in entry.Animations )
+				{
+					var clip = ObjectAssets.LoadModel( entry.FileSystem, file.Path ).Clip;
+					if ( clip != null && ObjectAnimator.Fctiwz( 1000f * (clip.Duration - clip.FirstTick) / ObjectAnimator.DefaultTicksPerSecond ) < RideAnimationTiming.MinimumWaitMilliseconds )
+						shortClips++;
+				}
+				foreach ( var member in entry.Scripts )
+				{
+					RideScriptFile script;
+					using ( var stream = entry.FileSystem.OpenRead( member ) )
+						script = new RideScriptFile( stream );
+					foreach ( var instruction in script.Instructions.Where( instruction => instruction.Opcode is (ushort)Opcode.WAITANIM or (ushort)Opcode.WAITANIM_CH ) )
+					{
+						requests++;
+						if ( instruction.Operands.Take( 2 ).Any( operand => operand.Kind != RideScriptOperandKind.Literal ) )
+						{
+							variable++;
+							continue;
+						}
+						literal++;
+						var animation = (short)instruction.Operands[0].Value;
+						var variant = (short)instruction.Operands[1].Value;
+						var resolved = entry.ResolveAnimation( animation, variant );
+						var clip = resolved == null ? null : ObjectAssets.LoadModel( entry.FileSystem, resolved.Path ).Clip;
+						if ( clip == null )
+						{
+							missing++;
+							continue;
+						}
+						var milliseconds = ObjectAnimator.Fctiwz( 1000f * (clip.Duration - clip.FirstTick) / ObjectAnimator.DefaultTicksPerSecond );
+						if ( RideAnimationTiming.WaitAnimDelay( milliseconds, RideVM.DefaultScriptSpeed ) == int.MaxValue )
+							wraps.Add( $"{member} word {instruction.WordOffset}: {(Opcode)instruction.Opcode} {animation} {variant} → {resolved!.Path} ({clip.Duration} ticks, {milliseconds} ms)" );
+					}
+				}
+			}
+		}
+		Assert.IsTrue( requests > 0 && literal > 0 );
+		Console.WriteLine( $"WAITANIM requests {requests}: {literal} literal ({missing} without a member, {wraps.Count} wrapping), {variable} with variable operands; object clips under 300 ms: {shortClips}" );
+		foreach ( var wrap in wraps )
+			Console.WriteLine( wrap );
 	}
 
 	[TestMethod]
@@ -200,12 +318,13 @@ public class ObjectCatalogCorpusTests
 	[TestMethod]
 	public void CatalogCountsPerThemeArePinned()
 	{
+		// Named = objects with an OBJECT_NAMES binding: all but the three tools of each theme (RIDES-010: the Info.Id table binds the gates, signs, lights, loudspeakers and more).
 		var expected = new Dictionary<string, (int Entries, int Buildable, int Rides, int Shops, int Sideshows, int Features, int Upgrades, int Named, int Scripts)>
 		{
-			["jungle"] = (70, 58, 18, 8, 5, 36, 3, 58, 67),
-			["hallow"] = (70, 58, 20, 8, 4, 35, 3, 56, 67),
-			["space"] = (68, 56, 21, 8, 4, 32, 3, 54, 65),
-			["fantasy"] = (66, 55, 17, 8, 4, 35, 2, 52, 63)
+			["jungle"] = (70, 58, 18, 8, 5, 36, 3, 67, 67),
+			["hallow"] = (70, 58, 20, 8, 4, 35, 3, 67, 67),
+			["space"] = (68, 56, 21, 8, 4, 32, 3, 65, 65),
+			["fantasy"] = (66, 55, 17, 8, 4, 35, 2, 63, 63)
 		};
 		foreach ( var theme in ObjectCatalog.Themes )
 		{
@@ -387,6 +506,9 @@ public class ObjectCatalogCorpusTests
 		Assert.AreEqual( ("_snake_1", 1, "Snake", "Slither"), (snake.ArchiveName, snake.BonusNumber, snake.SettingsName, snake.DisplayName) );
 		Assert.AreEqual( "Rutschbahn", BonusNames.Read( snake, "German" ) );
 		Assert.AreEqual( "Slither", BonusNames.Read( snake, "Klingon" ), "unknown languages fall back to English" );
+		// [BIN:TPW-EXE:0x00413600 object text] the sign lines come from the selected language's file only; no file means no lines (ObjectSigns then draws the display name; the original's NULL-line handling is untraced)
+		Assert.IsNotNull( BonusNames.ReadSignLines( snake, "German" ) );
+		Assert.IsNull( BonusNames.ReadSignLines( snake, "Klingon" ), "the sign lines do not fall back to English" );
 		Assert.IsTrue( snake.HasQueue, "bonus rides use the game's Rides.sam defaults" );
 	}
 }

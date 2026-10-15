@@ -62,12 +62,39 @@ def vector(container: pef.PEFContainer, name: str) -> dict:
 
 
 def glue_import(container: pef.PEFContainer, address: int, toc: int = 0) -> dict:
+    """Resolve only the six-instruction CFM named-call glue form used here.
+
+    This supported form saves caller r2 at stack+20, obtains code and callee
+    TOC from the imported vector, then branches through CTR without linking.
+    Other glue variants and addended import pointers require separate evidence;
+    this helper does not claim to recognize every valid CFM glue sequence.
+    """
+    if address % 4:
+        raise pef.PEFError('unaligned CFM glue code address')
+    pef._span(container.code.data, address, 24)
     rd, base, displacement = d_fields(container, address, 32)
     require((rd, base), (12, 2), 'CFM import glue TOC load')
+    require(d_fields(container, address + 4, 36), (2, 1, 20), 'CFM glue saves caller TOC')
+    require(d_fields(container, address + 8, 32), (0, 12, 0), 'CFM glue loads callee code')
+    require(d_fields(container, address + 12, 32), (2, 12, 4), 'CFM glue loads callee TOC')
+    counter = pef._u32(container.code.data, address + 16)
+    spr = (counter >> 16 & 31) | (counter >> 11 & 31) << 5
+    require((counter >> 26, counter >> 21 & 31, spr, counter >> 1 & 0x3ff, counter & 1),
+            (31, 0, 9, 467, 0), 'CFM glue moves callee code to CTR')
+    branch = pef._u32(container.code.data, address + 20)
+    require((branch >> 26, branch >> 21 & 31, branch >> 16 & 31,
+             branch >> 11 & 31, branch >> 1 & 0x3ff, branch & 1),
+            (19, 20, 0, 0, 528, 0), 'CFM glue branches unconditionally through CTR without linking')
     slot = toc + displacement
+    if slot % 4:
+        raise pef.PEFError('unaligned CFM glue TOC slot')
+    pef._span(container.data_section.data, slot, 4)
     target = container.relocs.get(container.data_section.index, {}).get(slot)
     if not target or target.kind != 'import':
         raise pef.PEFError('glue TOC slot is not an imported transition vector')
+    require(target.addend, 0, 'CFM glue supports unaddended imported transition vectors')
+    if not 0 <= target.target < len(container.imports):
+        raise pef.PEFError('CFM glue import index is out of range')
     imported = container.imports[target.target]
     return {'code_offset': address, 'toc_slot': slot, 'symbol': imported.name, 'library': imported.library}
 

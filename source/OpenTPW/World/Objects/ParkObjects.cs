@@ -81,16 +81,22 @@ public sealed class ParkObjects
 	private readonly List<OriginalObject> objects = new();
 	private readonly Dictionary<(int, int), OriginalObject> occupied = new();
 	private int nextSeed = 1;
+	private readonly int scriptKey;
 
-	public ParkObjects( ObjectCatalog catalog, IParkGrid grid )
+	/// <param name="seed">The park's world seed: object script seeds and the script world's stream derive from it.</param>
+	/// <param name="civilClock">The civil time the objects' scripts read (YEAR to SEC); null is the host clock, as in the game.</param>
+	public ParkObjects( ObjectCatalog catalog, IParkGrid grid, WorldSeed? seed = null, Func<DateTime>? civilClock = null )
 	{
 		Catalog = catalog;
 		Grid = grid;
+		var world = seed ?? WorldSeed.Default;
+		ScriptWorld = new RideScriptWorld( world.ScriptStream, civilClock );
+		scriptKey = world.ObjectScriptKey;
 	}
 
 	public ObjectCatalog Catalog { get; }
 	public IParkGrid Grid { get; }
-	public RideScriptWorld ScriptWorld { get; } = new();
+	public RideScriptWorld ScriptWorld { get; }
 	public IReadOnlyList<OriginalObject> Objects => objects;
 	/// <summary>Extra blocked cells owned by the host (the sandbox Totem prototype).</summary>
 	public Func<int, int, bool>? IsReserved { get; set; }
@@ -103,7 +109,11 @@ public sealed class ParkObjects
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
 	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap; no slope, path or land rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures)
-	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
+		Check( Grid, IsOccupied, entry, anchorX, anchorY, rotation );
+
+	/// <summary>The same build rule for any grid and occupancy (the headless M3 gate has no <see cref="OriginalObject"/>s).</summary>
+	internal static OriginalPlacementResult Check( IParkGrid grid, Func<int, int, bool> isOccupied, ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
 		if ( !ObjectFootprint.IsValidRotation( rotation ) )
 			throw new ArgumentOutOfRangeException( nameof( rotation ) );
@@ -111,12 +121,12 @@ public sealed class ParkObjects
 			return OriginalPlacementResult.Blocked;
 		foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
 		{
-			if ( x < 0 || y < 0 || x >= Grid.Width || y >= Grid.Height )
+			if ( x < 0 || y < 0 || x >= grid.Width || y >= grid.Height )
 				return OriginalPlacementResult.OutsideTerrain;
-			var terrain = Grid.CheckTerrain( x, y );
+			var terrain = grid.CheckTerrain( x, y );
 			if ( terrain != OriginalPlacementResult.Allowed )
 				return terrain;
-			if ( IsOccupied( x, y ) )
+			if ( isOccupied( x, y ) )
 				return OriginalPlacementResult.Occupied;
 		}
 		return OriginalPlacementResult.Allowed;
@@ -130,18 +140,61 @@ public sealed class ParkObjects
 	}
 
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
-	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true )
-	{
-		// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
-		var placement = entry.IsFixedItem
+	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open ) );
+
+	/// <summary>
+	/// Places a saved object back (<see cref="ParkLayoutSnapshot"/> restore): the placement rules of <see cref="Add"/>
+	/// with the record's own creation seed instead of the allocator's next value, and its saved attraction id instead
+	/// of a fresh allocation — the object's runtime adopts the id, so guests, scripts and the economy stay linked to
+	/// the exact identity they were saved with, in constant time (ids of removed objects are never replayed). Like
+	/// Add it applies no build rules and charges nothing; the seed allocator itself is restored separately with
+	/// <see cref="RestoreSeedAllocator"/> so objects placed after the load continue the saved seed sequence.
+	/// </summary>
+	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, seed, open, attractionId ) );
+
+	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
+	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
+	private ObjectPlacement ComputePlacement( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
+		entry.IsFixedItem && !GameEditions.IsThemeParkInc
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
-			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin, GetBaseHeight( entry, anchorX, anchorY, rotation ) );
-		var item = new OriginalObject( entry, placement, ScriptWorld, nextSeed++, open );
+			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin,
+				entry.IsFixedItem ? 0 : GetBaseHeight( entry, anchorX, anchorY, rotation ) );
+
+	private OriginalObject Register( OriginalObject item )
+	{
 		objects.Add( item );
 		foreach ( var (x, y, _) in item.Cells )
 			occupied[(x, y)] = item;
 		ObjectPlaced?.Invoke( item );
 		return item;
+	}
+
+	/// <summary>The next seed <see cref="Add"/> draws (one past every placement ever made; removals do not rewind it).</summary>
+	internal int NextPlacementSeed => nextSeed;
+	/// <summary>The world seed's object-script key the placement seeds are XORed with (<see cref="WorldSeed.ObjectScriptKey"/>).</summary>
+	internal int ObjectScriptKey => scriptKey;
+	/// <summary>
+	/// The script world's next attraction id. Like the seed allocator it never rewinds, so a park that removed objects
+	/// has holes in both — <see cref="ParkLayoutSnapshot"/> captures and reproduces them with explicit ids, not by
+	/// renumbering the survivors.
+	/// </summary>
+	internal int NextAttractionId => ScriptWorld.NextAttractionId;
+
+	/// <summary>Restores the placement-seed allocator of a saved park (validation checked every saved seed against it).</summary>
+	internal void RestoreSeedAllocator( int value ) => nextSeed = value >= 1 ? value : throw new ArgumentOutOfRangeException( nameof( value ) );
+
+	/// <summary>
+	/// Restores the script world's attraction-id frontier to a saved park's next id in constant time: the frontier
+	/// adopts it, so the ids of objects the park removed are skipped without replaying their allocation. Requires a
+	/// value the allocator could still allocate from (a fresh world starts at 1).
+	/// </summary>
+	internal void RestoreAttractionIdAllocator( int value )
+	{
+		if ( value < 1 || value >= int.MaxValue )
+			throw new ArgumentOutOfRangeException( nameof( value ) );
+		ScriptWorld.AdoptAttractionId( value - 1 );
 	}
 
 	/// <summary>
@@ -157,10 +210,31 @@ public sealed class ParkObjects
 		return heights.Length == 0 ? 0 : heights.Average();
 	}
 
+	private bool clearing;
+	private readonly HashSet<OriginalObject> removing = new();
+
+	/// <summary>
+	/// Raised for an object that is about to be removed, while its script and footprint are still there: the one seam every removal (remove tool, sale from a window, scripted
+	/// removal) passes through, except <see cref="Clear"/>. A handler that removes the same object again is ignored; one that throws aborts the removal.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4dd0a0 object removal] the removal passes flag 0x2 to the kill 0x559060 (which starts the DestroyParticleEffect) unless a park loads or clears (DAT_00785a2c)
+	public event Action<OriginalObject>? ObjectRemoving;
+
 	public bool Remove( OriginalObject item )
 	{
-		if ( !objects.Remove( item ) )
+		if ( !objects.Contains( item ) || !removing.Add( item ) )
 			return false;
+		try
+		{
+			if ( !clearing )
+				ObjectRemoving?.Invoke( item );
+			if ( !objects.Remove( item ) )
+				return false;
+		}
+		finally
+		{
+			removing.Remove( item );
+		}
 		foreach ( var key in occupied.Where( pair => pair.Value == item ).Select( pair => pair.Key ).ToArray() )
 			occupied.Remove( key );
 		item.Delete();
@@ -170,8 +244,16 @@ public sealed class ParkObjects
 
 	public void Clear()
 	{
-		foreach ( var item in objects.ToArray() )
-			Remove( item );
+		clearing = true;
+		try
+		{
+			foreach ( var item in objects.ToArray() )
+				Remove( item );
+		}
+		finally
+		{
+			clearing = false;
+		}
 	}
 
 	public void Simulate( double deltaSeconds )
@@ -186,33 +268,47 @@ public sealed class ParkObjects
 	/// Imported objects are opened: the save's ride state is not decoded.
 	/// </summary>
 	// [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too — evidence needed: TPWS ride-state fields, original build behaviour
-	public int ImportOriginal( OriginalParkImport save )
+	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
+
+	/// <summary><see cref="ImportOriginal"/> one object at a time: after each, the objects placed so far and the share of the records done.</summary>
+	internal IEnumerable<(int Placed, float Share)> ImportOriginalSteps( OriginalParkImport save )
 	{
+		save.RequireSupportedCoasterRuntime();
+		var records = save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ).ToList();
 		var count = 0;
-		foreach ( var record in save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ) )
+		for ( var index = 0; index < records.Count; index++ )
 		{
+			var record = records[index];
 			var entry = Catalog.Find( record.InfoId );
 			if ( entry == null || entry.IsTool )
 				continue;
+			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; their remaining transform fields are not decoded.
 			Add( entry, record.X, record.Y, record.Rotation );
 			count++;
+			yield return (count, (index + 1) / (float)records.Count);
 		}
-		return count;
+		yield return (count, 1);
 	}
 
 	/// <summary>
 	/// For levels without an original save: the three fixed items the Easymode save records (Gates, Lights,
-	/// Bus), in park space. Which fixed items the original spawns, and when (seaplane, ferry, end), is not known.
+	/// Bus), in park space. The original creates Gates and Lights at world setup; its arrival vehicle is picked per arrival (RIDES-019).
 	/// </summary>
-	// [APPROX:RIDES-019] Levels without a save get Gates, Lights and Bus (the fixed items Easymode records) — evidence needed: original fixed-item spawning per level
-	public int AddDefaultFixedItems()
+	// [BIN:TPW-EXE:0x005156A0 world setup fixed items] world setup creates the definitions named "gates" (wide literal 0x762448) and "lights" (0x762454) through 0x4db090 (case-insensitive compare 0x67b140); a missing definition logs "Could not find the gates feature" or the LIGHTSNAME message; a loaded save then restores the handles (writer 0x517076)
+	// [APPROX:RIDES-019] The arrival vehicle is always the Bus here; the original creates none at setup and picks bus, seaplane or ferry at random per arrival (0x51a2f0: LCG s = s·0x19660d + 0x3c6ef35f, s = rotr(s, 13), |s| % 3, seeded at 0x1da708 from 0x67d3f0; the current vehicle is reused), and End (0x762464) is created by 0x516b00, called from 0x503d40, not at setup — evidence needed: the arrival owner's vehicle choice (ARRIVAL register)
+	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
+
+	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>
+	internal IEnumerable<(int Placed, float Share)> AddDefaultFixedItemSteps()
 	{
+		var entries = Catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ).ToList();
 		var count = 0;
-		foreach ( var entry in Catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ) )
+		foreach ( var entry in entries )
 		{
 			Add( entry, 0, 0, 0 );
 			count++;
+			yield return (count, count / (float)entries.Count);
 		}
-		return count;
+		yield return (count, 1);
 	}
 }

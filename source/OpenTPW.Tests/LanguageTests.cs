@@ -11,16 +11,29 @@ namespace OpenTPW.Tests;
 public class LanguageTests
 {
 	private string root = "";
+	private GameLanguage? previousLanguage;
+	private string? previousOverlay;
 
 	[TestInitialize]
 	public void CreateRoot()
 	{
 		root = Path.Combine( Path.GetTempPath(), $"opentpw-language-{Guid.NewGuid():N}" );
 		Directory.CreateDirectory( root );
+		previousLanguage = GameLanguage.IsSelected ? GameLanguage.Current : null;
+		previousOverlay = GameLanguage.AvailableOverlay;
 	}
 
+	/// <summary>
+	/// Restores the static language selection (null means unselected) so no language rooted in the deleted
+	/// temporary folder outlives the test; later tests such as the online ones would otherwise load from it.
+	/// </summary>
 	[TestCleanup]
-	public void DeleteRoot() => Directory.Delete( root, true );
+	public void DeleteRoot()
+	{
+		GameLanguage.Current = previousLanguage!;
+		GameLanguage.AvailableOverlay = previousOverlay;
+		Directory.Delete( root, true );
+	}
 
 	private string CreateLanguage( string dataDirectory, string folder, string characters = "abc" )
 	{
@@ -40,6 +53,30 @@ public class LanguageTests
 		Assert.AreEqual( "English", language.Name );
 		Assert.IsNull( language.OverlayDataDirectory );
 		CollectionAssert.AreEqual( new[] { "English", "German" }, GameLanguage.FindLanguages( Path.Combine( root, "Data" ), null ).ToArray() );
+	}
+
+	[TestMethod]
+	public void GameFolderCopiedFromTheCdFindsItsBannersBesideData()
+	{
+		CreateLanguage( "Data", "English" );
+		Assert.IsNull( GameLanguage.Resolve( Path.Combine( root, "Data" ), null, null ).FindFile( "bankrupt.md2" ), "no banners before the CD folder exists" );
+		var meshes = Path.Combine( root, "english", "Meshes", "ENGLISH" );
+		Directory.CreateDirectory( meshes );
+		File.WriteAllBytes( Path.Combine( meshes, "bankrupt.MD2" ), new byte[] { 1 } );
+		Assert.AreEqual( Path.Combine( meshes, "bankrupt.MD2" ), GameLanguage.Resolve( Path.Combine( root, "Data" ), null, null ).FindFile( "BANKRUPT.md2" ) );
+	}
+
+	[TestMethod]
+	public void LanguagesBesideACdCopiedDataFolderAreChoosableWhenReadable()
+	{
+		CreateLanguage( "Data", "English" );
+		CreateLanguage( Path.Combine( "Danish", "data" ), "danish", "xyz" );
+		var polish = CreateLanguage( Path.Combine( "Polish", "data" ), "Polish" );
+		File.WriteAllBytes( Path.Combine( polish, "MBToUni.dat" ), new byte[] { (byte)'B', (byte)'F', (byte)'M', (byte)'U', 1, 0, 0xFF, 0x4B, 0x2A, 0 } );
+		var data = Path.Combine( root, "Data" );
+		CollectionAssert.AreEqual( new[] { "English", "Danish", "Polish" }, GameLanguage.FindLanguages( data, root ).ToArray() );
+		CollectionAssert.AreEqual( new[] { "English", "Danish" }, GameLanguage.Readable( data, root ).ToArray() );
+		Assert.AreEqual( "xyz", GameLanguage.Resolve( data, "Danish", root ).LoadStrings( "UITEXT.str" )[0] );
 	}
 
 	[TestMethod]
@@ -71,6 +108,21 @@ public class LanguageTests
 		StringAssert.Contains( error.Message, "English, German" );
 		StringAssert.Contains( error.Message, "--language-data" );
 		Assert.ThrowsException<DirectoryNotFoundException>( () => GameLanguage.Resolve( Path.Combine( root, "Data" ), null, Path.Combine( root, "missing" ) ) );
+	}
+
+	[TestMethod]
+	public void TheChosenCdStaysChoosableWhenTheInstalledLanguageIsSelected()
+	{
+		CreateLanguage( "Data", "English" );
+		CreateLanguage( Path.Combine( "cd", "Danish", "data" ), "danish", "xyz" );
+		CreateLanguage( Path.Combine( "cd", "German", "data" ), "German", "zyx" );
+		var overlay = Path.Combine( root, "cd" );
+		GameLanguage.Current = GameLanguage.Resolve( Path.Combine( root, "Data" ), null, overlay );
+		Assert.IsNull( GameLanguage.Current.OverlayDataDirectory, "English comes from the installation" );
+		GameLanguage.AvailableOverlay = overlay;
+		CollectionAssert.AreEqual( new[] { "English", "Danish", "German" }, GameLanguage.Choosable().ToArray(), "the CD's languages stay on offer" );
+		GameLanguage.AvailableOverlay = null;
+		CollectionAssert.AreEqual( new[] { "English" }, GameLanguage.Choosable().ToArray() );
 	}
 
 	[TestMethod]
@@ -126,7 +178,6 @@ public class LanguageTests
 	{
 		CreateLanguage( "Data", "French" );
 		var originalFileSystem = FileSystem;
-		var original = GameLanguage.IsSelected ? GameLanguage.Current : null;
 		try
 		{
 			FileSystem = new BaseFileSystem( Path.Combine( root, "Data" ) );
@@ -136,7 +187,44 @@ public class LanguageTests
 		finally
 		{
 			FileSystem = originalFileSystem;
-			GameLanguage.Current = original!;
+		}
+	}
+
+	[TestMethod]
+	public void OnlineStringsFallBackWithoutTablesAndFollowTheSelectedLanguage()
+	{
+		var previousLog = Log;
+		try
+		{
+			// The test host never sets the global logger, so the fallback path must not need it.
+			Log = null!;
+			GameLanguage.Current = null!;
+			Assert.IsNull( OnlineStrings.ChatCommands, "no language selected means no table" );
+			Assert.AreEqual( "fallback", OnlineStrings.Error( OnlineStrings.ErrorConnect, "fallback" ) );
+
+			var englishDirectory = CreateLanguage( "Data", "English" );
+			var english = GameLanguage.Resolve( Path.Combine( root, "Data" ), null, null );
+			GameLanguage.Current = english;
+			Assert.IsNull( OnlineStrings.ChatCommands, "the language has no CHAT_COMMANDS.str" );
+			Assert.AreEqual( "[160]", OnlineStrings.ChatNotice( OnlineStrings.SystemMessage, null ) );
+			Assert.AreEqual( "abc", OnlineStrings.Ui( 0, "fallback" ), "a missing table does not hide the others" );
+
+			var germanDirectory = CreateLanguage( "Other", "German", "xyz" );
+			File.WriteAllBytes( Path.Combine( germanDirectory, "CHAT_COMMANDS.str" ), StringTableTests.CreateStringTable( new byte[] { 3, 2, 1 } ) );
+			GameLanguage.Current = GameLanguage.Resolve( Path.Combine( root, "Other" ), null, null );
+			Assert.AreEqual( "xyz", OnlineStrings.Ui( 0, "fallback" ), "selecting another language drops the cached tables" );
+			Assert.AreEqual( "zyx", OnlineStrings.ChatCommands?[0] );
+
+			// A language whose folder is gone, as left behind by a test that deleted its temporary data.
+			Directory.Delete( englishDirectory, true );
+			GameLanguage.Current = english;
+			Assert.IsNull( OnlineStrings.ChatCommands );
+			Assert.AreEqual( "fallback", OnlineStrings.Ui( 0, "fallback" ) );
+			Assert.AreEqual( "fallback", OnlineStrings.Error( OnlineStrings.ErrorConnect, "fallback" ) );
+		}
+		finally
+		{
+			Log = previousLog;
 		}
 	}
 
@@ -161,7 +249,7 @@ public class LanguageTests
 
 	private static Dictionary<string, string[]> LoadAllStrings( GameLanguage language ) =>
 		language.EnumerateFiles().Where( file => Path.GetExtension( file ).Equals( ".str", StringComparison.OrdinalIgnoreCase ) )
-			.ToDictionary( file => Path.GetFileName( file ).ToUpperInvariant(), file => language.LoadStrings( Path.GetFileName( file ) ).Entries );
+			.ToDictionary( file => Path.GetFileName( file ).ToUpperInvariant(), file => language.LoadStrings( Path.GetFileName( file ), asStored: true ).Entries );
 
 	[DataTestMethod]
 	[DynamicData( nameof( ShippedLanguages ) )]
@@ -170,7 +258,8 @@ public class LanguageTests
 		var language = OriginalLanguage( name );
 		var tables = LoadAllStrings( language );
 		Assert.AreEqual( 21, tables.Count );
-		Assert.AreEqual( 2358, tables.Values.Sum( entries => entries.Length ) );
+		// Two editions: 2,358 entries, or 2,365 with UITEXT's extra entry 207 and six more CHAT_COMMANDS.
+		CollectionAssert.Contains( new[] { 2358, 2365 }, tables.Values.Sum( entries => entries.Length ) );
 		foreach ( var file in language.EnumerateFiles().Where( file => Path.GetExtension( file ).Equals( ".str", StringComparison.OrdinalIgnoreCase ) ) )
 			StringTableTests.AssertLengthsMatchLayout( File.ReadAllBytes( file ), tables[Path.GetFileName( file ).ToUpperInvariant()] );
 		var characters = tables.Values.SelectMany( entries => entries ).SelectMany( entry => entry ).Where( c => c > '~' ).Distinct().OrderBy( c => c );
@@ -198,8 +287,10 @@ public class LanguageTests
 	{
 		var language = OriginalLanguage( name );
 		var uiText = language.LoadStrings( "UITEXT.str" );
-		Assert.AreEqual( 473, uiText.Entries.Length );
+		Assert.AreEqual( GameLanguage.UiTextEntries, uiText.Entries.Length );
 		Assert.AreEqual( goOnline, uiText[(int)UIStrings.GoOnline] );
+		// After entry 207 (the 474-entry edition's extra message), a language-independent anchor.
+		Assert.AreEqual( " 640 x 480", uiText[(int)UIStrings.Resolution640x480] );
 		Assert.AreEqual( excitement, uiText[(int)UIStrings.Excitement] );
 		Assert.AreEqual( reliability, uiText[(int)UIStrings.Reliability] );
 		Assert.AreEqual( totem, language.LoadStrings( "OBJECT_NAMES.str" )[29] );
@@ -221,7 +312,8 @@ public class LanguageTests
 		var language = OriginalLanguage( name );
 		var used = LoadAllStrings( language ).Values.SelectMany( entries => entries ).SelectMany( entry => entry ).Where( c => c != '\n' ).ToHashSet();
 		var fonts = language.EnumerateFiles().Where( file => Path.GetExtension( file ).Equals( ".bf4", StringComparison.OrdinalIgnoreCase ) ).ToArray();
-		Assert.AreEqual( 33, fonts.Length );
+		// 33 fonts, or 37 in the 474-entry UITEXT edition, which adds DATEBIG/DATEMED/DATESMALL/DATETINY.
+		CollectionAssert.Contains( new[] { 33, 37 }, fonts.Length );
 		foreach ( var font in fonts )
 		{
 			var glyphs = language.LoadFont( Path.GetFileName( font ) ).Glyphs.Select( glyph => glyph.Character ).ToHashSet();

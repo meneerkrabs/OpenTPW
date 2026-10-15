@@ -15,7 +15,9 @@ public class SaveReaderTests
 		using var compressed = new MemoryStream();
 		using ( var encoder = new ZLibStream( compressed, CompressionLevel.Optimal, true ) )
 			encoder.Write( payload );
-		var compressedBytes = compressed.ToArray();
+		// .NET 9+ (zlib-ng) writes nothing for an empty input; the game's saves hold a complete
+		// zlib stream, so use the canonical empty stream there.
+		var compressedBytes = compressed.Length > 0 ? compressed.ToArray() : Convert.FromHexString( "789C030000000001" );
 		var container = new byte[0x629 + compressedBytes.Length];
 		BinaryPrimitives.WriteUInt32LittleEndian( container, magic );
 		BinaryPrimitives.WriteUInt32LittleEndian( container.AsSpan( 0x604 ), 0x19220100 );
@@ -25,6 +27,69 @@ public class SaveReaderTests
 		BinaryPrimitives.WriteUInt32LittleEndian( container.AsSpan( 0x615 ), (uint)(28 + compressedBytes.Length) );
 		compressedBytes.CopyTo( container, 0x629 );
 		return container;
+	}
+
+	private static byte[] CreateExtendedContainer( byte[] payload )
+	{
+		var legacy = CreateContainer( payload );
+		var extended = new byte[legacy.Length + 24];
+		legacy.AsSpan( 0, 4 ).CopyTo( extended );
+		new byte[] { 1, 19, 0, 0, 0 }.CopyTo( extended, 4 );
+		Encoding.ASCII.GetBytes( "Version: Beta_21\r\n\0" ).CopyTo( extended, 9 );
+		legacy.AsSpan( 4 ).CopyTo( extended.AsSpan( 28 ) );
+		return extended;
+	}
+
+	[TestMethod]
+	public void DecodesObservedExtendedTpwsContainer()
+	{
+		var payload = Encoding.ASCII.GetBytes( "extended park" );
+		using var reader = new SaveReader( new MemoryStream( CreateExtendedContainer( payload ) ) );
+		Assert.AreEqual( new SaveContainerInfo( 500, 0x19220100, 133, payload.Length, reader.buffer.Length - 0x625 ), reader.Inspect() );
+		CollectionAssert.AreEqual( payload, reader.ReadFile() );
+		CollectionAssert.AreEqual( payload, reader.ReadFile() );
+	}
+
+	[DataTestMethod]
+	[DataRow( 5 )]
+	[DataRow( 9 )]
+	[DataRow( 27 )]
+	public void RejectsMalformedExtendedHeader( int offset )
+	{
+		var container = CreateExtendedContainer( new byte[] { 1 } );
+		container[offset] ^= 0xff;
+		using var reader = new SaveReader( new MemoryStream( container ) );
+		Assert.ThrowsException<InvalidDataException>( () => reader.ReadFile() );
+	}
+
+	[DataTestMethod]
+	[DataRow( 0x620 )]
+	[DataRow( 0x625 )]
+	[DataRow( 0x62d )]
+	public void RejectsCorruptExtendedHeaderFields( int offset )
+	{
+		var container = CreateExtendedContainer( new byte[] { 1 } );
+		container[offset] ^= 0xff;
+		using var reader = new SaveReader( new MemoryStream( container ) );
+		Assert.ThrowsException<InvalidDataException>( () => reader.ReadFile() );
+	}
+
+	[TestMethod]
+	public void RejectsTruncatedExtendedContainer()
+	{
+		var container = CreateExtendedContainer( new byte[] { 1 } );
+		Array.Resize( ref container, 0x629 + 6 );
+		using var reader = new SaveReader( new MemoryStream( container ) );
+		Assert.ThrowsException<InvalidDataException>( () => reader.ReadFile() );
+	}
+
+	[TestMethod]
+	public void RejectsOnlineExtendedContainer()
+	{
+		var container = CreateExtendedContainer( new byte[] { 1 } );
+		container[0x621] = 1;
+		using var reader = new SaveReader( new MemoryStream( container ) );
+		Assert.ThrowsException<NotSupportedException>( () => reader.ReadFile() );
 	}
 
 	[TestMethod]

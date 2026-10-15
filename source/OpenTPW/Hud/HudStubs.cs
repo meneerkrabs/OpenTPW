@@ -6,7 +6,7 @@ namespace OpenTPW.Hud;
 /// Test stand-in for <see cref="IHudParkStatus"/> (the game binds the HUD to the park economy).
 /// Starting cash is whatever the test passes; the calendar is a fixed test schedule.
 /// </summary>
-// [APPROX:UI-023] test-only calendar (2 s/day, 30-day months) — not used by the game
+// test fixture only (2 s/day, 30-day months); the game binds the HUD to the park economy's clock
 public sealed class StubParkStatus : IHudParkStatus
 {
 	public const float SecondsPerDay = 2f;
@@ -44,8 +44,7 @@ public sealed class NoEconomyStatus : IHudParkStatus
 	public long Money => 0;
 	public ParkDate Date => default;
 	public GameSpeed Speed { get; set; } = GameSpeed.Normal;
-	// [APPROX:UI-022] without an economy only pause stops the rides; faster speeds run at normal speed
-	public float TimeScale => Speed == GameSpeed.Paused ? 0 : 1;
+	public float TimeScale => GameSpeedScale.Of( Speed );
 	public void Update( float realSeconds ) { }
 	public long? PriceOf( BuildItem item ) => null;
 	public bool IsAvailable( BuildItem item ) => true;
@@ -84,9 +83,14 @@ public sealed class EconomyParkStatus : IHudParkStatus
 		}
 	}
 
-	// The economy multiplies its own clock by Speed each fixed tick; rides and guests keep normal speed.
-	// [APPROX:UI-022] faster speeds only speed up the park clock/economy, not rides or guests — evidence needed: original speed controls
-	public float TimeScale => Speed == GameSpeed.Paused ? 0 : 1;
+	// The level scales the elapsed time of its whole fixed clock (guests, rides, scripts, economy) by this factor; the economy itself runs one tick per fixed tick.
+	// [EXT:speed-buttons] the four speed buttons (pause, ×1, ×2, ×4) are an OpenTPW addition scaling the simulation clock by 0, 1, 2 and 4; the original's time keys are numpad −/+ (×0.8, ×1.25, clamped 0.25-2.0) and * (= 1.0) (0x40c3b0/0x40c3c0/0x40c3d0), and "Speed :" is a ride-panel statistic, not a game-speed control
+	public float TimeScale => GameSpeedScale.Of( Speed );
+
+	public int GoldenTickets => Math.Max( 0, Economy?.GoldenTicketsAvailable ?? 0 );
+	// [DATA:video 41:22] one golden key for every three golden tickets won; spent tickets keep their key
+	public int GoldenKeys => Math.Max( 0, (Economy?.Objectives.GoldenTickets.Count ?? 0) / PlayerProgress.TicketsPerKey );
+	public object? EconomySource => Economy;
 
 	public void Update( float realSeconds ) { }
 
@@ -105,10 +109,10 @@ public sealed class OriginalBuildCatalog : IBuildCatalog
 
 	public OriginalBuildCatalog( ObjectCatalog catalog )
 	{
-		// [APPROX:UI-024] Catalogue pages sort by Info.Id; original build-menu order is not verified.
+		// [BIN:STP-PPC:0x10059F00 mesh instance flag 0x400] the buy-window preview (0x10162584 -> 0x10139084 -> 0x1005C35C) instances the p<name> preview mesh when it loaded and the object's main mesh otherwise, so objects without a P model show their main model
 		categories = catalog.Buildable.OrderBy( entry => entry.InfoId ).Select( entry => new BuildItem(
 			$"{entry.Theme}/{entry.InfoId}", entry.InfoId, (BuildCategory)entry.WhichUIType, entry.ObjectNameIndex ?? -1,
-			entry.BuildCost, entry.IsBonus ? null : entry.PreviewModelPath,
+			entry.BuildCost, entry.IsBonus ? null : entry.PreviewModelPath ?? entry.ModelPath,
 			ObjectAssets.TextureDirectories( entry ).Where( location => location.FileSystem == FileSystem ).Select( location => location.Directory ).ToArray(),
 			entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) : null, entry ) )
 			.GroupBy( item => item.Category ).ToDictionary( group => group.Key, group => group.ToArray() );
@@ -127,7 +131,7 @@ public sealed class TotemBuildCatalog : IBuildCatalog
 {
 	public const string ItemId = "totem";
 	public const int ObjectNameIndex = 29;
-	// [APPROX:UI-033] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs)
+	// [EXT:test-stub] price shown when Totem.sam cannot be read (the economy catalogue price is used when a park economy runs)
 	public const long FallbackCost = 3250;
 	private readonly BuildItem? totem;
 

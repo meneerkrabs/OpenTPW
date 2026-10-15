@@ -26,11 +26,16 @@ public sealed class GuestSpriteAtlas
 	public int Height { get; }
 	/// <summary>RGBA8, row-major.</summary>
 	public byte[] Pixels { get; }
+	/// <summary>Key of this atlas in the optional texture pack (docs/TEXTURE-PACKS.md); not a file in the game data.</summary>
+	public string PackKey { get; }
 
-	public GuestSpriteAtlas( string name, SpriteBankFile bank, SpriteAnimationFile animations )
+	/// <param name="packFolder">Folder of the set under <c>esprites/&lt;packRoot&gt;</c> for the texture pack key (<c>kids</c>, <c>kidsheads</c>, <c>costumes</c>, ...).</param>
+	/// <param name="packRoot">The <c>esprites</c> folder the set lives in: <c>generic</c>, or a theme for the costumes.</param>
+	public GuestSpriteAtlas( string name, SpriteBankFile bank, SpriteAnimationFile animations, string packFolder = "kids", string packRoot = "generic" )
 	{
 		Name = name;
 		Animations = animations;
+		PackKey = $"esprites/{packRoot.ToLowerInvariant()}/{packFolder}/{name.ToLowerInvariant()}.atlas";
 		Frames = new GuestAtlasFrame[bank.Frames.Count];
 		var x = Padding;
 		var y = Padding;
@@ -86,9 +91,36 @@ public sealed class GuestSpriteAtlas
 	}
 
 	/// <summary>Loads every kid set under <c>esprites/Generic/Kids</c> (sorted by name), or none when absent.</summary>
-	public static List<GuestSpriteAtlas> LoadKids()
+	public static List<GuestSpriteAtlas> LoadKids() => LoadSets( "/esprites/Generic/Kids", ".FPC", "kids" );
+
+	/// <summary>
+	/// Loads every head set under <c>esprites/Generic/Kidsheads</c>: each <c>SPR_xx.ESP</c> with its <c>SPR_xx.TPC</c> bank
+	/// (the heads ship no <c>.FPC</c>), or none when absent. A rider's head is drawn from the set of its kid type.
+	/// </summary>
+	// [DATA:esprites.wad/Generic/Kidsheads/SPR_xx.ESP+TPC] heads are 8 frames × 7 directions (docs/GUESTS.md); the 5-direction selection of kid sets is reused
+	public static List<GuestSpriteAtlas> LoadKidHeads() => LoadSets( "/esprites/Generic/Kidsheads", ".TPC", "kidsheads" );
+
+	/// <summary>
+	/// Loads the theme's costume sets (<c>esprites/&lt;theme&gt;/Costumes</c>, one per theme), drawn for guests in costume (sprite category 2, tp.exe
+	/// <c>0x00541F70</c>), or none when absent. They share the kids' animation layout.
+	/// </summary>
+	// [DATA:esprites.wad/<theme>/Costumes/SPR_xx.ESP+FPC] Jungle SPR_TI, Fantasy SPR_BK, Hallow SPR_HK (175 frames like the kids), Space SPR_SK (135 frames, its own slot table)
+	public static List<GuestSpriteAtlas> LoadCostumes( string theme ) => LoadSets( $"/esprites/{theme}/Costumes", ".FPC", "costumes", theme );
+
+	/// <summary>Loads the theme's costume heads (<c>esprites/&lt;theme&gt;/Costumeheads</c>: Jungle and Space only), or none.</summary>
+	// [DATA:esprites.wad/<theme>/Costumeheads/SPR_xx.ESP+TPC] 8 frames × 7 directions like the kid heads; Fantasy and Hallow ship none
+	public static List<GuestSpriteAtlas> LoadCostumeHeads( string theme ) => LoadSets( $"/esprites/{theme}/Costumeheads", ".TPC", "costumeheads", theme );
+
+	/// <summary>Loads the balloon set (<c>esprites/Generic/Balloons/SPR_BL</c>, sprite category 10), or none.</summary>
+	// [DATA:esprites.wad/Generic/Balloons/SPR_BL.ESP+TPC] 8 frames: four colours (slots 0 red, 1 green, 2 blue, 3 yellow), each the whole balloon then its burst; no directions
+	public static List<GuestSpriteAtlas> LoadBalloons() => LoadSets( "/esprites/Generic/Balloons", ".TPC", "balloons" );
+
+	/// <summary>Loads the thought bubbles (<c>esprites/Generic/Thoughts</c>: <c>SPR_TB</c> then <c>SPR_TC</c>, sprite category 9), or none.</summary>
+	// [DATA:esprites.wad/Generic/Thoughts/SPR_TB.ESP+TPC,SPR_TC.ESP+TPC] TB: 16 bubbles, slot n is frame n; TC: 10 frames, its slots 0-9 show frames 0, 1, 8, 9, 7, 2, 3, 4, 5, 6 (the staff's bubbles, a thumb up and four arrows)
+	public static List<GuestSpriteAtlas> LoadThoughts() => LoadSets( "/esprites/Generic/Thoughts", ".TPC", "thoughts" );
+
+	internal static List<GuestSpriteAtlas> LoadSets( string directory, string bankExtension, string packFolder, string packRoot = "generic" )
 	{
-		const string directory = "/esprites/Generic/Kids";
 		var sets = new List<GuestSpriteAtlas>();
 		string[] files;
 		try
@@ -102,12 +134,12 @@ public sealed class GuestSpriteAtlas
 		foreach ( var esp in files.Where( file => file.EndsWith( ".ESP", StringComparison.OrdinalIgnoreCase ) ).OrderBy( file => file, StringComparer.OrdinalIgnoreCase ) )
 		{
 			var stem = Path.GetFileNameWithoutExtension( esp );
-			var bank = files.FirstOrDefault( file => string.Equals( file, stem + ".FPC", StringComparison.OrdinalIgnoreCase ) );
+			var bank = files.FirstOrDefault( file => string.Equals( file, stem + bankExtension, StringComparison.OrdinalIgnoreCase ) );
 			if ( bank == null )
 				continue;
 			using var espStream = FileSystem.OpenRead( $"{directory}/{esp}" );
 			using var bankStream = FileSystem.OpenRead( $"{directory}/{bank}" );
-			sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), new SpriteAnimationFile( espStream ) ) );
+			sets.Add( new GuestSpriteAtlas( stem, new SpriteBankFile( bankStream ), new SpriteAnimationFile( espStream ), packFolder, packRoot ) );
 		}
 		return sets;
 	}

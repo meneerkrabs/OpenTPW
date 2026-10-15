@@ -69,15 +69,33 @@ checksums, dictionary/header corruption, truncated streams and trailing data.
 The optional original fixture test checks exact header and both SHA-256 hashes;
 without that licensed fixture it reports inconclusive, not a compatibility pass.
 
-The decoded payload's section markers, its per-cell grid and SYSG object records
-are documented in TPWS-PAYLOAD.md (`SavePayloadLayout`, `SaveCellGrid`,
-`SaveObjectList`, read-only `OriginalParkImport`); other contents remain opaque.
+The decoded payload's writer-order block split (17 trailing delimiters), the
+World block (variables, calendar, per-cell grid, thing list closed at the `WRLD`
+delimiter), the typed things and the RideSystem object records are documented in
+TPWS-PAYLOAD.md and reverse/SAVE-plan.md (`SavePayloadLayout`, `SaveWorld`,
+`SaveThingChain`, `SaveCellGrid`, `SaveObjectList`, read-only
+`OriginalParkImport`). The Coasters block (between the stored `EMAK`/`SAOC`
+delimiters) has a bounded structural reader (`SaveCoasterBlock`; TPWS-PAYLOAD.md
+"Coasters block"): header, auxiliary links, sections and links are typed, the
+train payload stays raw, nothing is imported and nothing is written. A park
+started from the shipped save imports its turn,
+bank, objects, staff and advisor controller (`OriginalEconomyImport`; values not
+imported are reported as SAVE-001 to SAVE-010 and SAVE-920 to SAVE-923); the
+other blocks stay opaque.
+The split finds the delimiters of blocks whose width is not traced by their
+bytes, so a payload that splits in more than one way, or holds one delimiter's
+bytes more than 256 times, is rejected although the count-based original loader
+would read it (SAVE-011).
 The four local `scape.omp` files start with `OBJ_`; this is not evidence that they
-are terrain tile grids. No playable park importer or save writer exists.
+are terrain tile grids. No save writer exists: original saves are never written,
+because round-trip evidence is missing and Easymode alone holds 18,288
+uninitialized `0xCD` bytes, so byte equality cannot be the criterion
+(SAVE-plan §8.3).
 
 The upstream format document is readable through the GitHub contents API
 (`opentpw-docs` `src/formats/tpws-ints-lays.md`). It agrees with the container
 fields above (magic 500 for TPWS, file type `00 01 22 19`, version byte, online
 flag, `BILZ` header) and names INTS/LAYS as other file kinds; it says nothing
 about the decoded payload. Original runtime fidelity, real TPWS variants and
-online saves remain unverified.
+online saves remain unverified. Nonempty TPW coaster bodies support structural inspection only;
+the runtime importer refuses them before constructing objects (see [TPWS-PAYLOAD.md](TPWS-PAYLOAD.md#coasters-block-savecoasterblock)).

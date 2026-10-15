@@ -4,7 +4,7 @@ namespace OpenTPW;
 /// Money categories of the original financial screens: "Money in" = gate/shop/sideshow takings
 /// (UITEXT 164–167), "Money out" = staff costs (169), other costs (358) and loan payments (359).
 /// <see cref="OtherIncome"/> (challenge prizes, scrap sales) and <see cref="LoanReceived"/> have no
-/// original label; loans received change the balance but are not counted as money in.
+/// original label. Loans received count as money in but not as profit.
 /// </summary>
 public enum LedgerCategory
 {
@@ -21,9 +21,10 @@ public enum LedgerCategory
 /// <summary>Totals of one closed month (or the open current month).</summary>
 public sealed record LedgerMonth( long MonthIndex, IReadOnlyDictionary<LedgerCategory, long> Totals, long OpeningBalance, long ClosingBalance, int ParkRating, long ParkValue )
 {
-	public long MoneyIn => Sum( LedgerCategory.GateTakings, LedgerCategory.ShopTakings, LedgerCategory.SideshowTakings, LedgerCategory.OtherIncome );
+	// [BIN:STP-PPC:0x100CC904 loan deposit] loan proceeds are added to the "Money in" accumulator (+0x1FC90, graph toggle 0x12279 "Money in") like every other credit; instalments go to the money-out accumulator (+0x1F5A0)
+	public long MoneyIn => Sum( LedgerCategory.GateTakings, LedgerCategory.ShopTakings, LedgerCategory.SideshowTakings, LedgerCategory.OtherIncome, LedgerCategory.LoanReceived );
 	public long MoneyOut => Sum( LedgerCategory.StaffCosts, LedgerCategory.OtherCosts, LedgerCategory.LoanPayments );
-	public long Profit => MoneyIn - MoneyOut;
+	public long Profit => MoneyIn - this[LedgerCategory.LoanReceived] - MoneyOut;
 	public long this[LedgerCategory category] => Totals.TryGetValue( category, out var value ) ? value : 0;
 	private long Sum( params LedgerCategory[] categories ) => categories.Sum( category => this[category] );
 }
@@ -50,9 +51,13 @@ public sealed class ParkLedger
 	public IReadOnlyList<LedgerMonth> History => history;
 	public IReadOnlyDictionary<LedgerCategory, long> CurrentTotals => current;
 
-	// [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; loans received are not money in — evidence needed: captured financial screen after these transactions
+	// [APPROX:ECON-005] challenge prizes and scrap sales are other income and build, upgrade, goods, prizes, land and training other costs, OpenTPW's split of the original's two totals: tp.exe keeps rows only for the gate, shop and sideshow takings and the staff wages (finance graph 0x49A7B0: +0x1FEE0 from the admission 0x4D0600, +0x20130 / +0x20380 by Info.WhichUIType from 0x4E16B0, +0x1F7F0 from the month wage 0x504C70 and the dismissal 0x505790), and every other credit reaches money in (+0x1FC90, 0x4D0190) and every other debit money out (+0x1F5A0, 0x4D01F0) only; the monthly Profit (whole instalments) is OpenTPW's trace figure with no original row — evidence needed: the writer of the bank's pending word +0x10, which the month routine 0x4D0370 adds to money in without a row
 	public static bool IsIncome( LedgerCategory category ) => category is LedgerCategory.GateTakings or LedgerCategory.ShopTakings or LedgerCategory.SideshowTakings or LedgerCategory.OtherIncome or LedgerCategory.LoanReceived;
 
+	/// <summary>The year's running profit (<c>mProfitThisYear</c>): reset at each new calendar year.</summary>
+	public long ProfitThisYear { get; private set; }
+
+	// [BIN:STP-PPC:0x100CBF50 bank deposit] every credit raises the bank's mProfitThisYear (+0x124) and every debit (0x100CBFDC) lowers it; a loan deposit (0x100CC904) adds and removes its amount, and an instalment (0x100CC21C) nets to minus its interest share
 	public void Post( LedgerCategory category, long amount )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( amount );
@@ -60,7 +65,25 @@ public sealed class ParkLedger
 			return;
 		Balance = checked(IsIncome( category ) ? Balance + amount : Balance - amount);
 		current[category] = checked(current.GetValueOrDefault( category ) + amount);
+		if ( category is not (LedgerCategory.LoanReceived or LedgerCategory.LoanPayments) )
+			ProfitThisYear = Wrap32( checked(IsIncome( category ) ? ProfitThisYear + amount : ProfitThisYear - amount) );
 	}
+
+	/// <summary>
+	/// The year-profit word (+292, read by the profit ticket as a signed value) is 32 bits wide in the original (lwz, subf or
+	/// add, stw: 0xCC060, 0xCBF50, 0xCBFDC), so every update wraps; at 0 % APR a loan's interest share is about 119 million a
+	/// month and the word crosses the boundary within a year (jungle Easy mode's 0 % loans). The balance, money-in and
+	/// money-out words are 32-bit in the original too, but the park cannot reach 2^31 there (not wrapped, not demonstrable).
+	/// </summary>
+	private static long Wrap32( long value ) => unchecked((int)value);
+
+	/// <summary>Lowers the year's profit by a loan instalment's interest share, or by an early payoff's whole-term share.</summary>
+	public void ChargeLoanInterest( long interest ) => ProfitThisYear = Wrap32( ProfitThisYear - interest );
+
+	// [BIN:STP-PPC:0x100CC120 bank message 13] the year event (type 13, from the calendar's year change 0x100E4148) sets mProfitThisYear to 0
+	public void StartYear() => ProfitThisYear = 0;
+
+	internal void RestoreProfitThisYear( long profit ) => ProfitThisYear = Wrap32( profit );
 
 	public LedgerMonth CurrentMonth( int rating, long parkValue ) => new( CurrentMonthIndex, new Dictionary<LedgerCategory, long>( current ), CurrentOpeningBalance, Balance, rating, parkValue );
 
@@ -100,54 +123,78 @@ public sealed class ParkLedger
 	}
 }
 
-/// <summary>An outstanding loan.</summary>
-public sealed record LoanAccount( int OfferIndex, int LenderNameIndex, long OriginalAmount, int AprPercent, int Months, long MonthlyRepayment, int MonthsRemaining, long RemainingBalance );
+/// <summary>
+/// An outstanding loan. The original keeps no declining balance: a bought loan is its instalment M, its term N and the
+/// months repaid (bank record words, 0xcc21c / 0xccc78), so the amount still owed is derived as M × (N − months repaid).
+/// </summary>
+public sealed record LoanAccount( int OfferIndex, int LenderNameIndex, long OriginalAmount, int AprPercent, int Months, long MonthlyRepayment, int MonthsRepaid )
+{
+	public int MonthsRemaining => Months - MonthsRepaid;
+
+	/// <summary>What early repayment costs (0xccc78): M × the months left.</summary>
+	public long RemainingBalance => MonthlyRepayment * MonthsRemaining;
+}
 
 /// <summary>
-/// Loan arithmetic. With 0 % APR the monthly repayment is <c>floor(amount / months)</c>: the
-/// Easymode save stores exactly these values for all eight easy-mode offers (docs/ECONOMY.md).
-/// For a positive APR the original formula is unknown; OpenTPW uses a standard annuity (monthly
-/// rate APR/12) rounded down — an <b>approximation</b>. The final payment settles the remainder.
+/// Loan arithmetic, as the original does it (executed in the PowerPC oracle, docs/reverse/ORACLE.md F12 and F13).
+/// The instalment is <c>trunc_u32(P × pow(1 + APR/100, (N/12) × 0.5) / N)</c> (0xcb7a8), paid unchanged for N months
+/// (0xcc21c) with no interest on a balance and no final remainder; an early repayment (0xccc78) pays M × the months left.
 /// </summary>
 public static class LoanMath
 {
+	/// <summary>
+	/// The interest share the original takes off the year's profit per instalment: (M × N − P) / N with the
+	/// subtraction in unsigned 32-bit arithmetic, as 0x100CC21C computes it (so it wraps when M × N &lt; P).
+	/// </summary>
+	public static long InstalmentInterest( long monthlyRepayment, int months, long principal )
+	{
+		if ( months <= 0 )
+			return 0;
+		var difference = (uint)unchecked(monthlyRepayment * months - principal);
+		return difference / (uint)months;
+	}
+
+	/// <summary>
+	/// What an early payoff takes off the year's profit (0xCCDC0..0xCCDD0): the instalment's share q = (M × N − P) / N times
+	/// the whole term N (32-bit), whatever the months already repaid; the payoff itself only leaves the balance.
+	/// </summary>
+	public static long PayoffInterest( long monthlyRepayment, int months, long principal ) =>
+		unchecked((uint)(InstalmentInterest( monthlyRepayment, months, principal ) * months));
+
+	/// <summary>The original's float-to-unsigned conversion (0x1c3fbc): negative gives 0, NaN and 2^32 or more give 2^32 - 1, else truncation.</summary>
+	internal static long TruncateUnsigned( double value )
+	{
+		if ( double.IsNaN( value ) )
+			return uint.MaxValue;
+		if ( value < 0.0 )
+			return 0;
+		return value >= 4294967296.0 ? uint.MaxValue : (long)value;
+	}
+
+	/// <summary>
+	/// The instalment M of an offer, 0xcb7a8 in binary64. At 0 % APR the power is 1 and M is floor(P / N), the value every
+	/// original save stores; the original's M × N then falls short of P by the division remainder (100,000 over 36 months
+	/// repays 99,972) and OpenTPW follows it.
+	/// </summary>
 	public static long MonthlyRepayment( long amount, int aprPercent, int months )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegativeOrZero( months );
 		ArgumentOutOfRangeException.ThrowIfNegative( amount );
-		if ( aprPercent <= 0 )
-			// [DATA:levels/jungle/Easymode.TPWI:loan table repayments = floor(amount/months) at 0 % APR]
-			return amount / months;
-		// [APPROX:ECON-006] APR > 0 repayment is an annuity at APR/12 per month, rounded down; interest accrues monthly on the balance — evidence needed: standard-mode save or capture with an outstanding loan
-		var rate = aprPercent / 1200.0;
-		return (long)Math.Floor( amount * rate / (1 - Math.Pow( 1 + rate, -months )) );
+		var power = Math.Pow( 1.0 + aprPercent / 100.0, months / 12.0 * 0.5 );
+		return TruncateUnsigned( amount * power / months );
 	}
 
-	public static long MonthlyInterest( long balance, int aprPercent ) => aprPercent <= 0 ? 0 : (long)Math.Round( balance * (aprPercent / 1200.0), MidpointRounding.AwayFromZero );
-
-	public static long TotalPayable( long amount, int aprPercent, int months )
-	{
-		var account = Open( new LoanOffer( 0, amount, aprPercent, months, 0 ) );
-		long total = 0;
-		while ( account.MonthsRemaining > 0 )
-		{
-			var (next, paid) = Pay( account );
-			total += paid;
-			account = next;
-		}
-		return total;
-	}
+	/// <summary>What the loan costs in all: M × N.</summary>
+	public static long TotalPayable( long amount, int aprPercent, int months ) => MonthlyRepayment( amount, aprPercent, months ) * months;
 
 	public static LoanAccount Open( LoanOffer offer ) => new( offer.Index, offer.LenderNameIndex, offer.Amount, offer.AprPercent, offer.Months,
-		MonthlyRepayment( offer.Amount, offer.AprPercent, offer.Months ), offer.Months, offer.Amount );
+		MonthlyRepayment( offer.Amount, offer.AprPercent, offer.Months ), 0 );
 
-	/// <summary>One month: interest accrues on the remaining balance, then the repayment (or the remainder in the last month) is paid.</summary>
+	/// <summary>One month (0xcc21c): exactly M is paid and one more month counts as repaid.</summary>
 	public static (LoanAccount Account, long Paid) Pay( LoanAccount account )
 	{
 		if ( account.MonthsRemaining <= 0 )
 			return (account, 0);
-		var owed = account.RemainingBalance + MonthlyInterest( account.RemainingBalance, account.AprPercent );
-		var paid = account.MonthsRemaining == 1 ? owed : Math.Min( owed, account.MonthlyRepayment );
-		return (account with { MonthsRemaining = account.MonthsRemaining - 1, RemainingBalance = owed - paid }, paid);
+		return (account with { MonthsRepaid = account.MonthsRepaid + 1 }, account.MonthlyRepayment);
 	}
 }

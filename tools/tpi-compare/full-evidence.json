@@ -1,0 +1,3634 @@
+{
+  "cosStructures": {
+    "fileCount": 80,
+    "firstU32Counts": {
+      "2": 80
+    },
+    "hashRecordCount": 80,
+    "hashRecordsSha256": "031939809dfcc4b5821c73c31a54bec34eff4f615144fd1ad8f8179a0e5df498",
+    "limitation": "All coaster headers classified; no invented payload/track schema",
+    "manifestSha256": "79dac03e700d87c7e8e976e72d568eba0ecf1fd1d5131ad92e060a53e920bd63",
+    "readerStatusCounts": {
+      "reader-rejected": 80
+    },
+    "tagOffsetPatterns": {
+      "{\"BILZ\": -1, \"DWFB\": -1, \"RSSEQ\": -1, \"SHPI\": -1, \"TP2M\": -1}": 80
+    }
+  },
+  "fullAudit": {
+    "artifactPath": "/Volumes/USBSSD/repos/offload/game-assets/theme-park-inc/analysis/tpi-full-evidence.json",
+    "bytes": 2745817,
+    "coverage": "Every bounded physical file and decompressed WAD member; original assets remain external",
+    "regenerationCommand": "python3 tools/tpi-compare/full_summary.py --tpw /tmp/tpi-full-tpw.json --patch2 /tmp/tpi-full-patch2.json --tpi /tmp/tpi-full-retail.json --source-root . --cos /tmp/tpi-full-cos.json --readme /tmp/tpi-full-readme.json --output /Users/sander/server/game-assets/theme-park-inc/analysis/tpi-full-evidence.json",
+    "sha256": "b22069f821ac6647f68f44a7e097e5f45d8bcadf8b4e4399fcd3281bfc303039"
+  },
+  "intersections": [
+    {
+      "commonLogicalPaths": 14195,
+      "equalAfterOccurrences": 14154,
+      "equalBeforeOccurrences": 14153,
+      "equalCommonPaths": 14150,
+      "equalPayloadRecordCount": 12696,
+      "equalPayloadRecordsSha256": "af9e3ccc7ec7caac5671ea73d29bae8087ea30b51a8d40574cd48477a34280d1",
+      "labels": [
+        "TPW-Windows-full",
+        "TPW-Patch2-full"
+      ],
+      "limitation": "Exact payload equality across physical files and decompressed WAD members; duplicate occurrences are counted separately",
+      "uniqueEqualPayloads": 12696
+    },
+    {
+      "commonLogicalPaths": 250,
+      "equalAfterOccurrences": 501,
+      "equalBeforeOccurrences": 758,
+      "equalCommonPaths": 95,
+      "equalPayloadRecordCount": 382,
+      "equalPayloadRecordsSha256": "db65594ca040551781b8c977bcb0fe5d731c6ec373ac7cc55ff96fc92ba2bd76",
+      "labels": [
+        "TPW-Windows-full",
+        "TPI-retail-full"
+      ],
+      "limitation": "Exact payload equality across physical files and decompressed WAD members; duplicate occurrences are counted separately",
+      "uniqueEqualPayloads": 382
+    },
+    {
+      "commonLogicalPaths": 254,
+      "equalAfterOccurrences": 499,
+      "equalBeforeOccurrences": 756,
+      "equalCommonPaths": 93,
+      "equalPayloadRecordCount": 380,
+      "equalPayloadRecordsSha256": "b41ae5ed2ab9067d23b617b6580635263a1893d79dece66398d2db785c853aa4",
+      "labels": [
+        "TPW-Patch2-full",
+        "TPI-retail-full"
+      ],
+      "limitation": "Exact payload equality across physical files and decompressed WAD members; duplicate occurrences are counted separately",
+      "uniqueEqualPayloads": 380
+    }
+  ],
+  "inventories": [
+    {
+      "archiveMembers": 13394,
+      "bounds": {
+        "compressedMemberBytes": 2097152,
+        "maximumFiles": 50000,
+        "memberBytes": 16777216,
+        "memberProbesPerFamily": null,
+        "physicalParseBytes": 134217728,
+        "physicalProbesPerFamily": null
+      },
+      "diagnostics": {
+        "allPartialReaderResults": [],
+        "count": 68,
+        "groups": [
+          {
+            "count": 64,
+            "errorType": "InvalidDataException",
+            "examples": [
+              {
+                "declaredEntries": null,
+                "errorType": "InvalidDataException",
+                "parsedEntries": null,
+                "path": "Data/levels/jungle/features/speaker1.wad!cat_rideBANK.map",
+                "reason": "MAP is not a TP2M attribute map or its header is truncated.",
+                "sha256": "b6574b9195655f46dd71a3b99cfecd3c681308266f2c2d749cda2b9417d5044a",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "InvalidDataException",
+                "parsedEntries": null,
+                "path": "Data/levels/jungle/features/speaker1.wad!cat_rideSFX.map",
+                "reason": "MAP is not a TP2M attribute map or its header is truncated.",
+                "sha256": "a1d6e11e3ae4bca7c023bfd8e280cebfa2578dc0c9944c8b2e9712942b2cbd10",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "InvalidDataException",
+                "parsedEntries": null,
+                "path": "Data/global/Speech/cat_speechBANK.map",
+                "reason": "MAP is not a TP2M attribute map or its header is truncated.",
+                "sha256": "bb70bc8479a9563cf3a8fca8fa0d506887fb913585771287e27d86fd7028d478",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              }
+            ],
+            "status": "reader-rejected"
+          },
+          {
+            "count": 4,
+            "errorType": "NotSupportedException",
+            "examples": [
+              {
+                "declaredEntries": null,
+                "errorType": "NotSupportedException",
+                "parsedEntries": null,
+                "path": "Data/generic/dynamic/garrow.MD2",
+                "reason": "Unsupported MD2 version 24.23.",
+                "sha256": "d5154361929da3a835fee4a47a68ef9c717e18365e670902d423d4e8f480839f",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "NotSupportedException",
+                "parsedEntries": null,
+                "path": "Data/generic/dynamic/rarrow.MD2",
+                "reason": "Unsupported MD2 version 24.23.",
+                "sha256": "3e021b02eb830bcbd183286eff56775d4548ede57bf4713a7ac172395995825f",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "NotSupportedException",
+                "parsedEntries": null,
+                "path": "Data/levels/jungle/rides/wateride.wad!wr_tunnel.md2",
+                "reason": "Unsupported MD2 version 207.201.",
+                "sha256": "23cd9b49df7da0f301ff94715ef05342134cbae11db904ac6a088ce1086ce031",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              }
+            ],
+            "status": "reader-rejected"
+          }
+        ],
+        "recordsSha256": "19b640432298d2f0c85ea2f9bf743718603d49ba9395458b770cbc4069687887"
+      },
+      "exhaustiveRequested": true,
+      "hashedRecords": 14195,
+      "label": "TPW-Windows-full",
+      "manifestSha256": "1af4c8d5465a2238b6a600d9d96f5c5f1729248e5bbe4c8b9f6337fa2956b539",
+      "physicalFiles": 801,
+      "statusCounts": [
+        {
+          "count": 1,
+          "family": "BFMU",
+          "status": "signature-only"
+        },
+        {
+          "count": 21,
+          "family": "BFST",
+          "status": "signature-only"
+        },
+        {
+          "count": 33,
+          "family": "FontFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 64,
+          "family": "MAP",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 4,
+          "family": "MD2",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 5,
+          "family": "MapFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 2119,
+          "family": "ModelFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 308,
+          "family": "RideScriptFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 48,
+          "family": "SdtArchive",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 399,
+          "family": "SettingsFile/SAMParser",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 312,
+          "family": "WadArchive",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 265,
+          "family": "unrecognized",
+          "status": "signature-only"
+        },
+        {
+          "count": 10616,
+          "family": "unrecognized",
+          "status": "unverified"
+        }
+      ]
+    },
+    {
+      "archiveMembers": 13394,
+      "bounds": {
+        "compressedMemberBytes": 2097152,
+        "maximumFiles": 50000,
+        "memberBytes": 16777216,
+        "memberProbesPerFamily": null,
+        "physicalParseBytes": 134217728,
+        "physicalProbesPerFamily": null
+      },
+      "diagnostics": {
+        "allPartialReaderResults": [],
+        "count": 69,
+        "groups": [
+          {
+            "count": 1,
+            "errorType": "BadImageFormatException",
+            "examples": [
+              {
+                "declaredEntries": null,
+                "errorType": "BadImageFormatException",
+                "parsedEntries": null,
+                "path": "clcd16.dll",
+                "reason": "Invalid PE signature.",
+                "sha256": "c9cf95564c2d5a57a89832f127a9e4d8ca3628be45277f75e38e22d91821afa0",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              }
+            ],
+            "status": "reader-rejected"
+          },
+          {
+            "count": 64,
+            "errorType": "InvalidDataException",
+            "examples": [
+              {
+                "declaredEntries": null,
+                "errorType": "InvalidDataException",
+                "parsedEntries": null,
+                "path": "Data/levels/jungle/features/speaker1.wad!cat_rideBANK.map",
+                "reason": "MAP is not a TP2M attribute map or its header is truncated.",
+                "sha256": "b6574b9195655f46dd71a3b99cfecd3c681308266f2c2d749cda2b9417d5044a",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "InvalidDataException",
+                "parsedEntries": null,
+                "path": "Data/levels/jungle/features/speaker1.wad!cat_rideSFX.map",
+                "reason": "MAP is not a TP2M attribute map or its header is truncated.",
+                "sha256": "a1d6e11e3ae4bca7c023bfd8e280cebfa2578dc0c9944c8b2e9712942b2cbd10",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "InvalidDataException",
+                "parsedEntries": null,
+                "path": "Data/global/Speech/cat_speechBANK.map",
+                "reason": "MAP is not a TP2M attribute map or its header is truncated.",
+                "sha256": "bb70bc8479a9563cf3a8fca8fa0d506887fb913585771287e27d86fd7028d478",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              }
+            ],
+            "status": "reader-rejected"
+          },
+          {
+            "count": 4,
+            "errorType": "NotSupportedException",
+            "examples": [
+              {
+                "declaredEntries": null,
+                "errorType": "NotSupportedException",
+                "parsedEntries": null,
+                "path": "Data/generic/dynamic/garrow.MD2",
+                "reason": "Unsupported MD2 version 24.23.",
+                "sha256": "d5154361929da3a835fee4a47a68ef9c717e18365e670902d423d4e8f480839f",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "NotSupportedException",
+                "parsedEntries": null,
+                "path": "Data/generic/dynamic/rarrow.MD2",
+                "reason": "Unsupported MD2 version 24.23.",
+                "sha256": "3e021b02eb830bcbd183286eff56775d4548ede57bf4713a7ac172395995825f",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "NotSupportedException",
+                "parsedEntries": null,
+                "path": "Data/levels/jungle/rides/wateride.wad!wr_tunnel.md2",
+                "reason": "Unsupported MD2 version 207.201.",
+                "sha256": "23cd9b49df7da0f301ff94715ef05342134cbae11db904ac6a088ce1086ce031",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              }
+            ],
+            "status": "reader-rejected"
+          }
+        ],
+        "recordsSha256": "07d3f6848dbc50cbfa5c4d52ff967792095b09dab6b247faff2c0ac5fab6884b"
+      },
+      "exhaustiveRequested": true,
+      "hashedRecords": 14218,
+      "label": "TPW-Patch2-full",
+      "manifestSha256": "c53f89932b7d39b1410531b8fe3a1843afb5c6fcb2b5e23dfaa2a55d76d20185",
+      "physicalFiles": 824,
+      "statusCounts": [
+        {
+          "count": 1,
+          "family": "BFMU",
+          "status": "signature-only"
+        },
+        {
+          "count": 21,
+          "family": "BFST",
+          "status": "signature-only"
+        },
+        {
+          "count": 37,
+          "family": "FontFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 64,
+          "family": "MAP",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 4,
+          "family": "MD2",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 5,
+          "family": "MapFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 2119,
+          "family": "ModelFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 1,
+          "family": "PE",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 308,
+          "family": "RideScriptFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 48,
+          "family": "SdtArchive",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 400,
+          "family": "SettingsFile/SAMParser",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 11,
+          "family": "System.Reflection.PortableExecutable.PEReader",
+          "status": "parsed-standard-header"
+        },
+        {
+          "count": 312,
+          "family": "WadArchive",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 271,
+          "family": "unrecognized",
+          "status": "signature-only"
+        },
+        {
+          "count": 10616,
+          "family": "unrecognized",
+          "status": "unverified"
+        }
+      ]
+    },
+    {
+      "archiveMembers": 15007,
+      "bounds": {
+        "compressedMemberBytes": 2097152,
+        "maximumFiles": 50000,
+        "memberBytes": 16777216,
+        "memberProbesPerFamily": null,
+        "physicalParseBytes": 134217728,
+        "physicalProbesPerFamily": null
+      },
+      "diagnostics": {
+        "allPartialReaderResults": [
+          {
+            "declaredEntries": 143,
+            "errorType": null,
+            "parsedEntries": 103,
+            "path": "Data/levels/arabian/Music/MusicHD.sdt",
+            "reason": null,
+            "sha256": "193c976c3d07fda05ef507d00ba97867073dda42e51d99d87040f1fee094d66f",
+            "skippedDiagnosticsSha256": "eaad05b095a1d8c61ea04346a51367297468ab49e9ff3d59eef90a85ad9bf197",
+            "skippedEntries": 40,
+            "status": "partial-reader-result"
+          },
+          {
+            "declaredEntries": 116,
+            "errorType": null,
+            "parsedEntries": 101,
+            "path": "Data/levels/water/Music/MusicHD.sdt",
+            "reason": null,
+            "sha256": "88a29f9b7ef2f129755ddc0e3d55d852024974c55659d900d77442b342d93b36",
+            "skippedDiagnosticsSha256": "1cdd8f41a5c73334ba6cd1583799c4b7de8da708abd6d1f39c564686cdd61a1a",
+            "skippedEntries": 15,
+            "status": "partial-reader-result"
+          }
+        ],
+        "count": 42,
+        "groups": [
+          {
+            "count": 2,
+            "errorType": null,
+            "examples": [
+              {
+                "declaredEntries": 143,
+                "errorType": null,
+                "parsedEntries": 103,
+                "path": "Data/levels/arabian/Music/MusicHD.sdt",
+                "reason": null,
+                "sha256": "193c976c3d07fda05ef507d00ba97867073dda42e51d99d87040f1fee094d66f",
+                "skippedDiagnosticsSha256": "eaad05b095a1d8c61ea04346a51367297468ab49e9ff3d59eef90a85ad9bf197",
+                "skippedEntries": 40,
+                "status": "partial-reader-result"
+              },
+              {
+                "declaredEntries": 116,
+                "errorType": null,
+                "parsedEntries": 101,
+                "path": "Data/levels/water/Music/MusicHD.sdt",
+                "reason": null,
+                "sha256": "88a29f9b7ef2f129755ddc0e3d55d852024974c55659d900d77442b342d93b36",
+                "skippedDiagnosticsSha256": "1cdd8f41a5c73334ba6cd1583799c4b7de8da708abd6d1f39c564686cdd61a1a",
+                "skippedEntries": 15,
+                "status": "partial-reader-result"
+              }
+            ],
+            "status": "partial-reader-result"
+          },
+          {
+            "count": 38,
+            "errorType": "InvalidDataException",
+            "examples": [
+              {
+                "declaredEntries": null,
+                "errorType": "InvalidDataException",
+                "parsedEntries": null,
+                "path": "Data/global/Speech/cat_speechBANK.map",
+                "reason": "MAP is not a TP2M attribute map or its header is truncated.",
+                "sha256": "4a5f9b4fa1e352159cff711a56bfa8bfdcd75f66f735a408a571993cb8242215",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "InvalidDataException",
+                "parsedEntries": null,
+                "path": "Data/global/Speech/cat_speechSFX.map",
+                "reason": "MAP is not a TP2M attribute map or its header is truncated.",
+                "sha256": "264df087645dcda627c1f95065e5a38cbfb43b4a842b904ab7fe3c839ed404a2",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "InvalidDataException",
+                "parsedEntries": null,
+                "path": "Data/global/sound/cat_ambientBANK.map",
+                "reason": "MAP is not a TP2M attribute map or its header is truncated.",
+                "sha256": "737f028d777ae4e220b9f74382ba25b3b3713f3eaa2acaf077d92a946bc53950",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              }
+            ],
+            "status": "reader-rejected"
+          },
+          {
+            "count": 2,
+            "errorType": "NotSupportedException",
+            "examples": [
+              {
+                "declaredEntries": null,
+                "errorType": "NotSupportedException",
+                "parsedEntries": null,
+                "path": "Data/generic/dynamic/garrow.MD2",
+                "reason": "Unsupported MD2 version 24.23.",
+                "sha256": "d5154361929da3a835fee4a47a68ef9c717e18365e670902d423d4e8f480839f",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              },
+              {
+                "declaredEntries": null,
+                "errorType": "NotSupportedException",
+                "parsedEntries": null,
+                "path": "Data/generic/dynamic/rarrow.MD2",
+                "reason": "Unsupported MD2 version 24.23.",
+                "sha256": "3e021b02eb830bcbd183286eff56775d4548ede57bf4713a7ac172395995825f",
+                "skippedDiagnosticsSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "skippedEntries": 0,
+                "status": "reader-rejected"
+              }
+            ],
+            "status": "reader-rejected"
+          }
+        ],
+        "recordsSha256": "9e7923746f37c096a018de6442693c06bf41957c2061f204027f2370812a2f14"
+      },
+      "exhaustiveRequested": true,
+      "hashedRecords": 16573,
+      "label": "TPI-retail-full",
+      "manifestSha256": "58db49514c8cd2fa1b24d9e90f9599ced958480f4b420a69516190c9b396a530",
+      "physicalFiles": 1566,
+      "statusCounts": [
+        {
+          "count": 5,
+          "family": "BFMU",
+          "status": "signature-only"
+        },
+        {
+          "count": 185,
+          "family": "BFST",
+          "status": "signature-only"
+        },
+        {
+          "count": 180,
+          "family": "FontFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 38,
+          "family": "MAP",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 2,
+          "family": "MD2",
+          "status": "reader-rejected"
+        },
+        {
+          "count": 4,
+          "family": "MapFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 1978,
+          "family": "ModelFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 288,
+          "family": "RideScriptFile",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 7283,
+          "family": "SHPI",
+          "status": "unverified"
+        },
+        {
+          "count": 26,
+          "family": "SdtArchive",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 2,
+          "family": "SdtArchive",
+          "status": "partial-reader-result"
+        },
+        {
+          "count": 369,
+          "family": "SettingsFile/SAMParser",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 29,
+          "family": "System.Reflection.PortableExecutable.PEReader",
+          "status": "parsed-standard-header"
+        },
+        {
+          "count": 303,
+          "family": "WadArchive",
+          "status": "parsed-existing-reader"
+        },
+        {
+          "count": 540,
+          "family": "unrecognized",
+          "status": "signature-only"
+        },
+        {
+          "count": 5341,
+          "family": "unrecognized",
+          "status": "unverified"
+        }
+      ]
+    }
+  ],
+  "opcodeSourceHashes": {
+    "source/OpenTPW/VM/Handlers/Animation.cs": "f4f8d76ec32f383dd649fbce8148bdbd584294fb1b8a6a5f609030fc426f84e6",
+    "source/OpenTPW/VM/Handlers/Children.cs": "dcb8e54687c93b0c4ab0d1fb154ce3f8a16489567b15cbcde85f86a92aa53617",
+    "source/OpenTPW/VM/Handlers/Effects.cs": "4da977f88d98b9e28bcabb3079a481fcd0dde0911cef972454f8226bb5f7d46b",
+    "source/OpenTPW/VM/Handlers/Logic.cs": "c58006927e04bc785cfc7f1b23fcbe2d38cb37fdabaa3e46dc7d8d49390caf6b",
+    "source/OpenTPW/VM/Handlers/Math.cs": "046a3c84dc11a7bde1e967ddb1b8f346ee30b53cf4d0f2b1c698f23577a228ed",
+    "source/OpenTPW/VM/Handlers/Scheduling.cs": "267961d2cc6288eac95cfb287a866cdbb13d8dcdb5d6b3de21c7641ba8aa41bc",
+    "source/OpenTPW/VM/Handlers/Visitors.cs": "2f9289ef11cf68422a36acddc2ebe65c0b7e202550c255d8b29c922180f99e1c",
+    "source/OpenTPW/VM/Opcode.cs": "27d76267ce20526481c268b0b04eb4c4fcc55284223b5aaa8ce161d51b990d38"
+  },
+  "opcodes": [
+    {
+      "label": "TPW-Windows-full",
+      "limitation": "VM declaration/handler status only; Hooked effects and TPI opcode semantics remain unqualified",
+      "missingHandlerProofs": [],
+      "noRegisteredHandlerIds": [],
+      "opcodeCounts": [
+        {
+          "id": 0,
+          "instructions": 2,
+          "name": "NOP",
+          "scripts": 2,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 1,
+          "instructions": 150,
+          "name": "CRIT_LOCK",
+          "scripts": 128,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 2,
+          "instructions": 240,
+          "name": "CRIT_UNLOCK",
+          "scripts": 129,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 3,
+          "instructions": 1243,
+          "name": "COPY",
+          "scripts": 190,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 5,
+          "instructions": 74,
+          "name": "SUB",
+          "scripts": 63,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 6,
+          "instructions": 396,
+          "name": "ENDSLICE",
+          "scripts": 251,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 7,
+          "instructions": 172,
+          "name": "GETTIME",
+          "scripts": 57,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 8,
+          "instructions": 644,
+          "name": "ADDOBJ",
+          "scripts": 164,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 10,
+          "instructions": 235,
+          "name": "KILLOBJ",
+          "scripts": 122,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 11,
+          "instructions": 113,
+          "name": "FADEOBJ",
+          "scripts": 39,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 12,
+          "instructions": 20,
+          "name": "SETOBJPARAM",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 13,
+          "instructions": 527,
+          "name": "EVENT",
+          "scripts": 107,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 15,
+          "instructions": 17,
+          "name": "FLUSHANIM",
+          "scripts": 7,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 16,
+          "instructions": 74,
+          "name": "TRIGANIM",
+          "scripts": 59,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 17,
+          "instructions": 547,
+          "name": "WAITANIM",
+          "scripts": 250,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 18,
+          "instructions": 210,
+          "name": "LOOPANIM",
+          "scripts": 114,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 19,
+          "instructions": 133,
+          "name": "TRIGWAITANIM",
+          "scripts": 56,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 21,
+          "instructions": 4,
+          "name": "TRIGANIMSPEED",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 23,
+          "instructions": 63,
+          "name": "TRIGANIM_CH",
+          "scripts": 6,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 25,
+          "instructions": 1,
+          "name": "LOOPANIM_CH",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 27,
+          "instructions": 15,
+          "name": "GETANIM_CH",
+          "scripts": 5,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 28,
+          "instructions": 56,
+          "name": "RAND",
+          "scripts": 40,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 29,
+          "instructions": 70,
+          "name": "JSR",
+          "scripts": 23,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 30,
+          "instructions": 33,
+          "name": "RETURN",
+          "scripts": 23,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 31,
+          "instructions": 725,
+          "name": "BRANCH",
+          "scripts": 308,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 32,
+          "instructions": 787,
+          "name": "BRANCH_Z",
+          "scripts": 163,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 33,
+          "instructions": 943,
+          "name": "BRANCH_NZ",
+          "scripts": 150,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 34,
+          "instructions": 55,
+          "name": "BRANCH_NV",
+          "scripts": 53,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 35,
+          "instructions": 84,
+          "name": "BRANCH_PV",
+          "scripts": 66,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 37,
+          "instructions": 277,
+          "name": "NAME",
+          "scripts": 277,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 38,
+          "instructions": 1318,
+          "name": "TEST",
+          "scripts": 166,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 39,
+          "instructions": 61,
+          "name": "CMP",
+          "scripts": 33,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 42,
+          "instructions": 39,
+          "name": "HUSH",
+          "scripts": 39,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 43,
+          "instructions": 39,
+          "name": "HOP",
+          "scripts": 39,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 44,
+          "instructions": 458,
+          "name": "WAIT",
+          "scripts": 156,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 46,
+          "instructions": 170,
+          "name": "WAIT4ANIM",
+          "scripts": 75,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 47,
+          "instructions": 541,
+          "name": "ADD",
+          "scripts": 134,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 49,
+          "instructions": 4,
+          "name": "DIV",
+          "scripts": 4,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 50,
+          "instructions": 5,
+          "name": "MOD",
+          "scripts": 5,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 51,
+          "instructions": 20,
+          "name": "TURBO",
+          "scripts": 8,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 53,
+          "instructions": 76,
+          "name": "TOUR",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 54,
+          "instructions": 199,
+          "name": "BUMP",
+          "scripts": 12,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 55,
+          "instructions": 144,
+          "name": "COAST",
+          "scripts": 12,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 56,
+          "instructions": 31,
+          "name": "ADDHEAD",
+          "scripts": 31,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 57,
+          "instructions": 31,
+          "name": "DELHEAD",
+          "scripts": 31,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 58,
+          "instructions": 24,
+          "name": "LIMBO",
+          "scripts": 24,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 59,
+          "instructions": 24,
+          "name": "UNLIMBO",
+          "scripts": 24,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 60,
+          "instructions": 23,
+          "name": "FORCEUNLIMBO",
+          "scripts": 23,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 61,
+          "instructions": 6,
+          "name": "INLIMBO",
+          "scripts": 6,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 62,
+          "instructions": 24,
+          "name": "LIMBOSPACE",
+          "scripts": 24,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 63,
+          "instructions": 20,
+          "name": "SPAWNCHILD",
+          "scripts": 16,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 64,
+          "instructions": 28,
+          "name": "SPAWNSOUND",
+          "scripts": 28,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 65,
+          "instructions": 4,
+          "name": "REMOVECHILD",
+          "scripts": 4,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 66,
+          "instructions": 7,
+          "name": "SETVARINCHILD",
+          "scripts": 3,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 67,
+          "instructions": 9,
+          "name": "GETVARINCHILD",
+          "scripts": 2,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 69,
+          "instructions": 10,
+          "name": "GETVARINPARENT",
+          "scripts": 8,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 70,
+          "instructions": 1,
+          "name": "BOUNCESETNODE",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 71,
+          "instructions": 4,
+          "name": "BOUNCESETBASE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 72,
+          "instructions": 4,
+          "name": "BOUNCE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 73,
+          "instructions": 4,
+          "name": "UNBOUNCE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 74,
+          "instructions": 8,
+          "name": "FORCEUNBOUNCE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 75,
+          "instructions": 25,
+          "name": "BOUNCING",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 76,
+          "instructions": 47,
+          "name": "WALKON",
+          "scripts": 37,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 77,
+          "instructions": 53,
+          "name": "WALKOFF",
+          "scripts": 37,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 78,
+          "instructions": 43,
+          "name": "WALKGET",
+          "scripts": 37,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 79,
+          "instructions": 1,
+          "name": "WALKST_FLOAT",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 80,
+          "instructions": 1,
+          "name": "WALKFLOATSTAT",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 81,
+          "instructions": 1,
+          "name": "WALKFLOATSTOP",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 86,
+          "instructions": 40,
+          "name": "STARTSCREAM",
+          "scripts": 40,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 87,
+          "instructions": 80,
+          "name": "STOPSCREAM",
+          "scripts": 41,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 88,
+          "instructions": 46,
+          "name": "SINGLESCREAM",
+          "scripts": 44,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 89,
+          "instructions": 81,
+          "name": "SCREAMLEVEL",
+          "scripts": 36,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 90,
+          "instructions": 5,
+          "name": "FINDSCRIPTRAND",
+          "scripts": 5,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 91,
+          "instructions": 2,
+          "name": "GETREMOTEVAR",
+          "scripts": 1,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 92,
+          "instructions": 10,
+          "name": "SETREMOTEVAR",
+          "scripts": 5,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 93,
+          "instructions": 140,
+          "name": "REPAIREFFECT",
+          "scripts": 70,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 95,
+          "instructions": 40,
+          "name": "SETTIMER",
+          "scripts": 18,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 96,
+          "instructions": 21,
+          "name": "GETTIMER",
+          "scripts": 18,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 100,
+          "instructions": 1,
+          "name": "HOUR",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 101,
+          "instructions": 1,
+          "name": "MIN",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 102,
+          "instructions": 1,
+          "name": "SEC",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 103,
+          "instructions": 21,
+          "name": "SETREVERB",
+          "scripts": 11,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 104,
+          "instructions": 8,
+          "name": "DIPMUSIC",
+          "scripts": 8,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 105,
+          "instructions": 1,
+          "name": "SPARK",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        }
+      ],
+      "unknownEnumIds": []
+    },
+    {
+      "label": "TPW-Patch2-full",
+      "limitation": "VM declaration/handler status only; Hooked effects and TPI opcode semantics remain unqualified",
+      "missingHandlerProofs": [],
+      "noRegisteredHandlerIds": [],
+      "opcodeCounts": [
+        {
+          "id": 0,
+          "instructions": 2,
+          "name": "NOP",
+          "scripts": 2,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 1,
+          "instructions": 150,
+          "name": "CRIT_LOCK",
+          "scripts": 128,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 2,
+          "instructions": 240,
+          "name": "CRIT_UNLOCK",
+          "scripts": 129,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 3,
+          "instructions": 1243,
+          "name": "COPY",
+          "scripts": 190,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 5,
+          "instructions": 74,
+          "name": "SUB",
+          "scripts": 63,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 6,
+          "instructions": 396,
+          "name": "ENDSLICE",
+          "scripts": 251,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 7,
+          "instructions": 172,
+          "name": "GETTIME",
+          "scripts": 57,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 8,
+          "instructions": 644,
+          "name": "ADDOBJ",
+          "scripts": 164,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 10,
+          "instructions": 235,
+          "name": "KILLOBJ",
+          "scripts": 122,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 11,
+          "instructions": 113,
+          "name": "FADEOBJ",
+          "scripts": 39,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 12,
+          "instructions": 20,
+          "name": "SETOBJPARAM",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 13,
+          "instructions": 527,
+          "name": "EVENT",
+          "scripts": 107,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 15,
+          "instructions": 15,
+          "name": "FLUSHANIM",
+          "scripts": 7,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 16,
+          "instructions": 74,
+          "name": "TRIGANIM",
+          "scripts": 59,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 17,
+          "instructions": 547,
+          "name": "WAITANIM",
+          "scripts": 250,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 18,
+          "instructions": 210,
+          "name": "LOOPANIM",
+          "scripts": 114,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 19,
+          "instructions": 133,
+          "name": "TRIGWAITANIM",
+          "scripts": 56,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 21,
+          "instructions": 4,
+          "name": "TRIGANIMSPEED",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 23,
+          "instructions": 63,
+          "name": "TRIGANIM_CH",
+          "scripts": 6,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 25,
+          "instructions": 1,
+          "name": "LOOPANIM_CH",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 27,
+          "instructions": 15,
+          "name": "GETANIM_CH",
+          "scripts": 5,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 28,
+          "instructions": 56,
+          "name": "RAND",
+          "scripts": 40,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 29,
+          "instructions": 70,
+          "name": "JSR",
+          "scripts": 23,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 30,
+          "instructions": 33,
+          "name": "RETURN",
+          "scripts": 23,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 31,
+          "instructions": 725,
+          "name": "BRANCH",
+          "scripts": 308,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 32,
+          "instructions": 787,
+          "name": "BRANCH_Z",
+          "scripts": 163,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 33,
+          "instructions": 943,
+          "name": "BRANCH_NZ",
+          "scripts": 150,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 34,
+          "instructions": 55,
+          "name": "BRANCH_NV",
+          "scripts": 53,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 35,
+          "instructions": 84,
+          "name": "BRANCH_PV",
+          "scripts": 66,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 37,
+          "instructions": 277,
+          "name": "NAME",
+          "scripts": 277,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 38,
+          "instructions": 1318,
+          "name": "TEST",
+          "scripts": 166,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 39,
+          "instructions": 61,
+          "name": "CMP",
+          "scripts": 33,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 42,
+          "instructions": 39,
+          "name": "HUSH",
+          "scripts": 39,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 43,
+          "instructions": 39,
+          "name": "HOP",
+          "scripts": 39,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 44,
+          "instructions": 458,
+          "name": "WAIT",
+          "scripts": 156,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 46,
+          "instructions": 170,
+          "name": "WAIT4ANIM",
+          "scripts": 75,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 47,
+          "instructions": 541,
+          "name": "ADD",
+          "scripts": 134,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 49,
+          "instructions": 4,
+          "name": "DIV",
+          "scripts": 4,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 50,
+          "instructions": 5,
+          "name": "MOD",
+          "scripts": 5,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 51,
+          "instructions": 20,
+          "name": "TURBO",
+          "scripts": 8,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 53,
+          "instructions": 76,
+          "name": "TOUR",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 54,
+          "instructions": 199,
+          "name": "BUMP",
+          "scripts": 12,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 55,
+          "instructions": 144,
+          "name": "COAST",
+          "scripts": 12,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 56,
+          "instructions": 31,
+          "name": "ADDHEAD",
+          "scripts": 31,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 57,
+          "instructions": 31,
+          "name": "DELHEAD",
+          "scripts": 31,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 58,
+          "instructions": 24,
+          "name": "LIMBO",
+          "scripts": 24,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 59,
+          "instructions": 24,
+          "name": "UNLIMBO",
+          "scripts": 24,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 60,
+          "instructions": 23,
+          "name": "FORCEUNLIMBO",
+          "scripts": 23,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 61,
+          "instructions": 6,
+          "name": "INLIMBO",
+          "scripts": 6,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 62,
+          "instructions": 24,
+          "name": "LIMBOSPACE",
+          "scripts": 24,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 63,
+          "instructions": 20,
+          "name": "SPAWNCHILD",
+          "scripts": 16,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 64,
+          "instructions": 28,
+          "name": "SPAWNSOUND",
+          "scripts": 28,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 65,
+          "instructions": 4,
+          "name": "REMOVECHILD",
+          "scripts": 4,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 66,
+          "instructions": 7,
+          "name": "SETVARINCHILD",
+          "scripts": 3,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 67,
+          "instructions": 9,
+          "name": "GETVARINCHILD",
+          "scripts": 2,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 69,
+          "instructions": 10,
+          "name": "GETVARINPARENT",
+          "scripts": 8,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 70,
+          "instructions": 1,
+          "name": "BOUNCESETNODE",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 71,
+          "instructions": 4,
+          "name": "BOUNCESETBASE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 72,
+          "instructions": 4,
+          "name": "BOUNCE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 73,
+          "instructions": 4,
+          "name": "UNBOUNCE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 74,
+          "instructions": 8,
+          "name": "FORCEUNBOUNCE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 75,
+          "instructions": 25,
+          "name": "BOUNCING",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 76,
+          "instructions": 47,
+          "name": "WALKON",
+          "scripts": 37,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 77,
+          "instructions": 53,
+          "name": "WALKOFF",
+          "scripts": 37,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 78,
+          "instructions": 43,
+          "name": "WALKGET",
+          "scripts": 37,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 79,
+          "instructions": 1,
+          "name": "WALKST_FLOAT",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 80,
+          "instructions": 1,
+          "name": "WALKFLOATSTAT",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 81,
+          "instructions": 1,
+          "name": "WALKFLOATSTOP",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 86,
+          "instructions": 40,
+          "name": "STARTSCREAM",
+          "scripts": 40,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 87,
+          "instructions": 80,
+          "name": "STOPSCREAM",
+          "scripts": 41,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 88,
+          "instructions": 46,
+          "name": "SINGLESCREAM",
+          "scripts": 44,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 89,
+          "instructions": 81,
+          "name": "SCREAMLEVEL",
+          "scripts": 36,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 90,
+          "instructions": 5,
+          "name": "FINDSCRIPTRAND",
+          "scripts": 5,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 91,
+          "instructions": 2,
+          "name": "GETREMOTEVAR",
+          "scripts": 1,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 92,
+          "instructions": 10,
+          "name": "SETREMOTEVAR",
+          "scripts": 5,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 93,
+          "instructions": 140,
+          "name": "REPAIREFFECT",
+          "scripts": 70,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 95,
+          "instructions": 40,
+          "name": "SETTIMER",
+          "scripts": 18,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 96,
+          "instructions": 21,
+          "name": "GETTIMER",
+          "scripts": 18,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 100,
+          "instructions": 1,
+          "name": "HOUR",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 101,
+          "instructions": 1,
+          "name": "MIN",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 102,
+          "instructions": 1,
+          "name": "SEC",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 103,
+          "instructions": 21,
+          "name": "SETREVERB",
+          "scripts": 11,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 104,
+          "instructions": 8,
+          "name": "DIPMUSIC",
+          "scripts": 8,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 105,
+          "instructions": 1,
+          "name": "SPARK",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        }
+      ],
+      "unknownEnumIds": []
+    },
+    {
+      "label": "TPI-retail-full",
+      "limitation": "VM declaration/handler status only; Hooked effects and TPI opcode semantics remain unqualified",
+      "missingHandlerProofs": [
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/arabian/facilities/littbin.wad!littbin.RSE",
+          "sha256": "73459cd49c0894e04c09ad7e5c0db17ce089ff8deed0d2450cfeed39bedc4bef"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/arabian/obstacles/Bridge.wad!bridge.RSE",
+          "sha256": "de4a511ad4318c0f2d39a56dc3ad373a8309155ea044bd44ed6c754a2d4ce2f4"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/arabian/obstacles/Camera.wad!camera.RSE",
+          "sha256": "e5853409cdfd51ea816a2276931b8cc376b0081e14b5f8f34de18d25b25edc34"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/arabian/obstacles/Rock.wad!rock.RSE",
+          "sha256": "d48ca0e6582f98dc4e03612844bd1e201ef6c1aa27fbd3459ca07967321e4ad3"
+        },
+        {
+          "instructions": 2,
+          "opcodeId": 45,
+          "path": "Data/levels/arabian/obstacles/Tunnel.wad!tunnel.RSE",
+          "sha256": "ddf899a4350d89320ef032899b6af28bbec24c993a7983e00036cf8816dce1ee"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/arabian/obstacles/cliff.wad!cliff.RSE",
+          "sha256": "6a031257f589c3be90f34a4b906dce571f39996ea175019a78a278bf86ca179b"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/science/Facilities/litbin.wad!litbin.RSE",
+          "sha256": "c9c7f7887fac80dac9f91a75c8b04a1f72b2f9878a2c36646517e800090a72db"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/science/obstacles/Bridge.wad!bridge.RSE",
+          "sha256": "09b976bfece3ebd6729ee24d027f34bf2aa034c2290ced8e22be2059a72bbcb6"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/science/obstacles/Camera.wad!camera.RSE",
+          "sha256": "e5853409cdfd51ea816a2276931b8cc376b0081e14b5f8f34de18d25b25edc34"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/science/obstacles/falltree.wad!falltree.RSE",
+          "sha256": "7ec78665ebf4422cabb12b6d01b84e6f28fc6cac422779e1df0c71d065c5ae7b"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/science/obstacles/gatesobstacle.wad!gatesobstacle.RSE",
+          "sha256": "1a254c56a7f3a1359b677a65e0c702cbc43c730d5ac02032ee04add5d5e9342f"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 48,
+          "path": "Data/levels/vegetation.RSE",
+          "sha256": "0ad7a09c96e86aad676e52640c50b5cb41e6ea57f5a58fea3b44df7a0a48c971"
+        },
+        {
+          "instructions": 12,
+          "opcodeId": 45,
+          "path": "Data/levels/vegetation.RSE",
+          "sha256": "0ad7a09c96e86aad676e52640c50b5cb41e6ea57f5a58fea3b44df7a0a48c971"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/wIntro/obstacles/Camera.wad!camera.RSE",
+          "sha256": "0a8fb6a851941f110918973d5ec52f1b998045709c22326b06561c075dace656"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/water/facilities/litbin.wad!litbin.RSE",
+          "sha256": "22a0846f8baeff523804c9623d69abe8d1a7c1d7e850f6a0972a81ddfac97802"
+        },
+        {
+          "instructions": 2,
+          "opcodeId": 45,
+          "path": "Data/levels/water/obstacles/Bridge.wad!bridge.RSE",
+          "sha256": "942b1760457bf83e7240b25f27199ff51a42ca0bc1acc9134801d8006b71d7da"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/water/obstacles/Building.wad!building.RSE",
+          "sha256": "bd65cba8b9d7af1d4fec7c5a8ebff1e585f0df3e8cc42966b16784168a9073aa"
+        },
+        {
+          "instructions": 1,
+          "opcodeId": 45,
+          "path": "Data/levels/water/obstacles/Camera.wad!camera.RSE",
+          "sha256": "e5853409cdfd51ea816a2276931b8cc376b0081e14b5f8f34de18d25b25edc34"
+        },
+        {
+          "instructions": 2,
+          "opcodeId": 45,
+          "path": "Data/levels/water/obstacles/swamp.wad!swamp.RSE",
+          "sha256": "0477283ed641dfb986fae1a9cde30fa4a98730027a3b6a8eeb10a8ade9c3aa8d"
+        },
+        {
+          "instructions": 2,
+          "opcodeId": 45,
+          "path": "Data/levels/water/obstacles/tunnel.wad!tunnel.RSE",
+          "sha256": "d9cb1cc4e6c28be420b9d22ae724ef5cb91efa2254d7035d9e696f15a5222845"
+        }
+      ],
+      "noRegisteredHandlerIds": [
+        45,
+        48
+      ],
+      "opcodeCounts": [
+        {
+          "id": 0,
+          "instructions": 24,
+          "name": "NOP",
+          "scripts": 24,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 1,
+          "instructions": 145,
+          "name": "CRIT_LOCK",
+          "scripts": 127,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 2,
+          "instructions": 232,
+          "name": "CRIT_UNLOCK",
+          "scripts": 127,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 3,
+          "instructions": 1483,
+          "name": "COPY",
+          "scripts": 202,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 5,
+          "instructions": 60,
+          "name": "SUB",
+          "scripts": 56,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 6,
+          "instructions": 398,
+          "name": "ENDSLICE",
+          "scripts": 248,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 7,
+          "instructions": 155,
+          "name": "GETTIME",
+          "scripts": 51,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 8,
+          "instructions": 1024,
+          "name": "ADDOBJ",
+          "scripts": 168,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 10,
+          "instructions": 242,
+          "name": "KILLOBJ",
+          "scripts": 111,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 11,
+          "instructions": 149,
+          "name": "FADEOBJ",
+          "scripts": 67,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 12,
+          "instructions": 20,
+          "name": "SETOBJPARAM",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 13,
+          "instructions": 1449,
+          "name": "EVENT",
+          "scripts": 76,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 15,
+          "instructions": 15,
+          "name": "FLUSHANIM",
+          "scripts": 7,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 16,
+          "instructions": 135,
+          "name": "TRIGANIM",
+          "scripts": 77,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 17,
+          "instructions": 595,
+          "name": "WAITANIM",
+          "scripts": 208,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 18,
+          "instructions": 271,
+          "name": "LOOPANIM",
+          "scripts": 138,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 19,
+          "instructions": 37,
+          "name": "TRIGWAITANIM",
+          "scripts": 21,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 23,
+          "instructions": 18,
+          "name": "TRIGANIM_CH",
+          "scripts": 3,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 27,
+          "instructions": 9,
+          "name": "GETANIM_CH",
+          "scripts": 3,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 28,
+          "instructions": 20,
+          "name": "RAND",
+          "scripts": 20,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 29,
+          "instructions": 40,
+          "name": "JSR",
+          "scripts": 8,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 30,
+          "instructions": 16,
+          "name": "RETURN",
+          "scripts": 8,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 31,
+          "instructions": 868,
+          "name": "BRANCH",
+          "scripts": 288,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 32,
+          "instructions": 877,
+          "name": "BRANCH_Z",
+          "scripts": 173,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 33,
+          "instructions": 1013,
+          "name": "BRANCH_NZ",
+          "scripts": 149,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 34,
+          "instructions": 48,
+          "name": "BRANCH_NV",
+          "scripts": 48,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 35,
+          "instructions": 69,
+          "name": "BRANCH_PV",
+          "scripts": 56,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 37,
+          "instructions": 241,
+          "name": "NAME",
+          "scripts": 241,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 38,
+          "instructions": 1416,
+          "name": "TEST",
+          "scripts": 163,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 39,
+          "instructions": 150,
+          "name": "CMP",
+          "scripts": 44,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 42,
+          "instructions": 33,
+          "name": "HUSH",
+          "scripts": 33,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 43,
+          "instructions": 33,
+          "name": "HOP",
+          "scripts": 33,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 44,
+          "instructions": 812,
+          "name": "WAIT",
+          "scripts": 149,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 45,
+          "instructions": 34,
+          "name": "WAITABS",
+          "scripts": 19,
+          "vmStatus": null
+        },
+        {
+          "id": 46,
+          "instructions": 155,
+          "name": "WAIT4ANIM",
+          "scripts": 72,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 47,
+          "instructions": 502,
+          "name": "ADD",
+          "scripts": 119,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 48,
+          "instructions": 1,
+          "name": "MULT",
+          "scripts": 1,
+          "vmStatus": null
+        },
+        {
+          "id": 49,
+          "instructions": 3,
+          "name": "DIV",
+          "scripts": 3,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 50,
+          "instructions": 3,
+          "name": "MOD",
+          "scripts": 3,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 53,
+          "instructions": 57,
+          "name": "TOUR",
+          "scripts": 3,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 54,
+          "instructions": 159,
+          "name": "BUMP",
+          "scripts": 10,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 55,
+          "instructions": 216,
+          "name": "COAST",
+          "scripts": 18,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 56,
+          "instructions": 31,
+          "name": "ADDHEAD",
+          "scripts": 29,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 57,
+          "instructions": 31,
+          "name": "DELHEAD",
+          "scripts": 29,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 58,
+          "instructions": 23,
+          "name": "LIMBO",
+          "scripts": 23,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 59,
+          "instructions": 23,
+          "name": "UNLIMBO",
+          "scripts": 23,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 60,
+          "instructions": 23,
+          "name": "FORCEUNLIMBO",
+          "scripts": 23,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 61,
+          "instructions": 4,
+          "name": "INLIMBO",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 62,
+          "instructions": 22,
+          "name": "LIMBOSPACE",
+          "scripts": 22,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 63,
+          "instructions": 4,
+          "name": "SPAWNCHILD",
+          "scripts": 4,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 64,
+          "instructions": 31,
+          "name": "SPAWNSOUND",
+          "scripts": 31,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 65,
+          "instructions": 3,
+          "name": "REMOVECHILD",
+          "scripts": 3,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 70,
+          "instructions": 1,
+          "name": "BOUNCESETNODE",
+          "scripts": 1,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 71,
+          "instructions": 4,
+          "name": "BOUNCESETBASE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 72,
+          "instructions": 4,
+          "name": "BOUNCE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 73,
+          "instructions": 4,
+          "name": "UNBOUNCE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 74,
+          "instructions": 8,
+          "name": "FORCEUNBOUNCE",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 75,
+          "instructions": 24,
+          "name": "BOUNCING",
+          "scripts": 4,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 76,
+          "instructions": 77,
+          "name": "WALKON",
+          "scripts": 58,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 77,
+          "instructions": 86,
+          "name": "WALKOFF",
+          "scripts": 58,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 78,
+          "instructions": 80,
+          "name": "WALKGET",
+          "scripts": 58,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 86,
+          "instructions": 32,
+          "name": "STARTSCREAM",
+          "scripts": 32,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 87,
+          "instructions": 64,
+          "name": "STOPSCREAM",
+          "scripts": 32,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 88,
+          "instructions": 35,
+          "name": "SINGLESCREAM",
+          "scripts": 35,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 89,
+          "instructions": 43,
+          "name": "SCREAMLEVEL",
+          "scripts": 28,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 90,
+          "instructions": 1,
+          "name": "FINDSCRIPTRAND",
+          "scripts": 1,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 92,
+          "instructions": 2,
+          "name": "SETREMOTEVAR",
+          "scripts": 1,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 93,
+          "instructions": 132,
+          "name": "REPAIREFFECT",
+          "scripts": 66,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 95,
+          "instructions": 87,
+          "name": "SETTIMER",
+          "scripts": 39,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 96,
+          "instructions": 42,
+          "name": "GETTIMER",
+          "scripts": 39,
+          "vmStatus": "Implemented"
+        },
+        {
+          "id": 103,
+          "instructions": 6,
+          "name": "SETREVERB",
+          "scripts": 3,
+          "vmStatus": "Hooked"
+        },
+        {
+          "id": 104,
+          "instructions": 11,
+          "name": "DIPMUSIC",
+          "scripts": 8,
+          "vmStatus": "Hooked"
+        }
+      ],
+      "unknownEnumIds": []
+    }
+  ],
+  "retailReadmeMetadata": [
+    {
+      "bytes": 14330,
+      "explicitProductEngineVersionCandidates": [],
+      "filename": "Readme.txt",
+      "limitation": "No source text dumped; titles/system requirements do not establish an engine build version",
+      "sha256": "90f8447c0fd32ebbf851a9ed9bb0fe7f6fde6932fb287ddb1e25d7ba79dfb8cb",
+      "versionWordOccurrences": 0
+    },
+    {
+      "bytes": 27302,
+      "explicitProductEngineVersionCandidates": [],
+      "filename": "ReadMe.htm",
+      "limitation": "No source text dumped; titles/system requirements do not establish an engine build version",
+      "sha256": "4939e85128250b95792d80d34957b30b5684432321fed8f17c3ffb431f73214e",
+      "versionWordOccurrences": 0
+    }
+  ],
+  "schema": 2,
+  "shpiStructures": {
+    "consistencyCounts": [
+      {
+        "declaredLengthMatches": true,
+        "files": 7283,
+        "offsetsInsideFile": true,
+        "tableFits": true
+      }
+    ],
+    "examples": [
+      {
+        "candidate": {
+          "countAt8": 1,
+          "declaredLengthAt4": 14704,
+          "directoryTagHash": "07710624b89d2dc91e4e4ad308a3ff7c713a6e4e035eebb64afc41d202a62fe1",
+          "distinctOffsets": 1,
+          "offsetsInsideFile": true,
+          "tableFits": true
+        },
+        "path": "Data/levels/arabian/terrain.wad!pathtex/an_cnr1.fsh",
+        "sha256": "5f4be6b22e6b3569f194625c20ed9fa7eb579fe47f083222e4adb8dd82641620"
+      },
+      {
+        "candidate": {
+          "countAt8": 1,
+          "declaredLengthAt4": 13808,
+          "directoryTagHash": "07710624b89d2dc91e4e4ad308a3ff7c713a6e4e035eebb64afc41d202a62fe1",
+          "distinctOffsets": 1,
+          "offsetsInsideFile": true,
+          "tableFits": true
+        },
+        "path": "Data/levels/arabian/terrain.wad!pathtex/an_cnr2.fsh",
+        "sha256": "5dea6d967929cd4df12f6f91cbfa8c4340591fcc448633bb07aeb97f90912d40"
+      },
+      {
+        "candidate": {
+          "countAt8": 1,
+          "declaredLengthAt4": 16736,
+          "directoryTagHash": "07710624b89d2dc91e4e4ad308a3ff7c713a6e4e035eebb64afc41d202a62fe1",
+          "distinctOffsets": 1,
+          "offsetsInsideFile": true,
+          "tableFits": true
+        },
+        "path": "Data/levels/arabian/terrain.wad!pathtex/an_ctr1.fsh",
+        "sha256": "3f7b0f391465df2dd7470e2d8627002cf3f2a6c637ed6d45be6f59140e02596a"
+      }
+    ],
+    "limitation": "Bounded candidate table consistency, not pixel decoding or proven entry semantics",
+    "observed": 7283
+  },
+  "standardSam": {
+    "afterSha256": "8966c8647104feb1878ff3c3d43f3b2ac6dc89856570f9aa5a5a0bf040e6749e",
+    "beforeSha256": "3d39433641df70dba73e6ce0f4ae576a5a334ed93e61adc1cdd570b751a8bf4b",
+    "changeCount": 702,
+    "changeRecordsSha256": "3c2d912f21b3ab72dfceadca3dfd5993e97d2c32b3b856ff0915368fd4c967b1",
+    "equalKeysAndValueHashes": 214,
+    "familyChanges": [
+      {
+        "family": "AllStaffConstants",
+        "keys": 24,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[0]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[10]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[11]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[12]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[13]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[14]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[1]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[2]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[3]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[4]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[5]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[6]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[7]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[8]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "AllThemes[9]",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "Arrival",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "Arrival",
+        "keys": 2,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "AutoRotate",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "BankAccountInfo",
+        "keys": 1,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "Challenges",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "Challenges",
+        "keys": 4,
+        "state": "removed"
+      },
+      {
+        "family": "CoasterEditExtents",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "Costs",
+        "keys": 5,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "Entertainer",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[0]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[0]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[0]",
+        "keys": 1,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[1]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[1]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[2]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[2]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[3]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[3]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[4]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "EntertainerConstsPerGrade[4]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "FiringLineForRank[0]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "FiringLineForRank[1]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "FiringLineForRank[2]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "FiringLineForRank[3]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "FiringLineForRank[4]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "FiringLineForRank[5]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "FirstHour",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "FixedItemInfo",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "FixedItemInfo",
+        "keys": 4,
+        "state": "removed"
+      },
+      {
+        "family": "Gardener",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "GenericUmbrellaModifiers",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "GoldenTicketGlobal",
+        "keys": 5,
+        "state": "removed"
+      },
+      {
+        "family": "Guard",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "GuardConstsPerGrade[0]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "GuardConstsPerGrade[0]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "GuardConstsPerGrade[1]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "GuardConstsPerGrade[1]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "GuardConstsPerGrade[2]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "GuardConstsPerGrade[2]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "GuardConstsPerGrade[3]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "GuardConstsPerGrade[3]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "GuardConstsPerGrade[4]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "GuardConstsPerGrade[4]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "Handyman",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "HandymanConstsPerGrade[0]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "HandymanConstsPerGrade[0]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "HandymanConstsPerGrade[1]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "HandymanConstsPerGrade[1]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "HandymanConstsPerGrade[2]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "HandymanConstsPerGrade[2]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "HandymanConstsPerGrade[3]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "HandymanConstsPerGrade[3]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "HandymanConstsPerGrade[4]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "HandymanConstsPerGrade[4]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "KidRelease[0]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "KidRelease[1]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "LitterBin",
+        "keys": 3,
+        "state": "added"
+      },
+      {
+        "family": "Mechanic",
+        "keys": 3,
+        "state": "added"
+      },
+      {
+        "family": "MechanicConstsPerGrade[0]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "MechanicConstsPerGrade[0]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "MechanicConstsPerGrade[1]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "MechanicConstsPerGrade[1]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "MechanicConstsPerGrade[2]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "MechanicConstsPerGrade[2]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "MechanicConstsPerGrade[3]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "MechanicConstsPerGrade[3]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "MechanicConstsPerGrade[4]",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "MechanicConstsPerGrade[4]",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "ParkAward",
+        "keys": 12,
+        "state": "added"
+      },
+      {
+        "family": "PeepHappinessWeatherEffects[0]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "PeepHappinessWeatherEffects[1]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "PeepHappinessWeatherEffects[2]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "PeepHungerWeatherEffects[0]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "PeepHungerWeatherEffects[1]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "PeepHungerWeatherEffects[2]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "PeepInfo",
+        "keys": 32,
+        "state": "added"
+      },
+      {
+        "family": "PeepInfo",
+        "keys": 4,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "PeepThirstWeatherEffects[0]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "PeepThirstWeatherEffects[1]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "PeepThirstWeatherEffects[2]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[0]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[0]",
+        "keys": 1,
+        "state": "removed"
+      },
+      {
+        "family": "PeepTypes[10]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[11]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[12]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[13]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[14]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[15]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[16]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[17]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[18]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[19]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[1]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[1]",
+        "keys": 1,
+        "state": "removed"
+      },
+      {
+        "family": "PeepTypes[20]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[21]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[22]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[23]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[2]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[2]",
+        "keys": 1,
+        "state": "removed"
+      },
+      {
+        "family": "PeepTypes[3]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[3]",
+        "keys": 1,
+        "state": "removed"
+      },
+      {
+        "family": "PeepTypes[4]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[4]",
+        "keys": 1,
+        "state": "removed"
+      },
+      {
+        "family": "PeepTypes[5]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[5]",
+        "keys": 1,
+        "state": "removed"
+      },
+      {
+        "family": "PeepTypes[6]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[6]",
+        "keys": 1,
+        "state": "removed"
+      },
+      {
+        "family": "PeepTypes[7]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[7]",
+        "keys": 1,
+        "state": "removed"
+      },
+      {
+        "family": "PeepTypes[8]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PeepTypes[9]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "PerGradeStaffConsts[0]",
+        "keys": 4,
+        "state": "removed"
+      },
+      {
+        "family": "PerGradeStaffConsts[1]",
+        "keys": 4,
+        "state": "removed"
+      },
+      {
+        "family": "PerGradeStaffConsts[2]",
+        "keys": 4,
+        "state": "removed"
+      },
+      {
+        "family": "PerGradeStaffConsts[3]",
+        "keys": 4,
+        "state": "removed"
+      },
+      {
+        "family": "PerGradeStaffConsts[4]",
+        "keys": 4,
+        "state": "removed"
+      },
+      {
+        "family": "PersonSpriteUmbrellaModifiers[0]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "PersonSpriteUmbrellaModifiers[1]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "PersonSpriteUmbrellaModifiers[2]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "PersonSpriteUmbrellaModifiers[3]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "PersonSpriteUmbrellaModifiers[4]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "PersonSpriteUmbrellaModifiers[5]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "PersonSpriteUmbrellaModifiers[8]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "PersonSpriteUmbrellaModifiers[9]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "RegionFX[10]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "RegionFX[11]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "RegionFX[12]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "RegionFX[13]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "RegionFX[14]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "RegionFX[1]",
+        "keys": 1,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "RegionFX[2]",
+        "keys": 1,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "RegionFX[4]",
+        "keys": 2,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "RegionFX[8]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "RegionFX[9]",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "Research",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "ResearchCategories[0]",
+        "keys": 1,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "ResearchCategories[1]",
+        "keys": 1,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "ResearchCategories[2]",
+        "keys": 1,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "ResearchCategories[3]",
+        "keys": 1,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "ResearchCategories[4]",
+        "keys": 1,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "Researcher",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[0]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[0]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[1]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[1]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[2]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[2]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[3]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[3]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[4]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "ResearcherConstsPerGrade[4]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "Seasons[0]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "Seasons[0]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "Seasons[1]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "Seasons[1]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "Seasons[2]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "Seasons[2]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "Seasons[3]",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "Seasons[3]",
+        "keys": 3,
+        "state": "removed"
+      },
+      {
+        "family": "ShareInfo",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "SpamBalance",
+        "keys": 10,
+        "state": "added"
+      },
+      {
+        "family": "SpriteTest",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "StaffAgencies[0]",
+        "keys": 9,
+        "state": "added"
+      },
+      {
+        "family": "StaffAgencies[1]",
+        "keys": 9,
+        "state": "added"
+      },
+      {
+        "family": "StaffAgencies[2]",
+        "keys": 9,
+        "state": "added"
+      },
+      {
+        "family": "StaffAgencies[3]",
+        "keys": 9,
+        "state": "added"
+      },
+      {
+        "family": "StaffPoolInfo",
+        "keys": 10,
+        "state": "added"
+      },
+      {
+        "family": "StaffPoolInfo",
+        "keys": 4,
+        "state": "value-hash-changed"
+      },
+      {
+        "family": "Strike",
+        "keys": 5,
+        "state": "added"
+      },
+      {
+        "family": "ThemeEngine",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "TicketBooth[0]",
+        "keys": 3,
+        "state": "added"
+      },
+      {
+        "family": "TicketBooth[1]",
+        "keys": 3,
+        "state": "added"
+      },
+      {
+        "family": "ToolTips[7]",
+        "keys": 2,
+        "state": "added"
+      },
+      {
+        "family": "UserInterface",
+        "keys": 39,
+        "state": "added"
+      },
+      {
+        "family": "Vegetation",
+        "keys": 6,
+        "state": "added"
+      },
+      {
+        "family": "Weather",
+        "keys": 1,
+        "state": "added"
+      },
+      {
+        "family": "Weather",
+        "keys": 2,
+        "state": "removed"
+      },
+      {
+        "family": "WeatherEffects",
+        "keys": 4,
+        "state": "added"
+      },
+      {
+        "family": "WeatherEffects",
+        "keys": 2,
+        "state": "value-hash-changed"
+      }
+    ],
+    "limitation": "Normalized existing SAMParser first-value token; trailing/multi-value schema and runtime semantics are not asserted",
+    "stateCounts": {
+      "added": 554,
+      "removed": 120,
+      "value-hash-changed": 28
+    }
+  },
+  "tpiTrackAndTrainingKeys": {
+    "directionKeys": [
+      "ThemeEngine.DirectionalLightLevel"
+    ],
+    "keyCounts": {
+      "AllStaffConstants.MaxExperience": 1,
+      "AllStaffConstants.MinExperienceForTraining": 1,
+      "AllStaffConstants.TrainingExtraExperience": 1,
+      "EntertainerConstsPerGrade[0].ExperiencePerMonth": 2,
+      "EntertainerConstsPerGrade[1].ExperiencePerMonth": 2,
+      "EntertainerConstsPerGrade[2].ExperiencePerMonth": 2,
+      "EntertainerConstsPerGrade[3].ExperiencePerMonth": 2,
+      "EntertainerConstsPerGrade[4].ExperiencePerMonth": 2,
+      "GuardConstsPerGrade[0].ExperiencePerMonth": 2,
+      "GuardConstsPerGrade[1].ExperiencePerMonth": 2,
+      "GuardConstsPerGrade[2].ExperiencePerMonth": 2,
+      "GuardConstsPerGrade[3].ExperiencePerMonth": 2,
+      "GuardConstsPerGrade[4].ExperiencePerMonth": 2,
+      "HandymanConstsPerGrade[0].ExperiencePerMonth": 2,
+      "HandymanConstsPerGrade[1].ExperiencePerMonth": 2,
+      "HandymanConstsPerGrade[2].ExperiencePerMonth": 2,
+      "HandymanConstsPerGrade[3].ExperiencePerMonth": 2,
+      "HandymanConstsPerGrade[4].ExperiencePerMonth": 2,
+      "MechanicConstsPerGrade[0].ExperiencePerMonth": 2,
+      "MechanicConstsPerGrade[1].ExperiencePerMonth": 2,
+      "MechanicConstsPerGrade[2].ExperiencePerMonth": 2,
+      "MechanicConstsPerGrade[3].ExperiencePerMonth": 2,
+      "MechanicConstsPerGrade[4].ExperiencePerMonth": 2,
+      "ParkAward.Training": 1,
+      "ParkAward.TrainingMinStaff": 1,
+      "ResearcherConstsPerGrade[0].ExperiencePerMonth": 2,
+      "ResearcherConstsPerGrade[1].ExperiencePerMonth": 2,
+      "ResearcherConstsPerGrade[2].ExperiencePerMonth": 2,
+      "ResearcherConstsPerGrade[3].ExperiencePerMonth": 2,
+      "ResearcherConstsPerGrade[4].ExperiencePerMonth": 2,
+      "StaffAgencies[0].ExperienceGainModifier": 1,
+      "StaffAgencies[0].InitialExperienceModifier": 1,
+      "StaffAgencies[0].TrainingExperienceGainModifier": 1,
+      "StaffAgencies[1].ExperienceGainModifier": 1,
+      "StaffAgencies[1].InitialExperienceModifier": 1,
+      "StaffAgencies[1].TrainingExperienceGainModifier": 1,
+      "StaffAgencies[2].ExperienceGainModifier": 1,
+      "StaffAgencies[2].InitialExperienceModifier": 1,
+      "StaffAgencies[2].TrainingExperienceGainModifier": 1,
+      "StaffAgencies[3].ExperienceGainModifier": 1,
+      "StaffAgencies[3].InitialExperienceModifier": 1,
+      "StaffAgencies[3].TrainingExperienceGainModifier": 1,
+      "StaffPoolInfo.AvgExperienceOfEntertainers": 1,
+      "StaffPoolInfo.AvgExperienceOfGuards": 1,
+      "StaffPoolInfo.AvgExperienceOfHandymen": 1,
+      "StaffPoolInfo.AvgExperienceOfMechanics": 1,
+      "StaffPoolInfo.AvgExperienceOfResearchers": 1,
+      "StaffPoolInfo.MinExperience": 1,
+      "ThemeEngine.DirectionalLightLevel": 10,
+      "TrainingRoomBuild.Score": 1,
+      "TrainingRoomClosed.Score": 1,
+      "UsageInfo.TrainingRoom": 3
+    },
+    "occurrenceCount": 88,
+    "occurrenceRecordsSha256": "81e1e9441e9c55c5a01584833aa3ad69bb8518aea2706f11176249f9d38ce8b3",
+    "trackInfoKeys": []
+  }
+}

@@ -4,14 +4,21 @@ using NVector2 = System.Numerics.Vector2;
 namespace OpenTPW.UI.Original;
 
 /// <summary>
-/// Texture of a UI draw: a solid colour (both null), a BF4 font atlas (point sampled) or an original
-/// image from the game file system (pink 255/0/255 is transparent, linear filtered).
+/// Texture of a UI draw: a solid colour (all null), a BF4 font atlas drawn at integer
+/// <see cref="FontScale"/> (see <see cref="FontSmoothing"/>), an original image from the game file
+/// system (pink 255/0/255 is transparent, linear filtered), or a texture rendered this frame by its
+/// owner (the park advisor; linear filtered, not disposed by the UI).
 /// </summary>
-public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas )
+public sealed record UiTexture( string? ImagePath, FontAtlas? Atlas, int FontScale = 1, Veldrid.Texture? Rendered = null )
 {
+	public static UiTexture Of( Veldrid.Texture rendered ) => new( null, null, Rendered: rendered );
 	public static readonly UiTexture Solid = new( null, null );
-	public static UiTexture Image( string path ) => new( path, null );
-	public static UiTexture Font( FontAtlas atlas ) => new( null, atlas );
+	public static UiTexture Image( string path ) => images.GetOrAdd( path, static path => new( path, null ) );
+	// Interface models name their images every frame; one record per path keeps that allocation-free.
+	private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, UiTexture> images = new();
+	/// <summary>An image file on the host file system, e.g. a local art override.</summary>
+	public static UiTexture HostImage( string path ) => new( UiImages.HostPrefix + path, null );
+	public static UiTexture Font( FontAtlas atlas, int scale = 1 ) => new( null, atlas, Math.Max( 1, scale ) );
 }
 
 /// <summary>One UI vertex in framebuffer pixels (origin top-left).</summary>
@@ -21,12 +28,22 @@ public readonly record struct UiVertex( NVector2 Position, NVector2 TexCoords, R
 public sealed class UiDraw
 {
 	public UiDraw( UiTexture texture ) => Texture = texture;
-	public UiTexture Texture { get; }
+	public UiTexture Texture { get; private set; }
 	public List<UiVertex> Vertices { get; } = new();
+
+	/// <summary>Reuses this draw (and its vertex list's capacity) for another texture.</summary>
+	internal void Reset( UiTexture texture )
+	{
+		Texture = texture;
+		Vertices.Clear();
+	}
 }
 
 /// <summary>A placed glyph, kept so GPU readback of text can be checked against the atlas.</summary>
 public readonly record struct UiGlyphQuad( FontAtlas Atlas, int X, int Y, int Width, int Height, int AtlasX, int AtlasY, int Scale, RgbaByte Color );
+
+/// <summary>Associates one text draw with its exact glyph range, excluding underlying screens.</summary>
+public readonly record struct UiTextDraw( UiRect Rect, string Text, int FirstGlyph, int GlyphCount );
 
 /// <summary>
 /// CPU list of UI triangles in draw order: original model frames, images, solid rectangles and BF4
@@ -35,26 +52,41 @@ public readonly record struct UiGlyphQuad( FontAtlas Atlas, int X, int Y, int Wi
 public sealed class UiBatch
 {
 	private readonly List<UiDraw> draws = new();
+	// Draws of earlier frames, reused in order so the vertex lists keep their capacity from frame to frame.
+	private readonly List<UiDraw> pool = new();
 	private readonly List<UiGlyphQuad> glyphs = new();
 	private readonly List<(UiRect Rect, string Text)> texts = new();
+	private readonly List<UiTextDraw> textDraws = new();
 
 	public IReadOnlyList<UiDraw> Draws => draws;
 	public IReadOnlyList<UiGlyphQuad> Glyphs => glyphs;
 	/// <summary>Every text string drawn this frame with its pixel bounds (used by tests and the smoke test).</summary>
 	public IReadOnlyList<(UiRect Rect, string Text)> Texts => texts;
+	public IReadOnlyList<UiTextDraw> TextDraws => textDraws;
 
 	public void Clear()
 	{
 		draws.Clear();
 		glyphs.Clear();
 		texts.Clear();
+		textDraws.Clear();
 	}
 
 	private UiDraw Current( UiTexture texture )
 	{
 		if ( draws.Count > 0 && Equals( draws[^1].Texture, texture ) )
 			return draws[^1];
-		var draw = new UiDraw( texture );
+		UiDraw draw;
+		if ( draws.Count < pool.Count )
+		{
+			draw = pool[draws.Count];
+			draw.Reset( texture );
+		}
+		else
+		{
+			draw = new UiDraw( texture );
+			pool.Add( draw );
+		}
 		draws.Add( draw );
 		return draw;
 	}
@@ -114,7 +146,8 @@ public sealed class UiBatch
 	public void AddText( FontAtlas atlas, TextLayoutResult layout, int x, int y, RgbaByte color, int scale = 1, string? text = null )
 	{
 		scale = Math.Max( 1, scale );
-		var texture = UiTexture.Font( atlas );
+		var texture = UiTexture.Font( atlas, scale );
+		var firstGlyph = glyphs.Count;
 		foreach ( var glyph in layout.Glyphs )
 		{
 			var quad = new UiGlyphQuad( atlas, x + glyph.X * scale, y + glyph.Y * scale, glyph.Glyph.Width * scale, glyph.Glyph.Height * scale, glyph.Glyph.X, glyph.Glyph.Y, scale, color );
@@ -124,6 +157,10 @@ public sealed class UiBatch
 				new NVector2( (float)(glyph.Glyph.X + glyph.Glyph.Width) / atlas.Width, (float)(glyph.Glyph.Y + glyph.Glyph.Height) / atlas.Height ), color );
 		}
 		if ( text != null )
-			texts.Add( (new UiRect( x, y, layout.Width * scale, layout.Height * scale ), text) );
+		{
+			var rect = new UiRect( x, y, layout.Width * scale, layout.Height * scale );
+			texts.Add( (rect, text) );
+			textDraws.Add( new( rect, text, firstGlyph, glyphs.Count - firstGlyph ) );
+		}
 	}
 }

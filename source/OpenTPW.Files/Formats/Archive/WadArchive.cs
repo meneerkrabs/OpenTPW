@@ -25,24 +25,36 @@ public sealed class WadArchiveFile : ArchiveFile
 		if ( Compressed )
 		{
 			var refpack = new Refpack( data );
-			data = refpack.Decompress().ToArray();
+			data = refpack.Decompress();
 		}
 
 		// Save off data so we can use it again quickly if we need to
 		CachedData = data;
+		Interlocked.Add( ref WadArchive.cachedMemberBytes, data.Length );
 
 		return data;
 	}
 
 	public void Free()
 	{
+		if ( CachedData != null )
+			Interlocked.Add( ref WadArchive.cachedMemberBytes, -CachedData.Length );
 		CachedData = null;
 	}
 }
 
 public sealed class WadArchive : IArchive
 {
-	private ExpandedMemoryStream memoryStream;
+	internal static long loadedBytes;
+	internal static long cachedMemberBytes;
+
+	/// <summary>
+	/// Bytes of the archive files read into memory so far (archives are never closed, so this is also what they hold) and of the members
+	/// kept decompressed now, for the memory accounting of the browser harness.
+	/// </summary>
+	public static (long Archives, long Members) MemoryInUse => (Interlocked.Read( ref loadedBytes ), Interlocked.Read( ref cachedMemberBytes ));
+
+	private ExpandedMemoryStream? memoryStream;
 	public byte[] Buffer { get; internal set; }
 
 	/// <summary>
@@ -51,10 +63,17 @@ public sealed class WadArchive : IArchive
 	/// </summary>
 	public ArchiveDirectory Root { get; internal set; }
 
+	/// <summary>
+	/// The file an archive opened from a path reads its members from, one read per member, instead of holding the whole file:
+	/// the archives of a park are tens of megabytes, and the browser already holds the files (docs/BROWSER-PERFORMANCE.md).
+	/// </summary>
+	private readonly string? path;
+
 	public WadArchive( string path )
 	{
+		this.path = path;
 		using var fileStream = File.OpenRead( path );
-		ReadFromStream( fileStream );
+		ReadFromStream( fileStream, keepInMemory: false );
 	}
 
 	public WadArchive( Stream stream )
@@ -64,11 +83,19 @@ public sealed class WadArchive : IArchive
 
 	public void Dispose()
 	{
-		memoryStream.Dispose();
+		lock ( readLock )
+		{
+			disposed = true;
+			memoryStream?.Dispose();
+		}
 	}
+
+	private bool disposed;
 
 	private void ReadArchive()
 	{
+		if ( memoryStream!.Length < 88 )
+			throw new InvalidDataException( "WAD header is truncated." );
 		memoryStream.Seek( 0, SeekOrigin.Begin );
 
 		/* 
@@ -86,7 +113,7 @@ public sealed class WadArchive : IArchive
 
 		// Magic number
 		if ( magicNumber != "DWFB" )
-			throw new Exception( $"Magic number did not match: {magicNumber}" );
+			throw new InvalidDataException( $"WAD magic number did not match: {magicNumber}" );
 
 		// Version
 		_ = memoryStream.ReadInt32();
@@ -96,6 +123,8 @@ public sealed class WadArchive : IArchive
 
 		// File count
 		var fileCount = memoryStream.ReadInt32();
+		if ( fileCount < 0 || (long)fileCount * 40 > memoryStream.Length - 88 )
+			throw new InvalidDataException( "WAD directory count exceeds its available records." );
 
 		// File list offset
 		_ = memoryStream.ReadInt32();
@@ -128,7 +157,6 @@ public sealed class WadArchive : IArchive
 			 * 12 - null
 			 */
 
-			GC.Collect();
 			// Save the current position so that we can go back to it later
 			var initialPos = memoryStream.Position;
 
@@ -147,16 +175,23 @@ public sealed class WadArchive : IArchive
 			var filenameLength = memoryStream.ReadUInt32();
 
 			// Data offset
-			newFile.OffsetInArchive = (int)memoryStream.ReadUInt32();
+			var dataOffset = memoryStream.ReadUInt32();
 
 			// Data length
-			newFile.SizeInArchive = (int)memoryStream.ReadUInt32();
+			var dataLength = memoryStream.ReadUInt32();
 
 			// Compression type
 			newFile.Compressed = memoryStream.ReadUInt32() == 4;
 
 			// Decompressed size
 			var decompressedSize = memoryStream.ReadUInt32();
+
+			if ( filenameLength == 0 )
+				throw new InvalidDataException( "WAD filename length does not include its terminator." );
+			RequireRange( filenameOffset, filenameLength, "filename" );
+			RequireRange( dataOffset, dataLength, "member" );
+			newFile.OffsetInArchive = (int)dataOffset;
+			newFile.SizeInArchive = (int)dataLength;
 
 			// Set file's name name
 			memoryStream.Seek( filenameOffset, SeekOrigin.Begin );
@@ -204,23 +239,57 @@ public sealed class WadArchive : IArchive
 			// Return to initial position, skip to the next file's data
 			memoryStream.Seek( initialPos + 40, SeekOrigin.Begin );
 		}
+
+		void RequireRange( uint offset, uint length, string section )
+		{
+			if ( (ulong)offset + length > (ulong)memoryStream!.Length )
+				throw new InvalidDataException( $"WAD {section} range exceeds the archive." );
+		}
 	}
 
-	public void ReadFromStream( Stream stream )
+	public void ReadFromStream( Stream stream ) => ReadFromStream( stream, keepInMemory: true );
+
+	/// <summary>Reads the directory; with <paramref name="keepInMemory"/> false (an archive with a path) the file's bytes are dropped afterwards.</summary>
+	private void ReadFromStream( Stream stream, bool keepInMemory )
 	{
 		// Set up read buffer
-		var tempStreamReader = new StreamReader( stream );
-		var fileLength = (int)tempStreamReader.BaseStream.Length;
+		using var tempStreamReader = new StreamReader( stream );
+		var remaining = tempStreamReader.BaseStream.Length - tempStreamReader.BaseStream.Position;
+		if ( remaining < 0 || remaining > Array.MaxLength )
+			throw new InvalidDataException( "WAD input exceeds the supported managed buffer range." );
+		var fileLength = (int)remaining;
 
-		Buffer = new byte[fileLength];
-		tempStreamReader.BaseStream.Read( Buffer, 0, fileLength );
+		var bytes = new byte[fileLength];
+		try
+		{
+			tempStreamReader.BaseStream.ReadExactly( bytes );
+		}
+		catch ( EndOfStreamException exception )
+		{
+			throw new InvalidDataException( "WAD input stream is truncated.", exception );
+		}
 		tempStreamReader.Close();
 
-		memoryStream = new ExpandedMemoryStream( Buffer );
+		memoryStream = new ExpandedMemoryStream( bytes );
 		Root = new ArchiveDirectory( "/" );
 
 		ReadArchive();
+
+		if ( keepInMemory )
+		{
+			Buffer = bytes;
+			Interlocked.Add( ref loadedBytes, fileLength );
+		}
+		else
+		{
+			memoryStream.Dispose();
+			memoryStream = null;
+			Buffer = Array.Empty<byte>();
+			fileSize = fileLength;
+		}
 	}
+
+	private long fileSize;
 
 	private T GetItem<T>( string internalPath ) where T : ArchiveItem
 	{
@@ -285,10 +354,42 @@ public sealed class WadArchive : IArchive
 		return (files?.Select( x => x.Name ).ToArray() ?? Array.Empty<string>())!;
 	}
 
+	private readonly object readLock = new();
+
+	/// <summary>Seek and read are one step: a texture pack switch reads members on a worker thread while the game thread may read the same archive.</summary>
 	public byte[] GetData( int offset, int length )
 	{
-		memoryStream.Seek( offset, SeekOrigin.Begin );
-		return memoryStream.ReadBytes( length );
+		using var profile = LoadProfile.Measure( "wad-read" );
+		ArgumentOutOfRangeException.ThrowIfNegative( offset );
+		ArgumentOutOfRangeException.ThrowIfNegative( length );
+		lock ( readLock )
+		{
+			ObjectDisposedException.ThrowIf( disposed, this );
+			if ( memoryStream != null )
+			{
+				memoryStream.Seek( offset, SeekOrigin.Begin );
+				return memoryStream.ReadBytes( length );
+			}
+			// From the file, the same bytes the in-memory copy gave: a range past its end comes back padded with zeros.
+			if ( offset >= fileSize || length == 0 )
+				return new byte[length];
+			// Opened per read and closed again, so the file can still be replaced or deleted (a bonus import on Windows) while the
+			// archive is open; a file of another length is not the one whose directory was read.
+			using var file = new FileStream( path!, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, bufferSize: 1 );
+			if ( file.Length != fileSize )
+				throw new IOException( $"{path} changed on disk after its directory was read." );
+			var data = new byte[length];
+			file.Seek( offset, SeekOrigin.Begin );
+			var filled = 0;
+			while ( filled < length )
+			{
+				var read = file.Read( data, filled, length - filled );
+				if ( read == 0 )
+					break;
+				filled += read;
+			}
+			return data;
+		}
 	}
 
 	public Stream OpenFile( string path )

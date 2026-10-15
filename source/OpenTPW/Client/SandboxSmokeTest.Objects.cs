@@ -9,6 +9,7 @@ internal sealed partial class SandboxSmokeTest
 	/// </summary>
 	private static readonly (int InfoId, int X, int Y, int Rotation)[] SmokeObjects = { (1106, 5, 5, 0), (1101, 5, 26, 90), (1113, 26, 5, 180), (1112, 26, 26, 270) };
 	private readonly Dictionary<OriginalObject, System.Numerics.Matrix4x4[]> objectPoses = new();
+	private const int BellyBounceInfoId = 1100;
 
 	private void PlaceObjects()
 	{
@@ -93,22 +94,83 @@ internal sealed partial class SandboxSmokeTest
 		Require( level.PlaceObject( first.Entry, cell.X, cell.Y, 0 ) == null, "reject overlapping footprints" );
 	}
 
+	private int rideHeadFrames;
+	private int maximumDrawnRideHeads;
+
+	/// <summary>Counts frames in which the head renderer submitted a rider head quad on a ride that runs ADDHEAD.</summary>
+	private void TrackRideHeads()
+	{
+		if ( level.RideHeadRenderer == null )
+			return;
+		var drawn = level.RideHeadRenderer.DrawnHeads;
+		if ( drawn > 0 )
+			rideHeadFrames++;
+		maximumDrawnRideHeads = Math.Max( maximumDrawnRideHeads, drawn );
+	}
+
+	/// <summary>An original level must submit a rider head quad on some ride that places heads (the Jungle rides of the import, which guests board).</summary>
+	private void VerifyRideHeads()
+	{
+		Require( rideHeadFrames > 0, "submit a rider head quad on a ride that uses ADDHEAD" );
+		Require( rideHeadPixelsVerified, "complete the isolated rider-head GPU pixel comparison" );
+		Log.Trace( $"Ride heads: quads submitted in {rideHeadFrames} frames, at most {maximumDrawnRideHeads} at once on rides that run ADDHEAD." );
+	}
+
 	private void SnapshotObjects()
 	{
 		foreach ( var item in level.Objects.Objects )
 			objectPoses[item] = item.NodeTransforms.ToArray();
 	}
 
-	/// <summary>Requires at least three different objects (the Totem included) to have moved model nodes since the snapshot.</summary>
+	// Every original object's model-node motion over the whole run: the number of frames in which any node transform
+	// changed from the previous frame. A fixed 20-frame sample depended on where each ride stood in its cycle: in the
+	// ANIM-M merge, Crazy Ape and Aztec Mayhem animated for thousands of frames but were between cycles in that sample.
+	private readonly Dictionary<OriginalObject, (System.Numerics.Matrix4x4[] Pose, int MovedFrames)> objectMotion = new();
+
+	/// <summary>
+	/// Frames an object must have moved in to count as animating. Pose noise is one frame (Drinks Shop, Security Camera
+	/// and Round Fountain settle once after import); objects that run their original cycles move in hundreds to thousands
+	/// of frames by the check (main 78989f9, jungle: Small Toilet 219, Bus 406, Aztec Mayhem 2,045, Crazy Ape 3,188,
+	/// Belly Bounce 4,578; sandbox: Crazy Ape 311, Eruption 706, Sun God 716, Tom Tom Twister 930).
+	/// </summary>
+	private const int MinimumMovedFrames = 100;
+
+	/// <summary>Counts, every frame, the frames in which each placed original object's model nodes changed.</summary>
+	private void TrackObjectMotion()
+	{
+		foreach ( var item in level.Objects.Objects )
+		{
+			if ( item.IsDeleted || item is PrototypeRide )
+				continue;
+			var pose = item.NodeTransforms.ToArray();
+			var moved = objectMotion.TryGetValue( item, out var seen ) ? seen.MovedFrames : 0;
+			if ( seen.Pose != null && seen.Pose.Length == pose.Length && pose.Where( ( transform, index ) => !transform.Equals( seen.Pose[index] ) ).Any() )
+				moved++;
+			objectMotion[item] = (pose, moved);
+		}
+	}
+
+	/// <summary>
+	/// Requires the Totem to animate (VerifyPoseChanged, just before), in an original level the imported Belly Bounce
+	/// to move between the two sample frames, and at least three other different original objects to each have moved in
+	/// at least <see cref="MinimumMovedFrames"/> frames of the run so far.
+	/// </summary>
 	private void VerifyObjectsAnimate()
 	{
-		var moving = objectPoses.Where( pair => !pair.Key.IsDeleted && pair.Key.Script?.State != RideVMState.Faulted
+		var sampled = objectPoses.Where( pair => !pair.Key.IsDeleted && pair.Key.Script?.State != RideVMState.Faulted
 			&& pair.Key.NodeTransforms.Where( ( transform, index ) => !transform.Equals( pair.Value[index] ) ).Any() )
-			.Select( pair => pair.Key.Entry.InfoId )
-			// The Totem's pose change was verified just before (VerifyPoseChanged).
-			.Concat( level.PlacedRide != null ? new[] { PrototypeRide.InfoId } : Array.Empty<int>() ).Distinct().ToArray();
+			.Select( pair => pair.Key.Entry.InfoId ).Distinct().ToArray();
+		var counts = objectMotion.Where( pair => !pair.Key.IsDeleted && pair.Key.Script?.State != RideVMState.Faulted )
+			.GroupBy( pair => pair.Key.Entry.InfoId )
+			.Select( group => (InfoId: group.Key, MovedFrames: group.Max( pair => pair.Value.MovedFrames )) )
+			.OrderByDescending( item => item.MovedFrames ).ToArray();
+		var animating = counts.Where( item => item.MovedFrames >= MinimumMovedFrames ).Select( item => item.InfoId ).ToArray();
+		string Names( IEnumerable<int> ids ) => string.Join( ", ", ids.Select( id => level.Objects.Catalog.Find( id )?.DisplayName ?? id.ToString() ) );
+		Log.Trace( $"Original object moved frames by frame {frame}: {string.Join( ", ", counts.Select( item => $"{level.Objects.Catalog.Find( item.InfoId )?.DisplayName ?? item.InfoId.ToString()} {item.MovedFrames}" ) )}." );
 		Require( level.Objects.Objects.All( item => item.Script?.State != RideVMState.Faulted ), "original object scripts run without faults" );
-		Require( moving.Length >= 3, $"at least three different original objects animate (moving: {string.Join( ", ", moving )})" );
+		Require( animating.Length >= 3, $"at least three different original objects besides the Totem each move in at least {MinimumMovedFrames} frames (animating: {Names( animating )})" );
+		if ( level.OriginalPark != null )
+			Require( sampled.Contains( BellyBounceInfoId ), $"the imported Belly Bounce animates between the sample frames (moving: {Names( sampled )})" );
 		if ( level.Guests != null )
 		{
 			// Guests use the imported Easymode attractions through their own scripts, entering at the shape's entrance cell.
@@ -120,6 +182,6 @@ internal sealed partial class SandboxSmokeTest
 				Require( used.Select( item => item.Entry.InfoId ).Where( imported.Contains ).Distinct().Count() >= 2, "guests ride at least two different imported original objects" );
 			}
 		}
-		Log.Trace( $"Original objects animating between frames: {string.Join( ", ", moving.Select( id => level.Objects.Catalog.Find( id )?.DisplayName ?? PrototypeRide.DisplayName ) )}." );
+		Log.Trace( $"Original objects animating: {Names( animating )} and the Totem; between the sample frames: {Names( sampled )}." );
 	}
 }

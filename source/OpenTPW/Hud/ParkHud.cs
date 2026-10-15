@@ -699,10 +699,6 @@ public sealed partial class ParkHud
 	internal static bool ParkShortcutsAllowed( bool paused, bool overlayOpen, bool textEntry, bool keyboardCaptured ) =>
 		!paused && !overlayOpen && !textEntry && !keyboardCaptured;
 
-	/// <summary>A right-click exit belongs to the park view only when neither UI owns the pointer.</summary>
-	internal static bool RideRightClickAllowed( bool shortcutsAllowed, bool overUi, bool consumed, bool mouseCaptured ) =>
-		shortcutsAllowed && !overUi && !consumed && !mouseCaptured;
-
 	/// <summary>
 	/// One frame: HUD input first (so clicks on the HUD never reach the park), then park selection,
 	/// purchase bookkeeping and messages. Returns true when the pointer is over the UI.
@@ -747,7 +743,8 @@ public sealed partial class ParkHud
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
 			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
 		}
-		if ( !paused && input.Has( UiKeys.Pause ) )
+		// [APPROX:UI-093] the camcorder's message procedure (0x488a00) acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf) and passes every other key on, so the pause key and the park door shortcuts are not offered while the ride view is open (whether the default procedure 0x65f66e forwards them to the HUD is not traced)
+		if ( !paused && !IsRiding && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
 		if ( mouseCaptured == null || keyboardCaptured == null || textCaptured == null )
@@ -767,12 +764,14 @@ public sealed partial class ParkHud
 		// [APPROX:UI-093] E stands in beside the ride window's b_rideit button
 		if ( shortcutsAllowed && !IsRiding && Input.Pressed( InputButton.RideView ) && selectedObject is { IsDeleted: false } rideObject )
 			level.EnterRideView( rideObject );
-		UpdateRideExits( input, shortcutsAllowed, mouseCaptured.Value );
+		// only a ride view that was already open at the start of the frame can be left by a key: the E that boarded it must not also leave it
+		if ( ridingAtStart )
+			UpdateRideExits( input, shortcutsAllowed, mouseCaptured.Value );
 
 		// The park door's keyboard shortcuts, named by the door button's help rows (UIHELPTEXT 193/194: Ctrl-O/Ctrl-C).
 		// [DATA:UIHELPTEXT 193 "Left-click to open the park (Ctrl-O)", 194 "Left-click to close the park (Ctrl-C)"]
 		// [EXT:maexah/OpenTPW park-engine.md] the original's shortcut table row 9 maps Ctrl-C to the close-park handler (PC 0x0040c410)
-		if ( shortcutsAllowed && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
+		if ( shortcutsAllowed && !IsRiding && FinanceEconomy is { } doorEconomy && !level.IsReadOnlyVisit )
 		{
 			// [BIN:TPW-EXE:0x0040C410 close-park handler] the shortcut calls the door routine 0x519EF0 whatever the park's state, which posts event 4 (0x51A1C6, also from a closed park) or, for opening, event 3 (0x51A033) every time
 			if ( Input.Pressed( InputButton.OpenPark ) )

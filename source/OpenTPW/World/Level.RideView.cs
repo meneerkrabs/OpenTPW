@@ -7,6 +7,9 @@ public partial class Level
 
 	private CameraMode? parkCameraBeforeRide;
 
+	/// <summary>The park camera the ride was boarded from while the ride view is open, else null: its target stays where it was (the crowd sound counts around it).</summary>
+	internal ParkCameraMode? ParkCameraWhileRiding => RideView != null ? parkCameraBeforeRide as ParkCameraMode : null;
+
 	/// <summary>True while the ride view is open: the original's camcorder hides every interface layer but the viewfinder, the eject button and the advisor ([DATA:video 77:09-77:24]).</summary>
 	public bool HidesInterface => RideView != null;
 

@@ -63,7 +63,11 @@ public sealed class RideCameraMode : CameraMode
 	public override void Update()
 	{
 		var size = Screen.Size;
-		var pointer = PointerOverride ?? (size.X > 0 && size.Y > 0 ? PointerOffset( Input.Mouse.Position.X, Input.Mouse.Position.Y, size.X, size.Y ) : NVector2.Zero);
+		var position = Input.Mouse.Position;
+		// like the terrain walk: without focus, with the pointer outside the window or while a developer panel owns the mouse the view looks straight ahead
+		var active = Window.Current?.SdlWindow.Focused == true && size.X > 0 && size.Y > 0 && position.X >= 0 && position.Y >= 0 && position.X < size.X && position.Y < size.Y
+			&& !ImGuiNET.ImGui.GetIO().WantCaptureMouse && Level.Current?.UiCapturesMouse != true;
+		var pointer = PointerOverride ?? (active ? PointerOffset( position.X, position.Y, size.X, size.Y ) : NVector2.Zero);
 		Advance( Time.Delta * 1000f, pointer );
 	}
 

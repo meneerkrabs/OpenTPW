@@ -171,6 +171,25 @@ public class FreeWalkCameraTests
 		} finally { Camera.Mode=previous; Input.KeysDown=down; Input.LastKeysDown=last; }
 	}
 
+	[TestMethod]
+	public void EPressEntersTheRideOnceAndASecondPressLeavesIt()
+	{
+		var previous=Camera.Mode; var down=Input.KeysDown; var last=Input.LastKeysDown;
+		try {
+			Camera.Mode=new ParkCameraMode(); var hud=Fixture(out var level);
+			var ride=(PrototypeRide)RuntimeHelpers.GetUninitializedObject(typeof(PrototypeRide)); Set(level,"<PlacedRide>k__BackingField",ride); hud.SelectObject(ride);
+			Input.KeysDown=new(){InputButton.RideView}; Input.LastKeysDown=new();
+			hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false);
+			Assert.IsNotNull(level.RideView,"the E that boards the ride does not also leave it in the same frame");
+			Input.LastKeysDown=new(){InputButton.RideView};
+			for(var frame=0;frame<4;frame++) { hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false); Assert.IsNotNull(level.RideView); }
+			Input.KeysDown=new(); Input.LastKeysDown=new(){InputButton.RideView}; hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false);
+			Input.KeysDown=new(){InputButton.RideView}; Input.LastKeysDown=new();
+			hud.Update(Context(),UiInput.Idle(new N.Vector2(500)),false,false,false);
+			Assert.IsNull(level.RideView,"a second press leaves");
+		} finally { Camera.Mode=previous; Input.KeysDown=down; Input.LastKeysDown=last; }
+	}
+
 	private sealed class EmptyCatalog : IBuildCatalog
 	{ public IReadOnlyList<BuildItem> GetItems(BuildCategory category)=>Array.Empty<BuildItem>(); }
 

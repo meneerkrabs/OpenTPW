@@ -627,7 +627,8 @@ public partial class Level : IDisposable
 	{
 		StaffPlacement?.Reconcile();
 		StaffWorld?.Synchronize();
-		if ( RideView?.Ride.IsDeleted == true )
+		// the ride ends when it is deleted or loses what the view rides on (a coaster's train)
+		if ( RideView is { } riding && (riding.Ride.IsDeleted || !RideCameraMode.CanRide( riding.Ride )) )
 			ExitRideView();
 		Camera.Update();
 		if ( ShowDeveloperPanels && !HidesInterface )

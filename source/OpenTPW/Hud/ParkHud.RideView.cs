@@ -16,7 +16,8 @@ public sealed partial class ParkHud
 	public const float RideStaticSeconds = 0.33f;
 
 	/// <summary>A right click leaves the ride view only after it has been open this long, in seconds.</summary>
-	// [BIN:TPW-EXE:0x48a7bd right-click guard] the right-button message (0x10006, button 1) leaves only when RMBCancelOn (0x78d911) is set and the clock (0x65968e) is more than 0x7d0 = 2000 ms past the stamp the screen took on message 0x15 (0x48a789); Escape without modifiers (0x1b, 0x48a8a7) leaves too
+	// [BIN:TPW-EXE:0x48a7bd right-click guard] the ride screen's procedure 0x48a740 leaves on the right-button message (0x10006, button 1) only when RMBCancelOn (0x78d911) is set, the clock (0x65968e) is more than 0x7d0 = 2000 ms past the stamp it took on message 0x15 (0x48a789) and the window pointer [0x7c24cc] is not 0; Escape without modifiers (0x1b, 0x48a8a7) leaves under the same pointer test
+	// [APPROX:UI-094] message 0x15 is the window's creation and 0x14 its destruction (0x14 clears [0x7c24cc], which the creator 0x48ac40 fills with the new window at 0x48ad8c), so the pointer test holds for as long as the ride view is open and the two seconds count from its opening, as modelled; the window itself (table 0x74fb20, id 0x5a, (174,500)-(1874,1000)) draws nothing in the video and is not ported
 	internal const float RideRightClickDelaySeconds = 2f;
 
 	// The viewfinder and the eject button at the rectangles of the ride-view screen's control table.
@@ -54,6 +55,7 @@ public sealed partial class ParkHud
 			rideScreen = null;
 			Stack.RemoveWhere( candidate => ReferenceEquals( candidate, screen ) );
 			rideStaticLeft = RideStaticSeconds;
+			RideCameraMode.PointerOverride = null;
 		}
 	}
 

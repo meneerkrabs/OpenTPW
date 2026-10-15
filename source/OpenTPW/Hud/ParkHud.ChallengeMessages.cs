@@ -23,6 +23,23 @@ public sealed partial class ParkHud
 		PostGameMessage( item.Detail, ChallengeActions( () => level.Park?.Economy ) );
 	}
 
+	/// <summary>
+	/// Keeps a waiting offer answerable: while the challenge system waits on an answer and neither the tube nor the open panel holds the offer's
+	/// message (it was closed, deleted, pushed out of a full tube, or the park was loaded), the offer is posted again.
+	/// </summary>
+	// [APPROX:UI-025] what the original does with an offer whose message is deleted unanswered is not traced: OpenTPW posts it again, so the challenge system (which waits on the answer) never stalls
+	internal bool KeepChallengeOfferPosted( ParkEconomy? economy )
+	{
+		if ( economy?.Objectives.Current is not { Accepted: false } || economy.Objectives.CurrentDefinition is not { } definition )
+			return false;
+		if ( openedActions?.Any( IsChallengeAction ) == true || pendingActions != null && pendingActions.Any( actions => actions.Any( IsChallengeAction ) ) )
+			return false;
+		PostGameMessage( economy.Objectives.Describe( definition ), ChallengeActions( () => economy ) );
+		return true;
+	}
+
+	private static bool IsChallengeAction( GameMessageAction action ) => action.Kind is GameMessageKind.Accept or GameMessageKind.Decline;
+
 	/// <summary>The Accept and Decline actions of an offer's message; each answers whatever offer waits when it is pressed, then closes the panel.</summary>
 	internal GameMessageAction[] ChallengeActions( Func<ParkEconomy?> economy ) => new[]
 	{

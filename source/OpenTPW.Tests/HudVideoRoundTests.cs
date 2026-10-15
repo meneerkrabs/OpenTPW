@@ -86,6 +86,36 @@ public class HudVideoRoundTests
 	}
 
 	[TestMethod]
+	public void AnUnansweredOfferWhoseMessageIsGoneIsPostedAgain()
+	{
+		var hud = Hud();
+		var park = EconomyTestData.Park();
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "nothing waits yet" );
+		park.AdvanceDays( 541 );
+		Assert.IsNotNull( park.Objectives.Current );
+		// a loaded park: the tube is empty but the offer waits
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		Assert.AreEqual( 1, hud.PendingMessages.Count );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "once is enough while it is in the tube" );
+		// deleted unread
+		Assert.IsTrue( hud.DeletePendingMessage( 0 ) );
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		// opened, then closed without an answer
+		Assert.IsTrue( hud.OpenPendingMessage( 0 ) );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "the open panel holds it" );
+		hud.CloseMessagePanel();
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		// pushed out of a full tube
+		for ( var index = 0; index < ParkHud.MessageTubeCapacity; index++ )
+			hud.PostGameMessage( $"m{index}" );
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		Assert.IsTrue( hud.OpenPendingMessage( hud.PendingMessages.Count - 1 ) );
+		hud.OpenedActions[0].Clicked();
+		Assert.IsTrue( park.Objectives.Current!.Accepted );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "an answered offer is not posted again" );
+	}
+
+	[TestMethod]
 	public void AMessageStaysInTheTubeUntilItIsHandled()
 	{
 		var hud = Hud();

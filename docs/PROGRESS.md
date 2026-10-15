@@ -19,10 +19,11 @@ Divergences found while reading other areas, each checked in tp.exe and fixed in
 - **A cleaned toilet opens** through `0x4df390` without the reopening guard (ECON-049 text extended).
 - **A called ride gets its mechanic** in any state, condemned included (`0x4da740`, `0x4daa90`).
 - **Removing an attraction or bin** sends its guests the original's removal message (`0x4fb360`, message 10): riders get their model
-  back, queued guests are dismissed, every targeting guest goes to state 6 and the history slots naming the object are cleared
-  (GUEST-004 and GUEST-005 narrowed).
+  back, queued guests are dismissed, every targeting guest goes to state 6, and every guest's history slots naming the object are
+  cleared (GUEST-004 and GUEST-005 narrowed).
 - **A closed park stops visitors on the walk to the booth** (`0x4ff730`, `0x4ff7f0`): they go home with no thought; the booth and the
-  booking read no closed state, so a guest who paid at a closed park is sent home without a refund.
+  booking read no closed state, so a guest who paid at a closed park is sent home without a refund. A bankrupt park still takes no fee
+  (its thing loop stops in tp.exe, ECON-030).
 - **A staff candidate draws** variant, spare, grade, name and timeout in tp.exe's order (`0x507600`, GUEST-014 narrowed).
 - **A new park starts with only the research-free objects researched** (`Upgrades[0].CostOfResearch` = 0, `0x5031a0`): Jungle's Wooden
   Log now has to be researched.

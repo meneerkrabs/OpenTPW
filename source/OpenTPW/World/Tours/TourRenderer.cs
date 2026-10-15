@@ -8,7 +8,7 @@ namespace OpenTPW;
 /// clip members (<c>Bird?.md2</c>: C 0, L 3, S 4, M 5, E 6, B 9, R 10), and its riders hang from the mesh's head dummies like the go-karts' (<see cref="CollectHeads"/>).
 /// </summary>
 // [BIN:TPW-EXE:0x0055AA80 car animation] a changed (animation, channel, loops) triggers the car instance's clip through 0x004732A0(instance, animation, 0, loops, 1.0, 0); the instance is the ride's supplemental mesh 0 created by 0x00463060 (0x0055AA07), whose clips are the mesh's own letter members (the loader 0x461F10)
-// [APPROX:TOUR-008] no shadow is drawn under the cars: whether the original draws one is not read (the car instance is created with flags 0x101 by 0x00463060 at 0x0055AA07, and the draw 0x0055CE60 places only the instance and the emitter)
+// [APPROX:TOUR-008] no shadow is drawn under the cars: whether the original draws one is not read (the car instance is created with flags 0x101 by 0x00463060 at 0x0055AA07, and the draw 0x0055CE60 places only the instance and the emitter); the pose uses exact sines where the original reads its angle table
 public sealed class TourRenderer : IDisposable
 {
 	private const string TextureArrayName = "Color";

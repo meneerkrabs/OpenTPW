@@ -75,7 +75,7 @@ parts: a save without them restores with zero stale words. No schema version mov
 
 ## Not done
 
-A shadow under the cars (TOUR-008: whether the original draws one is not read), the pad's live-instance read and rotation identity (TOUR-003), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
+A shadow under the cars and the angle table's sines (TOUR-008: whether the original draws a shadow is not read), the pad's live-instance read and rotation identity (TOUR-003), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
 
 ## Drawing
 

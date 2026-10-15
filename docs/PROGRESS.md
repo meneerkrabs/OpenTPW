@@ -6,6 +6,32 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Original saves bring their research, challenges, staff HQ and hiring pool (October 15, 2026)
+
+Importing an original save (the Jungle Easymode start) now restores four more parts, all read in tp.exe:
+
+- **Research** (`0x502dc0`): the lab's projects, their points and each category's current project, effort and work load. The Jungle start
+  continues researching rides 1150, shops 1212, sideshows 1304 and features 1414 where it left off; the lab's own table order differs from
+  OpenTPW's info-id order (ECON-017 narrowed with the evidence).
+- **Challenges** (`0x4d2320`, `0x4d1e90`): won and declined challenges, a running or unanswered challenge and the next offer day. A system not
+  yet switched on offers its first challenge on park day `DaysUntilFirstChallenge`, as the original counts from the park's start: the Jungle
+  start now gets its first offer on day 540 instead of 572.
+- **Staff HQ** (`0x508bb0`, `0x50c800`): training budgets in the role order handyman, mechanic, entertainer, guard, researcher, and each
+  role's strike level, active flag and last-considered turn (`0x508e70`).
+- **Hiring pool** (`0x507850`, the 670 bytes before the calendar): the Jungle start keeps its 16 saved candidates with their own expiry
+  turns, and the pool refills on its own schedule. The saved stamps (refills on turns 361 and 722) confirm the pool timing now read in
+  `0x5084f0`: the pool refills on the first turn past 4 × `TimeBetweenStaffUpdates` turns, and each candidate draws its own timeout of
+  `StaffTimeoutTime` + R % (`StaffTimeoutTime` / 2) units of four turns (`0x507600`) instead of a fixed 120 seconds (ECON-010 retired).
+
+Imported staff also take the display state of their saved state word (`0x5064f0`): the word is the member's own state, not the
+STAFFSTATES index, so a member walking to rest or striking no longer shows as working or picked up. SAVE-003, 004, 005, 007 and 009 are narrowed.
+## The All Attractions button is a round icon again (October 15, 2026)
+
+The button that opens the All Attractions window from the buy window (above All Staff) and the staff window was a text
+button in a round slot about 100 units wide. Its label ("All Rides", in Dutch "Alle Attracties") fitted no font size,
+so the text fallback wrapped it one letter per line down the panel. It now wears the attractions window's own rides tab
+icon (`b_srides`), round like its neighbours, with the name as its popup help.
+
 ## Scream voices limited to the sound manager's pool of twelve (October 14, 2026)
 
 Ride screams no longer start new children everywhere in the park. tp.exe's sound manager (`0x6b62b0`) ticks only 12 audible

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 namespace OpenTPW;
 
 /// <summary>Base thing serializer 0xfa808: <c>mX, mY, mMapChild, mMapParent</c>, four u16 fields.</summary>
@@ -260,13 +261,37 @@ public sealed record SaveAdvisorController( int Id, SaveThingBase Base, uint Tim
 	}
 }
 
+/// <summary>One research project (16 bytes, tp.exe <c>0x504210</c>): object id, category, group, upgrade level, the points it costs and the points done.</summary>
+public readonly record struct SaveResearchProject( ushort ObjectId, uint Category, byte Group, byte UpgradeLevel, float Cost, float Done );
+
+/// <summary>One research category (13 bytes, tp.exe <c>0x504760</c>): effort, output (not read by the game), current project index (−1: none) and highest open group.</summary>
+public readonly record struct SaveResearchGroup( int Effort, int Output, int CurrentProject, byte HighestGroup );
+
 /// <summary>
-/// Model 14, the research lab (0xf0930): base, 256 project records of 16 bytes, five group records of 13 bytes and
-/// 4 + 4 + 4 + 1 trailing bytes. The record fields (<c>mObjId</c>, <c>mCat</c>, group, upgrade level, cost, done;
-/// group effort, output, current project, highest group) have no pinned widths, so the records stay raw.
+/// Model 14, the research lab (tp.exe <c>0x502dc0</c>; Mac 0xf0930): base, 256 project records of 16 bytes, five group records of 13 bytes and
+/// the tail mNumProjects 4, mWorkLoad 4, mMostExpensiveProject 4, mLabActive 1.
 /// </summary>
+// [BIN:TPW-EXE:0x504210 research project serializer] u16 mObjId, u32 mCat, u8 mResearchGroup, u8 mUpgradeLevel, f32 mCost, f32 mResearchDone (0x504630 compares and adds them as floats)
+// [BIN:TPW-EXE:0x504760 research group serializer] u32 effort, u32 output, i32 currentProject, u8 highestGroupAvailable
 public sealed record SaveResearchLab( int Id, SaveThingBase Base, IReadOnlyList<byte[]> Projects, IReadOnlyList<byte[]> Groups, byte[] Tail )
 {
+	public SaveResearchProject Project( int index )
+	{
+		var raw = Projects[index];
+		return new SaveResearchProject( BinaryPrimitives.ReadUInt16LittleEndian( raw ), BinaryPrimitives.ReadUInt32LittleEndian( raw.AsSpan( 2 ) ), raw[6], raw[7],
+			BinaryPrimitives.ReadSingleLittleEndian( raw.AsSpan( 8 ) ), BinaryPrimitives.ReadSingleLittleEndian( raw.AsSpan( 12 ) ) );
+	}
+
+	public SaveResearchGroup Group( int index )
+	{
+		var raw = Groups[index];
+		return new SaveResearchGroup( BinaryPrimitives.ReadInt32LittleEndian( raw ), BinaryPrimitives.ReadInt32LittleEndian( raw.AsSpan( 4 ) ),
+			BinaryPrimitives.ReadInt32LittleEndian( raw.AsSpan( 8 ) ), raw[12] );
+	}
+
+	/// <summary>The lab's work load percentage (tail <c>mWorkLoad</c>).</summary>
+	public int WorkLoad => BinaryPrimitives.ReadInt32LittleEndian( Tail.AsSpan( 4 ) );
+
 	public const int ProjectRecords = 256;
 	public const int ProjectBytes = 16;
 	public const int GroupRecords = 5;
@@ -338,11 +363,19 @@ public sealed record SaveBank( int Id, SaveThingBase Base, SaveBankRecord Accoun
 
 /// <summary>
 /// One 45-byte challenge slot (field order differs from <c>Challenges.sam</c>): <c>i32 type, time, value, u16 object,
-/// u16 object2, i32 staff type, prize, follow-up type, u8 check at end only</c>, 13 raw bytes, <c>u8 independent</c>,
-/// two raw bytes.
+/// u16 object2, i32 staff type, prize, follow-up type, u8 check at end only, i32 offered, lost, declined, u8 won, u8 independent,
+/// u16 follow-up thing</c>.
 /// </summary>
+// [BIN:TPW-EXE:0x4d0f90 challenge slot serializer] ... mCheckAtEndOnly (1), mChallengeOffered (4, +0x20), mChallengeLost (4, +0x24), mChallengeDeclined (4, +0x28), mHaveWon (1, +0x2c), mIndependent (1, +0x1d), mThingIdForFollowup (2, +0x2e)
 public readonly record struct SaveChallengeRecord( int Offset, int Type, int TargetTime, int TargetValue, int TargetObject, int TargetObject2,
-	int TargetStaffType, int Prize, int FollowupType, bool CheckAtEndOnly, bool Independent );
+	int TargetStaffType, int Prize, int FollowupType, bool CheckAtEndOnly, bool Independent )
+{
+	public int Offered { get; init; }
+	public int Lost { get; init; }
+	public int Declined { get; init; }
+	public bool Won { get; init; }
+	public ushort FollowupThing { get; init; }
+}
 
 /// <summary>
 /// Model 19, the challenge system (0xcf42c): base, 20 slots of 45 bytes, current challenge 4, next event time 8,
@@ -368,9 +401,12 @@ public sealed record SaveChallengeSystem( int Id, SaveThingBase Base, IReadOnlyL
 			var type = reader.I32();
 			var record = new SaveChallengeRecord( start, type, reader.I32(), reader.I32(), reader.U16(), reader.U16(), reader.I32(), reader.I32(), reader.I32(),
 				reader.U8() != 0, false );
-			reader.Skip( 13 );
+			var offered = reader.I32();
+			var lost = reader.I32();
+			var declined = reader.I32();
+			var won = reader.U8();
 			var independent = reader.U8();
-			reader.Skip( 2 );
+			var followupThing = reader.U16();
 			if ( type == 0 )
 			{
 				ended = true;
@@ -378,9 +414,9 @@ public sealed record SaveChallengeSystem( int Id, SaveThingBase Base, IReadOnlyL
 			}
 			if ( ended )
 				throw new InvalidDataException( $"Save challenge slot {index} is used after an unused slot." );
-			if ( payload[start + 28] > 1 || independent > 1 )
-				throw new InvalidDataException( $"Save challenge slot {index} has non-boolean flags {payload[start + 28]}/{independent}." );
-			used.Add( record with { Independent = independent != 0 } );
+			if ( payload[start + 28] > 1 || independent > 1 || won > 1 )
+				throw new InvalidDataException( $"Save challenge slot {index} has non-boolean flags {payload[start + 28]}/{independent}/{won}." );
+			used.Add( record with { Independent = independent != 0, Offered = offered, Lost = lost, Declined = declined, Won = won != 0, FollowupThing = followupThing } );
 		}
 		return new SaveChallengeSystem( thing.Id, thingBase, used, reader.I32(), reader.I64(), reader.U8(), reader.U8(), reader.U8(), reader.I32(), reader.U16() );
 	}

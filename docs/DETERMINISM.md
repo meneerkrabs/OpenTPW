@@ -306,7 +306,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x9F437861FA2E5452`, schema 19: a ride keeps its broken-down state (QUEUE-019) in the hash, the booth's verdict on the fee
+  (`0x611EFAD61F9A8D68`, schema 19: each staff candidate draws its own timeout, `StaffTimeoutTime` + R % (`StaffTimeoutTime` / 2) units of
+  four park turns, and the pool refills on the first turn past 4 × `TimeBetweenStaffUpdates` turns (tp.exe `0x00507600`, `0x005084F0`), so the
+  candidates and the world stream after them move. Before that:
+  `0x9F437861FA2E5452`, schema 19: a ride keeps its broken-down state (QUEUE-019) in the hash, the booth's verdict on the fee
   (tp.exe `0x004FF5B0`) draws from the guest stream, and the invented boredom loss is gone (nothing in tp.exe reads BoredomThreshold; docs/GUESTS.md). Before that:
   `0xCAF8114002723B8C`, schema 18: the bank's withdrawals flag, balance after the last debit and turn-entered-red stamp join the
   park save and so the hash; the synthetic park stays in the black, so only the hashed fields change the value (docs/ECONOMY.md). Before that:

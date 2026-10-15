@@ -939,9 +939,66 @@ follows the PC instructions (docs/COASTERS.md "Running", `CoasterRide`, `Coaster
 - 13.6 and 17.3 (frames): the original's sample list starts at the platform start (its end node stands on the first station node and
   the closing pair is the platform's one-sample stub), the braking zone `[ctl+0x134, count)` lies before the platform and the window
   `[ctl+0xf8, ctl+0xfc]` between the sample coordinates of the first and third station node narrowed by `fEntranceSizeInterval`
-  (`0x43b750`). OpenTPW's station has two nodes, so the same frame is built from the end node's knot (`CoasterRide.PlatformStart`).
+  (`0x43b750`). OpenTPW built the same frame from the end node's knot while its station had two nodes; since the three-node station
+  (section 22) the list starts on S0 and the window is read from the knot coordinates of S0 and S2.
 - 13.7: the PC runtime sine table is `T[k] = f32(fsin(k/4096 · f32(2π)))` with scale `f32(4096 · f32(1/2π))` (`0x4708d0`); lookups round the
   index to nearest (`fistp`), except inside the self-intersection pass, which sets the truncating control word (`0x439ac4`).
 - Collision (COAST-004): the track is tested against itself (`0x439ab0` → `0x439c40` → `0x43a2b0`), with the five default collision points
   `(4, 8), (4, 0), (0, −3), (−4, −1), (−4, 8)`; there is no terrain or scenery collision.
 - Render (COAST-026): the textures scroll by `P · Δt` per frame with P the power factor (`0x435adf`); `fScrollRate` is not read there.
+
+## 22. The three-node station and the controller states (October 15, TOUR-COAST report, round 3)
+
+COAST-029, 019, 004 and 012 were implemented (`CoasterTrack`, `CoasterStationLayout`, `CoasterCurve`, `CoasterRide`, `Level.Coasters`).
+Every claim was read again at instruction level in tp.exe (TPW-EXE); the round-3 report is the spec and was confirmed.
+
+- **Station construction `0x436ac0`.** With definition flag `0x20` (always set) the loop runs `i = 0..2` over the dummy numbered `i + 1`
+  with attribute `0x400000` (`0x44b220`) and reads its world position (node instance `+0x30..+0x38`, placement included). `i = 0` and `2`
+  build a StdPylon node in the cell `ftol(x · 0.1)`, `ftol(z · 0.1)` (descriptor `0x432c10(…, 0x12, …)`, height = dummy y − the station's
+  base height) with the creation parameters `0x274` and `0x28c`; `i = 1` builds a pylon-less node (descriptor `0x13`) on the exact
+  position with `0x3c`. The constructor `0x434060` maps the parameter bits: `8` → `0x200`, `0x10` → `0x400`, `0x20` → `0x1800`
+  (winch), `0x40` → `0x80000` (no previous), `0x80` → `0x40000` (no next), `0x100` → `0x100000`; bit `0x4` goes to `0x433bd0`, which
+  skips the fMinHeight/fMaxHeight clamp of `0x433790` (an unstacked node's height is taken as it comes, the loft parameter is
+  `clamp((h − h0)/(h1 − h0), 0, 1)`). The 12 PC stations' dummies (read from the model files, in model units, End/Mid/Start): End is
+  always `x = −5` and `z = 10·row + 5`, Start half a cell past the `>` column, Mid between them; heights 20, 29, 12.04, 2.04, 14, 3.5,
+  12.04, 17.43 → 42.32 (the Moonshot's station climbs), 44.09, 11.08, 7.09 and 12.69.
+- **Completion `0x435570`.** One end node (definition `0x20`) at the world position of S0's pylon track dummy, a pylon-less descriptor with
+  `0x144` (= `0x80000 | 0x100000`), then the state setter with state 2.
+- **Tangents `0x431660`.** The previous neighbour is dropped on `0x80000`, the next on `0x40000`, and on `0x100000` the next is the head's
+  next node (S1): S0 and the end node leave along S1 − S0, S2 along S2 − S1. The bank pass `0x4310c8` banks a node that has a next node
+  in the list (the raw link) and no flag `0x4`: S2 banks, the end node (no next) does not, S0 has no previous neighbour and takes none.
+- **Sampler `0x440c10`.** The walk covers every pair of the node list; at the end node the closing pair runs from it to the second node
+  (head `+0x64`), emits one sample (t may pass 1), the count `n` is the samples written, the last sample is copied into slot `n` and `n`
+  grows by one when `n ≤ trunc(c) + (frac(c) ≠ 0)` with `c` the end knot's coordinate (`ctl+0xa8`; it lies less than one sample past the last
+  sample before it, so the growth does not happen). A knot's coordinate (`node +8`) is the index of the last sample before it plus the distance
+  walked since that sample and the distance to the knot over the spacing; S0's is 0. The braking start is `(n − 1) − v/spacing` (`0x43c72f`) and
+  the swing's fade runs over `(i − b)/(c − b)` (`0x43c9e8`).
+- **Collision `0x439c40`.** S0 → S1 and S1 → S2 are ordinary links; the skips are the ordinal-0/pylon-less rule only, so a track over the
+  platform is counted and the closing link into S0 is not tested against S0 → S1.
+- **Stacking `0x434d34`.** The bottom node's flags `0x200`/`0x400` refuse a stack: S0, S1 and S2.
+- **State setter `0x435730`.** Old → new: 1 → 2 sets P = 1 (outside mode `0x40`), sets every train slot up (`0x43be10`) and clears the highlight;
+  1 → 8 and 2 → 8 run `0x43b390`; 2 → 1 removes every train (`0x43bf20`), clears flag `0x800` and highlights the chain start; 4 → 2 unloads
+  both seat lists of every train (`0x43b480` with 0 and 1); 4 → 8 runs `0x43b390`; 8 → 2 unloads both lists and runs `0x43b390`; the rest changes
+  nothing. Callers: completion, close-circuit `0x442c70` and load `0x437b60` set 2, the cut `0x446740` and `0x4368f0` set 1, the script's
+  `COAST 5` (`0x43b2f0`) 4 or 8.
+- **The coaster tool `0x4474d0` → `0x447520`.** Round 2 called `0x447520` the tool's exit; with param 1 it is the **entry**: with no coaster being
+  edited (`0x790fec`) it closes the ride object (`0x4df300`: "Object %d Closing", `+0x68/+0x6c` cleared, event 6) and sets state 2 when the
+  track is complete with its circuit closed (controller `+0x3c` bit 0 set, bit 1 clear), else 1. With param 0 it is the exit: after the
+  sub-mode clean-up it opens the ride object again (`0x4df390`) when the controller's state is 2.
+- **Still open (COAST-029).** A station whose dummies lie below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5,
+  Candy Coaster 7.09 against 10, Escape Velocity 12.04 against 30; the pylon heights come from the models): the loft parameter stops at 0, so
+  S0 and S2 stand at h0 above S1. Whether the original's pylon pose leaves it so, and the terrain height under the pylon's cell, were not traced.
+  Whether the middle knot takes `fTrackHeightAdjust` (the Big Dripper's −1.5, zero elsewhere) is not known either.
+
+## 23. The coaster tool panel (COAST-028, COAST-035; PC tp.exe, October 15)
+
+Read at the instruction level for the panel round; addresses are `[BIN:TPW-EXE]`.
+
+- **Panel.** Table `0x751530` (layout command stream; root `0x17`, `!f_plain` boxes `0x22` and `0x18`, controls `0x19`..`0x21` with the models `cb_incline`, `cb_loft`, `cb_move`, `cb_rotate`, `cb_swapdown`, `cb_swapup`, `cb_track`, (`cb_loop`), `cb_dellast`, help ids 569, 297, 296, 300, 303, 302, 564, 565, 304). The click handler `0x4982a0` maps a control to a button bit (`0x19` → 8, `0x1a` → `0x10`, `0x1b` → 4, `0x1c` → `0x20`, `0x1d` → `0x100`, `0x1e` → `0x80`, `0x1f` → 1, `0x20` → 2, `0x21` → `0x40`) and calls `0x446fa0`, which maps the bit to the sub-mode `0x79c624` (1 build, 2 move, 4 tilt, 8 height, `0x10` rotate, `0x20` stack up, `0x40` stack down, `0x80` demolish) through `0x444360`/`0x445220`.
+- **Pointer.** `0x446300(press)` picks the pylon model under the pointer (`0x45d620` = the hovered thing, matched with the node's thing at `+0x70` through table `0x7a4610`; descriptors with flag 1, the pylon-less ones, are skipped, flag 2, the station's, cannot be edited) and starts the sub-mode's handler; the stack and demolish sub-modes act on the release. The per-frame drag `0x443340` computes `(start mouse − mouse) × rate` per axis (the start position is `0x790ac8/acc`, mouse pixels), clamps to the handler's range and, for the clamped, non-camera-relative drags, moves the start position to `(clamped − start value)/rate + mouse`; flag `0x2000` (tilt) first turns the vector by `camera yaw − node yaw` (`local_8 = cos·dy + sin·dx`, `local_c = cos·dx − sin·dy`).
+- **Handlers.** Height `0x441a00` (pylon flag `0x20`, rate 0.005 on Y, range `[max(0, (pylon+0x68 − h0)/(h1 − h0)), t + (pylon+0x6c − 0x433280(top of stack))/(h1 − h0)]`; the release credits `ftol` of the noted cost and debits `0x43e160(cost)`); rotate `0x441e80` (flag `0x40`, rate 0.02 on X, `[auto yaw − pylon+0x94, auto yaw + pylon+0x94]`, node flag 1); tilt `0x442010` (flag `0x100`: `+0xD8` ±π with node flag 4, flag `0x80`: `+0xDC` ±π with node flag 2, rates 0.02); loop tilt `0x441cd0` (flag `0x200`, rate 0.01, `+0xF8` in `[0.15, 0.85]`, or `[−0.35, 0.35]` for a first-of-pair node whose value above 0.5 first loses 1); swap `0x4423f0`/`0x4425c0` → `0x4424e0` (stack index, array entries, model base height `+0x44` and loft `+0xE8` exchanged); move `0x446d50` (press), `0x443340` (the node follows the hovered cell through `0x442f40`, validator `0x434740` sets `0x4000`), `0x445a70` (release: the node and, on a complete track, the next one are re-costed and `0x4d0190`/`0x4d01f0` settle). The pylon flags `0x20`..`0x200` are set by `0x430590` from the model's animations (types 3, 10, 2, 9 and 10 index 1).
+- **Enable mask** `0x445910` and **initial selection** `0x4455c0` as in docs/COASTERS.md. A complete track (controller flag 1) with flag 2 clear disables the build buttons and enables demolish; any other state disables demolish.
+- **Cut** `0x446740` (see `CoasterTrack.Cut`): the ends are the clicked nodes ordered by ordinal, ordinal 0 standing for the last node; a first-of-pair node adjacent to its second widens the range, equal ends widen to the neighbours, the second node of a pair after the lower end moves it back, a first-of-pair node before the upper end moves it on; the nodes between are deleted from the upper end down by `0x444cb0`; the lower end gets `0x50000`, the upper `0xa0000`; controller flag 2 is set (cleared with flag 1 when the range reached the last node, `0x435530`); `0x435730(ctl, 1)` and the build button follow. Closing on the chain start `ctl+0x64` is `0x442c70` (state 2).
+- **Placement area.** `0x434f10` sets the box (reference node: the last node, `ctl+0x60` while cut open, the moved node's predecessor in a move) of half size `trunc(sqrt(pylon+0xa0)) + 1`; `0x5234d0` (tool mode `0x15`) draws face `0x115` on the hovered cell (red when `0x434740` returns 0) and face `0x11f` on every cell of the box (upper edges exclusive) that passes `0x434740`, has cell flag `0x40` clear, whose object (or the owner of a type `0xc`/`0x11` object, `0x53ad90`) is none of the types `0x19` and `0xb`, `0xd`, `0x10`, `0x12` (`0x53ad30`), and whose cell type is none of 9, 10, 3, 4, 7, `0x1e`, nor a type 1 cell with flag `0x20`.
+- **Delete last** `0x444f30` is called only from `0x52fe50` (tool mode `0x15`, the undo list of the ride removal `0x527ee0`); no key or button calling it was found. The `0x403be0`/`0x403d00`/`0x403ed0` calls in the handlers are action-record log writes (`"AR: %d"`), not sounds.
+- **Not traced.** The renderer's use of node flags `0x8000`/`0x4000`/`0x800000`; the picture of face `0x11f`; the clip angles; the panel window's position.

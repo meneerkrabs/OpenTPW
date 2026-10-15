@@ -222,6 +222,9 @@ public class OriginalObject : Entity
 		return new TourStation( (int)MathF.Truncate( x ) * 300, (int)MathF.Truncate( up ) * 300, (int)MathF.Truncate( y ) * 300, Placement.Rotation );
 	}
 
+	/// <summary>The station frame of a coaster station (<see cref="CoasterStationLayout.FromModel"/>) at the model's rest pose, or null when its model lacks a dummy.</summary>
+	internal CoasterStationLayout? ComputeCoasterStationLayout() => CoasterStationLayout.FromModel( Runtime.Model, NodeTransforms, Placement );
+
 	/// <summary>One fixed simulation tick.</summary>
 	public void Simulate( double deltaSeconds )
 	{

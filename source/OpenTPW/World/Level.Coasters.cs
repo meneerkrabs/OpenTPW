@@ -13,6 +13,8 @@ public partial class Level
 	/// <summary>The builder the coaster tool drives, or null.</summary>
 	public CoasterBuilder? CoasterTool => CoasterToolStation is { } station ? GetCoasterBuilder( station ) : null;
 	public bool IsCoasterToolActive => CoasterToolStation != null;
+	/// <summary>The coaster tool's panel (the nine buttons and their sub-modes), or null when the tool is off.</summary>
+	public CoasterToolPanel? CoasterPanel { get; private set; }
 	/// <summary>Triangles the coaster renderer drew in the last frame.</summary>
 	public int CoasterTrianglesDrawn => coasterRenderer?.DrawnTriangles ?? 0;
 
@@ -50,7 +52,7 @@ public partial class Level
 	/// <paramref name="infoId"/> picks the coaster (its <c>Info.Id</c>), the first buildable one by default. Null when no site has room.
 	/// </summary>
 	// [EXT:debug-coaster] developer/screenshot helper, not original behaviour: it builds the track for the player without the tool and without charging money
-	internal OriginalObject? BuildDemoCoaster( bool finished, int? infoId, int height = 40 )
+	internal OriginalObject? BuildDemoCoaster( bool finished, int? infoId, int height = 40, bool enterTool = false )
 	{
 		if ( IsReadOnlyVisit || Guests == null || OriginalPark == null )
 			return null;
@@ -84,6 +86,9 @@ public partial class Level
 			{
 				builder.Place( ends.Return.X, ends.Return.Y );
 				builder.Complete();
+				// with the tool: the finished coaster is taken into the tool, so its panel shows on the height button (capture helper)
+				if ( enterTool )
+					EnterCoasterTool( station );
 			}
 			else
 			{
@@ -96,6 +101,35 @@ public partial class Level
 			return station;
 		}
 		return null;
+	}
+
+	/// <summary>The camera's heading in the knot directions' yaw convention (atan2(x, z) of its forward direction in track coordinates), which turns the tilt drag to the view.</summary>
+	internal float CoasterCameraYaw
+	{
+		get
+		{
+			var forward = Camera.Rotation.Forward;
+			return MathF.Atan2( forward.X, forward.Y );
+		}
+	}
+
+	/// <summary>Whether a cell holds nothing but ground: no object, path or queue (the cells the placement area marks).</summary>
+	private bool IsCoasterCellFree( int x, int y ) => Objects.FindAt( x, y ) == null && Guests != null && Guests.Grid.Cells.RawTypeAt( x, y ) == 0;
+
+	/// <summary>
+	/// Screen position of a coaster-space point (original units: X, height, Z of the track), for picking the pylon piece under the pointer. False when the point is behind the camera.
+	/// </summary>
+	public bool TryProjectCoasterPoint( System.Numerics.Vector3 world, System.Numerics.Vector2 viewportSize, out System.Numerics.Vector2 screen )
+	{
+		var origin = Objects.Grid.Origin;
+		var scale = ObjectPlacement.ModelScale;
+		var point = new System.Numerics.Vector4( origin.X + world.X * scale, origin.Y + world.Z * scale, world.Y * scale, 1 );
+		var clip = System.Numerics.Vector4.Transform( point, Camera.ViewMatrix * Camera.ProjMatrix );
+		screen = default;
+		if ( clip.W <= 0 )
+			return false;
+		screen = new System.Numerics.Vector2( (clip.X / clip.W + 1) / 2 * viewportSize.X, (1 - clip.Y / clip.W) / 2 * viewportSize.Y );
+		return float.IsFinite( screen.X ) && float.IsFinite( screen.Y );
 	}
 
 	/// <summary>The catalogue entry (archive) of a coaster's station object, or null when the station left.</summary>
@@ -117,13 +151,20 @@ public partial class Level
 		if ( item.Runtime.Coaster == null || GetCoasterBuilder( item ) is not { } builder )
 			return;
 		if ( CoasterBuilder.StationEnds( item.Entry.Shape, item.Placement.X, item.Placement.Y, item.Placement.Rotation ) is { } ends )
-			builder.SetStation( ends.Depart, ends.Return );
+			builder.SetStation( ends.Depart, ends.Return, item.ComputeCoasterStationLayout() );
 	}
 
 	private void OnCoasterStationRemoved( OriginalObject item )
 	{
 		if ( CoasterToolStation == item )
+		{
+			// the tool's full clean-up for a station that goes (the ride object is deleted, so it is not opened again)
+			CoasterPanel?.Close();
+			CoasterPanel = null;
+			CoasterPreview = null;
+			DemoPreview = null;
 			CoasterToolStation = null;
+		}
 		if ( coasterBuilders.Remove( item, out var builder ) )
 			builder.Delete();
 	}
@@ -145,27 +186,38 @@ public partial class Level
 	public CoasterSite CoasterSite => coasterSite ??= CoasterSite.FromGrid( Objects.Grid );
 	private CoasterSite? coasterSite;
 
-	/// <summary>Starts the coaster tool on a station: park clicks place pylons, a click on a station end closes the circuit, the next one completes the track.</summary>
+	/// <summary>
+	/// Starts the coaster tool on a station: park clicks place pylons, a click on a station end closes the circuit, the next one completes the track. The ride is closed
+	/// (its riders leave, no guest is stranded) and its controller goes to state 2 when the track is finished, so the trains run empty without a station step, or to state 1
+	/// (no trains) when it is not.
+	/// </summary>
+	// [BIN:TPW-EXE:0x447520 coaster tool entry] with no coaster being edited the ride object is closed (0x4df300) and the controller set to state 2 (a complete track with its circuit closed) or 1 (0x435730); round 2 labelled 0x447520 the tool's exit, it is its entry when called with param 1
 	public bool EnterCoasterTool( OriginalObject station )
 	{
 		if ( IsReadOnlyVisit || GetCoasterBuilder( station ) is not { } builder )
 			return false;
-		if ( builder.Track.IsComplete && !builder.Reopen() )
-		{
-			LastActionMessage = "Cannot edit the coaster while riders are on board.";
-			return false;
-		}
+		if ( CoasterToolStation != null && CoasterToolStation != station )
+			ExitCoasterTool();
 		StaffPlacement?.Cancel();
 		CellTool.Cancel();
+		station.Close();
+		builder.Ride.EnterTool();
 		CoasterToolStation = station;
+		CoasterPanel = new CoasterToolPanel( builder, IsCoasterCellFree );
 		return true;
 	}
 
-	/// <summary>Ends the coaster tool (the track keeps its pylons; an incomplete track takes no riders).</summary>
+	/// <summary>Ends the coaster tool (the track keeps its pylons; an incomplete track takes no riders). A ride the tool took out of service (state 2) opens again.</summary>
+	// [BIN:TPW-EXE:0x447520 coaster tool exit] leaving the tool (param 0) opens the ride object again (0x4df390) when the controller's state is 2; the station script's COAST 5 then sets state 4 or 8; a ride left in state 1 stays closed
 	public void ExitCoasterTool()
 	{
+		var station = CoasterToolStation;
+		CoasterPanel?.Close();
+		CoasterPanel = null;
 		CoasterToolStation = null;
 		CoasterPreview = null;
+		if ( station is { IsDeleted: false } && station.Runtime.Coaster is { State: CoasterControllerState.Built } )
+			station.Open();
 	}
 
 	/// <summary>
@@ -203,7 +255,7 @@ public partial class Level
 		var rating = builder.Ride.Rating!.Value;
 		LastActionMessage = $"Coaster complete (track ${builder.Ride.PaidCost}): excitement {rating.Excitement:F0}, sickness {rating.Sickness:F0}, {rating.Trains} train(s).";
 		var station = CoasterToolStation!;
-		CoasterToolStation = null;
+		ExitCoasterTool();
 		if ( station.Entry.HasQueue && station.Runtime.IsAttraction && station.Visitors.HasCells )
 			EnterQueueTool( station.Visitors );
 		return result;
@@ -247,6 +299,9 @@ public partial class Level
 			if ( !live.Contains( ride ) )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s coaster controller is not live; a stopped station holds no coaster state." );
 			ride.RestoreSnapshot( entry );
+			// [EXT:coaster-resume-reopen] a save taken while the coaster tool was open holds the ride out of service (state 2, its object closed); the tool is not open after a load, so the ride is let out as leaving the tool would (0x447520 → 0x4df390; the original's save during the tool is not traced)
+			if ( ride.State == CoasterControllerState.Built && !station.IsOpen )
+				station.Open();
 		}
 		if ( Coasters.Count != saved.Rides.Count )
 			throw new InvalidDataException( $"The save holds {saved.Rides.Count} coasters, but this park places {Coasters.Count} live coaster stations." );

@@ -13,6 +13,21 @@ public enum CoasterPylonFlags : uint
 }
 
 /// <summary>
+/// What a pylon can be edited by hand with (pylon control <c>+0</c> bits 0x20..0x200), from the animations its model has (<c>0x430590</c>): the loft clip (type 3) lets the height drag
+/// move it, the rotate clip (type 10) the rotate drag, the incline clip (type 2) and the bank clip (type 9) the two axes of the tilt drag and a second rotate clip (type 10, index 1) the loop tilt.
+/// </summary>
+[Flags]
+public enum CoasterPylonCapabilities : uint
+{
+	None = 0,
+	Loft = 0x20,
+	Rotate = 0x40,
+	Incline = 0x80,
+	Bank = 0x100,
+	LoopTilt = 0x200
+}
+
+/// <summary>
 /// One of the two 288-byte pylon controls of a coaster definition (COAST-plan §3.2): the StdPylon at definition
 /// <c>+168</c> and the LoopPylon at <c>+456</c>. Angles are radians (the settings give degrees), place distances
 /// whole cells; the loader stores both the squared distances and the float distances.
@@ -20,6 +35,9 @@ public enum CoasterPylonFlags : uint
 public sealed class CoasterPylonControl
 {
 	public CoasterPylonFlags Flags { get; internal set; }
+	/// <summary>The hand edits the pylon's model allows. Without the model (no game data) a standard pylon takes all four drags and a loop pylon the loop tilt.</summary>
+	// [BIN:TPW-EXE:0x430590 pylon capabilities] pylon flags 0x20 (loft clip), 0x40 (rotate), 0x80 (incline), 0x100 (bank) and 0x200 (second rotate clip) are set when the model has the animation of that type (0x472d10); the drag handlers test them (0x441a00, 0x441e80, 0x442010, 0x441cd0)
+	public CoasterPylonCapabilities Capabilities { get; internal set; } = CoasterPylonCapabilities.Loft | CoasterPylonCapabilities.Rotate | CoasterPylonCapabilities.Incline | CoasterPylonCapabilities.Bank;
 	/// <summary><c>pcMeshFilename</c> (StdPylon, LoopPylon), or empty.</summary>
 	public string MeshName { get; internal set; } = "";
 	public int MinPlaceDistance { get; internal set; }
@@ -77,7 +95,7 @@ public sealed class CoasterPylonControl
 /// unconditionally (absent = 0). No PC <c>.sam</c> sets a motion, distance, angle or rating key, so the PC game
 /// runs on these defaults.
 /// </summary>
-// [APPROX:COAST-014] the PC twins in tp.exe agree with the Mac readings for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330), the mode and speed setters, the guest predicates, the debit 0x4d01f0, the validator 0x434740 (plus a move-mode skip for 0x10000 with 0x20000 and the closure re-validation), the sampler 0x440c10 and the hop 0x43ce20; the differences are COAST 6's literal 0 floor (the Mac reading takes a global), the round-to-nearest sine-table indices (fistp) of the PC where the Mac and C# truncate (the swing uses the PC rule; the validator's and curve's Mac tables truncate), x87 arithmetic, the three-node station (COAST-029) and the creation parameters of the end node; the cost routine 0x447830 is not compared — evidence needed: 0x447830 against the Mac cost 0x1004B168
+// [APPROX:COAST-014] the PC twins in tp.exe agree with the Mac readings for the rating step and final (ORACLE X11/X12; the step's stale term differs, what C# follows), COAST 2-6 (0x43b1f0..0x43b330), the mode and speed setters, the guest predicates, the debit 0x4d01f0, the validator 0x434740 (plus a move-mode skip for 0x10000 with 0x20000 and the closure re-validation), the sampler 0x440c10 and the hop 0x43ce20; the differences are COAST 6's literal 0 floor (the Mac reading takes a global), the round-to-nearest sine-table indices (fistp) of the PC where the Mac and C# truncate (the swing uses the PC rule; the validator's and curve's Mac tables truncate), and x87 arithmetic; the cost routine 0x447830 is not compared — evidence needed: 0x447830 against the Mac cost 0x1004B168
 public sealed class CoasterDefinition
 {
 	/// <summary><c>Bumper.WhichTrackType</c> of a coaster (<c>0xe2fe4</c>: type record +156 == 3).</summary>
@@ -191,6 +209,7 @@ public sealed class CoasterDefinition
 		var pylon = new CoasterPylonControl
 		{
 			Flags = CoasterPylonFlags.Standard | CoasterPylonFlags.Loop,
+			Capabilities = CoasterPylonCapabilities.Loft | CoasterPylonCapabilities.Rotate | CoasterPylonCapabilities.LoopTilt,
 			MinPlaceDistance = 3,
 			MaxPlaceDistance = 9,
 			EntranceMinAngleAtMinDistance = 120 * DegreesToRadians,
@@ -264,6 +283,7 @@ public sealed class CoasterDefinition
 	// [BIN:TPW-EXE:0x4309a4 pylon heights] pylon +0xbc = h0, +0xc0 = h1, +0x68 (fMinHeight) = max(fMinHeight, h0) (0x4309a4..0x4309bb), +0xc4 = stack dummy Y − h0 or 0
 	internal void ApplyPylonModel( bool loop, CoasterPylonRig rig )
 	{
+		Pylon( loop ).Capabilities = rig.Capabilities;
 		// The original applies h0 and h1 as they come (0x4309a4 has no guard on h1 <= h0, and a missing dummy reads the constant 0 at 0x6fde74).
 		// OpenTPW skips a model whose track dummy is missing or does not move with the loft clip (the Gorilla coaster 3180's loop pylon, h0 = h1 =
 		// 9.47, below its own raised minimum 10) and keeps the settings' heights: with h1 <= h0 every node of that pylon would stand at h0.
@@ -329,7 +349,7 @@ public sealed class CoasterDefinition
 		definition.MaxCars = Int( "sTrainType.uiMaxCars", definition.MaxCars );
 
 		var flags = AlwaysFlags;
-		// The always-set 0xA0 already holds 0x20, so the setting is kept on its own for the end-node count (COAST-029).
+		// The always-set 0xA0 already holds 0x20, so the setting is kept on its own (it does not change the end node count, 0x435570).
 		definition.VisibleEndPylon = Flag( Coaster + "bVisibleEndPylon" );
 		if ( definition.VisibleEndPylon )
 			flags |= VisibleEndPylonFlag;

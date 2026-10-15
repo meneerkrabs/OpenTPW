@@ -26,12 +26,15 @@ public class CoasterDispatchTests
 		configure?.Invoke( settings );
 		var ride = new CoasterRide( CoasterDefinition.FromValues( settings ), new CoasterWorld( 1 ), "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
-		builder.SetStation( Depart, Return );
+		CoasterTests.PlaceStation( builder, Depart );
 		builder.Height = 40;
 		foreach ( var (dx, dy) in CoasterTests.Circuit )
 			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( Depart.X + dx, Depart.Y + dy ) );
 		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
 		ride.Command( 8, 0 );
+		// A finished ride is built (state 2: no station step); the station script opens it and, as the tests need, closes it again.
+		ride.Command( 5, 0 );
+		ride.Command( 5, 1 );
 		return ride;
 	}
 
@@ -71,17 +74,20 @@ public class CoasterDispatchTests
 	}
 
 	[TestMethod]
-	public void TheStationWindowSpansThePlatformFromTheEndNodeToTheStationNode()
+	public void TheStationWindowSpansThePlatformFromTheFirstStationNodeToTheThirdOne()
 	{
 		var ride = NewRide();
 		var count = ride.Samples.Count;
-		Assert.IsTrue( ride.PlatformStart > 0 && ride.PlatformStart < count, $"platform start {ride.PlatformStart} of {count} samples" );
-		Assert.AreEqual( (0f, count - ride.PlatformStart), ride.StationWindow, "fEntranceSizeInterval 0: the whole span between the two station nodes (0x43b750)" );
-		Assert.IsTrue( ride.BrakingStart < ride.PlatformStart, "the brake zone is the stretch before the platform" );
+		var coordinates = ride.KnotCoordinates;
+		Assert.AreEqual( 0f, coordinates[0], "the sample list starts on the first station node (S0)" );
+		Assert.IsTrue( coordinates[1] > 0 && coordinates[2] > coordinates[1] && coordinates[2] < count / 2f, $"S1 at {coordinates[1]}, S2 at {coordinates[2]} of {count} samples: the platform is the head of the list" );
+		Assert.AreEqual( (0f, coordinates[2]), ride.StationWindow, "fEntranceSizeInterval 0: the whole span between the first and the third station node (0x43b750)" );
+		Assert.AreEqual( count - 1f, ride.BrakingStart + ride.Samples[CoasterRide.BrakingSpeedSample( ride.Samples.ToArray(), ride.Track.Nodes.Count - 1 )].Speed / ride.Spacing, 1e-3f, "ctl+0x134 = (n − 1) − v/spacing" );
+		Assert.IsTrue( ride.BrakingStart > ride.StationWindow.End, "the brake zone is the stretch before the end of the list, which is the start of the platform" );
 
 		var narrowed = NewRide( settings => settings["sCoasterType.fEntranceSizeInterval"] = "0.25" );
-		var length = narrowed.Samples.Count - narrowed.PlatformStart;
-		Assert.AreEqual( (0.25f * length / 2, 0.75f * length + 0.25f * length / 2), narrowed.StationWindow, "f8 = (1 − k)·A + k·mid, fc = (1 − k)·B + k·mid" );
+		var end = narrowed.KnotCoordinates[2];
+		Assert.AreEqual( (0.25f * end / 2, 0.75f * end + 0.25f * end / 2), narrowed.StationWindow, "f8 = (1 − k)·A + k·mid, fc = (1 − k)·B + k·mid" );
 	}
 
 	[TestMethod]

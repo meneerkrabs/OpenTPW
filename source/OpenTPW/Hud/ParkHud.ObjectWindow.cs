@@ -226,6 +226,11 @@ public sealed partial class ParkHud
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
 	}
 
+	/// <summary>
+	/// The ride window's track button (<c>b_track</c>, control 0x3e2a, help 10): for a coaster (track type 3 of the object's type record, +0x9c) it opens the coaster tool on the selected ride
+	/// (<c>0x4af200</c> → <c>0x4988c0</c> → <c>0x4474d0</c>, the panel's first button selected by <c>0x4455c0</c>); a water track ride opens its track tool.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4ad53a track button] the ride window shows control 0x3e2a when the object's type record has a track type (+0x9c nonzero), and its handler 0x4af200 sends type 1 to tool 0xe, type 2 to 0x13 and type 3, a coaster, to 0x4988c0, which enters the tool (0x4474d0, state 2 for a complete track whose circuit is closed)
 	private void EditTrack()
 	{
 		if ( selectedObject is not { IsDeleted: false } item || !CanEditTrack( item ) || RejectReadOnlyAction() )
@@ -234,7 +239,7 @@ public sealed partial class ParkHud
 		LeaveBuildTool();
 		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.EnterTrackTool( item );
 		if ( entered )
-			PostMessage( item.Runtime.Coaster != null ? CoasterToolHelp : TrackToolHelp );
+			PostMessage( item.Runtime.Coaster != null ? strings.Help( 0x125 ) : TrackToolHelp );
 	}
 
 	/// <summary>Copies the selected shop's or sideshow's price to every placed object of the same type.</summary>

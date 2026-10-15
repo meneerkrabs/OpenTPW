@@ -143,7 +143,7 @@ public class CoasterPresentationTests
 	{
 		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
 		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
-		builder.SetStation( (20, 20), (17, 20) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
 		builder.Height = 40;
 		for ( var index = 0; index < pylons; index++ )
 			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + CoasterTests.Circuit[index].X, 20 + CoasterTests.Circuit[index].Y ) );
@@ -159,14 +159,15 @@ public class CoasterPresentationTests
 		Assert.IsNotNull( preview );
 		Assert.IsFalse( preview!.Value.Closed );
 		Assert.AreEqual( track.Nodes.Count + 1, preview.Value.Chain.Count, "the ghost pylon at the cursor is the last node" );
-		var knots = track.BuildKnots( builder.Site, preview.Value.Chain, closed: false, writeBanks: false );
+		var knots = track.BuildKnots( builder.Site, preview.Value.Chain, writeBanks: false );
 		var slices = HermiteCoasterCurve.Slices( knots, builder.Ride.Definition.Curviness, closed: false );
 		Assert.AreEqual( (knots.Count - 1) * HermiteCoasterCurve.SliceSegments + 1, slices.Length );
-		Assert.AreEqual( 0f, (slices[0].Position - knots[0].Position).Length(), 1e-3f, "the first slice is the station node" );
+		Assert.AreEqual( 0f, (slices[0].Position - knots[0].Position).Length(), 1e-3f, "the first slice is the first station node" );
 		Assert.AreEqual( 0f, (slices[^1].Position - knots[^1].Position).Length(), 1e-3f, "the last slice is the cursor pylon" );
 		// The curve bends: an interior slice leaves the straight chord between its two knots.
-		var chordMid = (knots[1].Position + knots[2].Position) / 2;
-		Assert.IsTrue( (slices[1 * HermiteCoasterCurve.SliceSegments + 5].Position - chordMid).Length() > 0.1f );
+		var first = CoasterTrack.StationNodeCount;
+		var chordMid = (knots[first].Position + knots[first + 1].Position) / 2;
+		Assert.IsTrue( (slices[first * HermiteCoasterCurve.SliceSegments + 5].Position - chordMid).Length() > 0.1f );
 		Assert.IsTrue( track.Nodes.All( node => node.Bank == 0 ), "a preview leaves the nodes' banks untouched" );
 		var mesh = CoasterTrackMesh.Build( CoasterCrossSections.FromValues( SectionSettings() ), slices, closed: false );
 		Assert.AreEqual( slices.Length - 1, mesh.Segments );
@@ -193,7 +194,7 @@ public class CoasterPresentationTests
 		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
 		var ride = builder.Ride;
 		var again = builder.Track.BuildKnots( builder.Site );
-		var chain = builder.Track.BuildKnots( builder.Site, builder.Track.Nodes, closed: true, writeBanks: false );
+		var chain = builder.Track.BuildKnots( builder.Site, builder.Track.Nodes, writeBanks: false );
 		CollectionAssert.AreEqual( again.ToArray(), chain.ToArray() );
 		Assert.IsTrue( ride.IsOperational );
 	}

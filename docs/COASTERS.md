@@ -17,7 +17,8 @@ of this work.
 | File | Contents |
 | --- | --- |
 | `World/Coasters/CoasterDefinition.cs` | The definition: code defaults of `0x2d274`, then the `coaster.sam` values (only nonzero values replace a default; the three pylon cost rates are copied as given). The StdPylon and LoopPylon controls. |
-| `World/Coasters/CoasterTrack.cs` | Nodes, the placement validator `0x36ba4`, invalid marking, closure, completion, the height clamp, the pylon cost, node positions, node tangents, auto-banking and the knots. |
+| `World/Coasters/CoasterTrack.cs` | Nodes, the station's three nodes, the placement validator `0x36ba4`, invalid marking, closure, completion, the height clamp, the pylon cost, node positions, node tangents, auto-banking and the knots. |
+| `World/Coasters/CoasterStationLayout.cs` | The station frame: the End, Mid and Start dummies of the station model (`0x436ac0`) that the three station nodes are built from. |
 | `World/Coasters/CoasterCurve.cs` | The curve: Hermite tangents along each knot's direction, one cubic Bézier per knot pair (`0x41b00`), the sampler `0x44ff4` (parameter steps of 0.05, one sample every 3.0 world units), yaw and pitch, and the 4096-entry sine table. `ICoasterCurve` keeps the curve swappable. |
 | `World/Coasters/CoasterRating.cs` | The rating pass `0x3fc18`, the step `0x415b4`, the final `0x41900`, the train count and the guests' ride excitement. |
 | `World/Coasters/CoasterRide.cs` | The controller of one station: samples, rating, trains, the admission ring, the `COAST` commands of the station script, the train motion `0x43ce20`, the station step `0x43b8b0` and the collision exchange `0x43cd60`. |
@@ -31,12 +32,33 @@ of this work.
 
 ## Building
 
-When a coaster station is placed, the HUD starts the coaster tool. The track
-leaves the station at its `>` cell. That is the station node.
+When a coaster station is placed, the HUD starts the coaster tool. The station
+is **three nodes** (COAST-029, `0x436ac0`), built from the three dummies of the station model that carry attribute
+`0x400000` (numbered 1, 2, 3: End, Mid, Start; in the 12 PC stations End is half a cell before the `<` column, Start half a
+cell past the `>` column and Mid between them, with the placement's rotation applied):
 
-- **Pylons.** A click places a pylon at the tool's height. The mouse wheel
-  changes the height in steps of 10, and Tab switches to loop pylons on coasters
-  that have them. The height is clamped to `[max(fMinHeight, h0), fMaxHeight]`,
+| Node | Where | Node flags | Creation parameters |
+| --- | --- | --- | --- |
+| S0 (ordinal 0) | a StdPylon in the cell of End: the cell before `<`, outside the footprint | `0x400`, winch, no previous link (`0x80000`) | `0x274` |
+| S1 (ordinal 1) | pylon-less, at the exact position of Mid (its knot is the dummy, not a cell centre) | `0x200 \| 0x400`, winch | `0x3c` |
+| S2 (ordinal 2) | a StdPylon in the cell of Start: the cell after `>` | `0x200`, no next link (`0x40000`) | `0x28c` |
+
+All three carry descriptor flag 2: they are never picked up, no pylon stacks on them (the bottom-node flags `0x200`/`0x400`
+refuse it) and the entrance limits apply after S2. The station pylons are as high as the dummies (`dummy y − the station's
+base`), **without** the fMinHeight/fMaxHeight clamp (creation parameter bit 4, `0x433790`), so the loft parameter is
+`clamp((h − h0)/(h1 − h0), 0, 1)`; the station's cost belongs to the station. The track leaves at S2, runs through the player's
+pylons and returns to S0: the closing click is on S0's cell (OpenTPW also takes a click on the station's own `<` and `>` cells).
+S0 leaves straight toward S1, S1 is straight between S0 and S2 and S2 leaves straight along the platform whatever the first
+pylon (the tangent routine `0x431660` drops the previous neighbour on `0x80000` and the next on `0x40000`). The station links
+S0 → S1 and S1 → S2 are ordinary links of the collision pass.
+
+A station whose dummies lie below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Candy Coaster 7.09
+against 10, Escape Velocity 12.04 against 30) stands on pylons raised to h0, so S0 and S2 sit above the middle knot; the original's
+pose of that pylon was not traced for it (COAST-029). A station placed without its model (a headless test) takes the
+same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-station-frame]`).
+
+- **Pylons.** A click places a pylon at the tool's height (the last pylon's height; the
+  panel's loop button switches to loop pylons on coasters that have them). The height is clamped to `[max(fMinHeight, h0), fMaxHeight]`,
   never refused. `h0` and `h1` are the heights of the pylon model's track dummy at the two
   loft poses (the dummy the model's attribute record `0x800000` names), so the node height is
   `h0 + t(h1 − h0)` (`0x430590`, `0x433280`). A pylon stacked on another stands the pylon's stack
@@ -49,7 +71,7 @@ leaves the station at its `>` cell. That is the station node.
   bounds; a no-ground cell (new pylons only); the pylon control (LoopPylon after
   a loop node or in loop mode); the same cell as the previous node; the squared
   distance window (StdPylon 3 to 8 cells, LoopPylon 3 to 9); the turn window,
-  interpolated by distance (entrance limits after the station node); and
+  interpolated by distance (entrance limits after the station's last node S2); and
   stacking. A failed test does **not** refuse the pylon. It marks the pylon and
   the node before it invalid (flag `0x4000`), and the mark clears when the
   validator passes again. Slope and deviance limits are loaded but never
@@ -70,14 +92,15 @@ leaves the station at its `>` cell. That is the station node.
   is posted as other costs and income (COAST-031); the economy's posting follows the original debit `0x4d01f0`
   (the bank's withdrawals gate, the last balance and the turn it entered the red), and the station's total spent is
   OpenTPW's own.
-- **Closing and completing.** A click on a station end cell closes the circuit
+- **Closing and completing.** A click on the head's cell (S0) or on a station end cell closes the circuit
   without adding a node. A second click, or Enter, completes it: one station end
   node is appended (the loader always sets definition bit `0x20`, so
   `bVisibleEndPylon` selects nothing), the curve is fitted, the track is rated and
-  the trains are placed. Completion moves no money. The end node is called with the
+  the trains are placed (controller state 2). Completion moves no money. The end node is a pylon-less node **on the knot of
+  S0** (the world position of S0's pylon track dummy, `0x435570`), called with the
   creation parameters `0x144`, which the PC node constructor maps to node flags
-  `0x80000` and `0x100000` (`0x434060`): it is no loop node, banks like a pylon and takes
-  its neighbours' tangent. OpenTPW completes only a closed circuit without invalid marks, in
+  `0x80000` and `0x100000` (`0x434060`): it is no loop node, its tangent has no previous neighbour and its next is S1, and
+  it starts no link. OpenTPW completes only a closed circuit without invalid marks, in
   two clicks (`[EXT:coaster-completion-click]`); the original completes on one click on any
   cell of type 4, 9 or 10 and refuses nothing (`0x435570`, cell evaluator `0x5345b8`).
 
@@ -86,16 +109,57 @@ Headless API (tests, the M3/M4 gates):
 ```csharp
 var ride = runtime.Coaster;                               // OriginalObjectRuntime of a coaster station
 var builder = new CoasterBuilder( ride, CoasterSite.FromGrid( grid ), () => economy );
-builder.SetStation( depart, back );                       // CoasterBuilder.StationEnds( shape, x, y, rotation )
+builder.SetStation( depart, back, layout );               // CoasterBuilder.StationEnds( shape, x, y, rotation ); layout: the model's dummies
 builder.Height = 40;
 builder.Place( x, y );                                    // per pylon: charges trunc(cost), marks invalid links
 builder.Place( back.X, back.Y );                          // closes the circuit
-builder.Complete();                                       // end nodes, curve, rating, trains
+builder.Complete();                                       // end node, curve, rating, trains
 // ride.Rating, ride.Trains, ride.Command( n, p ), ride.Advance( dt ), builder.Move / SetHeight / Reopen / Delete
 ```
 
 `Level` exposes the same through `GetCoasterBuilder`, `EnterCoasterTool`,
 `CoasterClick`, `CompleteCoaster` and `DeleteCoasterTrack`.
+
+## The tool panel
+
+The coaster tool shows the original's slide-out panel (COAST-028, tp.exe `0x4982a0`, `0x446fa0`, `0x445910`, table `0x751530`): a left box with the
+build (`cb_track`, control `0x1f`) and loop (`cb_loop`, `0x20`) buttons, a middle box with move (`cb_move`, `0x1b`), height (`cb_loft`, `0x1a`),
+stack up (`cb_swapup`, `0x1e`), rotate (`cb_rotate`, `0x1c`), tilt (`cb_incline`, `0x19`) and stack down (`cb_swapdown`, `0x1d`), and the demolish
+button (`cb_dellast`, `0x21`) at the right. The rectangles, models and tooltip help ids come from the table; the click help is `0x486b00` with `0x125`
+(build), `0x126`/`0x127` (loop), `0x121` (move) and `0x124` (demolish). The panel's window position is measured from the video (`APPROX`), and it appears
+at once instead of sliding out. Its background takes the clicks of the area it covers.
+
+**Way in.** The ride window's track button (`b_track`, control `0x3e2a`, help 10; shown when the object's type record has a track type, `0x4ad53a`) calls `0x4af200`, which sends a coaster
+(type 3) to `0x4988c0`: it enters the tool (`0x4474d0`, state 2 for a finished circuit) and selects the first button (`0x4455c0`). The table-driven ride window (`ParkHud.ObjectWindow.cs`) has that
+button at its original place and `ParkHud.EditTrack` is its click, so select a coaster, press it, cut, extend, complete.
+A drag does not fit the controller on every pointer move (the original rebuilds the track each frame): the renderer draws the nodes as they are and the track is fitted, rated and the trains
+placed once on the release. Backspace waits for a drag; a drag let go while the game is paused ends there. A save taken while the tool is open lets the ride out of state 2 on load, as leaving the tool would. `CoasterToolPanel` is the headless controller, `ParkHud.CoasterPanel.cs` the pointer side.
+
+- **Enable mask** (`0x445910`): the seven edit buttons always; build unless the first pylon of a loop pair waits for its second; loop when the coaster has a
+  loop pylon; a finished circuit (complete, not cut open) turns build and loop off, any other track turns demolish off. The tool opens on build (loop while a
+  pair is pending) for an unfinished track and on height for a finished one (`0x4455c0`).
+- **Build and loop**: a click places a pylon (loop mode places a pair, `0x442cd0`); the cursor cell is a blue or red blueprint face, the cost shows beside
+  it, and the **placement area** is the box of the maximum place distance + 1 cells around the last node (`0x434f10`) whose cells pass the validator and
+  hold nothing (`0x5243a6`), drawn yellow and black (`BlueprintMarker.Area`, `APPROX`: the cell types and the texture). Hovering the chain start marks it
+  as the closing target; a click closes the circuit.
+- **Height** (`0x441a00`): a press on a pylon picks it up; the loft parameter follows the pointer at 0.005 per pixel upward within `[max(0, (fMinHeight − h0)/(h1 − h0)),
+  t + (fMaxHeight − the stack top's height)/(h1 − h0)]`; a clamped value moves the drag's origin so the pointer has to come back; the release credits
+  `trunc(old cost)` and debits `ceil(new cost)` (`0x4d0190`, `0x4d01f0`).
+- **Rotate** (`0x441e80`): the yaw (node `+0xE0`, flag `1`) follows the pointer at 0.02 per pixel to the left within the automatic yaw ± `fMaxRotnAngleDeviance`.
+- **Tilt** (`0x442010`): the bank (`+0xD8`, flag `4` = no auto-bank, range ±π) and the incline (`+0xDC`, flag `2`) follow the pointer at 0.02 per pixel, the drag turned by the camera's
+  heading against the pylon's; a loop pylon (`0x441cd0`) moves its loop rotation at 0.01 per pixel in `[0.15, 0.85]`, the first of a pair in `[−0.35, 0.35]`. Which of these a
+  pylon allows follows its model's clips (`0x430590`: L loft, R rotate, I incline, B bank, R2 loop tilt).
+- **Move** (`0x446d50`, `0x443340`, `0x445a70`): a press picks a player's pylon up, the node follows the hovered cell (marked invalid when the validator refuses it) and the release drops it,
+  settling the money of the node and, on a finished track, the next one; a release over no cell puts it back.
+- **Stack up and down** (`0x4423f0`, `0x4425c0`): a release over a pylon swaps it with its neighbour in the cell's stack (stack index and loft parameter), no money moves.
+- **Demolish** (`0x446740`, enabled on a finished circuit only): the first release over a pylon starts the range, the second ends it. The nodes between are removed without a refund,
+  the controller goes to state 1 (the trains and riders leave) and the build button comes back. S0 counts as the last node, so a cut from a pylon to S0 removes everything after that pylon
+  and leaves an unfinished track to **extend** again (build, close on S0, complete); a cut in the middle opens a **gap**: new pylons are inserted into it, the node after the cut is the chain
+  start, and a click on it closes the circuit and completes it at once (state 2, `0x442c70`; OpenTPW first requires the closing link and every node to pass, `[EXT:coaster-completion-click]`).
+  A loop pair is never split and the same node twice cuts that node out. The cut ends carry `0x10000`/`0x20000` and the knots break there.
+- **Keyboard**: Backspace deletes the last pylon (`0x444f30`; the original reaches it only through its undo list, `[EXT:coaster-tool-controls]`); the mouse wheel and Tab are gone (the original has
+  no wheel height, the loop button replaces Tab, and a new pylon takes the last pylon's height).
+- **Cursor ribbon** (COAST-035, `0x435d50`): the link to the cursor node is a translucent blue (valid) or red (refused) ribbon with no pylon, as the video shows it.
 
 ## Running
 
@@ -147,9 +211,11 @@ instead of the original's per-frame elapsed time, which keeps runs reproducible
 **Trains never stop.** The motion tick has no zero-speed branch (`0x43ce20`): in the station a train's speed blends toward the
 chain-lift floor and stays there. The controller tick (`0x435a30`) runs the motion in the built, open and closed states
 (`state & 0xE`) and the station step (`0x43b8b0`) only in the open and closed states outside mode 64 (a breakdown). The
-station step works on the train's span (front and rear in the **station frame**, whose origin is the platform start, where
-the original's sample list begins) and the window `[ctl+0xf8, ctl+0xfc]` (from the platform start to its end, narrowed toward its
-middle by `fEntranceSizeInterval`, 0 in every PC `.sam`):
+station step works on the train's span (front and rear on the sample list, which starts on S0, the start of the platform) and the
+window `[ctl+0xf8, ctl+0xfc]` (the sample coordinates of S0 and S2, narrowed toward its middle by `fEntranceSizeInterval`, 0 in every
+PC `.sam`; `0x43b750`). The sampler walks every pair from S0 and, at the end node, the closing pair E → S1: it emits **one** sample
+there (`0x440c10`; E stands on S0, so the pair repeats S0 → S1), so the list ends just before the platform and the braking zone
+`[ctl+0x134, n)` is the stretch before it:
 
 - When a train's span first overlaps the window (flag `0x20` clear) it **unloads**: the riders of the lap go to the leaving ring, whether the ride is open or closed.
 - While the ride is open (state 4) the cars that are inside the window **seat** guests from the admission ring: the ring is filled by `COAST 1`, and each guest takes car `(s >> 16) % n + first` of the generator (`s = s·0x343fd + 0x269ec3`) or the first car after it with room; the span of cars grows from car 0 to the last car seen in the window.
@@ -166,8 +232,20 @@ effect `0x439840` (sound and particles) is not reproduced.
 
 The station commands follow the Windows twins (tp.exe `0x43b1f0..0x43b330`, which agree with the Mac readings).
 `COAST 5` is gated: argument 0 opens (state 4) only from state 8 or 2, a nonzero argument closes (state 8) only from
-state 4; OpenTPW keeps a closed flag, so a repeated command changes nothing, and the original's admission ring (moved
-into the leaving ring that `COAST 3` pops when the ride closes) does not exist here because a guest is seated at once.
+state 4, so a repeated command changes nothing and a ride whose track is not finished (state 1) takes neither; closing moves the
+admission ring into the leaving ring that `COAST 3` pops.
+
+**Controller states** (COAST-012, `0x435730`): 1 the track is not finished (no trains), 2 built or out of service (the trains circulate
+empty, no station step), 4 open, 8 closed. Completion sets 2; the script's `COAST 5` makes it 4 or 8. The coaster tool's entry
+(`0x4474d0` → `0x447520`, which round 2 labelled the tool's exit) closes the ride object (`0x4df300`: the guest being loaded is
+dropped) and sets state 2 for a finished track with its circuit closed, else 1; leaving the tool opens the ride object again when
+the state is 2 (`0x4df390`). The transitions: 1 → 2 sets the trains up, 2 → 1 removes them, 4 → 2 and 8 → 2 unload both seat lists of every
+train (8 → 2 then runs the closing move), 1/2/4 → 8 run the closing move, every other pair changes nothing. OpenTPW lets the guests of the
+admission ring leave with the riders on 4 → 2: the original does the same, since 4 → 2 and 8 → 2 unload and then fall through to the closing move `0x43b390`
+(`0x43587f`, `0x4358c9` → `0x4358cb`). It does nothing on 4 → 1 and 8 → 1, which the tool never reaches (it goes through state 2 first); OpenTPW's headless edits take the trains off there
+(`[EXT:coaster-state-clear]`). A finished
+coaster entered by the tool keeps its trains (empty) and its pylons can be moved and re-heighted there; extending the circuit goes through the panel's
+demolish button, whose cut sets state 1 (see "The tool panel").
 `COAST 4` maps 0/1/2 to the modes 16/64/32; mode 32 is treated exactly like 16 by the mode setter `0x435730` and nothing
 tests it. In mode 64 the station step (`0x43b8b0`) is skipped, so a train on the platform does not unload until
 the power is back (an arriving train unloads open or closed; boarding is state 4 only). `COAST 6` takes
@@ -205,8 +283,8 @@ The train count is `min(uiMaxTrains, max(1, trunc(lap / (uiTrainReleaseRate/1000
 ## Determinism
 
 Coasters are in the canonical state hash (schema 6, docs/DETERMINISM.md): the
-coaster generator, then every coaster's track (with each node's loop rotate), controller state, the platform start and station
-window, the intersection count, samples, rating, trains (position, speed, flags, boarding span, the riders of the lap and the
+coaster generator, then every coaster's track (with each node's loop rotate and the middle station node's exact position), controller state
+(1, 2, 4 or 8), the station window, the intersection count, samples, rating, trains (position, speed, flags, boarding span, the riders of the lap and the
 guests seated at the station per car), the admission ring and the leaving ring. The park save holds them all
 ([PARK-SAVES.md](PARK-SAVES.md)): the track verbatim, the controller scalars
 and trains with their riders, and the shared generator through the script
@@ -273,6 +351,11 @@ a name search finds.
   rating against oracle-verified values, the train count, the sine tables (Mac and PC),
   Bézier, chord, knot controls, node tangents, the turn angle and auto-bank against the
   COAST-R2 witness, the speed cap and braking, a run through the station, mode 64, and the hash.
+- `CoasterStationTests` (no game data): the three station nodes with the original's flags, the no-clamp station height, the exact middle
+  knot and the end node on S0's knot with the straight tangents, the refusal to stack on a station pylon, the closing pair's single
+  sample and the window from S0 to S2, a track over the platform counted by the collision pass, and the controller states: completion,
+  the tool's entry on a finished and an unfinished coaster (riders and the admission ring leave, trains run empty without a station step,
+  no guest is stranded) and the reopened and deleted track.
 - `CoasterDispatchTests` (no game data): the station window, trains that never stop, boarding only while the
   ride is open, unloading in any state, the seat recurrence and the admission ring, the halved winch floor and the headway
   flag, and the collision exchange.
@@ -281,7 +364,8 @@ a name search finds.
 - `CoasterPylonRuleTests` (no game data): the loop pair (flags, rotates, cost, mirrored tangent and knot sides, the rating's
   counted section), the stack offset, the loft keys, and the older save's end node flags.
 - `CoasterAssetTests` (`OPENTPW_GAME_PATH`): the twelve PC coasters and their
-  values; the pylon heights and stack offsets from the models; every PC coaster builds, rates and runs; and on a fresh Jungle park
+  values; the pylon heights and stack offsets from the models; the three station dummies of every station model in all four rotations (the
+  frame's cells lie beyond the `<` and `>` cells); every PC coaster builds, rates and runs; and on a fresh Jungle park
   guests board Temple Of Gloom through its original script, ride a lap and leave (boarded equals released).
   Closing makes the trains unload on arrival while they keep circulating, and deleting removes every pylon.
 - `CoasterSaveTests` (no game data) and `CoasterSaveAssetTests`
@@ -297,6 +381,9 @@ a name search finds.
   loads: a boarding train keeps its guests seated at the station, an unloading one hands its riders to the leaving ring. The older saves were
   rated with the earlier pylon heights, so the re-derived rating can place another number of trains or cars (coasters 1190, 2180, 2190, 3190 and
   4185 at height 20): the new placement then stands and every saved rider waits to leave, nobody is dropped; a save of the current shape with a wrong count is refused.
+  A save made with the two-node station (one station node at the `>` cell, the end node at the `<` cell) migrates on load: the placement's three
+  nodes stay, the saved pylons and circuit flags follow them, the end node returns onto S0, the whole circuit is sampled again and, because the
+  new train placement is another one, the riders of the old trains wait to leave (the admission ring is kept).
 - `OriginalCoasterSaveTests` (no game data for the synthetic part): the original
   save's Coasters block reader — every traced field, truncation inside each part,
   bounds, non-finite floats, out-of-map cells, the two-coaster refusal and the
@@ -308,13 +395,19 @@ a name search finds.
   `CoasterPresentationAssetTests` (`OPENTPW_GAME_PATH`): every coaster wad's cross sections, track textures, pylon
   models (the tag reaches the node height) and car models.
 - The native smoke test of an original level builds a coaster through HUD clicks
-  (pylons, wheel height, close, complete), sees a train leave and the track
-  drawn, and removes it.
+  (pylons, close, complete), sees a train leave and the track drawn, and cuts it out
+  through the panel's demolish button.
+- `CoasterPanelTests` (no game data): the enable mask and the loop pair, the height, rotate, tilt, loop-tilt and move drags (rates, ranges, clamps, money),
+  the stack swaps, the cut to the end that reopens a finished circuit so it is extended, completed and every boarded guest is released, the cut in the middle and
+  its gap, the loop pair rule, the save round trip, the placement area and the cursor.
 
 ## Approximation register
 
-`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: eighteen open
-IDs. COAST-013 (the sickness has no guest consumer) was retired by the register round of October 14 and COAST-007
+`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: sixteen open
+IDs. COAST-012 (the controller states and the tool's entry and exit) and COAST-019 (the sampler's closing pair) were retired by the
+three-node station round of October 15, which narrowed COAST-004 (the platform links are ordinary links now) and COAST-029 (to the
+stations below the pylon's h0 and the middle knot's height adjust) and took the station clauses out of COAST-014, 015, 024 and 030
+(`[EXT:coaster-state-clear]` is the one deliberate difference of the states). COAST-013 (the sickness has no guest consumer) was retired by the register round of October 14 and COAST-007
 (the distance waiver exempts the station's own internal nodes), COAST-016 (the completion click), COAST-018 (the swing's
 sine table) were retired by round 2; COAST-025 (own-format save), COAST-027 (generator seed) and COAST-031 (the station's total
 spent) became extensions (`[EXT:coaster-own-save]`, `[EXT:coaster-rng-seed]`, `[EXT:coaster-ledger]`) and COAST-016 the extension
@@ -322,14 +415,17 @@ spent) became extensions (`[EXT:coaster-own-save]`, `[EXT:coaster-rng-seed]`, `[
 APPROX:COAST-031 no longer exist). The IDs below 15 are the unknowns of COAST-plan §10 that are still open, narrowed to what
 the PC executable did not settle. COAST-015..019 are the new unknowns of §10.1, COAST-022..030 are rules OpenTPW
 chose while implementing the plan, now narrowed (COAST-022's 60 Hz step is a determinism decision; the dispatch, the headway and the
-collision exchange of COAST-012/022/023 are the original's). COAST-032 is the arithmetic precision of the knot chord, the node tangent,
-the knot-control norms and the swing, where the original uses x87 steps with extended intermediates. COAST-019 stays: the PC sampler's
-closing rule presumes the original's three-node station (COAST-029). COAST-020 (cost rates) and COAST-021 (force
+collision exchange of COAST-022/023 are the original's). COAST-032 is the arithmetic precision of the knot chord, the node tangent,
+the knot-control norms and the swing, where the original uses x87 steps with extended intermediates. COAST-020 (cost rates) and COAST-021 (force
 term) were resolved by the COAST-V review and are traced now. The generated
 table is in [FIDELITY-REGISTER.md](FIDELITY-REGISTER.md).
 
+The coaster tool panel round of October 15 narrowed COAST-028 (the panel, every sub-mode handler, the drag rates and ranges and the placement area's box are traced and built; the pointer's pixel scale,
+picking by cell, the area's occupancy test, the guessed clip angles of the hand-set yaw and incline and the panel's window position stay approximations) and COAST-035 (the cursor node and its flags
+are built as a translucent ribbon; the original's renderer for the flags is not found) and the cut-end flags of COAST-030.
+
 The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
-COAST-034 (cars) and COAST-035 (the build cursor). Rider heads are not seated in the cars yet (the head renderer
+COAST-034 (cars) and COAST-035 (the build cursor's ribbon). Rider heads are not seated in the cars yet (the head renderer
 takes providers of head sources; a coaster provider reading the cars' seat sockets, `CoasterCarRig.Seats`, is the
 next step). The ride camera
 is not implemented. `CoasterRide.TryGetRideView` gives the front car's pose

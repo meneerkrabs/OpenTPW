@@ -709,8 +709,8 @@ internal sealed partial class GameFlow : IDisposable
 			}
 			GlobeCameraMode.RadiusOut = Lobby!.Definition.GlobeRadiusOut;
 			GlobeCameraMode.RadiusIn = Lobby.Definition.GlobeRadiusIn;
-			if ( backdrop == Backdrop.Lobby )
-				GlobeCameraMode.Reset();
+			// Every globe activation faces the start view again, also back from a city lobby (GlobeCameraMode.Reset).
+			GlobeCameraMode.Reset();
 			Camera.SetCameraMode<GlobeCameraMode>();
 		}
 		else

@@ -21,6 +21,45 @@ public class GlobeTests
 	}
 
 	[TestMethod]
+	public void EveryGlobeViewStartsAtYawAndPitchZeroAndThePitchLimitStopsTheTurn()
+	{
+		var delta = Time.Delta;
+		try
+		{
+			Time.Delta = 0;
+			GlobeCameraMode.RadiusOut = 475;
+			GlobeCameraMode.Reset();
+			var camera = new GlobeCameraMode();
+			// tp.exe 0x005DCFE0: yaw 0 and pitch 0 put the camera on the model's +X axis (engine +X) at GLOBERADIUSOUT.
+			var offset = camera.Position.GetSystemVector3() - GlobeScene.Centre.GetSystemVector3();
+			Assert.AreEqual( 475f, offset.X, 1e-2f );
+			Assert.AreEqual( 0f, offset.Y, 1e-2f );
+			Assert.AreEqual( 0f, offset.Z, 1e-2f );
+			// Turning up into the limit stops there with no turn left (0x005DCD47): one step down then moves away from the pole at once.
+			Time.Delta = 1f / GlobeCameraMode.TicksPerSecond;
+			for ( var step = 0; step < 40; step++ )
+			{
+				GlobeCameraMode.Turn( 0, 1 );
+				camera.Update();
+			}
+			var atLimit = camera.Position.GetSystemVector3() - GlobeScene.Centre.GetSystemVector3();
+			Assert.AreEqual( MathF.Sin( GlobeCameraMode.PitchLimit ) * 475f, atLimit.Z, 1e-1f );
+			GlobeCameraMode.Turn( 0, -1 );
+			camera.Update();
+			Assert.IsTrue( (camera.Position.GetSystemVector3() - GlobeScene.Centre.GetSystemVector3()).Z < atLimit.Z - 1, "the pitch velocity was zeroed at the limit" );
+			// A new activation faces the start view again.
+			GlobeCameraMode.Reset();
+			camera.Update();
+			Assert.AreEqual( 475f, (camera.Position.GetSystemVector3() - GlobeScene.Centre.GetSystemVector3()).X, 1e-1f );
+		}
+		finally
+		{
+			Time.Delta = delta;
+			GlobeCameraMode.Reset();
+		}
+	}
+
+	[TestMethod]
 	public void PinsStandOutwardAndGrowWithTheirParks()
 	{
 		var direction = GlobeScene.Direction( 51.5f, -0.1f );

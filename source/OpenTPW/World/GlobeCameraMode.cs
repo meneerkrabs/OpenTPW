@@ -8,7 +8,12 @@ namespace OpenTPW;
 // [BIN:TPW-EXE:0x005DC860 globe camera update] position r·(cos yaw·cos pitch, sin pitch, sin yaw·cos pitch) around the globe (pole axis up), looking at its centre; pitch clamped to ±1.5; r eases towards the zoom state's radius at 0.3; velocities are multiplied by the state's damping and integrated into the angles; zoomed out (rate, step, damping) = (0.4, 0.15, 0.5), zoomed in (0.2, 0.075, 0.25); field of view 60 (0x005DCFE0)
 public class GlobeCameraMode : CameraMode
 {
-	// [APPROX:ONLINE-007] the original applies its rates, steps and damping per game tick; OpenTPW assumes 30 ticks per second — evidence needed: the tick length of the online world's update
+	// [APPROX:ONLINE-007] the original has no fixed tick: the online front end updates the globe once a frame (tp.exe 0x54E360 state 2
+	// → 0x5D5C50 → 0x5DC860) with dt = min(elapsed ms, 500) × 0.01 (0x5D5C50), damps the velocities once a frame and then moves the
+	// angles by velocity × dt and eases the radius by 0.3 × dt; OpenTPW applies rates, steps, damping and the radius ease per tick at
+	// 30 ticks per second and moves the angles by velocity × ticks — evidence needed: the original's frame rate on the online screens
+	// (the per-frame damping and steering make its turning depend on it) and how often a held panel arrow sends its step (event
+	// 0x10008/0x10009, 0x4C53F0)
 	public const float TicksPerSecond = 30f;
 	public const float PitchLimit = 1.5f;
 	private const float RadiusEase = 0.3f;
@@ -18,9 +23,8 @@ public class GlobeCameraMode : CameraMode
 	public static float RadiusIn { get; set; } = 200f;
 	public static bool ZoomedIn { get; private set; }
 
-	// [APPROX:ONLINE-008] the first view faces Europe and the Atlantic from 30° north — evidence needed: the original's starting yaw and pitch
-	private static float yaw = 70f * MathF.PI / 180f;
-	private static float pitch = 0.5f;
+	private static float yaw;
+	private static float pitch;
 	private static float radius = 475f;
 	private static float yawVelocity;
 	private static float pitchVelocity;
@@ -33,11 +37,15 @@ public class GlobeCameraMode : CameraMode
 
 	private static (float Rate, float Step, float Damping) Preset => ZoomedIn ? (0.2f, 0.075f, 0.25f) : (0.4f, 0.15f, 0.5f);
 
-	/// <summary>Starts the online world zoomed out, at rest.</summary>
+	/// <summary>Starts the globe view zoomed out, at rest, facing yaw 0 and pitch 0 (60° W on the equator).</summary>
+	// [BIN:TPW-EXE:0x005DCFE0 globe activate] each activation of a globe screen (0x005DD650 online world, 0x005DD910 publish globe, also on the
+	// way back from a city lobby, 0x004B86A0 control 0x49D7) sets yaw, pitch and both velocities to 0, the radius to GLOBERADIUSOUT and the
+	// zoomed-out preset
 	public static void Reset()
 	{
 		ZoomedIn = false;
 		radius = RadiusOut;
+		yaw = pitch = 0;
 		yawVelocity = pitchVelocity = 0;
 	}
 
@@ -52,7 +60,11 @@ public class GlobeCameraMode : CameraMode
 	/// Continuous steering for this frame, -1..1 per axis (cursor at the screen edge, or the right button held off
 	/// centre), scaled by the zoom state's rate.
 	/// </summary>
-	// [APPROX:ONLINE-009] edge and right-button steering add rate × offset × step per tick to the velocity; the original's exact edge-depth and right-button scaling are not decoded — evidence needed: the input branches of 0x005DC860
+	// [APPROX:ONLINE-009] edge and right-button steering add rate × offset × step per tick to the velocity; the original (0x005DC860) adds,
+	// once a frame and without the step, rate × 50 × the cursor's depth into the 1% edge band (x = X / 2048 and y = Y / 1536 clamped to
+	// 0..1; the depth 0.01 − x below 0.01, x − 0.99 above 0.99, so at most rate / 2) or, with the right button held, rate × the offset from
+	// the centre ((X − 1024) / 1024, −(Y − 768) / 768); those increments need the original's per-frame integration (ONLINE-007) — evidence
+	// needed: the original's frame rate on the online screens
 	public static void Steer( float yawAmount, float pitchAmount, float delta )
 	{
 		var ticks = Math.Min( delta, 0.1f ) * TicksPerSecond;
@@ -67,7 +79,13 @@ public class GlobeCameraMode : CameraMode
 		var ticks = Math.Min( Time.Delta, 0.1f ) * TicksPerSecond;
 		var damping = MathF.Pow( Preset.Damping, ticks );
 		yaw += yawVelocity * ticks;
-		pitch = Math.Clamp( pitch + pitchVelocity * ticks, -PitchLimit, PitchLimit );
+		pitch += pitchVelocity * ticks;
+		// [BIN:TPW-EXE:0x005DCD47 globe pitch limit] a pitch past ±1.5 is set to the limit and its velocity to 0
+		if ( MathF.Abs( pitch ) > PitchLimit )
+		{
+			pitch = Math.Clamp( pitch, -PitchLimit, PitchLimit );
+			pitchVelocity = 0;
+		}
 		yawVelocity *= damping;
 		pitchVelocity *= damping;
 		radius += ((ZoomedIn ? RadiusIn : RadiusOut) - radius) * (1 - MathF.Pow( 1 - RadiusEase, ticks ));

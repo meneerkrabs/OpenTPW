@@ -59,9 +59,12 @@ around the edges. What is traced:
   back to your own lobby, zoom and the four rotate arrows, help texts 424–431 and 435;
   five `i_sat` satellites (help 423) with a small label area each.
 - Camera (`tp.exe` 0x005DC860/0x005DCFE0): the globe stands still and the camera circles
-  it at GLOBERADIUSOUT (475) or, after the zoom button, GLOBERADIUSIN (200); field of view 60, pitch limited to ±1.5 rad; arrow keys, the
-  panel arrows, the cursor at a screen edge and the right button held turn it, and the
-  turn dies away (zoomed out: step 0.15, damping 0.5; in: 0.075, 0.25). It does not spin
+  it at GLOBERADIUSOUT (475) or, after the zoom button, GLOBERADIUSIN (200); field of view 60, pitch limited to ±1.5 rad
+  (the limit stops the pitch turn); arrow keys, the panel arrows and, by the Scroll option, the
+  cursor at a screen edge (Pushscroll) or the right button held (the other mode) turn it, and the
+  turn dies away (zoomed out: step 0.15, damping 0.5; in: 0.075, 0.25). Each time a globe
+  screen opens, also back from a city lobby, it faces yaw 0 and pitch 0 (60° W on the equator),
+  zoomed out and at rest (0x005DCFE0). It does not spin
   by itself, and the plane and `Lpin` models in the folder are not used by the game.
 - Cities: the server's list (`GET /api/v1/cities`, docs/SERVER.md). Each city gets a pin
   (`Hpin`; `Bullfrog` for the city named "North Pole") standing on the globe, taller the
@@ -345,11 +348,10 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-004 | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. |
 | ONLINE-005 | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. |
 | ONLINE-006 | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. |
-| ONLINE-007 | The globe camera's rates, steps and damping are applied per tick at 30 ticks per second. | The tick length of the online world's update (`tp.exe` 0x005DC860). |
-| ONLINE-008 | The globe first faces Europe and the Atlantic from 30° north. | The original's starting yaw and pitch. |
-| ONLINE-009 | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The input branches of 0x005DC860. |
+| ONLINE-007 | The globe camera's rates, steps, damping and radius ease are applied per tick at 30 ticks per second, and the angles move by velocity × ticks. | The original (tp.exe 0x5D5C50 → 0x5DC860) runs once a frame with no fixed rate: it damps the velocities once a frame, then moves the angles by velocity × dt and eases the radius by 0.3 × dt, dt = min(elapsed ms, 500) × 0.01. Still unknown: its frame rate on the online screens and how often a held panel arrow repeats its step (0x4C53F0, events 0x10008/0x10009). |
+| ONLINE-009 | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The original (0x5DC860) adds, once a frame and without the step, rate × 50 × the cursor's depth into the 1 % edge band (at most rate / 2) or rate × the right button's offset from the centre; these need its per-frame integration (ONLINE-007), so the frame rate is still unknown. |
 | ONLINE-010 | The hovered city's name and park count are drawn at the top centre. | The layout of the original city labels 0x16c11/0x16c12. |
-| ONLINE-012 | Edge steering starts once the cursor has moved on the globe screen. | Whether the original steers from the first frame. |
+| ONLINE-012 | Edge steering starts once the cursor has moved on the globe screen. | The original has no per-screen gate: it reads the online front end's last mouse-move position (0x5D5DD0), the canvas centre until the first move after the front end starts (0x5D5770), so it steers at once when the cursor already rests at an edge (for example back from a city lobby). Still unknown: an OpenTPW home for that move history across the online screens. |
 | ONLINE-013 | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. |
 | ONLINE-017 | The publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top. | The publish globe's layout table. |
 | ONLINE-018 | Each satellite's player count is drawn at its bottom-right corner. | The original wrote the count into the satellite control itself (STP-PPC 0x1b96d8), whose text placement is not decoded. |

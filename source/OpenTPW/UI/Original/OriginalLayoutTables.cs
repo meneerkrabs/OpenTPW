@@ -289,6 +289,141 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x756400] layout table TrainingBudget.</summary>
+	public static readonly LayoutTable TrainingBudget = new( "TrainingBudget", 0x756400, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x2D9u, 208, 30, 1840, 1007, -1, -1, "window3", null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0x2DAu, 805, 74, 1277, 153, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFFu, 1711, 820, 1794, 903, 1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x2DBu, 1688, 575, 1790, 677, 176, -1, "b_entry", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x2DCu, 1688, 467, 1790, 570, 175, -1, "b_finance", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x2DDu, 1688, 360, 1790, 462, 174, -1, "b_loans", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x2DEu, 267, 183, 765, 411, 177, -1, "!frame", null, null, new LayoutNode[]
+			{
+				new( 1, 0x3u, 0x2DFu, 591, 246, 755, 291, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E0u, 591, 297, 755, 342, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E1u, 284, 297, 561, 342, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E2u, 591, 195, 755, 240, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E3u, 284, 195, 561, 240, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E4u, 591, 349, 755, 393, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E5u, 284, 349, 561, 393, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E6u, 284, 246, 561, 291, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 12, 0x1u, 0x2E7u, 770, 183, 1670, 332, 164, -1, "f_train", null, new[] { 996, 233, 1273, 278 }, new LayoutNode[]
+			{
+				new( 9, 0x1u, 0x2E8u, 1376, 235, 1592, 274, 169, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x2u, 925, 224, 985, 285, -1, -1, "b_minus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x1u, 1286, 224, 1346, 285, -1, -1, "b_plus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E9u, 800, 203, 902, 306, -1, -1, "h_handy", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 12, 0x1u, 0x2EAu, 770, 491, 1670, 640, 166, -1, "f_train", null, new[] { 996, 542, 1273, 586 }, new LayoutNode[]
+			{
+				new( 9, 0x1u, 0x2E8u, 1376, 544, 1592, 582, 171, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x2u, 925, 533, 985, 593, -1, -1, "b_minus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x1u, 1286, 533, 1346, 593, -1, -1, "b_plus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E9u, 800, 512, 902, 614, -1, -1, "h_enter", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 12, 0x1u, 0x2EBu, 770, 645, 1670, 794, 167, -1, "f_train", null, new[] { 996, 696, 1273, 740 }, new LayoutNode[]
+			{
+				new( 9, 0x1u, 0x2E8u, 1376, 698, 1592, 736, 172, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x2u, 925, 687, 985, 747, -1, -1, "b_minus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x1u, 1286, 687, 1346, 747, -1, -1, "b_plus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E9u, 800, 666, 902, 768, -1, -1, "h_guard", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 12, 0x1u, 0x2ECu, 770, 337, 1670, 486, 165, -1, "f_train", null, new[] { 996, 387, 1273, 432 }, new LayoutNode[]
+			{
+				new( 9, 0x1u, 0x2E8u, 1376, 389, 1592, 428, 170, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x2u, 925, 379, 985, 439, -1, -1, "b_minus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x1u, 1286, 379, 1346, 439, -1, -1, "b_plus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E9u, 800, 357, 902, 460, -1, -1, "h_mech", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 12, 0x1u, 0x2EDu, 770, 799, 1670, 948, 168, -1, "f_train", null, new[] { 996, 850, 1273, 895 }, new LayoutNode[]
+			{
+				new( 9, 0x1u, 0x2E8u, 1376, 852, 1592, 890, 173, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x2u, 925, 841, 985, 901, -1, -1, "b_minus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x21u, 0x1u, 1286, 841, 1346, 901, -1, -1, "b_plus", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x3u, 0x2E9u, 800, 820, 902, 922, -1, -1, "h_resrcher", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+		} ),
+	} );
+
+	/// <summary>[BIN:TPW-EXE:0x756f48] layout table EmployeeWindow.</summary>
+	public static readonly LayoutTable EmployeeWindow = new( "EmployeeWindow", 0x756F48, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x50Au, 328, 130, 1720, 901, -1, -1, "window1", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0x50Bu, 1568, 518, 1670, 620, 94, -1, "b_allstaff", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x50Cu, 380, 694, 534, 847, 89, -1, "b_fire", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x50Du, 1591, 234, 1674, 317, 92, -1, "b_arup", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFFu, 1591, 714, 1674, 797, 1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x50Eu, 539, 694, 692, 847, 88, -1, "b_pick", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x50Fu, 1580, 322, 1663, 406, 91, -1, "b_ardown", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x11u, 0x510u, 1401, 694, 1555, 847, 86, 87, "b_route", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x511u, 386, 280, 650, 544, -1, -1, "!frame", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x512u, 665, 280, 1538, 623, -1, -1, "!frame", null, null, new LayoutNode[]
+			{
+				new( 9, 0x1u, 0x513u, 1193, 451, 1520, 496, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 9, 0x1u, 0x514u, 1193, 400, 1520, 444, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 9, 0x1u, 0x515u, 1193, 502, 1520, 547, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x516u, 688, 553, 1085, 598, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x517u, 1193, 553, 1523, 598, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x518u, 688, 451, 1085, 496, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x519u, 688, 400, 1085, 444, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x51Au, 688, 297, 1085, 342, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x51Bu, 1193, 297, 1520, 342, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x51Cu, 688, 502, 1085, 547, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x51Du, 688, 348, 1085, 393, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x51Eu, 1193, 348, 1520, 393, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 6, 0x1u, 0x51Fu, 1130, 553, 1175, 598, -1, -1, "staffstat", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0x520u, 749, 174, 1221, 253, 85, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x521u, 1568, 411, 1670, 513, 93, -1, "b_locate", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
+	/// <summary>[BIN:TPW-EXE:0x753c68] layout table PlayerScreen.</summary>
+	public static readonly LayoutTable PlayerScreen = new( "PlayerScreen", 0x753C68, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x7A13u, 0, 0, 2048, 1536, -1, -1, null, null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0x7A14u, 884, 46, 2048, 193, -1, -1, "b_login", null, null, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0x7A15u, 941, 75, 1716, 164, -1, -1, null, null, null, new LayoutNode[]
+				{
+					new( 2, 0x1u, 0x7A16u, 1919, 68, 2021, 171, -1, -1, "b_dellog", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+				new( 6, 0x1u, 0x7A17u, 1762, 68, 1865, 171, -1, -1, "e_joy", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0x7A18u, 32, 1321, 442, 1497, -1, -1, "tpwlogo", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x7A19u, 884, 245, 2048, 392, -1, -1, "b_login", null, null, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0x7A15u, 941, 274, 1716, 363, -1, -1, null, null, null, new LayoutNode[]
+				{
+					new( 2, 0x1u, 0x7A16u, 1919, 267, 2021, 370, -1, -1, "b_dellog", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+				new( 6, 0x1u, 0x7A17u, 1762, 267, 1865, 370, -1, -1, "e_joy", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0x7A1Au, 884, 444, 2048, 591, -1, -1, "b_login", null, null, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0x7A15u, 941, 473, 1716, 562, -1, -1, null, null, null, new LayoutNode[]
+				{
+					new( 2, 0x1u, 0x7A16u, 1919, 466, 2021, 569, -1, -1, "b_dellog", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+				new( 6, 0x1u, 0x7A17u, 1762, 466, 1865, 569, -1, -1, "e_joy", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0x7A1Bu, 884, 643, 2048, 790, -1, -1, "b_login", null, null, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0x7A15u, 941, 672, 1716, 761, -1, -1, null, null, null, new LayoutNode[]
+				{
+					new( 2, 0x1u, 0x7A16u, 1919, 665, 2021, 768, -1, -1, "b_dellog", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+				new( 6, 0x1u, 0x7A17u, 1762, 665, 1865, 768, -1, -1, "e_joy", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0x7A1Cu, 1264, 895, 2428, 1042, -1, -1, "b_login", null, new[] { 1339, 924, 2039, 1013 }, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x7529dc] layout table HudArm.</summary>
 	public static readonly LayoutTable HudArm = new( "HudArm", 0x7529DC, new LayoutNode[]
 	{

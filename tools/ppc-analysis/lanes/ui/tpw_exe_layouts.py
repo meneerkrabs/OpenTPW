@@ -46,6 +46,9 @@ TABLES = [
     ('NameDialog', 0x753F50, 0x708, (500, 233, 1516, 830), 0x7540BE, 9),
     ('Lobby', 0x757F60, 0x1E0E7, (28, 855, 476, 1521), 0x75817A, 11),
     ('LobbyCity', 0x757D88, 0x49D4, (28, 541, 476, 1521), 0x757F5A, 9),
+    ('TrainingBudget', 0x756400, 0x2D9, (208, 30, 1840, 1007), 0x756944, 40),
+    ('EmployeeWindow', 0x756F48, 0x50A, (328, 130, 1720, 901), 0x7572E4, 25),
+    ('PlayerScreen', 0x753C68, 0x7A13, (0, 0, 2048, 1536), 0x753F4E, 19),
     ('HudArm', 0x7529DC, 0x21, (331, 1069, 1006, 1495), 0x752C60, 12),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
@@ -63,6 +66,9 @@ REQUIRED = {
     'ConfirmDialog': ['wdialogw', 'b_okay', 'b_exit'],
     'NameDialog': ['wdialogw', 'b_okay', 'b_exit'],
     'Lobby': ['islandlob', 'b_entpark', 'b_worldview', 'b_lobleft', 'b_lobright'],
+    'TrainingBudget': ['window3', 'b_okay', 'b_entry', 'b_finance', 'b_loans', 'f_train', 'b_minus', 'b_plus', 'h_handy', 'h_mech', 'h_enter', 'h_guard', 'h_resrcher'],
+    'EmployeeWindow': ['window1', 'b_fire', 'b_pick', 'b_okay', 'b_arup', 'b_ardown', 'b_route', 'b_allstaff', 'b_locate'],
+    'PlayerScreen': ['b_login', 'b_dellog', 'e_joy', 'tpwlogo'],
     'HudArm': ['b_retract', 'b_buy', 'b_info', 'b_money', 'b_resrch', 'b_map', 'b_camera'],
     'LobbyCity': ['citylob', 'b_listpark', 'b_bck2lob', 'b_worldview', 'b_entpark', 'b_lobleft', 'b_lobright'],
 }

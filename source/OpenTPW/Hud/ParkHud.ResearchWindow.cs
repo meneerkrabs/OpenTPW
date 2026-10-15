@@ -42,6 +42,7 @@ public sealed partial class ParkHud
 		level.CellTool.Cancel();
 		LeaveBuildTool();
 		researchScreen ??= CreateResearchScreen();
+		ResetResearchFluids();
 		Stack.Push( researchScreen );
 		researchScreen.Focus( researchScreen.Find( "exit" ) );
 		// [BIN:TPW-EXE:0x4a1737 drawer open] opening the map/research drawer (message 0xA) plays cat_ui event 0x1C (the drawer's research button help is 'Click for research (R)')
@@ -73,11 +74,63 @@ public sealed partial class ParkHud
 		return economy.Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "";
 	}
 
-	private float? ResearchProgress( ResearchCategory category )
+	// The five panels' fluids in ResearchCategories[n] order, rebuilt whenever the window opens (the original builds the window anew, 0x4aa480).
+	private readonly ResearchFluid[] researchFluids = Enumerable.Range( 0, 5 ).Select( _ => new ResearchFluid() ).ToArray();
+	private string? researchFluidKey;
+	private float researchFluidTime;
+
+	/// <summary>Seconds per fluid step (one message 0x1e, assumed at 30 frames a second).</summary>
+	public const float ResearchFluidTickSeconds = 1f / 30f;
+
+	internal ResearchFluid ResearchFluidOf( ResearchCategory category ) => researchFluids[(int)category];
+
+	private void ResetResearchFluids()
 	{
-		if ( ResearchEconomy is not { } economy || economy.Research.Current( category ) is not { } item )
-			return null;
-		return item.Cost <= 0 ? 1 : Math.Clamp( economy.Research.GetProgress( item ) / (item.Cost * (float)ParkResearch.PointScale), 0, 1 );
+		for ( var index = 0; index < researchFluids.Length; index++ )
+			researchFluids[index] = new ResearchFluid();
+		researchFluidKey = null;
+		researchFluidTime = 0;
+		RefreshResearchFluids();
+	}
+
+	/// <summary>
+	/// Applies every category's rate when the window opens and whenever a current project, an effort or the workload changes:
+	/// the original runs its refresh 0x4a9c70 when the window is built (0x4aa480), on the effort and workload sliders (message 0x800),
+	/// after the cursor arrows (0x4aa0c0 → 0x4aa120) and when a project completes (message 0x12, 0x4aaec0).
+	/// </summary>
+	private void RefreshResearchFluids()
+	{
+		if ( ResearchEconomy is not { } economy )
+			return;
+		var research = economy.Research;
+		var key = string.Join( ',', Enum.GetValues<ResearchCategory>().Select( category => research.Current( category ) is { } item ? $"{item.InfoId}:{item.Level}" : "-" )
+			.Concat( research.Effort.Select( value => value.ToString( System.Globalization.CultureInfo.InvariantCulture ) ) ).Append( research.Workload.ToString( System.Globalization.CultureInfo.InvariantCulture ) ) );
+		if ( key == researchFluidKey )
+			return;
+		researchFluidKey = key;
+		foreach ( var category in Enum.GetValues<ResearchCategory>() )
+			researchFluids[(int)category].Apply( ResearchFluidRate( economy, category ) );
+	}
+
+	internal static int ResearchFluidRate( ParkEconomy economy, ResearchCategory category )
+	{
+		var settings = economy.Settings;
+		var abilitySum = economy.Staff.OfType( StaffType.Researcher ).Sum( member => settings.ResearchAbility[Math.Clamp( member.Grade, 0, BalanceSettings.GradeCount - 1 )] );
+		return ResearchFluid.Rate( economy.Research.Effort, (int)category, economy.Research.Workload, economy.Research.Current( category ) != null, abilitySum,
+			settings[StaffType.Researcher].MaximumInPark, settings.ResearchAbility[BalanceSettings.GradeCount - 1] );
+	}
+
+	private void StepResearchFluids( float delta )
+	{
+		RefreshResearchFluids();
+		// [APPROX:UI-066] the fluids step at a fixed 30 ticks a second; the original steps them on every message 0x1e, sent once per rendered frame (0x48a580 → 0x658f6c) — evidence needed: the original's frame rate
+		researchFluidTime = Math.Min( researchFluidTime + Math.Max( 0, delta ), ResearchFluidTickSeconds * 8 );
+		while ( researchFluidTime >= ResearchFluidTickSeconds )
+		{
+			researchFluidTime -= ResearchFluidTickSeconds;
+			foreach ( var fluid in researchFluids )
+				fluid.Tick();
+		}
 	}
 
 	public static bool TrySetResearchWorkload( ParkEconomy? economy, bool readOnly, int workload )
@@ -128,7 +181,7 @@ public sealed partial class ParkHud
 			screen.Add( new UiLabel { Id = $"item{index}", Text = () => ResearchItemName( category ), Font = fonts => fonts.Label,
 				Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
 				Bounds = cells.Value, Anchor = UiAnchor.Center } );
-			screen.Add( new ResearchProgressBar( this, category ) { Id = $"progress{index}",
+			screen.Add( new ResearchFluidCell( this, category ) { Id = $"fluid{index}",
 				Bounds = cells.Fluid, Anchor = UiAnchor.Center } );
 			Model( $"effortTrack{index}", "effortslidea", slider );
 			// [BIN:TPW-EXE:0x4aa6bd effort sliders] SetRange(0,100) on the generic slider class: integer value 0..100, a drag position is truncated (0x66afc9), the ball runs linearly across the table's slider rectangle
@@ -141,8 +194,9 @@ public sealed partial class ParkHud
 		// [DATA:Mac research table 0x4c652:-1] b_okay exits; help 1.
 		screen.Add( new UiButton { Id = "exit", Model = "b_okay", Help = strings.Help( 1 ), Clicked = CloseResearchWindow,
 			Bounds = Rect( 1889, 844, 1972, 927 ), Anchor = UiAnchor.Center } );
-		screen.Updating = _ =>
+		screen.Updating = context =>
 		{
+			StepResearchFluids( context.Delta );
 			var editable = !level.IsReadOnlyVisit && ResearchEconomy is { Features: { ResearchPanel: true } };
 			if ( screen.Find( "workloadKnob" ) is UiElement workload ) workload.Enabled = editable;
 			foreach ( var index in Enumerable.Range( 0, ResearchRows.Length ) )
@@ -157,21 +211,14 @@ public sealed partial class ParkHud
 		return screen;
 	}
 
-	private sealed class ResearchProgressBar : UiElement
+	private sealed class ResearchFluidCell : UiElement
 	{
 		private readonly ParkHud owner;
 		private readonly ResearchCategory category;
-		public ResearchProgressBar( ParkHud owner, ResearchCategory category ) { this.owner = owner; this.category = category; }
-		public override void Draw( UiContext context, bool focused, bool pressed )
-		{
-			var bounds = ScreenRect( context.Canvas );
-			context.DrawModel( "fluid", 0, bounds );
-			if ( owner.ResearchProgress( category ) is not { } fraction )
-				return;
-			// [APPROX:UI-066] a simple fill within the fluid cell; the original draws no fill but animates the fluid model (0x4a95b0: (p+20)/100 in 16.16, state 3, frame limit 0x30, winding down to 0x20) — evidence needed: porting the fluid model animation (no further evidence needed)
-			var inset = bounds.Inflate( -bounds.Height * 0.2f );
-			context.Batch.AddRectangle( inset with { Width = inset.Width * fraction }, new RgbaByte( 104, 213, 239, 190 ) );
-		}
+		public ResearchFluidCell( ParkHud owner, ResearchCategory category ) { this.owner = owner; this.category = category; }
+		// [BIN:TPW-EXE:0x0065d3a3 control frame] the fluid child 0xd2d06 draws res_fluid at the frame its panel's animation last set (ResearchFluid); there is no progress fill
+		public override void Draw( UiContext context, bool focused, bool pressed ) =>
+			context.DrawModel( "fluid", owner.ResearchFluidOf( category ).Frame, ScreenRect( context.Canvas ) );
 	}
 
 	/// <summary>The workload knob's slider range: its value runs from 1023 at the top to 0 at the bottom (tp.exe 0x4aa634).</summary>

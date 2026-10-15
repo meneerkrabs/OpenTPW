@@ -4,36 +4,57 @@ using NVector2 = System.Numerics.Vector2;
 namespace OpenTPW.Hud;
 
 /// <summary>
-/// The All Attractions window: the park's placed attractions in a live list with the original
-/// category tabs (<c>b_srides</c>/<c>b_sshow</c>/<c>b_sshop</c>/<c>b_sfeature</c>, the buy window's
-/// tab art) and the original per-category statistic labels (UITEXT 78-97) and status strings
-/// (UITEXT 364-395). No original layout table is decoded for this window, so its placement follows
-/// the proven staff/buy window geometry; the window itself is an original feature (the key table's
-/// All Attractions key A, which the host camera's WASD pan currently owns).
+/// The All Attractions window, built from tp.exe's table 0x7508e0: the window4 frame, the list_all frame with the four category tabs
+/// (b_sride/b_sshow/b_sshop/b_sfeature), the title box, the tick and the park information, all-staff and all-visitors buttons, and per
+/// category one of the list tables 0x750ab8 (rides and shops), 0x750ba0 (sideshows) and 0x750ca0 (features) with its columns and scroll bar.
 /// </summary>
-// [APPROX:UI-905] window layout, list columns and detail placement follow the staff/buy table geometry; the decoded tables (attractions 0x7508e0, per-category lists 0x750ab8/0x750ba0/0x750ca0, list id 400 at [266,318,1825,876]) are not ported, their list behaviour (attribute 0x291) is — evidence needed: porting them
+// [BIN:TPW-EXE:0x00495aa0 attractions window] the builder applies table 0x7508e0, selects the category's tab, fills the list with the category's list table
+// (0 rides 0x494ec0, 1 shops 0x494c70, 2 sideshows 0x494250, 3 features 0x495110), titles it UITEXT 78-81 and plays 0xbf; a category of -1 reopens the last one
+// (0x7ca154), and the object windows open their own category with their object selected (0x4af91b, 0x4b0d06, 0x4b22ff, 0x4b5158)
+// [APPROX:UI-905] the All Attractions list's row pitch is the row item's height (0x4944d0: font slot 7's height scaled to the canvas + 6), taken as the list's pitch; rows re-sort when their values refresh, where the original sorts on a header press; the list selects its first row when nothing is chosen, where the original opens with no selection; the users and customers columns show the economy's previous calendar month, where the original sums the object's last 30 history entries (+0x1ac ring, 0x493cd0); the bars take the object window's values (UI-028) and satisfaction, which OpenTPW does not simulate, draws an empty bar — evidence needed: the list class's row pitch (+0x170) and sort trigger for this list; the cadence of the objects' history entries
 public sealed partial class ParkHud
 {
-	private static readonly UiRect AttractionContent = Rect( 1043, 441, 1729, 911 );
-	private static readonly UiRect AttractionScrollTrack = Rect( 1743, 398, 1802, 843 );
-	private static readonly UiRect AttractionScrollKnob = Rect( 1735, 651, 1802, 718 );
-	// [DATA:UITEXT.str:78-81] the four category titles of this window; the tab art is the buy window's.
 	/// <summary>The round entry button of the All Attractions window in the buy and staff windows: the window's own rides tab icon.</summary>
 	internal const string AllAttractionsModel = "b_srides";
-	private static readonly (BuildCategory Category, string Model, UIStrings Title, UiRect Rect)[] AttractionCategories =
+	private static LayoutTable AttractionsTable => OriginalLayoutTables.AttractionsWindow;
+	// [BIN:TPW-EXE:0x00495aa0 attractions tabs] category 0 selects tab 0x12c4ba, 1 0x12c4bc, 2 0x12c4bb, 3 0x12c4bd; the titles are UITEXT 78-81
+	private static readonly (BuildCategory Category, uint Tab, UIStrings Title)[] AttractionCategories =
 	{
-		(BuildCategory.Rides, AllAttractionsModel, UIStrings.AllRides, Rect( 1283, 195, 1386, 297 )),
-		(BuildCategory.Sideshows, "b_sshow", UIStrings.AllSideshows, Rect( 1402, 195, 1504, 297 )),
-		(BuildCategory.Shops, "b_sshop", UIStrings.AllShops, Rect( 1521, 195, 1623, 297 )),
-		(BuildCategory.Features, "b_sfeature", UIStrings.AllMiscItems, Rect( 1640, 195, 1742, 297 )),
+		(BuildCategory.Rides, 0x12C4BAu, UIStrings.AllRides),
+		(BuildCategory.Sideshows, 0x12C4BBu, UIStrings.AllSideshows),
+		(BuildCategory.Shops, 0x12C4BCu, UIStrings.AllShops),
+		(BuildCategory.Features, 0x12C4BDu, UIStrings.AllMiscItems),
 	};
-	// [EXT:overview-detail-rows] seven equal detail rows fill the stats frame's area (the sideshow category has
-	// five original rows plus the two live queue rows) — evidence needed: the original detail layout.
-	private const int AttractionDetailRowCount = 7;
+
+	private static LayoutTable AttractionListTable( BuildCategory category ) => category switch
+	{
+		BuildCategory.Sideshows => OriginalLayoutTables.SideshowList,
+		BuildCategory.Features => OriginalLayoutTables.FeatureList,
+		_ => OriginalLayoutTables.RideShopList,
+	};
+	/// <summary>The rows' region of a category's list (the list control's inner rectangle).</summary>
+	private static UiRect AttractionContent( BuildCategory category ) => AttractionListTable( category ).Root.Inner!.Value;
+	/// <summary>The column header rectangles of a category's list, left to right (controls 0x10, 0x11, ...).</summary>
+	private static UiRect[] AttractionColumnRects( BuildCategory category ) =>
+		AttractionListTable( category ).Root.Children.Where( node => node.Type == 2 && node.Id is >= 0x10 and < 0x20 ).OrderBy( node => node.Id ).Select( node => node.Rect ).ToArray();
+	private static LayoutNode AttractionSlider => OriginalLayoutTables.RideShopList.Root.Children.Single( node => node.Type == 3 );
+
+	/// <summary>Seconds between two refreshes of the rows' values (timer 0x80083, 2000 ms, armed on message 0x15 by 0x4955e0).</summary>
+	public const float AttractionValueRefreshSeconds = 2f;
 
 	private UiScreen? attractionScreen;
 	private UiButton? deleteAttractionButton;
-	private BuildCategory attractionCategory = BuildCategory.Rides;
+	private BuildCategory attractionCategory
+	{
+		get => (BuildCategory)Sorts.AttractionCategory;
+		set => Sorts.AttractionCategory = (int)value;
+	}
+	/// <summary>The sorted column of the current category tab, remembered for the session (UI-084).</summary>
+	private int attractionSortColumn
+	{
+		get => Sorts.AttractionColumn[(int)attractionCategory];
+		set => Sorts.AttractionColumn[(int)attractionCategory] = value;
+	}
 	/// <summary>The sort direction of the current category tab, remembered for the session (UI-084).</summary>
 	private bool attractionSortDescending
 	{
@@ -42,45 +63,52 @@ public sealed partial class ParkHud
 	}
 	private int selectedAttractionId;
 	private int attractionFirstRow;
+	private float attractionValueAge;
+	private float attractionRowHeight = 30f;
 
 	public bool AttractionsWindowOpen => attractionScreen != null && Stack.Screens.Contains( attractionScreen );
 	public int SelectedAttractionId => SelectedAttractionRow.AttractionId;
 	public int AttractionFirstRow => attractionFirstRow;
-	/// <summary>Live rows of the selected category in list order (by name), the developer prototype Totem included.</summary>
+	public BuildCategory AttractionCategory => attractionCategory;
+	/// <summary>The list's row pitch in canvas units, as last drawn.</summary>
+	public float AttractionRowHeight => attractionRowHeight;
+	/// <summary>The rows the list shows at once.</summary>
+	public int AttractionVisibleRows => Math.Max( 1, (int)MathF.Floor( AttractionContent( attractionCategory ).Height / attractionRowHeight ) );
+	/// <summary>The top of the list's first row in canvas units.</summary>
+	public float AttractionRowsTop => AttractionContent( attractionCategory ).Y;
+	/// <summary>Live rows of the selected category in list order, the developer prototype Totem included.</summary>
 	// [EXT:developer-prototype] the prototype ride lives beside the object world; Level.ListAttractions is where both sources merge
-	public IReadOnlyList<AttractionListRow> AttractionItems =>
-		ParkAttractionRoster.Rows( level.ListAttractions().Select( AttractionRow ), attractionCategory, attractionSortDescending );
+	public IReadOnlyList<AttractionListRow> AttractionItems => ParkAttractionRoster.Rows( level.ListAttractions().Select( AttractionRow ), attractionCategory,
+		attractionSortColumn, attractionSortDescending, AttractionCellsOf );
 
 	/// <summary>
-	/// The window's rows for one frame: the screen refreshes them when it updates and every action that
-	/// changes the category or order refreshes them again, so the labels, list and scrollbar share one
-	/// snapshot instead of re-projecting the park's objects for every draw call.
+	/// The window's rows for one frame: the screen refreshes them when it updates and every action that changes the category or order
+	/// refreshes them again, so the list and scrollbar share one snapshot instead of re-projecting the park's objects for every draw call.
 	/// <see cref="AttractionItems"/> stays live for callers outside the frame.
 	/// </summary>
 	private IReadOnlyList<AttractionListRow> attractionRows = Array.Empty<AttractionListRow>();
-	private readonly Dictionary<int, AttractionBusinessStats> attractionBusinessStats = new();
-	private readonly record struct AttractionBusinessStats( long CustomersLastMonth, long ProfitLastMonth, long TotalProfit );
+	/// <summary>The cells of each listed attraction, taken when the window opens, the category or order changes and every 2 s (the original's timer).</summary>
+	private readonly Dictionary<int, IReadOnlyList<AttractionCell>> attractionCells = new();
+	private readonly Dictionary<int, OriginalObject> attractionObjects = new();
 
-	private IReadOnlyList<AttractionListRow> RefreshAttractionRows()
+	private IReadOnlyList<AttractionListRow> RefreshAttractionRows( bool values = false )
 	{
-		attractionBusinessStats.Clear();
-		var finance = FinanceEconomy;
-		var economy = GameEditions.Current == GameEdition.ThemeParkWorld && !level.IsReadOnlyVisit
-			&& ReferenceEquals( finance, level.Park?.Economy ) ? finance : null;
-		AttractionListRow Project( OriginalObject item )
+		var listed = level.ListAttractions();
+		attractionObjects.Clear();
+		foreach ( var item in listed )
+			attractionObjects[item.Runtime.AttractionId] = item;
+		if ( values )
 		{
-			var row = AttractionRow( item );
-			if ( economy != null && row.Category == attractionCategory && item is not PrototypeRide && level.GetEconomyInstance( item ) is int instance
-				&& economy.TryGetObject( instance, out var state ) && state.InfoId == item.Entry.InfoId
-				&& (row.Category == BuildCategory.Shops && state.Kind == ParkObjectKind.Shop
-					|| row.Category == BuildCategory.Sideshows && state.Kind == ParkObjectKind.Sideshow) )
-				attractionBusinessStats[row.AttractionId] = new( state.CustomersLastMonth, state.ProfitLastMonth, state.TotalProfit );
-			return row;
+			attractionCells.Clear();
+			attractionValueAge = 0;
 		}
-		return attractionRows = ParkAttractionRoster.Rows( level.ListAttractions().Select( Project ), attractionCategory, attractionSortDescending );
+		foreach ( var id in attractionCells.Keys.Where( id => !attractionObjects.ContainsKey( id ) ).ToArray() )
+			attractionCells.Remove( id );
+		return attractionRows = ParkAttractionRoster.Rows( listed.Select( AttractionRow ), attractionCategory, attractionSortColumn, attractionSortDescending, AttractionCellsOf );
 	}
+
 	private AttractionListRow SelectedAttractionRow => attractionRows.FirstOrDefault( row => row.AttractionId == selectedAttractionId );
-	private int AttractionMaxFirstRow => ParkAttractionRoster.MaxFirstRow( attractionRows.Count, StaffVisibleRows );
+	private int AttractionMaxFirstRow => ParkAttractionRoster.MaxFirstRow( attractionRows.Count, AttractionVisibleRows );
 	private int AttractionRowIndex( int id )
 	{
 		var rows = attractionRows;
@@ -90,24 +118,96 @@ public sealed partial class ParkHud
 		return -1;
 	}
 
-	// [EXT:overview-detail-rows] the projected live values of one placed attraction (wear, queue, riders, excitement); the original window has no detail rows
 	private AttractionListRow AttractionRow( OriginalObject item ) => new( item.Runtime.AttractionId, EntryName( item.Entry ),
 		(BuildCategory)item.Entry.WhichUIType, item.IsOpen, item.Runtime.State.IsBroken,
 		item.Visitors.QueueLength, item.Runtime.State.OnRide, item.Visitors.WearGauge, item.Visitors.ExcitementLevel );
 
-	public void OpenAttractionsWindow()
+	/// <summary>The cells of one row (its taken values, or new ones for a row not seen since the last refresh).</summary>
+	internal IReadOnlyList<AttractionCell> AttractionCellsOf( AttractionListRow row )
+	{
+		if ( attractionCells.TryGetValue( row.AttractionId, out var cells ) )
+			return cells;
+		if ( !attractionObjects.TryGetValue( row.AttractionId, out var item ) )
+			item = level.ListAttractions().FirstOrDefault( candidate => candidate.Runtime.AttractionId == row.AttractionId );
+		if ( item == null )
+			return Array.Empty<AttractionCell>();
+		return attractionCells[row.AttractionId] = AttractionCellsFor( item, row.Category );
+	}
+
+	/// <summary>
+	/// The economy record of a listed object when it may supply the business columns: a Theme Park World park of its own (no visit), the level's own
+	/// economy, and a record of the object's info id and kind.
+	/// </summary>
+	private ParkObjectState? TrustedAttractionState( OriginalObject item, BuildCategory category )
+	{
+		var finance = FinanceEconomy;
+		if ( GameEditions.Current != GameEdition.ThemeParkWorld || level.IsReadOnlyVisit || finance == null || !ReferenceEquals( finance, level.Park?.Economy )
+			|| item is PrototypeRide || level.GetEconomyInstance( item ) is not int instance || !finance.TryGetObject( instance, out var state ) || state.InfoId != item.Entry.InfoId )
+			return null;
+		var kind = category switch
+		{
+			BuildCategory.Rides => ParkObjectKind.Ride,
+			BuildCategory.Shops => ParkObjectKind.Shop,
+			BuildCategory.Sideshows => ParkObjectKind.Sideshow,
+			_ => (ParkObjectKind?)null,
+		};
+		return kind == state.Kind ? state : null;
+	}
+
+	private IReadOnlyList<AttractionCell> AttractionCellsFor( OriginalObject item, BuildCategory category )
+	{
+		var columns = ParkAttractionRoster.Columns( category );
+		var cells = new AttractionCell[columns.Length];
+		var trusted = TrustedAttractionState( item, category );
+		var state = LiveState( item );
+		var economy = Status.EconomySource as ParkEconomy;
+		AttractionCell Count( long? value ) => new( value?.ToString( System.Globalization.CultureInfo.InvariantCulture ), null, value );
+		AttractionCell Money( long? value ) => new( value is { } amount ? FormatMoney( amount ) : null, null, value );
+		AttractionCell Gauge( ObjectRowKind kind ) => ObjectStatOf( item, kind, state, economy ).Gauge is { } gauge ? new( null, gauge, gauge ) : new( null, null, null );
+		for ( var column = 0; column < columns.Length; column++ )
+		{
+			cells[column] = columns[column].Kind switch
+			{
+				AttractionColumnKind.Name => new( EntryName( item.Entry ), null, null ),
+				AttractionColumnKind.Users or AttractionColumnKind.Customers => Count( trusted?.CustomersLastMonth ),
+				AttractionColumnKind.ProfitLastMonth => Money( trusted?.ProfitLastMonth ),
+				AttractionColumnKind.TotalProfit => Money( trusted?.TotalProfit ),
+				AttractionColumnKind.Excitement => Gauge( ObjectRowKind.Excitement ),
+				AttractionColumnKind.Repair => Gauge( ObjectRowKind.Repair ),
+				AttractionColumnKind.Life => Gauge( ObjectRowKind.Life ),
+				AttractionColumnKind.Satisfaction => Gauge( ObjectRowKind.Satisfaction ),
+				// [BIN:TPW-EXE:0x00494200 feature row] the number owned is the park's count of objects of the feature's info id (0x4ca8c0 with the word at +0xe)
+				AttractionColumnKind.NumberOwned => Count( level.Objects.Objects.Count( other => !other.IsDeleted && other.Entry.InfoId == item.Entry.InfoId ) ),
+				_ => new( null, null, null ),
+			};
+		}
+		return cells;
+	}
+
+	/// <summary>Opens the window on <paramref name="category"/> (null: the category it showed last) with <paramref name="select"/> chosen when it is listed.</summary>
+	public void OpenAttractionsWindow( BuildCategory? category, OriginalObject? select = null )
 	{
 		if ( AttractionsWindowOpen )
 			return;
-		attractionCategory = BuildCategory.Rides;
+		if ( category is { } chosen )
+			attractionCategory = chosen;
 		attractionFirstRow = 0;
 		selectedAttractionId = 0;
-		RefreshAttractionRows();
+		RefreshAttractionRows( values: true );
+		// [BIN:TPW-EXE:0x00494ff1 list selection] with an object the filler selects its row (0x664d2a → 0x665739)
+		if ( select != null && AttractionRowIndex( select.Runtime.AttractionId ) is >= 0 and var index )
+		{
+			selectedAttractionId = select.Runtime.AttractionId;
+			SelectAttraction( index );
+		}
 		EnsureAttractionSelection();
 		attractionScreen ??= CreateAttractionsScreen();
 		Stack.Push( attractionScreen );
 		attractionScreen.Focus( attractionScreen.Find( "attractionList" ) );
 	}
+
+	/// <summary>The buy, staff, visitors and park information windows open it on the category it showed last (0x495aa0 with -1).</summary>
+	public void OpenAttractionsWindow() => OpenAttractionsWindow( null );
 
 	public void CloseAttractionsWindow()
 	{
@@ -130,16 +230,17 @@ public sealed partial class ParkHud
 		}
 		index = Math.Clamp( index, 0, items.Count - 1 );
 		selectedAttractionId = items[index].AttractionId;
-		attractionFirstRow = Math.Clamp( attractionFirstRow, Math.Max( 0, index - StaffVisibleRows + 1 ), index );
+		attractionFirstRow = Math.Clamp( attractionFirstRow, Math.Max( 0, index - AttractionVisibleRows + 1 ), index );
 	}
 
 	public void ScrollAttractions( int rows ) => SetAttractionFirstRow( attractionFirstRow + rows );
 	public void SetAttractionFirstRow( int first ) => attractionFirstRow = Math.Clamp( first, 0, AttractionMaxFirstRow );
 
 	// [BIN:TPW-EXE:0x665a44 generic list sort, list attribute 0x10] the same column toggles its direction, a new column starts ascending; the initial sort column is 0 (ascending, the per-category sort words 0x750d5c..0x750d68 = 1), so the first press on column 0 descends, and each category keeps its word for the session (ListSortMemory).
-	public void SortAttractions()
+	public void SortAttractions( int column = 0 )
 	{
-		attractionSortDescending = !attractionSortDescending;
+		attractionSortDescending = attractionSortColumn == column && !attractionSortDescending;
+		attractionSortColumn = column;
 		RefreshAttractionRows();
 		var index = AttractionRowIndex( selectedAttractionId );
 		EnsureAttractionSelection();
@@ -218,85 +319,57 @@ public sealed partial class ParkHud
 			deleteAttractionButton.Enabled = !level.IsReadOnlyVisit && selectedAttractionId != 0;
 	}
 
-	/// <summary>The selected attraction's detail rows: its category's original labels, then the live queue rows.</summary>
-	// [EXT:overview] queue length and riders are live OpenTPW rows with supplementary labels (no original label is decoded).
-	private (string Label, string Value)[] AttractionDetailRows( in AttractionListRow row )
-	{
-		var notSimulated = strings.Extra( OpenTpwText.NotSimulated );
-		var statistics = ParkAttractionRoster.StatRows( row );
-		if ( attractionBusinessStats.TryGetValue( row.AttractionId, out var business ) )
-			for ( var index = 0; index < statistics.Length; index++ )
-			{
-				var label = statistics[index].Label;
-				var value = label switch
-				{
-					UIStrings.CustomersLastMonthShop or UIStrings.CustomersLastMonthGame => business.CustomersLastMonth.ToString( System.Globalization.CultureInfo.InvariantCulture ),
-					UIStrings.ProfitLastMonthShop or UIStrings.ProfitLastMonthGame => FormatMoney( business.ProfitLastMonth ),
-					UIStrings.TotalProfitShop or UIStrings.TotalProfitGame => FormatMoney( business.TotalProfit ),
-					_ => statistics[index].Value
-				};
-				statistics[index] = (label, value);
-			}
-		var rows = statistics.Select( stat => (strings[stat.Label], Value: stat.Value ?? notSimulated) ).ToList();
-		rows.Add( (strings.Extra( OpenTpwText.QueueLength ), row.QueueLength.ToString( System.Globalization.CultureInfo.InvariantCulture )) );
-		rows.Add( (strings.Extra( OpenTpwText.RidingNow ), row.Riders.ToString( System.Globalization.CultureInfo.InvariantCulture )) );
-		return rows.ToArray();
-	}
-
 	private UiScreen CreateAttractionsScreen()
 	{
 		var screen = new AttractionsScreen( this );
-		void Model( string id, string model, UiRect rect ) => screen.Add( new UiModelImage { Id = id, Model = model, Bounds = rect, Anchor = UiAnchor.Center } );
-		// [APPROX:UI-905] the staff/buy window frames at their authored rectangles; `list_all` is the shipped all-list frame art.
-		Model( "window", "w_big", Rect( 186, 30, 2018, 1007 ) );
-		Model( "statsFrame", "f_balance", Rect( 259, 650, 971, 930 ) );
-		Model( "listFrame", "list_all", Rect( 1017, 179, 1813, 930 ) );
+		var table = AttractionsTable;
+		void Model( string id, LayoutNode node ) => screen.Add( new UiModelImage { Id = id, Model = node.Model!, Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		Model( "window", table.Root );
+		Model( "listFrame", table.Model( "list_all" ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[AttractionCategories.First( tab => tab.Category == attractionCategory ).Title],
-			Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 805, 74, 1277, 153 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "attractionName", Text = () => SelectedAttractionRow.Name,
-			Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
-			Bounds = Rect( 283, 536, 679, 575 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "attractionStatus", Text = () => SelectedAttractionRow.AttractionId == 0 ? "" : strings[ParkAttractionRoster.StatusOf( SelectedAttractionRow )],
-			Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right, Fit = true,
-			Bounds = Rect( 722, 536, 957, 575 ), Anchor = UiAnchor.Center } );
-		for ( var row = 0; row < AttractionDetailRowCount; row++ )
-		{
-			var index = row;
-			var top = 660 + row * 38f;
-			screen.Add( new UiLabel { Id = $"statLabel{row}", Text = () => DetailRow( index ).Label, Font = fonts => fonts.Label,
-				Color = UiColors.Text, Fit = true, Bounds = Rect( 283, top, 679, top + 36 ), Anchor = UiAnchor.Center } );
-			screen.Add( new UiLabel { Id = $"statValue{row}", Text = () => DetailRow( index ).Value,
-				Font = fonts => fonts.Label, Color = UiColors.Value, Align = UiAlign.Right, Fit = true,
-				Bounds = Rect( 722, top, 957, top + 36 ), Anchor = UiAnchor.Center } );
-		}
-		(string Label, string Value) DetailRow( int index )
-		{
-			var rows = AttractionDetailRows( SelectedAttractionRow );
-			return index < rows.Length ? rows[index] : ("", "");
-		}
+			Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = table.Control( 0x12C4BE ).Rect, Anchor = UiAnchor.Center } );
 		foreach ( var tab in AttractionCategories )
 		{
 			var category = tab;
-			screen.Add( new UiButton { Id = $"category{category.Category}", Model = category.Model, Clicked = () => SelectAttractionCategory( category.Category ),
-				Selected = () => attractionCategory == category.Category, Bounds = category.Rect, Anchor = UiAnchor.Center } );
+			var node = table.Control( category.Tab );
+			screen.Add( new UiButton { Id = $"category{category.Category}", Model = node.Model, Help = strings.Help( node.Help ),
+				Clicked = () => SelectAttractionCategory( category.Category ), Selected = () => attractionCategory == category.Category, Bounds = node.Rect, Anchor = UiAnchor.Center } );
 		}
-		screen.Add( new AttractionHeader( this ) { Id = "headerName", Bounds = Rect( 1039, 331, 1460, 436 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiLabel { Id = "headerStatus", Text = () => strings[UIStrings.CurrentStatus], Font = fonts => fonts.Label,
-			Color = UiColors.Text, Align = UiAlign.Center, Fit = true, Bounds = Rect( 1471, 331, 1731, 436 ), Anchor = UiAnchor.Center } );
-		screen.Add( new AttractionList( this ) { Id = "attractionList", Bounds = AttractionContent, Anchor = UiAnchor.Center } );
-		screen.Add( new AttractionScrollBar( this ) { Id = "attractionScroll", Bounds = AttractionScrollTrack, Anchor = UiAnchor.Center } );
+		// the headers of every category's columns; only the current category's are shown
+		foreach ( var category in AttractionCategories.Select( tab => tab.Category ) )
+		{
+			var rects = AttractionColumnRects( category );
+			var columns = ParkAttractionRoster.Columns( category );
+			for ( var column = 0; column < columns.Length; column++ )
+				screen.Add( new AttractionHeader( this, category, column, columns[column].Header ) { Id = column == 0 ? $"headerName{category}" : $"header{category}{column}",
+					Help = strings.Help( columns[column].Help ), Bounds = rects[column], Anchor = UiAnchor.Center } );
+		}
+		screen.Add( new AttractionList( this ) { Id = "attractionList", Bounds = AttractionContent( BuildCategory.Rides ), Anchor = UiAnchor.Center } );
+		var slider = AttractionSlider;
+		screen.Add( new AttractionScrollBar( this ) { Id = "attractionScroll", Bounds = slider.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollAttractions( -1 ),
-			Bounds = Rect( 1742, 331, 1803, 391 ), Anchor = UiAnchor.Center } );
+			Bounds = slider.Children.Single( node => node.Model == "b_up" ).Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollAttractions( 1 ),
-			Bounds = Rect( 1742, 850, 1803, 910 ), Anchor = UiAnchor.Center } );
-		// [EXT:overview-select-button] the select button selects the row's object in the park; the delete button sells it (the shipped b_goto art has no texture in ui.wad)
-		// (the original buttons of this window are not decoded; the shipped b_goto art has no texture in ui.wad).
-		screen.Add( new UiButton { Id = "gotoAttraction", Text = () => strings.Extra( OpenTpwText.SelectInPark ), Font = fonts => fonts.Label,
-			Clicked = SelectSelectedAttraction, Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
+			Bounds = slider.Children.Single( node => node.Model == "b_down" ).Rect, Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x004952b0 attractions buttons] the tick (-2) closes the window; b_pkinfo opens the park information (0x4a52a0), b_allstaff the all-staff window
+		// (0x496620) and b_kids the all-visitors window (0x493530), each replacing this one
+		var okay = table.Model( "b_okay" );
+		screen.Add( new UiButton { Id = "exit", Model = okay.Model, Help = strings.Help( okay.Help ), Clicked = CloseAttractionsWindow, Bounds = okay.Rect, Anchor = UiAnchor.Center } );
+		var parkInfo = table.Model( "b_pkinfo" );
+		screen.Add( new UiButton { Id = "parkInfo", Model = parkInfo.Model, Help = strings.Help( parkInfo.Help ), Bounds = parkInfo.Rect, Anchor = UiAnchor.Center,
+			Clicked = () => { CloseAttractionsWindow(); OpenParkInfoWindow(); } } );
+		var allStaff = table.Model( "b_allstaff" );
+		screen.Add( new UiButton { Id = "allStaff", Model = allStaff.Model, Help = strings.Help( allStaff.Help ), Bounds = allStaff.Rect, Anchor = UiAnchor.Center,
+			Clicked = () => { CloseAttractionsWindow(); OpenStaffWindow(); ShowEmployedStaff( true ); } } );
+		var visitors = table.Model( "b_kids" );
+		screen.Add( new UiButton { Id = "allVisitors", Model = visitors.Model, Help = strings.Help( visitors.Help ), Bounds = visitors.Rect, Anchor = UiAnchor.Center,
+			Clicked = () => { CloseAttractionsWindow(); OpenVisitorWindow(); } } );
+		// [EXT:overview-select-button] the select button selects the row's object in the park; the delete button sells it. Both sit where the original
+		// window has nothing: the delete button below the column of round buttons, the select button under the list frame (the shipped b_goto art has no texture in ui.wad)
 		deleteAttractionButton = screen.Add( new UiButton { Id = "deleteAttraction", Model = "b_erase", Clicked = ConfirmDeleteSelectedAttraction, Enabled = false,
-			Bounds = Rect( 1866, 471, 1968, 574 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseAttractionsWindow,
-			Bounds = Rect( 1889, 818, 1972, 901 ), Anchor = UiAnchor.Center } );
+			Bounds = Rect( 1866, 682, 1968, 785 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "gotoAttraction", Text = () => strings.Extra( OpenTpwText.SelectInPark ), Font = fonts => fonts.Label,
+			Clicked = SelectSelectedAttraction, Bounds = Rect( 1435, 910, 1835, 995 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseAttractionsWindow;
 		return screen;
 	}
@@ -307,19 +380,25 @@ public sealed partial class ParkHud
 		attractionCategory = category;
 		attractionFirstRow = 0;
 		selectedAttractionId = 0;
-		RefreshAttractionRows();
+		RefreshAttractionRows( values: true );
 		EnsureAttractionSelection();
 	}
 
-	/// <summary>The All Attractions window screen: the wheel scrolls the list, the selection follows the live park.</summary>
+	/// <summary>The All Attractions window screen: the wheel scrolls the list, the selection follows the live park, the values refresh every 2 s.</summary>
 	private sealed class AttractionsScreen : UiScreen
 	{
 		private readonly ParkHud owner;
 		public AttractionsScreen( ParkHud owner ) : base( "attractions" ) => this.owner = owner;
 		public override bool Update( UiContext context, UiInput input )
 		{
-			owner.RefreshAttractionRows();
+			owner.attractionValueAge += Math.Max( 0, context.Delta );
+			// [BIN:TPW-EXE:0x004955e0 list refresh] every 2000 ms (timer 0x80083) the rows of rides, shops and sideshows take new values; features keep theirs
+			owner.RefreshAttractionRows( values: owner.attractionValueAge >= AttractionValueRefreshSeconds && owner.attractionCategory != BuildCategory.Features );
 			owner.EnsureAttractionSelection();
+			if ( Find( "attractionList" ) is { } list )
+				list.Bounds = AttractionContent( owner.attractionCategory );
+			foreach ( var element in Elements.OfType<AttractionHeader>() )
+				element.Visible = element.Category == owner.attractionCategory;
 			if ( Find( "gotoAttraction" ) is UiButton gotoButton )
 				gotoButton.Enabled = owner.selectedAttractionId != 0;
 			if ( input.Wheel != 0 )
@@ -331,7 +410,7 @@ public sealed partial class ParkHud
 		}
 	}
 
-	/// <summary>The attraction rows: name and status columns over the all-list frame.</summary>
+	/// <summary>The attraction rows: the category's columns over the list frame.</summary>
 	private sealed class AttractionList : UiElement, IUiRowList
 	{
 		private readonly ParkHud owner;
@@ -358,76 +437,111 @@ public sealed partial class ParkHud
 		public override void Adjust( int direction ) => owner.SelectAttraction( Math.Max( 0, Selected ) + direction );
 		public int RowAt( UiCanvas canvas, NVector2 point )
 		{
-			var content = canvas.Map( AttractionContent, Anchor );
+			var content = canvas.Map( AttractionContent( owner.attractionCategory ), Anchor );
 			if ( !content.Contains( point ) )
 				return -1;
-			var visible = (int)MathF.Floor( (point.Y - content.Y) / (StaffRowHeight * canvas.Scale) );
+			var visible = (int)MathF.Floor( (point.Y - content.Y) / (owner.attractionRowHeight * canvas.Scale) );
 			var index = owner.attractionFirstRow + visible;
-			return visible < 0 || visible >= StaffVisibleRows || index >= owner.attractionRows.Count ? -1 : index;
+			return visible < 0 || visible >= owner.AttractionVisibleRows || index >= owner.attractionRows.Count ? -1 : index;
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
 			var canvas = context.Canvas;
+			// [BIN:TPW-EXE:0x00494508 attractions row] a row item is font slot 7's height scaled to the 1536-unit canvas, plus 6 (0x7ca158)
+			owner.attractionRowHeight = context.Fonts.Small.LineHeight * canvas.TextScale / Math.Max( 0.001f, canvas.Scale ) + 6;
+			var category = owner.attractionCategory;
+			var content = AttractionContent( category );
+			var columns = ParkAttractionRoster.Columns( category );
+			var rects = AttractionColumnRects( category );
 			var items = owner.attractionRows;
-			for ( var visible = 0; visible < StaffVisibleRows && owner.attractionFirstRow + visible < items.Count; visible++ )
+			var rowHeight = owner.attractionRowHeight;
+			for ( var visible = 0; visible < owner.AttractionVisibleRows && owner.attractionFirstRow + visible < items.Count; visible++ )
 			{
 				var index = owner.attractionFirstRow + visible;
 				var row = items[index];
-				var y = AttractionContent.Y + visible * StaffRowHeight;
-				var rect = canvas.Map( Rect( AttractionContent.X, y, AttractionContent.Right, y + StaffRowHeight ), Anchor );
+				var y = content.Y + visible * rowHeight;
+				var rect = canvas.Map( Rect( content.X, y, content.Right, y + rowHeight ), Anchor );
 				var selected = row.AttractionId == owner.selectedAttractionId;
 				if ( index == HoveredRow && !selected )
 					context.Batch.AddRectangle( rect, new Veldrid.RgbaByte( 60, 90, 200, 60 ) );
 				if ( selected )
 					context.Batch.AddRectangle( rect, new Veldrid.RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)120 ) );
 				var color = selected ? UiColors.Highlight : UiColors.Text;
-				UiRect Cell( float left, float right )
+				var cells = owner.AttractionCellsOf( row );
+				for ( var column = 0; column < columns.Length && column < cells.Count; column++ )
 				{
-					var origin = canvas.Map( new NVector2( left, y ), Anchor );
-					return new UiRect( origin.X, origin.Y, (right - left) * canvas.Scale, StaffRowHeight * canvas.Scale );
+					var origin = canvas.Map( new NVector2( rects[column].X, y ), Anchor );
+					var cell = new UiRect( origin.X, origin.Y, rects[column].Width * canvas.Scale, rowHeight * canvas.Scale );
+					var kind = columns[column].Kind;
+					// [BIN:TPW-EXE:0x00494690 attractions cells] the name is left-aligned (0x6636b2 column 0 mode 0), counts are centred (0x48fde0), money right-aligned (0x490250)
+					// and the bars are type-9 controls over ridestatbar.wct with a 0..1024 range
+					if ( ParkAttractionRoster.IsGauge( kind ) )
+						UiGauge.Draw( context.Batch, cell.Inflate( -cell.Height * 0.2f ), cells[column].Gauge );
+					else
+						context.DrawFittedText( context.Fonts.Small, cells[column].Text ?? context.Strings.Extra( OpenTpwText.NotSimulated ), cell, color,
+							kind == AttractionColumnKind.Name ? UiAlign.Left : ParkAttractionRoster.IsMoney( kind ) ? UiAlign.Right : UiAlign.Center );
 				}
-				context.DrawFittedText( context.Fonts.Label, row.Name, Cell( 1043, 1456 ), color, UiAlign.Left );
-				context.DrawFittedText( context.Fonts.Label, context.Strings[ParkAttractionRoster.StatusOf( row )], Cell( 1477, 1724 ), color, UiAlign.Right );
 			}
 		}
 	}
 
-	/// <summary>The name column header: repeated presses reverse the sort order.</summary>
+	/// <summary>A column header of one category's list: a press sorts by that column, a second press reverses it.</summary>
 	private sealed class AttractionHeader : UiElement
 	{
 		private readonly ParkHud owner;
-		public AttractionHeader( ParkHud owner ) => this.owner = owner;
-		public override bool Focusable => Visible && Enabled;
-		public override void Activate() => owner.SortAttractions();
-		public override void Draw( UiContext context, bool focused, bool pressed ) =>
-			context.DrawFittedText( context.Fonts.Label, owner.strings[UIStrings.NameAttr],
-				ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+		private readonly BuildCategory category;
+		private readonly int column;
+		private readonly UIStrings header;
+		public AttractionHeader( ParkHud owner, BuildCategory category, int column, UIStrings header )
+		{
+			this.owner = owner;
+			this.category = category;
+			this.column = column;
+			this.header = header;
+		}
+		public BuildCategory Category => category;
+		private bool Current => owner.attractionCategory == category;
+		public override bool Focusable => Visible && Enabled && Current;
+		public override void Activate()
+		{
+			if ( Current )
+				owner.SortAttractions( column );
+		}
+		// [BIN:TPW-EXE:0x00495020 attractions headers] each column header shows its UITEXT label in font slot 8 (0x750d58) and gets its help id (0x486660)
+		public override void Draw( UiContext context, bool focused, bool pressed )
+		{
+			if ( Current )
+				context.DrawFittedText( context.Fonts.Label, owner.strings[header], ScreenRect( context.Canvas ), focused ? UiColors.Highlight : UiColors.Text, UiAlign.Center );
+		}
 	}
 
-	/// <summary>The vertical scroll bar, drawn and dragged like the staff window's.</summary>
+	/// <summary>The list's scroll bar: the table's !slider track with the b_scroller knob.</summary>
 	private sealed class AttractionScrollBar : UiElement, IUiDragTarget
 	{
 		private readonly ParkHud owner;
 		public AttractionScrollBar( ParkHud owner ) => this.owner = owner;
 		public override bool Focusable => Visible && Enabled;
+		private static UiRect Knob => AttractionSlider.Children.Single( node => node.Model == "b_scroller" ).Rect;
 		private UiRect KnobRect()
 		{
-			var travel = AttractionScrollTrack.Height - AttractionScrollKnob.Height;
-			var top = AttractionScrollTrack.Y + (owner.AttractionMaxFirstRow == 0 ? 0 : travel * owner.attractionFirstRow / owner.AttractionMaxFirstRow);
-			return AttractionScrollKnob with { Y = top };
+			var track = AttractionSlider.Rect;
+			var travel = track.Height - Knob.Height;
+			var top = track.Y + (owner.AttractionMaxFirstRow == 0 ? 0 : travel * owner.attractionFirstRow / owner.AttractionMaxFirstRow);
+			return Knob with { Y = top };
 		}
 		public void DragTo( UiCanvas canvas, NVector2 point )
 		{
 			var rect = ScreenRect( canvas );
 			if ( rect.Height <= 0 || owner.AttractionMaxFirstRow == 0 )
 				return;
+			var track = AttractionSlider.Rect;
 			var y = Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
-			var fraction = Math.Clamp( (y - AttractionScrollTrack.Y - AttractionScrollKnob.Height / 2) / (AttractionScrollTrack.Height - AttractionScrollKnob.Height), 0, 1 );
+			var fraction = Math.Clamp( (y - track.Y - Knob.Height / 2) / (track.Height - Knob.Height), 0, 1 );
 			owner.SetAttractionFirstRow( (int)MathF.Round( fraction * owner.AttractionMaxFirstRow ) );
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
-			context.DrawModel( "!slider", 0, context.Canvas.Map( AttractionScrollTrack, Anchor ) );
+			context.DrawModel( "!slider", 0, context.Canvas.Map( AttractionSlider.Rect, Anchor ) );
 			context.DrawModel( "b_scroller", owner.AttractionMaxFirstRow == 0 ? UiButton.DisabledFrame : pressed ? UiButton.DownFrame : focused ? UiButton.HighlightFrame : UiButton.NormalFrame,
 				context.Canvas.Map( KnobRect(), Anchor ) );
 		}

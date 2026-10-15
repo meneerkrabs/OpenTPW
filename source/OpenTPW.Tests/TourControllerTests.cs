@@ -289,30 +289,60 @@ public class TourControllerTests
 	}
 
 	[TestMethod]
-	public void HandedOutSeatsAreEmptyAndTheDigestIgnoresThem()
+	public void HandedOutSeatsKeepTheirStaleIdsAndTheSaveHoldsThem()
 	{
 		var controller = Create();
 		controller.Board( 8 );
 		controller.Board( 9 );
 		controller.Cars[0].RiderCount = -2;
-		controller.Unboard();
-		controller.Unboard();
-		Assert.IsTrue( controller.Cars[0].Riders.All( seat => seat == 0 ), "the vacated seats are cleared" );
+		Assert.AreEqual( 9, controller.Unboard() );
+		Assert.AreEqual( 8, controller.Unboard() );
+		CollectionAssert.AreEqual( new[] { 8, 9, 0, 0, 0, 0, 0, 0, 0 }, controller.Cars[0].Riders, "the original reads a seat without clearing it (0x0055D610)" );
+		var saved = TourSave.Capture( controller );
+		Assert.AreEqual( TourCar.MaximumRiders, saved.Cars[0].Riders.Count, "every seat word is saved, the stale ones too" );
+		TourSave.Validate( saved, guest => false, new HashSet<int>() );
+		var copy = new TourController( System.Text.Json.JsonSerializer.Deserialize<TourControllerSaveData>( System.Text.Json.JsonSerializer.Serialize( saved ) )!, Random( 1 ), new TourWorld() );
+		CollectionAssert.AreEqual( controller.Cars[0].Riders, copy.Cars[0].Riders );
+		Assert.AreEqual( Digest( controller ), Digest( copy ) );
+		controller.Cars[0].Riders[5] = 77;
+		Assert.AreNotEqual( Digest( controller ), Digest( copy ), "the digest sees a stale seat word" );
 	}
 
 	[TestMethod]
-	public void ClosingBeforeTheLiftOffCancelsAPendingDeparture()
+	public void ARideClosedAfterTheDepartureOrderKeepsItsCarDockedUntilItReopens()
 	{
 		var controller = Create();
 		controller.Board( 21 );
 		Assert.AreEqual( 1, controller.Command( TourController.CommandDepart, 0 ) );
 		Assert.IsFalse( controller.Ready );
 		controller.Command( TourController.CommandOpen, 0 );
-		Assert.IsTrue( controller.Ready, "the car that was about to leave is ready again" );
-		Run( controller, 50 );
-		Assert.AreEqual( TourCar.StateDocked, controller.Cars[0].State, "it never lifted off" );
-		Assert.AreEqual( 1, controller.Command( TourController.CommandReady, 0 ), "the script's TOUR 10 sees it" );
-		Assert.AreEqual( 21, controller.Command( TourController.CommandUnboard, 0 ), "its rider is handed out" );
+		Assert.IsFalse( controller.Ready, "the closing leaves the ready flag as it was (0x0055D9F0)" );
+		Assert.AreEqual( -1, controller.Cars[0].RiderCount, "the rider starts unloading" );
+		Run( controller, 200 );
+		Assert.AreEqual( TourCar.StateDocked, controller.Cars[0].State, "the sole car of a closed ride never lifts off" );
+		Assert.AreEqual( 0, controller.Command( TourController.CommandReady, 0 ), "TOUR 10 reads 0, so the script's unload loop waits" );
+		Assert.AreEqual( 1, controller.Riders );
+		CollectionAssert.AreEqual( new[] { 21 }, controller.AllRiders().ToList(), "a removed ride can still hand the rider back" );
+		// the ride reopens: the car flies once more with its negative count, lands ready, and the script unloads it
+		controller.Command( TourController.CommandOpen, 1 );
+		Run( controller, 2 );
+		Assert.AreEqual( TourCar.StateTakeoff, controller.Cars[0].State );
+		Assert.IsTrue( RunUntil( controller, () => controller.Ready, 30_000 ), "the car lands and is ready again" );
+		Assert.AreEqual( -1, controller.Cars[0].RiderCount );
+		Assert.AreEqual( 1, controller.Command( TourController.CommandReady, 0 ) );
+		Assert.AreEqual( 21, controller.Command( TourController.CommandUnboard, 0 ) );
+		Assert.AreEqual( 0, controller.Riders );
+		Assert.AreEqual( controller.Boarded, controller.Released );
+	}
+
+	[TestMethod]
+	public void ARideClosedWhileTheCarWaitsReadyStillUnloadsIt()
+	{
+		var controller = Create();
+		controller.Board( 21 );
+		controller.Command( TourController.CommandOpen, 0 );
+		Assert.IsTrue( controller.Ready, "no departure was ordered: the car is still ready" );
+		Assert.AreEqual( 21, controller.Command( TourController.CommandUnboard, 0 ) );
 	}
 
 	[TestMethod]

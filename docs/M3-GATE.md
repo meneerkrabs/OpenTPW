@@ -418,7 +418,7 @@ exit 2.
 Passing rows that rest on approximations rather than original rules:
 - arrival rate and needs (GUESTS.md approximation table);
 - wear, repair and cleaning (`ECON-021` to `ECON-024`), which also set the staff windows;
-- opening the park on load (`ECON-031`);
+- opening the park at the start: a new park starts closed (tp.exe `0x51562d`), and the gate run opens it as the player's door button would;
 - the entrance/exit snap (`RIDES-028`);
 - the build rule (`RIDES-018`);
 - the queue build rules (`QUEUE-012` to `QUEUE-014`);

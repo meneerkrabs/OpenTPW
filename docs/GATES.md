@@ -50,8 +50,10 @@ The reduced imported guest grid does not yet preserve every original cell type: 
 ## Approximations
 
 - `ECON-049`: the reopen guard (`0xde654`) is executed in the oracle and follows the original's state test, including the maintenance flag (the ride
-  panel's call for a mechanic); the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`) is not modelled.
-- `ECON-050`: the guest-grid import preserves paths, but not all original outside, approach-road and footprint cell types. The census predicate is traced; the imported type provenance is incomplete.
+  panel's call for a mechanic); the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`) is not modelled, so the door and the open button
+  open a ride whose queue back has lost its path, which the original's guard (`0x004DF290`) refuses.
+- `ECON-050`: the guest-grid import types only empty, path, queue and track cells. The original types every cell at world init from its MAP byte
+  and the base.md2 tile flags (`0x00536490`: off-terrain 2, 30 or 7) and placement writes footprint types; here those cells read 0 and count.
 - The ticket booth closes at once; the original's booth state and the closed-ride queue turn-away are not
   traced here.
 - The keyboard shortcuts are the door button's own help rows; the original's shortcut table row for Ctrl-C

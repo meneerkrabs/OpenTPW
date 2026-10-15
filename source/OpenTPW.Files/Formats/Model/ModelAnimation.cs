@@ -30,8 +30,9 @@ public readonly record struct ModelScaleKey( ushort Time, ushort Unknown, NVecto
 /// One 64-byte animation record bound to a base-model node. Position, rotation, scale, the
 /// quantised vertex block (flag 0x1000 without 0x4000), the per-corner texture-coordinate tracks
 /// (flag 0x10000) and the node-flag toggles (flag 0x20000) are decoded; the 12-byte block (flag
-/// 0x4000) is parsed into <see cref="VertexPose"/> (one stored pose per tick, read by the PC sampler 0x471860). Path parameters (0x600)
-/// stay raw in <see cref="Words"/> (<see cref="UnsupportedFlags"/>). The bits in
+/// 0x4000) is parsed into <see cref="VertexPose"/> (one stored pose per tick, read by the PC sampler 0x471860). The path-parameter
+/// block of flag 0x200 is parsed into <see cref="PathParameters"/> but not played: the path it indexes is not decoded, so
+/// 0x200/0x400 stay in <see cref="UnsupportedFlags"/>. The bits in
 /// <see cref="MetadataFlags"/> are never read by the original's animation code.
 /// Sampling follows the record sampler of the Feral Mac build (SimThemePark 0xa4f68,
 /// docs/reverse/PPC-formats.md, docs/reverse/ANIM-plan.md); negative times are outside the traced clock domain.
@@ -46,7 +47,7 @@ public sealed class ModelAnimationTrack
 	public const uint NodeFlagToggleFlag = 0x20000;
 	/// <summary>Per-corner texture-coordinate tracks at record +44 (sampler tail 0xa56d8 → 0xa83e8).</summary>
 	public const uint UvAnimationFlag = 0x10000;
-	/// <summary>Path parameter (0x200) and derived orientation (0x400), only partly traced.</summary>
+	/// <summary>Path parameter (0x200, <see cref="ModelPathParameters"/>) and path orientation (0x400); the path itself is not decoded.</summary>
 	public const uint PathFlags = 0x600;
 	/// <summary>
 	/// Exporter metadata: bits that no animation routine of the Mac build tests (the sampler
@@ -73,6 +74,8 @@ public sealed class ModelAnimationTrack
 	public ModelVertexPose? VertexPose { get; init; }
 	/// <summary>Per-corner texture-coordinate tracks (record +44, flag 0x10000).</summary>
 	public ModelUvAnimation? UvAnimation { get; init; }
+	/// <summary>Path-parameter block (record +36, flag 0x200); decoded, not played.</summary>
+	public ModelPathParameters? PathParameters { get; init; }
 	/// <summary>Signed tick entries (record +48, count u16 +22) of a flag-0x20000 record.</summary>
 	public IReadOnlyList<short> NodeFlagToggles { get; init; } = Array.Empty<short>();
 	/// <summary>The raw 16 record words.</summary>
@@ -83,7 +86,8 @@ public sealed class ModelAnimationTrack
 	/// </summary>
 	public bool HasUndecodedPayload => (Flags & ~(PositionFlag | RotationFlags | ScaleFlags | MetadataFlags)) != 0;
 	/// <summary>
-	/// Flag bits whose payload this reader does not play: the path parameters (0x600). <see cref="MetadataFlags"/> are not counted.
+	/// Flag bits whose payload this reader does not play: the path parameters (0x600; <see cref="PathParameters"/> is decoded,
+	/// the path it indexes is not). <see cref="MetadataFlags"/> are not counted.
 	/// </summary>
 	public uint UnsupportedFlags => Flags & ~(PositionFlag | RotationFlags | ScaleFlags | NodeFlagToggleFlag | UvAnimationFlag | MetadataFlags
 		| VertexAnimationFlag | VertexLayoutFlag);
@@ -335,6 +339,14 @@ public sealed class ModelAnimation
 				var block = Pointer( raw[10], ModelVertexAnimation.HeaderBytes, $"record {index} vertex block" );
 				vertexAnimation = ModelVertexAnimation.Decode( data, block, Pointer );
 			}
+			ModelPathParameters? pathParameters = null;
+			if ( (flags & 0x200) != 0 )
+			{
+				if ( raw[9] == 0 )
+					throw new InvalidDataException( $"MD2 animation record {index} has flag 0x200 without a path-parameter block." );
+				var block = Pointer( raw[9], ModelPathParameters.HeaderBytes, $"record {index} path parameters" );
+				pathParameters = ModelPathParameters.Decode( data, block, Pointer );
+			}
 			ModelUvAnimation? uvAnimation = null;
 			if ( (flags & ModelAnimationTrack.UvAnimationFlag) != 0 )
 			{
@@ -443,6 +455,7 @@ public sealed class ModelAnimation
 				VertexPose = vertexPose,
 				UvAnimation = uvAnimation,
 				NodeFlagToggles = toggles,
+				PathParameters = pathParameters,
 				Words = raw
 			};
 		}

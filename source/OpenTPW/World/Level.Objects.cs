@@ -136,7 +136,7 @@ public partial class Level
 	}
 
 	/// <summary>An object's access cell (thing <c>+0x36</c>) for bins and rest areas: its entrance's outside cell on a path, else its first path neighbour.</summary>
-	// [APPROX:GUEST-005] a bin's or rest area's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; the original's +0x36 writer for features is not traced — evidence needed: the object setup's access cell rule
+	// [APPROX:GUEST-005] a bin's or rest area's access cell (thing +0x36) is its entrance's outside cell or its first path neighbour in direction order; tp.exe's constructor 0x004DB090 stores the shape's first entrance cell itself (0x004DB33C, the shape cell 0x00413410 records at +0x494; no walkability test) — evidence needed: whether the original's route finder reaches a goal cell inside a footprint
 	private static (int X, int Y)? AccessCell( OriginalObject item, GuestPathGrid grid )
 	{
 		var cell = (item.Placement.X, item.Placement.Y);
@@ -676,6 +676,7 @@ public partial class Level
 	{
 		if ( Park == null )
 			return;
+		AttachCoasterChallenges();
 		if ( resumeState != null )
 		{
 			var items = Objects.Objects.ToDictionary( item => item.Visitors.AttractionId );

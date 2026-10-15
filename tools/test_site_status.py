@@ -65,10 +65,10 @@ README = """# OpenTPW
 
 ### File formats
 
-| Format | Status | Verified support / remaining limit |
-|---|---|---|
-| Textures ([.WCT](https://x/wct.html)) | ✅ | Decoder loads textures. |
-| Models ([.MD2](https://x/m.html)) | ⚠️ | Most parse. |
+| Format | Decoding | What decodes | Still open in the format | Not yet in the game |
+|---|---|---|---|---|
+| Textures ([.WCT](https://x/wct.html)) | ✅ | Every texture. | — | — |
+| Models ([.MD2](https://x/m.html)) | ⚠️ | Most parse. | Node paths. | Path movement. |
 """
 
 CURATED = {
@@ -127,6 +127,7 @@ class Parsing(unittest.TestCase):
         f = site_status.parse_formats(README)
         self.assertEqual((f["decoded"], f["partial"]), (1, 1))
         self.assertEqual(f["rows"][0]["format"], "Textures")
+        self.assertEqual((f["rows"][1]["open"], f["rows"][1]["game"]), ("Node paths.", "Path movement."))
 
     def test_pulls_keep_only_merged_newest_first(self):
         data = [{"number": 1, "title": "closed", "merged_at": None, "html_url": "u1"},

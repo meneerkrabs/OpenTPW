@@ -6,6 +6,99 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Audio, weather and advisor reading round (October 15, 2026)
+
+Thirty-one audio, advisor and compatibility approximations were read again in tp.exe:
+
+- **Weather draws with the original's render states** (decoder `0x567620`): lightning is additive (`0x200d52`, SRCALPHA/ONE, no depth
+  writes), snow writes depth, and all three discard alpha below 16/255; the parallax is absolute (`0x57efd0`); snow is one triangle per
+  flake with a small jitter each frame (`0x8bcbc8` bit `0x100` is never set on PC); the weather's step follows the game speed (`0x57ff60`
+  reads the rate-scaled clock `0x402d70`).
+- **Sounds**: a level event id is looked up in the level's own category only (`0x6b87d0`; incagod.RSE's EVENT 3 id 43 is silent, as in
+  the original), and event and repair sounds start at whole units (`0x5573d0`).
+- ADVISOR-007, AUDIO-011, AUDIO-015, AUDIO-026 and AUDIO-908 are retired, ADVISOR-010's manual tools are an extension
+  (`[EXT:speech-tool-audio-clock]`), and 15 items are narrowed. Items that need QMixer.dll or usp10.dll stay open: only tp.exe is analysed.
+
+## Interface reading round, part A (October 15, 2026)
+
+Twenty-two interface approximations were read again in tp.exe:
+
+- **The lobby island camera follows the original** (`0x5e1210`, `0x5d5c50`): the eye and target glide separately by 0.1 and 0.2 of the
+  frame step (the frame's ms × 0.01, capped at 500 ms), the field of view is ISLANDFOV (100°, vertical, `0x5e13ed`) instead of 60°,
+  and the angle wraps into [0, 2π) (UI-017 retired).
+- UI-016 (the island angle and height already matched) and UI-029 (the door button latch and help, `0x4ad4e0`, `0x669410`) are retired.
+- Nine items are narrowed with what was read: the font bank chosen by screen mode (`0x419710`), control colours and the single-pass
+  text renderer without a shadow (`0x48f830`), the four readers of RMBCancelOn (`0x4881a0`), the greedy text wrap (`0x6aec80`), the
+  slider class, the options labels and the buy-list row pitch (font slot 7's line height, `0x4ad240`).
+
+## Format table reconciled; SAM reader, LIP checks and MD2 path parameters (October 15, 2026)
+
+The README's format table mixed decoding with game integration: the sound banks' ⚠️ listed untriggered
+events and the mixer, not the one entry word that is really still unknown. It now has separate columns
+for what decodes, what is still unknown in the files and what the game does not use yet; `tools/site_status.py` reads the new
+columns, and docs/FORMAT-BACKLOG.md replaces the October 9 list that had fallen behind the code.
+
+- **SAM:** `SettingsFile`'s parser was character-based and skipped newlines after a key, so a key
+  without a value took the next line's key as its value, quoted names lost everything after the first
+  space (`"Inca Totem"` read as `"Inca`) and the rows of `---` blocks became settings. It now reads the
+  line grammar the shipped files use (one-token or quoted value, `#`/`//` comments, blocks skipped) and
+  agrees with `ObjectSettingsFile` on every shipped `.sam`, loose and in WADs. It reads the rest of any
+  stream instead of trusting `Length`, so non-seekable and partly read streams work.
+- **LIP:** the two corpus checks no longer skip `z_error`, the one Layer I clip, since the decoder reads
+  Layer I: 639 clips, still 70.2 dB talking against 41.9 dB silent, `sp_478` still the only overrun.
+- **MD2 path parameters:** the record +36 block of flag 0x200 is decoded (`ModelPathParameters`): a 16-byte
+  header and one float per tick, a position along the node's path in percent, as the PC sampler
+  0x471860/0x474EA0 reads it. All 71 corpus blocks fit. The path it indexes (model instance +0xAC) is not
+  decoded, so nothing moves along it yet and 0x200/0x400 stay unsupported.
+- The merge of main into the older `formats-phase1` branch keeps its exact Layer I corpus counts and
+  ffmpeg-pinned Layer I clips; main already had its decoder.
+- Verification (macOS arm64, original data): the full test suite passes (4,486 passed, 109 skipped);
+  an independent Codex review's four findings (path table allocated before its bounds check, flag 0x200
+  without a block, an unclosed SAM block, an overclaimed sound-bank ✅) are fixed. No native run was needed.
+
+## Economy rules settled against tp.exe, part two (October 15, 2026)
+
+Sixteen more economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **A new park starts closed** (`0x51562d` writes the closed flag): only the gate button, the two keys and the online park creation open it
+  (`0x519ef0`), and only an imported park saved open is open on load (ECON-031 retired). The M3/M4 gate runs open their park explicitly.
+- **Challenges:** a won challenge with a follow-up marks the follow-up won, so the challenge can be offered again (`0x4d2fb0` re-reads the
+  index the offer moved); declining a follow-up that is not Independent pays half its prize (`0x4d2ec0`); the follow-up is the first open
+  slot of its type in table order (`0x4d2b60`, no same-object preference); type 18 is the best coaster's counted sections with no floor
+  (`0x4d1873`, ECON-036 retired); types 14 and 19 read the coasters' counted sections and type 22 counts ride uses (ECON-034, -035, -055
+  narrowed).
+- **Fixed items** are the objects whose WhichUIType is 4, as the buy menu tests (`0x4aaff0`; ECON-041 retired; the same six per theme), and
+  a repairing mechanic cannot be picked up (`0x505bee` refuses state 13; ECON-052 narrowed).
+- ECON-040 (one golden key once, `0x5afc30`), ECON-051 (the withdrawals flag) and ECON-053 (a carried member is put down where he was
+  before a save, `0x46cdc0`) are retired; ECON-038, -044, -048, -049, -050 and -054 are narrowed.
+
+## Guest rules settled against tp.exe (October 15, 2026)
+
+Sixteen guest approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Prices against RipOffOK** (`0x4d3e00`, key 42 of the table at `0x7456e8`): each shop or sideshow type's own RipOffOK now sets how far
+  above the fair price a guest still pays (100 for shops, 250 for sideshows in the shipped data, so up to 2× and 3.5×); a noticeable
+  balance change (GUEST-003 narrowed).
+- **A full queue costs nothing** (`0x4ffbc0`): a guest finding no room records the event and walks on, with no thought and no happiness
+  loss, and a queue that is too long no longer costs happiness either (GUEST-004 narrowed).
+- **Newest attraction first** (`0x4fcb10`, `0x519d80` pushes at the head): the choice walks the objects newest first, which decides ties
+  (GUEST-002 narrowed).
+- **The use routine's other terms** (`0x4fe1e0`): the small-portion penalty, scaled happiness, fat, salt and ice from the ingredients and
+  the toilet speed term (GUEST-005 narrowed).
+- **Energy** is tp.exe's field `+0x1B8`, 0 at birth and changed only by `0x4fd970` (GUEST-008 retired); 15 guest items are narrowed. The
+  determinism hash is now `0xD28386DACAD73241`.
+
+## Queue exits as in tp.exe (October 15, 2026)
+
+- **A closed ride drains its queue one head per turn** (`0x4e1220` → `0x4e0450`): the others keep waiting, a closed ride that breaks down
+  sends away two that turn (`0x4e0e60`), and joins and the walk to a ride no longer test the open word or the broken state, as the
+  original's join `0x4ffbc0` does not (QUEUE-018 retired; the choice still skips closed rides). A guest at its place in a coaster's queue
+  leaves with thought 13 while the track refuses guests (`0x500612`; COAST-024 narrowed).
+- **Every queue exit but a removed ride costs the medium happiness drop** (the dismissal `0x5012f0`, `0x4fea70(1)`): feeling sick, bored,
+  unhappy, needing the toilet, a failed move-up, a queue edit or a refused price alike; a water ride with a broken circuit is only
+  skipped by the choice, its queue stays (`0x500612` tests coasters and kart tracks). The "problem with a queue" exit (`0x500270`) thinks nothing, and a toilet above 80
+  thinks "need toilet" before the relief test (`0x5003aa`).
+
 ## Economy rules settled against tp.exe, part one (October 15, 2026)
 
 Seventeen economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):

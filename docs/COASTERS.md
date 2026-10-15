@@ -184,7 +184,8 @@ excitement is `trunc(0.5·E + 50)`, where `E` is the coaster's excitement rating
 `0x441970` tests controller `+0x140 == 0`, which is the **self-intersection count** (not riders on board: its only writers
 are the pass `0x439c40` and its inverse `0x43ad50`), that the track is complete and not open, and that the coaster is not the
 one being edited (`0x790fec`). OpenTPW refuses a coaster whose count is nonzero (`CoasterRide.AcceptsGuests`); it has no
-edited-coaster state, and the queue's state 11 gives a failing coaster thought 13 and sends the guest on (not modelled, GUESTS.md).
+edited-coaster state. The queue's state 11 gives a guest queueing for a failing coaster thought 13 and sends it on (tp.exe `0x500612`,
+modelled in GuestSimulation); the ride's own admission is skipped meanwhile (COAST-024).
 
 The count comes from `CoasterCollision` (`0x439ab0` → `0x439c40` → `0x43a2b0`, COAST-004). Every node with a successor has a
 box of the samples of its link grown by its pylon's `fCollisionPossibleRadius` (`0x439920`). A link is tested against every link

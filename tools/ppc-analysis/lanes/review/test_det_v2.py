@@ -78,6 +78,7 @@ class GuardRound2(unittest.TestCase):
             'GlobeCameraMode.cs: private static float yawVelocity;',
             'GlobeCameraMode.cs: public static float RadiusIn { get; set; } = 200f;',
             'GlobeCameraMode.cs: public static float RadiusOut { get; set; } = 475f;',
+            'LobbyCameraMode.cs: public static float IslandFieldOfView { get; set; } = 100f;',
             'LobbyCameraMode.cs: public static float Radius { get; set; } = 70f;',
             'LobbyCameraMode.cs: public static float SpinSpeed { get; set; } = 0.02f;',
             'LobbyCameraMode.cs: public static float VerticalOffset { get; set; } = 20f;',

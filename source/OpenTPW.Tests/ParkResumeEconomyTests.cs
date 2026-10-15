@@ -63,12 +63,14 @@ public sealed class ParkResumeEconomyTests
 	}
 
 	[TestMethod]
-	public void NormalAttachmentKeepsItsExistingOpenParkBehavior()
+	public void AParkWithoutAnImportedSaveStaysClosedWhenGuestsAttach()
 	{
+		// tp.exe 0x51562d: a new world is created with mParkClosed = 1; only the player's door command (0x519ef0) opens it
 		var economy = EconomyTestData.Park();
 		var runtime = ParkEconomyRuntime.ForResume( economy, ParkStartKind.FullSimulation );
 		runtime.AttachGuests( Guests() );
-		Assert.IsTrue( economy.IsParkOpen );
+		Assert.IsFalse( economy.IsParkOpen );
+		Assert.IsFalse( economy.TryAdmitVisitor( 1000, out _ ), "a closed park admits nobody" );
 	}
 
 	[TestMethod]

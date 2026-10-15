@@ -1,3 +1,4 @@
+using OpenTPW.UI.Original;
 using OpenTPW.FrontEnd;
 
 namespace OpenTPW;
@@ -12,6 +13,11 @@ internal sealed partial class FrontEndSmokeTest
 			Require( flow.Menu!.Stack.Top?.Name == "gameMode", "Enter on the focused enter-park button asks for the game mode" );
 			verifyGameMode();
 			Click( flow.Menu.Stack.Top!, "fullSimulation" );
+		} );
+		Do( "confirm game mode", () =>
+		{
+			Require( flow.Menu!.Stack.Top?.Name == "gameMode" && flow.Menu.Stack.Top.Find( "fullSimulation" ) is UiButton { Selected: { } selected } && selected(), "the Full Simulation toggle latches" );
+			Click( flow.Menu.Stack.Top!, "ok" );
 		} );
 		Wait( "starter-key consent opens", 3 );
 		Do( "accept starter-key consent", () =>

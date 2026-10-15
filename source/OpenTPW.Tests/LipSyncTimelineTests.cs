@@ -78,8 +78,6 @@ public class LipSyncTimelineTests
 		{
 			var stem = Path.GetFileNameWithoutExtension( name );
 			var clip = bank.soundFiles.Single( file => string.Equals( Path.GetFileNameWithoutExtension( file.Name ), stem, StringComparison.OrdinalIgnoreCase ) );
-			if ( (clip.FrameData[1] & 0x06) == 0x06 )
-				continue; // z_error is Layer I.
 			var audio = Mp2Decoder.Decode( clip.FrameData );
 			var timeline = new LipSyncTimeline( new LipSyncFile( new MemoryStream( lips.GetFile( name ).GetData() ) ) );
 			if ( timeline.EndMicroseconds > audio.DurationSeconds * 1e6 )
@@ -97,7 +95,8 @@ public class LipSyncTimelineTests
 				(timeline.IsTalking( centre ) ? talking : silent).Add( decibels );
 			}
 		}
-		Assert.AreEqual( 638, clips );
+		// Every global clip with a LIP file, z_error (the one Layer I clip) included.
+		Assert.AreEqual( 639, clips );
 		CollectionAssert.AreEqual( new[] { "sp_478" }, overruns );
 		Console.WriteLine( $"{talking.Count} talking windows {talking.Average():F1} dB; {silent.Count} silent windows {silent.Average():F1} dB (re 1 LSB)." );
 		Assert.IsTrue( talking.Average() - silent.Average() > 20, $"talking {talking.Average():F1} dB, silent {silent.Average():F1} dB" );
@@ -120,8 +119,6 @@ public class LipSyncTimelineTests
 		{
 			var stem = Path.GetFileNameWithoutExtension( name );
 			var clip = bank.soundFiles.Single( file => string.Equals( Path.GetFileNameWithoutExtension( file.Name ), stem, StringComparison.OrdinalIgnoreCase ) );
-			if ( (clip.FrameData[1] & 0x06) == 0x06 )
-				continue; // z_error is Layer I.
 			var audio = Mp2Decoder.Decode( clip.FrameData );
 			var timeline = new LipSyncTimeline( new LipSyncFile( new MemoryStream( lips.GetFile( name ).GetData() ) ) );
 			var ratio = timeline.EndMicroseconds / (audio.DurationSeconds * 1e6);
@@ -134,7 +131,7 @@ public class LipSyncTimelineTests
 		ratios.Sort();
 		var median = ratios[ratios.Count / 2];
 		Console.WriteLine( $"last mark / duration: n={ratios.Count} min={ratios[0].ToString( "F6", CultureInfo.InvariantCulture )} shortest-talking={shortest.ToString( "F6", CultureInfo.InvariantCulture )} median={median.ToString( "F6", CultureInfo.InvariantCulture )} max={ratios[^1].ToString( "F6", CultureInfo.InvariantCulture )}" );
-		Assert.AreEqual( 638, ratios.Count );
+		Assert.AreEqual( 639, ratios.Count );
 		// sp_478 is the only English global clip whose last mark passes its end (about 1.05x).
 		CollectionAssert.AreEqual( new[] { "sp_478" }, overruns );
 		Assert.IsTrue( ratios[^1] < 1.06, $"max {ratios[^1]}" );

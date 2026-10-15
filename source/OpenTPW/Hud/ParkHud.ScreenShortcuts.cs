@@ -211,10 +211,10 @@ public sealed partial class ParkHud
 				RotateBlueprint( shortcut );
 				break;
 			case HudScreenShortcut.LocateNextStaff:
-				LocateNextStaffRole();
+				OpenStaffLocator();
 				break;
 			case HudScreenShortcut.LocateNextVisitor:
-				LocateVisitor();
+				OpenVisitorLocator();
 				break;
 		}
 	}
@@ -279,23 +279,5 @@ public sealed partial class ParkHud
 			return;
 		for ( var step = 0; step < BlueprintTurnSteps( shortcut ); step++ )
 			level.RotateBuild();
-	}
-
-	// [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S (0x40c590 → 0x481790 → 0x4b3f60) opens the locator panel (role radios 0x95e..0x964) and the per-employee panel's buttons 1293/1295 (help 92 "cycle back", 91 "cycle through") cycle through staff — evidence needed: porting those panels (no further evidence needed)
-	private static readonly StaffType[] LocatorRoles = { StaffType.Handyman, StaffType.Mechanic, StaffType.Entertainer, StaffType.Guard, StaffType.Researcher };
-	private StaffType? lastLocatedRole;
-	private void LocateNextStaffRole()
-	{
-		// Without a previous role the cycle starts at the first (handyman); afterwards it starts after it.
-		var start = lastLocatedRole is { } previous ? Math.Max( 0, Array.IndexOf( LocatorRoles, previous ) ) : -1;
-		for ( var offset = 1; offset <= LocatorRoles.Length; offset++ )
-		{
-			var role = LocatorRoles[(start + offset) % LocatorRoles.Length];
-			if ( CanLocateStaff( role ) && LocateStaff( role ) )
-			{
-				lastLocatedRole = role;
-				return;
-			}
-		}
 	}
 }

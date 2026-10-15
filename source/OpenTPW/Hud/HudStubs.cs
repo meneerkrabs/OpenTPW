@@ -58,14 +58,17 @@ public sealed class NoEconomyStatus : IHudParkStatus
 public sealed class EconomyParkStatus : IHudParkStatus
 {
 	private readonly Func<ParkEconomy?> economy;
+	private readonly Func<int?>? playerKeys;
 
-	public EconomyParkStatus( Func<ParkEconomy?> economy )
+	/// <param name="playerKeys">The player's golden keys from the application-owned ticket ledger, null while no ledger is attached.</param>
+	public EconomyParkStatus( Func<ParkEconomy?> economy, Func<int?>? playerKeys = null )
 	{
 		this.economy = economy;
+		this.playerKeys = playerKeys;
 	}
 
 	/// <summary>Binds to a level's runtime (followed on every access).</summary>
-	public static EconomyParkStatus ForLevel( Level level ) => new( () => level.Park?.Economy );
+	public static EconomyParkStatus ForLevel( Level level, Func<int?>? playerKeys = null ) => new( () => level.Park?.Economy, playerKeys );
 
 	private ParkEconomy? Economy => economy();
 
@@ -88,8 +91,10 @@ public sealed class EconomyParkStatus : IHudParkStatus
 	public float TimeScale => GameSpeedScale.Of( Speed );
 
 	public int GoldenTickets => Math.Max( 0, Economy?.GoldenTicketsAvailable ?? 0 );
-	// [DATA:video 41:22] one golden key for every three golden tickets won; spent tickets keep their key
-	public int GoldenKeys => Math.Max( 0, (Economy?.Objectives.GoldenTickets.Count ?? 0) / PlayerProgress.TicketsPerKey );
+	// [BIN:TPW-EXE:0x004a1017 HUD key counter] the HUD's message 0x1e handler (0x4a0fb0) skips the key row in game type 2 (Instant Action) and otherwise shows the player's
+	// keys (0x409410 → 0x5af680): the earned global, per-theme and secret tickets / 3 + the extra keys, which is PlayerTicketLedger.Keys; spent tickets keep their key
+	public int GoldenKeys => Economy is not { } park || park.Mode == ParkGameMode.InstantAction ? 0
+		: Math.Max( 0, playerKeys?.Invoke() ?? park.Objectives.GoldenTickets.Count / PlayerProgress.TicketsPerKey );
 	public object? EconomySource => Economy;
 
 	public void Update( float realSeconds ) { }

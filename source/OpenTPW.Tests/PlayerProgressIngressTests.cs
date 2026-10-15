@@ -52,7 +52,7 @@ public class PlayerProgressIngressTests
 	private static void Set( object target, string name, object? value ) => target.GetType().GetField( name, BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( target, value );
 	private void WriteCost( string theme, string value ) { var path = Path.Combine( root, "data", "levels", theme, "global.sam" ); Directory.CreateDirectory( Path.GetDirectoryName( path )! ); File.WriteAllText( path, "Keys.CostToEnter " + value + "\n" ); }
 	private void Click( string id ) => menu.Stack.Update( context, UiInput.Click( menu.Stack.Top!.Find( id )!.ScreenRect( context.Canvas ).Center ) );
-	private void Choose( string mode, string theme = "jungle" ) { menu.SelectLevel( theme ); menu.ShowGameMode(); Click( mode ); }
+	private void Choose( string mode, string theme = "jungle" ) { menu.SelectLevel( theme ); menu.ShowGameMode(); Click( mode ); Click( "ok" ); }
 	private void Pending()
 	{
 		var field = typeof( GameFlow ).GetField( "pending", BindingFlags.NonPublic | BindingFlags.Instance )!;
@@ -135,7 +135,7 @@ public class PlayerProgressIngressTests
 	{
 		Known( 1 ); Choose( "fullSimulation" ); menu.Stack.Pop(); menu.Stack.Push( new UiScreen( "fresh" ) ); Pending(); Assert.AreEqual( 0, built );
 		Assert.AreEqual( "fresh", menu.Stack.Top!.Name );
-		menu.Stack.Clear(); menu.ShowGameMode(); var action = ((UiButton)menu.Stack.Top!.Find( "fullSimulation" )!).Clicked;
+		menu.Stack.Clear(); menu.ShowGameMode(); Click( "fullSimulation" ); var action = ((UiButton)menu.Stack.Top!.Find( "ok" )!).Clicked;
 		Set( flow, "<Menu>k__BackingField", new FrontEndMenu( OriginalUiTests.FakeStrings(), new[] { Island( "jungle" ) }, new FrontEndActions() ) );
 		action(); Pending(); Assert.AreEqual( 0, built );
 	}
@@ -182,7 +182,7 @@ public class PlayerProgressIngressTests
 		Choose( "fullSimulation" ); var consent = menu.Stack.Top!; var button = consent.Find( "choice0" )!;
 		menu.Stack.Update( context, UiInput.Click( button.ScreenRect( context.Canvas ).Center ) with { Pressed = UiKeys.Accept } );
 		Pending(); Assert.AreEqual( 1, built ); Assert.AreEqual( 1, PlayerTicketFile.LoadIfPresent( Profile )!.ExtraKeys );
-		menu.Stack.Pop(); menu.ShowGameMode(); Click( "fullSimulation" ); Pending(); Assert.AreEqual( 2, built );
+		menu.Stack.Pop(); menu.ShowGameMode(); Click( "fullSimulation" ); Click( "ok" ); Pending(); Assert.AreEqual( 2, built );
 	}
 
 	[TestMethod]

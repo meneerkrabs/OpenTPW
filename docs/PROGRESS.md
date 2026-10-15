@@ -1032,6 +1032,11 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Layout-table review follow-ups (October 15):** the TPI layout-load confirmation lists the tick first (a source scan of every
+  `UiDialogs` caller guards the order); Escape and the right click (RMBCancelOn) close the object window; the window layout is
+  cached; the shop and sideshow windows use their own row kinds, the ride one shows the age; the theme-start dialog, the game-mode
+  screen and the training-budget window follow their tables; the object windows gain the queue, track and apply-all buttons;
+  the lobby shows a menu hint. Restart Park leaves an older automatic checkpoint alone.
 - **Original UI layout tables (October 15):** the Windows executable holds the layout command streams of its windows (the
   grammar of the Mac tables, checked against the window builder 0x65FD58 and its dispatcher 0x66076E), and
   `tools/ppc-analysis/lanes/ui/tpw_exe_layouts.py` generates the derived rectangles, help ids and ui.wad model names of ten of

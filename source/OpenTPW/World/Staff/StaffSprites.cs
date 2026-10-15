@@ -50,13 +50,13 @@ public static class StaffSpriteRules
 	public static readonly StaffClip CatchAndCarry = new( 0x16, 7, StaffPlayback.OnceThenLoop, ThenSlot: 8 );
 
 	/// <summary>Frames per second of a full-rate clip.</summary>
-	// [APPROX:GUEST-016] the staff clips' frame rate (10 per second, half rate 5), the 'moving' test (a position change within the last 0.6 s, 1.3 s for members the world moves a cell per second), the smoothing of the drawn position and the heading from the position change replace the original's per-turn animation steps (0x4d4190), movement vectors and sprite zoom — evidence needed: the script player's frame timing
+	// [APPROX:GUEST-016] the staff clips' frame rate (10 per second, half rate 5), the 'moving' test (a position change within the last 0.6 s, 1.3 s for members the world moves a cell per second) and the smoothing of the drawn position replace tp.exe's timing: the sprite player 0x475360 runs one script step when the millisecond clock passes the sprite's due time +0x7c and adds its interval +0x80 (62 ms at creation, 0x4758f0), and the movement step 0x4fa2a0 sets the heading from the position change, picks the walk or run clip and, through 0x4d41d0 and 0x4d4190, sets the interval to clamp(trunc(62 / v), 0, 250) ms once per turn (v = step length × 3.829657e-05, doubled for the walk clip) — evidence needed: the frames a script step draws and the step length per turn
 	public const float FramesPerSecond = 10f;
 
 	private static readonly int[] PerformanceSlots = { 4, 10, 3, 11 };
 
 	/// <summary>The key a person's sprite bank derives from: the same for the candidate and the member it becomes.</summary>
-	// [APPROX:GUEST-014] the original's variant byte (candidate +9, member +0x20) is not part of OpenTPW's staff records and the order of the banks it indexes is untraced: the bank is (NameIndex + Id) modulo the folder's banks, in file order — evidence needed: the candidate's variant byte and the bank order of 0x4d4140
+	// [APPROX:GUEST-014] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010); OpenTPW keeps no variant: the bank is (NameIndex + Id) modulo the folder's banks, in file order, and every bank of the folder is loaded where 0x541310 stops a flagged category at the limit of 0x41aa40 (1 or 2 by the graphics setting 0x7858d0) — evidence needed: which categories 0x541310 flags and the bank order within a folder
 	public static int VariantKey( int nameIndex, int id ) => (nameIndex + id) & int.MaxValue;
 
 	/// <summary>Index of a variant's bank among <paramref name="count"/> banks.</summary>
@@ -105,7 +105,7 @@ public static class StaffSpriteRules
 	/// <paramref name="moving"/> is whether the member is being moved now; <paramref name="animations"/> (the bank's slots) lets an entertainer pick a
 	/// performance the bank has.
 	/// </summary>
-	// [APPROX:GUEST-015] an entertainer performs a random one of the scripts 13-16, whose entries (0-3) the original resolves per bank (0x540c70, untraced): OpenTPW picks, per member, one of the bank's multi-frame slots 4, 10, 3, 11 while it performs (state 14)
+	// [APPROX:GUEST-015] tp.exe (0x4d46d0) queues script 13 + (r mod (n − 1)) from a second world draw r, or 13 when n is 1, n being the bank's present performance entries (0x541fa0); scripts 13..16 of the table 0x75a418 hold the entry indices 0..3, so a full bank never plays its fourth entry: OpenTPW discards that draw and picks, per member, one of the bank's multi-frame slots 4, 10, 3, 11 while it performs (state 14) — evidence needed: the shipped banks' performance entries (0x540d90) and how 0x475b80 plays an entry
 	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpriteAnimation>? animations = null )
 	{
 		// a resting member is inside the Staff Room (0x5054d0 state 3 removes the model); a carried one is the dangling sprite instead

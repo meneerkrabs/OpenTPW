@@ -124,6 +124,16 @@ public class AudioTriggerTests
 		Assert.AreEqual( SoundEventPlayer.BranchingSentence, crowd.Player );
 		for ( var parameter = 0; parameter <= GameAudio.MaximumCrowdParameter; parameter++ )
 			Assert.IsTrue( SoundSentence.NextSound( crowd, 0, parameter, 1 ) >= 0, $"parameter {parameter} has a section" );
+		// Code 7 is the event's own code (slot 0) and sounds 1-6 bind it in slot 1 under the volume mask, so a count update re-evaluates them.
+		Assert.AreEqual( GameAudio.CrowdParameterCode, crowd.Extra );
+		CollectionAssert.AreEqual( Enumerable.Repeat( true, 6 ).Concat( Enumerable.Repeat( false, 6 ) ).ToArray(),
+			crowd.Sounds.Select( sound => SoundSentence.BindsSlot( sound, GameAudio.CrowdParameterCode ) ).ToArray() );
+		Assert.IsTrue( crowd.Sounds.Take( 6 ).All( sound => sound.Raw[24] == 1 && (sound.MinimumVolume, sound.MaximumVolume) == (14, 22) ) );
+		// The advisor's cut-off slaps and the ticket advice's sound exist in the global banks.
+		var speech = SoundCategory.TryLoad( fileSystem, "/global/Speech", "cat_speech" );
+		Assert.IsNotNull( speech );
+		for ( var slap = 0; slap < 3; slap++ )
+			Assert.IsNotNull( speech.Catalog.Find( AutomaticAdvisor.FirstSlapSound + (uint)slap ), $"cat_speech slap {AutomaticAdvisor.FirstSlapSound + slap:#x}" );
 		var ui = SoundCategory.TryLoad( fileSystem, "/global/sound", "cat_ui" );
 		Assert.IsNotNull( ui );
 		foreach ( var eventId in new[] { GameAudio.ClickEvent, GameAudio.ErrorEvent, GameAudio.DrawerOpenEvent, GameAudio.DrawerCloseEvent, 0xBDu } )

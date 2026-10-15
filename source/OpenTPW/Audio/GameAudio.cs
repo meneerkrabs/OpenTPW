@@ -63,6 +63,8 @@ internal sealed class ScreamStatistics
 /// </summary>
 public static class GameAudio
 {
+	/// <summary>The crowd sentence's parameter code (cat_kids 0x5B's event code).</summary>
+	public const byte CrowdParameterCode = 7;
 	/// <summary>The park music event the original starts when a park opens (<c>0x100BC144</c>: event 2 of the level's music category).</summary>
 	public const uint ParkMusicEvent = 2;
 	/// <summary>The music parameter's cap (<c>0x101C2448</c>: values above 0x59 become 0x59).</summary>
@@ -248,6 +250,7 @@ public static class GameAudio
 			return;
 		LeaveLobby();
 		LeavePark();
+		SoundCadence.Reset();
 		if ( seed is uint value )
 			events!.Reseed( value );
 		staffRandom = new DeterministicRandom( events!.Seed ^ 0x53544146u );
@@ -446,6 +449,20 @@ public static class GameAudio
 	/// </summary>
 	// [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) and capped at 100 (0x101C2498)
 	// [BIN:STP-PPC:0x100BC210 crowd update] a count above 0 starts cat_kids event 0x5B and sets its parameter; 0 stops it (the start/stop wrapper is 0x100BC2E0)
+	/// <summary>The world-step gate of the park's music and crowd parameter updates (<see cref="WorldStepCadence"/>).</summary>
+	public static WorldStepCadence SoundCadence { get; } = new();
+
+	/// <summary>
+	/// Advances the park's world steps by the game timer's <paramref name="elapsedMilliseconds"/> (0 while paused) and runs the crowd update
+	/// (<see cref="SetCrowd"/>) once for every 32nd step, as the original's main loop does; the count is read only when an update falls due.
+	/// </summary>
+	public static void UpdateCrowd( double elapsedMilliseconds, Func<int> guestsNearCamera )
+	{
+		ArgumentNullException.ThrowIfNull( guestsNearCamera );
+		for ( var due = SoundCadence.Advance( elapsedMilliseconds ); due > 0; due-- )
+			SetCrowd( guestsNearCamera() );
+	}
+
 	public static void SetCrowd( int guestsNearCamera )
 	{
 		if ( events == null )
@@ -462,8 +479,8 @@ public static class GameAudio
 			if ( crowd != null )
 			{
 				// [BIN:STP-PPC:0x100BC298–0x100BC29C crowd update] the capped nearby count is sent with parameter code 7 to 0x100BAF70
-				crowd.ParameterCode = 7;
-				crowd.Parameter = parameter;
+				// [BIN:TPW-EXE:0x0051E7FC crowd update] the PC sends it on every update through 0x51BC40(handle, 7, count); code 7 is the crowd event's own code (cat_kids 0x5B, event +0x12 = 7) and sounds 1-6 of the twelve bind it in slot 1 under the volume mask (selector +0x16 = 7, mask +0x18 = 1), so while one of them plays each update re-evaluates its volume (14 + 8 * count / 100) and redraws its pitch (0..6); sounds 7-12 have selector 0 and are untouched
+				crowd.SetParameter( CrowdParameterCode, parameter );
 				crowd.Resume();
 			}
 		}

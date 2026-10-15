@@ -24,6 +24,12 @@ public sealed partial class ParkHud
 		var type = ChooseCursor();
 		Input.CursorType = type;
 		cursorPath = CursorArt( type );
+		if ( IsRiding )
+		{
+			// the ride view's crosshair is drawn from rectangles (its art is not in the data files), so the system pointer is hidden whenever the pointer is in the window
+			Input.SoftwareCursorRequested = pointer != null && !uiCapturesMouse;
+			return;
+		}
 		// the system pointer stays unless the game's own pointer will be drawn this frame: its art is loaded and decodes, the pointer is in the window and no ImGui panel wants the mouse
 		Input.SoftwareCursorRequested = ShouldDrawSoftwareCursor( cursorPath, pointer != null, uiCapturesMouse );
 	}
@@ -33,6 +39,8 @@ public sealed partial class ParkHud
 
 	private Input.CursorTypes ChooseCursor()
 	{
+		if ( IsRiding )
+			return Input.CursorTypes.Crosshair;
 		if ( pointerOverUi )
 			return Input.CursorTypes.Normal;
 		if ( level.StaffPlacement is { IsActive: true } staffTool )
@@ -47,6 +55,11 @@ public sealed partial class ParkHud
 	/// <summary>Draws the game's pointer; the game flow calls it after every other layer so nothing covers it.</summary>
 	public void DrawCursor( UiContext context )
 	{
+		if ( IsRiding && pointer is { X: >= 0, Y: >= 0 } crosshairAt )
+		{
+			DrawCrosshair( context, crosshairAt );
+			return;
+		}
 		if ( cursorPath == null || pointer is not { X: >= 0, Y: >= 0 } at )
 			return;
 		var size = 32f * Math.Max( 1, context.Canvas.TextScale );

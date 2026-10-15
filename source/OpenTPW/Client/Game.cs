@@ -481,6 +481,7 @@ internal static class Game
 						case "msg": hud.PostGameMessage( argument ); break;
 						case "openmsg": hud.OpenPendingMessage( 0 ); break;
 						case "help": hud.DebugHelp( argument ); break;
+						case "ride": hud.DebugRide( argument ); break;
 						case "models": hud.DebugShowModels( argument.Split( '+' ) ); break;
 						default: Log.Warning( $"--debug-hud: unknown action {name}." ); break;
 					}

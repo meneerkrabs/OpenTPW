@@ -99,7 +99,7 @@ public sealed partial class ParkHud
 
 	public OriginalObject? SelectedObject => selectedObject;
 	/// <summary>True while a menu is on top of the HUD; the buy, staff, attractions and visitors windows do not pause.</summary>
-	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != buyScreen && screen != staffScreen
+	public bool Paused => Stack.Screens.Any( screen => screen != hud && screen != rideScreen && screen != buyScreen && screen != staffScreen
 		&& screen != attractionScreen && screen != visitorScreen );
 	public IReadOnlyList<string> Messages => messages.Select( message => message.Text ).ToArray();
 	/// <summary>The park simulation's time scale for the screens now open (see <see cref="TimeScaleFor"/>).</summary>
@@ -356,15 +356,16 @@ public sealed partial class ParkHud
 			Anchor = UiAnchor.BottomLeft,
 			Visible = false
 		} ) );
-		// [EXT:ONLINE-069] a read-only visit can ride the inspected ride (the original's visitors could ride the
-		// published park's rides; docs/reverse/ONLINE-VISIT.md). The button lives in the object panel.
+		// The ride window's "Ride it!" button: the model button b_rideit (control 0x3e37) with help 16 "Left-click to ride the attraction"; every ride whose model has a camera seat can be ridden, the owner's and a visit's.
+		// [BIN:TPW-EXE:0x7556fc ride window table] control 0x3e37, type 2 (model button), model b_rideit.MD2 (root "b_ride it!", hash 0xaaee5929), rectangle (956,800)-(1109,953), help 16, in the object window w_ (248,30)-(1800,1007) of the table 0x755150
+		// [APPROX:UI-024] the button sits in the info arm's button row (centre 875,1425) instead of the original object window's row at (956,800)-(1109,953), which this arm does not have; the object windows' tables are ported separately
 		infoElements.Add( hud.Add( new UiButton
 		{
 			Id = "rideView",
-			Text = () => OnlineStrings.Get( IsRiding ? OnlineLabel.LeaveRide : OnlineLabel.Ride ),
-			Font = fonts => fonts.Label,
+			Model = "b_rideit",
+			Help = strings.Help( 16 ),
 			Clicked = () => { if ( IsRiding ) StopRide(); else StartRide( selectedObject ); },
-			Bounds = UiRect.FromCenter( new NVector2( 875, 1425 ), 200, 100 ),
+			Bounds = UiRect.FromCenter( new NVector2( 875, 1425 ), 120, 120 ),
 			Anchor = UiAnchor.BottomLeft,
 			Visible = false
 		} ) );
@@ -372,7 +373,7 @@ public sealed partial class ParkHud
 		AddShopPriceButton();
 		AddRideUpgradeButton();
 		AddCallStaffButton();
-		hud.DrawOverlay = DrawFeedback;
+		hud.DrawOverlay = context => { DrawFeedback( context ); DrawRideStatic( context ); };
 		hud.DrawBackground = DrawMessagePanel;
 		hud.Updating = FitCashText;
 		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
@@ -600,13 +601,13 @@ public sealed partial class ParkHud
 	public bool IsRiding => level.RideView != null;
 
 	/// <summary>
-	/// Boards a placed ride of the visited park: the camera becomes the ride's view, keeping the heading the visitor
-	/// had. The original's visitors could ride the published park's rides (docs/reverse/ONLINE-VISIT.md); only a
-	/// read-only visit offers it here, and building/selling stays impossible while riding.
+	/// Boards a placed ride: the camera becomes the ride's view, keeping the heading the player had. The original's
+	/// "Ride it!" button boards any ride whose model has a camera seat, and its visitors could ride the published
+	/// park's rides (docs/reverse/ONLINE-VISIT.md); building/selling stays impossible while riding.
 	/// </summary>
 	public void StartRide( OriginalObject? item )
 	{
-		if ( !level.IsReadOnlyVisit || item is not { IsDeleted: false } candidate || !level.EnterRideView( candidate ) )
+		if ( item is not { IsDeleted: false } candidate || !level.EnterRideView( candidate ) )
 			return;
 		PostMessage( OnlineStrings.Get( OnlineLabel.Ride ) + ": " + EntryName( candidate.Entry ) );
 	}
@@ -712,11 +713,11 @@ public sealed partial class ParkHud
 	internal bool Update( UiContext context, UiInput input, bool? mouseCaptured, bool? keyboardCaptured, bool? textCaptured )
 	{
 		var ridingAtStart = IsRiding;
+		SyncRideScreen( context.Delta );
 		var walkingAtStart = CamcorderArmed || level.FreeWalk != null;
 		foreach ( var element in infoElements )
 			element.Visible = InfoArmOpen && selectedObject is { IsDeleted: false }
-				// The visit button uses the same ride camera as the park's keyboard shortcut.
-				&& (element.Id != "rideView" || level.IsReadOnlyVisit);
+				&& (element.Id != "rideView" || (selectedObject is { IsDeleted: false } rideCandidate && RideCameraMode.CanRide( rideCandidate ) && !TryPriceTarget( rideCandidate, out _, out _ ))); // the price button shares the slot
 		if ( selectedObject is not { IsDeleted: false } && InfoArmOpen )
 			InfoArmOpen = false;
 
@@ -729,7 +730,7 @@ public sealed partial class ParkHud
 		if ( hud.Find( "deleteRide" ) is UiButton deleteButton )
 			deleteButton.Enabled = !level.IsReadOnlyVisit && selectedObject is { IsDeleted: false } item && !item.Entry.IsFixedItem;
 		if ( hud.Find( "rideView" ) is UiButton rideButton )
-			rideButton.Enabled = level.IsReadOnlyVisit && (IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate )));
+			rideButton.Enabled = IsRiding || (selectedObject is { IsDeleted: false } candidate && RideCameraMode.CanRide( candidate ));
 
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
 		UpdateRideUpgradeButton( input );
@@ -756,21 +757,17 @@ public sealed partial class ParkHud
 			keyboardCaptured ??= io.WantCaptureKeyboard;
 			textCaptured ??= io.WantTextInput;
 		}
-		var shortcutsAllowed = ParkShortcutsAllowed( paused, Stack.Screens.Count > 1, Input.TextEntryActive, keyboardCaptured.Value || textCaptured.Value );
+		// the ride view's own screen is not an overlay of the park: its exit keys stay live
+		var shortcutsAllowed = ParkShortcutsAllowed( paused, Stack.Screens.Count > (rideScreen != null ? 2 : 1), Input.TextEntryActive, keyboardCaptured.Value || textCaptured.Value );
 
 		var camcorderOwnsInput = UpdateCamcorder( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
 			!shortcutsAllowed || overUi || consumed || mouseCaptured.Value || input.Text.Length > 0 || ridingAtStart ) || walkingAtStart;
 
-		// Ride It (E) rides the selected ride; a right click (RMB cancel on) or E again leaves the ride view.
-		// [APPROX:UI-093] the key stands in for the ride window's "Ride it!" button (gui_CameraFlags 4), whose art is not in the repository
-		if ( shortcutsAllowed )
-		{
-			if ( IsRiding && (Input.Pressed( InputButton.RideView ) || (input.RightPressed && GameOptions.Current.RmbCancel
-				&& RideRightClickAllowed( shortcutsAllowed, overUi, consumed, mouseCaptured.Value ))) )
-				level.ExitRideView();
-			else if ( !IsRiding && Input.Pressed( InputButton.RideView ) && selectedObject is { IsDeleted: false } rideObject )
-				level.EnterRideView( rideObject );
-		}
+		// Ride It (E) rides the selected ride; Escape, the C key, the eject button and a right click (RMB cancel on, after two seconds) leave the ride view, and E again does too.
+		// [APPROX:UI-093] E stands in beside the ride window's b_rideit button
+		if ( shortcutsAllowed && !IsRiding && Input.Pressed( InputButton.RideView ) && selectedObject is { IsDeleted: false } rideObject )
+			level.EnterRideView( rideObject );
+		UpdateRideExits( input, shortcutsAllowed, mouseCaptured.Value );
 
 		// The park door's keyboard shortcuts, named by the door button's help rows (UIHELPTEXT 193/194: Ctrl-O/Ctrl-C).
 		// [DATA:UIHELPTEXT 193 "Left-click to open the park (Ctrl-O)", 194 "Left-click to close the park (Ctrl-C)"]
@@ -859,6 +856,7 @@ public sealed partial class ParkHud
 		}
 		UpdateCursor( input, overUi || consumed, mouseCaptured == true );
 		Status.Update( context.Delta );
+		SyncRideScreen( 0 );
 		return overUi || consumed || toolClick;
 	}
 

@@ -1,61 +1,195 @@
+using System.Numerics;
+using NVector2 = System.Numerics.Vector2;
+using NVector3 = System.Numerics.Vector3;
+
 namespace OpenTPW;
 
 /// <summary>
-/// The ride camera: the first-person view from a placed ride, reusable by the park (the player rides it with
-/// <see cref="Level.EnterRideView"/>) and by read-only visits of a shared park. The original had ride cameras:
-/// the Mac binary's camera-mode classes <c>CMMFirstPersonTarget</c> (Mac <c>0x1006CF44</c>, 3,312 bytes, its
-/// body starts by reading a thing's position into a cell index) and <c>CMMCoaster</c> (vtables data:0x3d758 and
-/// data:0x3d7a4). The "Ride it!" entry and the exits are the maexah/OpenTPW lead (docs/exe/hud.md); OpenTPW
-/// offers the ride where its motion is traced: a coaster, from its first train's front car along the sampled
-/// track, and the prototype Totem, on its carriage's modelled height.
+/// The ride view (the original's camcorder on a ride, <c>gui_CameraFlags</c> 4): the eye sits on the ride model's camera seat (<see cref="RideSeat"/>), looks along
+/// the seat's axes with the original's one-frame orientation smoothing, and the pointer's offset from the screen centre turns the view (free look). Reusable by the park
+/// (the player rides with <see cref="Level.EnterRideView"/>) and by read-only visits of a shared park. A coaster takes the seat of its first train's front car model.
 /// </summary>
-// [APPROX:UI-094] the view itself is an approximation: the eye sits half a car above the first train's front car
-// sample (coaster) or on the carriage node's height above the ride's anchor (prototype), the look direction follows
-// the track's sampled direction or the entry camera's heading, and the walk, the sway and the camera-mode Update
-// bodies are not decoded — evidence needed: the Update of CMMFirstPersonTarget (Mac 0x1006CF44) and CMMCoaster,
-// and the seat position the ride's script gives the rider.
-// Riding a coaster follows the first train only; the other trains are not chosen by the player.
+// [BIN:TPW-EXE:0x42b1c0 camera update] the per-frame camera update: with the ride flag set, the camera matrix is the seat node's world matrix (0x790a30) with the three rotation rows blended with the node's matrix of the previous frame (0x790948) and the translation copied exactly (0x42ca04-0x42cb96), then the free-look rotation is multiplied in (0x42cba0-0x42cbdf)
+// [APPROX:UI-094] the field of view (55) is OpenTPW's: the projection setup of the ride view is not traced; which car of the first train 0x436880 selects (record +0x49 -> +0x34 -> +0xc) is not decoded, so the front car stands in; the signs of the look rotations are read from the video (the view turns right and down with the pointer, 77:20-77:21), not from the matrix code; which of the seat's axes is the view direction (the model's Z) is taken from the car models
 public sealed class RideCameraMode : CameraMode
 {
-	/// <summary>Engine units above the front car's sample the eye sits at (half of the drawn car height, CoasterRenderer).</summary>
+	/// <summary>Engine units above the front car's sample the eye sits at when a coaster's car model has no seat (half of the drawn car height, CoasterRenderer).</summary>
 	public const float CoasterSeatHeight = 1.5f;
-	/// <summary>Engine units above the prototype ride's anchor the eye sits at.</summary>
+	/// <summary>Engine units above the prototype ride's anchor the eye sits at when its model has no seat.</summary>
 	public const float PrototypeSeatHeight = 2f;
 	/// <summary>The field of view of the ride view; the original's first-person field of view is not traced (UI-094).</summary>
 	public const float ViewFieldOfView = 55f;
+	/// <summary>The pointer's dead zone each side of the view's centre, in units of the half width.</summary>
+	public const float LookDeadZoneX = 0.2f;
 
 	private readonly OriginalObject ride;
 	private readonly Vector3 heading;
+	private readonly Func<Matrix4x4?>? seat;
+	private NVector3 up = NVector3.UnitZ;
+	private Matrix4x4? previousNode;
 
-	/// <param name="ride">The placed ride to ride: a coaster station with a completed track, or the prototype ride.</param>
-	/// <param name="heading">Horizontal look direction until the track gives one (the view the player had when boarding).</param>
-	public RideCameraMode( OriginalObject ride, Vector3 heading )
+	/// <param name="ride">The placed ride to ride: a ride whose model has a camera seat, a coaster station with a completed track, or the prototype ride.</param>
+	/// <param name="heading">Horizontal look direction until a seat gives one (the view the player had when boarding).</param>
+	/// <param name="seat">The seat's world matrix in engine axes (X/Y ground, Z up), null when it is not available; defaults to the ride model's seat node (a coaster has none by default).</param>
+	public RideCameraMode( OriginalObject ride, Vector3 heading, Func<Matrix4x4?>? seat = null )
 	{
 		this.ride = ride;
 		this.heading = heading;
+		this.seat = seat ?? DefaultSeat( ride );
 		FieldOfView = ViewFieldOfView;
 	}
 
 	/// <summary>The ride being ridden.</summary>
 	public OriginalObject Ride => ride;
 
+	/// <summary>The camera's up vector: the seat's, so the horizon rolls with the car.</summary>
+	public override Vector3 Up => new( up.X, up.Y, up.Z );
+
+	/// <summary>The look angles of the last frame in radians: yaw (positive turns right) and pitch (positive looks down).</summary>
+	public (float Yaw, float Pitch) LastLook { get; private set; }
+
+	private static Func<Matrix4x4?>? DefaultSeat( OriginalObject? ride )
+	{
+		if ( ride?.Runtime == null || ride.Runtime.Coaster != null )
+			return null;
+		var node = RideSeat.FindNode( ride );
+		return node < 0 ? null : () => node < ride.NodeTransforms.Count ? ride.GetNodeTransform( node ) : null;
+	}
+
+	/// <summary>A pointer offset that replaces the mouse (captures and tests); null reads the mouse.</summary>
+	// [EXT:debug-hud] developer/screenshot helper, not original behaviour
+	internal static NVector2? PointerOverride { get; set; }
+
 	public override void Update()
 	{
-		var (eye, look) = Frame( ride, heading );
-		Position = eye;
-		Rotation = FrameRotation( eye, look );
+		var size = Screen.Size;
+		var pointer = PointerOverride ?? (size.X > 0 && size.Y > 0 ? PointerOffset( Input.Mouse.Position.X, Input.Mouse.Position.Y, size.X, size.Y ) : NVector2.Zero);
+		Advance( Time.Delta * 1000f, pointer );
+	}
+
+	/// <summary>One frame: the seat's pose (or the fallback frame without one), smoothed, then turned by the free look.</summary>
+	/// <param name="deltaMilliseconds">The frame time in milliseconds.</param>
+	/// <param name="pointer">The pointer's offset from the view centre, each axis in [-1, 1] (X right, Y up).</param>
+	public void Advance( float deltaMilliseconds, NVector2 pointer )
+	{
+		if ( seat?.Invoke() is not { } node )
+		{
+			var (eye, look) = Frame( ride, heading );
+			Position = eye;
+			Rotation = FrameRotation( eye, look );
+			up = NVector3.UnitZ;
+			previousNode = null;
+			LastLook = default;
+			return;
+		}
+		var current = SeatAxes( node );
+		var smoothed = current;
+		if ( previousNode is { } before )
+			smoothed = Blend( current, SeatAxes( before ), BlendFactor( deltaMilliseconds ) );
+		previousNode = node;
+		var (yaw, pitch) = LookAngles( pointer.X, pointer.Y );
+		LastLook = (yaw, pitch);
+		var (lookForward, lookUp) = ApplyLook( smoothed.Forward, smoothed.Up, yaw, pitch );
+		up = lookUp;
+		Position = new Vector3( node.Translation.X, node.Translation.Y, node.Translation.Z );
+		Rotation = BasisRotation( lookForward, lookUp );
+		if ( !EntityConstructionScope.IsStaging )
+			GameAudio.UpdateListener( new NVector3( Position.X, Position.Y, Position.Z ), lookForward, Level.Current?.OriginalPark?.Heightfield );
+	}
+
+	/// <summary>
+	/// The weight of the previous frame's orientation in the blend: <c>(1000 - clamp(dt, 1, 1000)) * 0.0005</c> with the frame time in milliseconds,
+	/// about 0.48 at 30 frames a second and never more than 0.4995.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42cba0 view smoothing] 0x42ca88-0x42cb0b: dt = (current millisecond tick + 1) - the last frame's tick (0x42b1c0), clamped to [1, 1000], a = (1000 - dt) * 0.0005 (0x6fde34 is 0.0005), and every one of the three rotation rows is node * (1 - a) + previousNode * a; the previous matrix (0x790948) is then overwritten with the node's matrix, not with the blend, so the smoothing is a one-frame average, not an accumulating ease
+	public static float BlendFactor( float deltaMilliseconds )
+	{
+		var dt = float.IsFinite( deltaMilliseconds ) ? Math.Clamp( deltaMilliseconds, 1f, 1000f ) : 1f;
+		return (1000f - dt) * 0.0005f;
+	}
+
+	/// <summary>
+	/// The turn the pointer asks for: <c>yaw</c> from its horizontal offset (a dead zone of 0.2 each side, then 3.5 radians per unit), <c>pitch</c> from its vertical offset
+	/// (upwards from 0.2 at 1.2, downwards from -0.4 at 1.0), in radians; positive yaw turns right, positive pitch looks down.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42b8c7 ride look] with the camera flags in 0x3c: x = (pointer x - 0x7a1c54) / 0x74d104 and y = -(pointer y - 0x7a1c58) / 0x74d108 (the view's centre and half size, written at 0x48a14e-0x48a1c5); 0x790ae0 = (x -/+ 0.2) * 3.5 outside +/-0.2 else 0; 0x790adc = (0.2 - y) * 1.2 above 0.2, -y - 0.4 below -0.4, else 0; both are read at 0x42cba5/0x42cbaa and multiplied in as a rotation about X by 0x790adc then about Y by 0x790ae0 (the axis string "XY" at 0x74daa4, 0x46f6f0); the pointer position itself is the input, with no easing of its own
+	// [APPROX:UI-094] the signs (a pointer right of and below the centre turns the view right and down) come from the video, the matrix code was not followed to its sign; the pointer is the host's mouse position over the window, where the original takes the view window's own rectangle
+	public static (float Yaw, float Pitch) LookAngles( float x, float y )
+	{
+		x = float.IsFinite( x ) ? Math.Clamp( x, -1f, 1f ) : 0;
+		y = float.IsFinite( y ) ? Math.Clamp( y, -1f, 1f ) : 0;
+		var yaw = x < -LookDeadZoneX ? (x + LookDeadZoneX) * 3.5f : x > LookDeadZoneX ? (x - LookDeadZoneX) * 3.5f : 0;
+		var pitch = y < -0.4f ? -y - 0.4f : y > 0.2f ? (0.2f - y) * 1.2f : 0;
+		return (yaw, pitch);
+	}
+
+	/// <summary>The pointer's offset from the view centre as the original computes it: -1..1 across the window, Y up.</summary>
+	public static NVector2 PointerOffset( float pointerX, float pointerY, float width, float height ) =>
+		new( Math.Clamp( (pointerX - width / 2f) / (width / 2f), -1f, 1f ), Math.Clamp( -(pointerY - height / 2f) / (height / 2f), -1f, 1f ) );
+
+	/// <summary>
+	/// The forward and up axes of a seat matrix in engine axes. A node's local Z (the model's forward) and Y (up) are the engine matrix's second and third rows
+	/// (<see cref="ObjectPlacement.SwapAxes"/> swaps Y and Z); the placement's scale is divided out.
+	/// </summary>
+	public static (NVector3 Forward, NVector3 Up) SeatAxes( Matrix4x4 engineNode ) =>
+		Orthonormal( NVector3.TransformNormal( NVector3.UnitY, engineNode ), NVector3.TransformNormal( NVector3.UnitZ, engineNode ) );
+
+	private static (NVector3 Forward, NVector3 Up) Orthonormal( NVector3 forward, NVector3 upward )
+	{
+		if ( forward.LengthSquared() < 1e-12f )
+			forward = NVector3.UnitX;
+		forward = NVector3.Normalize( forward );
+		upward -= forward * NVector3.Dot( upward, forward );
+		if ( upward.LengthSquared() < 1e-12f )
+		{
+			var candidate = MathF.Abs( forward.Z ) < 0.9f ? NVector3.UnitZ : NVector3.UnitX;
+			upward = candidate - forward * NVector3.Dot( candidate, forward );
+		}
+		return (forward, NVector3.Normalize( upward ));
+	}
+
+	/// <summary>The blend of the current and the previous frame's axes: current * (1 - weight) + previous * weight, made orthonormal again.</summary>
+	public static (NVector3 Forward, NVector3 Up) Blend( (NVector3 Forward, NVector3 Up) current, (NVector3 Forward, NVector3 Up) previous, float weight ) =>
+		Orthonormal( current.Forward * (1 - weight) + previous.Forward * weight, current.Up * (1 - weight) + previous.Up * weight );
+
+	/// <summary>Turns a view by the free look: first the pitch about its right axis, then the yaw about its up axis (positive yaw to the right, positive pitch down).</summary>
+	public static (NVector3 Forward, NVector3 Up) ApplyLook( NVector3 forward, NVector3 up, float yaw, float pitch )
+	{
+		if ( yaw == 0 && pitch == 0 )
+			return (forward, up);
+		// Engine axes are right-handed with right = forward x up; a positive turn about 'right' looks up, about 'up' looks left.
+		var right = NVector3.Cross( forward, up );
+		var pitched = Quaternion.CreateFromAxisAngle( right, -pitch );
+		var f = NVector3.Transform( forward, pitched );
+		var u = NVector3.Transform( up, pitched );
+		var yawed = Quaternion.CreateFromAxisAngle( up, -yaw );
+		return Orthonormal( NVector3.Transform( f, yawed ), NVector3.Transform( u, yawed ) );
+	}
+
+	/// <summary>The rotation whose forward axis is <paramref name="forward"/> and whose up axis is <paramref name="up"/> (the engine's forward is +X, right -Y, up +Z).</summary>
+	public static Rotation BasisRotation( NVector3 forward, NVector3 up )
+	{
+		(forward, up) = Orthonormal( forward, up );
+		var right = NVector3.Cross( forward, up );
+		var matrix = new Matrix4x4( forward.X, forward.Y, forward.Z, 0, -right.X, -right.Y, -right.Z, 0, up.X, up.Y, up.Z, 0, 0, 0, 0, 1 );
+		var q = Quaternion.Normalize( Quaternion.CreateFromRotationMatrix( matrix ) );
+		return new Rotation( q.X, q.Y, q.Z, q.W );
 	}
 
 	/// <summary>The look target is a world position; rotation follows its direction relative to the eye.</summary>
 	internal static Rotation FrameRotation( Vector3 eye, Vector3 look ) => Rotation.LookAt( look - eye );
 
-	/// <summary>Whether a placed ride can be ridden: the prototype ride, or a coaster whose track is complete.</summary>
-	public static bool CanRide( OriginalObject ride ) => ride is PrototypeRide || CanRide( ride.Runtime );
+	/// <summary>
+	/// Whether a placed ride can be ridden: a coaster with a completed track, or any other ride whose model has a camera seat
+	/// (the first dummy attribute with bit 0x1000 and value 1), or the prototype ride.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42a560 ride camera] a ride is rideable when its model has the seat record the camera looks up; about 40 ride models carry one (coasters, the Totem, bumper cars, go-karts, tv simulator, rocket and others)
+	public static bool CanRide( OriginalObject ride ) => ride is PrototypeRide || (ride.Runtime is { } runtime && (runtime.Coaster != null ? CanRide( runtime ) : runtime.IsAttraction && RideSeat.FindNode( ride ) >= 0));
 
 	/// <summary>Whether a placed object's runtime is a coaster with a completed, running track.</summary>
 	public static bool CanRide( OriginalObjectRuntime runtime ) => runtime.Coaster is { IsOperational: true, Trains.Count: > 0 };
 
-	/// <summary>The camera frame for the current state of the ridden ride: where the eye is and where it looks.</summary>
+	/// <summary>The camera frame without a seat: where the eye is and where it looks (a coaster's sampled track, the prototype's height).</summary>
 	public static (Vector3 Eye, Vector3 Look) Frame( OriginalObject ride, Vector3 heading )
 	{
 		if ( CanRide( ride.Runtime ) )
@@ -72,7 +206,7 @@ public sealed class RideCameraMode : CameraMode
 		return (eye, eye + direction);
 	}
 
-	/// <summary>The prototype ride: the eye on the carriage's height above the anchor, looking as on entry.</summary>
+	/// <summary>The prototype ride without a seat: the eye on the carriage's height above the anchor, looking as on entry.</summary>
 	public static (Vector3 Eye, Vector3 Look) PrototypeFrame( Vector3 anchor, float motionHeight, Vector3 heading )
 	{
 		var eye = new Vector3( anchor.X, anchor.Y, anchor.Z + motionHeight + PrototypeSeatHeight );

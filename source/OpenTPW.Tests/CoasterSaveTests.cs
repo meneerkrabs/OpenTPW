@@ -326,7 +326,7 @@ public class CoasterSaveTests
 
 		// The train placement is the new one; every rider of the old one waits to leave, the admission ring is kept.
 		Assert.AreEqual( 0, restored.RidersOnBoard );
-		Assert.AreEqual( 0f, restored.Trains[0].Position, "a new train starts on the platform" );
+		Assert.AreEqual( 0f, restored.CarCoordinate( restored.Trains[0], restored.Trains[0].Cars.Count - 1 ), 1e-4f, "a new train's last car starts on the platform start (0x43c1f0)" );
 		var waiting = new List<int>();
 		while ( restored.TakeLeavingRider() is var guest and not 0 )
 			waiting.Add( guest );

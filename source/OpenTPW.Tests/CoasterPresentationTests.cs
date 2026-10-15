@@ -240,10 +240,8 @@ public class CoasterPresentationTests
 	}
 
 	[TestMethod]
-	public void CarsAreSpacedByTheirExtentsAndTheTrainTypesFollowFrontCentreRear()
+	public void TheTrainTypesFollowFrontCentreRear()
 	{
-		var offsets = CoasterCarRig.CarOffsets( new[] { (4f, 5f), (3f, 3f), (2f, 6f) } );
-		CollectionAssert.AreEqual( new[] { 0f, 8f, 13f }, offsets );
 		var types = CoasterCarTypes.FromValues( new Dictionary<string, string>
 		{
 			["asCarTypes[0].pcMeshFilename"] = "\"head\"", ["asCarTypes[0].fFrontDistanceAdd"] = "0.5", ["asCarTypes[0].fYOffset"] = "-1",

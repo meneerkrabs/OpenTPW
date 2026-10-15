@@ -157,6 +157,112 @@ public sealed class CoasterDefinition
 	public float TerrorScreamSustainExcitement { get; private set; } = 20f;
 	/// <summary><c>sTrainType.uiMaxCars</c> (cars per train).</summary>
 	public int MaxCars { get; private set; } = 1;
+	/// <summary>The cars of one train (at least one).</summary>
+	public int CarCount => Math.Max( 1, MaxCars );
+	/// <summary>The car types (<c>asCarTypes</c>) and the front, centre and rear type of a train (<c>sTrainType</c>).</summary>
+	public CoasterCarTypes CarTypes { get; private set; } = new();
+	/// <summary>Whether the car models were read (<see cref="ApplyCarModels"/>); without them every car type has the generic metrics of <see cref="FallbackCarMetrics"/>.</summary>
+	public bool HasCarModels { get; private set; }
+
+	private CoasterCarMetrics[] carMetrics = Array.Empty<CoasterCarMetrics>();
+	private float[] carOffsets = Array.Empty<float>();
+
+	/// <summary>
+	/// The metrics a car type takes without its model (no game data): 3.5 world units in front of and behind its pivot plus the type's distance adds,
+	/// and four head sockets, so a generic train has its cars 7 units apart with four seats each.
+	/// </summary>
+	// [EXT:coaster-car-fallback] the original always has the car models (a type whose model fails to load has zero extents and no seat, which ApplyCarModels keeps); a definition built from settings alone (tests, a headless park without game data) takes these generic metrics instead
+	public static CoasterCarMetrics FallbackCarMetrics( CoasterCarType type ) => new( type.FrontAdd + 3.5f, type.RearAdd + 3.5f, 4 );
+
+	/// <summary>The car type index of car <paramref name="car"/> of a train (<c>0x436d10</c>: car 0 the front type, the last car the rear type, the others the centre type).</summary>
+	public int CarTypeIndex( int car ) => CarTypes.TypeIndexFor( car, CarCount );
+
+	/// <summary>The metrics of a car type index (an index without a type record takes an empty type).</summary>
+	public CoasterCarMetrics CarTypeMetrics( int typeIndex ) => typeIndex >= 0 && typeIndex < carMetrics.Length ? carMetrics[typeIndex] : FallbackOrEmpty( new CoasterCarType( "", 0, 0, 0, false ) );
+
+	/// <summary>The metrics of car <paramref name="car"/> of a train.</summary>
+	public CoasterCarMetrics CarMetrics( int car ) => CarTypeMetrics( CarTypeIndex( car ) );
+
+	private CoasterCarMetrics FallbackOrEmpty( CoasterCarType type ) => HasCarModels ? new CoasterCarMetrics( type.FrontAdd, type.RearAdd, 0 ) : FallbackCarMetrics( type );
+
+	/// <summary>
+	/// The three distances between neighbouring cars (definition <c>+0x30c</c>, <c>+0x310</c>, <c>+0x314</c>): front type's rear plus the centre type's
+	/// front, the centre type's rear plus its front, and the rear type's front plus the centre type's rear.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42fc20 car pair distances] +0x30c = front.+0x28 + centre.+0x24, +0x310 = centre.+0x28 + centre.+0x24, +0x314 = rear.+0x24 + centre.+0x28 (each pair is measured against the centre type, also in a two-car train)
+	public (float Front, float Centre, float Rear) CarPairDistances
+	{
+		get
+		{
+			var front = CarTypeMetrics( CarTypes.FrontIndex );
+			var centre = CarTypeMetrics( CarTypes.CentreIndex );
+			var rear = CarTypeMetrics( CarTypes.RearIndex );
+			return (front.RearExtent + centre.FrontExtent, centre.RearExtent + centre.FrontExtent, rear.FrontExtent + centre.RearExtent);
+		}
+	}
+
+	/// <summary>The reference car of a train (train <c>+0x2c</c> = (cars − 1) ≫ 1, the middle car): the train's position is this car's.</summary>
+	// [BIN:TPW-EXE:0x43baef reference car] train +0x2c = (train +0xc − 1) >> 1 whenever the car count is set (0x43ba90)
+	public int ReferenceCar => (CarCount - 1) >> 1;
+
+	/// <summary>
+	/// Each car's offset from the reference car along the track in world units (car <c>+0x38</c>, <c>0x43bc20</c>): the cars in front of it add, going
+	/// forward, the pair distance their own index selects (front pair for car 0, rear pair for the last car, else centre), the cars behind it subtract it.
+	/// </summary>
+	public IReadOnlyList<float> CarOffsets => carOffsets;
+
+	// [BIN:TPW-EXE:0x43bc20 car offsets] the reference car's +0x38 = 0; from it toward car 0 the sum grows by +0x1c (car index 0), +0x24 (the last index) or +0x20 of the train definition (definition +0x30c/+0x314/+0x310); behind it the sum falls by the same choice; +0x3c = +0x38 / spacing
+	private void RebuildCarLayout()
+	{
+		var count = CarCount;
+		var (front, centre, rear) = CarPairDistances;
+		float Pair( int car ) => car == 0 ? front : car == count - 1 ? rear : centre;
+		var offsets = new float[count];
+		var reference = ReferenceCar;
+		var sum = 0f;
+		for ( var car = reference - 1; car >= 0; car-- )
+		{
+			sum = Pair( car ) + sum;
+			offsets[car] = sum;
+		}
+		sum = 0f;
+		for ( var car = reference + 1; car < count; car++ )
+		{
+			sum -= Pair( car );
+			offsets[car] = sum;
+		}
+		carOffsets = offsets;
+	}
+
+	/// <summary>The generic metrics for every car type (no model read).</summary>
+	private void SetFallbackCarMetrics()
+	{
+		carMetrics = CarTypes.Types.Select( FallbackCarMetrics ).ToArray();
+		RebuildCarLayout();
+	}
+
+	/// <summary>
+	/// Takes the car types' metrics from their models (<c>0x42fad0</c> → <c>0x430130</c> for the front, centre and rear type): the model extents plus
+	/// the distance adds and the head sockets; a type the archive has no model for keeps zero extents and no seat, as the original's record does.
+	/// </summary>
+	internal void ApplyCarModels( Func<int, CoasterCarRig?> rig )
+	{
+		ArgumentNullException.ThrowIfNull( rig );
+		ApplyCarMetrics( index => rig( index )?.Metrics( CarTypes.Types[index] ) );
+	}
+
+	/// <summary>The core of <see cref="ApplyCarModels"/>: each car type's metrics from its model, null for a type without one.</summary>
+	internal void ApplyCarMetrics( Func<int, CoasterCarMetrics?> metrics )
+	{
+		ArgumentNullException.ThrowIfNull( metrics );
+		var models = Enumerable.Range( 0, CarTypes.Types.Count ).Select( metrics ).ToArray();
+		// An archive that holds none of the car models (a synthetic entry) is a definition without game data: it keeps the generic metrics.
+		if ( models.All( model => model == null ) )
+			return;
+		HasCarModels = true;
+		carMetrics = models.Select( model => model ?? new CoasterCarMetrics( 0, 0, 0 ) ).ToArray();
+		RebuildCarLayout();
+	}
 
 	/// <summary>The StdPylon (definition <c>+168</c>).</summary>
 	public CoasterPylonControl StandardPylon { get; private set; } = DefaultStandardPylon();
@@ -265,6 +371,9 @@ public sealed class CoasterDefinition
 		ArgumentNullException.ThrowIfNull( entry );
 		var definition = FromEntry( entry );
 		using var assets = new CoasterAssets( entry, definition );
+		// [BIN:TPW-EXE:0x42fbde car models] the loader reads the centre car type's model, then the front and the rear type's when they are other types (0x430130 at 0x42fbde, 0x42fbf3, 0x42fc08) before the pair distances and head sums
+		var used = new HashSet<int> { definition.CarTypes.FrontIndex, definition.CarTypes.CentreIndex, definition.CarTypes.RearIndex };
+		definition.ApplyCarModels( index => used.Contains( index ) ? assets.GetCar( index ) : null );
 		foreach ( var loop in new[] { false, true } )
 		{
 			if ( !loop || definition.HasLoopPylon )
@@ -347,6 +456,8 @@ public sealed class CoasterDefinition
 		definition.TerrorScreamSustainExcitement = Float( Coaster + "fTerrorScreamSustainExcitement", definition.TerrorScreamSustainExcitement );
 		// [DATA:coaster.sam:sTrainType.uiMaxCars]
 		definition.MaxCars = Int( "sTrainType.uiMaxCars", definition.MaxCars );
+		definition.CarTypes = CoasterCarTypes.FromValues( values );
+		definition.SetFallbackCarMetrics();
 
 		var flags = AlwaysFlags;
 		// The always-set 0xA0 already holds 0x20, so the setting is kept on its own (it does not change the end node count, 0x435570).

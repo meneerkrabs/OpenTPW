@@ -44,16 +44,21 @@ public class CoasterDispatchTests
 			ride.Advance( Tick );
 	}
 
-	/// <summary>A speed change that changes the train count takes every train off with its lap riders and the guests seated at the station: nobody vanishes.</summary>
+	/// <summary>
+	/// A speed change re-rates the track and places the trains again (0x43c450): the trains below the new count keep their riders, the trains past it
+	/// give theirs up to the leaving ring (0x43ba20), and nobody vanishes.
+	/// </summary>
 	[TestMethod]
-	public void ARerateThatChangesTheTrainCountKeepsTheSeatedGuests()
+	public void ARerateKeepsTheRidersOfTheTrainsThatStayAndTheTrainsPastTheNewCountGiveTheirsUp()
 	{
-		var changed = false;
+		var fewer = false;
+		var more = false;
 		foreach ( var release in new[] { 1500, 2500, 4000, 6000, 9000, 14000, 20000 } )
 		{
-			foreach ( var bias in new[] { 0, 10, 20, 35, 65, 80, 100 } )
+			foreach ( var (from, bias) in new[] { 0, 10, 20, 35, 65, 80, 100 }.SelectMany( other => new[] { (50, other), (other, 50) } ) )
 			{
 				var ride = NewRide( settings => { settings["sCoasterType.uiMaxTrains"] = "8"; settings["sCoasterType.fMaxSpeedAtMinSetting"] = "3"; settings["sCoasterType.fMaxSpeedAtMaxSetting"] = "40"; settings["sCoasterType.uiTrainReleaseRate"] = release.ToString(); } );
+				ride.ApplyScriptSpeed( from );
 				var guest = 1000;
 				foreach ( var train in ride.Trains )
 				{
@@ -65,12 +70,16 @@ public class CoasterDispatchTests
 				ride.ApplyScriptSpeed( bias );
 				if ( ride.Trains.Count == before )
 					continue;
-				changed = true;
-				Assert.AreEqual( seated, ride.LeavingCount, $"release {release}, bias {bias}: the lap riders and the seated guests of {before} trains wait to leave" );
-				Assert.AreEqual( 0, ride.RidersOnBoard );
+				var kept = Math.Min( before, ride.Trains.Count );
+				fewer |= ride.Trains.Count < before;
+				more |= ride.Trains.Count > before;
+				Assert.AreEqual( 2 * kept, ride.RidersOnBoard, $"release {release}, bias {from} → {bias}: the {kept} trains that stay keep their riders" );
+				Assert.AreEqual( seated - 2 * kept, ride.LeavingCount, $"release {release}, bias {from} → {bias}: the trains past the new count give up theirs" );
+				for ( var index = 0; index < kept; index++ )
+					Assert.AreEqual( (1, 1), (ride.Trains[index].Cars[0].Count, ride.Trains[index].BoardingCars[^1].Count), "the riders stay in their cars" );
 			}
 		}
-		Assert.IsTrue( changed, "some script speed changes the train count of this circuit" );
+		Assert.IsTrue( fewer && more, $"some script speed changes the train count of this circuit both ways ({fewer}, {more})" );
 	}
 
 	[TestMethod]

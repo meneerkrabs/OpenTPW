@@ -203,10 +203,22 @@ or friction (on the sample the train stood on at the start of the step), the flo
 a car's half-sample point is on a chain-lift section, else the minimum speed,
 both times the power factor) and the cap. A hop takes `d / ((v + v')/2)`
 seconds, and the last hop of a step is partial; its end speed is capped but not
-floored, so a new train, which starts at rest, builds up speed over several frames. Below speed 2 the speed decays by 0.95 per hop,
-and below 0.01 it is 0. The hops run on OpenTPW's fixed 60 Hz simulation step
-instead of the original's per-frame elapsed time, which keeps runs reproducible
-(COAST-022).
+floored, so a train at rest builds up speed over several frames. Below speed 2 the speed decays by 0.95 per hop,
+and below 0.01 it is 0. The trains of a frame hop one at a time from a queue (`0x43ced8`): the train with the most of the frame's
+time left hops next, a full hop puts it back before the first train with no more time left, a partial hop takes it out. The hops run
+on OpenTPW's fixed 60 Hz simulation step instead of the original's per-frame elapsed time, which keeps runs reproducible
+(`[EXT:coaster-fixed-step]`).
+
+**The train.** A train's position is its middle car's, car `(n − 1) >> 1` (train `+0x2c`); every other car stands its offset ahead or
+behind (`0x43bc20`): the car types' extents (`0x430130`: the model's header bounds around its root node plus `fFrontDistanceAdd` and
+`fRearDistanceAdd`) give three pair distances (`0x42fad0`: front type's rear + centre type's front, centre rear + centre front, rear type's
+front + centre rear), and going forward from the middle car each car adds the pair its own index selects (front for car 0, rear for the last
+car, centre otherwise), going back each car subtracts it. The hop measures its distance on the middle car, the braking blend on car 0, and the
+train's span is car 0's offset and front extent to the last car's offset and rear extent. After every rating pass (`0x43c450`) the trains are placed again (`0x43c1f0`): train 0 keeps its last car where it stood (on a new track
+where it last ran, since the idle train slot keeps its cars' coordinates), each next train's last car stands where the walk over the rated
+sample speeds from the previous one's reaches `uiTrainReleaseRate`, a train's cars are laid out from the last car forward, and its speed is the
+mean rated speed under its cars. Trains below a new count keep their riders, the ones past it give theirs to the leaving ring. Without the car
+models (a definition from settings alone) every car type is 3.5 units each side of its pivot (`[EXT:coaster-car-fallback]`).
 
 **Trains never stop.** The motion tick has no zero-speed branch (`0x43ce20`): in the station a train's speed blends toward the
 chain-lift floor and stays there. The controller tick (`0x435a30`) runs the motion in the built, open and closed states
@@ -403,8 +415,9 @@ a name search finds.
 
 ## Approximation register
 
-`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: sixteen open
-IDs. COAST-012 (the controller states and the tool's entry and exit) and COAST-019 (the sampler's closing pair) were retired by the
+`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: fifteen open
+IDs. COAST-022 (the train layout, the hop queue and the placement by the release time) was retired by the coaster train round of
+October 15 (`[EXT:coaster-fixed-step]` and `[EXT:coaster-car-fallback]` are its deliberate differences). COAST-012 (the controller states and the tool's entry and exit) and COAST-019 (the sampler's closing pair) were retired by the
 three-node station round of October 15, which narrowed COAST-004 (the platform links are ordinary links now) and COAST-029 (to the
 stations below the pylon's h0 and the middle knot's height adjust) and took the station clauses out of COAST-014, 015, 024 and 030
 (`[EXT:coaster-state-clear]` is the one deliberate difference of the states). COAST-013 (the sickness has no guest consumer) was retired by the register round of October 14 and COAST-007
@@ -413,9 +426,8 @@ sine table) were retired by round 2; COAST-025 (own-format save), COAST-027 (gen
 spent) became extensions (`[EXT:coaster-own-save]`, `[EXT:coaster-rng-seed]`, `[EXT:coaster-ledger]`) and COAST-016 the extension
 `[EXT:coaster-completion-click]` (APPROX:COAST-007, APPROX:COAST-016, APPROX:COAST-018, APPROX:COAST-025, APPROX:COAST-027 and
 APPROX:COAST-031 no longer exist). The IDs below 15 are the unknowns of COAST-plan §10 that are still open, narrowed to what
-the PC executable did not settle. COAST-015..019 are the new unknowns of §10.1, COAST-022..030 are rules OpenTPW
-chose while implementing the plan, now narrowed (COAST-022's 60 Hz step is a determinism decision; the dispatch, the headway and the
-collision exchange of COAST-022/023 are the original's). COAST-032 is the arithmetic precision of the knot chord, the node tangent,
+the PC executable did not settle. COAST-015..019 are the new unknowns of §10.1, COAST-023..030 are rules OpenTPW
+chose while implementing the plan, now narrowed (the dispatch of COAST-023 is the original's). COAST-032 is the arithmetic precision of the knot chord, the node tangent,
 the knot-control norms and the swing, where the original uses x87 steps with extended intermediates. COAST-020 (cost rates) and COAST-021 (force
 term) were resolved by the COAST-V review and are traced now. The generated
 table is in [FIDELITY-REGISTER.md](FIDELITY-REGISTER.md).

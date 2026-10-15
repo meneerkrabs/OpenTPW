@@ -769,7 +769,8 @@ public class CoasterTests
 		ride.Command( 8, 0 );
 		ride.Command( 5, 0 );
 		var train = ride.Trains[0];
-		Assert.AreEqual( 0f, train.Speed, "a new train starts at rest (0x436dd7)" );
+		// A placed train starts at the mean rated speed under its cars (0x43cc8a); this test starts one from rest.
+		train.Speed = 0;
 		ride.Advance( Tick );
 		var minimum = ride.Definition.MinSpeed * ride.PowerFactor;
 		Assert.IsTrue( train.Speed > 0 && train.Speed < minimum / 2, $"first frame: speed {train.Speed}, M {minimum}" );
@@ -946,7 +947,9 @@ public class CoasterTests
 			ride.Advance( Tick );
 		ride.Command( 4, 1 );
 		Assert.AreEqual( (64, 0f), (ride.ControllerStateFlag, ride.PowerFactor), "the scripted breakdown cuts the power" );
-		for ( var tick = 0; tick < 300 * 60; tick++ )
+		// The trains of a 1000 ms release rate stand closer than a train's length (0x43c1f0), so the ones that roll into the braking zone stop and the
+		// ones behind bump them on again (0x43cd60) for a while before the last of them comes to rest.
+		for ( var tick = 0; tick < 900 * 60 && !ride.Trains.All( train => train.Speed == 0 ); tick++ )
 			ride.Advance( Tick );
 		Assert.IsTrue( ride.Trains.All( train => train.Speed == 0 ), "without floors the trains coast and decay to a stop" );
 		var flags = ride.Trains.Select( train => train.Flags ).ToArray();

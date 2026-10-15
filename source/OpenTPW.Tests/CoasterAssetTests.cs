@@ -42,6 +42,31 @@ public class CoasterAssetTests
 	private static IEnumerable<ObjectCatalogEntry> PcCoasters() =>
 		ObjectCatalog.Themes.SelectMany( theme => ObjectCatalog.Load( theme ).Entries ).Where( entry => !entry.IsBonus && CoasterDefinition.IsCoaster( entry.Settings ) );
 
+	/// <summary>
+	/// The car metrics come from the car models (<c>0x430130</c>): the header bounds around the root node plus the distance adds; the caterpillar's (4185)
+	/// cars are laid out around its third car.
+	/// </summary>
+	[TestMethod]
+	public void CarMetricsComeFromTheCarModels()
+	{
+		foreach ( var entry in PcCoasters() )
+		{
+			var definition = CoasterDefinition.FromCatalogEntry( entry );
+			Assert.IsTrue( definition.HasCarModels, $"{entry.InfoId} reads its car models" );
+			using var assets = new CoasterAssets( entry, definition );
+			var rig = assets.GetCar( definition.CarTypes.CentreIndex )!;
+			var type = definition.CarTypes.Types[definition.CarTypes.CentreIndex];
+			var metrics = definition.CarTypeMetrics( definition.CarTypes.CentreIndex );
+			var rootZ = rig.Model.Nodes[rig.Model.RootNodeIndex].Transform.M43;
+			Assert.AreEqual( type.FrontAdd + rig.Model.BoundsMax.Z - rootZ, metrics.FrontExtent, 1e-4f, $"{entry.InfoId}: front extent" );
+			Assert.AreEqual( type.RearAdd + rootZ - rig.Model.BoundsMin.Z, metrics.RearExtent, 1e-4f, $"{entry.InfoId}: rear extent" );
+		}
+		var caterpillar = CoasterDefinition.FromCatalogEntry( PcCoasters().Single( entry => entry.InfoId == 4185 ) );
+		Assert.AreEqual( (6, 2), (caterpillar.CarCount, caterpillar.ReferenceCar), "head, four bodies, tail; the third car is the reference" );
+		Assert.AreEqual( 0f, caterpillar.CarOffsets[2] );
+		Assert.IsTrue( caterpillar.CarOffsets.Zip( caterpillar.CarOffsets.Skip( 1 ), ( ahead, behind ) => ahead > behind ).All( x => x ), "the offsets fall from the head to the tail" );
+	}
+
 	/// <summary>The twelve PC coasters of COAST-plan §3.3 with their coaster.sam values over the code defaults.</summary>
 	[TestMethod]
 	public void ThePcCatalogHasTwelveCoasters()

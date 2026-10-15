@@ -159,7 +159,7 @@ public class CoasterStationTests
 		Assert.IsTrue( coordinates[0] < coordinates[1] && coordinates[1] < coordinates[2] && coordinates[2] < coordinates[3] );
 		Assert.AreEqual( (0f, coordinates[2]), ride.StationWindow );
 		Assert.IsTrue( coordinates[tail] >= samples.Count - 2 && coordinates[tail] < samples.Count - 1, $"the end knot's coordinate {coordinates[tail]} lies between the last sample before it and the closing sample ({samples.Count} samples)" );
-		Assert.AreEqual( 0f, ride.Trains[0].Position, "train 0 starts at the platform start" );
+		Assert.AreEqual( 0f, ride.CarCoordinate( ride.Trains[0], ride.Trains[0].Cars.Count - 1 ), 1e-4f, "train 0's last car starts at the platform start" );
 	}
 
 	[TestMethod]

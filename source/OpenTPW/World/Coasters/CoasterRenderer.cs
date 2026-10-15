@@ -168,7 +168,6 @@ public sealed class CoasterRenderer : Entity
 	{
 		public required CoasterCarRig Rig { get; init; }
 		public required ModelEntity[] Parts { get; init; }
-		public required float Offset { get; init; }
 		public required float YOffset { get; init; }
 		public required int Train { get; init; }
 		public required int Car { get; init; }
@@ -480,21 +479,11 @@ public sealed class CoasterRenderer : Entity
 			for ( var train = 0; train < Ride.Trains.Count; train++ )
 			{
 				var count = Ride.Trains[train].Cars.Count;
-				var rigs = new CoasterCarRig?[count];
-				var extents = new (float Front, float Rear)[count];
 				for ( var car = 0; car < count; car++ )
 				{
 					var typeIndex = types.TypeIndexFor( car, count );
-					rigs[car] = assets.GetCar( typeIndex );
-					var type = typeIndex >= 0 && typeIndex < types.Types.Count ? types.Types[typeIndex] : new CoasterCarType( "", 0, 0, 0, false );
-					extents[car] = ((rigs[car]?.FrontExtent ?? 0) + type.FrontAdd, (rigs[car]?.RearExtent ?? 0) + type.RearAdd);
-				}
-				var offsets = CoasterCarRig.CarOffsets( extents );
-				for ( var car = 0; car < count; car++ )
-				{
-					if ( rigs[car] is not { } rig )
+					if ( assets.GetCar( typeIndex ) is not { } rig )
 						continue;
-					var typeIndex = types.TypeIndexFor( car, count );
 					var carModels = assets.GetCarModels( rig );
 					var parts = new ModelEntity[carModels.Length];
 					for ( var part = 0; part < parts.Length; part++ )
@@ -502,7 +491,7 @@ public sealed class CoasterRenderer : Entity
 						parts[part] = new ModelEntity { Model = carModels[part], Name = "coaster car" };
 						carTriangles += rig.Parts[part].Indices.Length / 3;
 					}
-					cars.Add( new CarInstance { Rig = rig, Parts = parts, Offset = offsets[car], YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
+					cars.Add( new CarInstance { Rig = rig, Parts = parts, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
 				}
 			}
 		}
@@ -519,7 +508,7 @@ public sealed class CoasterRenderer : Entity
 				var car = cars[index];
 				if ( car.Train >= Ride.Trains.Count )
 					continue;
-				var coordinate = Ride.Trains[car.Train].Position - car.Offset / Ride.Spacing;
+				var coordinate = Ride.CarCoordinate( Ride.Trains[car.Train], car.Car );
 				var pose = CoasterCarRig.PoseAt( Ride.Samples, coordinate );
 				car.World = CoasterCarRig.Matrix( pose, car.YOffset );
 				var transform = ObjectPlacement.SwapAxes( car.World ) * engine;

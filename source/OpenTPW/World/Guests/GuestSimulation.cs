@@ -1244,7 +1244,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( guest.HasWaypoint && !Move( guest ) )
 			return;
 		var attraction = FindAttraction( guest.AttractionId );
-		if ( attraction == null || !attraction.IsOpen )
+		// [BIN:TPW-EXE:0x004FFBC0 walk to the queue] state 10 reads neither the ride's state nor its open word: a guest keeps walking to a ride closed or broken meanwhile, joins, and the ride sends it away from the queue head (RideVisitorBridge.HostStep)
+		if ( attraction == null || !attraction.AcceptsJoins )
 		{
 			guest.AttractionId = 0;
 			guest.State = GuestState.DoingNothing;
@@ -1642,7 +1643,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.State = GuestState.Boarding;
 			return;
 		}
-		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken ride
+		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken or closed ride
 		// dismisses its queue head first from the ride update (RideVisitorBridge.DismissHead), the others keep waiting.
 		// [APPROX:QUEUE-008] the predicate follows the original; relief objects wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning), and the swaps of the RegionFX rows 1 and 6 at the toilet's cell are the original's (0x004D8460 / 0x004D8440 are the remove and add wrappers of the region writer 0x004D8480, ParkEconomy.SwapToiletEffect). Not modelled: the branch of 0x004E2440 for game type 1 (the word 0x00FB3B7C), where a use wears nothing and a toilet whose gauge byte is below 25 is cleaned at once (rows 6 → 1, script variable 8 = 0, gauge 100, +0x5E and +0x64 cleared); OpenTPW wears toilets in every game — evidence needed: what game type 1 is in OpenTPW's terms
 		if ( attraction.ReliefWornOut )
@@ -1681,6 +1682,12 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !held && guest.QueuePosition > attraction.QueueLimit )
 		{
 			LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
+			return;
+		}
+		// [BIN:TPW-EXE:0x00500612 coaster or track refuses] at its position, after the limit test, a guest queueing for a coaster (0x004E2B50) that fails 0x00441970, or for a ride of track type 1 whose track word +0x2C is 0, thinks 13 and leaves (0x005004AA)
+		if ( !held && attraction.TrackRefusesGuests )
+		{
+			LeaveQueue( guest, attraction, GuestThought.Angry );
 			return;
 		}
 		// 7. Needs window, and the boredom test that cannot fire (QUEUE-plan §5.3): +508 ≥ +520 always holds here.

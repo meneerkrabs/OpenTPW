@@ -44,7 +44,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private bool letMeOnWritten;
 	private long lastAdmissionTurn = long.MinValue;
 	private long calledTurn = -1;
-	private Func<bool> isOpen = () => true;
+	private Func<bool> isOpen = () => true;     // the ride's open word (+0x68)
+	private Func<bool> takesGuests = () => true; // the coaster and track tests (0x00441970, the track word +0x2C)
 	private readonly int excitementLevel;
 
 	public RideVisitorBridge( int attractionId, string name, RideVisitorKind kind, int capacity, int excitementLevel, int attractionValue,
@@ -161,7 +162,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public QueueParameters Parameters { get; set; } = QueueParameters.Default;
 	public bool HasQueue => Parameters.HasQueue;
 	public IRideVisitorHost? Host { get; set; }
-	public bool IsOpen => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting) && isOpen();
+	public bool IsOpen => ScriptRuns && isOpen() && takesGuests();
+	/// <summary>
+	/// The ride's script runs and its coaster or track takes guests (<see cref="Attach"/>); unlike <see cref="IsOpen"/> it ignores the open word and the
+	/// breakdown, which the original's join (state 10, <c>0x004FFBC0</c>) does not read either.
+	/// </summary>
+	public bool AcceptsJoins => ScriptRuns && takesGuests();
+	/// <summary>The coaster or track refuses guests (the original's state 11 sends a queued guest away with thought 13, <c>0x004FFFF0</c>).</summary>
+	public bool TrackRefusesGuests => vm != null && !takesGuests();
+	private bool ScriptRuns => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting);
 	/// <summary>
 	/// The ride script reports a breakdown (<c>VAR_BROKEN</c>, which the original's ride update turns into ride state 1, or 4 when
 	/// the life gauge is 0): the ride dismisses its queue head first, one guest per park turn, and takes nobody (ORACLE.md F15).
@@ -528,11 +537,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return quotient >= 4294967296f ? uint.MaxValue : (uint)quotient;
 	}
 
-	/// <summary>Binds the bridge to the script it serves; <paramref name="open"/> reports whether the owner opened the ride.</summary>
-	public void Attach( RideVM script, Func<bool> open )
+	/// <summary>
+	/// Binds the bridge to the script it serves; <paramref name="open"/> reports whether the owner opened the ride (the open word +0x68),
+	/// <paramref name="takes"/> whether its coaster or track takes guests (null: always).
+	/// </summary>
+	public void Attach( RideVM script, Func<bool> open, Func<bool>? takes = null )
 	{
 		vm = script;
 		isOpen = open;
+		takesGuests = takes ?? (() => true);
 	}
 
 	/// <summary>
@@ -622,10 +635,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	public QueueJoinResult JoinQueue( int guestId, int? preferredExcitement = null )
 	{
-		if ( guestId <= 0 || !IsOpen )
-			return QueueJoinResult.Closed;
-		// [APPROX:QUEUE-018] a ride in state 1 (and, above, a closed ride) refuses joins; tp.exe's state-10 join 0x004FFBC0 reads neither the ride's state (+0x19C) nor its open word (+0x68): after the walk step 0x004FA2A0 it tests the guest's cell against the back cell (0x004DE110), the room 0x004DDA20, the excitement gate 0x004FD4E0 / 0x004E0860(1) and the limit 0x004DDB60, then appends (0x004DDB90); only the choice's counts-test 0x004DD920 refuses states 1 and 4 and a closed ride — evidence needed: none for the join (read); OpenTPW keeps the refusal because its closed ride turns the whole queue away at once, where the original's admission 0x004E1220 sends away one head per park turn (0x004E0450) while the open word is 0
-		if ( IsBrokenDown )
+		// [BIN:TPW-EXE:0x004FFBC0 state-10 join] the join reads neither the ride's state (+0x19C) nor its open word (+0x68): after the walk step 0x004FA2A0 it tests the guest's cell against the back cell (0x004DE110), the room 0x004DDA20, the excitement gate 0x004FD4E0 / 0x004E0860(1) and the limit 0x004DDB60, then appends (0x004DDB90); a guest joining a closed or broken ride is sent away when it reaches the head (HostStep: 0x004E1220 → 0x004E0450, states 1, 2 and 4 through 0x004E0E00). Only the choice's counts-test 0x004DD920 refuses them. A ride whose script does not run takes nobody (OpenTPW's teardown), nor does a coaster or track that refuses guests (COAST-024)
+		if ( guestId <= 0 || !AcceptsJoins )
 			return QueueJoinResult.Closed;
 		if ( links.ContainsKey( guestId ) || Holds( guestId ) )
 			return QueueJoinResult.AlreadyQueued;
@@ -784,26 +795,6 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		if ( called != 0 && letMeOnWritten && Get( RideVariables.VAR_LETMEON ) != called )
 			MarkBoarded( called );
 
-		// A breakdown takes precedence over a closed ride: SetState(1) writes VAR_RIDECLOSED = 1 itself, and the original still drains the
-		// queue head first (0xe0aec) instead of emptying it at once.
-		if ( !isOpen() && !IsBroken && !IsBrokenDown )
-		{
-			if ( called != 0 )
-			{
-				// The script never took the guest before closing; give it back.
-				var guest = called;
-				Withdraw();
-				Unlink( guest );
-				Host?.OnVisitorTurnedAway( this, guest );
-			}
-			foreach ( var guest in Queue )
-			{
-				Unlink( guest );
-				Host?.OnVisitorTurnedAway( this, guest );
-			}
-			return;
-		}
-
 		// [BIN:TPW-EXE:0x00516380 park turn walk] the park update runs once per park turn (the main loop calls it when its 31 ms substep counter & 7 == 0, 0x0054F668) and dispatches every live-list thing whose pointer is set and whose byte +3 is 0 (0x005163F0..0x005163F7, no type, state or id test) to 0x0050B360: a ride (type 3) runs 0x004E0B90, then the state dispatch 0x004E0E00, whose state 0 runs the admission 0x004E1220 once (0x004E14E0); a guest (type 1) runs 0x00501650, then 0x005019F0, whose state 11 is 0x004FFFF0; OpenTPW's lastAdmissionTurn and LastQueueUpdateTurn guards give the same once-per-turn cadence
 		var turn = Host?.ParkTurn ?? -1;
 		if ( turn >= 0 && turn == lastAdmissionTurn )
@@ -822,16 +813,21 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			}
 			brokenDown = false;
 		}
+		// [BIN:TPW-EXE:0x004E1220 closed ride admission] state 0 runs the admission first (0x004E14E0); with the open word +0x68 at 0 it only runs the head step 0x004E0450, which unlinks the queue head (0x004DDD20) and dismisses it (0x005012F0), so a closed ride sends away one head per park turn and the others wait (a head the script has already taken was boarded above: 0x004E0450's "forcing him onto ride" case, 0x00500870)
+		if ( !isOpen() )
+			DismissHead();
 		if ( IsBroken )
 		{
-			// State 0 reads VAR_BROKEN whether or not the ride is open (0x4e0e00 → 0x4e14e0), so a closed ride enters state 1 too; it is
-			// admitted from only while open. A park save keeps no bridge state: a ride still broken after a load enters state 1 again here.
-			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 )
+			// State 0 reads VAR_BROKEN whether or not the ride is open (0x4e0e00 → 0x4e14e0), so a closed ride enters state 1 too, after the admission's own
+			// head step: a closed ride dismisses two heads on that turn. A park save keeps no bridge state: a ride still broken after a load enters state 1 again here.
+			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 && takesGuests() )
 				CheckAdmission( turn );
 			EnterBrokenState();
 			return;
 		}
-		CheckAdmission( turn );
+		// COAST-024: a coaster or track that refuses guests calls nobody forward; its queued guests leave by themselves (state 11, thought 13)
+		if ( isOpen() && takesGuests() )
+			CheckAdmission( turn );
 	}
 
 	/// <summary>

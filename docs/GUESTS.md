@@ -528,7 +528,8 @@ once per tick before the script slice and never inside `CRIT_LOCK`:
    wait with `TEST VAR_LETMEOFF; BRANCH_NZ` until the host has taken the guest).
 2. The called guest's id was written to `VAR_LETMEON` and is no longer there →
    the script took it: it leaves the queue list and boards (original state 14).
-3. Ride closed → the called guest is withdrawn and the queue turned away.
+3. Ride closed (its open word 0) → once per park turn the queue head is sent away
+   (tp.exe `0x4e1220` → `0x4e0450`: unlink and the dismissal `0x5012f0`); the others wait.
 4. Once per park turn, the admission of [Queues](#queues) may call the front
    guest forward. The guest writes its own id to `VAR_LETMEON` (only while that
    is 0) when it reaches the stand point. Hosts that do not simulate the walk
@@ -680,7 +681,7 @@ thought, happiness down by `PeepInfo.MediumHappinessChange`, back to wandering).
 has already taken is forced aboard instead. The guests behind keep their places and wait, and a
 repaired ride keeps whoever is left. While the ride is broken (state 1) the guests behind do not walk forward either (`0xed4b0` skips the move), so they keep their physical places; a condemned ride (state 4) is not told apart. A script that closes the ride on breakdown does not empty the queue at once: the drain takes precedence. Nobody new joins: the
 choice's counts-test (tp.exe `0x4dd920`) refuses states 1 and 4 and a closed ride, and never reads VAR_BROKEN, so a ride whose script has
-just reported a breakdown is still chosen until its ride update enters state 1; joins are refused in state 1 (QUEUE-018). State 1 lasts
+just reported a breakdown is still chosen until its ride update enters state 1. The join itself (state 10, tp.exe `0x4ffbc0`) reads neither the state nor the open word, so a guest already walking there still joins and is sent away when it reaches the head. A closed ride drains the same way: its admission (`0x4e1220`) runs only the head step `0x4e0450` while the open word is 0, one head per park turn, two on the turn a closed ride notices a breakdown (the admission's step, then SetState(1)'s). State 1 lasts
 until the ride is opened again (a repair, an upgrade's end, the open button), even when the script clears VAR_BROKEN first (QUEUE-019). The ride update runs the admission once on the turn it
 notices the breakdown and then enters state 1, which writes VAR_RIDECLOSED = 1 and the open word 0 (ORACLE.md F27); admission does not call the head afterwards. Queued guests no longer leave "feeling sick" for
 a breakdown: state 11's exit at `0xed424` is `0xdfe34`, a relief object (toilet) whose wear gauge
@@ -744,13 +745,12 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-013 | At most 25 cells per queue; tp.exe's setter (`0x5346d0`), validator (`0x535670`) and line layer (`0x536100`) test no count, and the back walk (`0x4de130`) stops at 1,000 | The rest of the tool's cell handler (`0x524960`, `0x532fc0`) |
 | QUEUE-014 | Laid cell by cell from the front, each touching the back, on empty cells; tp.exe lays straight segments (`0x536100`) from a clicked start, over ordinary path cells, ending on a path cell to connect | The queue-link (`+0x0D`) writer and the commit in `0x524960` (UI-031) |
 | QUEUE-015 | Removing a queue cell removes every cell behind it; the original's cell clear (tp.exe `0x5367a0`) removes only that cell, and the bulldozer's rectangle (`0x52bdd0`) clears only path cells | The route that clears a queue cell (`0x527ee0`, `0x452ca0`) |
-| QUEUE-018 | A closed ride or one in state 1 refuses joins; tp.exe's state-10 join (`0x4ffbc0`) has no state or open-word test (only the choice's counts-test `0x4dd920` has) | None for the join; OpenTPW's closed-ride queue handling |
 | QUEUE-019 | OpenTPW keeps state 1 in the bridge and leaves it when the ride is opened again (repair `0x4df8f0`; the reopen guard `0x4df290` refuses 1, 2 and 4); state 2 is the economy's closed ride (ECON-023) and state 4 (life gauge 0, `0x4e14e0`) is not told apart from 1, although queued guests hold their places only in state 1 (`0x500523`) | The life gauge in the bridge (state 4) |
 | QUEUE-020 | BOUNCE takes one script-clock reading for the deadline's base and the slot's start; tp.exe's BOUNCE (`0x555674`) calls its clock twice (`0x555753`, `0x555770`), so its start can lie 1 ms later | None for the reading; a stepped clock cannot reproduce the live tick |
 | QUEUE-021 | A left click on a queue cell starts the queue tool at that ride's back cell; tp.exe's click (`0x4879d0`) enters tool 0x14 first, and the next cell click collects the queue (`0x530120`) and enters mode 3 | Where mode 3 goes on laying after `0x530120` |
 | QUEUE-022 | A bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object; every original object has `InitSpeed` and `InitDuration`) is read at its design speed and duration; tp.exe (`0x4e0560`) clamps a 0/0 ratio to 0.75 and would score trunc(0.5625 × level) | None |
 
-Retired: `APPROX:QUEUE-016` (admission and state 11 once per park turn: tp.exe `0x516380` walks the live list once per turn and dispatches every thing whose byte `+3` is 0 through `0x50b360`). `APPROX:QUEUE-009` (the queue facing change: only within 30 turns of the last interlude, r mod 10 = 0, then (r₂ mod 800) − 400 of 2048; tp.exe `0x4ffff0`). `APPROX:QUEUE-017` (the choice applies the counts-test's queue room, list count < 4 × cells; tp.exe `0x4dd920`).
+Retired: `APPROX:QUEUE-016` (admission and state 11 once per park turn: tp.exe `0x516380` walks the live list once per turn and dispatches every thing whose byte `+3` is 0 through `0x50b360`). `APPROX:QUEUE-009` (the queue facing change: only within 30 turns of the last interlude, r mod 10 = 0, then (r₂ mod 800) − 400 of 2048; tp.exe `0x4ffff0`). `APPROX:QUEUE-017` (the choice applies the counts-test's queue room, list count < 4 × cells; tp.exe `0x4dd920`). `APPROX:QUEUE-018` (the join reads neither the ride state nor the open word, tp.exe `0x4ffbc0`; a closed ride drains one head per park turn, `0x4e1220` → `0x4e0450`).
 
 Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
 state `+408` (beyond the QUEUE-019 reading), the price check at the stand

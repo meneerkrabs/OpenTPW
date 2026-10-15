@@ -95,10 +95,11 @@ public sealed class CellBuildTool
 			return null;
 		var end = ParkPathBuilder.SnapEnd( start, cell );
 		// [BIN:TPW-EXE:0x524A63 refused ghost] a click while the ghost of the line has a refused cell (0x816D48, set at 0x533933 when the preview's validator 0x535670 refuses a cell) ends the path or queue tool and lays nothing (mode table 0x52766C: SetMode(0, 0) at 0x5266A3)
-		if ( Mode is CellToolMode.Path or CellToolMode.Queue && Writer.Preview( start, end ) is { Completed: false } refused )
+		// A ghost stopped only by OpenTPW's queue length cap is not a refusal of the original's validator (QUEUE-013): the click commits up to the cap
+		if ( Mode is CellToolMode.Path or CellToolMode.Queue && Writer.Preview( start, end ) is { Completed: false, StoppedByOwnLimit: false } refused )
 		{
 			End();
-			return refused;
+			return refused with { GhostRefused = true };
 		}
 		if ( end == start && vertices.Count != 1 )
 		{
@@ -243,6 +244,7 @@ public sealed class QueueLineWriter : ICellLineWriter
 		var built = new List<(int X, int Y)>();
 		var existing = new List<(int X, int Y)>();
 		var stoppedBy = CellBuildResult.Ok;
+		var ownLimit = false;
 		(int X, int Y)? stoppedAt = null;
 		var last = line[^1];
 		// [BIN:TPW-EXE:0x5345A1 end flag] the last cell ends the tool when it held a path or any queue cell (type 1 or 3) before the write, this ride's own queue included
@@ -268,6 +270,7 @@ public sealed class QueueLineWriter : ICellLineWriter
 					_ => CellBuildResult.Occupied
 				};
 				stoppedAt = (x, y);
+				ownLimit = result == QueueBuildResult.TooLong;
 				break;
 			}
 			built.Add( (x, y) );
@@ -277,7 +280,8 @@ public sealed class QueueLineWriter : ICellLineWriter
 			Start = start,
 			Line = line,
 			Existing = existing,
-			StoppedAt = stoppedAt
+			StoppedAt = stoppedAt,
+			StoppedByOwnLimit = ownLimit
 		};
 	}
 }

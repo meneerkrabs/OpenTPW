@@ -183,7 +183,7 @@ public class PathBuilderTests
 		Assert.AreEqual( 4, first.Built.Count );
 		Assert.AreEqual( 4L * PathCost, first.Charged );
 		Assert.AreEqual( balance - 4 * PathCost, rig.Economy.Balance );
-		Assert.AreEqual( 4L * PathCost, rig.OtherCosts, "posted as other costs (PATH-010)" );
+		Assert.AreEqual( 4L * PathCost, rig.OtherCosts, "posted as other costs (tp.exe 0x4d01f0)" );
 
 		// Over the same cells plus two new ones: only the new cells are charged; the old ones bump their counter.
 		var second = rig.Builder.BuildSegment( (3, 1), (6, 1) );
@@ -681,10 +681,10 @@ public class PathBuilderTests
 		ghost = tool.Hover( (2, 35) )!;
 		Assert.AreEqual( QueuePaths.MaximumCells, ghost.Built.Count );
 		Assert.IsFalse( ghost.Completed, "the cell past the limit is refused" );
-		Assert.IsFalse( tool.Click( (2, 35) )!.Completed );
-		Assert.AreEqual( 0, grid.QueueCellCount, "a refused ghost lays nothing" );
-		tool.Enter( QueueWriter( grid, ride ), (2, 1) );
-		var commit = tool.Click( (2, 1 + QueuePaths.MaximumCells - 1) )!;
+		Assert.IsTrue( ghost.StoppedByOwnLimit, "by OpenTPW's own cap (QUEUE-013), which the original does not have" );
+		// so the click is not a refused-ghost click: it commits up to the cap
+		var commit = tool.Click( (2, 35) )!;
+		Assert.IsFalse( commit.GhostRefused );
 		CollectionAssert.AreEqual( ghost.Built.ToArray(), commit.Built.ToArray() );
 		Assert.AreEqual( QueuePaths.MaximumCells, ride.QueueSizeInCells );
 

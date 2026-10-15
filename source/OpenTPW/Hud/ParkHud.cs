@@ -909,15 +909,17 @@ public sealed partial class ParkHud
 			cellToolClicking = false;
 		}
 		ResolveQueueRearm( result );
-		// A click on a refused ghost lays nothing and returns before the commit, so no queue-join sound (tp.exe 0x524A63 skips 0x527587).
-		if ( result is { Completed: true } )
+		// [BIN:TPW-EXE:0x527587 queue-join sound] it follows every commit; a click on a refused ghost lays nothing and returns before the commit (0x524A63)
+		if ( result is { GhostRefused: false } )
 			level.PlayQueueJoin( queueJoin );
-		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); [APPROX:AUDIO-022] a refused commit plays cat_ui 175 at the clicked cell
+		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); a click on a refused ghost (or a refused track commit) plays cat_ui 175 at the clicked cell (AUDIO-022)
 		if ( result is { Completed: true } )
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )
 		{
-			GameAudio.PlayPathRefused( cursorX, cursorY );
+			// a commit stopped only by OpenTPW's own queue cap is not one of the original's refusals (QUEUE-013)
+			if ( !result.StoppedByOwnLimit )
+				GameAudio.PlayPathRefused( cursorX, cursorY );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
 		}
 		return toolPress = true;

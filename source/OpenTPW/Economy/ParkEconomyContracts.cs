@@ -114,6 +114,11 @@ public sealed class NoRideOperations : IRideOperations
 public interface IParkGuestStatistics
 {
 	int PeopleInPark { get; }
+	/// <summary>
+	/// The guests standing on a cell of type 0, 1, 3, 9 or 10, counted now (tp.exe <c>0x004C9130</c>, the predicate <c>0x004FA990</c>): park ground,
+	/// path, queue, entrance and exit, not the cells without terrain or an object's body. Statistics without a cell map answer <see cref="PeopleInPark"/>.
+	/// </summary>
+	int GuestCensus => PeopleInPark;
 	/// <summary>Average visitor happiness, 0–100, as the original's 0xc19e4 returns it: a single, the mean of each guest's truncated happiness, 0 while the park is closed.</summary>
 	float AverageHappiness { get; }
 	/// <summary>Visitors whose happiness is at least <see cref="GoldenTicketSettings.Happiness"/>.</summary>

@@ -24,6 +24,27 @@ public class ParkRatingValueTests
 		Assert.AreEqual( 0, fixedItems.ParkRating, "fixed items declare the UI type 4 and count for nothing" );
 	}
 
+	private sealed class Census( int inPark, int census ) : IParkGuestStatistics
+	{
+		public int PeopleInPark => inPark;
+		public int GuestCensus => census;
+		public float AverageHappiness => 0;
+		public int CountHappierThan( int happiness ) => 0;
+		public int KidsWithBalloonsPercent => 0;
+		public int KidsWithCostumesPercent => 0;
+	}
+
+	[TestMethod]
+	public void TheVisitorTermCountsTheGuestsOnCountedCells()
+	{
+		// [BIN:TPW-EXE:0x4cceb0 park rating] the guests on a cell of type 0, 1, 3, 9 or 10 (0x4fa990), at most 1000, × 20 / 1000; riders on a ride's body do not count
+		var park = EconomyTestData.Park();
+		park.GuestStatistics = new Census( inPark: 900, census: 100 );
+		Assert.AreEqual( 2, park.ParkRating );
+		park.GuestStatistics = new Census( inPark: 900, census: 1500 );
+		Assert.AreEqual( 20, park.ParkRating, "capped at 1000" );
+	}
+
 	[TestMethod]
 	public void AnExplicitUiTypeWinsOverTheDirectory()
 	{

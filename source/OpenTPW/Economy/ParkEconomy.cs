@@ -262,7 +262,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
 	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
 	/// </summary>
-	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines (tp.exe month gate 0x508E70, escalation 0x508F70, grievance 0x509360; the month message comes from the calendar update 0x4F8260 with no game-type test, and the age stamp 0x4F8800 counts floor(turn × 3750) seconds from world turn 0, both as here); without a staff world (a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the month gate skips a month while any guest is in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 in a census reused for up to 23 turns (0x4C7FA0); the handymen's litter share counts the live map (ECON-020); the forced-strike word (zero at creation 0x5089FE, written only by the save 0x508BB0) is not imported (SAVE-009) — evidence needed: none for the routines (read); the census needs the original cell types (ECON-050)
+	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines (tp.exe month gate 0x508E70, escalation 0x508F70, grievance 0x509360; the month message comes from the calendar update 0x4F8260 with no game-type test, and the age stamp 0x4F8800 counts floor(turn × 3750) seconds from world turn 0, both as here); without a staff world (a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the month gate counts the guests on a counted cell (types 0, 1, 3, 9, 10) at once, where the original reads the analyser's cached census (0x4C7FA0 with age 5: recounted when (turn >> 2) − (stamp >> 2) exceeds 5), which the crowd sound's read (0x4C81E0, age 0, every 32nd substep of the main loop 0x54E360) refreshes, so its count can be a few turns old; the handymen's litter share counts the live map (ECON-020); the forced-strike word (zero at creation 0x5089FE, written only by the save 0x508BB0) is not imported (SAVE-009) — evidence needed: the main loop's substep count at a level's first turn (the phase of the crowd sound's refresh), for the census cache
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -274,7 +274,7 @@ public sealed class ParkEconomy : IParkEconomy
 			// 0x00505FE0, 0x005061D0, 0x005056E0, 0x00506300); only the role's strike ends here, when a striker sees the park closed and empty.
 			if ( DrivenByWorld( member ) )
 			{
-				if ( member.State == StaffState.OnStrike && !IsParkOpen && guestStatistics.PeopleInPark == 0 )
+				if ( member.State == StaffState.OnStrike && !IsParkOpen && guestStatistics.GuestCensus == 0 )
 					Staff.Strikes.End( member.Type );
 				continue;
 			}
@@ -284,7 +284,8 @@ public sealed class ParkEconomy : IParkEconomy
 					continue;
 				case StaffState.OnStrike:
 					// [BIN:STP-PPC:0x100F3F64 strike turn] a striking member that sees the park closed and without guests (0x100C3684) ends its role's strike (0x100F40E8 / 0x100F8BD0); once the role's flag is clear it walks back to work
-					if ( !IsParkOpen && guestStatistics.PeopleInPark == 0 )
+					// [BIN:TPW-EXE:0x00506300 strike turn] the park-closed word (0x0051A280) and the uncached census 0x004C9130 (guests on a counted cell)
+					if ( !IsParkOpen && guestStatistics.GuestCensus == 0 )
 						Staff.Strikes.End( member.Type );
 					if ( !Staff.Strikes.IsActive( member.Type ) )
 						member.State = StaffState.Patrolling;
@@ -508,12 +509,12 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>The staff manager's month-end consideration of each role's strike (ECON-014): <see cref="StaffStrikeBoard.ConsiderMonth"/> with the park's state.</summary>
 	// [BIN:TPW-EXE:0x004F8260 month message] the calendar update sends the month message (kind 12, 0x0040F500) to the staff manager (0x00508A30 → 0x00508E70) with no game-type test, so strikes are considered in every mode; the stamp (0x004F8800) is floor(turn × rate / 4) × 10^7 with the calendar's base added and taken off again, the park clock from world turn 0
-	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike word is never set (an original save's mForceStrike is not imported, SAVE-009), and the month gate takes the guests in the park by state for the cell census 0x004C7FA0
+	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike word is never set (an original save's mForceStrike is not imported, SAVE-009), and the month gate counts the census now where the original reads the analyser's cached count (0x004C7FA0 with age 5)
 	// [BIN:TPW-EXE:0x00509360 handyman grievance] the handymen's litter grievance: the analyser's littered cells (0x004C8180) over its path, queue and type-9 cells (0x004C8150), as singles, above 0.2 (ParkLitter.Statistic)
 	private void ConsiderStrikes()
 	{
 		var stamp = ParkCalendar.Seconds( Tick ) * StaffStrikeBoard.StampUnitsPerSecond;
-		var messages = Staff.Strikes.ConsiderMonth( Turn, forced: false, IsParkOpen, guestStatistics.PeopleInPark, stamp,
+		var messages = Staff.Strikes.ConsiderMonth( Turn, forced: false, IsParkOpen, guestStatistics.GuestCensus, stamp,
 			role => Staff.OfType( role ).Select( member => new StaffVital( member.Energy, member.Happiness ) ).ToList(), Litter.Statistic );
 		foreach ( var message in messages )
 			Raise( ParkEventKind.StaffStrikeMessage, (int)message.Kind, 0, (int)message.Role, $"TAG_SYSTEM {message.TagSystemIndex}" );
@@ -985,8 +986,8 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		get
 		{
-			// [APPROX:ECON-027] the visitor term counts the guests in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 (0x004CCEB0 with the cell test 0x004FA990, recounted at every rating, capped at 1000); ParkGate.GuestCensus has that test, but the imported cell types are incomplete (ECON-050), so the rating keeps the state count; the staff terms match (the byte +3 is set only by the deleter at 0x0050B8E9, which then marks the thing deleted at 0x0050B906, and a dismissal removes the member at once here too) — evidence needed: the original cell types (ECON-050)
-			var guests = Math.Min( guestStatistics.PeopleInPark, 1000 ) * 20 / 1000;
+			// [BIN:TPW-EXE:0x004CCEB0 park rating] the visitor term counts the guests on a cell of type 0, 1, 3, 9 or 10 now (the predicate 0x004FA990, no cache), capped at 1000; the staff terms count the members whose byte +3 is clear, which only the deleter sets (0x0050B8E9) before it marks the thing deleted (0x0050B906): a dismissal removes the member at once here too
+			var guests = Math.Min( guestStatistics.GuestCensus, 1000 ) * 20 / 1000;
 			// An object counts by the type's Info.WhichUIType: the shipped add-ons (the upgrades directory) declare 0 and count as rides, fixed items declare 4 and count for nothing.
 			int Count( int uiType, int minimumLevel = 0 ) => objects.Values.Count( item => Catalog.TryGet( item.InfoId, out var info ) && info.RatingType == uiType && item.Level >= minimumLevel );
 			var attractions = Math.Min( Count( 0 ) * 3 / 2, 20 )

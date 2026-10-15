@@ -47,6 +47,26 @@ public class ParkGateTests
 		Assert.AreNotEqual( inside.Id, queueing.Id );
 	}
 
+	[TestMethod]
+	public void TheBridgesCensusSkipsGuestsOnAnObjectsBodyAndOffTheTerrain()
+	{
+		var (simulation, grid) = InsideGuests();
+		var onPath = simulation.SpawnInPark( 2, 0 );
+		var onBody = simulation.SpawnInPark( 3, 0 );
+		grid.Cells.SetType( 20, 20, ParkCellTypes.Object );
+		onBody.CellX = 20;
+		onBody.CellY = 20;
+		var outside = simulation.SpawnInPark( 4, 0 );
+		grid.Cells.SetType( 30, 30, ParkCellTypes.FixedWalkway );
+		outside.CellX = 30;
+		outside.CellY = 30;
+		var economy = new ParkEconomy( EconomyTestData.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+		var bridge = new GuestEconomyBridge( () => economy, simulation );
+		Assert.AreEqual( 3, bridge.PeopleInPark );
+		Assert.AreEqual( 1, bridge.GuestCensus, "a rider on a body cell (4) and a guest on the walkway (30) are not counted (0x4fa990)" );
+		Assert.AreNotEqual( onPath.Id, onBody.Id );
+	}
+
 	// ---------------------------------------------------------------- gate script (original data)
 
 	private BaseFileSystem? originalFileSystem;

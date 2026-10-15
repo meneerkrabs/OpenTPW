@@ -245,6 +245,62 @@ public class CoasterSaveTests
 		Assert.AreEqual( Hash( ride ), Hash( resumed ) );
 	}
 
+	/// <summary>
+	/// The lead car coordinate a reopened track keeps (train 0's last car when the trains were taken off) survives the save, joins the hash, and the
+	/// resumed ride places its trains from it when the track is finished again, as the uninterrupted ride does.
+	/// </summary>
+	[TestMethod]
+	public void TheLeadCarCoordinateOfAReopenedTrackRoundTripsAndPlacesTheTrainsAgain()
+	{
+		var (builder, ride, _) = NewCoaster();
+		builder.Height = 40;
+		foreach ( var (dx, dy) in CoasterTests.Circuit )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( Depart.X + dx, Depart.Y + dy ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
+		ride.Command( 8, 0 );
+		for ( var tick = 0; tick < 20 * 60; tick++ )
+			ride.Advance( Tick );
+		var last = ride.Definition.CarCount - 1;
+		var lead = ride.CarCoordinate( ride.Trains[0], last );
+		Assert.IsTrue( lead > 1f, $"train 0's last car left the platform start ({lead})" );
+		Assert.IsTrue( builder.Reopen() );
+		Assert.AreEqual( lead, ride.LeadCarCoordinate, 1e-4f, "the trains were taken off and the idle slot keeps the coordinate" );
+
+		var captured = ParkResumeJson.Deserialize<CoasterRideSaveData>( ParkResumeJson.Serialize( CoasterSave.CaptureRide( ride, attractionId: 7 ) ) );
+		Assert.AreEqual( ride.LeadCarCoordinate, captured.LeadCarCoordinate, "the codec keeps the coordinate" );
+		var resumed = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Test Coaster" );
+		var other = new CoasterBuilder( resumed, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( other, Depart );
+		resumed.RestoreSnapshot( captured );
+		Assert.AreEqual( ride.LeadCarCoordinate, resumed.LeadCarCoordinate );
+		Assert.AreEqual( Hash( ride ), Hash( resumed ), "the restored controller hashes as the saved one" );
+		var moved = new CoasterRide( ride.Definition, new CoasterWorld( 1 ), "Test Coaster" );
+		CoasterTests.PlaceStation( new CoasterBuilder( moved, new CoasterSite( 64, 64 ) ), Depart );
+		moved.RestoreSnapshot( captured with { LeadCarCoordinate = captured.LeadCarCoordinate + 1f } );
+		Assert.AreNotEqual( Hash( ride ), Hash( moved ), "the coordinate is part of the canonical state" );
+
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( other ) );
+		Assert.AreEqual( lead, resumed.CarCoordinate( resumed.Trains[0], last ), 1e-3f, "the next placement starts train 0's last car on the kept coordinate (0x43c1f0)" );
+		Assert.AreEqual( Hash( ride ), Hash( resumed ), "both rides place the same trains" );
+	}
+
+	[TestMethod]
+	public void ALeadCarCoordinateSurvivesTheShapeCheckAndTheCodecAndANegativeOrNonFiniteOneIsRefused()
+	{
+		var snapshot = WithCoasters( new CoasterWorldSaveData { Rides = new List<CoasterRideSaveData> { CoasterEntry() with { LeadCarCoordinate = 17.25f } } } );
+		ParkResumeSaveFile.ValidateShape( snapshot );
+		var restored = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( snapshot ) );
+		ParkResumeSaveFile.ValidateShape( restored );
+		Assert.AreEqual( 17.25f, restored.Coasters!.Rides[0].LeadCarCoordinate );
+		Assert.IsNull( ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( WithCoasters( new CoasterWorldSaveData { Rides = new List<CoasterRideSaveData> { CoasterEntry() } } ) ) ).Coasters!.Rides[0].LeadCarCoordinate,
+			"a save without it (an older one) stays without it" );
+		foreach ( var bad in new[] { -0.5f, float.NaN, float.PositiveInfinity, float.NegativeInfinity } )
+			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>(
+				() => ParkResumeSaveFile.ValidateShape( WithCoasters( new CoasterWorldSaveData { Rides = new List<CoasterRideSaveData> { CoasterEntry() with { LeadCarCoordinate = bad } } } ) ) ).Message,
+				"lead car coordinate", $"{bad}" );
+	}
+
 	[TestMethod]
 	public void AnUnfinishedTrackRoundTripsWithoutTrains()
 	{

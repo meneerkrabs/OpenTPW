@@ -274,17 +274,18 @@ public sealed class CoasterDefinition
 		float Pair( int car ) => car == 0 ? front : car == count - 1 ? rear : centre;
 		var offsets = new float[count];
 		var reference = ReferenceCar;
-		var sum = 0f;
+		// The running sum stays on the x87 stack (0x43bc39..0x43bca5, 0x43bcb0..0x43bd09); each car's offset is its single-precision store.
+		var sum = 0.0;
 		for ( var car = reference - 1; car >= 0; car-- )
 		{
 			sum = Pair( car ) + sum;
-			offsets[car] = sum;
+			offsets[car] = (float)sum;
 		}
-		sum = 0f;
+		sum = 0.0;
 		for ( var car = reference + 1; car < count; car++ )
 		{
 			sum -= Pair( car );
-			offsets[car] = sum;
+			offsets[car] = (float)sum;
 		}
 		carOffsets = offsets;
 	}

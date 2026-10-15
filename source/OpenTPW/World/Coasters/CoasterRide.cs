@@ -112,6 +112,10 @@ public sealed class CoasterRide
 	private IReadOnlyList<CoasterKnot> curveKnots = Array.Empty<CoasterKnot>();
 	private (System.Numerics.Vector3 Back, System.Numerics.Vector3 Forward)[] curveControls = Array.Empty<(System.Numerics.Vector3, System.Numerics.Vector3)>();
 	private HashSet<int> winchSections = new();
+	// The hop queue of MoveTrains, kept between ticks so a tick allocates nothing.
+	private float[] hopBudgets = Array.Empty<float>();
+	private bool[] hopFriction = Array.Empty<bool>();
+	private readonly List<int> hopQueue = new();
 
 	public CoasterRide( CoasterDefinition definition, CoasterWorld world, string name = "" )
 	{
@@ -192,6 +196,8 @@ public sealed class CoasterRide
 	/// slot); the next placement starts from it. 0 before any train ran.
 	/// </summary>
 	public float LeadCarCoordinate { get; private set; }
+	/// <summary>Test probe: called after every hop of <see cref="Advance"/> with the train's index, its remaining budget and whether the hop was full.</summary>
+	internal Action<int, float, bool>? HopObserved { get; set; }
 	/// <summary>The guests waiting for a seat, in arrival order (park-resume capture).</summary>
 	internal IReadOnlyCollection<int> AdmissionGuests => admission;
 	/// <summary>The riders waiting for <c>COAST 3</c>, in departure order (park-resume capture).</summary>
@@ -463,13 +469,19 @@ public sealed class CoasterRide
 			var sample = (int)whole % n;
 			var time = (1.0 - fraction) * spacing / samples[sample].Speed;
 			var before = 0.0;
-			while ( time < release )
+			// A lap of samples that adds no time (every rated speed infinite) would never reach the release time: the walk stops after one such lap.
+			var stalled = 0;
+			while ( time < release && stalled < n )
 			{
 				sample = (sample + 1) % n;
 				before = time;
 				time += spacing / (double)samples[sample].Speed;
+				stalled = time > before ? 0 : stalled + 1;
 			}
 			var f = (time - release) / (time - before);
+			// A sample rated at speed 0 takes forever (t = ∞, f = NaN in the original's x87 sum); the train then stands on that sample, f's limit.
+			if ( !double.IsFinite( f ) || time < release )
+				f = 1.0;
 			var position = (float)((sample - 1) * (1.0 - f) + sample * f);
 			result[index] = (float)(((double)position + total) % total);
 		}
@@ -549,6 +561,10 @@ public sealed class CoasterRide
 		CollisionLists = Array.Empty<IReadOnlyList<int>>();
 		samples = Array.Empty<CoasterSample>();
 		Spacing = 0;
+		// The original keeps the stale braking start (ctl+0x134) and station window (ctl+0xf8/+0xfc) until the next rating pass rewrites them, before any
+		// train runs again; they go with the samples here, so a resumed park (whose save does not hold them) hashes as the one that kept running.
+		BrakingStart = 0;
+		StationWindow = default;
 		Rating = null;
 		winchSections = new HashSet<int>();
 		TrackChanged?.Invoke( this );
@@ -887,7 +903,7 @@ public sealed class CoasterRide
 	/// </summary>
 	// [BIN:TPW-EXE:0x435ac9 controller tick] the motion tick runs when state & 0xE (2 built, 4 open, 8 closed); the station step (0x43b8b0, then 0x439570) only when state & 0xC and mode is not 0x40 (0x435cd1, 0x435cd5); the motion tick has no zero-speed branch, so a train in the station keeps the winch floor's speed
 	// [BIN:TPW-EXE:0x43ce40 frame time] the frame's time is the elapsed milliseconds of the cached animation clock (0x4709e0) since ctl+0x120 × 0.001, written to every train's +0x7c
-	// [EXT:coaster-fixed-step] OpenTPW runs the hops on the park's fixed 60 Hz simulation step instead of the original's frame time (docs/DETERMINISM.md: no simulation reads the wall clock); a sample read past the original's slot n (a stale lead coordinate beyond a shorter track's samples, a car laid out past the end of the list) wraps instead of reading past the list, and the hop time 0/0 of a hop of no length at no speed (impossible with samples 3 units apart), which the original's x87 compare takes as a full hop, is a partial one
+	// [EXT:coaster-fixed-step] OpenTPW runs the hops on the park's fixed 60 Hz simulation step instead of the original's frame time (docs/DETERMINISM.md: no simulation reads the wall clock; the original's frame coupling is the proposed DET-003 that DET-I2 registers with the substep scheduler, docs/reverse/DET-plan.md §2.2, §4.6); a sample read past the original's slot n (a stale lead coordinate beyond a shorter track's samples, a car laid out past the end of the list) wraps instead of reading past the list, and the hop time 0/0 of a hop of no length at no speed (impossible with samples 3 units apart), which the original's x87 compare takes as a full hop, is a partial one; the release walk of the train placement (0x43c1f0) over samples rated at speed 0 or infinity, where the original's sum turns NaN or never reaches the release time, stops after a lap that adds no time and takes the crossing sample itself
 	public void Advance( double deltaSeconds )
 	{
 		if ( !(deltaSeconds > 0) )
@@ -898,7 +914,7 @@ public sealed class CoasterRide
 		MoveTrains( (float)deltaSeconds );
 		foreach ( var train in trains )
 			ClearHeadway( train );
-		// [BIN:TPW-EXE:0x43b8b0 coaster station] the station step is skipped entirely in mode 64 (breakdown); an arriving train unloads open or closed and boarding needs state 4; the tick also skips the station step (and 0x439570) for a train whose flag bit 0x2 is clear (0x435ce5 test byte [esi],2; the train flag writers of bit 0x2 are not identified, the stride-0x60 car flags at 0x43d1ee/0x43d23e are another word), here every train counts as having it set
+		// [BIN:TPW-EXE:0x43b8b0 coaster station] the station step is skipped entirely in mode 64 (breakdown); an arriving train unloads open or closed and boarding needs state 4; the tick also skips the station step (and 0x439570) for a train whose flag bit 0x2 is clear (0x435ce5 test byte [esi],2); the slot setup 0x43be10 sets it (0x43be45) on each train 0x43cad6 brings below the count, and 0x43cb08..0x43cb97 clear it (0x43cb95, under controller flag 0x800) on the trains at or past it, which leave the list here, so every train in the list counts as having it set (the stride-0x60 car flags at 0x43d1ee/0x43d23e are another word)
 		if ( IsBroken || State is CoasterControllerState.Built )
 			return;
 		foreach ( var train in trains )
@@ -961,26 +977,41 @@ public sealed class CoasterRide
 	// [BIN:TPW-EXE:0x43ced8 hop queue] every train starts the frame with the frame's time at +0x7c in the queue at ctl+0x12c (train order); the train at the head hops; after a full hop it goes back in before the first train whose remaining time is not above its own (0x43d48b..0x43d4b9, or at the end), after a partial hop it leaves the queue; the frame ends when the queue is empty
 	private void MoveTrains( float budget )
 	{
-		var budgets = new float[trains.Count];
-		var friction = new bool[trains.Count];
-		var queue = new List<int>( trains.Count );
-		for ( var index = 0; index < trains.Count; index++ )
+		var count = trains.Count;
+		if ( hopBudgets.Length != count )
 		{
-			budgets[index] = budget;
+			hopBudgets = new float[count];
+			hopFriction = new bool[count];
+		}
+		hopQueue.Clear();
+		for ( var index = 0; index < count; index++ )
+		{
+			hopBudgets[index] = budget;
 			// [BIN:TPW-EXE:0x43d30d friction sample] the friction flag (8) is read on sample ftol(reference car +0x40), which is written only at the end of the tick, so it is the frame's starting sample
-			friction[index] = (samples[(int)CarCoordinate( trains[index], Definition.ReferenceCar ) % samples.Length].Flags & CoasterSampleFlags.Friction) != 0;
-			queue.Add( index );
+			hopFriction[index] = (samples[(int)CarCoordinate( trains[index], Definition.ReferenceCar ) % samples.Length].Flags & CoasterSampleFlags.Friction) != 0;
+			hopQueue.Add( index );
 		}
-		while ( queue.Count > 0 )
+		while ( hopQueue.Count > 0 )
 		{
-			var index = queue[0];
-			var full = HopTrain( trains[index], ref budgets[index], friction[index] );
-			queue.RemoveAt( 0 );
-			if ( !full )
-				continue;
-			var at = queue.FindIndex( other => budgets[other] <= budgets[index] );
-			queue.Insert( at < 0 ? queue.Count : at, index );
+			var index = hopQueue[0];
+			var full = HopTrain( trains[index], ref hopBudgets[index], hopFriction[index] );
+			HopObserved?.Invoke( index, hopBudgets[index], full );
+			hopQueue.RemoveAt( 0 );
+			if ( full )
+				Requeue( hopQueue, hopBudgets, index );
 		}
+	}
+
+	/// <summary>
+	/// Puts a train that made a full hop back in the hop queue (<c>0x43d48b..0x43d4b9</c>): before the first train whose remaining budget is not above
+	/// its own, or at the end when every train left in the queue has more time left than it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43d497 hop requeue] fld other +0x7c; fcomp own +0x7c; test ah, 0x41 (C0 or C3: other ≤ own) jumps to 0x43d8e0, which stores the train in that slot; a train with more time left moves one slot toward the head (0x43d4ab)
+	internal static void Requeue( List<int> queue, IReadOnlyList<float> budgets, int index )
+	{
+		var own = budgets[index];
+		var at = queue.FindIndex( other => budgets[other] <= own );
+		queue.Insert( at < 0 ? queue.Count : at, index );
 	}
 
 	/// <summary>One hop of a train (see <see cref="MoveTrains"/>); true for a full hop, false for the partial last hop of its frame.</summary>
@@ -1111,6 +1142,7 @@ public sealed class CoasterRide
 		hash.Add( SpeedSetting );
 		hash.Add( SeatsPerTrain );
 		hash.Add( SpeedCap );
+		hash.Add( LeadCarCoordinate );
 		hash.Add( PaidCost );
 		hash.Add( TimeSeconds );
 		hash.Add( BrakingStart );

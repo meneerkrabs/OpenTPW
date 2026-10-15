@@ -146,6 +146,73 @@ public class CoasterTrainLayoutTests
 		}
 	}
 
+	/// <summary>The requeue of 0x43d48b..0x43d4b9: before the first train whose remaining budget is not above the hopper's, ties included, else at the end.</summary>
+	[TestMethod]
+	public void AFullHopRequeuesTheTrainBeforeTheFirstWithNoMoreTimeLeft()
+	{
+		List<int> Requeued( int index, float[] budgets, params int[] queue )
+		{
+			var list = queue.ToList();
+			CoasterRide.Requeue( list, budgets, index );
+			return list;
+		}
+		CollectionAssert.AreEqual( new[] { 1, 2, 0 }, Requeued( 0, new[] { 0.1f, 0.5f, 0.3f }, 1, 2 ), "both others have more time left: it goes to the end" );
+		CollectionAssert.AreEqual( new[] { 1, 0, 2 }, Requeued( 0, new[] { 0.3f, 0.5f, 0.3f }, 1, 2 ), "an equal budget counts as not above (fcomp, test ah 0x41): it goes before train 2" );
+		CollectionAssert.AreEqual( new[] { 0, 1, 2 }, Requeued( 0, new[] { 0.6f, 0.5f, 0.3f }, 1, 2 ), "more time left than every other train: it hops again first" );
+		CollectionAssert.AreEqual( new[] { 1 }, Requeued( 1, new[] { 0f, 0.2f }, Array.Empty<int>() ), "alone it is the queue" );
+	}
+
+	/// <summary>
+	/// A frame of three trains on a long step: every hop is the queue head's, and a train that hopped fully goes back before the first train whose
+	/// remaining budget is not above its own (0x43ced8, 0x43d48b..0x43d4b9), so a train with more time left hops before one that hopped less.
+	/// </summary>
+	[TestMethod]
+	public void TheHopsOfAFrameFollowTheRemainingBudgetQueue()
+	{
+		var settings = CoasterTests.PcSettings();
+		settings["sCoasterType.uiTrainReleaseRate"] = "3000";
+		var ride = Built( CoasterDefinition.FromValues( settings ) );
+		Assert.IsTrue( ride.Trains.Count >= 3, $"{ride.Trains.Count} trains" );
+		var trace = new List<(int Train, float Budget, bool Full)>();
+		ride.HopObserved = ( train, budget, full ) => trace.Add( (train, budget, full) );
+		const float Step = 0.75f;
+		var reorders = 0;
+		var hops = 0;
+		for ( var frame = 0; frame < 40; frame++ )
+		{
+			trace.Clear();
+			ride.Advance( Step );
+			var budgets = Enumerable.Repeat( Step, ride.Trains.Count ).ToArray();
+			var queue = Enumerable.Range( 0, ride.Trains.Count ).ToList();
+			foreach ( var (train, budget, full) in trace )
+			{
+				Assert.IsTrue( queue.Count > 0, $"frame {frame}: a hop after the queue emptied" );
+				Assert.AreEqual( queue[0], train, $"frame {frame}: the head of the queue hops" );
+				queue.RemoveAt( 0 );
+				budgets[train] = budget;
+				hops++;
+				if ( !full )
+					continue;
+				// Written out: the first train still queued whose remaining time is not above this one's.
+				var at = queue.Count;
+				for ( var slot = 0; slot < queue.Count; slot++ )
+				{
+					if ( budgets[queue[slot]] <= budget )
+					{
+						at = slot;
+						break;
+					}
+				}
+				if ( at < queue.Count )
+					reorders++;
+				queue.Insert( at, train );
+			}
+			Assert.AreEqual( 0, queue.Count, $"frame {frame}: every train ends its frame with a partial hop" );
+		}
+		Assert.IsTrue( hops > 40 * ride.Trains.Count, "the long step gives full hops" );
+		Assert.IsTrue( reorders > 0, "some train went back ahead of a train with less time left" );
+	}
+
 	[TestMethod]
 	public void APlacedTrainRunsAtTheMeanRatedSpeedUnderItsCarsAndItsExtentsComeFromTheCarOffsets()
 	{

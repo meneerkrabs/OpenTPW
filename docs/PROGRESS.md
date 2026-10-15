@@ -17,7 +17,8 @@ files remain outside that publication.
 - **Pylons** play all five clips (loft, rotate, incline, bank, loop tilt; `0x430ca0`, `0x430ed0`) through their clip maps, with each dummy
   record on its own node (`0x44ab90`); the station ends take the auto bank (`0x4310c8`). Cars stand on the curve at their knot-pair
   parameter (`0x43c0a0` → `0x43e6b0`) and riders sit on the PC head sockets (COAST-015, -017, -033 and -034 narrowed).
-- Saves gain two optional fields (a train's reference car, the ride's lead-car coordinate); older saves convert from the front car.
+- Saves gain two optional fields (a train's reference car, the ride's lead-car coordinate, which also joins the state hash); older saves
+  convert from the front car. The coaster hash content changes with all of this (docs/DETERMINISM.md); no pinned hash depended on it.
 
 ## Interface windows from tp.exe's tables (October 15, 2026)
 

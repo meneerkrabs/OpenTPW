@@ -208,7 +208,8 @@ floored, so a train at rest builds up speed over several frames. Below speed 2 t
 and below 0.01 it is 0. The trains of a frame hop one at a time from a queue (`0x43ced8`): the train with the most of the frame's
 time left hops next, a full hop puts it back before the first train with no more time left, a partial hop takes it out. The hops run
 on OpenTPW's fixed 60 Hz simulation step instead of the original's per-frame elapsed time, which keeps runs reproducible
-(`[EXT:coaster-fixed-step]`).
+(`[EXT:coaster-fixed-step]`; the original's frame coupling is the proposed DET-003 that DET-I2 registers with the substep
+scheduler, docs/reverse/DET-plan.md §2.2 and §4.6).
 
 **The train.** A train's position is its middle car's, car `(n − 1) >> 1` (train `+0x2c`); every other car stands its offset ahead or
 behind (`0x43bc20`): the car types' extents (`0x430130`: the model's header bounds around its root node plus `fFrontDistanceAdd` and

@@ -4,8 +4,8 @@ namespace OpenTPW;
 /// The original walk's cell rules over the <see cref="ParkCellMap"/> (tp.exe): the edge test <c>0x4D8750</c> that tells
 /// whether a walker with mask <c>m</c> (walk <c>+0xB4</c>, guest <c>+0x188</c>) may cross from a cell to one of its four
 /// neighbours, and the step commit <c>0x510510</c> built on it. Directions are <see cref="GuestPathGrid.Directions"/>
-/// (0 −Y, 1 +X, 2 +Y, 3 −X; the original's table <c>0x7622B0</c>). The original map is 128 × 128 cells; cells outside
-/// the <see cref="ParkCellMap"/> read as type 0.
+/// (0 −Y, 1 +X, 2 +Y, 3 −X; the original's table <c>0x7622B0</c>). The original map is 128 × 128 cells; a step off a smaller
+/// <see cref="ParkCellMap"/> is blocked like a step off the original's.
 /// </summary>
 // [BIN:TPW-EXE:0x004D8750 edge test] blocked(from, d, mask): map edge (x 0 with d 3, y 0 with d 0, x 127 with d 1, y 127 with d 2); a path target from a non-queue cell is open; type 4 to type 4 open; type 4 target blocked; a 0x1E target is open unless mask 2; mask 2 (or a 0x1E target) reads the target's flag 0x400 (open) and a type-9 target's ride thing; targets of type 2, 5 or 7 blocked; a queue (3, 9) target is open from a path or queue cell whose neighbour link (+0x0C) points back; a path target from a queue cell likewise; an object cell (0x5363F0, 0x53AD20) may block; from a cell that is neither path nor queue every step is open; mask 1 opens path to any non-path, non-queue, non-4 cell; mask 2 path to type 0; a type 9 or 10 source opens into a type-0 cell along its queue link (+0x0D); everything else is blocked
 // [BIN:TPW-EXE:0x00536300 cell type tests] 0x536300 type 2, 0x536310 type 1 (path), 0x536320 type 3 or 9 (queue), 0x536340 9, 0x536350 10, 0x536380 4, 0x536390 0, 0x5363A0 0x1E, 0x5363B0 flag 0x400, 0x5363C0 type 5, 7 or 2; 0x522770 the link byte +0x0C (+0x22 underground, not modelled), 0x522850 the queue link +0x0D
@@ -32,6 +32,9 @@ public static class WalkEdges
 			return true;
 		var (dx, dy) = GuestPathGrid.Directions[direction];
 		int tx = x + dx, ty = y + dy;
+		// OpenTPW maps smaller than the original's 128 × 128 end at their own edge (the same test for the original's size).
+		if ( !map.InBounds( tx, ty ) )
+			return true;
 		var from = map.RawTypeAt( x, y );
 		var to = map.RawTypeAt( tx, ty );
 		if ( to == 1 && !IsQueue( from ) )

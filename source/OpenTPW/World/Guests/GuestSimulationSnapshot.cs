@@ -193,6 +193,10 @@ public sealed record GuestNavigationSnapshot
 					yield return $"guest {guestId} buffers {Count} waypoints, but its route from cursor {Cursor} gives {buffered}";
 				if ( Count == 0 ? Index != 0 : (uint)Index >= (uint)Count )
 					yield return $"guest {guestId} waypoint index {Index} is outside its {Count} buffered waypoints";
+				// A route walk buffers its route from the cursor: the saved slots must say the same.
+				if ( Waypoints is { Length: GuestNavigation.BufferedWaypoints } && Count == buffered
+					&& !Waypoints.AsSpan( 0, Count ).SequenceEqual( Route.AsSpan( Cursor, Count ) ) )
+					yield return $"guest {guestId} buffered waypoints do not match its route from cursor {Cursor}";
 			}
 			if ( PreviousRemaining < -1 )
 				yield return $"guest {guestId} previous remaining distance {PreviousRemaining} is negative";
@@ -207,6 +211,8 @@ public sealed record GuestNavigationSnapshot
 				yield return $"guest {guestId} waypoint index {Index} is outside its {Count} buffered waypoints";
 			if ( walk.Stamp < 0 || walk.Total < 0 || walk.Ahead < 0 || walk.Beyond < 0 )
 				yield return $"guest {guestId} original walk lengths or stamp are negative";
+			if ( walk.Progress > Fixed16.One )
+				yield return $"guest {guestId} walk progress {walk.Progress} is above ONE";
 			if ( OffGrid )
 				yield return $"guest {guestId} walks off the grid with an original walk";
 		}

@@ -11,8 +11,8 @@ namespace OpenTPW.Tests;
 /// <summary>
 /// The original walk's cell rules and route search (<see cref="WalkEdges"/>, <see cref="WalkSearch"/>) and the steering of a walk of the
 /// original kind (<see cref="GuestNavigation.Navigate"/>). The expected values are tp.exe's own: its edge test 0x4D8750, commit 0x510510,
-/// search 0x511420, avoid_walls 0x50E4A0 and steering step 0x50F3B0 run in the dev-only x86 oracle (docs/reverse/ORACLE.md section 7) on
-/// the same cells; thousands of random maps, walks and edits agreed the same way while porting.
+/// search 0x511420, avoid_walls 0x50E4A0 and steering step 0x50F3B0 run in the dev-only x86 oracle (docs/reverse/ORACLE.md section 7.19,
+/// finding X25) on the same cells; thousands of random maps, walks and edits agreed the same way while porting.
 /// </summary>
 [TestClass]
 public class WalkSearchTests
@@ -333,6 +333,9 @@ public class WalkSearchTests
 		cells.SetType( 35, 20, ParkCellType.Path );
 		cells.SetType( 35, 20, ParkCellType.Path );
 		Assert.AreEqual( 2, cells.StampCounter, "an unchanged type stamps nothing" );
+		var cleared = new ParkCellMap( 40, 40 );
+		cleared.SetType( 20, 20, ParkCellType.Empty );
+		Assert.AreEqual( (1, 1), (cleared.StampCounter, cleared.BlockStamp( 1, 1 )), "clearing an empty cell stamps its block (0x5346EC skips the same-type return for 0)" );
 		ParkLayoutSnapshot.CellData Record( int x, int y ) => new() { X = x, Y = y, Type = 1, Flags = 0, Placements = 0, Links = 0, QueueLink = 0 };
 		var layout = new ParkLayoutSnapshot.Data
 		{
@@ -409,5 +412,36 @@ public class WalkSearchTests
 			simulation.Tick( GuestSnapshotTests.Tick );
 		Assert.AreNotEqual( GuestState.LeavingPark, guest.State );
 		Assert.AreEqual( 0, guest.Navigation.Mask );
+	}
+
+	[TestMethod]
+	public void SavesWithAProgressAboveOneOrBufferedWaypointsOffTheRouteAreRejected()
+	{
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
+		for ( var tick = 0; tick < 60 * 60 && !simulation.Guests.Any( guest => guest.Navigation.Original && guest.HasWaypoint ); tick++ )
+			simulation.Tick( GuestSnapshotTests.Tick );
+		var snapshot = simulation.CaptureSnapshot();
+		Assert.IsTrue( simulation.ValidateSnapshot( snapshot ).IsValid );
+		GuestSimulationSnapshot With( Func<GuestNavigationSnapshot, GuestNavigationSnapshot?> change ) => snapshot with
+		{
+			Guests = snapshot.Guests.Select( guest => change( guest.Navigation ) is { } changed ? guest with { Navigation = changed } : guest ).ToArray()
+		};
+		var tooFar = simulation.ValidateSnapshot( With( navigation => navigation.OriginalWalk is { } walk
+			? navigation with { OriginalWalk = walk with { Progress = Fixed16.One + 1 } } : null ) );
+		Assert.IsTrue( tooFar.Errors.Any( error => error.Contains( "progress" ) && error.Contains( "above ONE" ) ), string.Join( "; ", tooFar.Errors ) );
+		// A route walk (an older save's walk) must buffer its route from the cursor.
+		var route = With( navigation => navigation.OriginalWalk != null || navigation.OffGrid ? null : navigation with
+		{
+			Route = [(10, 5), (11, 5)], Cursor = 0, Count = 2, Index = 0,
+			Waypoints = [(10, 5), (12, 5), (0, 0), (0, 0), (0, 0)]
+		} );
+		var mismatch = simulation.ValidateSnapshot( route );
+		Assert.IsTrue( mismatch.Errors.Any( error => error.Contains( "do not match its route" ) ), string.Join( "; ", mismatch.Errors ) );
+		var matching = route with
+		{
+			Guests = route.Guests.Select( guest => guest.Navigation.OriginalWalk == null && !guest.Navigation.OffGrid
+				? guest with { Navigation = guest.Navigation with { Waypoints = [(10, 5), (11, 5), (0, 0), (0, 0), (0, 0)] } } : guest ).ToArray()
+		};
+		Assert.IsFalse( simulation.ValidateSnapshot( matching ).Errors.Any( error => error.Contains( "do not match its route" ) ) );
 	}
 }

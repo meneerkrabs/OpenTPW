@@ -659,6 +659,9 @@ internal static class ParkResumeSaveFile
 				$"guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap" );
 			foreach ( var problem in navigation.Problems( guest.Id, InBounds ) )
 				Require( false, problem );
+			// A walk keeps the stamp counter of its set-up; the layout's counter can only have grown since (WALK-007).
+			Require( navigation.OriginalWalk is not { } walk || walk.Stamp <= snapshot.Layout.Cells.StampCounter,
+				$"guest {guest.Id} walk stamp {navigation.OriginalWalk?.Stamp} is above the layout's stamp counter {snapshot.Layout.Cells.StampCounter}" );
 			Require( InBounds( guest.CellX, guest.CellY ), $"guest {guest.Id} cell ({guest.CellX}, {guest.CellY}) is outside the cell map" );
 			if ( guest.PreviousCellX >= 0 || guest.PreviousCellY >= 0 )
 				Require( InBounds( guest.PreviousCellX, guest.PreviousCellY ),

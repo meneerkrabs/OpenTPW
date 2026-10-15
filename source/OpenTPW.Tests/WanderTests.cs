@@ -216,14 +216,18 @@ public class WanderTests
 		Assert.IsTrue( guest.HasWaypoint && guest.Navigation.Original && guest.Navigation.Route.Length >= 3, "a walk of at least two cells" );
 		var destination = guest.Navigation.Route[^1];
 		var reroutes = guest.Navigation.Reroutes;
+		var target = (guest.Navigation.TargetX, guest.Navigation.TargetY);
 		grid.SetPath( destination.X, destination.Y, false );
-		var stuck = false;
-		for ( var tick = 0; tick < 60 && !stuck; tick++ )
+		var searched = false;
+		for ( var tick = 0; tick < 60 && !searched; tick++ )
 		{
 			simulation.Tick( GuestSnapshotTests.Tick );
-			stuck |= guest.Navigation.Reroutes > reroutes;
+			searched |= guest.Navigation.Reroutes > reroutes;
 		}
-		Assert.IsTrue( stuck, "the walk searched again at its next step" );
+		Assert.IsTrue( searched, "the walk searched again at its next step" );
+		// The search failed, so the walk ended stuck (0x4fa2a0 result 2): stuck and without a waypoint to follow.
+		Assert.IsTrue( guest.Navigation.Stuck || !guest.HasWaypoint, "the walk ended stuck" );
+		Assert.AreEqual( target, (guest.Navigation.TargetX, guest.Navigation.TargetY), "the stuck walk keeps its target" );
 		for ( var tick = 0; tick < 60 * 60; tick++ )
 		{
 			simulation.Tick( GuestSnapshotTests.Tick );

@@ -589,7 +589,7 @@ public sealed class GuestNavigation
 			if ( Blocked( side1.X, side1.Y, toCell1 ) || Blocked( side2.X, side2.Y, toCell2 ) )
 				return null;
 			var t = Ray( x, y, dx, dy, cornerX, cornerY, radius );
-			if ( t == int.MaxValue || t <= 0 || t > length )
+			if ( t <= 0 || t > length )
 				return null;
 			var hitX = unchecked(x + Fixed16.PcMul( dx, t ));
 			var hitY = unchecked(y + Fixed16.PcMul( dy, t ));
@@ -720,8 +720,9 @@ public sealed class GuestNavigation
 		var newY = unchecked(Y + VelocityY);
 		var from = ((int)((uint)X >> 16), (int)((uint)Y >> 16));
 		var to = ((int)((uint)newX >> 16), (int)((uint)newY >> 16));
-		var fromCell = from.Item1 < 128 && from.Item2 < 128 ? from : (-1, -1);
-		(int X, int Y)? toCell = to.Item1 < 128 && to.Item2 < 128 ? to : null;
+		// 0x510870: −1 for a cell outside the map (0..127; a smaller OpenTPW map ends at its own edge)
+		var fromCell = map.InBounds( from.Item1, from.Item2 ) ? from : (-1, -1);
+		(int X, int Y)? toCell = map.InBounds( to.Item1, to.Item2 ) ? to : null;
 		if ( WalkEdges.Commit( map, fromCell, toCell, Mask ) )
 			(X, Y) = (newX, newY);
 		else

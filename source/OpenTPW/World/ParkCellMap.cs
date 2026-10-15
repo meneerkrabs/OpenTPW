@@ -69,10 +69,10 @@ public sealed class ParkCellMap
 
 	/// <summary>
 	/// The stamp of the 16 × 16-cell block (<paramref name="blockX"/>, <paramref name="blockY"/>): the <see cref="StampCounter"/> of the last
-	/// write that changed a cell type in it, 0 when none did (or outside the map). A walk set up at a lower counter searches again when it
+	/// write that changed a cell type in it (or cleared one), 0 when none did (or outside the map). A walk set up at a lower counter searches again when it
 	/// stands in the block (tp.exe <c>0x4D8CD0</c>, follow_path <c>0x50ED6C</c>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x004D8C60 block stamp] a cell type change (0x5346D0, 0x5348D0, 0x538FC0; the queue length change 0x4DE1F0 stamps its back cell) writes the counter 0x7CDB98, raised by one (0x4D8C50), into the block (y >> 4) × 33 + (x >> 4); every walk set-up takes the counter raised by one too (0x50F8E0), so a later edit always stamps above the walk; an unchanged type (0x5346D0: same type, only the placement count rises) and a link write (0x522700) stamp nothing
+	// [BIN:TPW-EXE:0x004D8C60 block stamp] a cell type change (0x5346D0, 0x5348D0, 0x538FC0; the queue length change 0x4DE1F0 stamps its back cell) writes the counter 0x7CDB98, raised by one (0x4D8C50), into the block (y >> 4) × 33 + (x >> 4); every walk set-up takes the counter raised by one too (0x50F8E0), so a later edit always stamps above the walk; an unchanged non-zero type (0x5346D0: the same-type return at 0x5346F5, only the placement count rises) and a link write (0x522700) stamp nothing, but clearing stamps even an empty cell (0x5346EC skips that return for type 0, the stamp at 0x5347AF)
 	public int BlockStamp( int blockX, int blockY ) =>
 		(uint)blockX < (uint)BlocksX && (uint)blockY < (uint)BlocksY ? blockStamps[blockY * BlocksX + blockX] : 0;
 
@@ -154,7 +154,8 @@ public sealed class ParkCellMap
 	public void SetType( int x, int y, byte type )
 	{
 		var index = Index( x, y );
-		var changed = types[index] != type;
+		// tp.exe's cell setter 0x5346D0 returns early for the same non-zero type only: clearing always stamps.
+		var changed = types[index] != type || type == 0;
 		typeCounts[types[index]]--;
 		typeCounts[type]++;
 		types[index] = type;

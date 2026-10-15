@@ -155,9 +155,10 @@ public static class ParkLayoutSnapshot
 				IsFixedItem = item.Entry.IsFixedItem
 			} );
 		}
+		var stamps = cells.CaptureBlockStamps();
 		return new Data
 		{
-			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, BlockStamps = cells.CaptureBlockStamps(), StampCounter = cells.CaptureBlockStamps() == null ? 0 : cells.StampCounter },
+			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, BlockStamps = stamps, StampCounter = stamps == null ? 0 : cells.StampCounter },
 			Objects = objectRecords,
 			NextSeed = objects.NextPlacementSeed,
 			NextAttractionId = objects.NextAttractionId,

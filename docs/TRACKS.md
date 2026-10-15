@@ -23,7 +23,7 @@ Code: `source/OpenTPW/World/Tracks/`, the track layer in `ParkCellMap`, the tool
 - The cells, the controller and its boats are saved in the park-resume envelope (optional `Tracks` part) and restored exactly.
 
 Not in phases 1 and 2: jumps and tunnels (add-ons), the tee pieces' arm masks and the
-water texture animation, sounds and particles of the boats, advisor messages, the three other themes' water rides were checked for data only (the
+water texture animation, advisor messages, the three other themes' water rides were checked for data only (the
 tables and kits load for all four; only the Jungle ride was run).
 
 ## Cells

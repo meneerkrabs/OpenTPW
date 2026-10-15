@@ -322,7 +322,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
-		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
+		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
 		using ( LoadProfile.Measure( "park-hud" ) )
 			Hud = CreateParkHud( level, status );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)

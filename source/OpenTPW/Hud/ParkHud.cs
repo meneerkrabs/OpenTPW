@@ -196,7 +196,8 @@ public sealed partial class ParkHud
 	// [DATA:video 40:40-41:30, 73:21] the counters read "1 ×" (the count, a space, the multiplication sign) and each row shows only while its count is above zero: a first session has neither, the ticket row appears above the key row after the first ticket
 	public string GoldenTicketsText => Status.HasEconomy && Status.GoldenTickets > 0 ? CounterText( Status.GoldenTickets ) : "";
 	public string GoldenKeysText => Status.HasEconomy && Status.GoldenKeys > 0 ? CounterText( Status.GoldenKeys ) : "";
-	private static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count} \u00d7" );
+	// [BIN:TPW-EXE:0x004a10a9 HUD counter text] both counters format their count with the UTF-16 "%d  x" at 0x752ef8 (two spaces, a letter x)
+	internal static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count}  x" );
 	public string DateText => !Status.HasEconomy ? "" : string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
 
 	public void PostMessage( string text )
@@ -256,8 +257,9 @@ public sealed partial class ParkHud
 		moneyLabel = hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, ColorSource = () => CashColor( Status.Money ), Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
-		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending; the golden key and ticket counters show only above zero ("1 ×")
-		// [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is read off the art and the video's red down arrow; the keys count is the park's earned tickets / 3 (the player-wide key ledger is not reachable from the HUD) — evidence needed: a capture of the dollar sign with a negative balance
+		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending
+		// [BIN:TPW-EXE:0x004a0c18 HUD balance refresh] 0x4a0ab0 sets i_dollar (control 0x32) to frame 1 for a negative balance and 0 otherwise, beside the balance's absolute value
+		// [APPROX:UI-051] green_up frame 1 while the balance fell in the last seconds; the ticket count is the park's available tickets — evidence needed: the trend arrow's visibility and the in-park ticket spend reaching the player ledger
 		economyElements.Add( hud.Add( new UiModelImage { Id = "dollar", Model = "i_dollar", Frame = () => Status.Money < 0 ? 1 : 0, Bounds = Rect( 37, 58, 242, 262 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.Highlight, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashChange < 0 ? 1 : 0, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
@@ -1008,7 +1010,7 @@ public sealed partial class ParkHud
 	{
 		foreach ( var element in economyElements )
 			element.Visible = Status.HasEconomy;
-		// the golden ticket and key rows appear only above zero (UI-051)
+		// [BIN:TPW-EXE:0x004a1045 HUD counter rows] the HUD's message 0x1e handler 0x4a0fb0 shows a counter's row (0x34/0x36 keys, 0x35/0x37 tickets) only while its count is not zero
 		foreach ( var id in TicketIds )
 			if ( hud.Find( id ) is { } ticketElement ) ticketElement.Visible = Status.HasEconomy && Status.GoldenTickets > 0;
 		foreach ( var id in KeyIds )

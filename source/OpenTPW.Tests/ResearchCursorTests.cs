@@ -12,9 +12,10 @@ public class ResearchCursorTests
 {
 	private static EconomyObjectCatalog Catalog()
 	{
-		EconomyObjectInfo Ride( int id, int group ) => new( id, $"Ride {id}", ParkObjectKind.Ride, ResearchCategory.Ride, group,
-			new[] { new UpgradeLevelInfo( 0, 500, 100, 1, 0, new[] { 50, 30, 20, 10 } ) }, null, null, null, 0, 0, 0, 0, 0, 25, $"rides/{id}.wad" );
-		return new EconomyObjectCatalog( new[] { Ride( 1100, 0 ), Ride( 1120, 1 ), Ride( 1130, 1 ), Ride( 1140, 1 ), Ride( 1150, 2 ) } );
+		EconomyObjectInfo Ride( int id, int group, int research = 100 ) => new( id, $"Ride {id}", ParkObjectKind.Ride, ResearchCategory.Ride, group,
+			new[] { new UpgradeLevelInfo( 0, 500, research, 1, 0, new[] { 50, 30, 20, 10 } ) }, null, null, null, 0, 0, 0, 0, 0, 25, $"rides/{id}.wad" );
+		// 1100 costs no research, so it starts researched (tp.exe 0x5031a0); the others are lab projects
+		return new EconomyObjectCatalog( new[] { Ride( 1100, 0, 0 ), Ride( 1120, 1 ), Ride( 1130, 1 ), Ride( 1140, 1 ), Ride( 1150, 2 ) } );
 	}
 
 	[TestMethod]

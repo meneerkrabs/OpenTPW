@@ -114,7 +114,7 @@ and strike where they stand.
 | Key(s) | Values | Meaning | Use |
 | --- | --- | --- | --- |
 | object `Research.Category` | 0 ride, 1 shop, 2 sideshow, 3 feature, 4 upgrade | From the category files' comments | data |
-| object `Research.Group` | 0–4 | "0 = Available initially" | data; group 0 of ride/shop/sideshow/feature starts researched |
+| object `Research.Group` | 0–4 | "0 = Available initially" | data; what starts researched is an object without research cost, whatever its group (tp.exe `0x5031a0`; Jungle's Wooden Log, group 0 at cost 300, is researched in the lab) |
 | object `Upgrades[n].CostOfResearch` | 0–1,250 | "research points taken for item to be researched"; levels 1–2 = ride upgrades | data |
 | `ResearchCategories[c].Effort` | 100/15/30/15/10 (easy 100/15/30/25/0) | Starting slider effort (UIHELPTEXT 244–248) | data |
 | `ResearcherConstsPerGrade[g].ResearchAbility` | 2–6 (easy 6–20) | Research ability | traced: added every 20 park turns per researcher, × effort share × work load / 100 (0x100F0DF0) |

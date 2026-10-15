@@ -68,7 +68,7 @@ public class UiScreen
 		Modal || elements.Any( element => element.Visible && element.ScreenRect( canvas ).Contains( point ) );
 
 	/// <summary>Handles one frame of input; returns true when the input was consumed.</summary>
-	// [APPROX:UI-012] hover focus follows the pointer, and the right click backs out of a modal screen when the RMBCancelOn option (+0x39, default 1) is set; the option's only readers in the original are the park view 0x4881a0, the camcorder 0x488aa1 and the ride view 0x48a7ab/0x48aadb — evidence needed: whether the original's modal windows react to a right click at all
+	// [APPROX:UI-012] hover focus follows the pointer, and the right click backs out of a modal screen when the RMBCancelOn option (+0x39, default 1) is set; the option's only direct readers in the original are the park view 0x4881a0, the camcorder 0x488aa1 and the ride view 0x48a7ab/0x48aadb — evidence needed: whether the original's modal windows react to a right click at all
 	public virtual bool Update( UiContext context, UiInput input )
 	{
 		if ( IsRemoved )

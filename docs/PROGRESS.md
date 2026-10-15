@@ -6,6 +6,56 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Audio, weather and advisor reading round (October 15, 2026)
+
+Thirty-one audio, advisor and compatibility approximations were read again in tp.exe:
+
+- **Weather draws with the original's render states** (decoder `0x567620`): lightning is additive (`0x200d52`, SRCALPHA/ONE, no depth
+  writes), snow writes depth, and all three discard alpha below 16/255; the parallax is absolute (`0x57efd0`); snow is one triangle per
+  flake with a small jitter each frame (`0x8bcbc8` bit `0x100` is never set on PC); the weather's step follows the game speed (`0x57ff60`
+  reads the rate-scaled clock `0x402d70`).
+- **Sounds**: a level event id is looked up in the level's own category only (`0x6b87d0`; incagod.RSE's EVENT 3 id 43 is silent, as in
+  the original), and event and repair sounds start at whole units (`0x5573d0`).
+- ADVISOR-007, AUDIO-011, AUDIO-015, AUDIO-026 and AUDIO-908 are retired, ADVISOR-010's manual tools are an extension
+  (`[EXT:speech-tool-audio-clock]`), and 15 items are narrowed. Items that need QMixer.dll or usp10.dll stay open: only tp.exe is analysed.
+
+## Interface reading round, part A (October 15, 2026)
+
+Twenty-two interface approximations were read again in tp.exe:
+
+- **The lobby island camera follows the original** (`0x5e1210`, `0x5d5c50`): the eye and target glide separately by 0.1 and 0.2 of the
+  frame step (the frame's ms × 0.01, capped at 500 ms), the field of view is ISLANDFOV (100°, vertical, `0x5e13ed`) instead of 60°,
+  and the angle wraps into [0, 2π) (UI-017 retired).
+- UI-016 (the island angle and height already matched) and UI-029 (the door button latch and help, `0x4ad4e0`, `0x669410`) are retired.
+- Nine items are narrowed with what was read: the font bank chosen by screen mode (`0x419710`), control colours and the single-pass
+  text renderer without a shadow (`0x48f830`), the four readers of RMBCancelOn (`0x4881a0`), the greedy text wrap (`0x6aec80`), the
+  slider class, the options labels and the buy-list row pitch (font slot 7's line height, `0x4ad240`).
+
+## Format table reconciled; SAM reader, LIP checks and MD2 path parameters (October 15, 2026)
+
+The README's format table mixed decoding with game integration: the sound banks' ⚠️ listed untriggered
+events and the mixer, not the one entry word that is really still unknown. It now has separate columns
+for what decodes, what is still unknown in the files and what the game does not use yet; `tools/site_status.py` reads the new
+columns, and docs/FORMAT-BACKLOG.md replaces the October 9 list that had fallen behind the code.
+
+- **SAM:** `SettingsFile`'s parser was character-based and skipped newlines after a key, so a key
+  without a value took the next line's key as its value, quoted names lost everything after the first
+  space (`"Inca Totem"` read as `"Inca`) and the rows of `---` blocks became settings. It now reads the
+  line grammar the shipped files use (one-token or quoted value, `#`/`//` comments, blocks skipped) and
+  agrees with `ObjectSettingsFile` on every shipped `.sam`, loose and in WADs. It reads the rest of any
+  stream instead of trusting `Length`, so non-seekable and partly read streams work.
+- **LIP:** the two corpus checks no longer skip `z_error`, the one Layer I clip, since the decoder reads
+  Layer I: 639 clips, still 70.2 dB talking against 41.9 dB silent, `sp_478` still the only overrun.
+- **MD2 path parameters:** the record +36 block of flag 0x200 is decoded (`ModelPathParameters`): a 16-byte
+  header and one float per tick, a position along the node's path in percent, as the PC sampler
+  0x471860/0x474EA0 reads it. All 71 corpus blocks fit. The path it indexes (model instance +0xAC) is not
+  decoded, so nothing moves along it yet and 0x200/0x400 stay unsupported.
+- The merge of main into the older `formats-phase1` branch keeps its exact Layer I corpus counts and
+  ffmpeg-pinned Layer I clips; main already had its decoder.
+- Verification (macOS arm64, original data): the full test suite passes (4,486 passed, 109 skipped);
+  an independent Codex review's four findings (path table allocated before its bounds check, flag 0x200
+  without a block, an unclosed SAM block, an overclaimed sound-bank ✅) are fixed. No native run was needed.
+
 ## Economy rules settled against tp.exe, part two (October 15, 2026)
 
 Sixteen more economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):

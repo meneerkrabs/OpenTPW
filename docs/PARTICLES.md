@@ -84,8 +84,10 @@ the native pool, rule by rule. It needs no GPU, so tests build one directly, and
 
 - **Init** (`[BIN:TPW-EXE:0x51FAA0]`): the game calls it with no ground function (the pool then uses the stub `0x5D60C0`
   that returns 0, a flat plane at Y 0), the options' PARTICLEDENSITY and a count of `0x800` (`0x54E5F9`, `0x54EAB9`);
-  the count is clamped 100..0x7FFF and a density of 0 becomes 1. OpenTPW passes the options' built-in default, 500
-  (settings record `0x744860`); the player's saved value (registry) is not read or exposed (`APPROX:PTCL-906`).
+  the count is clamped 100..0x7FFF and a density of 0 becomes 1. The density is GameOptions.PARTICLEDENSITY of the detail
+  object (`0x7858C8`), which only the detail-file load fills (`0x44DE20` -> `0x44DC60`: the player's detail level picks
+  `low.sam` 500, `med.sam` 1000 or `high.sam` 1500); OpenTPW passes the value of the player's graphics preset (Enhanced and
+  Custom included, `ParticleSystem.OptionsDensity`) and 500 when no options are loaded.
   TOTALPARTICLES has no code reference in tp.exe. The reset (`0x51FB70`) sets the generator to 1, both generation
   counters to 1 and the free lists ascending from slot 0 / particle 0.
 - **Random forms** (`[BIN:TPW-EXE:0x5205D1, 0x5205F2]`): the generator is `state * 214013 + 2531011`. The signed form
@@ -246,13 +248,15 @@ Retired (the port is from the instructions, with the tests below): `APPROX:PTCL-
 density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-903` (effectors and the spiral) and
 `APPROX:PTCL-907` (saves, above). Still registered in the fidelity register:
 
-- `PTCL-900`: EVENT positions use the animator's current matrices; the original uses the pose of the object's last draw
-  (`0x473C70` -> `0x44AB30`, gated by header bit 0x1 and table bit 0x1), about a render frame behind and stale while
-  culled.
+- `PTCL-900`: EVENT positions use the animator's current matrices; the original reads the key table (`0x556B90`), which
+  `0x44AB30` refreshes (gated by header bit 0x1 and table bit 0x1) when the instance is created (`0x463851`, the pose after
+  animations 0 and 13 start), when it is drawn (the render node's per-frame callback `0x463030` -> `0x44E380` -> `0x473C70`
+  -> `0x473E1B`) and from `0x42A6D6` and `0x438A53`, so it is about a render frame behind and stale while culled. What the two
+  header and table bits mean and what the other two refreshes serve are not read.
 - `PTCL-904`: the quad's width factor: the frame record's float +8 is unread; `DAT_008BCBCC` is height / width.
 - `PTCL-905`: one batch per particle in the original against OpenTPW's three blend batches; the per-particle state
   words are decoded (depth writes, opaque untextured particles), the order across batches is not read.
-- `PTCL-906`: the pose conversion inverts OpenTPW's placement; the density option's saved value is not read.
+- `PTCL-906`: the pose conversion inverts OpenTPW's placement.
 - `PTCL-908`: wired are EVENT 1/2, ADDOBJ 1/2 and the per-type object effects (below). Not wired: ADDOBJ following the
   key node afterwards (`0x5516B0` updates it each run with the node position truncated to whole units), ADDOBJ_EXT
   (no VM handler), the negative-key box centre (`0x556B90`/`0x466B70`), the scoped effects (record `+0x4E0`), the further

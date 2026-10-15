@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.IO;
 using System.Linq;
@@ -82,8 +83,9 @@ public class AdvisorTests
 	{
 		// Traced rules leave the register; their numbers are not reused.
 		// 11 (a deliberate extension), 16 (the fixed rows) and 18 (the model hides at the end of the last clip) left in the MISC round of October 14;
-		// 7 (no face test before the submit's transform) and 10 (the game's mouth runs on the advisor clock; the tools' audio clock is an extension) in the read-audio round.
-		var retired = new[] { 1, 2, 3, 4, 7, 8, 10, 11, 13, 14, 15, 16, 18, 19, 21, 23, 24 };
+		// 7 (no face test before the submit's transform) and 10 (the game's mouth runs on the advisor clock; the tools' audio clock is an extension) in the read-audio round;
+		// 27 (the slap on cut-off and the F1 replay) in the advisor presentation round.
+		var retired = new[] { 1, 2, 3, 4, 7, 8, 10, 11, 13, 14, 15, 16, 18, 19, 21, 23, 24, 27 };
 		CollectionAssert.AreEqual( Enumerable.Range( 1, 27 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 
@@ -192,6 +194,61 @@ public class AdvisorTests
 		// Advisorm13 is the only clip with tracks on the five mouth meshes: the likeliest source of the original mouth-shape choice.
 		var mouths = new ModelFile( $"{Advisor.ArchivePath}/Advisorm13.MD2" ).Clip!.Tracks.Select( track => global.Nodes[track.NodeIndex].Name ).Where( name => name.StartsWith( "Mouth - " ) ).OrderBy( name => name ).ToArray();
 		CollectionAssert.AreEqual( new[] { "Mouth - Aah", "Mouth - Eee", "Mouth - Normal", "Mouth - Ooh", "Mouth - Sss" }, mouths );
+	}
+
+	[TestMethod]
+	public void TheClipsVertexAndTextureCoordinateTracksFitTheAdvisorMeshes()
+	{
+		using var assets = new OriginalAssets();
+		var global = new ModelFile( $"{Advisor.ArchivePath}/Advisor.MD2" );
+		Assert.AreEqual( 0u, global.HeaderFlags & ModelFile.RelativeAnimationFlag, "set mode: the vertex keys replace the positions" );
+		var clip = new ModelFile( $"{Advisor.ArchivePath}/Advisorm3.MD2" ).Clip!;
+		var tracks = AdvisorRig.FindMeshTracks( global, clip );
+		var animated = Enumerable.Range( 0, tracks.Length ).Where( node => tracks[node]?.Vertices != null ).Select( node => global.Nodes[node].Name ).ToArray();
+		CollectionAssert.AreEquivalent( new[] { "Right Antennae", "Left Antennae", "Right hand", "Left Hand" }, animated );
+		var hand = global.Meshes.Single( mesh => mesh.Name == "Right hand" );
+		var positions = new System.Numerics.Vector3[hand.Positions.Length];
+		var moved = 0;
+		for ( var tick = 0; tick < clip.Duration; tick += Math.Max( 1, clip.Duration / 8 ) )
+		{
+			tracks[hand.NodeIndex]!.Vertices!.ApplyPose( tick, positions );
+			moved += positions.Where( ( position, index ) => System.Numerics.Vector3.Distance( position, hand.Positions[index].GetSystemVector3() ) > 0.01f ).Any() ? 1 : 0;
+		}
+		Assert.IsTrue( moved > 0, "the hand's vertex track moves it away from the stored mesh" );
+
+		var fantasy = new ModelFile( "/levels/fantasy/advisor/Advisor_FAN.MD2" );
+		var eyes = AdvisorRig.FindMeshTracks( fantasy, new ModelFile( "/levels/fantasy/advisor/Advisor_FANm16.MD2" ).Clip! );
+		CollectionAssert.AreEquivalent( new[] { "Right Eye", "Left Eye" },
+			Enumerable.Range( 0, eyes.Length ).Where( node => eyes[node]?.TexCoords != null ).Select( node => fantasy.Nodes[node].Name ).ToArray(),
+			"the level advisors' texture-coordinate tracks" );
+	}
+
+	[TestMethod]
+	public void TheTicketCloseUpShowsTheTicketTheClipBeforeToggledOnAndHidesTheBugHead()
+	{
+		using var assets = new OriginalAssets();
+		const string archive = "/levels/fantasy/advisor";
+		var model = new ModelFile( $"{archive}/Advisor_FAN.MD2" );
+		var map = AdvisorNodeMap.From( model );
+		var durations = AdvisorClipDurations.LoadArchive( FileSystem, archive )!;
+		var clips = new Dictionary<int, ModelAnimation?>();
+		ModelAnimation? ClipOf( int number ) => clips.TryGetValue( number, out var clip ) ? clip
+			: clips[number] = new ModelFile( $"{archive}/{Advisor.AnimationClipName( "_FAN", number )}" ).Clip;
+		var sequence = AdvisorSequences.Build( 29, 1500, durations, () => 0 );
+		CollectionAssert.AreEqual( new[] { 17, 17, 17, 17, 18, 19, 20 }, sequence.Clips.ToArray() );
+		int Node( string name ) => model.Meshes.Single( mesh => mesh.Name == name ).NodeIndex;
+		HashSet<int> At( int index ) => AdvisorAccessories.SequenceHiddenNodes( map, sequence, durations, ClipOf, AdvisorCostume.None, AdvisorThemeCostume.None, index );
+
+		var ticketClip = At( 4 );
+		Assert.IsTrue( ticketClip.Contains( Node( "Ticket2" ) ), "clip 18 starts with the ticket hidden" );
+		AdvisorAccessories.ApplyToggles( map, ticketClip, ClipOf( 18 ), 40 );
+		Assert.IsFalse( ticketClip.Contains( Node( "Ticket2" ) ), "and shows it from tick 38" );
+		var closeUp = At( 5 );
+		Assert.IsFalse( closeUp.Contains( Node( "Ticket2" ) ), "clip 19's list leaves the ticket clip 18 showed" );
+		foreach ( var name in new[] { "Body", "Right Eye", "Right hand", AdvisorAccessories.BugHead } )
+			Assert.IsTrue( closeUp.Contains( Node( name ) ), $"the close-up hides {name}" );
+		Assert.IsTrue( At( 6 ).Contains( Node( "Ticket2" ) ), "clip 19's toggle hides the ticket at tick 39, before clip 20 starts" );
+		Assert.IsFalse( At( 0 ).Contains( Node( "Body" ) ) || At( 0 ).Contains( Node( AdvisorAccessories.BugHead ) ), "the advisor itself shows in clip 17" );
 	}
 
 	/// <summary>The clip lengths of the original's advisor clips come from trailer word 2 (0x474070): the global advisor's and a level advisor's.</summary>

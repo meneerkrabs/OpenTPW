@@ -189,6 +189,25 @@ public class ParkLandTests
 	}
 
 	[TestMethod]
+	public void UnownedLandAgainstTheHighYEdgeIsAPocket()
+	{
+		// a full-size map whose bottom row (y 127) is fixed, so owned, except for x 26..32 below the purchase; tp.exe's
+		// bordered land grid keeps its row 65 (below y 127) a wall over columns 1..63 (0x5321dc), so that gap is enclosed
+		var cells = new ParkCellMap( ParkLand.MapSize, ParkLand.MapSize );
+		for ( var x = 0; x < ParkLand.MapSize; x++ )
+			if ( x is < 26 or > 32 )
+				cells.SetFlags( x, ParkLand.MapSize - 1, ParkCellFlags.NoModify );
+		var land = ParkLand.FromClicks( Setup( RectangleClicks ) );
+		land.ApplyToNewPark( cells );
+		cells.SetLand( land );
+		Assert.IsFalse( Owned( cells, 29, 127 ), "the gap is not owned" );
+		// down to the last post row (y 125): only the gap at y 127 is left, against the map's edge
+		Assert.AreEqual( LandPurchaseRefusal.Pocket, Check( cells, (25, 11), (33, 125) ).Refusal );
+		// a row short of it the gap still reaches the unowned land round the rectangle
+		Assert.AreEqual( LandPurchaseRefusal.None, Check( cells, (25, 11), (33, 123) ).Refusal );
+	}
+
+	[TestMethod]
 	public void TwoBarrierPostsInARowOnAnEdgeAreRefused()
 	{
 		var cells = NewPark();
@@ -281,6 +300,45 @@ public class ParkLandTests
 	}
 
 	[TestMethod]
+	public void ABalanceChangeOnlyRepeatsTheHoversMoneyTest()
+	{
+		var cells = NewPark();
+		var economy = Economy( 5000, 100 );
+		var tool = new BuyLandTool( () => cells, () => economy, ( _, _ ) => false );
+		tool.Begin();
+		tool.Click( 25, 11 );
+		tool.Hover( 33, 21 );
+		Assert.AreEqual( LandPurchaseRefusal.None, tool.HoverCheck?.Refusal );
+		Assert.AreEqual( 1, tool.ValidatorRuns );
+		tool.Hover( 33, 21 );
+		Assert.AreEqual( 1, tool.ValidatorRuns, "the same rectangle is not validated again" );
+		// 4800 against 4700, then 4800 again: the refusal follows the balance without another walk of the fence
+		economy.ChargeLand( 300, 0 );
+		tool.Hover( 33, 21 );
+		Assert.AreEqual( LandPurchaseRefusal.Money, tool.HoverCheck?.Refusal );
+		Assert.IsTrue( tool.HoverTooDear );
+		Assert.AreEqual( 4800, tool.HoverCheck?.Cost, "the refused price is still reported" );
+		economy.CreditCoasterTrack( 100 );
+		tool.Hover( 33, 21 );
+		Assert.AreEqual( LandPurchaseRefusal.None, tool.HoverCheck?.Refusal, "equal is allowed" );
+		Assert.AreEqual( 1, tool.ValidatorRuns, "balance changes only repeat the money test" );
+		// another rectangle or a changed map runs the validator again
+		tool.Hover( 35, 21 );
+		Assert.AreEqual( 2, tool.ValidatorRuns );
+		cells.Touch();
+		tool.Hover( 35, 21 );
+		Assert.AreEqual( 3, tool.ValidatorRuns );
+		// a refusal other than money stays put whatever the balance
+		tool.Hover( 19, 19 );
+		var refusal = tool.HoverCheck?.Refusal;
+		Assert.IsTrue( refusal is not (null or LandPurchaseRefusal.None or LandPurchaseRefusal.Money), $"{refusal}" );
+		economy.ChargeLand( 4000, 0 );
+		tool.Hover( 19, 19 );
+		Assert.AreEqual( refusal, tool.HoverCheck?.Refusal );
+		Assert.AreEqual( 4, tool.ValidatorRuns );
+	}
+
+	[TestMethod]
 	public void SnappingClampsToTheMapAndRoundsDownToThePostLattice()
 	{
 		Assert.AreEqual( (21, 11), BuyLandTool.Snap( 22, 12, PostA, 64, 64 ) );
@@ -362,6 +420,36 @@ public class ParkLandTests
 	}
 
 	[TestMethod]
+	public void AnImportedSaveWithoutAWalkableFenceHasNoLand()
+	{
+		var land = ParkLand.FromClicks( Setup( RectangleClicks ) );
+		var links = new Dictionary<(int, int), byte>();
+		for ( var index = 0; index + 1 < land.Ring.Count; index++ )
+		{
+			var (a, b) = (land.Ring[index], land.Ring[index + 1]);
+			links[a] = (byte)(links.GetValueOrDefault( a ) | Link( b.X - a.X, b.Y - a.Y ));
+			links[b] = (byte)(links.GetValueOrDefault( b ) | Link( a.X - b.X, a.Y - b.Y ));
+		}
+		static byte Link( int dx, int dy ) => (dx, dy) switch { (0, < 0) => 1, (> 0, 0) => 4, (0, > 0) => 16, _ => 64 };
+		// the saved flags: everything west of x 30 owned
+		static bool Unowned( int x, int y ) => x >= 30;
+
+		var walked = new ParkCellMap( 64, 64 );
+		walked.ImportLand( Setup( RectangleClicks ), Unowned, ( x, y ) => links.TryGetValue( (x, y), out var bits ) ? bits : null );
+		Assert.IsNotNull( walked.Land );
+		CollectionAssert.AreEqual( land.Ring.ToArray(), walked.Land!.Ring.ToArray() );
+		Assert.IsTrue( Owned( walked, 29, 40 ) && !Owned( walked, 30, 5 ), "the saved flags, not the fence's land" );
+
+		// a fence broken half way: no land (Buy Land unavailable), the saved flags kept, not the level's starting ring
+		links.Remove( land.Ring[land.Ring.Count / 2] );
+		var broken = new ParkCellMap( 64, 64 );
+		broken.ImportLand( Setup( RectangleClicks ), Unowned, ( x, y ) => links.TryGetValue( (x, y), out var bits ) ? bits : null );
+		Assert.IsNull( broken.Land );
+		Assert.IsTrue( Owned( broken, 29, 40 ) && !Owned( broken, 30, 5 ) && !Owned( broken, 40, 15 ) );
+		Assert.IsFalse( new BuyLandTool( () => broken, () => null, ( _, _ ) => false ).Begin() );
+	}
+
+	[TestMethod]
 	public void ACorruptLandRecordIsRejected()
 	{
 		var cells = NewPark();
@@ -378,5 +466,17 @@ public class ParkLandTests
 			(With( land with { Ring = land.Ring.Where( ( _, index ) => index != 3 ).ToList() } ), "neighbours"),
 		} )
 			StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( data ) ).Message, message );
+
+		// beside a land record a cell record may not carry the unowned flag 0x40; without one it may
+		cells.SetType( 15, 15, ParkCellType.Path );
+		var withPath = ParkLayoutSnapshot.CaptureSnapshot( cells, new ParkObjects( null!, new SandboxParkGrid() ) );
+		var record = withPath.Cells.Cells.Single( cell => (cell.X, cell.Y) == (15, 15) );
+		var flagged = withPath with
+		{
+			Cells = withPath.Cells with { Cells = withPath.Cells.Cells.Select( cell => cell == record ? cell with { Flags = (ushort)(cell.Flags | 0x40) } : cell ).ToList() }
+		};
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( flagged ) ).Message, "unowned flag" );
+		var landless = flagged with { Cells = flagged.Cells with { Land = null } };
+		Assert.IsTrue( ParkLayoutSnapshot.RestoreCellMap( landless ).FlagsAt( 15, 15 ).HasFlag( ParkCellFlags.Unowned ) );
 	}
 }

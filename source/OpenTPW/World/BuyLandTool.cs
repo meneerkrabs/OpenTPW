@@ -57,6 +57,7 @@ public sealed class BuyLandTool
 		Corner = null;
 		HoverPost = null;
 		HoverCheck = null;
+		hoverVerdict = null;
 	}
 
 	/// <summary>The pointer is over (<paramref name="x"/>, <paramref name="y"/>), or off the park when null.</summary>
@@ -74,15 +75,31 @@ public sealed class BuyLandTool
 			HoverCheck = null;
 			return;
 		}
-		// the validator walks the whole fence, so it runs again only when the rectangle, the map or the money changed
-		var key = (corner, HoverPost.Value, map.Version, economy()?.Balance);
-		if ( HoverCheck != null && key == hoverKey )
-			return;
-		hoverKey = key;
-		HoverCheck = Check( map, land, corner, HoverPost.Value );
+		// the validator walks the whole fence, so its money-free verdict runs again only when the rectangle, the map or the
+		// cell price changed; a balance change only repeats the money test on the cached price
+		var park = economy();
+		var cellCost = park?.CellCost( CellPurchase.Land ) ?? 0;
+		var key = (corner, HoverPost.Value, map.Version, cellCost);
+		if ( hoverVerdict == null || key != hoverKey )
+		{
+			hoverKey = key;
+			hoverVerdict = land.CheckPurchase( map, corner, HoverPost.Value, barrier, cellCost, null );
+			ValidatorRuns++;
+		}
+		HoverCheck = WithMoney( hoverVerdict.Value, cellCost, park?.Balance );
 	}
 
-	private ((int X, int Y) Corner, (int X, int Y) Post, int Version, long? Balance) hoverKey;
+	private ((int X, int Y) Corner, (int X, int Y) Post, int Version, long CellCost) hoverKey;
+	private LandPurchaseCheck? hoverVerdict;
+
+	/// <summary>How often the hover ran the full validator (for tests: balance changes alone must not).</summary>
+	internal int ValidatorRuns { get; private set; }
+
+	/// <summary>The money test on a money-free verdict: an allowed rectangle becomes a <see cref="LandPurchaseRefusal.Money"/> refusal when its price is too dear for <paramref name="balance"/>.</summary>
+	private static LandPurchaseCheck WithMoney( LandPurchaseCheck verdict, long cellCost, long? balance ) =>
+		verdict.Allowed && balance is { } bank && ParkLand.TooDear( verdict.Cells, cellCost, bank )
+			? verdict with { Refusal = LandPurchaseRefusal.Money }
+			: verdict;
 
 	/// <summary>A click on (<paramref name="x"/>, <paramref name="y"/>): the first stores a corner, the second buys or refuses and ends the tool.</summary>
 	// [BIN:TPW-EXE:0x525d29 Buy Land click] without a stored corner (0x81ede4/0x81ede8 at -1) the click stores the post and rebuilds the land grid (0x532960); otherwise it runs the validator from the stored post to the clicked one with the money test, and when it passes buys the rectangle (0x5327e0) and debits its total (0x4d01f0); either way the corner is reset and the tool ends (0x52f200(0, 0))

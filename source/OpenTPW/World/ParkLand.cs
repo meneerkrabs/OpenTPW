@@ -375,7 +375,7 @@ public sealed class ParkLand
 			return Refused( LandPurchaseRefusal.NoNewLand );
 		if ( LeavesPocket( cells, xmin, ymin, xmax, ymax ) )
 			return Refused( LandPurchaseRefusal.Pocket );
-		// [APPROX:PATH-007] a rectangle that covers a square on the open side of the gate (between posts B and A) is refused, and so is one whose merged fence cannot be walked from post A to post B; the original lays the fence across such ground and walks whatever ring results (0x5327e0, 0x52ba50) — still open: what the original's purchase does with land in front of the gate
+		// [APPROX:PATH-007] a rectangle that covers a square on the open side of the gate (between posts B and A) is refused, and so is one whose merged fence cannot be walked from post A to post B; the original's validator accepts some rectangles in front of the gate (e.g. Jungle (45, 11)-(49, 17)) and its purchase lays the fence across that ground (0x5327e0); reading the code, the ring walk 0x52ba50 then likely keeps the old ring and the refill drops the new hoardings (the land is charged but none is gained), or the walk may not terminate — still open: that outcome is not confirmed at run time
 		if ( CoversGate( xmin, ymin, xmax, ymax ) )
 			return Refused( LandPurchaseRefusal.Gate );
 		if ( Merge( first, second ) == null )
@@ -395,7 +395,6 @@ public sealed class ParkLand
 	public static (int Cells, long Cost) Price( ParkCellMap cells, int xmin, int ymin, int xmax, int ymax, long cellCost, long? balance, out bool tooDear )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
-		tooDear = false;
 		var count = 0;
 		var total = 0;
 		for ( var y = ymin + 2; y < ymax; y++ )
@@ -406,11 +405,26 @@ public sealed class ParkLand
 					continue;
 				count++;
 				total = unchecked( total + (int)cellCost );
-				if ( balance is { } bank && unchecked( (int)bank - total ) < 0 )
-					tooDear = true;
 			}
 		}
+		tooDear = balance is { } bank && TooDear( count, cellCost, bank );
 		return (count, total);
+	}
+
+	/// <summary>
+	/// The money test of <see cref="Price"/> on its own: whether any running total of <paramref name="cells"/> charges of
+	/// <paramref name="cellCost"/>, summed in 32 bits, exceeds <paramref name="balance"/>.
+	/// </summary>
+	public static bool TooDear( int cells, long cellCost, long balance )
+	{
+		var total = 0;
+		for ( var cell = 0; cell < cells; cell++ )
+		{
+			total = unchecked( total + (int)cellCost );
+			if ( unchecked( (int)balance - total ) < 0 )
+				return true;
+		}
+		return false;
 	}
 
 	/// <summary>
@@ -419,7 +433,7 @@ public sealed class ParkLand
 	/// unowned land or hoardings filled; a block of unowned land or a hoarding left over is a pocket.
 	/// </summary>
 	// [BIN:TPW-EXE:0x532960 land grid] block (x >> 1, y >> 1) of 0x81eeb0 (67 bytes per column) is rewritten by each of its cells in row order, so the cell (2i + 1, 2j + 1) decides it: '@' for a hoarding (following object links, 0x53ad90), '#' for a cell without 0x40, ' ' otherwise
-	// [BIN:TPW-EXE:0x5321dc pocket test] the grid is copied inside a border of ' ' (0x81d7c8), the blocks (x >> 1, y >> 1) for x from xmin + 1 to xmax + 1 and y from ymin + 1 to ymax + 1 in steps of 2 become '#', the flood 0x5328e0 turns every ' ' and '@' it reaches from the border corner (65, 0) into '#', and any ' ' or '@' left inside refuses the rectangle
+	// [BIN:TPW-EXE:0x5321dc pocket test] the grid is copied inside a border of ' ' (0x81d7c8; most of its last row is a wall, see the pocket border below), the blocks (x >> 1, y >> 1) for x from xmin + 1 to xmax + 1 and y from ymin + 1 to ymax + 1 in steps of 2 become '#', the flood 0x5328e0 turns every ' ' and '@' it reaches from the border corner (65, 0) into '#', and any ' ' or '@' left inside refuses the rectangle
 	private bool LeavesPocket( ParkCellMap cells, int xmin, int ymin, int xmax, int ymax )
 	{
 		const int Size = MapSize / 2 + 2;
@@ -428,6 +442,9 @@ public sealed class ParkLand
 		for ( var i = 0; i < Size; i++ )
 			for ( var j = 0; j < Size; j++ )
 				grid[i, j] = Unowned;
+		// [BIN:TPW-EXE:0x5321dc pocket border] the copy loop (0x5321dc..0x53221b) writes the border row y = 65 at iterations 0..63, then iteration 64 copies source row 64 into bordered row 65 over columns 1..65; the source 0x81eeb0 never has rows 64 or 65 written (0x532960 fills blocks 0..63 only), so columns 1..63 of that row hold neither ' ' nor '@' and wall the flood off; only (0, 65), (64, 65) and (65, 65) stay open
+		for ( var i = 1; i <= Size - 3; i++ )
+			grid[i, Size - 1] = Owned;
 		for ( var i = 0; i < Size - 2; i++ )
 		{
 			for ( var j = 0; j < Size - 2; j++ )

@@ -290,6 +290,9 @@ public static class ParkLayoutSnapshot
 			Require( cell.QueueLink is 0 or 1 or 4 or 16 or 64, $"cell ({cell.X}, {cell.Y}) has queue link {cell.QueueLink}" );
 			Require( cell.QueueLink == 0 || cell.Type == (byte)ParkCellType.Queue, $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
 			Require( cell.Placements >= 0, $"cell ({cell.X}, {cell.Y}) has placement count {cell.Placements}" );
+			// with a land record the unowned flag lives in the record's bits, never in a cell record (see CaptureSnapshot)
+			Require( cells.Land == null || (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0,
+				$"cell ({cell.X}, {cell.Y}) carries the unowned flag beside a land record" );
 		}
 		if ( cells.Land is { } land )
 			ReadLand( land, cells.Width, cells.Height );

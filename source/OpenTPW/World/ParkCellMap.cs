@@ -91,14 +91,20 @@ public sealed class ParkCellMap
 
 	/// <summary>
 	/// Sets up the land of an original level (see <see cref="FromOriginal(MapFile, OriginalParkImport?, ParkLandSetup?)"/>):
-	/// an imported save keeps its own ownership; its fence is walked from its hoarding cells, the level's fence standing in when
-	/// that walk fails. A new park gets the level's fence and its land (<see cref="ParkLand.ApplyToNewPark"/>).
+	/// an imported save keeps its own ownership; its fence is walked from its hoarding cells, and without a walkable fence it has
+	/// no land (<see cref="ImportLand"/>). A new park gets the level's fence and its land (<see cref="ParkLand.ApplyToNewPark"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x4d0b30 cell base serializer] a save keeps each map cell's mFlags, so its 0x40 cells are the saved park's unowned land, and each hoarding's mHoardingNeighbours, its fence
 	public void SetUpLand( ParkLandSetup setup, OriginalParkImport? save )
 	{
 		ArgumentNullException.ThrowIfNull( setup );
-		ParkLand? fence = null;
+		if ( save != null && save.Cells.CountX == Width && save.Cells.CountY == Height )
+		{
+			ImportLand( setup, ( x, y ) => (save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.Unowned) != 0,
+				( x, y ) => InBounds( x, y ) && save.Cells[x, y].StructureType == SaveCell.HoardingType ? save.Cells[x, y].HoardingNeighbours : null );
+			return;
+		}
+		ParkLand fence;
 		try
 		{
 			fence = ParkLand.FromClicks( setup );
@@ -106,30 +112,36 @@ public sealed class ParkCellMap
 		catch ( InvalidDataException exception )
 		{
 			Log.Warning( $"The level's park fence cannot be laid: {exception.Message} Every cell stays owned." );
-		}
-		if ( save != null && save.Cells.CountX == Width && save.Cells.CountY == Height )
-		{
-			var imported = ParkLand.FromFenceLinks( setup.PostA, setup.PostB, ( x, y ) =>
-				InBounds( x, y ) && save.Cells[x, y].StructureType == SaveCell.HoardingType ? save.Cells[x, y].HoardingNeighbours : null );
-			if ( imported == null )
-				Log.Warning( "The imported park's fence does not run from post A to post B; the level's fence stands in for Buy Land." );
-			for ( var y = 0; y < Height; y++ )
-			{
-				for ( var x = 0; x < Width; x++ )
-				{
-					var unowned = (save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.Unowned) != 0;
-					var flags = FlagsAt( x, y );
-					if ( unowned != flags.HasFlag( ParkCellFlags.Unowned ) )
-						SetFlags( x, y, unowned ? flags | ParkCellFlags.Unowned : flags & ~ParkCellFlags.Unowned );
-				}
-			}
-			SetLand( imported ?? fence );
 			return;
 		}
-		if ( fence == null )
-			return;
 		fence.ApplyToNewPark( this );
 		SetLand( fence );
+	}
+
+	/// <summary>
+	/// The land of an imported save: every cell takes the saved unowned flag (<paramref name="unowned"/>) and the fence is
+	/// walked from post A by the saved hoardings' links (<paramref name="links"/>). When that walk fails the map has no land
+	/// (Buy Land is unavailable) and keeps the saved flags.
+	/// </summary>
+	internal void ImportLand( ParkLandSetup setup, Func<int, int, bool> unowned, Func<int, int, byte?> links )
+	{
+		ArgumentNullException.ThrowIfNull( setup );
+		var imported = ParkLand.FromFenceLinks( setup.PostA, setup.PostB, links );
+		for ( var y = 0; y < Height; y++ )
+		{
+			for ( var x = 0; x < Width; x++ )
+			{
+				var saved = unowned( x, y );
+				var flags = FlagsAt( x, y );
+				if ( saved != flags.HasFlag( ParkCellFlags.Unowned ) )
+					SetFlags( x, y, saved ? flags | ParkCellFlags.Unowned : flags & ~ParkCellFlags.Unowned );
+			}
+		}
+		// The level's starting fence does not stand in: it would not enclose the saved land, so Buy Land would merge new
+		// rectangles into a ring that disagrees with the saved flags.
+		if ( imported == null )
+			Log.Warning( "The imported park's fence does not run from post A to post B; Buy Land is unavailable for this park." );
+		SetLand( imported );
 	}
 
 	private void SetPath( int x, int y, byte cellLinks )

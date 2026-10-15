@@ -69,7 +69,8 @@ around the edges. What is traced:
 - Cities: the server's list (`GET /api/v1/cities`, docs/SERVER.md). Each city gets a pin
   (`Hpin`; `Bullfrog` for the city named "North Pole") standing on the globe, taller the
   more parks it holds (0x005DC3E0); the cursor ray picks the city within 10 units of where
-  it meets a sphere of radius 116, and its name and "Parks: n" (UITEXT 461) show at the top.
+  it meets a sphere of radius 116, and its name and "Parks: n" (UITEXT 461) show at the top right
+  (tp.exe 0x4B9980, labels 93201/93202 of table 0x7581A0), empty while no city is hovered.
 - The 24 globe textures form an equirectangular world map, so a city at latitude φ and
   longitude L stands at atan2(x, z) = 30° − L, sin φ up the model's +Y axis.
 
@@ -79,7 +80,8 @@ park (Go Online from the pause menu): it replaces the park and the HUD, and clos
 park's camera.
 
 **Publish Park** starts on the globe as the original's PublishGlobe does: "Choose the city to
-publish in" (UITEXT 419) at the top, the panel's back, zoom and rotate buttons, and a click on a
+publish in" (UITEXT 419) in the city label while no city is hovered, the panel's zoom and rotate
+buttons without Find Parks, back and the satellites (tp.exe 0x5DD910 → 0x4C4FB0(1)), and a click on a
 city's pin opens the name and description form for that city (Mac: the hovered city is stored and
 the Publish Park dialog opens, 0x1018CE80). A server without cities skips the globe.
 
@@ -108,10 +110,10 @@ own lobby, the online world, enter this park (download and visit) and previous/n
 island; the selected park's rank (`"%d"`, font slot 0) shows at the top and its name
 (font slot 5, yellow) at the bottom (the item detail overlay, labels 0x49D9/0x49DA,
 `0x101834A0`). The top-10 request's completion builds one island per park with a running
-slot counter (0x005E23C0 → 0x005E27B0 → 0x005E3210); that each park uses its theme's
-island is inferred from the own lobby, which builds its four islands the same way. The list comes from `GET /api/v1/parks?city=`,
+slot counter (0x005E23C0 → 0x005E27B0 → 0x005E3210): each park loads its theme's island
+file and stands at its list position, the counter replacing the ISLAND line's slot. The list comes from `GET /api/v1/parks?city=`,
 which needs a login, as the original's city server did. OpenTPW's own functions (login, news, postcards,
-chat, import, account) are behind **OpenTPW online** at the top right.
+chat, import, account) are behind **OpenTPW online** at the top centre.
 
 ### The chat overlay
 
@@ -350,11 +352,10 @@ are not claims that the original online protocol or service has been recovered.
 | ONLINE-006 | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. |
 | ONLINE-007 | The globe camera's rates, steps, damping and radius ease are applied per tick at 30 ticks per second, and the angles move by velocity × ticks. | The original (tp.exe 0x5D5C50 → 0x5DC860) runs once a frame with no fixed rate: it damps the velocities once a frame, then moves the angles by velocity × dt and eases the radius by 0.3 × dt, dt = min(elapsed ms, 500) × 0.01. Still unknown: its frame rate on the online screens and how often a held panel arrow repeats its step (0x4C53F0, events 0x10008/0x10009). |
 | ONLINE-009 | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The original (0x5DC860) adds, once a frame and without the step, rate × 50 × the cursor's depth into the 1 % edge band (at most rate / 2) or rate × the right button's offset from the centre; these need its per-frame integration (ONLINE-007), so the frame rate is still unknown. |
-| ONLINE-010 | The hovered city's name and park count are drawn at the top centre. | The layout of the original city labels 0x16c11/0x16c12. |
+| ONLINE-010 | The hovered city's name and park count are drawn at the top right in the labels' rectangles (tp.exe table 0x7581A0: 93201 (1477,90)-(2048,240), 93202 (1627,275)-(2048,395)), white and centred, without the `hilight` model their table entries bind. | Whether a label draws that model (highlight.MD2) behind its text. |
 | ONLINE-012 | Edge steering starts once the cursor has moved on the globe screen. | The original has no per-screen gate: it reads the online front end's last mouse-move position (0x5D5DD0), the canvas centre until the first move after the front end starts (0x5D5770), so it steers at once when the cursor already rests at an edge (for example back from a city lobby). Still unknown: an OpenTPW home for that move history across the online screens. |
 | ONLINE-013 | Pins are twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7). | The scale of the original flag node's parent and a capture of the original globe. |
-| ONLINE-017 | The publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top. | The publish globe's layout table. |
-| ONLINE-018 | Each satellite's player count is drawn at its bottom-right corner. | The original wrote the count into the satellite control itself (STP-PPC 0x1b96d8), whose text placement is not decoded. |
+| ONLINE-017 | The publish globe shows UITEXT 419 in the city name label while no city is hovered. | Its panel is read (tp.exe 0x5DD910 → 0x4C4FB0(1): the worldlob table without the satellites, Find Parks and back, with the city labels); neither tp.exe nor the Mac publish globe code loads UITEXT 419 as an immediate, so where it showed is unknown. |
 | ONLINE-019 | A chat park is shown as a flat overhead view in which each player is a marker that the server's relayed movement moves; the player walks their own marker by clicking (one walk speed; the original's double-click teleport is not separated). | The original chat park's three-dimensional scene, avatar model and animation (manual pp. 63-68) are not decoded. |
 | ONLINE-021 | The chat overlay's action buttons are a fixed top bar (vote, earmuffs, postcards, goto, page, locate) and three list buttons (buddy, ignore, blackmark). | The original (tp.exe list handler 0x4BE820) gave 799016 earmuffs on/off, 799017 vote and 799018 the unidentified shared handler 0x4A9380, and the six-button table 6024-6031 (tp.exe 0x758CD8) is a popup on a name in the list (0x4BE290, at the cursor): blackmark, goto, ignore, remove buddy, locate, page (0x4BEDE0); other names get the popup 12290 (blackmark, goto, ignore, add buddy). Still unknown: what 0x4A9380 does and which list flag picks the popup. |
 | ONLINE-020 | The park details' eighth label row shows the players currently in the park's chat room (UITEXT 273). | The original's last row showed the Instant action mode flag (UITEXT 282), which the package format does not record. |

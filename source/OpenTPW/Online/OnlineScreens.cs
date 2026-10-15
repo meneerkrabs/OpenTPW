@@ -70,37 +70,35 @@ public sealed class OnlineScreens
 		// The chat satellites (data:0x523f0, controls 90120–90124): each is a chat park, shows the players in its
 		// room and enters it on a click (the original's "chatellite" connector, 0x1b8808; manual: "The number
 		// displayed next to each satellite is the number of people currently in this chat park").
-		var satellites = new (float X0, float Y0, float X1, float Y1, UiAnchor Anchor)[]
+		// [BIN:TPW-EXE:0x7596B0 worldlob table] satellites 90120-90124 with their command-3 text regions; the builder 0x4C4FB0 gives
+		// each a text object (0x48FDE0, default white) in font slot 6, centred both ways (0x65C428(1, 1)), into which the connector
+		// writes the room's "%d" player count
+		var satellites = new (float X0, float Y0, float X1, float Y1, UiRect Count, UiAnchor Anchor)[]
 		{
-			(131, 139, 438, 446, UiAnchor.TopLeft), (484, -51, 791, 256, UiAnchor.TopLeft), (1690, 344, 1997, 651, UiAnchor.TopRight),
-			(1743, 620, 2050, 927, UiAnchor.Right), (1335, 1199, 1643, 1506, UiAnchor.BottomRight),
+			(131, 139, 438, 446, Region( 312, 373, 401, 418 ), UiAnchor.TopLeft), (484, -51, 791, 256, Region( 664, 183, 754, 228 ), UiAnchor.TopLeft),
+			(1690, 344, 1997, 651, Region( 1870, 578, 1960, 623 ), UiAnchor.TopRight), (1743, 620, 2050, 927, Region( 1924, 854, 2013, 899 ), UiAnchor.Right),
+			(1335, 1199, 1643, 1506, Region( 1516, 1433, 1605, 1478 ), UiAnchor.BottomRight),
 		};
 		for ( var index = 0; index < satellites.Length && index < Online.Chat.ChatProtocol.SatelliteRoomCount; index++ )
 		{
-			var (x0, y0, x1, y1, anchor) = satellites[index];
+			var (x0, y0, x1, y1, countRegion, anchor) = satellites[index];
 			var number = index + 1;
 			var room = Online.Chat.ChatProtocol.SatelliteRoom( number );
 			var satellite = screen.Add( new UiButton { Id = $"satellite{number}", Model = "i_sat", Help = strings.Help( 423 ), Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = anchor,
 				Clicked = () => Guard( () => { Session.JoinRoom( room ); ShowChat(); } ) } );
-			// [APPROX:ONLINE-018] the count is drawn at the satellite's bottom-right corner; the original wrote it
-			// into the satellite control itself (0x1b96d8), whose text placement is not decoded
-			var count = screen.Add( new UiLabel { Id = $"satellite{number}Count", Font = fonts => fonts.Menu, Color = UiColors.Value, Align = UiAlign.Center,
-				Bounds = new UiRect( x1 - 150, y1 - 50, 140, 90 ), Anchor = anchor,
+			var count = screen.Add( new UiLabel { Id = $"satellite{number}Count", Font = fonts => fonts.Menu, Color = UiColors.Text, Align = UiAlign.Center,
+				Bounds = countRegion, Anchor = anchor,
 				Text = () => Session.ChatParks.Count >= number ? Session.ChatParks[number - 1].Players.ToString( System.Globalization.CultureInfo.InvariantCulture ) : "" } );
 			screen.Updating += _ => satellite.Enabled = Session.IsLoggedIn && Session.Busy == 0;
 		}
-		// The hovered city's name and parks (the original's labels 0x16c11/0x16c12; their place is not decoded), else the title.
-		// [APPROX:ONLINE-010] city name and park count drawn at the top centre — evidence needed: the original city labels' layout
-		screen.Add( new UiLabel { Id = "city", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 40, 1000, 90 ), Anchor = UiAnchor.Top,
-			Text = () => screen.Hovered is { } city ? city.Name : OnlineStrings.Ui( OnlineStrings.OnlineWorld, "Online world" ) } );
-		screen.Add( new UiLabel { Id = "cityParks", Font = fonts => fonts.Small, Align = UiAlign.Center, Bounds = new UiRect( 524, 130, 1000, 60 ), Anchor = UiAnchor.Top,
-			Text = () => screen.Hovered is { } city ? OnlineStrings.Ui( OnlineStrings.CityParks, "Parks: " ) + city.Parks : "" } );
-		// [EXT:ONLINE-UI] the login and OpenTPW's own online menu (news, postcards, chat, import, account)
+		AddCityLabels( screen, null );
+		// [EXT:ONLINE-UI] the login and OpenTPW's own online menu (news, postcards, chat, import, account), at the top centre: the
+		// original's city labels take the top right
 		var login = screen.Add( new UiButton { Id = "login", Text = () => Session.IsLoggedIn ? OnlineStrings.Get( OnlineLabel.LogOut ) : OnlineStrings.Ui( OnlineStrings.OnlineLogin, "Online login" ),
 			Clicked = () => { if ( Session.IsLoggedIn ) Guard( () => { Session.Disconnect(); localStatus = ""; } ); else ShowLogin(); },
-			Bounds = new UiRect( 1560, 40, 440, 100 ), Anchor = UiAnchor.TopRight } );
+			Bounds = new UiRect( 804, 40, 440, 100 ), Anchor = UiAnchor.Top } );
 		var menu = screen.Add( new UiButton { Id = "menu", Text = () => OnlineStrings.Get( OnlineLabel.OnlineMenu ), Clicked = ShowMenu,
-			Bounds = new UiRect( 1560, 150, 440, 100 ), Anchor = UiAnchor.TopRight } );
+			Bounds = new UiRect( 804, 150, 440, 100 ), Anchor = UiAnchor.Top } );
 		// The online status box (Mac UI table data:0x5011c): the original's progress message at the bottom right
 		// while an online request runs, here showing the screen's own status line.
 		screen.Add( new UiLabel { Id = "status", Wrap = true, Font = fonts => fonts.Small, Color = UiColors.Value, Align = UiAlign.Left,
@@ -131,11 +129,32 @@ public sealed class OnlineScreens
 		Push( screen );
 	}
 
+	/// <summary>A table rectangle given by its corners.</summary>
+	private static UiRect Region( float x0, float y0, float x1, float y1 ) => new( x0, y0, x1 - x0, y1 - y0 );
+
 	/// <summary>
-	/// The worldlob panel of the globe screens: Find Parks (when <paramref name="find"/> is given), back, zoom and the four
-	/// rotate arrows (Mac table data:0x523f0). Returns Find Parks (null without it) and zoom.
+	/// The hovered city's name and park count at the top right of a globe screen (tp.exe table 0x7581A0), empty while no city is
+	/// hovered; <paramref name="idle"/> is the name label's text then (null: none).
 	/// </summary>
-	private (UiButton? Find, UiButton Zoom) AddGlobePanel( UiScreen screen, Action back, Action? find )
+	// [BIN:TPW-EXE:0x4B9A70 city labels] window 93200 (1477,90)-(2048,511) holds the name label 93201 (1477,90)-(2048,240), font slot 5,
+	// and the parks label 93202 (1627,275)-(2048,395), font slot 8, both white and centred both ways; 0x4B9980 sets them from the
+	// hovered city (its name, and UITEXT 0x1CE with its park count) and clears both when none is hovered
+	// [APPROX:ONLINE-010] the labels are drawn without the hilight model their table entries bind with command 1 — evidence needed:
+	// whether a label draws that model (highlight.MD2) behind its text
+	private void AddCityLabels( OnlineGlobeScreen screen, Func<string>? idle )
+	{
+		screen.Add( new UiLabel { Id = "city", Font = fonts => fonts.Title, Color = UiColors.Text, Align = UiAlign.Center, Bounds = Region( 1477, 90, 2048, 240 ), Anchor = UiAnchor.TopRight,
+			Text = () => screen.Hovered is { } city ? city.Name : idle?.Invoke() ?? "" } );
+		screen.Add( new UiLabel { Id = "cityParks", Font = fonts => fonts.Small, Color = UiColors.Text, Align = UiAlign.Center, Bounds = Region( 1627, 275, 2048, 395 ), Anchor = UiAnchor.TopRight,
+			Text = () => screen.Hovered is { } city ? OnlineStrings.Ui( OnlineStrings.CityParks, "Parks: " ) + city.Parks : "" } );
+	}
+
+	/// <summary>
+	/// The worldlob panel of the globe screens: Find Parks (when <paramref name="find"/> is given), back (when
+	/// <paramref name="back"/> is given), zoom and the four rotate arrows (Mac table data:0x523f0). Returns Find Parks (null
+	/// without it) and zoom.
+	/// </summary>
+	private (UiButton? Find, UiButton Zoom) AddGlobePanel( UiScreen screen, Action? back, Action? find )
 	{
 		screen.Add( new UiModelImage { Id = "worldPanel", Model = "worldlob", Bounds = new UiRect( 9, 620, 501, 911 ), Anchor = UiAnchor.BottomLeft } );
 		// [BIN:TPW-EXE:0x7596B0 worldlob table] root 90111 (9,620,510,1531): command 1 binds root worldlob, command 2 the root nunupan of f_wlobbg.MD2 and command 3 its region (33,1057,480,1505); the table is built by 0x4C4FB0
@@ -146,7 +165,8 @@ public sealed class OnlineScreens
 			Bounds = new UiRect( x0, y0, x1 - x0, y1 - y0 ), Anchor = UiAnchor.BottomLeft
 		} );
 		var findButton = find == null ? null : PanelButton( "findParks", "b_findprk", 49, 731, 202, 885, 435, find );
-		PanelButton( "ownLobby", "b_bck2lob", 49, 898, 202, 1051, 431, back );
+		if ( back != null )
+			PanelButton( "ownLobby", "b_bck2lob", 49, 898, 202, 1051, 431, back );
 		var zoom = PanelButton( "zoom", "b_zoom", 41, 1070, 143, 1173, 428, GlobeCameraMode.ToggleZoom );
 		PanelButton( "rotateUp", "b_lobup", 182, 1077, 336, 1231, 426, () => GlobeCameraMode.Turn( 0, 1 ) );
 		PanelButton( "rotateLeft", "b_lobleft", 61, 1201, 214, 1355, 424, () => GlobeCameraMode.Turn( -1, 0 ) );
@@ -731,16 +751,17 @@ public sealed class OnlineScreens
 	}
 
 	// [BIN:STP-PPC:CLBScreenComponentPublishGlobe] a click on a hovered city's pin stores that city (Mac DAT_101ED220) and opens the Publish Park dialog (0x1018CE80)
-	// [APPROX:ONLINE-017] the publish globe reuses the Online World's panel (back, zoom, rotate) without Find Parks and the satellites, with UITEXT 419 at the top — evidence needed: the publish globe's layout table
+	// [BIN:TPW-EXE:0x5DD910 publish globe] its activation builds the worldlob table with argument 1 (0x4C4FB0), which hides the satellites
+	// (90119), Find Parks (90115) and back to the lobby (90112), leaving zoom and the four arrows, and shows the city labels (0x4B9A70);
+	// the Mac twin (CLBScreenComponentPublishGlobe vf7, 0x10092F30) passes 1 to its builder 0x101B9068 too
+	// [APPROX:ONLINE-017] UITEXT 419 ("Choose the city to publish in") shows in the name label while no city is hovered — evidence needed:
+	// where the original showed UITEXT 419 (neither tp.exe nor the Mac publish globe code loads id 419 as an immediate)
 	private void ShowPublishGlobe()
 	{
 		var screen = new OnlineGlobeScreen( host.Globe, "publishGlobe" );
 		screen.CityClicked = city => { stack.Pop(); ShowPublishForm( city ); };
-		var (_, zoom) = AddGlobePanel( screen, stack.Pop, null );
-		screen.Add( new UiLabel { Id = "city", Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Bounds = new UiRect( 524, 40, 1000, 90 ), Anchor = UiAnchor.Top,
-			Text = () => screen.Hovered is { } city ? city.Name : OnlineStrings.Ui( OnlineStrings.ChooseCityToPublish, "Choose the city to publish in" ) } );
-		screen.Add( new UiLabel { Id = "cityParks", Font = fonts => fonts.Small, Align = UiAlign.Center, Bounds = new UiRect( 524, 130, 1000, 60 ), Anchor = UiAnchor.Top,
-			Text = () => screen.Hovered is { } city ? OnlineStrings.Ui( OnlineStrings.CityParks, "Parks: " ) + city.Parks : "" } );
+		var (_, zoom) = AddGlobePanel( screen, null, null );
+		AddCityLabels( screen, () => OnlineStrings.Ui( OnlineStrings.ChooseCityToPublish, "Choose the city to publish in" ) );
 		OnlineClient? citiesFor = null;
 		screen.Updating += _ =>
 		{

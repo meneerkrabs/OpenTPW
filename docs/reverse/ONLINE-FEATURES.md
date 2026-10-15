@@ -43,8 +43,8 @@ S5 the TPW-SE roadmap).
 | The globe fills the screen; camera circles it, zoom toggles two radii, arrows/edges/right button turn it with damping | BIN tp.exe 0x005DC860/0x005DCFE0; DATA data:0x523f0 (worldlob panel) | Done (rates per tick are [APPROX:ONLINE-007]…010) |
 | Cities as pins, taller with more parks; Bullfrog pin; hover shows name and "Parks: n" | BIN tp.exe 0x005DC3E0; UITEXT 461; S4 | Done; city list [EXT:ONLINE-059] |
 | Click a city → its lobby (sets the selected city for the top-10 request) | BIN tp.exe 0x005DD530, 0x005E23F0 | Done |
-| Five chat satellites around the globe, each showing the player count of its chat park; click to enter the park | DATA data:0x523f0 (i_sat 90120-90124); STP-PPC 0x1b8808 ("ONLINE CHATELLITES" connector, RoomInfo query, "%d" count); MAN p. 63; S5 | Done — the server names the five chat parks, the globe shows each count ([APPROX:ONLINE-018] count placement) and enters the room on click |
-| Publish globe: "Choose the city to publish in" over the globe; click a city opens the publish form | DATA UITEXT 419; STP-PPC 0x1018CE80 | Done ([APPROX:ONLINE-017] panel reuse) |
+| Five chat satellites around the globe, each showing the player count of its chat park; click to enter the park | DATA data:0x523f0 (i_sat 90120-90124); STP-PPC 0x1b8808 ("ONLINE CHATELLITES" connector, RoomInfo query, "%d" count); MAN p. 63; S5 | Done — the server names the five chat parks, the globe shows each count centred in the satellite's text region (tp.exe 0x4C4FB0) and enters the room on click |
+| Publish globe: "Choose the city to publish in" over the globe; click a city opens the publish form | DATA UITEXT 419; STP-PPC 0x1018CE80 | Done (panel read: tp.exe 0x5DD910; [APPROX:ONLINE-017] where UITEXT 419 showed) |
 | Back to your own lobby from the online world | DATA data:0x523f0 b_bck2lob, help 431 | Done |
 
 ## City lobby

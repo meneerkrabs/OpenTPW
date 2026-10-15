@@ -359,8 +359,12 @@ glyph in all 14 UI fonts of each language.
   in modes that support the research panel; Instant Action shows its original unavailable message.
   The main workload knob adjusts the tracked percentage by drag and keyboard
   with inferred linear travel (UI-064). The five effort sliders are the original's generic slider with
-  SetRange(0,100) (`0x4aa6bd`): a drag position is truncated to its value, not rounded (`0x66afc9`). The
-  fluid progress fill (UI-066) is a presentation approximation. The item-navigation
+  SetRange(0,100) (`0x4aa6bd`): a drag position is truncated to its value, not rounded (`0x66afc9`). Each
+  row's fluid (`res_fluid`, 64 frames) animates as the original's (`ResearchFluid`, `0x4a95b0` / `0x4a9fc0`): a
+  category with a project and a non-zero rate (its effort share times the staffing percentage, `0x503980`) fills
+  from empty and then loops its bubbling frames at (rate + 20) / 100 × 2 frames a tick, and drains back to the
+  empty frame when the rate falls to zero; there is no progress fill. The fluids step at 30 ticks a second
+  (UI-066). The item-navigation
   arrows move the category's current target through `ParkResearch.MoveCurrent`
   when more than one item is selectable (tested in `ManagementUiTests`).
 - Buy window (`ParkHud.BuyWindow.cs`, Mac buy table `data:0x4cd94`): the Buy button opens the original window as a modal
@@ -674,7 +678,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-061 | `Hud/ParkHud.FinanceWindow.cs` | the entry-price window is a host layout over actual economy values (its table is not located); the training-budget window follows table 0x756400 (mini balance, five role rows, tick and the entry price, finance and loans buttons) without the rows' skill gauges, and a click changes a budget by one unit | the entry-price window's table (the G key, entryprice 0x40c570) and what the training rows' gauges show |
 | UI-063 | `Hud/ParkHud.LoansWindow.cs` | loan list has seven equal rows and inferred scrollbar travel; its summary uses the bounded monthly ledger rather than the original lifetime counters | the loans list control and handler (candidates: type-7 lists such as attribute 0x81, id 2342112), scroll handler and original lifetime finance counters |
 | UI-064 | `Hud/ParkHud.ResearchWindow.cs` | research workload is adjustable with linear 0..100 mouse/keyboard travel; native slider quantization remains unqualified | which control of the research window handler 0x4a96b0 is the workload knob (it sets controls 0xd2d12 and 0xd2d10 on message 0x1e) and its 0x800 branch |
-| UI-066 | `Hud/ParkHud.ResearchWindow.cs` | research progress is a simple fill inside the fluid model cell; the original draws no fill but animates the fluid model (0x4a95b0: (p+20)/100 in 16.16, state 3, frame limit 0x30, winding down to 0x20) | porting the fluid model animation (no further evidence needed) |
+| UI-066 | `Hud/ParkHud.ResearchWindow.cs` | the research fluids step at a fixed 30 ticks a second; the original advances each panel's fluid (0x4a9fc0) on every message 0x1e, which the UI sends once per rendered frame (0x48a580 → 0x658f6c) | the original's frame rate |
 | UI-080 | `Hud/ParkHud.Staff.cs` | staff list has ten equal rows in the table content area and the wheel moves one row | capture of the original staff list |
 | UI-081 | `Hud/ParkHud.Staff.cs` | applicant details: the skill gauge fills the candidate's skill byte over 5 (taken as the grade + 1, the video's cheapest candidate is a fifth full) and the mini balance (money in, staff costs plus the wage, other costs, balance) uses the current month's ledger samples; the field that writes the skill byte is not traced | the writer of the candidate's skill byte (candidate +8) |
 | UI-082 | `Hud/ParkHud.Staff.cs` | the portrait box shows the selected role and grade as text; the original spawns a live animated figure of the candidate's role there (0x49ba00 -> 0x475a10 with descriptor 0x74f758, animation 8 at speed 8.0; the sprite-bank character) and OpenTPW does not draw it | drawing the role's sprite-bank figure in the window (no further evidence needed) |

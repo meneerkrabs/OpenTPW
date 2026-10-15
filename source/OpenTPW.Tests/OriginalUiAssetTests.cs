@@ -146,6 +146,19 @@ public class OriginalUiAssetTests
 	}
 
 	[TestMethod]
+	public void TheResearchFluidHasTheSixtyFourFramesItsAnimationSteps()
+	{
+		// tp.exe 0x4a9fc0 / 0x4a95b0 step the fluid child through frames 0..31 (loop), 32..47 (drain, idle at 48) and 48..63 (fill)
+		var fluid = UiModel.Load( "res_fluid" );
+		Assert.AreEqual( "fluid", fluid.RootNodeName );
+		Assert.AreEqual( ResearchFluid.FrameCount, fluid.Frames.Count );
+		var expected = new[] { "fluid" }.Concat( Enumerable.Range( 2, 31 ).Select( index => $"fluid{index:00}" ) )
+			.Concat( Enumerable.Range( 1, 32 ).Select( index => $"empty{index:00}" ) ).ToArray();
+		CollectionAssert.AreEqual( expected, fluid.Frames.Select( frame => frame.NodeName ).ToArray() );
+		Assert.IsTrue( fluid.Frames[ResearchFluid.IdleFrame].Parts.All( part => part.TextureName == "fluidempty" ), "the idle frame shows the empty fluid only" );
+	}
+
+	[TestMethod]
 	public void ButtonStateFramesAreDrawnOverTheRootMesh()
 	{
 		var buy = UiModel.Load( "b_buy" );

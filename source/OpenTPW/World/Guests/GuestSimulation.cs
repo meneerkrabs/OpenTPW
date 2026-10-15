@@ -1264,17 +1264,17 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				BeginQueue( guest, attraction );
 				return;
 			}
-			// [BIN:TPW-EXE:0x004FFCD7 join refusal] too exciting: 15, not exciting enough: 12, a queue too long: 16 (0x004FFD7E)
-			Think( guest, result switch
-			{
-				QueueJoinResult.TooExciting => GuestThought.Scared,
-				QueueJoinResult.NotExcitingEnough => GuestThought.Bored,
-				_ => GuestThought.QueueTooLong
-			} );
-			if ( result is QueueJoinResult.NoRoom or QueueJoinResult.QueueTooLong )
-				guest.Happiness = Math.Max( 0, guest.Happiness - Settings.SmallHappinessChange );
+			// [BIN:TPW-EXE:0x004FFCD7 join refusal] too exciting: 15, not exciting enough: 12, a queue too long: 16 (0x004FFD7E); none of the join's refusals changes happiness (0x004FFBC0 calls 0x004FEA70 only when the walk is stuck or the park closed)
+			// [BIN:TPW-EXE:0x004FFC4F full queue room] the room test 0x004DDA20 (count below 4 × cells) fails: event 0x15 and state 6 only (0x004FFE0A → 0x004FFE54), no thought, no happiness change and no history push
+			if ( result != QueueJoinResult.NoRoom )
+				Think( guest, result switch
+				{
+					QueueJoinResult.TooExciting => GuestThought.Scared,
+					QueueJoinResult.NotExcitingEnough => GuestThought.Bored,
+					_ => GuestThought.QueueTooLong
+				} );
 			// [BIN:STP-PPC:0x100ECE18 refusal history] the queue-too-long path (0xece18) and both excitement refusals (0xecf3c) push the target's id into the temporary history (0xea290) before clearing the target
-			// [APPROX:GUEST-004] tp.exe's full-room refusal (0x004FFC4F → 0x004FFE0A → 0x004FFE54) records event 0x15 and sets state 6 only: no thought, no happiness change, no history push, and the target +0x1DC is kept; its queue-too-long refusal (0x004FFD47..0x004FFD83: history push 0x004FDC60, thought 16) changes no happiness either; OpenTPW thinks QueueTooLong and loses SmallHappinessChange on both, and clears the target — evidence needed: none (read)
+			// [APPROX:GUEST-004] the full-room refusal keeps the target +0x1DC in tp.exe (the jump past 0x004FFEDA), which OpenTPW clears; the state-6 handler cannot tell (its only read, 0x004FF437, follows the choice 0x004FCB10, which clears the word first at 0x004FCB21), but the object-removal message handler 0x004FB360 still matches a stale target and costs the guest SmallHappinessChange (0x004FE980(0)) with a reset to state 6, a message OpenTPW does not model — evidence needed: none (read)
 			if ( result is QueueJoinResult.QueueTooLong or QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
 				PushHistory( guest.TemporaryHistory, attraction.AttractionId );
 			// [BIN:TPW-EXE:0x004FFCF6 excitement refusal] the refusal clears the target and the decision stamp +0x1FC, so the next major decision is not held back 30 turns

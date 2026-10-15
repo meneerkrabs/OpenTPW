@@ -1302,7 +1302,7 @@ Medium happiness loss at `VomitCapacity`, and read the static `ExcitementLevel`.
 *What changes for a player.* A ride next to a guest who prefers its excitement scores 27 (the former rule gave, for an `Info.AttractionValue` of 40, 65 plus a random 0..9; first counterexample, plan 65 against 27);
 bought less than 8 days ago it scores 135, an attraction of the type the guest just used 0, one it used one, two or three rides before the last a quarter, a third or a half, and one it was turned away from a fifth for about 20 s. A ride 3 columns away (9 squares) loses its queue weight and scores
 19 instead of 27; at a squared distance of 8 a queue of 6 in 3 cells gives 22. A guest riding at excitement 70 with a preference of 65 gains `GoodRide` (the former rule gave `PerfectRide`) and a bored or scared guest no longer loses
-happiness from the ride itself (a refused join still costs `SmallHappinessChange` in C#: GUEST-004).
+happiness from the ride itself (a refused join costs no happiness either: tp.exe `0x4ffbc0` changes happiness only on a stuck walk or a closed park; GUEST-004).
 
 *Pins.* `attraction-score` 593 inputs (592 differ from the plan; first counterexample: the shipped weights, a perfect ride, original 27 against 65), `ride-outcome` 561 (498; original `{happiness 75, illness 30}` against `{75, 6}`),
 `attraction-choice` 515 (99; the score 9 is not a candidate in the original). Mutation checks: `450 → 449`, `<= → <` of the new-ride test, the good band `<= 15` and the swapped tie parity are caught.

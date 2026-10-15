@@ -104,7 +104,9 @@ Formats and evidence:
   renderer (`OriginalObject`) binds the rendered halves to the `sign1`/`sign2` slots, and
   the buy-window preview (`PreviewIcon`) draws the same textures. The gate binds its
   composed park-name halves to the fixed model and its raised sign faces. The name is the
-  current language's display name (approximation COMPAT-016); characters outside a font's
+  object's info-record name in the current language (`SignName`: the OBJECT_NAMES entries of
+  its Info.Id row, empty for an id outside tp.exe's table `0x7488D8`, which composes the
+  board alone, as `0x467A80` does); characters outside a font's
   cmap are drawn as .notdef with a diagnostic. The native compositor still layers the
   material effects for the three signs (`hallow/c_scat`, `fantasy/jelly`, `space/zob`)
   whose paint styles are both zero.
@@ -238,7 +240,6 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-006 | Sign text | No pair kerning: tp.exe has no TextOut/DrawText/ExtTextOut imports, sign text goes through Uniscribe (`0x5EAB70`: ScriptStringAnalyse flag 0x80, ScriptStringGetLogicalWidths, the percent scaling, a second ScriptStringAnalyse with the game's advance array `0xF85F00`, ScriptStringOut) and no kerning API is called | whether usp10's natural widths include kerning |
 | COMPAT-007 | Sign text | The theme name is the default park name; the original stores the name as two editable lines (the rename dialog's two fields) that the gate draws and saves; OpenTPW has no rename or saved name | save field of the two lines |
 | COMPAT-009 | Sign text | 16 sub-scanline unhinted linear coverage instead of GDI ANTIALIASED_QUALITY | captures of original sign text |
-| COMPAT-016 | Sign text | Ride sign text = the localized type name of the catalogue entry (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space; confirmed by a PC v2.0 video, also for a prebuilt ride whose instance name differs. The original's name for an id outside table `0x7488D8` is empty (`0x4146B0`: two empty parts and an empty separator, reached through `0x412FB0` when no object text file NAME is loaded) | what the sign generator `0x467A80` draws for an empty name |
 | COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified | native bitmap pixel oracle and ride-sign capture |
 | COMPAT-032 | Sign text | Transparent sign faces use the engine's object material (alpha test below 0.1, alpha blend, no depth sorting); thin letters can erode at low mips and blended edges depend on draw order. The original's face state follows the texture's alpha type (`0x590C40`: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque; depth writes on; decoder `0x567620`) | the generated sign texture's alpha type; a distant capture |
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only. tp.exe: option `[0x785898]` 0 → engine flag 0x20000 (MAGFILTER point), 1 → 0x40000 (MIPFILTER none), 2/3 → the device's mip mode; 0x400000 → wrap + linear MINFILTER, else clamp + point (`0x44D8F0`, `0x567620`) | that `[0x785898]` is TEXTUREFILTERING; the path from the engine flags into the state word |

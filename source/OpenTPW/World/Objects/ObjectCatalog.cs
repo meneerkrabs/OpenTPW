@@ -97,6 +97,13 @@ public sealed class ObjectCatalogEntry
 	/// archive's &lt;language&gt;.txt (English as fallback); else <see cref="SettingsName"/>.
 	/// </summary>
 	public string DisplayName { get; internal set; }
+	/// <summary>
+	/// The original's info-record name (+0x410) that the sign generator draws for an object built from the catalogue: the
+	/// joined OBJECT_NAMES entries of the object's Info.Id row, or the empty string when the id is not in the table (or its
+	/// row names the empty entry). Null where OpenTPW has no such binding (Theme Park Inc, no OBJECT_NAMES, bonus objects),
+	/// and then <see cref="DisplayName"/> stands in.
+	/// </summary>
+	public string? SignName { get; internal set; }
 	/// <summary>Index of the first OBJECT_NAMES entry of this object (names may span two entries), or null.</summary>
 	public int? ObjectNameIndex { get; internal set; }
 
@@ -497,14 +504,31 @@ public static class ObjectNames
 		var localized = GameLanguage.IsSelected ? TryLoadCurrent() ?? english : english;
 		var entries = catalog.Entries.Where( entry => !entry.IsBonus ).ToList();
 		// The Info.Id table is tp.exe's; Theme Park Inc ships another OBJECT_NAMES.str (other order and length) and keeps the English-name matcher.
-		var bound = GameEditions.Current == GameEdition.ThemeParkWorld ? Bind( entries ) : Match( entries, english );
+		var tpw = GameEditions.Current == GameEdition.ThemeParkWorld;
+		Assign( entries, tpw ? Bind( entries ) : Match( entries, english ), localized, tpw );
+	}
+
+	/// <summary>
+	/// Pure naming step, exposed for tests: each bound entry gets its OBJECT_NAMES index and (when not empty) its display name;
+	/// with the Info.Id table (<paramref name="infoIdTable"/>) every entry also gets its info-record <see cref="ObjectCatalogEntry.SignName"/>,
+	/// empty for an entry that is not bound.
+	/// </summary>
+	internal static void Assign( IReadOnlyList<ObjectCatalogEntry> entries, IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> bound, IReadOnlyList<string> localized, bool infoIdTable )
+	{
+		// [BIN:TPW-EXE:0x004146B0 object name getter] an id outside the table 0x7488D8 formats two empty parts with an empty separator ("%s%s%s" 0x74985C) into an empty info name
+		if ( infoIdTable )
+			foreach ( var entry in entries )
+				entry.SignName = "";
 		foreach ( var (entry, index, length) in bound )
 		{
 			entry.ObjectNameIndex = index;
 			entry.ObjectNameLength = length;
+			var joined = index + length <= localized.Count ? Join( localized.Skip( index ).Take( length ) ) : "";
+			if ( infoIdTable )
+				entry.SignName = joined;
 			// An empty bound name (the four End items, entry 0) keeps the .sam name as display name.
-			if ( index + length <= localized.Length && Join( localized.Skip( index ).Take( length ) ) is { Length: > 0 } name )
-				entry.DisplayName = name;
+			if ( joined.Length > 0 )
+				entry.DisplayName = joined;
 		}
 	}
 

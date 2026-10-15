@@ -656,13 +656,14 @@ Each turn, in order:
 
 1. Called forward → walk to the stand point (state 13).
 2. The ride failed (`0xdfe34`: a toilet whose wear gauge is below 25) → leave, "feeling sick".
-3. Not in the list any more → leave.
+3. Not in the list any more → leave, no thought ("Problem with a queue", tp.exe `0x500270`).
 4. The list position moved up: wait while the delay is non-zero and the gap is
    at most 2 (one turn per decrement), else walk to the new position.
-5. Recorded position above the limit → leave.
+5. Recorded position above the limit → leave, "queue too long". Then a coaster or track
+   that refuses guests (`0x441970`, the track word) → leave, "angry" (tp.exe `0x500612`).
 6. Needs window, every 30 turns after the last interlude: happiness > 80 or
-   10–19 idles for 10 turns, happiness < 10 leaves, else toilet > 80 leaves
-   unless the attraction provides relief.
+   10–19 idles for 10 turns, happiness < 10 leaves, else toilet > 80 thinks
+   "need toilet" and leaves unless the attraction provides relief.
 7. Within 30 turns of the last interlude only (the needs window returns on every path): a 1-in-10 facing change by
    (r mod 800) − 400 of 2048 from a second draw (tp.exe `0x4ffff0`).
 
@@ -673,6 +674,9 @@ queue only when admitted, when unhappy (< 10), for the toilet (> 80, not when
 queueing for a toilet), when the ride fails, closes or is removed, or on a
 queue edit. Happiness and toilet are compared after truncation to whole
 numbers, as the original does (`fctiwz`): "> 80" means at least 81.
+Every exit of state 11, like the queue edit's and the price refusal's, ends in the dismissal
+(tp.exe `0x5004aa` → `0x5012f0`): after its thought the guest loses `PeepInfo.MediumHappinessChange`
+(`0x4fea70` with 1); the dismissal's guest event 6 and its sound are not modelled (QUEUE-005).
 
 **Breakdown** (ORACLE.md F15). While `VAR_BROKEN ≠ 0` the ride dismisses its queue head first,
 one guest per park turn: the ride update (`0xe0a8c`, executed in the oracle for its states 1, 2

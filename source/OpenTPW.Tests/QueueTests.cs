@@ -665,6 +665,7 @@ public class QueueTests
 		long leftAt = -1;
 		var leftCell = (-1, -1);
 		var thought = GuestThought.None;
+		var leftHappiness = -1f;
 		rig.RunTurns( 40, () =>
 		{
 			if ( leftAt >= 0 || guest.IsInQueue || guest.State == GuestState.GoingToRide )
@@ -672,10 +673,58 @@ public class QueueTests
 			leftAt = rig.Simulation.ParkTurn;
 			leftCell = guest.Cell;
 			thought = guest.Thought;
+			leftHappiness = guest.Happiness;
 		} );
 		Assert.AreEqual( GuestThought.Unhappy, thought );
 		Assert.AreEqual( GuestSimulation.NeedsWindowTurns + 1, leftAt, "turn − +520 must exceed 30" );
+		Assert.AreEqual( 0f, leftHappiness, "the dismissal's medium step (0x4fea70(1)) clamps at 0" );
 		Assert.AreEqual( (2, 0), leftCell, "back on the path at the join cell" );
+	}
+
+	[TestMethod]
+	public void EveryStateElevenExitGoesThroughTheDismissal()
+	{
+		// tp.exe 0x5004aa: the state-11 exits set their thought, then unlink and dismiss (0x5012f0), which lowers happiness by the medium step (0x4fea70(1)).
+		foreach ( var exit in new[] { GuestThought.Unhappy, GuestThought.NeedToilet, GuestThought.Bored, GuestThought.QueueTooLong, GuestThought.None } )
+		{
+			var rig = new Rig();
+			rig.HoldAdmission();
+			var guests = Enumerable.Range( 0, exit == GuestThought.QueueTooLong ? 6 : 1 ).Select( _ => rig.Send( exit == GuestThought.Unhappy ? 15 : 60 ) ).ToList();
+			var guest = guests[^1];
+			guest.BaseSpeed = 140;
+			rig.KeepNeedsEmpty = exit != GuestThought.NeedToilet;
+			rig.RunTurns( exit == GuestThought.QueueTooLong ? 120 : 20 );
+			Assert.IsTrue( guest.IsInQueue, $"{exit}: queued before the exit" );
+			// A smaller QueueWaitTimeConstant lowers the limit to its floor of 4, below the last guest's position 5 (QueueLimitFollowsTheTracedFormula).
+			if ( exit == GuestThought.QueueTooLong )
+				rig.Ride.Parameters = new QueueParameters( true, false, false, 1, 60, 60, 5, 30 );
+			var medium = rig.Simulation.Settings.MediumHappinessChange;
+			var before = guest.Happiness;
+			var thought = (GuestThought?)null;
+			var after = 0f;
+			rig.RunTurns( 200, () =>
+			{
+				if ( thought != null )
+					return;
+				switch ( exit )
+				{
+					case GuestThought.Unhappy: guest.Happiness = Math.Min( guest.Happiness, 9 ); break;
+					case GuestThought.NeedToilet: guest.Toilet = 90; break;
+					case GuestThought.Bored: guest.InterludeTurn = rig.Simulation.ParkTurn; break;
+					case GuestThought.QueueTooLong: break;
+					case GuestThought.None: rig.Ride.LeaveQueue( guest.Id ); break;   // "Problem with a queue": a guest missing from the list
+				}
+				if ( guest.IsInQueue )
+				{
+					before = guest.Happiness;
+					return;
+				}
+				thought = guest.Thought;
+				after = guest.Happiness;
+			} );
+			Assert.AreEqual( exit, thought ?? GuestThought.Confused, $"{exit}: the exit's own thought" );
+			Assert.AreEqual( Math.Max( 0, before - medium ), after, 0.01f, $"{exit}: one medium step in the dismissal" );
+		}
 	}
 
 	[TestMethod]
@@ -734,6 +783,8 @@ public class QueueTests
 			} );
 			Assert.AreEqual( relief ? GuestThought.None : GuestThought.NeedToilet, left, relief ? "ProvidesRelief keeps the guest" : "toilet > 80 leaves" );
 			Assert.AreEqual( relief, guest.IsInQueue );
+			// tp.exe 0x5003aa: the thought comes before the relief test, so a guest queueing for a toilet thinks it too
+			Assert.AreEqual( GuestThought.NeedToilet, guest.Thought );
 		}
 	}
 

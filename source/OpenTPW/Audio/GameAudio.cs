@@ -792,6 +792,19 @@ public static class GameAudio
 	}
 
 	/// <summary>
+	/// Starts a held RSE event voice that takes parameters and moves (a ride vehicle's engine): a sentence event runs as a sentence with a parameter channel
+	/// (<see cref="SoundSentence.SetParameter"/>, <see cref="SoundSentence.MoveTo"/>); null when the event is missing or is not a repeating sentence (play those with <see cref="PlayRseEvent"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0051EEB0 sound-variable submit] the vehicle code resolves an EventMap variable to an event id (0x55A3E0) and submits it through 0x51BFC0, keeping the handle for the per-tick 0x51C270 (position) and 0x51BC40 (parameter) calls
+	public static SoundSentence? StartRseSentence( int type, uint eventId, Vector3 position )
+	{
+		var sound = FindRseEvent( type, eventId );
+		if ( sound == null || events == null || sound.Value.Event.Player is not (SoundEventPlayer.Sentence or SoundEventPlayer.BranchingSentence) )
+			return null;
+		return events.StartSentence( sound.Value.Category, eventId, AudioChannel.Effects, position: position, parameterChannel: true );
+	}
+
+	/// <summary>
 	/// The sounds of a ride script's <c>REPAIREFFECT</c> instruction: showing the repair effect starts a repair sound of
 	/// <c>cat_kids</c>, hiding it plays two <c>cat_rides</c> sounds at the object's position.
 	/// </summary>

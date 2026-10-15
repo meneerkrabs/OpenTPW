@@ -438,8 +438,9 @@ public class KartControllerTests
 		var boatEffects = new List<BumpEffect>();
 		water.Effect += boatEffects.Add;
 		water.Tick();
-		Assert.AreEqual( 0, boatEffects.Count, "a boat's tick raises no crash, horn or smoke effect (the water types are absent from 0x546C80's switch)" );
-		Assert.AreEqual( 2, raised, "the only effects of the two launches are their engine voices ([BIN:TPW-EXE:0x54A040], TRACK-016)" );
+		Assert.AreEqual( 0, boatEffects.Count( effect => effect.Kind != BumpEffectKind.EngineParameter ), "a boat's tick raises no crash, horn or smoke effect (the water types are absent from 0x546C80's switch)" );
+		Assert.AreEqual( 2, boatEffects.Count( effect => effect.Kind == BumpEffectKind.EngineParameter ), "only its engine voice's move and parameter (0x548104)" );
+		Assert.AreEqual( 4, raised, "the launches' engine voices ([BIN:TPW-EXE:0x54A040], TRACK-016) and one voice tick per boat" );
 	}
 
 	[TestMethod]

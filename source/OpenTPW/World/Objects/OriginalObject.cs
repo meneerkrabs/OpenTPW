@@ -122,6 +122,16 @@ public class OriginalObject : Entity
 					if ( Level?.OriginalPark?.Heightfield is { } field )
 						engine += new System.Numerics.Vector3( OriginalParkPlacement.GetOrigin( field ), 0 );
 					return GameAudio.SoundPosition( engine );
+				},
+				// an engine voice sits at the original's voice place: the vehicle point scaled by 0x700F20 and truncated, at height 0, from the park grid's sound origin
+				( x, y ) =>
+				{
+					var grid = new System.Numerics.Vector3( Placement.GridOrigin, 0 );
+					if ( Level?.OriginalPark?.Heightfield is { } field )
+						grid += new System.Numerics.Vector3( OriginalParkPlacement.GetOrigin( field ), 0 );
+					var origin = GameAudio.SoundPosition( grid );
+					var (vx, vz) = BumpEffects.VoicePlace( x, y );
+					return new Vector3( origin.X + vx, origin.Y, origin.Z + vz );
 				} );
 			Runtime.SetTourStation( ComputeTourStation );
 			BuildModels();

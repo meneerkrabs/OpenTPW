@@ -16,7 +16,7 @@ public sealed class TrackRenderer : IDisposable
 	public const float UnitsPerModelUnit = 307.2f;
 
 	/// <summary>A drawable mesh set with the surface it provides and, for a vehicle mesh, the rest transforms and flags of its rider head dummies (head 1, head 2).</summary>
-	private sealed record PieceGeometry( List<Model> Models, TrackSurface Surface, Matrix4x4[] HeadNodes, uint[] HeadFlags );
+	private sealed record PieceGeometry( List<Model> Models, TrackSurface Surface, Matrix4x4[] HeadNodes, uint[] HeadFlags, Matrix4x4?[] SparksNodes );
 
 	/// <summary>The entities of one vehicle: its body, its shadow (hovering karts) and the transform the heads hang from.</summary>
 	private sealed class VehicleVisual
@@ -185,6 +185,11 @@ public sealed class TrackRenderer : IDisposable
 					* Matrix4x4.CreateTranslation( origin.X, origin.Y, 0 );
 			}
 			visual.Transform = transform;
+			// the break smoke follows the vehicle's sparks node: number 1 on a kart, 2 on a bumper car (water boats have none)
+			var sparks = controller.Template.IsKart ? 1 : controller.Template.IsBumper ? 2 : 0;
+			vehicle.SparksNode = sparks > 0 && VehicleMesh( vehicle.Variant ) is { SparksNodes: var nodes } && nodes[sparks] is { } rest
+				? System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, ObjectPlacement.SwapAxes( rest ) * transform )
+				: null;
 			visual.Vehicle = vehicle;
 			visual.Controller = controller;
 			visual.Hover = hover;
@@ -356,7 +361,28 @@ public sealed class TrackRenderer : IDisposable
 			heads.Add( rest[node] );
 			flags.Add( model.Nodes[node].Type );
 		}
-		return new PieceGeometry( models, surface ?? TrackSurface.FromModel( model ), heads.ToArray(), flags.ToArray() );
+		var sparks = new Matrix4x4?[3];
+		for ( var number = 1; number <= 2; number++ )
+		{
+			var node = SparksNode( model, number );
+			sparks[number] = node >= 0 && node < rest.Length ? rest[node] : null;
+		}
+		return new PieceGeometry( models, surface ?? TrackSurface.FromModel( model ), heads.ToArray(), flags.ToArray(), sparks );
+	}
+
+	/// <summary>The model node of a vehicle's sparks dummy: the first dummy record with class bit 0x100 and the number, or −1.</summary>
+	// [BIN:TPW-EXE:0x0044B220 dummy by class] the first dummy record (20 bytes at +0x7C, +0x48 of them) whose number (+4) matches and whose class word has a requested bit; the vehicle creation 0x54A040 asks class 0x100 number 1 for a kart (0x54A6D2) and number 2 for a bumper car (0x54A1C8) and keeps the index in +0x24
+	internal static int SparksNode( ModelFile model, int number )
+	{
+		for ( var index = 0; index < model.DummyAttributes.Count; index++ )
+		{
+			var attribute = model.DummyAttributes[index];
+			if ( (attribute.Type & 0x100) == 0 || attribute.Value != (uint)number )
+				continue;
+			var node = model.Counts.Unknown46 + index;
+			return node < model.Nodes.Count ? node : -1;
+		}
+		return -1;
 	}
 
 	/// <summary>The texture of a model material or track texture of an object's archive (the textures, gtexture and theme sharetex directories), or <see cref="Texture.Missing"/>.</summary>

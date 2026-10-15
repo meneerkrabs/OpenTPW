@@ -118,7 +118,7 @@ public sealed class BumpController
 	/// <summary>The kart grid buoys (flag 2), in slot order.</summary>
 	public IEnumerable<Buoy> GridBuoys => buoys.Where( buoy => buoy.IsSkipped );
 
-	private void Raise( BumpEffectKind kind, BumpVehicle vehicle, int id = 0, int value = 0 ) => Effect?.Invoke( new BumpEffect( kind, vehicle.Slot, id, value, vehicle.X, vehicle.Y, vehicle.Height ) );
+	private void Raise( BumpEffectKind kind, BumpVehicle vehicle, int id = 0, int value = 0 ) => Effect?.Invoke( new BumpEffect( kind, vehicle.Slot, id, value, vehicle.X, vehicle.Y, vehicle.Height, vehicle.SparksNode ) );
 	/// <summary>Guests added by BUMP 1 who ride with the next boat, newest first (+0xC4).</summary>
 	public List<int> Pending { get; } = new();
 	/// <summary>Guests who left a boat, handed to the script one at a time by BUMP 2, newest first (+0xC8).</summary>
@@ -1295,6 +1295,8 @@ public sealed class BumpController
 			Sprays++;
 			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleSmallSplash );
 		}
+		// [BIN:TPW-EXE:0x00548104 boat engine voice] a boat holding a voice (+0x20) moves it and sets its parameter to speed / 3 every tick, as the karts do
+		Raise( BumpEffectKind.EngineParameter, vehicle, BumpEffects.SlotEngine, vehicle.Speed / 3 );
 	}
 
 	/// <summary>The break smoke's emitter follows its car every tick (0x547F50 moves it to the sparks node, 0x51FE30).</summary>
@@ -1338,8 +1340,8 @@ public sealed class BumpController
 				vehicle.EffectRequest = BumpEffects.RequestExhaust;
 			}
 		}
-		FollowSmoke( vehicle );
 		Raise( BumpEffectKind.EngineParameter, vehicle, BumpEffects.SlotEngine, speed / 3 );
+		FollowSmoke( vehicle );
 		var heading = BumpMath.HeadingOf( vehicle.VX, vehicle.VY );
 		var difference = (heading - vehicle.VisualHeading) & 0x1FF;
 		if ( difference > 0x100 )

@@ -270,7 +270,7 @@ Retired as already matching: TRACK-013 (worn is read only by the kart exhaust br
 ## Open points
 
 - Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre and look (TRACK-030, 031), the water animation and arm masks, the
-  engine voice parameter and the voices' position updates (TRACK-025), the advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
+  advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 
@@ -319,7 +319,7 @@ The controller raises `BumpEffect`s (`BumpController.Effect`); the runtime plays
 | crash | impulse above 130, once per tick per pair | request 3: global `cat_rides` 12 |
 | horn | phase 2, every 32 ticks, speed above 230 | request 2: the module LCG draws every tick until `(lcg & 0x70000) == 0`, then EventMap slot 3 |
 | exhaust | worn, every 32 ticks, speed above 80 | draw r = (lcg >> 16) & 7: r < 2 particle 1 (Sparks), r = 2 particle 10 + request 1 (`cat_rides` 24) |
-| engine | every tick | EventMap slot 0; the parameter speed / 3 is raised, not applied, and the voice does not follow its vehicle (TRACK-025) |
+| engine | every tick | EventMap slot 0 as a sentence with a parameter channel: every tick the voice moves to the vehicle's voice place and takes parameter code = EventMap variable 10 at speed / 3 (below) |
 | smoke | `BUMP 8` break | a persistent particle-2 emitter per car (below) |
 | animation | speed above 40 / at most 40 | 5 / 12 (the hovering karts stay on 5) |
 
@@ -329,8 +329,18 @@ The controller raises `BumpEffect`s (`BumpController.Effect`); the runtime plays
 node and no emitter yet, a particle-2 (Smoke) emitter (`0x521E60`) stored in the car's +0x2C; `0x547F50` moves it to the node every tick (`0x51FE30`), and the fix (`BUMP 8` with 0,
 `0x544E50`) and the unload (`0x54AE50`) destroy it (`0x51FEB0`). It is not phase-gated and cars created later get none; water boats have no sparks node. In OpenTPW the controller raises
 `EmitterStart`, `EmitterMove` (every tick) and `EmitterStop` effects and the runtime keeps one `ParticleSystem` emitter handle per car slot (`ParticleSystem.Move` repositions it); the
-flag is saved with the car (`Smoke`) but is presentation state and not in the hash, and a resume restarts the emitters of smoking cars. The emitter sits at the car's position, not on
-its sparks node.
+flag is saved with the car (`Smoke`) but is presentation state and not in the hash, and a resume restarts the emitters of smoking cars. The emitter sits on the sparks node: `TrackRenderer`
+stores the node's drawn place on the car (`BumpVehicle.SparksNode`, class 0x100 number 1 on a kart and 2 on a bumper car, `0x44B220` from `0x54A040`) and the start (`0x544D4D`) and every
+move (`0x548593`) use it; a headless host has none and uses the car's point.
+
+**Engine voice** (TRACK-025 retired): the engine event (EventMap slot 0; every shipped engine is a repeating sentence, flags 0x6) starts at the vehicle (`0x51EEB0`, then `0x51C270`) and
+the integration of every family (water `0x548104`, karts `0x5484A4`, bumper cars `0x548A53`) moves it each tick to the voice place `((int)(x × 0.0033036), 0, (int)(y × 0.0033036))` in
+sound units (the float at `0x700F20`, truncated by `0x67A830`; height 0, not the vehicle's) and sets its parameter: code = the EventMap's variable 10 (`0x55A3E0`; 16, or 17 in the fantasy
+rides), value = speed / 3 as a byte (`0x51BC40` → `0x6BBB80`). The placeholder's parameter table (`0x6B7150`) holds the event's code (+0x12) in slot 0 and the chosen sound's two selectors
+(+0x16, +0x1A) in slots 1 and 2 (`0x6BBF00`); a set that matches slot 1–3 re-evaluates the playing segment's volume and pitch (`0x6BBBE0`), and a sound whose mask (+0x18 / +0x1C) has bit 2
+takes its pitch as min + value × (max − min) / 100 without a draw (`0x6BC170`, bit 1 the volume likewise, `0x6BC090`). The kart and bumper engines bind selector 16/17 to pitch (range −24..36),
+so the pitch follows the speed; the water engines have no binding and play unchanged. `SoundSentence.SetParameter` and `MoveTo` implement the table and the move for voices started by
+`GameAudio.StartRseSentence`.
 
 `TrackRenderer` is one per family. A kart is drawn along its drawn heading (+0x54, which follows the velocity by (angle difference × speed / 1000) per tick) with the
 four-probe height, pitch and roll over the piece's `.hmp` profile (2-unit samples of 0.4 units; the profile equals the mesh's top surface sample for sample, TRACK-001).

@@ -12,8 +12,8 @@ and placed objects play their vertex and texture-coordinate tracks. Decoder
 mechanics and the 30 ticks/s clock are read from the Feral Mac PowerPC build
 (`docs/reverse/PPC-formats.md`, `docs/reverse/ANIM-plan.md`); the PC executable's
 equivalence is **not verified** (its code is encrypted; 275 of 293 PC WADs with
-MD2 members are byte-identical to the Mac copies), path parameters (0x200/0x400)
-are decoded but not played (the path they index is not decoded), and original rendering fidelity is not verified. These are
+MD2 members are byte-identical to the Mac copies; the path sampler is read from tp.exe), and original rendering
+fidelity is not verified. These are
 not Quake II MD2 files. No dependency or original asset is added to the repository.
 
 `ModelFile` (`source/OpenTPW.Files/Formats/Model/`) reads the whole member into a
@@ -39,7 +39,7 @@ Header, 0xB8 bytes:
 | 0x18 | 20-byte source name, NUL-padded (92 differ from the member name) | `SourceName` |
 | 0x30 | flags (geometry 1/3/5/9/13/25; animation 0/4/8/16/32/34); bit 0x4 of a geometry model is "relative animation" (Mac sampler adds instead of sets; 27 geometry members, all coaster pylons/carts/track, none in the object catalog); other bits opaque | `HeaderFlags`, `RelativeAnimationFlag` |
 | 0x36 | texture slots; 0x38 position blocks (×4); 0x3A UV blocks (×4); 0x3C materials; 0x3E faces | totals re-summed per mesh |
-| 0x40 | extra 16-byte records (pointer at 0xAC); 0x42 nodes; 0x44 meshes | |
+| 0x40 | 16-byte path records (pointer at 0xAC; see "Paths" below); 0x42 nodes; 0x44 meshes | `Paths` |
 | 0x46 | opaque (equals mesh count in 254 files, 0xFFFF in 493) | `Unknown46` |
 | 0x48 | dummy attribute records; 0x4A normals (corners + faces) | |
 | 0x50–0x7C | flag table, slot table, position, normal, UV, material, face regions, 0x6C block, mesh table, dummy table, root node, attribute table | each region bounds-checked |
@@ -257,18 +257,39 @@ Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are 
   a 16-byte header `u32 start tick, u32 count, u32 reserved, ptr → f32[count]`. In all 71 blocks the start
   tick and the reserved word are 0, the count is the record duration + 1 and the table follows the header
   (`ModelPathParameters`, corpus test `OriginalPathParameterBlocksHoldOneValuePerTick`). The PC sampler
-  (tp.exe 0x471860, block read at 0x471ECF) uses it only when the bound node has bit 0x8 in its first byte
-  and the clip time lies in `[start, start + count]`: 0x474EA0 interpolates the table at `time − start`
-  (linearly per tick, wrapping when the node's path is closed, with no blend across a jump of more than 50),
-  then `(value + 1000) mod 100 × 0.01` is the position along the node's path as a fraction of its segments.
-  The values are percentages of the path (the go-karts' rise by 100 per lap). The path itself comes from a
-  table at model instance +0xAC (16-byte entries indexed by node +0x52) and its evaluation 0x474840/0x474BF0/
-  0x474CC0; flag 0x400 also applies the path's orientation (0x474A20/0x474C70, then 0x470780). Neither the
-  path table's source in the files nor those evaluators are decoded, so the blocks are read but not played.
+  (tp.exe 0x471860, block read at 0x471ECF) uses it when the record has no position keys (flag 0x1 wins), the
+  node's parent is a path dummy (type bit 0x8) and the clip time lies in `[start, start + count]`; outside that
+  range the node keeps its translation. 0x474EA0 interpolates the table at `time − start`: values i and i + 1
+  blend linearly (at `time − start = count` the last pair with fraction 1); on a closed path i + 1 wraps to 0,
+  on an open one the last value holds; two values more than 50 apart cross the 100 → 0 seam (the smaller gains
+  100, the blend is taken modulo 100). The result is a percentage of the path: `s = N · fmod(v + 1000, 100) ·
+  0.01` with N the path's segment count, segment `trunc(s)` at fraction `s − trunc(s)`. The go-karts rise by
+  100 per lap. Flag 0x400 then turns the node along the path (0x470780): row 2 becomes the unit direction, row 0
+  `normalize(up × direction)`, row 1 `direction × row 0`, with up = +Y unless the record has rotation keys
+  (flag 0x8), whose row 1 is used; the rows replace rotation and scale. `ModelAnimationTrack.TrySamplePath`,
+  played by `ObjectAnimator`. 0x400 with position keys would turn the node along its position curve; no record
+  does that, so it is not played.
+- **Paths** (geometry header u16 0x40 = count, u32 0xAC = table; 18 paths in 15 distinct geometry models): 16-byte
+  records `u32 kind, u16 point count, u16 0, ptr → points (f32 x, y, z), u32 0` (`ModelPath`). Kind bit 0x1
+  closes the path, bit 0x2 makes it cubic Bézier (`P0, (C, C, P)…`), else bit 0x8 linear and otherwise
+  Catmull-Rom; the corpus has kind 3 (closed Bézier: karts, Haunted House, Rat Race, water ride, lobby
+  islands, Big Apple), kind 2 (open Bézier: bus, ferry, seaplane, one go-kart model) and kind 8 (the slide). A node follows a
+  path when its parent is a type-0x208 dummy (`Spline path`, `Kart_path01`…`04`, `Flightpath`, `FERRYSPLINE`,
+  `h_line`, `sb_spline`); the high 16 bits of the dummy's stored index select the path (Kart_path02 is
+  0x10033, path 1) and the points are in the dummy's space. N is the point count (÷ 3 for Bézier) minus 1 when
+  open; segment i is evaluated by 0x474840 (Bézier, points 3i … 3i + 3), 0x474BF0 (linear, points i, i + 1)
+  or 0x474CC0 (Catmull-Rom, points i − 1 … i + 2), indices wrapping modulo the point count. The direction is
+  the Bézier derivative (0x474A20), the linear segment (0x474C70) or, for Catmull-Rom, the normalised position
+  at fraction + 0.1 itself (0x474CC0 again). The open Bézier paths store a closing control pair the sampler
+  never reads, so a vehicle on them jumps from the end back to the start when its value wraps past 100 (the
+  bus once per loop, the ferry for 22 ticks of FerryM1). Checks (`OriginalPathsStartFlagged200NodesOnTheirStoredPose`):
+  every flag-0x200 node hangs under such a dummy, and where a clip starts on the stored pose (Haunted House
+  B/E/M/S, Busm1, slidec) tick 0 lands within 0.02 of the stored translation, facing within a few degrees of
+  its stored row 2; a placed Haunted House moves its four karts along their paths (`PlacedHauntedHouseKartsFollowTheirPaths`).
 
 Record bits (ANIM-plan §1): 0x1, 0x8, 0x80, 0x1000, 0x10000 and 0x20000 are
-decoded and played, and so is 0x4000 (the 12-byte block); 0x200 (the path-parameter block) is decoded,
-and 0x200/0x400 stay in `ModelAnimationTrack.UnsupportedFlags` because the path is not. 0x10, 0x20, 0x40, 0x8000 (always with
+decoded and played, and so are 0x4000 (the 12-byte block) and 0x200/0x400 (path parameters); only 0x400 together
+with 0x1, which no record has, stays in `ModelAnimationTrack.UnsupportedFlags`. 0x10, 0x20, 0x40, 0x8000 (always with
 0x8), 0x100 (with 0x80), 0x800 (with 0x200/0x400) and 0x2000 (with 0x1000) are
 never tested by the sampler, the bind, the engine relocation or the clip bind:
 they are exporter metadata (`ModelAnimationTrack.MetadataFlags`), neither
@@ -391,7 +412,7 @@ console harness referencing `OpenTPW.Tests.csproj`, on the main thread, with
 cannot create a Cocoa window. Native SDL2, cimgui and veldrid-spirv libraries
 must be available beside the harness. No original assets or native binaries
 are committed. Not played: group-0
-bounds (no consumer traced) and path parameters (decoded, but the path is not). `LobbyIsland` (not instantiated by the game yet) uses the composed
+bounds (no consumer traced). `LobbyIsland` (not instantiated by the game yet) uses the composed
 hierarchy, swaps normal axes like positions, and renders untextured materials
 white instead of requesting `lobby/terrain/textures/.wct`.
 
@@ -472,8 +493,7 @@ count and offset fields, but that does not verify the rest of its layout.
 ## Remaining gates and sources
 
 Next: the object-list replay without a bind (RIDES-032), and game-speed scaling
-of the scene clock; the node paths that the decoded path parameters
-(0x200/0x400) index; consumers of node bit 0x10 and the group-0 box; the original
+of the scene clock; consumers of node bit 0x10 and the group-0 box; the original
 draw-path reader of a texture slot's current frame (the applied binding follows
 this port's material-slot mapping, RIDES-035/MD2-900..902);
 texture/material flag bits from original captures;

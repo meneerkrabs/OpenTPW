@@ -168,9 +168,8 @@ public class AdvisorTests
 				var name = Advisor.AnimationClipName( suffix, index );
 				var clip = new ModelFile( $"{archive}/{name}" ).Clip!;
 				clips++;
-				var unsupported = clip.Tracks.Aggregate( 0u, ( flags, track ) => flags | track.UnsupportedFlags );
-				Assert.AreEqual( 0u, unsupported & ~ModelAnimationTrack.PathFlags, name );
-				withPathParameters += unsupported != 0 ? 1 : 0;
+				Assert.AreEqual( 0u, clip.Tracks.Aggregate( 0u, ( flags, track ) => flags | track.UnsupportedFlags ), name );
+				withPathParameters += clip.Tracks.Any( track => track.PathParameters != null ) ? 1 : 0;
 				withUv += clip.Tracks.Any( track => track.UvAnimation != null ) ? 1 : 0;
 				Assert.IsTrue( clip.Tracks.All( track => track.VertexPose == null ), $"{name} has no 12-byte block" );
 				var animator = new ObjectAnimator( model );

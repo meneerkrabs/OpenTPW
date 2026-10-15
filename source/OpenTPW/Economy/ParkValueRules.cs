@@ -2,8 +2,8 @@ namespace OpenTPW;
 
 /// <summary>
 /// The object part of the park value (<c>0xc1d4c</c>, docs/reverse/ORACLE.md F29, ECON-026). The original adds, over the 128 × 128 map cells and then over every object, a
-/// number of points per cell and, per object, the costs of its upgrade levels scaled by its state of repair. OpenTPW has the object part: its cell map has no ownership
-/// (PATH-007), so the cell points (2 per owned empty cell, 3 per path, 5 per queue, and so on) are not added.
+/// number of points per cell and, per object, the costs of its upgrade levels scaled by its state of repair. OpenTPW has the object part: its cell map has the ownership
+/// (the park's land) but not the original's cell types (ECON-050), so the cell points (2 per owned empty cell, 3 per path, 5 per queue, and so on) are not added.
 /// </summary>
 public static class ParkValueRules
 {

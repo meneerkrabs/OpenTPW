@@ -31,6 +31,7 @@ public sealed class ParkEconomy : IParkEconomy
 	private readonly SortedDictionary<int, ParkObjectState> objects = new();
 	private readonly List<LoanAccount> loans = new();
 	private readonly HashSet<int> takenOffers = new();
+	private readonly Dictionary<int, bool> loanAvailable = new();
 	private readonly List<long> monthlyAdmissions = new();
 	private IParkGuestStatistics guestStatistics = NoGuestStatistics.Instance;
 
@@ -48,6 +49,9 @@ public sealed class ParkEconomy : IParkEconomy
 		EntranceFee = settings.InitialAdmissionFee;
 		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
 		Staff.CreateInitialPool( Random, 0 );
+		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
+		foreach ( var offer in settings.Loans )
+			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
 	}
 
 	/// <summary>Loads the original settings and objects of <paramref name="theme"/> and starts a new park.</summary>
@@ -104,11 +108,40 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public event Action<ParkEvent>? EventRaised;
 
-	/// <summary>Loan offers that can still be taken; none in Instant Action (UIHELPTEXT 493).</summary>
+	/// <summary>
+	/// The offers the Available tab lists: not bought and passed at the last list build (<see cref="RefreshLoanOffers"/>); none in Instant Action (UIHELPTEXT 493).
+	/// </summary>
 	// [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action)
+	// [BIN:TPW-EXE:0x0049FA00 loan list] the Available tab lists an offer whose bought flag (+0x28) is clear and whose stored test (+0x14) passed; the Bought tab lists the bought ones
 	public IEnumerable<LoanOffer> AvailableLoans => !Features.Loans
 		? Enumerable.Empty<LoanOffer>()
-		: Settings.Loans.Where( offer => !takenOffers.Contains( offer.Index ) );
+		: Settings.Loans.Where( offer => !takenOffers.Contains( offer.Index ) && IsLoanAvailable( offer.Index ) );
+
+	/// <summary>An offer's stored credit test (bank offer <c>+0x14</c>), as the last list build or the save left it.</summary>
+	public bool IsLoanAvailable( int offerIndex ) => loanAvailable.TryGetValue( offerIndex, out var available ) && available;
+
+	/// <summary>
+	/// The loans dialog builds its list (it opens, a tab is selected): every offer's credit test runs and is stored (<see cref="PassesCreditTest"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0049FA00 loan list] the list build calls 0x004D06B0 for each of the 8 offers; the dialog's open (0x0049FB30) and the tab buttons (0x004A06B0) build it
+	public void RefreshLoanOffers()
+	{
+		foreach ( var offer in Settings.Loans )
+			loanAvailable[offer.Index] = PassesCreditTest( offer );
+	}
+
+	/// <summary>
+	/// The bank's credit test (tp.exe <c>0x004D06B0</c>): the amount is at most the net worth (read with age 20) less the instalments the bought loans still owe
+	/// (their months left × the monthly repayment), in 32-bit words.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D06B0 credit test] remaining = sum over the bought offers (+0x28) of (months +0x20 − repaid +0x2C) × monthly +0x24; worth = 0x004C7DB0(20) × 1.0 truncated; the offer passes when amount (+0x18) <= worth − remaining (signed), stored at +0x14
+	public bool PassesCreditTest( LoanOffer offer )
+	{
+		var remaining = 0;
+		foreach ( var loan in loans )
+			remaining = unchecked( remaining + (loan.Months - loan.MonthsRepaid) * (int)loan.MonthlyRepayment );
+		return unchecked( (int)offer.Amount ) <= unchecked( NetWorth( 20 ) - remaining );
+	}
 
 	public bool TryGetObject( int instanceId, out ParkObjectState state ) => objects.TryGetValue( instanceId, out state! );
 
@@ -859,8 +892,7 @@ public sealed class ParkEconomy : IParkEconomy
 			{
 				loans.RemoveAt( position );
 				// [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes
-				// [BIN:TPW-EXE:0x4d0750 take loan] taking a loan only needs its bought flag (+0x28) clear: no credit test
-				// [APPROX:ECON-007] a repaid loan is offered again at once and every offer not taken is listed, without a credit test: the original clears the bought flag at the last instalment (0x4D0370) and lists an offer on the Available tab (0x49FA00) only when it is not bought and its stored test passed, amount ≤ net worth (0x4C7DB0, the park value with its cell points, ECON-026) − the remaining instalments of the bought loans (0x4D06B0), stored whenever the list is built (the dialog opens, a tab is selected); taking a loan needs only the bought flag clear (0x4D0750) — evidence needed: the net worth's cell points (ECON-026)
+				// [BIN:TPW-EXE:0x4d0370 bank month] the last instalment clears the bought flag (+0x28); the Available tab lists the offer again once a list build's credit test (0x4d06b0) passes
 				takenOffers.Remove( account.OfferIndex );
 				Raise( ParkEventKind.LoanRepaid, 0, 0, account.OfferIndex );
 			}
@@ -1458,7 +1490,9 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public LoanAccount TakeLoan( int offerIndex )
 	{
-		var offer = AvailableLoans.FirstOrDefault( item => item.Index == offerIndex ) ?? throw new InvalidOperationException( $"Loan offer {offerIndex} is not available." );
+		// [BIN:TPW-EXE:0x004D0750 take loan] taking a loan needs only its bought flag (+0x28) clear ("Applying for loan already bought"): the stored test only decides what the list shows
+		var offer = (Features.Loans ? Settings.Loans.FirstOrDefault( item => item.Index == offerIndex && !takenOffers.Contains( item.Index ) ) : null)
+			?? throw new InvalidOperationException( $"Loan offer {offerIndex} is not available." );
 		if ( IsBankrupt )
 			throw new InvalidOperationException( "A bankrupt park cannot borrow." );
 		var account = LoanMath.Open( offer );
@@ -1648,6 +1682,16 @@ public sealed class ParkEconomy : IParkEconomy
 	// ---------------------------------------------------------------- save support
 
 	internal IReadOnlyCollection<int> TakenOffers => takenOffers;
+	/// <summary>The offers whose stored credit test passed (for the park save).</summary>
+	internal IEnumerable<int> AvailableOfferIndices => loanAvailable.Where( pair => pair.Value ).Select( pair => pair.Key ).OrderBy( index => index );
+
+	/// <summary>Restores the offers' stored credit tests (a park save's or an original save's); offers not listed failed it.</summary>
+	internal void RestoreLoanAvailability( IEnumerable<int> availableOffers )
+	{
+		var available = availableOffers.ToHashSet();
+		foreach ( var offer in Settings.Loans )
+			loanAvailable[offer.Index] = available.Contains( offer.Index );
+	}
 
 	internal void RestoreTicketItems( IEnumerable<int> items )
 	{

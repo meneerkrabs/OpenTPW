@@ -69,6 +69,8 @@ public static class ParkSaveFile
 		public required List<ObjectData> Objects { get; init; }
 		public required List<LoanData> Loans { get; init; }
 		public required List<int> TakenLoanOffers { get; init; }
+		/// <summary>The offers whose stored credit test passed (tp.exe bank offer +0x14); absent in older saves: the new park's test, amount &lt;= 10,000.</summary>
+		public List<int>? AvailableLoanOffers { get; init; }
 		public required List<long> MonthlyAdmissions { get; init; }
 		public required StaffData Staff { get; init; }
 		public required ResearchData Research { get; init; }
@@ -488,6 +490,7 @@ public static class ParkSaveFile
 				RemainingBalance = loan.RemainingBalance
 			} ).ToList(),
 			TakenLoanOffers = park.TakenOffers.OrderBy( index => index ).ToList(),
+			AvailableLoanOffers = park.AvailableOfferIndices.ToList(),
 			MonthlyAdmissions = park.MonthlyAdmissions.ToList(),
 			Staff = new StaffData
 			{
@@ -656,6 +659,7 @@ public static class ParkSaveFile
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
 		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( data.AvailableLoanOffers == null || data.AvailableLoanOffers.Distinct().Count() == data.AvailableLoanOffers.Count && data.AvailableLoanOffers.All( index => index >= 0 ), "available loan offers" );
 		foreach ( var loan in data.Loans )
 			Require( loan.MonthsRemaining > 0 && loan.MonthsRemaining <= loan.Months && loan.MonthlyRepayment >= 0 && (loan.RemainingBalance is null or >= 0) && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
 	}
@@ -708,6 +712,8 @@ public static class ParkSaveFile
 				TotalProfit = item.Statistics[8]
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
+		if ( data.AvailableLoanOffers != null )
+			park.RestoreLoanAvailability( data.AvailableLoanOffers );
 		// Older saves keep only the months in the red: the stamp is counted back so that the bank counts as many 30-day months
 		park.RestoreBankWords( data.WithdrawalsEnabled ?? true, data.LastBalance ?? data.Ledger.Balance,
 			data.TurnEnteredRed ?? LegacyTurnEnteredRed( ParkCalendar.Turn( data.Tick ), data.MonthsInRed, data.Ledger.Balance ) );

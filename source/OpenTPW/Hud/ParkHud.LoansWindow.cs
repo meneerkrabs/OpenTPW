@@ -77,8 +77,10 @@ public sealed partial class ParkHud
 		if ( selectedLoan >= loanFirstRow + LoanVisibleRows ) loanFirstRow = selectedLoan - LoanVisibleRows + 1;
 		loanFirstRow = Math.Clamp( loanFirstRow, 0, LoanMaxFirstRow );
 	}
+	// [BIN:TPW-EXE:0x004A06B0 loan tabs] the dialog's open and each tab button build the list again, which runs every offer's credit test (0x0049FA00 → 0x004D06B0)
 	private void SelectLoanTab( bool outstanding )
 	{
+		LoansEconomy?.RefreshLoanOffers();
 		outstandingLoans = outstanding;
 		selectedLoan = -1;
 		loanFirstRow = 0;

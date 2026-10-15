@@ -148,6 +148,44 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void TheCreditTestComparesTheAmountWithTheNetWorthLessTheBoughtInstalments()
+	{
+		// [BIN:TPW-EXE:0x4d06b0 credit test] amount <= net worth (read with age 20) - sum((months - repaid) x monthly) over the bought offers
+		var park = EconomyTestData.Park( initialCash: 0 );
+		Assert.IsTrue( park.Settings.Loans.All( offer => park.IsLoanAvailable( offer.Index ) == offer.Amount < 10001 ), "the constructor 0x4cf7c0 stores amount < 10,001" );
+		park.Litter.Cells = new ParkCellMap( 128, 128 );
+		park.RefreshLoanOffers();
+		var worth = park.NetWorth( 20 );
+		Assert.AreEqual( 32768, worth );
+		CollectionAssert.AreEqual( park.Settings.Loans.Where( offer => offer.Amount <= worth ).Select( offer => offer.Index ).ToArray(), park.AvailableLoans.Select( offer => offer.Index ).ToArray() );
+		var bought = park.TakeLoan( 2 );
+		Assert.IsFalse( park.AvailableLoans.Any( offer => offer.Index == 2 ), "a bought offer is not listed" );
+		park.RefreshLoanOffers();
+		var owed = bought.Months * (int)bought.MonthlyRepayment;
+		CollectionAssert.AreEqual( park.Settings.Loans.Where( offer => offer.Index != 2 && offer.Amount <= worth - owed ).Select( offer => offer.Index ).ToArray(),
+			park.AvailableLoans.Select( offer => offer.Index ).ToArray(), "the bought loan's instalments still owed come off the net worth" );
+		// [BIN:TPW-EXE:0x4d0750 take loan] taking needs only the bought flag clear
+		var large = park.Settings.Loans.First( offer => !park.IsLoanAvailable( offer.Index ) && offer.Index != 2 );
+		Assert.AreEqual( large.Amount, park.TakeLoan( large.Index ).OriginalAmount, "an offer that failed the test can still be taken" );
+		Assert.ThrowsException<InvalidOperationException>( () => park.TakeLoan( large.Index ), "but not twice" );
+	}
+
+	[TestMethod]
+	public void TheStoredCreditTestsAreSavedAndAnOlderSaveStartsWithTheConstructors()
+	{
+		var park = EconomyTestData.Park();
+		park.Litter.Cells = new ParkCellMap( 128, 128 );
+		park.RefreshLoanOffers();
+		var data = ParkSaveFile.Capture( park );
+		CollectionAssert.AreEqual( park.AvailableLoans.Select( offer => offer.Index ).ToArray(), data.AvailableLoanOffers!.ToArray() );
+		var restored = ParkSaveFile.Restore( data, park.Settings, park.Catalog );
+		CollectionAssert.AreEqual( park.AvailableLoans.Select( offer => offer.Index ).ToArray(), restored.AvailableLoans.Select( offer => offer.Index ).ToArray() );
+		typeof( ParkSaveFile.Data ).GetProperty( nameof( ParkSaveFile.Data.AvailableLoanOffers ) )!.SetValue( data, null ); // a save written before the field
+		var older = ParkSaveFile.Restore( data, park.Settings, park.Catalog );
+		CollectionAssert.AreEqual( park.Settings.Loans.Where( offer => offer.Amount < 10001 ).Select( offer => offer.Index ).ToArray(), older.AvailableLoans.Select( offer => offer.Index ).ToArray() );
+	}
+
+	[TestMethod]
 	public void LoanRepaymentsFollowTheOriginalInstalment()
 	{
 		// ORACLE F12: M = trunc(P x pow(1 + APR/100, (N/12) x 0.5) / N); the five original PC saves store these eight values
@@ -175,7 +213,14 @@ public class ParkEconomyTests
 		Assert.AreEqual( 18000 - LoanMath.TotalPayable( 18000, 20, 24 ), park.Balance );
 		Assert.AreEqual( LoanMath.TotalPayable( 18000, 20, 24 ), park.Ledger.History.Sum( month => month[LedgerCategory.LoanPayments] ) );
 		Assert.AreEqual( 18000, park.Ledger.History.Sum( month => month.MoneyIn ), "the loan is money in" );
-		Assert.IsTrue( park.AvailableLoans.Any( offer => offer.Index == 2 ) );
+		// [BIN:TPW-EXE:0x4d0370 / 0x49fa00] the last instalment clears the bought flag; the Available tab lists the offer again when a list build's credit test passes
+		Assert.IsFalse( park.AvailableLoans.Any( offer => offer.Index == 2 ), "the 18,000 offer's stored test is the constructor's amount < 10,001" );
+		park.RefreshLoanOffers();
+		Assert.IsFalse( park.AvailableLoans.Any( offer => offer.Index == 2 ), "a headless park is worth nothing" );
+		park.Litter.Cells = new ParkCellMap( 128, 128 );
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 4 * 21 );
+		park.RefreshLoanOffers();
+		Assert.IsTrue( park.AvailableLoans.Any( offer => offer.Index == 2 ), "16,384 owned empty cells are worth 32,768" );
 
 		var early = EconomyTestData.Park( initialCash: 30000 );
 		early.TakeLoan( 1 );

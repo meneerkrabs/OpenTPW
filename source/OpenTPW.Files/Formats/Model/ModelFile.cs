@@ -27,6 +27,12 @@ public partial class ModelFile : BaseFormat
 	public string SourceName { get; private set; } = "";
 	public uint HeaderFlags { get; private set; }
 	/// <summary>
+	/// The header float at +0xA0: the height above the terrain the original's height sampler adds for an object it samples as terrain (the flat track pieces' floor,
+	/// a bumper ride's platform; tp.exe 0x004511A0), 0 for most models.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00450EA0 sampler mode] the loaded header's float +0xA0 (model +0xA0) selects the terrain sampler when nonzero; 0x004511A0 adds it to every sample and resets a NaN to 0
+	public float HeaderHeight { get; private set; }
+	/// <summary>
 	/// <see cref="HeaderFlags"/> bit that makes the Feral Mac record sampler add vertex keys and
 	/// translations instead of setting them. The ride loader calls it "relative animation" and strips
 	/// it unless the ride's flag word allows it (docs/reverse/PPC-formats.md).
@@ -168,6 +174,7 @@ public partial class ModelFile : BaseFormat
 		var nameLength = nameBytes.IndexOf( (byte)0 );
 		SourceName = Encoding.Latin1.GetString( nameLength < 0 ? nameBytes : nameBytes[..nameLength] );
 		HeaderFlags = U32( data, 0x30 );
+		HeaderHeight = BinaryPrimitives.ReadSingleLittleEndian( data.AsSpan( 0xA0 ) );
 		Counts = new ModelHeaderCounts( U16( data, 0x36 ), U16( data, 0x38 ), U16( data, 0x3A ), U16( data, 0x3C ), U16( data, 0x3E ),
 			U16( data, 0x40 ), U16( data, 0x42 ), U16( data, 0x44 ), U16( data, 0x46 ), U16( data, 0x48 ), U16( data, 0x4A ) );
 		BoundsMin = ReadVector3( data, 0x80 );

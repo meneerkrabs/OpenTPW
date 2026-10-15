@@ -527,19 +527,6 @@ public class KartControllerTests
 		Assert.AreEqual( -90 / 13f * MathF.PI / 2, hard.Roll, 1e-4f, "a hard yaw banks past a quarter turn: the original does not clamp" );
 	}
 
-	[TestMethod]
-	public void AProfileSurfaceReadsTwoUnitSamplesOfFourTenthsAndHasNoSurfaceWhereTheByteIsZero()
-	{
-		var surface = TrackSurface.FromSamples( new byte[] { 0, 7, 8, 14 }, 4, 1 );
-		Assert.IsNull( surface.HeightAt( 1, 1 ) );
-		Assert.AreEqual( 2.8f, surface.HeightAt( 3, 1 )!.Value, 1e-5f );
-		Assert.AreEqual( 3.2f, surface.HeightAt( 5, 1 )!.Value, 1e-5f );
-		Assert.AreEqual( 5.6f, surface.HeightAt( 7.9f, 1 )!.Value, 1e-5f );
-		Assert.IsNull( surface.HeightAt( 8.1f, 1 ), "outside the piece" );
-		Assert.IsNull( surface.HeightAt( 3, 2.1f ) );
-		Assert.AreEqual( 3, surface.TriangleCount );
-	}
-
 	// ---- Saves -----------------------------------------------------------------------------------
 
 	[TestMethod]

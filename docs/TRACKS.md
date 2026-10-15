@@ -73,7 +73,8 @@ offset, six floats (the bounding box, at most 20). Body: (5w) × (5h) bytes of p
 w × h zero flags. A piece profile is 2 × 2 cells (156 bytes), the station's 4 × 4 (480 bytes). The reader is bounded (1 MiB), strict about the
 offsets and the length, and rejects malformed files. The profile is the original's per-object height map (`[TPW-EXE:0x451640]`, called from the mesh loader
 `0x4629D0` after swapping the extension, checks magic 0xAB1E0003 and (5, 100), and rebuilds the map from the mesh with `0x451880` when the file is missing or the size
-differs); OpenTPW uses it only as the kart surface (TRACK-001, TRACK-002: the sampler mode that reads it, `0x4527F0`, is not traced).
+differs). The vehicles' sampler never reads it (`0x4511A0` samples faces or the terrain, `0x4527F0` is the landscape's height, see "Vehicle height" below), so OpenTPW's
+vehicles do not either; the kit still parses it (TRACK-002).
 
 ## The tool (`TrackLineWriter`, `TrackBuilder`)
 
@@ -223,9 +224,23 @@ writes it to `VAR_LETMEOFF` when the boat has unloaded.
 `TrackRenderer`: one entity per piece part per tile, the mesh baked with its rest transform; the tile turns counter-clockwise by its rotation about its own
 centre (the original's one-cell instance offset is unresolved, TRACK-003; the `Bumper.*Adjust` keys are the station-reference offsets, not a mesh pivot) and stands on the mean ground height of its four cells; boats are
 `wr_ring.md2` at `position / 307.2` model units. A boat's height, pitch and roll follow the original's four probes (`[TPW-EXE:0x546280]`): ± the vehicle radius
-along the facing and across it, each the highest surface triangle under the point (here the piece's water meshes, `TrackSurface`; the station tiles use one water
-height), else the terrain; the mean is the height, the front/back and right/left differences the pitch and roll. The original's surface-face flag (bit 0x8000 of the
-face's first u16) is not decoded (TRACK-001). The pieces are static (TRACK-018). `--debug-water-track` (Debug builds) places a ride with a circuit for captures.
+along the facing and across it, each sampling the object on the probed cell ("Vehicle height" below); the mean is the height, the front/back and right/left differences the
+pitch and roll. The pieces are static (TRACK-018).
+
+**Vehicle height** (TRACK-001 narrowed, TRACK-031 retired). Each probe of `0x546280` takes the object on its cell (`0x450AC0`: the cell's owner, a track cell through `0x53BF30`)
+and samples it in the mode `0x450EA0` chooses (`TrackSurface.FromObject`):
+
+| Mode | When | Height |
+| --- | --- | --- |
+| 2, surface records | the instance block's bit 8 (OpenTPW: a dummy record with type bit 2) | the 0x8000 faces of the records' meshes (`0x451290`, `0x451390`): a record with bit 4 answers with its first covering face, else the highest; none: no surface |
+| 1, terrain | header flags 0x80, or the header float +0xA0 nonzero | the terrain (`0x4527F0`) + the header's +0xA0 |
+| 4, collision mesh | otherwise | the instance's +0x2C mesh, first covering face; none: the instance's height |
+
+Every mode adds the header's +0xA0 (`0x4511A0`, a NaN reset to 0); a probe with no surface (−100) keeps the vehicle's last height. In the shipped kits the flat pieces are terrain
+mode with their floor in +0xA0 (water 3.254, The Blobulator 4.161; karts 3.1 jungle, 5 Halloween and space, 5.005 fantasy: the whole tile, banks and walls included), the hills and ramps
+(`H`, `H_U`, `H_D`) read their surface record (`7/0`: bits 2 and 4), the jungle and fantasy kart stations and every water station are terrain plus the station model's +0xA0
+(3.1, 5.005, 3.254, 4.072), and the bumper rides stand on a platform: The Hot Pot +29.8, Pumpkin Castle +15.005, Uforia +10.924 above the terrain. OpenTPW takes the terrain as the mean ground of
+the tile's (bumper: the cell's) four corners and keeps the straight piece's floor for the Halloween and space kart stations, whose station model reads faces (TRACK-001). `--debug-water-track` (Debug builds) places a ride with a circuit for captures.
 
 ## Rides side by side, pools and demolition
 
@@ -343,7 +358,7 @@ so the pitch follows the speed; the water engines have no binding and play uncha
 `GameAudio.StartRseSentence`.
 
 `TrackRenderer` is one per family. A kart is drawn along its drawn heading (+0x54, which follows the velocity by (angle difference × speed / 1000) per tick) with the
-four-probe height, pitch and roll over the piece's `.hmp` profile (2-unit samples of 0.4 units; the profile equals the mesh's top surface sample for sample, TRACK-001).
+four-probe height, pitch and roll over the sampled pieces ("Vehicle height").
 Space and fantasy karts hover 1.6 units above the front/back mean with a sine bob (±0.43 units, period 512/6 ticks), have no roll of their own, bank into turns
 (`roll += yaw / 13 · π/2` with no clamp, `[TPW-EXE:0x5469C3]`; TRACK-024 retired. The original's roll is the negative of this pose's slope roll with the bank added in its own sign, so the
 bank's sign relative to the slope is the original's and the absolute roll sign is a rendering convention, `[EXT:kart-roll-convention]`) and stand on a `gk_shadow` instance on the four-probe mean. The riders' heads are `RideHeadRenderer` sources at the kart's head dummies (TRACK-026).
@@ -411,12 +426,14 @@ Otherwise it aims at the target's position plus its velocity times the ticks to 
 (`0x546C80`). Non-jungle cars that carry a rider throw sparks (particle 1, code 1 = `cat_rides` 24) on every 32nd tick when `(lcg >> 16) & 3 == 2`. The first carrying car of a running ride
 starts the engine voice (EventMap slot 0), stopped when it hands its riders over or is removed (no stop sound, unlike karts). The drawn heading follows the steering heading (jungle) or the velocity (others) at
 speed / 1000 of the angle gap. Cars are the ride's supplemental meshes (`b_car` jungle, `halcar`, `spacecar`, `bbugscar`; model base 1 in the jungle, 0 elsewhere) drawn by the kart renderer without a kit
-(`TrackFamily.Bumper`), the jungle `b_wake` as the shadow instance, and the riders' heads hang from the car's head dummy.
+(`TrackFamily.Bumper`) on the ride's platform (the four probes sample the ride object, terrain plus its +0xA0, "Vehicle height"), the jungle `b_wake` (mesh 0, flag 0x2000000) as the original's
+second instance: behind the car by `(sine[h] × speed × 4) / 49143` and `(sine[h + 128] × speed × 4) / 49143` model units (`0x764CD8`), 0.7 above the car's height, turned by the drawn heading
+only (`0x546280`); the riders' heads hang from the car's head dummy and the break smoke from its sparks node (number 2).
 
 **Saves** (park-resume): the validator accepts a bumper session (durations up to 0x10000 ticks, the wall counter −1, the chase target). `OPENTPW_SMOKE_BUMPER=1` on both phases of the park-resume smoke buys and places the theme's
 bumper ride, saves with a session running and guests in the cars, restores through the menu load and matches the 600 continuation hashes. The digest holds the chase target and the drawn heading of bumper cars only.
 
-**Open**: the arena centre (TRACK-030), the ground-only pose probes and the unmapped sound ids (TRACK-031).
+**Open**: the arena centre (TRACK-030); TRACK-031 retired (platform probes, the wake instance and the engine voice's parameter are the original's).
 
 **Tests**: `BumperCarAssetTests` (with `OPENTPW_GAME_PATH`): each theme's real script with 16 guests for ten simulated minutes: every guest boards and is released, the ride cycles at least twice,
 nobody stays in `GuestState.Using`, the phase returns to loading after each session; `BumperControllerTests` (asset-free) pins the arena, the countdown, the release, the chase, the crash codes and the saves. The native smoke places a bumper ride, loads two riders, runs a short session and captures

@@ -43,6 +43,9 @@ public sealed class TrackRenderer : IDisposable
 	private float? kartStationHeight;
 	private readonly Func<float, float, float> probe;
 	private TrackCellLayer? probeLayer;
+	private float probeFallback;
+	private TrackSurface? rideSurface;
+	private bool rideSurfaceFailed;
 	private int version = -1;
 	private bool disposed;
 
@@ -56,7 +59,8 @@ public sealed class TrackRenderer : IDisposable
 		this.kit = kit;
 		this.gridOrigin = gridOrigin;
 		this.groundHeight = groundHeight;
-		probe = ( x, y ) => SurfaceHeight( probeLayer!, x, y );
+		// a probe the sampler finds no surface for keeps the vehicle's last height (0x00546280: a −100 sample takes +0xA0)
+		probe = ( x, y ) => SurfaceHeight( probeLayer!, x, y ) ?? probeFallback;
 	}
 
 	public TrackFamily Family => kit?.Family ?? TrackFamily.Bumper;
@@ -107,7 +111,7 @@ public sealed class TrackRenderer : IDisposable
 	/// </summary>
 	// [BIN:STP-PPC:0x1008B610 piece instancing] the instance sits at the origin cell plus an offset by rotation (90°: y+1; 180°: x+1, y+1; 270°: x+1) with engine rotation 360 − rotation, skipped for flag 0x10 or piece 0
 	// [APPROX:TRACK-003] the one-cell instance offset of the original is unresolved for 20-unit tiles; OpenTPW turns each tile about its own centre, which keeps every rotation inside the tile — evidence needed: the instancer 0x1008B610's PC twin (the Bumper.*Adjust keys are the station-reference offsets of TRACK-005 and TRACK-030, not a mesh pivot)
-	// [APPROX:TRACK-001] a tile stands on the mean ground height of its four cells (the height profile .hmp and the original's height source are not decoded)
+	// [APPROX:TRACK-001] a tile stands on the mean ground height of its four cells; the original's instance height for a piece is not read
 	public Matrix4x4 TileTransform( int x, int y, int rotation )
 	{
 		var ground = (groundHeight( x, y ) + groundHeight( x + 1, y ) + groundHeight( x, y + 1 ) + groundHeight( x + 1, y + 1 )) / 4;
@@ -141,8 +145,7 @@ public sealed class TrackRenderer : IDisposable
 		{
 			var (controller, vehicle) = wanted[index];
 			var visual = visuals[index];
-			// [APPROX:TRACK-031] bumper cars: the pose probes read the terrain (not the ride's platform mesh) and the jungle wake is drawn as a shadow-style instance
-			// a bumper car is posed like a kart on flat ground: the drawn heading follows its motion (the original's +0x54), the four probes read the terrain
+			// a bumper car is posed like a kart: the drawn heading follows its motion (the original's +0x54), the four probes read the ride object (its platform above the terrain)
 			var kart = !controller.Template.IsWater;
 			var hover = controller.Template.IsKart && (vehicle.Flags & BumpVehicle.Hover) != 0;
 			// the shadow instance is the ride's mesh 0: the hovering karts' gk_shadow, the jungle bumper cars' wake (flag 0x2000000)
@@ -153,6 +156,7 @@ public sealed class TrackRenderer : IDisposable
 				continue;
 			var (x, y) = (vehicle.X / UnitsPerModelUnit, vehicle.Y / UnitsPerModelUnit);
 			var radius = vehicle.Radius / UnitsPerModelUnit;
+			probeFallback = vehicle.Height;
 			Matrix4x4 transform;
 			if ( kart )
 			{
@@ -165,7 +169,13 @@ public sealed class TrackRenderer : IDisposable
 					* Matrix4x4.CreateTranslation( x, y, pose.Height )
 					* Matrix4x4.CreateScale( ObjectPlacement.ModelScale )
 					* Matrix4x4.CreateTranslation( origin.X, origin.Y, 0 );
-				if ( visual.Shadow.Count > 0 )
+				if ( visual.Shadow.Count > 0 && controller.Template.IsBumper )
+				{
+					// [BIN:TPW-EXE:0x00546280 wake] flag 0x2000000: the second instance (mesh 0, b_wake) trails the car by (sine[h] × speed × 4) / 49143 and (sine[h + 128] × speed × 4) / 49143
+					// model units (0x764CD8) at the four-probe height + 0.7, turned by the car's drawn heading only (angles 0, 0, h)
+					Place( visual.Shadow, WakeTransform( x, y, pose.Height, vehicle.VisualHeading, vehicle.Speed, origin ) );
+				}
+				else if ( visual.Shadow.Count > 0 )
 				{
 					// the shadow lies on the ground under the kart and follows its slope, not its hover or bank
 					var ground = Matrix4x4.CreateRotationX( pose.Pitch ) * Matrix4x4.CreateRotationZ( -vehicle.VisualHeading * 2 * MathF.PI / BumpMath.Turn )
@@ -195,6 +205,22 @@ public sealed class TrackRenderer : IDisposable
 			visual.Hover = hover;
 			Place( visual.Body, transform );
 		}
+	}
+
+	/// <summary>The divisor of the jungle bumper car's wake offset (the float at 0x764CD8).</summary>
+	public const float WakeDivisor = 49143f;
+	/// <summary>The wake's height above the car's four-probe mean, in model units.</summary>
+	public const float WakeHeight = 0.7f;
+
+	/// <summary>The jungle bumper car's wake (flag 0x2000000): behind the car by its speed along the drawn heading, 0.7 above its height, level, turned by the heading.</summary>
+	public static Matrix4x4 WakeTransform( float x, float y, float height, int heading, int speed, Vector2 origin )
+	{
+		var wakeX = x - (BumpMath.Sin( heading ) * speed * 4) / WakeDivisor;
+		var wakeY = y - (BumpMath.Cos( heading ) * speed * 4) / WakeDivisor;
+		return Matrix4x4.CreateRotationZ( -heading * 2 * MathF.PI / BumpMath.Turn )
+			* Matrix4x4.CreateTranslation( wakeX, wakeY, height + WakeHeight )
+			* Matrix4x4.CreateScale( ObjectPlacement.ModelScale )
+			* Matrix4x4.CreateTranslation( origin.X, origin.Y, 0 );
 	}
 
 	private static void Place( List<ModelEntity> entities, Matrix4x4 transform )
@@ -248,40 +274,64 @@ public sealed class TrackRenderer : IDisposable
 	}
 
 	/// <summary>
-	/// The height of the surface a vehicle runs on at a model-unit point, as an absolute height in model units: for a boat the water faces of the track tile under
-	/// the point (the tile's ground plus the face height) or the station's water plane, for a kart the tile's height profile, else the terrain.
+	/// The height of the surface a vehicle runs on at a model-unit point, as an absolute height in model units, or null when the sampler finds no surface there (the probe
+	/// keeps the vehicle's last height): the object on the probed cell is sampled as the original's <c>0x00450EA0</c> chooses (<see cref="TrackSurface.FromObject"/>): the
+	/// flat pieces, the stations and the bumper rides as the ground plus their header's +0xA0, the hill pieces by their surface faces; a cell with no track is the terrain.
 	/// </summary>
-	// [BIN:TPW-EXE:0x00546280 vehicle height] four probes at ± the vehicle radius along the facing and across it; each takes the highest surface triangle under the point (faces whose first u16 has bit 0x8000), else the terrain plus the object's base height; the mean is the height (+0xA0), the front/back and right/left differences the pitch and roll
-	// [APPROX:TRACK-001] a tile's base is the mean ground of its four cells, the surface faces are the pieces' water meshes (TrackSurface) or, for karts, their .hmp profile, and the station tiles use one water height (boats) or the straight piece's floor (karts) above the ground; the face-flag test and the surface object lookup of the original are not reproduced
-	private float SurfaceHeight( TrackCellLayer layer, float x, float y )
+	// [BIN:TPW-EXE:0x00546280 vehicle height] four probes at ± the vehicle radius along the facing and across it; each probe's cell object (0x00450AC0: the cell's owner, a track cell through 0x0053BF30) is selected (0x00450EA0) and sampled (0x004511A0); a −100 sample keeps the vehicle's previous height (+0xA0); the mean is the height, the front/back and right/left differences the pitch and roll
+	// [APPROX:TRACK-001] the terrain under a terrain-sampled object is the mean ground of the tile's (or bumper cell's) four corners, not the original's triangle sampler 0x004527F0 at the probe; a cell with no track gives the terrain where the original samples its owner object (or keeps the previous height without one); the kart stations whose model samples faces (Halloween, space) use the straight piece's floor
+	private float? SurfaceHeight( TrackCellLayer layer, float x, float y )
 	{
 		var cellX = Math.Clamp( (int)MathF.Floor( x / 10 ), 0, layer.Width - 1 );
 		var cellY = Math.Clamp( (int)MathF.Floor( y / 10 ), 0, layer.Height - 1 );
 		float Ground( int gx, int gy ) => groundHeight( Math.Clamp( gx, 0, layer.Width - 1 ), Math.Clamp( gy, 0, layer.Height - 1 ) ) / ObjectPlacement.ModelScale;
+		float Mean( int gx, int gy ) => (Ground( gx, gy ) + Ground( gx + 1, gy ) + Ground( gx, gy + 1 ) + Ground( gx + 1, gy + 1 )) / 4;
+		if ( kit == null )
+		{
+			// a bumper ride: the cars stand on the ride object, sampled like a piece (the jungle pot's platform at +29.8, the castle's at +15)
+			return RideSurface() is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } platform } ? Mean( cellX, cellY ) + platform : Ground( cellX, cellY );
+		}
 		var cell = layer.Get( cellX, cellY );
 		if ( cell.Type == 0 )
 			return Ground( cellX, cellY );
-		if ( kit == null )
-			return Ground( cellX, cellY );
 		var (ox, oy) = cell.IsExtension ? layer.CellOf( cell.Parent ) : (cellX, cellY);
 		var tile = layer.Get( ox, oy );
-		var baseHeight = (Ground( ox, oy ) + Ground( ox + 1, oy ) + Ground( ox, oy + 1 ) + Ground( ox + 1, oy + 1 )) / 4;
+		var baseHeight = Mean( ox, oy );
 		if ( TrackCellTypes.IsStation( tile.Type ) )
+		{
+			if ( RideSurface() is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } floor } )
+				return baseHeight + floor;
 			return baseHeight + (kit.Family == TrackFamily.Kart ? KartStationHeight() : TrackSurface.StationWaterHeight);
+		}
 		if ( tile.Piece != 0 && GeometryOf( tile.Piece ) is { } geometry )
 		{
 			// the tile turned counter-clockwise by its rotation: undo it about the tile's centre to read the piece's own faces
 			var (dx, dy) = (x - (ox * 10 + 10), y - (oy * 10 + 10));
 			var angle = tile.Rotation * MathF.PI / 180;
 			var (lx, ly) = (10 + dx * MathF.Cos( angle ) + dy * MathF.Sin( angle ), 10 - dx * MathF.Sin( angle ) + dy * MathF.Cos( angle ));
-			if ( geometry.Surface.HeightAt( lx, ly ) is { } surface )
-				return baseHeight + surface;
+			return geometry.Surface.HeightAt( lx, ly ) is { } surface ? baseHeight + surface : null;
 		}
 		return Ground( cellX, cellY );
 	}
 
+	/// <summary>The sampler surface of the ride's own model (the station of a kart or water ride, the arena of a bumper ride), or null when it cannot be read.</summary>
+	private TrackSurface? RideSurface()
+	{
+		if ( rideSurface != null || rideSurfaceFailed )
+			return rideSurface;
+		try
+		{
+			rideSurface = TrackSurface.FromObject( ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath ) );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException )
+		{
+			rideSurfaceFailed = true;
+			Log?.Warning( $"The track ride's model {entry.ModelPath} could not be sampled: {exception.Message}" );
+		}
+		return rideSurface;
+	}
+
 	/// <summary>The floor height of a kart station tile: the straight piece's floor at its centre.</summary>
-	// [APPROX:TRACK-001] the station tiles' floor is the straight piece's centre sample (the station model's own profile is not mapped onto the footprint)
 	private float KartStationHeight()
 	{
 		kartStationHeight ??= GeometryOf( TrackPieceSelector.PieceStraight )?.Surface.HeightAt( 10, 10 ) ?? 3f;
@@ -297,7 +347,7 @@ public sealed class TrackRenderer : IDisposable
 		PieceGeometry? geometry = null;
 		if ( kit?.GetModel( piece ) is { } model )
 		{
-			geometry = Build( model, entry, kit.Family == TrackFamily.Kart && kit.GetHeightProfile( piece ) is { } profile ? TrackSurface.FromProfile( profile ) : null );
+			geometry = Build( model, entry, TrackSurface.FromObject( model ) );
 		}
 		pieces[piece] = geometry!;
 		return geometry;
@@ -367,7 +417,7 @@ public sealed class TrackRenderer : IDisposable
 			var node = SparksNode( model, number );
 			sparks[number] = node >= 0 && node < rest.Length ? rest[node] : null;
 		}
-		return new PieceGeometry( models, surface ?? TrackSurface.FromModel( model ), heads.ToArray(), flags.ToArray(), sparks );
+		return new PieceGeometry( models, surface ?? TrackSurface.FromObject( model ), heads.ToArray(), flags.ToArray(), sparks );
 	}
 
 	/// <summary>The model node of a vehicle's sparks dummy: the first dummy record with class bit 0x100 and the number, or −1.</summary>

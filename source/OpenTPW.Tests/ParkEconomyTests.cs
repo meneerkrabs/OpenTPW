@@ -531,7 +531,7 @@ public class ParkEconomyTests
 	[TestMethod]
 	public void MechanicsSkipACondemnedRideAndRepairABrokenRideBeforeItsUpgrade()
 	{
-		// ORACLE F19: the arrival 0xd9c0c starts a job only for state 1 or 2, so a condemned ride (state 4, life gauge 0) gets no mechanic.
+		// ORACLE F19: the arrival 0xd9c0c starts a job only for state 1 or 2 or a call, so an uncalled condemned ride (state 4, life gauge 0) gets no mechanic.
 		var park = EconomyTestData.Park();
 		park.TryBuild( 1100, out var condemned );
 		park.TryBuild( 1100, out var broken );
@@ -553,6 +553,31 @@ public class ParkEconomyTests
 		Assert.AreEqual( 0, broken.Level, "the repair does not install the upgrade" );
 		Assert.AreEqual( 1, broken.PendingLevel );
 		Assert.AreEqual( 0, condemned.MechanicId );
+	}
+
+	[TestMethod]
+	public void ACalledCondemnedRideIsRepaired()
+	{
+		// tp.exe 0x4da740 (0x4da7d5): the arrival starts the work for state 1, state 2 or the call +0x64, whatever else the state is, and the finder
+		// 0x4daa90 selects a called ride in any state; the repair 0x4df8f0 then sets the gauge to 100 and the state to 0.
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var condemned );
+		condemned!.IsBrokenDown = true;
+		condemned.LifeGauge = 0;
+		condemned.Repair = 40;
+		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( condemned ) );
+		Assert.IsTrue( park.RequestMaintenance( condemned.Id, true ) );
+		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
+		var repaired = 0;
+		park.EventRaised += item => { if ( item.Kind == ParkEventKind.RideRepaired && item.InstanceId == condemned.Id ) repaired++; };
+		park.Advance( ParkCalendar.TicksForHours( 2 ) );
+		Assert.AreEqual( mechanic.Id, condemned.MechanicId, "the call makes the condemned ride a job" );
+		var work = park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade];
+		EconomyTestData.AdvanceToTurn( park, park.Turn + work + 2 );
+		Assert.AreEqual( 1, repaired );
+		Assert.AreEqual( 0, condemned.MechanicId );
+		Assert.IsFalse( condemned.MaintenanceRequested, "the repair clears the call (+0x64 = 0)" );
+		Assert.AreEqual( 0, condemned.MechanicId, "the uncalled ride, condemned again by its life gauge, is no job" );
 	}
 
 	[TestMethod]

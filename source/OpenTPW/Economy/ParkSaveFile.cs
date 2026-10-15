@@ -648,7 +648,7 @@ public static class ParkSaveFile
 				var job = data.Objects.FirstOrDefault( item => item.Id == member.AssignedInstanceId );
 				Require( member.Type == StaffType.Mechanic && BusyTurnsOf( member ) > 0 && Enum.IsDefined( member.State )
 					&& job is { Kind: ParkObjectKind.Ride } && job.MechanicId == member.Id
-					&& (job.IsBrokenDown ? RideBreakdownRules.GaugeByte( (float)(job.LifeGauge ?? 100) ) != 0 : job.PendingLevel > job.Level || job.StateOfRepair < ParkEconomy.WornStateOfRepair),
+					&& (job.IsBrokenDown ? RideBreakdownRules.GaugeByte( (float)(job.LifeGauge ?? 100) ) != 0 || job.MaintenanceRequested : job.PendingLevel > job.Level || job.StateOfRepair < ParkEconomy.WornStateOfRepair || job.MaintenanceRequested),
 					$"staff {member.Id} awaiting arrival job ownership" );
 			}
 

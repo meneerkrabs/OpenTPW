@@ -718,14 +718,16 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// The mechanic's job for an object, as a dispatch rank (lower first), or -1 for none: an object the economy has broken down, then a purchased
-	/// upgrade, then a worn ride (OpenTPW's own threshold, Advisor.sam). A condemned ride (life gauge 0) is no job.
+	/// upgrade, then a called or worn ride (the worn threshold is OpenTPW's own, Advisor.sam). A condemned ride (life gauge 0) is a job only while it is called.
 	/// </summary>
-	// [BIN:STP-PPC:0x100D9C0C mechanic arrival] the timer starts only for a ride in state 1 (broken down) or 2 (upgrading) or with the maintenance word +96; any other ride, a condemned one (state 4) included, logs and releases the mechanic (ORACLE F19)
+	// [BIN:STP-PPC:0x100D9C0C mechanic arrival] the timer starts only for a ride in state 1 (broken down) or 2 (upgrading) or with the maintenance word +96; any other ride logs and releases the mechanic (ORACLE F19)
+	// [BIN:TPW-EXE:0x004DA7D5 mechanic arrival] the PC twin 0x004DA740 tests state 1 (0x004E0370), state 2 (0x004E03E0) and the call +0x64 (0x004E03D0) in turn and starts the work (state 13) on any of them, so a called ride in state 4 (condemned) is repaired; the finder 0x004DAA90 selects it too (the call of an object without the relief flag +0x32 bit 1, whatever its state)
 	private static int JobRank( ParkObjectState item ) => ObjectState( item ) switch
 	{
 		RideObjectStates.BrokenDown when item.IsBrokenDown => 0,
 		RideObjectStates.Upgrading => 1,
 		RideObjectStates.Idle when item.Kind == ParkObjectKind.Ride && (item.StateOfRepair < WornStateOfRepair || item.MaintenanceRequested) => 2,
+		RideObjectStates.Condemned when item.Kind == ParkObjectKind.Ride && item.MaintenanceRequested => 2,
 		_ => -1,
 	};
 

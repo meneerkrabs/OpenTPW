@@ -123,14 +123,17 @@ public class MechanicArrivalTests
 	public void WornAndActuallyPurchasedUpgradeJobsWaitThenUseExistingCompletion( bool upgrade )
 	{
 		var f = Fixture(); f.Park.Remove( f.Ride.Id ); var ride = f.Park.RegisterExisting( 1100 );
-		if ( upgrade ) { f.Park.Research.AddResearcherPoints( 1000000 ); Assert.IsTrue( f.Park.Research.IsAvailable( 1100, 1 ) ); var balance = f.Park.Balance; Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, f.Park.TryBuyUpgrade( ride.Id ) ); Assert.AreEqual( balance - 400, f.Park.Balance ); }
+		if ( upgrade ) { f.Park.Research.AddResearcherPoints( 1000000 ); Assert.IsTrue( f.Park.Research.IsAvailable( 1100, 1 ) ); var balance = f.Park.Balance; Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, f.Park.TryBuyUpgrade( ride.Id ) ); Assert.AreEqual( balance, f.Park.Balance, "the request debits nothing (0x4af480)" ); Assert.IsTrue( ride.UpgradeCostDue ); }
 		else ride.Repair = 20;
 		var world = new StaffWorldSimulation( f.Grid, () => f.Park.Staff.Members, id => id == ride.Id ? (5, 1) : null, (0, 1) ); f.Park.MechanicJobWorld = world;
 		EconomyTestData.AdvanceToTurn( f.Park, f.Park.Turn + 1 ); Assert.IsTrue( f.Member.AwaitingJobArrival ); Assert.AreEqual( ride.Id, f.Member.AssignedInstanceId );
 		var remaining = f.Member.BusyTicks; EconomyTestData.AdvanceToTurn( f.Park, f.Park.Turn + 3 ); Assert.AreEqual( remaining, f.Member.BusyTicks );
 		world.Tick( 5 ); EconomyTestData.AdvanceToTurn( f.Park, f.Park.Turn + 1 ); Assert.IsFalse( f.Member.AwaitingJobArrival ); Assert.AreEqual( remaining, f.Member.BusyTicks );
 		var completions = 0; f.Park.EventRaised += item => { if ( item.InstanceId == ride.Id && item.Kind == (upgrade ? ParkEventKind.UpgradeCompleted : ParkEventKind.RideRepaired) ) completions++; };
+		var spent = ride.TotalSpent;
 		EconomyTestData.AdvanceToTurn( f.Park, f.Park.Turn + remaining ); Assert.AreEqual( 1, completions ); if ( upgrade ) Assert.AreEqual( 1, ride.Level ); else Assert.AreEqual( 100, ride.Repair );
+		// The installation debits the level's cost (0x4df8f0 → 0x4d01f0)
+		Assert.AreEqual( spent + (upgrade ? 400 : 0), ride.TotalSpent ); Assert.IsFalse( ride.UpgradeCostDue );
 	}
 	[TestMethod]
 	public void PauseAndSpeedScaleAdvanceTheSameActualClockAndActorWork()

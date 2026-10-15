@@ -609,11 +609,13 @@ public class ParkEconomyTests
 		while ( !park.Research.IsAvailable( 1100, 1 ) )
 			park.AdvanceDays( 1 );
 		var before = park.Balance;
+		var spent = ride.TotalSpent;
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuyUpgrade( ride.Id ) );
-		Assert.AreEqual( before - 400, park.Balance );
+		Assert.AreEqual( before, park.Balance, "tp.exe 0x4af480 requests the upgrade without a debit" );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.UpgradeInProgress, park.TryBuyUpgrade( ride.Id ) );
 		park.AdvanceDays( 10 );
 		Assert.AreEqual( 1, ride.Level );
+		Assert.AreEqual( spent + 400, ride.TotalSpent, "the installation debits the level's cost (0x4df8f0)" );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.UpgradeCompleted ) );
 		Assert.IsNotNull( researcher );
 		var instant = EconomyTestData.Park( mode: ParkGameMode.InstantAction );

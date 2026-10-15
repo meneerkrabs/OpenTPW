@@ -644,6 +644,14 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			item.Level = item.PendingLevel;
 			item.PendingLevel = 0;
+			// [BIN:TPW-EXE:0x004DFA96 upgrade installed] the completion 0x004DF8F0 raises the level byte +0x50 by one and debits Upgrades[new level].CostOfUpgrade (type record +0x1B8 + 0x40 · level, 0x004DFA81) through 0x004D01F0, without a balance test
+			if ( item.UpgradeCostDue && Catalog.TryGet( item.InfoId, out var upgraded ) && item.Level < upgraded.Upgrades.Count )
+			{
+				var cost = upgraded.Upgrades[item.Level].CostOfUpgrade;
+				Post( LedgerCategory.OtherCosts, cost );
+				item.TotalSpent += cost;
+			}
+			item.UpgradeCostDue = false;
 			Raise( ParkEventKind.UpgradeCompleted, item.Level, item.Id, item.InfoId );
 		}
 		else
@@ -1224,7 +1232,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );
 	}
 
-	/// <summary>Buys the next upgrade level of a ride; a mechanic installs it (UITEXT 367–372).</summary>
+	/// <summary>Requests the next upgrade level of a ride (UITEXT 367–372); the mechanic who installs it debits its cost (<see cref="FinishJob"/>).</summary>
 	public PurchaseResult TryBuyUpgrade( int instanceId )
 	{
 		if ( IsBankrupt )
@@ -1243,12 +1251,12 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !Research.IsAvailable( item.InfoId, level ) )
 			return PurchaseResult.NotResearched;
 		// [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff
+		// [BIN:TPW-EXE:0x004AF4E9 upgrade purchase] the buy handler compares the signed balance (bank +0xC) with Upgrades[level].CostOfUpgrade (type record +0x1B8 + 0x40 · level) and requests the upgrade (0x004E0050(1): state 2, a mechanic called) only when the balance is greater; nothing is debited here
 		var cost = info.Upgrades[level].CostOfUpgrade;
-		if ( cost > Balance )
+		if ( unchecked( (int)Balance <= (int)cost ) )
 			return PurchaseResult.NotEnoughMoney;
-		Post( LedgerCategory.OtherCosts, cost );
-		item.TotalSpent += cost;
 		item.PendingLevel = level;
+		item.UpgradeCostDue = true;
 		Raise( ParkEventKind.UpgradeBought, cost, item.Id, item.InfoId, $"level {level}" );
 		return PurchaseResult.Ok;
 	}

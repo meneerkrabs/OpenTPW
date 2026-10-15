@@ -19,6 +19,18 @@ Thirty-one audio, advisor and compatibility approximations were read again in tp
 - ADVISOR-007, AUDIO-011, AUDIO-015, AUDIO-026 and AUDIO-908 are retired, ADVISOR-010's manual tools are an extension
   (`[EXT:speech-tool-audio-clock]`), and 15 items are narrowed. Items that need QMixer.dll or usp10.dll stay open: only tp.exe is analysed.
 
+## Interface reading round, part A (October 15, 2026)
+
+Twenty-two interface approximations were read again in tp.exe:
+
+- **The lobby island camera follows the original** (`0x5e1210`, `0x5d5c50`): the eye and target glide separately by 0.1 and 0.2 of the
+  frame step (the frame's ms × 0.01, capped at 500 ms), the field of view is ISLANDFOV (100°, vertical, `0x5e13ed`) instead of 60°,
+  and the angle wraps into [0, 2π) (UI-017 retired).
+- UI-016 (the island angle and height already matched) and UI-029 (the door button latch and help, `0x4ad4e0`, `0x669410`) are retired.
+- Nine items are narrowed with what was read: the font bank chosen by screen mode (`0x419710`), control colours and the single-pass
+  text renderer without a shadow (`0x48f830`), the four readers of RMBCancelOn (`0x4881a0`), the greedy text wrap (`0x6aec80`), the
+  slider class, the options labels and the buy-list row pitch (font slot 7's line height, `0x4ad240`).
+
 ## Format table reconciled; SAM reader, LIP checks and MD2 path parameters (October 15, 2026)
 
 The README's format table mixed decoding with game integration: the sound banks' ⚠️ listed untriggered

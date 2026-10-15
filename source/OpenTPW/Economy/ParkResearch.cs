@@ -146,7 +146,7 @@ public sealed class ParkResearch
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
 	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
-	// [APPROX:ECON-017] a new park's research table is in info-id order and the player cannot step the cursor to another item; the shipped Jungle lab lists its projects in another order (rides 1140, 1150, 1108, …; features 1414 before 1400), which an imported park follows for its current projects only — evidence needed: the table fill order (FUN_100c9064, tp.exe 0x502dc0's 256 project records) and the next/previous control
+	// [APPROX:ECON-017] a new park's research table is in info-id order, and after a project completes its category's cursor falls back to the first selectable project; the original fills the table in its object loader's order (0x5031A0 over 0x412E60 / 0x412E70, no sort on that path) and moves the cursor to the next eligible project after the completed one, wrapping (message 0x12 from 0x503D40, 0x4AAEC0 → 0x5034F0); the per-category arrows step the cursor in table order with wrap as the original's do (0x4AA0C0 → 0x5034F0 / 0x5036A0); the shipped Jungle lab lists its projects in another order (rides 1140, 1150, 1108, …; features 1414 before 1400), which an imported park follows for its current projects only — evidence needed: the enumeration order of the object loader 0x413930 / 0x413C10
 	// Host UI selection below retains the native default cursor; correspondence with native player selection remains unverified.
 	public ResearchItem? Current( ResearchCategory category )
 	{

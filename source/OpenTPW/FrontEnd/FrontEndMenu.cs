@@ -103,6 +103,9 @@ public sealed partial class FrontEndMenu
 		// the globe button opens the online world (the original's Go Online lobby)
 		if ( actions.GoOnline != null )
 			LobbyButton( "worldView", "b_worldview", () => actions.GoOnline( Stack ) );
+		// [EXT:lobby-menu-hint] the original opens the lobby menu with Escape and its lobby table has no button or other mouse route for it that was found (callers of the pause menu 0x48c830 in the front-end handler 0x4be1a0 and 0x4be537 take no click); the hint tells a mouse user where it is
+		screen.Add( new UiLabel { Id = "menuHint", Text = () => strings.Extra( OpenTpwText.LobbyMenuHint ), Font = fonts => fonts.Small, Color = UiColors.Disabled, Align = UiAlign.Right,
+			Bounds = new UiRect( 1548, 1484, 480, 40 ), Anchor = UiAnchor.BottomRight } );
 		screen.Back = ShowMenu;
 		screen.Focus( enter );
 		return screen;

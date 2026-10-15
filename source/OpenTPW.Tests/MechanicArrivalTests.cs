@@ -132,7 +132,7 @@ public class MechanicArrivalTests
 		var completions = 0; f.Park.EventRaised += item => { if ( item.InstanceId == ride.Id && item.Kind == (upgrade ? ParkEventKind.UpgradeCompleted : ParkEventKind.RideRepaired) ) completions++; };
 		var spent = ride.TotalSpent;
 		EconomyTestData.AdvanceToTurn( f.Park, f.Park.Turn + remaining ); Assert.AreEqual( 1, completions ); if ( upgrade ) Assert.AreEqual( 1, ride.Level ); else Assert.AreEqual( 100, ride.Repair );
-		// The installation debits the level's cost (0x4df8f0 → 0x4d01f0)
+		// The installation debits the level's cost (0x4df8f0 -> 0x4d01f0)
 		Assert.AreEqual( spent + (upgrade ? 400 : 0), ride.TotalSpent ); Assert.IsFalse( ride.UpgradeCostDue );
 	}
 	[TestMethod]

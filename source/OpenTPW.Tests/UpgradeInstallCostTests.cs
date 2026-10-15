@@ -39,14 +39,26 @@ public class UpgradeInstallCostTests
 	public void TheInstallationDebitsTheCostWithoutABalanceTest()
 	{
 		var (park, ride) = Researched( 401 );
+		long OtherCosts() => park.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherCosts );
+		var (balance, costs) = (park.Balance, OtherCosts());
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuyUpgrade( ride.Id ) );
+		Assert.AreEqual( (balance, costs), (park.Balance, OtherCosts()), "the request (0x4af480) debits nothing" );
+		// drain the balance below the cost after the request: the installation does not test it
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TrySpendCoasterTrack( park.Balance - 100, force: true ) );
+		Assert.AreEqual( 100L, park.Balance );
 		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
-		var debits = new List<ParkEvent>();
-		park.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeCompleted ) debits.Add( item ); };
-		for ( var day = 0; day < 20 && ride.Level == 0; day++ )
-			park.AdvanceDays( 1 );
-		Assert.AreEqual( 1, ride.Level );
-		Assert.AreEqual( 1, debits.Count );
+		long? delta = null, costDelta = null;
+		for ( var turn = 0; turn < 2000 && ride.Level == 0; turn++ )
+		{
+			(balance, costs) = (park.Balance, OtherCosts());
+			EconomyTestData.AdvanceToTurn( park, park.Turn + 1 );
+			if ( ride.Level == 1 )
+				(delta, costDelta) = (balance - park.Balance, OtherCosts() - costs);
+		}
+		Assert.AreEqual( 1, ride.Level, "installed with a balance below the cost" );
+		Assert.AreEqual( 400L, delta, "the installation debits exactly Upgrades[1].CostOfUpgrade (0x4df8f0 → 0x4d01f0)" );
+		Assert.AreEqual( 400L, costDelta );
+		Assert.IsTrue( park.Balance < 0, $"the balance goes negative ({park.Balance})" );
 		Assert.AreEqual( 400L, ride.TotalSpent );
 		Assert.IsFalse( ride.UpgradeCostDue );
 		Assert.IsNotNull( mechanic );

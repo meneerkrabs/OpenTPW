@@ -576,7 +576,8 @@ public class ParkEconomyTests
 		Assert.AreEqual( 1, repaired );
 		Assert.AreEqual( 0, condemned.MechanicId );
 		Assert.IsFalse( condemned.MaintenanceRequested, "the repair clears the call (+0x64 = 0)" );
-		Assert.AreEqual( 0, condemned.MechanicId, "the uncalled ride, condemned again by its life gauge, is no job" );
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 100 );
+		Assert.AreEqual( (0, 1), (condemned.MechanicId, repaired), "without a new call the ride, whatever its gauges, gets no second job" );
 	}
 
 	[TestMethod]

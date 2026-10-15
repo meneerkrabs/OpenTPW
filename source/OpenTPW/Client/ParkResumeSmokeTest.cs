@@ -450,11 +450,11 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		var gateBefore = Booked( LedgerCategory.GateTakings );
 		var admissionsBefore = economy.Counters[ParkCounters.Admissions];
 		economy.ClosePark();
-		var refused = !economy.TryAdmitVisitor( long.MaxValue, out _ );
+		var refused = !economy.TryAdmitVisitor( out _ );
 		Require( refused && economy.Counters[ParkCounters.Admissions] == admissionsBefore && Booked( LedgerCategory.GateTakings ) == gateBefore,
 			"the closed resumed park refuses an admission without booking anything" );
 		economy.OpenPark();
-		Require( economy.TryAdmitVisitor( economy.EntranceFee, out var feePaid ) && feePaid == economy.EntranceFee
+		Require( economy.TryAdmitVisitor( out var feePaid ) && feePaid == economy.EntranceFee
 			&& economy.Counters[ParkCounters.Admissions] == admissionsBefore + 1 && Booked( LedgerCategory.GateTakings ) == gateBefore + economy.EntranceFee,
 			"one admitted visitor pays exactly one entrance fee into the new economy" );
 		// Sell one of the two same-catalogue shops: scrap credited once, links removed exactly.

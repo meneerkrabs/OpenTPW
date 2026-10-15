@@ -152,8 +152,8 @@ public interface IParkEconomy : IParkClock
 	IParkGuestStatistics GuestStatistics { get; set; }
 	event Action<ParkEvent>? EventRaised;
 
-	/// <summary>Charges the entrance fee at the gate. False when the park is closed or the visitor cannot pay.</summary>
-	bool TryAdmitVisitor( long visitorCash, out int feePaid );
+	/// <summary>Books the entrance fee at the gate. False when the park is closed or bankrupt; the visitor's cash is not read.</summary>
+	bool TryAdmitVisitor( out int feePaid );
 	/// <summary>Sells one item of a shop. False when the shop is unknown/closed or the visitor cannot pay.</summary>
 	bool TryBuy( int instanceId, long visitorCash, out int pricePaid );
 	/// <summary>One play of a sideshow; the economy draws the win with <c>UsageInfo.InitChanceOfLoosing</c> and pays the prize cost.</summary>

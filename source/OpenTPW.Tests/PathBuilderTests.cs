@@ -335,7 +335,7 @@ public class PathBuilderTests
 	/// once more: a guest starts with drawn needs and a drawn exit counter that counts once per needs phase, so the guests spend the run differently (60 → 61 admissions). The traced leaving test (ORACLE.md F26: happiness below 1 or the counter exactly 0, no "at most 10")
 	/// moved it again (61 → 62). Guests stepping off once per park turn instead of every 0.4 s (tp.exe 0x004CF3E0, ARRIVAL-001)
 	/// moved it to 60. The original state machine of a guest in the park (state 6 deciding once per park turn, state 7 walking to a
-	/// wander destination; docs/reverse/WANDER-plan.md, GUEST-010) changed the hash; the admissions stay 60. The guests' litter meter joined the hash (WANDER-plan §6). The prankery flag joined it next (pranksters in the Jungle's balance, WANDER-plan §7), then the balloon life, balloon and costume (only the hashed fields), then the original's thoughts (the pick of the needs phase; rides and shops set none), then the booth's verdict on the fee (tp.exe 0x004FF5B0), whose draw shifts the guest stream (60 → 62 admissions), and the end of the invented boredom loss.
+	/// wander destination; docs/reverse/WANDER-plan.md, GUEST-010) changed the hash; the admissions stay 60. The guests' litter meter joined the hash (WANDER-plan §6). The prankery flag joined it next (pranksters in the Jungle's balance, WANDER-plan §7), then the balloon life, balloon and costume (only the hashed fields), then the original's thoughts (the pick of the needs phase; rides and shops set none), then the booth's verdict on the fee (tp.exe 0x004FF5B0), whose draw shifts the guest stream (60 → 62 admissions), and the end of the invented boredom loss. The booth no longer debits the guest's purse (tp.exe 0x004FF9D0 books the fee to the bank only), so the hashed purses change; the admissions stay 62.
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsGuestPathingIdentical()
@@ -344,7 +344,7 @@ public class PathBuilderTests
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
 		Assert.AreEqual( 62, simulation.Admissions, $"{simulation.Admissions}" );
-		Assert.AreEqual( 0x1857864C0DED4CADUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 0x1A2B7A5BDB8C9320UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

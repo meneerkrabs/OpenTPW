@@ -1459,10 +1459,11 @@ public sealed class ParkEconomy : IParkEconomy
 
 	// ---------------------------------------------------------------- guests
 
-	public bool TryAdmitVisitor( long visitorCash, out int feePaid )
+	// [BIN:TPW-EXE:0x004D0600 admission deposit] the booth's paying verdict calls the bank deposit with the bank thing (0x004FFAE5): the fee +0x118 goes to the balance, the year's profit and the park's money-in total; nothing reads the guest's purse
+	public bool TryAdmitVisitor( out int feePaid )
 	{
 		feePaid = 0;
-		if ( !IsParkOpen || IsBankrupt || visitorCash < EntranceFee )
+		if ( !IsParkOpen || IsBankrupt )
 			return false;
 		feePaid = EntranceFee;
 		Post( LedgerCategory.GateTakings, feePaid );

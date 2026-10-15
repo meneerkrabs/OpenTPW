@@ -576,7 +576,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( level.Gate.Gate?.GetVariableByName( ParkGate.CommandVariable ) == 1, "opening the park commands the gate open" );
 		// A refused admission books nothing, so the admissions counter still matches the economy's own ledger.
 		park.Economy.ClosePark();
-		Require( !park.Economy.TryAdmitVisitor( long.MaxValue, out _ ), "a closed park refuses admissions at the booth" );
+		Require( !park.Economy.TryAdmitVisitor( out _ ), "a closed park refuses admissions at the booth" );
 		Require( !level.PlacedRide!.IsOpen && !level.PlacedRide.Visitors.IsOpen, "closing the park also closes the separately owned Totem and stops its admissions" );
 		park.Economy.OpenPark();
 		Require( level.PlacedRide!.IsOpen, "reopening the park reopens the Totem" );

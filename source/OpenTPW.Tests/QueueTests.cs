@@ -449,7 +449,7 @@ public class QueueTests
 		public bool Closed;
 		public int AdmissionFee => 0;
 		public bool ParkClosed => Closed;
-		public bool TryPayAdmission( long guestMoney, out int feePaid ) { feePaid = 0; return !Closed; }
+		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; return !Closed; }
 		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
 	}
 
@@ -457,7 +457,7 @@ public class QueueTests
 	{
 		public readonly List<int> Relief = new();
 		public int AdmissionFee => 0;
-		public bool TryPayAdmission( long guestMoney, out int feePaid ) { feePaid = 0; return true; }
+		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; return true; }
 		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
 		public void ReliefUsed( IRideVisitorBridge attraction, int toiletByte ) => Relief.Add( toiletByte );
 	}

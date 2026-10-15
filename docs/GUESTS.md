@@ -206,7 +206,7 @@ closed, broken, queue-less, full, crossing or invalid ride gives no points, whil
 type. Only things whose type's `Info.WhichUIType` is 0 or 2 count (`0x4c8240`), which includes the shipped add-ons that declare 0. The
 coaster test also needs three track samples and has no edited-coaster term, and the track word starts false before the first walk
 (ARRIVAL-003). Objects imported from an original save set the first purchase to the import turn, where
-the original restores each type's record from the save (tp.exe `0x4d3aa0`, ARRIVAL-005); fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002, 003, 005, 006 and 007 (`ArrivalApproximations`).
+the original restores each type's record from the save (tp.exe `0x4d3aa0`, ARRIVAL-005); fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002, 003, 005 and 006 (`ArrivalApproximations`).
 
 ## Simulation
 
@@ -285,8 +285,9 @@ same sum as the arrival rule's, `0x4c8240`), N = `PeepInfo.ExcitementToCostDivis
 - up to `CheapPriceMultiplier` × GP (0.75): cheap — the guest gains `MediumHappinessChange` and pays;
 - otherwise fair — the guest pays.
 
-An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. OpenTPW charges the fee from the guest's purse and turns back a
-guest who cannot pay; the original's booth books the fee (`0x4d0600`) without reading the guest's cash (ARRIVAL-007).
+An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. A paying guest's fee is booked to the bank (tp.exe `0x4d0600`,
+`ParkEconomy.TryAdmitVisitor`) without reading or debiting the guest's purse, as in the original; OpenTPW's economy still refuses an
+admission while the park is closed or bankrupt.
 
 ### Needs and starting values
 

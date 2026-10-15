@@ -841,16 +841,15 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( verdict == BoothVerdictKind.Cheap )
 				guest.Happiness = MeterMath.Add( guest.Happiness, Settings.MediumHappinessChange );
 		}
-		int fee;
-		if ( Payments != null ? !Payments.TryPayAdmission( guest.Money, out fee ) : guest.Money < (fee = AdmissionFee) )
+		var fee = AdmissionFee;
+		if ( Payments != null && !Payments.TryPayAdmission( out fee ) )
 		{
-			// A closed park, or a guest whose purse is short of the fee, turns back with thought 6 as the booth's refusals do.
-			// [APPROX:ARRIVAL-007] OpenTPW charges the fee from the guest's purse and turns back a guest who cannot pay; the original's booth books the fee (0x004D0600) without reading the guest's cash — evidence needed: whether anything takes the fee from the guest's cash
+			// A closed or bankrupt park turns back with thought 6 as the booth's refusals do.
 			Think( guest, GuestThought.Dissatisfied );
 			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
 			return;
 		}
-		guest.Money -= fee;
+		// [BIN:TPW-EXE:0x004FFAD5 booth fee] the paying verdict books the fee with the bank deposit 0x004D0600 (ECX = the bank, 0x005195D0) and sets the guest's +0x204 and state 3; the guest's purse +0x1A0 is neither tested nor debited
 		guest.TimeInParkSeconds = 0;
 		Admissions++;
 		if ( fee > 0 )

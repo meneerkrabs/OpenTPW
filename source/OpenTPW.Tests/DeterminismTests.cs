@@ -179,7 +179,8 @@ public class DeterminismTests
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
 		park.Run( 3600 );
-		Assert.AreEqual( 0x611EFAD61F9A8D68UL, park.Hash, $"0x{park.Hash:X16}" );
+		// Re-pinned when the booth stopped debiting the guest's purse (tp.exe 0x004FF9D0 books the fee to the bank only; the former ARRIVAL-007).
+		Assert.AreEqual( 0xE132070EE9EAA9E8UL, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
 	[TestMethod]

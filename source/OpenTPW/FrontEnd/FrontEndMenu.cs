@@ -184,7 +184,7 @@ public sealed partial class FrontEndMenu
 		}
 		// [BIN:TPW-EXE:0x004a6d51 mode tick] the tick (control −1) confirms: the player is made with Instant Action only when toggle 0x70d is selected, otherwise Full Simulation, also with no toggle selected (0x4a6b80)
 		var ok = table.Model( "b_okay" );
-		screen.Add( new UiButton
+		var tick = screen.Add( new UiButton
 		{
 			Id = "ok",
 			Model = ok.Model,
@@ -208,6 +208,9 @@ public sealed partial class FrontEndMenu
 			Anchor = UiAnchor.Center
 		} );
 		screen.Back = () => { if ( !screen.IsRemoved && ReferenceEquals( Stack.Top, screen ) ) Stack.Pop(); };
+		// [BIN:TPW-EXE:0x004a6dc1 dialog Enter] Enter in the dialog's name field posts 0x802 (the edit control's key handler 0x667fee: 0x0d → 0x802, Escape → 0x804),
+		// which the dialog procedure 0x4a6d00 turns into the tick (0x100 with control −1), whatever toggle has the focus
+		screen.Accept = tick.Activate;
 		screen.Focus( screen.FocusableElements.First() );
 		Stack.Push( screen );
 	}

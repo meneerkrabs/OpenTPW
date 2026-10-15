@@ -24,6 +24,10 @@ public sealed class LocatorModel
 	public bool Following { get; private set; }
 	/// <summary>Whether the role's radio is chosen in its group (0x66a295); the visitor panel opens with its role set but no radio chosen.</summary>
 	public bool RadioChosen { get; private set; }
+	/// <summary>The actor whose name the strip last showed (the text 0x4b3490 wrote), 0 before any; the strip keeps it when a key reopens the panels without an actor.</summary>
+	public int StripActorId { get; private set; }
+	/// <summary>The role <see cref="StripActorId"/> was located in.</summary>
+	public int StripRole { get; private set; }
 
 	/// <summary>The role of a staff type (the radios 0x95e..0x962 in 0x4b3f60's type switch).</summary>
 	// [BIN:TPW-EXE:0x004b3fe5 locator roles] thing type 5 (handyman) → role 1, 4 (mechanic) → 2, 7 (guard) → 3, 6 (entertainer) → 4, 8 (researcher) → 5, 1 (visitor) → 6
@@ -48,7 +52,8 @@ public sealed class LocatorModel
 	/// <summary>Ctrl+S, or Ctrl+V with a visitor (0x4b3f60): the panel of the actor's kind, its role chosen and the camera on it; without an actor the staff panel with no role.</summary>
 	public void Open( LocatorMode mode, int role, int actorId )
 	{
-		// [BIN:TPW-EXE:0x004b3f60 locator open] an actor sets the mode from its type, chooses its radio, shows the strip and sets the follow flag; without one no radio is chosen
+		// [BIN:TPW-EXE:0x004b3f60 locator open] an actor sets the mode from its type, chooses its radio, shows the strip and sets the follow flag; without one the actor (0x7cc308)
+		// and role (0x7cc30c) go to 0 and no radio is chosen, while the strip window 0x7cc304 (with its last text) and the follow flag 0x1000 stay as they were
 		Mode = mode;
 		if ( actorId == 0 )
 		{
@@ -62,11 +67,21 @@ public sealed class LocatorModel
 		RadioChosen = true;
 		StripShown = true;
 		Following = true;
+		WriteStrip();
+	}
+
+	// the strip's text and icons (0x4b3490) are written only when an actor is located
+	private void WriteStrip()
+	{
+		StripActorId = ActorId;
+		StripRole = Role;
 	}
 
 	/// <summary>Ctrl+V without a visitor (0x4b4280): the visitors panel with the visitor role set but its radio not chosen and no actor.</summary>
 	public void OpenVisitors()
 	{
+		// [BIN:TPW-EXE:0x004b4280 visitor locator open] the role becomes 6 and the actor 0 with no radio chosen; the strip window keeps its visibility and last name, with the
+		// state icon 0x148 hidden and the thought icon 0x14a shown; the follow flag 0x1000 is not touched (0x4b3640 follows nothing without an actor)
 		Mode = LocatorMode.Visitor;
 		Role = VisitorRole;
 		ActorId = 0;
@@ -102,6 +117,7 @@ public sealed class LocatorModel
 		if ( previous == 0 || !StripShown )
 			StripShown = true;
 		Following = true;
+		WriteStrip();
 	}
 
 	/// <summary>The player moved the camera: it stops following (the camera code clears flag 0x1000, e.g. 0x42ae52); the strip stays.</summary>
@@ -111,6 +127,7 @@ public sealed class LocatorModel
 	public void LoseActor()
 	{
 		ActorId = 0;
+		StripActorId = 0;
 		StripShown = false;
 		Following = false;
 	}
@@ -124,6 +141,8 @@ public sealed class LocatorModel
 		RadioChosen = false;
 		StripShown = false;
 		Following = false;
+		StripActorId = 0;
+		StripRole = 0;
 	}
 }
 
@@ -131,7 +150,7 @@ public sealed class LocatorModel
 /// The staff and visitor locator panels of the HUD arm (tp.exe table 0x756950: five role radios, and one visitor radio) and their strip (table 0x756ad8: the actor's
 /// name, the staff state icon or the visitor's thought). Ctrl+S and Ctrl+V open them; a radio locates its role's next actor and the camera follows it.
 /// </summary>
-// [APPROX:UI-091] the locator panels take staff newest first (by id, descending) and visitors by id, where the original walks the role's thing list (+0x210) and the thing list (0x4824d0); the camera snaps to the followed actor every frame where the original eases it (0x486860); a staff member's patrol rectangle is not marked (0x536100 in 0x4b3640); the panels appear without sliding and without the sounds 0xc6 / 0x11f; a picked-up member's state frame 9 (0x485ec0) draws the first frame; the staff window's own locate buttons focus actual actor positions, the list rows' 0x402 path (0x4867b0) is the original's — evidence needed: the order of the role lists, the easing of 0x486860 and the patrol markers
+// [APPROX:UI-091] the locator panels take staff newest first (by id, descending) and visitors by id, where the original walks the role's thing list (+0x210) and the thing list (0x4824d0); the camera snaps to the followed actor every frame where the original eases it (0x486860); a staff member's patrol rectangle is not marked (0x536100 in 0x4b3640); the panels appear without sliding and without the sounds 0xc6 / 0x11f; a picked-up member's state frame 9 (0x485ec0) draws the first frame; the staff window's own locate buttons focus actual actor positions, the list rows' 0x402 path (0x4867b0) is the original's; Ctrl+S ignores the per-employee window path (0x481790: while [0x7cc3c0] is open the key locates that window's employee [0x7c2658]); the visitor info window that Ctrl+V tests ([0x7cc418], window object 0x7cc408) is not ported: a left click on an All Visitors row or a visitor picked in the park stands in for opening it and it closes with the All Visitors window, where the original's stays open on its own — evidence needed: the order of the role lists, the easing of 0x486860 and the patrol markers
 public sealed partial class ParkHud
 {
 	private static LayoutTable LocatorTable => OriginalLayoutTables.LocatorPanels;
@@ -185,13 +204,16 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>Ctrl+S: the staff locator, with no role chosen (the per-employee window, whose employee the original passes, is not ported).</summary>
+	// [BIN:TPW-EXE:0x00481790 staff locator key] while the per-employee window is open ([0x7cc3c0], +0x10 of the window object 0x7cc3b0) the key opens 0x4b3f60 with [0x7c2658]; that path is not ported (UI-091)
 	public void OpenStaffLocator() => OpenLocator( LocatorMode.Staff, 0, 0 );
 
-	/// <summary>Ctrl+V: the visitor locator; with the visitors window's selected visitor it locates that visitor at once.</summary>
+	/// <summary>Ctrl+V: the visitor locator; with a visitor's info open (a row of the All Visitors window clicked) it locates that visitor at once.</summary>
 	public void OpenVisitorLocator()
 	{
-		// [BIN:TPW-EXE:0x004817c0 visitor locator key] with the visitor info open (0x7cc418) the key opens 0x4b3f60 with the selected visitor, else 0x4b4280
-		if ( VisitorWindowOpen && SelectedVisitor is { } guest )
+		// [BIN:TPW-EXE:0x004817c0 visitor locator key] while the visitor info window is open (its window word [0x7cc418], +0x10 of the window object 0x7cc408 that 0x4b79b0 opens)
+		// the key opens 0x4b3f60 with the info windows' current thing [0x7c2658] (written by the info window base 0x48d134 and its next/previous buttons), else 0x4b4280;
+		// the visitors list's row click (0x400) opens that window for the row's visitor (0x49351e), and its detail rows stand in for it here
+		if ( VisitorWindowOpen && VisitorInfoGuest is { } guest )
 		{
 			OpenLocator( LocatorMode.Visitor, LocatorModel.VisitorRole, guest.Id );
 			return;
@@ -310,11 +332,12 @@ public sealed partial class ParkHud
 	{
 		get
 		{
-			if ( Locator.ActorId == 0 )
+			var actor = Locator.StripActorId;
+			if ( actor == 0 )
 				return "";
-			if ( Locator.Role == LocatorModel.VisitorRole )
-				return Locator.ActorId > 0 ? strings[UIStrings.VisitorCount] + Locator.ActorId.ToString( System.Globalization.CultureInfo.InvariantCulture ) : strings[UIStrings.NewVisitor];
-			return (Status.EconomySource as ParkEconomy)?.Staff.Members.FirstOrDefault( member => member.Id == Locator.ActorId ) is { } member ? StaffName( member ) : "";
+			if ( Locator.StripRole == LocatorModel.VisitorRole )
+				return actor > 0 ? strings[UIStrings.VisitorCount] + actor.ToString( System.Globalization.CultureInfo.InvariantCulture ) : strings[UIStrings.NewVisitor];
+			return (Status.EconomySource as ParkEconomy)?.Staff.Members.FirstOrDefault( member => member.Id == actor ) is { } member ? StaffName( member ) : "";
 		}
 	}
 
@@ -329,11 +352,13 @@ public sealed partial class ParkHud
 		_ => 9,
 	};
 
-	private int LocatorStateFrame => (Status.EconomySource as ParkEconomy)?.Staff.Members.FirstOrDefault( member => member.Id == Locator.ActorId ) is { } member ? StaffStateFrame( member.State ) : 0;
+	private int LocatorStateFrame => Locator.StripRole != LocatorModel.VisitorRole
+		&& (Status.EconomySource as ParkEconomy)?.Staff.Members.FirstOrDefault( member => member.Id == Locator.StripActorId ) is { } member ? StaffStateFrame( member.State ) : 0;
 
 	/// <summary>The visitor's thought frame of the thoughts model (ti_hungry ... ti_confused): the thought less 1, null without a thought.</summary>
 	// [BIN:TPW-EXE:0x004b35dd visitor thought icon] the icon 0x14a takes the visitor's thought less 1, and 0x29a (no frame) without one (medium confidence: the word read is the visitor's +0x30)
-	private int? LocatorThoughtFrame => Locator.Role == LocatorModel.VisitorRole && level.Guests?.Guests.FirstOrDefault( guest => guest.Id == Locator.ActorId ) is { Thought: not GuestThought.None } guest
+	private int? LocatorThoughtFrame => Locator.Role == LocatorModel.VisitorRole && Locator.StripRole == LocatorModel.VisitorRole
+		&& level.Guests?.Guests.FirstOrDefault( guest => guest.Id == Locator.StripActorId ) is { Thought: not GuestThought.None } guest
 		? (int)guest.Thought - 1 : null;
 }
 

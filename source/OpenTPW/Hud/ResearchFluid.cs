@@ -89,7 +89,9 @@ public sealed class ResearchFluid
 		ArgumentNullException.ThrowIfNull( effort );
 		if ( !hasProject )
 			return 0;
-		// [BIN:TPW-EXE:0x00503870 research share] the share stored beside each effort: Σ effort == 0 ? 0 : (effort × 100 / Σ effort) × workload (+0x1460) / 100, unsigned
+		// [BIN:TPW-EXE:0x00503870 research share] the share stored beside each effort: Σ effort == 0 ? 0 : (effort × 100 / Σ effort) × workload (+0x1460) / 100, unsigned;
+		// the effort setter 0x503870 and the workload setter 0x503900 (both clamp to 100) recompute every share, so the share 0x503980 reads is
+		// always this value of the current effort and workload and computing it here has no lag
 		uint total = 0;
 		foreach ( var value in effort )
 			total = unchecked(total + (uint)value);

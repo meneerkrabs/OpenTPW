@@ -12,11 +12,13 @@ files remain outside that publication.
   columns, a value refresh every 2 seconds, sorting on any column, reopening on the last category and the park info, all staff and all
   visitors buttons; OpenTPW's detail rows and status column are gone, as the original list has neither (UI-905 narrowed).
 - **The staff and visitor locator panels** (tables `0x756950`, `0x756ad8`) open with Ctrl+S and Ctrl+V (`0x481790` → `0x4b3f60`,
-  `0x4b4280`): a role's button finds and cycles that role's people and the camera follows (UI-904 retired, UI-091 narrowed).
+  `0x4b4280`): a role's button finds and cycles that role's people and the camera follows; Ctrl+V locates the visitor whose info a list
+  row click or a park click opened (tp.exe's visitor info window `0x7cc408`), and a key without an actor keeps the strip's last name (UI-904
+  retired, UI-091 narrowed).
 - **The research lab's fluids** play tp.exe's animation (`0x4a95b0`, `0x4a9fc0`) at the rate of the category's effort share and staffing
   (`0x503870`, `0x503980`); the **HUD key counter** shows the player's earned tickets / 3 plus extra keys (`0x5af680`), hidden in Instant
   Action; the **loans summary** shows the last closed month's money in and out minus outstanding instalments (`0x49fb30`); the
-  **game-mode toggles** latch and only the tick starts the park (`0x4a6d00`). UI-066, -051, -063 and -013 are narrowed.
+  **game-mode toggles** latch and only the tick, or Enter (message `0x802`), starts the park (`0x4a6d00`). UI-066, -051, -063 and -013 are narrowed.
 
 ## Format table reconciled; SAM reader, LIP checks and MD2 path parameters (October 15, 2026)
 

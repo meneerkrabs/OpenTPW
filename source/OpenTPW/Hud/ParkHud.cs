@@ -193,7 +193,7 @@ public sealed partial class ParkHud
 		}
 	}
 	public string CashChangeText => BuildActionCost is { } cost ? FormatMoney( cost ) : "";
-	// [DATA:video 40:40-41:30, 73:21] the counters read "1 ×" (the count, a space, the multiplication sign) and each row shows only while its count is above zero: a first session has neither, the ticket row appears above the key row after the first ticket
+	// [DATA:video 40:40-41:30, 73:21] the counters show the count followed by an x (the string below) and each row shows only while its count is above zero: a first session has neither, the ticket row appears above the key row after the first ticket
 	public string GoldenTicketsText => Status.HasEconomy && Status.GoldenTickets > 0 ? CounterText( Status.GoldenTickets ) : "";
 	public string GoldenKeysText => Status.HasEconomy && Status.GoldenKeys > 0 ? CounterText( Status.GoldenKeys ) : "";
 	// [BIN:TPW-EXE:0x004a10a9 HUD counter text] both counters format their count with the UTF-16 "%d  x" at 0x752ef8 (two spaces, a letter x)

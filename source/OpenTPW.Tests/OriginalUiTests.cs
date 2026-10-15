@@ -259,6 +259,14 @@ public class OriginalUiTests
 			menu.ShowGameMode();
 			menu.Stack.Update( context, UiInput.Click( menu.Stack.Top!.Find( "ok" )!.ScreenRect( context.Canvas ).Center ) );
 			Assert.AreEqual( ("jungle", GameMode.FullSimulation), started[^1], "the tick with no toggle chosen gives Full Simulation (0x4a6b80)" );
+			menu.ShowGameMode();
+			var dialog = menu.Stack.Top!;
+			menu.Stack.Update( context, UiInput.Click( dialog.Find( "instantAction" )!.ScreenRect( context.Canvas ).Center ) );
+			dialog.Focus( dialog.Find( "fullSimulation" ) );
+			var startedBefore = started.Count;
+			menu.Stack.Update( context, UiInput.Key( UiKeys.Accept ) );
+			Assert.AreEqual( startedBefore + 1, started.Count, "Enter presses the tick (0x802 → 0x4a6dc1)" );
+			Assert.AreEqual( ("jungle", GameMode.InstantAction), started[^1], "Enter confirms the chosen toggle, not the focused one" );
 
 			menu.Stack.Clear();
 			menu.Stack.Push( menu.Main );

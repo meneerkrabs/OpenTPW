@@ -89,6 +89,49 @@ public class LocatorPanelTests
 	}
 
 	[TestMethod]
+	public void TheKeysWithoutAnActorKeepTheStripWithItsLastName()
+	{
+		// tp.exe 0x4b3f60 without an actor and 0x4b4280 clear the actor and role but leave the strip window, its text and the follow flag
+		var locator = new LocatorModel();
+		locator.Open( LocatorMode.Staff, 3, 7 );
+		locator.Open( LocatorMode.Staff, 0, 0 );
+		Assert.AreEqual( (0, 0, false, true, true), (locator.Role, locator.ActorId, locator.RadioChosen, locator.StripShown, locator.Following) );
+		Assert.AreEqual( (7, 3), (locator.StripActorId, locator.StripRole), "the strip keeps the last located name" );
+		locator.OpenVisitors();
+		Assert.AreEqual( (LocatorModel.VisitorRole, 0, true, 7, 3), (locator.Role, locator.ActorId, locator.StripShown, locator.StripActorId, locator.StripRole) );
+		static int Visitors( int role, int current ) => role == LocatorModel.VisitorRole && current == 0 ? 4 : 0;
+		locator.Press( LocatorModel.VisitorRole, Visitors );
+		Assert.AreEqual( (4, LocatorModel.VisitorRole), (locator.StripActorId, locator.StripRole), "a located actor rewrites the strip" );
+		locator.Close();
+		Assert.AreEqual( (0, 0, false), (locator.StripActorId, locator.StripRole, locator.StripShown) );
+	}
+
+	[TestMethod]
+	public void TheVisitorKeyLocatesTheVisitorWhoseInfoIsOpen()
+	{
+		var hud = VisitorWorldSelectionTests.Fixture( out var simulation, out _ );
+		var first = new Guest( 1, 0 ) { State = GuestState.WalkingAround };
+		var second = new Guest( 8, 0 ) { State = GuestState.WalkingAround };
+		typeof( GuestSimulation ).GetField( "guests", BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( simulation, new List<Guest> { first, second } );
+		hud.OpenVisitorWindow();
+		Assert.AreEqual( 1, hud.SelectedVisitorId );
+		hud.OpenVisitorLocator();
+		Assert.AreEqual( (LocatorMode.Visitor, 0), (hud.Locator.Mode, hud.Locator.ActorId), "a selected row without its info open is not the original's info window (0x4b4280)" );
+		hud.CloseLocator();
+		hud.OpenVisitorWindow();
+		((IUiRowList)hud.Stack.Top!.Find( "visitorList" )!).RowClicked( 1, true );
+		hud.SelectVisitor( 0 );
+		hud.OpenVisitorLocator();
+		Assert.AreEqual( (LocatorMode.Visitor, 8, true), (hud.Locator.Mode, hud.Locator.ActorId, hud.Locator.RadioChosen),
+			"the key takes the visitor whose info a row click opened ([0x7c2658]), not the list's selection" );
+		Assert.IsFalse( hud.VisitorWindowOpen );
+		hud.CloseLocator();
+		Assert.IsTrue( hud.SelectWorldVisitor( first ) );
+		hud.OpenVisitorLocator();
+		Assert.AreEqual( 1, hud.Locator.ActorId, "a visitor picked in the park opens its info too" );
+	}
+
+	[TestMethod]
 	public void RolesMapAsTheOriginalsRadiosAndTheStateIconFollowsTheDisplayState()
 	{
 		foreach ( var type in Enum.GetValues<StaffType>() )

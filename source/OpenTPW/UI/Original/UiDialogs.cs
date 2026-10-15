@@ -73,7 +73,7 @@ public static class UiDialogs
 				{
 					Id = $"choice{index}",
 					Model = buttons[index].Model,
-					Help = choice.Label(),
+					HelpSource = choice.Label,
 					Clicked = choice.Clicked,
 					Bounds = buttons[index].Rect,
 					Anchor = UiAnchor.Center

@@ -241,7 +241,8 @@ public sealed partial class ParkHud
 			hud.Add( new UiButton { Id = MessageActionIds[slot], Model = GameMessageKind.Locate.Model(), Clicked = () => { if ( index < openedActions.Length ) openedActions[index].Clicked(); },
 				Bounds = OriginalLayoutTables.MessagePanel.Control( slot == 0 ? 0x10D2Fu : 0x10D30u ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		}
-		hud.Add( new UiButton { Id = "messageClose", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseMessagePanel, Bounds = UiRect.FromCenter( new NVector2( 384, 1420 ), 75, 75 ), Anchor = UiAnchor.BottomLeft, Visible = false } );
+		// [BIN:TPW-EXE:0x7529dc HUD arm table] the red X under the HUD that closes the panel is the arm table's b_retract (id 0x24) at (349,1386)-(429,1466), help 481
+		hud.Add( new UiButton { Id = "messageClose", Model = "b_retract", Help = strings.Help( OriginalLayoutTables.HudArm.Model( "b_retract" ).Help ), Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.HudArm.Model( "b_retract" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		// The gauge model is the empty dish (one 'thoughts2'-textured quad): the value is drawn over it.
 		// [APPROX:UI-901] the fill is a rising coloured bar in the dish (the original draws the value another way); colour red→yellow→green — evidence needed: capture of the original gauge
@@ -616,6 +617,10 @@ public sealed partial class ParkHud
 	internal static bool ParkShortcutsAllowed( bool paused, bool overlayOpen, bool textEntry, bool keyboardCaptured ) =>
 		!paused && !overlayOpen && !textEntry && !keyboardCaptured;
 
+	private const long RideRightClickGuardMs = 2000;
+	private long rideOpenedAt;
+	private bool wasRiding;
+
 	/// <summary>A right-click exit belongs to the park view only when neither UI owns the pointer.</summary>
 	internal static bool RideRightClickAllowed( bool shortcutsAllowed, bool overUi, bool consumed, bool mouseCaptured ) =>
 		shortcutsAllowed && !overUi && !consumed && !mouseCaptured;
@@ -687,9 +692,13 @@ public sealed partial class ParkHud
 
 		// Ride It (E) rides the selected ride; a right click (RMB cancel on) or E again leaves the ride view.
 		// [EXT:ride-view-key] the key rides the selected ride as the ride window's "Ride it!" button does (gui_CameraFlags 4)
+		// [BIN:TPW-EXE:0x48a7ab ride view right click] a right click leaves the ride view only with RMBCancelOn and more than 2000 ms after the screen opened (0x7c2508, stamped on message 0x15)
+		if ( IsRiding && !wasRiding )
+			rideOpenedAt = Environment.TickCount64;
+		wasRiding = IsRiding;
 		if ( shortcutsAllowed )
 		{
-			if ( IsRiding && (Input.Pressed( InputButton.RideView ) || (input.RightPressed && GameOptions.Current.RmbCancel
+			if ( IsRiding && (Input.Pressed( InputButton.RideView ) || (input.RightPressed && GameOptions.Current.RmbCancel && Environment.TickCount64 - rideOpenedAt > RideRightClickGuardMs
 				&& RideRightClickAllowed( shortcutsAllowed, overUi, consumed, mouseCaptured.Value ))) )
 				level.ExitRideView();
 			else if ( !IsRiding && Input.Pressed( InputButton.RideView ) && selectedObject is { IsDeleted: false } rideObject )

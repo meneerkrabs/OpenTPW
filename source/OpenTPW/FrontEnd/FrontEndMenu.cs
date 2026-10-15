@@ -256,7 +256,7 @@ public sealed partial class FrontEndMenu
 		{
 			if ( IsRemoved ) return true;
 			// Cancellation owns a combined input batch before a row or button can load.
-			if ( input.Has( UiKeys.Back ) || input.RightPressed && Modal )
+			if ( input.Has( UiKeys.Back ) || RightCancels( input ) && Modal )
 			{
 				Back?.Invoke();
 				return true;

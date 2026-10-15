@@ -46,6 +46,7 @@ TABLES = [
     ('NameDialog', 0x753F50, 0x708, (500, 233, 1516, 830), 0x7540BE, 9),
     ('Lobby', 0x757F60, 0x1E0E7, (28, 855, 476, 1521), 0x75817A, 11),
     ('LobbyCity', 0x757D88, 0x49D4, (28, 541, 476, 1521), 0x757F5A, 9),
+    ('HudArm', 0x7529DC, 0x21, (331, 1069, 1006, 1495), 0x752C60, 12),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
 CONFIRM_TWIN = 0x7585A8
@@ -62,6 +63,7 @@ REQUIRED = {
     'ConfirmDialog': ['wdialogw', 'b_okay', 'b_exit'],
     'NameDialog': ['wdialogw', 'b_okay', 'b_exit'],
     'Lobby': ['islandlob', 'b_entpark', 'b_worldview', 'b_lobleft', 'b_lobright'],
+    'HudArm': ['b_retract', 'b_buy', 'b_info', 'b_money', 'b_resrch', 'b_map', 'b_camera'],
     'LobbyCity': ['citylob', 'b_listpark', 'b_bck2lob', 'b_worldview', 'b_entpark', 'b_lobleft', 'b_lobright'],
 }
 

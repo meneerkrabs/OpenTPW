@@ -96,7 +96,7 @@ public sealed partial class ParkHud
 		public RideUpgradeScreen() : base( "rideUpgrade" ) { }
 		public override bool Update( UiContext context, UiInput input )
 		{
-			if ( input.Has( UiKeys.Back ) || input.RightPressed ) { Back?.Invoke(); return true; }
+			if ( input.Has( UiKeys.Back ) || RightCancels( input ) ) { Back?.Invoke(); return true; }
 			return base.Update( context, input );
 		}
 	}

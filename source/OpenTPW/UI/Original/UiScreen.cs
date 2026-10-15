@@ -35,6 +35,11 @@ public class UiScreen
 	/// <summary>True once a stack removed this screen; it then ignores the rest of the frame's input (a click that closed it must not also act as Back on whatever it opened).</summary>
 	public bool IsRemoved { get; internal set; }
 
+	/// <summary>Whether the right click leaves a modal screen: the RMBCancelOn option (+0x39, default on) is set.</summary>
+	// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens (camcorder 0x488aa1, ride view 0x48a7ab, 0x48aadb) leave on a right click only when the option [0x78d911] is set
+	// [APPROX:UI-012] the other windows are taken to read it as well; the readers traced are the camcorder, ride-view and one more screen
+	public static bool RightCancels( UiInput input ) => input.RightPressed && GameOptions.Current.RmbCancel;
+
 	public T Add<T>( T element ) where T : UiElement
 	{
 		elements.Add( element );
@@ -73,7 +78,7 @@ public class UiScreen
 			return true;
 		var canvas = context.Canvas;
 		var hit = HitTest( canvas, input.Mouse );
-		context.HoverHelp = hit?.Help;
+		context.HoverHelp = hit?.CurrentHelp;
 		// A text field keeps the keyboard focus while the mouse merely passes over other elements.
 		var typing = Focused is UiTextField { Visible: true, Enabled: true };
 		if ( hit != null && (input.LeftPressed || input.LeftReleased || hit != Focused && !typing) && input.Mouse.X >= 0 )
@@ -123,7 +128,7 @@ public class UiScreen
 				field.Activate();
 			if ( IsRemoved )
 				return true;
-			if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal) )
+			if ( input.Has( UiKeys.Back ) || (RightCancels( input ) && Modal) )
 				Back?.Invoke();
 			// Typed keys belong to the field, not to navigation or to the park below.
 			return true;
@@ -150,7 +155,7 @@ public class UiScreen
 		}
 		if ( IsRemoved )
 			return true;
-		if ( input.Has( UiKeys.Back ) || (input.RightPressed && Modal && !rightHandled) )
+		if ( input.Has( UiKeys.Back ) || (RightCancels( input ) && Modal && !rightHandled) )
 		{
 			Back?.Invoke();
 			consumed = true;

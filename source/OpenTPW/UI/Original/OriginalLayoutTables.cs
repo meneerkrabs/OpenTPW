@@ -288,6 +288,29 @@ public static class OriginalLayoutTables
 			new( 2, 0x1u, 0x49DCu, 260, 1299, 413, 1453, 344, -1, "b_lobright", null, null, System.Array.Empty<LayoutNode>() ),
 		} ),
 	} );
+
+	/// <summary>[BIN:TPW-EXE:0x7529dc] layout table HudArm.</summary>
+	public static readonly LayoutTable HudArm = new( "HudArm", 0x7529DC, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x21u, 331, 1069, 1006, 1495, -1, -1, "pan_money", null, null, new LayoutNode[]
+		{
+			new( 1, 0x20001u, 0x22u, 1006, 1069, 1071, 1382, -1, -1, "pane_money", null, null, new LayoutNode[]
+			{
+				new( 1, 0x20001u, 0x23u, 976, 1058, 1129, 1503, -1, -1, "handle", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 2, 0x1u, 0x24u, 349, 1386, 429, 1466, 481, -1, "b_retract", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+		new( 1, 0x1u, 0x25u, 170, 1122, 392, 1372, -1, -1, null, null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0x26u, 170, 1122, 288, 1240, 469, -1, "b_buy", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x11u, 0x27u, 202, 1355, 320, 1474, 474, -1, "b_camera", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x28u, 287, 1133, 405, 1252, 470, -1, "b_info", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x29u, 81, 1340, 200, 1458, 473, -1, "b_map", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x2Au, 156, 1241, 274, 1360, 471, -1, "b_money", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x2Bu, 274, 1254, 392, 1372, 472, 9, "b_resrch", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x3u, 0x2Cu, 274, 1254, 392, 1372, 494, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
 }
 
 /// <summary>The original game pointers: their ids and .tga files, and the tool-to-pointer switch.</summary>

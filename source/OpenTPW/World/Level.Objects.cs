@@ -97,14 +97,16 @@ public partial class Level
 			return;
 		Guests.Bins = LitterBins;
 		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
-		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint); a visit or a Theme Park Inc layout keeps the cells it was given
-		if ( !IsReadOnlyVisit && incLayoutCells == null )
+		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint, tp.exe 0x00528A70); a visit, a Theme Park Inc layout and
+		// Theme Park Inc itself (whose placement is not traced) keep the cells they were given
+		var typesFootprints = !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
+		if ( typesFootprints )
 		{
 			var cells = Guests.Grid.Cells;
 			foreach ( var item in Objects.Objects )
 				cells.WriteFootprint( item.Cells );
 		}
-		if ( !IsReadOnlyVisit )
+		if ( typesFootprints )
 		{
 			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells );
 			Objects.ObjectRemoved += item => Guests?.Grid.Cells.ClearFootprint( item.Cells );
@@ -744,6 +746,7 @@ public partial class Level
 			// the breakdown goes through the script: the economy writes VAR_BREAKSTAT, the script reports VAR_BROKEN and the ride update's state 1 breaks the object down (ECON-023)
 			state.ScriptHosted = item.Runtime.Script != null;
 			state.ScriptBreakStat = item.Runtime.GetVariable( RideVariables.VAR_BREAKSTAT );
+			state.ScriptWorn = item.Runtime.GetVariable( RideVariables.VAR_WORN );
 			Park.Economy.ObserveScriptState( state, item.Visitors.InBrokenState );
 			// a water ride's circuit walk writes the attraction's track word (+0x2C on the PC), which the counts-test reads (docs/TRACKS.md)
 			state.TrackValid = item.Runtime.Bump?.IsTrackValid ?? true;

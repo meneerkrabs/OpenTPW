@@ -611,7 +611,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	private void UpdateRides( long turn )
 	{
-		foreach ( var item in objects.Values.ToList() )
+		foreach ( var item in objects.Values )
 		{
 			// [BIN:TPW-EXE:0x004DB4FB object state] a thing whose type record is choosable (Info.IsChoosable, +0x32 bit 4) starts in state 0, any other in state 3, which the update skips
 			if ( !Catalog.TryGet( item.InfoId, out var info ) || !info.IsChoosable )
@@ -638,7 +638,8 @@ public sealed class ParkEconomy : IParkEconomy
 				}
 			}
 			// [BIN:TPW-EXE:0x004E0D16 relief worn] a relief object (+0x32 bit 1) whose repair byte is below 25 writes VAR_WORN = 1 (script variable 8) on every update
-			if ( info.ProvidesRelief && RideBreakdownRules.GaugeByte( (float)item.Repair ) < ReliefWornByte )
+			// (the write is skipped while the script already holds 1: the same value, no event per turn)
+			if ( info.ProvidesRelief && RideBreakdownRules.GaugeByte( (float)item.Repair ) < ReliefWornByte && item.ScriptWorn != 1 )
 				WriteScript( item, RideVariables.VAR_WORN, 1 );
 		}
 	}
@@ -655,6 +656,8 @@ public sealed class ParkEconomy : IParkEconomy
 			return;
 		if ( variable == RideVariables.VAR_BREAKSTAT )
 			item.ScriptBreakStat = value;
+		else if ( variable == RideVariables.VAR_WORN )
+			item.ScriptWorn = value;
 		Raise( ParkEventKind.RideScriptVariable, value, item.Id, (int)variable );
 	}
 
@@ -664,7 +667,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// </summary>
 	internal void ObserveScriptState( ParkObjectState item, bool inBrokenState )
 	{
-		if ( inBrokenState && !item.ScriptStateBroken )
+		if ( inBrokenState && item.ScriptStateBroken == false )
 			item.IsBrokenDown = true;
 		item.ScriptStateBroken = inBrokenState;
 	}
@@ -1071,7 +1074,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// The net worth as a reader of the analyser's cache sees it (tp.exe <c>0x004C7DB0</c>): the cached value while (turn >> 2) − (stamp >> 2) is at most
-	/// <paramref name="maximumAge"/> (unsigned), else counted again and stamped with the current turn. The cache is not saved: a loaded park counts at its first read.
+	/// <paramref name="maximumAge"/> (unsigned), else counted again and stamped with the current turn. The cache is saved with the park (older saves count at the first read).
 	/// </summary>
 	public int NetWorth( uint maximumAge )
 	{
@@ -1085,24 +1088,46 @@ public sealed class ParkEconomy : IParkEconomy
 		return netWorthValue;
 	}
 
+	/// <summary>The net worth cache (the park save), null until a read has counted it.</summary>
+	internal (int Value, long Stamp)? CachedNetWorth => netWorthCached ? (netWorthValue, netWorthStamp) : null;
+
+	/// <summary>Restores a saved net worth cache.</summary>
+	internal void RestoreNetWorthCache( int value, long stamp )
+	{
+		netWorthValue = value;
+		netWorthStamp = stamp;
+		netWorthCached = true;
+	}
+
 	private int ComputeNetWorth()
 	{
-		var total = 0;
-		if ( Litter.Cells is { } cells )
-		{
-			for ( var y = 0; y < cells.Height; y++ )
-			{
-				for ( var x = 0; x < cells.Width; x++ )
-				{
-					if ( (cells.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 )
-						continue;
-					var (type, structure) = CellForValue( cells, x, y );
-					total = unchecked( total + ParkValueRules.CellPoints( type, structure ) );
-				}
-			}
-		}
+		var total = CellPoints();
 		foreach ( var item in objects.Values )
 			total = unchecked( total + (int)ObjectValue( item ) );
+		return total;
+	}
+
+	private (ParkCellMap? Map, int Version, int TrackVersion, int Points) cellPoints;
+
+	/// <summary>The map part of the net worth; counted again only when the cell map changed (every cell write bumps its version), so a HUD read costs no map walk.</summary>
+	private int CellPoints()
+	{
+		if ( Litter.Cells is not { } cells )
+			return 0;
+		if ( ReferenceEquals( cellPoints.Map, cells ) && cellPoints.Version == cells.Version && cellPoints.TrackVersion == cells.Tracks.Version )
+			return cellPoints.Points;
+		var total = 0;
+		for ( var y = 0; y < cells.Height; y++ )
+		{
+			for ( var x = 0; x < cells.Width; x++ )
+			{
+				if ( (cells.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 )
+					continue;
+				var (type, structure) = CellForValue( cells, x, y );
+				total = unchecked( total + ParkValueRules.CellPoints( type, structure ) );
+			}
+		}
+		cellPoints = (cells, cells.Version, cells.Tracks.Version, total);
 		return total;
 	}
 

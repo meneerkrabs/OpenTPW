@@ -213,8 +213,13 @@ public sealed class ParkObjectState
 	public bool ScriptHosted { get; set; }
 	/// <summary>The script's VAR_BREAKSTAT, mirrored each tick by the level (and set at once when the economy writes it); not saved.</summary>
 	public int ScriptBreakStat { get; set; }
-	/// <summary>The ride update's state 1 as the level last saw it (the visitor bridge keeps it): its rising edge breaks the object down. Not saved.</summary>
-	internal bool ScriptStateBroken { get; set; }
+	/// <summary>The script's VAR_WORN, mirrored each tick by the level (and set at once when the economy writes it); not saved.</summary>
+	public int ScriptWorn { get; set; }
+	/// <summary>
+	/// The ride update's state 1 as the level last saw it (the visitor bridge keeps it): its rising edge breaks the object down. Saved; null until the first
+	/// observation (a new object, an older save), which then only records the state.
+	/// </summary>
+	internal bool? ScriptStateBroken { get; set; }
 	/// <summary>
 	/// The attraction's track validity (<c>mIsTrackRideValid</c>, +0x2C on the PC): a water ride whose circuit walk failed does not count for the park points
 	/// (the counts-test's built-track condition). Mirrored each tick by the level, not saved; true for every ride without a track.

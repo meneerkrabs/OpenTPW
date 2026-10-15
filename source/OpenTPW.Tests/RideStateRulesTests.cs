@@ -102,6 +102,7 @@ public class RideStateRulesTests
 		Assert.AreEqual( 1, writes.Count( item => item.InstanceId == ride.Id && item.InfoId == (int)RideVariables.VAR_BREAKSTAT && item.Amount == 1 ) );
 		EconomyTestData.AdvanceToTurn( park, 2 * ParkEconomy.RideUpdateInterval );
 		Assert.AreEqual( 1, writes.Count( item => item.InfoId == (int)RideVariables.VAR_BREAKSTAT ), "VAR_BREAKSTAT set: no second request" );
+		park.ObserveScriptState( ride, inBrokenState: false );
 		park.ObserveScriptState( ride, inBrokenState: true );
 		Assert.IsTrue( ride.IsBrokenDown, "the ride update's state 1" );
 		ride.IsBrokenDown = false;
@@ -116,6 +117,55 @@ public class RideStateRulesTests
 		EconomyTestData.AdvanceToTurn( park, turn + 1 );
 		Assert.IsTrue( writes.Any( item => item.InstanceId == toilet.Id && item.InfoId == (int)RideVariables.VAR_WORN && item.Amount == 1 ) );
 		Assert.IsFalse( toilet.IsBrokenDown, "relief objects never break down" );
+	}
+
+	[TestMethod]
+	public void TheObservedStateOneIsSavedSoALoadCountsNoSecondBreakdown()
+	{
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var ride );
+		ride!.ScriptHosted = true;
+		park.ObserveScriptState( ride, inBrokenState: false );
+		park.ObserveScriptState( ride, inBrokenState: true );
+		Assert.IsTrue( ride.IsBrokenDown );
+		// the repair finished, the level has not reopened the ride yet (the bridge still holds state 1)
+		ride.IsBrokenDown = false;
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Capture( park ), park.Settings, park.Catalog );
+		var loaded = restored.Objects.Single( item => item.Id == ride.Id );
+		restored.ObserveScriptState( loaded, inBrokenState: true );
+		Assert.IsFalse( loaded.IsBrokenDown, "the saved observation holds no rising edge: no second mechanic" );
+
+		// an older save (no observation saved) only records the bridge's state at its first observation
+		var older = EconomyTestData.Park();
+		older.TryBuild( 1100, out var unobserved );
+		older.ObserveScriptState( unobserved!, inBrokenState: true );
+		Assert.IsFalse( unobserved!.IsBrokenDown );
+	}
+
+	[TestMethod]
+	public void AHeadlessMechanicWaitsForTheFixAnimationOfAScriptHostedRide()
+	{
+		// [BIN:TPW-EXE:0x4da830 repairing] the economy's own mechanic dispatch: the job timer ends, then the repair waits while the script reports VAR_BROKEN
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var ride );
+		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
+		ride!.ScriptHosted = true;
+		ride.ScriptBroken = true;
+		ride.IsBrokenDown = true;
+		ride.Repair = 40;
+		var cleared = false;
+		park.EventRaised += item => cleared |= item.Kind == ParkEventKind.RideScriptVariable && item.InstanceId == ride.Id && item.InfoId == (int)RideVariables.VAR_BREAKSTAT && item.Amount == 0;
+		for ( var turn = 0; turn < 2000 && !cleared; turn++ )
+			EconomyTestData.AdvanceToTurn( park, park.Turn + 1 );
+		Assert.IsTrue( cleared, "the timer ran out: VAR_BREAKSTAT = 0" );
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 20 );
+		Assert.IsTrue( ride.IsBrokenDown, "still waiting for the script" );
+		Assert.AreEqual( mechanic.Id, ride.MechanicId, "he keeps the job" );
+		Assert.AreEqual( 1L, mechanic.BusyTicks, "the next staff update looks again" );
+		ride.ScriptBroken = false;
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 2 );
+		Assert.IsFalse( ride.IsBrokenDown, "the repair completes once VAR_BROKEN is clear" );
+		Assert.AreEqual( 0, ride.MechanicId );
 	}
 
 	[TestMethod]

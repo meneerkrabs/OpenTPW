@@ -47,7 +47,18 @@ public sealed class ParkLitter
 	/// <summary>The environment grid that vomit and stinkbombs spread their <c>RegionFX</c> on while they lie.</summary>
 	public ParkEnvironment Environment { get; } = new();
 	/// <summary>The level's cell map, for the litter share (null until a level attaches it: the share is then 0).</summary>
-	public ParkCellMap? Cells { get; set; }
+	public ParkCellMap? Cells
+	{
+		get => cells;
+		set
+		{
+			// another map's blocks hold other cells: the analyser's counts start again (attaching the first map, as after a load, keeps the restored counts)
+			if ( cells != null && !ReferenceEquals( cells, value ) )
+				ResetBlockCounts();
+			cells = value;
+		}
+	}
+	private ParkCellMap? cells;
 	/// <summary>Cells holding litter.</summary>
 	public int Count { get; private set; }
 	/// <summary>Changes with every drop, removal or claim (for presentation caches).</summary>
@@ -71,7 +82,7 @@ public sealed class ParkLitter
 	/// takes the type and nobody's claim. True when the litter was placed.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D93B0 littering cell] nothing in game type 1 (online) or when the cell's +0x2c is nonzero; else a sprite of bank 11 frame type − 1 (+0x28), +0x30 = 0, +0x2c = type; vomit (7) and stinkbomb (8) also add their RegionFX (2, 5) through 0x004D8440 and a stinkbomb its particle (+0x38)
-	// [APPROX:ECON-020] litter lies on map cells (one item per cell, dropped by guests' full litter meters, vomit and bins they cannot reach) with the original's sprite offset (0x004D93B0) and is counted through the analyser's 4 × 4 block caches (0x004C8BA0, 0x004C8AE0) as the strike (age 1) and the thought (age 4) read them, but the drop's reseed of the original's world generator with the cell id (0x004D94E2) is not followed by OpenTPW's separate streams (DET-014), and the caches start empty after a load where the original's saved analyser state is not traced — evidence needed: DET-014's stream decision for the reseed; the analyser's serializer for the block caches
+	// [APPROX:ECON-020] litter lies on map cells (one item per cell, dropped by guests' full litter meters, vomit and bins they cannot reach) with the original's sprite offset (0x004D93B0) and is counted through the analyser's 4 × 4 block caches (0x004C8BA0, 0x004C8AE0) as the strike (age 1) and the thought (age 4) read them, but the drop's reseed of the original's world generator with the cell id (0x004D94E2) is not followed by OpenTPW's separate streams (DET-014), and the caches are saved with the park where whether the original's analyser serializer keeps them is not traced — evidence needed: DET-014's stream decision for the reseed; the analyser's serializer for the block caches
 	public bool Drop( int x, int y, LitterType type )
 	{
 		if ( Disabled || type == LitterType.None || !InBounds( x, y ) || types[Index( x, y )] != 0 )
@@ -173,7 +184,7 @@ public sealed class ParkLitter
 
 	/// <summary>
 	/// A block's littered cells as the analyser reads them (tp.exe <c>0x004C8BA0</c>): the cached count while it is no older than the reader's age, else
-	/// counted again and stamped. The caches are not saved: a loaded park counts at its first reads.
+	/// counted again and stamped. The caches are saved with the park (older saves count at their first reads).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004C8BA0 block litter] counted again only when the block's flag (+0x60) is clear or the age (0x0041A990: (turn >> 2) − (stamp >> 2)) exceeds the caller's; then the 4 × 4 cells with litter are counted and stamped (0x0041A960)
 	public int LitteredInBlock( int block, uint maximumAge, long turn )
@@ -211,6 +222,24 @@ public sealed class ParkLitter
 		for ( var x = x0; x < x0 + BlockSize; x++ )
 			for ( var y = y0; y < y0 + BlockSize; y++ )
 				visit( x, y );
+	}
+
+	/// <summary>The valid littered-cell counts of the blocks with their stamps (the park save).</summary>
+	public IEnumerable<(int Block, int Count, long Stamp)> LitteredBlockCache =>
+		Enumerable.Range( 0, BlockCount ).Where( block => blockLitteredValid[block] ).Select( block => (block, blockLittered[block], blockLitteredStamp[block]) );
+
+	/// <summary>The valid path-cell counts of the blocks with their stamps (the park save).</summary>
+	public IEnumerable<(int Block, int Count, long Stamp)> PathBlockCache =>
+		Enumerable.Range( 0, BlockCount ).Where( block => blockPathsValid[block] ).Select( block => (block, blockPaths[block], blockPathsStamp[block]) );
+
+	/// <summary>Restores the saved block caches (after <see cref="Restore"/>, which empties them); the other blocks count at their first read.</summary>
+	public void RestoreBlockCaches( IEnumerable<(int Block, int Count, long Stamp)> littered, IEnumerable<(int Block, int Count, long Stamp)> paths )
+	{
+		ResetBlockCounts();
+		foreach ( var (block, count, stamp) in littered )
+			(blockLittered[block], blockLitteredStamp[block], blockLitteredValid[block]) = (count, stamp, true);
+		foreach ( var (block, count, stamp) in paths )
+			(blockPaths[block], blockPathsStamp[block], blockPathsValid[block]) = (count, stamp, true);
 	}
 
 	/// <summary>Forgets the analyser's block counts (a load: the next reads count again).</summary>

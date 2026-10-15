@@ -1157,8 +1157,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( Litter is not { } litter || Grid.Cells is null || (uint)guest.CellX >= ParkLitter.MapSize || (uint)guest.CellY >= ParkLitter.MapSize )
 			return 0f;
 		var block = ParkLitter.BlockOf( guest.CellX, guest.CellY );
-		var littered = litter.LitteredInBlock( block, 4, ParkTurn );
-		var paths = litter.PathCellsInBlock( block, 4, ParkTurn );
+		// the analyser stamps its caches with the world turn, the clock the strike reads them with too (the economy's, ArrivalClock)
+		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
+		var littered = litter.LitteredInBlock( block, 4, turn );
+		var paths = litter.PathCellsInBlock( block, 4, turn );
 		return paths == 0 ? (littered == 0 ? 0f : float.PositiveInfinity) : (float)littered / paths;
 	}
 

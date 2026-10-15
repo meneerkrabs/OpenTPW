@@ -246,6 +246,12 @@ public class StaffPlacementTests
 			f.Grid.Cells.SetType( 3, 2, type );
 			Assert.AreEqual( allowed, StaffPlacementRules.CanBePickedUp( other, f.Grid.Cells ), $"own cell of type {type}" );
 		}
+		// tp.exe 0x505bd0 refuses state 13, the mechanic's repair (0x4da370(0xd), the timer +0x214)
+		f.Grid.Cells.SetType( 3, 2, 1 );
+		other.Job = StaffJob.Repairing;
+		Assert.IsFalse( StaffPlacementRules.CanBePickedUp( other, f.Grid.Cells ), "repairing (state 13)" );
+		other.Job = StaffJob.Idle;
+		Assert.IsTrue( StaffPlacementRules.CanBePickedUp( other, f.Grid.Cells ) );
 		var unplaced = f.Hire( StaffType.Mechanic );
 		(unplaced.CellX, unplaced.CellY) = (null, null);
 		Assert.IsFalse( StaffPlacementRules.CanBePickedUp( unplaced, f.Grid.Cells ), "no position, no cell" );

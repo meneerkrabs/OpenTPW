@@ -110,6 +110,13 @@ internal static class AdvisorUiHelp
 		[Hud.ParkHud.StaffPlacementHelp] = 309,
 	};
 
+	/// <summary>
+	/// Whether F1 in the HUD window named <paramref name="window"/> repeats the last tutorial advice: the procedures of the eight help
+	/// windows pass the key messages they do not handle to the default window procedure, whose F1 row replays it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00488BA0 default window procedure] called with the window message from the procedures of the buy (0x4AC80B), hire staff (0x49B768), all attractions (0x495331), loans (0x49F81B), finance (0x49A100, 0x49A149, 0x49A1B7), park information (0x4A4A9B), all visitors (0x49337C) and ticket price (0x498D53, in 0x498C60 with its withdrawal 0x498CC7) windows, each beside its window's withdrawal call; seven more callers (0x48D27E, 0x495EE5, 0x4A8111, 0x4A9B3A, 0x4B26F7, 0x4B7ADA and one of the finance sites) belong to windows not identified
+	public static bool RepeatsTutorialOnHelpKey( string? window ) => window != null && Windows.ContainsKey( window );
+
 	/// <summary>The help message of the HUD window named <paramref name="window"/>, or null when it has none.</summary>
 	public static int? MessageFor( string window ) => Windows.TryGetValue( window, out var message ) ? message : null;
 

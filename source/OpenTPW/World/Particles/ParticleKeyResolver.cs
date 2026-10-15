@@ -44,7 +44,7 @@ public sealed class ParticleKeyResolver
 	// [BIN:STP-PPC:0x1019B298 model key lookup] matches attribute Value and selector mask; first matching entry wins
 	// [BIN:STP-PPC:0x1019AE64 lookup construction] entry i selects header word +0x46 plus i; +0x44 selects mesh versus dummy records
 	// [BIN:STP-PPC:0x100AC7F0 particle key resolver] position comes from matrix +48/+52/+56; direction from +32/+36/+40, optionally negated by runtime lookup flag 0x10, normalized then multiplied by 1024
-	// [APPROX:PTCL-900] current ObjectAnimator hierarchy matrices supply key frames at EVENT time; the original reads the matrices of the object's last draw (tp.exe 0x473C70 -> 0x44AB30, about one render frame behind and stale while the object is culled)
+	// [APPROX:PTCL-900] current ObjectAnimator hierarchy matrices supply key frames at EVENT time; the original reads its key table (0x556B90), which 0x44AB30 refreshes at the instance's creation (0x463851) and per draw (render callback 0x463030 -> 0x44E380 -> 0x473C70), gated by instance-header bit 0x1 and table bit 0x1 whose meaning is not read, and at 0x42A6D6/0x438A53 — about one render frame behind and stale while the object is culled
 	public ParticleKeyResult Resolve( int key, uint selector, IReadOnlyList<Matrix4x4> nodeTransforms,
 		ObjectPlacement placement, bool includeDirection = false )
 	{

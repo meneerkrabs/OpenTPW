@@ -43,9 +43,18 @@ public sealed partial class ParticleSystem
 	public const int TickMilliseconds = 31;
 	/// <summary>The most wall-clock time one frame advances, so a stalled frame does not replay seconds of particles.</summary>
 	public const float MaximumFrameSeconds = 0.25f;
-	/// <summary>The PARTICLEDENSITY the game's options start with (tp.exe settings record 0x744860, value 500); 1024 would run the templates as authored.</summary>
-	// [BIN:TPW-EXE:0x54E5F9 pool init call] density = [0x7858C8], the PARTICLEDENSITY slot of the options object; the registry value is not read here
+	/// <summary>The PARTICLEDENSITY of the Low detail file (<c>low.sam</c>), used when no detail options are loaded; 1024 would run the templates as authored.</summary>
+	// [BIN:TPW-EXE:0x54E5F9 pool init call] density = [0x7858C8], GameOptions.PARTICLEDENSITY of the detail object (its fields start at 0x785874, schema 0x7442C0), which only the detail-file load 0x44DC60 fills
+	// [DATA:low.sam:GameOptions.PARTICLEDENSITY] 500 (med.sam 1000, high.sam 1500)
 	public const int NativeDefaultDensity = 500;
+
+	/// <summary>
+	/// The density a park's pool starts with: the PARTICLEDENSITY of the player's detail options (the preset's original file, Enhanced or
+	/// Custom), or <see cref="NativeDefaultDensity"/> when no options are loaded or the preset's file is missing.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0044DE20 detail options] the player's saved detail level [0x78D8E0] (0, 1, 2) selects low.sam, med.sam or high.sam (high only with [0x78D8D8] set, else med) for the load 0x44DC60 -> 0x401650 into the detail object, whose PARTICLEDENSITY the pool init reads; OpenTPW's graphics settings keep the same choice (and its Enhanced/Custom extensions)
+	public static int OptionsDensity( IGraphicsSettings? graphics ) =>
+		graphics != null && graphics.GetPresetValues( graphics.Current.Preset ) != null ? graphics.Detail.ParticleDensity : NativeDefaultDensity;
 	/// <summary>The highest effect id plus one (tp.exe 0x521E60 refuses ids at 0x69).</summary>
 	public const int EffectIdLimit = 0x69;
 

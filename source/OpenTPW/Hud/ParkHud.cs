@@ -33,6 +33,8 @@ public sealed class HudHost
 	public Action<string>? WindowOpened { get; init; }
 	/// <summary>A screen other than the HUD closed; the advisor withdraws the window's help message.</summary>
 	public Action<string>? WindowClosed { get; init; }
+	/// <summary>F1 was pressed in a HUD window that passes keys to the original's default window procedure; the advisor repeats the last tutorial advice.</summary>
+	public Action? HelpKeyPressed { get; init; }
 }
 
 /// <summary>

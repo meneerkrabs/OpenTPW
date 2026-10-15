@@ -22,8 +22,12 @@ public sealed class SettingsFile : BaseFormat
 
 	protected override void ReadFromStream( Stream stream )
 	{
-		using var binaryReader = new BinaryReader( stream );
-		var text = Encoding.ASCII.GetString( binaryReader.ReadBytes( (int)stream.Length ) );
+		// Read to the end instead of trusting Length, so non-seekable and partly read streams work;
+		// the stream is still closed afterwards, as before.
+		using var buffer = new MemoryStream();
+		using ( stream )
+			stream.CopyTo( buffer );
+		var text = Encoding.ASCII.GetString( buffer.GetBuffer(), 0, (int)buffer.Length );
 
 		var parser = new SAMParser( text );
 		Entries = parser.Parse();

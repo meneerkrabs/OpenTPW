@@ -127,6 +127,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public const int ArrivalParkLimit = 1500;
 	/// <summary>The group limit while <see cref="OnlineVisit"/> is set.</summary>
 	public const int OnlineArrivalParkLimit = 500;
+	/// <summary>The original's thing pool (10239 slots): no park holds more guests, so a cut remainder (limit − guests) is never below a limit minus this.</summary>
+	private const int MaximumThings = 10239;
 	/// <summary>
 	/// True for an online visit of another player's park. The original cuts the group to 500 minus the guests when its GameType word
 	/// (data:0x53D98) is 1 (online) and to 1500 otherwise.
@@ -2243,6 +2245,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !float.IsFinite( snapshot.SpawnTimer ) )
 			Error( $"SpawnTimer {snapshot.SpawnTimer} is not finite." );
 		// PendingArrivals may be negative: a group cut above the park limit keeps limit − guests, as the original's word does (0x004CF6E5), and ends at the next stop like 0.
+		if ( snapshot.PendingArrivals < OnlineArrivalParkLimit - MaximumThings )
+			Error( $"PendingArrivals {snapshot.PendingArrivals} is below the lowest cut remainder ({OnlineArrivalParkLimit - MaximumThings})." );
 		if ( snapshot.LaneToggle < 0 )
 			Error( $"LaneToggle {snapshot.LaneToggle} is negative." );
 		// A file that lost one of its core lists (a JSON null) cannot be cross-checked; the hole is named and

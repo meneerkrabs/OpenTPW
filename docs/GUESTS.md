@@ -204,8 +204,8 @@ cell), for a coaster its controller test (`0x441970`: no self-intersection, comp
 a kart or water ride its track word (the circuit walk's verdict, `BumpController.IsTrackValid`); the level syncs them each tick. So a
 closed, broken, queue-less, full, crossing or invalid ride gives no points, while its copies still count in the divisor of an untracked
 type. Only things whose type's `Info.WhichUIType` is 0 or 2 count (`0x4c8240`), which includes the shipped add-ons that declare 0. The
-coaster test also needs three track samples and has no edited-coaster term, and the track word starts false before the first walk
-(ARRIVAL-003). Objects imported from an original save set the first purchase to the import turn, where
+coaster test also needs three track samples and has no edited-coaster term, the track word starts false before the first walk, and a
+coaster imported from an original save has no controller (its track is not imported), so it gives no points (ARRIVAL-003). Objects imported from an original save set the first purchase to the import turn, where
 the original restores each type's record from the save (tp.exe `0x4d3aa0`, ARRIVAL-005); fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002, 003, 005 and 006 (`ArrivalApproximations`).
 
 ## Simulation

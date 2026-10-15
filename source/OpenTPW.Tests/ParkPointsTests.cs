@@ -226,6 +226,7 @@ public class ParkPointsTests
 	{
 		var park = TrackPark();
 		park.RegisterExisting( 6 );
+		// QueueHasRoom defaults to true until the level's first queue sync; in a real level an add-on without an entrance has no queue cells and then stops counting, as in the original.
 		Assert.AreEqual( 30 + 25, park.ParkPoints(), "an add-on declaring WhichUIType 0 counts as a ride" );
 		park.RegisterExisting( 7 );
 		Assert.AreEqual( 30 + 25, park.ParkPoints(), "a ride declaring WhichUIType 4 does not count" );

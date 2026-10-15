@@ -15,7 +15,7 @@ re-read):
   (ARRIVAL-007 retired). The determinism hash is now `0x9AA9973FC2A6A5D6`.
 - **Arrival groups** keep a negative remainder after the cut (`0x4cf6e5`), which every reader treats as 0 (ARRIVAL-004 retired), and a
   guest the booth sends to wait reruns the verdict N + 1 turns later (`0x4ffa72`, `0x4ffb01`; ARRIVAL-006 narrowed).
-- **The counts-test's track terms** apply to the attraction choice (`0x4dd9ad` → `0x441970`; ARRIVAL-003 narrowed).
+- **The counts-test's track terms** apply to the park points that size the arrival groups (`0x4dd9ad` → `0x441970`; ARRIVAL-003 narrowed).
 - SAVE-930 is OpenTPW's own layout checkpoint (`[EXT:tpi-layout-checkpoint]`); thirteen arrival and save items are narrowed, among them
   the bus, seaplane or ferry by group size (`0x4cf48c`) and the coaster save block (`0x437300`, `0x437b60`).
 

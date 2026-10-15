@@ -79,8 +79,9 @@ public class ParticleEventRequestTests
 		var placed = Placed(); Emit(placed.Runtime, 2); var node = placed.Runtime.LastParticleEventAttempt!.Value.Request!.Value.EnginePosition;
 		Emit(placed.Runtime, 3, 7); var voice = mixer.Voices.Single();
 		Assert.IsNotNull(voice.Position);
-		var expected = GameAudio.SoundPosition(node);
-		Assert.IsTrue((voice.Position!.Value - expected).Length < 0.01f, $"{voice.Position} vs {expected}");
+		// [BIN:TPW-EXE:0x5573d0] the node position is submitted truncated to whole units
+		var expected = OriginalObjectRuntime.WholeUnits(GameAudio.SoundPosition(node))!.Value;
+		Assert.AreEqual(expected, voice.Position!.Value, $"{voice.Position} vs {expected}");
 		Emit(placed.Runtime, 4, 99); Assert.AreEqual(1, mixer.Voices.Count, "an unknown key submits nothing");
 		Emit(placed.Runtime, 9, 99); Assert.AreEqual(1, mixer.Voices.Count, "for every sound type 3-9");
 	}

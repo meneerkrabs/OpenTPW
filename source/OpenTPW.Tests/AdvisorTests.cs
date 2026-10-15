@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.IO;
 using System.Linq;
@@ -219,6 +220,34 @@ public class AdvisorTests
 		CollectionAssert.AreEquivalent( new[] { "Right Eye", "Left Eye" },
 			Enumerable.Range( 0, eyes.Length ).Where( node => eyes[node]?.TexCoords != null ).Select( node => fantasy.Nodes[node].Name ).ToArray(),
 			"the level advisors' texture-coordinate tracks" );
+	}
+
+	[TestMethod]
+	public void TheTicketCloseUpShowsTheTicketTheClipBeforeToggledOnAndHidesTheBugHead()
+	{
+		using var assets = new OriginalAssets();
+		const string archive = "/levels/fantasy/advisor";
+		var model = new ModelFile( $"{archive}/Advisor_FAN.MD2" );
+		var map = AdvisorNodeMap.From( model );
+		var durations = AdvisorClipDurations.LoadArchive( FileSystem, archive )!;
+		var clips = new Dictionary<int, ModelAnimation?>();
+		ModelAnimation? ClipOf( int number ) => clips.TryGetValue( number, out var clip ) ? clip
+			: clips[number] = new ModelFile( $"{archive}/{Advisor.AnimationClipName( "_FAN", number )}" ).Clip;
+		var sequence = AdvisorSequences.Build( 29, 1500, durations, () => 0 );
+		CollectionAssert.AreEqual( new[] { 17, 17, 17, 17, 18, 19, 20 }, sequence.Clips.ToArray() );
+		int Node( string name ) => model.Meshes.Single( mesh => mesh.Name == name ).NodeIndex;
+		HashSet<int> At( int index ) => AdvisorAccessories.SequenceHiddenNodes( map, sequence, durations, ClipOf, AdvisorCostume.None, AdvisorThemeCostume.None, index );
+
+		var ticketClip = At( 4 );
+		Assert.IsTrue( ticketClip.Contains( Node( "Ticket2" ) ), "clip 18 starts with the ticket hidden" );
+		AdvisorAccessories.ApplyToggles( map, ticketClip, ClipOf( 18 ), 40 );
+		Assert.IsFalse( ticketClip.Contains( Node( "Ticket2" ) ), "and shows it from tick 38" );
+		var closeUp = At( 5 );
+		Assert.IsFalse( closeUp.Contains( Node( "Ticket2" ) ), "clip 19's list leaves the ticket clip 18 showed" );
+		foreach ( var name in new[] { "Body", "Right Eye", "Right hand", AdvisorAccessories.BugHead } )
+			Assert.IsTrue( closeUp.Contains( Node( name ) ), $"the close-up hides {name}" );
+		Assert.IsTrue( At( 6 ).Contains( Node( "Ticket2" ) ), "clip 19's toggle hides the ticket at tick 39, before clip 20 starts" );
+		Assert.IsFalse( At( 0 ).Contains( Node( "Body" ) ) || At( 0 ).Contains( Node( AdvisorAccessories.BugHead ) ), "the advisor itself shows in clip 17" );
 	}
 
 	/// <summary>The clip lengths of the original's advisor clips come from trailer word 2 (0x474070): the global advisor's and a level advisor's.</summary>

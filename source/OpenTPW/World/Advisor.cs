@@ -46,7 +46,7 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-020", "event 2 comes from the economy's six-month bankruptcy, not 0x4D0370's monthly guard (balance and previous balance < 0, and the red-time term from 0x4F88B0 over 2.592e13 >= 6, with the turn entered red at +0x120); events 3/4 are raised on every open/close button press as in the original"),
 		("ADVISOR-022", "an original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129, 323 and the help messages are bound) are dropped on import; OpenTPW's own park save stores the controller"),
 		("ADVISOR-025", "a fixed sequence's timer (sequences 28 and 29, the ticket/key advice) plays cat_ui 0xC6 when the advisor clock reaches it, but the particle effect 0x521E60 (87, 90000, 0, 7000) it also starts is not (template 87, Key, is screen-space, which OpenTPW does not draw), nor the HUD golden-ticket/key counter refresh 0x4B9340 (OpenTPW has no such counter, UI-051), which shows or hides the controls 0x1E0EA-0x1E0F1, formats \"%d x\" with the key count (0x5AF680) into 0x1E0EE and starts particle 0x61 at the counter when the ticket count drops"),
-		("ADVISOR-026", "the level advisors' props (Ticket, MAP, Ticket2, Mutant Eye and the T_Particle/Rotate dummies, shown by the ticket logic 0x599B09-0x599BDE and the accessory bits 0x20000-0x200000 of 0x598DC0) stay hidden"),
+		("ADVISOR-026", "the level advisors' props are shown and hidden by the clips' node lists and blink toggles carried from clip to clip, with the accessory bit 0x10000 hiding the bug head and the mouth, but the screen-space effects of the accessory bits 0x20000-0x200000 (UI particle pool 0x5ED5A0, 0x5ED660, 0x5ED700) are not started, and the node state is rebuilt from the model's base state at every response (the original keeps the bits on the model instance)"),
 	};
 
 	private readonly AdvisorRig globalRig;
@@ -76,7 +76,11 @@ internal sealed class Advisor : IDisposable
 	private readonly Dictionary<string, AdvisorThemeCostume> themes = new();
 	// The hidden accessory nodes of the response's costume by clip accessory bits, and the per-frame scratch set.
 	private readonly Dictionary<int, HashSet<int>> costumeHidden = new();
+	// The hidden nodes at the start of each clip of the current sequence (SequenceHiddenNodes), by clip index.
+	private readonly Dictionary<int, HashSet<int>> sequenceHidden = new();
 	private readonly HashSet<int> hiddenScratch = new();
+	// The clip index of the current sequence whose start has been seen (its clip-start sound played), −1 before the first.
+	private int startedClipIndex = -1;
 	private System.Numerics.Vector3 mouthMin = new( float.MaxValue );
 	private System.Numerics.Vector3 mouthMax = new( float.MinValue );
 	// [BIN:TPW-EXE:0x00429BA0 advisor setup] model matrix = identity with translation (0.6, -0.6, 0.2); the root node is
@@ -128,6 +132,8 @@ internal sealed class Advisor : IDisposable
 	/// </summary>
 	// [BIN:TPW-EXE:0x004732A0 animation start] the model is shown when any animation other than 12 starts (via 0x45BD30); "Kill advisor" (0x429D60: animation 12 with the immediate flag, then unlink), called by the stop path 0x5996D0 (six callers, including level exit) and the slap path 0x5994E0, hides it at once; the normal end of advice (0x599880) calls neither, the sampler hides the model at the end of the last clip (see DrawnSpanMilliseconds). The model therefore hides at the clip sum even while a long speech of a fixed row (21-27) is still playing; that follows the trace, and a capture should confirm it
 	public bool ModelShown { get; private set; }
+	/// <summary>Whether the playing clip hides the mouth (accessory bit <see cref="AdvisorAccessories.SuppressCostumeBit"/>, the ticket close-ups).</summary>
+	public bool MouthSuppressed { get; private set; }
 
 	/// <summary>The model is drawn: shown, and (automatic advisor) before the last clip ends or (manual tools) while the speech plays.</summary>
 	public bool IsDrawn => !disposed && ModelShown && (clock == null || speechStart == null ? IsSpeaking : speechStart.Value.Within( clock(), DrawnSpanMilliseconds ));
@@ -362,6 +368,8 @@ internal sealed class Advisor : IDisposable
 		if ( (costume.Hat == -1 || costume.SecondHat == -1) && level != null && !themes.TryGetValue( level, out theme! ) )
 			themes[level] = theme = AdvisorThemeCostume.Load( FileSystem, level );
 		costumeHidden.Clear();
+		sequenceHidden.Clear();
+		startedClipIndex = -1;
 		if ( response != null && clock != null )
 		{
 			var now = clock();
@@ -393,6 +401,15 @@ internal sealed class Advisor : IDisposable
 	{
 		if ( disposed || clock == null || speechStart is not { } start )
 			return;
+		// A clip whose accessory bits are exactly the key effect plays its sound as it starts (the accessory update runs once per clip start).
+		if ( Sequence?.AccessoryBits is { } accessoryBits && clipDurations != null
+			&& AdvisorTimeline.At( Sequence, clipDurations, unchecked((uint)(clock() - start.RequestMilliseconds)) ) is { } playing && playing.Index != startedClipIndex )
+		{
+			for ( var index = startedClipIndex + 1; index <= playing.Index; index++ )
+				if ( index < accessoryBits.Count && (accessoryBits[index] & AdvisorAccessories.EffectBits) == AdvisorAccessories.KeyEffectBit )
+					PlayUiSound( AdvisorAccessories.KeySound );
+			startedClipIndex = playing.Index;
+		}
 		// The sequence timer fires once while the response is current (a kill clears the request, so a cut-off response never fires it).
 		if ( !timerFired && Sequence?.TimerMilliseconds is { } timer && start.TimerDue( clock(), timer ) )
 		{
@@ -537,7 +554,7 @@ internal sealed class Advisor : IDisposable
 		var (worlds, hidden, clip, tick) = CurrentPose();
 		foreach ( var part in rig.Parts )
 		{
-			if ( hidden.Contains( part.NodeIndex ) || Mouths.Contains( part.Name ) && part.Name != shownMouth )
+			if ( hidden.Contains( part.NodeIndex ) || Mouths.Contains( part.Name ) && (part.Name != shownMouth || MouthSuppressed) )
 				continue;
 			rig.Write( part, worlds[part.NodeIndex], clip, tick );
 			part.Material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
@@ -565,6 +582,7 @@ internal sealed class Advisor : IDisposable
 		ModelAnimation? clip = null;
 		var tick = 0f;
 		var clipNumber = 0;
+		var clipIndex = -1;
 		var sampledTick = 0f;
 		var bits = 0;
 		var worlds = rig.Rest;
@@ -576,13 +594,22 @@ internal sealed class Advisor : IDisposable
 			bits = Sequence.AccessoryBits is { } list && position.Index < list.Count ? list[position.Index] : 0;
 			worlds = rig.Pose( position.Clip, tick );
 			clipNumber = position.Clip;
+			clipIndex = position.Index;
 			sampledTick = rig.SampledTick;
 		}
-		if ( !costumeHidden.TryGetValue( bits, out var accessories ) )
+		HashSet<int>? accessories;
+		if ( clipNumber != 0 )
+		{
+			if ( !sequenceHidden.TryGetValue( clipIndex, out accessories ) )
+				sequenceHidden[clipIndex] = accessories = AdvisorAccessories.SequenceHiddenNodes( rig.Nodes, Sequence!, clipDurations!, rig.Clip, costume, theme, clipIndex );
+		}
+		else if ( !costumeHidden.TryGetValue( bits, out accessories ) )
 			costumeHidden[bits] = accessories = AdvisorAccessories.CostumeHiddenNodes( rig.Nodes, costume, theme, bits );
 		hiddenScratch.Clear();
 		hiddenScratch.UnionWith( accessories );
 		AdvisorAccessories.ApplyToggles( rig.Nodes, hiddenScratch, clip, tick );
+		// [BIN:TPW-EXE:0x00599BA3 mouth update] with bit 0x10000 the mouth update shows no mouth (0x598DC0 hid all five at the clip start)
+		MouthSuppressed = (bits & AdvisorAccessories.SuppressCostumeBit) != 0;
 		return (worlds, hiddenScratch, clipNumber, sampledTick);
 	}
 

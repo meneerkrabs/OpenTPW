@@ -47,9 +47,10 @@ for every sound type (`0x5575c7` on; tp.exe):
   (`0x5575e5`). OpenTPW used to fall back to flat.
 
 Headless runtimes (no placement) and a nonfinite result keep the flat path. Types 0, 1, 2 and 10 never
-sample an audio origin or produce sound through this route. AUDIO-908 narrows what is left: the
-original passes integers and the footprint middle's height is the model's `+0x44` field; OpenTPW keeps
-floats and the object's base height.
+sample an audio origin or produce sound through this route. The dispatcher truncates the three
+coordinates to whole units before the submit (`__ftol` in `0x5573d0`, as the REPAIREFFECT sounds do), and
+OpenTPW does the same; the footprint middle's height is the root node's `+0x44`, the object's own height
+that `0x556a80` also reads, which is the base height here (AUDIO-908 is retired).
 
 The flag `0x8` loop applies to every one-shot, positioned or flat (the loop test `0x6bc621` follows both
 branches; AUDIO-019 is retired), so formerly flat placed calls loop too. Returned loop voices belong to

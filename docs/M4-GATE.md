@@ -108,7 +108,7 @@ removed. Nothing else can be done: OpenTPW has no track builder.
 - **W, the use window ([APPROX:GATEM4-001]).** A working attraction admits a queued
   guest within W, releases a boarded guest within W, and after closing releases its
   riders within W. W = 5 simulated minutes (18,000 ticks; one simulated minute is
-  3,600 fixed ticks, GATE-001). No traced bound on a ride cycle exists yet (BOARD-plan
+  3,600 fixed ticks, EXT:m3-gate-minute). No traced bound on a ride cycle exists yet (BOARD-plan
   traced BOUNCE only); W is far above every cycle the baseline completed (the slowest,
   The Aerotron's, took 4,811 ticks from boarding to release). Each window starts at
   its own event (first queued guest, first boarding, closing), so a late boarding is

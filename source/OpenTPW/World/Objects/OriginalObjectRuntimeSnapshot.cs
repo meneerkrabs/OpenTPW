@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -62,6 +64,16 @@ public sealed record OriginalObjectRuntimeSnapshot
 	public IReadOnlyList<ParticleObjectRecord>? ParticleObjects { get; init; }
 	/// <summary>The pool handle of the repair effect REPAIREFFECT 1 started (the original keeps it at the script's +0xCC), or 0 when none is live; older saves have none.</summary>
 	public int RepairParticle { get; init; }
+	/// <summary>
+	/// The ride words the settings setters wrote (SPEED <c>+0x58</c>, CAPACITY <c>+0x5d</c>, DURATION <c>+0x5c</c>), each null while it holds the catalogue
+	/// tier's value; older saves have none. The script's bias and variables 2 and 3 come back with the script's own snapshot.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public int? RideSpeed { get; init; }
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public int? RideCapacity { get; init; }
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public int? RideDuration { get; init; }
 	/// <summary>Whether the script's own view of its scream handle is set (the scream diagnostics follow it, with or without audio); null in older saves, which fall back to <see cref="HeldScream"/>.</summary>
 	public bool? ScriptHoldsScream { get; init; }
 
@@ -99,6 +111,8 @@ public sealed record OriginalObjectRuntimeSnapshot
 			throw new InvalidDataException( "runtime snapshot has a negative scream-chain count." );
 		if ( ParticleObjects != null && ( ParticleObjects.Count > MaximumParticleObjects || ParticleObjects.Any( record => record == null || record.Handle == 0 ) ) )
 			throw new InvalidDataException( "runtime snapshot has too many or malformed particle object records." );
+		if ( RideSpeed is < 0 or > short.MaxValue || RideCapacity is < 0 or > byte.MaxValue || RideDuration is < 0 or > byte.MaxValue )
+			throw new InvalidDataException( "runtime snapshot has a ride setting word outside its range (speed 0..32767, capacity and duration 0..255)." );
 		if ( StoppedScriptFault != null && ( !Stopped || !HasScript ) )
 			throw new InvalidDataException( "runtime snapshot carries a stopped script fault without a stopped scripted runtime." );
 	}

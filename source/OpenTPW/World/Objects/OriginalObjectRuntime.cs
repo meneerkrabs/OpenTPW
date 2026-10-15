@@ -77,10 +77,11 @@ public sealed partial class OriginalObjectRuntime
 				ResolveScript = ResolveChildScript
 			} );
 			// Upgrade level 0 values from the .sam layers.
-			// [DATA:<object>.sam:Upgrades[0].InitCapacity]
-			SetVariable( nameof( RideVariables.VAR_CAPACITY ), entry.InitialCapacity );
+			// [BIN:TPW-EXE:0x4db54f ride init capacity] [DATA:<object>.sam:Upgrades[0].InitCapacity] written only when above 0, through the capacity setter 0x4dd7f0 (its low byte clamped to UsageInfo.MinCapacity..MaxCapacity when the two sum above 0) into script variable 2 and ride +0x5d
+			if ( entry.InitialCapacity > 0 )
+				SetVariable( nameof( RideVariables.VAR_CAPACITY ), ClampCapacity( entry.Settings, entry.InitialCapacity ) );
 			var level0 = entry.Upgrades.FirstOrDefault( level => level.Level == 0 );
-			// [BIN:TPW-EXE:0x4db565 ride init duration] [DATA:<object>.sam:Upgrades[0].InitDuration] written only when above 0: the low byte, clamped to [UsageInfo.MinDuration, UsageInfo.MaxDuration] (type +0x12c/+0x130), into script variable 3 and ride +0x5c; DurationUnit is never read. The same clamp runs at ride settings (0x4dd720) and upgrade (0x4df8f0).
+			// [BIN:TPW-EXE:0x4db565 ride init duration] [DATA:<object>.sam:Upgrades[0].InitDuration] written only when above 0: the low byte, clamped to [UsageInfo.MinDuration, UsageInfo.MaxDuration] (type +0x12c/+0x130), into script variable 3 and ride +0x5c; DurationUnit is not read here (the ride window reads it, 0x4af030). The same clamp runs at ride settings (0x4dd720) and upgrade (0x4df8f0).
 			if ( ClampInitDuration( entry.Settings, level0?.GetInt( "InitDuration" ) ?? 0 ) is { } duration )
 				SetVariable( nameof( RideVariables.VAR_DURATION ), duration );
 			// [BIN:TPW-EXE:0x4db51c ride init speed] [DATA:<object>.sam:Upgrades[0].InitSpeed] the script speed bias, written only when above 0 (setter 0x55a300).
@@ -307,7 +308,10 @@ public sealed partial class OriginalObjectRuntime
 			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null,
 			ParticleObjects = CaptureParticleObjects(),
 			RepairParticle = CaptureRepairParticle(),
-			ScriptHoldsScream = effects.ScriptHoldsScream
+			ScriptHoldsScream = effects.ScriptHoldsScream,
+			RideSpeed = speedWord,
+			RideCapacity = capacityWord,
+			RideDuration = durationWord
 		};
 	}
 
@@ -358,6 +362,7 @@ public sealed partial class OriginalObjectRuntime
 		RestoreParticleObjects( snapshot.Stopped ? null : snapshot.ParticleObjects );
 		RestoreRepairParticle( snapshot.Stopped ? 0 : snapshot.RepairParticle );
 		effects.ScriptHoldsScream = snapshot.ScriptHoldsScream ?? snapshot.HeldScream;
+		RestoreSettingWords( snapshot.RideSpeed, snapshot.RideCapacity, snapshot.RideDuration );
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
 		unresolvedAnimations.Clear();

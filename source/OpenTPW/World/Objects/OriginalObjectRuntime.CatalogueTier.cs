@@ -22,7 +22,7 @@ public sealed partial class OriginalObjectRuntime
 		reason = "";
 		if ( !SupportsCatalogueTier ) reason = "catalogue tier binding supports ordinary scripted Theme Park World rides only";
 		else if ( stopped || Script is { State: RideVMState.Faulted } ) reason = "the owning runtime is stopped or faulted";
-		else if ( !ReferenceEquals( Visitors.Parameters, catalogueParameters ) || Visitors.Capacity != catalogueFallbackCapacity ) reason = "the runtime has custom queue/default parameters";
+		else if ( !ReferenceEquals( Visitors.Parameters, PublishedParameters ) || Visitors.Capacity != catalogueFallbackCapacity ) reason = "the runtime has custom queue/default parameters";
 		return reason.Length == 0;
 	}
 
@@ -56,8 +56,9 @@ public sealed partial class OriginalObjectRuntime
 		{ reason = "the script is missing the common CAP/DUR seed variables"; return false; }
 		if ( !ResolveCatalogueTier( tier, out var row, out var parameters, out reason ) ) return false;
 		ApplyCatalogueMetadata( tier, row, parameters );
-		// The same CAP/DUR/SPEED initialization as the constructor: DUR is the clamped low byte (0x4df8f0), written when above 0.
-		SetVariable( nameof( RideVariables.VAR_CAPACITY ), row.GetInt( "InitCapacity" ) );
+		// The same CAP/DUR/SPEED initialization as the constructor: CAP and DUR are the clamped low bytes (0x4dd7f0, 0x4db565), each written when above 0.
+		if ( row.GetInt( "InitCapacity" ) is > 0 and var capacity )
+			SetVariable( nameof( RideVariables.VAR_CAPACITY ), ClampCapacity( Entry.Settings, capacity ) );
 		if ( ClampInitDuration( Entry.Settings, row.GetInt( "InitDuration" ) ) is { } duration )
 			SetVariable( nameof( RideVariables.VAR_DURATION ), duration );
 		if ( row.GetInt( "InitSpeed" ) is > 0 and var speed )
@@ -77,15 +78,16 @@ public sealed partial class OriginalObjectRuntime
 		ApplyCatalogueMetadata( tier, row, parameters );
 		// [BIN:TPW-EXE:0x4df8f0 upgrade completion speed] completing an upgrade sets the script speed bias to the new level's InitSpeed (Upgrades[level] at def+0x180+level·0x40, +0x28) when above 0, the same three steps as the ride-settings setter 0x4dd6e0 (bias 0x55a300, ride+0x58, log line); the same routine sets capacity from +0x198 (0x4dd7f0) and duration from +0x1a0 (QUEUE-011 keeps those authored)
 		if ( completion && row.GetInt( "InitSpeed" ) is > 0 and var speed )
-			Script!.SpeedBias = speed;
+			SetSpeed( speed );
 		return true;
 	}
 
 	private void ApplyCatalogueMetadata( int tier, ObjectUpgradeLevel row, QueueParameters parameters )
 	{
 		Visitors.SetCatalogueFallbackCapacity( row.GetInt( "InitCapacity" ) );
-		Visitors.Parameters = parameters;
 		catalogueParameters = parameters;
+		// the ride words a setter wrote stay over the tier's values (a restored binding keeps the saved settings)
+		PublishSettingWords();
 		catalogueFallbackCapacity = Visitors.Capacity;
 		catalogueInitialized = true;
 		CatalogueTier = tier;
@@ -96,7 +98,7 @@ public sealed partial class OriginalObjectRuntime
 	{
 		reason = "";
 		if ( !SupportsCatalogueTier ) return true;
-		if ( !ReferenceEquals( Visitors.Parameters, catalogueParameters ) || Visitors.Capacity != catalogueFallbackCapacity )
+		if ( !ReferenceEquals( Visitors.Parameters, PublishedParameters ) || Visitors.Capacity != catalogueFallbackCapacity )
 			reason = "custom catalogue parameters cannot be reconstructed from the existing snapshot";
 		else if ( economyTier < 0 || (CatalogueTier ?? 0) != economyTier )
 			reason = "the live catalogue defaults do not match the saved economy tier";

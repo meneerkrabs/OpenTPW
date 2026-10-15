@@ -108,8 +108,6 @@ public sealed partial class ParkHud
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.ResearchLab], Font = fonts => fonts.Title,
 			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = Rect( 866, 67, 1338, 146 ), Anchor = UiAnchor.Center } );
 		Model( "workload", "effort", Rect( 234, 148, 464, 968 ) );
-		// [APPROX:UI-064] The table supplies the workload knob's initial rectangle and travel inset.
-		// The current percentage is shown with linear travel; the original mapping is untraced.
 		screen.Add( new ResearchWorkloadKnob( this ) { Id = "workloadKnob",
 			Bounds = Rect( 267, 220, 334, 701 ), Anchor = UiAnchor.Center } );
 		Model( "cameo", "cameo", Rect( 262, 760, 438, 936 ) );
@@ -176,26 +174,79 @@ public sealed partial class ParkHud
 		}
 	}
 
+	/// <summary>The workload knob's slider range: its value runs from 1023 at the top to 0 at the bottom (tp.exe 0x4aa634).</summary>
+	public const int WorkloadKnobRange = 1023;
+	/// <summary>The lowest and highest research workload the knob sets (tp.exe 0x4a96b0: 70 + 30 × value / limit).</summary>
+	public const int MinimumKnobWorkload = 70, MaximumKnobWorkload = 100;
+
+	/// <summary>
+	/// The highest knob value the researchers allow: ((100 - c) / 3 + c) × 1024 / (MaxResearchersInPark × the grade-4 ResearchAbility), c being the summed
+	/// ResearchAbility of the park's researchers, in integers.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4aac80 research window] the builder stores 0x4c9ed0 (MaxResearchersInPark 0x7852f8 × ResearcherConstsPerGrade[4].ResearchAbility 0x78548c) to 0x7cc1b4 and
+	// 0x4c9e60 (the researchers' ResearchAbility by grade +0x1e4, summed) to 0x7cc1c8, sets child 0xd2d12 to the limit ((100 - c) / 3 + c) × 1024 / 0x7cc1b4 and the knob 0xd2d10 to
+	// (workload - 70) × limit / 30 (0x4aacce-0x4aad3e); message 0x1e repeats this when the sum changes (0x4a97e6)
+	public static int WorkloadKnobLimit( int abilitySum, int maximumResearchers, int topAbility )
+	{
+		var divisor = maximumResearchers * topAbility;
+		return divisor <= 0 ? WorkloadKnobRange : ((100 - abilitySum) / 3 + abilitySum) * 1024 / divisor;
+	}
+
+	/// <summary>The workload a knob value sets: a value above the limit is pulled back to it, then 70 + 30 × value / limit.</summary>
+	// [BIN:TPW-EXE:0x4a985b workload knob] on a change (message 0x800 from 0xd2d10) a value above the limit is set back to the limit and the workload becomes 70 + value × 30 / limit (0x503900)
+	public static int WorkloadFromKnob( int value, int limit )
+	{
+		if ( limit <= 0 )
+			return MaximumKnobWorkload;
+		value = Math.Clamp( value, 0, Math.Min( limit, WorkloadKnobRange ) );
+		return MinimumKnobWorkload + value * 30 / limit;
+	}
+
+	/// <summary>The knob value that shows <paramref name="workload"/>: (workload - 70) × limit / 30 within the slider's range.</summary>
+	public static int KnobFromWorkload( int workload, int limit ) => Math.Clamp( (workload - MinimumKnobWorkload) * limit / 30, 0, WorkloadKnobRange );
+
+	/// <summary>The knob ball's top in table units for a knob value: the slider class's top + (1023 - value) × (481 - 67) / 1023.</summary>
+	// [BIN:TPW-EXE:0x66b088 slider ball] the ball's top is top + (min - value) × (height - ball height) / (min - max) in integers; the knob's range is min 1023, max 0 (0x66b47d at 0x4aa63a)
+	public static float WorkloadKnobTop( int value ) => 220 + (WorkloadKnobRange - Math.Clamp( value, 0, WorkloadKnobRange )) * (701 - 220 - 67) / WorkloadKnobRange;
+
+	/// <summary>The knob value for a ball centred at the authored height <paramref name="y"/>: the distance of the ball's bottom above the track's, truncated.</summary>
+	public static int KnobValueAt( float y )
+	{
+		var above = Math.Clamp( 701 - (y + 67 / 2f), 0, 701 - 220 - 67 );
+		return (int)MathF.Floor( above * WorkloadKnobRange / (701 - 220 - 67) + 1e-4f );
+	}
+
+	private int WorkloadLimit()
+	{
+		if ( ResearchEconomy is not { } economy )
+			return WorkloadKnobRange;
+		var abilities = economy.Settings.ResearchAbility;
+		var sum = economy.Staff.OfType( StaffType.Researcher ).Sum( member => abilities[Math.Clamp( member.Grade, 0, abilities.Count - 1 )] );
+		return WorkloadKnobLimit( sum, economy.Settings[StaffType.Researcher].MaximumInPark, abilities[^1] );
+	}
+
 	private sealed class ResearchWorkloadKnob : UiElement, IUiDragTarget
 	{
 		private readonly ParkHud owner;
 		public ResearchWorkloadKnob( ParkHud owner ) => this.owner = owner;
 		public override bool Focusable => Visible && Enabled;
+		// [EXT:ui-key-navigation] the arrow keys move the workload one point within the knob's 70..100
 		public override void Adjust( int direction ) => TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit,
-			(owner.ResearchEconomy?.Research.Workload ?? 0) + direction );
+			Math.Clamp( (owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload) + direction, MinimumKnobWorkload, MaximumKnobWorkload ) );
+		// [BIN:TPW-EXE:0x66afe5 vertical slider drag] the value is read back from the ball: trunc((bottom - ball bottom) × (min - max) / (height - ball height)) + max
+		// [APPROX:UI-064] the ball centres on the pointer during a drag (where the slider class places it is not read); the value's meaning, its limit and the ball's travel are the original's
 		public void DragTo( UiCanvas canvas, NVector2 point )
 		{
 			if ( !Enabled ) return;
 			var rect = ScreenRect( canvas );
 			if ( rect.Height <= 0 ) return;
 			var y = Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
-			TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit,
-				(int)MathF.Round( (1 - (y - 220 - 33.5f) / (701 - 220 - 67)) * 100 ) );
+			TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit, WorkloadFromKnob( KnobValueAt( y ), owner.WorkloadLimit() ) );
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
-			var workload = owner.ResearchEconomy?.Research.Workload ?? 0;
-			var top = 220 + (701 - 220 - 67) * (1 - workload / 100f);
+			var workload = owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload;
+			var top = WorkloadKnobTop( KnobFromWorkload( workload, owner.WorkloadLimit() ) );
 			context.DrawModel( "b_scroller", owner.ResearchEconomy == null ? UiButton.DisabledFrame : UiButton.NormalFrame,
 				context.Canvas.Map( Rect( 267, top, 334, top + 67 ), Anchor ) );
 		}

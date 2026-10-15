@@ -78,4 +78,31 @@ public class UiRegisterReadTests
 		// tp.exe 0x4abae0 sets gauge 0x1f0 to 100 of 1024 when the window is built; 0x4abb00 never updates it
 		Assert.AreEqual( 100f / 1024f, ParkHud.RideWorkingLifeGauge, 1e-7f );
 	}
+
+	[TestMethod]
+	public void TheWorkloadKnobSetsSeventyToAHundredWithinTheResearchersLimit()
+	{
+		// tp.exe 0x4aac80: limit ((100 - c) / 3 + c) × 1024 / (MaxResearchersInPark × top ability); 0x4a96b0: 70 + 30 × value / limit
+		Assert.AreEqual( 33 * 1024 / 60, ParkHud.WorkloadKnobLimit( 0, 10, 6 ), "no researchers" );
+		Assert.AreEqual( (97 / 3 + 3) * 1024 / 60, ParkHud.WorkloadKnobLimit( 3, 10, 6 ) );
+		var limit = ParkHud.WorkloadKnobLimit( 0, 10, 6 );
+		Assert.AreEqual( 70, ParkHud.WorkloadFromKnob( 0, limit ) );
+		Assert.AreEqual( 100, ParkHud.WorkloadFromKnob( 1023, limit ), "a value above the limit is pulled back to it" );
+		Assert.AreEqual( 70 + 300 * 30 / limit, ParkHud.WorkloadFromKnob( 300, limit ) );
+		Assert.AreEqual( 15 * limit / 30, ParkHud.KnobFromWorkload( 85, limit ) );
+		Assert.AreEqual( 0, ParkHud.KnobFromWorkload( 40, limit ), "a saved workload below 70 shows at the bottom" );
+		Assert.AreEqual( 1023, ParkHud.KnobFromWorkload( 100, 2000 ), "the knob stays on its slider" );
+		Assert.AreEqual( 97, ParkHud.WorkloadFromKnob( 1023, 1100 ), "a limit beyond the slider cannot reach 100" );
+	}
+
+	[TestMethod]
+	public void TheWorkloadKnobBallRunsDownwardsWithTheValue()
+	{
+		// tp.exe 0x66b088 with min 1023, max 0: top + (1023 - value) × 414 / 1023; 0x66afe5 reads it back truncated
+		Assert.AreEqual( 220f, ParkHud.WorkloadKnobTop( 1023 ) );
+		Assert.AreEqual( 701f - 67f, ParkHud.WorkloadKnobTop( 0 ) );
+		Assert.AreEqual( 1023, ParkHud.KnobValueAt( 220 + 33.5f ) );
+		Assert.AreEqual( 0, ParkHud.KnobValueAt( 701 - 33.5f ) );
+		Assert.AreEqual( 1023, ParkHud.KnobValueAt( 0 ), "the pointer above the track takes the top" );
+	}
 }

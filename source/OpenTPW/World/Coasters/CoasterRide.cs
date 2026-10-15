@@ -271,7 +271,7 @@ public sealed class CoasterRide
 		roll = 0;
 		if ( !IsOperational || train < 0 || train >= trains.Count )
 			return false;
-		var sample = SampleAt( trains[train].Position );
+		var sample = SampleAt( CarCoordinate( trains[train], 0 ) );
 		(position, forward, roll) = (sample.Position, sample.Direction, sample.Bank);
 		return true;
 	}

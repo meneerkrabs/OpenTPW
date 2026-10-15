@@ -250,6 +250,17 @@ and station. A circuit that overflows the section, collision-object or buoy pool
 (TRACK-020). A controller counts as live while its runtime is not stopped and it is in the park's controller list; the park-resume capture and restore both use that
 one rule, so a faulted or removed ride is skipped by both.
 
+**One module for every ride** (TRACK-019 narrowed, `0x546C80`). The bump module is the park's (`BumpWorld`): one frame counter (`0x877B5C`) that the 32-tick gates of every
+controller read, one vehicle pool of 256 (`0x877B68`, first free record, `0x549DB0`) whose live vehicles are stepped and integrated in pool order and then collided with every
+other live vehicle of the pool whichever ride owns them (the restitution is the other vehicle's controller's, the crash code the vehicle's own type), one collision-object pool of
+2048 (`0x877B70`, first free record, `0x54B1E0`) that every object search walks in pool order (the station drop, the steering's target and route, the walls and the
+keep-out circles), so a vehicle can enter a neighbouring ride's object (`BumpVehicle.ObjectOwner`), and the buoy budget of 1024 (`0x54B170`) counted over every ride. A circuit or arena
+that does not fit the shared pools is refused like an overflowing one. The module ticks once per world step where the first controller's ride advances. Saves carry the frame
+counter and clock (`TrackWorldSaveData.FrameCount`, `TickRemainder`), each controller's object pool slots (`ObjectSlots`) and a vehicle's foreign object (`ObjectAttraction`), all optional:
+an older save takes the first controller's clock, the slots the restore gives and no foreign object. A vehicle's `Slot` is its module pool slot (an older save whose rides
+used the same slot gets the first free one). Open (TRACK-019): the tick's place among the rides' script steps, an older save's pool order, and the bumper cars' chase and drop-in
+tests, which still read their own ride's cars.
+
 ## Saves and determinism
 
 The envelope's optional `Tracks` part holds the cell layer, every controller (scalars, tick clock, waiting and leaving guests, the sections for

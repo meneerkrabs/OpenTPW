@@ -313,7 +313,10 @@ public partial class Level
 		if ( controllers.Count - legacy.Count != saved.Controllers.Count )
 			throw new InvalidDataException( $"The save holds {saved.Controllers.Count} track controllers, but this park places {controllers.Count - legacy.Count} rides that need one." );
 		MigrateLegacyKarts( legacy );
-		Objects.ScriptWorld.Bumpers.CosmeticState = saved.CosmeticState;
+		var module = Objects.ScriptWorld.Bumpers;
+		module.CosmeticState = saved.CosmeticState;
+		module.FinishRestore( saved.FrameCount, saved.TickRemainder, saved.Controllers
+			.Select( entry => (controllers.First( item => item.Runtime.AttractionId == entry.AttractionId ).Runtime.Bump!, (IReadOnlyList<int>?)entry.ObjectSlots) ).ToList() );
 	}
 
 	/// <summary>Lays the station tiles of kart rides that an older save carried without a controller and walks their (empty) circuit.</summary>

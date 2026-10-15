@@ -7,7 +7,7 @@ namespace OpenTPW;
 /// −7, −9, −10: the grid start, the race, the finish and the kart effects) and bumper cars (types −1, −6, −11, −14: cars that wander an arena
 /// and hand their riders over when the session's countdown ends); the add-on handler 0x00548E80 (jumps, tunnels) is TRACK-008.
 /// </summary>
-// [APPROX:TRACK-019] the original's vehicle pass, object searches and pool limits (2048 objects, 1024 buoys, 256 boats) are module-wide and its 32-tick gates use one module frame counter (0x877B5C, [BIN:TPW-EXE:0x546C80]); OpenTPW runs them per controller, so vehicles of different rides never collide (reachable for the karts of adjacent circuits), the gates' phase depends on the controller's creation and the pool limits count per ride — evidence needed: a BumpWorld-level tick that steps every controller's vehicles in one pool
+// [APPROX:TRACK-019] the shared pools are allocated first-free as the original's, but their order after a park-resume restore of a save from before the shared pools follows the restore (controllers by attraction id), the module ticks where the first controller's ride advances (the rides placed before it run their script step first; the original ticks the module before every script), and the bumper cars' chase candidates and drop-in overlap test still read their own ride's cars
 
 public sealed class BumpController
 {
@@ -36,12 +36,12 @@ public sealed class BumpController
 
 	private readonly Func<uint> worldRandom;
 	private readonly BumpWorld? world;
-	private readonly BumpVehicle?[] slots = new BumpVehicle?[VehiclePool];
+	/// <summary>The module this controller ticks in: its world, or one of its own for a controller made without a world.</summary>
+	private readonly BumpWorld module;
 	private readonly List<BumpVehicle> vehicles = new();
 	private List<TrackSection> sections = new();
 	private List<CollisionObject> objects = new();
 	private List<Buoy> buoys = new();
-	private double tickRemainder;
 
 	/// <param name="template">The controller type's template.</param>
 	/// <param name="worldRandom">The world generator the aiming jitter draws from (the original's 0x516330).</param>
@@ -51,6 +51,9 @@ public sealed class BumpController
 		Template = template ?? throw new ArgumentNullException( nameof( template ) );
 		this.worldRandom = worldRandom ?? throw new ArgumentNullException( nameof( worldRandom ) );
 		this.world = world;
+		// the controller ticks in its module from its creation (a ride's runtime adds it to the park's module, a test's controller to its own world)
+		module = world ?? new BumpWorld();
+		module.Add( this );
 		Laps = template.Laps;
 		Performance = template.DefaultPerformance;
 		ApplyPerformance();
@@ -101,8 +104,11 @@ public sealed class BumpController
 	public bool IsTrackValid { get; private set; }
 	/// <summary>The water pieces' animation state set by BUMP 17: true while they run (animation 5), false when stopped (animation 12).</summary>
 	public bool WaterRunning { get; private set; } = true;
-	/// <summary>The module tick counter (the original's global at 0x877B5C, gating the cosmetic effects every 32nd tick).</summary>
+	/// <summary>The module ticks this controller has run (statistics; the 32-tick gates read the module's frame counter, <see cref="BumpWorld.FrameCount"/>).</summary>
 	public long TickCount { get; internal set; }
+
+	/// <summary>The module the controller ticks in (its world, or its own).</summary>
+	public BumpWorld Module => module;
 	public IReadOnlyList<TrackSection> Sections => sections;
 	public IReadOnlyList<CollisionObject> Objects => objects;
 	public IReadOnlyList<Buoy> Buoys => buoys;
@@ -186,28 +192,70 @@ public sealed class BumpController
 			x = (nx + ((nx >> 31) & 0xFF)) >> 8;
 			y = (ny + ((ny >> 31) & 0xFF)) >> 8;
 		}
+		// [BIN:TPW-EXE:0x00545890 bumper arena] the circle and the ring come from the module's object and buoy pools
+		if ( !PlaceInModule( new List<CollisionObject> { circle }, ring.Count ) )
+		{
+			Log?.Warning( "The bumper arena does not fit the module's object or buoy pool." );
+			ring.Clear();
+		}
 		sections = new List<TrackSection>();
-		objects = new List<CollisionObject> { circle };
 		buoys = ring;
 		FirstAfterFinish = null;
 		foreach ( var vehicle in vehicles )
-			vehicle.ObjectIndex = 0;
+		{
+			vehicle.ObjectIndex = objects.Count > 0 ? 0 : -1;
+			vehicle.ObjectOwner = null;
+		}
+	}
+
+	/// <summary>
+	/// Puts this controller's new collision objects into the module's pool (the old ones freed first) when they and <paramref name="buoyCount"/> buoys fit the shared
+	/// pools; else the controller keeps no objects and the call answers false. Vehicles of other rides that sat in the old objects lose their object.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0054B1E0 object pool] 2048 records for every ride of the park; [BIN:TPW-EXE:0x0054B170 buoy pool] 1024 ("Out of Buoys")
+	private bool PlaceInModule( List<CollisionObject> fresh, int buoyCount )
+	{
+		foreach ( var other in module.Controllers )
+		{
+			if ( other == this )
+				continue;
+			foreach ( var vehicle in other.vehicles )
+			{
+				if ( vehicle.ObjectOwner == this )
+				{
+					vehicle.ObjectIndex = -1;
+					vehicle.ObjectOwner = null;
+				}
+			}
+		}
+		var placed = module.BuoyCount - buoys.Count + buoyCount <= BumpWorld.BuoyPool && module.PlaceObjects( this, fresh );
+		if ( !placed )
+		{
+			module.PlaceObjects( this, Array.Empty<CollisionObject>() );
+			objects = new List<CollisionObject>();
+			return false;
+		}
+		objects = fresh;
+		return true;
 	}
 
 	private void RebuildStationOnly()
 	{
 		var result = TrackSections.Build( Array.Empty<TrackStep>(), Template.Slack, CloneStation(), IsWater );
-		Adopt( result );
+		if ( !Adopt( result ) )
+			Log?.Warning( "The track station does not fit the module's object or buoy pool." );
 	}
 
 	private IReadOnlyList<Buoy> CloneStation() => stationBuoys.Select( buoy => new Buoy { Flags = buoy.Flags, X = buoy.X, Y = buoy.Y } ).ToArray();
 
-	private void Adopt( TrackSections.Result result )
+	/// <summary>Takes a built circuit; false when its objects or buoys overflow the module's shared pools (the controller then holds no objects and no buoys).</summary>
+	private bool Adopt( TrackSections.Result result )
 	{
+		var fits = PlaceInModule( result.Objects.ToList(), result.Buoys.Count );
 		sections = result.Sections.ToList();
-		objects = result.Objects.ToList();
-		buoys = result.Buoys.ToList();
+		buoys = fits ? result.Buoys.ToList() : new List<Buoy>();
 		FirstAfterFinish = FindFirstAfterFinish();
+		return fits;
 	}
 
 	/// <summary>
@@ -222,19 +270,20 @@ public sealed class BumpController
 		Close();
 		var result = TrackSections.Build( circuit.IsValid ? circuit.Steps : Array.Empty<TrackStep>(), Template.Slack, CloneStation(), IsWater );
 		// [EXT:track-pool-overflow-refused] a circuit that overflows the section, collision-object or buoy pool is not a ride: the walk's verdict is overridden to invalid and the geometry is dropped, so no boat runs on a partial track; the original skips sections silently when the section pool is full, crashes on a collision-object overflow (it logs "Out of Collision Objects" and writes the flags through a null pointer, [BIN:TPW-EXE:0x0054B1E0]) and drops buoys ("Out of Buoys")
-		if ( result.Truncated )
+		// the collision-object and buoy pools are the module's: a circuit that does not fit beside the other rides' is refused the same way
+		if ( result.Truncated || !Adopt( result ) )
 		{
 			Log?.Warning( $"A track circuit of {circuit.Steps.Count} tiles overflows the section pools; the ride is invalid." );
 			IsTrackValid = false;
 			Adopt( TrackSections.Build( Array.Empty<TrackStep>(), Template.Slack, CloneStation(), IsWater ) );
 		}
 		else
-		{
 			IsTrackValid = circuit.IsValid;
-			Adopt( result );
-		}
 		foreach ( var vehicle in vehicles )
+		{
 			vehicle.ObjectIndex = -1;
+			vehicle.ObjectOwner = null;
+		}
 	}
 
 	private Buoy? FindFirstAfterFinish()
@@ -489,16 +538,6 @@ public sealed class BumpController
 
 	// ---- Vehicles ----------------------------------------------------------------------------------
 
-	private int FreeSlot()
-	{
-		for ( var index = 0; index < slots.Length; index++ )
-		{
-			if ( slots[index] == null )
-				return index;
-		}
-		return -1;
-	}
-
 	/// <summary>BUMP 4: launches a boat at the station with the waiting guests aboard.</summary>
 	// [BIN:TPW-EXE:0x00549DB0 create vehicle] needs a running count below the type's maximum and 64, and a nonzero phase; the boat starts at the station reference with the controller's laps, takes the pending guests and is launched (0x0054A040)
 	public bool Launch()
@@ -509,16 +548,17 @@ public sealed class BumpController
 		// [EXT:late-kart-guard] a kart is refused while the race is over, where the original creates a kart that never moves and keeps the controller's count above 0 (its race never resets: a deadlock no shipped script reaches); OpenTPW does not reproduce the frozen kart
 		if ( Template.IsKart && Phase == PhaseOver )
 			return false;
-		var slot = FreeSlot();
+		// [BIN:TPW-EXE:0x00549DB0 create vehicle] the record comes from the module's pool of 256, shared by every ride: a full pool refuses the vehicle
+		var vehicle = new BumpVehicle { Flags = BumpVehicle.Live, X = StationX, Y = StationY, Radius = Template.VehicleRadius, Controller = this };
+		var slot = module.AllocateVehicle( vehicle );
 		if ( slot < 0 )
 			return false;
-		var vehicle = new BumpVehicle { Slot = slot, Flags = BumpVehicle.Live, X = StationX, Y = StationY, Radius = Template.VehicleRadius };
-		slots[slot] = vehicle;
+		vehicle.Slot = slot;
 		InsertSorted( vehicle );
 		vehicle.Flags |= BumpVehicle.Steerable;
 		VehicleCount++;
 		vehicle.Laps = Laps;
-		vehicle.ObjectIndex = FirstContaining( StationX, StationY )?.Index ?? -1;
+		SetObject( vehicle, FirstContaining( StationX, StationY ) );
 		vehicle.Riders.AddRange( Pending );
 		Pending.Clear();
 		vehicle.Flags |= BumpVehicle.FirstLaunch;
@@ -625,7 +665,7 @@ public sealed class BumpController
 			StopEngine( vehicle );
 		}
 		vehicle.Flags &= ~(BumpVehicle.Live | BumpVehicle.First);
-		slots[vehicle.Slot] = null;
+		module.FreeVehicle( vehicle );
 		vehicles.Remove( vehicle );
 		VehicleCount--;
 		if ( VehicleCount == 0 && !IsWater )
@@ -790,7 +830,7 @@ public sealed class BumpController
 	// the target is named by slot, as in the original (+0x80 is an index into the vehicle pool): a retired target ends the chase (its live flag is gone), but a car created into the freed slot within the 90 ticks is followed like the original follows it
 	private void ChaseStep( BumpVehicle vehicle )
 	{
-		var target = vehicle.ChaseTarget >= 0 && vehicle.ChaseTarget < slots.Length ? slots[vehicle.ChaseTarget] : null;
+		var target = module.VehicleAt( vehicle.ChaseTarget );
 		vehicle.BuoyCountdown--;
 		if ( vehicle.BuoyCountdown < 1 || target == null || (target.Flags & 0x40021) != 1 )
 		{
@@ -883,55 +923,45 @@ public sealed class BumpController
 	/// <summary>Advances the controller by <paramref name="deltaSeconds"/>: whole 31 ms ticks run, the rest carries over.</summary>
 	public void Advance( double deltaSeconds )
 	{
-		if ( !double.IsFinite( deltaSeconds ) || deltaSeconds <= 0 )
-			return;
-		tickRemainder += deltaSeconds;
-		while ( tickRemainder >= TickSeconds - 1e-9 )
-		{
-			tickRemainder = Math.Max( 0, tickRemainder - TickSeconds );
-			Tick();
-		}
+		module.Advance( this, deltaSeconds );
 	}
 
 	/// <summary>The fractional tick time left over (saved with the controller).</summary>
-	public double TickRemainder => tickRemainder;
+	public double TickRemainder => module.TickRemainder;
 
-	internal void RestoreTickRemainder( double remainder ) => tickRemainder = remainder;
+	internal void RestoreTickRemainder( double remainder ) => module.RestoreTickRemainder( remainder );
 
-	/// <summary>One physics tick (the original's per-vehicle update 0x00546C80): steering and integration, then collisions.</summary>
-	public void Tick()
+	/// <summary>One module tick (the original's 0x00546C80): every ride's vehicles of this controller's module are stepped, integrated and collided in one pass (<see cref="BumpWorld.Tick"/>).</summary>
+	public void Tick() => module.Tick();
+
+	/// <summary>The first half of a vehicle's module tick: its step (0x5474B0); <see cref="IntegrateVehicle"/> follows while it lives.</summary>
+	internal void StepVehicle( BumpVehicle vehicle ) => Step( vehicle );
+
+	internal void IntegrateVehicle( BumpVehicle vehicle ) => Integrate( vehicle );
+
+	/// <summary>The rest of a vehicle's module tick after its collisions: the stuck check, the walls, the keep-out circles and the effect player.</summary>
+	internal void FinishVehicle( BumpVehicle vehicle )
 	{
-		TickCount++;
-		// a boat that reaches the unload point retires itself during its own step, so the index only advances while the list still holds it there
-		for ( var index = 0; index < vehicles.Count; )
-		{
-			var vehicle = vehicles[index];
-			vehicle.Flags &= ~BumpVehicle.Crunched;
-			Step( vehicle );
-			if ( vehicle.IsLive )
-				Integrate( vehicle );
-			if ( index < vehicles.Count && vehicles[index] == vehicle )
-				index++;
-		}
-		// nothing below adds or removes boats, so the list is walked in place
-		foreach ( var vehicle in vehicles )
-		{
-			if ( !vehicle.IsLive )
-				continue;
-			if ( ((ObjectOf( vehicle )?.Flags ?? 0) & CollisionObject.Crossing) == 0 && (vehicle.Flags & 0x200) == 0 )
-			{
-				foreach ( var other in vehicles )
-					Collide( vehicle, other );
-			}
-			StuckCheck( vehicle );
-			KeepIn( vehicle );
-			KeepOut( vehicle );
-			if ( !IsWater )
-				PlayEffect( vehicle );
-		}
+		StuckCheck( vehicle );
+		KeepIn( vehicle );
+		KeepOut( vehicle );
+		if ( !IsWater )
+			PlayEffect( vehicle );
 	}
 
-	private CollisionObject? ObjectOf( BumpVehicle vehicle ) => vehicle.ObjectIndex >= 0 && vehicle.ObjectIndex < objects.Count ? objects[vehicle.ObjectIndex] : null;
+	/// <summary>The collision object a vehicle sits in: one of its own ride's, or another ride's (the searches are module-wide), or null.</summary>
+	internal static CollisionObject? ObjectOf( BumpVehicle vehicle )
+	{
+		var owner = vehicle.ObjectOwner ?? vehicle.Controller;
+		return owner != null && vehicle.ObjectIndex >= 0 && vehicle.ObjectIndex < owner.objects.Count ? owner.objects[vehicle.ObjectIndex] : null;
+	}
+
+	/// <summary>Records the object a vehicle sits in (null: none); an object of another ride is kept with its owner.</summary>
+	private static void SetObject( BumpVehicle vehicle, CollisionObject? item )
+	{
+		vehicle.ObjectIndex = item?.Index ?? -1;
+		vehicle.ObjectOwner = item?.Owner is { } owner && owner != vehicle.Controller ? owner : null;
+	}
 
 	// ---- Collision tests ---------------------------------------------------------------------------
 
@@ -953,9 +983,10 @@ public sealed class BumpController
 		return Math.Abs( dx ) <= item.Extent && Math.Abs( dy ) <= item.ExtentY;
 	}
 
+	// [BIN:TPW-EXE:0x005476FE module object search] every object search walks the module pool 0x877B70 (2048 records), whichever ride owns the objects
 	private CollisionObject? FirstContaining( int x, int y )
 	{
-		foreach ( var item in objects )
+		foreach ( var item in module.Objects )
 		{
 			if ( (item.Flags & CollisionObject.Used) != 0 && !item.IsKeepOut && Contains( x, y, item ) )
 				return item;
@@ -999,12 +1030,12 @@ public sealed class BumpController
 	{
 		CollisionObject? best = null;
 		var bestDistance = int.MaxValue;
-		foreach ( var item in objects )
+		foreach ( var item in module.Objects )
 		{
 			if ( (item.Flags & CollisionObject.Used) == 0 || item.IsKeepOut || !includeSelf && current == item || !Adjacent( current, item ) )
 				continue;
 			var (wx, wy) = Waypoint( item );
-			if ( objects.Any( other => (other.Flags & CollisionObject.Used) != 0 && other.IsKeepOut && Contains( wx, wy, other ) ) )
+			if ( module.Objects.Any( other => (other.Flags & CollisionObject.Used) != 0 && other.IsKeepOut && Contains( wx, wy, other ) ) )
 				continue;
 			var distance = BumpMath.Distance( item.X - x, item.Y - y );
 			if ( distance < bestDistance )
@@ -1208,7 +1239,7 @@ public sealed class BumpController
 				return;
 			}
 			if ( buoy.Object != null )
-				vehicle.ObjectIndex = buoy.Object.Index;
+				SetObject( vehicle, buoy.Object );
 			AimAtNext( vehicle, NextBuoy( buoy ) );
 		}
 		vehicle.Flags |= BumpVehicle.Retarget;
@@ -1289,7 +1320,7 @@ public sealed class BumpController
 		var roll = (vehicle.Spin + ((vehicle.Spin >> 31) & 0x7F)) >> 7;
 		vehicle.Roll = Math.Clamp( roll, -16, 16 );
 		// [BIN:TPW-EXE:0x005480B7 boat spray] the water branch of 0x547F50: in phase 2 on every 32nd module tick the cosmetic LCG gives (s >> 16) &amp; 7 == 2 and 0x521E60(0x60, …) raises particle 96 (P_EFFECT_SmallSplash) at the boat model's world position (0x5480B7..0x5480FC); the water types have no crash cue (absent from 0x546C80's switch), no horn and no smoke (node +0x24 stays −1), and their templates hold one model (base 0, count 1)
-		if ( Phase == PhaseRunning && (TickCount & 0x1F) == 0 && (world?.NextCosmetic() ?? 0) is var draw && ((draw >> 16) & 7) == 2 )
+		if ( Phase == PhaseRunning && (module.FrameCount & 0x1F) == 0 && (world?.NextCosmetic() ?? 0) is var draw && ((draw >> 16) & 7) == 2 )
 		{
 			vehicle.Sprays++;
 			Sprays++;
@@ -1314,7 +1345,7 @@ public sealed class BumpController
 	private void IntegrateKart( BumpVehicle vehicle )
 	{
 		var speed = vehicle.Speed;
-		if ( Phase == PhaseRunning && (TickCount & 0x1F) == 0 && speed > BumpEffects.TootSpeed && vehicle.EffectRequest == 0 )
+		if ( Phase == PhaseRunning && (module.FrameCount & 0x1F) == 0 && speed > BumpEffects.TootSpeed && vehicle.EffectRequest == 0 )
 			vehicle.EffectRequest = BumpEffects.RequestToot;
 		if ( speed <= BumpEffects.AnimationSpeed )
 		{
@@ -1329,7 +1360,7 @@ public sealed class BumpController
 			vehicle.Animation = 5;
 			Raise( BumpEffectKind.Animation, vehicle, 5 );
 		}
-		if ( Phase == PhaseRunning && State == StateWorn && (TickCount & 0x1F) == 0 && speed > BumpEffects.ExhaustSpeed && HasSparksNode )
+		if ( Phase == PhaseRunning && State == StateWorn && (module.FrameCount & 0x1F) == 0 && speed > BumpEffects.ExhaustSpeed && HasSparksNode )
 		{
 			var draw = ((world?.NextCosmetic() ?? 0) >> 16) & 7;
 			if ( draw < 2 )
@@ -1370,7 +1401,7 @@ public sealed class BumpController
 		}
 		else
 			vehicle.YawRate = 0;
-		if ( Phase == PhaseRunning && (vehicle.Flags & BumpVehicle.Steerable) != 0 && (TickCount & 0x1F) == 0 && HasSparksNode
+		if ( Phase == PhaseRunning && (vehicle.Flags & BumpVehicle.Steerable) != 0 && (module.FrameCount & 0x1F) == 0 && HasSparksNode
 			&& (((world?.NextCosmetic() ?? 0) >> 16) & 3) == 2 && Type != -1 && vehicle.EffectRequest == 0 )
 		{
 			Raise( BumpEffectKind.Particle, vehicle, BumpEffects.ParticleSparks );
@@ -1422,10 +1453,12 @@ public sealed class BumpController
 
 	/// <summary>Pushes <paramref name="vehicle"/> and <paramref name="other"/> apart when their circles overlap, exchanging momentum when they close in.</summary>
 	// [BIN:TPW-EXE:0x00546C80 vehicle collisions] closing (relative velocity within a quarter turn of the line between them): the normal part of the relative speed × the other's restitution goes to the other vehicle, the rest back to this one; otherwise they are pushed apart by the overlap, the other by its restitution share
-	private void Collide( BumpVehicle vehicle, BumpVehicle other )
+	// [BIN:TPW-EXE:0x00546DB0 shared pass] the pair loop runs over the whole module pool: the restitution is the other vehicle's controller's (+0x9C → +0x2C) and the crash code this vehicle's controller type, so vehicles of neighbouring rides push each other
+	internal void Collide( BumpVehicle vehicle, BumpVehicle other )
 	{
 		if ( other == vehicle || !other.IsLive || ((ObjectOf( other )?.Flags ?? 0) & CollisionObject.Crossing) != 0 || (other.Flags & 0x200) != 0 )
 			return;
+		var restitution = other.Controller?.Restitution ?? Restitution;
 		var dx = other.X - vehicle.X;
 		var dy = other.Y - vehicle.Y;
 		var reach = other.Radius + vehicle.Radius;
@@ -1441,7 +1474,7 @@ public sealed class BumpController
 		{
 			var speed = BumpMath.Length( rvx, rvy );
 			var normal = BumpMath.Div1024( speed * BumpMath.Cos( angle ) * 4 );
-			var share = BumpMath.Div1024( Restitution * normal );
+			var share = BumpMath.Div1024( restitution * normal );
 			other.VX += BumpMath.Div1024( share * BumpMath.Sin( direction ) * 4 );
 			other.VY += BumpMath.Div1024( share * BumpMath.Cos( direction ) * 4 );
 			other.Flags |= BumpVehicle.Bumped | BumpVehicle.Retarget;
@@ -1461,8 +1494,8 @@ public sealed class BumpController
 		{
 			var ox = dx - dx * reach / distance;
 			var oy = dy - dy * reach / distance;
-			var px = BumpMath.Div1024( ox * Restitution );
-			var py = BumpMath.Div1024( oy * Restitution );
+			var px = BumpMath.Div1024( ox * restitution );
+			var py = BumpMath.Div1024( oy * restitution );
 			other.X -= px;
 			other.Y -= py;
 			vehicle.X += ox - px;
@@ -1507,7 +1540,7 @@ public sealed class BumpController
 		var found = FirstContaining( vehicle.X, vehicle.Y );
 		if ( found != null )
 		{
-			vehicle.ObjectIndex = found.Index;
+			SetObject( vehicle, found );
 			vehicle.Flags |= BumpVehicle.Retarget;
 			return;
 		}
@@ -1564,7 +1597,7 @@ public sealed class BumpController
 	// [BIN:TPW-EXE:0x005494D0 keep-out] inside a keep-out circle and moving toward its centre: velocity += normal speed × (restitution + 1024) / 1024 along the radial direction, position projected to the rim; water adds the wall spin
 	private void KeepOut( BumpVehicle vehicle )
 	{
-		foreach ( var circle in objects )
+		foreach ( var circle in module.Objects )
 		{
 			if ( (circle.Flags & CollisionObject.Used) == 0 || !circle.IsKeepOut || !Contains( vehicle.X, vehicle.Y, circle ) )
 				continue;
@@ -1616,7 +1649,7 @@ public sealed class BumpController
 		hash.Add( IsTrackValid );
 		hash.Add( WaterRunning );
 		hash.Add( TickCount );
-		hash.Add( tickRemainder );
+		hash.Add( module.TickRemainder );
 		hash.Add( StationX );
 		hash.Add( StationY );
 		hash.Add( sections.Count );
@@ -1659,6 +1692,9 @@ public sealed class BumpController
 			hash.Add( vehicle.BuoyCountdown );
 			hash.Add( vehicle.Age );
 			hash.Add( vehicle.ObjectIndex );
+			// an object of another ride (the searches are module-wide) is named by its owner
+			if ( vehicle.ObjectOwner is { } foreign )
+				hash.Add( foreign.AttractionId );
 			hash.Add( vehicle.WallHits );
 			hash.Add( vehicle.WallWindow );
 			hash.Add( vehicle.Sprays );
@@ -1690,7 +1726,8 @@ public sealed class BumpController
 		// the walked circuit decides how many buoys and collision objects exist, so the boats' indexes are checked against it before anything changes
 		foreach ( var saved in data.Vehicles )
 		{
-			if ( saved.TargetBuoy >= buoys.Count || saved.ObjectIndex >= objects.Count || saved.Slot is < 0 or >= VehiclePool )
+			// an object of another ride (ObjectAttraction) is checked once every ride is back (BumpWorld.ResolveRestoredObjects)
+			if ( saved.TargetBuoy >= buoys.Count || saved.ObjectAttraction < 0 && saved.ObjectIndex >= objects.Count || saved.Slot is < 0 or >= VehiclePool )
 				throw new InvalidDataException( $"A saved boat aims at buoy {saved.TargetBuoy} or sits in object {saved.ObjectIndex}, but the walked circuit has {buoys.Count} buoys and {objects.Count} objects." );
 		}
 		if ( !double.IsFinite( data.TickRemainder ) || data.TickRemainder < 0 || data.TickRemainder >= MaximumSavedRemainder )
@@ -1700,13 +1737,19 @@ public sealed class BumpController
 		Phase = data.Phase;
 		State = data.State;
 		TickCount = data.TickCount;
-		tickRemainder = data.TickRemainder;
+		// the module clock: a save from before the shared module carries it on its controllers, the module's first controller drives it (the park restore then sets the saved module clock)
+		if ( module.Controllers.Count == 0 || module.Controllers[0] == this )
+		{
+			module.RestoreTickRemainder( data.TickRemainder );
+			module.FrameCount = data.TickCount;
+		}
 		WaterRunning = data.WaterRunning;
 		Pending.Clear();
 		Pending.AddRange( data.Pending );
 		Leaving.Clear();
 		Leaving.AddRange( data.Leaving );
-		Array.Clear( slots );
+		foreach ( var old in vehicles )
+			module.FreeVehicle( old );
 		vehicles.Clear();
 		VehicleCount = 0;
 		RiderCount = 0;
@@ -1719,10 +1762,14 @@ public sealed class BumpController
 				TargetX = saved.TargetX, TargetY = saved.TargetY, JitterX = saved.JitterX, JitterY = saved.JitterY, TargetBuoy = saved.TargetBuoy, Laps = saved.Laps,
 				BuoyCountdown = saved.BuoyCountdown, Age = saved.Age, ObjectIndex = saved.ObjectIndex, WallHits = saved.WallHits, WallWindow = saved.WallWindow, Sprays = saved.Sprays,
 				VisualHeading = saved.VisualHeading, YawRate = saved.YawRate, YawDelta = saved.YawDelta, Animation = saved.Animation, EffectRequest = saved.EffectRequest,
-				EffectLatch = saved.EffectLatch, Height = float.IsFinite( saved.Height ) ? saved.Height : 0f, ChaseTarget = saved.ChaseTarget, Engine = saved.Engine || Template.IsWater, Smoke = saved.Smoke
+				EffectLatch = saved.EffectLatch, Height = float.IsFinite( saved.Height ) ? saved.Height : 0f, ChaseTarget = saved.ChaseTarget, Engine = saved.Engine || Template.IsWater, Smoke = saved.Smoke,
+				Controller = this, RestoredObjectAttraction = saved.ObjectAttraction
 			};
 			vehicle.Riders.AddRange( saved.Riders );
-			slots[vehicle.Slot] = vehicle;
+			// the saved pool slot; a save from before the shared pool may name a slot another ride's vehicle took, which then gets the first free one
+			vehicle.Slot = module.PlaceVehicle( vehicle, saved.Slot );
+			if ( vehicle.Slot < 0 )
+				throw new InvalidDataException( "The module's vehicle pool cannot hold the saved vehicles." );
 			InsertSorted( vehicle );
 			VehicleCount++;
 			RiderCount += vehicle.Riders.Count;

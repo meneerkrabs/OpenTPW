@@ -81,6 +81,15 @@ public sealed class BumpVehicle
 	/// presentation state set by the renderer (the break smoke sits there). Not saved, not part of the digest.
 	/// </summary>
 	public System.Numerics.Vector3? SparksNode { get; set; }
+	/// <summary>The controller the vehicle belongs to (+0x9C).</summary>
+	public BumpController? Controller { get; internal set; }
+	/// <summary>
+	/// The ride whose collision object <see cref="ObjectIndex"/> names when it is not the vehicle's own (the object searches walk the module's shared pool, so a vehicle
+	/// can pass into a neighbouring ride's object); null for its own ride.
+	/// </summary>
+	public BumpController? ObjectOwner { get; internal set; }
+	/// <summary>A restored vehicle's saved object owner (attraction id, −1 for its own ride) until the park restore resolves it.</summary>
+	internal int RestoredObjectAttraction { get; set; } = -1;
 	/// <summary>The vehicle radius in section units.</summary>
 	public int Radius { get; set; }
 	/// <summary>Per-vehicle thrust added to the controller's (+0x68).</summary>

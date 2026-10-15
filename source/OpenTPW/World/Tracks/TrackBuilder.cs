@@ -317,11 +317,12 @@ public sealed class TrackBuilder
 	// ---- Pieces and bridges ------------------------------------------------------------------------
 
 	/// <summary>
-	/// Recomputes the bridge flags and chosen piece of the tile at (x, y) and its four neighbours: a straight tile over water (or over cleared
-	/// paths) is a bridge, and the second pass turns it into the ramp or deck variant by which neighbours along the flow are bridges too.
+	/// Recomputes the bridge flags and chosen piece of the tile at (x, y) and its four neighbours: a straight tile over cleared paths
+	/// is a bridge, and the second pass turns it into the ramp or deck variant by which neighbours along the flow are bridges too.
 	/// </summary>
-	// [BIN:STP-PPC:0x10088590 bridge flag] a straight tile over map type 2 (water) or 7/30 gets flag bit 1; [BIN:STP-PPC:0x1007A354 bridge pass] neither neighbour bridged → H; only ahead → H_U; only behind → H_D; both → H_A
-	// [APPROX:TRACK-010] the bridge test is OpenTPW's: terrain water under any of the tile's four cells, or path cells the tile cleared; the original tests map types 2, 7 and 30 whose meaning beyond water is not traced, and the ahead/behind neighbours follow the flow link (the positive axis direction before a walk) — evidence needed: what map types 7 and 30 are and the flag writer 0x10088590
+	// [BIN:STP-PPC:0x1007A354 bridge pass] neither neighbour bridged → H; only ahead → H_U; only behind → H_D; both → H_A
+	// [BIN:TPW-EXE:0x00538A92 bridge flag] a kart or water tile (any type but 25) with at most two arms and no corner (0x538AA4–0x538B05) gets flag word +0xE = 1 when its map cell or the (0, +1), (+1, 0), (+1, +1) map cells hold a path or queue (type 1 or 3), the paths staying in the map layer under the track, and its four low bits cleared when all four are type 0 (0x538B0B–0x538BDB); only type 25 tests map types 2, 7 and 30 (0x53890F–0x538A82), which map setup 0x536490 gives to cells outside the park alone (inside, water becomes type 0 at 0x536548)
+	// [APPROX:TRACK-010] the bridge test reads the paths a tile cleared when it was laid (OpenTPW's track replaces path cells in the cell map, the original keeps them in the map layer under the track and re-tests when a path is laid later), and only exact straights (masks 0x11, 0x44) qualify where the original also bridges a single-arm end or an armless tile; the type-25 rule has no case (OpenTPW writes no type 25) and the ahead/behind neighbours follow the flow link (the positive axis direction before a walk) — evidence needed: the second pass's PC twin and which cell operations of 0x5370E0 re-run the bridge write
 	public void Refresh( int x, int y )
 	{
 		var region = new List<(int X, int Y)> { (x, y) };
@@ -339,14 +340,7 @@ public sealed class TrackBuilder
 		var tile = Tracks.Get( x, y );
 		if ( !tile.IsOrigin || TrackCellTypes.IsStation( tile.Type ) || !IsStraight( tile.Mask ) )
 			return false;
-		if ( (tile.Flags & FlagOverPath) != 0 )
-			return true;
-		foreach ( var (cx, cy) in TrackStation.TileCellsOf( x, y ) )
-		{
-			if ( Terrain.CheckTerrain( cx, cy ) == OriginalPlacementResult.Water )
-				return true;
-		}
-		return false;
+		return (tile.Flags & FlagOverPath) != 0;
 	}
 
 	internal static bool IsStraight( byte mask ) => mask is 0x11 or 0x44;

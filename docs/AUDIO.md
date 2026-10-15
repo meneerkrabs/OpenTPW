@@ -327,7 +327,8 @@ Traced in the binary but not triggered yet:
   (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
 * `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`), and it plays now: with no tool on and
   a path cell under the cursor it plays at that cell, then that one cell is removed (ClearCell's path case), even when a fixed
-  cell stays. Inside the path tool the original's Backspace does nothing; OpenTPW keeps its segment undo there (PATH-002).
+  cell stays. Inside the path tool the original's Backspace is Back (tp.exe `0x52FE50`): it takes the last segment back without
+  a refund and plays no sound, as OpenTPW's segment undo does.
 * The weather's own visuals are drawn now, as procedural approximations (AUDIO-900..904,
   "Weather visuals" below); the forecast's warning is shown as an OpenTPW extension (banner, wording
   and cadence are `[EXT:forecast-banner]`, `[EXT:forecast-wording]`, `[EXT:forecast-cadence]`): the PC has

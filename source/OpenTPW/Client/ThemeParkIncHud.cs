@@ -71,7 +71,7 @@ public sealed class ThemeParkIncHud
 		// The place flow's HUD finish (Level.PlaceObject owns the build and the guest link):
 		// [BIN:STP-PPC:0x1007497C ride placement] a placed HasQueue ride enters tool mode 3, the queue tool (PATH-plan §8)
 		level.Objects.ObjectPlaced += OnObjectPlaced;
-		// [APPROX:PATH-011] Escape inside a tool ends it without writing; only a Back outside every tool opens the menu
+		// [BIN:TPW-EXE:0x40C180 Escape in a tool] Escape ends a tool (installs the default park mode, SetMode(0)) and is consumed; only an Escape with no tool on reaches the pause menu row (0x748378, 0x40C4D0)
 		hud.Back = () =>
 		{
 			if ( level.CellTool.IsActive )

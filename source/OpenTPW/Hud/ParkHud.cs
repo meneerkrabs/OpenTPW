@@ -309,7 +309,7 @@ public sealed partial class ParkHud
 		};
 		BuildCoasterPanel();
 		hud.Updating = FitCashText;
-		// [APPROX:PATH-011] Escape/Back inside the path or queue tool ends the tool without writing; only a Back outside it opens the pause menu (PATH-plan §9.4 cancel; the original's key handler for the tool is not traced, UI-012) — evidence needed: the original's Escape handling in tool modes 1 and 3
+		// [BIN:TPW-EXE:0x488921 key dispatch] a key goes to the camera, game and shortcut groups in turn (0x40C990, the first nonzero callback wins); Escape's game row (0x748028, 0x40C180) ends any mode object other than the default park mode (types 0 and 1): it installs the default mode and SetMode(0) 0x52F200 without writing and consumes the key, so only the next Escape reaches the shortcut row "menu" (0x748378, 0x40C4D0), which opens the pause menu (0x4816D0); the path and queue tools run in a type-3 mode object (vtable 0x6FE9E0)
 		hud.Back = () =>
 		{
 			if ( IsRiding )
@@ -856,7 +856,7 @@ public sealed partial class ParkHud
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark, bool paused )
 	{
 		var tool = level.CellTool;
-		// [APPROX:PATH-013] while the pause menu is open the tool takes no clicks: this returns before the commit, and Update reports the pointer as captured (overUi), so Level's park click skips it too; the economy's speed pause does not stop the tool, which keeps its ghost — evidence needed: the original park view's input handling while paused
+		// [APPROX:PATH-013] PATH-PAUSE: while the pause menu is shown the park takes no tool clicks, as in the original (tp.exe gate 0x48c8d0 reads the pause-menu object 0x7c2534 +0xc; the park click handler 0x4879d0 returns before the tool dispatch); OpenTPW's speed pause keeps the tool live, and the original's pause key P (0x40bf70 calls 0x409350(1), which also opens a window) is not shown to block or pass park clicks (0x4879d0 does not read the pause flag 0x786b84) — still open: whether the original's P pause window takes park clicks (0x47ed80/0x65dd7b input layer)
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } )

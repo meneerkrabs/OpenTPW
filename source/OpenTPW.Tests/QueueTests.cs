@@ -609,6 +609,23 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void AGuestWaitingItsMoveUpDelayStillRunsTheNeedsWindow()
+	{
+		// tp.exe 0x005002EB: the delay decrement falls through to the needs window (0x005002F2), so an unhappy guest leaves meanwhile
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
+		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
+		var waiting = guests[5];
+		Assert.IsTrue( waiting.QueueMoveDelay > 1 );
+		rig.Ride.LeaveQueue( guests[0].Id );
+		waiting.Happiness = 0;
+		rig.RunTurns( 2 );
+		Assert.IsFalse( waiting.IsInQueue, "the unhappy guest left while waiting its delay" );
+	}
+
+	[TestMethod]
 	public void GuestsMoveUpAfterTruncOneTwoTimesPositionTurnsWhenTheGapIsSmall()
 	{
 		var rig = new Rig();
@@ -622,12 +639,14 @@ public class QueueTests
 		rig.Ride.LeaveQueue( guests[0].Id );
 		var removedTurn = rig.Simulation.ParkTurn;
 		var moved = new Dictionary<int, long>();
-		rig.RunTurns( 12, () =>
+		rig.RunTurns( 1 );
+		Assert.IsFalse( guests[0].IsInQueue, "the removed guest left the queue" );
+		rig.RunTurns( 11, () =>
 		{
+			// it may choose the ride again and rejoin at the back within these turns
 			foreach ( var guest in guests.Skip( 1 ).Where( guest => guest.State == GuestState.MovingUpQueue ) )
 				moved.TryAdd( guest.Id, rig.Simulation.ParkTurn - removedTurn );
 		} );
-		Assert.IsFalse( guests[0].IsInQueue, "the removed guest left the queue" );
 		CollectionAssert.AreEqual( new long[] { 2, 3, 4, 5, 7 }, guests.Skip( 1 ).Select( guest => moved[guest.Id] ).ToArray(),
 			"first seen at the next turn, then 1, 2, 3, 4 and 6 turns of delay" );
 		rig.RunTurns( 20 );
@@ -699,6 +718,45 @@ public class QueueTests
 		Assert.AreEqual( GuestThought.Unhappy, thought );
 		Assert.AreEqual( GuestSimulation.NeedsWindowTurns + 1, leftAt, "turn − +520 must exceed 30" );
 		Assert.AreEqual( (2, 0), leftCell, "back on the path at the join cell" );
+	}
+
+	[TestMethod]
+	public void QueueFacingChangesOnlyInsideTheWindowBySpreadAngles()
+	{
+		// tp.exe 0x004FFFF0: beyond 30 turns from the last interlude every needs path returns, so a guest that keeps queueing never
+		// turns; inside the window a draw mod 10 = 0 turns the heading by (second draw mod 800) − 400 of 2048.
+		static int Turned( (float X, float Y) before, (float X, float Y) after ) =>
+			(int)MathF.Round( MathF.Atan2( before.X * after.Y - before.Y * after.X, before.X * after.X + before.Y * after.Y ) * 2048 / MathF.Tau );
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guest = rig.Send();
+		guest.BaseSpeed = 140;
+		rig.RunTurns( 31 );
+		Assert.AreEqual( GuestState.Queueing, guest.State );
+		var outside = new List<int>();
+		var heading = (guest.HeadingX, guest.HeadingY);
+		rig.RunTurns( 60, () =>
+		{
+			if ( guest.State == GuestState.Queueing && !guest.InQueueInterlude )
+				outside.Add( Turned( heading, (guest.HeadingX, guest.HeadingY) ) );
+			heading = (guest.HeadingX, guest.HeadingY);
+		} );
+		Assert.IsTrue( outside.Count > 0 && outside.All( turned => turned == 0 ), string.Join( " ", outside ) );
+
+		var inside = new List<int>();
+		rig.RunTurns( 600, () =>
+		{
+			var turned = Turned( heading, (guest.HeadingX, guest.HeadingY) );
+			if ( turned != 0 )
+				inside.Add( turned );
+			heading = (guest.HeadingX, guest.HeadingY);
+			guest.InterludeTurn = rig.Simulation.ParkTurn;
+			guest.QueueStandingSinceTurn = rig.Simulation.ParkTurn;
+		} );
+		Assert.AreEqual( GuestState.Queueing, guest.State );
+		Assert.IsTrue( inside.Count is >= 30 and <= 100, $"about one turn in ten: {inside.Count}" );
+		Assert.IsTrue( inside.All( turned => turned is >= -400 and <= 399 ), string.Join( " ", inside ) );
+		Assert.IsTrue( inside.Any( turned => Math.Abs( turned ) < 300 ), "the size is spread, not a fixed ±400" );
 	}
 
 	[TestMethod]
@@ -1081,7 +1139,7 @@ public class QueueTests
 		Assert.AreEqual( 1, NextTurn( ride, host ).CalledGuest, "repaired: the head is called again" );
 		Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 2 ) );
 
-		// Choosing: walking guests skip a broken attraction (APPROX:QUEUE-017). The first major decision waits until turn 31 (state 6: T > +0x1FC + 30).
+		// Choosing: walking guests skip a broken attraction (the counts-test, tp.exe 0x4dd920). The first major decision waits until turn 31 (state 6: T > +0x1FC + 30).
 		foreach ( var broken in new[] { false, true } )
 		{
 			var rig = new Rig( excitement: 25 );
@@ -1092,6 +1150,25 @@ public class QueueTests
 			var chose = 0;
 			rig.RunTurns( 60, () => chose += guests.Count( guest => guest.AttractionId == RideId ) );
 			Assert.AreEqual( broken, chose == 0, $"broken {broken}: {chose} guest-ticks heading for the ride" );
+		}
+	}
+
+	[TestMethod]
+	public void FullRidesAreNotChosen()
+	{
+		// tp.exe 0x4dd920: the choice's counts-test needs the queue list count below 4 × cells, so a full queue is never chosen
+		// (the join's own room test 0x4dda20 stays for a queue that fills while the guest walks).
+		foreach ( var full in new[] { false, true } )
+		{
+			var rig = new Rig( excitement: 25 );
+			rig.HoldAdmission();
+			Assert.AreEqual( 20, rig.Ride.QueueRoom, "five cells" );
+			for ( var id = 9001; id < 9001 + (full ? 20 : 0); id++ )
+				Assert.AreEqual( QueueJoinResult.Joined, rig.Ride.JoinQueue( id ) );
+			var guests = Enumerable.Range( 0, 10 ).Select( _ => rig.Simulation.SpawnInPark( 2, 0 ) ).ToList();
+			var chose = 0;
+			rig.RunTurns( 60, () => chose += guests.Count( guest => guest.AttractionId == RideId ) );
+			Assert.AreEqual( full, chose == 0, $"full {full}: {chose} guest-ticks heading for the ride" );
 		}
 	}
 

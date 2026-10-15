@@ -321,7 +321,12 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x611EFAD61F9A8D68`, schema 19: each staff candidate draws its own timeout, `StaffTimeoutTime` + R % (`StaffTimeoutTime` / 2) units of
+  (`0xD28386DACAD73241`, schema 19: the guest's energy meter is tp.exe's field `+0x1B8` (0 at birth, changed only by `0x004FD970`), the
+  attraction choice walks the objects newest first, a full queue costs no happiness and the use routine `0x004FE1E0` applies its
+  remaining terms, so the guests and the world stream move. Before that:
+  `0x4AEFBABAD786E2FD`, schema 19: guests skip a ride whose queue is full (4 × cells, tp.exe `0x004DD920`) when they choose, and a queued guest
+  turns only within 30 turns of its last interlude, by −400..+399 of 2048 (`0x004FFFF0`), so the guests' choices and the world stream move. Before that:
+  `0x611EFAD61F9A8D68`, schema 19: each staff candidate draws its own timeout, `StaffTimeoutTime` + R % (`StaffTimeoutTime` / 2) units of
   four park turns, and the pool refills on the first turn past 4 × `TimeBetweenStaffUpdates` turns (tp.exe `0x00507600`, `0x005084F0`), so the
   candidates and the world stream after them move. Before that:
   `0x9F437861FA2E5452`, schema 19: a ride keeps its broken-down state (QUEUE-019) in the hash, the booth's verdict on the fee

@@ -1,6 +1,58 @@
 namespace OpenTPW;
 
 /// <summary>
+/// What the ride scripts did with STARTSCREAM and STOPSCREAM while a park ran: how many started a chain, how many were refused because the ride still held one
+/// (the original's "Started screaming without stopping first.", which leaves the held chain screaming unreferenced), and the band operand of each start.
+/// </summary>
+internal sealed class ScreamStatistics
+{
+	private readonly Dictionary<string, (int Starts, int Refusals, int Stops)> perRide = new();
+	private readonly SortedDictionary<int, int> bands = new();
+
+	public int Starts { get; private set; }
+	public int Refusals { get; private set; }
+	public int Stops { get; private set; }
+	/// <summary>STARTSCREAM instructions by band operand (every one the script ran, refused or not).</summary>
+	public IReadOnlyDictionary<int, int> Bands => bands;
+	public IReadOnlyDictionary<string, (int Starts, int Refusals, int Stops)> PerRide => perRide;
+
+	public void NoteStart( string? ride, int band, bool refused )
+	{
+		if ( refused ) Refusals++; else Starts++;
+		bands[band] = bands.GetValueOrDefault( band ) + 1;
+		var key = ride ?? "?";
+		var (starts, refusals, stops) = perRide.GetValueOrDefault( key );
+		perRide[key] = refused ? (starts, refusals + 1, stops) : (starts + 1, refusals, stops);
+	}
+
+	public void NoteStop( string? ride )
+	{
+		Stops++;
+		var key = ride ?? "?";
+		var (starts, refusals, stops) = perRide.GetValueOrDefault( key );
+		perRide[key] = (starts, refusals, stops + 1);
+	}
+
+	/// <summary>One line per fact for the gates' output: totals, the band histogram and every ride that ran a scream instruction.</summary>
+	public string Summary()
+	{
+		var text = new System.Text.StringBuilder();
+		text.AppendLine( $"Scream diagnostics: {Starts} STARTSCREAM started a chain, {Refusals} refused (leaked chains), {Stops} STOPSCREAM stopped one." );
+		text.AppendLine( $"  STARTSCREAM bands (operand: count): {string.Join( ", ", bands.Select( pair => $"{pair.Key}: {pair.Value}" ) )}" );
+		foreach ( var (name, counts) in perRide.OrderBy( pair => pair.Key, StringComparer.Ordinal ) )
+			text.AppendLine( $"  {name}: {counts.Starts} starts, {counts.Refusals} refused, {counts.Stops} stops" );
+		return text.ToString();
+	}
+
+	public void Reset()
+	{
+		Starts = Refusals = Stops = 0;
+		bands.Clear();
+		perRide.Clear();
+	}
+}
+
+/// <summary>
 /// The game's sound service: one mixer, the original sound categories and the park music. Mirrors the
 /// Mac game's sound manager (<c>0x100BC6F0</c> registers the global <c>cat_ambient</c>, <c>cat_rides</c>,
 /// <c>cat_ui</c>, <c>cat_kids</c>, <c>cat_staff</c> and <c>cat_speech</c> at sound-manager offsets 0/8/12/4/16/20,
@@ -528,6 +580,9 @@ public static class GameAudio
 			Log.Trace( $"Sound: scream chain started (cat_kids {eventId}, parameter {parameter})." );
 		return chain;
 	}
+
+	/// <summary>Counts of the scream instructions the ride scripts ran, for the leaked-chain and rider-band diagnostics (docs/AUDIO.md, "Scream diagnostics").</summary>
+	internal static readonly ScreamStatistics Screams = new();
 
 	/// <summary>The held-chain event a scream's band operand picks (Mac <c>0x100ACA38</c>: 0 nothing, 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74), or null for band 0.</summary>
 	public static uint? ScreamBandEvent( int band ) => band == 0 ? null : band == 1 ? 71u : band >= 8 ? 74u : band >= 4 ? 73u : 72u;

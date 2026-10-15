@@ -358,7 +358,6 @@ public class ParkEconomyTests
 	public void GuestsPayAtTheGateShopsAndSideshows()
 	{
 		var park = EconomyTestData.Park();
-		Assert.IsFalse( park.TryAdmitVisitor( 100, out _ ) );
 		park.OpenPark();
 		Assert.IsTrue( park.TryAdmitVisitor( 100, out var fee ) );
 		Assert.AreEqual( 20, fee );

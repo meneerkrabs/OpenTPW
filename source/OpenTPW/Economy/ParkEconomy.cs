@@ -1479,10 +1479,15 @@ public sealed class ParkEconomy : IParkEconomy
 
 	// ---------------------------------------------------------------- guests
 
+	/// <summary>
+	/// The booth books the entrance fee (tp.exe <c>0x004D0600</c>): no open or bankruptcy test, which the guests' walk to the booth makes instead
+	/// (<see cref="GuestSimulation"/>, states 2 and 3). False only when the guest's purse is short (ARRIVAL-007).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D0600 admission] the fee (bank +0x118) goes to the balance, money in (+0x1FC90), the year's takings (+0x124) and the gate row (+0x1FEE0), and 0x004C7520 counts the admission; no state is read
 	public bool TryAdmitVisitor( long visitorCash, out int feePaid )
 	{
 		feePaid = 0;
-		if ( !IsParkOpen || IsBankrupt || visitorCash < EntranceFee )
+		if ( visitorCash < EntranceFee )
 			return false;
 		feePaid = EntranceFee;
 		Post( LedgerCategory.GateTakings, feePaid );

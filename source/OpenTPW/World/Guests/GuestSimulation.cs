@@ -824,6 +824,14 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			if ( guest.LaneIndex == lane.Length - 2 && guest.State != GuestState.EnteringPark )
 			{
+				// [BIN:TPW-EXE:0x004FF7D9 booth arrival] state 2 ends at the booth in state 4 (the booth) while the park is open, in state 3 while it is closed (mParkClosed
+				// +0x1DA710, 0x0051A280); state 3 (0x004FF7F0) with the park closed or the entrance gate's script variable 1 not 1 (0x0051A290) counts the wait +0x200
+				// down and then sends the guest home (+0x188 = 1, a lane, state 18) with no thought and no happiness change
+				if ( Payments?.ParkClosed == true )
+				{
+					StartLeavingLane( guest, lane, guest.LaneIndex );
+					return;
+				}
 				guest.State = GuestState.AtTicketBooth;
 				guest.StateTimer = TicketBoothSeconds;
 				return;
@@ -856,38 +864,36 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// truncates to 0), and lets the others pay, a cheap park with a medium happiness gain.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4ff9d0 booth] verdict 0: thought 6 and home (state 18); 1: +0x200 = 50 + R % 50 (counted down one per update before the verdict runs again), thought 6, 0x4fea70(1), home when the happiness byte is 0; 2: 0x4fe9c0(1), then 3: the fee is booked (0x4d0600) and the guest enters (+0x204 = 1, state 3)
+	// [BIN:TPW-EXE:0x004FF9D0 booth without closure test] the booth reads neither mParkClosed nor the bank's state: a guest that reached it while the park was open is weighed and pays even once the park has closed; the paid guest's state 3 (0x004FF7F0) then sends it home while the park is closed
 	private void PayAdmission( Guest guest )
 	{
-		if ( Payments?.ParkClosed != true )
+		var verdict = BoothVerdict.Decide( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord(), Settings );
+		if ( verdict == BoothVerdictKind.FarTooExpensive )
 		{
-			var verdict = BoothVerdict.Decide( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord(), Settings );
-			if ( verdict == BoothVerdictKind.FarTooExpensive )
-			{
-				Think( guest, GuestThought.Dissatisfied );
-				StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
-				return;
-			}
-			if ( verdict == BoothVerdictKind.Expensive )
-			{
-				var wait = BoothVerdict.ExpensiveWaitBase + random.NextWord() % BoothVerdict.ExpensiveWaitBase;
-				Think( guest, GuestThought.Dissatisfied );
-				guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.MediumHappinessChange );
-				if ( ((int)guest.Happiness & 0xFF) != 0 )
-				{
-					// [APPROX:ARRIVAL-006] the wait counts park turns of the booth's fixed clock (248 ms each) rather than the guest updates of state 4, and the draws come from the guest stream (DET-014)
-					guest.StateTimer = wait * ParkCalendar.TurnMilliseconds / 1000f;
-					return;
-				}
-				StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
-				return;
-			}
-			if ( verdict == BoothVerdictKind.Cheap )
-				guest.Happiness = MeterMath.Add( guest.Happiness, Settings.MediumHappinessChange );
+			Think( guest, GuestThought.Dissatisfied );
+			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
+			return;
 		}
+		if ( verdict == BoothVerdictKind.Expensive )
+		{
+			var wait = BoothVerdict.ExpensiveWaitBase + random.NextWord() % BoothVerdict.ExpensiveWaitBase;
+			Think( guest, GuestThought.Dissatisfied );
+			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.MediumHappinessChange );
+			if ( ((int)guest.Happiness & 0xFF) != 0 )
+			{
+				// [APPROX:ARRIVAL-006] the wait counts park turns of the booth's fixed clock (248 ms each) rather than the guest updates of state 4, and the draws come from the guest stream (DET-014)
+				guest.StateTimer = wait * ParkCalendar.TurnMilliseconds / 1000f;
+				return;
+			}
+			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
+			return;
+		}
+		if ( verdict == BoothVerdictKind.Cheap )
+			guest.Happiness = MeterMath.Add( guest.Happiness, Settings.MediumHappinessChange );
 		int fee;
 		if ( Payments != null ? !Payments.TryPayAdmission( guest.Money, out fee ) : guest.Money < (fee = AdmissionFee) )
 		{
-			// A closed park, or a guest whose purse is short of the fee, turns back with thought 6 as the booth's refusals do.
+			// A guest whose purse is short of the fee turns back with thought 6 as the booth's refusals do.
 			// [APPROX:ARRIVAL-007] OpenTPW charges the fee from the guest's purse and turns back a guest who cannot pay; the original's booth books the fee (0x004D0600) without reading the guest's cash — evidence needed: whether anything takes the fee from the guest's cash
 			Think( guest, GuestThought.Dissatisfied );
 			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
@@ -898,6 +904,13 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Admissions++;
 		if ( fee > 0 )
 			MoneySpent?.Invoke( guest, fee, 0 );
+		// [BIN:TPW-EXE:0x004FF80A paid at a closed park] state 3 sends a paid guest home (state 18, no refund, no thought) while the park is closed, as an arriving one
+		// [APPROX:GUEST-011] the entrance gate's script variable 1 (0x0051A290), which state 3 also requires to be 1 before a paid guest walks in, is not read
+		if ( Payments?.ParkClosed == true )
+		{
+			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
+			return;
+		}
 		guest.LaneIndex = guest.Lane!.Length - 1;
 		guest.State = GuestState.EnteringPark;
 		SetLaneWaypoint( guest );

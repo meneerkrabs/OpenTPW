@@ -127,7 +127,7 @@ public sealed class WeatherRenderer : Entity
 					new SVector3( vertex.Grey, vertex.Alpha, 0 ), vertex.TexCoords );
 			}
 			dropVertexCount = written;
-			DrawnDrops = written / VerticesPerQuad;
+			DrawnDrops = written / (visual.Snow ? WeatherVisualState.SnowVerticesPerFlake : VerticesPerQuad);
 		}
 
 		var boltStart = vertexCount;

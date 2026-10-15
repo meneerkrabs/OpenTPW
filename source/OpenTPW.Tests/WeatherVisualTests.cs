@@ -214,22 +214,52 @@ public class WeatherVisualTests
 		var state = Field( 8, snow: true );
 		var vertices = new WeatherVertex[WeatherVisualState.FieldSize * 6];
 		var count = state.WriteSnow( Eye, vertices );
-		Assert.IsTrue( count > 0 && count % 6 == 0 );
-		for ( var quad = 0; quad < count; quad += 6 )
+		Assert.IsTrue( count > 0 && count % 3 == 0 );
+		// [BIN:TPW-EXE:0x57f490] one triangle a flake: the apex at the top middle of the quadrant, the base at its lower corners
+		for ( var flake = 0; flake < count; flake += 3 )
 		{
-			Assert.AreEqual( 1f, vertices[quad].Grey, "full white" );
-			Assert.AreEqual( 1f, vertices[quad].Alpha );
-			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, (vertices[quad + 1].Position - vertices[quad].Position).X, 1e-5f, "half-size 0.1" );
-			var uv = vertices[quad].TexCoords;
-			Assert.IsTrue( uv is { X: 0f or 0.5f, Y: 0f or 0.5f }, "an atlas quadrant" );
-			Assert.AreEqual( 0.5f, vertices[quad + 1].TexCoords.X - uv.X, 1e-6f );
-			Assert.IsTrue( vertices[quad].Position.Z > 0 );
+			var (apex, right, left) = (vertices[flake], vertices[flake + 1], vertices[flake + 2]);
+			Assert.AreEqual( 1f, apex.Grey, "full white" );
+			Assert.AreEqual( 1f, apex.Alpha );
+			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, (right.Position - left.Position).X, 1e-5f, "base 2h wide" );
+			Assert.AreEqual( 2 * WeatherVisualState.SnowHalfSize, apex.Position.Y - left.Position.Y, 1e-5f, "2h tall" );
+			Assert.AreEqual( (right.Position.X + left.Position.X) / 2, apex.Position.X, 1e-5f, "the apex above the base's middle" );
+			var corner = left.TexCoords;
+			Assert.IsTrue( corner is { X: 0f or 0.5f, Y: 0.5f or 1f }, "the lower left corner of an atlas quadrant" );
+			Assert.AreEqual( new System.Numerics.Vector2( corner.X + 0.5f, corner.Y ), right.TexCoords );
+			Assert.AreEqual( new System.Numerics.Vector2( corner.X + 0.25f, corner.Y - 0.5f ), apex.TexCoords );
+			Assert.IsTrue( apex.Position.Z > 0 );
 		}
 		var first = vertices[0];
 		state.Update( 0.016f, new Source { DropCount = 8, Snow = true }, Eye );
 		var again = new WeatherVertex[WeatherVisualState.FieldSize * 6];
 		state.WriteSnow( Eye, again );
 		Assert.AreNotEqual( first.Position, again[0].Position, "a flake moves each frame" );
+	}
+
+	[TestMethod]
+	public void SnowJitterIsDrawnInWholeStepsOf1Over2048EveryFrameEvenWhenPaused()
+	{
+		// [BIN:TPW-EXE:0x57f490] each draw adds ((rand & 31) - 16) / 2048 to every axis of every flake
+		var state = Field( 64, snow: true );
+		var seen = new HashSet<float>();
+		var changed = false;
+		for ( var frame = 0; frame < 20; frame++ )
+		{
+			var before = state.JitterOf( 0 );
+			state.Update( 0f, new Source { DropCount = 64, Snow = true }, Eye );
+			changed |= state.JitterOf( 0 ) != before;
+			for ( var index = 0; index < 64; index++ )
+				foreach ( var axis in new[] { state.JitterOf( index ).X, state.JitterOf( index ).Y, state.JitterOf( index ).Z } )
+				{
+					var steps = axis * 2048f;
+					Assert.AreEqual( MathF.Round( steps ), steps, 1e-4f, "a whole number of 1/2048 steps" );
+					Assert.IsTrue( steps >= -16 && steps <= 15, $"{steps} within -16..15" );
+					seen.Add( steps );
+				}
+		}
+		Assert.IsTrue( changed, "a paused frame still draws a new jitter" );
+		Assert.IsTrue( seen.Contains( -16f ) && seen.Contains( 15f ) && seen.Count == 32, $"all 32 steps occur ({seen.Count})" );
 	}
 
 	[TestMethod]
@@ -253,14 +283,14 @@ public class WeatherVisualTests
 			var offset = state.DropOffset( index );
 			if ( offset.Z <= 0 )
 				continue;
-			var centre = (vertices[quad * 6].Position + vertices[quad * 6 + 4].Position) / 2;
+			var centre = new NVector3( vertices[quad * 3].Position.X, (vertices[quad * 3].Position.Y + vertices[quad * 3 + 1].Position.Y) / 2, vertices[quad * 3].Position.Z );
 			var spread = 1f + offset.Z / WeatherVisualState.SnowSpreadDepth;
 			Assert.AreEqual( offset.X * spread, centre.X, 0.03f, $"flake {index} x" );
 			Assert.AreEqual( offset.Y * spread, centre.Y, 0.03f, $"flake {index} y" );
 			quad++;
 			compared++;
 		}
-		Assert.IsTrue( compared > 2 && compared * 6 == count );
+		Assert.IsTrue( compared > 2 && compared * 3 == count );
 	}
 
 	[TestMethod]

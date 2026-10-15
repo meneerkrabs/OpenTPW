@@ -454,9 +454,11 @@ Behaviour worth knowing:
   decoder `0x567620`: rain and bolts `0x200D52` (source alpha over one, no depth writes), snow `0x556` (alpha blend,
   depth writes), each with the alpha test at 0x10 of 255; the rain's `0x200D22` (one plus one) is only a fallback
   for the chips flagged at device init (`0x566840`).
-* Snow: flakes of half-size 0.1 map to atlas quadrant `index & 3`, full white, x and y spread by
-  `1 + depth/8`, jittering by +-1/128 each frame. The original's other mode (flag `0x115E94` bit 8)
-  swirls flakes along a closed 128-point spline; its meaning is not identified, so it is not drawn (AUDIO-901).
+* Snow: one triangle a flake, half-size 0.1, its apex at the top middle of atlas quadrant `index & 3` and its base
+  at the quadrant's lower corners, full white, x and y spread by `1 + depth/8`, jittering by
+  `((rand & 31) - 16) / 2048` on every axis each frame (`0x57f490`). The original's other mode swirls flakes along
+  a closed 128-point spline under engine flag `0x8bcbc8` bit `0x100`, which nothing in tp.exe sets, so the PC
+  draws only the jitter version; the flake's z + 0.1 and fourth word z + 0.1501 are not reproduced (AUDIO-901).
 * Bolts: from the strike's top (x, 300, z) straight down to original y = 0 (not the terrain; the
   original's ground point is a float draw, so OpenTPW uses the top's x and z), recursive midpoint
   displacement with roughness 0.6, splitting until a segment's squared length is under 6 + 2u (about
@@ -582,7 +584,7 @@ implemented yet.
 | AUDIO-025 | December's average is the storage of the unnamed type-0 `.sam` schema record after `Seasons` (`0x741d80`), taken as 4; the season is the FILETIME date's month / 3 (`0x4f8770`, wMonth 1-12, so December is row 4) and the word (`0x7854f4`) is in .bss with no code reference; its tolerance and chance are confirmed | The generic `.sam` loader's type-0 case (if it stores nothing the average would be 0, not 4) |
 | AUDIO-037 | The sound chooser is seeded from the clock at start-up (as the original) but a park reseeds it from its world seed at entry and saves it with the park, so headless runs and tests start from a known state (not a replay guarantee with sound on); the original's chooser is clock-seeded and unsaved | None (a deliberate determinism choice) |
 | AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops, its parallax the original's absolute `-0.1 x camera position` (`0x57efd0`), its states decoded (`0x567620`: rain and bolts `0x200D52`, snow `0x556`, alpha test at 0x10/255); the 0.3 factor under camera modes `0x790ab0 & 0x16` and the 1/16384 quantisation are not reproduced | Which views set the camera-mode bits `0x16` |
-| AUDIO-901 | Snow reuses the rain's drop count but falls slower with a sinusoidal sway | The original's snow motion |
+| AUDIO-901 | Snow is the jitter version (((rand & 31) - 16) / 2048 a frame on every axis), the only one the PC draws (the swirl flag `0x8bcbc8` bit `0x100` is never set), each flake one triangle over its atlas quadrant (`0x57f490`) | The space of the flake's z + 0.1 and its fourth word z + 0.1501 (camera or clip) |
 | AUDIO-902 | The bolt follows the traced CRain shape (roughness 0.6, stop test, branch odds, depth and lengths, ground at y = 0, 2000 ms life, up to 16); the per-split displacement and the branch heading are OpenTPW's where tp.exe displaces the midpoint along one random-axis perpendicular by \|segment\| x roughness x r2 x r1² (`0x57e4b0`) and heads a branch along the segment plus the bolt's direction (`0x57e810`); the pulse curve is OpenTPW's and the ground point keeps the top's x and z | A port of `0x57e4b0`/`0x57e810`; the pulse in the segment emitter `0x57dd10`; the ground point's float draw |
 | AUDIO-903 | The weather's visuals advance by the frame time scaled by the simulation's time scale, capped at 500 ms, as the original's CRain dt on its rate-scaled clock (`0x402d70`, `0x57ff60`); tp.exe also zeroes dt while engine flag `0x8bd508` bit 2 is set (`0x57ffb1`) | What sets that bit (no instruction writes it alone) |
 | AUDIO-904 | The camera's near plane (0.1 engine units = 0.5 original units) clips the nearest drops; the original's near plane is 0.1 original units (`0x54e86f` → `0x578be0`) and its clipper cuts the streaks there; the vertex buffer is sized once (1024 drops, 16 bolts of 512 segments) | A near clip of 0.1 original units for the weather without changing the scene's depth mapping |

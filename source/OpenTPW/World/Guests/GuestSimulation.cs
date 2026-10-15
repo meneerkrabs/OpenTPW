@@ -625,15 +625,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	(int X, int Y)[]? IGuardGuests.Lane( int side ) => side == 0 ? ValidLane( Settings.ArrivalLaneA ) : ValidLane( Settings.ArrivalLaneB );
 
-	// [APPROX:GUEST-008] OpenTPW's energy meter (starting at 100, drained while walking, restored while resting, queueing or riding) has no tp.exe counterpart: the guest's float +0x1B8 starts at 0 (0x4FAEC0 at 0x4FAF1F / 0x4FB0EF, the load factory at 0x518611), changes only when a use completes (0x4FD970: clamp(value − UsageInfo.FatigueEffect, 0, 100)) and is read only by the save (0x4FC026) — evidence needed: none (read)
+	// [BIN:TPW-EXE:0x004FD970 guest meter +0x1B8] the energy meter is the original's unnamed float +0x1B8: nothing changes it while walking, resting, queueing or riding (the needs phase 0x00501650 does not touch it), so OpenTPW keeps only its use step (OnVisitorReleased)
 	private void UpdateNeeds( Guest guest, float dt )
 	{
-		var riding = guest.State == GuestState.Using;
-		if ( riding || guest.State is GuestState.Queueing or GuestState.WaitingToBoard or GuestState.DoingNothing )
-			guest.Energy = Math.Min( 100, guest.Energy + Settings.EnergyRecoveryPerSecond * dt );
-		else
-			guest.Energy = Math.Max( 0, guest.Energy - Settings.EnergyDrainPerSecond * dt );
-		if ( !riding )
+		if ( guest.State != GuestState.Using )
 			guest.SecondsSinceRide += dt;
 	}
 
@@ -1853,6 +1848,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Payments?.VisitFinished( ride );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
 		PushHistory( guest.UsedHistory, ride.AttractionId );
+		// [BIN:TPW-EXE:0x004FD9EE use fatigue] a completed use, won or lost, lowers the meter +0x1B8 by the type's UsageInfo.FatigueEffect (type +0xE8) through the clamped adder 0x004FB4F0, before the use routine; only the save reads the meter (0x004FC026)
+		guest.Energy = MeterMath.Add( guest.Energy, -(float)ride.FatigueEffect );
 		ApplyVisit( guest, ride );
 		// [BIN:TPW-EXE:0x00501FD3 state 15 entry] after the use routine (0x005015F4, 0x004FD970) the state-15 entry gives a guest with balloon life its balloon back, except at a balloon shop, whose use routine has just made one
 		if ( guest.BalloonLife > 0 && ride.AppearanceEffect != GuestAppearance.Balloon )

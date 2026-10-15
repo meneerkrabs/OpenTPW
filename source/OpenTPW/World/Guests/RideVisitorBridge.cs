@@ -127,6 +127,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public int InitCostOfGoods { get; set; }
 	/// <summary>Type <c>UsageInfo.RipOffOK</c> (tp.exe type <c>+0x16C</c>).</summary>
 	public int RipOffOk { get; set; }
+	/// <summary>Type <c>UsageInfo.FatigueEffect</c> (tp.exe type <c>+0xE8</c>).</summary>
+	public int FatigueEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.HappinessEffect</c> (<c>+336</c>).</summary>
 	public int HappinessEffect { get; set; }
 	/// <summary>Type <c>UsageInfo.LitterEffect</c> (tp.exe type <c>+0x154</c>).</summary>

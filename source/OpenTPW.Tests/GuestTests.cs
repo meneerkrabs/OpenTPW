@@ -461,7 +461,7 @@ public class GuestTests
 			Assert.AreEqual( phaseZero ? 2f * fixedSteps : 0f, guest.Hunger, $"guest {guest.Id} hunger" );
 			Assert.AreEqual( phaseZero ? 2f * fixedSteps : 0f, guest.Thirst, $"guest {guest.Id} thirst" );
 			Assert.AreEqual( phaseZero ? 1f * fixedSteps : 0f, guest.Toilet, $"guest {guest.Id} toilet" );
-			Assert.IsTrue( guest.Energy < 100 );
+			Assert.AreEqual( 0f, guest.Energy, "nothing but a completed use changes the meter +0x1B8 (tp.exe 0x004FD970)" );
 		}
 		var thirsty = guests[0];
 		thirsty.Thirst = 90;
@@ -497,6 +497,31 @@ public class GuestTests
 		iceCream.Bridge.IngredientAmount = 100;
 		host.OnVisitorReleased( iceCream.Bridge, guest.Id );
 		Assert.AreEqual( (ushort)9, guest.Boost, "a second visit adds on top: 3 + 6" );
+	}
+
+	/// <summary>
+	/// The original's meter +0x1B8 (OpenTPW's <c>Energy</c>): 0 for a new guest (tp.exe 0x004FAEC0), and a completed use takes the type's
+	/// <c>UsageInfo.FatigueEffect</c> off it through the clamped adder (0x004FD970, 0x004FB4F0); walking, waiting and riding leave it alone.
+	/// </summary>
+	[TestMethod]
+	public void OnlyACompletedUseMovesTheMeterAtPlus1B8()
+	{
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var shop = CreateShop( 2, (0, 5), satisfies: GuestNeeds.Hunger );
+		var host = (IRideVisitorHost)simulation;
+		var guest = simulation.SpawnInPark( 19, 5 );
+		Assert.AreEqual( 0f, guest.Energy, "a new guest starts at 0" );
+		Run( simulation, new[] { shop }, 600 );
+		Assert.AreEqual( 0f, guest.Energy, "ten seconds in the park change nothing" );
+		shop.Bridge.FatigueEffect = 5;
+		host.OnVisitorReleased( shop.Bridge, guest.Id );
+		Assert.AreEqual( 0f, guest.Energy, "the shipped FatigueEffect 5 is clamped at 0" );
+		shop.Bridge.FatigueEffect = -30;
+		host.OnVisitorReleased( shop.Bridge, guest.Id );
+		Assert.AreEqual( 30f, guest.Energy, "a negative effect raises it" );
+		shop.Bridge.FatigueEffect = -90;
+		host.OnVisitorReleased( shop.Bridge, guest.Id );
+		Assert.AreEqual( 100f, guest.Energy, "and clamps at 100" );
 	}
 
 	[TestMethod]

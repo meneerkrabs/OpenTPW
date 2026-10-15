@@ -53,13 +53,14 @@ public static class StaffPlacementRules
 
 	/// <summary>
 	/// The pick-up button's enable rule (tp.exe <c>CanBePickedUp</c> 0x505bd0): refused while the member is on strike or walking to one
-	/// (states 4 and 5), already picked up (7) or escorting (18; the state 13 has no job here), and when the member's own cell is not of a pick-up type.
+	/// (states 4 and 5), already picked up (7), repairing a ride (13) or escorting (18), and when the member's own cell is not of a pick-up type.
 	/// </summary>
-	// [APPROX:ECON-052] the original also refuses staff state 13 and plays script 0x14 for state 6: StaffJob has neither, so only the jobs it has are refused — evidence needed: what the staff states 6 and 13 are
+	// [BIN:TPW-EXE:0x505bd0 CanBePickedUp] the state word +0x19c: 4, 5 (jump table 0x505c0c), 7 (0x505c2c), 13 and 18 refuse, then the cell test 0x4fa990; 13 is the
+	// mechanic's repair (0x4da370(0xd), entered from 0x4da740), OpenTPW's StaffJob.Repairing
 	public static bool CanBePickedUp( StaffMember member, ParkCellMap cells )
 	{
 		if ( member.State is StaffState.OnStrike or StaffState.PickedUp
-			|| member.Job is StaffJob.ToStrike or StaffJob.Striking or StaffJob.PickedUp or StaffJob.Escorting )
+			|| member.Job is StaffJob.ToStrike or StaffJob.Striking or StaffJob.PickedUp or StaffJob.Repairing or StaffJob.Escorting )
 			return false;
 		return CellOf( member ) is { } cell && cells.InBounds( cell.X, cell.Y ) && IsPickUpCellType( cells.RawTypeAt( cell.X, cell.Y ) );
 	}

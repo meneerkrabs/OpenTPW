@@ -890,6 +890,9 @@ public static class GameAudio
 	/// <summary>Plays a <c>cat_ui</c> event (control activation clicks, drawer and error feedback).</summary>
 	public static AudioVoice? PlayUi( uint eventId ) => events?.Play( Ui, eventId, AudioChannel.Effects );
 
+	/// <summary>Plays one event of the global <c>cat_speech</c> category flat on the speech channel (the advisor's cut-off slap); null when nothing plays.</summary>
+	public static AudioVoice? PlaySpeechEffect( uint eventId ) => events?.Play( Speech, eventId, AudioChannel.Speech );
+
 	/// <summary>Plays one event of any loaded category on the effects channel; null when nothing plays.</summary>
 	public static AudioVoice? Play( SoundCategory? category, uint eventId ) => events?.Play( category, eventId, AudioChannel.Effects );
 

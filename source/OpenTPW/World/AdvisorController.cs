@@ -40,8 +40,12 @@ internal static class AdvisorTables
 	};
 
 	/// <summary>The Advisor.sam key of the score every help message carries.</summary>
-	// [BIN:TPW-EXE:0x0059E8C0 context-help score] the score callback of the 82 help descriptors returns the balance field at +0x328, the Advisor.sam key HelpMessage.ContextHelpScore (1000 shipped; HelpMessage.Score is 1000 too)
-	public const string HelpScoreKey = "HelpMessage.ContextHelpScore";
+	// [BIN:TPW-EXE:0x0059E8C0 help score] the score callback of the 82 help descriptors returns the balance field at +0x328, the Advisor.sam key HelpMessage.Score (1000 shipped)
+	// [BIN:TPW-EXE:0x0072E124 advisor.sam schema] the schema's int fields laid out in order from +0x18 (GeneralAdvisor +0x18/+0x1C/+0x20, read at 0x59B6C3 as +0x20) put HelpMessage.Score at +0x328 and HelpMessage.ContextHelpScore at +0x32C once the 4-byte gap after the MessageGroups array is counted, which the accessors confirm: four Score getters at +0x31C..+0x328 (0x59E890..0x59E8C0, GeneralWonGoldenTicket, AwardGiven, AwardMoved, HelpMessage) and the money test 0x59E8E6 against +0x330 (WealthHigh.MoreMoneyThan)
+	public const string HelpScoreKey = "HelpMessage.Score";
+	/// <summary>The Advisor.sam key of the score F1 gives the replayed last tutorial advice (<see cref="AdvisorController.ReplayLastTutorial"/>).</summary>
+	// [BIN:TPW-EXE:0x0059AB8E replay score] the only reader of the balance field +0x32C (0xFB386C), HelpMessage.ContextHelpScore (1000 shipped)
+	public const string ContextHelpScoreKey = "HelpMessage.ContextHelpScore";
 
 	private static IReadOnlyList<AdvisorMessageDefinition>? help;
 
@@ -96,6 +100,8 @@ internal sealed class AdvisorBalance
 	public required int MinimumTimeSameMessage { get; init; }
 	public required IReadOnlyDictionary<int, (uint RepeatGroups, bool SayOnlyOnce, uint DiscardAfterSlaps)> Groups { get; init; }
 	public required IReadOnlyDictionary<string, int> Scores { get; init; }
+	/// <summary><c>HelpMessage.ContextHelpScore</c>: the score F1 gives the replayed last tutorial advice (0 when the file lacks it, which leaves the replay silent).</summary>
+	public int ContextHelpScore { get; init; }
 
 	public static AdvisorBalance Load() => Parse( FileSystem.ReadAllBytes( Path ), Path );
 
@@ -122,6 +128,7 @@ internal sealed class AdvisorBalance
 			MinimumTimeSameMessage = settings.GetInt( "GeneralAdvisor.MinTimeSameMessage" ),
 			Groups = groups,
 			// The help score is optional: a settings file without it leaves the help silent instead of disabling the advisor.
+			ContextHelpScore = settings.GetInt( AdvisorTables.ContextHelpScoreKey, 0, optional: true ),
 			Scores = AdvisorTables.AllMessages.Select( message => message.ScoreKey ).Distinct( StringComparer.OrdinalIgnoreCase )
 				.ToDictionary( key => key, key => key == AdvisorTables.HelpScoreKey ? settings.GetInt( key, 0, optional: true ) : settings.GetInt( key ), StringComparer.OrdinalIgnoreCase ),
 		};
@@ -181,6 +188,14 @@ internal sealed class AdvisorController
 			return null;
 		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, Balance.ScoreOf( messageId ) ), liveGameTick, tutorialEnabled );
 	}
+
+	/// <summary>
+	/// F1 in a HUD window (the default window procedure 0x488BA0, key 0x70 without modifiers): the last tutorial advice the queue kept is
+	/// offered again at <c>HelpMessage.ContextHelpScore</c>, bypassing its once-only and slap checks. Null when none is kept.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00488C02 F1 replay] message 0x1000B with key 0x70 and no modifier byte calls the controller getter 0x5194D0 and 0x59AB50
+	public AdvisorQueueAdmission? ReplayLastTutorial( uint liveGameTick, bool tutorialEnabled ) =>
+		Queue.ReplayLastTutorial( Balance.ContextHelpScore, liveGameTick, tutorialEnabled );
 
 	/// <summary>The window or tool no longer needs its help (the original's 0x486B40): see <see cref="AdvisorScoreQueue.Withdraw"/>.</summary>
 	public AdvisorWithdrawal Withdraw( int messageId, uint advisorClock ) => Queue.Withdraw( messageId, advisorClock );
@@ -265,8 +280,13 @@ internal sealed class AdvisorController
 			history[messageId] = new AdvisorMessageHistory( entry.SavedGameTick, entry.PreviousVariant, entry.HasBeenPlayed, entry.SlapCount );
 		}
 		Queue.Restore( pending, history );
+		// [BIN:TPW-EXE:0x0059BA30 record serializer] the controller's save and load pass the record at +0x16D0 through it (0x59A1C6, 0x59A49D), so the save's current record is the last tutorial advice
+		var current = saved.Current;
+		var lastTutorial = current.Valid && current.MessageId <= int.MaxValue && Queue.HasDescriptor( (int)current.MessageId ) && Queue.IsTutorial( (int)current.MessageId )
+			? new AdvisorPendingAdvice( (int)current.MessageId, current.Score, current.ResponseNo, current.OverrideOnlyOnce != 0 ) : null;
+		Queue.RestoreLastTutorial( lastTutorial );
 		// [APPROX:ADVISOR-022] An original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129 and 323 are bound) are dropped on import; OpenTPW's own park save stores the controller (ParkResumeSaveFile, AutomaticAdvisorSnapshot) — evidence needed: the remaining descriptor rows (table 0x76E300)
-		return $"[APPROX:ADVISOR-022] Advisor controller imported: {imported} pending advice, history of {history.Count} bound messages; dropped {dropped.Count} pending advice of unbound messages ({string.Join( ", ", dropped )}) and {droppedHistory} unbound history entries; the imported records' thing, secondary and score-overridden fields are not kept ({string.Join( "; ", fields )}); the controller's other values are reported under SAVE-010.";
+		return $"[APPROX:ADVISOR-022] Advisor controller imported: {imported} pending advice, history of {history.Count} bound messages; dropped {dropped.Count} pending advice of unbound messages ({string.Join( ", ", dropped )}) and {droppedHistory} unbound history entries; last tutorial advice {(lastTutorial != null ? $"message {lastTutorial.MessageId} kept" : current.Valid ? $"message {current.MessageId} dropped (unbound or not a tutorial)" : "none")}; the imported records' thing, secondary and score-overridden fields are not kept ({string.Join( "; ", fields )}); the controller's other values are reported under SAVE-010.";
 	}
 
 	/// <summary>

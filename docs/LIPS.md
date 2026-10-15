@@ -395,7 +395,7 @@ gone 0.8–1.0 s later (2.2 s for one longer outro); the played sum puts the end
 ### Contextual help (ADVISOR-009, October 14, 2026)
 
 About half of all speech in the video is help text for a window or tool. In `tp.exe` it is a message family: descriptors of the
-tutorial group (group 1; 82 descriptors, 81 of them with a response in the table, since 291 names the absent response 551) whose score callback `0x59E8C0` returns the Advisor.sam score `HelpMessage.ContextHelpScore` (1000), marked to
+tutorial group (group 1; 82 descriptors, 81 of them with a response in the table, since 291 names the absent response 551) whose score callback `0x59E8C0` returns the Advisor.sam score `HelpMessage.Score` (`+0x328`, 1000), marked to
 skip the background scan, posted by the UI code (`content/data/advisor-help-messages.toml`; the descriptor table `0x76E300` is filled at
 start by the straight-line initializer `0x5A0A50`, which the script replays). A window builder posts its message with `0x486B00`
 (build `0x59B590`, queue `0x59A940`) and its close handler withdraws it with `0x486B40` → `0x59AA70`: pending records of the message are
@@ -409,7 +409,14 @@ starts, each cut by the next window), again three times in the next park, and th
 attractions 191, loans 195 (full simulation only), finance 197, park information 199, all visitors 286, ticket price 303, identified by the
 title strings their builders load (`AdvisorUiHelp`). `ParkHud` reports screens opening and closing to the host, `AutomaticAdvisor.OnWindowOpened`/
 `OnWindowClosed` post and withdraw. The other 73 help ids (windows OpenTPW does not have, tool starts such as the queue and path tools; mode 3 of
-`SetMode` posts 203) are bound as descriptors but have no producer (ADVISOR-009); the slap sound the last-tutorial copy and its clearing branch `0x59AA7B`-`0x59AAC8` are ADVISOR-027.
+`SetMode` posts 203) are bound as descriptors but have no producer (ADVISOR-009). A cut-off while the speech sound still plays (the update
+`0x599902` drops the handle once it ends) plays one of the three slaps of the global `cat_speech` bank, `0x27F` + `rand() % 3`
+(`0x5995A4`; OpenTPW draws from a local presentation generator). Every tutorial (group 1) record offered to the queue is first copied to
+controller `+0x16D0` (`0x59A940`), admitted or not; withdrawing that message clears the copy (`0x59AA7B`-`0x59AAC8`), and F1 in a help
+window (the default window procedure `0x488BA0`, key `0x70` without modifiers) offers it again at `HelpMessage.ContextHelpScore` with its
+once-only and slap checks overridden (`0x59AB50`). The help descriptors themselves score `HelpMessage.Score` (`+0x328`, `0x59E8C0`). The
+copy is the save's "current record" and rides in OpenTPW's park save; `+0x16E8` (`mRequestedLastTutorial`) has no writer besides the
+save/load and its clear, so the one update it skips only follows an original save that held it (reported under SAVE-010).
 
 ### Sequences and timing
 
@@ -635,12 +642,11 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-022 | `source/OpenTPW/World/AdvisorController.cs` | On an original save import, pending advice and history of messages without a bound descriptor (all but 0, 106, 128, 129, 323 and the 81 help messages) are dropped (reported); OpenTPW's own park save stores the controller | The remaining descriptor rows (table `0x76E300`) |
 | ADVISOR-025 | `source/OpenTPW/World/AdvisorSequence.cs` | The effect of a fixed sequence's timer entry (sequences 28 and 29: particle `0x521E60` (87, 90000, 0, 7000), sound `0xC6`, `0x4B9340`) is not ported; the timer is recorded on the sequence | The effects of `0x521E60` with these arguments and of `0x4B9340` |
 | ADVISOR-026 | `source/OpenTPW/World/AdvisorCostumes.cs` | The level advisors' props (Ticket, MAP, Ticket2, Mutant Eye, T_Particle/Rotate dummies) stay hidden; the ticket logic `0x599B09`–`0x599BDE` and the accessory bits `0x20000`–`0x200000` of `0x598DC0` are not ported | The ticket schedule behind `0xF7978C`/`0xF79788` and the effects of `0x5ED5A0`–`0x5ED700` |
-| ADVISOR-027 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | A withdrawn speaking help hides the advisor and stops the speech; the slap sound (`0x27F`–`0x281`) and the last-tutorial copy at controller `+0x16D0` with its clearing branch `0x59AA7B`-`0x59AAC8` (when `0x59C500(message) == 1` and `+0x16DC` is the message, `+0x16E4` is cleared) are not ported | The samples of the three sound ids and the reader of `+0x16D0`/`+0x16E8` (`0x59A550`) |
 
 Retired October 14, 2026 (traced in tp.exe, citations at the sites): ADVISOR-008 (audio start), ADVISOR-013 (talking
 flag), ADVISOR-014 (synthesis window), ADVISOR-019 (balance fields +0x18/+0x1C are not read), ADVISOR-016 (the ten fixed
 rows of table `0x76DC18`; the unported timer effect is ADVISOR-025) and ADVISOR-018 (the sampler hides the model at the end of the
-last clip). ADVISOR-002 (costumes) and ADVISOR-023 (the −1..1 screen space, confirmed by the video: the body centre at 0.80 of the
+last clip). ADVISOR-027 (the cut-off slap, the last tutorial record and its F1 replay) retired on October 15, 2026. ADVISOR-002 (costumes) and ADVISOR-023 (the −1..1 screen space, confirmed by the video: the body centre at 0.80 of the
 frame in both axes, `[EXT-EVIDENCE:video tpw-nl 1:50]`) retired on October 14, 2026 (video round). ADVISOR-011 is an extension (`[EXT:advisor-no-device-speech]`), as is ADVISOR-024 (`[EXT:advisor-aspect]`).
 
 ## Remaining gates

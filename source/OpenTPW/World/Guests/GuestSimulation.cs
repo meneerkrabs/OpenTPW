@@ -177,9 +177,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>
 	/// An attraction is removed (the removal message 10, tp.exe <c>0x004DD0A0</c> → the guest handler <c>0x004FB360</c>): every guest whose target it is
 	/// loses the small happiness step and its target and decides again (state 6); a queued guest (states 11–14) is first dismissed (<c>0x005012F0</c>:
-	/// the medium step, the queue words cleared), and the guest's used history forgets the attraction.
+	/// the medium step, the queue words cleared); every guest's used history forgets the attraction.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FB360 object removed] for message 10 naming the target +0x1DC: a guest in state 16 (on the ride) gets its model back (0x004D4140 / 0x004217F0), +0x28 = 0, event 0xD and the cat_kids 0x80 sound; any other guest in states 11–14 (0x00502430, state 8's held state too) the dismissal 0x005012F0; then every one the small step (0x004FE980(0), clamped by 0x004FB4F0), +0x1DC = 0 and state 6 (0x00501DB0); the major destination +0x1DE is cleared when it names the object, and each used-history slot +0x1E0 that does is zeroed with the temporary-history slot +0x1E8 of the same index
+	// [BIN:TPW-EXE:0x004FB360 object removed] for message 10 naming the target +0x1DC: a guest in state 16 (on the ride) gets its model back (0x004D4140 / 0x004217F0), +0x28 = 0, event 0xD and the cat_kids 0x80 sound; any other guest in states 11–14 (0x00502430, state 8's held state too) the dismissal 0x005012F0; then every one the small step (0x004FE980(0), clamped by 0x004FB4F0), +0x1DC = 0 and state 6 (0x00501DB0); the target test (0x004FB383, jne 0x004FB4A6) guards only that block: for every guest the message reaches, the major destination +0x1DE is cleared when it names the object (0x004FB4A6) and each used-history slot +0x1E0 that does is zeroed with the temporary-history slot +0x1E8 of the same index (0x004FB4BA..0x004FB4D9)
 	// [APPROX:GUEST-004] OpenTPW keeps no major destination (+0x1DE, a target set aside for a minor one, 0x00500900) and clears the target when a visit ends, where tp.exe keeps +0x1DC until the next choice 0x004FCB10, so a guest that has just left the removed attraction is not hit; the dismissal's event 6 and sound and the state-16 event 0xD and sound are not modelled (QUEUE-005); a guest on the ride or in the queue is placed at once on the exit or join cell (QUEUE-010)
 	public void Unregister( IRideVisitorBridge attraction )
 	{
@@ -196,19 +196,23 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			ClearQueueState( guest );
 			guest.SideshowWon = null;
 			guest.Happiness = MeterMath.Add( guest.Happiness, -(float)(Settings.SmallHappinessChange & 0xFF) );
-			for ( var slot = 0; slot < Guest.HistorySlots; slot++ )
-			{
-				if ( guest.UsedHistory[slot] != attraction.AttractionId )
-					continue;
-				guest.UsedHistory[slot] = 0;
-				guest.TemporaryHistory[slot] = 0;
-			}
 			if ( guest.State is GuestState.GoingToRide or GuestState.Using || guest.IsInQueue )
 				ReturnToPath( guest, cell );
 			else
 			{
 				guest.AttractionId = 0;
 				guest.State = GuestState.DoingNothing;
+			}
+		}
+		// every guest, targeting it or not, forgets it in its histories
+		foreach ( var guest in guests )
+		{
+			for ( var slot = 0; slot < Guest.HistorySlots && attraction.AttractionId != 0; slot++ )
+			{
+				if ( guest.UsedHistory[slot] != attraction.AttractionId )
+					continue;
+				guest.UsedHistory[slot] = 0;
+				guest.TemporaryHistory[slot] = 0;
 			}
 		}
 		if ( attraction.Host == this )

@@ -23,6 +23,9 @@ public class AttractionRemovalGuestTests
 		var walking = rig.Send( 80 );
 		var other = rig.Simulation.SpawnInPark( 5, 0 );
 		other.Happiness = 80;
+		other.UsedHistory[1] = RideId;
+		other.TemporaryHistory[1] = 9;
+		other.TemporaryHistory[3] = RideId;
 		queued[1].UsedHistory[2] = RideId;
 		queued[1].TemporaryHistory[2] = 7;
 		queued[1].TemporaryHistory[0] = RideId;
@@ -41,7 +44,9 @@ public class AttractionRemovalGuestTests
 		}
 		Assert.AreEqual( MeterMath.Add( walkingBefore, -settings.SmallHappinessChange ), walking.Happiness, "a guest walking to it is not dismissed" );
 		Assert.AreEqual( (GuestState.DoingNothing, 0), (walking.State, walking.AttractionId) );
-		Assert.AreEqual( 80f, other.Happiness, "a guest with another target is untouched" );
+		Assert.AreEqual( (80f, 0), (other.Happiness, other.AttractionId), "a guest with another target keeps its happiness" );
+		Assert.AreEqual( (0, 0, RideId), (other.UsedHistory[1], other.TemporaryHistory[1], other.TemporaryHistory[3]),
+			"the history pass 0x4fb4ba runs for every guest the message reaches, not only the targeting ones" );
 		Assert.AreEqual( 0, queued[1].UsedHistory[2], "the used-history slot naming the attraction is cleared" );
 		Assert.AreEqual( 0, queued[1].TemporaryHistory[2], "with the temporary-history slot of the same index" );
 		Assert.AreEqual( RideId, queued[1].TemporaryHistory[0], "a temporary-history slot is cleared only beside a used-history match" );

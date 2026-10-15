@@ -215,19 +215,7 @@ public sealed class BumpController
 	// [BIN:TPW-EXE:0x0054B1E0 object pool] 2048 records for every ride of the park; [BIN:TPW-EXE:0x0054B170 buoy pool] 1024 ("Out of Buoys")
 	private bool PlaceInModule( List<CollisionObject> fresh, int buoyCount )
 	{
-		foreach ( var other in module.Controllers )
-		{
-			if ( other == this )
-				continue;
-			foreach ( var vehicle in other.vehicles )
-			{
-				if ( vehicle.ObjectOwner == this )
-				{
-					vehicle.ObjectIndex = -1;
-					vehicle.ObjectOwner = null;
-				}
-			}
-		}
+		module.ForgetObjectsOf( this );
 		var placed = module.BuoyCount - buoys.Count + buoyCount <= BumpWorld.BuoyPool && module.PlaceObjects( this, fresh );
 		if ( !placed )
 		{

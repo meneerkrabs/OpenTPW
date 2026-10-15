@@ -58,11 +58,30 @@ public sealed class BumpWorld
 	internal void Remove( BumpController controller )
 	{
 		controllers.Remove( controller );
+		ForgetObjectsOf( controller );
 		ReleaseObjects( controller );
 		for ( var slot = 0; slot < VehiclePool; slot++ )
 		{
 			if ( vehicleSlots[slot]?.Controller == controller )
 				vehicleSlots[slot] = null;
+		}
+	}
+
+	/// <summary>The vehicles of other rides that sat in <paramref name="owner"/>'s objects lose them (the objects are rebuilt or gone; the original keeps a stale pointer).</summary>
+	internal void ForgetObjectsOf( BumpController owner )
+	{
+		foreach ( var controller in controllers )
+		{
+			if ( controller == owner )
+				continue;
+			foreach ( var vehicle in controller.Vehicles )
+			{
+				if ( vehicle.ObjectOwner == owner )
+				{
+					vehicle.ObjectIndex = -1;
+					vehicle.ObjectOwner = null;
+				}
+			}
 		}
 	}
 

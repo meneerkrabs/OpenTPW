@@ -124,11 +124,17 @@ public sealed partial class FrontEndMenu
 			if ( menu is { IsRemoved: false } && ReferenceEquals( Stack.Top, menu ) )
 				Stack.Pop();
 		}
+		// the menu closes before the screen it opens, so closing that screen returns to the lobby
+		Action Then( Action open ) => () =>
+		{
+			CloseMenu();
+			open();
+		};
 		var items = new List<(string Id, Func<string> Text, Action Clicked, bool Enabled)>();
 		if ( actions.GoOnline != null )
-			items.Add( ("goOnline", () => strings[UIStrings.GoOnline], () => actions.GoOnline( Stack ), true) );
-		items.Add( ("load", () => strings[UIStrings.Load], ShowLoad, true) );
-		items.Add( ("options", () => strings[UIStrings.Options], ShowOptions, actions.CreateOptions != null) );
+			items.Add( ("goOnline", () => strings[UIStrings.GoOnline], Then( () => actions.GoOnline( Stack ) ), true) );
+		items.Add( ("load", () => strings[UIStrings.Load], Then( ShowLoad ), true) );
+		items.Add( ("options", () => strings[UIStrings.Options], Then( ShowOptions ), actions.CreateOptions != null) );
 		items.Add( ("resume", () => strings[UIStrings.ResumeGame], CloseMenu, true) );
 		items.Add( ("quit", () => strings[UIStrings.QuitGame], ShowQuit, true) );
 		menu = UiDialogs.TextMenu( "lobbyMenu", items, CloseMenu, "resume" );

@@ -45,7 +45,10 @@ seconds per turn; sampling into 60 Hz ticks is `APPROX:ECON-001`) turns
 108,000 ticks into 7,258 park turns, about 315 park-clock days (Year 1, month 11,
 day 11). Thirty park-clock minutes would be less than one turn (about 15 ticks),
 which cannot exercise anything. Reading "in-game minutes" as simulation minutes is
-**[APPROX:GATE-001]**. The gate's second registered assumption, **[APPROX:GATE-006]**,
+OpenTPW's own harness unit, `[EXT:m3-gate-minute]` (formerly `APPROX:GATE-001`): the
+original has no gate and paces play by scaled real time, a park turn every eighth 31 ms
+substep (tp.exe `0x54f4c4`, `0x54f668`) and 3,750 park-clock seconds per turn (the rate
+15,000 / 4, `0x4f7e80`, `0x4f8260`). The gate's registered assumption, **[APPROX:GATE-006]**,
 covers its queue walk terms, which come from enumerating the steering OpenTPW runs since
 WALK-I (below).
 

@@ -258,6 +258,10 @@ public class ParkEconomyTests
 		park.AdvanceMonths( 1 );
 		Assert.AreEqual( 60, mechanic.TrainingPoints );
 		Assert.AreEqual( balance - park.Settings.GetMonthlyWage( StaffType.Mechanic, grade ) - price * 60L, park.Balance );
+		// tp.exe 0x00505A10: the training is money out but not a staff cost (the staff costs row +0x1F7F0 takes only the wages)
+		Assert.AreEqual( park.Settings.GetMonthlyWage( StaffType.Mechanic, grade ) + park.Settings.GetMonthlyWage( StaffType.Handyman, handyman.Grade ),
+			park.Ledger.History[^1][LedgerCategory.StaffCosts], "the mechanic's wage and the dismissed handyman's month" );
+		Assert.AreEqual( price * 60L, park.Ledger.History[^1][LedgerCategory.OtherCosts] );
 		park.AdvanceMonths( 1 );
 		Assert.AreEqual( grade + 1, mechanic.Grade );
 		Assert.AreEqual( 20, mechanic.TrainingPoints, "60 + 60 points: the 20 above the grade boundary carry over" );

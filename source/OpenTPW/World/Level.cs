@@ -433,6 +433,8 @@ public partial class Level : IDisposable
 			else if ( item.Kind == ParkEventKind.UpgradeCompleted )
 			{
 				ApplyCompletedCatalogueTier( item.InstanceId );
+				// [BIN:TPW-EXE:0x55A100 upgrade effect] the type's UpgradeParticleEffect starts when the upgrade is installed (0x4df8f0)
+				AttractionRuntimeOf( item.InstanceId )?.StartObjectEffect( ObjectParticleEffect.Upgrade );
 				OpenAfterRepair( item.InstanceId );
 			}
 		};

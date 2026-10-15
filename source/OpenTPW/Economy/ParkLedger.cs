@@ -51,7 +51,7 @@ public sealed class ParkLedger
 	public IReadOnlyList<LedgerMonth> History => history;
 	public IReadOnlyDictionary<LedgerCategory, long> CurrentTotals => current;
 
-	// [APPROX:ECON-005] challenge prizes and scrap sales are other income; build, upgrade, goods, prizes, land are other costs; the monthly Profit charges whole instalments — evidence needed: the writers of the finance screen's per-category rows (tp.exe keeps one money-in word, +0x1FC90, and one total-cost word, +0x1F5A0, in 0x4d0190 / 0x4d01f0; a loan taken, 0x4d0750, is money in and nets to 0 on the year profit, and an instalment, 0x4d0370, costs it only its interest share)
+	// [APPROX:ECON-005] challenge prizes and scrap sales are other income and build, upgrade, goods, prizes, land and training other costs, OpenTPW's split of the original's two totals: tp.exe keeps rows only for the gate, shop and sideshow takings and the staff wages (finance graph 0x49A7B0: +0x1FEE0 from the admission 0x4D0600, +0x20130 / +0x20380 by Info.WhichUIType from 0x4E16B0, +0x1F7F0 from the month wage 0x504C70 and the dismissal 0x505790), and every other credit reaches money in (+0x1FC90, 0x4D0190) and every other debit money out (+0x1F5A0, 0x4D01F0) only; the monthly Profit (whole instalments) is OpenTPW's trace figure with no original row — evidence needed: the writer of the bank's pending word +0x10, which the month routine 0x4D0370 adds to money in without a row
 	public static bool IsIncome( LedgerCategory category ) => category is LedgerCategory.GateTakings or LedgerCategory.ShopTakings or LedgerCategory.SideshowTakings or LedgerCategory.OtherIncome or LedgerCategory.LoanReceived;
 
 	/// <summary>The year's running profit (<c>mProfitThisYear</c>): reset at each new calendar year.</summary>

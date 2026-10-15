@@ -27,8 +27,9 @@ public interface ICellLineWriter
 /// <summary>
 /// The path and queue build tool (PATH-plan §4.3, §9.4), CPU-only and shared by both modes: a start cell, the
 /// 1024-entry vertex stack, a ghost preview on cursor moves (the <c>mode | 0x100</c> LayLine) and a commit on
-/// clicks (the raw-mode LayLine). A click whose snapped end is the start (laying nothing once a line exists), a
-/// refused cell, or a line ending on an existing path or queue ends the tool; otherwise the end becomes the next start. The HUD and tests drive it.
+/// clicks (the raw-mode LayLine). A click whose ghost has a refused cell (laying nothing), whose snapped end is the
+/// start (laying nothing once a line exists), or whose line ends on an existing path or queue ends the tool;
+/// otherwise the end becomes the next start. The HUD and tests drive it.
 /// </summary>
 public sealed class CellBuildTool
 {
@@ -82,9 +83,10 @@ public sealed class CellBuildTool
 	}
 
 	/// <summary>
-	/// Click: snap; a click on the start with more than one vertex stored ends the tool and lays nothing (null);
-	/// otherwise push the end, commit the line, then continue from the end or end the tool. Returns the
-	/// committed segment, or null when off or when the click only ended the tool.
+	/// Click: snap; in the path and queue tools a line whose ghost has a refused cell ends the tool and lays nothing
+	/// (the refused ghost is returned); a click on the start with more than one vertex stored ends the tool and lays
+	/// nothing (null); otherwise push the end, commit the line, then continue from the end or end the tool. Returns
+	/// the committed segment, the refused ghost, or null when off or when the click only ended the tool.
 	/// </summary>
 	// [BIN:STP-PPC:0x10070F84 path commit] push and LayLine(mode, start, end) unless the end equals the start with more than one vertex stored (0x7107c..0x71084 bf eq to 0x71174: then nothing is laid); end the tool (start −1, SetMode(0)) when end == start
 	public SegmentResult? Click( (int X, int Y) cell )
@@ -92,6 +94,13 @@ public sealed class CellBuildTool
 		if ( Writer == null || Start is not { } start )
 			return null;
 		var end = ParkPathBuilder.SnapEnd( start, cell );
+		// [BIN:TPW-EXE:0x524A63 refused ghost] a click while the ghost of the line has a refused cell (0x816D48, set at 0x533933 when the preview's validator 0x535670 refuses a cell) ends the path or queue tool and lays nothing (mode table 0x52766C: SetMode(0, 0) at 0x5266A3)
+		// A ghost stopped only by OpenTPW's queue length cap is not a refusal of the original's validator (QUEUE-013): the click commits up to the cap
+		if ( Mode is CellToolMode.Path or CellToolMode.Queue && Writer.Preview( start, end ) is { Completed: false, StoppedByOwnLimit: false } refused )
+		{
+			End();
+			return refused with { GhostRefused = true };
+		}
 		if ( end == start && vertices.Count != 1 )
 		{
 			End();
@@ -120,8 +129,16 @@ public sealed class CellBuildTool
 		LastCommit = result;
 		if ( pushed )
 			segments.Add( result );
-		// [APPROX:PATH-012] a line refused part-way ends the tool (the flag read at 0x7123c is the result of the ghost-clear LayLine(0x81) at 0x71164, not of the commit LayLine at 0x710c0, so ending on the commit's refusal is not traced) — evidence needed: what LayLine(0x81) returns after a refused commit
-		// [APPROX:PATH-003] a line whose last cell was already a path or queue cell ends the tool (SetCell raises data:0x84b34 there; its consumer is not traced, the help text 443 says such a click completes the path) — evidence needed: the reader of data 0x84b34
+		if ( Mode is CellToolMode.Path or CellToolMode.Queue )
+		{
+			// [BIN:TPW-EXE:0x527517 end flag] after the commit LayLine (0x527429) the pass 0x81 returns 0 only when the commit reached the line's last cell and that cell was a path or queue cell before the write (SetCell's write branch sets 0x820ABC at 0x5345AD, case 0x81 reads it at 0x5340C1); then the tool ends (0x5275B1), as when the end is the start; otherwise the snapped end is the next start (0x527650), even after a refused commit
+			var reachedLast = result.Completed || (result.Line.Count > 0 && result.StoppedAt == result.Line[^1]);
+			if ( end == start || (result.EndedOnExisting && reachedLast) || !pushed )
+				End();
+			else
+				Start = end;
+			return result;
+		}
 		if ( end == start || !result.Completed || result.EndedOnExisting || !pushed )
 			End();
 		else
@@ -227,9 +244,11 @@ public sealed class QueueLineWriter : ICellLineWriter
 		var built = new List<(int X, int Y)>();
 		var existing = new List<(int X, int Y)>();
 		var stoppedBy = CellBuildResult.Ok;
+		var ownLimit = false;
 		(int X, int Y)? stoppedAt = null;
 		var last = line[^1];
-		var endedOnExisting = grid.IsWalkable( last.X, last.Y ) || (grid.IsQueue( last.X, last.Y ) && !Ride.QueueCells.Contains( last ));
+		// [BIN:TPW-EXE:0x5345A1 end flag] the last cell ends the tool when it held a path or any queue cell (type 1 or 3) before the write, this ride's own queue included
+		var endedOnExisting = grid.IsWalkable( last.X, last.Y ) || grid.IsQueue( last.X, last.Y );
 		foreach ( var (x, y) in line )
 		{
 			if ( grid.IsQueue( x, y ) && Ride.QueueCells.Contains( (x, y) ) )
@@ -251,6 +270,7 @@ public sealed class QueueLineWriter : ICellLineWriter
 					_ => CellBuildResult.Occupied
 				};
 				stoppedAt = (x, y);
+				ownLimit = result == QueueBuildResult.TooLong;
 				break;
 			}
 			built.Add( (x, y) );
@@ -260,7 +280,8 @@ public sealed class QueueLineWriter : ICellLineWriter
 			Start = start,
 			Line = line,
 			Existing = existing,
-			StoppedAt = stoppedAt
+			StoppedAt = stoppedAt,
+			StoppedByOwnLimit = ownLimit
 		};
 	}
 }

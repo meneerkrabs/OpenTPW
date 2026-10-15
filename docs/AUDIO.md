@@ -192,6 +192,18 @@ empty range draw nothing. A sentence does not repeat the sample it just played w
 two. The state is seeded once at static initialisation (`0x72e09c` -> `0x6bb930` -> `0x5f5f10`,
 QueryPerformanceCounter) and is never saved.
 
+**Pitch.** A sample starts (`0x6bc410`) with the volume draw, then the pitch draw (`0x6bc170`): the signed bytes `+0xE`/`+0xF`
+of the sound record are put in order and the step is `min + r % (max - min)` (a placeholder flag `0x10000` fixes it, a
+parameter-bound pitch slot supplies it from the parameter). A non-zero step multiplies the sample rate by a float of the
+tables at `0x782f40` (positive) and `0x783540` (negative, read at `+4 * |step|`), rounded to an integer for the mixer
+(`0x6d2820`); the tables hold 2^((k + 1) / 96) written with six decimals (a few ULP from the exact power; OpenTPW computes them by that rule, which matches all 110 entries of both tables), so the index is one step off: step 1 is already +25 cents, step 0 is the only
+unshifted one, and 2^(1/96) is never played. The scream, chain and crowd sounds draw 0..6 (steps 0-5, up to +4.4 %);
+others range from -24..36 to -2..0 steps, and 1,343 shipped sounds have no range. In the video of the original, 141
+playbacks sit on exactly the six ratios of 0..6 (median error 0.00014), not on 2^(1/96) or the maximum. OpenTPW draws and
+applies it in `SoundEventSystem.Pitch` and `AudioVoice.SetPitch` for every one-shot, placed sound, sentence segment and
+chain child; the pitched voice is shorter by its ratio and a sentence's next segment starts when it ends. The chain
+delays are milliseconds (the video shows sub-second gaps and overlapping children).
+
 OpenTPW draws everything from that one chooser (`SoundEventSystem`; the crowd's separate stream and
 AUDIO-035 are retired). The state is seeded from the clock when the sound service starts, but a park
 **reseeds it from its world seed at entry and saves it with the park** (`WorldRandomState.SoundSeed`;
@@ -290,7 +302,7 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 | Control click | `cat_ui` 0x1F | every activated control, front end included (control message 0x100) | tp.exe `0x485780` (a global hook, `0x658d9f`/`0x658e42` call it for every control message); Mac `0x10137FD0` |
 | Map/research drawer | `cat_ui` 0x1C open, 0x1C then 0xC2 close | the map and research windows | tp.exe `0x4a14f0` (open `0x4a1737`, close `0x4a186f`, slide end `0x4a1947`) |
 | Error feedback | `cat_ui` 0x1D | a rejected purchase or placement | `0x10139A40` (buy window callers `0x10163AFC`/`0x10163BFC`) |
-| Path tool | `cat_ui` 101 lay, 175 refused | a committed path line; a refused commit, at the clicked cell (x * 10, 0, z * 10) | `0x10070DE0` (commit), tp.exe `0x52496e` (refused `0xAF`, `0x524a80`; AUDIO-022) |
+| Path tool | `cat_ui` 101 lay, 175 refused | a committed path line; a click on a refused path or queue ghost (or a refused track commit), at the clicked cell (x * 10, 0, z * 10) | `0x10070DE0` (commit), tp.exe `0x52496e` (refused `0xAF`, `0x524a80`; AUDIO-022) |
 | Ride-script sounds | any event of the routed category | an RSE `EVENT type key id` instruction: type 3 level `cat_rides` (falling back to the global one, AUDIO-011), 4 level `cat_ambient` (same fallback), 5 global `cat_rides`, 6 `cat_kids`, 7 `cat_staff`, 8 `cat_ambient`, 9 `cat_ui` | `0x100AE930` (dispatcher, guard `bgt` 10 at `0x100AE938`); tp.exe `0x5575c7` (anchored at the key's model node, the footprint middle for a negative key, nothing for an unknown key; see "Placed sound EVENT origins") |
 | Ride screams | `cat_kids` 71–74 held per ride (STARTSCREAM), STOPSCREAM stops it; `cat_kids` 75–109 one-shot (SINGLESCREAM) | a ride script's scream instructions; band 1 → 71, 2–3 → 72, 4–7 → 73, 8+ → 74; parameter (level + 50) / 2 (parameter 6 on the PC); **positioned at the ride's footprint middle** | `0x100B19DC` (STARTSCREAM), `0x100B1A74` (STOPSCREAM), `0x100B1A90` (SINGLESCREAM), `0x100ACA38`, `0x100ACB7C`, `0x100ACC24`, `0x100ACE68`; tp.exe `0x551130` (STARTSCREAM submit: positioned, 0x47-0x4A at (x, y, z), parameter 6 = clamp((a + b) / 2, 0, 100)), `0x555edb`, `0x555f1b` -> `0x556af0` -> `0x551320` |
 | Repair sounds | `cat_kids` 75 (families 75–90) show; `cat_rides` 111 and 211 hide | an RSE `REPAIREFFECT 1/0` instruction, both at the object | `0x100B1F78` / `0x100B1EC0`, `0x100B1F00`; tp.exe `0x55635f` / `0x551320` |
@@ -308,9 +320,31 @@ continuously, as in the original. What limits it is the sound manager: it ticks 
 priority with the ground distance as tie-break (`0x6bb9f0` stores the priority beside `0xFFFF − d²/100`, and the admission `0x6b6bc0`
 compares both as one word), and a scream is audible only while the listener is within its range of 95 sound units (9.5 cells) over
 the ground. Screams have priority 2700, below the crowd (5300) and most ride and ambient sounds, so a busy scene leaves them few places.
-A chain outside the pool or out of range starts no new child, its first included (AUDIO-038). The visitors'
+A chain outside the pool or out of range starts no new child, its first included (AUDIO-038); every other event voice out of range without the any-distance flag (event flag `0x200`: the crowd sentence, music, speech, most UI sounds) has its sample stopped by mixer message 3 (`0x6bca70`), a sentence standing still until the listener returns. The visitors'
 chatter and laughter is the crowd sentence (`cat_kids` 0x5B), a continuous bed at 14–22 % volume while guests are within four cells
 of the camera: its segments have no delay in the data.
+
+**Scream diagnostics (October 15).** The original's video shows screams in bursts of 2-17 s with 2-4 samples a second near a
+busy ride, so OpenTPW's rate is not too high; the report's candidate causes were counted. A second STARTSCREAM before a
+STOPSCREAM is refused by `0x551130` (log `0x765a4c`) and leaks the old chain (the caller stores the 0 over the handle,
+`0x555ee3`/`0x555ee6`); `GameAudio.Screams` counts every STARTSCREAM by band, the refusals and the stops, from the script's own
+view of its handle, so the headless gates count them without audio (`--m3-gate` and `--m4-gate` print the summary; the
+native `--debug-sim-minutes` prints it for a running level).
+
+- `--m3-gate --level jungle --minutes 120` (432,000 ticks, 429 guests, 416 rides on Belly Bounce, breakdowns and repairs
+  included): 791 STARTSCREAM, **0 refused**, 737 stops (every start with a band above 0 is stopped but the last); bands 0:
+  53, 1: 116, 2: 141, 3: 160, 4: 202, 5: 119.
+- `--m4-gate` (every ride of the four themes through its lifecycle with queued guests): 169 STARTSCREAM, **0 refused**;
+  bands 0: 105, 1: 9, 2: 11, 3: 7, 4: 37.
+
+So OpenTPW's scripts never reach the leak path, and no chain piles up. The band is the script's operand (`STARTSCREAM V5 20`:
+variable 5 is `VAR_ONRIDE`, which the script maintains per rider with LIMBO and UNLIMBO); tp.exe reads the operand itself, with no
+visitor lookup (`0x551130` takes it as its second argument; 0 returns, 1 picks event 0x47, 2-3 (negative too) 0x48, 4-7 0x49, 8 and
+above 0x4A, parameter `(level + speed) / 2` clamped to 0..100), exactly what `GameAudio.ScreamBandEvent` and `ScreamParameter`
+do. The bands run from 0 to the ride's capacity (5 for Belly Bounce, `Upgrades[0].InitCapacity`), and the data fixes that
+capacity, so OpenTPW's band equals the original's for the same riders; whether the original seats as many riders as OpenTPW
+(boarding and queue pace) is the guest slice's question, not the band's. Near a full ride a band of 4 or more picks the
+0-500 ms and 100-1000 ms event (73, 74) in 43 % of the starts of the jungle run, as in the original's busiest minutes.
 
 Traced in the binary but not triggered yet:
 
@@ -326,8 +360,9 @@ Traced in the binary but not triggered yet:
   linking has no queue-link check (PATH-004, AUDIO-023). The count-classed removal sounds `cat_ui` 141–144 and 150–153
   (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
 * `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`), and it plays now: with no tool on and
-  a path cell under the cursor it plays at that cell, then that one cell is removed (ClearCell's path case), even when a fixed
-  cell stays. Inside the path tool the original's Backspace does nothing; OpenTPW keeps its segment undo there (PATH-002).
+  a path cell under the cursor it plays at that cell, then that cell loses one placement (ClearCell's counted path case,
+  tp.exe `0x40BE8B`) and goes only when it was laid once; the sound plays even when the cell stays. Inside the path tool the original's Backspace is Back (tp.exe `0x52FE50`): it takes the last segment back without
+  a refund and plays no sound, as OpenTPW's segment undo does.
 * The weather's own visuals are drawn now, as procedural approximations (AUDIO-900..904,
   "Weather visuals" below); the forecast's warning is shown as an OpenTPW extension (banner, wording
   and cadence are `[EXT:forecast-banner]`, `[EXT:forecast-wording]`, `[EXT:forecast-cadence]`): the PC has
@@ -529,14 +564,14 @@ implemented yet.
 
 | ID | Approximation | Evidence needed |
 | --- | --- | --- |
-| AUDIO-003 | Pitch (1/8-semitone steps, ratio 2^(sign x (\|p\| + 1) / 96), drawn `min + r % (max - min)`; tp.exe `0x6bc170`/`0x6d2820`), delay (u16 + `r % range`, `0x6bc343`, unit not read) and reverb (`SndReverb.map`) are not applied; position is applied only by the positioned playback path | The pitch link to the mixer's frequency wrapper is inferred (same vtable); the delay unit; `SndReverb.map` |
+| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. Not applied: a parameter-bound pitch slot (ride engine loops), a placeholder's fixed-pitch flag (`0x10000`, which replaces the draw with the short at `+0x4A`), the delay of non-chain sounds (u16 + `r % range`, `0x6bc343`) and reverb (`SndReverb.map`); chain delays are milliseconds (video, 2026-10-15); position is applied only by the positioned playback path | The delay of non-chain sounds; `SndReverb.map`; the parameter-bound pitch slot; which placeholder sets the fixed-pitch flag `0x10000` (the event's flags are 16-bit) |
 | AUDIO-004 | `0xBD` plays for a control whose construction style (`+0x48`, `0x65bcad` arg 2) has bit `0x10` (`0x4857cb`); no OpenTPW control plays it | Which original controls are created with style bit `0x10` (the creation sites or UI resources) |
 | AUDIO-008 | The repair family comes from the owner object's word `+0x14` (band 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87, 0 silent; `0x55635f`/`0x551320`); OpenTPW uses band 1 (75) and plays it at the object as the original does | The band word's meaning and source |
 | AUDIO-009 | A rejected placement ("Cannot build") plays the error feedback 0x1D; the traced 0x1D callers are buy and hire money and limit checks (tp.exe `0x4879d0`, `0x4ac590`, `0x4af500`), no placement-tool site was found | The object-placement refusal cases of the build tool's 0x35-way tool switch (`0x524acd`) |
 | AUDIO-011 | An RSE EVENT id missing from the level catalogue plays from the global category of the same name (`incagod.RSE`'s EVENT 3 id 43 exists only in the global `cat_rides`); the PC dispatcher has no fallback (`0x5575c7`) | Whether the library's own event lookup resolves a missing id elsewhere |
 | AUDIO-015 | The weather thing's own flat, unparameterised 0x21 voice (`0x51327c`, handle `+0x54`) is built beside the level-driven one while it rains | Whether the library lets two instances of one event sound (a per-event instance or priority limit), or a capture |
 | AUDIO-018 | The positioned voice's pan is constant-power by bearing, not the original's pan law (inside QMixer) | QMixer.dll (a separate binary) or a capture |
-| AUDIO-022 | A refused path-tool commit plays `cat_ui` 175 at the clicked cell; the original plays it on a click while the hovered line is refused (validator `0x535670` = 1 or cost > money), outside a drag and after a hover (`0x52496e`) | The input model behind `0x785a2c` (press versus release) |
+| AUDIO-022 | A click on a refused path or queue ghost plays `cat_ui` 175 at the clicked cell, the trigger of tp.exe's click handler `0x52496e` (refusal latch `0x816d48`, `0x524a80`); its gates for a running line drag (`0x785a2c == 0`) and a mouse move since the last hover (`0x8186d8`) are not modelled | The input model behind `0x785a2c` (press versus release) |
 | AUDIO-023 | The link-end sound (`cat_ui` 139) is not played; no undo sound is traced | The link-end condition; the Backspace handler |
 | AUDIO-025 | December's average is the storage of the unnamed type-0 `.sam` schema record after `Seasons` (`0x741d80`), taken as 4; its tolerance and chance are confirmed | The generic `.sam` loader's type-0 case (if it stores nothing the average would be 0, not 4) |
 | AUDIO-026 | The schedule runs on game seconds sampled at the park turn (roll at `lastChanged + max(0, DaysBetweenChanges - DaysOfWarning)` days, apply at the roll's time + `DaysOfWarning` days, the apply falling through to the roll test); the first roll is due at the first step | The PC tick mapping (10^7 units a second) against the park turn |
@@ -549,7 +584,7 @@ implemented yet.
 | AUDIO-033 | Minimum distance 2 is confirmed in both builds; the exponent 0.8 (the fork's QMixer lead) and the missing 2.1 maximum floor stand | The gain curve inside QMixer/SoundSprocket (outside the analysable binaries) |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The PC library's sentence classes (vtables `0x70a7e0`/`0x70a8d0`) |
 | AUDIO-036 | Crowd parameter-controlled volume is evaluated at PCM segment start; the original re-evaluates the playing sample when a parameter in slots 1-3 changes (`0x6bbb80` -> `0x6bbbe0`) | Which slot carries the crowd's parameter 7 |
-| AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) holds back only the held chains (screams); OpenTPW ranks them with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`), but its sentences and one-shots always play | Voices outside the event system, the voice flag 8 (`0x6bca44`), the order among equal ranks, and what happens to a sentence that loses its place |
+| AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) ranks the held chains (screams) with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`). A voice out of range without the any-distance flag (event flag `0x200`, voice flag 8 at `0x6bca44`) is flagged `0x800` and its sample stopped by mixer message 3 (`0x6bca70` -> handler `0x6b8d60` -> `0x6bb7c0`: stop, release, clear the slot), and it is not ticked; OpenTPW stops one-shots and sentence segments, and a chain starts no new child, but a chain's children already playing play out and looping voices are not stopped | What restarts a looping voice after the listener returns (nothing read does), how a stopped sentence resumes, whether a chain's playing children are stopped, the order among equal ranks, and voices the mixer plays outside the event system |
 
 ### Register round 2 (October 14)
 

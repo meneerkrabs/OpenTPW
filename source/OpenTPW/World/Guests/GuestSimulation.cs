@@ -53,6 +53,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public const int BoredomTurns = 100;
 	/// <summary>Park turns an idle interlude lasts (state 8 restores the saved state once turn &gt; +520 + 10).</summary>
 	public const int InterludeTurns = 10;
+	/// <summary>The queue facing change spans (r mod 800) − 400 of 2048 (tp.exe <c>0x004FFFF0</c>).</summary>
+	public const int FacingChangeRange = 800;
 	public const float LeaveHappiness = 10;
 	public const float ToiletLeaveLevel = 80;
 	public const float TicketBoothSeconds = 1.0f;
@@ -677,14 +679,14 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A cell is walkable for the stepping guest (the <c>+180</c> mask) when it is on its current walk: the route cells
 	/// and, for a queue walk, the queue's next cells ahead of the destination and behind the start.
 	/// </summary>
-	// [APPROX:WALK-005] a cell is walkable when it is on the current walk (its route cells and the walk's extra open cells), so path cells beside the route are walls; the original tests the cell's edge flags against the guest's +180 mask (0xd768c) and commits the step through a transition call (0xfee3c..0xfee58) — evidence needed: the edge flags 0xd768c reads, the +180 mask per guest state and the commit callback
+	// [APPROX:WALK-005] a cell is walkable when it is on the current walk (route and extra open cells), so path cells beside the route are walls; the original commits a step through the callback 0x510510 (at most one cell, diagonal steps through either L-shaped route) and the edge test 0x4d8750 with the guest's mask (walk +0xb4): path-to-path steps are always open, queue boundaries need the target's link back, other cell types and the masks 1 and 2 have their own rules; none of this is modelled — still open: the edge test 0x4d8750 on ParkCellMap and the mask writers are not ported
 	private bool IsOpenForStep( int x, int y ) => stepping!.IsOnWalk( x, y );
 
 	/// <summary>
 	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests standing in the 3 × 3 cells around its
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
-	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops at their 16.16 navigation position (the thing's own 1/256-cell position +4/+6 is not traced); within a cell they come in OpenTPW's list order, rebuilt every park turn with movers appended, not the original's per-cell thing list (+764, +10); the original's query also keeps thing types 4–8 and 18, which never push in OpenTPW — evidence needed: the writers of thing +4/+6 and of the cell lists, and what thing types 4–8 and 18 are
+	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone) in OpenTPW's cell lists, rebuilt every park turn in guest order with movers appended; the original (tp.exe query 0x5102f0, Mac 0x10087c) walks per-cell thing lists that are head-inserted when a thing enters a cell (0x50b6a0 via 0x4d91f0) and never rebuilt, keeps class-1 guests whatever their state, and also keeps staff (classes 4-8) and the online avatar (class 18); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
@@ -1210,7 +1212,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E8FF4 choice loop] executed by the PowerPC oracle (attraction-choice); the tie rule reads the world turn's bit 0 (game +0x1da70c)
 	// [BIN:TPW-EXE:0x4dd920 counts-test] the candidate needs flag +0x32 bit 4, a state other than 1 and 4 (+0x19c), the open word (+0x68), a back cell, queue room below 4 × cells (+0x40) and the type checks; VAR_BROKEN is not read, so a ride whose script just reported a breakdown is chosen until its ride update enters state 1
-	// [APPROX:QUEUE-017] the queue room and the coaster controller tests of the counts-test are left to the join (ARRIVAL-003)
+	// [BIN:TPW-EXE:0x004DD920 counts-test room] the candidate's queue list count (0x004DDF50 with id 0) must be below 4 × its cells (+0x40, from the back-of-queue walk 0x004DE130); the coaster test 0x00441970 and the kart/water track word +0x2C are applied through IsOpen (CoasterRide.AcceptsGuests, BumpController.IsTrackValid; the edited-coaster exclusion is COAST-024)
 	// [BIN:TPW-EXE:0x004FCB10 choice loop] no price or money test in the choice: a candidate needs flag +0x32 bit 4, a back-of-queue cell, a score above 9 that beats the best (ties on an odd turn), the counts-test 0x004DD920 and a route; the price is tested when the guest is called forward (0x004FDE50)
 	// [BIN:TPW-EXE:0x4ff419 major decision] once the turn is above +0x1FC + 30 the choice 0x4fcb10 runs; with no target the guest logs event 1, thinks 4, loses the small step (0x4fea70(0)) and is stamped; nothing in it tests time since a ride, and no instruction reads PeepTypes' BoredomThreshold (0x7850EC + 12 × type has no reference; excitement 0x7850E4 and cash 0x7850E8 have)
 	private IRideVisitorBridge? ChooseAttraction( Guest guest )
@@ -1221,7 +1223,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			{
 				var canJoin = attraction.JoinCell != null;
 				yield return new AttractionChoice.Candidate( attraction.AttractionId, true, canJoin, canJoin ? ScoreAttraction( guest, attraction ) : 0,
-					() => attraction.IsOpen && !attraction.IsBrokenDown && attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
+					() => attraction.IsOpen && !attraction.IsBrokenDown && attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells
+						&& attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
 			}
 		}
 		var id = AttractionChoice.Pick( Candidates(), ParkTurn );
@@ -1344,7 +1347,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
 			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs), so a guest whose cell left the queue keeps queueing; OpenTPW's queue walk cannot route such a guest back, so it leaves (Confused), and the guests that stay are given their walk again. A leaving guest thinks Angry for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id, and its dismissal 0x005012F0 records event 6 for the ride (0x0050C100) and plays a sound for one guest in eight, which OpenTPW does not (its medium happiness drop is applied) — evidence needed: how the original's state-12 walk recovers a guest standing off the queue, and what the event-6 record feeds
+			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs): state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0; OpenTPW's queue walk cannot route a guest standing off the queue back, so such a guest leaves (Confused) and the guests that stay are given their walk again. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 records event 6 with the ride id in the guest's own event history (0x0050C100 with ECX = guest + 0x30) and plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D), which OpenTPW does not (its medium happiness drop is applied) — evidence needed: whether the generic route reaches a queue place from a cell off the queue, the thing-id numbering, and what the event history feeds
 			if ( index < 0 && !onJoinCell )
 			{
 				LeaveQueue( guest, attraction, GuestThought.Confused );
@@ -1425,7 +1428,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			route.Add( EntranceCellOf( attraction ) );
 		// The queue goes on beyond both ends of the walk: the cell ahead of the destination (the entrance cell ahead of
 		// the front cell) and the cell behind the start (the join cell behind the back cell) are walkable too.
-		// [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start (the entrance and the join cell at the ends), and no other cell off its route; this stands in for the original's edge flags along the queue — evidence needed: the queue cells' edge flags and the +180 mask in states 12 and 13
+		// [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route; in the original a step from a queue cell is open (edge test 0x4d8750) into a path, queue or queue-end neighbour whose link points back at it, or into a type-0x1e fixed walkway when the mask is not 2, and blocked otherwise; OpenTPW does not read the cell links for this — still open: the edge test 0x4d8750 on the queue links is not ported (WALK-005)
 		(int X, int Y)? ahead = toEntrance ? null : index > 0 ? cells[index - 1] : EntranceCellOf( attraction );
 		var behind = from + 1 < cells.Count ? cells[from + 1] : attraction.JoinCell;
 		var alsoOpen = new List<(int X, int Y)>( 2 );
@@ -1456,7 +1459,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// sideways byte <paramref name="lateral"/> (114..141) across it, each byte / 256 of a cell (<c>0xe68cc</c>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DE840 queue slot] depth = trunc(255 × 0.25 × the place within the cell); lateral = 0x72 + rand % 28. Up to depth 128 the cell's own link to the front picks the axis: link 1 (−Y) gives (lateral, depth), 4 (+X) (255 − depth, lateral), 16 (+Y) (lateral, 255 − depth), 64 (−X) (depth, lateral). Beyond 128 (the fourth place) the axis is the link of the queue cell behind (0x004DE670), for the back cell the direction from its attached path cell (the first of its connections 1, 4, 16, 64 that leads to a path cell, reversed), and link 4 then gives depth − 128 instead of 255 − depth
-	// [APPROX:QUEUE-006] the back cell's fourth place takes its axis from OpenTPW's join cell (QUEUE-003) where the original takes the first connected path neighbour in the order 1, 4, 16, 64 — evidence needed: none for the rule (static); QUEUE-003's join cell decides the difference
+	// [APPROX:QUEUE-006] the back cell's fourth place takes its axis from OpenTPW's join cell, the first adjacent path cell in the order 1, 4, 16, 64; tp.exe 0x004DE840 takes the first such cell whose bit is also set in the back cell's connection byte +0x0C (0x004DEA2F..0x004DEA57), so the two differ when the back cell touches an unconnected path cell earlier in that order — evidence needed: the queue tool's connection writes (QUEUE-003)
 	public (int CellIndex, float X, float Y) QueuePositionPoint( IRideVisitorBridge attraction, int position, byte lateral )
 	{
 		var (index, x, y) = QueueSlotPoint( attraction, position, lateral );
@@ -1641,7 +1644,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken ride
 		// dismisses its queue head first from the ride update (RideVisitorBridge.DismissHead), the others keep waiting.
-		// [APPROX:QUEUE-008] the predicate follows the original and relief objects now wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning); the online game type's branch of the wear step (a dirty toilet cleans itself back to 100 at once, tp.exe 0x004E2440) and the dirty-toilet messages' own handlers (0x004D8460 / 0x004D8440 with 1 and 6, raised here as ToiletDirty) are not modelled — evidence needed: what the two message handlers do with the toilet's cell
+		// [APPROX:QUEUE-008] the predicate follows the original; relief objects wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning), and the swaps of the RegionFX rows 1 and 6 at the toilet's cell are the original's (0x004D8460 / 0x004D8440 are the remove and add wrappers of the region writer 0x004D8480, ParkEconomy.SwapToiletEffect). Not modelled: the branch of 0x004E2440 for game type 1 (the word 0x00FB3B7C), where a use wears nothing and a toilet whose gauge byte is below 25 is cleaned at once (rows 6 → 1, script variable 8 = 0, gauge 100, +0x5E and +0x64 cleared); OpenTPW wears toilets in every game — evidence needed: what game type 1 is in OpenTPW's terms
 		if ( attraction.ReliefWornOut )
 		{
 			LeaveQueue( guest, attraction, GuestThought.FeelingSick );
@@ -1658,24 +1661,19 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// While the ride is in state 1 (broken) 0xed4b0 (0xdfe0c) skips the walk and goes straight to the needs window (0xed58c), so the
 		// guests keep their physical places as the head is dismissed.
 		// [BIN:STP-PPC:0x100ED4B0 broken ride holds the queue] only state 1 holds; state 4 (condemned, life gauge 0) is not told apart from it here (QUEUE-019)
-		var held = false;
-		if ( position != guest.QueuePosition )
+		// [BIN:TPW-EXE:0x005002C2 move-up] a changed place decrements the delay (0x005002EB), holds for a broken ride (0x004E0370) or starts the
+		// walk (0x00501160, state 12); each continues into the needs window at 0x005002F2, and only an unchanged place reaches the limit test (0x0050059D)
+		var moved = position != guest.QueuePosition;
+		if ( moved )
 		{
 			var gap = guest.QueuePosition - position;
 			if ( guest.QueueMoveDelay != 0 && gap is >= 0 and <= MoveUpWaitGap )
-			{
 				guest.QueueMoveDelay--;
-				return;
-			}
-			if ( !attraction.IsBrokenDown )
-			{
+			else if ( !attraction.IsBrokenDown )
 				MoveToQueuePosition( guest, attraction );
-				return;
-			}
-			held = true;
 		}
 		// 6. Beyond the limit.
-		if ( !held && guest.QueuePosition > attraction.QueueLimit )
+		if ( !moved && guest.QueuePosition > attraction.QueueLimit )
 		{
 			LeaveQueue( guest, attraction, GuestThought.QueueTooLong );
 			return;
@@ -1701,21 +1699,21 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				LeaveQueue( guest, attraction, GuestThought.NeedToilet );
 				return;
 			}
+			// [BIN:TPW-EXE:0x004FFFF0 needs branch returns] beyond the window every path of the needs branch returns (0x00500311..0x005003A2), so the facing change below runs only within 30 turns of the last interlude
+			return;
 		}
-		else if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
+		if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
 		{
 			LeaveQueue( guest, attraction, GuestThought.Bored );
 			return;
 		}
-		// 8. A 1-in-10 facing change of ±400/2048 of a turn.
-		// [APPROX:QUEUE-009] the facing change's sign comes from the same draw (0 → +400, 1 → −400 of 2048) — evidence needed: the sign selection after the 1-in-10 facing test at the end of 0x100ED244
-		var draw = random.Next( 20 );
-		if ( draw < 2 )
-		{
-			var angle = (draw == 0 ? 400 : -400) * MathF.Tau / 2048;
-			var (sin, cos) = MathF.SinCos( angle );
-			(guest.HeadingX, guest.HeadingY) = (guest.HeadingX * cos - guest.HeadingY * sin, guest.HeadingX * sin + guest.HeadingY * cos);
-		}
+		// 8. A 1-in-10 facing change of −400..+399 of 2048 of a turn.
+		// [BIN:TPW-EXE:0x004FFFF0 queue facing change] one draw (0x00516330) mod 10 must be 0 (else return), then a second draw gives heading +0x1C += (r mod 800) − 400, wrapped by 0x800; OpenTPW draws both from its GuestRandom (DET-014) and turns the heading vector by the same angle
+		if ( random.Next( 10 ) != 0 )
+			return;
+		var angle = (random.Next( FacingChangeRange ) - FacingChangeRange / 2) * MathF.Tau / 2048;
+		var (sin, cos) = MathF.SinCos( angle );
+		(guest.HeadingX, guest.HeadingY) = (guest.HeadingX * cos - guest.HeadingY * sin, guest.HeadingX * sin + guest.HeadingY * cos);
 	}
 
 	/// <summary>Idle interlude (<c>0xe8b74</c>): +520 = turn, state 8 until turn &gt; +520 + 10, then state 11 again.</summary>
@@ -1726,7 +1724,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>The guest leaves the queue without riding and steps back onto the path at the join cell.</summary>
-	// [APPROX:QUEUE-010] a guest leaving a queue is placed on the queue's join path cell at once; the original walk out of the queue is not traced — evidence needed: the state-6 transition after a queue exit
+	// [APPROX:QUEUE-010] a guest leaving a queue is placed on the queue's join path cell at once; in tp.exe every state-11 exit (0x005004AA: unlink 0x004DDD20, dismissal 0x005012F0, SetState(6)) and the queue-edit exit write no position, so the guest stays on its queue cell in state 6 until the state-6 handler 0x004FEC90 starts its next walk from there — evidence needed: the state-6 handler's walk from a queue cell and the route it takes
 	private void LeaveQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
 	{
 		attraction.LeaveQueue( guest.Id );

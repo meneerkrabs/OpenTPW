@@ -241,7 +241,7 @@ public static class GraphicsPresets
 		["GraphicalOptions.FORCELOWALPHAREF"] = "Not applied: meaning unknown.",
 		["GameOptions.COASTERSMOOTHNESS"] = "Exposed for the rides slice (coaster track tessellation); not consumed yet.",
 		["GameOptions.COASTERTRACKDETAIL"] = "Exposed for the rides slice; not consumed yet.",
-		["GameOptions.PARTICLEDENSITY"] = "Exposed (simulation-affecting); not applied to the particle pool yet (it uses density 1000, PTCL-906).",
+		["GameOptions.PARTICLEDENSITY"] = "Exposed (simulation-affecting); not applied to the particle pool yet (it uses density 500, PTCL-906).",
 		["GameOptions.TOTALPARTICLES"] = "Exposed (simulation-affecting); not applied to the particle pool yet (it holds 2048 particles, PTCL-906).",
 		["GameOptions.NUMKIDS"] = "Exposed for the guests slice (simulation-affecting).",
 		["GameOptions.WEATHER"] = "Exposed (simulation-affecting); no weather yet.",

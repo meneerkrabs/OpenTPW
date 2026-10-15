@@ -427,7 +427,8 @@ are built as a translucent ribbon; the original's renderer for the flags is not 
 The read round of October 15 (tp.exe) narrowed COAST-004 (the collision count +0xB0 is read by the section builder `0x43F4E0`, which draws a
 crossing link with material variant 2; flag 0x400000 at `0x4376CC` is the coaster save writer's), COAST-014 (the PC cost `0x447830` is the Mac
 formula with x87 steps scaled by 0.1), COAST-032 (tp.exe sets single precision only around the renderer `0x576EC0`; the simulation runs with
-the start-up or 64-bit precision) and COAST-035 (the section builder recolours a link into a node with 0x800000/0x2000, or 0x4000).
+the start-up or 64-bit precision) and COAST-035 (the section builder recolours a link into a node with 0x800000/0x2000, or 0x4000); the cursor now keeps its last cell
+beyond the 300-unit reach of `0x435D50`, as the original does.
 
 The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
 COAST-034 (cars) and COAST-035 (the build cursor's ribbon). Rider heads are not seated in the cars yet (the head renderer

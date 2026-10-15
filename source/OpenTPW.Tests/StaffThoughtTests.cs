@@ -60,7 +60,7 @@ public class StaffThoughtTests
 		Assert.IsFalse( seen.Contains( StaffThoughts.VeryHappy ) );
 		member.Thought = 0;
 		var happy = 0;
-		f.Turns( 1000, () =>
+		f.Turns( 4000, () =>
 		{
 			member.Energy = StaffVitals.Maximum;
 			member.Happiness = StaffVitals.Maximum;

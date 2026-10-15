@@ -42,8 +42,9 @@ public static partial class OpcodeHandlers
 			else
 			{
 				// The original resumes once the integer clock word reaches the deadline, so the wake is when the scheduler clock reaches it (not the arming time's fraction plus the wait).
-				// [APPROX:VM-901] the clock is this VM's non-wrapping double, so a wait that spans the 2^32 ms wrap of the original's clock word (about 49.7 days of scheduler clock) is not modelled — evidence needed: none (the rule is traced, tp.exe 0x553828); the port waits for the wrap-free case
-				vm.WaitUntil( vm.TimeMilliseconds + ( deadline - vm.SchedulerMilliseconds ) );
+				// [BIN:TPW-EXE:0x553828] the test is unsigned (now <u deadline), so the remaining wait is the unsigned 32-bit difference even when the deadline is past the 2^32 ms wrap of the clock word; the clock's fraction is already spent inside the current millisecond.
+				var clock = vm.SchedulerMilliseconds;
+				vm.WaitUntil( vm.TimeMilliseconds + (double)(uint)(deadline - now) - (clock - System.Math.Floor( clock )) );
 			}
 		}
 

@@ -18,9 +18,11 @@ public sealed partial class ParkHud
 	private static readonly UiRect AttractionScrollTrack = Rect( 1743, 398, 1802, 843 );
 	private static readonly UiRect AttractionScrollKnob = Rect( 1735, 651, 1802, 718 );
 	// [DATA:UITEXT.str:78-81] the four category titles of this window; the tab art is the buy window's.
+	/// <summary>The round entry button of the All Attractions window in the buy and staff windows: the window's own rides tab icon.</summary>
+	internal const string AllAttractionsModel = "b_srides";
 	private static readonly (BuildCategory Category, string Model, UIStrings Title, UiRect Rect)[] AttractionCategories =
 	{
-		(BuildCategory.Rides, "b_srides", UIStrings.AllRides, Rect( 1283, 195, 1386, 297 )),
+		(BuildCategory.Rides, AllAttractionsModel, UIStrings.AllRides, Rect( 1283, 195, 1386, 297 )),
 		(BuildCategory.Sideshows, "b_sshow", UIStrings.AllSideshows, Rect( 1402, 195, 1504, 297 )),
 		(BuildCategory.Shops, "b_sshop", UIStrings.AllShops, Rect( 1521, 195, 1623, 297 )),
 		(BuildCategory.Features, "b_sfeature", UIStrings.AllMiscItems, Rect( 1640, 195, 1742, 297 )),

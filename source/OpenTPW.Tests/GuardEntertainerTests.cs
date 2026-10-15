@@ -192,8 +192,13 @@ public class GuardEntertainerTests
 		f.Stand( guard, 10, 5 );
 		var prankster = f.Guests.SpawnInPark( 11, 5 );
 		f.World.ReportPrank( f.Park, prankster.Id );
-		for ( var turn = 0; turn < 100 && guard.Job != StaffJob.Escorting; turn++ )
+		// a prankster that slips past the guard ends the chase; the next prank report sends him again
+		for ( var turn = 0; turn < 400 && guard.Job != StaffJob.Escorting; turn++ )
+		{
 			f.Turns( 1 );
+			if ( guard.Job is StaffJob.Idle or StaffJob.Patrol && prankster.State != GuestState.HeldByGuard )
+				f.World.ReportPrank( f.Park, prankster.Id );
+		}
 		Assert.AreEqual( StaffJob.Escorting, guard.Job );
 		Assert.AreEqual( GuestState.HeldByGuard, prankster.State );
 		f.Park.Fire( guard.Id );

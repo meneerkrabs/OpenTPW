@@ -239,6 +239,9 @@ public abstract class UiElement
 	public bool Enabled { get; set; } = true;
 	/// <summary>Original popup help (UIHELPTEXT) shown on hover.</summary>
 	public string? Help { get; set; }
+	/// <summary>The help read each frame when set (a text that follows the language); otherwise <see cref="Help"/>.</summary>
+	public Func<string?>? HelpSource { get; set; }
+	public string? CurrentHelp => HelpSource?.Invoke() ?? Help;
 	public virtual bool Focusable => false;
 
 	public UiRect ScreenRect( UiCanvas canvas ) => canvas.Map( Bounds, Anchor );

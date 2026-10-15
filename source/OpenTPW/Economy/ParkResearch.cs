@@ -146,7 +146,7 @@ public sealed class ParkResearch
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
 	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
-	// [APPROX:ECON-017] the research table is in info-id order — evidence needed: the table fill order (FUN_100c9064) and the next/previous control
+	// [APPROX:ECON-017] a new park's research table is in info-id order and the player cannot step the cursor to another item; the shipped Jungle lab lists its projects in another order (rides 1140, 1150, 1108, …; features 1414 before 1400), which an imported park follows for its current projects only — evidence needed: the table fill order (FUN_100c9064, tp.exe 0x502dc0's 256 project records) and the next/previous control
 	// Host UI selection below retains the native default cursor; correspondence with native player selection remains unverified.
 	public ResearchItem? Current( ResearchCategory category )
 	{
@@ -245,6 +245,19 @@ public sealed class ParkResearch
 			}
 		}
 		while ( changed );
+	}
+
+	/// <summary>Whether the lab has an item of <paramref name="infoId"/> at <paramref name="level"/>.</summary>
+	internal bool HasItem( int infoId, int level ) => itemKeys.Contains( (infoId, level) );
+
+	/// <summary>Makes an imported project its category's current item when it may be researched now; false otherwise.</summary>
+	internal bool TrySelect( ResearchCategory category, int infoId, int level )
+	{
+		var item = items.FirstOrDefault( item => item.Category == category && item.InfoId == infoId && item.Level == level );
+		if ( item == null || !IsSelectable( item ) )
+			return false;
+		selected[category] = item;
+		return true;
 	}
 
 	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort, IEnumerable<(ResearchCategory Category, int InfoId, int Level)>? restoredCurrent = null )

@@ -18,12 +18,17 @@ public sealed partial class ParkHud
 	// The tube sits left of the HUD panel above its top edge, in the BottomLeft-anchored authored coordinates of the main panel; read off the 720p frames (video 15:20 and 12:00).
 	private static readonly UiRect TubeBase = Rect( 69, 850, 157, 985 );
 	private const float TubeStep = 77f;
-	private static readonly UiRect MessagePanelRect = Rect( 405, 1090, 1100, 1445 );
-	private static readonly UiRect MessageTextRect = Rect( 640, 1118, 1085, 1425 );
+	// [BIN:TPW-EXE:0x7501a0 message panel] the panel (458,1101)-(1073,1442) is drawn from the tag models messagel (458..623), messagem (623..835) and messager (835..1073); its text area is (609,1118)-(1056,1422); mb_erase sits at (486,1325)-(589,1428) and two action buttons above it, (486,1218)-(589,1320) and (486,1110)-(589,1213), whose models are not fixed by the table
+	private static readonly LayoutTable MessageTable = OriginalLayoutTables.MessagePanel;
+	private static readonly UiRect MessagePanelRect = MessageTable.Root.Rect;
+	private static readonly UiRect MessageTextRect = MessageTable.Control( 0x10D32 ).Inner!.Value;
+	private static readonly string[] MessageActionIds = { "messageAction0", "messageAction1" };
 
 	private static readonly string[] PanelButtonIds = { "messageDelete", "messageClose" };
 	private List<string>? pendingMessages;
+	private List<GameMessageAction[]>? pendingActions;
 	private string? openedMessage;
+	private GameMessageAction[] openedActions = Array.Empty<GameMessageAction>();
 	private float messageSlide;
 
 	/// <summary>The messages waiting in the tube, oldest first (the lowest icon).</summary>
@@ -33,15 +38,26 @@ public sealed partial class ParkHud
 	/// <summary>How far the panel has slid out of the HUD, 0 (hidden) to 1 (fully out).</summary>
 	public float MessagePanelSlide => messageSlide;
 
-	/// <summary>Adds a game message to the tube. It stays until it is opened or deleted.</summary>
-	public void PostGameMessage( string text )
+	/// <summary>The actions of the opened message, in the order of the panel's two action slots.</summary>
+	public IReadOnlyList<GameMessageAction> OpenedActions => openedActions;
+
+	/// <summary>
+	/// Adds a game message to the tube. It stays until it is opened or deleted. A message may carry up to two actions, drawn as the panel's action buttons with
+	/// the art of their kind.
+	/// </summary>
+	public void PostGameMessage( string text, params GameMessageAction[] actions )
 	{
 		if ( string.IsNullOrWhiteSpace( text ) )
 			return;
 		pendingMessages ??= new List<string>();
+		pendingActions ??= new List<GameMessageAction[]>();
 		pendingMessages.Add( text );
+		pendingActions.Add( actions.Take( MessageActionIds.Length ).ToArray() );
 		while ( pendingMessages.Count > MessageTubeCapacity )
+		{
 			pendingMessages.RemoveAt( 0 );
+			pendingActions.RemoveAt( 0 );
+		}
 	}
 
 	/// <summary>A left click on an icon: the message leaves the tube and the panel shows it.</summary>
@@ -52,8 +68,12 @@ public sealed partial class ParkHud
 		// the panel comes out where the info arm is, so opening a message puts the arm away: the opened message is always visible, and one read there is not lost
 		if ( InfoArmOpen )
 			SetInfoArm( false );
+		// the message panel and the camera panel share one slot: opening a message puts the camera panel away
+		CameraPanelOpen = false;
 		openedMessage = pendingMessages[index];
+		openedActions = pendingActions![index];
 		pendingMessages.RemoveAt( index );
+		pendingActions.RemoveAt( index );
 		return true;
 	}
 
@@ -63,11 +83,16 @@ public sealed partial class ParkHud
 		if ( pendingMessages == null || index < 0 || index >= pendingMessages.Count )
 			return false;
 		pendingMessages.RemoveAt( index );
+		pendingActions!.RemoveAt( index );
 		return true;
 	}
 
 	/// <summary>Closes the panel (the red cross, or the bomb that deletes the opened message).</summary>
-	public void CloseMessagePanel() => openedMessage = null;
+	public void CloseMessagePanel()
+	{
+		openedMessage = null;
+		openedActions = Array.Empty<GameMessageAction>();
+	}
 
 	/// <summary>The tube's whole rectangle for <paramref name="count"/> messages: the base tube grown by one step per icon.</summary>
 	internal static UiRect TubeRect( int count ) => new( TubeBase.X, TubeBase.Y - TubeStep * count, TubeBase.Width, TubeBase.Height + TubeStep * count );
@@ -83,6 +108,14 @@ public sealed partial class ParkHud
 		foreach ( var id in PanelButtonIds )
 			if ( hud.Find( id ) is { } element )
 				element.Visible = fullyOut;
+		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
+		{
+			if ( hud.Find( MessageActionIds[slot] ) is not UiButton button )
+				continue;
+			button.Visible = fullyOut && slot < openedActions.Length;
+			if ( button.Visible )
+				button.Model = openedActions[slot].Kind.Model();
+		}
 		// an empty tube is hidden, so its rectangle swallows no park clicks
 		if ( hud.Find( "messageTube" ) is { } tube )
 		{
@@ -99,9 +132,9 @@ public sealed partial class ParkHud
 		var canvas = context.Canvas;
 		var offset = -(1f - messageSlide) * MessagePanelRect.Width;
 		UiRect Slide( UiRect rect ) => canvas.Map( new UiRect( rect.X + offset, rect.Y, rect.Width, rect.Height ), UiAnchor.BottomLeft );
-		// the green panel (panel model: the arm's art), then the black text box with the message
-		context.DrawModel( "panel", 0, Slide( MessagePanelRect ) );
-		context.Batch.AddRectangle( Slide( MessageTextRect ), new RgbaByte( 0, 0, 0, 235 ) );
+		// the tag models side by side: the left part with the buttons, the middle and the right part with the black text box
+		foreach ( var part in MessageTable.Root.Children.Where( node => node.Model?.StartsWith( "message", StringComparison.Ordinal ) == true ) )
+			context.DrawModel( part.Model!, 0, Slide( part.Rect ) );
 		if ( messageSlide >= 1f )
 			context.DrawText( context.Fonts.Small, openedMessage, Slide( MessageTextRect ).Inflate( -6 * canvas.TextScale ), UiColors.Text, UiAlign.Left, wrap: true );
 	}
@@ -150,4 +183,26 @@ public sealed partial class ParkHud
 			}
 		}
 	}
+}
+
+/// <summary>What a message's action button does; each kind has its own art among the ui.wad mb_ models.</summary>
+// [DATA:ui.wad mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline] the six models the panel's action buttons can take (the table gives those buttons no fixed model)
+public enum GameMessageKind { Locate, CallMechanic, Research, Buy, Accept, Decline }
+
+/// <summary>One action of a tube message: the kind picks the button's art, <paramref name="Clicked"/> runs when it is pressed.</summary>
+public readonly record struct GameMessageAction( GameMessageKind Kind, Action Clicked );
+
+public static class GameMessageKinds
+{
+	/// <summary>The ui.wad model of the action button of this kind.</summary>
+	public static string Model( this GameMessageKind kind ) => kind switch
+	{
+		GameMessageKind.Locate => "mb_locate",
+		GameMessageKind.CallMechanic => "mb_callmech",
+		GameMessageKind.Research => "mb_resrch",
+		GameMessageKind.Buy => "mb_buy",
+		GameMessageKind.Accept => "mb_accept",
+		GameMessageKind.Decline => "mb_decline",
+		_ => throw new ArgumentOutOfRangeException( nameof( kind ) )
+	};
 }

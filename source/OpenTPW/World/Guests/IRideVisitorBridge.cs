@@ -121,6 +121,8 @@ public interface IRideVisitorBridge
 	int VomitEffect => 0;
 	/// <summary>Type <c>UsageInfo.InitCostOfGoods</c> (<c>+320</c>): the base of the price test's willingness to pay.</summary>
 	int InitCostOfGoods => 0;
+	/// <summary>Type <c>UsageInfo.RipOffOK</c> (<c>+0x16C</c>): the price test's per-type word, a premium in percent on the willingness to pay.</summary>
+	int RipOffOk => 0;
 	/// <summary>The live goods words: cost of goods <c>+388</c>, price <c>+400</c> and the losing chance behind the win byte <c>+396</c> (shops and sideshows).</summary>
 	SideshowTerms Sideshow => default;
 	/// <summary>True when <see cref="Sideshow"/> holds live terms; without them the price test falls back to the bridge's own price.</summary>

@@ -1553,7 +1553,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			EnterStanding( guest );
 		else if ( TooExpensive( guest, attraction ) )
 			// [BIN:TPW-EXE:0x005006B0 called forward] at the stand point the price test 0x004FDE50 comes before the ride takes the guest (AdmitPerson); a guest that refuses leaves the queue ("Object %d is too expensive, I'm leaving the queue") and keeps its thought
-			// [APPROX:GUEST-003] the refusal's thought 6, two medium drops (0x004FEA70 with 1 at 0x00500778, and the dismissal 0x005012F0) and leave match; not modelled: the ride's walk-away counters (0x004E1670: +0x1A4 and the period count +0x230, which 0x004DD320 rolls and 0x004CAAE0 sums per ShopType for the advisor), the dismissal's sound for a thing id whose low three bits are 0 and the price statistic 0x004C74B0 (recorded on every shop and sideshow test); the guest's event records (0x0050C100) feed only the debug dump 0x004FAA60; the per-type word (record +0xC of 0x004E2740, filled by 0x004D3E00 from the type's UsageInfo.RipOffOK at +0x16C) is taken as 0 — evidence needed: none for the rule (read)
+			// [APPROX:GUEST-003] the refusal's thought 6, two medium drops (0x004FEA70 with 1 at 0x00500778, and the dismissal 0x005012F0) and leave match; not modelled: the ride's walk-away counters (0x004E1670: +0x1A4 and the period count +0x230, which 0x004DD320 rolls and 0x004CAAE0 sums per ShopType for the advisor), the dismissal's sound for a thing id whose low three bits are 0 and the price statistic 0x004C74B0 (recorded on every shop and sideshow test); the guest's event records (0x0050C100) feed only the debug dump 0x004FAA60 — evidence needed: none (read)
 			RefusePrice( guest, attraction );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			guest.State = GuestState.WaitingToBoard;
@@ -1579,12 +1579,13 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// The price test's words for <paramref name="attraction"/>: the live words the level mirrors from the economy (a free visit's
 	/// all-zero terms included); a bridge nobody mirrors into keeps its constructor price.
 	/// </summary>
+	// [BIN:TPW-EXE:0x004D3E00 per-type price word] the word +0xC of the per-type record the price test reads (0x004E2740 → 0x004D3D10) is copied from the type record's +0x16C, UsageInfo.RipOffOK (key 42 of the table at 0x007456E8); no caller of the record lookup 0x004D3D10 stores that word
 	internal static PriceTerms PriceTermsOf( IRideVisitorBridge attraction )
 	{
 		var live = attraction.Sideshow;
 		var price = attraction.HasSideshowTerms ? live.PricePerUse : attraction.Price;
 		return new PriceTerms( price, live.CostOfGoods, (100 - live.ChanceOfLosingPercent) & 0xFF, attraction.Kind == RideVisitorKind.Sideshow,
-			attraction.InitCostOfGoods, attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, 0 );
+			attraction.InitCostOfGoods, attraction.ThirstEffect, attraction.HungerEffect, attraction.VomitEffect, attraction.HappinessEffect, attraction.RipOffOk );
 	}
 
 	/// <summary>The cell the walking guest stands on, and its queue index when it is a queue cell.</summary>

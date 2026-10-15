@@ -2199,11 +2199,11 @@ the willingness of a guest whose needs are all 20. For example, a burger shop at
 The rule therefore leaves the default prices just acceptable and lets needier guests pay more.
 
 A refusal lowers happiness twice by the medium step (`0x4fea70` with 1, for the refusal and again in the dismissal `0x5012f0`).
-GUEST-003 keeps four things:
-- the per-type park word (`0x4e2740`, park record `+0xc`, written by script opcodes; taken as 0);
-- animation 6;
-- the guest record of event 10;
-- the walk-away count and the price statistic.
+The per-type word is not 0: `0x4d3e00` (new-game setup `0x5156a0` through `0x4d3de0`) fills the record `0x4e2740` returns from the
+type's `UsageInfo.RipOffOK` (type `+0x16c`), 100 for every shipped shop and 250 for every sideshow, so the willingness above is
+multiplied by 2 or 3.5 before the happiness factor; OpenTPW passes it since the GUEST-003 fix (the willingness figures above are the
+word-0 values). GUEST-003 keeps the ride's walk-away counters (`0x4e1670`, read by the advisor's per-ShopType test `0x4caae0`), the
+dismissal's sound and the price statistic `0x4c74b0`; the guest's event records (`0x50c100`, events 10 and 6) feed only a debug dump.
 
 ### 7.13 Finding X17: toilets wear by use, handymen clean them
 

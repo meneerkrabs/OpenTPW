@@ -207,7 +207,7 @@ public sealed class CoasterRating
 	/// roll; returns the winch sections.
 	/// </summary>
 	// [BIN:STP-PPC:0x1003FC18 rating pass] start speed fWinchSpeed (+68), max speed and max height 0.0 (-13460(r2), 0x1003FCB8/BC); samples 1..n−2; trough coasters (flag 0x100) set sample flag 8 where the next segment climbs more than 0.01745 and clear it elsewhere (0x1003FDA4..0x1003FDC8); force a·(v/10) into sample +32..+40; speed into +28; the rating step reads the roll +24; lap += spacing / v; afterwards sample 0 gets speed fWinchSpeed and force 0, sample n−1 the speed and force of sample n−2 (0x1004001C..0x1004006C); then the suspended swing (flag 0x8), final (max Y, max speed) and the train count
-	public static (CoasterRatingResult Result, HashSet<int> WinchSections) RatePass( CoasterDefinition definition, CoasterSample[] samples, float spacing, float cap, int? tailSection = null )
+	public static (CoasterRatingResult Result, HashSet<int> WinchSections) RatePass( CoasterDefinition definition, CoasterSample[] samples, float spacing, float cap, int? tailSection = null, float? endCoordinate = null )
 	{
 		var rating = new CoasterRating( definition );
 		var winch = new HashSet<int>();
@@ -264,8 +264,9 @@ public sealed class CoasterRating
 		if ( definition.IsSuspended && count > 0 )
 		{
 			var tail = tailSection ?? samples.Max( sample => sample.Section );
-			var platform = CoasterRide.PlatformStartSample( samples, tail );
-			Swing( definition, samples, CoasterRide.BrakingStartFor( platform, samples[CoasterRide.BrakingSpeedSample( samples, tail )].Speed, spacing ), platform );
+			// [BIN:TPW-EXE:0x43c9e8 swing fade] the fade runs over (i − ctl+0x134)/(ctl+0xa8 − ctl+0x134): the braking start is (n − 1) − v/spacing with n the sample count (0x43c723..0x43c746) and ctl+0xa8 the sample coordinate of the end node's knot
+			var total = endCoordinate ?? CoasterRide.PlatformStartSample( samples, tail );
+			Swing( definition, samples, CoasterRide.BrakingStartFor( samples.Length, samples[CoasterRide.BrakingSpeedSample( samples, tail )].Speed, spacing ), total );
 		}
 		var (sickness, excitement) = rating.Final();
 		var trains = TrainCount( lap, definition.TrainReleaseRate, definition.MaxTrains );

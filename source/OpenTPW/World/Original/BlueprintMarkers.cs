@@ -8,6 +8,8 @@ public enum BlueprintMarker
 	Allowed = 0,
 	/// <summary>A cell the tool refuses (including a cell it cannot afford).</summary>
 	Refused = 1,
+	/// <summary>A cell of the coaster tool's placement area: a yellow and black chequered face (the original draws face type 0x11f from <c>0x5234d0</c>).</summary>
+	Area = 2,
 }
 
 /// <summary>
@@ -40,9 +42,34 @@ public sealed class BlueprintMarkers : ModelEntity
 		Hidden = true;
 		material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 		var textures = TextureNames.Select( name => LoadTexture( $"/generic/dynamic/textures/{name}.wct" ) ).ToList();
+		textures.Add( AreaTexture() );
 		while ( textures.Count < TextureSlots )
 			textures.Add( textures[0] );
 		material.Set( "Color", textures.ToArray(), SamplerType.Anisotropic );
+	}
+
+	/// <summary>
+	/// The placement area's texture: translucent yellow and black squares, two by two to a cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5243a6 area face] the cells of the coaster tool's placement area get face type 0x11f; the video (73:20-75:58) shows them as a translucent yellow with dark mottling, and the dynamic texture table holds no such texture (orange.tga is not on the PC CD)
+	// [APPROX:COAST-028] the texture is generated: 4 x 4 squares of yellow (255, 214, 0) and near-black (40, 34, 0), both at alpha 205 — evidence needed: the original texture behind face type 0x11f
+	private static Texture AreaTexture()
+	{
+		const int Size = 8, Square = 4;
+		var data = new byte[Size * Size * 4];
+		for ( var y = 0; y < Size; y++ )
+		{
+			for ( var x = 0; x < Size; x++ )
+			{
+				var dark = ((x / Square) + (y / Square)) % 2 == 1;
+				var offset = (y * Size + x) * 4;
+				data[offset] = dark ? (byte)40 : (byte)255;
+				data[offset + 1] = dark ? (byte)34 : (byte)214;
+				data[offset + 2] = 0;
+				data[offset + 3] = 205;
+			}
+		}
+		return new Texture( data, Size, Size, TextureFlags.Repeat );
 	}
 
 	private static Texture LoadTexture( string path )

@@ -19,6 +19,19 @@ public enum CoasterTrainFlags
 }
 
 /// <summary>
+/// The controller state (controller <c>+8</c>, low nibble) the ride's tool and its script move between (<c>0x435730</c>): 1 the track is not finished
+/// (no trains), 2 built or taken out of service by the coaster tool (trains circulate empty, no station step), 4 open (the station step unloads and
+/// boards) and 8 closed (the station step unloads, nobody boards).
+/// </summary>
+public enum CoasterControllerState
+{
+	Incomplete = 1,
+	Built = 2,
+	Open = 4,
+	Closed = 8
+}
+
+/// <summary>
 /// One train (tp.exe train record, COAST-plan §3.3): its reference car's position along the track in samples, its
 /// speed, its flags and the riders of each car. The original never stops a train (<c>0x43ce20</c> has no zero-speed
 /// branch); it unloads a train that arrives and seats waiting guests in the cars that roll through the station window.
@@ -130,9 +143,15 @@ public sealed class CoasterRide
 	public float BrakingStart { get; private set; }
 	/// <summary>Set by <c>COAST 8</c>: the station script created its controller.</summary>
 	public bool Initialised { get; private set; }
-	// [APPROX:COAST-012] controller state 2 (built, never opened) is not told from state 8 (closed), and the tool's transitions to state 2 that unload every train (0x435844, from states 4 and 8) and to state 1 that remove the trains (0x43bf20) have no case here: the track is edited only through ClearTrains; the writers of the states are traced (1: 0x4368f0, 0x446740, 0x447520; 2: 0x435570, 0x442c70, 0x437b60, 0x447520; 4 and 8: COAST 5, 0x43b2f0)
-	/// <summary><c>COAST 5</c>: the ride is closed (controller state 8 or 2: trains keep circulating and unload on arrival, nobody boards).</summary>
-	public bool Closed { get; private set; } = true;
+	/// <summary>The controller state: 1 the track is not finished, 2 built or out of service for the coaster tool, 4 open, 8 closed.</summary>
+	// [BIN:TPW-EXE:0x435730 state setter] the transitions: 1 → 2 sets the power factor to 1 (outside mode 64), sets every train slot up (0x43be10) and clears the highlight; 1 → 8 and 2 → 8 run the closing move (0x43b390); 2 → 1 removes every train (0x43bf20), clears the shown-trains flag 0x800 and highlights the chain start; 4 → 2 unloads both seat lists of every train (0x43b480 with 0 and 1); 4 → 8 runs the closing move; 8 → 2 unloads both lists and then runs the closing move; every other pair changes nothing
+	// [BIN:TPW-EXE:0x447520 coaster tool entry] entering the tool (param 1, no coaster being edited) closes the ride object (0x4df300: "Object %d Closing", the guest being loaded is dropped, event 6) and sets state 2 when the track is complete with its circuit closed (controller +0x3c bit 0 set, bit 1 clear), else state 1; leaving it (param 0) opens the ride object again when the controller's state is 2 (0x4df390; the script's COAST 5 then makes it 4 or 8)
+	// [BIN:TPW-EXE:0x435570 completion] completion sets the track's complete flag, appends the end node and sets state 2 (0x435730); close-circuit (0x442c70) and load (0x437b60) set 2 as well, the cut (0x446740) sets 1 from 2
+	// [BIN:TPW-EXE:0x43587f admission on 4 → 2] 4 → 2 and 8 → 2 unload both seat lists and then fall through to the closing move 0x43b390 (0x43587f / 0x4358c9 → 0x4358cb), which moves the guests of the admission ring to the leaving ring: no guest waits on a ride that does not run
+	// [EXT:coaster-state-clear] the original does nothing on 4 → 1 and 8 → 1 (cases 4 and 8 of 0x435730 have no state 1 branch); the tool always goes through state 2 first, where 2 → 1 removes the trains, but OpenTPW's headless edits (Reopen, Delete, SetStation) also change an open or closed ride to state 1 and then take the trains off with their riders so none is left on a track that is gone; the power factor reset of 1 → 2 is derived from the ride mode here, and the highlight (0x441840) is not drawn
+	public CoasterControllerState State { get; private set; } = CoasterControllerState.Incomplete;
+	/// <summary>The ride is not open for boarding: <c>COAST 5</c> closed it, the coaster tool took it out of service or its track is not finished (every state but 4).</summary>
+	public bool Closed => State != CoasterControllerState.Open;
 	/// <summary><c>COAST 4</c> argument (0, 1, 2), mapped to the ride modes 16, 64 and 32 (1 is the breakdown: mode 64, no power).</summary>
 	public int BreakdownState { get; private set; }
 	// [BIN:STP-PPC:0x1003DDFC coaster state] COAST 4: argument 1 → mode 64 (0x1003DE18 → 0x1003DE50), 2 → mode 32 (0x1003DE44), 0 → mode 16 (0x1003DE38), 3 and above change nothing; each calls 0x10038250
@@ -163,15 +182,16 @@ public sealed class CoasterRide
 	/// <summary>The riders waiting for <c>COAST 3</c>, in departure order (park-resume capture).</summary>
 	internal IReadOnlyCollection<int> LeavingRiders => leaving;
 	/// <summary>
-	/// The station window in samples of the station frame, <c>[ctl+0xf8, ctl+0xfc]</c> (<c>0x43b750</c>): the span between the
-	/// frame's two station nodes, narrowed toward its middle by fEntranceSizeInterval. The frame's origin is the platform
-	/// start (<see cref="PlatformStart"/>), where the original's sample list starts.
+	/// The station window in samples, <c>[ctl+0xf8, ctl+0xfc]</c> (<c>0x43b750</c>): the span between the sample coordinates of the station's first
+	/// and third node (S0, where the sample list starts, and S2), narrowed toward its middle by fEntranceSizeInterval.
 	/// </summary>
 	public (float Start, float End) StationWindow { get; private set; }
-	/// <summary>The sample coordinate of the platform start: the station end node's knot, where the train arrives (origin of the station frame).</summary>
-	public float PlatformStart { get; private set; }
+	/// <summary>The coordinate of every track node's knot on the sample list (<c>node +8</c>): 0 for S0, where the list starts, the window's end for S2, and the end node's for the last.</summary>
+	public IReadOnlyList<float> KnotCoordinates { get; private set; } = Array.Empty<float>();
 	/// <summary>Self-intersecting places of the track (controller <c>+0x140</c>); the guests refuse the coaster while it is nonzero (0x441970).</summary>
 	public int IntersectionCount { get; private set; }
+	/// <summary>Per node, the nodes whose links cross the link that starts at it (the original's per-node collision lists, <c>+0xb0</c>).</summary>
+	public IReadOnlyList<IReadOnlyList<int>> CollisionLists { get; private set; } = Array.Empty<IReadOnlyList<int>>();
 	public bool IsOperational => Track.IsRunnable && samples.Length >= 3;
 	/// <summary>
 	/// The guest predicate <c>0x441970</c>: the coaster is complete and its track crosses itself nowhere (controller <c>+0x140 == 0</c>); guests do not
@@ -218,6 +238,9 @@ public sealed class CoasterRide
 	internal void Rebuild()
 	{
 		PlaceTrains( RateTrack() );
+		// A finished track puts the controller in state 2 (0x435570 → 0x435730); a track edited while built, open or closed keeps its state.
+		if ( State == CoasterControllerState.Incomplete )
+			EnterState( CoasterControllerState.Built );
 		TrackChanged?.Invoke( this );
 	}
 
@@ -229,7 +252,8 @@ public sealed class CoasterRide
 		var sampling = Curve.Sample( knots, Definition.Curviness );
 		samples = sampling.Samples;
 		Spacing = sampling.Spacing;
-		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, nodes.Count - 1 );
+		var tail = nodes.Count - 1;
+		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, tail, sampling.KnotCoordinates.Length > tail ? sampling.KnotCoordinates[tail] : null );
 		winchSections = winch;
 		for ( var index = 0; index < nodes.Count; index++ )
 		{
@@ -239,18 +263,18 @@ public sealed class CoasterRide
 		// Controller +264: the sections with both node flags 0x40 and 0x80 (CoasterRating.FinalFor; ORACLE F8).
 		var counted = CoasterRating.FinalFor( 0, 0, 0, 0, nodes.Select( node => (uint)node.Flags ), 0, 0, 0, 0 ).Sections;
 		Rating = result with { CountedSections = counted };
-		var tail = nodes.Count - 1;
-		var platform = PlatformStartSample( samples, tail );
-		IntersectionCount = CoasterCollision.Run( NodesForCollision( nodes, samples ), samples ).Count;
-		PlatformStart = PlatformStartCoordinate( samples, knots, tail, Spacing );
-		// [BIN:TPW-EXE:0x43c72f braking start] ctl+0x134 = (n − 1) − v_last/spacing in the original's frame, where the end node coincides with the platform start (the closing pair ends at the second node) so the brake zone is the stretch before the platform; OpenTPW's end node starts the closing pair toward the station node at the platform's far end, so the same zone ends at the end node's first sample
-		BrakingStart = BrakingStartFor( platform, samples[BrakingSpeedSample( samples, tail )].Speed, Spacing );
-		var length = Math.Max( 0f, samples.Length - PlatformStart );
-		// [BIN:TPW-EXE:0x43b750 station window] f8 = (1 − k)·A + k·(A + B)/2 and fc = (1 − k)·B + k·(A + B)/2 with k = definition +0x31c (fEntranceSizeInterval, copied unconditionally) and A, B the sample coordinates of the first and third station node ([[node+0x90]+4]+8)
-		// [APPROX:COAST-029] OpenTPW's station has two nodes, so A is the platform start (the end node) and B the station node's wrap at the sample count; the original takes the sample coordinates of its first and third station node
+		var collisions = CoasterCollision.Run( NodesForCollision( nodes, samples ), samples );
+		IntersectionCount = collisions.Count;
+		CollisionLists = collisions.Lists;
+		// [BIN:TPW-EXE:0x43c72f braking start] ctl+0x134 = (n − 1) − v_last/spacing with n the sample count; the end node stands on the first station node, so the brake zone is the stretch just before the sample list's end, which is the start of the platform
+		BrakingStart = BrakingStartFor( samples.Length, samples[BrakingSpeedSample( samples, tail )].Speed, Spacing );
+		// [BIN:TPW-EXE:0x43b750 station window] f8 = (1 − k)·A + k·(A + B)/2 and fc = (1 − k)·B + k·(A + B)/2 with k = definition +0x31c (fEntranceSizeInterval, copied unconditionally) and A, B the sample coordinates of the first and third station node ([[node+0x90]+4]+8): the first one's is 0, the third one's is where the sampler passed S2
+		KnotCoordinates = sampling.KnotCoordinates;
+		var windowStart = 0f;
+		var windowEnd = sampling.KnotCoordinates.Length > CoasterTrack.StationNodeCount - 1 ? sampling.KnotCoordinates[CoasterTrack.StationNodeCount - 1] : samples.Length;
 		var k = Definition.EntranceSizeInterval;
-		var middle = (0f + length) * 0.5f;
-		StationWindow = ((1f - k) * 0f + k * middle, (1f - k) * length + k * middle);
+		var middle = (windowStart + windowEnd) * 0.5f;
+		StationWindow = ((1f - k) * windowStart + k * middle, (1f - k) * windowEnd + k * middle);
 		return result.Trains;
 	}
 
@@ -277,7 +301,7 @@ public sealed class CoasterRide
 		return result;
 	}
 
-	/// <summary>The first sample of the closing pair (the pair that starts at the end node): the sample count when there is none (a pair cannot start at sample 0, the first knot).</summary>
+	/// <summary>The first sample of the closing pair (the pair that starts at the end node, which carries one sample): the sample count when there is none.</summary>
 	internal static int PlatformStartSample( IReadOnlyList<CoasterSample> samples, int tailSection )
 	{
 		for ( var index = 1; index < samples.Count; index++ )
@@ -286,17 +310,6 @@ public sealed class CoasterRide
 				return index;
 		}
 		return samples.Count;
-	}
-
-	/// <summary>The sample coordinate of the end node's knot: the last sample before it plus the distance to the knot over the spacing.</summary>
-	private static float PlatformStartCoordinate( IReadOnlyList<CoasterSample> samples, IReadOnlyList<CoasterKnot> knots, int tailSection, float spacing )
-	{
-		var first = PlatformStartSample( samples, tailSection );
-		if ( first <= 0 || first >= samples.Count )
-			return first >= samples.Count ? samples.Count : 0f;
-		var knot = knots.FirstOrDefault( candidate => candidate.Section == tailSection );
-		var fraction = System.Numerics.Vector3.Distance( samples[first - 1].Position, knot.Position ) / spacing;
-		return first - 1 + Math.Clamp( fraction, 0f, 1f );
 	}
 
 	/// <summary>
@@ -378,6 +391,7 @@ public sealed class CoasterRide
 		MoveAdmissionToLeaving();
 		trains.Clear();
 		IntersectionCount = 0;
+		CollisionLists = Array.Empty<IReadOnlyList<int>>();
 		samples = Array.Empty<CoasterSample>();
 		Spacing = 0;
 		Rating = null;
@@ -440,17 +454,14 @@ public sealed class CoasterRide
 				return 0;
 			case 5:
 				// [BIN:STP-PPC:0x1003DEC8 coaster close] COAST 5 closes (nonzero) or opens the controller
-				// [BIN:TPW-EXE:0x43b2f0 coaster close] gated: argument 0 opens (state → 4) only when state & 0xA (closed 8 or incomplete 2), a nonzero argument closes (→ 8) only when state & 4 (open), like the Mac; the bool Closed is state 8/2 versus 4, so each branch changes nothing when already there. Closing (4 → 8, 0x43b390) moves the admission ring (+0xB0) into the leaving ring (+0xD0) that COAST 3 (0x43b220) pops; OpenTPW has no admission ring (a guest is seated at once, see Board), so nothing waits to be released
+				// [BIN:TPW-EXE:0x43b2f0 coaster close] gated: argument 0 opens (state → 4) only when state & 0xA (built 2 or closed 8), a nonzero argument closes (→ 8) only when state & 4 (open), like the Mac; a ride whose track is not finished (state 1) takes neither. Closing (4 → 8, 0x43b390) moves the admission ring (+0xB0) into the leaving ring (+0xD0) that COAST 3 (0x43b220) pops
 				if ( parameter == 0 )
 				{
-					if ( Closed )
-						Closed = false;
+					if ( State is CoasterControllerState.Built or CoasterControllerState.Closed )
+						EnterState( CoasterControllerState.Open );
 				}
-				else if ( !Closed )
-				{
-					Closed = true;
-					MoveAdmissionToLeaving();
-				}
+				else if ( State == CoasterControllerState.Open )
+					EnterState( CoasterControllerState.Closed );
 				return 0;
 			case 6:
 				// [BIN:STP-PPC:0x1003DF24 coaster capacity] COAST 6 takes MAX with the global value, then MIN with the definition and train bounds
@@ -556,19 +567,19 @@ public sealed class CoasterRide
 		train.FirstBoardingCar = train.LastBoardingCar = 0;
 	}
 
-	/// <summary>The station frame's coordinate of a position: samples past the platform start, in [0, count).</summary>
+	/// <summary>A position's coordinate on the sample list, in [0, count): the sample list starts at the platform's first node.</summary>
 	private float StationCoordinate( float position )
 	{
 		var count = samples.Length;
 		if ( count == 0 )
 			return 0;
-		var coordinate = (position - PlatformStart) % count;
+		var coordinate = position % count;
 		return coordinate < 0 ? coordinate + count : coordinate;
 	}
 
 	/// <summary>The train's front and rear in the station frame (train <c>+0x20</c>, <c>+0x24</c>).</summary>
 	// [BIN:TPW-EXE:0x43d50b train extents] train +0x20 = front car offset/spacing + position + the car model's front extent; +0x24 = rear car offset/spacing + position − its rear extent; neither is wrapped
-	// [APPROX:COAST-022] the cars are 7 world units apart with no model extents, the front car is the reference car (the original's is the middle car, train +0x2c) and the frame's origin is the end node's knot, where the original's sample list starts
+	// [APPROX:COAST-022] the cars are 7 world units apart with no model extents and the front car is the reference car (the original's is the middle car, train +0x2c)
 	private void UpdateExtents( CoasterTrain train )
 	{
 		if ( samples.Length == 0 )
@@ -697,7 +708,7 @@ public sealed class CoasterRide
 	/// never stop: they circulate whether or not the ride is open.
 	/// </summary>
 	// [BIN:TPW-EXE:0x435ac9 controller tick] the motion tick runs when state & 0xE (2 built, 4 open, 8 closed); the station step (0x43b8b0, then 0x439570) only when state & 0xC and mode is not 0x40 (0x435cd1, 0x435cd5); the motion tick has no zero-speed branch, so a train in the station keeps the winch floor's speed
-	// [APPROX:COAST-022] the hops run on OpenTPW's fixed 60 Hz simulation step instead of the elapsed milliseconds of the cached animation clock per frame (0x4709e0, controller +0x120), trains are processed in list order instead of a queue by remaining budget, cars are 7 world units apart with no model extents (car +0x38 and the model extents are not read), the front car is the reference car (the original's is the middle car, train +0x2c) and the braking car (train +8), every car counts as active (car flag bit 0 is not modelled; the sum skips inactive cars, the average divides by all), the half-sample point wraps to sample 0 instead of reading the duplicated slot n, a zero-length hop at zero speed counts as partial (the original's NaN hop time takes the full branch), a new train starts at its even share of the lap (the original spaces trains by the release time, 0x43c1f0) and controller state 2 (built, never opened) is not told from state 8 (closed) — evidence needed: DET-I2's substep clock, the car offsets from asCarTypes (0x43bc20), car flag bit 0 and the original's train placement
+	// [APPROX:COAST-022] the hops run on OpenTPW's fixed 60 Hz simulation step instead of the elapsed milliseconds of the cached animation clock per frame (0x4709e0, controller +0x120), trains are processed in list order instead of a queue by remaining budget, cars are 7 world units apart with no model extents (car +0x38 and the model extents are not read), the front car is the reference car (the original's is the middle car, train +0x2c) and the braking car (train +8), every car counts as active (car flag bit 0 is not modelled; the sum skips inactive cars, the average divides by all), the half-sample point wraps to sample 0 instead of reading the duplicated slot n, a zero-length hop at zero speed counts as partial (the original's NaN hop time takes the full branch), a new train starts at its even share of the lap (the original spaces trains by the release time, 0x43c1f0) — evidence needed: DET-I2's substep clock, the car offsets from asCarTypes (0x43bc20), car flag bit 0 and the original's train placement
 	public void Advance( double deltaSeconds )
 	{
 		if ( !(deltaSeconds > 0) )
@@ -710,11 +721,44 @@ public sealed class CoasterRide
 		foreach ( var train in trains )
 			ClearHeadway( train );
 		// [BIN:TPW-EXE:0x43b8b0 coaster station] the station step is skipped entirely in mode 64 (breakdown); an arriving train unloads open or closed and boarding needs state 4; the tick also skips the station step (and 0x439570) for a train whose flag bit 0x2 is clear (0x435ce5 test byte [esi],2; the train flag writers of bit 0x2 are not identified, the stride-0x60 car flags at 0x43d1ee/0x43d23e are another word), here every train counts as having it set
-		if ( IsBroken )
+		if ( IsBroken || State is CoasterControllerState.Built )
 			return;
 		foreach ( var train in trains )
 			StationStep( train );
 	}
+
+	/// <summary>The ride's state change (<c>0x435730</c>) with what it does to the trains and the rings; see <see cref="State"/>.</summary>
+	internal void EnterState( CoasterControllerState next )
+	{
+		var old = State;
+		switch ( (old, next) )
+		{
+			case (CoasterControllerState.Built, CoasterControllerState.Incomplete):
+			case (CoasterControllerState.Open, CoasterControllerState.Incomplete):
+			case (CoasterControllerState.Closed, CoasterControllerState.Incomplete):
+				// The trains are removed with their riders, and the guests waiting for a seat leave with them.
+				ClearTrains();
+				break;
+			case (CoasterControllerState.Open, CoasterControllerState.Built):
+			case (CoasterControllerState.Closed, CoasterControllerState.Built):
+				foreach ( var train in trains )
+					UnloadAll( train );
+				MoveAdmissionToLeaving();
+				break;
+			case (CoasterControllerState.Incomplete, CoasterControllerState.Closed):
+			case (CoasterControllerState.Built, CoasterControllerState.Closed):
+			case (CoasterControllerState.Open, CoasterControllerState.Closed):
+				MoveAdmissionToLeaving();
+				break;
+		}
+		State = next;
+	}
+
+	/// <summary>
+	/// The coaster tool opens on this controller (<c>0x447520</c>): a finished track goes to state 2 (its riders and the guests waiting for a seat leave, the trains
+	/// circulate empty without a station step), an unfinished one to state 1 (no trains).
+	/// </summary>
+	internal void EnterTool() => EnterState( Track.IsRunnable ? CoasterControllerState.Built : CoasterControllerState.Incomplete );
 
 	/// <summary>
 	/// One car's candidate speed for a hop (<c>0x40650</c>): max(mod·(PerHeight·(y(s) − y(s + ½))) + v, floor), the uphill
@@ -763,7 +807,7 @@ public sealed class CoasterRide
 			}
 			var next = sum / cars;
 			if ( pastBraking && (train.Flags & CoasterTrainFlags.Bumped) == 0 )
-				next = BrakeBlend( next, winchFloor, position, BrakingStart, PlatformStart );
+				next = BrakeBlend( next, winchFloor, position, BrakingStart, count );
 			else if ( friction )
 				next *= Definition.FrictionMultiplier;
 			next = MathF.Max( next, anyWinch ? winchFloor : minimumFloor );
@@ -862,7 +906,7 @@ public sealed class CoasterRide
 	{
 		Track.AddCanonicalState( hash );
 		hash.Add( Initialised );
-		hash.Add( Closed );
+		hash.Add( (int)State );
 		hash.Add( BreakdownState );
 		hash.Add( SpeedSetting );
 		hash.Add( SeatsPerTrain );
@@ -870,7 +914,6 @@ public sealed class CoasterRide
 		hash.Add( PaidCost );
 		hash.Add( TimeSeconds );
 		hash.Add( BrakingStart );
-		hash.Add( PlatformStart );
 		hash.Add( StationWindow.Start );
 		hash.Add( StationWindow.End );
 		hash.Add( IntersectionCount );
@@ -937,9 +980,14 @@ public sealed class CoasterRide
 	internal void RestoreSnapshot( CoasterRideSaveData saved )
 	{
 		ArgumentNullException.ThrowIfNull( saved );
-		Track.RestoreSnapshot( saved.Track );
+		if ( saved.State is { } checkedState && !Enum.IsDefined( (CoasterControllerState)checkedState ) )
+			throw new InvalidDataException( $"Coaster '{Name}' holds the controller state {checkedState}, which is not 1, 2, 4 or 8." );
+		var migrated = Track.RestoreSnapshot( saved.Track );
 		Initialised = saved.Initialised;
-		Closed = saved.Closed;
+		// A save from before the controller state held only the closed flag: a finished track is open or closed, an unfinished one has no state to be in but 1.
+		State = !Track.IsRunnable ? CoasterControllerState.Incomplete
+			: saved.State is { } savedState ? (CoasterControllerState)savedState
+			: saved.Closed ? CoasterControllerState.Closed : CoasterControllerState.Open;
 		BreakdownState = saved.BreakdownState;
 		SpeedSetting = saved.SpeedSetting;
 		SeatsPerTrain = saved.SeatsPerTrain;
@@ -955,11 +1003,11 @@ public sealed class CoasterRide
 				ClearTrains();
 			RaiseTrackChanged();
 		}
-		// A save of the older shape (no train flags) was rated with the earlier pylon heights, minimum heights and end node flags, so the
-		// re-derived rating can place another number of trains or cars. Its trains are not kept: the new placement stands and every saved rider
-		// waits to leave (they are not lost). A save of the current shape must match exactly, or it is refused.
-		var olderShape = saved.Trains.Any( train => train.Flags is null );
-		var matches = saved.Trains.Count == trains.Count
+		// A save of the older shape (no train flags, or the station of one node) was rated with the earlier pylon heights, minimum heights, end node flags
+		// and station, so the re-derived rating can place another number of trains or cars and the samples start elsewhere. Its trains are not kept: the new
+		// placement stands and every saved rider waits to leave (they are not lost). A save of the current shape must match exactly, or it is refused.
+		var olderShape = migrated || saved.Trains.Any( train => train.Flags is null );
+		var matches = !migrated && saved.Trains.Count == trains.Count
 			&& saved.Trains.Select( ( train, index ) => train.Cars.Count == trains[index].Cars.Count ).All( equal => equal );
 		if ( !matches && !olderShape )
 		{

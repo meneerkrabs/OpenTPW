@@ -1058,6 +1058,39 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Coaster three-node station (October 15):** the coaster's station is the original's three nodes (COAST-029, tp.exe `0x436ac0`, read again at the
+  instruction level): S0, a StdPylon in the cell beyond the `<` cell (node flags `0x400`, winch, no previous link), S1, pylon-less on the exact
+  middle dummy (`0x200 | 0x400`, winch) and S2, a StdPylon in the cell beyond the `>` cell (`0x200`, no next link). The three dummies are read from the
+  station model with the placement's rotation applied (`CoasterStationLayout`; all 12 PC stations, four rotations, checked against the shape's
+  `<` and `>` cells); the pylon heights are the dummies' heights without the fMinHeight/fMaxHeight clamp (creation parameter bit 4). The end node of a
+  finished track stands on S0's knot with the tangent of S0 (`0x435570`, `0x431660`), S0 leaves straight toward S1 and S2 straight along the platform,
+  the closing click is S0's cell, and no pylon stacks on a station node (`0x200`/`0x400`). The sampler's closing pair E → S1 emits one sample, so
+  the list starts on S0 and the braking zone, the station window (the knot coordinates of S0 and S2) and the swing's fade follow the original's frame
+  (`PlatformStart` and the two-node workaround are gone, COAST-019 retired); the platform links S0 → S1 and S1 → S2 are ordinary links of the collision
+  pass (COAST-004 narrowed). COAST-029 stays open only for the stations whose dummies lie below the StdPylon's h0 (Ghosta Coasta, Scatty Batty, Candy
+  Coaster, Escape Velocity: the loft parameter stops at 0, so S0 and S2 stand above the middle knot) and for the middle knot's fTrackHeightAdjust.
+  The controller has the original's states (COAST-012 retired, `0x435730`): 1 unfinished, 2 built or out of service (trains run empty, no station
+  step), 4 open, 8 closed. Entering the coaster tool closes the ride object and sets state 2 for a finished track (its riders and the admission ring
+  leave, the trains stay) or 1 (the trains are removed); leaving the tool opens the ride again when the state is 2 (`0x447520` is the tool's entry,
+  not its exit as round 2 labelled it). A save with the two-node station migrates on load (the placement's three nodes, the saved pylons, the end
+  node on S0, a new sampling, the riders of the old trains leave); the coaster hash changed shape (docs/DETERMINISM.md). Register: COAST-012 and 019
+  retired, COAST-004 and 029 narrowed, COAST-014, 015, 024 and 030 lost their station clauses. The coaster tool panel (COAST-028/035) is untouched.
+- **Coaster tool panel (October 15):** the coaster tool shows the original's slide-out panel with its nine buttons (tp.exe `0x4982a0`, `0x446fa0`, table `0x751530`; the `cb_*` models of ui.wad
+  at the table's rectangles, their tooltip and click help). Every sub-mode follows its handler read at the instruction level: build and loop (`0x445220`, `0x442cd0`), height (`0x441a00`, 0.005 per pixel
+  within the loft range of `0x433280`, money settled on the release), rotate (`0x441e80`), tilt (`0x442010`, `0x441cd0`, the hand-set bank keeps its node out of the auto-bank pass), move (`0x446d50`, `0x445a70`),
+  stack swaps (`0x4423f0`, `0x4425c0`) and the demolish button's cut (`0x446740`). The cut is what extends a finished circuit again: it sets state 1 and leaves the track open at the chosen pylon (or,
+  cut in the middle, with a gap that new pylons fill and a click on the chain start closes); a test finishes a coaster, boards guests, cuts, extends, completes and checks that every boarded guest leaves.
+  The enable mask is `0x445910` (build and loop off on a finished circuit, demolish off otherwise). The build cursor is the original's spare cursor node drawn as a translucent blue or red ribbon without a
+  pylon, the placement area yellow cells in the box of `0x434f10` (the per-cell test `0x5243a6` is traced, its cell types only partly known). The mouse wheel, Tab and Enter controls are gone (Backspace stays
+  as an extension); saves carry the hand-set yaw and incline and the cut. Register: COAST-028 and 035 narrowed, the mouse-to-value rate and the placement test traced (the pointer scale, picking by
+  cell, the area's occupancy test and the guessed clip angles stay approximations).
+
+- **Coaster tool panel review fixes (October 15):** the way back into the tool exists: a selected coaster shows the ride window's `b_track` button (control `0x3e2a`, handler `0x4af200` → `0x4988c0` →
+  `0x4474d0`, read at the instruction level) on the ride window (the table-driven one, at its original place), so select, track button, cut, extend and complete all work in normal play (tested, and the jungle smoke does it through the HUD). The cut refuses the second
+  release on the same station node (`0x44678c`) and any cut that starts inside the station; a loop-tilted loop rotation (−0.35) and a height above the model's top (t above 1, as `0x434680` allows) load again;
+  moving a stacked pylon away and back keeps the stack whole; the panel's background takes its clicks; Backspace waits for a drag and a released drag while paused ends; a stale cut start is dropped; a save taken
+  in the tool lets the ride out on load; a removed station cleans the tool up; drags fit the controller once, on the release. The `[EXT:coaster-tool-admission]` claim was wrong (4 → 2 and 8 → 2 run the closing
+  move, `0x43587f`..`0x4358cb`): it is a BIN tag now and the one difference left is `[EXT:coaster-state-clear]`.
 - **Sign and gate round (October 15):** the PC v2.0 video settled sign composition. Sign faces now start transparent (COMPAT-030 retired, `BackingColor` gone), so wood and sky show between the letters, and paint masks are shifted by their stored offsets (COMPAT-003 narrowed: Wilde Aap's drop shadow, the gate's shadow; growth and blur stay open). The gate shows the park name on two lines (`SplitAtMiddleSpace`) with the stored paint and no cream override; the earlier gate-paint-legibility decision (COMPAT-031) is contradicted and recorded as such, and the upward sign normals that came with it are gone (they rendered the relief letters white; with the model's own normals the gate is dark stone with grey-blue letters, as in the video). COMPAT-001, -004, -007 and -016 are narrowed (ride signs already show the localized type name). VM-901 is retired: `WAITABS` wakes after the unsigned distance to the deadline minus the clock fraction, so a wait no longer ends at once after 2^32 ms (tests at the wrap). ADVISOR-025 records 0x4B9340 as the HUD golden-ticket/key counter refresh, ADVISOR-027 gains the video's slap-sound evidence, and DET-plan.md and DETERMINISM.md are corrected (rotate by 13, `ScriptRandom`). Review fixes: the gate overlay's normals are converted to engine axes like its positions (the first version passed model-axis normals, so one face lit up and the other down), the sign halves are straight alpha with bled edge colours (`[EXT:sign-straight-alpha]`, no more double-darkened fringes), the engine's alpha test and unsorted blend for sign faces is COMPAT-032, and the `fidelity_register.py` empty-register marker is a whole-line comment with a test. Sign baselines moved twice and were re-pinned.
 - **Silent automated runs (October 15):** smokes, captures and park-resume runs open no audio device unless `--smoke-audio` is given (`SdlMovieAudioOutput.Suppressed`, `[EXT:silent-automated-runs]`), so the many test runs on a developer machine make no sound; `--silent` or `OPENTPW_SILENT=1` silences any run. Every audio path already falls back to the wall clock without a device, so timing and smoke results are unchanged.
 - **Layout-table review follow-ups (October 15):** the TPI layout-load confirmation lists the tick first (a source scan of every

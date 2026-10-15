@@ -93,7 +93,7 @@ public class RideUpgradeIngressTests
 		Assert.AreEqual( cash - 400, economy.Balance ); Assert.AreEqual( ledger + 400, economy.Ledger.CurrentTotals[LedgerCategory.OtherCosts] ); Assert.AreEqual( 400L, state.TotalSpent ); Assert.AreEqual( 1, state.PendingLevel ); Assert.AreEqual( 0, state.Level ); Assert.AreEqual( 0, other.PendingLevel ); Assert.IsFalse( first.IsOpen ); Assert.IsTrue( second.IsOpen );
 		economy.AdvanceDays( 1 ); Assert.AreEqual( 0, state.Level, "No mechanic means pending, not refusal/refund." );
 		EconomyTestData.HireBest( economy, StaffType.Mechanic ); for ( var i = 0; i < 20 && state.Level < 1; i++ ) economy.AdvanceDays( 1 );
-		Assert.AreEqual( 1, state.Level ); Assert.AreEqual( 3, first.Visitors.Capacity ); Assert.AreEqual( 1, second.Visitors.Capacity ); Assert.AreEqual( 1, first.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "Live CAP is not reset on completion." );
+		Assert.AreEqual( 1, state.Level ); Assert.AreEqual( 3, first.Visitors.Capacity ); Assert.AreEqual( 1, second.Visitors.Capacity ); Assert.AreEqual( 3, first.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "the completion 0x4df8f0 writes the level's InitCapacity through SetCapacity 0x4dd7f0" ); Assert.AreEqual( 1, second.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) );
 	}
 	private static void Research( ParkEconomy economy )
 	{

@@ -642,6 +642,8 @@ public sealed class ParkEconomy : IParkEconomy
 		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
 		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
+			// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the routine's common entry, before its state-2 upgrade branch, sets the state of repair (+0x44) to 100.0 for an upgrade too
+			item.Repair = RideRepair.FullGauge;
 			item.Level = item.PendingLevel;
 			item.PendingLevel = 0;
 			Raise( ParkEventKind.UpgradeCompleted, item.Level, item.Id, item.InfoId );

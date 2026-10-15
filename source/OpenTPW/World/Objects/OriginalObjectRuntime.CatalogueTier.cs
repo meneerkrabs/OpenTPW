@@ -66,8 +66,13 @@ public sealed partial class OriginalObjectRuntime
 		return true;
 	}
 
-	/// <summary>Completed tier metadata only: no live VM, queue/rider/head, animator or scheduler mutation.</summary>
-	// [APPROX:QUEUE-011] exact completed economy tiers drive factory-owned catalogue defaults and the speed bias; tp.exe's completion 0x004DF8F0 (its state-2 branch) also writes live VAR_CAPACITY through 0x004DD7F0 (InitCapacity +0x198, clamped to UsageInfo Min/MaxCapacity +0x124/+0x128 when their sum is above 0) and VAR_DURATION (InitDuration +0x1A0, clamped to Min/MaxDuration +0x12C/+0x130), each only when above 0, while OpenTPW keeps live CAP/DUR authored — evidence needed: none for the writes (read); the routine's common entry (gauge 100, VAR_WORN 0) and reopen tail are not compared with OpenTPW's completion path
+	/// <summary>
+	/// A completed (or restored) economy tier: the catalogue metadata, and on <paramref name="completion"/> the ride words of tp.exe's completion
+	/// <c>0x4df8f0</c> (its state-2 branch): SPEED from the level's <c>InitSpeed</c>, CAPACITY through the setter <c>0x4dd7f0</c> from <c>InitCapacity</c>
+	/// and DURATION, clamped, from <c>InitDuration</c>, each only when above 0, so a word whose value is not above 0 keeps the ride's setting.
+	/// No queue, rider, head, animator or scheduler state changes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4df8f0 upgrade completion] the state-2 branch raises the level (+0x50), then: Upgrades[level].InitSpeed (def +0x1a8 + level·0x40) when above 0 → the bias (0x55a300), the log line and ride +0x58, as SetSpeed 0x4dd6e0; InitCapacity (+0x198) when above 0 → SetCapacity 0x4dd7f0 with its low byte (script variable 2, +0x5d); InitDuration (+0x1a0) when above 0 → its low byte clamped to Min/MaxDuration (+0x12c/+0x130), script variable 3 and +0x5c
 	internal bool TryApplyCatalogueTierDefaults( int tier, out string reason, bool completion = false )
 	{
 		if ( !CanConfigureCatalogue( out reason ) ) return false;
@@ -75,10 +80,23 @@ public sealed partial class OriginalObjectRuntime
 		{ reason = "completed catalogue tiers cannot regress on a live owner"; return false; }
 		if ( !ResolveCatalogueTier( tier, out var row, out var parameters, out reason ) ) return false;
 		if ( catalogueInitialized && CatalogueTier == tier ) return true;
+		if ( completion )
+		{
+			// the completion writes only the words whose level value is above 0; the others keep the ride's current value over the new tier
+			var live = Settings;
+			speedWord ??= live.Speed;
+			capacityWord ??= live.Capacity;
+			durationWord ??= live.Duration;
+		}
 		ApplyCatalogueMetadata( tier, row, parameters );
-		// [BIN:TPW-EXE:0x4df8f0 upgrade completion speed] completing an upgrade sets the script speed bias to the new level's InitSpeed (Upgrades[level] at def+0x180+level·0x40, +0x28) when above 0, the same three steps as the ride-settings setter 0x4dd6e0 (bias 0x55a300, ride+0x58, log line); the same routine sets capacity from +0x198 (0x4dd7f0) and duration from +0x1a0 (QUEUE-011 keeps those authored)
-		if ( completion && row.GetInt( "InitSpeed" ) is > 0 and var speed )
+		if ( !completion )
+			return true;
+		if ( row.GetInt( "InitSpeed" ) is > 0 and var speed )
 			SetSpeed( speed );
+		if ( row.GetInt( "InitCapacity" ) is > 0 and var capacity )
+			SetCapacity( capacity );
+		if ( row.GetInt( "InitDuration" ) is > 0 and var duration )
+			SetDuration( duration );
 		return true;
 	}
 

@@ -353,8 +353,9 @@ glyph in all 14 UI fonts of each language.
   accounts come directly from `ParkEconomy`. Borrowing and repayment use its existing methods,
   only where the game mode permits loans. Lender names come from the selected language's
   `LOANNAMES.str`; a missing entry uses a numbered fallback, which the shipped data never reaches (`LOANNAMES.str` has 18 entries and every `Lendername` is 0..17). The seven list rows and scroll travel are
-  inferred from the table's content bounds; the summary uses tracked ledger data whose scope
-  differs from the original lifetime counters (UI-063).
+  inferred from the table's content bounds (UI-063). The summary is the original's (`0x49fb30`), filled when the
+  window opens: the last closed month's money in, its money out less the monthly repayments of the loans now
+  outstanding, those repayments, and money in less money out.
 - Research (`ParkHud.ResearchWindow.cs`) places `w_res`, five `res_panel` rows and effort sliders
   in the table's visual order: rides, upgrades, shops, sideshows, features. Item names, progress
   and effort come from `ParkResearch`; changing effort calls `ParkEconomy.SetResearchEffort` only
@@ -678,7 +679,7 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-051 | `Hud/ParkHud.cs` | green_up frame 1 while the balance fell over the last seconds, shown only then; the original sets the arrow's frame at each date update (0x4a0e30: frame 1 when the newest entry of the history ring beside the money-out total +0x1F5A0 exceeds that of the ring beside the money-in total +0x1FC90) and its visibility is untraced; the ticket counter is the park's available tickets, where the original shows the player's earned tickets less the spent count (0x5af5d0), because an in-park ticket purchase does not reach the player ledger | the trend arrow's visibility and when the history rings take an entry; an in-park ticket purchase recorded in the player ledger |
 | UI-060 | `Hud/ParkHud.FinanceWindow.cs` | finance graph line colours, scaling and default selected series use the tracked monthly ledger values | original financial graph capture and its sample/render handler |
 | UI-061 | `Hud/ParkHud.FinanceWindow.cs` | the entry-price window is a host layout over actual economy values (its table is not located); the training-budget window follows table 0x756400 (mini balance, five role rows, tick and the entry price, finance and loans buttons) without the rows' skill gauges, and a click changes a budget by one unit | the entry-price window's table (the G key, entryprice 0x40c570) and what the training rows' gauges show |
-| UI-063 | `Hud/ParkHud.LoansWindow.cs` | loan list has seven equal rows and inferred scrollbar travel; its summary uses the bounded monthly ledger rather than the original lifetime counters | the loans list control and handler (candidates: type-7 lists such as attribute 0x81, id 2342112), scroll handler and original lifetime finance counters |
+| UI-063 | `Hud/ParkHud.LoansWindow.cs` | loan list has seven equal rows and inferred scrollbar travel | the loans list control and handler (candidates: type-7 lists such as attribute 0x81, id 2342112) and its scroll handler |
 | UI-064 | `Hud/ParkHud.ResearchWindow.cs` | research workload is adjustable with linear 0..100 mouse/keyboard travel; native slider quantization remains unqualified | which control of the research window handler 0x4a96b0 is the workload knob (it sets controls 0xd2d12 and 0xd2d10 on message 0x1e) and its 0x800 branch |
 | UI-066 | `Hud/ParkHud.ResearchWindow.cs` | the research fluids step at a fixed 30 ticks a second; the original advances each panel's fluid (0x4a9fc0) on every message 0x1e, which the UI sends once per rendered frame (0x48a580 → 0x658f6c) | the original's frame rate |
 | UI-080 | `Hud/ParkHud.Staff.cs` | staff list has ten equal rows in the table content area and the wheel moves one row | capture of the original staff list |

@@ -887,7 +887,8 @@ public sealed class ParkEconomy : IParkEconomy
 		MonthsInRed = MonthsSinceEnteringRed();
 		if ( MonthsInRed >= MonthsInRedForBankruptcy )
 			BankruptcyMessage();
-		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, ParkValue );
+		// [BIN:TPW-EXE:0x004C7720 month sample] the analyser's month handler stores the net worth read with age 0 (0x004C79A7)
+		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
 		{
@@ -959,12 +960,73 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// Park value (UITEXT 163): the object part of the original's <c>0xc1d4c</c> (ORACLE.md F29): per object, unless it is condemned, the costs of its upgrade levels up to the
-	/// current one times its state of repair / 100. The original adds the map's cell points to it (2 per owned empty cell, 3 per path, 5 per queue, ...).
+	/// Park value (UITEXT 163, the net worth): the cell points of the owned map cells (<see cref="ParkValueRules.CellPoints"/>) and per object, unless it is condemned,
+	/// the costs of its upgrade levels up to the current one times its state of repair / 100 (ORACLE.md F29). A headless economy without a cell map has the object part only.
 	/// </summary>
 	// [BIN:STP-PPC:0x100C1D4C park value] the thing loop adds sum(Upgrades[0..level].CostOfUpgrade) × byte(state of repair) / 100 for every object that is not in state 4; the 128 × 128 cell loop adds 1, 3, 5, 1, 1, 2 and 50 points by cell type (the predicates 0x10085174..0x10085418) for cells without the unowned flag 0x40; both executed by the oracle target park-value
-	// [APPROX:ECON-026] the map's cell points are not added: the original (0x004C7DB0) adds, for each cell without flag 0x40, 2 for type 0, 3 for type 1, 1 for types 2 and 10, 5 for type 3, 6 for type 9 and 50 when the cell's 40-byte record (for a record of type 12 or 17, the record its link names) has type 11, 13, 16, 18 or 25; at map start (0x00536490, 0x00450420) flag 0x40 is set on every cell but the InitialPath cells the terrain's ownership bits mark owned; OpenTPW's cell map has no such flag (PATH-007) and its types are incomplete (ECON-050), so the park value is the object part only, which matches, without the scrap values, as in the original — evidence needed: the terrain's ownership bit (Terrain base.md2 vertex flags +0x2C, bit 0, read by 0x00450420) and the writer that later clears 0x40 (Buy Land)
-	public long ParkValue => objects.Values.Sum( ObjectValue );
+	// [BIN:TPW-EXE:0x004C7DB0 net worth] the same sums in a 32-bit word; the result is cached (+0x1F0EC, stamp +0x1F0E8) and counted again only when the reader's age is below (turn >> 2) − (stamp >> 2): the month's history sample reads it with age 0, the loans' credit test with 20 (NetWorth)
+	public long ParkValue => ComputeNetWorth();
+
+	private bool netWorthCached;
+	private long netWorthStamp;
+	private int netWorthValue;
+
+	/// <summary>
+	/// The net worth as a reader of the analyser's cache sees it (tp.exe <c>0x004C7DB0</c>): the cached value while (turn >> 2) − (stamp >> 2) is at most
+	/// <paramref name="maximumAge"/> (unsigned), else counted again and stamped with the current turn. The cache is not saved: a loaded park counts at its first read.
+	/// </summary>
+	public int NetWorth( uint maximumAge )
+	{
+		var age = unchecked( (uint)(Turn >> 2) - (uint)(netWorthStamp >> 2) );
+		if ( !netWorthCached || maximumAge < age )
+		{
+			netWorthValue = ComputeNetWorth();
+			netWorthStamp = Turn;
+			netWorthCached = true;
+		}
+		return netWorthValue;
+	}
+
+	private int ComputeNetWorth()
+	{
+		var total = 0;
+		if ( Litter.Cells is { } cells )
+		{
+			for ( var y = 0; y < cells.Height; y++ )
+			{
+				for ( var x = 0; x < cells.Width; x++ )
+				{
+					if ( (cells.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 )
+						continue;
+					var (type, structure) = CellForValue( cells, x, y );
+					total = unchecked( total + ParkValueRules.CellPoints( type, structure ) );
+				}
+			}
+		}
+		foreach ( var item in objects.Values )
+			total = unchecked( total + (int)ObjectValue( item ) );
+		return total;
+	}
+
+	/// <summary>
+	/// A cell's map type and whether its structure record counts 50, from OpenTPW's cell map: a track tile keeps its type in the map's type byte as well as in the track
+	/// layer (the original's structure records), so its map type is taken as the empty cell's 0.
+	/// </summary>
+	// [APPROX:ECON-026] the cell points follow tp.exe 0x004C7DB0 on OpenTPW's cell map, but a track tile's map type is taken as 0 (OpenTPW keeps the track's type in the map's type byte as well as in the track layer, where the original's map cell keeps its own type under the structure record) and OpenTPW has no park fence, whose hoardings (structure type 25) count 50 each; which cells are owned is PATH-007's — evidence needed: the map cell's type under a laid track tile (tp.exe's track tool 0x0053B280 and its callers)
+	private static (byte Type, bool Structure) CellForValue( ParkCellMap cells, int x, int y )
+	{
+		var track = cells.Tracks.Get( x, y );
+		if ( track.IsEmpty )
+			return (cells.RawTypeAt( x, y ), false);
+		var record = track.Type;
+		if ( track.IsExtension && track.Parent >= 0 )
+		{
+			var (px, py) = cells.Tracks.CellOf( track.Parent );
+			record = cells.Tracks.Get( px, py ).Type;
+		}
+		var type = cells.RawTypeAt( x, y ) == track.Type ? (byte)0 : cells.RawTypeAt( x, y );
+		return (type, ParkValueRules.IsCountedStructure( record ));
+	}
 
 	/// <summary>One object's share of the park value (<see cref="ParkValueRules.ObjectValue"/>); condemned objects count for nothing.</summary>
 	private long ObjectValue( ParkObjectState item )

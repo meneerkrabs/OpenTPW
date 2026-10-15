@@ -11,7 +11,7 @@ public enum GameSpeed
 	Paused = 0,
 	Normal = 1,
 	// [BIN:TPW-EXE:0x40c3b0 speed actions] the key table at 0x7480a0 maps VK_SUBTRACT (0x6D) to 0x40c3b0 (rate × 0.8, 0x403340), VK_ADD (0x6B) to 0x40c3c0 (rate × 1.25, 0x4032f0) and VK_MULTIPLY (0x6A) to 0x40c3d0 (rate 1.0, 0x4032d0); both steps clamp to 0.25..2.0 (0x6fd648 / 0x6fd650) on the clock 0x785970 +0x20
-	// [APPROX:ECON-004] Fast x2 and Fastest x4 are OpenTPW's buttons: the original has no fixed speeds; numpad + and numpad − multiply its clock rate by 1.25 and 0.8 within 0.25..2 and numpad * resets it to 1 (x4 exceeds its maximum) — evidence needed: whether the shipped game shows a speed control and which action it sends
+	// [EXT:speed-buttons] Fast ×2 and Fastest ×4 are OpenTPW's speeds: the original has no fixed speeds and no on-screen speed control, only the numpad keys of the game key table (0x7480a0) that scale its clock rate by 0.8 and 1.25 within 0.25..2 and reset it to 1
 	Fast = 2,
 	Fastest = 4
 }
@@ -61,7 +61,8 @@ public static class ParkCalendar
 	// [BIN:STP-PPC:0x100E4348 calendar start] TbTimeStamp::SetTime( 2000, 1, 1, 0, 0, 0, 0 )
 	public static readonly DateTime Epoch = new( 2000, 1, 1, 0, 0, 0, DateTimeKind.Unspecified );
 	// [BIN:TPW-EXE:0x54e360 park frame] case 10: the backlog over the scaled millisecond clock (0x4031e0) is cut to 2000 ms, each substep adds 31 ms, every eighth substep is a park turn (0x516380, 8 × 31 = 248 ms) while fewer than three ran this frame (DAT_00879064, reset after the loop)
-	// [APPROX:ECON-001] OpenTPW's fixed 60 Hz clock is sampled into 248 ms park turns (4.03 a second at normal speed), without the original's 31 ms substeps, its limit of three park turns per frame (further due turns in that frame are skipped, not deferred) and its drop of a backlog above 2000 ms — evidence needed: the clock route a real run selects (QueryPerformanceCounter when its flag is set, else timeGetTime) and the original's behaviour under load
+	// [BIN:TPW-EXE:0x5f5e80 clock route] the raw millisecond clock (0x5f5f10) reads QueryPerformanceCounter, (count − base) / counts per ms + the base time, whenever the constructor found QueryPerformanceFrequency / 1000 in 10..32,000,000 counts per ms, else timeGetTime
+	// [APPROX:ECON-001] OpenTPW's fixed 60 Hz clock is sampled into 248 ms park turns (4.03 a second at normal speed) without the original's 31 ms substeps; under load the two differ: OpenTPW runs at most 16 ticks (266.7 ms) a frame for the whole simulation and drops the rest, where the original's world substeps catch up a backlog of up to 2000 ms but at most three park turns run a frame (further due turns in that frame are skipped, not deferred) — evidence needed: none for the rules (read: the clock route 0x5F5E80 / 0x5F5F10 and the frame loop 0x54E360 case 10); a timed run of the original only for the size of the drift under load
 	private const long TickTurnNumerator = 1000;
 	private const long TickTurnDenominator = (long)TicksPerSecond * TurnMilliseconds;
 	// [BIN:STP-PPC:0x101C5C4C TbTimeStamp::GetTime] the hour comes from the OS LongDateRec hour field (0–23)
@@ -82,7 +83,7 @@ public static class ParkCalendar
 	/// <summary>The first fixed tick whose park-clock time is at least <paramref name="seconds"/>.</summary>
 	public static long TickAtSeconds( long seconds ) => TickOfTurn( (seconds + SecondsPerTurn - 1) / SecondsPerTurn );
 
-	// [APPROX:ECON-002] the Mac OS date conversion (LongSecondsToDate, reached through 0x101C5C4C) uses the default Gregorian calendar — evidence needed: the script system of an original run
+	// [BIN:TPW-EXE:0x4f85a0 park date] the date is the FILETIME of 2000-01-01 (0x4f7e80, rate 15000 at +0x1c) plus floor(turn × 15000 / 4) × 10^7, decoded by FileTimeToSystemTime (0x5fc660, IAT 0x6fd0bc): the proleptic Gregorian calendar in UTC, with no locale calendar and no time zone
 	// [BIN:STP-PPC:0x100E4394 calendar conversion] the date of a park turn is the 2000-01-01 start plus floor(turn x 15000 / 4) seconds (oracle F30: 647 turns and rates agree)
 	public static DateTime DateAtTurn( long turn ) => Epoch.AddSeconds( turn * SecondsPerTurn );
 

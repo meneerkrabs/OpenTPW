@@ -37,6 +37,7 @@ internal sealed class AdvisorClipDurations
 	public const int EndClip = 15;
 
 	private readonly uint[] milliseconds = new uint[Count];
+	private readonly uint[] played = new uint[Count];
 
 	/// <param name="trailerWord2">Trailer word 2 of clip n at index n − 1 (0 for a clip that does not exist).</param>
 	public AdvisorClipDurations( IReadOnlyList<uint> trailerWord2 )
@@ -45,6 +46,8 @@ internal sealed class AdvisorClipDurations
 		// [BIN:TPW-EXE:0x005989C0 advisor clip lengths] the 20 entries are read through 0x474070 from the level advisor's clips when one is loaded, else the global advisor's; afterwards the entry of clip 14 (0xF796FC) is set to 0
 		for ( var index = 0; index < Count && index < trailerWord2.Count; index++ )
 			milliseconds[index] = FromTrailer( trailerWord2[index] );
+		// The animation itself still plays clip 14 for its whole length: the zero only keeps the opening out of the sequence's budget and sum.
+		Array.Copy( milliseconds, played, Count );
 		milliseconds[StartClip - 1] = 0;
 	}
 
@@ -52,8 +55,15 @@ internal sealed class AdvisorClipDurations
 	// [BIN:TPW-EXE:0x00474070 clip length] returns (uint)(trailer word 2 × 1000) / 30, and 0 when the slot has no clip at that index
 	public static uint FromTrailer( uint trailerWord2 ) => unchecked(trailerWord2 * 1000u) / 30u;
 
-	/// <summary>Length of clip <paramref name="clip"/> (1–20); 0 outside the table.</summary>
+	/// <summary>Length of clip <paramref name="clip"/> (1–20) in the table the sequence builder reads (clip 14 is 0); 0 outside the table.</summary>
 	public uint Of( int clip ) => clip is >= 1 and <= Count ? milliseconds[clip - 1] : 0;
+
+	/// <summary>
+	/// How long clip <paramref name="clip"/> plays: its own length, including clip 14's (<see cref="Of"/> forces that to 0 for the
+	/// budget); 0 outside the table or for a clip the archive lacks.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004735D0 animation sampler] a clip runs to its own length before the sampler frees the channel (0x473743-0x47374E); only the table entry of clip 14 (0xF796FC) is zeroed, by 0x5989C0
+	public uint PlayOf( int clip ) => clip is >= 1 and <= Count ? played[clip - 1] : 0;
 
 	private static readonly Regex ClipName = new( @"^Advisor(?:_[A-Za-z]+)?m(\d+)\.MD2$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant );
 
@@ -64,6 +74,14 @@ internal sealed class AdvisorClipDurations
 	public static AdvisorClipDurations? Load( BaseFileSystem fileSystem, string? level )
 	{
 		foreach ( var archive in level == null ? new[] { Advisor.ArchivePath } : new[] { $"/levels/{level}/advisor", Advisor.ArchivePath } )
+			if ( LoadArchive( fileSystem, archive ) is { } durations )
+				return durations;
+		return null;
+	}
+
+	/// <summary>Lengths from the clips of one archive (the model that plays them); null when it holds no clip.</summary>
+	public static AdvisorClipDurations? LoadArchive( BaseFileSystem fileSystem, string archive )
+	{
 		{
 			IEnumerable<string> members;
 			try
@@ -72,7 +90,7 @@ internal sealed class AdvisorClipDurations
 			}
 			catch ( Exception exception ) when ( exception is IOException or DirectoryNotFoundException or UnauthorizedAccessException or InvalidDataException )
 			{
-				continue;
+				return null;
 			}
 			var words = new uint[Count];
 			var found = false;
@@ -109,7 +127,11 @@ internal sealed class AdvisorClipDurations
 /// The effect timer a fixed row's timer entry sets (the clip sum before the entry plus its milliseconds), on the advisor
 /// clock relative to the clip start; null without one. The timer's effect is not ported (ADVISOR-025).
 /// </param>
-internal sealed record AdvisorSequence( IReadOnlyList<int> Clips, int SumMilliseconds, int? TimerMilliseconds = null );
+/// <param name="AccessoryBits">
+/// For a fixed row, the accessory bits (<c>entry &amp; 0x7F0000</c> shifted down by 16) of each clip, parallel to <paramref name="Clips"/>;
+/// null for a generated sequence.
+/// </param>
+internal sealed record AdvisorSequence( IReadOnlyList<int> Clips, int SumMilliseconds, int? TimerMilliseconds = null, IReadOnlyList<int>? AccessoryBits = null );
 
 /// <summary>One entry of a fixed-sequence row: a clip (with its accessory bits) or a timer.</summary>
 internal readonly record struct AdvisorSequenceEntry( int Clip, int Bits, int TimerMilliseconds )
@@ -217,6 +239,7 @@ internal static class AdvisorSequences
 		ArgumentNullException.ThrowIfNull( durations );
 		ArgumentNullException.ThrowIfNull( rand );
 		var clips = new List<int>();
+		var bits = new List<int>();
 		var sum = 0;
 		int? timer = null;
 		// [BIN:TPW-EXE:0x00598BF0 fixed-sequence builder] a timer entry sets the timer to the clip sum so far plus its milliseconds and adds no clip; a clip adds its length from the clip table (clip 14 is 0); a sum of 0 with a nonzero budget returns the generator's sequence (0x598B20) instead
@@ -230,11 +253,26 @@ internal static class AdvisorSequences
 				continue;
 			}
 			clips.Add( entry.Clip );
+			bits.Add( entry.Bits );
 			sum += (int)durations.Of( entry.Clip );
 		}
 		if ( sum == 0 && budgetMilliseconds != 0 )
 			return Generate( budgetMilliseconds, durations, rand ) with { TimerMilliseconds = timer };
-		return new AdvisorSequence( clips, sum, timer );
+		return new AdvisorSequence( clips, sum, timer, sequence >= AdvisorFixedSequences.FirstSequence && clips.Count > 0 ? bits : null );
+	}
+
+	/// <summary>
+	/// How long the sequence's clips play from the request to the end of the last one: each clip's own length
+	/// (<see cref="AdvisorClipDurations.PlayOf"/>), clip 14's included. The sampler hides the model there.
+	/// </summary>
+	public static uint PlayMilliseconds( AdvisorSequence sequence, AdvisorClipDurations durations )
+	{
+		ArgumentNullException.ThrowIfNull( sequence );
+		ArgumentNullException.ThrowIfNull( durations );
+		var total = 0u;
+		foreach ( var clip in sequence.Clips )
+			total = checked(total + durations.PlayOf( clip ));
+		return total;
 	}
 
 	/// <summary>

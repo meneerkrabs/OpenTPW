@@ -93,7 +93,7 @@ internal sealed partial class SandboxSmokeTest
 	{
 		var ride = smokeStation!.Runtime.Coaster!;
 		var train = ride.Trains[0];
-		Require( train.State != CoasterTrainState.Boarding || train.Position != smokeTrainStart, $"a coaster train left the station (state {train.State}, position {train.Position:F1})" );
+		Require( train.Position != smokeTrainStart, $"a coaster train left the station (position {train.Position:F1}, speed {train.Speed:F1})" );
 		Require( level.CoasterTrianglesDrawn > 0, "the coaster track is drawn" );
 		CaptureFrame( "original-coaster.png" );
 		var economy = level.Park?.Economy;
@@ -112,7 +112,7 @@ internal sealed partial class SandboxSmokeTest
 		if ( smokeStation == null || coasterBuiltFrame == 0 )
 			return;
 		var train = smokeStation.Runtime.Coaster!.Trains[0];
-		if ( train.State == CoasterTrainState.Boarding && train.Position == smokeTrainStart )
+		if ( train.Position == smokeTrainStart )
 		{
 			coasterWait ??= System.Diagnostics.Stopwatch.StartNew();
 			Require( coasterWait.Elapsed.TotalSeconds < 60, "a coaster train leaves the station" );

@@ -85,10 +85,10 @@ public class RideCameraTests
 
 		// The station script initialises the controller, the train dispatches and runs, and the camera follows it.
 		var first = RideCameraMode.CoasterFrame( ride, origin ).Eye;
-		for ( var tick = 0; tick < 30 * 30 && (ride.Trains[0].State == CoasterTrainState.Boarding || !ride.Initialised); tick++ )
+		for ( var tick = 0; tick < 30 * 30 && (ride.Trains[0].Speed == 0 || !ride.Initialised); tick++ )
 			station.Simulate( Tick );
 		Assert.IsTrue( ride.Initialised, "the station script initialises the coaster controller" );
-		Assert.AreNotEqual( CoasterTrainState.Boarding, ride.Trains[0].State, "the train dispatches without riders after the boarding stop" );
+		Assert.IsTrue( ride.Trains[0].Speed > 0, "the train keeps circulating: it never stops at the station" );
 		for ( var tick = 0; tick < 120; tick++ )
 			station.Simulate( Tick );
 		CheckFrame();

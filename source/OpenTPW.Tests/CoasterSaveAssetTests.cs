@@ -20,9 +20,14 @@ public class CoasterSaveAssetTests
 {
 	private const float Tick = 1f / FixedStepClock.TicksPerSecond;
 
+	private BaseFileSystem previousFileSystem = null!;
+	private Logger previousLog = null!;
+
 	[TestInitialize]
 	public void Init()
 	{
+		previousFileSystem = FileSystem;
+		previousLog = Log;
 		Log = new();
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
 		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
@@ -32,6 +37,14 @@ public class CoasterSaveAssetTests
 			Assert.Inconclusive( "OPENTPW_GAME_PATH lacks levels/Standard.sam." );
 		FileSystem = new BaseFileSystem( dataPath );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+	}
+
+	// Other tests read the global FileSystem, so the original game data must not outlive the test.
+	[TestCleanup]
+	public void Cleanup()
+	{
+		FileSystem = previousFileSystem;
+		Log = previousLog;
 	}
 
 	/// <summary>Builds a circuit on a station's controller over a flat site (the headless build API; a level's own site only exists in play).</summary>
@@ -165,7 +178,7 @@ public class CoasterSaveAssetTests
 		Rejects( snapshot with { Coasters = snapshot.Coasters! with { Rides = snapshot.Coasters.Rides.Take( 1 ).ToList() } },
 			"places 2 live coaster stations" );
 		// Definition bounds: the coaster's train and car counts (both entries stay saved, so the count check passes).
-		var definition = CoasterDefinition.FromSettings( fixture.Coaster.Settings );
+		var definition = CoasterDefinition.FromEntry( fixture.Coaster );
 		var tooManyTrains = Enumerable.Range( 0, definition.MaxTrains + 1 )
 			.Select( _ => snapshot.Coasters!.Rides[0].Trains[0] with { Cars = Enumerable.Range( 0, definition.MaxCars ).Select( _ => new List<int>() ).ToList() } )
 			.ToList();
@@ -299,7 +312,7 @@ public class CoasterSaveAssetTests
 			runtime.Simulate( Tick );
 			maximumAboard = Math.Max( maximumAboard, runtime.Visitors.Riders.Count );
 			var inHandOver = false;
-			foreach ( var rider in ride.Trains.SelectMany( train => train.Cars ).SelectMany( car => car ).Concat( ride.LeavingRiders ) )
+			foreach ( var rider in ride.Trains.SelectMany( train => train.Cars.Concat( train.BoardingCars ) ).SelectMany( car => car ).Concat( ride.AdmissionGuests ).Concat( ride.LeavingRiders ) )
 			{
 				if ( Accepted( rider ) )
 				{
@@ -323,7 +336,7 @@ public class CoasterSaveAssetTests
 		Assert.AreNotEqual( RideVMState.Faulted, runtime.Script!.State, runtime.Script.FaultMessage );
 		Assert.IsTrue( ride.Initialised, "the station script initialised its controller (COAST 8)" );
 		Assert.IsTrue( maximumAboard > 0, "guests boarded the running coaster through the real script" );
-		Assert.IsTrue( handOverRiderTicks > 0, "the boarding hand-over window is real (a rider in a car before the bridge marks it aboard)" );
+		Assert.IsTrue( handOverRiderTicks > 0, "the boarding hand-over window is real (a guest on the admission ring or in a car before the bridge marks it aboard)" );
 		Assert.IsTrue( handOverClosed, "the hand-over closes: the script consumes VAR_LETMEON and the rider is marked aboard" );
 		// The snapshotted pair agrees with the live rule: the hand-over rider is the called guest, WaitingToBoard,
 		// aboard nobody, while the coaster part holds it in a car.
@@ -335,8 +348,8 @@ public class CoasterSaveAssetTests
 		Assert.AreEqual( GuestState.WaitingToBoard, savedGuest.State );
 		Assert.AreEqual( runtime.AttractionId, savedGuest.AttractionId );
 		CollectionAssert.Contains( bridge.Queue.ToArray(), handOverRider );
-		Assert.IsTrue( boundaryCoaster!.Trains
-			.Any( train => train.Cars.Any( car => car.Contains( handOverRider ) ) ), "the coaster part holds the hand-over rider in a car" );
+		Assert.IsTrue( boundaryCoaster!.Admission!.Contains( handOverRider ) || boundaryCoaster.Trains
+			.Any( train => train.Cars.Concat( train.BoardingCars! ).Any( car => car.Contains( handOverRider ) ) ), "the coaster part holds the hand-over rider on the admission ring or in a car" );
 	}
 
 	private static int SeedOf( OriginalObjectRuntime runtime ) => runtime.Script!.Seed;

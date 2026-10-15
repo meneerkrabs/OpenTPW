@@ -6,6 +6,15 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Scream voices limited to the sound manager's pool of twelve (October 14, 2026)
+
+Ride screams no longer start new children everywhere in the park. tp.exe's sound manager (`0x6b62b0`) ticks only 12 audible
+voices, ranked by event priority with the ground distance as tie-break (`0x6bb9f0`, `0x6b6bc0`), and a held scream chain makes its
+children, the first included, only in that tick (`0x6bdae0` → `0x6bdb50`). Screams (priority 2700) rank below the crowd (5300) and
+most ride and ambient sounds, so OpenTPW now holds back a scream chain that is out of the listener's range (95 sound units over the
+ground) or outside the twelve highest-ranked voices; its started children play out (AUDIO-038). The timing of a chain itself was confirmed in tp.exe: a full
+ride (8+ riders, event 74) screams every 0–0.5 s, as in the original data.
+
 ## Ticket booth verdict, broken-ride state and no boredom loss (October 14, 2026)
 
 The ticket booth now weighs the entrance fee against the park as tp.exe does (`0x4ff5b0`, `0x4ff9d0`): the park value is the attraction
@@ -46,6 +55,11 @@ never replaces. Entering the theme again offers Continue for it. A failure befor
 failure while leaving the park after the write is reported instead of crashing. Details: docs/AUTOMATIC-CHECKPOINT-INGRESS.md and
 docs/AUTOMATIC-CHECKPOINT-CORE.md.
 
+Two checkpoint tests that capture a synthetic level failed locally when they ran after the original-data asset tests: those
+tests left the global `FileSystem` on the game data, so `Level.SetupStaff` loaded real staff atlases and created textures without
+a graphics device. The checkpoint tests' CPU renderer scope now also pins `FileSystem` to an empty directory, and the coaster,
+staff sprite and M4 gate asset tests restore `FileSystem` (and `Log`) after each test. CI has no game data, so it never saw this.
+
 ## Application-owned progress entry and smoke repair (October 14, 2026)
 
 New Full Simulation checks the selected theme's explicit entry cost against
@@ -60,11 +74,17 @@ precommit failure, tracking and retirement qualifications.
 
 The front-end smoke uses a fresh temporary save directory. Its plan now asserts
 that `newProgress` is a `ProgressChoiceScreen` and that the progress file is absent
-before injecting the actual starter-consent button click. It then uses the
-existing 40-frame park-load wait; the timeout is not enlarged and no history is
-preseeded. CPU regression controls drive those actual queued smoke steps and
+before injecting the actual starter-consent button click. It then waits in the
+queued readiness check for completed construction, the activated Jungle level
+and its HUD. It reports a progress failure dialog explicitly and retains the
+strict 3,000-frame budget; no history is preseeded. The former 40-frame delay
+could reach the original post-load assertion while construction was still
+active. CPU regression controls drive those actual queued smoke steps and
 menu/admission callbacks with synthetic theme metadata, checking successful
-consent, Back cancellation and preservation of known zero-key history.
+consent, Back cancellation and preservation of known zero-key history. Additional
+controller controls wait beyond 40 frames, reject a wrong theme or missing HUD,
+report a real failure dialog, and retain the strict noncompletion bound. These
+CPU controls model activation fields; native runs use actual construction state.
 
 The original native smoke objection is not counted as a successful native rerun.
 These CPU controls do not exercise native text readback, the GPU/window, original
@@ -1013,7 +1033,30 @@ research batch was included in this merge.
 ## Browser build, official server and website (October 10, 2026)
 
 - **HUD video round (October 14):** a gameplay video of the Dutch PC build settled the HUD and window register items. The hire window now has the Vaardigheid gauge and the mini balance (money in, staff costs plus the wage, other costs, balance) that follow the hovered candidate; the click-to-hire trigger stays (the original's 0x400 list message and its advisor line, UI-083 retired) and the 3D candidate figure is registered (UI-082). The yellow text under the cash is the cost of the build action under way and is hidden outside the build tools (UI-047). Pending messages stack in a red message tube left of the HUD, left click opens one in a green slide-out panel and right click deletes it (UI-025); OpenTPW's own feedback lines moved to a status line. The popup help box sits at the bottom centre on translucent black (UI-010). The golden ticket and key counters show only above zero as "n ×", keys are tracked (UI-051). Excitement, reliability, repair and life are red-to-green gauges (UI-028/046), the buy list's third column is a tick box (UI-050), and the park draws the original glove, arrow and no-entry pointers (UI-100). UI-011 is retired, UI-042 narrowed and the shortcut letters of the help texts recorded under UI-012.
-
+- **Particle allocation test (October 14):** `ParticleSystemPortTests.TickAllocatesNothing` measures windows of 100 ticks until one is clean, so tiered-compilation allocations in a busy full run no longer fail it; a real per-tick allocation still never gives a clean window.
+- **Rides register round 2 (October 14):** the rides items were traced in tp.exe and the code follows what was found
+  (docs/OBJECTS.md, "Retired and reclassified"). Names: the executable binds OBJECT_NAMES by Info.Id through a 281-row
+  table (0x7488D8), `ObjectNameTable`, instead of the English matcher; 262 of 274 entries now bind (only the three tools of each
+  theme do not), the gates, signs, lights, seaplane, loudspeakers and renamed rides get their names, and the fantasy
+  Fountain and the space Crater point at the right entry (RIDES-010 retired; COMPAT-016 cites the table). Shapes: every
+  symbol comes from the executable's 19-row table (0x7396C8) with a cell type and a compass bit; the entrances `8 6 4 O`, the
+  exits `X` and `W` and the cells `Q # D` exist now, the open side of an access cell comes from its symbol (exit: its bit,
+  entrance: the opposite), all 209 corpus access cells open as before, and the bit-to-axis mapping stays APPROX (RIDES-012,
+  medium confidence). 12-byte vertex block: the PC sampler does read it (0x4718F7). The table holds one pose per tick
+  (duration + 1 poses, all 30 records), the sampler shows pose `trunc(time)` with no blending, and `ObjectAnimator` does the
+  same; 19 of the 30 records (speakers, rocks, tree, droid, plane) were drawn wrong before, and the 10 catalog clips that were
+  reported as limitations play now (RIDES-041 retired; docs/MD2-MODELS.md corrected). Upgrade completion sets the script
+  speed bias to the new level's `InitSpeed` when above 0 (0x4DF8F0, RIDES-033 narrowed to the unmodelled ride-settings UI).
+  Low detail: `stexture` and `ssharete` replace `textures` and `sharetex` exactly when the active detail has TEXTUREQUALITY 0
+  or 1, and they hold every texture the full folders hold (RIDES-022 retired). `coaster.sam` is the coaster's own settings
+  as in the loader (0x413C10, 0x42FAD0; RIDES-009 retired, values identical). Also retired: RIDES-017 (build-menu filler
+  0x4AAF70), RIDES-036 (UV pass gate) and RIDES-043 (objects load in set mode; the TrackMaster Add-mode remainder moved to
+  COAST-026); reclassified as OpenTPW conventions: RIDES-026 (`[EXT:md2-engine-scale]`), RIDES-030
+  (`[EXT:malformed-texture-coordinates]`) and RIDES-038 (`[EXT:trig-anim-speed-guard]`, the corpus has four literal uses
+  from 1800 to 4000); narrowed: RIDES-011, 012, 019 (the original picks bus, seaplane or ferry per arrival with the LCG at
+  0x51A2F0, not implemented here), 024, 025, 031, 033, 035 and 044. Open and not implemented: in Instant Action the
+  original does not load an object without `Easy_<object>.sam` (0x413AC4), which would change the objects of that catalog
+  (docs/OBJECTS.md, "Remaining gates"). Re-pins: see docs/DETERMINISM.md.
 - **Advisor, compatibility and VM register round 2 (October 14):** the advisor's fixed sequences are imported: the ten rows in use of table `0x76DC18` (`AdvisorFixedSequences`), a
   span of the clip sum + 1000 + clip 15, a row that sums to 0 (sequence 28, or clips missing from the archives) generated instead, the immediate start derived from
   "first clip is not 14", and the timer entries' effect (particle `0x521E60`, sound `0xC6`, `0x4B9340`) registered as ADVISOR-025; ADVISOR-016 is retired. ADVISOR-018 is settled at the
@@ -1146,6 +1189,16 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   baseline hashes of 71 of 75 signs were re-pinned), object sign lines keep 32 characters and line 1 loses a trailing "--"
   (COMPAT-017 narrowed), COMPAT-006 now names Uniscribe instead of GDI TextOut, COMPAT-008 and COMPAT-013 are extensions, COMPAT-011/012
   are narrowed. 392 to 384 unresolved IDs.
+- **Advisor video round (October 14):** from the Dutch gameplay video and the Windows `tp.exe`. The advisor now wears a hat: each response's two
+  accessory selectors (response record `+0x14`/`+0x18`, `content/data/advisor-costumes.toml`) show one node by dummy attribute (hard hat for
+  breakdowns, security cap, handyman cap, research hair, bowler with bow tie, ticket and kiosk hats, fast-food hat with spatula, no hat for help
+  text) and the level's theme costume (`ThemeAdvisorCostumes` in `Standard.sam`: pith helmet, axe, space helmet, fantasy helm) on the level
+  advisor's own model. The clips are played: the node tracks give the rise and the sink, the blink toggles the blinks (vertex tracks still not), and
+  the model hides when the clips have played out, clip 14's 1000 ms included; a new response restarts at clip 14. Contextual help is a new producer
+  family: 81 help messages (`content/data/advisor-help-messages.toml`, replayed from the descriptor initializer `0x5A0A50`) are posted when
+  the buy, hire, attractions, loans, finance, park-information, visitors and ticket-price windows open and withdrawn when they close; a
+  withdrawn speaking help cuts off at once, counts as unplayed and gains a slap (three cuts discard it), while event advice is never cut.
+  ADVISOR-002 and ADVISOR-023 retired, ADVISOR-006/009/022 narrowed, ADVISOR-026/027 added. Tests: `AdvisorHelpTests` (27) and a script test.
 - **UI register round (October 14):** findings from the Windows `tp.exe` land. The hire window's control 9366 is the plain
   cash label ("Cash $ N", UITEXT `0x1ca`/`0x1cb`); the applicant/employee toggle is now a labelled extension button
   (UI-090 retired). The map zoom is 1.0–3.0 in half steps and a pan moves the centre one map cell whatever the zoom (UI-087
@@ -1182,6 +1235,13 @@ drawn from the ride's own car meshes with their riders' heads; bumper state is s
   instead of 1, COAST 8 applies the script speed bias 50 (cap 105 instead of 110), and the station step is skipped in
   mode 64. The suspended swing now follows the PC restatement (`0x43c76c..0x43ca45`). COAST-012, 014, 018, 023, 024 and 031 are
   narrowed to what remains. No determinism or coaster pin moved.
+- **Coaster register round 2 (October 14):** the COAST findings read against the Windows tp.exe. Trains never stop: arriving trains
+  unload in any state, guests board only while the ride is open as cars roll through the station window (admission ring filled by
+  COAST 1), headway comes from the halved winch floor and the collision exchange, closed trains circulate empty. The track's
+  self-intersections are counted (`0x439ab0`) and guests refuse a coaster with a nonzero count. Pylon heights come from the
+  model's track dummy, with the stack offset and loop pylons placed as a pair. The swing uses the PC sine table, textures scroll
+  by the power factor, and the end node keeps the PC flags. COAST-007, 016, 018 retired; 025, 027, 031 and the completion click
+  are extensions; the rest narrowed; COAST-019 and the three-node station (COAST-029) stay open. Old coaster saves migrate.
 - **Particle register round (October 14):** `ParticleSystem` is now ported from the traced `tp.exe` instructions
   (docs/PARTICLES.md): density as `(rate * density) >> 10` clamped to 127 (negative rates scaled too, default PARTICLEDENSITY
   500), the pool init (flat-zero ground stub, 0x800 particles), the signed and unsigned random forms (a jitter of -1 still

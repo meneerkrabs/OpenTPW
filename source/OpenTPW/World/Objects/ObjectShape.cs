@@ -8,18 +8,18 @@ public enum ObjectCellKind
 	/// <summary><c>*</c>: occupied.</summary>
 	Occupied,
 	/// <summary>
-	/// <c>2</c>: the entrance cell. Verified in Easymode: the Belly Bounce queue ends at it, and the Drinks
+	/// <c>2</c> (and <c>8</c> <c>6</c> <c>4</c> <c>O</c>): the entrance cell. Verified in Easymode: the Belly Bounce queue ends at it, and the Drinks
 	/// Shop, Jungle Spray and Staff Room paths connect to it (the only special cell of shops and toilets).
 	/// </summary>
 	Entrance,
 	/// <summary>
-	/// <c>S</c>, <c>N</c>, <c>E</c>: the exit cell. <c>S</c> verified (Belly Bounce exit joins the path);
-	/// <c>N</c> (next to <c>2</c> on track rides) and <c>E</c> (two dark rides) are inferred by analogy.
+	/// <c>S</c>, <c>N</c>, <c>E</c>, <c>W</c>, <c>X</c>: the exit cell. <c>S</c> verified (Belly Bounce exit joins the path);
+	/// the others follow the executable's symbol table.
 	/// </summary>
 	Exit,
-	/// <summary><c>&lt;</c>, <c>&gt;</c>: coaster station ends where the track leaves/returns (inferred).</summary>
+	/// <summary><c>&lt;</c>, <c>&gt;</c>, <c>D</c>: track-end cells (type 23); the coaster station ends where the track leaves/returns.</summary>
 	TrackConnection,
-	/// <summary><c>+</c>: track-upgrade cells laid over the parent ride's track (inferred).</summary>
+	/// <summary><c>+</c>: cell type 11, the track-upgrade cells laid over the parent ride's track (use inferred).</summary>
 	Overlay
 }
 
@@ -27,7 +27,50 @@ public enum ObjectCellKind
 public readonly record struct ObjectAccessPoint( ObjectCellKind Kind, int X, int Y, int OutsideX, int OutsideY );
 
 /// <summary>One footprint cell: local shape coordinates and its kind.</summary>
-public readonly record struct ObjectShapeCell( int U, int V, ObjectCellKind Kind, char Symbol );
+public readonly record struct ObjectShapeCell( int U, int V, ObjectCellKind Kind, char Symbol )
+{
+	/// <summary>The executable's cell type of the symbol (<see cref="ObjectShapeSymbols"/>); 0 for a space.</summary>
+	public int CellType => ObjectShapeSymbols.TryGet( Symbol, out var row ) ? row.CellType : 0;
+
+	/// <summary>The compass bit of the symbol (0x01 N, 0x04 E, 0x10 S, 0x40 W); 0 when the symbol has none.</summary>
+	public byte Direction => ObjectShapeSymbols.TryGet( Symbol, out var row ) ? row.Direction : (byte)0;
+}
+
+/// <summary>
+/// The shape-symbol table of <c>Info.Shape</c>: one row per character with the cell type the shape parser stores and a direction bit.
+/// </summary>
+public static class ObjectShapeSymbols
+{
+	/// <summary>Cell types of the table (the executable's numbering).</summary>
+	public const int TypeFree = 0, TypeAt = 1, TypeQ = 3, TypeOccupied = 4, TypeEntrance = 9, TypeExit = 10, TypeUpgrade = 11, TypeHash = 16, TypeTrackEnd = 23;
+
+	/// <summary>Compass bits.</summary>
+	public const byte North = 0x01, East = 0x04, South = 0x10, West = 0x40;
+
+	// [BIN:TPW-EXE:0x007396C8 shape symbol table] 19 rows of 12 bytes (character, cell type, direction byte) passed to the shape parser 0x402720 for Info.Shape; the parser looks every non-space character up in it (0x402840..0x40287B) and fails with "Illegal map character" when it is missing
+	private static readonly (char Symbol, int CellType, byte Direction)[] Rows =
+	{
+		('.', TypeFree, 0), ('*', TypeOccupied, 0), ('Q', TypeQ, 0), ('@', TypeAt, 0), ('+', TypeUpgrade, 0), ('#', TypeHash, 0),
+		('8', TypeEntrance, North), ('6', TypeEntrance, East), ('2', TypeEntrance, South), ('4', TypeEntrance, West),
+		('N', TypeExit, North), ('E', TypeExit, East), ('S', TypeExit, South), ('W', TypeExit, West),
+		('D', TypeTrackEnd, 0), ('>', TypeTrackEnd, East), ('<', TypeTrackEnd, West),
+		('O', TypeEntrance, North), ('X', TypeExit, North)
+	};
+
+	public static bool TryGet( char symbol, out (int CellType, byte Direction) row )
+	{
+		foreach ( var candidate in Rows )
+		{
+			if ( candidate.Symbol == symbol )
+			{
+				row = (candidate.CellType, candidate.Direction);
+				return true;
+			}
+		}
+		row = default;
+		return false;
+	}
+}
 
 /// <summary>
 /// An object's <c>Info.Shape</c> grid. Local coordinates: <c>U</c> is the column (model +X), <c>V</c> counts
@@ -71,20 +114,26 @@ public sealed class ObjectShape
 	public IEnumerable<ObjectShapeCell> Entrances => cells.Where( cell => cell.Kind == ObjectCellKind.Entrance );
 	public IEnumerable<ObjectShapeCell> Exits => cells.Where( cell => cell.Kind == ObjectCellKind.Exit );
 
-	// [APPROX:RIDES-011] Meanings of N/E (exit), </> (station ends), + (upgrade cells), W (occupied) are inferred; 2, S, *, . are verified in Easymode — evidence needed: saves/captures with these rides
-	public static ObjectCellKind Classify( char symbol ) => symbol switch
+	/// <summary>The kind of a symbol from its cell type in <see cref="ObjectShapeSymbols"/>; a space is free.</summary>
+	// [BIN:TPW-EXE:0x007396C8 shape symbol kinds] '.' type 0, '*' 4, 'Q' 3, '@' 1, '+' 11, '#' 16; entrances (type 9) 8 6 2 4 O; exits (type 10) N E S W X; track ends (type 23) D > <
+	// [APPROX:RIDES-011] The uses of type 11 ('+', track-upgrade cells laid over the parent ride's track) and of the track ends '<' '>' (coaster station ends) are inferred; the types and direction bits of all symbols are the executable's table — evidence needed: the placement code that consumes the cell types
+	// [APPROX:RIDES-031] The types of '@' (1, only in the Theme Park Inc road signs "*@*" and "*@@*"), 'Q' (3) and '#' (16) differ from the occupied type 4 in the executable, but their placement meaning is untraced; they count as occupied footprint cells here (Theme Park Inc may differ) — evidence needed: the consumer of the shape cell types
+	public static ObjectCellKind Classify( char symbol )
 	{
-		'.' or ' ' => ObjectCellKind.Free,
-		// 'W' occurs once, in the bonus Snake ride ("****/W***/..."); its meaning is unknown, it is treated as occupied.
-		'*' or 'W' => ObjectCellKind.Occupied,
-		// [APPROX:RIDES-031] '@' occurs only in the Theme Park Inc road signs ("*@*", "*@@*": a sign board between two pillar cells); treated as occupied — evidence needed: TPI placement of a sign over a path
-		'@' => ObjectCellKind.Occupied,
-		'2' => ObjectCellKind.Entrance,
-		'S' or 'N' or 'E' => ObjectCellKind.Exit,
-		'<' or '>' => ObjectCellKind.TrackConnection,
-		'+' => ObjectCellKind.Overlay,
-		_ => throw new InvalidDataException( $"Unknown object shape symbol '{symbol}'." )
-	};
+		if ( symbol == ' ' )
+			return ObjectCellKind.Free;
+		if ( !ObjectShapeSymbols.TryGet( symbol, out var row ) )
+			throw new InvalidDataException( $"Unknown object shape symbol '{symbol}'." );
+		return row.CellType switch
+		{
+			ObjectShapeSymbols.TypeFree => ObjectCellKind.Free,
+			ObjectShapeSymbols.TypeEntrance => ObjectCellKind.Entrance,
+			ObjectShapeSymbols.TypeExit => ObjectCellKind.Exit,
+			ObjectShapeSymbols.TypeTrackEnd => ObjectCellKind.TrackConnection,
+			ObjectShapeSymbols.TypeUpgrade => ObjectCellKind.Overlay,
+			_ => ObjectCellKind.Occupied
+		};
+	}
 
 	/// <summary>A 1×1 occupied shape, used for objects without an Info.Shape.</summary>
 	public static ObjectShape Single { get; } = new( new[] { "*" } );
@@ -133,22 +182,25 @@ public static class ObjectFootprint
 	};
 
 	/// <summary>
-	/// Local direction from an edge cell to the outside: the first/last row (−V/+V) before the first/last column.
-	/// Verified for Easymode entrances on the first row (queue/path at −V) and the Belly Bounce exit on the last
-	/// row (path at +V); other edges are inferred.
+	/// Local direction from an access cell to the outside, from its symbol: an exit opens towards its compass bit
+	/// (N −V, S +V, E +U, W −U), an entrance opposite to it (the guest walks in along the bit), so <c>2</c> opens towards −V.
+	/// Cells without a direction bit open towards −V.
 	/// </summary>
-	// [APPROX:RIDES-012] Access cells open across the first/last row before the first/last column (verified only for first/last-row cells) — evidence needed: saves with side entrances
+	// [BIN:TPW-EXE:0x00413410 shape access cells] the first entrance cell (type 9) is copied with its row, column and direction byte to the object record (def+0x494..0x49C, default direction 1) and the first exit cell (type 10) to def+0x4A0..0x4A8 (default 0x10); the direction therefore belongs to the symbol, not to the edge the cell lies on
+	// [APPROX:RIDES-012] The compass bits 0x01 N, 0x04 E, 0x10 S, 0x40 W are mapped to the local axes with text-down = N (−V), text-up = S (+V), right = E (+U), left = W (−U), and the outward side is the exit's bit and the entrance's opposite; every corpus shape agrees (Easymode entrance 2 queue at −V, Belly Bounce exit S at +V), but no reader of def+0x49C/+0x4A8 was traced — evidence needed: the placement code that reads the direction bytes
 	public static (int U, int V) OutwardDirection( ObjectShape shape, ObjectShapeCell cell )
 	{
-		if ( cell.V == 0 )
+		var (du, dv) = cell.Direction switch
+		{
+			ObjectShapeSymbols.North => (0, -1),
+			ObjectShapeSymbols.South => (0, 1),
+			ObjectShapeSymbols.East => (1, 0),
+			ObjectShapeSymbols.West => (-1, 0),
+			_ => (0, 0)
+		};
+		if ( du == 0 && dv == 0 )
 			return (0, -1);
-		if ( cell.V == shape.Height - 1 )
-			return (0, 1);
-		if ( cell.U == 0 )
-			return (-1, 0);
-		if ( cell.U == shape.Width - 1 )
-			return (1, 0);
-		return (0, -1);
+		return cell.Kind == ObjectCellKind.Entrance ? (-du, -dv) : (du, dv);
 	}
 
 	/// <summary>Entrance and exit cells on the grid with the outside cell a queue or path joins.</summary>

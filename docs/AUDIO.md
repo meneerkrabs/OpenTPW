@@ -301,6 +301,17 @@ global `cat_globallobbysfx` at 40, `0x100BC4C0` a level's `cat_locallobbymusic`/
 | Crowd | `cat_kids` 0x5B (branching sentence, parameter 0–100) | guests within four cells of the camera; louder/bigger sections as more gather, stopped when nobody is near | count `0x101C2490` (`0x100C313C`, radius 4, cap 100), sentence `0x100BC210`/`0x100BC2E0` |
 | Advisor speech | response table: sample and LIP from the global or level speech bank | traced advisor events | `0x10006B7C` |
 
+**How often screams come.** A held scream is a chain of one-shot children (tp.exe `0x6bdae0` → `0x6bdb50`): each child starts a
+delay after the previous child's start, drawn from the event's bounds — 1–3 s for one rider (event 71), 0.5–2 s for two or three (72),
+0.1–1 s for four to seven (73) and 0–0.5 s for eight or more (74) — and earlier children play out, so a full ride screams almost
+continuously, as in the original. What limits it is the sound manager: it ticks only 12 audible voices (`0x6b62b0`), ranked by the event
+priority with the ground distance as tie-break (`0x6bb9f0` stores the priority beside `0xFFFF − d²/100`, and the admission `0x6b6bc0`
+compares both as one word), and a scream is audible only while the listener is within its range of 95 sound units (9.5 cells) over
+the ground. Screams have priority 2700, below the crowd (5300) and most ride and ambient sounds, so a busy scene leaves them few places.
+A chain outside the pool or out of range starts no new child, its first included (AUDIO-038). The visitors'
+chatter and laughter is the crowd sentence (`cat_kids` 0x5B), a continuous bed at 14–22 % volume while guests are within four cells
+of the camera: its segments have no delay in the data.
+
 Traced in the binary but not triggered yet:
 
 * The custom-bank type 10 is not routed. Type 0 is the dispatcher's default/unsupported path.
@@ -538,6 +549,7 @@ implemented yet.
 | AUDIO-033 | Minimum distance 2 is confirmed in both builds; the exponent 0.8 (the fork's QMixer lead) and the missing 2.1 maximum floor stand | The gain curve inside QMixer/SoundSprocket (outside the analysable binaries) |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The PC library's sentence classes (vtables `0x70a7e0`/`0x70a8d0`) |
 | AUDIO-036 | Crowd parameter-controlled volume is evaluated at PCM segment start; the original re-evaluates the playing sample when a parameter in slots 1-3 changes (`0x6bbb80` -> `0x6bbbe0`) | Which slot carries the crowd's parameter 7 |
+| AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) holds back only the held chains (screams); OpenTPW ranks them with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`), but its sentences and one-shots always play | Voices outside the event system, the voice flag 8 (`0x6bca44`), the order among equal ranks, and what happens to a sentence that loses its place |
 
 ### Register round 2 (October 14)
 

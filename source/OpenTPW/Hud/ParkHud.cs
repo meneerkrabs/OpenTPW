@@ -25,6 +25,10 @@ public sealed class HudHost
 	public Action? OptionsChanged { get; init; }
 	/// <summary>The open/close button or its shortcut was pressed (true: open, false: close), also when the park's state does not change; the advisor raises game event 3 or 4 on it.</summary>
 	public Action<bool>? ParkDoorPressed { get; init; }
+	/// <summary>A screen other than the HUD opened (by <see cref="UI.Original.UiScreen.Name"/>); the advisor posts the window's help message.</summary>
+	public Action<string>? WindowOpened { get; init; }
+	/// <summary>A screen other than the HUD closed; the advisor withdraws the window's help message.</summary>
+	public Action<string>? WindowClosed { get; init; }
 }
 
 /// <summary>
@@ -728,6 +732,7 @@ public sealed partial class ParkHud
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
 		var consumed = Stack.Update( context, input );
+		ReportScreens();
 		if ( Camera.Mode is ParkCameraMode camera )
 		{
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
@@ -993,7 +998,7 @@ public sealed partial class ParkHud
 	/// The coaster tool's HUD side: the ghost pylon under the cursor, wheel height, Tab loop mode, Backspace removes the
 	/// last pylon, Enter closes and completes, right click leaves; park clicks place pylons, close and complete on a station end.
 	/// </summary>
-	// [APPROX:COAST-028] the coaster tool's controls (click to place, wheel for the next pylon's height in steps of 10, Tab for loop pylons, Backspace to delete the last pylon without refund, a click on a station end cell to close and again or Enter to complete, right click or Escape to leave) and its flat ghost marker are OpenTPW's; the original drag, height/rotate/bank sliders (0x10045FC4, 0x10046508, 0x10046718) and keys are not reproduced — evidence needed: the input handling of the coaster build mode around 0x100483AC and 0x1004A1FC
+	// [EXT:coaster-tool-controls] the coaster tool's controls (click to place, wheel for the next pylon's height in steps of 10, Tab for loop pylons, Backspace to delete the last pylon without refund, a click on a station end cell to close and again or Enter to complete, right click or Escape to leave) and its flat ghost marker are OpenTPW's user interface; the original places a loop pylon pair in loop mode (0x442cd0, CoasterBuilder.LoopMode). [APPROX:COAST-028] the original drag, height/rotate/bank sliders (0x10045FC4, 0x10046508, 0x10046718) and the sub-modes 0x79c624 (2, 4 = pick-up/move, 8) and flags 0x79c658 (0x40 loop, 0x100 move, 0x80/0x20 range cut) are not mapped to controls — evidence needed: the input handling of the coaster build mode around 0x100483AC and 0x1004A1FC
 	private bool UpdateCoasterTool( UiInput input, bool inPark, bool paused )
 	{
 		CoasterGhost = null;

@@ -486,10 +486,18 @@ public class ParticleSystemPortTests
 		system.CreateEffector( 0, (1024, 1024, 1024) );
 		Run( system, 50 );
 		Assert.IsTrue( system.LiveParticles > 20, "the pool is busy while it is measured" );
-		Run( system, 100 ); // warm-up: tier-up compiles allocate once
-		var before = GC.GetAllocatedBytesForCurrentThread();
-		Run( system, 100 );
-		Assert.AreEqual( 0, GC.GetAllocatedBytesForCurrentThread() - before, "a tick allocates nothing" );
+		// tiered compilation (call counting, tier-up, OSR) can allocate on this thread for a while in a busy full run, so measure
+		// windows of 100 ticks until one is clean; a real per-tick allocation never yields a clean window
+		long allocated = -1;
+		for ( var window = 0; window < 10 && allocated != 0; window++ )
+		{
+			if ( system.LiveParticles <= 20 )
+				system.Create( 1, (1024, 1024, 1024) ); // keep the pool busy across windows
+			var before = GC.GetAllocatedBytesForCurrentThread();
+			Run( system, 100 );
+			allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+		}
+		Assert.AreEqual( 0, allocated, "a tick allocates nothing" );
 		Assert.IsTrue( system.LiveParticles > 20, "the pool was still busy" );
 	}
 

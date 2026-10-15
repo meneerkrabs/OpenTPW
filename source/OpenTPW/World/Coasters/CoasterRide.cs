@@ -1,27 +1,47 @@
 namespace OpenTPW;
 
-public enum CoasterTrainState
+/// <summary>
+/// The train flags of the original that matter to the motion and the station step (train <c>+0</c>, tp.exe
+/// <c>0x43ce20</c>, <c>0x43b8b0</c>): braking, in the station, bumped and headway not reached.
+/// </summary>
+[Flags]
+public enum CoasterTrainFlags
 {
-	/// <summary>Stopped at the station, taking riders.</summary>
-	Boarding,
-	Running,
-	/// <summary>Waiting before the station while another train uses it.</summary>
-	Holding,
-	/// <summary>Stopped at the station, letting riders off (one per <c>COAST 3</c>).</summary>
-	Unloading
+	None = 0,
+	/// <summary>Station braking applies (0x10); presentation only here.</summary>
+	Braking = 0x10,
+	/// <summary>The train is in the station: it was unloaded on arrival and boards while its cars roll through the window (0x20).</summary>
+	InStation = 0x20,
+	/// <summary>The train was hit from behind (0x40, set on the train ahead by the collision exchange 0x43cd60): no station braking until it is past the window.</summary>
+	Bumped = 0x40,
+	/// <summary>The headway to the train ahead has not been reached since the power came back (0x80): the winch floor is halved inside the station.</summary>
+	Headway = 0x80
 }
 
-/// <summary>One train: its front's position along the track in samples, speed, state and the riders of each car.</summary>
+/// <summary>
+/// One train (tp.exe train record, COAST-plan §3.3): its reference car's position along the track in samples, its
+/// speed, its flags and the riders of each car. The original never stops a train (<c>0x43ce20</c> has no zero-speed
+/// branch); it unloads a train that arrives and seats waiting guests in the cars that roll through the station window.
+/// Every car has two rider lists (car <c>+0x28/+0x2c</c>, counts <c>+0x30/+0x34</c>): the riders on the lap, and the
+/// guests seated at the station, which become the riders when the train leaves (<c>0x43b8b0</c>).
+/// </summary>
 public sealed class CoasterTrain
 {
 	private readonly List<int>[] cars;
+	private readonly List<int>[] boarding;
 
 	internal CoasterTrain( int index, int carCount )
 	{
 		Index = index;
-		cars = new List<int>[Math.Max( 1, carCount )];
-		for ( var car = 0; car < cars.Length; car++ )
+		var count = Math.Max( 1, carCount );
+		cars = new List<int>[count];
+		boarding = new List<int>[count];
+		Seats = new int[count];
+		for ( var car = 0; car < count; car++ )
+		{
 			cars[car] = new List<int>();
+			boarding[car] = new List<int>();
+		}
 	}
 
 	public int Index { get; }
@@ -29,12 +49,22 @@ public sealed class CoasterTrain
 	public float Position { get; internal set; }
 	/// <summary>World units per second.</summary>
 	public float Speed { get; internal set; }
-	public CoasterTrainState State { get; internal set; }
-	/// <summary>Park simulation time (seconds) when the train last stopped to board.</summary>
-	public double BoardingSince { get; internal set; }
+	public CoasterTrainFlags Flags { get; internal set; }
+	/// <summary>Cars <c>0..LastBoardingCar</c> are the boarding span of the train in the station (train <c>+0x18/+0x1c</c>).</summary>
+	public int FirstBoardingCar { get; internal set; }
+	public int LastBoardingCar { get; internal set; }
+	/// <summary>Seats of each car (car <c>+0x44</c>).</summary>
+	public int[] Seats { get; }
+	/// <summary>The train's extent in the station frame (train <c>+0x20</c> front, <c>+0x24</c> rear), derived from the position.</summary>
+	internal float Front { get; set; }
+	internal float Rear { get; set; }
+	/// <summary>The riders of each car on the lap (they get off when the train arrives).</summary>
 	public IReadOnlyList<IReadOnlyList<int>> Cars => cars;
-	public int Riders => cars.Sum( car => car.Count );
+	/// <summary>The guests seated in each car at the station (they ride when the train leaves).</summary>
+	public IReadOnlyList<IReadOnlyList<int>> BoardingCars => boarding;
+	public int Riders => cars.Sum( car => car.Count ) + boarding.Sum( car => car.Count );
 	internal List<int>[] CarLists => cars;
+	internal List<int>[] BoardingLists => boarding;
 }
 
 /// <summary>
@@ -48,8 +78,6 @@ public sealed class CoasterRide
 {
 	/// <summary>Seats per car when the script has not set a capacity yet (COAST-023).</summary>
 	public const int DefaultSeatsPerCar = 4;
-	/// <summary>Shortest stop at the station before a train that is not full departs (COAST-023).</summary>
-	public const double MinimumBoardingSeconds = 5;
 	/// <summary>Distance between the fronts of two cars in world units (COAST-022).</summary>
 	public const float CarSpacing = 7f;
 	/// <summary>Samples per motion hop.</summary>
@@ -65,9 +93,10 @@ public sealed class CoasterRide
 
 	private readonly List<CoasterTrain> trains = new();
 	private readonly Queue<int> leaving = new();
+	// [BIN:TPW-EXE:0x43b0e0 coaster admission] COAST 1 pushes the guest on the admission ring (controller +0xb0); a train in the station seats the guests from it (0x43b600)
+	private readonly Queue<int> admission = new();
 	private CoasterSample[] samples = Array.Empty<CoasterSample>();
 	private HashSet<int> winchSections = new();
-	private double lastDispatch = double.NegativeInfinity;
 
 	public CoasterRide( CoasterDefinition definition, CoasterWorld world, string name = "" )
 	{
@@ -101,7 +130,8 @@ public sealed class CoasterRide
 	public float BrakingStart { get; private set; }
 	/// <summary>Set by <c>COAST 8</c>: the station script created its controller.</summary>
 	public bool Initialised { get; private set; }
-	/// <summary><c>COAST 5</c>: the ride is closed (no boarding, no departures).</summary>
+	// [APPROX:COAST-012] controller state 2 (built, never opened) is not told from state 8 (closed), and the tool's transitions to state 2 that unload every train (0x435844, from states 4 and 8) and to state 1 that remove the trains (0x43bf20) have no case here: the track is edited only through ClearTrains; the writers of the states are traced (1: 0x4368f0, 0x446740, 0x447520; 2: 0x435570, 0x442c70, 0x437b60, 0x447520; 4 and 8: COAST 5, 0x43b2f0)
+	/// <summary><c>COAST 5</c>: the ride is closed (controller state 8 or 2: trains keep circulating and unload on arrival, nobody boards).</summary>
 	public bool Closed { get; private set; } = true;
 	/// <summary><c>COAST 4</c> argument (0, 1, 2), mapped to the ride modes 16, 64 and 32 (1 is the breakdown: mode 64, no power).</summary>
 	public int BreakdownState { get; private set; }
@@ -121,15 +151,34 @@ public sealed class CoasterRide
 	public long PaidCost { get; internal set; }
 	/// <summary>Seconds of fixed simulation steps this controller has run.</summary>
 	public double TimeSeconds { get; private set; }
-	/// <summary>Controller <c>+320</c>: riders on board, unloading riders included.</summary>
+	/// <summary>The guests seated in the cars of the trains (riders on the lap and guests seated at the station).</summary>
+	// [APPROX:COAST-030] the original's controller +0x140 is the self-intersection count, not a rider count (0x439c40, 0x441970), and its pick-up (0x446300) has no rider test; OpenTPW refuses edits while a train carries guests, the Mac reading of the guest predicate
 	public int RidersOnBoard => trains.Sum( train => train.Riders );
-	/// <summary>Riders taken off a removed track or reopened ride, waiting for <c>COAST 3</c>.</summary>
+	/// <summary>Guests handed over by <c>COAST 1</c> and waiting for a train in the station to seat them (the admission ring).</summary>
+	public int AdmissionCount => admission.Count;
+	/// <summary>Riders taken off a train, a removed track or a closed ride, waiting for <c>COAST 3</c>.</summary>
 	public int LeavingCount => leaving.Count;
-	/// <summary>Park time of the last dispatch, or <c>-∞</c> while no train has ever been dispatched (park-resume capture).</summary>
-	internal double LastDispatch => lastDispatch;
+	/// <summary>The guests waiting for a seat, in arrival order (park-resume capture).</summary>
+	internal IReadOnlyCollection<int> AdmissionGuests => admission;
 	/// <summary>The riders waiting for <c>COAST 3</c>, in departure order (park-resume capture).</summary>
 	internal IReadOnlyCollection<int> LeavingRiders => leaving;
+	/// <summary>
+	/// The station window in samples of the station frame, <c>[ctl+0xf8, ctl+0xfc]</c> (<c>0x43b750</c>): the span between the
+	/// frame's two station nodes, narrowed toward its middle by fEntranceSizeInterval. The frame's origin is the platform
+	/// start (<see cref="PlatformStart"/>), where the original's sample list starts.
+	/// </summary>
+	public (float Start, float End) StationWindow { get; private set; }
+	/// <summary>The sample coordinate of the platform start: the station end node's knot, where the train arrives (origin of the station frame).</summary>
+	public float PlatformStart { get; private set; }
+	/// <summary>Self-intersecting places of the track (controller <c>+0x140</c>); the guests refuse the coaster while it is nonzero (0x441970).</summary>
+	public int IntersectionCount { get; private set; }
 	public bool IsOperational => Track.IsRunnable && samples.Length >= 3;
+	/// <summary>
+	/// The guest predicate <c>0x441970</c>: the coaster is complete and its track crosses itself nowhere (controller <c>+0x140 == 0</c>); guests do not
+	/// join or board a coaster that fails it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x441988 guest predicate] +0x140 must be 0 (the self-intersection count of 0x439c40), +0x3C bit 0 set (complete) and bit 1 clear (circuit not open), and the coaster is not the one being edited (0x790fec: OpenTPW's edits un-complete the track)
+	public bool AcceptsGuests => IsOperational && IntersectionCount == 0;
 	/// <summary>Raised after a track edit that changes the samples (built, reopened, deleted).</summary>
 	public event Action<CoasterRide>? TrackChanged;
 
@@ -176,7 +225,8 @@ public sealed class CoasterRide
 	private int RateTrack()
 	{
 		var nodes = Track.Nodes;
-		var sampling = Curve.Sample( Track.BuildKnots( Site ), Definition.Curviness );
+		var knots = Track.BuildKnots( Site );
+		var sampling = Curve.Sample( knots, Definition.Curviness );
 		samples = sampling.Samples;
 		Spacing = sampling.Spacing;
 		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, nodes.Count - 1 );
@@ -189,8 +239,64 @@ public sealed class CoasterRide
 		// Controller +264: the sections with both node flags 0x40 and 0x80 (CoasterRating.FinalFor; ORACLE F8).
 		var counted = CoasterRating.FinalFor( 0, 0, 0, 0, nodes.Select( node => (uint)node.Flags ), 0, 0, 0, 0 ).Sections;
 		Rating = result with { CountedSections = counted };
-		BrakingStart = BrakingStartFor( samples.Length, samples[BrakingSpeedSample( samples, nodes.Count - 1 )].Speed, Spacing );
+		var tail = nodes.Count - 1;
+		var platform = PlatformStartSample( samples, tail );
+		IntersectionCount = CoasterCollision.Run( NodesForCollision( nodes, samples ), samples ).Count;
+		PlatformStart = PlatformStartCoordinate( samples, knots, tail, Spacing );
+		// [BIN:TPW-EXE:0x43c72f braking start] ctl+0x134 = (n − 1) − v_last/spacing in the original's frame, where the end node coincides with the platform start (the closing pair ends at the second node) so the brake zone is the stretch before the platform; OpenTPW's end node starts the closing pair toward the station node at the platform's far end, so the same zone ends at the end node's first sample
+		BrakingStart = BrakingStartFor( platform, samples[BrakingSpeedSample( samples, tail )].Speed, Spacing );
+		var length = Math.Max( 0f, samples.Length - PlatformStart );
+		// [BIN:TPW-EXE:0x43b750 station window] f8 = (1 − k)·A + k·(A + B)/2 and fc = (1 − k)·B + k·(A + B)/2 with k = definition +0x31c (fEntranceSizeInterval, copied unconditionally) and A, B the sample coordinates of the first and third station node ([[node+0x90]+4]+8)
+		// [APPROX:COAST-029] OpenTPW's station has two nodes, so A is the platform start (the end node) and B the station node's wrap at the sample count; the original takes the sample coordinates of its first and third station node
+		var k = Definition.EntranceSizeInterval;
+		var middle = (0f + length) * 0.5f;
+		StationWindow = ((1f - k) * 0f + k * middle, (1f - k) * length + k * middle);
 		return result.Trains;
+	}
+
+	/// <summary>The nodes as the self-intersection pass sees them: the sample index of each knot and the radius of its pylon control.</summary>
+	// [BIN:STP-PPC:0x100457A0 node sample index] node +252 = the truncated sampler coordinate when the walk reaches the node: the last sample before its knot, or the sample on the knot when its t is 0 (0x43a060 reads it as the node's first sample)
+	private List<CoasterCollision.Node> NodesForCollision( IReadOnlyList<CoasterNode> nodes, IReadOnlyList<CoasterSample> samples )
+	{
+		var result = new List<CoasterCollision.Node>( nodes.Count );
+		for ( var index = 0; index < nodes.Count; index++ )
+		{
+			var first = -1;
+			for ( var sample = 1; sample < samples.Count && index > 0; sample++ )
+			{
+				if ( samples[sample].Section == index )
+				{
+					first = sample;
+					break;
+				}
+			}
+			var at = index == 0 ? 0 : first < 0 ? (result.Count > 0 ? result[^1].SampleIndex : 0) : samples[first].T == 0 ? first : first - 1;
+			var node = nodes[index];
+			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : Definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless ) );
+		}
+		return result;
+	}
+
+	/// <summary>The first sample of the closing pair (the pair that starts at the end node): the sample count when there is none (a pair cannot start at sample 0, the first knot).</summary>
+	internal static int PlatformStartSample( IReadOnlyList<CoasterSample> samples, int tailSection )
+	{
+		for ( var index = 1; index < samples.Count; index++ )
+		{
+			if ( samples[index].Section == tailSection )
+				return index;
+		}
+		return samples.Count;
+	}
+
+	/// <summary>The sample coordinate of the end node's knot: the last sample before it plus the distance to the knot over the spacing.</summary>
+	private static float PlatformStartCoordinate( IReadOnlyList<CoasterSample> samples, IReadOnlyList<CoasterKnot> knots, int tailSection, float spacing )
+	{
+		var first = PlatformStartSample( samples, tailSection );
+		if ( first <= 0 || first >= samples.Count )
+			return first >= samples.Count ? samples.Count : 0f;
+		var knot = knots.FirstOrDefault( candidate => candidate.Section == tailSection );
+		var fraction = System.Numerics.Vector3.Distance( samples[first - 1].Position, knot.Position ) / spacing;
+		return first - 1 + Math.Clamp( fraction, 0f, 1f );
 	}
 
 	/// <summary>
@@ -233,40 +339,45 @@ public sealed class CoasterRide
 	}
 
 	// [BIN:STP-PPC:0x1003F930 train spacing] after the rating pass 0x1003E9EC allocates the trains and 0x1003F930 spaces them along the track
+	// [BIN:TPW-EXE:0x436dd4 train constructor] a new train has position 0 and speed 0 (train +0x74/+0x78), whatever its place; the tick accelerates it with the floors and gravity like any other
 	private void PlaceTrains( int count )
 	{
 		trains.Clear();
 		for ( var index = 0; index < count; index++ )
 		{
 			var train = new CoasterTrain( index, Definition.MaxCars );
-			if ( index == 0 )
-			{
-				train.State = CoasterTrainState.Boarding;
-				train.BoardingSince = TimeSeconds;
-			}
-			else
-			{
-				train.Position = (float)samples.Length * index / count;
-				train.Speed = SampleAt( train.Position ).Speed;
-				train.State = CoasterTrainState.Running;
-			}
+			train.Position = index == 0 ? 0f : (float)samples.Length * index / count;
+			RebuildSeats( train );
+			UpdateExtents( train );
 			trains.Add( train );
 		}
 	}
 
-	/// <summary>Takes the trains off the track; their riders wait for <c>COAST 3</c> to leave.</summary>
+	/// <summary>
+	/// The seats of each car (<c>0x43ba90</c>): the capacity split over the cars by integer division of what is left by the cars
+	/// still to fill, so the front cars get the smaller share.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43bb7b seat split] car +0x44 = remaining / (seat cars − filled) for the cars whose type is the train's seat type, 0 for the others
+	// [APPROX:COAST-023] every car carries seats; the original seats only the cars of the train definition's seat type (+0x10) and caps the capacity by the fleet sockets (definition +0x318)
+	private void RebuildSeats( CoasterTrain train )
+	{
+		var remaining = Math.Max( 0, SeatsPerTrain );
+		for ( var car = 0; car < train.Seats.Length; car++ )
+		{
+			var share = remaining / (train.Seats.Length - car);
+			train.Seats[car] = share;
+			remaining -= share;
+		}
+	}
+
+	/// <summary>Takes the trains off the track; their riders and the guests waiting for a seat wait for <c>COAST 3</c> to leave.</summary>
 	internal void ClearTrains()
 	{
 		foreach ( var train in trains )
-		{
-			foreach ( var car in train.CarLists )
-			{
-				foreach ( var guest in car )
-					leaving.Enqueue( guest );
-				car.Clear();
-			}
-		}
+			UnloadAll( train );
+		MoveAdmissionToLeaving();
 		trains.Clear();
+		IntersectionCount = 0;
 		samples = Array.Empty<CoasterSample>();
 		Spacing = 0;
 		Rating = null;
@@ -325,7 +436,7 @@ public sealed class CoasterRide
 			case 4:
 				// [BIN:STP-PPC:0x1003DDFC coaster state] COAST 4 maps states 0, 1, 2 to the ride modes 16, 64, 32; other values change nothing
 				if ( parameter is >= 0 and <= 2 )
-					BreakdownState = parameter;
+					SetBreakdownState( parameter );
 				return 0;
 			case 5:
 				// [BIN:STP-PPC:0x1003DEC8 coaster close] COAST 5 closes (nonzero) or opens the controller
@@ -336,13 +447,18 @@ public sealed class CoasterRide
 						Closed = false;
 				}
 				else if ( !Closed )
+				{
 					Closed = true;
+					MoveAdmissionToLeaving();
+				}
 				return 0;
 			case 6:
 				// [BIN:STP-PPC:0x1003DF24 coaster capacity] COAST 6 takes MAX with the global value, then MIN with the definition and train bounds
 				// [BIN:TPW-EXE:0x43b330 coaster capacity] min(max(request, 0), definition +0x318 (the fleet's seat socket total), the first train definition's +8); the lower bound is the literal 0 where the Mac reading takes a global (documented difference); a changed value is rebuilt through 0x43ba90 (seat allocation, not modelled)
-				// [APPROX:COAST-023] a train seats COAST 6's capacity (at least 0; uiMaxCars × 4 before the script sets it), split evenly over its cars; the two upper bounds (definition +0x318 and the first train definition's +8) are not applied because OpenTPW does not read the seat sockets or that train field; a train departs at speed 0 when the release headway has passed since the last departure and it is full or has boarded for 5 s; an arriving train waits before the station while another train uses it; running trains do not collide — evidence needed: the tick 0x10040650's dispatch branches and the seat socket count per car (definition +0x318, train definition +8)
+				// [APPROX:COAST-023] a train seats COAST 6's capacity (at least 0; uiMaxCars × 4 before the script sets it) split over its cars by the original's recurrence, all cars carrying seats; the two upper bounds (definition +0x318 fleet sockets and the first train definition's +8) are not applied because OpenTPW reads neither the seat sockets nor that train field, the admission ring has no size limit (definition +0x2f8) and the leaving ring none (2 × definition +0x318) — evidence needed: the seat socket count per car (definition +0x318, train definition +8, car type +0x10) and the ring sizes
 				SeatsPerTrain = Math.Max( 0, parameter );
+				foreach ( var train in trains )
+					RebuildSeats( train );
 				return 0;
 			default:
 				return 0;
@@ -353,7 +469,7 @@ public sealed class CoasterRide
 	/// The ride-script loop's speed setter (<c>0x43b2b0</c>): a changed setting becomes the controller's speed setting and the
 	/// speed cap lerp(maxAtMin, maxAtMax, s/100) (<c>0x43c3d0</c>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x43b2b0 coaster speed setter] the loop 0x5516b0 calls it every pass with the signed 16-bit script bias at script +0xC0 (50 at creation, 0x558c3c); applied via 0x43c3d0 (setting +0x30, cap +0x34 = fmadds-style lerp of definition +0x4C and +0x50 by s·0.01, dirty flags 0x1001, the per-node pass 0x43afa0 on flag 8) when it differs from the setting and money is off (0x785a2c set) or controller +0 bit 0x8000 is clear; bit 0x8000 and the money switch are not modelled (treated as clear), and since the script's bias (RideVM.SpeedBias, the ride's InitSpeed) is only written at ride init (RIDES-033) the first pass after COAST 8 is the only one that changes anything
+	// [BIN:TPW-EXE:0x43b2b0 coaster speed setter] the loop 0x5516b0 calls it every pass with the signed 16-bit script bias at script +0xC0 (50 at creation, 0x558c3c); applied via 0x43c3d0 (setting +0x30, cap +0x34 = fmadds-style lerp of definition +0x4C and +0x50 by s·0.01, dirty flags 0x1001, the per-node pass 0x43afa0 on flag 8) when it differs from the setting and money is off (0x785a2c set) or controller +0 bit 0x8000 is clear; bit 0x8000 and the money switch are not modelled (treated as clear), and since the script's bias (RideVM.SpeedBias, the ride's InitSpeed) is written at ride init and when an upgrade completes (RIDES-033) it changes between passes only then
 	internal void ApplyScriptSpeed( int bias )
 	{
 		if ( bias == SpeedSetting )
@@ -369,83 +485,219 @@ public sealed class CoasterRide
 		if ( count != trains.Count )
 		{
 			foreach ( var train in trains )
-				foreach ( var car in train.CarLists )
-				{
-					foreach ( var guest in car )
-						leaving.Enqueue( guest );
-					car.Clear();
-				}
+				UnloadAll( train );
 			PlaceTrains( count );
 		}
 		TrackChanged?.Invoke( this );
 	}
 
-	/// <summary>Free seats on the boarding train, 0 while closed, broken, not runnable or with no train at the station.</summary>
-	public int Room
-	{
-		get
-		{
-			if ( !IsOperational || Closed || IsBroken || BoardingTrain is not { } train )
-				return 0;
-			return Math.Max( 0, SeatsPerTrain - train.Riders );
-		}
-	}
+	/// <summary>The room COAST 2 reports: the capacity COAST 6 stored minus the guests waiting for a seat on the admission ring.</summary>
+	// [BIN:TPW-EXE:0x43b1f0 coaster room] COAST 2 returns max(0, ctl+0xb8 − ctl+0xc0 − ctl+0xbc): the capacity COAST 6 stored (0x43bbd1: ctl+0xf0 → +0xb8), minus the ring's second counter (+0xc0, only ever 0), minus the guests on the admission ring (+0xbc); no state, mode or train enters it, so the room is the capacity of one train whether or not a train is in the station
+	public int Room => Math.Max( 0, SeatsPerTrain - admission.Count );
 
-	private CoasterTrain? BoardingTrain => trains.FirstOrDefault( train => train.State == CoasterTrainState.Boarding );
-
-	/// <summary>Seats a guest on the boarding train in a random car with room (<c>CoasterRng</c>); a guest without a seat leaves again.</summary>
+	/// <summary>
+	/// COAST 1: the guest the script handed over goes on the admission ring (<c>0x43b0e0</c>); a train in the station seats it
+	/// while its cars roll through the window. A guest handed over with no room goes back through <c>COAST 3</c>.
+	/// </summary>
 	// [BIN:STP-PPC:0x1003E2F8 boarding] the pending ring's read cursor (+196) is popped and the visitor is placed in a randomly chosen car (s·214013 + 2531011)
+	// [BIN:TPW-EXE:0x43b0e0 coaster boarding] COAST 1 pushes the guest on the ring at ctl+0xb0 when its count is below the capacity (definition +0x2f8, a queue size OpenTPW does not read; the room above bounds it); nobody is seated here
 	internal void Board( int guest )
 	{
 		if ( guest <= 0 )
 			return;
-		if ( Room == 0 || BoardingTrain is not { } train )
+		if ( Room == 0 )
 		{
 			leaving.Enqueue( guest );
 			return;
 		}
-		var cars = train.CarLists;
-		var seatsPerCar = (SeatsPerTrain + cars.Length - 1) / cars.Length;
-		var first = World.Random.Next() % cars.Length;
-		for ( var offset = 0; offset < cars.Length; offset++ )
-		{
-			var car = cars[(first + offset) % cars.Length];
-			if ( car.Count < seatsPerCar )
-			{
-				car.Add( guest );
-				return;
-			}
-		}
-		cars[first].Add( guest );
+		admission.Enqueue( guest );
 	}
 
-	internal int TakeLeavingRider()
+	internal int TakeLeavingRider() => leaving.Count > 0 ? leaving.Dequeue() : 0;
+
+	/// <summary>The admission ring into the leaving ring (<c>0x43b390</c>), when the ride closes and when the track is taken away.</summary>
+	// [BIN:TPW-EXE:0x43b390 coaster close] moves min(leaving ring room, admission count) guests from the admission ring (+0xb0) to the leaving ring (+0xd0), oldest first; the leaving ring's size (2 × definition +0x318) is not modelled, so every waiting guest moves
+	private void MoveAdmissionToLeaving()
 	{
-		if ( leaving.Count > 0 )
-			return leaving.Dequeue();
+		while ( admission.Count > 0 )
+			leaving.Enqueue( admission.Dequeue() );
+	}
+
+	/// <summary>COAST 4: the ride mode changes; leaving mode 64 (breakdown) flags every train for the headway rule and clears its bumped flag (<c>0x435730</c>).</summary>
+	// [BIN:TPW-EXE:0x435944 mode setter] from mode 64 to 16 or 32 the power factor becomes 1 and every train gets flag 0x80 and loses 0x40 (0x435947..0x435950); entering mode 64 sets the power factor to 0 (0x4359d5)
+	private void SetBreakdownState( int state )
+	{
+		var wasBroken = BreakdownState == 1;
+		BreakdownState = state;
+		if ( !wasBroken || state == 1 )
+			return;
 		foreach ( var train in trains )
+			train.Flags = (train.Flags & ~CoasterTrainFlags.Bumped) | CoasterTrainFlags.Headway;
+	}
+
+	// ---- Station -------------------------------------------------------------------------------------
+
+	/// <summary>Moves the riders of one list of every car to the leaving ring, car by car (<c>0x43b480</c>).</summary>
+	private void Unload( CoasterTrain train, bool boardingList )
+	{
+		foreach ( var car in boardingList ? train.BoardingLists : train.CarLists )
 		{
-			if ( train.State != CoasterTrainState.Unloading )
-				continue;
-			foreach ( var car in train.CarLists )
-			{
-				if ( car.Count == 0 )
-					continue;
-				var guest = car[0];
-				car.RemoveAt( 0 );
-				return guest;
-			}
+			foreach ( var guest in car )
+				leaving.Enqueue( guest );
+			car.Clear();
 		}
-		return 0;
+	}
+
+	private void UnloadAll( CoasterTrain train )
+	{
+		Unload( train, boardingList: false );
+		Unload( train, boardingList: true );
+		train.Flags &= ~CoasterTrainFlags.InStation;
+		train.FirstBoardingCar = train.LastBoardingCar = 0;
+	}
+
+	/// <summary>The station frame's coordinate of a position: samples past the platform start, in [0, count).</summary>
+	private float StationCoordinate( float position )
+	{
+		var count = samples.Length;
+		if ( count == 0 )
+			return 0;
+		var coordinate = (position - PlatformStart) % count;
+		return coordinate < 0 ? coordinate + count : coordinate;
+	}
+
+	/// <summary>The train's front and rear in the station frame (train <c>+0x20</c>, <c>+0x24</c>).</summary>
+	// [BIN:TPW-EXE:0x43d50b train extents] train +0x20 = front car offset/spacing + position + the car model's front extent; +0x24 = rear car offset/spacing + position − its rear extent; neither is wrapped
+	// [APPROX:COAST-022] the cars are 7 world units apart with no model extents, the front car is the reference car (the original's is the middle car, train +0x2c) and the frame's origin is the end node's knot, where the original's sample list starts
+	private void UpdateExtents( CoasterTrain train )
+	{
+		if ( samples.Length == 0 )
+		{
+			train.Front = train.Rear = 0;
+			return;
+		}
+		var coordinate = StationCoordinate( train.Position );
+		train.Front = coordinate;
+		train.Rear = coordinate - (train.CarLists.Length - 1) * CarSpacing / Spacing;
+	}
+
+	/// <summary>
+	/// The station step of one train (<c>0x43b8b0</c>), run after the motion in the open and closed states outside mode 64. A train
+	/// whose span overlaps the window unloads its riders when it arrives (any state) and, while the ride is open, seats the
+	/// waiting guests in the cars that are inside the window; when the span leaves the window the remaining seats are filled, the
+	/// two rider lists swap and the flag clears.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43b8b0 coaster station] in the station when train +0x20 ≥ ctl+0xf8 and train +0x24 ≤ ctl+0xfc; arrival (flag 0x20 clear): 0x43b480(…, 1) unloads the lap's riders; state 4: 0x43b7e0 finds the cars inside the window, the span grows from car 0 to the last car seen, 0x43b600 seats the ring's guests; leaving (flag 0x20 set, out of the window): state 4 seats the free seats of every car from train +0x18, the two lists swap, +0x18/+0x1c = 0, flag 0x20 clears
+	private void StationStep( CoasterTrain train )
+	{
+		var (start, end) = StationWindow;
+		var inStation = train.Front >= start && train.Rear <= end;
+		var open = !Closed;
+		var cars = train.CarLists.Length;
+		if ( inStation )
+		{
+			if ( (train.Flags & CoasterTrainFlags.InStation) == 0 )
+				Unload( train, boardingList: false );
+			if ( open )
+			{
+				var first = train.FirstBoardingCar;
+				var last = train.LastBoardingCar;
+				// The original reads the first and last car index 0x43b7e0 returns even when no car is inside; OpenTPW's cars have no extents, so a train that overlaps the window can have none, and then nothing is seated this step.
+				if ( CarsInWindow( train, out var newFirst, out var newLast ) )
+				{
+					first = Math.Min( newFirst, first );
+					last = Math.Max( newLast, last );
+					// [BIN:TPW-EXE:0x43b9fe seating span] the seating call gets the span grown from the stored one (min/max, 0x43b9ae..0x43b9cb), but +0x18 and +0x1c keep the raw first and last of 0x43b7e0 (0x43ba09, 0x43ba0c)
+					SeatGuests( train, first, last - first + 1 );
+					train.FirstBoardingCar = newFirst;
+					train.LastBoardingCar = newLast;
+				}
+			}
+			train.Flags |= CoasterTrainFlags.InStation;
+		}
+		else if ( (train.Flags & CoasterTrainFlags.InStation) != 0 )
+		{
+			if ( open )
+				SeatGuests( train, train.FirstBoardingCar, cars - train.FirstBoardingCar );
+			for ( var car = 0; car < cars; car++ )
+			{
+				// A rider still on the lap list would be lost by the pointer swap; a train is unloaded on arrival, so this only guards a restored train.
+				foreach ( var guest in train.CarLists[car] )
+					leaving.Enqueue( guest );
+				train.CarLists[car].Clear();
+				train.CarLists[car].AddRange( train.BoardingLists[car] );
+				train.BoardingLists[car].Clear();
+			}
+			train.FirstBoardingCar = train.LastBoardingCar = 0;
+			train.Flags &= ~CoasterTrainFlags.InStation;
+		}
+	}
+
+	/// <summary>The first and last car whose position is inside the station window (<c>0x43b7e0</c>); false when no car is.</summary>
+	// [BIN:TPW-EXE:0x43b7e0 cars in window] car +0x40 + front extent ≥ ctl+0xf8 and car +0x40 − rear extent ≤ ctl+0xfc; OpenTPW's cars have no extents, so a car is inside when its point is
+	private bool CarsInWindow( CoasterTrain train, out int first, out int last )
+	{
+		var (start, end) = StationWindow;
+		first = last = 0;
+		var found = false;
+		for ( var car = 0; car < train.CarLists.Length; car++ )
+		{
+			var coordinate = train.Front - car * CarSpacing / Spacing;
+			if ( coordinate < 0 )
+				coordinate += samples.Length;
+			if ( coordinate < start || coordinate > end )
+				continue;
+			if ( !found )
+				first = car;
+			last = car;
+			found = true;
+		}
+		return found;
+	}
+
+	/// <summary>
+	/// Seats guests from the admission ring (<c>0x43b600</c>): while the span's cars have a free seat and the ring a guest, the guest
+	/// goes to car <c>(s &gt;&gt; 16) % count + first</c> of the generator, or the first car after it with room.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43b600 seat guests] train +0x14 = the free seats of the span's cars (car +0x44 − car +0x34), counted by the caller; each guest popped from the ring (+0xc4) draws s = s·0x343fd + 0x269ec3 (no 0x7fff mask) and takes (s >> 16) % count + first, then the first car from there, wrapping inside the span, whose count (+0x34) is below its seats (+0x44)
+	private void SeatGuests( CoasterTrain train, int first, int count )
+	{
+		if ( count <= 0 )
+			return;
+		var free = 0;
+		for ( var car = first; car < first + count; car++ )
+			free += Math.Max( 0, train.Seats[car] - train.BoardingLists[car].Count );
+		while ( free > 0 && admission.Count > 0 )
+		{
+			var guest = admission.Dequeue();
+			var car = first + World.Random.Next() % count;
+			var seated = false;
+			for ( var step = 0; step < count && !seated; step++ )
+			{
+				var list = train.BoardingLists[car];
+				if ( list.Count < train.Seats[car] )
+				{
+					list.Add( guest );
+					seated = true;
+				}
+				else if ( ++car >= first + count )
+					car = first;
+			}
+			if ( !seated )
+				leaving.Enqueue( guest );
+			free--;
+		}
 	}
 
 	// ---- Motion -------------------------------------------------------------------------------------
 
 	/// <summary>
-	/// One fixed simulation step: station work (unloading, boarding, dispatch at the release headway), then each running
-	/// train's half-sample hops (<c>0x40650</c>) within the step's time budget.
+	/// One fixed simulation step (<c>0x435a30</c>): every train's half-sample hops (<c>0x43ce20</c>) within the step's time
+	/// budget, the headway test, then the station step of each train in the open and closed states outside mode 64. Trains
+	/// never stop: they circulate whether or not the ride is open.
 	/// </summary>
-	// [APPROX:COAST-022] the hops run on OpenTPW's fixed 60 Hz simulation step instead of the elapsed milliseconds of the cached animation clock per frame (0x100A3E08, controller +288), trains are processed in list order instead of a queue by remaining budget, cars are 7 world units apart (car +56 not read), the front car is the reference car (train +44) and the braking car (train +8), station braking is tested on the front car only (train flag 0x40 is not modelled), the winch floor is never halved (0x100408E4 halves it for trains with flags 0x80 and 0x20; 0x80 is set on leaving mode 64 by 0x10038250, 0x20 after seat allocation at 0x1003E9CC and cleared at 0x1003E7E4, and neither train flag is modelled), every car counts as active (car flag bit 0 is not modelled; the sum skips inactive cars, the average divides by all), the half-sample point wraps to sample 0 instead of reading the duplicated slot n, and a zero-length hop at zero speed counts as partial (the original's NaN hop time takes the full branch) — evidence needed: DET-I2's substep clock, the car offsets from asCarTypes, the train flag 0x20/0x40/0x80 lifecycle in 0x1003E138..0x1003E9E8 and 0x10038250, and car flag bit 0
+	// [BIN:TPW-EXE:0x435ac9 controller tick] the motion tick runs when state & 0xE (2 built, 4 open, 8 closed); the station step (0x43b8b0, then 0x439570) only when state & 0xC and mode is not 0x40 (0x435cd1, 0x435cd5); the motion tick has no zero-speed branch, so a train in the station keeps the winch floor's speed
+	// [APPROX:COAST-022] the hops run on OpenTPW's fixed 60 Hz simulation step instead of the elapsed milliseconds of the cached animation clock per frame (0x4709e0, controller +0x120), trains are processed in list order instead of a queue by remaining budget, cars are 7 world units apart with no model extents (car +0x38 and the model extents are not read), the front car is the reference car (the original's is the middle car, train +0x2c) and the braking car (train +8), every car counts as active (car flag bit 0 is not modelled; the sum skips inactive cars, the average divides by all), the half-sample point wraps to sample 0 instead of reading the duplicated slot n, a zero-length hop at zero speed counts as partial (the original's NaN hop time takes the full branch), a new train starts at its even share of the lap (the original spaces trains by the release time, 0x43c1f0) and controller state 2 (built, never opened) is not told from state 8 (closed) — evidence needed: DET-I2's substep clock, the car offsets from asCarTypes (0x43bc20), car flag bit 0 and the original's train placement
 	public void Advance( double deltaSeconds )
 	{
 		if ( !(deltaSeconds > 0) )
@@ -454,57 +706,14 @@ public sealed class CoasterRide
 		if ( !IsOperational || trains.Count == 0 )
 			return;
 		foreach ( var train in trains )
-		{
-			// [BIN:TPW-EXE:0x43b8b0 coaster station] the station step is skipped entirely in mode 64 (breakdown) — and in controller state 2, which OpenTPW does not model; an arriving train unloads open or closed and boarding needs state 4
-			if ( IsBroken && train.State != CoasterTrainState.Running )
-				continue;
-			switch ( train.State )
-			{
-				case CoasterTrainState.Unloading:
-					if ( train.Riders == 0 )
-					{
-						train.State = CoasterTrainState.Boarding;
-						train.BoardingSince = TimeSeconds;
-					}
-					break;
-				case CoasterTrainState.Boarding:
-					if ( CanDispatch( train ) )
-					{
-						train.State = CoasterTrainState.Running;
-						train.Speed = 0;
-						lastDispatch = TimeSeconds;
-					}
-					break;
-				case CoasterTrainState.Holding:
-					if ( !StationBusy( train ) )
-						Arrive( train );
-					break;
-				case CoasterTrainState.Running:
-					Move( train, (float)deltaSeconds );
-					break;
-			}
-		}
-	}
-
-	// [APPROX:COAST-012] departures stop while the ride is closed or broken (the original tests boarding only in state 4, 0x43b7e0/0x43b600; whether a full or boarded train still departs while closed is the departure gating of the station step, not traced), and the writers of controller states 1 and 2 (callers of the mode setter 0x435730: 0x435570, 0x4368f0, 0x437b60, 0x442c70, 0x446740, 0x447520) are not traced; COAST 4 (0x43b270: 0/1/2 → 16/64/32), the gated COAST 5, mode 32 treated exactly like 16 by the setter (nothing tests it) and the skipped station step in mode 64 are the traced PC rules (COAST 4 argument 1, mode 64, power factor 0 so moving trains coast to a stop)
-	private bool CanDispatch( CoasterTrain train )
-	{
-		if ( !Initialised || Closed || IsBroken || PowerFactor == 0 )
-			return false;
-		if ( (TimeSeconds - lastDispatch) * 1000 < Definition.TrainReleaseRate )
-			return false;
-		return train.Riders >= SeatsPerTrain || TimeSeconds - train.BoardingSince >= MinimumBoardingSeconds;
-	}
-
-	private bool StationBusy( CoasterTrain except ) =>
-		trains.Any( train => train != except && train.State is CoasterTrainState.Boarding or CoasterTrainState.Unloading );
-
-	private void Arrive( CoasterTrain train )
-	{
-		train.Position = 0;
-		train.Speed = 0;
-		train.State = train.Riders > 0 ? CoasterTrainState.Unloading : CoasterTrainState.Boarding;
-		train.BoardingSince = TimeSeconds;
+			Move( train, (float)deltaSeconds );
+		foreach ( var train in trains )
+			ClearHeadway( train );
+		// [BIN:TPW-EXE:0x43b8b0 coaster station] the station step is skipped entirely in mode 64 (breakdown); an arriving train unloads open or closed and boarding needs state 4; the tick also skips the station step (and 0x439570) for a train whose flag bit 0x2 is clear (0x435ce5 test byte [esi],2; the train flag writers of bit 0x2 are not identified, the stride-0x60 car flags at 0x43d1ee/0x43d23e are another word), here every train counts as having it set
+		if ( IsBroken )
+			return;
+		foreach ( var train in trains )
+			StationStep( train );
 	}
 
 	/// <summary>
@@ -519,34 +728,42 @@ public sealed class CoasterRide
 	}
 
 	/// <summary>
-	/// The hops of one frame for a running train: per hop the cars' average candidate speed, station braking (past
-	/// <see cref="BrakingStart"/>) or friction, the winch or minimum floor, the cap; the hop takes d/((v + v′)/2) seconds;
-	/// the last hop of the budget is partial; after each hop the speed decays below 2.0 and stops below 0.01.
+	/// The hops of one frame for a train: per hop the cars' average candidate speed, station braking (a car past
+	/// <see cref="BrakingStart"/>, no bumped flag) or friction, the winch or minimum floor (the winch floor halved for a train
+	/// with the headway and in-station flags), the cap; the hop takes d/((v + v′)/2) seconds; the last hop of the budget is
+	/// partial; after each hop the speed decays below 2.0 and stops below 0.01, the extents update, a train that caught up with
+	/// the train ahead exchanges speed with it and the position wraps.
 	/// </summary>
 	// [BIN:STP-PPC:0x10040650 coaster tick] hops of half a sample: per car the winch test reads the section of the sample at trunc(s + ½) (0x1004098C, 0x10040A0C), the average car speed, braking when a car is past ctl+308 (strictly) or friction on the flag-8 sample of the reference car's +64 position, which is written only after the frame's hops (0x10041094), so it is fixed per frame; max(·, W) when any car is on a winch section else max(·, M), min(·, ctl+52); τ = d/((v + v')/2) from the reference car's distance to its half-sample point (0x1004316C); a full hop if τ < budget, else α = budget/τ, v_end = (1 − α)v + αv', s += ½·((v + v_end)/2·budget/d), v = min(cap, v_end) with no floor: 0x10040D98 stores max(v_end, M), but 0x10040D9C..0x10040DC8 reload the unfloored v_end and overwrite that store; after every hop v ×= 0.95 below 2.0 and v = 0 below 0.01; s wraps by fmod
+	// [BIN:TPW-EXE:0x43d054 hop floors] the winch floor [ebp-0xc] = W·P·0.5 (0x6fe064) when train flags 0x80 and 0x20 are both set (0x43d041..0x43d05d), else W·P; braking needs a car past ctl+0x134 and flag 0x40 clear (0x43d161, 0x43d294)
 	private void Move( CoasterTrain train, float budget )
 	{
 		var count = samples.Length;
 		var cars = Math.Max( 1, train.Cars.Count );
-		var winchFloor = Definition.WinchSpeed * PowerFactor;
 		var minimumFloor = Definition.MinSpeed * PowerFactor;
-		var position = train.Position;
-		var speed = train.Speed;
-		var friction = (SampleAt( position ).Flags & CoasterSampleFlags.Friction) != 0;
+		var friction = (SampleAt( train.Position ).Flags & CoasterSampleFlags.Friction) != 0;
 		while ( true )
 		{
+			var position = train.Position;
+			var speed = train.Speed;
+			var winchFloor = Definition.WinchSpeed * PowerFactor;
+			if ( (train.Flags & (CoasterTrainFlags.Headway | CoasterTrainFlags.InStation)) == (CoasterTrainFlags.Headway | CoasterTrainFlags.InStation) )
+				winchFloor *= 0.5f;
 			var sum = 0f;
 			var anyWinch = false;
+			var pastBraking = false;
 			for ( var car = 0; car < cars; car++ )
 			{
 				var at = position - car * CarSpacing / Spacing;
 				var winch = winchSections.Contains( SampleAt( at + Hop ).Section );
 				anyWinch |= winch;
 				sum += CarSpeed( Definition, speed, SampleAt( at ).Position.Y, SampleAt( at + Hop ).Position.Y, winch ? winchFloor : minimumFloor );
+				var wrapped = at < 0 ? at + count : at % count;
+				pastBraking |= wrapped > BrakingStart;
 			}
 			var next = sum / cars;
-			if ( position > BrakingStart && BrakingStart < count )
-				next = BrakeBlend( next, winchFloor, position, BrakingStart, count );
+			if ( pastBraking && (train.Flags & CoasterTrainFlags.Bumped) == 0 )
+				next = BrakeBlend( next, winchFloor, position, BrakingStart, PlatformStart );
 			else if ( friction )
 				next *= Definition.FrictionMultiplier;
 			next = MathF.Max( next, anyWinch ? winchFloor : minimumFloor );
@@ -573,23 +790,70 @@ public sealed class CoasterRide
 				speed *= Decay;
 			if ( speed < StopBelow )
 				speed = 0;
-			if ( position >= count )
-			{
-				if ( StationBusy( train ) )
-				{
-					train.Position = count - Hop / 2;
-					train.Speed = 0;
-					train.State = CoasterTrainState.Holding;
-				}
-				else
-					Arrive( train );
-				return;
-			}
+			train.Position = position;
+			train.Speed = speed;
+			UpdateExtents( train );
+			Collide( train );
+			if ( train.Position >= count )
+				train.Position %= count;
+			// [BIN:TPW-EXE:0x43d575 bumped flag] flag 0x40 clears while the train is past the window and before the braking start (0x43d578..0x43d599)
+			var coordinate = StationCoordinate( train.Position );
+			if ( coordinate > StationWindow.End && coordinate < StationCoordinate( BrakingStart ) )
+				train.Flags &= ~CoasterTrainFlags.Bumped;
 			if ( done )
 				break;
 		}
-		train.Position = position;
-		train.Speed = speed;
+	}
+
+	/// <summary>
+	/// The collision exchange (<c>0x43cd60</c>, run after every hop): when the rear of the train ahead (the next index) is behind this
+	/// train's front and it is slower, both take a third of their own speed plus two thirds of the other's, and the train ahead is
+	/// flagged bumped.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43cd60 train collision] T.speed = (T + 2·O)/3, O.speed = (O + 2·T)/3 and O.flags |= 0x40 when O +0x24 (+ the sample count when O +0x74 < T +0x74) < T +0x20 and O +0x78 < T +0x78; when |T' − O'| > 1 it calls the crash effect 0x439840 (sound and particles only)
+	private void Collide( CoasterTrain train )
+	{
+		if ( trains.Count < 2 )
+			return;
+		var other = trains[(train.Index + 1) % trains.Count];
+		var rear = other.Rear;
+		if ( other.Front < train.Front )
+			rear += samples.Length;
+		if ( !(rear < train.Front) || !(other.Speed < train.Speed) )
+			return;
+		const float Third = 0.33333334f;
+		var own = train.Speed;
+		var ahead = other.Speed;
+		train.Speed = (own - -2f * ahead) * Third;
+		other.Speed = (ahead - -2f * own) * Third;
+		other.Flags |= CoasterTrainFlags.Bumped;
+	}
+
+	/// <summary>
+	/// The headway test at the end of the tick (<c>0x43d806..0x43d8b3</c>): a train with flag 0x80 loses it once the time to the train
+	/// ahead reaches <c>uiTrainReleaseRate</c>. The original multiplies the sample count between the two trains by spacing over the
+	/// speed of the sample whose index is the train's own index (a loop counter reused as a sample index); OpenTPW keeps that.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43d85f headway time] t = (s − c)·(spacing / sample[i mod n].speed) with c = trunc(position), s = trunc(next train's position) (+ n − 1 when below the train's position); flag 0x80 clears when release ≤ 1000·t (0x43d8a5..0x43d8b1); the sample index is the train's own index i (0x43d85f), where a walk over the samples between the trains would use the walking index
+	private void ClearHeadway( CoasterTrain train )
+	{
+		if ( (train.Flags & CoasterTrainFlags.Headway) == 0 || samples.Length == 0 )
+			return;
+		var other = trains[(train.Index + 1) % trains.Count];
+		var count = samples.Length;
+		var stop = (int)other.Position;
+		if ( stop < train.Position )
+			stop += count - 1;
+		var from = (int)train.Position;
+		var seconds = 0f;
+		if ( from < stop )
+		{
+			var each = Spacing / samples[train.Index % count].Speed;
+			for ( var step = stop - from; step > 0; step-- )
+				seconds += each;
+		}
+		if ( Definition.TrainReleaseRate <= seconds * 1000f )
+			train.Flags &= ~CoasterTrainFlags.Headway;
 	}
 
 	// ---- Canonical state -----------------------------------------------------------------------------
@@ -605,8 +869,11 @@ public sealed class CoasterRide
 		hash.Add( SpeedCap );
 		hash.Add( PaidCost );
 		hash.Add( TimeSeconds );
-		hash.Add( lastDispatch );
 		hash.Add( BrakingStart );
+		hash.Add( PlatformStart );
+		hash.Add( StationWindow.Start );
+		hash.Add( StationWindow.End );
+		hash.Add( IntersectionCount );
 		hash.Add( samples.Length );
 		hash.Add( Spacing );
 		foreach ( var sample in samples )
@@ -632,15 +899,25 @@ public sealed class CoasterRide
 		{
 			hash.Add( train.Position );
 			hash.Add( train.Speed );
-			hash.Add( (int)train.State );
-			hash.Add( train.BoardingSince );
+			hash.Add( (int)train.Flags );
+			hash.Add( train.FirstBoardingCar );
+			hash.Add( train.LastBoardingCar );
 			foreach ( var car in train.Cars )
 			{
 				hash.Add( car.Count );
 				foreach ( var guest in car )
 					hash.Add( guest );
 			}
+			foreach ( var car in train.BoardingCars )
+			{
+				hash.Add( car.Count );
+				foreach ( var guest in car )
+					hash.Add( guest );
+			}
 		}
+		hash.Add( admission.Count );
+		foreach ( var guest in admission )
+			hash.Add( guest );
 		hash.Add( leaving.Count );
 		foreach ( var guest in leaving )
 			hash.Add( guest );
@@ -669,7 +946,6 @@ public sealed class CoasterRide
 		SpeedCap = saved.SpeedCap;
 		PaidCost = saved.PaidCost;
 		TimeSeconds = saved.TimeSeconds;
-		lastDispatch = saved.LastDispatch ?? double.NegativeInfinity;
 		if ( Track.IsRunnable )
 			Rebuild();
 		else
@@ -679,28 +955,88 @@ public sealed class CoasterRide
 				ClearTrains();
 			RaiseTrackChanged();
 		}
-		if ( saved.Trains.Count != trains.Count )
-			throw new InvalidDataException( $"Coaster '{Name}' holds {saved.Trains.Count} trains in the save, but the restored track places {trains.Count}." );
-		for ( var index = 0; index < trains.Count; index++ )
-			RestoreTrain( index, saved.Trains[index] );
+		// A save of the older shape (no train flags) was rated with the earlier pylon heights, minimum heights and end node flags, so the
+		// re-derived rating can place another number of trains or cars. Its trains are not kept: the new placement stands and every saved rider
+		// waits to leave (they are not lost). A save of the current shape must match exactly, or it is refused.
+		var olderShape = saved.Trains.Any( train => train.Flags is null );
+		var matches = saved.Trains.Count == trains.Count
+			&& saved.Trains.Select( ( train, index ) => train.Cars.Count == trains[index].Cars.Count ).All( equal => equal );
+		if ( !matches && !olderShape )
+		{
+			if ( saved.Trains.Count != trains.Count )
+				throw new InvalidDataException( $"Coaster '{Name}' holds {saved.Trains.Count} trains in the save, but the restored track places {trains.Count}." );
+			throw new InvalidDataException( $"Coaster '{Name}' holds trains with another number of cars in the save than the definition gives ({trains[0].Cars.Count} cars per train)." );
+		}
 		leaving.Clear();
 		foreach ( var guest in saved.Leaving )
 			leaving.Enqueue( guest );
+		admission.Clear();
+		foreach ( var guest in saved.Admission ?? new List<int>() )
+			admission.Enqueue( guest );
+		if ( !matches )
+		{
+			foreach ( var train in saved.Trains )
+			{
+				foreach ( var car in train.Cars )
+					foreach ( var guest in car )
+						leaving.Enqueue( guest );
+				foreach ( var car in train.BoardingCars ?? new List<List<int>>() )
+					foreach ( var guest in car )
+						leaving.Enqueue( guest );
+			}
+			return;
+		}
+		for ( var index = 0; index < trains.Count; index++ )
+			RestoreTrain( index, saved.Trains[index] );
 	}
 
+	/// <summary>
+	/// Restores one train. A save made before the original's station rule (no flags) held the old stop-and-dispatch states: a
+	/// train that was boarding keeps its guests in the boarding lists and counts as in the station, so they ride when it leaves;
+	/// one that was unloading hands its riders to the leaving ring; waiting and running trains keep their riders on the lap.
+	/// </summary>
 	private void RestoreTrain( int index, CoasterTrainSaveData saved )
 	{
 		var train = trains[index];
 		if ( saved.Cars.Count != train.Cars.Count )
 			throw new InvalidDataException( $"Coaster '{Name}' train {index} holds {saved.Cars.Count} cars in the save, the definition gives {train.Cars.Count}." );
+		if ( saved.BoardingCars != null && saved.BoardingCars.Count != train.Cars.Count )
+			throw new InvalidDataException( $"Coaster '{Name}' train {index} holds {saved.BoardingCars.Count} boarding lists in the save, the definition gives {train.Cars.Count}." );
 		train.Position = saved.Position;
 		train.Speed = saved.Speed;
-		train.State = (CoasterTrainState)saved.State;
-		train.BoardingSince = saved.BoardingSince;
+		UpdateExtents( train );
+		var legacyBoarding = saved.Flags is null && saved.State == LegacyBoardingState;
+		var legacyUnloading = saved.Flags is null && saved.State == LegacyUnloadingState;
 		for ( var car = 0; car < train.CarLists.Length; car++ )
 		{
 			train.CarLists[car].Clear();
-			train.CarLists[car].AddRange( saved.Cars[car] );
+			train.BoardingLists[car].Clear();
+			if ( legacyUnloading )
+			{
+				foreach ( var guest in saved.Cars[car] )
+					leaving.Enqueue( guest );
+			}
+			else
+				( legacyBoarding ? train.BoardingLists : train.CarLists )[car].AddRange( saved.Cars[car] );
+			if ( saved.BoardingCars != null )
+				train.BoardingLists[car].AddRange( saved.BoardingCars[car] );
+		}
+		if ( saved.Flags is { } flags )
+		{
+			train.Flags = (CoasterTrainFlags)flags;
+			train.FirstBoardingCar = saved.FirstBoardingCar;
+			train.LastBoardingCar = saved.LastBoardingCar;
+		}
+		else
+		{
+			train.Flags = legacyBoarding || legacyUnloading ? CoasterTrainFlags.InStation : CoasterTrainFlags.None;
+			train.FirstBoardingCar = 0;
+			train.LastBoardingCar = legacyBoarding ? train.CarLists.Length - 1 : 0;
 		}
 	}
+
+	/// <summary>The states of the stop-and-dispatch model saves made before the original's station rule hold: boarding at the station (0) and unloading (3); 1 ran and 2 waited before the station.</summary>
+	internal const int LegacyBoardingState = 0;
+	internal const int LegacyRunningState = 1;
+	internal const int LegacyUnloadingState = 3;
 }

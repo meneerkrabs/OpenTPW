@@ -21,9 +21,19 @@ internal sealed class CoasterHeadSources : IHeadSourceProvider
 /// a chain lift) moves by rewriting its own few vertices.
 /// </summary>
 // [BIN:TPW-EXE:0x43eb70 track rebuild] the original rebuilds the track mesh as a dynamic model when the track changes (0x43eb70 from 0x435a30/0x447d30), animates the scrolling textures by shifting the V of the faces of scrolling textures every frame (0x435a30) and poses each car from its sample coordinate (0x43ce20)
-// [APPROX:COAST-026] see CoasterTrackMesh: the extruded mesh draws both faces and takes cross-section changes per segment; scroll textures advance by their fScrollRate per second (the original's rate source, controller +0x2c, is not resolved) and self-illuminated textures are lit like the rest
+// [BIN:TPW-EXE:0x435adf scroll shift] the per-frame tick shifts V by δ = (now − ctl+0x138)·P·0.001 for every polygon of a texture the loader flagged (definition flag 4, set when any fScrollRate is nonzero; texture flag 0x20), P the power factor at controller +0x2c; the stored fScrollRate (texture +0xc) is not read in that loop
+// [APPROX:COAST-026] see CoasterTrackMesh: the extruded mesh draws both faces and takes cross-section changes per segment and self-illuminated textures are lit like the rest; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc; the coaster MD2 models' Add-mode vertex and UV animation (TrackMaster loader 0x42fad0 keeps header flag 4: keys added to a per-update base copy, the add paths of 0x471860) is not modelled (formerly the remainder of RIDES-043)
 public sealed class CoasterRenderer : Entity
 {
+	/// <summary>
+	/// The scroll phase after a frame (<c>0x435adf..0x435b20</c>): the accumulator gains P·Δt and wraps above 1. A breakdown (power factor 0) stops the scroll.
+	/// </summary>
+	public static float AdvanceScroll( float phase, float powerFactor, float deltaSeconds )
+	{
+		var next = phase + powerFactor * deltaSeconds;
+		return next - MathF.Floor( next );
+	}
+
 	private readonly Func<IReadOnlyList<CoasterRide>> coasters;
 	private readonly Func<SVector2> origin;
 	private readonly float scale;
@@ -157,7 +167,7 @@ public sealed class CoasterRenderer : Entity
 	/// in the MD2 axes and engine scale the head presentation works in.
 	/// </summary>
 	// [BIN:TPW-EXE:0x430130 car heads] each car type counts the head sockets of its model ("Car type %s can receive %d heads"); the riders of a car take them in order
-	// [APPROX:COAST-034] rider j takes socket j modulo the sockets of its car (the original's seat assignment is not traced)
+	// [APPROX:COAST-034] rider j takes socket j modulo the sockets of its car (the original seats a guest in a random car inside the station window and then the first car with room, 0x43b600, which CoasterRide does; the seat inside the car and the car's world position written to its model, 0x43d6b2, are not traced)
 	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
 	{
 		var corner = origin();
@@ -180,7 +190,7 @@ public sealed class CoasterRenderer : Entity
 		private Model? scrollModel;
 		private Vertex[] scrollVertices = Array.Empty<Vertex>();
 		private float[] scrollBase = Array.Empty<float>();
-		private float[] scrollRate = Array.Empty<float>();
+		private float scrollPhase;
 		private float[] scrollU = Array.Empty<float>();
 		private int trackTriangles;
 		private int pylonTriangles;
@@ -262,7 +272,6 @@ public sealed class CoasterRenderer : Entity
 			var movingVertices = new List<Vertex>();
 			var movingIndices = new List<uint>();
 			var moveBase = new List<float>();
-			var moveRate = new List<float>();
 			var moveU = new List<float>();
 			// The mesh emits one quad (four vertices, six indices) per edge and segment, all of one texture.
 			for ( var quad = 0; quad < mesh.Vertices.Count / 4; quad++ )
@@ -279,7 +288,6 @@ public sealed class CoasterRenderer : Entity
 					if ( rate != 0 )
 					{
 						moveBase.Add( source.V );
-						moveRate.Add( rate );
 						moveU.Add( source.U );
 					}
 				}
@@ -296,7 +304,6 @@ public sealed class CoasterRenderer : Entity
 			{
 				scrollVertices = movingVertices.ToArray();
 				scrollBase = moveBase.ToArray();
-				scrollRate = moveRate.ToArray();
 				scrollU = moveU.ToArray();
 				AddModel( scrollVertices, movingIndices.ToArray(), assets.GetTrackSlots(), matrix, doubleSided: true, dynamic: true, out scrollModel );
 			}
@@ -365,18 +372,14 @@ public sealed class CoasterRenderer : Entity
 			trackTriangles = pylonTriangles = 0;
 		}
 
-		/// <summary>Moves the scrolling textures (a flume's water and ratchet, a chain lift): V shifts by rate × time, wrapped.</summary>
+		/// <summary>Moves the scrolling textures (a flume's water and ratchet, a chain lift): V shifts by the power factor × elapsed seconds, the same for every scrolling texture.</summary>
 		private void UpdateScroll()
 		{
 			if ( scrollModel == null )
 				return;
-			var time = Time.Now;
+			scrollPhase = AdvanceScroll( scrollPhase, Ride.PowerFactor, Time.Delta );
 			for ( var index = 0; index < scrollVertices.Length; index++ )
-			{
-				var shift = scrollRate[index] * time;
-				shift -= MathF.Floor( shift );
-				scrollVertices[index].TexCoords = new SVector2( scrollU[index], scrollBase[index] - shift );
-			}
+				scrollVertices[index].TexCoords = new SVector2( scrollU[index], scrollBase[index] - scrollPhase );
 			scrollModel.UpdateVertices( scrollVertices );
 		}
 

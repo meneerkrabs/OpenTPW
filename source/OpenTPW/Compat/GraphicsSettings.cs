@@ -151,8 +151,9 @@ public static class GraphicsPresets
 	// [EXT:graphics-preset-cpu] the processor clock is taken as 450 MHz or faster, since .NET cannot read it portably; the original's thresholds are applied to the memory and this fixed clock (any machine that runs OpenTPW exceeds 450 MHz)
 	public static GraphicsPreset DefaultForThisMachine()
 	{
-		var bytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
-		return DefaultFor( bytes > 0 ? bytes / (1024 * 1024) : 64, 450 );
+		// [EXT:graphics-preset-browser] the browser (WASM) reports no usable memory size, which would select Low; it takes the High thresholds.
+		var bytes = OperatingSystem.IsBrowser() ? 0 : GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+		return DefaultFor( OperatingSystem.IsBrowser() ? 4096 : bytes > 0 ? bytes / (1024 * 1024) : 64, 450 );
 	}
 
 	public static readonly IReadOnlyDictionary<GraphicsPreset, string> OriginalFiles = new Dictionary<GraphicsPreset, string>

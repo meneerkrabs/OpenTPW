@@ -366,7 +366,7 @@ public class ObjectVertexAnimationCorpusTests
 					animator.Play( 0, clip, animation.Name, false );
 					limitations += animator.VertexLimitations.Count;
 					limitedClips += animator.VertexLimitations.Count > 0 ? 1 : 0;
-					var supported = tracks.Where( track => track.VertexAnimation != null ).ToArray();
+					var supported = tracks.Where( track => track.VertexAnimation != null || track.VertexPose != null ).ToArray();
 					if ( supported.Length == 0 )
 						continue;
 					played++;
@@ -397,7 +397,8 @@ public class ObjectVertexAnimationCorpusTests
 			}
 		}
 		Assert.AreEqual( 0, relative );
-		Assert.AreEqual( (609, 599, 10, 23), (clips, played, limitedClips, limitations) );
+		// RIDES-041: the 10 clips with a 12-byte block play now (they were reported as limitations before).
+		Assert.AreEqual( (609, 609, 0, 0), (clips, played, limitedClips, limitations) );
 		Assert.AreEqual( 0, poses % 4 );
 		Assert.AreEqual( 3, fixedClips.Count, string.Join( ", ", fixedClips ) );
 		Console.WriteLine( $"{meshes} vertex-animated meshes, {poses} sampled poses, fixed-item vertex clips {string.Join( ", ", fixedClips )}" );

@@ -28,8 +28,28 @@ public sealed class CoasterBuilder
 	public CoasterSite Site { get; }
 	public CoasterTrack Track => Ride.Track;
 	public ParkEconomy? Economy => economy();
-	/// <summary>The loop edit mode (bit 0x40): new pylons are LoopPylons.</summary>
-	public bool LoopMode { get; set; }
+	private bool loopMode;
+	private int loopPylonsLeft;
+
+	/// <summary>
+	/// The loop edit mode (bit 0x40): new pylons are LoopPylons, and they come in pairs: the mode begins with two pylons to place, the first gets loop
+	/// rotate 0 and node flag 0x80, the second loop rotate 0.5, and the mode ends after the second (counter 0x79c664).
+	/// </summary>
+	// [BIN:TPW-EXE:0x442cd0 loop mode] entering loop mode sets the counter 0x79c664 to 2; every placed pylon (0x435020) decrements it and the mode (0x79c658 bit 0x40) is left at 0
+	public bool LoopMode
+	{
+		get => loopMode;
+		set
+		{
+			if ( value == loopMode )
+				return;
+			loopMode = value;
+			loopPylonsLeft = value ? LoopPair : 0;
+		}
+	}
+
+	/// <summary>Loop pylons a loop edit mode places before it ends.</summary>
+	public const int LoopPair = 2;
 	/// <summary>The requested height of the next pylon (world units above the ground; clamped when placed).</summary>
 	// [DATA:coaster.sam:sCoasterType.fInitialPylonLoftHeight] the height a new pylon starts at (10 by default, 20 for several PC coasters)
 	public float Height
@@ -85,15 +105,18 @@ public sealed class CoasterBuilder
 		var result = Check( x, y );
 		if ( result is CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon )
 			return result;
-		// [APPROX:COAST-028] the generic tool's affordability test (accumulator data:0x84ac4 against the balance, 0x1006F664 → global 0x7c50c) refuses nothing here: its consumers 0x10070DB0, 0x1007118C and 0x100712A8 are not traced — evidence needed: what those consumers do with 0x7c50c on a coaster click
+		// [BIN:TPW-EXE:0x435020 place debit] the PC coaster click path (0x524960 → 0x4419b0 → 0x435020) reads the balance (0x6ad810) and ignores it, then debits ftol(cost) through 0x4d01f0 when money is on (0x785a2c == 0): there is no balance comparison on the path, so nothing here refuses a pylon for money
 		Spend( CoasterTrack.Truncate( PreviewCost( x, y ) ), force: true );
-		Track.Append( Ride.World, Ride, x, y, Height, LoopMode );
+		var secondOfPair = LoopMode && loopPylonsLeft == 1;
+		Track.Append( Ride.World, Ride, x, y, Height, LoopMode, secondOfPair );
+		if ( LoopMode && --loopPylonsLeft <= 0 )
+			LoopMode = false;
 		Track.Revalidate( Site, Ride.World, Ride );
 		return result;
 	}
 
 	/// <summary>Closes the circuit (no node is added).</summary>
-	// [APPROX:COAST-030] closing needs two pylons, and the closing link and the arrival turn into the station are validated (the last pylon is marked invalid when they fail); 0x100470C4 itself tests neither — evidence needed: the closure tests, if any, of the generic tool engine 0x10080C50
+	// [APPROX:COAST-030] closing needs two pylons, and the closing link and the arrival turn into the station are validated by OpenTPW's own rule (the last pylon is marked invalid when they fail); the original validates a reopened circuit's open start through the validator's re-validation of the next node (0x434d6b..0x434d92, 0x434e5a) and closes a fresh circuit by completion (COAST-016); the closing click 0x442c70 itself tests nothing — evidence needed: none for the original; the rule is OpenTPW's
 	public bool Close()
 	{
 		if ( !Track.Close() )
@@ -109,7 +132,7 @@ public sealed class CoasterBuilder
 	/// </summary>
 	// [BIN:STP-PPC:0x1004A43C drop node] dropping on another cell credits trunc(stored node cost) [+ trunc(stored next)] and debits ceil(cost(node)) [+ ceil(cost(next))], the bracketed terms only on a complete track; the same cell (0x1004A5A8..0x1004A5BC) moves no money
 	// [BIN:STP-PPC:0x1004A228 pick up node] the station node (descriptor flag 2) cannot be picked up
-	// [APPROX:COAST-030] moving a pylon or its height is refused while riders are on board a complete track; the pick-up 0x1004A1FC tests only the station node (descriptor flag 2) — evidence needed: the guest predicate's callers in the build tick 0x10047E4C
+	// [APPROX:COAST-030] moving a pylon or its height is refused while riders are on board a complete track: OpenTPW's guard (the Mac reading of the guest predicate); the original pick-up 0x446300 excludes only descriptor flag 2 and has no rider or state test, and cutting a range (0x446740) sets state 1, whose setter takes the trains off (0x43bf20)
 	public CoasterPlaceResult Move( int index, int x, int y )
 	{
 		if ( index <= 0 || index >= Track.Nodes.Count || Track.Nodes[index].IsPylonless || (Track.IsComplete && Ride.RidersOnBoard != 0) )
@@ -175,7 +198,7 @@ public sealed class CoasterBuilder
 	/// Completes a closed track (<c>0x37ef0</c>): appends the station end nodes, then fits the curve, rates the track and
 	/// places the trains. Completion moves no money.
 	/// </summary>
-	// [APPROX:COAST-016] completion is refused while a node is marked invalid (flag 0x4000) or the circuit is open, and the build click completes on a station end cell of a closed circuit; 0x10037EF0 itself completes unconditionally and tests neither, so these refusals stand only as a guess at the tool layer; the original's click decision is cell action 129 (0x10084EA4 via 0x10073A3C) of the generic tool engine 0x10080C50, whose test is not decoded — evidence needed: cell action 129 in 0x10080C50 and what the original does with invalid nodes on completion
+	// [EXT:coaster-completion-click] OpenTPW completes a coaster only when its circuit is closed and no node is marked invalid (flag 0x4000), by a click on a station end after the closing click, or by Enter: a design decision. The original completes on one click on any cell whose type is 4, 9 or 10 (ride and queue-end cells) or whose byte +0xf has bit 0 (cell evaluator default case 0x534584..0x5345d0, click 0x524960 → 0x435570) and the completion appends the end node and sets state 2 without testing the invalid marks or the open bit; a click elsewhere adds a pylon (0x4419b0 → 0x435020), or closes a reopened circuit on its open start. Completing an unclosed or invalid track would hand the sampler and the rating a closing link of any length, which OpenTPW's curve fit does not guard against
 	public CoasterPlaceResult Complete()
 	{
 		var check = CheckComplete();
@@ -187,7 +210,7 @@ public sealed class CoasterBuilder
 	}
 
 	/// <summary>Reopens a completed track for editing (removes the station end nodes, opens the circuit); refused while riders are on board.</summary>
-	// [BIN:STP-PPC:0x10045EAC rider predicate] the guest predicate requires riders +320 == 0
+	// [BIN:STP-PPC:0x10045EAC reopen guard] the Mac predicate adds riders +320 == 0 (written by passenger removal 0x3d6f8..0x3d85c); the PC predicate 0x441970 reads controller +0x140 instead, which is the self-intersection count (its only writers are 0x439c40 and 0x43ad50), so the rider test is the Mac's reading and OpenTPW keeps it as its own edit guard (COAST-030)
 	public bool Reopen()
 	{
 		if ( !Track.IsComplete || Ride.RidersOnBoard != 0 )
@@ -208,7 +231,7 @@ public sealed class CoasterBuilder
 
 	// [BIN:STP-PPC:0x100CBFDC bank debit] coaster charges debit the bank (+12) directly; credits go through 0x100CBF50
 	// [BIN:TPW-EXE:0x4d01f0 bank debit] the debit (callers 0x435020, 0x441a00, 0x445a70; credit 0x4d0190 for refunds): bank +0x114 (mWithdrawalsEnabled, serializer 0x4cf920) 0 → nothing; else balance (+0xC) down, turn-entered-red (+0x120) stamped from game +0x1da70c when it crosses below 0 from the last balance (+0x11C) ≥ 0, last balance set, park total costs (+0x1F5A0; "Other costs" = total − loan payments) up, year profit (+0x124) down; the credit adds to balance, money-in (+0x1FC90) and year profit
-	// [APPROX:COAST-031] track money is posted as other costs and other income (ParkEconomy), which matches the debit and credit totals, and joins the station's total spent, which is OpenTPW's own; the posting applies the debit's withdrawals gate, last balance and turn-entered-red stamp
+	// [EXT:coaster-ledger] track money is posted as other costs and other income (ParkEconomy), which matches the debit and credit totals, and joins the station's total spent, which is OpenTPW's own extension; the debit's withdrawals gate, last balance and turn-entered-red stamp come from ParkEconomy's posting
 	private bool Spend( long amount, bool force = false )
 	{
 		if ( amount <= 0 )

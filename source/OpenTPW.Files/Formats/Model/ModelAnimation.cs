@@ -30,7 +30,7 @@ public readonly record struct ModelScaleKey( ushort Time, ushort Unknown, NVecto
 /// One 64-byte animation record bound to a base-model node. Position, rotation, scale, the
 /// quantised vertex block (flag 0x1000 without 0x4000), the per-corner texture-coordinate tracks
 /// (flag 0x10000) and the node-flag toggles (flag 0x20000) are decoded; the 12-byte block (flag
-/// 0x4000) is parsed into <see cref="VertexPose"/> but has no traced reader. Path parameters (0x600)
+/// 0x4000) is parsed into <see cref="VertexPose"/> (one stored pose per tick, read by the PC sampler 0x471860). Path parameters (0x600)
 /// stay raw in <see cref="Words"/> (<see cref="UnsupportedFlags"/>). The bits in
 /// <see cref="MetadataFlags"/> are never read by the original's animation code.
 /// Sampling follows the record sampler of the Feral Mac build (SimThemePark 0xa4f68,
@@ -69,7 +69,7 @@ public sealed class ModelAnimationTrack
 	public IReadOnlyList<byte[]> EaseCurves { get; init; } = Array.Empty<byte[]>();
 	/// <summary>Quantised vertex block (record +40); null when absent or in the 12-byte layout.</summary>
 	public ModelVertexAnimation? VertexAnimation { get; init; }
-	/// <summary>The 12-byte block (record +40, flag 0x4000); parsed, not played.</summary>
+	/// <summary>The 12-byte block (record +40, flag 0x4000): one stored pose per tick; played by <see cref="ModelVertexPose.ApplyPose"/>.</summary>
 	public ModelVertexPose? VertexPose { get; init; }
 	/// <summary>Per-corner texture-coordinate tracks (record +44, flag 0x10000).</summary>
 	public ModelUvAnimation? UvAnimation { get; init; }
@@ -83,11 +83,10 @@ public sealed class ModelAnimationTrack
 	/// </summary>
 	public bool HasUndecodedPayload => (Flags & ~(PositionFlag | RotationFlags | ScaleFlags | MetadataFlags)) != 0;
 	/// <summary>
-	/// Flag bits whose payload this reader does not play: path parameters (0x600) and the 12-byte block
-	/// (0x4000 with its 0x1000). <see cref="MetadataFlags"/> are not counted.
+	/// Flag bits whose payload this reader does not play: the path parameters (0x600). <see cref="MetadataFlags"/> are not counted.
 	/// </summary>
 	public uint UnsupportedFlags => Flags & ~(PositionFlag | RotationFlags | ScaleFlags | NodeFlagToggleFlag | UvAnimationFlag | MetadataFlags
-		| ((Flags & VertexLayoutFlag) == 0 ? VertexAnimationFlag : 0));
+		| VertexAnimationFlag | VertexLayoutFlag);
 	/// <summary>The exporter-metadata bits of this record (<see cref="MetadataFlags"/>).</summary>
 	public uint MetadataBits => Flags & MetadataFlags;
 
@@ -329,7 +328,7 @@ public sealed class ModelAnimation
 			if ( (flags & ModelAnimationTrack.VertexLayoutFlag) != 0 )
 			{
 				var block = Pointer( raw[10], ModelVertexPose.HeaderBytes, $"record {index} 12-byte block" );
-				vertexPose = ModelVertexPose.Decode( data, block, Pointer );
+				vertexPose = ModelVertexPose.Decode( data, block, Pointer, raw[3] + 1L );
 			}
 			else if ( (flags & ModelAnimationTrack.VertexAnimationFlag) != 0 )
 			{

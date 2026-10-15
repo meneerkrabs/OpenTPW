@@ -20,8 +20,8 @@ internal sealed class CoasterAssets : IDisposable
 	{
 		Entry = entry;
 		Definition = definition;
-		Sections = CoasterCrossSections.FromSettings( entry.Settings );
-		CarTypes = CoasterCarTypes.FromSettings( entry.Settings );
+		Sections = CoasterCrossSections.FromSettings( entry.CoasterSettings );
+		CarTypes = CoasterCarTypes.FromSettings( entry.CoasterSettings );
 	}
 
 	public ObjectCatalogEntry Entry { get; }
@@ -112,7 +112,7 @@ internal sealed class CoasterAssets : IDisposable
 			{
 				var loft = FindModel( name + "L" )?.Clip;
 				var rotate = (FindModel( name + "R" ) ?? FindModel( name + "R1" ))?.Clip;
-				rig = new CoasterPylonRig( geometry, loft, rotate );
+				rig = new CoasterPylonRig( geometry, loft, rotate, Definition.Pylon( loop ) );
 			}
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )

@@ -51,5 +51,16 @@ public class PriceTestTests
 	}
 
 	[TestMethod]
+	public void ThePerTypeWordIsTheTypesRipOffOk()
+	{
+		// tp.exe 0x004D3E00 fills the per-type record's word +0xC, which the price test reads through 0x004E2740, from the type's UsageInfo.RipOffOK (+0x16C)
+		var shop = new RideVisitorBridge( 1, "Shop", RideVisitorKind.Shop, 1, 0, 10, price: 50 ) { InitCostOfGoods = 20, ThirstEffect = 40, HappinessEffect = 10, RipOffOk = 100 };
+		var terms = GuestSimulation.PriceTermsOf( shop );
+		Assert.AreEqual( 100, terms.TypeWord );
+		Assert.AreEqual( 99u, QueueJoinRules.WillingnessToPay( terms, 60f, 80f, 10f, 0f ), "the word 0 gives 49 (the first row above): 31 × 200 / 100 = 62, then × 160 / 100" );
+		Assert.AreEqual( 49u, QueueJoinRules.WillingnessToPay( terms with { TypeWord = 0 }, 60f, 80f, 10f, 0f ) );
+	}
+
+	[TestMethod]
 	public void AFreeVisitNeverFails() => Assert.IsFalse( QueueJoinRules.TooExpensive( Shop( 0 ), 0f, 0f, 0f, 100f, 0 ) );
 }

@@ -290,6 +290,24 @@ public class GuestAssetTests
 	}
 
 	/// <summary>
+	/// The price test's per-type word (tp.exe 0x004D3E00 copies UsageInfo.RipOffOK, type +0x16C, into the record 0x004E2740 returns): 100 for every
+	/// shipped shop (Shops.sam) and 250 for every sideshow (SideShow.sam, "%premium peeps willing to pay above 'average win'").
+	/// </summary>
+	[TestMethod]
+	public void ShippedShopsAndSideshowsCarryTheirRipOffOk()
+	{
+		var words = new SortedSet<string>();
+		foreach ( var theme in ObjectCatalog.Themes )
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
+			{
+				var bridge = OriginalObjectRuntime.CreateVisitorBridge( entry, 1 );
+				if ( bridge.Kind is RideVisitorKind.Shop or RideVisitorKind.Sideshow )
+					words.Add( $"{bridge.Kind} {bridge.RipOffOk}" );
+			}
+		CollectionAssert.AreEqual( new[] { "Shop 100", "Sideshow 250" }, words.ToArray(), string.Join( "; ", words ) );
+	}
+
+	/// <summary>
 	/// The special ingredient of shipped objects (<c>UsageInfo.SpecialIngredient</c>, type +344): only the Ice Cream Shop of every theme has Sugar (4),
 	/// the one ingredient that raises the guests' speed boost (ORACLE.md F20); the burger, fries and drinks shops carry Fat, Salt and Ice.
 	/// </summary>

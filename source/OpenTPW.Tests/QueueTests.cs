@@ -407,6 +407,32 @@ public class QueueTests
 		Assert.AreEqual( 99, big.GetQueuePosition( 100 ) );
 	}
 
+	[TestMethod]
+	public void AFullQueueRoomTurnsAGuestAwayWithoutAThoughtOrAHappinessLoss()
+	{
+		// tp.exe 0x004FFC4F: the room test fails, so event 0x15 and state 6 only (GUEST-004); the queue-too-long refusal thinks 16 and pushes the
+		// history, and neither changes happiness (0x004FFBC0 calls 0x004FEA70 only for a stuck walk or a closed park).
+		var rig = new Rig { KeepNeedsEmpty = true };
+		Assert.IsTrue( Enumerable.Range( 100, rig.Ride.QueueRoom ).All( rig.Ride.TryJoinQueue ), "the room is full" );
+		var guest = rig.Send();
+		rig.RunTurns( 2 );
+		Assert.AreEqual( GuestState.DoingNothing, guest.State );
+		Assert.AreEqual( GuestThought.None, guest.Thought, "no thought" );
+		Assert.AreEqual( 60f, guest.Happiness, "no happiness change" );
+		Assert.IsTrue( guest.TemporaryHistory.All( id => id == 0 ), "no history push" );
+		Assert.AreEqual( 0, guest.AttractionId );
+
+		var shop = new Rig( parameters: new QueueParameters( true, false, false, 10, 60, 60, 1, 30 ) ) { KeepNeedsEmpty = true };
+		Assert.IsTrue( Enumerable.Range( 100, (int)shop.Ride.QueueLimit ).All( shop.Ride.TryJoinQueue ), "the queue is at its limit" );
+		Assert.IsTrue( shop.Ride.QueueLength < shop.Ride.QueueRoom, "with room to spare" );
+		var turned = shop.Send();
+		shop.RunTurns( 2 );
+		Assert.AreEqual( GuestState.DoingNothing, turned.State );
+		Assert.AreEqual( GuestThought.QueueTooLong, turned.Thought, "thought 16" );
+		Assert.AreEqual( 60f, turned.Happiness, "no happiness change" );
+		Assert.AreEqual( RideId, turned.TemporaryHistory[0], "the history push" );
+	}
+
 	// ---- Standing and moving up ------------------------------------------------------------------
 
 	[TestMethod]

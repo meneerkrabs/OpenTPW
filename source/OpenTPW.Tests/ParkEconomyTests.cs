@@ -885,6 +885,22 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void ChallengeType18ComparesTheBestCoastersCountedSectionsWithoutABaseline()
+	{
+		// tp.exe 0x4d1873: TargetVal <= the unsigned maximum of the counted sections (+0x108) over the coasters of TargetObj (0x4cc810), 0 without one
+		var park = EconomyTestData.Park();
+		var definition = park.Settings.Challenges[7] with { TargetValue = 12 };
+		long Measure() => park.Objectives.Measure( definition, park.Counters, park.Staff, park.Objects, park.GuestStatistics, park.CoasterCountedSections );
+		Assert.AreEqual( 0, Measure(), "no coaster host" );
+		var sections = new Dictionary<int, long> { [1180] = 12, [1185] = 30 };
+		park.CoasterCountedSections = infoId => infoId == 0 ? sections.Values.Max() : sections.GetValueOrDefault( infoId );
+		Assert.AreEqual( 12, Measure() );
+		Assert.IsFalse( ParkObjectives.IsCountSinceAcceptance( 18 ), "no baseline: an existing coaster counts at once" );
+		Assert.AreEqual( 12, ParkObjectives.Target( definition ) );
+		Assert.AreEqual( 0, ParkObjectives.Target( definition with { TargetValue = 0 } ), "TargetVal 0 is not raised, so it passes with no coaster" );
+	}
+
+	[TestMethod]
 	public void DecliningAFollowupPaysHalfItsPrize()
 	{
 		// tp.exe 0x4d2ec0: a declined challenge that is not independent credits prize / 2 (0x4d0190); an independent one pays nothing
@@ -897,6 +913,7 @@ public class ParkEconomyTests
 		park.AdvanceDays( 270 );
 		park.AcceptChallenge();
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1180, out _ ) );
+		park.CoasterCountedSections = infoId => infoId is 0 or 1180 ? 1 : 0;
 		park.AdvanceDays( 1 );
 		Assert.AreEqual( 8, park.Objectives.Current!.DefinitionIndex );
 		balance = park.Balance;
@@ -925,6 +942,8 @@ public class ParkEconomyTests
 		park.AcceptChallenge();
 		Assert.IsTrue( park.Research.IsAvailable( 1180 ) );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuild( 1180, out var minecart ) );
+		// type 18 (tp.exe 0x4d1873) reads the most counted sections of the coasters 1180, which the level supplies
+		park.CoasterCountedSections = infoId => infoId is 0 or 1180 ? 1 : 0;
 		var balance = park.Balance;
 		park.AdvanceDays( 1 );
 		Assert.AreEqual( balance, park.Balance, "a part with a follow-up pays no prize (0x4d2fb0)" );

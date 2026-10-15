@@ -135,6 +135,26 @@ public partial class Level
 	/// <summary>The catalogue entry (archive) of a coaster's station object, or null when the station left.</summary>
 	private ObjectCatalogEntry? CoasterEntry( CoasterRide ride ) => CoasterStation( ride )?.Entry;
 
+	/// <summary>Challenge type 18's measure (<see cref="ParkEconomy.CoasterCountedSections"/>): the most counted sections of the coasters whose station is <paramref name="infoId"/>, any for 0.</summary>
+	// [BIN:TPW-EXE:0x4cc810 best coaster] every ride of track type 3 with the id (any when 0) is read through 0x43e0e0's fourth output, the controller's +0x108; an unrated coaster counts 0
+	private long CoasterCountedSections( int infoId )
+	{
+		long best = 0;
+		foreach ( var ride in Coasters )
+		{
+			if ( CoasterStation( ride ) is { } station && (infoId == 0 || station.Entry.InfoId == infoId) )
+				best = Math.Max( best, ride.Rating?.CountedSections ?? 0 );
+		}
+		return best;
+	}
+
+	/// <summary>Points the current economy's challenge type 18 at the park's coasters; a park load replaces the economy, so it runs again then.</summary>
+	private void AttachCoasterChallenges()
+	{
+		if ( Park != null )
+			Park.Economy.CoasterCountedSections = CoasterCountedSections;
+	}
+
 	/// <summary>The station object a coaster belongs to (a plain loop: the renderer asks every frame).</summary>
 	private OriginalObject? CoasterStation( CoasterRide ride )
 	{

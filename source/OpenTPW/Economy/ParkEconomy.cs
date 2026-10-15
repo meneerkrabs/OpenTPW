@@ -175,6 +175,11 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>Ride scripts' running state, riders and speed for the wear step; none by default (nothing wears).</summary>
 	public IRideOperations RideOperations { get; set; } = NoRideOperations.Instance;
+	/// <summary>
+	/// The host's coasters for challenge type 18: the most counted sections (the rating's sections with flags 0x40 and 0x80) of the coasters of an Info.Id,
+	/// any coaster for 0, and 0 when none matches. Null in a headless economy, which has no coasters (type 18 then measures 0).
+	/// </summary>
+	public Func<int, long>? CoasterCountedSections { get; set; }
 	/// <summary>New mechanic jobs await this host world; null keeps new headless jobs immediate.</summary>
 	public IMechanicJobWorld? MechanicJobWorld { get; set; }
 	/// <summary>The world that moves the handymen and runs their state machine; null keeps the economy's own dispatch (no positions).</summary>
@@ -788,7 +793,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Raise( ParkEventKind.DayEnded, Balance );
 	}
 
-	private long MeasureChallenge( ChallengeDefinition definition ) => Objectives.Measure( definition, Counters, Staff, objects.Values, guestStatistics );
+	private long MeasureChallenge( ChallengeDefinition definition ) => Objectives.Measure( definition, Counters, Staff, objects.Values, guestStatistics, CoasterCountedSections );
 
 	private void EndMonth( long nextMonthIndex )
 	{

@@ -95,7 +95,9 @@ public sealed class ParkObjectives
 	public static bool IsSupportedType( int type ) => type is >= 1 and <= 13 or 15 or 16 or 17 or 18 or 19 or 20 or 21 or 24 or 25 or 27 or 28 or 29 or 30 or 31 or 32 or 33;
 
 	/// <summary>The progress value of a challenge type, absolute; count-like types are compared with the acceptance baseline.</summary>
-	public long Measure( ChallengeDefinition definition, ParkCounters counters, ParkStaff staff, IReadOnlyCollection<ParkObjectState> objects, IParkGuestStatistics guests )
+	/// <param name="coasterSections">The most counted sections of the park's coasters of an Info.Id (0: any coaster), 0 without one; null when the host has no coasters.</param>
+	public long Measure( ChallengeDefinition definition, ParkCounters counters, ParkStaff staff, IReadOnlyCollection<ParkObjectState> objects, IParkGuestStatistics guests,
+		Func<int, long>? coasterSections = null )
 	{
 		long Built( int infoId ) => infoId == 0 ? 0 : counters[ParkCounters.Built( infoId )];
 		long Sold( int shopType, int ingredient = -1 ) => ingredient >= 0
@@ -132,7 +134,9 @@ public sealed class ParkObjectives
 			15 => counters[ParkCounters.Record( ParkRecordKind.KartCrossroads, definition.TargetObject )],
 			16 => counters[ParkCounters.Researched( ResearchCategory.Ride )],
 			17 or 20 => counters[ParkCounters.RideUses( definition.TargetObject )],
-			18 => Built( definition.TargetObject ),
+			// [BIN:TPW-EXE:0x4d1873 challenge type 18] passes when TargetVal <= 0x4cc810(TargetObj): the unsigned maximum, over the rides of track type 3 (0x4e2b50) whose id is
+			// TargetObj (any when 0), of the controller's counted sections (+0x108 via 0x43e0e0, zeroed and counted by the rating final 0x43df90), 0 without one; no accumulator, no baseline
+			18 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
 			19 => counters[ParkCounters.Record( ParkRecordKind.CoasterLoops, definition.TargetObject )],
 			21 => Built( definition.TargetObject ) > 0 ? counters[ParkCounters.Record( ParkRecordKind.KartSections, definition.TargetObject )] : 0,
 			24 => counters[ParkCounters.Record( ParkRecordKind.ToiletCleanlinessPercent, 0 )],
@@ -150,12 +154,11 @@ public sealed class ParkObjectives
 	}
 
 	/// <summary>Types measured as a change since acceptance rather than an absolute value.</summary>
-	public static bool IsCountSinceAcceptance( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 17 or 18 or 20;
+	public static bool IsCountSinceAcceptance( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 17 or 20;
 
 	/// <summary>Target value; the build types 30-33 measure 1 when built.</summary>
 	// [BIN:STP-PPC:0x100CE690 challenge check] a 34-entry handler table (0x1022C794) by type; types 30-33 test "built" (1), type 28 compares TargetVal with the level
-	// [APPROX:ECON-036] type 18 needs TargetVal items built since acceptance; the binary compares TargetVal with a per-ride value from 0x100C7264 that is not identified — evidence needed: the fifth output of 0x10041A34
-	public static long Target( ChallengeDefinition definition ) => definition.Type is >= 30 and <= 33 ? 1 : definition.Type == 18 ? Math.Max( 1, definition.TargetValue ) : definition.TargetValue;
+	public static long Target( ChallengeDefinition definition ) => definition.Type is >= 30 and <= 33 ? 1 : definition.TargetValue;
 
 	/// <summary>Daily challenge processing; returns the events to publish and the prize won (0 when none).</summary>
 	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0, for which no reader is found): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again, without limit; the next offer waits DaysAfterCompletedChallenge as after a win

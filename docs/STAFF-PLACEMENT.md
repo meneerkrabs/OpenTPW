@@ -25,7 +25,7 @@ ground marker (UI-099).
 
 ## Saves
 
-A member in hand is saved dropped on its old cell (ECON-053); a pending hire is not saved. A member left in state PickedUp without a tool (an imported
+A member in hand is saved dropped on its old cell, as the original's save does (it first ends the carry tool, whose exit `0x46cdc0` drops the member, `0x516c80`); a pending hire is not saved. A member left in state PickedUp without a tool (an imported
 original save) is put back to Idle by `StaffPlacement.Reconcile`.
 
 ## Drawing

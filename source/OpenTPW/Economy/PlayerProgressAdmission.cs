@@ -13,6 +13,7 @@ internal sealed class PlayerProgressAdmission
 	public string Theme { get; }
 	public bool Creating { get; }
 	/// <summary>The keys a new progress history starts with.</summary>
+	// [BIN:TPW-EXE:0x4a6a50 new player award] a new Full Simulation player's mExtraKeys (+0x20) is raised once from the constructor's 0 (0x5aef50) by 0x5afc30
 	public const int StarterKeys = 1;
 	public bool IsActive => ownsRequest();
 	public PlayerTicketLedger Ledger { get; }

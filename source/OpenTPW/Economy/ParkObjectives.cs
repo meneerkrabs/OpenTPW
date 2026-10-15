@@ -299,7 +299,7 @@ public sealed class ParkObjectives
 		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) > rules.CoasterHeight );
 		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) > rules.GokartExcitement );
 		Check( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ) > rules.WaterLength );
-		// [APPROX:ECON-038] big park uses MinCellsOwned, cameras use MinCellsCovered — evidence needed: golden ticket award captures
+		// [APPROX:ECON-038] the big park and camera tickets compare OpenTPW records (CellsOwned with MinCellsOwned, CellsCoveredByCameras >= MinCellsCovered) that no game code reports yet, and OpenTPW also awards an all-land ticket; tp.exe's big park (global index 3, 0x4d4e50) needs more than GoldenTicketGlobal.MinCellsCovered (0x7857bc, the fifth global key of the table 0x73fc70; MinCellsOwned, 0x7857b8, is never read) cells of type 4, 9, 10 or 21 or under an object (0x4cd7f0), its camera ticket is the secret one (0x4d4a00) won only when exactly 100 % of the cells not of type 2, 7 or 30 have a nonzero coverage short (+6 of the 10-byte cell array, 0x4cd720), and it never awards an all-land ticket (0x5afb00 and 0x4d5870 have the single caller 0x4d4a00, with index 0) — evidence needed: the writer of the cell coverage short (+6) and the original cell types in OpenTPW's cell map (ECON-050)
 		Check( GoldenTicketKind.BigPark, MaxRecord( ParkRecordKind.CellsOwned ) > rules.MinCellsOwned );
 		Check( GoldenTicketKind.CamerasEverywhere, MaxRecord( ParkRecordKind.CellsCoveredByCameras ) >= rules.MinCellsCovered );
 		Check( GoldenTicketKind.AllLandOwned, MaxRecord( ParkRecordKind.OwnsAllLand ) > 0 );
@@ -332,14 +332,15 @@ public sealed class ParkObjectives
 /// The Windows European English manual (printed p. 28) awards one key for every third earned ticket;
 /// spending tickets on mystery items preserves earned keys. Pass cumulative earned counts to
 /// <see cref="SetTickets"/>, not the available ticket balance.
-/// <b>Approximation</b>: OpenTPW starts with one key; keys are not consumed by entering.
+/// A new Full Simulation player starts with one key, and entering a theme only compares the cost with the keys.
 /// </summary>
 public sealed class PlayerProgress
 {
 	// [DATA:theme-park-world_win_manual_europe_en_ii5.pdf:PDF-page-15/printed-page-28; SHA256=c96eb25f3dc13f7f0824bbf03f9bbeb3bb94e9f4756d4d8dfa09ac71732b0668]
 	// [BIN:STP-PPC:0x10128B60 profile key count] keys = mExtraKeys + (earned global, per-theme and secret tickets) / 3, truncated; spent tickets are not subtracted
 	public const int TicketsPerKey = 3;
-	// [APPROX:ECON-040] players start with 1 golden key and keys are not consumed by entering themes — evidence needed: initial lobby and repeated theme-entry captures
+	// [BIN:TPW-EXE:0x4a6a50 new player award] a player created through name entry gets mExtraKeys +1 (0x5afc30, its only caller 0x4a6b2e) unless GameType is 2 (Instant Action: message 394 only, no key)
+	// [BIN:TPW-EXE:0x5e1cc0 theme entry] Instant Action skips the test; otherwise the theme is refused when its cost (0x5b11a0) is above the keys (0x5af680), and nothing is subtracted
 	public const int StartingKeys = 1;
 	// [DATA:Language/*/THEMENAMES.str:order; levels/*/global.sam:Keys.CostToEnter]
 	public static readonly IReadOnlyList<string> ThemeOrder = new[] { "jungle", "hallow", "fantasy", "space" };

@@ -808,7 +808,8 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100CC21C loan instalment] each bought loan, in offer-index order, pays exactly M and counts one more month repaid; it ends after N months (ORACLE F13)
 		// [BIN:TPW-EXE:0x4d0370 bank month] the instalment is deducted only with mWithdrawalsEnabled (+0x114) set, as a debit that keeps mLastBalance and the
 		// turn-entered-red stamp; the year profit then gains back the principal share either way, so with the flag clear the instalment raises the profit by it
-		// [APPROX:ECON-051] the withdrawals flag is imported from an original save and kept, and no OpenTPW action clears it — evidence needed: the writer that clears +0x114 (every shipped save has it set)
+		// [BIN:TPW-EXE:0x404140 layout replay start] besides the bank constructor (0x4cf7c0, 1) and the serializer (0x4cf920), only the online layout replay writes +0x114: its start clears it
+		// (sole caller 0x54f11f, in the GameType 1 branch of the level start) and its end 0x4041d0 sets it again, so a single-player park never clears it, as here
 		foreach ( var loan in loans.OrderBy( item => item.OfferIndex ).ToList() )
 		{
 			var (account, paid) = LoanMath.Pay( loan );
@@ -1294,7 +1295,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>
 	/// Charges one path or queue cell when it is written (<c>SetCellType</c>, PATH-plan §3.2): refused only
 	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs. A negative cost (modified
-	/// <c>Costs.*</c>) raises the balance by its amount, as the original's Spend of a negative amount does.
+	/// <c>Costs.*</c>, which tp.exe refuses when it loads the balance file) raises the balance by its amount.
 	/// </summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost < 0, else Spend per cell at write time
 	public PurchaseResult TrySpendCell( CellPurchase kind )
@@ -1302,7 +1303,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !CanSpendCell( kind ) )
 			return PurchaseResult.NotEnoughMoney;
 		var cost = CellCost( kind );
-		// [APPROX:ECON-048] a negative cell cost is booked as other income (same balance and profit as the original's Spend of a negative amount; the month category is not traced) — evidence needed: the ledger category of a negative Spend
+		// [APPROX:ECON-048] a negative path or queue cell cost (modified Costs.*) is accepted and booked as other income; tp.exe never spends one: Costs.* are type-5 balance keys, whose parser refuses a negative value ('Balance problem: invalid -ve value specified', 0x401d7c), which fails the balance load (0x407f20, 0x407e00 skips the cost copy 0x4080e0) and so the level start (0x54e360) — evidence needed: none (read); OpenTPW does not refuse the value at load
 		if ( cost >= 0 )
 			Post( LedgerCategory.OtherCosts, cost );
 		else

@@ -226,7 +226,8 @@ public sealed class StaffPlacement
 	/// <summary>
 	/// A park save: a member in hand is saved dropped on its old cell, a pending hire is not saved (the candidate stays in the pool).
 	/// </summary>
-	// [APPROX:ECON-053] the original saves a carried member as a thing in state 7 with the pool's mStaffMemberPickedUp, and nothing re-creates the carry tool after a load, so it probably stays stuck (0x508c57, 0x508d7c, 0x5056e0); OpenTPW drops it on its old cell before saving — evidence needed: a load of such a save
+	// [BIN:TPW-EXE:0x516c80 world save] before its first field the save makes a new default tool current (0x46c350 at 0x516d13), whose switch runs the old tool's exit
+	// (vtable slot +0x2c, 0x46c378): the carry tool's exit 0x46cdc0 drops the member where he was (0x509af0 → 0x505ea0) and clears the pool's mStaffMemberPickedUp
 	public void PrepareForSave() => Cancel();
 
 	/// <summary>Ends a tool without touching a member (the economy was replaced by a load).</summary>

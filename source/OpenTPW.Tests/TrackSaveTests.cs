@@ -99,6 +99,113 @@ public class TrackSaveTests
 		Rejects( WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with { Vehicles = new List<BumpVehicleSaveData> { Vehicle( 3, 1 ) with { TargetBuoy = -5 } } } ).ToList() } ), "negative" );
 	}
 
+	/// <summary>The fixture with a second placed ride (attraction 2) beside the track ride.</summary>
+	private static ParkResumeSnapshot WithSecondRide( Func<TrackWorldSaveData, TrackWorldSaveData> change )
+	{
+		var snapshot = WithTracks( change );
+		var second = snapshot.Layout.Objects[0] with { AttractionId = 2, X = 12, Y = 6, CreationSeed = snapshot.Layout.Objects[0].CreationSeed ^ 3 };
+		return snapshot with
+		{
+			Layout = snapshot.Layout with { Objects = snapshot.Layout.Objects.Append( second ).ToList(), NextSeed = 3, NextAttractionId = 3 },
+			Scripts = snapshot.Scripts with { NextAttractionId = 3 },
+			Runtimes = snapshot.Runtimes.Append( new ParkResumeRuntime( 0, ParkResumeSaveFileTests.RuntimeSnapshot( 2, second.InfoId, second.Archive ) ) ).ToList()
+		};
+	}
+
+	[TestMethod]
+	public void TheSharedModulePartIsRefusedWhenOutOfRange()
+	{
+		Rejects( WithTracks( part => part with { FrameCount = -1 } ), "frame counter or clock" );
+		Rejects( WithTracks( part => part with { FrameCount = 5, TickRemainder = double.NaN } ), "frame counter or clock" );
+		Rejects( WithTracks( part => part with { FrameCount = 5, TickRemainder = BumpController.MaximumSavedRemainder } ), "frame counter or clock" );
+		Rejects( WithTracks( part => part with { FrameCount = 5, TickRemainder = -0.001 } ), "frame counter or clock" );
+		ParkResumeSnapshot Slots( params int[] slots ) => WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with { ObjectSlots = slots.ToList() } ).ToList() } );
+		ParkResumeSaveFile.ValidateShape( Slots( 0, 2047 ) );
+		Rejects( Slots( -1 ), "outside the module's pool" );
+		Rejects( Slots( BumpWorld.ObjectPool ), "outside the module's pool" );
+		ParkResumeSnapshot Foreign( int attraction ) => WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with
+		{
+			Vehicles = new List<BumpVehicleSaveData> { Vehicle( 3, 40000 ) with { ObjectAttraction = attraction, ObjectIndex = 0 } }
+		} ).ToList() } );
+		Rejects( Foreign( 1 ), "not another placed ride" );
+		Rejects( Foreign( 7 ), "not another placed ride" );
+		// a placed neighbour is accepted (the park restore checks its object exists)
+		ParkResumeSaveFile.ValidateShape( WithSecondRide( part => part with { Controllers = part.Controllers.Select( controller => controller with
+		{
+			Vehicles = new List<BumpVehicleSaveData> { Vehicle( 3, 40000 ) with { ObjectAttraction = 2, ObjectIndex = 0 } }
+		} ).ToList() } ) );
+	}
+
+	[TestMethod]
+	public void ASharedModuleSaveNamesEverySlotOnceAcrossTheRides()
+	{
+		// the second ride's controller holds no section (a fresh water ride's entry suffices for the shape check)
+		BumpControllerSaveData Second( params BumpVehicleSaveData[] vehicles ) => new( 2, -5, -1, 50, 0, 0, 0, 0, true, false, new List<int>(), new List<int>(),
+			new List<TrackSectionSaveData>(), vehicles.ToList(), new List<int> { 5 } );
+		ParkResumeSnapshot Two( long? frames, int vehicleSlot, int objectSlot, List<int>? firstSlots = null ) => WithSecondRide( part => part with
+		{
+			FrameCount = frames,
+			Controllers = new List<BumpControllerSaveData>
+			{
+				part.Controllers[0] with { ObjectSlots = firstSlots ?? new List<int> { 0 }, BuoyCount = 1 },
+				Second( Vehicle( vehicleSlot, 41000 ) with { Riders = new List<int>() } ) with { ObjectSlots = new List<int> { objectSlot }, BuoyCount = 1 }
+			}
+		} );
+		ParkResumeSaveFile.ValidateShape( Two( 9, 4, 1 ) );
+		Rejects( Two( 9, 3, 1 ), "another ride's vehicle holds" );
+		Rejects( Two( 9, 4, 0 ), "a slot another object of the module holds" );
+		Rejects( WithTracks( part => part with { FrameCount = 9 } ), "names no collision-object slots" );
+		Rejects( WithTracks( part => part with { FrameCount = 9, Controllers = part.Controllers.Select( controller => controller with { ObjectSlots = new List<int>() } ).ToList() } ), "buoy count" );
+		Rejects( WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with { BuoyCount = BumpWorld.BuoyPool + 1 } ).ToList() } ), "buoy count" );
+		// a save from before the shared module may repeat a slot across rides: the restore moves the later vehicle to the first free one
+		ParkResumeSaveFile.ValidateShape( Two( null, 3, 0 ) );
+	}
+
+	[TestMethod]
+	public void ABumperCarOfAnArenaThePoolsRefusedSitsInNoObject()
+	{
+		ParkResumeSnapshot Bumper( List<int>? slots, int objectIndex ) => WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with
+		{
+			Type = -1, Phase = 2, Sections = new List<TrackSectionSaveData>(), ObjectSlots = slots,
+			Vehicles = new List<BumpVehicleSaveData> { Vehicle( 3, 40000 ) with { Flags = 0x4404009, ObjectIndex = objectIndex, Riders = new List<int> { 5 }, Engine = true, WallHits = -1 } }
+		} ).ToList() } );
+		ParkResumeSaveFile.ValidateShape( Bumper( new List<int>(), -1 ) );
+		ParkResumeSaveFile.ValidateShape( Bumper( new List<int> { 0 }, 0 ) );
+		Rejects( Bumper( new List<int> { 0 }, -1 ), "not in the arena object" );
+		Rejects( Bumper( null, -1 ), "not in the arena object" );
+	}
+
+	[TestMethod]
+	public void AParkWhoseLastBumpRideWasRemovedKeepsItsModuleThroughTheEnvelope()
+	{
+		var rng = 5u;
+		var world = new BumpWorld();
+		var ride = new BumpController( BumperTemplates.Get( -6 ), () => rng = unchecked( rng * 1664525u + 1013904223u ), world );
+		ride.SetStation( 5 * 0xC00, 5 * 0xC00, TrackHeading.PosY );
+		for ( var tick = 0; tick < 7; tick++ )
+			ride.Tick();
+		ride.Advance( BumpController.TickSeconds / 3 );
+		world.CosmeticState = 1234;
+		world.Remove( ride );
+		var part = TrackSave.Capture( new ParkCellMap( 20, 10 ), world, Array.Empty<(int, BumpController)>() );
+		Assert.IsNotNull( part, "the module outlives its last ride" );
+		var snapshot = ParkResumeSaveFileTests.Envelope() with { Tracks = part };
+		ParkResumeSaveFile.ValidateShape( snapshot );
+		var back = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( snapshot ) );
+		ParkResumeSaveFile.ValidateShape( back );
+		Assert.AreEqual( 0, back.Tracks!.Controllers.Count );
+		var fresh = new BumpWorld();
+		TrackSave.RestoreModule( fresh, back.Tracks, Array.Empty<(BumpController, IReadOnlyList<int>?)>() );
+		Assert.AreEqual( (7L, world.TickRemainder, 1234u), (fresh.FrameCount, fresh.TickRemainder, fresh.CosmeticState), "clock, remainder and generator come back" );
+		var again = TrackSave.Capture( new ParkCellMap( 20, 10 ), fresh, Array.Empty<(int, BumpController)>() )!;
+		Assert.AreEqual( System.Text.Json.JsonSerializer.Serialize( part ), System.Text.Json.JsonSerializer.Serialize( again ), "and save the same part again" );
+		// a ride built after the resume ticks on from the saved counter
+		var next = new BumpController( BumperTemplates.Get( -6 ), () => 0u, fresh );
+		next.SetStation( 5 * 0xC00, 5 * 0xC00, TrackHeading.PosY );
+		next.Tick();
+		Assert.AreEqual( 8L, fresh.FrameCount );
+	}
+
 	[TestMethod]
 	public void CellsAndAControllerWithABoatSurviveASaveAndRestore()
 	{

@@ -198,6 +198,136 @@ public class BumpModuleTests
 		Assert.IsNull( TrackSave.Capture( new ParkCellMap( 8, 8 ), new BumpWorld(), Array.Empty<(int, BumpController)>() ), "a park that never had a ride writes none" );
 	}
 
+	private sealed class FlatGrid : IParkGrid
+	{
+		public int Width => 40;
+		public int Height => 40;
+		public System.Numerics.Vector2 Origin => default;
+		public OriginalPlacementResult CheckTerrain( int x, int y ) => OriginalPlacementResult.Allowed;
+		public float GetCellHeight( int x, int y ) => 0;
+	}
+
+	/// <summary>The eight-tile water loop of the circuit tests, walked on its own cell map: station (10, 10), corners (14, 10), (14, 12), (8, 12), (8, 10).</summary>
+	private static (TrackStation Station, TrackCircuit Circuit) WaterLoop()
+	{
+		var builder = new TrackBuilder( new ParkCellMap( 40, 40 ), TrackFamily.Water, () => null, new FlatGrid() );
+		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		builder.PlaceStation( station );
+		var writer = new TrackLineWriter( builder );
+		writer.Commit( (14, 10), (14, 12) );
+		writer.Commit( (14, 12), (8, 12) );
+		writer.Commit( (8, 12), (8, 10) );
+		return (station, TrackCircuitWalker.WalkAndRefresh( builder, station ));
+	}
+
+	private static BumpController Water( BumpWorld world, TrackStation station )
+	{
+		var controller = new BumpController( BumperTemplates.Get( -5 ), () => 0u, world );
+		var centre = TrackStation.Centre( station.First );
+		controller.SetStation( centre.X, centre.Y, station.Heading );
+		return controller;
+	}
+
+	private static string Digest( BumpWorld module )
+	{
+		var hash = new StateHasher();
+		module.AddCanonicalState( hash );
+		return hash.Value.ToString();
+	}
+
+	[TestMethod]
+	public void ARestoreKeepsTheSavedPoolVerdictsNearTheLimit()
+	{
+		// 128 arenas of 8 buoys fill the module's 1024 buoys: the 129th arena and a water ride built after them are refused, though the water circuit walks valid
+		var world = new BumpWorld();
+		var arenas = Enumerable.Range( 0, 129 ).Select( index => Bumper( world, (5 + index % 16) * 0xC00, (5 + index / 16) * 0xC00 ) ).ToList();
+		for ( var index = 0; index < arenas.Count; index++ )
+			arenas[index].AttractionId = index + 1;
+		Assert.AreEqual( BumpWorld.BuoyPool, world.BuoyCount );
+		Assert.AreEqual( 0, arenas[128].Objects.Count, "the 129th arena does not fit the buoy pool" );
+		var (station, circuit) = WaterLoop();
+		Assert.IsTrue( circuit.IsValid );
+		var water = Water( world, station );
+		water.AttractionId = 500;
+		water.Rebuild( circuit );
+		Assert.IsFalse( water.IsTrackValid, "refused by the shared pools" );
+		Assert.AreEqual( 0, water.Objects.Count );
+		// ten arenas go: the refused rides would fit now, but they are not rebuilt
+		foreach ( var gone in arenas.Take( 10 ) )
+			world.Remove( gone );
+		var live = arenas.Skip( 10 ).Append( water ).ToList();
+		var saved = TrackSave.Capture( new ParkCellMap( 8, 8 ), world, live.Select( ride => (ride.AttractionId, ride) ) )!;
+		saved = System.Text.Json.JsonSerializer.Deserialize<TrackWorldSaveData>( System.Text.Json.JsonSerializer.Serialize( saved ) )!;
+
+		// the restore builds the rides afresh in their order: now everything fits, so replaying the pools' checks would give other verdicts
+		var copy = new BumpWorld();
+		var restored = arenas.Skip( 10 ).Select( ( arena, index ) => Bumper( copy, arena.StationX, arena.StationY ) ).ToList();
+		for ( var index = 0; index < restored.Count; index++ )
+			restored[index].AttractionId = index + 11;
+		var (station2, circuit2) = WaterLoop();
+		var water2 = Water( copy, station2 );
+		water2.AttractionId = 500;
+		Assert.AreEqual( 1, restored[^1].Objects.Count, "the 129th arena fits a fresh module" );
+		var probe = new BumpWorld();
+		var replay = Water( probe, WaterLoop().Station );
+		replay.Rebuild( WaterLoop().Circuit );
+		Assert.IsTrue( replay.IsTrackValid, "and the water circuit fits too: the verdict depends on the build order" );
+
+		var rides = restored.Append( water2 ).ToList();
+		copy.SharedSaveRestore = true;
+		try
+		{
+			foreach ( var (ride, entry) in rides.Zip( saved.Controllers ) )
+			{
+				Assert.AreEqual( ride.AttractionId, entry.AttractionId );
+				if ( ride.Template.IsBumper )
+					ride.RestoreArena( entry.ObjectSlots is { Count: > 0 }, entry.BuoyCount );
+				else
+					ride.RestoreCircuit( circuit2, entry.IsTrackValid, entry.ObjectSlots!.Count, entry.BuoyCount );
+				ride.Restore( entry );
+			}
+		}
+		finally
+		{
+			copy.SharedSaveRestore = false;
+		}
+		TrackSave.RestoreModule( copy, saved, rides.Zip( saved.Controllers, ( ride, entry ) => (ride, (IReadOnlyList<int>?)entry.ObjectSlots) ).ToList() );
+		Assert.AreEqual( 0, restored[^1].Objects.Count, "the refused arena stays refused" );
+		Assert.IsFalse( water2.IsTrackValid, "the refused water ride keeps its saved verdict" );
+		Assert.AreEqual( 0, water2.Objects.Count );
+		CollectionAssert.AreEqual( water.Sections.Select( section => (section.Kind, section.X, section.Y) ).ToArray(), water2.Sections.Select( section => (section.Kind, section.X, section.Y) ).ToArray() );
+		Assert.AreEqual( world.BuoyCount, copy.BuoyCount );
+		Assert.AreEqual( Digest( world ), Digest( copy ), "the restored module is the saved one: slots, verdicts and objects" );
+	}
+
+	[TestMethod]
+	public void ASharedModuleRestoreRefusesAVehicleSlotAnotherRideHolds()
+	{
+		var world = new BumpWorld();
+		var a = Bumper( world, 5 * 0xC00, 5 * 0xC00 );
+		var b = Bumper( world, 20 * 0xC00, 5 * 0xC00 );
+		Start( a, 2, 100 );
+		var saved = TrackSave.CaptureController( a, 11 );
+		var copy = new BumpWorld();
+		var a2 = Bumper( copy, 5 * 0xC00, 5 * 0xC00 );
+		var b2 = Bumper( copy, 20 * 0xC00, 5 * 0xC00 );
+		Start( b2, 1, 200 );
+		Assert.AreEqual( 0, b2.Vehicles[0].Slot );
+		copy.SharedSaveRestore = true;
+		try
+		{
+			Assert.ThrowsException<System.IO.InvalidDataException>( () => a2.Restore( saved ), "a save of the shared module names its slots exactly" );
+		}
+		finally
+		{
+			copy.SharedSaveRestore = false;
+		}
+		// a save from before the shared pool takes the first free slot instead
+		a2.Restore( saved );
+		Assert.IsTrue( a2.Vehicles.All( car => car.Slot != 0 ) );
+		_ = b;
+	}
+
 	[TestMethod]
 	public void ALegacyChaseFollowsItsCarToItsNewSlot()
 	{

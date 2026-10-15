@@ -256,9 +256,13 @@ other live vehicle of the pool whichever ride owns them (the restitution is the 
 2048 (`0x877B70`, first free record, `0x54B1E0`) that every object search walks in pool order (the station drop, the steering's target and route, the walls and the
 keep-out circles), so a vehicle can enter a neighbouring ride's object (`BumpVehicle.ObjectOwner`), and the buoy budget of 1024 (`0x54B170`) counted over every ride. A circuit or arena
 that does not fit the shared pools is refused like an overflowing one. The module ticks once per world step where the first controller's ride advances. Saves carry the frame
-counter and clock (`TrackWorldSaveData.FrameCount`, `TickRemainder`), each controller's object pool slots (`ObjectSlots`) and a vehicle's foreign object (`ObjectAttraction`), all optional:
+counter and clock (`TrackWorldSaveData.FrameCount`, `TickRemainder`), each controller's object pool slots (`ObjectSlots`) and live buoy count (`BuoyCount`) and a vehicle's foreign object (`ObjectAttraction`), all optional:
 an older save takes the first controller's clock, the slots the restore gives and no foreign object. A vehicle's `Slot` is its module pool slot (an older save whose rides
-used the same slot gets the first free one). Open (TRACK-019): the tick's place among the rides' script steps, an older save's pool order, and the bumper cars' chase and drop-in
+used the same slot gets the first free one; a save with the module clock must name slots unique across the rides). Because the shared pools' overflow verdicts depend on the
+order the rides were built in, a restore of a save with the module clock trusts the save (`[EXT:track-pool-overflow-refused]`): every vehicle and object keeps its saved slot,
+a ride saved invalid gets the station-only geometry even when its circuit walks valid now, a ride saved with no objects and no buoys stays without them, and no pool check runs
+on the restore's re-walk, so a park near the 2048-object or 1024-buoy limit loads as saved. A vehicle of another ride whose object is rebuilt or removed loses it (TRACK-019; the
+original keeps its stale pointer). Open (TRACK-019): the tick's place among the rides' script steps, an older save's pool order, and the bumper cars' chase and drop-in
 tests, which still read their own ride's cars.
 
 ## Saves and determinism
@@ -380,6 +384,8 @@ bank's sign relative to the slope is the original's and the absolute roll sign i
 
 The vehicle record carries the kart fields (drawn heading, yaw rate and change, animation, effect request and latch, last height; flags, lap counter, thrust bias and
 target were already saved); the controller's phase is the saved state. The kart fields join the digest of kart controllers only, so water saves keep their hashes.
+The last height is the drawn height `TrackRenderer` writes for every family (zero in a headless run); it is presentation state outside the digest, so a rendered and a headless
+run of the same park save the same state except for it, and it only seeds the next probe that finds no surface and the effects' height.
 
 ### Tests
 

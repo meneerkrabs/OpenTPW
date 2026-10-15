@@ -68,6 +68,7 @@ public sealed class BumpWorld
 	}
 
 	/// <summary>The vehicles of other rides that sat in <paramref name="owner"/>'s objects lose them (the objects are rebuilt or gone; the original keeps a stale pointer).</summary>
+	// [APPROX:TRACK-019] a vehicle of another ride whose object is rebuilt or removed loses it (object −1, so it searches afresh); the original keeps its pointer to the freed or reused pool record
 	internal void ForgetObjectsOf( BumpController owner )
 	{
 		foreach ( var controller in controllers )
@@ -101,7 +102,10 @@ public sealed class BumpWorld
 		return -1;
 	}
 
-	/// <summary>Puts a restored vehicle back in its saved slot, or in the first free slot when another ride's vehicle holds it (a save from before the shared pool).</summary>
+	/// <summary>
+	/// Puts a restored vehicle back in its saved slot. A save of the shared module (<see cref="SharedSaveRestore"/>) must name a free slot; a save from before the
+	/// shared pool may name a slot another ride's vehicle took, which then gets the first free one.
+	/// </summary>
 	internal int PlaceVehicle( BumpVehicle vehicle, int slot )
 	{
 		if ( slot >= 0 && slot < VehiclePool && vehicleSlots[slot] == null )
@@ -109,8 +113,18 @@ public sealed class BumpWorld
 			vehicleSlots[slot] = vehicle;
 			return slot;
 		}
+		if ( SharedSaveRestore )
+			throw new InvalidDataException( $"A saved vehicle names module pool slot {slot}, which is out of range or holds another vehicle." );
 		return AllocateVehicle( vehicle );
 	}
+
+	/// <summary>
+	/// True while a park-resume restore of a save written with the shared module runs (it carries the module clock and every controller's object slots): the
+	/// saved state is trusted, so the vehicles must keep their saved pool slots, the re-walked circuits take the saved verdicts and their collision objects wait
+	/// unplaced for <see cref="FinishRestore"/> (no shared-pool check: the pools' overflow verdicts depend on the order rides were built in, which the restore does
+	/// not replay).
+	/// </summary>
+	internal bool SharedSaveRestore { get; set; }
 
 	internal void FreeVehicle( BumpVehicle vehicle )
 	{
@@ -238,6 +252,9 @@ public sealed class BumpWorld
 			ReleaseObjects( controller );
 		foreach ( var (controller, slots) in placed )
 			RestoreObjectSlots( controller, slots! );
+		// a shared-module save names every object's slot: none may stay unplaced
+		if ( controllers.Any( controller => controller.Objects.Any( item => item.ModuleSlot < 0 ) ) )
+			throw new InvalidDataException( "A saved controller's collision objects have no saved pool slots." );
 		foreach ( var controller in controllers )
 		{
 			foreach ( var vehicle in controller.Vehicles )

@@ -22,10 +22,15 @@ Vehicle effects and the bump rides' shared state now follow tp.exe:
   second instance behind the car (TRACK-031 retired, TRACK-001 narrowed).
 - **One bump module for every bump ride** (TRACK-019 narrowed): one frame counter (`0x877B5C`), a 256-vehicle pool stepped and collided
   in pool order across rides (restitution from the other vehicle's controller, `0x546E52`), a 2048-object pool and a 1024-buoy budget.
+  Because those pools' overflow verdicts depend on the order the rides were built in, a resume restores the saved slots, verdicts and
+  buoy counts instead of replaying the checks, so a park near the limits loads as saved.
+- **Sound pitch**: a parameter-bound pitch slot now applies to sentences started with a parameter channel (the vehicle engines); other
+  playbacks still draw (AUDIO-003 narrowed).
 
 No world or guest draws were added and the pinned run hash is unchanged; parks with a bump controller hash the frame counter and pool
 order. New optional, validated save fields: the tour car's `Emitter`, the track world's `FrameCount`/`TickRemainder`, per controller
-`ObjectSlots` and per vehicle `ObjectAttraction`; a vehicle's `Slot` is now its pool slot, and older saves load.
+`ObjectSlots` and `BuoyCount` and per vehicle `ObjectAttraction`; a vehicle's `Slot` is now its pool slot (unique across the rides in a
+save that has the module clock), and older saves load.
 
 ## Interface windows from tp.exe's tables (October 15, 2026)
 

@@ -6,14 +6,19 @@ internal sealed record TrackCellSaveData( int X, int Y, byte Type, byte Mask, by
 /// <summary>One saved section (the circuit walk rebuilds the sections, so they are verified against the walk on load, never trusted).</summary>
 internal sealed record TrackSectionSaveData( int Kind, bool NoBuoy, int X, int Y, int Segment );
 
-/// <summary>One saved boat or kart: every integer field of the vehicle record and the guests aboard; the trailing fields are the kart's drawn heading, yaw, animation, effect latch and last height (zero in water saves and in saves from before the kart rides).</summary>
+/// <summary>One saved boat or kart: every integer field of the vehicle record and the guests aboard; the trailing fields are the kart's drawn heading, yaw, animation, effect latch and the vehicle's last drawn height. The height is presentation state written by
+/// TrackRenderer for every family (zero in a headless run and in saves from before the kart rides) and not hashed: a rendered and a headless run of the same simulation
+/// save the same park except for it, and it only seeds the next probe that finds no surface and the effects' height.</summary>
 internal sealed record BumpVehicleSaveData( int Slot, int Flags, int Variant, int X, int Y, int VX, int VY, int VX0, int VY0, int Speed, int Heading, int Spin, int Roll,
 	int Radius, int AccelBonus, int TargetX, int TargetY, int JitterX, int JitterY, int TargetBuoy, int Laps, int BuoyCountdown, int Age, int ObjectIndex,
 	int WallHits, int WallWindow, int Sprays, List<int> Riders, int VisualHeading = 0, int YawRate = 0, int YawDelta = 0, int Animation = 0, int EffectRequest = 0, int EffectLatch = 0, float Height = 0, int ChaseTarget = -1, bool Engine = false, bool Smoke = false, int ObjectAttraction = -1 );
 
-/// <summary>One saved controller joined to its station by attraction id: the scalars the script set, the waiting and leaving guests and the boats.</summary>
+/// <summary>
+/// One saved controller joined to its station by attraction id: the scalars the script set, the waiting and leaving guests and the boats; a save of the shared module adds
+/// the pool slots of its collision objects and its live buoy count, so a restore can tell a build the shared pools refused (no objects and no buoys) from one that fitted.
+/// </summary>
 internal sealed record BumpControllerSaveData( int AttractionId, int Type, int Laps, int Performance, int Phase, int State, long TickCount, double TickRemainder, bool WaterRunning,
-	bool IsTrackValid, List<int> Pending, List<int> Leaving, List<TrackSectionSaveData> Sections, List<BumpVehicleSaveData> Vehicles, List<int>? ObjectSlots = null );
+	bool IsTrackValid, List<int> Pending, List<int> Leaving, List<TrackSectionSaveData> Sections, List<BumpVehicleSaveData> Vehicles, List<int>? ObjectSlots = null, int? BuoyCount = null );
 
 /// <summary>The kart and water tracks of one saved park (the park-resume envelope's optional track part): the cell layer, the controllers and the cosmetic generator.</summary>
 internal sealed record TrackWorldSaveData
@@ -62,7 +67,16 @@ internal static class TrackSave
 		controller.Vehicles.Select( vehicle => new BumpVehicleSaveData( vehicle.Slot, vehicle.Flags, vehicle.Variant, vehicle.X, vehicle.Y, vehicle.VX, vehicle.VY, vehicle.VX0, vehicle.VY0,
 			vehicle.Speed, vehicle.Heading, vehicle.Spin, vehicle.Roll, vehicle.Radius, vehicle.AccelBonus, vehicle.TargetX, vehicle.TargetY, vehicle.JitterX, vehicle.JitterY,
 			vehicle.TargetBuoy, vehicle.Laps, vehicle.BuoyCountdown, vehicle.Age, vehicle.ObjectIndex, vehicle.WallHits, vehicle.WallWindow, vehicle.Sprays, vehicle.Riders.ToList(), vehicle.VisualHeading, vehicle.YawRate, vehicle.YawDelta, vehicle.Animation, vehicle.EffectRequest, vehicle.EffectLatch, vehicle.Height, vehicle.ChaseTarget, vehicle.Engine, vehicle.Smoke, vehicle.ObjectOwner?.AttractionId ?? -1 ) ).ToList(),
-		controller.Objects.Select( item => item.ModuleSlot ).ToList() );
+		controller.Objects.Select( item => item.ModuleSlot ).ToList(), controller.Buoys.Count );
+
+	/// <summary>The module part of a park-resume restore, once every controller is back: the cosmetic generator, the module clock and the objects' saved pool slots.</summary>
+	public static void RestoreModule( BumpWorld module, TrackWorldSaveData saved, IReadOnlyList<(BumpController Controller, IReadOnlyList<int>? Slots)> controllers )
+	{
+		ArgumentNullException.ThrowIfNull( module );
+		ArgumentNullException.ThrowIfNull( saved );
+		module.CosmeticState = saved.CosmeticState;
+		module.FinishRestore( saved.FrameCount, saved.TickRemainder, controllers );
+	}
 
 	/// <summary>Writes the saved cells into the (freshly restored) track layer; the map's type bytes were restored with the layout.</summary>
 	public static void RestoreCells( ParkCellMap cells, TrackWorldSaveData saved )

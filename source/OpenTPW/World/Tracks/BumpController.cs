@@ -216,6 +216,18 @@ public sealed class BumpController
 	private bool PlaceInModule( List<CollisionObject> fresh, int buoyCount )
 	{
 		module.ForgetObjectsOf( this );
+		if ( module.SharedSaveRestore )
+		{
+			// a restore of a shared-module save: the objects wait unplaced for their saved pool slots (BumpWorld.FinishRestore), no pool check
+			module.PlaceObjects( this, Array.Empty<CollisionObject>() );
+			foreach ( var item in fresh )
+			{
+				item.Owner = this;
+				item.ModuleSlot = -1;
+			}
+			objects = fresh;
+			return true;
+		}
 		var placed = module.BuoyCount - buoys.Count + buoyCount <= BumpWorld.BuoyPool && module.PlaceObjects( this, fresh );
 		if ( !placed )
 		{
@@ -261,7 +273,9 @@ public sealed class BumpController
 		// the collision-object and buoy pools are the module's: a circuit that does not fit beside the other rides' is refused the same way
 		if ( result.Truncated || !Adopt( result ) )
 		{
-			Log?.Warning( $"A track circuit of {circuit.Steps.Count} tiles overflows the section pools; the ride is invalid." );
+			Log?.Warning( result.Truncated
+				? $"A track circuit of {circuit.Steps.Count} tiles overflows the section pool; the ride is invalid."
+				: $"A track circuit of {circuit.Steps.Count} tiles does not fit the module's shared collision-object or buoy pool beside the other rides; the ride is invalid." );
 			IsTrackValid = false;
 			Adopt( TrackSections.Build( Array.Empty<TrackStep>(), Template.Slack, CloneStation(), IsWater ) );
 		}
@@ -272,6 +286,68 @@ public sealed class BumpController
 			vehicle.ObjectIndex = -1;
 			vehicle.ObjectOwner = null;
 		}
+	}
+
+	/// <summary>
+	/// The re-walk of a park-resume restore of a shared-module save (<see cref="BumpWorld.SharedSaveRestore"/>): the saved verdict is taken instead of replaying the
+	/// shared pools' checks. A ride saved invalid gets the station-only geometry (a walk that is valid now was refused by the pools when it was built); a ride saved
+	/// valid needs a valid walk whose sections fit its own pool.
+	/// </summary>
+	// [EXT:track-pool-overflow-refused] the shared pools' overflow verdict depends on the order the rides were built in, which a restore does not replay (it walks the rides by attraction id); the restore keeps the saved verdicts and object slots, so a park near the limits loads as it was saved
+	internal void RestoreCircuit( TrackCircuit circuit, bool savedValid, int savedObjectCount, int? savedBuoyCount = null )
+	{
+		ArgumentNullException.ThrowIfNull( circuit );
+		EjectAll();
+		Close();
+		var valid = savedValid && circuit.IsValid;
+		var result = TrackSections.Build( valid ? circuit.Steps : Array.Empty<TrackStep>(), Template.Slack, CloneStation(), IsWater );
+		if ( result.Truncated )
+			throw new InvalidDataException( $"A saved valid circuit of {circuit.Steps.Count} tiles overflows the section pool." );
+		if ( savedObjectCount == 0 && (savedBuoyCount ?? 0) == 0 && (result.Objects.Count > 0 || savedBuoyCount != null && result.Buoys.Count > 0) )
+		{
+			// the save holds a ride whose station did not fit the shared pools either: its sections without objects or buoys, as Adopt leaves a refused build
+			if ( valid )
+				throw new InvalidDataException( "A saved valid circuit places no collision objects." );
+			module.ForgetObjectsOf( this );
+			module.PlaceObjects( this, Array.Empty<CollisionObject>() );
+			objects = new List<CollisionObject>();
+			buoys = new List<Buoy>();
+			sections = result.Sections.ToList();
+			FirstAfterFinish = FindFirstAfterFinish();
+		}
+		else
+			Adopt( result );
+		if ( savedBuoyCount is { } count && count != buoys.Count )
+			throw new InvalidDataException( $"A saved controller holds {count} buoys, but its rebuilt circuit has {buoys.Count}." );
+		IsTrackValid = valid;
+		foreach ( var vehicle in vehicles )
+		{
+			vehicle.ObjectIndex = -1;
+			vehicle.ObjectOwner = null;
+		}
+	}
+
+	/// <summary>The bumper arena of a park-resume restore of a shared-module save: present when the save placed its object, else dropped (it did not fit the pools when built).</summary>
+	internal void RestoreArena( bool present, int? savedBuoyCount = null )
+	{
+		if ( !Template.IsBumper )
+			return;
+		if ( present )
+			BuildArena();
+		else
+		{
+			module.ForgetObjectsOf( this );
+			module.PlaceObjects( this, Array.Empty<CollisionObject>() );
+			objects = new List<CollisionObject>();
+			buoys = new List<Buoy>();
+			foreach ( var vehicle in vehicles )
+			{
+				vehicle.ObjectIndex = -1;
+				vehicle.ObjectOwner = null;
+			}
+		}
+		if ( savedBuoyCount is { } count && count != buoys.Count )
+			throw new InvalidDataException( $"A saved bumper ride holds {count} buoys, but its rebuilt arena has {buoys.Count}." );
 	}
 
 	private Buoy? FindFirstAfterFinish()

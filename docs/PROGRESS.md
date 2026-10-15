@@ -6,6 +6,18 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Online, economy and path reading round (October 15, 2026)
+
+Nineteen approximations were read again in tp.exe:
+
+- **Chat**: blanks before a `/` are skipped (`0x5e45d0`; ONLINE-002 retired). **The globe** starts at yaw 0, pitch 0 whenever a globe screen
+  opens (`0x5dcfe0`; ONLINE-008 retired), edge steering works only in the Pushscroll option and right-button steering only in the other,
+  and the pitch limit stops the turn. **Pins** replace their root matrix instead of composing it (`0x5d81c0`, no doubled scale).
+- **The online world screen** puts the city labels at the top right (table `0x7581a0`), empty when no city is hovered; satellite counts are
+  centred in white (`0x4c4fb0`); the publish globe has no back button.
+- ONLINE-011, -015, -016 and -018, ECON-005 (bank `+0x10` is the batch balance, only cleared; OpenTPW's finer ledger split carries
+  `[EXT:ECON-LEDGER-SPLIT]`) and PATH-009 (bank `+0x114` is the withdrawals flag) are retired; 11 items are narrowed.
+
 ## Economy rules settled against tp.exe, part two (October 15, 2026)
 
 Sixteen more economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):

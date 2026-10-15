@@ -762,7 +762,7 @@ public static class GameAudio
 	/// level category lacks plays nothing (<c>incagod.RSE</c>'s <c>EVENT 3 id 43</c>, which only the global
 	/// <c>cat_rides</c> has, is silent in the original too).
 	/// </summary>
-	// [BIN:TPW-EXE:0x5575c7 RSE EVENT dispatch] the PC dispatcher submits type 3 to the level cat_rides (0x803a3c) and type 4 to the level cat_ambient with no handle check and no global retry (the submit 0x51bfc0 returns 0 for a null category)
+	// [BIN:TPW-EXE:0x5575c7 RSE EVENT dispatch] the PC dispatcher submits type 3 to the level cat_rides (0x803a3c) and type 4 to the level cat_ambient with no handle check and no global retry (the submit 0x51bfc0 returns 0 for event id 0 or with sound off, 0x802bc8/0x802bd4; an empty category slot returns in 0x6b9b30)
 	// [BIN:TPW-EXE:0x6b87d0 event lookup] the submit takes the category by its handle (0x6b9b30, a deque index; an empty slot returns) and searches only that category's 20-byte event records for the id (0x6c5870, linear, null when absent), returning without a voice (0x6b8919); the level category is loaded from the level's own data under its own path key (0x51ec50 -> 0x51b530 -> 0x6bf330, path joined at 0x6b8690), so nothing falls back to the global category
 	public static (SoundCategory Category, SoundEvent Event)? FindRseEvent( int type, uint eventId )
 	{

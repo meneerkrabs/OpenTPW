@@ -321,7 +321,11 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xD28386DACAD73241`, schema 19: the guest's energy meter is tp.exe's field `+0x1B8` (0 at birth, changed only by `0x004FD970`), the
+  (`0x0B7C79BA1B5AC12A`, schema 19: guests walk the park with tp.exe's walk: the route search `0x511420`, the edge test `0x4d8750`,
+  the step commit `0x510510`, avoid_walls `0x50e4a0` and the walk's progress `0x50fd40`, in tp.exe's fixed-point arithmetic (multiply
+  rounding towards −∞ `0x50df70`, divide towards 0 `0x50e080`), and cell type changes stamp their blocks (`0x4d8c60`), so the guests'
+  positions and the world stream move. Before that: `0x667465443A92B7CB`, the block stamps alone. Before that:
+  `0xD28386DACAD73241`, schema 19: the guest's energy meter is tp.exe's field `+0x1B8` (0 at birth, changed only by `0x004FD970`), the
   attraction choice walks the objects newest first, a full queue costs no happiness and the use routine `0x004FE1E0` applies its
   remaining terms, so the guests and the world stream move. Before that:
   `0x4AEFBABAD786E2FD`, schema 19: guests skip a ride whose queue is full (4 × cells, tp.exe `0x004DD920`) when they choose, and a queued guest

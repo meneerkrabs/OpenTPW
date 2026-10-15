@@ -20,7 +20,7 @@ public static class Camera
 		if ( CameraMode == null )
 			return;
 
-		var up = Vector3.Up;
+		var up = CameraMode.Up;
 		var direction = CameraMode.Rotation.Forward;
 		var position = CameraMode.Position;
 

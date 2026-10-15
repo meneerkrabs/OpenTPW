@@ -12,6 +12,7 @@ public sealed partial class ParkHud
 	/// withdraws it when it closes (<see cref="AdvisorUiHelp"/>), and any screen taking over is an interface mode change.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00486B00 advise] the original's window builders post their help as they open (0x486B00) and their close handlers withdraw it (0x486B40)
+	// [APPROX:ADVISOR-027] the ride view's screen is not reported: none of the camcorder screen's creators (0x489f50, 0x48a410) or the helpers they call reaches the interface mode change 0x52f200, so entering it does not withdraw mode help (medium confidence: callees followed one level)
 	private void ReportScreens()
 	{
 		if ( host?.WindowOpened == null && host?.WindowClosed == null )
@@ -19,7 +20,7 @@ public sealed partial class ParkHud
 		openScreens.Clear();
 		var screens = Stack.Screens;
 		for ( var index = 0; index < screens.Count; index++ )
-			if ( screens[index] != hud )
+			if ( screens[index] != hud && screens[index] != rideScreen )
 				openScreens.Add( screens[index].Name );
 		if ( openScreens.SetEquals( reportedScreens ) )
 			return;

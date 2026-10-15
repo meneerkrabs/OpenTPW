@@ -375,7 +375,8 @@ internal sealed partial class GameFlow : IDisposable
 	// [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) for the crowd sentence
 	private static int GuestsNearCamera( Level level )
 	{
-		if ( level.Guests == null || Camera.Mode is not ParkCameraMode camera )
+		// [APPROX:UI-094] in the ride view the park camera's target stays where it was and the count keeps using it (the camera cell of the crowd call 0x54f899 is not traced to its source; the ride moves only the eye matrix 0x790990, never the target 0x7908f0)
+		if ( level.Guests == null || (Camera.Mode as ParkCameraMode ?? level.ParkCameraWhileRiding) is not { } camera )
 			return 0;
 		if ( !level.TryGetGridCell( camera.Target.X, camera.Target.Y, out var x, out var y ) )
 			return 0;

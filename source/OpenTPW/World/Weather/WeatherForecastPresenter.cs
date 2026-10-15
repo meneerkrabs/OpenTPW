@@ -58,7 +58,7 @@ public sealed class WeatherForecastPresenter : Entity
 	private void DrawBanner()
 	{
 		DrawnBanner = null;
-		if ( deleted || Level.Current != Level || forecast.Banner is not { } text )
+		if ( deleted || Level.Current != Level || Level.HidesInterface || forecast.Banner is not { } text )
 			return;
 		DrawnBanner = text;
 		// The selected language's own font, reloaded when the language changes (the chat overlay's pattern).

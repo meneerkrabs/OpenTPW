@@ -1552,8 +1552,8 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// Moves a park that has not run yet to an original save's park turn (<c>mGameTick</c>, the turn the calendar
-	/// converts, so the date matches the save's). The ledger month, the hiring pool's timers and the first challenge
-	/// offer day move with it.
+	/// converts, so the date matches the save's). The ledger month and the hiring pool's timers move with it; the
+	/// challenge state is imported separately (<see cref="RestoreOriginalChallenges"/>).
 	/// </summary>
 	internal void StartAtOriginalTurn( long turn )
 	{
@@ -1563,8 +1563,27 @@ public sealed class ParkEconomy : IParkEconomy
 		Tick = ParkCalendar.TickOfTurn( turn );
 		Ledger.Restore( Ledger.Balance, Ledger.CurrentOpeningBalance, ParkCalendar.MonthIndex( Tick ), new Dictionary<LedgerCategory, long>(), Array.Empty<LedgerMonth>() );
 		Staff.ShiftSchedule( Tick );
-		// [APPROX:SAVE-005] the challenge system's next-offer time, current challenge, three switch bytes, Value and ActualThing are not imported; the first offer day is counted from the imported day — evidence needed: the unit of the challenge system's next event time and the meaning of its switch bytes, Value and ActualThing
-		Objectives.ShiftSchedule( ParkCalendar.DayIndex( Tick ) );
+	}
+
+	/// <summary>
+	/// Takes an original save's challenge state (<see cref="OriginalEconomyImport"/>): the next offer day, the round-robin position, the finished and
+	/// declined challenges, and a challenge that is running (accepted, with its deadline and the value it has reached) or offered and unanswered.
+	/// </summary>
+	internal void RestoreOriginalChallenges( long nextOfferDay, int nextListPosition, int? runningIndex, long deadlineDay, long value, int? offeredIndex,
+		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished )
+	{
+		ActiveChallenge? current = null;
+		if ( runningIndex is int running && Settings.Challenges.TryGetValue( running, out var definition ) )
+		{
+			// The original accumulates the value from 0 at the offer; OpenTPW measures a count type against a baseline, so the baseline is set
+			// to give the saved value now
+			var baseline = ParkObjectives.IsCountSinceAcceptance( definition.Type ) ? MeasureChallenge( definition ) - value : 0;
+			var start = deadlineDay - definition.TargetTime;
+			current = new ActiveChallenge( running, start, true, start, deadlineDay, baseline );
+		}
+		else if ( offeredIndex is int offered && Settings.Challenges.ContainsKey( offered ) )
+			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0 );
+		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets );
 	}
 
 	/// <summary>Takes an original save's bank account: balance, admission fee, the year's profit and the bought loans.</summary>

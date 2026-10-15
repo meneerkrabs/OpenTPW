@@ -63,7 +63,7 @@ public class OriginalSaveImportTests
 	/// <paramref name="unverifiedFootprint"/> records Belly Bounce as 2×1 turned 90°, a footprint without a verified rule.
 	/// </summary>
 	private static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
-		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false )
+		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
@@ -71,7 +71,7 @@ public class OriginalSaveImportTests
 			things[0] = (30, (uint)SaveThingModel.Researcher, researcher);
 		if ( bellyBounce != null )
 			things[1] = (12, (uint)SaveThingModel.Attraction, bellyBounce);
-		things[2] = (10, (uint)SaveThingModel.ChallengeSystem, Challenges( settings ));
+		things[2] = (10, (uint)SaveThingModel.ChallengeSystem, challenges ?? Challenges( settings ));
 		things[4] = (8, (uint)SaveThingModel.Bank, bank ?? Bank( settings ));
 		if ( staffHq != null )
 			things[^1] = (1, (uint)SaveThingModel.StaffHq, staffHq);
@@ -79,8 +79,49 @@ public class OriginalSaveImportTests
 		things.InsertRange( 0, extraThings ?? Array.Empty<(uint, uint, byte[])>() );
 		var grid = SaveTestPayloads.Grid( map, ( x, y ) => OriginalParkImportTests.CreateCellRecord( 0, occupied: (x, y) == (1, 1) ) );
 		var rideSystem = RideSystemRecord( 1601, 0, 0, SaveObject.FixedItemKind, 1 ).Concat( RideSystemRecord( 1100, 1, 1, SaveObject.PlacedObjectKind, 2, width: unverifiedFootprint ? 2 : 1, rotation: unverifiedFootprint ? 90 : 0 ) ).ToArray();
-		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( parkClosed: parkClosed ), grid, SaveTestPayloads.Things( things ) ), rideSystem );
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables( parkClosed: parkClosed ), grid, SaveTestPayloads.Things( things ), opaque: staffPool ), rideSystem );
 		return OriginalParkImport.Import( payload, map );
+	}
+
+	/// <summary>A 670-byte staff pool (tp.exe 0x507850) with the given valid candidates in its first slots and a stray invalid slot after them.</summary>
+	private static byte[] StaffPool( uint timeSig, params (uint Type, uint Name, byte Grade, byte SubType, uint TimeSig, uint Timeout)[] candidates )
+	{
+		var pool = new byte[SaveStaffPool.Bytes];
+		for ( var slot = 0; slot <= candidates.Length; slot++ )
+		{
+			var record = pool.AsSpan( slot * SaveStaffCandidate.Bytes, SaveStaffCandidate.Bytes );
+			var (type, name, grade, subType, sig, timeout) = slot < candidates.Length ? candidates[slot] : (9u, 3u, (byte)1, (byte)0, 1u, 2u);
+			BinaryPrimitives.WriteUInt32LittleEndian( record, type );
+			BinaryPrimitives.WriteUInt32LittleEndian( record[4..], name );
+			record[8] = grade;
+			record[9] = subType;
+			record[10] = slot < candidates.Length ? (byte)1 : (byte)0;
+			BinaryPrimitives.WriteUInt32LittleEndian( record[12..], sig );
+			BinaryPrimitives.WriteUInt32LittleEndian( record[16..], timeout );
+		}
+		BinaryPrimitives.WriteUInt32LittleEndian( pool.AsSpan( SaveStaffPool.Slots * SaveStaffCandidate.Bytes ), 2 );
+		BinaryPrimitives.WriteUInt32LittleEndian( pool.AsSpan( SaveStaffPool.Bytes - 5 ), timeSig );
+		pool[^1] = 1;
+		return Enumerable.Repeat( (byte)0xCD, 37 ).Concat( pool ).ToArray();
+	}
+
+	[TestMethod]
+	public void ImportsTheSavedHiringPool()
+	{
+		var settings = Settings();
+		var save = Park( settings, staffPool: StaffPool( 740, (3, 7, 3, 2, 700, 130), (4, 12, 1, 0, 750, 121) ) );
+		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+		var import = OriginalEconomyImport.Apply( economy, save );
+		// A candidate leaves on the first turn past 4 × its timeout from its stamp; the pool refills past 4 × TimeBetweenStaffUpdates from its own (tp.exe 0x5084f0)
+		CollectionAssert.AreEqual( new[] { (StaffType.Guard, 7, 3, ParkCalendar.TickOfTurn( 700 + 4 * 130 + 1 )), (StaffType.Researcher, 12, 1, ParkCalendar.TickOfTurn( 750 + 4 * 121 + 1 )) },
+			economy.Staff.Candidates.Select( candidate => (candidate.Type, candidate.NameIndex, candidate.Grade, candidate.ExpiresTick) ).ToArray() );
+		Assert.AreEqual( ParkCalendar.TickOfTurn( 740 + 4 * settings.TimeBetweenStaffUpdates + 1 ), economy.Staff.NextPoolUpdateTick );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "Staff pool imported: 2 candidates", StringComparison.Ordinal ) ) );
+		StringAssert.Contains( import.Evidence.Single( line => line.Contains( "[APPROX:SAVE-004]" ) ), "sub-types 2/0, on pointer 0, people in category 2/0/0/0/0, stop producing 0/0/0/0/0, opening pool generated 1." );
+		// The imported candidates stay until their own turn and the pool refills on its own schedule.
+		economy.Advance( ParkCalendar.TickOfTurn( 700 + 4 * 130 + 1 ) - economy.Tick );
+		Assert.IsFalse( economy.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Guard && candidate.NameIndex == 7 ) );
+		Assert.IsTrue( economy.Staff.Candidates.Any( candidate => candidate.Type == StaffType.Researcher && candidate.NameIndex == 12 ) );
 	}
 
 	[TestMethod]
@@ -114,7 +155,7 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( 755, economy.Turn );
 		Assert.AreEqual( new ParkDate( 1, 2, 2, 18 ), economy.Date );
 		Assert.AreEqual( 1, economy.Ledger.CurrentMonthIndex, "the ledger's open month is February" );
-		Assert.AreEqual( firstOffer + ParkCalendar.DayIndex( economy.Tick ), economy.Objectives.NextOfferDay );
+		Assert.AreEqual( firstOffer, economy.Objectives.NextOfferDay, "a system not yet switched on offers on park day DaysUntilFirstChallenge (tp.exe 0x4d1e90), not counted from the import" );
 		Assert.AreEqual( poolUpdate + economy.Tick, economy.Staff.NextPoolUpdateTick );
 		Assert.IsTrue( economy.Staff.Candidates.All( candidate => candidate.ExpiresTick > economy.Tick ) );
 
@@ -165,8 +206,9 @@ public class OriginalSaveImportTests
 		StringAssert.Contains( Line( "Bank words imported:" ), "withdrawals enabled, last balance " );
 		StringAssert.Contains( Line( "[APPROX:SAVE-008] Loan offers' Available flags not imported:" ), "OpenTPW offers " );
 		var challenges = Line( "[APPROX:SAVE-005]" );
-		foreach ( var value in new[] { "current challenge ", "next event time ", "switch bytes ", "Value ", "ActualThing " } )
+		foreach ( var value in new[] { "losses ", "ActualThing ", "follow-up things " } )
 			StringAssert.Contains( challenges, value );
+		StringAssert.Contains( Line( "Challenges imported:" ), "not started" );
 		var attractions = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-006] Attraction thing ", StringComparison.Ordinal ) ).ToArray();
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
@@ -181,8 +223,11 @@ public class OriginalSaveImportTests
 				StringAssert.Contains( line, value );
 		}
 		var hq = Line( "[APPROX:SAVE-009]" );
-		foreach ( var value in new[] { "training budgets ", "force strike ", "picked up ", "strike levels ", "trained " } )
+		foreach ( var value in new[] { "force strike ", "picked up ", "trained " } )
 			StringAssert.Contains( hq, value );
+		var imported = Line( "Staff HQ imported:" );
+		foreach ( var value in new[] { "training budgets ", "strike levels ", "last considered on turns " } )
+			StringAssert.Contains( imported, value );
 		StringAssert.Contains( Line( "[APPROX:SAVE-010] Saved advisor pending advice" ), "imported only when the automatic advisor attaches" );
 	}
 
@@ -196,12 +241,13 @@ public class OriginalSaveImportTests
 		var import = OriginalEconomyImport.Apply( economy, save );
 
 		var researcher = economy.Staff.Members.Single();
-		Assert.AreEqual( (100, 99, StaffState.Idle), (researcher.Happiness, researcher.TrainingPoints, researcher.State), "clamped to the traced happiness range and OpenTPW's 0-99 points" );
+		Assert.AreEqual( (100, 99, StaffState.Working), (researcher.Happiness, researcher.TrainingPoints, researcher.State), "clamped to the traced happiness range and OpenTPW's 0-99 points; the state word 9 shows as working (tp.exe 0x5064f0)" );
 		var adjusted = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-003] Adjusted on import:", StringComparison.Ordinal ) ).ToArray();
-		Assert.AreEqual( 4, adjusted.Length );
+		Assert.AreEqual( 3, adjusted.Length );
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "happiness 150 imported as 100" ) ) );
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "grade percentage 100 imported as 99" ) ) );
-		Assert.IsTrue( adjusted.Any( line => line.Contains( "state 9 has no STAFFSTATES entry" ) ) );
+		CollectionAssert.AreEqual( new[] { StaffState.Idle, StaffState.Patrolling, StaffState.Resting, StaffState.Resting, StaffState.OnStrike, StaffState.OnStrike, StaffState.Working, StaffState.PickedUp, StaffState.Working },
+			Enumerable.Range( 0, 9 ).Select( word => ParkStaff.DisplayState( (uint)word ) ).ToArray(), "0x5064f0: the saved word is the state word +0x19c, not the STAFFSTATES index" );
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "lies 5 park seconds into turn 648" ) ) );
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "the hire time is rounded down to its turn" );
 
@@ -236,13 +282,14 @@ public class OriginalSaveImportTests
 		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
 		var import = OriginalEconomyImport.Apply( economy, Park( settings, staffHq: hq ) );
 		var line = import.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-009]", StringComparison.Ordinal ) );
-		StringAssert.Contains( line, "training budgets 0, 250, 0, 0, 0 (different from OpenTPW's starting budgets of 0, which are kept" );
+		StringAssert.Contains( import.Evidence.Single( line => line.StartsWith( "Staff HQ imported:", StringComparison.Ordinal ) ), "training budgets 0, 250, 0, 0, 0 (handyman, mechanic" );
 		StringAssert.Contains( line, "force strike 1, picked up 0" );
 		StringAssert.Contains( line, "trained 1." );
-		Assert.IsTrue( Enum.GetValues<StaffType>().All( type => economy.Staff.GetTrainingBudget( type ) == 0 ) );
+		Assert.AreEqual( 250, economy.Staff.GetTrainingBudget( StaffType.Mechanic ), "budget word 1 is the mechanics' (tp.exe 0x50c800)" );
+		Assert.IsTrue( Enum.GetValues<StaffType>().Where( type => type != StaffType.Mechanic ).All( type => economy.Staff.GetTrainingBudget( type ) == 0 ) );
 
 		var zero = OriginalEconomyImport.Apply( new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 ), Park( settings ) );
-		StringAssert.Contains( zero.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-009]", StringComparison.Ordinal ) ), "all 0, which equals OpenTPW's starting budgets" );
+		StringAssert.Contains( zero.Evidence.Single( line => line.StartsWith( "Staff HQ imported:", StringComparison.Ordinal ) ), "training budgets 0, 0, 0, 0, 0" );
 		var available = zero.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-008] Loan offers' Available flags", StringComparison.Ordinal ) );
 		StringAssert.Contains( available, "the save marks no offer available (0:0, 1:0" );
 		StringAssert.Contains( available, "OpenTPW offers 0, 1, 2, 3, 4, 5, 6, 7." );
@@ -250,6 +297,51 @@ public class OriginalSaveImportTests
 		var count = zero.Evidence.Count;
 		zero.Report( "advisor outcome" );
 		Assert.AreEqual( (count + 1, "advisor outcome"), (zero.Evidence.Count, zero.Evidence[^1]) );
+	}
+
+	[TestMethod]
+	public void ImportsARunningAnOfferedAndAnIdleChallengeSystem()
+	{
+		// tp.exe 0x4d2320: after the 20 slots, current 4, next event time 8, switched on, challenge on, waiting for reply, value 4, actual thing 2
+		var settings = Settings();
+		var level = settings.ChallengesInThisLevel;
+		var start = Park( settings ).World.Calendar.FunnyTimeStart;
+		const long Day = 864_000_000_000;
+		ParkEconomy Import( int current, long nextDays, byte on, byte running, byte waiting, int value, Action<byte[]>? slots = null )
+		{
+			var body = Challenges( settings );
+			var tail = 8 + SaveChallengeSystem.Slots * SaveChallengeSystem.SlotBytes;
+			BinaryPrimitives.WriteInt32LittleEndian( body.AsSpan( tail ), current );
+			BinaryPrimitives.WriteInt64LittleEndian( body.AsSpan( tail + 4 ), start + nextDays * Day + Day / 2 );
+			(body[tail + 12], body[tail + 13], body[tail + 14]) = (on, running, waiting);
+			BinaryPrimitives.WriteInt32LittleEndian( body.AsSpan( tail + 15 ), value );
+			slots?.Invoke( body );
+			var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
+			OriginalEconomyImport.Apply( economy, Park( settings, challenges: body ) );
+			return economy;
+		}
+		int Slot( int index, int field ) => 8 + index * SaveChallengeSystem.SlotBytes + field;
+
+		var running = Import( 1, 100, 1, 1, 0, 7, body =>
+		{
+			body[Slot( 0, 41 )] = 1;
+			BinaryPrimitives.WriteInt32LittleEndian( body.AsSpan( Slot( 2, 37 ) ), 1 );
+		} );
+		var active = running.Objectives.Current!;
+		Assert.AreEqual( (level[1], true, 101L), (active.DefinitionIndex, active.Accepted, active.DeadlineDay), "the deadline passes at the first daily update after the stamp" );
+		var definition = settings.Challenges[level[1]];
+		if ( ParkObjectives.IsCountSinceAcceptance( definition.Type ) )
+			Assert.AreEqual( 7, running.Objectives.Measure( definition, running.Counters, running.Staff, running.Objects, running.GuestStatistics ) - active.Baseline, "the saved value is reached now" );
+		CollectionAssert.AreEqual( new[] { level[0] }, running.Objectives.Finished.ToArray(), "a won slot is finished" );
+		Assert.AreEqual( 1, running.Objectives.Declines[level[2]] );
+		Assert.AreEqual( 2, running.Objectives.NextListPosition, "the offer scan continues after the current slot" );
+
+		var offered = Import( 0, 0, 1, 0, 1, 0 );
+		Assert.AreEqual( (level[0], false), (offered.Objectives.Current!.DefinitionIndex, offered.Objectives.Current.Accepted) );
+
+		var idle = Import( 3, 200, 1, 0, 0, 0 );
+		Assert.IsNull( idle.Objectives.Current );
+		Assert.AreEqual( 201, idle.Objectives.NextOfferDay, "an idle system offers at the first daily update after the stamp" );
 	}
 
 	[TestMethod]
@@ -390,6 +482,20 @@ public class OriginalSaveImportTests
 			Assert.AreEqual( (long)save.World.Variables.GameTick, economy.Turn );
 			Assert.AreEqual( save.Economy.Bank.Balance, economy.Balance );
 			Assert.AreEqual( save.Staff.Count, economy.Staff.Members.Count );
+			// The saved hiring pool (tp.exe 0x507850): 16 candidates and refills on turns 361 and 722 (4 × 90 + 1 apart), the next one past 4 × 90 more turns
+			var pool = save.World.StaffPool!;
+			Assert.AreEqual( (16, 722u), (economy.Staff.Candidates.Count, pool.TimeSig) );
+			Assert.AreEqual( ParkCalendar.TickOfTurn( 722 + 4 * 90 + 1 ), economy.Staff.NextPoolUpdateTick );
+			CollectionAssert.AreEqual( pool.Candidates.Where( candidate => candidate.Valid ).Select( candidate => ((StaffType)candidate.Type, (int)candidate.Grade,
+				ParkCalendar.TickOfTurn( candidate.TimeSig + 4 * candidate.Timeout + 1 )) ).ToList(),
+				economy.Staff.Candidates.Select( candidate => (candidate.Type, candidate.Grade, candidate.ExpiresTick) ).ToList() );
+			// The shipped lab (tp.exe 0x502dc0): 24 projects, rides 1150 at 30 of 600 points, features 1414 at 7.5, shops 1212 at 4.5, sideshows 1304 at 9; effort 100/15/30/25/0, work load 85
+			var research = economy.Research;
+			Assert.AreEqual( 85, research.Workload );
+			Assert.AreEqual( (1150, 1414, 1212, 1304), (research.Current( ResearchCategory.Ride )?.InfoId ?? 0, research.Current( ResearchCategory.Feature )?.InfoId ?? 0,
+				research.Current( ResearchCategory.Shop )?.InfoId ?? 0, research.Current( ResearchCategory.Sideshow )?.InfoId ?? 0), "the saved current projects, not OpenTPW's info-id order (1400 before 1414)" );
+			Assert.AreEqual( 30L * ParkResearch.PointScale, research.GetProgress( research.Current( ResearchCategory.Ride )! ) );
+			Assert.AreEqual( 7500L, research.GetProgress( research.Current( ResearchCategory.Feature )! ) );
 			Assert.IsFalse( runtime.Import!.ParkClosed );
 			// Every pending advice of the saved controller is either imported or reported.
 			var controller = new AdvisorController( AdvisorBalance.Load() );

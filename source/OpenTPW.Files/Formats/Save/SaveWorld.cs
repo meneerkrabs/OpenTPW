@@ -80,6 +80,62 @@ public sealed record SaveWorldVariables(
 		reader.U16(), reader.U32(), reader.U16(), reader.U16(), reader.U16(), reader.U16(), reader.U16(), reader.U16() );
 }
 
+/// <summary>One slot of the saved staff hiring pool (tp.exe serializer <c>0x507850</c>, 20 bytes).</summary>
+/// <param name="Type">The role in handyman, mechanic, entertainer, guard, researcher order.</param>
+/// <param name="Name">The index into the role's name table.</param>
+/// <param name="SubType">The role sub-type byte (not traced).</param>
+/// <param name="OnPointer">Set while the candidate hangs on the mouse pointer to be placed.</param>
+/// <param name="TimeSig">The park turn the candidate was made.</param>
+/// <param name="Timeout">Its life in units of four park turns.</param>
+public readonly record struct SaveStaffCandidate( uint Type, uint Name, byte Grade, byte SubType, bool Valid, bool OnPointer, uint TimeSig, uint Timeout )
+{
+	public const int Bytes = 20;
+}
+
+/// <summary>
+/// The staff hiring pool, the first part of the macro AI (tp.exe serializer <c>0x507850</c>, 670 bytes before the calendar): 32 candidate slots,
+/// five (people in category, stop producing) pairs, the pool's time stamp (the park turn of the last refill) and the opening-pool flag.
+/// </summary>
+// [BIN:TPW-EXE:0x507850 staff pool serializer] 32 × 20-byte candidates (+0 type, +4 name, +8 grade, +9 sub-type, +0xa valid, +0xb on pointer, +0xc time stamp, +0x10 timeout), 5 × (u32 mPeopleInCat, u8 mStopProducing), u32 mTimeSig, u8 mOpeningStaffPoolGenerated; the macro AI 0x4d7a70 writes it just before the calendar 0x4f7f30
+public sealed record SaveStaffPool( int Offset, IReadOnlyList<SaveStaffCandidate> Candidates, IReadOnlyList<uint> PeopleInCategory, IReadOnlyList<bool> StopProducing,
+	uint TimeSig, bool OpeningPoolGenerated )
+{
+	public const int Slots = 32;
+	public const int Roles = 5;
+	public const int Bytes = Slots * SaveStaffCandidate.Bytes + Roles * 5 + 5;
+
+	/// <summary>Reads the pool ending at <paramref name="end"/>; null when fewer bytes precede it or a flag or valid role is out of range.</summary>
+	internal static SaveStaffPool? TryRead( ReadOnlySpan<byte> payload, int start, int end )
+	{
+		var offset = end - Bytes;
+		if ( offset < start )
+			return null;
+		var reader = new SaveFieldReader( payload[..end], offset, "staff pool" );
+		var candidates = new SaveStaffCandidate[Slots];
+		for ( var slot = 0; slot < Slots; slot++ )
+		{
+			var candidate = new SaveStaffCandidate( reader.U32(), reader.U32(), reader.U8(), reader.U8(), reader.U8() != 0, reader.U8() != 0, reader.U32(), reader.U32() );
+			if ( payload[offset + slot * SaveStaffCandidate.Bytes + 10] > 1 || payload[offset + slot * SaveStaffCandidate.Bytes + 11] > 1
+				|| candidate.Valid && candidate.Type >= Roles )
+				return null;
+			candidates[slot] = candidate;
+		}
+		var people = new uint[Roles];
+		var stop = new bool[Roles];
+		for ( var role = 0; role < Roles; role++ )
+		{
+			people[role] = reader.U32();
+			var flag = reader.U8();
+			if ( flag > 1 )
+				return null;
+			stop[role] = flag != 0;
+		}
+		var timeSig = reader.U32();
+		var generated = reader.U8();
+		return generated > 1 ? null : new SaveStaffPool( offset, candidates, people, stop, timeSig, generated != 0 );
+	}
+}
+
 /// <summary>
 /// The macro-AI calendar (serializer 0xe3d30, widths 8, 8, 4, 4, 4). The time stamps count 100 ns since
 /// 1601-01-01; <see cref="MonthAtLastUpdate"/> is zero-based. The year cache is not saved.
@@ -93,9 +149,9 @@ public readonly record struct SaveCalendar( int Offset, long FunnyTimeStart, lon
 /// The World block of a decoded payload: action-recording header, the 64 bytes of labelled variables,
 /// control manager and macro AI, the cell map and the thing list (docs/reverse/SAVE-plan.md §8.1).
 /// <list type="bullet">
-/// <item>The control manager (0xd1a60) and candidate pool (0xf5f1c) widths are not pinned: their bytes stay
-/// opaque (<see cref="OpaqueMacroAiOffset"/>/<see cref="OpaqueMacroAiLength"/>). The map is located by the
-/// structural cell-grid search inside the World block.</item>
+/// <item>The control manager's (0xd1a60) width is not pinned: its bytes stay opaque (<see cref="OpaqueMacroAiOffset"/>/<see cref="OpaqueMacroAiLength"/>,
+/// which still include the staff pool). The map is located by the structural cell-grid search inside the World block.</item>
+/// <item>The staff hiring pool (<see cref="SaveStaffPool"/>, 670 bytes) is the macro AI's first part, just before the calendar.</item>
 /// <item>The calendar (28 bytes) and arrivals (18 bytes, 0xcb050: three 4-byte numbers, a 4-byte timer and two
 /// bytes) are the fixed-width macro-AI suffix immediately before the map.</item>
 /// <item>The thing list walks from the map end and must close with next ID 0 exactly at the World delimiter.</item>
@@ -110,8 +166,9 @@ public sealed class SaveWorld
 	public const int ThingHeaderBytes = 8;
 
 	private SaveWorld( SavePayloadBlock block, SaveWorldVariables variables, int variablesOffset, SaveCalendar calendar, int arrivalOffset,
-		byte[] arrivals, SaveCellGrid cells, uint usedThingHead, IReadOnlyList<SaveThing> things )
+		byte[] arrivals, SaveCellGrid cells, uint usedThingHead, IReadOnlyList<SaveThing> things, SaveStaffPool? staffPool )
 	{
+		StaffPool = staffPool;
 		Block = block;
 		Variables = variables;
 		VariablesOffset = variablesOffset;
@@ -129,6 +186,8 @@ public sealed class SaveWorld
 	public int OpaqueMacroAiOffset => VariablesOffset + SaveWorldVariables.Bytes;
 	public int OpaqueMacroAiLength => Calendar.Offset - OpaqueMacroAiOffset;
 	public SaveCalendar Calendar { get; }
+	/// <summary>The staff hiring pool before the calendar; null when the bytes there are too few or do not read as one.</summary>
+	public SaveStaffPool? StaffPool { get; }
 	public int ArrivalOffset { get; }
 	/// <summary>The <see cref="ArrivalBytes"/> raw arrival bytes at <see cref="ArrivalOffset"/> (field meanings not traced).</summary>
 	public byte[] Arrivals { get; }
@@ -181,7 +240,8 @@ public sealed class SaveWorld
 		if ( calendar.FunnySecsPerRealSec <= 0 || calendar.MonthAtLastUpdate is < 0 or > 11 || calendar.DayAtLastUpdate is < 1 or > 31 )
 			throw new InvalidDataException( $"Save World calendar before the map is not a calendar (rate {calendar.FunnySecsPerRealSec}, month {calendar.MonthAtLastUpdate}, day {calendar.DayAtLastUpdate})." );
 		var (head, things) = SaveThingChain.Walk( span, cells.EndOffset, block.End );
-		var world = new SaveWorld( block, variables, block.Offset, calendar, arrival, span.Slice( arrival, ArrivalBytes ).ToArray(), cells, head, things );
+		var world = new SaveWorld( block, variables, block.Offset, calendar, arrival, span.Slice( arrival, ArrivalBytes ).ToArray(), cells, head, things,
+			SaveStaffPool.TryRead( span, reader.Position, calendarOffset ) );
 		foreach ( var (name, id, model) in variables.ThingReferences() )
 		{
 			if ( id == 0 )

@@ -485,6 +485,7 @@ internal static class Game
 						case "confirm": hud.Stack.Push( OpenTPW.UI.Original.UiDialogs.Message( "debugConfirm", () => "QUIT GAME\n\nAre you sure you want to quit the game ?", (() => "Yes", () => { }), (() => "No", () => { }) ) ); break;
 						case "select": if ( flow.Level.Objects.Objects.Skip( int.Parse( argument ) ).FirstOrDefault() is { } selected ) hud.SelectObject( selected ); break;
 						case "help": hud.DebugHelp( argument ); break;
+						case "ride": hud.DebugRide( argument ); break;
 						case "models": hud.DebugShowModels( argument.Split( '+' ) ); break;
 						default: Log.Warning( $"--debug-hud: unknown action {name}." ); break;
 					}

@@ -224,11 +224,12 @@ public sealed partial class ParkHud
 		// [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window.
 		screen.Add( new UiButton { Id = "exit", Model = BuyExitModel, Help = strings.Help( 2 ), Clicked = CloseBuyWindow, Bounds = Rect( 1889, 818, 1972, 901 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "allStaff", Model = BuyStaffModel, Help = strings.Help( 153 ), Clicked = OpenStaffWindow, Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
-		// [EXT:overview-entry-buttons] a text button above b_allstaff opens the All Attractions window (its rides tab,
-		// UITEXT 78 'All Rides'); the shipped b_allthinginfo button art cannot be used — its model's
-		// texture 'b_allthginfo' is absent from ui.wad. The original entry point is not decoded.
+		// [EXT:overview-entry-buttons] a round button above b_allstaff opens the All Attractions window (its rides tab,
+		// UITEXT 78 'All Rides', shown as its popup help); the shipped b_allthinginfo button art cannot be used — its model's
+		// texture 'b_allthginfo' is absent from ui.wad — so it wears the window's own rides tab icon b_srides, round like its
+		// neighbours (a text label does not fit a button this narrow). The original entry point is not decoded.
 		// The rectangle ends above b_allstaff's top edge so no click band of the two buttons overlaps.
-		screen.Add( new UiButton { Id = "allAttractions", Text = () => strings[UIStrings.AllRides], Font = fonts => fonts.Label,
+		screen.Add( new UiButton { Id = "allAttractions", Model = AllAttractionsModel, Help = strings[UIStrings.AllRides],
 			Clicked = OpenAttractionsWindow, Bounds = Rect( 1866, 458, 1968, 577 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseBuyWindow;
 		return screen;

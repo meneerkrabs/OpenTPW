@@ -157,7 +157,7 @@ public sealed partial class ParkHud
 		return rows;
 	}
 
-	private ObjectWindowLayout? ObjectLayout => selectedObject is { IsDeleted: false } item ? ObjectWindowLayout.For( item.Entry.WhichUIType ) : null;
+	private ObjectWindowLayout? ObjectLayout => selectedObject is { IsDeleted: false, Runtime: not null } item ? ObjectWindowLayout.For( item.Entry.WhichUIType ) : null;
 
 	private void BuildObjectWindow()
 	{

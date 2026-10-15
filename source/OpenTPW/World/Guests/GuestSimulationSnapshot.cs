@@ -154,6 +154,95 @@ public sealed record GuestNavigationSnapshot
 	public required int PreviousRemaining { get; init; }
 	public required bool OffGrid { get; init; }
 	public required int Reroutes { get; init; }
+	/// <summary>
+	/// The fields of a walk of the original kind (<see cref="GuestNavigation.Original"/>: the tp.exe search and edge test); null for a
+	/// walk along an explicit route and in saves made before, which restore as route walks (the route above).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public OriginalWalkSnapshot? OriginalWalk { get; init; }
+	/// <summary>
+	/// All five waypoint slots (<see cref="GuestNavigation.Buffer"/>, tp.exe <c>+0x64</c>), the ones past <see cref="Count"/> included: a failed
+	/// set-up of the original walk keeps the old slots, and separation reads the first. Null in saves made before, which rebuild the
+	/// buffered ones from the route.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public (int X, int Y)[]? Waypoints { get; init; }
+	/// <summary>The walk mask (<see cref="GuestNavigation.Mask"/>, guest <c>+0x188</c>); 0, the default, is not written and older saves have none.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int Mask { get; init; }
+
+	/// <summary>
+	/// Walk-structure problems of this snapshot (both kinds), for the save validators; <paramref name="inBounds"/> tells a cell of the map.
+	/// </summary>
+	internal IEnumerable<string> Problems( int guestId, Func<int, int, bool> inBounds )
+	{
+		if ( Route == null )
+			yield return $"guest {guestId} has no route";
+		if ( AlsoOpen == null )
+			yield return $"guest {guestId} has no extra-open-cell list";
+		if ( Route == null || AlsoOpen == null )
+			yield break;
+		if ( OriginalWalk is not { } walk )
+		{
+			if ( Cursor < 0 || Cursor > Route.Length )
+				yield return $"guest {guestId} navigation cursor {Cursor} is outside its {Route.Length}-cell route";
+			else
+			{
+				var buffered = Math.Min( GuestNavigation.BufferedWaypoints, Route.Length - Cursor );
+				if ( Count != buffered )
+					yield return $"guest {guestId} buffers {Count} waypoints, but its route from cursor {Cursor} gives {buffered}";
+				if ( Count == 0 ? Index != 0 : (uint)Index >= (uint)Count )
+					yield return $"guest {guestId} waypoint index {Index} is outside its {Count} buffered waypoints";
+			}
+			if ( PreviousRemaining < -1 )
+				yield return $"guest {guestId} previous remaining distance {PreviousRemaining} is negative";
+		}
+		else
+		{
+			if ( Waypoints == null )
+				yield return $"guest {guestId} original walk does not carry its waypoint slots";
+			if ( walk.PathCount is < 0 or > 0xFC || Count != Math.Min( walk.PathCount, GuestNavigation.BufferedWaypoints ) )
+				yield return $"guest {guestId} buffers {Count} of {walk.PathCount} waypoints";
+			if ( Count == 0 ? Index != 0 : (uint)Index >= (uint)Count )
+				yield return $"guest {guestId} waypoint index {Index} is outside its {Count} buffered waypoints";
+			if ( walk.Stamp < 0 || walk.Total < 0 || walk.Ahead < 0 || walk.Beyond < 0 )
+				yield return $"guest {guestId} original walk lengths or stamp are negative";
+			if ( OffGrid )
+				yield return $"guest {guestId} walks off the grid with an original walk";
+		}
+		if ( Mask is < 0 or > 2 )
+			yield return $"guest {guestId} walk mask {Mask} is not 0, 1 or 2";
+		if ( Waypoints != null )
+		{
+			if ( Waypoints.Length != GuestNavigation.BufferedWaypoints )
+				yield return $"guest {guestId} carries {Waypoints.Length} waypoint slots, not {GuestNavigation.BufferedWaypoints}";
+			foreach ( var (x, y) in Waypoints )
+				if ( !inBounds( x, y ) )
+					yield return $"guest {guestId} waypoint ({x}, {y}) is outside the map";
+		}
+		if ( History is < 0 or > 0x7fff )
+			yield return $"guest {guestId} progress history {History} is outside its 15-bit window";
+		if ( Reroutes < 0 || WalkCrossings < 0 )
+			yield return $"guest {guestId} navigation counters ({Reroutes} reroutes, {WalkCrossings} crossings) are negative";
+		foreach ( var (x, y) in Route )
+			if ( !inBounds( x, y ) )
+				yield return $"guest {guestId} route cell ({x}, {y}) is outside the map";
+		foreach ( var (x, y) in AlsoOpen )
+			if ( !inBounds( x, y ) )
+				yield return $"guest {guestId} extra open cell ({x}, {y}) is outside the map";
+	}
+}
+
+/// <summary>The fields only a walk of the original kind has (tp.exe walk <c>+0x48</c> .. <c>+0xB8</c>, <see cref="GuestNavigation"/>).</summary>
+public sealed record OriginalWalkSnapshot
+{
+	public required bool Stuck { get; init; }
+	public required int Stamp { get; init; }
+	public required int PathCount { get; init; }
+	public required int Total { get; init; }
+	public required int Ahead { get; init; }
+	public required int Beyond { get; init; }
+	public required int Progress { get; init; }
 }
 
 /// <summary>

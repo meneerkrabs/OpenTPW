@@ -62,7 +62,7 @@ public sealed class ParkCellMap
 
 	/// <summary>
 	/// The stamp counter (tp.exe <c>0x7CDB98</c>): raised by every write that changes a cell type, which stamps the cell's block with it.
-	/// A walk keeps the counter of its set-up. The original also raises it at every walk set-up and
+	/// A walk keeps the counter of its set-up (<see cref="GuestNavigation.Stamp"/>). The original also raises it at every walk set-up and
 	/// route test (<c>0x4D8C50</c>), which changes no comparison of a block stamp with a walk's, so OpenTPW counts the edits only.
 	/// </summary>
 	public int StampCounter { get; private set; }

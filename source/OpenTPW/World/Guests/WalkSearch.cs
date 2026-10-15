@@ -23,6 +23,7 @@ public static class WalkEdges
 	/// <c>0x4D8750</c>: true when a walker with <paramref name="mask"/> may not step from (<paramref name="x"/>,
 	/// <paramref name="y"/>) to its neighbour in <paramref name="direction"/>. Coordinates are bytes, as in the original.
 	/// </summary>
+	// [APPROX:WALK-005] the edge test 0x4d8750 reads only the cell map: OpenTPW's cells hold no object or thing references, so an object standing on a target cell (0x5363f0, its type record's 0x53ad20 bits) never blocks, a type-9 target's ride thing (on its owner cell +0x10, type 3: 0x42a440, 0x4dd4e0 +0x118) never decides a mask-2 step, and the underground link byte +0x22 (0x522770 with 0x81b4cc) is not kept; the types are the ones OpenTPW's tools write (path, queue and track cells; map init 0x536490's types 2, 5, 7 and 0x1e are not written, WALK-008) — still open: object and thing references in the cell map
 	public static bool Blocked( ParkCellMap map, int x, int y, int direction, int mask )
 	{
 		x &= 0xFF;

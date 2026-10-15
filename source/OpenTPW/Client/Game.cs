@@ -240,8 +240,10 @@ internal static class Game
 			return;
 		}
 
-		var onlineFolders = OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) );
-		if ( OnlineCommands.Run( args, Settings.Default.GamePath, onlineFolders, Console.WriteLine ) )
+		// [EXT:extension-online-gate] with opentpw.online disabled the online command-line tools refuse and no online folder is set up
+		FeatureGates.RefuseOnlineCommandLine( args );
+		var onlineFolders = FeatureGates.Online ? OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) ) : null;
+		if ( onlineFolders != null && OnlineCommands.Run( args, Settings.Default.GamePath, onlineFolders, Console.WriteLine ) )
 			return;
 
 		//

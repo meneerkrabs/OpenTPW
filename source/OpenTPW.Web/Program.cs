@@ -146,7 +146,7 @@ public static partial class Program
 			Log.Warning( diagnostic );
 		renderer = new Renderer( displaySettings, displayPath );
 		Render = renderer;
-		flow = new GameFlow { OnlineFolders = new OnlineFolders( "/online" ) };
+		flow = new GameFlow { OnlineFolders = FeatureGates.Online ? new OnlineFolders( "/online" ) : null };
 		// Level folders are copied when a park is first started; the lobby keeps running meanwhile.
 		// A language other than the installed one needs its speech files (about 27 MB) beside the text; they are copied when the
 		// language is chosen, at once for a saved choice, and a park or a switch waits for them so the advisor never mixes voices.

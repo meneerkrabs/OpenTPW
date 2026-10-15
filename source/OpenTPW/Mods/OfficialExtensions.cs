@@ -24,8 +24,14 @@ public sealed record OpenTpwExtension( string Id, string Name, ModVersion Versio
 // [EXT:mods] OpenTPW's own extension registry; the original game had none
 public static class OfficialExtensions
 {
+	/// <summary>
+	/// The online extension (docs/ONLINE.md): Go Online, publishing, postcards, visiting and importing parks, the online
+	/// folder and its command-line tools. On by default; it makes no network request until the player acts.
+	/// </summary>
+	public static IOpenTpwExtension Online { get; } = new OpenTpwExtension( "opentpw.online", "OpenTPW online", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = Array.Empty<IOpenTpwExtension>();
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

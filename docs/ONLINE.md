@@ -5,6 +5,10 @@ It does not connect to the original Theme Park World service and is not a recons
 of its network protocol. No service address is configured and no network request occurs
 until the player selects a server and an action in the online screens.
 
+Online is the official extension `opentpw.online` ([MODS.md](MODS.md)). It is on by default; switching it off in
+`mods.json` or with `--disable-extension opentpw.online` hides every online entry and refuses the online
+command-line options until the next start.
+
 The online screens support the server's Game News and System News, account registration/login, park export/publish/search/download,
 voting, read-only visits, local postcard composition, sending the outbox, fetching the
 inbox, and chat — including the globe's five **chat parks**, standing rooms with live

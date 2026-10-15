@@ -402,7 +402,12 @@ glyph in all 14 UI fonts of each language.
   nearby `data:0x4e45c` staff and visitor locate buttons use their authored positions; each is
   enabled while a live actor of its role (or any visible visitor) can be focused, and the click
   focuses the host park camera on that actor's world position (UI-091). The keyboard locators
-  Ctrl+S and Ctrl+V cycle the same targets (UI-904).
+  Ctrl+S and Ctrl+V open the original's locator panels in the HUD arm (`ParkHud.LocatorPanel.cs`, tables `0x756950` and
+  `0x756ad8`; `0x4b3f60`, `0x4b4280`): the staff panel's five role radios and the visitor panel's radio locate the role's
+  first actor, the chosen radio again steps to the next one, and the strip above shows the actor's name with the staff
+  state icon or the visitor's thought while the camera follows the actor until the player moves it (`0x4b3790`,
+  `0x4b3490`, `0x4b3640`); the info arm, a message, the camera panel and the arm's red X put the panel away. Ctrl+V with
+  the visitors window's selected visitor locates that visitor at once (UI-091).
 - The All Attractions and All Visitors windows' lists (attribute 0x291) follow the original's list control: the pointer
   highlights the hovered row (the original selects it), a left click selects it and opens the row's info panel (the info arm for an attraction, the window's detail
   rows for a visitor) and keeps the list, a right click centres the camera on the row and closes the window
@@ -458,7 +463,7 @@ glyph in all 14 UI fonts of each language.
   (numpad +/−/*) step and reset the four-speed clock model (`[EXT:time-key-speeds]`; the original scales the clock by ×0.8/×1.25 within 0.25–2.0 and * resets to 1.0),
   comma adds 90° to the pending blueprint's angle (one `Level.RotateBuild` step) and full stop adds 270° (three steps; tp.exe `0x40c120`/`0x40c150`),
   holding exactly Ctrl at the placing click keeps the build tool armed (Escape or a right click leaves it) and leaving the tool resets the angle to 0 (`0x5253b8`, `0x52f3b6`; UI-031),
-  and Ctrl+S / Ctrl+V run the staff and visitor locators (UI-904). The keys wait
+  and Ctrl+S / Ctrl+V open the staff and visitor locator panels (UI-091). The keys wait
   while a menu, dialog, text field or the ride view owns the input; window keys
   keep acting over their own window. Camcorder terrain-walk ingress and postcard ingress use their dedicated full-frame
   actions below. Ctrl+H flips the global Popup help option (options byte +0x36, tp.exe `0x40c5d0` → `0x4817f0` stores `0x78d90e`) for every screen
@@ -566,7 +571,7 @@ the real assets. Approximation tags refer to the register below.
 | date display (478), balance (465), cash change, golden tickets/keys | live economy readouts | wired | `FrontEndSmokeTest` |
 | park clicks | select the object of the clicked grid cell; selection opens the object window | wired | `FrontEndSmokeTest` |
 | comma / full stop while a blueprint is pending | add 90° / 270° to the build angle (one / three `RotateBuild` steps) | wired | `UiRegisterRound2Tests` |
-| Ctrl+S / Ctrl+V | cycle staff roles / visitors and focus the camera (UI-904, UI-091) | wired | `MapStaffControlTests` |
+| Ctrl+S / Ctrl+V | open the staff / visitor locator panels; their radios locate and cycle the role's actors and the camera follows (UI-091) | wired | `LocatorPanelTests` |
 | key V | opens/closes the All Visitors window (plain V pans nothing; Ctrl+V stays the locator) | wired | `OverviewWindowTests` |
 
 ### Object window (selected object)
@@ -689,9 +694,8 @@ language rows and their supplementary strings) `// [EXT:…]`. Paths are relativ
 | UI-082 | `Hud/ParkHud.Staff.cs` | the portrait box shows the selected role and grade as text; the original spawns a live animated figure of the candidate's role there (0x49ba00 -> 0x475a10 with descriptor 0x74f758, animation 8 at speed 8.0; the sprite-bank character) and OpenTPW does not draw it | drawing the role's sprite-bank figure in the window (no further evidence needed) |
 | UI-085 | `Hud/ParkHud.Map.cs` | the 512 pixel theme map places five-pixel terrain cells centrally; live overlays use that mapping | original map overlay alignment capture |
 | UI-086 | `Hud/ParkHud.Map.cs` | paths, queues and placed objects use plain coloured cells over the shipped theme map image; the layer toggles are the original's independent bits (the layer word starts as 1 in the original) but their colours and the control-to-category assignment are not traced, so all four category layers start on | the original map layer colours and which category button owns which layer bit |
-| UI-091 | `Hud/ParkHud.Staff.cs` | staff and visitor locators cycle actual actor positions and focus the host park camera; the locator panels 0x4b3f60/0x4b4280 (Ctrl+S 0x40c590 → 0x481790, Ctrl+V 0x40c5a0 → 0x4817c0) are not ported, the list rows' 0x402 path (centre the camera on the cell, 0x4867b0, and close) is | porting the locator panels (per-employee cycling buttons 1293/1295, UI-904) |
+| UI-091 | `Hud/ParkHud.LocatorPanel.cs` | the locator panels take staff newest first (by id, descending) and visitors by id, where the original walks the role's thing list (+0x210) and the thing list (0x4824d0); the camera snaps to the followed actor every frame where the original eases it (0x486860); a staff member's patrol rectangle is not marked (0x536100 in 0x4b3640); the panels appear without sliding and without the sounds 0xc6 / 0x11f; a picked-up member's state frame 9 (0x485ec0) draws the first frame; the staff window's own locate buttons focus actual actor positions, the list rows' 0x402 path (0x4867b0) is the original's | the order of the role lists, the easing of 0x486860 and the patrol markers |
 | UI-901 | `Hud/ParkHud.cs`, `Hud/ParkHud.Gauge.cs` | the happiness gauge shows the visitors' mean happiness as a rising red-yellow-green bar in the gauge model's empty dish | capture of the original gauge and its value drawing |
-| UI-904 | `Hud/ParkHud.ScreenShortcuts.cs` | the staff-locator key (Ctrl+S) cycles staff roles in the staff window's role order; the original opens the locator panel (0x481790 → 0x4b3f60, role radios 0x95e..0x964) and cycles through staff with the per-employee panel's buttons 1293/1295 (help 92/91) | porting the locator panel and the per-employee panel (no further evidence needed) |
 | UI-905 | `Hud/ParkHud.AttractionsWindow.cs` | the All Attractions list's row pitch is the row item's height (0x4944d0: font slot 7's height scaled to the canvas + 6), taken as the list's pitch; rows re-sort when their values refresh, where the original sorts on a header press; the list selects its first row when nothing is chosen, where the original opens with no selection; the users and customers columns show the economy's previous calendar month, where the original sums the object's last 30 history entries (+0x1ac ring, 0x493cd0); the bars take the object window's values (UI-028) and satisfaction, which OpenTPW does not simulate, draws an empty bar | the list class's row pitch (+0x170) and sort trigger for this list; the cadence of the objects' history entries |
 | UI-907 | `Hud/ParkHud.VisitorWindow.cs` | the All Visitors window: staff/buy window geometry and number/status/happiness list columns; the decoded original table is not ported (visitors 0x7506c8, six columns), the list behaviour (attribute 0x291) is | porting the decoded window table |
 | UI-910 | `Hud/ParkHud.AttractionsWindow.cs`, `Hud/ParkHud.VisitorWindow.cs` | a left click on an attractions or visitors row selects it and opens its info panel (the info arm; the visitors window's detail rows) and keeps the list, a right click selects it, centres the camera and closes (list messages 0x400 and 0x402, 0x6655a2 / 0x66563d); button index 0 of the original's click codes is taken as the left button (medium confidence) | which physical button is button 0 (the DirectInput order behind the codes 0xf0..0xf2 of 0x486ca1) |

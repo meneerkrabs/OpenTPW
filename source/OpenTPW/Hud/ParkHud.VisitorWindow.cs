@@ -117,7 +117,7 @@ public sealed partial class ParkHud
 	public bool CanLocateVisitors => Camera.Mode is ParkCameraMode && level.OriginalPark != null;
 
 	/// <summary>Focuses a specific visitor's simulated position on the terrain (the locator flow of the staff window's visitor button).</summary>
-	// [APPROX:UI-091] the locator focuses a live simulated position; the locator panels 0x4b3f60/0x4b4280 are not ported (Ctrl+S 0x40c590 → 0x481790, Ctrl+V 0x40c5a0 → 0x4817c0; per-employee cycling buttons 1293/1295, UI-904) — evidence needed: porting those panels
+	// the row's right click (0x402, 0x4867b0) focuses the visitor's simulated position; the locator panels are ParkHud.LocatorPanel.cs
 	public bool LocateVisitor( Guest? guest )
 	{
 		if ( guest == null || Camera.Mode is not ParkCameraMode camera || level.OriginalPark is not { } park ||

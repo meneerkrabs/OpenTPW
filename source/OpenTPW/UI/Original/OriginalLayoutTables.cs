@@ -524,6 +524,41 @@ public static class OriginalLayoutTables
 			} ),
 		} ),
 	} );
+
+	/// <summary>[BIN:TPW-EXE:0x756950] layout table LocatorPanels.</summary>
+	public static readonly LayoutTable LocatorPanels = new( "LocatorPanels", 0x756950, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x95Cu, 474, 1159, 941, 1470, -1, -1, null, null, null, new LayoutNode[]
+		{
+			new( 8, 0x1u, 0x95Du, 526, 1191, 893, 1439, -1, -1, "!f_plain", null, null, new LayoutNode[]
+			{
+				new( 2, 0x11u, 0x95Eu, 546, 1207, 649, 1310, 482, 482, "b_shandy", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x95Fu, 659, 1207, 761, 1310, 483, 483, "b_smech", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x960u, 715, 1320, 817, 1422, 486, 486, "b_sresrcher", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x961u, 602, 1320, 705, 1422, 484, 484, "b_senter", null, null, System.Array.Empty<LayoutNode>() ),
+				new( 2, 0x11u, 0x962u, 771, 1207, 873, 1310, 485, 485, "b_sguard", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+		} ),
+		new( 1, 0x1u, 0x963u, -37, 1159, 429, 1470, -1, -1, null, null, null, new LayoutNode[]
+		{
+			new( 8, 0x1u, 0x95Du, 12, 1191, 379, 1439, -1, -1, "!f_plain", null, null, new LayoutNode[]
+			{
+				new( 2, 0x11u, 0x964u, 144, 1263, 247, 1366, 489, 489, "b_skids", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+		} ),
+	} );
+
+	/// <summary>[BIN:TPW-EXE:0x756ad8] layout table LocatorStrip.</summary>
+	public static readonly LayoutTable LocatorStrip = new( "LocatorStrip", 0x756AD8, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x146u, 448, 964, 1074, 1066, 552, -1, "!frame", null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0x147u, 483, 992, 986, 1037, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 6, 0x1u, 0x148u, 998, 992, 1043, 1037, -1, -1, "staffstat", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x149u, 483, 992, 986, 1037, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 6, 0x1u, 0x14Au, 988, 983, 1052, 1047, -1, -1, "ti_hungry", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
 }
 
 /// <summary>The original game pointers: their ids and .tga files, and the tool-to-pointer switch.</summary>

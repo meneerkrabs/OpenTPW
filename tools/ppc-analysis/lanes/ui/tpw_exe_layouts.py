@@ -54,6 +54,8 @@ TABLES = [
     ('RideShopList', 0x750AB8, 0x190, (266, 318, 1825, 876), 0x750BA0, 10),
     ('SideshowList', 0x750BA0, 0x190, (261, 318, 1825, 876), 0x750C9A, 11),
     ('FeatureList', 0x750CA0, 0x190, (266, 318, 1825, 876), 0x750D52, 7),
+    ('LocatorPanels', 0x756950, 0x95C, (474, 1159, 941, 1470), 0x756AD6, 10),
+    ('LocatorStrip', 0x756AD8, 0x146, (448, 964, 1074, 1066), 0x756B96, 5),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
 CONFIRM_TWIN = 0x7585A8
@@ -79,6 +81,8 @@ REQUIRED = {
     'RideShopList': ['b_up', 'b_down', 'b_scroller'],
     'SideshowList': ['b_up', 'b_down', 'b_scroller'],
     'FeatureList': ['b_up', 'b_down', 'b_scroller'],
+    'LocatorPanels': ['!f_plain', 'b_shandy', 'b_smech', 'b_sresrcher', 'b_senter', 'b_sguard', 'b_skids'],
+    'LocatorStrip': ['!frame', 'staffstat', 'ti_hungry'],
 }
 
 LOADER = 0x4899C0

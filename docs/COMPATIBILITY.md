@@ -233,7 +233,7 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | --- | --- | --- | --- |
 | COMPAT-001 | Sign text | Ride signs use two 128x128 destinations and a 512-wide text raster reduced to a 256-wide mask; the lower half of the native 512x512 DIB is not reproduced. Orientation (upright, unmirrored) and half order (sign1 left, sign2 right) match a PC v2.0 video | a capture showing the lower DIB rows |
 | COMPAT-002 | Sign text | lfWidth applied as a horizontal scale with the Win32 rule (average character width = lfWidth) and fractional advances; the width search itself is traced (`0x100A9F9C`: no margin, height unchanged, bisection over lfWidth) | captures of long names (Mac GDI width rounding) |
-| COMPAT-003 | Sign text | Ride signs apply paint RGBA, material strips and coefficients with native integer layer blending, and offset each paint mask by the record's offsets (Wilde Aap's drop shadow, the shadow under the gate text); mask growth and blur (mask word +4, parameter +8, `0xa9178`, Azteekse Tekens' outline), GDI coverage, source-height resampling and float rounding remain approximate. The video confirms strips, shadows and outlines, not their shape | `0xa9178` mask shaping; a capture where the sign fonts load |
+| COMPAT-003 | Sign text | Ride signs apply paint RGBA, material strips and coefficients with native integer layer blending, and shape each paint mask as `0x5EBF10` does: offset copy, erosion or dilation by the mask word (+4), separable Gaussian by the parameter (+8) (Wilde Aap's drop shadow, the gate's shadow, Azteekse Tekens' outline). GDI glyph coverage, the nearest-row upsampling of relief strips taller than their source and the x87 precision of the blur's sums remain approximate | the strip resampler's upsampling branch; the x87 precision-control state while signs are composed; a capture where the sign fonts load |
 | COMPAT-004 | Sign text | The gate is composed from its decoded board with the park name as two lines and the stored paint (a 60 % black shadow under dark relief stone text, as in the video); board placement and relief strength are compared with a 720p capture only | native-resolution gate capture |
 | COMPAT-006 | Sign text | No pair kerning: tp.exe has no TextOut/DrawText/ExtTextOut imports, sign text goes through Uniscribe (`0x5EAB70`: ScriptStringAnalyse flag 0x80, ScriptStringGetLogicalWidths, the percent scaling, a second ScriptStringAnalyse with the game's advance array `0xF85F00`, ScriptStringOut) and no kerning API is called | whether usp10's natural widths include kerning |
 | COMPAT-007 | Sign text | The theme name is the default park name; the original stores the name as two editable lines (the rename dialog's two fields) that the gate draws and saves; OpenTPW has no rename or saved name | save field of the two lines |
@@ -281,9 +281,9 @@ COMPAT-008 and COMPAT-013 are OpenTPW design decisions: `[EXT:gate-sign-depth-li
 ## Not done
 
 - Ride signs now compose optional decoded boards, native-order paint and relief layers,
-  and two 128x128 destinations. GDI text coverage, nonzero mask morphology, Gaussian
-  filtering and original-platform pixel parity remain open (COMPAT-001, COMPAT-003,
-  COMPAT-016, COMPAT-018).
+  and two 128x128 destinations, with paint masks shaped as tp.exe does (offset, morphology,
+  Gaussian). GDI text coverage, the x87 precision of the blur and original-platform pixel
+  parity remain open (COMPAT-001, COMPAT-003, COMPAT-018).
 - Most detail options have no renderer feature to drive (table above).
 - The overlay does not merge directory listings; `GameLanguage` keeps its own language overlay.
 - Only TPW (not TPI/Sim Theme Park) data was examined.

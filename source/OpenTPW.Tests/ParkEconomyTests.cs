@@ -392,6 +392,8 @@ public class ParkEconomyTests
 		Assert.IsTrue( park.Tick > tick, "the turn counter and the calendar go on in world state 4" );
 		Assert.AreEqual( months + 2, events.Count( item => item.Kind == ParkEventKind.MonthEnded ), "the bank's month goes on" );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.Bankrupt ), "the handler acts once: the world is already in state 4 (0x4d02d0)" );
+		Assert.IsTrue( park.MonthsInRed > 5 );
+		Assert.AreEqual( 3, events.Count( item => item.Kind == ParkEventKind.BankruptcyMessage ), "the bank posts message 2 at every month end while the condition holds (0x4d0370)" );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Bankrupt, park.TryBuild( 1100, out _ ) );
 
 		var recovered = EconomyTestData.Park( initialCash: 100 );

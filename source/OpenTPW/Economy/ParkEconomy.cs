@@ -987,7 +987,10 @@ public sealed class ParkEconomy : IParkEconomy
 		// the turn-entered-red stamp; above 5 it posts message type 2 (0x0040F630, bus DAT_00788D3C), at every month end while it stays so
 		MonthsInRed = MonthsSinceEnteringRed();
 		if ( MonthsInRed >= MonthsInRedForBankruptcy )
-			BankruptcyMessage();
+		{
+			Raise( ParkEventKind.BankruptcyMessage, MonthsInRed );
+			HandleBankruptcyMessage();
+		}
 		// [BIN:TPW-EXE:0x004C7720 month sample] the analyser's month handler stores the net worth read with age 0 (0x004C79A7)
 		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
@@ -1006,8 +1009,8 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:TPW-EXE:0x004D02D0 bank message] a type-19 message (CMsgEvent) with value 2 calls 0x005168F0 only while the world state (+0x1DA738) is not 4 and 0x00516C00 (a winning sequence's thing id at 0x7CF4F4) answers false
 	// [BIN:TPW-EXE:0x005168F0 park lost] world state = 4; every live thing of type 3 with flag +0x32 bit 4 gets VAR_BREAKSTAT = 1 (0x004E0DB0, "Object %d requested breakdown"); the door routine 0x00519EF0(0, 1) writes only the gate script's variable 0 = 2
 	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
-	// [APPROX:ECON-030] the lost park follows the bank's handler and the world update, but the HUD and the advisor do not tell the player: the TAG_SYSTEM 123–127 texts ("If you stay in the red for six months you will be made bankrupt", "the banks have closed your park") have no traced producer, OpenTPW still refuses purchases, hiring and opening the park in state 4 where the original's interface answer is not traced, and the camera move and the sound state of 0x005168F0 (0x00481B50, 0x005408F0) are not modelled — evidence needed: the producer of the TAG_SYSTEM 123–127 messages and the interface's tests of world state 4
-	private void BankruptcyMessage()
+	// [APPROX:ECON-030] the lost park follows the bank's handler and the world update, and the advisor plays its advice 106 for every bank message (game event 2, AutomaticAdvisor), but the HUD shows none of the TAG_SYSTEM 123–127 texts ("If you stay in the red for six months you will be made bankrupt", "the banks have closed your park"), whose producer is not traced; OpenTPW still refuses purchases, hiring and opening the park in state 4 where the original's interface answer is not traced, and the camera move and the sound state of 0x005168F0 (0x00481B50, 0x005408F0) are not modelled — evidence needed: the producer of the TAG_SYSTEM 123–127 messages and the interface's tests of world state 4
+	private void HandleBankruptcyMessage()
 	{
 		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )
 			return;

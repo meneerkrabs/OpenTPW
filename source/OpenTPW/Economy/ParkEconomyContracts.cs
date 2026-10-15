@@ -63,7 +63,13 @@ public enum ParkEventKind
 	/// The object's script variable <see cref="ParkEvent.InfoId"/> (a <see cref="RideVariables"/> index: VAR_BREAKSTAT, VAR_WORN) takes the value
 	/// <see cref="ParkEvent.Amount"/>; the host writes it into the script of <see cref="ParkEvent.InstanceId"/>. Raised only for a script-hosted object.
 	/// </summary>
-	RideScriptVariable
+	RideScriptVariable,
+	/// <summary>
+	/// The bank's month-end message type 2 (tp.exe <c>0x004D0370</c>): raised at every month end while the balance and the balance after the last debit
+	/// are below 0 and more than five 30-day months have passed since the park went into the red; <see cref="ParkEvent.Amount"/> the months. The advisor
+	/// answers each one (its game event 2); the bank's own handler loses the park once (<see cref="Bankrupt"/>).
+	/// </summary>
+	BankruptcyMessage
 }
 
 /// <summary>

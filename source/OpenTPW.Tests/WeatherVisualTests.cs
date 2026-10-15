@@ -149,13 +149,18 @@ public class WeatherVisualTests
 	}
 
 	[TestMethod]
-	public void FrameTimeIsWallClockCappedAtHalfASecondAndZeroWhilePaused()
+	public void FrameTimeFollowsTheSimulationScaleCappedAtHalfASecondAndZeroWhilePaused()
 	{
-		Assert.AreEqual( 0.016f, WeatherVisualState.FrameSeconds( 0.016f, paused: false ) );
-		Assert.AreEqual( 0.5f, WeatherVisualState.FrameSeconds( 3f, paused: false ), "a stall moves the field by 500 ms at most" );
-		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( 0.016f, paused: true ), "a paused park freezes the field" );
-		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( -1f, paused: false ) );
-		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( float.NaN, paused: false ) );
+		// [BIN:TPW-EXE:0x57ff60] dt = min(scaled ms, 500) on the rate-scaled clock 0x402d70
+		Assert.AreEqual( 0.016f, WeatherVisualState.FrameSeconds( 0.016f, 1f ) );
+		Assert.AreEqual( 0.032f, WeatherVisualState.FrameSeconds( 0.016f, 2f ), 1e-7f, "a faster game advances the field faster" );
+		Assert.AreEqual( 0.004f, WeatherVisualState.FrameSeconds( 0.016f, 0.25f ), 1e-7f );
+		Assert.AreEqual( 0.5f, WeatherVisualState.FrameSeconds( 3f, 1f ), "a stall moves the field by 500 ms at most" );
+		Assert.AreEqual( 0.5f, WeatherVisualState.FrameSeconds( 0.3f, 2f ), "the cap applies to the scaled step" );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( 0.016f, 0f ), "a paused park freezes the field" );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( -1f, 1f ) );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( float.NaN, 1f ) );
+		Assert.AreEqual( 0f, WeatherVisualState.FrameSeconds( 0.016f, float.NaN ) );
 		var state = Field( 200 );
 		var before = Enumerable.Range( 0, 200 ).Select( state.DropOffset ).ToList();
 		state.Update( 0f, new Source { DropCount = 200 }, Eye );

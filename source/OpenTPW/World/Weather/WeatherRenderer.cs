@@ -34,7 +34,7 @@ public sealed class WeatherRenderer : Entity
 
 	private readonly IWeatherVisualSource source;
 	private readonly Func<SVector3, SVector3> originalToEngine;
-	private readonly Func<bool> paused;
+	private readonly Func<float> timeScale;
 	private readonly float scale;
 	private readonly WeatherVisualState visual = new();
 
@@ -52,13 +52,13 @@ public sealed class WeatherRenderer : Entity
 
 	/// <param name="source">The drop count, weather kind and bolt tops, in original units.</param>
 	/// <param name="originalToEngine">Maps an original position (Y up) to engine space; the park maps through its heightfield's origin.</param>
-	/// <param name="paused">Whether the visuals freeze (the engine's dt-zeroing flag); the park passes its paused state.</param>
+	/// <param name="timeScale">The simulation's time scale the visuals advance by (0 freezes them); the park passes its own, the lobby 1.</param>
 	/// <param name="engineUnitsPerOriginal">Engine units per original unit: the park's models are drawn at <see cref="OriginalParkPlacement.ModelScale"/>, the lobby at 1.</param>
-	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<bool> paused, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale )
+	public WeatherRenderer( IWeatherVisualSource source, Func<SVector3, SVector3> originalToEngine, Func<float> timeScale, float engineUnitsPerOriginal = OriginalParkPlacement.ModelScale )
 	{
 		this.source = source;
 		this.originalToEngine = originalToEngine;
-		this.paused = paused;
+		this.timeScale = timeScale;
 		scale = engineUnitsPerOriginal;
 		Name = "Weather";
 		// Prepared with the entity — a resumed park creates it inside its load scope, a fresh park on its
@@ -88,7 +88,7 @@ public sealed class WeatherRenderer : Entity
 
 	protected override void OnUpdate()
 	{
-		var step = WeatherVisualState.FrameSeconds( Time.Delta, paused() );
+		var step = WeatherVisualState.FrameSeconds( Time.Delta, timeScale() );
 		visual.Update( step, source, CurrentCamera() );
 	}
 
@@ -250,7 +250,7 @@ internal static class WeatherRendererModule
 			if ( global::Global.Render == null || Level.Current?.Park == null )
 				return;
 			var level = Level.Current;
-			_ = new WeatherRenderer( new ParkWeatherVisualSource( weather ), position => ToEngine( level, position ), () => !(level.SimulationTimeScale > 0f) );
+			_ = new WeatherRenderer( new ParkWeatherVisualSource( weather ), position => ToEngine( level, position ), () => level.SimulationTimeScale );
 		};
 	}
 

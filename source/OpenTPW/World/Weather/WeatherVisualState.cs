@@ -160,12 +160,16 @@ public sealed class WeatherVisualState
 	public NVector3 Offset => offset;
 
 	/// <summary>
-	/// The step the field takes for a frame: wall-clock seconds capped at <see cref="MaximumStepSeconds"/>, zero while
-	/// paused or for a non-finite or negative delta.
+	/// The step the field takes for a frame: wall-clock seconds scaled by the simulation's time scale and capped at
+	/// <see cref="MaximumStepSeconds"/>, zero while paused (scale 0) or for a non-finite or negative delta.
 	/// </summary>
-	// [APPROX:AUDIO-903] OpenTPW zeroes dt while the park is paused (simulation speed 0) and otherwise uses the wall-clock frame time, whatever the simulation speed; tp.exe's CRain update (0x57ff60) also zeroes dt while engine flag 0x8bd508 bit 2 is set (0x57ffb1, 0x57ffc9), and nothing writes that bit alone (only whole-word stores at 0x564342, 0x577326, 0x577446 and 0x583555), so what sets it is not identified
-	public static float FrameSeconds( float deltaSeconds, bool paused ) =>
-		paused || !float.IsFinite( deltaSeconds ) || deltaSeconds <= 0 ? 0f : MathF.Min( deltaSeconds, MaximumStepSeconds );
+	// [BIN:TPW-EXE:0x57ff60 CRain dt] dt is min(now - last, 500) ms x 0.001 on the clock 0x402d70: the timer 0x785970's rate-scaled accumulator (0x4033a0, rate +0x20, 0.25..2 by the speed keys) minus its paused time, which stands still while paused (0x4030d0); OpenTPW's simulation time scale plays that rate
+	// [APPROX:AUDIO-903] tp.exe also zeroes dt while engine flag 0x8bd508 bit 2 is set (0x57ffb1, 0x57ffc9), and nothing writes that bit alone (only whole-word stores at 0x564342, 0x577326, 0x577446 and 0x583555), so what sets it is not identified and OpenTPW never zeroes dt for it
+	/// <summary>The unscaled step for the other presentation clocks (the particles): wall-clock seconds capped at <see cref="MaximumStepSeconds"/>, zero while paused.</summary>
+	public static float FrameSeconds( float deltaSeconds, bool paused ) => FrameSeconds( deltaSeconds, paused ? 0f : 1f );
+
+	public static float FrameSeconds( float deltaSeconds, float timeScale ) =>
+		!(timeScale > 0) || !float.IsFinite( timeScale ) || !float.IsFinite( deltaSeconds ) || deltaSeconds <= 0 ? 0f : MathF.Min( deltaSeconds * timeScale, MaximumStepSeconds );
 
 	/// <summary>The drop point's position relative to the eye, in world axes (original units): the scrolled point wrapped into -4..4.</summary>
 	public NVector3 DropOffset( int index )

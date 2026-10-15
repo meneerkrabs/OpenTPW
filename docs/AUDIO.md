@@ -466,8 +466,9 @@ Behaviour worth knowing:
   (2000 ms) with up to 16 at once. There is no screen flash and no sky darkening in the park. The
   displacement, branch heading and pulse curve are OpenTPW's; tp.exe's displacement (`0x57e4b0`) and branch
   heading (`0x57e810`) are read but not ported (AUDIO-902).
-* Time is the wall-clock frame time capped at 500 ms, frozen while the park is paused; the engine
-  zeroes dt under a flag that is not identified (AUDIO-903). The visual random stream is separate from
+* Time is the frame time scaled by the simulation's time scale and capped at 500 ms, as the original's
+  dt on its rate-scaled clock `0x402d70` (`0x57ff60`), so it stands still while the park is paused; the
+  engine also zeroes dt under flag `0x8bd508` bit 2, whose setter is not identified (AUDIO-903). The visual random stream is separate from
   every simulation stream, so world hashes are unchanged.
 * The renderer is created with the weather itself (`ParkWeather.Created`), inside the staged-candidate
   scope when a save is resumed, and deleted with the level's other entities. GPU allocations are made
@@ -583,7 +584,7 @@ implemented yet.
 | AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops, its parallax the original's absolute `-0.1 x camera position` (`0x57efd0`), its states decoded (`0x567620`: rain and bolts `0x200D52`, snow `0x556`, alpha test at 0x10/255); the 0.3 factor under camera modes `0x790ab0 & 0x16` and the 1/16384 quantisation are not reproduced | Which views set the camera-mode bits `0x16` |
 | AUDIO-901 | Snow reuses the rain's drop count but falls slower with a sinusoidal sway | The original's snow motion |
 | AUDIO-902 | The bolt follows the traced CRain shape (roughness 0.6, stop test, branch odds, depth and lengths, ground at y = 0, 2000 ms life, up to 16); the per-split displacement and the branch heading are OpenTPW's where tp.exe displaces the midpoint along one random-axis perpendicular by \|segment\| x roughness x r2 x r1² (`0x57e4b0`) and heads a branch along the segment plus the bolt's direction (`0x57e810`); the pulse curve is OpenTPW's and the ground point keeps the top's x and z | A port of `0x57e4b0`/`0x57e810`; the pulse in the segment emitter `0x57dd10`; the ground point's float draw |
-| AUDIO-903 | The weather's visuals run on the wall-clock frame time capped at 500 ms and freeze while the park is paused; tp.exe also zeroes dt while engine flag `0x8bd508` bit 2 is set (`0x57ffb1`) | What sets that bit (no instruction writes it alone) |
+| AUDIO-903 | The weather's visuals advance by the frame time scaled by the simulation's time scale, capped at 500 ms, as the original's CRain dt on its rate-scaled clock (`0x402d70`, `0x57ff60`); tp.exe also zeroes dt while engine flag `0x8bd508` bit 2 is set (`0x57ffb1`) | What sets that bit (no instruction writes it alone) |
 | AUDIO-904 | The camera's near plane (0.1 engine units = 0.5 original units) clips the nearest drops; the original's near plane is 0.1 original units (`0x54e86f` → `0x578be0`) and its clipper cuts the streaks there; the vertex buffer is sized once (1024 drops, 16 bolts of 512 segments) | A near clip of 0.1 original units for the weather without changing the scene's depth mapping |
 | AUDIO-033 | Minimum distance 2 is confirmed in both builds; the exponent 0.8 (the fork's QMixer lead) and the missing 2.1 maximum floor stand | The gain curve inside QMixer/SoundSprocket (outside the analysable binaries) |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The PC library's sentence classes (vtables `0x70a7e0`/`0x70a8d0`) |

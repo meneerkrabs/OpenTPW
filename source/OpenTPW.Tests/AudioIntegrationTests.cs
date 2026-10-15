@@ -281,9 +281,9 @@ public class AudioIntegrationTests
 		SetField( "<Rides>k__BackingField", globalRidesLoaded ? rides : null );
 		SetField( "<LevelRides>k__BackingField", null );
 		SetField( "<LevelAmbient>k__BackingField", null );
-		if ( globalRidesLoaded )
-			Assert.IsNotNull( GameAudio.FindRseEvent( 3, 43 ), "supported level-ride events can still fall back to the loaded global bank" );
-		Assert.IsNotNull( GameAudio.FindRseEvent( 4, 0x21 ), "supported level-ambient events still fall back to the loaded global bank" );
+		// [BIN:TPW-EXE:0x6b87d0 event lookup] a level event is looked up in the level category only, so without a level bank nothing plays
+		Assert.IsNull( GameAudio.FindRseEvent( 3, 43 ), "a level-ride event never falls back to the global bank" );
+		Assert.IsNull( GameAudio.FindRseEvent( 4, 0x21 ), "a level-ambient event never falls back to the global bank" );
 		var eventId = globalRidesLoaded ? 43u : 0x21u;
 		Assert.IsNull( GameAudio.FindRseEvent( type, eventId ), "a null level bank cannot turn an unsupported type into audio" );
 		Assert.IsNull( GameAudio.PlayRseEvent( type, eventId ) );
@@ -309,7 +309,7 @@ public class AudioIntegrationTests
 				Assert.IsNotNull( loaded );
 				SetField( $"<{property}>k__BackingField", loaded );
 			}
-			Assert.IsNotNull( GameAudio.FindRseEvent( 3, 43 ), "a control sound ID really resolves in these loaded catalogs" );
+			Assert.IsNotNull( GameAudio.FindRseEvent( 5, 43 ), "a control sound ID really resolves in these loaded catalogs (the global cat_rides; the level ones lack 43)" );
 			foreach ( var level in new[] { "jungle", "space", "fantasy", "hallow" } )
 				foreach ( var item in ObjectCatalog.Load( level ).Entries.Where( item => item.ScriptPath != null ) )
 				{
@@ -348,15 +348,15 @@ public class AudioIntegrationTests
 			// Positive control uses the same VM, owning effects hook, banks and mixer: silence above
 			// must not pass because a decoder, audio setting or the EVENT hook is disconnected.
 			using var control = new MemoryStream( RseScriptTests.CreateScript(
-				new uint[] { 0x8000_0000u | (uint)Opcode.EVENT, 3, 0xffff, 43, 0x8000_0000u | (uint)Opcode.ENDSLICE },
+				new uint[] { 0x8000_0000u | (uint)Opcode.EVENT, 5, 0xffff, 43, 0x8000_0000u | (uint)Opcode.ENDSLICE },
 				Array.Empty<string>(), Array.Empty<string>() ) );
 			var controlVm = new RideVM( control, new RideVMOptions { Effects = owner.Script!.Effects, Seed = 1 } );
 			try
 			{
 				controlVm.Advance( FixedStepClock.TickDuration );
 				Assert.AreNotEqual( RideVMState.Faulted, controlVm.State );
-				Assert.IsTrue( mixer.Voices.Count > 0, "supported EVENT type 3 reaches the same live audio hook" );
-				Assert.IsTrue( MixUntilAudible(), "supported EVENT type 3 produces nonzero decoded PCM in the same mixer" );
+				Assert.IsTrue( mixer.Voices.Count > 0, "supported EVENT type 5 reaches the same live audio hook" );
+				Assert.IsTrue( MixUntilAudible(), "supported EVENT type 5 produces nonzero decoded PCM in the same mixer" );
 			}
 			finally { controlVm.Stop(); }
 		}

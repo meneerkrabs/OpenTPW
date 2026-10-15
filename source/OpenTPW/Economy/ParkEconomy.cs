@@ -1138,7 +1138,8 @@ public sealed class ParkEconomy : IParkEconomy
 		objects.Add( item.Id, item );
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
 		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it
-		// [APPROX:ARRIVAL-005] an object imported from an original save or placed as a fixed item also sets the first-purchase turn to the current turn; the original restores park record +28 from the save (0x100D1E8C) — evidence needed: park record +28 in an original save
+		// [BIN:TPW-EXE:0x004DB690 first purchase] the constructor stamps the game turn into the type's record +0x1C only while it is 0; at a new park the gates and traffic lights are built after the turn is set to 0 (0x00515865), so fixed items stamp 0 as here
+		// [APPROX:ARRIVAL-005] an object imported from an original save sets the first-purchase turn to the import turn; the original restores the record from the save's object-control block (0x004D3AA0, called by the world loader at 0x005181E7), which OpenTPW keeps opaque — evidence needed: the block's offset and its +0x1C values in an original save
 		if ( Counters[ParkCounters.FirstPurchaseTurn( info.InfoId )] == 0 )
 			Counters.Max( ParkCounters.FirstPurchaseTurn( info.InfoId ), Turn );
 		return item;

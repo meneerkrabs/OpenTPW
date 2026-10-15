@@ -121,7 +121,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>The original's limit on guests in the park when a group's size is set.</summary>
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] a group is cut so the guests already counted plus the group stay at most 1500 (0x5DC)
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] executed by the PowerPC oracle (docs/reverse/ORACLE.md F9): the 500 cut applies when the GameType word (data:0x53d98) is 1, i.e. online parks only; offline parks use 1500
-	// [APPROX:ARRIVAL-002] the online-park cut (500 instead of 1500 for GameType 1) has no counterpart: OpenTPW's online visits run no simulation — evidence needed: whether a hosted online park runs this routine and which game type it reports
+	// [BIN:TPW-EXE:0x004CF5B0 arrival group cut] with the GameType word 0x00FB3B7C at 1 the counted guests plus the group stay at most 500 (cmp 0x1F4 at 0x004CF68A), else at most 1500 (cmp 0x5DC at 0x004CF6E8); the main loop runs the park turn for GameType 1 through 0x005166B0 (0x0054F760), so a visited park runs this routine
 	public const int ArrivalParkLimit = 1500;
 	/// <summary>The group limit while <see cref="OnlineVisit"/> is set.</summary>
 	public const int OnlineArrivalParkLimit = 500;
@@ -129,7 +129,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// True for an online visit of another player's park. The original cuts the group to 500 minus the guests when its GameType word
 	/// (data:0x53D98) is 1 (online) and to 1500 otherwise.
 	/// </summary>
-	// [APPROX:ARRIVAL-002] an OpenTPW online visit (a non-sandbox park visit) is taken to be the original's GameType 1 — evidence needed: which GameType the original sets for a visit of another park, and whether a hosted online park runs the arrival routine at all
+	// [BIN:TPW-EXE:0x004C0830 online visit] the park-info dialog's completion (stored at 0x007CCA4C by 0x004C0AE0, called at 0x004C07FF by the completion 0x004C07D0 that the dialog passes on at 0x004C0A09) writes exit code 2 and calls SetGameType(1) (0x004C0876), so a visit of a published park is GameType 1
+	// [APPROX:ARRIVAL-002] a visit reads the group's Arrival.* keys from Standard.sam, where the original loads online_Standard.sam for GameType 1 (0x0051573C), and a read-only visit has no economy, so its groups count 0 park points — evidence needed: an online_Standard.sam settings load for visits and the visited park's attraction points
 	public bool OnlineVisit { get; set; }
 
 	private ParkLitter? litter;
@@ -327,7 +328,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100CB2AC arrival update] if no group is active and 0x101210F8's (turn >> 2) − (start >> 2) exceeds Arrival.TimeBetweenArrivals (settings +0x2D4), the group size is set and the group starts; at each stop one guest is created and the count falls; at 0 the timer restarts (0x10121098)
 	// [BIN:TPW-EXE:0x004CF3E0 arrival update] runs once per park turn at the end of the world turn update 0x00516380 (through 0x004D7B20); the call that starts a group only sends the bus (0x0051A2F0 with size 1, 2 or 3 for groups under 36, up to 60, larger); while the bus is at its stop (vehicle state 2) each call creates one guest (0x004CF720) and counts the group down, and the call that finds it empty restarts the timer (0x0041A960) and sends the bus away
-	// [APPROX:ARRIVAL-001] the bus is not modelled: the first guest steps off on the turn after the group starts, where the original waits for the bus to drive to its stop (vehicle state 2, the bus animation's own time), and guests appear at the arrival lanes — evidence needed: the bus animation's length up to its stop
+	// [APPROX:ARRIVAL-001] no arrival vehicle is modelled: the first guest steps off on the turn after the group starts, where the original waits until the vehicle it dispatched (bus, seaplane or Ferry by group size, 0x004CF48C) reports script variable 1 = 2 at its stop (0x004CF46C), and guests appear at the arrival lanes — evidence needed: the vehicle level scripts' time from dispatch to state 2
 	private void UpdateArrivals( float deltaSeconds )
 	{
 		if ( !ArrivalsEnabled )

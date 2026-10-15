@@ -539,11 +539,14 @@ any one of them brings mismatches back (`test_arrival_reading_is_sharp`).
     `GuestSimulation.WeatherDropsFalling`, set by `Level` as `ParkWeather.CurrentDrops > 0`; with no weather (the headless M3
     and M4 gates, or before the first weather tick) it is 1.2. The snow target was an approximation (AUDIO-028: target 0)
     that this tracing resolved, so `ParkWeather` now ramps snow drops too (the rain voice level stays rain only).
-- **500 cut in online parks (ARRIVAL-002, open).** When word 0 of the GameType object (`data:0x53d98`, PPC-review "New
+- **500 cut in online parks (ARRIVAL-002; the GameType part settled on the PC).** When word 0 of the GameType object (`data:0x53d98`, PPC-review "New
   binding": 0 Full Simulation, 1 online, 2 Instant Action) is 1, the group is first cut to `500 − guests`. Otherwise the
   1500 cut applies. Offline parks use 1500. C# now cuts to 500 − guests for an OpenTPW online visit (`GuestSimulation.OnlineVisit`, set by
-  `Level` for a non-sandbox park visit). That a visit is the original's GameType 1 is an assumption (ARRIVAL-002); so is
-  whether a hosted online park runs this routine.
+  `Level` for a non-sandbox park visit). tp.exe settles both former assumptions: the park-info dialog's completion
+  `0x4c0830` calls SetGameType(1) when a published park is entered, and the main loop runs the park turn for GameType 1
+  through `0x5166b0` (call at `0x54f760`), so the visited park runs the arrival step with the 500 cut. ARRIVAL-002 keeps
+  the visit's inputs: the original loads `online_Standard.sam` for GameType 1 (`0x51573c`), OpenTPW reads `Standard.sam`,
+  and a read-only visit counts no park points.
 - **No floor.** Both cuts compare `guests + group` with `cmplwi` (unsigned) and store `limit − guests` as is. With more
   guests counted than the limit, the group is negative: 1700 guests give −200, where C# gives 0. Statically, the caller
   `0xcb2ac` creates guests only while the count is above 0 (`0xcb3bc`). Executing it with a negative group is F11

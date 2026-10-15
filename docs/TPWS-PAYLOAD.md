@@ -319,8 +319,11 @@ per coaster:
 contract states and refuses everything else: truncation inside the header, auxiliary block, section
 record or links (named per part); a coaster or auxiliary-link count above its bound; a non-finite
 power factor or section float; a section cell outside the map; and any block that lists more than one
-coaster, because the extent of each coaster's undecoded train payload is unknown, so the next header
-cannot be located (SAVE-920). The flag words are kept raw — the remapping is not recovered (SAVE-921)
+coaster, because the extent of each coaster's undecoded train payload depends on its coaster type, so the
+next header cannot be located here (SAVE-920): tp.exe's loader `0x437b60` reads every coaster, and the saver
+`0x437300` writes per train slot of the type (type `+0x2e8`) a 27-byte record and per car an 11-byte record
+followed by its two counted u32 lists (SAVE-923). The flag words are kept raw; tp.exe's saver and loader
+remap the section bits (`0x437615`, `0x437ea6`), which the reader does not interpret (SAVE-921)
 — as are the unnamed controller words, globals, auxiliary ordinals, `section+112` and the floats
 `+220/+224/+248` (SAVE-922). The train payload is preserved as raw bytes and never interpreted
 (SAVE-923). A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the

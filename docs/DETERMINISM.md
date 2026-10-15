@@ -44,9 +44,9 @@ derives every simulation stream from it:
 | --- | --- | --- | --- |
 | Guests | `GuestStream` = seed | SplitMix64 `GuestRandom` (DET-014) | `GuestSimulation` |
 | Economy | `EconomyStream` = seed XOR (default XOR 1) | SplitMix64 `DeterministicRandom` (DET-015) | `ParkEconomy` |
-| Placed object scripts | placement ordinal XOR `ObjectScriptKey` | per-VM `System.Random(seed)` (DET-013) | `ParkObjects` |
-| Scripts without a seed (prototype ride, `Ride`) | drawn from the script world's SplitMix64 stream, start `ScriptStream` | per-VM `System.Random(seed)` (DET-013) | `RideScriptWorld` |
-| Script children (SPAWNCHILD/SPAWNSOUND) | drawn from the parent VM | per-VM `System.Random(seed)` | parent `RideVM` |
+| Placed object scripts | placement ordinal XOR `ObjectScriptKey` | per-VM `ScriptRandom(seed)` (System.Random-compatible) (DET-013) | `ParkObjects` |
+| Scripts without a seed (prototype ride, `Ride`) | drawn from the script world's SplitMix64 stream, start `ScriptStream` | per-VM `ScriptRandom(seed)` (System.Random-compatible) (DET-013) | `RideScriptWorld` |
+| Script children (SPAWNCHILD/SPAWNSOUND) | drawn from the parent VM | per-VM `ScriptRandom(seed)` (System.Random-compatible) | parent `RideVM` |
 | Coaster boarding (`CoasterRng`) | `ScriptStream` XOR a fixed key, folded to 32 bits (`[EXT:coaster-rng-seed]`, formerly COAST-027) | the original's 214013/2531011 LCG (`CoasterRandom`) | `RideScriptWorld.Coasters` |
 | Sound chooser (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the library's one shared LCG, `s·0x19660D + 0x3C6EF35F` stored on every draw, `ror(s, 13)` then `>> 16` or `% range` (tp.exe `0x6bc839`; AUDIO-037) | `SoundEventSystem` |
 | Weather (presentation and sim) | `ParkWeather` seed from the park's weather key | SplitMix64 `DeterministicRandom`; the PC draws from the shared world LCG `0x516330` (`[EXT:weather-stream]`) | `ParkWeather` |

@@ -161,7 +161,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	}
 
 	/// <summary>A withdrawn message was being spoken: the advisor stops and vanishes (the original's slap path 0x5994E0 → "Kill advisor" 0x429D60).</summary>
-	// [APPROX:ADVISOR-027] The slap sound the cut-off plays (0x27F-0x281 through 0x51BFC0 once the speech handle is stopped) is not played and the last-tutorial copy the queue keeps at controller +0x16D0 (0x59A940) is not kept, nor is the branch 0x59AA7B-0x59AAC8 that clears the last-tutorial record's valid byte (+0x16E4) when the message is of group 1 (0x59C500 == 1) and +0x16DC is the message — evidence needed: the sound ids' samples in the global bank and the reader of +0x16D0/+0x16E8 (0x59A550)
+	// [APPROX:ADVISOR-027] The slap sound the cut-off plays (0x27F-0x281 through 0x51BFC0 once the speech handle is stopped) is not played and the last-tutorial copy the queue keeps at controller +0x16D0 (0x59A940) is not kept, nor is the branch 0x59AA7B-0x59AAC8 that clears the last-tutorial record's valid byte (+0x16E4) when the message is of group 1 (0x59C500 == 1) and +0x16DC is the message — a PC v2.0 video supports the sound (three cut-offs, each followed 0.27-0.30 s later by a loud 250-300 ms burst as the next advisor rises; an uninterrupted entry has none), but one cut-off coincides with a ride placement — evidence needed: the sound ids' samples in the global bank and the reader of +0x16D0/+0x16E8 (0x59A550)
 	private void CutOffSpeech() => presentation?.Kill();
 
 	private void Raise( AdvisorGameEvent gameEvent )

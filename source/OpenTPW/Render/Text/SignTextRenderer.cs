@@ -71,7 +71,7 @@ public sealed class SignTextRenderer
 	/// <summary>The GPU-free part of <see cref="RenderSign"/>: the RGBA bytes of the left (<c>sign1</c>) and right (<c>sign2</c>) halves.</summary>
 	public (byte[] Left, byte[] Right, IReadOnlyList<string> Diagnostics, int TextPixelCount) ComposeSign( SignFile sign, IReadOnlyList<string?> lines, (byte R, byte G, byte B, byte A) background, SignPaint? firstPaintOverride = null )
 	{
-		// The legacy background parameter is retained for callers; the compositor chooses its registered opaque backing.
+		// The legacy background parameter is retained for callers; the compositor starts from a transparent surface.
 		_ = background;
 		var diagnostics = new List<string>();
 		var composed = SignSurfaceComposer.Compose( sign, Fonts, lines, diagnostics, firstPaintOverride );

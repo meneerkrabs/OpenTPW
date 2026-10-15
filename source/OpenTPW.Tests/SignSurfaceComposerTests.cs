@@ -43,7 +43,7 @@ public class SignSurfaceComposerTests
 	}
 
 	[TestMethod]
-	public void ShippedSignsComposeOpaqueFacesWithoutKeyMagenta()
+	public void ShippedSignsComposeTransparentFacesWithoutKeyMagenta()
 	{
 		var data = StringTableTests.OriginalDataDirectory();
 		using var stream = File.OpenRead( Path.Combine( data, "fonts.wad" ) );
@@ -58,8 +58,9 @@ public class SignSurfaceComposerTests
 			var result = SignSurfaceComposer.Compose( sign, fonts, new[] { "Sign", "Board" }, diagnostics );
 			Assert.AreEqual( SignSurfaceComposer.HalfWidth * SignSurfaceComposer.Height * 4, result.Left.Length, path );
 			Assert.AreEqual( result.Left.Length, result.Right.Length, path );
-			Assert.IsTrue( result.Left.Where( (value, index) => index % 4 == 3 ).All( value => value == 255 ), $"transparent sign1 texel in {path}" );
-			Assert.IsTrue( result.Right.Where( (value, index) => index % 4 == 3 ).All( value => value == 255 ), $"transparent sign2 texel in {path}" );
+			// COMPAT-030 retired: the surface starts transparent, so a sign without a board keeps transparent texels between its letters.
+			if ( sign.ExtraImage == null )
+				Assert.IsTrue( result.Left.Where( (value, index) => index % 4 == 3 ).Any( value => value == 0 ), $"no transparent sign1 texel in {path}" );
 			Assert.AreEqual( 0, OpaqueKeyMagenta( result.Left ) + OpaqueKeyMagenta( result.Right ), $"opaque colour-key texels in {path}" );
 			if ( sign.ExtraImage == null ) continue;
 			var theme = path.StartsWith( "lobby.wad/", StringComparison.Ordinal ) ? "lobby" : path.Split( '/' )[1];
@@ -70,7 +71,7 @@ public class SignSurfaceComposerTests
 	}
 
 	[TestMethod]
-	public void BellyBounceHasNoExtraImageAndGetsAnOpaqueBacking()
+	public void BellyBounceHasNoExtraImageAndIsTransparentBetweenTheLetters()
 	{
 		var data = StringTableTests.OriginalDataDirectory();
 		using var stream = File.OpenRead( Path.Combine( data, "fonts.wad" ) );
@@ -80,29 +81,43 @@ public class SignSurfaceComposerTests
 		Assert.IsNull( sign.ExtraImage, "the shipped Belly Bounce sign has no board image" );
 		var result = SignSurfaceComposer.Compose( sign, fonts, new[] { "Belly", "Bounce" }, new List<string>() );
 		Assert.IsTrue( result.TextPixelCount > 0 );
-		Assert.IsTrue( result.Left.Where( (value, index) => index % 4 == 3 ).All( value => value == 255 ) );
-		Assert.IsTrue( result.Right.Where( (value, index) => index % 4 == 3 ).All( value => value == 255 ) );
+		foreach ( var half in new[] { result.Left, result.Right } )
+		{
+			var alpha = half.Where( (value, index) => index % 4 == 3 ).ToArray();
+			Assert.IsTrue( alpha.Any( value => value == 0 ), "wood and sky show between the letters" );
+			Assert.IsTrue( alpha.Any( value => value > 0 ), "the letters are drawn" );
+		}
 	}
 
+	/// <summary>The paint mask is translated by the record's offsets (right and down positive): the shadow adds covered texels beside the glyphs.</summary>
 	[TestMethod]
-	public void JungleGateLightPaintMakesNameVisibleOnDecodedBoard()
+	public void PaintOffsetsMoveTheShadowBesideTheGlyphs()
 	{
 		var data = StringTableTests.OriginalDataDirectory();
 		using var stream = File.OpenRead( Path.Combine( data, "fonts.wad" ) );
 		var fonts = SignFontLibrary.Load( stream );
-		var (_, bytes) = SignFileTests.OriginalSignMembers( data ).Single( member => member.Path == "levels/jungle/features/gates.wad/gates.sgn" );
+		var (_, bytes) = SignFileTests.OriginalSignMembers( data ).Single( member => member.Path == "levels/jungle/rides/monkey.wad/monkey.sgn" );
 		var sign = new SignFile( bytes );
+		Assert.IsNull( sign.ExtraImage, "Wilde Aap has no board, so every covered texel is paint or effect" );
 		var nativePaint = sign.Paints[0]!;
-		var dark = SignSurfaceComposer.Compose( sign, fonts, new[] { "Lost Kingdom" }, new List<string>() );
-		var light = SignSurfaceComposer.Compose( sign, fonts, new[] { "Lost Kingdom" }, new List<string>(),
-			nativePaint with { R = 230, G = 210, B = 170, A = 255 } );
-		Assert.IsTrue( light.TextPixelCount > 0 );
-		var brighter = 0;
-		for ( var i = 0; i < light.Left.Length; i += 4 )
-			if ( light.Left[i] > dark.Left[i] + 40 && light.Left[i + 1] > dark.Left[i + 1] + 40 ) brighter++;
-		for ( var i = 0; i < light.Right.Length; i += 4 )
-			if ( light.Right[i] > dark.Right[i] + 40 && light.Right[i + 1] > dark.Right[i + 1] + 40 ) brighter++;
-		Assert.IsTrue( brighter > 100, $"only {brighter} gate-name pixels gained contrast" );
+		var flat = SignSurfaceComposer.Compose( sign, fonts, new[] { "Wilde", "Aap" }, new List<string>(), nativePaint with { OffsetX = 0, OffsetY = 0 } );
+		var shadow = SignSurfaceComposer.Compose( sign, fonts, new[] { "Wilde", "Aap" }, new List<string>(), nativePaint with { OffsetX = 6, OffsetY = 6 } );
+		int Covered( (byte[] Left, byte[] Right, int Pixels) result ) => result.Left.Concat( result.Right ).Where( (value, index) => index % 4 == 3 && value > 0 ).Count();
+		Assert.IsTrue( Covered( shadow ) > Covered( flat ), "an offset paint covers texels the glyphs alone do not" );
+	}
+
+	[TestMethod]
+	public void ShiftMovesAMaskRightAndDownAndDropsWhatLeavesTheSurface()
+	{
+		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.Height];
+		mask[0] = 9;
+		mask[(SignSurfaceComposer.Height - 1) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 1] = 7;
+		var shifted = SignSurfaceComposer.Shift( mask, 2, 3 );
+		Assert.AreEqual( 9, shifted[3 * SignSurfaceComposer.Width + 2] );
+		Assert.AreEqual( 9, shifted.Sum( value => (int)value ), "the texel that left the surface is gone" );
+		Assert.AreSame( mask, SignSurfaceComposer.Shift( mask, 0, 0 ) );
+		var back = SignSurfaceComposer.Shift( mask, -1, -1 );
+		Assert.AreEqual( 7, back[(SignSurfaceComposer.Height - 2) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 2] );
 	}
 
 	private static int OpaqueKeyMagenta( byte[] rgba )

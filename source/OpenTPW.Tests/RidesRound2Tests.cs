@@ -312,21 +312,24 @@ public class RidesRound2CorpusTests
 	{
 		var expected = new (string Theme, int Id, string Name, string Left, string Right, int Pixels)[]
 		{
-			("jungle", 1185, "Chac Atak", "14a6661bc7557c7737844143796f76a0f213bcf8904fc3be8448a8cbefc9809c", "2e38b8aff07619410b6b88d1337ca68356851e89b0fe1e2cdbc01db836485e6c", 8089),
-			("jungle", 1601, "LOST Kingdom", "3e249ec4d27035e4a3461878ade6691d346b5185bf69b656ab89d62d732261ad", "84fc57dfbcdc9db36f6f91f5207b4afa75bf2629cc8a56357de6c948c175e7a4", 10785),
-			("hallow", 2601, "HALLOWEEN world", "085aa8a5ca14602211c094a65c6edb4043f74038843480f7658a677b393c4bf8", "3274ca31cfe0de1265e6316ee006d49b9c5aa4c87a948f31aec14d935e0cb469", 6329),
-			("fantasy", 4601, "Wonder Land", "f8e8397643d04c0271446d9ec4e29d1d778b2d6485667e4e57ae34a43a0c7bf5", "2317acd0ea39e9f8f3ae604c030f6f351ddb960f4fe629fda4c9f95873b6ee17", 6205),
-			("space", 3601, "Space Zone", "1933a922d06739a5e7e82c699224e2b524a29cdfbaf9468ca56ac98c9fa87635", "a08fc59c5543b0dae554f92e16bf2f5e9a3a7bcd47c17a0c378dc3bdea09868d", 7255)
+			("jungle", 1185, "Chac Atak", "0b602eb8b77589a1ebadc5447d94b1412ca5e03ed493fb39aea3d7c65644a032", "192703441a7901fe5324a8ef1bd868cc0b79cefd92152209e7ea49720c2744f2", 8089),
+			("jungle", 1601, "LOST Kingdom", "a844851c4901904b3c215e6e1054cc2805c2307484422bca70f8dcb4a9d1c7a4", "2a3db9c52cbff6bf814eb3a7591abd2e63bd63e32300b877e0f849bc4871fc7b", 10785),
+			("hallow", 2601, "HALLOWEEN world", "43f74ccce4399833a6b5440b9219782b0611582d49ca4bc1697177f9a8c64daa", "4cecb35aae7b86f9f1c999bd75d09f8a6f09b0687f99a5ccfdf0517e08202ea8", 6329),
+			("fantasy", 4601, "Wonder Land", "b09af23a79b9b8ea6b7f2d5877895e8b7d58d9a9b8be4594ce0aad1769d8d31a", "03615e885215608840b7309d5a8833d05e6ead989ce2b9f3c1501e4293cacfd1", 6205),
+			("space", 3601, "Space Zone", "71267cc74b8c9d735e1e68e85b2958138c36743722c31c0ce0986884dfa56104", "a48d9937e2b60894a7e82f2f5cb5526079cc151de05e3f9fa121b3545fc349aa", 7255)
 		};
 		string Hash( byte[] bytes ) => Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( bytes ) ).ToLowerInvariant();
+		var mismatches = new List<string>();
 		foreach ( var (theme, id, name, left, right, pixels) in expected )
 		{
 			var entry = ObjectCatalog.Load( theme ).Get( id );
 			Assert.AreEqual( name, entry.DisplayName, $"{theme}/{id}" );
 			var images = ObjectSigns.Get( entry );
 			Assert.IsNotNull( images, $"{theme}/{id}" );
-			Assert.AreEqual( (left, right, pixels), (Hash( images.Left ), Hash( images.Right ), images.TextPixelCount), $"{theme}/{id}" );
+			if ( (left, right, pixels) != (Hash( images.Left ), Hash( images.Right ), images.TextPixelCount) )
+				mismatches.Add( $"{theme}/{id}: (\"{Hash( images.Left )}\", \"{Hash( images.Right )}\", {images.TextPixelCount})" );
 		}
+		CollectionAssert.AreEqual( Array.Empty<string>(), mismatches, string.Join( "\n", mismatches ) );
 	}
 
 	/// <summary>

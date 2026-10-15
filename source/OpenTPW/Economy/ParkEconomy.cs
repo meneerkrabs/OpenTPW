@@ -1510,6 +1510,14 @@ public sealed class ParkEconomy : IParkEconomy
 		return true;
 	}
 
+	/// <summary>
+	/// A sideshow play's result (tp.exe <c>0x004E2670</c>): the win byte <c>+0x190</c> holds 100 − <c>ChanceOfLosing</c> and the play is won when
+	/// <paramref name="draw"/> mod 100 is at most that byte, so the chance of winning is (byte + 1) %, 100 % from a byte of 99 up.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E26E2 sideshow win] cmp byte(+0x190), R mod 100; sbb/inc: won when R mod 100 <= the byte (unsigned); the result is written to script variable 11 and returned to the use routine 0x00501DB0
+	// [BIN:TPW-EXE:0x004DB3A1 sideshow win byte] the object constructor stores 100 − the type record's InitChanceOfLoosing (+0xEC) at +0x190; the setter 0x004E21C0 stores a byte
+	public static bool SideshowWins( int chanceOfLosingPercent, int draw ) => (uint)draw % 100 <= (uint)((100 - chanceOfLosingPercent) & 0xFF);
+
 	public bool PlaySideshow( int instanceId, long visitorCash, out int pricePaid, out bool won )
 	{
 		pricePaid = 0;
@@ -1517,7 +1525,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) || item.Kind != ParkObjectKind.Sideshow || !item.IsOpen || IsBankrupt || visitorCash < item.Price )
 			return false;
 		pricePaid = item.Price;
-		won = !Random.Chance( item.ChanceOfLosingPercent );
+		won = SideshowWins( item.ChanceOfLosingPercent, Random.Next( 100 ) );
 		var prize = won ? item.CostOfGoods : 0;
 		Post( LedgerCategory.SideshowTakings, item.Price );
 		Post( LedgerCategory.OtherCosts, prize );

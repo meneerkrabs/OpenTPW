@@ -515,11 +515,11 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Builds <paramref name="entry"/> with its footprint centred on cell (x, y). In original levels the park
+	/// Builds <paramref name="entry"/> with its footprint centred on cell (x, y) (<see cref="GetCentredAnchor(ObjectShape, int, int, int)"/>). In original levels the park
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour
+	// [APPROX:RIDES-021] the cursor ray hits the Z = 0 plane to pick the clicked cell; the original's mouse-to-cell picking (the cell the build tool hands to 0x528A70) is not traced — evidence needed: the build tool's cursor pick (0x524960 → 0x528A70)
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )
@@ -556,10 +556,34 @@ public partial class Level
 	}
 
 	/// <summary>Anchor that centres the footprint on cell (x, y).</summary>
-	public static (int X, int Y) GetCentredAnchor( ObjectCatalogEntry entry, int x, int y, int rotation )
+	public static (int X, int Y) GetCentredAnchor( ObjectCatalogEntry entry, int x, int y, int rotation ) => GetCentredAnchor( entry.Shape, x, y, rotation );
+
+	/// <summary>
+	/// The anchor (the grid cell of local (0, 0)) the original placement takes for a build click on cell (x, y): the cell less half the
+	/// shape (truncated), then the rotation's offsets inside a 5 × 5 window, so the clicked cell is local (W/2, H/2) in every rotation
+	/// for shapes up to 5 cells or of odd size.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00528B44 build click anchor] the clicked cell less (W/2, H/2) (signed halves, 0x528B0F–0x528B68), with a = (5 − W)/2 and b = (5 − H)/2 truncated toward zero (0x528B31–0x528B4D): rotation 0 keeps it, 90 adds (b − a, 4 − a − b), 180 adds (4 − 2a, 4 − 2b), 270 adds (4 − a − b, a − b) (0x528D88–0x528E12); the other branch (0x81AF7C set) is dead, its only store writes 0 (0x52F074)
+	public static (int X, int Y) GetCentredAnchor( ObjectShape shape, int x, int y, int rotation )
 	{
-		var (minX, minY, maxX, maxY) = ObjectFootprint.GetBounds( entry.Shape, 0, 0, rotation );
-		return ObjectFootprint.AnchorForBounds( entry.Shape, x - (maxX - minX) / 2, y - (maxY - minY) / 2, rotation );
+		ArgumentNullException.ThrowIfNull( shape );
+		int left = x - shape.Width / 2, bottom = y - shape.Height / 2;
+		int a = (5 - shape.Width) / 2, b = (5 - shape.Height) / 2;
+		return rotation switch
+		{
+			0 => (left, bottom),
+			90 => (left + b - a, bottom + 4 - a - b),
+			180 => (left + 4 - 2 * a, bottom + 4 - 2 * b),
+			270 => (left + 4 - a - b, bottom + a - b),
+			_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+		};
+	}
+
+	/// <summary>The build click that places <paramref name="entry"/> at anchor (x, y): the inverse of <see cref="GetCentredAnchor(ObjectShape, int, int, int)"/>, a translation per rotation.</summary>
+	public static (int X, int Y) GetClickCell( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	{
+		var offset = GetCentredAnchor( entry.Shape, 0, 0, rotation );
+		return (anchorX - offset.X, anchorY - offset.Y);
 	}
 
 	/// <summary>Build rule for <paramref name="entry"/> centred on cell (x, y), without buying it.</summary>

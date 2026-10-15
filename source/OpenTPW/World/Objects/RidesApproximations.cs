@@ -15,7 +15,7 @@ public static class RidesApproximations
 		("RIDES-015", "imported and built objects start open; the original's constructor 0x4db090 opens a built object (open word +0x68 = 1, 0x4db3b9) but closes it again when its type has Info.HasQueue (def+0x40 sets flag 8 at 0x4db420; 'Object %d Closing', open word 0 and VAR_RIDECLOSED = 1 at 0x4db712..0x4db779), so built rides with a queue start closed; the saved ride state of imported objects is not decoded"),
 		("RIDES-018", "terrain/overlap rules without slope/path/land; Level enforces economy purchases"),
 		("RIDES-019", "the arrival vehicle is always the Bus; the original picks bus, seaplane or ferry at random per arrival (0x51a2f0), creates Gates and Lights at world setup (0x5156a0) and spawns End elsewhere (0x516b00)"),
-		("RIDES-021", "build centred on clicked cell, Z = 0 cursor plane"),
+		("RIDES-021", "the build cursor's ray picks the clicked cell on the Z = 0 plane; the original's mouse-to-cell pick (the cell the build tool 0x524960 hands to 0x528a70) is not traced; the anchor taken from the clicked cell is the original's (0x528b44)"),
 		("RIDES-023", "completed cycle = VAR_RUNNING 1 -> 0"),
 		("RIDES-024", "bonus archives merge, Info.Id collisions skipped; the original dedupes by archive name (0x41ede0) and loads Info.Id duplicates too, id lookups taking the first in directory order"),
 		("RIDES-025", "bonus name from the selected language file, then English, then the .sam name; the original reads only the selected language file (0x41f350) and the OBJECT_NAMES id table (OpenTPW extension for the fallbacks)"),

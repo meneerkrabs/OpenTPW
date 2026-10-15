@@ -105,6 +105,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			Require( level.Park != null && level.Guests != null && level.Paths != null && level.OriginalPark != null, "start a writable original Jungle park in full-simulation mode" );
 			Require( level.PlacedRide == null && level.Coasters.Count == 0, "the full-simulation park starts without prototype rides or coasters" );
 			Require( level.Guests.Grid.WalkableCount > 0, "the fresh park starts with its initial walkable entrance path" );
+			// a new park starts closed (tp.exe 0x0051562D); open it as the player's door button would before the fixture seeds guests
+			level.Park.Economy.OpenPark();
 			themeText = level.LevelName;
 			startKindText = ParkStartKind.FullSimulation.ToString();
 			stage = Stage.WarmUp;

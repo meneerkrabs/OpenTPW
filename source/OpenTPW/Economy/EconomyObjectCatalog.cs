@@ -117,9 +117,11 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 		var kind = directoryKind;
 		if ( id is 101 or 102 )
 			kind = ParkObjectKind.LandTool;
-		else if ( directoryKind == ParkObjectKind.Feature && researchCategory != (int)ResearchCategory.Feature )
-			// [APPROX:ECON-041] features-directory objects with Research.Category != 3 are fixed (non-buyable) items — evidence needed: buy-menu capture
-			kind = ParkObjectKind.FixedItem; // gates, bus, lights, ferry, seaplane, end: Research.Category 0 in the features directory
+		// [BIN:TPW-EXE:0x4aaf70 buy-menu filler] a definition is listed only in the tab (0-3) equal to its Info.WhichUIType (+0x4ac, copied from +0x4c by 0x413410),
+		// so a WhichUIType 4 object is never offered; Research.Category is not read. In the features directory those are the six fixed items of each theme
+		// (bus, gates, seaplane, lights, ferry, end); the mystery ride (rides directory, also 4) is bought with golden tickets, not here
+		else if ( directoryKind == ParkObjectKind.Feature && settings.GetInt( "Info.WhichUIType", -1, optional: true ) == 4 )
+			kind = ParkObjectKind.FixedItem;
 		var upgrades = new List<UpgradeLevelInfo>();
 		for ( var level = 0; level < 3; level++ )
 		{

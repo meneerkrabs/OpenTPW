@@ -175,6 +175,11 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>Ride scripts' running state, riders and speed for the wear step; none by default (nothing wears).</summary>
 	public IRideOperations RideOperations { get; set; } = NoRideOperations.Instance;
+	/// <summary>
+	/// The host's coasters for challenge type 18: the most counted sections (the rating's sections with flags 0x40 and 0x80) of the coasters of an Info.Id,
+	/// any coaster for 0, and 0 when none matches. Null in a headless economy, which has no coasters (type 18 then measures 0).
+	/// </summary>
+	public Func<int, long>? CoasterCountedSections { get; set; }
 	/// <summary>New mechanic jobs await this host world; null keeps new headless jobs immediate.</summary>
 	public IMechanicJobWorld? MechanicJobWorld { get; set; }
 	/// <summary>The world that moves the handymen and runs their state machine; null keeps the economy's own dispatch (no positions).</summary>
@@ -789,7 +794,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Raise( ParkEventKind.DayEnded, Balance );
 	}
 
-	private long MeasureChallenge( ChallengeDefinition definition ) => Objectives.Measure( definition, Counters, Staff, objects.Values, guestStatistics );
+	private long MeasureChallenge( ChallengeDefinition definition ) => Objectives.Measure( definition, Counters, Staff, objects.Values, guestStatistics, CoasterCountedSections );
 
 	private void EndMonth( long nextMonthIndex )
 	{
@@ -811,7 +816,8 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100CC21C loan instalment] each bought loan, in offer-index order, pays exactly M and counts one more month repaid; it ends after N months (ORACLE F13)
 		// [BIN:TPW-EXE:0x4d0370 bank month] the instalment is deducted only with mWithdrawalsEnabled (+0x114) set, as a debit that keeps mLastBalance and the
 		// turn-entered-red stamp; the year profit then gains back the principal share either way, so with the flag clear the instalment raises the profit by it
-		// [APPROX:ECON-051] the withdrawals flag is imported from an original save and kept, and no OpenTPW action clears it — evidence needed: the writer that clears +0x114 (every shipped save has it set)
+		// [BIN:TPW-EXE:0x404140 layout replay start] besides the bank constructor (0x4cf7c0, 1) and the serializer (0x4cf920), only the online layout replay writes +0x114: its start clears it
+		// (sole caller 0x54f11f, in the GameType 1 branch of the level start) and its end 0x4041d0 sets it again, so a single-player park never clears it, as here
 		foreach ( var loan in loans.OrderBy( item => item.OfferIndex ).ToList() )
 		{
 			var (account, paid) = LoanMath.Pay( loan );
@@ -1302,7 +1308,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>
 	/// Charges one path or queue cell when it is written (<c>SetCellType</c>, PATH-plan §3.2): refused only
 	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs. A negative cost (modified
-	/// <c>Costs.*</c>) raises the balance by its amount, as the original's Spend of a negative amount does.
+	/// <c>Costs.*</c>, which tp.exe refuses when it loads the balance file) raises the balance by its amount.
 	/// </summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost < 0, else Spend per cell at write time
 	public PurchaseResult TrySpendCell( CellPurchase kind )
@@ -1310,7 +1316,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !CanSpendCell( kind ) )
 			return PurchaseResult.NotEnoughMoney;
 		var cost = CellCost( kind );
-		// [APPROX:ECON-048] a negative cell cost is booked as other income (same balance and profit as the original's Spend of a negative amount; the month category is not traced) — evidence needed: the ledger category of a negative Spend
+		// [APPROX:ECON-048] a negative path or queue cell cost (modified Costs.*) is accepted and booked as other income; tp.exe never spends one: Costs.* are type-5 balance keys, whose parser refuses a negative value ('Balance problem: invalid -ve value specified', 0x401d7c), which fails the balance load (0x407f20, 0x407e00 skips the cost copy 0x4080e0) and so the level start (0x54e360) — evidence needed: none (read); OpenTPW does not refuse the value at load
 		if ( cost >= 0 )
 			Post( LedgerCategory.OtherCosts, cost );
 		else
@@ -1456,8 +1462,14 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public void DeclineChallenge()
 	{
+		var definition = Objectives.CurrentDefinition;
 		var index = Objectives.Decline( ParkCalendar.DayIndex( Tick ) );
-		Raise( ParkEventKind.ChallengeDeclined, 0, 0, index );
+		// [BIN:TPW-EXE:0x4d2ec0 challenge declined] a declined challenge whose mIndependent (+0x1d) is clear, a follow-up, credits half its prize (+0x14 / 2,
+		// truncated toward zero, 0x4d2f1d..0x4d2f33) through the bank credit 0x4d0190; an independent one pays nothing
+		var half = definition is { Independent: false } ? definition.Prize / 2 : 0;
+		if ( half != 0 )
+			Post( LedgerCategory.OtherIncome, half );
+		Raise( ParkEventKind.ChallengeDeclined, half, 0, index );
 	}
 
 	// ---------------------------------------------------------------- guests

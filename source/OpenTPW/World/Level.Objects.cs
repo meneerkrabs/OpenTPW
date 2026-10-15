@@ -652,6 +652,7 @@ public partial class Level
 	{
 		if ( Park == null )
 			return;
+		AttachCoasterChallenges();
 		if ( resumeState != null )
 		{
 			var items = Objects.Objects.ToDictionary( item => item.Visitors.AttractionId );

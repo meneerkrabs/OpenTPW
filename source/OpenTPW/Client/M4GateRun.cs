@@ -264,6 +264,8 @@ internal sealed class M4GateRun
 		foreach ( var entry in catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ) )
 			scene.FixedItems.Add( new OriginalObjectRuntime( entry, scene.World, scene.NextSeed(), open: true ) );
 		runtime.AttachGuests( scene.Guests );
+		// a new park starts closed (tp.exe 0x51562d); the gate run opens it as the player's door button would (0x519ef0)
+		runtime.Economy.OpenPark();
 		foreach ( var item in scene.FixedItems.Where( item => scene.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) ) )
 		{
 			var state = scene.Economy.RegisterExisting( item.Entry.InfoId );

@@ -524,8 +524,9 @@ advisor's speech keeps the wall clock and opens no audio device. Game ticks are 
 With the shipped `Advisor.sam` (minimum 25) the welcome (100,000) plays at once,
 the prebuilt-park advice (1,000) follows in Instant Action after the reservation,
 bankruptcy (100,000) plays, and park open/close (20) stay pending and never play.
-Imported parks are opened during level construction (ECON-031), before the
-advisor attaches, so that load-time opening raises no event.
+Imported parks saved open are opened during level construction, before the
+advisor attaches, so that load-time opening raises no event; a park started without
+a save stays closed until the player opens it (tp.exe `0x51562d`).
 
 Contextual help ("Contextual help" below) adds 81 help messages and eight HUD windows' producers. Not wired: the 135 computed
 score producers and the

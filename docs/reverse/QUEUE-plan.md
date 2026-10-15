@@ -226,7 +226,8 @@ cell is not traced).
      object ProvidesRelief**.
    - `w ≤ 30`: the **boredom test**. If `turn > +508 + 100`, "I'm bored and
      leaving the queue", thought 7/12, leave.
-8. A 1-in-10 random facing change (±400 mod 2048 on `+28`).
+8. Only when `w ≤ 30` (every `w > 30` path above returns): a 1-in-10 random facing change, a second draw adding
+   (r mod 800) − 400 to the heading mod 2048 (tp.exe `0x4ffff0`, `+0x1C`; the earlier ±400 reading is corrected).
 
 The idle interlude (`0xe8b74`) sets `+520 = turn`, saves the state in `+548`
 and enters state 8. State 8 restores the saved state once `turn > +520 + 10`

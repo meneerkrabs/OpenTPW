@@ -662,7 +662,8 @@ Each turn, in order:
 6. Needs window, every 30 turns after the last interlude: happiness > 80 or
    10–19 idles for 10 turns, happiness < 10 leaves, else toilet > 80 leaves
    unless the attraction provides relief.
-7. A 1-in-10 facing change.
+7. Within 30 turns of the last interlude only (the needs window returns on every path): a 1-in-10 facing change by
+   (r mod 800) − 400 of 2048 from a second draw (tp.exe `0x4ffff0`).
 
 There is **no boredom timeout**. The original's test (`turn > +508 + 100`
 within the 30-turn window) can never fire (§5.3); the code keeps it and the
@@ -737,7 +738,6 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-005 | The leave-for-room rule is the original's (position ≥ 4 × cells, not in state 14; tp.exe `0x501390`, ORACLE.md X14). OpenTPW also sends away a guest whose cell left the queue (Confused) and re-walks the others, where the original changes nothing for them (state 11 re-routes a moved guest through `0x501160`); Angry uses the guest id, not the thing id; the dismissal's event 6 in the guest's history and its sound (thing id & 7 = 0, `0x5012f0`) are not modelled | Whether the generic route (`0x4fa5f0`) reaches a place from off the queue; the thing-id numbering; the readers of the event history |
 | QUEUE-006 | Queue places follow tp.exe `0x4de840` (depths 0/63/127/191, the axis per link, the fourth place on the axis of the cell behind, the cell's own link when no path is attached); only the back cell's fourth place takes its axis from OpenTPW's join cell, chosen without the back cell's connection bit (`+0x0C`) | The queue tool's connection writes (QUEUE-003) |
 | QUEUE-008 | Toilets wear by use (tp.exe `0x4e2440`: 0.05 × the guest's toilet byte) and handymen clean them back to 100 after WorkDuration park turns (`0x4d7880`, state 11, `0x4dfd80`), so the worn-toilet exit fires, and the RegionFX row swaps (`0x4d8440`/`0x4d8460` → `0x4d8480`) are modelled; the wear step's branch for game type 1 (no wear; a dirty toilet is cleaned on use) is not | What game type 1 (`0xfb3b7c`) is in OpenTPW's terms |
-| QUEUE-009 | The facing change runs on every standing turn and turns ±400/2048 by one draw; tp.exe (`0x4ffff0`) turns only within 30 turns of the last interlude, by (r₂ mod 800) − 400 after r mod 10 = 0 | None (read) |
 | QUEUE-010 | A guest leaving a queue reappears on the join cell at once; tp.exe's exit (`0x5004aa`: `0x4ddd20`, `0x5012f0`, state 6) writes no position, so the guest stays where it stood | The state-6 handler's walk from a queue cell (`0x4fec90`) |
 | QUEUE-011 | Exact completed economy tier for ordinary TPW catalogue queue defaults/fallback capacity and the speed bias; live VM CAP/DUR retained, where tp.exe's completion (`0x4df8f0`) writes VAR_CAPACITY (`0x4dd7f0`, clamped) and VAR_DURATION (clamped), each when above 0 | None for the writes; the completion's repair reset and reopen tail against OpenTPW's completion path |
 | QUEUE-012 | Queue cells need allowed terrain and no object; tp.exe's validator (`0x535670`) tests the flag bit 0x40 (set by map setup `0x536490` outside the park and on inside cells but the initial path) and the cell type, not MAP terrain | What clears bit 0x40; the validator's ride-cell count test |
@@ -751,7 +751,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-021 | A left click on a queue cell starts the queue tool at that ride's back cell; tp.exe's click (`0x4879d0`) enters tool 0x14 first, and the next cell click collects the queue (`0x530120`) and enters mode 3 | Where mode 3 goes on laying after `0x530120` |
 | QUEUE-022 | A bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object; every original object has `InitSpeed` and `InitDuration`) is read at its design speed and duration; tp.exe (`0x4e0560`) clamps a 0/0 ratio to 0.75 and would score trunc(0.5625 × level) | None |
 
-Retired: `APPROX:QUEUE-016` (admission and state 11 once per park turn: tp.exe `0x516380` walks the live list once per turn and dispatches every thing whose byte `+3` is 0 through `0x50b360`).
+Retired: `APPROX:QUEUE-016` (admission and state 11 once per park turn: tp.exe `0x516380` walks the live list once per turn and dispatches every thing whose byte `+3` is 0 through `0x50b360`). `APPROX:QUEUE-009` (the queue facing change: only within 30 turns of the last interlude, r mod 10 = 0, then (r₂ mod 800) − 400 of 2048; tp.exe `0x4ffff0`).
 
 Not modelled: the track-type exits of step 6 (`0x45eac`, ride `+40`), ride
 state `+408` (beyond the QUEUE-019 reading), the price check at the stand

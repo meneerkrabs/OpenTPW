@@ -596,12 +596,15 @@ public class QueueTests
 		rig.Ride.LeaveQueue( guests[0].Id );
 		var removedTurn = rig.Simulation.ParkTurn;
 		var moved = new Dictionary<int, long>();
+		var removedLeft = false;
 		rig.RunTurns( 12, () =>
 		{
+			// it may choose the ride again and rejoin at the back within these turns
+			removedLeft |= !guests[0].IsInQueue;
 			foreach ( var guest in guests.Skip( 1 ).Where( guest => guest.State == GuestState.MovingUpQueue ) )
 				moved.TryAdd( guest.Id, rig.Simulation.ParkTurn - removedTurn );
 		} );
-		Assert.IsFalse( guests[0].IsInQueue, "the removed guest left the queue" );
+		Assert.IsTrue( removedLeft, "the removed guest left the queue" );
 		CollectionAssert.AreEqual( new long[] { 2, 3, 4, 5, 7 }, guests.Skip( 1 ).Select( guest => moved[guest.Id] ).ToArray(),
 			"first seen at the next turn, then 1, 2, 3, 4 and 6 turns of delay" );
 		rig.RunTurns( 20 );
@@ -673,6 +676,45 @@ public class QueueTests
 		Assert.AreEqual( GuestThought.Unhappy, thought );
 		Assert.AreEqual( GuestSimulation.NeedsWindowTurns + 1, leftAt, "turn − +520 must exceed 30" );
 		Assert.AreEqual( (2, 0), leftCell, "back on the path at the join cell" );
+	}
+
+	[TestMethod]
+	public void QueueFacingChangesOnlyInsideTheWindowBySpreadAngles()
+	{
+		// tp.exe 0x004FFFF0: beyond 30 turns from the last interlude every needs path returns, so a guest that keeps queueing never
+		// turns; inside the window a draw mod 10 = 0 turns the heading by (second draw mod 800) − 400 of 2048.
+		static int Turned( (float X, float Y) before, (float X, float Y) after ) =>
+			(int)MathF.Round( MathF.Atan2( before.X * after.Y - before.Y * after.X, before.X * after.X + before.Y * after.Y ) * 2048 / MathF.Tau );
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guest = rig.Send();
+		guest.BaseSpeed = 140;
+		rig.RunTurns( 31 );
+		Assert.AreEqual( GuestState.Queueing, guest.State );
+		var outside = new List<int>();
+		var heading = (guest.HeadingX, guest.HeadingY);
+		rig.RunTurns( 60, () =>
+		{
+			if ( guest.State == GuestState.Queueing && !guest.InQueueInterlude )
+				outside.Add( Turned( heading, (guest.HeadingX, guest.HeadingY) ) );
+			heading = (guest.HeadingX, guest.HeadingY);
+		} );
+		Assert.IsTrue( outside.Count > 0 && outside.All( turned => turned == 0 ), string.Join( " ", outside ) );
+
+		var inside = new List<int>();
+		rig.RunTurns( 600, () =>
+		{
+			var turned = Turned( heading, (guest.HeadingX, guest.HeadingY) );
+			if ( turned != 0 )
+				inside.Add( turned );
+			heading = (guest.HeadingX, guest.HeadingY);
+			guest.InterludeTurn = rig.Simulation.ParkTurn;
+			guest.QueueStandingSinceTurn = rig.Simulation.ParkTurn;
+		} );
+		Assert.AreEqual( GuestState.Queueing, guest.State );
+		Assert.IsTrue( inside.Count is >= 30 and <= 100, $"about one turn in ten: {inside.Count}" );
+		Assert.IsTrue( inside.All( turned => turned is >= -400 and <= 399 ), string.Join( " ", inside ) );
+		Assert.IsTrue( inside.Any( turned => Math.Abs( turned ) < 300 ), "the size is spread, not a fixed ±400" );
 	}
 
 	[TestMethod]

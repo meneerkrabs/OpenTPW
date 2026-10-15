@@ -53,6 +53,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public const int BoredomTurns = 100;
 	/// <summary>Park turns an idle interlude lasts (state 8 restores the saved state once turn &gt; +520 + 10).</summary>
 	public const int InterludeTurns = 10;
+	/// <summary>The queue facing change spans (r mod 800) − 400 of 2048 (tp.exe <c>0x004FFFF0</c>).</summary>
+	public const int FacingChangeRange = 800;
 	public const float LeaveHappiness = 10;
 	public const float ToiletLeaveLevel = 80;
 	public const float TicketBoothSeconds = 1.0f;
@@ -1701,21 +1703,21 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				LeaveQueue( guest, attraction, GuestThought.NeedToilet );
 				return;
 			}
+			// [BIN:TPW-EXE:0x004FFFF0 needs branch returns] beyond the window every path of the needs branch returns (0x00500311..0x005003A2), so the facing change below runs only within 30 turns of the last interlude
+			return;
 		}
-		else if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
+		if ( turn > guest.QueueStandingSinceTurn + BoredomTurns )
 		{
 			LeaveQueue( guest, attraction, GuestThought.Bored );
 			return;
 		}
-		// 8. A 1-in-10 facing change of ±400/2048 of a turn.
-		// [APPROX:QUEUE-009] the facing change runs on every standing turn that reaches step 8 and its sign comes from the same draw (0 → +400, 1 → −400 of 2048); tp.exe 0x004FFFF0 reaches it only while turn − interlude turn (+0x208) ≤ 30, since every path of the needs branch returns, and draws twice from the world RNG 0x00516330: when r mod 10 = 0 the heading +0x1C gets (r2 mod 800) − 400 added and wraps by 0x800 — evidence needed: none (read)
-		var draw = random.Next( 20 );
-		if ( draw < 2 )
-		{
-			var angle = (draw == 0 ? 400 : -400) * MathF.Tau / 2048;
-			var (sin, cos) = MathF.SinCos( angle );
-			(guest.HeadingX, guest.HeadingY) = (guest.HeadingX * cos - guest.HeadingY * sin, guest.HeadingX * sin + guest.HeadingY * cos);
-		}
+		// 8. A 1-in-10 facing change of −400..+399 of 2048 of a turn.
+		// [BIN:TPW-EXE:0x004FFFF0 queue facing change] one draw (0x00516330) mod 10 must be 0 (else return), then a second draw gives heading +0x1C += (r mod 800) − 400, wrapped by 0x800; OpenTPW draws both from its GuestRandom (DET-014) and turns the heading vector by the same angle
+		if ( random.Next( 10 ) != 0 )
+			return;
+		var angle = (random.Next( FacingChangeRange ) - FacingChangeRange / 2) * MathF.Tau / 2048;
+		var (sin, cos) = MathF.SinCos( angle );
+		(guest.HeadingX, guest.HeadingY) = (guest.HeadingX * cos - guest.HeadingY * sin, guest.HeadingX * sin + guest.HeadingY * cos);
 	}
 
 	/// <summary>Idle interlude (<c>0xe8b74</c>): +520 = turn, state 8 until turn &gt; +520 + 10, then state 11 again.</summary>

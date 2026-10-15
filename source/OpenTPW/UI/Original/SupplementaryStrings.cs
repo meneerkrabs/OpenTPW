@@ -113,6 +113,8 @@ public enum OpenTpwText
 	AutomaticCheckpointFailed,
 	RetryCheckpoint,
 	InvalidPrice,
+	BuyLandHint,
+	CannotBuyLand,
 }
 
 public static class SupplementaryStrings
@@ -314,6 +316,8 @@ public static class SupplementaryStrings
 		[OpenTpwText.OpenTpwPage] = new[] { "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW", "OpenTPW" },
 		// [DATA:video 15:20] the Dutch line is the original's own help text of a tube message; the other five languages are translated from it
 		[OpenTpwText.MessageTubeHelp] = new[] { "Message - left-click to open, right-click to delete", "Besked - venstreklik for at åbne, højreklik for at slette", "Bericht - klik links om te openen, klik rechts om te verwijderen", "Message - clic gauche pour ouvrir, clic droit pour supprimer", "Nachricht - Linksklick zum Öffnen, Rechtsklick zum Löschen", "Meddelande - vänsterklicka för att öppna, högerklicka för att ta bort" },
+		[OpenTpwText.BuyLandHint] = new[] { "Click two opposite corners of the land to buy; right click to cancel.", "Klik på to modsatte hjørner af grunden, du vil købe; højreklik for at annullere.", "Klik op twee tegenoverliggende hoeken van het land dat je wilt kopen; klik met rechts om te annuleren.", "Cliquez sur deux coins opposés du terrain à acheter ; clic droit pour annuler.", "Klicke auf zwei gegenüberliegende Ecken des Landes, das du kaufen willst; Rechtsklick bricht ab.", "Klicka på två motsatta hörn av marken du vill köpa; högerklicka för att avbryta." },
+		[OpenTpwText.CannotBuyLand] = new[] { "You cannot buy this land.", "Du kan ikke købe denne grund.", "Je kunt dit land niet kopen.", "Vous ne pouvez pas acheter ce terrain.", "Dieses Land kannst du nicht kaufen.", "Du kan inte köpa den här marken." },
 		[OpenTpwText.NotAvailable] = new[] { "Not available yet", "Endnu ikke tilgængelig", "Nog niet beschikbaar", "Pas encore disponible", "Noch nicht verfügbar", "Inte tillgänglig ännu" },
 		[OpenTpwText.OnlyOnePrototypeRide] = new[] {
 			"Only one ride can be placed in this build",

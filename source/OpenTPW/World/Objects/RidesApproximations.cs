@@ -15,7 +15,7 @@ public static class RidesApproximations
 		("RIDES-013", "180 degree and non-square rotations derived"),
 		("RIDES-014", "base height = mean footprint ground height"),
 		("RIDES-015", "imported and built objects start open"),
-		("RIDES-018", "terrain/overlap rules without slope/path/land; Level enforces economy purchases"),
+		("RIDES-018", "terrain/overlap/owned-land rules without slope/path; Level enforces economy purchases"),
 		("RIDES-019", "the arrival vehicle is always the Bus; the original picks bus, seaplane or ferry at random per arrival (0x51a2f0), creates Gates and Lights at world setup (0x5156a0) and spawns End elsewhere (0x516b00)"),
 		("RIDES-021", "build centred on clicked cell, Z = 0 cursor plane"),
 		("RIDES-023", "completed cycle = VAR_RUNNING 1 -> 0"),

@@ -33,6 +33,16 @@ public readonly struct SaveCell
 	public const int PathFlagsOffset = 13;
 	public const int PathTextureOffset = 17;
 	public const int PathRotationOffset = 21;
+	/// <summary>The map cell's <c>mFlags</c> (u16): 0x40 unowned land, 0x20 fixed (docs/reverse/PPC-formats.md, cell grid).</summary>
+	public const int MapFlagsOffset = 2;
+	/// <summary>The map cell's <c>mType</c> (u32): 1 path, 2 water, 7 no terrain, 0x1e fixed walkway, ...</summary>
+	public const int MapTypeOffset = 25;
+	/// <summary>The structure (track) cell's <c>mType</c> (u32): 0x19 for a hoarding (park fence post).</summary>
+	public const int StructureTypeOffset = 77;
+	/// <summary>The structure cell's <c>mHoardingNeighbours</c>: the fence links 1 (−Y), 4 (+X), 16 (+Y), 64 (−X).</summary>
+	public const int HoardingNeighboursOffset = 81;
+	/// <summary>The structure cell type of a hoarding (park fence post).</summary>
+	public const uint HoardingType = 0x19;
 	private readonly int baseRecordBytes;
 
 	public SaveCell( ReadOnlyMemory<byte> record ) : this( record, RecordBytes ) { }
@@ -64,6 +74,19 @@ public readonly struct SaveCell
 
 	/// <summary>On path cells, the texture's clockwise turn in degrees (u16 at byte 21: 0, 90, 180 or 270).</summary>
 	public int PathRotation => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( PathRotationOffset, 2 ) );
+
+	// [BIN:TPW-EXE:0x4d0b30 cell base serializer] each cell record writes mDirection (+0xd), mFlags (+0xe, 2 bytes), mMeshInstance, mNeighbours, mOverlapCounter, mParentID, mTileData, mType (+8, 4 bytes) and mHoardingNeighbours (+0x22) in that order, once for the map cell (record +1) and once for the structure cell (record +53)
+	/// <summary>The map cell's flags (TPW records): 0x40 marks land the park does not own.</summary>
+	public ushort MapFlags => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( MapFlagsOffset, 2 ) );
+
+	/// <summary>The map cell's type (TPW records).</summary>
+	public uint MapType => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( MapTypeOffset, 4 ) );
+
+	/// <summary>The structure cell's type (TPW records); <see cref="HoardingType"/> for a park fence post.</summary>
+	public uint StructureType => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( StructureTypeOffset, 4 ) );
+
+	/// <summary>The structure cell's fence links (TPW records).</summary>
+	public byte HoardingNeighbours => Record.Span[HoardingNeighboursOffset];
 
 	/// <summary>Byte 12 is nonzero on every cell of every placed object's footprint (and its queue cells).</summary>
 	public bool IsOccupied => Record.Span[OccupancyOffset] != 0;

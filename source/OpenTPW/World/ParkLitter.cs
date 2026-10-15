@@ -71,7 +71,7 @@ public sealed class ParkLitter
 	/// takes the type and nobody's claim. True when the litter was placed.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D93B0 littering cell] nothing in game type 1 (online) or when the cell's +0x2c is nonzero; else a sprite of bank 11 frame type − 1 (+0x28), +0x30 = 0, +0x2c = type; vomit (7) and stinkbomb (8) also add their RegionFX (2, 5) through 0x004D8440 and a stinkbomb its particle (+0x38)
-	// [APPROX:ECON-020] litter lies on map cells (one item per cell, dropped by guests' full litter meters, vomit and bins they cannot reach) with the original's sprite offset (0x004D93B0), but the drop's reseed of the original's world generator with the cell id (0x004D94E2) is not followed by OpenTPW's separate streams (DET-014), and the handymen's strike share (0x00509360) and the guests' thought pick (0x004FC8A0) count the live map, where the analyser recounts a 4 × 4 block's littered cells (0x004C8BA0) and path cells (0x004C8AE0) only when (turn >> 2) − (stamp >> 2) exceeds the reader's age (1 for the strike, 4 for the thought), so the counts can be 7 or 19 turns old — evidence needed: none (read): the reseed is DET-014's stream decision; a shared block cache would also need the original's order of the reads
+	// [APPROX:ECON-020] litter lies on map cells (one item per cell, dropped by guests' full litter meters, vomit and bins they cannot reach) with the original's sprite offset (0x004D93B0) and is counted through the analyser's 4 × 4 block caches (0x004C8BA0, 0x004C8AE0) as the strike (age 1) and the thought (age 4) read them, but the drop's reseed of the original's world generator with the cell id (0x004D94E2) is not followed by OpenTPW's separate streams (DET-014), and the caches start empty after a load where the original's saved analyser state is not traced — evidence needed: DET-014's stream decision for the reseed; the analyser's serializer for the block caches
 	public bool Drop( int x, int y, LitterType type )
 	{
 		if ( Disabled || type == LitterType.None || !InBounds( x, y ) || types[Index( x, y )] != 0 )
@@ -137,8 +137,88 @@ public sealed class ParkLitter
 	/// The park's litter share for the handymen's strike grievance (tp.exe <c>0x00509360</c> case 0): littered cells over path, queue and
 	/// type-9 cells (the analyser sums <c>0x004C8180</c> / <c>0x004C8150</c> over its 4 × 4 blocks).
 	/// </summary>
-	// Approximation (ECON-020, registered at Drop): the analyser recounts a 4 × 4 block only when (turn >> 2) − (stamp >> 2) exceeds the caller's age (1 here), so the original's share can lag a few turns; OpenTPW counts the live map
-	public LitterStatistic? Statistic => Cells == null ? null : new( Cells.CountOf( ParkCellType.Path ) + Cells.CountOf( ParkCellType.Queue ) + Cells.CountOf( (ParkCellType)9 ), Count );
+	// [BIN:TPW-EXE:0x00509360 handyman grievance] 0x004C8180(1) and 0x004C8150(1): the sums over the 1024 blocks, each read with age 1
+	public LitterStatistic? StatisticAt( long turn )
+	{
+		if ( Cells == null )
+			return null;
+		int littered = 0, paths = 0;
+		for ( var block = 0; block < BlockCount; block++ )
+			littered += LitteredInBlock( block, 1, turn );
+		for ( var block = 0; block < BlockCount; block++ )
+			paths += PathCellsInBlock( block, 1, turn );
+		return new LitterStatistic( paths, littered );
+	}
+
+	/// <summary>The analyser's block size: 4 × 4 cells (tp.exe <c>0x004C7B70</c>).</summary>
+	public const int BlockSize = 4;
+	/// <summary>Blocks per row of the original's 128 × 128 map.</summary>
+	public const int BlocksPerRow = MapSize / BlockSize;
+	/// <summary>The analyser's 1024 blocks.</summary>
+	public const int BlockCount = BlocksPerRow * BlocksPerRow;
+
+	private readonly int[] blockLittered = new int[BlockCount];
+	private readonly long[] blockLitteredStamp = new long[BlockCount];
+	private readonly bool[] blockLitteredValid = new bool[BlockCount];
+	private readonly int[] blockPaths = new int[BlockCount];
+	private readonly long[] blockPathsStamp = new long[BlockCount];
+	private readonly bool[] blockPathsValid = new bool[BlockCount];
+
+	/// <summary>The analyser block of a cell (tp.exe <c>0x004C7B70</c>: (y / 4) × 32 + x / 4).</summary>
+	public static int BlockOf( int x, int y ) => y / BlockSize * BlocksPerRow + x / BlockSize;
+
+	/// <summary>Whether a reader of age <paramref name="maximumAge"/> counts again at <paramref name="turn"/>: the analyser's (turn >> 2) − (stamp >> 2) test, unsigned.</summary>
+	private static bool Stale( bool valid, long stamp, uint maximumAge, long turn ) =>
+		!valid || maximumAge < unchecked( (uint)(turn >> 2) - (uint)(stamp >> 2) );
+
+	/// <summary>
+	/// A block's littered cells as the analyser reads them (tp.exe <c>0x004C8BA0</c>): the cached count while it is no older than the reader's age, else
+	/// counted again and stamped. The caches are not saved: a loaded park counts at its first reads.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004C8BA0 block litter] counted again only when the block's flag (+0x60) is clear or the age (0x0041A990: (turn >> 2) − (stamp >> 2)) exceeds the caller's; then the 4 × 4 cells with litter are counted and stamped (0x0041A960)
+	public int LitteredInBlock( int block, uint maximumAge, long turn )
+	{
+		if ( Stale( blockLitteredValid[block], blockLitteredStamp[block], maximumAge, turn ) )
+		{
+			var count = 0;
+			ForBlock( block, ( x, y ) => count += TypeAt( x, y ) != LitterType.None ? 1 : 0 );
+			blockLittered[block] = count;
+			blockLitteredStamp[block] = turn;
+			blockLitteredValid[block] = true;
+		}
+		return blockLittered[block];
+	}
+
+	/// <summary>A block's path, queue and entrance cells (types 1, 3, 9) as the analyser reads them (tp.exe <c>0x004C8AE0</c>), cached like <see cref="LitteredInBlock"/>.</summary>
+	// [BIN:TPW-EXE:0x004C8AE0 block paths] the same cache test with its own flag (+0x54) and stamp; a cell counts when 0x00536310 (type 1) or 0x00536320 (type 3 or 9) answers
+	public int PathCellsInBlock( int block, uint maximumAge, long turn )
+	{
+		if ( Stale( blockPathsValid[block], blockPathsStamp[block], maximumAge, turn ) )
+		{
+			var count = 0;
+			ForBlock( block, ( x, y ) => count += Cells?.RawTypeAt( x, y ) is 1 or 3 or 9 ? 1 : 0 );
+			blockPaths[block] = count;
+			blockPathsStamp[block] = turn;
+			blockPathsValid[block] = true;
+		}
+		return blockPaths[block];
+	}
+
+	private static void ForBlock( int block, Action<int, int> visit )
+	{
+		var x0 = block % BlocksPerRow * BlockSize;
+		var y0 = block / BlocksPerRow * BlockSize;
+		for ( var x = x0; x < x0 + BlockSize; x++ )
+			for ( var y = y0; y < y0 + BlockSize; y++ )
+				visit( x, y );
+	}
+
+	/// <summary>Forgets the analyser's block counts (a load: the next reads count again).</summary>
+	public void ResetBlockCounts()
+	{
+		Array.Clear( blockLitteredValid );
+		Array.Clear( blockPathsValid );
+	}
 
 	/// <summary>
 	/// The sprite's offset inside the cell in tenths of a cell (1..9 each way): the original reseeds the world generator with the cell id
@@ -186,6 +266,7 @@ public sealed class ParkLitter
 		Array.Clear( collectors );
 		Array.Clear( claimTurns );
 		Environment.Clear();
+		ResetBlockCounts();
 		Count = 0;
 		foreach ( var cell in cells )
 		{

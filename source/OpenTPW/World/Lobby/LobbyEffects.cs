@@ -33,9 +33,9 @@ public sealed class LobbyEffects
 
 	private uint state;
 	private float pending;
-	// The sky's current colour in 16.16 fixed point, eased 1/16 of the way to the target each tick.
+	// The sky's current colour and target in 16.16 fixed point; both start black (the scene's init zeroes them).
 	private int skyR, skyG, skyB;
-	private bool skySet;
+	private int targetR, targetG, targetB;
 	private readonly List<LobbyBolt> bolts = new();
 	private readonly List<WeatherStrike> strikes = new();
 
@@ -43,11 +43,19 @@ public sealed class LobbyEffects
 	// [BIN:STP-PPC:0x1008CDBC lobby generator seed] the lobby system's constructor stores time(NULL) as the generator's state; it is never reset
 	public LobbyEffects( uint seed ) => state = seed;
 
-	/// <summary>True once a tick has set the sky (before that the caller draws its own default).</summary>
-	public bool HasSky => skySet;
+	/// <summary>
+	/// The lobby's fog and clear colour (0x44DDFF): the screen behind the 3D scene is cleared to it, and the sky's colour
+	/// grid shows it while the eased colour has reached its target.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5d8b50 lobby fog] the lobby scene's init sets the fog colour [0x8bd47c] to 0xFF44DDFF (fog from 50 to 300) and render flag 0x4000000
+	// [BIN:TPW-EXE:0x5737aa lobby clear] the viewport clear (vtable +0x50, Clear2) uses the fog colour when render flags & 0x4002000, else black
+	public static readonly (byte R, byte G, byte B) ClearColour = (0x44, 0xDD, 0xFF);
 
-	/// <summary>The sky colour to draw now.</summary>
-	public (byte R, byte G, byte B) Sky => ((byte)(skyR >> 16), (byte)(skyG >> 16), (byte)(skyB >> 16));
+	/// <summary>
+	/// The colour the lobby writes into the engine sky's 256-entry colour grid this tick (the colour of the cloud layer):
+	/// the eased colour, or <see cref="ClearColour"/> while it equals its target.
+	/// </summary>
+	public (byte R, byte G, byte B) Sky { get; private set; } = ClearColour;
 
 	/// <summary>The rain's drop count for the lobby renderer.</summary>
 	public int RainDrops { get; private set; }
@@ -195,20 +203,27 @@ public sealed class LobbyEffects
 		return count >= MaximumDrops ? MaximumDrops : (int)count;
 	}
 
-	/// <summary>Eases the sky 1/16 of the way toward <paramref name="target"/> (16.16 fixed point); the first target is taken at once.</summary>
-	// [BIN:STP-PPC:0x1008FAA0 lobby sky] the current colour eases 1/16 toward the target each frame and fills the engine sky's whole colour ramp, so the sky is one flat colour; [BIN:TPW-EXE:0x5D96C0] the same
-	// [APPROX:UI-018] both builds ease the red channel toward the blue target; that quirk and the two settings flags that gate the eased sky (else a display default colour) are not reproduced until a capture confirms them
+	/// <summary>
+	/// Sets the sky's target to <paramref name="target"/> and runs one step of the scene's sky update: unless the colour
+	/// already equals its target, each channel moves (target − current) &gt;&gt; 4 in 16.16 fixed point, the red channel
+	/// toward the blue target; the grid takes the eased colour, else the fog colour.
+	/// </summary>
+	// [BIN:STP-PPC:0x1008FAA0 lobby sky] the current colour eases 1/16 toward the target each frame and fills the engine sky's whole colour ramp
+	// [BIN:TPW-EXE:0x5d96c0 lobby sky ease] while current != target: R += (B target − R) sar 4 (0x5d96fc-0x5d9709), G += (G target − G) sar 4, B += (B target − B) sar 4; the 256 grid entries at 0x8c2788 get 0xFF:R:G:B from the integer parts, else the fog colour [0x8bd47c]; the islands update copies the nearest island's SKYCOLOUR (+0x64..+0x6c) to the targets (0x5e11b2)
+	// [DATA:video 0:40-1:10, 78:30-78:40] the lobby's cloud layer is tinted per island (light grey for Lost Kingdom, pink for Wonderland, dark for Halloween World and Space Zone), which the red-toward-blue colour gives, over a cyan clear colour
+	// [APPROX:UI-018] the eased colour applies only while two settings pass (0x5d96c0: [0x785888] > 1 and the first word of the options object 0x78d8d8 == 1, else the grid keeps the fog colour); their runtime values are not read, the capture's tinted clouds show them passing
 	private void EaseSky( (byte R, byte G, byte B) target )
 	{
-		if ( !skySet )
+		(targetR, targetG, targetB) = (target.R << 16, target.G << 16, target.B << 16);
+		if ( skyR == targetR && skyG == targetG && skyB == targetB )
 		{
-			(skyR, skyG, skyB) = (target.R << 16, target.G << 16, target.B << 16);
-			skySet = true;
+			Sky = ClearColour;
 			return;
 		}
-		skyR += ((target.R << 16) - skyR) / 16;
-		skyG += ((target.G << 16) - skyG) / 16;
-		skyB += ((target.B << 16) - skyB) / 16;
+		skyR += (targetB - skyR) >> 4;
+		skyG += (targetG - skyG) >> 4;
+		skyB += (targetB - skyB) >> 4;
+		Sky = ((byte)(skyR >> 16), (byte)(skyG >> 16), (byte)(skyB >> 16));
 	}
 }
 

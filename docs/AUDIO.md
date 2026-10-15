@@ -410,9 +410,12 @@ stepped by `LobbyEffects` 30 times a second (UI-940; the original runs once per 
   (`0x10094F8C`): about 173 at the orbit radius around hallow, drawn by the same renderer.
 * **Island one-shots**: a draw with `(draw & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's
   `cat_locallobbysfx` (`0x10095340`), replacing OpenTPW's earlier 5–15 s timer (AUDIO-017 is resolved).
-* **Sky**: one flat colour eased 1/16 of the way toward the island's `SKYCOLOUR` each tick (`0x1008FAA0`, tp.exe
-  `0x5D96C0`). Both builds ease the red channel toward the blue target, and two settings flags gate the eased sky; neither
-  is reproduced before a capture confirms it (UI-018).
+* **Sky**: the screen is cleared to the lobby's fog colour 0x44DDFF (tp.exe `0x5D8B50`, `0x5737AA`). The colour of the
+  sky's cloud layer starts black and eases toward the island's `SKYCOLOUR` each tick by (target − current) >> 4 in 16.16
+  fixed point, the red channel toward the *blue* target (`0x1008FAA0`, tp.exe `0x5D96C0`); while it equals its target the
+  layer takes the fog colour. The capture's cloud layer is tinted that way (grey over Lost Kingdom, pink over Wonderland,
+  dark over Halloween World and Space Zone). The cloud layer itself is not drawn yet, and two settings gate the eased
+  colour whose runtime values are not read (UI-018).
 * **The globe** (`0x100923A8`) sets the rain to 0 and the sky target to (243, 203, 191) and starts its music
   (`cat_globallobbysfx` 2) and ambience (3), stopped when it closes; OpenTPW stops the lobby's own music meanwhile (UI-942).
 * **Entering a park** (`0x10183CC0`) plays `cat_globallobbysfx` 4 flat; the original skips it for game type 2 (UI-942).

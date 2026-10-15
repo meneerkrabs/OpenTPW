@@ -821,9 +821,10 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		else
 		{
-			// [DATA:lobby.wad:<theme>.txt SKYCOLOUR] Lobby sky: one flat colour eased toward the nearest island's SKYCOLOUR (LobbyEffects), behind the 3D scene.
+			// The lobby's backdrop: the screen is cleared to the lobby's fog colour (LobbyEffects.ClearColour) behind the 3D scene.
+			// [APPROX:UI-018] the cloud layer is not drawn: the engine sky (0x8c1828) loads <level>\sky\sky.tga for the lobby (0x5852b0 from 0x5d8b50, "Data\Levels\fantasy") and its draw (0x585ee0-0x586a00) colours it from the 16×16 grid at +0xf60 that LobbyEffects.Sky fills; that draw and the scene's fog (50 to 300) are not traced
 			backgroundBatch.Clear();
-			var sky = lobbyEffects.HasSky ? lobbyEffects.Sky : Menu?.Selected.SkyColour ?? ((byte)40, (byte)90, (byte)160);
+			var sky = LobbyEffects.ClearColour;
 			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), new RgbaByte( sky.R, sky.G, sky.B, 255 ) );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			foreach ( var entity in Entity.All.ToArray() )

@@ -4,9 +4,9 @@ namespace OpenTPW;
 
 /// <summary>
 /// Draws the flying cars of a level's tour rides (docs/TOURS.md): every live car of every controller is the ride's supplemental mesh 0 (the bird, balloon, craft or kite),
-/// placed at the car's position with its heading, pitch and roll, and its riders hang from the mesh's head dummies like the go-karts' (<see cref="CollectHeads"/>).
+/// placed at the car's smoothed position with its heading, pitch and roll (<see cref="TourPose"/>), and its riders hang from the mesh's head dummies like the go-karts' (<see cref="CollectHeads"/>).
 /// </summary>
-// [APPROX:TOUR-008] the cars are drawn from the ride's supplemental mesh 0 at the controller's pose; the mesh's forward axis (taken as +X), the signs of its pitch and roll and the original's car animations (ids 0, 3, 4, 5, 6, 9, 10 on the car's own clips) are assumptions, and the car shadow is not drawn
+// [APPROX:TOUR-008] the car animations (ids 0, 3, 4, 5, 6, 9, 10 on the car mesh's own clips, 0x0055AA80 through 0x004732A0) and the car shadow are not drawn; the pose, the axis, the angle formula, the per-frame smoothing and the rider head nodes are the original's (TourPose)
 public sealed class TourRenderer : IDisposable
 {
 	private const string TextureArrayName = "Color";
@@ -99,11 +99,18 @@ public sealed class TourRenderer : IDisposable
 			visual.Car = car;
 			if ( visual.Body.Count == 0 )
 				continue;
-			var heading = car.Heading * 2 * MathF.PI / 4096f;
-			var pitch = car.Pitch * 2 * MathF.PI / 4096f;
-			var roll = car.Roll * 2 * MathF.PI / 4096f;
-			var transform = Matrix4x4.CreateRotationX( roll ) * Matrix4x4.CreateRotationY( -pitch ) * Matrix4x4.CreateRotationZ( heading )
-				* Matrix4x4.CreateTranslation( car.X / 300f, car.Z / 300f, car.Y / 300f )
+			// the original redraws every frame with the time since the last tick; here the pose is smoothed once per simulation step with the tick clock's remainder, which is the same on every machine
+			if ( car.DrawnGeneration != car.Generation )
+			{
+				car.Drawn = TourPose.Snap( car );
+				car.DrawnGeneration = car.Generation;
+			}
+			else
+				car.Drawn = TourPose.Smooth( car, TourPose.Fraction( controller ), car.Drawn );
+			var pose = car.Drawn;
+			// the pose is in the original's frame (Y up): the rotation is swapped into the engine's (Z up) like the coaster cars'
+			var transform = ObjectPlacement.SwapAxes( TourPose.Rotation( pose ) )
+				* Matrix4x4.CreateTranslation( pose.X, pose.Z, pose.Y )
 				* Matrix4x4.CreateScale( ObjectPlacement.ModelScale )
 				* Matrix4x4.CreateTranslation( origin.X, origin.Y, 0 );
 			visual.Transform = transform;
@@ -115,7 +122,7 @@ public sealed class TourRenderer : IDisposable
 		}
 	}
 
-	/// <summary>The riders of the cars as head sources: each rider hangs from the head dummy of its seat, newest seat last.</summary>
+	/// <summary>The riders of the cars as head sources: each rider hangs from a head dummy picked by the car's shuffle (<see cref="TourPose.HeadNode"/>).</summary>
 	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
 	{
 		foreach ( var visual in visuals )
@@ -124,10 +131,14 @@ public sealed class TourRenderer : IDisposable
 				|| visual.Entry is not { } entry || Mesh( entry ) is not { } geometry )
 				continue;
 			var riders = Math.Min( Math.Abs( car.RiderCount ), TourCar.MaximumRiders );
-			for ( var seat = 0; seat < riders && seat < geometry.HeadNodes.Length; seat++ )
+			for ( var seat = 0; seat < riders; seat++ )
 			{
-				var node = ObjectPlacement.SwapAxes( geometry.HeadNodes[seat] ) * visual.Transform;
-				sources.Add( new HeadSource( car.Riders[seat], controller.AttractionId, ObjectPlacement.SwapAxes( node ), geometry.HeadFlags[seat] ) );
+				// the rider sits on a shuffled head node: (car random + rider + 1) mod the head count (TourPose.HeadNode)
+				var head = TourPose.HeadNode( car.Random, seat, geometry.HeadNodes.Length );
+				if ( head < 0 )
+					break;
+				var node = ObjectPlacement.SwapAxes( geometry.HeadNodes[head] ) * visual.Transform;
+				sources.Add( new HeadSource( car.Riders[seat], controller.AttractionId, ObjectPlacement.SwapAxes( node ), geometry.HeadFlags[head] ) );
 			}
 		}
 	}

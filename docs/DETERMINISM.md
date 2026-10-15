@@ -268,6 +268,13 @@ a controller changes and the pinned fixed run (`0x776A2A9E9A53BF25`, schema 17) 
 boats' `Engine` flag are presentation state: saved (trailing optional fields, so older saves restore) but not hashed. A save from
 before the tick change may carry a tick clock up to 1/30 s and still restores (`BumpController.MaximumSavedRemainder`).
 
+Tour register round (October 15): the tour controllers tick every 62 ms (`TourController.TickSeconds = 0.062`, was 31 ms: the original runs the tour tick on every second world step), so every park with a tour
+ride runs different flights than before; the park-resume continuation hashes of such a park move with it. A free car slot's stale words (heading, patrol corner, approach heading, seat ids) now join the
+tour part of the hash and are saved (trailing optional `FreeSlots`, and every seat word of a live car), a handed-out seat keeps its id, and a ride closed after a departure order keeps its car docked until it
+reopens, which changes a closing run. No `SchemaVersion` bump and no pinned hash moved: the tour module still joins the hash only while a controller exists, and nothing pins a park with one.
+A save from the 31 ms clock still restores (`TourController.MaximumSavedRemainder`, 62 ms). The wall-clock catch-up of the original's world loop (2 s clamp) and the parity phase of the tour tick
+against the script loop are not reproduced (`[EXT:tour-fixed-step]`). The drawn pose of a car (`TourCar.Drawn`, the head-node shuffle) is presentation state: not saved, not hashed, and it draws nothing from any stream.
+
 `GuestSimulation.ComputeStateHash` (the "raw guest hash") is unchanged. With
 per-park attraction ids it now gives the same value for a second run in the
 same process.

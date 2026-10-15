@@ -9,8 +9,9 @@ files remain outside that publication.
 ## Guests walk with tp.exe's walk (October 15, 2026)
 
 Guests walking the park's cells now use the original walk, checked instruction by instruction in tp.exe and against the original
-routines run in the repo's Unicorn harness (12,700 edge, commit and search cases, 8,000 avoid_walls cases and about 22,000 whole-walk
-steps without a difference):
+routines run in the repo's x86 oracle (finding X25 in docs/reverse/ORACLE.md: the edge test, step commit, route search, avoid_walls
+and 40 whole walks through the set-up and steering step agree on every pinned input; larger runs while porting, 12,700 edge, commit and
+search cases, 8,000 avoid_walls cases and about 22,000 whole-walk steps, agreed as well):
 
 - **Route search, edge test and step commit** (`0x511420`, `0x4d8750`, `0x510510`): a failed search makes the step return stuck (2, `+0xB8`),
   which the arrival state treats as arrival and the litter state as a drop (GUEST-010).

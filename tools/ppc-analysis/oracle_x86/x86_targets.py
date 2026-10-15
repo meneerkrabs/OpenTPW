@@ -46,10 +46,11 @@ class Target:
     equal: Callable = staticmethod(lambda a, b: a == b)
     notes: list[str] = field(default_factory=list)
     log: list = field(default_factory=list)
+    budget: int = 100_000
 
     def sandbox(self, image: Image) -> Sandbox:
         self.log = []
-        return Sandbox(image, self.allowed, self.stubs(self))
+        return Sandbox(image, self.allowed, self.stubs(self), self.budget)
 
 
 def run_binary(target: Target, sandbox: Sandbox, x):
@@ -2703,6 +2704,342 @@ def coast_targets() -> list:
 COAST_TARGETS = coast_targets()
 COAST_STEP_TPW, COAST_FINAL_TPW, COAST_STEP_TPI, COAST_FINAL_TPI = COAST_TARGETS
 
+
+# ============================================================================== tp.exe guest walk (WALK-002 .. WALK-009, X25)
+import walk_reading  # noqa: E402  (the C# port of the walk, restated)
+
+WALK_MAP = 0x7CF6EC             # global: the map object; [map] + 0x294 + id * 0x44 is cell id = y * 128 + x + 1 (type +8, links +0xc, queue link +0xd, flags +0xe)
+WALK_OBJECT_TABLE = 0x8023A0    # global read by the object test 0x5363f0 through 0x4d0af0 (cell word +0 = 0: object slot 0, an empty record)
+WALK_GAME = 0x7CF83C            # global: the game object; the block stamps at +0x2d8 + 0x1b0000, (y >> 4) * 33 + (x >> 4)
+WALK_COUNTER = 0x7CDB98         # the stamp counter 0x4d8c50 raises
+WALK_BEHAVIOURS = (0x7CF078, 0x7CF07C)   # the steering list (weight, behaviour) pairs
+WALK_EDGE = 0x4D8750            # cdecl (x, y, direction, mask) -> blocked
+WALK_COMMIT = 0x510510          # cdecl (from id, to id, mask) -> accepted
+WALK_SEARCH = 0x511420          # cdecl (buffer, mask): count +0, start +2, goal +4, waypoints +6; 0x70000000 on failure
+WALK_AVOID = 0x50E4A0           # (out, walk), ret 8: avoid_walls
+WALK_SETUP = 0x50F8E0           # thiscall walk (target, mode), ret 8
+WALK_STEP = 0x50F3B0            # thiscall walk: the steering step
+WALK_PROGRESS = 0x50FD40        # thiscall walk -> progress
+WALK_CELLS = (0x4D8750, 0x4D8B2C), (0x536300, 0x536460), (0x522770, 0x522790), (0x522850, 0x522860), (0x4D0AF0, 0x4D0B06), \
+    (0x53AD20, 0x53ADB0), (0x4D8300, 0x4D8330), (0x510510, 0x5108A0)
+WALK_SEARCH_RANGES = [*WALK_CELLS, (0x5108A0, 0x511F00), (0x67BB90, 0x67BF00), (DEBUG_PRINT, DEBUG_PRINT + 1)]
+WALK_AVOID_RANGES = WALK_SEARCH_RANGES + [(0x50E4A0, 0x50ECD4), (0x50F870, 0x50F8E0), (0x5104B0, 0x510510), (0x50CD80, 0x50CDA8),
+                                          (0x50E080, 0x50E0D4), (0x4D49A0, 0x4D49C2), (0x67A830, 0x67A8A0), (0x5104E0, 0x510502),
+                                          (0x50CC20, 0x50CD74), (0x50DF70, 0x50DFB4), (0x50ECE0, 0x50ED08)]
+WALK_STEP_RANGES = WALK_AVOID_RANGES + [(0x50F3B0, 0x50F5F8), (0x50F600, 0x50F6F9), (0x50ED10, 0x50F1BD), (0x50F1C0, 0x50F1E2),
+                                        (0x50F8E0, 0x50FD3C), (0x50FD40, 0x50FDE4), (0x4D8C50, 0x4D8C5C), (0x4D8CD0, 0x4D8CEB),
+                                        (0x50E0E0, 0x50E189), (0x50F1A0, 0x50F1BD), (0x50F700, 0x50F870), (0x4D99C0, 0x4D99D3)]
+WALK_NEIGHBOURS = 0x5102F0      # separation's neighbour query: stubbed (no neighbours), the sum it starts from stays 0
+
+
+def walk_debug_stub(sb: Sandbox):
+    return 0, 0
+
+
+def walk_stubs(target: Target) -> dict:
+    return {DEBUG_PRINT: walk_debug_stub, WALK_NEIGHBOURS: walk_debug_stub}
+
+
+def walk_map_binary(sb: Sandbox, x: dict) -> int:
+    """Writes the input's cells into a synthetic 128 x 128 map; returns the cell array's base."""
+    holder = sb.object(16)
+    base = sb.object(0x294 + (128 * 128 + 2) * 0x44)
+    sb.write(holder, 'I', base)
+    sb.write(WALK_MAP, 'I', holder)
+    sb.write(WALK_OBJECT_TABLE, 'I', sb.object(0x10FFD8 + 64))
+    for key, offset, fmt in (('types', 8, 'I'), ('links', 0xC, 'B'), ('qlinks', 0xD, 'B'), ('flags', 0xE, 'H')):
+        for cx, cy, value in x[key]:
+            sb.write(base + 0x294 + (cy * 128 + cx + 1) * 0x44 + offset, fmt, value)
+    return base
+
+
+def walk_map_reading(x: dict) -> 'walk_reading.Map':
+    return walk_reading.Map(*({(cx, cy): v for cx, cy, v in x[key]} for key in ('types', 'links', 'qlinks', 'flags')))
+
+
+def walk_random_cells(rng: random.Random) -> dict:
+    """A park-like window: path corridors (a maze on a 2-cell lattice, or random fill with full rows and columns) plus some queue,
+    walkway, type-2/4/5/7/9/10 cells with random links, queue links and the 0x400 flag."""
+    w, h = rng.choice([8, 15, 24, 41]), rng.choice([8, 15, 25])
+    ox, oy = rng.choice([0, 30, 128 - w]), rng.choice([0, 30, 128 - h])
+    types = {}
+    if rng.random() < 0.5:
+        lattice = [(x, y) for x in range(ox, ox + w, 2) for y in range(oy, oy + h, 2)]
+        members, seen, stack = set(lattice), {lattice[0]}, [lattice[0]]
+        types[lattice[0]] = 1
+        while stack:
+            c = stack[-1]
+            nbrs = [(c[0] + dx, c[1] + dy) for dx, dy in ((2, 0), (-2, 0), (0, 2), (0, -2)) if (c[0] + dx, c[1] + dy) in members and (c[0] + dx, c[1] + dy) not in seen]
+            if not nbrs:
+                stack.pop()
+                continue
+            n = rng.choice(nbrs)
+            seen.add(n)
+            stack.append(n)
+            types[n] = types[((c[0] + n[0]) // 2, (c[1] + n[1]) // 2)] = 1
+    else:
+        density = rng.choice([0.4, 0.6, 0.8])
+        for y in range(oy, oy + h):
+            for x in range(ox, ox + w):
+                if rng.random() < density:
+                    types[(x, y)] = 1
+        for _ in range(rng.randint(1, 3)):
+            ry, rx = rng.randrange(oy, oy + h), rng.randrange(ox, ox + w)
+            for x in range(ox, ox + w):
+                types[(x, ry)] = 1
+            for y in range(oy, oy + h):
+                types[(rx, y)] = 1
+    for _ in range(rng.randint(0, w * h // 12)):
+        types[(rng.randrange(ox, ox + w), rng.randrange(oy, oy + h))] = rng.choice([3, 3, 9, 4, 0x1E, 2, 10, 5, 7])
+    links = [[x, y, rng.choice([0x55, 0, 1, 4, 16, 64, 0x11, 0x44, rng.randrange(256)])] for (x, y), t in sorted(types.items()) if t in (1, 3, 9, 10)]
+    qlinks = [[x, y, rng.choice([1, 4, 16, 64, 0])] for (x, y), t in sorted(types.items()) if t in (3, 9, 10)]
+    flags = [[x, y, 0x400] for (x, y), t in sorted(types.items()) if t == 0x1E and rng.random() < 0.3]
+    paths = sorted(c for c, t in types.items() if t == 1) or [(ox, oy)]
+    return {'types': [[x, y, t] for (x, y), t in sorted(types.items())], 'links': links, 'qlinks': qlinks, 'flags': flags,
+            'window': (ox, oy, w, h), 'paths': paths}
+
+
+def walk_edge_binary(sb: Sandbox, x: dict, log) -> tuple:
+    walk_map_binary(sb, x)
+    return tuple(sb.call(WALK_EDGE, args=(cx, cy, d, x['mask'])).eax & 0xFF for cx, cy, d in x['edges'])
+
+
+def walk_edge_plan(x: dict) -> tuple:
+    m = walk_map_reading(x)
+    return tuple(walk_reading.blocked(m, cx, cy, d, x['mask']) for cx, cy, d in x['edges'])
+
+
+def walk_commit_binary(sb: Sandbox, x: dict, log) -> tuple:
+    walk_map_binary(sb, x)
+    return tuple(sb.call(WALK_COMMIT, args=(fy * 128 + fx + 1, ty * 128 + tx + 1, x['mask'])).eax for fx, fy, tx, ty in x['steps'])
+
+
+def walk_commit_plan(x: dict) -> tuple:
+    m = walk_map_reading(x)
+    return tuple(walk_reading.commit(m, (fx, fy), (tx, ty), x['mask']) for fx, fy, tx, ty in x['steps'])
+
+
+def walk_cell_inputs(rng: random.Random, n: int, kind: str) -> list:
+    out = []
+    for _ in range(n):
+        x = walk_random_cells(rng)
+        x['mask'] = rng.choice([0, 0, 1, 2])
+        ox, oy, w, h = x['window']
+        def cell():
+            return rng.randrange(max(0, ox - 1), min(128, ox + w + 1)), rng.randrange(max(0, oy - 1), min(128, oy + h + 1))
+        if kind == 'edge':
+            x['edges'] = [cell() + (rng.randrange(4),) for _ in range(12)]
+        else:
+            steps = []
+            while len(steps) < 12:
+                fx, fy = cell()
+                tx, ty = fx + rng.choice([-1, 0, 1, 1, -2]), fy + rng.choice([-1, 0, 1, -1, 2])
+                if 0 <= tx < 128 and 0 <= ty < 128:
+                    steps.append((fx, fy, tx, ty))
+            x['steps'] = steps
+        del x['paths']
+        out.append(x)
+    # the map edges: x 0 / 127, y 0 / 127 in every direction
+    edge = {'types': [[0, 0, 1], [127, 127, 1], [1, 0, 1], [0, 1, 1]], 'links': [], 'qlinks': [], 'flags': [], 'window': (0, 0, 128, 128), 'mask': 0}
+    if kind == 'edge':
+        out.append(dict(edge, edges=[(0, 0, d) for d in range(4)] + [(127, 127, d) for d in range(4)]))
+    else:
+        out.append(dict(edge, steps=[(0, 0, 1, 1), (0, 0, 1, 0), (1, 0, 0, 1), (127, 127, 126, 126)]))
+    return out
+
+
+def walk_search_binary(sb: Sandbox, x: dict, log) -> tuple:
+    walk_map_binary(sb, x)
+    buf = sb.object(0x200)
+    (sx, sy), (gx, gy) = x['start'], x['goal']
+    for offset, value in ((2, sx), (3, sy), (4, gx), (5, gy)):
+        sb.write(buf + offset, 'B', value)
+    result = sb.call(WALK_SEARCH, args=(buf, x['mask'])).eax
+    if result == walk_reading.FAIL:
+        return (False,)
+    return (True,) + tuple((sb.read(buf + 6 + 2 * i, 'B'), sb.read(buf + 7 + 2 * i, 'B')) for i in range(sb.read(buf, 'B')))
+
+
+def walk_search_plan(x: dict) -> tuple:
+    result, path = walk_reading.find(walk_map_reading(x), tuple(x['start']), tuple(x['goal']), x['mask'])
+    return (False,) if result == walk_reading.FAIL else (True,) + tuple(path)
+
+
+def walk_search_inputs(rng: random.Random, n: int) -> list:
+    out = []
+    for _ in range(n):
+        x = walk_random_cells(rng)
+        ox, oy, w, h = x['window']
+        x['mask'] = rng.choice([0, 0, 1, 2])
+        x['start'] = rng.choice(x['paths'])
+        x['goal'] = rng.choice(x['paths']) if rng.random() < 0.85 else (rng.randrange(ox, min(128, ox + w)), rng.randrange(oy, min(128, oy + h)))
+        del x['paths']
+        out.append(x)
+    return out
+
+
+def walk_avoid_binary(sb: Sandbox, x: dict, log) -> tuple:
+    walk_map_binary(sb, x)
+    walk = sb.object(0x100)
+    for offset, key in ((4, 'r'), (8, 'x'), (0xC, 'y'), (0x10, 'vx'), (0x14, 'vy'), (0xB4, 'mask')):
+        sb.write(walk + offset, 'i', x['walk'][key])
+    out = sb.object(16)
+    sb.call(WALK_AVOID, args=(out, walk), this=0)
+    return sb.read(out, 'i'), sb.read(out + 4, 'i')
+
+
+def walk_avoid_plan(x: dict) -> tuple:
+    return tuple(walk_reading.avoid_walls(walk_map_reading(x), x['walk']))
+
+
+def walk_avoid_inputs(rng: random.Random, n: int) -> list:
+    out = []
+    for i in range(n):
+        if i % 4 == 0:
+            # a queue cell on the diagonal cuts the corner its two path neighbours share: the corner blocks and the ray test
+            x = {'types': [[cx, cy, 3 if (cx, cy) == (41, 41) else 1] for cx in (39, 40, 41) for cy in (39, 40, 41)],
+                 'links': [], 'qlinks': [], 'flags': [], 'paths': [(40, 40)]}
+        else:
+            x = walk_random_cells(rng)
+        cx, cy = rng.choice(x['paths'])
+        near = rng.random() < 0.4
+        fx = rng.choice([rng.randrange(0, 16000), rng.randrange(49536, 65536)]) if near else rng.randrange(65536)
+        fy = rng.choice([rng.randrange(0, 16000), rng.randrange(49536, 65536)]) if near else rng.randrange(65536)
+        x['walk'] = {'r': walk_reading.RADIUS, 'mask': rng.choice([0, 0, 1, 2]), 'x': (cx << 16) + fx, 'y': (cy << 16) + fy,
+                     'vx': rng.randint(-30000, 30000) if rng.random() > 0.1 else 0, 'vy': rng.randint(-30000, 30000) if rng.random() > 0.1 else 0}
+        del x['paths']
+        out.append(x)
+    return out
+
+
+def walk_steering_binary(sb: Sandbox, x: dict, log) -> tuple:
+    """Set-up 0x50f8e0, then the steering step 0x50f3b0 with the behaviour list avoid_walls 0xe666, follow_path 0x8000 and
+    separation 0x1999 (registration 0x50fdf0); edits write a cell type and stamp its block with the raised counter."""
+    base = walk_map_binary(sb, x)
+    game = sb.object(0x2D8 + 0x1B0000 + 33 * 9 * 4)
+    sb.write(WALK_GAME, 'I', game)
+    pairs = sb.object(24)
+    for i, (behaviour, weight) in enumerate(((WALK_AVOID, 0xE666), (0x50ED10, 0x8000), (0x50E0E0, 0x1999))):
+        table = sb.object(4)
+        sb.write(table, 'I', behaviour)
+        instance = sb.object(8)
+        sb.write(instance, 'I', table)
+        sb.write(pairs + 8 * i, 'I', weight)
+        sb.write(pairs + 8 * i + 4, 'I', instance)
+    sb.write(WALK_BEHAVIOURS[0], 'I', pairs)
+    sb.write(WALK_BEHAVIOURS[1], 'I', pairs + 24)
+    sb.write(WALK_COUNTER, 'I', 0)
+    walk = sb.object(0x100)
+    sb.write(walk, 'I', 0x10000)
+    sb.write(walk + 4, 'I', walk_reading.RADIUS)
+    sb.write(walk + 0x60, 'B', 1)
+    init = x['walk']
+    for offset, key in ((8, 'x'), (0xC, 'y'), (0x10, 'vx'), (0x14, 'vy'), (0x18, 'max_force'), (0x1C, 'max_speed'), (0xB4, 'mask')):
+        sb.write(walk + offset, 'i', init[key])
+    target = sb.object(8)
+
+    def read(offset, fmt='i'):
+        return sb.read(walk + offset, fmt)
+
+    def fields() -> tuple:
+        count = read(0x58)
+        return (read(8), read(0xC), read(0x10), read(0x14), read(0x4C), read(0x50), read(0x54), count, read(0x5C), read(0x60, 'B'),
+                read(0xA0), read(0xA4), read(0xA8), read(0xAC), read(0xB0) & 0x7FFF, int(read(0xB8) != 0),
+                tuple(((read(0x64 + 8 * i) >> 16) & 0xFF, (read(0x68 + 8 * i) >> 16) & 0xFF) for i in range(count)))
+
+    trace = []
+    for kind, a, b, c in x['events']:
+        if kind == 'go':
+            sb.write(target, 'i', a)
+            sb.write(target + 4, 'i', b)
+            trace.append(('go', sb.call(WALK_SETUP, args=(target, 0), this=walk).eax, fields()))
+        elif kind == 'edit':
+            sb.write(base + 0x294 + (b * 128 + a + 1) * 0x44 + 8, 'I', c)
+            counter = (sb.read(WALK_COUNTER, 'I') + 1) & MASK32
+            sb.write(WALK_COUNTER, 'I', counter)
+            sb.write(game + 0x2D8 + 0x1B0000 + ((b >> 4) * 33 + (a >> 4)) * 4, 'I', counter)
+        else:
+            sb.call(WALK_STEP, this=walk)
+            progress = sb.call(WALK_PROGRESS, this=walk).eax
+            trace.append(('step', 2 if read(0xB8) else 0 if progress == 0x10000 else 1, fields()))
+    return tuple(trace)
+
+
+def walk_steering_plan(x: dict) -> tuple:
+    init = x['walk']
+    walk = walk_reading.Walk(walk_map_reading(x), {}, init['x'], init['y'], init['vx'], init['vy'], init['mask'], init['max_speed'], init['max_force'])
+    trace = []
+    for kind, a, b, c in x['events']:
+        if kind == 'go':
+            trace.append(('go', 1 if walk.setup(a, b, False) else 0, walk.fields()))
+        elif kind == 'edit':
+            walk.edit(a, b, c)
+        else:
+            result = walk.step()
+            trace.append(('step', result, walk.fields()))
+    return tuple(trace)
+
+
+WALK_STEERING_STEPS = 80
+WALK_STEERING_INPUTS = 40      # each input is a whole walk; the step count bounds the run time
+
+
+def walk_steering_inputs(rng: random.Random, n: int) -> list:
+    out = []
+    for _ in range(min(n, WALK_STEERING_INPUTS)):
+        x = walk_random_cells(rng)
+        cx, cy = rng.choice(x['paths'])
+        speed = rng.choice([655, 4000, 7733, 13107, 20000, 26214])
+        x['walk'] = {'x': (cx << 16) + rng.randrange(8000, 57000), 'y': (cy << 16) + rng.randrange(8000, 57000),
+                     'vx': rng.randint(-5000, 5000), 'vy': rng.randint(-5000, 5000), 'mask': rng.choice([0, 0, 0, 1]),
+                     'max_speed': speed, 'max_force': min(52428, 2 * speed)}
+        events, types = [], {(a, b): t for a, b, t in x['types']}
+        for k in range(WALK_STEERING_STEPS):
+            if k == 0 or rng.random() < 0.02:
+                gx, gy = rng.choice(x['paths'])
+                events.append(('go', (gx << 16) + rng.randrange(5 << 8, 123 << 8), (gy << 16) + rng.randrange(5 << 8, 123 << 8), 0))
+            if rng.random() < 0.02:
+                ex, ey = cx + rng.randint(-3, 3), cy + rng.randint(-3, 3)
+                kind = rng.choice([0, 1, 1, 3])
+                if 0 <= ex < 128 and 0 <= ey < 128 and types.get((ex, ey), 0) != kind:
+                    types[(ex, ey)] = kind
+                    events.append(('edit', ex, ey, kind))
+            events.append(('step', 0, 0, 0))
+        x['events'] = events
+        del x['paths']
+        out.append(x)
+    return out
+
+
+WALK_EDGE_TARGET = Target(
+    'tpw-exe-walk-edge-test', 'tpw', 'tp.exe walk edge test 0x4d8750', 'WalkEdges.Blocked (WALK-005, WALK-006)',
+    WALK_EDGE, WALK_SEARCH_RANGES, walk_stubs, walk_edge_binary, walk_edge_plan, lambda rng, n: walk_cell_inputs(rng, n, 'edge'),
+    notes=['A synthetic 128 x 128 map at [0x7cf6ec] (cells 0x44 bytes from +0x294, id = y * 128 + x + 1); no objects (the cell word +0 '
+           'names an empty record), so 0x5363f0 is false. Twelve edges per map, every mask.'], budget=2_000_000)
+WALK_COMMIT_TARGET = Target(
+    'tpw-exe-walk-commit', 'tpw', 'tp.exe walk step commit 0x510510', 'WalkEdges.Commit (WALK-005)',
+    WALK_COMMIT, WALK_SEARCH_RANGES, walk_stubs, walk_commit_binary, walk_commit_plan, lambda rng, n: walk_cell_inputs(rng, n, 'commit'),
+    notes=['The same synthetic maps; twelve steps of up to two cells per map, cell ids as 0x510870 forms them.'], budget=2_000_000)
+WALK_SEARCH_TARGET = Target(
+    'tpw-exe-walk-search', 'tpw', 'tp.exe walk route search 0x511420', 'WalkSearch.Find (WALK-004)',
+    WALK_SEARCH, WALK_SEARCH_RANGES, walk_stubs, walk_search_binary, walk_search_plan, walk_search_inputs,
+    notes=['The line search 0x511470, its tracers 0x511c90, the shortcuts 0x5110d0 and the refinement 0x5108a0 with the library '
+           'memmove 0x67bb90; the waypoint list is compared, or the failure.'], budget=400_000_000)
+WALK_AVOID_TARGET = Target(
+    'tpw-exe-walk-avoid-walls', 'tpw', 'tp.exe avoid_walls 0x50e4a0', 'GuestNavigation.AvoidWallsOriginal (WALK-002 retired)',
+    WALK_AVOID, WALK_AVOID_RANGES, walk_stubs, walk_avoid_binary, walk_avoid_plan, walk_avoid_inputs,
+    notes=['The walk object holds the radius +4, position +8, velocity +0x10 and mask +0xb4; a quarter of the inputs stand next to a '
+           'queue cell that cuts a corner, so the corner blocks and the ray test 0x50cc20 run.'], budget=5_000_000)
+WALK_STEERING_TARGET = Target(
+    'tpw-exe-walk-steering', 'tpw', 'tp.exe walk set-up 0x50f8e0 and steering step 0x50f3b0', 'GuestNavigation.Navigate / Step (WALK-004, -007, -009)',
+    WALK_STEP, WALK_STEP_RANGES, walk_stubs, walk_steering_binary, walk_steering_plan, walk_steering_inputs,
+    notes=['A whole walk per input: set-ups, 80 steering steps, map edits that stamp their block. The behaviour list is the '
+           'registration order with its weights; separation runs with its neighbour query 0x5102f0 stubbed (no neighbours). Every '
+           'walk field the step reads is compared after each set-up and step, with the walk step\'s result (0x4fa2a0).'],
+    budget=2_000_000_000)
+
+WALK_TARGETS = [WALK_EDGE_TARGET, WALK_COMMIT_TARGET, WALK_SEARCH_TARGET, WALK_AVOID_TARGET, WALK_STEERING_TARGET]
+
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
            SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS + WALK_TARGETS

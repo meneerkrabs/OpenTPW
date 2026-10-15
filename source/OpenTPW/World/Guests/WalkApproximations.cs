@@ -5,7 +5,7 @@ namespace OpenTPW;
 /// tagged <c>[APPROX:WALK-NNN]</c> at its code site. The speed model is traced from the Mac binary; a guest's walk on the park's
 /// cells is tp.exe's (GuestNavigation.Navigate: the route search 0x511420, the edge test 0x4d8750 and commit 0x510510, avoid_walls
 /// 0x50e4a0 with its corner blocks, follow_path 0x50ed10 with the block stamps, the progress 0x50fd40 and the steering step 0x50f3b0
-/// with its own arithmetic), checked against the original in the x86 oracle; separation is the Mac's (BIN labels at the code sites).
+/// with its own arithmetic), checked against the original in the x86 oracle (docs/reverse/ORACLE.md X25); separation is the Mac's (BIN labels at the code sites).
 /// Retired: WALK-002 (avoid_walls' corner blocks and the position's cell) and WALK-009 (the progress measure and its resets).
 /// </summary>
 public static class WalkApproximations

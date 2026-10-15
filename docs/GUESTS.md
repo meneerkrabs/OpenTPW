@@ -450,7 +450,8 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
   follow_path (0.5) and separation (0.1), each truncated to the max force, summed and
   truncated, added to the velocity, which is truncated to the max speed. A new
   destination keeps the velocity. On the park's cells this is tp.exe's walk
-  (`GuestNavigation.Navigate`), checked against the original routines in the x86 oracle:
+  (`GuestNavigation.Navigate`), checked against the original routines in the x86 oracle
+  ([ORACLE.md](reverse/ORACLE.md) X25):
   - **Route.** Every destination (SetDest `0x510100` → set-up `0x50f8e0`) searches from
     the guest's cell (`WalkSearch`, `0x511420`): a four-connected line towards the
     goal; at a blocked edge two boundary tracers (one turning each way) follow the wall

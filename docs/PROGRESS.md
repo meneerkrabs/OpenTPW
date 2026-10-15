@@ -1058,6 +1058,7 @@ research batch was included in this merge.
 
 ## Browser build, official server and website (October 10, 2026)
 
+- **Silent automated runs (October 15):** smokes, captures and park-resume runs open no audio device unless `--smoke-audio` is given (`SdlMovieAudioOutput.Suppressed`, `[EXT:silent-automated-runs]`), so the many test runs on a developer machine make no sound; `--silent` or `OPENTPW_SILENT=1` silences any run. Every audio path already falls back to the wall clock without a device, so timing and smoke results are unchanged.
 - **Layout-table review follow-ups (October 15):** the TPI layout-load confirmation lists the tick first (a source scan of every
   `UiDialogs` caller guards the order); Escape and the right click (RMBCancelOn) close the object window; the window layout is
   cached; the shop and sideshow windows use their own row kinds, the ride one shows the age; the theme-start dialog, the game-mode

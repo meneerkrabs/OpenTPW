@@ -66,11 +66,22 @@ Formats and evidence:
   The wavelet fourth channel is native alpha; the two 16x128 images supply relief
   text RGB, with coverage taken from the generated glyph mask. An absent extra image
   (for example Belly Bounce) therefore does not establish an invisible original board.
-  OpenTPW puts an opaque contrast-selected backing under each face (COMPAT-030) while
-  the downstream source of original board coverage remains untraced.
-  The gate's stored paint is black over a dark decoded stone board; OpenTPW uses
-  light stone text and upward-facing sign normals there for legibility (`[EXT:gate-paint-legibility]`,
-  an OpenTPW presentation decision), pending original-platform pixels.
+  The composed surface starts transparent, as in the native compositor (`0x100AC21C`): a PC v2.0
+  video shows wood and sky between the letters of Belly Bounce, Azteekse Tekens and Wilde Aap, so
+  the faces are drawn with alpha and there is no backing (COMPAT-030 retired). Paint masks are
+  shifted by the record's offsets, which gives Wilde Aap's drop shadow.
+  The gate shows the park name on two lines with the stored paint, a 60 % black shadow offset
+  by (-1, 1) under dark relief stone text, as in the video; the earlier cream paint
+  (`gate-paint-legibility`, formerly COMPAT-031) was contradicted by it and is gone, and so are
+  the upward-facing sign normals it came with: with them the relief text rendered white. With the
+  overlay's normals converted to engine axes like its positions (model X, Y, Z become X, Z, Y) the
+  gate's front face is dark stone with grey-blue relief letters and a black shadow, as in the video;
+  the back of the gate shows no text in a capture from behind.
+  The composed halves are straight alpha: the layers blend into a surface that started at ARGB 0, so
+  partial-alpha texels held colour already scaled by their alpha, which the engine's alpha blend
+  would scale again (dark fringes, a shadow far too dark); the colour is divided back and
+  transparent texels take their neighbours' colour so mip levels do not average towards black
+  (`[EXT:sign-straight-alpha]`; the native consumer of the texels is untraced).
 - Sign models have texture slots `sign1` (left half) and `sign2` (right half); the shared
   `sign1.wct`/`sign2.wct` are 128x128 placeholders reading "SIGN1"/"SIGN2", i.e. the game
   renders these textures at runtime. The binary imports `CreateFontIndirectA`,
@@ -220,16 +231,16 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 
 | Id | Area | Assumption | Evidence needed |
 | --- | --- | --- | --- |
-| COMPAT-001 | Sign text | Ride signs use two 128x128 destinations and a 512-wide text raster reduced to a 256-wide mask; lower DIB rows and GPU UV orientation remain unverified | native texture pixels and GPU UV consumer |
+| COMPAT-001 | Sign text | Ride signs use two 128x128 destinations and a 512-wide text raster reduced to a 256-wide mask; the lower half of the native 512x512 DIB is not reproduced. Orientation (upright, unmirrored) and half order (sign1 left, sign2 right) match a PC v2.0 video | a capture showing the lower DIB rows |
 | COMPAT-002 | Sign text | lfWidth applied as a horizontal scale with the Win32 rule (average character width = lfWidth) and fractional advances; the width search itself is traced (`0x100A9F9C`: no margin, height unchanged, bisection over lfWidth) | captures of long names (Mac GDI width rounding) |
-| COMPAT-003 | Sign text | Ride signs apply paint RGBA, material strips and coefficients with native integer layer blending; GDI coverage, morphology, Gaussian filtering, source-height resampling and float rounding remain approximate | native masks and original-platform pixels |
-| COMPAT-004 | Sign text | Gate signs now compose their decoded .sgn boards; gate-specific pixels have not been compared with the original | original gate capture and board/text placement comparison |
+| COMPAT-003 | Sign text | Ride signs apply paint RGBA, material strips and coefficients with native integer layer blending, and offset each paint mask by the record's offsets (Wilde Aap's drop shadow, the shadow under the gate text); mask growth and blur (mask word +4, parameter +8, `0xa9178`, Azteekse Tekens' outline), GDI coverage, source-height resampling and float rounding remain approximate. The video confirms strips, shadows and outlines, not their shape | `0xa9178` mask shaping; a capture where the sign fonts load |
+| COMPAT-004 | Sign text | The gate is composed from its decoded board with the park name as two lines and the stored paint (a 60 % black shadow under dark relief stone text, as in the video); board placement and relief strength are compared with a 720p capture only | native-resolution gate capture |
 | COMPAT-006 | Sign text | No pair kerning: tp.exe has no TextOut/DrawText/ExtTextOut imports, sign text goes through Uniscribe (`0x5EAB70`: ScriptStringAnalyse flag 0x80, ScriptStringGetLogicalWidths, the percent scaling, a second ScriptStringAnalyse with the game's advance array `0xF85F00`, ScriptStringOut) and no kerning API is called | whether usp10's natural widths include kerning |
-| COMPAT-007 | Sign text | Gate shows the THEMENAMES theme name until a save supplies a park name | save park-name field, capture |
+| COMPAT-007 | Sign text | The theme name is the default park name; the original stores the name as two editable lines (the rename dialog's two fields) that the gate draws and saves; OpenTPW has no rename or saved name | save field of the two lines |
 | COMPAT-009 | Sign text | 16 sub-scanline unhinted linear coverage instead of GDI ANTIALIASED_QUALITY | captures of original sign text |
-| COMPAT-016 | Sign text | Ride sign text = the object's display name (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space | record field selecting the name entries; capture of a shop/sideshow sign |
+| COMPAT-016 | Sign text | Ride sign text = the localized type name of the catalogue entry (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space; confirmed by a PC v2.0 video, also for a prebuilt ride whose instance name differs | the original's empty-name result for an id outside table `0x7488D8` |
 | COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified | native bitmap pixel oracle and ride-sign capture |
-| COMPAT-030 | Sign text | Opaque dark or cream backing under every sign face; native compositor clears transparent, but downstream board coverage is untraced | original sign material/render path and original-platform gate and ride captures |
+| COMPAT-032 | Sign text | Transparent sign faces use the engine's object material (alpha test below 0.1, alpha blend, no depth sorting); thin letters can erode at low mips and blended edges depend on draw order | the original's render state for sign faces; a distant capture |
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only | binary render states or captures per detail level |
 | COMPAT-014 | Theme Park Inc textures | FSH palette 0x24 has no alpha and decodes opaque; no colour key (see [FSH.md](FSH.md)) | Theme Park Inc texture upload code or captures |
 | COMPAT-015 | Theme Park Inc textures | FSH palette 0x2D (one file) read as A1R5G5B5, bit 15 = opaque | Theme Park Inc palette conversion code or a capture |
@@ -253,16 +264,16 @@ for NAME, SIGNA, SIGNB and +0x500 before it parses (`0x413600`, `0x41360D`–`0x
 pointers stay NULL (`0x412C65`; the sign code's handling of a NULL line is untraced and OpenTPW draws the display name); the "both empty, keep the .sam name" rule is gone. The line-1 fallback `0x78A374` is a
 never-written .bss buffer, the empty string, so an empty line 1 stays empty (`0x4E2860`). Both getters (`0x413020`, `0x4130B0`) read the
 OBJECT_NAMES row (table `0x7488D8`, +4 and +8) when the id is listed, and otherwise def+0x4F8 (SIGNA) and def+0x4FC (SIGNB).
-COMPAT-011 (the localized-string fallback order), COMPAT-012 (the UniToMB encode rule: the original converts wide text with
-`WideCharToMultiByte`, `0x424DB0`, and `Encode` has no runtime caller) and COMPAT-031 (the gate paint) are OpenTPW decisions or helpers now:
-`[EXT:locale-fallback]`, `[EXT:text-encode-helper]` and `[EXT:gate-paint-legibility]`. The original opens one language folder
+COMPAT-011 (the localized-string fallback order) and COMPAT-012 (the UniToMB encode rule: the original converts wide text with
+`WideCharToMultiByte`, `0x424DB0`, and `Encode` has no runtime caller) are OpenTPW decisions or helpers now:
+`[EXT:locale-fallback]` and `[EXT:text-encode-helper]` (COMPAT-031, the cream gate paint, was an OpenTPW decision too and is contradicted by the video, see COMPAT-004). The original opens one language folder
 (`Data\Language\<selected>`, `0x419710`) and has no English-then-identifier chain; the missing-id result of the table lookup (`0x6ACB70`) is untraced.
 COMPAT-019 is narrowed: Theme Park Inc's `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704 "New Science Drained Lake
 Obstacle", `levels/science/obstacles/` holds `lake.wad` and `dlake.wad`, `terrain.wad` holds dlake, dlakem, lake, lakem1 and lakem2, and
 `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10 ("Water Drainage"); so "dlake" is the
 drained lake, not a finished one (the viewer's drawing is unchanged). COMPAT-006 (kerning) stays open but its answer is in the shipped
 usp10.dll: tp.exe imports only ScriptStringAnalyse, ScriptStringGetLogicalWidths, ScriptStringOut, ScriptString_pSize and ScriptStringFree
-from USP10 and no kerning or ABC-width call from GDI32. COMPAT-001, -003, -004 and -018 need pixel captures; COMPAT-014 and -015 need
+from USP10 and no kerning or ABC-width call from GDI32. COMPAT-018 needs pixel captures, COMPAT-001, -003 and -004 native-resolution ones; COMPAT-014 and -015 need
 Theme Park Inc's own FSH loader.
 COMPAT-008 and COMPAT-013 are OpenTPW design decisions: `[EXT:gate-sign-depth-lift]` (the gate sign faces' depth lift) and
 `[EXT:graphics-preset-cpu]` (the processor clock taken as 450 MHz or faster).

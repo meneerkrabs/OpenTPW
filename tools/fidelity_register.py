@@ -37,6 +37,7 @@ EXTENSION_SCOPE = "OpenTPW online extension"
 ORIGINAL_SCOPE = "Original-fidelity area (scope unadjudicated)"
 
 ID = re.compile(r"[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3}\Z")
+EMPTY_REGISTER = re.compile(r"\s*//\s*register-empty:")
 TEMPLATE = re.compile(r"[A-Z]+-NNN\Z")
 MARKER = re.compile(r"\[(APPROX|EXT|DATA|BIN)\b")
 # Executables a BIN label may cite (docs/COMPLETION-PLAN.md, "Provenance of game rules").
@@ -183,7 +184,8 @@ def collect(root: Path, registers: dict[str, str] | None = None,
             errors.append(f"missing declaration register: {relative}")
             continue
         count = 0
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        register_lines = path.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(register_lines, 1):
             match = DECLARATION.match(line)
             if not match:
                 continue
@@ -197,7 +199,8 @@ def collect(root: Path, registers: dict[str, str] | None = None,
                 errors.append(f"{relative}:{number}: duplicate declaration {label}")
             else:
                 declarations[label] = Declaration(relative, number, description)
-        if not count:
+        # A register whose last entry was retired says so with a whole-line marker comment; entries are still parsed normally.
+        if not count and not any(EMPTY_REGISTER.match(line) for line in register_lines):
             errors.append(f"no declarations found in {relative}")
     for prefix, relative in sorted(markdown_registers.items()):
         path = root / relative

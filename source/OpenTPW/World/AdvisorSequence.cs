@@ -247,8 +247,8 @@ internal static class AdvisorSequences
 		{
 			if ( entry.IsTimer )
 			{
-				// [BIN:TPW-EXE:0x00599880 advisor update] when the advisor clock reaches the timer (0x599991) the update calls the particle effect 0x521E60 (87, 90000, 0, 7000), plays sound 0xC6 (0x51BFC0) and calls 0x4B9340
-				// [APPROX:ADVISOR-025] the timer is recorded on the sequence (the clip sum so far plus its milliseconds), but its effect (particle 87, sound 0xC6, 0x4B9340) is not ported — evidence needed: the effects of 0x521E60 with these arguments and of 0x4B9340
+				// [BIN:TPW-EXE:0x00599880 advisor update] when the advisor clock reaches the timer (0x599991) the update calls the particle effect 0x521E60 (87, 90000, 0, 7000), plays sound 0xC6 (0x51BFC0) and calls 0x4B9340, the HUD golden-ticket/key counter refresh (shows or hides controls 0x1E0EA-0x1E0F1, formats "%d x" with the key count 0x5AF680, particle 0x61 when the ticket count drops)
+				// [APPROX:ADVISOR-025] the timer is recorded on the sequence (the clip sum so far plus its milliseconds), but its effect (particle 87, sound 0xC6, the HUD ticket/key counter refresh 0x4B9340) is not ported — evidence needed: the effects of 0x521E60 with these arguments and of 0x4B9340
 				timer = sum + entry.TimerMilliseconds;
 				continue;
 			}

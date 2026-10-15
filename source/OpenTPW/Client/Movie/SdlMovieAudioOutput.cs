@@ -64,10 +64,21 @@ internal sealed unsafe class SdlMovieAudioOutput : IMovieAudioOutput
 		LatencySeconds = bufferFrames / (double)sampleRate;
 	}
 
-	/// <summary>Opens the default output device, or returns null (with the reason) when SDL audio is unavailable.</summary>
+	/// <summary>
+	/// True when no output device may be opened: automated runs (smokes and captures) stay silent unless they ask for sound.
+	/// Every caller already handles a missing device (the wall clock stands in for played frames), so timing is unchanged.
+	/// </summary>
+	public static bool Suppressed { get; set; }
+
+	/// <summary>Opens the default output device, or returns null (with the reason) when SDL audio is unavailable or suppressed.</summary>
 	public static SdlMovieAudioOutput? TryOpen( int sampleRate, out string? failure )
 	{
 		failure = null;
+		if ( Suppressed )
+		{
+			failure = "silent run (no output device by request)";
+			return null;
+		}
 		try
 		{
 			var native = Native.Value;

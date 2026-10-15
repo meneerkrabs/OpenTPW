@@ -9,6 +9,7 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ) );
 		var tgqExportIndex = Array.IndexOf(args, "--export-tgq-png");
 		if (tgqExportIndex >= 0)
 		{
@@ -566,6 +567,15 @@ internal static class Game
 	}
 
 	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
+	/// <summary>
+	/// [EXT:silent-automated-runs] smokes, captures and park-resume runs open no audio device unless --smoke-audio is given, so automated runs
+	/// on a developer machine make no sound; --silent or OPENTPW_SILENT=1 silences any run. The game logic and its timing are unchanged.
+	/// </summary>
+	internal static bool IsSilentRun( string[] args, string? silentEnvironment ) =>
+		args.Contains( "--silent" ) || silentEnvironment == "1"
+		|| ((args.Contains( "--smoke-test" ) || args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) ) || args.Contains( "--park-resume-smoke" ))
+			&& !args.Contains( "--smoke-audio" ));
+
 	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
 	{
 		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );

@@ -252,15 +252,6 @@ public class OriginalObject : Entity
 				slots[index] = sign?.TextureFor( name )
 					?? (fallbackBaseSign != null && ObjectSigns.IsSignSlot( name ) ? fallbackBaseSign : LoadTexture( Entry, name ));
 			}
-			if ( gateSign != null )
-				for ( var vertexIndex = 0; vertexIndex < part.Vertices.Length; vertexIndex++ )
-					if ( ObjectSigns.IsSignSlot( part.Textures[part.Vertices[vertexIndex].TexIndex] ) )
-					{
-						// [EXT:gate-paint-legibility] orient the gate's sign lighting upward so the light stone name remains legible (an OpenTPW presentation decision until an original capture exists).
-						var vertex = part.Vertices[vertexIndex];
-						vertex.Normal = System.Numerics.Vector3.UnitZ;
-						part.Vertices[vertexIndex] = vertex;
-					}
 			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 			material.Set( TextureArrayName, slots );
 			// A texture-frame track swaps the frames of the model slots the part shows, unless a runtime sign

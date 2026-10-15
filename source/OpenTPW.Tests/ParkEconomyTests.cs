@@ -258,7 +258,10 @@ public class ParkEconomyTests
 		var park = EconomyTestData.Park();
 		Assert.AreEqual( 15, park.Staff.Candidates.Count );
 		var first = park.Staff.Candidates[0];
-		Assert.IsTrue( first.ExpiresTick == ParkCalendar.SecondsToTicks( 120 ) );
+		// StaffTimeoutTime 120 + R % 60 units of four turns, leaving on the first turn past them (tp.exe 0x507600, 0x5084f0)
+		Assert.IsTrue( park.Staff.Candidates.All( candidate => candidate.ExpiresTick >= ParkCalendar.TickOfTurn( ParkStaff.TurnsPerPoolUnit * 120 + 1 )
+			&& candidate.ExpiresTick <= ParkCalendar.TickOfTurn( ParkStaff.TurnsPerPoolUnit * 179 + 1 ) ) );
+		Assert.IsTrue( park.Staff.Candidates.Select( candidate => candidate.ExpiresTick ).Distinct().Count() > 1, "each candidate draws its own timeout" );
 		park.Advance( ParkCalendar.SecondsToTicks( 200 ) );
 		Assert.IsFalse( park.Staff.Candidates.Any( candidate => candidate.Id == first.Id ) );
 		foreach ( var type in Enum.GetValues<StaffType>() )

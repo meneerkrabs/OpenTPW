@@ -99,7 +99,7 @@ public sealed partial class ParkHud
 		public ShopPriceScreen() : base( "shopPrice" ) { }
 		public override bool Update( UiContext context, UiInput input )
 		{
-			if ( input.Has( UiKeys.Back ) || input.RightPressed )
+			if ( input.Has( UiKeys.Back ) || RightCancels( input ) )
 			{
 				Back?.Invoke();
 				return true;

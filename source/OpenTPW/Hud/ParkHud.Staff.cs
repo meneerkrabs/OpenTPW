@@ -482,8 +482,8 @@ public sealed partial class ParkHud
 		// The original staff window navigates to the visitor and attractions windows (UI-MAP 0x1014b124:
 		// messages 0x32f and 0x330 open them with the last used category); this entry keeps the All
 		// Attractions window reachable where the buy window is closed (a read-only visit disables buy).
-		// [EXT:overview-entry-buttons] a text button: the shipped b_allthinginfo art has no texture in ui.wad.
-		screen.Add( new UiButton { Id = "allAttractions", Text = () => strings[UIStrings.AllRides], Font = fonts => fonts.Label,
+		// [EXT:overview-entry-buttons] the rides tab icon b_srides with 'All Rides' as popup help: the shipped b_allthinginfo art has no texture in ui.wad.
+		screen.Add( new UiButton { Id = "allAttractions", Model = AllAttractionsModel, Help = strings[UIStrings.AllRides],
 			Clicked = OpenAttractionsWindow, Bounds = Rect( 24, 1320, 127, 1422 ), Anchor = UiAnchor.Center } );
 		// [PROVISIONAL:LOCATE] Locate controls focus live actors; role lookup prefers the selected employee, otherwise cycles IDs.
 		var locate = new (string Model, int Help, UiRect Rect)[]

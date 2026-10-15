@@ -11,13 +11,13 @@ public sealed partial class ParkHud
 	private UiButton? callStaffButton;
 
 	// [DATA:ui.wad:b_callmech,b_callhandy] the original's call buttons (with their pressed frames b_callmechd, b_callhandyd)
-	// Approximation (UI-024, registered at ParkHud.Build): the call button sits in the info arm's header beside the name; the original panel's layout is not captured
+	// [BIN:TPW-EXE:0x755150 b_callmech] the call button is b_callmech at (1114,800)-(1268,953), help 8, in the ride window's bottom row; a toilet (a shop) takes the same place
 	private void AddCallStaffButton()
 	{
 		// ui.wad lacks the highlight textures b_callmechg and b_callhandyg (the model's frame 2), so a focused button keeps its normal frame
 		callStaffButton = hud.Add( new UiButton { Id = "callStaff", Model = "b_callmech", Clicked = ToggleCallStaff, KeepNormalFrameWhenFocused = true,
 			Selected = () => CallTarget( selectedObject, out _, out var item, out _ ) && item.MaintenanceRequested,
-			Bounds = UiRect.FromCenter( new System.Numerics.Vector2( 945, 1125 ), 90, 90 ), Anchor = UiAnchor.BottomLeft, Visible = false, Enabled = false } );
+			Bounds = new UiRect( 1114, 800, 154, 153 ), Anchor = UiAnchor.Center, Visible = false, Enabled = false } );
 		infoElements.Add( callStaffButton );
 	}
 

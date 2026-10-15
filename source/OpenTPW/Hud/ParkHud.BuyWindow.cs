@@ -17,8 +17,10 @@ public sealed partial class ParkHud
 {
 	/// <summary>Rows of the list that fit the content region (1037,427)-(1727,871) at <see cref="BuyRowHeight"/>.</summary>
 	public const int BuyVisibleRows = BuyListModel.VisibleRows;
-	// [APPROX:UI-044] row height: the table gives the content region (444 units high), not the row pitch; ten equal rows fill it — evidence needed: capture of the original buy list
-	public const float BuyRowHeight = 444f / BuyVisibleRows;
+	// [BIN:TPW-EXE:0x754cf8 buy window table] the list (type 7, 0x1f8) gives the content region (1037,427)-(1727,871); its row height is not in the table: the list class takes it from its font (0x663718 stores the text height measured by 0x65d865 at +0x170; the row under a point is (y - top) / +0x170, 0x66552e), so the pitch follows the font
+	// [DATA:video 17:20 buy list] ten rows with no scrolling: a text pitch of 175 px / 9 = 19.4 px at 720p, 41.4 +- 1 virtual units; the first band starts at about 423 and the tenth ends at about 837, leaving about 34 units of the region empty
+	// [APPROX:UI-044] the pitch is the measured 41.4 units, not the original's font-derived value, and does not follow the font or the screen; the wheel steps one row
+	public const float BuyRowHeight = 41.4f;
 	// [BIN:TPW-EXE:0x665a44 buy list sort] list 504 has attribute 0x91 including 0x10 (header sort): the same column toggles its direction, a new column starts ascending, and the sort word [0x755140] starts at 1 (column 0, ascending; 0x4ad057 → 0x6659af) and is written back on a change (0x4ac9dd), so the order survives reopening the window for the session (ListSortMemory); the table only gives column header buttons 16/17 without a model
 
 	// [DATA:Mac buy table 0x4cd94:507,506,509,508] category buttons with their help ids (command_17 140, 142, 141, 143)
@@ -222,11 +224,12 @@ public sealed partial class ParkHud
 		// [DATA:Mac buy table 0x4cd94:-2,511] b_exit (help 2) closes; b_allstaff (help 153) opens the staff window.
 		screen.Add( new UiButton { Id = "exit", Model = BuyExitModel, Help = strings.Help( 2 ), Clicked = CloseBuyWindow, Bounds = Rect( 1889, 818, 1972, 901 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "allStaff", Model = BuyStaffModel, Help = strings.Help( 153 ), Clicked = OpenStaffWindow, Bounds = Rect( 1866, 583, 1968, 686 ), Anchor = UiAnchor.Center } );
-		// [EXT:overview-entry-buttons] a text button above b_allstaff opens the All Attractions window (its rides tab,
-		// UITEXT 78 'All Rides'); the shipped b_allthinginfo button art cannot be used — its model's
-		// texture 'b_allthginfo' is absent from ui.wad. The original entry point is not decoded.
+		// [EXT:overview-entry-buttons] a round button above b_allstaff opens the All Attractions window (its rides tab,
+		// UITEXT 78 'All Rides', shown as its popup help); the shipped b_allthinginfo button art cannot be used — its model's
+		// texture 'b_allthginfo' is absent from ui.wad — so it wears the window's own rides tab icon b_srides, round like its
+		// neighbours (a text label does not fit a button this narrow). The original entry point is not decoded.
 		// The rectangle ends above b_allstaff's top edge so no click band of the two buttons overlaps.
-		screen.Add( new UiButton { Id = "allAttractions", Text = () => strings[UIStrings.AllRides], Font = fonts => fonts.Label,
+		screen.Add( new UiButton { Id = "allAttractions", Model = AllAttractionsModel, Help = strings[UIStrings.AllRides],
 			Clicked = OpenAttractionsWindow, Bounds = Rect( 1866, 458, 1968, 577 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseBuyWindow;
 		return screen;

@@ -12,6 +12,27 @@ public sealed partial class ParkHud
 	/// <summary>Draws the named ui.wad models in a row along the top of the screen (a capture to identify art).</summary>
 	internal void DebugShowModels( IEnumerable<string> names ) => debugModels = names.ToArray();
 
+	/// <summary>Boards a rideable ride: the first one, or the first whose name contains <paramref name="name"/>, or "coaster"; "look:x,y" holds the look pointer at that offset instead.</summary>
+	internal void DebugRide( string? name )
+	{
+		if ( name != null && name.StartsWith( "look:", StringComparison.Ordinal ) )
+		{
+			var parts = name[5..].Split( ',' );
+			RideCameraMode.PointerOverride = parts.Length == 2 && float.TryParse( parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var x )
+				&& float.TryParse( parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var y ) ? new System.Numerics.Vector2( x, y ) : null;
+			return;
+		}
+		RideCameraMode.PointerOverride ??= System.Numerics.Vector2.Zero;
+		var candidates = level.Objects.Objects.Where( item => !item.IsDeleted && RideCameraMode.CanRide( item ) );
+		var match = string.IsNullOrEmpty( name ) ? candidates.FirstOrDefault( item => item.Runtime.Coaster == null )
+			: name == "coaster" ? candidates.FirstOrDefault( item => item.Runtime.Coaster != null )
+			: candidates.FirstOrDefault( item => (item.Entry.DisplayName ?? "").Contains( name, StringComparison.OrdinalIgnoreCase ) );
+		if ( match == null || !level.EnterRideView( match ) )
+			Log.Warning( $"--debug-hud ride: no rideable ride matches '{name}'." );
+		else
+			Log.Trace( $"--debug-hud ride: riding {match.Entry.DisplayName}." );
+	}
+
 	/// <summary>Shows <paramref name="text"/> as if an element under the pointer had this help.</summary>
 	internal void DebugHelp( string? text ) => debugHelp = text;
 

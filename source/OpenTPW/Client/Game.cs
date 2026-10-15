@@ -9,6 +9,7 @@ internal static class Game
 	public static void Run( string[] args )
 	{
 		Log = new();
+		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ) );
 		var tgqExportIndex = Array.IndexOf(args, "--export-tgq-png");
 		if (tgqExportIndex >= 0)
 		{
@@ -541,7 +542,7 @@ internal static class Game
 			}
 		}
 		// [EXT:debug-hud] smoke-only (Debug builds): once the park's HUD is up, runs a list of interface actions for captures (--capture-interface):
-		// staff and buy open those windows, msg:<text> posts a message, help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
+		// staff and buy open those windows, msg:<text> posts a message, msgaction:<kind>+<kind> posts one with action buttons, pause and confirm open those menus, select:<n> selects the n-th placed object, help:<text> forces the popup help line, models:<a+b+c> draws ui.wad models.
 		var debugHud = GetOption( args, "--debug-hud", "a '|' separated action list for interface captures" );
 		if ( debugHud != null )
 		{
@@ -561,7 +562,12 @@ internal static class Game
 						case "buy": hud.OpenBuyWindow(); break;
 						case "msg": hud.PostGameMessage( argument ); break;
 						case "openmsg": hud.OpenPendingMessage( 0 ); break;
+						case "msgaction": hud.PostGameMessage( "A message with two actions", argument.Split( '+' ).Select( kind => new OpenTPW.Hud.GameMessageAction( Enum.Parse<OpenTPW.Hud.GameMessageKind>( kind, true ), () => { } ) ).ToArray() ); break;
+						case "pause": hud.OpenPauseMenu(); break;
+						case "confirm": hud.Stack.Push( OpenTPW.UI.Original.UiDialogs.Message( "debugConfirm", () => "QUIT GAME\n\nAre you sure you want to quit the game ?", (() => "Yes", () => { }), (() => "No", () => { }) ) ); break;
+						case "select": if ( flow.Level.Objects.Objects.Skip( int.Parse( argument ) ).FirstOrDefault() is { } selected ) hud.SelectObject( selected ); break;
 						case "help": hud.DebugHelp( argument ); break;
+						case "ride": hud.DebugRide( argument ); break;
 						case "models": hud.DebugShowModels( argument.Split( '+' ) ); break;
 						default: Log.Warning( $"--debug-hud: unknown action {name}." ); break;
 					}
@@ -642,6 +648,15 @@ internal static class Game
 	}
 
 	/// <summary>The CD launcher screen for the game's language, or null when it is disabled or the CD's Autorun files are absent.</summary>
+	/// <summary>
+	/// [EXT:silent-automated-runs] smokes, captures and park-resume runs open no audio device unless --smoke-audio is given, so automated runs
+	/// on a developer machine make no sound; --silent or OPENTPW_SILENT=1 silences any run. The game logic and its timing are unchanged.
+	/// </summary>
+	internal static bool IsSilentRun( string[] args, string? silentEnvironment ) =>
+		args.Contains( "--silent" ) || silentEnvironment == "1"
+		|| ((args.Contains( "--smoke-test" ) || args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) ) || args.Contains( "--park-resume-smoke" ))
+			&& !args.Contains( "--smoke-audio" ));
+
 	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
 	{
 		var cd = GetOption( args, "--cd-data", "the original CD's folder" ) ?? Environment.GetEnvironmentVariable( "OPENTPW_CD_DATA" );

@@ -45,7 +45,7 @@ public class AutomaticCheckpointIngressTests
 	public void ActualRetiredPauseExitCannotActOnReplacementPause()
 	{
 		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) ); var exits = 0; var hud = BareHud( level, new HudHost { ExitToLobby = () => exits++ } );
-		hud.OpenPauseMenu(); var retired = (UiButton)hud.Stack.Top!.Find( "ExitToLobby" )!; hud.Stack.Pop(); hud.OpenPauseMenu(); retired.Clicked(); Assert.AreEqual( 0, exits ); ((UiButton)hud.Stack.Top!.Find( "ExitToLobby" )!).Clicked(); Assert.AreEqual( 1, exits );
+		hud.OpenPauseMenu(); var retired = (UiMenuItem)hud.Stack.Top!.Find( "ExitToLobby" )!; hud.Stack.Pop(); hud.OpenPauseMenu(); retired.Clicked(); Assert.AreEqual( 0, exits ); ((UiMenuItem)hud.Stack.Top!.Find( "ExitToLobby" )!).Clicked(); Assert.AreEqual( 1, exits );
 	}
 
 	private GameFlow Flow( Level? level = null, ParkHud? hud = null )

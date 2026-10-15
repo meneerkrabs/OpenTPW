@@ -1,3 +1,4 @@
+using System.Globalization;
 namespace OpenTPW;
 
 /// <summary>The mixer groups the original's volume controls act on.</summary>
@@ -20,7 +21,8 @@ public sealed class AudioVoice
 {
 	private readonly short[] samples;
 	private readonly int channels;
-	private readonly double step;
+	private double step;
+	private readonly int outputRate;
 	private double position;
 
 	public AudioVoice( Mp2Audio audio, AudioChannel channel, float gain, int outputRate )
@@ -33,12 +35,18 @@ public sealed class AudioVoice
 		SampleRate = audio.SampleRate;
 		Channel = channel;
 		Gain = gain;
+		this.outputRate = outputRate;
+		Frequency = audio.SampleRate;
 		step = audio.SampleRate / (double)outputRate;
 		Frames = samples.Length / channels;
 	}
 
 	public AudioChannel Channel { get; }
 	public int SampleRate { get; }
+	/// <summary>The playback frequency in Hz: the sample's rate, or after <see cref="SetPitch"/> the rate the original hands its mixer.</summary>
+	public int Frequency { get; private set; }
+	/// <summary>The pitch step this voice was set to (0: the sample's own rate).</summary>
+	public int PitchStep { get; private set; }
 	public int Frames { get; }
 	public float Gain { get; set; }
 	public bool IsFinished { get; private set; }
@@ -53,6 +61,42 @@ public sealed class AudioVoice
 	public event Action<AudioVoice>? Completed;
 
 	public void Stop() => IsFinished = true;
+
+	/// <summary>
+	/// The playback ratio of a pitch step: 1 for step 0, otherwise the float of the original's table, which holds 2^((|step| + 1) / 96) (or its inverse) so step 1 is already +25 cents.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6d2820 mixer set-frequency wrapper] a non-zero step multiplies the sample rate by the float at 0x782f40 + 4 * step (positive) or 0x783540 + 4 * |step| (negative) and rounds to an integer for QSWaveMixSetFrequency
+	// [BIN:TPW-EXE:0x782f40 pitch ratio tables] each table's entry k is the float of 2^((k + 1) / 96) (or its inverse) written with six decimals, so it can differ from the exact power by a few ULP (all 110 entries of both tables match that rule; the test pins some of them bit for bit); the index is one step off: step 1 reads entry 1, 2^(2/96), and 2^(1/96) (entry 0) is never used
+	public static float PitchRatio( int step )
+	{
+		if ( step == 0 )
+			return 1f;
+		var index = Math.Min( Math.Abs( (long)step ), PitchTableLength - 1 );
+		return (step > 0 ? PositivePitchTable : NegativePitchTable)[index];
+	}
+
+	// the original's tables hold 110 entries each; data steps are signed bytes, and a larger step (no shipped sound has one) is held at the last entry
+	private const int PitchTableLength = 110;
+
+	private static readonly float[] PositivePitchTable = PitchTable( 1 );
+
+	private static readonly float[] NegativePitchTable = PitchTable( -1 );
+
+	private static float[] PitchTable( int sign )
+	{
+		var table = new float[PitchTableLength];
+		for ( var k = 0; k < table.Length; k++ )
+			table[k] = (float)double.Parse( Math.Pow( 2.0, sign * (k + 1) / 96.0 ).ToString( "F6", CultureInfo.InvariantCulture ), CultureInfo.InvariantCulture );
+		return table;
+	}
+
+	/// <summary>Sets the pitch step before the voice is first mixed: the frequency is the sample rate times <see cref="PitchRatio"/>, rounded to even as the original's x87 store does.</summary>
+	public void SetPitch( int pitchStep )
+	{
+		PitchStep = pitchStep;
+		Frequency = pitchStep == 0 ? SampleRate : Math.Max( 1, (int)MathF.Round( (float)SampleRate * PitchRatio( pitchStep ), MidpointRounding.ToEven ) );
+		step = Frequency / (double)outputRate;
+	}
 
 	/// <summary>Adds up to <paramref name="frames"/> output frames into <paramref name="mix"/> (interleaved stereo floats); returns the frames used before the voice ran out.</summary>
 	internal int MixInto( Span<float> mix, int frames, float gain )

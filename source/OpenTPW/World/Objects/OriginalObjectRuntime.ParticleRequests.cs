@@ -49,7 +49,7 @@ public sealed partial class OriginalObjectRuntime
 		};
 	}
 
-	// [APPROX:PTCL-908] only EVENT 1/2 and ADDOBJ 1/2 start particles; a refusal (negative or unresolved key, scoped effect, headless runtime) starts nothing, and an ADDOBJ effect starts at the key's pose without following the node afterwards; the latest attempt stays as owner-local diagnostics, cleared on Stop, while the effect lives in the level's ParticleSystem (docs/PARTICLES.md)
+	// [APPROX:PTCL-908] only EVENT 1/2, ADDOBJ 1/2 and the per-type object effects (OriginalObjectRuntime.ObjectEffects.cs) start particles; a refusal (negative or unresolved key, scoped effect, headless runtime) starts nothing, and an ADDOBJ effect starts at the key's pose without following the node afterwards; the latest attempt stays as owner-local diagnostics, cleared on Stop, while the effect lives in the level's ParticleSystem (docs/PARTICLES.md)
 	internal void ObserveParticleEvent(RideEffectCall call)
 	{
 		if (stopped || call.Opcode != Opcode.EVENT || call.Argument(0) is not (1 or 2)) return;
@@ -110,7 +110,11 @@ public sealed partial class OriginalObjectRuntime
 
 	private void ClearParticleRequests()
 	{
-		particlePlacement = null; particleKeys = null; LastParticleEventAttempt = null; LastParticleObjectAttempt = null;
+		particlePlacement = null; particleKeys = null; LastParticleEventAttempt = null; LastParticleObjectAttempt = null; particleFootprint = null;
+		// [BIN:TPW-EXE:0x55854b script destructor] the repair effect's handle (+0xCC) ends with life -2
+		if ( repairParticle != 0 )
+			ParticleKiller?.Invoke( repairParticle );
+		repairParticle = 0;
 		// [BIN:TPW-EXE:0x558703 object destructor] the object's ADDOBJ records of types 1 and 2 end their effects (0x51FF70 life -2); effects started by EVENT have no record and run on
 		foreach (var record in particleObjects) ParticleKiller?.Invoke(record.Handle);
 		particleObjects.Clear();

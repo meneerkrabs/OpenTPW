@@ -44,4 +44,11 @@ public class UiRegisterReadTests
 		// the layer word starts as 1, the bit of control 2439 (b_sride)
 		CollectionAssert.AreEquivalent( new[] { BuildCategory.Rides }, ParkHud.InitialMapCategories.ToArray() );
 	}
+
+	[TestMethod]
+	public void ThePlaceToolCarriesTheHiresAdvisorHelp()
+	{
+		// tp.exe 0x49b9dd posts 0x135 after the hire; the Place tool's end 0x46c890 withdraws it
+		Assert.AreEqual( 309, AdvisorUiHelp.MessageFor( ParkHud.StaffPlacementHelp ) );
+	}
 }

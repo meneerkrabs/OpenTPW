@@ -139,7 +139,7 @@ public sealed partial class ParkHud
 	/// exists only after a click on a valid cell (docs/STAFF-PLACEMENT.md). Without a park view the economy hires at once.
 	/// </summary>
 	// [BIN:TPW-EXE:0x507bf0 hire] the hire creates no object, it builds the place tool; [BIN:TPW-EXE:0x49b9dd hire handler] the handler posts advisor message 0x135 and closes the window
-	// [APPROX:UI-097] the advisor message 0x135 (309, "place your new staff member") is not posted: its descriptor row exists (table 0x76E300 of 56-byte rows built by 0x5a0a50; row 309 at 0x772698: all game modes, group 1, first response 0x239 = 569 = speech sample 587, one response, one pending duplicate) but its score callback 0x59e8c0 returns field +0x328 of the Advisor.sam balance object (0xfb3540), whose key is unidentified, so OpenTPW's advisor table (scored messages only) cannot hold it; the hint is an OpenTPW line of the message area, shown when the tool starts, and the queue cannot withdraw advice — evidence needed: the Advisor.sam key behind balance field +0x328 and the advice withdrawal
+	// [BIN:TPW-EXE:0x46c890 place tool end] the advisor help 0x135 (309) is posted after the window closes and withdrawn when the Place tool ends (ParkHud.StaffPlacementHelp); no message-area line
 	public bool HireSelectedStaff()
 	{
 		if ( showingEmployedStaff || RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.IsBankrupt )
@@ -152,7 +152,6 @@ public sealed partial class ParkHud
 			if ( !placement.BeginHire( candidate.Id ) )
 				return false;
 			level.EndBuildTools();
-			PostMessage( strings.Extra( OpenTpwText.PlaceStaff ) );
 			CloseStaffWindow();
 		}
 		else

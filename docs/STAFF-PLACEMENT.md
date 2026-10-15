@@ -7,8 +7,8 @@ buttons), `Hud/ParkHud.cs` (`UpdateStaffTool`).
 ## Hire and place
 
 A hire (0x507bf0) creates no object: it builds the Place tool (CMMPlaceStaff) and flags the candidate as being placed. OpenTPW keeps the candidate in the
-pool (`ParkStaff.PendingPlacementId`, exempt from expiry); the staff window closes and an OpenTPW hint line replaces the advisor message 0x135
-(UI-097). A click on a valid cell calls `ParkEconomy.Hire` and puts the member on the cell centre: state Idle, happiness and energy 100, patrol rectangle
+pool (`ParkStaff.PendingPlacementId`, exempt from expiry); the staff window closes and the advisor's help 0x135 (309, place your new staff member) is posted as the
+original's hire handler does (0x49b9dd); the Place tool withdraws it when it ends (0x46c890). A click on a valid cell calls `ParkEconomy.Hire` and puts the member on the cell centre: state Idle, happiness and energy 100, patrol rectangle
 the whole map; the state machines decide the first job on their next update. Right click or Escape (`RmbCancel`) only clears the flag.
 
 ## Pick up and drop

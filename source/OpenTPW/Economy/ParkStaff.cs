@@ -258,16 +258,36 @@ public sealed class ParkStaff
 		while ( added );
 	}
 
+	/// <summary>The most name draws a candidate makes before it keeps a name already in use (tp.exe <c>0x00507580</c>).</summary>
+	public const int MaximumNameDraws = 15;
+
 	private StaffCandidate CreateCandidate( StaffRoleSettings role, DeterministicRandom random, long tick )
 	{
+		// [BIN:TPW-EXE:0x0050761C staff candidate draws] the constructor 0x00507600 draws, in order: the sprite variant (0x00541F70: (R >> 2) mod the role category's bank count, candidate +9), one draw it discards (0x0050762D), the grade (0x00507638), the name (0x00507580) and the timeout
+		// [APPROX:GUEST-014] the variant's draw is made in its place but its value is not kept: the sprite bank still derives from the name index and id
+		random.NextUInt64();
+		random.NextUInt64();
 		// [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read
 		var raw = (role.AverageGrade + random.Next( 3 ) - 1) & 0xFF;
 		var grade = raw > BalanceSettings.GradeCount - 1 ? BalanceSettings.GradeCount - 1 : raw;
-		var name = random.Next( NameTableSize );
+		// [BIN:TPW-EXE:0x00507580 candidate name] R mod 35, drawn again while 0x005083F0 finds the name's text on a pool candidate (the 32 slots with +0xA set) or a hired member (thing types 4-8), at most 15 draws; the last one is kept even when it is taken
+		// [DATA:Language/English/*_NAMES.str:no text twice] no name text repeats within or across the five tables (English and Dutch), so the role and index stand for the text
+		int name;
+		var draws = 0;
+		do
+		{
+			name = random.Next( NameTableSize );
+			draws++;
+		}
+		while ( NameTaken( role.Type, name ) && draws < MaximumNameDraws );
 		// [BIN:TPW-EXE:0x507600 staff candidate] the timeout (+0x10) is StaffTimeoutTime + R % (StaffTimeoutTime >> 1)
 		var timeout = settings.StaffTimeoutTime + (settings.StaffTimeoutTime >> 1 > 0 ? random.Next( settings.StaffTimeoutTime >> 1 ) : 0);
 		return new StaffCandidate( NextId++, role.Type, name, grade, TickAfterUnits( tick, timeout ) );
 	}
+
+	/// <summary>Whether a pool candidate or an employee of the role already has the name (tp.exe <c>0x005083F0</c>).</summary>
+	private bool NameTaken( StaffType type, int nameIndex ) =>
+		candidates.Any( candidate => candidate.Type == type && candidate.NameIndex == nameIndex ) || members.Any( member => member.Type == type && member.NameIndex == nameIndex );
 
 	public bool CanHire( StaffType type ) => OfType( type ).Count() < settings[type].MaximumInPark;
 

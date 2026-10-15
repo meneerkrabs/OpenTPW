@@ -683,7 +683,7 @@ public sealed class CoasterRide
 
 	/// <summary>
 	/// COAST 1: the guest the script handed over goes on the admission ring (<c>0x43b0e0</c>); a train in the station seats it
-	/// while its cars roll through the window. A guest handed over with no room goes back through <c>COAST 3</c>.
+	/// while its cars roll through the window. A guest handed over to a full ring goes back through <c>COAST 3</c>.
 	/// </summary>
 	// [BIN:STP-PPC:0x1003E2F8 boarding] the pending ring's read cursor (+196) is popped and the visitor is placed in a randomly chosen car (s·214013 + 2531011)
 	// [BIN:TPW-EXE:0x43b0e0 coaster boarding] COAST 1 pushes the guest on the ring at ctl+0xb0 when the ring's two counters (+0xc0, +0xbc) are below its size (+0xb0 = definition +0x2f8); nobody is seated here, and the room COAST 2 reports is not tested

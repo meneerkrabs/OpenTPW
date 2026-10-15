@@ -1010,8 +1010,10 @@ public sealed class CoasterRide
 	internal static void Requeue( List<int> queue, IReadOnlyList<float> budgets, int index )
 	{
 		var own = budgets[index];
-		var at = queue.FindIndex( other => budgets[other] <= own );
-		queue.Insert( at < 0 ? queue.Count : at, index );
+		var at = 0;
+		while ( at < queue.Count && budgets[queue[at]] > own )
+			at++;
+		queue.Insert( at, index );
 	}
 
 	/// <summary>One hop of a train (see <see cref="MoveTrains"/>); true for a full hop, false for the partial last hop of its frame.</summary>

@@ -136,7 +136,7 @@ public class AudioTriggerTests
 			Assert.IsNotNull( speech.Catalog.Find( AutomaticAdvisor.FirstSlapSound + (uint)slap ), $"cat_speech slap {AutomaticAdvisor.FirstSlapSound + slap:#x}" );
 		var ui = SoundCategory.TryLoad( fileSystem, "/global/sound", "cat_ui" );
 		Assert.IsNotNull( ui );
-		foreach ( var eventId in new[] { GameAudio.ClickEvent, GameAudio.ErrorEvent, GameAudio.DrawerOpenEvent, GameAudio.DrawerCloseEvent, 0xBDu } )
+		foreach ( var eventId in new[] { GameAudio.ClickEvent, GameAudio.ErrorEvent, GameAudio.DrawerOpenEvent, GameAudio.DrawerCloseEvent, 0xBDu, AdvisorSequences.TimerSound } )
 			Assert.IsNotNull( ui.Catalog.Find( eventId ), $"cat_ui event {eventId:#x}" );
 		var ambient = SoundCategory.TryLoad( fileSystem, "/global/sound", "cat_ambient" );
 		Assert.IsNotNull( ambient );

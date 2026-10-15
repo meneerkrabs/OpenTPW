@@ -45,7 +45,7 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-017", "the advisor clock starts at 0 for a new park and an original-save import; the original's load sets its +0x50 offset to the saved value (0x402E80 -> 0x403160), and it stands still whenever 0x4092A0 pauses the timer (eight callers, screens unidentified)"),
 		("ADVISOR-020", "event 2 comes from the economy's six-month bankruptcy, not 0x4D0370's monthly guard (balance and previous balance < 0, and the red-time term from 0x4F88B0 over 2.592e13 >= 6, with the turn entered red at +0x120); events 3/4 are raised on every open/close button press as in the original"),
 		("ADVISOR-022", "an original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129, 323 and the help messages are bound) are dropped on import; OpenTPW's own park save stores the controller"),
-		("ADVISOR-025", "the effect a fixed sequence's timer entry fires when the advisor clock reaches it (sequences 28 and 29, the ticket/key advice: the particle effect 0x521E60 (87, 90000, 0, 7000), sound 0xC6 and the HUD golden-ticket/key counter refresh 0x4B9340 in the update 0x599880) is not ported; 0x4B9340 shows or hides the controls 0x1E0EA-0x1E0F1, formats \"%d x\" with the key count (0x5AF680) into 0x1E0EE and starts particle 0x61 at the counter when the ticket count drops, and OpenTPW has no such HUD counter (UI-051); the timer is recorded on the sequence only"),
+		("ADVISOR-025", "a fixed sequence's timer (sequences 28 and 29, the ticket/key advice) plays cat_ui 0xC6 when the advisor clock reaches it, but the particle effect 0x521E60 (87, 90000, 0, 7000) it also starts is not (template 87, Key, is screen-space, which OpenTPW does not draw), nor the HUD golden-ticket/key counter refresh 0x4B9340 (OpenTPW has no such counter, UI-051), which shows or hides the controls 0x1E0EA-0x1E0F1, formats \"%d x\" with the key count (0x5AF680) into 0x1E0EE and starts particle 0x61 at the counter when the ticket count drops"),
 		("ADVISOR-026", "the level advisors' props (Ticket, MAP, Ticket2, Mutant Eye and the T_Particle/Rotate dummies, shown by the ticket logic 0x599B09-0x599BDE and the accessory bits 0x20000-0x200000 of 0x598DC0) stay hidden"),
 	};
 
@@ -63,6 +63,10 @@ internal sealed class Advisor : IDisposable
 	// --advisor-say / --advisor-response tools, which start their speech at the first rendered frame.
 	private readonly Func<long>? clock;
 	private AdvisorSpeechStart? speechStart;
+	// The current sequence's timer has fired (it fires once per response).
+	private bool timerFired;
+	/// <summary>Plays a <c>cat_ui</c> sound (the sequence timer's); tests substitute a recorder.</summary>
+	internal Action<uint> PlayUiSound { get; set; } = sound => GameAudio.PlayUi( sound );
 	// The generated sequences draw from their own stream (see AdvisorRandom).
 	private readonly AdvisorRandom sequenceRandom = new();
 	// The clip lengths of the model that plays (a level advisor's clips 16-20 exist only there), by archive.
@@ -348,6 +352,7 @@ internal sealed class Advisor : IDisposable
 		player = CreatePlayer( audio );
 		speechStart = null;
 		Sequence = null;
+		timerFired = false;
 		// Choose the model first: a failed level load must not leave a disposed rig drawn.
 		rig = SelectRig( response, level );
 		ModelShown = true;
@@ -388,6 +393,12 @@ internal sealed class Advisor : IDisposable
 	{
 		if ( disposed || clock == null || speechStart is not { } start )
 			return;
+		// The sequence timer fires once while the response is current (a kill clears the request, so a cut-off response never fires it).
+		if ( !timerFired && Sequence?.TimerMilliseconds is { } timer && start.TimerDue( clock(), timer ) )
+		{
+			timerFired = true;
+			PlayUiSound( AdvisorSequences.TimerSound );
+		}
 		// The last clip's end hides the model (see DrawnSpanMilliseconds); the next response shows it again.
 		if ( ModelShown && !start.Within( clock(), DrawnSpanMilliseconds ) )
 			ModelShown = false;

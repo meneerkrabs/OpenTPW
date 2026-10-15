@@ -156,6 +156,19 @@ public class AdvisorSequenceTests
 	}
 
 	[TestMethod]
+	public void TheTimerIsDueOnceTheClockReachesTheRequestPlusItsMillisecondsAcrossTheWrap()
+	{
+		var start = AdvisorSpeechStart.For( 10_000, 28 );
+		Assert.IsFalse( start.TimerDue( 26_999, 17000 ) );
+		Assert.IsTrue( start.TimerDue( 27_000, 17000 ), "equality counts (timer - now <= 0)" );
+		Assert.IsTrue( start.TimerDue( 90_000, 17000 ) );
+		var wrapping = AdvisorSpeechStart.For( uint.MaxValue - 100L, 28 );
+		Assert.IsFalse( wrapping.TimerDue( uint.MaxValue, 1000 ), "a 32-bit clock just before the wrap" );
+		Assert.IsTrue( wrapping.TimerDue( 900, 1000 ), "and after it" );
+		Assert.AreEqual( 0xC6u, AdvisorSequences.TimerSound, "global cat_ui 198" );
+	}
+
+	[TestMethod]
 	public void AGeneratedResponseHasNoRow()
 	{
 		var generated = AdvisorSequences.Generate( 2500, Uniform( 1000 ), Script( 9, 4, 2, 6 ) );

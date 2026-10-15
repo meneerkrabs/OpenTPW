@@ -472,16 +472,7 @@ public sealed partial class StaffWorldSimulation
 				break;
 		}
 		member.Job = job;
-		// the display state (0x005064F0)
-		member.State = job switch
-		{
-			StaffJob.Idle => StaffState.Idle,
-			StaffJob.Patrol => StaffState.Patrolling,
-			StaffJob.ToRestArea or StaffJob.Resting => StaffState.Resting,
-			StaffJob.ToStrike or StaffJob.Striking => StaffState.OnStrike,
-			StaffJob.PickedUp => StaffState.PickedUp,
-			_ => StaffState.Working
-		};
+		member.State = ParkStaff.DisplayState( (uint)job );
 	}
 
 	/// <summary>

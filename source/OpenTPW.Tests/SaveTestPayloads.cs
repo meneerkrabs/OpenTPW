@@ -282,8 +282,8 @@ internal static class SaveTestPayloads
 	}
 
 	/// <summary>World block bytes (without its delimiter).</summary>
-	public static byte[] World( byte[] variables, byte[] grid, byte[] things, int opaqueBytes = 37, byte[]? calendar = null ) =>
-		variables.Concat( Enumerable.Repeat( (byte)0xCD, opaqueBytes ) ).Concat( calendar ?? CalendarAndArrivals() ).Concat( grid ).Concat( things ).ToArray();
+	public static byte[] World( byte[] variables, byte[] grid, byte[] things, int opaqueBytes = 37, byte[]? calendar = null, byte[]? opaque = null ) =>
+		variables.Concat( opaque ?? Enumerable.Repeat( (byte)0xCD, opaqueBytes ) ).Concat( calendar ?? CalendarAndArrivals() ).Concat( grid ).Concat( things ).ToArray();
 
 	/// <summary>The stored (byte-reversed) delimiter of <paramref name="tag"/>.</summary>
 	public static byte[] Stored( string tag ) => Encoding.ASCII.GetBytes( tag ).Reverse().ToArray();

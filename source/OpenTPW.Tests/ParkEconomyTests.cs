@@ -338,12 +338,15 @@ public class ParkEconomyTests
 		Assert.IsTrue( park.IsBankrupt, string.Join( ", ", counts ) );
 		Assert.AreEqual( 6, counts[^1], "more than 5" );
 		Assert.IsTrue( counts.Take( counts.Count - 1 ).All( count => count <= 5 ) );
-		CollectionAssert.AreEqual( new long[] { 3, 5 }, events.Where( item => item.Kind == ParkEventKind.BankruptcyWarning ).Select( item => item.Amount ).ToArray() );
-		Assert.IsFalse( park.IsParkOpen );
+		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.BankruptcyWarning ), "the bank's month compares the count only with 5 (0x4d0370): no warnings" );
+		Assert.IsTrue( park.IsParkOpen, "the lost park keeps its park-closed word (0x5168f0)" );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.Bankrupt ) );
 		var tick = park.Tick;
-		park.AdvanceMonths( 1 );
-		Assert.AreEqual( tick, park.Tick );
+		var months = events.Count( item => item.Kind == ParkEventKind.MonthEnded );
+		park.AdvanceMonths( 2 );
+		Assert.IsTrue( park.Tick > tick, "the turn counter and the calendar go on in world state 4" );
+		Assert.AreEqual( months + 2, events.Count( item => item.Kind == ParkEventKind.MonthEnded ), "the bank's month goes on" );
+		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.Bankrupt ), "the handler acts once: the world is already in state 4 (0x4d02d0)" );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Bankrupt, park.TryBuild( 1100, out _ ) );
 
 		var recovered = EconomyTestData.Park( initialCash: 100 );
@@ -352,6 +355,45 @@ public class ParkEconomyTests
 		recovered.TakeLoan( 0 );
 		recovered.AdvanceMonths( 1 );
 		Assert.AreEqual( 0, recovered.MonthsInRed );
+	}
+
+	[TestMethod]
+	public void ALostParkStopsItsThingsButKeepsTheCalendarAndTheBank()
+	{
+		var park = EconomyTestData.Park( initialCash: 100 );
+		var events = new List<ParkEvent>();
+		park.EventRaised += events.Add;
+		var researcher = EconomyTestData.HireBest( park, StaffType.Researcher );
+		var ride = park.RegisterExisting( 1100 );
+		park.OpenPark();
+		while ( !park.IsBankrupt )
+			park.AdvanceMonths( 1 );
+		var energy = researcher.Energy;
+		var repair = ride.Repair;
+		var researched = park.Research.ProgressEntries.Sum( entry => entry.Points );
+		var wages = events.Count( item => item.Kind == ParkEventKind.WagesPaid );
+		park.AdvanceMonths( 1 );
+		Assert.AreEqual( energy, researcher.Energy, "the staff's thing update stops" );
+		Assert.AreEqual( researched, park.Research.ProgressEntries.Sum( entry => entry.Points ), "research comes from the researchers' thing update" );
+		Assert.AreEqual( repair, ride.Repair, "the ride update stops" );
+		Assert.AreEqual( wages + 1, events.Count( item => item.Kind == ParkEventKind.WagesPaid ), "the staff manager's month goes on" );
+	}
+
+	[TestMethod]
+	public void AWinningSequenceKeepsTheParkFromBankruptcy()
+	{
+		var park = EconomyTestData.Park( initialCash: 100 );
+		EconomyTestData.HireBest( park, StaffType.Researcher );
+		var winning = true;
+		park.WinningSequenceActive = () => winning;
+		park.AdvanceMonths( 1 );
+		while ( park.MonthsInRed < ParkEconomy.MonthsInRedForBankruptcy )
+			park.AdvanceMonths( 1 );
+		park.AdvanceMonths( 1 );
+		Assert.IsFalse( park.IsBankrupt, "0x516c00: the handler skips the message while the winning sequence's thing exists" );
+		winning = false;
+		park.AdvanceMonths( 1 );
+		Assert.IsTrue( park.IsBankrupt, "the next month's message type 2 is acted on" );
 	}
 
 	[TestMethod]

@@ -146,6 +146,25 @@ public sealed class ParkGate
 		}
 	}
 
+	/// <summary>The gate's command of the end-of-park sequence ([DATA:gates.RSE VAR_COMMAND] 2).</summary>
+	public const int EndOfParkCommand = 2;
+
+	/// <summary>
+	/// The park is lost (tp.exe <c>0x005168F0</c>, ECON-030): every attraction is asked to break down (its script's <c>VAR_BREAKSTAT</c> becomes 1, the request
+	/// <c>0x004E0DB0</c>) and the gate gets the end-of-park command (<c>0x00519EF0</c> with its second argument set). Nothing is closed and the park-closed
+	/// word keeps its value.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005168F0 park lost] the thing walk calls 0x004E0DB0 (0x0055A0B0(script, 4, 1): variable 4, VAR_BREAKSTAT) for each live thing of type 3 with +0x32 bit 4, then 0x00519EF0(0, 1)
+	// [BIN:TPW-EXE:0x00519EF0 door routine] with the second argument set it only writes 2 to the gate script's variable 0 (0x0055A0B0(script, 0, 2)) and returns
+	public void ParkLost()
+	{
+		foreach ( var item in Attractions )
+			if ( item.Script != null )
+				item.SetVariable( nameof( RideVariables.VAR_BREAKSTAT ), 1 );
+		if ( Gate is { Script: not null } gate )
+			gate.SetVariable( CommandVariable, EndOfParkCommand );
+	}
+
 	/// <summary>
 	/// The deferred closure retry (Mac <c>0x10536c</c> / PC <c>FUN_00516380</c>): every 30 park turns (7.44 s of scaled time),
 	/// a closed park whose gate still stands open commands the gate shut once the guest census is zero

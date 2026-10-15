@@ -424,6 +424,8 @@ public partial class Level : IDisposable
 		{
 			if ( item.Kind is ParkEventKind.ParkOpened or ParkEventKind.ParkClosed )
 				Gate?.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
+			else if ( item.Kind == ParkEventKind.Bankrupt )
+				Gate?.ParkLost();
 			else if ( item.Kind == ParkEventKind.RideRepaired )
 				OpenAfterRepair( item.InstanceId );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )

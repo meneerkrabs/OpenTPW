@@ -31,6 +31,7 @@ public enum ParkEventKind
 	MonthEnded,
 	YearEnded,
 	InTheRed,
+	/// <summary>Not raised: the bank's month gives no warnings before the bankruptcy message (tp.exe <c>0x004D0370</c>, ECON-030); kept so the event numbering stays.</summary>
 	BankruptcyWarning,
 	Bankrupt,
 	ParkOpened,

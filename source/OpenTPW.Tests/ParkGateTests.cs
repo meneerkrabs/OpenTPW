@@ -68,6 +68,22 @@ public class ParkGateTests
 	}
 
 	[TestMethod]
+	public void ALostParkRequestsEveryBreakdownAndTheGatesEndOfParkSequence()
+	{
+		UseOriginalData();
+		var (gate, gates, totem, economy) = Park();
+		economy.OpenPark();
+		gate.InitializeFromParkState();
+		Assert.AreEqual( 0, totem.GetVariable( RideVariables.VAR_BREAKSTAT ) );
+		gate.ParkLost();
+		// [BIN:TPW-EXE:0x5168f0 park lost] 0x4e0db0 writes VAR_BREAKSTAT = 1 on each attraction; 0x519ef0(0, 1) writes only the gate's variable 0 = 2
+		Assert.AreEqual( 1, totem.GetVariable( RideVariables.VAR_BREAKSTAT ) );
+		Assert.AreEqual( ParkGate.EndOfParkCommand, gates.GetVariableByName( ParkGate.CommandVariable ) );
+		Assert.IsTrue( totem.IsOpen, "nothing is closed" );
+		Assert.IsTrue( economy.IsParkOpen, "the park-closed word keeps its value" );
+	}
+
+	[TestMethod]
 	public void DoorCommandsTheGateAndClosesAndOpensTheRides()
 	{
 		UseOriginalData();

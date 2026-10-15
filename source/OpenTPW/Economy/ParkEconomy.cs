@@ -22,7 +22,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>Advisor.sam <c>StaffHireMechanics1.PoorerStateThan</c>: below this state of repair a ride is worn and gets a mechanic.</summary>
 	// [DATA:Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan]
 	public const int WornStateOfRepair = 25;
-	/// <summary>Months in the red before bankruptcy (TAG_SYSTEM 123–127: warnings at 3 and 5, bankrupt after 6).</summary>
+	/// <summary>Months in the red before bankruptcy: the bank's month posts message type 2 once more than 5 have passed (TAG_SYSTEM 123–127 tell of six).</summary>
 	// [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)]
 	public const int MonthsInRedForBankruptcy = 6;
 	/// <summary>The bank's month in the red: 30 days of park time (tp.exe <c>0x004D0370</c> divides by <c>0x1792F8648000</c>, 30 × 864e9 in 100 ns units).</summary>
@@ -70,7 +70,17 @@ public sealed class ParkEconomy : IParkEconomy
 	public long Balance => Ledger.Balance;
 	public bool IsParkOpen { get; private set; }
 	public int EntranceFee { get; private set; }
+	/// <summary>
+	/// The world is in state 4, the lost park (tp.exe world <c>+0x1DA738</c>, written by <c>0x005168F0</c>): the bank's bankruptcy message put it there.
+	/// The per-turn thing updates stop (staff, rides, research, the challenge system; the host stops its guests and staff walks) while the turn counter,
+	/// the calendar, the bank's month, the staff pool and the golden-ticket checks go on.
+	/// </summary>
 	public bool IsBankrupt { get; private set; }
+	/// <summary>
+	/// Whether a winning sequence is showing (tp.exe <c>0x00516C00</c>: the word <c>0x7CF4F4</c>, the thing the research completion's
+	/// <c>StartWinningSequence</c> 0x00516B00 creates); the bank's handler does not make such a park bankrupt. OpenTPW has no winning sequence, so null answers no.
+	/// </summary>
+	public Func<bool>? WinningSequenceActive { get; set; }
 	/// <summary>Whole 30-day months since the park went into the red, as the last month end counted them (0 in the black).</summary>
 	public int MonthsInRed { get; private set; }
 	/// <summary>The bank's <c>mWithdrawalsEnabled</c> (+0x114): when clear, a debit charges nothing (tp.exe <c>0x004D01F0</c>). Set in every shipped save.</summary>
@@ -153,8 +163,8 @@ public sealed class ParkEconomy : IParkEconomy
 	public void Advance( long ticks )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( ticks );
-		// A bankrupt park stops (ECON-030, EndMonth)
-		for ( long step = 0; step < ticks && !IsBankrupt; step++ )
+		// [BIN:TPW-EXE:0x004D7B20 world turn tail] a lost park (world state 4) keeps its turn counter, calendar and bank: only the thing loop of 0x00516380 stops
+		for ( long step = 0; step < ticks; step++ )
 		{
 			var previousTurn = ParkCalendar.Turn( Tick );
 			Tick++;
@@ -190,6 +200,30 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
+		// [BIN:TPW-EXE:0x00516380 world update] the thing loop (staff, rides, guests, the challenge system: 0x0050B360 by thing type) runs only while the world state (+0x1DA738) is not 4;
+		// the turn counter before it and the calendar, staff pool, bank and golden-ticket step after it (0x004D7B20) run in every state
+		if ( !IsBankrupt )
+			UpdateThings( turn );
+		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
+		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
+		var changes = ParkCalendar.Update( ref stored, turn );
+		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
+		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour; hour++ )
+			UpdateHour();
+		if ( changes.HasFlag( CalendarChange.Day ) )
+			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
+		if ( changes.HasFlag( CalendarChange.Month ) )
+			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
+		if ( changes.HasFlag( CalendarChange.Year ) )
+			Ledger.StartYear();
+		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
+		if ( RunsGoldenTicketCheck( turn, Mode ) )
+			CheckGoldenTickets();
+	}
+
+	/// <summary>The economy's part of the original's per-turn thing loop: staff, mechanics' jobs, research and the ride update.</summary>
+	private void UpdateThings( long turn )
+	{
 		UpdateStaffVitals();
 		// [BIN:STP-PPC:0x100D9E04 repair state] each staff update counts a mechanic's job timer down by one; the update that finds it zero completes the repair
 		foreach ( var member in Staff.Members )
@@ -220,21 +254,6 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100E077C ride update] each ride is updated when the turn counter is a multiple of 8
 		if ( turn % RideUpdateInterval == 0 )
 			UpdateRides( turn );
-		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
-		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
-		var changes = ParkCalendar.Update( ref stored, turn );
-		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
-		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour && !IsBankrupt; hour++ )
-			UpdateHour();
-		if ( changes.HasFlag( CalendarChange.Day ) && !IsBankrupt )
-			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
-		if ( changes.HasFlag( CalendarChange.Month ) )
-			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
-		if ( changes.HasFlag( CalendarChange.Year ) )
-			Ledger.StartYear();
-		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
-		if ( RunsGoldenTicketCheck( turn, Mode ) )
-			CheckGoldenTickets();
 	}
 
 	/// <summary>
@@ -534,8 +553,11 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void UpdateHour()
 	{
+		// [BIN:TPW-EXE:0x005084F0 staff pool update] the staff manager's update runs from the world turn's tail (0x004D7B20), in every world state
 		Staff.UpdatePool( Random, Tick );
-		DispatchMechanics();
+		// the dispatch belongs to the mechanics' and rides' thing updates, which a lost park no longer runs
+		if ( !IsBankrupt )
+			DispatchMechanics();
 	}
 
 	/// <summary>
@@ -784,7 +806,8 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void EndDay( long day )
 	{
-		var challenges = Features.Challenges ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
+		// [BIN:TPW-EXE:0x0050B360 thing update] the challenge system's day (0x004D1E90) is its thing update (type 0x13), which a lost park no longer runs
+		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
 		foreach ( var (kind, index, amount, detail) in challenges )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
@@ -860,19 +883,9 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		// [BIN:TPW-EXE:0x4d0370 bank month] after the instalments, a park whose balance and mLastBalance are both below 0 counts the 30-day months since
 		// the turn-entered-red stamp; above 5 it posts message type 2 (0x0040F630, bus DAT_00788D3C), at every month end while it stays so
-		var previousMonthsInRed = MonthsInRed;
 		MonthsInRed = MonthsSinceEnteringRed();
 		if ( MonthsInRed >= MonthsInRedForBankruptcy )
-		{
-			IsBankrupt = true;
-			IsParkOpen = false;
-			Raise( ParkEventKind.Bankrupt, MonthsInRed );
-		}
-		// [APPROX:ECON-030] message type 2 of the bank's month (posted at each month end while more than 5 thirty-day months have passed since the turn-entered-red stamp, tp.exe 0x4D0370) is taken as bankruptcy: the park closes and the simulation stops, and the TAG_SYSTEM warnings come when the count reaches 3 and 5; the original's bank handler (0x4D02D0) acts on it once, unless the word 0x7CF4F4 is set (0x516C00), by setting the world state to 4 (0x5168F0): the per-turn thing loop stops (0x516380) and the park script's variable 0 becomes 2 (0x519EF0); the park-closed word is not written, and the turn counter, the calendar and the monthly bank go on; the bank routine compares the count only with 5, so it gives no warnings — evidence needed: the producer of the TAG_SYSTEM warnings and the meaning of the word 0x7CF4F4
-		else if ( previousMonthsInRed < 5 && MonthsInRed >= 5 )
-			Raise( ParkEventKind.BankruptcyWarning, 5 );
-		else if ( previousMonthsInRed < 3 && MonthsInRed >= 3 )
-			Raise( ParkEventKind.BankruptcyWarning, 3 );
+			BankruptcyMessage();
 		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, ParkValue );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
@@ -880,6 +893,23 @@ public sealed class ParkEconomy : IParkEconomy
 			var year = Ledger.SummariseYear( nextMonthIndex / ParkCalendar.MonthsPerYear - 1 );
 			Raise( ParkEventKind.YearEnded, year?.Profit ?? 0, 0, 0, year == null ? "" : $"in ${year.MoneyIn}, out ${year.MoneyOut}, balance ${year.ClosingBalance}" );
 		}
+	}
+
+	/// <summary>
+	/// The bank's handler of its own message type 2 (tp.exe <c>0x004D02D0</c>): once, when the world is not yet in state 4 and no winning sequence
+	/// shows, the park is lost (<c>0x005168F0</c>). The park-closed word is not written; the host requests a breakdown of every attraction and gives the
+	/// gate its end-of-park command on <see cref="ParkEventKind.Bankrupt"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D02D0 bank message] a type-19 message (CMsgEvent) with value 2 calls 0x005168F0 only while the world state (+0x1DA738) is not 4 and 0x00516C00 (a winning sequence's thing id at 0x7CF4F4) answers false
+	// [BIN:TPW-EXE:0x005168F0 park lost] world state = 4; every live thing of type 3 with flag +0x32 bit 4 gets VAR_BREAKSTAT = 1 (0x004E0DB0, "Object %d requested breakdown"); the door routine 0x00519EF0(0, 1) writes only the gate script's variable 0 = 2
+	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
+	// [APPROX:ECON-030] the lost park follows the bank's handler and the world update, but the HUD and the advisor do not tell the player: the TAG_SYSTEM 123–127 texts ("If you stay in the red for six months you will be made bankrupt", "the banks have closed your park") have no traced producer, OpenTPW still refuses purchases, hiring and opening the park in state 4 where the original's interface answer is not traced, and the camera move and the sound state of 0x005168F0 (0x00481B50, 0x005408F0) are not modelled — evidence needed: the producer of the TAG_SYSTEM 123–127 messages and the interface's tests of world state 4
+	private void BankruptcyMessage()
+	{
+		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )
+			return;
+		IsBankrupt = true;
+		Raise( ParkEventKind.Bankrupt, MonthsInRed );
 	}
 
 	/// <summary>Admissions of months dropped from the bounded history (keeps the monthly differences exact).</summary>

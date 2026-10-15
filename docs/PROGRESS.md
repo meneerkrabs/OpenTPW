@@ -6,6 +6,17 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Queue exits as in tp.exe (October 15, 2026)
+
+- **A closed ride drains its queue one head per turn** (`0x4e1220` → `0x4e0450`): the others keep waiting, a closed ride that breaks down
+  sends away two that turn (`0x4e0e60`), and joins and the walk to a ride no longer test the open word or the broken state, as the
+  original's join `0x4ffbc0` does not (QUEUE-018 retired; the choice still skips closed rides). A guest at its place in a coaster's queue
+  leaves with thought 13 while the track refuses guests (`0x500612`; COAST-024 narrowed).
+- **Every queue exit but a removed ride costs the medium happiness drop** (the dismissal `0x5012f0`, `0x4fea70(1)`): feeling sick, bored,
+  unhappy, needing the toilet, a failed move-up, a queue edit or a refused price alike; a water ride with a broken circuit is only
+  skipped by the choice, its queue stays (`0x500612` tests coasters and kart tracks). The "problem with a queue" exit (`0x500270`) thinks nothing, and a toilet above 80
+  thinks "need toilet" before the relief test (`0x5003aa`).
+
 ## Economy rules settled against tp.exe, part one (October 15, 2026)
 
 Seventeen economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):

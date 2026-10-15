@@ -22,6 +22,22 @@ Sixteen guest approximations were checked again, item by item, in tp.exe (leads 
 - **Energy** is tp.exe's field `+0x1B8`, 0 at birth and changed only by `0x4fd970` (GUEST-008 retired); 15 guest items are narrowed. The
   determinism hash is now `0xD28386DACAD73241`.
 
+## Economy rules settled against tp.exe, part one (October 15, 2026)
+
+Seventeen economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Research categories come from the object data** (`0x4aaffc`, the add-on id at `+0x284`; `+0x508` only means "model not loaded"): a
+  project takes the object's own Research.Category and Group, and an object outside category 4 gets level projects (ECON-018 retired; no
+  change on the shipped data, which a game-data test pins).
+- **The research cursor moves on** after a project completes to the next eligible project in table order, wrapping (`0x4aaec0` → `0x5034f0`),
+  instead of falling back to the first selectable one (ECON-017 narrowed: the table's fill order is still open).
+- **Staff training is booked as other costs** (`0x505a10` writes its own word `+0x1fa40`, not the staff-costs series of the eight-series
+  finance graph `0x49a7b0`); total money out is unchanged (ECON-005 narrowed).
+- ECON-002 (the 2000-01-01 Gregorian UTC calendar, `0x4f7eb0`) and ECON-028 (`0x523658`) are retired; the ×2/×4 speed buttons are an
+  OpenTPW extension (`[EXT:speed-buttons]`: the original has only the numpad keys, `0x7480a0`) and so is the headless economy's own
+  mechanic dispatch to worn rides (`[EXT:headless-economy]`: the finder `0x4daa90` only takes broken, upgrading or called rides). Ten more
+  items are narrowed to what is still unknown.
+
 ## Path tool and walking settled against tp.exe (October 15, 2026)
 
 The path and walk approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):

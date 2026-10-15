@@ -1739,6 +1739,7 @@ public sealed class BumpController
 		foreach ( var old in vehicles )
 			module.FreeVehicle( old );
 		vehicles.Clear();
+		var moved = new Dictionary<int, int>();
 		VehicleCount = 0;
 		RiderCount = 0;
 		foreach ( var saved in data.Vehicles )
@@ -1758,9 +1759,16 @@ public sealed class BumpController
 			vehicle.Slot = module.PlaceVehicle( vehicle, saved.Slot );
 			if ( vehicle.Slot < 0 )
 				throw new InvalidDataException( "The module's vehicle pool cannot hold the saved vehicles." );
+			moved[saved.Slot] = vehicle.Slot;
 			InsertSorted( vehicle );
 			VehicleCount++;
 			RiderCount += vehicle.Riders.Count;
+		}
+		// a chase names a pool slot: a car of this ride that moved to another slot (a save from before the shared pool) is still the one chased
+		foreach ( var vehicle in vehicles )
+		{
+			if ( vehicle.ChaseTarget >= 0 && moved.TryGetValue( vehicle.ChaseTarget, out var slot ) )
+				vehicle.ChaseTarget = slot;
 		}
 	}
 }

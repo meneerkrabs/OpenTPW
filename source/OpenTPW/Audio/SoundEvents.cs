@@ -729,6 +729,12 @@ public sealed class SoundSentence
 	{
 		// [BIN:STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch] a branching sentence starts on the event's first sound
 		var first = soundEvent.Player == SoundEventPlayer.BranchingSentence ? 0 : Math.Max( 0, system.PickSound( soundEvent.Sounds ) );
+		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] the chosen sound's selectors are in the table from the creation (0x6BBF00), so a parameter set before the first sample plays is kept
+		if ( parameterChannel )
+		{
+			soundIndex = first;
+			SoundParameterTable.SelectSound( ref parameters, soundEvent.Sounds[first] );
+		}
 		Prefetch( first );
 		waiting = true;
 	}

@@ -49,7 +49,8 @@ internal static class TrackSave
 			throw new InvalidOperationException( $"The park holds {live.Count} bump controllers but {controllers.Count} placed kart or water stations; a controller lost its station." );
 		var tiles = cells.Tracks.Cells().Select( item => new TrackCellSaveData( item.X, item.Y, item.Cell.Type, item.Cell.Mask, item.Cell.Link, item.Cell.Flags, item.Cell.Parent,
 			item.Cell.Family, item.Cell.Piece, item.Cell.Rotation, item.Cell.Overlap, item.Cell.AltMask, item.Cell.Segment, item.Cell.Owner ) ).ToList();
-		if ( tiles.Count == 0 && controllers.Count == 0 )
+		// the module's clock and generator outlive its last ride, so a park that once had one keeps them in its save
+		if ( tiles.Count == 0 && controllers.Count == 0 && world.FrameCount == 0 && world.TickRemainder == 0 && world.CosmeticState == 0 )
 			return null;
 		return new TrackWorldSaveData { Cells = tiles, Controllers = controllers, CosmeticState = world.CosmeticState, FrameCount = world.FrameCount, TickRemainder = world.TickRemainder };
 	}

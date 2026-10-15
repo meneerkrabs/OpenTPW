@@ -149,6 +149,17 @@ public class VehicleEngineVoiceTests
 	}
 
 	[TestMethod]
+	public void AParameterSetBeforeTheFirstSegmentIsKept()
+	{
+		var category = Category( 0x6, 0, EngineSound() );
+		var sentence = system.StartSentence( category, 5, AudioChannel.Effects, position: new Vector3( 1, 0, 1 ), parameterChannel: true )!;
+		sentence.SetParameter( 0x10, 30 );
+		Playing( sentence );
+		Assert.AreEqual( -6, mixer.Voices.Last().PitchStep, "the selectors are in the table from the creation (0x6BBF60 -> 0x6BBF00)" );
+		sentence.Stop();
+	}
+
+	[TestMethod]
 	public void ASentenceWithoutAChannelIgnoresParameters()
 	{
 		var category = Category( 0x6, 0, EngineSound( selector: 0x10 ) );

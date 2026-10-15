@@ -183,4 +183,39 @@ public class BumpModuleTests
 		legacy.FinishRestore( null, null, new (BumpController, IReadOnlyList<int>?)[] { (a3, null), (b3, null) } );
 		Assert.AreEqual( loaded[0].TickCount, legacy.FrameCount );
 	}
+
+	[TestMethod]
+	public void TheModuleClockOutlivesItsLastRideInTheSave()
+	{
+		var world = new BumpWorld();
+		var ride = Bumper( world, 5 * 0xC00, 5 * 0xC00 );
+		for ( var tick = 0; tick < 5; tick++ )
+			ride.Tick();
+		world.Remove( ride );
+		var saved = TrackSave.Capture( new ParkCellMap( 8, 8 ), world, Array.Empty<(int, BumpController)>() );
+		Assert.IsNotNull( saved, "an empty module with a running clock still writes its part" );
+		Assert.AreEqual( 5L, saved!.FrameCount );
+		Assert.IsNull( TrackSave.Capture( new ParkCellMap( 8, 8 ), new BumpWorld(), Array.Empty<(int, BumpController)>() ), "a park that never had a ride writes none" );
+	}
+
+	[TestMethod]
+	public void ALegacyChaseFollowsItsCarToItsNewSlot()
+	{
+		var world = new BumpWorld();
+		var a = Bumper( world, 5 * 0xC00, 5 * 0xC00, seed: 3 );
+		var b = Bumper( world, 20 * 0xC00, 5 * 0xC00, seed: 4 );
+		Start( a, 2, 100 );
+		Start( b, 2, 200 );
+		var saved = TrackSave.CaptureController( b, 12 );
+		// a save from before the shared pool: b's cars at its own slots 0 and 1, one chasing the other
+		var legacy = saved with { Vehicles = saved.Vehicles.Select( ( car, index ) => car with { Slot = index, ChaseTarget = index == 0 ? 1 : -1 } ).ToList() };
+		var world2 = new BumpWorld();
+		var a2 = Bumper( world2, 5 * 0xC00, 5 * 0xC00, seed: 3 );
+		var b2 = Bumper( world2, 20 * 0xC00, 5 * 0xC00, seed: 4 );
+		Start( a2, 2, 100 );
+		b2.Restore( legacy );
+		var chaser = b2.Vehicles.First( car => car.ChaseTarget >= 0 );
+		Assert.AreSame( b2, world2.VehicleAt( chaser.ChaseTarget )!.Controller, "the chase still names the ride's own car" );
+		Assert.AreNotEqual( 1, chaser.ChaseTarget, "slot 1 belongs to the other ride now" );
+	}
 }

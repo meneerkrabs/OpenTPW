@@ -45,7 +45,8 @@ public sealed class UiStringTable
 
 /// <summary>
 /// Font size tier. The original ships three sizes of its menu fonts (MENU/TITLE/SESH/CASH
-/// SMALL, MED and BIG); picking one by output size is inferred from that, not from code.
+/// SMALL, MED and BIG) and picks a font bank by screen mode (tp.exe 0x419710, UI-002); OpenTPW's
+/// pick by output size does not follow that rule.
 /// </summary>
 public enum UiFontTier { Small, Medium, Big }
 
@@ -58,7 +59,7 @@ public sealed class UiFonts
 	{
 		this.load = load;
 		Tier = tier;
-		// [APPROX:UI-002] which shipped font serves which role per tier — evidence needed: binary font use / captures
+		// [APPROX:UI-002] which shipped font serves which role per tier: the original's controls name a bank slot (0x485a70; options labels 6, buy list rows 7) whose fonts differ per bank (docs/UI.md) — evidence needed: the slot each screen's controls use
 		var (title, menu, label, small, cash, heading) = tier switch
 		{
 			UiFontTier.Small => ("TITLESMALL", "MENUSMALL", "GAME10AA", "GAME8AA", "GAMEBOLD10", "SESHSMALL"),
@@ -71,7 +72,7 @@ public sealed class UiFonts
 		Small = Load( small );
 		Cash = Load( cash );
 		Heading = Load( heading );
-		// [APPROX:UI-002] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1)
+		// [APPROX:UI-002] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1; the original's banks 0-3 hold CASHSMALL/CASHMED/CASHBIG/CASHBIG, 0x419710)
 		var balance = tier switch { UiFontTier.Small => "CASHSMALL", UiFontTier.Big => "CASHBIG", _ => "CASHMED" };
 		try { Balance = Load( balance ); }
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Balance = Cash; }
@@ -159,7 +160,8 @@ public sealed class UiFonts
 }
 
 /// <summary>Colours used by the original-style screens (OpenTPW choices, see docs/UI.md).</summary>
-// [APPROX:UI-006] the UI text/backdrop colours are read off 720p video frames (+-15 per channel); the original's palette is not traced — evidence needed: lossless captures
+// [BIN:TPW-EXE:0x65c5d5 text control colour] the original gives each text control an RGBA colour (renderer +0x48, kept as ARGB at +0x78, 0x48fd07) and renders its glyphs white (0x48fa96) unless the control keeps the font's own colours (+0xdd); the buy list rows are (255,255,255,255) (0x4ad340)
+// [APPROX:UI-006] the other UI text/backdrop colours are read off 720p video frames (+-15 per channel) — evidence needed: the colour each screen passes to 0x65c5d5, the backdrop colours
 public static class UiColors
 {
 	public static readonly RgbaByte Text = new( 255, 255, 255, 255 );
@@ -173,7 +175,8 @@ public static class UiColors
 	/// <summary>Red text of costs (the hire window's mini balance rows, video 12:00).</summary>
 	public static readonly RgbaByte Negative = new( 255, 40, 40, 255 );
 	/// <summary>Dark label text inside the light-green option bars (near-black navy).</summary>
-	// [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye — evidence needed: exact pixel colour from a capture or the font palette
+	// [BIN:TPW-EXE:0x4a43b0 options labels] the original's options labels (and the slider labels, 0x4a4490) get the colour (0,0,0,255) (0x4a441e, 0x4a44fe) and font slot 6 ([0x7537b4])
+	// [APPROX:UI-037] option bar label colour (16,16,48) read off a capture by eye; how the control's colour tints its white glyph bitmap when drawn is not traced — evidence needed: the text bitmap's sprite draw (0x48f410 → 0x588c20)
 	public static readonly RgbaByte OptionText = new( 16, 16, 48, 255 );
 	public static readonly RgbaByte Shadow = new( 0, 0, 40, 200 );
 	public static readonly RgbaByte Backdrop = new( 0, 0, 30, 120 );

@@ -180,7 +180,7 @@ public sealed class CoasterRenderer : Entity
 	/// in the MD2 axes and engine scale the head presentation works in.
 	/// </summary>
 	// [BIN:TPW-EXE:0x430130 car heads] each car type counts the head sockets of its model ("Car type %s can receive %d heads"); the riders of a car take them in order
-	// [APPROX:COAST-034] rider j takes socket j modulo the sockets of its car (the original seats a guest in a random car inside the station window and then the first car with room, 0x43b600, which CoasterRide does; the seat inside the car and the car's world position written to its model, 0x43d6b2, are not traced)
+	// [BIN:TPW-EXE:0x43b70d seat socket] a guest seated in a car (0x43b600) is hung on the car model's socket of its index in the car's seated list (0x44b410 with the type's socket array entry at the list count), and a rider leaving at the arrival is taken off its socket (0x44b4c0, 0x43b480): the lap's riders and the guests seated at the station use the same sockets, one list at a time
 	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
 	{
 		var corner = origin();
@@ -512,7 +512,7 @@ public sealed class CoasterRenderer : Entity
 				if ( car.Train >= Ride.Trains.Count )
 					continue;
 				var coordinate = Ride.CarCoordinate( Ride.Trains[car.Train], car.Car );
-				var pose = CoasterCarRig.PoseAt( Ride.Samples, coordinate );
+				var pose = Ride.CarPose( coordinate );
 				car.World = CoasterCarRig.Matrix( pose, car.YOffset );
 				var transform = ObjectPlacement.SwapAxes( car.World ) * engine;
 				var position = new SVector3( transform.M41, transform.M42, transform.M43 );
@@ -551,11 +551,14 @@ public sealed class CoasterRenderer : Entity
 			{
 				if ( car.Train >= Ride.Trains.Count || car.Rig.Seats.Count == 0 || car.Car >= Ride.Trains[car.Train].Cars.Count )
 					continue;
-				var riders = Ride.Trains[car.Train].Cars[car.Car];
-				for ( var rider = 0; rider < riders.Count; rider++ )
+				foreach ( var riders in new[] { Ride.Trains[car.Train].Cars[car.Car], Ride.Trains[car.Train].BoardingCars[car.Car] } )
 				{
-					var (node, local) = car.Rig.Seats[rider % car.Rig.Seats.Count];
-					sources.Add( new HeadSource( riders[rider], attraction, local * car.World * shift, car.Rig.Model.Nodes[node].Type ) );
+					// A rider past the car's sockets (a car seated by a capacity above its own sockets, which COAST 6 does not allow) has no socket to hang from.
+					for ( var rider = 0; rider < riders.Count && rider < car.Rig.Seats.Count; rider++ )
+					{
+						var (node, local) = car.Rig.Seats[rider];
+						sources.Add( new HeadSource( riders[rider], attraction, local * car.World * shift, car.Rig.Model.Nodes[node].Type ) );
+					}
 				}
 			}
 		}

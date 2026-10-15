@@ -351,8 +351,10 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   (`0x43e590`) unless set by hand, the bank the auto-bank or the hand-set one. Every mesh of the model is drawn, the ground tile
   too.
 - **Cars.** The `asCarTypes` meshes, front, centre and rear by `sTrainType`. A car's pivot is its root node; its front
-  and rear extents come from the model bounds plus `fFrontDistanceAdd`/`fRearDistanceAdd` and give the spacing; it stands
-  on the interpolated sample with roll, pitch and yaw of that point and `fYOffset` along its up axis.
+  and rear extents come from the model's header bounds plus `fFrontDistanceAdd`/`fRearDistanceAdd`, the train's pair distances
+  space the cars around its middle car (see "The train"), and a car stands on the curve itself at its coordinate (`0x43c0a0`:
+  the knot pair whose knot coordinates enclose it, at t = (c − c₀)/(c₁ − c₀)) with the roll, pitch and yaw of that point and
+  `fYOffset` along its up axis; the model's +Z runs along the track (`0x43d8f0`).
 - **Debug.** In a Debug build `--debug-coaster built|open [--debug-coaster-id N] [--debug-coaster-height H]` with
   `--load-original-level` builds a small coaster for captures (`--capture-world`): finished with trains, or open after
   four pylons with the cursor on the fifth cell.
@@ -448,8 +450,8 @@ picking by cell, the area's occupancy test, the guessed clip angles of the hand-
 are built as a translucent ribbon; the original's renderer for the flags is not found) and the cut-end flags of COAST-030.
 
 The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
-COAST-034 (cars) and COAST-035 (the build cursor's ribbon). Rider heads are not seated in the cars yet (the head renderer
-takes providers of head sources; a coaster provider reading the cars' seat sockets, `CoasterCarRig.Seats`, is the
-next step). The ride camera
+COAST-034 (cars) and COAST-035 (the build cursor's ribbon). A rider's head hangs from its car's socket of its index in the
+car's seated list (`0x43b600` → `0x44b410`: socket j is the node of the car model's (j + 1)-th attribute record with flag `0x80`,
+`CoasterCarRig.Seats`). The ride camera
 is not implemented. `CoasterRide.TryGetRideView` gives the front car's pose
 (COAST-011).

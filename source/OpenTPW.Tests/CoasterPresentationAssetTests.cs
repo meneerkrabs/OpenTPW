@@ -175,6 +175,7 @@ public class CoasterPresentationAssetTests
 				var rig = new CoasterCarRig( geometry! );
 				Assert.IsTrue( rig.Parts.Count > 0, $"{entry.InfoId} {type.MeshName} has mesh parts" );
 				Assert.IsTrue( rig.FrontExtent + rig.RearExtent > 1, $"{entry.InfoId} {type.MeshName} has a length" );
+				Assert.AreEqual( rig.HeadSockets, rig.Seats.Count, $"{entry.InfoId} {type.MeshName}: a socket per 0x80 record, in record order (0x4301f5)" );
 				foreach ( var part in rig.Parts )
 				{
 					foreach ( var name in part.Textures )

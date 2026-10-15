@@ -109,6 +109,8 @@ public sealed class CoasterRide
 	// [BIN:TPW-EXE:0x43b0e0 coaster admission] COAST 1 pushes the guest on the admission ring (controller +0xb0); a train in the station seats the guests from it (0x43b600)
 	private readonly Queue<int> admission = new();
 	private CoasterSample[] samples = Array.Empty<CoasterSample>();
+	private IReadOnlyList<CoasterKnot> curveKnots = Array.Empty<CoasterKnot>();
+	private (System.Numerics.Vector3 Back, System.Numerics.Vector3 Forward)[] curveControls = Array.Empty<(System.Numerics.Vector3, System.Numerics.Vector3)>();
 	private HashSet<int> winchSections = new();
 
 	public CoasterRide( CoasterDefinition definition, CoasterWorld world, string name = "" )
@@ -228,6 +230,37 @@ public sealed class CoasterRide
 	}
 
 	/// <summary>
+	/// A car's pose at a coordinate on the sample list (<c>0x43c0a0</c>): the knot pair whose knot coordinates enclose it, starting from the pair of the
+	/// sample below it, and the curve itself at t = (c − c₀)/(c₁ − c₀) on that pair, with the yaw and pitch of the curve's derivative and the knot roll
+	/// interpolated by t (the sample pose when the curve has not been fitted).
+	/// </summary>
+	// [BIN:TPW-EXE:0x43c121 car curve point] the car stands on the slice frame 0x43e6b0 of the pair (A, B) with A the knot of sample[ftol(c)] (sample +0x2c) and B its next knot (+0x18), advanced while B's coordinate (+8) is below c, at t = (c − A +8)/(B +8 − A +8): the cubic Bézier point and its tangent's yaw and pitch, not the lerp of two samples
+	// [EXT:coaster-closing-pair-car] the closing pair's next knot is the second knot, whose coordinate is taken as one lap on (its own plus the sample count) so the car's parameter runs on; the original's walk compares the second knot's own coordinate
+	public CoasterCarPose CarPose( float coordinate )
+	{
+		var count = curveKnots.Count;
+		var coordinates = KnotCoordinates;
+		if ( samples.Length == 0 || count < 2 || coordinates.Count < count )
+			return CoasterCarRig.PoseAt( samples, coordinate );
+		var c = StationCoordinate( coordinate );
+		int Next( int pair ) => pair == count - 1 ? 1 : pair + 1;
+		float CoordinateOf( int pair, int next ) => next <= pair ? coordinates[next] + samples.Length : coordinates[next];
+		var a = Math.Clamp( samples[Math.Min( (int)c, samples.Length - 1 )].Section, 0, count - 1 );
+		var guard = 0;
+		while ( CoordinateOf( a, Next( a ) ) < c && guard++ < count )
+			a = Next( a );
+		var b = Next( a );
+		var span = CoordinateOf( a, b ) - coordinates[a];
+		var t = span > 0 ? Math.Clamp( (c - coordinates[a]) / span, 0f, 1f ) : 0f;
+		var position = HermiteCoasterCurve.Bezier( curveKnots[a].Position, curveControls[a].Forward, curveControls[b].Back, curveKnots[b].Position, t );
+		var tangent = HermiteCoasterCurve.Derivative( curveKnots[a].Position, curveControls[a].Forward, curveControls[b].Back, curveKnots[b].Position, t );
+		var (yaw, pitch) = tangent.LengthSquared() > 0 ? HermiteCoasterCurve.Orientation( tangent ) : (0f, 0f);
+		// [APPROX:COAST-017] the car's roll is the knots' rolls interpolated by t, as the samples', where the original takes the slice roll of 0x43e6b0
+		var roll = curveKnots[a].Roll + (curveKnots[b].Roll - curveKnots[a].Roll) * t;
+		return new CoasterCarPose( position, yaw, pitch, roll );
+	}
+
+	/// <summary>
 	/// The ride view of a train's front car (COAST-plan §7, §18): position from the interpolated sample, forward from the
 	/// sample direction, roll from the sample roll. False without that train.
 	/// </summary>
@@ -263,6 +296,8 @@ public sealed class CoasterRide
 	{
 		var nodes = Track.Nodes;
 		var knots = Track.BuildKnots( Site );
+		curveKnots = knots;
+		curveControls = HermiteCoasterCurve.Controls( knots, Definition.Curviness, closed: true );
 		var sampling = Curve.Sample( knots, Definition.Curviness );
 		samples = sampling.Samples;
 		Spacing = sampling.Spacing;

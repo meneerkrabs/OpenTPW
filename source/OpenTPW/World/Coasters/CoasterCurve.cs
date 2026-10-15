@@ -184,7 +184,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	/// The knot controls of every knot; the first knot has no previous neighbour and the last none after it (a closed chain's last knot, the station
 	/// end node, has the second knot as its next one), so those chords are 1.0.
 	/// </summary>
-	private static (SVector3 Back, SVector3 Forward)[] Controls( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed )
+	internal static (SVector3 Back, SVector3 Forward)[] Controls( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed )
 	{
 		var count = knots.Count;
 		var controls = new (SVector3 Back, SVector3 Forward)[count];

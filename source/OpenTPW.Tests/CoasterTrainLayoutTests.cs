@@ -183,6 +183,26 @@ public class CoasterTrainLayoutTests
 		Assert.AreNotEqual( samples[^1].Position, ride.SampleAt( samples.Count - 1.5f ).Position );
 	}
 
+	/// <summary>A car stands on the curve itself (0x43c0a0): at t = (c − c₀)/(c₁ − c₀) of the knot pair whose knot coordinates enclose its coordinate.</summary>
+	[TestMethod]
+	public void ACarStandsOnTheCurveAtItsKnotCoordinateParameter()
+	{
+		var ride = Built( CoasterDefinition.FromValues( CoasterTests.PcSettings() ) );
+		var knots = ride.Track.BuildKnots( ride.Site );
+		var coordinates = ride.KnotCoordinates;
+		for ( var knot = 1; knot < knots.Count - 1; knot++ )
+			Assert.IsTrue( System.Numerics.Vector3.Distance( knots[knot].Position, ride.CarPose( coordinates[knot] ).Position ) < 1e-3f, $"knot {knot} at its coordinate" );
+		var pair = 4;
+		var c = (coordinates[pair] + coordinates[pair + 1]) / 2;
+		var controls = HermiteCoasterCurve.Controls( knots, ride.Definition.Curviness, closed: true );
+		var expected = HermiteCoasterCurve.Bezier( knots[pair].Position, controls[pair].Forward, controls[pair + 1].Back, knots[pair + 1].Position, 0.5f );
+		Assert.IsTrue( System.Numerics.Vector3.Distance( expected, ride.CarPose( c ).Position ) < 1e-3f, "halfway between two knot coordinates is t = ½ of their pair" );
+		var lap = ride.CarPose( c + ride.Samples.Count );
+		Assert.IsTrue( System.Numerics.Vector3.Distance( expected, lap.Position ) < 1e-3f, "a coordinate a lap on is the same point" );
+		var near = ride.CarPose( ride.Samples.Count - 0.25f );
+		Assert.IsTrue( float.IsFinite( near.Position.X ) && float.IsFinite( near.Yaw ), "the closing pair poses too" );
+	}
+
 	[TestMethod]
 	public void ARerateRestartsThePlacementFromTrainZerosLastCarAndKeepsTheCount()
 	{

@@ -85,8 +85,9 @@ public readonly record struct CoasterCarPose( NVector3 Position, float Yaw, floa
 /// A train car model (an MD2 such as <c>CrocCar.MD2</c>, <c>cart.MD2</c> or <c>ape.MD2</c>) baked at its rest pose around its root node: the mesh parts, the extents
 /// along the car (the model's forward axis is +Z, the car's front is its maximum Z) and the head sockets of its seats.
 /// </summary>
-// [BIN:TPW-EXE:0x43ce20 car pose] each frame a car stands at the curve point of its coordinate (the train's coordinate plus the car's offset over the sample spacing, interpolated between two samples, 0x43c0a0) with the yaw, pitch and roll of that point turned into a matrix (0x43d8f0: roll, then pitch, then yaw) and the car type's fYOffset added along the turned up axis; the car's own wheel animation runs at +0x1c times the train speed
-// [APPROX:COAST-034] cars are posed at the interpolated sample point with the sample direction and bank, spaced by their model extents plus the car type's distance adds, and drawn as the static rest mesh: the bend of flume cars (bBendCar with fBendElevationLow/High), the wheel and head animation clips (M1..M3) and the train's front-car reference are not reproduced, and the model's forward axis is taken as +Z — evidence needed: the car matrix consumer of node +0x78 (0x474050) and the bend-car pose
+// [BIN:TPW-EXE:0x43ce20 car pose] each frame a car stands at the curve point of its coordinate (the train's coordinate plus the car's offset over the sample spacing, CoasterRide.CarPose, 0x43c0a0) with the yaw, pitch and roll of that point turned into a matrix (0x43d8f0: roll, then pitch, then yaw) and the car type's fYOffset added along the turned up axis; the car's own wheel animation runs at +0x1c times the train speed
+// [BIN:TPW-EXE:0x43d8f0 car matrix] the car's model root node gets the rotation roll (+0xc), then pitch (+8), then yaw (+4) from identity, so the model's +Z runs along the track, and the root's translation (+0x40..+0x48) the car point plus the turned fYOffset (0x43d6b2)
+// [APPROX:COAST-034] cars are drawn as their static rest mesh: the bend of bBendCar types (0x438800 with the angle tables of 0x438ab0: every vertex of the car's mesh, at its local Z over the samples around the car, takes the yaw and pitch of the track there relative to the car's and rises by fBendElevationLow, or fBendElevationHigh on flag-8 samples) and the model clip of slot 0 (set up by 0x43be10 and played at the car type's +0x1c × the train speed through 0x474050, on non-bend cars only) are not reproduced
 public sealed class CoasterCarRig
 {
 	public CoasterCarRig( ModelFile model )
@@ -122,12 +123,14 @@ public sealed class CoasterCarRig
 		Parts = parts;
 		FrontExtent = parts.Count == 0 ? 0 : MathF.Max( maxZ, 0 );
 		RearExtent = parts.Count == 0 ? 0 : MathF.Max( -minZ, 0 );
+		// [BIN:TPW-EXE:0x4301f5 car head sockets] the car type's socket j is the node of the (j + 1)-th attribute record with flag 0x80 (0x44b270(model, 0x80, j + 1), the record index; record i belongs to the node stored as header +0x46 + i, 0x44ab90), in record order whatever the records' values
 		var seats = new List<(int Node, Matrix4x4 Local)>();
-		for ( var id = 1; id < 64; id++ )
+		for ( var index = 0; index < model.DummyAttributes.Count; index++ )
 		{
-			var node = RideHeadSpace.NodeForHead( model, id );
-			if ( node == RideHeadSpace.NoRecord )
-				break;
+			if ( (model.DummyAttributes[index].Type & RideHeadSpace.HeadFlag) == 0 )
+				continue;
+			var stored = model.Counts.Unknown46 + index;
+			var node = model.Nodes.FirstOrDefault( candidate => candidate.StoredIndex == stored )?.Index ?? -1;
 			if ( node >= 0 )
 				seats.Add( (node, rest[node] * shift) );
 		}

@@ -321,7 +321,10 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xD28386DACAD73241`, schema 19: the guest's energy meter is tp.exe's field `+0x1B8` (0 at birth, changed only by `0x004FD970`), the
+  (`0x0F080CC6C6923088`, schema 19: the bank's stored credit test (`0x4D06B0`, run when the loans dialog opens or a tab is selected)
+  decides which offers the Available tab lists, and the park save gains the optional `AvailableLoanOffers` field, so the hashed save
+  text moves. Before that:
+  `0xD28386DACAD73241`, schema 19: the guest's energy meter is tp.exe's field `+0x1B8` (0 at birth, changed only by `0x004FD970`), the
   attraction choice walks the objects newest first, a full queue costs no happiness and the use routine `0x004FE1E0` applies its
   remaining terms, so the guests and the world stream move. Before that:
   `0x4AEFBABAD786E2FD`, schema 19: guests skip a ride whose queue is full (4 × cells, tp.exe `0x004DD920`) when they choose, and a queued guest

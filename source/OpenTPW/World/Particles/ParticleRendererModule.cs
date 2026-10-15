@@ -108,7 +108,7 @@ internal static class ParticleRendererModule
 			var atlas = ParticleSpriteAtlas.Load();
 			if ( atlas != null )
 				// the entity takes Level.Current at construction; a resumed park's candidate is not necessarily current yet
-				return new ParticleRenderer( new ParticleSystem( templates.Templates, effectors: templates.EffectorTemplates ), atlas,
+				return new ParticleRenderer( new ParticleSystem( templates.Templates, ParticleSystem.OptionsDensity( IGraphicsSettings.Instance ), effectors: templates.EffectorTemplates ), atlas,
 					position => ToEngine( level, position ), () => !(level.SimulationTimeScale > 0f), level: level );
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidDataException or NullReferenceException )
@@ -139,7 +139,7 @@ internal static class ParticleRendererModule
 
 	/// <summary>The native position of an engine position: original units times 1024, Y up, truncated toward zero (the dispatcher's unit before the constructor's >> 4).</summary>
 	// [BIN:TPW-EXE:0x5573D0 EVENT dispatcher] world position * 1024.0 (constant 0x700FDC) through _ftol, which truncates
-	// [APPROX:PTCL-906] the conversion inverts OpenTPW's placement; the pool runs with the options' default density (PARTICLEDENSITY 500), 2048 particles and the original's flat-zero ground stub, and the density option is not exposed
+	// [APPROX:PTCL-906] the conversion inverts OpenTPW's placement (the pool runs with the detail options' PARTICLEDENSITY, 2048 particles and the original's flat-zero ground stub, as the original does)
 	internal static (int X, int Y, int Z) ToNative( Level level, SVector3 engine )
 	{
 		var original = ToOriginal( level, engine );

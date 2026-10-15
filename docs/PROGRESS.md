@@ -19,6 +19,19 @@ re-read):
 - SAVE-930 is OpenTPW's own layout checkpoint (`[EXT:tpi-layout-checkpoint]`); thirteen arrival and save items are narrowed, among them
   the bus, seaplane or ferry by group size (`0x4cf48c`) and the coaster save block (`0x437300`, `0x437b60`).
 
+## Advisor presentation, crowd sound and particle density from tp.exe (October 15, 2026)
+
+- **The advisor moves**: its antennae, hands and eyes vertex tracks and the level advisors' eye texture tracks play through the shared
+  instance draw (`0x429df0` → `0x473c70`); clip node bits carry from clip to clip, so bit `0x10000` hides the bug head and mouth and
+  `0x40000` plays cat_ui `0xC5` (the ticket close-up, ADVISOR-006 and -026 narrowed).
+- **The slap and F1**: cutting the advisor off while it speaks plays one of three slaps (`0x5994e0`), and F1 in the eight help windows
+  replays the last tutorial record (`0x488c02` → `0x59ab50`, saved as an optional field; ADVISOR-027 retired). The help descriptors read
+  `HelpMessage.Score`, not `ContextHelpScore` (both 1000 in the shipped file).
+- **The crowd sound follows its parameter** (`0x6bbb80`): a parameter change recomputes the playing sample's volume and pitch, on the
+  original's beat of every 32nd 31 ms step (`0x54f82d`, AUDIO-036 retired). The ticket timer plays cat_ui `0xC6` (`0x5999b2`).
+- **Particle density** comes from the player's graphics preset as the original's detail files set it (500/1000/1500, `0x44dc60`;
+  PTCL-906 narrowed).
+
 ## Buy Land, as in the original (October 15, 2026)
 
 The original's land purchase is in: the build window's Miscellaneous tab has "Buy Land" (with the `Costs.MapCell` price) and "Clear

@@ -156,6 +156,31 @@ public class AdvisorSequenceTests
 	}
 
 	[TestMethod]
+	public void TheTimerIsDueOnceTheClockReachesTheRequestPlusItsMillisecondsAcrossTheWrap()
+	{
+		var start = AdvisorSpeechStart.For( 10_000, 28 );
+		Assert.IsFalse( start.TimerDue( 26_999, 17000 ) );
+		Assert.IsTrue( start.TimerDue( 27_000, 17000 ), "equality counts (timer - now <= 0)" );
+		Assert.IsTrue( start.TimerDue( 90_000, 17000 ) );
+		var wrapping = AdvisorSpeechStart.For( uint.MaxValue - 100L, 28 );
+		Assert.IsFalse( wrapping.TimerDue( uint.MaxValue, 1000 ), "a 32-bit clock just before the wrap" );
+		Assert.IsTrue( wrapping.TimerDue( 900, 1000 ), "and after it" );
+		Assert.AreEqual( 0xC6u, AdvisorSequences.TimerSound, "global cat_ui 198" );
+	}
+
+	[TestMethod]
+	public void OnlyTheKeyClipsEffectBitsPlayTheKeySound()
+	{
+		// Row 29: clips 17 x 4 (0x20000), 18 (0x40000), 19 (0x10000 | 0x80000), 20 (0x10000 | 0x100000); the sound needs bits & 0x3E0000 == 0x40000
+		var keyed = AdvisorFixedSequences.Row( 29 ).Where( entry => !entry.IsTimer && (entry.Bits & AdvisorAccessories.EffectBits) == AdvisorAccessories.KeyEffectBit )
+			.Select( entry => entry.Clip ).ToArray();
+		CollectionAssert.AreEqual( new[] { 18 }, keyed );
+		Assert.AreEqual( 0xC5u, AdvisorAccessories.KeySound );
+		CollectionAssert.AreEqual( new[] { 19, 20 }, AdvisorFixedSequences.Row( 29 ).Where( entry => (entry.Bits & AdvisorAccessories.SuppressCostumeBit) != 0 ).Select( entry => entry.Clip ).ToArray(),
+			"the close-ups hide the costume, the bug head and the mouth" );
+	}
+
+	[TestMethod]
 	public void AGeneratedResponseHasNoRow()
 	{
 		var generated = AdvisorSequences.Generate( 2500, Uniform( 1000 ), Script( 9, 4, 2, 6 ) );

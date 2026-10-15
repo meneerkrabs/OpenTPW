@@ -14,8 +14,7 @@ public sealed record ResearchItem( int InfoId, int Level, ResearchCategory Categ
 /// effort share × <c>Research.StartingWorkLoad</c> / 100 points to every category's current item; a
 /// category's highest open group rises while the percentage of researched items in its open groups
 /// reaches the next <c>ResearchTech</c> threshold; each category researches the first open item in table order.
-/// <b>Approximations</b>: the table is in info-id order; ride upgrade levels and add-on objects form the
-/// "upgrade" category; Instant Action research runs at one grade-2 researcher's ability without staff;
+/// <b>Approximations</b>: the table is in info-id order; Instant Action research runs at one grade-2 researcher's ability without staff;
 /// progress is kept in thousandths of a point. Researcher <c>WorkDuration</c> is not used.
 /// </summary>
 public sealed class ParkResearch
@@ -46,13 +45,15 @@ public sealed class ParkResearch
 		{
 			if ( !info.IsBuyable || info.Upgrades.Count == 0 )
 				continue;
-			// [APPROX:ECON-018] ride upgrade levels and add-on objects form the "upgrade" research category — evidence needed: research lab capture
-			var category = info.Kind == ParkObjectKind.Upgrade ? ResearchCategory.Upgrade : info.ResearchCategory;
-			var group = info.Kind == ParkObjectKind.Upgrade ? 0 : info.ResearchGroup;
-			items.Add( new ResearchItem( info.InfoId, 0, category, group, info.Upgrades[0].CostOfResearch, info.Kind == ParkObjectKind.Upgrade ? info.AddOnTargetId : 0 ) );
-			if ( info.Kind != ParkObjectKind.Ride )
+			// [BIN:TPW-EXE:0x005031A0 research table fill] an object's base project takes its own Research.Category (+0x17C) and Research.Group (+0x178), add-ons included
+			// (every shipped add-on declares category 4 and group 0); a category-4 project is selectable once the object its AddOn.UpgradesId names (+0x284) is researched (0x005034F0; its second test for a target with a golden-ticket cost is ECON-017)
+			var category = info.ResearchCategory;
+			items.Add( new ResearchItem( info.InfoId, 0, category, info.ResearchGroup, info.Upgrades[0].CostOfResearch, category == ResearchCategory.Upgrade ? info.AddOnTargetId : 0 ) );
+			// [BIN:TPW-EXE:0x00504580 upgrade level project] an object whose own category is not 4 gets its next level's project in category 4, group 0, once the level below is
+			// researched (levels 1 and 2; a level without research cost is researched at once); on the shipped data only rides have such levels
+			if ( category == ResearchCategory.Upgrade )
 				continue;
-			for ( var level = 1; level < info.Upgrades.Count; level++ )
+			for ( var level = 1; level < Math.Min( info.Upgrades.Count, 3 ); level++ )
 				items.Add( new ResearchItem( info.InfoId, level, ResearchCategory.Upgrade, 0, info.Upgrades[level].CostOfResearch, info.InfoId ) );
 		}
 		foreach ( var item in items )
@@ -146,7 +147,7 @@ public sealed class ParkResearch
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
 	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
-	// [APPROX:ECON-017] a new park's research table is in info-id order and the player cannot step the cursor to another item; the shipped Jungle lab lists its projects in another order (rides 1140, 1150, 1108, …; features 1414 before 1400), which an imported park follows for its current projects only — evidence needed: the table fill order (FUN_100c9064, tp.exe 0x502dc0's 256 project records) and the next/previous control
+	// [APPROX:ECON-017] a new park's research table is in info-id order, where the original fills it in its object loader's order (0x5031A0 over 0x412E60 / 0x412E70, no sort on that path); the cursor steps with the arrows (0x4AA0C0 → 0x5034F0 / 0x5036A0) and moves on after a completed project (0x4AAEC0) to the next eligible project in table order with wrap, as the original's picker does, but the original appends an object's next level project to the end of the table only when the level below completes (0x503D40 → 0x504580 at 0x503D8C), where OpenTPW lists every level right after its base project, so after a level completes the two cursors can land on different projects; the picker's second test for an add-on whose target has a golden-ticket cost (+0xC4 > 0 → 0x4D4B70 over the set at 0xF7C58C) is not modelled; and the original marks an object researched at the start when its first research cost (+0x180) is 0, in any group, where OpenTPW does so for every group-0 item; the shipped Jungle lab lists its projects in another order (rides 1140, 1150, 1108, …; features 1414 before 1400), which an imported park follows for its current projects only — evidence needed: the enumeration order of the object loader 0x413930 / 0x413C10, and what the set at 0xF7C58C holds
 	// Host UI selection below retains the native default cursor; correspondence with native player selection remains unverified.
 	public ResearchItem? Current( ResearchCategory category )
 	{
@@ -196,6 +197,7 @@ public sealed class ParkResearch
 	public IReadOnlyList<ResearchItem> AddResearcherPoints( int ability )
 	{
 		var done = new List<ResearchItem>();
+		var finished = new List<ResearchItem>();
 		var active = Enum.GetValues<ResearchCategory>().Select( category => (Category: category, Item: Current( category )) )
 			.Where( entry => entry.Item != null ).ToList();
 		var totalEffort = active.Sum( entry => (long)effort[(int)entry.Category] );
@@ -213,6 +215,7 @@ public sealed class ParkResearch
 				progress.Remove( key );
 				MarkCompleted( item );
 				done.Add( item );
+				finished.Add( item );
 			}
 			else
 				progress[key] = value;
@@ -223,7 +226,24 @@ public sealed class ParkResearch
 				OpenGroups( category );
 			PropagateFreeItems( done );
 		}
+		foreach ( var item in finished )
+			AdvanceCursor( item );
 		return done;
+	}
+
+	/// <summary>Moves a category's cursor on from its completed project: the next selectable project after it in table order, wrapping to the first.</summary>
+	// [BIN:TPW-EXE:0x004AAEC0 research completed] the completion's message 0x11 (0x00504630) reaches the lab (0x00503D40), which opens the groups (0x00503B80) and posts
+	// message 0x12 with the category; its handler (0x0050CA50 → 0x00481520) runs the forward picker 0x005034F0 when the cursor's project is finished (0x00504040): the first
+	// eligible project after the cursor, else the first before it, else none
+	private void AdvanceCursor( ResearchItem finished )
+	{
+		selected.Remove( finished.Category );
+		if ( !byCategory.TryGetValue( finished.Category, out var list ) )
+			return;
+		var index = list.IndexOf( finished );
+		var next = list.Skip( index + 1 ).FirstOrDefault( IsSelectable ) ?? list.Take( index ).FirstOrDefault( IsSelectable );
+		if ( next != null )
+			selected[finished.Category] = next;
 	}
 
 	/// <summary>Marks items with zero research cost whose prerequisites are available (e.g. easy-mode ride upgrades).</summary>

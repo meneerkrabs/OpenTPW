@@ -1337,7 +1337,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( visitAttractionRows >= 1, "the visited park's rides are listed" );
 			var capture = CaptureFrame( "visit-attractions.png" );
 			VerifyText( capture, flow.Strings[UIStrings.AllRides], "All Rides title in the visit" );
-			Click( hud.Stack.Top!, "headerName" );
+			Click( hud.Stack.Top!, "headerNameRides" );
 		} );
 		Wait( "visit attractions header chosen", 3 );
 		Do( "visit attractions header sorted once", () => Require( flow.Hud!.AttractionItems.Count > 0, "the sorted attraction list is not empty" ) );
@@ -1678,8 +1678,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Require( hud.AttractionsWindowOpen, "the attractions window is open" );
 		var index = hud.AttractionItems.ToList().FindIndex( row => row.AttractionId == attractionId );
 		var visible = index - hud.AttractionFirstRow;
-		Require( index >= 0 && visible >= 0 && visible < ParkHud.StaffVisibleRows, "the requested attraction is among the visible rows" );
-		var point = Context.Canvas.Map( new System.Numerics.Vector2( 1240, 441 + (visible + 0.5f) * ParkHud.StaffRowHeight ), UiAnchor.Center );
+		Require( index >= 0 && visible >= 0 && visible < hud.AttractionVisibleRows, "the requested attraction is among the visible rows" );
+		var point = Context.Canvas.Map( new System.Numerics.Vector2( 1240, hud.AttractionRowsTop + (visible + 0.5f) * hud.AttractionRowHeight ), UiAnchor.Center );
 		flow.InjectedInput = right ? UiInput.Idle( point ) with { RightPressed = true } : UiInput.Click( point );
 	}
 

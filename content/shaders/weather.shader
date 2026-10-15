@@ -44,10 +44,15 @@ fragment {
     layout( set = 1, binding = 1 ) uniform sampler s_Color;
 
     // Textured camera-facing particles (rain streaks, snow flakes, the bolt's ribbon): the image modulated by the
-    // vertex's grey level, its alpha by the vertex's alpha. The material picks the blend (additive for the rain).
+    // vertex's grey level, its alpha by the vertex's alpha. The material picks the blend (source alpha over one for
+    // the rain and the bolts, alpha for the snow). All three states of the original (0x200D52, 0x556) carry the alpha
+    // test 0x400 with the low reference 0x10 and ALPHAFUNC greater-or-equal (tp.exe 0x567620, 0x566840).
     void main()
     {
         vec4 vColor = texture( sampler2D( Color, s_Color ), vs_out.vTexCoords );
-        fragColor = vec4( vColor.rgb * vs_out.vGrey, vColor.a * vs_out.vAlpha );
+        float alpha = vColor.a * vs_out.vAlpha;
+        if ( alpha < 16.0 / 255.0 )
+            discard;
+        fragColor = vec4( vColor.rgb * vs_out.vGrey, alpha );
     }
 }

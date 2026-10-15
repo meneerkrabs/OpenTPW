@@ -1,3 +1,5 @@
+using System.Linq;
+using System.Collections.Generic;
 using System;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -82,6 +84,38 @@ public class RideStateRulesTests
 		ride.IsOpen = true;
 		EconomyTestData.AdvanceToTurn( park, 6 * ParkEconomy.RideUpdateInterval );
 		Assert.IsTrue( ride.IsBrokenDown );
+	}
+
+	[TestMethod]
+	public void AScriptHostedObjectBreaksDownThroughItsScriptAndReportsWear()
+	{
+		var park = EconomyTestData.Park();
+		var writes = new List<ParkEvent>();
+		park.EventRaised += item => { if ( item.Kind == ParkEventKind.RideScriptVariable ) writes.Add( item ); };
+		park.TryBuild( 1100, out var ride );
+		ride!.ScriptHosted = true;
+		ride.Repair = 0;
+		EconomyTestData.AdvanceToTurn( park, ParkEconomy.RideUpdateInterval );
+		// [BIN:TPW-EXE:0x4e0b90 breakdown check] VAR_BREAKSTAT = 1 and state 0 until the script's VAR_BROKEN is read (0x4e14e0)
+		Assert.IsFalse( ride.IsBrokenDown );
+		Assert.AreEqual( 1, ride.ScriptBreakStat );
+		Assert.AreEqual( 1, writes.Count( item => item.InstanceId == ride.Id && item.InfoId == (int)RideVariables.VAR_BREAKSTAT && item.Amount == 1 ) );
+		EconomyTestData.AdvanceToTurn( park, 2 * ParkEconomy.RideUpdateInterval );
+		Assert.AreEqual( 1, writes.Count( item => item.InfoId == (int)RideVariables.VAR_BREAKSTAT ), "VAR_BREAKSTAT set: no second request" );
+		park.ObserveScriptState( ride, inBrokenState: true );
+		Assert.IsTrue( ride.IsBrokenDown, "the ride update's state 1" );
+		ride.IsBrokenDown = false;
+		park.ObserveScriptState( ride, inBrokenState: true );
+		Assert.IsFalse( ride.IsBrokenDown, "only the rising edge breaks it down" );
+
+		// [BIN:TPW-EXE:0x4e0d16 relief worn] a relief object below 25 writes VAR_WORN = 1 on every update
+		park.TryBuild( 1402, out var toilet );
+		toilet!.ScriptHosted = true;
+		toilet.Repair = 24.9;
+		var turn = park.Turn;
+		EconomyTestData.AdvanceToTurn( park, turn + 1 );
+		Assert.IsTrue( writes.Any( item => item.InstanceId == toilet.Id && item.InfoId == (int)RideVariables.VAR_WORN && item.Amount == 1 ) );
+		Assert.IsFalse( toilet.IsBrokenDown, "relief objects never break down" );
 	}
 
 	[TestMethod]

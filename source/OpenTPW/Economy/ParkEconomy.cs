@@ -273,7 +273,12 @@ public sealed class ParkEconomy : IParkEconomy
 			member.BusyTicks--;
 			if ( member.BusyTicks == 0 )
 			{
-				FinishJob( member );
+				if ( !FinishJob( member ) )
+				{
+					// the broken ride's fix animation still runs (its script's VAR_BROKEN): the next staff update looks again
+					member.BusyTicks = 1;
+					continue;
+				}
 				StrikeOrRest( member, HasRestArea );
 			}
 		}
@@ -284,9 +289,8 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
 		if ( turn % ParkResearch.TurnsPerResearch == 0 )
 			DoResearch();
-		// [BIN:STP-PPC:0x100E077C ride update] each ride is updated when the turn counter is a multiple of 8
-		if ( turn % RideUpdateInterval == 0 )
-			UpdateRides( turn );
+		// [BIN:TPW-EXE:0x004E0B90 object update] every live object thing runs its update each turn; the wear and the breakdown check inside it run when the turn counter is a multiple of 8
+		UpdateRides( turn );
 	}
 
 	/// <summary>
@@ -389,13 +393,19 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>A world mechanic finishes his job (tp.exe <c>0x004DF8F0</c>): the repair or the upgrade, as <see cref="FinishJob"/>.</summary>
-	internal void FinishMechanicJob( StaffMember member )
+	/// <returns>False while the broken ride's fix animation still runs (its script's VAR_BROKEN): the mechanic keeps the job and tries again.</returns>
+	internal bool FinishMechanicJob( StaffMember member )
 	{
 		member.AssignedInstanceId = member.RideId;
-		member.RideId = 0;
 		var state = member.State;
-		FinishJob( member );
+		if ( !FinishJob( member ) )
+		{
+			member.AssignedInstanceId = 0;
+			return false;
+		}
+		member.RideId = 0;
 		member.State = state;
+		return true;
 	}
 
 	/// <summary>The member's role is on strike (the strike flag 0x00509990).</summary>
@@ -595,27 +605,68 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// The original ride update (docs/reverse/RIDE-WEAR.md, ORACLE.md F27): every 8 turns each ride that is open and not broken down runs the
-	/// wear step, which acts on every 64th turn, and then the breakdown check.
+	/// The original object update (tp.exe <c>0x004E0B90</c>, docs/reverse/RIDE-WEAR.md, ORACLE.md F27) of every object guests may choose: every 8 turns one that
+	/// is open and not broken down runs the wear step, which acts on every 64th turn, and then the breakdown check; a relief object reports itself worn
+	/// below a state of repair of 25 every turn.
 	/// </summary>
 	private void UpdateRides( long turn )
 	{
-		foreach ( var item in objects.Values.Where( item => item.Kind == ParkObjectKind.Ride ).ToList() )
+		foreach ( var item in objects.Values.ToList() )
 		{
-			// [BIN:STP-PPC:0x100E077C ride update] a ride in state 1 or 4 (broken down, condemned), a closed ride (open word +0x64 = 0, which state 2 clears too) and a ride on a turn that is not a multiple of 8 are not updated; a mechanic at work on a ride that is open and not broken (a repair of a worn ride) does not stop the update
-			// [APPROX:ECON-023] the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word: an economy breakdown (a life or repair byte of 0, relief objects exempt) marks the ride broken down at once, where the original only writes VAR_BREAKSTAT = 1 (0x004E0CA5 / 0x004E0CFA) and leaves it in state 0 until the script sets VAR_BROKEN (state 1, or 4 with a life byte of 0: 0x004E14E0); a breakdown that only the script reports gets no mechanic, where the original's state 1 gets one (0x004DAA90) and the repair waits for VAR_BROKEN to clear (0x004DA830); VAR_WORN is not written (the wear step 0x004DF670 sets it below a repair byte of 20, the update for relief objects below 25 at 0x004E0D16); only rides are updated, where the original updates every choosable object (state 0 at 0x004DB4FB): the shipped toilets are choosable with WearRate 0, so only their use (0x004E2440, modelled) wears them; state 2 comes only from the upgrade request 0x004E0050 (buy handler 0x004AF480) — evidence needed: the ride scripts' handling of VAR_BREAKSTAT and VAR_WORN (.rse data)
+			// [BIN:TPW-EXE:0x004DB4FB object state] a thing whose type record is choosable (Info.IsChoosable, +0x32 bit 4) starts in state 0, any other in state 3, which the update skips
+			if ( !Catalog.TryGet( item.InfoId, out var info ) || !info.IsChoosable )
+				continue;
 			var state = ObjectState( item );
-			if ( !RideBreakdownRules.RunsWear( state, item.IsOpen && state != RideObjectStates.Upgrading, turn ) )
+			// [BIN:STP-PPC:0x100E077C ride update] a ride in state 1 or 4 (broken down, condemned), a closed ride (open word +0x64 = 0, which state 2 clears too) and a ride on a turn that is not a multiple of 8 are not updated; a mechanic at work on a ride that is open and not broken (a repair of a worn ride) does not stop the update
+			if ( RideBreakdownRules.SkipsUpdate( state ) )
 				continue;
-			if ( turn % WearInterval == 0 )
-				Wear( item );
-			// [BIN:STP-PPC:0x100E077C breakdown check] a ride that is not already broken down breaks down when its truncated life gauge or state of repair is 0; when only the state of repair is 0 the life gauge first loses 5 (clamped to 0..100); 0x100E09F4 then sets VAR_BREAKSTAT; there is no random roll
-			if ( !RideBreakdownRules.BreaksDown( false, 0, (float)item.LifeGauge, (float)item.Repair ) )
-				continue;
-			item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
-			item.IsBrokenDown = true;
-			Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
+			if ( RideBreakdownRules.RunsWear( state, item.IsOpen && state != RideObjectStates.Upgrading, turn ) )
+			{
+				if ( turn % WearInterval == 0 )
+					Wear( item );
+				// [BIN:STP-PPC:0x100E077C breakdown check] a ride that is not already broken down breaks down when its truncated life gauge or state of repair is 0; when only the state of repair is 0 the life gauge first loses 5 (clamped to 0..100); 0x100E09F4 then sets VAR_BREAKSTAT; there is no random roll
+				// [BIN:TPW-EXE:0x004E0B90 breakdown check] an object without the relief flag (+0x32 bit 1) whose life (+0x48) or repair (+0x44) byte is 0 and whose VAR_BREAKSTAT (script variable 4) is 0 writes VAR_BREAKSTAT = 1 ("Object %d requested breakdown"); its state stays 0 until the ride update reads the script's VAR_BROKEN (0x004E14E0)
+				if ( RideBreakdownRules.BreaksDown( info.ProvidesRelief, item.ScriptHosted ? item.ScriptBreakStat : 0, (float)item.LifeGauge, (float)item.Repair ) )
+				{
+					item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
+					// [APPROX:ECON-023] an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN), but the state word is split between the visitor bridge (state 1) and the economy's broken flag, which the level joins on the rising edge of state 1, state 4 is told apart only by the economy's life gauge (QUEUE-019), and a headless economy without ride scripts breaks an object down at once and repairs it without the wait — evidence needed: none for the routines (read); one state word needs the bridge's and the economy's records merged
+					if ( item.ScriptHosted )
+						WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
+					else
+						item.IsBrokenDown = true;
+					Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
+				}
+			}
+			// [BIN:TPW-EXE:0x004E0D16 relief worn] a relief object (+0x32 bit 1) whose repair byte is below 25 writes VAR_WORN = 1 (script variable 8) on every update
+			if ( info.ProvidesRelief && RideBreakdownRules.GaugeByte( (float)item.Repair ) < ReliefWornByte )
+				WriteScript( item, RideVariables.VAR_WORN, 1 );
 		}
+	}
+
+	/// <summary>A relief object reports itself worn (VAR_WORN) below this state of repair byte (tp.exe <c>0x004E0D16</c>: 25.0).</summary>
+	public const int ReliefWornByte = 25;
+	/// <summary>The wear step reports a ride worn (VAR_WORN) below this state of repair byte (tp.exe <c>0x004DF670</c>: 20.0).</summary>
+	public const int WornByte = 20;
+
+	/// <summary>Writes one of the object's script variables (the host applies <see cref="ParkEventKind.RideScriptVariable"/>); nothing for an object no script runs.</summary>
+	private void WriteScript( ParkObjectState item, RideVariables variable, int value )
+	{
+		if ( !item.ScriptHosted )
+			return;
+		if ( variable == RideVariables.VAR_BREAKSTAT )
+			item.ScriptBreakStat = value;
+		Raise( ParkEventKind.RideScriptVariable, value, item.Id, (int)variable );
+	}
+
+	/// <summary>
+	/// The level saw the ride update enter state 1 (the script's VAR_BROKEN read in state 0, tp.exe <c>0x004E14E0</c>): the object is broken down and a mechanic
+	/// is sent (<c>0x004DAA90</c> looks for state 1). Only the rising edge of <paramref name="inBrokenState"/> breaks it down, so a repaired ride the level has not yet reopened stays repaired.
+	/// </summary>
+	internal void ObserveScriptState( ParkObjectState item, bool inBrokenState )
+	{
+		if ( inBrokenState && !item.ScriptStateBroken )
+			item.IsBrokenDown = true;
+		item.ScriptStateBroken = inBrokenState;
 	}
 
 	/// <summary>
@@ -643,6 +694,9 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100DEC2C wear step] state of repair (+0x40) loses the wear and the life gauge (+0x44) 0.02 × the wear, each clamped to 0..100
 		item.Repair = Math.Clamp( item.Repair - wear, 0, 100 );
 		item.LifeGauge = Math.Clamp( item.LifeGauge - 0.02f * wear, 0, 100 );
+		// [BIN:TPW-EXE:0x004DF670 wear step] after the gauges, a repair byte below 20 writes VAR_WORN = 1 (script variable 8)
+		if ( RideBreakdownRules.GaugeByte( (float)item.Repair ) < WornByte )
+			WriteScript( item, RideVariables.VAR_WORN, 1 );
 		if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 			Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
 	}
@@ -663,8 +717,17 @@ public sealed class ParkEconomy : IParkEconomy
 		return (speedTerm + riderTerm) * 0.5f * level.WearRate;
 	}
 
-	private void FinishJob( StaffMember member )
+	/// <returns>False when a mechanic's broken ride still plays its fix animation (the job goes on), else true.</returns>
+	private bool FinishJob( StaffMember member )
 	{
+		// [BIN:TPW-EXE:0x004DA830 repairing] at the end of the timer a ride in state 1 (0x004E0370) gets VAR_BREAKSTAT = 0 (0x004E03F0) and the repair waits while the script's VAR_BROKEN (variable 7) is above 0 (0x004E0410, "Ride has finished fix anim" once it is not)
+		if ( member.Type == StaffType.Mechanic && member.LitterCell == null && objects.TryGetValue( member.AssignedInstanceId, out var fixing )
+			&& fixing.ScriptHosted && ObjectState( fixing ) == RideObjectStates.BrokenDown && fixing.IsBrokenDown )
+		{
+			WriteScript( fixing, RideVariables.VAR_BREAKSTAT, 0 );
+			if ( fixing.ScriptBroken )
+				return false;
+		}
 		member.AwaitingJobArrival = false;
 		member.State = StaffState.Patrolling;
 		if ( member.LitterCell is { } litter )
@@ -673,12 +736,12 @@ public sealed class ParkEconomy : IParkEconomy
 			member.LitterCell = null;
 			if ( Litter.CollectorAt( litter.X, litter.Y ) == member.Id )
 				Litter.Remove( litter.X, litter.Y );
-			return;
+			return true;
 		}
 		if ( !objects.TryGetValue( member.AssignedInstanceId, out var item ) )
 		{
 			member.AssignedInstanceId = 0;
-			return;
+			return true;
 		}
 		member.AssignedInstanceId = 0;
 		item.MechanicId = 0;
@@ -691,10 +754,11 @@ public sealed class ParkEconomy : IParkEconomy
 			var called = item.MaintenanceRequested;
 			item.MaintenanceRequested = false;
 			Raise( ParkEventKind.ToiletCleaned, called ? 1 : 0, item.Id, item.InfoId );
-			return;
+			return true;
 		}
-		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the repair or the upgrade clears the call (+0x64 = 0) and the claim (+0x5E)
+		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the repair or the upgrade clears the call (+0x64 = 0) and the claim (+0x5E) and writes VAR_WORN = 0; a repair (not in state 2) also writes VAR_BREAKSTAT = 0
 		item.MaintenanceRequested = false;
+		WriteScript( item, RideVariables.VAR_WORN, 0 );
 		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
 		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
@@ -707,8 +771,10 @@ public sealed class ParkEconomy : IParkEconomy
 			// [BIN:STP-PPC:0x100DEF2C repair] a repair sets the state of repair to 100.0 (the float at TOC -11016, ORACLE F27) and clears the worn flag; it does not restore the life gauge. It also opens the ride (the host reopens the ride on RideRepaired)
 			item.Repair = RideRepair.FullGauge;
 			item.IsBrokenDown = false;
+			WriteScript( item, RideVariables.VAR_BREAKSTAT, 0 );
 			Raise( ParkEventKind.RideRepaired, 0, item.Id, item.InfoId );
 		}
+		return true;
 	}
 
 	/// <summary>

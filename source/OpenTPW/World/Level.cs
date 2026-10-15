@@ -426,6 +426,8 @@ public partial class Level : IDisposable
 				Gate?.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
 			else if ( item.Kind == ParkEventKind.Bankrupt )
 				Gate?.ParkLost();
+			else if ( item.Kind == ParkEventKind.RideScriptVariable && Enum.IsDefined( (RideVariables)item.InfoId ) )
+				AttractionRuntimeOf( item.InstanceId )?.SetVariable( ((RideVariables)item.InfoId).ToString(), (int)item.Amount );
 			else if ( item.Kind == ParkEventKind.RideRepaired )
 				OpenAfterRepair( item.InstanceId );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )

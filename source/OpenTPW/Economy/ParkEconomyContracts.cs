@@ -58,7 +58,12 @@ public enum ParkEventKind
 	/// <summary>The player called a mechanic to the object (tp.exe 0x004DFE30): the ride closes. <see cref="ParkEvent.InstanceId"/> the object.</summary>
 	MaintenanceRequested,
 	/// <summary>The player cancelled the call (tp.exe 0x004DFE30): the ride reopens when its state allows. <see cref="ParkEvent.InstanceId"/> the object.</summary>
-	MaintenanceCancelled
+	MaintenanceCancelled,
+	/// <summary>
+	/// The object's script variable <see cref="ParkEvent.InfoId"/> (a <see cref="RideVariables"/> index: VAR_BREAKSTAT, VAR_WORN) takes the value
+	/// <see cref="ParkEvent.Amount"/>; the host writes it into the script of <see cref="ParkEvent.InstanceId"/>. Raised only for a script-hosted object.
+	/// </summary>
+	RideScriptVariable
 }
 
 /// <summary>
@@ -201,6 +206,15 @@ public sealed class ParkObjectState
 	public bool IsBrokenDown { get; set; }
 	/// <summary>The ride script reports VAR_BROKEN, which the original's ride update turns into ride state 1 or 4; mirrored each tick by the level, not saved.</summary>
 	public bool ScriptBroken { get; set; }
+	/// <summary>
+	/// A script runs the object (the level's objects; mirrored each tick, not saved): the breakdown then goes through the script (VAR_BREAKSTAT, the script's
+	/// VAR_BROKEN, the ride update's state 1); a headless economy breaks the object down at once.
+	/// </summary>
+	public bool ScriptHosted { get; set; }
+	/// <summary>The script's VAR_BREAKSTAT, mirrored each tick by the level (and set at once when the economy writes it); not saved.</summary>
+	public int ScriptBreakStat { get; set; }
+	/// <summary>The ride update's state 1 as the level last saw it (the visitor bridge keeps it): its rising edge breaks the object down. Not saved.</summary>
+	internal bool ScriptStateBroken { get; set; }
 	/// <summary>
 	/// The attraction's track validity (<c>mIsTrackRideValid</c>, +0x2C on the PC): a water ride whose circuit walk failed does not count for the park points
 	/// (the counts-test's built-track condition). Mirrored each tick by the level, not saved; true for every ride without a track.

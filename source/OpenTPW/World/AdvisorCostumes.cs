@@ -177,15 +177,27 @@ internal static class AdvisorAccessories
 	public const int FirstAntenna = 0x13, SecondAntenna = 0x14;
 	/// <summary>The right hand (0x15), which the spatula (attribute 14) replaces.</summary>
 	public const int RightHand = 0x15;
-	/// <summary>The accessory bit of a fixed sequence's clip that hides the costume (<c>0x10000</c>, bit 0 of <see cref="AdvisorSequenceEntry.Bits"/>).</summary>
+	/// <summary>
+	/// The accessory bit of a fixed sequence's clip (<c>0x10000</c>, bit 0 of <see cref="AdvisorSequenceEntry.Bits"/>) that hides the costume, the
+	/// bug head and the mouth: the close-ups of the ticket advice (clips 19 and 20).
+	/// </summary>
 	public const int SuppressCostumeBit = 1;
+	/// <summary>The accessory bits of a fixed sequence's clip that start the screen-space effects (<c>0x20000</c>-<c>0x200000</c>, bits 1-5).</summary>
+	public const int EffectBits = 0x3E;
+	/// <summary>The effect bit (<c>0x40000</c>) whose effect also plays <c>cat_ui</c> <see cref="KeySound"/>.</summary>
+	public const int KeyEffectBit = 4;
+	/// <summary>The <c>cat_ui</c> sound of effect bit <see cref="KeyEffectBit"/> (the key advice).</summary>
+	// [BIN:TPW-EXE:0x00598F1C accessory effects] with the advisor active (0xF7966C, 0x598E88) and the bits & 0x3E0000 exactly 0x40000 (0x598E7D, 0x598E96): 0x51BFC0(0, [0x803A2C] = global cat_ui, 0xC5, 0, 0, 0), then the UI pool effect 0x5ED5A0(0, 2, 0x31)
+	public const uint KeySound = 0xC5;
+	/// <summary>The mesh a <see cref="SuppressCostumeBit"/> clip hides (the original looks it up by name, 0x44B2E0 with −1).</summary>
+	public const string BugHead = "Bug Head";
 
 	/// <summary>
 	/// The meshes drawn without any accessory: body, head, eyes, antennae and hands, and the five mouths (one of which is drawn
 	/// at a time, see <see cref="AdvisorMouth"/>). Every other mesh (hats, spatula, bow tie, blink meshes, level props) starts hidden.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00472E75 clip start] every clip lists the accessory, prop and blink nodes in its node list (clip 14 of the global advisor: spatula, seven hats and the bow tie, nodes 14 and 16-24; of a level advisor: tickets, map, costume pieces and the mutant eye) and sets node bit 0x10 on them (hidden) as it starts
-	// [APPROX:ADVISOR-026] The level advisors' props (Ticket, MAP, Ticket2, Mutant Eye and the T_Particle/Rotate dummies) stay hidden: the ticket logic at 0x599B09-0x599BDE and the accessory bits 0x20000-0x200000 of 0x598DC0 that show them (and start particle effects) are not ported — evidence needed: the ticket schedule behind 0xF7978C/0xF79788 and the effects of 0x5ED5A0-0x5ED700
+	// [APPROX:ADVISOR-026] The level advisors' props are shown and hidden by the clips' node lists and blink toggles carried from clip to clip (SequenceHiddenNodes), but the screen-space effects of the accessory bits 0x20000-0x200000 (the UI particle pool 0x5ED5A0, 0x5ED660, 0x5ED700: effects 0x2C and 0x31) are not started, and the state is rebuilt from the model's base state at every response, while the original's node bits live on the model instance (whether a later response shows the body a ticket close-up hid is not read) — evidence needed: the screen-space particle draw path and the node-bit reset between responses
 	public static bool IsBaseMesh( string name ) => Advisor.BodyMeshes.Contains( name ) || Advisor.Mouths.Contains( name );
 
 	/// <summary>
@@ -267,6 +279,58 @@ internal static class AdvisorAccessories
 		ApplySelector( model, costume.Hat, theme, suppressed, hidden );
 		if ( costume.SecondHat != 0 )
 			ApplySelector( model, costume.SecondHat, theme, suppressed, hidden );
+		return hidden;
+	}
+
+	/// <summary>
+	/// A clip starts: the nodes of its node list are hidden (node bit 0x10 set), then the accessory update runs: the costume selectors and,
+	/// for a clip with <see cref="SuppressCostumeBit"/>, the bug head hidden. Every other node keeps the bit the clips before left it with.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00598DC0 accessory update] run after each clip start (0x599839, once the started clip is bound): it hides the five mouths (one is shown again by the mouth update unless bit 0x10000 is set, 0x599BA3), applies the selectors and, with bit 0x10000, sets bit 0x10 on the bug head (table 0xF79698, filled by 0x5989C0 through 0x44B2E0(model, 0, −1), the mesh named "bug head")
+	public static void ApplyClipStart( AdvisorNodeMap model, ModelAnimation? clip, AdvisorCostume costume, AdvisorThemeCostume theme, int accessoryBits, ISet<int> hidden )
+	{
+		ArgumentNullException.ThrowIfNull( model );
+		ArgumentNullException.ThrowIfNull( hidden );
+		if ( clip != null )
+			foreach ( var node in clip.NodeList )
+				if ( node < model.NodeCount )
+					hidden.Add( node );
+		var suppressed = (accessoryBits & SuppressCostumeBit) != 0;
+		ApplySelector( model, costume.Hat, theme, suppressed, hidden );
+		if ( costume.SecondHat != 0 )
+			ApplySelector( model, costume.SecondHat, theme, suppressed, hidden );
+		if ( suppressed )
+			foreach ( var (name, node) in model.Meshes )
+				if ( string.Equals( name, BugHead, StringComparison.OrdinalIgnoreCase ) )
+					hidden.Add( node );
+	}
+
+	/// <summary>
+	/// The hidden nodes when clip <paramref name="index"/> of a sequence has just started: from the model's base state (every mesh but the
+	/// body, head, eyes, antennae, hands and mouths hidden) each clip up to and including <paramref name="index"/> starts
+	/// (<see cref="ApplyClipStart"/>), and every earlier clip's blink toggles leave the state they reach at its end, so a prop a clip shows
+	/// stays shown in the next clip until it is hidden again. Toggles of the clip at <paramref name="index"/> are not applied.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00472E75 clip start] the node bits live on the model instance: a clip start only sets the listed nodes' bit, so the ticket that clip 18 shows (Ticket2 toggled on at tick 38) stays shown into clip 19, whose list hides the body, eyes, hands and mouths and whose toggle hides the ticket at tick 39
+	public static HashSet<int> SequenceHiddenNodes( AdvisorNodeMap model, AdvisorSequence sequence, AdvisorClipDurations durations, Func<int, ModelAnimation?> clipOf,
+		AdvisorCostume costume, AdvisorThemeCostume theme, int index )
+	{
+		ArgumentNullException.ThrowIfNull( model );
+		ArgumentNullException.ThrowIfNull( sequence );
+		ArgumentNullException.ThrowIfNull( durations );
+		ArgumentNullException.ThrowIfNull( clipOf );
+		var hidden = new HashSet<int>();
+		foreach ( var (name, node) in model.Meshes )
+			if ( !IsBaseMesh( name ) )
+				hidden.Add( node );
+		for ( var played = 0; played <= index && played < sequence.Clips.Count; played++ )
+		{
+			var clip = clipOf( sequence.Clips[played] );
+			var bits = sequence.AccessoryBits is { } list && played < list.Count ? list[played] : 0;
+			ApplyClipStart( model, clip, costume, theme, bits, hidden );
+			if ( played < index )
+				ApplyToggles( model, hidden, clip, durations.PlayOf( sequence.Clips[played] ) * AdvisorTimeline.TicksPerSecond / 1000f );
+		}
 		return hidden;
 	}
 

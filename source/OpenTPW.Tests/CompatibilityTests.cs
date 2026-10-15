@@ -50,6 +50,19 @@ public class CompatibilityTests
 	}
 
 	[TestMethod]
+	public void TheParticlePoolTakesThePlayersDetailPresetDensity()
+	{
+		Assert.AreEqual( 500, ParticleSystem.OptionsDensity( null ), "without loaded options: the Low file's 500" );
+		var high = new GraphicsSettingsService( SyntheticPresets, GraphicsSettings.Default with { Preset = GraphicsPreset.High }, null, () => CompatibilityFlags.Original );
+		Assert.AreEqual( 1500, ParticleSystem.OptionsDensity( high ), "high.sam's PARTICLEDENSITY" );
+		var medium = new GraphicsSettingsService( SyntheticPresets, GraphicsSettings.Default with { Preset = GraphicsPreset.Medium }, null, () => CompatibilityFlags.Original );
+		Assert.AreEqual( 500, ParticleSystem.OptionsDensity( medium ), "a preset whose file is missing keeps the default" );
+		var custom = new GraphicsSettingsService( SyntheticPresets, GraphicsSettings.Default with { Preset = GraphicsPreset.Custom, Detail = new OriginalDetailSettings { ParticleDensity = 900 } }, null,
+			() => CompatibilityFlags.Custom( new[] { CompatibilityFixes.EnhancedGameOptions } ) );
+		Assert.AreEqual( 900, ParticleSystem.OptionsDensity( custom ), "a custom value with the enhanced-game-options fix" );
+	}
+
+	[TestMethod]
 	public void MapsFilteringMipmapsAndExtensionsToRenderQuality()
 	{
 		var detail = new OriginalDetailSettings();

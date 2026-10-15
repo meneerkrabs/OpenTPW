@@ -6,6 +6,33 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Guest rules settled against tp.exe (October 15, 2026)
+
+Sixteen guest approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):
+
+- **Prices against RipOffOK** (`0x4d3e00`, key 42 of the table at `0x7456e8`): each shop or sideshow type's own RipOffOK now sets how far
+  above the fair price a guest still pays (100 for shops, 250 for sideshows in the shipped data, so up to 2× and 3.5×); a noticeable
+  balance change (GUEST-003 narrowed).
+- **A full queue costs nothing** (`0x4ffbc0`): a guest finding no room records the event and walks on, with no thought and no happiness
+  loss, and a queue that is too long no longer costs happiness either (GUEST-004 narrowed).
+- **Newest attraction first** (`0x4fcb10`, `0x519d80` pushes at the head): the choice walks the objects newest first, which decides ties
+  (GUEST-002 narrowed).
+- **The use routine's other terms** (`0x4fe1e0`): the small-portion penalty, scaled happiness, fat, salt and ice from the ingredients and
+  the toilet speed term (GUEST-005 narrowed).
+- **Energy** is tp.exe's field `+0x1B8`, 0 at birth and changed only by `0x4fd970` (GUEST-008 retired); 15 guest items are narrowed. The
+  determinism hash is now `0xD28386DACAD73241`.
+
+## Queue exits as in tp.exe (October 15, 2026)
+
+- **A closed ride drains its queue one head per turn** (`0x4e1220` → `0x4e0450`): the others keep waiting, a closed ride that breaks down
+  sends away two that turn (`0x4e0e60`), and joins and the walk to a ride no longer test the open word or the broken state, as the
+  original's join `0x4ffbc0` does not (QUEUE-018 retired; the choice still skips closed rides). A guest at its place in a coaster's queue
+  leaves with thought 13 while the track refuses guests (`0x500612`; COAST-024 narrowed).
+- **Every queue exit but a removed ride costs the medium happiness drop** (the dismissal `0x5012f0`, `0x4fea70(1)`): feeling sick, bored,
+  unhappy, needing the toilet, a failed move-up, a queue edit or a refused price alike; a water ride with a broken circuit is only
+  skipped by the choice, its queue stays (`0x500612` tests coasters and kart tracks). The "problem with a queue" exit (`0x500270`) thinks nothing, and a toilet above 80
+  thinks "need toilet" before the relief test (`0x5003aa`).
+
 ## Economy rules settled against tp.exe, part one (October 15, 2026)
 
 Seventeen economy approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address re-read):

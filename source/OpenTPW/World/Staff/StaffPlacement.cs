@@ -39,7 +39,7 @@ public static class StaffPlacementRules
 	/// A cell a staff member may be put on: inside the map, owned, of a drop type and under no ride, shop or feature footprint
 	/// (<paramref name="occupied"/>: any placed object or the prototype ride).
 	/// </summary>
-	// [APPROX:GUEST-013] the original refuses a cell whose structure record (+0 → table at 0x8023a0 + 0x10ffd8) is of kind 0xb, 0xd, 0x10, 0x12 or 0x19 (following 0xc and 0x11 to the parent record), most likely ride, shop and scenery footprints; OpenTPW refuses every cell under a placed object or the prototype ride — evidence needed: the structure-record kinds
+	// [APPROX:GUEST-013] tp.exe's drop 0x46cc40 (and the place click 0x46c8e0, inlined) also refuses a cell whose track record ([0x8023a0] + 0x10ffd8 + 40 × the cell's id word, kind at +8) is of kind 11, 13, 16, 18 or 25, directly or through the parent (+0x10) of a kind 12 or 17 record (0x5363f0, 0x536450, 0x53ad30, 0x53ad60, 0x53ad90; the circuit walk 0x52a970 uses the same kind tests); OpenTPW has no track-record test (its track tiles carry map types the type test refuses) and refuses every cell under a placed object or the prototype ride by occupancy, its stand-in for the footprint cells the original refuses by cell type — evidence needed: the original's writer of an object footprint's cell type
 	public static bool IsValidDropCell( ParkCellMap cells, int x, int y, Func<int, int, bool>? occupied )
 	{
 		if ( !cells.InBounds( x, y ) || (cells.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 )

@@ -39,7 +39,7 @@ public static class GuestWander
 	{
 		areaBlocked = false;
 		var remaining = draw() % 5;
-		// [APPROX:GUEST-010] off the linked paths the original searches the eight directions at distances 0..3 for a path cell a route reaches (centre point, 0x80), then five random cells within ±5; the search meets the own cell first, so a path cell without links gives its own centre, which is all OpenTPW models: a guest on a cell that is no path cell finds no destination; a stranded guest is not marked (+0x198, animation 0x11), so it draws again on its next try — evidence needed: none (read); OpenTPW's routes start on path cells
+		// [APPROX:GUEST-010] off the linked paths the original (0x4F9490, start cell without links) tries its own cell, then seven directions at distances 0..3 for a path cell a route reaches (centre point, 0x80), then five random cells within ±5; the search meets the own cell first, so a path cell without links gives its own centre, which is all OpenTPW models: a guest on a cell that is no path cell finds no destination, where the original walks the links of a linked cell of any type; a stranded guest is not marked (+0x198, a stamp of the global counter 0x4D8C50, animation 0x11, held while 0x4FA770 sees no newer region stamp), so it draws again on its next try — evidence needed: none (read); OpenTPW's routes start on path cells
 		if ( !grid.IsWalkable( start.X, start.Y ) )
 			return null;
 		if ( (grid.Cells.LinksAt( start.X, start.Y ) & AllLinks) == 0 )

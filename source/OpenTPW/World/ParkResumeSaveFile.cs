@@ -659,17 +659,11 @@ internal static class ParkResumeSaveFile
 			var navigation = guest.Navigation!;
 			Require( Math.Abs( (long)navigation.VelocityX ) <= GuestSpeed.VelocityBound && Math.Abs( (long)navigation.VelocityY ) <= GuestSpeed.VelocityBound,
 				$"guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap" );
-			Require( navigation.Cursor >= 0 && navigation.Cursor <= navigation.Route!.Length,
-				$"guest {guest.Id} navigation cursor {navigation.Cursor} is outside its {navigation.Route!.Length}-cell route" );
-			var buffered = Math.Min( GuestNavigation.BufferedWaypoints, navigation.Route.Length - navigation.Cursor );
-			Require( navigation.Count == buffered,
-				$"guest {guest.Id} buffers {navigation.Count} waypoints, but its route from cursor {navigation.Cursor} gives {buffered}" );
-			Require( navigation.Count == 0 ? navigation.Index == 0 : (uint)navigation.Index < (uint)navigation.Count,
-				$"guest {guest.Id} waypoint index {navigation.Index} is outside its {navigation.Count} buffered waypoints" );
-			Require( navigation.History is >= 0 and <= 0x7fff, $"guest {guest.Id} progress history {navigation.History} is outside its 15-bit window" );
-			Require( navigation.PreviousRemaining >= -1, $"guest {guest.Id} previous remaining distance {navigation.PreviousRemaining} is negative" );
-			Require( navigation.Reroutes >= 0 && navigation.WalkCrossings >= 0,
-				$"guest {guest.Id} navigation counters ({navigation.Reroutes} reroutes, {navigation.WalkCrossings} crossings) are negative" );
+			foreach ( var problem in navigation.Problems( guest.Id, InBounds ) )
+				Require( false, problem );
+			// A walk keeps the stamp counter of its set-up; the layout's counter can only have grown since (WALK-007).
+			Require( navigation.OriginalWalk is not { } walk || walk.Stamp <= snapshot.Layout.Cells.StampCounter,
+				$"guest {guest.Id} walk stamp {navigation.OriginalWalk?.Stamp} is above the layout's stamp counter {snapshot.Layout.Cells.StampCounter}" );
 			Require( InBounds( guest.CellX, guest.CellY ), $"guest {guest.Id} cell ({guest.CellX}, {guest.CellY}) is outside the cell map" );
 			if ( guest.PreviousCellX >= 0 || guest.PreviousCellY >= 0 )
 				Require( InBounds( guest.PreviousCellX, guest.PreviousCellY ),
@@ -678,10 +672,6 @@ internal static class ParkResumeSaveFile
 				$"guest {guest.Id} navigation position ({navigation.X >> 16}, {navigation.Y >> 16}) is outside the cell map" );
 			Require( InBounds( navigation.TargetX >> 16, navigation.TargetY >> 16 ),
 				$"guest {guest.Id} navigation target ({navigation.TargetX >> 16}, {navigation.TargetY >> 16}) is outside the cell map" );
-			foreach ( var (x, y) in navigation.Route )
-				Require( InBounds( x, y ), $"guest {guest.Id} route cell ({x}, {y}) is outside the cell map" );
-			foreach ( var (x, y) in navigation.AlsoOpen! )
-				Require( InBounds( x, y ), $"guest {guest.Id} extra open cell ({x}, {y}) is outside the cell map" );
 			var onLane = guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
 				or GuestState.AtTicketBooth or GuestState.EnteringPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome;
 			if ( onLane )

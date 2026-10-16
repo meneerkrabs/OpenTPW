@@ -197,8 +197,13 @@ public class WanderTests
 		Assert.IsTrue( walks.Max() > 1, "a walk covers up to five cells, not one" );
 	}
 
+	/// <summary>
+	/// A grid edit in the 16 × 16-cell block a walker stands in raises the block's stamp above its walk's, so the next walk step searches
+	/// again from the guest's cell (tp.exe follow_path 0x50ED6C, WALK-007); with its destination cell gone the search fails and the walk
+	/// ends stuck, which state 7 treats like an arrival. The guest never steps onto the removed cell.
+	/// </summary>
 	[TestMethod]
-	public void AWalkThatLosesARouteCellEndsWhereTheGuestStands()
+	public void AWalkWhoseDestinationIsRemovedSearchesAgainAndEndsStuck()
 	{
 		var grid = Row( 12 );
 		var settings = GuestTests.CreateSettings();
@@ -208,16 +213,26 @@ public class WanderTests
 		var guest = simulation.SpawnInPark( 6, 0 );
 		for ( var tick = 0; tick < 200 * 60 && !(guest.State == GuestState.WalkingAround && guest.Navigation.Route.Length >= 3); tick++ )
 			simulation.Tick( GuestSnapshotTests.Tick );
-		Assert.IsTrue( guest.HasWaypoint && guest.Navigation.Route.Length >= 3, "a walk of at least two cells" );
+		Assert.IsTrue( guest.HasWaypoint && guest.Navigation.Original && guest.Navigation.Route.Length >= 3, "a walk of at least two cells" );
 		var destination = guest.Navigation.Route[^1];
+		var reroutes = guest.Navigation.Reroutes;
+		var target = (guest.Navigation.TargetX, guest.Navigation.TargetY);
 		grid.SetPath( destination.X, destination.Y, false );
-		simulation.Tick( GuestSnapshotTests.Tick );
-		Assert.IsFalse( guest.HasWaypoint, "the walk ended" );
-		Assert.IsTrue( grid.IsWalkable( guest.Cell.X, guest.Cell.Y ), $"the guest stays on the path at {guest.Cell}" );
+		var searched = false;
+		for ( var tick = 0; tick < 60 && !searched; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			searched |= guest.Navigation.Reroutes > reroutes;
+		}
+		Assert.IsTrue( searched, "the walk searched again at its next step" );
+		// The search failed, so the walk ended stuck (0x4fa2a0 result 2): stuck and without a waypoint to follow.
+		Assert.IsTrue( guest.Navigation.Stuck || !guest.HasWaypoint, "the walk ended stuck" );
+		Assert.AreEqual( target, (guest.Navigation.TargetX, guest.Navigation.TargetY), "the stuck walk keeps its target" );
 		for ( var tick = 0; tick < 60 * 60; tick++ )
 		{
 			simulation.Tick( GuestSnapshotTests.Tick );
 			Assert.IsTrue( guest.State is GuestState.DoingNothing or GuestState.WalkingAround );
+			Assert.IsTrue( grid.IsWalkable( guest.Navigation.Cell.X, guest.Navigation.Cell.Y ), $"the guest stays on the path at {guest.Navigation.Cell}" );
 		}
 	}
 

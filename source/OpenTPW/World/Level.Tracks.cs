@@ -112,8 +112,8 @@ public partial class Level
 		if ( !circuit.IsValid )
 			return circuit;
 		LastActionMessage = $"The track is complete: {circuit.Steps.Count} tiles.";
-		// [BIN:TPW-EXE:0x0052A970 circuit walk] a valid circuit closes the tool; an invalid one plays animation 12 on the pieces and the tool continues from the last end
-		// [APPROX:TRACK-006] the advisor and event messages the original raises after a walk (ids 0xCC, 0x151, 0xB8, 0xD6) are not shown: their texts and triggers are not resolved — evidence needed: the message table at 0x0059B590
+		// [BIN:TPW-EXE:0x0052A970 circuit walk] a valid circuit closes the tool; the walk itself posts no advisor or event message (it calls no message builder 0x0059B590)
+		// [BIN:TPW-EXE:0x00526D41 track tool help] the kart and water tool posts tool help 0xCC (204) only for a click with no line start (0x0081EDE4/E8 = −1), which sets the start (0x00525A1C → 0x00526CB3); the placement presets the start at the station's exit (0x0052A1A0), so it is reached only when the tool stays on without one after a line closes with exactly Ctrl and no queue to follow (0x00526FB3, UI-031); 0xB8, 0xD6 and 0x151 are the path and queue tool's help (0x005272F5, 0x00527351, 0x00527620)
 		if ( TrackToolStation == item )
 		{
 			CellTool.Cancel();

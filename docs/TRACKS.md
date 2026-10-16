@@ -23,7 +23,7 @@ Code: `source/OpenTPW/World/Tracks/`, the track layer in `ParkCellMap`, the tool
 - The cells, the controller and its boats are saved in the park-resume envelope (optional `Tracks` part) and restored exactly.
 
 Not in phases 1 and 2: jumps and tunnels (add-ons), the tee pieces' arm masks and the
-water texture animation, advisor messages, the three other themes' water rides were checked for data only (the
+water texture animation; the three other themes' water rides were checked for data only (the
 tables and kits load for all four; only the Jungle ride was run).
 
 ## Cells
@@ -117,7 +117,11 @@ valid when the walk arrives back at the start tile; no minimum length. The resul
 park points counts-test and guest boarding read. A re-walk (commit mode) also resets the controller: boats leave, the ride closes
 (`[TPW-EXE:0x545450]`).
 
-Messages: the original raises advisor and event ids 0xCC, 0x151, 0xB8, 0xD6 after a walk; their texts are unresolved (TRACK-006).
+Messages: the walk posts no advisor or event message (TRACK-006 retired: `0x52A970` and the walk sites of the tool handler `0x524960` call no message builder `0x59B590`).
+The ids once listed for it are tool help of the cell build tool: 0xCC (204) is posted by the kart and water tool for a click with no line start (`0x526D41`),
+which OpenTPW's tool never has (the placement presets the start at the station's exit, `0x52A1A0`; the original reaches it only when a line closes with exactly Ctrl
+held and no queue to follow, UI-031), and 0xB8 (184, the path tool's first click), 0xD6 (214, the third later click of the path or queue tool) and 0x151 (337,
+the end of the queue tool) belong to the path and queue tools (`0x5272F5`, `0x527351`, `0x527620`; their producers are open under ADVISOR-009).
 
 ## Sections, collision objects, buoys (Q2)
 
@@ -295,12 +299,13 @@ OpenTPW decisions with no original rule (`[EXT:name]` at the code sites):
 - `[EXT:kart-roll-convention]`: the absolute sign of a kart's roll (above).
 
 Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start heading), 016 (boat spray, engine voice, unload), 017 (crossing flag), 024 (bank clamp), 029 (chase, already ported).
+October 16: TRACK-006 retired as already matching (the walk posts no message, above).
 Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 026, 030 (texts in the register); TRACK-025 and 031 were retired in a later round (below).
 
 ## Open points
 
 - Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre (TRACK-030), the water animation and arm masks, the
-  advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
+  demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 

@@ -283,6 +283,27 @@ public sealed class ParkObjectState
 	public long WinnersLastMonth { get; set; }
 	public long TotalProfit { get; set; }
 	public long ProfitLastMonth => TakingsLastMonth - CostsLastMonth;
+	/// <summary>The costs ring (<c>+0xF8</c>): the cost of goods and prizes of each of the last 30 days; today's running value is <see cref="DailyRing.Today"/>.</summary>
+	public DailyRing CostsRing { get; set; } = new();
+	/// <summary>The takings ring (<c>+0x70</c>): the price taken on each of the last 30 days.</summary>
+	public DailyRing TakingsRing { get; set; } = new();
+	/// <summary>The customers ring (<c>+0x1A8</c>): the uses (rides), sales (shops) or plays (sideshows) of each of the last 30 days.</summary>
+	public DailyRing CustomersRing { get; set; } = new();
+	/// <summary>The winners ring (<c>+0x2B8</c>): the plays a sideshow's guests won on each of the last 30 days.</summary>
+	public DailyRing WinnersRing { get; set; } = new();
+	/// <summary>
+	/// The visits' averaged happiness change ring (<c>+0x340</c>, the satisfaction gauge's source, 0x004E1E30). Imported and saved as it is; OpenTPW's guests
+	/// keep no per-visit happiness change, so nothing writes it (ECON-057).
+	/// </summary>
+	public DailyRing SatisfactionRing { get; set; } = new();
+	/// <summary>The customers of the last 30 days (the sum over the customers ring's entries, the windows' customers and users rows).</summary>
+	public long CustomersLast30Days => CustomersRing.Total;
+	/// <summary>The takings of the last 30 days.</summary>
+	public long TakingsLast30Days => TakingsRing.Total;
+	/// <summary>The profit of the last 30 days: the takings ring's sum less the costs ring's sum, each over its own count (<c>0x004E1C70</c>).</summary>
+	public long ProfitLast30Days => TakingsRing.Total - CostsRing.Total;
+	/// <summary>The winners of the last 30 days.</summary>
+	public long WinnersLast30Days => WinnersRing.Total;
 	/// <summary>
 	/// Guests that refused the object's price at its stand point and walked away, since it was built: the original's <c>mNumWalkAways</c>
 	/// (<c>+0x1A4</c>), which the refusal raises (<see cref="ParkEconomy.RecordWalkAway"/>) and only the object constructor clears.

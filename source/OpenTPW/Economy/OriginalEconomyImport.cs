@@ -213,6 +213,7 @@ public sealed class OriginalEconomyImport
 			}
 			// [BIN:TPW-EXE:0x004DC12B walk-away load] the attraction loader reads mNumWalkAways (key 0x0075B508) into +0x1A4, the count the refusal raises (0x004E1670)
 			state.WalkAways = attraction.WalkAwayCount;
+			ImportRings( state, attraction );
 			things.TryAdd( attraction.Id, state );
 			// [BIN:STP-PPC:0x100DAF04 attraction serializer] mPricePerUse, mCostOfGoods, mUpgradeLevel and the gauges at +0x40 (state of repair) and +0x44 (life gauge)
 			// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the PC loader puts the three floats at +0x4C, +0x48 (life gauge) and +0x44 (state of repair) and clamps mPricePerUse to 0–500
@@ -241,10 +242,42 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"Attraction value adjusted on import: {line}." );
 		// [BIN:TPW-EXE:0x004DC12B walk-away load] the loader reads mNumWalkAways (+0x1A4) back with the other fields, so it is imported (ImportObjects); 0x004E1670 raises it (from 0x005006B0) and nothing else reads the field
 		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} imported (mNumWalkAways, +0x1A4)." );
-		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a closed open word of a working attraction (mCanLoad, the park door opens it), the six daily 30-day rings (OpenTPW keeps this and last month and, apart, a 30-day ring of walk-aways that starts empty at the import, ECON-057), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (an imported job's claim is taken again with its saved turn, 0x004E01F0; any other claim is dropped, and a claim lapses 100 turns after its turn unless its claimant still targets the object, 0x004E0220, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the readers of the daily rings and of +0x4C
+		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a closed open word of a working attraction (mCanLoad, the park door opens it), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (an imported job's claim is taken again with its saved turn, 0x004E01F0; any other claim is dropped, and a claim lapses 100 turns after its turn unless its claimant still targets the object, 0x004E0220, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the reader of +0x4C
 		foreach ( var item in save.Attractions )
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, open word {item.CanLoad}, third gauge {item.Gauge48}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", daily rings {string.Join( "/", item.Histories.Select( ring => ring.Current ) )} (today), claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
+			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, open word {item.CanLoad}, third gauge {item.Gauge48}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
 		return (objects, fixedItems, things);
+	}
+
+	/// <summary>
+	/// The six daily rings of an attraction record (the serializer order costs, takings, customers, walk-aways, winners, satisfaction change); a ring that
+	/// does not fit the original's 30 slots is left as it was.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the six rings follow in the order +0xF8 costs, +0x70 takings, +0x1A8 customers (after the word +0x1A0), +0x230 walk-aways (after +0x1A4), +0x2B8 winners and +0x340 the visits' averaged happiness change; each is its head, its size, the full flag, its running value and the 30 slots
+	private static void ImportRings( ParkObjectState state, SaveAttraction attraction )
+	{
+		if ( attraction.Histories.Count != SaveAttraction.HistoryBuffers || attraction.Histories.Any( ring => ring.Entries.Count != DailyRing.Size ) )
+			return;
+		DailyRing Ring( int index )
+		{
+			var saved = attraction.Histories[index];
+			return DailyRing.FromSlots( saved.CurrentEntry, saved.WrappedAround, saved.Current, saved.Entries );
+		}
+		try
+		{
+			var (costs, takings, customers, walkAways, winners, satisfaction) = (Ring( 0 ), Ring( 1 ), Ring( 2 ), Ring( 3 ), Ring( 4 ), Ring( 5 ));
+			state.CostsRing = costs;
+			state.TakingsRing = takings;
+			state.CustomersRing = customers;
+			state.WinnersRing = winners;
+			state.SatisfactionRing = satisfaction;
+			state.WalkAwayDays.Clear();
+			state.WalkAwayDays.AddRange( walkAways.Entries.Select( entry => (long)Math.Max( 0, entry ) ) );
+			state.WalkAwaysToday = Math.Max( 0, walkAways.Today );
+		}
+		catch ( InvalidDataException )
+		{
+			// a head outside the ring leaves the object's rings new
+		}
 	}
 
 	private static int ImportStaff( ParkEconomy economy, OriginalParkImport save, IReadOnlyDictionary<int, ParkObjectState> things, List<string> evidence )

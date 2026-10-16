@@ -1071,7 +1071,7 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		foreach ( var item in objects.Values )
 		{
-			// [APPROX:ECON-057] an attraction keeps this and last month's sums; the original keeps six 30-day daily rings per attraction rolled on the day message 0xB (0x004DD320) — evidence needed: which panel or graph reads the rings
+			// [APPROX:ECON-057] an attraction's six daily 30-day rings follow tp.exe (costs +0xF8, takings +0x70, customers +0x1A8, walk-aways +0x230, winners +0x2B8 and the visits' averaged happiness change +0x340: the constructor 0x004DB090 starts each at head -1, size 30; the day message 0x004DD320 rolls them; the windows and lists sum them over their counts, 0x004E1C70, 0x00495C20, 0x004B01D0, 0x004B16C0, 0x004955E0, 0x00493CD0), but the happiness-change ring has no writer (the use routine 0x004FD970 averages the visit's change into it, 0x004E1E00; OpenTPW's guests keep no per-visit change, UI-024), the walk-aways stay a list beside the ring type, the customers row's second number (the text variables 0x19 and 0x1A of its UITEXT) is not formatted, and the calendar-month sums remain only for saves written before the rings — evidence needed: the per-visit happiness change a guest takes from an attraction (0x004FD970 with the guest's mood) and the UITEXT 32 and 41 templates
 			item.CustomersLastMonth = item.CustomersThisMonth;
 			item.TakingsLastMonth = item.TakingsThisMonth;
 			item.CostsLastMonth = item.CostsThisMonth;
@@ -1908,6 +1908,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			Post( LedgerCategory.ShopTakings, item.Price );
 			item.TakingsThisMonth += item.Price;
+			item.TakingsRing.Today += item.Price;
 			if ( Catalog.TryGet( item.InfoId, out var info ) )
 				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
 		}
@@ -1915,7 +1916,9 @@ public sealed class ParkEconomy : IParkEconomy
 		var goods = Catalog.TryGet( item.InfoId, out var shopInfo ) ? ShopGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, shopInfo.SpecialIngredient ) : item.CostOfGoods;
 		Post( LedgerCategory.OtherCosts, goods );
 		item.CustomersThisMonth++;
+		item.CustomersRing.Today++;
 		item.CostsThisMonth += goods;
+		item.CostsRing.Today += goods;
 		item.TotalProfit += item.Price - goods;
 		Counters.Add( ParkCounters.ShopProfit, item.Price - goods );
 		if ( item.Price != 0 )
@@ -1945,13 +1948,19 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			Post( LedgerCategory.SideshowTakings, item.Price );
 			item.TakingsThisMonth += item.Price;
+			item.TakingsRing.Today += item.Price;
 		}
 		Post( LedgerCategory.OtherCosts, prize );
 		item.CustomersThisMonth++;
+		item.CustomersRing.Today++;
 		item.CostsThisMonth += prize;
+		item.CostsRing.Today += prize;
 		item.TotalProfit += item.Price - prize;
 		if ( won )
+		{
 			item.WinnersThisMonth++;
+			item.WinnersRing.Today++;
+		}
 		Counters.Add( ParkCounters.SideshowProfit, item.Price - prize );
 		if ( item.Price != 0 )
 			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.SideshowTakings ) );
@@ -1964,6 +1973,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) )
 			return;
 		item.CustomersThisMonth++;
+		item.CustomersRing.Today++;
 		Counters.Add( ParkCounters.RideUses( item.InfoId ), 1 );
 	}
 
@@ -2004,6 +2014,11 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( item.WalkAwayDays.Count > WalkAwayHistoryDays )
 				item.WalkAwayDays.RemoveAt( 0 );
 			item.WalkAwaysToday = 0;
+			item.CostsRing.Roll();
+			item.TakingsRing.Roll();
+			item.CustomersRing.Roll();
+			item.WinnersRing.Roll();
+			item.SatisfactionRing.Roll();
 		}
 	}
 

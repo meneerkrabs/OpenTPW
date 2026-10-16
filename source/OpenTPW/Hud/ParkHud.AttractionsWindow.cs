@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x00495aa0 attractions window] the builder applies table 0x7508e0, selects the category's tab, fills the list with the category's list table
 // (0 rides 0x494ec0, 1 shops 0x494c70, 2 sideshows 0x494250, 3 features 0x495110), titles it UITEXT 78-81 and plays 0xbf; a category of -1 reopens the last one
 // (0x7ca154), and the object windows open their own category with their object selected (0x4af91b, 0x4b0d06, 0x4b22ff, 0x4b5158)
-// [APPROX:UI-905] the All Attractions list's row pitch is the row item's height (0x4944d0: font slot 7's height scaled to the canvas + 6), taken as the list's pitch; rows re-sort when their values refresh, where the original sorts on a header press; the list selects its first row when nothing is chosen, where the original opens with no selection; the users and customers columns show the economy's previous calendar month, where the original sums the object's last 30 history entries (+0x1ac ring, 0x493cd0); the bars take the object window's values (UI-028) and satisfaction, which OpenTPW does not simulate, draws an empty bar — evidence needed: the list class's row pitch (+0x170) and sort trigger for this list; the cadence of the objects' history entries
+// [APPROX:UI-905] the All Attractions list's row pitch is the row item's height (0x4944d0: font slot 7's height scaled to the canvas + 6), taken as the list's pitch; rows re-sort when their values refresh, where the original sorts on a header press; the list selects its first row when nothing is chosen, where the original opens with no selection; the bars take the object window's values (UI-028) and satisfaction, which OpenTPW does not simulate, draws an empty bar — evidence needed: the list class's row pitch (+0x170) and sort trigger for this list
 public sealed partial class ParkHud
 {
 	/// <summary>The round entry button of the All Attractions window in the buy and staff windows: the window's own rides tab icon.</summary>
@@ -169,8 +169,8 @@ public sealed partial class ParkHud
 			cells[column] = columns[column].Kind switch
 			{
 				AttractionColumnKind.Name => new( EntryName( item.Entry ), null, null ),
-				AttractionColumnKind.Users or AttractionColumnKind.Customers => Count( trusted?.CustomersLastMonth ),
-				AttractionColumnKind.ProfitLastMonth => Money( trusted?.ProfitLastMonth ),
+				AttractionColumnKind.Users or AttractionColumnKind.Customers => Count( trusted?.CustomersLast30Days ),
+				AttractionColumnKind.ProfitLastMonth => Money( trusted?.ProfitLast30Days ),
 				AttractionColumnKind.TotalProfit => Money( trusted?.TotalProfit ),
 				AttractionColumnKind.Excitement => Gauge( ObjectRowKind.Excitement ),
 				AttractionColumnKind.Repair => Gauge( ObjectRowKind.Repair ),

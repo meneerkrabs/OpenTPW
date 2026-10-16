@@ -186,6 +186,25 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public long[]? WalkAwayDays { get; init; }
+		/// <summary>
+		/// The 30-day rings of costs, takings, customers, winners and the satisfaction change, in that order (ECON-057); absent in older saves, which seed the
+		/// first four with last month's totals as one day, and while all five are still new.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public DailyRingData[]? Rings { get; init; }
+	}
+
+	/// <summary>One 30-day ring: the newest slot (-1 before the first day), whether it has wrapped, today's running value and the entries oldest first.</summary>
+	public sealed class DailyRingData
+	{
+		public required int Head { get; init; }
+		public required bool Wrapped { get; init; }
+		public required int Today { get; init; }
+		public required int[] Entries { get; init; }
+
+		internal static DailyRingData Of( DailyRing ring ) => new() { Head = ring.Head, Wrapped = ring.Wrapped, Today = ring.Today, Entries = ring.Entries.ToArray() };
+
+		internal DailyRing ToRing() => DailyRing.FromState( Head, Wrapped, Today, Entries );
 	}
 
 	/// <summary>One category of the park's perception statistics (<see cref="ParkPriceStatistics"/>).</summary>
@@ -604,7 +623,8 @@ public static class ParkSaveFile
 				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit },
 				WalkAways = item.WalkAways,
 				WalkAwaysToday = item.WalkAwaysToday,
-				WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.ToArray() : null
+				WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.ToArray() : null,
+				Rings = RingsOf( item )
 			} ).ToList(),
 			Loans = park.Loans.Select( loan => new LoanData
 			{
@@ -679,6 +699,45 @@ public static class ParkSaveFile
 	}
 
 	public static string Serialize( ParkEconomy park, WorldRandomState? world = null ) => JsonSerializer.Serialize( Capture( park, world ), Options );
+
+	private static DailyRingData[]? RingsOf( ParkObjectState item )
+	{
+		var rings = new[] { item.CostsRing, item.TakingsRing, item.CustomersRing, item.WinnersRing, item.SatisfactionRing };
+		return rings.All( ring => ring.Head < 0 && ring.Today == 0 ) ? null : rings.Select( DailyRingData.Of ).ToArray();
+	}
+
+	/// <summary>The ring of an object record; a save without rings seeds the first four with last month's totals as one day, so the windows' 30-day values stay continuous.</summary>
+	private static DailyRing RingAt( ObjectData item, int index )
+	{
+		if ( item.Rings is { } rings )
+			return rings[index].ToRing();
+		var seed = index switch { 0 => item.Statistics[5], 1 => item.Statistics[3], 2 => item.Statistics[1], 3 => item.Statistics[7], _ => 0L };
+		var ring = new DailyRing();
+		if ( seed > 0 )
+		{
+			ring.Today = (int)Math.Min( seed, int.MaxValue );
+			ring.Roll();
+		}
+		return ring;
+	}
+
+	private static bool RingsValid( DailyRingData[]? rings )
+	{
+		if ( rings is null )
+			return true;
+		if ( rings.Length != 5 )
+			return false;
+		try
+		{
+			foreach ( var ring in rings )
+				ring.ToRing();
+			return true;
+		}
+		catch ( InvalidDataException )
+		{
+			return false;
+		}
+	}
 
 	private static StrikeData? CaptureStrikes( StaffStrikeBoard board )
 	{
@@ -759,6 +818,7 @@ public static class ParkSaveFile
 			Require( item.QualityOfGoods is null or >= 0 and <= 255, $"object {item.Id} quality of goods" );
 			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
 			Require( item.ClaimTurn >= 0 && item.ClaimTurn <= ParkCalendar.Turn( data.Tick ) && (item.ClaimTurn == 0 || item.MechanicId != 0), $"object {item.Id} claim turn" );
+			Require( RingsValid( item.Rings ) && item.Rings?.All( ring => ring.Today >= 0 ) != false, $"object {item.Id} daily rings" );
 			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
 				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
@@ -872,7 +932,8 @@ public static class ParkSaveFile
 				TotalProfit = item.Statistics[8],
 				WalkAways = item.WalkAways,
 				WalkAwaysToday = item.WalkAwaysToday,
-				WalkAwayDays = item.WalkAwayDays?.ToList() ?? new()
+				WalkAwayDays = item.WalkAwayDays?.ToList() ?? new(),
+				CostsRing = RingAt( item, 0 ), TakingsRing = RingAt( item, 1 ), CustomersRing = RingAt( item, 2 ), WinnersRing = RingAt( item, 3 ), SatisfactionRing = RingAt( item, 4 )
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
 		if ( data.AnalyserCaches is { } caches )

@@ -440,7 +440,7 @@ public class TrackAssetTests
 	{
 		var cells = new ParkCellMap( 40, 40 );
 		var builder = new TrackBuilder( cells, family, () => null, new FlatGrid() );
-		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		var station = TrackStation.FromPlacement( 10, 9, 0 );
 		builder.PlaceStation( station );
 		var writer = new TrackLineWriter( builder );
 		Assert.IsTrue( writer.Commit( (14, 10), (14, 12) ).Completed );

@@ -32,7 +32,7 @@ public class TrackCircuitTests
 		public readonly HashSet<(int, int)> Objects = new();
 		public readonly ParkEconomy? Economy;
 		public readonly TrackBuilder Builder;
-		public readonly TrackStation Station = TrackStation.FromPlacement( 10, 10, 0 );
+		public readonly TrackStation Station = TrackStation.FromPlacement( 10, 9, 0 );
 
 		public Rig( bool economy = false, int cash = 100000 )
 		{
@@ -59,17 +59,17 @@ public class TrackCircuitTests
 	[TestMethod]
 	public void StationTilesFollowTheRotationAndTheCircuitStartsAtTheFirst()
 	{
+		// the line of 0x52A1A0 from the attraction cell (10, 10): the tiles lie one row beside the entrance row, the circuit starts at the first
 		var station = TrackStation.FromPlacement( 10, 10, 0 );
-		Assert.AreEqual( ((10, 10), (12, 10), (14, 10), (8, 10)), (station.First, station.Second, station.Exit, station.Entry) );
+		Assert.AreEqual( ((10, 11), (12, 11), (14, 11), (8, 11)), (station.First, station.Second, station.Exit, station.Entry) );
 		Assert.AreEqual( TrackHeading.PosX, station.Heading );
-		// rotation 90 turns the footprint to (X + v, Y − u): the flow runs along −Y and the tiles stack downward
 		var turned = TrackStation.FromPlacement( 10, 10, 90 );
 		Assert.AreEqual( TrackHeading.NegY, turned.Heading );
-		Assert.AreEqual( ((10, 9), (10, 7), (10, 5), (10, 11)), (turned.First, turned.Second, turned.Exit, turned.Entry) );
+		Assert.AreEqual( ((11, 9), (11, 7), (11, 5), (11, 11)), (turned.First, turned.Second, turned.Exit, turned.Entry) );
 		var back = TrackStation.FromPlacement( 10, 10, 180 );
-		Assert.AreEqual( ((9, 9), (7, 9), (5, 9), (11, 9)), (back.First, back.Second, back.Exit, back.Entry) );
+		Assert.AreEqual( ((9, 8), (7, 8), (5, 8), (11, 8)), (back.First, back.Second, back.Exit, back.Entry) );
 		var up = TrackStation.FromPlacement( 10, 10, 270 );
-		Assert.AreEqual( ((9, 10), (9, 12), (9, 14), (9, 8)), (up.First, up.Second, up.Exit, up.Entry) );
+		Assert.AreEqual( ((8, 10), (8, 12), (8, 14), (8, 8)), (up.First, up.Second, up.Exit, up.Entry) );
 		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
 		{
 			var item = TrackStation.FromPlacement( 20, 20, rotation );
@@ -398,7 +398,7 @@ public class TrackCircuitTests
 	public void TwoAdjacentRidesNeverConnectAndADemolitionRemovesOnlyItsOwnTiles()
 	{
 		var rig = new Rig();
-		var other = TrackStation.FromPlacement( 10, 14, 0 );
+		var other = TrackStation.FromPlacement( 10, 13, 0 );
 		rig.Builder.PlaceStation( other );
 		var (ownerA, ownerB) = (rig.Builder.OwnerOf( rig.Station ), rig.Builder.OwnerOf( other ));
 		Assert.AreNotEqual( ownerA, ownerB );
@@ -454,7 +454,7 @@ public class TrackCircuitTests
 	public void ARideWalksOnlyItsOwnLineEvenWhenAnotherRideTouchesIt()
 	{
 		var rig = new Rig();
-		var other = TrackStation.FromPlacement( 10, 14, 0 );
+		var other = TrackStation.FromPlacement( 10, 13, 0 );
 		rig.Builder.PlaceStation( other );
 		var writerA = new TrackLineWriter( rig.Builder, owner: rig.Builder.OwnerOf( rig.Station ) );
 		var writerB = new TrackLineWriter( rig.Builder, owner: rig.Builder.OwnerOf( other ) );

@@ -161,4 +161,15 @@ public class UiRegisterReadTests
 		Assert.AreEqual( 0, ParkHud.KnobValueAt( 701 - 33.5f ) );
 		Assert.AreEqual( 1023, ParkHud.KnobValueAt( 0 ), "the pointer above the track takes the top" );
 	}
+
+	[TestMethod]
+	public void ADragMovesTheBallByThePointersMovementAndHoldsItInTheTrack()
+	{
+		// tp.exe 0x66b771: the ball rectangle is translated by the delta and pulled back inside the limits
+		var centre = 400f;
+		centre = ParkHud.DragBall( centre, 380f, 390f );
+		Assert.AreEqual( 410f, centre, "the ball keeps its grab offset: it moves by the 10 units the pointer moved" );
+		Assert.AreEqual( 701f - 33.5f, ParkHud.DragBall( centre, 390f, 900f ), "it stops at the bottom of the track" );
+		Assert.AreEqual( 220f + 33.5f, ParkHud.DragBall( centre, 390f, -500f ), "and at the top" );
+	}
 }

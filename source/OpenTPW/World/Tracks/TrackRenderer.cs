@@ -59,6 +59,8 @@ public sealed class TrackRenderer : IDisposable
 	private readonly TrackPieceKit? kit;
 	private readonly Func<Vector2> gridOrigin;
 	private readonly Func<int, int, float> groundHeight;
+	private readonly Func<int, int, float>? cornerHeight;
+	private readonly Func<float, float, float>? terrainHeight;
 	private readonly Dictionary<int, PieceGeometry> pieces = new();
 	private readonly Dictionary<int, PieceGeometry?> vehicleMeshes = new();
 	private readonly List<ModelEntity> tiles = new();
@@ -80,8 +82,13 @@ public sealed class TrackRenderer : IDisposable
 	/// <param name="kit">The piece kit of the ride's family; this renderer draws that family's cells and the controllers it is given. Null for the bumper cars, which have no pieces.</param>
 	/// <param name="gridOrigin">Engine position of grid corner (0, 0).</param>
 	/// <param name="groundHeight">Engine height of the ground at a cell.</param>
-	public TrackRenderer( ObjectCatalogEntry entry, TrackPieceKit? kit, Func<Vector2> gridOrigin, Func<int, int, float> groundHeight )
+	/// <param name="cornerHeight">Engine height of the ground at a grid corner (the landscape vertex); null takes the cells' heights.</param>
+	/// <param name="terrainHeight">Engine height of the ground under a model-unit point of the grid (the original's landscape sampler); null takes the cell's height.</param>
+	public TrackRenderer( ObjectCatalogEntry entry, TrackPieceKit? kit, Func<Vector2> gridOrigin, Func<int, int, float> groundHeight, Func<int, int, float>? cornerHeight = null,
+		Func<float, float, float>? terrainHeight = null )
 	{
+		this.cornerHeight = cornerHeight;
+		this.terrainHeight = terrainHeight;
 		this.entry = entry;
 		this.kit = kit;
 		this.gridOrigin = gridOrigin;
@@ -217,18 +224,35 @@ public sealed class TrackRenderer : IDisposable
 	/// The matrix of the tile whose origin cell is (<paramref name="x"/>, <paramref name="y"/>): the piece turns counter-clockwise by
 	/// <paramref name="rotation"/> degrees about its centre (the original's engine rotation is 360 − rotation), then moves to the tile and the ground.
 	/// </summary>
-	// [BIN:STP-PPC:0x1008B610 piece instancing] the instance sits at the origin cell plus an offset by rotation (90°: y+1; 180°: x+1, y+1; 270°: x+1) with engine rotation 360 − rotation, skipped for flag 0x10 or piece 0
-	// [APPROX:TRACK-003] the one-cell instance offset of the original is unresolved for 20-unit tiles; OpenTPW turns each tile about its own centre, which keeps every rotation inside the tile — evidence needed: the instancer 0x1008B610's PC twin (the Bumper.*Adjust keys are the controller-reference offsets of the ride placement 0x529E10, not a mesh pivot)
-	// [APPROX:TRACK-001] a tile stands on the mean ground height of its four cells; the original's instance height for a piece is not read
+	// [BIN:TPW-EXE:0x522B90 piece instancing] the kart instancer (the water one 0x522D50 alike) turns the rotation to the engine's 360 − rotation and adds one cell to the origin cell by it (90°: y+1; 180°: x+1, y+1; 270°: x+1), then the mesh creation 0x463060 → 0x466F90 adds the same one cell again, so the instance turns about the tile's corner and sits two cells (a whole tile) over: the tile turns about its centre, as here
+	// [BIN:TPW-EXE:0x463060 instance height] the instance height is 0x466D70's midrange, (lowest + highest landscape vertex of the tile's 3 × 3 vertices (every footprint cell, flag 0x10) ) / 2, written at +0x44 by 0x467030, not the mean of the four cell means
 	public Matrix4x4 TileTransform( int x, int y, int rotation )
 	{
-		var ground = (groundHeight( x, y ) + groundHeight( x + 1, y ) + groundHeight( x, y + 1 ) + groundHeight( x + 1, y + 1 )) / 4;
+		var ground = TileHeight( x, y );
 		var origin = gridOrigin();
 		return Matrix4x4.CreateTranslation( -10, -10, 0 )
 			* Matrix4x4.CreateRotationZ( rotation * MathF.PI / 180 )
 			* Matrix4x4.CreateTranslation( 10 + x * 10, 10 + y * 10, 0 )
 			* Matrix4x4.CreateScale( ObjectPlacement.ModelScale )
 			* Matrix4x4.CreateTranslation( origin.X, origin.Y, ground );
+	}
+
+	/// <summary>The height a tile's instance stands on: half the sum of the lowest and highest ground height among the tile's 3 × 3 grid corners (0x466D70).</summary>
+	public float TileHeight( int x, int y )
+	{
+		if ( cornerHeight == null )
+			return (groundHeight( x, y ) + groundHeight( x + 1, y ) + groundHeight( x, y + 1 ) + groundHeight( x + 1, y + 1 )) / 4;
+		var (low, high) = (float.MaxValue, float.MinValue);
+		for ( var dx = 0; dx <= 2; dx++ )
+		{
+			for ( var dy = 0; dy <= 2; dy++ )
+			{
+				var height = cornerHeight( x + dx, y + dy );
+				low = MathF.Min( low, height );
+				high = MathF.Max( high, height );
+			}
+		}
+		return (low + high) / 2;
 	}
 
 	private void UpdateVehicles( TrackCellLayer layer, IEnumerable<BumpController> controllers )
@@ -367,7 +391,7 @@ public sealed class TrackRenderer : IDisposable
 	/// The rider heads of the vehicles: each rider hangs from the kart mesh's head dummy of its seat (class 0x100000B1, number 1, and 2 in the Halloween karts).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0044B410 head draw] the seat's dummy node is found by class 0x80 and its number (0x0044B220); each rider is drawn as the guest's head sprite at that node (0x00475A10), the ADDHEAD mechanism
-	// [APPROX:TRACK-026] the head sprites hang from the dummies through the ride-head renderer (seat order as traced: [BIN:TPW-EXE:0x00549C60] gives rider i of the car's rider list dummy i); the draw internals 0x44B410 and 0x475A10 and the boarding guest drawn between BUMP 1 and the car's creation are not traced
+	// [APPROX:TRACK-026] the head sprites hang from the dummies through the ride-head renderer (seat order as traced: [BIN:TPW-EXE:0x00549C60] gives rider i of the car's rider list dummy i); 0x44B410 is the PC twin of ADDHEAD (it marks the head record and has 0x475A10 create the head thing; the sprite draw is the shared thing renderer, sizes under the HEADS entries) and the boarding guest drawn between BUMP 1 and the car's creation is not traced
 	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
 	{
 		foreach ( var visual in visuals )
@@ -386,31 +410,32 @@ public sealed class TrackRenderer : IDisposable
 	/// <summary>
 	/// The height of the surface a vehicle runs on at a model-unit point, as an absolute height in model units, or null when the sampler finds no surface there (the probe
 	/// keeps the vehicle's last height): the object on the probed cell is sampled as the original's <c>0x00450EA0</c> chooses (<see cref="TrackSurface.FromObject"/>): the
-	/// flat pieces, the stations and the bumper rides as the ground plus their header's +0xA0, the hill pieces by their surface faces; a cell with no track is the terrain.
+	/// flat pieces, the stations and the bumper rides as the ground plus their header's +0xA0, the hill pieces by their surface faces; a cell with no track is the terrain (<c>0x004527F0</c> at the probe).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00546280 vehicle height] four probes at ± the vehicle radius along the facing and across it; each probe's cell object (0x00450AC0: the cell's owner, a track cell through 0x0053BF30) is selected (0x00450EA0) and sampled (0x004511A0); a −100 sample keeps the vehicle's previous height (+0xA0); the mean is the height, the front/back and right/left differences the pitch and roll
-	// [APPROX:TRACK-001] the terrain under a terrain-sampled object is the mean ground of the tile's (or bumper cell's) four corners, not the original's triangle sampler 0x004527F0 at the probe; a cell with no track gives the terrain where the original samples its owner object (or keeps the previous height without one); the kart stations whose model samples faces (Halloween, space) use the straight piece's floor
+	// [APPROX:TRACK-001] a cell with no track gives the terrain where the original samples its owner object (or keeps the previous height without one); the kart stations whose model samples faces (Halloween, space) use the straight piece's floor
 	private float? SurfaceHeight( TrackCellLayer layer, float x, float y )
 	{
 		var cellX = Math.Clamp( (int)MathF.Floor( x / 10 ), 0, layer.Width - 1 );
 		var cellY = Math.Clamp( (int)MathF.Floor( y / 10 ), 0, layer.Height - 1 );
 		float Ground( int gx, int gy ) => groundHeight( Math.Clamp( gx, 0, layer.Width - 1 ), Math.Clamp( gy, 0, layer.Height - 1 ) ) / ObjectPlacement.ModelScale;
-		float Mean( int gx, int gy ) => (Ground( gx, gy ) + Ground( gx + 1, gy ) + Ground( gx, gy + 1 ) + Ground( gx + 1, gy + 1 )) / 4;
+		// [BIN:TPW-EXE:0x004527F0 landscape sampler] the terrain at the probe is the landscape's triangle height at the point, 0 off the map (0x4511A0 adds the object's +0xA0)
+		float Terrain() => terrainHeight != null ? terrainHeight( x, y ) / ObjectPlacement.ModelScale : Ground( cellX, cellY );
 		if ( kit == null )
 		{
 			// a bumper ride: the cars stand on the ride object, sampled like a piece (the jungle pot's platform at +29.8, the castle's at +15)
-			return RideSurface() is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } platform } ? Mean( cellX, cellY ) + platform : Ground( cellX, cellY );
+			return RideSurface() is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } platform } ? Terrain() + platform : Ground( cellX, cellY );
 		}
 		var cell = layer.Get( cellX, cellY );
 		if ( cell.Type == 0 )
-			return Ground( cellX, cellY );
+			return Terrain();
 		var (ox, oy) = cell.IsExtension ? layer.CellOf( cell.Parent ) : (cellX, cellY);
 		var tile = layer.Get( ox, oy );
-		var baseHeight = Mean( ox, oy );
+		var baseHeight = TileHeight( ox, oy ) / ObjectPlacement.ModelScale;
 		if ( TrackCellTypes.IsStation( tile.Type ) )
 		{
 			if ( RideSurface() is { Mode: TrackSamplerMode.Terrain, TerrainOffset: { } floor } )
-				return baseHeight + floor;
+				return Terrain() + floor;
 			return baseHeight + (kit.Family == TrackFamily.Kart ? KartStationHeight() : TrackSurface.StationWaterHeight);
 		}
 		if ( tile.Piece != 0 && GeometryOf( tile.Piece ) is { } geometry )
@@ -421,7 +446,7 @@ public sealed class TrackRenderer : IDisposable
 			var (lx, ly) = (10 + dx * MathF.Cos( angle ) + dy * MathF.Sin( angle ), 10 - dx * MathF.Sin( angle ) + dy * MathF.Cos( angle ));
 			return geometry.Surface.HeightAt( lx, ly ) is { } surface ? baseHeight + surface : null;
 		}
-		return Ground( cellX, cellY );
+		return Terrain();
 	}
 
 	/// <summary>The sampler surface of the ride's own model (the station of a kart or water ride, the arena of a bumper ride), or null when it cannot be read.</summary>

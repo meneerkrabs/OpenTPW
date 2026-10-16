@@ -20,7 +20,7 @@ What an original save restores now goes well beyond the placed objects (SAVE-003
 
 Evidence: every field cites its tp.exe address in the import code; `Evidence` lines of an import list what was restored and what was
 adjusted. Verification: the full suite passes without game data (4357 passed, 547 skipped) and with it (4795 passed, 109 skipped), the five
-native smokes pass, and `tools/fidelity_register.py --check` reports 242 unresolved unique APPROX IDs. The determinism pin did not move.
+native smokes pass, and `tools/fidelity_register.py --check` reports 241 unresolved unique APPROX IDs (the review registered ECON-056, the shop cost per sale of `0x4E1B40`, and ECON-057, the per-attraction 30-day rings). The determinism pin did not move.
 
 Still open: SAVE-006 keeps the operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do),
 a closed open word of a working attraction, the daily rings beyond this and last month, the sign lines, the third gauge `+0x4C` and a staff

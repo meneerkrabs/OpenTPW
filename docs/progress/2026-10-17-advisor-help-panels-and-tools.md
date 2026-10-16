@@ -20,7 +20,9 @@ Every help message that tp.exe posts through `0x486B00` (40 call sites found by 
   online only) and 36 help ids that no call names.
 - `advisor-descriptors.toml` keeps the scan flag of the descriptors (word `+0x0` of `0x76E300`): 155 messages are scored by the background scan
   `0x59C680` (one per update), the other 195 are posted by game code. Nothing scores the scanned ones yet; the register text names their inputs (134
-  callbacks over 85 park-statistics helpers) and the game-code posts that still have no producer (66, 69, 93-97, 136, 141, 167, 215-237, 311, 315).
+  callbacks over 85 park-statistics helpers) and the game-code posts that still have no producer (66, 68, 69, 215-237, 311, 315, and 167 outside Instant Action).
 
 **Narrowed ADVISOR-009** (not retired: the scored messages remain). The pinned run hash and saves are unchanged: help is presentation only and no
 world or guest RNG draw was added.
+
+The advisor also says the staff strike messages (33-57, replacing the direct tube post when an advisor runs), research completions (93-97), new research groups (133-136) and all research done in Instant Action (167); the determinism pin is unchanged.

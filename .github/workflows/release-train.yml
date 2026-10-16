@@ -1,4 +1,4 @@
-name: Hourly preview release
+name: Hourly release
 on:
   schedule:
     - cron: '17 * * * *'
@@ -44,23 +44,33 @@ jobs:
             echo "commit=$(jq -r .commit "$RUNNER_TEMP/plan.json")"
           } >> "$GITHUB_OUTPUT"
           {
-            echo '### Hourly preview release'
+            echo '### Hourly release'
             echo
             echo "Main at \`$(jq -r .commit "$RUNNER_TEMP/plan.json")\`: **$(jq -r .action "$RUNNER_TEMP/plan.json")**"
             echo
             jq -r .reason "$RUNNER_TEMP/plan.json"
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Start the preview release
+      - name: Start the release
         if: ${{ steps.plan.outputs.action == 'release' && inputs.dry_run != true }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.plan.outputs.version }}
           COMMIT: ${{ steps.plan.outputs.commit }}
         run: |
+          # Right before dispatching, fetch the tags again and plan again: another release may have been
+          # tagged since the plan above. Only go on when the new plan names the same version and commit.
+          git fetch --tags --force origin
+          python -B tools/release_train.py --notes-file "$RUNNER_TEMP/notes-recheck.md" > "$RUNNER_TEMP/recheck.json"
+          if [[ "$(jq -r .action "$RUNNER_TEMP/recheck.json")" != release \
+                || "$(jq -r .version "$RUNNER_TEMP/recheck.json")" != "$VERSION" \
+                || "$(jq -r .commit "$RUNNER_TEMP/recheck.json")" != "$COMMIT" ]]; then
+            echo "The plan changed before dispatch; starting nothing. The next train decides again." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           # The commit input pins the build and the tag to the exact commit that was checked above,
-          # even if main moves before the build starts.
+          # even if main moves before the build starts. Stable (not a pre-release): becomes the latest download.
           gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main \
-            -f version="$VERSION" -f prerelease=true -f commit="$COMMIT" -F notes=@"$RUNNER_TEMP/notes.md"
+            -f version="$VERSION" -f prerelease=false -f commit="$COMMIT" -F notes=@"$RUNNER_TEMP/notes.md"
           echo "Started release $VERSION from $COMMIT." >> "$GITHUB_STEP_SUMMARY"
       - name: Dry run note
         if: ${{ steps.plan.outputs.action == 'release' && inputs.dry_run == true }}

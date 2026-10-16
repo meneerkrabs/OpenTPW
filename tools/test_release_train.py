@@ -1,4 +1,4 @@
-"""Hourly preview release planning; no network, git or real releases are used."""
+"""Hourly release planning; no network, git or real releases are used."""
 from pathlib import Path
 import sys
 import unittest
@@ -15,39 +15,37 @@ def decide(tags, at_head=(), since=3, runs=GREEN, active=()):
 
 
 class VersionTests(unittest.TestCase):
-    def test_first_preview_after_stable(self):
-        self.assertEqual(rt.next_preview_version(['v0.8.5', 'v0.8.6']), 'v0.8.7-preview.1')
-
-    def test_preview_number_increments(self):
-        tags = ['v0.8.6', 'v0.8.7-preview.1', 'v0.8.7-preview.2']
-        self.assertEqual(rt.next_preview_version(tags), 'v0.8.7-preview.3')
-
-    def test_new_stable_restarts_numbering(self):
-        tags = ['v0.8.6', 'v0.8.7-preview.4', 'v0.8.7']
-        self.assertEqual(rt.next_preview_version(tags), 'v0.8.8-preview.1')
+    def test_next_patch_after_newest_stable(self):
+        self.assertEqual(rt.next_version(['v0.8.5', 'v0.8.6']), 'v0.8.7')
+        self.assertEqual(rt.next_version(['v0.8.7', 'v0.8.6']), 'v0.8.8')
 
     def test_numeric_not_lexical_order(self):
-        tags = ['v0.9.9', 'v0.10.0']
-        self.assertEqual(rt.next_preview_version(tags), 'v0.10.1-preview.1')
-        self.assertEqual(rt.next_preview_version(['v0.8.6'] + ['v0.8.7-preview.%d' % n for n in (2, 10, 9)]),
-                         'v0.8.7-preview.11')
+        self.assertEqual(rt.next_version(['v0.9.9', 'v0.10.0']), 'v0.10.1')
 
-    def test_stable_is_newer_than_its_previews(self):
-        self.assertEqual(rt.last_tag(['v0.8.7-preview.3', 'v0.8.7', 'v0.8.6']), 'v0.8.7')
+    def test_preview_tags_are_ignored(self):
+        tags = ['v0.8.6', 'v0.8.7-preview.1', 'v0.9.0-preview.2']
+        self.assertEqual(rt.last_tag(tags), 'v0.8.6')
+        self.assertEqual(rt.next_version(tags), 'v0.8.7')
 
     def test_unknown_tags_are_ignored(self):
         self.assertEqual(rt.last_tag(['v1', 'vnext', 'v0.8.6-rc1', 'v0.8.6']), 'v0.8.6')
         with self.assertRaises(ValueError):
-            rt.next_preview_version(['v0.8.7-preview.1'])
+            rt.next_version(['v0.8.7-preview.1'])
+
+    def test_result_is_always_stable_and_new(self):
+        tags = ['v0.8.6', 'v0.8.7', 'v0.8.8-preview.1']
+        version = rt.next_version(tags)
+        self.assertNotIn(version, tags)
+        self.assertIsNotNone(rt.parse_tag(version))
 
 
 class PlanTests(unittest.TestCase):
     def test_releases_when_green_and_new(self):
         result = decide(['v0.8.6'])
-        self.assertEqual((result['action'], result['version'], result['commit']), ('release', 'v0.8.7-preview.1', HEAD))
+        self.assertEqual((result['action'], result['version'], result['commit']), ('release', 'v0.8.7', HEAD))
 
     def test_skips_when_head_is_tagged(self):
-        result = decide(['v0.8.6', 'v0.8.7-preview.1'], at_head=['v0.8.7-preview.1'])
+        result = decide(['v0.8.6', 'v0.8.7'], at_head=['v0.8.7'])
         self.assertEqual(result['action'], 'skip')
         self.assertIn('already tagged', result['reason'])
 
@@ -73,24 +71,23 @@ class PlanTests(unittest.TestCase):
     def test_cancelled_run_is_not_green(self):
         self.assertEqual(decide(['v0.8.6'], runs=[{'status': 'completed', 'conclusion': 'cancelled'}])['action'], 'skip')
 
-    def test_retries_an_unfinished_preview_at_head(self):
-        tag = 'v0.8.7-preview.1'
-        result = rt.plan(HEAD, ['v0.8.6', tag], [tag], 0, [], [], [tag])
-        self.assertEqual((result['action'], result['version']), ('release', tag))
+    def test_retries_an_unfinished_newest_tag_on_its_own_commit(self):
+        other = 'b' * 40
+        result = rt.plan(HEAD, ['v0.8.6', 'v0.8.7'], [], 5, [], [], {'v0.8.7': other})
+        self.assertEqual((result['action'], result['version'], result['commit']), ('release', 'v0.8.7', other))
 
-    def test_never_retries_a_stable_tag_at_head(self):
-        result = rt.plan(HEAD, ['v0.8.6'], ['v0.8.6'], 0, GREEN, [], ['v0.8.6'])
+    def test_does_not_retry_while_a_release_runs(self):
+        result = rt.plan(HEAD, ['v0.8.7'], [], 5, GREEN, [{'id': 1}], {'v0.8.7': HEAD})
         self.assertEqual(result['action'], 'skip')
 
     def test_published_tag_at_head_is_skipped(self):
-        tag = 'v0.8.7-preview.1'
-        self.assertEqual(rt.plan(HEAD, ['v0.8.6', tag], [tag], 0, GREEN, [], [])['action'], 'skip')
+        self.assertEqual(rt.plan(HEAD, ['v0.8.6', 'v0.8.7'], ['v0.8.7'], 0, GREEN, [], {})['action'], 'skip')
 
     def test_skips_while_a_release_is_running(self):
         self.assertEqual(decide(['v0.8.6'], active=[{'id': 1}])['action'], 'skip')
 
-    def test_never_plans_a_stable_version(self):
-        self.assertIn('-preview.', decide(['v0.8.6'])['version'])
+    def test_follows_stable_numbering(self):
+        self.assertEqual(decide(['v0.8.6', 'v0.8.7'], since=2)['version'], 'v0.8.8')
 
 
 class NotesTests(unittest.TestCase):

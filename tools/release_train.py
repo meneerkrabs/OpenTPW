@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan the hourly preview release: pick the commit and the version, or say why to skip.
+"""Plan the hourly release: pick the commit and the version, or say why to skip.
 
 The planning rules are pure functions (tested in test_release_train.py); main() only gathers
 facts from git and the GitHub API and prints the decision. It never creates tags or releases.
@@ -11,41 +11,33 @@ import re
 import subprocess
 import sys
 
-TAG_RE = re.compile(r'^v(\d+)\.(\d+)\.(\d+)(?:-preview\.(\d+))?$')
+STABLE_RE = re.compile(r'^v(\d+)\.(\d+)\.(\d+)$')
 SHA_RE = re.compile(r'^[0-9a-f]{40}$')
 
 
 def parse_tag(tag):
-    """Return (major, minor, patch, preview_number_or_None) for stable and preview tags, else None."""
-    match = TAG_RE.match(tag)
-    if not match:
-        return None
-    major, minor, patch, preview = match.groups()
-    return int(major), int(minor), int(patch), None if preview is None else int(preview)
+    """Return (major, minor, patch) for a stable vX.Y.Z tag; anything else (previews, other tags) is None."""
+    match = STABLE_RE.match(tag)
+    return tuple(int(part) for part in match.groups()) if match else None
 
 
-def sort_key(tag):
-    # A stable release sorts after every preview of the same version.
-    major, minor, patch, preview = parse_tag(tag)
-    return major, minor, patch, 1 if preview is None else 0, preview or 0
+def stable_tags(tags):
+    return [tag for tag in tags if parse_tag(tag)]
 
 
 def last_tag(tags):
-    """The newest tag we know the format of, or None."""
-    known = [tag for tag in tags if parse_tag(tag)]
-    return max(known, key=sort_key) if known else None
+    """The newest stable tag, or None. Preview tags are left alone and never count."""
+    known = stable_tags(tags)
+    return max(known, key=parse_tag) if known else None
 
 
-def next_preview_version(tags):
-    """vX.Y.(Z+1)-preview.N after the latest stable vX.Y.Z; N counts up per train."""
-    stables = [tag for tag in tags if parse_tag(tag) and parse_tag(tag)[3] is None]
-    if not stables:
-        raise ValueError('no stable release tag to derive a preview version from')
-    major, minor, patch, _ = parse_tag(max(stables, key=sort_key))
-    base = (major, minor, patch + 1)
-    numbers = [parse_tag(tag)[3] for tag in tags
-               if parse_tag(tag) and parse_tag(tag)[:3] == base and parse_tag(tag)[3] is not None]
-    return 'v%d.%d.%d-preview.%d' % (*base, max(numbers, default=0) + 1)
+def next_version(tags):
+    """vX.Y.(Z+1) after the newest stable vX.Y.Z. The result never names an existing tag."""
+    previous = last_tag(tags)
+    if previous is None:
+        raise ValueError('no stable release tag to derive the next version from')
+    major, minor, patch = parse_tag(previous)
+    return 'v%d.%d.%d' % (major, minor, patch + 1)
 
 
 def check_state(runs):
@@ -67,18 +59,18 @@ def check_state(runs):
     return 'green'
 
 
-def plan(head, tags, tags_at_head, commits_since_last_tag, build_runs, release_runs_active, unfinished_at_head=()):
+def plan(head, tags, tags_at_head, commits_since_last_tag, build_runs, release_runs_active, unfinished=None):
     """Return {'action': 'release'|'skip', 'reason': ..., 'version': ..., 'commit': ...}."""
     def skip(reason):
         return {'action': 'skip', 'reason': reason, 'version': '', 'commit': head}
     if release_runs_active:
         return skip('a release run is still queued or in progress')
-    # A preview tag whose release is missing or still a draft means an earlier run died after tagging.
-    # Retry that exact version (the publish script repairs it) instead of waiting for the next commit.
-    unfinished = [tag for tag in unfinished_at_head if parse_tag(tag) and parse_tag(tag)[3] is not None]
-    if unfinished and len(unfinished) == len(tags_at_head):
-        return {'action': 'release', 'reason': 'retrying the unfinished release of %s' % max(unfinished, key=sort_key),
-                'version': max(unfinished, key=sort_key), 'commit': head}
+    # The newest stable tag exists but its release is missing or still a draft: an earlier run died after tagging.
+    # Retry that exact version on the commit it was tagged at (the publish script repairs it), never a new version.
+    if unfinished:
+        version, commit = sorted(unfinished.items())[-1]
+        return {'action': 'release', 'reason': 'retrying the unfinished release of %s' % version,
+                'version': version, 'commit': commit}
     if tags_at_head:
         return skip('HEAD is already tagged (%s)' % ', '.join(sorted(tags_at_head)))
     previous = last_tag(tags)
@@ -90,14 +82,14 @@ def plan(head, tags, tags_at_head, commits_since_last_tag, build_runs, release_r
     if state != 'green':
         return skip('CI has not finished on %s (%s); the next train retries' % (head[:10], state))
     return {'action': 'release', 'reason': 'main is green and has new commits',
-            'version': next_preview_version(tags), 'commit': head}
+            'version': next_version(tags), 'commit': head}
 
 
 def release_notes(added_fragments, repository, commit):
     """Extra notes appended to GitHub's generated list of merged pull requests."""
     if not added_fragments:
         return ''
-    lines = ['## Progress notes in this preview', '']
+    lines = ['## Progress notes in this release', '']
     for path in sorted(added_fragments):
         title = os.path.splitext(os.path.basename(path))[0]
         lines.append('- [%s](https://github.com/%s/blob/%s/%s)' % (title, repository, commit, path))
@@ -121,18 +113,24 @@ def release_is_unfinished(repository, tag):
     """True when the tag has no GitHub release yet or its release is still a draft."""
     result = subprocess.run(['gh', 'release', 'view', tag, '--repo', repository, '--json', 'isDraft', '--jq', '.isDraft'],
                             capture_output=True, text=True)
-    return result.returncode != 0 or result.stdout.strip() == 'true'
+    if result.returncode != 0:
+        if 'not found' in result.stderr.lower():
+            return True
+        raise RuntimeError('cannot read the release of %s: %s' % (tag, result.stderr.strip()))  # transient: do nothing this hour
+    return result.stdout.strip() == 'true'
 
 
 def gather(repository, head):
     tags = sh('git', 'tag', '--list', 'v*').split()
-    at_head = [t for t in sh('git', 'tag', '--points-at', head).split() if parse_tag(t)]
+    at_head = stable_tags(sh('git', 'tag', '--points-at', head).split())
     previous = last_tag(tags)
     since = int(sh('git', 'rev-list', '--count', '%s..%s' % (previous, head))) if previous else 1
     builds = workflow_runs(repository, 'build.yml', head_sha=head, event='push', branch='main')
-    unfinished = [t for t in at_head if parse_tag(t)[3] is not None and release_is_unfinished(repository, t)]
     active = (workflow_runs(repository, 'release.yml', status='queued')
               + workflow_runs(repository, 'release.yml', status='in_progress'))
+    unfinished = {}
+    if previous and release_is_unfinished(repository, previous):
+        unfinished[previous] = sh('git', 'rev-list', '-n', '1', previous).strip()
     fragments = []
     if previous:
         fragments = sh('git', 'diff', '--name-only', '--diff-filter=A', previous, head, '--', 'docs/progress/').split()

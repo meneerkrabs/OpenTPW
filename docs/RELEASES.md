@@ -49,27 +49,33 @@ To deploy the website separately, use **Actions → Website → Run workflow** o
 `main`. A normal (non-preview) release updates the existing latest-download links
 without requiring a website code change.
 
-## Hourly preview releases
+## Hourly releases
 
-`.github/workflows/release-train.yml` (**Actions → Hourly preview release**) runs at minute 17 of every hour and,
-when it finds something new, starts the normal release workflow as a preview. Previews are never marked as the
-latest download, never deploy the official server and never touch the stable version. Stable releases stay manual.
+`.github/workflows/release-train.yml` (**Actions → Hourly release**) runs at minute 17 of every hour and, when it
+finds something new, starts the normal release workflow for the next stable version. The result is a regular release
+that becomes the latest download, exactly like a manual one. Manual releases keep working as described above.
 
 Each train (`tools/release_train.py`) takes the current commit of `main` and:
 
-1. skips when a release run is still queued or running, when that commit already carries a version tag, or when no
-   commit is newer than the newest `v*` tag;
-2. skips when **Cross-platform build and CPU tests** has not finished on that exact commit (the next train retries,
-   so pull requests that merge while CI runs ride a later train) or did not succeed (the job summary says so);
-3. otherwise picks `vX.Y.(Z+1)-preview.N`, where `vX.Y.Z` is the newest stable tag and `N` counts up per train, and
-   dispatches **Release builds** with that version and the commit SHA. The commit input fixes the build and the tag
-   to the validated commit, even when `main` moves before the build starts (the commit must be on `main`).
+1. skips when a release run is still queued or running;
+2. retries a half-failed release first: if the newest stable tag exists but its release is missing or still a draft,
+   the train dispatches that same version again on the commit it was tagged at (the publish script repairs it), so a
+   version is never reused for a different commit and never skipped forever;
+3. skips when that commit already carries a stable tag, or when no commit is newer than the newest stable tag;
+4. skips when **Cross-platform build and CPU tests** has not finished on that exact commit (the next train retries,
+   so pull requests that merge while CI runs ride a later train) or did not succeed, including cancelled runs (the job
+   summary says so);
+5. otherwise picks `vX.Y.(Z+1)`, where `vX.Y.Z` is the newest stable tag (preview tags are ignored), plans again
+   after refetching the tags right before dispatching, and dispatches **Release builds** with that version,
+   `prerelease=false` and the commit SHA. The commit input fixes the build and the tag to the validated commit, even
+   when `main` moves before the build starts (the commit must be on `main`). Trains never overlap (concurrency group),
+   and the release workflow serializes runs of the same version.
 
 The release notes are GitHub's list of merged pull requests since the previous tag, plus links to the progress
 fragments (`docs/progress/`) added since then. A tag pushed with the workflow token would not start other workflows,
 which is why the train dispatches the release workflow instead of pushing a tag.
 
-To see what the next train would do without starting anything, run **Hourly preview release** manually with
+To see what the next train would do without starting anything, run **Hourly release** manually with
 **Only report** ticked (the default for manual runs); the plan is in the job summary. Untick it to release now.
 
 ## Native libraries

@@ -194,4 +194,61 @@ public class StopWalkTests
 		Assert.AreEqual( 0, vehicles.Variables[ArrivalVehicleKind.Bus][ArrivalVehicleKind.TriggerVariable], "a leaving guest heads the cell two rows up: the bus is held at status 4" );
 		Assert.IsFalse( simulation.Guests.Contains( guest ) );
 	}
+
+	// ---- original data ---------------------------------------------------------------------------------------------
+
+	private BaseFileSystem? originalFileSystem;
+	private bool initialized;
+
+	[TestCleanup]
+	public void Cleanup()
+	{
+		if ( initialized )
+			FileSystem = originalFileSystem!;
+	}
+
+	[TestMethod]
+	public void OnTheJungleMapAGuestWalksFromTheEntranceOverTheWalkwayToTheBusStop()
+	{
+		// the original level's map init types the gate and bus-stop cells 0x1E (no terrain, MAP 0x80): a leaving guest reaches the crossing, the stop cells and boards over the real cells
+		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
+		if ( string.IsNullOrWhiteSpace( gamePath ) || !System.IO.Directory.Exists( gamePath ) )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the Jungle level." );
+		Log = new();
+		originalFileSystem = FileSystem;
+		FileSystem = new BaseFileSystem( OriginalParkImportTests.OriginalDataPath() );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		initialized = true;
+		var park = OriginalPark.Load( "jungle" );
+		if ( park.Save == null )
+			Assert.Inconclusive( "The Jungle Easymode.TPWI save is missing." );
+		var grid = new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, park.Heightfield ) );
+		var settings = GuestSettings.Load( "jungle" );
+		var vehicles = new Vehicles();
+		var simulation = new GuestSimulation( grid, settings, 5 ) { ArrivalsEnabled = false, ArrivalVehicles = vehicles };
+		var entrance = settings.ArrivalLaneA![^1];
+		Assert.AreEqual( ParkCellTypes.FixedWalkway, grid.Cells.RawTypeAt( 47, 9 ), "the crossing cell is a walkway" );
+		var guest = simulation.SpawnInPark( entrance.X, entrance.Y );
+		guest.ExitLevel = 0;
+		guest.Happiness = 0;
+		Assert.IsTrue( simulation.RouteToGate( guest, 0 ), "a route from the entrance to the crossing" );
+		Assert.AreEqual( 0, guest.Navigation.Mask, "the walkway is open to the guest's own mask" );
+		guest.State = GuestState.LeavingPark;
+		var states = new List<GuestState>();
+		for ( var tick = 0; tick < 60 * 600 && guest.State != GuestState.WaitingToGoHome; tick++ )
+		{
+			simulation.Tick( Tick );
+			if ( states.Count == 0 || states[^1] != guest.State )
+				states.Add( guest.State );
+		}
+		CollectionAssert.AreEqual( new[] { GuestState.LeavingPark, GuestState.CrossingRoadHome, GuestState.WalkingToVehicle, GuestState.WaitingToGoHome }, states );
+		Assert.IsTrue( new[] { (42, 5), (43, 5), (42, 3), (43, 3) }.Contains( guest.Navigation.Cell ), $"{guest.Navigation.Cell}" );
+		simulation.RestoreArrivalVehicleForTest( ArrivalVehicleKind.Bus );
+		vehicles.Placed[ArrivalVehicleKind.Bus] = true;
+		vehicles.Variables[ArrivalVehicleKind.Bus][ArrivalVehicleKind.StatusVariable] = 4;
+		for ( var turn = 0; turn < 400 && simulation.Guests.Contains( guest ); turn++ )
+			Turns( simulation, 1 );
+		// at status 4 the guest on an upper cell (the seaplane's) still boards: the head of its cell's list boards whatever the kind
+		Assert.IsFalse( simulation.Guests.Contains( guest ), "it boarded" );
+	}
 }

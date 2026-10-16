@@ -112,7 +112,7 @@ public partial class Material : Asset
 		// World textures follow the graphics preset ([DATA:low/med/high.sam:TEXTUREFILTERING, MIPMAP]); see docs/COMPATIBILITY.md.
 		var quality = CompatibilityRuntime.RenderQuality;
 		// [EXT:texture-filter-samplers] the Veldrid sampler modes (point, linear with point mip, linear with linear mip; anisotropy) are an OpenTPW design choice for the graphics presets
-		// [APPROX:COMPAT-010] tp.exe sets stage 0 from the state word (0x567620: 0x20000 MAGFILTER point, 0x40000 MIPFILTER none, else the device's mip mode; 0x400000 wrap with linear MINFILTER, else clamp with point MINFILTER) and its option apply 0x44D8F0 sets 0x20000 for [0x785898] = 0 and 0x40000 for 1 — evidence needed: that [0x785898] is TEXTUREFILTERING and how the engine flags reach each state word.
+		// [APPROX:COMPAT-010] tp.exe sets stage 0 from the state word (0x567620: 0x20000 MAGFILTER point, 0x40000 MIPFILTER none, else the device's mip mode; 0x400000 wrap with linear MINFILTER, else clamp with point MINFILTER) and its option apply 0x44D8F0 sets 0x20000 for [0x785898] = 0 and 0x40000 for 1 — by the option table's position [0x785898] is the tenth option (SPRITESHADOW) and TEXTUREFILTERING is [0x785878] (bits 0x18 of DAT_008BD550), so which option the engine's filter bits belong to and how the engine flags reach each state word are not read.
 		var world = type is SamplerType.Anisotropic or SamplerType.AnisotropicWrap or SamplerType.AnisotropicRepeat;
 		var samplerFilter = type switch
 		{

@@ -93,6 +93,41 @@ public sealed partial class OriginalObjectRuntime
 			SetDuration( settings.Duration );
 	}
 
+	/// <summary>
+	/// Takes the operating words an original save holds (<c>mOperatingSpeed</c>, <c>mOperatingCapacity</c> and <c>mOperatingDuration</c>) as the ride's SPEED, CAPACITY and DURATION.
+	/// A word of 0 is left alone (the constructor and the upgrade completion write a word only from an Init value above 0, so 0 is the unset word here, which keeps the tier's value), and a
+	/// word equal to the live one changes nothing. Returns the words that differed and were taken.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4dcc6c attraction loader operating words] the loader reads mOperatingCapacity into the byte +0x5d (0x4dcc6c), mOperatingDuration into the byte +0x5c (0x4dcc92) and mOperatingSpeed into the dword +0x58 (0x4dccb8), each straight through the reader 0x424c20 / 0x4fae10 with no clamp and no setter call, so the saved words are the live ride words; the script's bias and variables 2 and 3 come back with the saved script state, which OpenTPW rebuilds from the archives ([EXT:original-engine-state-dumps]), so they are written here from the words
+	internal IReadOnlyList<string> RestoreOriginalSettingWords( uint speed, int capacity, int duration )
+	{
+		var taken = new List<string>();
+		var live = Settings;
+		var speedValue = unchecked((int)speed);
+		if ( speedValue > 0 && speedValue != live.Speed )
+		{
+			SetSpeed( speedValue );
+			taken.Add( $"speed {speedValue}" );
+		}
+		var capacityValue = capacity & 0xFF;
+		if ( capacityValue > 0 && capacityValue != live.Capacity )
+		{
+			SetVariable( nameof( RideVariables.VAR_CAPACITY ), capacityValue );
+			capacityWord = capacityValue;
+			taken.Add( $"capacity {capacityValue}" );
+		}
+		var durationValue = duration & 0xFF;
+		if ( durationValue > 0 && durationValue != live.Duration )
+		{
+			SetVariable( nameof( RideVariables.VAR_DURATION ), durationValue );
+			durationWord = durationValue;
+			taken.Add( $"duration {durationValue}" );
+		}
+		if ( taken.Count > 0 )
+			PublishSettingWords();
+		return taken;
+	}
+
 	/// <summary>Publishes the catalogue tier's queue parameters with the ride words a setter wrote.</summary>
 	private void PublishSettingWords()
 	{

@@ -17,9 +17,11 @@ Economy rules read again in tp.exe and built:
 - **Challenges** go to the message tube with Accept and Decline, which call AcceptChallenge and DeclineChallenge (`0x48E0F0` actions
   `0x1A`/`0x1B` → `0x4D2DF0`/`0x4D2EC0`) for whichever offer is waiting.
 - **Cell types** (ECON-050 narrowed): world init types each cell from the MAP and the terrain (`0x536490`): cells without terrain become
-  7, 2 or 30 with the unowned flag `0x40` (PATH-007 narrowed), and placement writes footprint types (`0x528A70` → `0x5346D0`).
+  7, 2 or 30, every cell without the fixed flag `0x20` gets the unowned flag `0x40`, which the level's land (Buy Land's `ParkLand`) clears
+  inside the fence, and placement writes footprint types (`0x528A70` → `0x5346D0`).
 - **Park rating and net worth**: the visitor term counts guests on cell types 0/1/3/9/10, capped at 1000 (`0x4CCEB0`, ECON-027 retired);
-  owned cells add 2/3/5/6/1/50 points (`0x4C7DB0`) and the net worth is cached as the original does (ECON-026 narrowed).
+  owned cells add 2/3/5/6/1/50 points (`0x4C7DB0`) over the land Buy Land maintains, so the net worth and the loans' credit test count
+  only owned land, and the net worth is cached as the original does (ECON-026 narrowed: the fence's hoardings are not counted).
 - **Loans** (ECON-007 retired): the Available tab lists an offer that is not bought and passed the stored credit test, amount ≤ net worth
   − bought loans' remaining instalments (`0x4D06B0`), run when the dialog opens or a tab is selected; the stored tests are imported from
   original saves (SAVE-008 narrowed). The park save gains the optional `AvailableLoanOffers`; older saves get the bank's default.
@@ -31,7 +33,65 @@ Economy rules read again in tp.exe and built:
 - **Saves**: the analyser caches (net worth, litter and path blocks) and the last observed script state are saved as optional fields
   outside the run hash, and an unanswered challenge offer whose message is gone is posted again (UI-025).
 
-The pinned run hash moves to `0x0F080CC6C6923088` (docs/DETERMINISM.md).
+The pinned run hash moves to `0x0C9F0042AD44A3E3` on top of the staff candidate draws (docs/DETERMINISM.md).
+
+## Nine divergences from tp.exe fixed (October 15, 2026)
+
+Divergences found while reading other areas, each checked in tp.exe and fixed in its own commit:
+
+- **Upgrades are paid at installation** (`0x4df8f0`, debit at `0x4dfa96` with no balance check); buying (`0x4af4e9`) only requests the
+  upgrade when the balance is above the cost. A save's pending upgrade gains the optional `UpgradeCostDue`; one loaded from an older
+  save, already charged at purchase, is not charged again.
+- **A sideshow play wins** when R % 100 ≤ the win byte (100 − InitChanceOfLoosing, `0x4e26e2`, `0x4db3a1`).
+- **A sale or play at price 0 books no takings** (`0x4fe1a0` skips `0x4e16b0`); the cost of goods and the customer count still apply
+  (ECON-034 narrowed).
+- **A cleaned toilet opens** through `0x4df390` without the reopening guard (ECON-049 text extended).
+- **A called ride gets its mechanic** in any state, condemned included (`0x4da740`, `0x4daa90`).
+- **Removing an attraction or bin** sends its guests the original's removal message (`0x4fb360`, message 10): riders get their model
+  back, queued guests are dismissed, every targeting guest goes to state 6, and every guest's history slots naming the object are
+  cleared (GUEST-004 and GUEST-005 narrowed).
+- **A closed park stops visitors on the walk to the booth** (`0x4ff730`, `0x4ff7f0`): they go home with no thought; the booth and the
+  booking read no closed state, so a guest who paid at a closed park is sent home without a refund. A bankrupt park still takes no fee
+  (its thing loop stops in tp.exe, ECON-030).
+- **A staff candidate draws** variant, spare, grade, name and timeout in tp.exe's order (`0x507600`, GUEST-014 narrowed).
+- **A new park starts with only the research-free objects researched** (`Upgrades[0].CostOfResearch` = 0, `0x5031a0`): Jungle's Wooden
+  Log now has to be researched.
+
+A tenth candidate (the dismissal leaving VAR_LETMEON set) does not hold: every caller unlinks first (`0x4ddd20`). The pinned run hash
+moves to `0xDB1DDEE4817DE5B0` (the staff candidate draws; docs/DETERMINISM.md).
+
+## Advisor presentation, crowd sound and particle density from tp.exe (October 15, 2026)
+
+- **The advisor moves**: its antennae, hands and eyes vertex tracks and the level advisors' eye texture tracks play through the shared
+  instance draw (`0x429df0` → `0x473c70`); clip node bits carry from clip to clip, so bit `0x10000` hides the bug head and mouth and
+  `0x40000` plays cat_ui `0xC5` (the ticket close-up, ADVISOR-006 and -026 narrowed).
+- **The slap and F1**: cutting the advisor off while it speaks plays one of three slaps (`0x5994e0`), and F1 in the eight help windows
+  replays the last tutorial record (`0x488c02` → `0x59ab50`, saved as an optional field; ADVISOR-027 retired). The help descriptors read
+  `HelpMessage.Score`, not `ContextHelpScore` (both 1000 in the shipped file).
+- **The crowd sound follows its parameter** (`0x6bbb80`): a parameter change recomputes the playing sample's volume and pitch, on the
+  original's beat of every 32nd 31 ms step (`0x54f82d`, AUDIO-036 retired). The ticket timer plays cat_ui `0xC6` (`0x5999b2`).
+- **Particle density** comes from the player's graphics preset as the original's detail files set it (500/1000/1500, `0x44dc60`;
+  PTCL-906 narrowed).
+
+## Buy Land, as in the original (October 15, 2026)
+
+The original's land purchase is in: the build window's Miscellaneous tab has "Buy Land" (with the `Costs.MapCell` price) and "Clear
+Land" (`0x4ab12f`), and the land a park owns now limits what can be built.
+
+- **The fence and the owned land** come from each theme's `Hoardings.sam` (loaded at `0x407f20`): the fence runs from post A (the gate's
+  second entrance + 3) to post B (the first − 4, `0x5323f0`), and every cell outside it is unowned (`0x40`, set at `0x536490`). An
+  imported original save keeps its own flags and fence (a save whose fence cannot be walked from post A to post B keeps its flags
+  but has no Buy Land); on the Jungle Easymode save the fill rule reproduces all 16,384 cells' flags, and that save owns 674 cells
+  more than a new park (land the player bought).
+- **The Buy Land tool** (mode `0x39`) takes two clicks on the fence-post lattice and checks the rectangle as `0x531a50` does (map
+  bounds and size, gate posts, runs over no-terrain or fixed-walkway cells (types 7 and 0x1e; water does not count), contact with
+  the park, no new land, no enclosed pocket, money with an equal balance allowed); each unowned cell in [x0+2, x1) × [y0+2, y1)
+  costs `Costs.MapCell` (`0x532303`; 100 in the standard balance, 10 in Jungle's easy one), booked as other costs. The fence is
+  walked round the new land (`0x5327e0`), one purchase per activation.
+- **Unowned land** refuses paths, queues, objects, tracks and staff drops (`0x535670`). Saves keep the land as an optional record;
+  older saves fall back to the land computed from the fence.
+- Not yet: the fence models and the unowned-terrain tint, Clear Land (the rectangle bulldozer, PATH-005), and the coaster tool's
+  ownership test. PATH-007 and ECON-026 are narrowed.
 
 ## Interface windows from tp.exe's tables (October 15, 2026)
 
@@ -71,6 +131,32 @@ Twenty-two interface approximations were read again in tp.exe:
 - Nine items are narrowed with what was read: the font bank chosen by screen mode (`0x419710`), control colours and the single-pass
   text renderer without a shadow (`0x48f830`), the four readers of RMBCancelOn (`0x4881a0`), the greedy text wrap (`0x6aec80`), the
   slider class, the options labels and the buy-list row pitch (font slot 7's line height, `0x4ad240`).
+
+## MD2 paths: vehicles and karts follow their routes (October 15, 2026)
+
+The path parameters decoded earlier today index a part of the geometry models that was still opaque: the
+16-byte "extra records" (header 0x40/0xAC) are paths, 18 of them in 15 distinct models (Bézier, one linear).
+
+- **Paths** (`ModelPath`, `ModelFile.Paths`): kind (closed, Bézier, linear, otherwise Catmull-Rom), point count and
+  points. A node follows one when its parent is a type-0x208 dummy (`Kart_path01`, `Flightpath`, `FERRYSPLINE`…);
+  the dummy's stored index selects the path in its high 16 bits.
+- **Playback** from tp.exe's sampler 0x471860: the per-tick value (0x474EA0: per-tick blend, seam across 100 → 0)
+  becomes `fmod(v + 1000, 100)` percent of the path's segments, evaluated by 0x474840/0x474BF0/0x474CC0; flag 0x400
+  turns the node along the path (0x474A20/0x474C70, rows built by 0x470780). `ObjectAnimator` and
+  `ModelAnimationPlayer` play it, so the Haunted House karts, the go-karts, the bus, ferry, seaplane and slide car
+  and the Halloween advisor's bats follow their routes instead of standing at their stored pose (every such record
+  evaluates on its path; moving playback is checked for the Haunted House karts).
+- **Checks:** every flag-0x200 node hangs under a path dummy; where a clip starts on the stored pose (Haunted House
+  B/E/M/S, Busm1, slidec) tick 0 lands within 0.02 of the stored translation and faces within a few degrees of the
+  stored orientation; a placed Haunted House moves its four karts along their paths. The open Bézier routes store a
+  closing control pair the sampler never reads, so the bus and ferry jump back to their route's start when the
+  value wraps past 100, as the original does.
+- Not played: flag 0x400 together with position keys (no record has it). OpenTPW guards: path tables decode at
+  most four times the member, empty or non-finite paths are rejected, and a direction parallel to up (a division
+  by zero in the original) faces +X. No native render was run.
+- Verification (macOS arm64, original data): the full test suite passes (4,496 passed, 109 skipped); an independent
+  Codex review's findings (path-table allocation budget, non-finite and empty paths, scale after facing across
+  channels, a vertical direction, claims beyond the tests) are fixed.
 
 ## Format table reconciled; SAM reader, LIP checks and MD2 path parameters (October 15, 2026)
 

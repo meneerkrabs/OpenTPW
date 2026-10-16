@@ -166,7 +166,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		}
 		if ( isOccupied?.Invoke( x, y ) == true )
 			return CellBuildResult.Occupied;
-		// [APPROX:PATH-006] PATH-SLOPE: no slope or height test, as in the original (tp.exe LayLine 0x536100, SetCell 0x532fc0 reads heights only for the ghost, validator 0x535670 has no float operation, SetCellType 0x5346d0); the object terrain rule OpenTPW applies (water, blocked, entrance area, fixed walkway, holes) stands in for the original's cell types and ownership: map init 0x536490 types only hole cells (2, 0x1e, 7, refused by type) and leaves every other non-InitialPath cell type 0 with the unowned flag 0x40 (PATH-007) — still open: the ownership rule (PATH-007) that the terrain stand-in replaces
+		// [APPROX:PATH-006] PATH-SLOPE: no slope or height test, as in the original (tp.exe LayLine 0x536100, SetCell 0x532fc0 reads heights only for the ghost, validator 0x535670 has no float operation, SetCellType 0x5346d0); the object terrain rule OpenTPW applies (water, blocked, entrance area, fixed walkway, holes) stands in for the original's cell types: map init 0x536490 types only hole cells (2, 0x1e, 7, refused by type) and leaves every other non-InitialPath cell type 0, whose unowned flag 0x40 the land now sets (PATH-007) — still open: the original cell types the terrain stand-in replaces
 		var terrain = Terrain.CheckTerrain( x, y );
 		if ( terrain is not (OriginalPlacementResult.Allowed or OriginalPlacementResult.Path) )
 			return terrain == OriginalPlacementResult.OutsideTerrain ? CellBuildResult.OutsideTerrain : CellBuildResult.Terrain;

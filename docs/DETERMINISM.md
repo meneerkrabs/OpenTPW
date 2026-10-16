@@ -321,9 +321,13 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x0F080CC6C6923088`, schema 19: the bank's stored credit test (`0x4D06B0`, run when the loans dialog opens or a tab is selected)
+  (`0x0C9F0042AD44A3E3`, schema 19: the bank's stored credit test (`0x4D06B0`, run when the loans dialog opens or a tab is selected)
   decides which offers the Available tab lists, and the park save gains the optional `AvailableLoanOffers` field, so the hashed save
-  text moves. Before that:
+  text moves, on top of the staff candidate draws below. Before that, two siblings off `0xD28386DACAD73241`:
+  `0xDB1DDEE4817DE5B0`, schema 19: a staff candidate draws as tp.exe does (`0x507600`): the variant (`0x50761c` via `0x541f70`), a
+  discarded draw (`0x50762d`), the grade (`0x507638`), the name (`0x507580`, at most 15 draws while `0x5083f0` finds it on a pool
+  candidate or a hired member) and then the timeout, so the world stream moves; and `0x0F080CC6C6923088`, the loan-offer save field
+  alone. Before both:
   `0xD28386DACAD73241`, schema 19: the guest's energy meter is tp.exe's field `+0x1B8` (0 at birth, changed only by `0x004FD970`), the
   attraction choice walks the objects newest first, a full queue costs no happiness and the use routine `0x004FE1E0` applies its
   remaining terms, so the guests and the world stream move. Before that:

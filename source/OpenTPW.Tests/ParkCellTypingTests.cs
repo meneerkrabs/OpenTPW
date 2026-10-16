@@ -18,15 +18,15 @@ public class ParkCellTypingTests
 	[TestMethod]
 	public void TheWorldInitTypesACellFromItsMapByteAndTheTerrain()
 	{
-		// [BIN:TPW-EXE:0x536490 cell init] no terrain: 2 (MAP 0x02), 0x1e (MAP 0x80) or 7, with flag 0x40; with terrain: 1 (MAP 0x08) or 0
+		// [BIN:TPW-EXE:0x536490 cell init] no terrain: 2 (MAP 0x02), 0x1e (MAP 0x80) or 7; with terrain: 1 (MAP 0x08, flag 0x20) or 0; flag 0x40 on every cell without 0x20 (0x53654b, 0x5365ad)
 		Assert.AreEqual( ((byte)7, ParkCellFlags.Unowned), ParkCellMap.MapStartCell( 0x00, hasTerrain: false ) );
 		Assert.AreEqual( ((byte)2, ParkCellFlags.Unowned), ParkCellMap.MapStartCell( 0x03, hasTerrain: false ), "water, MAP 0x02 before 0x80" );
 		Assert.AreEqual( ((byte)30, ParkCellFlags.Unowned | ParkCellFlags.EntranceArea | ParkCellFlags.MapBit04), ParkCellMap.MapStartCell( 0x94, hasTerrain: false ) );
 		Assert.AreEqual( ((byte)7, ParkCellFlags.Unowned | ParkCellFlags.EntranceArea), ParkCellMap.MapStartCell( 0x11, hasTerrain: false ) );
 		Assert.AreEqual( ((byte)7, ParkCellFlags.Unowned), ParkCellMap.MapStartCell( 0x08, hasTerrain: false ), "the hole branch reads no InitialPath bit" );
 		Assert.AreEqual( ((byte)1, ParkCellFlags.NoModify), ParkCellMap.MapStartCell( 0x08, hasTerrain: true ) );
-		Assert.AreEqual( ((byte)0, ParkCellFlags.None), ParkCellMap.MapStartCell( 0x01, hasTerrain: true ), "the types 5, 2 and 0x1e written first are overwritten by 0 inside" );
-		Assert.AreEqual( ((byte)0, ParkCellFlags.None), ParkCellMap.MapStartCell( 0x82, hasTerrain: true ) );
+		Assert.AreEqual( ((byte)0, ParkCellFlags.Unowned), ParkCellMap.MapStartCell( 0x01, hasTerrain: true ), "the types 5, 2 and 0x1e written first are overwritten by 0 inside" );
+		Assert.AreEqual( ((byte)0, ParkCellFlags.Unowned), ParkCellMap.MapStartCell( 0x82, hasTerrain: true ) );
 	}
 
 	[TestMethod]

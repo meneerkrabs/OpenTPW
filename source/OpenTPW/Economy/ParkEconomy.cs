@@ -767,6 +767,14 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			item.Level = item.PendingLevel;
 			item.PendingLevel = 0;
+			// [BIN:TPW-EXE:0x004DFA96 upgrade installed] the completion 0x004DF8F0 raises the level byte +0x50 by one and debits Upgrades[new level].CostOfUpgrade (type record +0x1B8 + 0x40 · level, 0x004DFA81) through 0x004D01F0, without a balance test
+			if ( item.UpgradeCostDue && Catalog.TryGet( item.InfoId, out var upgraded ) && item.Level < upgraded.Upgrades.Count )
+			{
+				var cost = upgraded.Upgrades[item.Level].CostOfUpgrade;
+				Post( LedgerCategory.OtherCosts, cost );
+				item.TotalSpent += cost;
+			}
+			item.UpgradeCostDue = false;
 			Raise( ParkEventKind.UpgradeCompleted, item.Level, item.Id, item.InfoId );
 		}
 		else
@@ -835,14 +843,16 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// The mechanic's job for an object, as a dispatch rank (lower first), or -1 for none: an object the economy has broken down, then a purchased
-	/// upgrade, then a worn ride (OpenTPW's own threshold, Advisor.sam). A condemned ride (life gauge 0) is no job.
+	/// upgrade, then a called or worn ride (the worn threshold is OpenTPW's own, Advisor.sam). A condemned ride (life gauge 0) is a job only while it is called.
 	/// </summary>
-	// [BIN:STP-PPC:0x100D9C0C mechanic arrival] the timer starts only for a ride in state 1 (broken down) or 2 (upgrading) or with the maintenance word +96; any other ride, a condemned one (state 4) included, logs and releases the mechanic (ORACLE F19)
+	// [BIN:STP-PPC:0x100D9C0C mechanic arrival] the timer starts only for a ride in state 1 (broken down) or 2 (upgrading) or with the maintenance word +96; any other ride logs and releases the mechanic (ORACLE F19)
+	// [BIN:TPW-EXE:0x004DA7D5 mechanic arrival] the PC twin 0x004DA740 tests state 1 (0x004E0370), state 2 (0x004E03E0) and the call +0x64 (0x004E03D0) in turn and starts the work (state 13) on any of them, so a called ride in state 4 (condemned) is repaired; the finder 0x004DAA90 selects it too (the call of an object without the relief flag +0x32 bit 1, whatever its state)
 	private static int JobRank( ParkObjectState item ) => ObjectState( item ) switch
 	{
 		RideObjectStates.BrokenDown when item.IsBrokenDown => 0,
 		RideObjectStates.Upgrading => 1,
 		RideObjectStates.Idle when item.Kind == ParkObjectKind.Ride && (item.StateOfRepair < WornStateOfRepair || item.MaintenanceRequested) => 2,
+		RideObjectStates.Condemned when item.Kind == ParkObjectKind.Ride && item.MaintenanceRequested => 2,
 		_ => -1,
 	};
 
@@ -1138,7 +1148,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// A cell's map type and whether its structure record counts 50, from OpenTPW's cell map: a track tile keeps its type in the map's type byte as well as in the track
 	/// layer (the original's structure records), so its map type is taken as the empty cell's 0.
 	/// </summary>
-	// [APPROX:ECON-026] the cell points follow tp.exe 0x004C7DB0 on OpenTPW's cell map, but a track tile's map type is taken as 0 (OpenTPW keeps the track's type in the map's type byte as well as in the track layer, where the original's map cell keeps its own type under the structure record) and OpenTPW has no park fence, whose hoardings (structure type 25) count 50 each; which cells are owned is PATH-007's, and until the owned land is modelled every terrain cell of the level counts as owned, the land outside the park included (thousands of cells at 2 points each), so the net worth, the month sample and the loans' credit test come out higher than the original's — evidence needed: the map cell's type under a laid track tile (tp.exe's track tool 0x0053B280 and its callers) and the unowned flag 0x40 of each cell (the Buy Land model)
+	// [APPROX:ECON-026] the cell points follow tp.exe 0x004C7DB0 on OpenTPW's cell map and its land (the cells without the unowned flag 0x40: the level fence's enclosure, the strip at the gate and Buy Land's purchases, or an imported save's saved flags, PATH-007), but a track tile's map type is taken as 0 (OpenTPW keeps the track's type in the map's type byte as well as in the track layer, where the original's map cell keeps its own type under the structure record) and the fence's hoardings (structure type 25) are not counted, 50 each in the original, because OpenTPW keeps the fence as a ring of posts (ParkLand) without structure records; a map without the level's land (a level without a fence setup, a Theme Park Inc map, a read-only visit) counts every cell over the terrain as owned — evidence needed: the map cell's type under a laid track tile (tp.exe's track tool 0x0053B280 and its callers) and the hoarding structure records the fence setup writes (0x005323F0)
 	private static (byte Type, bool Structure) CellForValue( ParkCellMap cells, int x, int y )
 	{
 		var track = cells.Tracks.Get( x, y );
@@ -1443,7 +1453,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Raise( ParkEventKind.ObjectSold, 0, instanceId, item.InfoId, "removed" );
 	}
 
-	/// <summary>Buys the next upgrade level of a ride; a mechanic installs it (UITEXT 367–372).</summary>
+	/// <summary>Requests the next upgrade level of a ride (UITEXT 367–372); the mechanic who installs it debits its cost (<see cref="FinishJob"/>).</summary>
 	public PurchaseResult TryBuyUpgrade( int instanceId )
 	{
 		if ( IsBankrupt )
@@ -1462,12 +1472,12 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !Research.IsAvailable( item.InfoId, level ) )
 			return PurchaseResult.NotResearched;
 		// [BIN:STP-PPC:0x10166F1C upgrade purchase] only the bank balance is checked; the upgrade is queued (0x100DF928) and waits for a mechanic, with or without mechanics on the staff
+		// [BIN:TPW-EXE:0x004AF4E9 upgrade purchase] the buy handler compares the signed balance (bank +0xC) with Upgrades[level].CostOfUpgrade (type record +0x1B8 + 0x40 · level) and requests the upgrade (0x004E0050(1): state 2, a mechanic called) only when the balance is greater; nothing is debited here
 		var cost = info.Upgrades[level].CostOfUpgrade;
-		if ( cost > Balance )
+		if ( Balance <= cost )
 			return PurchaseResult.NotEnoughMoney;
-		Post( LedgerCategory.OtherCosts, cost );
-		item.TotalSpent += cost;
 		item.PendingLevel = level;
+		item.UpgradeCostDue = true;
 		Raise( ParkEventKind.UpgradeBought, cost, item.Id, item.InfoId, $"level {level}" );
 		return PurchaseResult.Ok;
 	}
@@ -1494,6 +1504,22 @@ public sealed class ParkEconomy : IParkEconomy
 		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"{count} {kind} cells" );
 		return PurchaseResult.Ok;
+	}
+
+	/// <summary>
+	/// Charges a Buy Land purchase: <paramref name="cost"/> is the validator's total (<see cref="ParkLand.Price"/>, whose money
+	/// test already ran), debited without another test as other costs; <paramref name="cells"/> only names the purchase.
+	/// </summary>
+	// [BIN:TPW-EXE:0x525d5a land debit] after the purchase (0x5327e0) the click handler debits the validator's total 0x81af4c (0x52fbc0) through the bank debit 0x4d01f0, which adds it to the money-out word +0x1f5a0 of the object 0x519510 returns and tests no balance; the ledger books it as other costs, as the other cell purchases
+	public void ChargeLand( long cost, int cells )
+	{
+		ArgumentOutOfRangeException.ThrowIfNegative( cells );
+		// A negative total (a modified Costs.MapCell) is booked as other income, as TrySpendCell books a negative cell cost (the ECON-048 approximation: the original's debit of a negative amount raises the balance; its month category is not traced).
+		if ( cost >= 0 )
+			Post( LedgerCategory.OtherCosts, cost );
+		else
+			Post( LedgerCategory.OtherIncome, -cost );
+		Raise( ParkEventKind.CellsBought, cost, 0, (int)CellPurchase.Land, $"{cells} {CellPurchase.Land} cells" );
 	}
 
 	/// <summary>
@@ -1690,10 +1716,18 @@ public sealed class ParkEconomy : IParkEconomy
 
 	// ---------------------------------------------------------------- guests
 
+	/// <summary>
+	/// The booth books the entrance fee (tp.exe <c>0x004D0600</c>): no open test, which the guests' walk to the booth makes instead
+	/// (<see cref="GuestSimulation"/>, states 2 and 3). False when the guest's purse is short (ARRIVAL-007) or the park is bankrupt: there the
+	/// original's thing loop has stopped, so no guest reaches the booth at all; the level stops its guests in world state 4 as well (Level.Simulation),
+	/// and the refusal also holds for an economy run without a level.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D0600 admission] the fee (bank +0x118) goes to the balance, money in (+0x1FC90), the year's takings (+0x124) and the gate row (+0x1FEE0), and 0x004C7520 counts the admission; it reads no park-closed state
+	// [BIN:TPW-EXE:0x00516380 park turn walk] the per-turn thing loop is skipped while the world state +0x1DA738 is 4, which the bank's bankruptcy message sets (0x005168F0, ECON-030): no booth guest pays after bankruptcy
 	public bool TryAdmitVisitor( long visitorCash, out int feePaid )
 	{
 		feePaid = 0;
-		if ( !IsParkOpen || IsBankrupt || visitorCash < EntranceFee )
+		if ( IsBankrupt || visitorCash < EntranceFee )
 			return false;
 		feePaid = EntranceFee;
 		Post( LedgerCategory.GateTakings, feePaid );
@@ -1708,20 +1742,33 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) || item.Kind != ParkObjectKind.Shop || !item.IsOpen || IsBankrupt || visitorCash < item.Price )
 			return false;
 		pricePaid = item.Price;
-		Post( LedgerCategory.ShopTakings, item.Price );
+		// [BIN:TPW-EXE:0x004FE1A0 price taken] the use routine's price step takes the price (+0x194) only when it is not 0: the takings 0x004E16B0 (bank money in, the
+		// shop row, the per-type sale count and the challenge accumulators), the till sound and the guest's money; a free sale skips all of it, while the cost of
+		// goods (0x004FE1E0 → 0x004E1920) and the customer count (0x004E1690) are still booked
+		if ( item.Price != 0 )
+		{
+			Post( LedgerCategory.ShopTakings, item.Price );
+			item.TakingsThisMonth += item.Price;
+			if ( Catalog.TryGet( item.InfoId, out var info ) )
+				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
+		}
 		Post( LedgerCategory.OtherCosts, item.CostOfGoods );
 		item.CustomersThisMonth++;
-		item.TakingsThisMonth += item.Price;
 		item.CostsThisMonth += item.CostOfGoods;
 		item.TotalProfit += item.Price - item.CostOfGoods;
-		if ( Catalog.TryGet( item.InfoId, out var info ) )
-		{
-			Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
-		}
 		Counters.Add( ParkCounters.ShopProfit, item.Price - item.CostOfGoods );
-		Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
+		if ( item.Price != 0 )
+			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
 		return true;
 	}
+
+	/// <summary>
+	/// A sideshow play's result (tp.exe <c>0x004E2670</c>): the win byte <c>+0x190</c> holds 100 − <c>ChanceOfLosing</c> and the play is won when
+	/// <paramref name="draw"/> mod 100 is at most that byte, so the chance of winning is (byte + 1) %, 100 % from a byte of 99 up.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E26E2 sideshow win] cmp byte(+0x190), R mod 100; sbb/inc: won when R mod 100 <= the byte (unsigned); the result is written to script variable 11 and returned to the use routine 0x00501DB0
+	// [BIN:TPW-EXE:0x004DB3A1 sideshow win byte] the object constructor stores 100 − the type record's InitChanceOfLoosing (+0xEC) at +0x190; the setter 0x004E21C0 stores a byte
+	public static bool SideshowWins( int chanceOfLosingPercent, int draw ) => (uint)draw % 100 <= (uint)((100 - chanceOfLosingPercent) & 0xFF);
 
 	public bool PlaySideshow( int instanceId, long visitorCash, out int pricePaid, out bool won )
 	{
@@ -1730,18 +1777,23 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) || item.Kind != ParkObjectKind.Sideshow || !item.IsOpen || IsBankrupt || visitorCash < item.Price )
 			return false;
 		pricePaid = item.Price;
-		won = !Random.Chance( item.ChanceOfLosingPercent );
+		won = SideshowWins( item.ChanceOfLosingPercent, Random.Next( 100 ) );
 		var prize = won ? item.CostOfGoods : 0;
-		Post( LedgerCategory.SideshowTakings, item.Price );
+		// [BIN:TPW-EXE:0x004FE1A0 price taken] a free play skips the takings (0x004E16B0) as a free sale does; the prize is still paid
+		if ( item.Price != 0 )
+		{
+			Post( LedgerCategory.SideshowTakings, item.Price );
+			item.TakingsThisMonth += item.Price;
+		}
 		Post( LedgerCategory.OtherCosts, prize );
 		item.CustomersThisMonth++;
-		item.TakingsThisMonth += item.Price;
 		item.CostsThisMonth += prize;
 		item.TotalProfit += item.Price - prize;
 		if ( won )
 			item.WinnersThisMonth++;
 		Counters.Add( ParkCounters.SideshowProfit, item.Price - prize );
-		Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.SideshowTakings ) );
+		if ( item.Price != 0 )
+			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.SideshowTakings ) );
 		return true;
 	}
 

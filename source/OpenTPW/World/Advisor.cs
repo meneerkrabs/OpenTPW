@@ -37,14 +37,13 @@ internal sealed class Advisor : IDisposable
 	internal static readonly (string Id, string Rule)[] Approximations =
 	{
 		("ADVISOR-005", "light colour 0.6, shared test.shader ambient/fog; the original lights each vertex (0x574660 -> 0x5741B0: ambient + the sum over directional lights of colour x max(0, -L.N), clamped per channel, alpha 0xFF, masked by the renderer colour +0x2C) with the advisor's directional light (constructor 0x429A60, type 2 at +0x50) of colour 1.0 (0x429BA0); the ambient during the advisor pass (default 0.15 grey, 0x573FD0) and its fog state are not read"),
-		("ADVISOR-006", "the clips' node tracks, blink toggles and accessory selectors are drawn, but not their vertex tracks (antennae and hands) nor the texture-coordinate tracks of the level advisors; the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, not the clip-toggled mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), whose reader is open (RIDES-042)"),
+		("ADVISOR-006", "the clips' node tracks, blink toggles, accessory selectors, vertex tracks (antennae, hands, eyes) and the level advisors' texture-coordinate tracks are drawn; the blink toggles set the mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), whose reader in the draw is open (the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, RIDES-042), so hiding the toggled meshes is OpenTPW's reading"),
 		("ADVISOR-009", "--advisor-say plays global clips by number and starts them at its first rendered frame; the controller says the five bound game-event messages and the help messages of the HUD windows with a traced message (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price); the other window and tool-start help messages and the 135 computed score producers (descriptor table 0x76E300) are not bound"),
 		("ADVISOR-012", "mono speech duplicated to both channels; the original submits it unpositioned (0x51BFC0 with 0,0,0) and the library places flat sounds at (0,1,0) (0x6BC51D); the left/right levels come from QMixer, outside tp.exe (AUDIO-018)"),
 		("ADVISOR-017", "the advisor clock starts at 0 for a new park and an original-save import; the original's save carries it as the second word of the SSEM (MESS) block (writer 0x402E00 after the snapshot 0x402E60, reader 0x402E30, marker check 0x41555A) and the load sets the clock to it (0x415140 -> 0x402E80 -> 0x403160), which the import does not read; it stands still whenever 0x4092A0 pauses the timer: 0x46B600 (main window procedure, WM_ACTIVATEAPP deactivation) and 0x47F020 (message box builder) are identified, the other six callers' screens are not"),
 		("ADVISOR-022", "an original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129, 323 and the help messages are bound) are dropped on import; OpenTPW's own park save stores the controller"),
-		("ADVISOR-025", "the effect a fixed sequence's timer entry fires when the advisor clock reaches it (sequences 28 and 29, the ticket/key advice: the particle effect 0x521E60 (87, 90000, 0, 7000), sound 0xC6 and the HUD golden-ticket/key counter refresh 0x4B9340 in the update 0x599880) is not ported; 0x4B9340 shows or hides the controls 0x1E0EA-0x1E0F1, formats \"%d x\" with the key count (0x5AF680) into 0x1E0EE and starts particle 0x61 at the counter when the ticket count drops, and OpenTPW has no such HUD counter (UI-051); the timer is recorded on the sequence only"),
-		("ADVISOR-026", "the level advisors' props (Ticket, MAP, Ticket2, Mutant Eye and the T_Particle/Rotate dummies, shown by the ticket logic 0x599B09-0x599BDE and the accessory bits 0x20000-0x200000 of 0x598DC0) stay hidden"),
-		("ADVISOR-027", "withdrawing the speaking help (0x59AA70 -> 0x5994E0) hides the advisor and stops the speech, but its slap sound (0x27F-0x281 through 0x51BFC0) is not played, and the last-tutorial copy at controller +0x16D0 (0x59A940) is not kept, nor is the branch 0x59AA7B-0x59AAC8 that clears the last-tutorial record's valid byte (+0x16E4) when the message is of group 1 (0x59C500 == 1) and +0x16DC is the message; a PC v2.0 video supports the sound (a loud burst of 250-300 ms follows three cut-offs 0.27-0.30 s later, none follows an uninterrupted entry; one cut-off coincides with a ride placement)"),
+		("ADVISOR-025", "a fixed sequence's timer (sequences 28 and 29, the ticket/key advice) plays cat_ui 0xC6 when the advisor clock reaches it, but the particle effect 0x521E60 (87, 90000, 0, 7000) it also starts is not (template 87, Key, is screen-space, which OpenTPW does not draw), nor the HUD golden-ticket/key counter refresh 0x4B9340 (OpenTPW has no such counter, UI-051), which shows or hides the controls 0x1E0EA-0x1E0F1, formats \"%d x\" with the key count (0x5AF680) into 0x1E0EE and starts particle 0x61 at the counter when the ticket count drops"),
+		("ADVISOR-026", "the level advisors' props are shown and hidden by the clips' node lists and blink toggles carried from clip to clip, with the accessory bit 0x10000 hiding the bug head and the mouth, but the screen-space effects of the accessory bits 0x20000-0x200000 (UI particle pool 0x5ED5A0, 0x5ED660, 0x5ED700) are not started, and the node state is rebuilt from the model's base state at every response (the original keeps the bits on the model instance)"),
 	};
 
 	private readonly AdvisorRig globalRig;
@@ -61,6 +60,10 @@ internal sealed class Advisor : IDisposable
 	// --advisor-say / --advisor-response tools, which start their speech at the first rendered frame.
 	private readonly Func<long>? clock;
 	private AdvisorSpeechStart? speechStart;
+	// The current sequence's timer has fired (it fires once per response).
+	private bool timerFired;
+	/// <summary>Plays a <c>cat_ui</c> sound (the sequence timer's); tests substitute a recorder.</summary>
+	internal Action<uint> PlayUiSound { get; set; } = sound => GameAudio.PlayUi( sound );
 	// The generated sequences draw from their own stream (see AdvisorRandom).
 	private readonly AdvisorRandom sequenceRandom = new();
 	// The clip lengths of the model that plays (a level advisor's clips 16-20 exist only there), by archive.
@@ -70,7 +73,11 @@ internal sealed class Advisor : IDisposable
 	private readonly Dictionary<string, AdvisorThemeCostume> themes = new();
 	// The hidden accessory nodes of the response's costume by clip accessory bits, and the per-frame scratch set.
 	private readonly Dictionary<int, HashSet<int>> costumeHidden = new();
+	// The hidden nodes at the start of each clip of the current sequence (SequenceHiddenNodes), by clip index.
+	private readonly Dictionary<int, HashSet<int>> sequenceHidden = new();
 	private readonly HashSet<int> hiddenScratch = new();
+	// The clip index of the current sequence whose start has been seen (its clip-start sound played), −1 before the first.
+	private int startedClipIndex = -1;
 	private System.Numerics.Vector3 mouthMin = new( float.MaxValue );
 	private System.Numerics.Vector3 mouthMax = new( float.MinValue );
 	// [BIN:TPW-EXE:0x00429BA0 advisor setup] model matrix = identity with translation (0.6, -0.6, 0.2); the root node is
@@ -122,6 +129,8 @@ internal sealed class Advisor : IDisposable
 	/// </summary>
 	// [BIN:TPW-EXE:0x004732A0 animation start] the model is shown when any animation other than 12 starts (via 0x45BD30); "Kill advisor" (0x429D60: animation 12 with the immediate flag, then unlink), called by the stop path 0x5996D0 (six callers, including level exit) and the slap path 0x5994E0, hides it at once; the normal end of advice (0x599880) calls neither, the sampler hides the model at the end of the last clip (see DrawnSpanMilliseconds). The model therefore hides at the clip sum even while a long speech of a fixed row (21-27) is still playing; that follows the trace, and a capture should confirm it
 	public bool ModelShown { get; private set; }
+	/// <summary>Whether the playing clip hides the mouth (accessory bit <see cref="AdvisorAccessories.SuppressCostumeBit"/>, the ticket close-ups).</summary>
+	public bool MouthSuppressed { get; private set; }
 
 	/// <summary>The model is drawn: shown, and (automatic advisor) before the last clip ends or (manual tools) while the speech plays.</summary>
 	public bool IsDrawn => !disposed && ModelShown && (clock == null || speechStart == null ? IsSpeaking : speechStart.Value.Within( clock(), DrawnSpanMilliseconds ));
@@ -346,6 +355,7 @@ internal sealed class Advisor : IDisposable
 		player = CreatePlayer( audio );
 		speechStart = null;
 		Sequence = null;
+		timerFired = false;
 		// Choose the model first: a failed level load must not leave a disposed rig drawn.
 		rig = SelectRig( response, level );
 		ModelShown = true;
@@ -355,6 +365,8 @@ internal sealed class Advisor : IDisposable
 		if ( (costume.Hat == -1 || costume.SecondHat == -1) && level != null && !themes.TryGetValue( level, out theme! ) )
 			themes[level] = theme = AdvisorThemeCostume.Load( FileSystem, level );
 		costumeHidden.Clear();
+		sequenceHidden.Clear();
+		startedClipIndex = -1;
 		if ( response != null && clock != null )
 		{
 			var now = clock();
@@ -386,6 +398,21 @@ internal sealed class Advisor : IDisposable
 	{
 		if ( disposed || clock == null || speechStart is not { } start )
 			return;
+		// A clip whose accessory bits are exactly the key effect plays its sound as it starts (the accessory update runs once per clip start).
+		if ( Sequence?.AccessoryBits is { } accessoryBits && clipDurations != null
+			&& AdvisorTimeline.At( Sequence, clipDurations, unchecked((uint)(clock() - start.RequestMilliseconds)) ) is { } playing && playing.Index != startedClipIndex )
+		{
+			for ( var index = startedClipIndex + 1; index <= playing.Index; index++ )
+				if ( index < accessoryBits.Count && (accessoryBits[index] & AdvisorAccessories.EffectBits) == AdvisorAccessories.KeyEffectBit )
+					PlayUiSound( AdvisorAccessories.KeySound );
+			startedClipIndex = playing.Index;
+		}
+		// The sequence timer fires once while the response is current (a kill clears the request, so a cut-off response never fires it).
+		if ( !timerFired && Sequence?.TimerMilliseconds is { } timer && start.TimerDue( clock(), timer ) )
+		{
+			timerFired = true;
+			PlayUiSound( AdvisorSequences.TimerSound );
+		}
 		// The last clip's end hides the model (see DrawnSpanMilliseconds); the next response shows it again.
 		if ( ModelShown && !start.Within( clock(), DrawnSpanMilliseconds ) )
 			ModelShown = false;
@@ -521,12 +548,12 @@ internal sealed class Advisor : IDisposable
 		// [BIN:TPW-EXE:0x00599880 advisor update] the talking flag is set at LIP load (0x59930B), cleared on the delayed-start path (0x59943E) and set again when the speech starts (0x599987); then each mark flips it once the clock is strictly past it
 		var lipPosition = LipPosition;
 		var shownMouth = mouth.Update( player is { IsStarted: true } && IsTalking( timeline, lipPosition ),(long)lipPosition.TotalMilliseconds );
-		var (worlds, hidden) = CurrentPose();
+		var (worlds, hidden, clip, tick) = CurrentPose();
 		foreach ( var part in rig.Parts )
 		{
-			if ( hidden.Contains( part.NodeIndex ) || Mouths.Contains( part.Name ) && part.Name != shownMouth )
+			if ( hidden.Contains( part.NodeIndex ) || Mouths.Contains( part.Name ) && (part.Name != shownMouth || MouthSuppressed) )
 				continue;
-			rig.Write( part, worlds[part.NodeIndex] );
+			rig.Write( part, worlds[part.NodeIndex], clip, tick );
 			part.Material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 			{
 				g_mModel = model,
@@ -547,10 +574,13 @@ internal sealed class Advisor : IDisposable
 	/// The pose of the rig now: the node matrices of the clip the sequence plays at this moment after the request (the bind pose without
 	/// a sequence), and the hidden mesh nodes (accessories, blink meshes, props; see <see cref="AdvisorAccessories.HiddenMeshNodes"/>).
 	/// </summary>
-	private (Matrix4x4[] Worlds, HashSet<int> Hidden) CurrentPose()
+	private (Matrix4x4[] Worlds, HashSet<int> Hidden, int ClipNumber, float SampledTick) CurrentPose()
 	{
 		ModelAnimation? clip = null;
 		var tick = 0f;
+		var clipNumber = 0;
+		var clipIndex = -1;
+		var sampledTick = 0f;
 		var bits = 0;
 		var worlds = rig.Rest;
 		if ( Sequence != null && clipDurations != null && clock != null && speechStart is { } start
@@ -560,13 +590,24 @@ internal sealed class Advisor : IDisposable
 			tick = position.Tick;
 			bits = Sequence.AccessoryBits is { } list && position.Index < list.Count ? list[position.Index] : 0;
 			worlds = rig.Pose( position.Clip, tick );
+			clipNumber = position.Clip;
+			clipIndex = position.Index;
+			sampledTick = rig.SampledTick;
 		}
-		if ( !costumeHidden.TryGetValue( bits, out var accessories ) )
+		HashSet<int>? accessories;
+		if ( clipNumber != 0 )
+		{
+			if ( !sequenceHidden.TryGetValue( clipIndex, out accessories ) )
+				sequenceHidden[clipIndex] = accessories = AdvisorAccessories.SequenceHiddenNodes( rig.Nodes, Sequence!, clipDurations!, rig.Clip, costume, theme, clipIndex );
+		}
+		else if ( !costumeHidden.TryGetValue( bits, out accessories ) )
 			costumeHidden[bits] = accessories = AdvisorAccessories.CostumeHiddenNodes( rig.Nodes, costume, theme, bits );
 		hiddenScratch.Clear();
 		hiddenScratch.UnionWith( accessories );
 		AdvisorAccessories.ApplyToggles( rig.Nodes, hiddenScratch, clip, tick );
-		return (worlds, hiddenScratch);
+		// [BIN:TPW-EXE:0x00599BA3 mouth update] with bit 0x10000 the mouth update shows no mouth (0x598DC0 hid all five at the clip start)
+		MouthSuppressed = (bits & AdvisorAccessories.SuppressCostumeBit) != 0;
+		return (worlds, hiddenScratch, clipNumber, sampledTick);
 	}
 
 	/// <summary>The model a response draws: the level's advisor for a response that names model 1 (when the level has one), else the global advisor.</summary>

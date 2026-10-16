@@ -16,8 +16,8 @@ public sealed partial class ParkHud
 
 	// [DATA:video 15:20, 1:50, 12:00] in the park the pointer is a white glove, over windows a yellow arrow, over an invalid build spot a red no-entry sign; a placement shows the placing pointer; in the camcorder and the ride view a yellow "+" crosshair (77:10)
 	// [BIN:TPW-EXE:0x489639 cursor loader] the original loads its pointers from Data/ui/cursors with LoadCursorFromFileA (cursor object 0x661935); init 0x489ca0 loads the .ani set and the .tga set (0x4899c0) and hides the system pointer
-	// [BIN:TPW-EXE:0x52f950 tool pointer] the 22 pointer ids and the tool-to-pointer rules are OriginalPointers; the tool modes 1 (path), 3 (queue), 4 (place), 0xb and 0x10 (track) are the ones OpenTPW has
-	// [APPROX:UI-100] the pointers are the four-frame colour strips of the same folder (Cnor.tga, Cnog.tga, Cpic.tga ...) drawn by the UI at the pointer's hot spot (top left; the .ani files' own hot spots are 0,0) at 6 frames a second, the system pointer being hidden, instead of the .ani files as OS cursors (the .ani frames are monochrome, the video shows the colour art); the conditions behind the link, end and cash pointers (0x816d60, 0x816d4c, 0x816d5c) are not traced, so those pointers are never chosen, and the crosshair's art (CCro.tga) is not in the game data, so the system pointer stays in the camcorder and the ride view; the coaster tool uses the track pointer, the pylon and move tools and the erase, height, rotate, pivot and swap pointers have no OpenTPW tool
+	// [BIN:TPW-EXE:0x52f950 tool pointer] the 22 pointer ids and the tool-to-pointer rules are OriginalPointers; the tool modes 1 (path), 3 (queue), 4 (place), 0xb and 0x10 (track) and 0x39 (Buy Land) are the ones OpenTPW has
+	// [APPROX:UI-100] the pointers are the four-frame colour strips of the same folder (Cnor.tga, Cnog.tga, Cpic.tga ...) drawn by the UI at the pointer's hot spot (top left; the .ani files' own hot spots are 0,0) at 6 frames a second, the system pointer being hidden, instead of the .ani files as OS cursors (the .ani frames are monochrome, the video shows the colour art); the conditions behind the link and end pointers (0x816d60, 0x816d4c) are not traced, so those pointers are never chosen, the cash pointer (0x816d5c) is chosen only for Buy Land's money refusal, and the crosshair's art (CCro.tga) is not in the game data, so the system pointer stays in the camcorder and the ride view; the coaster tool uses the track pointer, the pylon and move tools and the erase, height, rotate, pivot and swap pointers have no OpenTPW tool
 	private void UpdateCursor( UiInput input, bool overUi, bool uiCapturesMouse )
 	{
 		pointer = input.Mouse.X >= 0 && input.Mouse.Y >= 0 ? input.Mouse : null;
@@ -51,6 +51,9 @@ public sealed partial class ParkHud
 			return OriginalPointers.TypeOf( 19 );
 		if ( level.StaffPlacement is { IsActive: true } staffTool )
 			return OriginalPointers.TypeOf( OriginalPointers.ForTool( 0, noPlace: staffTool.HoverCell != null && !staffTool.HoverValid ) ?? 9 );
+		// [BIN:TPW-EXE:0x5323c1 land cash pointer] the Buy Land validator's money refusal sets 0x816d5c, which the pointer switch 0x52f950 turns into the cash pointer (20)
+		if ( level.BuyLandTool is { IsActive: true } landTool )
+			return OriginalPointers.TypeOf( OriginalPointers.ForTool( 0x39, cash: landTool.HoverTooDear ) ?? 2 );
 		// the tool mode of the original: 4 places a blueprint, the cell tool's own mode is the cell type it writes (path 1, queue 3, kart track 11, water track 16)
 		var mode = level.BuildEntry != null ? 4 : level.CellTool.IsActive ? (int)level.CellTool.Mode : level.IsCoasterToolActive ? 11 : 0;
 		var pointer = OriginalPointers.ForTool( mode, noPlace: level.BuildEntry != null && placementRefused );

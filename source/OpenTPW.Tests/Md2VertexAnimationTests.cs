@@ -664,12 +664,19 @@ public class Md2VertexAnimationTests
 	}
 
 	[TestMethod]
-	public void PathParameterBlocksDecodeButStayUnsupported()
+	public void PathParameterBlocksDecodeAndPlay()
 	{
 		var track = Read( CreatePathAnimation( new[] { 13.5f, 14f, 113.5f } ) ).Tracks[0];
 		CollectionAssert.AreEqual( new[] { 13.5f, 14f, 113.5f }, track.PathParameters!.Values.ToArray() );
 		Assert.AreEqual( (0u, 0u), (track.PathParameters.StartTick, track.PathParameters.Reserved) );
-		Assert.AreEqual( 0x600u, track.UnsupportedFlags & 0x600u, "the path itself is not decoded" );
+		Assert.AreEqual( 0u, track.UnsupportedFlags );
+		// On a closed two-segment path the values are percentages: 13.5 % is a quarter of the way into segment 0.
+		var path = new ModelPath( 3, new System.Numerics.Vector3[] { new( 0, 0, 0 ), new( 1, 0, 0 ), new( 2, 0, 0 ), new( 3, 0, 0 ), new( 3, 0, 3 ), new( 0, 0, 3 ) } );
+		Assert.IsTrue( track.TrySamplePath( path, 0, out var position, out var direction ) );
+		Assert.IsTrue( path.TryEvaluate( 13.5f, out var expected, out _ ) );
+		Assert.AreEqual( expected, position );
+		Assert.IsNotNull( direction, "flag 0x400 turns the node along the path" );
+		Assert.IsFalse( track.TrySamplePath( path, 3.5f, out _, out _ ), "past the block the node keeps its translation" );
 
 		// Flag 0x200 without its block, and a non-finite value, are rejected.
 		var missing = CreatePathAnimation( new[] { 1f } );

@@ -76,9 +76,12 @@ public sealed class ParkCellMap
 	/// InitialPath cells linked to every cardinal neighbour; MAP InitialPath path cells carry NoModify (§5.4).
 	/// </summary>
 	// [BIN:STP-PPC:0x10085538 map initialisation] MAP attribute bit 0x08 (InitialPath) makes the cell type 1 with flag 0x20 (NOMODIFY)
-	// [APPROX:PATH-007] PATH-LAND: no cell over the terrain gets the unowned flag 0x40 (every in-bounds cell with terrain under it counts as owned; the cells without terrain get it at level load, as in the original); the original sets 0x40 on every non-InitialPath cell at level load (tp.exe 0x536490 from 0x52f050), clears it inside the park fence that 0x5323f0 lays from the level's outline table 0x784e3c anchored on the gate (fill 0x531040/0x5311c0 plus a strip at the gate), refuses 0x40 cells for paths (0x535670) and saves the flags as mFlags (0x4d0b30); OpenTPW decodes neither the outline nor the saved flags, and Buy Land (tool 0x39, 0x5327e0) is not modelled — still open: the level outline table 0x784e3c (Scape data) and the saved mFlags are not imported
 	/// <param name="terrain">The level's heightfield: its hole bit types the cells outside the terrain (<see cref="MapStartCell"/>); without it every cell
 	/// is inside, as in the original when no terrain is loaded.</param>
+	/// <remarks>
+	/// The cells without terrain keep the world init's unowned flag 0x40; the cells over the terrain stay owned here, and the level's land
+	/// (<see cref="FromOriginal(MapFile, OriginalParkImport?, ParkLandSetup?, ModelHeightfield?)"/>) sets 0x40 on them and claims the fenced land.
+	/// </remarks>
 	public static ParkCellMap FromOriginal( MapFile map, OriginalParkImport? save, ModelHeightfield? terrain = null )
 	{
 		var cells = new ParkCellMap( map.CellCountX, map.CellCountY );
@@ -93,6 +96,10 @@ public sealed class ParkCellMap
 				else if ( initial )
 					cells.SetPath( x, y, GuestPathGrid.ToCellLinks( 0x0F ) );
 				var (type, flags) = MapStartCell( map.GetCellAt( x, y ), inside );
+				// the init's 0x40 over the terrain is the land's to set (ParkLand.ApplyToNewPark) or an imported save's to restore (ImportLand)
+				// [APPROX:PATH-007] a map that gets no land (a level without a fence setup, a Theme Park Inc map, a read-only visit) keeps its cells over the terrain owned
+				if ( inside )
+					flags &= ~ParkCellFlags.Unowned;
 				if ( type != (byte)ParkCellType.Path && type != 0 )
 					cells.SetType( x, y, type );
 				if ( flags != ParkCellFlags.None )
@@ -103,11 +110,81 @@ public sealed class ParkCellMap
 	}
 
 	/// <summary>
-	/// The type and flags the world init gives a cell (tp.exe <c>0x00536490</c>) from its MAP attribute byte and whether the terrain is under it.
-	/// Outside the terrain: water (MAP 0x02), the fixed walkway (MAP 0x80) or no terrain, with the unowned flag 0x40. Inside: a path with
-	/// NoModify (MAP 0x08, InitialPath) or an empty cell. MAP 0x10 adds flag 0x80 and MAP 0x04 flag 0x400.
+	/// The map of an original level with its land: <see cref="FromOriginal(MapFile, OriginalParkImport?, ModelHeightfield?)"/>, then the ownership of
+	/// an imported save (its map flags 0x40 and its fence, walked from post A) or, for a new park, the level's own fence
+	/// (<paramref name="land"/>) and the land it encloses. Without <paramref name="land"/> every cell over the terrain stays owned.
 	/// </summary>
-	// [BIN:TPW-EXE:0x00536490 cell init] the MAP byte is cell +0x26; when 0x00450420 answers 0 (no terrain) the type is 2 (MAP & 2), else 0x1E (MAP & 0x80), else 7, and flag 0x40 is set; otherwise the type is 1 with links (0x005348D0) and flags 0x20 for MAP & 8, else 0, the types 5, 2 and 0x1E written first being overwritten; MAP & 0x10 sets flag 0x80 and MAP & 4 flag 0x400; Easymode's saved map types agree on all 16,384 cells but those of objects
+	/// <param name="terrain">The level's heightfield, for the world init's types and flags of the cells without terrain.</param>
+	public static ParkCellMap FromOriginal( MapFile map, OriginalParkImport? save, ParkLandSetup? land, ModelHeightfield? terrain = null )
+	{
+		var cells = FromOriginal( map, save, terrain );
+		if ( land != null )
+			cells.SetUpLand( land, save );
+		return cells;
+	}
+
+	/// <summary>
+	/// Sets up the land of an original level (see <see cref="FromOriginal(MapFile, OriginalParkImport?, ParkLandSetup?, ModelHeightfield?)"/>):
+	/// an imported save keeps its own ownership; its fence is walked from its hoarding cells, and without a walkable fence it has
+	/// no land (<see cref="ImportLand"/>). A new park gets the level's fence and its land (<see cref="ParkLand.ApplyToNewPark"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4d0b30 cell base serializer] a save keeps each map cell's mFlags, so its 0x40 cells are the saved park's unowned land, and each hoarding's mHoardingNeighbours, its fence
+	public void SetUpLand( ParkLandSetup setup, OriginalParkImport? save )
+	{
+		ArgumentNullException.ThrowIfNull( setup );
+		if ( save != null && save.Cells.CountX == Width && save.Cells.CountY == Height )
+		{
+			ImportLand( setup, ( x, y ) => (save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.Unowned) != 0,
+				( x, y ) => InBounds( x, y ) && save.Cells[x, y].StructureType == SaveCell.HoardingType ? save.Cells[x, y].HoardingNeighbours : null );
+			return;
+		}
+		ParkLand fence;
+		try
+		{
+			fence = ParkLand.FromClicks( setup );
+		}
+		catch ( InvalidDataException exception )
+		{
+			Log.Warning( $"The level's park fence cannot be laid: {exception.Message} Every cell stays owned." );
+			return;
+		}
+		fence.ApplyToNewPark( this );
+		SetLand( fence );
+	}
+
+	/// <summary>
+	/// The land of an imported save: every cell takes the saved unowned flag (<paramref name="unowned"/>) and the fence is
+	/// walked from post A by the saved hoardings' links (<paramref name="links"/>). When that walk fails the map has no land
+	/// (Buy Land is unavailable) and keeps the saved flags.
+	/// </summary>
+	internal void ImportLand( ParkLandSetup setup, Func<int, int, bool> unowned, Func<int, int, byte?> links )
+	{
+		ArgumentNullException.ThrowIfNull( setup );
+		var imported = ParkLand.FromFenceLinks( setup.PostA, setup.PostB, links );
+		for ( var y = 0; y < Height; y++ )
+		{
+			for ( var x = 0; x < Width; x++ )
+			{
+				var saved = unowned( x, y );
+				var flags = FlagsAt( x, y );
+				if ( saved != flags.HasFlag( ParkCellFlags.Unowned ) )
+					SetFlags( x, y, saved ? flags | ParkCellFlags.Unowned : flags & ~ParkCellFlags.Unowned );
+			}
+		}
+		// The level's starting fence does not stand in: it would not enclose the saved land, so Buy Land would merge new
+		// rectangles into a ring that disagrees with the saved flags.
+		if ( imported == null )
+			Log.Warning( "The imported park's fence does not run from post A to post B; Buy Land is unavailable for this park." );
+		SetLand( imported );
+	}
+
+
+	/// <summary>
+	/// The type and flags the world init gives a cell (tp.exe <c>0x00536490</c>) from its MAP attribute byte and whether the terrain is under it.
+	/// Outside the terrain: water (MAP 0x02), the fixed walkway (MAP 0x80) or no terrain. Inside: a path with NoModify (MAP 0x08, InitialPath)
+	/// or an empty cell. Every cell without NoModify gets the unowned flag 0x40; MAP 0x10 adds flag 0x80 and MAP 0x04 flag 0x400.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00536490 cell init] the MAP byte is cell +0x26; when 0x00450420 answers 0 (no terrain) the type is 2 (MAP & 2), else 0x1E (MAP & 0x80), else 7; otherwise the type is 1 with links (0x005348D0) and flags 0x20 for MAP & 8, else 0, the types 5, 2 and 0x1E written first being overwritten; both branches then set flag 0x40 unless the flags hold 0x20 (0x0053654B, 0x005365AD); MAP & 0x10 sets flag 0x80 and MAP & 4 flag 0x400; Easymode's saved map types agree on all 16,384 cells but those of objects
 	public static (byte Type, ParkCellFlags Flags) MapStartCell( byte mapByte, bool hasTerrain )
 	{
 		byte type;
@@ -123,7 +200,10 @@ public sealed class ParkCellMap
 			flags = ParkCellFlags.NoModify;
 		}
 		else
+		{
 			type = 0;
+			flags = ParkCellFlags.Unowned;
+		}
 		if ( (mapByte & 0x10) != 0 )
 			flags |= ParkCellFlags.EntranceArea;
 		if ( (mapByte & 0x04) != 0 )
@@ -153,7 +233,7 @@ public sealed class ParkCellMap
 	}
 
 	/// <summary>Empties the footprint cells a removed object typed (those still of its footprint type).</summary>
-	// [APPROX:ECON-050] the guest grid takes the world init's types (tp.exe 0x00536490 with the terrain test 0x00450420: 7, 2 or 30 with flag 0x40 where no terrain lies, 1 for an InitialPath cell and 0 inside) and the footprint types a placement writes (0x00528A70: 4, 9 and 10), but a removed object empties the cells it typed, where the original's removal path to its cells is not traced, the placement's other cell writes (the clear before the write, the link to the path in front of an entrance, the '@' path links) are not modelled, and a read-only visit or a Theme Park Inc layout keeps the cells it was given — evidence needed: the cell writes of tp.exe's object removal (0x004DD0A0 and the kill 0x00559060)
+	// [APPROX:ECON-050] the guest grid takes the world init's types and flags (tp.exe 0x00536490 with the terrain test 0x00450420: 7, 2 or 30 where no terrain lies, 1 with flag 0x20 for an InitialPath cell and 0 inside, flag 0x40 on every cell without 0x20, which the level's land then clears inside the fence) and the footprint types a placement writes (0x00528A70: 4, 9 and 10), but a removed object empties the cells it typed, where the original's removal path to its cells is not traced, the placement's other cell writes (the clear before the write, the link to the path in front of an entrance, the '@' path links) are not modelled, and a read-only visit or a Theme Park Inc layout keeps the cells it was given — evidence needed: the cell writes of tp.exe's object removal (0x004DD0A0 and the kill 0x00559060)
 	public void ClearFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint )
 	{
 		foreach ( var (x, y, cell) in footprint )
@@ -179,6 +259,15 @@ public sealed class ParkCellMap
 	public int Height { get; }
 	/// <summary>The track layer (kart and water track tiles, docs/TRACKS.md); empty until a track is laid.</summary>
 	public TrackCellLayer Tracks { get; }
+	/// <summary>The park's fence and enclosed land (Buy Land); null for a map without one, where no cell is made unowned.</summary>
+	public ParkLand? Land { get; private set; }
+
+	/// <summary>Replaces the land model (a purchase, a load); the cells' ownership flags are written separately.</summary>
+	public void SetLand( ParkLand? land )
+	{
+		Land = land;
+		Version++;
+	}
 	/// <summary>Incremented by every write.</summary>
 	public int Version { get; private set; }
 
@@ -273,6 +362,8 @@ public sealed class ParkCellMap
 		// The track layer joins the digest only while a track exists, so every trackless park keeps its earlier pins.
 		if ( Tracks.Count > 0 )
 			Tracks.AddCanonicalState( hash );
+		// The land joins it only on a map that has one (an original level), for the same reason.
+		Land?.AddCanonicalState( hash );
 	}
 
 	/// <summary>

@@ -40,8 +40,11 @@ The grid holds the original's types: the world init types the cells without terr
 
 ## What closing does to guests
 
-- Admissions stop: `ParkEconomy.TryAdmitVisitor` refuses while the park is closed, so visitors at the booth
-  do not enter.
+- Admissions stop at the walk to the booth, not at the booth (tp.exe `0x4ff730`, `0x4ff7f0`, `0x4ff9d0`): a visitor
+  who reaches the booth while the park is closed turns home with no thought; one already at the booth is weighed and
+  pays as usual (the booth and `ParkEconomy.TryAdmitVisitor`, like `0x4d0600`, read no park-closed state) and
+  is then sent home without a refund while the park stays closed. A bankrupt park takes no fee: tp.exe's bankruptcy
+  stops the whole thing loop (world state 4, `0x516380`, ECON-030), where OpenTPW's guests keep updating.
 - Guests already inside keep their place and carry on. Their rides are closed; a queue for a closed ride is
   turned away, one head at a time (the fork's `FUN_004e0450`, `docs/exe/ride-operation.md`, "The closed
   ride"; not reproduced by `ParkGate`).
@@ -55,8 +58,8 @@ The grid holds the original's types: the world init types the cells without terr
   open a ride whose queue back has lost its path, which the original's guard (`0x004DF290`) refuses.
 - `ECON-050`: a removed object empties the cells it typed; the original's removal path to its cells is not traced, and the placement's other cell
   writes (the link to the path in front of an entrance) are not modelled.
-- The ticket booth closes at once; the original's booth state and the closed-ride queue turn-away are not
-  traced here.
+- `GUEST-011`: a paid visitor walks in without waiting for the entrance gate's script variable 1, which the original's
+  state 3 requires (`0x51a290`); the closed-ride queue turn-away is not traced here.
 - The keyboard shortcuts are the door button's own help rows; the original's shortcut table row for Ctrl-C
   is a fork lead (`park-engine.md`, PC `0x0040c410`), not verified statically.
 

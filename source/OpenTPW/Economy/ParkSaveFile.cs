@@ -126,6 +126,9 @@ public static class ParkSaveFile
 		public required bool Imported { get; init; }
 		public required int Level { get; init; }
 		public required int PendingLevel { get; init; }
+		/// <summary>The pending upgrade is not paid yet (debited when it is installed); absent in saves that charged it at purchase.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public bool UpgradeCostDue { get; init; }
 		public required long TotalSpent { get; init; }
 		public required int Price { get; init; }
 		public required int CostOfGoods { get; init; }
@@ -505,6 +508,7 @@ public static class ParkSaveFile
 				Imported = item.Imported,
 				Level = item.Level,
 				PendingLevel = item.PendingLevel,
+				UpgradeCostDue = item.UpgradeCostDue,
 				TotalSpent = item.TotalSpent,
 				Price = item.Price,
 				CostOfGoods = item.CostOfGoods,
@@ -659,6 +663,7 @@ public static class ParkSaveFile
 		{
 			Require( item.Id > 0 && item.Id < data.NextObjectId && ids.Add( item.Id ), $"object id {item.Id}" );
 			Require( item.Level is >= 0 and <= 2 && item.PendingLevel is >= 0 and <= 2 && item.StateOfRepair is >= 0 and <= 100 && item.Statistics.Length == 9, $"object {item.Id}" );
+			Require( !item.UpgradeCostDue || item.PendingLevel > item.Level, $"object {item.Id} upgrade cost" );
 			Require( item.BuiltTick <= data.Tick && item.Price >= 0 && item.CostOfGoods >= 0 && item.ChanceOfLosingPercent is >= 0 and <= 100, $"object {item.Id} values" );
 			Require( item.Repair is null || (double.IsFinite( item.Repair.Value ) && item.Repair.Value is >= 0 and <= 100 && (int)item.Repair.Value == item.StateOfRepair), $"object {item.Id} repair" );
 			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
@@ -689,7 +694,7 @@ public static class ParkSaveFile
 				var job = data.Objects.FirstOrDefault( item => item.Id == member.AssignedInstanceId );
 				Require( member.Type == StaffType.Mechanic && BusyTurnsOf( member ) > 0 && Enum.IsDefined( member.State )
 					&& job is { Kind: ParkObjectKind.Ride } && job.MechanicId == member.Id
-					&& (job.IsBrokenDown ? RideBreakdownRules.GaugeByte( (float)(job.LifeGauge ?? 100) ) != 0 : job.PendingLevel > job.Level || job.StateOfRepair < ParkEconomy.WornStateOfRepair),
+					&& (job.IsBrokenDown ? RideBreakdownRules.GaugeByte( (float)(job.LifeGauge ?? 100) ) != 0 || job.MaintenanceRequested : job.PendingLevel > job.Level || job.StateOfRepair < ParkEconomy.WornStateOfRepair || job.MaintenanceRequested),
 					$"staff {member.Id} awaiting arrival job ownership" );
 			}
 
@@ -739,6 +744,7 @@ public static class ParkSaveFile
 				Imported = item.Imported,
 				Level = item.Level,
 				PendingLevel = item.PendingLevel,
+				UpgradeCostDue = item.UpgradeCostDue,
 				TotalSpent = item.TotalSpent,
 				Price = item.Price,
 				CostOfGoods = item.CostOfGoods,

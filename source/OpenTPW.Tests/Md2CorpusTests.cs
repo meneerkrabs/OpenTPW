@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -170,7 +170,8 @@ public class Md2CorpusTests
 		Assert.AreEqual( 1275, paired );
 		Assert.AreEqual( 2, unpaired );
 		Assert.AreEqual( 1, outOfRange );
-		Assert.AreEqual( 1237, bounded );
+		// The 36 bus, ferry and seaplane clips (four copies each) follow routes hundreds of units long, far outside their vehicle's box.
+		Assert.AreEqual( 1201, bounded );
 	}
 
 	private static bool StaysBounded( ModelFile model, ModelAnimationPlayer player )
@@ -298,8 +299,8 @@ public class Md2CorpusTests
 		Assert.AreEqual( 1735, sampled );
 		Assert.AreEqual( 0, keysOutside );
 		Assert.AreEqual( 713683, keysInside );
-		// Path parameters (0x200/0x400) only: the 30 12-byte records are played since RIDES-041; 0x10000 is decoded and 0x2000 is metadata.
-		Assert.AreEqual( 71, unsupported );
+		// None: path parameters (0x200/0x400) play along the parent dummy's path, the 30 12-byte records since RIDES-041; 0x10000 is decoded and 0x2000 is metadata.
+		Assert.AreEqual( 0, unsupported );
 		Assert.AreEqual( 2536, toggleLists );
 		Assert.AreEqual( 2536, togglesWithinDuration );
 		Assert.AreEqual( 1278, clips );
@@ -483,6 +484,120 @@ public class Md2CorpusTests
 		Assert.AreEqual( 201, kart.Count );
 		Assert.AreEqual( 13.682f, kart[0], 0.001f );
 		Assert.AreEqual( 100f, kart[^1] - kart[0], 0.01f );
+	}
+
+	/// <summary>
+	/// Paths ([BIN:TPW-EXE:0x00471F1D path evaluation]): every 0xAC record is a path, every flag-0x200 node hangs under a
+	/// type-0x208 dummy that selects one, and where a clip starts the node on its stored pose the evaluated path agrees
+	/// with that pose: the position within 0.02 and, with flag 0x400, the facing within a few degrees.
+	/// </summary>
+	[TestMethod]
+	public void OriginalPathsStartFlagged200NodesOnTheirStoredPose()
+	{
+		var dataPath = OriginalDataPath();
+		int paths = 0, followers = 0, posed = 0;
+		var violations = new List<string>();
+		// Path count per distinct geometry member name (the same model recurs in several themes' archives).
+		var distinct = new Dictionary<string, int>( StringComparer.Ordinal );
+		// Clips whose first tick shows the stored pose (the others start elsewhere on the route).
+		var startOnPose = new HashSet<string>( StringComparer.OrdinalIgnoreCase ) { "hauntB.MD2", "hauntE.MD2", "hauntM.MD2", "hauntS.MD2", "Busm1.MD2", "slidec.MD2" };
+		foreach ( var wad in Directory.EnumerateFiles( dataPath, "*", SearchOption.AllDirectories ).Where( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			using var archive = new WadArchive( wad );
+			var models = new List<(string Name, ModelFile Model)>();
+			foreach ( var (name, file) in Md2Members( archive.Root, "" ) )
+			{
+				try
+				{
+					models.Add( (name, new ModelFile( new MemoryStream( file.GetData() ) )) );
+				}
+				catch ( NotSupportedException )
+				{
+				}
+				finally
+				{
+					file.Free();
+				}
+			}
+			foreach ( var (name, model) in models.Where( entry => entry.Model.Kind == ModelFileKind.Geometry && entry.Model.Paths.Count > 0 ) )
+			{
+				distinct[Path.GetFileName( name )] = model.Paths.Count;
+				foreach ( var path in model.Paths )
+				{
+					paths++;
+					if ( path.Kind is not (2 or 3 or 8) || path.Keys != 0 || path.Reserved != 0 || path.SegmentCount <= 0 )
+						violations.Add( $"{name}: path kind {path.Kind}, {path.Points.Count} points, keys {path.Keys}, reserved {path.Reserved}" );
+				}
+				var stem = Path.GetFileNameWithoutExtension( name );
+				foreach ( var (clipName, clip) in models.Where( entry => entry.Model.Kind == ModelFileKind.Animation
+					&& Path.GetFileNameWithoutExtension( entry.Name ).StartsWith( stem, StringComparison.OrdinalIgnoreCase ) ) )
+				{
+					foreach ( var track in clip.Clip!.Tracks.Where( track => (track.Flags & ModelAnimationTrack.PathParameterFlag) != 0 ) )
+					{
+						followers++;
+						if ( model.GetPathOf( track.NodeIndex ) is not { } path )
+						{
+							violations.Add( $"{clipName} node {track.NodeIndex}: no path dummy above it" );
+							continue;
+						}
+						if ( !track.TrySamplePath( path, 0, out var position, out var direction ) )
+						{
+							violations.Add( $"{clipName} node {track.NodeIndex}: no path pose at tick 0" );
+							continue;
+						}
+						if ( !startOnPose.Contains( Path.GetFileName( clipName ) ) )
+							continue;
+						posed++;
+						var stored = model.Nodes[track.NodeIndex].Transform;
+						if ( System.Numerics.Vector3.Distance( position, stored.Translation ) > 0.02f )
+							violations.Add( $"{clipName} node {track.NodeIndex}: tick 0 at {position}, stored at {stored.Translation}" );
+						if ( direction is { } along && System.Numerics.Vector3.Dot( along, System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( stored.M31, stored.M32, stored.M33 ) ) ) < 0.99f )
+							violations.Add( $"{clipName} node {track.NodeIndex}: faces {along}, stored row 2 {stored.M31}, {stored.M32}, {stored.M33}" );
+					}
+				}
+			}
+		}
+		Assert.AreEqual( 0, violations.Count, string.Join( Environment.NewLine, violations.Take( 20 ) ) );
+		Console.WriteLine( $"{paths} paths, {followers} path-following records, {posed} checked against the stored pose" );
+		Assert.AreEqual( (15, 18), (distinct.Count, distinct.Values.Sum()), string.Join( ", ", distinct.Select( entry => $"{entry.Key}:{entry.Value}" ) ) );
+		Assert.IsTrue( paths >= 18 && followers >= 71 && posed >= 18, $"{paths} paths, {followers} followers, {posed} posed" );
+	}
+
+	/// <summary>
+	/// A placed Haunted House plays hauntB: each kart (nodes 12–15, children of the Kart_path dummies) is posed on its
+	/// path by the object animator, facing along it, and moves as the clip runs.
+	/// </summary>
+	[TestMethod]
+	public void PlacedHauntedHouseKartsFollowTheirPaths()
+	{
+		var model = new ModelFile( new MemoryStream( ReadMember( "levels/hallow/rides/haunt.wad", "haunt.MD2" ) ) );
+		var clip = new ModelFile( new MemoryStream( ReadMember( "levels/hallow/rides/haunt.wad", "hauntB.MD2" ) ) ).Clip!;
+		var animator = new ObjectAnimator( model );
+		animator.Play( 0, clip, "hauntB", loop: true );
+		var previous = new System.Numerics.Vector3[4];
+		foreach ( var seconds in new[] { 0.5, 1.75, 2.0 } )
+		{
+			animator.Advance( seconds );
+			var tick = animator.GetTick( 0 );
+			for ( var kart = 0; kart < 4; kart++ )
+			{
+				var node = 12 + kart;
+				var path = model.GetPathOf( node )!;
+				Assert.IsTrue( clip.Tracks.Single( track => track.NodeIndex == node ).TrySamplePath( path, tick, out var expected, out var direction ) );
+				System.Numerics.Matrix4x4.Invert( animator.NodeTransforms[model.Nodes[node].ParentIndex], out var toDummy );
+				var local = animator.NodeTransforms[node] * toDummy;
+				Assert.IsTrue( System.Numerics.Vector3.Distance( expected, local.Translation ) < 1e-3f, $"kart {kart} at tick {tick}: {local.Translation}, path {expected}" );
+				Assert.IsTrue( System.Numerics.Vector3.Dot( direction!.Value, new System.Numerics.Vector3( local.M31, local.M32, local.M33 ) ) > 0.999f, $"kart {kart} faces along the path" );
+				Assert.AreNotEqual( previous[kart], local.Translation, $"kart {kart} moves" );
+				previous[kart] = local.Translation;
+			}
+		}
+
+		// The clip player (advisor, prototype ride) poses path followers the same way.
+		var player = new ModelAnimationPlayer( model, clip, 30 );
+		player.Advance( 1.5f );
+		Assert.IsTrue( clip.Tracks.Single( track => track.NodeIndex == 13 ).TrySamplePath( model.GetPathOf( 13 )!, player.Tick, out var onPath, out _ ) );
+		Assert.IsTrue( System.Numerics.Vector3.Distance( onPath, player.LocalTransform( 13 ).Translation ) < 1e-4f );
 	}
 
 	private static float OneStep( float value ) => MathF.BitIncrement( MathF.Abs( value ) ) - MathF.Abs( value );

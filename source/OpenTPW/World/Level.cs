@@ -24,6 +24,7 @@ public partial class Level : IDisposable
 			{
 				StaffPlacement?.Cancel();
 				PatrolTool?.Cancel();
+				BuyLandTool?.Cancel();
 			}
 			isPlacing = value;
 		}
@@ -365,13 +366,19 @@ public partial class Level : IDisposable
 
 	private void SetupGuests( OriginalPark park )
 	{
+		var settings = GuestSettings.Load( park.LevelName );
+		var land = LandSetup( park, settings );
 		// A version 2 visit walks the shared park's own cell map (the owner's built paths and queues), not the shipped import.
+		// A resumed save from before land existed gets the level's land as a new park (or the imported save's) would.
 		var grid = incLayoutCells != null ? new GuestPathGrid(incLayoutCells)
-			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout ) )
+			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout, land == null ? null : cells => cells.SetUpLand( land, park.Save ) ) )
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
-			: GuestPathGrid.FromOriginal( park.Map, park.Save, park.Heightfield );
-		Guests = new GuestSimulation( grid, GuestSettings.Load( park.LevelName ), Seed.GuestStream ) { OnlineVisit = Visit != null };
+			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );
+		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
+			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
+			: null;
+		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
 		List<GuestSpriteAtlas> sprites;
 		using ( LoadProfile.Measure( "guest-sprites" ) )
 			sprites = GuestSpriteAtlas.LoadKids();
@@ -397,6 +404,21 @@ public partial class Level : IDisposable
 			() => Park?.Economy.Staff.Members ?? (IReadOnlyList<StaffMember>)Array.Empty<StaffMember>(),
 			member => member.State != StaffState.PickedUp && StaffRenderer != null && StaffRenderer.TryGetDrawCell( member, out var x, out var y ) ? (x, y) : null );
 		Log.Trace( $"Guests: {grid.WalkableCount} walkable path cells, {sprites.Count} original kid sprite sets, {costumes.Count} costume sets, {Guests.Settings.Types.Count} .sam peep types." );
+	}
+
+	/// <summary>The Buy Land tool (tp.exe mouse mode 0x39); null for a level without land (no Hoardings.sam, Theme Park Inc, a visit).</summary>
+	public BuyLandTool? BuyLandTool { get; private set; }
+
+	/// <summary>The level's park fence: its gate posts beside the entrance cells and its <c>Hoardings.sam</c>; null without them.</summary>
+	private static ParkLandSetup? LandSetup( OriginalPark park, GuestSettings settings )
+	{
+		if ( GameEditions.IsThemeParkInc )
+			return null;
+		var path = $"/levels/{park.LevelName}/Hoardings.sam";
+		var setup = ParkLandSetup.FromLevel( settings.EntranceA, settings.EntranceB, FileSystem.FileExists( path ) ? FileSystem.ReadAllText( path ) : null );
+		if ( setup == null )
+			Log.Warning( $"Level {park.LevelName} has no park fence (entrance cells or {path}); every cell counts as owned." );
+		return setup;
 	}
 
 	/// <summary>The visitor under the mouse, in or out of costume: the nearer of the two renderers' picks.</summary>
@@ -432,8 +454,10 @@ public partial class Level : IDisposable
 				OpenAfterRepair( item.InstanceId );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
 				CloseForUpgrade( item.InstanceId );
-			else if ( item.Kind == ParkEventKind.MaintenanceCancelled || item.Kind == ParkEventKind.ToiletCleaned && item.Amount == 1 )
+			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )
 				OpenAfterCancelledCall( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.ToiletCleaned )
+				OpenAfterClean( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.UpgradeCompleted )
 			{
 				ApplyCompletedCatalogueTier( item.InstanceId );
@@ -502,11 +526,7 @@ public partial class Level : IDisposable
 	/// </summary>
 	// [BIN:STP-PPC:0x100DF4D4 repair opens the ride] 0xdf4a0 open word = 1, 0xdf4c8 VAR_RIDECLOSED = 0, SetState(0); 0xdf4dc closes an incomplete coaster again
 	// [BIN:STP-PPC:0x100DF928 upgrade end] the upgrade's end leaves state 2 through SetState(0) like the repair (ORACLE.md F27, static): the same reopening, an incomplete coaster closed again
-	/// <summary>
-	/// A cancelled call for a mechanic reopens the ride unless its state keeps it closed (tp.exe <c>0x004DFE30</c> off, the reopen guard); so does the clean
-	/// that answered a toilet's call.
-	/// </summary>
-	// Approximation (ECON-049, registered at ParkGate.MayOpen): the toilet a call closed opens again after the handyman's clean; the original's clean (0x004DFD80) clears the call, and how the toilet reopens is not traced
+	/// <summary>A cancelled call for a mechanic reopens the ride unless its state keeps it closed (tp.exe <c>0x004DFE30</c> off, the reopen guard).</summary>
 	private void OpenAfterCancelledCall( int instance )
 	{
 		if ( AttractionRuntimeOf( instance ) is { } runtime && Gate?.MayOpen( runtime ) == true )
@@ -514,6 +534,19 @@ public partial class Level : IDisposable
 			runtime.Open();
 			SyncOpenState( runtime );
 		}
+	}
+
+	/// <summary>
+	/// A handyman's finished clean opens the toilet whatever the reopening guard says, called or not, the park open or closed (tp.exe <c>0x004D73C0</c>
+	/// state 11: the clean <c>0x004DFD80</c>, then <c>0x004DF390</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DF390 open after clean] the guard's refusal (states 1, 4, 2, the call +0x64, the queue link 0x004DE4A0, a broken track) only logs "Opening non-openable" five times; it then writes the open word +0x68 = 1, script variable 6 (VAR_RIDECLOSED) = 0 and SetState(0) (0x004E0E60)
+	private void OpenAfterClean( int instance )
+	{
+		if ( AttractionRuntimeOf( instance ) is not { } runtime )
+			return;
+		runtime.Open();
+		SyncOpenState( runtime );
 	}
 
 	private void OpenAfterRepair( int instance )
@@ -815,6 +848,7 @@ public partial class Level : IDisposable
 		StaffPlacement?.Abandon();
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();
+		BuyLandTool?.Cancel();
 		AttachStaffWorld();
 		AttachCoasterChallenges();
 		// The gate holds the economy it was built over; the load replaced it.

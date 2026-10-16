@@ -52,6 +52,25 @@ public static class ParkLayoutSnapshot
 		/// <summary><see cref="ParkCellMap.Version"/>: bumped by every write; restored exactly so cached walk state keeps the saved epoch.</summary>
 		public required int Version { get; init; }
 		public required List<CellData> Cells { get; init; }
+		/// <summary>
+		/// The park's land (Buy Land): its fence and which cells it owns. Null in saves written before land existed and for
+		/// maps without land; the loader then sets the level's land up afresh. The cell records' flags omit the unowned bit,
+		/// which this record carries for the whole map.
+		/// </summary>
+		public LandData? Land { get; init; }
+	}
+
+	/// <summary>The land of a park: the fence's gate posts and ring, and the unowned cells as a row-major bit map.</summary>
+	public sealed record LandData
+	{
+		public required int PostAX { get; init; }
+		public required int PostAY { get; init; }
+		public required int PostBX { get; init; }
+		public required int PostBY { get; init; }
+		/// <summary>Every fence post from post A to post B in walking order, as (x, y) pairs.</summary>
+		public required List<int[]> Ring { get; init; }
+		/// <summary>Base64 of one bit per cell in row order (bit <c>i &amp; 7</c> of byte <c>i &gt;&gt; 3</c>): set where the cell is not owned.</summary>
+		public required string Unowned { get; init; }
 	}
 
 	/// <summary>One non-empty cell: the raw bytes and counters of <see cref="ParkCellMap"/> at (X, Y).</summary>
@@ -116,7 +135,8 @@ public static class ParkLayoutSnapshot
 			for ( var x = 0; x < cells.Width; x++ )
 			{
 				var type = cells.RawTypeAt( x, y );
-				var flags = (ushort)cells.FlagsAt( x, y );
+				// with land, the land record carries the unowned bit of every cell, so a cell is not recorded for it alone
+				var flags = (ushort)(cells.Land != null ? cells.FlagsAt( x, y ) & ~ParkCellFlags.Unowned : cells.FlagsAt( x, y ));
 				var placements = cells.PlacementCountAt( x, y );
 				var links = cells.LinksAt( x, y );
 				var queueLink = cells.QueueLinkAt( x, y );
@@ -148,11 +168,35 @@ public static class ParkLayoutSnapshot
 		}
 		return new Data
 		{
-			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords },
+			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, Land = CaptureLand( cells ) },
 			Objects = objectRecords,
 			NextSeed = objects.NextPlacementSeed,
 			NextAttractionId = objects.NextAttractionId,
 			ObjectScriptKey = objects.ObjectScriptKey
+		};
+	}
+
+	/// <summary>The land record of <paramref name="cells"/>, null when the map has no land.</summary>
+	public static LandData? CaptureLand( ParkCellMap cells )
+	{
+		ArgumentNullException.ThrowIfNull( cells );
+		if ( cells.Land is not { } land )
+			return null;
+		var bits = new byte[(cells.Width * cells.Height + 7) / 8];
+		for ( var y = 0; y < cells.Height; y++ )
+		{
+			for ( var x = 0; x < cells.Width; x++ )
+			{
+				var index = y * cells.Width + x;
+				if ( cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ) )
+					bits[index >> 3] |= (byte)(1 << (index & 7));
+			}
+		}
+		return new LandData
+		{
+			PostAX = land.PostA.X, PostAY = land.PostA.Y, PostBX = land.PostB.X, PostBY = land.PostB.Y,
+			Ring = land.Ring.Select( post => new[] { post.X, post.Y } ).ToList(),
+			Unowned = Convert.ToBase64String( bits )
 		};
 	}
 
@@ -246,11 +290,54 @@ public static class ParkLayoutSnapshot
 			Require( cell.QueueLink is 0 or 1 or 4 or 16 or 64, $"cell ({cell.X}, {cell.Y}) has queue link {cell.QueueLink}" );
 			Require( cell.QueueLink == 0 || cell.Type == (byte)ParkCellType.Queue, $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
 			Require( cell.Placements >= 0, $"cell ({cell.X}, {cell.Y}) has placement count {cell.Placements}" );
+			// with a land record the unowned flag lives in the record's bits, never in a cell record (see CaptureSnapshot)
+			Require( cells.Land == null || (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0,
+				$"cell ({cell.X}, {cell.Y}) carries the unowned flag beside a land record" );
+		}
+		if ( cells.Land is { } land )
+			ReadLand( land, cells.Width, cells.Height );
+	}
+
+	/// <summary>The land and unowned-cell bits of a land record; throws <see cref="InvalidDataException"/> for an inconsistent one.</summary>
+	private static (ParkLand Land, byte[] Unowned) ReadLand( LandData data, int width, int height )
+	{
+		void Require( bool condition, string message )
+		{
+			if ( !condition )
+				throw new InvalidDataException( $"Layout snapshot is inconsistent: {message}." );
+		}
+		Require( data.Ring != null && data.Unowned != null, "the land record is incomplete" );
+		Require( data.Ring!.Count is >= 2 and <= ParkLand.MaximumPosts, $"the fence has {data.Ring.Count} posts" );
+		Require( data.Ring.All( post => post is { Length: 2 } && post[0] >= 0 && post[1] >= 0 && post[0] < width && post[1] < height ),
+			"a fence post is malformed or outside the map" );
+		byte[] bits;
+		try
+		{
+			bits = Convert.FromBase64String( data.Unowned! );
+		}
+		catch ( FormatException )
+		{
+			throw new InvalidDataException( "Layout snapshot is inconsistent: the unowned cells are not Base64." );
+		}
+		Require( bits.Length == (width * height + 7) / 8, $"the unowned cells cover {bits.Length} bytes, not {(width * height + 7) / 8}" );
+		try
+		{
+			return (new ParkLand( (data.PostAX, data.PostAY), (data.PostBX, data.PostBY), data.Ring.Select( post => (post[0], post[1]) ).ToArray() ), bits);
+		}
+		catch ( InvalidDataException exception )
+		{
+			throw new InvalidDataException( $"Layout snapshot is inconsistent: {exception.Message}", exception );
 		}
 	}
 
 	/// <summary>A fresh cell map with every snapshot cell written and the saved version restored (an empty map otherwise).</summary>
-	public static ParkCellMap RestoreCellMap( Data snapshot )
+	public static ParkCellMap RestoreCellMap( Data snapshot ) => RestoreCellMap( snapshot, null );
+
+	/// <summary>
+	/// <see cref="RestoreCellMap(Data)"/> with the saved land; a snapshot without a land record (a save from before land
+	/// existed) gets <paramref name="newLand"/> instead, applied to the restored cells before the saved version is restored.
+	/// </summary>
+	public static ParkCellMap RestoreCellMap( Data snapshot, Action<ParkCellMap>? newLand )
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );
 		ValidateCells( snapshot );
@@ -264,6 +351,20 @@ public static class ParkLayoutSnapshot
 			cells.SetFlags( cell.X, cell.Y, (ParkCellFlags)cell.Flags );
 			cells.SetPlacementCount( cell.X, cell.Y, cell.Placements );
 		}
+		if ( snapshot.Cells.Land is { } saved )
+		{
+			var (land, unowned) = ReadLand( saved, cells.Width, cells.Height );
+			for ( var index = 0; index < cells.Width * cells.Height; index++ )
+			{
+				if ( (unowned[index >> 3] & (1 << (index & 7))) == 0 )
+					continue;
+				var (x, y) = (index % cells.Width, index / cells.Width);
+				cells.SetFlags( x, y, cells.FlagsAt( x, y ) | ParkCellFlags.Unowned );
+			}
+			cells.SetLand( land );
+		}
+		else
+			newLand?.Invoke( cells );
 		cells.RestoreVersion( snapshot.Cells.Version );
 		return cells;
 	}

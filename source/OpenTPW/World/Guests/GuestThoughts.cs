@@ -48,7 +48,11 @@ public static class GuestThoughts
 	/// thought it has.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FC8A0 thought pick] hunger (+0x1A8) and thirst (+0x1A4) bytes both above 90: 3; else a byte above 99.0 (0x00700734) of hunger 1, thirst 2, toilet (+0x1AC) 4, illness (+0x1B0) 14; else the analyser block's littered cells (0x004C8BA0) over its path, queue and type-9 cells (0x004C8AE0) above 0.2: 7; else happiness (+0x19C) above 99: 9, below 10.0 (0x0070073C): 11; else no call
-	public static GuestThought? Pick( float hunger, float thirst, float toilet, float illness, float happiness, float messyShare )
+	public static GuestThought? Pick( float hunger, float thirst, float toilet, float illness, float happiness, float messyShare ) =>
+		Pick( hunger, thirst, toilet, illness, happiness, () => messyShare );
+
+	/// <summary>The pick with the block's littered share read only when the needs before it pass (the original reads the analyser's caches only then).</summary>
+	public static GuestThought? Pick( float hunger, float thirst, float toilet, float illness, float happiness, Func<float> messyShare )
 	{
 		var hungerByte = MeterMath.Byte( hunger );
 		var thirstByte = MeterMath.Byte( thirst );
@@ -63,7 +67,7 @@ public static class GuestThoughts
 		if ( MeterMath.Byte( illness ) > 99 )
 			return GuestThought.FeelingSick;
 		// a block without path cells divides by zero: litter over 0 is infinite (messy), 0 over 0 is unordered (not messy)
-		if ( messyShare > MessyShare )
+		if ( messyShare() > MessyShare )
 			return GuestThought.TooMessy;
 		var happinessByte = MeterMath.Byte( happiness );
 		if ( happinessByte > 99 )

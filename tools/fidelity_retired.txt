@@ -54,6 +54,7 @@ ECON-003 docs/reverse/APPROX-TRACE.md
 ECON-004 docs/reverse/APPROX-TRACE.md
 ECON-005 docs/reverse/APPROX-TRACE.md
 ECON-006 docs/reverse/APPROX-TRACE.md
+ECON-007 docs/reverse/APPROX-TRACE.md
 ECON-008 docs/reverse/APPROX-TRACE.md
 ECON-009 docs/reverse/APPROX-TRACE.md
 ECON-010 docs/reverse/APPROX-TRACE.md
@@ -67,6 +68,7 @@ ECON-019 docs/reverse/APPROX-TRACE.md
 ECON-021 docs/reverse/APPROX-TRACE.md
 ECON-024 docs/reverse/APPROX-TRACE.md
 ECON-025 docs/reverse/APPROX-TRACE.md
+ECON-027 docs/reverse/APPROX-TRACE.md
 ECON-028 docs/reverse/APPROX-TRACE.md
 ECON-029 docs/reverse/APPROX-TRACE.md
 ECON-031 docs/reverse/APPROX-TRACE.md

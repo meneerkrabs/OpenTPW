@@ -92,6 +92,7 @@ public sealed partial class ParkHud
 		Stack.Push( hud );
 		Build();
 		HookStaffStrikeMessages();
+		HookChallengeMessages();
 	}
 
 	public UiScreenStack Stack { get; } = new();
@@ -236,7 +237,7 @@ public sealed partial class ParkHud
 		// [DATA:video 15:20] the message tube (red, left of the HUD) with its icons, and the buttons of the green slide-out panel: the bomb deletes the opened message, the red cross closes the panel
 		hud.Add( new MessageTubeList( this ) { Id = "messageTube", Help = strings.Extra( OpenTpwText.MessageTubeHelp ), Bounds = TubeBase, Anchor = UiAnchor.BottomLeft } );
 		// [BIN:TPW-EXE:0x7501a0 message panel] mb_erase at (486,1325)-(589,1428) deletes the opened message; the two action buttons above it (486,1218) and (486,1110) take the art of their action's kind (mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline: ParkHud.MessageTube.cs)
-		// [APPROX:UI-025] no OpenTPW message carries an action yet (the strike messages are plain text), so the action buttons stay hidden; which original message types use which mb_ model is not traced
+		// [APPROX:UI-025] only the challenge offers carry actions (mb_accept, mb_decline: ParkHud.ChallengeMessages.cs); the action buttons stay hidden for every other message, and which other original message types use which mb_ model is not traced
 		hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
 		{

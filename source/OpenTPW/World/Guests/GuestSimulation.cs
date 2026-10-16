@@ -511,7 +511,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			// [BIN:TPW-EXE:0x00501919 thought pick] outside states 16 and 17 and on a park cell (0x004FA990), a world draw modulo 10 of 0 runs the pick 0x004FC8A0
 			if ( GuestThoughts.PickDraw( guest.Id, turn ) % GuestThoughts.PickOdds == 0
-				&& GuestThoughts.Pick( guest.Hunger, guest.Thirst, guest.Toilet, guest.Nausea, guest.Happiness, MessyShare( guest ) ) is { } thought )
+				&& GuestThoughts.Pick( guest.Hunger, guest.Thirst, guest.Toilet, guest.Nausea, guest.Happiness, () => MessyShare( guest ) ) is { } thought )
 				Think( guest, thought );
 			// [BIN:TPW-EXE:0x00501932 balloon life] then +0x214 loses 1 when it is above 0, and at 0 the balloon goes (0x004FE950)
 			if ( guest.BalloonLife > 0 && --guest.BalloonLife == 0 )
@@ -1237,20 +1237,16 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>The share of littered path cells in the guest's 4 × 4 analyser block (tp.exe <c>0x004C8BA0</c> over <c>0x004C8AE0</c>).</summary>
 	// [BIN:TPW-EXE:0x004C8AE0 block census] the block of the guest's cell (0x004C7B70: 32 × 32 blocks of 4 × 4 cells) counts its littered cells and its cells of type 1, 3 or 9 (0x00536310, 0x00536320); the ratio is a single division
-	// Approximation (ECON-020, registered at ParkLitter.Drop): the counts are live where the analyser caches them for a few turns
+	// [BIN:TPW-EXE:0x004FC8A0 thought pick] the block's counts are read through the analyser's caches with age 4 (0x004C8BA0(4), then 0x004C8AE0(4))
 	private float MessyShare( Guest guest )
 	{
-		if ( Litter is not { } litter || Grid.Cells is not { } cells )
+		if ( Litter is not { } litter || Grid.Cells is null || (uint)guest.CellX >= ParkLitter.MapSize || (uint)guest.CellY >= ParkLitter.MapSize )
 			return 0f;
-		int x0 = guest.CellX & ~3, y0 = guest.CellY & ~3, littered = 0, paths = 0;
-		for ( var x = x0; x < x0 + 4; x++ )
-			for ( var y = y0; y < y0 + 4; y++ )
-			{
-				if ( litter.TypeAt( x, y ) != LitterType.None )
-					littered++;
-				if ( cells.RawTypeAt( x, y ) is 1 or 3 or 9 )
-					paths++;
-			}
+		var block = ParkLitter.BlockOf( guest.CellX, guest.CellY );
+		// the analyser stamps its caches with the world turn, the clock the strike reads them with too (the economy's, ArrivalClock)
+		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
+		var littered = litter.LitteredInBlock( block, 4, turn );
+		var paths = litter.PathCellsInBlock( block, 4, turn );
 		return paths == 0 ? (littered == 0 ? 0f : float.PositiveInfinity) : (float)littered / paths;
 	}
 

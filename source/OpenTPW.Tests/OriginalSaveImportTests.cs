@@ -204,7 +204,7 @@ public class OriginalSaveImportTests
 			StringAssert.Contains( advisor, value );
 		StringAssert.Contains( Line( "[APPROX:SAVE-008] Not imported:" ), "batch balance " );
 		StringAssert.Contains( Line( "Bank words imported:" ), "withdrawals enabled, last balance " );
-		StringAssert.Contains( Line( "[APPROX:SAVE-008] Loan offers' Available flags not imported:" ), "OpenTPW offers " );
+		StringAssert.Contains( Line( "Loan offers' stored credit tests imported:" ), "the Available tab lists " );
 		var challenges = Line( "[APPROX:SAVE-005]" );
 		foreach ( var value in new[] { "losses ", "ActualThing ", "follow-up things " } )
 			StringAssert.Contains( challenges, value );
@@ -290,9 +290,10 @@ public class OriginalSaveImportTests
 
 		var zero = OriginalEconomyImport.Apply( new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 ), Park( settings ) );
 		StringAssert.Contains( zero.Evidence.Single( line => line.StartsWith( "Staff HQ imported:", StringComparison.Ordinal ) ), "training budgets 0, 0, 0, 0, 0" );
-		var available = zero.Evidence.Single( line => line.StartsWith( "[APPROX:SAVE-008] Loan offers' Available flags", StringComparison.Ordinal ) );
-		StringAssert.Contains( available, "the save marks no offer available (0:0, 1:0" );
-		StringAssert.Contains( available, "OpenTPW offers 0, 1, 2, 3, 4, 5, 6, 7." );
+		var available = zero.Evidence.Single( line => line.StartsWith( "Loan offers' stored credit tests imported:", StringComparison.Ordinal ) );
+		StringAssert.Contains( available, "no offer passed" );
+		StringAssert.Contains( available, "the Available tab lists none until the dialog tests them again." );
+		Assert.AreEqual( 0, zero.Evidence.Count( line => line.Contains( "Available flags not imported" ) ) );
 
 		var count = zero.Evidence.Count;
 		zero.Report( "advisor outcome" );

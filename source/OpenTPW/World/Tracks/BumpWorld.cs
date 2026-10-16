@@ -71,7 +71,7 @@ public sealed class BumpWorld
 	}
 
 	/// <summary>The vehicles of other rides that sat in <paramref name="owner"/>'s objects lose them (the objects are rebuilt or gone; the original keeps a stale pointer).</summary>
-	// [APPROX:TRACK-019] a vehicle of another ride whose object is rebuilt or removed loses it (object −1, so it searches afresh); the original keeps its pointer to the freed or reused pool record
+	// [EXT:bump-foreign-object-forget] a vehicle of another ride whose object is rebuilt or removed loses it (object -1, so it searches afresh); the original keeps a pointer to the freed or reused pool record, which is undefined behaviour to copy
 	internal void ForgetObjectsOf( BumpController owner )
 	{
 		foreach ( var controller in controllers )

@@ -7,7 +7,7 @@ namespace OpenTPW;
 /// −7, −9, −10: the grid start, the race, the finish and the kart effects) and bumper cars (types −1, −6, −11, −14: cars that wander an arena
 /// and hand their riders over when the session's countdown ends); the add-ons' vehicle hook (0x00548E80: the Space Racers Teleport hides a vehicle between its two tiles) is TRACK-008.
 /// </summary>
-// [APPROX:TRACK-019] the shared pools are allocated first-free as the original's, but their order after a park-resume restore of a save from before the shared pools follows the restore (controllers by attraction id), and a vehicle whose foreign object is rebuilt loses it where the original keeps a stale pointer; the module tick runs before every ride's script step as the original's substep does
+// [EXT:bump-pre-shared-save-order] a park-resume save from before the shared pools restores their order from the restore (controllers by attraction id), where the original's pools only ever fill in build order; kept so older saves load; [EXT:bump-foreign-object-forget] a vehicle whose foreign object is rebuilt loses it (BumpWorld.ForgetObjectsOf)
 
 public sealed class BumpController
 {

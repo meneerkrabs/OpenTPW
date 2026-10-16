@@ -38,6 +38,8 @@ public partial class Level
 			Economy = ParkSaveFile.Capture( Park.Economy, random ),
 			Layout = ParkLayoutSnapshot.CaptureSnapshot( Guests.Grid.Cells, Objects ),
 			Guests = Guests.CaptureSnapshot(),
+			// a level whose objects never took pool slots (a fixture built around the pool) has none to save, and loads as a save from before the pool
+			Things = Objects.Things == null ? null : Things.CaptureSnapshot(),
 			Scripts = Objects.ScriptWorld.CaptureSnapshot(),
 			Runtimes = runtimes,
 			EconomyBindings = Objects.Objects.Where( economyInstances.ContainsKey )

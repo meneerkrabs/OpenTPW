@@ -68,6 +68,12 @@ internal sealed record ParkResumeSnapshot
 	public required ParkSaveFile.Data Economy { get; init; }
 	public required ParkLayoutSnapshot.Data Layout { get; init; }
 	public required GuestSimulationSnapshot Guests { get; init; }
+	/// <summary>
+	/// The park's thing pool (<see cref="ThingPool"/>): the used list newest first and the free list's order, which the guests', objects' and staff's thing ids refer to. Null in a save from before the
+	/// pool: its guests keep their counter ids as slots and its objects and staff take the next free ones.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public ThingPoolSnapshot? Things { get; init; }
 	public required RideScriptWorldSnapshot Scripts { get; init; }
 	/// <summary>One entry per layout object, in layout-objects order.</summary>
 	public required IReadOnlyList<ParkResumeRuntime> Runtimes { get; init; }

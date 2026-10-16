@@ -415,6 +415,8 @@ public partial class Level : IDisposable
 				litterEffects = new ParkLitterEffects( Park.Economy.Litter, ParticleRendererModule.AdvisorPool );
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
+			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
+				ReleaseUnimportedThings();
 			SetupStaff();
 			SetupParkGate();
 		}
@@ -446,6 +448,7 @@ public partial class Level : IDisposable
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
 			: null;
 		Guests = new GuestSimulation( grid, settings, Seed.GuestStream ) { OnlineVisit = Visit != null };
+		Guests.AttachThings( Things );
 		List<GuestSpriteAtlas> sprites;
 		using ( LoadProfile.Measure( "guest-sprites" ) )
 			sprites = GuestSpriteAtlas.LoadKids();

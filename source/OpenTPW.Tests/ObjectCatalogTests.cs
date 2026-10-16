@@ -174,6 +174,66 @@ public class ObjectCatalogCacheTests
 			Directory.Delete( root, true );
 		}
 	}
+
+	[TestMethod]
+	public void ArchiveKeyFollowsTheOriginalsArchiveNaming()
+	{
+		// tp.exe 0x0041EC30: strip .wad (0x00424D30); exactly two underscores drop the second and what follows, then a leading 'p' (0x0041EB90).
+		Assert.AreEqual( "_snake", ObjectCatalog.ArchiveKey( "_snake_3" ) );
+		Assert.AreEqual( "_snake", ObjectCatalog.ArchiveKey( "_snake_3.WAD" ) );
+		Assert.AreEqual( "_snake", ObjectCatalog.ArchiveKey( "p_snake_12" ) );
+		Assert.AreEqual( "P_snake", ObjectCatalog.ArchiveKey( "P_snake_12" ), "the p test is case-sensitive" );
+		Assert.AreEqual( "a_b", ObjectCatalog.ArchiveKey( "pa_b_x" ), "the suffix need not be a number" );
+		Assert.AreEqual( "cat_co", ObjectCatalog.ArchiveKey( "cat_co" ), "one underscore keeps the name" );
+		Assert.AreEqual( "a_b_c_d", ObjectCatalog.ArchiveKey( "a_b_c_d" ), "three underscores keep the name" );
+		Assert.AreEqual( "pumpkin", ObjectCatalog.ArchiveKey( "pumpkin" ) );
+	}
+
+	[TestMethod]
+	public void BonusArchivesLoadOncePerNameAndKeepTakenIdsBehindTheFirst()
+	{
+		var root = Path.Combine( Path.GetTempPath(), "opentpw-catalog-" + Guid.NewGuid().ToString( "N" ) );
+		var game = Path.Combine( root, "game" );
+		var bonus = Path.Combine( root, "bonus" );
+		void Archive( string data, string archive, string member, int id, string category = "rides" )
+		{
+			var directory = Path.Combine( data, "levels", "jungle", category, archive );
+			Directory.CreateDirectory( directory );
+			File.WriteAllText( Path.Combine( directory, member + ".sam" ), $"Info.Id\t{id}\nInfo.Name\t\"{archive}\"\nInfo.WhichUIType\t0\n" );
+			File.WriteAllBytes( Path.Combine( directory, member + ".MD2" ), Array.Empty<byte>() );
+		}
+		Archive( game, "totem", "totem", 1110 );
+		Archive( game, "zebra", "zebra", 1111 );
+		Archive( bonus, "_totem_1", "_totem", 1110 );
+		Archive( bonus, "_totem_2", "_totem", 1300 );
+		Archive( bonus, "p_snake_3", "_snake", 1301 );
+		Archive( game, "totem", "totem", 1600, "features" );
+		Archive( game, "cafe", "cafe", 1500, "shops" );
+		Archive( bonus, "_cafe_9", "_cafe", 1500, "features" );
+		var previous = FileSystem;
+		try
+		{
+			FileSystem = new BaseFileSystem( game );
+			ObjectCatalog.BonusDataRoot = bonus;
+			var catalog = ObjectCatalog.Load( "jungle" );
+			// One rides directory in name order (ordinal, upper-cased: P < T < Z < _); _totem_2 has the name _totem_1 already holds.
+			CollectionAssert.AreEqual( new[] { "p_snake_3", "totem", "zebra", "_totem_1" }, catalog.Entries.Where( entry => entry.Category == ObjectCategory.Ride ).Select( entry => entry.ArchiveName ).ToArray() );
+			Assert.AreEqual( "totem", catalog.Get( 1600 ).ArchiveName, "each category keeps its own archive names" );
+			Assert.AreEqual( ObjectCategory.Feature, catalog.Get( 1500 ).Category, "ids resolve in the original's category order: features before shops" );
+			Assert.IsNull( catalog.Find( 1300 ), "the second _totem archive is not read" );
+			Assert.AreEqual( "totem", catalog.Get( 1110 ).ArchiveName, "a taken Info.Id resolves to the first definition" );
+			Assert.AreEqual( 2, catalog.Entries.Count( entry => entry.InfoId == 1110 ), "the bonus definition with a taken id stays loaded" );
+			Assert.AreEqual( 3, catalog.Get( 1301 ).BonusNumber );
+			Assert.AreEqual( 1, catalog.Entries.Single( entry => entry.ArchiveName == "_totem_1" ).BonusNumber );
+			Assert.IsNull( catalog.Get( 1111 ).BonusNumber );
+		}
+		finally
+		{
+			FileSystem = previous;
+			ObjectCatalog.BonusDataRoot = null;
+			Directory.Delete( root, true );
+		}
+	}
 }
 
 /// <summary>Catalog of the original objects; inconclusive without OPENTPW_GAME_PATH.</summary>

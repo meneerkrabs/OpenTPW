@@ -111,6 +111,7 @@ RIDES-016 docs/reverse/APPROX-TRACE.md
 RIDES-017 docs/OBJECTS.md
 RIDES-020 docs/reverse/APPROX-TRACE.md
 RIDES-022 docs/OBJECTS.md
+RIDES-024 docs/reverse/APPROX-TRACE.md
 RIDES-026 docs/OBJECTS.md
 RIDES-027 docs/reverse/APPROX-TRACE.md
 RIDES-029 docs/reverse/APPROX-TRACE.md

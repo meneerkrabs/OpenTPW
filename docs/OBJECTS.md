@@ -289,9 +289,18 @@ features, hallow 4 rides + 1 sideshow + 4 features, space 3 rides + 2 sideshows
 Members use `_name` (`_snake.md2`, `_snake.RSE`); `Easy__name.sam` overlays are
 ignored like the base game's. Info.Ids continue the theme ranges (jungle rides
 1118–1121, features 1436–1439, …) and none collides with a base object of the
-same theme (a collision would be logged and skipped; the fantasy bonus Giant
-Puzzle reuses space's 3301, which is not in the fantasy catalog). Category
-defaults come from the game's own `Rides.sam` etc.
+same theme (the fantasy bonus Giant Puzzle reuses space's 3301, which is not in
+the fantasy catalog). Category defaults come from the game's own `Rides.sam` etc.
+
+The archives load as the original's scan does (tp.exe `0x413930`, once per category: Rides,
+Features, Upgrades, Shops, Sideshow, `0x413140`): a category's game and bonus archives are one
+directory in name order. Each archive is named by `0x41ec30`: the file name without `.wad`,
+and a name with exactly two underscores loses the second one and what follows, then a leading
+lower-case `p` (`_snake_3` and `p_snake_3` are both `_snake`, the name its members use,
+`0x41eb90`). An archive whose name the category already holds is not read (`0x41ede0`,
+`_stricmp`), so the first in name order wins. A definition whose `Info.Id` is taken still
+loads, but every lookup by id finds the first definition (`0x412e90`, `0x412ef0`) in the
+category order above.
 
 Names: bonus objects are not in OBJECT_NAMES. Each archive has UTF-16 text
 files per language (`english.txt`, `German.txt`, `Dutch.txt`, … also languages
@@ -342,7 +351,6 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-019 | World/Objects/ParkObjects.cs | Levels without a save get Gates, Lights and Bus. The original creates Gates and Lights at world setup (0x5156A0); its arrival vehicle is bus, seaplane or ferry at random per arrival (LCG at 0x51A2F0, the current vehicle is reused) and End is created elsewhere (0x516B00). Not implemented: the arrival owner's vehicle choice | The arrival code (ARRIVAL register) |
 | RIDES-021 | World/Level.Objects.cs:46 | Build centred on clicked cell; cursor ray hits Z = 0 | Original build cursor behaviour |
 | RIDES-023 | World/Objects/OriginalObjectRuntime.cs:125 | Completed cycle = VAR_RUNNING 1 → 0 | Original cycle/income accounting |
-| RIDES-024 | World/Objects/ObjectCatalog.cs | Bonus archives merge; this port skips a bonus entry whose Info.Id is taken. The original dedupes by archive name (0x41EDE0) and loads Info.Id duplicates too, its id lookups (0x412E90/0x412EF0) taking the first definition in directory order | The directory order of the original's category walk; how a `_name_N` archive finds its `_name.sam` |
 | RIDES-025 | World/Objects/ObjectCatalog.cs | Bonus name: selected language file, then English, then the .sam name. The original reads only `<selected language>.txt` (0x41F350) and falls back to the id table (empty for bonus ids except 3301); the English and .sam fallbacks are an OpenTPW extension for languages an archive lacks (third-party content) | None needed for the shipped archives (all 35 carry the four shipped languages) |
 
 | RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue) | Original queue-path joining rules |

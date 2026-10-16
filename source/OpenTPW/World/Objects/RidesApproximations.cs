@@ -19,7 +19,6 @@ public static class RidesApproximations
 		("RIDES-019", "the arrival vehicle is always the Bus; the original picks bus, seaplane or ferry at random per arrival (0x51a2f0), creates Gates and Lights at world setup (0x5156a0) and spawns End elsewhere (0x516b00)"),
 		("RIDES-021", "build centred on clicked cell, Z = 0 cursor plane"),
 		("RIDES-023", "completed cycle = VAR_RUNNING 1 -> 0"),
-		("RIDES-024", "bonus archives merge, Info.Id collisions skipped; the original dedupes by archive name (0x41ede0) and loads Info.Id duplicates too, id lookups taking the first in directory order"),
 		("RIDES-025", "bonus name from the selected language file, then English, then the .sam name; the original reads only the selected language file (0x41f350) and the OBJECT_NAMES id table (OpenTPW extension for the fallbacks)"),
 		("RIDES-028", "non-walkable object access cells use the nearest walkable path"),
 		("RIDES-031", "shape cell types of '@' (1), 'Q' (3) and '#' (16) differ from the occupied type 4, but their placement meaning is untraced; they count as occupied here (Theme Park Inc may differ)"),

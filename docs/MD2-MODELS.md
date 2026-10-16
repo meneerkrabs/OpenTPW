@@ -52,9 +52,16 @@ Texture slots: 8-byte records (`u32 flags`, `u32 0`) at 0x50, then contiguous
 124 slots have several frame names. Flag bits (observed 0x1..0x73) are retained raw. tp.exe reads them
 (loader 0x462F80, texture setup 0x575E9C): **0x40** = multi-frame (set exactly on the 124 animated slots;
 it makes instances copy their texture tables, 0x462FEE), **0x10/0x20** become texture bits 0x10000/0x20000,
-which choose the U/V texel bias and a render state (0x590422/0x59043B; per-axis clamp is a likely reading,
-not proven), **0x80** is a procedural texture (not in the corpus). No reader of **0x1** (always set by
-generated models, 0x42539E) or **0x2** (on cut-out art: grass, webs, fences) was found. Material word +0xC
+which mean *wrap*: on the Direct3D path either bit sets render-key bit 0x400000 (0x590C40, 0x581847), and the
+stage decoder 0x567620 sets `D3DTSS_ADDRESS` to WRAP with a linear `MINFILTER` for that bit, else CLAMP with a point
+`MINFILTER` (0x5678CF, 0x567912); the address state covers both axes, so either bit wraps U and V (the software
+texel path insets only the flagged axis, 0x590422/0x59043B). They select no blend, alpha or depth state.
+**0x80** is a procedural texture (not in the corpus). **0x1** and **0x2** have no reader: the runtime model generator
+writes them (0x42539E: 0x1 always, 0x2 from its descriptor), and a scan of every load of the slot record (+0x50), the
+material pointer (+0x6C) and every bit test of 1, 2 or 3 in 0x440000–0x5A0000 finds none. Transparency in the
+original follows the image instead: the image decoder 0x574BD0 turns its header's alpha bits into texture flags
+0x100/0x200/0x300 (0x575771), which 0x590C40 maps to the blended render keys 0x2756, 0x556 and 0x200552 (additive);
+without them the key is 0x1256, no blend. Material word +0xC
 bit 0x1 draws the mesh in one constant colour instead of per-vertex lighting (0x580C51; on signs, fire,
 glow, water, flames and lava, i.e. self-lit art).
 
@@ -376,7 +383,13 @@ coordinates. Channels mix by ascending index, the highest channel writing a
 component winning (0xa7960). Node-state bit 0x10 from node lists and toggles
 hides the node's mesh: the draw walk 0x57A530 skips a node's own mesh when its state word has any of
 0x8210 (0x57A5E3) and still draws its children; only bit 0x20 prunes a subtree. (The bit 0x10 tested at
-0x57A797 belongs to an object render record, not to an MD2 node.)
+0x57A797 belongs to an object render record, not to an MD2 node.) Bit 0x8000 is the UI widgets' hidden-state bit:
+the widget model class (vtables 0x6FEE10, 0x6FEE38, 0x6FEE60; `!cbut`, `!frame`, `!slider`) sets 0xC8010 on the root and
+its first-child chain in its constructor 0x476A90, and its state selector 0x476E80 hides the previous state frame with
+`or 0x8010` (0x476EEC) and shows the new one by clearing 0x8010 (0x476EF9), so node lists and animation toggles, which
+set or clear only 0x10, cannot show a hidden widget frame. The draw and picking walks (0x57A5E3, 0x57B664, 0x451E44,
+0x45D0C1) treat it as 0x10. The only other writer is the save round trip of a model's node states (packed at
+0x4643A8, restored at 0x4647A0). OpenTPW's `UiModel` draws one chosen state frame, which is the same result.
 Relative-animation models play their vertex tracks in set mode, because the
 default ride load path strips header flag 0x4 (the loader 0x461F10 keeps it only for the TrackMaster coaster loader, whose
 Add mode is registered under COAST-026). Texture-frame tracks
@@ -514,7 +527,7 @@ count and offset fields, but that does not verify the rest of its layout.
 Next: the object-list replay without a bind (RIDES-032), and game-speed scaling
 of the scene clock; the
 texture slot's current frame is read by the draw (`0x580530`) and the per-slot bind (`0x57A420`) only while the ANIMATINGTEXTURES option is on (RIDES-035 retired; MD2-900..902 stay);
-texture flag bits 0x1/0x2 and the exact render state of 0x10/0x20;
+object textures sampled with the slot's wrap (0x10/0x20) or clamp instead of OpenTPW's mirrored repeat (COMPAT-010);
 the heightfield's texture turn and mirror in the terrain renderer. CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.
 

@@ -83,6 +83,21 @@ public class GuestTests
 		Assert.AreEqual( 40, walk.FrameCount );
 		Assert.AreEqual( 135 + 2 * 8 + 3, walk.GetFrame( 2, 3 ) );
 		Assert.IsTrue( file.Animations[3].IsEmpty );
+		Assert.AreEqual( 0, file.PerformanceCount, "no performance entries" );
+	}
+
+	[TestMethod]
+	public void SpriteAnimationTableReadsThePerformanceEntries()
+	{
+		// Hallow SPR_DR's entry (0x14E): 01 05 02 28, program 0 on slot 4 with registers 2 and 40; a second entry with a zero first byte is not counted.
+		var data = new byte[SpriteAnimationFile.FileBytes];
+		"ESP_FILE2.00SPR_DR.TPS"u8.CopyTo( data );
+		new byte[] { 0x01, 0x05, 0x02, 0x28, 0x00, 0x03 }.CopyTo( data, 0x14E );
+		var file = new SpriteAnimationFile( new MemoryStream( data ) );
+		Assert.AreEqual( 1, file.PerformanceCount );
+		Assert.AreEqual( new SpritePerformance( 0, 4, 2, 40 ), file.Performances[0] );
+		Assert.AreEqual( new SpritePerformance( -1, 2, 0, 0 ), file.Performances[1] );
+		Assert.AreEqual( 4, file.Performances.Count );
 	}
 
 	[DataTestMethod]

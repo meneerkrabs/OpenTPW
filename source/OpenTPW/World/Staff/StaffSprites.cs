@@ -55,7 +55,8 @@ public static class StaffSpriteRules
 	// [APPROX:GUEST-016] the staff clips' frame rate (10 per second, half rate 5), the 'moving' test (a position change within the last 0.6 s, 1.3 s for members the world moves a cell per second) and the smoothing of the drawn position replace tp.exe's timing: the sprite player 0x475360 runs one script step when the millisecond clock passes the sprite's due time +0x7c and adds its interval +0x80 (62 ms at creation, 0x4758f0), and the movement step 0x4fa2a0 sets the heading from the position change, picks the walk or run clip and, through 0x4d41d0 and 0x4d4190, sets the interval to clamp(trunc(62 / v), 0, 250) ms once per turn (v = step length × 3.829657e-05, doubled for the walk clip) — evidence needed: the frames a script step draws and the step length per turn
 	public const float FramesPerSecond = 10f;
 
-	private static readonly int[] PerformanceSlots = { 4, 10, 3, 11 };
+	/// <summary>The slot an entertainer performs when the bank lists no performance (every shipped entertainer bank lists slot 4).</summary>
+	public const int DefaultPerformanceSlot = 4;
 
 	/// <summary>The key a person's sprite bank derives from: the same for the candidate and the member it becomes.</summary>
 	// [APPROX:GUEST-014] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010); OpenTPW makes the variant draw in its place (ParkStaff) but keeps no variant: the bank is (NameIndex + Id) modulo the folder's banks, in file order (the shipped save carries no variant field, so an imported member's bank is not known; the loaded banks are GUEST-020)
@@ -105,11 +106,11 @@ public static class StaffSpriteRules
 
 	/// <summary>
 	/// The clip of a placed member (null: not drawn). Resting members have no sprite (state 3) and a carried one is the dangling sprite instead.
-	/// <paramref name="moving"/> is whether the member is being moved now; <paramref name="animations"/> (the bank's slots) lets an entertainer pick a
-	/// performance the bank has.
+	/// <paramref name="moving"/> is whether the member is being moved now; <paramref name="performances"/> (the bank's performance entries,
+	/// <see cref="SpriteAnimationFile.Performances"/>) give an entertainer's performance.
 	/// </summary>
-	// [APPROX:GUEST-015] tp.exe (0x4d46d0) queues script 13 + (r mod (n − 1)) from a second world draw r, or 13 when n is 1, n being the bank's present performance entries (0x541fa0); scripts 13..16 of the table 0x75a418 hold the entry indices 0..3, so a full bank never plays its fourth entry: OpenTPW discards that draw and picks, per member, one of the bank's multi-frame slots 4, 10, 3, 11 while it performs (state 14) — read: the ESP file's last 16 bytes are four entries of four bytes; 0x540d90 counts those with a nonzero first byte, and 0x475b80 plays entry e through 0x540c70 (first byte − 1 the slot index into the script table 0x74f7c8, second byte − 1 the frame); evidence needed: those bytes in the shipped entertainer banks
-	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpriteAnimation>? animations = null )
+	// [APPROX:GUEST-015] tp.exe (0x4D46D0) queues script 13 + (r mod (n − 1)) from a second world draw r, or 13 when n is 1, n being the bank's present performance entries (0x541FA0); scripts 13..16 of the table 0x75A418 hold the entry indices 0..3, so a full bank never plays its fourth entry, and 0x475B80 runs the entry's program on its slot (SpritePerformance). Every shipped entertainer bank has exactly one entry, program 0 on slot 4, so the draw never matters and every entertainer performs slot 4; OpenTPW loops that slot's frames, and for a bank of several entries picks by the member's id instead of the draw — evidence needed: the program's steps with the entry's third and fourth bytes (Hallow SPR_DR's 2 and 40; read as a 2-frame intro and frame 0 held 41 steps per loop), which OpenTPW does not play
+	public static StaffClip? SelectClip( StaffMember member, bool moving, IReadOnlyList<SpritePerformance>? performances = null, int performanceCount = 0 )
 	{
 		// a resting member is inside the Staff Room (0x5054d0 state 3 removes the model); a carried one is the dangling sprite instead
 		if ( member.State is StaffState.Resting or StaffState.PickedUp || member.Job is StaffJob.Resting or StaffJob.PickedUp )
@@ -134,32 +135,21 @@ public static class StaffSpriteRules
 			case StaffType.Guard:
 				return member.Job == StaffJob.Escorting ? CatchAndCarry : moving ? (member.Job == StaffJob.Chasing ? Run : Walk) : Stand;
 			default:
-				return member.Job == StaffJob.Performing && !moving ? Perform( member.Id, animations ) : moving ? Walk : Stand;
+				return member.Job == StaffJob.Performing && !moving ? Perform( member.Id, performances, performanceCount ) : moving ? Walk : Stand;
 		}
 	}
 
-	/// <summary>An entertainer's performance clip: one of the bank's multi-frame performance slots, chosen by the member (slot 4 when the bank lists none).</summary>
-	public static StaffClip Perform( int seed, IReadOnlyList<SpriteAnimation>? animations )
+	/// <summary>
+	/// An entertainer's performance clip: entry 0 when the bank has one (or none: <see cref="DefaultPerformanceSlot"/>), else entry
+	/// <paramref name="seed"/> mod (count − 1) as the original's script choice, its slot looping.
+	/// </summary>
+	public static StaffClip Perform( int seed, IReadOnlyList<SpritePerformance>? performances, int count )
 	{
-		var slot = 4;
-		if ( animations != null )
-		{
-			var candidates = 0;
-			foreach ( var candidate in PerformanceSlots )
-				if ( candidate < animations.Count && animations[candidate].FramesPerDirection > 1 )
-					candidates++;
-			if ( candidates > 0 )
-			{
-				var pick = (seed & int.MaxValue) % candidates;
-				foreach ( var candidate in PerformanceSlots )
-					if ( candidate < animations.Count && animations[candidate].FramesPerDirection > 1 && pick-- == 0 )
-					{
-						slot = candidate;
-						break;
-					}
-			}
-		}
-		return new StaffClip( 13, slot, StaffPlayback.Loop );
+		if ( performances == null || count <= 0 || performances.Count == 0 )
+			return new StaffClip( 13, DefaultPerformanceSlot, StaffPlayback.Loop );
+		var entry = count == 1 ? 0 : (int)((uint)seed % (uint)(count - 1));
+		var slot = performances[Math.Min( entry, performances.Count - 1 )].Slot;
+		return new StaffClip( 13 + entry, slot is >= 0 and < SpriteAnimationFile.SlotCount ? slot : DefaultPerformanceSlot, StaffPlayback.Loop );
 	}
 
 	/// <summary>The hire window's figure: the walk slot (ESP slot 1), frames 0..7 in turn, looping.</summary>

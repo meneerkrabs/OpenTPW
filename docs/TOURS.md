@@ -77,9 +77,18 @@ parts: a save without them restores with zero stale words. No schema version mov
 
 TOUR 1 (`0x005542FE`) reads the pad node live (`0x0044B220`, class 0x800 number 99, then `0x004386D0`) and the instance angle `+0x10` (`0x00554385`). `+0x10` is the build angle the constructor stores in degrees (`0x004DB0CD`, handed over by the placement `0x00529E10`) and, for a saved ride, the save's `mAngle`, which the attraction reader (`0x004DB7D0`) loads straight into `+0x10`: the placement rotation is the angle either way. All four tour scripts run TOUR 1 before any clip is triggered (`WAITANIM 0 0` on an idle channel, then `TOUR 1`), so the live node is the model's rest pose; `TourAssetTests.TheLaunchPadIsReadBeforeAnyClipPlays` pins that. TOUR-003 retired.
 
+## Walk-off time (TOUR-007 retired)
+
+WALKON (`0x00556F40`) stores its walker's slot in the ride's walk table: the operands in order are the visitor, nodes u1 and u2 (the walk on), nodes u3 and u4 and the walk action. WALKOFF
+(`0x005571A0`) finds the slot by visitor and takes `ftol(the distance between node u3 and node u4) x 100` ms (100 ms for 0) before WALKGET hands the walker out; u3 is the first dummy of class 0x800
+whose number matches (class 0x80 for the head action 4), u4 one of class 0x800 (`0x0044B220`), both read live (`0x00556B90`). `RideVisitorBridge` keeps the slot per rider (`WalkSlots`, an optional
+saved part) and the ride runtime measures the model's dummies (`OriginalObjectRuntime.WalkNodeDistance`). The Star and Tweety Tours' slots lie 10 model units apart (the Cosmic Cruiser's
+10.03, the Tweety Tours' exactly 10), so both ride 1000 ms, as before (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`). TOUR-007 retired. WALKON's own walk-on
+time (`ftol(distance between u1 and u2) x 100`, 0x00556F40) and the beam effect of action 2 at WALKOFF are not modelled: riders board at once.
+
 ## Not done
 
-A shadow under the cars and the angle table's sines (TOUR-008: whether the original draws a shadow is not read), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
+A shadow under the cars and the angle table's sines (TOUR-008: whether the original draws a shadow is not read), the mesh-derived and thing-owned ground (TOUR-005); see the register.
 
 ## Drawing
 
@@ -133,8 +142,7 @@ the original finds through the track redirect or a type-3 thing, and objects who
 - Reclassified: TOUR-006 is `[EXT:legacy-tour-save]`.
 - Narrowed: TOUR-002 (the original drops thrown-off riders: the script never releases them, so **thrown-off riders inflate the ride's rider count**, VAR_ONRIDE, for ever; OpenTPW hands them out through TOUR 4
   and lowers it; the guest-side consequence of a boarded guest nobody releases is the guest owner's), TOUR-004 (all
-  triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-007 (the walk-off duration is `ftol(distance between the walker's two slot nodes) x 100` ms, 100 ms for 0, `0x005571A0`;
-  OpenTPW's WALKON keeps no walk nodes, so this stays at 1 s until the walk owner supplies them: **note for the walk owner**, evidence needed: the nodes a WALKON slot holds when WALKOFF runs), TOUR-008 (animations and
+  triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-008 (animations and
   shadow only).
 
 ## Verification

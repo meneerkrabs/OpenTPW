@@ -84,6 +84,36 @@ public class TourAssetTests
 		}
 	}
 
+	/// <summary>
+	/// TOUR-007: the Star and Tweety Tours walk their riders off between two slot nodes of the ride model (WALKON's third and fourth node operands, class 0x800), which lie 10 model
+	/// units apart, so the original's <c>ftol(distance) x 100</c> ms (0x005571A0) is the one second the port always used; no clip moves those nodes.
+	/// </summary>
+	[TestMethod]
+	public void TheTourWalkOffsSpanTheModelsSlotNodes()
+	{
+		foreach ( var (theme, infoId, _) in Tours.Where( tour => tour.Theme is "space" or "fantasy" ) )
+		{
+			var entry = ObjectCatalog.Load( theme ).Get( infoId );
+			using var stream = entry.FileSystem.OpenRead( entry.ScriptPath! );
+			var walkOn = new RideScriptFile( stream ).Instructions.Single( instruction => instruction.Opcode == (ushort)Opcode.WALKON );
+			var (from, to, action) = ((int)walkOn.Operands[3].Value, (int)walkOn.Operands[4].Value, (int)walkOn.Operands[5].Value);
+			var runtime = new OriginalObjectRuntime( entry, new RideScriptWorld(), 1 );
+			var distance = runtime.WalkNodeDistance( action, from, to );
+			Assert.IsNotNull( distance, $"{theme}: the slot nodes {from} and {to} exist" );
+			Assert.AreEqual( 1000, RideVisitorBridge.WalkOffDuration( distance!.Value ), $"{theme}: distance {distance}" );
+			var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+			// the nodes a clip moves (its tracks; a clip's node list only toggles a mesh) and their descendants
+			var moved = new HashSet<int>( entry.Animations.SelectMany( file => ObjectAssets.LoadModel( entry.FileSystem, file.Path ).Clip?.Tracks.Select( track => (int)track.NodeIndex ) ?? Enumerable.Empty<int>() ) );
+			foreach ( var number in new[] { from, to } )
+			{
+				var index = model.DummyAttributes.ToList().FindIndex( attribute => (attribute.Type & 0x800) != 0 && attribute.Value == number );
+				for ( var node = model.Counts.Unknown46 + index; node >= 0; node = model.Nodes[node].ParentIndex )
+					Assert.IsFalse( moved.Contains( node ), $"{theme}: slot node {number} (or an ancestor) is never moved by a clip" );
+			}
+			runtime.Stop();
+		}
+	}
+
 	/// <summary>The ride's flying-car mesh is the supplemental mesh 0 and carries the rider seats (head dummies numbered from 1, one more than the script's per-car load).</summary>
 	[TestMethod]
 	public void TheCarMeshesCarryTheRiderSeats()

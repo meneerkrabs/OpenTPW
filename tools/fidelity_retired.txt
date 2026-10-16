@@ -50,11 +50,11 @@ COAST-016 docs/COASTERS.md
 COAST-017 docs/reverse/COAST-plan.md
 COAST-018 docs/COASTERS.md
 COAST-019 docs/reverse/COAST-plan.md
-COAST-024 docs/COASTERS.md
 COAST-020 docs/reverse/REVIEW-COAST-2.md
 COAST-021 docs/reverse/REVIEW-COAST-2.md
 COAST-022 docs/PROGRESS.md
 COAST-023 docs/PROGRESS.md
+COAST-024 docs/COASTERS.md
 COAST-025 docs/COASTERS.md
 COAST-027 docs/COASTERS.md
 COAST-030 docs/COASTERS.md
@@ -115,6 +115,7 @@ ECON-043 docs/reverse/APPROX-TRACE.md
 ECON-045 docs/reverse/APPROX-TRACE.md
 ECON-046 docs/reverse/APPROX-TRACE.md
 ECON-047 docs/reverse/RIDE-WEAR.md
+ECON-048 docs/reverse/ORACLE.md
 GATE-001 docs/M3-GATE.md
 GATE-002 docs/reverse/PATH-plan.md
 GATE-003 docs/reverse/BOARD-plan.md

@@ -1617,11 +1617,8 @@ public sealed class ParkEconomy : IParkEconomy
 	public void ChargeLand( long cost, int cells )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( cells );
-		// A negative total (a modified Costs.MapCell) is booked as other income, as TrySpendCell books a negative cell cost (the ECON-048 approximation: the original's debit of a negative amount raises the balance; its month category is not traced).
-		if ( cost >= 0 )
-			Post( LedgerCategory.OtherCosts, cost );
-		else
-			Post( LedgerCategory.OtherIncome, -cost );
+		// Costs.MapCell cannot be negative (the balance load refuses it, 0x00401D7C), so the total is never income.
+		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)CellPurchase.Land, $"{cells} {CellPurchase.Land} cells" );
 	}
 
@@ -1650,8 +1647,8 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// Charges one path or queue cell when it is written (<c>SetCellType</c>, PATH-plan §3.2): refused only
-	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs. A negative cost (modified
-	/// <c>Costs.*</c>, which tp.exe refuses when it loads the balance file) raises the balance by its amount.
+	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs. A negative <c>Costs.*</c> is refused
+	/// when the balance file loads (tp.exe 0x00401D7C), so the cost is never negative.
 	/// </summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost < 0, else Spend per cell at write time
 	public PurchaseResult TrySpendCell( CellPurchase kind )
@@ -1659,11 +1656,8 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !CanSpendCell( kind ) )
 			return PurchaseResult.NotEnoughMoney;
 		var cost = CellCost( kind );
-		// [APPROX:ECON-048] a negative path or queue cell cost (modified Costs.*) is accepted and booked as other income; tp.exe never spends one: Costs.* are type-5 balance keys, whose parser refuses a negative value ('Balance problem: invalid -ve value specified', 0x401d7c), which fails the balance load (0x407f20, 0x407e00 skips the cost copy 0x4080e0) and so the level start (0x54e360) — evidence needed: none (read); OpenTPW does not refuse the value at load
-		if ( cost >= 0 )
-			Post( LedgerCategory.OtherCosts, cost );
-		else
-			Post( LedgerCategory.OtherIncome, -cost );
+		// [BIN:TPW-EXE:0x00401D7C negative cost refused at load] a negative Costs.* value fails the balance load (BalanceSettings), so a cell cost here is never negative and is always spent
+		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"1 {kind} cell" );
 		return PurchaseResult.Ok;
 	}

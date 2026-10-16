@@ -143,13 +143,6 @@ public class PathBuilderTests
 		var result = low.Builder.BuildSegment( (1, 1), (1, 1) );
 		CollectionAssert.AreEqual( new[] { (1, 1) }, result.Built.ToArray(), "balance −2^31, cost 1: −2^31 − 1 wraps to 2^31 − 1" );
 		Assert.AreEqual( (long)int.MinValue - 1, low.Economy!.Balance );
-		// …and balance 2^31 − 1 with cost −1 is refused: no cell, no charge (64-bit arithmetic accepts it).
-		var high = new Rig( park: EconomyTestData.CellCostPark( int.MaxValue, -1, 75 ) );
-		result = high.Builder.BuildSegment( (1, 1), (1, 1) );
-		Assert.AreEqual( 0, result.Built.Count );
-		Assert.AreEqual( CellBuildResult.NotEnoughMoney, result.StoppedBy );
-		Assert.AreEqual( ParkCellType.Empty, high.Cells.TypeAt( 1, 1 ) );
-		Assert.AreEqual( int.MaxValue, high.Economy!.Balance );
 	}
 
 	[TestMethod]
@@ -158,8 +151,6 @@ public class PathBuilderTests
 		// 0x84550: the 32-bit pending line cost (this cell included) is refused when greater than the balance; a zero sum passes.
 		Assert.AreEqual( CellBuildResult.NotEnoughMoney, new Rig( park: EconomyTestData.CellCostPark( int.MinValue, 1, 75 ) ).Builder.Preview( (1, 1), (1, 1) ).StoppedBy,
 			"pending 1 > balance −2^31 (the commit accepts this cell)" );
-		Assert.AreEqual( CellBuildResult.Ok, new Rig( park: EconomyTestData.CellCostPark( int.MaxValue, -1, 75 ) ).Builder.Preview( (1, 1), (1, 1) ).StoppedBy,
-			"pending −1 ≤ balance (the commit refuses this cell)" );
 		var free = new Rig( park: EconomyTestData.CellCostPark( -5, 0, 75 ) );
 		Assert.AreEqual( 4, free.Builder.Preview( (1, 1), (4, 1) ).Built.Count, "a zero pending cost skips the test, even in the red" );
 		Assert.AreEqual( CellBuildResult.Ok, free.Builder.CheckCell( 6, 6 ) );

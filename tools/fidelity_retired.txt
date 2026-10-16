@@ -281,6 +281,7 @@ UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md
 UI-065 docs/PROGRESS.md
+UI-066 docs/COMPATIBILITY.md
 UI-083 docs/PROGRESS.md
 UI-084 docs/PROGRESS.md
 UI-088 docs/UI.md

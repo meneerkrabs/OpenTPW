@@ -11,7 +11,7 @@ public enum GameMode { InstantAction, FullSimulation }
 
 /// <summary>A park that can be loaded from the Load Park screen.</summary>
 /// <param name="Sandbox">True for the OpenTPW sandbox save (jungle sandbox), false for an original read-only park.</param>
-public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null, DateTime? SavedAt = null );
+public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null, DateTime? SavedAt = null, string? Requires = null );
 
 /// <summary>What the front-end screens ask of the game.</summary>
 public sealed class FrontEndActions
@@ -227,6 +227,11 @@ public sealed partial class FrontEndMenu
 	// closes the dialog (0x49e880)
 	// [BIN:TPW-EXE:0x49ec80 save list rows] each row is the park name and the save file's local last-write date (UITEXT 0x1c0 = OpenTPW's 447 with day, month, year, 0x5fc660) plus " %02d:%02d" hour and minute, in a second right-aligned cell (0x49f170)
 	// [APPROX:UI-044] the rows take the buy list's measured pitch
+	/// <summary>" (requires mod X)" after a save's name when the mods it was saved with are not all active, else nothing; the entry stays listed.</summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	internal static string RequiresSuffix( UiStringTable strings, string? requires ) =>
+		requires == null ? "" : " (" + string.Format( strings.Extra( OpenTpwText.RequiresMod ), requires ) + ")";
+
 	public static UiScreen CreateLoadScreen( UiScreenStack stack, UiStringTable strings, IReadOnlyList<ParkLoadEntry> entries, Action<ParkLoadEntry> load )
 	{
 		var screen = new LoadChooserScreen();
@@ -243,7 +248,7 @@ public sealed partial class FrontEndMenu
 		var list = screen.Add( new UiScrollList
 		{
 			Id = "parks",
-			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? entry.DisplayName ?? entry.Level : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
+			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? (entry.DisplayName ?? entry.Level) + RequiresSuffix( strings, entry.Requires ) : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
 				: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ) ).ToArray(),
 			Trailing = index => parks[index].SavedAt is { } saved
 				? strings.Format( UiTextRecord.SaveDate, saved.Day.ToString(), saved.Month.ToString(), saved.Year.ToString() ) + $" {saved.Hour:00}:{saved.Minute:00}" : "",

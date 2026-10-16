@@ -374,9 +374,29 @@ and the default extensions nothing in the simulation changes: the online extensi
 simulation state, and `DeterminismTests.TogglingOnlyTheOnlineExtensionKeepsThePinnedDigests` runs the pinned fixed
 run (`FixedRunHash`) and the guest-pathing run with it on and off and gets the same digests. The M4 gate and the
 browser digest need the original game data and run outside the unit tests, so they are not part of that test; they
-read no extension switch. Mods do not consume content yet. Before any mod may change the simulation, park saves will
-record each active mod's id, version and content digest (`ResolvedMod.ContentSha256`) and refuse a mismatched set,
-and the object catalog's cache key will include `ModSet.Digest`; an unmodded save stays byte-identical.
+read no extension switch.
+
+Park saves record the mods that can change the simulation (`ParkResumeSnapshot.Mods`, `ParkModRecord`: id, version and
+content digest). An extension that sets `AffectsSimulation` is recorded with the digest of no bytes; a files-based mod is
+recorded when it adds objects (`content.objects`) or overrides a file that is not plainly presentation media (textures,
+sounds, text and fonts; an unknown file type counts as simulation). The field is **null, and left out of the file, when
+nothing of that kind is active**, so a park saved without such a mod is byte-identical to one from before mods existed.
+Online and presentation-only mods are never recorded. Loading (`ParkResumeSaveFile.ValidateSnapshot`) needs every recorded
+mod active in the same version with the same content digest, in the same order, and no other simulation-changing mod
+active; an extra presentation-only mod is fine. A missing mod, another version or another digest refuses the load with a
+named reason such as `needs community.tpi-rides 1.0.0`. The load and Continue menus keep such a save listed and add
+"requires mod X" instead of hiding it. The shape check bounds the list (256 entries), the ids, versions and lowercase hex
+digests, and every `mod:<id>:` key of the asset manifest must name a recorded mod. A build from before this field rejects a
+save that has it (the codec refuses unknown members), which is intended. `ParkSharing.ExportLevel` refuses to export while a
+simulation-changing mod is active, because a park package records none yet.
+
+The asset manifest names the content root of every archive member: `data:` for the game data, `bonus:` for the official
+bonus content and `mod:<id>:` for a mod (`ContentRoot.KeyPrefix`, `ObjectCatalogEntry.Root`). A mod's override of a
+game-data path keeps the `data:` key, and its changed hash makes the existing manifest comparison refuse a mismatched park.
+The object catalog's cache key includes `ModSet.Digest`, so a catalog is never shared between two sets of files-based mods.
+`ModSaveTests.EmptyOnlineOnlyAndPresentationOnlyModSetsKeepThePinnedDigests` runs the fixed run and the guest pathing under an
+empty set, with only the online extension toggled and with a presentation-only mod, and checks the same digests and no
+record; the M4 gate and browser digests read the same code paths and are checked by the smokes.
 
 ## Tests
 

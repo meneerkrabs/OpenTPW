@@ -302,17 +302,19 @@ public sealed class ParkObjects
 	}
 
 	/// <summary>
-	/// For levels without an original save: the three fixed items the Easymode save records (Gates, Lights,
-	/// Bus), in park space. The original creates Gates and Lights at world setup; its arrival vehicle is picked per arrival (RIDES-019).
+	/// For levels without an original save: the fixed items the original creates at world setup, Gates and Lights, in park space.
+	/// The arrival vehicles (bus, seaplane, Ferry) are placed when the arrival update first sends them (<see cref="ArrivalVehicles"/>);
+	/// a Theme Park Inc world still gets the Bus here.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005156A0 world setup fixed items] world setup creates the definitions named "gates" (wide literal 0x762448) and "lights" (0x762454) through 0x4db090 (case-insensitive compare 0x67b140); a missing definition logs "Could not find the gates feature" or the LIGHTSNAME message; a loaded save then restores the handles (writer 0x517076)
-	// [APPROX:RIDES-019] The arrival vehicle is always the Bus here; the original creates none at setup and picks bus, seaplane or ferry at random per arrival (0x51a2f0: LCG s = s·0x19660d + 0x3c6ef35f, s = rotr(s, 13), |s| % 3, seeded at 0x1da708 from 0x67d3f0; the current vehicle is reused), and End (0x762464) is created by 0x516b00, called from 0x503d40, not at setup — evidence needed: the arrival owner's vehicle choice (ARRIVAL register)
+	// [BIN:TPW-EXE:0x0051A2F0 vehicle on demand] the bus, seaplane and Ferry are created by the vehicle dispatch the first time each is sent (0x004DB090 at 0x0051A57E), never at setup
+	// [APPROX:RIDES-019] End (0x762464) is not created: the original creates it through 0x516b00, called from the message handler 0x503d40 (message type 0x11, from 0x50b550), not at setup; Theme Park Inc worlds without a prebuilt save keep a Bus from setup — evidence needed: what sends the End message, and how Theme Park Inc places its arrival vehicle
 	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
 
 	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>
 	internal IEnumerable<(int Placed, float Share)> AddDefaultFixedItemSteps()
 	{
-		var entries = Catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ).ToList();
+		var entries = Catalog.Entries.Where( entry => entry.IsFixedItem && (entry.SettingsName is "Gates" or "Lights" || GameEditions.IsThemeParkInc && entry.SettingsName == "Bus") ).ToList();
 		var count = 0;
 		foreach ( var entry in entries )
 		{

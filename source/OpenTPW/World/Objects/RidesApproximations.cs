@@ -16,7 +16,7 @@ public static class RidesApproximations
 		("RIDES-014", "base height = mean footprint ground height"),
 		("RIDES-015", "imported and built objects start open"),
 		("RIDES-018", "terrain/overlap/owned-land rules without slope/path; Level enforces economy purchases"),
-		("RIDES-019", "the arrival vehicle is always the Bus; the original picks bus, seaplane or ferry at random per arrival (0x51a2f0), creates Gates and Lights at world setup (0x5156a0) and spawns End elsewhere (0x516b00)"),
+		("RIDES-019", "End is not created: the original creates it through 0x516b00 from the message handler 0x503d40 (message type 0x11, from 0x50b550), not at setup; a Theme Park Inc world without a prebuilt save keeps a Bus from setup where the TPW arrival vehicles are placed on first dispatch"),
 		("RIDES-021", "build centred on clicked cell, Z = 0 cursor plane"),
 		("RIDES-023", "completed cycle = VAR_RUNNING 1 -> 0"),
 		("RIDES-025", "bonus name from the selected language file, then English, then the .sam name; the original reads only the selected language file (0x41f350) and the OBJECT_NAMES id table (OpenTPW extension for the fallbacks)"),

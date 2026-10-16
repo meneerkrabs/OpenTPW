@@ -201,15 +201,17 @@ public sealed class OriginalTerrain : Entity
 
 	/// <summary>
 	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
-	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), at the cell's mean ground height.
+	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), each vertex on the ground under it.
 	/// </summary>
-	// [APPROX:PATH-015] the queue models are baked at the cell's mean corner height and drawn without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
+	// [APPROX:PATH-015] the queue models are baked with each vertex raised by the drawn ground under it (LandscapeSampler, the path layer's lift above it, so the models follow a sloped cell and their floor shows over the grass as in the original's footage) and drawn without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
 	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
 	{
 		QueueModelCount = 0;
 		if ( queues.Count == 0 )
 			return;
 		var field = Park.Heightfield;
+		// The path layer's lift, so the queue's floor never fights the ground for depth.
+		var lift = 0.01f * field.CellSizeX;
 		var directory = $"/levels/{Park.LevelName}/queue";
 		var batchTextures = new List<string>();
 		var batchVertices = new List<Vertex>();
@@ -228,7 +230,6 @@ public sealed class OriginalTerrain : Entity
 			}
 			foreach ( var (x, y, tile) in group )
 			{
-				var height = (field.GetCornerHeight( x, y ) + field.GetCornerHeight( x + 1, y ) + field.GetCornerHeight( x, y + 1 ) + field.GetCornerHeight( x + 1, y + 1 )) / 4;
 				var turn = ObjectPlacement.CellRotation( tile.Yaw );
 				foreach ( var mesh in model.Meshes )
 				{
@@ -256,9 +257,10 @@ public sealed class OriginalTerrain : Entity
 						var local = System.Numerics.Vector3.Transform( ObjectAssets.ConvertAxes( System.Numerics.Vector3.Transform( source.Position.GetSystemVector3(), world ) ), turn );
 						var normal = System.Numerics.Vector3.TransformNormal( ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world ) ), turn );
 						var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
+						var (groundX, groundY) = (x * field.CellSizeX + local.X, y * field.CellSizeZ + local.Y);
 						batchVertices.Add( new Vertex
 						{
-							Position = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x * field.CellSizeX + local.X, height + local.Z, y * field.CellSizeZ + local.Y ) ),
+							Position = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( groundX, GroundUnder( field, groundX, groundY ) + lift + local.Z, groundY ) ),
 							Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : System.Numerics.Vector3.UnitZ,
 							TexCoords = mesh.TexCoords[index],
 							TexIndex = slotOfMaterial[materialIndex],
@@ -273,6 +275,11 @@ public sealed class OriginalTerrain : Entity
 		}
 		FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
 	}
+
+	/// <summary>The drawn ground's height under a point in model units (<see cref="LandscapeSampler"/>), the point kept on the map.</summary>
+	internal static float GroundUnder( ModelHeightfield field, float x, float y ) =>
+		LandscapeSampler.Sample( field.CellCountX, field.CellCountZ, field.CellSizeX, field.CellSizeZ, field.GetCornerHeight, field.SplitsAlongAntiDiagonal,
+			Math.Clamp( x, 0, field.CellCountX * field.CellSizeX - 0.001f ), Math.Clamp( y, 0, field.CellCountZ * field.CellSizeZ - 0.001f ) );
 
 	private void FlushQueueBatch( Dictionary<string, Texture> textures, string directory, List<string> names, List<Vertex> vertices, List<uint> indices )
 	{

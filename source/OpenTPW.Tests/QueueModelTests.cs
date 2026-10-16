@@ -95,6 +95,23 @@ public class QueueModelTests
 		Assert.IsNull( OriginalTerrain.FindTexture( "/levels/jungle/terrain", "jungle", "jpa_que1", "pathtex", Files ) );
 	}
 
+	[TestMethod]
+	public void QueueModelVerticesStandOnTheDrawnGroundUnderThem()
+	{
+		var heights = new float[9];
+		for ( var index = 0; index < heights.Length; index++ )
+			heights[index] = index * 4f; // a ramp: every corner differs
+		var field = new ModelHeightfield( 2, 2, 10, 10, 0, 0, Array.Empty<uint>(), heights, new uint[4] );
+		for ( var corner = 0; corner < 4; corner++ )
+		{
+			var (cx, cy) = (corner % 2, corner / 2);
+			Assert.AreEqual( field.GetCornerHeight( cx, cy ), OriginalTerrain.GroundUnder( field, cx * 10, cy * 10 ), 1e-4f, $"corner {(cx, cy)}" );
+		}
+		var mean = (field.GetCornerHeight( 0, 0 ) + field.GetCornerHeight( 1, 0 ) + field.GetCornerHeight( 0, 1 ) + field.GetCornerHeight( 1, 1 )) / 4;
+		Assert.AreNotEqual( mean, OriginalTerrain.GroundUnder( field, 2.2f, 9 ), "a post near the cell's high edge stands above the cell's mean height" );
+		Assert.AreEqual( OriginalTerrain.GroundUnder( field, 20 - 0.001f, 5 ), OriginalTerrain.GroundUnder( field, 20.7f, 5 ), 1e-4f, "a vertex past the map's edge takes the edge's ground" );
+	}
+
 	[DataTestMethod]
 	[DataRow( "jungle" )]
 	[DataRow( "hallow" )]

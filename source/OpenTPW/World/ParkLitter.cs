@@ -66,6 +66,9 @@ public sealed class ParkLitter
 	/// <summary>True in an online visit: the original's game type 1 drops no litter (tp.exe <c>0x004D93B0</c> returns at once).</summary>
 	public bool Disabled { get; set; }
 
+	/// <summary>The park's world generator (the economy's), which a drop reseeds and draws from; null: the litter draws nothing (a standalone litter map).</summary>
+	public Func<WorldRng>? World { get; set; }
+
 	/// <summary>Raised after a drop or a removal, with the cell and its new type.</summary>
 	public event Action<int, int, LitterType>? Changed;
 
@@ -82,12 +85,15 @@ public sealed class ParkLitter
 	/// takes the type and nobody's claim. True when the litter was placed.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D93B0 littering cell] nothing in game type 1 (online) or when the cell's +0x2c is nonzero; else a sprite of bank 11 frame type − 1 (+0x28), +0x30 = 0, +0x2c = type; vomit (7) and stinkbomb (8) also add their RegionFX (2, 5) through 0x004D8440 and a stinkbomb its particle (+0x38)
-	// [APPROX:ECON-020] litter lies on map cells (one item per cell, dropped by guests' full litter meters, vomit and bins they cannot reach) with the original's sprite offset (0x004D93B0) and is counted through the analyser's 4 × 4 block caches (0x004C8BA0, 0x004C8AE0) as the strike (age 1) and the thought (age 4) read them, but the drop's reseed of the original's world generator with the cell id (0x004D94E2) is not followed by OpenTPW's separate streams (DET-014), and the caches are saved with the park where whether the original's analyser serializer keeps them is not traced — evidence needed: DET-014's stream decision for the reseed; the analyser's serializer for the block caches
+	// [APPROX:ECON-020] litter lies on map cells (one item per cell, dropped by guests' full litter meters, vomit and bins they cannot reach) with the original's sprite offset (0x004D93B0, whose reseed of the world generator with the cell id 0x004D94E2 and two draws the drop takes from the park's one generator) and is counted through the analyser's 4 × 4 block caches (0x004C8BA0, 0x004C8AE0) as the strike (age 1) and the thought (age 4) read them, but the caches are saved with the park where whether the original's analyser serializer keeps them is not traced — evidence needed: the analyser's serializer for the block caches
 	public bool Drop( int x, int y, LitterType type )
 	{
 		if ( Disabled || type == LitterType.None || !InBounds( x, y ) || types[Index( x, y )] != 0 )
 			return false;
 		var index = Index( x, y );
+		// [BIN:TPW-EXE:0x004D94E2 litter sprite offset] the placed item's sprite takes the world generator reseeded with the cell id and two draws (0x004D94F8, 0x004D953F): the park's one generator keeps the state they leave
+		if ( World?.Invoke() is { } generator )
+			SpriteOffset( generator, x, y );
 		Spread( x, y, type, add: true );
 		types[index] = (byte)type;
 		collectors[index] = 0;
@@ -249,36 +255,38 @@ public sealed class ParkLitter
 		Array.Clear( blockPathsValid );
 	}
 
+	/// <summary>The id a cell reseeds the world generator with (<c>y × 128 + x + 1</c>, the original's cell index).</summary>
+	public static uint CellId( int x, int y ) => (uint)(y * 128 + x + 1);
+
 	/// <summary>
 	/// The sprite's offset inside the cell in tenths of a cell (1..9 each way): the original reseeds the world generator with the cell id
-	/// (<c>y × 128 + x + 1</c>) and draws twice (tp.exe <c>0x004D94E2</c>), so the offset depends on the cell alone.
+	/// and draws twice (tp.exe <c>0x004D94E2</c>), so the offset depends on the cell alone. The draws are taken from <paramref name="world"/>, which keeps the state
+	/// they leave: everything the park draws next continues from it.
 	/// </summary>
-	public static (int X, int Z) SpriteOffset( int x, int y )
+	public static (int X, int Z) SpriteOffset( WorldRng world, int x, int y )
 	{
-		var state = (uint)(y * 128 + x + 1);
-		return ((int)(Next( ref state ) % 9) + 1, (int)(Next( ref state ) % 9) + 1);
+		world.Reseed( CellId( x, y ) );
+		return ((int)(world.NextWord() % 9) + 1, (int)(world.NextWord() % 9) + 1);
 	}
+
+	/// <summary>The sprite offset of a cell as a pure function of the cell (a generator of its own is reseeded).</summary>
+	public static (int X, int Z) SpriteOffset( int x, int y ) => SpriteOffset( new WorldRng( 0 ), x, y );
 
 	/// <summary>
 	/// The point in a littered cell a handyman walks to, in 1/256 of a cell: the job search reseeds the world generator with the cell id and
-	/// draws twice (tp.exe <c>0x004D71CA</c>), each draw's low seven bits clamped to 1..9 and times 13, so the spot depends on the cell alone.
+	/// draws twice (tp.exe <c>0x004D71CA</c>), each draw's low seven bits clamped to 1..9 and times 13, so the spot depends on the cell alone. The draws are taken from
+	/// <paramref name="world"/>, which keeps the state they leave.
 	/// </summary>
-	public static (int X, int Y) SweepSpot( int x, int y )
+	public static (int X, int Y) SweepSpot( WorldRng world, int x, int y )
 	{
-		var state = (uint)(y * 128 + x + 1);
+		world.Reseed( CellId( x, y ) );
 		int Byte( uint draw ) => Math.Clamp( (int)(draw & 0x7F), 1, 9 ) * 13;
-		var first = Byte( Next( ref state ) );
-		return (first, Byte( Next( ref state ) ));
+		var first = Byte( world.NextWord() );
+		return (first, Byte( world.NextWord() ));
 	}
 
-	/// <summary>The world generator step (tp.exe <c>0x00516330</c>, ORACLE.md X1): LCG, rotate right by 13, signed absolute value.</summary>
-	private static uint Next( ref uint state )
-	{
-		var value = unchecked(state * 1664525u + 1013904223u);
-		state = (value >> 13) | (value << 19);
-		var signed = (int)state;
-		return (uint)(signed < 0 ? unchecked(-signed) : signed);
-	}
+	/// <summary>The sweep spot of a cell as a pure function of the cell (a generator of its own is reseeded).</summary>
+	public static (int X, int Y) SweepSpot( int x, int y ) => SweepSpot( new WorldRng( 0 ), x, y );
 
 	/// <summary>Every littered cell with its claim, in row order (saves).</summary>
 	public IEnumerable<LitterCell> Snapshot()

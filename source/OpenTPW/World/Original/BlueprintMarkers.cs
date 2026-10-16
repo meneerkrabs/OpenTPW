@@ -10,13 +10,21 @@ public enum BlueprintMarker
 	Refused = 1,
 	/// <summary>A cell of the coaster tool's placement area: a yellow and black chequered face (the original draws face type 0x11f from <c>0x5234d0</c>).</summary>
 	Area = 2,
+	/// <summary>The entrance's outside cell: <c>m_enter</c>, an arrow turned to the direction byte (texture 3).</summary>
+	Enter = 3,
+	/// <summary>The exit's outside cell: <c>m_exit</c>, an arrow turned to the direction byte (texture 4).</summary>
+	Exit = 4,
+	/// <summary>The front row of an object's footprint: <c>m_front</c>, turned to the build direction (texture 6).</summary>
+	Front = 6,
+	/// <summary>The entrance's outside cell when no queue is laid: <c>m_inout</c> (texture 7).</summary>
+	InOut = 7,
 }
 
 /// <summary>
-/// The original's BlueprintMesh: build-tool ghosts drawn as blue (or red) boxes over the cells of a path or queue
-/// line and over an object's footprint while it is being placed. Each cell gets a flat face 10 units square at its
-/// marker height plus 1.5, and vertical faces, 10 high, from each lower neighbour's marker height up to its own
-/// (docs/reverse/BLUEPRINT.md). The geometry is rebuilt only when the set of marked cells changes.
+/// The original's BlueprintMesh: build-tool ghosts drawn as blue (or red) squares over the cells of a path or queue
+/// line and over an object's footprint while it is being placed. Each cell gets a flat face 10 units square whose
+/// vertices follow the terrain, 1.5 above it, and ripple with a travelling sine (docs/reverse/BLUEPRINT.md). The geometry is rebuilt when
+/// the set of marked cells changes and, while the game runs, every frame (the ripple phase moves).
 /// </summary>
 // [BIN:STP-PPC:0x100BCB60 dynamic meshes] BlueprintMesh, WaterMesh, FlagsMesh; [BIN:STP-PPC:0x100BD3D4 AddFace] square faces of mesh 0 with a texture index; [BIN:STP-PPC:0x100BF540 square face] code 0 is the flat face at (x, y, z)-(x+10, y, z+10), codes 1/4/0x10/0x40 the vertical faces on the −Y/+X/+Y/−X edges, 10 high
 public sealed class BlueprintMarkers : ModelEntity
@@ -30,6 +38,8 @@ public sealed class BlueprintMarkers : ModelEntity
 
 	private const int TextureSlots = 16;
 	private static readonly string[] TextureNames = ["blue", "red"];
+	// [BIN:STP-PPC:0x1022C374 dynamic texture table] slots 3, 4, 6 and 7 are m_enter, m_exit, m_front and m_inout (docs/reverse/BLUEPRINT.md)
+	private static readonly (int Slot, string Name)[] ArrowTextures = [(3, "m_enter"), (4, "m_exit"), (6, "m_front"), (7, "m_inout")];
 
 	private readonly ModelHeightfield field;
 	private readonly Material material;
@@ -45,6 +55,10 @@ public sealed class BlueprintMarkers : ModelEntity
 		textures.Add( AreaTexture() );
 		while ( textures.Count < TextureSlots )
 			textures.Add( textures[0] );
+		// The arrow markers are optional art: a data set without them (Theme Park Inc) draws those cells blue.
+		foreach ( var (slot, name) in ArrowTextures )
+			if ( ResolveTexturePath( $"/generic/dynamic/textures/{name}.wct" ) is { } arrowPath )
+				textures[slot] = new Texture( arrowPath, TextureFlags.Repeat );
 		material.Set( "Color", textures.ToArray(), SamplerType.Anisotropic );
 	}
 
@@ -108,27 +122,73 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// <summary>The cells currently marked (empty while no tool shows a ghost).</summary>
 	public IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> Cells => shown;
 
+	/// <summary>The ripple phase (the original's global <c>0x874FC0</c>).</summary>
+	public float Phase => phase;
+
 	/// <summary>Shows exactly these cells (later duplicates of a cell win); an empty list hides the markers.</summary>
-	public void Show( IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells )
+	public void Show( IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells ) => Show( cells, null );
+
+	/// <summary>
+	/// Shows exactly these cells; <paramref name="directions"/> gives the direction byte (1, 4, 0x10 or 0x40) of the cells
+	/// whose texture is an arrow (<see cref="BlueprintMarker.Front"/>, <see cref="BlueprintMarker.Enter"/>, <see cref="BlueprintMarker.Exit"/>).
+	/// </summary>
+	public void Show( IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells, IReadOnlyDictionary<(int X, int Y), byte>? directions )
 	{
 		var unique = cells
 			.Where( cell => cell.X >= 0 && cell.Y >= 0 && cell.X < field.CellCountX && cell.Y < field.CellCountZ )
 			.GroupBy( cell => (cell.X, cell.Y) ).Select( group => group.Last() ).ToArray();
-		if ( unique.SequenceEqual( shown ) )
+		var directionList = directions == null ? [] : unique.Where( cell => directions.ContainsKey( (cell.X, cell.Y) ) ).Select( cell => directions[(cell.X, cell.Y)] ).ToArray();
+		if ( unique.SequenceEqual( shown ) && directionList.AsSpan().SequenceEqual( shownDirectionList ) )
 			return;
 		shown = unique;
+		shownDirectionList = directionList;
+		shownDirections = directions == null ? [] : directions.Where( pair => unique.Any( cell => (cell.X, cell.Y) == pair.Key ) ).ToDictionary();
+		Rebuild();
+	}
+
+	public void Clear() => Show( [] );
+
+	/// <summary>
+	/// Advances the ripple phase while the game runs. The original adds 0.1 to the phase on every unpaused frame of its
+	/// dynamic-mesh flush and the vertex writer rebuilds every face from it, so the markers' height keeps moving.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053C762 ripple phase] the per-frame flush subtracts the constant 0x700DF8 (-0.1) from the global 0x874FC0 unless the pause test 0x402DF0 answers true
+	// [APPROX:BLUEPRINT-001] the original steps the phase once per rendered frame and its frame rate is not known; OpenTPW steps 0.1 per 1/30 s of real time
+	public void Update( float deltaSeconds, bool paused )
+	{
+		if ( paused || shown.Length == 0 || !(deltaSeconds > 0) )
+			return;
+		phase = (phase + PhaseStep * Math.Min( deltaSeconds, 0.25f ) * AssumedFrameRate) % (MathF.PI * 2 * 64);
+		// Only the heights move with the phase: the cells are unchanged, so the model's own vertex buffer takes the new vertices
+		// instead of allocating a model and its buffers every frame.
+		if ( Model is { } model && model.HasDynamicVertices )
+		{
+			var (vertices, _) = BuildGeometry( field, shown, shownDirections, phase );
+			model.UpdateVertices( vertices );
+			return;
+		}
+		Rebuild();
+	}
+
+	private void Rebuild()
+	{
 		var old = Model;
 		Model = null;
-		Hidden = unique.Length == 0;
-		if ( unique.Length > 0 )
+		Hidden = shown.Length == 0;
+		if ( shown.Length > 0 )
 		{
-			var (vertices, indices) = BuildGeometry( field, unique );
-			Model = new Model( vertices, indices, material );
+			var (vertices, indices) = BuildGeometry( field, shown, shownDirections, phase );
+			Model = new Model( vertices, indices, material, dynamicVertices: true );
 		}
 		old?.ReleaseBuffers();
 	}
 
-	public void Clear() => Show( [] );
+	/// <summary>Phase added per frame.</summary>
+	public const float PhaseStep = 0.1f;
+	private const float AssumedFrameRate = 30f;
+	private float phase;
+	private byte[] shownDirectionList = [];
+	private IReadOnlyDictionary<(int X, int Y), byte> shownDirections = new Dictionary<(int X, int Y), byte>();
 
 	/// <summary>Leaving the park releases the marker model and the markers' own material (the textures are shared game textures).</summary>
 	protected override void OnDelete()
@@ -139,68 +199,72 @@ public sealed class BlueprintMarkers : ModelEntity
 		material.ReleaseOwnedResources();
 	}
 
+	private const int SineEntries = 4096;
+	private static readonly float[] SineTable = Enumerable.Range( 0, SineEntries ).Select( index => (float)Math.Sin( (double)index / SineEntries * 6.2831854820251465 ) ).ToArray();
+
 	/// <summary>
-	/// The marker height of a cell: the original passes 0 for plain ground (its vertices then follow the terrain) and the
-	/// cell height rounded up to a multiple of 10 on ride and track cells; OpenTPW rounds the cell's corner height up for every cell.
+	/// The ripple the face builder adds to a vertex's height: a lookup in the 4096-entry sine table at
+	/// <c>(phase + x + z)</c> radians, rounded to the nearest entry (amplitude 1 unit).
 	/// </summary>
-	// [BIN:STP-PPC:0x10086794 SetCell ghost height] plain cells start at 0.0 (TOC −0x306c); cells of types 4, 7, 9, 10, 0xb, 0x10, 0x19 take 10 × ((int)h + 9) / 10 with h from 0x100509E8 (the terrain height at the cell corner x·10, y·10); 0x10086030 raises the height next to those types
-	// [APPROX:BLUEPRINT-001] every cell is a flat face at its corner height rounded up to a multiple of 10; the PC SetCell 0x532FC0 passes 0 for a plain cell (0x5330A5) and 10 × ((int)H + 9) / 10 of the cell height 0x452AE0 (the owner object's .hmp, else the terrain sampler 0x4527F0) for a second-layer cell (0x4D0AF0) of type 11, 12, 16, 17 or 25 and then a map cell of type 4, 7, 9, 10 or 30 (0x5330AD–0x533189; no neighbour raise: 0x536CA0 serves only the 2 × 2 track ghost 0x5370E0), and the face builder's vertex writer 0x53DDD0 adds to every vertex of a texture 0–14 face the terrain at that vertex (0x4527F0) and sin(phase + x + z) from the sine table (phase 0x874FC0 + 0.1 per unpaused frame at 0x53C762), so plain markers drape over the ground and ripple by ±1 unit; neither the drape, the ripple nor the typed raise (OpenTPW's map does not type ride cells) is reproduced
-	public static float MarkerHeight( ModelHeightfield field, int x, int y )
+	// [BIN:TPW-EXE:0x0053DDD0 blueprint vertex writer] for a texture 0-14 face the vertex y becomes y + terrain(x, z) (0x4527F0) + sine[round((phase + x + z) * 4096 / 2π) & 4095]; the table is filled by 0x4708D0 (callers 0x449EB0, 0x44A1D0 pass 0x1000) with sin(i / 4096 * 2π)
+	public static float Ripple( float phase, float x, float z )
 	{
-		var height = (int)field.GetCornerHeight( x, y );
-		return height <= 0 ? 0 : (height + 9) / 10 * 10;
+		var index = (int)MathF.Round( (phase + (z + x)) * (SineEntries * 0.15915493667125702f), MidpointRounding.ToEven );
+		return SineTable[index & (SineEntries - 1)];
 	}
 
-	internal static (Vertex[] Vertices, uint[] Indices) BuildGeometry( ModelHeightfield field, IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells )
+	/// <summary>
+	/// The height of one marker vertex in original units: the terrain under it, the face lift and the ripple. The original's
+	/// <c>SetCell</c> gives a plain cell height 0 and the vertex writer adds the terrain, so a plain marker drapes over the ground.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005330A5 plain cell height] SetCell 0x532FC0 passes 0 for a plain cell; the face is added at y + 1.5 (0x5338E7, constant 0x700D5C = -1.5 subtracted) and 0x53DDD0 adds the terrain at the vertex and the ripple
+	// [APPROX:BLUEPRINT-001] the raise of a cell that already holds an object or track (map types 4, 7, 9, 10, 30; second layer 11, 12, 16, 17, 25: 10 x ((int)H + 9) / 10 of the cell height H) is not applied, because OpenTPW's cell map does not type the cells of objects and the ghost then shows the plain value
+	public static float VertexHeight( ModelHeightfield field, int cornerX, int cornerY, float phase ) =>
+		field.GetCornerHeight( cornerX, cornerY ) + Lift + Ripple( phase, cornerX * FaceSize, cornerY * FaceSize );
+
+	internal static (Vertex[] Vertices, uint[] Indices) BuildGeometry( ModelHeightfield field, IReadOnlyList<(int X, int Y, BlueprintMarker Marker)> cells,
+		IReadOnlyDictionary<(int X, int Y), byte>? directions = null, float phase = 0 )
 	{
 		var vertices = new List<Vertex>();
 		var indices = new List<uint>();
 		foreach ( var (x, y, marker) in cells )
 		{
-			var height = MarkerHeight( field, x, y );
 			var left = x * FaceSize;
 			var front = y * FaceSize;
-			AddFace( vertices, indices, field, (int)marker,
-				new( left, height + Lift, front ), new( left + FaceSize, height + Lift, front ),
-				new( left, height + Lift, front + FaceSize ), new( left + FaceSize, height + Lift, front + FaceSize ) );
-			// Walls from each lower neighbour's marker height up to this cell's, one 10-unit face per step.
-			// [BIN:STP-PPC:0x10086B9C SetCell ghost walls] fcmpu neighbour height with the cell's; a loop adds an edge face per 10 units (0x10086C2C) from the neighbour's height while below the cell's
-			foreach ( var (dx, dy) in new[] { (0, -1), (1, 0), (0, 1), (-1, 0) } )
-			{
-				var neighbour = x + dx >= 0 && y + dy >= 0 && x + dx < field.CellCountX && y + dy < field.CellCountZ
-					? MarkerHeight( field, x + dx, y + dy ) : height;
-				for ( var bottom = neighbour; bottom < height; bottom += FaceSize )
-					AddWall( vertices, indices, field, (int)marker, x, y, dx, dy, bottom + Lift );
-			}
+			byte direction = 0;
+			if ( directions != null )
+				directions.TryGetValue( (x, y), out direction );
+			AddFace( vertices, indices, field, (int)marker, direction,
+				new( left, VertexHeight( field, x, y, phase ), front ), new( left + FaceSize, VertexHeight( field, x + 1, y, phase ), front ),
+				new( left, VertexHeight( field, x, y + 1, phase ), front + FaceSize ), new( left + FaceSize, VertexHeight( field, x + 1, y + 1, phase ), front + FaceSize ) );
 		}
 		return (vertices.ToArray(), indices.ToArray());
 	}
 
-	private static void AddWall( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int slot, int x, int y, int dx, int dy, float bottom )
+	/// <summary>
+	/// The corner order of a face's texture coordinates by direction byte: vertex i takes the unit-square entry <c>order[i]</c>
+	/// (0 = (0,0), 1 = (1,0), 2 = (0,1), 3 = (1,1)); every byte but 4, 0x10 and 0x40 uses the default order.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053DFF7 face corner order] the face builder 0x53DF30 picks the four table entries by the direction byte: default (0,1,2,3), 0x40 (1,3,0,2), 0x10 (3,2,1,0), 4 (2,0,3,1)
+	public static int[] CornerOrder( byte direction ) => direction switch
 	{
-		var top = bottom + FaceSize;
-		// The edge of cell (x, y) towards (x + dx, y + dy), as two points on the ground plane.
-		var (ax, az, bx, bz) = (dx, dy) switch
-		{
-			(0, -1) => (x, y, x + 1, y),
-			(1, 0) => (x + 1, y, x + 1, y + 1),
-			(0, 1) => (x + 1, y + 1, x, y + 1),
-			_ => (x, y + 1, x, y),
-		};
-		AddFace( vertices, indices, field, slot,
-			new( ax * FaceSize, bottom, az * FaceSize ), new( bx * FaceSize, bottom, bz * FaceSize ),
-			new( ax * FaceSize, top, az * FaceSize ), new( bx * FaceSize, top, bz * FaceSize ) );
-	}
+		0x40 => [1, 3, 0, 2],
+		0x10 => [3, 2, 1, 0],
+		4 => [2, 0, 3, 1],
+		_ => [0, 1, 2, 3],
+	};
 
 	/// <summary>One textured quad from four original-space corners (u: first→second, v: first→third), both sides facing out.</summary>
 	// [BIN:TPW-EXE:0x0053C3F0 blueprint UV table] the runtime table 0x871EE8 (12-byte entries, u at +0, v at +4) holds the unit square (0,0), (1,0), (0,1), (1,1) in entries 0-3 and (0.5, 0.5) in entry 4; entries 5-8 are the rotating +-0.4 square of the track symbols
-	// [BIN:TPW-EXE:0x0053DF30 blueprint face builder] textures 8-14 (m_link to m_erase) use the rotating set from entry 5, every other texture the unit square from entry 0 (0x53DFE6–0x53DFF2); the corner order follows the direction byte: default (0,1,2,3), 0x40 (1,3,0,2), 0x10 (3,2,1,0), 4 (2,0,3,1) (0x53DFF7–0x53E034), which shows only on a non-uniform texture; the blue and red markers are uniform, so each face shows its whole texture once, as here, and both sides are drawn (no hardware cull)
-	private static void AddFace( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int slot,
+	// [BIN:TPW-EXE:0x0053DF30 blueprint face builder] textures 8-14 (m_link to m_erase) use the rotating set from entry 5, every other texture the unit square from entry 0 (0x53DFE6–0x53DFF2); the corner order follows the direction byte: default (0,1,2,3), 0x40 (1,3,0,2), 0x10 (3,2,1,0), 4 (2,0,3,1) (0x53DFF7–0x53E034), which shows only on a non-uniform texture (the arrows of m_front, m_enter and m_exit; the blue and red markers are uniform) and is applied here by CornerOrder; both sides are drawn (no hardware cull)
+	private static void AddFace( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int slot, byte direction,
 		System.Numerics.Vector3 a, System.Numerics.Vector3 b, System.Numerics.Vector3 c, System.Numerics.Vector3 d )
 	{
 		var positions = new[] { a, b, c, d }.Select( corner => OriginalParkPlacement.ToEngine( field, corner ) ).ToArray();
 		var normal = System.Numerics.Vector3.Normalize( System.Numerics.Vector3.Cross( positions[1] - positions[0], positions[2] - positions[0] ) );
-		var uv = new[] { new Vector2( 0, 0 ), new Vector2( 1, 0 ), new Vector2( 0, 1 ), new Vector2( 1, 1 ) };
+		var square = new[] { new Vector2( 0, 0 ), new Vector2( 1, 0 ), new Vector2( 0, 1 ), new Vector2( 1, 1 ) };
+		var order = CornerOrder( direction );
+		var uv = order.Select( entry => square[entry] ).ToArray();
 		foreach ( var (offsets, sign) in new[] { (new uint[] { 0, 2, 3, 3, 1, 0 }, 1f), (new uint[] { 0, 1, 3, 3, 2, 0 }, -1f) } )
 		{
 			var start = (uint)vertices.Count;

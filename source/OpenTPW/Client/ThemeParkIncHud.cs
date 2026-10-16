@@ -402,7 +402,7 @@ public sealed class ThemeParkIncHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		var toolClick = UpdateCellTool( context, input, inPark );
-		UpdateBlueprint( inPark );
+		UpdateBlueprint( inPark, context.Delta );
 		// [APPROX:UI-027] select by occupied grid cell; the original picks a ride, shop or other object by its pick sprite (0x5890e0, 0x532bd0, window 0x4b6080)
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsRemovingObjects && input.LeftReleased && !toolPress )
 			selectedObject = level.Objects.FindAt( cursorX, cursorY );
@@ -496,30 +496,27 @@ public sealed class ThemeParkIncHud
 	}
 
 	/// <summary>The build ghost: the tool's line, or the armed object's footprint, as blueprint markers.</summary>
-	private void UpdateBlueprint( bool inPark )
+	private void UpdateBlueprint( bool inPark, float delta )
 	{
 		if ( level.Blueprint is not { } blueprint )
 			return;
 		var cells = new List<(int X, int Y, BlueprintMarker Marker)>();
+		Dictionary<(int X, int Y), byte>? directions = null;
 		if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			foreach ( var cell in ghost.Line )
-			{
-				var refused = cell == ghost.StoppedAt;
-				cells.Add( (cell.X, cell.Y, refused ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
-				if ( refused )
-					break;
-			}
+			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
 			// No economy runs: the footprint's own terrain and occupancy check decides the colour.
 			var allowed = level.CheckObject( entry, cursorX, cursorY, level.BuildRotation ) == OriginalPlacementResult.Allowed;
 			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, level.BuildRotation );
-			foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, level.BuildRotation ) )
-				cells.Add( (x, y, allowed ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
+			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, level.BuildRotation, allowed );
+			cells.AddRange( footprint.Cells );
+			directions = footprint.Directions;
 		}
-		blueprint.Show( cells );
+		blueprint.Update( delta, false );
+		blueprint.Show( cells, directions );
 	}
 
 	public void Draw( UiContext context ) => Stack.Draw( context );

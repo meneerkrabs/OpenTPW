@@ -35,6 +35,9 @@ public class DeterminismTests
 			Economy.Speed = GameSpeed.Fastest;
 			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream );
 			Scripts = new RideScriptWorld( seed.ScriptStream );
+			// the park's one world generator, as Level links it: the economy's, which the guests and the scripts draw from
+			Guests.AttachWorld( Economy.World );
+			Scripts.AttachWorld( Economy.World );
 			Sound = new SoundEventSystem( new AudioMixer( null ), seed.SoundStream );
 			payments = new GuestEconomyBridge( () => Economy, Guests );
 			Guests.Payments = payments;
@@ -95,6 +98,9 @@ public class DeterminismTests
 			Economy.GuestStatistics = payments;
 			Assert.IsNotNull( world );
 			Assert.AreEqual( Seed.Value, world.Seed );
+			// the loaded economy holds its own generator object: the guests and the scripts continue it
+			Guests.AttachWorld( Economy.World );
+			Scripts.AttachWorld( Economy.World );
 			Streams.RestoreRandomState( world );
 		}
 
@@ -183,7 +189,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
-	internal const ulong FixedRunHash = 0x09894103FAFB8D45UL;
+	internal const ulong FixedRunHash = 0x7AED41D19433D4B2UL;
 
 	/// <summary>
 	/// Switching only the <c>opentpw.online</c> extension (docs/MODS.md) leaves the pinned digests unchanged: this fixed run,
@@ -216,9 +222,9 @@ public class DeterminismTests
 		var seed = new WorldSeed( 2026 );
 		var reference = new SyntheticPark( seed );
 		reference.Run( HalfRun );
-		var economyStreamAtHalf = reference.Economy.Random.State;
+		var economyStreamAtHalf = reference.Economy.World.State;
 		reference.Run( HalfRun );
-		Assert.AreNotEqual( economyStreamAtHalf, reference.Economy.Random.State, "the economy stream is drawn after the save point" );
+		Assert.AreNotEqual( economyStreamAtHalf, reference.Economy.World.State, "the world generator is drawn after the save point" );
 
 		var resumed = new SyntheticPark( seed );
 		resumed.Run( HalfRun );
@@ -230,11 +236,11 @@ public class DeterminismTests
 			resumed.Save( path );
 			var atSave = resumed.Hash;
 			var streams = resumed.RandomState;
-			// Move the economy and the script stream away from the save point by drawing, not through the
-			// restore path under test; the guest stream is covered by LoadRestoresEveryStreamDrawnAfterTheSave,
-			// because drawing from it also moves the (unsaved in this legacy economy-only save) guests.
+			// Move the world generator away from the save point by drawing, not through the restore path under
+			// test (the economy's staff pool draws from it; the guests are covered by
+			// LoadRestoresEveryStreamDrawnAfterTheSave, because their ticks also move the unsaved guests of this legacy economy-only save).
 			resumed.Economy.Advance( 50_000 );
-			resumed.Scripts.NextScriptSeed();
+			resumed.Scripts.World.NextWord();
 			Assert.AreNotEqual( atSave, resumed.Hash );
 			resumed.Load( path );
 			Assert.AreEqual( streams, resumed.RandomState );
@@ -267,20 +273,22 @@ public class DeterminismTests
 			park.Sound.Draw();
 			park.Save( path );
 			var saved = park.RandomState;
-			Assert.AreEqual( park.Sound.Seed, saved.SoundSeed, "the chooser's advanced state is what the save holds (AUDIO-037: the original's chooser is clock-seeded and unsaved)" );
+			Assert.AreEqual( park.Sound.Seed, saved.SoundSeed, "the chooser's advanced state is what the save holds ([EXT:sound-chooser-seed]: the original's chooser is clock-seeded and unsaved)" );
 			Assert.AreNotEqual( park.Seed.SoundStream, saved.SoundSeed, "the draw before the save advanced the chooser (tp.exe 0x6bc84c stores every draw's state)" );
 			for ( var tick = 0; tick < 600; tick++ )
 				park.Guests.Tick( Tick );
-			park.Scripts.NextScriptSeed();
+			var afterGuests = park.RandomState.Generator;
+			park.Scripts.World.NextWord();
 			park.Sound.Draw();
 			park.Sound.Reseed( saved.SoundSeed + 1 );
 			var moved = park.RandomState;
-			Assert.AreNotEqual( saved.GuestRandom, moved.GuestRandom, "guest ticks drew from the guest stream" );
-			Assert.AreNotEqual( saved.ScriptRandom, moved.ScriptRandom );
+			Assert.AreNotEqual( saved.Generator, afterGuests, "guest ticks drew from the world generator" );
+			Assert.AreNotEqual( afterGuests, moved.Generator, "a script draw moved the same generator" );
 			Assert.AreNotEqual( saved.SoundSeed, moved.SoundSeed );
 			park.Load( path );
-			Assert.AreEqual( saved.GuestRandom, park.Guests.RandomState, "guest stream" );
-			Assert.AreEqual( saved.ScriptRandom, park.Scripts.RandomState, "script stream" );
+			Assert.AreEqual( saved.Generator, park.Guests.RandomState, "the guests' generator" );
+			Assert.AreEqual( saved.Generator, park.Scripts.RandomState, "the scripts' generator" );
+			Assert.AreSame( park.Guests.World, park.Scripts.World, "one generator for everyone after the load" );
 			Assert.AreEqual( saved.SoundSeed, park.Sound.Seed, "sound seed" );
 		}
 		finally
@@ -306,7 +314,7 @@ public class DeterminismTests
 	public void ParkSaveRoundTripsTheWorldStreams()
 	{
 		var park = EconomyTestData.Park();
-		var state = new WorldRandomState( 0xFFFF_FFFF_FFFF_FFFF, 0x8000_0000_0000_0001, 42, 0xFFFF_FFFF );
+		var state = new WorldRandomState( 0xFFFF_FFFF_FFFF_FFFF, 0x8000_0001, 0xFFFF_FFFF );
 		var json = ParkSaveFile.Serialize( park, state );
 		Assert.AreEqual( state, ParkSaveFile.ToWorldState( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ) ) );
 		Assert.AreEqual( json, ParkSaveFile.Serialize( ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), park.Settings, park.Catalog ), state ) );
@@ -454,7 +462,7 @@ public class DeterminismAssetTests
 			var park = ParkEconomyRuntime.ForOriginalLevel( original, ParkStartKind.OriginalSaveReference, seed );
 			var guests = new GuestSimulation( GuestPathGrid.FromOriginal( original.Map, original.Save ), GuestSettings.Load( "jungle" ), seed.GuestStream );
 			park.AttachGuests( guests );
-			var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) );
+			var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) ).LinkGenerator();
 			void Run( int ticks )
 			{
 				for ( var tick = 0; tick < ticks; tick++ )
@@ -465,7 +473,7 @@ public class DeterminismAssetTests
 			}
 			park.Economy.Speed = GameSpeed.Fastest;
 			Run( 3000 );
-			streams.Scripts.NextScriptSeed();
+			streams.Scripts.World.NextWord();
 			streams.Sound!.Draw();
 			Directory.CreateDirectory( directory );
 			var path = Path.Combine( directory, "park.json" );
@@ -473,13 +481,13 @@ public class DeterminismAssetTests
 			var saved = streams.CaptureRandomState();
 			var economy = ParkSaveFile.Serialize( park.Economy );
 			Run( 3000 );
-			streams.Scripts.NextScriptSeed();
+			streams.Scripts.World.NextWord();
 			// A draw stores the chooser's advanced state (tp.exe 0x6bc84c), and the park saves it so a resume continues the same draws.
 			Assert.AreEqual( saved.SoundSeed, streams.CaptureRandomState().SoundSeed, "no draw since the save" );
 			streams.Sound.Draw();
 			streams.Sound.Reseed( unchecked(saved.SoundSeed + 1) );
 			var moved = streams.CaptureRandomState();
-			Assert.IsTrue( saved.GuestRandom != moved.GuestRandom && saved.ScriptRandom != moved.ScriptRandom && saved.SoundSeed != moved.SoundSeed, "every stream was drawn after the save" );
+			Assert.IsTrue( saved.Generator != moved.Generator && saved.SoundSeed != moved.SoundSeed, "every stream was drawn after the save" );
 			Assert.AreNotEqual( economy, ParkSaveFile.Serialize( park.Economy ) );
 			streams.LoadPark( path );
 			Assert.AreEqual( saved, streams.CaptureRandomState() );

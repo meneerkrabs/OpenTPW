@@ -204,7 +204,6 @@ public class VisitorWorldSelectionTests
 		Set(hud, "infoElements", new List<UiElement>());
 		Set(hud, "economyElements", new List<UiElement>());
 		Set(hud, "messages", new List<(string Text, float Age)>());
-		Set(hud, "cashTracker", new CashChangeTracker(0));
 		Set(hud, "<Status>k__BackingField", new NoEconomyStatus());
 		Set(hud, "lastLevelMessage", "");
 		Set(level, "<LastActionMessage>k__BackingField", "");

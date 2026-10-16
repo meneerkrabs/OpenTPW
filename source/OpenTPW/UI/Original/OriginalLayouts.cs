@@ -1,6 +1,6 @@
 namespace OpenTPW.UI.Original;
 
-/// <summary>Which of the two tool-pointer flags of the original (0x816d60, 0x816d4c) overrides the tool's own pointer; their meaning is not traced (UI-100).</summary>
+/// <summary>Which of the two tool-pointer flags of the original (0x816d60, 0x816d4c) overrides the tool's own pointer; their meaning is not traced (`[EXT:software-pointers]`).</summary>
 public enum ToolPointerFlag { Link, End }
 
 /// <summary>

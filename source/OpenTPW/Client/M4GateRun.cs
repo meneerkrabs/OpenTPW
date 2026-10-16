@@ -23,7 +23,7 @@ internal sealed class M4GateRun
 	{
 		this.options = options;
 		this.runIndex = runIndex;
-		// [APPROX:GATEM4-001] a working attraction admits a queued guest within W, releases a boarded guest within W, and after closing releases its riders within W; W = 5 simulated minutes (18,000 fixed ticks) by default — evidence needed: a traced bound on one ride cycle (admission, ride, unload) per ride type
+		// [EXT:m4-gate-use-window] the use window W (a working attraction admits a queued guest, releases a boarded guest and, after closing, releases its riders within W; 5 simulated minutes, 18,000 fixed ticks, by default) is the OpenTPW test harness's own tolerance: the original has no gate and no such bound, and a pass criterion needs some finite window
 		window = M3Gate.TicksForMinutes( options.UseWindowMinutes );
 	}
 
@@ -211,12 +211,8 @@ internal sealed class M4GateRun
 		public SegmentResult? Segment;
 		public long PathCharged;
 		public long Ticks;
-		private int nextSeed = 1;
 
 		public ParkEconomy Economy => Runtime.Economy;
-
-		/// <summary>Object script seeds as <see cref="ParkObjects"/> derives them from the world seed.</summary>
-		public int NextSeed() => nextSeed++ ^ Seed.ObjectScriptKey;
 
 		public bool IsBlocked( int x, int y ) => Occupied.Contains( (x, y) ) || Grid.IsWalkable( x, y ) || Grid.IsQueue( x, y );
 
@@ -262,8 +258,9 @@ internal sealed class M4GateRun
 		};
 		// [DATA:levels/<theme>/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes]
 		foreach ( var entry in catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ) )
-			scene.FixedItems.Add( new OriginalObjectRuntime( entry, scene.World, scene.NextSeed(), open: true ) );
+			scene.FixedItems.Add( new OriginalObjectRuntime( entry, scene.World, seed: null, open: true ) );
 		runtime.AttachGuests( scene.Guests );
+		scene.World.AttachWorld( runtime.Economy.World );
 		// a new park starts closed (tp.exe 0x51562d); the gate run opens it as the player's door button would (0x519ef0)
 		runtime.Economy.OpenPark();
 		foreach ( var item in scene.FixedItems.Where( item => scene.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) ) )
@@ -510,7 +507,7 @@ internal sealed class M4GateRun
 		try
 		{
 			scene = CreateScene( park, settings, catalog, savePath, arrivals: entry.IsChoosable && entry.ScriptPath != null );
-			runtime = new OriginalObjectRuntime( entry, scene.World, scene.NextSeed(), open: true );
+			runtime = new OriginalObjectRuntime( entry, scene.World, seed: null, open: true );
 			attraction = runtime.IsAttraction;
 			var load = new JsonObject
 			{
@@ -698,7 +695,7 @@ internal sealed class M4GateRun
 		var problems = new List<string>();
 		if ( scriptProblem != null )
 			problems.Add( scriptProblem );
-		// [APPROX:GATEM4-002] closing ends use: no guest boards a closed attraction — evidence needed: a trace of the host's admission test against VAR_RIDECLOSED (QUEUE-plan) and of what happens to riders and queue on closing
+		// [EXT:m4-gate-closing-ends-use] the gate's criterion that no guest boards a closed attraction is the OpenTPW test harness's own pass rule: the original has no gate, and the criterion only asks the host to honour VAR_RIDECLOSED
 		if ( track.Boardings > 0 )
 			problems.Add( $"{track.Boardings} guest(s) boarded after closing (first at tick {track.Boarded})" );
 		if ( riders > 0 && scriptProblem == null )
@@ -789,7 +786,7 @@ internal sealed class M4GateRun
 		try
 		{
 			var scene = CreateScene( park, settings, catalog, savePath, arrivals: false );
-			var runtime = new OriginalObjectRuntime( entry, scene.World, scene.NextSeed(), open: true );
+			var runtime = new OriginalObjectRuntime( entry, scene.World, seed: null, open: true );
 			var (build, placement) = Build( scene, entry, runtime );
 			evidence["station"] = build.Detail;
 			if ( placement == null )

@@ -68,8 +68,6 @@ public sealed partial class ParkHud
 	/// <summary>The session's remembered list sorts (UI-084); a HUD built without a host keeps its own.</summary>
 	private ListSortMemory Sorts => host?.ListSorts ?? (fallbackSorts ??= new());
 	private OriginalObject? selectedObject;
-	private CashChangeTracker cashTracker;
-	private object? cashSource;
 	private readonly List<UiElement> economyElements = new();
 	private int cursorX = -1;
 	/// <summary>Set by a press the path/queue tool used, so its release does not select an object.</summary>
@@ -87,8 +85,6 @@ public sealed partial class ParkHud
 		Status = status;
 		Catalog = catalog;
 		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows );
-		cashTracker = new CashChangeTracker( status.Money );
-		cashSource = status.EconomySource;
 		lastLevelMessage = level.LastActionMessage;
 		level.Objects.ObjectPlaced += OnObjectPlaced;
 		// Harnesses that build a Level without its constructor have no tool object.
@@ -129,10 +125,14 @@ public sealed partial class ParkHud
 	// and calls the resume 0x10110598. The pause freezes the scaled clock (0x1010E888 → 0x10117C54) that drives the
 	// scheduler's 31 ms substeps and park turns, together with the advisor's unscaled clock (0x10117AE8).
 	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), by the generic message box 0x47f020 (0x47f26c), by the main window procedure 0x46b600 when the application is deactivated (0x46b74c) and by the three screens the pause menu's handler 0x48b6a0 opens (0x49efba, 0x49f29f, 0x4a3a6c); the park pauses here for the pause menu with the screens opened from it and for the map window
-	// [APPROX:UI-096] the pause menu's own screens keep the pause (its cases 1/22 → 0x49efb0, 2 → 0x49f280, 5 → 0x4a3a30 pause at 0x49efba, 0x49f29f, 0x4a3a6c; jump table 0x48bbc8 of 0x48b6a0), but the postcard (Ctrl+P), every generic message box 0x47f020 (table 0x74f920, b_okay/b_exit buttons, 27 callers, pause at 0x47f26c) and the application's deactivation (WM_ACTIVATEAPP in 0x46b600, 0x46b74c) pause in the original and not here — evidence needed: which OpenTPW dialogs are 0x47f020's message boxes
+	// [BIN:TPW-EXE:0x48cd10 delete confirmation] the delete confirmation of an object or staff member (the object windows 0x4af600, 0x4b0b30, 0x4b2150, the attractions window 0x497640 and the All Staff window 0x4b4fc0) is a generic message box 0x47f020 with UITEXT 0x18c and the b_exit and b_okay buttons when the Confirmations option is on, so it pauses (0x47f26c) and its close resumes (0x47eed0, message 0x14 → 0x409300); the postcard (Ctrl+P, 0x4a9380) pauses the same way: confirmDelete, confirmDeleteAttraction and the postcard screen stop the park here
+	// [APPROX:UI-096] the other message boxes (0x47f020's 27 call sites: the alert queue 0x47f620 that the goal and challenge code feeds through 0x47f410, the file errors of 0x4237f0, 0x4a77f0, the online notices 0x4bc500 and 0x4ec030) and the application's deactivation (WM_ACTIVATEAPP in 0x46b600, 0x46b74c) pause in the original and not here — evidence needed: which of OpenTPW's other dialogs (the dismissal box, whose original 0x4b5e5d is no 0x47f020 caller, the loan boxes, the restart and quit boxes) correspond to those call sites
 	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
 	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
-		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" ) ? 0 : speedScale;
+		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" or PostcardScreen or "confirmDelete" or "confirmDeleteAttraction" ) ? 0 : speedScale;
+
+	/// <summary>The name of the postcard composer's screen (it pauses the park while open, as Ctrl+P does).</summary>
+	public const string PostcardScreen = "sendPostcard";
 
 	/// <summary>The name of the map window's screen (it pauses the park while open).</summary>
 	public const string MapScreenName = "map";
@@ -177,8 +177,13 @@ public sealed partial class ParkHud
 	public static Veldrid.RgbaByte CashColor( long balance ) => CashColors[(int)Math.Clamp( (Math.Clamp( balance, -999, 6000 ) + 999) / 1000, 0, CashColors.Length - 1 )];
 	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
 
-	/// <summary>The balance change of the last <see cref="CashChangeTracker.Seconds"/>; it drives the trend arrow beside the balance (control 49), not the yellow cost text.</summary>
-	public long CashChange => cashTracker.Change;
+	/// <summary>
+	/// The frame of the trend arrow beside the balance (control 49, <c>green_up</c>): 1 (the red down arrow) when the last closed month spent more than it took, else 0;
+	/// 0 before the first month closes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4a0e30 date refresh] at every date update (0x4815e0 daily, 0x481560) the arrow's frame becomes 1 when the newest entry of the money-out sample ring (+0x1f5a4, index +0x1f7e4) exceeds the newest of the money-in ring (+0x1fc94, index +0x1fed4); an empty ring reads as the year, so both sides tie and the frame is 0
+	// [BIN:TPW-EXE:0x4c7720 month samples] both rings take one entry per month close (month message 12; 144 entries each), the entries the hire window reads as its income and money-out rows (0x49bdd0); the builder 0x4a1d70 sets the arrow to frame 0 and never hides it, only the cost text (control 48)
+	public int CashTrendFrame => FinanceEconomy is { } economy && economy.Ledger.History is { Count: > 0 } history && history[^1].MoneyOut > history[^1].MoneyIn ? 1 : 0;
 
 	/// <summary>
 	/// The cost of the build action under way, shown in yellow under the balance (control 48): the held blueprint's price, the path or queue line's cost so far, or the coaster track
@@ -269,10 +274,10 @@ public sealed partial class ParkHud
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
 		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending
 		// [BIN:TPW-EXE:0x004a0c18 HUD balance refresh] 0x4a0ab0 sets i_dollar (control 0x32) to frame 1 for a negative balance and 0 otherwise, beside the balance's absolute value
-		// [APPROX:UI-051] green_up frame 1 while the balance fell in the last seconds; the ticket count is the park's available tickets — evidence needed: the trend arrow's visibility and the in-park ticket spend reaching the player ledger
+		// [APPROX:UI-051] the ticket count is the park's available tickets, where the original shows the player's earned tickets less the spent count (0x5af5d0) — evidence needed: the in-park ticket spend reaching the player ledger
 		economyElements.Add( hud.Add( new UiModelImage { Id = "dollar", Model = "i_dollar", Frame = () => Status.Money < 0 ? 1 : 0, Bounds = Rect( 37, 58, 242, 262 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.Highlight, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
-		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashChange < 0 ? 1 : 0, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
+		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashTrendFrame, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "goldenKey", Model = "gkey", Bounds = Rect( 1853, 165, 1955, 268 ), Anchor = UiAnchor.TopRight } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "goldenTicket", Model = "gtick", Bounds = Rect( 1853, 54, 1955, 156 ), Anchor = UiAnchor.TopRight } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "goldenKeys", Text = () => GoldenKeysText, Font = fonts => fonts.Balance, Align = UiAlign.Right, Fit = true, Bounds = Rect( 1688, 171, 1829, 261 ), Anchor = UiAnchor.TopRight } ) );
@@ -681,7 +686,7 @@ public sealed partial class ParkHud
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
 		UpdateRideUpgradeButton( input );
 		UpdateCallStaffButton();
-		TrackCashChange( context.Delta );
+		UpdateEconomyElements();
 		UpdateCameraPanel( context.Delta );
 		UpdateMessageTube( context.Delta );
 		UpdateLocatorPanels();
@@ -701,7 +706,8 @@ public sealed partial class ParkHud
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
 			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
 		}
-		// [APPROX:UI-093] the camcorder's message procedure (0x488a00) acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf) and passes every other key to 0x65f66e, which calls the window's default handler (+0x118, 0x65f6d1 for ordinary windows, set at 0x65bd42) that has no key case and returns 0, so the pause key and the park door shortcuts are not offered while the ride view is open — evidence needed: whether a key the top window returns 0 for still reaches the HUD's key groups (0x488921)
+		// [BIN:TPW-EXE:0x6698e6 key delivery] a key event (0x1000a/b/c, posted to window 1 by 0x658c38/0x658c67/0x658c96) is handed to exactly one window: an accelerator-table window (0x65e640, list and edit controls) when the key is in its table, else the focus window (0x65e59b, [0xfaa5ec]) while its flag bit 0 is set, else the root ([0xfaa5dc]); nothing falls through to a second window
+		// [BIN:TPW-EXE:0x48ac40 ride view creation] the ride view window (flags 1) takes the focus (0x65e59b) and the HUD's own window handle [0x7c24c8] gets message 5 and is cleared, so the HUD's key groups (0x787c14, 0x787a60, 0x78721c at 0x488886) are never reached while it is open: the procedure 0x488a00 acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf), and the pause key and the park door shortcuts are not offered while riding
 		if ( !paused && !IsRiding && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
@@ -774,14 +780,15 @@ public sealed partial class ParkHud
 			if ( lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
 			{
 				// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
-				// [APPROX:AUDIO-009] the traced 0x1D callers are buy and hire money and limit checks (tp.exe 0x4879d0, 0x4ac590, 0x4af500); no placement-tool site was found (the build tool's click handler 0x52496e plays only cat_ui 0xAF), and the object-placement refusal cases of its tool switch were not enumerated
+				// [EXT:cannot-build-sound] a refused placement ('Cannot build') plays the error feedback 0x1D with OpenTPW's own message text: tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480), so the original plays nothing for a refused placement; the feedback is an OpenTPW addition
+				// [APPROX:AUDIO-009] within the build tools' code (0x524960-0x535100, which plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90) no refusal sound exists; whether a placement refusal plays a sound from code outside that range is not searched
 				PostMessage( strings.Extra( OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}
 
 		// [BIN:TPW-EXE:0x485780 UI message hook] a 0x100 (activated) message plays cat_ui event 0x1F, or 0xBD when the control's construction style (+0x48) has bit 0x10 (0x4857cb)
-		// [APPROX:AUDIO-004] which original controls are created with style bit 0x10 is not traced, so the view always plays 0x1F
+		// [APPROX:AUDIO-004] the controls created with style bit 0x10 are the list row templates and the table builder's type 3 controls (docs/AUDIO.md); which of them are activated and map to OpenTPW controls is not read, so the view always plays 0x1F
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 
@@ -803,7 +810,7 @@ public sealed partial class ParkHud
 			LeaveBuildTool();
 			toolClick = true;
 		}
-		UpdateBlueprint( inPark && !rideOwnsInput );
+		UpdateBlueprint( inPark && !rideOwnsInput, context.Delta, paused || Status.Speed == GameSpeed.Paused );
 		// [BIN:TPW-EXE:0x487013 hover modes] with Shift alone, or with the visitor locator panel out, the hover handler picks visitors only (IsVisitorPickState) and no object mode is set
 		// [APPROX:UI-027] the object is the one occupying the cell of the cursor's terrain hit; the original picks a ride, shop or other object by its model's pick sprite (the sprite pass 0x5890e0, the thing in the 3 x 3 cells round the hovered cell 0x532bd0, the window 0x4b6080) — evidence needed: which instances carry a pickable sprite and its size and offset
 		if ( inPark && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
@@ -854,7 +861,7 @@ public sealed partial class ParkHud
 	/// The staff tools' HUD side (hire placement and carrying): the cursor, the hovered cell, right click leaves, a left click on a valid cell completes it.
 	/// A click on an invalid cell does nothing and the tool stays; the park view's other clicks (guest selection, the path tool) wait while it runs.
 	/// </summary>
-	// [APPROX:UI-100] the original loads its cursors from Data/ui/cursors/*.ani with LoadCursorFromFileA (0x489639, IAT 0x6fd314) into a cursor object (0x661935): OS animated cursors drawn at the pointer hot spot (a software cursor path, "bwcursor", also exists); OpenTPW has no .ani loader, so the tools' cursor 9 (c_carry.ani) is the closest cursor it has, Input.CursorTypes.Carry (Ccar.tga), and the dangling sprite hangs over the hovered cell's centre instead of the exact mouse point — evidence needed: a .ani cursor loader
+	// [EXT:software-pointers] the original loads its cursors from Data/ui/cursors/*.ani with LoadCursorFromFileA (0x489639, IAT 0x6fd314) into a cursor object (0x661935): OS animated cursors drawn at the pointer hot spot (a software cursor path, "bwcursor", also exists); OpenTPW has no .ani loader, so the tools' cursor 9 (c_carry.ani) is the closest cursor it has, Input.CursorTypes.Carry (Ccar.tga), and the dangling sprite hangs over the hovered cell's centre instead of the exact mouse point (the platforms cannot load animated Windows cursors)
 	private bool UpdateStaffTool( UiInput input, bool inPark )
 	{
 		var tool = level.StaffPlacement;
@@ -987,12 +994,13 @@ public sealed partial class ParkHud
 	// [BIN:STP-PPC:0x100866B8 SetCell ghost] LayLine(mode | 0x100) gives each previewed cell a BlueprintMesh face: blue (0) when the chooser 0x100895D8 accepts it, red (1) when it refuses it (money included)
 	// [BIN:STP-PPC:0x10080C50 cell ghost] the same blue or red faces for the cells of other build modes, checked by 0x10084154
 	// [BIN:TPW-EXE:0x0053C8D0 blueprint AddFace] the PC twins: AddFace 0x53C8D0 (face records at 0x820B00 + i * 0xA0, callers 0x46C480, 0x4FA030, 0x532FC0 and 0x5370E0), the ghost routine 0x5370E0 (called from 0x52BA50 and 0x53AAC0) whose chooser 0x539760 returns 1 for the refused branch 0x537A1B, 0 for the default texture and otherwise that texture, and 0x532FC0 (called from 0x452D30, 0x5286A0, 0x528A70 and 0x536100); the chooser walks neighbouring cell types (0x536340–0x536380, type 0x15)
-	// [APPROX:BLUEPRINT-003] a line marks every cell up to the refused one, existing cells blue; a footprint is blue when the build rule and the purchase allow it, red otherwise. PC: LayLine 0x536100 previews every cell of the line, as the ghost SetCell 0x532FC0 returns 1 for allowed (0x53391D) and refused (0x534009) cells, and the validator 0x535670 refuses every later cell (param 0) once its flag 0x816D50 is set (0x5358A0; reset at 0x527C52 and 0x5247AA); the footprint caller is the object placement 0x528A70 in ghost mode: row 0 of the shape gets SetCell(0x104, 6 = m_front, build direction) (0x52967E), every other cell SetCell(0x104, 0) (0x52969C), red where refused, and the outside cells of the access points get m_enter (3, op 0x104, 0x52989A) or m_inout (7, op 0x118, 0x5299AE, when option 0x81B0CC lays no queue) and m_exit (4, op 0x118, 0x529B1C), none drawn here — evidence needed: the validator's result for existing path cells (0x535670 after 0x5358B5)
-	private void UpdateBlueprint( bool inPark )
+	// The line preview and the footprint markers (every cell of the line, red from the refused one; m_front row, m_enter and m_exit arrows) are BlueprintGhosts; the PC evidence sits there (LayLine 0x536100, SetCell 0x532FC0, the placement 0x528A70)
+	private void UpdateBlueprint( bool inPark, float delta, bool paused )
 	{
 		if ( level.Blueprint is not { } blueprint )
 			return;
 		var cells = new List<(int X, int Y, BlueprintMarker Marker)>();
+		Dictionary<(int X, int Y), byte>? directions = null;
 		if ( level.IsCoasterToolActive && level.CoasterPanel is { } coasterPanel )
 		{
 			// [BIN:TPW-EXE:0x5234d0 coaster tool markers] the build buttons mark the placement area (face 0x11f) and the cell under the pointer (face 0x115, red when the validator refuses it)
@@ -1002,7 +1010,8 @@ public sealed partial class ParkHud
 				cells.Add( (cursor.X, cursor.Y, cursor.Result == CoasterPlaceResult.Ok ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
 		}
 		else if ( level.StaffPlacement is { IsActive: true, HoverValid: false, HoverCell: { } staffCell } )
-			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell is the blueprint's red face; the staff tools' per-frame method 0x46c480 (slot +0x18 of the place tool 0x6fea40 and the carry tool 0x6fea70) queues a square dynamic face with 0x53c8d0 at (x - 5, 1.0, z - 5), face type 1 (queued only when [0x763c98] is set; its 10th argument is a per-face flag, not a texture index), when one of the cell tests 0x5363f0, 0x535db0(0x40), 0x536450 holds or none of 0x536390, 0x536310, 0x536320 does; the renderer (0x53da49) takes type 1's material from slot [+0x50] + 16 × type — evidence needed: the texture of that material
+			// [BIN:TPW-EXE:0x46c480 staff tool face] the staff tools' per-frame method 0x46c480 (slot +0x18 of the place tool 0x6fea40 and the carry tool 0x6fea70) queues a square dynamic face with 0x53c8d0 at (x - 5, 1.0, z - 5), face type 1, when one of the cell tests 0x5363f0, 0x535db0(0x40), 0x536450 holds or none of 0x536390, 0x536310, 0x536320 does (queued only when [0x763c98] is set)
+			// [BIN:TPW-EXE:0x53d9e0 dynamic face texture] the renderer takes a face's batch from slot [+0x50] + 16 × type and the textures from the table 0x763b38 (16-byte records, loaded from Data\Generic\Dynamic\Textures by 0x53d790): type 0 blue.tga, 1 red.tga, 2 orange.tga, 3 m_enter ..., so type 1 is the blueprint's red face (BlueprintMarker.Refused)
 			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
 		else if ( level.BuyLandTool is { IsActive: true } landTool )
 		{
@@ -1027,13 +1036,7 @@ public sealed partial class ParkHud
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			foreach ( var cell in ghost.Line )
-			{
-				var refused = cell == ghost.StoppedAt;
-				cells.Add( (cell.X, cell.Y, refused ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
-				if ( refused )
-					break;
-			}
+			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
@@ -1042,12 +1045,14 @@ public sealed partial class ParkHud
 			var allowed = level.CheckObject( entry, cursorX, cursorY, rotation ) == OriginalPlacementResult.Allowed
 				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId ) == ParkEconomy.PurchaseResult.Ok);
 			placementRefused = !allowed;
-			foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ) )
-				cells.Add( (x, y, allowed ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
+			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, rotation, allowed );
+			cells.AddRange( footprint.Cells );
+			directions = footprint.Directions;
 		}
 		if ( level.BuildEntry == null || !inPark )
 			placementRefused = false;
-		blueprint.Show( cells );
+		blueprint.Update( delta, paused );
+		blueprint.Show( cells, directions );
 	}
 
 	/// <summary>The cost of the tool's preview line beside its end (the markers themselves are <see cref="BlueprintMarkers"/>).</summary>
@@ -1067,7 +1072,7 @@ public sealed partial class ParkHud
 	private static readonly string[] TicketIds = { "goldenTicket", "goldenTickets" };
 	private static readonly string[] KeyIds = { "goldenKey", "goldenKeys" };
 
-	private void TrackCashChange( float delta )
+	private void UpdateEconomyElements()
 	{
 		foreach ( var element in economyElements )
 			element.Visible = Status.HasEconomy;
@@ -1076,17 +1081,8 @@ public sealed partial class ParkHud
 			if ( hud.Find( id ) is { } ticketElement ) ticketElement.Visible = Status.HasEconomy && Status.GoldenTickets > 0;
 		foreach ( var id in KeyIds )
 			if ( hud.Find( id ) is { } keyElement ) keyElement.Visible = Status.HasEconomy && Status.GoldenKeys > 0;
-		// A loaded save replaces the economy: start counting changes from its balance.
-		if ( !ReferenceEquals( Status.EconomySource, cashSource ) )
-		{
-			cashSource = Status.EconomySource;
-			cashTracker = new CashChangeTracker( Status.Money );
-		}
-		cashTracker.Update( Status.Money, delta );
 		if ( hud.Find( "cashChange" ) is { } text )
 			text.Visible = BuildActionCost != null;
-		if ( hud.Find( "cashTrend" ) is { } arrow )
-			arrow.Visible = Status.HasEconomy && CashChange != 0;
 	}
 
 	public void SelectObject( OriginalObject? item )

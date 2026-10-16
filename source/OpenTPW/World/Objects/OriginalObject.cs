@@ -85,7 +85,7 @@ public class OriginalObject : Entity
 	private int hiddenVersion = -1;
 
 	public OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world = null, int? seed = null, bool open = true )
-		: this( entry, placement, world, seed, open, attractionId: null )
+		: this( entry, placement, world, seed, open, attractionId: null, seedScript: true )
 	{
 	}
 
@@ -96,7 +96,7 @@ public class OriginalObject : Entity
 	/// which moves the world's frontier past it without allocating — dead ids are skipped in constant time, never
 	/// replayed. Everything else (validation, render init, self-cleanup on failure) is the constructor's own.
 	/// </summary>
-	internal OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world, int? seed, bool open, int? attractionId )
+	internal OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world, int? seed, bool open, int? attractionId, bool seedScript = true )
 	{
 		try
 		{
@@ -105,8 +105,8 @@ public class OriginalObject : Entity
 			Placement = placement;
 			CreationSeed = seed;
 			Runtime = attractionId is { } restored
-				? OriginalObjectRuntime.CreateForRestore( entry, world ?? new RideScriptWorld(), seed, open, restored )
-				: new OriginalObjectRuntime( entry, world, seed, open );
+				? OriginalObjectRuntime.CreateForRestore( entry, world ?? new RideScriptWorld(), seedScript ? seed : null, open, restored )
+				: new OriginalObjectRuntime( entry, world, seedScript ? seed : null, open );
 			Name = entry.DisplayName;
 			Position = System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, placement.ModelToEngine );
 			Vector3 ToSound(System.Numerics.Vector3 engine)
@@ -172,7 +172,8 @@ public class OriginalObject : Entity
 		if ( Entry.IsFixedItem )
 			return null;
 		var (minX, minY, maxX, maxY) = ObjectFootprint.GetBounds( Entry.Shape, Placement.X, Placement.Y, Placement.Rotation );
-		return new ParticleFootprint( FootprintMiddle(), maxX - minX + 1, maxY - minY + 1 );
+		var model = Runtime.Model;
+		return new ParticleFootprint( FootprintMiddle(), maxX - minX + 1, maxY - minY + 1, model.BoundsMax.Y - model.BoundsMin.Y );
 	}
 
 	public ObjectCatalogEntry Entry => Runtime.Entry;
@@ -305,7 +306,7 @@ public class OriginalObject : Entity
 	/// The model's texture slots with more than one frame name that an enabled texture-frame track of the object's
 	/// animation members addresses, each with every frame decoded once (null when no searched directory has it).
 	/// </summary>
-	// [APPROX:MD2-902] A frame whose art no searched texture directory has (including Theme Park Inc tvsim slot 39 frame 3, lt1.tga) keeps the effective selected frame the slot currently shows (renderer registers decoded-art availability with the animator, so save history retains the visible frame) — evidence needed: the original's fallback for a missing frame file
+	// [EXT:missing-frame-keeps-visible] A frame whose art no searched texture directory has (including Theme Park Inc tvsim slot 39 frame 3, lt1.tga) keeps the effective selected frame the slot currently shows (the renderer registers decoded-art availability with the animator, so save history retains the visible frame); a missing art file has no original fallback to match and showing nothing or failing would break the object, so keeping the visible frame is OpenTPW's design
 	private static Dictionary<int, FrameTextures> FindFrameAnimatedSlots( ObjectCatalogEntry entry, ModelFile model )
 	{
 		var slots = new Dictionary<int, FrameTextures>();

@@ -134,6 +134,9 @@ public sealed class ObjectCatalogEntry
 	/// <summary><c>Info.WhichUIType</c>: 0 rides, 1 shops, 2 sideshows, 3 features, 4 not shown (fixed items).</summary>
 	public int WhichUIType => Settings.GetInt( "Info.WhichUIType", -1 );
 	public bool IsChoosable => Settings.GetBool( "Info.IsChoosable" );
+	/// <summary><c>Info.OverwritePriority</c> ("Overwrite priority order"): an object may be built over objects of a lower priority, which it demolishes (rides, shops and sideshows 5, small scenery 1, other features 0).</summary>
+	// [BIN:TPW-EXE:0x745020 sam schema] OverwritePriority follows WhichUIType (+0x4C) and DontDeformBase (+0x50) at +0x54, the field the validator 0x535670 compares (0x535785) and the hover 0x5234D0 loads into 0x818C10
+	public int OverwritePriority => Settings.GetInt( "Info.OverwritePriority" );
 	public bool HasQueue => Settings.GetBool( "Info.HasQueue" );
 	/// <summary><c>Info.DontApplyOffset 1</c>: "a fixed item whose animation should be played relative to world (0,0)" (gates, bus, lights, ferry, seaplane, end).</summary>
 	// [DATA:<object>.sam:Info.DontApplyOffset]

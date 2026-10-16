@@ -1,0 +1,71 @@
+name: Hourly preview release
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only report what the train would release; start nothing'
+        default: true
+        type: boolean
+# Two trains never overlap; a later train waits for the running one instead of cancelling it.
+concurrency:
+  group: release-train
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  train:
+    # The scheduled run belongs to the default branch; ignore forks, which have no releases to publish.
+    if: github.repository == 'meneerkrabs/OpenTPW'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write   # read the build runs and start Release builds (a tag pushed by GITHUB_TOKEN would start nothing)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Test the train rules
+        run: python -B -m unittest discover -s tools -p "test_release_train.py"
+      - name: Plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -B tools/release_train.py --notes-file "$RUNNER_TEMP/notes.md" > "$RUNNER_TEMP/plan.json"
+          {
+            echo "action=$(jq -r .action "$RUNNER_TEMP/plan.json")"
+            echo "version=$(jq -r .version "$RUNNER_TEMP/plan.json")"
+            echo "commit=$(jq -r .commit "$RUNNER_TEMP/plan.json")"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo '### Hourly preview release'
+            echo
+            echo "Main at \`$(jq -r .commit "$RUNNER_TEMP/plan.json")\`: **$(jq -r .action "$RUNNER_TEMP/plan.json")**"
+            echo
+            jq -r .reason "$RUNNER_TEMP/plan.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Start the preview release
+        if: ${{ steps.plan.outputs.action == 'release' && inputs.dry_run != true }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
+        run: |
+          # The commit input pins the build and the tag to the exact commit that was checked above,
+          # even if main moves before the build starts.
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main \
+            -f version="$VERSION" -f prerelease=true -f commit="$COMMIT" -F notes=@"$RUNNER_TEMP/notes.md"
+          echo "Started release $VERSION from $COMMIT." >> "$GITHUB_STEP_SUMMARY"
+      - name: Dry run note
+        if: ${{ steps.plan.outputs.action == 'release' && inputs.dry_run == true }}
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
+        run: echo "Dry run, would release $VERSION from $COMMIT." >> "$GITHUB_STEP_SUMMARY"

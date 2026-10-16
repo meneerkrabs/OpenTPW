@@ -24,6 +24,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	private Level? level;
 	private ParkEconomyRuntime? park;
 	private GuestSimulation? guests;
+	private StaffWorldSimulation? staffWorld;
 
 	private AutomaticAdvisor( AdvisorController controller ) : this( controller, StopwatchSource() ) { }
 
@@ -92,6 +93,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 		guests = started.Guests;
 		if ( guests != null )
 			guests.Pranked += OnPrank;
+		staffWorld = started.StaffWorld;
+		if ( staffWorld != null )
+			staffWorld.MechanicOnTheWay += OnMechanicOnTheWay;
 		// A park started from an original save takes its saved controller first; the main loop's events follow.
 		if ( started.Park?.Import is { } import && started.OriginalPark?.Save?.Advisor is { } saved )
 		{
@@ -118,6 +122,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 		if ( guests != null )
 			guests.Pranked -= OnPrank;
 		guests = null;
+		if ( staffWorld != null )
+			staffWorld.MechanicOnTheWay -= OnMechanicOnTheWay;
+		staffWorld = null;
 		// Help still pending or speaking belongs to the windows of this park, which close without reporting.
 		if ( level != null )
 			foreach ( var window in AdvisorUiHelp.Windows.Keys )
@@ -134,6 +141,17 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
+	}
+
+	/// <summary>A mechanic set off for a broken-down ride: advice 70 reaches the advisor's queue at once.</summary>
+	// [BIN:TPW-EXE:0x004DA6C5 mechanic on the way] the mechanic update builds the advice record (0x0059B590) and queues it (0x0059A940) as the mechanic claims the ride; the record's arguments (his id, the ride's Info.Id) are not kept, as for every advice OpenTPW queues (GUEST-007)
+	internal void OnMechanicOnTheWay( int rideId, int mechanicId )
+	{
+		if ( level == null )
+			return;
+		var admission = Controller.Advise( AdvisorTables.MechanicOnTheWayMessage, GameTick, GameType, TutorialEnabled );
+		if ( admission is { Stored: true } )
+			Log.Trace( $"Advisor mechanic message for ride {rideId} (mechanic {mechanicId}): advice {AdvisorTables.MechanicOnTheWayMessage} {admission.Value.Eligibility} in slot {admission.Value.Slot}." );
 	}
 
 	/// <summary>

@@ -143,6 +143,13 @@ public sealed class GameLanguage
 	/// <summary>Files directly inside the language folder.</summary>
 	public IEnumerable<string> EnumerateFiles() => System.IO.Directory.EnumerateFiles( Directory ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase );
 
+	/// <summary>
+	/// A string table a mod supplies for a language (docs/MODS.md): called with the language name and the table's file name
+	/// (<c>UITEXT.str</c>), it returns the replacement stream (disposed by the caller) or null for the language's own file. Null by default.
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public static Func<string, string, Stream?>? StringOverride { get; set; }
+
 	/// <summary>UITEXT entries in the edition OpenTPW numbers its strings by (the <c>UIStrings</c> enum).</summary>
 	public const int UiTextEntries = 473;
 
@@ -159,7 +166,7 @@ public sealed class GameLanguage
 	/// </summary>
 	public StringFile LoadStrings( string fileName, bool asStored = false )
 	{
-		using var stream = OpenRead( fileName );
+		using var stream = StringOverride?.Invoke( Name, fileName ) ?? OpenRead( fileName );
 		var strings = new StringFile( stream, CharacterTable );
 		if ( !asStored && string.Equals( fileName, "UITEXT.str", StringComparison.OrdinalIgnoreCase ) && strings.Entries.Length == UiTextEntries + 1 )
 			strings.RemoveEntryAt( UiTextEditionExtraEntry );

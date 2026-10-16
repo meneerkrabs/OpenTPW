@@ -13,6 +13,12 @@ public sealed record ResolvedExtension( IOpenTpwExtension Extension, bool Enable
 public sealed record ResolvedMod( ModManifest Manifest, string Directory, ModSource Source, string ContentSha256 )
 {
 	public string Id => Manifest.Id;
+	/// <summary>Every file of the mod's folder with its SHA-256, by '/' path in Unicode normalization form C (what <see cref="ContentSha256"/> covers).</summary>
+	public IReadOnlyList<(string Path, string Sha256)> Files { get; init; } = Array.Empty<(string, string)>();
+	/// <summary>The validated <c>objects.json</c> (<see cref="ModContent.Objects"/>), or null when the mod adds no objects.</summary>
+	public ModObjectsFile? Objects { get; init; }
+	/// <summary>The data folder of each input the mod's objects read from, by input id (the folder the player chose, or its Data folder).</summary>
+	public IReadOnlyDictionary<string, string> InputDirectories { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>A mod that was found or enabled but cannot run, and why.</summary>
@@ -97,7 +103,11 @@ public sealed class ModSet
 			if ( error != null )
 				Refuse( node, error, refused );
 			else
+			{
 				node.Files = files;
+				if ( ValidateContent( node, settings, edition ) is { } contentError )
+					Refuse( node, contentError, refused );
+			}
 		}
 
 		// Refusing a mod can refuse the mods that need it, so repeat until nothing changes.
@@ -129,7 +139,8 @@ public sealed class ModSet
 
 		var resolvedExtensions = extensions.Select( extension => new ResolvedExtension( extension, nodes[extension.Id].Enabled ) ).ToList();
 		var mods = order.Where( node => node.Discovered != null )
-			.Select( node => new ResolvedMod( node.Manifest!, node.Discovered!.Directory, node.Discovered.Source, ContentDigest( node.Files! ) ) ).ToList();
+			.Select( node => new ResolvedMod( node.Manifest!, node.Discovered!.Directory, node.Discovered.Source, ContentDigest( node.Files! ) )
+				{ Files = node.Files!, Objects = node.Objects, InputDirectories = node.InputDirectories } ).ToList();
 		return new ModSet( resolvedExtensions, mods, order.Select( node => node.Id ).ToList(), refused );
 	}
 
@@ -223,24 +234,84 @@ public sealed class ModSet
 	}
 
 	/// <summary>
-	/// Two enabled mods that override the same file (compared without case or normalization differences) where neither
-	/// declares the other in 'after'. All pairs are judged against one snapshot of the enabled mods and refused together,
-	/// so a third mod with the same file cannot win because the first two were refused before it was compared.
+	/// What a mod's content may hold, beyond what its manifest says: <c>objects.json</c> must be a valid file of the mod, in a
+	/// Theme Park World park, reading only from inputs whose folder is a game data folder; files below <c>strings</c> must be
+	/// <c>&lt;Language&gt;/&lt;NAME&gt;.str</c>. Returns the reason the mod cannot run, or null.
+	/// </summary>
+	private static string? ValidateContent( Node node, ModSettings settings, GameEdition edition )
+	{
+		var manifest = node.Manifest!;
+		if ( manifest.Content.Strings is { } strings )
+		{
+			var prefix = FoldKey( strings ) + "/";
+			foreach ( var (path, _) in node.Files! )
+			{
+				if ( !FoldKey( path ).StartsWith( prefix, StringComparison.Ordinal ) )
+					continue;
+				var parts = path[strings.Length..].TrimStart( '/' ).Split( '/' );
+				if ( parts.Length != 2 || !parts[1].EndsWith( ".str", StringComparison.OrdinalIgnoreCase ) || parts[1].Length <= 4 )
+					return $"'{path}' is not a string table: files below '{strings}' must be <Language>/<NAME>.str";
+			}
+		}
+		if ( manifest.Content.Objects is not { } objects )
+			return null;
+		if ( edition != GameEdition.ThemeParkWorld )
+			return "adds Theme Park World objects, which Theme Park Inc does not use";
+		var file = node.Files!.Select( entry => entry.Path ).FirstOrDefault( path => FoldKey( path ) == FoldKey( objects ) );
+		if ( file == null )
+			return $"content.objects '{objects}' is not a file of the mod";
+		try
+		{
+			node.Objects = ModObjectsFile.Load( Path.Combine( node.Discovered!.Directory, file ), manifest.Inputs.Select( input => input.Id ).ToList() );
+		}
+		catch ( InvalidDataException exception )
+		{
+			return exception.Message;
+		}
+		foreach ( var inputId in node.Objects.Objects.Select( definition => definition.Input ).Where( id => id != null ).Distinct( StringComparer.Ordinal ) )
+		{
+			if ( !settings.Inputs.TryGetValue( manifest.Id, out var inputs ) || !inputs.TryGetValue( inputId!, out var folder ) )
+				return $"its objects read from the input '{inputId}', which is not chosen";
+			var data = DataRoots.FindDataDirectory( folder );
+			if ( data == null )
+				return $"its objects read from the input '{inputId}', but '{folder}' is neither a Data folder nor an install holding one";
+			node.InputDirectories[inputId!] = data;
+		}
+		return null;
+	}
+
+	/// <summary>
+	/// Two enabled mods that provide the same content where neither declares the other in 'after': the same file in
+	/// <c>overrides</c> or <c>strings</c> (compared without case or normalization differences; a string table sits at
+	/// <c>Language/&lt;Language&gt;/&lt;NAME&gt;.str</c> in the same space as the overrides), overlapping Info.Id ranges, or an object
+	/// archive of the same name in the same theme and category. Only files can be put in order with 'after'. All pairs
+	/// are judged against one snapshot of the enabled mods and refused together, so a third mod with the same content
+	/// cannot win because the first two were refused before it was compared.
 	/// </summary>
 	private static bool RefuseConflicts( Dictionary<string, Node> nodes, List<ModRefusal> refused )
 	{
 		var owners = new Dictionary<string, List<Node>>( StringComparer.Ordinal );
-		foreach ( var node in nodes.Values.Where( node => node.Enabled && node.Manifest?.Content.Overrides != null ).OrderBy( node => node.Id, StringComparer.Ordinal ) )
+		void Own( string key, Node node )
 		{
-			var prefix = FoldKey( node.Manifest!.Content.Overrides! ) + "/";
-			foreach ( var (path, _) in node.Files! )
-			{
-				var key = FoldKey( path );
-				if ( !key.StartsWith( prefix, StringComparison.Ordinal ) )
-					continue;
-				if ( !owners.TryGetValue( key[prefix.Length..], out var list ) )
-					owners[key[prefix.Length..]] = list = new List<Node>();
+			if ( !owners.TryGetValue( key, out var list ) )
+				owners[key] = list = new List<Node>();
+			if ( !list.Contains( node ) )
 				list.Add( node );
+		}
+		var active = nodes.Values.Where( node => node.Enabled && node.Manifest != null ).OrderBy( node => node.Id, StringComparer.Ordinal ).ToList();
+		foreach ( var node in active )
+		{
+			foreach ( var (root, space) in new[] { (node.Manifest!.Content.Overrides, ""), (node.Manifest.Content.Strings, "language/") } )
+			{
+				if ( root == null )
+					continue;
+				var prefix = FoldKey( root ) + "/";
+				foreach ( var (path, _) in node.Files! )
+				{
+					var key = FoldKey( path );
+					if ( key.StartsWith( prefix, StringComparison.Ordinal ) )
+						Own( space + key[prefix.Length..], node );
+				}
 			}
 		}
 		var reasons = new Dictionary<Node, string>();
@@ -254,11 +325,32 @@ public sealed class ModSet
 					reasons.TryAdd( a, $"overrides '{path}' like {b.Id}, and neither declares the other in 'after'" );
 					reasons.TryAdd( b, $"overrides '{path}' like {a.Id}, and neither declares the other in 'after'" );
 				}
+		var withObjects = active.Where( node => node.Objects != null ).ToList();
+		for ( var first = 0; first < withObjects.Count; first++ )
+			for ( var second = first + 1; second < withObjects.Count; second++ )
+			{
+				var (a, b) = (withObjects[first], withObjects[second]);
+				if ( a.Objects!.FirstId <= b.Objects!.LastId && b.Objects.FirstId <= a.Objects.LastId )
+				{
+					reasons.TryAdd( a, $"reserves the Info.Ids {a.Objects.FirstId} to {a.Objects.LastId}, which overlap those of {b.Id} ({b.Objects.FirstId} to {b.Objects.LastId})" );
+					reasons.TryAdd( b, $"reserves the Info.Ids {b.Objects.FirstId} to {b.Objects.LastId}, which overlap those of {a.Id} ({a.Objects.FirstId} to {a.Objects.LastId})" );
+				}
+				var shared = a.Objects.Objects.Select( ObjectKey ).Intersect( b.Objects.Objects.Select( ObjectKey ), StringComparer.OrdinalIgnoreCase ).FirstOrDefault();
+				if ( shared != null )
+				{
+					reasons.TryAdd( a, $"adds the object archive '{shared}' like {b.Id}" );
+					reasons.TryAdd( b, $"adds the object archive '{shared}' like {a.Id}" );
+				}
+			}
 		var changed = false;
 		foreach ( var (node, reason) in reasons.OrderBy( pair => pair.Key.Id, StringComparer.Ordinal ) )
 			changed |= Refuse( node, reason, refused );
 		return changed;
 	}
+
+	/// <summary>The identity an object archive has in the catalog: its theme, category and file name.</summary>
+	private static string ObjectKey( ModObjectDefinition definition ) =>
+		$"{definition.Theme}/{ModObjectsFile.CategoryName( definition.Category )}/{ObjectCatalog.ArchiveKey( Path.GetFileName( definition.Archive ) )}";
 
 	/// <summary>Topological order of the enabled nodes; ties by official first, the player's order, then the ordinal id.</summary>
 	private static IReadOnlyList<Node> Sort( Dictionary<string, Node> nodes, ModSettings settings, out IReadOnlyList<Node> cyclic )
@@ -327,5 +419,7 @@ public sealed class ModSet
 		public DiscoveredMod? Discovered { get; } = discovered;
 		public bool Enabled { get; set; }
 		public IReadOnlyList<(string Path, string Sha256)>? Files { get; set; }
+		public ModObjectsFile? Objects { get; set; }
+		public Dictionary<string, string> InputDirectories { get; } = new( StringComparer.Ordinal );
 	}
 }

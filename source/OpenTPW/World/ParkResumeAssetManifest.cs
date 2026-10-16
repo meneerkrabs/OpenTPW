@@ -1,3 +1,4 @@
+using OpenTPW.Mods;
 using System.Security.Cryptography;
 
 namespace OpenTPW;
@@ -35,7 +36,8 @@ internal static class ParkResumeAssetManifest
 	public const int MaximumKeyLength = 512;
 
 	// Root identity prefixes keep members of the official bonus content (their own file-system root)
-	// from colliding with game-data members of the same relative path.
+	// from colliding with game-data members of the same relative path. A mod's content root has the prefix
+	// "mod:<id>:" (the mod's own folder) or "mod:<id>/<input>:" (a folder the player supplied); see CatalogContentRoot.
 	private const string DataRootPrefix = "data:";
 	private const string BonusRootPrefix = "bonus:";
 
@@ -77,7 +79,7 @@ internal static class ParkResumeAssetManifest
 		// anything its catalogue offered at save time.
 		foreach ( var entry in catalog.Entries.OrderBy( entry => entry.ArchivePath, StringComparer.Ordinal ) )
 		{
-			var prefix = entry.IsBonus ? BonusRootPrefix : DataRootPrefix;
+			var prefix = entry.ContentRoot?.ManifestPrefix ?? (entry.IsBonus ? BonusRootPrefix : DataRootPrefix);
 			foreach ( var member in SimulationMembers( entry.FileSystem, entry.ArchivePath ) )
 				Add( manifest, prefix + member, Hash( entry.FileSystem, member ) );
 		}
@@ -86,7 +88,8 @@ internal static class ParkResumeAssetManifest
 		// the game data root too, so they are keyed there once per category instead of per entry.
 		foreach ( var (directory, defaults) in CategoryDefaults )
 		{
-			if ( !catalog.Entries.Any( entry => IsInCategoryDirectory( entry.ArchivePath, theme, directory ) ) )
+			// A mod's object archive sits in its own root, but takes the same category defaults from the game data.
+			if ( !catalog.Entries.Any( entry => IsInCategoryDirectory( entry.ArchivePath, theme, directory ) || (entry.ContentRoot != null && ModObjectsFile.CategoryName( entry.Category ) == directory) ) )
 				continue;
 			AddWhenPresent( manifest, $"/levels/{theme}/{directory}/{defaults}" );
 		}

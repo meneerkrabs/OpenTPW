@@ -87,7 +87,8 @@ public static class SignTextLayout
 	/// The horizontal scale a LOGFONT width selects: GDI scales a TrueType font so that its average
 	/// character width (OS/2 xAvgCharWidth) equals <paramref name="logFontWidth"/>; 0 keeps the design aspect.
 	/// </summary>
-	// [APPROX:COMPAT-002] lfWidth is applied with the Win32 rule (average character width = lfWidth) and fractional advances; the Mac GDI layer's rounding is not verified — evidence needed: long-name captures
+	// [EXT:sign-fractional-advance] character advances stay fractional (an OpenTPW design choice: the rasterizer is resolution independent and needs no integer pixel grid)
+	// [APPROX:COMPAT-002] lfWidth is applied with the Win32 rule (average character width = lfWidth); the Mac GDI layer's width rounding is not verified — evidence needed: long-name captures
 	public static float LogFontHorizontalScale( TrueTypeFont font, float emPixels, int logFontWidth ) =>
 		logFontWidth <= 0 || font.AverageCharWidth <= 0 ? 1 : logFontWidth / (font.AverageCharWidth * font.ScaleForEmHeight( emPixels ));
 

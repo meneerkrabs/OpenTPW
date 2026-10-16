@@ -178,4 +178,57 @@ public class ParkPointsTests
 		// The divisor is the park record's copy count (+24, 0x100C5828), which lists the closed copy too: (30 + 25) / 2.
 		Assert.AreEqual( (30 + 25) / 2, park.ParkPoints() );
 	}
+
+	// tp.exe 0x004DD920 by Bumper.WhichTrackType and 0x004C8240 by Info.WhichUIType (ARRIVAL-003).
+
+	private static ParkEconomy TrackPark() => new( EconomyTestData.Settings(), new EconomyObjectCatalog( new[]
+	{
+		Ride( Plain, trackType: 0 ),
+		Ride( Tracked, trackType: 3 ),
+		Ride( 4, trackType: 1 ),
+		Ride( 5, trackType: 2 ),
+		Ride( 6, trackType: 0 ) with { Kind = ParkObjectKind.Upgrade, WhichUIType = 0 },
+		Ride( 7, trackType: 0 ) with { WhichUIType = 4 }
+	} ), ParkGameMode.FullSimulation, 7 );
+
+	[TestMethod]
+	public void ACoasterCountsOnlyWhileItsControllerAcceptsGuests()
+	{
+		var park = TrackPark();
+		var coaster = park.RegisterExisting( Tracked );
+		Assert.AreEqual( 30 + 25, park.ParkPoints() );
+		// 0x00441970: no controller, a self-intersection, an incomplete or open track fails the coaster test.
+		coaster.CoasterAcceptsGuests = false;
+		Assert.AreEqual( 0, park.ParkPoints() );
+		// The track word is not read for a coaster (WhichTrackType 3).
+		coaster.CoasterAcceptsGuests = true;
+		coaster.TrackValid = false;
+		Assert.AreEqual( 30 + 25, park.ParkPoints() );
+	}
+
+	[TestMethod]
+	public void KartsAndWaterRidesNeedTheirTrackWordAndOtherTypesIgnoreIt()
+	{
+		var park = TrackPark();
+		var kart = park.RegisterExisting( 4 );
+		var water = park.RegisterExisting( 5 );
+		var plain = park.RegisterExisting( Plain );
+		Assert.AreEqual( 3 * (30 + 25), park.ParkPoints() );
+		kart.TrackValid = false;
+		water.TrackValid = false;
+		plain.TrackValid = false;
+		plain.CoasterAcceptsGuests = false;
+		Assert.AreEqual( 30 + 25, park.ParkPoints(), "only the untracked ride counts" );
+	}
+
+	[TestMethod]
+	public void TheKindFilterReadsInfoWhichUIType()
+	{
+		var park = TrackPark();
+		park.RegisterExisting( 6 );
+		// QueueHasRoom defaults to true until the level's first queue sync; in a real level an add-on without an entrance has no queue cells and then stops counting, as in the original.
+		Assert.AreEqual( 30 + 25, park.ParkPoints(), "an add-on declaring WhichUIType 0 counts as a ride" );
+		park.RegisterExisting( 7 );
+		Assert.AreEqual( 30 + 25, park.ParkPoints(), "a ride declaring WhichUIType 4 does not count" );
+	}
 }

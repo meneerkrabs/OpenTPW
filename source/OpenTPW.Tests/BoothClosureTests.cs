@@ -18,7 +18,7 @@ public class BoothClosureTests
 		public int Paid;
 		public int AdmissionFee => 0;
 		public bool ParkClosed => Closed;
-		public bool TryPayAdmission( long guestMoney, out int feePaid ) { feePaid = 0; Paid++; return true; }
+		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; Paid++; return true; }
 		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
 	}
 
@@ -88,6 +88,6 @@ public class BoothClosureTests
 		Assert.AreNotEqual( GuestState.EnteringPark, waiting.State );
 		Assert.AreEqual( admissions, economy.Counters[ParkCounters.Admissions] );
 		Assert.AreEqual( takings, economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.GateTakings ) );
-		Assert.IsFalse( economy.TryAdmitVisitor( long.MaxValue, out _ ) );
+		Assert.IsFalse( economy.TryAdmitVisitor( out _ ) );
 	}
 }

@@ -33,9 +33,9 @@ public sealed class LobbyEffects
 
 	private uint state;
 	private float pending;
-	// The sky's current colour in 16.16 fixed point, eased 1/16 of the way to the target each tick.
+	// The sky's current colour and target in 16.16 fixed point; both start black (the scene's init zeroes them).
 	private int skyR, skyG, skyB;
-	private bool skySet;
+	private int targetR, targetG, targetB;
 	private readonly List<LobbyBolt> bolts = new();
 	private readonly List<WeatherStrike> strikes = new();
 
@@ -43,11 +43,19 @@ public sealed class LobbyEffects
 	// [BIN:STP-PPC:0x1008CDBC lobby generator seed] the lobby system's constructor stores time(NULL) as the generator's state; it is never reset
 	public LobbyEffects( uint seed ) => state = seed;
 
-	/// <summary>True once a tick has set the sky (before that the caller draws its own default).</summary>
-	public bool HasSky => skySet;
+	/// <summary>
+	/// The lobby's fog and clear colour (0x44DDFF): the screen behind the 3D scene is cleared to it, and the sky's colour
+	/// grid shows it while the eased colour has reached its target.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5d8b50 lobby fog] the lobby scene's init sets the fog colour [0x8bd47c] to 0xFF44DDFF (fog from 50 to 300) and render flag 0x4000000
+	// [BIN:TPW-EXE:0x5737aa lobby clear] the viewport clear (vtable +0x50, Clear2) uses the fog colour when render flags & 0x4002000, else black
+	public static readonly (byte R, byte G, byte B) ClearColour = (0x44, 0xDD, 0xFF);
 
-	/// <summary>The sky colour to draw now.</summary>
-	public (byte R, byte G, byte B) Sky => ((byte)(skyR >> 16), (byte)(skyG >> 16), (byte)(skyB >> 16));
+	/// <summary>
+	/// The colour the lobby writes into the engine sky's 256-entry colour grid this tick (the colour of the cloud layer):
+	/// the eased colour, or <see cref="ClearColour"/> while it equals its target.
+	/// </summary>
+	public (byte R, byte G, byte B) Sky { get; private set; } = ClearColour;
 
 	/// <summary>The rain's drop count for the lobby renderer.</summary>
 	public int RainDrops { get; private set; }
@@ -58,10 +66,15 @@ public sealed class LobbyEffects
 	/// <summary>True for the frame after a strike: the renderer draws one white full-screen quad and clears it.</summary>
 	public bool Flash { get; set; }
 
-	/// <summary>The generator's next state: it returns the full 32-bit value.</summary>
-	// [BIN:STP-PPC:0x100904A8 lobby generator] state = state × 0x19660D + 0x3C6EF35F, stored at +0x34; the full state is returned (inlined in the islands update)
-	// [APPROX:UI-941] only the islands' own draws advance the generator; the original's flying meshes and camera wander draw from it too (0x10090174, 0x1009476C), so the strikes come in a different rhythm
-	public uint Draw() => state = unchecked(state * 0x19660Du + 0x3C6EF35Fu);
+	/// <summary>The generator's next draw: the LCG step rotated right by 13 bits, which is also the stored state.</summary>
+	// [BIN:STP-PPC:0x100904A8 lobby generator] state = state × 0x19660D + 0x3C6EF35F, stored at +0x34 (inlined in the islands update)
+	// [BIN:TPW-EXE:0x5e0f4b lobby generator draw] tp.exe stores the step at lobby +0x34, rotates it right by 13 (ror 0xd) and stores and uses the rotated value; every inlined draw does the same (0x5d98d1 flying-mesh placement, 0x5da0d4 flying-mesh spawn, 0x5e113f island one-shots)
+	// [APPROX:UI-941] the islands' draws and the flying meshes (LobbyFlyingMeshes) advance the generator, but the original's camera wander draws from it too (0x5e09da, Mac 0x1009476C) and the islands step 30 times a second while the flyers step per frame (UI-940), so the strikes come in a different rhythm
+	public uint Draw()
+	{
+		state = System.Numerics.BitOperations.RotateRight( unchecked(state * 0x19660Du + 0x3C6EF35Fu), 13 );
+		return state;
+	}
 
 	/// <summary>A draw as the fraction the bolt offsets use: (state &amp; 0x3FFFFFFF) / 2^30, in [0, 1).</summary>
 	private float Fraction() => (Draw() & 0x3FFFFFFF) / 1073741824f;
@@ -153,6 +166,7 @@ public sealed class LobbyEffects
 		var lightning = nearest.Info.Lightning;
 		// [BIN:STP-PPC:0x10095124 lobby lightning] with LIGHTNING > 0, a draw strikes when (state & LIGHTNING) == 1; four fresh draws place the top at the island ±50 (height 500) and the bottom within ±10 of it (height 0)
 		// [BIN:STP-PPC:0x10095310 lobby strike] AddLightning(bottom, top, 500, 1), LightningFlash() and cat_globallobbysfx 1 played flat at once (no thunder delay)
+		// [BIN:TPW-EXE:0x5e0f55 lobby lightning] tp.exe tests the rotated draw against the island's LIGHTNING (+0x5c) and places the bolt with the next four draws the same way (0x5e0f94-0x5e10a4)
 		if ( lightning > 0 && (Draw() & (uint)lightning) == 1 )
 		{
 			var topX = 100 * Fraction() + nearest.X - 50;
@@ -168,6 +182,7 @@ public sealed class LobbyEffects
 			thunder = true;
 		}
 		// [BIN:STP-PPC:0x10095340 lobby one-shots] a draw with (state & 15) == 1 plays event 3 + (fresh draw mod 3) of the nearest island's cat_locallobbysfx
+		// [BIN:TPW-EXE:0x5e1149 lobby one-shots] (draw & 15) == 1 on the rotated draw, then the next draw mod 3 (0x5e117e) picks event 3, 4 or 5
 		uint? oneShot = null;
 		if ( (Draw() & 15) == 1 )
 			oneShot = 3 + Draw() % 3;
@@ -188,20 +203,27 @@ public sealed class LobbyEffects
 		return count >= MaximumDrops ? MaximumDrops : (int)count;
 	}
 
-	/// <summary>Eases the sky 1/16 of the way toward <paramref name="target"/> (16.16 fixed point); the first target is taken at once.</summary>
-	// [BIN:STP-PPC:0x1008FAA0 lobby sky] the current colour eases 1/16 toward the target each frame and fills the engine sky's whole colour ramp, so the sky is one flat colour; [BIN:TPW-EXE:0x5D96C0] the same
-	// [APPROX:UI-018] both builds ease the red channel toward the blue target; that quirk and the two settings flags that gate the eased sky (else a display default colour) are not reproduced until a capture confirms them
+	/// <summary>
+	/// Sets the sky's target to <paramref name="target"/> and runs one step of the scene's sky update: unless the colour
+	/// already equals its target, each channel moves (target − current) &gt;&gt; 4 in 16.16 fixed point, the red channel
+	/// toward the blue target; the grid takes the eased colour, else the fog colour.
+	/// </summary>
+	// [BIN:STP-PPC:0x1008FAA0 lobby sky] the current colour eases 1/16 toward the target each frame and fills the engine sky's whole colour ramp
+	// [BIN:TPW-EXE:0x5d96c0 lobby sky ease] while current != target: R += (B target − R) sar 4 (0x5d96fc-0x5d9709), G += (G target − G) sar 4, B += (B target − B) sar 4; the 256 grid entries at 0x8c2788 get 0xFF:R:G:B from the integer parts, else the fog colour [0x8bd47c]; the islands update copies the nearest island's SKYCOLOUR (+0x64..+0x6c) to the targets (0x5e11b2)
+	// [DATA:video 0:40-1:10, 78:30-78:40] the lobby's cloud layer is tinted per island (light grey for Lost Kingdom, pink for Wonderland, dark for Halloween World and Space Zone), which the red-toward-blue colour gives, over a cyan clear colour
+	// [APPROX:UI-018] the eased colour applies only while two settings pass (0x5d96c0: [0x785888] > 1 and the first word of the options object 0x78d8d8 == 1, else the grid keeps the fog colour); [0x785888] lives in the .bss settings block 0x785840-0x785920 filled at runtime (readers 0x44d8f1-0x44dc51) and is not read statically; the capture's tinted clouds show both passing. An island without SKYCOLOUR keeps the random target its constructor drew (0x5dfb4a-0x5dfb7b: three rand() & 0xFF << 16 into +0x64..+0x6c); OpenTPW uses black
 	private void EaseSky( (byte R, byte G, byte B) target )
 	{
-		if ( !skySet )
+		(targetR, targetG, targetB) = (target.R << 16, target.G << 16, target.B << 16);
+		if ( skyR == targetR && skyG == targetG && skyB == targetB )
 		{
-			(skyR, skyG, skyB) = (target.R << 16, target.G << 16, target.B << 16);
-			skySet = true;
+			Sky = ClearColour;
 			return;
 		}
-		skyR += ((target.R << 16) - skyR) / 16;
-		skyG += ((target.G << 16) - skyG) / 16;
-		skyB += ((target.B << 16) - skyB) / 16;
+		skyR += (targetB - skyR) >> 4;
+		skyG += (targetG - skyG) >> 4;
+		skyB += (targetB - skyB) >> 4;
+		Sky = ((byte)(skyR >> 16), (byte)(skyG >> 16), (byte)(skyB >> 16));
 	}
 }
 

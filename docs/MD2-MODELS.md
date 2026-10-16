@@ -11,8 +11,8 @@ original never reads). The sandbox Totem plays its original `totemm1.MD2` cycle
 and placed objects play their vertex and texture-coordinate tracks. Decoder
 mechanics and the 30 ticks/s clock are read from the Feral Mac PowerPC build
 (`docs/reverse/PPC-formats.md`, `docs/reverse/ANIM-plan.md`); the PC executable's
-equivalence is **not verified** (its code is encrypted; 275 of 293 PC WADs with
-MD2 members are byte-identical to the Mac copies; the path sampler is read from tp.exe), and original rendering
+equivalence is **not verified** apart from the path sampler, which is read from the decrypted PC executable
+(275 of 293 PC WADs with MD2 members are byte-identical to the Mac copies), and original rendering
 fidelity is not verified. These are
 not Quake II MD2 files. No dependency or original asset is added to the repository.
 

@@ -30,8 +30,8 @@ public partial class Level
 	/// <summary>Car instances the tour renderer holds (0 before the first car is drawn).</summary>
 	public int TourCarInstances => tourRenderer?.CarCount ?? 0;
 
-	/// <summary>Moves the tour renderer's car instances to the controllers' cars (once per simulation step).</summary>
-	private void UpdateTourRendering()
+	/// <summary>Moves the tour renderer's car instances to the controllers' cars and plays their clips for the step's <paramref name="seconds"/> (once per simulation step).</summary>
+	private void UpdateTourRendering( double seconds = 0 )
 	{
 		if ( tourRenderFailed )
 			return;
@@ -41,7 +41,7 @@ public partial class Level
 		try
 		{
 			tourRenderer ??= new TourRenderer( TourEntryOf, TourGridOrigin );
-			tourRenderer.Update( tours.Controllers );
+			tourRenderer.Update( tours.Controllers, seconds );
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )
 		{

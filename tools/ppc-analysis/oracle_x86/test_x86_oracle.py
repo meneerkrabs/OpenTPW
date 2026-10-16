@@ -75,11 +75,10 @@ EXPECTED = {
     ('tpw-exe-scrap-value', 'plan'): AGREE,
     # X14 (queue re-evaluation 0x501390 vs QUEUE-005): one exit, position >= 4 x cells unless in state 14; C#'s rule agrees.
     ('tpw-exe-queue-reevaluate', 'plan'): AGREE,
-    # X15 (park points counts-test 0x4dd920 vs ARRIVAL-003): the Mac test at PC offsets; C# applies all of it but the coaster
-    # controller test and the kart/water word, so it differs only for track types 1 to 3.
+    # X15 (park points counts-test 0x4dd920 vs ARRIVAL-003): the Mac test at PC offsets; C# applies all of it, the coaster
+    # controller test (CoasterRide.AcceptsGuests) and the kart/water track word (BumpController.IsTrackValid) included.
     ('tpw-exe-counts-test', 'plan'): AGREE,
-    ('tpw-exe-counts-test', 'csharp-rule'): (29, {'flags': 4, 'state': 0, 'open': 1, 'cells': 2, 'back': 4660, 'length': 3,
-                                                   'track': 3, 'controller_ok': False, 'track_word': 1}),
+    ('tpw-exe-counts-test', 'csharp-rule'): AGREE,
     ('tpw-exe-counts-test', 'csharp-rule-untracked'): AGREE,
     # X16 (price test 0x4fde50, GUEST-003): the willingness and the statistic agree with the reading; without the money test 56 differ.
     ('tpw-exe-price-test', 'plan'): AGREE,
@@ -796,7 +795,7 @@ class Oracle(CoastTests, unittest.TestCase):
             self.check(('tpw-exe-queue-reevaluate', side))
 
     # ------------------------------------------------------------------ X15: park points counts-test
-    def test_counts_test_matches_csharp_but_for_tracked_rides(self):
+    def test_counts_test_matches_csharp(self):
         for side in ('plan', 'csharp-rule', 'csharp-rule-untracked'):
             self.check(('tpw-exe-counts-test', side))
 

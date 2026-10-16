@@ -259,6 +259,26 @@ public partial class Texture : Asset
 		} );
 	}
 
+	/// <summary>
+	/// Gives this texture new pixels (possibly another size): a new GPU texture replaces the native identity, which materials
+	/// follow, and the old one is deleted after the current frame. Render thread only.
+	/// </summary>
+	internal void Replace( byte[] data, int width, int height )
+	{
+		var (texture, view) = CreateNative( data, (uint)width, (uint)height );
+		var oldTexture = NativeTexture;
+		var oldView = NativeTextureView;
+		NativeTexture = texture;
+		NativeTextureView = view;
+		Width = (uint)width;
+		Height = (uint)height;
+		Render.ScheduleDelete( () =>
+		{
+			oldView?.Dispose();
+			oldTexture?.Dispose();
+		} );
+	}
+
 	private static int CalculateMipLevels( int width, int height, int depth )
 	{
 		int maxDimension = Math.Max( width, Math.Max( height, depth ) );

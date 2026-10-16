@@ -233,6 +233,12 @@ internal static class AdvisorToolHelp
 	/// <summary>Posted when the queue tool starts, by every way into it (SetMode(3), 0x52F4B0).</summary>
 	public const int QueueTool = 203;
 
+	// [BIN:TPW-EXE:0x004AC5D0 buy list click] choosing an item builds the placement tool and posts 0xC9 (201) when the item is a ride and no ride is placed yet, else 0xCE (206); the land rows build tool 0x3A (0x159, 345) and 0x39 (0x15A, 346)
+	public const int FirstRide = 201, Placement = 206, ClearLandTool = 345, BuyLandTool = 346;
+
+	/// <summary>The help a chosen buy item posts: 201 for a ride (<c>Info.WhichUIType</c> 0) while the park has no ride, else 206.</summary>
+	public static int BuildStart( int whichUiType, bool anyRidePlaced ) => whichUiType == 0 && !anyRidePlaced ? FirstRide : Placement;
+
 	/// <summary>Every message a tool or panel posts, for the withdrawal when a park ends.</summary>
-	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool } );
+	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool, FirstRide, Placement, ClearLandTool, BuyLandTool } );
 }

@@ -429,6 +429,8 @@ public sealed partial class ParkHud
 		level.IsPlacing = false;
 		CloseBuyWindow();
 		PostMessage( strings.Help( 440 ) );
+		// [BIN:TPW-EXE:0x4ac683 buy click] the chosen item's type record +0x4C (Info.WhichUIType) is 0 (a ride) and no ride stands in the park (0x4824d0(0x80, 0): the first placed object with that type and no add-on id, 0x4828f0): help 0xC9 (201), else 0xCE (206)
+		PostToolHelp( AdvisorToolHelp.BuildStart( entry.WhichUIType, level.Objects.Objects.Any( placed => !placed.IsDeleted && placed.Entry.WhichUIType == 0 ) ) );
 	}
 
 	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance continues into the entrance, exit and queue sub-modes (0x52fab0 / 0x52faf0, 0x52f580(3,0)), whose last click does the same Ctrl test. Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits

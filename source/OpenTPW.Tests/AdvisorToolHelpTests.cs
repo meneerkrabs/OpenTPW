@@ -275,4 +275,47 @@ public class AdvisorToolHelpTests
 		Frame( hud );
 		Assert.AreEqual( 0, events.Count, "the handler 0x527200 is the path and queue modes' only" );
 	}
+
+	// ---- The buy list ---------------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void ABuyItemPostsHelp201ForTheFirstRideAnd206Otherwise()
+	{
+		Assert.AreEqual( 201, AdvisorToolHelp.BuildStart( 0, anyRidePlaced: false ), "0x4ac6a5: a ride with none placed" );
+		Assert.AreEqual( 206, AdvisorToolHelp.BuildStart( 0, anyRidePlaced: true ), "0x4ac7d4: a ride exists" );
+		Assert.AreEqual( 206, AdvisorToolHelp.BuildStart( 1, anyRidePlaced: false ), "a shop is not a ride" );
+		Assert.AreEqual( 206, AdvisorToolHelp.BuildStart( 2, anyRidePlaced: false ) );
+		Assert.AreEqual( 206, AdvisorToolHelp.BuildStart( 3, anyRidePlaced: false ) );
+		Assert.AreEqual( 206, AdvisorToolHelp.BuildStart( -1, anyRidePlaced: false ), "an entry without the key is no ride" );
+	}
+
+	[TestMethod]
+	public void StartingToPlaceAnItemPostsItsHelpAfterTheModeChange()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var placed = level.Objects.Objects.First();
+		var item = new BuildItem( "ride", 1100, BuildCategory.Rides, 0, 0, null, System.Array.Empty<string>(), null, placed.Entry );
+		hud.BeginPlacing( item );
+		Assert.IsNotNull( level.BuildEntry, "the placement tool is armed" );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode", "post 206" }, events, "a ride already stands in the park" );
+		events.Clear();
+		level.BuildEntry = null;
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode" }, events, "leaving the tool is a mode change and posts nothing" );
+		foreach ( var existing in level.Objects.Objects.ToArray() )
+			existing.Delete();
+		events.Clear();
+		hud.BeginPlacing( item );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode", "post 201" }, events, "no ride is placed: the first-ride help" );
+	}
+
+	[TestMethod]
+	public void TheLandRowsPostTheirToolHelp()
+	{
+		Assert.AreEqual( 345, AdvisorToolHelp.ClearLandTool, "row -2 builds tool 0x3A and posts 0x159" );
+		Assert.AreEqual( 346, AdvisorToolHelp.BuyLandTool, "row -1 builds tool 0x39 and posts 0x15A" );
+	}
 }

@@ -412,11 +412,25 @@ public class ObjectCatalogCorpusTests
 		Assert.ThrowsException<KeyNotFoundException>( () => jungle.Get( 17302 ) );
 	}
 
+	/// <summary>RIDES-003 (PC 0x473f32): instance flag 0x10 is set exactly when no clip exists for AnimIDs 1 to 11.</summary>
+	[TestMethod]
+	public void OnlyBaseClipsSetsTheHoldFlag()
+	{
+		ObjectAnimationFile[] Clips( params string[] names ) => ObjectAnimations.Find( "x", names.Select( name => $"/a/{name}.MD2" ) ).ToArray();
+		Assert.IsTrue( ObjectAnimations.HasOnlyBaseClips( Clips() ), "no clips at all" );
+		Assert.IsTrue( ObjectAnimations.HasOnlyBaseClips( Clips( "xc" ) ) );
+		Assert.IsTrue( ObjectAnimations.HasOnlyBaseClips( Clips( "xc1", "xc2" ) ) );
+		Assert.IsFalse( ObjectAnimations.HasOnlyBaseClips( Clips( "xc", "xm1" ) ) );
+		Assert.IsFalse( ObjectAnimations.HasOnlyBaseClips( Clips( "xo" ) ), "O is AnimID 11" );
+		Assert.IsFalse( ObjectAnimations.HasOnlyBaseClips( Clips( "xd" ) ) );
+		Assert.IsTrue( ObjectAnimations.HasOnlyBaseClips( Clips( "xm2" ) ), "m2 lies behind the missing m1, so no clip loads for AnimID 5" );
+	}
+
 	[TestMethod]
 	public void EveryEntryResolvesItsModelAnimationsAndTextures()
 	{
 		var missingTextures = new SortedSet<string>( StringComparer.OrdinalIgnoreCase );
-		int entries = 0, slots = 0, animations = 0, split = 0;
+		int entries = 0, slots = 0, animations = 0, split = 0, holders = 0, withoutClips = 0;
 		foreach ( var theme in ObjectCatalog.Themes )
 		{
 			foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
@@ -439,6 +453,12 @@ public class ObjectCatalogCorpusTests
 							missingTextures.Add( $"{entry.ArchivePath}:{material.Name}" );
 					}
 				}
+				if ( ObjectAnimations.HasOnlyBaseClips( entry.Animations ) )
+				{
+					holders++;
+					if ( entry.Animations.Count == 0 )
+						withoutClips++;
+				}
 				foreach ( var animation in entry.Animations )
 				{
 					var clip = ObjectAssets.LoadModel( entry.FileSystem, animation.Path );
@@ -452,6 +472,8 @@ public class ObjectCatalogCorpusTests
 			}
 		}
 		Assert.AreEqual( (274, 911, 31), (entries, animations, split) );
+		// RIDES-003: the objects whose only clip is the construction clip C (or that have none) take the hold route at a clip end.
+		Assert.AreEqual( (88, 8), (holders, withoutClips) );
 		Assert.AreEqual( 5629, slots );
 		// The ogre upgrade has an unnamed slot and the space rocket a slot whose texture is not shipped.
 		CollectionAssert.AreEqual( new[] { "/levels/hallow/upgrades/ogre:", "/levels/space/rides/rocket:s_leg3" }, missingTextures.ToArray() );
@@ -518,6 +540,31 @@ public class ObjectCatalogCorpusTests
 		Assert.IsTrue( OriginalParkPlacement.TryGetCell( park.Heightfield, engine.X, engine.Y, out var cellX, out var cellY ) );
 		Assert.AreEqual( (20, 60), (cellX, cellY) );
 		Assert.AreEqual( OriginalParkPlacement.ToEngine( park.Heightfield, new System.Numerics.Vector3( 205, 0, 605 ) ).X, engine.X, 1e-4 );
+	}
+
+	/// <summary>
+	/// The overwrite priorities and access cells the build rules read (docs/OBJECTS.md "Build rules"): rides, shops, sideshows, upgrades,
+	/// toilets, staff rooms and the fixed items have priority 5, the small scenery 1, the other features 0; every type with a queue has one
+	/// entrance and one exit, every other type at most one entrance and no exit (so tp.exe's exit test, which only queue types reach, always has a cell).
+	/// </summary>
+	[TestMethod]
+	public void OverwritePrioritiesAndAccessCellsFollowTheTypes()
+	{
+		var counts = new Dictionary<int, int>();
+		foreach ( var theme in ObjectCatalog.Themes )
+		{
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
+			{
+				counts[entry.OverwritePriority] = counts.GetValueOrDefault( entry.OverwritePriority ) + 1;
+				if ( entry.Category is not ObjectCategory.Feature || entry.IsFixedItem )
+					Assert.AreEqual( 5, entry.OverwritePriority, entry.ToString() );
+				var entrances = entry.Shape.Cells.Count( cell => cell.Kind == ObjectCellKind.Entrance );
+				var exits = entry.Shape.Cells.Count( cell => cell.Kind == ObjectCellKind.Exit );
+				Assert.AreEqual( entry.HasQueue ? (1, 1) : (Math.Min( entrances, 1 ), 0), (entrances, exits), entry.ToString() );
+			}
+		}
+		Assert.AreEqual( 3, counts.Count, "priorities 0, 1 and 5 only" );
+		Assert.AreEqual( (48, 45), (counts[0], counts[1]) );
 	}
 
 	/// <summary>Official bonus content (private: OPENTPW_BONUS_DATA, inconclusive without it).</summary>

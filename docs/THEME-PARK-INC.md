@@ -123,7 +123,7 @@ items; the science save contains no Bus record, so none is inferred for that par
 scripts report unimplemented effects in the log; the two opcodes only Theme Park Inc scripts use
 (`WAITABS`, `MULT`) have VM handlers since October 13, 2026 (see RSE-VM.md's gap-opcode section;
 the science smoke never reached them, so retail execution is not claimed). Textures are not
-checked against the original game's alpha or colour handling (COMPAT-014/015).
+checked against the original game's alpha or colour handling (the palette converter's `0x24` reading is read at instruction level, `APPROX:COMPAT-014` retired; the `0x2D` palette is `[EXT:fsh-0x2d-palette]`, `APPROX:COMPAT-015` retired).
 
 **Textures.** `Texture` now loads `.fsh` (first image of the SHPI file, `FshFile`) and stb images
 (`.tga`, `.png`) from the game data as well as from disk; decoding is GPU-free
@@ -151,7 +151,7 @@ file fill them. In Theme Park Inc the lake is a separate model: `terrain.wad` ho
 (`lake_surface`, `lake_bottom`; its extent equals the holes that no `base.MD2` mesh covers: 453
 cells, none left once it is drawn), `lake.MD2` (the same lake with hoardings, a tent, a plank and a
 shovel, so a building site) and the animation files `idle1`/`idle2`/`lakem1`/`lakem2`/`dlakem`. The
-viewer now always draws `dlake.MD2` (COMPAT-019; `lake.MD2` and the animations are
+viewer now always draws `dlake.MD2` (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the viewer runs no missions; `lake.MD2` and the animations are
 ignored). That was a loader gap. The data names it the drained state: `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704
 "New Science Drained Lake Obstacle", and `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10
 ("Water Drainage"); so `dlake` is the drained lake, not a finished one, and which one a park shows is data-driven (the exe holds no
@@ -171,9 +171,9 @@ The slice's own scope decisions are OpenTPW design decisions, not approximations
 the Theme Park World guest rules over Theme Park Inc data, the capability gates and the Theme Park World tool flow (`[EXT:tpi-*]` at their sites; TPI-900 to
 TPI-904 are retired).
 
-**Approximations and open questions.** COMPAT-014, COMPAT-015 (palettes), COMPAT-019 (lake),
+**Approximations and open questions.** (The `0x2D` palette and the drained lake are extensions now: `[EXT:fsh-0x2d-palette]`, `[EXT:tpi-lake-drained]`.)
 RIDES-031 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
-drawn as 0, 0), RIDES-019 (default fixed items without a save), RIDES-040 (zero-coordinate fixed
+drawn as 0, 0), RIDES-019 (the End object; the Bus from setup is `[EXT:tpi-bus-from-setup]`), RIDES-040 (zero-coordinate fixed
 scene records). Open: how the original game transforms the zero-coordinate scene records and
 places the gate and bus in worlds without a prebuilt save; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the
 missing lake bed textures; the viewer's lighting and water transparency against the original.
@@ -193,7 +193,7 @@ No original executable was run to establish a broader TPI save schema.
 | Cell grid | One 128×128 X-fastest run at offsets 7,116–1,449,038. Type 3 records are 88 bytes; 13 type 7 records add 10 bytes. `FF FF` closes each base record at +86/+87. MAP attributes remain at +46; path flag bit 0 at +13, connections +8, path texture +17, turn +21 and occupancy +12 match the TPW positions. The save yields 76 path cells. |
 | `SYSG` objects | A candidate begins with byte `1`, then an opaque `u32`, followed by little-endian `u32` Info.Id at +5, X +9, Y +13, width +17, height +21, kind +25 and index +29; rotation is `u16` at +43. The bounded signature scan finds 23 records: 9 kind 815 objects and 14 kind 865 fixed/scene records. |
 | Catalogue and placement | All nine kind 815 IDs resolve in science: eight rectangular footprints are occupied in the grid and one (`1101`, 4×5 at 42,26) has two unoccupied corner cells (42,30 and 45,30), so its footprint remains unresolved while the object is rendered at its saved anchor. Of the 14 fixed/scene records, nine IDs resolve; five zero-coordinate IDs (`1702`, `1701`, `1700`, `1750`, `1798`) have no object archive and are not rendered. One resolved record is a tool, leaving 17 objects rendered in the native viewer. |
-| Entrance | Saved `1601` Gates at (46,17), and `103` Lobby plus `104` atmdesk at (46,16), all rotation 0. TPI fixed models use local coordinates, so the viewer applies these saved anchors and rotations. There is no Bus record in this save. Eleven other fixed/scene records use (0,0); their model origin remains an approximation (RIDES-040). |
+| Entrance | Saved `1601` Gates at (46,17), and `103` Lobby plus `104` atmdesk at (46,16), all rotation 0. TPI fixed models use local coordinates, so the viewer applies these saved anchors and rotations. There is no Bus record in this save. Eleven other fixed/scene records use (0,0); their thing records hold the default position (128, 128) and angle 0 for the six with an archive (real positions for the five without one), and how the original places their local-coordinate models at that anchor remains an approximation (RIDES-040). |
 
 The importer is read-only. It requires this observed 23-record SYSG profile so a damaged or
 different save cannot quietly produce a partial park. It uses the same exact map-attribute check
@@ -310,7 +310,7 @@ about the readers.
    decodes all 7,283 files and WAD members to RGBA, with `--inspect-fsh`; see
    [FSH.md](FSH.md). The [level viewer](#theme-park-inc-playable-slice) uses them (October 11, 2026).
    Not done: checking them against the original game's rendering. Opaque `0x24`
-   palettes are approximation COMPAT-014.
+   palettes match the original's converter (`APPROX:COMPAT-014` retired).
 2. Use the `.rss` evidence in the VM: name `LIMBO`'s second operand as the limbo
    duration and cite the source comments in the opcode handlers.
 3. Other TPI save profiles, untraced prebuilt fields and the new `Standard.sam` keys,

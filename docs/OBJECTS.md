@@ -139,10 +139,11 @@ rotation about the anchor → + 10·(X, Y) → × 0.2 → grid origin (the heigh
 mapping of MAP.md; sandbox: the 32×32 tile park). Fixed items use anchor
 (0, 0) and no rotation: their models are authored in park coordinates (Jungle
 gates span MD2 X 450…510 = cells 45…51, matching the saved 6×3 footprint at
-45, 16). Base height = mean ground height of the footprint cells
-(**approximation**: rides flatten their ground in the original, cf.
+45, 16). Base height = the midpoint of the lowest and highest terrain vertex under the footprint (`0x466D70`; RIDES-014: the earlier mean of the cell heights
+stays only for a park-resume save without `BaseHeightRule`)
+(**approximation** for the blend: rides flatten their ground in the original, cf.
 `Info.DontDeformBase` and the per-archive `.hmp` files, whose header repeats the
-shape size, e.g. Totem 3×4, but are not decoded).
+shape size, e.g. Totem 3×4).
 
 ## Animations: ANIM_* → member
 
@@ -181,8 +182,11 @@ Playback (`ObjectAnimator`) follows the channel records of the Feral Mac build
 plain opcodes use channel 0, `_CH` opcodes the channel in their operand
 (sideshows use 0–2, the Totem 1–3). Channels update in ascending index, so for
 each node component (translation, rotation, scale, mesh positions, texture
-coordinates) the highest channel that writes it wins. A finished non-looping
-clip becomes AnimID 14: frozen on its last frame, pose kept (RIDES-003), and
+coordinates) the highest channel that writes it wins. A finished clip with
+nothing deferred takes one of three routes by the instance flags (`0x47376E`): an object that has a clip beyond AnimID 0 becomes
+AnimID 14 (a non-looping clip: frozen on its last frame, pose kept), an object whose only clips are AnimID 0, the construction
+clip C (88 of the 274 catalog entries, instance flag 0x10 set by `0x473e30`), holds its last frame as AnimID 12 whether the clip
+loops or not (`0x4737D7`), and the advisor model alone (flag 0x8) stops (`0x473778`); `APPROX:RIDES-003` retired.
 GETANIM(_CH) then returns −1 (otherwise the AnimID, 12 when empty). FLUSHANIM
 clears only the deferred clip. The scripts' waits use the trigger's result
 (`trunc(1000 × ticks / 30)` ms, 1000 for a missing member): TRIGANIM-family
@@ -197,7 +201,7 @@ Quantised vertex tracks (0x1000) and per-corner texture-coordinate tracks
 (0x10000, e.g. `fountainm`, `Coconutm`) play per instance. Texture-frame tracks
 (trailer word 12 behind bit 0x2) select the frame of a model texture slot while
 the clip plays — the Belly Bounce's alien eyes, the arcade and Bug TV screens,
-the fixed gate's worm face, the queue-bin fires (RIDES-035; the mixing and
+the fixed gate's worm face, the queue-bin fires (RIDES-035 retired; the mixing and
 fallback rules are MD2-900..902) — and the renderer swaps the bound texture of
 the material slots that show the slot, with no reallocation while the frame
 holds. Node-state bit 0x10
@@ -214,8 +218,7 @@ scripts from the same archive, and one `RideScriptWorld` per park
 traffic lights). Initial variables from the .sam layers: `VAR_CAPACITY` =
 `Upgrades[0].InitCapacity`, `VAR_DURATION` = `Upgrades[0].InitDuration` (written only when above 0: its low byte clamped to
 `UsageInfo.MinDuration..MaxDuration`, 0x4db565..0x4db64f; `Info.DurationUnit` is never used, Totem.RSE uses it as cycle count),
-`VAR_RIDECLOSED` 0 (built and imported objects open; the saved ride state is not
-decoded) — the sandbox Totem starts closed. Variables are written by name since
+`VAR_RIDECLOSED` 1 for a built ride whose type has `Info.HasQueue` (the constructor `0x4DB090` opens the object and then closes it, `0x4DB712`–`0x4DB779`: RIDES-015 retired; the player opens it) and 0 otherwise; imported objects open (the saved open word `mCanLoad` is SAVE-006) — the sandbox Totem starts closed. Variables are written by name since
 scripts declare different subsets.
 
 Corpus run (`EveryObjectScriptRunsInItsParkWithOriginalAnimations`): all 262
@@ -228,16 +231,16 @@ objects, TOUR and kart BUMP controllers (a water ride's BUMP goes to its control
 ## Building (`ParkObjects`)
 
 Footprint cells from the shape and rotation; per cell: inside the grid, terrain
-rule (original levels: MAP blocked/water/entrance/fixed walkway, heightfield
-holes, Easymode path cells and occupied non-object cells such as the Belly Bounce
-queue — see MAP.md), not occupied by another object, a built queue cell or the
-sandbox Totem. Queue paths for `Info.HasQueue` rides are laid from the cell
+rule (original levels: the map start's cell types, heightfield holes, the Easymode
+save's occupied non-object cells such as the Belly Bounce queue — see MAP.md), no
+NoModify path (a plain path is cleared), no object of an equal or higher overwrite
+priority, no queue, track or other typed cell and no sandbox Totem; then the
+entrance's and exit's outside cells ("Build rules" below). Queue paths for `Info.HasQueue` rides are laid from the cell
 outside the entrance (`QueuePaths`, `Level.BuildQueueCell`; GUESTS.md "Queues"). Removing
 an imported object frees its cells. In original levels, building now uses `ParkEconomy.TryBuild`: research, money and
 golden-ticket checks apply, costs are charged and removal credits the economy
-scrap value. The generic sandbox still builds free. These are
-OpenTPW rules grounded in the data, not the original build checks (no slope,
-path-connection or land-ownership rules). The ImGui build panel lists the
+scrap value. The generic sandbox still builds free. The cell rules
+follow tp.exe's validator ("Build rules" below; owned land included, no slope test). The ImGui build panel lists the
 buildable catalog per category; R rotates, click builds centred on the cell, the
 remove tool deletes the object under the cursor. Sandbox JSON saves still contain
 only the Totem.
@@ -307,7 +310,7 @@ files per language (`english.txt`, `German.txt`, `Dutch.txt`, … also languages
 the game does not ship) with `NAME`, `SIGNA`, `SIGNB` sections; `DisplayName`
 uses the selected language, then English, then the `.sam` name (never fails; the original reads only
 the selected language file, 0x41F350, and falls back to the id table, which holds no bonus id except
-3301: RIDES-025).
+3301); the fallbacks are `[EXT:bonus-name-fallback]`.
 E.g. `_snake_1` (.sam "Snake") is "Slither" — a name the base OBJECT_NAMES
 already reserves at jungle index 22 — and "Rutschbahn" in German.
 
@@ -322,20 +325,44 @@ bonus root is set (observed: Dizzy Dinos animating).
 The build tool's hover (`0x5234D0`) and click (`0x524960`) run the placement `0x528A70` over the footprint;
 each cell goes through cell op `0x204` (`0x532FC0`) into the validator `0x535670` with the cell type the
 footprint symbol asks for (4 for an occupied cell). For an object the validator refuses a cell flagged
-NoModify (0x20) or unowned (0x40), a fence post or track piece on the second layer (types 0x19, 0xB, 0xD,
-0x10, 0x12), a queue and any other non-empty type, and the build when the pending cost exceeds the balance
-(`0x52FBC0`, unless `0x785A2C`); it allows an empty cell, a path cell without NoModify (`0x535D21`, the
-commit then clears the path, `0x534549`) and an object cell whose owner has a lower **overwrite priority**:
-the hover loads the placed type's `Info.OverwritePriority` (type record +0x54, schema `0x745020`) into
-`0x818C10`, the validator the owner's into `0x818C14` and compares them (`0x535D66`). On commit cell op 0x87
-demolishes every such owner whole (`0x527EE0`, crediting its scrap value) before the new footprint is
-written. The path and queue tools use the same comparison with `0x818C10` = 2 and 3, so they may replace
-scenery. In the shipped catalogues rides, shops and sideshows have priority 5, small scenery (bushes,
-flowers, tiny rocks, speakers) 1 and the other features 0.
+NoModify (0x20, the map start's initial path) or unowned (0x40), a fence post or track piece on the second layer
+(types 0x19, 0xB, 0xD, 0x10, 0x12), a queue and any other non-empty type, and the build when the pending cost
+exceeds the balance (`0x52FBC0`, unless `0x785A2C`); it allows an empty cell, a path cell without NoModify
+(`0x535D21`) and an object cell whose owner has a lower **overwrite priority**: the hover loads the placed
+type's `Info.OverwritePriority` (type record +0x54, schema `0x745020`) into `0x818C10`, the validator the
+owner's into `0x818C14` and compares them (`0x535D66`). On commit cell op 0x87 (`0x5344E5`) demolishes every
+such owner whole (`0x527EE0`, crediting its scrap value) before the new footprint is written, and every
+footprint cell is cleared with ClearCell `0x5367A0(0, 0)` before its type is written (`0x52910C`), so a path
+cell under the footprint goes whatever the priorities (op 0x87 already clears it when the new priority is the
+higher, `0x534549`). The path case of ClearCell refunds nothing. In the shipped catalogues rides, shops,
+sideshows, upgrades, toilets, staff rooms, fantasy's Large Sign and the fixed items have priority 5, the
+small scenery (bushes, flowers, small rocks and trees, statues, speakers; 45 types) 1 and the other 48
+features 0 (test `OverwritePrioritiesAndAccessCellsFollowTheTypes`).
 
-OpenTPW follows the overwrite priority for objects (`ParkObjects.Check`, `TryPlace`) and refuses track,
-path and queue cells by their cell type (`Level`'s `IsReserved`); objects on path cells, the outside cells'
-path rule and paths or queues over scenery are still open (RIDES-018).
+**The path and queue tools.** The hover (`0x5234D0`, `0x524571`) and the click (`0x524960`, `0x527200`,
+`0x527218`) set `0x818C10` to 2 for the path tool and 3 for the queue tool, and the validator compares it
+with the owner's priority before any path or queue rule, so a path or queue may be laid over a feature of
+priority 0 or 1 but over no ride, shop, sideshow, toilet or staff room. The commit's first line pass
+(`0x536100(0x87, ...)`) demolishes each such feature whole before the cells are typed.
+
+**The access cells.** After the footprint the placement checks the outside cells of the entrance and the
+exit (`0x529744`, `0x5299E2`: off the map refuses). Entering the build tool sets option `0x81B0CC` to the
+type's `Info.HasQueue` (`0x46D644`; `0x8187F8` gets the type's `Bumper.WhichTrackType` when its record +0x288
+is 1, which turns the option off, `0x52FAB0`). With the option on the entrance's outside cell is checked as an
+object cell (op `0x204`, `0x5297A4`) and becomes the queue's first cell, and the exit's is checked by the path
+rule (op `0x201`, `0x529A2F`) and becomes a path cell; with it off only the entrance's cell is checked, by the
+path rule (`0x5298B9`), and becomes a path cell. The commit's op 0x87 there demolishes a lower-priority owner
+too. In the corpus every type with a queue has one entrance and one exit and every other type at most one
+entrance and no exit.
+
+OpenTPW follows these rules: `ParkObjects.Check` and `TryPlace` (overwrite priority, a plain path cell under
+the footprint cleared through `ParkPathBuilder.Remove`, a NoModify one refused, the access cells by
+`Info.HasQueue`, refusing with `AccessBlocked`), `ParkPathBuilder.ObjectGivesWay`/`DemolishObject` and the
+queue builder's `givesWay` (`QueuePaths`), and `Level`, which hands the cell map to these hooks and refuses
+track and queue cells by their type (`IsReserved`). Guests standing on a cleared path cell are set down on the
+nearest path cell (`GuestSimulation.SetDownOffCells`). Still open (RIDES-018): the second-layer link tests
+`0x53AE00`/`0x53AE90`, the cost of the access cells the commit lays (RIDES-028 lays none), the types whose
+record +0x288 is 1, and what tp.exe does with a guest inside a new footprint.
 
 ## Remaining gates
 
@@ -361,24 +388,19 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| RIDES-003 | World/Objects/ObjectAnimator.cs | Finished clip holds its last pose (AnimID 14 path traced: 0xa7498, 0xa68ac, 0xa694c); the next trigger restores against the ended clip, while the original passes the AnimID-14 slot as the old clip (0xa692c–0xa6948) | Capture after a clip ends; the object's AnimID-14 table slot; the ride-data sources of object flags 0x8 (stop) and 0x10 (hold) |
 | RIDES-011 | World/Objects/ObjectShape.cs | `+` is an overlay cell over the parent ride's track, the track ends `<` `>` station connections. The original placement `0x528A70` stamps `+`, `#` and the ends as occupied type 4 (`0x5290C7`–`0x5290EE`), checks `+` with cell op 0x10B and `#` with 0x110 and on commit writes the flags word 0x10 on the cell and its second-layer cell (`0x52950D`); an end with a direction needs the cell beyond it and on commit makes it type 0x15 (`0x5295F7`) | What cell ops 0x10B/0x110 require and what type 0x15 is |
-| RIDES-014 | World/Objects/ParkObjects.cs:153 | Base height = mean footprint ground height | `.hmp` format, captures on slopes |
-| RIDES-015 | World/Objects/ParkObjects.cs | Imported and built objects start open. The original constructor `0x4DB090` opens a built object, then closes one whose type has `Info.HasQueue` (def+0x40; `0x4DB712`–`0x4DB779`: open word 0, VAR_RIDECLOSED 1), so built rides with a queue start closed | TPWS ride state (save loader `0x415270`) |
-| RIDES-018 | World/Objects/ParkObjects.cs:120 | Build rules: grid, the original's map-start cell types (holes refused; `Blocked` surface cells buildable, as in tp.exe), save paths/objects, overlap by `Info.OverwritePriority` (a lower-priority object gives way and is demolished, as in tp.exe), owned land; no slope test (none in tp.exe either); Level enforces economy purchases | Objects on plain path cells (tp.exe allows them and clears the path), the entrance/exit outside cells' path rule, and paths and queues over scenery |
-| RIDES-019 | World/Objects/ParkObjects.cs | Levels without a save get Gates and Lights at setup, as the original's world setup (0x5156A0); the bus, seaplane and Ferry are placed when the arrival update first sends them (0x51A2F0, see GUESTS.md "Arrivals"). End is not created: the original creates it through 0x516B00 from the message handler 0x503D40 (message type 0x11). A Theme Park Inc world without a prebuilt save keeps a Bus from setup | What sends the End message; how Theme Park Inc places its arrival vehicle |
-| RIDES-021 | World/Level.Objects.cs | The cursor ray picks the clicked cell on the Z = 0 plane. The anchor taken from that cell is the original's (`0x528B44`: the cell less (W/2, H/2), then the rotation's 5 × 5 window offsets), so the click is local (W/2, H/2) when each side is odd or at most 5 cells; the only shipped exception is space 3104 Orbiter (6 × 3: local (3, 1) at 0°, (2, 2) at 90°) | The original's mouse-to-cell pick (`0x524960` → `0x528A70`) |
-| RIDES-023 | World/Objects/OriginalObjectRuntime.cs:125 | Completed cycle = VAR_RUNNING 1 → 0 | Original cycle/income accounting |
-| RIDES-025 | World/Objects/ObjectCatalog.cs | Bonus name: selected language file, then English, then the .sam name. The original reads only `<selected language>.txt` (0x41F350) and falls back to the id table (empty for bonus ids except 3301); the English and .sam fallbacks are an OpenTPW extension for languages an archive lacks (third-party content) | None needed for the shipped archives (all 35 carry the four shipped languages) |
+| RIDES-014 | World/Objects/ParkObjects.cs | Base height = (lowest + highest) / 2 of the terrain vertex heights at the corners of the footprint's shape cells (`0x466D70`, cells with a non-zero type nibble, `0x469930`; the vertex is `ftol(lerp + 0.1)` of `0x454050`, equal to `ObjectFootprint.ToGrid` of the corner: `ObjectBaseHeightTests`). The original then blends the ground flat under the ride (`0x467030`, `0x57ACE0`), which is not modelled; a park-resume save from before the rule restores with the earlier cell mean (`BaseHeightRule` absent) | The blend; the instance words +0xF0/+0xF4 taken as the shape size; an instance height captured on a slope |
+| RIDES-018 | World/Objects/ParkObjects.cs | Build rules: grid, the original's map-start cell types (holes refused; `Blocked` surface cells buildable, as in tp.exe), plain path cells cleared and NoModify ones refused, overlap by `Info.OverwritePriority` (a lower-priority object gives way and is demolished, for objects, paths and queues alike), the access cells by `Info.HasQueue`, owned land; no slope test (none in tp.exe either); Level enforces economy purchases. Guests on a cleared path cell are set down on the nearest path cell | The second-layer link tests `0x53AE00`/`0x53AE90`, the pending cost of the access cells the commit lays (RIDES-028), which types have record +0x288 = 1 (their `Bumper.WhichTrackType` turns the access-cell option off), and what tp.exe does with a guest inside a new footprint |
+| RIDES-019 | World/Objects/ParkObjects.cs | Levels without a save get Gates and Lights at setup, as the original's world setup (0x5156A0); the bus, seaplane and Ferry are placed when the arrival update first sends them (0x51A2F0, see GUESTS.md "Arrivals"). End (the finale object, `End.RSE`) is not created: the original creates it through 0x516B00 from the lab's message handler 0x503D40 (message type 0x11) once every research item is complete, by the GameType word 0xFB3B7C (2 Instant Action at once; 0 Full Simulation once every online park record is done, 0x5B0C40; 1 never), after posting the advisor message 0xA7. (A Theme Park Inc world without a prebuilt save gets its Bus at setup: `[EXT:tpi-bus-from-setup]`.) | The player-wide record list behind 0x5B0C40; the advisor message 0xA7's text |
+| RIDES-021 | World/Level.Objects.cs | The cursor's cell is the cell of the ray's nearest terrain hit (`TerrainRayPick`, the heightfield triangle planes of `0x45BF90`; the cell is the hit divided by the cell size, `0x45D560`; the click command `0x46C5D0` hands it to `0x524790`); the generic sandbox has no heightfield and picks on the Z = 0 plane (`EXT:build-cursor-ground-plane`). The anchor taken from that cell is the original's (`0x528B44`: the cell less (W/2, H/2), then the rotation's 5 × 5 window offsets), so the click is local (W/2, H/2) when each side is odd or at most 5 cells; the only shipped exception is space 3104 Orbiter (6 × 3: local (3, 1) at 0°, (2, 2) at 90°) | The object half of the original's nearest hit (`0x45CDC0` → `0x45D090`): which polygons of the object model it tests and which object a cell yields (`0x452AE0`); the original also keeps its previous hit when the ray finds nothing |
 
 | RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue). The original placement `0x528A70` lays a queue cell at the entrance's outside cell and a path cell at the exit's (option `0x81B0CC` on; only an entrance path cell with it off) and refuses an outside cell off the map | The link ops 0x81/0x85/0x86 of the laid cells |
 | RIDES-031 | World/Objects/ObjectShape.cs | Shape symbols `@` (type 1; only in the Theme Park Inc road signs, "`*@*`" and "`*@@*`"), `Q` (3) and `#` (16) count as occupied here. The original placement `0x528A70` stamps `@` as a linked path cell inside the footprint (flags word 0x20, `0x529173`–`0x529208`), `Q` as a queue cell (type 3) and `#` like `+` (RIDES-011) | A path and queue cell model inside footprints; TPI placement of a sign over a path (`[EXT:tpi-viewer]`, docs/THEME-PARK-INC.md) |
-| RIDES-032 | World/Objects/ObjectAnimator.cs | Every instance takes the callback route. PC: render callback 0x463030 (model record +0x140, set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 updates instances without it via 0x473c70(inst, 0, 8) without posing and clears it on the others; object flag 0x00400000 is set at 0x4737e8 when a non-looping clip ends with nothing deferred, flags & 0x10 set and & 0x8 clear (also sets 0x40000000, holds the last frame). The list-pass route is not modelled | The renderer's call site of the +0x140 callback |
-| RIDES-035 | World/Objects/ObjectAnimator.cs | Texture-frame tracks apply to rendering (MD2-900..902). PC writer: clip update 0x4721F0 runs 0x470C90, which writes the slot record at model+0x50+slot·8 (frame at +2, dirty bit 0x04 in byte +1); no reader of the frame or the dirty bit was found, so the binding follows this port's material-slot mapping | The draw-path reader of a texture slot's current frame (a runtime write watchpoint on a slot's +2, or the D3D texture-bind code) |
-| RIDES-040 | World/Objects/ParkObjects.cs | Theme Park Inc fixed scene records saved at (0, 0) use their local model origin | The original fixed-scene transform fields and a game capture |
-| RIDES-044 | VM/RideVM.cs | The scheduler clock that GETTIME and the WAITANIM(_CH) deadlines read starts at 0 when the park's script world is created and advances with the script ticks. The PC clock is the app-lifetime scaled timer 0x785970 (started at 0x54DCF0, read by 0x402D70, set only by the save writer 0x4164C0 and loader 0x415270, never reset for a new park), so a new park's first script sees the time since program start; the two differ only in absolute GETTIME values, since every deadline is relative | GETTIME's PC handler (to show it is only used for differences) |
+| RIDES-032 | World/Objects/ObjectAnimator.cs | Every instance takes the callback route. PC: render callback 0x463030 (model object +0x140, set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 (once per frame, from 0x54e360) updates instances without it via 0x473c70(inst, 0, 8), which poses only with instance flag 0x400000 (set once by the hold route of RIDES-003), and clears it on the others. The list-pass route is not modelled, so an instance the renderer does not pose (a view-dependent choice) is posed here | The callback's call site: no instruction calls or jumps through that +0x140 (the other `+0x140` operands belong to other structures) and the renderer (`0x579D95`) only initialises the word to 0, so any call goes through a computed address |
+| RIDES-040 | World/Objects/ParkObjects.cs | Theme Park Inc fixed scene records saved at (0, 0) use their local model origin. Their thing records (tag `EJBO`: position X, Y in 1/256 cell, two links, angle, Info.Id) carry the fixed-item default (128, 128), angle 0 for the six that have an archive (1705, 1706, 1709, 3708, 1707, 1710); the five without an archive (1702, 1701, 1700, 1750, 1798) carry real positions but have nothing to draw | How the original places a local-coordinate fixed model at its anchor (the no-CD Theme Park Inc exe holds that code) |
 | MD2-900 | World/Objects/ObjectAnimator.cs | A texture-frame slot's frame selection is the PC writer `0x470C90`: the last key at or before the clip time wins, none before the first key keeps the previous frame, later tracks of a slot overwrite earlier ones (hyenasm1 carries two tracks on one slot); a slot no bound clip addresses shows frame 0 again here (the writer never resets), and the fixed-item pose hold is not extended to frames | The draw-path reader of a slot's current frame, and what resets a slot (the writer only sets it) |
 | MD2-901 | World/Objects/ObjectAnimator.cs | Texture-frame keys naming a frame outside the slot's frame names, or a slot the model does not have (Pmegacostm slot 12), are ignored; the PC writer `0x470C90` checks neither index | The unread consumer of the slot record (original behaviour on an out-of-range frame or slot) |
+
 
 ### Retired and reclassified (RIDES round 2, October 14)
 
@@ -393,10 +415,15 @@ Traced in tp.exe (`TPW-EXE`) and no longer approximations:
 - `APPROX:RIDES-043`: objects load in set mode (loader 0x461F10 strips header flag 4 unless the TrackMaster loader asks for it). The Add-mode remainder for TrackMaster coaster models moved to COAST-026.
 
 Reclassified as OpenTPW conventions (no original rule to recover): `[EXT:md2-engine-scale]` (formerly `APPROX:RIDES-026`, the 0.2 presentation scale),
+`[EXT:bonus-name-fallback]` (formerly `APPROX:RIDES-025`: a bonus object whose archive lacks the selected language takes the English name, then the `.sam` name; the original reads only the selected language file and the id table, `0x41F350`; third-party content only, all 35 shipped bonus archives carry the four languages),
+`[EXT:build-cursor-ground-plane]` (the Z = 0 plane pick that is part of `APPROX:RIDES-021`; the original's pick stays open, see the register),
+`[EXT:ride-cycle-counter]` (formerly `APPROX:RIDES-023`: `CompletedCycles` counts VAR_RUNNING 1 → 0 edges as OpenTPW's own diagnostic counter; nothing in the original counts ride cycles, it only reads VAR_RUNNING as a level),
+`[EXT:park-clock-origin]` (formerly `APPROX:RIDES-044`, retired: each park's script world starts its scheduler clock at 0 where the original's is the app-lifetime timer, so a park's run never depends on how long the program ran before it; the one origin-dependent sum, WAITANIM_CH (`0x55320A`, an unsigned wrapping sum), is issued by no shipped script, so nothing original remains),
+`[EXT:tpi-bus-from-setup]` (the Theme Park Inc part of `APPROX:RIDES-019`: a Theme Park Inc world without a prebuilt save gets its Bus at setup where the Theme Park World arrival vehicles are placed on first dispatch; no original reading of how Theme Park Inc places its arrival vehicle is available; the End object stays open, see the register),
 `[EXT:malformed-texture-coordinates]` (formerly `APPROX:RIDES-030`, non-finite texture coordinates drawn as (0, 0); the original passes raw floats to Direct3D) and
 `[EXT:trig-anim-speed-guard]` (formerly `APPROX:RIDES-038`: the corpus has 4 TRIGANIMSPEED uses, all literal 1800–4000, so the guard against 0 and negative speeds only meets malformed input).
 
-Narrowed: RIDES-011, 012, 019, 024, 025, 031, 033, 035 and 044 (rows above); RIDES-013, 015, 021, 023, 028, 032, 040 stay as they were.
+Narrowed: RIDES-011, 012, 019, 024, 031, 033, 035 and 044 (rows above); RIDES-013, 021, 028, 032, 040 stay as they were.
 
 ### Read round (tp.exe, October 15)
 

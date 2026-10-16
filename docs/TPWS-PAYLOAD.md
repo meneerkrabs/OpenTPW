@@ -100,26 +100,30 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
 `SavePayloadLayout.Parse` (span or `SaveReader`, payload capped at 64 MiB):
 
 - reads the action-recording header (published flag 0/1, size within the payload);
-- splits the payload at the 17 delimiters in writer order. A block whose writer
-  width is traced ends exactly there, like the original loader: Clock 8 (two
-  clock words, `0x10e944`), VanillaTime 4 (`0x127ac8`), Camera 40 (`0x2cb90`),
-  and an empty Coasters block is exactly its 16-byte count and globals (the
-  World block is checked by its thing list, below). The other delimiters may be
-  any later copy of their four bytes, and the payload must split in exactly one
-  way. A copy of a block's delimiter bytes is harmless only inside an earlier
-  block or where taking it as that block's end leaves no valid split of the
-  rest (a later delimiter missing or out of order, or a traced width broken).
-  A copy inside the block itself or any later block that forms a second valid
-  split throws, for example the block's own delimiter bytes inside it with
-  every later delimiter still in order, or the AdvisorScoring (`ADSC`) bytes
-  anywhere in the trailing UI block. A missing or out-of-order delimiter, a
-  broken width and a payload holding one delimiter's bytes more than 256 times
-  throw as well. The count-based original loader accepts the ambiguous cases
-  (SAVE-011);
+- splits the payload at the 17 delimiters in writer order. Every block but two ends exactly where its tp.exe
+  reader stops (`SaveBlockWidths`; the loader `0x415270` runs each reader and then compares the next four bytes with the
+  block's tag, `0x415371` and the following checks), so a delimiter's bytes inside a block are data:
+  Scripts `0x475730` (`u32 'SCPT'`, `u32 0x118`, `u32 n`, n slot words and `0x118` bytes for each nonzero slot 1 to n-1),
+  Particles `0x51f7a0` (`u32 'PCLT'`, `u32 on`, then `0x9e68` and `0x8b60` byte tables and a counted tail),
+  message centre `0x40fd60` (a word and 29 counted `u16` lists), Clock 8 (`0x402e30`), VanillaTime 4 (`0x403260`),
+  GameSystem 36 (`0x5506e0`), RideSystem `0x4647a0` (`u32` length and that many bytes), TrackRides `0x543560` (a chunk
+  whose container header `u32 1, u32, u32 size` carries the width; the close `0x544290` seeks to its start plus the size,
+  and the sub-chunk sizes must add up to it), FlyingRides `0x55e020` (`'FLY_'`, an on word, a counted slot table, ten
+  words and one block per nonzero slot), RSSE `0x5597a0` (`'RSSE'`, a counted header, five words, a record count and size,
+  then per record its struct, nine counted buffers and an `'OBJ '` list), Camera 40 (`0x42cec0`), Advisor `0x599d00`
+  (`'ADV_'`, two counted buffers), Sound `0x51c400` (the settings, and with sound on a chunk the loader skips by its
+  length word), Cheat 2 (`0x405570`), AdvisorScoring 4 (`0x59c860`) and UI `0x481680` (`u32 count`, count x `0x21c`).
+  The Jungle Easymode save's seventeen widths all agree with these readers. An empty Coasters block is exactly its
+  16-byte count and globals. Only the World block (its control manager and macro AI are not traced; its thing list closes
+  at the delimiter, below) and a Coasters block with a coaster (its trains and cars depend on the coaster type's counts)
+  are located by their delimiter's bytes, and the payload must split in exactly one way there; a copy of those delimiters
+  that forms a second valid split throws, as does a payload holding one of them more than 256 times, although the
+  count-based original loader accepts those cases (SAVE-011). A missing or out-of-order delimiter, a block that does not
+  read as its block and a block not followed by its tag throw as well;
 - reports the 19 blocks (offset, length, delimiter offset); UI is everything
   after the AdvisorScoring delimiter. No partial result on error.
 
-Blocks other than World and RideSystem stay raw, size-checked byte spans — except the Coasters
+Blocks other than World and RideSystem stay raw byte spans, measured by `SaveBlockWidths` — except the Coasters
 block, which has a bounded structural reader (next section).
 
 ## World block (`SaveWorld`)
@@ -351,24 +355,41 @@ per coaster:
     +8  u16  cell X       +10 u16 cell Y   (the descriptor's +12/+16 grid coordinates)
     +12 u8   cell-stack insertion ordinal
     +13 f32  section+232  (height parameter t)   +17 f32 section+216 (bank)
-    +21/+25/+29 f32       section+220/+224/+248 (meanings unqualified)
+    +21/+25/+29 f32       section+220 (incline), +224 (yaw), +248 (loop rotation, loop nodes only)
     +33 u8   link count   (narrowed from section+176), then that many u16 ordinals,
                           each its own 2-byte read like the original
-  train/car/passenger payload (serializer 0x38da4) — layout not qualified, kept raw
+  per train slot of the coaster type (type +0x2e8, uiMaxTrains):
+    27-byte record: u32 train flags, u8 car count (+0xc), u32 +0x74 (the reference car's position, f32),
+                    u32 +0x78 (speed, f32), u32 +0x38, u32 +0x64, u32 +0x68, u16 riders (+0x10)
+    per car of the train (type +0x2f4, uiMaxCars):
+      11-byte record: u32 car flags, u8 count A (+0x30), u8 count B (+0x34), u8 +0x44, u32 mesh instance (+0xc)
+      then count A u32 (riders on the lap) and count B u32 (guests seated at the station)
 ```
 
 `SaveCoasterBlock.Parse` (payload + layout + map dimensions) bounds and validates what the traced
 contract states and refuses everything else: truncation inside the header, auxiliary block, section
 record or links (named per part); a coaster or auxiliary-link count above its bound; a non-finite
-power factor or section float; a section cell outside the map; and any block that lists more than one
-coaster, because the extent of each coaster's undecoded train payload depends on its coaster type, so the
-next header cannot be located here (SAVE-920): tp.exe's loader `0x437b60` reads every coaster, and the saver
-`0x437300` writes per train slot of the type (type `+0x2e8`) a 27-byte record and per car an 11-byte record
-followed by its two counted u32 lists (SAVE-923). The flag words are kept raw; tp.exe's saver and loader
-remap the section bits (`0x437615`, `0x437ea6`), which the reader does not interpret (SAVE-921)
-— as are the unnamed controller words, globals, auxiliary ordinals, `section+112` and the floats
-`+220/+224/+248` (SAVE-922). The train payload is preserved as raw bytes and never interpreted
-(SAVE-923). A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
+power factor or section float; and a section cell outside the map. The train payload's extent depends
+on the coaster's type (the file carries neither the train slots, `uiMaxTrains`, nor the cars per
+train, `uiMaxCars`: the loader `0x437b60` reads them from the live type, `0x436d10`), so the caller
+may pass each coaster's `SaveCoasterTrainLayout`, keyed by the header's controller `+0x10`: with it
+`SaveCoasterTrain.ReadAll` decodes the train slots and cars exactly as the loader reads them, and
+a block of several coasters reads (`OriginalParkImport.Import` takes the type's counts from a
+callback and `OriginalPark` supplies them from the level's coaster `.sam`, finding the station as the
+saved attraction whose mesh instance equals the controller word); SAVE-920 is narrowed to the runtime
+restore, which is still refused. Without a layout only a single coaster's
+train payload stays raw (the rest of the block) and a block with more coasters is refused, since the next
+header cannot be located. The controller word `+0x10` is the station's mesh instance id and `+8` the controller
+state word (low nibble: 1 incomplete, 2 built, 4 open, 8 closed). The section flag word follows the saver's
+and the loader's maps (`SaveCoasterSectionFlags`, `0x437615..0x4376e0`, `0x437ea6..0x437f58`): wire bits 0x1, 0x2, 0x4
+(manual yaw, incline, bank), the cut markers 0x40/0x80, the link marks 0x100/0x200 and the intersection marks
+0x400/0x800 are restored, while 0x8, 0x10 and 0x20 (the loop-pair, loop and zero-bank node flags) are
+derived again by the node constructor (the loader runs the loop setup `0x442cd0` for 0x8 and picks the loop
+rotation float for 0x10). The section words are named: `section+112` is the node's mesh instance (re-attached
+through `0x463ab0`), `+216` bank, `+220` incline, `+224` yaw, `+232` the height parameter and `+248`
+the loop rotation (setters `0x444150`, `0x4441d0`, `0x444270`). The header's remaining track flags
+(SAVE-921), controller words (SAVE-922) and the train words `+0x38`, `+0x64`, `+0x68` and the car flag and
+byte `+0x44` (SAVE-923) are kept raw. A block with count 0 is exactly its 16 bytes (`SavePayloadLayout` enforces this on the
 split). `OriginalParkImport.Import` runs the reader on every save and exposes the result as
 `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell queries and `CoasterSections` joins that require both cell
 and object `Info.Id` to attach attraction ids. Missing or ambiguous scene matches remain visible;
@@ -450,7 +471,8 @@ words and the loan offers' Available flags, the staff HQ's training budgets,
 strike words, strike levels and trained byte, the world state,
 arrival variables and bytes, the calendar session start, the advisor
 controller's presentation words and current record, the weather, park analyser,
-tag system, mechanic HQ and UI receiver things and the opaque blocks. Staff
+tag system, mechanic HQ and UI receiver things. The raw dumps of the original's own engine structures (the Scripts, RSSE, Particles, Sound, message-centre, Track ride and Flying ride blocks) are
+not restored: OpenTPW's engines restart from the archives (`[EXT:original-engine-state-dumps]`, formerly part of SAVE-010). Staff
 values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
 training percentage, a state without a STAFFSTATES entry, a hire time outside
 the calendar or inside a park turn, which is rounded down to the turn) are adjusted and each adjustment is reported; an attraction whose
@@ -506,9 +528,9 @@ RideSystem, attraction and economy readers over the second fixture set
   extra paths, so those readers are still proven on Easymode alone. A Theme Park World
   save with a built coaster does not exist in any available corpus: the Coasters block's
   nonempty shape rests on the static Mac contract and the Theme Park Inc cross-check.
-- The coaster train/car/passenger payload (0x38da4), the flag remapping, the auxiliary
-  ordinals' meaning and the unnamed header/section words; bodies with more than one coaster
-  are refused until the train payload's extent is known (SAVE-920).
+- The meaning of the coaster header's track flags and controller words and of the train words
+  `+0x38`, `+0x64`, `+0x68` (SAVE-920 to SAVE-923); the train layout is decoded from the loader and the saver but
+  no Theme Park World save with a coaster exists to check it on real bytes.
 - The control manager and macro AI before the calendar, the guest, analyser and weather bodies, record
   fields marked raw above, the extension data, RideSystem record bodies/lengths, RSSE object bodies and every
   other block.

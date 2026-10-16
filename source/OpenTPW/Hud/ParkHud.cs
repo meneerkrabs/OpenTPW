@@ -84,7 +84,7 @@ public sealed partial class ParkHud
 		this.host = host;
 		Status = status;
 		Catalog = catalog;
-		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows );
+		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
 		lastLevelMessage = level.LastActionMessage;
 		level.Objects.ObjectPlaced += OnObjectPlaced;
 		// Harnesses that build a Level without its constructor have no tool object.
@@ -811,8 +811,9 @@ public sealed partial class ParkHud
 			toolClick = true;
 		}
 		UpdateBlueprint( inPark && !rideOwnsInput, context.Delta, paused || Status.Speed == GameSpeed.Paused );
-		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
-		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
+		// [BIN:TPW-EXE:0x487013 hover modes] with Shift alone, or with the visitor locator panel out, the hover handler picks visitors only (IsVisitorPickState) and no object mode is set
+		// [APPROX:UI-027] the object is the one occupying the cell of the cursor's terrain hit; the original picks a ride, shop or other object by its model's pick sprite (the sprite pass 0x5890e0, the thing in the 3 x 3 cells round the hovered cell 0x532bd0, the window 0x4b6080) — evidence needed: which instances carry a pickable sprite and its size and offset
+		if ( inPark && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
 			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
 		if ( input.LeftReleased )
@@ -910,7 +911,7 @@ public sealed partial class ParkHud
 			context.HoverHelp = strings.Help( help );
 		if ( !tool.IsActive )
 		{
-			// Backspace over a path cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent).
+			// Backspace over a path or queue cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack]).
 			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && level.BacktrackAt( cursorX, cursorY ) )
 				return true;
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )

@@ -219,6 +219,10 @@ public sealed class UiContext
 		return true;
 	}
 
+	/// <summary>Whether every named texture of model <paramref name="name"/> frame <paramref name="frame"/> resolves (a missing one would draw as untextured white).</summary>
+	public bool FrameTexturesResolve( string name, int frame ) =>
+		Models.Get( name ) is { } model && model.GetFrame( frame ).Parts.All( part => part.TextureName.Length == 0 || ResolveTexture( part.TextureName ) != null );
+
 	/// <summary>Authored canvas rectangle of a model frame placed where the original file put it.</summary>
 	public UiRect AuthoredRect( string name, int frame = 0, UiRect fallback = default )
 	{
@@ -406,6 +410,10 @@ public sealed class UiImageElement : UiElement
 	}
 }
 
+/// <summary>The timer of a repeating button: after <see cref="Delay"/> held it calls <see cref="Start"/>, then <see cref="Tick"/> every time more than <see cref="Interval"/> has passed.</summary>
+// [BIN:TPW-EXE:0x668dd9 button hold timer] the per-frame message 0x1e of a pressed button with style bit 0x20 (+0x48): state +0x15a 1 waits until now - +0x144 >= +0x13c (the delay), then sets state 2 and posts 0x10009 to the parent; state 2 posts 0x10008 each time now - +0x144 > +0x140 (the interval); both only while the button's pressed bit (+0x138 & 2) is set, and they restart +0x144; the press 0x668ecf sets state 1 and +0x144, the release 0x668eff clears the state and the click (0x100) follows only when it was not 2
+public sealed record UiButtonRepeat( float Delay, float Interval, Action Start, Action Tick );
+
 /// <summary>
 /// Button. With <see cref="Model"/> it draws the original state frames (0 normal, 1 disabled,
 /// 2 highlighted, 5 down); otherwise a text button on the original purple button art.
@@ -416,6 +424,8 @@ public sealed class UiButton : UiElement
 	public const int DisabledFrame = 1;
 	public const int HighlightFrame = 2;
 	public const int DownFrame = 5;
+	/// <summary>The grey a disabled button takes when its model has no usable disable frame (the purple text buttons' disabled grey).</summary>
+	public static readonly RgbaByte DisabledTint = new( 160, 160, 160, 255 );
 	/// <summary>Share of each purple_button half outside its bar (16 of 64 texture rows); the bar is centred in the button.</summary>
 	public const float PurpleBarGap = 0.25f;
 
@@ -423,12 +433,21 @@ public sealed class UiButton : UiElement
 	public Func<string>? Text { get; set; }
 	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Menu;
 	public Action? Clicked { get; set; }
+	/// <summary>
+	/// The hold-repeat of a button created with the repeat attribute (0x20 of its table attributes, 0x21 for the variable box's b_minus and b_plus): null for a plain button.
+	/// <see cref="UiScreen"/> runs it while the button is held (<see cref="UiButtonRepeat"/>).
+	/// </summary>
+	public UiButtonRepeat? Repeat { get; set; }
+	/// <summary>The hold state of a repeating button (the original's byte +0x15a): 0 idle, 1 pressed and waiting for the delay, 2 repeating.</summary>
+	internal int HoldState { get; set; }
+	/// <summary>The time of the press, then of the last start or tick, in seconds of <see cref="UiContext.Time"/> (the original's +0x144).</summary>
+	internal float HoldTime { get; set; }
 	/// <summary>Left/right keys on the focused button (e.g. turn the lobby to the next island).</summary>
 	public Action<int>? Adjusted { get; set; }
 	/// <summary>The mouse wheel over the button also calls <see cref="Adjusted"/> (OpenTPW page cycle buttons); off elsewhere, so the wheel over a lobby button does not turn the island.</summary>
 	public bool WheelAdjusts { get; set; }
 	public Func<bool>? Selected { get; set; }
-	/// <summary>Keeps the normal frame while focused, for a model whose highlight texture the game files lack (b_callmech's b_callmechg).</summary>
+	/// <summary>Keeps the normal frame while focused.</summary>
 	public bool KeepNormalFrameWhenFocused { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Center;
 	public override bool Focusable => Visible && Enabled;
@@ -449,7 +468,17 @@ public sealed class UiButton : UiElement
 	{
 		var rect = ScreenRect( context.Canvas );
 		var frame = !Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : focused && !KeepNormalFrameWhenFocused ? HighlightFrame : NormalFrame;
-		if ( Model != null && context.DrawModel( Model, frame, rect ) )
+		RgbaByte? tint = null;
+		// [EXT:missing-state-texture] a state frame whose texture ui.wad lacks (the disable frames of b_callmech, b_callhandy and b_upgrade name b_callmechg, b_callhandyg
+		// and b_upgradeg) draws the normal frame instead of untextured white, greyed when disabled; the original's mesh texture binder 0x46EAD0 (which the UI model loaders 0x488D20,
+		// 0x488EE0 and 0x489060 call) logs "Could not load texture" and binds entry 0 of the texture table (+0x4C) instead — evidence needed: which texture that entry holds at run time
+		if ( Model != null && frame != NormalFrame && !context.FrameTexturesResolve( Model, frame ) )
+		{
+			if ( frame == DisabledFrame )
+				tint = DisabledTint;
+			frame = NormalFrame;
+		}
+		if ( Model != null && context.DrawModel( Model, frame, rect, tint ) )
 		{
 			if ( Text != null )
 				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );

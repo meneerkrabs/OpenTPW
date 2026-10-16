@@ -14,7 +14,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x4955e0 list refresh, 0x66403b sorted row insert] the 2000 ms refresh rewrites the cells in place and never moves a row, a new row goes in by the list's sorted insert (ListRowOrder), and the first row added selects row 0 (0x66525c)
 // [EXT:list-row-pitch] the list's row pitch is the row item's height (0x4944d0: font slot 7's height scaled to the canvas + 6), taken as the list's pitch, a design choice: the original's pitch follows the screen mode's font bank (0x663718 into +0x170), which resolution-independent output sizes do not have (UI-002)
 // [EXT:list-selection-by-id] the selected row follows its attraction while rows are added or removed, where the original keeps the selected position (+0x14c) — a design choice that keeps a live list from highlighting another attraction
-// [APPROX:UI-905] the users and customers columns show the economy's previous calendar month, where the original sums the object's last 30 history entries (+0x1ac ring, 0x493cd0); the bars take the object window's values (UI-028) and satisfaction, which OpenTPW does not simulate, draws an empty bar — evidence needed: the cadence of the objects' history entries
+// [APPROX:UI-905] the bars take the object window's values (the gauge rows of the ride window) and satisfaction, which OpenTPW does not simulate, draws an empty bar — evidence needed: the satisfaction gauge's data, which OpenTPW's guests do not keep (ECON-057)
 public sealed partial class ParkHud
 {
 	/// <summary>The round entry button of the All Attractions window in the buy and staff windows: the window's own rides tab icon.</summary>
@@ -186,8 +186,8 @@ public sealed partial class ParkHud
 			cells[column] = columns[column].Kind switch
 			{
 				AttractionColumnKind.Name => new( EntryName( item.Entry ), null, null ),
-				AttractionColumnKind.Users or AttractionColumnKind.Customers => Count( trusted?.CustomersLastMonth ),
-				AttractionColumnKind.ProfitLastMonth => Money( trusted?.ProfitLastMonth ),
+				AttractionColumnKind.Users or AttractionColumnKind.Customers => Count( trusted?.CustomersLast30Days ),
+				AttractionColumnKind.ProfitLastMonth => Money( trusted?.ProfitLast30Days ),
 				AttractionColumnKind.TotalProfit => Money( trusted?.TotalProfit ),
 				AttractionColumnKind.Excitement => Gauge( ObjectRowKind.Excitement ),
 				AttractionColumnKind.Repair => Gauge( ObjectRowKind.Repair ),

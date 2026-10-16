@@ -80,6 +80,27 @@ public class LanguageTests
 	}
 
 	[TestMethod]
+	public void AModStringTableIsUsedOnlyWhenItParsesAndIsNotShorter()
+	{
+		CreateLanguage( "Data", "danish", "xyz" );
+		var language = GameLanguage.Resolve( Path.Combine( root, "Data" ), "", null );
+		var previous = GameLanguage.StringOverride;
+		try
+		{
+			GameLanguage.StringOverride = ( _, _ ) => new MemoryStream( StringTableTests.CreateStringTable( new byte[] { 3, 2, 1 } ) );
+			Assert.AreEqual( "zyx", language.LoadStrings( "UITEXT.str" )[0], "a valid table replaces the language's own" );
+			GameLanguage.StringOverride = ( _, _ ) => new MemoryStream( new byte[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 } );
+			Assert.AreEqual( "xyz", language.LoadStrings( "UITEXT.str" )[0], "a broken table leaves the language's own" );
+			GameLanguage.StringOverride = ( _, _ ) => new MemoryStream( Array.Empty<byte>() );
+			Assert.AreEqual( "xyz", language.LoadStrings( "UITEXT.str" )[0], "an empty table leaves the language's own" );
+		}
+		finally
+		{
+			GameLanguage.StringOverride = previous;
+		}
+	}
+
+	[TestMethod]
 	public void DefaultsToTheOnlyInstalledLanguage()
 	{
 		CreateLanguage( "Data", "danish", "xyz" );

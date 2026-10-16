@@ -42,6 +42,18 @@ public class ParkCameraMode : CameraMode
 		Focus( target );
 	}
 
+	/// <summary>
+	/// Turns the camera to look along the ground direction <paramref name="direction"/> (engine X/Y), keeping the target and the height: the eye goes behind the
+	/// target, <c>Position = Target + (cos yaw, sin yaw) × Height</c>. A zero or non-finite direction changes nothing.
+	/// </summary>
+	public void LookAlong( System.Numerics.Vector2 direction )
+	{
+		if ( !float.IsFinite( direction.X ) || !float.IsFinite( direction.Y ) || direction.LengthSquared() < 1e-12f )
+			return;
+		Yaw = MathF.Atan2( -direction.Y, -direction.X ) * 180f / MathF.PI;
+		UpdateTransform();
+	}
+
 	public ParkCameraView CycleView()
 	{
 		View = (ParkCameraView)(((int)View + 1) % 3);
@@ -57,7 +69,7 @@ public class ParkCameraMode : CameraMode
 		var io = ImGuiNET.ImGui.GetIO();
 		Update( new CameraControlInput
 		{
-			HasFocus = Window.Current?.SdlWindow.Focused == true,
+			HasFocus = Window.Current?.Focused == true,
 			LogicalSize = Screen.Size, MousePosition = Input.Mouse.Position, MouseDelta = Input.Mouse.Delta,
 			CaptureMouse = io.WantCaptureMouse || Level.Current?.UiCapturesMouse == true,
 			CaptureKeyboard = io.WantCaptureKeyboard || UiCapturesKeyboard,
@@ -86,6 +98,7 @@ public class ParkCameraMode : CameraMode
 			var rotation = options.Rotation == RotationMode.Smooth
 				? ((input.RotateRight ? 1 : 0) - (input.RotateLeft ? 1 : 0)) * HostRotationSpeed * dt
 				: ((input.RotateRightPressed ? 1 : 0) - (input.RotateLeftPressed ? 1 : 0)) * 90;
+			// [APPROX:UI-102] the original also turns the view with the middle button held, by (pointer X x 2048 / width - 1024) / 2048 radians on every drawn frame (0x42a760, message 0x1e, up to 0.5 radian a frame); not built
 			Yaw = (Yaw + rotation) % 360;
 			Height = Math.Clamp( Height - input.Zoom * HostZoomSpeed * dt, 12, MaximumHeight );
 		}

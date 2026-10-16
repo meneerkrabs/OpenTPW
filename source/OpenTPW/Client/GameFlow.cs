@@ -267,7 +267,8 @@ internal sealed partial class GameFlow : IDisposable
 			try
 			{
 				var saved = ParkResumeSaveFile.Load( path );
-				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ) ) );
+				// [EXT:mods] a save made with mods that are not all active stays listed and says which it needs
+				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ), ParkResumeMods.MissingText( saved.Mods, Mods.OpenTpwExtensions.Active ) ) );
 			}
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
 			{
@@ -820,11 +821,15 @@ internal sealed partial class GameFlow : IDisposable
 		if ( backdrop != Backdrop.Lobby )
 		{
 			lobbyEffects.StopRain();
-			cityScene?.Step( Time.Delta );
+			if ( cityScene is { } city )
+			{
+				// [EXT:frame-driven-at-60hz] the city lobby's islands run the same per-frame update as the lobby's (0x5d5c50), so it steps per reference frame too
+				for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
+					city.StepFrame( ReferenceFrameClock.FrameSeconds );
+				city.Animate( Time.Delta );
+			}
 			return;
 		}
-		// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby steps its subsystems in the order they registered: the flying-mesh system (0x5d5aed) before the islands component, so the flyers draw from the generator first
-		Lobby.Step( Time.Delta );
 		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.
 		if ( lobbyWeather == null || !Entity.All.Contains( lobbyWeather ) )
 			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f );
@@ -834,12 +839,22 @@ internal sealed partial class GameFlow : IDisposable
 			var (x, y) = Lobby.Definition.PositionOf( slot );
 			lobbyIslands.Add( new LobbyEffects.Island( island, x, y ) );
 		}
-		var (thunders, oneShots) = lobbyEffects.Step( Time.Delta, lobbyIslands, Camera.Position.X, Camera.Position.Y );
-		for ( var index = 0; index < thunders; index++ )
-			GameAudio.PlayLobbyThunder();
-		foreach ( var oneShot in oneShots )
-			GameAudio.PlayLobbyOneShot( oneShot );
+		// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby steps its subsystems once per rendered frame in the order they registered: the flying-mesh system (0x5d5aed) before the islands component, so the flyers draw from the generator first
+		// [EXT:frame-driven-at-60hz] one such frame per 60 Hz reference frame, whatever OpenTPW's own frame rate; the models' clips below follow the real time
+		for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
+		{
+			Lobby.StepFrame( ReferenceFrameClock.FrameSeconds );
+			var (thunders, oneShots) = lobbyEffects.Step( ReferenceFrameClock.FrameSeconds, lobbyIslands, Camera.Position.X, Camera.Position.Y );
+			for ( var index = 0; index < thunders; index++ )
+				GameAudio.PlayLobbyThunder();
+			foreach ( var oneShot in oneShots )
+				GameAudio.PlayLobbyOneShot( oneShot );
+		}
+		Lobby.Animate( Time.Delta );
 	}
+
+	/// <summary>The lobby's reference frames (60 Hz) for the frame-driven effects and flyers.</summary>
+	private readonly ReferenceFrameClock lobbyFrames = new();
 
 	private readonly List<LobbyEffects.Island> lobbyIslands = new();
 	private WeatherRenderer? lobbyWeather;

@@ -143,6 +143,13 @@ public sealed class GameLanguage
 	/// <summary>Files directly inside the language folder.</summary>
 	public IEnumerable<string> EnumerateFiles() => System.IO.Directory.EnumerateFiles( Directory ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase );
 
+	/// <summary>
+	/// A string table a mod supplies for a language (docs/MODS.md): called with the language name and the table's file name
+	/// (<c>UITEXT.str</c>), it returns the replacement stream (disposed by the caller) or null for the language's own file. Null by default.
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public static Func<string, string, Stream?>? StringOverride { get; set; }
+
 	/// <summary>UITEXT entries in the edition OpenTPW numbers its strings by (the <c>UIStrings</c> enum).</summary>
 	public const int UiTextEntries = 473;
 
@@ -159,11 +166,42 @@ public sealed class GameLanguage
 	/// </summary>
 	public StringFile LoadStrings( string fileName, bool asStored = false )
 	{
-		using var stream = OpenRead( fileName );
-		var strings = new StringFile( stream, CharacterTable );
+		var strings = LoadModStrings( fileName ) ?? LoadOwnStrings( fileName );
 		if ( !asStored && string.Equals( fileName, "UITEXT.str", StringComparison.OrdinalIgnoreCase ) && strings.Entries.Length == UiTextEntries + 1 )
 			strings.RemoveEntryAt( UiTextEditionExtraEntry );
 		return strings;
+	}
+
+	private StringFile LoadOwnStrings( string fileName )
+	{
+		using var stream = OpenRead( fileName );
+		return new StringFile( stream, CharacterTable );
+	}
+
+	// [EXT:mods] A mod's table is used only when it parses and has as many entries as the language's own: the interface indexes the
+	// tables by position, so a short or broken table would crash it, and a mod is untrusted data. Otherwise the game's table stays.
+	private StringFile? LoadModStrings( string fileName )
+	{
+		if ( StringOverride == null )
+			return null;
+		try
+		{
+			using var stream = StringOverride( Name, fileName );
+			if ( stream == null )
+				return null;
+			var replacement = new StringFile( stream, CharacterTable );
+			StringFile? own = null;
+			try { own = LoadOwnStrings( fileName ); }
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException ) { } // no table of the game's to compare with
+			if ( own == null || replacement.Entries.Length >= own.Entries.Length )
+				return replacement;
+			Log?.Warning( $"Mod string table {Name}/{fileName} is ignored: it has {replacement.Entries.Length} entries, the game's has {own.Entries.Length}." );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or ArgumentException or OverflowException or IndexOutOfRangeException )
+		{
+			Log?.Warning( $"Mod string table {Name}/{fileName} is ignored: {exception.Message}" );
+		}
+		return null;
 	}
 
 	public FontFile LoadFont( string fileName )

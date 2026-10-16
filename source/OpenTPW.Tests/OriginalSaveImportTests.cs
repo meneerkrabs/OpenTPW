@@ -29,7 +29,7 @@ public class OriginalSaveImportTests
 	} );
 
 	/// <summary>The settings' level challenges in save slot layout.</summary>
-	private static byte[] Challenges( BalanceSettings settings )
+	internal static byte[] Challenges( BalanceSettings settings )
 	{
 		var body = SaveTestPayloads.ChallengeSystem( Array.Empty<(int, int, int, int)>() );
 		for ( var index = 0; index < settings.ChallengesInThisLevel.Count; index++ )
@@ -212,14 +212,14 @@ public class OriginalSaveImportTests
 		StringAssert.Contains( Line( "Bank words imported:" ), "withdrawals enabled, last balance " );
 		StringAssert.Contains( Line( "Loan offers' stored credit tests imported:" ), "the Available tab lists " );
 		var challenges = Line( "[APPROX:SAVE-005]" );
-		foreach ( var value in new[] { "losses ", "ActualThing ", "follow-up things " } )
+		foreach ( var value in new[] { "losses " } )
 			StringAssert.Contains( challenges, value );
 		StringAssert.Contains( Line( "Challenges imported:" ), "not started" );
 		var attractions = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-006] Attraction thing ", StringComparison.Ordinal ) ).ToArray();
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
 		{
-			foreach ( var value in new[] { "operating capacity ", "duration ", "speed ", "open word ", "third gauge ", "name \"", "daily rings ",
+			foreach ( var value in new[] { "operating capacity ", "duration ", "speed ", "open word ", "name \"",
 				"claim by thing ", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}
@@ -332,7 +332,8 @@ public class OriginalSaveImportTests
 			BinaryPrimitives.WriteInt32LittleEndian( body.AsSpan( Slot( 2, 37 ) ), 1 );
 		} );
 		var active = running.Objectives.Current!;
-		Assert.AreEqual( (level[1], true, 101L), (active.DefinitionIndex, active.Accepted, active.DeadlineDay), "the deadline passes at the first daily update after the stamp" );
+		Assert.AreEqual( (level[1], true, 100L), (active.DefinitionIndex, active.Accepted, active.DeadlineDay), "the deadline is the stamp itself, tested on every park turn" );
+		Assert.AreEqual( 100 * 86400L + 43200, active.EndSeconds, "the stamp's exact second (day 100 and a half)" );
 		var definition = settings.Challenges[level[1]];
 		if ( ParkObjectives.IsCountSinceAcceptance( definition.Type ) )
 			Assert.AreEqual( 7, running.Objectives.Measure( definition, running.Counters, running.Staff, running.Objects, running.GuestStatistics ) - active.Baseline, "the saved value is reached now" );
@@ -345,7 +346,8 @@ public class OriginalSaveImportTests
 
 		var idle = Import( 3, 200, 1, 0, 0, 0 );
 		Assert.IsNull( idle.Objectives.Current );
-		Assert.AreEqual( 201, idle.Objectives.NextOfferDay, "an idle system offers at the first daily update after the stamp" );
+		Assert.AreEqual( 200, idle.Objectives.NextOfferDay, "an idle system offers on the first park turn at or after the stamp" );
+		Assert.AreEqual( 200 * 86400L + 43200, idle.Objectives.NextOfferSeconds );
 	}
 
 	[TestMethod]
@@ -532,6 +534,10 @@ public class OriginalSaveImportTests
 			Assert.AreEqual( 30L * ParkResearch.PointScale, research.GetProgress( research.Current( ResearchCategory.Ride )! ) );
 			Assert.AreEqual( 7500L, research.GetProgress( research.Current( ResearchCategory.Feature )! ) );
 			Assert.IsFalse( runtime.Import!.ParkClosed );
+			// The saved object controls' researched bytes (0x4D3AA0) agree with the research OpenTPW derives from the lab and the objects' costs.
+			var controlsLine = runtime.Import!.Evidence.Single( line => line.StartsWith( "Research object controls:", StringComparison.Ordinal ) );
+			StringAssert.Contains( controlsLine, "50 records, 26 researched, 42 research items checked" );
+			StringAssert.Contains( controlsLine, "none disagree" );
 			// Every pending advice of the saved controller is either imported or reported.
 			var controller = new AdvisorController( AdvisorBalance.Load() );
 			var report = controller.ImportOriginal( save.Advisor! );

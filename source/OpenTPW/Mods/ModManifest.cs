@@ -12,7 +12,7 @@ public sealed record ModDependency( string Id, ModVersionRange Version );
 /// <summary>An input the player supplies, such as the folder of another original game (phase 6; docs/MODS.md).</summary>
 public sealed record ModInput( string Id, string Kind, string? Edition );
 
-/// <summary>The mod-relative content paths. Nothing consumes them yet: content roots arrive in a later phase (docs/MODS.md).</summary>
+/// <summary>The mod-relative content paths (docs/MODS.md): <see cref="ModContentRoots"/> installs them at startup.</summary>
 public sealed record ModContent( string? Overrides, string? Objects, string? Strings );
 
 /// <summary>

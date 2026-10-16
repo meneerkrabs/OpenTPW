@@ -570,6 +570,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var hud = flow.Hud!;
 			Require( !hud.ResearchWindowOpen && hud.Stack.Top == hud.Screen, "research exit returns to the HUD" );
+			// The buy list shows only researched items (the filler 0x4aaf70), so the flow researches the whole ride
+			// catalogue first; a locked item cannot be listed or clicked, as in the original.
+			var research = flow.Level!.Park!.Economy.Research;
+			research.Restore( research.Completed.Concat( hud.Catalog.GetItems( BuildCategory.Rides ).Select( item => (item.InfoId, 0) ) ).Distinct().ToArray(), research.ProgressEntries.ToArray(), research.Effort );
 			Click( hud.Screen, "buy" );
 		} );
 		Wait( "buy window opens", 3 );
@@ -577,7 +581,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var hud = flow.Hud!;
 			Require( hud.BuyWindowOpen && hud.Stack.Top?.Name == "buy", "buy button opens the original buy window" );
-			Require( hud.Catalog is OriginalBuildCatalog && hud.BuyItems.Count > ParkHud.BuyVisibleRows, "the original ride catalogue spans more rows than the list shows" );
+			Require( hud.Catalog is OriginalBuildCatalog && hud.BuyItems.Count > 0, "the original ride catalogue lists the researched rides (the buy list filler 0x4aaf70 shows only available items)" );
 			var capture = CaptureFrame( "buy-window.png" );
 			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
 			VerifyText( capture, flow.Strings[UIStrings.NameAttr], "Name column header" );
@@ -882,6 +886,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var cash = level.Park!.Economy.Balance;
 			secondObject = level.PlaceObject( secondItem.Entry!, site.X, site.Y, level.BuildRotation );
 			Require( secondObject != null && cash - level.Park.Economy.Balance == secondItem.Cost, "the second catalogue object is charged exactly once" );
+			// a built ride with a queue starts closed (RIDES-015, 0x4DB712); the door below then closes an open ride
+			Require( secondObject!.IsOpen == !secondItem.Entry!.HasQueue, "the built ride starts closed exactly when its type has a queue" );
+			secondObject.Open();
 			var instance = level.GetEconomyInstance( secondObject! );
 			Require( instance != null && level.Park.Economy.TryGetObject( instance.Value, out var bought ) && bought.TotalSpent == secondItem.Cost, "the second object links to its paid economy record" );
 			var after = level.Park.Economy.Balance;
@@ -908,6 +915,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			thirdObject = level.PlaceObject( item.Entry!, site.X, site.Y, level.BuildRotation );
 			thirdAttractionId = thirdObject!.Runtime.AttractionId;
 			Require( thirdObject != null, "a third catalogue object is placed for the attractions window" );
+			// a built ride with a queue starts closed (RIDES-015, 0x4DB712); the attractions window shows the working fixture, so it is opened as the player would
+			thirdObject.Open();
 			Log.Trace( $"Front-end smoke: placed {flow.Hud.ItemName( item )} as the attractions-window fixture." );
 		} );
 		Do( "attractions window opens", () =>

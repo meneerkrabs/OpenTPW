@@ -305,7 +305,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		for ( var index = 0; index < grid.CountX * grid.CountY; index++ )
 		{
 			var cell = (X: index % grid.CountX, Y: index / grid.CountX);
-			if ( Level.CheckObject( entry, cell.X, cell.Y, 0 ) != OriginalPlacementResult.Allowed )
+			if ( !Level.IsUntouchedSite( entry, cell.X, cell.Y, 0 ) )
 				continue;
 			var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
 			var door = ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, 0 ).FirstOrDefault( point => point.Kind == ObjectCellKind.Entrance );

@@ -690,11 +690,18 @@ public partial class Level
 	}
 
 	/// <summary>Build rule for <paramref name="entry"/> centred on cell (x, y), without buying it.</summary>
-	public OriginalPlacementResult CheckObject( ObjectCatalogEntry entry, int x, int y, int rotation )
+	public OriginalPlacementResult CheckObject( ObjectCatalogEntry entry, int x, int y, int rotation ) => CheckObject( entry, x, y, rotation, out _ );
+
+	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> with the objects it would demolish and the path cells it would clear.</summary>
+	public OriginalPlacementResult CheckObject( ObjectCatalogEntry entry, int x, int y, int rotation, out ObjectPlacementPlan plan )
 	{
 		var anchor = GetCentredAnchor( entry, x, y, rotation );
-		return Objects.Check( entry, anchor.X, anchor.Y, rotation );
+		return Objects.Check( entry, anchor.X, anchor.Y, rotation, out plan );
 	}
+
+	/// <summary>A site the smokes and demos may build on without demolishing or clearing anything of their own layout.</summary>
+	internal bool IsUntouchedSite( ObjectCatalogEntry entry, int x, int y, int rotation ) =>
+		CheckObject( entry, x, y, rotation, out var plan ) == OriginalPlacementResult.Allowed && plan.KeepsTheRest;
 
 	public bool RemoveObjectAt( int x, int y )
 	{

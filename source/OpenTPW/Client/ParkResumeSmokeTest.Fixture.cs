@@ -208,7 +208,7 @@ internal sealed partial class ParkResumeSmokeTest
 			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) );
 		foreach ( var cell in candidates )
 		{
-			if ( level.CheckObject( entry, cell.X, cell.Y, rotation ) != OriginalPlacementResult.Allowed || ( requireOnScreen && !Clickable( cell, out _ ) ) )
+			if ( !level.IsUntouchedSite( entry, cell.X, cell.Y, rotation ) || ( requireOnScreen && !Clickable( cell, out _ ) ) )
 				continue;
 			var door = DoorAt( entry, cell.X, cell.Y, rotation );
 			var line = LineOut( door, QueueLength + 1 );
@@ -237,7 +237,7 @@ internal sealed partial class ParkResumeSmokeTest
 		var cells = Enumerable.Range( 0, grid.CountX * grid.CountY ).Select( index => (X: index % grid.CountX, Y: index / grid.CountX) )
 			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) );
 		foreach ( var cell in cells )
-			if ( level.CheckObject( entry, cell.X, cell.Y, rotation ) == OriginalPlacementResult.Allowed )
+			if ( level.IsUntouchedSite( entry, cell.X, cell.Y, rotation ) )
 				return cell;
 		throw new InvalidOperationException( $"Native park-resume smoke test failed: no buildable site for {entry.DisplayName} at rotation {rotation}." );
 	}

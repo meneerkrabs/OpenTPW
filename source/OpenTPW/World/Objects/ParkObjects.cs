@@ -85,6 +85,9 @@ public enum ObjectPathCell
 public sealed record ObjectPlacementPlan( IReadOnlyList<OriginalObject> Overwritten, IReadOnlyList<(int X, int Y)> ClearedPaths )
 {
 	public static ObjectPlacementPlan None { get; } = new( Array.Empty<OriginalObject>(), Array.Empty<(int X, int Y)>() );
+
+	/// <summary>True when the placement demolishes no object and clears no path (the smokes' and demos' site searches keep their own layout).</summary>
+	public bool KeepsTheRest => Overwritten.Count == 0 && ClearedPaths.Count == 0;
 }
 
 /// <summary>

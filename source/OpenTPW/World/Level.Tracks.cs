@@ -437,6 +437,7 @@ public partial class Level
 		}
 	}
 
+	// [APPROX:TRACK-032] the controller of a saved ride is rebuilt from its circuit and the saved verdict, where tp.exe's loader 0x543560 restores it from the save stream and the ride's handle +0x28 points at it (evidence needed: the record layout read by 0x543560)
 	/// <summary>Walks a station's circuit for a restore of a shared-module save and rebuilds it with the saved verdict (<see cref="BumpController.RestoreCircuit"/>).</summary>
 	private TrackCircuit? RewalkForRestore( OriginalObject item, BumpControllerSaveData entry )
 	{

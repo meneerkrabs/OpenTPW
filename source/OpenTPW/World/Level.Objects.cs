@@ -167,8 +167,28 @@ public partial class Level
 	/// </summary>
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
-		if ( Guests != null )
-			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ) );
+		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ) ) )
+			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
+	}
+
+	/// <summary>
+	/// The queue re-evaluation after an edit of a ride's cells (tp.exe <c>0x004DE1F0</c>): a closed ride whose state is not 1, 2 or 4 (broken down, upgrading,
+	/// condemned), without a maintenance call, whose queue is connected (<c>0x004DE4A0</c>), a coaster that passes <c>0x00441970</c> and a kart or water ride
+	/// with a valid track (the track word <c>+0x2C</c>) is opened.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation] the ride is skipped when its open word +0x68 is set or its state +0x19C is 1 or 4, +0x64 (the call) is set, state 2, or 0x4DE4A0 reports the queue unconnected; a type-3 ride (coaster) must pass 0x441970 and a kind 1, 2 or 3 ride needs its track word +0x2C; then +0x68 = 1, the script variable 6 (VAR_RIDECLOSED) = 0 and SetState(0) (0x4E0E60); +0x5E is cleared on every path
+	// [APPROX:QUEUE-023] the model call 0x4547C0 on the type's table entry 0x7A4610 that the opening makes (the open sound is not among the traced effects) is not made
+	private void ReevaluateQueuedRide( OriginalObjectRuntime runtime )
+	{
+		if ( runtime.IsOpen || Gate?.MayOpen( runtime ) != true )
+			return;
+		// a HasQueue ride without queue cells has no back cell, which the original's connection test 0x004DE4A0 reports as not connected (ECON-049 takes it as connected)
+		if ( runtime.Visitors.HasQueue && (runtime.Visitors.QueueFrontCell is not { } front || Guests?.Grid.IsQueue( front.X, front.Y ) != true) )
+			return;
+		if ( runtime.Coaster is { AcceptsGuests: false } || runtime.Bump is { HasTrack: true, IsTrackValid: false } )
+			return;
+		runtime.Open();
+		SyncOpenState( runtime );
 	}
 
 	/// <summary>
@@ -426,20 +446,43 @@ public partial class Level
 	/// <summary>Where a cell's sounds play: the original submits them at (x*10, 0, z*10), a cell is ten units at height 0.</summary>
 	internal Vector3 CellSoundPosition( int x, int y ) => GameAudio.CellSoundPosition( x, y );
 
+	/// <summary>What Backspace with no build tool on takes off a cell (<see cref="Level.BacktrackAt"/>).</summary>
+	internal enum BacktrackTarget { None, Path, Queue }
+
+	/// <summary>
+	/// Backspace's target at (x, y): a path cell (the original's backtrack), a queue cell (OpenTPW's extension), else none.
+	/// </summary>
+	internal static BacktrackTarget BacktrackTargetAt( ParkCellMap cells, int x, int y ) => cells.TypeAt( x, y ) switch
+	{
+		ParkCellType.Path => BacktrackTarget.Path,
+		ParkCellType.Queue => BacktrackTarget.Queue,
+		_ => BacktrackTarget.None
+	};
+
 	/// <summary>
 	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a path cell it plays the
 	/// backtrack sound, then takes one placement off that cell, which goes only when it was laid once; the sound plays even
-	/// when the cell stays (a fixed or a re-laid cell). False when the cell under the cursor is not a path cell, so the key
-	/// does nothing there.
+	/// when the cell stays (a fixed or a re-laid cell). Over a queue cell it plays the same sound and removes that cell and
+	/// every cell behind it, with the remove tool's refund (<see cref="RemoveQueueCell"/>). False on any other cell, so the
+	/// key does nothing there.
 	/// </summary>
 	// [BIN:TPW-EXE:0x40BE8B backtrack click] the key handler clicks the cell in mode 0x32, whose one-cell LayLine (0x536100) calls SetCell(0x32, 0, 1) and so ClearCell 0x5367A0 with (0, 1): the counted removal, not the forced one
+	// [EXT:queue-backtrack] tp.exe's key handler backtracks only a type-1 (path) cell: it tests the tile's +8 through 0x536310 at 0x40BE3C and does nothing over a queue cell, whose cells the original takes back only with Backspace inside the queue tool (Back 0x52FE50, the segment just laid); OpenTPW also takes a queue back from the cursor, as the remove tool does (QueuePaths.RemoveFrom, so the queue stays one line from the ride)
 	public bool BacktrackAt( int x, int y )
 	{
-		if ( IsReadOnlyVisit || Paths == null || Paths.Cells.TypeAt( x, y ) != ParkCellType.Path )
+		if ( IsReadOnlyVisit || Paths == null )
+			return false;
+		var target = BacktrackTargetAt( Paths.Cells, x, y );
+		if ( target == BacktrackTarget.None )
 			return false;
 		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
-		if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )
-			LastActionMessage = "Removed a path cell.";
+		if ( target == BacktrackTarget.Path )
+		{
+			if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )
+				LastActionMessage = "Removed a path cell.";
+		}
+		else if ( RemoveQueueCell( x, y ) is var removed and > 0 )
+			LastActionMessage = removed == 1 ? "Removed a queue cell." : $"Removed {removed} queue cells.";
 		return true;
 	}
 

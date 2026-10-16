@@ -437,7 +437,7 @@ public sealed class ThemeParkIncHud
 			context.HoverHelp = strings.Help( help );
 		if ( !tool.IsActive )
 		{
-			// Backspace over a path cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent).
+			// Backspace over a path or queue cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack]).
 			if ( inPark && input.Backspaces > 0 && level.BacktrackAt( cursorX, cursorY ) )
 				return true;
 			if ( !inPark || !input.LeftPressed || level.Objects.FindAt( cursorX, cursorY ) != null )
@@ -487,7 +487,7 @@ public sealed class ThemeParkIncHud
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )
 		{
-			// a commit stopped only by OpenTPW's own queue cap is not one of the original's refusals (QUEUE-013)
+			// a commit stopped only by the back-of-queue walk's bound is not one of the original's refusals
 			if ( !result.StoppedByOwnLimit )
 				refusalClick.Refused( cursorX, cursorY );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );

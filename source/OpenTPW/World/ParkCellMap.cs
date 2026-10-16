@@ -180,7 +180,7 @@ public sealed class ParkCellMap
 				}
 				var (type, flags) = MapStartCell( map.GetCellAt( x, y ), inside );
 				// the init's 0x40 over the terrain is the land's to set (ParkLand.ApplyToNewPark) or an imported save's to restore (ImportLand)
-				// [APPROX:PATH-007] a map that gets no land (a level without a fence setup, a Theme Park Inc map, a read-only visit) keeps its cells over the terrain owned
+				// [EXT:no-land-maps] a map that gets no land (a level without a fence setup, a Theme Park Inc map, a read-only visit) keeps its cells over the terrain owned: the fence needs the theme's Hoardings.sam and entrance cells, which those maps lack, and a visit is OpenTPW's read-only extension
 				if ( inside )
 					flags &= ~ParkCellFlags.Unowned;
 				if ( type != (byte)ParkCellType.Path && type != 0 )

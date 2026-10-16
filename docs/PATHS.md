@@ -78,7 +78,10 @@ The map start's initial path stays fixed. The ride's entrance and exit then reso
 on the emptied cells are set down (queued guests leave the queue, QUEUE-015), a queue or path can be laid on the cell again, and demolishing the ride clears what is left.
 Backspace over a path cell with no tool on uses the counted case (tp.exe
 `0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
-when it was laid once (`ParkPathBuilder.RemoveOnce`).
+when it was laid once (`ParkPathBuilder.RemoveOnce`). The original's key does
+nothing over a queue cell (it backtracks only a type-1 cell, tp.exe `0x40BE3C`);
+OpenTPW also removes a queue there, from the cell under the cursor to the queue's
+back with the remove tool's refund (`[EXT:queue-backtrack]`).
 
 ## Tool
 
@@ -178,7 +181,7 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
-| PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate); a level without a fence setup, a Theme Park Inc map and a read-only visit keep every cell over the terrain owned |
-| PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause opens a full-screen layer (0x47ed80 → 0x65dd7b) under its panel, whose effect on park clicks is untraced |
+| PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |
+| PATH-017 | PATH-PAUSE-WINDOW | the pause menu blocks tool clicks and the speed pause does not, as tp.exe's click gate (`0x48c8d0` reads the pause-menu object `0x7c2534`; `APPROX:PATH-013`, retired); the P key's full-screen layer (`0x47ed80` → `0x65dd7b`) under its panel is not drawn and whether it stops the park click route is not read | The window manager's hit test of the layer |
 | PATH-015 | QUEUE-MODELS | queue cells carry the theme's queue models as tp.exe places them (0x535dd0 class 2, 0x5229e0); baked at the cell's mean height, without their .hmp ground deformation, texture-frame animation (the fire0 torches) and quedead's load flag 0x100000 |
 | PATH-016 | PATH-INITIAL | InitialPath cells carry links 0x0F; tp.exe's map init (`0x536490`) links them with the link writer `0x5348d0` in mode 1, so links toward non-path neighbours may differ |

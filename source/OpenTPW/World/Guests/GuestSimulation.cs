@@ -126,7 +126,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// (data:0x53D98) is 1 (online) and to 1500 otherwise.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004C0830 online visit] the park-info dialog's completion (stored at 0x007CCA4C by 0x004C0AE0, called at 0x004C07FF by the completion 0x004C07D0 that the dialog passes on at 0x004C0A09) writes exit code 2 and calls SetGameType(1) (0x004C0876), so a visit of a published park is GameType 1
-	// [APPROX:ARRIVAL-002] a visit reads the group's Arrival.* keys from Standard.sam, where the original loads online_Standard.sam for GameType 1 (0x0051573C), and a read-only visit has no economy, so its groups count 0 park points — evidence needed: an online_Standard.sam settings load for visits and the visited park's attraction points
+	// [EXT:online-visit-settings] a visit reads the group's Arrival.* keys from Standard.sam, where the original loads online_Standard.sam for GameType 1 (0x0051573C), and a read-only visit has no economy, so its groups count 0 park points: the online visit is OpenTPW's read-only extension, not the original's two-player park (docs/ONLINE.md)
 	public bool OnlineVisit { get; set; }
 
 	private ParkLitter? litter;
@@ -653,7 +653,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// on the guest's phase the exit counter loses 1 and the needs grow or cost happiness, the toilet speed term follows the toilet byte, and every 20th turn a 0
 	/// enters the temporary history.
 	/// </summary>
-	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, but the pick's voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0) is not played; bubbles are always on where 0x50BE80 skips them online (0xFB3B7C = 1; none of its 22 callers passes the override) and while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); a load puts back the row an object's saved state implies — evidence needed: whether the original saves or rebuilds the environment table, and what bits 0x16 of 0x790AB0 mean
+	// [EXT:online-bubbles-on] bubbles are on in a visit too, where 0x50BE80 skips them in an online game (GameType word 0xFB3B7C = 1; none of its 22 callers passes the override): a visit is OpenTPW's read-only extension and shows the park as its owner sees it
+	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, but the pick's voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0) is not played; bubbles are always on where 0x50BE80 skips them while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); a load puts back the row an object's saved state implies — evidence needed: whether the original saves or rebuilds the environment table, and what bits 0x16 of 0x790AB0 mean
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
@@ -742,6 +743,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					UpdateLeaving( guest, dt );
 				break;
 			case GuestState.AtTicketBooth:
+				// [BIN:TPW-EXE:0x004FF9D0 booth wait] an expensive verdict stores N in +0x200, every later state-4 update counts it down by one without a verdict and the update after runs the verdict again: one count per executed park turn
+				if ( guest.BoothWait > 0 )
+				{
+					if ( turnStarted && --guest.BoothWait == 0 )
+						PayAdmission( guest );
+					break;
+				}
 				guest.StateTimer -= dt;
 				if ( guest.StateTimer <= 0 )
 					PayAdmission( guest );
@@ -1102,8 +1110,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.MediumHappinessChange );
 			if ( ((int)guest.Happiness & 0xFF) != 0 )
 			{
-				// [APPROX:ARRIVAL-006] the N + 1 turns of the wait are timed as seconds of the frame clock (248 ms each), not counted at park-turn boundaries, turns the original's loop drops (at most 3 per pass, 0x0054F680) are not dropped
-				guest.StateTimer = wait * ParkCalendar.TurnMilliseconds / 1000f;
+				// [APPROX:ARRIVAL-006] the wait is counted in executed park turns, but OpenTPW's fixed-step loop drops none (the original's loop drops at most 3 per pass, 0x0054F680), and a closed park's state 3 (0x004FF966) counts any remaining wait +0x200 down before it sends the guest home, where OpenTPW sends it home at once; the booth's first verdict follows the walk to it after TicketBoothSeconds, not at the next update
+				guest.BoothWait = wait;
 				return;
 			}
 			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
@@ -1848,12 +1856,80 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x004FFEB9 park closed underneath me] after the walk step 0x004FA2A0 returns "still walking" (neither 0 nor 2) the handler reads the closed word (0x0051A280, mParkClosed): closed gives the log line, 0x004FEA70(2) (PeepInfo.BigHappinessChange), target +0x1DC = 0 and SetState(6) (0x00501DB0); open counts a byte at +0x2C and calls 0x004FD570 every twelfth update
 	private void DropRideTargetForClosedPark( Guest guest )
 	{
-		// [APPROX:GUEST-018] with the park open the original counts +0x2C here and calls 0x004FD570 every twelfth update; OpenTPW's walk to a ride has no such call
-		if ( !turnStarted || Payments?.ParkClosed != true )
+		if ( !turnStarted )
 			return;
-		guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.BigHappinessChange );
-		guest.AttractionId = 0;
-		guest.State = GuestState.DoingNothing;
+		if ( Payments?.ParkClosed == true )
+		{
+			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.BigHappinessChange );
+			guest.AttractionId = 0;
+			guest.State = GuestState.DoingNothing;
+			return;
+		}
+		// [BIN:TPW-EXE:0x004FFEF2 periodic call] the byte +0x2C counts up on every update that finds the guest still walking in an open park; past 11 it is reset to 0 and 0x004FD570 runs, so every twelfth update
+		if ( ++guest.RideWalkCount > 11 )
+		{
+			guest.RideWalkCount = 0;
+			MinorDecision( guest );
+		}
+	}
+
+	/// <summary>
+	/// The minor decision of a guest walking to a ride (tp.exe <c>0x004FD570</c>): the rides standing within a window of 4 × 4 cells round the guest
+	/// (x − 2..x + 1, y − 2..y + 1) and strictly nearer to the target's back cell than the guest is, other than the target, that pass the counts-test, are
+	/// scored (<see cref="ScoreAttraction"/>); the best one (a tie goes to the later one on an odd park turn) replaces the target when the route from the target's
+	/// access cell to the best ride's access cell is shorter than the route from the target's access cell to the guest, and the guest walks to its back cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FD570 minor decision] needs a target +0x1DC; d0 = squared distance from the guest's cell to the target's back cell (0x004DE110); every thing of type 3 on the window's cells that is not the target and passes 0x004DD920 is scored with 0x004FCC30, kept when the score beats the best (starting at 0) or ties it on an odd turn (game +0x1DA70C bit 0); with a best the routes 0x004D8B40 (the sum of the legs' |dx| + |dy| of the search, mask +0x188; −1 when none) from the TARGET's access cell +0x36 to the guest's cell and from the TARGET's access cell to the best's access cell must both exist and the second be shorter (the best is nearer to the target than the guest is); then event 0x17, +0x1DE = the old target, +0x1DC = the best and the route request 0x004FA530 to the best's access cell +0x36
+	// [APPROX:GUEST-019] the route request goes to the best's back cell where the original requests its access cell +0x36; a ride is placed on the window by its entrance cell where the original reads the cell its thing stands on (+5, +7) and walks the cell's thing list newest first (GUEST-002); the access cell of a ride is its entrance cell (+0x36, GUEST-005); the major destination +0x1DE and the event 0x17 are not kept (GUEST-004)
+	internal void MinorDecision( Guest guest )
+	{
+		if ( guest.AttractionId == 0 || FindAttraction( guest.AttractionId ) is not { } target || target.JoinCell == null )
+			return;
+		var back = target.QueueCells[^1];
+		var distance = (guest.CellX - back.X) * (guest.CellX - back.X) + (guest.CellY - back.Y) * (guest.CellY - back.Y);
+		IRideVisitorBridge? best = null;
+		uint bestScore = 0;
+		for ( var x = guest.CellX - 2; x < guest.CellX + 2; x++ )
+		{
+			for ( var y = guest.CellY - 2; y < guest.CellY + 2; y++ )
+			{
+				if ( x < 0 || x >= 128 || y < 0 || y >= 128 || (x - back.X) * (x - back.X) + (y - back.Y) * (y - back.Y) >= distance )
+					continue;
+				foreach ( var candidate in NewestFirst() )
+				{
+					if ( candidate.EntranceCell != (x, y) || candidate.AttractionId == target.AttractionId || candidate.JoinCell == null
+						|| !candidate.IsOpen || candidate.IsBrokenDown || candidate.QueueLength >= RideVisitorBridge.PositionsPerCell * candidate.QueueSizeInCells )
+						continue;
+					var score = ScoreAttraction( guest, candidate );
+					if ( bestScore < score || (score == bestScore && (ParkTurn & 1) != 0) )
+						(best, bestScore) = (candidate, score);
+				}
+			}
+		}
+		if ( best == null )
+			return;
+		var toGuest = RouteLength( guest, target.EntranceCell, (guest.CellX, guest.CellY) );
+		var toBest = RouteLength( guest, target.EntranceCell, best.EntranceCell );
+		if ( toGuest == -1 || toBest == -1 || toBest >= toGuest )
+			return;
+		guest.AttractionId = best.AttractionId;
+		RouteToCell( guest, best.QueueCells[^1] );
+	}
+
+	/// <summary>The original's route length <c>0x004D8B40</c> from <paramref name="from"/> to <paramref name="to"/>: the sum of the legs' |dx| + |dy|, −1 without a route.</summary>
+	private int RouteLength( Guest guest, (int X, int Y) from, (int X, int Y) to )
+	{
+		var path = new List<(int X, int Y)>();
+		if ( !WalkSearch.Find( Grid.Cells, (from.X & 0xFF, from.Y & 0xFF), (to.X & 0xFF, to.Y & 0xFF), guest.Navigation.Mask, path ) )
+			return -1;
+		var total = 0;
+		var previous = from;
+		foreach ( var cell in path )
+		{
+			total += Math.Abs( cell.X - previous.X ) + Math.Abs( cell.Y - previous.Y );
+			previous = cell;
+		}
+		return total;
 	}
 
 	// ---- Queues (docs/reverse/QUEUE-plan.md §4–6) ----------------------------------------------
@@ -2761,6 +2837,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			QueueMoveDelay = guest.QueueMoveDelay,
 			QueueCalled = guest.QueueCalled,
 			QueueStandingSinceTurn = guest.QueueStandingSinceTurn,
+			RideWalkCount = guest.RideWalkCount,
+			BoothWait = guest.BoothWait,
 			InterludeTurn = guest.InterludeTurn,
 			InQueueInterlude = guest.InQueueInterlude,
 			Activity = guest.Activity,
@@ -3044,6 +3122,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} QueueMoveDelay {guest.QueueMoveDelay} is negative." );
 			if ( guest.QueueCellIndex < 0 )
 				Error( $"Guest {guest.Id} QueueCellIndex {guest.QueueCellIndex} is negative." );
+			if ( guest.RideWalkCount is < 0 or > 11 )
+				Error( $"Guest {guest.Id} RideWalkCount {guest.RideWalkCount} is outside 0..11 (the byte +0x2C resets past 11)." );
+			if ( guest.BoothWait is < 0 or > 2 * BoothVerdict.ExpensiveWaitBase )
+				Error( $"Guest {guest.Id} BoothWait {guest.BoothWait} is outside 0..{2 * BoothVerdict.ExpensiveWaitBase}." );
 			Finite( guest.Id, guest.HeadingX, nameof( guest.HeadingX ) );
 			Finite( guest.Id, guest.HeadingY, nameof( guest.HeadingY ) );
 			Finite( guest.Id, guest.DistanceWalked, nameof( guest.DistanceWalked ) );
@@ -3293,6 +3375,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueMoveDelay = snapshot.QueueMoveDelay;
 		guest.QueueCalled = snapshot.QueueCalled;
 		guest.QueueStandingSinceTurn = snapshot.QueueStandingSinceTurn;
+		guest.RideWalkCount = Math.Clamp( snapshot.RideWalkCount, 0, 11 );
+		guest.BoothWait = Math.Clamp( snapshot.BoothWait, 0, 2 * BoothVerdict.ExpensiveWaitBase );
 		guest.InterludeTurn = snapshot.InterludeTurn;
 		guest.InQueueInterlude = snapshot.InQueueInterlude;
 		guest.Activity = snapshot.Activity;
@@ -3440,6 +3524,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			hash.Add( guest.QueueMoveDelay );
 			hash.Add( guest.QueueCalled );
 			hash.Add( guest.QueueStandingSinceTurn );
+			if ( guest.RideWalkCount != 0 )
+				hash.Add( 0x52574B00L + guest.RideWalkCount );
+			if ( guest.BoothWait != 0 )
+				hash.Add( 0x42574100L + guest.BoothWait );
 			hash.Add( guest.InterludeTurn );
 			hash.Add( guest.InQueueInterlude );
 			hash.Add( guest.QueueJoinHappiness );

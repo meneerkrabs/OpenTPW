@@ -672,14 +672,13 @@ public class PathBuilderTests
 		(grid, ride) = QueueRig( 40 );
 		tool.Enter( QueueWriter( grid, ride ), (2, 1) );
 		ghost = tool.Hover( (2, 35) )!;
-		Assert.AreEqual( QueuePaths.MaximumCells, ghost.Built.Count );
-		Assert.IsFalse( ghost.Completed, "the cell past the limit is refused" );
-		Assert.IsTrue( ghost.StoppedByOwnLimit, "by OpenTPW's own cap (QUEUE-013), which the original does not have" );
-		// so the click is not a refused-ghost click: it commits up to the cap
+		Assert.AreEqual( 35, ghost.Built.Count, "the original tests no cell count: the whole line is laid (QUEUE-013 retired)" );
+		Assert.IsTrue( ghost.Completed );
+		Assert.IsFalse( ghost.StoppedByOwnLimit );
 		var commit = tool.Click( (2, 35) )!;
 		Assert.IsFalse( commit.GhostRefused );
 		CollectionAssert.AreEqual( ghost.Built.ToArray(), commit.Built.ToArray() );
-		Assert.AreEqual( QueuePaths.MaximumCells, ride.QueueSizeInCells );
+		Assert.AreEqual( 35, ride.QueueSizeInCells );
 
 		// Money: the ghost charges the pending cells as the commit spends them, one by one.
 		(grid, ride) = QueueRig( 12 );
@@ -797,8 +796,8 @@ public class PathBuilderTests
 	public void PathRegisterHasThePlanUnknowns()
 	{
 		var names = PathApproximations.Entries.Select( entry => entry.Rule.Split( ':' )[0] ).ToArray();
-		// PATH-ENTER (001), PATH-UNDO (002), PATH-ENDFLAG (003), PATH-CONNECT (004), PATH-CODE8 (008), PATH-FREE (009), PATH-LEDGER (010), PATH-CANCEL (011), PATH-ENDREFUSE (012), PATH-VARIANT (014) and PATH-SLOPE (006) are retired: traced in tp.exe and matched; PATH-REMOVE (005) too (the area clear reads the cells' owner words and flags).
-		CollectionAssert.AreEqual( new[] { "PATH-LAND", "PATH-PAUSE", "QUEUE-MODELS", "PATH-INITIAL" }, names );
-		CollectionAssert.AreEqual( new[] { 7, 13, 15, 16 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
+		// PATH-ENTER (001), PATH-PAUSE (013) is retired into PATH-PAUSE-WINDOW (017); PATH-UNDO (002), PATH-ENDFLAG (003), PATH-CONNECT (004), PATH-CODE8 (008), PATH-FREE (009), PATH-LEDGER (010), PATH-CANCEL (011), PATH-ENDREFUSE (012), PATH-VARIANT (014) and PATH-SLOPE (006) are retired: traced in tp.exe and matched; PATH-REMOVE (005) too (the area clear reads the cells' owner words and flags).
+		CollectionAssert.AreEqual( new[] { "PATH-LAND", "QUEUE-MODELS", "PATH-INITIAL", "PATH-PAUSE-WINDOW" }, names );
+		CollectionAssert.AreEqual( new[] { 7, 15, 16, 17 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
 	}
 }

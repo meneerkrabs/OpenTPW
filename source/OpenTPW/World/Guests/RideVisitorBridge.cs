@@ -636,6 +636,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return true;
 	}
 
+	/// <summary>Raised after an edit of this ride's queue cells (tp.exe's re-evaluation 0x004DE1F0), once the queue is recomputed.</summary>
+	public event Action? QueueEdited;
+
+	/// <summary>Reports a queue edit to the level (<see cref="QueueEdited"/>).</summary>
+	internal void NotifyQueueEdited() => QueueEdited?.Invoke();
+
 	/// <summary>The queue cell behind (x, y): a neighbour of type 3 whose link points back at (x, y) (<c>0xdda18</c>).</summary>
 	// [BIN:TPW-EXE:0x004DE670 queue predecessor] the neighbours are tried −Y (its link 16), +Y (link 1), +X (link 64), −X (link 4), through the run-time table 0x007CDBA0 (entries 0, 1, 5, 6); the first queue cell (type 3, not 9) whose link points back is taken
 	private static readonly int[] PredecessorOrder = { 0, 2, 1, 3 };   // Directions indices: −Y, +Y, +X, −X
@@ -710,7 +716,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return QueueJoinResult.NoRoom;
 		// [BIN:STP-PPC:0x100ECD6C join gate] 0xe9a84 then 0xe02ec(ride, 1) and the 45 test; executed in the oracle (ORACLE.md F16, queue-join-gate)
 		// [BIN:TPW-EXE:0x004E0560 live excitement] a ride with a controller behind it (thing +0x28) has the base level × 60 / 100 + clamp(3 × crossings + longest straight run + 2 × corners, 0, 40) from the section counts 0x00545310 (BumpController.ExcitementBase); water rides have one
-		// [APPROX:QUEUE-004] the controller base comes from OpenTPW's BumpController (BumperTemplates.ForRide: water and kart rides of their own family, and the bumper cars −1, −6, −11, −14); tp.exe's placement 0x00529E10 builds a controller through 0x00545890 for any nonzero type word +0xA0 (taken to be Bumper.BumperType), including the types −2 and −3 and a type of the other family, and 0x004E0560 then scores 60 % of the level plus the counts — evidence needed: whether a shipped ride uses BumperType −2 or −3 or a mixed pair, and whether a loaded ride keeps its controller handle
+		// [BIN:TPW-EXE:0x00529E10 controller types] the placement builds a controller through 0x00545890 for any nonzero ride type word +0xA0 (Bumper.BumperType); the shipped rides of all four themes (bonus entries included) use only −1 and −4..−14, each with the WhichTrackType of its family (0 bumper cars, 1 karts, 2 water), so BumperTemplates.ForRide covers every one (BumperTypeCoverageTests); the loader of a saved ride (0x00543560) restores the controller from the save
 		if ( preferredExcitement is { } preferred && ExcitementRefusal( preferred ) is { } refusal )
 			return refusal;
 		if ( count >= QueueLimit )
@@ -739,7 +745,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				return QueueJoinRules.SideshowExcitement( Sideshow );
 			if ( ExcitementSource is { } source )
 				return source();
-			// [APPROX:QUEUE-022] a bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object, every original object has them) is read at its design speed and duration; tp.exe's 0x004E0560 divides with no zero guard and its clamps take the 0.75 floor for a NaN ratio (FCOM against 0.75 sets C0 when unordered: 0x004E07D2, 0x004E0802), so 0/0 gives trunc(0.5625 × level), and QueueJoinRules.ClampRatio lets NaN through — evidence needed: none, no original object lacks them (the Mac reading, NaN → excitement 0, is not re-checked here)
+			// [EXT:synthetic-ride-zero-guard] a bridge without any operating values (speed, design speed, duration and design duration all 0) is a synthetic object, since every original object has InitSpeed and InitDuration; it is read at its design speed and duration, where tp.exe's 0x004E0560 divides with no guard and would score trunc(0.5625 × level) from the 0.75 floor on a NaN ratio (0x004E07D2, 0x004E0802); no original object reaches that
 			var level = ExcitementBase?.Invoke( excitementLevel ) ?? excitementLevel;
 			if ( Parameters is { Speed: 0, InitSpeed: 0, Duration: 0, InitDuration: null or 0 } )
 				return level;
@@ -1153,7 +1159,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// With every slot taken nothing is stored and the visitor is not bouncing.
 	/// </summary>
 	// [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing; the deadline comes from one clock call (0xadfb0) and the start from a second (0xadfcc)
-	// [APPROX:QUEUE-020] one script-clock reading stands for both of BOUNCE's clock calls: OpenTPW's clock does not advance inside an opcode; tp.exe's BOUNCE 0x00555674 calls the clock 0x00402D70 (timer 0x00785970) once for the deadline (0x00555753, + 1000 × dur) and again for the start (0x00555770), so a millisecond tick between them puts the start 1 ms after the deadline's base and moves UNBOUNCE's 200 ms window by 1 ms — evidence needed: none for the reading; a stepped clock cannot reproduce a live tick
+	// [EXT:bounce-single-clock-read] one script-clock reading stands for both of BOUNCE's clock calls: OpenTPW's clock is stepped and does not advance inside an opcode, so the two live reads of tp.exe's BOUNCE (0x00555674: the deadline 0x00555753 and the start 0x00555770 through 0x00402D70, up to 1 ms apart, which moves UNBOUNCE's 200 ms window by 1 ms) cannot differ; a determinism design choice
 	internal static bool TakeBounceSlot( List<(int Guest, double Until, double Start)> slots, int capacity, int guest, double until, double now )
 	{
 		for ( var index = 0; index < capacity; index++ )

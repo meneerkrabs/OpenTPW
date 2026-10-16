@@ -84,7 +84,7 @@ public sealed partial class ParkHud
 		this.host = host;
 		Status = status;
 		Catalog = catalog;
-		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows );
+		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
 		lastLevelMessage = level.LastActionMessage;
 		level.Objects.ObjectPlaced += OnObjectPlaced;
 		// Harnesses that build a Level without its constructor have no tool object.
@@ -901,7 +901,8 @@ public sealed partial class ParkHud
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark, bool paused )
 	{
 		var tool = level.CellTool;
-		// [APPROX:PATH-013] PATH-PAUSE: while the pause menu is shown the park takes no tool clicks, as in the original (tp.exe gate 0x48c8d0 reads the pause-menu object 0x7c2534 +0xc; the park click handler 0x4879d0 returns before the tool dispatch); OpenTPW's speed pause keeps the tool live; the original's pause key P (0x40bf70 → 0x409350(1)) also toggles a window (0x48a720 → 0x4a27f0 → 0x47ed80): a full-screen layer (0x65dd7b(1, 1, 1, 0, 0, 0x7ff, 0x5ff), the 'lolight' backdrop) under the panel 5094 (174,500)-(1874,900) of table 0x752e00, and the park click handler 0x4879d0 does not read the pause flag 0x786b84 — still open: whether that full-screen layer stops the click route to 0x4879d0 (the routine that calls it at 0x488768 is not a defined procedure)
+		// [BIN:TPW-EXE:0x0048C8D0 pause-menu click gate] while the pause menu is shown the park takes no tool clicks (the gate reads the pause-menu object 0x7c2534 +0xc; the park click handler 0x4879d0 returns before the tool dispatch) and the handler does not read the speed pause flag 0x786b84, so the speed pause keeps the tool live
+		// [APPROX:PATH-017] the P key's window (the global 0x7cb2cc, 0x4a27f0 → 0x47ed80) puts a full-screen layer (0x65dd7b, the 'lolight' backdrop) under the panel 5094 of table 0x752e00; OpenTPW draws neither, and whether the layer stops the click route to 0x4879d0 is not read (the window manager's hit test of the layer classes)
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }
@@ -911,7 +912,7 @@ public sealed partial class ParkHud
 			context.HoverHelp = strings.Help( help );
 		if ( !tool.IsActive )
 		{
-			// Backspace over a path cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent).
+			// Backspace over a path or queue cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack]).
 			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && level.BacktrackAt( cursorX, cursorY ) )
 				return true;
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )
@@ -974,7 +975,7 @@ public sealed partial class ParkHud
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )
 		{
-			// a commit stopped only by OpenTPW's own queue cap is not one of the original's refusals (QUEUE-013)
+			// a commit stopped only by the back-of-queue walk's bound is not one of the original's refusals
 			if ( !result.StoppedByOwnLimit )
 				refusalClick.Refused( cursorX, cursorY );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );

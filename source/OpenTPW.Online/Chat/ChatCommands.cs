@@ -177,17 +177,22 @@ public sealed class ChatCommandTable
 			: ChatCommands.CanonicalName( command );
 
 	/// <summary>
-	/// [APPROX:ONLINE-002] A line starting with '/' is a command, anything else is "say" — evidence
-	/// needed: the original chat input syntax is not documented in the data.
-	/// Returns false for an unknown command word.
+	/// A line whose first character after leading blanks is '/' is a command, anything else is "say" with the whole
+	/// line. Returns false for an unknown command word.
 	/// </summary>
+	// [BIN:TPW-EXE:0x5E45D0 chat line parse] the tokenizer skips its delimiters (space, line feed, tab, carriage return; 0x5E6820) with
+	// 0x5E6FC0, then 0x5E7320 reads the first character: not '/' (0x5E463B) or none builds a say (command 0) of the whole line, '/'
+	// parses the command word (0x5E6C90), and an unknown word becomes command 0x18; the dispatcher 0x4EC030 says the line (Chat::Say)
 	public bool TryParse( string line, out ChatCommand command, out string argument )
 	{
 		command = ChatCommand.Say;
 		argument = line;
-		if ( !line.StartsWith( '/' ) )
+		var start = 0;
+		while ( start < line.Length && line[start] is ' ' or '\n' or '\t' or '\r' )
+			start++;
+		if ( start == line.Length || line[start] != '/' )
 			return true;
-		var body = line[1..];
+		var body = line[(start + 1)..];
 		var lower = body.ToLowerInvariant();
 		foreach ( var (word, value) in words )
 		{

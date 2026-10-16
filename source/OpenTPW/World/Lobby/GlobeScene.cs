@@ -17,10 +17,9 @@ public sealed class GlobeScene : OriginalModelScene
 	// [BIN:TPW-EXE:0x005DC860 globe pick] the cursor ray meets a sphere of radius 116 (r² 13456); a city within 10 units (d² < 100) of that point is hovered
 	public const float PickRadius = 116f;
 	public const float PickDistance = 10f;
-	// [APPROX:ONLINE-013] pins are drawn twice the decoded (s, s, p) scale and stand on the mesh surface (radius 119.7)
-	// rather than the pick sphere (116); at the decoded size they barely clear the surface — evidence needed: the
-	// scale of the original flag node's parent (globe node) and a capture of the original globe
-	public const float PinScale = 2f;
+	// [APPROX:ONLINE-013] pins stand on the mesh surface (radius 119.7): the original puts a pin's root node at the city record's
+	// position vector (+0x34..+0x3c, 0x005DC3E0 → 0x005D8190), which the city list from weacityr.dll fills and which is not decoded —
+	// evidence needed: the radius of the original city positions (a city list from the original service or a capture of its globe)
 	public const float PinRadius = 119.7f;
 	// [BIN:TPW-EXE:0x005DC3E0 city flag] the city named "North Pole" gets the Bullfrog pin, every other city the hpin model
 	public const string BullfrogCity = "North Pole";
@@ -80,7 +79,10 @@ public sealed class GlobeScene : OriginalModelScene
 				var bullfrog = string.Equals( city.Name, BullfrogCity, StringComparison.OrdinalIgnoreCase );
 				var model = bullfrog ? bullfrogPin ??= new ModelFile( $"{GlobeDirectory}/Bullfrog.MD2" ) : cityPin ??= new ModelFile( $"{GlobeDirectory}/Hpin.MD2" );
 				var direction = Direction( city.Latitude, city.Longitude );
-				var added = AddModel( model, PinPlacement( direction, city.Parks ) );
+				// The placement replaces the pin's root node transform, as the original overwrites that node's matrix (0x005D81C0).
+				var root = model.RootNodeIndex >= 0 && model.RootNodeIndex < model.Nodes.Count ? model.Nodes[model.RootNodeIndex].Transform : NMatrix4x4.Identity;
+				var undoRoot = NMatrix4x4.Invert( root, out var inverse ) ? inverse : NMatrix4x4.Identity;
+				var added = AddModel( model, undoRoot * PinPlacement( direction, city.Parks ) );
 				Place( added );
 				pins.AddRange( added );
 				cityPoints.Add( (city, ToEngine( direction * PickRadius )) );
@@ -94,25 +96,26 @@ public sealed class GlobeScene : OriginalModelScene
 	}
 
 	/// <summary>
-	/// A pin standing on the globe at <paramref name="direction"/>: radial height grows with the city's parks, in the
-	/// frame right = up × direction, forward = direction × right.
+	/// The root node matrix of a pin standing on the globe at <paramref name="direction"/> (MD2 space, row vectors): the model's
+	/// local X along right = up × direction and local Y along direction × right, both scaled by s, and its local Z along the
+	/// direction, scaled by p, so the pin's height grows with the city's parks.
 	/// </summary>
-	// [BIN:TPW-EXE:0x005DC3E0 city flag] scale (s, s, p) with p = clamp(0.02 + 0.0005·parks, 0.02, 0.1) and s = 0.035 + 0.2·p, at the city position, oriented along its direction from the globe centre
+	// [BIN:TPW-EXE:0x005DC3E0 city flag] p = clamp(0.02 + 0.0005·parks, 0.02, 0.1) and s = 0.035 + 0.2·p; 0x005D81C0 overwrites the pin's root
+	// node matrix with the rows normalize(z, 0, −x), the unit cross product of the direction and that row, and the unit direction, 0x005D8190
+	// puts its translation at the city position and 0x005D83B0 → 0x0046FAD0 scales the three rows by (s, s, p): no parent scale applies
 	public static NMatrix4x4 PinPlacement( NVector3 direction, int parks )
 	{
 		var p = Math.Clamp( 0.02f + 0.0005f * parks, 0.02f, 0.1f );
 		var s = 0.035f + 0.2f * p;
 		var right = NVector3.Cross( NVector3.UnitY, direction );
 		right = right.LengthSquared() < 1e-6f ? NVector3.UnitX : NVector3.Normalize( right );
-		var forward = NVector3.Normalize( NVector3.Cross( direction, right ) );
-		// After their own node transform the pin models stand along +Y (head up, point down), so +Y is the radial axis
-		// and the decoded radial scale p applies to it.
-		var frame = new NMatrix4x4(
-			right.X, right.Y, right.Z, 0,
-			direction.X, direction.Y, direction.Z, 0,
-			forward.X, forward.Y, forward.Z, 0,
-			0, 0, 0, 1 );
-		return NMatrix4x4.CreateScale( s * PinScale, p * PinScale, s * PinScale ) * frame * NMatrix4x4.CreateTranslation( direction * PinRadius );
+		var north = NVector3.Normalize( NVector3.Cross( direction, right ) );
+		var position = direction * PinRadius;
+		return new NMatrix4x4(
+			right.X * s, right.Y * s, right.Z * s, 0,
+			north.X * s, north.Y * s, north.Z * s, 0,
+			direction.X * p, direction.Y * p, direction.Z * p, 0,
+			position.X, position.Y, position.Z, 1 );
 	}
 
 	/// <summary>The city under the cursor ray from the camera, if any.</summary>

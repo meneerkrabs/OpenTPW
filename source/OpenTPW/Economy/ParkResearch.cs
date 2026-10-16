@@ -8,8 +8,8 @@ public sealed record ResearchItem( int InfoId, int Level, ResearchCategory Categ
 /// <c>Research.Group</c> — group 0 "available initially"), costs (<c>Upgrades[n].CostOfResearch</c>,
 /// "research points taken for item to be researched"), the starting effort per category
 /// (<c>ResearchCategories[n].Effort</c>), researcher ability per grade (<c>ResearchAbility</c>) and
-/// the group thresholds (<c>ResearchTech[g].PercentageForThisTech</c>). Group 0 items of the ride,
-/// shop, sideshow and feature categories start researched whatever their cost.
+/// the group thresholds (<c>ResearchTech[g].PercentageForThisTech</c>). An object whose research cost is 0
+/// starts researched, whatever its group; any other object, group 0 included, is researched in the lab.
 /// Traced in the Mac binary: every 20 park turns each researcher adds <c>ResearchAbility</c> ×
 /// effort share × <c>Research.StartingWorkLoad</c> / 100 points to every category's current item; a
 /// category's highest open group rises while the percentage of researched items in its open groups
@@ -63,8 +63,11 @@ public sealed class ParkResearch
 				byCategory[item.Category] = list = new List<ResearchItem>();
 			list.Add( item );
 		}
-		// "Research.Group 0 = Available initially" (category files); add-ons are always group 0 but carry a research cost.
-		foreach ( var item in items.Where( item => item.Group == 0 && item.Level == 0 && item.Category != ResearchCategory.Upgrade ) )
+		// [BIN:TPW-EXE:0x005031E5 research table fill] the fill 0x005031A0 (from the lab's start 0x00502D60) marks a choosable type (+0x508 = 0, Info.WhichUIType below 4)
+		// researched (its control record +0x10 = 1, 0x0050320A) only when Upgrades[0].CostOfResearch (+0x180) is 0, with no group, category or add-on target test;
+		// every other type, group 0 included ("0 = Available initially" in the category files), becomes a lab project; the only other writer of the flag is the
+		// research completion 0x00504630 (on the shipped data this keeps Jungle's Wooden Log, group 0 at cost 300, to be researched)
+		foreach ( var item in items.Where( item => item.Level == 0 && item.Cost == 0 ) )
 			completed.Add( (item.InfoId, item.Level) );
 		RebuildGroupStats();
 		OpenGroups();

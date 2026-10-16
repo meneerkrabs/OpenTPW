@@ -780,7 +780,7 @@ public class GuestTests
 		public bool Closed;
 		public int AdmissionFee => 0;
 		public bool ParkClosed => Closed;
-		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; return !Closed; }
+		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; return true; }
 		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
 	}
 

@@ -358,7 +358,6 @@ public class ParkEconomyTests
 	public void GuestsPayAtTheGateShopsAndSideshows()
 	{
 		var park = EconomyTestData.Park();
-		Assert.IsFalse( park.TryAdmitVisitor( out _ ) );
 		park.OpenPark();
 		Assert.IsTrue( park.TryAdmitVisitor( out var fee ) );
 		Assert.AreEqual( 20, fee );
@@ -530,7 +529,7 @@ public class ParkEconomyTests
 	[TestMethod]
 	public void MechanicsSkipACondemnedRideAndRepairABrokenRideBeforeItsUpgrade()
 	{
-		// ORACLE F19: the arrival 0xd9c0c starts a job only for state 1 or 2, so a condemned ride (state 4, life gauge 0) gets no mechanic.
+		// ORACLE F19: the arrival 0xd9c0c starts a job only for state 1 or 2 or a call, so an uncalled condemned ride (state 4, life gauge 0) gets no mechanic.
 		var park = EconomyTestData.Park();
 		park.TryBuild( 1100, out var condemned );
 		park.TryBuild( 1100, out var broken );
@@ -552,6 +551,32 @@ public class ParkEconomyTests
 		Assert.AreEqual( 0, broken.Level, "the repair does not install the upgrade" );
 		Assert.AreEqual( 1, broken.PendingLevel );
 		Assert.AreEqual( 0, condemned.MechanicId );
+	}
+
+	[TestMethod]
+	public void ACalledCondemnedRideIsRepaired()
+	{
+		// tp.exe 0x4da740 (0x4da7d5): the arrival starts the work for state 1, state 2 or the call +0x64, whatever else the state is, and the finder
+		// 0x4daa90 selects a called ride in any state; the repair 0x4df8f0 then sets the gauge to 100 and the state to 0.
+		var park = EconomyTestData.Park();
+		park.TryBuild( 1100, out var condemned );
+		condemned!.IsBrokenDown = true;
+		condemned.LifeGauge = 0;
+		condemned.Repair = 40;
+		Assert.AreEqual( RideObjectStates.Condemned, ParkEconomy.ObjectState( condemned ) );
+		Assert.IsTrue( park.RequestMaintenance( condemned.Id, true ) );
+		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
+		var repaired = 0;
+		park.EventRaised += item => { if ( item.Kind == ParkEventKind.RideRepaired && item.InstanceId == condemned.Id ) repaired++; };
+		park.Advance( ParkCalendar.TicksForHours( 2 ) );
+		Assert.AreEqual( mechanic.Id, condemned.MechanicId, "the call makes the condemned ride a job" );
+		var work = park.Settings[StaffType.Mechanic].WorkDuration[mechanic.Grade];
+		EconomyTestData.AdvanceToTurn( park, park.Turn + work + 2 );
+		Assert.AreEqual( 1, repaired );
+		Assert.AreEqual( 0, condemned.MechanicId );
+		Assert.IsFalse( condemned.MaintenanceRequested, "the repair clears the call (+0x64 = 0)" );
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 100 );
+		Assert.AreEqual( (0, 1), (condemned.MechanicId, repaired), "without a new call the ride, whatever its gauges, gets no second job" );
 	}
 
 	[TestMethod]
@@ -608,11 +633,13 @@ public class ParkEconomyTests
 		while ( !park.Research.IsAvailable( 1100, 1 ) )
 			park.AdvanceDays( 1 );
 		var before = park.Balance;
+		var spent = ride.TotalSpent;
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, park.TryBuyUpgrade( ride.Id ) );
-		Assert.AreEqual( before - 400, park.Balance );
+		Assert.AreEqual( before, park.Balance, "tp.exe 0x4af480 requests the upgrade without a debit" );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.UpgradeInProgress, park.TryBuyUpgrade( ride.Id ) );
 		park.AdvanceDays( 10 );
 		Assert.AreEqual( 1, ride.Level );
+		Assert.AreEqual( spent + 400, ride.TotalSpent, "the installation debits the level's cost (0x4df8f0)" );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.UpgradeCompleted ) );
 		Assert.IsNotNull( researcher );
 		var instant = EconomyTestData.Park( mode: ParkGameMode.InstantAction );

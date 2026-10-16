@@ -452,9 +452,10 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		var gateBefore = Booked( LedgerCategory.GateTakings );
 		var admissionsBefore = economy.Counters[ParkCounters.Admissions];
 		economy.ClosePark();
-		var refused = !economy.TryAdmitVisitor( out _ );
+		// tp.exe stops visitors on the walk to the booth (0x4ff730), not in the fee booking (0x4d0600): the guests see the closed park
+		var refused = payments.ParkClosed;
 		Require( refused && economy.Counters[ParkCounters.Admissions] == admissionsBefore && Booked( LedgerCategory.GateTakings ) == gateBefore,
-			"the closed resumed park refuses an admission without booking anything" );
+			"the closed resumed park is closed to the arriving guests without booking anything" );
 		economy.OpenPark();
 		Require( economy.TryAdmitVisitor( out var feePaid ) && feePaid == economy.EntranceFee
 			&& economy.Counters[ParkCounters.Admissions] == admissionsBefore + 1 && Booked( LedgerCategory.GateTakings ) == gateBefore + economy.EntranceFee,

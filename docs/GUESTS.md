@@ -286,8 +286,9 @@ same sum as the arrival rule's, `0x4c8240`), N = `PeepInfo.ExcitementToCostDivis
 - otherwise fair — the guest pays.
 
 An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. A paying guest's fee is booked to the bank (tp.exe `0x4d0600`,
-`ParkEconomy.TryAdmitVisitor`) without reading or debiting the guest's purse, as in the original; OpenTPW's economy still refuses an
-admission while the park is closed or bankrupt.
+`ParkEconomy.TryAdmitVisitor`) without reading or debiting the guest's purse, as in the original. The booth has no park-closed test: a
+closed park stops its visitors on the walk to the booth ([GATES.md](GATES.md), "What closing does to guests"); OpenTPW's economy refuses an
+admission only while the park is bankrupt (tp.exe's bankruptcy stops the thing loop, ECON-030).
 
 ### Needs and starting values
 
@@ -514,7 +515,8 @@ the approximation table above still describe the running OpenTPW simulation.
 In original levels `Level` attaches the park economy (`ParkEconomyRuntime.AttachGuests`,
 docs/ECONOMY.md): `GuestSimulation.Payments` (`IGuestPayments`, implemented by
 `GuestEconomyBridge`) charges admission through `ParkEconomy.TryAdmitVisitor` — the economy's
-entrance fee and open/closed state decide, and refused guests turn back at the booth — shop and
+entrance fee decides, refused guests turn back at the booth, and a closed park turns guests home as they
+reach the booth or once they have paid (docs/GATES.md) — shop and
 sideshow visits through `TryBuy`/`PlaySideshow`, and ride visits are counted with
 `RecordRideUse`. The bridge also supplies `IParkGuestStatistics` (people in park, happiness).
 Without `Payments` (unit tests) the `.sam` fee and `IRideVisitorBridge.Price` apply and nothing is booked.

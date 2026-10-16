@@ -12,12 +12,39 @@ Seventeen arrival and save approximations were checked again, item by item, in t
 re-read):
 
 - **The booth books the fee with the bank** (`0x4ffade` → `0x4d0600`): the guest's purse (`+0x1A0`) is never touched, as in the original
-  (ARRIVAL-007 retired). The determinism hash is now `0x9AA9973FC2A6A5D6`.
+  (ARRIVAL-007 retired); the booth refuses an admission only at a bankrupt park, a closed one stopping visitors on their walk to it
+  (next entry). The determinism hash moved to `0x9AA9973FC2A6A5D6`, and with the staff candidate draws below to `0x89123A798D58778F`.
 - **Arrival groups** keep a negative remainder after the cut (`0x4cf6e5`), which every reader treats as 0 (ARRIVAL-004 retired), and a
   guest the booth sends to wait reruns the verdict N + 1 turns later (`0x4ffa72`, `0x4ffb01`; ARRIVAL-006 narrowed).
 - **The counts-test's track terms** apply to the park points that size the arrival groups (`0x4dd9ad` → `0x441970`; ARRIVAL-003 narrowed).
 - SAVE-930 is OpenTPW's own layout checkpoint (`[EXT:tpi-layout-checkpoint]`); thirteen arrival and save items are narrowed, among them
   the bus, seaplane or ferry by group size (`0x4cf48c`) and the coaster save block (`0x437300`, `0x437b60`).
+
+## Nine divergences from tp.exe fixed (October 15, 2026)
+
+Divergences found while reading other areas, each checked in tp.exe and fixed in its own commit:
+
+- **Upgrades are paid at installation** (`0x4df8f0`, debit at `0x4dfa96` with no balance check); buying (`0x4af4e9`) only requests the
+  upgrade when the balance is above the cost. A save's pending upgrade gains the optional `UpgradeCostDue`; one loaded from an older
+  save, already charged at purchase, is not charged again.
+- **A sideshow play wins** when R % 100 ≤ the win byte (100 − InitChanceOfLoosing, `0x4e26e2`, `0x4db3a1`).
+- **A sale or play at price 0 books no takings** (`0x4fe1a0` skips `0x4e16b0`); the cost of goods and the customer count still apply
+  (ECON-034 narrowed).
+- **A cleaned toilet opens** through `0x4df390` without the reopening guard (ECON-049 text extended).
+- **A called ride gets its mechanic** in any state, condemned included (`0x4da740`, `0x4daa90`).
+- **Removing an attraction or bin** sends its guests the original's removal message (`0x4fb360`, message 10): riders get their model
+  back, queued guests are dismissed, every targeting guest goes to state 6, and every guest's history slots naming the object are
+  cleared (GUEST-004 and GUEST-005 narrowed).
+- **A closed park stops visitors on the walk to the booth** (`0x4ff730`, `0x4ff7f0`): they go home with no thought; the booth and the
+  booking read no closed state, so a guest who paid at a closed park is sent home without a refund. A bankrupt park still takes no fee
+  (its thing loop stops in tp.exe, ECON-030).
+- **A staff candidate draws** variant, spare, grade, name and timeout in tp.exe's order (`0x507600`, GUEST-014 narrowed).
+- **A new park starts with only the research-free objects researched** (`Upgrades[0].CostOfResearch` = 0, `0x5031a0`): Jungle's Wooden
+  Log now has to be researched.
+
+A tenth candidate (the dismissal leaving VAR_LETMEON set) does not hold: every caller unlinks first (`0x4ddd20`). The pinned run hash
+moves to `0xDB1DDEE4817DE5B0` (the staff candidate draws; docs/DETERMINISM.md), and to `0x89123A798D58778F` together with the
+booth that no longer reads the guest's purse (previous entry).
 
 ## Advisor presentation, crowd sound and particle density from tp.exe (October 15, 2026)
 

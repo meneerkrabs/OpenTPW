@@ -10,7 +10,7 @@ public interface IGuestPayments
 {
 	/// <summary>Current entrance fee shown at the ticket booth.</summary>
 	int AdmissionFee { get; }
-	/// <summary>Books admission. False when the park refuses it (closed); the guest's purse is not read.</summary>
+	/// <summary>Books admission at the booth. False only when the park refuses it (bankrupt); the guest's purse is not read, and a closed park stops guests on their walk to the booth (<see cref="ParkClosed"/>).</summary>
 	bool TryPayAdmission( out int feePaid );
 	/// <summary>True while the park is closed (the world variable <c>mParkClosed</c>): every guest that gets to decide heads home (<see cref="GuestLifecycle"/>).</summary>
 	bool ParkClosed => false;

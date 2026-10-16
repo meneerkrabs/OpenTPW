@@ -51,8 +51,9 @@ public readonly record struct SavePayloadBlock( SaveBlock Block, string Tag, int
 /// (<see cref="SaveBlockWidths"/>, read from tp.exe's block readers), like the original loader, which then compares the next
 /// four bytes with the block's tag and aborts with "The SAD_&lt;module&gt; module did not load the same number of bytes that it
 /// saved" otherwise; a delimiter's bytes inside a block are data. The empty Coasters block ends after its 16 bytes.</item>
-/// <item>Only the World block (its control manager and macro AI are not traced; the thing chain closes it, see
-/// <see cref="SaveWorld"/>) and a Coasters block with a coaster (its trains and cars depend on the coaster type's train and car counts)
+/// <item>The World block ends where its loader's readers stop (<see cref="SaveBlockWidths.TryMeasureWorld"/>: fixed-width variables, control manager and
+/// macro AI, 0x4000 status-byte cells and the self-closing thing list, see <see cref="SaveWorld"/>) when its bytes read that way and the WRLD tag follows. Only a Coasters block
+/// with a coaster (its trains and cars depend on the coaster type's train and car counts) and a World block that does not read that way (a synthetic payload)
 /// are located by their delimiter's bytes. The payload must split into the blocks in exactly one way under these rules: a copy
 /// of such a delimiter's bytes inside the block or a later one that forms a second valid split is rejected, even though the
 /// count-based original loader would accept the save (SAVE-011). A payload with more than
@@ -136,7 +137,7 @@ public sealed class SavePayloadLayout
 		if ( recording > (uint)(payload.Length - ActionRecordingHeaderBytes) )
 			throw new InvalidDataException( $"Save action recording claims {recording} bytes; only {payload.Length - ActionRecordingHeaderBytes} remain." );
 		var start = ActionRecordingHeaderBytes + (int)recording;
-		// [APPROX:SAVE-011] the World block and a Coasters block with a coaster are located by their delimiter's bytes: a payload that splits in more than one way there, or holds the WRLD or COAS delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while tp.exe's loader 0x415270 runs each block's reader and then compares the next 4 bytes with its tag (0x415371), never searching — evidence needed: the World's control manager and macro AI widths, and the coaster type's train slot and car counts (SAVE-920)
+		// [APPROX:SAVE-011] a Coasters block with a coaster, and a World block that does not read as the original's (a synthetic payload), are located by their delimiter's bytes: a payload that splits in more than one way there, or holds the COAS (or such a World's WRLD) delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while tp.exe's loader 0x415270 runs each block's reader and then compares the next 4 bytes with its tag (0x415371), never searching — evidence needed: the coaster type's train slot and car counts (SAVE-920) for a layout that knows the park's coaster types
 		var search = new DelimiterSearch( payload, start );
 		var splits = search.Count( 0, start );
 		if ( splits == 0 )
@@ -219,8 +220,12 @@ public sealed class SavePayloadLayout
 	/// The end of a block whose width follows from its bytes (<see cref="SaveBlockWidths"/>, or the empty Coasters block), or -1 when the
 	/// block is located by its delimiter; throws when the bytes do not read as the block.
 	/// </summary>
+	private const string WorldTag = "WRLD";
+
 	private static int TracedEnd( ReadOnlySpan<byte> payload, SaveBlock block, int offset )
 	{
+		if ( block == SaveBlock.World )
+			return SaveBlockWidths.TryMeasureWorld( payload, offset, out var worldWidth ) && TagAt( payload, WorldTag, offset + worldWidth ) ? offset + worldWidth : -1;
 		if ( block == SaveBlock.Coasters )
 		{
 			if ( payload.Length - offset < EmptyCoastersBytes )
@@ -292,8 +297,8 @@ public sealed class SavePayloadLayout
 			for ( var index = 0; index < Delimiters.Count; index++ )
 			{
 				occurrences[index] = new List<int>();
-				// Only the delimiter-located blocks search for their delimiter.
-				if ( Delimiters[index].Block is not (SaveBlock.World or SaveBlock.Coasters) )
+				// Only the delimiter-located blocks search for their delimiter: a World block that reads as the original's does not.
+				if ( Delimiters[index].Block is not (SaveBlock.World or SaveBlock.Coasters) || Delimiters[index].Block == SaveBlock.World && TracedEnd( payload, SaveBlock.World, start ) >= 0 )
 					continue;
 				Stored( Delimiters[index].Tag, stored );
 				for ( var position = start; position + DelimiterBytes <= payload.Length; )

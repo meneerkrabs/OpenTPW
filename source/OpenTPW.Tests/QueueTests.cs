@@ -34,11 +34,11 @@ public class QueueTests
 		public readonly GuestSimulation Simulation;
 		public bool Open = true;
 
-		public Rig( int queueCells = 5, QueueParameters? parameters = null, GuestNeeds satisfies = GuestNeeds.None, int capacity = 5, bool takesGuests = false, int excitement = 55, Action<GuestSettings>? configure = null )
+		public Rig( int queueCells = 5, QueueParameters? parameters = null, GuestNeeds satisfies = GuestNeeds.None, int capacity = 5, bool takesGuests = false, int excitement = 55, Action<GuestSettings>? configure = null, RideVisitorKind? kind = null )
 		{
 			for ( var x = 0; x < 10; x++ )
 				Grid.SetPath( x, 0, true );
-			Ride = new RideVisitorBridge( RideId, "Queue ride", satisfies == GuestNeeds.None ? RideVisitorKind.Ride : RideVisitorKind.Facility, capacity, excitement, 30, satisfies )
+			Ride = new RideVisitorBridge( RideId, "Queue ride", kind ?? (satisfies == GuestNeeds.None ? RideVisitorKind.Ride : RideVisitorKind.Facility), capacity, excitement, 30, satisfies )
 			{
 				EntranceCell = (2, 0),
 				ExitCell = (2, 0),

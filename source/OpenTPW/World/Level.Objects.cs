@@ -939,6 +939,28 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// An original save's operating words (speed, capacity and duration, SAVE-006) become the linked ride runtimes' words where they differ from the tier's values. Only a park started
+	/// from the shipped save does this; a resumed park restores its own words (<see cref="OriginalObjectRuntimeSnapshot"/>).
+	/// </summary>
+	private void ImportOriginalRideSettings()
+	{
+		if ( resumeState != null || Park?.Import is not { } import || OriginalPark?.Save is not { } save )
+			return;
+		var runtimes = economyInstances.ToDictionary( pair => pair.Value, pair => pair.Key.Runtime );
+		foreach ( var attraction in save.Attractions )
+		{
+			if ( !import.AttractionInstances.TryGetValue( attraction.Id, out var instance ) || !runtimes.TryGetValue( instance, out var runtime ) )
+				continue;
+			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
+			if ( taken.Count == 0 )
+				continue;
+			var line = $"Ride settings imported for attraction thing {attraction.Id} (Info.Id {attraction.InfoId}): {string.Join( ", ", taken )}.";
+			import.Report( line );
+			Log.Trace( $"Park economy import: {line}" );
+		}
+	}
+
+	/// <summary>
 	/// The economy side of removing a placed object (the remove tool; also used by the headless M4 gate): unlinks its guest
 	/// payments and sells its economy record for <see cref="ParkEconomy.ScrapValue"/>. Null when it had no record.
 	/// </summary>

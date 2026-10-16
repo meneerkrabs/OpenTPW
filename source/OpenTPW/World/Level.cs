@@ -414,6 +414,7 @@ public partial class Level : IDisposable
 			if ( Park != null )
 				litterEffects = new ParkLitterEffects( Park.Economy.Litter, ParticleRendererModule.AdvisorPool );
 			ImportOriginalGuests();
+			ImportOriginalRideSettings();
 			SetupStaff();
 			SetupParkGate();
 		}

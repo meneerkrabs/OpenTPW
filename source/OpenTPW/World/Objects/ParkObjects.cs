@@ -329,7 +329,7 @@ public sealed class ParkObjects
 			var entry = Catalog.Find( record.InfoId );
 			if ( entry == null || entry.IsTool )
 				continue;
-			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; their remaining transform fields are not decoded.
+			// [APPROX:RIDES-040] TPI fixed scene records at (0, 0) use their local model origin; the thing records of the six that have an archive carry the fixed-item default position (128, 128) and angle 0 (the five without an archive carry real positions, but nothing to draw), so no transform field is left unread in the save — evidence needed: how the original places a local-coordinate fixed model at its anchor (the no-CD Theme Park Inc exe holds that code; it is not in the REA session)
 			Add( entry, record.X, record.Y, record.Rotation );
 			count++;
 			yield return (count, (index + 1) / (float)records.Count);

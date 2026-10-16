@@ -189,7 +189,7 @@ the trigger, and the vehicle drives off. Status 6 (gone) releases it (`0x51a690`
 waiting to go home call a vehicle when none is at work (size 0: one world draw picks the kind, `0x51a34b`;
 OpenTPW draws it from the economy stream, DET-014) and keep it at status 4 until the last has boarded
 (`0x500bd0`). The time to the stop is the script's: the jungle bus waits 2 s, plays its drive-in clip
-`Busm1` to its end (about 7 s) and waits 1 s more, so its first guest steps off about 10 s after
+`Busm1` for the time its trigger reports (the clip's 7,333 ms less 300) and waits 1 s more, so its first guest steps off about 10 s after
 the group starts. A park without any vehicle definition (the original stops with a fatal error) steps its
 guests off from the turn after the group starts, and its leaving guests go after 3 s. What still differs
 around the stop is ARRIVAL-001: the original first walks a leaving guest to the vehicle's own stop cells.

@@ -276,9 +276,9 @@ public class ArrivalVehicleTests
 			Assert.IsNotNull( placed, "the first group places the bus" );
 			Assert.IsNotNull( atStop );
 			var drive = (atStop!.Value - placed!.Value) * 1000;
-			// bus.RSE keeps the drive-in trigger's result less 3000 in VAR_TEMP (variable 3): the Busm1 clip's time to its end.
+			// bus.RSE keeps the drive-in trigger's result less 3000 in VAR_TEMP (variable 3); TRIGANIM reports the clip length less 300 ms (Mac 0xafa94).
 			var driveIn = triggered + 3000;
-			Assert.IsTrue( driveIn > 3000 && driveIn <= clipLength, $"the drive-in trigger reports {driveIn} ms of the {clipLength} ms clip" );
+			Assert.AreEqual( clipLength - 300, driveIn, $"the drive-in trigger reports {driveIn} ms for the {clipLength} ms clip" );
 			Assert.AreEqual( 2000 + driveIn + 1000, drive, 1000.0 / FixedStepClock.TicksPerSecond + 1, $"status 2 after the 2 s wait, the {driveIn} ms clip and 1 s" );
 			Assert.IsTrue( firstGuest >= atStop && firstGuest - atStop < 0.3, "the first guest steps off at the next park turn" );
 			Assert.AreEqual( 4, simulation.Guests.Count );

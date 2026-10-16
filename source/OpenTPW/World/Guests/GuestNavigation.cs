@@ -47,14 +47,53 @@ public static class Fixed16
 		var scale = Div( maximum, size );
 		return (Mul( x, scale ), Mul( y, scale ));
 	}
+
+	/// <summary>tp.exe's FixMul <c>0x50DF70</c>: bits 16..47 of the 64-bit product, so it rounds towards −∞.</summary>
+	// [BIN:TPW-EXE:0x0050DF70 fixed multiply] imul, then (edx << 16) | (eax >> 16) for each component
+	public static int PcMul( int a, int b ) => unchecked((int)(((long)a * b) >> 16));
+
+	/// <summary>tp.exe's FixDiv <c>0x50E080</c>: (a &lt;&lt; 16) / b by idiv, rounding towards zero; division by zero saturates as <see cref="Div"/>.</summary>
+	// [BIN:TPW-EXE:0x0050E080 fixed divide] edx:eax = a sign-extended and shifted left 16, idiv b
+	public static int PcDiv( int a, int b )
+	{
+		if ( b == 0 )
+			return a >= 0 ? int.MaxValue : int.MinValue;
+		return unchecked((int)(((long)a << 16) / b));
+	}
+
+	/// <summary>tp.exe's truncate <c>0x50F600</c>: <see cref="Truncate"/> with <see cref="PcDiv"/> and <see cref="PcMul"/>.</summary>
+	// [BIN:TPW-EXE:0x0050F600 vector truncate] the length of 0x4D49A0 (exact below 2^12, else in units of 2^8 or 2^18); unchanged when below the maximum, else each component FixMul(c, FixDiv(maximum, length))
+	public static (int X, int Y) PcTruncate( int x, int y, int maximum )
+	{
+		var size = Length( x, y );
+		if ( size < maximum )
+			return (x, y);
+		var scale = PcDiv( maximum, size );
+		return (PcMul( x, scale ), PcMul( y, scale ));
+	}
+}
+
+/// <summary>The walk step's result (tp.exe <c>0x4FA2A0</c>): 0 arrived, 1 still walking, 2 stuck (a route search failed).</summary>
+public enum WalkResult
+{
+	Arrived = 0,
+	Walking = 1,
+	Stuck = 2
 }
 
 /// <summary>
-/// One guest's navigation object (original guest <c>+212</c>) and its steering step <c>0xfec9c</c>, run once per park
-/// turn in the walking states (docs/reverse/WALK-plan.md §3, §5–§7, §11). Positions are 16.16 cells. The step sums
-/// avoid_walls (0.9), follow_path (0.5) and separation (0.1), each truncated to the max force <c>+24</c>; the sum is
-/// truncated again and added to the velocity, which is truncated to the max speed <c>+28</c>. A new destination does
-/// not reset the velocity.
+/// One guest's navigation object (original guest <c>+212</c>, tp.exe <c>+0xD4</c>) and its steering step <c>0xfec9c</c>
+/// (tp.exe <c>0x50F3B0</c>), run once per park turn in the walking states (docs/reverse/WALK-plan.md §3, §5–§7, §11). Positions
+/// are 16.16 cells. The step sums avoid_walls (0.9), follow_path (0.5) and separation (0.1), each truncated to the max force
+/// <c>+24</c>; the sum is truncated again and added to the velocity, which is truncated to the max speed <c>+28</c>. A new
+/// destination does not reset the velocity.
+/// <para>
+/// Two kinds of walk share the object. A guest's walk on the park's cells (<see cref="Navigate"/>, <see cref="Original"/>) is the
+/// tp.exe walk: the route search <see cref="WalkSearch"/> at every set-up and refill, the edge test <see cref="WalkEdges"/> with the
+/// walk mask for the walls and the step commit, the block stamps of the cell map, and its progress measure. A walk along an
+/// explicit cell route (<see cref="SetDestination"/>: staff, the arrival lanes, and walks restored from saves made before) keeps
+/// OpenTPW's earlier model: the route's cells are the walkable ones and the Mac step's arithmetic.
+/// </para>
 /// </summary>
 // [BIN:STP-PPC:0x100FEC9C steering step] forces avoid_walls/follow_path/separation (data 0xecd6c list), each truncated to +24 and FixMul-weighted; sum truncated to +24, FixDiv by ONE; +16 += force, truncated to +28; position committed when the map accepts the cell; progress history +176
 public sealed class GuestNavigation
@@ -105,8 +144,27 @@ public sealed class GuestNavigation
 	public int History;
 	/// <summary>Remaining route distance after the last step, −1 right after route setup.</summary>
 	public int PreviousRemaining = -1;
+	/// <summary>True for a walk set up by <see cref="Navigate"/>: the tp.exe search, edge test, commit and progress.</summary>
+	public bool Original;
+	/// <summary>The walk mask <c>+0xB4</c> (guest <c>+0x188</c>) the edge test reads: 0 on the park's paths, 1 while leaving.</summary>
+	public int Mask;
+	/// <summary><c>+0xB8</c>: a route search of this walk failed; the walk step reports stuck (2).</summary>
+	public bool Stuck;
+	/// <summary><c>+0x48</c>: the cell map's stamp counter when the walk was last set up (<see cref="ParkCellMap.BlockStamp"/>).</summary>
+	public int Stamp;
+	/// <summary><c>+0x54</c>: the waypoints of the last search; <see cref="Count"/> (<c>+0x58</c>) of them are buffered.</summary>
+	public int PathCount;
+	/// <summary><c>+0xA0</c>: the route's octile length from the position at set-up, through every waypoint.</summary>
+	public int Total;
+	/// <summary><c>+0xA4</c>: the octile lengths between the buffered waypoints from <see cref="Index"/> on.</summary>
+	public int Ahead;
+	/// <summary><c>+0xA8</c>: the octile lengths between the waypoints beyond the buffer.</summary>
+	public int Beyond;
+	/// <summary><c>+0xAC</c>: the progress after the last step (<see cref="ProgressValue"/>).</summary>
+	public int Progress;
+
 	/// <summary>Walking off the path grid (the arrival lanes): no walls and every position is accepted.</summary>
-	// [APPROX:WALK-008] guests on the arrival lanes walk off the path grid, with no wall force and every position committed; the original walks them like every guest (route search 0x50f8e0, commit 0x510510 and edge test 0x4d8750 with the walk mask), the lane cells being type 0x1e or path from map init 0x536490, so only map-edge, entrance-building, water, ride and queue cells could push or refuse them — still open: lane guests are not walked through the edge test
+	// [APPROX:WALK-008] guests on the arrival lanes walk off the path grid, with no wall force and every position committed; the original walks them like every guest (route search 0x50f8e0, commit 0x510510 and edge test 0x4d8750 with the walk mask), the lane cells being type 0x1e or path from map init 0x536490, so only map-edge, entrance-building, water, ride and queue cells could push or refuse them — still open: OpenTPW's cell map does not type the lane cells (map init 0x536490 gives the cells outside the park type 7, or 0x1e and 2 by their MAP attributes 0x80 and 2), so the lanes cannot be walked through WalkEdges and WalkSearch
 	public bool OffGrid;
 	public int Reroutes;
 
@@ -144,6 +202,8 @@ public sealed class GuestNavigation
 	/// <param name="alsoOpen">Cells off the route that are still walkable during this walk.</param>
 	public void SetDestination( int targetX, int targetY, IReadOnlyList<(int X, int Y)> route, IReadOnlyList<(int X, int Y)>? alsoOpen = null )
 	{
+		Original = false;
+		Stuck = false;
 		TargetX = targetX;
 		TargetY = targetY;
 		WalkCrossings = Math.Max( 0, route.Count - 1 );
@@ -179,7 +239,6 @@ public sealed class GuestNavigation
 	}
 
 	/// <summary>Route setup mode 1 (the stuck reroute): the current cell, then the rest of the route from the current waypoint.</summary>
-	// [APPROX:WALK-004] routes are OpenTPW's cell sequences (one Grid.TryStep cell per destination, the queue cells in order, Grid.FindPath for the bin and wander walks) that start at the guest's own cell and are refilled five waypoints at a time from the stored route; the stuck reroute prepends the current cell to the rest; the original searches from the guest's cell at every SetDest (0x510100, setup 0x50f8e0, search 0x511420 = line-and-boundary search 0x511470 plus refinement 0x5108a0), again at each refill (0x50efce) and at the stuck reroute (0x50ee79, mode 1, current cell prepended), and ends the walk when a search fails (+0x60 = +0xb8 = 1, 0x50f945) — still open: the search 0x511470 and refinement 0x5108a0 are not ported
 	private void Reroute()
 	{
 		Reroutes++;
@@ -247,19 +306,19 @@ public sealed class GuestNavigation
 	}
 
 	/// <summary>
-	/// One steering step. <paramref name="isOpen"/> tells whether a cell is walkable for the guest; it decides the
+	/// One steering step of a walk along an explicit route (the Mac model of WALK-plan §3–§7). <paramref name="isOpen"/> tells whether a cell is walkable for the guest; it decides the
 	/// walls and the position commit (ignored <see cref="OffGrid"/>). <paramref name="separation"/> returns the summed
 	/// neighbour push (<see cref="Separation"/>) when the traced on/off rule asks for it; null means no neighbours.
 	/// Returns the walk step's result: true when the guest has arrived, tested on the position at the start of the step
 	/// (the step still moves).
 	/// </summary>
+	// [APPROX:WALK-006] queue walks (states 12 and 13), the arrival lanes' walks (WALK-008) and walks restored from saves made before the original walk keep OpenTPW's route walk: the route's cells (and a queue walk's next queue cells ahead and behind) are the walkable ones, avoid_walls has its edge branch only (with the probe's cell), refills come from the stored route, the stuck reroute prepends the current cell to the rest, progress compares raw remaining distances in the five-waypoint window, and the Mac's rounding FixMul/FixDiv apply; in the original every walk is the search and edge-test walk of Navigate, a step from a queue cell being open (edge test 0x4d8750) into a path, queue or queue-end neighbour whose +0x0C link points back, or into a 0x1e walkway unless the mask is 2 — still open: OpenTPW's queue cells carry no +0x0C neighbour links (the original's queue tool writes them, QUEUE-003) and its ride entrance cells no type, so the edge test cannot run on a queue walk
 	public bool Step( int maxSpeed, int maxForce, Func<int, int, bool> isOpen, Func<GuestNavigation, (int X, int Y)>? separation = null )
 	{
 		// avoid_walls (0xfdc70): probe = position + velocity; a blocked edge of the probe cell in the direction of motion
 		// (zero counts as positive) within the radius pushes back with 2 x the penetration, perpendicular to the edge. The
 		// edges are tried in the order +x, -x, +y, -y and the first that pushes is the whole force (each branch ends with
 		// b 0xfe5f0: 0xfde78, 0xfdee4, 0xfdf64, 0xfdfe0).
-		// [APPROX:WALK-002] avoid_walls (tp.exe 0x50e4a0, Mac 0xfdc70) models only its edge branch (the first pushing edge of +x, -x, +y, -y, 2 x the penetration) and takes the cell of the probe; the original takes the cell of the position (0x5104b0 on walk +8/+0xc, 0x50e4eb) and, when no edge pushes, runs one corner block for that cell's corner in the motion quadrant (0x50e75e, 0x50e8b3, 0x50ea07, 0x50eb5e) with the ray test 0x50cc20, which OpenTPW leaves out — still open: the corner branch and the position cell are not ported
 		var probeX = X + VelocityX;
 		var probeY = Y + VelocityY;
 		int wallX = 0, wallY = 0;
@@ -294,7 +353,6 @@ public sealed class GuestNavigation
 		}
 
 		// follow_path (0xfe628).
-		// [APPROX:WALK-007] no map-edit reroute: the original stamps the 16 x 16-cell block of a changed cell with a global counter (0x4d8c50/0x4d8c60, from 0x5346d0, 0x538fc0, 0x5348d0 and 0x4de1f0), and every walk step follow_path (0x50ed10) compares the stamp of the guest's block (0x4d8cd0) with the walk's +72 (0x50ed6c) and searches again (0x50f8e0 mode 1); a failed search sets +184 and ends the walk as arrived; OpenTPW reroutes only on the stuck rule — still open: no block stamps in OpenTPW
 		if ( !Arrived && Count > 0 && PreviousRemaining != 0 && StuckBits() * Fixed16.One / StuckWindow >= StuckFraction )
 			Reroute();
 		int pathX, pathY, goalX = TargetX, goalY = TargetY;
@@ -369,7 +427,6 @@ public sealed class GuestNavigation
 			History = ((History << 1) | 1) & 0x7fff;
 
 		// Progress (0xff738) against the current waypoint: a history bit when it did not improve.
-		// [APPROX:WALK-009] the progress history compares raw remaining distances inside the five-waypoint window and skips the first step after route setup; the original's progress is ONE - trunc(remaining x ONE / +160) (0x50fd40; ONE when arrived or +160 is 0), where +160 is the whole route's octile length from the position at setup or refill, compared (<=) with +172 (0x50f5c7), which setup and every refill reset to 0 together with the history +176 (0x50f8e0) — still open: the full-route length +160 and the resets are not ported (refill timing: WALK-004)
 		if ( Count > 0 )
 		{
 			var remaining = Remaining();
@@ -381,6 +438,310 @@ public sealed class GuestNavigation
 	}
 
 	private int StuckBits() => System.Numerics.BitOperations.PopCount( (uint)(History & 0x7fff) );
+
+	// ---- The tp.exe walk (Original) ---------------------------------------------------------------------------------
+
+	[ThreadStatic] private static List<(int X, int Y)>? searchPath;
+
+	/// <summary>The octile length between the centres of two waypoint cells (<c>0x50CD80</c>, then |dx| + |dy| − min / 2).</summary>
+	private static int SegmentLength( (int X, int Y) a, (int X, int Y) b ) => Fixed16.Octile( (b.X - a.X) << 16, (b.Y - a.Y) << 16 );
+
+	/// <summary>The cell of a 16.16 position as the original takes it (<c>0x5104B0</c>: the high halves).</summary>
+	private static (int X, int Y) CellByte( int x, int y ) => ((x >> 16) & 0xFF, (y >> 16) & 0xFF);
+
+	/// <summary>
+	/// SetDest (tp.exe <c>0x510100</c>): a walk to the 16.16 point (<paramref name="targetX"/>, <paramref name="targetY"/>) from the
+	/// walker's cell, searched on <paramref name="map"/> with <see cref="Mask"/> (<see cref="WalkSearch"/>). False when the search
+	/// fails: the walk then stands arrived and stuck. <paramref name="route"/> and <paramref name="alsoOpen"/> are the caller's own
+	/// cells for the walk, kept as bookkeeping (<see cref="WalkCrossings"/> for the M3 gate) and not read by the step.
+	/// </summary>
+	public bool Navigate( ParkCellMap map, int targetX, int targetY, IReadOnlyList<(int X, int Y)>? route = null, IReadOnlyList<(int X, int Y)>? alsoOpen = null )
+	{
+		Original = true;
+		Route = route?.ToArray() ?? [];
+		Cursor = 0;
+		WalkCrossings = Math.Max( 0, Route.Length - 1 );
+		AlsoOpen = alsoOpen?.ToArray() ?? [];
+		PreviousRemaining = -1;
+		return Setup( map, targetX, targetY, reroute: false );
+	}
+
+	/// <summary>
+	/// The walk set-up <c>0x50F8E0</c>: a search from the walker's cell to the target's; mode 1 (<paramref name="reroute"/>, the stuck
+	/// and changed-ground reroutes) puts the current cell in front of the result. The first five waypoints are buffered and the
+	/// lengths of the progress measure computed; the progress, its history, the waypoint index, the arrival and the stuck flag reset,
+	/// and the walk takes the cell map's stamp counter. A failed search leaves the walk arrived and stuck with no waypoints.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0050F8E0 walk set-up] start bytes = position >> 16, goal = target >> 16; 0x511420 with the mask +0xB4; on 0x70000000: +0x4C/+0x50 = target, +0x54, +0x58, +0xA0..+0xB0, +0x5C = 0, +0x60 = 1, +0xB8 = 1, return 0; mode 1 shifts the result one place and puts the position's cell first (count + 1 below 0xFC); +0x54 = count, +0x58 = min(count, 5); +0xA0 = octile(waypoint 0 − position) + every segment; +0x64.. the buffered centres (cell << 16 | 0x8000); +0x8C.. and +0xA4 the buffered segments; +0xA8 the segments beyond; +0xAC, +0xB0, +0x5C, +0x60, +0xB8 = 0; +0x48 = the stamp counter 0x4D8C50
+	private bool Setup( ParkCellMap map, int targetX, int targetY, bool reroute )
+	{
+		var path = searchPath ??= new List<(int X, int Y)>();
+		var start = CellByte( X, Y );
+		var goal = CellByte( targetX, targetY );
+		TargetX = targetX;
+		TargetY = targetY;
+		if ( !WalkSearch.Find( map, start, goal, Mask, path ) )
+		{
+			PathCount = 0;
+			Count = 0;
+			Total = Ahead = Beyond = Progress = History = 0;
+			Index = 0;
+			Arrived = true;
+			Stuck = true;
+			return false;
+		}
+		if ( reroute )
+		{
+			path.Insert( 0, start );
+			if ( path.Count > 0xFC )
+				path.RemoveAt( path.Count - 1 );
+		}
+		PathCount = path.Count;
+		Count = Math.Min( PathCount, BufferedWaypoints );
+		var (firstX, firstY) = Centre( path[0] );
+		Total = Fixed16.Octile( firstX - X, firstY - Y );
+		for ( var index = 0; index + 1 < PathCount; index++ )
+			Total += SegmentLength( path[index], path[index + 1] );
+		for ( var index = 0; index < Count; index++ )
+			Buffer[index] = path[index];
+		Ahead = 0;
+		for ( var index = 0; index + 1 < Count; index++ )
+			Ahead += SegmentLength( path[index], path[index + 1] );
+		Beyond = 0;
+		for ( var index = Count - 1; index + 1 < PathCount; index++ )
+			Beyond += SegmentLength( path[index], path[index + 1] );
+		Progress = 0;
+		History = 0;
+		Index = 0;
+		Arrived = false;
+		Stuck = false;
+		Stamp = map.StampCounter;
+		return true;
+	}
+
+	/// <summary>
+	/// The progress <c>0x50FD40</c>: ONE once arrived or for a route of length 0, else ONE − trunc(remaining × ONE / <see cref="Total"/>)
+	/// with the remaining length from the position to the current waypoint plus <see cref="Ahead"/> and <see cref="Beyond"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0050FD40 progress] +0x60 == 1 gives 0x10000; remaining = octile(+0x64[+0x5C] − position) + +0xA4 + +0xA8; +0xA0 == 0 gives 0x10000; else 0x10000 − (remaining << 16) / +0xA0 (idiv)
+	public int ProgressValue()
+	{
+		if ( Arrived )
+			return Fixed16.One;
+		var (wx, wy) = Centre( Buffer[Math.Clamp( Index, 0, BufferedWaypoints - 1 )] );
+		var remaining = Fixed16.Octile( wx - X, wy - Y ) + Ahead + Beyond;
+		if ( Total == 0 )
+			return Fixed16.One;
+		return unchecked(Fixed16.One - (int)(((long)remaining << 16) / Total));
+	}
+
+	/// <summary>
+	/// avoid_walls <c>0x50E4A0</c> for a walker at (<paramref name="x"/>, <paramref name="y"/>) moving with (<paramref name="velocityX"/>,
+	/// <paramref name="velocityY"/>): the probe is the position plus the velocity, the cell is the position's. The first edge of that
+	/// cell in the direction of motion (zero counts as positive; +X or −X, then +Y or −Y) that <see cref="WalkEdges.Blocked"/> calls
+	/// blocked and the probe penetrates within the radius pushes back with twice the penetration. Else the corner of the motion's
+	/// quadrant pushes when its diagonal cell is cut off from one of the cell's two neighbours on that side while both connect to the
+	/// cell: where the velocity's ray (direction FixDiv(v, |v|)) meets the circle of the radius around the corner within |v|, the force
+	/// is (hit point − corner) / radius.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0050E4A0 avoid_walls] probe 0x50F870 (position + FixMul(velocity, ONE)); cell 0x5104B0 of +8/+0xC; direction = velocity / length (0x50E080) unless the length is 0; edges +X (limit (cx + 1) << 16 − radius, probe above it), −X (cx << 16 + radius, probe below), +Y, −Y, the first pushing returns 2 × (limit − probe); corners by quadrant (+X+Y 0x50E75E, −X+Y 0x50E8B3, −X−Y 0x50EA07, +X−Y 0x50EB5E): the diagonal cell blocked towards the cell's row or column, both side cells open towards the cell, the ray 0x50CC20 hitting at t with 0 < t <= length gives FixDiv(position + FixMul(direction, t) − corner, radius)
+	public static (int X, int Y) AvoidWallsOriginal( ParkCellMap map, int x, int y, int velocityX, int velocityY, int mask, int radius )
+	{
+		var probeX = unchecked(x + Fixed16.PcMul( velocityX, Fixed16.One ));
+		var probeY = unchecked(y + Fixed16.PcMul( velocityY, Fixed16.One ));
+		int cx = x >> 16, cy = y >> 16;
+		int vx = unchecked(probeX - x), vy = unchecked(probeY - y);
+		var length = Fixed16.Length( vx, vy );
+		int dx = vx, dy = vy;
+		if ( length != 0 )
+			(dx, dy) = (Fixed16.PcDiv( vx, length ), Fixed16.PcDiv( vy, length ));
+		var xPositive = dx >= 0;
+		var yPositive = dy >= 0;
+		bool Blocked( int cellX, int cellY, int direction ) => WalkEdges.Blocked( map, cellX, cellY, direction, mask );
+		if ( xPositive && Blocked( cx, cy, 1 ) )
+		{
+			var limit = unchecked(((cx + 1) << 16) - radius);
+			if ( probeX > limit )
+				return (unchecked((limit - probeX) * 2), 0);
+		}
+		if ( !xPositive && Blocked( cx, cy, 3 ) )
+		{
+			var limit = unchecked((cx << 16) + radius);
+			if ( probeX < limit )
+				return (unchecked((limit - probeX) * 2), 0);
+		}
+		if ( yPositive && Blocked( cx, cy, 2 ) )
+		{
+			var limit = unchecked(((cy + 1) << 16) - radius);
+			if ( probeY > limit )
+				return (0, unchecked((limit - probeY) * 2));
+		}
+		if ( !yPositive && Blocked( cx, cy, 0 ) )
+		{
+			var limit = unchecked((cy << 16) + radius);
+			if ( probeY < limit )
+				return (0, unchecked((limit - probeY) * 2));
+		}
+		(int X, int Y)? Corner( (int X, int Y) diagonal, int first, int second, (int X, int Y) side1, int toCell1, (int X, int Y) side2, int toCell2, int cornerX, int cornerY )
+		{
+			if ( !Blocked( diagonal.X, diagonal.Y, first ) && !Blocked( diagonal.X, diagonal.Y, second ) )
+				return null;
+			if ( Blocked( side1.X, side1.Y, toCell1 ) || Blocked( side2.X, side2.Y, toCell2 ) )
+				return null;
+			var t = Ray( x, y, dx, dy, cornerX, cornerY, radius );
+			if ( t <= 0 || t > length )
+				return null;
+			var hitX = unchecked(x + Fixed16.PcMul( dx, t ));
+			var hitY = unchecked(y + Fixed16.PcMul( dy, t ));
+			return (Fixed16.PcDiv( unchecked(hitX - cornerX), radius ), Fixed16.PcDiv( unchecked(hitY - cornerY), radius ));
+		}
+		(int X, int Y)? force = null;
+		if ( yPositive && xPositive )
+			force = Corner( (cx + 1, cy + 1), 0, 3, (cx, cy + 1), 0, (cx + 1, cy), 3, (cx + 1) << 16, (cy + 1) << 16 );
+		if ( force == null && yPositive && !xPositive )
+			force = Corner( (cx - 1, cy + 1), 0, 1, (cx, cy + 1), 0, (cx - 1, cy), 1, cx << 16, (cy + 1) << 16 );
+		if ( force == null && !yPositive && !xPositive )
+			force = Corner( (cx - 1, cy - 1), 2, 1, (cx - 1, cy), 1, (cx, cy - 1), 2, cx << 16, cy << 16 );
+		if ( force == null && !yPositive && xPositive )
+			force = Corner( (cx + 1, cy - 1), 2, 3, (cx + 1, cy), 3, (cx, cy - 1), 2, (cx + 1) << 16, cy << 16 );
+		return force ?? (0, 0);
+	}
+
+	/// <summary>
+	/// The ray test <c>0x50CC20</c>: where the ray from (x, y) along (dx, dy) meets the circle of <paramref name="radius"/> around the
+	/// corner, as the original computes it (FixMul throughout, the square root of the 16.16 discriminant taken as an integer, the
+	/// nearer root halved); <see cref="int.MinValue"/> when it misses.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0050CC20 ray test] m = position − corner; a = d·d, b = 2 (d·m), c = m·m − r·r (FixMul each); disc = FixMul(b, b) − 4 FixMul(a, c); disc <= 0 returns 0x80000000; s = isqrt(disc) (0x4D49A0); min(s − b, −(s + b)) >> 1
+	private static int Ray( int x, int y, int dx, int dy, int cornerX, int cornerY, int radius )
+	{
+		unchecked
+		{
+			int mx = x - cornerX, my = y - cornerY;
+			var a = Fixed16.PcMul( dx, dx ) + Fixed16.PcMul( dy, dy );
+			var b = (Fixed16.PcMul( dx, mx ) + Fixed16.PcMul( dy, my )) * 2;
+			var c = Fixed16.PcMul( mx, mx ) + Fixed16.PcMul( my, my ) - Fixed16.PcMul( radius, radius );
+			var discriminant = Fixed16.PcMul( b, b ) - Fixed16.PcMul( a, c ) * 4;
+			if ( discriminant <= 0 )
+				return int.MinValue;
+			var root = (int)Math.Sqrt( (uint)discriminant );
+			int near = root - b, far = -(root + b);
+			return (far <= near ? far : near) >> 1;
+		}
+	}
+
+	/// <summary>
+	/// follow_path <c>0x50ED10</c>: the changed-ground reroute (the stamp of the walker's 16 × 16-cell block above the walk's), the stuck
+	/// reroute (6 of the last 15 history bits while the progress is short of ONE), then the waypoint step: on the last waypoint arrival
+	/// within 0.32 cell of the target and the arrival ramp towards it; before it, passing a waypoint within 0.4 cell, a refill by a
+	/// new search once the five are used, and the pull towards the current waypoint's centre. Arrived (or no waypoints): −velocity.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0050ED10 follow_path] stamp 0x4D8CD0(x >> 20, y >> 20) above +0x48 sets up again in mode 1 (failure: +0xB8 = 1, "The ground changed under this peep"); unless arrived, a remaining measure short of ONE with the 0x50FD40 progress short of ONE counts the history bits 0..14, (bits << 32) / 0xF0000 above 0x6665 sets up in mode 1 (failure: +0xB8 = 1); with waypoints and not arrived: index == +0x54 − 1 aims at +0x4C/+0x50 and arrives at octile < FixMul(radius, 0x19999); else a waypoint centre within octile < FixMul(radius, 0x20000) is passed (+0xA4 −= its segment), and the index reaching +0x58 sets up in mode 0; below +0x54 − 1 the force is (aim − position) − velocity, else the ramp min(FixDiv(|aim − position|, 2.0), +0x1C) along it less the velocity; otherwise −velocity (0x50F1A0)
+	private (int X, int Y) FollowPathOriginal( ParkCellMap map, int maxSpeed )
+	{
+		if ( Stamp < map.BlockStamp( X >> 20, Y >> 20 ) )
+		{
+			Reroutes++;
+			if ( !Setup( map, TargetX, TargetY, reroute: true ) )
+				Stuck = true;
+		}
+		if ( !Arrived && ProgressValue() != Fixed16.One )
+		{
+			var ratio = (int)(((long)StuckBits() << 32) / 0xF0000);
+			if ( ratio > 0x6665 )
+			{
+				Reroutes++;
+				if ( !Setup( map, TargetX, TargetY, reroute: true ) )
+					Stuck = true;
+			}
+		}
+		if ( PathCount == 0 || Arrived )
+			return (-VelocityX, -VelocityY);
+		int goalX, goalY;
+		if ( Index == PathCount - 1 )
+		{
+			(goalX, goalY) = (TargetX, TargetY);
+			if ( Fixed16.Octile( goalX - X, goalY - Y ) < Fixed16.PcMul( Radius, ArrivalFactor ) )
+				Arrived = true;
+		}
+		else
+		{
+			(goalX, goalY) = Centre( Buffer[Index] );
+			if ( Fixed16.Octile( goalX - X, goalY - Y ) < Fixed16.PcMul( Radius, WaypointFactor ) )
+			{
+				Ahead -= Index + 1 < Count ? SegmentLength( Buffer[Index], Buffer[Index + 1] ) : 0;
+				Index++;
+				if ( Index == Count )
+					Setup( map, TargetX, TargetY, reroute: false );
+			}
+			(goalX, goalY) = Centre( Buffer[Math.Min( Index, BufferedWaypoints - 1 )] );
+		}
+		var offsetX = goalX - X;
+		var offsetY = goalY - Y;
+		if ( Index < PathCount - 1 )
+			return (Fixed16.PcMul( offsetX, Fixed16.One ) - VelocityX, Fixed16.PcMul( offsetY, Fixed16.One ) - VelocityY);
+		var size = Fixed16.Length( offsetX, offsetY );
+		if ( size == 0 )
+			return (0, 0);
+		var desired = Math.Min( Fixed16.PcDiv( size, RampDivisor ), maxSpeed );
+		var scale = Fixed16.PcDiv( desired, size );
+		return (Fixed16.PcMul( offsetX, scale ) - VelocityX, Fixed16.PcMul( offsetY, scale ) - VelocityY);
+	}
+
+	/// <summary>
+	/// One step of an <see cref="Original"/> walk (<c>0x50F3B0</c>, through the walk step <c>0x4FA2A0</c>): the three forces with the
+	/// original's arithmetic, the velocity, the position committed through <see cref="WalkEdges.Commit"/> (a refused step adds a
+	/// history bit), then the progress and its history bit. Stuck when a search of the walk failed, else arrived when the progress is ONE.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0050F3B0 steering step] behaviours in list order (avoid_walls 0xE666, follow_path 0x8000, separation), each truncated to +0x18 (0x50F600) and FixMul-weighted; the sum truncated to +0x18 and FixDiv by ONE; +0x10 = truncate(+0x10 + force, +0x1C); the commit 0x510510 from the old position's cell to the new one's with +0xB4 (refused: +0xB0 = +0xB0 << 1 | 1, the position kept); then +0xB0 = +0xB0 << 1 | (0x50FD40 <= +0xAC) and +0xAC = the progress
+	// [BIN:TPW-EXE:0x004FA2A0 walk step] the steering step, then 2 when +0x18C (walk +0xB8) is set, 0 when 0x50FD40 is ONE, else 1
+	private WalkResult StepOriginal( int maxSpeed, int maxForce, ParkCellMap map, Func<GuestNavigation, (int X, int Y)>? separation )
+	{
+		var (wallX, wallY) = AvoidWallsOriginal( map, X, Y, VelocityX, VelocityY, Mask, Radius );
+		var (pathX, pathY) = FollowPathOriginal( map, maxSpeed );
+		// separation (0x50E0E0): off on the last waypoint (or once arrived) within ONE + radius of the current waypoint's centre.
+		int pushX = 0, pushY = 0;
+		if ( separation != null )
+		{
+			var (wx, wy) = Centre( Buffer[Math.Clamp( Index, 0, BufferedWaypoints - 1 )] );
+			var near = Fixed16.Octile( X - wx, Y - wy ) <= Fixed16.One + Radius;
+			if ( !((Index == PathCount - 1 || Arrived) && near) )
+				(pushX, pushY) = separation( this );
+		}
+		var (ax, ay) = Fixed16.PcTruncate( wallX, wallY, maxForce );
+		var (fx, fy) = Fixed16.PcTruncate( pathX, pathY, maxForce );
+		var (sx, sy) = Fixed16.PcTruncate( pushX, pushY, maxForce );
+		var totalX = Fixed16.PcMul( ax, AvoidWallsWeight ) + Fixed16.PcMul( fx, FollowPathWeight ) + Fixed16.PcMul( sx, SeparationWeight );
+		var totalY = Fixed16.PcMul( ay, AvoidWallsWeight ) + Fixed16.PcMul( fy, FollowPathWeight ) + Fixed16.PcMul( sy, SeparationWeight );
+		var (forceX, forceY) = Fixed16.PcTruncate( totalX, totalY, maxForce );
+		(forceX, forceY) = (Fixed16.PcDiv( forceX, Fixed16.One ), Fixed16.PcDiv( forceY, Fixed16.One ));
+		(VelocityX, VelocityY) = Fixed16.PcTruncate( VelocityX + forceX, VelocityY + forceY, maxSpeed );
+		var newX = unchecked(X + VelocityX);
+		var newY = unchecked(Y + VelocityY);
+		var from = ((int)((uint)X >> 16), (int)((uint)Y >> 16));
+		var to = ((int)((uint)newX >> 16), (int)((uint)newY >> 16));
+		// 0x510870: −1 for a cell outside the map (0..127; a smaller OpenTPW map ends at its own edge)
+		var fromCell = map.InBounds( from.Item1, from.Item2 ) ? from : (-1, -1);
+		(int X, int Y)? toCell = map.InBounds( to.Item1, to.Item2 ) ? to : null;
+		if ( WalkEdges.Commit( map, fromCell, toCell, Mask ) )
+			(X, Y) = (newX, newY);
+		else
+			History = ((History << 1) | 1) & 0x7fff;
+		var progress = ProgressValue();
+		History = ((History << 1) | (progress <= Progress ? 1 : 0)) & 0x7fff;
+		Progress = progress;
+		if ( Stuck )
+			return WalkResult.Stuck;
+		return progress == Fixed16.One ? WalkResult.Arrived : WalkResult.Walking;
+	}
+
+	/// <summary>
+	/// The walk step for a guest: an <see cref="Original"/> walk steps on <paramref name="map"/>; any other (an explicit route) steps as
+	/// <see cref="Step(int, int, Func{int, int, bool}, Func{GuestNavigation, (int X, int Y)}?)"/> with <paramref name="isOpen"/>.
+	/// </summary>
+	public WalkResult Step( int maxSpeed, int maxForce, ParkCellMap map, Func<int, int, bool> isOpen, Func<GuestNavigation, (int X, int Y)>? separation = null ) =>
+		Original ? StepOriginal( maxSpeed, maxForce, map, separation )
+			: Step( maxSpeed, maxForce, isOpen, separation ) ? WalkResult.Arrived : WalkResult.Walking;
 
 	/// <summary>Every field the next step reads, for <see cref="WorldStateHash"/>.</summary>
 	internal void AddCanonicalState( StateHasher hash )
@@ -404,6 +765,51 @@ public sealed class GuestNavigation
 		hash.Add( AlsoOpen.Length );
 		foreach ( var (x, y) in AlsoOpen )
 			hash.Add( x * 4096L + y );
+		hash.Add( Mask );
+		// The original walk's own fields join the digest for walks of that kind.
+		if ( !Original )
+			return;
+		hash.Add( Stuck );
+		hash.Add( Stamp );
+		hash.Add( PathCount );
+		hash.Add( Total );
+		hash.Add( Ahead );
+		hash.Add( Beyond );
+		hash.Add( Progress );
+		// Every slot: a failed set-up keeps the old ones and separation reads the first.
+		foreach ( var (x, y) in Buffer )
+			hash.Add( x * 4096L + y );
+	}
+
+	/// <summary>The original walk's fields for a snapshot, or null for a route walk.</summary>
+	internal OriginalWalkSnapshot? CaptureOriginal() => !Original ? null : new OriginalWalkSnapshot
+	{
+		Stuck = Stuck,
+		Stamp = Stamp,
+		PathCount = PathCount,
+		Total = Total,
+		Ahead = Ahead,
+		Beyond = Beyond,
+		Progress = Progress
+	};
+
+	/// <summary>Restores what <see cref="CaptureOriginal"/> recorded (null: a route walk).</summary>
+	internal void RestoreOriginal( OriginalWalkSnapshot? walk )
+	{
+		Original = walk != null;
+		if ( walk == null )
+		{
+			Stuck = false;
+			Stamp = PathCount = Total = Ahead = Beyond = Progress = 0;
+			return;
+		}
+		Stuck = walk.Stuck;
+		Stamp = walk.Stamp;
+		PathCount = walk.PathCount;
+		Total = walk.Total;
+		Ahead = walk.Ahead;
+		Beyond = walk.Beyond;
+		Progress = walk.Progress;
 	}
 }
 

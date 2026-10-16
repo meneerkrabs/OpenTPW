@@ -37,7 +37,7 @@ public class UiScreen
 
 	/// <summary>Whether the right click leaves a modal screen: the RMBCancelOn option (+0x39, default on) is set.</summary>
 	// [BIN:TPW-EXE:0x488aa1 RMBCancelOn] the original's screens (camcorder 0x488aa1, ride view 0x48a7ab, 0x48aadb) leave on a right click only when the option [0x78d911] is set; the option's other reader is the park view's mouse procedure 0x4881a0 (a quick right click cancels the tool and mode there)
-	// [APPROX:UI-012] OpenTPW's other windows read it as well; the original's modal windows and object window do not read the option
+	// [EXT:ui-modal-right-click-back] OpenTPW's other windows read the RMBCancelOn option as well; the original's modal windows and object window do not read it (docs/UI.md)
 	public static bool RightCancels( UiInput input ) => input.RightPressed && GameOptions.Current.RmbCancel;
 
 	public T Add<T>( T element ) where T : UiElement
@@ -76,7 +76,7 @@ public class UiScreen
 		Modal || elements.Any( element => element.Visible && element.ScreenRect( canvas ).Contains( point ) );
 
 	/// <summary>Handles one frame of input; returns true when the input was consumed.</summary>
-	// [APPROX:UI-012] hover focus follows the pointer, and the right click backs out of a modal screen when the RMBCancelOn option (+0x39, default 1) is set; the option's only direct readers in the original are the park view 0x4881a0, the camcorder 0x488aa1 and the ride view 0x48a7ab/0x48aadb — evidence needed: whether the original's modal windows react to a right click at all
+	// [EXT:ui-modal-right-click-back] hover focus follows the pointer, and the right click backs out of a modal screen when the RMBCancelOn option (+0x39, default 1) is set; the option's only direct readers in the original are the park view 0x4881a0, the camcorder 0x488aa1 and the ride view 0x48a7ab/0x48aadb, so this is OpenTPW's uniform back-out
 	public virtual bool Update( UiContext context, UiInput input )
 	{
 		if ( IsRemoved )

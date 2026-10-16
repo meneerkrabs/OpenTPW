@@ -116,6 +116,28 @@ public class ParkRatingValueTests
 	}
 
 	[TestMethod]
+	public void TheBigParkCountsObjectEntranceExitAndStructureCellsOwnedOrNot()
+	{
+		// 0x4cd7f0: the cells of type 4, 9, 10 or 21 or under a counted structure; unlike the net worth it ignores the unowned flag
+		var park = EconomyTestData.Park();
+		Assert.IsNull( park.CoveredCells(), "no cell map" );
+		var cells = new ParkCellMap( 4, 4 );
+		park.Litter.Cells = cells;
+		Assert.AreEqual( 0, park.CoveredCells() );
+		cells.SetType( 0, 0, ParkCellTypes.Object );
+		cells.SetType( 1, 0, ParkCellTypes.Entrance );
+		cells.SetType( 2, 0, ParkCellTypes.Exit );
+		cells.SetType( 3, 0, 21 );
+		cells.SetType( 0, 1, ParkCellType.Path );
+		cells.SetType( 1, 1, ParkCellTypes.Water );
+		cells.SetFlags( 0, 0, ParkCellFlags.Unowned );
+		Assert.AreEqual( 4, park.CoveredCells() );
+		var builder = new TrackBuilder( cells, TrackFamily.Kart, () => null, new FlatGrid() );
+		Assert.AreEqual( CellBuildResult.Ok, builder.PlaceTile( 2, 2 ) );
+		Assert.AreEqual( 4 + 4, park.CoveredCells(), "a track tile and its three extensions" );
+	}
+
+	[TestMethod]
 	public void ATrackTileCountsFiftyThroughItsOrigin()
 	{
 		var park = EconomyTestData.Park();

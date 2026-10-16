@@ -120,7 +120,7 @@ public sealed class ParkObjects
 	public bool IsOccupied( int x, int y ) => occupied.ContainsKey( (x, y) ) || IsReserved?.Invoke( x, y ) == true;
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
-	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap with objects, paths and queues (IsReserved) + owned land; no slope rule, as the validator 0x535670 has no float operation; Level.PlaceObject enforces economy purchases. The validator accepts an object cell (type 4) over an existing path cell (its closing 'type 4 over type 1' test) where this port refuses any footprint cell that holds a path or queue — evidence needed: the placement's own pre-checks (0x528A70, ghost 0x5370E0, chooser 0x539760) and what 0x53AE00 / 0x53AE90 refuse
+	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + save paths/objects + no overlap with objects, paths and queues (IsReserved) + owned land; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases. The validator accepts an object cell (type 4) over an existing path cell (its closing 'type 4 over type 1' test) where this port refuses any footprint cell that holds a path or queue — evidence needed: 0x535670's object branches (ride cells 4/9/10 against the count 0x818c10, the entrance/exit cells 9/10 and their path cell 0x5286a0, the cost test 0x52fbc0), the placement's own pre-checks (0x528A70, ghost 0x5370E0, chooser 0x539760) and what 0x53AE00 / 0x53AE90 refuse
 	// [BIN:TPW-EXE:0x5357c7 placement validator] after its early returns for a few tool modes the validator 0x535670 refuses a cell with flag 0x40 for whatever it places, paths, queues and objects alike
 	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
@@ -301,6 +301,9 @@ public sealed class ParkObjects
 
 	public void Simulate( double deltaSeconds )
 	{
+		// [BIN:TPW-EXE:0x0054F55F world substep] the bump module ticks once per substep before every ride's script step (the RSSE tick 0x5516B0), whichever rides exist
+		ScriptWorld.Bumpers.HostDriven = true;
+		ScriptWorld.Bumpers.AdvanceModule( deltaSeconds );
 		foreach ( var item in objects )
 			item.Simulate( deltaSeconds );
 	}

@@ -36,7 +36,7 @@ low confidence); 17 has no known writer; the walk accepts 11, 13, 16, 18 and 25.
 | --- | --- | --- |
 | type | +8 | cell type (above); the map's own type byte stays in sync, so guests and the object rules see an occupied cell |
 | mask | +0xC | connections: 0x01 −Y, 0x04 +X, 0x10 +Y, 0x40 −X |
-| link | +0xD | flow heading bit the last walk moved along here (ORed when a crossing is walked twice) |
+| link | +0xD | flow heading bit: the line's drawing direction at lay time (ORed on a tile with more than two arms), rewritten by the walk at corners |
 | flags | +0xE | bits 0–3 the bridge state, 0x10 add-on (TRACK-008); OpenTPW keeps 0x20 for "replaced path cells" (TRACK-010) |
 | parent | +0x10 | origin cell index in an extension cell |
 | family/piece/rotation | +0x14/+0x18/+0x1C | the chosen piece |
@@ -57,7 +57,7 @@ Adjustments, in order: (1) a straight with link 0x40 or 0x10 turns +180°; (2) p
 (0x04,0x05)} adds 16 (B → B2); (4) type 16 crossings: link 0x14 sets 90°, 0x41 adds 16, 0x50 sets 270° and adds 16 (X2, pieces 20–24). Types 4, 5,
 7, 9, 10, 12, 17 and the station tiles draw nothing.
 
-Bridges: a straight tile over the paths it cleared (TRACK-010) gets bit 1. The PC original (`[TPW-EXE:0x538A92]`) sets the bridge word on a kart or water
+Bridges: a tile with at most two arms and no corner (a straight, a single-arm end or an armless tile) over the paths it cleared (TRACK-010) gets bit 1. The PC original (`[TPW-EXE:0x538A92]`) sets the bridge word on a kart or water
 tile with at most two arms and no corner whose four map cells hold a path or queue, which stay in the map layer under the track; water is no bridge
 (inside the park water cells are map type 0), and only type 25 tests map types 2, 7 and 30, which exist only outside the park;
 the second pass (`[STP-PPC:0x1007A354]`) turns it into H (neither neighbour bridged), H_U (only ahead), H_D (only behind) or H_A (both), ahead
@@ -115,11 +115,14 @@ the second (`Exit`) is where the first line starts.
 
 ## The circuit walk (Q3)
 
-`TrackCircuitWalker`, `[TPW-EXE:0x52A970]`. From the start tile the walk follows the masks two cells at a time. Each step needs a track tile with at least
-two arms and an arm toward the flow; a bend leaves by the other arm and rewrites the link; a three- or four-arm tile continues straight ahead and fails
-when that arm is missing or the cell ahead has type 0 (**the tee refusal**). The original (read October 15) keeps the heading on every non-corner cell
-without testing arms, fails a three-arm cell when the cell two ahead has type 0 (or, by a literal bit test, is an armless track cell while the heading is
-0x01), has no step limit and numbers the steps from 0 (TRACK-014). The segment number goes to the tile. The circuit is
+`TrackCircuitWalker`, `[TPW-EXE:0x52A970]`. From the start tile the walk follows the masks two cells at a time. A cell that is not a track tile, has fewer than
+two arms or no heading fails the walk; a corner (two perpendicular arms) takes the new heading `mask ^ opposite(heading)` (the heading itself when the opposite
+arm is missing) and rewrites the flow link `+0xD`; every other cell keeps the heading without testing its arms. A three-arm cell fails when the cell two ahead
+has type 0 or is a track cell without arms while the heading has bit 0x01 (a literal bit test, `0x52B234..0x52B280`); a four-arm cell has no rule. The walk
+writes the 0-based step to `+0x24` and has no step limit in the original (OpenTPW cuts it off after as many steps as the layer has tiles plus the station, `[EXT:track-walk-step-limit]`; the readers of the step number are the track tool's edit sub-modes, TRACK-014). The cells
+are written in both of the original's modes. The flow link of a straight or junction is written at lay time by the line op (`0x539670`, op `0x82` of
+`0x53AAC0`): a tile with at most two arms takes the line's direction, a tile with more arms ORs it in (a crossing of two lines gets a two-bit link such as `0x14`, TRACK-004), and the
+station tiles take the heading of the rotation (`0x524F1E`), so a straight drawn against the flow keeps its drawing direction. The circuit is
 valid when the walk arrives back at the start tile; no minimum length. The result is the attraction's validity flag, which `BUMP 5` returns and which the
 park points counts-test and guest boarding read. A re-walk (commit mode) also resets the controller: boats leave, the ride closes
 (`[TPW-EXE:0x545450]`).
@@ -286,7 +289,7 @@ the tile's (bumper: the cell's) four corners and keeps the straight piece's floo
 
 Every tile records the ride it was laid for (`TrackCell.Owner`: the station's first-tile cell index plus one, saved and hashed; TRACK-021). A tile of one ride never
 connects to, links to or overwrites a tile of another, so two water rides can touch without sharing a circuit, and a demolition removes exactly the ride's own tiles
-and station. A circuit that overflows the section, collision-object or buoy pool (1024, 2048, 1024) is invalid whatever the walk said, with no geometry and no boats
+and station. The demolition pays as the original's (`0x527EE0`, TRACK-007): every tile laid for the ride refunds the track cell cost × the ride's scrap percentage / 100 (`ClearCell` `0x53B280` credits it at `0x53B622`; the two replays run with flag `0x81B46C` = 1, so end tiles refund too, and with the queue flag `0x81D7A8` clear, so a tile another line still overlaps stays until its last clearing visit) and the demolition then charges 2 × the cell cost × the percentage / 100 once (`0x528157..0x528179`), both only for a type with a queue. A circuit that overflows the section, collision-object or buoy pool (1024, 2048, 1024) is invalid whatever the walk said, with no geometry and no boats
 (TRACK-020). A controller counts as live while its runtime is not stopped and it is in the park's controller list; the park-resume capture and restore both use that
 one rule, so a faulted or removed ride is skipped by both.
 
@@ -295,15 +298,14 @@ controller read, one vehicle pool of 256 (`0x877B68`, first free record, `0x549D
 other live vehicle of the pool whichever ride owns them (the restitution is the other vehicle's controller's, the crash code the vehicle's own type), one collision-object pool of
 2048 (`0x877B70`, first free record, `0x54B1E0`) that every object search walks in pool order (the station drop, the steering's target and route, the walls and the
 keep-out circles), so a vehicle can enter a neighbouring ride's object (`BumpVehicle.ObjectOwner`), and the buoy budget of 1024 (`0x54B170`) counted over every ride. A circuit or arena
-that does not fit the shared pools is refused like an overflowing one. The module ticks once per world step where the first controller's ride advances. Saves carry the frame
+that does not fit the shared pools is refused like an overflowing one. The module ticks once per world step before every ride's script step (`0x54F55F`), driven by the object pass. Saves carry the frame
 counter and clock (`TrackWorldSaveData.FrameCount`, `TickRemainder`), each controller's object pool slots (`ObjectSlots`) and live buoy count (`BuoyCount`) and a vehicle's foreign object (`ObjectAttraction`), all optional:
 an older save takes the first controller's clock, the slots the restore gives and no foreign object. A vehicle's `Slot` is its module pool slot (an older save whose rides
 used the same slot gets the first free one; a save with the module clock must name slots unique across the rides). Because the shared pools' overflow verdicts depend on the
 order the rides were built in, a restore of a save with the module clock trusts the save (`[EXT:track-pool-overflow-refused]`): every vehicle and object keeps its saved slot,
 a ride saved invalid gets the station-only geometry even when its circuit walks valid now, a ride saved with no objects and no buoys stays without them, and no pool check runs
-on the restore's re-walk, so a park near the 2048-object or 1024-buoy limit loads as saved. A vehicle of another ride whose object is rebuilt or removed loses it (TRACK-019; the
-original keeps its stale pointer). Open (TRACK-019): the tick's place among the rides' script steps, an older save's pool order, and the bumper cars' chase and drop-in
-tests, which still read their own ride's cars.
+on the restore's re-walk, so a park near the 2048-object or 1024-buoy limit loads as saved. A vehicle of another ride whose object is rebuilt or removed loses it (`[EXT:bump-foreign-object-forget]`; the
+original keeps its stale pointer). The drop-in overlap test walks the whole vehicle pool (`0x54A040`); the chase candidates need the same controller as the original's.
 
 ## Saves and determinism
 
@@ -328,6 +330,9 @@ OpenTPW decisions with no original rule (`[EXT:name]` at the code sites):
 - `[EXT:track-pool-overflow-refused]` (was TRACK-020): a circuit that overflows the section, collision-object or buoy pool is refused. The original skips sections silently when the section pool
   is full, **crashes** when the collision-object pool overflows (it logs "Out of Collision Objects" and writes the flags through a null pointer, `0x54B1E0`, `0x54B97E`, `0x54BAC8`) and
   drops buoys ("Out of Buoys").
+- `[EXT:bump-foreign-object-forget]` (was part of `APPROX:TRACK-019`, now retired with the rest of it): a vehicle whose foreign object is rebuilt or removed loses it. The original keeps a pointer to the freed or reused pool record.
+- `[EXT:bump-pre-shared-save-order]` (was part of `APPROX:TRACK-019`): a park-resume save from before the shared pools restores their order from the restore (controllers by attraction id); kept so older saves load.
+- `[EXT:track-walk-step-limit]` (was part of TRACK-014): the circuit walk stops after as many steps as the layer has tiles plus the station. The original `0x52A970` has no limit and would hang on a flow that never returns to the start.
 - `[EXT:track-tile-owner]` (was TRACK-021): every tile records its ride (`TrackCell.Owner`). The original's 40-byte cell has no owner field; its vehicles can cross into a neighbour ride's adjacent objects (TRACK-019).
 - `[EXT:legacy-kart-save]` (was TRACK-027): a park-resume save from before the kart or bumper controllers restores its rides freshly (save compatibility).
 - `[EXT:late-kart-guard]` (was TRACK-028): `BUMP 4` on a kart ride in phase 3 is refused. The original creates a kart whose relaunch gives it no movement flags (`0x54A040`), so it never moves and keeps the
@@ -360,7 +365,7 @@ writes for the footprint codes (`0x532FC0`).
 ## Open points
 
 - Jumps and tunnels (TRACK-008: the add-ons are neither sold nor placed; their placement, sections and the teleport hook are read, see "Add-ons"), the edit
-  sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
+  sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition's replayed action list, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 

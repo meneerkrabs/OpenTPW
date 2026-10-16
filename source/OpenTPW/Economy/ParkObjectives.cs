@@ -34,7 +34,7 @@ public sealed class ParkCounters
 	public const string SideshowProfit = "profit:sideshow";
 }
 
-/// <summary>State of an offered or accepted challenge.</summary>
+/// <summary>State of an offered or accepted challenge; <c>Baseline</c> is the measure at acceptance of a count type, the running sum of the daily values of types 24, 25 and 27.</summary>
 public sealed record ActiveChallenge( int DefinitionIndex, long OfferedDay, bool Accepted, long StartDay, long DeadlineDay, long Baseline );
 
 /// <summary>
@@ -63,8 +63,7 @@ public enum GoldenTicketKind
 /// golden tickets. Data-driven: definitions, level order, prizes, target times/values/objects,
 /// follow-ups, <c>Independent</c>, <c>CheckAtEndOnly</c>, offer delays, declines to forfeit and every
 /// golden ticket threshold. The Easymode save stores the level's challenge list in exactly this order
-/// (docs/ECONOMY.md). <b>Approximations</b>: types 24, 25 and 27 compare the current value and some shop-sale
-/// details differ (ECON-034); declines count towards a forfeit (ECON-035); a follow-up does not keep the won
+/// (docs/ECONOMY.md). <b>Approximations</b>: a follow-up does not keep the won
 /// part's object (ECON-055); types without a progress source (23, 26) never complete.
 /// </summary>
 public sealed class ParkObjectives
@@ -83,6 +82,10 @@ public sealed class ParkObjectives
 	}
 
 	public long NextOfferDay { get; private set; }
+	/// <summary>
+	/// The challenge system's switch (+0x3d8): off until the park is open on or after day <c>DaysUntilFirstChallenge</c>; on, offers follow the next event time alone.
+	/// </summary>
+	public bool SwitchedOn { get; private set; }
 	public int NextListPosition { get; private set; }
 	public ActiveChallenge? Current { get; private set; }
 	public IReadOnlyCollection<int> Finished => finished;
@@ -103,10 +106,18 @@ public sealed class ParkObjectives
 		long Sold( int shopType, int ingredient = -1 ) => ingredient >= 0
 			? counters[ParkCounters.Sold( shopType, ingredient )]
 			: Enumerable.Range( 0, 5 ).Sum( value => counters[ParkCounters.Sold( shopType, value )] );
+		// [BIN:TPW-EXE:0x4c9d80 staff happiness] the average over the staff things (model types 4-8, or the one type 0x4c9cc0 is given) of the truncated low byte of the happiness single (+0x1F8), an integer division, 0 without staff
 		int AverageHappiness( StaffType? type )
 		{
 			var members = staff.Members.Where( member => type == null || member.Type == type ).ToList();
-			return members.Count == 0 ? 0 : (int)members.Average( member => member.Happiness );
+			return members.Count == 0 ? 0 : members.Sum( member => StaffVitals.Byte( member.Happiness ) ) / members.Count;
+		}
+		// [BIN:TPW-EXE:0x4ca160 toilet cleanliness] over the relief things (type 3, flag +0x32 bit 0) the integer average of 100 minus the low byte of the gauge single (+0x44), 0 without a toilet; the daily message 0x4d2860 (type 24) adds 100 minus that
+		int ToiletCleanliness()
+		{
+			var toilets = objects.Where( item => catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief ).ToList();
+			var dirtiness = toilets.Count == 0 ? 0 : toilets.Sum( item => 100 - StaffVitals.Byte( (float)item.Repair ) ) / toilets.Count;
+			return 100 - dirtiness;
 		}
 		// [BIN:STP-PPC:0x100F41DC staff skill] skill = trunc(20 × (grade + training percentage / 100)) in single precision; grade 4 at 0 % is 80
 		long SkillPercent( StaffType type )
@@ -115,13 +126,15 @@ public sealed class ParkObjectives
 			return members.Count == 0 ? 0 : (long)members.Average( member => ParkStaff.StaffSkill( member ) );
 		}
 		// [BIN:TPW-EXE:0x4d1660 challenge check] types 1-8, 11-13, 16, 17, 20 and 22 compare an accumulated value (the system's +0x3dc) with TargetVal; types 9 and 10 are 100 × the guests with a balloon or a costume (0x4c9530 / 0x4c95d0) / the census (0x4c9130)
-		// [APPROX:ECON-034] the challenge types follow tp.exe's accumulator writers (0x4d27a0 adds to +0x3dc only for the accepted slot of that type and object): a paid shop sale adds 1 by ShopType and SpecialIngredient (0x4e16b0: ShopType 1 type 5; SpecialIngredient 1, 2, 3, 4 of ShopType 2 or 4 types 2, 1, 3, 4; ShopType 3 type 8, 5 type 7, 6 type 6), shops and sideshows add price minus cost of goods to 12 and 13 (0x4e16b0, 0x4e1920), an admission 1 to 11 (0x4c7520), a researched ride 1 to 16 (0x4d2860), a ride use 1 to 17, 20 and 22 (0x501db0), and 14, 18 and 19 read the coasters' counted sections; but OpenTPW counts every ShopType 4 sale as a drink (3) and the ingredient types in ShopType 2 only (the same on the shipped data), and compares the current value for 24, 25 and 27, where tp.exe adds the toilet cleanliness, the average staff happiness or that of the challenge's staff type (27; OpenTPW always reads the handymen) at every kind-11 message and compares the sum divided by TargetTime (0x4d2860, 0x4d1660) — evidence needed: the sender and rate of the kind-11 message (types 24, 25, 27)
+		// [BIN:TPW-EXE:0x4e16b0 shop sale] a paid sale adds 1 to a challenge type by the shop's ShopType (+0x164) and SpecialIngredient (+0x158): ShopType 1 type 5; 2 or 4 by the ingredient 1, 2, 3, 4 to types 2, 1, 3, 4 (the jump tables 0x4e18e4 / 0x4e18fc); 3 type 8; 5 type 7; 6 type 6; a ShopType 2 or 4 sale with another ingredient and other ShopTypes add nothing
+		// [BIN:TPW-EXE:0x4d27a0 challenge accumulator] an event is added to the system's value (+0x3dc) only while a challenge is accepted and only into a slot of the event's type whose TargetObj equals the event's object, which a shop sale sets to 0 (the shipped challenges of types 1-8 have TargetObj 0)
+		// [BIN:TPW-EXE:0x4d2860 daily challenge message] the day message 0xb (the one 0x4dd320 rolls the attraction rings on) adds to the accumulator, for the accepted slot of that type, 100 minus the toilet cleanliness 0x4ca160 (type 24), the average happiness of all staff 0x4c9d80 (25) or of the staff type of TargetStaffType 0x4c9cc0 (27, handyman model 5, mechanic 4, entertainer 6, guard 7, researcher 8); 0x4d1660 compares TargetVal with the sum divided by TargetTime (signed integer division), so these three are daily sums (AdvanceDay), not the current value
 		return definition.Type switch
 		{
-			1 => Sold( 2, 2 ),   // fries: food shop with salt
-			2 => Sold( 2, 1 ),   // burgers: food shop with fat
-			3 => Sold( 4 ),      // drinks
-			4 => Sold( 2, 4 ),   // ice creams: food shop with sugar
+			1 => Sold( 2, 2 ) + Sold( 4, 2 ),   // special ingredient 2 of a ShopType 2 or 4 shop (fries: food shop with salt)
+			2 => Sold( 2, 1 ) + Sold( 4, 1 ),   // ingredient 1 (burgers: food shop with fat)
+			3 => Sold( 2, 3 ) + Sold( 4, 3 ),   // ingredient 3 (drinks)
+			4 => Sold( 2, 4 ) + Sold( 4, 4 ),   // ingredient 4 (ice creams: food shop with sugar)
 			5 => Sold( 1 ),      // gifts
 			6 => Sold( 6 ),      // balloons sold (approximates "kids with balloons")
 			7 => Sold( 5 ),      // costumes
@@ -144,9 +157,10 @@ public sealed class ParkObjectives
 			18 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
 			19 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
 			21 => Built( definition.TargetObject ) > 0 ? counters[ParkCounters.Record( ParkRecordKind.KartSections, definition.TargetObject )] : 0,
-			24 => counters[ParkCounters.Record( ParkRecordKind.ToiletCleanlinessPercent, 0 )],
+			// the day's value of the three daily-average types (summed by AdvanceDay)
+			24 => ToiletCleanliness(),
 			25 => AverageHappiness( null ),
-			27 => AverageHappiness( StaffType.Handyman ),
+			27 => AverageHappiness( (StaffType)Math.Clamp( definition.TargetStaffType, 0, 4 ) ),
 			// [BIN:STP-PPC:0x100CE754 challenge type 28] passes when TargetVal <= the highest upgrade level byte (+0x4C, 0 = base) of the target rides (0x100C5740, -1 when none)
 			28 => objects.Where( item => item.InfoId == definition.TargetObject ).Select( item => (long)item.Level ).DefaultIfEmpty( -1 ).Max(),
 			29 => SkillPercent( (StaffType)Math.Clamp( definition.TargetStaffType, 0, 4 ) ),
@@ -157,6 +171,9 @@ public sealed class ParkObjectives
 			_ => 0
 		};
 	}
+
+	/// <summary>Types whose daily value (<see cref="Measure"/>) is added up from the acceptance and compared as the sum divided by TargetTime (0x4d2860, 0x4d1660).</summary>
+	public static bool IsDailyAverage( int type ) => type is 24 or 25 or 27;
 
 	/// <summary>Types measured as a change since acceptance rather than an absolute value.</summary>
 	public static bool IsCountSinceAcceptance( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 17 or 20 or 22;
@@ -169,10 +186,18 @@ public sealed class ParkObjectives
 	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0, for which no reader is found): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again, without limit; the next offer waits DaysAfterCompletedChallenge as after a win
 	// [BIN:TPW-EXE:0x4d1e90 challenge day] nothing is offered, checked or timed out while an offer waits for its answer (+0x3da, set by 0x4d2a70 / 0x4d2b60), which only
 	// the accept 0x4d2df0 (accepted +0x3d9, the deadline from mTargetTime) or the decline 0x4d2ec0 clears
-	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure )
+	// [APPROX:ECON-058] an accepted challenge is evaluated once a day, and an idle system offers at the first day end after its next event time; the original's update 0x4d1e90 tests a running challenge on the park turns whose low two bits (+0x1da70c, 0x4d1f99) are not 0 and on the others only posts the progress message 0x4d3390 (tag 0x160) — evidence needed: what the message 0x160 feeds and the thing update's rate
+	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure, bool parkOpen = true )
 	{
 		if ( Current == null )
 		{
+			// [BIN:TPW-EXE:0x4d1e90 challenge system start] while the switch (+0x3d8) is off, the system offers only with the park open (0x4c9050: the park-closed word 0x1da710 clear) and the park's age in days (0x4f8800 / 864e9) at DaysUntilFirstChallenge (0x7857c8), then sets the switch and offers at once; afterwards only the next event time (+0x3d0) counts
+			if ( !SwitchedOn )
+			{
+				if ( !parkOpen || day < NextOfferDay )
+					yield break;
+				SwitchedOn = true;
+			}
 			if ( day >= NextOfferDay && settings.Challenges.Count > 0 && TryPickNext( out var index ) )
 			{
 				Current = new ActiveChallenge( index, day, false, 0, 0, 0 );
@@ -183,7 +208,15 @@ public sealed class ParkObjectives
 		if ( !Current.Accepted )
 			yield break;
 		var definition = settings.Challenges[Current.DefinitionIndex];
-		var value = measure( definition ) - (IsCountSinceAcceptance( definition.Type ) ? Current.Baseline : 0);
+		long value;
+		if ( IsDailyAverage( definition.Type ) )
+		{
+			// the baseline of these types is the running sum of the daily values
+			Current = Current with { Baseline = Current.Baseline + measure( definition ) };
+			value = definition.TargetTime > 0 ? Current.Baseline / definition.TargetTime : 0;
+		}
+		else
+			value = measure( definition ) - (IsCountSinceAcceptance( definition.Type ) ? Current.Baseline : 0);
 		var reached = IsSupportedType( definition.Type ) && value >= Target( definition );
 		if ( reached && !definition.CheckAtEndOnly )
 		{
@@ -221,7 +254,7 @@ public sealed class ParkObjectives
 			// mChallengeDeclined (+0x28) below DeclinesToForfeit; only the type is compared, not the object (0x4d2bc0..0x4d2bd8)
 			// [APPROX:ECON-055] the satisfying object a won challenge carries into its follow-up is not modelled: the checks of types 14, 15 and 18 store the best object's thing id in the slot (+0x2e, 0x4d1660), the win 0x4d2fb0 copies it to the challenge system's filter (+0x3e0) and into the follow-up slot, and while the filter is set the accumulator 0x4d27a0 adds only events of that one object (its parameter B, the object index: ride uses of types 17, 20 and 22, 0x501db0); OpenTPW counts the follow-up's uses of every object of its TargetObject type — evidence needed: none (read); OpenTPW keeps no per-object use counts
 			followup = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
-				.FirstOrDefault( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) );
+				.FirstOrDefault( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) && !IsForfeited( item.Index ) );
 		}
 		finished.Add( (followup ?? definition).Index );
 		Current = null;
@@ -234,6 +267,9 @@ public sealed class ParkObjectives
 		}
 	}
 
+	/// <summary>The slot's saved declined count has reached DeclinesToForfeit: only a loaded save can hold one (0x4d2a70, 0x4d2b60).</summary>
+	private bool IsForfeited( int index ) => declines.GetValueOrDefault( index ) >= settings.ChallengeTiming.DeclinesToForfeit;
+
 	private bool TryPickNext( out int index )
 	{
 		var list = settings.ChallengesInThisLevel;
@@ -241,7 +277,7 @@ public sealed class ParkObjectives
 		{
 			var position = (NextListPosition + step) % list.Count;
 			var candidate = list[position];
-			if ( finished.Contains( candidate ) || !settings.Challenges[candidate].Independent )
+			if ( finished.Contains( candidate ) || !settings.Challenges[candidate].Independent || IsForfeited( candidate ) )
 				continue;
 			NextListPosition = (position + 1) % list.Count;
 			index = candidate;
@@ -256,18 +292,16 @@ public sealed class ParkObjectives
 		if ( Current == null || Current.Accepted )
 			throw new InvalidOperationException( "No challenge is waiting to be accepted." );
 		var definition = settings.Challenges[Current.DefinitionIndex];
-		Current = Current with { Accepted = true, StartDay = day, DeadlineDay = day + definition.TargetTime, Baseline = baseline };
+		Current = Current with { Accepted = true, StartDay = day, DeadlineDay = day + definition.TargetTime, Baseline = IsDailyAverage( definition.Type ) ? 0 : baseline };
 	}
 
-	// [APPROX:ECON-035] a declined challenge counts towards DeclinesToForfeit and is finished when it reaches it; tp.exe's offer scans (0x4d2a70, 0x4d2b60) do skip a slot whose mChallengeDeclined (+0x28) is not below DeclinesToForfeit (0x7857cc), but its decline 0x4d2ec0 does not raise that count and no writer other than the slot initialisers (0x4d0f70, 0x4d1bd0) and the serializer was found, so in the original a declined challenge may be offered again without limit (offers waiting for an answer, the won mark and a declined follow-up's half prize are read and modelled: 0x4d1e90, 0x4d2df0, 0x4d2ec0, 0x4d2fb0) — evidence needed: a writer of the slot's mChallengeDeclined (+0x28) outside the challenge module 0x4d0000-0x4d6000
+	// [BIN:TPW-EXE:0x4d2ec0 challenge declined] the decline answers a waiting offer only: it clears the waiting and running flags, pays half the prize of a follow-up (ParkEconomy.DeclineChallenge) and sets the next event time from DaysAfterDeclinedChallenge; it never raises the slot's mChallengeDeclined (+0x28)
+	// [BIN:TPW-EXE:0x4d2a70 challenge offer scan] a slot is offered only while that count is below Challenges.DeclinesToForfeit (0x7857cc, compared at 0x4d2ae5 and by the follow-up scan 0x4d2bcd). The only writers of +0x28 are the slot initialisers (0x4d0f7c, 0x4d1bf9) and the serializer (0x4d2320): the challenge system's only users outside its own module are the accept/decline handler 0x48e0f0 (0x4d2df0 / 0x4d2ec0) and the accumulator callers 0x4e16b0, 0x4e1920 and 0x501db0 (the callers of its getter 0x519610), so a declined challenge is offered again without limit and the count only matters when a save holds one
 	public int Decline( long day )
 	{
 		if ( Current == null || Current.Accepted )
 			throw new InvalidOperationException( "No challenge is waiting to be declined." );
 		var index = Current.DefinitionIndex;
-		declines[index] = declines.GetValueOrDefault( index ) + 1;
-		if ( declines[index] >= settings.ChallengeTiming.DeclinesToForfeit )
-			finished.Add( index );
 		Current = null;
 		NextOfferDay = day + settings.ChallengeTiming.DaysAfterDeclinedChallenge;
 		return index;
@@ -280,8 +314,8 @@ public sealed class ParkObjectives
 			+ (IsSupportedType( definition.Type ) ? "" : " [progress not measurable yet]");
 	}
 
-	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets.</summary>
-	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions, long droppedAdmissions = 0, long parkSeconds = long.MaxValue )
+	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets. <paramref name="coveredCells"/> is the big park's cell count (<see cref="ParkEconomy.CoveredCells"/>); null without a cell map.</summary>
+	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions, long droppedAdmissions = 0, long parkSeconds = long.MaxValue, long? coveredCells = null )
 	{
 		var won = new List<GoldenTicketKind>();
 		if ( !settings.CanEarnTickets )
@@ -313,8 +347,9 @@ public sealed class ParkObjectives
 		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) > rules.CoasterHeight );
 		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) > rules.GokartExcitement );
 		Check( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ) > rules.WaterLength );
-		// [APPROX:ECON-038] the big park and camera tickets compare OpenTPW records (CellsOwned with MinCellsOwned, CellsCoveredByCameras >= MinCellsCovered) that no game code reports yet, and OpenTPW also awards an all-land ticket; tp.exe's big park (global index 3, 0x4d4e50) needs more than GoldenTicketGlobal.MinCellsCovered (0x7857bc, the fifth global key of the table 0x73fc70; MinCellsOwned, 0x7857b8, is never read) cells of type 4, 9, 10 or 21 or under an object (0x4cd7f0), its camera ticket is the secret one (0x4d4a00) won only when exactly 100 % of the cells not of type 2, 7 or 30 have a nonzero coverage short (+6 of the 10-byte cell array, 0x4cd720), and it never awards an all-land ticket (0x5afb00 and 0x4d5870 have the single caller 0x4d4a00, with index 0) — evidence needed: the writer of the cell coverage short (+6) and the original cell types in OpenTPW's cell map (ECON-050)
-		Check( GoldenTicketKind.BigPark, MaxRecord( ParkRecordKind.CellsOwned ) > rules.MinCellsOwned );
+		// [BIN:TPW-EXE:0x004D4E50 global golden tickets] the four global tickets are tested in index order against the GoldenTicketGlobal words (0x7857AC, B0, B4, BC), each strictly greater: coaster height, go-kart excitement, water length and, index 3, the big park, whose count (0x004CD7F0) goes over all 128 x 128 cells of type 9, 10, 4 or 21 or under a structure of 0x005363F0 and is compared with GoldenTicketGlobal.MinCellsCovered (0x7857BC, the fifth key of the table 0x73FC70); MinCellsOwned (0x7857B8) is never read
+		Check( GoldenTicketKind.BigPark, coveredCells > rules.MinCellsCovered );
+		// [APPROX:ECON-038] the camera ticket compares an OpenTPW record (CellsCoveredByCameras >= MinCellsCovered) that no game code reports yet, and OpenTPW also awards an all-land ticket; tp.exe's camera ticket is the secret one (0x4d4a00), won only when exactly 100 % of the cells not of type 2, 7 or 30 have a nonzero coverage short (+6 of the 10-byte cell array, 0x4cd720), and it never awards an all-land ticket (0x5afb00 and 0x4d5870 have the single caller 0x4d4a00, with index 0) — evidence needed: the writer of the cell coverage short (+6)
 		Check( GoldenTicketKind.CamerasEverywhere, MaxRecord( ParkRecordKind.CellsCoveredByCameras ) >= rules.MinCellsCovered );
 		Check( GoldenTicketKind.AllLandOwned, MaxRecord( ParkRecordKind.OwnsAllLand ) > 0 );
 		return won;
@@ -322,8 +357,9 @@ public sealed class ParkObjectives
 
 	/// <summary>Moves the next offer day by <paramref name="days"/> (a new park started at a later day).</summary>
 
-	internal void Restore( long nextOfferDay, int nextListPosition, ActiveChallenge? current, IReadOnlyDictionary<int, int> restoredDeclines, IEnumerable<int> restoredFinished, IEnumerable<GoldenTicketKind> restoredTickets )
+	internal void Restore( long nextOfferDay, int nextListPosition, ActiveChallenge? current, IReadOnlyDictionary<int, int> restoredDeclines, IEnumerable<int> restoredFinished, IEnumerable<GoldenTicketKind> restoredTickets, bool switchedOn = true )
 	{
+		SwitchedOn = switchedOn;
 		if ( current != null && !settings.Challenges.ContainsKey( current.DefinitionIndex ) )
 			throw new InvalidDataException( $"Saved challenge {current.DefinitionIndex} is not defined in Challenges.sam." );
 		NextOfferDay = nextOfferDay;

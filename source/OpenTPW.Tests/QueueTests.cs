@@ -191,23 +191,16 @@ public class QueueTests
 	}
 
 	[TestMethod]
-	public void TheCellMoneyTestIs32BitAndANegativeCostIsBookedAsOtherIncome()
+	public void TheCellMoneyTestIs32BitAndANegativeCostFailsTheBalanceLoad()
 	{
 		// SetCellType 0x82bc8: balance − cost as a wrapping 32-bit difference, then the sign bit.
 		var low = EconomyTestData.CellCostPark( int.MinValue, 20, 1 );
 		Assert.IsTrue( low.CanSpendCell( CellPurchase.Queue ), "−2^31 − 1 wraps to 2^31 − 1" );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, low.TrySpendCell( CellPurchase.Queue ) );
-		var high = EconomyTestData.CellCostPark( int.MaxValue, 20, -1 );
-		Assert.IsFalse( high.CanSpendCell( CellPurchase.Queue ), "2^31 − 1 + 1 wraps to −2^31" );
-		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, high.TrySpendCell( CellPurchase.Queue ) );
-		Assert.AreEqual( int.MaxValue, high.Balance );
 
-		// ECON-048: a negative cost (Costs.QueueCell -5) raises the balance and is booked as other income.
-		var negative = EconomyTestData.CellCostPark( 100, 20, -5 );
-		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, negative.TrySpendCell( CellPurchase.Queue ) );
-		Assert.AreEqual( 105, negative.Balance );
-		Assert.AreEqual( 5, negative.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherIncome ) );
-		Assert.AreEqual( 0, negative.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherCosts ) );
+		// tp.exe's balance parser 0x00401D7C refuses a negative Costs.* value, which fails the balance load.
+		Assert.ThrowsException<InvalidDataException>( () => EconomyTestData.CellCostPark( 100, 20, -5 ) );
+		Assert.ThrowsException<InvalidDataException>( () => EconomyTestData.CellCostPark( 100, -1, 75 ) );
 	}
 
 	[TestMethod]
@@ -215,7 +208,6 @@ public class QueueTests
 	{
 		// The validator 0x84550: the 32-bit pending line cost is refused when greater than the balance; zero passes.
 		Assert.IsFalse( EconomyTestData.CellCostPark( int.MinValue, 20, 1 ).CanPreviewCells( CellPurchase.Queue, 1 ) );
-		Assert.IsTrue( EconomyTestData.CellCostPark( int.MaxValue, 20, -1 ).CanPreviewCells( CellPurchase.Queue, 1 ) );
 		Assert.IsTrue( EconomyTestData.CellCostPark( -5, 20, 0 ).CanPreviewCells( CellPurchase.Queue, 4 ), "a zero sum passes in the red" );
 		var park = EconomyTestData.CellCostPark( 150, 20, 75 );
 		Assert.IsTrue( park.CanPreviewCells( CellPurchase.Queue, 2 ) );
@@ -229,13 +221,6 @@ public class QueueTests
 		Assert.AreEqual( QueueBuildResult.Ok, Level.BuildQueueCell( rig.Grid, low, rig.Ride, 2, 5, ( _, _ ) => false, out _ ) );
 		Assert.AreEqual( 1, rig.Grid.QueueCellCount );
 		Assert.AreEqual( (long)int.MinValue - 1, low.Balance );
-		// Balance 2^31 − 1 with cost −1: the preview accepts, the commit refuses and lays nothing.
-		var other = new Rig( queueCells: 0 );
-		var high = EconomyTestData.CellCostPark( int.MaxValue, 20, -1 );
-		Assert.AreEqual( QueueBuildResult.Ok, Level.CheckQueueCell( other.Grid, high, other.Ride, 2, 5, Array.Empty<(int X, int Y)>(), ( _, _ ) => false ) );
-		Assert.AreEqual( QueueBuildResult.Refused, Level.BuildQueueCell( other.Grid, high, other.Ride, 2, 5, ( _, _ ) => false, out _ ) );
-		Assert.AreEqual( 0, other.Grid.QueueCellCount );
-		Assert.AreEqual( int.MaxValue, high.Balance );
 	}
 
 	[TestMethod]

@@ -270,6 +270,9 @@ public sealed class ParkObjects
 
 	public void Simulate( double deltaSeconds )
 	{
+		// [BIN:TPW-EXE:0x0054F55F world substep] the bump module ticks once per substep before every ride's script step (the RSSE tick 0x5516B0), whichever rides exist
+		ScriptWorld.Bumpers.HostDriven = true;
+		ScriptWorld.Bumpers.AdvanceModule( deltaSeconds );
 		foreach ( var item in objects )
 			item.Simulate( deltaSeconds );
 	}

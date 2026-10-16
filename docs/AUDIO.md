@@ -410,7 +410,7 @@ Traced in the binary but not triggered yet:
 ## Lobby effects
 
 The front end's island effects follow the original's islands update (`CLBScreenComponentIslands::vf2`, `0x10094474`),
-stepped by `LobbyEffects` 30 times a second (UI-940; the original runs once per rendered frame):
+stepped by `LobbyEffects` 30 times a second (`[EXT:lobby-fixed-step]`; the original runs once per rendered frame):
 
 * **The nearest island** to the camera drives everything, not the selected one.
 * **The lobby's own generator** (state × 0x19660D + 0x3C6EF35F, `0x100904A8`; tp.exe rotates the step right by 13 bits

@@ -37,6 +37,8 @@ public sealed class ParkEconomyRuntime
 	{
 		Guests = new GuestEconomyBridge( () => Economy, guests );
 		guests.Payments = Guests;
+		// the guests draw from the park's one world generator, the economy's (tp.exe 0x00516330)
+		guests.AttachWorld( Economy.World );
 		// The arrival rule reads the park's turn, attraction points and bankruptcy (world mode 4).
 		guests.ArrivalClock = () => Economy.Turn;
 		guests.ParkPoints = () => Economy.ParkPoints();

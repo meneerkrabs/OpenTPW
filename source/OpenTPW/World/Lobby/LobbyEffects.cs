@@ -10,7 +10,7 @@ namespace OpenTPW;
 /// island's one-shot sounds. GPU-free and testable; <see cref="GameFlow"/> plays the sounds and draws the result.
 /// </summary>
 // [BIN:STP-PPC:0x10094474 lobby islands update] the per-frame update of the islands component: nearest island to the camera, sky target, raindrops, lightning and the island one-shots
-// [APPROX:UI-940] the effects advance at a fixed 30 ticks a second; the original steps them once per rendered frame and its frame rate is not known
+// [EXT:lobby-fixed-step] the effects advance at a fixed 30 ticks a second, a design choice: the original steps them once per rendered frame, so its pace follows the host's frame rate, which a deterministic, frame-rate independent presentation must not copy
 public sealed class LobbyEffects
 {
 	/// <summary>Seconds per effects tick (one original frame, assumed at 30 frames a second).</summary>
@@ -69,7 +69,8 @@ public sealed class LobbyEffects
 	/// <summary>The generator's next draw: the LCG step rotated right by 13 bits, which is also the stored state.</summary>
 	// [BIN:STP-PPC:0x100904A8 lobby generator] state = state × 0x19660D + 0x3C6EF35F, stored at +0x34 (inlined in the islands update)
 	// [BIN:TPW-EXE:0x5e0f4b lobby generator draw] tp.exe stores the step at lobby +0x34, rotates it right by 13 (ror 0xd) and stores and uses the rotated value; every inlined draw does the same (0x5d98d1 flying-mesh placement, 0x5da0d4 flying-mesh spawn, 0x5e113f island one-shots)
-	// [APPROX:UI-941] the islands' draws and the flying meshes (LobbyFlyingMeshes) advance the generator, but the original's camera wander draws from it too (0x5e09da, Mac 0x1009476C) and the islands step 30 times a second while the flyers step per frame (UI-940), so the strikes come in a different rhythm
+	// [EXT:lobby-fixed-step] the islands step at the fixed 30 ticks a second while the flyers step per frame, a design choice that follows the effects' pace
+	// [APPROX:UI-941] the islands' draws and the flying meshes (LobbyFlyingMeshes) advance the generator, but the original's camera wander draws from it too (0x5e09da, Mac 0x1009476C), so the strikes come in a different rhythm
 	public uint Draw()
 	{
 		state = System.Numerics.BitOperations.RotateRight( unchecked(state * 0x19660Du + 0x3C6EF35Fu), 13 );

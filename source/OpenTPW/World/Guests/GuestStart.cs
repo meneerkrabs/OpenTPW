@@ -17,8 +17,8 @@ public readonly record struct GuestStartValues( int Type, int Money, float Happi
 /// The starting values of a guest (the person constructor <c>0xe7644</c>, docs/reverse/ORACLE.md F25): happiness 50, thirst and hunger a draw modulo 50, toilet a
 /// draw modulo 30, illness and litter 0, the exit counter <c>PeepInfo.ExitLevel</c> plus a draw modulo twice <c>ExitLevelVar</c> minus <c>ExitLevelVar</c>, the
 /// type a draw modulo the type count and the cash the type's <c>StartingCash</c> scaled by 100 plus a draw modulo <c>2 · StartingCashVarPc + 1</c> minus
-/// <c>StartingCashVarPc</c> percent. The original takes the draws, in this order, from the world generator (<c>0x105328</c>); OpenTPW feeds words from the
-/// guest stream (DET-014). The eighth draw picks the prankery flag.
+/// <c>StartingCashVarPc</c> percent. The original takes the draws, in this order, from the world generator (<c>0x105328</c>, PC <c>0x00516330</c>); OpenTPW feeds
+/// words of the park's one world generator. The eighth draw picks the prankery flag.
 /// </summary>
 public static class GuestStart
 {
@@ -36,7 +36,7 @@ public static class GuestStart
 	/// An <paramref name="exitLevelVariation"/> of 0 is the original's division by zero (undefined); here it adds nothing.
 	/// </summary>
 	// [BIN:STP-PPC:0x100E7644 guest constructor] executed by the PowerPC oracle (guest-constructor, 517 inputs; C# agrees on the compared values)
-	// [APPROX:DET-014] the draws come from OpenTPW's guest stream, not the original's world generator reseeded per guest — evidence needed: DET-I2 port of WorldRng
+	// [BIN:TPW-EXE:0x004FAFF8 guest constructor draws] the eight draws come from the world generator in this order (0x004FAFF8, 0x004FB01F, 0x004FB046, 0x004FB085, 0x004FB0AB, 0x004FB0D1, 0x004FB109, 0x004FB114), after the base constructor's speed draw (0x004F89E1) and before the reseed with the thing id (0x004FB19E)
 	// [BIN:TPW-EXE:0x004FB114 prankery flag] the eighth draw: +0x1C0 = 100 when draw % 100 is below PrankeryLikelihood (0x007850DC), else 0; a 100 then adds the thing id (0x0050B350) modulo 3, both unsigned
 	public static GuestStartValues FromDraws( IReadOnlyList<GuestType> types, int exitLevel, int exitLevelVariation, int startingCashVariationPercent, Func<uint> draw,
 		int prankeryLikelihood = 0, int thingId = 0 )

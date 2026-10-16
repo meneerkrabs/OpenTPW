@@ -80,7 +80,7 @@ delimiters) has a bounded structural reader (`SaveCoasterBlock`; TPWS-PAYLOAD.md
 train slots decode once the coaster type's counts are known, nothing is imported and nothing is written. A park
 started from the shipped save imports its turn,
 bank, objects, staff and advisor controller (`OriginalEconomyImport`; values not
-imported are reported as SAVE-001 to SAVE-010 and SAVE-920 to SAVE-923); the
+imported are reported as SAVE-002 to SAVE-010 and SAVE-920 to SAVE-923); the
 other blocks stay opaque.
 Every block but the World and a Coasters block with a coaster ends where its tp.exe
 reader stops (`SaveBlockWidths`), like the original loader, which runs each block's own

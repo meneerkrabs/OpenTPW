@@ -47,17 +47,16 @@ public readonly record struct SavePayloadBlock( SaveBlock Block, string Tag, int
 /// bytes are that delimiter. Delimiters are therefore trailing length sentinels, not chunk headers.
 /// <list type="bullet">
 /// <item>ActionRecording: <c>u32 mLoadedPublishedPark, u32 size</c>, then <c>size</c> bytes.</item>
-/// <item>The 17 delimiters follow each other in writer order. A block whose width is traced (<see cref="FixedBlockBytes"/>)
-/// ends exactly at that width, like the original loader; the empty Coasters block ends after its 16 bytes. The World
-/// block is checked by its thing chain (<see cref="SaveWorld"/>).</item>
-/// <item>The other blocks' widths are not traced, so their delimiter may be any later occurrence of its four bytes.
-/// The payload must split into the blocks in exactly one way under these rules. A copy of a block's delimiter bytes
-/// is harmless only where it cannot end that block: inside an earlier block, or where taking it as the block's end
-/// leaves no valid split of the rest (a later delimiter missing or out of order, or a traced width broken). A copy
-/// inside the block itself or any later block that forms a second valid split is rejected, even though the count-based
-/// original loader would accept the save (SAVE-011): for example a block's own delimiter bytes inside it with every later
-/// delimiter still in order, or AdvisorScoring's bytes anywhere in the trailing UI block. A payload with more than
-/// <see cref="MaximumDelimiterOccurrences"/> copies of one delimiter is rejected too.</item>
+/// <item>The 17 delimiters follow each other in writer order. Every block but two ends exactly where its reader stops
+/// (<see cref="SaveBlockWidths"/>, read from tp.exe's block readers), like the original loader, which then compares the next
+/// four bytes with the block's tag and aborts with "The SAD_&lt;module&gt; module did not load the same number of bytes that it
+/// saved" otherwise; a delimiter's bytes inside a block are data. The empty Coasters block ends after its 16 bytes.</item>
+/// <item>Only the World block (its control manager and macro AI are not traced; the thing chain closes it, see
+/// <see cref="SaveWorld"/>) and a Coasters block with a coaster (its trains and cars depend on the coaster type's train and car counts)
+/// are located by their delimiter's bytes. The payload must split into the blocks in exactly one way under these rules: a copy
+/// of such a delimiter's bytes inside the block or a later one that forms a second valid split is rejected, even though the
+/// count-based original loader would accept the save (SAVE-011). A payload with more than
+/// <see cref="MaximumDelimiterOccurrences"/> copies of one of these delimiters is rejected too.</item>
 /// <item>UI is everything after the AdvisorScoring delimiter.</item>
 /// </list>
 /// </summary>
@@ -82,14 +81,18 @@ public sealed class SavePayloadLayout
 	} );
 
 	/// <summary>
-	/// Blocks whose saved width is fixed by their traced writer: Clock two 4-byte clock words (0x10e944),
-	/// VanillaTime one <c>LbTime_GetClock</c> word (0x127ac8), Camera 3×4 + 12 + 12 + 4 (0x2cb90).
+	/// Blocks whose saved width is fixed by their traced writer: Clock two 4-byte clock words (0x402e30), VanillaTime one
+	/// clock word (0x403260), GameSystem nine words (0x5506e0), Camera 3×4 + 12 + 12 + 4 (0x42cec0), Cheat two bytes
+	/// (0x405570) and AdvisorScoring one word (0x59c860). The other blocks' widths follow from their bytes (<see cref="SaveBlockWidths"/>).
 	/// </summary>
 	public static IReadOnlyDictionary<SaveBlock, int> FixedBlockBytes { get; } = new Dictionary<SaveBlock, int>
 	{
 		[SaveBlock.Clock] = 8,
 		[SaveBlock.VanillaTime] = 4,
+		[SaveBlock.GameSystem] = SaveBlockWidths.GameSystemBytes,
 		[SaveBlock.Camera] = 40,
+		[SaveBlock.Cheat] = SaveBlockWidths.CheatBytes,
+		[SaveBlock.AdvisorScoring] = SaveBlockWidths.AdvisorScoringBytes,
 	};
 
 	private readonly SavePayloadBlock[] blocks;
@@ -133,7 +136,7 @@ public sealed class SavePayloadLayout
 		if ( recording > (uint)(payload.Length - ActionRecordingHeaderBytes) )
 			throw new InvalidDataException( $"Save action recording claims {recording} bytes; only {payload.Length - ActionRecordingHeaderBytes} remain." );
 		var start = ActionRecordingHeaderBytes + (int)recording;
-		// [APPROX:SAVE-011] the delimiters of blocks whose width is not traced are located by their bytes: a payload that splits into its blocks in more than one way, or holds a delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while tp.exe's loader 0x415270 runs each block's reader and then compares the next 4 bytes with its tag (0x415371), never searching — evidence needed: the serialized widths of the remaining blocks
+		// [APPROX:SAVE-011] the World block and a Coasters block with a coaster are located by their delimiter's bytes: a payload that splits in more than one way there, or holds the WRLD or COAS delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while tp.exe's loader 0x415270 runs each block's reader and then compares the next 4 bytes with its tag (0x415371), never searching — evidence needed: the World's control manager and macro AI widths, and the coaster type's train slot and car counts (SAVE-920)
 		var search = new DelimiterSearch( payload, start );
 		var splits = search.Count( 0, start );
 		if ( splits == 0 )
@@ -200,11 +203,9 @@ public sealed class SavePayloadLayout
 		return new SavePayloadLayout( payload.Length, published != 0, blocks );
 	}
 
-	/// <summary>Whether a block of <paramref name="length"/> bytes at <paramref name="offset"/> meets its traced width rules.</summary>
+	/// <summary>Whether a delimiter-located block of <paramref name="length"/> bytes at <paramref name="offset"/> meets its traced width rules.</summary>
 	private static string? WidthError( ReadOnlySpan<byte> payload, SaveBlock block, int offset, int length )
 	{
-		if ( FixedBlockBytes.TryGetValue( block, out var bytes ) && length != bytes )
-			return $"Save {block} block is {length} bytes; its writer saves exactly {bytes} (the original loader would report SAD_{block}).";
 		if ( block != SaveBlock.Coasters )
 			return null;
 		if ( length < EmptyCoastersBytes )
@@ -214,7 +215,33 @@ public sealed class SavePayloadLayout
 		return null;
 	}
 
-	/// <summary>Names why a payload has no valid split: the first delimiter missing or out of order after the first-occurrence split, or the first width rule it breaks.</summary>
+	/// <summary>
+	/// The end of a block whose width follows from its bytes (<see cref="SaveBlockWidths"/>, or the empty Coasters block), or -1 when the
+	/// block is located by its delimiter; throws when the bytes do not read as the block.
+	/// </summary>
+	private static int TracedEnd( ReadOnlySpan<byte> payload, SaveBlock block, int offset )
+	{
+		if ( block == SaveBlock.Coasters )
+		{
+			if ( payload.Length - offset < EmptyCoastersBytes )
+				throw new InvalidDataException( $"Save Coasters block is {payload.Length - offset} bytes; its count and globals alone take {EmptyCoastersBytes}." );
+			return BinaryPrimitives.ReadUInt32LittleEndian( payload[offset..] ) == 0 ? offset + EmptyCoastersBytes : -1;
+		}
+		return SaveBlockWidths.IsTraced( block ) && SaveBlockWidths.TryMeasure( payload, block, offset, out var width ) ? offset + width : -1;
+	}
+
+	private static bool TagAt( ReadOnlySpan<byte> payload, string tag, int offset )
+	{
+		Span<byte> stored = stackalloc byte[DelimiterBytes];
+		Stored( tag, stored );
+		return offset >= 0 && payload.Length - offset >= DelimiterBytes && payload.Slice( offset, DelimiterBytes ).SequenceEqual( stored );
+	}
+
+	/// <summary>
+	/// Names why a payload has no valid split, walking the blocks in writer order: a delimiter missing from the rest of the payload, a
+	/// traced block that does not read as its block or is not followed by its delimiter, or (for the delimiter-located blocks) the first
+	/// occurrence that breaks a width rule.
+	/// </summary>
 	private static void Diagnose( ReadOnlySpan<byte> payload, int position )
 	{
 		Span<byte> stored = stackalloc byte[DelimiterBytes];
@@ -226,8 +253,15 @@ public sealed class SavePayloadLayout
 				throw new InvalidDataException( payload[..position].IndexOf( stored ) >= 0
 					? $"Save payload delimiter {tag} ({block}) is out of writer order."
 					: $"Save payload is missing the {tag} delimiter of the {block} block." );
-			var length = FixedBlockBytes.TryGetValue( block, out var bytes ) && position + bytes + DelimiterBytes <= payload.Length
-				&& payload.Slice( position + bytes, DelimiterBytes ).SequenceEqual( stored ) ? bytes : found;
+			var end = TracedEnd( payload, block, position );
+			if ( end >= 0 && block != SaveBlock.Coasters )
+			{
+				if ( !TagAt( payload, tag, end ) )
+					throw new InvalidDataException( $"Save {block} block is {end - position} bytes, but the {tag} delimiter does not follow it (the original loader would report SAD_{block})." );
+				position = end + DelimiterBytes;
+				continue;
+			}
+			var length = found;
 			if ( WidthError( payload, block, position, length ) is { } error )
 				throw new InvalidDataException( error );
 			position += length + DelimiterBytes;
@@ -241,9 +275,9 @@ public sealed class SavePayloadLayout
 	}
 
 	/// <summary>
-	/// Counts the splits of the framed blocks (capped at 2): delimiter <c>k</c> may end its block at a fixed-width block's
-	/// traced end or, otherwise, at any later occurrence of its bytes. Memoized per (delimiter, block start), so the search
-	/// is bounded by the delimiter occurrences, not their combinations.
+	/// Counts the splits of the framed blocks (capped at 2): a traced block ends where its reader stops, and its delimiter must follow;
+	/// the World block and a Coasters block with a coaster may end at any later occurrence of their delimiter's bytes. Memoized per
+	/// (delimiter, block start), so the search is bounded by the delimiter occurrences, not their combinations.
 	/// </summary>
 	private readonly ref struct DelimiterSearch
 	{
@@ -257,8 +291,11 @@ public sealed class SavePayloadLayout
 			Span<byte> stored = stackalloc byte[DelimiterBytes];
 			for ( var index = 0; index < Delimiters.Count; index++ )
 			{
-				Stored( Delimiters[index].Tag, stored );
 				occurrences[index] = new List<int>();
+				// Only the delimiter-located blocks search for their delimiter.
+				if ( Delimiters[index].Block is not (SaveBlock.World or SaveBlock.Coasters) )
+					continue;
+				Stored( Delimiters[index].Tag, stored );
 				for ( var position = start; position + DelimiterBytes <= payload.Length; )
 				{
 					var found = payload[position..].IndexOf( stored );
@@ -275,16 +312,29 @@ public sealed class SavePayloadLayout
 		/// <summary>The delimiter offsets that can end block <paramref name="index"/> starting at <paramref name="offset"/>, in payload order.</summary>
 		public List<int> Ends( int index, int offset )
 		{
-			var block = Delimiters[index].Block;
+			var (block, tag) = Delimiters[index];
 			var ends = new List<int>();
+			int traced;
+			try
+			{
+				traced = TracedEnd( payload, block, offset );
+			}
+			catch ( InvalidDataException )
+			{
+				return ends;
+			}
+			if ( traced >= 0 )
+			{
+				if ( TagAt( payload, tag, traced ) )
+					ends.Add( traced );
+				return ends;
+			}
 			var first = occurrences[index].BinarySearch( offset );
 			for ( var item = first < 0 ? ~first : first; item < occurrences[index].Count; item++ )
 			{
 				var end = occurrences[index][item];
 				if ( WidthError( payload, block, offset, end - offset ) == null )
 					ends.Add( end );
-				if ( FixedBlockBytes.TryGetValue( block, out var bytes ) && end - offset >= bytes )
-					break;
 			}
 			return ends;
 		}

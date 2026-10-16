@@ -25,6 +25,26 @@ public class ParkNameTests
 		return names;
 	}
 
+	/// <summary>
+	/// The save field of the gate lines (COMPAT-007): the gate's attraction record carries them as <c>mNameA</c>/<c>mNameB</c> (the thing's +0x3C8 and +0x40A, written by
+	/// the setters 0x4E2950 and 0x4E2A50); the shipped jungle Easymode save holds LOST / Kingdom, the gate's default row.
+	/// </summary>
+	[TestMethod]
+	public void TheShippedEasymodeSaveCarriesTheGateLines()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game." );
+		try
+		{
+			var gate = OriginalPark.Load( "jungle" ).Save!.Attractions.Single( attraction => attraction.InfoId == 1601 );
+			Assert.AreEqual( ("LOST", "Kingdom"), (gate.NameLine1, gate.NameLine2) );
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
+	}
+
 	[TestMethod]
 	public void TheGateStartsWithTheTwoTextsOfItsRow()
 	{

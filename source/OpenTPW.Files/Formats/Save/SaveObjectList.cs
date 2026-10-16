@@ -46,7 +46,7 @@ public readonly record struct SaveObject( int Offset, int InfoId, int X, int Y, 
 }
 
 /// <summary>
-/// Signature scan of the RideSystem block for <see cref="SaveObject"/> scene-mesh instance records (their
+/// Signature scan of the RideSystem block's bytes (after its length word) for <see cref="SaveObject"/> scene-mesh instance records (their
 /// variable-length tails are not decoded, so the block has no framed walk yet). A candidate
 /// must have the leading byte 1, coordinates inside the grid, a 1–16 cell footprint, a known kind
 /// (815 or 865), a rotation of 0/90/180/270 and an index greater than the previous record's.
@@ -62,8 +62,12 @@ public static class SaveObjectList
 		ArgumentNullException.ThrowIfNull( layout );
 		if ( layout.PayloadLength != payload.Length )
 			throw new ArgumentException( "Layout does not describe this payload.", nameof( layout ) );
+		// The block is u32 length + records (tp.exe 0x4647a0 reads the length, then that many bytes).
 		var section = layout[SaveBlock.RideSystem];
-		var data = payload.Slice( section.Offset, section.Length );
+		if ( section.Length < 4 )
+			throw new InvalidDataException( "Save RideSystem block has no length word." );
+		var data = payload.Slice( section.Offset + 4, section.Length - 4 );
+		section = section with { Offset = section.Offset + 4 };
 		var result = new List<SaveObject>();
 		var lastIndex = 0;
 		for ( var offset = 0; offset <= data.Length - RecordHeaderBytes; offset++ )

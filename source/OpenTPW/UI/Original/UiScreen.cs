@@ -103,15 +103,25 @@ public class UiScreen
 		lastMouse = input.Mouse;
 		var consumed = hit != null;
 		if ( input.LeftPressed )
+		{
 			pressed = hit;
+			if ( hit is UiButton { Repeat: not null, Enabled: true } holdButton && input.Mouse.X >= 0 )
+				(holdButton.HoldState, holdButton.HoldTime) = (1, context.Time);
+		}
+		if ( pressed is UiButton { Repeat: { } repeat, HoldState: not 0 } held && input.LeftDown )
+			RunHold( held, repeat, context.Time, ReferenceEquals( hit, held ) );
 		// A slider follows the mouse while it is held, wherever the pointer has drifted to.
 		if ( pressed is { Enabled: true } and IUiDragTarget drag && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
 			drag.DragTo( canvas, input.Mouse );
 		if ( input.LeftReleased )
 		{
 			// [BIN:TPW-EXE:0x65f6d1 click rule] a release is a click only within 500 ms of its press and without the pointer straying more than 6 px (UiInputSource)
-			if ( hit != null && (pressed == null || pressed == hit) && !input.NotClick )
+			// a button whose hold began repeating gives no click when it is let go (0x668eff: the click needs the state not to be 2)
+			var repeating = pressed is UiButton { HoldState: 2 };
+			if ( hit != null && (pressed == null || pressed == hit) && !input.NotClick && !repeating )
 				Click( canvas, hit, input.Mouse );
+			if ( pressed is UiButton { Repeat: not null } released )
+				released.HoldState = 0;
 			pressed = null;
 			if ( IsRemoved )
 				return true;
@@ -169,6 +179,24 @@ public class UiScreen
 			consumed = true;
 		}
 		return consumed || input.Pressed != UiKeys.None && Modal;
+	}
+
+	/// <summary>One frame of a held repeating button (<see cref="UiButtonRepeat"/>): <paramref name="inside"/> is the pointer being over it, the original's pressed bit.</summary>
+	internal static void RunHold( UiButton button, UiButtonRepeat repeat, float now, bool inside )
+	{
+		if ( button.HoldState == 1 && now - button.HoldTime >= repeat.Delay )
+		{
+			button.HoldState = 2;
+			button.HoldTime = now;
+			if ( inside )
+				repeat.Start();
+		}
+		else if ( button.HoldState == 2 && now - button.HoldTime > repeat.Interval )
+		{
+			if ( inside )
+				repeat.Tick();
+			button.HoldTime = now;
+		}
 	}
 
 	private static void Click( UiCanvas canvas, UiElement element, NVector2 point )

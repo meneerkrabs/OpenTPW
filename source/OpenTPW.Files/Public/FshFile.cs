@@ -237,7 +237,7 @@ public sealed class FshFile : BaseFormat
 			switch ( format )
 			{
 				case FshPaletteFormat.Rgb24:
-					// [APPROX:COMPAT-014] No alpha is stored, so every entry is opaque; no colour key is applied.
+					// [BIN:TPI-EXE:0x6B7000 palette 0x24] the Theme Park Inc palette converter reads three bytes R, G, B per entry and stores alpha 0xFF (OR 0xFFFFFF00 at 0x6B7211; the 16 and 24 bit destinations OR the full alpha mask at 0x6B72CE); its alpha scan 0x6B73F0 gives a 0x24 palette no surface alpha mask at all (0x6B746F, 0x6B74C0), and neither the converter nor the pixel loops (0x6B76BD..) treat an index as transparent: no colour key is applied (COMPAT-014 retired)
 					target[0] = entry[0];
 					target[1] = entry[1];
 					target[2] = entry[2];
@@ -250,7 +250,7 @@ public sealed class FshFile : BaseFormat
 					target[3] = entry[3];
 					break;
 				default:
-					// [APPROX:COMPAT-015] A1R5G5B5 with bit 15 as alpha; one corpus file, every entry has bit 15 set.
+					// [EXT:fsh-0x2d-palette] A1R5G5B5 with bit 15 as alpha is OpenTPW's own choice for the one 0x2D palette in the corpus (every entry has bit 15 set): the Theme Park Inc palette converter 0x6B7000 has no 0x2D path (only 0x24 and 0x2A), so there is no original reading to match
 					var value = BinaryPrimitives.ReadUInt16LittleEndian( entry );
 					target[0] = Expand5( value >> 10 );
 					target[1] = Expand5( value >> 5 );

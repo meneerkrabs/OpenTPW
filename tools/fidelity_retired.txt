@@ -72,8 +72,11 @@ COMPAT-009 docs/COMPATIBILITY.md
 COMPAT-011 docs/reverse/APPROX-TRACE.md
 COMPAT-012 docs/reverse/APPROX-TRACE.md
 COMPAT-013 docs/reverse/APPROX-TRACE.md
+COMPAT-014 docs/FORMAT-BACKLOG.md
+COMPAT-015 docs/COMPATIBILITY.md
 COMPAT-016 docs/progress/2026-10-16-park-name-and-sign-paint-read-in-tp-exe.md
 COMPAT-017 docs/COMPATIBILITY.md
+COMPAT-019 docs/COMPATIBILITY.md
 COMPAT-030 docs/COMPATIBILITY.md
 DET-001 docs/reverse/DET-plan.md
 DET-002 docs/reverse/DET-plan.md
@@ -197,6 +200,7 @@ QUEUE-020 docs/GUESTS.md
 QUEUE-022 docs/GUESTS.md
 RIDES-001 docs/reverse/APPROX-TRACE.md
 RIDES-002 docs/reverse/APPROX-TRACE.md
+RIDES-003 docs/OBJECTS.md
 RIDES-004 docs/reverse/APPROX-TRACE.md
 RIDES-005 docs/reverse/APPROX-TRACE.md
 RIDES-006 docs/reverse/APPROX-TRACE.md
@@ -228,6 +232,7 @@ RIDES-039 docs/reverse/REVIEW-ANIM-2.md
 RIDES-041 docs/OBJECTS.md
 RIDES-042 docs/OBJECTS.md
 RIDES-043 docs/OBJECTS.md
+RIDES-044 docs/RSE-VM.md
 SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
@@ -269,6 +274,7 @@ UI-020 docs/reverse/APPROX-TRACE.md
 UI-021 docs/reverse/APPROX-TRACE.md
 UI-022 docs/reverse/APPROX-TRACE.md
 UI-023 docs/reverse/APPROX-TRACE.md
+UI-028 docs/UI.md
 UI-029 docs/reverse/APPROX-TRACE.md
 UI-030 docs/reverse/APPROX-TRACE.md
 UI-033 docs/reverse/APPROX-TRACE.md

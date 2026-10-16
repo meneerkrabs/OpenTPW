@@ -7,7 +7,7 @@ sounds (RSE EVENT and REPAIREFFECT), the crowd sentence and the advisor's speech
 through the mixer. The park's weather plays its rain and thunder, the level's placed
 ambients (scape.omp) play with the mixer's distance law, ride screams play, the staff's
 walking and idle voices play, the path tool's laying and refused clicks play, a queue joining a path
-plays `cat_ui` 139, Backspace over a path cell plays `cat_ui` 95 as it removes the cell, and opening a
+plays `cat_ui` 139, Backspace over a path cell (and, as an extension, a queue cell) plays `cat_ui` 95 as it removes the cell, and opening a
 visitor's details plays the visitor click (`cat_kids` 129). Still silent: the second source of 139 (a
 laid path cell linking to a queue) and the lobby's global effects
 (see "Traced but not triggered"). No original data is in the repository.
@@ -378,7 +378,8 @@ Traced in the binary but not triggered yet:
   (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
 * `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`), and it plays now: with no tool on and
   a path cell under the cursor it plays at that cell, then that cell loses one placement (ClearCell's counted path case,
-  tp.exe `0x40BE8B`) and goes only when it was laid once; the sound plays even when the cell stays. Inside the path tool the original's Backspace is Back (tp.exe `0x52FE50`): it takes the last segment back without
+  tp.exe `0x40BE8B`) and goes only when it was laid once; the sound plays even when the cell stays. Over a queue cell OpenTPW plays it too and takes the queue back from that cell
+  (`[EXT:queue-backtrack]`; the original's key does nothing there). Inside the path tool the original's Backspace is Back (tp.exe `0x52FE50`): it takes the last segment back without
   a refund and plays no sound, as OpenTPW's segment undo does.
 * The weather's own visuals are drawn now, as procedural approximations (AUDIO-900..902, 904,
   "Weather visuals" below); the forecast's warning is shown as an OpenTPW extension (banner, wording

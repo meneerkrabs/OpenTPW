@@ -192,7 +192,7 @@ public sealed class BalloonRenderer : Entity
 			g_mProj = Camera.ProjMatrix,
 			g_vCameraPos = Camera.Position,
 			g_flTime = now
-		} );
+		}.WithFog() );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();

@@ -13,6 +13,8 @@ vertex {
         vec3 g_vLightColor;
         vec3 g_vCameraPos;
         float g_flTime;
+        float g_flViewDistanceScale;
+        vec3 g_vFogColor;
     } g_oUbo;
 
     layout(location = 0) out VS_OUT {
@@ -41,6 +43,18 @@ fragment {
 
     layout(location = 0) out vec4 fragColor;
 
+    layout(set = 0, binding = 0) uniform ObjectUniformBuffer {
+        mat4 g_mModel;
+        mat4 g_mView;
+        mat4 g_mProj;
+        vec3 g_vLightPos;
+        vec3 g_vLightColor;
+        vec3 g_vCameraPos;
+        float g_flTime;
+        float g_flViewDistanceScale;
+        vec3 g_vFogColor;
+    } g_oUbo;
+
     layout( set = 1, binding = 0 ) uniform texture2D Color0;
     layout( set = 1, binding = 1 ) uniform texture2D Color1;
     layout( set = 1, binding = 2 ) uniform texture2D Color2;
@@ -68,6 +82,6 @@ fragment {
 
         float viewSpaceDepth = length( vs_out.vViewPosition );
         float fogFactor = clamp( exp( viewSpaceDepth * 0.01 ) * 0.025, 0, 1 );
-        fragColor = vec4( mix( color.rgb, vec3( 0.301, 0.84, 1 ), fogFactor ), 1.0 );
+        fragColor = vec4( mix( color.rgb, g_oUbo.g_vFogColor, fogFactor ), 1.0 );
     }
 }

@@ -13,11 +13,15 @@ public static class AudioListener
 	/// <summary>The far end the original hands its mixer for a range of 2 or less (tp.exe <c>0x6C3B8A</c> stores 2.1 there, so the far end is always beyond the minimum distance).</summary>
 	public const float MinimumFarDistance = 2.1f;
 
-	/// <summary>Host distance gain: 1 inside the minimum, 0 past the far end (the range, at least <see cref="MinimumFarDistance"/>), otherwise ((far − d) / (far − 2))^0.8.</summary>
 	// [BIN:TPW-EXE:0x6C3B8A distance mapping] the source's mapping is {2.0, max(range, 2.1 when range ≤ 2.0), rolloff} (0x6bc650's range against the constant 2.0 at 0x70a9c4, 0x40066666 = 2.1f when it is not above it), handed to QSWaveMixSetDistanceMapping (0x6D2930, 0x51B6D3 sends the global mapping 1.0)
 	// [BIN:QMIXER-DLL:0x1800a0d0 distance gain] the channel parameter routine tests the channel's enable word (params +0x5c = channel +0x60, stored by the enable message 0x18007a11 from QSWaveMixEnableChannel 0x180014c0; tp.exe builds that word at 0x6d22d0 and always ORs 0x1000, 0x6d230e): with flag 0x1000 the gain is 1 up to the minimum distance (or for rolloff 0), 0 past the maximum and ((max - d) / (max - min)) to the power of the rolloff between, rolloff 1.0 being linear (0x1800a0bb-0x1800a172)
+	/// <summary>The exponent of the distance law: 0.2, the rolloff of a sound system whose 3D comes from the QMixer layer.</summary>
 	// [BIN:TPW-EXE:0x6b9bb0 rolloff] the float of the sound system object (0xfb1f24, built by 0x6b8ed0, vtable 0x70a5d8 +0x2c) is 0.2 (0x70a624) when the object's flag 0x40 (+0x28) is set and 0.8 (0x70a628) otherwise
-	// [APPROX:AUDIO-033] the flag is set at 0x6b9006 from bit 0x100 of the capability word the object is created with (ORed with 0x300 at 0x6b8fe8, filtered by 0x6b7d70, which can clear it); that capability result is not read, so the fork's exponent 0.8 stands
+	// [BIN:TPW-EXE:0x6b9006 rolloff flag] the flag is set when bit 0x100 of the creation descriptor survives the capability filter 0x6b7d70 (the descriptor is ORed with 0x300 at 0x6b8fe8); the filter clears it only when the driver object's slot +0x20 is set or its virtual +0x4c reports no native 3D (0x6b7d80-0x6b7d9d)
+	// [BIN:TPW-EXE:0x5d1400 native 3D] the driver object is built by 0x6c4190: first the QMixer class (constructor 0x6d2d70, vtable 0x711b08), whose +0x4c is 'mov al, 1; ret' (0x5d1400), and only when that class fails to initialise the fallback class (0x6d1e30); with QMixer the software 3D layer 0x6b7750 (slot +0x20, made only when +0x4c reports false, 0x6b75c5) does not exist, so the flag is set and the rolloff is 0.2
+	public const float Rolloff = 0.2f;
+
+	/// <summary>Host distance gain: 1 inside the minimum, 0 past the far end (the range, at least <see cref="MinimumFarDistance"/>), otherwise ((far − d) / (far − 2))^<see cref="Rolloff"/>.</summary>
 	public static float RangeGain( float range, float distance )
 	{
 		if ( !float.IsFinite( range ) || range < 0 )
@@ -30,7 +34,7 @@ public static class AudioListener
 		if ( distance >= far )
 			return 0;
 		var fraction = (far - distance) / (far - MinimumDistance);
-		return MathF.Pow( fraction, 0.8f );
+		return MathF.Pow( fraction, Rolloff );
 	}
 
 	/// <summary>The listener's place in the original's sound units (cell edges are 10; the thunder's bolt tops reach 300).</summary>

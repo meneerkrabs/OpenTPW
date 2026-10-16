@@ -951,7 +951,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests standing in the 3 × 3 cells around its
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
-	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone) in OpenTPW's cell lists, rebuilt every park turn in guest order with movers appended; the original (tp.exe query 0x5102f0, Mac 0x10087c) walks per-cell thing lists that are head-inserted when a thing enters a cell (0x50b6a0 via 0x4d91f0) and never rebuilt, keeps class-1 guests whatever their state, and also keeps staff (classes 4-8) and the online avatar (class 18); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
+	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone); the original's query (tp.exe 0x5102f0, Mac 0x10087c) visits each cell's things in the order they were head-inserted when they entered it (0x50b6a0 via 0x4d91f0), keeps class-1 guests whatever their state, and also keeps staff (classes 4-8) and the online avatar (class 18); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
@@ -973,6 +973,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>Files every guest under its cell, in list order.</summary>
+	// [EXT:guest-cell-lists] OpenTPW keeps its per-cell guest lists as a structure it rebuilds every park turn (guest order, movers appended), where the original's per-cell thing lists are persistent and head-inserted: a data-structure choice with no original behaviour to match (which things the lists hold and their query order are WALK-003)
 	private void RebuildOccupants()
 	{
 		foreach ( var list in occupants.Values )

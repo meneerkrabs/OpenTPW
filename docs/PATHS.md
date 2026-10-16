@@ -81,7 +81,9 @@ Backspace over a path cell with no tool on uses the counted case (tp.exe
 when it was laid once (`ParkPathBuilder.RemoveOnce`). The original's key does
 nothing over a queue cell (it backtracks only a type-1 cell, tp.exe `0x40BE3C`);
 OpenTPW also removes a queue there, from the cell under the cursor to the queue's
-back with the remove tool's refund (`[EXT:queue-backtrack]`).
+back with the remove tool's refund (`[EXT:queue-backtrack]`). A queue cell that no ride's queue reaches
+(a stray piece, such as one an older save left) goes alone there and with the remove tool, refunding nothing,
+as the original's `ClearCell` clears one queue cell (tp.exe `0x5367A0`).
 
 ## Tool
 
@@ -159,7 +161,8 @@ queue link is +X or +Y, a bend takes the other bend for some queue links, and a 
 back takes the end piece: `queend`, `quebin1`, `quebin2`), and the refresh places that model of the theme's `queue`
 archive on the cell (`quedead`, `questra`, `quebnd1`, `quebnd2`, `queend`, `quebin1`, `quebin2`; tp.exe `0x522900`,
 `0x5229e0`) at the yaw 360 minus the row's rotation, as a one-cell object would be placed (`QueueModels`). The
-models are baked into the path layer (PATH-015).
+models are baked into the path layer (PATH-015), each vertex on the drawn ground under it and lifted a little as
+the path tiles are, so the plank floor shows over the grass and the posts follow a sloped cell.
 
 ## Headless API
 

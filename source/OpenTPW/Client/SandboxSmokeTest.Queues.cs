@@ -22,19 +22,18 @@ internal sealed partial class SandboxSmokeTest
 			return;
 		var canvas = hudContext.Canvas;
 		var viewport = new System.Numerics.Vector2( canvas.Width, canvas.Height );
+		var field = level.OriginalPark?.Heightfield;
 		bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point )
 		{
 			point = default;
-			// the guest grid is larger than the terrain of some levels: a cell off the heightfield has no screen point
-			if ( cell.X < 0 || cell.Y < 0 || cell.X >= level.Objects.Grid.Width || cell.Y >= level.Objects.Grid.Height )
+			// The guest grid can be larger than the level's heightfield; its outer cells have no ground to project.
+			if ( field != null && (cell.X >= field.CellCountX || cell.Y >= field.CellCountZ) )
 				return false;
-			return ClickableCell( cell, out point );
+			return level.TryProjectCell( cell.X, cell.Y, viewport, out point )
+				&& point.X > canvas.Width * 0.25f && point.X < canvas.Width * 0.75f && point.Y > canvas.Height * 0.15f && point.Y < canvas.Height * 0.65f
+				&& !hud.Stack.Covers( canvas, point )
+				&& level.TryGetGridCell( point, viewport, out var x, out var y ) && (x, y) == cell;
 		}
-		bool ClickableCell( (int X, int Y) cell, out System.Numerics.Vector2 point ) =>
-			level.TryProjectCell( cell.X, cell.Y, viewport, out point )
-			&& point.X > canvas.Width * 0.25f && point.X < canvas.Width * 0.75f && point.Y > canvas.Height * 0.15f && point.Y < canvas.Height * 0.65f
-			&& !hud.Stack.Covers( canvas, point )
-			&& level.TryGetGridCell( point, viewport, out var x, out var y ) && (x, y) == cell;
 
 		var item = hud.Catalog.GetItems( BuildCategory.Rides )
 			.Where( candidate => candidate.Entry is { HasQueue: true } && hud.Status.IsAvailable( candidate ) && (hud.Status.PriceOf( candidate ) ?? candidate.Cost) <= hud.Status.Money )
@@ -96,6 +95,10 @@ internal sealed partial class SandboxSmokeTest
 		hud.Update( hudContext, new UiInput( endPoint, true, true, false, false, UiKeys.None ) );
 		hud.Update( hudContext, new UiInput( endPoint, false, false, true, false, UiKeys.None ) );
 		Require( !level.CellTool.IsActive && level.Blueprint!.Cells.Count == 0, "clicking the queue's end again ends the tool and clears the markers" );
+		// [EXT:queue-backtrack] Backspace over the queue's last cell with no tool on takes it back.
+		hud.Update( hudContext, new UiInput( endPoint, false, false, false, false, UiKeys.None, Backspaces: 1 ) );
+		Require( !grid.IsQueue( end.X, end.Y ) && grid.IsQueue( entrance.OutsideX, entrance.OutsideY ),
+			$"Backspace over the queue's last cell {end} removes that cell and keeps the front (message: {level.LastActionMessage})" );
 		Log.Trace( $"HUD queue tool: placed {entry.DisplayName} at {site} and laid {SmokeQueueLength + 1} queue cells from {(entrance.OutsideX, entrance.OutsideY)} to {end}." );
 
 		// The queue front the placement laid is NoModify, and the remove tool takes it with the queue behind it ([EXT:removable-access-cells]); the ride's entrance then resolves to the nearest path again.
@@ -118,7 +121,7 @@ internal sealed partial class SandboxSmokeTest
 			"a free-standing queue cell can be laid" );
 		Require( level.RemoveAt( lone!.Value.X, lone.Value.Y ) && !grid.IsQueue( lone.Value.X, lone.Value.Y ), "the remove tool takes the free-standing queue cell" );
 
-		for ( var step = SmokeQueueLength; step >= 0; step-- )
+		for ( var step = SmokeQueueLength - 1; step >= 0; step-- )
 			level.RemoveAt( entrance.OutsideX + stepX * step, entrance.OutsideY + stepY * step );
 		level.RemoveObjectAt( entrance.X, entrance.Y );
 	}

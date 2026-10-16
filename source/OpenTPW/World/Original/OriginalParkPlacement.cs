@@ -53,6 +53,10 @@ public static class OriginalParkPlacement
 		return ToEngine( field, new System.Numerics.Vector3( (x + 0.5f) * field.CellSizeX, height, (y + 0.5f) * field.CellSizeZ ) );
 	}
 
+	/// <summary>The engine height of a heightfield corner (the landscape grid vertex the original's instance height reads, 0x466D70); the index is clamped to the grid.</summary>
+	public static float GetCornerEngineHeight( ModelHeightfield field, int x, int y ) =>
+		field.GetCornerHeight( Math.Clamp( x, 0, field.CellCountX ), Math.Clamp( y, 0, field.CellCountZ ) ) * ModelScale;
+
 	public static OriginalPlacementResult Check( OriginalPark park, int minX, int minY, int maxX, int maxY ) =>
 		Check( park.Map, park.Heightfield, park.Save, minX, minY, maxX, maxY );
 

@@ -238,7 +238,9 @@ writes it to `VAR_LETMEOFF` when the boat has unloaded.
 ## Rendering
 
 `TrackRenderer`: one entity per piece part per tile, the mesh baked with its rest transform; the tile turns counter-clockwise by its rotation about its own
-centre (the original's one-cell instance offset is unresolved, TRACK-003; the `Bumper.*Adjust` keys are the controller-reference offsets of the ride placement `0x529E10`, not a mesh pivot) and stands on the mean ground height of its four cells; boats are
+centre, which is the original's placement (the instancers `0x522B90` and `0x522D50` take the engine rotation 360 − rotation and add one cell by it to the origin cell, then the
+mesh creation `0x463060` → `0x466F90` adds the same cell again: the piece turns about its corner and sits a whole tile over; `APPROX:TRACK-003` retired) and stands on the height the original gives an instance,
+the midrange of the tile's 3 × 3 landscape vertices (`0x466D70`, written at +0x44 by `0x467030`: half the sum of the lowest and highest; `TrackRenderer.TileHeight`); boats are
 `wr_ring.md2` at `position / 307.2` model units. A boat's height, pitch and roll follow the original's four probes (`[TPW-EXE:0x546280]`): ± the vehicle radius
 along the facing and across it, each sampling the object on the probed cell ("Vehicle height" below); the mean is the height, the front/back and right/left differences the
 pitch and roll.
@@ -282,8 +284,8 @@ and samples it in the mode `0x450EA0` chooses (`TrackSurface.FromObject`):
 Every mode adds the header's +0xA0 (`0x4511A0`, a NaN reset to 0); a probe with no surface (−100) keeps the vehicle's last height. In the shipped kits the flat pieces are terrain
 mode with their floor in +0xA0 (water 3.254, The Blobulator 4.161; karts 3.1 jungle, 5 Halloween and space, 5.005 fantasy: the whole tile, banks and walls included), the hills and ramps
 (`H`, `H_U`, `H_D`) read their surface record (`7/0`: bits 2 and 4), the jungle and fantasy kart stations and every water station are terrain plus the station model's +0xA0
-(3.1, 5.005, 3.254, 4.072), and the bumper rides stand on a platform: The Hot Pot +29.8, Pumpkin Castle +15.005, Uforia +10.924 above the terrain. OpenTPW takes the terrain as the mean ground of
-the tile's (bumper: the cell's) four corners and keeps the straight piece's floor for the Halloween and space kart stations, whose station model reads faces (TRACK-001). `--debug-water-track` (Debug builds) places a ride with a circuit for captures.
+(3.1, 5.005, 3.254, 4.072), and the bumper rides stand on a platform: The Hot Pot +29.8, Pumpkin Castle +15.005, Uforia +10.924 above the terrain. The terrain is the original's sampler `0x4527F0` (`LandscapeSampler`: the cell's plane, or the triangle of the diagonal for a cell the load marked non-planar with 0x800 at `0x45075D`, 0 off the map);
+OpenTPW keeps the straight piece's floor for the Halloween and space kart stations, whose station model reads faces (TRACK-001). `--debug-water-track` (Debug builds) places a ride with a circuit for captures.
 
 ## Rides side by side, pools and demolition
 
@@ -365,7 +367,7 @@ writes for the footprint codes (`0x532FC0`).
 ## Open points
 
 - Jumps and tunnels (TRACK-008: the add-ons are neither sold nor placed; their placement, sections and the teleport hook are read, see "Add-ons"), the edit
-  sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition's replayed action list, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
+  sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition's replayed action list, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 

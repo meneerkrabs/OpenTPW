@@ -183,7 +183,7 @@ public sealed class CoasterRide
 	/// <summary>Seconds of fixed simulation steps this controller has run.</summary>
 	public double TimeSeconds { get; private set; }
 	/// <summary>The guests seated in the cars of the trains (riders on the lap and guests seated at the station).</summary>
-	// [APPROX:COAST-030] the original's controller +0x140 is the self-intersection count, not a rider count (0x439c40, 0x441970), and its pick-up (0x446300) has no rider test; OpenTPW refuses edits while a train carries guests, the Mac reading of the guest predicate
+	// [BIN:TPW-EXE:0x441970 controller +0x140] the original's controller +0x140 is the self-intersection count, not a rider count (0x439c40, 0x441970), and its pick-up (0x446300) has no rider test: no edit is refused for riders any more
 	public int RidersOnBoard => trains.Sum( train => train.Riders );
 	/// <summary>Guests handed over by <c>COAST 1</c> and waiting for a train in the station to seat them (the admission ring).</summary>
 	public int AdmissionCount => admission.Count;
@@ -429,8 +429,8 @@ public sealed class CoasterRide
 	{
 		for ( var index = count; index < trains.Count; index++ )
 		{
-			// The original unloads them in the open and closed states only; in state 2 the trains are empty (4 → 2 and 8 → 2 unload them), and OpenTPW's
-			// headless edits never leave a rider on a train that goes, whatever the state.
+			// The original unloads them in the open and closed states only; in state 2 the trains are empty (4 → 2 and 8 → 2 unload them, the tool's entry), and a
+			// caller that edits outside the tool never leaves a rider on a train that goes, whatever the state.
 			Unload( trains[index], boardingList: true );
 			Unload( trains[index], boardingList: false );
 		}

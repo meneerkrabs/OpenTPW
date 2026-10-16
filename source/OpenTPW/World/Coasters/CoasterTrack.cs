@@ -308,8 +308,25 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>The point before node <paramref name="index"/> for its turn angle: the cell of the node before it (the first station node has none).</summary>
-	// [APPROX:COAST-030] the original skips the turn test when the nodes carry 0x10000 together with 0x20000 in move mode (0x4348af..0x4348d8, the cut ends of a reopened circuit, set by 0x434060 on a node added to an open circuit), flags OpenTPW never sets — evidence needed: a capture of a cut and reconnected circuit
 	private (int X, int Y)? Before( int index ) => index >= 1 ? (nodes[index - 1].X, nodes[index - 1].Y) : null;
+
+	/// <summary>
+	/// Whether the turn at node <paramref name="turnNode"/> is across the cut of a reopened circuit: one of the node before it, itself and the node after it carries the cut end (0x10000) and one the cut start (0x20000).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4348af move mode cut test] in move mode (0x79c658 bit 0x100) the validator 0x434740 drops the node before the turn node (its turn test is skipped, the distance windows still apply) when the node, its previous node and its next node together carry 0x10000 and 0x20000 (0x4348af..0x4348d8, the next node of the last one being the head's next); the cut ends are marked by 0x446740 on the node before and after the cut, and 0x434060 moves the 0x50000 mark to every node built into the gap
+	private bool TurnCrossesTheCut( int turnNode )
+	{
+		var cutEnd = false;
+		var cutStart = false;
+		for ( var index = turnNode - 1; index <= turnNode + 1; index++ )
+		{
+			if ( index < 0 || index >= nodes.Count )
+				continue;
+			cutEnd |= (nodes[index].Flags & CoasterNodeFlags.CutEnd) != 0;
+			cutStart |= (nodes[index].Flags & CoasterNodeFlags.CutStart) != 0;
+		}
+		return cutEnd && cutStart;
+	}
 
 	/// <summary>
 	/// The validator <c>0x36ba4</c> for a new pylon after the last node (<paramref name="moving"/> null) or for node
@@ -334,7 +351,8 @@ public sealed class CoasterTrack
 		var position = moving ?? InsertIndex;
 		var previous = nodes[position - 1];
 		var pylon = ControlAfter( previous, loopMode );
-		var link = CheckLink( pylon, (x, y), (previous.X, previous.Y), Before( position - 1 ), entrance: previous.IsStation );
+		// in move mode a turn across the cut of a reopened circuit is not tested (0x4348af..0x4348d8)
+		var link = CheckLink( pylon, (x, y), (previous.X, previous.Y), moving != null && TurnCrossesTheCut( position - 1 ) ? null : Before( position - 1 ), entrance: previous.IsStation );
 		if ( link != CoasterPlaceResult.Ok )
 			return link;
 		// [BIN:TPW-EXE:0x439ab0 track collision] the original tests the track against itself only (CoasterCollision, run on every rebuild): no terrain or scenery query exists in 0x439ab0, 0x439c40 or 0x43a2b0, so a pylon placement is never refused for what stands under or beside the track
@@ -344,13 +362,18 @@ public sealed class CoasterTrack
 		if ( moving is int moved )
 		{
 			// [BIN:STP-PPC:0x10037318 move re-validation] moving a node re-validates the following node and the one after it with the moved position (0x10037318, 0x100373B4)
+			// [BIN:TPW-EXE:0x434e06 re-validation] after a move the PC validator calls itself for the node after the moved one (0x434e5a, with the moved cell as the next node's previous point) unless the moved node carries the cut end 0x10000 (0x434e06), then for the node after that (0x434ec9) unless the first re-validated node carries it (0x434ea1); the turn test of each is skipped across the cut (0x4348af..0x4348d8)
 			for ( var next = moved + 1; next <= moved + 2 && next < nodes.Count; next++ )
 			{
 				if ( !nodes[next].IsPlayerPylon )
 					break;
 				var after = nodes[next - 1];
+				if ( (after.Flags & CoasterNodeFlags.CutEnd) != 0 )
+					break;
 				var from = next - 1 == moved ? (x, y) : (after.X, after.Y);
 				var behind = next - 2 == moved ? (x, y) : next - 2 >= 0 ? (nodes[next - 2].X, nodes[next - 2].Y) : ((int X, int Y)?)null;
+				if ( TurnCrossesTheCut( next - 1 ) )
+					behind = null;
 				var control = Definition.Pylon( next - 1 == moved ? loopMode : (after.Flags & CoasterNodeFlags.Loop) != 0 );
 				if ( CheckLink( control, (nodes[next].X, nodes[next].Y), from, behind, entrance: after.IsStation ) != CoasterPlaceResult.Ok )
 					return CoasterPlaceResult.BreaksNextLink;
@@ -583,7 +606,7 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>Whether the last pylon joins the head of the chain, the cell of S0 (distance window, turn, and the arrival turn along the platform).</summary>
-	// [APPROX:COAST-030] OpenTPW's closure check: the closing link to the station's first node S0 and the arrival turn (entrance window at S0, toward S1) are validated and Revalidate marks the last pylon invalid when they fail; the original validates the open start of a reopened circuit through the validator's re-validation (0x434d6b, 0x434e5a) and a fresh circuit is closed by completion
+	// [EXT:coaster-closing-check] OpenTPW's closure check: the closing link to the station's first node S0 and the arrival turn (entrance window at S0, toward S1) are validated and Revalidate marks the last pylon invalid when they fail; the original closes a reopened circuit by a click on the chain start without a validator test (0x435020 → 0x442c70) and completes a fresh circuit by 0x435570 without one
 	public CoasterPlaceResult CheckClosure()
 	{
 		if ( nodes.Count < StationNodeCount )
@@ -614,7 +637,7 @@ public sealed class CoasterTrack
 		return angle < low ? CoasterPlaceResult.TurnTooSharp : angle > high ? CoasterPlaceResult.TurnTooWide : CoasterPlaceResult.Ok;
 	}
 
-	/// <summary>Whether a click on (x, y) is on the chain's open start: the cell of the head S0 (COAST-030), or a cell of the station itself where the track begins and ends.</summary>
+	/// <summary>Whether a click on (x, y) is on the chain's open start: the cell of the head S0, or a cell of the station itself where the track begins and ends.</summary>
 	// [BIN:TPW-EXE:0x435d50 closing target] the cell that holds the head node (S0) of a fresh track is the closing target (the closing flag, and the open-circuit close test of 0x435020)
 	// [EXT:coaster-station-end-click] a click on the station's '<' or '>' cell closes the circuit too, as it did when the station's ends were the track's ends; the original's own completion click takes any ride cell (types 4, 9, 10), see CoasterBuilder.Complete
 	public bool IsChainStart( int x, int y ) => CutAfter is int cut

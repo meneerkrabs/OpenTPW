@@ -89,6 +89,11 @@ public sealed class ParkEconomy : IParkEconomy
 	public int MonthsInRed { get; private set; }
 	/// <summary>The bank's <c>mWithdrawalsEnabled</c> (+0x114): when clear, a debit charges nothing (tp.exe <c>0x004D01F0</c>). Set in every shipped save.</summary>
 	public bool WithdrawalsEnabled { get; private set; } = true;
+	/// <summary>
+	/// The bank's <c>mBatchBalance</c> (+0x10): a pending credit that the next month message pays into the balance (tp.exe <c>0x004D0370</c>). Nothing in play raises it
+	/// (see <see cref="ParkLedger.IsIncome"/>), so it is 0 unless an original save carries one.
+	/// </summary>
+	public long BatchCredit { get; private set; }
 	/// <summary>The bank's <c>mLastBalance</c> (+0x11C): the balance after the last debit; credits leave it.</summary>
 	public long LastBalance { get; private set; }
 	/// <summary>The bank's turn-entered-red stamp (+0x120): the park turn of the debit that took the balance from 0 or more below 0.</summary>
@@ -663,7 +668,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void CheckGoldenTickets()
 	{
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ) ) )
+		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ), CoveredCells() ) )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 	}
 
@@ -1000,7 +1005,7 @@ public sealed class ParkEconomy : IParkEconomy
 	private void EndDay( long day )
 	{
 		// [BIN:TPW-EXE:0x0050B360 thing update] the challenge system's day (0x004D1E90) is its thing update (type 0x13), which a lost park no longer runs
-		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
+		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge, IsParkOpen ).ToList() : new();
 		foreach ( var (kind, index, amount, detail) in challenges )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
@@ -1014,6 +1019,12 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void EndMonth( long nextMonthIndex )
 	{
+		// [BIN:TPW-EXE:0x004D0370 bank month] the month message first pays the batch word (+0x10, an unsigned credit below 1,000,000 by the routine's own assertion) into the balance, the money-in total (+0x1FC90) and the year's profit (+0x124), then zeroes it (0x4D0393..0x4D03DB), before any instalment
+		if ( BatchCredit != 0 )
+		{
+			Post( LedgerCategory.OtherIncome, BatchCredit );
+			BatchCredit = 0;
+		}
 		var wages = Staff.TotalMonthlyWages;
 		if ( wages > 0 )
 		{
@@ -1222,6 +1233,27 @@ public sealed class ParkEconomy : IParkEconomy
 			}
 		}
 		cellPoints = (cells, cells.Version, cells.Tracks.Version, total);
+		return total;
+	}
+
+	/// <summary>
+	/// The big park ticket's count (tp.exe <c>0x004CD7F0</c>): the cells, owned or not, whose type is 4, 9, 10 or 21 or that lie under a counted structure; null without a cell map.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CD7F0 covered cells] the loop over x and y from 127 down to 0 counts a cell when 0x00536340 (type 9), 0x00536350 (10), 0x00536380 (4), 0x005363F0 (the structure test of the net worth, ECON-026) or 0x005363E0 (type 21) answers
+	internal long? CoveredCells()
+	{
+		if ( Litter.Cells is not { } cells )
+			return null;
+		var total = 0L;
+		for ( var y = 0; y < cells.Height; y++ )
+		{
+			for ( var x = 0; x < cells.Width; x++ )
+			{
+				var (type, structure) = CellForValue( cells, x, y );
+				if ( structure || type is 4 or 9 or 10 or 21 )
+					total++;
+			}
+		}
 		return total;
 	}
 
@@ -1617,11 +1649,8 @@ public sealed class ParkEconomy : IParkEconomy
 	public void ChargeLand( long cost, int cells )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( cells );
-		// A negative total (a modified Costs.MapCell) is booked as other income, as TrySpendCell books a negative cell cost (the ECON-048 approximation: the original's debit of a negative amount raises the balance; its month category is not traced).
-		if ( cost >= 0 )
-			Post( LedgerCategory.OtherCosts, cost );
-		else
-			Post( LedgerCategory.OtherIncome, -cost );
+		// Costs.MapCell cannot be negative (the balance load refuses it, 0x00401D7C), so the total is never income.
+		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)CellPurchase.Land, $"{cells} {CellPurchase.Land} cells" );
 	}
 
@@ -1650,8 +1679,8 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// Charges one path or queue cell when it is written (<c>SetCellType</c>, PATH-plan §3.2): refused only
-	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs. A negative cost (modified
-	/// <c>Costs.*</c>, which tp.exe refuses when it loads the balance file) raises the balance by its amount.
+	/// when balance − cost &lt; 0 (no bankruptcy test), then spent as other costs. A negative <c>Costs.*</c> is refused
+	/// when the balance file loads (tp.exe 0x00401D7C), so the cost is never negative.
 	/// </summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 costs Costs.PathCell, type 3 Costs.QueueCell; refused when balance − cost < 0, else Spend per cell at write time
 	public PurchaseResult TrySpendCell( CellPurchase kind )
@@ -1659,11 +1688,8 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !CanSpendCell( kind ) )
 			return PurchaseResult.NotEnoughMoney;
 		var cost = CellCost( kind );
-		// [APPROX:ECON-048] a negative path or queue cell cost (modified Costs.*) is accepted and booked as other income; tp.exe never spends one: Costs.* are type-5 balance keys, whose parser refuses a negative value ('Balance problem: invalid -ve value specified', 0x401d7c), which fails the balance load (0x407f20, 0x407e00 skips the cost copy 0x4080e0) and so the level start (0x54e360) — evidence needed: none (read); OpenTPW does not refuse the value at load
-		if ( cost >= 0 )
-			Post( LedgerCategory.OtherCosts, cost );
-		else
-			Post( LedgerCategory.OtherIncome, -cost );
+		// [BIN:TPW-EXE:0x00401D7C negative cost refused at load] a negative Costs.* value fails the balance load (BalanceSettings), so a cell cost here is never negative and is always spent
+		Post( LedgerCategory.OtherCosts, cost );
 		Raise( ParkEventKind.CellsBought, cost, 0, (int)kind, $"1 {kind} cell" );
 		return PurchaseResult.Ok;
 	}
@@ -1706,6 +1732,36 @@ public sealed class ParkEconomy : IParkEconomy
 		var amount = TryGetObject( rideInstanceId, out var ride ) ? CellCost( CellPurchase.Queue ) * ScrapPercent( ride! ) / 100 : 0;
 		if ( amount > 0 )
 			Post( LedgerCategory.OtherIncome, amount );
+		return amount;
+	}
+
+	/// <summary>
+	/// Refunds one cleared kart or water track tile of a ride being demolished: the track cell cost × the ride's scrap percentage / 100, an unsigned 32-bit
+	/// division as the queue cell refund. Returns the amount credited.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053B5FE track tile refund] ClearCell takes the cell cost of the tile type (0x52FB60 for a type 11 kart tile, 0x52FB80 for a type 16 water tile, 0x53B299) and, when the tile is cleared, credits (0x4D0190 at 0x53B622) the ride's scrap percentage (0x4E2290) × that cost / 100 (imul and unsigned mul by 0x51EB851F at 0x53B60A..0x53B617); the station tiles (types 13 and 18) refund nothing
+	public long RefundTrackTile( CellPurchase kind, int rideInstanceId )
+	{
+		if ( !TryGetObject( rideInstanceId, out var ride ) )
+			return 0;
+		var amount = unchecked( (uint)((int)CellCost( kind ) * ScrapPercent( ride! )) ) / 100;
+		if ( amount > 0 )
+			Post( LedgerCategory.OtherIncome, amount );
+		return amount;
+	}
+
+	/// <summary>
+	/// The one charge a kart or water ride's demolition makes after its tiles are cleared: twice the track cell cost × the ride's scrap percentage / 100, a signed
+	/// 32-bit division, debited without a balance test. Returns the amount debited.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00528157 demolition charge] after the replays of the track tool from both station sides (0x81B46C = 1), 0x527EE0 takes twice the cell cost (0x52FB60 or 0x52FB80 by the type record +0x9C, 0x5280F0..0x52814A), multiplies by the scrap percentage (0x4E2290) and divides by 100 signed (imul by 0x51EB851F, sar 5 and the sign correction), and debits it through 0x4D01F0 (0x528179)
+	public long ChargeTrackDemolition( CellPurchase kind, int rideInstanceId )
+	{
+		if ( !TryGetObject( rideInstanceId, out var ride ) )
+			return 0;
+		var amount = unchecked( ((int)CellCost( kind ) << 1) * ScrapPercent( ride! ) ) / 100;
+		if ( amount > 0 )
+			Post( LedgerCategory.OtherCosts, amount );
 		return amount;
 	}
 
@@ -1855,12 +1911,13 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( Catalog.TryGet( item.InfoId, out var info ) )
 				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
 		}
-		// [APPROX:ECON-056] the cost booked for a shop sale is the shop's mCostOfGoods as it stands; the original books the value of 0x004E1B40, a float product of mCostOfGoods with terms of the quality byte (+0x18C) and the special-ingredient byte (+0x198) — evidence needed: the last combination step of 0x004E1B40 from a capture of a booked shop cost
-		Post( LedgerCategory.OtherCosts, item.CostOfGoods );
+		// [BIN:TPW-EXE:0x004FE1E0 shop use] a shop (WhichUIType 1) books 0x004E1B40's value (ShopGoodsCost: the cost of goods scaled by the quality and special-ingredient bytes) through 0x004E1920: the bank debit, the object's cost rings and the challenge types 12 and 13 all take the same number
+		var goods = Catalog.TryGet( item.InfoId, out var shopInfo ) ? ShopGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, shopInfo.SpecialIngredient ) : item.CostOfGoods;
+		Post( LedgerCategory.OtherCosts, goods );
 		item.CustomersThisMonth++;
-		item.CostsThisMonth += item.CostOfGoods;
-		item.TotalProfit += item.Price - item.CostOfGoods;
-		Counters.Add( ParkCounters.ShopProfit, item.Price - item.CostOfGoods );
+		item.CostsThisMonth += goods;
+		item.TotalProfit += item.Price - goods;
+		Counters.Add( ParkCounters.ShopProfit, item.Price - goods );
 		if ( item.Price != 0 )
 			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
 		return true;
@@ -2005,20 +2062,21 @@ public sealed class ParkEconomy : IParkEconomy
 	/// declined challenges, and a challenge that is running (accepted, with its deadline and the value it has reached) or offered and unanswered.
 	/// </summary>
 	internal void RestoreOriginalChallenges( long nextOfferDay, int nextListPosition, int? runningIndex, long deadlineDay, long value, int? offeredIndex,
-		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished )
+		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished, bool switchedOn = true )
 	{
 		ActiveChallenge? current = null;
 		if ( runningIndex is int running && Settings.Challenges.TryGetValue( running, out var definition ) )
 		{
 			// The original accumulates the value from 0 at the offer; OpenTPW measures a count type against a baseline, so the baseline is set
 			// to give the saved value now
-			var baseline = ParkObjectives.IsCountSinceAcceptance( definition.Type ) ? MeasureChallenge( definition ) - value : 0;
+			// the daily-average types keep the system's accumulated value itself
+			var baseline = ParkObjectives.IsCountSinceAcceptance( definition.Type ) ? MeasureChallenge( definition ) - value : ParkObjectives.IsDailyAverage( definition.Type ) ? value : 0;
 			var start = deadlineDay - definition.TargetTime;
 			current = new ActiveChallenge( running, start, true, start, deadlineDay, baseline );
 		}
 		else if ( offeredIndex is int offered && Settings.Challenges.ContainsKey( offered ) )
 			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0 );
-		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets );
+		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn );
 	}
 
 	/// <summary>Takes an original save's bank account: balance, admission fee, the year's profit and the bought loans.</summary>
@@ -2034,8 +2092,10 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>Restores the bank's withdrawals flag, balance after the last debit and turn-entered-red stamp (an original save's or OpenTPW's).</summary>
-	internal void RestoreBankWords( bool withdrawalsEnabled, long lastBalance, long turnEnteredRed )
+	internal void RestoreBankWords( bool withdrawalsEnabled, long lastBalance, long turnEnteredRed, long batchCredit = 0 )
 	{
+		ArgumentOutOfRangeException.ThrowIfNegative( batchCredit );
+		BatchCredit = batchCredit;
 		ArgumentOutOfRangeException.ThrowIfNegative( turnEnteredRed );
 		WithdrawalsEnabled = withdrawalsEnabled;
 		LastBalance = lastBalance;

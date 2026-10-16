@@ -53,8 +53,9 @@ The reduced imported guest grid does not yet preserve every original cell type: 
 ## Approximations
 
 - `ECON-049`: the reopen guard (`0xde654`) is executed in the oracle and follows the original's state test, including the maintenance flag (the ride
-  panel's call for a mechanic); the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`) is not modelled, so the door and the open button
-  open a ride whose queue back has lost its path, which the original's guard (`0x004DF290`) refuses.
+  panel's call for a mechanic) and the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`: the back queue cell's link byte must differ
+  from its queue link, so a queue whose back has lost its path stays closed); a ride on OpenTPW's one-cell queue and an object without a
+  queue are taken as connected, because OpenTPW's ride entrance cells keep no link byte.
 - `ECON-050`: the guest-grid import types only empty, path, queue and track cells. The original types every cell at world init from its MAP byte
   and the base.md2 tile flags (`0x00536490`: off-terrain 2, 30 or 7) and placement writes footprint types; here those cells read 0 and count.
 - `GUEST-011`: a paid visitor walks in without waiting for the entrance gate's script variable 1, which the original's

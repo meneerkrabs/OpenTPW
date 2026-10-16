@@ -76,6 +76,7 @@ public class ParkResumeSaveFileTests
 			bridge.Attach( script, () => true );
 			Assert.AreEqual( 5, QueuePaths.TryExtend( Grid, bridge, Enumerable.Range( 0, 5 ).Select( index => (2, 5 - index) ) ),
 				"the fixture park builds its queue" );
+			QueuePaths.TryConnect( Grid, bridge );
 			Simulation.Register( bridge );
 			script.Advance( Tick );
 		}

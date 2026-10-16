@@ -622,16 +622,27 @@ points back at the previous cell, followed from the front at most 1,000 steps
 (`RideVisitorBridge.RecomputeQueue`). That gives the back cell and the size in
 cells, at least 1. A front cell that is neither a queue nor a path cell falls
 back to the nearest walkable path cell as a one-cell queue (RIDES-028). Guests
-step onto the back cell from the **join cell**, a walkable neighbour of the
-back cell. A queue that touches no path is not connected and guests do not
-choose the ride. Every grid edit recomputes all queues. A changed queue is a
+step onto the back cell from the **join cell**, the path cell attached to the
+back cell: the first cardinal neighbour (order 1, 4, 16, 64) whose bit is set in
+the back cell's link byte `+0x0C` (tp.exe `0x4de840`). A queue whose back links
+to no path is not connected and guests do not choose the ride. Every grid edit
+recomputes all queues. A changed queue is a
 queue edit: queued guests beyond 4 × cells or off the queue leave, and the
 others walk to their positions again.
 
 **Building** (§3.3, partly approximated). `QueuePaths.TryExtend` (headless)
 and the level's queue tool (`Level.BuildQueueCell`) lay one cell at a time. The
 first cell is the front cell, linked toward the ride. Every later cell touches
-the back cell and links toward it. Only `Info.HasQueue` objects take queue
+the back cell and links toward it. The queue tool's link pass (tp.exe link
+writer `0x5348D0`, mode 3) writes the link bytes: the front cell gets the bit
+toward the entrance, each later cell and the cell before it get each other's
+bit while that cell has fewer than two, and a queue line that ends on a path
+cell (the validator's code 8) links that path cell and the back cell to each
+other (`QueuePaths.Connect`): the queue is connected to that path, and only
+to it. A path laid later beside a queue does not connect it. Removing a queue
+or path cell unlinks it on both sides (`0x5367A0`). Saves made before the
+links existed get them when the ride registers: the chain, and the back linked
+to its first adjacent path cell (`QueuePaths.RebuildMissingLinks`). Only `Info.HasQueue` objects take queue
 paths, at most 25 cells. A queue cell goes only on an empty cell
 (`ParkCellMap.CanChangeCellType`, traced; the original's line tool may also lay
 queue over a path on every cell of a line but the last, which this tool does
@@ -773,10 +784,9 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
-| QUEUE-003 | Guests walk to the back cell's first walkable neighbour (order 1, 4, 16, 64, no connection test) and join from it; with none the ride cannot be joined. tp.exe's state 10 (`0x4ffbc0`) joins when the guest stands on the back queue cell itself (`0x4de110`, `0x4de130`); its first connected path neighbour (`0x4de840`: the `+0x0C` bit and a type-1 cell) only sets the back cell's fourth-place axis (none: a log line and the cell's own link) | The queue tool's `+0x0C`/`+0x0D` writes and the route (`0x4fa5f0`) onto a queue cell |
+| QUEUE-003 | Guests walk to the join cell, the path cell attached to the back of the queue (the first neighbour in the order 1, 4, 16, 64 whose bit is set in the back cell's link byte `+0x0C`, `0x4de840`), and join from it; with none the ride cannot be joined. tp.exe's state 10 (`0x4ffbc0`) joins when the guest stands on the back queue cell itself (`0x4de110`, `0x4de130`), reached through the back cell's link by the walk's edge test, and uses the attached path cell only for the back cell's fourth-place axis; the ride's entrance cell keeps no link byte here (ride cells are not typed map cells) | The route (`0x4fa5f0`) onto a queue cell on OpenTPW's walk (WALK-006) |
 | QUEUE-004 | The join excitement gate, clamped difference and live excitement follow the original (ORACLE.md F16); the controller base (60 % of the level plus up to 40 from the circuit counts, tp.exe `0x4e0560`) is given to water, kart and bumper-car rides, while the original builds a controller for any nonzero BumperType (`0x529e10` → `0x545890`, also −2 and −3) | Whether a shipped ride uses BumperType −2 or −3 or a mixed WhichTrackType/BumperType pair |
 | QUEUE-005 | The leave-for-room rule is the original's (position ≥ 4 × cells, not in state 14; tp.exe `0x501390`, ORACLE.md X14). OpenTPW also sends away a guest whose cell left the queue (Confused) and re-walks the others, where the original changes nothing for them (state 11 re-routes a moved guest through `0x501160`); Angry uses the guest id, not the thing id; the dismissal's event 6 in the guest's history and its sound (thing id & 7 = 0, `0x5012f0`) are not modelled | Whether the generic route (`0x4fa5f0`) reaches a place from off the queue; the thing-id numbering; the readers of the event history |
-| QUEUE-006 | Queue places follow tp.exe `0x4de840` (depths 0/63/127/191, the axis per link, the fourth place on the axis of the cell behind, the cell's own link when no path is attached); only the back cell's fourth place takes its axis from OpenTPW's join cell, chosen without the back cell's connection bit (`+0x0C`) | The queue tool's connection writes (QUEUE-003) |
 | QUEUE-008 | Toilets wear by use (tp.exe `0x4e2440`: 0.05 × the guest's toilet byte) and handymen clean them back to 100 after WorkDuration park turns (`0x4d7880`, state 11, `0x4dfd80`), so the worn-toilet exit fires, and the RegionFX row swaps (`0x4d8440`/`0x4d8460` → `0x4d8480`) are modelled; the wear step's branch for game type 1 (no wear; a dirty toilet is cleaned on use) is not | What game type 1 (`0xfb3b7c`) is in OpenTPW's terms |
 | QUEUE-010 | A guest leaving a queue reappears on the join cell at once; tp.exe's exit (`0x5004aa`: `0x4ddd20`, `0x5012f0`, state 6) writes no position, so the guest stays where it stood | The state-6 handler's walk from a queue cell (`0x4fec90`) |
 | QUEUE-011 | Exact completed economy tier for ordinary TPW catalogue queue defaults/fallback capacity and the speed bias; live VM CAP/DUR retained, where tp.exe's completion (`0x4df8f0`) writes VAR_CAPACITY (`0x4dd7f0`, clamped) and VAR_DURATION (clamped), each when above 0 | None for the writes; the completion's repair reset and reopen tail against OpenTPW's completion path |

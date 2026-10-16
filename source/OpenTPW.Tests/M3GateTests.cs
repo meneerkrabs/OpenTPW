@@ -100,6 +100,7 @@ public class M3GateTests
 			Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 )
 		};
 		Assert.AreEqual( 5, QueuePaths.TryExtend( grid, ride, Enumerable.Range( 0, 5 ).Select( index => (2, 5 - index) ) ) );
+		QueuePaths.TryConnect( grid, ride );
 		Assert.AreEqual( ((int, int)?)(2, 0), ride.JoinCell );
 		return ride;
 	}

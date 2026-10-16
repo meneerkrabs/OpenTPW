@@ -996,6 +996,7 @@ public class GuestTests
 		};
 		ride.Attach( CreateShopScript( new VisitorRideScriptEffects( ride, UnimplementedRideScriptEffects.Instance ) ), () => true );
 		Assert.AreEqual( 3, QueuePaths.TryExtend( grid, ride, new[] { (2, 5), (2, 4), (2, 3) } ) );
+		QueuePaths.TryConnect( grid, ride );
 		Assert.AreEqual( (2, 3), ride.QueueBackCell );
 		Assert.AreEqual( (3, 3), ride.JoinCell, "the only walkable neighbour of the back cell, away from the guest" );
 		for ( var queued = 1; queued <= 6; queued++ )

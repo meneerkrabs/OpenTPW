@@ -211,7 +211,7 @@ Still approximations:
 | ID | What |
 | --- | --- |
 | ECON-023 | The wear step and the breakdown check do not know relief objects (toilets are not simulated), and the ride's state is derived from the economy and the script's VAR_BROKEN instead of a state word; a breakdown that only the script reports (VAR_BROKEN) gets no mechanic, because the economy does not write VAR_BREAKSTAT and the job could not wait for the script as 0xd9e04 does. |
-| ECON-049 | The maintenance flag (+96, a player request) and the back-of-queue link test of the reopening guard are not modelled. |
+| ECON-049 | The back-of-queue link test of the reopening guard runs only for rides with real queue cells (entrance cells keep no link byte). |
 
 Not in OpenTPW yet:
 

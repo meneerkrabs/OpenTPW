@@ -259,8 +259,13 @@ public sealed class QueueLineWriter : ICellLineWriter
 			// The preview validates every new cell as the commit would, with the ghost's earlier new cells taken as laid.
 			var result = write ? build( x, y ) : check( x, y, built );
 			// [BIN:STP-PPC:0x84154 queue line validator] a line whose last cell is a path cell returns code 8, the queue joining the path (it sets the flag 0x7C500 the commit's cat_ui 139 reads): the path cell is not laid, and the line is not refused
+			// [BIN:TPW-EXE:0x00535C7E queue line validator] queue over a type-1 cell on the line's last cell (0x820AB8, while 0x816D50 is clear) returns 8; the commit's link pass then links that path cell to the queue cell before it (QueuePaths.Connect)
 			if ( result != QueueBuildResult.Ok && (x, y) == last && grid.IsWalkable( x, y ) )
+			{
+				if ( write && line.Count > 1 )
+					QueuePaths.Connect( grid, Ride, line[^2], (x, y) );
 				break;
+			}
 			if ( result != QueueBuildResult.Ok )
 			{
 				stoppedBy = result switch

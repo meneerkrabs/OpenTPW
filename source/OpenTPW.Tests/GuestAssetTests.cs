@@ -435,6 +435,7 @@ public class GuestAssetTests
 		var simulation = new GuestSimulation( grid, settings, 21 ) { ArrivalsEnabled = false };
 		simulation.Register( ride );
 		Assert.AreEqual( 4, QueuePaths.TryExtend( grid, ride, queue ) );
+		QueuePaths.TryConnect( grid, ride );
 		CollectionAssert.AreEqual( queue, ride.QueueCells.ToArray() );
 		Assert.AreEqual( site.Path, ride.JoinCell );
 		Assert.AreEqual( 16, ride.MaximumQueueLength, "min(21, 4 × 4 cells)" );

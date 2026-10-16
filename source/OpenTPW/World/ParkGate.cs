@@ -212,18 +212,32 @@ public sealed class ParkGate
 	/// <summary>
 	/// Whether a closed attraction may be opened again: the original's <c>0xde654</c> (PC <c>FUN_004df290</c>), the guard of the door's opening
 	/// walk and of the open buttons (ORACLE.md F27, ECON-049). It reads the ride's state: not broken down, condemned or upgrading, no maintenance
-	/// flag, the back of its queue connected to a path, and a coaster with a complete circuit.
+	/// flag, the back of its queue connected to a path (<see cref="QueueConnected"/>), and a coaster with a complete circuit.
 	/// </summary>
 	// [BIN:STP-PPC:0x100DE654 reopen guard] state 1, 4 and 2 (the script's VAR_BROKEN or the economy's breakdown; a purchased upgrade not yet installed), maintenance flag +96, back of the queue 0xdd744, coaster circuit 0x45eac; executed by the oracle target ride-may-open
-	// [APPROX:ECON-049] the back-of-queue link test (tp.exe 0x004DE4A0) is not modelled: OpenTPW takes the queue as connected, so the park door (0x00519EF0, guard 0x004DF290) and the open button (disabled by 0x004AD4E0 / 0x004973A0 when the guard fails) open a ride whose queue back has lost its path; in the original an object with flag +0x32 bit 8 needs its back cell's connection byte (+0xC) to differ from its queue-link byte (+0xD), any other object its entrance cell and the type-1 cell in front of it linked both ways; the cell clear 0x005367A0 unlinks a removed path's neighbours, and nothing that tests the link closes an open ride (the repair 0x004DF8F0, the upgrade cancel 0x004E0050, the toilet clean 0x004DF390 and the track-edit exit 0x00447520 open regardless) — evidence needed: the placement-side writer of a back cell's connection bit (OpenTPW keeps no connection bits for queue cells, QUEUE-003)
 	internal bool MayOpen( OriginalObjectRuntime item )
 	{
 		var record = economyOf?.Invoke( item );
 		var state = item.GetVariable( RideVariables.VAR_BROKEN ) != 0 || record is { IsBrokenDown: true } ? RideObjectStates.BrokenDown
 			: record is { } && record.PendingLevel > record.Level ? RideObjectStates.Upgrading : RideObjectStates.Idle;
 		var coaster = item.Coaster != null;
-		return RideOpening.MayOpen( state, maintenanceFlag: record?.MaintenanceRequested == true, queueConnected: true, coaster ? RideOpening.CoasterTrackType : 0,
+		return RideOpening.MayOpen( state, maintenanceFlag: record?.MaintenanceRequested == true, queueConnected: guests == null || QueueConnected( guests.Grid, item.Visitors ), coaster ? RideOpening.CoasterTrackType : 0,
 			coasterComplete: !coaster || item.Coaster!.IsOperational );
+	}
+
+	/// <summary>
+	/// The back-of-queue link test (tp.exe <c>0x004DE4A0</c>): a ride with <c>Info.HasQueue</c> is connected when the link byte of its
+	/// back queue cell differs from its queue link, i.e. the back links to more than the cell before it (a path attached by the queue
+	/// tool, <see cref="QueuePaths.Connect"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE4A0 queue link test] thing flag +0x32 bit 8 (Info.HasQueue, type record +0x40, set at 0x4DB425): the back cell (0x4DE130, the cached +0x3A) must exist and its +0x0C (0x522770) differ from its +0x0D (0x522850); without the flag the entrance cell's link toward the cell in front (by the rotation +0x10: 0 → 16, 90 → 4, 180 → 1, 270 → 64) and that type-1 cell's link back are both needed
+	// [APPROX:ECON-049] a ride without real queue cells (OpenTPW's one-cell queue on the nearest path, RIDES-028) and an object without Info.HasQueue are taken as connected: OpenTPW's ride entrance cells are not typed map cells and keep no link byte (WALK-005), so tp.exe's front cell (read from the entrance cell's link, 0x004DE040) and the entrance-to-path test of objects without a queue cannot run; nothing that tests the link closes an open ride (the repair 0x004DF8F0, the upgrade cancel 0x004E0050, the toilet clean 0x004DF390 and the track-edit exit 0x00447520 open regardless) — evidence needed: the entrance cells' types and link bytes in OpenTPW's cell map
+	internal static bool QueueConnected( GuestPathGrid grid, RideVisitorBridge ride )
+	{
+		if ( !ride.HasQueue || ride.QueueFrontCell is not { } front || !grid.IsQueue( front.X, front.Y ) )
+			return true;
+		var back = ride.QueueBackCell;
+		return grid.Cells.LinksAt( back.X, back.Y ) != grid.Cells.QueueLinkAt( back.X, back.Y );
 	}
 
 	/// <summary>

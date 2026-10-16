@@ -167,6 +167,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		attraction.Host = this;
 		attractions.Add( attraction );
 		attractions.Sort( ( a, b ) => a.AttractionId.CompareTo( b.AttractionId ) );
+		// A queue from a save made before queue cells were linked gets the links the queue tool writes (QueuePaths.RebuildMissingLinks).
+		if ( attraction is RideVisitorBridge ride && ride.HasQueue )
+			QueuePaths.RebuildMissingLinks( Grid, ride );
 		attraction.RecomputeQueue( Grid );
 		seenQueueEdits[attraction.AttractionId] = attraction.QueueEditCount;
 	}
@@ -1527,7 +1530,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueTargetIndex = index;
 		guest.QueueTargetX = target.X / (float)Fixed16.One;
 		guest.QueueTargetY = target.Y / (float)Fixed16.One;
-		// A queue walk stays a route walk along these cells (GuestNavigation.SetDestination, WALK-006): OpenTPW's queue cells carry no +0x0c neighbour links (QUEUE-003) for the edge test 0x4d8750
+		// A queue walk stays a route walk along these cells (GuestNavigation.SetDestination, WALK-006)
 		SetDestination( guest, target, route, alsoOpen, alongCells: true );
 	}
 
@@ -1547,8 +1550,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// depth byte trunc(255 × 0.25 × remaining) (0, 63, 127, 191) along the cell from its front edge and the
 	/// sideways byte <paramref name="lateral"/> (114..141) across it, each byte / 256 of a cell (<c>0xe68cc</c>).
 	/// </summary>
-	// [BIN:TPW-EXE:0x004DE840 queue slot] depth = trunc(255 × 0.25 × the place within the cell); lateral = 0x72 + rand % 28. Up to depth 128 the cell's own link to the front picks the axis: link 1 (−Y) gives (lateral, depth), 4 (+X) (255 − depth, lateral), 16 (+Y) (lateral, 255 − depth), 64 (−X) (depth, lateral). Beyond 128 (the fourth place) the axis is the link of the queue cell behind (0x004DE670), for the back cell the direction from its attached path cell (the first of its connections 1, 4, 16, 64 that leads to a path cell, reversed), and link 4 then gives depth − 128 instead of 255 − depth
-	// [APPROX:QUEUE-006] the back cell's fourth place takes its axis from OpenTPW's join cell, the first adjacent path cell in the order 1, 4, 16, 64; tp.exe 0x004DE840 takes the first such cell whose bit is also set in the back cell's connection byte +0x0C (0x004DEA2F..0x004DEA57), so the two differ when the back cell touches an unconnected path cell earlier in that order — evidence needed: the queue tool's connection writes (QUEUE-003)
+	// [BIN:TPW-EXE:0x004DE840 queue slot] depth = trunc(255 × 0.25 × the place within the cell); lateral = 0x72 + rand % 28. Up to depth 128 the cell's own link to the front picks the axis: link 1 (−Y) gives (lateral, depth), 4 (+X) (255 − depth, lateral), 16 (+Y) (lateral, 255 − depth), 64 (−X) (depth, lateral). Beyond 128 (the fourth place) the axis is the link of the queue cell behind (0x004DE670), for the back cell the direction from its attached path cell (the first of its connections 1, 4, 16, 64 that leads to a path cell, reversed: RideVisitorBridge.JoinCell), and link 4 then gives depth − 128 instead of 255 − depth
 	public (int CellIndex, float X, float Y) QueuePositionPoint( IRideVisitorBridge attraction, int position, byte lateral )
 	{
 		var (index, x, y) = QueueSlotPoint( attraction, position, lateral );

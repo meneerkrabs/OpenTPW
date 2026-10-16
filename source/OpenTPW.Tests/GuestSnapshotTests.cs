@@ -70,6 +70,7 @@ public class GuestSnapshotTests
 			var script = scriptFactory( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ) );
 			bridge.Attach( script, () => true );
 			Assert.AreEqual( queueCells, QueuePaths.TryExtend( Grid, bridge, Enumerable.Range( 0, queueCells ).Select( index => (front.X, front.Y - index) ) ) );
+			QueuePaths.TryConnect( Grid, bridge );
 			Simulation.Register( bridge );
 			Rides.Add( (bridge, script) );
 			script.Advance( Tick );

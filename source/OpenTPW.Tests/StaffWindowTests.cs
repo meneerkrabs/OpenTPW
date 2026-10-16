@@ -388,4 +388,12 @@ public class VisitorsWindowTests
 		hud.Stack.Top!.Find( "exit" )!.Activate();
 		Assert.IsFalse( hud.VisitorWindowOpen, "the tick (-2) closes it" );
 	}
+
+	[TestMethod]
+	public void TheHireListSharesTheBuyListsRowPitch()
+	{
+		// the hire list's row factory 0x49bbb0 is the buy list's 0x4ad240 formula on the same font slot 7
+		Assert.AreEqual( ParkHud.BuyRowHeight, ParkHud.StaffRowHeight );
+		Assert.AreEqual( 11, ParkHud.StaffVisibleRows, "(bottom - top) / pitch whole rows (0x663786)" );
+	}
 }

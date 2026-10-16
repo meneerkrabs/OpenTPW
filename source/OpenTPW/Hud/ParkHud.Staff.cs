@@ -40,11 +40,10 @@ public sealed partial class ParkHud
 	private Dictionary<StaffType, string[]>? staffNames;
 	private string[]? staffTypes;
 	private string[]? staffStates;
-	// [EXT:list-row-pitch] the staff rows take the table's content area rather than a font bank's pitch, a design choice: the original list class takes its pitch from the font's text height (0x663718: 0x65d865 into +0x170), which resolution-independent output sizes cannot copy (UI-002)
-	// [APPROX:UI-080] ten equal rows fill the table's 470-unit content area (47 units each), where the video's list (12:00) has a pitch of about 19 px at 720p, about 40 units, and shows (bottom - top) / pitch rows (0x663786), about twelve — evidence needed: the staff list font's text height
+	// [BIN:TPW-EXE:0x49bbb0 hire list row] the hire window's list (control 0x248e) makes each row (0x49c870 → 0x49bbb0, 0x65bcad) as high as font slot 7's line height ([0x7523dc] holds 7) × 1536 / screen height + 6, computed once ([0x7ca314]), the formula and slot of the buy list's rows (0x4ad240), so the staff list takes the buy list's pitch (BuyRowHeight, UI-044 for its value) and shows (bottom - top) / pitch whole rows (0x663786): 470 / 41.4 = 11
 	// [BIN:TPW-EXE:0x665c35 list wheel] the list forwards a wheel message (0x1000d, one notch = WM_MOUSEWHEEL delta / 120 at 0x46b600) to its scroll bar child as position - notches, so the wheel moves one row per notch
-	public const int StaffVisibleRows = 10;
-	public const float StaffRowHeight = 470f / StaffVisibleRows;
+	public const float StaffRowHeight = BuyRowHeight;
+	public const int StaffVisibleRows = (int)(470f / StaffRowHeight);
 
 	public bool StaffWindowOpen => staffScreen != null && Stack.Screens.Contains( staffScreen );
 	public StaffType? StaffFilter => staffFilter;

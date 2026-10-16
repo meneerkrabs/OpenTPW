@@ -21,6 +21,18 @@ Twenty-two more interface approximations were read again in tp.exe:
 - The left mouse button is button 0 (`0x634963`), so UI-910 keeps only the per-visitor window `0x4b79b0`, which is not ported;
   13 interface items are narrowed.
 
+## Online, economy and path reading round (October 15, 2026)
+
+Nineteen approximations were read again in tp.exe:
+
+- **Chat**: blanks before a `/` are skipped (`0x5e45d0`; ONLINE-002 retired). **The globe** starts at yaw 0, pitch 0 whenever a globe screen
+  opens (`0x5dcfe0`; ONLINE-008 retired), edge steering works only in the Pushscroll option and right-button steering only in the other,
+  and the pitch limit stops the turn. **Pins** replace their root matrix instead of composing it (`0x5d81c0`, no doubled scale).
+- **The online world screen** puts the city labels at the top right (table `0x7581a0`), empty when no city is hovered; satellite counts are
+  centred in white (`0x4c4fb0`); the publish globe has no back button.
+- ONLINE-011, -015, -016 and -018, ECON-005 (bank `+0x10` is the batch balance, only cleared; OpenTPW's finer ledger split carries
+  `[EXT:ECON-LEDGER-SPLIT]`) and PATH-009 (bank `+0x114` is the withdrawals flag) are retired; 11 items are narrowed.
+
 ## The per-employee window and All Visitors from tp.exe's tables (October 15, 2026)
 
 - **The per-employee window** (`0x4b6080`, table `0x756f48`) opens from the staff list as the original's All Staff list does: the name as

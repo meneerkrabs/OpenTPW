@@ -398,6 +398,18 @@ Lost Kingdom), `78:57` (the axe in Halloween), `14:00` (yellow hard hat on a bre
 `60:40` (police cap), `6:49` (bowler on the ticket price), `55:08` (fast-food visor on shop value), `74:10` (no hat on help).
 OpenTPW's capture of the jungle welcome shows the pith helmet.
 
+### Captions (ECON-030, October 16, 2026)
+
+When the advisor chooses a response to say, tp.exe (`0x0059B620`, from the player of the next response `0x0059A550`) asks the speech (`0x00599050`, which
+answers 0 with the advisor switched off) and then, either way, posts a category-24 message carrying the response's tag (field `+0x1C` of its 32-byte row,
+`0x005997B0`; `0x17F` has no text) to the tag system (`0x00509BF0`). The tag system finds the tag's record in the table at `0x0075ECA8` (`0x0050AF40`, by the id in
+field `+0`), fills the `TAG_SYSTEM.str` entry in field `+0xC` with the message's words (`0x00509E10`) and posts the text to the message tube. The bank's warnings are
+such captions: the money messages 102 to 106 (responses 266 to 275) show the entries 123 to 127 ("If you stay in the red for six months...", "the banks have closed
+your park..."), so the advice 106 of the bank's message type 2 puts entry 127 in the tube. `content/data/advisor-captions.toml` (written by
+`tools/ppc-analysis/lanes/advisor/tpw_exe_tables.py`) lists the 353 responses with a caption; `AutomaticAdvisor.PostCaption` hands the entry to the park HUD
+(`ParkHud.PostAdvisorCaption`). A caption with parameter slots (36 responses) is not posted: its arguments are the advice record's words, which OpenTPW does not keep
+(GUEST-007). The money warnings 102 to 105 still have no producer (ADVISOR-009: their scores are computations of the months in the red).
+
 ### Clip timeline (ADVISOR-018 and the clip draw, October 14, 2026)
 
 A sequence's clips play one after the other from the request, each for its own length (trailer word 2 × 1000 / 30 ms; the budget table

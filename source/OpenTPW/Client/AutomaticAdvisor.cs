@@ -124,6 +124,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 				Controller.Withdraw( AdvisorUiHelp.Windows[window], AdvisorClock );
 		park = null;
 		level = null;
+		CaptionSink = null;
 		presentation?.Kill();
 	}
 
@@ -280,15 +281,35 @@ internal sealed class AutomaticAdvisor : IDisposable
 		if ( !GameOptions.Current.Advisor )
 		{
 			presentation?.Kill();
-			Controller.Update( () => AdvisorClock, () => GameTick, _ => 0u );
+			Controller.Update( () => AdvisorClock, () => GameTick, responseId =>
+			{
+				PostCaption( responseId );
+				return 0u;
+			} );
 			return;
 		}
 		presentation?.Update();
 		Controller.Update( () => AdvisorClock, () => GameTick, Play );
 	}
 
+	/// <summary>
+	/// Where the caption of a chosen response goes: the entry of <c>TAG_SYSTEM.str</c> the response's tag shows (the park HUD posts it to the message tube); null posts none.
+	/// </summary>
+	internal Action<int>? CaptionSink { get; set; }
+
+	/// <summary>
+	/// A response is chosen to be said: its caption goes to the message tube, whether or not the advisor is heard (the speech switched off, the clip missing).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059B620 advisor caption] the player of the next response (0x0059A550) asks the speech (0x00599050, 0 when the advisor is off), then posts a category-24 message with the response's tag (field +0x1C of its row, 0x005997B0; 0x17F without a caption) to the tag system (0x00509BF0), which shows the tag's text in the message tube
+	internal void PostCaption( int responseId )
+	{
+		if ( AdvisorCaptionTable.For( responseId ) is { } caption )
+			CaptionSink?.Invoke( caption.TextEntry );
+	}
+
 	private uint? Play( int responseId )
 	{
+		PostCaption( responseId );
 		if ( presentationFailed || level == null )
 			return null;
 		try

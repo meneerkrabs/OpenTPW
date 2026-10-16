@@ -385,6 +385,8 @@ internal sealed partial class GameFlow : IDisposable
 				Advisor ??= AutomaticAdvisor.TryCreate();
 			advisorUnavailable = Advisor == null;
 			Advisor?.AttachLevel( level );
+			if ( Advisor != null )
+				Advisor.CaptionSink = Hud.PostAdvisorCaption;
 		}
 		if ( Advisor?.IsAttached != true && level.Park?.Import is { } import && level.OriginalPark?.Save?.Advisor is { } saved )
 		{

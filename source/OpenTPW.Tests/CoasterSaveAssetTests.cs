@@ -136,7 +136,7 @@ public class CoasterSaveAssetTests
 				Seed = seed.Value,
 				DisplayName = "Coaster park",
 				SavedUtc = new DateTimeOffset( 2026, 10, 13, 9, 0, 0, TimeSpan.Zero ),
-				Economy = ParkSaveFile.Capture( economy, new WorldRandomState( seed.Value, guests.RandomState, scripts.RandomState, 42u ) ),
+				Economy = ParkSaveFile.Capture( economy, new WorldRandomState( seed.Value, (uint)guests.RandomState, 42u ) ),
 				Layout = ParkLayoutSnapshot.CaptureSnapshot( ParkCellMap.FromOriginal( park.Map, park.Save ), objects ) with
 				{
 					Objects = new List<ParkLayoutSnapshot.PlacedObjectData> { Record( 1, 20, 62 ), Record( 2, 40, 62 ) },

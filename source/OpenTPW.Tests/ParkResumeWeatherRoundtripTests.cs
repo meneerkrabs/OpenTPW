@@ -48,6 +48,9 @@ public class ParkResumeWeatherRoundtripTests
 			var settings = EconomyTestData.Settings( extra: weatherKeys );
 			Economy = saved == null ? new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 )
 				: ParkSaveFile.Restore( saved.Economy, settings, EconomyTestData.Catalog() );
+			// one world generator for the park: the economy's
+			Guests.AttachWorld( Economy.World );
+			objects.ScriptWorld.AttachWorld( Economy.World );
 			if ( saved == null )
 			{
 				Guests.SpawnInPark( 10, 0 );
@@ -72,7 +75,7 @@ public class ParkResumeWeatherRoundtripTests
 		} );
 		public ParkResumeSnapshot Capture() => template with
 		{
-			Economy = ParkSaveFile.Capture( Economy, new WorldRandomState( seed.Value, Guests.RandomState, objects.ScriptWorld.RandomState, 42 ) ),
+			Economy = ParkSaveFile.Capture( Economy, new WorldRandomState( seed.Value, (uint)Guests.RandomState, 42 ) ),
 			Layout = ParkLayoutSnapshot.CaptureSnapshot( Guests.Grid.Cells, objects ),
 			Guests = Guests.CaptureSnapshot(),
 			Scripts = objects.ScriptWorld.CaptureSnapshot(),

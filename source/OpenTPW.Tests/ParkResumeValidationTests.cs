@@ -100,12 +100,14 @@ public class ParkResumeValidationTests
 		Rejects( snapshot with { EconomyBindings = new List<ParkResumeEconomyBinding> { new( 1, 1 ), new( 1, 2 ) } }, "attraction 1 is bound twice" );
 		Rejects( snapshot with { EconomyBindings = new List<ParkResumeEconomyBinding> { new( 0, 1 ) } }, "maps attraction 0 to instance 1" );
 
-		// A guest stream that disagrees with the typed fields is rejected even when everything else is honest.
-		var wrongGuests = ParkSaveFile.Capture( EconomyTestData.Park(), new WorldRandomState( WorldSeed.Default.Value, 999, snapshot.Scripts.RandomState, snapshot.SoundSeed ) );
-		Rejects( snapshot with { Economy = wrongGuests, EconomyBindings = new List<ParkResumeEconomyBinding>() }, "guest stream" );
-		var wrongScripts = ParkSaveFile.Capture( EconomyTestData.Park(), new WorldRandomState( WorldSeed.Default.Value, snapshot.Guests.RandomState, 888, snapshot.SoundSeed ) );
-		Rejects( snapshot with { Economy = wrongScripts, EconomyBindings = new List<ParkResumeEconomyBinding>() }, "script stream" );
-		var wrongSeed = ParkSaveFile.Capture( EconomyTestData.Park(), new WorldRandomState( 7, snapshot.Guests.RandomState, snapshot.Scripts.RandomState, snapshot.SoundSeed ) );
+		// A world generator that disagrees with the guest snapshot's or the script world's is rejected even when everything else is honest: there is one generator.
+		var generator = (uint)snapshot.Guests.RandomState;
+		Assert.AreEqual( generator, snapshot.Guests.WorldGenerator, "the envelope's guests carry the generator" );
+		Assert.AreEqual( generator, snapshot.Scripts.WorldGenerator, "the envelope's script world carries the same generator" );
+		var wrongGenerator = ParkSaveFile.Capture( EconomyTestData.Park(), new WorldRandomState( WorldSeed.Default.Value, generator + 999, snapshot.SoundSeed ) );
+		Rejects( snapshot with { Economy = wrongGenerator, EconomyBindings = new List<ParkResumeEconomyBinding>() }, "world generator" );
+		Rejects( snapshot with { Economy = wrongGenerator, EconomyBindings = new List<ParkResumeEconomyBinding>(), Guests = snapshot.Guests with { WorldGenerator = generator + 999 } }, "script world's" );
+		var wrongSeed = ParkSaveFile.Capture( EconomyTestData.Park(), new WorldRandomState( 7, generator, snapshot.SoundSeed ) );
 		Rejects( snapshot with { Economy = wrongSeed, EconomyBindings = new List<ParkResumeEconomyBinding>() }, "world seed" );
 		Rejects( snapshot with { SoundSeed = 43 }, "sound seed" );
 	}
@@ -412,7 +414,7 @@ public class ParkResumeCatalogValidationTests
 				Seed = seed.Value,
 				DisplayName = "Drinks park",
 				SavedUtc = new DateTimeOffset( 2026, 10, 12, 12, 0, 0, TimeSpan.Zero ),
-				Economy = ParkSaveFile.Capture( economy, new WorldRandomState( seed.Value, guests.RandomState, scripts.RandomState, 42u ) ),
+				Economy = ParkSaveFile.Capture( economy, new WorldRandomState( seed.Value, (uint)guests.RandomState, 42u ) ),
 				Layout = layout,
 				Guests = guests,
 				Scripts = scripts,

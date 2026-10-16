@@ -340,7 +340,8 @@ internal static class ParkResumeSaveFile
 				Require( runtime.RootScriptId != 0, $"runtime {index} runs a script but names no root script" );
 				Require( scriptsById.TryGetValue( runtime.RootScriptId, out var root ) && root!.ParentScriptId == 0,
 					$"runtime {index} names root script {runtime.RootScriptId}, which the world does not hold as a root" );
-				Require( root!.Seed == record.CreationSeed,
+				// a script of the world generator has no seed of its own; an older save's script was created with the placement's seed
+				Require( root!.UsesWorldRandom || root.Seed == record.CreationSeed,
 					$"runtime {index}'s root script was created with seed {root.Seed}, not the layout's creation seed {record.CreationSeed}" );
 				Require( claimedRoots.Add( runtime.RootScriptId ), $"root script {runtime.RootScriptId} is claimed by two runtimes" );
 			}
@@ -392,7 +393,7 @@ internal static class ParkResumeSaveFile
 				Require( prototype.RootScriptId != 0, "the prototype runs a script but names no root script" );
 				Require( scriptsById.TryGetValue( prototype.RootScriptId, out var prototypeRoot ) && prototypeRoot!.ParentScriptId == 0,
 					$"the prototype names root script {prototype.RootScriptId}, which the world does not hold as a root" );
-				Require( prototypeRoot!.Seed == prototype.ScriptSeed,
+				Require( prototypeRoot!.UsesWorldRandom || prototypeRoot.Seed == prototype.ScriptSeed,
 					$"the prototype's root script was created with seed {prototypeRoot.Seed}, not the part's {prototype.ScriptSeed}" );
 				Require( claimedRoots.Add( prototype.RootScriptId ), $"root script {prototype.RootScriptId} is claimed by two runtimes" );
 			}
@@ -442,14 +443,18 @@ internal static class ParkResumeSaveFile
 		// Clock: the clock's own pure validator, on a fresh instance it never mutates.
 		new FixedStepClock().ValidateSnapshot( snapshot.Clock! );
 
-		// World streams, when the economy carried them, must agree with the typed fields.
+		// The world generator the economy carries must be the one the guests and the script world carry (a snapshot from before the generator was ported carries neither marker), and the
+		// world streams, when the economy carried them, must agree with the typed fields.
+		if ( snapshot.Economy.WorldGenerator is { } generator )
+		{
+			Require( snapshot.Guests!.WorldGenerator is not { } guestGenerator || guestGenerator == generator,
+				$"the economy's world generator {generator} is not the guest snapshot's {snapshot.Guests.WorldGenerator}" );
+			Require( snapshot.Scripts.WorldGenerator is not { } scriptGenerator || scriptGenerator == generator,
+				$"the economy's world generator {generator} is not the script world's {snapshot.Scripts.WorldGenerator}" );
+		}
 		if ( snapshot.Economy.World is { } world )
 		{
 			Require( world.Seed == snapshot.Seed, $"the economy's world seed {world.Seed} is not the envelope's {snapshot.Seed}" );
-			Require( world.GuestRandom == snapshot.Guests!.RandomState,
-				$"the economy's guest stream {world.GuestRandom} is not the guest snapshot's {snapshot.Guests.RandomState}" );
-			Require( world.ScriptRandom == snapshot.Scripts.RandomState,
-				$"the economy's script stream {world.ScriptRandom} is not the script world's {snapshot.Scripts.RandomState}" );
 			Require( world.SoundSeed == snapshot.SoundSeed,
 				$"the economy's sound seed {world.SoundSeed} is not the envelope's {snapshot.SoundSeed}" );
 		}

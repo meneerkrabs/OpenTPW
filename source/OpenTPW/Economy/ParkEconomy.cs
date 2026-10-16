@@ -13,7 +13,7 @@ public enum CellPurchase
 /// <summary>
 /// The park management simulation: calendar, bank account, prices, construction and scrap,
 /// loans, bankruptcy, staff, maintenance, litter, research, challenges, golden tickets and park
-/// rating. Deterministic: all randomness comes from one saved <see cref="DeterministicRandom"/> and
+/// rating. Deterministic: all randomness comes from the one saved <see cref="WorldRng"/> (the original's world generator) and
 /// time advances in whole fixed ticks. Values come from the original settings wherever they exist;
 /// every approximation is listed in docs/ECONOMY.md and in the member documentation.
 /// </summary>
@@ -41,14 +41,15 @@ public sealed class ParkEconomy : IParkEconomy
 		Catalog = catalog ?? throw new ArgumentNullException( nameof( catalog ) );
 		Mode = mode;
 		Features = ParkModeFeatures.For( mode );
-		Random = new DeterministicRandom( seed );
+		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
 		Research = new ParkResearch( settings, catalog );
 		Objectives = new ParkObjectives( settings, catalog );
 		EntranceFee = settings.InitialAdmissionFee;
 		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
-		Staff.CreateInitialPool( Random, 0 );
+		Litter.World = () => World;
+		Staff.CreateInitialPool( World, 0 );
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
@@ -62,7 +63,15 @@ public sealed class ParkEconomy : IParkEconomy
 	public IEconomyObjectCatalog Catalog { get; }
 	public ParkGameMode Mode { get; }
 	public ParkModeFeatures Features { get; }
-	public DeterministicRandom Random { get; }
+	/// <summary>
+	/// The park's world generator (tp.exe 0x00516330): the economy's staff pool and the staff walks draw from it, and the level attaches the guests'
+	/// and the scripts' draws to the same instance (<see cref="AttachWorld"/>), as the original has one generator for everything.
+	/// </summary>
+	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, but the staff members have no person-thing constructor draws (base speed, reseed, sprite variant), the month end is not ordered against the thing sweep, and the advisor's pick and the weather stay off the stream
+	public WorldRng World { get; private set; }
+
+	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
+	public void AttachWorld( WorldRng world ) => World = world ?? throw new ArgumentNullException( nameof( world ) );
 	public ParkLedger Ledger { get; }
 	public ParkStaff Staff { get; }
 	public ParkResearch Research { get; }
@@ -614,7 +623,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// (the original's working member finishes its job first, then reaches this decision).
 	/// </summary>
 	// [BIN:STP-PPC:0x100F4900 strike or rest] a free member of a striking role walks to the strike area (raw state 4); the original also needs the world state 0x1091B8 to be 1, which is not modelled
-	// [APPROX:DET-015] the world draw of the no-rest-area happiness hit (0x100F4AD4 takes it from the shared world LCG 0x105328, which OpenTPW has not ported) comes from the economy's own stream
+	// [BIN:STP-PPC:0x100F4AD4 no rest area draw] the happiness hit without a rest area takes one world draw (the shared generator 0x105328, PC 0x00516330); OpenTPW takes it from the park's one world generator
 	private bool StrikeOrRest( StaffMember member, bool restArea )
 	{
 		if ( Staff.Strikes.IsActive( member.Type ) )
@@ -622,7 +631,7 @@ public sealed class ParkEconomy : IParkEconomy
 			member.State = StaffState.OnStrike;
 			return true;
 		}
-		if ( !StaffVitals.SeekRest( member, Settings.RestLevel, Settings.HappyHitCosNoRestArea, restArea, () => (uint)Random.NextUInt64() ) )
+		if ( !StaffVitals.SeekRest( member, Settings.RestLevel, Settings.HappyHitCosNoRestArea, restArea, () => World.NextWord() ) )
 			return false;
 		member.State = StaffState.Resting;
 		return true;
@@ -676,7 +685,7 @@ public sealed class ParkEconomy : IParkEconomy
 	private void UpdateHour()
 	{
 		// [BIN:TPW-EXE:0x005084F0 staff pool update] the staff manager's update runs from the world turn's tail (0x004D7B20), in every world state
-		Staff.UpdatePool( Random, Tick );
+		Staff.UpdatePool( World, Tick );
 		// the dispatch belongs to the mechanics' and rides' thing updates, which a lost park no longer runs
 		if ( !IsBankrupt )
 			DispatchMechanics();
@@ -1881,7 +1890,7 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) || item.Kind != ParkObjectKind.Sideshow || !item.IsOpen || IsBankrupt || visitorCash < item.Price )
 			return false;
 		pricePaid = item.Price;
-		won = SideshowWins( item.ChanceOfLosingPercent, Random.Next( 100 ) );
+		won = SideshowWins( item.ChanceOfLosingPercent, (int)World.Next( 100u ) );
 		var prize = won ? item.CostOfGoods : 0;
 		// [BIN:TPW-EXE:0x004FE1A0 price taken] a free play skips the takings (0x004E16B0) as a free sale does; the prize is still paid
 		if ( item.Price != 0 )

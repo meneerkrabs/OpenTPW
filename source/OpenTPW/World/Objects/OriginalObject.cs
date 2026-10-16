@@ -85,7 +85,7 @@ public class OriginalObject : Entity
 	private int hiddenVersion = -1;
 
 	public OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world = null, int? seed = null, bool open = true )
-		: this( entry, placement, world, seed, open, attractionId: null )
+		: this( entry, placement, world, seed, open, attractionId: null, seedScript: true )
 	{
 	}
 
@@ -96,7 +96,7 @@ public class OriginalObject : Entity
 	/// which moves the world's frontier past it without allocating — dead ids are skipped in constant time, never
 	/// replayed. Everything else (validation, render init, self-cleanup on failure) is the constructor's own.
 	/// </summary>
-	internal OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world, int? seed, bool open, int? attractionId )
+	internal OriginalObject( ObjectCatalogEntry entry, ObjectPlacement placement, RideScriptWorld? world, int? seed, bool open, int? attractionId, bool seedScript = true )
 	{
 		try
 		{
@@ -105,8 +105,8 @@ public class OriginalObject : Entity
 			Placement = placement;
 			CreationSeed = seed;
 			Runtime = attractionId is { } restored
-				? OriginalObjectRuntime.CreateForRestore( entry, world ?? new RideScriptWorld(), seed, open, restored )
-				: new OriginalObjectRuntime( entry, world, seed, open );
+				? OriginalObjectRuntime.CreateForRestore( entry, world ?? new RideScriptWorld(), seedScript ? seed : null, open, restored )
+				: new OriginalObjectRuntime( entry, world, seedScript ? seed : null, open );
 			Name = entry.DisplayName;
 			Position = System.Numerics.Vector3.Transform( System.Numerics.Vector3.Zero, placement.ModelToEngine );
 			Vector3 ToSound(System.Numerics.Vector3 engine)

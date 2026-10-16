@@ -156,7 +156,7 @@ public class GuestAssetTests
 			Assert.AreEqual( 120, settings.ExitLevelSeconds );
 			Assert.AreEqual( 60, settings.ExitLevelVarSeconds );
 			Assert.AreEqual( 15, settings.StartingCashVarPercent );
-			var random = new GuestRandom( 99 );
+			var random = new WorldRng( 99 );
 			var types = new HashSet<int>();
 			for ( var count = 0; count < 4000; count++ )
 			{

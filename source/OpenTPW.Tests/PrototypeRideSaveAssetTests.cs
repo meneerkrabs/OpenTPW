@@ -248,7 +248,7 @@ public class PrototypeRideSaveAssetTests
 			Seed = WorldSeed.Default.Value,
 			DisplayName = "Totem park",
 			SavedUtc = new DateTimeOffset( 2026, 10, 13, 12, 0, 0, TimeSpan.Zero ),
-			Economy = ParkSaveFile.Capture( economy, new WorldRandomState( WorldSeed.Default.Value, guests.RandomState, scripts.RandomState, 42u ) ),
+			Economy = ParkSaveFile.Capture( economy, new WorldRandomState( WorldSeed.Default.Value, (uint)guests.RandomState, 42u ) ),
 			Layout = ParkLayoutSnapshot.CaptureSnapshot( rig.Grid.Cells, new ParkObjects( catalog, new OriginalParkGrid( rig.Park ), WorldSeed.Default ) ) with
 			{
 				Objects = new List<ParkLayoutSnapshot.PlacedObjectData>(),

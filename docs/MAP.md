@@ -144,13 +144,20 @@ Easymode park was built on `base.map`. tp.exe never loads `terrain.map`: 0x45090
 words without reading them, and stores each byte at tile `(column << 7) + row + 1`, +0x26 (68-byte tiles at
 `[0x7CF83C] + 0x294`), keeping coordinates 0–127. The tile initialiser 0x536490 then interprets the cell:
 0x08 lays the initial path (0x5348D0); 0x10 sets tile flag 0x80; on a heightfield hole 0x02 gives kind 2,
-else 0x80 kind 0x1E, else 7. **Bit 0x01 is not consulted there**: blocking comes from the heightfield
-hole, so OpenTPW's refusal to build on `Blocked` surface cells (below) is stricter than this loader.
+else 0x80 kind 0x1E, else 7. On a surface cell bit 0x01 picks kind 5, 0x02 kind 2 and 0x80 kind 0x1E, but
+the 0x08 test right after overwrites the kind with 1 or 0 (0x536524..0x536548), so **bit 0x01 has no effect**:
+blocking comes from the heightfield hole.
 
-The game rules derived from these bits in OpenTPW (`OriginalParkPlacement`) refuse
-building on Blocked, Water, EntranceArea, FixedWalkway, InitialPath, heightfield
-holes, saved paths and occupied cells. These are sandbox rules grounded in the
-data, not a reproduction of the original build check.
+**Original build check (tp.exe, October 16, 2026).** The cursor handler 0x5234D0 places an object through
+0x528A70, which tests every footprint cell through 0x532FC0 (mode 0x200) with the cell validator 0x535670.
+The validator reads the cell's kind (+8), flags (+0xE: 0x40 unowned, 0x20 path), path links (+0xC) and owner
+(+0x10), never the MAP byte (+0x26): holes (kinds 2, 0x1E, 7) refuse by kind, the initial path by its flag 0x20, and a
+`Blocked` cell with a surface is kind 0 like any other ground, buildable once the park owns it.
+`OriginalParkPlacement` follows this: its terrain rule is the map-start kind (`ParkLand.OriginalCellType`,
+the heightfield cell word's bit 0 for the hole test), plus imported save paths and objects. Measured over the
+four `base.map` levels, 318–326 surface cells per theme carry `Blocked` (all value 1, the edge ring and the
+ground round rocks), plus fantasy's value-16 cell (27, 17); of these only space (45, 18) and (50, 18) and
+fantasy (27, 17) lie in the starting land, the rest become buildable when bought.
 
 ## Reader limits
 
@@ -206,9 +213,8 @@ inconclusive without `OPENTPW_GAME_PATH`.
 
 ## Remaining gates
 
-- Whether anything outside the tile initialiser reads `Blocked` (0x01) on surface cells (none found;
-  until then OpenTPW keeps refusing to build there).
 - Heightfield: the cell-word low bits are read by tp.exe (MD2-MODELS.md: triangle diagonal, texture turn
   and mirror; the diagonal is applied); the texture turn and mirror are not drawn yet.
-- The original game's actual build/path rules (runtime observation needed).
+- The object branches of the validator 0x535670 (existing ride cells against the count 0x818C10, entrance
+  and exit cells, the cost test); see OBJECTS.md RIDES-018.
 - Sound catalog `.map` schema: decoded separately, see [AUDIO.md](AUDIO.md).

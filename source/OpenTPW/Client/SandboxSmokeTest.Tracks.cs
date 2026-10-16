@@ -63,7 +63,7 @@ internal sealed partial class SandboxSmokeTest
 		var grid = level.Objects.Grid;
 		bool Free( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height
 			&& level.Objects.FindAt( x, y ) == null && grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed
-			&& level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0 && !level.Guests.Grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
+			&& level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0 && !level.Guests!.Grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		(int X, int Y)? anchor = null;
 		for ( var index = 0; index < grid.Width * grid.Height && anchor == null; index++ )
 		{
@@ -154,7 +154,7 @@ internal sealed partial class SandboxSmokeTest
 		var grid = level.Objects.Grid;
 		bool Free( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height
 			&& level.Objects.FindAt( x, y ) == null && grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed
-			&& level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0 && !level.Guests.Grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
+			&& level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0 && !level.Guests!.Grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		(int X, int Y)? anchor = null;
 		for ( var index = 0; index < grid.Width * grid.Height && anchor == null; index++ )
 		{

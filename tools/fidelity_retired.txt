@@ -50,17 +50,18 @@ COAST-016 docs/COASTERS.md
 COAST-017 docs/reverse/COAST-plan.md
 COAST-018 docs/COASTERS.md
 COAST-019 docs/reverse/COAST-plan.md
-COAST-024 docs/COASTERS.md
 COAST-020 docs/reverse/REVIEW-COAST-2.md
 COAST-021 docs/reverse/REVIEW-COAST-2.md
 COAST-022 docs/PROGRESS.md
 COAST-023 docs/PROGRESS.md
+COAST-024 docs/COASTERS.md
 COAST-025 docs/COASTERS.md
 COAST-027 docs/COASTERS.md
 COAST-030 docs/COASTERS.md
 COAST-031 docs/COASTERS.md
 COMPAT-005 docs/reverse/APPROX-TRACE.md
 COMPAT-008 docs/reverse/APPROX-TRACE.md
+COMPAT-009 docs/COMPATIBILITY.md
 COMPAT-011 docs/reverse/APPROX-TRACE.md
 COMPAT-012 docs/reverse/APPROX-TRACE.md
 COMPAT-013 docs/reverse/APPROX-TRACE.md
@@ -105,6 +106,8 @@ ECON-029 docs/reverse/APPROX-TRACE.md
 ECON-031 docs/reverse/APPROX-TRACE.md
 ECON-032 docs/reverse/APPROX-TRACE.md
 ECON-033 docs/reverse/APPROX-TRACE.md
+ECON-034 docs/reverse/APPROX-TRACE.md
+ECON-035 docs/reverse/APPROX-TRACE.md
 ECON-036 docs/reverse/APPROX-TRACE.md
 ECON-037 docs/reverse/APPROX-TRACE.md
 ECON-039 docs/PROGRESS.md
@@ -115,6 +118,8 @@ ECON-043 docs/reverse/APPROX-TRACE.md
 ECON-045 docs/reverse/APPROX-TRACE.md
 ECON-046 docs/reverse/APPROX-TRACE.md
 ECON-047 docs/reverse/RIDE-WEAR.md
+ECON-048 docs/reverse/ORACLE.md
+ECON-056 docs/progress/2026-10-16-economy-and-saves-sweep.md
 GATE-001 docs/M3-GATE.md
 GATE-002 docs/reverse/PATH-plan.md
 GATE-003 docs/reverse/BOARD-plan.md
@@ -199,6 +204,7 @@ RIDES-041 docs/OBJECTS.md
 RIDES-042 docs/OBJECTS.md
 RIDES-043 docs/OBJECTS.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
+SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 TOUR-001 docs/PROGRESS.md
 TOUR-004 docs/PROGRESS.md
 TOUR-009 docs/PROGRESS.md
@@ -211,6 +217,7 @@ TRACK-013 docs/PROGRESS.md
 TRACK-015 docs/PROGRESS.md
 TRACK-016 docs/PROGRESS.md
 TRACK-017 docs/PROGRESS.md
+TRACK-019 docs/TRACKS.md
 TRACK-023 docs/PROGRESS.md
 TRACK-024 docs/PROGRESS.md
 TRACK-025 docs/PROGRESS.md
@@ -218,9 +225,12 @@ TRACK-029 docs/PROGRESS.md
 TRACK-030 docs/TRACKS.md
 TRACK-031 docs/PROGRESS.md
 UI-001 docs/reverse/APPROX-TRACE.md
+UI-002 docs/UI.md
+UI-005 docs/UI.md
 UI-009 docs/reverse/APPROX-TRACE.md
 UI-010 docs/reverse/APPROX-TRACE.md
 UI-011 docs/reverse/APPROX-TRACE.md
+UI-012 docs/UI.md
 UI-014 docs/reverse/APPROX-TRACE.md
 UI-015 docs/reverse/APPROX-TRACE.md
 UI-016 docs/reverse/APPROX-TRACE.md
@@ -261,3 +271,4 @@ VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
+PATH-006 docs/progress/2026-10-16-original-build-check.md

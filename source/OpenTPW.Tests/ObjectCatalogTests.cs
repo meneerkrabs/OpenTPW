@@ -500,6 +500,16 @@ public class ObjectCatalogCorpusTests
 		Assert.AreEqual( OriginalPlacementResult.Allowed, grid.CheckTerrain( 52, 25 ) );
 		Assert.AreEqual( OriginalPlacementResult.OutsideTerrain, objects.Check( totem, 95, 84, 0 ) );
 		Assert.AreEqual( OriginalPlacementResult.Blocked, objects.Check( catalog.Get( 100 ), 20, 60, 0 ), "the Mystery ride is a tool" );
+		// Blocked ground with a surface is not refused by its MAP bit (tp.exe's validator 0x535670 reads the cell type, 0 there): only the land decides
+		var blocked = Enumerable.Range( 0, park.Heightfield.CellCountX * park.Heightfield.CellCountZ ).Select( index => (X: index % park.Heightfield.CellCountX, Y: index / park.Heightfield.CellCountX) )
+			.First( cell => cell.X >= 2 && cell.Y >= 2 && park.Map.GetFlagsAt( cell.X, cell.Y ) == MapCellFlags.Blocked && !park.Heightfield.IsHole( cell.X, cell.Y ) );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, objects.Check( bin, blocked.X, blocked.Y, 0 ) );
+		var settings = GuestSettings.Load( "jungle" );
+		var land = ParkCellMap.FromOriginal( park.Map, null, ParkLandSetup.FromLevel( settings.EntranceA, settings.EntranceB, FileSystem.ReadAllText( "/levels/jungle/Hoardings.sam" ) ), park.Heightfield );
+		Assert.IsTrue( land.FlagsAt( blocked.X, blocked.Y ).HasFlag( ParkCellFlags.Unowned ), "Jungle's starting land holds no Blocked ground" );
+		objects.IsUnowned = ( x, y ) => land.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
+		Assert.AreEqual( OriginalPlacementResult.NotOwned, objects.Check( bin, blocked.X, blocked.Y, 0 ) );
+		objects.IsUnowned = null;
 		objects.IsReserved = ( x, y ) => x == 21 && y == 61;
 		Assert.AreEqual( OriginalPlacementResult.Occupied, objects.Check( totem, 20, 60, 0 ) );
 		// Placement matrices agree with the terrain mapping: a rotation-0 model point lands on its cell.

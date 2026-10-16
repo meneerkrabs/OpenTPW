@@ -51,7 +51,7 @@ public class TrackCircuitTests
 			Assert.IsTrue( Writer.Commit( (8, 12), (8, 10) ).Completed );
 		}
 
-		public TrackCircuit Walk( bool commit = true ) => TrackCircuitWalker.Walk( Builder, Station, commit );
+		public TrackCircuit Walk() => TrackCircuitWalker.Walk( Builder, Station );
 	}
 
 	// ---- The station and the line tool ---------------------------------------------------------------
@@ -195,7 +195,7 @@ public class TrackCircuitTests
 	// ---- The circuit walk ----------------------------------------------------------------------------
 
 	[TestMethod]
-	public void AClosedLoopWalksValidWithNumberedSegmentsAndFlowLinks()
+	public void AClosedLoopWalksValidWithZeroBasedSegmentsAndFlowLinks()
 	{
 		var rig = new Rig();
 		rig.LayLoop();
@@ -203,15 +203,54 @@ public class TrackCircuitTests
 		Assert.IsTrue( circuit.IsValid, circuit.Failure );
 		Assert.AreEqual( 8, circuit.Steps.Count );
 		CollectionAssert.AreEqual( new[] { (10, 10), (12, 10), (14, 10), (14, 12), (12, 12), (10, 12), (8, 12), (8, 10) }, circuit.Steps.Select( step => (step.X, step.Y) ).ToArray() );
-		CollectionAssert.AreEqual( Enumerable.Range( 1, 8 ).ToArray(), circuit.Steps.Select( step => step.Segment ).ToArray() );
+		CollectionAssert.AreEqual( Enumerable.Range( 0, 8 ).ToArray(), circuit.Steps.Select( step => step.Segment ).ToArray() );
 		CollectionAssert.AreEqual( new byte[] { 0x04, 0x04, 0x10, 0x40, 0x40, 0x40, 0x01, 0x04 }, circuit.Steps.Select( step => step.Exit ).ToArray(), "the exit heading of each tile" );
 		var tracks = rig.Cells.Tracks;
-		Assert.AreEqual( 4, tracks.Get( 14, 12 ).Segment );
+		Assert.AreEqual( 3, tracks.Get( 14, 12 ).Segment, "the walk numbers its steps from 0 (0x52B295)" );
 		Assert.AreEqual( TrackHeading.NegY, tracks.Get( 8, 12 ).Link, "a corner's link is its new heading" );
 		Assert.AreEqual( 0x04, tracks.Get( 12, 10 ).Link );
 		// the four corners draw the first corner mesh (this loop turns counter-clockwise) and the straights the straight; station tiles draw nothing
 		foreach ( var corner in new[] { (14, 10), (14, 12), (8, 12), (8, 10) } )
 			Assert.AreEqual( 3, tracks.Get( corner.Item1, corner.Item2 ).Piece, $"corner {corner}" );
+	}
+
+	/// <summary>TRACK-014: the walk rewrites the flow link only at corners, so a straight keeps the direction its line was drawn in, whichever way the circuit runs.</summary>
+	[TestMethod]
+	public void AStraightKeepsTheDirectionItsLineWasDrawnIn()
+	{
+		var rig = new Rig();
+		// the left side is drawn upward from the station row while the circuit flows down it
+		Assert.IsTrue( rig.Writer.Commit( (8, 10), (8, 14) ).Completed );
+		Assert.IsTrue( rig.Writer.Commit( (8, 14), (14, 14) ).Completed );
+		Assert.IsTrue( rig.Writer.Commit( (14, 14), (14, 10) ).Completed );
+		var tracks = rig.Cells.Tracks;
+		Assert.AreEqual( TrackHeading.PosY, tracks.Get( 8, 12 ).Link, "drawn toward +Y" );
+		Assert.AreEqual( TrackHeading.NegY, tracks.Get( 14, 12 ).Link, "drawn toward −Y" );
+		Assert.AreEqual( TrackHeading.PosX, tracks.Get( 10, 10 ).Link, "the station tiles take the heading of the rotation (0x524F1E)" );
+		var circuit = rig.Walk();
+		Assert.IsTrue( circuit.IsValid, circuit.Failure );
+		Assert.AreEqual( TrackHeading.NegY, circuit.Steps.Single( step => (step.X, step.Y) == (8, 12) ).Exit, "the circuit flows down the left side" );
+		Assert.AreEqual( TrackHeading.PosY, tracks.Get( 8, 12 ).Link, "the walk leaves a straight's link alone" );
+		Assert.AreEqual( TrackHeading.PosY, tracks.Get( 14, 10 ).Link, "a corner takes its new heading" );
+		Assert.AreEqual( TrackHeading.PosY, circuit.Steps.Single( step => (step.X, step.Y) == (14, 10) ).Exit );
+	}
+
+	/// <summary>TRACK-014: a non-corner keeps the heading without testing its arms, and the walk fails only on the original's conditions.</summary>
+	[TestMethod]
+	public void AStraightIsNotTestedForAnArmTowardTheFlow()
+	{
+		var rig = new Rig();
+		rig.LayLoop();
+		var tracks = rig.Cells.Tracks;
+		// a stray tile of type 11 whose mask has two parallel arms across the flow: the original keeps the heading through it
+		var side = tracks.Get( 14, 10 );
+		Assert.AreEqual( 0x50, side.Mask );
+		var straight = tracks.Get( 12, 12 );
+		straight.Mask = 0x11;
+		tracks.Set( 12, 12, straight );
+		var circuit = rig.Walk();
+		Assert.IsTrue( circuit.IsValid, "no arm toward the flow is tested on a straight: " + circuit.Failure );
+		Assert.AreEqual( TrackHeading.NegX, circuit.Steps.Single( step => (step.X, step.Y) == (12, 12) ).Exit, "the heading is kept" );
 	}
 
 	[TestMethod]
@@ -295,6 +334,23 @@ public class TrackCircuitTests
 
 	// ---- Bridges -------------------------------------------------------------------------------------
 
+	/// <summary>TRACK-010: the bridge test takes every tile with at most two arms and no corner, so a single-arm end laid over a path is a bridge end (tp.exe 0x538AA4..0x538B05).</summary>
+	[TestMethod]
+	public void ASingleArmEndOverAPathIsABridge()
+	{
+		var lone = new Rig();
+		var paths = new GuestPathGrid( lone.Cells );
+		foreach ( var cell in TrackStation.TileCellsOf( 16, 10 ) )
+			paths.SetPath( cell.X, cell.Y, true );
+		Assert.IsTrue( lone.Writer.Commit( (14, 10), (16, 10) ).Completed );
+		var end = lone.Cells.Tracks.Get( 16, 10 );
+		Assert.AreEqual( 0x40, end.Mask, "a stub with one arm" );
+		Assert.AreEqual( TrackCell.FlagBridge, end.Flags & TrackCell.BridgeMask );
+		Assert.AreEqual( 1 + TrackPieceSelector.PieceBridgeStem, end.Piece, "the end piece in its bridge variant" );
+		Assert.IsTrue( TrackBuilder.IsBridgeShape( 0x00 ) && TrackBuilder.IsBridgeShape( 0x10 ) && TrackBuilder.IsBridgeShape( 0x44 ) );
+		Assert.IsFalse( TrackBuilder.IsBridgeShape( 0x14 ) || TrackBuilder.IsBridgeShape( 0x54 ), "corners and tees are no bridges" );
+	}
+
 	[TestMethod]
 	public void StraightsOverPathsBecomeBridgeVariantsByTheirNeighbours()
 	{
@@ -367,6 +423,31 @@ public class TrackCircuitTests
 		Assert.AreEqual( TrackHeading.PosY, tracks.Get( 14, 14 ).Mask & TrackHeading.PosY );
 		Assert.IsTrue( tracks.Get( 10, 14 ).IsOrigin && TrackCellTypes.IsStation( tracks.Get( 10, 14 ).Type ) );
 		Assert.AreEqual( 0, rig.Builder.RemoveOwned( 0 ), "tiles laid without a ride are nobody's" );
+	}
+
+	/// <summary>TRACK-007: each cleared water or kart tile refunds cost × scrap percentage / 100 and the demolition charges twice that once (tp.exe 0x53B5FE, 0x528157).</summary>
+	[TestMethod]
+	public void ADemolitionRefundsEveryTileAndChargesTwoTilesOnce()
+	{
+		var economy = EconomyTestData.Park( initialCash: 100000 );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( 1100, out var ride ) );
+		var percent = economy.ScrapPercent( ride! );
+		Assert.IsTrue( percent > 0 );
+		var before = economy.Balance;
+		var refund = economy.RefundTrackTile( CellPurchase.WaterTrack, ride!.Id );
+		Assert.AreEqual( WaterCost * percent / 100, refund );
+		Assert.AreEqual( before + refund, economy.Balance );
+		var charge = economy.ChargeTrackDemolition( CellPurchase.WaterTrack, ride.Id );
+		Assert.AreEqual( 2 * WaterCost * percent / 100, charge );
+		Assert.AreEqual( before + refund - charge, economy.Balance );
+		Assert.AreEqual( 0, economy.RefundTrackTile( CellPurchase.WaterTrack, 12345 ), "an unknown ride refunds nothing" );
+		Assert.AreEqual( 0, economy.ChargeTrackDemolition( CellPurchase.WaterTrack, 12345 ) );
+		var rig = new Rig();
+		var owner = rig.Builder.OwnerOf( rig.Station );
+		var writer = new TrackLineWriter( rig.Builder, owner: owner );
+		Assert.IsTrue( writer.Commit( (14, 10), (14, 12) ).Completed );
+		Assert.AreEqual( 2, rig.Builder.OwnedTileCount( owner ), "the station tiles refund nothing and are not counted" );
+		Assert.AreEqual( 0, rig.Builder.OwnedTileCount( 0 ) );
 	}
 
 	[TestMethod]

@@ -135,7 +135,7 @@ public sealed class UiModel
 			maxX = Math.Max( maxX, point.X );
 			maxY = Math.Max( maxY, point.Y );
 		}
-		// [APPROX:UI-004] back-to-front by Z per texture group — evidence needed: binary or capture of overlapping UI parts
+		// [APPROX:UI-004] back-to-front by Z per texture group; the original's display object reserves a UI depth range in front of its scene ranges (0x5833c0), so it probably depth-tests — evidence needed: the UI model draw call
 		// Group triangles by material texture and order groups back to front (lower Z first), as the
 		// panels layer flat inner faces over their bevels.
 		var groups = new Dictionary<string, List<(float Depth, int A, int B, int C)>>( StringComparer.OrdinalIgnoreCase );

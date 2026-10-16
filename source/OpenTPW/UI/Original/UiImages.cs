@@ -105,7 +105,7 @@ public static class UiImages
 		KeyOut( rgba, width, height, ( r, g, b ) => r <= BlackKeyClear && g <= BlackKeyClear && b <= BlackKeyClear );
 	}
 
-	// [APPROX:UI-005] pink key + neighbour colour bleed for linear filtering — evidence needed: capture of UI edges at other resolutions
+	// [EXT:ui-linear-filtering] the pink key plus neighbour colour bleed make UI images safe for linear filtering at any output size; the original drew at its few fixed modes, so no original behaviour exists at OpenTPW's resolutions
 	public static void KeyOutPink( byte[] rgba, int width, int height ) =>
 		KeyOut( rgba, width, height, ( r, g, b ) => r == 255 && g == 0 && b == 255 );
 

@@ -58,6 +58,45 @@ public class BankWordsTests
 	}
 
 	[TestMethod]
+	public void ASavedBatchCreditIsPaidIntoTheBalanceAndTheProfitAtTheNextMonthEndAndThenZeroed()
+	{
+		// 0x4D0370: the month adds the batch word to the balance, the money in and the year's profit, then zeroes it.
+		var park = EconomyTestData.Park( initialCash: 5000 );
+		var (balance, profit) = (park.Balance, park.Ledger.ProfitThisYear);
+		park.RestoreBankWords( true, balance, 0, 750 );
+		Assert.AreEqual( 750, park.BatchCredit );
+		park.AdvanceMonths( 1 );
+		Assert.AreEqual( 0, park.BatchCredit );
+		Assert.AreEqual( balance + 750, park.Balance, "no staff or loans: the month changes nothing else" );
+		Assert.AreEqual( profit + 750, park.Ledger.ProfitThisYear );
+		Assert.AreEqual( 750, park.Ledger.History.Last().MoneyIn );
+		park.AdvanceMonths( 1 );
+		Assert.AreEqual( balance + 750, park.Balance, "paid once" );
+		Assert.ThrowsException<System.ArgumentOutOfRangeException>( () => park.RestoreBankWords( true, balance, 0, -1 ) );
+	}
+
+	[TestMethod]
+	public void ThePendingBatchCreditSurvivesAParkSave()
+	{
+		var park = EconomyTestData.Park( initialCash: 5000 );
+		park.RestoreBankWords( true, park.Balance, 0, 321 );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) ), park.Settings, park.Catalog );
+		Assert.AreEqual( 321, restored.BatchCredit );
+		Assert.IsFalse( ParkSaveFile.Serialize( EconomyTestData.Park() ).Contains( "BatchCredit" ), "absent while 0, so existing save text is unchanged" );
+	}
+
+	[TestMethod]
+	public void ANegativeBatchCreditInASaveIsRefused()
+	{
+		var park = EconomyTestData.Park( initialCash: 5000 );
+		park.RestoreBankWords( true, park.Balance, 0, 5 );
+		var node = JsonNode.Parse( ParkSaveFile.Serialize( park ) )!;
+		node["BatchCredit"] = -1;
+		var json = System.Text.Encoding.UTF8.GetBytes( node.ToJsonString() );
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( json ), park.Settings, park.Catalog ) );
+	}
+
+	[TestMethod]
 	public void WithWithdrawalsOffADebitChargesNothingAndAnInstalmentRaisesTheProfit()
 	{
 		var park = EconomyTestData.Park( initialCash: 300000 );

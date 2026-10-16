@@ -99,6 +99,10 @@ class Parsing(unittest.TestCase):
     def test_register(self):
         r = site_status.parse_register(REGISTER)
         self.assertEqual((r["total"], r["original"], r["online"]), (12, 9, 3))
+        closed = REGISTER.replace("Of these, 9 IDs belong to the existing original-fidelity areas (x), and 3 ONLINE IDs record uncertainty.",
+                                  "All of them belong to the original-fidelity areas (x).")
+        r = site_status.parse_register(closed)
+        self.assertEqual((r["total"], r["original"], r["online"]), (12, 12, 0))
         self.assertEqual(r["areas"][0], {"area": "AUDIO", "ids": 9, "occurrences": 11})
 
     def test_register_missing_is_an_error(self):

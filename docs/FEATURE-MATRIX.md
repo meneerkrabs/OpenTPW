@@ -43,8 +43,9 @@ kart and tour controllers remain explicit gaps ([OBJECTS.md](OBJECTS.md)); water
 The verified [Patch 2](PATCH-2.md) data copy is a separate reference baseline;
 28 physical Data differences and 24 WAD member differences are known. Static
 [Mac timer evidence](reverse/FINDINGS.md) does not prove gameplay tick rates.
-[The fidelity register](FIDELITY-REGISTER.md) contains 326 unresolved original-area
-IDs and 24 online-extension IDs (350 in total); its CI check covers explicit tags only.
+[The fidelity register](FIDELITY-REGISTER.md) contains 259 unresolved IDs, all in the
+original areas; the online extension's former approximations are closed as OpenTPW design
+choices (`EXT:online-*`, [ONLINE.md](ONLINE.md#online-design-choices)). Its CI check covers explicit tags only.
 Online file sharing/server work is an extension ([ONLINE.md](ONLINE.md)); shared
 edited layouts and exact original service behavior remain unimplemented/unverified.
 

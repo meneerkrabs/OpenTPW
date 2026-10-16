@@ -41,7 +41,7 @@ public static class ChatFormatter
 			ChatEventKind.Notice => Notice( item.Notice ?? 0, item.Args ),
 			ChatEventKind.System when item.Text == "rate-limited" => label( OnlineLabel.RateLimited ),
 			ChatEventKind.System when item.Text == "buddy-list" => label( OnlineLabel.NoBuddies ),
-			// [APPROX:ONLINE-024] the original notification's string is not recovered; the wording is OpenTPW's own
+			// [EXT:online-buddy-enters-text] the wording is OpenTPW's own; the original notification's string is not recovered
 			ChatEventKind.System when item.Text == "buddy-enters" && item.Args is { Count: 2 } enters =>
 				string.Format( label( OnlineLabel.BuddyEnters ), enters[0], enters[1] ),
 			ChatEventKind.System when item.Text == "server-message" => Notice( OnlineStrings.SystemMessage, item.Args ),

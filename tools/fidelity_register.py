@@ -32,8 +32,10 @@ REGISTERS = {
     "TRACK": "source/OpenTPW/World/Tracks/TrackApproximations.cs",
     "TOUR": "source/OpenTPW/World/Tours/TourApproximations.cs",
 }
-MARKDOWN_REGISTERS = {"ONLINE": "docs/ONLINE.md"}
-EXTENSION_SCOPE = "OpenTPW online extension"
+# Closed areas: no register, and their IDs stay reserved. The OpenTPW online extension's former APPROX:ONLINE IDs were
+# closed as design choices with EXT:online-* labels (docs/ONLINE.md, "Online design choices"); online uncertainty takes an
+# EXT label, not a new APPROX ID.
+CLOSED_AREAS = {"ONLINE": "the online extension records its choices as EXT:online-* labels (docs/ONLINE.md)"}
 ORIGINAL_SCOPE = "Original-fidelity area (scope unadjudicated)"
 
 ID = re.compile(r"[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3}\Z")
@@ -142,34 +144,10 @@ def annotations(text: str, path: str) -> tuple[list[Site], list[str]]:
     return sites, errors
 
 
-def markdown_declarations(text: str, path: str, prefix: str) -> tuple[list[tuple[str, Declaration]], list[str]]:
-    """Read explicit three-column rows inside the Approximation register section."""
-    entries, errors = [], []
-    active = False
-    for number, line in enumerate(text.splitlines(), 1):
-        if line.startswith("## "):
-            active = line.strip() == "## Approximation register"
-            continue
-        if not active or not line.lstrip().startswith("|"):
-            continue
-        cells = [cell.strip().replace(r"\|", "|") for cell in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
-        if not cells or cells[0] == "ID" or all(re.fullmatch(r"[: -]+", cell) for cell in cells):
-            continue
-        if len(cells) != 3 or not cells[0].startswith(prefix + "-") or not ID.fullmatch(cells[0]):
-            errors.append(f"{path}:{number}: malformed Markdown declaration row")
-        elif not cells[1] or not cells[2]:
-            errors.append(f"{path}:{number}: Markdown declaration requires assumption and evidence")
-        else:
-            entries.append((cells[0], Declaration(path, number, cells[1], EXTENSION_SCOPE, cells[2])))
-    if not entries:
-        errors.append(f"no Markdown declarations found in {path}")
-    return entries, errors
-
-
 def collect(root: Path, registers: dict[str, str] | None = None,
-            markdown_registers: dict[str, str] | None = None) -> Inventory:
-    if markdown_registers is None:
-        markdown_registers = MARKDOWN_REGISTERS if registers is None else {}
+            closed_areas: dict[str, str] | None = None) -> Inventory:
+    if closed_areas is None:
+        closed_areas = CLOSED_AREAS if registers is None else {}
     registers = REGISTERS if registers is None else registers
     sites, errors, declarations = [], [], {}
     for path in sorted((root / "source").rglob("*.cs")):
@@ -202,24 +180,16 @@ def collect(root: Path, registers: dict[str, str] | None = None,
         # A register whose last entry was retired says so with a whole-line marker comment; entries are still parsed normally.
         if not count and not any(EMPTY_REGISTER.match(line) for line in register_lines):
             errors.append(f"no declarations found in {relative}")
-    for prefix, relative in sorted(markdown_registers.items()):
-        path = root / relative
-        if not path.is_file():
-            errors.append(f"missing Markdown declaration register: {relative}")
-            continue
-        entries, problems = markdown_declarations(path.read_text(encoding="utf-8"), relative, prefix)
-        errors.extend(problems)
-        for label, declaration in entries:
-            if label in declarations:
-                errors.append(f"{relative}:{declaration.line}: duplicate declaration {label}")
-            else:
-                declarations[label] = declaration
     tagged = {s.label for s in sites if s.kind == "APPROX"}
     for label in sorted(tagged - declarations.keys()):
-        errors.append(f"{label}: annotation has no declaration in the configured registers")
+        area = label.rsplit("-", 1)[0]
+        if area in closed_areas:
+            errors.append(f"{label}: {area} is a closed area without APPROX IDs: {closed_areas[area]}")
+        else:
+            errors.append(f"{label}: annotation has no declaration in the configured registers")
     for label in sorted(declarations.keys() - tagged):
         errors.append(f"{label}: declaration has no source annotation")
-    retired = retired_ids(root, set(registers) | set(markdown_registers), declarations, errors)
+    retired = retired_ids(root, set(registers) | set(closed_areas), declarations, errors)
     return Inventory(sites, declarations, errors, len(registers), retired)
 
 
@@ -279,16 +249,15 @@ def location(path: str, line: int) -> str:
 
 def render(data: Inventory) -> str:
     counts = Counter(s.kind for s in data.sites)
-    extension_count = sum(d.scope == EXTENSION_SCOPE for d in data.declarations.values())
     lines = ["# Fidelity register", "", "Generated by `tools/fidelity_register.py`; edit the source annotations or declarations, then regenerate.", "",
              "The acceptance gate is **zero unresolved assumptions in required original behavior**. All APPROX IDs below remain unresolved while their labels exist. Tags describing developer-only behavior or presentation conventions also remain listed; this inventory does not judge their relevance or downgrade them.", "",
              "EXT labels identify deliberate extensions. DATA labels identify claimed original-data provenance. BIN labels cite the original executable logic a rule was traced to (`STP-PPC` = Mac PowerPC Sim Theme Park, `TPI-EXE` = Theme Park Inc Game.exe, `TPW-EXE` = Windows Sim Theme Park World v2.0 tp.exe; see docs/reverse/FINDINGS.md). None of these labels proves semantic correctness or cancels an APPROX label at the same site. Acceptance also requires evidence for required behavior, assets, inputs and outputs; a zero tag count alone cannot satisfy that gate.", "",
              "This is a tag inventory, not enforcement of all semantics. It does not detect unlabelled magic numbers, formulas, logic, omitted features or false provenance claims. It scans whole-line C# // and /// comments under source, excluding bin/obj; inline trailing comments, block comments and other languages are outside its scope. ID templates and runtime log string templates are not code-site annotations.", "",
              "```sh", "python3 tools/fidelity_register.py --write", "python3 tools/fidelity_register.py --check", "python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v", "```", "",
              f"Current inventory: **{len(data.unresolved)} unresolved unique APPROX IDs**, {counts['APPROX']} APPROX occurrences, {counts['EXT']} EXT occurrences, {counts['DATA']} DATA occurrences and {counts['BIN']} BIN occurrences.", "",
-             f"Of these, {len(data.unresolved) - extension_count} IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and {extension_count} ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.", "",
+             "All of them belong to the original-fidelity areas (required-behavior scope remains unadjudicated). The allowed OpenTPW online extension keeps no APPROX IDs: its former ONLINE approximations are closed as OpenTPW design choices with EXT:online-* labels, whose known original evidence docs/ONLINE.md keeps for a later fidelity pass, and their IDs stay reserved below.", "",
              "CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.", "",
-             f"Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the {in_words(data.register_count)} configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.", "",
+             f"Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the {in_words(data.register_count)} configured C# registers (current one-entry-per-line tuple/new syntax); these are bounded lexical readers, not general C# parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.", "",
              "| Area | Unique unresolved IDs | Source occurrences |", "| --- | ---: | ---: |"]
     grouped = Counter(label.rsplit("-", 1)[0] for label in data.unresolved)
     for area, count in sorted(grouped.items()):

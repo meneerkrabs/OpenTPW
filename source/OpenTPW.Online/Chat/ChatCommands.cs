@@ -31,16 +31,18 @@ public enum ChatNotice
 	YouIgnore = 98,
 	YouNoLongerIgnore = 99,
 	WhoToIgnore = 101,
-	// [APPROX:ONLINE-003] 102/110 are both "Could not add "; assigned to ignore/buddy by their position next to
-	// the ignore (98-105) and buddy (106-113) blocks — evidence needed: the original response code table.
+	// [EXT:online-chat-add-failure] 102/110 are both "Could not add "; OpenTPW's server sends 102 for a failed ignore
+	// and 110 for a failed buddy add, by their position in the ignore (98-105) and buddy (106-113) blocks. The original
+	// server chose the code; its response table is not recovered, so its use is not reproduced.
 	CouldNotAddIgnore = 102,
 	YouBlackmark = 103,
 	Muted = 104,
 	WhoToBlackmark = 105,
 	YouMakeBuddy = 106,
 	CouldNotAddBuddy = 110,
-	// [APPROX:ONLINE-004] 111-113 are all "Your buddy " (English suffix strings are empty); online/offline/removed
-	// meanings are assumed — evidence needed: localized variants or the original response code table.
+	// [EXT:online-buddy-status-notices] 111-113 are all "Your buddy " (English suffix strings are empty); OpenTPW's
+	// server uses them for a buddy coming online, going offline and being removed. The original server's meanings
+	// (localized variants or its response table) are not recovered, so they are not reproduced.
 	YourBuddyOnline = 111,
 	YourBuddyOffline = 112,
 	YourBuddyRemoved = 113,

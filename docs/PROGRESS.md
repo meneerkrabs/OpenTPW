@@ -6,6 +6,20 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+## Online approximations closed as design choices (October 16, 2026)
+
+The eighteen open `APPROX:ONLINE-*` IDs recorded uncertainty inside OpenTPW's own online extension, not required original
+behavior, so they are closed as explicit OpenTPW design choices:
+
+- Each site now carries an `EXT:online-*` label that states what OpenTPW does (for example `online-word-filter`,
+  `online-globe-tick`, `online-chat-park-view`, `online-visit-count-guard`); behavior is unchanged.
+- [ONLINE.md](ONLINE.md#online-design-choices) replaces its approximation register with a design-choices table: label,
+  former ID, OpenTPW's decision and the known original evidence (Mac traces of the word filter, tp.exe addresses of the
+  globe, chat overlay and park-name masking, manual pages) for a later fidelity pass; nothing there is claimed as reproduced.
+- The fidelity register has no ONLINE area and no Markdown register any more: `ONLINE` is a closed area whose former IDs
+  stay reserved, and a new `APPROX:ONLINE-*` tag fails the check. The register now counts 259 unresolved IDs, all in the
+  original areas; the website status page reads the new sentence.
+
 ## Interface reading round, part B (October 15, 2026)
 
 Twenty-two more interface approximations were read again in tp.exe:

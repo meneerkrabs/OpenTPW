@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fidelity_register import EXTENSION_SCOPE, REGISTERS, Inventory, annotations, collect, in_words, markdown_declarations, render
+from fidelity_register import CLOSED_AREAS, REGISTERS, Inventory, annotations, collect, in_words, render
 
 
 class FidelityRegisterTests(unittest.TestCase):
@@ -92,43 +92,23 @@ var text = "[APPROX:TEST-002] runtime string";
             (root / 'source/test.cs').write_text('// [APPROX:TEST-001] one\n')
             self.assertTrue(any('TEST-001: annotation has no declaration' in e for e in collect(root, config).errors))
 
-    def test_markdown_extension_evidence_and_consistency(self):
+    def test_closed_area_takes_no_approx_ids_and_keeps_its_ids_reserved(self):
         with TemporaryDirectory() as directory:
             root = Path(directory)
             (root / 'source').mkdir()
             (root / 'docs').mkdir()
             code = root / 'source/chat.cs'
-            document = root / 'docs/ONLINE.md'
-            code.write_text('// [APPROX:ONLINE-001] inferred input\n// [EXT:ONLINE-001] package choice\n')
-            text = '## Approximation register\n| ID | Assumption | Evidence needed |\n| --- | --- | --- |\n| ONLINE-001 | Inferred rule | Original trace |\n'
-            document.write_text(text)
-            config = {'ONLINE': 'docs/ONLINE.md'}
-            result = collect(root, {}, config)
-            self.assertEqual(result.errors, [])
-            self.assertEqual(result.unresolved, ['ONLINE-001'])
-            self.assertEqual(result.declarations['ONLINE-001'].scope, EXTENSION_SCOPE)
-            self.assertEqual(result.declarations['ONLINE-001'].evidence, 'Original trace')
-            self.assertEqual([s.kind for s in result.sites], ['APPROX', 'EXT'])
-            self.assertIn('1 ONLINE IDs record uncertainty', render(result))
-            document.write_text(text + '| ONLINE-001 | Duplicate | Original trace |\n')
-            self.assertTrue(any('duplicate declaration ONLINE-001' in e for e in collect(root, {}, config).errors))
-            document.write_text(text.replace('ONLINE-001', 'ONLINE-002'))
-            self.assertEqual(len(collect(root, {}, config).errors), 2)
-
-    def test_markdown_requires_valid_id_assumption_and_evidence(self):
-        header = '## Approximation register\n'
-        for row in ['| ONLINE-001 | Rule | |', '| ONLINE-001 | | Trace |',
-                    '| ONLINE-01 | Rule | Trace |', '| OTHER-001 | Rule | Trace |',
-                    '| ONLINE-001 | Rule | Trace | extra |']:
-            with self.subTest(row=row):
-                entries, errors = markdown_declarations(header + row, 'docs/ONLINE.md', 'ONLINE')
-                self.assertEqual(entries, [])
-                self.assertTrue(errors)
-        text = '| ONLINE-999 | Outside section | Trace |\n' + header + '| ONLINE-001 | Rule with escaped \\| delimiter | Trace |\n## Other section\n| ONLINE-002 | Outside section | Trace |'
-        entries, errors = markdown_declarations(text, 'docs/ONLINE.md', 'ONLINE')
-        self.assertEqual(errors, [])
-        self.assertEqual([label for label, _ in entries], ['ONLINE-001'])
-        self.assertEqual(entries[0][1].description, 'Rule with escaped | delimiter')
+            code.write_text('// [EXT:online-chat-rule] OpenTPW design choice\n')
+            (root / 'docs/ONLINE.md').write_text('| [EXT:online-chat-rule] | `APPROX:ONLINE-001` | Choice | Evidence |\n| ONLINE-002 | old row |\n')
+            closed = {'ONLINE': 'online choices take EXT labels'}
+            data = collect(root, {}, closed)
+            self.assertEqual(data.errors, [])
+            self.assertEqual(data.unresolved, [])
+            self.assertEqual([(s.kind, s.label) for s in data.sites], [('EXT', 'online-chat-rule')])
+            self.assertEqual(data.retired, {'ONLINE-001': 'docs/ONLINE.md', 'ONLINE-002': 'docs/ONLINE.md'})
+            code.write_text('// [APPROX:ONLINE-003] new uncertainty\n')
+            self.assertIn('ONLINE-003: ONLINE is a closed area without APPROX IDs: online choices take EXT labels', collect(root, {}, closed).errors)
+        self.assertIn('ONLINE', CLOSED_AREAS)
 
     def test_cli_check_detects_stale_and_incomplete_document(self):
         tool = Path(__file__).with_name('fidelity_register.py')
@@ -143,8 +123,6 @@ var text = "[APPROX:TEST-002] runtime string";
                 file = root / relative
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text(text)
-            (root / 'source/online.cs').write_text('// [APPROX:ONLINE-001] unresolved fixture\n')
-            (root / 'docs/ONLINE.md').write_text('## Approximation register\n| ONLINE-001 | Rule | Original behavior trace |\n')
             data = collect(root)
             self.assertEqual(data.errors, [])
             document = root / 'docs/FIDELITY-REGISTER.md'
@@ -152,7 +130,7 @@ var text = "[APPROX:TEST-002] runtime string";
             command = [sys.executable, str(tool), '--root', str(root), '--check']
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn(f"{len(REGISTERS) + 1} unresolved unique APPROX IDs", result.stdout)
+            self.assertIn(f"{len(REGISTERS)} unresolved unique APPROX IDs", result.stdout)
             document.write_text(render(data).replace('| ECON-001 |', '| ECON-999 |'))
             result = subprocess.run(command, capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)

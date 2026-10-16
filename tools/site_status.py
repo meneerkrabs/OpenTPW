@@ -57,9 +57,12 @@ def parse_register(text: str) -> dict:
     split = re.search(r"(\d+) IDs belong to the existing original-fidelity areas.*?and (\d+) ONLINE IDs", text, re.S)
     areas = [{"area": r[0], "ids": int(r[1]), "occurrences": int(r[2])}
              for r in table_rows(text.splitlines(), "| Area | Unique unresolved IDs") if len(r) == 3]
-    if not total or not split or not areas:
+    # Since the online extension's approximations became EXT design choices, every ID is in an original area.
+    every_original = "All of them belong to the original-fidelity areas" in text
+    if not total or not (split or every_original) or not areas:
         raise ValueError("docs/FIDELITY-REGISTER.md: header counts or area table not found")
-    return {"total": int(total.group(1)), "original": int(split.group(1)), "online": int(split.group(2)), "areas": areas}
+    original, online = (int(split.group(1)), int(split.group(2))) if split else (int(total.group(1)), 0)
+    return {"total": int(total.group(1)), "original": original, "online": online, "areas": areas}
 
 
 def csharp_status(cell: str) -> str:
@@ -279,7 +282,7 @@ def render_page(status: dict) -> str:
     f, o, m, fm, r, cur = (status[k] for k in ("fidelity", "oracle", "features", "formats", "recent", "curated"))
     source = "the GitHub API (merged pull requests)" if r["source"] == "github" else "the first-parent history of the checked-out branch"
     tiles = "".join([
-        stat(f["total"], "open fidelity items", f"{f['original']} in the original areas, {f['online']} online"),
+        stat(f["total"], "open fidelity items", f"{f['original']} in the original areas, {f['online']} online" if f["online"] else "all in the original areas"),
         stat(o["f_count"] + o["x_count"], "executed oracle findings", f"{o['f_count']} F, {o['x_count']} X; C# agrees with the original in {o['csharp_agrees']} of {o['target_count']} executed targets"),
         stat(fm["decoded"], "formats fully decoded", f"{fm['partial']} more partly"),
         stat(len(m["rows"]), "feature areas tracked", ", ".join(f"{n} {k}" for k, n in m["counts"].items())),
@@ -302,7 +305,7 @@ def render_page(status: dict) -> str:
 <p>The latest merged changes, from {source}.</p>
 {recent_list(r, RECENT)}
 <h2 id="fidelity">Open fidelity items</h2>
-<p>{f["total"]} unresolved APPROX IDs: {f["original"]} in the original-fidelity areas and {f["online"]} inside the online extension. Source: <a href="FIDELITY-REGISTER.html">fidelity register</a>, generated from tagged code sites.</p>
+<p>{f["total"]} unresolved APPROX IDs: {f"{f['original']} in the original-fidelity areas and {f['online']} inside the online extension" if f["online"] else "all in the original-fidelity areas (the online extension records its choices as EXT labels)"}. Source: <a href="FIDELITY-REGISTER.html">fidelity register</a>, generated from tagged code sites.</p>
 {areas}
 <h2 id="oracle">Executed oracle findings</h2>
 <p>Rules traced in the original binaries and executed against OpenTPW: {o["f_count"]} Mac PowerPC findings (F) and {o["x_count"]} cross-binary findings (X). Source: <a href="reverse/ORACLE.html">oracle notes</a>.</p>

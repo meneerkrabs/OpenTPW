@@ -701,7 +701,8 @@ public sealed partial class ParkHud
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
 			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
 		}
-		// [APPROX:UI-093] the camcorder's message procedure (0x488a00) acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf) and passes every other key to 0x65f66e, which calls the window's default handler (+0x118, 0x65f6d1 for ordinary windows, set at 0x65bd42) that has no key case and returns 0, so the pause key and the park door shortcuts are not offered while the ride view is open — evidence needed: whether a key the top window returns 0 for still reaches the HUD's key groups (0x488921)
+		// [BIN:TPW-EXE:0x6698e6 key delivery] a key event (0x1000a/b/c, posted to window 1 by 0x658c38/0x658c67/0x658c96) is handed to exactly one window: an accelerator-table window (0x65e640, list and edit controls) when the key is in its table, else the focus window (0x65e59b, [0xfaa5ec]) while its flag bit 0 is set, else the root ([0xfaa5dc]); nothing falls through to a second window
+		// [BIN:TPW-EXE:0x48ac40 ride view creation] the ride view window (flags 1) takes the focus (0x65e59b) and the HUD's own window handle [0x7c24c8] gets message 5 and is cleared, so the HUD's key groups (0x787c14, 0x787a60, 0x78721c at 0x488886) are never reached while it is open: the procedure 0x488a00 acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf), and the pause key and the park door shortcuts are not offered while riding
 		if ( !paused && !IsRiding && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 

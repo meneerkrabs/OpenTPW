@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
@@ -67,6 +68,10 @@ public class CameraPanelSlideTests
 			context.Delta = delta;
 			hud.Update( context, UiInput.Idle( new System.Numerics.Vector2( -1 ) ), false, false, false );
 		}
+		var elements = hud.Screen.Elements.ToList();
+		Assert.IsTrue( elements.IndexOf( hud.Screen.Find( "cameraCamcorder" )! ) < elements.IndexOf( hud.Screen.Find( "mainPanel" )! )
+			&& elements.IndexOf( hud.Screen.Find( "cameraPanel" )! ) < elements.IndexOf( hud.Screen.Find( "camera" )! ),
+			"the panel lies under the HUD, whose buttons win the hit test while it slides" );
 		hud.ToggleCameraPanel();
 		Frame( 0 );
 		CollectionAssert.AreEqual( new[] { "post 305" }, events );

@@ -32,11 +32,14 @@ public sealed partial class ParkHud
 	{
 		var root = CameraPanelTable.Root.Rect;
 		var panel = new UiRect( root.X - 12, root.Y - 14, CameraPanelViewsRect.Right - root.X + 24, root.Height + 28 );
+		// [BIN:TPW-EXE:0x4a15c8 arm panel depth] after attaching the panel to the arm (0x65f447) the drawer lowers the panel's depth by 3 (0x65f16b), so it slides out
+		// from under the HUD; OpenTPW adds its elements under the main panel, which also keeps the HUD's buttons on top of a panel that is still sliding
+		var mainPanel = hud.Find( "mainPanel" );
 		T Add<T>( T element ) where T : UiElement
 		{
 			element.Anchor = UiAnchor.BottomLeft;
 			element.Visible = false;
-			return hud.Add( element );
+			return hud.InsertBefore( mainPanel, element );
 		}
 		Add( new UiModelImage { Id = "cameraPanel", Model = "panel", Frame = () => 1, Bounds = panel } );
 		var camcorder = CameraPanelTable.Model( "b_1person" );

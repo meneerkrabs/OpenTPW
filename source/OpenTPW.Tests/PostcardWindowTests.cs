@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Online.Packages;
 using OpenTPW.UI;
 using OpenTPW.UI.Original;
 
@@ -41,7 +42,7 @@ public class PostcardWindowTests
 		Assert.AreEqual( table.Control( 0x5DA4 ).Rect, screen.Find( "title" )!.Bounds );
 		Assert.AreEqual( table.Control( 0x5DA5 ).Rect, screen.Find( "to" )!.Bounds );
 		Assert.AreEqual( 0xFF, ((UiTextField)screen.Find( "message" )!).MaximumLength );
-		Assert.AreEqual( 0x5F, ((UiTextField)screen.Find( "title" )!).MaximumLength );
+		Assert.AreEqual( Postcard.MaximumTitleLength, ((UiTextField)screen.Find( "title" )!).MaximumLength, "the online card's 64 of the original's 95" );
 		Assert.AreEqual( 0x1FF, ((UiTextField)screen.Find( "to" )!).MaximumLength );
 		Assert.AreEqual( table.Model( "b_okay" ).Rect, screen.Find( "ok" )!.Bounds );
 		Assert.AreEqual( table.Model( "b_exit" ).Rect, screen.Find( "back" )!.Bounds );
@@ -55,13 +56,14 @@ public class PostcardWindowTests
 		screens.ShowSendPostcard();
 		var screen = stack.Top!;
 		var to = (UiTextField)screen.Find( "to" )!;
-		Assert.AreEqual( OnlineStrings.Ui( OnlineStrings.EmailAddresses, "Email address(es)" ), to.Text );
-		Assert.AreEqual( OnlineStrings.Ui( OnlineStrings.MessageText, "Message text" ), ((UiTextField)screen.Find( "message" )!).Text );
-		to.Text = "alice; bob";
+		Assert.AreEqual( OnlineStrings.Ui( OnlineStrings.EmailAddresses, "Email address(es)" ), to.Placeholder );
+		Assert.AreEqual( OnlineStrings.Ui( OnlineStrings.MessageText, "Message text" ), ((UiTextField)screen.Find( "message" )!).Placeholder );
+		Assert.AreEqual( "", to.Text, "typing does not append to the prompt" );
+		to.Type( "alice; Bob Smith", 0 );
 		((UiButton)screen.Find( "ok" )!).Clicked!();
 		Assert.AreEqual( "hud", stack.Top!.Name, "the tick closes the window" );
 		var card = session.Folders.List( session.Folders.Outbox ).Single().Card!;
-		CollectionAssert.AreEqual( new[] { "alice", "bob" }, card.Manifest.To.ToArray() );
+		CollectionAssert.AreEqual( new[] { "alice", "Bob Smith" }, card.Manifest.To.ToArray() );
 		Assert.AreEqual( OnlineStrings.Ui( OnlineStrings.PostcardTitle, "Postcard from Theme Park World" ), card.Manifest.Title );
 		Assert.AreEqual( OnlineStrings.Ui( OnlineStrings.PostcardGreeting, "Greetings from Theme Park World!" ), card.Manifest.Text );
 	} );
@@ -72,17 +74,19 @@ public class PostcardWindowTests
 		screens.ShowSendPostcard();
 		var screen = stack.Top!;
 		((UiButton)screen.Find( "ok" )!).Clicked!();
-		Assert.AreEqual( "postcardRecipients", stack.Top!.Name, "the untouched prompt is no recipient" );
+		Assert.AreEqual( "postcardRecipients", stack.Top!.Name, "an empty recipients field is no recipient" );
+		stack.Pop();
+		var to = (UiTextField)screen.Find( "to" )!;
+		to.Type( ";, \n", 0 );
+		((UiButton)screen.Find( "ok" )!).Clicked!();
+		Assert.AreEqual( "postcardRecipients", stack.Top!.Name, "separators alone are no recipient" );
 		stack.Pop();
 		((UiButton)screen.Find( "clear" )!).Clicked!();
-		Assert.AreEqual( "", ((UiTextField)screen.Find( "to" )!).Text );
-		Assert.AreEqual( "", ((UiTextField)screen.Find( "title" )!).Text );
-		((UiButton)screen.Find( "ok" )!).Clicked!();
-		Assert.AreEqual( "postcardRecipients", stack.Top!.Name );
+		Assert.AreEqual( "", to.Text );
 		Assert.AreEqual( 0, session.Folders.List( session.Folders.Outbox ).Count );
 	} );
 
 	[TestMethod]
 	public void RecipientsSplitAtTheOriginalSeparators() =>
-		CollectionAssert.AreEqual( new[] { "a", "b", "c", "d" }, OnlineScreens.PostcardRecipients( "a;b, c\nd ;" ) );
+		CollectionAssert.AreEqual( new[] { "a", "b", "c d", "e" }, OnlineScreens.PostcardRecipients( "a;b, c d\ne ;" ) );
 }

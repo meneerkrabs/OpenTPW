@@ -297,14 +297,28 @@ public sealed partial class FrontEndMenu
 		return screen;
 	}
 
-	/// <summary>The load list's slider: the <c>!slider</c> track and the <c>b_scroller</c> ball at the list's first row (0x66b088, as in the buy list).</summary>
-	private sealed class LoadScrollBar( UiScrollList list, UiRect track, UiRect knob, string trackModel, string knobModel ) : UiElement
+	/// <summary>The load list's slider: the <c>!slider</c> track and the <c>b_scroller</c> ball at the list's first row (0x66b088, as in the buy list); dragging or clicking it sets the first row.</summary>
+	private sealed class LoadScrollBar( UiScrollList list, UiRect track, UiRect knob, string trackModel, string knobModel ) : UiElement, IUiDragTarget
 	{
+		private int MaxFirstRow => Math.Max( 0, list.Rows().Count - list.VisibleRows );
+		public override bool Focusable => Visible && Enabled;
+
+		public void DragTo( UiCanvas canvas, NVector2 point )
+		{
+			var rect = ScreenRect( canvas );
+			var travel = track.Height - knob.Height;
+			if ( rect.Height <= 0 || travel <= 0 || MaxFirstRow == 0 )
+				return;
+			var authoredY = Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
+			var fraction = Math.Clamp( (authoredY - track.Y - knob.Height / 2) / travel, 0, 1 );
+			list.Scroll( (int)MathF.Round( fraction * MaxFirstRow ) - list.FirstRow );
+		}
+
 		public override void Draw( UiContext context, bool focused, bool pressed )
 		{
-			var max = Math.Max( 0, list.Rows().Count - list.VisibleRows );
 			context.DrawModel( trackModel, 0, context.Canvas.Map( track, Anchor ) );
-			context.DrawModel( knobModel, UiButton.NormalFrame, context.Canvas.Map( OpenTPW.Hud.ParkHud.ListScrollKnobRect( track, knob, list.FirstRow, max ), Anchor ) );
+			context.DrawModel( knobModel, pressed ? UiButton.DownFrame : focused ? UiButton.HighlightFrame : UiButton.NormalFrame,
+				context.Canvas.Map( OpenTPW.Hud.ParkHud.ListScrollKnobRect( track, knob, list.FirstRow, MaxFirstRow ), Anchor ) );
 		}
 	}
 

@@ -46,6 +46,14 @@ public class UiScreen
 		return element;
 	}
 
+	/// <summary>Adds <paramref name="element"/> before <paramref name="before"/>, so it draws under it and loses hit tests to it (at the end when it is absent).</summary>
+	public T InsertBefore<T>( UiElement? before, T element ) where T : UiElement
+	{
+		var index = before == null ? -1 : elements.IndexOf( before );
+		if ( index < 0 ) elements.Add( element ); else elements.Insert( index, element );
+		return element;
+	}
+
 	public void Remove( UiElement element )
 	{
 		elements.Remove( element );

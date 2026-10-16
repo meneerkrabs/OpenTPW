@@ -1,3 +1,4 @@
+using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.FrontEnd;
@@ -46,5 +47,11 @@ public class LoadDialogTableTests
 		Assert.AreEqual( 1, list.FirstRow );
 		screen.Find( "scrollUp" )!.Activate();
 		Assert.AreEqual( 0, list.FirstRow );
+		// dragging the ball to the track's bottom shows the last rows
+		var context = new UiContext( OriginalUiTests.FakeStrings(), null!, new UiModels( name => throw new FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 1024, 768 ) };
+		var bar = (IUiDragTarget)screen.Find( "loadScroll" )!;
+		var rect = screen.Find( "loadScroll" )!.ScreenRect( context.Canvas );
+		bar.DragTo( context.Canvas, new System.Numerics.Vector2( rect.Center.X, rect.Bottom ) );
+		Assert.AreEqual( 20 - list.VisibleRows, list.FirstRow );
 	}
 }

@@ -16,6 +16,8 @@ public sealed class UiTextField : UiElement
 	public float TextInset { get; set; }
 	/// <summary>Background model frame; null draws the plain help-box colour.</summary>
 	public string? Model { get; set; }
+	/// <summary>Text shown, dimmed, while the field is empty (the original's prompt texts); never part of <see cref="Text"/>.</summary>
+	public string? Placeholder { get; set; }
 	/// <summary>Called with Enter.</summary>
 	public Action? Submitted { get; set; }
 	/// <summary>Called whenever the text changes.</summary>
@@ -48,13 +50,14 @@ public sealed class UiTextField : UiElement
 		// [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded
 		if ( Model == null || !context.DrawModel( Model, 0, rect, focused ? new RgbaByte( 255, 255, 220, 255 ) : null ) )
 			context.Batch.AddRectangle( rect, focused ? new RgbaByte( 40, 50, 110, 220 ) : UiColors.HelpBackground );
-		var shown = Password ? new string( '*', Text.Length ) : Text;
+		var prompt = Text.Length == 0 && Placeholder is { Length: > 0 };
+		var shown = prompt ? Placeholder! : Password ? new string( '*', Text.Length ) : Text;
 		// The caret blinks twice a second while the field has the focus.
 		if ( focused && Enabled && (int)(context.Time * 2) % 2 == 0 )
 			shown += "_";
 		var scale = rect.Height / Bounds.Height;
 		var inset = MathF.Max( rect.Height * 0.25f, TextInset * scale );
-		context.DrawText( context.Fonts.Label, shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled ? UiColors.Value : UiColors.Disabled );
+		context.DrawText( context.Fonts.Label, shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
 	}
 }
 

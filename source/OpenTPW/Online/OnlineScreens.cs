@@ -859,20 +859,18 @@ public sealed class OnlineScreens
 			Align = UiAlign.Center, Fit = true, Bounds = Control( 0x5D9E ).Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "photo", Model = Control( 0x5D9F ).Model!, Bounds = Control( 0x5D9F ).Rect, Anchor = UiAnchor.Center } );
 		var edited = new HashSet<string>( StringComparer.Ordinal );
-		var prompts = new Dictionary<string, string>( StringComparer.Ordinal );
-		// a field whose text differs from its prompt counts as edited, also when it was set without typing
-		bool Edited( UiTextField field ) => edited.Contains( field.Id ) || field.Text != prompts[field.Id];
+		// a field counts as edited once typed in (message 0x801), or when it holds text that was set without typing
+		bool Edited( UiTextField field ) => edited.Contains( field.Id ) || field.Text.Length > 0;
+		// [EXT:postcard-player-names] the prompts are shown while a field is empty instead of being its text, so typing does not append to them, and the title takes at
+		// most the online card's 64 characters (Postcard.MaximumTitleLength) of the original's 95
 		UiTextField Field( string id, uint control, int maximumLength, Func<string> prompt )
 		{
 			var node = Control( control );
-			var initial = prompt();
-			var field = screen.Add( new UiTextField { Id = id, MaximumLength = maximumLength, Text = initial, Help = strings.Help( node.Help ), Model = node.Model,
+			return screen.Add( new UiTextField { Id = id, MaximumLength = maximumLength, Placeholder = prompt(), Help = strings.Help( node.Help ), Model = node.Model,
 				TextInset = node.Inner is { } inner ? inner.X - node.Rect.X : 0, Bounds = node.Rect, Anchor = UiAnchor.Center, Changed = _ => edited.Add( id ) } );
-			prompts[id] = initial;
-			return field;
 		}
 		var message = Field( "message", 0x5DA3, 0xFF, () => OnlineStrings.Ui( OnlineStrings.MessageText, "Message text" ) );
-		var title = Field( "title", 0x5DA4, 0x5F, () => OnlineStrings.Ui( OnlineStrings.MessageTitle, "Message title" ) );
+		var title = Field( "title", 0x5DA4, Math.Min( 0x5F, Postcard.MaximumTitleLength ), () => OnlineStrings.Ui( OnlineStrings.MessageTitle, "Message title" ) );
 		var to = Field( "to", 0x5DA5, 0x1FF, () => OnlineStrings.Ui( OnlineStrings.EmailAddresses, "Email address(es)" ) );
 		// The original attached a photo of the park the card is sent from (manual p. 51/67); OpenTPW attaches the
 		// park's map view. [APPROX:ONLINE-022] the camcorder snapshot is not reproduced, and no park reference is
@@ -899,14 +897,14 @@ public sealed class OnlineScreens
 		}
 		void Send()
 		{
-			var recipients = PostcardRecipients( Edited( to ) ? to.Text : "" );
+			var recipients = PostcardRecipients( to.Text );
 			if ( recipients.Length == 0 )
 			{
 				stack.Push( UiDialogs.Message( "postcardRecipients", () => OnlineStrings.Ui( OnlineStrings.InvalidEmailAddresses, "Invalid email addresses in the send to field" ),
 					(() => strings.Extra( OpenTpwText.Back ), stack.Pop) ) );
 				return;
 			}
-			Guard( () =>
+			try
 			{
 				var card = Postcard.Create( Session.Settings.PlayerName ?? "", recipients,
 					Edited( title ) ? title.Text : OnlineStrings.Ui( OnlineStrings.PostcardTitle, "Postcard from Theme Park World" ),
@@ -914,7 +912,12 @@ public sealed class OnlineScreens
 					GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage, image: ParkImage() );
 				localStatus = OnlineStrings.Get( OnlineLabel.SavedTo ) + Session.Folders.Store( Session.Folders.Outbox, card );
 				Close();
-			} );
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or InvalidOperationException or UnauthorizedAccessException )
+			{
+				// the window has no status line: a refused card or a failed store is shown in a message box and the window stays
+				stack.Push( UiDialogs.Message( "postcardFailed", () => exception.Message, (() => strings.Extra( OpenTpwText.Back ), stack.Pop) ) );
+			}
 		}
 		UiButton Button( string id, string model, Action? clicked, bool enabled = true )
 		{
@@ -932,9 +935,10 @@ public sealed class OnlineScreens
 		Push( screen );
 	}
 
-	/// <summary>The recipients of a postcard: the field's text split at the original's separators (';', ',', ' ' and newlines, tp.exe 0x754448).</summary>
+	/// <summary>The recipients of a postcard: the field's text split at the original's separators but the space (';', ',' and newlines, tp.exe 0x754448).</summary>
+	// [EXT:postcard-player-names] player names may hold spaces, so the space the original also splits its e-mail addresses at is not a separator
 	public static string[] PostcardRecipients( string text ) =>
-		text.Split( new[] { ';', ',', ' ', '\n' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries );
+		text.Split( new[] { ';', ',', '\n' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries );
 
 	/// <summary>
 	/// Unsent Postcards in its original composition (Mac UI table data:0x508bc): a window (186,30)-(2018,1007)

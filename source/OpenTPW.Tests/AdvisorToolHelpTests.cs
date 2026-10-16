@@ -488,4 +488,58 @@ public class AdvisorToolHelpTests
 		Frame( hud );
 		CollectionAssert.AreEqual( new[] { "mode" }, events, "0xD6 is posted before the line is laid and the tool's end (SetMode(0)) withdraws it" );
 	}
+
+	// ---- The shipped tables ------------------------------------------------------------------------------------
+
+	private static string ShippedData( string relative )
+	{
+		for ( var directory = new System.IO.DirectoryInfo( System.AppContext.BaseDirectory ); directory != null; directory = directory.Parent )
+		{
+			var path = System.IO.Path.Combine( directory.FullName, relative );
+			if ( System.IO.File.Exists( path ) )
+				return System.IO.File.ReadAllText( path );
+		}
+		Assert.Fail( $"{relative} not found above the test directory." );
+		return "";
+	}
+
+	[TestMethod]
+	public void EveryMessageTheHudPostsIsAGroupOneHelpDescriptorOfTheOriginalsTable()
+	{
+		var help = AdvisorHelpTable.Parse( ShippedData( AdvisorHelpTable.RelativePath ) ).ToDictionary( row => row.MessageId );
+		var posted = AdvisorUiHelp.AllWindowMessages.Concat( AdvisorUiHelp.ModeHelpMessages ).Concat( AdvisorToolHelp.All ).Distinct().ToArray();
+		Assert.AreEqual( 42, posted.Length, "forty-two of the 81 help messages have a producer here" );
+		foreach ( var message in posted )
+		{
+			Assert.IsTrue( help.TryGetValue( message, out var row ), $"message {message} is a help descriptor" );
+			Assert.AreEqual( 1, row.Group, $"message {message} is of the tutorial group" );
+		}
+	}
+
+	[TestMethod]
+	public void ASampleOfTheHelpTableMatchesTpExe()
+	{
+		// descriptor rows of 0x76E300 (filled by 0x5A0A50), read with the script of tools/ppc-analysis/lanes/advisor: (message, first response, game mode)
+		var expected = new (int Message, int Response, byte Mode)[]
+		{
+			(184, 403, 2), (193, 412, 2), (195, 414, 0), (198, 417, 2), (200, 419, 0), (201, 420, 2), (203, 422, 2), (205, 424, 2), (206, 425, 2), (212, 431, 2), (213, 432, 2),
+			(214, 433, 2), (284, 544, 2), (287, 547, 2), (289, 549, 2), (292, 552, 2), (293, 553, 2), (294, 554, 2), (295, 555, 2), (298, 558, 2), (299, 559, 2), (300, 560, 2),
+			(301, 561, 2), (304, 564, 2), (305, 565, 2), (337, 601, 2), (345, 607, 2), (346, 608, 2)
+		};
+		var help = AdvisorHelpTable.Parse( ShippedData( AdvisorHelpTable.RelativePath ) ).ToDictionary( row => row.MessageId );
+		foreach ( var (message, response, mode) in expected )
+			Assert.AreEqual( (response, mode), (help[message].FirstResponseId, help[message].GameMode), $"message {message}" );
+	}
+
+	[TestMethod]
+	public void TheDescriptorTablesScanFlagsAreThoseOfTheOriginal()
+	{
+		var rows = AdvisorDescriptorTable.Parse( ShippedData( AdvisorDescriptorTable.RelativePath ) );
+		Assert.AreEqual( 155, rows.Count( row => row.Scan ), "0x59C680 scores the descriptors whose first word is 0" );
+		Assert.AreEqual( 21, rows.Count( row => row.Scan && row.Callback == 0x5D60C0 ), "21 of them score 0" );
+		Assert.AreEqual( 134, rows.Count( row => row.Scan && row.Callback != 0x5D60C0 ), "134 compute a score" );
+		Assert.IsTrue( rows.Where( row => row.Callback == 0x59E8C0 ).All( row => !row.Scan ), "the help messages are skipped by the scan" );
+		foreach ( var message in new[] { 0, 66, 68, 69, 70, 93, 94, 95, 96, 97, 106, 125, 126, 127, 128, 129, 136, 141, 167, 215, 237, 271, 311, 315, 323 } )
+			Assert.IsFalse( rows[message].Scan && message != 141, $"game code posts {message}" );
+	}
 }

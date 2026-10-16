@@ -152,7 +152,7 @@ internal static class AdvisorUiHelp
 
 	/// <summary>
 	/// The ten help messages the original withdraws whenever the interface mode changes (0x52F200, 0x52F580): the help of the tools
-	/// and modes rather than of windows. Their producers are not bound (ADVISOR-009).
+	/// and modes rather than of windows. <see cref="AdvisorToolHelp"/> binds the post of each.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052F200 interface mode change] when the new mode differs from the old one, 0x59AA70 is called for 0xB8, 0xCB, 0xD6, 0xCD, 0xC9, 0xCE, 0xC1, 0x159, 0x15A and 0x151 (184, 203, 214, 205, 201, 206, 193, 345, 346, 337); the new mode 3 then posts 0xCB (203)
 	public static readonly IReadOnlyList<int> ModeHelpMessages = new[] { 184, 203, 214, 205, 201, 206, 193, 345, 346, 337 };

@@ -421,7 +421,7 @@ public static class GameAudio
 
 	/// <summary>Starts the globe's music (<c>cat_globallobbysfx</c> 2) and ambience (3) as looping sentences while the online globe is up.</summary>
 	// [BIN:STP-PPC:0x100923A8 globe audio] the globe component starts cat_globallobbysfx 2 (globe music) and 3 (globe ambience) and keeps both handles; closing stops them by handle (0x1009261C)
-	// [APPROX:UI-942] the lobby's own music and ambience are stopped while the globe plays and restarted after it; what the original does with them is not traced
+	// [EXT:online-globe-audio] the globe is the online extension's screen: its music and ambience replace the lobby's, which OpenTPW stops while the globe plays and restarts after it
 	public static void EnterGlobe()
 	{
 		if ( events == null || globeMusic != null )

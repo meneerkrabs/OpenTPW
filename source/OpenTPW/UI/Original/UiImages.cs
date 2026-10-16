@@ -71,7 +71,7 @@ public static class UiImages
 		var opaque = true;
 		for ( var pixel = 3; pixel < data.Length && opaque; pixel += 4 )
 			opaque = data[pixel] == 255;
-		// [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots (0x567c10 sets alpha test and blend from record flag bits; that its flag 0x2 is the slot's is not shown) (0x567c10 sets alpha test and blend from record flag bits; that its flag 0x2 is the slot's is not shown) (0x567c10 sets alpha test and blend from record flag bits; that its flag 0x2 is the slot's is not shown)
+		// [APPROX:UI-034] a fully opaque texture on a transparent (flag 0x2) slot keys out black with a soft edge — evidence needed: the original's render state for flagged slots (0x567c10 sets alpha test and blend from record flag bits; that its flag 0x2 is the slot's is not shown)
 		if ( opaque )
 			KeyOutBlackSoft( data, width, height );
 		return (width, height, data);

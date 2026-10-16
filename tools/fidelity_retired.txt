@@ -249,6 +249,7 @@ UI-035 docs/reverse/PPC-review.md
 UI-038 docs/PROGRESS.md
 UI-040 docs/PROGRESS.md
 UI-043 docs/PROGRESS.md
+UI-044 docs/UI.md
 UI-045 docs/PROGRESS.md
 UI-048 docs/PROGRESS.md
 UI-049 docs/PROGRESS.md
@@ -272,6 +273,7 @@ UI-906 docs/PROGRESS.md
 UI-908 docs/PROGRESS.md
 UI-920 docs/PROGRESS.md
 UI-940 docs/UI.md
+UI-942 docs/UI.md
 VM-900 docs/PROGRESS.md
 VM-901 docs/PROGRESS.md
 VM-902 docs/DETERMINISM.md

@@ -101,6 +101,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public Func<long>? ArrivalClock { get; set; }
 	/// <summary>The park's attraction points for the arrival rule (the economy's attractions); 0 without one.</summary>
 	public Func<int>? ParkPoints { get; set; }
+
+	/// <summary>
+	/// Whether the entrance gate's script reports itself open (its script variable 1, <c>VAR_STATUS</c>; null reads as open, a level without a gate). A paid guest walks in only
+	/// while it is (tp.exe's state 3, <c>0x004FF80F</c> with <c>0x0051A290</c>).
+	/// </summary>
+	public Func<bool>? EntranceGateOpen { get; set; }
 	/// <summary>True while no group arrives (a bankrupt park).</summary>
 	public Func<bool>? ArrivalsHalted { get; set; }
 	/// <summary>
@@ -1133,8 +1139,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( fee > 0 )
 			MoneySpent?.Invoke( guest, fee, 0 );
 		// [BIN:TPW-EXE:0x004FF80A paid at a closed park] state 3 sends a paid guest home (state 18, no refund, no thought) while the park is closed, as an arriving one
-		// [APPROX:GUEST-011] the entrance gate's script variable 1 (0x0051A290), which state 3 also requires to be 1 before a paid guest walks in, is not read
-		if ( Payments?.ParkClosed == true )
+		// [BIN:TPW-EXE:0x004FF80F gate status] state 3 also reads the entrance gate's script variable 1 (0x0051A290, VAR_STATUS) and takes the same way home unless it is 1 (0x004FF814), the wait +0x200 of a paid guest being 0
+		if ( Payments?.ParkClosed == true || EntranceGateOpen?.Invoke() == false )
 		{
 			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
 			return;

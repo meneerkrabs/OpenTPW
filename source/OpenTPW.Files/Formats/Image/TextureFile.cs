@@ -49,9 +49,9 @@ public partial class TextureFile : BaseFormat
 				Width = binaryReader.ReadInt16(),
 				Height = binaryReader.ReadInt16(),
 				YChannelQuantizationScale = binaryReader.ReadInt16(),
-				// The two chroma scales sit in the header as Cr then Cb: the first chroma plane in the stream takes the third short and the second plane the second.
-				// Read Cb first, saturated reds decoded as yellow-greens (the research tubes' orange caps, the gauge bars' red end); muted art barely changed
-				// because its two scales are close.
+				// [BIN:TPW-EXE:0x564e20 header read, 0x593ab0 decode] the header's second short (offset 0xa) scales the second chroma plane and the third (0xc) the first: the loader pushes the
+				// third short as the chroma scale the decoder (0x593ab0) applies to the plane it later multiplies by 1.772 (Cb), the second short for the plane it multiplies by 1.402 (Cr).
+				// Read the other way round, saturated reds decoded as yellow-greens; muted art barely changed because its two scales are close or equal.
 				CrChannelQuantizationScale = binaryReader.ReadInt16(),
 				CbChannelQuantizationScale = binaryReader.ReadInt16(),
 				AChannelQuantizationScale = binaryReader.ReadInt16(),

@@ -16,6 +16,8 @@ public sealed partial class ParkHud
 		(ResearchCategory.Sideshow, "h_show", Rect( 785, 640, 1830, 791 ), Rect( 472, 660, 769, 771 )),
 		(ResearchCategory.Feature, "h_feature", Rect( 785, 801, 1830, 951 ), Rect( 472, 820, 769, 931 )),
 	};
+	// [BIN:TPW-EXE:0x35299c research panel control table (file offset)] the bottom edge of each row's pipe child (its tops are the panels' tops + 17)
+	private static readonly int[] ResearchPipeBottoms = { 294, 455, 615, 776, 937 };
 	private static readonly (UiRect Icon, UiRect Previous, UiRect Next, UiRect Value, UiRect Fluid, UiRect Track, UiRect Knob)[] ResearchCells =
 	{
 		(Rect( 816, 182, 919, 284 ), Rect( 924, 191, 1007, 275 ), Rect( 1012, 191, 1096, 275 ), Rect( 1132, 179, 1497, 284 ), Rect( 1555, 196, 1712, 264 ), Rect( 532, 199, 714, 268 ), Rect( 579, 199, 646, 267 )),
@@ -176,8 +178,8 @@ public sealed partial class ParkHud
 				Bounds = cells.Value, Anchor = UiAnchor.Center } );
 			screen.Add( new ResearchFluidCell( this, category ) { Id = $"fluid{index}",
 				Bounds = cells.Fluid, Anchor = UiAnchor.Center } );
-			// [BIN:TPW-EXE:0x0035299c research panel control table (file offset)] each category parent control holds a second model child besides the fluid: the pipe (root name "pipe", res_pipe.md2), a rect 1497..1804 wide and 119 tall that starts 17 units below the panel's top (row 0: y 175..294); it frames the fluid with the orange end caps the original's tube shows (720p video 34:30) and is drawn over the fluid
-			Model( $"pipe{index}", "pipe", new UiRect( 1497, panel.Y + 17, 1804 - 1497, 119 ) );
+			// [BIN:TPW-EXE:0x0035299c research panel control table (file offset)] each category parent control holds a second model child besides the fluid: the pipe (root name "pipe", res_pipe.md2), a rect 1497..1804 wide that starts 17 units below the panel's top in every row (y 175..294, 335..455, 496..615, 657..776, 818..937 for the five rows); it frames the fluid with the orange end caps the original's tube shows (720p video 34:30) and is drawn over the fluid
+			Model( $"pipe{index}", "pipe", Rect( 1497, panel.Y + 17, 1804, ResearchPipeBottoms[row] ) );
 			Model( $"effortTrack{index}", "effortslidea", slider );
 			// [BIN:TPW-EXE:0x4aa6bd effort sliders] SetRange(0,100) on the generic slider class: integer value 0..100, a drag position is truncated (0x66afc9), the ball runs linearly across the table's slider rectangle
 			screen.Add( new UiSlider { Id = $"effort{index}", Track = cells.Track,

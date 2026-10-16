@@ -982,6 +982,7 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		foreach ( var item in objects.Values )
 		{
+			// [APPROX:ECON-057] an attraction keeps this and last month's sums; the original keeps six 30-day daily rings per attraction rolled on the day message 0xB (0x004DD320) — evidence needed: which panel or graph reads the rings
 			item.CustomersLastMonth = item.CustomersThisMonth;
 			item.TakingsLastMonth = item.TakingsThisMonth;
 			item.CostsLastMonth = item.CostsThisMonth;
@@ -1775,6 +1776,7 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( Catalog.TryGet( item.InfoId, out var info ) )
 				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
 		}
+		// [APPROX:ECON-056] the cost booked for a shop sale is the shop's mCostOfGoods as it stands; the original books the value of 0x004E1B40, a float product of mCostOfGoods with terms of the quality byte (+0x18C) and the special-ingredient byte (+0x198) — evidence needed: the last combination step of 0x004E1B40 from a capture of a booked shop cost
 		Post( LedgerCategory.OtherCosts, item.CostOfGoods );
 		item.CustomersThisMonth++;
 		item.CostsThisMonth += item.CostOfGoods;

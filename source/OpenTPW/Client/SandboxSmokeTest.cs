@@ -105,6 +105,12 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
+		// [EXT:smoke-camera-focus] the smoke searches the middle of the screen for free owned sites; aim the camera at the paths' centre, as the camera did before it took the original's Home pose
+		if ( frame == 1 && level.OriginalPark != null && Camera.Mode is ParkCameraMode smokeCamera )
+		{
+			smokeCamera.ExtendedZoomRange = true;
+			smokeCamera.SetPose( level.PathFocus, 300, ParkCameraMode.HomeYaw );
+		}
 		TrackObjectMotion();
 		TrackRideHeads();
 		if ( StepRideHeadReadback() )

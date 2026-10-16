@@ -110,6 +110,6 @@ public class RideCameraTests
 		// A degenerate heading falls back to the world's forward axis instead of an empty view.
 		var fallback = RideCameraMode.PrototypeFrame( anchor, 0, Vector3.Zero );
 		Assert.AreEqual( Vector3.Forward, (fallback.Look - fallback.Eye).Normal );
-		Assert.AreEqual( RideCameraMode.ViewFieldOfView, 55f );
+		Assert.AreEqual( 90f, RideCameraMode.ViewFieldOfView, "the original's one projection angle" );
 	}
 }

@@ -103,6 +103,12 @@ public interface IUiDragTarget
 	void DragBegin( UiCanvas canvas, System.Numerics.Vector2 point ) { }
 }
 
+/// <summary>A drag target that wants to know where the press landed, before the first <see cref="IUiDragTarget.DragTo"/> of that press.</summary>
+public interface IUiDragStart
+{
+	void DragStart( UiCanvas canvas, System.Numerics.Vector2 point );
+}
+
 /// <summary>
 /// A list of text rows inside an original list frame (list_findprks, list_outbox, list_msgs …):
 /// click or Up/Down selects, Enter or a second click activates, the wheel scrolls.

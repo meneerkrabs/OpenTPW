@@ -538,6 +538,34 @@ public class GuestTests
 	}
 
 	/// <summary>
+	/// The minor decision of a guest walking to a ride (tp.exe 0x004FD570, every twelfth update of state 10): a score-qualified ride in the 4 x 4 window
+	/// round the guest that is nearer to the target's back cell and whose route to the guest is shorter replaces the target (GUEST-018).
+	/// </summary>
+	[TestMethod]
+	public void AGuestWalkingToARideSwitchesToANearerRideInItsWindow()
+	{
+		var simulation = new GuestSimulation( CreateCross(), CreateSettings(), 9 ) { ArrivalsEnabled = false };
+		var far = CreateShop( 1, (15, 5) );
+		var near = CreateShop( 2, (11, 5) );
+		var outside = CreateShop( 3, (5, 5) );
+		simulation.Register( far.Bridge );
+		simulation.Register( near.Bridge );
+		simulation.Register( outside.Bridge );
+		var guest = simulation.SpawnInPark( 10, 5 );
+		guest.AttractionId = far.Bridge.AttractionId;
+		guest.State = GuestState.GoingToRide;
+		simulation.MinorDecision( guest );
+		Assert.AreEqual( near.Bridge.AttractionId, guest.AttractionId, "the ride beside the guest, nearer to the target's back cell, is the better one" );
+		// from the near ride the far one is not nearer to its back cell, and the ride behind the guest is outside the window
+		simulation.MinorDecision( guest );
+		Assert.AreEqual( near.Bridge.AttractionId, guest.AttractionId );
+		// a guest without a target decides nothing
+		guest.AttractionId = 0;
+		simulation.MinorDecision( guest );
+		Assert.AreEqual( 0, guest.AttractionId );
+	}
+
+	/// <summary>
 	/// The original's meter +0x1B8 (OpenTPW's <c>Energy</c>): 0 for a new guest (tp.exe 0x004FAEC0), and a completed use takes the type's
 	/// <c>UsageInfo.FatigueEffect</c> off it through the clamped adder (0x004FD970, 0x004FB4F0); walking, waiting and riding leave it alone.
 	/// </summary>

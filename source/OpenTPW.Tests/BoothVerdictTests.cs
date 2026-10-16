@@ -74,4 +74,26 @@ public class BoothVerdictTests
 		Assert.AreEqual( 51, BoothVerdict.ExpensiveWaitTurns( 50 ) );
 		Assert.AreEqual( 100, BoothVerdict.ExpensiveWaitTurns( uint.MaxValue - 46 ) );
 	}
+
+	[TestMethod]
+	public void TheBoothWaitIsCountedInParkTurnsNotSeconds()
+	{
+		var settings = GuestTests.CreateSettings();
+		settings.AdmissionFee = 30;
+		var simulation = new GuestSimulation( GuestTests.CreateCross(), settings, 3 );
+		Guest? waiting = null;
+		for ( var tick = 0; tick < 240 * 60 && waiting == null; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			waiting = simulation.Guests.FirstOrDefault( guest => guest.State == GuestState.AtTicketBooth && guest.BoothWait > 0 );
+		}
+		Assert.IsNotNull( waiting, "an expensive verdict stores a wait" );
+		var turns = waiting!.BoothWait;
+		Assert.IsTrue( turns is >= 51 and <= 100, $"{turns}" );
+		var start = simulation.ParkTurn;
+		while ( simulation.ParkTurn - start < turns - 1 )
+			simulation.Tick( GuestSnapshotTests.Tick );
+		Assert.AreEqual( 1, waiting.BoothWait, "one count per executed park turn: the verdict runs again as the last turn's count empties it" );
+		Assert.AreEqual( GuestState.AtTicketBooth, waiting.State );
+	}
 }

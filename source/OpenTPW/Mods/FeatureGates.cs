@@ -14,6 +14,12 @@ public static class FeatureGates
 	/// <summary>The <c>opentpw.online</c> extension is on for this run.</summary>
 	public static bool Online => OpenTpwExtensions.IsEnabled( OfficialExtensions.Online );
 
+	/// <summary>
+	/// The <c>opentpw.cross-edition-objects</c> extension is on for this run: objects from a registered content root of another
+	/// original game get their own Info.Ids, sound banks and economy defaults (docs/MODS.md).
+	/// </summary>
+	public static bool CrossEditionObjects => OpenTpwExtensions.IsEnabled( OfficialExtensions.CrossEditionObjects );
+
 	/// <summary>Exporting, importing, visiting and postcards: the edition supports sharing and the online extension is on.</summary>
 	public static bool Sharing => GameEditions.Capabilities.Sharing && Online;
 

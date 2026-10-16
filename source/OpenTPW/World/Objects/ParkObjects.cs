@@ -13,6 +13,8 @@ public interface IParkGrid
 	float GetCellHeight( int x, int y );
 	/// <summary>Engine height of the ground at grid corner (x, y), the original's terrain vertex; a grid without corner heights gives the height of the cell there.</summary>
 	float GetCornerHeight( int x, int y ) => GetCellHeight( x, y );
+	/// <summary>Engine height of the ground under a point of the grid in model units (10 per cell from corner (0, 0)), 0 off the map: the original's landscape sampler (0x4527F0); defaults to the cell's mean.</summary>
+	float GetTerrainHeight( float x, float y ) => GetCellHeight( Math.Clamp( (int)MathF.Floor( x / 10 ), 0, Math.Max( Width - 1, 0 ) ), Math.Clamp( (int)MathF.Floor( y / 10 ), 0, Math.Max( Height - 1, 0 ) ) );
 }
 
 /// <summary>The generic sandbox: the 32×32 tile park of <see cref="ParkPlacement"/>, flat at height 0.</summary>
@@ -77,6 +79,13 @@ public sealed class OriginalParkGrid : IParkGrid
 		x = Math.Clamp( x, 0, field.CellCountX );
 		y = Math.Clamp( y, 0, field.CellCountZ );
 		return OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x * field.CellSizeX, field.GetCornerHeight( x, y ), y * field.CellSizeZ ) ).Z;
+	}
+
+	public float GetTerrainHeight( float x, float y )
+	{
+		var field = park.Heightfield;
+		return LandscapeSampler.Sample( field.CellCountX, field.CellCountZ, field.CellSizeX, field.CellSizeZ, ( cx, cz ) => field.GetCornerHeight( cx, cz ), ( cx, cz ) => field.SplitsAlongAntiDiagonal( cx, cz ), x, y )
+			* OriginalParkPlacement.ModelScale;
 	}
 }
 

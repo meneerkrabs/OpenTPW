@@ -52,6 +52,24 @@ public class UiRegisterRound2Tests
 	}
 
 	[TestMethod]
+	public void TheConfirmationBoxesAndThePostcardPauseThePark()
+	{
+		// the generic message box 0x47f020 pauses at 0x47f251 (ride erase 0x48cd10, employee dismiss 0x4b5e5d) and the postcard window at 0x4a93d7
+		foreach ( var name in new[] { "confirmDelete", "confirmDismissStaff", "sendPostcard" } )
+			Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 2f, new[] { "hud", name } ), name );
+	}
+
+	[TestMethod]
+	public void TheMapFillsPathsQueuesAndUnownedLandWithTheOriginalsRecords()
+	{
+		// 0x5f2050 classes 10, 11 and 12 (path, queue, unowned) in that order, 0x5f2380 fills them from 0xf86b00, 0xf86b24 and 0xf86b6c
+		Assert.AreEqual( new Veldrid.RgbaByte( 31, 166, 31, 255 ), ParkMapPalette.CellFill( ParkCellType.Path, true ) );
+		Assert.AreEqual( new Veldrid.RgbaByte( 37, 198, 37, 255 ), ParkMapPalette.CellFill( ParkCellType.Queue, false ) );
+		Assert.AreEqual( new Veldrid.RgbaByte( 0, 23, 0, 128 ), ParkMapPalette.CellFill( ParkCellType.Empty, true ) );
+		Assert.IsNull( ParkMapPalette.CellFill( ParkCellType.Empty, false ) );
+	}
+
+	[TestMethod]
 	public void TheMapWindowPausesThePark()
 	{
 		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 2f, new[] { "hud", "map" } ), "0x5f0b40 calls the game pause 0x4092a0" );

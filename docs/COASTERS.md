@@ -509,3 +509,10 @@ test; the tool's entry already put the controller in state 2), the move validato
 (`0x4348af..0x4348d8`) and stops re-validating at a cut end (`0x434e06`, `0x434ea1`), and the close step OpenTPW keeps for a fresh circuit
 is the extension `[EXT:coaster-closing-check]` (the original closes a reopened circuit by a click without a test and completes a fresh one
 by `0x435570`); APPROX:COAST-030 and APPROX:COAST-017 no longer exist.
+
+The second read round of October 16 narrowed COAST-004 (the candidate readers of the node's collision list `+0xB4`: loads at `0x430867`, `0x43420A`, `0x43B159`, `0x43B3E5`, `0x43B63F`,
+`0x443087`, `0x44309C` and `0x44ACE9`, not decoded), COAST-011 (the option table `0x7442C0` has 0x3C-byte named entries and no instruction addresses an entry; its only reference is its start in the
+stub at `0x402BFD`, so a reader reads fields a generic key loader filled), COAST-014 (the PC's sampler `0x440C10` rounds its sine-table indices with `fistp` at `0x44123F..0x441271`, as the
+knot pass does at `0x4313A5`; C#'s curve keeps two truncating Mac-table lookups), COAST-015 (the knot pass `0x430CA0` clamps the loft parameter and writes it back, which every node built here
+already has: `ClampHeight`, `StationHeight`), COAST-029 (the PC rating pass `0x43C450` only sets the node's winch mark `0x800` on a floor speed) and COAST-032 (tp.exe's `SetCooperativeLevel` calls
+`0x563914` and `0x563B92` carry `DDSCL_FPUSETUP` without `FPUPRESERVE`, so DirectDraw sets single precision for the thread; the control word itself is not read back).

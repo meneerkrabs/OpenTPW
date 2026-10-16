@@ -105,6 +105,8 @@ public class UiScreen
 		if ( input.LeftPressed )
 		{
 			pressed = hit;
+			if ( pressed is { Enabled: true } and IUiDragStart start && input.Mouse.X >= 0 )
+				start.DragStart( canvas, input.Mouse );
 			if ( hit is UiButton { Repeat: not null, Enabled: true } holdButton && input.Mouse.X >= 0 )
 				(holdButton.HoldState, holdButton.HoldTime) = (1, context.Time);
 		}

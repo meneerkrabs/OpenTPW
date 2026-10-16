@@ -9,8 +9,6 @@ public enum QueueBuildResult
 	NoQueue,
 	/// <summary>The entrance's outside cell is unknown or is a walkable path (remove the path first).</summary>
 	NoFrontCell,
-	/// <summary>The cell is not the next cell of the queue: the front cell first, then a neighbour of the back cell.</summary>
-	NotAtQueueEnd,
 	/// <summary>A path cell, a queue cell, an object or terrain the build rule refuses.</summary>
 	Blocked,
 	TooLong,
@@ -32,7 +30,8 @@ public static class QueuePaths
 	public const int MaximumCells = 1000;
 
 	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
-	// [APPROX:QUEUE-014] Queue lines start on the entrance's outside cell and lay empty cells that each touch the current back cell, where tp.exe's queue tool lays straight segments along the dominant axis (0x536100, ported) from a start the player clicks (SetMode 0x52f200 clears it), each cell validated by 0x535670: an empty cell is accepted, a path cell is replaced unless its flag 0x20 (NoModify) is set, a path cell on the line's last cell is code 8, the connection (ported), an object cell is refused, a queue cell of another ride (owner word +0x10 against the tool's ride, 0x818698) is refused and the tool's own passed; the commit 0x532fc0 then types the cell (0x5346D0, which clears a path first), links it (pass 0x80, the link writer in mode 3), gives it the queue link toward the previous cell (pass 0x82) and the tool's ride as owner word (pass 0x83); OpenTPW keeps no owner word (a queue cell belongs to the ride whose chain reaches it) and lays no queue over a path cell, and a queue line must start on the front cell and touch the back cell — evidence needed: the validator's object-cell branch (0x818C10 and 0x818C14), the rest of the commit 0x532fc0 and the refund of the cell clear 0x5367A0, which reads the owner word
+	// [BIN:TPW-EXE:0x0053402E queue link writer] the segment commit 0x527403..0x527517 runs LayLine once per pass: the types, the links (0x5348D0 in the mode of the last type written), 0x82, 0x85, 0x86, 0x83 and the refresh 0x81; the pass 0x82 writes the queue link +0xD of a cell that has none from the line's step, towards the previous cell of the line (dx −1 gives 0x04, dx 1 0x40, dy −1 0x10, dy 1 0x01: 0x53402E..0x53407B), and the pass 0x83 the ride's owner word (0x5340E9, RideVisitorBridge.OwnerWord)
+	// [APPROX:QUEUE-014] the queue tool lays straight segments along the dominant axis from the ride's back cell (CellBuildTool, QueueLineWriter), ending on a path cell to connect the queue (code 8 on the last cell), as tp.exe's does (0x536100, ported); tp.exe starts a segment at a cell the player clicks (SetMode 0x52F200 clears the start) and lays anywhere, where the tool starts at the front or back cell; each cell is validated as 0x535670 does (an empty cell is accepted, a path cell is replaced unless NoModify and not on a line's last cell, an object cell of a lower overwrite priority than the queue tool's 3 is demolished and covered by the commit's op 0x87, another ride's queue cell is refused by the owner word +0x10), then typed (0x5346D0), linked, given its queue link toward the previous cell (pass 0x82) and the tool's ride as owner word (pass 0x83, ported); a cell that touches no queue is laid free-standing (no queue link, the ride's owner word only) because the validator never asks a cell to touch the back cell (the remove tool takes it, the ride's chain ignores it); OpenTPW lays no queue over a path cell — evidence needed: the segment commit's first-click handling in 0x524960 (UI-031), the rest of the commit 0x532FC0 and the refund of the cell clear 0x5367A0, which reads the owner word
 	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null, Func<int, int, bool>? givesWay = null ) =>
 		CheckExtend( grid, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked, givesWay );
 
@@ -60,10 +59,24 @@ public static class QueuePaths
 		if ( (!covers && (grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )))
 			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true || pending.Contains( (x, y) ) )
 			return QueueBuildResult.Blocked;
+		// [BIN:TPW-EXE:0x00535670 queue cell validator] the validator tests the cell alone: it asks that the next cell of a line touches the previous one only in the line walk (0x536100), never against the ride's back cell, so a queue cell may stand free (an orphan, owned by the ride through its owner word but in no chain)
+		return QueueBuildResult.Ok;
+	}
+
+	/// <summary>
+	/// Whether (x, y) would continue the ride's queue: it is the front cell of a ride that has no queue cells yet, or it touches the back cell (or the last of <paramref name="pending"/>).
+	/// Any other cell is laid as a free-standing queue cell.
+	/// </summary>
+	public static bool ContinuesQueue( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)>? pending = null )
+	{
+		pending ??= Array.Empty<(int X, int Y)>();
+		if ( ride.QueueFrontCell is not { } front )
+			return false;
+		var hasCells = grid.IsQueue( front.X, front.Y ) || pending.Count > 0;
 		if ( !hasCells )
-			return (x, y) == front ? QueueBuildResult.Ok : QueueBuildResult.NotAtQueueEnd;
+			return (x, y) == front;
 		var back = pending.Count > 0 ? pending[^1] : ride.QueueBackCell;
-		return GuestPathGrid.DirectionBetween( x, y, back.X, back.Y ) >= 0 ? QueueBuildResult.Ok : QueueBuildResult.NotAtQueueEnd;
+		return GuestPathGrid.DirectionBetween( x, y, back.X, back.Y ) >= 0;
 	}
 
 	/// <summary>
@@ -87,10 +100,19 @@ public static class QueuePaths
 			if ( grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || isBlocked?.Invoke( x, y ) == true )
 				return QueueBuildResult.Blocked;
 		}
+		var continues = ContinuesQueue( grid, ride, x, y );
 		var first = !HasQueueCells( grid, ride );
 		var back = ride.QueueBackCell;
-		var towards = first ? ride.QueueEntranceDirection : GuestPathGrid.DirectionBetween( x, y, back.X, back.Y );
+		// a free-standing cell has no predecessor: no queue link and no links, only the ride's owner word
+		var towards = !continues ? -1 : first ? ride.QueueEntranceDirection : GuestPathGrid.DirectionBetween( x, y, back.X, back.Y );
 		grid.SetQueue( x, y, towards );
+		if ( ride.OwnerWord != 0 )
+			grid.Cells.SetOwner( x, y, ride.OwnerWord );
+		if ( !continues )
+		{
+			ride.RecomputeQueue( grid );
+			return QueueBuildResult.Ok;
+		}
 		if ( first )
 			LinkFront( grid.Cells, x, y, ride.QueueEntranceDirection );
 		else
@@ -140,6 +162,8 @@ public static class QueuePaths
 		if ( !grid.IsWalkable( path.X, path.Y ) || GuestPathGrid.DirectionBetween( before.X, before.Y, path.X, path.Y ) < 0 )
 			return false;
 		PathLinkWriter.LinkQueueStep( grid.Cells, path.X, path.Y, path.X - before.X, path.Y - before.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
+		if ( ride.OwnerWord != 0 )
+			grid.Cells.SetOwner( path.X, path.Y, ride.OwnerWord );
 		ride.RecomputeQueue( grid );
 		ride.NotifyQueueEdited();
 		return true;
@@ -199,9 +223,13 @@ public static class QueuePaths
 		return count;
 	}
 
-	/// <summary>Removes queue cell (x, y) of <paramref name="ride"/> and every cell behind it; returns the number removed.</summary>
-	// [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller); the original's cell clear (tp.exe 0x005367A0, queue branch) refunds and clears only that cell, and the bulldozer's rectangle pass 0x0052BDD0 clears only path cells (type 1 test 0x00536310 at 0x0052C116 before 0x005367A0) and hands ride cells (types 4, 9, 10) to the demolition 0x00527EE0 — evidence needed: the route that clears a queue cell (0x00527EE0's own clears, and the edit-list clear 0x00452CA0 from 0x0043EAF0 / 0x00442EA0)
-	public static int RemoveFrom( GuestPathGrid grid, RideVisitorBridge ride, int x, int y )
+	/// <summary>
+	/// Removes queue cell (x, y) of <paramref name="ride"/> and every cell behind it; returns the number removed. A free-standing cell (one of the ride's by its owner word, in
+	/// no chain) is removed alone.
+	/// </summary>
+	/// <param name="removeFixed">Whether a NoModify cell (the queue front the placement laid) may go too; the original's cell clear keeps it unless forced (the level opts in, EXT:removable-access-cells).</param>
+	// [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller) and the queued guests standing on them are set down and dismissed (GuestSimulation.SetDownOffQueueCells); the original's cell clear (tp.exe 0x005367A0, queue branch) refunds and clears only that cell, and the bulldozer's rectangle pass 0x0052BDD0 clears only path cells (type 1 test 0x00536310 at 0x0052C116 before 0x005367A0) and hands ride cells (types 4, 9, 10) to the demolition 0x00527EE0 — evidence needed: the route that clears a queue cell (0x00527EE0's own clears, and the edit-list clear 0x00452CA0 from 0x0043EAF0 / 0x00442EA0)
+	public static int RemoveFrom( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, bool removeFixed = false )
 	{
 		ride.RecomputeQueue( grid );
 		var cells = ride.QueueCells;
@@ -211,11 +239,20 @@ public static class QueuePaths
 			if ( cells[i] == (x, y) )
 				index = i;
 		}
-		if ( index < 0 || !grid.IsQueue( x, y ) )
+		if ( !grid.IsQueue( x, y ) )
 			return 0;
-		var removed = cells.Skip( index ).ToArray();
+		// [BIN:TPW-EXE:0x005367D4 NoModify keeps the cell] the placement lays the cell outside the entrance with the flag 0x20, and the cell clear leaves such a cell alone unless it is forced (0x5367D4..0x5367E0)
+		if ( grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) && !removeFixed )
+			return 0;
+		// a free-standing cell is the ride's by its owner word alone
+		if ( index < 0 && (ride.OwnerWord == 0 || grid.Cells.OwnerAt( x, y ) != ride.OwnerWord) )
+			return 0;
+		var removed = index < 0 ? new[] { (X: x, Y: y) } : cells.Skip( index ).ToArray();
 		foreach ( var cell in removed )
+		{
 			grid.ClearQueue( cell.X, cell.Y );
+			grid.Cells.SetFlags( cell.X, cell.Y, grid.Cells.FlagsAt( cell.X, cell.Y ) & ~ParkCellFlags.NoModify );
+		}
 		ride.RecomputeQueue( grid );
 		ride.NotifyQueueEdited();
 		return removed.Length;

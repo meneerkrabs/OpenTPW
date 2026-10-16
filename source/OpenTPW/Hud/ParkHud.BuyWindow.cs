@@ -35,7 +35,7 @@ public sealed partial class ParkHud
 
 	// [DATA:Mac buy table 0x4cd94:504] content region and the three columns (command_10/command_11)
 	private static readonly UiRect BuyContent = Rect( 1037, 427, 1727, 871 );
-	// [DATA:video 1:50 and 30:00 buy window] the third column (1673,1724) holds a tick box per row (UiTickBox); the unnamed control 491 is not drawn
+	// [DATA:video 1:50 and 30:00 buy window] the third column (1673,1724) holds a tick box per row (UiTickBox); the control 491 is the footprint thumbnail (BuyFootprint)
 	private static readonly (float Left, float Right)[] BuyColumns = { (1039, 1447), (1460, 1664), (1673, 1724) };
 	// [DATA:Mac buy table 0x4cd94:500,499,497,502,503 and 501,494,498,495,496] label/value rows of the stats frame (493)
 	private static readonly (UiRect Label, UiRect Value)[] BuyStatRows =
@@ -229,6 +229,8 @@ public sealed partial class ParkHud
 		} );
 		// [DATA:Mac buy table 0x4cd94:490] preview content region (437,202)-(797,565)
 		screen.Add( new BuyPreview( this ) { Id = "preview", Bounds = Rect( 437, 202, 797, 565 ), Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x754d50 buy control 491] the footprint thumbnail (control 0x1eb, 0x4ab1b0) at (440,407)-(594,561), over the preview frame's lower left
+		screen.Add( new BuyFootprint( this ) { Id = "footprint", Bounds = Rect( 440, 407, 594, 561 ), Anchor = UiAnchor.Center } );
 
 		for ( var row = 0; row < BuyStatRows.Length; row++ )
 		{

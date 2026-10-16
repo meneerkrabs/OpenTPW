@@ -59,7 +59,7 @@ public class AttractionBusinessStatsTests
 		Assert.AreEqual( customers.ToString( System.Globalization.CultureInfo.InvariantCulture ), Value( w, 0 ) );
 		Assert.AreEqual( Money( w, monthProfit ), Value( w, 1 ) ); Assert.AreEqual( Money( w, totalProfit ), Value( w, 2 ) );
 		var row = w.Hud.AttractionItems.First( item => item.AttractionId == w.Hud.SelectedAttractionId );
-		Assert.IsNull( w.Hud.AttractionCellsOf( row ).Last().Gauge, "customer satisfaction is not simulated" );
+		Assert.AreEqual( UiGauge.OfPercent( 50 ), w.Hud.AttractionCellsOf( row ).Last().Gauge, "customer satisfaction without visits is 50 (0x004E1E30)" );
 		var label = w.Category == BuildCategory.Shops ? UIStrings.CustomersLastMonthShop : UIStrings.CustomersLastMonthGame;
 		Assert.AreEqual( label, ParkAttractionRoster.Columns( w.Category )[1].Header );
 	}

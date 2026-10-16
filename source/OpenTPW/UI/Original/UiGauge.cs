@@ -9,7 +9,6 @@ namespace OpenTPW.UI.Original;
 /// orange end and a full bar reaches green.
 /// </summary>
 // [APPROX:UI-046] the gradient stops and the track colours are read off the 720p video frames (buy window 1:50, hire window 12:00: a 70 % bar runs red, orange, yellow to lime green; a 12 % bar is red/orange)
-// [APPROX:UI-106] the original's gauge art ridestatbar.wct (32 x 32: the top half the bar, the bottom half the track) decodes in OpenTPW's wavelet decoder to a dark gold to green ramp without the red the video shows (the happygrad.wct decode even has blue texels)
 public static class UiGauge
 {
 	private static readonly (float At, RgbaByte Colour)[] Stops =

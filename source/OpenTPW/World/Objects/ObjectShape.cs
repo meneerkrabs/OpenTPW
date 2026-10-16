@@ -116,8 +116,9 @@ public sealed class ObjectShape
 
 	/// <summary>The kind of a symbol from its cell type in <see cref="ObjectShapeSymbols"/>; a space is free.</summary>
 	// [BIN:TPW-EXE:0x007396C8 shape symbol kinds] '.' type 0, '*' 4, 'Q' 3, '@' 1, '+' 11, '#' 16; entrances (type 9) 8 6 2 4 O; exits (type 10) N E S W X; track ends (type 23) D > <
-	// [APPROX:RIDES-011] Type 11 ('+') is an overlay cell over the parent ride's track and the track ends '<' '>' are station connections here. The original placement 0x528A70 stamps '+', '#' and the ends as occupied type 4 (0x5290C7–0x5290EE); '+' is checked with cell op 0x10B (0x20B when validating), '#' with 0x110/0x210, and on commit both overwrite the flags word +0xE of the cell and of its second-layer cell with 0x10 (0x52950D–0x52951C); an end with a direction needs the cell beyond it in its rotated direction (refused when missing, 0x5295A8) and on commit makes that cell type 0x15 (ops 0x87, 0x15, 0x83, 0x84, 0x81 at 0x5295F7–0x52963F) — evidence needed: what cell ops 0x10B/0x110 require (the dispatcher 0x532FC0 → validator 0x535670) and what type 0x15 is
-	// [APPROX:RIDES-031] '@' (1, only in the Theme Park Inc road signs "*@*" and "*@@*"), 'Q' (3) and '#' (16) count as occupied footprint cells here. The original placement 0x528A70 stamps '@' as a path cell inside the footprint (type 1; on commit flags word 0x20, links by 0x5348D0 and to the neighbouring path cells, 0x529173–0x529208), 'Q' as a queue cell (type 3 through the generic stamp at 0x529119) and '#' like '+' (RIDES-011) — evidence needed: a path and queue cell model inside footprints (OpenTPW keeps them out of the cell map)
+	// [APPROX:RIDES-011] The cells of '+' (11) and '#' (16) are stamped as the placement 0x528A70 stamps them (object type 4, the owner word, the flag word 0x10 on the cell and on its track-layer cell, ParkCellMap.WriteFootprint) and validated as its add-on mode does (cell ops 0x10B/0x110, 0x20B/0x210 into the validator 0x535670 with the upgrade selection 0x8187F8: a cell of a straight, unflagged tile of the selected ride, TrackBuilder.CanStandAddOn, 0x535953–0x5359B3; Level.CheckAddOn), and a track end '<' '>' 'D' needs the cell beyond it on the map (0x5295A8); the type 0x15 the commit writes on that cell with the ride's owner word (ops 0x87, 0x15, 0x83, 0x84, 0x81 at 0x5295F7–0x52963F) is not written: it is the coaster module's cell marker (SetCell(0x15) of 0x452D30, called by the coaster tool code 0x434412, 0x443057, 0x444EE7 and 0x445B50), which OpenTPW's coaster builder, with its own area test (COAST-028), neither writes nor reads — evidence needed: what the coaster tool reads the marker for (the validator's modes 0x15 and 0x16, 0x535B53/0x5359BC)
+	// [BIN:TPW-EXE:0x0052950D '+' and '#' stamp] '+' and '#' are stored as occupied type 4 (0x5290C7–0x5290EE) and on commit both set the flag word of the cell and of its second-layer cell to 0x10 (0x52950D–0x52951C); every shipped add-on is a block of '+' (Dino Karts Jump "++/++", the tunnels, the Teleport) and no shipped shape has a '#'
+	// [BIN:TPW-EXE:0x00528A70 '@' and 'Q' stamp] '@' (1) and 'Q' (3) are stamped by the placement as a type-1 and a type-3 cell (0x529119, 0x529173–0x529208); no Theme Park World shape has either (only the Theme Park Inc road signs "*@*" and "*@@*" do)
 	public static ObjectCellKind Classify( char symbol )
 	{
 		if ( symbol == ' ' )
@@ -170,6 +171,25 @@ public static class ObjectFootprint
 		270 => new( anchorX + 1 - local.Y, anchorY + local.X ),
 		_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
 	};
+
+	/// <summary>
+	/// A shape symbol's direction byte (0x01, 0x04, 0x10 or 0x40) turned by the build rotation, the byte the placement stores in an entrance or exit cell's queue link:
+	/// shifted left by 0, 6, 4 or 2 bits (rotation 0, 90, 180, 270); a result above 0x80 is taken as its overflow, the value shifted right by 8.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D8C20 rotate direction byte] the byte is shifted left by log2 of the step byte (1, 0x40, 0x10, 4 for 0, 90, 180, 270); a result above 0x80 is shifted right by 8 (0x4D8C45), so the bit that left the byte comes back at the bottom: 0x10 turned by 90 is 0x04, by 180 0x01, by 270 0x40; Easymode's saved entrance and exit cells carry these bytes (Staff Room at 90: 0x04, Small Toilets at 270: 0x40)
+	public static byte RotateDirectionByte( byte direction, int rotation )
+	{
+		var shift = rotation switch
+		{
+			0 => 0,
+			90 => 6,
+			180 => 4,
+			270 => 2,
+			_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+		};
+		var value = direction << shift;
+		return (byte)(value > 0x80 ? value >> 8 : value);
+	}
 
 	/// <summary>Turns a local direction (du, dv) like <see cref="ToGrid(int,int,int,int,int)"/> turns offsets.</summary>
 	public static (int X, int Y) RotateDirection( int rotation, int du, int dv ) => rotation switch

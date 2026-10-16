@@ -72,7 +72,7 @@ public sealed class UiContext
 		var y = height <= rect.Height ? rect.Y + (rect.Height - height) / 2 : rect.Y;
 		var ix = (int)MathF.Round( x );
 		var iy = (int)MathF.Round( y );
-		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow, and the glyph draw entry 0x6ae0f0 is reached only through the text box routine 0x492750 (single call per caller; BF4 glyphs hold coverage only) — evidence needed: the sprite draw of a text control's bitmap (0x48f410 → 0x588c20) and what in the capture looks like a shadow
+		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow, and the glyph draw entry 0x6ae0f0 is reached only through the text box routine 0x492750 (single call per caller; BF4 glyphs hold coverage only) — evidence needed: the sprite draw of a text control's bitmap (0x48f410 → 0x588c20 is only the release of the control's sprite quads, and the text control's vtable 0x6ff350 has no draw slot of its own (slot 2 is a bare return), so the control's sprite quads are drawn by the engine's sprite pass, where no reader of the colour at +0x78 was found) and what in the capture looks like a shadow
 		if ( shadow )
 			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
 		Batch.AddText( font, layout, ix, iy, color, scale, text );
@@ -130,8 +130,8 @@ public sealed class UiContext
 	/// otherwise it takes the largest smaller size that fits, or the smallest size when none does.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4a43b0 options label font] the original's options labels take font slot 6 of the screen mode's bank ([0x7537b4], 0x4a443c) with no fitting
-	// [EXT:option-label-fit] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles), shared per page; a label whose widest value does not fit drops alone to the largest size that does; the original does no fitting
-	// [APPROX:UI-039] the original's labels use the bank's slot-6 font (GAME5AA/GAME7/GAME8/GAME9 for banks 0-3), which OpenTPW's fit rule does not select — evidence needed: what the original does with a label that overflows (UI-032)
+	// [EXT:option-label-fit] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles), shared per page; a label whose widest value does not fit drops alone to the largest size that does; the original does no fitting and wraps an overflowing label into its rectangle through the text library (0x6ae930, 0x6aeb10, 0x6aec80), where OpenTPW shrinks it
+	// [BIN:TPW-EXE:0x4a443c bank font] slot 6 is GAME5AA/GAME7/GAME8/GAME9 for banks 0-3; which shipped font serves the label per size tier is [EXT:ui-font-tier-by-scale], and a label that overflows is not shrunk in the original but laid out by the text library (wrapped into its rectangle: 0x6ae930, 0x6aeb10, 0x6aec80)
 	public (FontAtlas Font, int Scale) ChooseUniform( UiLabelGroup group, UiLabel label )
 	{
 		var members = group.Members.Where( member => member.Visible ).ToList();
@@ -303,7 +303,7 @@ public sealed class UiLabel : UiElement
 			return;
 		}
 		// [BIN:TPW-EXE:0x6aec80 text wrap] the original's formatter wraps greedily: a line ends at the last break opportunity before the glyph that overflows, trailing spaces dropped, or before that glyph when the line has none
-		// [APPROX:UI-032] which glyphs the formatter flags as break opportunities (flag 0x10) and as spaces (flag 2), and whether the catalogue slots are multi-line text controls, are not read — evidence needed: the glyph flag table and the slots' control type
+		// [BIN:TPW-EXE:0x6aeab0 glyph class] only space and tab are break opportunities (0x10) and spaces (2); every text control lays out through 0x6ae930 -> 0x6aeb10, which splits at line feeds and wraps each line with 0x6aec80, so the catalogue slots wrap
 		// [EXT:fit-button-text] the small-font fallback for long labels: the original's control renderer 0x48f830 keeps its one slot font, and a translated label that overflowed its art would be unreadable
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
@@ -459,7 +459,7 @@ public sealed class UiButton : UiElement
 		if ( !Enabled )
 			return;
 		// [BIN:TPW-EXE:0x485780 UI message hook] a global hook, installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and never removed, is called by the dispatchers 0x658d9f and 0x658e42 for every control message before the control's own procedure (unless the control's destroyed byte +4 is set); for message 0x100 on any control it plays cat_ui 0x1F (0xBD when the control's style word +0x48 has bit 0x10, 0x4857cb), so every activated button plays it, front end included
-		// [APPROX:AUDIO-004] 0xBD plays for a control whose construction style (+0x48, tp.exe 0x65bcad arg 2) has bit 0x10; the creation sites with that bit are the list row templates (0x4938c0, 0x4944d0, 0x496cea, 0x4b4c70) and the table builder's type 3 controls (0x6604a1-0x661144), the traced button sites use styles 0, 1 and 0x21; which of them are activated and map to OpenTPW controls is not read, so no OpenTPW control plays it
+		// [APPROX:AUDIO-004] 0xBD plays for a control whose construction style (+0x48, tp.exe 0x65bcad arg 2) has bit 0x10; the creation sites with that bit are the list row templates (0x4938c0, 0x4944d0, 0x496cea, 0x4b4c70) and the table builder's type 3 controls (0x6604a1-0x661144), the traced button sites use styles 0, 1 and 0x21; the type 3 controls are the lists' sliders (table builder case 9, 0x65fd58, in list containers of types 4 and 7); whether a press on a slider or a row child sends the activate message 0x100 is not read, so no OpenTPW control plays it
 		GameAudio.PlayUi( GameAudio.ClickEvent );
 		Clicked?.Invoke();
 	}
@@ -563,7 +563,7 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	/// </summary>
 	// [BIN:TPW-EXE:0x66b088 slider thumb] the original's slider class (vtable 0x705b20) places the thumb at track left + (value - min) × (track width - thumb width) / (max - min) in integer units; the options page's sliders are 0..100 (0x4a455a)
 	// [EXT:options-slider-steps] OpenTPW's option sliders step through its own graphics presets and 11 volume steps and take the nearest step; the original's are 0..100 with the change handler 0x4a2e90 mapping the value to a resolution index (v × 2) / 100 and a quality index (k × v) / 100 (k 2, or 1 when [0x78d8d8] is 0)
-	// [APPROX:UI-036] a click or drag takes the nearest step where the original truncates a drag (0x66af19) and moves one page toward a track click (0x66b8aa), and leaves the knob where it was dragged (0x4a2e90) — evidence needed: the knob's position after a drag for the 0..100 volume sliders
+	// [BIN:TPW-EXE:0x4a455a options slider range] the options page creates its sliders with the range 0..100 and no page setting (the default 1 stays), its change handler 0x4a2e90 only updates the setting's text and leaves the knob where it was dragged; the original-class mechanics are built for the sliders that use Truncates (research effort, object settings), and the options page's own presets and volume steps are [EXT:options-slider-steps]
 	public UiRect KnobRect( int value )
 	{
 		var steps = Math.Max( 2, Steps() );
@@ -584,7 +584,56 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 		return Math.Clamp( Truncates ? (int)MathF.Floor( fraction * (steps - 1) + 1e-4f ) : (int)MathF.Round( fraction * (steps - 1) ), 0, steps - 1 );
 	}
 
-	void IUiDragTarget.DragTo( UiCanvas canvas, NVector2 point ) => SetFromMouse( canvas, point );
+	// the press of an original-class slider (Truncates): on the thumb it grabs it (the thumb keeps the offset of the grab), on the track it moves one page toward the click
+	private enum PressMode { None, Grab, Page }
+	private PressMode pressMode;
+	private float grabOffset;
+
+	/// <summary>Value change of a click on the track beside the thumb (the original's page, +0x148, default 1 from 0x66adc9).</summary>
+	public int Page { get; set; } = 1;
+
+	private float AuthoredX( UiCanvas canvas, NVector2 point )
+	{
+		var rect = ScreenRect( canvas );
+		return Bounds.X + (point.X - rect.X) / rect.Width * Bounds.Width;
+	}
+
+	void IUiDragTarget.DragBegin( UiCanvas canvas, NVector2 point )
+	{
+		pressMode = PressMode.None;
+		if ( !Truncates || !Enabled || ScreenRect( canvas ).Width <= 0 )
+			return;
+		var x = AuthoredX( canvas, point );
+		var knob = KnobRect( Value() );
+		// [BIN:TPW-EXE:0x66b8aa slider track click] a click off the thumb is compared with the thumb's far edge (horizontal: its right edge) and calls the page move 0x66b088 (mode 2 or 3, +-0x148),
+		// inverted for a slider whose step +0x144 is positive (the default): left of the thumb lowers the value, right of it raises it; 0x66b088 clamps to the range and posts 0x800 when the value changed
+		if ( x >= knob.X && x <= knob.Right )
+		{
+			pressMode = PressMode.Grab;
+			grabOffset = x - (knob.X + knob.Width / 2);
+		}
+		else
+		{
+			pressMode = PressMode.Page;
+			var steps = Math.Max( 2, Steps() );
+			Set( Math.Clamp( Value() + (x < knob.Right ? -Page : Page), 0, steps - 1 ) );
+		}
+	}
+
+	void IUiDragTarget.DragTo( UiCanvas canvas, NVector2 point )
+	{
+		if ( pressMode == PressMode.Page )
+			return;
+		if ( pressMode == PressMode.Grab )
+		{
+			if ( !Enabled || ScreenRect( canvas ).Width <= 0 )
+				return;
+			// [BIN:TPW-EXE:0x66af19 slider drag] the thumb follows the pointer at the grabbed offset; the value is read from the thumb's left edge
+			Set( ValueAt( AuthoredX( canvas, point ) - grabOffset ) );
+			return;
+		}
+		SetFromMouse( canvas, point );
+	}
 
 	/// <summary>Sets the value from a mouse position in framebuffer pixels.</summary>
 	public void SetFromMouse( UiCanvas canvas, NVector2 point )

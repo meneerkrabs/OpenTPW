@@ -58,10 +58,16 @@ public sealed class OriginalParkGrid : IParkGrid
 	public int Height => Math.Min( park.Heightfield.CellCountZ, park.Map.CellCountY );
 	public System.Numerics.Vector2 Origin => -OriginalParkPlacement.GetOrigin( park.Heightfield );
 
+	/// <summary>
+	/// The level's live cell map, once it has one. Its types and flags then decide path, queue and object cells (the host's reservation), so the saved path and occupancy bits
+	/// are no longer consulted: they describe the park as it was saved, not as the player has built on it since.
+	/// </summary>
+	public Func<ParkCellMap?>? LiveCells { get; set; }
+
 	public OriginalPlacementResult CheckTerrain( int x, int y )
 	{
 		var result = OriginalParkPlacement.Check( park.Map, park.Heightfield, null, x, y, x, y );
-		if ( result != OriginalPlacementResult.Allowed || park.Save == null )
+		if ( result != OriginalPlacementResult.Allowed || park.Save == null || LiveCells?.Invoke() != null )
 			return result;
 		var cell = park.Save.Cells[x, y];
 		if ( cell.IsPath )
@@ -150,6 +156,11 @@ public sealed class ParkObjects
 	public Action<int, int>? ClearPath { get; set; }
 	/// <summary>The path tool's rule for an access cell's outside cell, objects aside (the level: ParkPathBuilder.CheckPathRule); without it, or where it answers null, the terrain and the reserved cells decide.</summary>
 	public Func<int, int, bool?>? PathRuleAllows { get; set; }
+	/// <summary>
+	/// The rule for the '+' and '#' cells of an add-on (<see cref="TrackBuilder.CanStandAddOn"/> for the ride it is for): such a cell lies on its ride's track instead of free ground, so the
+	/// occupancy rules do not apply to it and this one does. Null: they are ordinary object cells.
+	/// </summary>
+	public Func<int, int, bool>? AddOnCellRule { get; set; }
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -167,7 +178,7 @@ public sealed class ParkObjects
 	/// demolished, a path cell under the footprint is cleared, and any other overlap refuses. The outside cells of the entrances and exits
 	/// must pass the rules the original lays its access cells with.
 	/// </summary>
-	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + save paths/objects + overlap by overwrite priority + plain path cells cleared + owned land + the access cells' rules; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases — evidence needed: the second-layer link tests 0x53AE00 and 0x53AE90 (a corner or junction on the cell's second layer, 0x535BD7) and the pending cost of the access cells the commit lays (0x535600, 0x52FBA0; RIDES-028), and which types carry +0x288 = 1, whose Bumper.WhichTrackType turns the access-cell option off at the build tool's enter (0x46D605; OpenTPW follows Info.HasQueue alone)
+	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + save paths/objects + overlap by overwrite priority + plain path cells cleared + owned land + the access cells' rules; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases — evidence needed: the second-layer link tests 0x53AE00 and 0x53AE90 (a corner or junction on the cell's second layer, 0x535BD7), and which types carry +0x288 = 1, whose Bumper.WhichTrackType turns the access-cell option off at the build tool's enter (0x46D605; OpenTPW follows Info.HasQueue alone)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] after its early returns for a few tool modes the validator 0x535670 refuses a cell with flag 0x40 for whatever it places, paths, queues and objects alike
 	// [BIN:TPW-EXE:0x535D66 overwrite priority] a cell of type 4, 9 or 10 is allowed when 0x818C10, the placed type's +0x54 (Info.OverwritePriority, sam schema 0x745020; set by the hover 0x5234D0), is greater than 0x818C14, the +0x54 of the type of the object owning the cell (0x53570E: the thing at the cell's owner index +0x10, class 3); otherwise the cell is refused and the sticky refusal 0x816D50 set
 	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out ObjectPlacementPlan plan )
@@ -216,13 +227,34 @@ public sealed class ParkObjects
 			throw new ArgumentOutOfRangeException( nameof( rotation ) );
 		if ( entry.IsTool )
 			return OriginalPlacementResult.Blocked;
-		foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
+		foreach ( var (x, y, cell) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
 		{
+			// a '+' or '#' cell lies on its ride's track: the add-on rule judges it instead of the occupancy rules
+			if ( AddOnCellRule != null && cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash )
+			{
+				if ( x < 0 || y < 0 || x >= Grid.Width || y >= Grid.Height )
+					return OriginalPlacementResult.OutsideTerrain;
+				var terrain = Grid.CheckTerrain( x, y );
+				if ( terrain != OriginalPlacementResult.Allowed )
+					return terrain;
+				if ( !AddOnCellRule( x, y ) )
+					return OriginalPlacementResult.Blocked;
+				continue;
+			}
 			var result = CheckObjectCell( entry, x, y, overwritten );
 			if ( result != OriginalPlacementResult.Allowed )
 				return result;
 			if ( PathAt?.Invoke( x, y ) == ObjectPathCell.Path && !paths.Contains( (x, y) ) )
 				paths.Add( (x, y) );
+		}
+		// [BIN:TPW-EXE:0x005295A8 track end beyond cell] a track end (type 23: '<', '>', 'D') needs the cell beyond it in its rotated direction (0x4D97E0 answers none off the map or for a symbol without a direction), and the placement is refused when there is none
+		foreach ( var (x, y, cell) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
+		{
+			if ( cell.CellType != ObjectShapeSymbols.TypeTrackEnd )
+				continue;
+			var direction = GuestPathGrid.LinkDirection( ObjectFootprint.RotateDirectionByte( cell.Direction, rotation ) );
+			if ( direction < 0 || x + GuestPathGrid.Directions[direction].DX is var bx && y + GuestPathGrid.Directions[direction].DY is var by && (bx < 0 || by < 0 || bx >= Grid.Width || by >= Grid.Height) )
+				return OriginalPlacementResult.OutsideTerrain;
 		}
 		return OriginalPlacementResult.Allowed;
 	}

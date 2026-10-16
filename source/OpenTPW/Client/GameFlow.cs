@@ -819,7 +819,13 @@ internal sealed partial class GameFlow : IDisposable
 		if ( backdrop != Backdrop.Lobby )
 		{
 			lobbyEffects.StopRain();
-			cityScene?.Step( Time.Delta );
+			if ( cityScene is { } city )
+			{
+				// [EXT:frame-driven-at-60hz] the city lobby's islands run the same per-frame update as the lobby's (0x5d5c50), so it steps per reference frame too
+				for ( var frames = lobbyFrames.Advance( Time.Delta ); frames > 0; frames-- )
+					city.StepFrame( ReferenceFrameClock.FrameSeconds );
+				city.Animate( Time.Delta );
+			}
 			return;
 		}
 		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.

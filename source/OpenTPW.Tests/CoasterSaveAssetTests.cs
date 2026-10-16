@@ -136,7 +136,7 @@ public class CoasterSaveAssetTests
 				Seed = seed.Value,
 				DisplayName = "Coaster park",
 				SavedUtc = new DateTimeOffset( 2026, 10, 13, 9, 0, 0, TimeSpan.Zero ),
-				Economy = ParkSaveFile.Capture( economy, new WorldRandomState( seed.Value, guests.RandomState, scripts.RandomState, 42u ) ),
+				Economy = ParkSaveFile.Capture( economy, new WorldRandomState( seed.Value, (uint)guests.RandomState, 42u ) ),
 				Layout = ParkLayoutSnapshot.CaptureSnapshot( ParkCellMap.FromOriginal( park.Map, park.Save ), objects ) with
 				{
 					Objects = new List<ParkLayoutSnapshot.PlacedObjectData> { Record( 1, 20, 62 ), Record( 2, 40, 62 ) },
@@ -144,7 +144,8 @@ public class CoasterSaveAssetTests
 					NextAttractionId = 3
 				},
 				Guests = guests,
-				Scripts = scripts,
+				// the park has one world generator: the script world carries the guests' (this rig builds them apart)
+				Scripts = scripts with { RandomState = guests.RandomState, WorldGenerator = guests.WorldGenerator },
 				Runtimes = new List<ParkResumeRuntime> { new( First.Script!.ScriptId, First.CaptureSnapshot() ), new( Second.Script!.ScriptId, Second.CaptureSnapshot() ) },
 				EconomyBindings = bindings,
 				Clock = new FixedStepClockSnapshot( 2700, 0, 0 ),

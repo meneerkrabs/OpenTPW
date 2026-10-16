@@ -42,7 +42,14 @@ public static class ParkSaveFile
 		public bool SeedResearcherStandIn { get; init; }
 		public required long Tick { get; init; }
 		public required GameSpeed Speed { get; init; }
+		/// <summary>The world generator's state as a number (written for older readers' sake); older saves hold the economy's own SplitMix64 stream here, which a load ignores (see <see cref="WorldGenerator"/>).</summary>
 		public required ulong RandomState { get; init; }
+		/// <summary>
+		/// The state of the park's one world generator (tp.exe 0x00516330; the original's <c>mRandomSeed</c>). Absent in saves written before the generator was ported: such a
+		/// load derives the state from the saved world seed (<see cref="WorldSeed.GeneratorState"/>), or from the economy's old stream state when the save has no world section.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public uint? WorldGenerator { get; init; }
 		public required bool ParkOpen { get; init; }
 		public required int EntranceFee { get; init; }
 		public required bool Bankrupt { get; init; }
@@ -96,12 +103,16 @@ public static class ParkSaveFile
 		public WorldData? World { get; init; }
 	}
 
-	/// <summary><see cref="WorldRandomState"/> as saved; the economy's own stream stays in <see cref="Data.RandomState"/>.</summary>
+	/// <summary><see cref="WorldRandomState"/> as saved; the world generator itself is <see cref="Data.WorldGenerator"/>.</summary>
 	public sealed class WorldData
 	{
 		public required ulong Seed { get; init; }
-		public required ulong GuestRandom { get; init; }
-		public required ulong ScriptRandom { get; init; }
+		/// <summary>The guests' own SplitMix64 state of saves written before the world generator was ported; read and ignored, never written.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ulong? GuestRandom { get; init; }
+		/// <summary>The script seed stream's state of saves written before the world generator was ported; read and ignored, never written.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ulong? ScriptRandom { get; init; }
 		public required uint SoundSeed { get; init; }
 	}
 
@@ -561,7 +572,8 @@ public static class ParkSaveFile
 			SeedResearcherStandIn = false,
 			Tick = park.Tick,
 			Speed = park.Speed,
-			RandomState = park.Random.State,
+			RandomState = world?.Generator ?? park.World.State,
+			WorldGenerator = world?.Generator ?? park.World.State,
 			ParkOpen = park.IsParkOpen,
 			EntranceFee = park.EntranceFee,
 			Bankrupt = park.IsBankrupt,
@@ -702,7 +714,7 @@ public static class ParkSaveFile
 			MechanicCursor = park.MechanicCursor,
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
 				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
-			World = world == null ? null : new WorldData { Seed = world.Seed, GuestRandom = world.GuestRandom, ScriptRandom = world.ScriptRandom, SoundSeed = world.SoundSeed }
+			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed }
 		};
 	}
 
@@ -895,7 +907,8 @@ public static class ParkSaveFile
 		if ( !string.Equals( settings.Theme, data.Theme, StringComparison.OrdinalIgnoreCase ) || settings.IsEasy != data.Easy )
 			throw new InvalidDataException( $"Park save is for {data.Theme}{(data.Easy ? " (easy)" : "")}, not {settings.Theme}{(settings.IsEasy ? " (easy)" : "")}." );
 		var park = new ParkEconomy( settings, catalog, data.Mode, 0 );
-		park.Random.Restore( data.RandomState );
+		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
+		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );
 		park.Ledger.Restore( data.Ledger.Balance, data.Ledger.OpeningBalance, data.Ledger.MonthIndex, data.Ledger.CurrentTotals,
 			data.Ledger.History.Select( month => new LedgerMonth( month.MonthIndex, month.Totals, month.OpeningBalance, month.ClosingBalance, month.ParkRating, month.ParkValue ) ) );
 		park.Ledger.RestoreProfitThisYear( data.Ledger.ProfitThisYear );
@@ -1017,7 +1030,7 @@ public static class ParkSaveFile
 	}
 
 	public static WorldRandomState? ToWorldState( Data data ) =>
-		data.World is { } world ? new WorldRandomState( world.Seed, world.GuestRandom, world.ScriptRandom, world.SoundSeed ) : null;
+		data.World is { } world ? new WorldRandomState( world.Seed, data.WorldGenerator ?? new WorldSeed( world.Seed ).GeneratorState, world.SoundSeed ) : null;
 
 	/// <summary>Loads a save using the original data of its theme from the game file system.</summary>
 	public static ParkEconomy Load( string path ) => Load( path, ( theme, easy ) => (BalanceSettings.Load( theme, easy ), EconomyObjectCatalog.Load( theme, easy )) );

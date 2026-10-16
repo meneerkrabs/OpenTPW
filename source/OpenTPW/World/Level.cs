@@ -381,6 +381,7 @@ public partial class Level : IDisposable
 		{
 			using ( LoadProfile.Measure( "guests" ) )
 				SetupGuests( OriginalPark );
+			LinkWorldGenerator();
 			yield return 0.9f;
 			using ( LoadProfile.Measure( "paths" ) )
 			{
@@ -413,6 +414,17 @@ public partial class Level : IDisposable
 			SetupStaff();
 			SetupParkGate();
 		}
+	}
+
+	/// <summary>
+	/// The original has one world generator (tp.exe 0x00516330): the park's economy holds it (it drew the staff pool already) and the guests, the staff and the
+	/// scripts draw from the same object. A level without an economy owns one started from the world seed.
+	/// </summary>
+	private void LinkWorldGenerator()
+	{
+		var world = Park?.Economy.World ?? new WorldRng( Seed.GeneratorState );
+		Guests?.AttachWorld( world );
+		Objects.ScriptWorld.AttachWorld( world );
 	}
 
 	private void SetupGuests( OriginalPark park )

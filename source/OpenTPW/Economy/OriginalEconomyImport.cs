@@ -97,8 +97,9 @@ public sealed class OriginalEconomyImport
 		var matches = calendar.FunnyTimeStart == epoch && calendar.FunnySecsPerRealSec == ParkCalendar.SecondsPerTurn * 4
 			&& calendar.MonthAtLastUpdate == date.Month - 1 && calendar.DayAtLastUpdate == date.Day;
 		evidence.Add( $"Park turn {world.Variables.GameTick} imported ({ParkCalendar.ToDate( economy.Tick )}); the save's calendar (rate {calendar.FunnySecsPerRealSec}, month cache {calendar.MonthAtLastUpdate}, day cache {calendar.DayAtLastUpdate}) {(matches ? "agrees" : "does not agree")} with that date." );
-		// [APPROX:SAVE-001] the save's world generator word (mRandomSeed) is reported but not imported: it is the whole state of the original's one shared world LCG (tp.exe 0x516330, world +0x1DA708), saved and loaded raw (0x51710E, 0x517DE7), while OpenTPW's economy, guest and script streams are separate generators derived from the world seed — evidence needed: DET-I2 port of the world LCG and its call order (DET-005, DET-013)
-		evidence.Add( $"[APPROX:SAVE-001] World generator state mRandomSeed 0x{world.Variables.RandomSeed:X8} is not imported; the park's streams come from its world seed." );
+		// [BIN:TPW-EXE:0x0051710F world generator word] the world writer saves the u32 at world +0x1DA708 raw under the name "mRandomSeed" (0x00517123 with the name at 0x00762924) and the loader reads it back raw (0x00517DFC): it is the whole state of the one world generator 0x00516330, which the park continues from
+		economy.World.Restore( world.Variables.RandomSeed );
+		evidence.Add( $"World generator state mRandomSeed 0x{world.Variables.RandomSeed:X8} imported: the park's draws continue the saved stream." );
 	}
 
 	/// <summary>Checks the save's loan offers and challenge list against the balance settings.</summary>

@@ -68,7 +68,6 @@ public class GuestThoughtTests
 		}
 		Assert.IsTrue( thoughtAt > 0, "within four minutes the one-in-ten pick comes" );
 		Assert.IsTrue( NeedsUpdate.IsPhase( (uint)thoughtAt, guest.Id ), "on the guest's needs phase" );
-		Assert.AreEqual( 0u, GuestThoughts.PickDraw( guest.Id, (uint)thoughtAt ) % GuestThoughts.PickOdds );
 		Assert.AreEqual( (GuestThought.Hungry, thoughtAt), (guest.BubbleThought, guest.BubbleTurn), "the first bubble" );
 		long gone = -1;
 		for ( var tick = 0; tick < 60 * 60 && gone < 0; tick++ )

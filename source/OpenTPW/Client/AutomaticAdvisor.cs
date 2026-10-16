@@ -139,10 +139,17 @@ internal sealed class AutomaticAdvisor : IDisposable
 		if ( level == null )
 			return;
 		OnModeChanged();
-		if ( AdvisorUiHelp.MessageFor( window ) is not { } message )
+		if ( AdvisorUiHelp.MessageFor( window ) is { } message )
+			PostHelp( message, $"window {window}" );
+	}
+
+	/// <summary>Posts help <paramref name="message"/> as a window builder does through 0x486B00, without an interface mode change.</summary>
+	public void PostHelp( int message, string source = "the HUD" )
+	{
+		if ( level == null )
 			return;
 		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
-		Log.Trace( $"Advisor help for window {window}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
+		Log.Trace( $"Advisor help for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
 	}
 
 	/// <summary>
@@ -152,12 +159,19 @@ internal sealed class AutomaticAdvisor : IDisposable
 	// [BIN:TPW-EXE:0x00486B40 unadvise] the window close handlers withdraw their message through 0x486B40 → 0x59AA70
 	public void OnWindowClosed( string window )
 	{
-		if ( level == null || AdvisorUiHelp.MessageFor( window ) is not { } message )
+		if ( AdvisorUiHelp.MessageFor( window ) is { } message )
+			WithdrawHelp( message, $"window {window}" );
+	}
+
+	/// <summary>Withdraws help <paramref name="message"/> as a close handler does through 0x486B40.</summary>
+	public void WithdrawHelp( int message, string source = "the HUD" )
+	{
+		if ( level == null )
 			return;
 		var withdrawal = Controller.Withdraw( message, AdvisorClock );
 		if ( withdrawal.SpeechCancelled )
 			CutOffSpeech();
-		Log.Trace( $"Advisor help for window {window} withdrawn: message {message}, {withdrawal.PendingRemoved} pending dropped{(withdrawal.SpeechCancelled ? ", speech cut off" : "")}." );
+		Log.Trace( $"Advisor help for {source} withdrawn: message {message}, {withdrawal.PendingRemoved} pending dropped{(withdrawal.SpeechCancelled ? ", speech cut off" : "")}." );
 	}
 
 	/// <summary>The interface mode changed (a window or tool took over): the help of the tools and modes is withdrawn.</summary>

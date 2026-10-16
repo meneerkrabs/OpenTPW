@@ -11,13 +11,22 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x751720 camera panel] panel id 0x62 (466,1316)-(785,1469) with b_1person 0x63 (474,1316)-(627,1469) help 479 and b_postcard 0x64 (632,1316)-(785,1469) help 480
 	// [DATA:video 8:20-8:40] the green panel right of the HUD shows those two buttons at the table's positions
 	// [EXT:camera-view-cycle] the former camera button's Standard/Close/Overview view cycle is a third round button, b_camera, to the right of the panel's two; the original has none
-	// [APPROX:UI-042] the panel appears without sliding out, and a left click on the camcorder button only arms it (the walk starts on the next click, as with the C key); the postcard window (8:42) is the host composer
+	// [APPROX:UI-042] a left click on the camcorder button only arms it (the walk starts on the next click, as with the C key); the postcard window (8:42) is the host composer
 	private static readonly LayoutTable CameraPanelTable = OriginalLayoutTables.CameraPanel;
 	private static readonly string[] CameraPanelIds = { "cameraPanel", "cameraCamcorder", "cameraPostcard", "cameraViews" };
 	private static readonly UiRect CameraPanelViewsRect = new( 790, 1316, 153, 153 );
 
-	/// <summary>True while the camera button's panel is out.</summary>
+	/// <summary>The camera panel's advisor help (0x131): posted when the panel opens, withdrawn when it is put away.</summary>
+	// [BIN:TPW-EXE:0x498bb0 camera open] the camera button's press (HUD case 0x27 with the toggle down, 0x4a0840) puts panel 33 into the arm (0x4a2590) and posts help 0x131 through 0x486b00;
+	// its release (0x498bd0) puts the panel away (0x4a25f0) and withdraws the help (0x486b40), as do the panel's camcorder (99) and postcard (100) buttons (0x498ad0)
+	public const int CameraPanelHelp = 0x131;
+
+	/// <summary>True while the camera button's panel is out or sliding out.</summary>
 	public bool CameraPanelOpen { get; private set; }
+
+	/// <summary>The panel's slide: 0 when it is in, <see cref="ArmSlide.Steps"/> when it is out.</summary>
+	internal ArmSlide CameraSlide => cameraSlide ??= new();
+	private ArmSlide? cameraSlide;
 
 	private void BuildCameraPanel()
 	{
@@ -35,36 +44,80 @@ public sealed partial class ParkHud
 		Add( new UiButton { Id = "cameraCamcorder", Model = camcorder.Model, Help = strings.Help( camcorder.Help ), Clicked = ArmCamcorderFromPanel, Bounds = camcorder.Rect } );
 		Add( new UiButton { Id = "cameraPostcard", Model = postcard.Model, Help = strings.Help( postcard.Help ), Clicked = OpenPostcardFromPanel, Bounds = postcard.Rect } );
 		Add( new UiButton { Id = "cameraViews", Model = "b_camera", Clicked = CycleCameraView, Bounds = CameraPanelViewsRect } );
+		cameraPanelRects = CameraPanelIds.Select( id => hud.Find( id )!.Bounds ).ToArray();
 	}
+
+	private UiRect[]? cameraPanelRects;
 
 	/// <summary>The camera button: opens the panel, or closes it. The panel takes the slot of the message panel, which closes.</summary>
 	public void ToggleCameraPanel()
 	{
-		CameraPanelOpen = !CameraPanelOpen;
-		if ( CameraPanelOpen && OpenedMessage != null )
+		if ( CameraPanelOpen )
+		{
+			CloseCameraPanel();
+			return;
+		}
+		CameraPanelOpen = true;
+		if ( OpenedMessage != null )
 			CloseMessagePanel();
+		CameraSlide.Open();
+		host.HelpPosted?.Invoke( CameraPanelHelp );
 	}
 
-	public void CloseCameraPanel() => CameraPanelOpen = false;
+	public void CloseCameraPanel()
+	{
+		if ( !CameraPanelOpen )
+			return;
+		CameraPanelOpen = false;
+		CameraSlide.Close();
+		host.HelpWithdrawn?.Invoke( CameraPanelHelp );
+	}
 
-	private void UpdateCameraPanel()
+	private void UpdateCameraPanel( float delta )
 	{
 		if ( CameraPanelOpen && (IsRiding || level.FreeWalk != null) )
-			CameraPanelOpen = false;
-		foreach ( var id in CameraPanelIds )
-			if ( hud.Find( id ) is { } element )
-				element.Visible = CameraPanelOpen;
+			CloseCameraPanel();
+		CameraSlide.Update( delta );
+		var offset = CameraPanelOffset( CameraSlide.Step );
+		var rects = cameraPanelRects ?? Array.Empty<UiRect>();
+		for ( var index = 0; index < CameraPanelIds.Length && index < rects.Length; index++ )
+		{
+			if ( hud.Find( CameraPanelIds[index] ) is not { } element )
+				continue;
+			var rect = rects[index];
+			element.Bounds = rect with { X = rect.X + offset };
+			element.Visible = CameraSlide.Step > 0 && ArmChildShown( element.Bounds );
+		}
 	}
+
+	/// <summary>The panel's horizontal offset from its table place at slide step <paramref name="step"/>: it starts a panel width and 50 units left of the arm's left edge.</summary>
+	// [BIN:TPW-EXE:0x4a165d arm panel start] the drawer places a new panel left of the arm: its left at the arm's left - the panel's width - 50 (0x4a1631); the slide then moves it a
+	// tenth of the travel each step
+	// [APPROX:UI-042] the slide ends at the table rectangle; the original's end is the HUD window's right + 50 with the panel centred on the arm (0x4a15d2-0x4a1650), and the HUD window's rectangle is not traced
+	internal static float CameraPanelOffset( int step )
+	{
+		var table = CameraPanelTable.Root.Rect;
+		var start = HudArmLeft - table.Width - 50;
+		var travel = table.X - start;
+		return -travel * (ArmSlide.Steps - step) / ArmSlide.Steps;
+	}
+
+	/// <summary>The left edge of the HUD arm (control 0x21, table 0x7529dc).</summary>
+	private static readonly float HudArmLeft = OriginalLayoutTables.HudArm.Control( 0x21 ).Rect.X;
+
+	/// <summary>Whether a panel control is drawn: only once its right edge has passed the arm's left edge, so nothing shows behind the HUD.</summary>
+	// [BIN:TPW-EXE:0x4a1440 arm children] each child of the sliding panel is shown only while its right edge is right of the arm's left edge (0x4a1485)
+	internal static bool ArmChildShown( UiRect rect ) => rect.Right > HudArmLeft;
 
 	private void ArmCamcorderFromPanel()
 	{
-		CameraPanelOpen = false;
+		CloseCameraPanel();
 		ArmCamcorder();
 	}
 
 	private void OpenPostcardFromPanel()
 	{
-		CameraPanelOpen = false;
+		CloseCameraPanel();
 		if ( IsRiding || Stack.Screens.Count != 1 || Camera.Mode is not ParkCameraMode || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects
 			|| level.CellTool.IsActive || level.IsCoasterToolActive )
 			return;
@@ -74,5 +127,61 @@ public sealed partial class ParkHud
 			return;
 		}
 		host.OpenPostcard( Stack );
+	}
+}
+
+/// <summary>
+/// The HUD arm's slide (the drawer procedure of arm control 0x21): a panel goes out or in over ten steps of a 20 ms timer, with the drawer sounds.
+/// </summary>
+// [BIN:TPW-EXE:0x4a14f0 arm drawer] message 10 starts a slide out (state 2, ten steps in +0x130, timer 0x80080 every 0x14 ms, 0x4a1556/0x4a15a7) and plays cat_ui 0x1C (0x4a1742);
+// message 0xB starts a slide in (state 3) and plays cat_ui 0x1C (0x4a187a); each timer message moves the arm a step until the ten are done (0x4a19d2), and a finished slide in
+// hides the panel and plays cat_ui 0xC2 (0x4a1947); the arm control's procedure is set by the HUD builder (0x4a2382)
+internal sealed class ArmSlide
+{
+	public const int Steps = 10;
+	public const float StepSeconds = 0.02f;
+	private float clock;
+
+	/// <summary>0 when the panel is in, <see cref="Steps"/> when it is out.</summary>
+	public int Step { get; private set; }
+	public bool Out { get; private set; }
+
+	public void Open()
+	{
+		if ( Out )
+			return;
+		Out = true;
+		clock = 0;
+		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
+	}
+
+	public void Close()
+	{
+		if ( !Out )
+			return;
+		Out = false;
+		clock = 0;
+		GameAudio.PlayUi( GameAudio.DrawerOpenEvent );
+	}
+
+	/// <summary>Advances the slide by <paramref name="delta"/> seconds; true when a slide in finished in this update.</summary>
+	public bool Update( float delta )
+	{
+		var target = Out ? Steps : 0;
+		if ( Step == target )
+			return false;
+		clock += Math.Max( 0, delta );
+		while ( clock >= StepSeconds && Step != target )
+		{
+			clock -= StepSeconds;
+			Step += Out ? 1 : -1;
+		}
+		if ( Step != target )
+			return false;
+		clock = 0;
+		if ( Out )
+			return false;
+		GameAudio.PlayUi( GameAudio.DrawerCloseEvent );
+		return true;
 	}
 }

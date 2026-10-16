@@ -368,6 +368,8 @@ internal sealed partial class GameFlow : IDisposable
 			ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
 			WindowOpened = window => Advisor?.OnWindowOpened( window ),
 			WindowClosed = window => Advisor?.OnWindowClosed( window ),
+			HelpPosted = message => Advisor?.PostHelp( message ),
+			HelpWithdrawn = message => Advisor?.WithdrawHelp( message ),
 			HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
 		} );
 		return createdHud;

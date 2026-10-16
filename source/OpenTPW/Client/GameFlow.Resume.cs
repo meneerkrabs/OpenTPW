@@ -44,7 +44,7 @@ internal sealed partial class GameFlow
 			AbandonParkBuild();
 			using var scene = new EntityConstructionScope();
 			var candidate = new Level( snapshot, economy, OnlineFolders ) { ShowDeveloperPanels = false };
-			var candidateHud = CreateParkHud( candidate, EconomyParkStatus.ForLevel( candidate ) );
+			var candidateHud = CreateParkHud( candidate, EconomyParkStatus.ForLevel( candidate, PlayerKeys ) );
 			if ( candidateAdvisor != null )
 			{
 				candidateAdvisor.AttachLevel( candidate );

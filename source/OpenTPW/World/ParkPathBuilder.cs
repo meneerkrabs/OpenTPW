@@ -87,7 +87,8 @@ public sealed class ParkPathBuilder : ICellLineWriter
 
 	/// <summary>Cost of one path cell (<c>Costs.PathCell</c>), or 0 without an economy.</summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] type 1 is priced with the path cost global (Costs.PathCell, balance +1472, loaded by 0x1010F29C)
-	// [APPROX:PATH-009] PATH-FREE: the path tool charges Costs.PathCell through Spend, which does nothing while bank +0x114 is 0 (tp.exe 0x4d01f0); OpenTPW takes 'no park economy' for that state; the free byte (tp.exe 0x8186d4, Mac data:0x7de2d) zeroes the path and queue cost in SetCellType (0x534717, 0x53472c) but is set only in the mode-4 and mode-59 placement branches (0x5235d4, 0x523967, 0x524b4a, 0x5253e9), never by the path tool; open: what bank +0x114 is — still open: what bank +0x114 is
+	// [BIN:TPW-EXE:0x4D01F0 bank debit] the path tool charges Costs.PathCell through the bank debit, which does nothing while mWithdrawalsEnabled (bank +0x114, serialized by 0x4CF920) is 0; the bank constructor 0x4CF7C0 sets it to 1 and only the action recorder's layout replay of a visited online park clears it (0x404140, 'Starting layout replay', called from the front-end loop 0x54E360) until the replay ends (0x4041D0 at 0x4044C4 / 0x40459C), when no tool runs, so a played park always pays; OpenTPW's path is free only for a builder without a park economy, a state no played park has
+	// [BIN:TPW-EXE:0x534717 free byte] the free byte (0x8186D4, Mac data:0x7DE2D) zeroes the path and queue cost in SetCellType (0x534717, 0x53472C) but is set only in the mode-4 and mode-59 placement branches (0x5235D4, 0x523967, 0x524B4A, 0x5253E9), never by the path tool
 	public long CellCost => Economy?.CellCost( CellPurchase.Path ) ?? 0;
 
 	// ---- LayLine ----------------------------------------------------------------------------------
@@ -166,7 +167,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		}
 		if ( isOccupied?.Invoke( x, y ) == true )
 			return CellBuildResult.Occupied;
-		// [APPROX:PATH-006] PATH-SLOPE: no slope or height test, as in the original (tp.exe LayLine 0x536100, SetCell 0x532fc0 reads heights only for the ghost, validator 0x535670 has no float operation, SetCellType 0x5346d0); the object terrain rule OpenTPW applies (water, blocked, entrance area, fixed walkway, holes) stands in for the original's cell types and ownership: map init 0x536490 types only hole cells (2, 0x1e, 7, refused by type) and leaves every other non-InitialPath cell type 0 with the unowned flag 0x40 (PATH-007) — still open: the ownership rule (PATH-007) that the terrain stand-in replaces
+		// [APPROX:PATH-006] PATH-SLOPE: no slope or height test, as in the original (tp.exe LayLine 0x536100, SetCell 0x532fc0 reads heights only for the ghost, validator 0x535670 has no float operation, SetCellType 0x5346d0); the object terrain rule OpenTPW applies (water, blocked, entrance area, fixed walkway, holes) stands in for the original's cell types: map init 0x536490 types only hole cells (2, 0x1e, 7, refused by type) and leaves every other non-InitialPath cell type 0, whose unowned flag 0x40 the land now sets (PATH-007) — still open: the original cell types the terrain stand-in replaces
 		var terrain = Terrain.CheckTerrain( x, y );
 		if ( terrain is not (OriginalPlacementResult.Allowed or OriginalPlacementResult.Path) )
 			return terrain == OriginalPlacementResult.OutsideTerrain ? CellBuildResult.OutsideTerrain : CellBuildResult.Terrain;

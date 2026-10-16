@@ -7,39 +7,54 @@ namespace OpenTPW;
 public sealed record CoasterModelPart( string MeshName, string[] Textures, Vertex[] Vertices, uint[] Indices );
 
 /// <summary>
-/// A pylon model (<c>StdPylon.MD2</c> or <c>LoopPylon.MD2</c> with its <c>L</c> loft clip and <c>R</c> rotate clip) posed for one node. The loft clip stretches
-/// the pylon to a height (it adds a vertex animation to the pylon mesh and a position key to the track tag and stack-height dummies), the rotate clip turns
-/// it about the cell centre to line its track tag up with the track.
+/// The node values the knot pass feeds a pylon's clips (<c>0x430ed0</c> → <c>0x430ca0</c>): the stored height parameter (node <c>+0xe8</c>), the yaw
+/// (<c>+0xe0</c>), the pitch (<c>+0xdc</c>), the bank (<c>+0xd8</c>) and the loop rotate parameter (<c>+0xf8</c>).
+/// </summary>
+/// <param name="TurnedBack">Node flag <c>0x10000000</c>: the rotate clip takes the yaw half a turn on (a suspended coaster's pylon on the outside of a turn).</param>
+public readonly record struct CoasterPylonPose( float Loft, float Yaw = 0, float Pitch = 0, float Bank = 0, float LoopRotate = 0, bool TurnedBack = false );
+
+/// <summary>
+/// A pylon model (<c>StdPylon.MD2</c> or <c>LoopPylon.MD2</c>) posed for one node with its five clips (<c>0x430ca0</c>): the loft clip <c>L</c> stretches
+/// the pylon to a height (it adds a vertex animation to the pylon mesh and a position key to the track tag and stack-height dummies), the rotate clip
+/// <c>R</c> (<c>R1</c>) turns it about the cell centre, the incline clip <c>I</c> and the bank clip <c>B</c> tilt the track tag (and bend the pylon mesh
+/// where they carry a vertex animation), and a loop pylon's second rotate clip <c>R2</c> turns its tag by the loop rotate parameter.
 /// </summary>
 // [BIN:TPW-EXE:0x42fad0 coaster model load] the TrackMaster loader opens the pylon models with the relative-animation flag 0x1013405 (the only caller to do so, with "GTexture" as the extra texture directory): a vertex key or position key is added to the stored mesh or node, not set
 // [BIN:TPW-EXE:0x430590 pylon model tags] the loft, rotate, incline and bank clips and the track and stack dummies are looked up on the loaded model by node attribute (0x2, 0x3, 0x9, 0xa, 0x1000000, 0x800000, 0x2000000, 0x100000, 0x80000) when the control is set up (0x42eb70)
-// [APPROX:COAST-033] a pylon is the geometry of its model with the loft clip (to the node height) and the rotate clip (to the knot yaw, yaw/2π of the clip) posed once per track change; the incline and bank clips (the tag's tilt and the pylon's bank lean) are not played, a ground-tile mesh under the pylon is skipped, the pylon takes the node's height by scaling or sinking when the node lies outside the loft range, and the bridge or stacker head above the track tag is drawn only when a pylon is stacked on it (an assumption: the loft clip moves it with the tag, and no node flag that hides it was found); the heights h0/h1, the raised fMinHeight and the stack offset are the model's since the pylon setup 0x430590 was read — evidence needed: the pose routine that feeds node +232 to the clips and the rotate/incline/bank clip setup of 0x42eb70
+// [BIN:TPW-EXE:0x430ca0 pylon clip times] slot 0 (loft) = duration × map(clamp(+0xe8, 0, 1)), the node's +0xe8 written back clamped; slot 1 (rotate) = map(+0xec), +0xec = frac(yaw/2π) (+1 when negative, 0x43110c), frac(+0xec + ½) on node flag 0x10000000; slot 2 (incline) = map(+0xf0 · mult + add + 0.5), +0xf0 = pitch/2π; slot 3 (bank) = map(+0xf4 · mult + add + 0.5), +0xf4 = frac(bank/2π + ½) − ½ (0x431177..0x4311b7); slot 4 (loop tilt) = map(+0xf8), +0xf8 = frac(+0xf8); each map raises to its start cap, then lowers to its end cap
+// [BIN:TPW-EXE:0x470d10 relative rotation] a model loaded with the relative-animation flag (header +0x30 & 0x4) multiplies a clip's rotation key into the node's matrix (key × node, 0x470d10) instead of setting it (0x46fbb0), and adds position and vertex keys (0x471860); the slots run in order loft, rotate, incline, bank, loop tilt (0x473c70 → 0x4735d0)
+// [APPROX:COAST-033] the bridge or stacker head above the track tag is drawn only when a pylon is stacked on it (an assumption: the model's 0x80000 records, values 1..4 → pylon +0x1c..+0x28 and pylon flags 0x400..0x2000, name these parts, but the code that shows or hides them is not traced); the rotation keys are slerped by the shared clip sampler, where the original lerps their components when 0x7b4980 bit 2 is set — evidence needed: the consumer of pylon +0x1c..+0x28 and flags 0x400..0x2000 and the run-time value of 0x7b4980
 public sealed class CoasterPylonRig
 {
+	/// <summary>The five clip slots in the original's order: loft, rotate, incline, bank, loop tilt (<c>0x74ca70</c>: types 3, 10, 2, 9, 10 index 1).</summary>
+	public const int SlotCount = 5;
+	private const int LoftSlot = 0, RotateSlot = 1, InclineSlot = 2, BankSlot = 3, LoopTiltSlot = 4;
+
 	private readonly ModelFile model;
-	private readonly ModelAnimation? loft;
-	private readonly ModelAnimation? rotate;
+	private readonly ModelAnimation?[] clips;
 	private readonly (NVector3 Scale, Quaternion Rotation, NVector3 Translation)[] rest;
-	private readonly ModelAnimationTrack?[] loftTracks;
-	private readonly ModelAnimationTrack?[] rotateTracks;
+	private readonly ModelAnimationTrack?[][] tracks;
 	private readonly int[] order;
 	private readonly Matrix4x4[] worlds;
+	private readonly CoasterClipMap loftMap = CoasterClipMap.Identity, rotateMap = CoasterClipMap.Identity, inclineMap = CoasterClipMap.Identity, bankMap = CoasterClipMap.Identity, loopRotateMap = CoasterClipMap.Identity;
+
+	/// <summary>The hand edits the pylon's animations allow; set by the asset loader from the models of the same family (<c>I</c>, <c>B</c>, <c>R2</c>).</summary>
+	public CoasterPylonCapabilities Capabilities { get; internal set; }
 
 	/// <param name="model">The pylon's geometry.</param>
 	/// <param name="loft">The loft clip (<c>&lt;pylon&gt;L.MD2</c>), or null.</param>
 	/// <param name="rotate">The rotate clip (<c>&lt;pylon&gt;R.MD2</c> or <c>R1</c>), or null.</param>
-	/// <param name="control">The pylon control whose loft caps, multiplier and add (<c>fLoftAnim*</c>) map the node's height parameter to the clip; null takes the defaults.</param>
-	/// <summary>The hand edits the pylon's animations allow; set by the asset loader from the models of the same family (<c>I</c>, <c>B</c>, <c>R2</c>).</summary>
-	public CoasterPylonCapabilities Capabilities { get; internal set; }
-
-	public CoasterPylonRig( ModelFile model, ModelAnimation? loft, ModelAnimation? rotate, CoasterPylonControl? control = null )
+	/// <param name="control">The pylon control whose clip maps (<c>f…Anim*</c>) turn the node values into clip fractions; null takes the defaults.</param>
+	/// <param name="incline">The incline clip (<c>&lt;pylon&gt;I.MD2</c>), or null.</param>
+	/// <param name="bank">The bank clip (<c>&lt;pylon&gt;B.MD2</c>), or null.</param>
+	/// <param name="loopTilt">The second rotate clip (<c>&lt;pylon&gt;R2.MD2</c>), or null.</param>
+	public CoasterPylonRig( ModelFile model, ModelAnimation? loft, ModelAnimation? rotate, CoasterPylonControl? control = null, ModelAnimation? incline = null, ModelAnimation? bank = null, ModelAnimation? loopTilt = null )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
 			throw new ArgumentException( "A pylon needs a geometry model.", nameof( model ) );
 		this.model = model;
-		this.loft = loft;
-		this.rotate = rotate;
+		clips = new[] { loft, rotate, incline, bank, loopTilt };
 		var count = model.Nodes.Count;
 		rest = new (NVector3, Quaternion, NVector3)[count];
 		for ( var index = 0; index < count; index++ )
@@ -52,16 +67,15 @@ public sealed class CoasterPylonRig
 			}
 			rest[index] = (scale, rotation, translation);
 		}
-		loftTracks = TracksByNode( loft, count );
-		rotateTracks = TracksByNode( rotate, count );
+		tracks = clips.Select( clip => TracksByNode( clip, count ) ).ToArray();
 		order = ParentFirst( model );
 		worlds = new Matrix4x4[count];
-		// [BIN:TPW-EXE:0x430590 pylon track dummy] the track dummy is the dummy numbered by the first attribute record with bit 0x800000 (0x4306be..0x4306e9: record index +0x2c, dummy number − 1 at +0x30), the stack dummy the one of the first record with 0x100000 (0x430780..0x4307a6); the numbers count the model's dummy nodes from 1 in file order; a model without such a record falls back to the first dummy named Track* or animated by the loft clip
-		TagNode = DummyByAttribute( model, TrackDummyAttribute ) ?? FindTag( model, loftTracks );
+		// [BIN:TPW-EXE:0x430590 pylon track dummy] the track dummy is the node of the first attribute record with bit 0x800000 (0x4306be..0x4306e9: the record index at pylon +0x2c; +0x30 is the record's value − 1, the base of the knot tags), the stack dummy the node of the first record with 0x100000 (0x430780..0x4307a6); in the PC models it is the dummy the loft, incline and bank clips move (Skull Coaster's TrackCentreDummy, not its TrackHeightDummy); a model without such a record falls back to the first dummy named Track* or animated by the loft clip
+		TagNode = DummyByAttribute( model, TrackDummyAttribute ) ?? FindTag( model, tracks[LoftSlot] );
 		StackNode = DummyByAttribute( model, StackDummyAttribute ) ?? -1;
 		Duration = loft?.Duration ?? 0;
 		if ( control != null )
-			(loftStartCap, loftEndCap, loftMultiplier, loftAdd) = (control.LoftStartCap, control.LoftEndCap, control.LoftMultiplier, control.LoftAdd);
+			(loftMap, rotateMap, inclineMap, bankMap, loopRotateMap) = (control.LoftMap, control.RotateMap, control.InclineMap, control.BankMap, control.LoopRotateMap);
 		// [BIN:TPW-EXE:0x430590 pylon heights] h0 = the track dummy's Y with the loft clip at clamp(fLoftAnimAdd, StartCap, EndCap) (0x430923..0x430990), h1 = its Y at clamp(fLoftAnimMultiplier + fLoftAnimAdd, StartCap, EndCap) (0x430a0b..0x430a92), the stack offset the stack dummy's Y at the first pose minus h0, or 0 without a stack dummy (0x4309be..0x430a01)
 		var first = LoftFraction( 0 );
 		var low = TagHeightAtFraction( first );
@@ -74,23 +88,51 @@ public sealed class CoasterPylonRig
 	public const uint TrackDummyAttribute = 0x800000;
 	/// <summary>Attribute bit of the record that names a pylon's stack dummy.</summary>
 	public const uint StackDummyAttribute = 0x100000;
-	private const uint DummyNodeType = 0x200;
 
-	private float loftStartCap = 0, loftEndCap = 1, loftMultiplier = 1, loftAdd = 0;
+	/// <summary>The loft clip's fraction for a height parameter t: t · fLoftAnimMultiplier + fLoftAnimAdd, raised to StartCap, then lowered to EndCap (<c>0x430ca0</c>).</summary>
+	public float LoftFraction( float t ) => loftMap.Fraction( t );
 
-	/// <summary>The loft clip's fraction for a height parameter t: clamp(t · fLoftAnimMultiplier + fLoftAnimAdd, StartCap, EndCap) (<c>0x434060</c>).</summary>
-	public float LoftFraction( float t ) => Math.Clamp( t * loftMultiplier + loftAdd, loftStartCap, MathF.Max( loftStartCap, loftEndCap ) );
+	/// <summary>
+	/// The fractions of the five clips for a node (<c>0x430ed0</c>, <c>0x430ca0</c>): the height parameter clamped to [0, 1] through the loft map, the yaw's
+	/// turn fraction through the rotate map, the pitch's through the incline map and the bank's, wrapped into [−½, ½), through the bank map (both centred on
+	/// ½), and the loop rotate parameter's fraction through the loop rotate map.
+	/// </summary>
+	public (float Loft, float Rotate, float Incline, float Bank, float LoopTilt) Fractions( CoasterPylonPose pose ) => Fractions( pose, loftMap, rotateMap, inclineMap, bankMap, loopRotateMap );
 
-	/// <summary>The dummy node numbered (from 1, in file order of the dummy nodes) by the first attribute record that has any of <paramref name="mask"/>, or null.</summary>
+	/// <summary>The clip fractions of a pose with a pylon control's maps (the defaults without one).</summary>
+	public static (float Loft, float Rotate, float Incline, float Bank, float LoopTilt) Fractions( CoasterPylonControl? control, CoasterPylonPose pose ) =>
+		control == null ? Fractions( pose, CoasterClipMap.Identity, CoasterClipMap.Identity, CoasterClipMap.Identity, CoasterClipMap.Identity, CoasterClipMap.Identity )
+			: Fractions( pose, control.LoftMap, control.RotateMap, control.InclineMap, control.BankMap, control.LoopRotateMap );
+
+	private static (float Loft, float Rotate, float Incline, float Bank, float LoopTilt) Fractions( CoasterPylonPose pose, CoasterClipMap loftMap, CoasterClipMap rotateMap, CoasterClipMap inclineMap, CoasterClipMap bankMap, CoasterClipMap loopRotateMap )
+	{
+		const float InverseTwoPi = 0.15915494f;
+		var loft = Math.Clamp( pose.Loft, 0f, 1f );
+		var turn = Fraction( pose.Yaw * InverseTwoPi );
+		if ( pose.TurnedBack )
+			turn = Fraction( turn + 0.5f );
+		var bank = Fraction( pose.Bank * InverseTwoPi + 0.5f ) - 0.5f;
+		return (loftMap.Fraction( loft ), rotateMap.Fraction( turn ), inclineMap.Fraction( pose.Pitch * InverseTwoPi, 0.5f ), bankMap.Fraction( bank, 0.5f ), loopRotateMap.Fraction( Fraction( pose.LoopRotate ) ));
+	}
+
+	/// <summary>modf's fractional part, plus 1 when it is negative (<c>0x431480</c> and the callers' correction).</summary>
+	private static float Fraction( float value )
+	{
+		var fraction = value - MathF.Truncate( value );
+		return fraction < 0 ? fraction + 1f : fraction;
+	}
+
+	/// <summary>The node of the first attribute record that has any of <paramref name="mask"/>: record i belongs to the node stored as header +0x46 + i; null without one.</summary>
+	// [BIN:TPW-EXE:0x44ab90 dummy record table] the world-matrix pass stores a dummy node's matrix in the record table entry (node stored index (+0x50) − header +0x46), and 0x430590 reads the track dummy's height from the entry of the record index 0x44b270 returned (0x430988)
 	private static int? DummyByAttribute( ModelFile model, uint mask )
 	{
-		foreach ( var attribute in model.DummyAttributes )
+		for ( var index = 0; index < model.DummyAttributes.Count; index++ )
 		{
-			if ( (attribute.Type & mask) == 0 )
+			if ( (model.DummyAttributes[index].Type & mask) == 0 )
 				continue;
-			var number = (int)attribute.Value - 1;
-			var dummies = model.Nodes.Where( node => (node.Type & DummyNodeType) != 0 ).ToList();
-			return number >= 0 && number < dummies.Count ? dummies[number].Index : null;
+			var stored = model.Counts.Unknown46 + index;
+			var node = model.Nodes.FirstOrDefault( candidate => candidate.StoredIndex == stored );
+			return node?.Index;
 		}
 		return null;
 	}
@@ -106,7 +148,8 @@ public sealed class CoasterPylonRig
 	{
 		if ( node < 0 || node >= worlds.Length )
 			return 0;
-		Worlds( fraction * Duration, 0, worlds );
+		// The heights are the loft clip's alone (the other clips' keys at time 0 turn the dummies but do not raise them in the PC models).
+		Worlds( new[] { fraction * Duration, 0, 0, 0, 0 }, worlds, loftOnly: true );
 		return worlds[node].Translation.Y;
 	}
 
@@ -118,96 +161,81 @@ public sealed class CoasterPylonRig
 	public float TagLow { get; }
 	/// <summary>The height of the track tag above the pylon base at loft 1 (MD2 units).</summary>
 	public float TagHigh { get; }
-	public bool HasLoft => loft != null && TagHigh > TagLow;
+	public bool HasLoft => clips[LoftSlot] != null && TagHigh > TagLow;
+	/// <summary>Whether the model has the incline, bank and loop tilt clips.</summary>
+	public bool HasIncline => clips[InclineSlot] != null;
+	public bool HasBank => clips[BankSlot] != null;
+	public bool HasLoopTilt => clips[LoopTiltSlot] != null;
 
-	/// <summary>The height above the pylon base of any node of the model at a clip fraction in [0, 1] (the node's world Y after the loft clip).</summary>
+	/// <summary>The height above the pylon base of any node of the model at a loft clip fraction in [0, 1] (the node's world Y after the loft clip).</summary>
 	public float NodeHeightAt( int node, float loftParameter ) => NodeHeightAtFraction( node, loftParameter );
 
-	/// <summary>The tag height at a clip fraction in [0, 1].</summary>
+	/// <summary>The tag height at a loft clip fraction in [0, 1].</summary>
 	public float TagHeightAt( float loftParameter ) => TagHeightAtFraction( loftParameter );
 
-	/// <summary>
-	/// How a pylon reaches a node height: the loft parameter (clamped to the clip), a vertical scale about the base when the height lies above the loft's
-	/// top, and a vertical offset when it lies below the loft's bottom (the pylon sinks into the ground).
-	/// </summary>
-	// [BIN:STP-PPC:0x100369BC pylon height] the node height is h0 + t(h1 − h0) with t = clamp((h − h0)/(h1 − h0), 0, 1): the loft clip's two ends are the pylon's heights
-	public static (float Loft, float Scale, float Offset) FitHeight( float low, float high, float height )
+	/// <summary>The posed world matrix of a node of the model for a node's clip values (MD2 axes, relative to the pylon's cell corner).</summary>
+	public Matrix4x4 NodeMatrix( int node, CoasterPylonPose pose )
 	{
-		if ( high <= low )
-			return (0, high > 0 ? height / high : 1, high > 0 ? 0 : height - low);
-		if ( height <= low )
-			return (0, 1, height - low);
-		if ( height >= high )
-			return (1, high > 0 ? height / high : 1, 0);
-		return ((height - low) / (high - low), 1, 0);
-	}
-
-	/// <summary>The loft clip fraction, scale and offset that put the track tag at <paramref name="height"/> above the base: the height parameter t of h0 + t(h1 − h0) goes through the loft mapping (<see cref="LoftFraction"/>).</summary>
-	public (float Loft, float Scale, float Offset) Fit( float height )
-	{
-		var (loft, scale, offset) = FitHeight( TagLow, TagHigh, height );
-		return (LoftFraction( loft ), scale, offset);
-	}
-
-	/// <summary>The height of the tag after <see cref="Fit"/> and posing (loft, then the vertical scale and offset): the node height itself.</summary>
-	public float PosedTagHeight( float height )
-	{
-		var (loftParameter, scale, offset) = Fit( height );
-		return TagHeightAt( loftParameter ) * scale + offset;
-	}
-
-	/// <summary>The pylon's mesh parts for a node height and a knot yaw (radians); positions relative to the cell corner.</summary>
-	public IReadOnlyList<CoasterModelPart> Pose( float height, float yaw, bool stackedAbove = false )
-	{
-		var (loftParameter, scale, offset) = Fit( height );
-		var turn = yaw / (2 * MathF.PI);
-		turn -= MathF.Floor( turn );
-		return Pose( loftParameter, turn, scale, offset, stackedAbove );
-	}
-
-	/// <summary>
-	/// The mesh parts at explicit clip parameters: loft in [0, 1], rotate in [0, 1) of the rotate clip. A part that lies above the track tag (the bridge or
-	/// stacker head that carries a pylon stacked on this one) is left out unless <paramref name="stackedAbove"/>: a pylon ends at the track's underside.
-	/// </summary>
-	public IReadOnlyList<CoasterModelPart> Pose( float loftParameter, float rotateParameter, float verticalScale, float verticalOffset, bool stackedAbove = false )
-	{
-		var tagHeight = TagHeightAt( loftParameter ) * verticalScale + verticalOffset;
-		var loftTick = Math.Clamp( loftParameter, 0f, 1f ) * Duration;
-		var rotateTick = rotate == null ? 0 : Math.Clamp( rotateParameter, 0f, 1f ) * rotate.Duration;
 		var matrices = new Matrix4x4[model.Nodes.Count];
-		Worlds( loftTick, rotateTick, matrices );
+		Worlds( Ticks( pose ), matrices );
+		return node >= 0 && node < matrices.Length ? matrices[node] : Matrix4x4.Identity;
+	}
+
+	/// <summary>The clip times of the five slots: each clip's duration times its fraction (<c>0x430ca0</c>: slot +0x20 = slot +0x1c × fraction).</summary>
+	private float[] Ticks( CoasterPylonPose pose )
+	{
+		var (loft, rotate, incline, bank, loopTilt) = Fractions( pose );
+		var fractions = new[] { loft, rotate, incline, bank, loopTilt };
+		var ticks = new float[SlotCount];
+		for ( var slot = 0; slot < SlotCount; slot++ )
+			ticks[slot] = clips[slot] is { } clip ? fractions[slot] * clip.Duration : 0;
+		return ticks;
+	}
+
+	/// <summary>
+	/// The pylon's mesh parts for a node's clip values; positions relative to the cell corner (engine axis order). A part that lies above the track tag
+	/// (the bridge or stacker head that carries a pylon stacked on this one) is left out unless <paramref name="stackedAbove"/>: a pylon ends at the
+	/// track's underside. A height parameter outside [0, 1] stands the pylon at the end of its loft (the original clamps the parameter, 0x430ca0).
+	/// </summary>
+	public IReadOnlyList<CoasterModelPart> Pose( CoasterPylonPose pose, bool stackedAbove = false )
+	{
+		var ticks = Ticks( pose );
+		var matrices = new Matrix4x4[model.Nodes.Count];
+		Worlds( ticks, matrices );
+		var tagHeight = TagNode >= 0 ? matrices[TagNode].Translation.Y : 0;
 		var parts = new List<CoasterModelPart>();
 		foreach ( var mesh in model.Meshes )
 		{
 			if ( ObjectAssets.GetUnrenderableReason( mesh ) is { } reason && reason != "more than 16 texture slots" )
 				continue;
-			if ( IsGroundTile( mesh ) )
-				continue;
 			var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < matrices.Length ? mesh.NodeIndex : model.RootNodeIndex;
 			var source = mesh;
-			if ( loft != null && node >= 0 && loftTracks[node]?.VertexAnimation is { } animation && animation.GetPoseLimitation( mesh.Positions.Length, loft.Duration ) == null )
+			if ( node >= 0 )
 			{
-				var positions = mesh.Positions.Select( position => position.GetSystemVector3() ).ToArray();
-				if ( animation.HasStaticGroup )
-					animation.ApplyStaticGroup( positions, add: true );
-				animation.ApplyAnimatedGroups( loftTick, positions, add: true );
-				source = WithPositions( mesh, positions );
+				NVector3[]? positions = null;
+				for ( var slot = 0; slot < SlotCount; slot++ )
+				{
+					if ( clips[slot] is not { } clip || tracks[slot][node]?.VertexAnimation is not { } animation || animation.GetPoseLimitation( mesh.Positions.Length, clip.Duration ) != null )
+						continue;
+					positions ??= mesh.Positions.Select( position => position.GetSystemVector3() ).ToArray();
+					// Add mode: every clip's vertex keys are added to the stored mesh (0x471860).
+					if ( animation.HasStaticGroup )
+						animation.ApplyStaticGroup( positions, add: true );
+					animation.ApplyAnimatedGroups( ticks[slot], positions, add: true );
+				}
+				if ( positions != null )
+					source = WithPositions( mesh, positions );
 			}
 			var bake = node >= 0 ? matrices[node] : Matrix4x4.Identity;
 			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( source, bake ) )
 			{
-				for ( var index = 0; index < vertices.Length; index++ )
-				{
-					// Engine axis order: Z is the model's up.
-					var position = vertices[index].Position.GetSystemVector3();
-					vertices[index].Position = new NVector3( position.X, position.Y, position.Z * verticalScale + verticalOffset );
-				}
 				if ( !stackedAbove && TagNode >= 0 && vertices.Length > 0 )
 				{
 					var low = float.MaxValue;
 					var high = float.MinValue;
 					foreach ( var vertex in vertices )
 					{
+						// Engine axis order: Z is the model's up.
 						var z = vertex.Position.GetSystemVector3().Z;
 						low = MathF.Min( low, z );
 						high = MathF.Max( high, z );
@@ -219,21 +247,6 @@ public sealed class CoasterPylonRig
 			}
 		}
 		return parts;
-	}
-
-	/// <summary>A flat tile under the pylon (the ground patch of the Gorilla Thrilla pylon): four corners spanning most of the cell with no height.</summary>
-	private static bool IsGroundTile( ModelFile.Mesh mesh )
-	{
-		if ( mesh.Positions.Length != 4 )
-			return false;
-		var low = new NVector3( float.MaxValue );
-		var high = new NVector3( float.MinValue );
-		foreach ( var position in mesh.Positions )
-		{
-			low = NVector3.Min( low, position.GetSystemVector3() );
-			high = NVector3.Max( high, position.GetSystemVector3() );
-		}
-		return high.Y - low.Y < 0.5f && high.X - low.X > 8f && high.Z - low.Z > 8f;
 	}
 
 	private static ModelFile.Mesh WithPositions( ModelFile.Mesh mesh, NVector3[] positions )
@@ -253,17 +266,27 @@ public sealed class CoasterPylonRig
 		};
 	}
 
-	private void Worlds( float loftTick, float rotateTick, Matrix4x4[] output )
+	/// <summary>
+	/// The world matrices of the model's nodes at the slots' clip times: each node starts from its stored matrix (the relative model is reset to it,
+	/// 0x472310), then every slot in order adds its position key to the node's translation and multiplies its rotation key into the node's rotation
+	/// (key × node, <c>0x470d10</c>).
+	/// </summary>
+	private void Worlds( float[] ticks, Matrix4x4[] output, bool loftOnly = false )
 	{
 		foreach ( var node in order )
 		{
 			var (scale, rotation, translation) = rest[node];
-			if ( rotateTracks[node]?.SampleRotation( rotateTick ) is { } turn )
-				rotation = turn;
-			// Add mode: the loft clip's position key moves the node away from its stored place.
-			if ( loftTracks[node]?.SampleTranslation( loftTick ) is { } move )
-				translation += move;
-			var local = Multiply( Multiply( Matrix4x4.CreateScale( scale ), Matrix4x4.CreateFromQuaternion( rotation ) ), Matrix4x4.CreateTranslation( translation ) );
+			var turned = Multiply( Matrix4x4.CreateScale( scale ), Matrix4x4.CreateFromQuaternion( rotation ) );
+			for ( var slot = 0; slot < (loftOnly ? 1 : SlotCount); slot++ )
+			{
+				if ( tracks[slot][node] is not { } track )
+					continue;
+				if ( track.SampleTranslation( ticks[slot] ) is { } move )
+					translation += move;
+				if ( track.SampleRotation( ticks[slot] ) is { } key )
+					turned = Multiply( Matrix4x4.CreateFromQuaternion( key ), turned );
+			}
+			var local = Multiply( turned, Matrix4x4.CreateTranslation( translation ) );
 			var parent = model.Nodes[node].ParentIndex;
 			output[node] = parent < 0 ? local : Multiply( local, output[parent] );
 		}

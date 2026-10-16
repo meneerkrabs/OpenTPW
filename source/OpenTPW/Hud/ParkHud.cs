@@ -33,6 +33,8 @@ public sealed class HudHost
 	public Action<string>? WindowOpened { get; init; }
 	/// <summary>A screen other than the HUD closed; the advisor withdraws the window's help message.</summary>
 	public Action<string>? WindowClosed { get; init; }
+	/// <summary>F1 was pressed in a HUD window that passes keys to the original's default window procedure; the advisor repeats the last tutorial advice.</summary>
+	public Action? HelpKeyPressed { get; init; }
 }
 
 /// <summary>
@@ -77,7 +79,7 @@ public sealed partial class ParkHud
 		this.host = host;
 		Status = status;
 		Catalog = catalog;
-		buy = new BuyListModel( catalog, ItemName, item => Status.PriceOf( item ) ?? item.Cost, Sorts );
+		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows );
 		cashTracker = new CashChangeTracker( status.Money );
 		cashSource = status.EconomySource;
 		lastLevelMessage = level.LastActionMessage;
@@ -118,8 +120,8 @@ public sealed partial class ParkHud
 	// calls the game pause 0x10110518 (0x10198580) and clears the gate; the menu's close routine 0x101985C0 sets the gate
 	// and calls the resume 0x10110598. The pause freezes the scaled clock (0x1010E888 → 0x10117C54) that drives the
 	// scheduler's 31 ms substeps and park turns, together with the advisor's unscaled clock (0x10117AE8).
-	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), and by the generic dialog 0x47f020 (0x47f26c; probably the message box, medium confidence). Callers 0x46b74c, 0x49efba, 0x49f29f and 0x4a3a6c are unidentified, so the park only pauses here for the screens whose original pauses (the pause menu with the screens opened from it, and the map window)
-	// [APPROX:UI-096] the message dialog, the postcard (Ctrl+P) and the four unidentified callers pause in the original but not here — evidence needed: which screens 0x47f020's callers and 0x46b74c/0x49efba/0x49f29f/0x4a3a6c open
+	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), by the generic message box 0x47f020 (0x47f26c), by the main window procedure 0x46b600 when the application is deactivated (0x46b74c) and by the three screens the pause menu's handler 0x48b6a0 opens (0x49efba, 0x49f29f, 0x4a3a6c); the park pauses here for the pause menu with the screens opened from it and for the map window
+	// [APPROX:UI-096] the pause menu's own screens keep the pause (its cases 1/22 → 0x49efb0, 2 → 0x49f280, 5 → 0x4a3a30 pause at 0x49efba, 0x49f29f, 0x4a3a6c; jump table 0x48bbc8 of 0x48b6a0), but the postcard (Ctrl+P), every generic message box 0x47f020 (table 0x74f920, b_okay/b_exit buttons, 27 callers, pause at 0x47f26c) and the application's deactivation (WM_ACTIVATEAPP in 0x46b600, 0x46b74c) pause in the original and not here — evidence needed: which OpenTPW dialogs are 0x47f020's message boxes
 	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
 	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
 		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" ) ? 0 : speedScale;
@@ -176,7 +178,7 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the mode objects whose type (vtable +0x24) is 3, 4 or 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; type 3 is the tool-mode object 0x6fe9e0 that every build tool runs in; it is no sum of balance changes
 	// [DATA:video 2:05, 74:00-76:00] "$ 2500" while the blueprint of a 2500 ride is held, "$ 150" in the path tool, "$ 10000" for the coaster station and "$ 70" to "$ 130" per track segment; absent outside the build tools even when the balance changes
-	// [APPROX:UI-047] the mode-object types that show the text are 3 (the tool-mode object that wraps every build tool: blueprint, path and queue line, coaster segment), 4 and 8 (gated by 0x447990), which are not identified; the staff and patrol tools show nothing
+	// [APPROX:UI-047] type 3 is the tool-mode object (vtable 0x6fe9e0) of every build tool; type 8 is the coaster panel's mode object (vtable 0x6feaa0, 0x46cfc0, made by 0x497bc0 when a panel button is pressed), which shows the cost only while bit 0 of 0x79c658 is set (0x447990, set at 0x441a5d), a sub-state OpenTPW does not track, so the coaster tool shows its cost in every sub-mode; no mode-object class returns 4 (the classes 0x6fe980-0x6fead0 return 7, 3, 1, 5, 6, 8, 9; 5 and 6 are the staff place and carry tools, which show nothing) — evidence needed: what bit 0 of 0x79c658 stands for
 	public long? BuildActionCost
 	{
 		get
@@ -193,10 +195,11 @@ public sealed partial class ParkHud
 		}
 	}
 	public string CashChangeText => BuildActionCost is { } cost ? FormatMoney( cost ) : "";
-	// [DATA:video 40:40-41:30, 73:21] the counters read "1 ×" (the count, a space, the multiplication sign) and each row shows only while its count is above zero: a first session has neither, the ticket row appears above the key row after the first ticket
+	// [DATA:video 40:40-41:30, 73:21] the counters show the count followed by an x (the string below) and each row shows only while its count is above zero: a first session has neither, the ticket row appears above the key row after the first ticket
 	public string GoldenTicketsText => Status.HasEconomy && Status.GoldenTickets > 0 ? CounterText( Status.GoldenTickets ) : "";
 	public string GoldenKeysText => Status.HasEconomy && Status.GoldenKeys > 0 ? CounterText( Status.GoldenKeys ) : "";
-	private static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count} \u00d7" );
+	// [BIN:TPW-EXE:0x004a10a9 HUD counter text] both counters format their count with the UTF-16 "%d  x" at 0x752ef8 (two spaces, a letter x)
+	internal static string CounterText( int count ) => string.Create( System.Globalization.CultureInfo.InvariantCulture, $"{count}  x" );
 	public string DateText => !Status.HasEconomy ? "" : string.Format( strings.Extra( OpenTpwText.DateFormat ), Status.Date.Year, Status.Date.Month, Status.Date.Day );
 
 	public void PostMessage( string text )
@@ -242,7 +245,7 @@ public sealed partial class ParkHud
 				Bounds = OriginalLayoutTables.MessagePanel.Control( slot == 0 ? 0x10D2Fu : 0x10D30u ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		}
 		// [BIN:TPW-EXE:0x7529dc HUD arm table] the red X under the HUD that closes the panel is the arm table's b_retract (id 0x24) at (349,1386)-(429,1466), help 481
-		hud.Add( new UiButton { Id = "messageClose", Model = "b_retract", Help = strings.Help( OriginalLayoutTables.HudArm.Model( "b_retract" ).Help ), Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.HudArm.Model( "b_retract" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
+		hud.Add( new UiButton { Id = "messageClose", Model = "b_retract", Help = strings.Help( OriginalLayoutTables.HudArm.Model( "b_retract" ).Help ), Clicked = CloseArmPanel, Bounds = OriginalLayoutTables.HudArm.Model( "b_retract" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		// The gauge model is the empty dish (one 'thoughts2'-textured quad): the value is drawn over it.
 		// [APPROX:UI-901] the fill is a rising coloured bar in the dish (the original draws the value another way); colour red→yellow→green — evidence needed: capture of the original gauge
@@ -256,8 +259,9 @@ public sealed partial class ParkHud
 		moneyLabel = hud.Add( new UiLabel { Id = "money", Text = () => MoneyText, Font = fonts => fonts.Balance, Color = UiColors.Text, ColorSource = () => CashColor( Status.Money ), Align = UiAlign.Left, Bounds = Rect( 258, 60, 720, 260 ), Anchor = UiAnchor.TopLeft, Help = strings.Help( 465 ) } );
 
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
-		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending; the golden key and ticket counters show only above zero ("1 ×")
-		// [APPROX:UI-051] i_dollar frame 1 for a negative balance and green_up frame 1 for a decrease: the two-frame models' state meaning is read off the art and the video's red down arrow; the keys count is the park's earned tickets / 3 (the player-wide key ledger is not reachable from the HUD) — evidence needed: a capture of the dollar sign with a negative balance
+		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending
+		// [BIN:TPW-EXE:0x004a0c18 HUD balance refresh] 0x4a0ab0 sets i_dollar (control 0x32) to frame 1 for a negative balance and 0 otherwise, beside the balance's absolute value
+		// [APPROX:UI-051] green_up frame 1 while the balance fell in the last seconds; the ticket count is the park's available tickets — evidence needed: the trend arrow's visibility and the in-park ticket spend reaching the player ledger
 		economyElements.Add( hud.Add( new UiModelImage { Id = "dollar", Model = "i_dollar", Frame = () => Status.Money < 0 ? 1 : 0, Bounds = Rect( 37, 58, 242, 262 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.Highlight, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashChange < 0 ? 1 : 0, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
@@ -276,6 +280,7 @@ public sealed partial class ParkHud
 		// [APPROX:UI-042] the panel's sound 0x131 is not played; ParkHud.CameraPanel.cs
 		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), 474, ToggleCameraPanel );
 		BuildCameraPanel();
+		BuildLocatorPanels();
 
 		// [EXT:speed-buttons] the four speed buttons are an OpenTPW addition; the original has only the numpad time keys (0x40c3b0/0x40c3c0/0x40c3d0)
 		// Speed control (OpenTPW buttons): each sets the clock scale of the whole simulation.
@@ -327,6 +332,8 @@ public sealed partial class ParkHud
 				staffTool.Cancel();
 			else if ( level.PatrolTool is { IsActive: true } patrolTool )
 				patrolTool.Cancel();
+			else if ( level.BuyLandTool is { IsActive: true } landTool )
+				landTool.Cancel();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
 			else if ( pendingItem != null || level.BuildEntry != null )
@@ -348,7 +355,7 @@ public sealed partial class ParkHud
 	private ParkObjectState? LiveState( OriginalObject item ) =>
 		Status.EconomySource is ParkEconomy economy && !level.IsReadOnlyVisit && level.GetEconomyInstance( item ) is int instance && economy.TryGetObject( instance, out var state ) ? state : null;
 
-	public string ItemName( BuildItem item ) => item.Entry == null ? strings.Object( item.ObjectNameIndex ) : EntryName( item.Entry );
+	public string ItemName( BuildItem item ) => item.Entry == null ? LandRowName( item ) ?? strings.Object( item.ObjectNameIndex ) : EntryName( item.Entry );
 
 	private string EntryName( ObjectCatalogEntry entry ) => entry.ObjectNameIndex is int index
 		? ObjectNames.Join( Enumerable.Range( index, Math.Max( 1, entry.ObjectNameLength ) ).Select( strings.Object ) )
@@ -372,6 +379,11 @@ public sealed partial class ParkHud
 	/// <summary>Starts placing a catalog item (the click on the ground is handled by <see cref="Level"/>).</summary>
 	public void BeginPlacing( BuildItem item )
 	{
+		if ( IsLandRow( item ) )
+		{
+			BeginLandTool( item );
+			return;
+		}
 		if ( RejectReadOnlyAction() )
 			return;
 		if ( !Status.IsAvailable( item ) )
@@ -392,6 +404,7 @@ public sealed partial class ParkHud
 		level.CellTool.Cancel();
 		level.StaffPlacement?.Cancel();
 		level.PatrolTool?.Cancel();
+		level.BuyLandTool?.Cancel();
 		pendingItem = item;
 		level.BuildEntry = entry;
 		level.IsRemovingObjects = false;
@@ -659,6 +672,7 @@ public sealed partial class ParkHud
 		TrackCashChange( context.Delta );
 		UpdateCameraPanel();
 		UpdateMessageTube( context.Delta );
+		UpdateLocatorPanels();
 		SampleHappiness( context.Delta );
 		var paused = Paused;
 		var overUi = Stack.Covers( context.Canvas, input.Mouse ) || Stack.Screens.Count > 1;
@@ -675,7 +689,7 @@ public sealed partial class ParkHud
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
 			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
 		}
-		// [APPROX:UI-093] the camcorder's message procedure (0x488a00) acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf) and passes every other key on, so the pause key and the park door shortcuts are not offered while the ride view is open (whether the default procedure 0x65f66e forwards them to the HUD is not traced)
+		// [APPROX:UI-093] the camcorder's message procedure (0x488a00) acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf) and passes every other key to 0x65f66e, which calls the window's default handler (+0x118, 0x65f6d1 for ordinary windows, set at 0x65bd42) that has no key case and returns 0, so the pause key and the park door shortcuts are not offered while the ride view is open — evidence needed: whether a key the top window returns 0 for still reaches the HUD's key groups (0x488921)
 		if ( !paused && !IsRiding && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
@@ -762,9 +776,11 @@ public sealed partial class ParkHud
 		if ( !inPark )
 			cursorX = cursorY = -1;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
-		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured.Value ) || UpdatePatrolTool( input, inPark && !mouseCaptured.Value ));
+		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured.Value ) || UpdatePatrolTool( input, inPark && !mouseCaptured.Value )
+			|| UpdateBuyLandTool( input, inPark && !mouseCaptured.Value ));
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
-			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true } );
+			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true }
+			|| level.BuyLandTool is { IsActive: true } );
 		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( context, input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
 		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
 		if ( inPark && !rideOwnsInput && !paused && input.RightPressed && GameOptions.Current.RmbCancel && level.BuildEntry != null && !toolClick )
@@ -774,7 +790,8 @@ public sealed partial class ParkHud
 		}
 		UpdateBlueprint( inPark && !rideOwnsInput );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
-		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
+		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
+			&& level.BuyLandTool is not { IsActive: true } && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
 		if ( input.LeftReleased )
 			toolPress = false;
@@ -857,10 +874,10 @@ public sealed partial class ParkHud
 	private bool UpdateCellTool( UiContext context, UiInput input, bool inPark, bool paused )
 	{
 		var tool = level.CellTool;
-		// [APPROX:PATH-013] PATH-PAUSE: while the pause menu is shown the park takes no tool clicks, as in the original (tp.exe gate 0x48c8d0 reads the pause-menu object 0x7c2534 +0xc; the park click handler 0x4879d0 returns before the tool dispatch); OpenTPW's speed pause keeps the tool live, and the original's pause key P (0x40bf70 calls 0x409350(1), which also opens a window) is not shown to block or pass park clicks (0x4879d0 does not read the pause flag 0x786b84) — still open: whether the original's P pause window takes park clicks (0x47ed80/0x65dd7b input layer)
+		// [APPROX:PATH-013] PATH-PAUSE: while the pause menu is shown the park takes no tool clicks, as in the original (tp.exe gate 0x48c8d0 reads the pause-menu object 0x7c2534 +0xc; the park click handler 0x4879d0 returns before the tool dispatch); OpenTPW's speed pause keeps the tool live; the original's pause key P (0x40bf70 → 0x409350(1)) also toggles a window (0x48a720 → 0x4a27f0 → 0x47ed80): a full-screen layer (0x65dd7b(1, 1, 1, 0, 0, 0x7ff, 0x5ff), the 'lolight' backdrop) under the panel 5094 (174,500)-(1874,900) of table 0x752e00, and the park click handler 0x4879d0 does not read the pause flag 0x786b84 — still open: whether that full-screen layer stops the click route to 0x4879d0 (the routine that calls it at 0x488768 is not a defined procedure)
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
-			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } )
+			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true } )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );
@@ -953,8 +970,15 @@ public sealed partial class ParkHud
 				cells.Add( (cursor.X, cursor.Y, cursor.Result == CoasterPlaceResult.Ok ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
 		}
 		else if ( level.StaffPlacement is { IsActive: true, HoverValid: false, HoverCell: { } staffCell } )
-			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell is the blueprint's red face; the original queues "square dynamic faces" with 0x53c8d0 (face type 1, queued only when [0x763c98] is set, unit-square UVs 0x871ee8; its 10th argument is a per-face flag, not a texture index) — evidence needed: the texture binding of face type 1 and the staff tool's caller among 0x53c8d0's 10 callers
+			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell is the blueprint's red face; the staff tools' per-frame method 0x46c480 (slot +0x18 of the place tool 0x6fea40 and the carry tool 0x6fea70) queues a square dynamic face with 0x53c8d0 at (x - 5, 1.0, z - 5), face type 1 (queued only when [0x763c98] is set; its 10th argument is a per-face flag, not a texture index), when one of the cell tests 0x5363f0, 0x535db0(0x40), 0x536450 holds or none of 0x536390, 0x536310, 0x536320 does; the renderer (0x53da49) takes type 1's material from slot [+0x50] + 16 × type — evidence needed: the texture of that material
 			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
+		else if ( level.BuyLandTool is { IsActive: true } landTool )
+		{
+			// [APPROX:BLUEPRINT-003] the Buy Land ghost is the blueprint's cells along the rectangle's four edges (or the hovered post before the first click), blue while the validator allows the rectangle and red when it refuses it; the original draws a ghost fence model along the edges (0x53aac0 with the tool mode | 0x100) coloured by the refusal 0x816d50
+			var marker = landTool.HoverRefused ? BlueprintMarker.Refused : BlueprintMarker.Allowed;
+			foreach ( var (x, y) in landTool.PreviewEdge() )
+				cells.Add( (x, y, marker) );
+		}
 		else if ( level.PatrolTool is { IsActive: true } patrol )
 		{
 			// Approximation (UI-024, registered at ParkHud.Build): the patrol tool's rectangle is previewed as the blueprint's edge cells between the first corner and the hovered cell; the original's marking is not traced
@@ -1009,7 +1033,7 @@ public sealed partial class ParkHud
 	{
 		foreach ( var element in economyElements )
 			element.Visible = Status.HasEconomy;
-		// the golden ticket and key rows appear only above zero (UI-051)
+		// [BIN:TPW-EXE:0x004a1045 HUD counter rows] the HUD's message 0x1e handler 0x4a0fb0 shows a counter's row (0x34/0x36 keys, 0x35/0x37 tickets) only while its count is not zero
 		foreach ( var id in TicketIds )
 			if ( hud.Find( id ) is { } ticketElement ) ticketElement.Visible = Status.HasEconomy && Status.GoldenTickets > 0;
 		foreach ( var id in KeyIds )

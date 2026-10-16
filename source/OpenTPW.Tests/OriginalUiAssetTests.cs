@@ -146,6 +146,19 @@ public class OriginalUiAssetTests
 	}
 
 	[TestMethod]
+	public void TheResearchFluidHasTheSixtyFourFramesItsAnimationSteps()
+	{
+		// tp.exe 0x4a9fc0 / 0x4a95b0 step the fluid child through frames 0..31 (loop), 32..47 (drain, idle at 48) and 48..63 (fill)
+		var fluid = UiModel.Load( "res_fluid" );
+		Assert.AreEqual( "fluid", fluid.RootNodeName );
+		Assert.AreEqual( ResearchFluid.FrameCount, fluid.Frames.Count );
+		var expected = new[] { "fluid" }.Concat( Enumerable.Range( 2, 31 ).Select( index => $"fluid{index:00}" ) )
+			.Concat( Enumerable.Range( 1, 32 ).Select( index => $"empty{index:00}" ) ).ToArray();
+		CollectionAssert.AreEqual( expected, fluid.Frames.Select( frame => frame.NodeName ).ToArray() );
+		Assert.IsTrue( fluid.Frames[ResearchFluid.IdleFrame].Parts.All( part => part.TextureName == "fluidempty" ), "the idle frame shows the empty fluid only" );
+	}
+
+	[TestMethod]
 	public void ButtonStateFramesAreDrawnOverTheRootMesh()
 	{
 		var buy = UiModel.Load( "b_buy" );
@@ -164,6 +177,19 @@ public class OriginalUiAssetTests
 		var uvs = buy.Frames[0].Parts[0].Vertices.Select( vertex => vertex.TexCoords ).ToArray();
 		Assert.AreEqual( 0, uvs.Min( uv => uv.Y ), 0.01f );
 		Assert.AreEqual( 0.58f, uvs.Max( uv => uv.Y ), 0.01f );
+	}
+
+	/// <summary>The icon models of the per-employee and All Visitors windows have a frame per status and per thought.</summary>
+	[TestMethod]
+	public void TheStatusAndThoughtIconsHaveTheirFrames()
+	{
+		var models = new UiModels();
+		// the root names the per-employee and All Visitors windows draw (tables 0x756f48 and 0x7506c8)
+		foreach ( var name in OriginalLayoutTables.EmployeeWindow.All.Concat( OriginalLayoutTables.VisitorsWindow.All ).Select( node => node.Model ).OfType<string>() )
+			Assert.IsNotNull( models.Get( name ), name );
+		var thoughts = models.Get( "ti_hungry" )!.Frames.Count;
+		var statuses = models.Get( "staffstat" )!.Frames.Count;
+		Assert.AreEqual( (17, 4), (thoughts, statuses), "ti_hungry: one frame per THOUGHTS entry 1-17 (frame = thought - 1); staffstat: frames 0-3 of 0x485ec0" );
 	}
 
 	[TestMethod]

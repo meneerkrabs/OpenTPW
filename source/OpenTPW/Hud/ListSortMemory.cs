@@ -13,8 +13,12 @@ public sealed class ListSortMemory
 	/// <summary>The hire list's sorted column (false: name, true: wage) and direction (0x7523e4).</summary>
 	public bool StaffByWage { get; set; }
 	public bool StaffDescending { get; set; }
-	/// <summary>The All Attractions list's direction per category tab (rides, shops, sideshows, features; 0x750d5c..0x750d68).</summary>
+	/// <summary>The All Attractions window's last category (0x7ca154; rides, shops, sideshows, features as BuildCategory), which a reopening without a category shows.</summary>
+	public int AttractionCategory { get; set; }
+	/// <summary>The All Attractions list's sorted column and direction per category tab (rides, shops, sideshows, features; 0x750d5c..0x750d68).</summary>
+	public int[] AttractionColumn { get; } = new int[4];
 	public bool[] AttractionDescending { get; } = new bool[4];
-	/// <summary>The All Visitors list's direction (0x7508bc).</summary>
+	/// <summary>The All Visitors list's sorted column (0-5) and direction (0x7508bc).</summary>
+	public int VisitorColumn { get; set; }
 	public bool VisitorDescending { get; set; }
 }

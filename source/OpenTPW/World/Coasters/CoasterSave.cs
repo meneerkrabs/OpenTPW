@@ -25,8 +25,9 @@ internal sealed record CoasterNodeSaveData( int X, int Y, float Height, float T,
 /// <param name="BoardingSince">The old model's boarding clock; written as 0 and ignored.</param>
 /// <param name="Flags">The <see cref="CoasterTrainFlags"/> as their raw int; null in a save from before the station rule.</param>
 /// <param name="BoardingCars">The guests seated at the station in each car (they ride when the train leaves); null in an older save.</param>
+/// <param name="ReferenceCar">The car whose coordinate <paramref name="Position"/> is (the middle car, train <c>+0x2c</c>); null in a save from before the car layout, whose position is the front car's.</param>
 internal sealed record CoasterTrainSaveData( float Position, float Speed, int State, double BoardingSince, List<List<int>> Cars,
-	int? Flags = null, int FirstBoardingCar = 0, int LastBoardingCar = 0, List<List<int>>? BoardingCars = null );
+	int? Flags = null, int FirstBoardingCar = 0, int LastBoardingCar = 0, List<List<int>>? BoardingCars = null, int? ReferenceCar = null );
 
 /// <summary>
 /// A saved track: the station end cells, the ordered nodes (the station's three nodes first, then the pylons in build order,
@@ -48,8 +49,9 @@ internal sealed record CoasterTrackSaveData( (int X, int Y)? DepartCell, (int X,
 /// <param name="LastDispatch">The old model's last departure time; written as null and ignored (trains no longer depart on a decision).</param>
 /// <param name="Admission">The guests <c>COAST 1</c> handed over that wait for a train in the station to seat them; null in a save from before the admission ring.</param>
 /// <param name="State">The controller state (1 unfinished, 2 built or out of service, 4 open, 8 closed); null in a save from before it, which held only <paramref name="Closed"/>.</param>
+/// <param name="LeadCarCoordinate">Where train 0's last car stood when the trains were last taken off (<see cref="CoasterRide.LeadCarCoordinate"/>); null in an older save (0).</param>
 internal sealed record CoasterRideSaveData( int AttractionId, CoasterTrackSaveData Track, bool Initialised, bool Closed, int BreakdownState, int SpeedSetting, int SeatsPerTrain, float SpeedCap, long PaidCost, double TimeSeconds, double? LastDispatch, List<CoasterTrainSaveData> Trains, List<int> Leaving,
-	List<int>? Admission = null, int? State = null );
+	List<int>? Admission = null, int? State = null, float? LeadCarCoordinate = null );
 
 /// <summary>The coasters of one saved park (the park-resume envelope's optional coaster part): every live coaster in creation order, which is attraction-id order.</summary>
 internal sealed record CoasterWorldSaveData
@@ -121,11 +123,11 @@ internal static class CoasterSave
 			node.ExactPosition?.X, node.ExactPosition?.Y, node.ExactPosition?.Z,
 			(node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : null, (node.Flags & CoasterNodeFlags.ManualIncline) != 0 ? node.Incline : null ) ).ToList();
 		var trains = ride.Trains.Select( train => new CoasterTrainSaveData( train.Position, train.Speed, CoasterRide.LegacyRunningState, 0, train.Cars.Select( car => car.ToList() ).ToList(),
-			(int)train.Flags, train.FirstBoardingCar, train.LastBoardingCar, train.BoardingCars.Select( car => car.ToList() ).ToList() ) ).ToList();
+			(int)train.Flags, train.FirstBoardingCar, train.LastBoardingCar, train.BoardingCars.Select( car => car.ToList() ).ToList(), ride.Definition.ReferenceCar ) ).ToList();
 		return new CoasterRideSaveData( attractionId,
 			new CoasterTrackSaveData( track.DepartCell, track.ReturnCell, track.IsClosed, track.IsComplete, track.Version, nodes, track.CutAfter ),
 			ride.Initialised, ride.Closed, ride.BreakdownState, ride.SpeedSetting, ride.SeatsPerTrain, ride.SpeedCap, ride.PaidCost, ride.TimeSeconds,
 			null,
-			trains, ride.LeavingRiders.ToList(), ride.AdmissionGuests.ToList(), (int)ride.State );
+			trains, ride.LeavingRiders.ToList(), ride.AdmissionGuests.ToList(), (int)ride.State, ride.LeadCarCoordinate );
 	}
 }

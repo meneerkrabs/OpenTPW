@@ -50,6 +50,13 @@ TABLES = [
     ('EmployeeWindow', 0x756F48, 0x50A, (328, 130, 1720, 901), 0x7572E4, 25),
     ('PlayerScreen', 0x753C68, 0x7A13, (0, 0, 2048, 1536), 0x753F4E, 19),
     ('HudArm', 0x7529DC, 0x21, (331, 1069, 1006, 1495), 0x752C60, 12),
+    ('VisitorsWindow', 0x7506C8, 0x1E496, (186, 30, 2018, 1007), 0x7508B2, 17),
+    ('AttractionsWindow', 0x7508E0, 0x12C4B7, (186, 30, 2018, 1007), 0x750AB6, 12),
+    ('RideShopList', 0x750AB8, 0x190, (266, 318, 1825, 876), 0x750BA0, 10),
+    ('SideshowList', 0x750BA0, 0x190, (261, 318, 1825, 876), 0x750C9A, 11),
+    ('FeatureList', 0x750CA0, 0x190, (266, 318, 1825, 876), 0x750D52, 7),
+    ('LocatorPanels', 0x756950, 0x95C, (474, 1159, 941, 1470), 0x756AD6, 10),
+    ('LocatorStrip', 0x756AD8, 0x146, (448, 964, 1074, 1066), 0x756B96, 5),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
 CONFIRM_TWIN = 0x7585A8
@@ -70,7 +77,14 @@ REQUIRED = {
     'EmployeeWindow': ['window1', 'b_fire', 'b_pick', 'b_okay', 'b_arup', 'b_ardown', 'b_route', 'b_allstaff', 'b_locate'],
     'PlayerScreen': ['b_login', 'b_dellog', 'e_joy', 'tpwlogo'],
     'HudArm': ['b_retract', 'b_buy', 'b_info', 'b_money', 'b_resrch', 'b_map', 'b_camera'],
+    'VisitorsWindow': ['window4', 'list_kids', 'b_okay', 'b_pkinfo', 'b_allstaff', 'b_allthings', 'b_up', 'b_down', 'b_scroller'],
     'LobbyCity': ['citylob', 'b_listpark', 'b_bck2lob', 'b_worldview', 'b_entpark', 'b_lobleft', 'b_lobright'],
+    'AttractionsWindow': ['window4', 'list_all', 'b_sride', 'b_sshow', 'b_sshop', 'b_sfeature', 'b_okay', 'b_pkinfo', 'b_allstaff', 'b_kids'],
+    'RideShopList': ['b_up', 'b_down', 'b_scroller'],
+    'SideshowList': ['b_up', 'b_down', 'b_scroller'],
+    'FeatureList': ['b_up', 'b_down', 'b_scroller'],
+    'LocatorPanels': ['!f_plain', 'b_shandy', 'b_smech', 'b_sresrcher', 'b_senter', 'b_sguard', 'b_skids'],
+    'LocatorStrip': ['!frame', 'staffstat', 'ti_hungry'],
 }
 
 LOADER = 0x4899C0

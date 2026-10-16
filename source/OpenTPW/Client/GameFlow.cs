@@ -323,7 +323,7 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		// Money, calendar, speed and purchases come from the park economy of original levels (Level.Park,
 		// looked up on every access so loading a park save is followed); the generic sandbox has none.
-		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level ) : new NoEconomyStatus();
+		IHudParkStatus status = level.Park != null ? EconomyParkStatus.ForLevel( level, PlayerKeys ) : new NoEconomyStatus();
 		using ( LoadProfile.Measure( "park-hud" ) )
 			Hud = CreateParkHud( level, status );
 		// [EXT:online-visit] read-only visits of shared parks get no advisor (the original has no visits)
@@ -368,6 +368,7 @@ internal sealed partial class GameFlow : IDisposable
 			ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
 			WindowOpened = window => Advisor?.OnWindowOpened( window ),
 			WindowClosed = window => Advisor?.OnWindowClosed( window ),
+			HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
 		} );
 		return createdHud;
 	}
@@ -514,7 +515,9 @@ internal sealed partial class GameFlow : IDisposable
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
-			GameAudio.SetCrowd( GuestsNearCamera( Level ) );
+			// The game timer the steps follow stands still while the park is paused, as the advisor's clock does.
+			var crowdLevel = Level;
+			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ) );
 			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1, Level.StaffWorld?.DrivesStaff == true );
 			if ( Level.StaffWorld != null )
 				GameAudio.PlayStaffVoices( Level.StaffWorld.TakeVoices() );
@@ -710,8 +713,8 @@ internal sealed partial class GameFlow : IDisposable
 			}
 			GlobeCameraMode.RadiusOut = Lobby!.Definition.GlobeRadiusOut;
 			GlobeCameraMode.RadiusIn = Lobby.Definition.GlobeRadiusIn;
-			if ( backdrop == Backdrop.Lobby )
-				GlobeCameraMode.Reset();
+			// Every globe activation faces the start view again, also back from a city lobby (GlobeCameraMode.Reset).
+			GlobeCameraMode.Reset();
 			Camera.SetCameraMode<GlobeCameraMode>();
 		}
 		else
@@ -787,7 +790,7 @@ internal sealed partial class GameFlow : IDisposable
 			cityScene = null;
 			cityKey = key;
 			// [BIN:TPW-EXE:0x005E27B0 city islands] the top-10 completion builds one lobby island per list entry with a running slot counter
-			// [APPROX:ONLINE-016] each park stands as its theme's island (as the own lobby builds its four) — evidence needed: what 0x005E27B0 passes to 0x005E3210 per entry
+			// [BIN:TPW-EXE:0x005E27B0 city islands] each entry calls 0x005E3210 with the name its theme id (+0x4c) has in the server's theme list (0x005BD270), the entry and the running counter: 0x005E3210 reads that theme's island file and its ISLAND line, whose slot the counter replaces when it is not negative (0x005E3363), so each park stands as its theme's island at its list position
 			// A park of an unknown theme leaves its slot empty.
 			var themes = islands.Select( park => Lobby!.Definition.Islands.FirstOrDefault( island => string.Equals( island.Level, park.Level, StringComparison.OrdinalIgnoreCase ) ) ).ToList();
 			try

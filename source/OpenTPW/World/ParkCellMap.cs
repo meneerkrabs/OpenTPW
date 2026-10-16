@@ -55,7 +55,6 @@ public sealed class ParkCellMap
 	/// InitialPath cells linked to every cardinal neighbour; MAP InitialPath path cells carry NoModify (§5.4).
 	/// </summary>
 	// [BIN:STP-PPC:0x10085538 map initialisation] MAP attribute bit 0x08 (InitialPath) makes the cell type 1 with flag 0x20 (NOMODIFY)
-	// [APPROX:PATH-007] PATH-LAND: no cell gets the unowned flag 0x40 (every in-bounds cell counts as owned); the original sets 0x40 on every non-InitialPath cell at level load (tp.exe 0x536490 from 0x52f050), clears it inside the park fence that 0x5323f0 lays from the level's outline table 0x784e3c anchored on the gate (fill 0x531040/0x5311c0 plus a strip at the gate), refuses 0x40 cells for paths (0x535670) and saves the flags as mFlags (0x4d0b30); OpenTPW decodes neither the outline nor the saved flags, and Buy Land (tool 0x39, 0x5327e0) is not modelled — still open: the level outline table 0x784e3c (Scape data) and the saved mFlags are not imported
 	public static ParkCellMap FromOriginal( MapFile map, OriginalParkImport? save )
 	{
 		var cells = new ParkCellMap( map.CellCountX, map.CellCountY );
@@ -77,6 +76,74 @@ public sealed class ParkCellMap
 		return cells;
 	}
 
+	/// <summary>
+	/// The map of an original level with its land: <see cref="FromOriginal(MapFile, OriginalParkImport?)"/>, then the ownership of
+	/// an imported save (its map flags 0x40 and its fence, walked from post A) or, for a new park, the level's own fence
+	/// (<paramref name="land"/>) and the land it encloses. Without <paramref name="land"/> every cell stays owned.
+	/// </summary>
+	public static ParkCellMap FromOriginal( MapFile map, OriginalParkImport? save, ParkLandSetup? land )
+	{
+		var cells = FromOriginal( map, save );
+		if ( land != null )
+			cells.SetUpLand( land, save );
+		return cells;
+	}
+
+	/// <summary>
+	/// Sets up the land of an original level (see <see cref="FromOriginal(MapFile, OriginalParkImport?, ParkLandSetup?)"/>):
+	/// an imported save keeps its own ownership; its fence is walked from its hoarding cells, and without a walkable fence it has
+	/// no land (<see cref="ImportLand"/>). A new park gets the level's fence and its land (<see cref="ParkLand.ApplyToNewPark"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4d0b30 cell base serializer] a save keeps each map cell's mFlags, so its 0x40 cells are the saved park's unowned land, and each hoarding's mHoardingNeighbours, its fence
+	public void SetUpLand( ParkLandSetup setup, OriginalParkImport? save )
+	{
+		ArgumentNullException.ThrowIfNull( setup );
+		if ( save != null && save.Cells.CountX == Width && save.Cells.CountY == Height )
+		{
+			ImportLand( setup, ( x, y ) => (save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.Unowned) != 0,
+				( x, y ) => InBounds( x, y ) && save.Cells[x, y].StructureType == SaveCell.HoardingType ? save.Cells[x, y].HoardingNeighbours : null );
+			return;
+		}
+		ParkLand fence;
+		try
+		{
+			fence = ParkLand.FromClicks( setup );
+		}
+		catch ( InvalidDataException exception )
+		{
+			Log.Warning( $"The level's park fence cannot be laid: {exception.Message} Every cell stays owned." );
+			return;
+		}
+		fence.ApplyToNewPark( this );
+		SetLand( fence );
+	}
+
+	/// <summary>
+	/// The land of an imported save: every cell takes the saved unowned flag (<paramref name="unowned"/>) and the fence is
+	/// walked from post A by the saved hoardings' links (<paramref name="links"/>). When that walk fails the map has no land
+	/// (Buy Land is unavailable) and keeps the saved flags.
+	/// </summary>
+	internal void ImportLand( ParkLandSetup setup, Func<int, int, bool> unowned, Func<int, int, byte?> links )
+	{
+		ArgumentNullException.ThrowIfNull( setup );
+		var imported = ParkLand.FromFenceLinks( setup.PostA, setup.PostB, links );
+		for ( var y = 0; y < Height; y++ )
+		{
+			for ( var x = 0; x < Width; x++ )
+			{
+				var saved = unowned( x, y );
+				var flags = FlagsAt( x, y );
+				if ( saved != flags.HasFlag( ParkCellFlags.Unowned ) )
+					SetFlags( x, y, saved ? flags | ParkCellFlags.Unowned : flags & ~ParkCellFlags.Unowned );
+			}
+		}
+		// The level's starting fence does not stand in: it would not enclose the saved land, so Buy Land would merge new
+		// rectangles into a ring that disagrees with the saved flags.
+		if ( imported == null )
+			Log.Warning( "The imported park's fence does not run from post A to post B; Buy Land is unavailable for this park." );
+		SetLand( imported );
+	}
+
 	private void SetPath( int x, int y, byte cellLinks )
 	{
 		SetType( x, y, ParkCellType.Path );
@@ -87,6 +154,15 @@ public sealed class ParkCellMap
 	public int Height { get; }
 	/// <summary>The track layer (kart and water track tiles, docs/TRACKS.md); empty until a track is laid.</summary>
 	public TrackCellLayer Tracks { get; }
+	/// <summary>The park's fence and enclosed land (Buy Land); null for a map without one, where no cell is made unowned.</summary>
+	public ParkLand? Land { get; private set; }
+
+	/// <summary>Replaces the land model (a purchase, a load); the cells' ownership flags are written separately.</summary>
+	public void SetLand( ParkLand? land )
+	{
+		Land = land;
+		Version++;
+	}
 	/// <summary>Incremented by every write.</summary>
 	public int Version { get; private set; }
 
@@ -181,6 +257,8 @@ public sealed class ParkCellMap
 		// The track layer joins the digest only while a track exists, so every trackless park keeps its earlier pins.
 		if ( Tracks.Count > 0 )
 			Tracks.AddCanonicalState( hash );
+		// The land joins it only on a map that has one (an original level), for the same reason.
+		Land?.AddCanonicalState( hash );
 	}
 
 	/// <summary>

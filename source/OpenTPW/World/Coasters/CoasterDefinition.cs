@@ -28,6 +28,27 @@ public enum CoasterPylonCapabilities : uint
 }
 
 /// <summary>
+/// How a pylon control maps a node value to the fraction of one of its model's clips (pylon <c>+0xd0</c>..<c>+0x11c</c>, four floats per clip:
+/// <c>f…AnimStartCap</c>, <c>f…AnimEndCap</c>, <c>f…AnimMultiplier</c>, <c>f…AnimAdd</c>): value · Multiplier + Add, raised to StartCap, then lowered to EndCap.
+/// </summary>
+// [BIN:TPW-EXE:0x42ff1a clip map defaults] the definition defaults give every one of the five maps of both pylon controls (definition +0x178.. and +0x298.., pylon +0xd0..+0x11c) StartCap 0, EndCap 1, Multiplier 1, Add 0; the loader copies each settings value over its field when nonzero (0x42eeec..0x42f161)
+public readonly record struct CoasterClipMap( float StartCap, float EndCap, float Multiplier, float Add )
+{
+	public static readonly CoasterClipMap Identity = new( 0, 1, 1, 0 );
+
+	/// <summary>The clip fraction of a value (<c>0x430ca0</c>): v·Multiplier + Add (+ <paramref name="centre"/>), below StartCap → StartCap, then above EndCap → EndCap.</summary>
+	public float Fraction( float value, float centre = 0 )
+	{
+		var fraction = value * Multiplier + Add + centre;
+		if ( fraction < StartCap )
+			fraction = StartCap;
+		if ( EndCap < fraction )
+			fraction = EndCap;
+		return fraction;
+	}
+}
+
+/// <summary>
 /// One of the two 288-byte pylon controls of a coaster definition (COAST-plan §3.2): the StdPylon at definition
 /// <c>+168</c> and the LoopPylon at <c>+456</c>. Angles are radians (the settings give degrees), place distances
 /// whole cells; the loader stores both the squared distances and the float distances.
@@ -79,6 +100,16 @@ public sealed class CoasterPylonControl
 	public float LoftEndCap { get; internal set; } = 1;
 	public float LoftMultiplier { get; internal set; } = 1;
 	public float LoftAdd { get; internal set; }
+	/// <summary>The rotate clip's map (+0xe0..+0xec), fed the yaw over 2π.</summary>
+	public CoasterClipMap RotateMap { get; internal set; } = CoasterClipMap.Identity;
+	/// <summary>The incline clip's map (+0xf0..+0xfc), fed the pitch over 2π and centred on 0.5.</summary>
+	public CoasterClipMap InclineMap { get; internal set; } = CoasterClipMap.Identity;
+	/// <summary>The bank clip's map (+0x100..+0x10c), fed the bank over 2π wrapped into [−½, ½) and centred on 0.5.</summary>
+	public CoasterClipMap BankMap { get; internal set; } = CoasterClipMap.Identity;
+	/// <summary>The second rotate (loop tilt) clip's map (+0x110..+0x11c), fed the loop rotate parameter wrapped into [0, 1).</summary>
+	public CoasterClipMap LoopRotateMap { get; internal set; } = CoasterClipMap.Identity;
+	/// <summary>The loft clip's map (+0xd0..+0xdc).</summary>
+	public CoasterClipMap LoftMap => new( LoftStartCap, LoftEndCap, LoftMultiplier, LoftAdd );
 	/// <summary>Whether the pylon model has set the mesh heights, the stack offset and the raised minimum (<see cref="CoasterDefinition.ApplyPylonModel"/>).</summary>
 	public bool HasModelHeights { get; internal set; }
 
@@ -157,6 +188,137 @@ public sealed class CoasterDefinition
 	public float TerrorScreamSustainExcitement { get; private set; } = 20f;
 	/// <summary><c>sTrainType.uiMaxCars</c> (cars per train).</summary>
 	public int MaxCars { get; private set; } = 1;
+	/// <summary>The cars of one train (at least one).</summary>
+	public int CarCount => Math.Max( 1, MaxCars );
+	/// <summary>The car types (<c>asCarTypes</c>) and the front, centre and rear type of a train (<c>sTrainType</c>).</summary>
+	public CoasterCarTypes CarTypes { get; private set; } = new();
+	/// <summary>Whether the car models were read (<see cref="ApplyCarModels"/>); without them every car type has the generic metrics of <see cref="FallbackCarMetrics"/>.</summary>
+	public bool HasCarModels { get; private set; }
+
+	private CoasterCarMetrics[] carMetrics = Array.Empty<CoasterCarMetrics>();
+	private float[] carOffsets = Array.Empty<float>();
+
+	/// <summary>
+	/// The metrics a car type takes without its model (no game data): 3.5 world units in front of and behind its pivot plus the type's distance adds,
+	/// and four head sockets, so a generic train has its cars 7 units apart with four seats each.
+	/// </summary>
+	// [EXT:coaster-car-fallback] the original always has the car models (a type whose model fails to load has zero extents and no seat, which ApplyCarModels keeps); a definition built from settings alone (tests, a headless park without game data) takes these generic metrics instead
+	public static CoasterCarMetrics FallbackCarMetrics( CoasterCarType type ) => new( type.FrontAdd + 3.5f, type.RearAdd + 3.5f, 4 );
+
+	/// <summary>The car type index of car <paramref name="car"/> of a train (<c>0x436d10</c>: car 0 the front type, the last car the rear type, the others the centre type).</summary>
+	public int CarTypeIndex( int car ) => CarTypes.TypeIndexFor( car, CarCount );
+
+	/// <summary>The metrics of a car type index (an index without a type record takes an empty type).</summary>
+	public CoasterCarMetrics CarTypeMetrics( int typeIndex ) => typeIndex >= 0 && typeIndex < carMetrics.Length ? carMetrics[typeIndex] : FallbackOrEmpty( new CoasterCarType( "", 0, 0, 0, false ) );
+
+	/// <summary>The metrics of car <paramref name="car"/> of a train.</summary>
+	public CoasterCarMetrics CarMetrics( int car ) => CarTypeMetrics( CarTypeIndex( car ) );
+
+	private CoasterCarMetrics FallbackOrEmpty( CoasterCarType type ) => HasCarModels ? new CoasterCarMetrics( type.FrontAdd, type.RearAdd, 0 ) : FallbackCarMetrics( type );
+
+	/// <summary>Whether car <paramref name="car"/> carries seats: its type is the train's centre type (<c>0x43bb7b</c>).</summary>
+	public bool IsSeatCar( int car ) => CarTypeIndex( car ) == CarTypes.CentreIndex;
+
+	/// <summary>The cars the seats are split over (<c>0x43ba90</c>): every car, less one when the front type is not the centre type and one when the rear type is not.</summary>
+	// [BIN:TPW-EXE:0x43bb37 seat cars] param_4 = cars − (train definition +0xc ≠ +0x10) − (+0x14 ≠ +0x10): the front and rear type records compared with the centre one
+	public int SeatCarCount => CarCount - (CarTypes.FrontIndex != CarTypes.CentreIndex ? 1 : 0) - (CarTypes.RearIndex != CarTypes.CentreIndex ? 1 : 0);
+
+	/// <summary>The head sockets of one train (definition <c>+0x2f8</c>, the train definition's <c>+8</c>): the sockets of each car's type summed over the cars.</summary>
+	// [BIN:TPW-EXE:0x42fc38 train heads] definition +0x2f8 = Σ over the uiMaxCars cars of the head count (+0x30) of the front type for car 0, the rear type for the last car and the centre type for the others
+	public int HeadsPerTrain
+	{
+		get
+		{
+			var heads = 0;
+			for ( var car = 0; car < MaxCars; car++ )
+				heads += CarMetrics( car ).Heads;
+			return heads;
+		}
+	}
+
+	/// <summary>The head sockets of the whole fleet (definition <c>+0x318</c>): the sockets of one train × <c>uiMaxTrains</c>.</summary>
+	// [BIN:TPW-EXE:0x42fd66 fleet heads] definition +0x318 = +0x2f8 × +0x2e8 (uiMaxTrains)
+	public int FleetHeads => HeadsPerTrain * MaxTrains;
+
+	/// <summary>
+	/// The three distances between neighbouring cars (definition <c>+0x30c</c>, <c>+0x310</c>, <c>+0x314</c>): front type's rear plus the centre type's
+	/// front, the centre type's rear plus its front, and the rear type's front plus the centre type's rear.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42fc20 car pair distances] +0x30c = front.+0x28 + centre.+0x24, +0x310 = centre.+0x28 + centre.+0x24, +0x314 = rear.+0x24 + centre.+0x28 (each pair is measured against the centre type, also in a two-car train)
+	public (float Front, float Centre, float Rear) CarPairDistances
+	{
+		get
+		{
+			var front = CarTypeMetrics( CarTypes.FrontIndex );
+			var centre = CarTypeMetrics( CarTypes.CentreIndex );
+			var rear = CarTypeMetrics( CarTypes.RearIndex );
+			return (front.RearExtent + centre.FrontExtent, centre.RearExtent + centre.FrontExtent, rear.FrontExtent + centre.RearExtent);
+		}
+	}
+
+	/// <summary>The reference car of a train (train <c>+0x2c</c> = (cars − 1) ≫ 1, the middle car): the train's position is this car's.</summary>
+	// [BIN:TPW-EXE:0x43baef reference car] train +0x2c = (train +0xc − 1) >> 1 whenever the car count is set (0x43ba90)
+	public int ReferenceCar => (CarCount - 1) >> 1;
+
+	/// <summary>
+	/// Each car's offset from the reference car along the track in world units (car <c>+0x38</c>, <c>0x43bc20</c>): the cars in front of it add, going
+	/// forward, the pair distance their own index selects (front pair for car 0, rear pair for the last car, else centre), the cars behind it subtract it.
+	/// </summary>
+	public IReadOnlyList<float> CarOffsets => carOffsets;
+
+	// [BIN:TPW-EXE:0x43bc20 car offsets] the reference car's +0x38 = 0; from it toward car 0 the sum grows by +0x1c (car index 0), +0x24 (the last index) or +0x20 of the train definition (definition +0x30c/+0x314/+0x310); behind it the sum falls by the same choice; +0x3c = +0x38 / spacing
+	private void RebuildCarLayout()
+	{
+		var count = CarCount;
+		var (front, centre, rear) = CarPairDistances;
+		float Pair( int car ) => car == 0 ? front : car == count - 1 ? rear : centre;
+		var offsets = new float[count];
+		var reference = ReferenceCar;
+		// The running sum stays on the x87 stack (0x43bc39..0x43bca5, 0x43bcb0..0x43bd09); each car's offset is its single-precision store.
+		var sum = 0.0;
+		for ( var car = reference - 1; car >= 0; car-- )
+		{
+			sum = Pair( car ) + sum;
+			offsets[car] = (float)sum;
+		}
+		sum = 0.0;
+		for ( var car = reference + 1; car < count; car++ )
+		{
+			sum -= Pair( car );
+			offsets[car] = (float)sum;
+		}
+		carOffsets = offsets;
+	}
+
+	/// <summary>The generic metrics for every car type (no model read).</summary>
+	private void SetFallbackCarMetrics()
+	{
+		carMetrics = CarTypes.Types.Select( FallbackCarMetrics ).ToArray();
+		RebuildCarLayout();
+	}
+
+	/// <summary>
+	/// Takes the car types' metrics from their models (<c>0x42fad0</c> → <c>0x430130</c> for the front, centre and rear type): the model extents plus
+	/// the distance adds and the head sockets; a type the archive has no model for keeps zero extents and no seat, as the original's record does.
+	/// </summary>
+	internal void ApplyCarModels( Func<int, CoasterCarRig?> rig )
+	{
+		ArgumentNullException.ThrowIfNull( rig );
+		ApplyCarMetrics( index => rig( index )?.Metrics( CarTypes.Types[index] ) );
+	}
+
+	/// <summary>The core of <see cref="ApplyCarModels"/>: each car type's metrics from its model, null for a type without one.</summary>
+	internal void ApplyCarMetrics( Func<int, CoasterCarMetrics?> metrics )
+	{
+		ArgumentNullException.ThrowIfNull( metrics );
+		var models = Enumerable.Range( 0, CarTypes.Types.Count ).Select( metrics ).ToArray();
+		// An archive that holds none of the car models (a synthetic entry) is a definition without game data: it keeps the generic metrics.
+		if ( models.All( model => model == null ) )
+			return;
+		HasCarModels = true;
+		carMetrics = models.Select( model => model ?? new CoasterCarMetrics( 0, 0, 0 ) ).ToArray();
+		RebuildCarLayout();
+	}
 
 	/// <summary>The StdPylon (definition <c>+168</c>).</summary>
 	public CoasterPylonControl StandardPylon { get; private set; } = DefaultStandardPylon();
@@ -265,6 +427,9 @@ public sealed class CoasterDefinition
 		ArgumentNullException.ThrowIfNull( entry );
 		var definition = FromEntry( entry );
 		using var assets = new CoasterAssets( entry, definition );
+		// [BIN:TPW-EXE:0x42fbde car models] the loader reads the centre car type's model, then the front and the rear type's when they are other types (0x430130 at 0x42fbde, 0x42fbf3, 0x42fc08) before the pair distances and head sums
+		var used = new HashSet<int> { definition.CarTypes.FrontIndex, definition.CarTypes.CentreIndex, definition.CarTypes.RearIndex };
+		definition.ApplyCarModels( index => used.Contains( index ) ? assets.GetCar( index ) : null );
 		foreach ( var loop in new[] { false, true } )
 		{
 			if ( !loop || definition.HasLoopPylon )
@@ -285,8 +450,8 @@ public sealed class CoasterDefinition
 	{
 		Pylon( loop ).Capabilities = rig.Capabilities;
 		// The original applies h0 and h1 as they come (0x4309a4 has no guard on h1 <= h0, and a missing dummy reads the constant 0 at 0x6fde74).
-		// OpenTPW skips a model whose track dummy is missing or does not move with the loft clip (the Gorilla coaster 3180's loop pylon, h0 = h1 =
-		// 9.47, below its own raised minimum 10) and keeps the settings' heights: with h1 <= h0 every node of that pylon would stand at h0.
+		// OpenTPW skips a model whose track dummy is missing or does not move with the loft clip and keeps the settings' heights: with h1 <= h0 every
+		// node of that pylon would stand at h0. No PC pylon model needs it since the clips turn the nodes relatively (0x470d10).
 		if ( rig.TagNode < 0 || rig.TagHigh <= rig.TagLow )
 			return;
 		var pylon = Pylon( loop );
@@ -347,6 +512,8 @@ public sealed class CoasterDefinition
 		definition.TerrorScreamSustainExcitement = Float( Coaster + "fTerrorScreamSustainExcitement", definition.TerrorScreamSustainExcitement );
 		// [DATA:coaster.sam:sTrainType.uiMaxCars]
 		definition.MaxCars = Int( "sTrainType.uiMaxCars", definition.MaxCars );
+		definition.CarTypes = CoasterCarTypes.FromValues( values );
+		definition.SetFallbackCarMetrics();
 
 		var flags = AlwaysFlags;
 		// The always-set 0xA0 already holds 0x20, so the setting is kept on its own (it does not change the end node count, 0x435570).
@@ -405,6 +572,13 @@ public sealed class CoasterDefinition
 		pylon.LoftEndCap = Float( "fLoftAnimEndCap", pylon.LoftEndCap );
 		pylon.LoftMultiplier = Float( "fLoftAnimMultiplier", pylon.LoftMultiplier );
 		pylon.LoftAdd = Float( "fLoftAnimAdd", pylon.LoftAdd );
+		// [BIN:TPW-EXE:0x42ef68 clip map keys] pylon +0xe0..+0xec = fRotateAnim{StartCap,EndCap,Multiplier,Add}, +0xf0..+0xfc fInclineAnim…, +0x100..+0x10c fBankAnim…, +0x110..+0x11c fLoopRotateAnim…, each copied when nonzero; the PC coaster.sam files set fInclineAnimMultiplier (4.5, 3 or −3) and fBankAnimMultiplier (−1 or −4.5)
+		CoasterClipMap Map( string clip, CoasterClipMap current ) => new( Float( $"f{clip}AnimStartCap", current.StartCap ), Float( $"f{clip}AnimEndCap", current.EndCap ),
+			Float( $"f{clip}AnimMultiplier", current.Multiplier ), Float( $"f{clip}AnimAdd", current.Add ) );
+		pylon.RotateMap = Map( "Rotate", pylon.RotateMap );
+		pylon.InclineMap = Map( "Incline", pylon.InclineMap );
+		pylon.BankMap = Map( "Bank", pylon.BankMap );
+		pylon.LoopRotateMap = Map( "LoopRotate", pylon.LoopRotateMap );
 		pylon.StraightDotThreshold = Float( "fPylonStraightDotThreshold", pylon.StraightDotThreshold );
 		pylon.CostPerUnit = Rate( "fCostPerUnit" );
 		pylon.CostPer2DLength = Rate( "fCostPer2DLength" );

@@ -79,6 +79,19 @@ public sealed partial class ParkHud
 	internal static bool WindowShortcutsAllowed( bool parkShortcutsAllowed, string? topScreenName ) =>
 		parkShortcutsAllowed || topScreenName is not null && TogglableWindowNames.Contains( topScreenName );
 
+	/// <summary>
+	/// Whether a pressed shortcut acts: window keys over their own window, the locator chords also over the window whose
+	/// person they locate (the employee window for Ctrl+S, All Visitors for Ctrl+V), every other key on the plain park gate.
+	/// </summary>
+	// [BIN:TPW-EXE:0x481790 locator key] Ctrl+S tests the open employee window [0x7cc3c0] and locates its employee (0x4b3f60), so the key acts while that window is open
+	internal static bool ShortcutAllowed( HudScreenShortcut shortcut, bool parkShortcutsAllowed, string? topScreenName ) => shortcut switch
+	{
+		HudScreenShortcut.LocateNextStaff => parkShortcutsAllowed || topScreenName == "employee",
+		HudScreenShortcut.LocateNextVisitor => parkShortcutsAllowed || topScreenName == "visitors",
+		_ when OpensWindow( shortcut ) => WindowShortcutsAllowed( parkShortcutsAllowed, topScreenName ),
+		_ => parkShortcutsAllowed,
+	};
+
 	/// <summary>The speed steps of the OpenTPW speed control, slowest first.</summary>
 	internal static readonly GameSpeed[] SpeedSteps = { GameSpeed.Paused, GameSpeed.Normal, GameSpeed.Fast, GameSpeed.Fastest };
 
@@ -110,13 +123,14 @@ public sealed partial class ParkHud
 		// The ride view owns the park input: window keys wait until the visitor has left the ride.
 		if ( IsRiding )
 			return;
-		var windowKeysAllowed = WindowShortcutsAllowed( parkShortcutsAllowed, Stack.Top?.Name );
+		// F1 without a modifier in a help window repeats the last tutorial advice (the default window procedure's key 0x70 row)
+		if ( AdvisorUiHelp.RepeatsTutorialOnHelpKey( Stack.Top?.Name ) && Input.Pressed( InputButton.Help ) && Input.ModifierMaskDown == 0 )
+			host?.HelpKeyPressed?.Invoke();
 		foreach ( var shortcut in AllShortcuts )
 		{
 			if ( shortcut == HudScreenShortcut.None || !(shortcut == HudScreenShortcut.ToggleHelpBar ? helpPressed : Pressed( shortcut )) )
 				continue;
-			// Window keys may also close their own window; every other key follows the plain park gate.
-			if ( !(OpensWindow( shortcut ) ? windowKeysAllowed : parkShortcutsAllowed) )
+			if ( !ShortcutAllowed( shortcut, parkShortcutsAllowed, Stack.Top?.Name ) )
 				continue;
 			ApplyShortcut( shortcut );
 		}
@@ -211,10 +225,10 @@ public sealed partial class ParkHud
 				RotateBlueprint( shortcut );
 				break;
 			case HudScreenShortcut.LocateNextStaff:
-				LocateNextStaffRole();
+				OpenStaffLocator();
 				break;
 			case HudScreenShortcut.LocateNextVisitor:
-				LocateVisitor();
+				OpenVisitorLocator();
 				break;
 		}
 	}
@@ -279,23 +293,5 @@ public sealed partial class ParkHud
 			return;
 		for ( var step = 0; step < BlueprintTurnSteps( shortcut ); step++ )
 			level.RotateBuild();
-	}
-
-	// [APPROX:UI-904] the staff locator cycles roles in the staff window's role order; the original Ctrl+S (0x40c590 → 0x481790 → 0x4b3f60) opens the locator panel (role radios 0x95e..0x964) and the per-employee panel's buttons 1293/1295 (help 92 "cycle back", 91 "cycle through") cycle through staff — evidence needed: porting those panels (no further evidence needed)
-	private static readonly StaffType[] LocatorRoles = { StaffType.Handyman, StaffType.Mechanic, StaffType.Entertainer, StaffType.Guard, StaffType.Researcher };
-	private StaffType? lastLocatedRole;
-	private void LocateNextStaffRole()
-	{
-		// Without a previous role the cycle starts at the first (handyman); afterwards it starts after it.
-		var start = lastLocatedRole is { } previous ? Math.Max( 0, Array.IndexOf( LocatorRoles, previous ) ) : -1;
-		for ( var offset = 1; offset <= LocatorRoles.Length; offset++ )
-		{
-			var role = LocatorRoles[(start + offset) % LocatorRoles.Length];
-			if ( CanLocateStaff( role ) && LocateStaff( role ) )
-			{
-				lastLocatedRole = role;
-				return;
-			}
-		}
 	}
 }

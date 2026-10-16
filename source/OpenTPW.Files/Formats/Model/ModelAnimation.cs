@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using Matrix4x4 = System.Numerics.Matrix4x4;
 using Quaternion = System.Numerics.Quaternion;
 using NVector3 = System.Numerics.Vector3;
@@ -30,9 +30,9 @@ public readonly record struct ModelScaleKey( ushort Time, ushort Unknown, NVecto
 /// One 64-byte animation record bound to a base-model node. Position, rotation, scale, the
 /// quantised vertex block (flag 0x1000 without 0x4000), the per-corner texture-coordinate tracks
 /// (flag 0x10000) and the node-flag toggles (flag 0x20000) are decoded; the 12-byte block (flag
-/// 0x4000) is parsed into <see cref="VertexPose"/> (one stored pose per tick, read by the PC sampler 0x471860). The path-parameter
-/// block of flag 0x200 is parsed into <see cref="PathParameters"/> but not played: the path it indexes is not decoded, so
-/// 0x200/0x400 stay in <see cref="UnsupportedFlags"/>. The bits in
+/// 0x4000) is parsed into <see cref="VertexPose"/> (one stored pose per tick, read by the PC sampler 0x471860), and the
+/// path-parameter block of flag 0x200 into <see cref="PathParameters"/>, which moves a node along its parent dummy's
+/// <see cref="ModelPath"/> (<see cref="TrySamplePath"/>). The bits in
 /// <see cref="MetadataFlags"/> are never read by the original's animation code.
 /// Sampling follows the record sampler of the Feral Mac build (SimThemePark 0xa4f68,
 /// docs/reverse/PPC-formats.md, docs/reverse/ANIM-plan.md); negative times are outside the traced clock domain.
@@ -47,8 +47,10 @@ public sealed class ModelAnimationTrack
 	public const uint NodeFlagToggleFlag = 0x20000;
 	/// <summary>Per-corner texture-coordinate tracks at record +44 (sampler tail 0xa56d8 → 0xa83e8).</summary>
 	public const uint UvAnimationFlag = 0x10000;
-	/// <summary>Path parameter (0x200, <see cref="ModelPathParameters"/>) and path orientation (0x400); the path itself is not decoded.</summary>
+	/// <summary>Path parameter (0x200, <see cref="ModelPathParameters"/>) and path orientation (0x400), played by <see cref="TrySamplePath"/>.</summary>
 	public const uint PathFlags = 0x600;
+	public const uint PathParameterFlag = 0x200;
+	public const uint PathOrientationFlag = 0x400;
 	/// <summary>
 	/// Exporter metadata: bits that no animation routine of the Mac build tests (the sampler
 	/// 0xa4f68–0xa56f8, the bind 0xa3e24, the engine relocation and the clip bind 0xa5894; witness
@@ -74,7 +76,7 @@ public sealed class ModelAnimationTrack
 	public ModelVertexPose? VertexPose { get; init; }
 	/// <summary>Per-corner texture-coordinate tracks (record +44, flag 0x10000).</summary>
 	public ModelUvAnimation? UvAnimation { get; init; }
-	/// <summary>Path-parameter block (record +36, flag 0x200); decoded, not played.</summary>
+	/// <summary>Path-parameter block (record +36, flag 0x200); see <see cref="TrySamplePath"/>.</summary>
 	public ModelPathParameters? PathParameters { get; init; }
 	/// <summary>Signed tick entries (record +48, count u16 +22) of a flag-0x20000 record.</summary>
 	public IReadOnlyList<short> NodeFlagToggles { get; init; } = Array.Empty<short>();
@@ -86,11 +88,29 @@ public sealed class ModelAnimationTrack
 	/// </summary>
 	public bool HasUndecodedPayload => (Flags & ~(PositionFlag | RotationFlags | ScaleFlags | MetadataFlags)) != 0;
 	/// <summary>
-	/// Flag bits whose payload this reader does not play: the path parameters (0x600; <see cref="PathParameters"/> is decoded,
-	/// the path it indexes is not). <see cref="MetadataFlags"/> are not counted.
+	/// Flag bits whose payload this reader does not play. Only 0x400 with position keys (flag 0x1) remains: the original then
+	/// turns the node along its position curve, which no corpus record does. <see cref="MetadataFlags"/> are not counted.
 	/// </summary>
-	public uint UnsupportedFlags => Flags & ~(PositionFlag | RotationFlags | ScaleFlags | NodeFlagToggleFlag | UvAnimationFlag | MetadataFlags
-		| VertexAnimationFlag | VertexLayoutFlag);
+	public uint UnsupportedFlags => (Flags & ~(PositionFlag | RotationFlags | ScaleFlags | NodeFlagToggleFlag | UvAnimationFlag | MetadataFlags
+		| VertexAnimationFlag | VertexLayoutFlag | PathFlags)) | ((Flags & (PathOrientationFlag | PositionFlag)) == (PathOrientationFlag | PositionFlag) ? PathOrientationFlag : 0);
+
+	/// <summary>
+	/// The node's place on <paramref name="path"/> at <paramref name="tick"/> (PC sampler 0x471860): false without a
+	/// path-parameter block, with position keys (they take precedence) or outside the block's tick range, where the
+	/// node keeps its translation. <paramref name="direction"/> is the unit direction to face with flag 0x400, else null.
+	/// </summary>
+	public bool TrySamplePath( ModelPath path, float tick, out NVector3 position, out NVector3? direction )
+	{
+		ArgumentNullException.ThrowIfNull( path );
+		position = default;
+		direction = null;
+		if ( PathParameters == null || (Flags & PositionFlag) != 0 || PathParameters.Sample( tick, path.IsClosed ) is not { } percent
+			|| !path.TryEvaluate( percent, out position, out var facing ) )
+			return false;
+		if ( (Flags & PathOrientationFlag) != 0 )
+			direction = facing;
+		return true;
+	}
 	/// <summary>The exporter-metadata bits of this record (<see cref="MetadataFlags"/>).</summary>
 	public uint MetadataBits => Flags & MetadataFlags;
 
@@ -600,9 +620,19 @@ public sealed class ModelAnimationPlayer
 		if ( track == null )
 			return model.Nodes[node].Transform;
 		var (scale, rotation, translation) = rest[node];
+		var sampledRotation = track.SampleRotation( Tick ) ?? rotation;
+		var sampledTranslation = track.SampleTranslation( Tick ) ?? translation;
+		// A flag-0x200 record sets the node on its parent dummy's path; with 0x400 its rows face along it (see TrySamplePath).
+		if ( model.GetPathOf( node ) is { } path && track.TrySamplePath( path, Tick, out var onPath, out var direction ) )
+		{
+			if ( direction is { } along )
+				return ModelPath.Facing( along, (track.Flags & 0x8) != 0 ? NVector3.Transform( NVector3.UnitY, sampledRotation ) : NVector3.UnitY )
+					* Matrix4x4.CreateTranslation( onPath );
+			sampledTranslation = onPath;
+		}
 		return Matrix4x4.CreateScale( track.SampleScale( Tick ) ?? scale )
-			* Matrix4x4.CreateFromQuaternion( track.SampleRotation( Tick ) ?? rotation )
-			* Matrix4x4.CreateTranslation( track.SampleTranslation( Tick ) ?? translation );
+			* Matrix4x4.CreateFromQuaternion( sampledRotation )
+			* Matrix4x4.CreateTranslation( sampledTranslation );
 	}
 
 	/// <summary>Fills model-space matrices for every node at the current tick.</summary>

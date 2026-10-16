@@ -168,7 +168,6 @@ public sealed class CoasterRenderer : Entity
 	{
 		public required CoasterCarRig Rig { get; init; }
 		public required ModelEntity[] Parts { get; init; }
-		public required float Offset { get; init; }
 		public required float YOffset { get; init; }
 		public required int Train { get; init; }
 		public required int Car { get; init; }
@@ -181,7 +180,7 @@ public sealed class CoasterRenderer : Entity
 	/// in the MD2 axes and engine scale the head presentation works in.
 	/// </summary>
 	// [BIN:TPW-EXE:0x430130 car heads] each car type counts the head sockets of its model ("Car type %s can receive %d heads"); the riders of a car take them in order
-	// [APPROX:COAST-034] rider j takes socket j modulo the sockets of its car (the original seats a guest in a random car inside the station window and then the first car with room, 0x43b600, which CoasterRide does; the seat inside the car and the car's world position written to its model, 0x43d6b2, are not traced)
+	// [BIN:TPW-EXE:0x43b70d seat socket] a guest seated in a car (0x43b600) is hung on the car model's socket of its index in the car's seated list (0x44b410 with the type's socket array entry at the list count), and a rider leaving at the arrival is taken off its socket (0x44b4c0, 0x43b480): the lap's riders and the guests seated at the station use the same sockets, one list at a time
 	internal void CollectHeads( List<HeadSource> sources, int? onlyAttraction )
 	{
 		var corner = origin();
@@ -278,7 +277,7 @@ public sealed class CoasterRenderer : Entity
 					BuildChain( knots.Skip( start ).Take( index - start + 1 ).ToArray(), definition.Curviness, closed && start == 0 && last, invalid, cursorIndex == index && cursorIndex > start ? preview?.Valid ?? true : null, matrix );
 				start = index + 1;
 			}
-			BuildPylons( chain, knots, matrix );
+			BuildPylons( chain, knots, track.BuildKnots( Ride.Site, chain, writeBanks: false, applyManual: false ), track.PylonsTurnedBack( chain, knots ), matrix );
 		}
 
 		/// <summary>
@@ -381,7 +380,9 @@ public sealed class CoasterRenderer : Entity
 			}
 		}
 
-		private void BuildPylons( IReadOnlyList<CoasterNode> chain, IReadOnlyList<CoasterKnot> knots, Matrix4x4 matrix )
+		/// <summary>The pylons of a chain, each posed with its node's clip values (<c>0x430ed0</c>): the height parameter, the yaw and pitch of its automatic knot direction or the hand-set ones, its bank and its loop rotate.</summary>
+		// [BIN:TPW-EXE:0x431057 pylon pose values] the knot pass turns the node tangent T+ into the automatic yaw (+0xd4) and pitch with 0x43e590 (yaw = atan2(T.x, T.z), pitch = atan2(−T.y, T.z′) with T turned by −yaw through the sine table) and copies them to +0xe0 and +0xdc unless node flags 1 and 2 hold hand-set values; +0xd8 is 0 unless flag 4 holds a hand-set bank, then the auto-bank (0x43c160) fills it
+		private void BuildPylons( IReadOnlyList<CoasterNode> chain, IReadOnlyList<CoasterKnot> knots, IReadOnlyList<CoasterKnot> automatic, bool[] turnedBack, Matrix4x4 matrix )
 		{
 			var accumulators = new Dictionary<(CoasterPylonRig Rig, int Part), (List<Vertex> Vertices, List<uint> Indices, string[] Textures)>();
 			var definition = Ride.Definition;
@@ -394,9 +395,10 @@ public sealed class CoasterRenderer : Entity
 				var lift = CoasterTrack.PylonHeight( definition.Pylon( node.LoopPylon ), node.T );
 				var knot = knots[index];
 				var baseHeight = knot.Position.Y - definition.TrackHeightAdjust - lift;
-				var yaw = MathF.Atan2( knot.Direction.X, knot.Direction.Z );
+				var (yaw, pitch) = HermiteCoasterCurve.Orientation( automatic[index].Direction );
+				var pose = new CoasterPylonPose( node.T, (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : yaw, (node.Flags & CoasterNodeFlags.ManualIncline) != 0 ? node.Incline : pitch, knot.Roll, node.LoopRotate, turnedBack[index] );
 				var stackedAbove = chain.Any( other => !other.IsPylonless && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
-				var parts = assets.PosePylon( node.LoopPylon, rig, lift, yaw, stackedAbove );
+				var parts = assets.PosePylon( node.LoopPylon, rig, pose, stackedAbove );
 				var shift = new SVector3( node.X * CoasterTrack.CellUnits, node.Y * CoasterTrack.CellUnits, baseHeight );
 				for ( var part = 0; part < parts.Count; part++ )
 				{
@@ -480,21 +482,11 @@ public sealed class CoasterRenderer : Entity
 			for ( var train = 0; train < Ride.Trains.Count; train++ )
 			{
 				var count = Ride.Trains[train].Cars.Count;
-				var rigs = new CoasterCarRig?[count];
-				var extents = new (float Front, float Rear)[count];
 				for ( var car = 0; car < count; car++ )
 				{
 					var typeIndex = types.TypeIndexFor( car, count );
-					rigs[car] = assets.GetCar( typeIndex );
-					var type = typeIndex >= 0 && typeIndex < types.Types.Count ? types.Types[typeIndex] : new CoasterCarType( "", 0, 0, 0, false );
-					extents[car] = ((rigs[car]?.FrontExtent ?? 0) + type.FrontAdd, (rigs[car]?.RearExtent ?? 0) + type.RearAdd);
-				}
-				var offsets = CoasterCarRig.CarOffsets( extents );
-				for ( var car = 0; car < count; car++ )
-				{
-					if ( rigs[car] is not { } rig )
+					if ( assets.GetCar( typeIndex ) is not { } rig )
 						continue;
-					var typeIndex = types.TypeIndexFor( car, count );
 					var carModels = assets.GetCarModels( rig );
 					var parts = new ModelEntity[carModels.Length];
 					for ( var part = 0; part < parts.Length; part++ )
@@ -502,7 +494,7 @@ public sealed class CoasterRenderer : Entity
 						parts[part] = new ModelEntity { Model = carModels[part], Name = "coaster car" };
 						carTriangles += rig.Parts[part].Indices.Length / 3;
 					}
-					cars.Add( new CarInstance { Rig = rig, Parts = parts, Offset = offsets[car], YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
+					cars.Add( new CarInstance { Rig = rig, Parts = parts, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
 				}
 			}
 		}
@@ -519,8 +511,8 @@ public sealed class CoasterRenderer : Entity
 				var car = cars[index];
 				if ( car.Train >= Ride.Trains.Count )
 					continue;
-				var coordinate = Ride.Trains[car.Train].Position - car.Offset / Ride.Spacing;
-				var pose = CoasterCarRig.PoseAt( Ride.Samples, coordinate );
+				var coordinate = Ride.CarCoordinate( Ride.Trains[car.Train], car.Car );
+				var pose = Ride.CarPose( coordinate );
 				car.World = CoasterCarRig.Matrix( pose, car.YOffset );
 				var transform = ObjectPlacement.SwapAxes( car.World ) * engine;
 				var position = new SVector3( transform.M41, transform.M42, transform.M43 );
@@ -559,11 +551,14 @@ public sealed class CoasterRenderer : Entity
 			{
 				if ( car.Train >= Ride.Trains.Count || car.Rig.Seats.Count == 0 || car.Car >= Ride.Trains[car.Train].Cars.Count )
 					continue;
-				var riders = Ride.Trains[car.Train].Cars[car.Car];
-				for ( var rider = 0; rider < riders.Count; rider++ )
+				foreach ( var riders in new[] { Ride.Trains[car.Train].Cars[car.Car], Ride.Trains[car.Train].BoardingCars[car.Car] } )
 				{
-					var (node, local) = car.Rig.Seats[rider % car.Rig.Seats.Count];
-					sources.Add( new HeadSource( riders[rider], attraction, local * car.World * shift, car.Rig.Model.Nodes[node].Type ) );
+					// A rider past the car's sockets (a car seated by a capacity above its own sockets, which COAST 6 does not allow) has no socket to hang from.
+					for ( var rider = 0; rider < riders.Count && rider < car.Rig.Seats.Count; rider++ )
+					{
+						var (node, local) = car.Rig.Seats[rider];
+						sources.Add( new HeadSource( riders[rider], attraction, local * car.World * shift, car.Rig.Model.Nodes[node].Type ) );
+					}
 				}
 			}
 		}

@@ -465,6 +465,35 @@ public class OriginalSaveImportTests
 	}
 
 	[TestMethod]
+	public void ImportsTheSavedCurrentRecordAsTheLastTutorialAdvice()
+	{
+		SaveAdvisorController Saved( SaveTestPayloads.AdvisorRecordFields current )
+		{
+			var things = SaveTestPayloads.ParkThings();
+			things[9] = (3, (uint)SaveThingModel.AdvisorController, SaveTestPayloads.AdvisorController( Array.Empty<SaveTestPayloads.AdvisorRecordFields>(), new Dictionary<int, (uint, int, byte, uint)>(), current ));
+			var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
+			var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( map ), SaveTestPayloads.Things( things ) ) );
+			return SaveAdvisorController.Read( payload, SaveWorld.Parse( payload, SavePayloadLayout.Parse( payload ), 3, 3 ).Single( SaveThingModel.AdvisorController ) );
+		}
+		AdvisorController Fresh() => new( AdvisorBalance.Parse( Encoding.ASCII.GetBytes( AdvisorSettings ), "test.sam" ) );
+
+		var controller = Fresh();
+		var report = controller.ImportOriginal( Saved( new SaveTestPayloads.AdvisorRecordFields( 0, 0, 188, 1000, 1, 0, 1, 1 ) ) );
+		Assert.AreEqual( new AdvisorPendingAdvice( 188, 1000, 0, true ), controller.Queue.LastTutorial, "the record at +0x16D0 keeps its score, response number and override" );
+		StringAssert.Contains( report, "last tutorial advice message 188 kept" );
+
+		controller = Fresh();
+		controller.Advise( 189, 0, 0, true );
+		controller.ImportOriginal( Saved( new SaveTestPayloads.AdvisorRecordFields( 0, 0, 346, 1000, 0, -1, 0, 0 ) ) );
+		Assert.IsNull( controller.Queue.LastTutorial, "a free record imports none and replaces the session's own" );
+
+		controller = Fresh();
+		report = controller.ImportOriginal( Saved( new SaveTestPayloads.AdvisorRecordFields( 0, 0, 128, 20, 1, -1, 0, 0 ) ) );
+		Assert.IsNull( controller.Queue.LastTutorial );
+		StringAssert.Contains( report, "last tutorial advice message 128 dropped (unbound or not a tutorial)" );
+	}
+
+	[TestMethod]
 	public void OriginalJungleEasymodeImportKeepsTheInstantActionStartRunning()
 	{
 		var dataPath = OriginalParkImportTests.OriginalDataPath();

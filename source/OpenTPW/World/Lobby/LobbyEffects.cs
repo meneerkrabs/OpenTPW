@@ -211,7 +211,7 @@ public sealed class LobbyEffects
 	// [BIN:STP-PPC:0x1008FAA0 lobby sky] the current colour eases 1/16 toward the target each frame and fills the engine sky's whole colour ramp
 	// [BIN:TPW-EXE:0x5d96c0 lobby sky ease] while current != target: R += (B target − R) sar 4 (0x5d96fc-0x5d9709), G += (G target − G) sar 4, B += (B target − B) sar 4; the 256 grid entries at 0x8c2788 get 0xFF:R:G:B from the integer parts, else the fog colour [0x8bd47c]; the islands update copies the nearest island's SKYCOLOUR (+0x64..+0x6c) to the targets (0x5e11b2)
 	// [DATA:video 0:40-1:10, 78:30-78:40] the lobby's cloud layer is tinted per island (light grey for Lost Kingdom, pink for Wonderland, dark for Halloween World and Space Zone), which the red-toward-blue colour gives, over a cyan clear colour
-	// [APPROX:UI-018] the eased colour applies only while two settings pass (0x5d96c0: [0x785888] > 1 and the first word of the options object 0x78d8d8 == 1, else the grid keeps the fog colour); their runtime values are not read, the capture's tinted clouds show them passing
+	// [APPROX:UI-018] the eased colour applies only while two settings pass (0x5d96c0: [0x785888] > 1 and the first word of the options object 0x78d8d8 == 1, else the grid keeps the fog colour); [0x785888] lives in the .bss settings block 0x785840-0x785920 filled at runtime (readers 0x44d8f1-0x44dc51) and is not read statically; the capture's tinted clouds show both passing. An island without SKYCOLOUR keeps the random target its constructor drew (0x5dfb4a-0x5dfb7b: three rand() & 0xFF << 16 into +0x64..+0x6c); OpenTPW uses black
 	private void EaseSky( (byte R, byte G, byte B) target )
 	{
 		(targetR, targetG, targetB) = (target.R << 16, target.G << 16, target.B << 16);

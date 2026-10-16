@@ -89,7 +89,7 @@ public sealed class LobbyScene : OriginalModelScene
 	/// its own seeded from the clock (the original's stream is shared with the rest of the game, so its values cannot be
 	/// reproduced). Presentation only.
 	/// </summary>
-	// [APPROX:UI-018] the island clips are picked with rand() & 1 (0x5e11ea, CRT rand 0x67b5c0), whose process-wide stream is replaced by a local clock-seeded stand-in; no world or guest stream is used
+	// [APPROX:UI-018] the island clips are picked with rand() & 1 (0x5e11ea, CRT rand 0x67b5c0), whose process-wide stream is replaced by a local clock-seeded stand-in; the original also spends three rand() calls per island in its constructor (0x5dfb4a-0x5dfb7b, the default sky target), which the stand-in does not mirror; no world or guest stream is used
 	private uint crtRand = (uint)Environment.TickCount;
 	private int Rand()
 	{

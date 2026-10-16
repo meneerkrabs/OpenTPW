@@ -752,6 +752,7 @@ internal sealed partial class GameFlow : IDisposable
 			return;
 		if ( backdrop == Backdrop.Globe )
 		{
+			// [APPROX:UI-018] while the globe is up the lobby scene is not stepped, so its flyers and island clips hold still; whether the original's flying-mesh system and islands keep running behind the globe is not traced
 			lobbyEffects.StepGlobe( Time.Delta );
 			return;
 		}
@@ -827,10 +828,11 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		else
 		{
-			// The lobby's backdrop: the screen is cleared to the lobby's fog colour (LobbyEffects.ClearColour) behind the 3D scene.
-			// [APPROX:UI-018] the cloud layer is not drawn: the engine sky (0x8c1828) loads <level>\sky\sky.tga for the lobby (0x5852b0 from 0x5d8b50, "Data\Levels\fantasy") and its draw (0x585ee0-0x586a00) colours it from the 16×16 grid at +0xf60 that LobbyEffects.Sky fills; that draw and the scene's fog (50 to 300) are not traced
+			// The lobby's backdrop. The original clears the screen to the lobby's fog colour (LobbyEffects.ClearColour) and tints only its
+			// cloud layer with the island's eased colour (LobbyEffects.Sky); until that layer is drawn, the backdrop shows the cloud colour flat.
+			// [APPROX:UI-018] stand-in for the cloud layer: the whole backdrop is painted with the cloud grid's colour (LobbyEffects.Sky) instead of the fog colour under tinted clouds; the engine sky (0x8c1828) loads <level>\sky\sky.tga for the lobby (0x5852b0 from 0x5d8b50, "Data\Levels\fantasy") and its draw (0x585ee0-0x586a00) colours it from the 16×16 grid at +0xf60 that LobbyEffects.Sky fills; that draw and the scene's fog (50 to 300) are not traced
 			backgroundBatch.Clear();
-			var sky = LobbyEffects.ClearColour;
+			var sky = lobbyEffects.Sky;
 			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), new RgbaByte( sky.R, sky.G, sky.B, 255 ) );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			foreach ( var entity in Entity.All.ToArray() )

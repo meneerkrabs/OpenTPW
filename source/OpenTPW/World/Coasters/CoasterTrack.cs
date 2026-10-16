@@ -1236,7 +1236,7 @@ public sealed class CoasterTrack
 				var table = stackTables[index] && rig.StackTable is { } stack ? stack : rig.SingleTable;
 				var matrices = rig.TagMatrices( pose, stackTables[index] );
 				var origin = NodeBase( site, node, positions[index] );
-				var roll = banks[index];
+				var roll = 0f;
 				var start = knots.Count;
 				for ( var k = 0; k < matrices.Length; k++ )
 				{
@@ -1247,12 +1247,13 @@ public sealed class CoasterTrack
 					var forwardRow = new SVector3( tag.M31, tag.M32, tag.M33 );
 					// [BIN:TPW-EXE:0x4321c0 knot direction] a knot of a posed pylon runs along its tag's forward row (+0x20..+0x28) normalised; a knot without a model along the node tangent (knot +0x28 = node +0x34) normalised, or (0, ∓1, 0) on a loop node
 					var direction = forwardRow.LengthSquared() > 0 ? SVector3.Normalize( forwardRow ) : SVector3.UnitZ;
+					// [BIN:TPW-EXE:0x430ed0 second rail] a posed knot's second rail point is its position + (0, 1, 0), or on a loop node (flag 0x40) + 2.0 × the tag's up row (+0x10..+0x18, the matrix after the half turn of a turned-back pylon)
+					var second = (node.Flags & CoasterNodeFlags.Loop) == 0 ? position + SVector3.UnitY : position + new SVector3( tag.M21, tag.M22, tag.M23 ) * 2f;
 					if ( (node.Flags & CoasterNodeFlags.Loop) == 0 )
 						roll = TagRoll( tag, yaw );
-					knots.Add( new CoasterKnot( position, direction, banks[index], index, node.LoopPylon, factor, nextIsLoop, reversed, previousIsLoop ) );
+					knots.Add( new CoasterKnot( position, direction, banks[index], index, node.LoopPylon, factor, nextIsLoop, reversed, previousIsLoop, SecondRail: second ) );
 				}
-				// [BIN:TPW-EXE:0x43106a tag roll] the node's roll (+0xe4), written by every knot of a node without flag 0x40 (the last tag's value stays): the tag's up row (+0x10) and forward row (+0x20) turned by −yaw (+0xe0, 0x431570), the pitch of the forward row (0x46f210), the up row turned by −pitch about X (0x4314f0) and its roll atan2(−x, y) (0x46f230)
-				// [APPROX:COAST-017] the knots keep the node's bank as their roll (the samples and slices interpolate it), where the original's sample roll is the second rail's and its slice roll adds the lerp of the tag rolls (0x440c10, 0x43e6b0)
+				// [BIN:TPW-EXE:0x43106a tag roll] the node's roll (+0xe4), written by every knot of a node without flag 0x40 (the last tag's value stays; a loop node's stays 0, as does a model-less node's: nothing else writes it and the node comes zeroed from 0x434060): the tag's up row (+0x10) and forward row (+0x20) turned by −yaw (+0xe0, 0x431570), the pitch of the forward row (0x46f210), the up row turned by −pitch about X (0x4314f0) and its roll atan2(−x, y) (0x46f230)
 				for ( var k = start; k < knots.Count; k++ )
 					knots[k] = knots[k] with { TagRoll = roll };
 				knotCount[index] = knots.Count - start;
@@ -1264,7 +1265,11 @@ public sealed class CoasterTrack
 				: tangent.LengthSquared() > 0 ? SVector3.Normalize( tangent ) : SVector3.UnitZ;
 			if ( applyManual && !node.IsPylonless && (node.Flags & CoasterNodeFlags.Cursor) == 0 )
 				plainDirection = ApplyManualPose( node, plainDirection );
-			knots.Add( new CoasterKnot( positions[index], plainDirection, banks[index], index, node.LoopPylon, factor, nextIsLoop, reversed, previousIsLoop, banks[index] ) );
+			// [BIN:TPW-EXE:0x430ed0 plain second rail] a knot without a posed model has its second rail point at its position + (0, 1, 0), or on a loop node (flag 0x40) at + (−sin a, 0, −cos a) with a the node's yaw (+0xe0, hand-set or automatic): the vector (0, 0, −1) turned about Y by 0x4314b0 with the PC table's cos and sin of a; its node roll (+0xe4) stays 0
+			var secondRail = positions[index] + SVector3.UnitY;
+			if ( (node.Flags & CoasterNodeFlags.Loop) != 0 )
+				secondRail = positions[index] + new SVector3( -CoasterTrig.PcSin( yaw ), 0, -CoasterTrig.PcCos( yaw ) );
+			knots.Add( new CoasterKnot( positions[index], plainDirection, banks[index], index, node.LoopPylon, factor, nextIsLoop, reversed, previousIsLoop, 0f, secondRail ) );
 			knotCount[index] = 1;
 			centre[index] = first[index];
 		}
@@ -1321,7 +1326,7 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>A vector turned about Y with the PC table (<c>0x431570</c>): x′ = x cos a + sin a·z, z′ = cos a·z − sin a·x.</summary>
-	private static SVector3 TurnY( SVector3 v, float angle )
+	internal static SVector3 TurnY( SVector3 v, float angle )
 	{
 		var s = CoasterTrig.PcSin( angle );
 		var c = CoasterTrig.PcCos( angle );
@@ -1329,7 +1334,7 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>A vector turned about X with the PC table (<c>0x4314f0</c>): y′ = y cos a − sin a·z, z′ = sin a·y + cos a·z.</summary>
-	private static SVector3 TurnX( SVector3 v, float angle )
+	internal static SVector3 TurnX( SVector3 v, float angle )
 	{
 		var s = CoasterTrig.PcSin( angle );
 		var c = CoasterTrig.PcCos( angle );

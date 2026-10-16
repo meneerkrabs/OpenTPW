@@ -111,6 +111,8 @@ public sealed class CoasterRide
 	private CoasterSample[] samples = Array.Empty<CoasterSample>();
 	private IReadOnlyList<CoasterKnot> curveKnots = Array.Empty<CoasterKnot>();
 	private (System.Numerics.Vector3 Back, System.Numerics.Vector3 Forward)[] curveControls = Array.Empty<(System.Numerics.Vector3, System.Numerics.Vector3)>();
+	private CoasterKnot[] curveSecondRail = Array.Empty<CoasterKnot>();
+	private (System.Numerics.Vector3 Back, System.Numerics.Vector3 Forward)[] curveSecondControls = Array.Empty<(System.Numerics.Vector3, System.Numerics.Vector3)>();
 	private HashSet<int> winchSections = new();
 	// The hop queue of MoveTrains, kept between ticks so a tick allocates nothing.
 	private float[] hopBudgets = Array.Empty<float>();
@@ -237,8 +239,8 @@ public sealed class CoasterRide
 
 	/// <summary>
 	/// A car's pose at a coordinate on the sample list (<c>0x43c0a0</c>): the knot pair whose knot coordinates enclose it, starting from the pair of the
-	/// sample below it, and the curve itself at t = (c − c₀)/(c₁ − c₀) on that pair, with the yaw and pitch of the curve's derivative and the knot roll
-	/// interpolated by t (the sample pose when the curve has not been fitted).
+	/// sample below it, and the curve itself at t = (c − c₀)/(c₁ − c₀) on that pair, with the yaw and pitch of the curve's derivative and the slice roll
+	/// (the second rail's roll about the tangent plus the tag roll lerp; the sample pose when the curve has not been fitted).
 	/// </summary>
 	// [BIN:TPW-EXE:0x43c121 car curve point] the car stands on the slice frame 0x43e6b0 of the pair (A, B) with A the knot of sample[ftol(c)] (sample +0x2c) and B its next knot (+0x18), advanced while B's coordinate (+8) is below c, at t = (c − A +8)/(B +8 − A +8): the cubic Bézier point and its tangent's yaw and pitch, not the lerp of two samples
 	// [EXT:coaster-closing-pair-car] the closing pair's next knot is the second knot, whose coordinate is taken as one lap on (its own plus the sample count) so the car's parameter runs on; the original's walk compares the second knot's own coordinate
@@ -261,9 +263,12 @@ public sealed class CoasterRide
 		var t = span > 0 ? Math.Clamp( (c - coordinates[a]) / span, 0f, 1f ) : 0f;
 		var position = HermiteCoasterCurve.Bezier( curveKnots[a].Position, curveControls[a].Forward, curveControls[b].Back, curveKnots[b].Position, t );
 		var tangent = HermiteCoasterCurve.Derivative( curveKnots[a].Position, curveControls[a].Forward, curveControls[b].Back, curveKnots[b].Position, t );
-		var (yaw, pitch) = tangent.LengthSquared() > 0 ? HermiteCoasterCurve.Orientation( tangent ) : (0f, 0f);
-		// [APPROX:COAST-017] the car's roll is the knots' rolls interpolated by t, as the samples', where the original takes the slice roll of 0x43e6b0
-		var roll = curveKnots[a].Roll + (curveKnots[b].Roll - curveKnots[a].Roll) * t;
+		// [BIN:TPW-EXE:0x43e6b0 car frame] the frame's yaw and pitch are 0x43e590's of the derivative (the PC table, nearest index) and its roll the slice roll: the second rail's roll plus the tag roll lerp, or the swing's sample rolls on a suspended coaster
+		var (yaw, pitch) = tangent.LengthSquared() > 0 ? CoasterTrack.PcOrientation( tangent ) : (0f, 0f);
+		var second = HermiteCoasterCurve.Bezier( curveSecondRail[a].Position, curveSecondControls[a].Forward, curveSecondControls[b].Back, curveSecondRail[b].Position, t );
+		var roll = Definition.IsSuspended
+			? HermiteCoasterCurve.FrameRoll( position, second, yaw, pitch, curveKnots[a], curveKnots[b], t, samples, coordinates[a], coordinates[b] )
+			: HermiteCoasterCurve.FrameRoll( position, second, yaw, pitch, curveKnots[a], curveKnots[b], t );
 		return new CoasterCarPose( position, yaw, pitch, roll );
 	}
 
@@ -306,6 +311,8 @@ public sealed class CoasterRide
 		var knots = pass.Knots;
 		curveKnots = knots;
 		curveControls = HermiteCoasterCurve.Controls( knots, Definition.Curviness, closed: true );
+		curveSecondRail = HermiteCoasterCurve.SecondRail( knots );
+		curveSecondControls = HermiteCoasterCurve.Controls( curveSecondRail, Definition.Curviness, closed: true );
 		var sampling = Curve.Sample( knots, Definition.Curviness );
 		samples = sampling.Samples;
 		Spacing = sampling.Spacing;

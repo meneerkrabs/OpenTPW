@@ -523,6 +523,10 @@ which were searched):
   still undecided ("snow or rain") because the apply-time draw has not happened, and the lightning
   band composes "thunderstorms". The apply message names the resolved weather ("The weather has
   changed: snow.").
+* The lines are worded in the selected game language, like OpenTPW's other own labels
+  (`SupplementaryStrings`, the six shipped languages; English for any other): in Dutch the countdown
+  reads "Weerbericht: morgen regen.". The countdown is worded again on every step, so a language
+  switch shows at once; a transient line keeps the language it was made in for its six seconds.
 
 Seeing it: enter any park whose economy runs (an original level; the sandbox has no weather). The
 weather follows the season's roll, so rain needs the roll to land in the rain or snow band — resume

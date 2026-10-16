@@ -567,11 +567,15 @@ matrix builder 0x6710C0, block decoder 0x6747D0, transform passes 0x67673C/0x676
   `clamp(brightness · (2n − base) / 100, 0, 255)` with bases 177 (red), 133 (green) and 225 (blue). The brightness is
   the library's default 100 (the open writes it at 0x6701A2 unless its flags carry 0x100000). Neutral grey 64 becomes
   (115, 113, 115) and the brightest neutral (241, 239, 241): the original never shows full white. No field leaves its
-  table over the 1,060,167,680 pixels of the nine movies (an underflowing field would read the next table in the
-  original). The values are the colour before the player packs it into the display surface (16-bit on the PC).
+  table over the 1,060,167,680 pixels of the nine movies. A field that wraps below zero (a dark pixel with extreme
+  chroma, such as Y 0 with Cr 0) would read the next table in the original, landing in another channel's bits of the
+  display format; OpenTPW draws that channel as 0. The values are the colour before the player packs it into the display surface (16-bit on the PC).
 
 **Verification.** The x86 oracle (docs/reverse/ORACLE.md, **X26**) runs the matrix builder for every quantiser and the
-first transform pass on 500 coefficient rows: both agree with the C# readings. Whole frames were compared too, outside
+first transform pass on 500 coefficient rows, both against Python readings of the C# rules: the matrix agrees for every
+quantiser and the pass on every row; rows whose odd-part products end within 0.1 of a half are left out, because the
+emulator's x87 does not round those as hardware does, so the half-way rounding itself rests on the IEEE semantics of
+the `fadd`/`fstp` pair, not on the oracle. Whole frames were compared too, outside
 the test suite: the original block decoder and writer (0x67519D with 0x6747D0) run per macroblock in the oracle's
 sandbox over 51 frames sampled from all nine movies (every 97th frame) matched `TqiDecoder` in every one of 8.6 million
 samples but one. That one is a half-way odd-part rounding: Unicorn's x87 rounds values whose fraction lies between

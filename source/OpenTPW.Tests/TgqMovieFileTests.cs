@@ -390,6 +390,8 @@ public class TgqMovieFileTests
 	[DataRow( (byte)127, (byte)64, (byte)64, (byte)241, (byte)239, (byte)241 )]
 	[DataRow( (byte)64, (byte)64, (byte)127, (byte)255, (byte)25, (byte)115 )]
 	[DataRow( (byte)64, (byte)0, (byte)64, (byte)115, (byte)157, (byte)0 )]
+	// The red field wraps below zero (145 − 64 − 88): past its table, a channel no shipped pixel reaches, drawn as 0.
+	[DataRow( (byte)0, (byte)64, (byte)0, (byte)0, (byte)75, (byte)0 )]
 	public void ColourTablesFollowTheOriginalPlayer( byte y, byte cb, byte cr, byte red, byte green, byte blue )
 	{
 		// Worked from tp.exe 0x670350: fields 145 + Y' + r, 123 + Y' + g, 169 + Y' + b (Y' = y − 64), each channel 2n − 177, 2n − 133, 2n − 225.

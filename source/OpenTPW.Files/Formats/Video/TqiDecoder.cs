@@ -92,14 +92,23 @@ public static class TqiColour
 
 	private static uint Truncate( double value ) => (uint)(int)value & 0x1FF;
 
+	/// <summary>Entries of the red, green and blue channel tables (0xFBA730, 0xFBABF8, 0xFBB010, laid out one after another).</summary>
+	private const int RedEntries = 306, GreenEntries = 262, BlueEntries = 354;
+
 	/// <summary>One pixel: 7-bit Y, Cb and Cr samples (0–127) to 8-bit red, green and blue.</summary>
+	/// <remarks>
+	/// A field that falls below zero wraps to a large index past its table (dark pixels with extreme chroma, such as Y 0 and Cr 0);
+	/// the original then reads the next table, whose value lands in another channel's bits of the display format. No pixel of the
+	/// nine shipped movies does that; OpenTPW draws such a channel as 0.
+	/// </remarks>
 	public static (byte Red, byte Green, byte Blue) Convert( byte y, byte cb, byte cr )
 	{
 		var sum = unchecked(LumaTerms[y] + BlueTerms[cb] + RedTerms[cr]);
-		return (Channel( sum >> 23, -177 ), Channel( (sum >> 11) & 0x1FF, -133 ), Channel( sum & 0x1FF, -225 ));
+		return (Channel( sum >> 23, -177, RedEntries ), Channel( (sum >> 11) & 0x1FF, -133, GreenEntries ), Channel( sum & 0x1FF, -225, BlueEntries ));
 	}
 
-	private static byte Channel( uint field, int start ) => (byte)Math.Clamp( Brightness * (start + 2 * (int)field) / 100, 0, 255 );
+	private static byte Channel( uint field, int start, int entries ) =>
+		field >= entries ? (byte)0 : (byte)Math.Clamp( Brightness * (start + 2 * (int)field) / 100, 0, 255 );
 }
 
 /// <summary>

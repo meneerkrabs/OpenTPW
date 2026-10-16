@@ -282,7 +282,7 @@ public sealed class CoasterRenderer : Entity
 			bool closed;
 			if ( Ride.IsOperational )
 				(chain, closed) = (track.Nodes, true);
-			else if ( track.BuildPreviewChain( preview is { } cursor ? (cursor.X, cursor.Y) : null, preview?.Height ?? 0, preview?.Loop ?? false ) is { } open )
+			else if ( track.BuildPreviewChain( preview is { } cursor ? (cursor.X, cursor.Y) : null, preview?.Height ?? 0, preview?.Loop ?? false, preview?.FirstOfPair ?? false ) is { } open )
 				(chain, closed) = (open.Chain, open.Closed);
 			else
 				return;

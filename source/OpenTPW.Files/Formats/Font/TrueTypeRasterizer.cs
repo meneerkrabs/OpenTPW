@@ -31,7 +31,7 @@ public sealed record CoverageBitmap( int Width, int Height, int OriginX, int Ori
 /// </summary>
 public static class TrueTypeRasterizer
 {
-	// [APPROX:COMPAT-009] 16 sub-scanlines, unhinted linear coverage instead of GDI ANTIALIASED_QUALITY — evidence needed: captures of original sign text.
+	// [EXT:sign-text-antialias] 16 sub-scanlines of unhinted linear coverage are an OpenTPW design choice: GDI ANTIALIASED_QUALITY is an OS rasterizer with no portable equivalent, and this one is deterministic and resolution independent
 	public const int SubScanlines = 16;
 	public const int MaximumDimension = 8192;
 	private const double FlatnessPixels = 0.05;

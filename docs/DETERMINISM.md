@@ -6,7 +6,7 @@ separate processes only when external host-civil-time query samples are also
 the same. A seed and player inputs alone do not pin those samples. This page
 covers the DET-I1 slice of the contract in
 [reverse/DET-plan.md](reverse/DET-plan.md) §4. The simulation still runs on the
-60 Hz `FixedStepClock` (ECON-001) and keeps its own generators. Moving to the
+60 Hz `FixedStepClock` (`EXT:fixed-60hz-clock`; ECON-001 keeps the substeps) and keeps its own generators. Moving to the
 original's 31 ms substep and its world LCG is DET-I2, a later fidelity step.
 That step changes every balance outcome.
 

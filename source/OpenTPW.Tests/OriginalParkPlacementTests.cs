@@ -44,7 +44,8 @@ public class OriginalParkPlacementTests
 		UseOriginalData();
 		var park = OriginalPark.Load( "jungle" );
 		OriginalPlacementResult At( int x, int y ) => OriginalParkPlacement.Check( park, x, y, x, y );
-		Assert.AreEqual( OriginalPlacementResult.Blocked, At( 0, 40 ) );
+		// the edge ring is Blocked ground with a surface: type 0 in tp.exe (0x536490), so only the land decides there
+		Assert.AreEqual( OriginalPlacementResult.Allowed, At( 0, 40 ) );
 		Assert.AreEqual( OriginalPlacementResult.Water, At( 51, 50 ) );
 		Assert.AreEqual( OriginalPlacementResult.FixedWalkway, At( 51, 57 ) );
 		Assert.AreEqual( OriginalPlacementResult.EntranceArea, At( 30, 5 ) );
@@ -61,6 +62,57 @@ public class OriginalParkPlacementTests
 		// Without the save only MAP/heightfield data applies: the imported ring path is buildable.
 		Assert.AreEqual( OriginalPlacementResult.Allowed, OriginalParkPlacement.Check( park.Map, park.Heightfield, null, 39, 21, 39, 21 ) );
 		Assert.AreEqual( OriginalPlacementResult.Path, OriginalParkPlacement.Check( park.Map, park.Heightfield, null, 47, 17, 47, 17 ) );
+	}
+
+	/// <summary>
+	/// tp.exe's cell validator 0x535670 never reads the MAP byte: a Blocked cell with a surface is type 0 after the map start
+	/// (0x536490) and buildable once owned, a hole is refused by its type. Measured over the four base maps.
+	/// </summary>
+	[TestMethod]
+	public void BlockedSurfaceCellsAreBuildableAndHolesAreNot()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out var previous ) == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for the four base maps." );
+		try
+		{
+			var expected = new System.Collections.Generic.Dictionary<string, int> { ["jungle"] = 326, ["hallow"] = 318, ["space"] = 320, ["fantasy"] = 318 };
+			var startingLand = new System.Collections.Generic.List<string>();
+			foreach ( var (theme, count) in expected )
+			{
+				var park = OriginalPark.Load( theme, readShippedSave: false );
+				var settings = GuestSettings.Load( theme );
+				var setup = ParkLandSetup.FromLevel( settings.EntranceA, settings.EntranceB, FileSystem.ReadAllText( $"/levels/{theme}/Hoardings.sam" ) );
+				var cells = ParkCellMap.FromOriginal( park.Map, null, setup, park.Heightfield );
+				var blockedSurface = 0;
+				for ( var x = 0; x < park.Heightfield.CellCountX; x++ )
+				{
+					for ( var y = 0; y < park.Heightfield.CellCountZ; y++ )
+					{
+						var flags = park.Map.GetFlagsAt( x, y );
+						var result = OriginalParkPlacement.Check( park, x, y, x, y );
+						if ( park.Heightfield.IsHole( x, y ) )
+						{
+							Assert.IsTrue( result is OriginalPlacementResult.NoTerrainSurface or OriginalPlacementResult.Blocked or OriginalPlacementResult.Water or OriginalPlacementResult.FixedWalkway or OriginalPlacementResult.EntranceArea, $"{theme} ({x}, {y}): {result}" );
+							continue;
+						}
+						Assert.AreEqual( flags.HasFlag( MapCellFlags.InitialPath ) ? OriginalPlacementResult.Path : OriginalPlacementResult.Allowed, result, $"{theme} ({x}, {y})" );
+						if ( flags != MapCellFlags.None && !flags.HasFlag( MapCellFlags.InitialPath ) && !cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ) )
+							startingLand.Add( $"{theme} ({x}, {y})" );
+						if ( flags.HasFlag( MapCellFlags.Blocked ) )
+						{
+							Assert.AreEqual( 1, park.Map.GetCellAt( x, y ), $"{theme} ({x}, {y})" );
+							blockedSurface++;
+						}
+					}
+				}
+				Assert.AreEqual( count, blockedSurface, theme );
+			}
+			CollectionAssert.AreEqual( new[] { "space (45, 18)", "space (50, 18)", "fantasy (27, 17)" }, startingLand );
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
 	}
 
 	[TestMethod]

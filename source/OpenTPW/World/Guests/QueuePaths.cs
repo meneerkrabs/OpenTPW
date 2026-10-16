@@ -62,6 +62,7 @@ public static class QueuePaths
 	}
 
 	/// <summary>Lays (x, y) as the next queue cell of <paramref name="ride"/> and recomputes the queue.</summary>
+	// [APPROX:PATH-004] PATH-CONNECT: the link writer tp.exe 0x5348d0 is ported (PathLinkWriter) and the path commit runs it as its link pass; the queue tool does not run its mode 3 (0x53538c), so queue cells carry no +0x0c links (QUEUE-003) — still open: the queue line's mode-3 link pass
 	public static QueueBuildResult TryExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null )
 	{
 		ride.RecomputeQueue( grid );

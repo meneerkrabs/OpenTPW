@@ -35,8 +35,7 @@ Per cell, in this order (`ParkPathBuilder.Validate`):
 8. money: balance − cost ≥ 0 (`NotEnoughMoney`); the preview tests the pending
    line cost.
 
-Writing a cell stores the type, links it to every cardinal path neighbour on
-both sides (PATH-004) and spends `Costs.PathCell` (20 in `Standard.sam`) as
+Writing a cell stores the type and spends `Costs.PathCell` (20 in `Standard.sam`) as
 other costs (tp.exe `0x534879`: Spend adds it to the total costs, shown as
 total costs minus staff costs). There is no batch purchase. A played park always
 pays: the original's debit skips only while the layout replay of a visited online park
@@ -44,8 +43,19 @@ runs (bank `mWithdrawalsEnabled`, tp.exe `0x404140`), and only a builder without
 economy is free here. A refused cell stops the line; earlier cells stay built and
 charged.
 
+The commit then runs its link pass, as the original does (tp.exe `0x52744E`): every
+cell of the line goes through the link writer (`PathLinkWriter`, tp.exe `0x5348D0`
+mode 1), which ORs bits into the link byte (map cell `+0x0C`): each cardinal path
+neighbour on both sides, a type-10 or type-9 neighbour by its queue link, the
+diagonal bits 2, 8, 0x20 and 0x80 toward diagonal path cells whose two sides are
+paths (and on a neighbour toward this cell's side neighbours, unless the corner
+beyond is a queue), and no link to a queue cell; a link to a queue cell clears the
+two diagonals beside it. A queue cell under the writer becomes a path cell and keeps
+its links. A queue neighbour that links back is refreshed and plays `cat_ui` 139.
+
 Removal is `ClearCell`'s forced path case (the original's area-clear tool,
-tp.exe `0x52bdd0`): links cleared on both sides, no refund. A `NoModify` cell that still has linked neighbours stays; without
+tp.exe `0x52bdd0`): every bit of the cell's link byte, diagonals included, is
+cleared on both sides (tp.exe `0x5367A0`), no refund. A `NoModify` cell that still has linked neighbours stays; without
 neighbours the flag is dropped and the cell is removed (PATH-005).
 Backspace over a path cell with no tool on uses the counted case (tp.exe
 `0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
@@ -136,7 +146,7 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
 | PATH-001 | PATH-ENTER | a click on an object-less cell or a path starts the tool (tp.exe 0x4879d0, SetMode(1) 0x52f200); the original enters even when the start check 0x535670(1, 0) refuses the cell (then without a start), OpenTPW does not enter |
-| PATH-004 | PATH-CONNECT | path-to-path links match tp.exe 0x5348d0; its type-9/10 links, diagonal bits, OR write and type-3 conversion are not ported |
+| PATH-004 | PATH-CONNECT | the link writer tp.exe 0x5348d0 is ported and runs as the path commit's link pass; the queue tool does not run its mode 3 (0x53538c), so queue cells carry no `+0x0C` links (QUEUE-003) |
 | PATH-005 | PATH-REMOVE | forced removal (a = b = 0) matches the original's area clear (tool 0x3a, 0x52bdd0); OpenTPW removes one clicked cell, the original a rectangle of type-1 cells and whole objects |
 | PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |

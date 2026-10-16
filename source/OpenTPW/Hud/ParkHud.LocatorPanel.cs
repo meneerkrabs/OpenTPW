@@ -150,7 +150,7 @@ public sealed class LocatorModel
 /// The staff and visitor locator panels of the HUD arm (tp.exe table 0x756950: five role radios, and one visitor radio) and their strip (table 0x756ad8: the actor's
 /// name, the staff state icon or the visitor's thought). Ctrl+S and Ctrl+V open them; a radio locates its role's next actor and the camera follows it.
 /// </summary>
-// [APPROX:UI-091] the locator panels take staff newest first (by id, descending) and visitors by id, where the original walks the role's thing list (+0x210) and the thing list (0x4824d0); the camera snaps to the followed actor every frame where the original eases it (0x486860); a staff member's patrol rectangle is not marked (0x536100 in 0x4b3640); the panels appear without sliding and without the sounds 0xc6 / 0x11f; a picked-up member's state frame 9 (0x485ec0) draws the first frame; the staff window's own locate buttons focus actual actor positions, the list rows' 0x402 path (0x4867b0) is the original's; Ctrl+S ignores the per-employee window path (0x481790: while [0x7cc3c0] is open the key locates that window's employee [0x7c2658]); the visitor info window that Ctrl+V tests ([0x7cc418], window object 0x7cc408) is not ported: a left click on an All Visitors row or a visitor picked in the park stands in for opening it and it closes with the All Visitors window, where the original's stays open on its own — evidence needed: the order of the role lists, the easing of 0x486860 and the patrol markers
+// [APPROX:UI-091] the locator panels take staff newest first (by id, descending) and visitors by id, where the original walks the role's thing list (+0x210) and the thing list (0x4824d0); the camera snaps to the followed actor every frame where the original eases it (0x486860); a staff member's patrol rectangle is not marked (0x536100 in 0x4b3640); the panels appear without sliding and without the sounds 0xc6 / 0x11f; a picked-up member's state frame 9 (0x485ec0) draws the first frame; the staff window's own locate buttons focus actual actor positions, the list rows' 0x402 path (0x4867b0) is the original's; the visitor info window that Ctrl+V tests ([0x7cc418], window object 0x7cc408) is not ported: a left click on an All Visitors row or a visitor picked in the park stands in for opening it and it closes with the All Visitors window, where the original's stays open on its own — evidence needed: the order of the role lists, the easing of 0x486860 and the patrol markers
 public sealed partial class ParkHud
 {
 	private static LayoutTable LocatorTable => OriginalLayoutTables.LocatorPanels;
@@ -203,16 +203,25 @@ public sealed partial class ParkHud
 		Add( new UiModelImage { Id = "locatorThought", Model = "ti_hungry", Frame = () => LocatorThoughtFrame ?? 0, Bounds = strip.Children.Single( node => node.Id == 0x14A ).Rect }, locatorStripElements );
 	}
 
-	/// <summary>Ctrl+S: the staff locator, with no role chosen (the per-employee window, whose employee the original passes, is not ported).</summary>
-	// [BIN:TPW-EXE:0x00481790 staff locator key] while the per-employee window is open ([0x7cc3c0], +0x10 of the window object 0x7cc3b0) the key opens 0x4b3f60 with [0x7c2658]; that path is not ported (UI-091)
-	public void OpenStaffLocator() => OpenLocator( LocatorMode.Staff, 0, 0 );
+	/// <summary>Ctrl+S: the staff locator; with the per-employee window open it locates that window's employee, else it opens with no role chosen.</summary>
+	public void OpenStaffLocator()
+	{
+		// [BIN:TPW-EXE:0x00481790 staff locator key] while the per-employee window is open ([0x7cc3c0], +0x10 of the window object 0x7cc3b0) the key opens 0x4b3f60 with
+		// the window's employee [0x7c2658], else with no actor
+		if ( Employee is { } member )
+		{
+			OpenLocator( LocatorMode.Staff, LocatorModel.RoleOf( member.Type ), member.Id );
+			return;
+		}
+		OpenLocator( LocatorMode.Staff, 0, 0 );
+	}
 
 	/// <summary>Ctrl+V: the visitor locator; with a visitor's info open (a row of the All Visitors window clicked) it locates that visitor at once.</summary>
 	public void OpenVisitorLocator()
 	{
 		// [BIN:TPW-EXE:0x004817c0 visitor locator key] while the visitor info window is open (its window word [0x7cc418], +0x10 of the window object 0x7cc408 that 0x4b79b0 opens)
 		// the key opens 0x4b3f60 with the info windows' current thing [0x7c2658] (written by the info window base 0x48d134 and its next/previous buttons), else 0x4b4280;
-		// the visitors list's row click (0x400) opens that window for the row's visitor (0x49351e), and its detail rows stand in for it here
+		// the visitors list's row click (0x400) opens that window for the row's visitor (0x49351e); the clicked row stands in for it here (the info window is not ported)
 		if ( VisitorWindowOpen && VisitorInfoGuest is { } guest )
 		{
 			OpenLocator( LocatorMode.Visitor, LocatorModel.VisitorRole, guest.Id );

@@ -13,7 +13,7 @@ the whole map; the state machines decide the first job on their next update. Rig
 
 ## Pick up and drop
 
-The staff window's employee view has a Pick up button (the original's control 0x50e, UI-098), enabled by `CanBePickedUp` (0x505bd0): refused on strike (states 4,
+The per-employee window (opened from the staff window's employee view) has a Pick up button (the original's control 0x50e, `b_pick`), enabled by `CanBePickedUp` (0x505bd0): refused on strike (states 4,
 5), in hand (7), repairing (13: `StaffJob.Repairing`) and escorting (18: `StaffMember.Escorting`), and when the member's own cell is not type 0, 1, 3, 9 or 10. The member becomes
 `StaffState.PickedUp`; a mechanic's ride assignment and a handyman's litter and toilet claims are released at once. The Carry tool drops it on a valid cell
 (0x509af0 → 0x505ea0): cell centre, `Navigation = null`, Idle, idle stamp 0, no jobs; the patrol rectangle is untouched. Cancelling drops it back on the cell

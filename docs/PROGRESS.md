@@ -18,7 +18,19 @@ Twenty-two more interface approximations were read again in tp.exe:
   OpenTPW's own hint line.
 - **Training budgets** step by 25 within 0..10000 with each row's grade gauge (`0x4b27d7`, `0x4c9c00`), and **the research workload
   knob** maps to the original's workload of 70..100 (`0x4aacce`, `0x4a985b`).
-- UI-910 (the left mouse button is button 0, `0x634963`) is retired; 12 interface items are narrowed.
+- The left mouse button is button 0 (`0x634963`), so UI-910 keeps only the per-visitor window `0x4b79b0`, which is not ported;
+  13 interface items are narrowed.
+
+## The per-employee window and All Visitors from tp.exe's tables (October 15, 2026)
+
+- **The per-employee window** (`0x4b6080`, table `0x756f48`) opens from the staff list as the original's All Staff list does: the name as
+  title, days employed, wage, skill, happiness and energy bars and the status, refreshed every 4 s; dismiss (with the Confirmations
+  option's yes/no box), pick-up (`0x505c50`), the patrol toggle (`0x4b5b50`), the cycle arrows, all staff, locate and the tick; locate and Ctrl+S
+  open the staff locator panel on the employee (`0x4b5f07`, `0x481790`) (UI-098 retired, UI-092 narrowed).
+- **All Visitors** is built from table `0x7506c8` and its builder `0x493530`: six sortable columns (number, cash, time in park in hours or
+  days, rides, thought, happiness), a value refresh every 2 s and the park info, all staff and all attractions buttons (UI-907 narrowed).
+- **The hire window's balance** reads the last closed month (`0x49bdd0`), and the string table keeps whole records, so "%d hours/day/days"
+  (UITEXT 440–442) are no longer empty.
 
 ## Coaster trains and pylons from tp.exe (October 15, 2026)
 

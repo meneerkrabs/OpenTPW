@@ -39,6 +39,7 @@ public class PathAssetTests
 	/// (tp.exe 0x004CF3E0, ARRIVAL-001) leave 22 admitted. The original state machine of a guest in the park (state 6 deciding once per
 	/// park turn, state 7 walking to a wander destination; docs/reverse/WANDER-plan.md, GUEST-010) changed the hash again and admits 23. The guests' litter meter joined the hash (WANDER-plan §6). The prankery flag joined it next (pranksters in the Jungle's balance, WANDER-plan §7), then the balloon life, balloon and costume (no shop here, so only the hashed fields), then the original's thoughts (the pick of the needs phase; rides and shops set none), then the booth's verdict on the fee (tp.exe 0x004FF5B0), whose draw shifts the guest stream (23 → 24 admitted), and the end of the invented boredom loss, then the guests' meter +0x1B8 (Energy) starting at 0 and moving only by a use's FatigueEffect (GUEST-008).
 	/// The guests' draws moved onto the original's one world generator (DET-013 to DET-015): it is reseeded with the guest's id at its creation and a new arrival takes its entrance from the creation draw, so the guests' offsets, lanes and walks move (22 → 21 admissions).
+	/// The booth walk's speed term (tp.exe 0x004FF730: 25 for a thing id with its low two bits 0, WALK-010) moved it again to 0x30F213E46933EB8C (21 admissions, as before).
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsTheJungleGuestRunIdentical()
@@ -52,7 +53,7 @@ public class PathAssetTests
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
 		Assert.AreEqual( 21, simulation.Admissions );
-		Assert.AreEqual( 0xF55B1DF82DFF7F3FUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 0x30F213E46933EB8CUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

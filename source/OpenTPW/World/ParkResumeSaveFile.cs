@@ -584,6 +584,8 @@ internal static class ParkResumeSaveFile
 		var problems = ThingPool.Problems( snapshot.Things );
 		Require( problems.Count == 0, $"the thing pool: {(problems.Count == 0 ? "" : problems[0])}" );
 		var models = snapshot.Things.Used.ToDictionary( slot => slot.Id, slot => (SaveThingModel)slot.Model );
+		// a thing demolished or dismissed since the turn's last end still holds its slot, and nothing names it
+		var pending = (snapshot.Things.Pending ?? Array.Empty<int>()).ToHashSet();
 		var named = new HashSet<int>();
 		void Names( int id, SaveThingModel model, string what )
 		{
@@ -597,7 +599,8 @@ internal static class ParkResumeSaveFile
 		if ( snapshot.Guests!.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
 			foreach ( var guest in snapshot.Guests.Guests! )
 				Names( guest!.Id, SaveThingModel.Guest, $"guest {guest.Id}" );
-		var held = snapshot.Things.Used.Count( slot => slot.Model is 1 or 3 or (>= 4 and <= 8) );
+		Require( !named.Overlaps( pending ), "a thing waiting for its destruction is named by a thing" );
+		var held = snapshot.Things.Used.Count( slot => slot.Model is 1 or 3 or (>= 4 and <= 8) && !pending.Contains( slot.Id ) );
 		Require( held == named.Count || snapshot.Guests.SchemaVersion < GuestSimulationSnapshot.ThingPoolSchemaVersion, "the thing pool holds a guest, attraction or staff slot no thing names" );
 	}
 

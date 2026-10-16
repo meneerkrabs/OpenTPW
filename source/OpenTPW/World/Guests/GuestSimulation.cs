@@ -40,7 +40,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private readonly Dictionary<int, Guest> byId = new();
 	private readonly List<IRideVisitorBridge> attractions = new();
 	private WorldRng random;
-	// the park's thing pool (tp.exe 0x516270): a guest's id is the slot its constructor takes (WALK-010); a simulation of its own owns a pool and drains its deferred destroys itself
+	// the park's thing pool (tp.exe 0x516270): a guest's id is the slot its constructor takes; a simulation of its own owns a pool and drains its deferred destroys itself
 	private ThingPool things = new();
 	private bool ownsThings = true;
 	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
@@ -203,7 +203,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// the medium step, the queue words cleared); every guest's used history forgets the attraction.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FB360 object removed] for message 10 naming the target +0x1DC: a guest in state 16 (on the ride) gets its model back (0x004D4140 / 0x004217F0), +0x28 = 0, event 0xD and the cat_kids 0x80 sound; any other guest in states 11–14 (0x00502430, state 8's held state too) the dismissal 0x005012F0; then every one the small step (0x004FE980(0), clamped by 0x004FB4F0), +0x1DC = 0 and state 6 (0x00501DB0); the target test (0x004FB383, jne 0x004FB4A6) guards only that block: for every guest the message reaches, the major destination +0x1DE is cleared when it names the object (0x004FB4A6) and each used-history slot +0x1E0 that does is zeroed with the temporary-history slot +0x1E8 of the same index (0x004FB4BA..0x004FB4D9)
-	// [APPROX:GUEST-004] OpenTPW keeps no major destination (+0x1DE, a target set aside for a minor one, 0x00500900) and clears the target when a visit ends, where tp.exe keeps +0x1DC until the next choice 0x004FCB10, so a guest that has just left the removed attraction is not hit; the dismissal's event 6 and sound and the state-16 event 0xD and sound are not modelled (QUEUE-005); a guest on the ride or in the queue is placed at once on the exit or join cell (QUEUE-010)
+	// [APPROX:GUEST-004] OpenTPW keeps no major destination (+0x1DE, a target set aside for a minor one, 0x00500900) and clears the target when a visit ends, where tp.exe keeps +0x1DC until the next choice 0x004FCB10, so a guest that has just left the removed attraction is not hit; the state-16 event 0xD and sound are not modelled; a guest on the ride or in the queue is placed at once on the exit or join cell (QUEUE-010)
 	public void Unregister( IRideVisitorBridge attraction )
 	{
 		if ( !attractions.Remove( attraction ) )
@@ -762,9 +762,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		switch ( guest.State )
 		{
+			case GuestState.GoingToTicketBooth:
+				if ( turnStarted )
+					guest.ToiletBonus = BoothWalkSpeedTerm( guest );
+				UpdateLane( guest, dt );
+				break;
 			case GuestState.CrossingRoad:
 			case GuestState.CrossingRoadToPark:
-			case GuestState.GoingToTicketBooth:
 			case GuestState.EnteringPark:
 				UpdateLane( guest, dt );
 				break;
@@ -1209,6 +1213,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return Grid.InBounds( x, y ) && Grid.InBounds( x + 1, y - 2 ) ? [(x, y), (x + 1, y), (x, y - 2), (x + 1, y - 2)] : null;
 	}
 
+	/// <summary>The purpose speed (+0xC2, the guest's speed term) of a guest on its way to the ticket booth: 25 for one in four guests, 50 while the bus waits at its status 3, else 0.</summary>
+	// [BIN:TPW-EXE:0x004FF730 booth walk speed] state 2 sets +0xC2 on every update, before its walk step: with a vehicle other than the bus at work (0x0051AAD0), or with none or the bus when the vehicle's status (0x0051A690) is not 3, it is the word 0x0075C7F2 (25) for a thing id with its low two bits 0 (0x004FF776) and 0x0075C7F0 (0) for the others; the bus at status 3 gives 0x0075C7F4 (50) (0x004FF753..0x004FF765)
+	private int BoothWalkSpeedTerm( Guest guest )
+	{
+		if ( !NonBusVehicleAtWork() && ReadArrivalVehicle() == BusWaitingStatus )
+			return BusWaitingSpeedTerm;
+		return (guest.Id & 3) == 0 ? GuestSpeed.ToiletBonus : 0;
+	}
+
+	/// <summary>The vehicle status in which the bus gives a guest on its way to the booth the larger speed term.</summary>
+	private const int BusWaitingStatus = 3;
+	private const int BusWaitingSpeedTerm = 50;
+
 	/// <summary>Whether the arrival vehicle at work is the seaplane or the Ferry (tp.exe <c>0x0051AAD0</c>: a vehicle at work that is not the bus).</summary>
 	// [BIN:TPW-EXE:0x0051AAD0 non-bus vehicle] 1 when the vehicle at work (+0x1DA72A) is set and differs from the bus's handle (+0x1DA72C)
 	private bool NonBusVehicleAtWork() => arrivalVehicle >= 0 && arrivalVehicle != ArrivalVehicleKind.Bus;
@@ -1644,7 +1661,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; the prank line is chosen by OpenTPW's guest id where the original takes the prankster's thing id (WALK-010), and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's gate cell (0x4D86D0, the original's route) and on along OpenTPW's arrival lane (ARRIVAL-001), where the original's states 19 to 21 walk it to the arrival vehicle's stop cells — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
+	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's gate cell (0x4D86D0, the original's route) and on along OpenTPW's arrival lane (ARRIVAL-001), where the original's states 19 to 21 walk it to the arrival vehicle's stop cells — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )
@@ -1666,6 +1683,15 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>A prankster pranked (the stinkbomb's sound, the advisor and the guards listen to the original's prank message).</summary>
 	public event Action<Guest, GuestDecision.Prank>? Pranked;
+
+	/// <summary>
+	/// A guest's voice (tp.exe <c>0x004FAA00</c>: the guest sound bank <c>cat_kids</c> at the guest's position): raised with the bank's event number. Presentation only: it takes no draw
+	/// from the park's generators and changes no state.
+	/// </summary>
+	public event Action<Guest, uint>? Voiced;
+
+	/// <summary>The <c>cat_kids</c> event of a guest dismissed from a queue: the sound <c>0x0050133D</c> plays for one thing id in eight (0x80).</summary>
+	public const uint DismissalVoiceEvent = 0x80;
 
 	/// <summary>Litter of <paramref name="type"/> on the guest's cell (lost when the cell already holds some).</summary>
 	private void DropLitter( Guest guest, LitterType type ) => Litter?.Drop( guest.CellX, guest.CellY, type );
@@ -2153,8 +2179,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts); OpenTPW sends it away
 			if ( position < 0 || position >= room )
 			{
-				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id is a multiple of 3 thinks 13 (Angry); the others think nothing
-				// [APPROX:QUEUE-005] a guest sent away thinks Angry by OpenTPW's guest id modulo 3 rather than its thing id (word at thing +0, 0x00501496), and its dismissal (0x005012f0) neither records event 6 with the ride id in the guest's event ring (0x0050C100 with ECX = guest + 0x30; the ring feeds only the debug dump 0x004FAA60, GUEST-005) nor plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D); its medium happiness drop is applied — evidence needed: the thing-id numbering (WALK-010)
+				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id (the word at thing +0, read at 0x00501483) is a multiple of 3 thinks 13 (Angry, 0x0050BE80); the others think nothing; the guest's id is its thing id
+				// [EXT:guest-event-ring] the dismissal 0x005012F0's event 6 with the ride's id is a record of the debug-only guest event ring (0x0050C100), which OpenTPW does not keep
 				DismissFromQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
 				continue;
 			}
@@ -2380,7 +2406,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		// [BIN:TPW-EXE:0x00500756 price refusal] "Object is too expensive, I'm leaving the queue": thought 6, then the refusal's own 0x004FEA70(1) before the dismissal's
 		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
-		// [APPROX:GUEST-003] the refusal's dismissal does not play its sound for a guest whose thing id has its low three bits 0 (0x4FAA00, [0x803A24] event 0x80), OpenTPW's guest ids not being the original's thing ids (WALK-010; QUEUE-005 has the same sound) — evidence needed: none (read)
+		// [BIN:TPW-EXE:0x0050133D dismissal sound] the dismissal that follows (0x005012F0) plays the guest sound 0x80 for a thing id with its low three bits 0 (Voiced); [EXT:guest-event-ring] its event 6 and the refusal's event 10 are records of the debug-only guest event ring
 		// [BIN:TPW-EXE:0x0050077F refusal walk-away] after 0x004FEA70(1) the ride's walk-away count (0x004E1670), then its loading slot (0x004E0AC0) and queue list (0x004DDD20) let the guest go and the dismissal 0x005012F0 runs
 		Payments?.WalkedAway( attraction );
 		DismissFromQueue( guest, attraction, GuestThought.Dissatisfied );
@@ -2569,11 +2595,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// dismissal <c>0x005012F0</c>, which lowers happiness by the medium step (<c>0x004FEA70</c> with 1, <c>PeepInfo.MediumHappinessChange</c>, clamped at 0)
 	/// before the guest leaves the queue.
 	/// </summary>
-	// [BIN:TPW-EXE:0x005012F0 dismissal] "Person %d: dismissed from queue on ride %d", event 6 (0x0050C100), the sound for one thing id in eight, 0x004FEA70(1), the queue words +0x22A/+0x228/+0x1F8/+0x1DC/+0x1F1 cleared, state 6; the event and the sound are not modelled (QUEUE-005)
+	// [BIN:TPW-EXE:0x005012F0 dismissal] "Person %d: dismissed from queue on ride %d", event 6 (0x0050C100, [EXT:guest-event-ring]), the sound for one thing id in eight (Voiced), 0x004FEA70(1), the queue words +0x22A/+0x228/+0x1F8/+0x1DC/+0x1F1 cleared, state 6
 	private void DismissFromQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
 	{
 		if ( thought != GuestThought.None )
 			Think( guest, thought );
+		// [BIN:TPW-EXE:0x0050133D dismissal sound] a guest whose thing id has its low three bits 0 plays [0x00803A24] (cat_kids) event 0x80 through 0x004FAA00 before the happiness step; the guest's id is its thing id
+		if ( (guest.Id & 7) == 0 )
+			Voiced?.Invoke( guest, DismissalVoiceEvent );
 		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
 		LeaveQueue( guest, attraction, GuestThought.None );
 	}

@@ -167,4 +167,46 @@ public class ThingPoolTests
 		Assert.AreEqual( 1, pool.Allocate( SaveThingModel.Guest ), "a slot is not freed twice" );
 		Assert.AreEqual( 2, pool.NextId );
 	}
+
+	/// <summary>The jungle level's shipped save holds the world setup as things 1 to 12 (the singletons in the constructor order, then two attractions) and nothing above the highest id it lists, so the pool puts the chain back and the next thing is 43.</summary>
+	[TestMethod]
+	public void TheShippedJungleSaveHoldsTheWorldSetupAsTheFirstTwelveThings()
+	{
+		var payload = OriginalParkImportTests.ReadEasymodePayload();
+		var layout = SavePayloadLayout.Parse( payload );
+		var world = SaveWorld.Parse( payload, layout, 128, 128 );
+		var chain = world.Things;
+		CollectionAssert.AreEqual( Enumerable.Range( 1, chain.Count ).ToArray(), chain.Select( thing => thing.Id ).OrderBy( id => id ).ToArray(), "the ids are 1 up to the thing count" );
+		var byId = chain.ToDictionary( thing => thing.Id, thing => thing.Model );
+		CollectionAssert.AreEqual( ThingPool.WorldSetupModels.ToArray(), Enumerable.Range( 1, 10 ).Select( id => byId[id] ).ToArray(), "things 1 to 10 are the world's singletons in the constructor order of 0x5156A0" );
+		Assert.AreEqual( (SaveThingModel.Attraction, SaveThingModel.Attraction), (byId[11], byId[12]), "the gates and the lights" );
+		Assert.AreEqual( chain.Select( thing => thing.Id ).First(), chain.Max( thing => thing.Id ), "the chain's head is the thing built last" );
+		var pool = new ThingPool();
+		pool.Restore( chain.Select( thing => new ThingSlot( thing.Id, thing.Model ) ) );
+		Assert.AreEqual( chain.Count, pool.Count );
+		Assert.AreEqual( chain.Count + 1, pool.NextId );
+		CollectionAssert.AreEqual( chain.Select( thing => thing.Id ).ToArray(), pool.UsedNewestFirst().Select( slot => slot.Id ).ToArray(), "the used list keeps the chain's order" );
+	}
+
+	/// <summary>A save taken between a destroy request and the turn's end keeps the request: the thing still holds its slot, and the restored pool frees it at its own turn's end.</summary>
+	[TestMethod]
+	public void ASnapshotKeepsTheDestroyRequestsOfTheTurn()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 5; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		pool.QueueDestroy( 2 );
+		pool.QueueDestroy( 4 );
+		var snapshot = pool.CaptureSnapshot();
+		CollectionAssert.AreEqual( new[] { 2, 4 }, snapshot.Pending!.ToArray() );
+		Assert.IsNull( new ThingPool().CaptureSnapshot().Pending, "a pool with no request writes none" );
+		var restored = new ThingPool();
+		restored.RestoreSnapshot( snapshot );
+		Assert.AreEqual( 2, restored.QueuedCount );
+		Assert.IsTrue( restored.IsUsed( 2 ) && restored.IsUsed( 4 ) );
+		CollectionAssert.AreEqual( pool.DestroyQueued().ToArray(), restored.DestroyQueued().ToArray(), "the same order" );
+		CollectionAssert.AreEqual( pool.FreeInOrder().Take( 4 ).ToArray(), restored.FreeInOrder().Take( 4 ).ToArray() );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Pending = new[] { 9 } } ).Count > 0, "a request for a free slot" );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Pending = new[] { 2, 2 } } ).Count > 0, "a request made twice" );
+	}
 }

@@ -172,7 +172,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// A prankster pranked: the prank message reaches the advisor at once (the bus delivers it as it is sent), which queues one of the three prank
 	/// lines by the prankster's id (<see cref="AdvisorTables.PrankAdvice"/>).
 	/// </summary>
-	// Approximation (GUEST-007, registered at GuestSimulation.Prank): the prank line is chosen by OpenTPW's guest id modulo 3 where the original takes the prankster's thing id (WALK-010), and the advice record's prankster id and cell words (+0x0, +0x4, 0x0059B590) are not kept, as for every advice OpenTPW queues — evidence needed: what reads those two words of a queued record
+	// Approximation (GUEST-007, registered at GuestSimulation.Prank): the prank line is chosen by the prankster's thing id modulo 3 (the guest's id), and the advice record's prankster id and cell words (+0x0, +0x4, 0x0059B590) are not kept, as for every advice OpenTPW queues — evidence needed: what reads those two words of a queued record
 	internal void OnPrank( Guest guest, GuestDecision.Prank prank )
 	{
 		if ( level == null )

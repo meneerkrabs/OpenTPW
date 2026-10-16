@@ -40,6 +40,21 @@ public class ParkThingPoolResumeTests
 	}
 
 	[TestMethod]
+	public void AThingWaitingForItsDestructionHoldsASlotNothingNames()
+	{
+		var snapshot = WithPool( out var pool );
+		var gone = snapshot.Guests.Guests[0].Id;
+		var waiting = snapshot with
+		{
+			Things = snapshot.Things! with { Pending = new[] { gone } },
+			Guests = snapshot.Guests with { Guests = snapshot.Guests.Guests.Skip( 1 ).ToArray() }
+		};
+		ParkResumeSaveFile.ValidateShape( waiting );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => ParkResumeSaveFile.ValidateShape( snapshot with { Things = snapshot.Things with { Pending = new[] { gone } } } ) ).Message, "waiting for its destruction is named" );
+		Assert.IsNotNull( pool );
+	}
+
+	[TestMethod]
 	public void ASaveFromBeforeThePoolNamesNoSlot()
 	{
 		var snapshot = ParkResumeSaveFileTests.Envelope();

@@ -137,4 +137,105 @@ public class GuestThingIdTests
 		Assert.IsFalse( target.ValidateSnapshot( snapshot with { Things = new ThingPoolSnapshot { Used = new[] { new ThingSlotData( 1, 1 ) }, FreeFirst = new[] { 1 } } } ).IsValid );
 		Assert.IsFalse( target.ValidateSnapshot( snapshot with { Things = new ThingPoolSnapshot { Used = new[] { new ThingSlotData( 0, 1 ) } } } ).IsValid );
 	}
+
+	// ---- The booth walk's speed term (tp.exe 0x004FF730) -------------------------------------------------------------------
+
+	private sealed class OneVehicle : IArrivalVehicleHost
+	{
+		public int Status;
+		public bool Exists( int kind ) => true;
+		public bool Create( int kind ) => true;
+		public int GetVariable( int kind, int index ) => index == ArrivalVehicleKind.StatusVariable ? Status : 0;
+		public void SetVariable( int kind, int index, int value ) { if ( index == ArrivalVehicleKind.StatusVariable ) Status = value; }
+	}
+
+	private static int BoothTerm( GuestSimulation simulation, Guest guest ) =>
+		(int)typeof( GuestSimulation ).GetMethod( "BoothWalkSpeedTerm", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!.Invoke( simulation, new object[] { guest } )!;
+
+	/// <summary>A guest on its way to the booth gets the speed term 25 when its thing id's low two bits are 0, else 0, but 50 while the bus waits at status 3.</summary>
+	[TestMethod]
+	public void TheBoothWalkSpeedTermFollowsTheThingIdAndTheBusStatus()
+	{
+		var simulation = Simulation();
+		var guests = Enumerable.Range( 0, 4 ).Select( _ => simulation.SpawnInPark( 10, 0 ) ).ToArray();
+		CollectionAssert.AreEqual( new[] { 0, 0, 0, GuestSpeed.ToiletBonus }, guests.Select( guest => BoothTerm( simulation, guest ) ).ToArray(), "no vehicle: ids 1, 2 and 3 take 0 and id 4 takes 25" );
+		var vehicle = new OneVehicle();
+		simulation.ArrivalVehicles = vehicle;
+		simulation.RestoreArrivalVehicleForTest( ArrivalVehicleKind.Bus );
+		vehicle.Status = 3;
+		CollectionAssert.AreEqual( new[] { 50, 50, 50, 50 }, guests.Select( guest => BoothTerm( simulation, guest ) ).ToArray(), "the bus at status 3: 50 for every guest" );
+		vehicle.Status = 2;
+		CollectionAssert.AreEqual( new[] { 0, 0, 0, 25 }, guests.Select( guest => BoothTerm( simulation, guest ) ).ToArray(), "the bus at another status: by thing id" );
+		simulation.RestoreArrivalVehicleForTest( ArrivalVehicleKind.Seaplane );
+		vehicle.Status = 3;
+		CollectionAssert.AreEqual( new[] { 0, 0, 0, 25 }, guests.Select( guest => BoothTerm( simulation, guest ) ).ToArray(), "a vehicle other than the bus is not tested for status 3" );
+		simulation.RestoreArrivalVehicleForTest( ArrivalVehicleKind.Bus );
+		vehicle.Status = 6;
+		Assert.AreEqual( 25, BoothTerm( simulation, guests[3] ), "a gone vehicle is released and the thing id decides" );
+		Assert.AreEqual( -1, simulation.ArrivalVehicle );
+	}
+
+	/// <summary>The term is set by the state-2 handler on every park turn of the walk to the booth: a guest of thing id 4 walks with the term 25.</summary>
+	[TestMethod]
+	public void AGuestWalkingToTheBoothCarriesTheTermOfItsThingId()
+	{
+		var grid = new GuestPathGrid( 20, 20 );
+		for ( var x = 0; x < 16; x++ )
+			grid.SetPath( x, 5, true );
+		grid.SetPath( 10, 6, true );
+		var settings = new GuestSettings { ArrivalLaneA = new[] { (10, 14), (10, 12), (10, 10), (10, 8), (10, 6) } };
+		settings.Types.Add( new GuestType( 60, 600, 40 ) );
+		var simulation = new GuestSimulation( grid, settings, 5 ) { ArrivalsEnabled = false };
+		var guests = Enumerable.Range( 0, 4 ).Select( _ => simulation.SpawnArrival()! ).ToArray();
+		var seen = new System.Collections.Generic.Dictionary<int, int>();
+		for ( var tick = 0; tick < 4000 && guests.Any( guest => guest.State is not (GuestState.AtTicketBooth or GuestState.EnteringPark or GuestState.DoingNothing) ); tick++ )
+		{
+			simulation.Tick( 1f / FixedStepClock.TicksPerSecond );
+			foreach ( var guest in guests.Where( guest => guest.State == GuestState.GoingToTicketBooth ) )
+				seen[guest.Id] = guest.ToiletBonus;   // the last value seen on the walk is the one its handler set
+		}
+		Assert.AreEqual( 4, seen.Count, "every guest walked to the booth" );
+		foreach ( var (id, term) in seen )
+			Assert.AreEqual( (id & 3) == 0 ? GuestSpeed.ToiletBonus : 0, term, $"guest {id}" );
+	}
+
+	// ---- The dismissal's voice (tp.exe 0x005012F0, 0x0050133D) ---------------------------------------------------------------
+
+	/// <summary>A guest dismissed from a queue says its piece for one thing id in eight (cat_kids 0x80); the guests of the other ids are silent.</summary>
+	[TestMethod]
+	public void ADismissedGuestVoicesForOneThingIdInEight()
+	{
+		var simulation = Simulation();
+		var ride = new RideVisitorBridge( 1, "Ride", RideVisitorKind.Ride, 5, 55, 30 );
+		simulation.Register( ride );
+		var guests = Enumerable.Range( 0, 16 ).Select( _ => simulation.SpawnInPark( 10, 0 ) ).ToArray();
+		var voiced = new System.Collections.Generic.List<(int Id, uint Event)>();
+		simulation.Voiced += ( guest, eventId ) => voiced.Add( (guest.Id, eventId) );
+		var dismiss = typeof( GuestSimulation ).GetMethod( "DismissFromQueue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
+		foreach ( var guest in guests )
+			dismiss.Invoke( simulation, new object[] { guest, ride, GuestThought.None } );
+		CollectionAssert.AreEqual( new[] { (8, 0x80u), (16, 0x80u) }, voiced.ToArray(), "thing ids 8 and 16 have their low three bits 0" );
+		Assert.AreEqual( GuestSimulation.DismissalVoiceEvent, 0x80u );
+	}
+
+	/// <summary>The thing ids are the original's pool slots, so who is silent depends on what was built before: behind the world's twelve things the guests are things 13 to 24, and 16 and 24 have their low three bits 0.</summary>
+	[TestMethod]
+	public void WhoVoicesDependsOnThePoolsHistory()
+	{
+		var simulation = Simulation();
+		var pool = new ThingPool();
+		pool.AllocateWorldSetup();
+		pool.Allocate( SaveThingModel.Attraction );
+		pool.Allocate( SaveThingModel.Attraction );
+		simulation.AttachThings( pool );
+		var ride = new RideVisitorBridge( 1, "Ride", RideVisitorKind.Ride, 5, 55, 30 );
+		simulation.Register( ride );
+		var guests = Enumerable.Range( 0, 12 ).Select( _ => simulation.SpawnInPark( 10, 0 ) ).ToArray();
+		var voiced = new System.Collections.Generic.List<int>();
+		simulation.Voiced += ( guest, _ ) => voiced.Add( guest.Id );
+		var dismiss = typeof( GuestSimulation ).GetMethod( "DismissFromQueue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance )!;
+		foreach ( var guest in guests )
+			dismiss.Invoke( simulation, new object[] { guest, ride, GuestThought.None } );
+		CollectionAssert.AreEqual( new[] { 16, 24 }, voiced.ToArray(), "guests 13..24 are the things 13..24" );
+	}
 }

@@ -17,6 +17,12 @@ public sealed record ThingPoolSnapshot
 	public required IReadOnlyList<ThingSlotData> Used { get; init; }
 	/// <summary>The free ids that come before the ascending run of the others, in allocation order (empty for a pool rebuilt by a load).</summary>
 	public IReadOnlyList<int> FreeFirst { get; init; } = Array.Empty<int>();
+	/// <summary>
+	/// The ids whose destruction was asked for and not yet carried out (a thing demolished or dismissed since the turn's last end), in the order they were asked: they stay in the used list
+	/// until the turn's end, so no thing names them. Absent when none waits.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public IReadOnlyList<int>? Pending { get; init; }
 }
 
 /// <summary>
@@ -29,6 +35,7 @@ public sealed record ThingPoolSnapshot
 /// The pool also keeps the used list newest first (the original's walk order of the thing sweep, 0x516380), which a save stores as the chain's head and each
 /// thing's link and which a load restores.
 /// </remarks>
+// [APPROX:WALK-010] thing ids are slots of one pool for every kind of thing, taken in the order the park builds them (see WalkApproximations): what the original builds that OpenTPW does not takes no slot, the destroy requests of a turn come in OpenTPW's update order, the guests' histories hold the script world's attraction ids, and OpenTPW's own save keeps the free list's order where the original's load rebuilds it ascending
 // [BIN:TPW-EXE:0x00515F30 pool init] 10239 slots of 0x14 bytes from 0x7CFB90 (slot 0 is the empty sentinel), each slot's id its index, chained into the free list in ascending order (slot 1 first, 0x515F5B..0x515F75; the last id is 0x27FF = 10239, 0x515F8F); the used list (head 0x7CF56C) is empty
 // [BIN:TPW-EXE:0x00516270 allocate] the free list's head is taken (0x516271), a full pool logs "FATAL ERROR - Thing Array is full!" and gives id 0 (0x516279..0x516290); the slot becomes the new head of the used list (its older link +8 the old head, 0x5162BB..0x5162D4) and the id is the slot's index (0x5162FA)
 // [BIN:TPW-EXE:0x00516200 free] the slot leaves the used list (0x516216..0x516238) and becomes the new head of the free list (0x51624B..0x516254): the next allocation takes the slot freed last
@@ -243,7 +250,8 @@ public sealed class ThingPool
 		return new ThingPoolSnapshot
 		{
 			Used = UsedNewestFirst().Select( slot => new ThingSlotData( slot.Id, (int)slot.Model ) ).ToArray(),
-			FreeFirst = free.Take( tail ).ToArray()
+			FreeFirst = free.Take( tail ).ToArray(),
+			Pending = destroyQueue.Count == 0 ? null : destroyQueue.ToArray()
 		};
 	}
 
@@ -278,6 +286,14 @@ public sealed class ThingPool
 			else if ( !first.Add( id ) )
 				problems.Add( $"free thing id {id} appears more than once" );
 		}
+		var pending = new HashSet<int>();
+		foreach ( var id in snapshot.Pending ?? Array.Empty<int>() )
+		{
+			if ( !used.Contains( id ) )
+				problems.Add( $"thing id {id} waits for its destruction but is not in use" );
+			else if ( !pending.Add( id ) )
+				problems.Add( $"thing id {id} waits for its destruction twice" );
+		}
 		return problems;
 	}
 
@@ -289,14 +305,17 @@ public sealed class ThingPool
 		if ( problems.Count != 0 )
 			throw new InvalidDataException( problems[0] );
 		Restore( snapshot.Used.Select( slot => new ThingSlot( slot.Id, (SaveThingModel)slot.Model ) ) );
-		if ( snapshot.FreeFirst.Count == 0 )
-			return;
-		// the saved head first, then the unused ids that are not in it, ascending
-		var first = snapshot.FreeFirst.ToHashSet();
-		var order = snapshot.FreeFirst.Concat( FreeInOrder().Where( id => !first.Contains( id ) ) ).ToList();
-		for ( var index = 0; index < order.Count; index++ )
-			nextFree[order[index]] = index + 1 < order.Count ? order[index + 1] : 0;
-		freeHead = order[0];
+		if ( snapshot.FreeFirst.Count != 0 )
+		{
+			// the saved head first, then the unused ids that are not in it, ascending
+			var first = snapshot.FreeFirst.ToHashSet();
+			var order = snapshot.FreeFirst.Concat( FreeInOrder().Where( id => !first.Contains( id ) ) ).ToList();
+			for ( var index = 0; index < order.Count; index++ )
+				nextFree[order[index]] = index + 1 < order.Count ? order[index + 1] : 0;
+			freeHead = order[0];
+		}
+		foreach ( var id in snapshot.Pending ?? Array.Empty<int>() )
+			QueueDestroy( id );
 	}
 
 	private void Link( int id, SaveThingModel thingModel )

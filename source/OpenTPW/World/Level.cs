@@ -926,7 +926,16 @@ public partial class Level : IDisposable
 	public void LoadPark( string path )
 	{
 		// a load that fails leaves the economy, and so the staff tool and its pending flag, as they were
+		var replacedStaff = Park?.Economy.Staff.Members.Select( member => member.ThingId ).Where( id => id != 0 ).ToList() ?? new List<int>();
 		Streams.LoadPark( path );
+		// the loaded economy's staff take their things (a member the save names keeps its slot); the replaced economy's staff are destroyed at the turn's end
+		if ( Park != null )
+		{
+			Park.Economy.Staff.AttachThings( Things );
+			var kept = Park.Economy.Staff.Members.Select( member => member.ThingId ).ToHashSet();
+			foreach ( var id in replacedStaff.Where( id => !kept.Contains( id ) ) )
+				Things.QueueDestroy( id );
+		}
 		StaffPlacement?.Abandon();
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();

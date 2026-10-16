@@ -81,7 +81,7 @@ train slots decode once the coaster type's counts are known, nothing is imported
 started from the shipped save imports its turn,
 bank, objects, staff and advisor controller (`OriginalEconomyImport`; values not
 imported are reported as SAVE-002 to SAVE-010 and SAVE-920 to SAVE-923); the
-other blocks stay opaque.
+other blocks are split by their widths, and the raw dumps of the original's engine structures are not restored (`[EXT:original-engine-state-dumps]`).
 Every block but the World and a Coasters block with a coaster ends where its tp.exe
 reader stops (`SaveBlockWidths`), like the original loader, which runs each block's own
 reader and then checks the block's tag (`0x415270`); only those two are found by their

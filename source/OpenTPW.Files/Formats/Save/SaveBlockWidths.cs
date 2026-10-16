@@ -119,7 +119,9 @@ public static class SaveBlockWidths
 					var position = (long)TrackChunkHeaderBytes;
 					while ( position < size )
 					{
-						var sub = new Cursor( payload, checked(offset + (int)position), block );
+						if ( position > payload.Length - offset )
+							throw new InvalidDataException( $"Save {block} sub-chunk at {position} lies beyond the end of the payload (truncated)." );
+						var sub = new Cursor( payload, offset + (int)position, block );
 						sub.U32();
 						sub.U32();
 						var length = sub.U32();

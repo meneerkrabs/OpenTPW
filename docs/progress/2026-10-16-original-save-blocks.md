@@ -15,6 +15,9 @@ A deeper pass over the original save format, read in tp.exe via REA:
   flag (`+0x10`) is written only by the lab (`0x5031A0`, `0x504630`), and on the Jungle save it agrees with OpenTPW for all 42 items.
 - **Camera and small runtime blocks** (SAVE-010 narrowed): zoom, yaw, flags and the points of interest; the clock, vanilla time, game
   system, cheat, advisor scoring and UI count blocks are decoded and reported.
+- **Engine-state dumps** (SAVE-010 split): the raw dumps of the original's own engine structures (the Scripts, RSSE, Particles, Sound mixer,
+  message-centre, Track ride and Flying ride blocks) are an OpenTPW design choice, labelled `[EXT:original-engine-state-dumps]`; the camera, clock
+  and similar decoded blocks stay under SAVE-010. The rebuild of a runtime coaster from a saved Coasters block stays SAVE-920.
 - **Also:** a staff sub-type is the sprite variant (`0x763F88`, `0x541D90`; SAVE-004), the pick-up handler `0x505C50` sets state 7
   (SAVE-009), and the third gauge `+0x4C` is write-only (SAVE-006).
 

@@ -471,7 +471,8 @@ words and the loan offers' Available flags, the staff HQ's training budgets,
 strike words, strike levels and trained byte, the world state,
 arrival variables and bytes, the calendar session start, the advisor
 controller's presentation words and current record, the weather, park analyser,
-tag system, mechanic HQ and UI receiver things and the opaque blocks. Staff
+tag system, mechanic HQ and UI receiver things. The raw dumps of the original's own engine structures (the Scripts, RSSE, Particles, Sound, message-centre, Track ride and Flying ride blocks) are
+not restored: OpenTPW's engines restart from the archives (`[EXT:original-engine-state-dumps]`, formerly part of SAVE-010). Staff
 values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
 training percentage, a state without a STAFFSTATES entry, a hire time outside
 the calendar or inside a park turn, which is rounded down to the turn) are adjusted and each adjustment is reported; an attraction whose

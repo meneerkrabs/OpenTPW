@@ -155,4 +155,40 @@ public class SaveBlockWidthsTests
 			Assert.IsTrue( SaveBlockWidths.IsTraced( block ), block.ToString() );
 		Assert.ThrowsException<InvalidDataException>( () => SaveBlockWidths.TryMeasure( new byte[4], SaveBlock.Rsse, 5, out _ ) );
 	}
+
+	[TestMethod]
+	public void HugeSubChunkLengthsAreRejectedAsInvalidDataNotAsOverflow()
+	{
+		// The first sub-chunk claims 2 GiB; the container's size (4 GiB - 1) says more follows, so the next sub-chunk offset leaves the int range.
+		var block = Join( Words( 1, 12, 0xFFFFFFFF ), Words( 2, 32, 0x80000000 ), new byte[64] );
+		Rejects( SaveBlock.TrackRides, block, "truncated" );
+	}
+
+	[TestMethod]
+	public void RandomBytesOnlyEverFailAsInvalidData()
+	{
+		var random = new Random( 249 );
+		var blocks = Enum.GetValues<SaveBlock>().Where( SaveBlockWidths.IsTraced ).ToArray();
+		for ( var iteration = 0; iteration < 20000; iteration++ )
+		{
+			var bytes = new byte[random.Next( 0, 96 )];
+			random.NextBytes( bytes );
+			// Bias some words towards the magics and large counts so the readers get past their first checks.
+			if ( bytes.Length >= 12 && random.Next( 2 ) == 0 )
+			{
+				var magics = new[] { SaveBlockWidths.ScriptsMagic, SaveBlockWidths.ParticlesMagic, SaveBlockWidths.FlyingMagic, SaveBlockWidths.RsseMagic, SaveBlockWidths.AdvisorMagic, 1u };
+				BitConverter.TryWriteBytes( bytes, magics[random.Next( magics.Length )] );
+				BitConverter.TryWriteBytes( bytes.AsSpan( 4 + 4 * random.Next( 2 ) ), random.Next( 2 ) == 0 ? 0xFFFFFFFFu : 0x80000000u | (uint)random.Next( 64 ) );
+			}
+			var block = blocks[random.Next( blocks.Length )];
+			try
+			{
+				SaveBlockWidths.TryMeasure( bytes, block, random.Next( 0, bytes.Length + 1 ), out var width );
+				Assert.IsTrue( width >= 0 && width <= bytes.Length );
+			}
+			catch ( InvalidDataException )
+			{
+			}
+		}
+	}
 }

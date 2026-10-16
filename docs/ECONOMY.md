@@ -219,10 +219,10 @@ The saved guests are restored by the level's guest simulation (`GuestSimulation.
 
 Imported: `mRandomSeed`, the state of the one world generator (`0x516330`; SAVE-001 retired), so the park continues the saved stream. Not imported and reported in `Evidence`: the guests the guest simulation cannot restore (SAVE-002), the hiring
 pool's sub-types and on-pointer flags (SAVE-004), the challenge slots' loss counts and carried object (SAVE-005), the research table's order and the dropped projects
-(SAVE-007), the staff HQ's picked-up id (SAVE-009; its force-strike word and trained byte are never set or read in play), the opaque blocks, world state, arrivals,
+(SAVE-007), the staff HQ's picked-up id (SAVE-009; its force-strike word and trained byte are never set or read in play), the advisor presentation block, world state, arrivals,
 calendar session start, the advisor controller's presentation words and current record, its pending
 advice and history when no automatic advisor is attached, and the subsystem things without an
-OpenTPW counterpart (SAVE-010). Staff values
+OpenTPW counterpart (SAVE-010). The raw dumps of the original's engine structures (scripts, RSSE, particles, sound mixer, message-centre lists, track and flying ride chunks) are not restored (`[EXT:original-engine-state-dumps]`). Staff values
 outside OpenTPW's ranges (and states or targets a save of the original cannot hold) are adjusted and each adjustment is reported; an attraction
 with out-of-range values keeps the defaults and is listed. The ledger's category history starts
 empty: the save has none, and the month opens at the current balance: `mLastBalance` (87,787 in

@@ -552,6 +552,11 @@ public partial class Level : IDisposable
 		// writes the command from mParkClosed (Mac 0x104500 writes the gate handle and the closed flag together);
 		// the initial OpenPark of AttachGuests (an imported park saved open) raises its event before this wiring, so it commands nothing.
 		Gate.InitializeFromParkState();
+		if ( Guests != null )
+		{
+			var gate = Gate;
+			Guests.EntranceGateOpen = () => gate.GateStatusIsOpen;
+		}
 	}
 
 	/// <summary>

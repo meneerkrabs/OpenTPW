@@ -977,6 +977,9 @@ public sealed class ParkEconomy : IParkEconomy
 		_ => -1,
 	};
 
+	/// <summary>An online visit, the original's game type 1: a use wears no toilet and cleans a dirty one at once (<see cref="UseRelief"/>).</summary>
+	public bool OnlineVisit { get; set; }
+
 	/// <summary>The gauge below which a toilet is dirty and handymen clean it (the single 25.0 at 0x00700550).</summary>
 	public const int DirtyToiletGauge = 25;
 
@@ -989,6 +992,19 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) || !Catalog.TryGet( item.InfoId, out var info ) || !info.ProvidesRelief )
 			return false;
+		if ( OnlineVisit )
+		{
+			// [BIN:TPW-EXE:0x004E2478 toilet wear, game type 1] the branch for the online game type (SetGameType 1 at the online entries 0x4C0830 and 0x5E2700; the word 0xFB3B7C is the game-type object) wears nothing; a relief object whose gauge byte is below 25 is cleaned at once: row 6 off and row 1 on at its cell (0x4D8460, 0x4D8440), script variable 8 = 0 (0x55A0B0), gauge 100.0, the claim (+0x5E) and the call (+0x64) cleared (0x4E251F..0x4E252A)
+			if ( IsDirtyToilet( item ) )
+			{
+				SwapToiletEffect( item, RegionEffect.DirtyToilet, RegionEffect.CleanToilet );
+				WriteScript( item, RideVariables.VAR_WORN, 0 );
+				item.Repair = RideRepair.FullGauge;
+				item.MechanicId = 0;
+				item.MaintenanceRequested = false;
+			}
+			return false;
+		}
 		var wasDirty = (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
 		var gauge = (double)(toiletByte & 0xFF) * (double)-0.05f + (double)(float)item.Repair;
 		item.Repair = (float)(gauge > 100 ? 100 : gauge >= 0 ? gauge : 0);
@@ -1654,7 +1670,7 @@ public sealed class ParkEconomy : IParkEconomy
 		Counters.Add( ParkCounters.Built( info.InfoId ), 1 );
 		// [BIN:STP-PPC:0x100DA874 object purchase] the type's park record +28 takes the current turn while it is still 0 (0x100DADEC..0x100DAE14); selling does not clear it
 		// [BIN:TPW-EXE:0x004DB690 first purchase] the constructor stamps the game turn into the type's record +0x1C only while it is 0; at a new park the gates and traffic lights are built after the turn is set to 0 (0x00515865), so fixed items stamp 0 as here
-		// [APPROX:ARRIVAL-005] an object imported from an original save sets the first-purchase turn to the import turn; the original restores the record from the save's object-control block (0x004D3AA0, called by the world loader at 0x005181E7), which OpenTPW keeps opaque — evidence needed: the block's offset and its +0x1C values in an original save
+		// [BIN:TPW-EXE:0x004D3AA0 object controls] an object imported from an original save finds its type's first-purchase turn restored from the save's object-control block (OriginalEconomyImport.ImportFirstPurchases), and is stamped with the import turn only while the type is still at 0, which is the original's rule
 		if ( Counters[ParkCounters.FirstPurchaseTurn( info.InfoId )] == 0 )
 			Counters.Max( ParkCounters.FirstPurchaseTurn( info.InfoId ), Turn );
 		return item;
@@ -1876,6 +1892,21 @@ public sealed class ParkEconomy : IParkEconomy
 		var amount = TryGetObject( rideInstanceId, out var ride ) ? CellCost( CellPurchase.Queue ) * ScrapPercent( ride! ) / 100 : 0;
 		if ( amount > 0 )
 			Post( LedgerCategory.OtherIncome, amount );
+		return amount;
+	}
+
+	/// <summary>
+	/// The one charge the demolition of a ride with queue cells makes after its queue is cleared: the queue cell cost × the ride's scrap percentage / 100 (a signed
+	/// 32-bit division), debited without a balance test, so the cells refund one cell less than they were laid for. Returns the amount debited.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00527FDC demolition queue charge] after the undo loop (0x527FBE..0x527FDA) 0x527EE0 takes the queue cell cost (0x52FB40) times the scrap percentage (0x4E2290), divides by 100 signed (imul by 0x51EB851F, sar 5 and the sign correction, 0x527FE3..0x527FFD) and debits it through 0x4D01F0 (0x528007); the cells themselves were credited one by one by the forced clears (ClearCell 0x5367A0's queue case, 0x4D0190), so a queue refunds one cell less than it holds
+	public long ChargeQueueDemolition( int rideInstanceId )
+	{
+		if ( !TryGetObject( rideInstanceId, out var ride ) )
+			return 0;
+		var amount = unchecked( (int)CellCost( CellPurchase.Queue ) * ScrapPercent( ride! ) ) / 100;
+		if ( amount > 0 )
+			Post( LedgerCategory.OtherCosts, amount );
 		return amount;
 	}
 

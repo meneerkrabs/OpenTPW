@@ -13,7 +13,7 @@ namespace OpenTPW.Tests;
 public class GuestTimeInParkReviewTests
 {
 	[TestMethod]
-	public void RealQueueRideAndExitLaneBoundariesAdvanceOnlyInside()
+	public void RealQueueRideAndExitLaneBoundariesAllAdvance()
 	{
 		var rig = new GuestSnapshotTests.Rig();
 		var seen = new HashSet<GuestState>();
@@ -26,17 +26,15 @@ public class GuestTimeInParkReviewTests
 			foreach ( var (guest, state, reversed, elapsed) in before )
 			{
 				if ( elapsed == null ) continue;
-				if ( reversed || state is GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome or GuestState.Gone )
+				// the stamp +0x1D4 is never rewritten (0x4FAFDB): the time runs on the road home too and ends with the guest
+				sawHomeLane |= reversed || state is GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome;
+				if ( state == GuestState.Gone )
 				{
 					Assert.AreEqual( elapsed, guest.TimeInParkSeconds );
-					// the road home: OpenTPW's reversed lane, or the cell-map walk from the gate (states 19 to 21)
-					sawHomeLane |= reversed || state is GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome;
+					continue;
 				}
-				else
-				{
-					Assert.AreEqual( elapsed.Value + (double)GuestSnapshotTests.Tick, guest.TimeInParkSeconds );
-					seen.Add( state );
-				}
+				Assert.AreEqual( elapsed.Value + (double)GuestSnapshotTests.Tick, guest.TimeInParkSeconds, $"{state} -> {guest.State}" );
+				seen.Add( state );
 			}
 		}
 		foreach ( var state in new[] { GuestState.Queueing, GuestState.Using, GuestState.LeavingPark } )
@@ -100,7 +98,7 @@ public class GuestTimeInParkReviewTests
 	}
 
 	[TestMethod]
-	public void ClosedEconomyRefusalDoesNotStartDuration()
+	public void ClosedEconomyRefusalLeavesTheCounterRunning()
 	{
 		var rig = new GuestSnapshotTests.Rig();
 		rig.Simulation.ArrivalsEnabled = false;
@@ -111,7 +109,7 @@ public class GuestTimeInParkReviewTests
 		for ( var tick = 0; tick < 20000 && !guest.LaneReversed; tick++ ) rig.Step();
 		Assert.IsTrue( guest.LaneReversed );
 		Assert.AreEqual( 0L, rig.Simulation.Admissions );
-		Assert.IsNull( guest.TimeInParkSeconds );
+		Assert.IsTrue( guest.TimeInParkSeconds > 0, "the counter is the creation stamp's, not the admission's" );
 	}
 	[TestMethod]
 	public void FailedExitRouteCountsTheLastInsideTickBeforeRemoval()

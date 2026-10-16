@@ -218,7 +218,7 @@ internal static class ParkVisitorRoster
 		return ParkCalendar.SecondsPerTurn * (refreshed ? steps << 2 : steps) / ParkCalendar.SecondsPerHour;
 	}
 
-	// [APPROX:GUEST-920] the turns since admission are the visitor's simulated seconds in the park over the turn's 248 ms, where the original counts world turns since its stamp +0x1d4
+	// [APPROX:GUEST-920] the turns since creation are the visitor's simulated seconds over the turn's 248 ms, floored, where the original subtracts two integer world turns (stamp +0x1d4, 0x4fd950)
 	private static long? Hours( Guest guest, bool refreshed ) => guest.TimeInParkSeconds is { } elapsed
 		? DisplayHours( (long)Math.Floor( elapsed * 1000 / ParkCalendar.TurnMilliseconds ), refreshed ) : null;
 

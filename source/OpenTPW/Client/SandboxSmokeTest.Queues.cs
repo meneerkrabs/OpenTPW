@@ -121,8 +121,11 @@ internal sealed partial class SandboxSmokeTest
 			"a free-standing queue cell can be laid" );
 		Require( level.RemoveAt( lone!.Value.X, lone.Value.Y ) && !grid.IsQueue( lone.Value.X, lone.Value.Y ), "the remove tool takes the free-standing queue cell" );
 
-		for ( var step = SmokeQueueLength - 1; step >= 0; step-- )
-			level.RemoveAt( entrance.OutsideX + stepX * step, entrance.OutsideY + stepY * step );
+		// A ride's demolition takes its queue with it: every point of the corner stack is undone (tp.exe 0x527EE0, QUEUE-015)
+		for ( var step = 1; step <= SmokeQueueLength; step++ )
+			Require( level.BuildQueueCell( bridge, entrance.OutsideX + stepX * step, entrance.OutsideY + stepY * step ) == QueueBuildResult.Ok, "lay the queue out of the entrance again before the ride goes" );
 		level.RemoveObjectAt( entrance.X, entrance.Y );
+		Require( Enumerable.Range( 0, SmokeQueueLength + 1 ).All( step => !grid.IsQueue( entrance.OutsideX + stepX * step, entrance.OutsideY + stepY * step ) ),
+			"demolishing the ride takes its queue cells with it" );
 	}
 }

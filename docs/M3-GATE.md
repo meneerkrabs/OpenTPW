@@ -278,7 +278,7 @@ walk-related assumptions of review GATE-V4 (B1/B2) are retired by WALK-I:
 and `[APPROX:GATE-005]` (W(p) and the head check left out the walk from the join cell).
 Both now use C = 9 from enumerating the steering OpenTPW runs, which is registered as
 `[APPROX:GATE-006]`: that steering is the traced step except for the walk register's
-WALK-001 (boost increments), WALK-002 (avoid_walls' corner branches), WALK-003
+WALK-001 (boost increments), WALK-002 (avoid_walls' corner branches, since ported), WALK-003
 (separation's neighbour set; the enumeration runs separation off and at its maximum
 against the walk), WALK-004 (OpenTPW's routes), WALK-005/006 (walkability: the walk's
 own cells instead of the cell edge flags), WALK-007 (no map-edit reroute), WALK-008

@@ -236,6 +236,7 @@ public class ParkEconomyOriginalDataTests
 		Assert.AreEqual( 87987, easy.Balance, "the bank balance is imported" );
 		Assert.AreEqual( (25, -12013L), (easy.EntranceFee, easy.Ledger.ProfitThisYear) );
 		Assert.AreEqual( 755, easy.Turn, "mGameTick is the park turn" );
+		Assert.AreEqual( (15L, 604L), (easy.Counters[ParkCounters.FirstPurchaseTurn( 1402 )], easy.Counters[ParkCounters.FirstPurchaseTurn( 1600 )]), "the first purchases come back from the save's object-control table (0x4d3aa0 +0x1c), not the import turn" );
 		Assert.AreEqual( new ParkDate( 1, 2, 2, 18 ), easy.Date, "the calendar's month and day caches agree with turn 755" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "agrees with that date" ) ) );
 		Assert.AreEqual( 4450, easy.Objects.Where( item => item.Kind != ParkObjectKind.FixedItem ).Sum( item => easy.Catalog.TryGet( item.InfoId, out var info ) ? info.PurchaseCost : 0 ) );

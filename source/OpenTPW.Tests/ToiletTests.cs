@@ -37,6 +37,24 @@ public class ToiletTests
 	}
 
 	[TestMethod]
+	public void AnOnlineVisitWearsNoToiletAndCleansADirtyOneAtOnce()
+	{
+		// [BIN:TPW-EXE:0x004E2478] the game-type-1 branch of the wear step
+		var park = EconomyTestData.Park();
+		park.OnlineVisit = true;
+		var toilet = park.RegisterExisting( Toilet );
+		park.PlaceObjectEffects( toilet.Id, (10, 10) );
+		Assert.IsFalse( park.UseRelief( toilet.Id, 200 ) );
+		Assert.AreEqual( 100.0, toilet.Repair, "a use wears nothing" );
+		toilet.Repair = 10;
+		toilet.MaintenanceRequested = true;
+		Assert.IsFalse( park.UseRelief( toilet.Id, 200 ), "no dirty message either" );
+		Assert.AreEqual( 100.0, toilet.Repair, "a dirty toilet is cleaned by the next use" );
+		Assert.IsFalse( toilet.MaintenanceRequested );
+		Assert.AreEqual( 0, toilet.MechanicId );
+	}
+
+	[TestMethod]
 	public void AHandymanCleansADirtyToiletAfterItsWorkDuration()
 	{
 		var park = EconomyTestData.Park();

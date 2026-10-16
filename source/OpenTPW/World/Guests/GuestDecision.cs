@@ -37,6 +37,8 @@ public static class GuestDecision
 		GoToRide,
 		/// <summary>The major decision found nothing: the "can't decide" activity, the small happiness loss and a new stamp.</summary>
 		CantDecide,
+		/// <summary>The guest turned toward a show or a performing entertainer and the call ended there (steps 5 and 6).</summary>
+		Watch,
 		/// <summary>A wander destination was set (state 7).</summary>
 		Wander,
 		/// <summary>No wander destination: a new stamp only.</summary>
@@ -66,9 +68,9 @@ public static class GuestDecision
 	// [BIN:TPW-EXE:0x004FEC90 state 6] one draw at entry; cheering when (unsigned) turn − +0x208 > 100 and the happiness byte > 80 (activity 5); vomiting when the illness byte is above 80 and equal to 100 and R % 3 == 0 (activity 7, illness 0); the leaving gate on happiness byte 0, +0x1BC == 0 or the closed word (0x0051A280) takes the big happiness change (0x004FEA70 selector 2) and tries a route to the two gate cells (0x004FA530, in an order by R & 1, twice): a route sets state 18, none goes on; then R % 3: 0 → when +0x1FC + 30 < turn (unsigned) the choice 0x004FCB10, a target sets state 10, none starts activity 4, takes the small happiness change (0x004FEA70 selector 0) and stamps +0x1FC; 1 → 0x004F9490, success sets state 7, failure stamps +0x1FC; 2 → nothing
 	// [BIN:TPW-EXE:0x004FEDA8 litter step] when the litter meter byte (+0x1B4) is at least 90 (and the state 6, 7 or 10): the bin search 0x00500DC0 (radius 3) sets +0x1DC and state 9 and returns; without a bin a second draw drops litter 1 + R2 % 5 on the cell (0x004D93B0) and the meter goes to 0
 	// [BIN:TPW-EXE:0x004FF0F5 pranks] with the happiness byte below 15 and the prankery byte +0x1C0 above R % 101: 100 drops a stinkbomb (litter 8) and plays sound 0xCF when R % 100 is below StinkbombLikelihood (0x007850E0), 101 drops litter R % 5 + 1, 102 bursts the balloon of the first other guest on its cell that holds one (0x004FE950); a prank then records event 15, sends the prank message (type 14 on the bus 0x00788D3C: the advisor and the guards) and adds 1.0 to happiness; the step never returns
-	// [APPROX:GUEST-010] steps 5 and 6 are not run: a show object within squared distance 5 (0x501020) or a kind-6 thing in the 3 × 3 cells with the nearest listed object in state 14 (0x500F00, also recording event 0xE) turns the guest when dx + dy is not 0, writing the heading +0x1C and ending its state-6 call before the pranks and the decision (0x4FF0D2..0x4FF0F4), so they are not presentation only — evidence needed: the path-finder mode word 0x7CF3C0 is the search's copy of the walk mask (read; the leaving gate's two passes are ported, GuestSimulation.RouteToGate)
+	// [BIN:TPW-EXE:0x004FF0D2 steps 5 and 6] the show turn and the performer turn run through the caller's watch callback (GuestSimulation.TurnToShowOrPerformer): a guest that turned writes the heading +0x1C and ends its state-6 call before the pranks and the decision (0x4FF0D2..0x4FF0F4), so they are not presentation only; the path-finder mode word 0x7CF3C0 is the search's copy of the walk mask (read; the leaving gate's two passes are ported, GuestSimulation.RouteToGate)
 	public static Outcome Decide( in Input input, Func<bool> litter, Func<bool> leave, Func<Prank, LitterType, bool> prank, Func<bool> chooseRide, Func<bool> wander,
-		Func<float>? happiness = null )
+		Func<float>? happiness = null, Func<bool>? watch = null )
 	{
 		var r = input.Draw;
 		if ( unchecked(input.Turn - input.ActivityStamp) > CheerGapTurns && MeterMath.Byte( input.Happiness ) > 80 )
@@ -80,6 +82,9 @@ public static class GuestDecision
 			return Outcome.ToBin;
 		if ( GuestLifecycle.ShouldLeave( input.Happiness, input.ExitLevel, input.ParkClosed ) && leave() )
 			return Outcome.Leave;
+		// [BIN:TPW-EXE:0x004FEF20 show and performer turns] steps 5 and 6 come after the leaving gate and end the call when the guest turned (0x004FEFCA, 0x004FF0D2..0x004FF0F4)
+		if ( watch?.Invoke() == true )
+			return Outcome.Watch;
 		// The prank test reads happiness again: a leaving gate that found no way out has just taken the big change.
 		if ( MeterMath.Byte( happiness?.Invoke() ?? input.Happiness ) < PrankHappinessBelow && (uint)input.PrankFlag > r % 101 )
 		{

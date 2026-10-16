@@ -215,6 +215,6 @@ inconclusive without `OPENTPW_GAME_PATH`.
 
 - Heightfield: the cell-word low bits are read by tp.exe (MD2-MODELS.md: triangle diagonal, texture turn
   and mirror; the diagonal is applied); the texture turn and mirror are not drawn yet.
-- The object branches of the validator 0x535670 (existing ride cells against the count 0x818C10, entrance
-  and exit cells, the cost test); see OBJECTS.md RIDES-018.
+- The rest of the validator 0x535670's object branches (the second-layer link tests and the cost of the
+  access cells the placement lays); see OBJECTS.md "Build rules" and RIDES-018.
 - Sound catalog `.map` schema: decoded separately, see [AUDIO.md](AUDIO.md).

@@ -10,9 +10,10 @@ namespace OpenTPW;
 /// the next one. <see cref="Stop"/> stops every live child, as the original's held-voice stop does.
 /// </summary>
 // [BIN:STP-PPC:sound_shared 0x10011F20 CreatePlaceHolder] the event flags 0x404 (cat_kids 71-74, the screams) make a voice that chains one-shot children
-// [LEAD:maexah/OpenTPW docs/exe/audio.md, PC 0x006BDAE0/0x006C3E00/0x006BD9B0] child scheduling from start time, first-sound selection and hard stop; packed local PC exe prevents independent verification
 // [BIN:TPW-EXE:0x6bdb50 held chain advance] the root voice (vtable 0x70a2e0, made for flags 0x404 by 0x6b6700 → 0x6bdd30) ticks in 0x6bdae0: a child node whose end (+0x1c, its creation time + a delay drawn min + R % (max − min) from its own sound, 0x6c3a80) has passed makes the next child (0x6bdbb0); released children play out, and the stop 0x6bd9b0 stops every live child; the root is ticked only while it holds a place in the sound manager's pool (SoundEventSystem.Pump)
-// [APPROX:AUDIO-034] held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads — evidence needed: the Mac held-voice tick, variation and stop routines
+// [BIN:TPW-EXE:0x6bdbb0 next child] the next child starts when the newest child's end has passed and it has no successor: a new node takes its sound from 0x6c3e00 (the first child the event's first sound, [event+8]; every later one a link of the previous sound whose bytes +6/+7 hold the root's parameter byte, picked by the target sounds' weights as ror13(LCG) % total with cumulative >= pick, 0x6c3e00) and its end is the start time plus the delay of 0x6bc2d0 (u16 min + r % (max - min), or (max - min) x v / 100 + min with a parameter-bound delay slot, 0 when both are 0); the children overlap and 0x6bdc10 drops the nodes whose end has passed
+// [BIN:TPW-EXE:0x6bd9b0 chain stop] the stop walks the child list, sends each child the stop command (0x6bcab0, command 1 sets the child's stopped flag 0x10) and destroys it, then stops the root, so every child ends at once
+// [APPROX:AUDIO-034] when no link covers the parameter the original (0x6c3e00) writes 0x7f into the root's parameter byte, sets the root flag 0x40 (the root's tick 0x6bdae0 does nothing while flags & 0x50 is set) and drops the half-made child; what clears 0x40 and starts the walk again (OpenTPW resumes when the parameter is set) and whether the forced 0x7f is visible to the script's next parameter call are not read
 public sealed class SoundChain
 {
 	private readonly SoundEventSystem system;

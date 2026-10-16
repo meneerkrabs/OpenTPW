@@ -57,7 +57,7 @@ Adjustments, in order: (1) a straight with link 0x40 or 0x10 turns +180°; (2) p
 (0x04,0x05)} adds 16 (B → B2); (4) type 16 crossings: link 0x14 sets 90°, 0x41 adds 16, 0x50 sets 270° and adds 16 (X2, pieces 20–24). Types 4, 5,
 7, 9, 10, 12, 17 and the station tiles draw nothing.
 
-Bridges: a straight tile over the paths it cleared (TRACK-010) gets bit 1. The PC original (`[TPW-EXE:0x538A92]`) sets the bridge word on a kart or water
+Bridges: a tile with at most two arms and no corner (a straight, a single-arm end or an armless tile) over the paths it cleared (TRACK-010) gets bit 1. The PC original (`[TPW-EXE:0x538A92]`) sets the bridge word on a kart or water
 tile with at most two arms and no corner whose four map cells hold a path or queue, which stay in the map layer under the track; water is no bridge
 (inside the park water cells are map type 0), and only type 25 tests map types 2, 7 and 30, which exist only outside the park;
 the second pass (`[STP-PPC:0x1007A354]`) turns it into H (neither neighbour bridged), H_U (only ahead), H_D (only behind) or H_A (both), ahead

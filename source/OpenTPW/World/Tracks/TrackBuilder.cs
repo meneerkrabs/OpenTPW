@@ -341,7 +341,7 @@ public sealed class TrackBuilder
 	/// </summary>
 	// [BIN:STP-PPC:0x1007A354 bridge pass] neither neighbour bridged → H; only ahead → H_U; only behind → H_D; both → H_A
 	// [BIN:TPW-EXE:0x00538A92 bridge flag] a kart or water tile (any type but 25) with at most two arms and no corner (0x538AA4–0x538B05) gets flag word +0xE = 1 when its map cell or the (0, +1), (+1, 0), (+1, +1) map cells hold a path or queue (type 1 or 3), the paths staying in the map layer under the track, and its four low bits cleared when all four are type 0 (0x538B0B–0x538BDB); only type 25 tests map types 2, 7 and 30 (0x53890F–0x538A82), which map setup 0x536490 gives to cells outside the park alone (inside, water becomes type 0 at 0x536548)
-	// [APPROX:TRACK-010] the bridge test reads the paths a tile cleared when it was laid (OpenTPW's track replaces path cells in the cell map, the original keeps them in the map layer under the track and re-tests when a path is laid later), and only exact straights (masks 0x11, 0x44) qualify where the original also bridges a single-arm end or an armless tile; the type-25 rule has no case (OpenTPW writes no type 25) and the ahead/behind neighbours follow the flow link (the line's drawing direction, +0xD) — evidence needed: the second pass's PC twin and which cell operations of 0x5370E0 re-run the bridge write
+	// [APPROX:TRACK-010] the bridge test reads the paths a tile cleared when it was laid (OpenTPW's track replaces path cells in the cell map, the original keeps them in the map layer under the track and re-tests when a path is laid later); the type-25 rule has no case (OpenTPW writes no type 25) and the ahead/behind neighbours follow the flow link (the line's drawing direction, +0xD), a single-arm end or an armless tile taking the positive axis when the link does not run along it — evidence needed: the second pass's PC twin and which cell operations of 0x5370E0 re-run the bridge write
 	public void Refresh( int x, int y )
 	{
 		var region = new List<(int X, int Y)> { (x, y) };
@@ -369,12 +369,16 @@ public sealed class TrackBuilder
 	private static bool IsBridgeBase( TrackCellLayer tracks, int x, int y )
 	{
 		var tile = tracks.Get( x, y );
-		if ( !tile.IsOrigin || TrackCellTypes.IsStation( tile.Type ) || !IsStraight( tile.Mask ) )
+		if ( !tile.IsOrigin || TrackCellTypes.IsStation( tile.Type ) || !IsBridgeShape( tile.Mask ) )
 			return false;
 		return (tile.Flags & FlagOverPath) != 0;
 	}
 
 	internal static bool IsStraight( byte mask ) => mask is 0x11 or 0x44;
+
+	/// <summary>A tile the bridge test may take: at most two arms and not a corner (a straight, a single-arm end or an armless tile).</summary>
+	// [BIN:TPW-EXE:0x00538AA4 bridge shape] the corner test (0x522810 = 2 with perpendicular arms) skips the tile at 0x538AD8 and an arm count above 2 at 0x538B05; every other kart or water tile goes on to the path test
+	internal static bool IsBridgeShape( byte mask ) => TrackHeading.Count( mask ) <= 2 && !(TrackHeading.Count( mask ) == 2 && (mask & 0x11) != 0 && (mask & 0x44) != 0);
 
 	private static void RefreshOne( TrackCellLayer tracks, int x, int y )
 	{

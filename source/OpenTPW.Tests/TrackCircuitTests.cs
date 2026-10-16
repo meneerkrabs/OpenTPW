@@ -334,6 +334,23 @@ public class TrackCircuitTests
 
 	// ---- Bridges -------------------------------------------------------------------------------------
 
+	/// <summary>TRACK-010: the bridge test takes every tile with at most two arms and no corner, so a single-arm end laid over a path is a bridge end (tp.exe 0x538AA4..0x538B05).</summary>
+	[TestMethod]
+	public void ASingleArmEndOverAPathIsABridge()
+	{
+		var lone = new Rig();
+		var paths = new GuestPathGrid( lone.Cells );
+		foreach ( var cell in TrackStation.TileCellsOf( 16, 10 ) )
+			paths.SetPath( cell.X, cell.Y, true );
+		Assert.IsTrue( lone.Writer.Commit( (14, 10), (16, 10) ).Completed );
+		var end = lone.Cells.Tracks.Get( 16, 10 );
+		Assert.AreEqual( 0x40, end.Mask, "a stub with one arm" );
+		Assert.AreEqual( TrackCell.FlagBridge, end.Flags & TrackCell.BridgeMask );
+		Assert.AreEqual( 1 + TrackPieceSelector.PieceBridgeStem, end.Piece, "the end piece in its bridge variant" );
+		Assert.IsTrue( TrackBuilder.IsBridgeShape( 0x00 ) && TrackBuilder.IsBridgeShape( 0x10 ) && TrackBuilder.IsBridgeShape( 0x44 ) );
+		Assert.IsFalse( TrackBuilder.IsBridgeShape( 0x14 ) || TrackBuilder.IsBridgeShape( 0x54 ), "corners and tees are no bridges" );
+	}
+
 	[TestMethod]
 	public void StraightsOverPathsBecomeBridgeVariantsByTheirNeighbours()
 	{

@@ -129,16 +129,32 @@ public class WeatherForecastTests
 	[TestMethod]
 	public void TheKindTextNamesTheUndecidedTieAndComposesThunder()
 	{
-		Assert.AreEqual( "snow or rain", WeatherForecastState.KindText( new WeatherQualityBands( true, true, false ) ) );
-		Assert.AreEqual( "thunderstorms", WeatherForecastState.KindText( new WeatherQualityBands( true, true, true ) ) );
-		Assert.AreEqual( "thunderstorms", WeatherForecastState.KindText( new WeatherQualityBands( false, true, true ) ) );
-		Assert.AreEqual( "thunder and lightning", WeatherForecastState.KindText( new WeatherQualityBands( false, false, true ) ) );
-		Assert.AreEqual( "snow", WeatherForecastState.KindText( new WeatherQualityBands( true, false, false ) ) );
-		Assert.AreEqual( "rain", WeatherForecastState.KindText( Rain ) );
-		Assert.AreEqual( "dry weather", WeatherForecastState.KindText( Dry ) );
-		Assert.AreEqual( "today", WeatherForecastState.DueText( 0 ) );
-		Assert.AreEqual( "tomorrow", WeatherForecastState.DueText( 1 ) );
-		Assert.AreEqual( "in 5 days", WeatherForecastState.DueText( 5 ) );
+		var english = new WeatherForecastState();
+		Assert.AreEqual( "snow or rain", english.KindText( new WeatherQualityBands( true, true, false ) ) );
+		Assert.AreEqual( "thunderstorms", english.KindText( new WeatherQualityBands( true, true, true ) ) );
+		Assert.AreEqual( "thunderstorms", english.KindText( new WeatherQualityBands( false, true, true ) ) );
+		Assert.AreEqual( "thunder and lightning", english.KindText( new WeatherQualityBands( false, false, true ) ) );
+		Assert.AreEqual( "snow", english.KindText( new WeatherQualityBands( true, false, false ) ) );
+		Assert.AreEqual( "rain", english.KindText( Rain ) );
+		Assert.AreEqual( "dry weather", english.KindText( Dry ) );
+		Assert.AreEqual( "today", english.DueText( 0 ) );
+		Assert.AreEqual( "tomorrow", english.DueText( 1 ) );
+		Assert.AreEqual( "in 5 days", english.DueText( 5 ) );
+	}
+
+	[TestMethod]
+	public void TheLinesFollowTheSelectedLanguage()
+	{
+		var language = "Dutch";
+		var state = new WeatherForecastState( () => language );
+		state.Step( Sample( day: 3, forecast: 30, applyDay: 4, forecastBands: Rain, currentBands: Dry ), 0 );
+		Assert.AreEqual( "Weerbericht: morgen regen.", state.Banner );
+		CollectionAssert.AreEqual( new[] { "Weerbericht: morgen regen." }, state.TakeAnnouncements().ToArray() );
+		language = "German";
+		state.Step( Sample( day: 1, forecast: 30, applyDay: 4, forecastBands: Rain, currentBands: Dry ), 0 );
+		Assert.AreEqual( "Vorhersage: in 3 Tagen Regen.", state.Banner, "the countdown is worded again on every step" );
+		Assert.AreEqual( "torrt väder", new WeatherForecastState( () => "Swedish" ).KindText( Dry ) );
+		Assert.AreEqual( "in 2 days", new WeatherForecastState( () => "Klingon" ).DueText( 2 ), "a language without a translation reads English" );
 	}
 
 	// ---- ParkWeather seams ----
@@ -241,7 +257,7 @@ public class WeatherForecastTests
 		Assert.IsNotNull( quality );
 		state.Step( new WeatherForecastSample( restored.CurrentDay, quality, restored.ForecastApplyDay,
 			restored.BandsOf( quality.Value ), default ), 0.016f );
-		var expected = $"Weather forecast: {WeatherForecastState.KindText( restored.BandsOf( quality.Value ) )} in 2 days.";
+		var expected = $"Weather forecast: {state.KindText( restored.BandsOf( quality.Value ) )} in 2 days.";
 		CollectionAssert.AreEqual( new[] { expected }, state.TakeAnnouncements().ToArray(),
 			"a park resumed mid-warning announces the true distance on its first frame" );
 	}

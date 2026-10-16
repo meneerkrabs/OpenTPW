@@ -11,7 +11,10 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x00495aa0 attractions window] the builder applies table 0x7508e0, selects the category's tab, fills the list with the category's list table
 // (0 rides 0x494ec0, 1 shops 0x494c70, 2 sideshows 0x494250, 3 features 0x495110), titles it UITEXT 78-81 and plays 0xbf; a category of -1 reopens the last one
 // (0x7ca154), and the object windows open their own category with their object selected (0x4af91b, 0x4b0d06, 0x4b22ff, 0x4b5158)
-// [APPROX:UI-905] the All Attractions list's row pitch is the row item's height (0x4944d0: font slot 7's height scaled to the canvas + 6), taken as the list's pitch; rows re-sort when their values refresh, where the original sorts on a header press; the list selects its first row when nothing is chosen, where the original opens with no selection; the bars take the object window's values (UI-028) and satisfaction, which OpenTPW does not simulate, draws an empty bar — evidence needed: the list class's row pitch (+0x170) and sort trigger for this list
+// [BIN:TPW-EXE:0x4955e0 list refresh, 0x66403b sorted row insert] the 2000 ms refresh rewrites the cells in place and never moves a row, a new row goes in by the list's sorted insert (ListRowOrder), and the first row added selects row 0 (0x66525c)
+// [EXT:list-row-pitch] the list's row pitch is the row item's height (0x4944d0: font slot 7's height scaled to the canvas + 6), taken as the list's pitch, a design choice: the original's pitch follows the screen mode's font bank (0x663718 into +0x170), which resolution-independent output sizes do not have (UI-002)
+// [EXT:list-selection-by-id] the selected row follows its attraction while rows are added or removed, where the original keeps the selected position (+0x14c) — a design choice that keeps a live list from highlighting another attraction
+// [APPROX:UI-905] the bars take the object window's values (UI-028) and satisfaction, which OpenTPW does not simulate, draws an empty bar — evidence needed: the satisfaction gauge's data, which OpenTPW's guests do not keep (ECON-057)
 public sealed partial class ParkHud
 {
 	/// <summary>The round entry button of the All Attractions window in the buy and staff windows: the window's own rides tab icon.</summary>
@@ -78,8 +81,22 @@ public sealed partial class ParkHud
 	public float AttractionRowsTop => AttractionContent( attractionCategory ).Y;
 	/// <summary>Live rows of the selected category in list order, the developer prototype Totem included.</summary>
 	// [EXT:developer-prototype] the prototype ride lives beside the object world; Level.ListAttractions is where both sources merge
-	public IReadOnlyList<AttractionListRow> AttractionItems => ParkAttractionRoster.Rows( level.ListAttractions().Select( AttractionRow ), attractionCategory,
-		attractionSortColumn, attractionSortDescending, AttractionCellsOf );
+	public IReadOnlyList<AttractionListRow> AttractionItems => OrderAttractions( level.ListAttractions().Select( AttractionRow ).ToArray() );
+
+	/// <summary>The row order the open category list holds (attraction ids); null before the list's first fill and after a category or header change, which sort it afresh.</summary>
+	private List<int>? attractionOrder;
+
+	/// <summary>The category's rows in the list's order: sorted when the list is filled or a header is pressed, afterwards kept with new rows inserted (<see cref="ListRowOrder"/>).</summary>
+	private IReadOnlyList<AttractionListRow> OrderAttractions( IReadOnlyList<AttractionListRow> rows )
+	{
+		if ( attractionOrder == null )
+		{
+			var sorted = ParkAttractionRoster.Rows( rows, attractionCategory, attractionSortColumn, attractionSortDescending, AttractionCellsOf );
+			attractionOrder = sorted.Select( row => row.AttractionId ).ToList();
+			return sorted;
+		}
+		return ParkAttractionRoster.Keep( attractionOrder, rows, attractionCategory, attractionSortColumn, attractionSortDescending, AttractionCellsOf );
+	}
 
 	/// <summary>
 	/// The window's rows for one frame: the screen refreshes them when it updates and every action that changes the category or order
@@ -104,7 +121,7 @@ public sealed partial class ParkHud
 		}
 		foreach ( var id in attractionCells.Keys.Where( id => !attractionObjects.ContainsKey( id ) ).ToArray() )
 			attractionCells.Remove( id );
-		return attractionRows = ParkAttractionRoster.Rows( listed.Select( AttractionRow ), attractionCategory, attractionSortColumn, attractionSortDescending, AttractionCellsOf );
+		return attractionRows = OrderAttractions( listed.Select( AttractionRow ).ToArray() );
 	}
 
 	private AttractionListRow SelectedAttractionRow => attractionRows.FirstOrDefault( row => row.AttractionId == selectedAttractionId );
@@ -193,6 +210,7 @@ public sealed partial class ParkHud
 			attractionCategory = chosen;
 		attractionFirstRow = 0;
 		selectedAttractionId = 0;
+		attractionOrder = null;
 		RefreshAttractionRows( values: true );
 		// [BIN:TPW-EXE:0x00494ff1 list selection] with an object the filler selects its row (0x664d2a → 0x665739)
 		if ( select != null && AttractionRowIndex( select.Runtime.AttractionId ) is >= 0 and var index )
@@ -241,6 +259,7 @@ public sealed partial class ParkHud
 	{
 		attractionSortDescending = attractionSortColumn == column && !attractionSortDescending;
 		attractionSortColumn = column;
+		attractionOrder = null;
 		RefreshAttractionRows();
 		var index = AttractionRowIndex( selectedAttractionId );
 		EnsureAttractionSelection();
@@ -380,6 +399,7 @@ public sealed partial class ParkHud
 		attractionCategory = category;
 		attractionFirstRow = 0;
 		selectedAttractionId = 0;
+		attractionOrder = null;
 		RefreshAttractionRows( values: true );
 		EnsureAttractionSelection();
 	}

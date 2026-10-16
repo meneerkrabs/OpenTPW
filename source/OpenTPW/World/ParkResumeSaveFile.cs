@@ -393,7 +393,8 @@ internal static class ParkResumeSaveFile
 				Require( prototype.RootScriptId != 0, "the prototype runs a script but names no root script" );
 				Require( scriptsById.TryGetValue( prototype.RootScriptId, out var prototypeRoot ) && prototypeRoot!.ParentScriptId == 0,
 					$"the prototype names root script {prototype.RootScriptId}, which the world does not hold as a root" );
-				Require( prototypeRoot!.UsesWorldRandom || prototypeRoot.Seed == prototype.ScriptSeed,
+				// a script of the world generator has no seed (0); an older save's was created with the part's seed
+				Require( prototypeRoot!.UsesWorldRandom ? prototype.ScriptSeed == 0 : prototypeRoot.Seed == prototype.ScriptSeed,
 					$"the prototype's root script was created with seed {prototypeRoot.Seed}, not the part's {prototype.ScriptSeed}" );
 				Require( claimedRoots.Add( prototype.RootScriptId ), $"root script {prototype.RootScriptId} is claimed by two runtimes" );
 			}

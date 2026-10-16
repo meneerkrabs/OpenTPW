@@ -15,9 +15,12 @@ public sealed partial class ParkHud
 	// picked through the index table at 0x5f186c); the layers are independent toggles, not an exclusive filter, and each
 	// category is drawn from its own bit only. The layer word ([object+0x18]) is set to 1 by the map object's static
 	// constructor (0x5f06a9-0x5f06c3), i.e. only the layer of control 2439 (bit 1) is on at the start.
-	// [APPROX:UI-086] which category button owns which control (2434 bit 8, 2439 bit 1, 2451 bit 2, 2452 bit 4) is not traced,
-	// so OpenTPW starts with all four category layers on instead of the single bit-1 layer.
-	private readonly HashSet<BuildCategory> mapCategories = new() { BuildCategory.Rides, BuildCategory.Shops, BuildCategory.Sideshows, BuildCategory.Features };
+	// [BIN:TPW-EXE:0x774da0 map table] the category controls are 2439 b_sride (64,1409)-(167,1512) help 267 → bit 1, 2452 (184,1409) → bit 4,
+	// 2451 (303,1409) → bit 2 and 2434 (423,1409) → bit 8, beside the track control 2441 (542,1409) → 0x10 and the visitor control 2435 (1390,1409) → 0x20
+	// (the handler 0x5f14f1-0x5f1628 and the rectangles of the PC map table), so only the rides layer is on when the map first opens.
+	/// <summary>The category layers the map starts with: the original's layer word 1, the rides button's bit.</summary>
+	public static IReadOnlyCollection<BuildCategory> InitialMapCategories { get; } = new[] { BuildCategory.Rides };
+	private readonly HashSet<BuildCategory> mapCategories = new( InitialMapCategories );
 	private readonly HashSet<StaffType> mapStaff = new();
 	public bool MapStaffRole( StaffType type ) => mapStaff.Contains( type );
 	public void ToggleMapStaff( StaffType type ) { if ( !mapStaff.Remove( type ) ) mapStaff.Add( type ); }
@@ -118,7 +121,6 @@ public sealed partial class ParkHud
 		Button( "zoomIn", "b_plus", 261, Rect( 218, 1327, 275, 1384 ), () => ZoomMap( 1 ) );
 		// [DATA:Mac map table 0x5265e:2434,2439,2451,2452] object-category map buttons.
 		// [BIN:TPW-EXE:0x5f186c] every category button toggles its own layer bit; an object is drawn from its category's bit only.
-		// [APPROX:UI-086] the layer colours are not traced — evidence needed: the original map layer colours
 		CategoryButton( "rides", "b_sride", BuildCategory.Rides, 267, Rect( 64, 1409, 167, 1512 ) );
 		CategoryButton( "sideshows", "b_sshow", BuildCategory.Sideshows, 271, Rect( 184, 1409, 286, 1512 ) );
 		CategoryButton( "shops", "b_sshop", BuildCategory.Shops, 269, Rect( 303, 1409, 406, 1512 ) );
@@ -211,10 +213,9 @@ public sealed partial class ParkHud
 			else
 				context.Batch.AddRectangle( image, new RgbaByte( 15, 81, 26, 255 ) );
 
-			// [APPROX:UI-085] the shipped 512px theme image places 5px terrain cells centrally; compare with original map overlays.
 			UiRect CellRect( int x, int y )
 			{
-				var cell = ParkMapGeometry.CellImageRect( width, height, park != null, x, y );
+				var cell = ParkMapGeometry.OverlayCellRect( width, height, park != null, x, y );
 				var left = cell.X / ParkMapGeometry.ImagePixels;
 				var top = cell.Y / ParkMapGeometry.ImagePixels;
 				var scale = owner.mapView.Zoom * side;
@@ -231,7 +232,7 @@ public sealed partial class ParkHud
 				if ( right > left && bottom > top )
 					context.Batch.AddRectangle( new UiRect( left, top, right - left, bottom - top ), color );
 			}
-			// [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art — evidence needed: the original map layer colours
+			// [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art; the original colours a cell from the tables 0xf86a28-0xf86c20 (filled at run time; the per-object ones through 0x5f09a0 from a value) and outlines it where its neighbour differs (0x5f2380) — evidence needed: those colour tables
 			if ( imagePath == null )
 			{
 				// [EXT:sandbox-map] the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base (OpenTPW content)
@@ -327,6 +328,22 @@ internal static class ParkMapGeometry
 {
 	public const float ImagePixels = 512f;
 	private const float OriginalCellPixels = 5f;
+
+	/// <summary>
+	/// The pixels of the map image that a live overlay cell covers. On a theme map these are the original's: cells of trunc(480 / width) by
+	/// trunc(425 / height) pixels from (15, 42), which sits one pixel left of and above the shipped art's terrain (16, 43); the sandbox fills the image.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5f2380 map overlay] the map draws its cells into the surface holding the level's 2dmap.tga (0x5f1ea0) at x = 15 + column × trunc(480.0 / width)
+	// and y = 42 + row × trunc(425.0 / height) (0x5f23dc-0x5f2400, the floats 0x703044 and 0x703048; start values 0xf and 0x2a), each cell's rectangle ending where the
+	// next begins (its outline's far edges are drawn at start + size - 1), and a placed object's footprint over the same grid (0x5f2ea9-0x5f2ecd: columns (index & 0x7f) and rows (index >> 7))
+	public static UiRect OverlayCellRect( int width, int height, bool original, int x, int y )
+	{
+		if ( !original || width <= 0 || height <= 0 )
+			return CellImageRect( width, height, original, x, y );
+		var cellWidth = (int)(480f / width);
+		var cellHeight = (int)(425f / height);
+		return new UiRect( 15 + x * cellWidth, 42 + y * cellHeight, cellWidth, cellHeight );
+	}
 
 	public static UiRect CellImageRect( int width, int height, bool original, int x, int y )
 	{

@@ -395,20 +395,43 @@ public partial class Level
 	/// <summary>Where a cell's sounds play: the original submits them at (x*10, 0, z*10), a cell is ten units at height 0.</summary>
 	internal Vector3 CellSoundPosition( int x, int y ) => GameAudio.CellSoundPosition( x, y );
 
+	/// <summary>What Backspace with no build tool on takes off a cell (<see cref="Level.BacktrackAt"/>).</summary>
+	internal enum BacktrackTarget { None, Path, Queue }
+
+	/// <summary>
+	/// Backspace's target at (x, y): a path cell (the original's backtrack), a queue cell (OpenTPW's extension), else none.
+	/// </summary>
+	internal static BacktrackTarget BacktrackTargetAt( ParkCellMap cells, int x, int y ) => cells.TypeAt( x, y ) switch
+	{
+		ParkCellType.Path => BacktrackTarget.Path,
+		ParkCellType.Queue => BacktrackTarget.Queue,
+		_ => BacktrackTarget.None
+	};
+
 	/// <summary>
 	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a path cell it plays the
 	/// backtrack sound, then takes one placement off that cell, which goes only when it was laid once; the sound plays even
-	/// when the cell stays (a fixed or a re-laid cell). False when the cell under the cursor is not a path cell, so the key
-	/// does nothing there.
+	/// when the cell stays (a fixed or a re-laid cell). Over a queue cell it plays the same sound and removes that cell and
+	/// every cell behind it, with the remove tool's refund (<see cref="RemoveQueueCell"/>). False on any other cell, so the
+	/// key does nothing there.
 	/// </summary>
 	// [BIN:TPW-EXE:0x40BE8B backtrack click] the key handler clicks the cell in mode 0x32, whose one-cell LayLine (0x536100) calls SetCell(0x32, 0, 1) and so ClearCell 0x5367A0 with (0, 1): the counted removal, not the forced one
+	// [EXT:queue-backtrack] tp.exe's key handler backtracks only a type-1 (path) cell: it tests the tile's +8 through 0x536310 at 0x40BE3C and does nothing over a queue cell, whose cells the original takes back only with Backspace inside the queue tool (Back 0x52FE50, the segment just laid); OpenTPW also takes a queue back from the cursor, as the remove tool does (QueuePaths.RemoveFrom, so the queue stays one line from the ride)
 	public bool BacktrackAt( int x, int y )
 	{
-		if ( IsReadOnlyVisit || Paths == null || Paths.Cells.TypeAt( x, y ) != ParkCellType.Path )
+		if ( IsReadOnlyVisit || Paths == null )
+			return false;
+		var target = BacktrackTargetAt( Paths.Cells, x, y );
+		if ( target == BacktrackTarget.None )
 			return false;
 		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
-		if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )
-			LastActionMessage = "Removed a path cell.";
+		if ( target == BacktrackTarget.Path )
+		{
+			if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )
+				LastActionMessage = "Removed a path cell.";
+		}
+		else if ( RemoveQueueCell( x, y ) is var removed and > 0 )
+			LastActionMessage = removed == 1 ? "Removed a queue cell." : $"Removed {removed} queue cells.";
 		return true;
 	}
 

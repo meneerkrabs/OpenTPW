@@ -81,13 +81,13 @@ public sealed partial class ParkHud
 
 	/// <summary>
 	/// Whether a pressed shortcut acts: window keys over their own window, the locator chords also over the window whose
-	/// person they locate (the employee window for Ctrl+S, All Visitors for Ctrl+V), every other key on the plain park gate.
+	/// person they locate (the employee window for Ctrl+S, the visitor window for Ctrl+V), every other key on the plain park gate.
 	/// </summary>
 	// [BIN:TPW-EXE:0x481790 locator key] Ctrl+S tests the open employee window [0x7cc3c0] and locates its employee (0x4b3f60), so the key acts while that window is open
 	internal static bool ShortcutAllowed( HudScreenShortcut shortcut, bool parkShortcutsAllowed, string? topScreenName ) => shortcut switch
 	{
 		HudScreenShortcut.LocateNextStaff => parkShortcutsAllowed || topScreenName == "employee",
-		HudScreenShortcut.LocateNextVisitor => parkShortcutsAllowed || topScreenName == "visitors",
+		HudScreenShortcut.LocateNextVisitor => parkShortcutsAllowed || topScreenName == "visitorInfo",
 		_ when OpensWindow( shortcut ) => WindowShortcutsAllowed( parkShortcutsAllowed, topScreenName ),
 		_ => parkShortcutsAllowed,
 	};

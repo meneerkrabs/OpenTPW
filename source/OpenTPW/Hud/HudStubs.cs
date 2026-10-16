@@ -102,6 +102,8 @@ public sealed class EconomyParkStatus : IHudParkStatus
 	public long? PriceOf( BuildItem item ) =>
 		Economy is { } economy && economy.Catalog.TryGet( item.InfoId, out var info ) ? info.PurchaseCost : item.Cost;
 
+	public int? TicketCostOf( BuildItem item ) => Economy?.ListedTicketCost( item.InfoId );
+
 	public bool IsAvailable( BuildItem item ) =>
 		Economy is not { } park || park.Catalog.TryGet( item.InfoId, out _ ) && park.Research.IsAvailable( item.InfoId );
 

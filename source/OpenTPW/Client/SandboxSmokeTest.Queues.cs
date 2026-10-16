@@ -22,11 +22,18 @@ internal sealed partial class SandboxSmokeTest
 			return;
 		var canvas = hudContext.Canvas;
 		var viewport = new System.Numerics.Vector2( canvas.Width, canvas.Height );
-		bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point ) =>
-			level.TryProjectCell( cell.X, cell.Y, viewport, out point )
-			&& point.X > canvas.Width * 0.25f && point.X < canvas.Width * 0.75f && point.Y > canvas.Height * 0.15f && point.Y < canvas.Height * 0.65f
-			&& !hud.Stack.Covers( canvas, point )
-			&& level.TryGetGridCell( point, viewport, out var x, out var y ) && (x, y) == cell;
+		var field = level.OriginalPark?.Heightfield;
+		bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point )
+		{
+			point = default;
+			// The guest grid can be larger than the level's heightfield; its outer cells have no ground to project.
+			if ( field != null && (cell.X >= field.CellCountX || cell.Y >= field.CellCountZ) )
+				return false;
+			return level.TryProjectCell( cell.X, cell.Y, viewport, out point )
+				&& point.X > canvas.Width * 0.25f && point.X < canvas.Width * 0.75f && point.Y > canvas.Height * 0.15f && point.Y < canvas.Height * 0.65f
+				&& !hud.Stack.Covers( canvas, point )
+				&& level.TryGetGridCell( point, viewport, out var x, out var y ) && (x, y) == cell;
+		}
 
 		var item = hud.Catalog.GetItems( BuildCategory.Rides )
 			.Where( candidate => candidate.Entry is { HasQueue: true } && hud.Status.IsAvailable( candidate ) && (hud.Status.PriceOf( candidate ) ?? candidate.Cost) <= hud.Status.Money )
@@ -88,6 +95,10 @@ internal sealed partial class SandboxSmokeTest
 		hud.Update( hudContext, new UiInput( endPoint, true, true, false, false, UiKeys.None ) );
 		hud.Update( hudContext, new UiInput( endPoint, false, false, true, false, UiKeys.None ) );
 		Require( !level.CellTool.IsActive && level.Blueprint!.Cells.Count == 0, "clicking the queue's end again ends the tool and clears the markers" );
+		// [EXT:queue-backtrack] Backspace over the queue's last cell with no tool on takes it back.
+		hud.Update( hudContext, new UiInput( endPoint, false, false, false, false, UiKeys.None, Backspaces: 1 ) );
+		Require( !grid.IsQueue( end.X, end.Y ) && grid.IsQueue( entrance.OutsideX, entrance.OutsideY ),
+			$"Backspace over the queue's last cell {end} removes that cell and keeps the front (message: {level.LastActionMessage})" );
 		Log.Trace( $"HUD queue tool: placed {entry.DisplayName} at {site} and laid {SmokeQueueLength + 1} queue cells from {(entrance.OutsideX, entrance.OutsideY)} to {end}." );
 
 		// A ride's demolition takes its queue with it: every point of the corner stack is undone (tp.exe 0x527EE0, QUEUE-015)

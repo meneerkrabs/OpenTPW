@@ -3,8 +3,8 @@ namespace OpenTPW;
 /// <summary>
 /// The tour-ride phase of the native smoke test (docs/TOURS.md): the Jungle's Jurassic Tours is placed on a free on-screen site, the real <c>TourRide.RSE</c> opens it
 /// and creates its controller, two real guests are sent to it and board through TOUR 3, and when a car is in flight with riders the simulation is frozen, the camera
-/// looks at the car and the pixels are read back with the cars shown and hidden (they must differ); then the simulation runs on until the car has landed and
-/// the riders were handed back through TOUR 4, and the ride is removed.
+/// looks at the car and the pixels are read back with the cars shown and hidden (they must differ); then the ride is closed, the simulation runs on until the car has
+/// landed and the riders were handed back through TOUR 4, and the ride is removed.
 /// </summary>
 internal sealed partial class SandboxSmokeTest
 {
@@ -24,6 +24,18 @@ internal sealed partial class SandboxSmokeTest
 		public Action? BeforeUpdate;
 		public Action? Freeze;
 		public int Departures;
+		public bool Closed;
+		public double ClosedAt;
+	}
+
+	/// <summary>The tour ride's state for a failure message: the bridge's and the controller's rider counts, every live car and the script's visitor variables.</summary>
+	private static string TourDiagnostics( OriginalObject ride )
+	{
+		var tour = ride.Runtime.Tour;
+		var vm = ride.Runtime.Script!;
+		int Var( string name ) => vm.GetVariableIndex( name ) is var index and >= 0 ? vm.Variables[index] : -999;
+		var cars = tour == null ? "none" : string.Join( ",", tour.Cars.Where( car => car.State != TourCar.StateFree ).Select( car => $"state {car.State} riders {car.RiderCount} timer {car.Timer}{(car.Leaving ? " leaving" : "")}" ) );
+		return $"guests boarded {ride.Visitors.BoardedTotal} released {ride.Visitors.ReleasedTotal}; controller boarded {tour?.Boarded} released {tour?.Released} aboard {tour?.Riders} departures {tour?.Departures} ready {tour?.Ready} open {tour?.IsOpen} cars {tour?.CarCount} landing reserved {tour?.LandingReserved} [{cars}]; script at {vm.ProgramCounter} {vm.State}{(vm.InCriticalSection ? " critical" : "")}, VAR_RIDECLOSED {Var( "VAR_RIDECLOSED" )} VAR_LETMEON {Var( "VAR_LETMEON" )} VAR_LETMEOFF {Var( "VAR_LETMEOFF" )} VAR_INCAR {Var( "VAR_INCAR" )}";
 	}
 
 	private readonly TourSmokeRun tourSmoke = new();
@@ -48,7 +60,7 @@ internal sealed partial class SandboxSmokeTest
 		}
 		var ride = run.Ride!;
 		var tour = ride.Runtime.Tour;
-		Require( run.Wait!.Elapsed.TotalSeconds < 400, $"the tour phase finishes (stage {run.Stage}, boarded {ride.Visitors.BoardedTotal}, released {ride.Visitors.ReleasedTotal}, departures {tour?.Departures})" );
+		Require( run.Wait!.Elapsed.TotalSeconds < 400, $"the tour phase finishes (stage {run.Stage}, {TourDiagnostics( ride )})" );
 		var renderer = level.TourRenderer;
 		switch ( run.Stage )
 		{
@@ -100,6 +112,19 @@ internal sealed partial class SandboxSmokeTest
 				run.Stage = 3;
 				return;
 			case 3:
+				if ( !run.Closed )
+				{
+					// Close the ride, as a player ends a tour ride's day. While it is open every landing hands a waiting guest to the unloaded car, which leaves again with
+					// riders aboard (a full cycle is about 75 s of flight, return, approach and loading), so "everybody released" depends on the queue. Closing ends the flight
+					// (TOUR 14 0 zeroes the timers), the car lands, the script unloads it and boards nobody (the loading loop leaves on VAR_RIDECLOSED), and the queue is sent away.
+					// A car docked after TOUR 11 but before its lift-off would stay there with its riders (docs/TOURS.md, closing the ride), so wait while one stands there unready.
+					if ( tour == null || tour.DockedCar != null && !tour.Ready )
+						return;
+					ride.Close();
+					run.Closed = true;
+					run.ClosedAt = run.Wait.Elapsed.TotalSeconds;
+				}
+				Require( run.Wait.Elapsed.TotalSeconds - run.ClosedAt < 120, $"the closed tour ride lands and releases its riders ({TourDiagnostics( ride )})" );
 				// the car lands and every rider is handed back
 				if ( tour == null || tour.Boarded == 0 || tour.Riders != 0 || tour.Released != tour.Boarded || ride.Visitors.BoardedTotal != ride.Visitors.ReleasedTotal || !tour.Cars.Any( car => car.State == TourCar.StateDocked ) )
 					return;
@@ -109,7 +134,7 @@ internal sealed partial class SandboxSmokeTest
 				Require( ride.Runtime.Script!.UnimplementedEffects.GetValueOrDefault( Opcode.TOUR ) == 0, "every TOUR command reached the controller" );
 				level.Objects.Remove( ride );
 				Require( level.Objects.ScriptWorld.Tours.Controllers.Count == 0, "removing the ride removes its controller" );
-				Log.Trace( $"HUD tour ride: {tour.Boarded} rider(s) boarded, flew and were released through TOUR 3 and 4 after {tour.Departures} departure(s); the car was drawn and read back from the GPU, the ride was removed." );
+				Log.Trace( $"HUD tour ride: {tour.Boarded} rider(s) boarded, flew and were released through TOUR 3 and 4 after {tour.Departures} departure(s), {run.Wait.Elapsed.TotalSeconds - run.ClosedAt:F0} s after the ride closed; the car was drawn and read back from the GPU, the ride was removed." );
 				run.Done = true;
 				return;
 		}

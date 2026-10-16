@@ -288,7 +288,7 @@ public sealed partial class StaffWorldSimulation
 			if ( FindLitter( economy.Litter, cell, member.Id, DetectionRange( economy, member ) ) is { } litter )
 			{
 				member.LitterCell = litter;
-				var (bx, by) = ParkLitter.SweepSpot( litter.X, litter.Y );
+				var (bx, by) = ParkLitter.SweepSpot( economy.World, litter.X, litter.Y );
 				if ( Route( member, litter, bx, by ) )
 				{
 					economy.Litter.Claim( litter.X, litter.Y, member.Id, turn );
@@ -586,8 +586,8 @@ public sealed partial class StaffWorldSimulation
 		voices.Add( new StaffVoice( member.Type, false, x, y, eventId, kids ) );
 	}
 
-	/// <summary>One draw of the world generator (tp.exe <c>0x00516330</c>; OpenTPW's economy stream, DET-014).</summary>
-	private static uint Draw( ParkEconomy economy ) => (uint)(economy.Random.NextUInt64() >> 33);
+	/// <summary>One draw of the world generator (tp.exe <c>0x00516330</c>): the park's one stream, shared with the guests and the scripts.</summary>
+	private static uint Draw( ParkEconomy economy ) => economy.World.NextWord();
 
 	private static (int X, int Y) Cell( StaffMember member ) => member.Navigation!.Cell;
 

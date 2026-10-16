@@ -281,7 +281,7 @@ public sealed partial class ParkHud
 		public override void Adjust( int direction ) => TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit,
 			Math.Clamp( (owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload) + direction, MinimumKnobWorkload, MaximumKnobWorkload ) );
 		// [BIN:TPW-EXE:0x66afe5 vertical slider drag] the value is read back from the ball: trunc((bottom - ball bottom) × (min - max) / (height - ball height)) + max
-		// [APPROX:UI-064] the ball centres on the pointer during a drag (where the slider class places it is not read); the value's meaning, its limit and the ball's travel are the original's
+		// [APPROX:UI-064] the ball centres on the pointer during a drag; the original's ball proc 0x66bb9b moves it by the pointer's offset from the press point (0x10005 stores the press in 0xfaa59a/0xfaa59c) from the rectangle saved at the press or release (0x65cf3d) and clamps it to the track (0x66b771), whether that rectangle is the press-time ball is not settled; the value's meaning, its limit and the ball's travel are the original's
 		public void DragTo( UiCanvas canvas, NVector2 point )
 		{
 			if ( !Enabled ) return;

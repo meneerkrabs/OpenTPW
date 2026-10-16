@@ -36,6 +36,22 @@ internal static class ParkAttractionRoster
 			.ThenBy( row => row.AttractionId ).ToArray();
 	}
 
+	/// <summary>The rows of an open category list in the order it already holds: new rows go in by the list's sorted insert, nobody is re-sorted (<see cref="ListRowOrder"/>).</summary>
+	public static IReadOnlyList<AttractionListRow> Keep( List<int> order, IEnumerable<AttractionListRow> attractions, BuildCategory category, int column, bool descending,
+		Func<AttractionListRow, IReadOnlyList<AttractionCell>> cells )
+	{
+		double Key( AttractionListRow row ) => cells( row ) is { } values && column < values.Count && values[column].Key is { } key ? key : double.NegativeInfinity;
+		return ListRowOrder.Keep( order, attractions.Where( row => row.Category == category ), row => row.AttractionId, ( added, row ) =>
+		{
+			if ( column <= 0 )
+			{
+				var compare = string.CompareOrdinal( added.Name, row.Name );
+				return descending ? compare > 0 : compare < 0;
+			}
+			return descending ? Key( row ) < Key( added ) : Key( added ) < Key( row );
+		} );
+	}
+
 	/// <summary>The selected attraction id after the park changed: the current one while it is still listed, else the first row, 0 when empty.</summary>
 	public static int HealedSelection( IReadOnlyList<AttractionListRow> rows, int selectedId ) =>
 		rows.Any( row => row.AttractionId == selectedId ) ? selectedId : rows.Count > 0 ? rows[0].AttractionId : 0;
@@ -92,6 +108,36 @@ internal static class ParkAttractionRoster
 	}
 }
 
+/// <summary>
+/// The row order of a sorted overview list between header presses.
+/// </summary>
+// [BIN:TPW-EXE:0x0066403b sorted row insert, 0x00663edc compare] a row added to a list with the sort attribute (0x10) goes before the first row it sorts strictly before, the compare being
+// "new < row" ascending and "row < new" descending on the sort column's cell (ties go after equal rows), and at the end when no row follows it; the refresh handlers
+// (0x4955e0, 0x493230) rewrite the cells in place with 0x6644ea, which redraws the rows (0x663324) but never moves one, so the order stays until a header press (0x665a44) sorts the list again
+internal static class ListRowOrder
+{
+	/// <summary>
+	/// Brings <paramref name="order"/> (ids in list order) up to date with <paramref name="current"/>: rows that left the list drop out, the others keep their place
+	/// and each new row (in the given sequence) is inserted where the sorted insert puts it. Returns the rows in list order.
+	/// </summary>
+	/// <param name="before">Whether the first row sorts strictly before the second under the list's column and direction.</param>
+	public static IReadOnlyList<T> Keep<T>( List<int> order, IEnumerable<T> current, Func<T, int> id, Func<T, T, bool> before )
+	{
+		var rows = new Dictionary<int, T>();
+		foreach ( var row in current )
+			rows[id( row )] = row;
+		order.RemoveAll( key => !rows.ContainsKey( key ) );
+		var known = order.ToHashSet();
+		foreach ( var key in rows.Keys.Where( key => !known.Contains( key ) ).OrderBy( key => key ).ToArray() )
+		{
+			var row = rows[key];
+			var at = order.FindIndex( other => before( row, rows[other] ) );
+			order.Insert( at < 0 ? order.Count : at, key );
+		}
+		return order.Select( key => rows[key] ).ToArray();
+	}
+}
+
 /// <summary>What one column of the All Attractions list shows.</summary>
 public enum AttractionColumnKind { Name, Users, Excitement, Repair, Life, Customers, ProfitLastMonth, TotalProfit, Satisfaction, NumberOwned }
 
@@ -140,6 +186,15 @@ internal static class ParkVisitorRoster
 		var listed = guests.Where( isInPark );
 		return (descending ? listed.OrderByDescending( guest => values( guest ).SortKey( column ) ) : listed.OrderBy( guest => values( guest ).SortKey( column ) ))
 			.ThenBy( guest => guest.Id ).ToArray();
+	}
+
+	/// <summary>The rows of an open list in the order it already holds: new visitors are inserted by the list's sorted insert, nobody is re-sorted (<see cref="ListRowOrder"/>).</summary>
+	public static IReadOnlyList<Guest> Keep( List<int> order, IEnumerable<Guest> guests, Func<Guest, VisitorRowValues> values, int column, bool descending )
+	{
+		column = Math.Clamp( column, 0, Columns.Length - 1 );
+		return ListRowOrder.Keep( order, guests, guest => guest.Id, ( added, row ) => descending
+			? values( row ).SortKey( column ) < values( added ).SortKey( column )
+			: values( added ).SortKey( column ) < values( row ).SortKey( column ) );
 	}
 
 	/// <summary>The selected visitor id after the simulation changed: the current one while still in the park, else the first row, 0 when empty.</summary>

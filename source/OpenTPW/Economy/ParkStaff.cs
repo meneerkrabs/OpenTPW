@@ -212,7 +212,7 @@ public sealed class ParkStaff
 	public long TotalMonthlyWages => members.Sum( MonthlyWage );
 
 	/// <summary>Fills the initial pool with <c>StaffPoolInfo.BeginningNumberOf*</c> candidates per role.</summary>
-	public void CreateInitialPool( DeterministicRandom random, long tick )
+	public void CreateInitialPool( WorldRng random, long tick )
 	{
 		foreach ( var role in settings.Roles )
 		{
@@ -231,7 +231,7 @@ public sealed class ParkStaff
 	/// adds candidates until hired plus pooled staff reach <c>Min*InPool</c> for every role.
 	/// </summary>
 	// [BIN:STP-PPC:0x100F6E24 staff pool update] draw = rand() % total shortfall picks the role whose share it falls in; each added candidate lowers that role's shortfall and the per-update cap (also limited by the 32 free slots); 0x100F65E8 drops roles whose hired count reached Max*InPark; 0x100F6790 then tops every role up to Min*InPool counting hired and pooled staff
-	public void UpdatePool( DeterministicRandom random, long tick )
+	public void UpdatePool( WorldRng random, long tick )
 	{
 		candidates.RemoveAll( candidate => candidate.ExpiresTick <= tick && candidate.Id != PendingPlacementId );
 		if ( tick < NextPoolUpdateTick )
@@ -276,12 +276,12 @@ public sealed class ParkStaff
 	/// <summary>The most name draws a candidate makes before it keeps a name already in use (tp.exe <c>0x00507580</c>).</summary>
 	public const int MaximumNameDraws = 15;
 
-	private StaffCandidate CreateCandidate( StaffRoleSettings role, DeterministicRandom random, long tick )
+	private StaffCandidate CreateCandidate( StaffRoleSettings role, WorldRng random, long tick )
 	{
 		// [BIN:TPW-EXE:0x0050761C staff candidate draws] the constructor 0x00507600 draws, in order: the sprite variant (0x00541F70: (R >> 2) mod the role category's bank count, candidate +9), one draw it discards (0x0050762D), the grade (0x00507638), the name (0x00507580) and the timeout
 		// [APPROX:GUEST-014] the variant's draw is made in its place but its value is not kept: the sprite bank still derives from the name index and id
-		random.NextUInt64();
-		random.NextUInt64();
+		random.NextWord();
+		random.NextWord();
 		// [BIN:STP-PPC:0x100F5B64 staff candidate] grade = (AvgGradeOf* + random % 3 - 1) & 0xFF, stored as 4 when above 4 (so -1 wraps to 4); ChanceToGetGreat* is never read
 		var raw = (role.AverageGrade + random.Next( 3 ) - 1) & 0xFF;
 		var grade = raw > BalanceSettings.GradeCount - 1 ? BalanceSettings.GradeCount - 1 : raw;

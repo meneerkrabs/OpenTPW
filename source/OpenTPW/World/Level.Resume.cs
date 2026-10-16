@@ -129,7 +129,7 @@ public partial class Level
 		if ( saved == null )
 			return null;
 		var ride = new PrototypeRide( new Vector3( saved.PositionX, saved.PositionY, saved.PositionZ ), Objects.ScriptWorld,
-			saved.ScriptSeed, saved.Open, saved.AttractionId );
+			null, saved.Open, saved.AttractionId );
 		var gaps = ride.Runtime.RestoreSnapshot( saved.Runtime );
 		if ( gaps.Count != 0 ) throw new InvalidDataException( string.Join( "; ", gaps ) );
 		if ( PrototypeRideSave.RestoreGuestCells( saved, ride.Visitors, Guests! ) && saved.EconomyInstanceId is int instance )

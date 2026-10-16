@@ -96,7 +96,7 @@ internal sealed partial class SandboxSmokeTest
 		foreach ( var corner in corners.Skip( 1 ) )
 		{
 			var ghost = level.CellTool.Hover( corner );
-			Require( ghost is { Completed: true } && ghost.Built.Count > 0, $"the tool previews the line to {corner}" );
+			Require( ghost is { Completed: true } && ghost.Built.Count > 0, $"the tool previews the line to {corner} (stopped by {ghost?.StoppedBy} at {ghost?.StoppedAt}, {ghost?.Built.Count} tiles)" );
 			var committed = level.CellTool.Click( corner );
 			Require( committed is { Completed: true }, $"the click lays the line to {corner}" );
 			tiles += committed!.Built.Count;

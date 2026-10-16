@@ -32,7 +32,7 @@ public static class QueuePaths
 	public const int MaximumCells = 25;
 
 	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
-	// [APPROX:QUEUE-014] a queue is laid cell by cell from the entrance's outside cell; each cell must touch the current back cell, must not be a path or queue cell, and is linked toward that back cell. tp.exe's tool lays straight segments along the dominant axis (0x00536100), each from the previous end, the first from the cell the player clicks (SetMode 0x0052F200 sets the start to −1 at 0x0052F340); the validator 0x00535670 lets a queue cell replace a path cell that is not NoModify (0x005346D0 clears the path first), and the last cell may end on a path cell (code 8, the connection) — evidence needed: the writer of the queue link +0x0D and the segment commit in 0x00524960 (UI-031)
+	// [APPROX:QUEUE-014] Queue lines start on the entrance's outside cell and lay empty cells that each touch the current back cell, where tp.exe's queue tool lays straight segments along the dominant axis (0x536100, ported) from a start the player clicks (SetMode 0x52f200 clears it), each cell validated by 0x535670: an empty cell is accepted, a path cell is replaced unless its flag 0x20 (NoModify) is set, a path cell on the line's last cell is code 8, the connection (ported), an object cell is refused, a queue cell of another ride (owner word +0x10 against the tool's ride, 0x818698) is refused and the tool's own passed; the commit 0x532fc0 then types the cell (0x5346D0, which clears a path first), links it (pass 0x80, the link writer in mode 3), gives it the queue link toward the previous cell (pass 0x82) and the tool's ride as owner word (pass 0x83); OpenTPW keeps no owner word (a queue cell belongs to the ride whose chain reaches it) and lays no queue over a path cell, and a queue line must start on the front cell and touch the back cell — evidence needed: the validator's object-cell branch (0x818C10 and 0x818C14), the rest of the commit 0x532fc0 and the refund of the cell clear 0x5367A0, which reads the owner word
 	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null ) =>
 		CheckExtend( grid, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
 
@@ -53,7 +53,7 @@ public static class QueuePaths
 		var hasCells = frontIsQueue || pending.Count > 0;
 		if ( hasCells && (frontIsQueue ? ride.QueueSizeInCells : 0) + pending.Count >= MaximumCells )
 			return QueueBuildResult.TooLong;
-		// CanChangeCellType allows a queue over an empty cell (and over a path except on a line's last cell); this tool also refuses path cells (QUEUE-014).
+		// CanChangeCellType allows a queue over an empty cell (and over a path except on a line's last cell); this tool also refuses path cells, where 0x535670 replaces a path cell unless it is NoModify (QUEUE-014).
 		if ( grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )
 			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true || pending.Contains( (x, y) ) )
 			return QueueBuildResult.Blocked;

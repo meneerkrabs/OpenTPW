@@ -61,11 +61,11 @@ public class ParkNameTests
 	}
 
 	[TestMethod]
-	public void TheDialogAndTheReloadDropATrailingDoubleDashFromLineOne()
+	public void TheDialogAndTheReloadDropOneDashOfATrailingDoubleDashFromLineOne()
 	{
 		var lines = new ParkNameLines( "Super--", "Park" );
-		Assert.AreEqual( ("Super", "Park"), lines.ReloadedSignLines );
-		Assert.AreEqual( ("Super", "Park"), lines.DialogFields );
+		Assert.AreEqual( ("Super-", "Park"), lines.ReloadedSignLines );
+		Assert.AreEqual( ("Super-", "Park"), lines.DialogFields );
 		var longLines = new ParkNameLines( "abcdefghijklmnopqrst", "x" );
 		Assert.AreEqual( ParkNameLines.DialogFieldLength, longLines.DialogFields.Line1.Length, "the dialog field holds 14 characters" );
 	}

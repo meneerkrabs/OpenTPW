@@ -264,7 +264,7 @@ font-size fit loop); `SignTextLayout.ScaledAdvance` applies it (the original's i
 reproduced, COMPAT-002; at 100 percent the advance is left as it is). The baseline hashes of the 71 of 75 composed signs whose percent is not 100 were re-pinned for it.
 COMPAT-017's calls are traced: the object text's NAME/SIGNA/SIGNB are parsed at `0x413600`, SIGNA/SIGNB are copied into each placed
 object as two 32-character lines (`0x413020`/`0x4130B0` at `0x4DB6F9`/`0x4DB70D`), and the sign rebuild `0x468500` (types with flag 0x8000000)
-reads line 1 through `0x4E2860`, which strips a trailing "--", and line 2 through `0x4E2920`; `BonusNames` now does both.
+reads line 1 through `0x4E2860`, which drops the last dash of a trailing "--" (it terminates the copy at length - 1), and line 2 through `0x4E2920`; `BonusNames` now does both.
 October 14, 2026, second round (tp.exe and Theme Park Inc data): COMPAT-017 is retired with a code change. The sign lines come from
 the selected language's file only (no English fallback); a file without SIGNA or SIGNB shows "MISSING STRING", which the original sets
 for NAME, SIGNA, SIGNB and +0x500 before it parses (`0x413600`, `0x41360D`–`0x41361D`); without a language file the definition's text

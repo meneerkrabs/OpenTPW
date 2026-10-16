@@ -62,13 +62,13 @@ public sealed record ParkNameLines( string Line1, string Line2 )
 		}
 	}
 
-	/// <summary>The lines as the sign rebuild after loading a park draws them: line 1 through 0x4E2860, which drops a trailing "--".</summary>
+	/// <summary>The lines as the sign rebuild after loading a park draws them: line 1 through 0x4E2860, which drops the last dash of a trailing "--".</summary>
 	// [BIN:TPW-EXE:0x00468500 sign rebuild] after a park is loaded (0x415140) each placed object of a type with flag 0x8000000 redraws its type's sign from line 1 through 0x4E2860 and line 2 through 0x4E2920 (0x4682B0)
-	public (string Line1, string Line2) ReloadedSignLines => (BonusNames.StripTrailingDashes( Line1 ), Line2);
+	public (string Line1, string Line2) ReloadedSignLines => (BonusNames.StripTrailingDash( Line1 ), Line2);
 
-	/// <summary>The fields the rename dialog opens with: line 1 through 0x4E2860 (no trailing "--") and line 2, each cut to the field length.</summary>
+	/// <summary>The fields the rename dialog opens with: line 1 through 0x4E2860 (the last dash of a trailing "--" dropped) and line 2, each cut to the field length.</summary>
 	// [BIN:TPW-EXE:0x004990F0 park rename dialog] field 0x3943C is filled from 0x4E2860 and field 0x3943D from 0x4E2920; how a longer line is cut to the 14-character field is not read, OpenTPW keeps the first 14 characters
-	public (string Line1, string Line2) DialogFields => (Cut( BonusNames.StripTrailingDashes( Line1 ) ), Cut( Line2 ));
+	public (string Line1, string Line2) DialogFields => (Cut( BonusNames.StripTrailingDash( Line1 ) ), Cut( Line2 ));
 
 	private static string Cut( string line ) => line.Length <= DialogFieldLength ? line
 		: line[..(char.IsHighSurrogate( line[DialogFieldLength - 1] ) ? DialogFieldLength - 1 : DialogFieldLength)];

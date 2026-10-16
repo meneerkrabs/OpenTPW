@@ -57,6 +57,7 @@ TABLES = [
     ('FeatureList', 0x750CA0, 0x190, (266, 318, 1825, 876), 0x750D52, 7),
     ('LocatorPanels', 0x756950, 0x95C, (474, 1159, 941, 1470), 0x756AD6, 10),
     ('LocatorStrip', 0x756AD8, 0x146, (448, 964, 1074, 1066), 0x756B96, 5),
+    ('LoansWindow', 0x7525A0, 0x12C4B9, (186, 30, 2018, 1007), 0x752934, 29),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
 CONFIRM_TWIN = 0x7585A8
@@ -85,6 +86,8 @@ REQUIRED = {
     'FeatureList': ['b_up', 'b_down', 'b_scroller'],
     'LocatorPanels': ['!f_plain', 'b_shandy', 'b_smech', 'b_sresrcher', 'b_senter', 'b_sguard', 'b_skids'],
     'LocatorStrip': ['!frame', 'staffstat', 'ti_hungry'],
+    'LoansWindow': ['window4', 'f_loans', '!frame', 'b_sloan', 'b_spayup', 'b_up', 'b_down', 'b_scroller', 'b_exit', 'b_finance', 'b_entry',
+                    'b_staffcost'],
 }
 
 LOADER = 0x4899C0

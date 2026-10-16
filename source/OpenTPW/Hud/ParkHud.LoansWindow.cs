@@ -5,65 +5,86 @@ using NVector2 = System.Numerics.Vector2;
 
 namespace OpenTPW.Hud;
 
-/// <summary>The bank dialog from the Mac loans table at <c>data:0x4a79c</c>.</summary>
+/// <summary>The bank dialog of tp.exe's loans table <c>0x7525a0</c> (built by <c>0x49fb30</c>).</summary>
 public sealed partial class ParkHud
 {
-	private const int LoanVisibleRows = 7;
-	// [APPROX:UI-063] Seven evenly spaced rows and scrollbar travel are inferred from the authored list content/track rectangles; the original row pitch and scrolling handler need a capture.
-	private const float LoanRowHeight = 317f / LoanVisibleRows;
-	private static readonly UiRect LoanContent = Rect( 326, 387, 1704, 704 );
-	private static readonly UiRect LoanTrack = Rect( 1738, 335, 1797, 629 );
-	private static readonly UiRect LoanKnob = Rect( 1730, 562, 1797, 629 );
+	// [BIN:TPW-EXE:0x7525a0 loans window] root window4 (186,30)-(2018,1007), the f_loans list 0x12c4bd (292,131)-(1804,727) with the content region (326,387)-(1704,704),
+	// attribute 0x91 (header sort), six header buttons 0x10-0x15, the b_sloan/b_spayup radio pair 0x12c4be and the scroller (1738,335)-(1797,629) with b_up, b_down and
+	// b_scroller; the summary frame 0x12c4c1 and the title 0x12c4ca; b_finance (help 235), b_entry (236), b_staffcost (237) and b_exit (2)
+	private static readonly LayoutTable LoansTable = OriginalLayoutTables.LoansWindow;
+	private static readonly UiRect LoanContent = LoansTable.Control( 0x12C4BD ).Inner!.Value;
+	private static readonly UiRect LoanTrack = LoansTable.All.First( node => node.Model2 == "!slider" ).Rect;
+	private static readonly UiRect LoanKnob = LoansTable.Model( "b_scroller" ).Rect;
+
+	// [BIN:TPW-EXE:0x4a02b0 loans list row] the loans list's row factory makes each row as high as font slot 7's line height x 1536 / screen height + 6, computed once
+	// ([0x7cb264]), the formula and slot of the buy list's rows (0x4ad240, [0x752934] = 7), so the two lists share one pitch
+	// [APPROX:UI-044] the loans list takes the buy list's measured pitch
+	private const float LoanRowHeight = BuyRowHeight;
+	/// <summary>Rows of the loans list that fit its content region at the row pitch.</summary>
+	// [BIN:TPW-EXE:0x663718 list rows] a list shows (content bottom - content top) / its first row's height whole rows (+0x172): (704 - 387) / 41 = 7
+	public static readonly int LoanVisibleRows = (int)(LoanContent.Height / LoanRowHeight);
+
 	private static readonly (float Left, float Right)[] LoanColumns =
 	{
 		(332, 647), (663, 862), (880, 1078), (1092, 1283), (1306, 1484), (1507, 1701)
 	};
-	private static readonly UiRect[] LoanHeaders =
+
+	/// <summary>The summary rows top to bottom: the label control, the value control and the UITEXT label.</summary>
+	// [BIN:TPW-EXE:0x49fc90 loans summary rows] the build gives 0x12c4c4 UITEXT 357 (Cash In) and 0x12c4c5 the money in at y 748, 0x12c4c9 UITEXT 360 (Loan Payments) and
+	// 0x12c4c8 the repayments at y 799, 0x12c4c6 UITEXT 359 (Other Costs) and 0x12c4c7 the money out less the repayments at y 850, and 0x12c4c2 UITEXT 361 (Balance) and
+	// 0x12c4c3 at y 902 (tp.exe's UITEXT ids above 237 are OpenTPW's + 1)
+	internal static readonly (uint Label, uint Value, UIStrings Text)[] LoanSummaryRows =
 	{
-		Rect( 327, 264, 652, 370 ), Rect( 657, 264, 868, 370 ), Rect( 873, 264, 1084, 370 ),
-		Rect( 1089, 264, 1286, 370 ), Rect( 1291, 264, 1488, 370 ), Rect( 1493, 264, 1704, 370 )
-	};
-	private static readonly (UiRect Label, UiRect Value)[] LoanSummaryRows =
-	{
-		(Rect( 816, 748, 1094, 793 ), Rect( 1115, 748, 1280, 793 )),
-		(Rect( 816, 799, 1094, 844 ), Rect( 1115, 799, 1280, 844 )),
-		(Rect( 816, 850, 1094, 895 ), Rect( 1115, 850, 1280, 895 )),
-		(Rect( 816, 902, 1094, 947 ), Rect( 1115, 902, 1280, 947 ))
+		(0x12C4C4, 0x12C4C5, UIStrings.CashIn), (0x12C4C9, 0x12C4C8, UIStrings.LoanPayments),
+		(0x12C4C6, 0x12C4C7, UIStrings.OtherCosts), (0x12C4C2, 0x12C4C3, UIStrings.Balance)
 	};
 
 	private UiScreen? loansScreen;
+	// [BIN:TPW-EXE:0x4a06b0 loans tab] the radio pair's message 0x101 sets the tab word [0x7cb260] (1 for b_spayup 0x12c4bf, else 0) and refills the list (0x49fa00); the
+	// build (0x49fb30) chooses the radio from that word and nothing resets it, so the tab the player last chose stays for the session
 	private bool outstandingLoans;
 	private int selectedLoan = -1;
 	private int loanFirstRow;
-	private int loanSortColumn = -1;
+	private int loanSortColumn;
 	private bool loanSortDescending;
 	private ParkEconomy? LoansEconomy => Status.EconomySource as ParkEconomy;
 	public bool LoansWindowOpen => loansScreen != null && Stack.Screens.Contains( loansScreen );
 
-	private readonly record struct LoanRow( int OfferIndex, int LenderNameIndex, long Amount, int AprPercent, int Months,
+	internal readonly record struct LoanRow( int OfferIndex, int LenderNameIndex, long Amount, int AprPercent, int Months,
 		long MonthlyRepayment, long FinalAmount );
 
 	private IReadOnlyList<LoanRow> LoanRows()
 	{
 		if ( LoansEconomy is not { Features.Loans: true } economy )
 			return Array.Empty<LoanRow>();
-		IEnumerable<LoanRow> rows = outstandingLoans
+		var rows = outstandingLoans
 			? economy.Loans.Select( account => new LoanRow( account.OfferIndex, account.LenderNameIndex, account.OriginalAmount,
 				account.AprPercent, account.MonthsRemaining, account.MonthlyRepayment, account.RemainingBalance ) )
 			: economy.AvailableLoans.Select( offer => new LoanRow( offer.Index, offer.LenderNameIndex, offer.Amount,
 				offer.AprPercent, offer.Months, LoanMath.MonthlyRepayment( offer.Amount, offer.AprPercent, offer.Months ),
 				LoanMath.TotalPayable( offer.Amount, offer.AprPercent, offer.Months ) ) );
-		rows = loanSortColumn switch
+		return SortLoanRows( rows.OrderBy( row => row.OfferIndex ), loanSortColumn, loanSortDescending, LenderText );
+	}
+
+	/// <summary>The rows of the loans list in display order for a sort <paramref name="column"/> and direction, from the rows in slot order.</summary>
+	// [BIN:TPW-EXE:0x66403b sorted insert] a list with attribute 0x10 inserts each row (slot order, 0x49fa00) before the first row it compares less than (0x663edc): the lender
+	// column (type 0, 0x6636b2) by wcscmp of the text (0x67c290), the others as 32-bit numbers, so equal keys keep the slot order in either direction
+	// [BIN:TPW-EXE:0x662679 list sort default] a new list sorts by column 0 ascending (+0x168, +0x16a), and the loans window builds a new list each time it opens (0x49fb30;
+	// its close clears the window word [0x7cb25c], 0x49f534), so every opening sorts by lender; a header press re-sorts as in the buy list (0x665a44)
+	internal static IReadOnlyList<LoanRow> SortLoanRows( IEnumerable<LoanRow> rowsInSlotOrder, int column, bool descending, Func<LoanRow, string> lender )
+	{
+		var rows = rowsInSlotOrder.ToArray();
+		if ( column == 0 )
+			return descending ? rows.OrderByDescending( lender, StringComparer.Ordinal ).ToArray() : rows.OrderBy( lender, StringComparer.Ordinal ).ToArray();
+		Func<LoanRow, int> key = column switch
 		{
-			0 => rows.OrderBy( row => row.LenderNameIndex ),
-			1 => rows.OrderBy( row => row.Amount ),
-			2 => rows.OrderBy( row => row.Months ),
-			3 => rows.OrderBy( row => row.AprPercent ),
-			4 => rows.OrderBy( row => row.MonthlyRepayment ),
-			5 => rows.OrderBy( row => row.FinalAmount ),
-			_ => rows.OrderBy( row => row.OfferIndex )
+			1 => row => unchecked((int)row.Amount),
+			2 => row => row.Months,
+			3 => row => row.AprPercent,
+			4 => row => unchecked((int)row.MonthlyRepayment),
+			_ => row => unchecked((int)row.FinalAmount)
 		};
-		return (loanSortDescending ? rows.Reverse() : rows).ToArray();
+		return descending ? rows.OrderByDescending( key ).ToArray() : rows.OrderBy( key ).ToArray();
 	}
 
 	private int LoanMaxFirstRow => Math.Max( 0, LoanRows().Count - LoanVisibleRows );
@@ -77,11 +98,19 @@ public sealed partial class ParkHud
 		if ( selectedLoan >= loanFirstRow + LoanVisibleRows ) loanFirstRow = selectedLoan - LoanVisibleRows + 1;
 		loanFirstRow = Math.Clamp( loanFirstRow, 0, LoanMaxFirstRow );
 	}
+
+	/// <summary>Refills the list for the current tab: from the top, with its first row chosen.</summary>
+	// [BIN:TPW-EXE:0x66403b first row] the list's first added row is chosen (0x66525c(0), list row 0), so a filled list opens with its top row highlighted
+	private void FillLoanList()
+	{
+		loanFirstRow = 0;
+		selectedLoan = LoanRows().Count > 0 ? 0 : -1;
+	}
+
 	private void SelectLoanTab( bool outstanding )
 	{
 		outstandingLoans = outstanding;
-		selectedLoan = -1;
-		loanFirstRow = 0;
+		FillLoanList();
 	}
 	private void SortLoans( int column )
 	{
@@ -89,6 +118,17 @@ public sealed partial class ParkHud
 		loanSortColumn = column;
 		selectedLoan = -1;
 		loanFirstRow = 0;
+	}
+
+	/// <summary>Whether the loans list's scroller and its arrows show: only while the list has more rows than fit (0x664495, as in the buy list).</summary>
+	private void UpdateLoanScrollVisibility()
+	{
+		if ( loansScreen == null )
+			return;
+		var shown = BuyScrollShown( LoanMaxFirstRow );
+		foreach ( var id in new[] { "loanScroll", "scrollUp", "scrollDown" } )
+			if ( loansScreen.Find( id ) is { } element )
+				element.Visible = shown;
 	}
 
 	public void OpenLoansWindow()
@@ -99,9 +139,12 @@ public sealed partial class ParkHud
 		level.CellTool.Cancel();
 		loansScreen ??= CreateLoansScreen();
 		loanSummary = LoansEconomy is { } economy ? LoanSummaryOf( economy ) : default;
-		SelectLoanTab( false );
+		loanSortColumn = 0;
+		loanSortDescending = false;
+		FillLoanList();
 		Stack.Push( loansScreen );
 		loansScreen.Focus( loansScreen.Find( "loanList" ) );
+		UpdateLoanScrollVisibility();
 	}
 
 	public void CloseLoansWindow()
@@ -176,9 +219,10 @@ public sealed partial class ParkHud
 	// The summary rows as they were when the window opened (the original fills them only when it builds the window).
 	private (long CashIn, long OtherCosts, long LoanPayments, long Balance) loanSummary;
 
-	private long LoanSummary( int row ) => row switch
+	/// <summary>The value a summary row with the label <paramref name="label"/> shows.</summary>
+	internal static long LoanSummaryValue( (long CashIn, long OtherCosts, long LoanPayments, long Balance) summary, UIStrings label ) => label switch
 	{
-		0 => loanSummary.CashIn, 1 => loanSummary.OtherCosts, 2 => loanSummary.LoanPayments, _ => loanSummary.Balance
+		UIStrings.CashIn => summary.CashIn, UIStrings.OtherCosts => summary.OtherCosts, UIStrings.LoanPayments => summary.LoanPayments, _ => summary.Balance
 	};
 
 	/// <summary>The loans window's summary: the last closed month's money in and out and the instalments of the loans now outstanding.</summary>
@@ -200,49 +244,54 @@ public sealed partial class ParkHud
 	private UiScreen CreateLoansScreen()
 	{
 		var screen = new LoansScreen( this );
-		void Model( string id, string model, UiRect bounds ) => screen.Add( new UiModelImage { Id = id, Model = model, Bounds = bounds, Anchor = UiAnchor.Center } );
-		// [DATA:Mac loans table 0x4a79c] Root, list frame, summary frame and table-authored controls.
-		Model( "window", "w_big", Rect( 186, 30, 2018, 1007 ) );
-		Model( "listFrame", "f_loans", Rect( 292, 131, 1804, 727 ) );
-		Model( "summaryFrame", "!frame", Rect( 792, 736, 1290, 964 ) );
+		var table = LoansTable;
+		void Model( string id, LayoutNode node ) => screen.Add( new UiModelImage { Id = id, Model = node.Model!, Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		LayoutNode Control( uint id ) => table.Control( id );
+		Model( "window", table.Root );
+		Model( "listFrame", Control( 0x12C4BD ) );
+		Model( "summaryFrame", Control( 0x12C4C1 ) );
 		screen.Add( new UiLabel { Id = "title", Text = () => strings[outstandingLoans ? UIStrings.GraphOutstandingLoans : UIStrings.GraphAvailableLoans],
 			Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center, Fit = true,
-			Bounds = Rect( 805, 80, 1277, 159 ), Anchor = UiAnchor.Center } );
+			Bounds = Control( 0x12C4CA ).Rect, Anchor = UiAnchor.Center } );
 		var captions = new[] { UIStrings.LenderName, UIStrings.Amount, UIStrings.LoanTerm, UIStrings.InterestRate, UIStrings.MonthlyRepayment, UIStrings.TotalPayable };
 		var outstandingCaptions = new[] { UIStrings.LenderName, UIStrings.OriginalAmount, UIStrings.MonthsRemaining, UIStrings.InterestRate, UIStrings.MonthlyRepayment, UIStrings.RemainingBalance };
-		for ( var column = 0; column < LoanHeaders.Length; column++ )
+		for ( var column = 0; column < LoanColumns.Length; column++ )
 		{
 			var index = column;
 			screen.Add( new LoanHeader( this, index, () => strings[outstandingLoans ? outstandingCaptions[index] : captions[index]] )
-				{ Id = $"header{index}", Bounds = LoanHeaders[index], Anchor = UiAnchor.Center } );
+				{ Id = $"header{index}", Bounds = Control( 0x10u + (uint)index ).Rect, Anchor = UiAnchor.Center } );
 		}
 		screen.Add( new LoanList( this ) { Id = "loanList", Bounds = LoanContent, Anchor = UiAnchor.Center } );
-		screen.Add( new LoanScrollBar( this ) { Id = "loanScroll", Bounds = Rect( 1730, 335, 1797, 629 ), Anchor = UiAnchor.Center } );
+		screen.Add( new LoanScrollBar( this ) { Id = "loanScroll", Bounds = new UiRect( LoanKnob.X, LoanTrack.Y, LoanTrack.Right - LoanKnob.X, LoanTrack.Height ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "scrollUp", Model = "b_up", Clicked = () => ScrollLoans( -1 ),
-			Bounds = Rect( 1737, 270, 1797, 330 ), Anchor = UiAnchor.Center } );
+			Bounds = table.Model( "b_up" ).Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiButton { Id = "scrollDown", Model = "b_down", Clicked = () => ScrollLoans( 1 ),
-			Bounds = Rect( 1737, 636, 1797, 697 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "available", Model = "b_sloan", Help = strings.Help( 220 ), Clicked = () => SelectLoanTab( false ),
-			Selected = () => !outstandingLoans, Bounds = Rect( 1455, 141, 1557, 244 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "outstanding", Model = "b_payup", Help = strings.Help( 221 ), Clicked = () => SelectLoanTab( true ),
-			Selected = () => outstandingLoans, Bounds = Rect( 1585, 141, 1688, 244 ), Anchor = UiAnchor.Center } );
-		var summaryLabels = new[] { UIStrings.CashIn, UIStrings.OtherCosts, UIStrings.LoanPayments, UIStrings.Balance };
+			Bounds = table.Model( "b_down" ).Rect, Anchor = UiAnchor.Center } );
+		var available = table.Model( "b_sloan" );
+		var outstanding = table.Model( "b_spayup" );
+		screen.Add( new UiButton { Id = "available", Model = available.Model, Help = strings.Help( available.Help ), Clicked = () => SelectLoanTab( false ),
+			Selected = () => !outstandingLoans, Bounds = available.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "outstanding", Model = outstanding.Model, Help = strings.Help( outstanding.Help ), Clicked = () => SelectLoanTab( true ),
+			Selected = () => outstandingLoans, Bounds = outstanding.Rect, Anchor = UiAnchor.Center } );
 		for ( var row = 0; row < LoanSummaryRows.Length; row++ )
 		{
 			var index = row;
-			screen.Add( new UiLabel { Id = $"summaryLabel{index}", Text = () => strings[summaryLabels[index]], Font = fonts => fonts.Label,
-				Color = UiColors.Text, Fit = true, Bounds = LoanSummaryRows[index].Label, Anchor = UiAnchor.Center } );
-			screen.Add( new UiLabel { Id = $"summaryValue{index}", Text = () => FormatMoney( LoanSummary( index ) ), Font = fonts => fonts.Label,
-				Color = UiColors.Value, Align = UiAlign.Right, Fit = true, Bounds = LoanSummaryRows[index].Value, Anchor = UiAnchor.Center } );
+			var (label, value, text) = LoanSummaryRows[index];
+			screen.Add( new UiLabel { Id = $"summaryLabel{index}", Text = () => strings[text], Font = fonts => fonts.Label,
+				Color = UiColors.Text, Fit = true, Bounds = Control( label ).Rect, Anchor = UiAnchor.Center } );
+			screen.Add( new UiLabel { Id = $"summaryValue{index}", Text = () => FormatMoney( LoanSummaryValue( loanSummary, text ) ), Font = fonts => fonts.Label,
+				Color = UiColors.Value, Align = UiAlign.Right, Fit = true, Bounds = Control( value ).Rect, Anchor = UiAnchor.Center } );
 		}
-		screen.Add( new UiButton { Id = "finance", Model = "b_finance", Clicked = CloseLoansWindow,
-			Bounds = Rect( 1866, 360, 1969, 462 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "entry", Model = "b_entry", Clicked = OpenEntryPriceWindow, Enabled = LoansEconomy != null,
-			Bounds = Rect( 1866, 467, 1969, 570 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "staffCosts", Model = "b_staffcost", Clicked = OpenStaffCostsWindow, Enabled = LoansEconomy != null,
-			Bounds = Rect( 1866, 575, 1969, 677 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "exit", Model = "b_exit", Help = strings.Help( 2 ), Clicked = CloseLoansWindow,
-			Bounds = Rect( 1889, 820, 1972, 903 ), Anchor = UiAnchor.Center } );
+		UiButton TableButton( string id, string model, Action clicked, bool enabled = true )
+		{
+			var node = table.Model( model );
+			return screen.Add( new UiButton { Id = id, Model = node.Model, Help = strings.Help( node.Help ), Clicked = clicked, Enabled = enabled,
+				Bounds = node.Rect, Anchor = UiAnchor.Center } );
+		}
+		TableButton( "finance", "b_finance", CloseLoansWindow );
+		TableButton( "entry", "b_entry", OpenEntryPriceWindow, LoansEconomy != null );
+		TableButton( "staffCosts", "b_staffcost", OpenStaffCostsWindow, LoansEconomy != null );
+		TableButton( "exit", "b_exit", CloseLoansWindow );
 		screen.Back = CloseLoansWindow;
 		return screen;
 	}
@@ -258,6 +307,7 @@ public sealed partial class ParkHud
 				owner.ScrollLoans( input.Wheel > 0 ? -1 : 1 );
 				input = input with { Wheel = 0 };
 			}
+			owner.UpdateLoanScrollVisibility();
 			return base.Update( context, input );
 		}
 	}
@@ -320,12 +370,7 @@ public sealed partial class ParkHud
 		private readonly ParkHud owner;
 		public LoanScrollBar( ParkHud owner ) => this.owner = owner;
 		public override bool Focusable => Visible && Enabled;
-		private UiRect KnobRect()
-		{
-			var travel = LoanTrack.Height - LoanKnob.Height;
-			var top = LoanTrack.Y + (owner.LoanMaxFirstRow == 0 ? 0 : travel * owner.loanFirstRow / owner.LoanMaxFirstRow);
-			return new UiRect( LoanKnob.X, top, LoanKnob.Width, LoanKnob.Height );
-		}
+		private UiRect KnobRect() => ListScrollKnobRect( LoanTrack, LoanKnob, owner.loanFirstRow, owner.LoanMaxFirstRow );
 		public void DragTo( UiCanvas canvas, NVector2 point )
 		{
 			var rect = ScreenRect( canvas );

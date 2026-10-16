@@ -8,7 +8,7 @@ namespace OpenTPW.UI.Original;
 /// reliability, repair and life): a dark track, filled from the left by a fixed gradient that is cut off at the value, so a low value shows only the red and
 /// orange end and a full bar reaches green.
 /// </summary>
-// [APPROX:UI-046] the gradient stops and the track colours are read off the 720p video frames (buy window 1:50, hire window 12:00: a 70 % bar runs red, orange, yellow to lime green; a 12 % bar is red/orange), not from the original's gauge art, whose texture is not identified
+// [APPROX:UI-046] the gradient stops and the track colours are read off the 720p video frames (buy window 1:50, hire window 12:00: a 70 % bar runs red, orange, yellow to lime green; a 12 % bar is red/orange), not from the original's gauge art ridestatbar.wct (32 x 32: the top half the bar, the bottom half the track), whose pixels OpenTPW's wavelet decoder gives as a dark gold to green ramp without the red the video shows (the happygrad.wct decode even has blue texels)
 public static class UiGauge
 {
 	private static readonly (float At, RgbaByte Colour)[] Stops =
@@ -21,6 +21,16 @@ public static class UiGauge
 		(1.00f, new( 90, 205, 0, 255 )),
 	};
 	private const int Segments = 32;
+
+	/// <summary>The range of a type-9 gauge's value (0x66d885 clamps it to 0..0x400).</summary>
+	public const int FullValue = 1024;
+
+	/// <summary>
+	/// The share a type-9 gauge shows for the percentage <paramref name="percent"/>: the windows set <c>(percent &lt;&lt; 10) / 100</c> in integer steps, which the
+	/// control clamps to 0..1024.
+	/// </summary>
+	// [BIN:TPW-EXE:0x66d885 gauge SetValue] the value is clamped to 0..0x400 and sent to the gauge's two models with message 8, whose handler (0x478400) turns it into value / 1024 × 100 percent of the bar's width: vertices 1, 2, 4 and 5 move to that percent and the texture's u of the fill quad to percent / 100 (0x4785a2..0x478675), so the fill is the art cut off at the value, not stretched
+	public static float OfPercent( int percent ) => Math.Clamp( (int)(((long)percent << 10) / 100), 0, FullValue ) / (float)FullValue;
 
 	/// <summary>The track behind the fill.</summary>
 	public static readonly RgbaByte Track = new( 62, 62, 72, 255 );
@@ -40,6 +50,18 @@ public static class UiGauge
 		}
 		return Stops[^1].Colour;
 	}
+
+	/// <summary>
+	/// The vertical inset of a gauge's bar in its control's rectangle, in virtual canvas units: each window's builder calls <c>0x485e30(gauge, 0, 10)</c> on the gauge control, which
+	/// deflates its rectangle by 10 units at the top and at the bottom (<c>0x65a43e</c>: top + 10, bottom - 10), and the bar's model fills that rectangle exactly (0x476c50 maps the
+	/// model's bounds to it), so a 45 unit cell has a 25 unit bar.
+	/// </summary>
+	// [BIN:TPW-EXE:0x485e30 gauge inset] the callers 0x4ab6b0 (buy window gauges 0x1ee, 0x1ef, 0x1f0), 0x4ad890 (ride window 0x3e16..0x3e19), 0x4afc10 and 0x4b1040 (shop and sideshow windows) all push 0 and 10; the attractions and visitors lists (0x496620: 8, 0x4939d0 and 0x494690: 10) and the employee and training windows use their own
+	public const float BarInsetUnits = 10;
+
+	/// <summary>The bar's rectangle in a gauge control's screen rectangle <paramref name="control"/>: deflated vertically by <paramref name="insetUnits"/> canvas units.</summary>
+	public static UiRect BarRect( UiRect control, UiCanvas canvas, float insetUnits = BarInsetUnits ) =>
+		new( control.X, control.Y + insetUnits * canvas.Scale, control.Width, Math.Max( 0f, control.Height - 2 * insetUnits * canvas.Scale ) );
 
 	/// <summary>Draws a gauge in <paramref name="track"/> filled to <paramref name="fraction"/> (0..1); null or 0 draws the empty track.</summary>
 	public static void Draw( UiBatch batch, UiRect track, float? fraction )

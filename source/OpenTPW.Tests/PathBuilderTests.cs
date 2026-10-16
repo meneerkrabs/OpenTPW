@@ -343,8 +343,9 @@ public class PathBuilderTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 61, simulation.Admissions, $"{simulation.Admissions}" );
-		Assert.AreEqual( 0xBE56BB444866D576UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		// the guests walk whole walks to the ride (0x4FFBC0 -> 0x510100) and the leaving walk, so admissions and the run moved from 61 / 0xBE56BB444866D576
+		Assert.AreEqual( 63, simulation.Admissions, $"{simulation.Admissions}" );
+		Assert.AreEqual( 0x26FD3689A54F5F1CUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

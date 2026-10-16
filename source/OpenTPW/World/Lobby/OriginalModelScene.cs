@@ -20,14 +20,20 @@ public abstract class OriginalModelScene : Entity
 
 	public int PartCount => parts.Count;
 
-	/// <summary>Shows or hides every part; the scene stays loaded.</summary>
+	private bool visible = true;
+	private readonly List<AnimatedModel> animatedModels = new();
+
+	/// <summary>Shows or hides every part (an animated model only while it is <see cref="AnimatedModel.Shown"/>); the scene stays loaded.</summary>
 	public bool Visible
 	{
-		get => parts.Count == 0 || !parts[0].Hidden;
+		get => visible;
 		set
 		{
+			visible = value;
 			foreach ( var part in parts )
 				part.Hidden = !value;
+			foreach ( var model in animatedModels )
+				model.ApplyVisibility();
 		}
 	}
 
@@ -135,8 +141,13 @@ public abstract class OriginalModelScene : Entity
 	{
 		private readonly List<(ModelEntity Entity, int Node, int Mesh, Vertex[] Vertices, Model Model, int Version)> meshParts = new();
 
+		private readonly OriginalModelScene scene;
+		private bool shown = true;
+
 		internal AnimatedModel( OriginalModelScene scene, ModelFile file, bool animatedMeshes )
 		{
+			this.scene = scene;
+			scene.animatedModels.Add( this );
 			File = file;
 			Animator = new ObjectAnimator( file );
 			dynamicMeshes = animatedMeshes;
@@ -177,6 +188,23 @@ public abstract class OriginalModelScene : Entity
 
 		public ModelFile File { get; }
 		public ObjectAnimator Animator { get; }
+
+		/// <summary>Whether the model is drawn while its scene is visible (a model built ahead of its use stays hidden until then).</summary>
+		public bool Shown
+		{
+			get => shown;
+			set
+			{
+				shown = value;
+				ApplyVisibility();
+			}
+		}
+
+		internal void ApplyVisibility()
+		{
+			foreach ( var part in meshParts )
+				part.Entity.Hidden = !shown || !scene.visible;
+		}
 
 		/// <summary>Model-to-lobby matrix in MD2 axes (row vectors).</summary>
 		public NMatrix4x4 Placement { get; set; } = NMatrix4x4.Identity;

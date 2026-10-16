@@ -51,7 +51,19 @@ public sealed class LobbyScene : OriginalModelScene
 				Slots.Add( (island, slot) );
 				// [BIN:TPW-EXE:0x5e36b3 flying-mesh centre] a FLYINGMESH group's centre is the island's camera target (x, height, z) (+0x3c) with 50 added to the height
 				foreach ( var flight in island.Flights )
-					FlyingMeshes?.Add( flight, new NVector3( x, island.Height, z ) );
+				{
+					if ( FlyingMeshes?.Add( flight, new NVector3( x, island.Height, z ) ) is not { } group )
+						continue;
+					// Every flyer's model is built with the scene and shown once its instance spawns, so the scene's entities stay the same.
+					var models = new List<AnimatedModel>();
+					for ( var index = 0; index < group.Count; index++ )
+						if ( CreateFlyer( group.Info.Mesh ) is { } flyer )
+						{
+							flyer.Shown = false;
+							models.Add( flyer );
+						}
+					flyerModels[group] = models;
+				}
 			}
 		}
 		catch
@@ -88,7 +100,7 @@ public sealed class LobbyScene : OriginalModelScene
 	/// <summary>The bats and butterflies of the placed islands (null without a generator).</summary>
 	public LobbyFlyingMeshes? FlyingMeshes { get; }
 
-	private readonly Dictionary<LobbyFlyingMeshes.Instance, AnimatedModel> flyers = new();
+	private readonly Dictionary<LobbyFlyingMeshes.Group, List<AnimatedModel>> flyerModels = new();
 	private readonly Dictionary<string, (ModelFile? Model, ModelAnimation? Clip)> flyerAssets = new( StringComparer.OrdinalIgnoreCase );
 
 	/// <summary>
@@ -103,15 +115,14 @@ public sealed class LobbyScene : OriginalModelScene
 		FlyingMeshes?.Step( step );
 		foreach ( var group in FlyingMeshes?.Groups ?? Array.Empty<LobbyFlyingMeshes.Group>() )
 		{
-			foreach ( var instance in group.Instances )
+			if ( !flyerModels.TryGetValue( group, out var models ) )
+				continue;
+			for ( var index = 0; index < group.Instances.Count && index < models.Count; index++ )
 			{
-				if ( !flyers.TryGetValue( instance, out var flyer ) )
-				{
-					if ( CreateFlyer( group.Info.Mesh ) is not { } created )
-						continue;
-					flyers[instance] = flyer = created;
-				}
-				flyer.Placement = instance.Matrix;
+				var flyer = models[index];
+				if ( !flyer.Shown )
+					flyer.Shown = true;
+				flyer.Placement = group.Instances[index].Matrix;
 				flyer.Advance( seconds );
 			}
 		}
@@ -192,7 +203,6 @@ public sealed class LobbyScene : OriginalModelScene
 		var flyer = AddAnimatedModel( assets.Model, animatedMeshes: assets.Clip != null );
 		if ( assets.Clip != null )
 			flyer.Animator.Trigger( 0, assets.Clip, $"{mesh}m1", animationId: 5, variant: 0, loop: true, speed: 1f );
-		flyer.UpdateParts();
 		return flyer;
 	}
 	public int IslandCount { get; private set; }

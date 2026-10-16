@@ -337,7 +337,11 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x4A4014649DF391DB`, schema 19: tp.exe's guest walk on top of the staff candidate draws, pinned on separate branches off
+  (`0x944788E41E278016`, schema 19: the ticket booth no longer reads the guest's purse (#207) on top of tp.exe's guest walk and the staff
+  candidate draws: the booth books the fee with the bank (tp.exe `0x004FFADE` → `0x004D0600`; the purse +0x1A0 is never touched), so the
+  guests' money and the world stream move. The booth change alone, off `0xD28386DACAD73241`, was `0x9AA9973FC2A6A5D6`, and on top of
+  the staff draws only `0x89123A798D58778F`. Before that:
+  `0x4A4014649DF391DB`, schema 19: tp.exe's guest walk on top of the staff candidate draws, pinned on separate branches off
   `0xD28386DACAD73241`. The walk alone was `0x0B7C79BA1B5AC12A`: guests walk the park with tp.exe's walk: the route search `0x511420`,
   the edge test `0x4d8750`, the step commit `0x510510`, avoid_walls `0x50e4a0` and the walk's progress `0x50fd40`, in tp.exe's
   fixed-point arithmetic (multiply rounding towards −∞ `0x50df70`, divide towards 0 `0x50e080`), and cell type changes stamp their

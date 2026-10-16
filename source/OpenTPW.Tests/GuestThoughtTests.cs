@@ -113,7 +113,7 @@ public class GuestThoughtTests
 	private sealed class SideshowPayments( bool won ) : IGuestPayments
 	{
 		public int AdmissionFee => 0;
-		public bool TryPayAdmission( long guestMoney, out int feePaid ) { feePaid = 0; return true; }
+		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; return true; }
 		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
 		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid, out bool? result )
 		{

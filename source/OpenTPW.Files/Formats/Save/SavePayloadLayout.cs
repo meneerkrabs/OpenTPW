@@ -133,7 +133,7 @@ public sealed class SavePayloadLayout
 		if ( recording > (uint)(payload.Length - ActionRecordingHeaderBytes) )
 			throw new InvalidDataException( $"Save action recording claims {recording} bytes; only {payload.Length - ActionRecordingHeaderBytes} remain." );
 		var start = ActionRecordingHeaderBytes + (int)recording;
-		// [APPROX:SAVE-011] the delimiters of blocks whose width is not traced are located by their bytes: a payload that splits into its blocks in more than one way, or holds a delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while the count-based original loader reads each block by its own width — evidence needed: the serialized widths of the remaining blocks
+		// [APPROX:SAVE-011] the delimiters of blocks whose width is not traced are located by their bytes: a payload that splits into its blocks in more than one way, or holds a delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while tp.exe's loader 0x415270 runs each block's reader and then compares the next 4 bytes with its tag (0x415371), never searching — evidence needed: the serialized widths of the remaining blocks
 		var search = new DelimiterSearch( payload, start );
 		var splits = search.Count( 0, start );
 		if ( splits == 0 )

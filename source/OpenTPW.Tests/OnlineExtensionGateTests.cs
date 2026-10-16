@@ -148,13 +148,14 @@ public class OnlineExtensionGateTests
 	[TestMethod]
 	public void DisableExtensionTurnsTheOnlineExtensionOffForTheRun()
 	{
+		// no OPENTPW_MOD_DIRS and no program folder: independent of the developer's own mods
 		using var scope = OpenTpwExtensions.Use( OpenTpwExtensions.Active );
 		var traces = new List<string>();
-		var set = ModStartup.Initialize( new[] { "--smoke-test", "--disable-extension", "opentpw.online" }, traces.Add, message => Assert.Fail( message ) );
+		var set = ModStartup.Initialize( new[] { "--smoke-test", "--disable-extension", "opentpw.online" }, traces.Add, message => Assert.Fail( message ), null, null );
 		Assert.IsFalse( set.IsEnabled( "opentpw.online" ) );
 		Assert.AreSame( set, OpenTpwExtensions.Active );
 		Assert.IsFalse( FeatureGates.Online );
 		StringAssert.Contains( traces.Single(), "opentpw.online" );
-		Assert.ThrowsException<ArgumentException>( () => ModStartup.Initialize( new[] { "--smoke-test", "--disable-extension", "opentpw.offline" }, _ => { }, _ => { } ) );
+		Assert.ThrowsException<ArgumentException>( () => ModStartup.Initialize( new[] { "--smoke-test", "--disable-extension", "opentpw.offline" }, _ => { }, _ => { }, null, null ) );
 	}
 }

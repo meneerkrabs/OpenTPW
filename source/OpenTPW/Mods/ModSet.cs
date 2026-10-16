@@ -134,8 +134,8 @@ public sealed class ModSet
 	}
 
 	/// <summary>
-	/// SHA-256 of the sorted list of (mod-relative path, file SHA-256): one <c>path NUL hex LF</c> line per file, paths in
-	/// '/' form and ordinal order, hashes in lowercase hex.
+	/// SHA-256 of the sorted list of (mod-relative path, file SHA-256): one <c>path NUL hex LF</c> line per file in UTF-8,
+	/// paths in '/' form and Unicode normalization form C, sorted by ordinal (UTF-16 code unit) order, hashes in lowercase hex.
 	/// </summary>
 	public static string ContentDigest( IEnumerable<(string Path, string Sha256)> files )
 	{
@@ -145,10 +145,16 @@ public sealed class ModSet
 		return Convert.ToHexString( SHA256.HashData( Encoding.UTF8.GetBytes( text.ToString() ) ) ).ToLowerInvariant();
 	}
 
-	/// <summary>Every file of a mod folder with its SHA-256; symbolic links inside the folder and oversized mods are refused.</summary>
+	/// <summary>
+	/// Every file of a mod folder with its SHA-256, by '/' path in Unicode normalization form C (so macOS, Windows and
+	/// Linux copies of a mod get the same digest). Operating-system clutter (<see cref="IsIgnoredFile"/>) is skipped.
+	/// Symbolic links, reparse points and other non-regular files, names that differ only by case or normalization, and
+	/// oversized mods are refused.
+	/// </summary>
 	public static (IReadOnlyList<(string Path, string Sha256)>? Files, string? Error) ReadFiles( string directory )
 	{
 		var files = new List<(string, string)>();
+		var names = new Dictionary<string, string>( StringComparer.Ordinal );
 		long bytes = 0;
 		var pending = new Stack<(string Path, string Relative, int Depth)>();
 		pending.Push( (directory, "", 0) );
@@ -160,14 +166,22 @@ public sealed class ModSet
 					return (null, $"folders are nested deeper than {MaximumDepth} levels");
 				foreach ( var entry in new DirectoryInfo( current.Path ).EnumerateFileSystemInfos() )
 				{
-					var relative = current.Relative.Length == 0 ? entry.Name : current.Relative + "/" + entry.Name;
-					if ( entry.LinkTarget != null )
-						return (null, $"'{relative}' is a symbolic link; mods may not contain links");
+					var name = entry.Name.Normalize( NormalizationForm.FormC );
+					var relative = current.Relative.Length == 0 ? name : current.Relative + "/" + name;
+					if ( entry.LinkTarget != null || entry.Attributes.HasFlag( FileAttributes.ReparsePoint ) )
+						return (null, $"'{relative}' is a symbolic link or reparse point; mods may not contain links");
+					if ( entry is FileInfo && IsIgnoredFile( name ) )
+						continue;
+					if ( names.TryGetValue( FoldKey( relative ), out var other ) )
+						return (null, $"'{relative}' and '{other}' differ only by case or Unicode normalization");
+					names.Add( FoldKey( relative ), relative );
 					if ( entry is DirectoryInfo )
 					{
 						pending.Push( (entry.FullName, relative, current.Depth + 1) );
 						continue;
 					}
+					if ( ModFiles.NotRegularFile( entry.FullName ) is { } reason )
+						return (null, $"'{relative}' {reason}");
 					var file = (FileInfo)entry;
 					bytes += file.Length;
 					if ( files.Count >= MaximumFilesPerMod || bytes > MaximumBytesPerMod )
@@ -183,6 +197,14 @@ public sealed class ModSet
 		}
 		return (files, null);
 	}
+
+	/// <summary>Files that operating systems leave in folders: <c>.DS_Store</c>, AppleDouble <c>._*</c>, <c>Thumbs.db</c> and <c>desktop.ini</c>.</summary>
+	public static bool IsIgnoredFile( string name ) =>
+		name.Equals( ".DS_Store", StringComparison.OrdinalIgnoreCase ) || name.StartsWith( "._", StringComparison.Ordinal )
+		|| name.Equals( "Thumbs.db", StringComparison.OrdinalIgnoreCase ) || name.Equals( "desktop.ini", StringComparison.OrdinalIgnoreCase );
+
+	/// <summary>The key two paths share when a case-insensitive or normalizing file system would treat them as one.</summary>
+	private static string FoldKey( string path ) => path.Normalize( NormalizationForm.FormC ).ToLowerInvariant();
 
 	private static string? Incompatibility( ModManifest manifest, ModSettings settings, ModVersion? openTpwVersion, GameEdition edition )
 	{
@@ -200,33 +222,41 @@ public sealed class ModSet
 		return null;
 	}
 
-	/// <summary>Two enabled mods that override the same file (case-insensitively) and neither declares the other in 'after'.</summary>
+	/// <summary>
+	/// Two enabled mods that override the same file (compared without case or normalization differences) where neither
+	/// declares the other in 'after'. All pairs are judged against one snapshot of the enabled mods and refused together,
+	/// so a third mod with the same file cannot win because the first two were refused before it was compared.
+	/// </summary>
 	private static bool RefuseConflicts( Dictionary<string, Node> nodes, List<ModRefusal> refused )
 	{
 		var owners = new Dictionary<string, List<Node>>( StringComparer.Ordinal );
 		foreach ( var node in nodes.Values.Where( node => node.Enabled && node.Manifest?.Content.Overrides != null ).OrderBy( node => node.Id, StringComparer.Ordinal ) )
 		{
-			var prefix = node.Manifest!.Content.Overrides + "/";
+			var prefix = FoldKey( node.Manifest!.Content.Overrides! ) + "/";
 			foreach ( var (path, _) in node.Files! )
-				if ( path.StartsWith( prefix, StringComparison.Ordinal ) )
-				{
-					var key = path[prefix.Length..].ToLowerInvariant();
-					if ( !owners.TryGetValue( key, out var list ) )
-						owners[key] = list = new List<Node>();
-					list.Add( node );
-				}
+			{
+				var key = FoldKey( path );
+				if ( !key.StartsWith( prefix, StringComparison.Ordinal ) )
+					continue;
+				if ( !owners.TryGetValue( key[prefix.Length..], out var list ) )
+					owners[key[prefix.Length..]] = list = new List<Node>();
+				list.Add( node );
+			}
 		}
-		var changed = false;
+		var reasons = new Dictionary<Node, string>();
 		foreach ( var (path, list) in owners.OrderBy( pair => pair.Key, StringComparer.Ordinal ) )
 			for ( var first = 0; first < list.Count; first++ )
 				for ( var second = first + 1; second < list.Count; second++ )
 				{
 					var (a, b) = (list[first], list[second]);
-					if ( !a.Enabled || !b.Enabled || a.Manifest!.After.Contains( b.Id ) || b.Manifest!.After.Contains( a.Id ) )
+					if ( a.Manifest!.After.Contains( b.Id ) || b.Manifest!.After.Contains( a.Id ) )
 						continue;
-					changed |= Refuse( a, $"overrides '{path}' like {b.Id}, and neither declares the other in 'after'", refused );
-					changed |= Refuse( b, $"overrides '{path}' like {a.Id}, and neither declares the other in 'after'", refused );
+					reasons.TryAdd( a, $"overrides '{path}' like {b.Id}, and neither declares the other in 'after'" );
+					reasons.TryAdd( b, $"overrides '{path}' like {a.Id}, and neither declares the other in 'after'" );
 				}
+		var changed = false;
+		foreach ( var (node, reason) in reasons.OrderBy( pair => pair.Key.Id, StringComparer.Ordinal ) )
+			changed |= Refuse( node, reason, refused );
 		return changed;
 	}
 

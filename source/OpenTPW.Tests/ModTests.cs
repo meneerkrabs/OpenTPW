@@ -349,6 +349,117 @@ public class ModTests
 	}
 
 	[TestMethod]
+	public void IdsCannotEndInALineFeed()
+	{
+		Assert.IsFalse( ModManifest.IsValidId( "community.a\n" ) );
+		Assert.IsFalse( ModManifest.IsValidInputId( "tpi\n" ) );
+		AssertInvalid( Manifest( "community.a\\n" ), "'id'" );
+		AssertInvalid( Manifest( "community.a", extra: ", \"inputs\": [{ \"id\": \"tpi\\n\", \"kind\": \"original-data\" }]" ), "input id" );
+		var diagnostics = new List<string>();
+		var settings = ModSettings.Parse( Encoding.UTF8.GetBytes( "{ \"enabled\": { \"community.a\\n\": true }, \"order\": [\"community.a\\n\"], \"inputs\": { \"community.a\": { \"tpi\\n\": \"/x\" } } }" ), diagnostics );
+		Assert.AreEqual( 0, settings.Enabled.Count );
+		Assert.AreEqual( 0, settings.Order.Count );
+		Assert.AreEqual( 0, settings.Inputs["community.a"].Count );
+		Assert.AreEqual( 3, diagnostics.Count, string.Join( "; ", diagnostics ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( "data/CON" )]
+	[DataRow( "data/nul.txt" )]
+	[DataRow( "Com1" )]
+	[DataRow( "data./x" )]
+	[DataRow( "data/x " )]
+	public void ContentPathsCannotUseNamesWindowsCannotHold( string path ) =>
+		AssertInvalid( Manifest( "community.a", extra: $", \"content\": {{ \"overrides\": \"{path}\" }}" ), "reserved" );
+
+	[TestMethod]
+	public void ThreeModsOverridingTheSameFileAreAllRefused()
+	{
+		const string overrides = ", \"content\": { \"overrides\": \"data\" }";
+		var directories = new[] { "community.a", "community.b", "community.c" }
+			.Select( id => Mod( id, extra: overrides, files: new[] { ("data/x.txt", id) } ) ).ToList();
+		var set = Resolve( directories, Enable( "community.a", "community.b", "community.c" ) );
+		CollectionAssert.AreEqual( new[] { Core.Id }, set.Order.ToArray() );
+		CollectionAssert.AreEquivalent( new[] { "community.a", "community.b", "community.c" }, set.Refused.Select( refusal => refusal.Id ).ToArray() );
+
+		// a fourth mod ordered after all three keeps its override; the three still conflict among themselves
+		var last = Mod( "community.d", extra: overrides + ", \"after\": [\"community.a\", \"community.b\", \"community.c\"]", files: new[] { ("data/X.txt", "d") } );
+		var withLast = Resolve( directories.Append( last ), Enable( "community.a", "community.b", "community.c", "community.d" ) );
+		CollectionAssert.AreEqual( new[] { Core.Id, "community.d" }, withLast.Order.ToArray() );
+	}
+
+	[TestMethod]
+	public void TheGoldenDigestIsTheSameOnEveryPlatform()
+	{
+		var directory = Path.Combine( root, "golden" );
+		Directory.CreateDirectory( Path.Combine( directory, "data" ) );
+		File.WriteAllText( Path.Combine( directory, ModManifest.FileName ), """{ "schema": 1, "id": "community.golden", "name": "Golden", "version": "1.0.0", "category": "community" }""" );
+		File.WriteAllText( Path.Combine( directory, "data", "A.txt" ), "alpha\n" );
+		File.WriteAllText( Path.Combine( directory, "data", "b.txt" ), "beta\n" );
+		// written in decomposed form (as macOS file systems hand names out); hashed in composed form
+		File.WriteAllText( Path.Combine( directory, "cafe\u0301.txt" ), "cafe\n" );
+		// operating-system clutter is not part of the mod
+		File.WriteAllText( Path.Combine( directory, ".DS_Store" ), "junk" );
+		File.WriteAllText( Path.Combine( directory, "._cafe.txt" ), "junk" );
+		File.WriteAllText( Path.Combine( directory, "data", "Thumbs.db" ), "junk" );
+		File.WriteAllText( Path.Combine( directory, "data", "desktop.ini" ), "junk" );
+		var set = Resolve( new[] { directory }, Enable( "community.golden" ) );
+		Assert.AreEqual( 0, set.Refused.Count, string.Join( "; ", set.Refused ) );
+		Assert.AreEqual( "08fcdf68c516d55a900c6167694d9ae2c8dcc2eda87186509e5c5920109fe618", set.Mods.Single().ContentSha256 );
+	}
+
+	[TestMethod]
+	public void NamesThatDifferOnlyByCaseRefuseTheMod()
+	{
+		var directory = Mod( "community.cased", files: new[] { ("data/Foo.txt", "1") } );
+		File.WriteAllText( Path.Combine( directory, "data", "foo.txt" ), "2" );
+		if ( Directory.GetFiles( Path.Combine( directory, "data" ) ).Length < 2 )
+			return; // a case-insensitive file system holds one file: nothing to refuse
+		StringAssert.Contains( Resolve( new[] { directory }, Enable( "community.cased" ) ).Refused.Single().Reason, "differ only by case" );
+	}
+
+	[TestMethod]
+	public void HostileManifestsAndFilesAreRefusedWithoutReadingThem()
+	{
+		if ( OperatingSystem.IsWindows() )
+			return;
+		// a manifest linked to an endless device: refused before any read
+		var linked = Path.Combine( root, "linked" );
+		Directory.CreateDirectory( linked );
+		File.CreateSymbolicLink( Path.Combine( linked, ModManifest.FileName ), "/dev/zero" );
+		StringAssert.Contains( Found( linked ).Error, "symbolic link" );
+		// a FIFO would block the first read forever
+		var piped = Path.Combine( root, "piped" );
+		Directory.CreateDirectory( piped );
+		MakeFifo( Path.Combine( piped, ModManifest.FileName ) );
+		StringAssert.Contains( Found( piped ).Error, "not a regular file" );
+		var withFifo = Mod( "community.fifo" );
+		MakeFifo( Path.Combine( withFifo, "data.bin" ) );
+		StringAssert.Contains( Resolve( new[] { withFifo }, Enable( "community.fifo" ) ).Refused.Single().Reason, "not a regular file" );
+		// mods.json the same way
+		var settings = Path.Combine( root, ModSettings.FileName );
+		MakeFifo( settings );
+		var diagnostics = new List<string>();
+		Assert.AreSame( ModSettings.Default, ModSettings.Load( settings, diagnostics ) );
+		StringAssert.Contains( diagnostics.Single(), "not a regular file" );
+	}
+
+	private static void MakeFifo( string path )
+	{
+		using var process = System.Diagnostics.Process.Start( "mkfifo", new[] { path } );
+		process.WaitForExit();
+		Assert.AreEqual( 0, process.ExitCode );
+	}
+
+	[TestMethod]
+	public void AMalformedEnvironmentFolderIsARefusedEntry()
+	{
+		var found = ModDiscovery.Discover( Array.Empty<string>(), new[] { "bad\0folder" }, null, null ).Single();
+		Assert.IsFalse( found.IsValid );
+		StringAssert.Contains( found.Error, "not a usable folder path" );
+	}
+
+	[TestMethod]
 	public void SymbolicLinksInsideAModAreRefused()
 	{
 		if ( OperatingSystem.IsWindows() )
@@ -381,6 +492,7 @@ public class ModTests
 		CollectionAssert.AreEqual( settings.Order.ToArray(), loaded.Order.ToArray() );
 		Assert.AreEqual( "/games/tpi", loaded.Inputs["community.a"]["tpi"] );
 		CollectionAssert.AreEqual( File.ReadAllBytes( path ), loaded.Serialize(), "saving what was loaded writes the same bytes" );
+		CollectionAssert.AreEqual( new[] { ModSettings.FileName }, Directory.GetFiles( Path.GetDirectoryName( path )! ).Select( Path.GetFileName ).ToArray(), "no temporary file is left behind" );
 		Assert.AreSame( ModSettings.Default, ModSettings.Load( Path.Combine( root, "missing.json" ), diagnostics ) );
 		Assert.AreEqual( 0, diagnostics.Count );
 	}

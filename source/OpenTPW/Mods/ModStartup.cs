@@ -33,15 +33,19 @@ public static class ModStartup
 	/// <c>&lt;program&gt;/content/mods</c>, the saved choices, then <c>--disable-extension</c>. Smoke tests ignore the
 	/// saved choices and the configuration folder's mods, like the compatibility settings.
 	/// </summary>
-	public static ModSet Initialize( string[] args, Action<string> trace, Action<string> warning )
+	public static ModSet Initialize( string[] args, Action<string> trace, Action<string> warning ) =>
+		Initialize( args, trace, warning, Environment.GetEnvironmentVariable( ModDiscovery.EnvironmentVariable ), AppContext.BaseDirectory );
+
+	/// <summary><see cref="Initialize(string[], Action{string}, Action{string})"/> with explicit <c>OPENTPW_MOD_DIRS</c> and program folder (tests).</summary>
+	internal static ModSet Initialize( string[] args, Action<string> trace, Action<string> warning, string? modDirsEnvironment, string? programDirectory )
 	{
 		var smokeTest = args.Contains( "--smoke-test" );
 		var configDirectory = Path.GetDirectoryName( DisplaySettings.GetDefaultPath() )!;
 		var diagnostics = new List<string>();
 		var settings = smokeTest ? ModSettings.Default : ModSettings.Load( ModSettings.GetDefaultPath(), diagnostics );
 		var discovered = ModDiscovery.Discover( Values( args, ModDirOption, "a mod folder containing " + ModManifest.FileName ),
-			ModDiscovery.SplitEnvironment( Environment.GetEnvironmentVariable( ModDiscovery.EnvironmentVariable ) ),
-			smokeTest ? null : configDirectory, AppContext.BaseDirectory );
+			ModDiscovery.SplitEnvironment( modDirsEnvironment ),
+			smokeTest ? null : configDirectory, programDirectory );
 		var set = Resolve( discovered, settings, Values( args, DisableExtensionOption, "an extension or mod id such as opentpw.online" ), diagnostics );
 		Report( set, diagnostics, trace, warning );
 		OpenTpwExtensions.Activate( set );

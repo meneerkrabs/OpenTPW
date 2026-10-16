@@ -46,9 +46,9 @@ public static class ModDiscovery
 	{
 		var found = new List<DiscoveredMod>();
 		foreach ( var folder in commandLineFolders )
-			found.Add( Read( Path.GetFullPath( folder ), ModSource.CommandLine, requireFolderName: false ) );
+			found.Add( ReadNamed( folder, ModSource.CommandLine ) );
 		foreach ( var folder in environmentFolders )
-			found.Add( Read( Path.GetFullPath( folder ), ModSource.Environment, requireFolderName: false ) );
+			found.Add( ReadNamed( folder, ModSource.Environment ) );
 		if ( configDirectory != null )
 			found.AddRange( ReadRoot( ConfigModsDirectory( configDirectory ), ModSource.Config ) );
 		if ( programDirectory != null )
@@ -100,6 +100,21 @@ public static class ModDiscovery
 			yield return Read( folder, source, requireFolderName: true );
 	}
 
+	/// <summary>A folder named on the command line or in the environment; a malformed path is a refused entry, not a crash.</summary>
+	private static DiscoveredMod ReadNamed( string folder, ModSource source )
+	{
+		string full;
+		try
+		{
+			full = Path.GetFullPath( folder );
+		}
+		catch ( Exception exception ) when ( exception is ArgumentException or NotSupportedException or PathTooLongException or System.Security.SecurityException )
+		{
+			return new DiscoveredMod( folder, folder, source, null, $"is not a usable folder path ({exception.Message})" );
+		}
+		return Read( full, source, requireFolderName: false );
+	}
+
 	private static DiscoveredMod Read( string folder, ModSource source, bool requireFolderName )
 	{
 		var name = Path.GetFileName( folder.TrimEnd( Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar ) );
@@ -110,7 +125,7 @@ public static class ModDiscovery
 		{
 			manifest = ModManifest.Load( Path.Combine( folder, ModManifest.FileName ) );
 		}
-		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException )
 		{
 			return new DiscoveredMod( name, folder, source, null, exception.Message );
 		}

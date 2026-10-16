@@ -31,17 +31,11 @@ public sealed record ModSettings
 	{
 		try
 		{
-			var info = new FileInfo( path );
-			if ( !info.Exists )
+			if ( !File.Exists( path ) && new FileInfo( path ).LinkTarget == null )
 				return Default;
-			if ( info.Length > MaximumBytes )
-			{
-				diagnostics.Add( $"Mod settings ({path}) are larger than {MaximumBytes} bytes; using the default mods and extensions." );
-				return Default;
-			}
-			return Parse( File.ReadAllBytes( path ), diagnostics );
+			return Parse( ModFiles.ReadBounded( path, MaximumBytes, $"Mod settings ({path})" ), diagnostics );
 		}
-		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidDataException )
 		{
 			diagnostics.Add( $"Mod settings could not be read ({exception.Message}); using the default mods and extensions." );
 			return Default;
@@ -88,7 +82,7 @@ public sealed record ModSettings
 			var paths = new Dictionary<string, string>( StringComparer.Ordinal );
 			foreach ( var (input, path) in values.Take( ModManifest.MaximumInputs ) )
 			{
-				if ( string.IsNullOrWhiteSpace( path ) || path.Length > MaximumInputPathLength || path.Any( char.IsControl ) || input.Length > ModManifest.MaximumIdLength )
+				if ( string.IsNullOrWhiteSpace( path ) || path.Length > MaximumInputPathLength || path.Any( char.IsControl ) || !ModManifest.IsValidInputId( input ) )
 					diagnostics.Add( $"Mod settings: input '{input}' of '{id}' has an invalid folder; it was ignored." );
 				else
 					paths[input] = path;
@@ -111,14 +105,8 @@ public sealed record ModSettings
 	// The strict reading rules, written indented so the file stays readable and editable.
 	private static readonly System.Text.Json.JsonSerializerOptions WriteOptions = new( StrictJson.Options ) { WriteIndented = true, NewLine = "\n" };
 
-	/// <summary>Writes the settings through a temporary file, so a failed write keeps the previous choices.</summary>
-	public void Save( string path )
-	{
-		Directory.CreateDirectory( Path.GetDirectoryName( Path.GetFullPath( path ) )! );
-		var temporary = path + ".tmp";
-		File.WriteAllBytes( temporary, Serialize() );
-		File.Move( temporary, path, overwrite: true );
-	}
+	/// <summary>Writes the settings through a unique temporary file, so a failed write keeps the previous choices.</summary>
+	public void Save( string path ) => OpenTPW.Online.AtomicFile.Write( path, Serialize() );
 
 	public ModSettings WithEnabled( string id, bool enabled )
 	{

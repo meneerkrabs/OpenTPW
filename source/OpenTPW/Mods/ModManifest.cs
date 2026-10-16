@@ -36,8 +36,11 @@ public sealed record ModManifest
 	public const string OfficialPrefix = "opentpw.";
 	public const string CommunityPrefix = "community.";
 
-	private static readonly Regex IdPattern = new( @"^(opentpw|community)\.[a-z0-9]+(?:[-_.][a-z0-9]+)*$", RegexOptions.CultureInvariant );
-	private static readonly Regex InputIdPattern = new( @"^[a-z0-9]+(?:[-_][a-z0-9]+)*$", RegexOptions.CultureInvariant );
+	// \z, not $: $ also matches before a final line feed
+	private static readonly Regex IdPattern = new( @"\A(opentpw|community)\.[a-z0-9]+(?:[-_.][a-z0-9]+)*\z", RegexOptions.CultureInvariant );
+	private static readonly Regex InputIdPattern = new( @"\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z", RegexOptions.CultureInvariant );
+	// Windows device names, with or without an extension
+	private static readonly Regex ReservedName = new( @"\A(?:con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])(?:\..*)?\z", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase );
 
 	public required string Id { get; init; }
 	public required string Name { get; init; }
@@ -56,20 +59,15 @@ public sealed record ModManifest
 
 	public static bool IsValidId( string? id ) => id != null && id.Length <= MaximumIdLength && IdPattern.IsMatch( id );
 
+	public static bool IsValidInputId( string? id ) => id != null && id.Length <= MaximumIdLength && InputIdPattern.IsMatch( id );
+
 	public static ModCategory CategoryOf( string id ) => id.StartsWith( OfficialPrefix, StringComparison.Ordinal ) ? ModCategory.Official : ModCategory.Community;
 
 	/// <summary>The edition token of the manifest's <c>edition</c> field.</summary>
 	public static string EditionToken( GameEdition edition ) => edition == GameEdition.ThemeParkInc ? "theme-park-inc" : "theme-park-world";
 
-	public static ModManifest Load( string path )
-	{
-		var info = new FileInfo( path );
-		if ( !info.Exists )
-			throw new FileNotFoundException( $"{FileName} is missing.", path );
-		if ( info.Length > MaximumBytes )
-			throw new InvalidDataException( $"{FileName} is larger than {MaximumBytes} bytes." );
-		return Parse( File.ReadAllBytes( path ) );
-	}
+	/// <summary>Reads a manifest; a missing, linked, non-regular or oversized file is refused before anything is parsed.</summary>
+	public static ModManifest Load( string path ) => Parse( ModFiles.ReadBounded( path, MaximumBytes, FileName ) );
 
 	/// <summary>Parses and validates manifest bytes; throws <see cref="InvalidDataException"/> with the reason.</summary>
 	public static ModManifest Parse( ReadOnlySpan<byte> utf8 )
@@ -123,7 +121,7 @@ public sealed record ModManifest
 		foreach ( var input in Bounded( document.Inputs, MaximumInputs, "inputs" ) )
 		{
 			var inputId = Required( input?.Id, "inputs[].id" );
-			if ( inputId.Length > MaximumIdLength || !InputIdPattern.IsMatch( inputId ) || inputs.Any( existing => existing.Id == inputId ) )
+			if ( !IsValidInputId( inputId ) || inputs.Any( existing => existing.Id == inputId ) )
 				throw Invalid( $"input id '{inputId}' must be unique and use lowercase letters, digits, '-' and '_'" );
 			var kind = Required( input!.Kind, "inputs[].kind" );
 			if ( kind != "original-data" )
@@ -166,6 +164,9 @@ public sealed record ModManifest
 		var normalized = path.Replace( '\\', '/' ).TrimEnd( '/' );
 		if ( normalized.Length == 0 || normalized.Split( '/' ).Any( part => part.Length == 0 || part == "." ) )
 			throw Invalid( $"{what} '{path}' is not a plain relative path" );
+		// names Windows cannot hold: a trailing '.' or space, or a device name such as CON or NUL
+		if ( normalized.Split( '/' ).Any( part => part.EndsWith( '.' ) || part.EndsWith( ' ' ) || ReservedName.IsMatch( part ) ) )
+			throw Invalid( $"{what} '{path}' has a name that ends in '.' or a space, or is reserved (CON, NUL, …)" );
 		return normalized;
 	}
 

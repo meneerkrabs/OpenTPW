@@ -14,6 +14,8 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private double startScriptMilliseconds;
 	private int frame;
 	private int motionFrame;
+	/// <summary>Whether the ride cycle that was playing when the guest phase finished has yet to end (the later checks wait for the next cycle's start).</summary>
+	private bool motionCycleEnding;
 	private bool completed;
 	private bool sharedCoasterExported;
 	private byte[]? earlyPixels;
@@ -125,7 +127,12 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		{
 			// Totem.RSE waits up to 10 s for passengers before it triggers its main animation.
 			// Totem.RSE first plays its create clip (totemc); the cart cycle is ANIM_Main (totemm1).
-			if ( level.PlacedRide!.IsPlayingMainAnimation && level.PlacedRide.MotionHeight > 0 )
+			if ( motionCycleEnding && !level.PlacedRide!.IsPlayingMainAnimation )
+			{
+				motionCycleEnding = false;
+				startScriptMilliseconds = level.PlacedRide.Script.TimeMilliseconds;
+			}
+			if ( !motionCycleEnding && level.PlacedRide!.IsPlayingMainAnimation && level.PlacedRide.MotionHeight > 0 )
 			{
 				motionFrame = frame;
 				motionScriptMilliseconds = level.PlacedRide.Script.TimeMilliseconds;
@@ -148,8 +155,9 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			UpdateGuestPhase( level.Guests );
 			if ( guestsVerified )
 			{
-				// Run the animation/close/remove checks on the next ride cycle.
+				// Run the animation/close/remove checks on the next ride cycle: a cycle still playing now ends first (its clip may be nearly done).
 				motionFrame = 0;
+				motionCycleEnding = level.PlacedRide!.IsPlayingMainAnimation;
 				startScriptMilliseconds = level.PlacedRide!.Script.TimeMilliseconds;
 			}
 			return;

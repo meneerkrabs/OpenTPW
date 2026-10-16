@@ -75,7 +75,10 @@ internal sealed partial class SandboxSmokeTest
 				Require( level.RemoveObjectAt( removalCell.X, removalCell.Y ), "remove bought object" );
 				Require( economy.Balance == afterBuild + refund && !economy.TryGetObject( id, out _ ), "credit the economy scrap value exactly once" );
 				Require( !level.Park.Guests.TryGetInstance( placed.Visitors.AttractionId, out _ ), "unlink payments after removal" );
-				Require( level.PlaceObject( entry, site.X, site.Y, rotation ) != null, "rebuild on freed footprint through the economy" );
+				var rebuilt = level.PlaceObject( entry, site.X, site.Y, rotation );
+				Require( rebuilt != null, "rebuild on freed footprint through the economy" );
+				// the rebuilt ride starts closed as well (RIDES-015, 0x4DB712); the rider-head readback needs guests on it (Crazy Ape is the jungle's only built ADDHEAD ride)
+				rebuilt!.Open();
 			}
 			Require( built >= 2, "build original objects through the park economy in the original level" );
 			PlaceModObjects( economy, siteX, siteY );

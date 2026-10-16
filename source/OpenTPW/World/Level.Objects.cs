@@ -797,13 +797,18 @@ public partial class Level
 		return true;
 	}
 
-	/// <summary>Screen position of cell (x, y)'s centre on the surface the cursor picks (the terrain's mean corner height on an original level, Z = 0 in the sandbox; for build ghosts).</summary>
+	/// <summary>
+	/// Screen position of cell (x, y)'s centre on the surface the cursor picks (the terrain's mean corner height on an original level, Z = 0 in the sandbox; for build ghosts).
+	/// False for a cell outside the object grid, which has no ground to project (the guest grid can be larger than the level's heightfield).
+	/// </summary>
 	public bool TryProjectCell( int x, int y, System.Numerics.Vector2 viewportSize, out System.Numerics.Vector2 screen )
 	{
+		screen = default;
+		if ( x < 0 || y < 0 || x >= Objects.Grid.Width || y >= Objects.Grid.Height )
+			return false;
 		var origin = Objects.Grid.Origin;
 		var point = new System.Numerics.Vector4( origin.X + (x + 0.5f) * ObjectPlacement.CellSize, origin.Y + (y + 0.5f) * ObjectPlacement.CellSize, Objects.Grid.GetCellHeight( x, y ), 1 );
 		var clip = System.Numerics.Vector4.Transform( point, Camera.ViewMatrix * Camera.ProjMatrix );
-		screen = default;
 		if ( clip.W <= 0 )
 			return false;
 		screen = new System.Numerics.Vector2( (clip.X / clip.W + 1) / 2 * viewportSize.X, (1 - clip.Y / clip.W) / 2 * viewportSize.Y );

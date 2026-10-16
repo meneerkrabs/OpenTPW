@@ -208,6 +208,13 @@ internal sealed partial class GameFlow : IDisposable
 		},
 	}, closed );
 
+	/// <summary>The save file's local last-write time (the original lists FILETIME to local time, 0x49ec80), or null when the file system has none.</summary>
+	private static DateTime? SavedAt( string path )
+	{
+		try { return File.GetLastWriteTime( path ); }
+		catch ( Exception error ) when ( error is IOException or UnauthorizedAccessException or PlatformNotSupportedException ) { return null; }
+	}
+
 	public IReadOnlyList<ParkLoadEntry> FindLoadEntries()
 	{
 		var entries = new List<ParkLoadEntry>();
@@ -218,7 +225,7 @@ internal sealed partial class GameFlow : IDisposable
 			try
 			{
 				var saved = ParkResumeSaveFile.Load( path );
-				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName ) );
+				entries.Add( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, SavedAt( path ) ) );
 			}
 			catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
 			{

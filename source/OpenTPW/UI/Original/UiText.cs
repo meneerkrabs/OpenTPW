@@ -82,6 +82,11 @@ public static class UiTextRecord
 	public const int Day = 441;
 	/// <summary>"%d days" (tp.exe 0x1bb).</summary>
 	public const int Days = 442;
+	/// <summary>
+	/// The save date record "%d.%d.%d" (tp.exe 0x1c0): its parameters 16, 17 and 18 take the day, month and year of the save file's local
+	/// last-write time (0x49ec80 fills the tags 0x10, 0x11 and 0x12 from the SYSTEMTIME's day, month and year, 0x5fc660).
+	/// </summary>
+	public const int SaveDate = 447;
 }
 
 /// <summary>

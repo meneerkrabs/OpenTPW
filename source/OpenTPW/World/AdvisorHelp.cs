@@ -160,9 +160,10 @@ internal static class AdvisorUiHelp
 
 /// <summary>
 /// The kinds of object window the original opens for a placed object (one layout table each): <see cref="Relief"/> is the window of a feature that provides relief
-/// (a toilet), <see cref="Rest"/> of one that chills you out and <see cref="Feature"/> of any other feature.
+/// (a toilet), <see cref="Rest"/> of one that chills you out and <see cref="Feature"/> of any other feature; <see cref="AddOn"/> is the window of a ride-type object
+/// that is an add-on of kind 2 (<c>AddOn.UpgradeType</c>, not a track add-on).
 /// </summary>
-internal enum ObjectInfoKind { Ride, Shop, Sideshow, Relief, Rest, Feature }
+internal enum ObjectInfoKind { Ride, Shop, Sideshow, Relief, Rest, Feature, AddOn }
 
 /// <summary>
 /// The help of the object windows. The original opens one of three windows for a placed object, by its layout table, and each builder posts its
@@ -175,6 +176,7 @@ internal enum ObjectInfoKind { Ride, Shop, Sideshow, Relief, Rest, Feature }
 // [BIN:TPW-EXE:0x004B2430 sideshow window builder] the window of layout table 0x755E80 posts 0xD0 (208) at 0x4B245C; its close handler withdraws it (0x4B2203)
 // [BIN:TPW-EXE:0x00486900 thing window dispatcher] the object's window is chosen by its kind: 0x4AF980 (calls at 0x4869CB and 0x4869F1), 0x4B0E30 (0x486A01) or 0x4B2430 (0x486A11)
 // [BIN:TPW-EXE:0x00486920 thing window dispatcher] a placed object (thing type 3) opens its window by its kind word +0x4AC (Info.WhichUIType): 0 the ride window (0x4AF980), 1 the shop window (0x4B0E30), 2 the sideshow window (0x4B2430), 3 a feature's window by the thing flags +0x32, and no window for a larger value (the jump table 0x486A90 ends at 3); a feature with bit 0 (UsageInfo.ProvidesRelief) opens 0x497990, with bit 1 (UsageInfo.ChillsYouOut) 0x4B5290, any other 0x499EB0
+// [BIN:TPW-EXE:0x00486958 ride kind dispatch] a ride-type object whose type record +0x288 (AddOn.UpgradeType, +0x284 is AddOn.UpgradesId) is 2 opens the window of table 0x7573C8 (0x4B6AE0) instead of the ride window: it posts 0x12D (301) as it opens (0x4B6B09) and its close handler withdraws it (0x4B6850)
 // [BIN:TPW-EXE:0x00497990 relief window] after building the window of layout table 0x751190 it truncates the float at the object's +0x44 (the state, as the ride window's repair) and posts 0xD5 (213) at 0x4979CA when its low byte is below 0x19, else 0x12B (299) at 0x4979DB; the close handler withdraws 0x12B and then 0xD5 (0x4976A0, 0x4976AD)
 // [BIN:TPW-EXE:0x004B5290 rest window] the window posts 0x12C (300) at 0x4B52B9 and its close handler withdraws it (0x4B50D4)
 // [BIN:TPW-EXE:0x00499EB0 feature window] the window posts 0x12A (298) at 0x499ED9 and its close handler withdraws it (0x499C10)
@@ -182,10 +184,10 @@ internal static class ObjectInfoHelp
 {
 	public const string Prefix = "objectInfo/";
 	public const int RideMessage = 207, RideRepairMessage = 297, ShopMessage = 209, SideshowMessage = 208;
-	public const int ReliefDirtyMessage = 213, ReliefMessage = 299, RestMessage = 300, FeatureMessage = 298;
+	public const int ReliefDirtyMessage = 213, ReliefMessage = 299, RestMessage = 300, FeatureMessage = 298, AddOnMessage = 301;
 
 	/// <summary>The messages any object window posts.</summary>
-	public static readonly IReadOnlyList<int> Messages = new[] { RideMessage, RideRepairMessage, ShopMessage, SideshowMessage, ReliefDirtyMessage, ReliefMessage, RestMessage, FeatureMessage };
+	public static readonly IReadOnlyList<int> Messages = new[] { RideMessage, RideRepairMessage, ShopMessage, SideshowMessage, ReliefDirtyMessage, ReliefMessage, RestMessage, FeatureMessage, AddOnMessage };
 
 	/// <summary>Whether the truncated state of a relief feature posts the first message: the low byte of the integer is below 25 (a missing state counts as clean).</summary>
 	public static bool IsDirty( double? state )
@@ -239,6 +241,10 @@ internal static class ObjectInfoHelp
 			case ObjectInfoKind.Feature:
 				posted = FeatureMessage;
 				withdrawn = new[] { FeatureMessage };
+				return true;
+			case ObjectInfoKind.AddOn:
+				posted = AddOnMessage;
+				withdrawn = new[] { AddOnMessage };
 				return true;
 			default:
 				posted = SideshowMessage;

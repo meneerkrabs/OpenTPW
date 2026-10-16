@@ -450,4 +450,22 @@ public class AdvisorToolHelpTests
 		Frame( hud );
 		Assert.IsFalse( events.Any( entry => entry.StartsWith( "open objectInfo/", System.StringComparison.Ordinal ) ), "0x486920: the jump table ends at kind 3" );
 	}
+
+	[TestMethod]
+	public void ARideTypeAddOnOfKind2OpensItsOwnWindowWithHelp301()
+	{
+		Assert.AreEqual( 301, AdvisorUiHelp.MessageFor( ObjectInfoHelp.WindowName( ObjectInfoKind.AddOn, 50, 1 ) ) );
+		CollectionAssert.AreEqual( new[] { 301 }, AdvisorUiHelp.WithdrawnWith( ObjectInfoHelp.WindowName( ObjectInfoKind.AddOn, 50, 1 ) ).ToArray(), "0x4B6850" );
+		var hud = NewHud( out var events, out _, BuildCategory.Rides, "AddOn.UpgradeType 2\n", recordWindows: true );
+		Frame( hud );
+		StringAssert.StartsWith( events.Single( entry => entry.StartsWith( "open objectInfo/", System.StringComparison.Ordinal ) ), "open objectInfo/AddOn/", "type record +0x288 == 2 (0x486958)" );
+	}
+
+	[TestMethod]
+	public void ATrackAddOnOfKind1KeepsTheRideWindow()
+	{
+		var hud = NewHud( out var events, out _, BuildCategory.Rides, "AddOn.UpgradeType 1\n", recordWindows: true );
+		Frame( hud );
+		StringAssert.StartsWith( events.Single( entry => entry.StartsWith( "open objectInfo/", System.StringComparison.Ordinal ) ), "open objectInfo/Ride" );
+	}
 }

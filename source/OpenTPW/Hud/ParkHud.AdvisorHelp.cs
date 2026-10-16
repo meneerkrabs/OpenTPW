@@ -168,7 +168,7 @@ public sealed partial class ParkHud
 		if ( !ReferenceEquals( item, objectHelpItem ) || objectHelpName == null )
 		{
 			// the layout tables of OpenTPW's windows are the original's ride, shop and sideshow tables; a feature (Info.WhichUIType 3) takes the shop table here but opens its own windows in the original
-			var kind = layout.Table == OriginalLayoutTables.RideWindow ? ObjectInfoKind.Ride
+			var kind = layout.Table == OriginalLayoutTables.RideWindow ? (item.Entry.Settings.GetInt( "AddOn.UpgradeType" ) == 2 ? ObjectInfoKind.AddOn : ObjectInfoKind.Ride)
 				: layout.Table == OriginalLayoutTables.SideshowWindow ? ObjectInfoKind.Sideshow
 				: item.Entry.WhichUIType == 3 ? FeatureKind( item.Entry ) : ObjectInfoKind.Shop;
 			var repair = LiveState( item )?.Repair ?? level.PublishedObjectState( item )?.Repair;

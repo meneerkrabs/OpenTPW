@@ -1072,7 +1072,8 @@ public class QueueTests
 	public void QueuedGuestsLeaveAngryWhenTheTrackRefusesGuests()
 	{
 		// tp.exe 0x500612: at its position, after the limit test, a guest queueing for a coaster failing 0x441970 (or a track-type-1 ride whose
-		// track word is 0) thinks 13 and leaves through 0x5004aa; the ride itself calls nobody forward meanwhile (COAST-024).
+		// track word is 0) thinks 13 and leaves through 0x5004aa. The admission 0x4e1220 does not call 0x441970 (see the next test), and the join
+		// 0x4ffbc0 does not either, so a guest walking to the refusing coaster still joins.
 		var rig = new Rig();
 		rig.HoldAdmission();
 		var takes = true;
@@ -1082,7 +1083,7 @@ public class QueueTests
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
 		takes = false;
 		Assert.IsTrue( rig.Ride.TrackRefusesGuests );
-		Assert.IsFalse( rig.Ride.AcceptsJoins );
+		Assert.IsTrue( rig.Ride.AcceptsJoins, "the join reads neither the coaster predicate nor the open word" );
 		var thoughts = new GuestThought?[guests.Count];
 		// The head leaves on the next update; the guests behind walk up first (their position changed) and leave once standing at it.
 		rig.RunTurns( 60, () =>
@@ -1093,7 +1094,28 @@ public class QueueTests
 		} );
 		CollectionAssert.AreEqual( Enumerable.Repeat<GuestThought?>( GuestThought.Angry, guests.Count ).ToArray(), thoughts );
 		Assert.AreEqual( 0, rig.Ride.Dismissed, "each guest leaves on its own state-11 update, not from the ride's head step" );
-		Assert.AreEqual( QueueJoinResult.Closed, rig.Ride.JoinQueue( 99 ), "COAST-024: nobody joins" );
+		Assert.AreEqual( QueueJoinResult.Joined, rig.Ride.JoinQueue( 99 ), "a guest that was already walking to the refusing coaster joins (0x4ffbc0 reads no coaster test)" );
+	}
+
+	[TestMethod]
+	public void AnOpenRideWhoseCoasterRefusesGuestsStillCallsItsHeadForward()
+	{
+		// tp.exe 0x4e1220 reads the open word, LETMEON, capacity, running, the pending visitor and the queue head: it never calls the coaster predicate 0x441970,
+		// so an open ride whose coaster refuses guests calls its head forward like any other, and the guests' own state 11 sends the others away (thought 13)
+		foreach ( var refuses in new[] { false, true } )
+		{
+			var (ride, script, host) = CreateAdmission();
+			ride.Attach( script, () => true, () => !refuses, () => refuses );
+			Assert.AreEqual( refuses, ride.TrackRefusesGuests );
+			Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 1 ), "the join does not read the coaster predicate" );
+			host.AtFront.Add( 1 );
+			Assert.AreEqual( 1, NextTurn( ride, host ).CalledGuest, $"refuses {refuses}: the head is called" );
+			// a refusing ride that is also broken enters state 1 after the admission's own step, as any other
+			script[RideVariables.VAR_BROKEN] = 1;
+			Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 2 ) );
+			NextTurn( ride, host );
+			Assert.IsTrue( ride.IsBrokenDown );
+		}
 	}
 
 	[TestMethod]

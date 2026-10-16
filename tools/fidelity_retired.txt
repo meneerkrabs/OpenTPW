@@ -30,6 +30,7 @@ COAST-013 docs/reverse/COAST-plan.md
 COAST-016 docs/COASTERS.md
 COAST-018 docs/COASTERS.md
 COAST-019 docs/reverse/COAST-plan.md
+COAST-024 docs/COASTERS.md
 COAST-025 docs/COASTERS.md
 COAST-027 docs/COASTERS.md
 COAST-031 docs/COASTERS.md

@@ -171,10 +171,11 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	public IRideVisitorHost? Host { get; set; }
 	public bool IsOpen => ScriptRuns && isOpen() && takesGuests();
 	/// <summary>
-	/// The ride's script runs and its coaster or track takes guests (<see cref="Attach"/>); unlike <see cref="IsOpen"/> it ignores the open word and the
-	/// breakdown, which the original's join (state 10, <c>0x004FFBC0</c>) does not read either.
+	/// The ride's script runs: a guest walking to it may join (state 10). Unlike <see cref="IsOpen"/> it ignores the open word, the breakdown and the coaster or track test,
+	/// which the original's join does not read either (the coaster predicate <c>0x00441970</c> is called by the choice, the reopen guard, the open routines and state 11 only).
 	/// </summary>
-	public bool AcceptsJoins => ScriptRuns && takesGuests();
+	// [BIN:TPW-EXE:0x00441970 callers] the predicate's callers are 0x004DD920 (the choice's counts-test), 0x004DE1F0 (the queue edit's reopening), 0x004DF290 (the reopen guard), 0x004DF390 (the open routine), 0x004DF8F0 (the repair), 0x004DFE30 and 0x004E0050 (the maintenance request and its cancel) and 0x004FFFF0 (state 11); the join 0x004FFBC0 and the admission 0x004E1220 call none of them
+	public bool AcceptsJoins => ScriptRuns;
 	/// <summary>The coaster or track refuses guests (the original's state 11 sends a queued guest away with thought 13, <c>0x004FFFF0</c>).</summary>
 	public bool TrackRefusesGuests => vm != null && refusesQueue();
 	private bool ScriptRuns => vm != null && vm.State is (RideVMState.Running or RideVMState.Waiting);
@@ -851,13 +852,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		{
 			// State 0 reads VAR_BROKEN whether or not the ride is open (0x4e0e00 → 0x4e14e0), so a closed ride enters state 1 too, after the admission's own
 			// head step: a closed ride dismisses two heads on that turn. A park save keeps no bridge state: a ride still broken after a load enters state 1 again here.
-			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 && !refusesQueue() )
+			if ( isOpen() && Get( RideVariables.VAR_RIDECLOSED ) == 0 )
 				CheckAdmission( turn );
 			EnterBrokenState();
 			return;
 		}
-		// COAST-024: a coaster or track that refuses guests calls nobody forward; its queued guests leave by themselves (state 11, thought 13)
-		if ( isOpen() && !refusesQueue() )
+		// [BIN:TPW-EXE:0x004E1220 admission ignores the coaster predicate] the admission reads the open word +0x68, the script's LETMEON, capacity and running variables, the pending visitor and the queue head only, never the coaster test 0x00441970: an open ride whose coaster refuses guests still calls its head forward, and its queued guests leave through state 11's own exit (thought 13, 0x00500612)
+		if ( isOpen() )
 			CheckAdmission( turn );
 	}
 

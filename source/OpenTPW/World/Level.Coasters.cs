@@ -9,7 +9,20 @@ public partial class Level
 	/// <summary>Every coaster controller of the park.</summary>
 	public IReadOnlyList<CoasterRide> Coasters => Objects.ScriptWorld.Coasters.Rides;
 	/// <summary>The station whose track the coaster tool edits, or null when the tool is off.</summary>
-	public OriginalObject? CoasterToolStation { get; private set; }
+	public OriginalObject? CoasterToolStation
+	{
+		get => coasterToolStation;
+		private set
+		{
+			// [BIN:TPW-EXE:0x00790FEC coaster being edited] the global names the controller the tool edits; the guest predicate 0x00441970 refuses it
+			if ( coasterToolStation?.Runtime.Coaster is { } previous )
+				previous.BeingEdited = false;
+			coasterToolStation = value;
+			if ( value?.Runtime.Coaster is { } current )
+				current.BeingEdited = true;
+		}
+	}
+	private OriginalObject? coasterToolStation;
 	/// <summary>The builder the coaster tool drives, or null.</summary>
 	public CoasterBuilder? CoasterTool => CoasterToolStation is { } station ? GetCoasterBuilder( station ) : null;
 	public bool IsCoasterToolActive => CoasterToolStation != null;

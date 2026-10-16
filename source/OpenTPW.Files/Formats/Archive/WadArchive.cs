@@ -10,6 +10,16 @@ public sealed class WadArchiveFile : ArchiveFile
 {
 	internal bool Compressed { get; set; }
 	internal int SizeInArchive { get; set; }
+	/// <summary>
+	/// The directory entry's declared decompressed size (+0x18). [BIN:TPW-EXE:0x00637690 WAD member size] the original takes it as a
+	/// compressed member's size and, opening it (0x61A800 → 0x638B20), allocates exactly that many bytes for the Refpack output
+	/// (decoder 0x641F10, which takes no capacity and checks nothing); a raw member's size is its data length. In all 6,804
+	/// shipped Refpack members it equals the decoded length, and raw members declare 0.
+	/// </summary>
+	internal uint DeclaredSize { get; set; }
+
+	/// <summary>The member's size as the original reports it, without decompressing it.</summary>
+	public long Size => Compressed ? DeclaredSize : SizeInArchive;
 	internal int OffsetInArchive { get; set; } 
 
 	internal byte[]? CachedData { get; set; }
@@ -183,8 +193,8 @@ public sealed class WadArchive : IArchive
 			// Compression type
 			newFile.Compressed = memoryStream.ReadUInt32() == 4;
 
-			// Decompressed size
-			var decompressedSize = memoryStream.ReadUInt32();
+			// Decompressed size (the size the original reports for a compressed member)
+			newFile.DeclaredSize = memoryStream.ReadUInt32();
 
 			if ( filenameLength == 0 )
 				throw new InvalidDataException( "WAD filename length does not include its terminator." );
@@ -404,7 +414,8 @@ public sealed class WadArchive : IArchive
 
 	public long GetFileSize( string path )
 	{
-		return GetFile( path ).GetData().Length;
+		var file = GetFile( path );
+		return file is WadArchiveFile member ? member.Size : file.GetData().Length;
 	}
 
 	public DateTime GetModifiedTime()

@@ -26,7 +26,6 @@ public static class RidesApproximations
 		("RIDES-033", "ride-settings speed changes (UI command 0x4af440 -> 0x4dd6e0) are not modelled: OpenTPW has no ride speed control"),
 		("RIDES-035", "MD2 texture-frame tracks apply to rendering; the PC writer is 0x4721f0 -> 0x470c90 (slot record at model+0x50+slot*8), the draw-path reader of a slot's current frame is not traced, so the binding follows this port's material-slot mapping (see MD2-900..902)"),
 		("RIDES-040", "Theme Park Inc fixed scene records saved at (0, 0) use their local model origin; other transform fields are not decoded"),
-		("RIDES-042", "node-state bit 0x10 (clip node lists, toggles) hides the node's mesh"),
 		("RIDES-044", "scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 per park script world; the PC clock is the app-lifetime scaled timer 0x785970 never reset for a new park (differs only in absolute GETTIME values)"),
 		("MD2-900", "texture-frame slots mix like node components: ascending channels and tracks (hyenasm1 holds two tracks on slot 15; its constant 0 loses to the face cycle), the last non-null frame wins, null before the first key keeps the previous frame (initially 0), and a slot no bound clip addresses returns to frame 0; the fixed-item pose hold is not extended to frames"),
 		("MD2-901", "texture-frame keys naming a frame outside the slot's frame-name list, or a slot the model does not have, are ignored (the one corpus case, Pmegacostm slot 12, addresses a slot its base model lacks)"),

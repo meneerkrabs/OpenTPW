@@ -313,7 +313,7 @@ def render_page(status: dict) -> str:
 <p>Source: <a href="FEATURE-MATRIX.html">feature matrix</a>. Implemented or self-tested does not mean original fidelity; unassessed means no evidence yet either way.</p>
 {matrix}
 <h2 id="formats">File formats</h2>
-<p>Source: the format table in the <a href="README.html#file-formats">README</a>. Decoded means every observed file decodes and its fields are understood; partial means some bytes or field meanings are still unknown. Game integration is listed separately in the README.</p>
+<p>Source: the format table in the <a href="README.html#file-formats">README</a>. Decoded means every observed file decodes and every field the original game reads is understood; partial means some bytes or field meanings that matter are still unknown. Game integration is listed separately in the README.</p>
 {formats}"""
     return load_site_docs().page("Project status", body, 0, "tools/site_status.py")
 

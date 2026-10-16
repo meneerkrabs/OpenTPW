@@ -229,6 +229,13 @@ public class MapFileTests
 					holesOnBlockedOnly += field.IsHole( x, y ) ? 1 : 0;
 				else
 					Assert.IsFalse( field.IsHole( x, y ), $"{level} ({x}, {y}) {flags}" );
+				if ( field.IsHole( x, y ) )
+					continue;
+				// Surface cells: exactly one of the renderer's 0x2 and the height lookup's 0x4 (one diagonal), and none of the
+				// runtime-only bits 0x80 (overlay), 0x100 (dirty), 0x200, 0x400 (darkened) and 0x800 (bent cell).
+				var word = field.GetCellWord( x, y );
+				Assert.AreEqual( (word & 0x2) == 0, (word & ModelHeightfield.AntiDiagonalFlag) != 0, $"{level} ({x}, {y}) 0x{word:X}" );
+				Assert.AreEqual( 0u, word & 0xFF80u, $"{level} ({x}, {y}) 0x{word:X}" );
 			}
 		}
 		Assert.AreEqual( blockedHoles, holesOnBlockedOnly );

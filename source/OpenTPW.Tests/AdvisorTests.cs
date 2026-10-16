@@ -313,7 +313,8 @@ public class AdvisorTests
 		using var assets = new OriginalAssets();
 		var (audio, timeline, _) = Advisor.LoadClip( FileSystem, 1 );
 		Assert.AreEqual( 22050, audio.SampleRate );
-		Assert.AreEqual( 93312, audio.Samples.Length );
+		// 93,312 decoded samples; the entry's playback length (SdtEntryHeader.PlaybackBytes) keeps 92,320 of them.
+		Assert.AreEqual( 92320, audio.Samples.Length );
 		CollectionAssert.AreEqual( new uint[] { 2226893, 2812380, 4058820 }, timeline.Marks.ToArray() );
 		Assert.IsTrue( timeline.EndMicroseconds < audio.DurationSeconds * 1e6 );
 	}

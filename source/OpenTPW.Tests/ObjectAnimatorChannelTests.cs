@@ -233,7 +233,7 @@ public class ObjectAnimatorChannelTests
 		Assert.AreEqual( "wide node 0: UV block animates 5 corners, the mesh has 4", wide.VertexLimitations.Single() );
 	}
 
-	/// <summary>Toggle entries and the clip's node list drive node-state bit 0x10, which hides the node's mesh (RIDES-042).</summary>
+	/// <summary>Toggle entries and the clip's node list drive node-state bit 0x10, which hides the node's mesh (draw walk 0x57A5E3).</summary>
 	[TestMethod]
 	public void NodeStateBitFollowsTogglesAndNodeLists()
 	{

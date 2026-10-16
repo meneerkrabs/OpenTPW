@@ -10,7 +10,7 @@ namespace OpenTPW;
 /// island's one-shot sounds. GPU-free and testable; <see cref="GameFlow"/> plays the sounds and draws the result.
 /// </summary>
 // [BIN:STP-PPC:0x10094474 lobby islands update] the per-frame update of the islands component: nearest island to the camera, sky target, raindrops, lightning and the island one-shots
-// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby's per-frame step calls every component's vf2 (offset 8), and the islands component's is 0x5e0470 (vtable 0x7034b0, slot 2 at 0x7034b8): the effects run once per rendered frame, not on the 31 ms simulation substep (0x54e360 state 2 calls 0x5d5c50 at 0x54e73a once per drawn frame and runs only 0x520130 on the 31 ms substep, 0x54e768-0x54e789)
+// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby's per-frame step calls every component's vf2 (offset 8), and the islands component's is 0x5e0470 (vtable 0x702cb0, slot 2 at 0x702cb8): the effects run once per rendered frame, not on the 31 ms simulation substep (0x54e360 state 2 calls 0x5d5c50 at 0x54e73a once per drawn frame and runs only 0x520130 on the 31 ms substep, 0x54e768-0x54e789)
 // [EXT:frame-driven-at-60hz] the effects advance at the 60 Hz reference rate, whatever OpenTPW's own frame rate (docs/COMPATIBILITY.md "Frame-driven timing")
 public sealed class LobbyEffects
 {

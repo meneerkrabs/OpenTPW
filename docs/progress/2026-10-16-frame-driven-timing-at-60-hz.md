@@ -16,5 +16,6 @@ Every simulation step was confirmed to be on the 31 ms substep, so the pinned ru
 4657 tests passing without game data, 5107 with it, and all five native smokes. The full enumeration of per-frame behaviour is in
 docs/COMPATIBILITY.md ("Frame-driven timing").
 
-Found and not built yet: the park camera's mouse rotation per frame (`0x42a760`), the pause-line hover ramp (`0x48b2a0` → `0x48b220`),
-the edge scroll of the view built by `0x5f0b40`, and the HUD balance's three-frame redraw cadence (`0x4a0db0`).
+Found and not built yet, now registered: the park camera's mouse rotation per frame (`0x42a760`, UI-102), the pause-line hover ramp
+(`0x48b2a0` → `0x48b220`, narrowed into UI-013's text), and the edge scroll of the map window's view (`0x5f0b40`, UI-103). The HUD balance's
+three-frame redraw cadence (`0x4a0db0`) is noted in docs/COMPATIBILITY.md only (at most 50 ms of delay at 60 Hz).

@@ -117,7 +117,7 @@ public sealed class LobbyScene : OriginalModelScene
 	/// 500, x 0.01) and every island model whose clip has run out picks its next one. The game flow calls it once per reference frame
 	/// (<see cref="ReferenceFrameClock"/>), as the original runs both once per rendered frame.
 	/// </summary>
-	// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby steps its subsystems once per rendered frame in registration order: the flying-mesh system (vf2 0x5da3a0) and the islands component (vf2 0x5e0470, vtable 0x7034b0, slot 2 at 0x7034b8, which also picks the island clips, 0x5e11d0), both in the same frame
+	// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby steps its subsystems once per rendered frame in registration order: the flying-mesh system (vf2 0x5da3a0) and the islands component (vf2 0x5e0470, vtable 0x702cb0, slot 2 at 0x702cb8, which also picks the island clips, 0x5e11d0), both in the same frame
 	// [EXT:frame-driven-at-60hz] the original steps these once per rendered frame; OpenTPW steps them at the 60 Hz reference, so the flyers and the island clips step as often as the effects and the camera (docs/COMPATIBILITY.md "Frame-driven timing")
 	public void StepFrame( float seconds )
 	{

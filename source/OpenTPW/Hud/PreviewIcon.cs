@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 /// turning in the menu (tp.exe 0x486410 → 0x4689f0, updated by 0x468e50); OpenTPW projects the model orthographically on the CPU
 /// with painter-sorted triangles, which is an approximation of the original 3D draw.
 /// </summary>
-// [APPROX:UI-026] orthographic CPU projection and painter sorting, the model centred in its frame; the original draws the preview object through its 3D object pipeline (0x463c80) with the placement terms of 0x468e50 and starts its animation 5 (0x4732a0)
+// [APPROX:UI-026] orthographic CPU projection and painter sorting, the model centred in its frame; the original draws the preview object through its 3D object pipeline (a ride object whose world matrix 0x468e50 rebuilds each frame with the x column scaled by 0.75 and the depth column by 0.1; its camera is not read) and starts its animation 5 (0x4732a0)
 public sealed class PreviewIcon
 {
 	private readonly List<(NVector3 A, NVector3 B, NVector3 C, NVector2 UvA, NVector2 UvB, NVector2 UvC, UiTexture? Texture)> triangles = new();

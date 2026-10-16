@@ -28,6 +28,12 @@ public sealed record M3GateOptions
 	public bool DeterminismProbe { get; init; } = true;
 	/// <summary>Arrival.TimeBetweenArrivals in timer units for this run; null keeps the theme's (150, about 2.5 minutes).</summary>
 	public int? ArrivalTimeBetween { get; init; }
+	/// <summary>
+	/// Narrows the objects the run may place as its attraction (the first researched, buyable ride with a queue that fits): the gate of a mod's objects names one (docs/MODS.md).
+	/// Null keeps the gate's own choice.
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public Func<ObjectCatalogEntry, bool>? AttractionFilter { get; init; }
 }
 
 public sealed record M3GateReport( M3GateOptions Options, JsonObject TimeMapping, IReadOnlyList<M3GateRow> Rows, double WallSeconds )
@@ -308,7 +314,7 @@ internal sealed class M3GateRun
 		runtime.Economy.OpenPark();
 		ConnectFixedItemsToEconomy();
 		BuildPaths();
-		PlaceObject( "attraction", entry => entry.Category == ObjectCategory.Ride && entry.HasQueue );
+		PlaceObject( "attraction", entry => entry.Category == ObjectCategory.Ride && entry.HasQueue && (options.AttractionFilter?.Invoke( entry ) ?? true) );
 		// Placing a HasQueue ride switches the HUD to the queue tool (ParkHud, BIN:STP-PPC:0x1007497C), so the queue comes next.
 		BuildQueue();
 		PlaceObject( "shop", entry => entry.Category == ObjectCategory.Shop && OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).Satisfies != GuestNeeds.None );

@@ -216,7 +216,15 @@ public partial class Level
 	{
 		foreach ( var (item, id) in economyInstances )
 			if ( id == instance && !item.IsDeleted )
-				item.Runtime.SetVariable( BinTriggerVariable, 1 );
+				SetBinTrigger( item.Runtime );
+	}
+
+	/// <summary>Sets the script variable at index 0 of a litter bin to 1: <see cref="BinTriggerVariable"/> in Theme Park World's bins, <c>VAR_USE</c> in the Theme Park Inc bin a mod brings.</summary>
+	// [EXT:cross-edition-objects] the original sets variable 0 by index (0x0055A0B0); a Theme Park Inc litter bin names it VAR_USE, so the index, not the Theme Park World name, is used
+	internal static void SetBinTrigger( OriginalObjectRuntime runtime )
+	{
+		var names = runtime.Script?.Script.VariableNames;
+		runtime.SetVariable( names is { Count: > 0 } ? names[0] : BinTriggerVariable, 1 );
 	}
 
 	/// <summary>

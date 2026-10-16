@@ -73,6 +73,33 @@ public class QueueEditTests
 	}
 
 	[TestMethod]
+	public void StrayAndFreeStandingCellsInteractWithTheOwnerWordAndTheNoModifyFlag()
+	{
+		var (grid, ride) = QueuedRide();
+		ride.OwnerWord = ParkCellMap.CellWord( 3, 3 );
+		var attractions = new[] { ride };
+		// The placement's front cell is NoModify: the plain removal keeps it, the opted-in one (EXT:removable-access-cells) takes it with the cell behind it and reports both.
+		grid.Cells.SetFlags( 2, 5, ParkCellFlags.NoModify );
+		Assert.AreEqual( 0, Level.RemoveQueueCellAt( grid, attractions, 2, 5, out _ ), "a NoModify cell stays for the plain removal" );
+		// A free-standing cell with the ride's owner word is the ride's, not stray, and a stray cell with no owner word goes alone either way.
+		grid.SetQueue( 8, 8, -1 );
+		grid.Cells.SetOwner( 8, 8, ride.OwnerWord );
+		grid.SetQueue( 9, 9, -1 );
+		grid.Cells.SetFlags( 9, 9, ParkCellFlags.NoModify );
+		Assert.AreSame( ride, Level.QueueRideAt( grid, attractions, 8, 8 ) );
+		Assert.AreEqual( 1, Level.RemoveQueueCellAt( grid, attractions, 8, 8, out var free, out var freeCells, removeFixed: true ) );
+		Assert.AreSame( ride, free );
+		CollectionAssert.AreEquivalent( new[] { (8, 8) }, freeCells.ToArray() );
+		Assert.AreEqual( 1, Level.RemoveQueueCellAt( grid, attractions, 9, 9, out var stray, out var strayCells, removeFixed: true ) );
+		Assert.IsNull( stray );
+		CollectionAssert.AreEquivalent( new[] { (9, 9) }, strayCells.ToArray() );
+		Assert.IsFalse( grid.Cells.FlagsAt( 9, 9 ).HasFlag( ParkCellFlags.NoModify ), "a removed stray cell is no fixed cell any more" );
+		Assert.AreEqual( 2, Level.RemoveQueueCellAt( grid, attractions, 2, 5, out _, out var chain, removeFixed: true ) );
+		CollectionAssert.AreEquivalent( new[] { (2, 5), (2, 4) }, chain.ToArray() );
+		Assert.IsFalse( grid.IsQueue( 2, 5 ) || grid.IsQueue( 2, 4 ) );
+	}
+
+	[TestMethod]
 	public void QueueCellNamesItsHasQueueOwner()
 	{
 		var (grid, ride) = QueuedRide();

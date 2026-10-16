@@ -148,8 +148,8 @@ public sealed partial class ParkHud
 			ObjectRowKind.Life => new ObjectStat( label, null, state?.LifeGauge is { } life ? UiGauge.OfPercent( RideBreakdownRules.GaugeByte( (float)life ) ) : null, true ),
 			// [BIN:TPW-EXE:0x4b1914 shop and sideshow refresh] the local happiness gauge (0xc07c, 0xa09e) is 0x4cd880 of the object's cell with radius 1 × 1024 / 100
 			ObjectRowKind.Happiness => new ObjectStat( label, null, LocalHappinessGauge( item ), true ),
-			// [APPROX:UI-024] the customer satisfaction gauge (0xc079, 0xa094: 0x4e1e30 over the object's own 30-entry history at +0x3bc) is not simulated and draws empty
-			ObjectRowKind.Satisfaction => new ObjectStat( label, null, null, true ),
+			// [BIN:TPW-EXE:0x4b1a89 customer satisfaction gauge] the shop and sideshow windows' gauge (0xc079, 0xa094) is 0x4e1e30 of the object's own 30-day history (50 plus the mean of the visits' happiness changes), (value << 10) / 100
+			ObjectRowKind.Satisfaction => new ObjectStat( label, null, state == null ? null : UiGauge.OfPercent( state.SatisfactionRing.Satisfaction ), true ),
 			ObjectRowKind.Winners => new ObjectStat( label, null, state == null ? null : WinnersGauge( state.WinnersLast30Days, state.CustomersLast30Days ), true ),
 			ObjectRowKind.Users or ObjectRowKind.Customers => new ObjectStat( label, state == null ? null : Number( state.CustomersLast30Days ) ),
 			ObjectRowKind.Age => new ObjectStat( label, state == null || economy == null ? null

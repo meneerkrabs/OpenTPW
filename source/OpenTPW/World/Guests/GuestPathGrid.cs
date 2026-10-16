@@ -98,7 +98,7 @@ public sealed class GuestPathGrid
 
 	/// <summary>
 	/// Makes (x, y) a queue cell whose link points toward <see cref="Directions"/>[<paramref name="towards"/>]
-	/// (its predecessor, i.e. toward the ride entrance). A path cell stops being walkable.
+	/// (its predecessor, i.e. toward the ride entrance); a negative <paramref name="towards"/> leaves the cell without a queue link (a free-standing cell). A path cell stops being walkable.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005346D0 SetCellType] type 3 over a type-1 cell first clears the path (0x5367A0(0, 0) under the flag 0x81D7A8, which lets a NoModify cell go), unlinking every bit of it on both sides; the queue's own links come from the line's link pass (QueuePaths)
 	public void SetQueue( int x, int y, int towards )
@@ -109,7 +109,7 @@ public sealed class GuestPathGrid
 			PathLinkWriter.Unlink( Cells, x, y, cardinalOnly: Cells.TypeAt( x, y ) == ParkCellType.Queue );
 		Cells.SetType( x, y, ParkCellType.Queue );
 		Cells.SetLinks( x, y, 0 );
-		Cells.SetQueueLink( x, y, LinkValue( towards ) );
+		Cells.SetQueueLink( x, y, towards >= 0 ? LinkValue( towards ) : (byte)0 );
 		Invalidate();
 	}
 

@@ -93,7 +93,7 @@ The rotation builder behind the car pose (`0x0046F6F0`) reads sine and cosine fr
 
 ## Not done
 
-A shadow under the cars (TOUR-008: the car draw and the MESHSHADOW flag show none, the generic instance draw was not read for one), the mesh-derived and thing-owned ground (TOUR-005); see the register.
+A shadow under the cars (TOUR-008: the car draw and the MESHSHADOW flag show none, the generic instance draw was not read for one), the mesh-derived and second-layer-owned ground (TOUR-005); see the register.
 
 ## Drawing
 
@@ -133,12 +133,12 @@ The controller raises `TourEffect`s (`TourController.Effect`, presentation only:
 ## Object ground (TOUR-005)
 
 The original's `.hmp` is the height map of every object (loaded beside its mesh by `0x00451640`, whose header words +0xC, +0x10 and +0x14 become pointers; +8 is the width in cells). The lookup `0x00452AE0` for
-a map cell takes its owner object (`0x0053BF30`, else the object of a type-3 thing on the cell) and, when that object has a map, returns the byte of the per-cell maxima table x 100/255 (`0x006FE408`) plus the
+a map cell takes the mesh instance of its second layer (`0x0053BF30`: a track piece or a park fence post), else the object that owns the cell (the owner word of a type-4, 9 or 10 cell and the class-3 thing in the owner's anchor cell, `0x527E80`, `0x527D60`) and, when that instance has a map, returns the byte of the per-cell maxima table x 100/255 (`0x006FE408`) plus the
 object's height (`+0x44` of its instance matrix). The table index is `width x row + column`, with row and column the truncated tenths of the cell corner's offset from the instance position,
 turned by the instance rotation (0, 90, 180, 270 swap and reflect the two offsets, the `+10` terms being a cell's width). `ObjectHeightMaps` reads `<mesh>.hmp` of the catalogue entry and does the same
 from OpenTPW's placement: the instance position is the model-to-engine translation, the rotation the placement's. All 274 catalogue objects ship their map and every footprint cell of every one of
-them lies inside it at all four rotations (`TourAssetTests`, `TourRegisterRoundTests.TheMapIndexFollowsThePlacementsRotation`), which fixes the orientation. Still terrain: cells whose owner
-the original finds through the track redirect or a type-3 thing, and objects whose map the original rebuilds from the mesh (`0x00451880`). The object's base height is RIDES-014's vertex midpoint.
+them lies inside it at all four rotations (`TourAssetTests`, `TourRegisterRoundTests.TheMapIndexFollowsThePlacementsRotation`), which fixes the orientation. The object route is matched (the footprint cells
+are the typed cells of one owner word). Still terrain: cells with a second-layer mesh instance (a track piece of a kart or water ride, a park fence post), whose map and height the original reads, and objects whose map the original rebuilds from the mesh (`0x00451880`). The object's base height is RIDES-014's vertex midpoint.
 
 ## Register changes (October 15 round)
 

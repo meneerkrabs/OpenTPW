@@ -162,6 +162,41 @@ public class OriginalUiAssetTests
 		Assert.AreEqual( 1245.7f, mainPanel.AuthoredCenter.Y, 0.1f );
 	}
 
+	/// <summary>
+	/// The chroma planes take their scales from the header's two chroma shorts crosswise, so saturated reds and oranges decode: the research
+	/// lab's tube caps (pipe.wct) are orange and the red end of the gauge bar (ridestatbar.wct) is red, where the swapped scales had made them yellow-green.
+	/// </summary>
+	[TestMethod]
+	public void SaturatedChromaOfTheTubeCapsAndTheGaugeBarDecodes()
+	{
+		(byte R, byte G, byte B, byte A) Texel( string path, int x, int y )
+		{
+			var texture = new TextureFile( path ).Data;
+			var index = (y * texture.Width + x) * 4;
+			return (texture.Data[index], texture.Data[index + 1], texture.Data[index + 2], texture.Data[index + 3]);
+		}
+		var cap = Texel( "/ui/textures/pipe.wct", 8, 8 );
+		Assert.IsTrue( cap.A == 255 && cap.R > 200 && cap.G is > 120 and < 200 && cap.B < 20, $"the tube cap is orange, not {cap}" );
+		var barStart = Texel( "/ui/textures/ridestatbar.wct", 4, 4 );
+		Assert.IsTrue( barStart.R > 220 && barStart.G < 140 && barStart.B < 20, $"the gauge bar starts red-orange, not {barStart}" );
+		var barEnd = Texel( "/ui/textures/ridestatbar.wct", 28, 4 );
+		Assert.IsTrue( barEnd.G > 240 && barEnd.R < 100, $"the gauge bar ends green, not {barEnd}" );
+	}
+
+	/// <summary>The research rows' tube art (res_pipe) is authored at the column the lab's rows draw it in.</summary>
+	[TestMethod]
+	public void TheResearchTubeIsAuthoredInTheRowColumn()
+	{
+		var pipe = UiModel.Load( "res_pipe" );
+		Assert.AreEqual( "pipe", pipe.RootNodeName );
+		var frame = pipe.Frames[0];
+		Assert.AreEqual( "pipe", frame.Parts.Single().TextureName );
+		// [BIN:TPW-EXE:0x35299c research panel control table] the pipe is the 307 x 119 child at x 1497..1804 whose top ParkHud.CreateResearchScreen places 17 units under each panel's top (row 0: 175)
+		Assert.AreEqual( 1497f, frame.MinX, 1f );
+		Assert.AreEqual( 1804f, frame.MaxX, 1f );
+		Assert.AreEqual( 119f, frame.Height, 1f );
+	}
+
 	[TestMethod]
 	public void TheResearchFluidHasTheSixtyFourFramesItsAnimationSteps()
 	{

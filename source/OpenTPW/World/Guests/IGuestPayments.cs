@@ -24,6 +24,8 @@ public interface IGuestPayments
 	}
 	/// <summary>A guest has left the attraction (the original's use counter, +412, rises on release).</summary>
 	void VisitFinished( IRideVisitorBridge attraction ) { }
+	/// <summary>A guest finished a use with this happiness change (three times the difference of the guest's happiness bytes after and at joining the queue): the attraction's satisfaction average (tp.exe <c>0x004E1E00</c>).</summary>
+	void UseSatisfaction( IRideVisitorBridge attraction, int change ) { }
 	/// <summary>A guest used a relief object with this toilet meter (as a byte): the toilet's gauge wears (tp.exe 0x004E2440).</summary>
 	void ReliefUsed( IRideVisitorBridge attraction, int toiletByte ) { }
 	/// <summary>A guest refused the attraction's price at its stand point and walked away (the ride's walk-away count, tp.exe <c>0x004E1670</c>).</summary>

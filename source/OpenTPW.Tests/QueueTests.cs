@@ -877,6 +877,32 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void AQueueEditChangesNothingForTheGuestsThatStay()
+	{
+		// tp.exe 0x00501390 only dismisses a guest whose place is beyond the new room (and not waiting to be taken); the others are left to their own state 11,
+		// which re-routes a guest whose place changed (0x00501160) and does nothing for one whose place did not
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
+		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", guests.Select( guest => guest.State ) ) );
+		var before = guests.Select( guest => (guest.QueuePosition, guest.Cell, guest.Navigation.X, guest.Navigation.Y) ).ToList();
+		// five cells cut to two: room 8, the six guests stay
+		QueuePaths.RemoveFrom( rig.Grid, rig.Ride, 2, 3 );
+		rig.Step();
+		Assert.AreEqual( 2, rig.Ride.QueueSizeInCells );
+		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), "nobody is sent walking by the edit: " + string.Join( ", ", guests.Select( guest => guest.State ) ) );
+		CollectionAssert.AreEqual( before, guests.Select( guest => (guest.QueuePosition, guest.Cell, guest.Navigation.X, guest.Navigation.Y) ).ToList(), "places and positions are untouched" );
+		// the guests beyond the new room leave, the called guest and the others stay
+		QueuePaths.RemoveFrom( rig.Grid, rig.Ride, 2, 4 );
+		rig.Step();
+		Assert.AreEqual( 1, rig.Ride.QueueSizeInCells );
+		Assert.AreEqual( 4, rig.Ride.QueueLength );
+		Assert.IsTrue( guests.Take( 4 ).All( guest => guest.IsInQueue && guest.State == GuestState.Queueing ) );
+		Assert.IsTrue( guests.Skip( 4 ).All( guest => !guest.IsInQueue ) );
+	}
+
+	[TestMethod]
 	public void QueueSlotsFollowTheOriginalAxisPerLink()
 	{
 		// tp.exe 0x004DE840: the rig's queue runs from (2, 5) back to (2, 1), its front towards +Y (link 16), so a place sits at

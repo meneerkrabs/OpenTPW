@@ -1414,11 +1414,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// "Queue edited" (<c>0xdd57c</c>): every queued guest except the called one re-evaluates. A guest whose place
-	/// is beyond the new room leaves ("queue was shortened"), unless it is already waiting to be taken (state 14);
-	/// the others walk to their position again.
+	/// "Queue edited" (<c>0xdd57c</c>, tp.exe <c>0x004DE1F0</c>): every queued guest except the called one re-evaluates. A guest whose place
+	/// is beyond the new room leaves ("queue was shortened"), unless it is already waiting to be taken (state 14); the others change nothing
+	/// here: a guest whose place changed walks to it from its own state 11 (<see cref="UpdateStanding"/>, <c>0x00501160</c>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00501390 queue re-evaluation] the only exit is position ≥ 4 × cells (unsigned) with the guest not in state 14; "Queue edited underneath me while Standing In Queue" is the entry log every guest prints, not an exit; the caller 0x004DE1F0 visits every guest in the queue list but the called one (ride +0x6C); executed by the x86 oracle target tpw-exe-queue-reevaluate (ORACLE.md X14)
+	// [BIN:TPW-EXE:0x00501160 state 11 re-route] a guest whose place changed (0x004FFFF0 at 0x005002C2) takes the new place's queue slot (0x004DDF50, 0x004DE7E0) and routes to it with the generic route 0x004FA5F0 (state 12), or leaves through the dismissal when the route fails
 	private void ReevaluateQueue( IRideVisitorBridge attraction )
 	{
 		var cells = attraction.QueueCells;
@@ -1439,14 +1440,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
 			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs): state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0; OpenTPW's queue walk cannot route a guest standing off the queue back, so such a guest leaves (Confused) and the guests that stay are given their walk again. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 records event 6 with the ride id in the guest's own event history (0x0050C100 with ECX = guest + 0x30) and plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D), which OpenTPW does not (its medium happiness drop is applied) — evidence needed: whether the generic route reaches a queue place from a cell off the queue, the thing-id numbering, and what the event history feeds
+			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs) and state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0, from wherever it stands; OpenTPW's queue walk cannot route a guest standing off the queue back, so a guest whose cell left the queue leaves (Confused) at once. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 neither records event 6 with the ride id in the guest's event ring (0x0050C100 with ECX = guest + 0x30; the ring feeds only the debug dump 0x004FAA60, GUEST-005) nor plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D); its medium happiness drop is applied — evidence needed: whether the generic route reaches a queue place from a cell off the queue, and the thing-id numbering (WALK-010)
 			if ( index < 0 && !onJoinCell )
 			{
 				DismissFromQueue( guest, attraction, GuestThought.Confused );
 				continue;
 			}
 			guest.QueueCellIndex = index < 0 ? cells.Count : index;
-			MoveToQueuePosition( guest, attraction );
 		}
 	}
 

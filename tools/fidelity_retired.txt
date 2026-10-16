@@ -69,7 +69,9 @@ COAST-025 docs/COASTERS.md
 COAST-027 docs/COASTERS.md
 COAST-030 docs/COASTERS.md
 COAST-031 docs/COASTERS.md
+COMPAT-001 docs/COMPATIBILITY.md
 COMPAT-005 docs/reverse/APPROX-TRACE.md
+COMPAT-006 docs/COMPATIBILITY.md
 COMPAT-008 docs/reverse/APPROX-TRACE.md
 COMPAT-009 docs/COMPATIBILITY.md
 COMPAT-011 docs/reverse/APPROX-TRACE.md
@@ -321,6 +323,7 @@ UI-099 docs/STAFF-PLACEMENT.md
 UI-101 docs/UI.md
 UI-102 docs/UI.md
 UI-103 docs/UI.md
+UI-104 docs/UI.md
 UI-105 docs/UI.md
 UI-106 docs/progress/2026-10-16-research-bars.md
 UI-902 docs/PROGRESS.md

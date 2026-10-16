@@ -312,11 +312,11 @@ public class RidesRound2CorpusTests
 	{
 		var expected = new (string Theme, int Id, string Name, string Left, string Right, int Pixels)[]
 		{
-			("jungle", 1185, "Chac Atak", "7fb6bd02bfffd2d8ad23dc3169b3fcf03ec5fe073285d712652c0d79bcb795a8", "3bdce0d209676d160affcb03dd3d8db39469d510fbb6461ba1dfebbb87290f1c", 8089),
-			("jungle", 1601, "LOST Kingdom", "a0835844de95e1c892cb10bd0665a5fac00da7739a53f1b65dfdad55173c8032", "f5ce37248981d6ed61a6fc513ecd7fec20c114c6d383420b5fe8e616299d41d8", 10785),
-			("hallow", 2601, "HALLOWEEN world", "01610a91ffac528e5e10da4f85e80dcae2dd40d360530a1a18bc68478c7bc92b", "3c6ff146806697d6305b88a372b4d056d9af4bdcd733ada2476ee69d3db7caea", 6329),
-			("fantasy", 4601, "Wonder Land", "710c3fd28ca091f9b8f539d5178b2fdb29ed4166f73458cc355784c887545223", "9dc604cda4ef35affda9d28b484f269dbf77a06d815772dcf7263ece60926073", 6205),
-			("space", 3601, "Space Zone", "1374cfc7c88147043e47666b807d9758ada7e58abf7e263a7a18405fe7cd87a7", "8e77ea663998dcd34a4b3a5bcf204e6d9062e22fa4f55b0cc20757c11eaa2817", 7255)
+			("jungle", 1185, "Chac Atak", "1e85f19584a5b381799c82c99e238d9b2334010288f8f2cca91eff4e04d051c4", "ba85193cc40ddca24689a1f59c91271bf26c8a574ab9dd341dfebec1ae49549c", 8089),
+			("jungle", 1601, "LOST Kingdom", "d3d6adf6e6113cbf9ae4868ef0a01364f52a88699b840741b348725564635bba", "6b4253f118c951aa538e7535686a9f9a05837c0e95c8b2407623f3102b7b88e1", 10785),
+			("hallow", 2601, "HALLOWEEN world", "9d89212290894285d20184d652b3f5ed7a9d918f6a988eaf8a7acacb2347aef3", "e371c44f69882d0931dccb75cb2901a74eaabf165cf15939d5ddba630ecda4af", 6330),
+			("fantasy", 4601, "Wonder Land", "244faae8e8a852d652a22b4d531267a22bae6aef4880fb4435fb21d2c675576f", "2ad62f661d8a63182982d169b9f2e38a824f308791686e59a8dfbb71dfc6428d", 6205),
+			("space", 3601, "Space Zone", "927fca4cc49be2a4c7db0b390a8a80bfa929d20ee348488d0d1ee2190b5c9da0", "3c2ea7095d9ad7b4c2d829ddff98b1cc5005a9b9cc7f6b8c61f888dfaea26928", 7255)
 		};
 		string Hash( byte[] bytes ) => Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( bytes ) ).ToLowerInvariant();
 		var mismatches = new List<string>();

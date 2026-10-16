@@ -142,15 +142,139 @@ public class SignSurfaceComposerTests
 	[TestMethod]
 	public void ShiftMovesAMaskRightAndDownAndDropsWhatLeavesTheSurface()
 	{
-		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.Height];
+		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight];
 		mask[0] = 9;
-		mask[(SignSurfaceComposer.Height - 1) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 1] = 7;
+		mask[(SignSurfaceComposer.SurfaceHeight - 1) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 1] = 7;
 		var shifted = SignSurfaceComposer.Shift( mask, 2, 3 );
 		Assert.AreEqual( 9, shifted[3 * SignSurfaceComposer.Width + 2] );
 		Assert.AreEqual( 9, shifted.Sum( value => (int)value ), "the texel that left the surface is gone" );
 		Assert.AreSame( mask, SignSurfaceComposer.Shift( mask, 0, 0 ) );
 		var back = SignSurfaceComposer.Shift( mask, -1, -1 );
-		Assert.AreEqual( 7, back[(SignSurfaceComposer.Height - 2) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 2] );
+		Assert.AreEqual( 7, back[(SignSurfaceComposer.SurfaceHeight - 2) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 2] );
+	}
+
+	/// <summary>The 512x512 text raster is reduced to the 256x256 mask by summing every 2x2 block of coverage bytes and shifting right by 2 (tp.exe 0x5EAFC3), not by two truncated halvings.</summary>
+	[TestMethod]
+	public void TextReductionSumsEachTwoByTwoBlockAndShiftsRightByTwo()
+	{
+		const int textWidth = SignSurfaceComposer.Width * 2;
+		var text = new byte[textWidth * SignSurfaceComposer.SurfaceHeight * 2 * 4];
+		void Coverage( int x, int y, byte value ) => text[(y * textWidth + x) * 4 + 3] = value;
+		// block (0, 0): 1, 0 / 3, 0 sums to 4 and gives 1 (two truncated halvings would give 0)
+		Coverage( 0, 0, 1 );
+		Coverage( 0, 1, 3 );
+		// block (1, 0): 3, 3 / 3, 2 sums to 11 and gives 2
+		Coverage( 2, 0, 3 ); Coverage( 3, 0, 3 ); Coverage( 2, 1, 3 ); Coverage( 3, 1, 2 );
+		// block (2, 0): all 255 stays 255; block (3, 0): three 255 and one 0 gives 191
+		for ( var dy = 0; dy < 2; dy++ )
+		for ( var dx = 0; dx < 2; dx++ )
+			Coverage( 4 + dx, dy, 255 );
+		Coverage( 6, 0, 255 ); Coverage( 7, 0, 255 ); Coverage( 6, 1, 255 );
+		// the lowest block: DIB rows 510 and 511 reach mask row 255
+		Coverage( 20, 510, 255 ); Coverage( 21, 511, 255 );
+		var mask = SignSurfaceComposer.ReduceText( text );
+		Assert.AreEqual( SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight, mask.Length );
+		CollectionAssert.AreEqual( new byte[] { 1, 2, 255, 191 }, mask[..4] );
+		Assert.AreEqual( 127, mask[255 * SignSurfaceComposer.Width + 10] );
+	}
+
+	private static SignEffect Relief( float p0, float @base, float diffuse, float specular, float exponent, float theta, float phi, uint maskWord = 0, float blur = 0f ) =>
+		new( 1, maskWord, new[] { p0, blur, @base, diffuse, specular, exponent, theta, phi }, 0, 0 );
+
+	private static SignBitmap Strip( int width, int height, Func<int, byte> red ) =>
+		new( width, height, 4, Enumerable.Range( 0, width * height ).SelectMany( i => new byte[] { 255, red( i / width ), red( i / width ), red( i / width ) } ).ToArray() );
+
+	/// <summary>The relief reads the shape byte after the current one and the byte one row below without a clamp: at the last column the next byte is the first pixel of the next row (tp.exe 0x5EB8A0).</summary>
+	[TestMethod]
+	public void ReliefReadsTheNextShapeByteWithoutClampingAtTheLastColumn()
+	{
+		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight];
+		mask[10 * SignSurfaceComposer.Width + 100] = 200;
+		mask[10 * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 1] = 200;
+		// the light comes from the left (phi 180 degrees), the bump scale is large: an isolated texel has a right neighbour of 0 and tilts towards the light
+		var effect = Relief( 100f, 0f, 1f, 0f, 1f, 0f, 180f );
+		var destination = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight * 4];
+		SignSurfaceComposer.Effect( destination, mask, Strip( 1, 1, _ => 200 ), effect, new List<string>() );
+		var inside = destination[(10 * SignSurfaceComposer.Width + 100) * 4 + 1];
+		var edge = destination[(10 * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 1) * 4 + 1];
+		Assert.IsTrue( inside > 0, "the lit isolated texel is coloured" );
+		Assert.AreEqual( inside, edge, "the last column sees the next row's first texel (0), as an interior isolated texel sees its neighbour (0); a clamp would see itself and leave it unlit" );
+	}
+
+	[TestMethod]
+	public void ReliefInTheLastRowReadsNothingBelowAndDoesNotThrow()
+	{
+		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight];
+		mask[(SignSurfaceComposer.SurfaceHeight - 1) * SignSurfaceComposer.Width + 50] = 255;
+		var destination = new byte[mask.Length * 4];
+		SignSurfaceComposer.Effect( destination, mask, Strip( 1, 1, _ => 200 ), Relief( 100f, 0.5f, 0f, 0f, 1f, 0f, 0f ), new List<string>() );
+		Assert.AreEqual( 255, destination[((SignSurfaceComposer.SurfaceHeight - 1) * SignSurfaceComposer.Width + 50) * 4] );
+	}
+
+	/// <summary>The measured text extent spans the whole 256-row mask, not only the 128 rows that reach the textures: the material strip is resampled to it (tp.exe 0x5EB035, 0x5ECCC5).</summary>
+	[TestMethod]
+	public void TheReliefExtentCoversTextBelowThePackedRows()
+	{
+		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight];
+		for ( var x = 10; x < 20; x++ )
+		{
+			mask[10 * SignSurfaceComposer.Width + x] = 255;
+			mask[200 * SignSurfaceComposer.Width + x] = 255;
+		}
+		var destination = new byte[mask.Length * 4];
+		// 191 strip rows for the 191 rows between the first and the last text row: the strip row of each text row is its distance from the top
+		SignSurfaceComposer.Effect( destination, mask, Strip( 1, 191, row => (byte)row ), Relief( 0f, 1f, 0f, 0f, 1f, 0f, 0f ), new List<string>() );
+		var top = destination[(10 * SignSurfaceComposer.Width + 15) * 4 + 1];
+		var bottom = destination[(200 * SignSurfaceComposer.Width + 15) * 4 + 1];
+		Assert.IsTrue( top <= 1, $"the first text row samples strip row 0, got {top}" );
+		Assert.IsTrue( Math.Abs( bottom - 190 ) <= 1, $"the row 190 below it samples strip row 190, got {bottom}" );
+	}
+
+	/// <summary>The mask word of an effect record erodes the shape the normals are built from: a lit bevel appears along the edge of a block.</summary>
+	[TestMethod]
+	public void ReliefNormalsFollowTheErodedShapeNotTheRawCoverage()
+	{
+		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight];
+		for ( var y = 20; y < 40; y++ )
+		for ( var x = 20; x < 60; x++ )
+			mask[y * SignSurfaceComposer.Width + x] = 255;
+		byte[] Render( uint word )
+		{
+			var destination = new byte[mask.Length * 4];
+			SignSurfaceComposer.Effect( destination, mask, Strip( 1, 20, _ => 200 ), Relief( 8f, 0.2f, 1f, 0f, 1f, 0f, 0f, word ), new List<string>() );
+			return destination;
+		}
+		var flat = Render( 0 );
+		var bevel = Render( 5 );
+		int Green( byte[] image, int x, int y ) => image[(y * SignSurfaceComposer.Width + x) * 4 + 2];
+		// inside a block of binary ink the shape is flat, so the normal is straight up and every interior texel has the same colour; the bevel adds a slope two texels in
+		Assert.AreEqual( Green( flat, 30, 30 ), Green( flat, 40, 30 ), "a flat shape shades every interior texel alike" );
+		Assert.AreNotEqual( Green( flat, 22, 30 ), Green( bevel, 22, 30 ), "the eroded shape slopes near the edge" );
+		Assert.AreEqual( 255, flat[(30 * SignSurfaceComposer.Width + 30) * 4 ], "alpha is the glyph coverage, not the shape" );
+	}
+
+	/// <summary>
+	/// COMPAT-006: sign text is never pair-kerned. The sign line goes through Uniscribe, whose placement (usp10.dll ScriptPlace 0x6510CEDE, the generic
+	/// routine 0x65113458 and the width cache 0x6510F241) sums per-glyph advances and reads no kern table, so a font with a kern pair for "AB"
+	/// gives the same mask as the same font without it.
+	/// </summary>
+	[TestMethod]
+	public void SignMasksIgnoreTheKernTableOfTheirFont()
+	{
+		byte[] Font( bool kern )
+		{
+			var builder = new TrueTypeFontTests.FontBuilder();
+			var a = builder.AddSimple( 600, 'A', TrueTypeFontTests.Square( 0, 0, 500, 500 ) );
+			var b = builder.AddSimple( 700, 'B', TrueTypeFontTests.Square( 0, 0, 500, 500 ) );
+			if ( kern )
+				builder.AddKerning( a, b, -300 );
+			return builder.Build();
+		}
+		var sign = new SignFile( SignFileTests.CreateNativeMetadataSign( (0, "Test", "TEST____.TTF", 100, 0, -100), (0, "Test", "TEST____.TTF", 100, 128, -90) ) );
+		byte[] Mask( bool kern ) => SignSurfaceComposer.RenderMask( sign, SignFontLibrary.FromFiles( new[] { ("TEST____.TTF", Font( kern )) } ), new string?[] { "AB", null }, 0, new List<string>() );
+		var plain = Mask( false );
+		Assert.IsTrue( plain.Any( value => value != 0 ), "the line is drawn" );
+		CollectionAssert.AreEqual( plain, Mask( true ), "a kern pair does not move the glyphs" );
 	}
 
 	private static int OpaqueKeyMagenta( byte[] rgba )

@@ -361,7 +361,7 @@ public class TrueTypeFontTests
 			Assert.AreEqual( (3, 1, 4), font.CharacterMapSource, font.SourceName );
 			Assert.AreEqual( 307, font.CodePoints.Count, font.SourceName );
 			Assert.IsFalse( font.HasGlyph( '€' ), "1999 fonts predate the euro sign" );
-			// COMPAT-006: every shipped font carries pair kerning only in the legacy kern table; none has an OpenType layout (GPOS, GSUB) table
+			// every shipped font carries pair kerning only in the legacy kern table, which the shipped Uniscribe never reads (USP10-DLL ScriptPlace 0x6510CEDE); none has an OpenType layout (GPOS, GSUB) table
 			Assert.IsTrue( font.HasTable( "kern" ) && font.KerningPairCount > 0, font.SourceName );
 			Assert.IsFalse( font.HasTable( "GPOS" ) || font.HasTable( "GSUB" ), font.SourceName );
 			for ( var glyph = 0; glyph < font.GlyphCount; glyph++ )

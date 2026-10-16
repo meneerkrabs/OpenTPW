@@ -92,6 +92,21 @@ internal sealed partial class SandboxSmokeTest
 				rebuilt!.Open();
 				if ( level.Guests != null && entry.HasQueue )
 					QueuePaths.TryConnect( level.Guests.Grid, rebuilt.Visitors );
+				// the Move tool (UI-104, mode 0x3b): the pick-up demolishes the ride as its erase button does and arms the same type at the same angle; the placement then buys the new object
+				var movedId = level.GetEconomyInstance( rebuilt )!.Value;
+				Require( level.CanMove( rebuilt ) && level.BeginMove( rebuilt ), "pick the rebuilt ride up with the Move tool" );
+				Require( rebuilt.IsDeleted && !economy.TryGetObject( movedId, out _ ), "the pick-up demolishes the ride and sells its record" );
+				Require( level.IsMoving && ReferenceEquals( level.BuildEntry, entry ) && level.BuildRotation == rotation, "the Move tool holds the type at the object's angle" );
+				var afterPickUp = economy.Balance;
+				var movedTo = level.PlaceObject( entry, site.X, site.Y, rotation );
+				Require( movedTo != null && !ReferenceEquals( movedTo, rebuilt ) && level.GetEconomyInstance( movedTo ) is int newInstance && newInstance != movedId, "the move places a new object" );
+				Require( afterPickUp - economy.Balance == entry.BuildCost, "the placement of a move charges the whole price again" );
+				movedTo!.Open();
+				if ( level.Guests != null && entry.HasQueue )
+					QueuePaths.TryConnect( level.Guests.Grid, movedTo.Visitors );
+				level.BuildEntry = null;
+				Require( !level.IsMoving, "leaving the tool ends the move" );
+				Log.Trace( $"Move tool: {entry.DisplayName} picked up and placed again for ${entry.BuildCost}." );
 			}
 			Require( built >= 2, "build original objects through the park economy in the original level" );
 			PlaceModObjects( economy, siteX, siteY );

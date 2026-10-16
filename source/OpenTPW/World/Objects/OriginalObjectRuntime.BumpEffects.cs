@@ -77,9 +77,9 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>Starts an engine voice (level cat_rides, RSE type 3) at a sound-space place: a sentence, or a plain voice for a non-sentence event.</summary>
 	private EngineVoice? StartEngineVoice( int engineEvent, Vector3? place )
 	{
-		if ( place is { } at && GameAudio.StartRseSentence( 3, (uint)engineEvent, at ) is { } sentence )
+		if ( place is { } at && GameAudio.StartRseSentence( 3, (uint)engineEvent, at, SoundSource ) is { } sentence )
 			return new EngineVoice( sentence, null );
-		return GameAudio.PlayRseEvent( 3, (uint)engineEvent, place ) is { } voice ? new EngineVoice( null, voice ) : null;
+		return GameAudio.PlayRseEvent( 3, (uint)engineEvent, place, SoundSource ) is { } voice ? new EngineVoice( null, voice ) : null;
 	}
 
 	/// <summary>The EventMap child's event id of a slot (<c>VAR_EVT0…9</c>), or null while the ride has no EventMap script.</summary>
@@ -128,13 +128,13 @@ public sealed partial class OriginalObjectRuntime
 			case BumpEffectKind.GlobalSound:
 				// [BIN:TPW-EXE:0x00547170 effect player] the global cat_rides sounds 12 and 24 are submitted through the global-rides route (EVENT type 5), the category the original's DAT_00803A28 names
 				BumpEffectStats = BumpEffectStats with { Sounds = BumpEffectStats.Sounds + 1 };
-				GameAudio.PlayRseEvent( 5, (uint)effect.Id, sound );
+				GameAudio.PlayRseEvent( 5, (uint)effect.Id, sound, SoundSource );
 				break;
 			case BumpEffectKind.EventSound:
 				if ( EventMapEvent( effect.Id ) is { } eventId )
 				{
 					BumpEffectStats = BumpEffectStats with { Sounds = BumpEffectStats.Sounds + 1 };
-					GameAudio.PlayRseEvent( 3, (uint)eventId, sound );
+					GameAudio.PlayRseEvent( 3, (uint)eventId, sound, SoundSource );
 				}
 				break;
 			case BumpEffectKind.EngineStart:
@@ -154,7 +154,7 @@ public sealed partial class OriginalObjectRuntime
 				if ( EventMapEvent( BumpEffects.SlotStop ) is { } stopEvent )
 				{
 					BumpEffectStats = BumpEffectStats with { Sounds = BumpEffectStats.Sounds + 1 };
-					GameAudio.PlayRseEvent( 3, (uint)stopEvent, sound );
+					GameAudio.PlayRseEvent( 3, (uint)stopEvent, sound, SoundSource );
 				}
 				break;
 			case BumpEffectKind.EngineHalt:

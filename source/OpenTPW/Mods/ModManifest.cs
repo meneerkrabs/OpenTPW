@@ -56,6 +56,12 @@ public sealed record ModManifest
 	public IReadOnlyList<string> After { get; init; } = Array.Empty<string>();
 	public IReadOnlyList<ModInput> Inputs { get; init; } = Array.Empty<ModInput>();
 	public ModContent Content { get; init; } = new( null, null, null );
+	/// <summary>
+	/// The <c>Info.Id</c>s the mod reserves for objects it brings from another original game (<see cref="CrossEditionObjects"/>), or
+	/// null. A mod that depends on <c>opentpw.cross-edition-objects</c> and lists object definitions must declare one
+	/// (<see cref="ModSet"/> refuses it otherwise).
+	/// </summary>
+	public InfoIdRange? InfoIds { get; init; }
 
 	public static bool IsValidId( string? id ) => id != null && id.Length <= MaximumIdLength && IdPattern.IsMatch( id );
 
@@ -132,6 +138,15 @@ public sealed record ModManifest
 		}
 
 		var content = document.Content ?? new ContentDocument();
+		InfoIdRange? infoIds = null;
+		if ( document.InfoIds is { } ids )
+		{
+			if ( ids.First is not { } first || ids.Last is not { } last )
+				throw Invalid( "'infoIds' needs 'first' and 'last'" );
+			if ( CrossEditionObjects.RangeProblem( first, last ) is { } problem )
+				throw Invalid( $"'infoIds' {first}..{last} {problem}" );
+			infoIds = new InfoIdRange( first, last );
+		}
 		return new ModManifest
 		{
 			Id = id,
@@ -146,6 +161,7 @@ public sealed record ModManifest
 			After = after,
 			Inputs = inputs,
 			Content = new ModContent( ContentPath( content.Overrides, "content.overrides" ), ContentPath( content.Objects, "content.objects" ), ContentPath( content.Strings, "content.strings" ) ),
+			InfoIds = infoIds,
 		};
 	}
 
@@ -218,6 +234,13 @@ public sealed record ModManifest
 		public List<string?>? After { get; init; }
 		public List<InputDocument?>? Inputs { get; init; }
 		public ContentDocument? Content { get; init; }
+		public InfoIdsDocument? InfoIds { get; init; }
+	}
+
+	private sealed class InfoIdsDocument
+	{
+		public int? First { get; init; }
+		public int? Last { get; init; }
 	}
 
 	private sealed class DependencyDocument

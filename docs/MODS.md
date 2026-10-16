@@ -54,6 +54,7 @@ Each mod folder holds `opentpw-mod.json`:
 | `dependencies` | no | Up to 32 mods or extensions this mod needs, each with an optional version range (default `*`). |
 | `after` | no | Mods this one is ordered after when both are enabled; also lets its overrides win over theirs. |
 | `inputs` | no | Up to 16 folders the player supplies; `kind` is `original-data` (another original game's install). |
+| `infoIds` | no | `{ "first": N, "last": M }`: the `Info.Id`s the mod reserves for objects from another original game (5000 to 65535, at most 4096). A mod that depends on `opentpw.cross-edition-objects` and sets `content.objects` must declare it. |
 | `content` | no | Mod-relative paths: `overrides` (a folder of files that replace game files), `objects` (object definitions), `strings` (a folder of text). |
 
 Parsing is strict, like the online documents (`StrictJson`): unknown or duplicate fields, comments, trailing commas
@@ -125,7 +126,8 @@ At startup, right after the compatibility settings, OpenTPW resolves the run's s
    every input has an existing folder.
 2. Every dependency must be installed, enabled and within its range; a refused mod refuses the mods that need it.
 3. Two enabled mods whose `overrides` folders hold the same file (compared without case) are **both refused** unless
-   one lists the other in `after`. There is no silent "last one wins".
+   one lists the other in `after`. There is no silent "last one wins". Two mods whose `infoIds` ranges overlap are
+   both refused the same way.
 4. Dependency and `after` cycles refuse the mods involved.
 5. The rest is ordered: dependencies (and `after`) first, then official before community, then the player's `order`,
    then the ordinal id.
@@ -167,3 +169,42 @@ Publish Park is a disabled line.
 The browser page has no control for the extension yet; a `/config/mods.json` saved in the page's storage is honoured
 at the next start. The page's own scripts make no request to an online server at startup (only the game's online
 client does, after the player acts), so there is no page-level fetch to check when the extension is off.
+
+## Cross-edition objects (`opentpw.cross-edition-objects`)
+
+An official extension, **off by default**, that lets a data mod bring attractions of another original game (Theme Park
+Inc) into Theme Park World. Nothing of Theme Park Inc ships with OpenTPW: the player supplies the install as a mod
+input (`"inputs": [{ "id": "tpi", "kind": "original-data", "edition": "theme-park-inc" }]`), and a mod that needs the
+extension lists it under `dependencies` (a mod refuses to run while the extension is off). Because objects it brings
+change the park, the extension is marked as changing the simulation (`AffectsSimulation`), which later steps record in
+park saves. It is `[EXT:cross-edition-objects]`.
+
+What the extension provides in the engine:
+
+- **Reserved `Info.Id`s.** Theme Park World and Theme Park Inc number their objects from the same space: 168 of the 202
+  distinct Theme Park Inc ids are also Theme Park World ids, and 145 of those name other objects (id 1100 is the Belly
+  Bounce in one and the Bellows in the other). The original keeps a definition whose id is
+  taken (it stays listed) but every lookup by id returns the first one in load order (RIDES-024), so a second object with
+  a taken id would be unreachable. A mod therefore declares a range in `infoIds` and gives each archive an id from it;
+  the engine refuses a claim outside the range, one already used by another object, or one claimed twice
+  (`CrossEditionObjects.CheckClaims`), one object at a time. The range lies above every original id (Theme Park World
+  reaches 4605, Theme Park Inc 4500) and within 16 bits, the width of an attraction id in the original park saves.
+- **Sound banks per content root.** A Theme Park Inc ride script's `EVENT` ids belong to Theme Park Inc's own sound
+  catalogues (its global `cat_rides` holds 114 events against Theme Park World's 25), so an object from a registered root
+  (`ContentSoundRoots.Register`) looks its events up in that root: global categories in the root's `global/sound`, level
+  categories in `levels/<theme of the object's archive>/Sound`, and nothing falls back to the running game's categories (the
+  original has no second folder to try either). Every Theme Park Inc ride and ambient bank resolves in the Theme Park Inc
+  root. Fixed-id sounds (screams, repair sounds) still use the running game's categories.
+- **The two Theme Park Inc RSE opcodes** `WAITABS` (45) and `MULT` (48) need no new support: the VM already runs them, and
+  they are not Theme Park Inc only. Theme Park Inc's `Game.exe` and `tp.exe` have the same two handlers (same operand
+  decoding and the same effect; see `[BIN:TPI-EXE:0x6a8b7e]` and `[BIN:TPI-EXE:0x6a9108]`).
+
+Missing economy keys: with the Theme Park World category defaults (`Rides.sam`, `Shops.sam`, ...) under a Theme Park Inc
+object file, as for official bonus archives, every key that all Theme Park World objects of that category carry is present
+in each of the 183 Theme Park Inc archives that map onto the four Theme Park World themes, so no per-key default is needed
+for Theme Park World's economy. Theme Park Inc's `Upgrades[n].RunningCost` has no Theme Park World counterpart and is
+ignored; its `Research.Group` values reach 6, and the research table already treats groups past `ResearchTech` as
+threshold 0, as the original's zero-filled block does.
+
+Loading the archives themselves needs the data content roots of the next step; until then the extension carries the rules
+above and nothing consumes them.

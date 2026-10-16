@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
 using OpenTPW.UI.Original;
+using Veldrid;
 using N = System.Numerics;
 
 namespace OpenTPW.Tests;
@@ -103,6 +104,10 @@ public class VisitorWorldSelectionTests
 	[DataRow("rideExit")]
 	[DataRow("cell")]
 	[DataRow("coaster")]
+	[DataRow("locator")]
+	[DataRow("plain")]
+	[DataRow("shiftLocator")]
+	[DataRow("shiftStaffLocator")]
 	public void FullUpdatePressRespectsInputOwnersAndDoesNotSelectOnRelease(string gate)
 	{
 		var previousMode = Camera.Mode;
@@ -137,13 +142,21 @@ public class VisitorWorldSelectionTests
 			if (gate == "readonly") Set(level, "<Visit>k__BackingField", Empty<ParkVisitInfo>());
 			if (gate == "hud") hud.Screen.Add(new UiButton { Bounds = new UiRect(980, 530, 100, 100), Anchor = UiAnchor.Center });
 			if (gate == "overlay") hud.Stack.Push(new UiScreen("modal"));
+			if (gate is "locator" or "shiftLocator") hud.Locator.Open(LocatorMode.Visitor, LocatorModel.VisitorRole, 0);
+			if (gate == "shiftStaffLocator") hud.Locator.Open(LocatorMode.Staff, 1, 0);
 			var font = new FontAtlas(FontAtlasTests.CreateFont(8, new FontAtlasTests.SyntheticGlyph('A', 2, 2, 0, 0, 3)));
 			var context = new UiContext(OriginalUiTests.FakeStrings(), new UiFonts(_ => font), new UiModels(name => throw new FileNotFoundException(name))) { Canvas = new UiCanvas(1000, 1000) };
 			var input = new UiInput(gate == "miss" ? new N.Vector2(950, 950) : new N.Vector2(500, 400), true, gate != "release", gate == "release", false, UiKeys.None);
-			hud.Update(context, input, gate == "mouse", gate == "keyboard", gate == "text");
-			Assert.AreEqual(gate is "success" or "readonly", hud.VisitorWindowOpen);
-			if (gate == "miss") Assert.IsTrue(level.CellTool.IsActive, "A visitor miss preserves automatic path activation.");
-			if (gate is "success" or "readonly")
+			// [BIN:TPW-EXE:0x487013 hover mode 7] a visitor is picked with Shift alone and no locator panel, or with the visitor locator panel out and no modifier
+			var shift = gate is not ("locator" or "plain");
+			using (shift ? Input.InjectKeyDown(Key.ShiftLeft) : null)
+			{
+				Input.UpdateButtons();
+				hud.Update(context, input, gate == "mouse", gate == "keyboard", gate == "text");
+			}
+			Assert.AreEqual(gate is "success" or "readonly" or "locator", hud.VisitorWindowOpen);
+			if (gate is "miss" or "plain") Assert.IsTrue(level.CellTool.IsActive, "A visitor miss, or a plain press on one, preserves automatic path activation.");
+			if (gate is "success" or "readonly" or "locator")
 			{
 				Assert.AreEqual(8, hud.SelectedVisitorId);
 				hud.Update(context, UiInput.Click(input.Mouse), false, false, false);
@@ -156,7 +169,7 @@ public class VisitorWorldSelectionTests
 				Assert.AreEqual(3, hud.SelectedVisitorId, "Actual visitor screen heals its selection after removal.");
 			}
 		}
-		finally { Camera.Mode = previousMode; Camera.ViewMatrix = previousView; Camera.ProjMatrix = previousProjection; Input.TextEntryActive = previousText; Input.KeysDown = previousDown; Input.LastKeysDown = previousLast; }
+		finally { Camera.Mode = previousMode; Camera.ViewMatrix = previousView; Camera.ProjMatrix = previousProjection; Input.TextEntryActive = previousText; Input.KeysDown = previousDown; Input.LastKeysDown = previousLast; Input.UpdateButtons(); }
 	}
 
 	internal static ParkHud Fixture(out GuestSimulation simulation, out GuestRenderer renderer)

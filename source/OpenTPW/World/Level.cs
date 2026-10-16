@@ -473,15 +473,24 @@ public partial class Level : IDisposable
 	}
 
 	/// <summary>The visitor under the mouse, in or out of costume: the nearer of the two renderers' picks.</summary>
+	// [BIN:TPW-EXE:0x532bd0 sprite to thing] the sprite pass picks the nearest pickable sprite, and the visitor (a thing of type 1) that owns it is then looked up only in the hovered cell and its eight neighbours
+	// (offset table 0x81ed40, filled by 0x532b30: the cell itself first, then the others), so a visitor that is none of those cells is not picked, and the next best sprite is not tried; the hovered cell is the cursor ray's terrain hit
+	// (0x45d560), which a hill or a tall object between the camera and the visitor moves away. The gate runs on original levels, where a heightfield gives the ray a hit
 	internal Guest? PickVisitor( System.Numerics.Vector2 mouse, System.Numerics.Vector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection )
 	{
 		float kidDepth = float.PositiveInfinity, costumeDepth = float.PositiveInfinity;
 		var kid = GuestRenderer?.PickVisitor( mouse, viewport, view, projection, out kidDepth );
 		var costumed = CostumeRenderer?.PickVisitor( mouse, viewport, view, projection, out costumeDepth );
-		if ( kid == null || costumed == null )
-			return kid ?? costumed;
-		return costumeDepth < kidDepth || (costumeDepth == kidDepth && costumed.Id < kid.Id) ? costumed : kid;
+		var picked = kid == null || costumed == null ? kid ?? costumed
+			: costumeDepth < kidDepth || (costumeDepth == kidDepth && costumed.Id < kid.Id) ? costumed : kid;
+		if ( picked == null || OriginalPark is not { } park )
+			return picked;
+		return TryGetGroundHit( mouse, viewport, view, projection, out var ground ) && OriginalParkPlacement.TryGetCell( park.Heightfield, ground.X, ground.Y, out var x, out var y ) && IsInHoveredNeighbourhood( (x, y), ((int)MathF.Floor( picked.X ), (int)MathF.Floor( picked.Y )) ) ? picked : null;
 	}
+
+	/// <summary>Whether a thing's cell is the hovered cell or one of its eight neighbours (the offsets of tp.exe's table 0x81ed40).</summary>
+	internal static bool IsInHoveredNeighbourhood( (int X, int Y) hovered, (int X, int Y) thing ) =>
+		Math.Abs( thing.X - hovered.X ) <= 1 && Math.Abs( thing.Y - hovered.Y ) <= 1;
 
 	/// <summary>
 	/// Wires the park door (docs/GATES.md): the economy's open/close events command the entrance gate's script

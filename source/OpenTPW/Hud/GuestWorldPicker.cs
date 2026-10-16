@@ -6,7 +6,7 @@ using NVector4 = System.Numerics.Vector4;
 namespace OpenTPW.Hud;
 
 /// <summary>CPU hit test against the current renderer's camera-facing sprite rectangle.</summary>
-// [APPROX:UI-930] rectangle hits choose the nearest projected depth, then lowest guest id; transparent pixels and terrain/object occlusion are not tested — evidence needed: original visitor picking geometry and occlusion policy
+// [APPROX:UI-930] rectangle hits choose the nearest projected depth, then lowest guest id; the original's sprite pass 0x5890e0 tests a circle round the sprite's projected anchor (radius squared 0.0002 x (width squared + height squared) in clip units, no alpha test), nearest clip w first, the first drawn keeping a tie — evidence needed: the clip-space position, scale (+0x2c) and aspect (0x8bcbcc) the guest draw code gives a visitor's sprite, and the sprite draw order
 internal static class GuestWorldPicker
 {
 	internal static bool TryHit(NVector3 feet, GuestAtlasFrame frame, bool mirror, Matrix4x4 view,

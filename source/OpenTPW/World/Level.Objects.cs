@@ -557,12 +557,15 @@ public partial class Level
 	/// </summary>
 	// [BIN:TPW-EXE:0x45d560 hover cell] the cell under the cursor is the ray's hit point divided by the cell size (x, z) and clamped to the grid; the frame loop 0x54e2b0 refreshes it every frame from the pick 0x45bf90
 	// [EXT:build-cursor-ground-plane] the generic sandbox has no heightfield: its cursor ray hits the Z = 0 plane
-	public bool TryGetGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, out Vector3 point )
+	public bool TryGetGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, out Vector3 point ) =>
+		TryGetGroundHit( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out point );
+
+	internal bool TryGetGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection, out Vector3 point )
 	{
 		point = default;
 		if ( OriginalPark is not { } park )
-			return ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out point );
-		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out var origin, out var direction )
+			return ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, view, projection, out point );
+		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, view, projection, out var origin, out var direction )
 			|| !TerrainRayPick.TryPick( park.Heightfield, origin, direction, out var hit ) )
 			return false;
 		point = hit;

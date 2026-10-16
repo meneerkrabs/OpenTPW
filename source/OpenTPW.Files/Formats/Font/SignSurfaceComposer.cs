@@ -3,8 +3,10 @@ namespace OpenTPW;
 /// <summary>CPU composition of the two native 128x128 sign destinations.</summary>
 public static class SignSurfaceComposer
 {
-	// [APPROX:COMPAT-032] the transparent faces are drawn with the engine's object material (alpha test below 0.1, alpha blend, no depth sorting); tp.exe derives a textured face's state from its texture's alpha type (0x590C40: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque, all with depth writes) — evidence needed: the alpha type of the generated sign texture and a distant capture
-	// [APPROX:COMPAT-001] native destination dimensions are integrated; original GPU UV orientation and lower DIB rows still require a pixel oracle.
+	// [EXT:sign-face-alpha-blend] the transparent faces are drawn with the engine's object material (alpha test below 0.1, alpha blend, no depth sorting), an OpenTPW design choice that needs no per-texture state word
+	// [APPROX:COMPAT-032] tp.exe derives a textured face's state from its texture's alpha type (0x590C40: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque, all with depth writes) — evidence needed: the alpha type of the generated sign texture and a distant capture
+	// [EXT:sign-text-mask-width] the 512-wide text raster is reduced to a 256-wide mask, an OpenTPW design choice
+	// [APPROX:COMPAT-001] the lower half of the native 512x512 DIB is not reproduced; original GPU UV orientation and lower DIB rows still require a pixel oracle.
 	public const int Width = 256;
 	public const int Height = 128;
 	public const int HalfWidth = Width / 2;
@@ -13,7 +15,8 @@ public static class SignSurfaceComposer
 
 	/// <summary>Composes ARGB sign layers, then returns top-down RGBA for the two model textures.</summary>
 	// [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows.
-	// [APPROX:COMPAT-003] OpenTPW glyph coverage stands in for the native GDI masks and relief strips taller than their source are upsampled by nearest rows; paint-mask shaping (SignMaskShaping), relief samples and material arithmetic follow the identified native path.
+	// [EXT:sign-coverage-precision] glyph coverage comes from OpenTPW's rasterizer instead of GDI masks and the blur sums in double precision (OpenTPW design choices)
+	// [APPROX:COMPAT-003] relief strips taller than their source are upsampled by nearest rows; paint-mask shaping (SignMaskShaping), relief samples and material arithmetic follow the identified native path.
 	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, SignPaint? firstPaintOverride = null )
 	{
 		ArgumentNullException.ThrowIfNull( sign );

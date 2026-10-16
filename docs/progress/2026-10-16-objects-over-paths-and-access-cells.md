@@ -25,9 +25,11 @@ docs/OBJECTS.md "Build rules"):
 The shipped priorities were counted over the four catalogues: 5 for every ride, shop, sideshow, upgrade, toilet, staff room, fixed item
 and fantasy's Large Sign, 1 for 45 small-scenery types and 0 for the other 48 features. QUEUE-012 lost its open question (the "count" at
 `0x818C10` is the tool's overwrite priority). Tests: `ObjectBuildRuleTests` (synthetic objects on a live cell map) and
-`OverwritePrioritiesAndAccessCellsFollowTheTypes` (corpus). The smokes' and demos' site searches now take only sites that clear no path
-and demolish nothing (`Level.IsUntouchedSite`): the park-resume fixture had built its shops over its own path spine and then spawned
-guests on the cleared cells. Verified with the full test suite (5064 passing with game data, 109 skipped) and the native park-resume
+`OverwritePrioritiesAndAccessCellsFollowTheTypes` (corpus). The smokes' and demos' site searches (`ParkObjects.CheckFree`, `Level.CheckFreeObject`) now also
+refuse a site that would clear a path: the park-resume fixture had built its shops over its own path spine and then spawned guests on
+the cleared cells. `TryPlace` builds the new object before anything is demolished or cleared, and its script again draws from the world
+generator like `Add`'s (DET-013; main's `TryPlace` had gone back to seeding it directly). Verified with the full test suite (5108 passing
+with game data, 109 skipped) and the native park-resume
 smoke, capture and restore (silent). An independent Codex review found three issues that were fixed: guests were looked up by their
 next cell, a path cell that could not be paid for still demolished its feature, and queues read stale save path terrain.
 

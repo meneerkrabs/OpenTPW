@@ -99,6 +99,7 @@ public sealed partial class OriginalObjectRuntime
 			{
 				Visitors.WalkOffMilliseconds = 1000;
 				Visitors.WalkNodeDistance = WalkNodeDistance;
+				Visitors.WalkOffEffect = StartWalkOffEffect;
 			}
 		}
 	}

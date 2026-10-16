@@ -39,7 +39,8 @@ internal static class ParticleRendererModule
 		if ( renderer == null )
 			return -1;
 		// [BIN:TPW-EXE:0x5573D0 dispatcher] the key's world position * 1024 truncated (a key without a matrix is the world origin); a control other than 1000 is set after creation
-		var position = request.AtWorldOrigin ? (0, 0, 0) : ToNative( level, request.EnginePosition );
+		// [BIN:TPW-EXE:0x557308 WALKOFF position] the walk effect takes each coordinate through ftol and shifts it left by 10: whole units, as a kept ADDOBJ effect follows
+		var position = request.AtWorldOrigin ? (0, 0, 0) : request.WholeUnits ? WholeNative( level, request.EnginePosition ) : ToNative( level, request.EnginePosition );
 		if ( request.Type == 2 && (request.AtWorldOrigin || request.EngineUnitDirection != null) )
 		{
 			var direction = request.AtWorldOrigin ? (0, 0, (int)ParticleKeyResolver.NativeDirectionMultiplier) : ToNativeDirection( request.EngineUnitDirection!.Value );
@@ -118,6 +119,12 @@ internal static class ParticleRendererModule
 			renderer.Particles.SetDirection( handle, ToNativeDirection( unit ) );
 		else if ( follow.Directed )
 			renderer.Particles.SetDirection( handle, (0, 0, (int)ParticleKeyResolver.NativeDirectionMultiplier) );
+	}
+
+	private static (int X, int Y, int Z) WholeNative( Level level, SVector3 engine )
+	{
+		var original = ToOriginal( level, engine );
+		return (WholeUnits( original.X ) << 10, WholeUnits( original.Y ) << 10, WholeUnits( original.Z ) << 10);
 	}
 
 	/// <summary>A coordinate truncated to whole units; a value within 1/1024 of a whole unit counts as that unit, as OpenTPW's engine round trip leaves whole values a few ulps short.</summary>

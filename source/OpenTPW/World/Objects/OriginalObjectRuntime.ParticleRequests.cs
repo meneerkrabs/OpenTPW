@@ -32,6 +32,30 @@ public sealed partial class OriginalObjectRuntime
 
 	internal void BindParticlePlacement(ObjectPlacement placement) => particlePlacement = placement;
 
+	/// <summary>The effect a WALKOFF with walk action 2 creates: effect 0x13 at the slot's start node, fire and forget.</summary>
+	// [BIN:TPW-EXE:0x5572EB WALKOFF action 2] the node is looked up with the class 0x800 (0x556b90, the key resolver of the EVENT effects) and 0x521E60 is called with effect 0x13 and the node's position, each coordinate through ftol and shifted left by 10; the handle is not kept
+	internal ParticleEventRequest? PrepareWalkOffEffect( int startNode )
+	{
+		if ( stopped || particlePlacement is not { } placement )
+			return null;
+		particleKeys ??= new ParticleKeyResolver( Model );
+		var pose = particleKeys.Resolve( startNode, ParticleKeyResolver.WalkSelector, Animator.NodeTransforms, placement );
+		return pose.Status switch
+		{
+			ParticleKeyStatus.Resolved => new ParticleEventRequest( AttractionId, 0, 1, startNode, WalkOffEffectId, 1000, pose.EnginePosition!.Value, null, pose.AttributeIndex, pose.NodeIndex, WholeUnits: true ),
+			ParticleKeyStatus.ResolvedAtWorldOrigin => new ParticleEventRequest( AttractionId, 0, 1, startNode, WalkOffEffectId, 1000, NVector3.Zero, null, pose.AttributeIndex, pose.NodeIndex, AtWorldOrigin: true ),
+			_ => null
+		};
+	}
+
+	internal const int WalkOffEffectId = 0x13;
+
+	private void StartWalkOffEffect( int startNode )
+	{
+		if ( PrepareWalkOffEffect( startNode ) is { } request )
+			ParticleStarter?.Invoke( request );
+	}
+
 	private ParticleEventAttempt PrepareParticle(int scriptId, int type, int key, int effect, int control)
 	{
 		ParticleEventAttempt Refuse(ParticleEventPreparationStatus status, ParticleKeyStatus? keyStatus = null) =>

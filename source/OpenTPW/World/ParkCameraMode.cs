@@ -20,6 +20,7 @@ public class ParkCameraMode : CameraMode
 
 	public ParkCameraMode()
 	{
+		// [APPROX:UI-101] the park camera's field of view is 55 degrees where tp.exe's projection has 90 (0x42A990 and 0x54E86F -> 0x578BE0); the pose below (height, yaw, pull-back) is OpenTPW's own and was tuned to 55, so the value is not changed here until the original view is captured
 		FieldOfView = 55;
 		Focus( InitialTarget );
 	}
@@ -56,7 +57,7 @@ public class ParkCameraMode : CameraMode
 		var io = ImGuiNET.ImGui.GetIO();
 		Update( new CameraControlInput
 		{
-			HasFocus = Window.Current?.SdlWindow.Focused == true,
+			HasFocus = Window.Current?.Focused == true,
 			LogicalSize = Screen.Size, MousePosition = Input.Mouse.Position, MouseDelta = Input.Mouse.Delta,
 			CaptureMouse = io.WantCaptureMouse || Level.Current?.UiCapturesMouse == true,
 			CaptureKeyboard = io.WantCaptureKeyboard || UiCapturesKeyboard,

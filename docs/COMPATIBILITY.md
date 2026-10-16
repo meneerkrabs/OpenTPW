@@ -249,8 +249,6 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified; tp.exe compares the BILZ chunk tag at `0x6193D0` (the inflate step) and its inverse transform and colour conversion are not located | the PC wavelet transform, a native bitmap pixel oracle and a ride-sign capture |
 | COMPAT-032 | Sign text | The original's face state follows the texture's alpha type (`0x590C40`: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque; depth writes on; decoder `0x567620`) | the generated sign texture's alpha type; a distant capture |
 | COMPAT-010 | Graphics | tp.exe: option `[0x785898]` 0 → engine flag 0x20000 (MAGFILTER point), 1 → 0x40000 (MIPFILTER none), 2/3 → the device's mip mode; 0x400000 → wrap + linear MINFILTER, else clamp + point (`0x44D8F0`, `0x567620`); OpenTPW's Veldrid sampler modes stand in for these states | that `[0x785898]` is TEXTUREFILTERING; the path from the engine flags into the state word |
-| COMPAT-015 | Theme Park Inc textures | FSH palette 0x2D (one file) read as A1R5G5B5, bit 15 = opaque; the executable's palette converter (`Game.exe` `0x6B7000`) has no `0x2D` path (only `0x24` and `0x2A`), so there is no original reading to match | whether any data path loads that file (see [FSH.md](FSH.md)) |
-| COMPAT-019 | Theme Park Inc lake | Theme Park Inc's lake is mission obstacle 1703 (`lake.MD2`, drained by a gardener's Water Drainage in mission 1) with the drained state 1704 (`dlake.MD2`); the viewer always draws `dlake.MD2` and ignores the obstacle state and the `idle`/`lakem` animations; the no-CD Game.exe holds no lake, dlake or obstacle string, so the state comes from mission data and scripts that the slice does not run (TPI-903) | the obstacle state of a park outside mission 1, from a capture or the mission scripts ([THEME-PARK-INC.md](THEME-PARK-INC.md)) |
 
 Extensions by design (not approximations): `[EXT:COMPAT-GFX-ENHANCED]` Enhanced preset
 values, `[EXT:COMPAT-GFX-ANISOTROPY]` anisotropy degree, `[EXT:COMPAT-GFX-VIEWDISTANCE]`
@@ -274,13 +272,13 @@ COMPAT-011 (the localized-string fallback order) and COMPAT-012 (the UniToMB enc
 `WideCharToMultiByte`, `0x424DB0`, and `Encode` has no runtime caller) are OpenTPW decisions or helpers now:
 `[EXT:locale-fallback]` and `[EXT:text-encode-helper]` (COMPAT-031, the cream gate paint, was an OpenTPW decision too and is contradicted by the video, see COMPAT-004). The original opens one language folder
 (`Data\Language\<selected>`, `0x419710`) and has no English-then-identifier chain; the missing-id result of the table lookup (`0x6ACB70`) is untraced.
-COMPAT-019 is narrowed: Theme Park Inc's `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704 "New Science Drained Lake
+COMPAT-019 is an extension (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the viewer runs no missions, so it has no obstacle state to follow): Theme Park Inc's `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704 "New Science Drained Lake
 Obstacle", `levels/science/obstacles/` holds `lake.wad` and `dlake.wad`, `terrain.wad` holds dlake, dlakem, lake, lakem1 and lakem2, and
 `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10 ("Water Drainage"); so "dlake" is the
-drained lake, not a finished one (the viewer's drawing is unchanged). COMPAT-006 (kerning) stays open but its answer is in the shipped
+drained lake, not a finished one. COMPAT-006 (kerning) stays open but its answer is in the shipped
 usp10.dll: tp.exe imports only ScriptStringAnalyse, ScriptStringGetLogicalWidths, ScriptStringOut, ScriptString_pSize and ScriptStringFree
-from USP10 and no kerning or ABC-width call from GDI32. COMPAT-018 needs pixel captures, COMPAT-001, -003 and -004 native-resolution ones; COMPAT-015 (the 0x2D palette) has no reading in
-Theme Park Inc's FSH loader to match.
+from USP10 and no kerning or ABC-width call from GDI32. COMPAT-018 needs pixel captures, COMPAT-001, -003 and -004 native-resolution ones; the 0x2D palette (`[EXT:fsh-0x2d-palette]`, `APPROX:COMPAT-015` retired) has no reading in
+Theme Park Inc's FSH loader to match, so its A1R5G5B5 decode is OpenTPW's choice.
 COMPAT-008 and COMPAT-013 are OpenTPW design decisions: `[EXT:gate-sign-depth-lift]` (the gate sign faces' depth lift) and
 `[EXT:graphics-preset-cpu]` (the processor clock taken as 450 MHz or faster).
 October 16, 2026 (user approved): COMPAT-009 is retired: `APPROX:COMPAT-009` became `[EXT:sign-text-antialias]` (16 sub-scanline coverage instead of GDI ANTIALIASED_QUALITY).

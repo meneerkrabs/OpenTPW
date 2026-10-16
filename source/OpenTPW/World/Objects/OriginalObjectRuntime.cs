@@ -252,7 +252,7 @@ public sealed partial class OriginalObjectRuntime
 		Tour?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
-		// [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting
+		// [EXT:ride-cycle-counter] CompletedCycles counts VAR_RUNNING 1 → 0 edges as OpenTPW's own diagnostic counter: nothing in the original counts ride cycles (it only reads VAR_RUNNING as a level), so there is no original behaviour to match
 		if ( wasRunning && !running )
 			CompletedCycles++;
 		wasRunning = running;
@@ -764,7 +764,9 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			// [BIN:TPW-EXE:0x5562bd REPAIREFFECT] the type's repair particle effect is switched before the sounds (0x556DE0)
 			ride.SetRepairParticle( show != 0 );
 			{
-				var voices = GameAudio.PlayRepairEffect( show, OriginalObjectRuntime.WholeUnits( ride.ReadEventOrigin() ) );
+				// [BIN:TPW-EXE:0x55637a repair band] the band is the script's variable slot 5 (a script with fewer variables has none here, so it stays silent)
+				var band = call.VM.Variables.Length > 5 ? call.VM.Variables[5] : 0;
+				var voices = GameAudio.PlayRepairEffect( show, OriginalObjectRuntime.WholeUnits( ride.ReadEventOrigin() ), band );
 				ownedEventLoops.RemoveAll( loop => loop.IsFinished );
 				if ( voices.First is { Loops: true } ) ownedEventLoops.Add( voices.First );
 				if ( voices.Second is { Loops: true } ) ownedEventLoops.Add( voices.Second );

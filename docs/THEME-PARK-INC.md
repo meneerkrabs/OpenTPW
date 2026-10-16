@@ -123,7 +123,7 @@ items; the science save contains no Bus record, so none is inferred for that par
 scripts report unimplemented effects in the log; the two opcodes only Theme Park Inc scripts use
 (`WAITABS`, `MULT`) have VM handlers since October 13, 2026 (see RSE-VM.md's gap-opcode section;
 the science smoke never reached them, so retail execution is not claimed). Textures are not
-checked against the original game's alpha or colour handling (the palette converter's `0x24` reading is read at instruction level, `APPROX:COMPAT-014` retired; COMPAT-015 stays).
+checked against the original game's alpha or colour handling (the palette converter's `0x24` reading is read at instruction level, `APPROX:COMPAT-014` retired; the `0x2D` palette is `[EXT:fsh-0x2d-palette]`, `APPROX:COMPAT-015` retired).
 
 **Textures.** `Texture` now loads `.fsh` (first image of the SHPI file, `FshFile`) and stb images
 (`.tga`, `.png`) from the game data as well as from disk; decoding is GPU-free
@@ -151,7 +151,7 @@ file fill them. In Theme Park Inc the lake is a separate model: `terrain.wad` ho
 (`lake_surface`, `lake_bottom`; its extent equals the holes that no `base.MD2` mesh covers: 453
 cells, none left once it is drawn), `lake.MD2` (the same lake with hoardings, a tent, a plank and a
 shovel, so a building site) and the animation files `idle1`/`idle2`/`lakem1`/`lakem2`/`dlakem`. The
-viewer now always draws `dlake.MD2` (COMPAT-019; `lake.MD2` and the animations are
+viewer now always draws `dlake.MD2` (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the viewer runs no missions; `lake.MD2` and the animations are
 ignored). That was a loader gap. The data names it the drained state: `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704
 "New Science Drained Lake Obstacle", and `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10
 ("Water Drainage"); so `dlake` is the drained lake, not a finished one, and which one a park shows is data-driven (the exe holds no
@@ -171,9 +171,9 @@ The slice's own scope decisions are OpenTPW design decisions, not approximations
 the Theme Park World guest rules over Theme Park Inc data, the capability gates and the Theme Park World tool flow (`[EXT:tpi-*]` at their sites; TPI-900 to
 TPI-904 are retired).
 
-**Approximations and open questions.** COMPAT-015 (the `0x2D` palette), COMPAT-019 (lake),
+**Approximations and open questions.** (The `0x2D` palette and the drained lake are extensions now: `[EXT:fsh-0x2d-palette]`, `[EXT:tpi-lake-drained]`.)
 RIDES-031 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
-drawn as 0, 0), RIDES-019 (default fixed items without a save), RIDES-040 (zero-coordinate fixed
+drawn as 0, 0), RIDES-019 (the End object; the Bus from setup is `[EXT:tpi-bus-from-setup]`), RIDES-040 (zero-coordinate fixed
 scene records). Open: how the original game transforms the zero-coordinate scene records and
 places the gate and bus in worlds without a prebuilt save; what the `*_newenv.MD2` files are for (`3ns_newenv` and `4ns_newenv` carry a heightfield and an `arrival_*` mesh set); the
 missing lake bed textures; the viewer's lighting and water transparency against the original.

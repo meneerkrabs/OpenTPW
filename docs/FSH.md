@@ -108,12 +108,12 @@ All values are little-endian unless stated otherwise.
   mask (`0x6B746F`, `0x6B74C0`), and the pixel loops (`0x6B76BD` on) copy the table entry of every index without a transparent
   index. The four 32-bit thumbnails above (alpha 0) and the opaque `0x24` copy of a texture whose `0x2A` copy is fully
   transparent (e.g. `fruitb.wad` `grape.fsh`) are data the loader does not look at.
-- `[APPROX:COMPAT-015]` The single `0x2D` palette (water `snowtrac.wad` `icewall1.fsh`) is read as A1R5G5B5 with bit 15
-  meaning opaque. The colour order is supported only by the mean-colour match above; the alpha bit has no effect on this
+- `[EXT:fsh-0x2d-palette]` (formerly `APPROX:COMPAT-015`, retired) The single `0x2D` palette (water `snowtrac.wad` `icewall1.fsh`) is read as A1R5G5B5 with bit 15
+  meaning opaque: OpenTPW's own choice, as there is no original reading to match. The colour order is supported only by the mean-colour match above; the alpha bit has no effect on this
   file. The Theme Park Inc executable's palette converter (`Game.exe` `0x6B7000`) handles only the codes `0x24` and `0x2A`
   (`cmp` at `0x6B70FB` and `0x6B7108`) and returns at `0x6B72D6` for any other code with its 256-entry table unwritten, so the
   executable has no reading of a `0x2D` palette to match (its alpha scan `0x6B73F0` would read such a palette as 32-bit
-  entries). Evidence needed: whether any data path loads this file and what it then shows.
+  entries).
 
 ## Reader
 
@@ -184,7 +184,7 @@ An index is always required: multi-image files do not silently select image zero
 This route runs before game-folder, window and profile setup, and needs no game
 installation or graphics device. It uses `FshFile`'s existing bounded decoder and
 `PngImage` to preserve the selected image's current RGBA pixels and dimensions;
-the raw/RefPack and palette rules, including the retired COMPAT-014 and COMPAT-015, are unchanged.
+the raw/RefPack and palette rules, including the retired COMPAT-014 and the extension `[EXT:fsh-0x2d-palette]` (COMPAT-015), are unchanged.
 The existing reader still validates and decodes the complete bounded FSH file;
 the selected index controls which image is written, not which records are parsed.
 

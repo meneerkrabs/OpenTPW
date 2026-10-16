@@ -139,6 +139,9 @@ public static class ParkLayoutSnapshot
 		public required bool IsFixedItem { get; init; }
 	}
 
+	/// <summary>The base height rule a placement is saved with: 1 (vertex midpoint), or none for a placement restored from a save that predates it.</summary>
+	internal static int? BaseHeightRuleOf( ObjectPlacement placement ) => placement.LegacyBaseHeight ? null : 1;
+
 	/// <summary>The cell map and placed objects of a live park, in the state right now. Throws for state this format cannot save.</summary>
 	public static Data CaptureSnapshot( ParkCellMap cells, ParkObjects objects )
 	{
@@ -178,7 +181,7 @@ public static class ParkLayoutSnapshot
 				CreationSeed = seed,
 				AttractionId = item.Visitors.AttractionId,
 				BaseHeight = item.Placement.BaseHeight,
-				BaseHeightRule = 1,
+				BaseHeightRule = BaseHeightRuleOf( item.Placement ),
 				IsFixedItem = item.Entry.IsFixedItem
 			} );
 		}

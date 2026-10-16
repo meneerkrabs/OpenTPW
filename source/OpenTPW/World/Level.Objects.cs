@@ -47,14 +47,17 @@ public partial class Level
 			else
 				catalog = loaded;
 		}
-		// Objects keep off built path, queue and track cells; imported path cells are refused by the terrain rule as before. Object cells
-		// (types 4, 9 and 10) are left to ParkObjects, which lets a higher overwrite priority replace their owner.
+		// Objects keep off queue and track cells. Path cells are the cell map's to judge (PathAt: a plain path is cleared by the placement, a
+		// NoModify one refuses), and object cells (types 4, 9 and 10) are left to ParkObjects, which lets a higher overwrite priority replace their owner.
 		// [BIN:TPW-EXE:0x535BB3 track cells] for an object cell (type 4) the validator refuses a second-layer track cell (0x53AD30: types 0xB, 0xD, 0x10, 0x12, 0x19; the extensions 0xC and 0x11 through their head, 0x535811) and any other map type but 0, 1 and the object types (0x535C4C..0x535D5D)
 		Objects = new ParkObjects( catalog!, grid, Seed )
 		{
 			IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type
-				&& type is not (0 or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit),
-			IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned )
+				&& type is not (0 or (byte)ParkCellType.Path or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit),
+			IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ),
+			PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null,
+			ClearPath = ( x, y ) => Paths?.Remove( x, y ),
+			PathRuleAllows = ( x, y ) => Paths?.CheckPathRule( x, y ) is { } rule ? rule is CellBuildResult.Ok or CellBuildResult.Existing : null
 		};
 		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes, for every removal but a park load or clear
 		Objects.ObjectRemoving += item => item.Runtime.StartObjectEffect( ObjectParticleEffect.Destroy );
@@ -118,6 +121,8 @@ public partial class Level
 			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells );
 			Objects.ObjectRemoved += item => Guests?.Grid.Cells.ClearFootprint( item.Cells );
 		}
+		// A placement over path cells clears them (ParkObjects.ClearPath): guests standing there step off
+		Objects.ObjectPlaced += item => Guests?.SetDownOffCells( item.Cells.Select( cell => (cell.X, cell.Y) ).ToHashSet() );
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
@@ -280,13 +285,33 @@ public partial class Level
 			{
 				if ( Park != null )
 					GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) );
-			} )
+			} ),
+			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
+			DemolishObject = DemolishObjectAt
 		};
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Objects.FindAt( x, y ), RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell );
 	}
 
-	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do.
+	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
+	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
 	private bool IsPathBlocked( int x, int y ) => Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y );
+
+	/// <summary>How the cell map holds a path for the object build rule: none, a plain path (cleared by the placement) or a NoModify one (refused).</summary>
+	internal static ObjectPathCell? ObjectPathAt( ParkCellMap cells, int x, int y )
+	{
+		if ( !cells.InBounds( x, y ) )
+			return null;
+		if ( cells.TypeAt( x, y ) != ParkCellType.Path )
+			return ObjectPathCell.None;
+		return cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) ? ObjectPathCell.FixedPath : ObjectPathCell.Path;
+	}
+
+	/// <summary>Demolishes the object at (x, y) a path or queue cell is laid over (tp.exe's cell op 0x87: the whole object, sold for its scrap value).</summary>
+	private void DemolishObjectAt( int x, int y )
+	{
+		if ( Objects.FindAt( x, y ) is { } item )
+			Objects.Remove( item );
+	}
 
 	/// <summary>
 	/// A click in the park view on an empty owned cell or a path cell enters the path tool without a start, then the same click is the
@@ -332,7 +357,8 @@ public partial class Level
 	/// (<see cref="EnterQueueTool"/>). False when the cell is not a queue cell of a HasQueue ride.
 	/// </summary>
 	// [DATA:UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it"] [BIN:STP-PPC:0x139c64 park-view hover] queue cell → hover state 3 (PATH-plan §4.1)
-	// [APPROX:QUEUE-021] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool); tp.exe's park-view click 0x004879D0 (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the vertex list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580) — evidence needed: where mode 3 goes on laying after 0x00530120's list
+	// [EXT:queue-click-at-back-cell] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool): an OpenTPW design choice, the first click is the whole edit gesture here
+	// [APPROX:QUEUE-021] tp.exe's park-view click 0x004879D0 (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the vertex list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580); that first-click step is not ported — evidence needed: where mode 3 goes on laying after 0x00530120's list
 	public bool EditQueueAt( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )
@@ -433,7 +459,7 @@ public partial class Level
 		}
 		if ( Guests == null )
 			return QueueBuildResult.Refused;
-		var result = BuildQueueCell( Guests.Grid, Park?.Economy, ride, x, y, IsQueueBlocked, out var message );
+		var result = BuildQueueCell( Guests.Grid, Park?.Economy, ride, x, y, IsQueueBlocked, out var message, QueueGivesWay, DemolishObjectAt );
 		LastActionMessage = message;
 		// The queue line's refresh pass (0x81) runs the chooser for the laid cell.
 		if ( result == QueueBuildResult.Ok )
@@ -446,13 +472,16 @@ public partial class Level
 	/// <c>CheckQueueCell</c> (static), then <c>Costs.QueueCell</c> charged through <paramref name="economy"/>
 	/// (none: free), then <see cref="QueuePaths.TryExtend(GuestPathGrid, RideVisitorBridge, int, int, Func{int, int, bool}?)"/>.
 	/// </summary>
-	internal static QueueBuildResult BuildQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, Func<int, int, bool> isBlocked, out string message )
+	/// <param name="givesWay">An object the queue may cover (tp.exe's overwrite priority below the queue tool's 3); null covers none.</param>
+	/// <param name="demolish">Demolishes that object when the cell is laid.</param>
+	internal static QueueBuildResult BuildQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, Func<int, int, bool> isBlocked, out string message,
+		Func<int, int, bool>? givesWay = null, Action<int, int>? demolish = null )
 	{
 		// Bring the queue up to date before charging: a grid edit since the last recompute would otherwise pass the
 		// check here, be charged, and then be refused by TryExtend's own recompute.
 		ride.RecomputeQueue( grid );
 		// The commit's money test is SetCellType's alone (TrySpendCell below); the validator's preview test does not run on a commit (PATH-plan §3.3).
-		var check = CheckQueueCell( grid, null, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
+		var check = CheckQueueCell( grid, null, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked, givesWay );
 		if ( check is not (QueueBuildResult.Ok or QueueBuildResult.Refused) )
 		{
 			message = $"Cannot build a queue here: {check}.";
@@ -464,7 +493,7 @@ public partial class Level
 			message = "Cannot build a queue: not enough money.";
 			return QueueBuildResult.Refused;
 		}
-		var result = QueuePaths.TryExtend( grid, ride, x, y, isBlocked );
+		var result = QueuePaths.TryExtend( grid, ride, x, y, isBlocked, givesWay, demolish );
 		message = $"{ride.Name}: queue is now {ride.QueueSizeInCells} cells long.";
 		return result;
 	}
@@ -478,7 +507,7 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Guests == null )
 			return QueueBuildResult.Refused;
-		return CheckQueueCell( Guests.Grid, Park?.Economy, ride, x, y, pending, IsQueueBlocked );
+		return CheckQueueCell( Guests.Grid, Park?.Economy, ride, x, y, pending, IsQueueBlocked, QueueGivesWay );
 	}
 
 	/// <summary>
@@ -486,9 +515,10 @@ public partial class Level
 	/// <see cref="QueuePaths.CheckExtend"/> after <paramref name="pending"/>, then the preview's money test against
 	/// <paramref name="economy"/> (none: no money test; the commit passes none and relies on <see cref="ParkEconomy.TrySpendCell"/>).
 	/// </summary>
-	internal static QueueBuildResult CheckQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending, Func<int, int, bool> isBlocked )
+	internal static QueueBuildResult CheckQueueCell( GuestPathGrid grid, ParkEconomy? economy, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending, Func<int, int, bool> isBlocked,
+		Func<int, int, bool>? givesWay = null )
 	{
-		var check = QueuePaths.CheckExtend( grid, ride, x, y, pending, isBlocked );
+		var check = QueuePaths.CheckExtend( grid, ride, x, y, pending, isBlocked, givesWay );
 		if ( check != QueueBuildResult.Ok )
 			return check;
 		// [BIN:STP-PPC:0x10084550 placement validator] the preview refuses when the 32-bit pending line cost (the pending cells and this one) is greater than the balance; a zero sum passes
@@ -518,13 +548,24 @@ public partial class Level
 		return removed;
 	}
 
-	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain), no object footprint and owned land; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (the park's land, ParkCellMap.Land) and object cells by their type, allows empty cells, lets a queue replace a path cell unless NoModify (+0x0E bit 0x20), and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: the ride-cell count test (0x00818C10)
+	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain: the map start's cell types and the Easymode save's occupied cells), no object footprint of the queue tool's overwrite priority 3 or more (a lower one is demolished, QueueGivesWay) and owned land; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (the park's land, ParkCellMap.Land), compares an object cell's owner priority with 0x818C10 = 3 (0x535D66), allows empty cells, lets a queue replace a path cell unless NoModify (+0x0E bit 0x20) and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: none for the validator; the save's occupied cells stand in for its cell types (ECON-050)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
 	private bool IsQueueBlocked( int x, int y ) =>
-		Objects.Grid.CheckTerrain( x, y ) != OriginalPlacementResult.Allowed || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y )
+		!QueueTerrainAllows( x, y ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ));
 
-	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell. The original placement 0x528A70 lays the access cells itself: on commit with 0x52FAB0 true (option 0x81B0CC, default 1 at 0x52F139, and 0x8187F8 clear) the entrance's outside cell becomes a queue cell linked to the entrance (0x5297BD–0x529890) and the exit's outside cell a path cell linked to its path neighbours (0x529A58–0x529B1A); with it false the entrance's outside cell becomes a path cell and the exit gets none; an outside cell off the map refuses the placement (0x529744, 0x5299E2), and validation runs ops 0x204/0x201 on it — evidence needed: the cell ops 0x81/0x85/0x86 that link the laid cells, and a model of the laid cells' cost
+	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
+	private bool QueueTerrainAllows( int x, int y ) => Objects.Grid.CheckTerrain( x, y ) switch
+	{
+		OriginalPlacementResult.Allowed => true,
+		OriginalPlacementResult.Path => Guests?.Grid.Cells is { } cells && ObjectPathAt( cells, x, y ) == ObjectPathCell.None,
+		_ => false
+	};
+
+	/// <summary>An object a queue cell may cover and demolish: its overwrite priority is below the queue tool's (tp.exe <c>0x818C10</c> = 3).</summary>
+	private bool QueueGivesWay( int x, int y ) => Objects.GivesWay( x, y, ParkObjects.QueueOverwritePriority );
+
+	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell. The original placement 0x528A70 lays the access cells itself: on commit with 0x52FAB0 true (option 0x81B0CC, the type's Info.HasQueue from the build tool's enter 0x46D644, and 0x8187F8 clear) the entrance's outside cell becomes a queue cell linked to the entrance (0x5297BD–0x529890) and the exit's outside cell a path cell linked to its path neighbours (0x529A58–0x529B1A); with it false the entrance's outside cell becomes a path cell and the exit gets none. The placement's checks of these cells are ported (ParkObjects.CheckAccessCells); OpenTPW lays neither cell — evidence needed: the cell ops 0x81/0x85/0x86 that link the laid cells, and a model of the laid cells' cost
 	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
 		grid.IsWalkable( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
 
@@ -656,18 +697,18 @@ public partial class Level
 	/// <summary>Build rule for <paramref name="entry"/> centred on cell (x, y), without buying it.</summary>
 	public OriginalPlacementResult CheckObject( ObjectCatalogEntry entry, int x, int y, int rotation ) => CheckObject( entry, x, y, rotation, out _ );
 
-	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing (<see cref="ParkObjects.CheckFree"/>).</summary>
+	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> with the objects it would demolish and the path cells it would clear.</summary>
+	public OriginalPlacementResult CheckObject( ObjectCatalogEntry entry, int x, int y, int rotation, out ObjectPlacementPlan plan )
+	{
+		var anchor = GetCentredAnchor( entry, x, y, rotation );
+		return Objects.Check( entry, anchor.X, anchor.Y, rotation, out plan );
+	}
+
+	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing and clears no path (<see cref="ParkObjects.CheckFree"/>).</summary>
 	public OriginalPlacementResult CheckFreeObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		var anchor = GetCentredAnchor( entry, x, y, rotation );
 		return Objects.CheckFree( entry, anchor.X, anchor.Y, rotation );
-	}
-
-	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> with the lower-priority objects the build would demolish.</summary>
-	public OriginalPlacementResult CheckObject( ObjectCatalogEntry entry, int x, int y, int rotation, out IReadOnlyList<OriginalObject> overwritten )
-	{
-		var anchor = GetCentredAnchor( entry, x, y, rotation );
-		return Objects.Check( entry, anchor.X, anchor.Y, rotation, out overwritten );
 	}
 
 	public bool RemoveObjectAt( int x, int y )

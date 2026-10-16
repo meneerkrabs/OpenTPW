@@ -174,6 +174,9 @@ public class GuardEntertainerTests
 			if ( seen.Count == 0 || seen[^1] != guard.Job )
 				seen.Add( guard.Job );
 			held |= prankster.State == GuestState.HeldByGuard && !prankster.IsVisible;
+			// a guest whose counter still holds changes its mind on its first turn in state 18 (the recall 0x00500A50, GuestTests); this one has none left once caught, so the set-down sends it home
+			if ( prankster.State == GuestState.HeldByGuard )
+				prankster.ExitLevel = 0;
 		} );
 		Assert.IsTrue( held, "caught and carried out of sight" );
 		CollectionAssert.IsSubsetOf( new[] { StaffJob.Chasing, StaffJob.Escorting, StaffJob.ReturningFromEscort }, seen, string.Join( ", ", seen ) );

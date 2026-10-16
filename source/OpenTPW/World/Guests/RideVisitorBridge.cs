@@ -1053,6 +1053,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			{
 				var guest = call.Argument( 0 );
 				MarkBoarded( guest );
+				// [APPROX:TOUR-011] WALKON boards the rider at once and WALKOFF's action 2 spawns no effect; the original's WALKON also holds the rider for ftol(distance between nodes u1 and u2) x 100 ms (100 ms for 0; the start node is of class 0x80 for the head action 4; the walk table entry's times at +0x8 and +0xC, 0x00556F40), and WALKOFF's action 2 creates an effect of type 0x13 at the walk's start node (0x00521E60 from 0x005572EB)
 				// [BIN:TPW-EXE:0x00556F40 WALKON slot] the walk table entry keeps the operands in order: start node u1, end node u2, u3 and u4 (the nodes WALKOFF walks between), the walk action
 				if ( WalkNodeDistance != null && onRide.Contains( guest ) )
 					walkSlots[guest] = (call.Argument( 3 ), call.Argument( 4 ), call.Argument( 5 ));

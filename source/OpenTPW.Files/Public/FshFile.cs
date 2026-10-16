@@ -250,7 +250,7 @@ public sealed class FshFile : BaseFormat
 					target[3] = entry[3];
 					break;
 				default:
-					// [APPROX:COMPAT-015] A1R5G5B5 with bit 15 as alpha; one corpus file, every entry has bit 15 set. The Theme Park Inc palette converter 0x6B7000 has no 0x2D path (only 0x24 and 0x2A), so this reading has no original to match
+					// [EXT:fsh-0x2d-palette] A1R5G5B5 with bit 15 as alpha is OpenTPW's own choice for the one 0x2D palette in the corpus (every entry has bit 15 set): the Theme Park Inc palette converter 0x6B7000 has no 0x2D path (only 0x24 and 0x2A), so there is no original reading to match
 					var value = BinaryPrimitives.ReadUInt16LittleEndian( entry );
 					target[0] = Expand5( value >> 10 );
 					target[1] = Expand5( value >> 5 );

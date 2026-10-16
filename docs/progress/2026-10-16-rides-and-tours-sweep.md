@@ -15,12 +15,16 @@ A sweep over the ride and tour approximations, read in tp.exe via REA:
   typed footprint corners (`0x466D70`, `0x469930`, RIDES-014), the End vehicle's creation by `0x516B00` from the lab handler `0x503D40`
   (RIDES-019), the GETTIME clock (`0x551F1E`, RIDES-044), the tour pose on the engine's 4096-entry sine table (`0x4708D0`, TOUR-008),
   and RIDES-018 and RIDES-032.
-- **Design choices, approved by the user:** RIDES-025 is closed (`[EXT:bonus-name-fallback]`) and RIDES-021's ground-plane pick is split
-  out (`[EXT:build-cursor-ground-plane]`).
+- **Design choices, approved by the user:** RIDES-025 is closed (`[EXT:bonus-name-fallback]`), RIDES-023 is closed
+  (`[EXT:ride-cycle-counter]`: `CompletedCycles` is OpenTPW's own diagnostic counter), TOUR-002 is closed
+  (`[EXT:tour-thrown-riders-released]`: a deliberate fix of the original's bug where thrown-off riders are never released), and
+  RIDES-021's ground-plane pick and RIDES-044's per-park clock origin are split out (`[EXT:build-cursor-ground-plane]`,
+  `[EXT:park-clock-origin]`); what is still unread stays open.
+- **New ID:** TOUR-011 registers WALKON's own walk-on time and the WALKOFF action-2 effect.
 
 The pinned run hash is unchanged. Layout saves gain an optional `BaseHeightRule` (older saves keep the old cell-mean height) and guest
 snapshots an optional `WalkSlots`. Verified with 4586 tests passing without game data, 5038 with it, and all five native smokes.
 
 Still open: the footprint cell model (`@`, `Q`, `#`, `+`, track ends) behind RIDES-011, RIDES-031 and TOUR-005, the walk-on time of
-WALKON (`ftol(dist(u1, u2)) × 100`) and the WALKOFF beam effect, the ground flatten (`0x467030`), who sets the instance stop and hold
+WALKON (`ftol(dist(u1, u2)) × 100`) and the WALKOFF beam effect (TOUR-011), the ground flatten (`0x467030`), who sets the instance stop and hold
 flags, and the build cursor's mouse-to-cell pick.

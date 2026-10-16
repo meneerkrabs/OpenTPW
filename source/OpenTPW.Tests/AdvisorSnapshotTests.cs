@@ -93,9 +93,9 @@ public class AdvisorSnapshotTests
 			good with { Queue = new AdvisorQueueSnapshot(
 				null!, good.Queue.History, 0, 0 ) },
 			good with { Queue = new AdvisorQueueSnapshot(
-				Replace( good.Queue.Slots.ToArray(), 0, new AdvisorPendingAdviceSnapshot( 42, 100, -1, false ) ), good.Queue.History, 0, 0 ) },
+				Replace( good.Queue.Slots.ToArray(), 0, new AdvisorPendingAdviceSnapshot( 400, 100, -1, false ) ), good.Queue.History, 0, 0 ) },
 			good with { Queue = new AdvisorQueueSnapshot(
-				good.Queue.Slots, good.Queue.History.Concat( new[] { KeyValuePair.Create( 42, new AdvisorHistorySnapshot( 0, -1, false, 0 ) ) } ).ToDictionary(), 0, 0 ) },
+				good.Queue.Slots, good.Queue.History.Concat( new[] { KeyValuePair.Create( 400, new AdvisorHistorySnapshot( 0, -1, false, 0 ) ) } ).ToDictionary(), 0, 0 ) },
 			good with { Queue = new AdvisorQueueSnapshot(
 				good.Queue.Slots, new Dictionary<int, AdvisorHistorySnapshot> { [0] = null! }, 0, 0 ) },
 			good with { Queue = new AdvisorQueueSnapshot(

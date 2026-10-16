@@ -111,4 +111,15 @@ public class SignMaskShapingTests
 		CollectionAssert.AreEqual( mask, SignMaskShaping.Shape( mask, 7, 7, Paint( parameter: float.NaN ) ) );
 		Assert.ThrowsException<NotSupportedException>( () => SignMaskShaping.Shape( mask, 7, 7, Paint( parameter: float.PositiveInfinity ) ) );
 	}
+
+	[TestMethod]
+	public void ABlurWithoutTapsClearsTheMask()
+	{
+		// 3 + trunc(2.5 * -1.2) = 0 taps: the native passes run over empty ranges and write 0 everywhere.
+		Assert.AreEqual( 0, SignMaskShaping.Kernel( -1.2f ).Length );
+		var mask = Enumerable.Repeat( (byte)200, 4 * 3 ).ToArray();
+		SignMaskShaping.Blur( mask, 4, 3, -1.2f );
+		Assert.AreEqual( 0, mask.Sum( value => value ) );
+		Assert.AreEqual( 0, SignMaskShaping.Shape( Enumerable.Repeat( (byte)90, 9 ).ToArray(), 3, 3, Paint( parameter: -2f ) ).Sum( value => value ) );
+	}
 }

@@ -137,8 +137,12 @@ public static class SignMaskShaping
 	public static void Blur( byte[] mask, int width, int height, float sigma )
 	{
 		var kernel = Kernel( sigma );
+		// [BIN:TPW-EXE:0x005EA8A0 empty kernel] with no taps (a parameter of -1.2 or less) both passes still run, every tap range [x - c, x + n - c - 1] is empty, and each pixel is written as the truncated empty sum 0
 		if ( kernel.Length == 0 )
+		{
+			Array.Clear( mask );
 			return;
+		}
 		var centre = (kernel.Length - 1) / 2;
 		var line = new byte[Math.Max( width, height )];
 		for ( var y = 0; y < height; y++ )

@@ -277,8 +277,8 @@ public sealed partial class ParkHud
 		void Cancel() { if ( Stack.Top == screen ) Stack.Pop(); }
 		void Apply()
 		{
-			if ( Stack.Top != screen ) return;
-			level.RenamePark( first.Text, second.Text );
+			// A refused name (a read-only visit, or lines a save could not hold) keeps the dialog open.
+			if ( Stack.Top != screen || !level.RenamePark( first.Text, second.Text ) ) return;
 			Cancel();
 		}
 		first.Submitted = () => screen.Focus( second );

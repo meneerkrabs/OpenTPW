@@ -105,3 +105,66 @@ public class ParkNameTests
 		Assert.ThrowsException<ArgumentException>( () => images.Replace( "a", "b", new byte[4], new byte[size], 0, Array.Empty<string>() ) );
 	}
 }
+
+/// <summary>A renamed park survives a world save and resume through <see cref="Level"/> (capture, codec, candidate setup, recapture).</summary>
+[TestClass, DoNotParallelize]
+public class ParkNameResumeTests
+{
+	private UpgradeCatalogueDefaultsTests fixture = null!;
+	private const System.Reflection.BindingFlags Private = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+	[TestInitialize]
+	public void Setup() { fixture = new(); fixture.Setup(); }
+	[TestCleanup]
+	public void Cleanup() => fixture.Cleanup();
+
+	[TestMethod]
+	public void ARenamedParkSurvivesSaveAndResume()
+	{
+		var world = ((Level Level, ParkEconomy Economy, OriginalObject One, OriginalObject Two, ParkObjectState State))typeof( UpgradeCatalogueDefaultsTests )
+			.GetMethod( "World", Private )!.Invoke( fixture, new object[] { "", 0, false } )!;
+		var assets = (System.Collections.Generic.Dictionary<string, string>)typeof( UpgradeCatalogueDefaultsTests )
+			.GetMethod( "PrepareCapture", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic )!.Invoke( null, new object[] { world } )!;
+		var level = world.Level;
+		// The synthetic world has no original gate: give it the jungle gate's default lines, as SetupParkName would.
+		typeof( Level ).GetProperty( nameof( Level.ParkName ) )!.SetValue( level, new ParkNameLines( "LOST", "Kingdom" ) );
+		Assert.AreEqual( new ParkNameSaveData( "LOST", "Kingdom" ), level.CaptureResumeSnapshot( null, "before", assets ).ParkName );
+		Assert.IsFalse( level.RenamePark( "a\tb", "" ), "a control character is refused" );
+		Assert.IsTrue( level.RenamePark( "Kevin", "Cosmic Park" ) );
+
+		var saved = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( level.CaptureResumeSnapshot( null, "renamed", assets ) ) );
+		Assert.AreEqual( new ParkNameSaveData( "Kevin", "Cosmic Park" ), saved.ParkName );
+
+		var candidate = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		typeof( Level ).GetField( "resumeState", Private )!.SetValue( candidate, saved );
+		typeof( Level ).GetMethod( "SetupParkName", Private )!.Invoke( candidate, null );
+		Assert.AreEqual( new ParkNameLines( "Kevin", "Cosmic Park" ), candidate.ParkName );
+		Assert.AreEqual( "Kevin Cosmic Park", candidate.ParkName!.DisplayName );
+
+		// A save from before the part restores without a saved name (the gate's default lines come from the gate itself).
+		var older = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		typeof( Level ).GetField( "resumeState", Private )!.SetValue( older, saved with { ParkName = null } );
+		typeof( Level ).GetMethod( "SetupParkName", Private )!.Invoke( older, null );
+		Assert.IsNull( older.ParkName );
+	}
+}
+
+/// <summary>The text field the rename dialog uses never leaves half a surrogate pair in its text.</summary>
+[TestClass]
+public class UiTextFieldSurrogateTests
+{
+	[TestMethod]
+	public void TypingKeepsSurrogatePairsWholeAndBackspaceRemovesThemWhole()
+	{
+		var field = new OpenTPW.UI.Original.UiTextField { MaximumLength = 3 };
+		field.Type( "ab🎢", 0 );
+		Assert.AreEqual( "ab", field.Text, "a pair that does not fit is not inserted half" );
+		field.Type( "", 1 );
+		field.Type( "🎢", 0 );
+		Assert.AreEqual( "a🎢", field.Text );
+		field.Type( "", 1 );
+		Assert.AreEqual( "a", field.Text, "backspace removes the whole pair" );
+		field.Type( "\ud800x\udc00", 0 );
+		Assert.AreEqual( "ax", field.Text, "unpaired surrogates are dropped" );
+		Assert.IsTrue( ParkNameLines.IsValidLine( field.Text ) );
+	}
+}

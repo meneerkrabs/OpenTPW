@@ -41,6 +41,14 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	/// </summary>
 	internal static bool PrototypeVariant => Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_PROTOTYPE" ) is "1" or "true";
 
+	/// <summary>
+	/// The explicit test-fixture option (both phases must set it, with a mod that adds rides active, <c>scripts/smoke-tpi-rides.sh</c>):
+	/// <c>OPENTPW_SMOKE_MODS=1</c> makes the fixture's rides the mod's: the build menu's ride, its second copy and the queues are a
+	/// Theme Park Inc ride that the mod brings into the park, so the save/resume pair proves a modded park natively. The default fixture is unchanged.
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	internal static bool ModVariant => Environment.GetEnvironmentVariable( "OPENTPW_SMOKE_MODS" ) is "1" or "true";
+
 	private readonly GameFlow flow;
 	private readonly string savePath;
 	private readonly string evidenceDirectory;
@@ -695,6 +703,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			ManifestSha256 = CanonicalManifestSha256( verifiedAssets ),
 			PrototypeVariant = PrototypeVariant,
 			WaterVariant = WaterVariant,
+			ModVariant = ModVariant,
 			WaterAtSave = new SmokeWater { Tiles = savedWater.Tiles, Boats = savedWater.Boats },
 			TourVariant = TourVariant,
 			TourAtSave = savedTour,

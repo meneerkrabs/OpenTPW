@@ -735,10 +735,22 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				new System.Numerics.Vector2( 1240, ParkHud.VisitorRowsTop + (visible + 0.5f) * ParkHud.VisitorRowHeight ), UiAnchor.Center ) );
 		} );
 		Wait( "visitor row selected", 3 );
-		Do( "visitor row selected", () =>
+		Do( "visitor row opened the visitor window", () =>
 		{
 			var hud = flow.Hud!;
 			Require( hud.SelectedVisitorId == locatedVisitor!.Id, "clicking a row selects that visitor" );
+			Require( hud.VisitorInfoWindowOpen && !hud.VisitorWindowOpen && hud.Stack.Top?.Name == "visitorInfo" && hud.InfoVisitor?.Id == locatedVisitor.Id,
+				"the row's left click opens the per-visitor window (tp.exe 0x4b79b0) in place of the list" );
+			var capture = CaptureFrame( "visitor-window.png" );
+			VerifyText( capture, hud.VisitorInfoTitle, "visitor window title" );
+			VerifyText( capture, flow.Strings[UIStrings.CashRemaining], "cash remaining label" );
+			Click( hud.Stack.Top!, "allVisitors" );
+		} );
+		Wait( "visitor window returned to the list", 3 );
+		Do( "visitor row selected", () =>
+		{
+			var hud = flow.Hud!;
+			Require( hud.VisitorWindowOpen && !hud.VisitorInfoWindowOpen && hud.SelectedVisitorId == locatedVisitor!.Id, "b_kids returns to the All Visitors list on that visitor" );
 			// Park the camera target in a far corner so the locate has to move it to the visitor.
 			var camera = (ParkCameraMode)Camera.Mode;
 			camera.SetPose( new Vector3( -9999, -9999, 0 ), camera.Height, camera.Yaw );

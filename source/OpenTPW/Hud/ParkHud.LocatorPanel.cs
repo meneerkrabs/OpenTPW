@@ -217,13 +217,13 @@ public sealed partial class ParkHud
 		OpenLocator( LocatorMode.Staff, 0, 0 );
 	}
 
-	/// <summary>Ctrl+V: the visitor locator; with a visitor's info open (a row of the All Visitors window clicked) it locates that visitor at once.</summary>
+	/// <summary>Ctrl+V: the visitor locator; with the per-visitor window open it locates that visitor at once.</summary>
 	public void OpenVisitorLocator()
 	{
 		// [BIN:TPW-EXE:0x004817c0 visitor locator key] while the visitor info window is open (its window word [0x7cc418], +0x10 of the window object 0x7cc408 that 0x4b79b0 opens)
 		// the key opens 0x4b3f60 with the info windows' current thing [0x7c2658] (written by the info window base 0x48d134 and its next/previous buttons), else 0x4b4280;
-		// the visitors list's row click (0x400) opens that window for the row's visitor (0x49351e); the clicked row stands in for it here (the info window is not ported)
-		if ( VisitorWindowOpen && VisitorInfoGuest is { } guest )
+		// the visitors list's row click (0x400) opens that window for the row's visitor (0x49351e), as does a press on a visitor in the park
+		if ( InfoVisitor is { } guest )
 		{
 			OpenLocator( LocatorMode.Visitor, LocatorModel.VisitorRole, guest.Id );
 			return;

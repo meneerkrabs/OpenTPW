@@ -145,7 +145,7 @@ public class FreeWalkCameraReviewTests
 			Input.UpdateButtons();
 			hud.Update( Context(), click, false, false, false );
 		}
-		Assert.AreEqual( guest.Id, hud.SelectedVisitorId, "A fresh park press recovers the existing visitor route." );
+		Assert.AreEqual( guest.Id, hud.InfoVisitor?.Id, "A fresh park press recovers the existing visitor route." );
 	}
 
 	private static ulong Hash( GuestSimulation simulation ) { var hash = new StateHasher(); simulation.AddCanonicalState( hash ); return hash.Value; }

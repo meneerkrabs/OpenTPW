@@ -14,7 +14,8 @@ namespace OpenTPW;
 // [BIN:STP-PPC:engine_shared 0x1ACC8 particle draw] over the emitter slots, culled by bounding box; a camera-facing quad of half-size size/1024 times the sprite scale, rotated by the spin
 // [BIN:STP-PPC:engine_shared 0x1ACC8 blend] untextured: SRC_ALPHA, ONE_MINUS_SRC_ALPHA; render flags 0x2004: SRC_ALPHA, ONE; flags 0x4: ONE, ONE; otherwise the sprite's own alpha blend
 // [BIN:TPW-EXE:0x57C620 draw driver] one quad per particle in slot order 0..119, newest particle first, each with its own blend state; the render flags apply to untextured particles too
-// [APPROX:PTCL-905] OpenTPW draws the quads in the original's order (0x565F90: slots ascending, newest particle first) as runs of one blend, depth-tested without depth writes and with no alpha test; the original gives every particle its own state word (decoder 0x567620): depth writes unless flags 0x4000 add 0x800, an untextured particle opaque (0x1256) when its alpha byte is 0 or >= 0xF0 and by alpha with an alpha test at 0x10/255 (0x556) otherwise, 0x200522 / 0x200552 for the add blends with that alpha test, MAGFILTER point for flags 0x20000, and its two triangles depth-sorted when the state lacks 0x1000/0x2000 (0x565590 -> 0x565490); the particle shader has no alpha test and the materials no depth-writing or opaque variant
+// [EXT:particle-blend-runs] OpenTPW draws the quads in the original's order (0x565F90: slots ascending, newest particle first) as runs of one blend (alpha, source-alpha-over-one, one-plus-one) through its shared material pipeline, not one submission with its own state word per particle
+// [APPROX:PTCL-905] the per-particle state words (decoder 0x567620) are not reproduced: depth writes unless flags 0x4000 add 0x800, an untextured particle opaque (0x1256) when its alpha byte is 0 or >= 0xF0 and by alpha with an alpha test at 0x10/255 (0x556) otherwise, 0x200522 / 0x200552 for the add blends with that alpha test, MAGFILTER point for flags 0x20000, and the triangle depth sort when the state lacks 0x1000/0x2000 (0x565590 -> 0x565490); the particle shader has no alpha test and the materials no depth-writing or opaque variant
 public sealed class ParticleRenderer : Entity
 {
 	private const int VerticesPerQuad = 6;
@@ -219,7 +220,8 @@ public sealed class ParticleRenderer : Entity
 		var centre = originalToEngine( new SVector3( sprite.X, sprite.Y, sprite.Z ) / 64f );
 		// [BIN:TPW-EXE:0x57C6B8 sprite size] half-height = (size << 1) * (1/1024) * 0.5 = size / 1024 original units for every particle; only the width gets a factor
 		// [BIN:TPW-EXE:0x588660 frame aspect] the frame record's float +8 is the frame's width / height (the shorts at +0xC and +0xE), the factor a textured quad's half-width takes; an untextured quad takes DAT_008BCBCC, the display's height / width (0x582EB0)
-		// [APPROX:PTCL-904] the original adds the half-extents in clip space after its world-to-clip transform (0x57C6xx: x +- half-width, y +- half-height, w untouched), so a textured quad is (width / height) x (display width / height) on the screen unless something rescales the +8 after the load (nothing found), and its world size is the half-height / cos(fov / 2) under the original's 90 degree camera; OpenTPW places the half-height in world units under its own 55 degree camera with the frame's pixel aspect, and an untextured quad 1
+		// [EXT:particle-world-scale] OpenTPW places a quad's half-height in world units under its own 55 degree camera (the original's world size is the half-height / cos(fov / 2) under its 90 degree camera, 0x42A990 -> 0x578BE0), and an aspect-correct projection gives an untextured quad its square (DAT_008BCBCC, the display's height / width, 0x582EB0): resolution-independent sizing with no original value to copy
+		// [APPROX:PTCL-904] the original adds the half-extents in clip space after its world-to-clip transform (0x57C6xx: x +- half-width, y +- half-height, w untouched) and a textured quad's width factor is the frame record's float +8 (width / height, 0x588660) with no height / width factor, so it is (width / height) x (display width / height) on the screen unless something rescales +8 after the load (nothing found); OpenTPW uses the frame's pixel aspect
 		var (halfWidth, halfHeight) = HalfExtents( sprite.Size, scale, sprite.FrameCount, found.Width, found.Height );
 		if ( !(halfWidth > 0 && halfHeight > 0) )
 			return false;
@@ -244,7 +246,8 @@ public sealed class ParticleRenderer : Entity
 	/// A screen-space particle's quad, its vertices in clip space (drawn without the camera). The width gets the frame's pixel aspect times the
 	/// target's height / width, so a square frame stays square on the screen.
 	/// </summary>
-	// [APPROX:PTCL-904] a screen-space quad's half-width is the half-height times the frame's width / height (textured) or times DAT_008BCBCC, height / width (untextured) in the original, added in clip space with w = 1 (flag 0x40000); OpenTPW takes the frame's aspect times the target's height / width for a textured one, which keeps a frame's pixels square where the original's has no height / width factor
+	// [EXT:particle-world-scale] a screen-space quad's width also takes the target's height / width, which keeps a frame's pixels square at any resolution (resolution independence)
+	// [APPROX:PTCL-904] the original's screen-space half-width is the half-height times the frame's width / height (textured) or times DAT_008BCBCC, height / width (untextured), added in clip space with w = 1 (flag 0x40000), with no target height / width factor on a textured quad
 	private bool AddScreenQuad( in ParticleSprite sprite, Batch batch, float screenAspect, ref int vertexCount )
 	{
 		var frame = sprite.FrameCount == 0 ? atlas.White : atlas.Find( sprite.SpriteCode, sprite.Frame );

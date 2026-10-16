@@ -267,7 +267,7 @@ public class DeterminismTests
 			park.Sound.Draw();
 			park.Save( path );
 			var saved = park.RandomState;
-			Assert.AreEqual( park.Sound.Seed, saved.SoundSeed, "the chooser's advanced state is what the save holds (AUDIO-037: the original's chooser is clock-seeded and unsaved)" );
+			Assert.AreEqual( park.Sound.Seed, saved.SoundSeed, "the chooser's advanced state is what the save holds ([EXT:sound-chooser-seed]: the original's chooser is clock-seeded and unsaved)" );
 			Assert.AreNotEqual( park.Seed.SoundStream, saved.SoundSeed, "the draw before the save advanced the chooser (tp.exe 0x6bc84c stores every draw's state)" );
 			for ( var tick = 0; tick < 600; tick++ )
 				park.Guests.Tick( Tick );

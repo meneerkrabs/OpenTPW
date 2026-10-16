@@ -26,7 +26,6 @@ public static class RidesApproximations
 		("RIDES-044", "scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 per park script world; the PC clock is the app-lifetime scaled timer 0x785970 never reset for a new park (differs only in absolute GETTIME values)"),
 		("MD2-900", "the slot's frame selection is the PC writer 0x470c90 (the last key at or before the clip time wins, none before the first key keeps the previous frame, later tracks of a slot overwrite earlier ones, hyenasm1 holds two tracks on slot 15); untraced: the draw-path reader of a slot's current frame, whether a slot no bound clip addresses returns to frame 0 (OpenTPW does; the writer never resets), and the fixed-item pose hold is not extended to frames"),
 		("MD2-901", "texture-frame keys naming a frame outside the slot's frame-name list, or a slot the model does not have, are ignored (the one corpus case, Pmegacostm slot 12, addresses a slot its base model lacks); the PC writer 0x470c90 does not check either index, so the original's behaviour depends on the unread consumer of the slot record"),
-		("MD2-902", "a texture frame whose art no searched directory has (including Theme Park Inc tvsim slot 39 frame 3 lt1.tga) retains the effective selected frame; decoded-art availability is registered with the animator so the visible frame survives save/restore")
 	};
 
 	private static bool logged;

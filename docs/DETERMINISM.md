@@ -67,7 +67,7 @@ Found in `source/OpenTPW` (World, Guests, Economy, Objects, VM, Audio) and
 | `OriginalObjectRuntime.nextAttractionId` (static counter) | attraction ids, and through them guest state and the raw guest hash, depended on how many objects the process had created before | ids are now allocated by the park's `RideScriptWorld`; every park starts at 1 |
 | `RideVM`: `new Random()` when no seed was given (prototype Totem, `Ride`, standalone VMs) | RAND/FINDSCRIPTRAND differed on every run | the seed is drawn from the `RideScriptWorld` stream; a world-less VM gets its own default world (state 0) |
 | `Level.RestoreVisitedRide`: prototype ride in its own script world | its attraction id could collide with id 1 of the park's objects | uses `Objects.ScriptWorld` |
-| `GameAudio`: `SoundEventSystem(mixer, Environment.TickCount)` | sound choice (presentation) | the clock seed matches the original's start-up seeding (`QueryPerformanceCounter`, tp.exe `0x72e09c`) and only affects front-end sounds: each park reseeds the chooser in `GameAudio.EnterPark` from `WorldSeed.SoundStream` and saves it (AUDIO-037, the one deviation from the original's unsaved chooser) |
+| `GameAudio`: `SoundEventSystem(mixer, Environment.TickCount)` | sound choice (presentation) | the clock seed matches the original's start-up seeding (`QueryPerformanceCounter`, tp.exe `0x72e09c`) and only affects front-end sounds: each park reseeds the chooser in `GameAudio.EnterPark` from `WorldSeed.SoundStream` and saves it (`[EXT:sound-chooser-seed]`, the one deviation from the original's unsaved chooser) |
 | `Extensions.RandomVector3` → `Random.Shared` | none: it has no callers | kept for presentation and documented as such; `DeterminismTests` fails if simulation folders reference it |
 | `Advisor`: `AdvisorMouth(new Random())` | mouth mesh choice while talking (presentation, clock B) | unchanged; the original also uses the C-library `rand` there (ADVISOR-001 area) |
 | `ParkEconomy.CreateForTheme(seed: 1)` / `Level.GuestSeed` | fixed, not tied to one seed | now derived from the world seed (same values for the default) |
@@ -184,7 +184,7 @@ library init `0x100118C8` writes `CAudioPlaceHolder::mRandomSeed`), which contra
 the PC instructions; the PC reading is used and the Mac reading is to be rechecked
 (docs/AUDIO.md "Mac versus PC"). Because UI clicks and mixer-timed sentence segments now move the
 chooser, its state depends on wall-clock events whenever sound is on: it is not a
-replay guarantee. The park still saves it (AUDIO-037) and reseeds it from the world
+replay guarantee. The park still saves it (`[EXT:sound-chooser-seed]`) and reseeds it from the world
 seed at entry, so headless (`--mute`) runs and tests start from a known state, and it
 stays out of the canonical hash and out of the resume smoke test's composite hash
 (DET-plan §3 D9, §4.5).

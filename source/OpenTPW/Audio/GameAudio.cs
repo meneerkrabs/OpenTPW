@@ -209,7 +209,7 @@ public static class GameAudio
 		AudioApproximations.LogOnce();
 		var mixer = AudioMixer.Open();
 		AudioMixer.Current = mixer;
-		// Clock seed like the original's start-up seeding (tp.exe 0x72e09c, QueryPerformanceCounter); it only colours front-end sounds, since EnterPark reseeds from the park's world seed (AUDIO-037).
+		// Clock seed like the original's start-up seeding (tp.exe 0x72e09c, QueryPerformanceCounter); it only colours front-end sounds, since EnterPark reseeds from the park's world seed ([EXT:sound-chooser-seed]).
 		events = new SoundEventSystem( mixer, (uint)Environment.TickCount );
 		mixer.DuckingLevel = ReadDuckingLevel() / 100f;
 		// [BIN:STP-PPC:0x100BC6F0 sound manager] global categories registered at sound-manager offsets 12 (cat_ui), 20 (cat_speech), 0 (cat_ambient), 8 (cat_rides), 4 (cat_kids), 16 (cat_staff)

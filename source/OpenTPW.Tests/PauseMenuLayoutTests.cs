@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.UI.Original;
 
@@ -31,4 +32,47 @@ public class PauseMenuLayoutTests
 
 	[TestMethod]
 	public void LinesAreTheOriginalCyan() => Assert.AreEqual( new Veldrid.RgbaByte( 0, 175, 190, 255 ), UiColors.MenuItem );
+}
+
+/// <summary>The pause-menu line colour ramp (tp.exe 0x48b2a0, 0x48b220).</summary>
+[TestClass]
+public class MenuLineRampTests
+{
+	[TestMethod]
+	public void EnteringRampsFromGreyToWhiteInEightSteps()
+	{
+		var ramp = new MenuLineRamp();
+		Assert.AreEqual( UiColors.MenuItem, ramp.Color );
+		ramp.Enter();
+		Assert.AreEqual( UiColors.MenuItem, ramp.Color, "nothing changes until the tick" );
+		var greys = new List<int>();
+		for ( var step = 0; step < 8; step++ )
+		{
+			ramp.Step();
+			greys.Add( ramp.Color.R );
+			Assert.AreEqual( ramp.Color.R, ramp.Color.G );
+			Assert.AreEqual( ramp.Color.R, ramp.Color.B );
+		}
+		CollectionAssert.AreEqual( new[] { 0x21, 0x41, 0x61, 0x81, 0xa1, 0xc1, 0xe1, 0xff }, greys );
+		Assert.AreEqual( 0, ramp.Slot, "then idle" );
+		ramp.Step();
+		Assert.AreEqual( new Veldrid.RgbaByte( 255, 255, 255, 255 ), ramp.Color );
+	}
+
+	[TestMethod]
+	public void LeavingRestoresTheCyanOnTheNextTick()
+	{
+		var ramp = new MenuLineRamp();
+		ramp.Enter();
+		ramp.Step();
+		ramp.Step();
+		ramp.Leave();
+		Assert.AreEqual( 0x41, ramp.Color.R, "the colour holds until the tick" );
+		ramp.Step();
+		Assert.AreEqual( UiColors.MenuItem, ramp.Color );
+		for ( var step = 0; step < 10; step++ )
+			ramp.Step();
+		Assert.AreEqual( 0, ramp.Slot );
+		Assert.AreEqual( UiColors.MenuItem, ramp.Color );
+	}
 }

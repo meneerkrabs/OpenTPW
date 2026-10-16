@@ -113,7 +113,8 @@ public static class UiDialogs
 	// previous line's bottom + 5 (0x48c240); 0x492f60 measures the text in the slot's font (0x4929f0) and makes the line (text width + 1) x 2048 / screen width wide and
 	// (text height + 5) x 1536 / screen height high, centred in its parent, the full-canvas lolight window (0,0)-(2047,1535) of 0x492e80
 	// [APPROX:UI-013] the line height follows OpenTPW's menu font, which is not the original's bank pick ([EXT:ui-font-tier-by-scale]), and its text layout box stands in for the measure 0x4929f0;
-	// the online state's top of 0 (FUN_005b6450) is not followed, and the focused line's ramp from grey 0x21 to white (0x48b2a0 starts it on message 0x10001, 0x48b220 steps it by 0x20 on every message 0x1e, eight frames at the 60 Hz reference) is drawn as plain white
+	// the online state's top of 0 (FUN_005b6450) is not followed
+	// [BIN:TPW-EXE:0x48b2a0 pause line ramp] the focused line's colour ramps from grey 0x21 in steps of 0x20 to white over eight frames (UiMenuItem, MenuLineRamp)
 	public static UiScreen TextMenu( string name, IReadOnlyList<(string Id, Func<string> Text, Action Clicked, bool Enabled)> items, Action back, string? focus = null )
 	{
 		var screen = new TextMenuScreen( name );

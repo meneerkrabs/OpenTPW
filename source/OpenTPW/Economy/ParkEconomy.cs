@@ -748,7 +748,7 @@ public sealed class ParkEconomy : IParkEconomy
 				if ( RideBreakdownRules.BreaksDown( info.ProvidesRelief, item.ScriptHosted ? item.ScriptBreakStat : 0, (float)item.LifeGauge, (float)item.Repair ) )
 				{
 					item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
-					// [APPROX:ECON-023] an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN), but the state word is split between the visitor bridge (states 1 and 4, told apart by the life gauge the level mirrors into it, QUEUE-019 retired) and the economy's broken flag, which the level joins on the rising edge of the bridge's state, and a headless economy without ride scripts breaks an object down at once and repairs it without the wait — evidence needed: none for the routines (read); one state word needs the bridge's and the economy's records merged
+					// [EXT:ride-state-word] [EXT:headless-economy-breakdown] (user-approved) an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN); the one state word is split between the visitor bridge (states 1 and 4, told apart by the life gauge the level mirrors into it) and the economy's broken flag, which the level joins on the rising edge of the bridge's state, and the headless test and tool economy without ride scripts breaks an object down at once and repairs it without the wait, where a level runs the scripts
 					if ( item.ScriptHosted )
 						WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
 					else
@@ -1008,7 +1008,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// Either job keeps him busy for <c>HandymanConstsPerGrade[grade].WorkDuration</c> park turns and the update that ends it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D7100 handyman job search] after the strike/rest gate (0x00506A40) and the too-tired gate (energy byte below RestLevel), the litter finder 0x004C8ED0 scans the cells within DetectionRange (x outer, y inner) for litter claimed by nobody or by him and takes the nearest by Manhattan distance; only without litter does 0x004D7880 look for a toilet flagged by mRequestedService, or one whose gauge byte is below 25 within DetectionRange; a sweep or a clean ends when the turn passes the arrival stamp + WorkDuration[grade] (0x004D76A0, 0x004D73C0; the grade table 0x007853EC {WorkDuration, DetectionRange, PoundsPerTrainingPoint})
-	// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateStaff): without a world the handymen have no position, so a free handyman takes the first unclaimed littered cell in the finder's scan order, park-wide, else the dirtiest toilet, timed from the dispatch
+	// [EXT:headless-economy-dispatch] (user-approved, test and tool economy only; a level runs the staff world): without a world the handymen have no position, so a free handyman takes the first unclaimed littered cell in the finder's scan order, park-wide, else the dirtiest toilet, timed from the dispatch
 	private void DispatchHandymen()
 	{
 		var role = Settings[StaffType.Handyman];

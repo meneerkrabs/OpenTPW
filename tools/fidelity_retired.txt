@@ -111,6 +111,7 @@ ECON-018 docs/reverse/APPROX-TRACE.md
 ECON-019 docs/reverse/APPROX-TRACE.md
 ECON-020 docs/ECONOMY.md
 ECON-021 docs/reverse/APPROX-TRACE.md
+ECON-023 docs/ECONOMY.md
 ECON-024 docs/reverse/APPROX-TRACE.md
 ECON-025 docs/reverse/APPROX-TRACE.md
 ECON-027 docs/reverse/APPROX-TRACE.md
@@ -135,6 +136,7 @@ ECON-046 docs/reverse/APPROX-TRACE.md
 ECON-047 docs/reverse/RIDE-WEAR.md
 ECON-048 docs/reverse/ORACLE.md
 ECON-052 docs/PROGRESS.md
+ECON-054 docs/ECONOMY.md
 ECON-055 docs/ECONOMY.md
 ECON-056 docs/progress/2026-10-16-economy-and-saves-sweep.md
 GATE-001 docs/M3-GATE.md
@@ -295,8 +297,8 @@ UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md
 UI-065 docs/PROGRESS.md
-UI-080 docs/UI.md
 UI-066 docs/COMPATIBILITY.md
+UI-080 docs/UI.md
 UI-083 docs/PROGRESS.md
 UI-084 docs/PROGRESS.md
 UI-088 docs/UI.md

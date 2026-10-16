@@ -11,7 +11,10 @@ A pass over the economy approximations, read in tp.exe via REA:
 - **ECON-026 and ECON-030** (partly built, narrowed): the guest-census cache with analyser age tests (`CachedGuestCensus`,
   `CrowdPhaseTurn`), and `KartBestCrossings` / `TrackRideSections` for challenge types 15 and 21.
 - **ECON-058** (partly built, narrowed): the challenge time-short event (message 271) goes through the advisor and the HUD captions.
-- **ECON-017, ECON-054, ECON-059** narrowed; **ECON-023** unchanged (a split state word and the headless breakdown remain).
+- **User-approved EXT conversions:** ECON-054 is closed as `[EXT:headless-economy-dispatch]`; ECON-023 is closed as
+  `[EXT:headless-economy-breakdown]` plus `[EXT:ride-state-word]` (its routines were already read); ECON-022 is split, its headless
+  handyman dispatch being `[EXT:headless-economy-dispatch]`. They exist only in the test and tool economy without a map.
+- **ECON-017, ECON-059** narrowed.
 - **SAVE-005** text no longer cites the retired ECON-055.
 
 Saves: `AnalyserCaches.GuestCensus` and `CrowdPhaseTurn` are new optional fields validated on load; old saves still load.

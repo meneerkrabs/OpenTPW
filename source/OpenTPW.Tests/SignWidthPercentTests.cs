@@ -49,15 +49,16 @@ public class SignWidthPercentTests
 	}
 
 	[TestMethod]
-	public void ASignLineKeepsThirtyTwoCharactersAndLineOneLosesATrailingDoubleHyphen()
+	public void ASignLineKeepsThirtyTwoCharactersAndLineOneLosesOneDashOfATrailingDoubleHyphen()
 	{
 		Assert.AreEqual( 32, BonusNames.SignLineCharacters );
-		Assert.AreEqual( "Mighty Mayhem", BonusNames.StripTrailingDashes( "Mighty Mayhem--" ) );
-		Assert.AreEqual( "Mighty Mayhem-", BonusNames.StripTrailingDashes( "Mighty Mayhem-" ) );
-		Assert.AreEqual( "-", BonusNames.StripTrailingDashes( "-" ) );
-		Assert.AreEqual( "", BonusNames.StripTrailingDashes( "--" ) );
-		Assert.AreEqual( "A--B", BonusNames.StripTrailingDashes( "A--B" ) );
-		Assert.AreEqual( "x-", BonusNames.StripTrailingDashes( "x---" ) );
+		// 0x4E2860 terminates the copy at length - 1: one of the two dashes goes.
+		Assert.AreEqual( "Mighty Mayhem-", BonusNames.StripTrailingDash( "Mighty Mayhem--" ) );
+		Assert.AreEqual( "Mighty Mayhem-", BonusNames.StripTrailingDash( "Mighty Mayhem-" ) );
+		Assert.AreEqual( "-", BonusNames.StripTrailingDash( "-" ) );
+		Assert.AreEqual( "-", BonusNames.StripTrailingDash( "--" ) );
+		Assert.AreEqual( "A--B", BonusNames.StripTrailingDash( "A--B" ) );
+		Assert.AreEqual( "x--", BonusNames.StripTrailingDash( "x---" ) );
 	}
 
 	[TestMethod]

@@ -231,6 +231,11 @@ reach my patrol area"); inside, the steps that leave it are removed, and with no
   broken or upgrading ride, walk to it and repair or upgrade it from their arrival (§4). Every staff role now walks.
 - **Phase 8 (ECON-049, ECON-022), done.** The player calls a mechanic or a handyman from the ride panel and draws an employee's patrol
   area with two clicks; the wander keeps staff inside it (§4).
+- **Staff on the original walk (ECON-022), done.** Staff walk the guests' walk (`0x4fa2a0` → `0x50f3b0`: the route search, avoid_walls,
+  follow_path and separation over the guests and staff around, the walk mask `+0x188` the strike walk and a guard's second booth route
+  raise). A claim on a ride or toilet lapses 100 turns after it was taken once its claimant no longer targets it (`0x4e0220`); the
+  mechanic HQ's cursor starts each ride search one object after the last (`0x4daa90`); selling the rest area a member rests in sends him
+  on to the nearest other one (`0x504c70`).
 - **Phase 9 (ECON-044, GUEST-007), done in the simulation.** Balloon and costume shops give guests a balloon with a life or a costume
   (`0x4fe1e0`); a ride puts the balloon away and gives it back, the life runs out on the needs phase, and balloon pranksters burst other
   guests' balloons (docs/GUESTS.md "Balloons and costumes"). Guests in costume are drawn with the theme's costume set, and

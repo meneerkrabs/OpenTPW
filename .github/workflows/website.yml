@@ -1,13 +1,14 @@
 name: Website
 # Publishes website/ to Cloudflare Pages (project "opentpw", served at opentpw.io).
 # Needs the repository secret CLOUDFLARE_API_TOKEN, a token limited to Cloudflare Pages: Edit.
-# Pull requests validate the generated pages; only main deploys.
+# Pull requests validate the generated pages; only main deploys. The fidelity register is generated here from the
+# source annotations (it is not committed), so source changes rebuild the site too.
 on:
   push:
     branches: [main]
-    paths: ['website/**', 'docs/**', 'README.md', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
+    paths: ['website/**', 'docs/**', 'README.md', 'source/**/*.cs', 'tools/fidelity_register.py', 'tools/fidelity_retired.txt', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
   pull_request:
-    paths: ['website/**', 'docs/**', 'README.md', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
+    paths: ['website/**', 'docs/**', 'README.md', 'source/**/*.cs', 'tools/fidelity_register.py', 'tools/fidelity_retired.txt', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -25,6 +26,7 @@ jobs:
           python-version: '3.12'
       - name: Test and build the static documentation
         run: |
+          python3 -I -B tools/fidelity_register.py --write
           python3 -I -B tools/test_site_docs.py
           python3 -I -B tools/test_check_site.py
           python3 -I -B tools/test_site_status.py
@@ -61,6 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          python3 -I -B tools/fidelity_register.py --write
           python3 -I -B tools/site_docs.py
           gh api "repos/${{ github.repository }}/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=50" > "$RUNNER_TEMP/pulls.json" || echo "::notice::GitHub API unavailable; recent progress comes from git history."
           python3 -I -B tools/site_status.py --pulls-json "$RUNNER_TEMP/pulls.json"

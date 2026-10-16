@@ -18,6 +18,15 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[4]
+
+
+def register_document() -> str:
+    """The fidelity register as tools/fidelity_register.py generates it (the document is not committed)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('fidelity_register', REPO / 'tools' / 'fidelity_register.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.render(module.collect(REPO))
 SOURCE = REPO / 'source' / 'OpenTPW'
 TEST = REPO / 'source' / 'OpenTPW.Tests' / 'DeterminismTests.cs'
 
@@ -156,7 +165,7 @@ class MergedGateDocs(unittest.TestCase):
         # cannot leave a stale count; the generated document carries its formatted count.
         self.assertIn('the {in_words(data.register_count)} configured C# registers', tool)
         expected_count = words[count] if count < len(words) else str(count)
-        self.assertIn(f'the {expected_count} configured C# registers', read(REPO / 'docs' / 'FIDELITY-REGISTER.md'))
+        self.assertIn(f'the {expected_count} configured C# registers', register_document())
 
 
 if __name__ == '__main__':

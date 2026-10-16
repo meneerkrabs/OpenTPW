@@ -207,6 +207,11 @@ your own edition of the game.
 2. Keep repository text in English, never commit original game files or binaries, and tag every
    behaviour you could not trace to the original as an approximation (see the
    [fidelity register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
+   `python3 tools/fidelity_register.py --check` validates the tags and their declarations;
+   `python3 tools/fidelity_register.py --write` generates the register locally as
+   `docs/FIDELITY-REGISTER.md`. That file is a build artifact: it is not committed, and the website
+   publishes the copy generated from `main`. When an ID is retired, `--write` also records it in
+   `tools/fidelity_retired.txt`, which is committed.
 3. Run the tests (`dotnet test source/OpenTPW.Tests`; tests that need original files run when
    `OPENTPW_GAME_PATH` points at your game folder) and open a pull request.
 

@@ -1718,9 +1718,42 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool Wander( Guest guest )
 	{
 		var start = (X: guest.CellX, Y: guest.CellY);
-		if ( GuestWander.Pick( Grid, start, () => random.NextWord() ) is not { } destination )
+		var cells = Grid.Cells;
+		// [BIN:TPW-EXE:0x004F94C6 stranded hold] a guest that found no way on is marked with the stamp counter (+0x198): while no block around its cell (the queue's tail for a queue cell) has been stamped above the mark (0x004FA770) the wander thinks "Confused" (0x0050BE80, 0x11) and returns before any draw
+		if ( guest.StrandedMark != 0 && cells.StampCounter + 1 < guest.StrandedMark )
+			guest.StrandedMark = 0;
+		if ( guest.StrandedMark != 0 && StrandedHolds( guest, start ) )
+		{
+			Think( guest, GuestThought.Confused );
 			return false;
-		// [BIN:TPW-EXE:0x004F9490 wander route] the picked destination is a SetDest (0x00510100), whose search decides success; a failed search leaves the walk stuck (the route cells below are the M3 gate's bookkeeping)
+		}
+		guest.StrandedMark = 0;
+		bool Route( (int X, int Y) cell )
+		{
+			// [BIN:TPW-EXE:0x004F9490 wander route] the picked destination is a SetDest (0x00510100), whose search decides success; a failed search leaves the walk stuck (the route cells below are the M3 gate's bookkeeping)
+			var path = Grid.FindPath( start.X, start.Y, cell.X, cell.Y );
+			SetDestination( guest, GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte ), path );
+			if ( !guest.Navigation.Stuck )
+				return true;
+			guest.HasWaypoint = false;
+			return false;
+		}
+		if ( (cells.LinksAt( start.X, start.Y ) & 0x55) == 0 )
+		{
+			// [BIN:TPW-EXE:0x004F9490 start without links] the step count R % 5 is drawn first, then the search for a path cell around the start (0x522810 below 1)
+			random.NextWord();
+			return GuestWander.OffPath( Grid, start, () => random.NextWord(), Route );
+		}
+		if ( GuestWander.Pick( Grid, start, () => random.NextWord() ) is not { } destination )
+		{
+			// [BIN:TPW-EXE:0x004F9D6E stranded] a guest (not a staff member) whose cell has links but no candidate is "stranded at time": thought Confused and the mark, raised stamp counter
+			if ( (Grid.IsWalkable( start.X, start.Y ) || Grid.IsQueue( start.X, start.Y )) && GuestWander.OriginalCandidates( Grid, start ) == 0 && (cells.LinksAt( start.X, start.Y ) & 0x55) != 0 )
+			{
+				Think( guest, GuestThought.Confused );
+				guest.StrandedMark = cells.StampCounter + 1;
+			}
+			return false;
+		}
 		var route = Grid.FindPath( start.X, start.Y, destination.Cell.X, destination.Cell.Y );
 		SetDestination( guest, GuestNavigation.BytePoint( destination.Cell, destination.ByteX, destination.ByteY ), route );
 		if ( guest.Navigation.Stuck )
@@ -1729,6 +1762,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return false;
 		}
 		return true;
+	}
+
+	/// <summary>Whether the stranded guest stays stranded: no block of the nine cells around its cell, or around its queue's tail, carries a stamp at or above its mark (<c>0x004FA770</c>).</summary>
+	// [BIN:TPW-EXE:0x004FA770 stranded test] the reference is the guest's cell, or for a queue cell (0x00536320) the cell reached by following the predecessor links (0x004DE670) to the end; the nine cell offsets (−1..1, −1..1) of the table 0x007CED88 give block stamps (0x004D8CA0) and the guest stays stranded while their largest is below the mark
+	private bool StrandedHolds( Guest guest, (int X, int Y) start )
+	{
+		var cell = start;
+		if ( Grid.IsQueue( cell.X, cell.Y ) )
+		{
+			for ( var guard = 0; guard < 1024; guard++ )
+			{
+				if ( RideVisitorBridge.NextQueueCell( Grid, cell ) is not { } behind )
+					break;
+				cell = behind;
+			}
+		}
+		var id = (ushort)(cell.Y * 128 + cell.X + 1);
+		var largest = 0;
+		for ( var dy = -1; dy <= 1; dy++ )
+		{
+			for ( var dx = -1; dx <= 1; dx++ )
+			{
+				var offset = (uint)(ushort)(id + dy * 128 + dx) - 1;
+				largest = Math.Max( largest, Grid.Cells.BlockStamp( (int)((offset & 0x7F) >> 4), (int)(offset >> 11) ) );
+			}
+		}
+		return largest < guest.StrandedMark;
 	}
 
 	/// <summary>
@@ -2904,6 +2964,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			QueueStandingSinceTurn = guest.QueueStandingSinceTurn,
 			RideWalkCount = guest.RideWalkCount,
 			BoothWait = guest.BoothWait,
+			StrandedMark = guest.StrandedMark,
 			InterludeTurn = guest.InterludeTurn,
 			InQueueInterlude = guest.InQueueInterlude,
 			Activity = guest.Activity,
@@ -3189,6 +3250,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} QueueCellIndex {guest.QueueCellIndex} is negative." );
 			if ( guest.RideWalkCount is < 0 or > 11 )
 				Error( $"Guest {guest.Id} RideWalkCount {guest.RideWalkCount} is outside 0..11 (the byte +0x2C resets past 11)." );
+			if ( guest.StrandedMark < 0 )
+				Error( $"Guest {guest.Id} StrandedMark {guest.StrandedMark} is negative." );
 			if ( guest.BoothWait is < 0 or > 2 * BoothVerdict.ExpensiveWaitBase )
 				Error( $"Guest {guest.Id} BoothWait {guest.BoothWait} is outside 0..{2 * BoothVerdict.ExpensiveWaitBase}." );
 			Finite( guest.Id, guest.HeadingX, nameof( guest.HeadingX ) );
@@ -3442,6 +3505,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueStandingSinceTurn = snapshot.QueueStandingSinceTurn;
 		guest.RideWalkCount = Math.Clamp( snapshot.RideWalkCount, 0, 11 );
 		guest.BoothWait = Math.Clamp( snapshot.BoothWait, 0, 2 * BoothVerdict.ExpensiveWaitBase );
+		guest.StrandedMark = Math.Max( 0, snapshot.StrandedMark );
 		guest.InterludeTurn = snapshot.InterludeTurn;
 		guest.InQueueInterlude = snapshot.InQueueInterlude;
 		guest.Activity = snapshot.Activity;
@@ -3593,6 +3657,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				hash.Add( 0x52574B00L + guest.RideWalkCount );
 			if ( guest.BoothWait != 0 )
 				hash.Add( 0x42574100L + guest.BoothWait );
+			if ( guest.StrandedMark != 0 )
+				hash.Add( 0x53545200L + guest.StrandedMark );
 			hash.Add( guest.InterludeTurn );
 			hash.Add( guest.InQueueInterlude );
 			hash.Add( guest.QueueJoinHappiness );

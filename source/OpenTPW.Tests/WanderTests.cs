@@ -86,6 +86,73 @@ public class WanderTests
 		Assert.IsNull( GuestWander.Pick( grid, (0, 0), Draws( 3 ) ) );
 	}
 
+	private static bool Wander( GuestSimulation simulation, Guest guest ) =>
+		(bool)typeof( GuestSimulation ).GetMethod( "Wander", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.Invoke( simulation, new object[] { guest } )!;
+
+	[TestMethod]
+	public void AStrandedGuestThinksConfusedAndSearchesNoMoreUntilACellNearItIsEdited()
+	{
+		// [BIN:TPW-EXE:0x004F9D6E] no candidate left on a linked cell: thought Confused (0x11), the mark; [BIN:TPW-EXE:0x004FA770] held while no block around the cell is stamped above it
+		var grid = new GuestPathGrid( 40, 40 );
+		grid.SetPath( 3, 3, true, connections: 0b0010 );
+		grid.SetQueue( 4, 3, 1 );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 3, 3 );
+		Assert.IsFalse( Wander( simulation, guest ) );
+		Assert.AreEqual( GuestThought.Confused, guest.Thought );
+		Assert.AreEqual( grid.Cells.StampCounter + 1, guest.StrandedMark, "the stamp counter raised by one" );
+		guest.Thought = GuestThought.None;
+		var draws = simulation.RandomState;
+		Assert.IsFalse( Wander( simulation, guest ) );
+		Assert.AreEqual( GuestThought.Confused, guest.Thought, "still stranded: Confused again" );
+		Assert.AreEqual( draws, simulation.RandomState, "and no draw is taken" );
+		// an edit in a block outside the nine cells around it changes nothing
+		grid.SetPath( 30, 30, true );
+		Assert.IsFalse( Wander( simulation, guest ) );
+		Assert.AreNotEqual( 0, guest.StrandedMark );
+		// an edit of a cell beside it releases the guest: the next search runs again (and strands it again, its link still leads nowhere)
+		grid.SetPath( 2, 3, true );
+		var stamp = guest.StrandedMark;
+		Assert.IsFalse( Wander( simulation, guest ) );
+		Assert.AreNotEqual( draws, simulation.RandomState, "the search drew again" );
+		Assert.IsTrue( guest.StrandedMark > stamp, "and marked the guest with a newer stamp" );
+	}
+
+	[TestMethod]
+	public void TheStrandedMarkIsSavedAndASaveWithoutOneRestoresNone()
+	{
+		var grid = new GuestPathGrid( 12, 12 );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		grid.SetPath( 3, 3, true );
+		var guest = simulation.SpawnInPark( 3, 3 );
+		guest.StrandedMark = 17;
+		var bytes = ParkResumeJson.Serialize( simulation.CaptureSnapshot() );
+		var restored = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		restored.RestoreSnapshot( ParkResumeJson.Deserialize<GuestSimulationSnapshot>( bytes ) );
+		Assert.AreEqual( 17, restored.Guests.Single().StrandedMark );
+		Assert.AreEqual( simulation.ComputeStateHash(), restored.ComputeStateHash() );
+		var json = System.Text.Json.Nodes.JsonNode.Parse( bytes )!;
+		json["Guests"]![0]!.AsObject().Remove( "StrandedMark" );
+		restored.RestoreSnapshot( ParkResumeJson.Deserialize<GuestSimulationSnapshot>( System.Text.Encoding.UTF8.GetBytes( json.ToJsonString() ) ) );
+		Assert.AreEqual( 0, restored.Guests.Single().StrandedMark );
+		guest.StrandedMark = 0;
+		Assert.AreNotEqual( simulation.ComputeStateHash(), 0UL );
+	}
+
+	[TestMethod]
+	public void AGuestOnACellWithoutLinksSearchesTheCellsAroundItForAPathCell()
+	{
+		// [BIN:TPW-EXE:0x004F99F8] eight patterns at the distances 0 to 3; the first path cell a route reaches
+		var grid = Row( 10 );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 3 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 5, 0 );
+		grid.Cells.SetType( 5, 0, ParkCellType.Empty );
+		grid.Cells.SetLinks( 5, 0, 0 );
+		Assert.IsTrue( Wander( simulation, guest ) );
+		Assert.AreEqual( (6, 0), (guest.Navigation.TargetX >> 16, guest.Navigation.TargetY >> 16), "pattern (t, 0) at t = 1 is the first path cell: (6, 0)" );
+		Assert.AreEqual( GuestWander.CentreByte, (guest.Navigation.TargetX >> 8) & 0xFF );
+	}
+
 	[TestMethod]
 	public void AStepFollowsTheCurrentCellsOwnLinks()
 	{

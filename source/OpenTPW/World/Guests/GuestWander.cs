@@ -28,6 +28,76 @@ public static class GuestWander
 	/// its own centre; null when the start is no path cell or its links lead to no path cell (stranded).
 	/// </summary>
 	// [BIN:TPW-EXE:0x004F9490 wander destination] rand % 5 at entry (0x004F9534); a do-while over the steps whose counter becomes 1 again when a step ends on the start cell with the counter at 0 (0x004F98F5); per step the current cell's links (0x00522770, & 0x55) in the order 16, 4, 1, 64, the count from 0x00522810; fewer than two left: the first in order (no draw); else the first from rand & 3 (0x004F9874) that is neither empty nor the way back ((i − 2) & 3 of the last step, 9999 before the first); then two draws & 0x7F, each clamped to 5..123 (0x004F9922)
+	/// <summary>
+	/// The links of <paramref name="cell"/> the original keeps as candidates of a step (<c>0x004F9490</c>): every cardinal link except, on a path cell, those toward
+	/// queue cells (types 3 and 9), on a queue cell (not the ride's entrance cell) its own queue link's direction, and on any cell those toward type-10 cells. A guest
+	/// whose count is 0 is stranded.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F97E4 candidate removals] a type-1 cell loses the links to queue cells (0x00536310, 0x00536320); a queue cell (0x00536320 and not 0x00536340) loses the direction of its own queue link (0x00522850); every cell loses the links to type-10 cells (0x00536350); a count below 2 takes the first one left, none left is stranded
+	public static int OriginalCandidates( GuestPathGrid grid, (int X, int Y) cell )
+	{
+		var links = (byte)(grid.Cells.LinksAt( cell.X, cell.Y ) & AllLinks);
+		var type = grid.Cells.RawTypeAt( cell.X, cell.Y );
+		var ownQueueLink = type == (byte)ParkCellType.Queue ? grid.Cells.QueueLinkAt( cell.X, cell.Y ) : (byte)0;
+		var count = 0;
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var bit = GuestPathGrid.LinkValue( direction );
+			if ( (links & bit) == 0 || bit == ownQueueLink )
+				continue;
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			var target = grid.Cells.RawTypeAt( cell.X + dx, cell.Y + dy );
+			if ( target == 10 || (type == (byte)ParkCellType.Path && target is (byte)ParkCellType.Queue or 9) )
+				continue;
+			count++;
+		}
+		return count;
+	}
+
+	/// <summary>
+	/// The destination search of a start cell without links (<c>0x004F9490</c>, <c>0x522810</c> below 1): for each of eight direction patterns at the distances 0 to 3 the
+	/// first path cell (type 1) a route reaches, then up to five random cells within five of the start that a route reaches. <paramref name="route"/> sets the walk to a
+	/// cell's centre and tells whether the search found one. The wander's first draw (the step count) has been taken by the caller.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F99F8 off-path candidates] 8 patterns (0, 0), (t, t), (t, 0), (t, −t), (0, −t), (−t, −t), (−t, 0), (−t, t) for t = 0..3, outer loop the pattern, inner the distance; the cell id is the start id plus (dy << 7) + dx in 16 bits, its cell is (id − 1) & 0x7F, (id − 1) >> 7; kept when inside 0..127 (0x004D8300) and of type 1 (0x00536310), then a SetDest (0x00510100) to the cell centre (0x80, 0x80): the first that finds a route wins
+	// [BIN:TPW-EXE:0x004F9BF2 random candidates] five tries of two draws each, x + (R1 % 11 − 5) and y + (R2 % 11 − 5), kept when inside 0..127 (no type test) and routed to the cell centre; none found returns 0 without a stranded mark
+	public static bool OffPath( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<(int X, int Y), bool> route )
+	{
+		var startId = (ushort)(start.Y * 128 + start.X + 1);
+		for ( var pattern = 0; pattern < 8; pattern++ )
+		{
+			for ( var t = 0; t < 4; t++ )
+			{
+				var (dx, dy) = pattern switch
+				{
+					0 => (0, 0),
+					1 => (t, t),
+					2 => (t, 0),
+					3 => (t, -t),
+					4 => (0, -t),
+					5 => (-t, -t),
+					6 => (-t, 0),
+					_ => (-t, t)
+				};
+				var id = (ushort)((dy << 7) + dx + startId);
+				var offset = (uint)id - 1;
+				var cell = ((int)(offset & 0x7F), (int)(offset >> 7));
+				if ( cell.Item1 < 128 && cell.Item2 < 128 && grid.InBounds( cell.Item1, cell.Item2 ) && grid.Cells.RawTypeAt( cell.Item1, cell.Item2 ) == (byte)ParkCellType.Path && route( cell ) )
+					return true;
+			}
+		}
+		for ( var attempt = 0; attempt < 5; attempt++ )
+		{
+			var first = draw();
+			var second = draw();
+			var x = (int)(first % 11) - 5 + start.X;
+			var y = (int)(second % 11) - 5 + start.Y;
+			if ( x >= 0 && y >= 0 && x < 128 && y < 128 && grid.InBounds( x, y ) && route( (x, y) ) )
+				return true;
+		}
+		return false;
+	}
+
 	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea = null ) =>
 		Pick( grid, start, draw, inArea, out _ );
 
@@ -39,7 +109,7 @@ public static class GuestWander
 	{
 		areaBlocked = false;
 		var remaining = draw() % 5;
-		// [APPROX:GUEST-010] off the linked paths the original (0x4F9490, start cell without links) tries its own cell, then seven directions at distances 0..3 for a path cell a route reaches (centre point, 0x80), then five random cells within ±5; the search meets the own cell first, so a path cell without links gives its own centre, which is all OpenTPW models: a guest on a cell that is no path cell finds no destination, where the original walks the links of a linked cell of any type; a stranded guest is not marked (+0x198, a stamp of the global counter 0x4D8C50, animation 0x11, held while 0x4FA770 sees no newer region stamp), so it draws again on its next try — evidence needed: none (read); OpenTPW's routes start on path cells
+		// [APPROX:GUEST-010] a linked start cell that is no path cell finds no destination here (a start without links takes the off-path search, OffPath, and a linked path or queue cell the link walk below), where the original walks the links of a linked cell of any type (0x4F9490); OpenTPW's routes start on path cells
 		// [BIN:TPW-EXE:0x004F9490 queue start] the link walk starts from any cell that has links, a queue cell (type 3) included: a guest the queue let go stands on its queue cell and wanders from there (QUEUE-010)
 		if ( !grid.IsWalkable( start.X, start.Y ) && !grid.IsQueue( start.X, start.Y ) )
 			return null;

@@ -152,6 +152,8 @@ public sealed class Guest
 	public int RideWalkCount { get; internal set; }
 	/// <summary>Park turns an expensive verdict still holds the guest at the booth (+0x200, tp.exe 0x004FF9D0): one is counted per turn, the verdict runs again as the last reaches 0.</summary>
 	public int BoothWait { get; internal set; }
+	/// <summary>The stranded mark (tp.exe <c>+0x198</c>): the cell map's stamp counter raised by one when the wander found no way on, 0 for none; the guest does not search again until a cell edit near it stamps a block above it.</summary>
+	public int StrandedMark { get; internal set; }
 	public int LastAttractionId { get; internal set; }
 	/// <summary>The attractions the guest used last, newest first (guest <c>+480..+486</c>); the score divides by 5, 4, 3 or 2 for the first match. 0 = empty slot.</summary>
 	public int[] UsedHistory { get; } = new int[HistorySlots];

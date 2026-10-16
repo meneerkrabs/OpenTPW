@@ -100,7 +100,7 @@ public sealed class UiFonts
 	{
 		this.load = load;
 		Tier = tier;
-		// [APPROX:UI-002] which shipped font serves which role per tier: the original's controls name a bank slot (0x485a70; options labels 6, buy list rows 7) whose fonts differ per bank (docs/UI.md) — evidence needed: the slot each screen's controls use
+		// [APPROX:UI-002] which shipped font serves which role per tier: the original's controls name a bank slot (0x485a70: menu lines 0, HUD cash 1, HUD date 3, window labels 6, list rows 7) whose fonts differ per bank (docs/UI.md); OpenTPW's Label and Small roles do not follow slot 6 — evidence needed: captures of the original's window text at each mode
 		var (title, menu, label, small, cash, heading) = tier switch
 		{
 			UiFontTier.Small => ("TITLESMALL", "MENUSMALL", "GAME10AA", "GAME8AA", "GAMEBOLD10", "SESHSMALL"),
@@ -211,7 +211,8 @@ public static class UiColors
 	public static readonly RgbaByte Title = new( 255, 214, 64, 255 );
 	public static readonly RgbaByte Value = new( 150, 255, 120, 255 );
 	/// <summary>The pause menu's text lines: cyan, white while focused (video 27:42).</summary>
-	public static readonly RgbaByte MenuItem = new( 0, 173, 218, 255 );
+	// [BIN:TPW-EXE:0x48b2b9 pause line colour] the line procedure 0x48b2a0 gives a line the colour (0, 175, 190, 255) on message 0x11 and again when it loses the focus (0x48b220)
+	public static readonly RgbaByte MenuItem = new( 0, 175, 190, 255 );
 	public static readonly RgbaByte MenuItemFocused = new( 255, 255, 255, 255 );
 	/// <summary>Red text of costs (the hire window's mini balance rows, video 12:00).</summary>
 	public static readonly RgbaByte Negative = new( 255, 40, 40, 255 );

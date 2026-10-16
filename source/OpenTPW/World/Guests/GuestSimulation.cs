@@ -71,6 +71,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool deliveringArrivals;
 	private float spawnTimer;   // kept for the save format; arrivals step once per park turn (ARRIVAL-001)
 	private int pendingArrivals;
+	// The arrival vehicle at work (world +0x1DA72A): the kind of ArrivalVehicleKind, -1 for none.
+	private int arrivalVehicle = -1;
+	// Stop cells a leaving guest boarded from this park turn (one per cell and turn, see UpdateWaitingToGoHome).
+	private readonly HashSet<(int X, int Y)> boardedThisTurn = new();
 	private int laneToggle;
 	private int seenGridVersion = -1;
 	private readonly Dictionary<int, int> seenQueueEdits = new();
@@ -105,6 +109,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public long ParkTurn => ParkCalendar.Turn( TickCount );
 	public double TimeSeconds { get; private set; }
 	public bool ArrivalsEnabled { get; set; } = true;
+	/// <summary>
+	/// The park's arrival vehicles (bus, seaplane, Ferry and their scripts). Null keeps the vehicle-less step-off of a park without
+	/// them (headless scenes): a group's first guest steps off on the turn after it starts and leaving guests go after
+	/// <see cref="WaitForBusSeconds"/>.
+	/// </summary>
+	public IArrivalVehicleHost? ArrivalVehicles { get; set; }
+	/// <summary>One draw of the world generator (tp.exe <c>0x00516330</c>, inlined at <c>0x0051A34B</c>; OpenTPW's economy stream, DET-014) for the vehicle of a pick-up without a group.</summary>
+	public Func<uint>? WorldDraw { get; set; }
+	/// <summary>The arrival vehicle at work (<see cref="ArrivalVehicleKind"/>), -1 for none.</summary>
+	public int ArrivalVehicle => arrivalVehicle;
 	/// <summary>The park turn the arrival timer reads: the economy's when attached, else <see cref="ParkTurn"/>.</summary>
 	public Func<long>? ArrivalClock { get; set; }
 	/// <summary>The park's attraction points for the arrival rule (the economy's attractions); 0 without one.</summary>
@@ -366,7 +380,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		SyncQueues();
 		UpdateArrivals( deltaSeconds );
 		if ( turnStarted )
+		{
 			RebuildOccupants();
+			boardedThisTurn.Clear();
+		}
 		for ( var index = 0; index < guests.Count; index++ )
 			UpdateGuest( guests[index], deltaSeconds );
 		for ( var index = guests.Count - 1; index >= 0; index-- )
@@ -386,11 +403,18 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100CB2AC arrival update] if no group is active and 0x101210F8's (turn >> 2) − (start >> 2) exceeds Arrival.TimeBetweenArrivals (settings +0x2D4), the group size is set and the group starts; at each stop one guest is created and the count falls; at 0 the timer restarts (0x10121098)
 	// [BIN:TPW-EXE:0x004CF3E0 arrival update] runs once per park turn at the end of the world turn update 0x00516380 (through 0x004D7B20); the call that starts a group only sends the bus (0x0051A2F0 with size 1, 2 or 3 for groups under 36, up to 60, larger); while the bus is at its stop (vehicle state 2) each call creates one guest (0x004CF720) and counts the group down, and the call that finds it empty restarts the timer (0x0041A960) and sends the bus away
-	// [APPROX:ARRIVAL-001] no arrival vehicle is modelled: the first guest steps off on the turn after the group starts, where the original waits until the vehicle it dispatched (bus, seaplane or Ferry by group size, 0x004CF48C) reports script variable 1 = 2 at its stop (0x004CF46C), and guests appear at the arrival lanes — evidence needed: the vehicle level scripts' time from dispatch to state 2
+	// Without ArrivalVehicles (a park without vehicle definitions, which the original refuses with a fatal error, 0x0051A601) the
+	// group's guests step off from the turn after it starts, as if the vehicle stood at its stop.
 	private void UpdateArrivals( float deltaSeconds )
 	{
 		if ( !ArrivalsEnabled )
 			return;
+		if ( ArrivalVehicles != null )
+		{
+			if ( turnStarted )
+				UpdateArrivalVehicle();
+			return;
+		}
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
 		// A save loaded from an earlier turn replaces the clock: the timer starts unset again, as in a freshly started park.
 		if ( turn < arrivalTimerStart )
@@ -412,6 +436,127 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		pendingArrivals--;
 		if ( guests.Count < Settings.MaximumGuests )
 			SpawnArrival();
+	}
+
+	/// <summary>
+	/// The arrival update with the park's vehicles, once per park turn (tp.exe <c>0x004CF3E0</c>): a group that starts dispatches the
+	/// vehicle its size calls for; while the vehicle reports status 2 (at its stop) each turn one guest steps off, and the turn that
+	/// finds the group empty restarts the timer and sends the vehicle on. Leaving guests waiting at the stop call a vehicle (any kind,
+	/// one world draw) when none is at work and hold one at status 4 until the last has boarded.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CF3E0 arrival update] with no group active the timer test starts one (0x004CF5B0, "Bus about to arrive with %d people"); with a group active
+	// the vehicle's status (0x0051A690) decides: -1 (none at work) dispatches by group size (0x0051A2F0 with 1 up to 35 guests, 2 up to 60, else 3, signed
+	// compares at 0x004CF48C/0x004CF49A), 2 creates one guest (0x004CF720) while the group is above 0 (signed, jle at 0x004CF56B) and counts it down, else
+	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
+	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
+	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
+	// [APPROX:ARRIVAL-001] leaving guests wait at their lane's first cell and board at status 4 one per stop cell and turn, where the original walks them to the vehicle's stop cells at status 1 to 3 (0x00500BD0, 0x0051AAD0) and boards the head of each cell's thing list; the pick-up test asks for any guest in state 21, not the head things of the four stop cells (0x0051A9D0); this update runs before the turn's guest updates, the original's after its thing sweep — evidence needed: what cell 0x004D8650 returns for each level (the stop walk also needs the original walk, WALK-008)
+	private void UpdateArrivalVehicle()
+	{
+		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
+		if ( turn < arrivalTimerStart )
+			arrivalTimerStart = 0;
+		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
+		{
+			pendingArrivals = ArrivalGroupSize();
+			deliveringArrivals = true;
+		}
+		if ( deliveringArrivals )
+		{
+			switch ( ReadArrivalVehicle() )
+			{
+				case -1:
+					DispatchArrivalVehicle( pendingArrivals <= 35 ? 1 : pendingArrivals <= 60 ? 2 : 3 );
+					break;
+				case 2 when pendingArrivals > 0:
+					if ( guests.Count < Settings.MaximumGuests )
+						SpawnArrival();
+					pendingArrivals--;
+					break;
+				case 2:
+					arrivalTimerStart = turn;
+					deliveringArrivals = false;
+					DispatchArrivalVehicle( 0 );
+					break;
+			}
+		}
+		if ( guests.Any( guest => guest.State == GuestState.WaitingToGoHome ) )
+		{
+			var status = ReadArrivalVehicle();
+			if ( status is -1 or 0 || status == 2 && pendingArrivals == 0 )
+				DispatchArrivalVehicle( 0 );
+		}
+		else if ( ReadArrivalVehicle() == 4 )
+			DispatchArrivalVehicle( 0 );
+	}
+
+	/// <summary>The status of the vehicle at work (script variable 1), -1 for none; a vehicle that reports 6 (gone) is released.</summary>
+	// [BIN:TPW-EXE:0x0051A690 vehicle status] no vehicle at work (+0x1DA72A 0) reads -1; else the script's variable 1 (0x0055A390); 6 writes 0 to it
+	// (0x0055A0B0), clears +0x1DA72A and reads -1
+	private int ReadArrivalVehicle()
+	{
+		if ( arrivalVehicle < 0 || ArrivalVehicles is not { } host )
+			return -1;
+		// A save whose vehicle object is not in the park (hand-edited, or a level without it) would otherwise hold the group for good.
+		if ( !host.Exists( arrivalVehicle ) )
+		{
+			arrivalVehicle = -1;
+			return -1;
+		}
+		var status = host.GetVariable( arrivalVehicle, ArrivalVehicleKind.StatusVariable );
+		if ( status != 6 )
+			return status;
+		host.SetVariable( arrivalVehicle, ArrivalVehicleKind.StatusVariable, 0 );
+		arrivalVehicle = -1;
+		return -1;
+	}
+
+	/// <summary>
+	/// Sends a vehicle (tp.exe <c>0x0051A2F0</c>): the one at work gets its trigger set; else size 1, 2 or 3 picks the bus, seaplane or
+	/// Ferry and size 0 one at random from the world generator. A kind the park already holds gets its trigger set, a new one is
+	/// placed with status 1; a kind the level lacks falls back to the Ferry, then the seaplane, then the bus.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0051A2F0 vehicle dispatch] with +0x1DA72A set only variable 0 = 1 (0x0051A649); else kind = size − 1, or for size 0 |rotr(s·0x19660D +
+	// 0x3C6EF35F, 13)| mod 3 on the world generator's state +0x1DA708 (0x0051A34B, the step of 0x00516330); a cached handle (+0x1DA72C/E/30) gets variable
+	// 0 = 1, else the first definition of that name (0x00412E60/0x00412E70 over 0x007890A0, _wcsicmp 0x0067B140) is created (0x004DB090) with variable 1 = 1
+	// (0x0051A59B); a missing one logs "Could not find the 'vehicle_name was here' feature" and tries the untried kinds Ferry, seaplane, bus (bit tests 4, 2,
+	// 1 from 0x0051A442) before the fatal "Could not find either the bus or the plane feature" (0x0051A601); the chosen handle becomes +0x1DA72A
+	private void DispatchArrivalVehicle( int size )
+	{
+		if ( ArrivalVehicles is not { } host )
+			return;
+		if ( arrivalVehicle >= 0 )
+		{
+			host.SetVariable( arrivalVehicle, ArrivalVehicleKind.TriggerVariable, 1 );
+			return;
+		}
+		var tried = 0;
+		while ( true )
+		{
+			int kind;
+			if ( tried == 0 )
+				kind = size == 0 ? (int)((WorldDraw?.Invoke() ?? 0) % 3) : size - 1;
+			else if ( (tried & 4) == 0 )
+				kind = ArrivalVehicleKind.Ferry;
+			else if ( (tried & 2) == 0 )
+				kind = ArrivalVehicleKind.Seaplane;
+			else if ( (tried & 1) == 0 )
+				kind = ArrivalVehicleKind.Bus;
+			else
+			{
+				Log?.Warning( "No arrival vehicle: the level has neither the bus, the seaplane nor the Ferry." );
+				return;
+			}
+			tried |= 1 << kind;
+			if ( host.Exists( kind ) )
+				host.SetVariable( kind, ArrivalVehicleKind.TriggerVariable, 1 );
+			else if ( host.Create( kind ) )
+				host.SetVariable( kind, ArrivalVehicleKind.StatusVariable, 1 );
+			else
+				continue;
+			arrivalVehicle = kind;
+			return;
+		}
 	}
 
 	/// <summary>
@@ -445,6 +590,25 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone);
 
 	private bool CountsParkTime( Guest guest ) => InPark( guest ) && !guest.LaneReversed;
+
+	/// <summary>
+	/// State 21, waiting at the stop to go home: with the park's vehicles a guest boards (and is gone) on a park turn the vehicle at
+	/// work reports status 4, one guest per stop cell and turn; without them it goes after <see cref="WaitForBusSeconds"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500BD0 state 21] status 4 (0x0051A690) boards the guest that heads its cell's thing list: event 0x13 (0x004FA470) and the guest
+	// is destroyed (0x0050B780)
+	private void UpdateWaitingToGoHome( Guest guest, float dt )
+	{
+		if ( ArrivalVehicles == null )
+		{
+			guest.StateTimer -= dt;
+			if ( guest.StateTimer <= 0 )
+				guest.State = GuestState.Gone;
+			return;
+		}
+		if ( turnStarted && ReadArrivalVehicle() == 4 && boardedThisTurn.Add( guest.Lane is { Length: > 0 } lane ? lane[0] : (guest.CellX, guest.CellY) ) )
+			guest.State = GuestState.Gone;
+	}
 
 	private void UpdateGuest( Guest guest, float dt )
 	{
@@ -583,9 +747,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					PayAdmission( guest );
 				break;
 			case GuestState.WaitingToGoHome:
-				guest.StateTimer -= dt;
-				if ( guest.StateTimer <= 0 )
-					guest.State = GuestState.Gone;
+				UpdateWaitingToGoHome( guest, dt );
 				break;
 			case GuestState.WalkingAround:
 				UpdateWalkingAround( guest );
@@ -2211,6 +2373,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			DeliveringArrivals = deliveringArrivals,
 			SpawnTimer = spawnTimer,
 			PendingArrivals = pendingArrivals,
+			ArrivalVehicle = arrivalVehicle < 0 ? null : arrivalVehicle,
 			LaneToggle = laneToggle,
 			ArrivalsEnabled = ArrivalsEnabled,
 			SeenGridVersion = seenGridVersion,
@@ -2368,6 +2531,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// PendingArrivals may be negative: a group cut above the park limit keeps limit − guests, as the original's word does (0x004CF6E5), and ends at the next stop like 0.
 		if ( snapshot.PendingArrivals < OnlineArrivalParkLimit - MaximumThings )
 			Error( $"PendingArrivals {snapshot.PendingArrivals} is below the lowest cut remainder ({OnlineArrivalParkLimit - MaximumThings})." );
+		if ( snapshot.ArrivalVehicle is { } vehicle && (vehicle < 0 || vehicle >= ArrivalVehicleKind.Names.Count) )
+			Error( $"ArrivalVehicle {vehicle} is not a vehicle kind (0 to {ArrivalVehicleKind.Names.Count - 1})." );
 		if ( snapshot.LaneToggle < 0 )
 			Error( $"LaneToggle {snapshot.LaneToggle} is negative." );
 		// A file that lost one of its core lists (a JSON null) cannot be cross-checked; the hole is named and
@@ -2737,6 +2902,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		deliveringArrivals = snapshot.DeliveringArrivals;
 		spawnTimer = snapshot.SpawnTimer;
 		pendingArrivals = snapshot.PendingArrivals;
+		arrivalVehicle = snapshot.ArrivalVehicle ?? -1;
 		laneToggle = snapshot.LaneToggle;
 		ArrivalsEnabled = snapshot.ArrivalsEnabled;
 		seenGridVersion = snapshot.SeenGridVersion;
@@ -2867,6 +3033,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		hash.Add( deliveringArrivals );
 		hash.Add( spawnTimer );
 		hash.Add( pendingArrivals );
+		// Only a park with vehicles has one at work; the vehicle-less hash stays as it was.
+		if ( ArrivalVehicles != null )
+			hash.Add( arrivalVehicle );
 		hash.Add( laneToggle );
 		hash.Add( ArrivalsEnabled );
 		hash.Add( guests.Count );

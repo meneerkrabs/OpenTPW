@@ -336,6 +336,8 @@ public sealed record GuestSimulationSnapshot
 	public required bool DeliveringArrivals { get; init; }
 	public required float SpawnTimer { get; init; }
 	public required int PendingArrivals { get; init; }
+	/// <summary>The arrival vehicle at work (<see cref="ArrivalVehicleKind"/>); null for none and in saves from before the vehicles.</summary>
+	public int? ArrivalVehicle { get; init; }
 	public required int LaneToggle { get; init; }
 	public required bool ArrivalsEnabled { get; init; }
 

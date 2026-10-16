@@ -632,7 +632,7 @@ Scripts of repeated calls, with the vehicle phase and report flag chosen per cal
   until the next group replaces it.
 - **Not held, but gated by the vehicle.** While the phase is −1 or 6 the active byte stays set for any group, and the
   vehicle script runs with size 1 (group up to 35, 60, more: 1/2/3; a negative group gives 1, as 0 does). Only phase 2
-  ends it. Neither a negative nor an empty group ends earlier. What phases occur in play is not traced (ARRIVAL-001).
+  ends it. Neither a negative nor an empty group ends earlier. The phases come from the vehicle's level script (`bus.RSE`: 1 driving in, 2 at the stop, 3 and 4 after the trigger, 0, 5 and 6 driving off).
 - **What differs.** After the group handling, with `0x109b78` nonzero and phase 2, an exactly empty group starts one more
   vehicle step with size 0 (slot 74, `0xcb488`); a negative group skips it. The two readings differ in the stored group
   word, the history value and this step on 158 scripts beyond the history values. The vehicle step with size 0 chooses
@@ -650,7 +650,7 @@ original's negative group, differing only in the stored group word and the empty
 readers of the word, the boarding gate `0x51a760` (`cmp 0xa` at `0x51a83d`) and the advisor score `0x59f220` over the group
 history, treat a negative group as 0; C# now keeps the negative word (the former ARRIVAL-004 is retired). The
 brief's static reading, a negative group holding the state, differs on 66 scripts and is refuted. The
-`plan` side models the stop gate as the vehicle phase 2. `UpdateArrivals` steps once per park turn from the turn after a group starts, because tp.exe's twin `0x4cf3e0` runs once per world turn (at the end of `0x516380`, through `0x4d7b20`); only the bus's drive to the stop is missing (ARRIVAL-001). C# is not compared.
+`plan` side models the stop gate as the vehicle phase 2. `UpdateArrivals` steps once per park turn from the turn after a group starts, because tp.exe's twin `0x4cf3e0` runs once per world turn (at the end of `0x516380`, through `0x4d7b20`); the vehicle's drive to the stop is now its own level script's (`GuestSimulation.ArrivalVehicles`, GUESTS.md "Arrivals"). C# is not compared.
 
 **F12, loan instalment (ECON-006, `LoanMath.MonthlyRepayment`, `0xcb7a8`; fixed in C#).** The constructor of the bank object fills
 eight loan records. Its loop (`0xcb84c..0xcb904`, run as a fragment) reads amount P, APR A, months N and lender from the

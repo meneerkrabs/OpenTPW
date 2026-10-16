@@ -119,6 +119,12 @@ public partial class Level
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
 		Objects.ObjectRemoved += item => Guests?.Unregister( item.Visitors );
+		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
+		if ( !GameEditions.IsThemeParkInc && ArrivalVehicles.Available( Objects.Catalog ) )
+		{
+			Guests.ArrivalVehicles = new ArrivalVehicles( Objects );
+			Guests.WorldDraw = () => Park is { } park ? (uint)(park.Economy.Random.NextUInt64() >> 33) : 0u;
+		}
 	}
 
 	/// <summary>

@@ -40,7 +40,7 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( economy.CheckBuild( entry.InfoId ) == ParkEconomy.PurchaseResult.Ok, $"the researched tour ride can be bought ({entry.InfoId}: {economy.CheckBuild( entry.InfoId )}, balance {economy.Balance})" );
 		var grid = level.Objects.Grid;
 		bool Free( int x, int y ) => x >= 0 && y >= 0 && x < grid.Width && y < grid.Height && level.Objects.FindAt( x, y ) == null
-			&& grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed && level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0;
+			&& grid.CheckTerrain( x, y ) is OriginalPlacementResult.Allowed && level.Guests!.Grid.Cells.RawTypeAt( x, y ) == 0 && !level.Guests!.Grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		(int X, int Y)? centre = null;
 		foreach ( var cell in Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
 			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )

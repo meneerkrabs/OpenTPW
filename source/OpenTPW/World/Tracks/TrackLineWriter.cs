@@ -86,6 +86,7 @@ public sealed class TrackLineWriter : ICellLineWriter
 		long charged = 0;
 		var stoppedBy = CellBuildResult.Ok;
 		(int X, int Y)? stoppedAt = null;
+		var processed = 0;
 		var last = line[^1];
 		var endedOnExisting = builder.IsTile( last.X, last.Y );
 		for ( var index = 0; index < line.Count; index++ )
@@ -110,6 +111,14 @@ public sealed class TrackLineWriter : ICellLineWriter
 			}
 			if ( write && index > 0 )
 				builder.Link( line[index - 1], line[index] );
+			processed = index + 1;
+		}
+		if ( write && line.Count > 1 )
+		{
+			// the line's link op: every tile the line reached takes the line's direction as its flow link (a tile with more than two arms adds it)
+			var direction = TrackBuilder.HeadingBetween( line[0], line[1] );
+			for ( var index = 0; index < processed; index++ )
+				builder.ApplyLineLink( line[index], direction );
 		}
 		return new SegmentResult( end, built, charged, stoppedBy, endedOnExisting )
 		{

@@ -677,4 +677,36 @@ public class ParticleSystemTests
 		Assert.AreEqual( (1024, 0, 0), ParticleRendererModule.ToNativeDirection( new System.Numerics.Vector3( 1, 0, 0 ) ) );
 		Assert.AreEqual( (0, 0, -1024), ParticleRendererModule.ToNativeDirection( new System.Numerics.Vector3( 0, -1, 0 ) ) );
 	}
+
+	[TestMethod]
+	public void PoseConversionRoundTripsThePlacementWithinOneNativeUnit()
+	{
+		// PTCL-906 retired: ToOriginal undoes ObjectPlacement.ModelToEngine (scale, grid origin, Z up), so the native pose is the original position * 1024 apart from float32 rounding
+		var level = (Level)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		var field = new ModelHeightfield( 96, 85, 10, 10, 0, 0, Array.Empty<uint>(), new float[97 * 86], new uint[96 * 85] );
+		var park = (OriginalPark)System.Runtime.CompilerServices.RuntimeHelpers.GetUninitializedObject( typeof( OriginalPark ) );
+		typeof( OriginalPark ).GetField( "<Heightfield>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( park, field );
+		typeof( Level ).GetField( "<OriginalPark>k__BackingField", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!.SetValue( level, park );
+		var origin = -OriginalParkPlacement.GetOrigin( field );
+		var random = new Random( 906 );
+		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+		{
+			for ( var step = 0; step < 200; step++ )
+			{
+				var placement = new ObjectPlacement( random.Next( 96 ), random.Next( 85 ), rotation, origin, random.Next( 0, 40 ) * 0.2f );
+				// a model point (ground XY, Z up) and the original position it stands for: the cell turn, the anchor in tens of units, the base height in original units
+				var model = new System.Numerics.Vector3( random.Next( 0, 100 ), random.Next( 0, 100 ), random.Next( 0, 50 ) );
+				var engine = System.Numerics.Vector3.Transform( model, placement.ModelToEngine );
+				var turned = System.Numerics.Vector3.Transform( model, ObjectPlacement.CellRotation( rotation ) );
+				var expected = (X: (turned.X + placement.X * 10) * 1024, Y: (turned.Z + placement.BaseHeight / ObjectPlacement.ModelScale) * 1024, Z: (turned.Y + placement.Y * 10) * 1024);
+				var native = ParticleRendererModule.ToNative( level, engine );
+				Assert.IsTrue( Math.Abs( native.X - expected.X ) <= 1 && Math.Abs( native.Y - expected.Y ) <= 1 && Math.Abs( native.Z - expected.Z ) <= 1,
+					$"rotation {rotation} model {model}: {native} against {expected}" );
+			}
+		}
+		// the conversion is also the inverse of the particle renderer's own original-to-engine map
+		var position = new System.Numerics.Vector3( 123.5f, 17.25f, 640.75f );
+		var back = ParticleRendererModule.ToOriginal( level, ParticleRendererModule.ToEngine( level, position ) );
+		Assert.IsTrue( System.Numerics.Vector3.Distance( position, back ) < 1e-3f, back.ToString() );
+	}
 }

@@ -39,7 +39,8 @@ internal static class ParticleRendererModule
 		if ( renderer == null )
 			return -1;
 		// [BIN:TPW-EXE:0x5573D0 dispatcher] the key's world position * 1024 truncated (a key without a matrix is the world origin); a control other than 1000 is set after creation
-		var position = request.AtWorldOrigin ? (0, 0, 0) : ToNative( level, request.EnginePosition );
+		// [BIN:TPW-EXE:0x557308 WALKOFF position] the walk effect takes each coordinate through ftol and shifts it left by 10: whole units, as a kept ADDOBJ effect follows
+		var position = request.AtWorldOrigin ? (0, 0, 0) : request.WholeUnits ? WholeNative( level, request.EnginePosition ) : ToNative( level, request.EnginePosition );
 		if ( request.Type == 2 && (request.AtWorldOrigin || request.EngineUnitDirection != null) )
 		{
 			var direction = request.AtWorldOrigin ? (0, 0, (int)ParticleKeyResolver.NativeDirectionMultiplier) : ToNativeDirection( request.EngineUnitDirection!.Value );
@@ -118,6 +119,12 @@ internal static class ParticleRendererModule
 			renderer.Particles.SetDirection( handle, ToNativeDirection( unit ) );
 		else if ( follow.Directed )
 			renderer.Particles.SetDirection( handle, (0, 0, (int)ParticleKeyResolver.NativeDirectionMultiplier) );
+	}
+
+	private static (int X, int Y, int Z) WholeNative( Level level, SVector3 engine )
+	{
+		var original = ToOriginal( level, engine );
+		return (WholeUnits( original.X ) << 10, WholeUnits( original.Y ) << 10, WholeUnits( original.Z ) << 10);
 	}
 
 	/// <summary>A coordinate truncated to whole units; a value within 1/1024 of a whole unit counts as that unit, as OpenTPW's engine round trip leaves whole values a few ulps short.</summary>
@@ -225,7 +232,8 @@ internal static class ParticleRendererModule
 
 	/// <summary>The native position of an engine position: original units times 1024, Y up, truncated toward zero (the dispatcher's unit before the constructor's >> 4).</summary>
 	// [BIN:TPW-EXE:0x5573D0 EVENT dispatcher] world position * 1024.0 (constant 0x700FDC) through _ftol, which truncates
-	// [APPROX:PTCL-906] the conversion inverts OpenTPW's placement (the pool runs with the detail options' PARTICLEDENSITY, 2048 particles and the original's flat-zero ground stub, as the original does)
+	// [BIN:TPW-EXE:0x556B90 particle key resolver] the pose is the key node's world position in original units (Y up), which ToOriginal recovers by undoing, constant for constant, the placement that made the engine pose (ObjectPlacement.ModelToEngine: 0.2 per unit, the grid origin, Z up); the constants cancel, so the native value does not depend on them, and it differs from the original's only by the float32 rounding of the engine pose (at most one native unit, 1/1024 of an original unit)
+	// the pool runs with the detail options' PARTICLEDENSITY, 2048 particles and the original's flat-zero ground stub, as the original does
 	internal static (int X, int Y, int Z) ToNative( Level level, SVector3 engine )
 	{
 		var original = ToOriginal( level, engine );

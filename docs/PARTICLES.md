@@ -190,7 +190,7 @@ same with its control operand. Each `Simulate` then moves the kept effects with 
 at the base height (`0x556B90` -> `0x466B70`, the EVENT sounds' anchor). `ParticleRendererModule` (module initialiser, like the weather)
 converts the engine pose to native units, inverting the placement (0.2 engine units per original unit, the park
 heightfield's centring, engine Z-up to original Y-up) and truncating `world * 1024` as the original's `_ftol` does
-(`APPROX:PTCL-906`), and calls `Create` or, for type 2, `CreateDirected` with the direction as `unit * 1024`; a control
+(see "Pose conversion" below), and calls `Create` or, for type 2, `CreateDirected` with the direction as `unit * 1024`; a control
 other than 1000 is set after creation (`0x51FFD0`). A key entry without a matrix (`0x556BF1`) starts the effect at the
 world origin, with direction (0, 0, 1024). Refusals (negative or unresolved key, scoped effect, headless runtime) start
 nothing.
@@ -262,18 +262,17 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
   header and table bits mean and what the other two refreshes serve are not read.
 - `PTCL-904` (OpenTPW's own world scale is `[EXT:particle-world-scale]`): the frame record's float +8 is the frame's width / height (`0x588660`) and `DAT_008BCBCC` the display's height / width; the extents are added in clip space, so a textured quad is wider on the screen by the display's width / height unless something rescales +8 (nothing found) and its world size depends on the original's 90 degree camera (OpenTPW: 55); a screen-space quad's width gets the target's height / width in OpenTPW and only the frame's aspect (1 untextured; height / width untextured) in the original.
 - `PTCL-905`: OpenTPW draws in the original's order (runs of one blend, `[EXT:particle-blend-runs]`); the per-particle state words are decoded (depth writes, opaque untextured particles, alpha tests) but need an alpha test in the particle shader and depth-writing and opaque material variants.
-- `PTCL-906`: the pose conversion inverts OpenTPW's placement.
 - `PTCL-909`: screen-space particles are drawn in the world pass in slot order with the world particles and without depth, so the HUD and the advisor's image draw over them; the original draws them in the same loop (`0x57C620`, inside the scene view render `0x576A00`, before the weather), and which later view or callback draws the HUD windows and the advisor's model is not read.
 - `PTCL-908`: wired are EVENT 1/2, ADDOBJ and ADDOBJ_EXT 1/2 (`0x5520E8`: ADDOBJ with a control operand), their kept
   effects following the key node on every object pass (`0x55189D`: the node position truncated to whole units through
   `0x51FE30`, a type-2 effect turned through `0x51FD90`), a negative key at the footprint box middle (`0x556B90`/`0x466B70`),
-  the advisor's screen effects (docs/LIPS.md "Screen effects") and the per-type object effects (below). Not wired: a type-2
+  the advisor's screen effects (docs/LIPS.md "Screen effects"), the stinkbomb litter's effect 50 (`ParkLitterEffects`: started at the sprite's position times 1024 when the litter is placed, `0x4D95BD`, ended when it is swept, `0x4D9620`; litter restored from a save starts none) and the per-type object effects (below). Not wired: a type-2
   effect with a negative key (`0x556B90` leaves its direction unset); a fixed item, which has no box in OpenTPW, starts a
   negative-key effect at the world origin; the scoped effects (bit `0x8000`: the type record's `+0x4E0 + 4n`, `0x4145D0`,
   four template ids `0x414420` loads into free pool slots (`0x51FA20`) from files of the type's archive whose names give the
   slot, released by `0x51FA80`; the archive and the names are not read); the further dispatches after the build and
   upgrade effects (`0x51C640`, `0x51BFC0`), and the other engine callers of `0x521E60`/`0x521930` (the lobby's enter-park routine `0x4B8FD0` is wired, below; UI pool group 2
-  `0x5ED920`, beams 19/15 `0x549C60`/`0x54AC70`/`0x546280`/`0x54AE50`, `0x557334`/`0x557f0e`, stink 50 `0x4D93B0`,
+  `0x5ED920`, beams 19/15 `0x549C60`/`0x54AC70`/`0x546280`/`0x54AE50`, `0x557334`/`0x557f0e`,
   smoke 2 `0x544C80`, splash 96 `0x547F50`, fly smoke and fire 39/40 `0x55DBA3`/`0x55DC22`, thing effects `0x4FA470`,
   `0x486B90`, `0x48DE1A`, `0x4B8EE0`, `0x550E00`, `0x5571A0`, `0x557D80`, `0x55DA70`).
 
@@ -305,3 +304,15 @@ EVENT and ADDOBJ/KILLOBJ and the world-origin key; `ParkResumeValidationTests` t
 effects in the native jungle run: `--load-original-level jungle --debug-particle 2,60,1 --capture-camera 1,-38,7,-135 --capture-world out.png --capture-frames 75`
 (`--debug-particle` starts template effects at the camera target through the ADDOBJ starter, `--debug-particle-at x,y,z` picks an
 engine position; the smoke puff of effect 2 is visible in the capture).
+
+## Pose conversion
+
+An EVENT or ADDOBJ effect starts at the key node's world position times 1024 (`0x5573D0`, `_ftol`; `0x55190F` for a kept
+effect). OpenTPW builds the engine pose from the original position through `ObjectPlacement.ModelToEngine` (0.2 engine
+units per original unit, the grid origin `-OriginalParkPlacement.GetOrigin(heightfield)`, original Y up to engine Z up) and
+`ParticleRendererModule.ToOriginal` undoes exactly that map, so the native position is the original position times 1024 whatever
+the scale and the centring are: they cancel, and no value of them needs to be read from tp.exe (the 0.2 scale is
+`[EXT:md2-engine-scale]` for the drawing only). What remains is float32 rounding of the engine pose, at most one native unit
+(1/1024 of an original unit) on a coordinate that lies exactly on a boundary; `ParticleSystemTests.PoseConversionRoundTripsThePlacementWithinOneNativeUnit`
+pins it. The generic sandbox park has no original counterpart and no heightfield, and uses the scaled axes without its grid origin.
+(PTCL-906, retired.)

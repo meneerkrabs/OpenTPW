@@ -100,7 +100,7 @@ Open points (`BlueprintApproximations`):
   vertex writer `0x53DDD0` adds to every vertex of a texture 0–14 face the terrain at that vertex and `sine[round((phase + x + z) × 4096 / 2π) & 4095]`
   (table `0x7B0968` filled by `0x4708D0` with `sin(i / 4096 × 2π)`, phase `0x874FC0`, + 0.1 per unpaused frame at `0x53C762`), so the markers drape over the
   ground, 1.5 above it, and ripple by ±1 unit. October 16: OpenTPW does this for every cell (`BlueprintMarkers.VertexHeight`, `Ripple`, `Update`), steps the phase
-  0.1 per 1/30 s because the original's frame rate is not known, and has no walls (equal heights need none). Still open: the raise of a cell that already holds an
+  0.1 per 1/30 s of real time (`[EXT:blueprint-phase-step]`, user approved: the original steps per rendered frame, which would tie the ripple speed to the frame rate), and has no walls (equal heights need none). Still open: the raise of a cell that already holds an
   object or track (OpenTPW's cell map does not type those cells).
 - BLUEPRINT-002 (retired October 14, 2026): texture coordinates. The PC table `0x871EE8` holds the unit square in entries 0–3 and (0.5, 0.5) in
   entry 4 (filled by `0x53C3F0`); entries 5–8 are the rotating ±0.4 square of the track symbols. The face builder `0x53DF30` uses the rotating set only

@@ -56,6 +56,8 @@ internal sealed partial class SandboxSmokeTest
 				var placed = level.PlaceObject( entry, site.X, site.Y, rotation );
 				if ( placed == null )
 					continue;
+				// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the smoke opens it as the player would, so its script runs and it animates
+				placed.Open();
 				built++;
 				if ( economy == null )
 					continue;
@@ -84,11 +86,20 @@ internal sealed partial class SandboxSmokeTest
 			return;
 		}
 		foreach ( var (infoId, x, y, rotation) in SmokeObjects )
-			Require( level.PlaceObject( level.Objects.Catalog.Get( infoId ), x, y, rotation ) != null, $"build original object {infoId}" );
+		{
+			var builtObject = level.PlaceObject( level.Objects.Catalog.Get( infoId ), x, y, rotation );
+			Require( builtObject != null, $"build original object {infoId}" );
+			// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the smoke opens it as the player would, so its script runs and it animates
+			builtObject!.Open();
+		}
 		// With --bonus-data / OPENTPW_BONUS_DATA, also build one official bonus ride (textures from the bonus root).
 		var bonus = level.Objects.Catalog.Buildable.FirstOrDefault( entry => entry.IsBonus && entry.Category == ObjectCategory.Ride );
 		if ( bonus != null )
-			Require( level.PlaceObject( bonus, 16, 5, 0 ) is { PartCount: > 0 }, $"build bonus object {bonus.ArchiveName}" );
+		{
+			var builtBonus = level.PlaceObject( bonus, 16, 5, 0 );
+			Require( builtBonus is { PartCount: > 0 }, $"build bonus object {bonus.ArchiveName}" );
+			builtBonus!.Open();
+		}
 		var first = level.Objects.Objects[0];
 		var cell = first.Cells.First();
 		Require( level.PlaceObject( first.Entry, cell.X, cell.Y, 0 ) == null, "reject overlapping footprints" );

@@ -7,8 +7,9 @@ namespace OpenTPW;
 /// position of grid corner (0, 0) and the engine height of the object's base. One cell is 10 MD2 units,
 /// <see cref="CellSize"/> engine units.
 /// </summary>
-public readonly record struct ObjectPlacement( int X, int Y, int Rotation, System.Numerics.Vector2 GridOrigin, float BaseHeight )
+public readonly record struct ObjectPlacement( int X, int Y, int Rotation, System.Numerics.Vector2 GridOrigin, float BaseHeight, bool LegacyBaseHeight = false )
 {
+	// LegacyBaseHeight: BaseHeight was restored from a save made before the vertex-midpoint rule (the mean ground height of the footprint's cells), so the next save writes no rule and still restores it.
 	// [EXT:md2-engine-scale] Engine units: 1 MD2 unit = 0.2 (presentation scale shared with the terrain; the original has no such game rule) — OpenTPW's presentation convention (formerly RIDES-026)
 	public const float ModelScale = 0.2f;
 	public const float CellSize = 10 * ModelScale;
@@ -80,6 +81,15 @@ public class OriginalObject : Entity
 	private readonly List<(Model Model, int MeshIndex, Vertex[] Vertices, int Version)> vertexParts = new();
 	/// <summary>Texture slots a clip of this object animates with texture-frame tracks, with their render bindings.</summary>
 	private readonly List<FrameTextures> frameTextures = new();
+	private bool texturesAnimating = true;
+
+	/// <summary>Whether the detail option ANIMATINGTEXTURES lets the texture-frame tracks show: Low turns it off, Medium, High and the extended preset keep it on.</summary>
+	// [BIN:TPW-EXE:0x0044D9CD render flag 0x40] the option record 4 (ANIMATINGTEXTURES, value 0 or 1; the records are 0x3C bytes from TEXTUREQUALITY at 0x744300, their values the words from 0x785874) clears (0) or sets (1) bit 0x40 of the render flags 0x8BD550
+	private static bool TextureAnimationEnabled => IGraphicsSettings.Instance is not { } settings || settings.GetPresetValues( settings.Current.Preset ) is not { } detail || detail.AnimatingTextures != 0;
+
+	/// <summary>The frame a texture slot shows: its track's frame while texture animation is on, else frame 0.</summary>
+	// [BIN:TPW-EXE:0x0057A420 slot texture bind] each model texture slot binds frames[flags 0x40 of 0x8BD550 ? slot word +2 : 0] (0x00575F90), the slot's current frame that the clip update writes (0x00470C90)
+	internal static int TextureFrameToShow( int frame, bool animating ) => animating ? frame : 0;
 	private int textureFrameVersion = -1;
 	private bool deleted;
 	private int hiddenVersion = -1;
@@ -172,7 +182,8 @@ public class OriginalObject : Entity
 		if ( Entry.IsFixedItem )
 			return null;
 		var (minX, minY, maxX, maxY) = ObjectFootprint.GetBounds( Entry.Shape, Placement.X, Placement.Y, Placement.Rotation );
-		return new ParticleFootprint( FootprintMiddle(), maxX - minX + 1, maxY - minY + 1 );
+		var model = Runtime.Model;
+		return new ParticleFootprint( FootprintMiddle(), maxX - minX + 1, maxY - minY + 1, model.BoundsMax.Y - model.BoundsMin.Y );
 	}
 
 	public ObjectCatalogEntry Entry => Runtime.Entry;
@@ -216,7 +227,8 @@ public class OriginalObject : Entity
 	/// number 99; the ride origin when it has none) with each coordinate truncated to whole model units first, as the original's creation command does, and the placement rotation.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005542FE TOUR 1] the node lookup 0x0044B220 (class 0x800, number 0x63), its world position 0x004386D0, each coordinate converted to an integer and multiplied by 300
-	// [APPROX:TOUR-003] the pad is read from the model's rest pose (the original reads the live node instance); the placement's rotation is the original's instance angle for a built ride (0x00529E10 hands the build angle to the constructor 0x004DB090, stored in degrees at +0x10 by 0x004DB0CD and read by TOUR 1 at 0x00554385); evidence needed: the live pad node at TOUR 1 time and the rotation field the save loader restores for an imported tour ride
+	// [BIN:TPW-EXE:0x00554385 TOUR 1 pad rotation] the instance angle read by TOUR 1 is the thing's word +0x10, written in degrees by the constructor from the build angle (0x004DB0CD, handed over by the placement 0x00529E10) and, for a saved ride, read back from the save's mAngle (the attraction reader 0x004DB7D0 loads mAngle straight into +0x10), so the placement rotation is the instance angle for built and imported rides alike
+	// [BIN:TPW-EXE:0x00554342 TOUR 1 pad node] the pad node is read live (0x0044B220 then 0x004386D0), but all four tour scripts run TOUR 1 before they trigger any clip (WAITANIM 0 0 on an idle channel, then TOUR 1: TourAssetTests.TheLaunchPadIsReadBeforeAnyClipPlays), so the live node instance is still the model's rest pose, which is what this reads
 	internal TourStation ComputeTourStation()
 	{
 		var model = Runtime.Model;
@@ -305,7 +317,7 @@ public class OriginalObject : Entity
 	/// The model's texture slots with more than one frame name that an enabled texture-frame track of the object's
 	/// animation members addresses, each with every frame decoded once (null when no searched directory has it).
 	/// </summary>
-	// [APPROX:MD2-902] A frame whose art no searched texture directory has (including Theme Park Inc tvsim slot 39 frame 3, lt1.tga) keeps the effective selected frame the slot currently shows (renderer registers decoded-art availability with the animator, so save history retains the visible frame) — evidence needed: the original's fallback for a missing frame file
+	// [EXT:missing-frame-keeps-visible] A frame whose art no searched texture directory has (including Theme Park Inc tvsim slot 39 frame 3, lt1.tga) keeps the effective selected frame the slot currently shows (the renderer registers decoded-art availability with the animator, so save history retains the visible frame); a missing art file has no original fallback to match and showing nothing or failing would break the object, so keeping the visible frame is OpenTPW's design
 	private static Dictionary<int, FrameTextures> FindFrameAnimatedSlots( ObjectCatalogEntry entry, ModelFile model )
 	{
 		var slots = new Dictionary<int, FrameTextures>();
@@ -393,12 +405,14 @@ public class OriginalObject : Entity
 			return;
 		var animator = Runtime.Animator;
 		var version = animator.TextureFrameVersion;
-		if ( version == textureFrameVersion )
+		var animating = TextureAnimationEnabled;
+		if ( version == textureFrameVersion && animating == texturesAnimating )
 			return;
 		textureFrameVersion = version;
+		texturesAnimating = animating;
 		foreach ( var frames in frameTextures )
 		{
-			var frame = animator.GetTextureFrame( frames.Slot );
+			var frame = TextureFrameToShow( animator.GetTextureFrame( frames.Slot ), animating );
 			if ( frame == frames.Shown )
 				continue;
 			frames.Shown = frame;

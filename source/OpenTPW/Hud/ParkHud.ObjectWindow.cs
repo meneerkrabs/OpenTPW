@@ -23,7 +23,8 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4afc10 shop window labels] the label controls 0xc075, 0xc071, 0xc072, 0xc073, 0xc074, 0xc07a and 0xc07b (rows 0-6 by their y) take UITEXT 0x20-0x26 (0x485b00): customers last month, cost of goods, takings last month, profit last month, customer satisfaction, scrap value, local happiness
 	// [BIN:TPW-EXE:0x4b1040 sideshow window labels] the label controls 0xa09c, 0xa095, 0xa09a, 0xa098, 0xa09b, 0xa097, 0xa0a1 and 0xa09f (rows 0-7) take UITEXT 0x29-0x30: customers last month, winners last month, takings last month, profit last month, excitement, customer satisfaction, scrap value, local happiness
 	// [BIN:TPW-EXE:0x4e1f20 winners gauge] the sideshow's row 1 gauge is 100 × the winners over the customers (0 without customers), the two summed over the 30-entry histories at +0x2bc and +0x1ac
-	// [APPROX:UI-024] the winners gauge divides last month's winners by last month's customers, the counts the customer row also uses, where 0x4e1f20 sums the 30-entry histories; the satisfaction and happiness gauges are not simulated and draw empty
+	// [BIN:TPW-EXE:0x4b01d0 shop window refresh] the customers, takings and profit rows are sums over the object's 30-day rings, the profit row the takings ring's sum less the costs ring's (0x4e1c70), not a calendar month (ECON-057)
+	// [APPROX:UI-024] the satisfaction and happiness gauges are not simulated and draw empty
 	private static readonly ObjectRowKind[] RideRows = { ObjectRowKind.Users, ObjectRowKind.Age, ObjectRowKind.Excitement, ObjectRowKind.Reliability, ObjectRowKind.Repair, ObjectRowKind.Life, ObjectRowKind.Scrap };
 	private static readonly ObjectRowKind[] ShopRows = { ObjectRowKind.Customers, ObjectRowKind.CostOfGoods, ObjectRowKind.Takings, ObjectRowKind.Profit, ObjectRowKind.Satisfaction, ObjectRowKind.Scrap, ObjectRowKind.Happiness };
 	private static readonly ObjectRowKind[] SideshowRows = { ObjectRowKind.Customers, ObjectRowKind.Winners, ObjectRowKind.Takings, ObjectRowKind.Profit, ObjectRowKind.Excitement, ObjectRowKind.Satisfaction, ObjectRowKind.Scrap, ObjectRowKind.Happiness };
@@ -145,14 +146,14 @@ public sealed partial class ParkHud
 				: level.PublishedObjectState( item )?.Repair is { } repair ? Math.Clamp( (float)repair / 100f, 0f, 1f ) : null, true ),
 			ObjectRowKind.Life => new ObjectStat( label, null, state?.LifeGauge is { } life ? Math.Clamp( (float)life / 100f, 0f, 1f ) : null, true ),
 			ObjectRowKind.Satisfaction or ObjectRowKind.Happiness => new ObjectStat( label, null, null, true ),
-			ObjectRowKind.Winners => new ObjectStat( label, null, state == null ? null : WinnersGauge( state.WinnersLastMonth, state.CustomersLastMonth ), true ),
-			ObjectRowKind.Users or ObjectRowKind.Customers => new ObjectStat( label, state == null ? null : Number( state.CustomersLastMonth ) ),
+			ObjectRowKind.Winners => new ObjectStat( label, null, state == null ? null : WinnersGauge( state.WinnersLast30Days, state.CustomersLast30Days ), true ),
+			ObjectRowKind.Users or ObjectRowKind.Customers => new ObjectStat( label, state == null ? null : Number( state.CustomersLast30Days ) ),
 			ObjectRowKind.Age => new ObjectStat( label, state == null || economy == null ? null
 				: string.Format( strings.Extra( OpenTpwText.AgeDays ), Number( Math.Max( 0, ParkCalendar.DayIndex( economy.Tick ) - ParkCalendar.DayIndex( state.BuiltTick ) ) ) ) ),
 			ObjectRowKind.Scrap => new ObjectStat( label, state == null || economy == null ? null : FormatMoney( economy.ScrapValue( state ) ) ),
 			ObjectRowKind.CostOfGoods => new ObjectStat( label, state == null ? null : FormatMoney( state.CostOfGoods ) ),
-			ObjectRowKind.Takings => new ObjectStat( label, state == null ? null : FormatMoney( state.TakingsLastMonth ) ),
-			ObjectRowKind.Profit => new ObjectStat( label, state == null ? null : FormatMoney( state.ProfitLastMonth ) ),
+			ObjectRowKind.Takings => new ObjectStat( label, state == null ? null : FormatMoney( state.TakingsLast30Days ) ),
+			ObjectRowKind.Profit => new ObjectStat( label, state == null ? null : FormatMoney( state.ProfitLast30Days ) ),
 			_ => new ObjectStat( UIStrings.Blank, null )
 		};
 	}

@@ -32,16 +32,17 @@ public static class QueuePaths
 	public const int MaximumCells = 25;
 
 	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
-	// [APPROX:QUEUE-014] a queue is laid cell by cell from the entrance's outside cell; each cell must touch the current back cell, must not be a path or queue cell, and is linked toward that back cell. tp.exe's tool lays straight segments along the dominant axis (0x00536100), each from the previous end, the first from the cell the player clicks (SetMode 0x0052F200 sets the start to −1 at 0x0052F340); the validator 0x00535670 lets a queue cell replace a path cell that is not NoModify (0x005346D0 clears the path first), and the last cell may end on a path cell (code 8, the connection) — evidence needed: the writer of the queue link +0x0D and the segment commit in 0x00524960 (UI-031)
-	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null ) =>
-		CheckExtend( grid, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
+	// [APPROX:QUEUE-014] Queue lines start on the entrance's outside cell and lay empty cells that each touch the current back cell, where tp.exe's queue tool lays straight segments along the dominant axis (0x536100, ported) from a start the player clicks (SetMode 0x52f200 clears it), each cell validated by 0x535670: an empty cell is accepted, a path cell is replaced unless its flag 0x20 (NoModify) is set, a path cell on the line's last cell is code 8, the connection (ported), an object cell is refused, a queue cell of another ride (owner word +0x10 against the tool's ride, 0x818698) is refused and the tool's own passed; the commit 0x532fc0 then types the cell (0x5346D0, which clears a path first), links it (pass 0x80, the link writer in mode 3), gives it the queue link toward the previous cell (pass 0x82) and the tool's ride as owner word (pass 0x83); OpenTPW keeps no owner word (a queue cell belongs to the ride whose chain reaches it) and lays no queue over a path cell, and a queue line must start on the front cell and touch the back cell — evidence needed: the validator's object-cell branch (0x818C10 and 0x818C14), the rest of the commit 0x532fc0 and the refund of the cell clear 0x5367A0, which reads the owner word
+	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null, Func<int, int, bool>? givesWay = null ) =>
+		CheckExtend( grid, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked, givesWay );
 
 	/// <summary>
 	/// Checks (x, y) as the next queue cell after <paramref name="pending"/>, the cells a ghost line has already
 	/// accepted in order, as if they were laid (no writes): they count toward the length, the last one is the back
 	/// cell, and none of them can be laid again. The queue tool's preview validates every cell this way.
 	/// </summary>
-	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending, Func<int, int, bool>? isBlocked = null )
+	/// <param name="givesWay">An object at the cell the queue may cover (tp.exe's overwrite priority below 3); the cell counts as empty and <see cref="TryExtend(GuestPathGrid, RideVisitorBridge, int, int, Func{int, int, bool}?, Func{int, int, bool}?, Action{int, int}?)"/> demolishes the object.</param>
+	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, IReadOnlyList<(int X, int Y)> pending, Func<int, int, bool>? isBlocked = null, Func<int, int, bool>? givesWay = null )
 	{
 		if ( !grid.InBounds( x, y ) )
 			return QueueBuildResult.OutOfBounds;
@@ -53,8 +54,10 @@ public static class QueuePaths
 		var hasCells = frontIsQueue || pending.Count > 0;
 		if ( hasCells && (frontIsQueue ? ride.QueueSizeInCells : 0) + pending.Count >= MaximumCells )
 			return QueueBuildResult.TooLong;
-		// CanChangeCellType allows a queue over an empty cell (and over a path except on a line's last cell); this tool also refuses path cells (QUEUE-014).
-		if ( grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )
+		// CanChangeCellType allows a queue over an empty cell (and over a path except on a line's last cell); this tool also refuses path cells, where 0x535670 replaces a path cell unless it is NoModify (QUEUE-014).
+		// [BIN:TPW-EXE:0x535D66 overwrite priority] the queue tool's 0x818C10 is 3: an object cell whose owner's priority is below it is allowed (features of priority 0 or 1)
+		var covers = givesWay?.Invoke( x, y ) == true;
+		if ( (!covers && (grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )))
 			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true || pending.Contains( (x, y) ) )
 			return QueueBuildResult.Blocked;
 		if ( !hasCells )
@@ -67,14 +70,23 @@ public static class QueuePaths
 	/// Lays (x, y) as the next queue cell of <paramref name="ride"/>, links it (the line's link pass) and recomputes the queue; a path
 	/// cell beside the back of an existing queue is linked to the back instead (<see cref="QueueBuildResult.Connected"/>, nothing laid).
 	/// </summary>
-	public static QueueBuildResult TryExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null )
+	/// <param name="givesWay">An object the queue may cover (<see cref="CheckExtend(GuestPathGrid, RideVisitorBridge, int, int, IReadOnlyList{ValueTuple{int, int}}, Func{int, int, bool}?, Func{int, int, bool}?)"/>).</param>
+	/// <param name="demolish">Demolishes that object before the cell is laid (tp.exe's cell op 0x87).</param>
+	public static QueueBuildResult TryExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null, Func<int, int, bool>? givesWay = null, Action<int, int>? demolish = null )
 	{
 		ride.RecomputeQueue( grid );
 		if ( grid.IsWalkable( x, y ) && HasQueueCells( grid, ride ) && GuestPathGrid.DirectionBetween( ride.QueueBackCell.X, ride.QueueBackCell.Y, x, y ) >= 0 )
 			return Connect( grid, ride, ride.QueueBackCell, (x, y) ) ? QueueBuildResult.Connected : QueueBuildResult.Blocked;
-		var result = CheckExtend( grid, ride, x, y, isBlocked );
+		var result = CheckExtend( grid, ride, x, y, isBlocked, givesWay );
 		if ( result != QueueBuildResult.Ok )
 			return result;
+		// [BIN:TPW-EXE:0x5344E5 cell op 0x87] the commit's first LayLine pass demolishes the cell's lower-priority owner (0x527EE0) before the queue type is written
+		if ( givesWay?.Invoke( x, y ) == true )
+		{
+			demolish?.Invoke( x, y );
+			if ( grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || isBlocked?.Invoke( x, y ) == true )
+				return QueueBuildResult.Blocked;
+		}
 		var first = !HasQueueCells( grid, ride );
 		var back = ride.QueueBackCell;
 		var towards = first ? ride.QueueEntranceDirection : GuestPathGrid.DirectionBetween( x, y, back.X, back.Y );

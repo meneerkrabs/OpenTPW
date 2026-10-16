@@ -520,6 +520,31 @@ public class ObjectCatalogCorpusTests
 		Assert.AreEqual( OriginalParkPlacement.ToEngine( park.Heightfield, new System.Numerics.Vector3( 205, 0, 605 ) ).X, engine.X, 1e-4 );
 	}
 
+	/// <summary>
+	/// The overwrite priorities and access cells the build rules read (docs/OBJECTS.md "Build rules"): rides, shops, sideshows, upgrades,
+	/// toilets, staff rooms and the fixed items have priority 5, the small scenery 1, the other features 0; every type with a queue has one
+	/// entrance and one exit, every other type at most one entrance and no exit (so tp.exe's exit test, which only queue types reach, always has a cell).
+	/// </summary>
+	[TestMethod]
+	public void OverwritePrioritiesAndAccessCellsFollowTheTypes()
+	{
+		var counts = new Dictionary<int, int>();
+		foreach ( var theme in ObjectCatalog.Themes )
+		{
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries )
+			{
+				counts[entry.OverwritePriority] = counts.GetValueOrDefault( entry.OverwritePriority ) + 1;
+				if ( entry.Category is not ObjectCategory.Feature || entry.IsFixedItem )
+					Assert.AreEqual( 5, entry.OverwritePriority, entry.ToString() );
+				var entrances = entry.Shape.Cells.Count( cell => cell.Kind == ObjectCellKind.Entrance );
+				var exits = entry.Shape.Cells.Count( cell => cell.Kind == ObjectCellKind.Exit );
+				Assert.AreEqual( entry.HasQueue ? (1, 1) : (Math.Min( entrances, 1 ), 0), (entrances, exits), entry.ToString() );
+			}
+		}
+		Assert.AreEqual( 3, counts.Count, "priorities 0, 1 and 5 only" );
+		Assert.AreEqual( (48, 45), (counts[0], counts[1]) );
+	}
+
 	/// <summary>Official bonus content (private: OPENTPW_BONUS_DATA, inconclusive without it).</summary>
 	[TestMethod]
 	public void BonusContentMergesIntoTheCatalogsAndRuns()

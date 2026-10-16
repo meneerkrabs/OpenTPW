@@ -43,7 +43,8 @@ public static class StaffSpriteRules
 	/// <summary>Script 0x13: striking, 4 frames then hold.</summary>
 	public static readonly StaffClip Strike = new( 0x13, 5, StaffPlayback.OnceThenHold, MaxFrames: 4 );
 	/// <summary>Script 0x14: state 6, a single frame of slot 3.</summary>
-	// [APPROX:ECON-052] the original's staff state 6 has no StaffJob, so no clip plays it: SetState 0x5054D0 case 6 stamps the idle clock (+0x200) and plays script 0x14 (slot 3, one frame), and ModelState 0x5056E0 returns the member to state 0 after 3 × the role's rate (table 0x785330); no direct SetState or role-setter call in tp.exe passes 6 and only the staff serializer 0x504DE0 restores it from a save, so it looks unreachable in play — evidence needed: a writer of state 6 outside the direct calls (a struct copy or another store), or its absence
+	// [BIN:TPW-EXE:0x5054D0 staff state 6] state 6 has no StaffJob, so no clip plays it in OpenTPW: SetState 0x5054D0 case 6 stamps the idle clock (+0x200) and plays script 0x14 (slot 3, one frame), and ModelState 0x5056E0 returns the member to state 0 after 3 x the role's rate (table 0x785330)
+	// [BIN:TPW-EXE:0x5054D0 staff state 6] nothing in tp.exe writes 6: the 20 SetState call sites pass 0, 1, 3, 5 or 7 or a role setter's parameter (0x4D46D0, 0x4D65D0, 0x4D7330, 0x4DA370, 0x502C20), whose callers pass 0, 1, 8-0xD, 0xF, 0x10, 0x12 or 0x13; the other stores of the state word +0x19C are those setters', the constructor's 0 (0x5185D8) and the entertainer's 0, 1 and 0xE; only the staff serializer 0x504DE0 can restore a 6 from a save, so the clip stays for a loaded save
 	public static readonly StaffClip State6 = new( 0x14, 3, StaffPlayback.Single );
 	/// <summary>Script 0x15: the dangling cursor sprite, slot 6 frames 0-3 looping.</summary>
 	public static readonly StaffClip Dangle = new( 0x15, 6, StaffPlayback.Loop, MaxFrames: 4 );

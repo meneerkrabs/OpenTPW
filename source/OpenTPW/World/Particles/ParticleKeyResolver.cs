@@ -26,6 +26,8 @@ public sealed class ParticleKeyResolver
 	public const uint EventSelector = 0x100;
 	/// <summary>The selector an EVENT sound's key is looked up with (tp.exe <c>0x556b90</c> passes 0x200 to <c>0x44b220</c>); particles use <see cref="EventSelector"/>.</summary>
 	public const uint SoundSelector = 0x200;
+	/// <summary>The selector a tour walk's node is looked up with (tp.exe <c>0x5571A0</c> passes 0x800 to <c>0x556b90</c>).</summary>
+	public const uint WalkSelector = 0x800;
 	public const float NativeDirectionMultiplier = 1024f;
 	private readonly ModelFile model;
 
@@ -50,7 +52,7 @@ public sealed class ParticleKeyResolver
 	{
 		ArgumentNullException.ThrowIfNull( nodeTransforms );
 		ParticleKeyResult Refuse( ParticleKeyStatus status, int attribute = -1, int node = -1 ) => new( status, attribute, node, null, null );
-		if ( selector != EventSelector && selector != SoundSelector )
+		if ( selector != EventSelector && selector != SoundSelector && selector != WalkSelector )
 			return Refuse( ParticleKeyStatus.UnsupportedSelector );
 		if ( key < 0 )
 			return Refuse( ParticleKeyStatus.UnsupportedFallback );

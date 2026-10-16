@@ -349,7 +349,7 @@ public partial class Level : IDisposable
 				var cells = Guests.Grid.Cells;
 				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Path;
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
-				OriginalTerrain.QueueLinkSource = cells.QueueLinkAt;
+				OriginalTerrain.QueueModelSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue ? QueueModels.Choose( cells, x, y ) : null;
 				OriginalTerrain.PathVariantSource = PathVariants.IsSecond;
 				// [BIN:TPW-EXE:0x00536490 map init refresh] the world's set-up refreshes every cell in order, so each path cell's chooser rolls once at the start
 				for ( var y = 0; y < cells.Height; y++ )

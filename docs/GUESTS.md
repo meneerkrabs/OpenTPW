@@ -654,7 +654,7 @@ balance − cost < 0 (`ParkEconomy.TrySpendCell`, `SetCellType` `0x82ac4`).
 behind it; each removed cell refunds `Costs.QueueCell` × the ride's scrap
 percentage / 100 (`ParkEconomy.RefundQueueCell`, `ClearCell` `0x85dcc`; 100 for a ride nobody used in its first 30 days, ORACLE.md F21). After a HasQueue ride is
 built from the HUD, park clicks lay its queue until Back (UI-031). Queue cells
-also block object placement. New queue cells are not drawn on the terrain yet.
+also block object placement. Queue cells carry the theme's queue models ([PATHS.md](PATHS.md#path-textures)).
 
 **Joining** (§4, state 10 at the join cell), in this order:
 

@@ -103,45 +103,6 @@ public static class PathTiles
 		return Choose( neighbours, second );
 	}
 
-	/// <summary>QueueTex's square, end, straight or corner, following predecessor/successor links and the back cell's join path.</summary>
-	public static PathTile ForQueueCell( int x, int y, int countX, int countY, Func<int, int, bool> isQueue,
-		Func<int, int, byte>? queueLink, Func<int, int, bool> isPath )
-	{
-		var mask = queueLink?.Invoke( x, y ) & 0x55 ?? 0;
-		var hasSuccessor = false;
-		for ( var direction = 0; direction < 4; direction++ )
-		{
-			var (dx, dy) = GuestPathGrid.Directions[direction];
-			var (nx, ny) = (x + dx, y + dy);
-			if ( (uint)nx >= (uint)countX || (uint)ny >= (uint)countY || !isQueue( nx, ny ) ) continue;
-			if ( queueLink == null || queueLink( nx, ny ) == GuestPathGrid.LinkValue( (direction + 2) & 3 ) )
-			{
-				mask |= GuestPathGrid.LinkValue( direction );
-				hasSuccessor = true;
-			}
-		}
-		if ( !hasSuccessor )
-			for ( var direction = 0; direction < 4; direction++ )
-			{
-				var (dx, dy) = GuestPathGrid.Directions[direction];
-				var (nx, ny) = (x + dx, y + dy);
-				if ( (uint)nx < (uint)countX && (uint)ny < (uint)countY && isPath( nx, ny ) )
-				{
-					mask |= GuestPathGrid.LinkValue( direction );
-					break;
-				}
-			}
-		// [APPROX:PATH-015] QUEUE-TEXTURES: queue cells are drawn with QueueTex ground textures whose shape and turn follow decoded artwork and queue links; the original applies no QueueTex texture: its tile refresh 0x5365d0 sends a queue cell's class-2 result of the chooser 0x535dd0 (table 0x7630b0) to 0x5229e0, which places one of the queue models loaded by 0x522900 (quedead, questra, quebnd2, quebnd1, queend, quebin1, quebin2 .md2) turned by 360 minus the rotation, and gives the ground only the sentinel (0, 8, 0); OpenTPW does not draw these models — still open: the queue models are not drawn; the ground under them (flags 0x101) and the model yaw convention
-		for ( var quarter = 0; quarter < 4; quarter++ )
-		{
-			if ( mask == 0x01 ) return new PathTile( 1, quarter * 90 );
-			if ( mask == 0x11 ) return new PathTile( 2, quarter * 90 );
-			if ( mask == 0x05 ) return new PathTile( 3, quarter * 90 );
-			mask = Turn( Turn( Turn( (byte)mask ) ) );
-		}
-		return new PathTile( 0, 0 );
-	}
-
 	/// <summary>
 	/// Vertex texture coordinates for the cell corner (<paramref name="fx"/>, <paramref name="fy"/>) ∈ [0, 1]² of a path
 	/// tile turned <paramref name="rotation"/> degrees clockwise. The textures have +X to the right and +Y at the top

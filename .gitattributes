@@ -1,0 +1,2 @@
+# Retired fidelity IDs are a line list; a union merge keeps both branches' additions (the order is not checked).
+tools/fidelity_retired.txt merge=union

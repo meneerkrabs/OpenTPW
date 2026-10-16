@@ -6,19 +6,39 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
-## Arrival and save rules settled against tp.exe (October 15, 2026)
+> **New entries:** since October 16, 2026 every pull request adds its entry as its own file,
+> `docs/progress/YYYY-MM-DD-<slug>.md`, and this file keeps the earlier entries as frozen history.
+> `python3 tools/progress.py` assembles both into the full log, newest first; the website's
+> [progress notes](https://opentpw.io/docs/PROGRESS.html) show that log.
 
-Seventeen arrival and save approximations were checked again, item by item, in tp.exe (leads from an earlier REA survey, every address
-re-read):
+## Ride vehicles: engine voices, tour cars and the shared bump module (October 15, 2026)
 
-- **The booth books the fee with the bank** (`0x4ffade` → `0x4d0600`): the guest's purse (`+0x1A0`) is never touched, as in the original
-  (ARRIVAL-007 retired); the booth refuses an admission only at a bankrupt park, a closed one stopping visitors on their walk to it
-  (next entry). The determinism hash moved to `0x9AA9973FC2A6A5D6`, and with the staff candidate draws and the guest walk to `0x944788E41E278016` (docs/DETERMINISM.md).
-- **Arrival groups** keep a negative remainder after the cut (`0x4cf6e5`), which every reader treats as 0 (ARRIVAL-004 retired), and a
-  guest the booth sends to wait reruns the verdict N + 1 turns later (`0x4ffa72`, `0x4ffb01`; ARRIVAL-006 narrowed).
-- **The counts-test's track terms** apply to the park points that size the arrival groups (`0x4dd9ad` → `0x441970`; ARRIVAL-003 narrowed).
-- SAVE-930 is OpenTPW's own layout checkpoint (`[EXT:tpi-layout-checkpoint]`); thirteen arrival and save items are narrowed, among them
-  the bus, seaplane or ferry by group size (`0x4cf48c`) and the coaster save block (`0x437300`, `0x437b60`).
+Vehicle effects and the bump rides' shared state now follow tp.exe:
+
+- **Engine voices** move with their vehicle every tick (`0x51C270`, place `x × 0.0033036`, `y × 0.0033036`) and take EventMap variable 10
+  = speed / 3 (`0x51BC40` → `0x6BBB80`), bound to pitch as min + v × range / 100 (`0x6BC170`; the shipped kart and bumper engines bind
+  selector 16, 17 in Fantasy). Break smoke sits on the sparks node (class `0x100`). Water boats' spray, engine voice and unload
+  particles now play: the runtime had subscribed to bump effects only for non-water rides (TRACK-025 retired).
+- **Tour cars** start their engine at `0x55A944` with parameter 80 docked or landed, 15 taking off, 60 broken and 30 otherwise, move the
+  voice every tick and stop it on removal; TOUR 9 plays FlySmoke and FlyFire, and the mend plays clip 10 and cat_rides `0xBB`; clips
+  retrigger only on an animation change and play from the car's own letter files (TOUR-004 retired, TOUR-008 narrowed).
+- **Vehicle heights** use the original's three sampler modes (`0x450EA0`: faces, terrain plus the model's header float `+0xA0`, the
+  collision mesh); vehicles never read the `.hmp`. Bumper cars stand on their ride's platform and the jungle wake is the original's
+  second instance behind the car (TRACK-031 retired, TRACK-001 narrowed).
+- **One bump module for every bump ride** (TRACK-019 narrowed): one frame counter (`0x877B5C`), a 256-vehicle pool stepped and collided
+  in pool order across rides (restitution from the other vehicle's controller, `0x546E52`), a 2048-object pool and a 1024-buoy budget.
+  Because those pools' overflow verdicts depend on the order the rides were built in, a resume restores the saved slots, verdicts and
+  buoy counts instead of replaying the checks, so a park near the limits loads as saved.
+- **Sound parameters**: one placeholder table per sentence (`0x6BBB80`, `0x6BBF00`, `0x6BC040`) serves the crowd, the vehicle engines, the
+  rain (code 8, `0x51E870`, which now also sets the rain's volume) and the park music (code 4, `0x51E79E`); a bound volume or pitch takes
+  its slot's value, 0 until a matching call, for sentences, one-shots and chains alike, so the kart and bumper stop sounds play at the
+  bottom of their pitch range; only a call with the event's own code sets the branching value (AUDIO-003 narrowed to the fixed-pitch flag,
+  the non-chain delay and reverb).
+
+No world or guest draws were added and the pinned run hash is unchanged; parks with a bump controller hash the frame counter and pool
+order. New optional, validated save fields: the tour car's `Emitter`, the track world's `FrameCount`/`TickRemainder`, per controller
+`ObjectSlots` and `BuoyCount` and per vehicle `ObjectAttraction`; a vehicle's `Slot` is now its pool slot (unique across the rides in a
+save that has the module clock), and older saves load.
 
 ## Guests walk with tp.exe's walk (October 15, 2026)
 
@@ -115,8 +135,7 @@ Divergences found while reading other areas, each checked in tp.exe and fixed in
   Log now has to be researched.
 
 A tenth candidate (the dismissal leaving VAR_LETMEON set) does not hold: every caller unlinks first (`0x4ddd20`). The pinned run hash
-moves to `0xDB1DDEE4817DE5B0` (the staff candidate draws; docs/DETERMINISM.md), and to `0x89123A798D58778F` together with the
-booth that no longer reads the guest's purse (previous entry).
+moves to `0xDB1DDEE4817DE5B0` (the staff candidate draws; docs/DETERMINISM.md).
 
 ## Advisor presentation, crowd sound and particle density from tp.exe (October 15, 2026)
 

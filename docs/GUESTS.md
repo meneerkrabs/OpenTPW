@@ -508,7 +508,7 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
   simulation state.
 
 **Walk approximation register** (`WalkApproximations.cs`; also in
-[FIDELITY-REGISTER](FIDELITY-REGISTER.md)):
+[FIDELITY-REGISTER](https://opentpw.io/docs/FIDELITY-REGISTER.html)):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
@@ -777,7 +777,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 τ (boarding latency) is not derived and must stay an explicit parameter.
 
 **Queue approximation register** (`QueueApproximations.cs`; also in
-[FIDELITY-REGISTER](FIDELITY-REGISTER.md)):
+[FIDELITY-REGISTER](https://opentpw.io/docs/FIDELITY-REGISTER.html)):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
@@ -850,7 +850,7 @@ OpenTPW (`RideHeadSpace`, `HeadPresentation`, `RideHeadRenderer`): each script k
 
 The original-level smoke test requires submitted head quads and separately compares visible/hidden GPU captures on one identified, naturally boarded animating ride. Simulation, animation, camera and shader time are frozen; repeated visible frames and repeated hidden frames must each be byte-identical, and toggling only that attraction's head renderer must change pixels. This establishes visible OpenTPW head geometry, not original visual equivalence.
 
-Approximations ([HEADS register](FIDELITY-REGISTER.md)): the slot draw uses the original formula, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`), on a per-ride stream, not the shared world generator `0x516330`, which rotates its state right by 13 after the LCG step (`s * 1664525 + 1013904223`, `ror 13`, absolute value) and is not ported (HEADS-001, depends on DET-013; the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the azimuth origin and sense of column 0 (local +X towards +Z is used), the reference frame of the roll (the node matrix in world axes), and costume heads (guests wear none). A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
+Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)): the slot draw uses the original formula, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`), on a per-ride stream, not the shared world generator `0x516330`, which rotates its state right by 13 after the LCG step (`s * 1664525 + 1013904223`, `ror 13`, absolute value) and is not ported (HEADS-001, depends on DET-013; the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the azimuth origin and sense of column 0 (local +X towards +Z is used), the reference frame of the roll (the node matrix in world axes), and costume heads (guests wear none). A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
 
 Not done in OpenTPW: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
 records with a handle and no head table (maexah `saves.md`, "A head on a node"); the Mac code that places a car's rider is not

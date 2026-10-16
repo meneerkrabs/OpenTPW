@@ -90,8 +90,9 @@ internal sealed partial class SandboxSmokeTest
 		Require( !level.CellTool.IsActive && level.Blueprint!.Cells.Count == 0, "clicking the queue's end again ends the tool and clears the markers" );
 		Log.Trace( $"HUD queue tool: placed {entry.DisplayName} at {site} and laid {SmokeQueueLength + 1} queue cells from {(entrance.OutsideX, entrance.OutsideY)} to {end}." );
 
-		for ( var step = SmokeQueueLength; step >= 0; step-- )
-			level.RemoveAt( entrance.OutsideX + stepX * step, entrance.OutsideY + stepY * step );
+		// A ride's demolition takes its queue with it: every point of the corner stack is undone (tp.exe 0x527EE0, QUEUE-015)
 		level.RemoveObjectAt( entrance.X, entrance.Y );
+		Require( Enumerable.Range( 0, SmokeQueueLength + 1 ).All( step => !grid.IsQueue( entrance.OutsideX + stepX * step, entrance.OutsideY + stepY * step ) ),
+			"demolishing the ride takes its queue cells with it" );
 	}
 }

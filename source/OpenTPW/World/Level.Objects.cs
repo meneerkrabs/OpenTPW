@@ -127,6 +127,9 @@ public partial class Level
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
 		Objects.ObjectRemoved += item => Guests?.Unregister( item.Visitors );
+		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
+		Objects.ObjectRemoving += SettleDemolishedQueue;
+		Objects.ObjectRemoved += ClearDemolishedQueue;
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
 		if ( !GameEditions.IsThemeParkInc && ArrivalVehicles.Available( Objects.Catalog ) )
 		{
@@ -366,8 +369,13 @@ public partial class Level
 		StaffPlacement?.Cancel();
 		ride.RecomputeQueue( Guests.Grid );
 		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? ride.QueueBackCell : front;
+		// [BIN:TPW-EXE:0x00530120 corner walk] the tool's entry walks the queue into the stack of corner points (0x81B740) and sets the line start to its last point; the tool's undo then takes the queue back segment by segment (Back 0x52FE50)
+		var stack = Guests.Grid.IsQueue( front.X, front.Y ) ? QueuePaths.CornerStack( Guests.Grid, ride ) : null;
+		if ( stack is not { Count: >= 2 } || stack[^1] != start )
+			stack = null;
 		CellTool.Enter( new QueueLineWriter( Guests.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
-			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 ), start );
+			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 ), start,
+			stack, stack == null ? null : QueuePaths.StackSegments( ride, stack ) );
 		return true;
 	}
 
@@ -589,6 +597,35 @@ public partial class Level
 				Park.Economy.RefundQueueCell( instance );
 		}
 		return removed;
+	}
+
+	private readonly HashSet<OriginalObject> demolishedQueues = new();
+
+	/// <summary>
+	/// The money side of a ride's demolition for its queue, while the cells are still laid: each queue cell refunds <c>Costs.QueueCell</c> × the ride's scrap percentage
+	/// / 100 and the demolition then debits one such amount (<see cref="ParkEconomy.ChargeQueueDemolition"/>). A park load or clear removes nothing through here.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00527F87 ride demolition queue] a type with a queue (Info.HasQueue, def +0x40, 0x527F87..0x527F93) fills the corner stack with 0x530120 (0x527F9A), enters mode 3 (0x527FA5) with the forced-clear flag 0x81D7A8 set (0x527FAA) and, when the ride's own word +0x40 is above 0 (0x527FB4..0x527FBC; read here as its queue having cells), calls Back 0x52FE50 until it returns 0 (0x527FBE..0x527FDA): every cell goes and credits its refund, and 0x527FDC..0x528007 then debits one cell's refund; the ride's entrance cell is not part of the stack
+	private void SettleDemolishedQueue( OriginalObject item )
+	{
+		if ( IsReadOnlyVisit || Guests == null || !item.Entry.HasQueue || item.Visitors is not RideVisitorBridge ride )
+			return;
+		ride.RecomputeQueue( Guests.Grid );
+		if ( ride.QueueFrontCell is not { } front || !Guests.Grid.IsQueue( front.X, front.Y ) )
+			return;
+		demolishedQueues.Add( item );
+		if ( Park?.Economy is not { } economy || GetEconomyInstance( item ) is not int instance )
+			return;
+		for ( var cell = 0; cell < ride.QueueCells.Count; cell++ )
+			economy.RefundQueueCell( instance );
+		economy.ChargeQueueDemolition( instance );
+	}
+
+	/// <summary>Takes the queue cells of a demolished ride off the map (<see cref="QueuePaths.ClearAll"/>), once its guests have been set down.</summary>
+	private void ClearDemolishedQueue( OriginalObject item )
+	{
+		if ( demolishedQueues.Remove( item ) && Guests != null && item.Visitors is RideVisitorBridge ride )
+			QueuePaths.ClearAll( Guests.Grid, ride );
 	}
 
 	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain: the map start's cell types and the Easymode save's occupied cells), no object footprint of the queue tool's overwrite priority 3 or more (a lower one is demolished, QueueGivesWay) and owned land; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (the park's land, ParkCellMap.Land), compares an object cell's owner priority with 0x818C10 = 3 (0x535D66), allows empty cells, lets a queue replace a path cell unless NoModify (+0x0E bit 0x20) and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: none for the validator; the save's occupied cells stand in for its cell types (ECON-050)
@@ -816,6 +853,7 @@ public partial class Level
 	}
 
 	/// <summary>The remove tool: the object under the cursor, else a queue cell, else a path cell.</summary>
+	// [EXT:dev-one-click-remove] the developer panel's one-click remove tool takes whatever stands on the clicked cell (an object, else a queue cell, else a path cell); the original removes each through its own tool (the bulldozer 0x52BDD0, the queue and path tools' undo, the sale of a ride) and has no combined click
 	public bool RemoveAt( int x, int y ) =>
 		RemoveObjectAt( x, y ) || RemoveQueueCell( x, y ) > 0 || RemovePathCell( x, y ) == CellBuildResult.Ok;
 

@@ -1818,6 +1818,21 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
+	/// The one charge the demolition of a ride with queue cells makes after its queue is cleared: the queue cell cost × the ride's scrap percentage / 100 (a signed
+	/// 32-bit division), debited without a balance test, so the cells refund one cell less than they were laid for. Returns the amount debited.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00527FDC demolition queue charge] after the undo loop (0x527FBE..0x527FDA) 0x527EE0 takes the queue cell cost (0x52FB40) times the scrap percentage (0x4E2290), divides by 100 signed (imul by 0x51EB851F, sar 5 and the sign correction, 0x527FE3..0x527FFD) and debits it through 0x4D01F0 (0x528007); the cells themselves were credited one by one by the forced clears (ClearCell 0x5367A0's queue case, 0x4D0190), so a queue refunds one cell less than it holds
+	public long ChargeQueueDemolition( int rideInstanceId )
+	{
+		if ( !TryGetObject( rideInstanceId, out var ride ) )
+			return 0;
+		var amount = unchecked( (int)CellCost( CellPurchase.Queue ) * ScrapPercent( ride! ) ) / 100;
+		if ( amount > 0 )
+			Post( LedgerCategory.OtherCosts, amount );
+		return amount;
+	}
+
+	/// <summary>
 	/// Refunds one cleared kart or water track tile of a ride being demolished: the track cell cost × the ride's scrap percentage / 100, an unsigned 32-bit
 	/// division as the queue cell refund. Returns the amount credited.
 	/// </summary>

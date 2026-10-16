@@ -328,9 +328,28 @@ Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start hea
 October 16: TRACK-006 retired as already matching (the walk posts no message, above); TRACK-018 narrowed (arm masks and water clips built).
 Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 026, 030 (texts in the register); TRACK-025 and 031 were retired in a later round (below).
 
+## Add-ons (read, not built: TRACK-008)
+
+The track add-ons are objects of the Upgrades category with `AddOn.UpgradesId` = their ride and `AddOn.UpgradeType` 1: Dino Karts Jump 1500 and Tunnel 1501,
+Splish Splash Tunnel 1502, CryptKarts Chopper 2500 and Jump 2501, Ooze Crooz Ogre 2502, Space Racers Teleport 3500, Blobulator Tunnel 3501, Bumble Buggies Jump
+4500 and Tunnel 4501 (Tubes Of Zob Extra Tube 3502 is type 2). Each has its own script, an `m` clip and footprint codes 0xB (kart) or 0x10 (water track). What the original
+does with them (`TPW-EXE`):
+
+- **Placement** (`0x528A70`): a footprint cell with code 0xB or 0x10 must lie on track of that kind (validator passes 0x10B/0x110, 0x20B/0x210), and placing the
+  object writes the cell's flags word to 0x10 (`0x53A510`, also on a second cell). A flagged tile gets no piece instance (`0x53AFA0`): the add-on's mesh replaces it.
+- **Walk** (`0x52A970`): a flagged straight builds section kind 12 (0x44) or 13 (0x11) with +8 = its place in the run of add-on tiles (0, 1, …; any other tile resets it),
+  +0xC = the add-on's instance and +0x10 = its type id; on the run's second tile it shows or hides the add-on's class-1 dummies 1 and 0x10 (its open ends) by whether the
+  tiles ahead and behind are plain pieces or stations ("Found upgrade... modify?").
+- **Vehicles** (end of `0x547F50`, `0x548CA5`): only the Space Racers Teleport (type 0xDAC) has a hook. In its first tile a vehicle within ±0x4B0 of the centre along the
+  section's axis is hidden (`0x548E80`: flag 0x200, the vehicle's instance, its shadow and its riders' heads), remembering the side it came from (0x800000), and the
+  teleport plays animation 5 and then animation 2 looping; past 0x4B0 on the far side of the second tile the vehicle shows again, as it does on leaving add-on objects.
+
+Not traced: where a ride's add-ons are sold (the object window code around `0x481BC0..0x486D90` reads an add-on's ride through `0x4E2710`) and the placement's cell
+writes for the footprint codes (`0x532FC0`).
+
 ## Open points
 
-- Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre (TRACK-030), the edit sub-modes' piece trigger and
+- Jumps and tunnels (TRACK-008: the add-ons are neither sold nor placed; their placement, sections and the teleport hook are read, see "Add-ons"), the bumper cars' arena centre (TRACK-030), the edit sub-modes' piece trigger and
   texture-frame piece clips (TRACK-018), the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
@@ -430,7 +449,7 @@ script through a race). The native smoke test has a kart phase: the circuit from
 
 The trace's corrections: `BUMP 5` reads the track-valid flag, `BUMP 8` has no return value, `BUMP 17` 1 stops the pieces; the × ¾ corner thrust applies to any vehicle whose
 object lacks all four quadrant bits. The lap count of a kart script is `VAR_DURATION`, which the ride's `InitDuration` (3) sets at creation
-(`[TPW-EXE:0x4db565]`). Still open: the `cat_rides` catalogue ids, the add-on handler `0x548E80` (jumps, tunnels), what else besides `BUMP 9` sets the worn state, and whether
+(`[TPW-EXE:0x4db565]`). Still open: the `cat_rides` catalogue ids, the add-ons' vehicle hook `0x548E80` (the Space Racers Teleport hides a vehicle between its two tiles, TRACK-008), what else besides `BUMP 9` sets the worn state, and whether
 the late-to-grid extra lap is observable (the code reproduces it as written).
 
 ## Bumper cars (October 14)

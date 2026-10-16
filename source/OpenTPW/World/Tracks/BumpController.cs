@@ -5,7 +5,7 @@ namespace OpenTPW;
 /// collision objects and buoys, the guests waiting to board and to leave, and the vehicles. It runs the module's integer physics once per 31 ms
 /// world substep (about 32.26 per second) and answers the ride script's <c>BUMP</c> commands. It runs water boats (types −5, −8, −12, −13), go-karts (types −4,
 /// −7, −9, −10: the grid start, the race, the finish and the kart effects) and bumper cars (types −1, −6, −11, −14: cars that wander an arena
-/// and hand their riders over when the session's countdown ends); the add-on handler 0x00548E80 (jumps, tunnels) is TRACK-008.
+/// and hand their riders over when the session's countdown ends); the add-ons' vehicle hook (0x00548E80: the Space Racers Teleport hides a vehicle between its two tiles) is TRACK-008.
 /// </summary>
 // [APPROX:TRACK-019] the shared pools are allocated first-free as the original's, but their order after a park-resume restore of a save from before the shared pools follows the restore (controllers by attraction id), the module ticks where the first controller's ride advances (the rides placed before it run their script step first; the original ticks the module before every script), and the bumper cars' chase candidates and drop-in overlap test still read their own ride's cars
 

@@ -207,7 +207,7 @@ public sealed class UiFonts
 
 /// <summary>Colours used by the original-style screens (OpenTPW choices, see docs/UI.md).</summary>
 // [BIN:TPW-EXE:0x65c5d5 text control colour] the original gives each text control an RGBA colour (renderer +0x48, kept as ARGB at +0x78, 0x48fd07) and renders its glyphs white (0x48fa96) unless the control keeps the font's own colours (+0xdd); the buy list rows are (255,255,255,255) (0x4ad340)
-// [APPROX:UI-006] the other UI text/backdrop colours (values, highlight, disabled, costs, backdrops) are read off 720p video frames (+-15 per channel); the title colour is exact — evidence needed: which screen each remaining 0x65c5d5 call colours (about a hundred sites), the backdrop colours
+// [APPROX:UI-006] the other UI text/backdrop colours (values, highlight, disabled, costs, backdrops) are read off 720p video frames (+-15 per channel); the title colour is exact — evidence needed: which screen each remaining 0x65c5d5 call colours (134 sites, see the register row), the backdrop colours
 public static class UiColors
 {
 	public static readonly RgbaByte Text = new( 255, 255, 255, 255 );

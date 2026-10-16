@@ -59,6 +59,7 @@ TABLES = [
     ('LocatorStrip', 0x756AD8, 0x146, (448, 964, 1074, 1066), 0x756B96, 5),
     ('LoansWindow', 0x7525A0, 0x12C4B9, (186, 30, 2018, 1007), 0x752934, 29),
     ('LoadDialog', 0x7523F0, 0x23BCDF, (248, 30, 1800, 1007), 0x752564, 10),
+    ('PostcardWindow', 0x7540D8, 0x5D9D, (186, 30, 2018, 1007), 0x7542B4, 11),
 ]
 # The second confirm-dialog table must be the same stream, byte for byte in its decoded tree.
 CONFIRM_TWIN = 0x7585A8
@@ -90,6 +91,7 @@ REQUIRED = {
     'LoansWindow': ['window4', 'f_loans', '!frame', 'b_sloan', 'b_spayup', 'b_up', 'b_down', 'b_scroller', 'b_exit', 'b_finance', 'b_entry',
                     'b_staffcost'],
     'LoadDialog': ['window2', 'f_load', '!frame', 'b_up', 'b_down', 'b_scroller', 'b_exit', 'b_okay'],
+    'PostcardWindow': ['window4', '!frame', 'b_address', 'b_clear', 'b_preview', 'b_okay', 'b_exit'],
 }
 
 LOADER = 0x4899C0

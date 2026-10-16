@@ -33,7 +33,7 @@ contents follow the original online screens mapped from the Mac binary in
 | Park details | The original details dialog (Mac table `data:0x51150`): eight label rows, description, enter-park and the owner's un-publish | `w_big` |
 | Other Parks | The city's outside-the-top-10 chart (Mac table `data:0x5137e`, "Other Parks In …", UITEXT 446) | `w_big`, `list_findprks` |
 | Publish Park | Publish Park form (Mac table `data:0x514de`); OpenTPW adds the website opt-in (off by default) | `w_med` |
-| Send Postcard | Send Postcard dialog | `w_med` |
+| Send Postcard | tp.exe's postcard window (table `0x7540d8`, `0x4a8c00`/`0x4a7d70`): photo frame, message, title and recipients fields with their prompts and lengths, clear, tick (unedited title and message take the defaults UITEXT 215/216; no recipient shows 213) and X; the preview and address book are disabled (UI-042); recipients are player names (`[EXT:postcard-player-names]`) | `window4`, `!frame`, `b_clear`, `b_okay`, `b_exit` |
 | Unsent Postcards | Unsent Postcards (outbox) screen in its original composition (Mac table `data:0x508bc`): Title/Date/Send/Delete columns and the mark buttons | `list_outbox`, `b_sendall` |
 | Inbox | (OpenTPW) | `list_outbox` |
 | Chat | The original chat overlay (Mac table `data:0x50b2c`): people-in-park list with tabs, action bar, message list, text entry — and the chat park view | `list_msgs`, `f_text1` |

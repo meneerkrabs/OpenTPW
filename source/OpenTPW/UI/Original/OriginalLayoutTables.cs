@@ -652,6 +652,24 @@ public static class OriginalLayoutTables
 			new( 5, 0x1u, 0x23BCE2u, 605, 811, 1343, 895, -1, -1, "!frame", null, new[] { 638, 830, 1317, 874 }, System.Array.Empty<LayoutNode>() ),
 		} ),
 	} );
+
+	/// <summary>[BIN:TPW-EXE:0x7540d8] layout table PostcardWindow.</summary>
+	public static readonly LayoutTable PostcardWindow = new( "PostcardWindow", 0x7540D8, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x5D9Du, 186, 30, 2018, 1007, -1, -1, "window4", null, null, new LayoutNode[]
+		{
+			new( 1, 0x1u, 0x5D9Eu, 809, 66, 1281, 146, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x5D9Fu, 336, 144, 1671, 675, -1, -1, "!frame", null, new[] { 366, 168, 1646, 648 }, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x5DA0u, 1688, 794, 1842, 948, 324, -1, "b_address", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x5DA1u, 1688, 475, 1842, 629, 323, -1, "b_clear", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x5DA2u, 1688, 311, 1842, 465, 322, -1, "b_preview", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 5, 0x81u, 0x5DA3u, 341, 691, 970, 952, 319, -1, "!frame", null, new[] { 364, 709, 951, 928 }, System.Array.Empty<LayoutNode>() ),
+			new( 5, 0x1u, 0x5DA4u, 981, 689, 1670, 781, 320, -1, "!frame", null, new[] { 1004, 713, 1654, 757 }, System.Array.Empty<LayoutNode>() ),
+			new( 5, 0x81u, 0x5DA5u, 983, 788, 1672, 953, 321, -1, "!frame", null, new[] { 1004, 806, 1654, 932 }, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFFu, 1878, 731, 1961, 815, 325, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFEu, 1889, 820, 1972, 903, 2, -1, "b_exit", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
 }
 
 /// <summary>The original game pointers: their ids and .tga files, and the tool-to-pointer switch.</summary>

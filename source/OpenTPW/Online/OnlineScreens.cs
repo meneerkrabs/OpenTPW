@@ -832,16 +832,48 @@ public sealed class OnlineScreens
 
 	// ---- Postcards (UI-MAP "Send Postcard dialog", "Unsent Postcards screen") ------------------
 
+	/// <summary>
+	/// Send Postcard in its original composition (tp.exe table 0x7540d8, built by 0x4a8c00): the window4 window with the title (UITEXT 208), the photo
+	/// frame, the message, title and recipients fields and the preview, clear, address book, tick and X buttons.
+	/// </summary>
+	// [BIN:TPW-EXE:0x7540d8 postcard window] root 0x5d9d window4 (186,30)-(2018,1007); title 0x5d9e (809,66)-(1281,146); photo frame 0x5d9f !frame (336,144)-(1671,675);
+	// message field 0x5da3 (341,691)-(970,952) help 319, title field 0x5da4 (981,689)-(1670,781) help 320, recipients field 0x5da5 (983,788)-(1672,953) help 321;
+	// b_preview 0x5da2 help 322, b_clear 0x5da1 help 323, b_address 0x5da0 help 324, b_okay help 325 and b_exit help 2
+	// [BIN:TPW-EXE:0x4a8c00 postcard build] the title gets UITEXT 0xd0; the recipients field holds at most 0x1ff characters and starts with UITEXT 0xd3, the title field 0x5f and
+	// UITEXT 0xd1, the message field 0xff and UITEXT 0xd2, each in font slot 11 and white (tp.exe's UITEXT ids here are OpenTPW's + 1)
+	// [BIN:TPW-EXE:0x4a7d70 postcard handler] an edit of the message or title field (message 0x801) sets its flag (0x7cbf40, 0x7cbf3c); b_clear empties the three fields
+	// without clearing the flags; the tick (-1) takes UITEXT 0xd9 for an unedited message and 0xd8 for an unedited title (0x4a7ee1, 0x4a7f07), splits the recipients at
+	// ';', ',', ' ' and newlines (0x754448) and, when there is none or one is refused, shows message box 0x47f020 with UITEXT 0xd6 and keeps the window; otherwise it sends
+	// (0x4a8600: to the outbox while offline) and closes the window; b_exit closes it
+	// [EXT:postcard-player-names] OpenTPW's postcards go to player names through its online service, so a recipient is not checked for an e-mail address (the original
+	// refuses a token without an '@' followed, beyond its next character, by a '.', 0x4a7f6c)
+	// [APPROX:UI-042] the photo frame stays empty and the preview and address book buttons are disabled: the 640x240 camcorder photo (0x4a9280), its preview redraw
+	// (0x4a84c0) and the address book window (table 0x7542b8, 0x4a8140) are not ported
 	public void ShowSendPostcard()
 	{
 		var screen = new UiScreen( "sendPostcard" );
-		var window = UiDialogs.CenteredWindow( 1300, 1120 );
-		UiDialogs.AddWindow( screen, window, "w_med", () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send postcard" ) );
-		var x = window.X + 120;
-		var width = window.Width - 340;
-		var to = AddField( screen, "to", () => OnlineStrings.Get( OnlineLabel.To ), x, window.Y + 170, width, 256 );
-		var title = AddField( screen, "title", () => OnlineStrings.Ui( OnlineStrings.MessageTitle, "Title" ), x, window.Y + 340, width, 64 );
-		var message = AddField( screen, "message", () => OnlineStrings.Ui( OnlineStrings.MessageText, "Message" ), x, window.Y + 510, width, 1000 );
+		var table = OriginalLayoutTables.PostcardWindow;
+		LayoutNode Control( uint id ) => table.Control( id );
+		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "heading", Text = () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send Postcard" ), Font = fonts => fonts.Title, Color = UiColors.Title,
+			Align = UiAlign.Center, Fit = true, Bounds = Control( 0x5D9E ).Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiModelImage { Id = "photo", Model = Control( 0x5D9F ).Model!, Bounds = Control( 0x5D9F ).Rect, Anchor = UiAnchor.Center } );
+		var edited = new HashSet<string>( StringComparer.Ordinal );
+		var prompts = new Dictionary<string, string>( StringComparer.Ordinal );
+		// a field whose text differs from its prompt counts as edited, also when it was set without typing
+		bool Edited( UiTextField field ) => edited.Contains( field.Id ) || field.Text != prompts[field.Id];
+		UiTextField Field( string id, uint control, int maximumLength, Func<string> prompt )
+		{
+			var node = Control( control );
+			var initial = prompt();
+			var field = screen.Add( new UiTextField { Id = id, MaximumLength = maximumLength, Text = initial, Help = strings.Help( node.Help ), Model = node.Model,
+				TextInset = node.Inner is { } inner ? inner.X - node.Rect.X : 0, Bounds = node.Rect, Anchor = UiAnchor.Center, Changed = _ => edited.Add( id ) } );
+			prompts[id] = initial;
+			return field;
+		}
+		var message = Field( "message", 0x5DA3, 0xFF, () => OnlineStrings.Ui( OnlineStrings.MessageText, "Message text" ) );
+		var title = Field( "title", 0x5DA4, 0x5F, () => OnlineStrings.Ui( OnlineStrings.MessageTitle, "Message title" ) );
+		var to = Field( "to", 0x5DA5, 0x1FF, () => OnlineStrings.Ui( OnlineStrings.EmailAddresses, "Email address(es)" ) );
 		// The original attached a photo of the park the card is sent from (manual p. 51/67); OpenTPW attaches the
 		// park's map view. [APPROX:ONLINE-022] the camcorder snapshot is not reproduced, and no park reference is
 		// attached because the live level has no package identity.
@@ -861,20 +893,48 @@ public sealed class OnlineScreens
 				return null;
 			}
 		}
-		screen.Add( new UiButton { Id = "outbox", Text = () => OnlineStrings.Get( OnlineLabel.PutInOutbox ),
-			Clicked = () => Guard( () =>
+		void Close()
+		{
+			if ( !screen.IsRemoved && ReferenceEquals( stack.Top, screen ) ) stack.Pop();
+		}
+		void Send()
+		{
+			var recipients = PostcardRecipients( Edited( to ) ? to.Text : "" );
+			if ( recipients.Length == 0 )
 			{
-				var card = Postcard.Create( Session.Settings.PlayerName ?? "", to.Text.Split( ',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries ),
-					title.Text, message.Text, GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage, image: ParkImage() );
+				stack.Push( UiDialogs.Message( "postcardRecipients", () => OnlineStrings.Ui( OnlineStrings.InvalidEmailAddresses, "Invalid email addresses in the send to field" ),
+					(() => strings.Extra( OpenTpwText.Back ), stack.Pop) ) );
+				return;
+			}
+			Guard( () =>
+			{
+				var card = Postcard.Create( Session.Settings.PlayerName ?? "", recipients,
+					Edited( title ) ? title.Text : OnlineStrings.Ui( OnlineStrings.PostcardTitle, "Postcard from Theme Park World" ),
+					Edited( message ) ? message.Text : OnlineStrings.Ui( OnlineStrings.PostcardGreeting, "Greetings from Theme Park World!" ),
+					GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage, image: ParkImage() );
 				localStatus = OnlineStrings.Get( OnlineLabel.SavedTo ) + Session.Folders.Store( Session.Folders.Outbox, card );
-				title.Text = message.Text = "";
-			} ),
-			Bounds = new UiRect( x, window.Bottom - 360, 560, 110 ), Anchor = UiAnchor.Center } );
-		AddStatus( screen, window );
-		AddBack( screen, window );
+				Close();
+			} );
+		}
+		UiButton Button( string id, string model, Action? clicked, bool enabled = true )
+		{
+			var node = table.Model( model );
+			return screen.Add( new UiButton { Id = id, Model = node.Model, Help = strings.Help( node.Help ), Clicked = clicked, Enabled = enabled, Bounds = node.Rect,
+				Anchor = UiAnchor.Center } );
+		}
+		Button( "preview", "b_preview", null, enabled: false );
+		Button( "clear", "b_clear", () => message.Text = title.Text = to.Text = "" );
+		Button( "addressBook", "b_address", null, enabled: false );
+		Button( "ok", "b_okay", Send );
+		Button( "back", "b_exit", Close );
+		screen.Back = Close;
 		screen.Focus( to );
 		Push( screen );
 	}
+
+	/// <summary>The recipients of a postcard: the field's text split at the original's separators (';', ',', ' ' and newlines, tp.exe 0x754448).</summary>
+	public static string[] PostcardRecipients( string text ) =>
+		text.Split( new[] { ';', ',', ' ', '\n' }, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries );
 
 	/// <summary>
 	/// Unsent Postcards in its original composition (Mac UI table data:0x508bc): a window (186,30)-(2018,1007)

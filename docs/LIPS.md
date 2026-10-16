@@ -520,9 +520,10 @@ model `OriginalAdvisorScoreQueue` and keeps all 31 of its cases as
 | 2 | `ParkEconomy` bankruptcy (ADVISOR-020) | 106 (`Bankrupted.Score`) | 274/275 → global 424/425 |
 | 3 | Every press of the open button or Ctrl-O (`ParkHud`), also when the park is already open | 128 (`ParkNowOpen.Score`) | 308/309 → global 342/343 |
 | 4 | Every press of the close button or Ctrl-C (`ParkHud`), also when the park is already closed | 129 (`ParkNowClosed.Score`) | 310/311 → global 344/345 |
+| prank message (type 0xE) | A prankster's prank (`GuestSimulation.Pranked`; the bus `0x40fb10` delivers it at once). The message's kind word is the prankster's id modulo 3 (tp.exe `0x4ff2f8`), not the prank | 125, 126 or 127 for kind 0, 1, 2 (`PrankSbomb.Score`, `PrankLitter.Score`, `PrankBalloon.Score`, optional in the file; `0x59b060`) | 302/303, 304/305, 306/307 → global 336–341 |
 
 `Advisor/Advisor.sam` is read at runtime with the bounded `.sam` reader (≤ 1 MiB):
-`MinScoreForConsideration`, the group repeat/once/slap controls and the five
+`MinScoreForConsideration`, the group repeat/once/slap controls and the eight
 scores. Queue rules: eight records; admission checks tutorial option, repeat
 interval in quarter game ticks (`(tick >> 2) − (saved >> 2)`, saved ticks 0–3
 skip it, equality passes), once-only, slaps and the pending-duplicate limit,

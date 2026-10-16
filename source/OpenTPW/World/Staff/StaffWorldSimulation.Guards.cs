@@ -175,13 +175,17 @@ public sealed partial class StaffWorldSimulation
 		SetJob( economy, member, StaffJob.Idle, turn );
 	}
 
-	/// <summary>The guard sets his guest down where he stands (tp.exe <c>0x004FEB50</c>): cat_kids 128 there, and the guest walks out of the park or is removed.</summary>
+	/// <summary>
+	/// The guard sets his guest down where he stands (tp.exe <c>0x004FEB50</c>): cat_kids 128 there, and the guest walks out of the park by the side
+	/// a world draw's bit 0 picks, or is removed when that side is out of reach.
+	/// </summary>
 	private void SetDown( ParkEconomy economy, StaffMember member )
 	{
 		var cell = Cell( member );
-		Draw( economy ); // the gate side the guest's route takes (0x004FEB50 draws the world generator)
+		// [BIN:TPW-EXE:0x004FEBC1 set-down side] one world draw (0x00516330); its bit 0 is the gate cell 0x004D86D0 returns, 0 side A, 1 side B
+		var side = (int)(Draw( economy ) & 1);
 		Sound( member, SetDownEvent, kids: true, cell );
-		Guests?.Release( member.TargetGuestId, cell );
+		Guests?.Release( member.TargetGuestId, cell, side );
 	}
 
 	private enum GateCell { TicketBooth, Entrance }

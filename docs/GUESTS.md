@@ -347,15 +347,19 @@ Traced and executed (x86 findings X18 and X22, [ORACLE.md](reverse/ORACLE.md) se
 guests in 100 (5 in the shipped balance) are pranksters, of one of three kinds by their id: stinkbombs, litter or balloons. In state 6 a prankster whose
 happiness byte is below 15 pranks when its flag beats a draw modulo 101: a stinkbomb on its cell (`StinkbombLikelihood` percent of the time, 25),
 litter on its cell, or another guest's balloon burst (the first other guest on the cell holding one; without a victim there is no prank). A stinkbomb
-plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. The advisor's prank lines are not modelled yet (GUEST-007).
+plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. The prank message reaches the advisor and the staff HQ at once
+(the bus `0x40fb10` delivers it as it is sent). The advisor queues one of its three prank lines (advice 0x7D, 0x7E or 0x7F, responses 302–307,
+scored by `PrankSbomb.Score`, `PrankLitter.Score` and `PrankBalloon.Score`), chosen not by the prank but by the message's kind word, which the
+prank step fills with the prankster's id modulo 3 (tp.exe `0x4ff2f8`, `0x59b060`).
 
 A prank calls the guards (tp.exe `0x508a30`, WANDER-plan.md §4), but only on a cell with security: a guard spreads `RegionFX[3]` (security 10,
 radius 3) where he stands, so a prankster within three cells of a guard is seen. Then the free guard (idle or patrolling) **nearest the staff HQ**
 is sent, and the HQ always sits at map cell (0, 0), so the guard nearest the map's corner goes, however far he is from the prankster. He walks
 to the prankster (cat_staff 136) and chases it for `GuardConstsPerGrade.WorkDuration` turns (10 to 75 by grade), re-routing when he arrives where
 it no longer is. On its cell he catches it if it is deciding, wandering, taking litter to a bin or walking to a ride (cat_staff 137): he carries it,
-out of sight, to the ticket booth (in OpenTPW the park entrance, as the booth lies off the paths) and sets it down there (cat_kids 128), and it
-heads for the exit. Like any leaving guest it is recalled on its next turn while its exit counter and happiness are above 0 and the park is
+out of sight, to the ticket booth (in OpenTPW the park entrance, as the booth lies off the paths) and sets it down there at the cell's centre
+(cat_kids 128). A world draw's bit 0 picks the side it leaves by (`0x4feb50`, `0x4d86d0`): it heads for that side's exit, and is removed when
+that side is out of reach. Like any leaving guest it is recalled on its next turn while its exit counter and happiness are above 0 and the park is
 open (the leaving handler `0x500a50`), so the guard's escort sends home only a guest that wanted to go anyway. A carried guest whose guard is dismissed or abandons the escort is removed from the park, as in the original.
 
 Vomit and stinkbombs spread their `RegionFX` row around their cell while they lie: every cell within the row's square radius gets the row's

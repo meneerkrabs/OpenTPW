@@ -29,6 +29,9 @@ internal readonly record struct AdvisorMessageDefinition( int MessageId, int Fir
 /// </summary>
 internal static class AdvisorTables
 {
+	/// <summary>The Advisor.sam keys of the three prank messages' scores; optional, a settings file without them leaves the pranks silent.</summary>
+	public static readonly string[] PrankScoreKeys = { "PrankSbomb.Score", "PrankLitter.Score", "PrankBalloon.Score" };
+
 	// [BIN:STP-PPC:0x1000D468 descriptor accessors] rows of the 351-record descriptor table (data section 0x1F2B4): message, first response (+32, 0x1000D468), response count (+36, 0x1000D5EC), group (+8), pending-duplicate limit (+28 low byte, 0x1000D770); all use cyclic mode 2 and game-mode selector 2 (always eligible)
 	public static readonly AdvisorMessageDefinition[] Messages =
 	{
@@ -37,7 +40,22 @@ internal static class AdvisorTables
 		new( 128, 308, 2, 0, 1, "ParkNowOpen.Score" ),
 		new( 129, 310, 2, 0, 1, "ParkNowClosed.Score" ),
 		new( 323, 587, 1, 1, 1, "PrebuiltPark.Score" ),
+		// [BIN:TPW-EXE:0x0076E300 prank descriptors] rows 0x7D..0x7F of the Windows table (filled by 0x5A0A50): responses 302/304/306, two each, group 0, game mode 2, pending duplicates 255, 1 and 255; their score callbacks 0x59F360/0x59F370/0x59F380 return the Advisor.sam fields +0x3D4/+0x3D8/+0x3DC, the schema's PrankSbomb, PrankLitter and PrankBalloon scores (0x0072E124, just before ParkNowOpen at +0x3E0)
+		new( 125, 302, 2, 0, 255, PrankScoreKeys[0] ),
+		new( 126, 304, 2, 0, 1, PrankScoreKeys[1] ),
+		new( 127, 306, 2, 0, 255, PrankScoreKeys[2] ),
 	};
+
+	/// <summary>The first of the three prank messages (0x7D).</summary>
+	public const int FirstPrankMessage = 125;
+
+	/// <summary>
+	/// The advice a prank message constructs: 0x7D, 0x7E or 0x7F by the message's kind word, which the prank step fills with the prankster's
+	/// thing id modulo 3, not with the prank (a stinkbomb, litter or a burst balloon).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FF2EA prank message kind] the message (vtable 0x007007A8, type 0xE) takes the prankster's id (0x0050B350) at +8 and, at +0xC, the word at esp+0x1C after the id was stored there (0x004FF2D6), divided by 3 (0x004FF2F8): the remainder; the bus 0x0040FB10 delivers it at once to the advisor and the staff HQ
+	// [BIN:TPW-EXE:0x0059B060 advisor messages] type 0xE: kind 0 queues 0x7D, 1 queues 0x7E, 2 queues 0x7F (0x0059A940), each record with the prankster's id and cell, no variant (-1) and the descriptor's score (0x0059BF20)
+	public static int PrankAdvice( int pranksterId ) => FirstPrankMessage + (int)((uint)(ushort)pranksterId % 3);
 
 	/// <summary>The Advisor.sam key of the score every help message carries.</summary>
 	// [BIN:TPW-EXE:0x0059E8C0 help score] the score callback of the 82 help descriptors returns the balance field at +0x328, the Advisor.sam key HelpMessage.Score (1000 shipped)
@@ -130,7 +148,8 @@ internal sealed class AdvisorBalance
 			// The help score is optional: a settings file without it leaves the help silent instead of disabling the advisor.
 			ContextHelpScore = settings.GetInt( AdvisorTables.ContextHelpScoreKey, 0, optional: true ),
 			Scores = AdvisorTables.AllMessages.Select( message => message.ScoreKey ).Distinct( StringComparer.OrdinalIgnoreCase )
-				.ToDictionary( key => key, key => key == AdvisorTables.HelpScoreKey ? settings.GetInt( key, 0, optional: true ) : settings.GetInt( key ), StringComparer.OrdinalIgnoreCase ),
+				.ToDictionary( key => key, key => key == AdvisorTables.HelpScoreKey || AdvisorTables.PrankScoreKeys.Contains( key, StringComparer.OrdinalIgnoreCase )
+					? settings.GetInt( key, 0, optional: true ) : settings.GetInt( key ), StringComparer.OrdinalIgnoreCase ),
 		};
 	}
 

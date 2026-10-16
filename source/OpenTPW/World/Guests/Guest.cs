@@ -104,6 +104,11 @@ public sealed class Guest
 	/// <summary>The prankery flag (guest <c>+0x1c0</c>, <c>mPrankeryIndex</c>): 0, or 100 (stinkbombs), 101 (litter) or 102 (balloons) for a prankster.</summary>
 	public int PrankFlag { get; internal set; }
 	/// <summary>
+	/// The way out a guard's set-down drew for the guest (0: arrival lane A, 1: lane B; tp.exe <c>0x004FEB50</c> takes bit 0 of a world draw), which its
+	/// walk out of the park takes; null for every other guest, which leaves by the nearer reachable lane.
+	/// </summary>
+	public int? ExitSide { get; internal set; }
+	/// <summary>
 	/// The balloon's remaining life (guest <c>+0x214</c>, <c>mRemainingBalloonLife</c>): set by a balloon shop, one less on every needs phase while the guest is in
 	/// the park and neither on a ride nor held; the balloon goes at 0. It is not cleared when the balloon bursts, so a burst balloon comes back after the next ride.
 	/// </summary>

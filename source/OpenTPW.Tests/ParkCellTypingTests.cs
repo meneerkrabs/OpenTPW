@@ -43,16 +43,22 @@ public class ParkCellTypingTests
 	}
 
 	[TestMethod]
-	public void AFootprintTypesOnlyEmptyCellsAndItsRemovalEmptiesThemAgain()
+	public void AFootprintTypesEmptyCellsClearsPlainPathUnderItAndKeepsNoModifyPathAndItsRemovalEmptiesThemAgain()
 	{
 		var cells = new ParkCellMap( 8, 8 );
 		cells.SetType( 2, 1, ParkCellType.Path );
+		cells.SetFlags( 2, 1, ParkCellFlags.NoModify );
+		cells.SetType( 1, 2, ParkCellType.Path );
+		cells.SetType( 1, 3, ParkCellType.Path );
+		cells.SetLinks( 1, 2, 0x10 );
+		cells.SetLinks( 1, 3, 0x01 );
 		var shape = new ObjectShape( new[] { "**", "2S" } );
 		var footprint = ObjectFootprint.GetCells( shape, 1, 1, 0 ).ToList();
 		cells.WriteFootprint( footprint );
 		var types = footprint.Select( cell => cells.RawTypeAt( cell.X, cell.Y ) ).OrderBy( type => type ).ToArray();
 		CollectionAssert.AreEquivalent( footprint.Select( cell => cell.X == 2 && cell.Y == 1 ? (byte)1 : ParkCellMap.FootprintType( cell.Cell.CellType ) ).ToArray(), types,
-			"each empty cell takes its shape type; the path cell keeps its type" );
+			"each empty cell takes its shape type and a path cell without NoModify is cleared first (0x5290F6..0x52910C); a NoModify path cell keeps its type" );
+		Assert.AreEqual( 0, cells.LinksAt( 1, 3 ) & 0x01, "the cleared path cell is unlinked from the path cell beside it" );
 		cells.ClearFootprint( footprint );
 		Assert.IsTrue( footprint.All( cell => cells.RawTypeAt( cell.X, cell.Y ) == (cell.X == 2 && cell.Y == 1 ? 1 : 0) ) );
 	}

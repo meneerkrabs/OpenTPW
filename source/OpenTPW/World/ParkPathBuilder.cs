@@ -333,6 +333,12 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	public CellBuildResult Remove( int x, int y ) => Clear( x, y, forced: true );
 
 	/// <summary>
+	/// <see cref="Remove"/> that also takes a NoModify cell with neighbours, the flag dropped first as for a lone one (the level opts in for the cells the placement laid outside
+	/// an entrance or exit, EXT:removable-access-cells). Nothing is refunded.
+	/// </summary>
+	public CellBuildResult RemoveFixed( int x, int y ) => Clear( x, y, forced: true, removeFixed: true );
+
+	/// <summary>
 	/// <c>ClearCell</c>'s path case with a walk step (a, b) other than (0, 0), as the backtrack key and the segment undo
 	/// call it: the cell's placement counter drops by one and the cell is removed only when it falls below zero
 	/// (<see cref="CellBuildResult.Existing"/> when the cell stays). NoModify as in <see cref="Remove"/>; no refund.
@@ -340,13 +346,13 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	// [BIN:TPW-EXE:0x5367A0 ClearCell] (a, b) other than (0, 0) decrements the signed counter +0x20; the cell stays while it is >= 0, else the counter is reset to 0 and the cell is cleared like the forced case
 	public CellBuildResult RemoveOnce( int x, int y ) => Clear( x, y, forced: false );
 
-	private CellBuildResult Clear( int x, int y, bool forced )
+	private CellBuildResult Clear( int x, int y, bool forced, bool removeFixed = false )
 	{
 		if ( Cells.TypeAt( x, y ) != ParkCellType.Path )
 			return CellBuildResult.NotPath;
 		if ( Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )
 		{
-			if ( HasPathNeighbours( x, y ) )
+			if ( !removeFixed && HasPathNeighbours( x, y ) )
 				return CellBuildResult.NoModify;
 			Cells.SetFlags( x, y, Cells.FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
 		}

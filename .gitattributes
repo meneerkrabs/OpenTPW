@@ -1,2 +1,5 @@
 # Retired fidelity IDs are a line list; a union merge keeps both branches' additions (the order is not checked).
 tools/fidelity_retired.txt merge=union
+
+# Shell scripts run under bash on every platform and a test parses this one: keep LF in a Windows checkout.
+scripts/*.sh text eol=lf

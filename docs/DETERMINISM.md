@@ -390,6 +390,9 @@ digests, and every `mod:<id>:` key of the asset manifest must name a recorded mo
 save that has it (the codec refuses unknown members), which is intended. `ParkSharing.ExportLevel` refuses to export while a
 simulation-changing mod is active, because a park package records none yet.
 
+A run with a mod that brings Theme Park Inc rides is as deterministic as any other: the M3 gate with such a ride as its attraction gives the same guest and state hashes in two runs
+(`TpiRidesEndToEndTests`, over the install named by `OPENTPW_TPI_PATH`), and the extension is recorded in the save, so a park saved with it loads only with it.
+
 The asset manifest names the content root of every archive member: `data:` for the game data, `bonus:` for the official
 bonus content and `mod:<id>:` for a mod (`ContentRoot.KeyPrefix`, `ObjectCatalogEntry.Root`). A mod's override of a
 game-data path keeps the `data:` key, and its changed hash makes the existing manifest comparison refuse a mismatched park.

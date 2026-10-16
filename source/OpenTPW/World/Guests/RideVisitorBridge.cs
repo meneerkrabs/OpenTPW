@@ -524,6 +524,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 
 	// ---- Queue geometry ----------------------------------------------------------------------
 
+	/// <summary>
+	/// The ride's owner word (the cell word of its anchor, <see cref="ParkCellMap.CellWord"/>): what the queue tool writes as the owner of the queue cells it lays and of the path
+	/// cell a line ends on. 0 for a bridge without a placed object (the gates, the prototype). Not saved: the level sets it when it registers the ride.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005340E9 owner pass] the line's pass 0x83 stores the tool's ride (0x818698, the cell word of the ride's anchor) as the owner word +0x10 of each cell of the line, queue cells and the path cell it ends on; Easymode's Belly Bounce queue cells and the path cell its queue ends on all carry its owner word
+	public ushort OwnerWord { get; set; }
+
 	/// <summary>The entrance's outside cell (the original front cell), or null to use <see cref="EntranceCell"/>.</summary>
 	public (int X, int Y)? QueueFrontCell { get; set; }
 	/// <summary><see cref="GuestPathGrid.Directions"/> index from the front cell toward the ride's entrance cell, or −1.</summary>
@@ -609,7 +616,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		var previous = queueCells.ToArray();
 		queueCells.Clear();
 		var front = QueueFrontCell ?? EntranceCell;
-		// A front cell that is neither a queue nor a path cell falls back to EntranceCell, the nearest walkable path cell (RIDES-028 in Level.Objects), as a one-cell queue.
+		// A front cell that is neither a queue nor a path cell falls back to EntranceCell, the nearest walkable path cell (a cell nothing laid: imports, restores, the gates), as a one-cell queue.
 		if ( !grid.IsQueue( front.X, front.Y ) && !grid.IsWalkable( front.X, front.Y ) )
 			front = EntranceCell;
 		queueCells.Add( front );

@@ -108,12 +108,12 @@ public class PlacedAmbientTests
 	[TestMethod]
 	public void APlacedVoiceIsSilentPastItsRangeAndFullNearTheListener()
 	{
-		// The distance law (the fork's QMixer law with the game's 2.0 minimum and the voice's own range); near is full gain.
+		// The distance law (QMixer's law with the game's 2.0 minimum, the voice's own range and the rolloff 0.2); near is full gain.
 		Assert.AreEqual( 1f, AudioListener.RangeGain( 97, 1 ), "inside the minimum distance" );
 		Assert.AreEqual( 0f, AudioListener.RangeGain( 97, 97 ), "at the range" );
 		var middle = AudioListener.RangeGain( 97, 50 );
 		Assert.IsTrue( middle > 0 && middle < 1, $"between: {middle}" );
-		Assert.AreEqual( MathF.Pow( (97f - 50) / (97f - 2), 0.8f ), middle, 1e-5f );
+		Assert.AreEqual( MathF.Pow( (97f - 50) / (97f - 2), AudioListener.Rolloff ), middle, 1e-5f );
 		Assert.AreEqual( 1f, AudioListener.RangeGain( 0, 500 ), "no range: always full" );
 	}
 
@@ -122,10 +122,10 @@ public class PlacedAmbientTests
 	{
 		// tp.exe 0x6c3b8a: the far end handed to the mixer is 2.1 when the sound's range is not above the minimum distance 2.0
 		Assert.AreEqual( 1f, AudioListener.RangeGain( 1.5f, 2 ), "at the minimum distance" );
-		Assert.AreEqual( MathF.Pow( (2.1f - 2.05f) / (2.1f - 2f), 0.8f ), AudioListener.RangeGain( 1.5f, 2.05f ), 1e-5f, "inside the 2.1 far end" );
+		Assert.AreEqual( MathF.Pow( (2.1f - 2.05f) / (2.1f - 2f), AudioListener.Rolloff ), AudioListener.RangeGain( 1.5f, 2.05f ), 1e-5f, "inside the 2.1 far end" );
 		Assert.AreEqual( 0f, AudioListener.RangeGain( 2f, 2.1f ), "at the far end" );
 		Assert.AreEqual( 0f, AudioListener.RangeGain( 1.5f, 3 ), "past it" );
-		Assert.AreEqual( MathF.Pow( (2.5f - 2.2f) / (2.5f - 2f), 0.8f ), AudioListener.RangeGain( 2.5f, 2.2f ), 1e-5f, "a range above 2 is its own far end" );
+		Assert.AreEqual( MathF.Pow( (2.5f - 2.2f) / (2.5f - 2f), AudioListener.Rolloff ), AudioListener.RangeGain( 2.5f, 2.2f ), 1e-5f, "a range above 2 is its own far end" );
 	}
 
 	[TestMethod]

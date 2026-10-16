@@ -2597,14 +2597,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
 		var before = guest.Happiness;
-		// [BIN:TPW-EXE:0x4FE816 sideshow won count] a sideshow's use routine tail raises the sideshows won (+0x1D0); a lost play skips the routine
-		if ( ride.Kind == RideVisitorKind.Sideshow )
-			guest.SideshowsWon++;
 		(guest.Happiness, guest.Nausea) = RideOutcome.Apply( guest.Happiness, guest.Hunger, guest.Nausea, type.PreferredExcitement, ride.LiveExcitement,
 			Settings.PerfectRide, Settings.GoodRide, Settings.OkRide, Settings.RideVomitDivisor );
 		// [BIN:TPW-EXE:0x004FDB66 sideshow thought] only a sideshow (thing kind 2) sets a thought at the end of a use: 5 after a win, 6 after a loss (0x004FDC25); rides and shops set none
 		if ( ride.Kind == RideVisitorKind.Sideshow )
 			Think( guest, (guest.SideshowWon ?? guest.Happiness - before > 0) ? GuestThought.Pleased : GuestThought.Dissatisfied );
+		// [BIN:TPW-EXE:0x4FE816 sideshow won count] a sideshow's use routine tail raises the sideshows won (+0x1D0); a lost play skips the routine
+		if ( ride.Kind == RideVisitorKind.Sideshow )
+			guest.SideshowsWon++;
 		guest.SideshowWon = null;
 		// the type's own effects follow the outcome in the original's use routine (0xeaaf8: 0xea318, then the effects fragment 0xeabb8)
 		var effects = UseEffects.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ),

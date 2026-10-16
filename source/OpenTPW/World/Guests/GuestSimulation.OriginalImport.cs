@@ -134,7 +134,12 @@ public sealed partial class GuestSimulation
 			guests.Add( guest );
 			byId.Add( guest.Id, guest );
 			if ( inPark )
+			{
 				ImportInPark( guest, save, cell, destination, attraction, bin, adjusted );
+				// [BIN:TPW-EXE:0x4FD950 time in park] mArrivalDate (+0x1D4) is the world's game tick at the stamp and the hours the visitor lists show are (tick − stamp) >> 2 turns (the roster's cell); the saved stamp gives the elapsed park turns, a stamp after the save's own turn is not a date
+				if ( save.ArrivalDate <= parkTurn )
+					guest.TimeInParkSeconds = ((parkTurn - save.ArrivalDate) * ParkCalendar.TurnMilliseconds + 0.5) / 1000.0; // half a millisecond keeps the roster's floor(seconds × 1000 / 248) at the exact turn count
+			}
 			else
 				ImportOnLane( guest, save.State, save.PaidAdmission != 0, lane!, cell, adjusted );
 			(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (guest.X, guest.Y, guest.DistanceWalked, TickCount);
@@ -147,10 +152,10 @@ public sealed partial class GuestSimulation
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
-		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one waiting at the booth (4) waits OpenTPW's booth time rather than its saved wait (+0x200), a paid guest waiting for the gate (3) walks in at once (GUEST-011), an arriving or departing guest walks OpenTPW's nearest arrival lane from where it stands, a turn stamp before the save's turn counts from the import, and the arrival date and index, the admission flags, the event ring and the queue links are not imported — evidence needed: an OpenTPW queue and rider restore for original guests, the booth's and gate's waits in OpenTPW's arrival model
+		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one waiting at the booth (4) waits OpenTPW's booth time rather than its saved wait (+0x200), a paid guest waiting for the gate (3) walks in at once (GUEST-011), an arriving or departing guest walks OpenTPW's nearest arrival lane from where it stands, a turn stamp before the save's turn counts from the import, and the arrival index, the admission flags, the event ring and the queue links are not imported — evidence needed: an OpenTPW queue and rider restore for original guests, the booth's and gate's waits in OpenTPW's arrival model
 		if ( dropped.Count > 0 )
 			evidence.Add( $"[APPROX:SAVE-002] Guests not imported: {string.Join( ", ", dropped )}." );
-		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: arrival dates {string.Join( "/", saved.Select( item => item.ArrivalDate ) )}, waits {string.Join( "/", saved.Select( item => item.ParkOpeningWaitingTime ) )}, paid {string.Join( "/", saved.Select( item => item.PaidAdmission ) )}, queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );
+		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: arrival indices {string.Join( "/", saved.Select( item => item.ArrivalIndex ) )}, waits {string.Join( "/", saved.Select( item => item.ParkOpeningWaitingTime ) )}, paid {string.Join( "/", saved.Select( item => item.PaidAdmission ) )}, queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );
 		return evidence;
 	}
 

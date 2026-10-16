@@ -710,7 +710,7 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — evidence needed: which polygons the test walks (the node face arrays and node states 0x10, 0x20, 0x8210 of the model at +0x78) and which object the cell yields (0x452ae0)
+	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — the model test 0x45d090 is read (it walks a node's face records, 8 bytes each: a normal index and three vertex indices, unless the node state has 0x10 or 0x8210, and recurses into the children unless 0x20; a hit is the plane hit inside the triangle by the 2 pi angle sum, accepted only when nearer than the terrain hit), but which object a cell yields (0x452ae0), the distance window and the object skip rule (0x473c30) are not
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )
@@ -933,6 +933,28 @@ public partial class Level
 		int Bin( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bins.Contains( instance ) ? instance : 0;
 		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin ) )
 		{
+			import.Report( line );
+			Log.Trace( $"Park economy import: {line}" );
+		}
+	}
+
+	/// <summary>
+	/// An original save's operating words (speed, capacity and duration, SAVE-006) become the linked ride runtimes' words where they differ from the tier's values. Only a park started
+	/// from the shipped save does this; a resumed park restores its own words (<see cref="OriginalObjectRuntimeSnapshot"/>).
+	/// </summary>
+	private void ImportOriginalRideSettings()
+	{
+		if ( resumeState != null || Park?.Import is not { } import || OriginalPark?.Save is not { } save )
+			return;
+		var runtimes = economyInstances.ToDictionary( pair => pair.Value, pair => pair.Key.Runtime );
+		foreach ( var attraction in save.Attractions )
+		{
+			if ( !import.AttractionInstances.TryGetValue( attraction.Id, out var instance ) || !runtimes.TryGetValue( instance, out var runtime ) )
+				continue;
+			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
+			if ( taken.Count == 0 )
+				continue;
+			var line = $"Ride settings imported for attraction thing {attraction.Id} (Info.Id {attraction.InfoId}): {string.Join( ", ", taken )}.";
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );
 		}

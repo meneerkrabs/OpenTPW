@@ -149,8 +149,9 @@ public readonly record struct SaveCalendar( int Offset, long FunnyTimeStart, lon
 /// The World block of a decoded payload: action-recording header, the 64 bytes of labelled variables,
 /// control manager and macro AI, the cell map and the thing list (docs/reverse/SAVE-plan.md §8.1).
 /// <list type="bullet">
-/// <item>The control manager's (0xd1a60) width is not pinned: its bytes stay opaque (<see cref="OpaqueMacroAiOffset"/>/<see cref="OpaqueMacroAiLength"/>,
-/// which still include the staff pool). The map is located by the structural cell-grid search inside the World block.</item>
+/// <item>The control manager (4806 bytes, <c>0x4D3AA0</c>) and the macro AI (<c>0x4D7A70</c>) have fixed widths, so the map starts 5522 bytes after the variables; their bytes
+/// stay opaque (<see cref="OpaqueMacroAiOffset"/>/<see cref="OpaqueMacroAiLength"/>, which still include the staff pool). A World that does not read that way has its map
+/// located by the structural cell-grid search inside the World block.</item>
 /// <item>The staff hiring pool (<see cref="SaveStaffPool"/>, 670 bytes) is the macro AI's first part, just before the calendar.</item>
 /// <item>The calendar (28 bytes) and arrivals (18 bytes, 0xcb050: three 4-byte numbers, a 4-byte timer and two
 /// bytes) are the fixed-width macro-AI suffix immediately before the map.</item>
@@ -233,7 +234,18 @@ public sealed class SaveWorld
 		var variables = SaveWorldVariables.Read( ref reader );
 		if ( variables.Version != SaveWorldVariables.SupportedVersion )
 			throw new InvalidDataException( $"Save World version {variables.Version} is not supported; only version {SaveWorldVariables.SupportedVersion} is witnessed." );
-		var cells = SaveCellGrid.Parse( payload, reader.Position, block.End, countX, countY );
+		// [BIN:TPW-EXE:0x5179C0 World loader] the control manager (4806 bytes) and the macro AI (the hiring pool 670, the calendar 28, the arrivals 18) have fixed widths, so the map starts there
+		var gridStart = reader.Position + SaveObjectControls.Bytes + SaveStaffPool.Bytes + SaveCalendar.Bytes + ArrivalBytes;
+		SaveCellGrid cells;
+		try
+		{
+			cells = SaveCellGrid.ParseAt( payload, gridStart, block.End, countX, countY );
+		}
+		catch ( InvalidDataException )
+		{
+			// a World that does not read as the original's (a synthetic payload): the grid is located structurally
+			cells = SaveCellGrid.Parse( payload, reader.Position, block.End, countX, countY );
+		}
 		var arrival = cells.StartOffset - ArrivalBytes;
 		var calendarOffset = arrival - SaveCalendar.Bytes;
 		if ( calendarOffset < reader.Position )
@@ -298,6 +310,26 @@ public static class SaveThingChain
 	/// </summary>
 	public static (uint Head, IReadOnlyList<SaveThing> Things) Walk( ReadOnlySpan<byte> payload, int start, int end )
 	{
+		var (head, things, offset) = WalkCore( payload, start, end );
+		if ( offset != end )
+			throw new InvalidDataException( $"Save thing list ends at offset {offset}, but the World delimiter is at {end}; the World block does not close." );
+		return (head, things);
+	}
+
+	/// <summary>
+	/// Where the thing list that starts at <paramref name="start"/> ends: the original's loader reads the head and then one thing after the other until a thing's next id
+	/// is 0, so the list closes itself and its end needs no delimiter. Bodies may extend to the end of the payload.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5179C0 World loader] after the three serializers the loader reads "Used Thing Head" and then one thing at a time through its model's serializer until the chain's next id is 0
+	public static int End( ReadOnlySpan<byte> payload, int start )
+	{
+		if ( start < 0 || payload.Length - start < 4 )
+			throw new InvalidDataException( "Save thing list has no room for its Used Thing Head." );
+		return WalkCore( payload, start, payload.Length ).End;
+	}
+
+	private static (uint Head, IReadOnlyList<SaveThing> Things, int End) WalkCore( ReadOnlySpan<byte> payload, int start, int end )
+	{
 		if ( start < 0 || end > payload.Length || end - start < 4 )
 			throw new InvalidDataException( "Save thing list has no room for its Used Thing Head before the World delimiter." );
 		var data = payload[..end];
@@ -333,9 +365,7 @@ public static class SaveThingChain
 				break;
 			current = next;
 		}
-		if ( offset != end )
-			throw new InvalidDataException( $"Save thing list ends at offset {offset}, but the World delimiter is at {end}; the World block does not close." );
-		return (head, things.AsReadOnly());
+		return (head, things.AsReadOnly(), offset);
 	}
 }
 

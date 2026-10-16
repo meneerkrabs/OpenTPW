@@ -193,6 +193,26 @@ public class CoasterPresentationTests
 	}
 
 	[TestMethod]
+	public void TheChainStartUnderTheCursorIsTheClosingTargetAndItsOwnPairsTakeTheMarker()
+	{
+		// tp.exe 0x4360c4 sets 0x800000 (0x804000 when the closing link is refused) on the start; 0x43f4e0 marks a node's own tag pairs while that bit is set
+		var builder = OpenTrack( 3 );
+		var track = builder.Track;
+		var start = track.Nodes[0];
+		var valid = track.BuildPreviewChain( (start.X, start.Y), 40, false, valid: true );
+		Assert.IsNotNull( valid );
+		Assert.AreEqual( track.Nodes.Count, valid!.Value.Chain.Count, "the closing target adds no cursor node" );
+		Assert.AreEqual( CoasterNodeFlags.ClosingTarget, valid.Value.Chain[0].Flags & (CoasterNodeFlags.ClosingTarget | CoasterNodeFlags.Invalid) );
+		Assert.AreEqual( CoasterNodeFlags.None, track.Nodes[0].Flags & CoasterNodeFlags.ClosingTarget, "the track's own node keeps its flags" );
+		var none = Array.Empty<IReadOnlyList<int>>();
+		Assert.AreEqual( CoasterTrackMesh.CursorMarker, CoasterRenderer.LinkMarker( valid.Value.Chain, none, true, 0, 0 ), "blue" );
+		Assert.IsNull( CoasterRenderer.LinkMarker( valid.Value.Chain, none, true, 1, 1 ), "other nodes' own pairs stay plain" );
+		Assert.IsNull( CoasterRenderer.LinkMarker( valid.Value.Chain, none, true, 0, 1 ), "the link out of the start is plain" );
+		var refused = track.BuildPreviewChain( (start.X, start.Y), 40, false, valid: false );
+		Assert.AreEqual( CoasterTrackMesh.RefusedMarker, CoasterRenderer.LinkMarker( refused!.Value.Chain, none, false, 0, 0 ), "red" );
+	}
+
+	[TestMethod]
 	public void AClosedUnfinishedTrackEndsInTheStationEndNode()
 	{
 		var builder = OpenTrack( CoasterTests.Circuit.Length );

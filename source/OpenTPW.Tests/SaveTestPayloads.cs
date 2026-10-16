@@ -265,6 +265,10 @@ internal static class SaveTestPayloads
 		public float Illness { get; init; } = 2;
 		public ushort MajorDest { get; init; }
 		public uint NumRides { get; init; }
+		public uint ArrivalDate { get; init; }
+		public uint NumShops { get; init; }
+		public uint NumSideshows { get; init; }
+		public uint NumSideshowsWon { get; init; }
 		public byte PersonType { get; init; } = 1;
 		public byte PrankeryIndex { get; init; }
 		public ushort[] PreviousRides { get; init; } = new ushort[4];
@@ -293,7 +297,7 @@ internal static class SaveTestPayloads
 		// the navigation block (177 bytes) follows mLastRecordedMapId at 33; mPreviousSpeed comes after it
 		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
 		writer.Write( person );
-		writer.Write( 0u ); // mArrivalDate
+		writer.Write( fields.ArrivalDate ); // mArrivalDate
 		writer.Write( 0u ); // mArrivalIndex
 		writer.Write( fields.BalloonScript );
 		writer.Write( 0u ); // mBeenAdmitted
@@ -306,9 +310,9 @@ internal static class SaveTestPayloads
 		writer.Write( fields.Litter );
 		writer.Write( fields.MajorDest );
 		writer.Write( fields.NumRides );
-		writer.Write( 0u );
-		writer.Write( 0u );
-		writer.Write( 0u );
+		writer.Write( fields.NumShops );
+		writer.Write( fields.NumSideshows );
+		writer.Write( fields.NumSideshowsWon );
 		writer.Write( fields.PaidAdmission );
 		writer.Write( 0u );
 		writer.Write( fields.PersonType );

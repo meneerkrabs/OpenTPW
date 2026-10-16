@@ -7,10 +7,9 @@
   portrait figure (`0x4b6b90`) is empty, and the arrow order (newest first) is not proven the same as the original's thing list.
 - **UI-102, UI-103 and UI-105 retired.** The park camera's middle-button turn, the map window's edge scroll and the buy list's golden-ticket rows are built
   from the original's routines.
-- **Use counters (shared with the saves branch).** The guest's counters `+0x1c4`, `+0x1c8`, `+0x1cc` and `+0x1d0` are `Guest.RidesTaken`, `ShopsVisited`,
-  `SideshowsVisited` and `SideshowsWon`, the same fields and optional save keys as the parallel `wave3/saves` branch, so one set of counters has one save
-  representation. A finished visit counts by the type's `WhichUIType` (`0x4fd9b1`): a shop or a sideshow is no ride any more. The All Visitors rides
-  column reads `RidesTaken`. GUEST-005 no longer lists `+0x1d0 += 1` as unfollowed.
+- **Use counters.** The visitor window and the All Visitors rides column read the guest counters that `wave3/saves` brought to main (`Guest.RidesTaken`,
+  `ShopsVisited`, `SideshowsVisited`, `SideshowsWon`, counted by `WhichUIType` at `0x4fd9b1`); this branch adds no copy of them. GUEST-005 no longer lists
+  `+0x1d0 += 1` as unfollowed.
 
 **Narrowed**
 - **UI-104** (Move tool): the placement runs through `0x528a70` with flag `0x8186d4` set, so it is free; the pick-up erase `0x527ee0` credits scrap percent
@@ -20,7 +19,6 @@
 - **UI-942:** `0x521e60` is the particle creator, not a sound; the enter-park routine starts screen-space particle effect `0x62` over the key counter. `docs/AUDIO.md`
   is corrected. The ID itself became `[EXT:online-globe-audio]` on main.
 
-**Determinism.** The pin moves from `0xDB3EA9A7AF384B5B` to `0x0487112FF9FF20DB`: shop and sideshow visits no longer count as rides, and the three new
-counters join the guest digest. This is the value `wave3/saves` reaches for the same two causes, so the second merge keeps one pin.
+**Determinism.** No pin change: the branch adds no simulation state of its own (the use counters and their pin move came with `wave3/saves`).
 
 **Verification.** See the PR description for the test, register, evidence and smoke runs.

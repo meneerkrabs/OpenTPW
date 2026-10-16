@@ -86,6 +86,8 @@ public class Model : Asset
 	/// vertex count and is read when the model is drawn (the frame's command list copies it), so the
 	/// caller may keep reusing it.
 	/// </summary>
+	public bool HasDynamicVertices => vertices?.IsDynamic == true;
+
 	public void UpdateVertices( Vertex[] vertices )
 	{
 		this.vertices.Set( vertices );

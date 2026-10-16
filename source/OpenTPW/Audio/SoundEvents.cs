@@ -251,7 +251,7 @@ public sealed class SoundEventSystem
 
 	// [BIN:TPW-EXE:0x6bc6ce] one shared chooser for every catalogue draw: s = s * 0x19660D + 0x3C6EF35F, stored back into the shared state (0xfb1f20) on every draw, and the draw is ror(s, 13), then >> 16 (weights: sound 0x6bc810, sample 0x6bc680) or % (max - min) (ranges: volume 0x6bc090, pitch 0x6bc170, delay 0x6bc343); the same state serves the sentence link choices (0x6be450, 0x6c3e00)
 	// [BIN:TPW-EXE:0x72e09c] the state is seeded once at static initialisation (0x6bb930 -> 0x5f5f10, QueryPerformanceCounter) and is never saved
-	// [APPROX:AUDIO-037] OpenTPW seeds the chooser from the clock when the sound service starts (as the original) but reseeds it from the park's world seed at park entry (GameAudio.EnterPark) and saves it with the park, so headless runs and tests start from a known state; with sound on, the draws follow wall-clock events (mixer-timed sentence segments, UI clicks), so the state is not a replay guarantee; the original's chooser is clock-seeded and unsaved
+	// [EXT:sound-chooser-seed] OpenTPW seeds the chooser from the clock when the sound service starts (as the original, QueryPerformanceCounter, tp.exe 0x72e09c) but reseeds it from the park's world seed at park entry (GameAudio.EnterPark) and saves it with the park, so headless runs and tests start from a known state; with sound on, the draws follow wall-clock events (mixer-timed sentence segments, UI clicks), so this is not a replay guarantee; a deliberate determinism choice with no original behaviour to match (the original's chooser is clock-seeded and unsaved)
 	// [EXT:audio-chooser-mac-reading] the Mac reading of this chooser (the seed is never stored and the draw takes the top 16 bits without the rotate, STP-PPC sound_shared 0x1000FCB4 / 0x100118C8) contradicts the PC instructions; the PC reading is used and the Mac reading is to be rechecked (docs/AUDIO.md)
 	private uint Advance()
 	{
@@ -334,7 +334,7 @@ public sealed class SoundEventSystem
 	// [BIN:TPW-EXE:0x6bc170 pitch draw] swaps the signed bytes +0xE/+0xF of the sound record when max < min, range = max - min, and without a parameter-bound pitch slot (the vf+0x40 query for parameter kind 2) draws ror13(chooser) % range + min; 0x6bc410 calls it right after the volume draw (0x6bc090) and hands it to 0x6c5170, unless the placeholder flag 0x10000 fixes the pitch
 	// [BIN:TPW-EXE:0x6bc410 sample start] the order of draws for one playback is sound, sample, volume, pitch, then the delay (0x6bc343)
 	// [DATA:global/sound,levels/*/Sound cat_*SFX.map] 1,343 shipped sounds have no pitch range; the chain, scream and crowd sounds draw 0..6 (steps 0-5 are played), the others signed ranges from -24..36 to -2..0
-	// [APPROX:AUDIO-003] the placeholder flag 0x10000 (pitch fixed at the short +0x4A) is not modelled: an unbound pitch always draws from the range
+	// [BIN:TPW-EXE:0x6bc484 fixed-pitch flag] a placeholder with flag 0x10000 (+0x30) plays the short at +0x4A instead of this draw, and a flag 0x8000 plays the short at +0x48 instead of the volume draw (0x6bc451); nothing in the library sets 0x10000 (the only 'or 0x10000' is the mixer handle's own flag word, 0x6c51d3) and the events' flags are 16-bit (the shipped values are 0x0-0x16, 0x200-0x208, 0x404-0x606), so the draw is the only pitch path here; 0x8000 is set by the placeholder's volume command (0x6bc9e7)
 	internal int Pitch( SoundEntry sound )
 	{
 		var low = Math.Min( sound.MinimumPitch, sound.MaximumPitch );
@@ -513,7 +513,7 @@ public sealed class SoundEventSystem
 		var index = PickSample( sound.Samples, -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		// [APPROX:AUDIO-003] the pitch is applied (Pitch, AudioVoice.SetPitch); the delay of non-chain sounds (u16 + r % range, 0x6bc343) and reverb (SndReverb.map) are not applied, chain delays are milliseconds (video, 2026-10-15)
+		// [APPROX:AUDIO-003] the pitch is applied (Pitch, AudioVoice.SetPitch); the delay of non-chain sounds (min + r % (max - min), 0x6bc2d0, stored at the placeholder's +0x3c by 0x6bc4fa) and reverb (SndReverb.map, loaded at 0x6c5d20) are not applied, chain delays are milliseconds (video, 2026-10-15)
 		// [BIN:TPW-EXE:0x6bc4e7 sample setup] the fixed (flat) branch and the positioned branch both reach the loop test 0x6bc621: a placeholder with flag 0x8 (+0x30 bit 4) loops its sample (0x6c5110, 9999 times), so a flat one-shot loops exactly as a positioned one does
 		// [EXT:inaudible-loop-advance] a loop whose source is inaudible is assumed to keep advancing silently and resume when the listener returns; the early exit 0x6bcb60 -> 0x6bc643 that skips starting in some cases is not read
 		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] every placeholder class (vtables 0x70a338, 0x70a3e8, 0x70a440, 0x70a498, 0x70a7e0, 0x70a878, 0x70a8d0) sets up at +0x10 with 0x6BBF60 and queries at +0x40 with 0x6BC040: a one-shot whose event has a code or whose sound has a selector gets a table, and a bound volume or pitch reads its slot (0 with no parameter call)

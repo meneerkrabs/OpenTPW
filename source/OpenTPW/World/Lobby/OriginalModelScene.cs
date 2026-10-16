@@ -139,6 +139,7 @@ public abstract class OriginalModelScene : Entity
 		{
 			File = file;
 			Animator = new ObjectAnimator( file );
+			dynamicMeshes = animatedMeshes;
 			for ( var meshIndex = 0; meshIndex < file.Meshes.Count; meshIndex++ )
 			{
 				var mesh = file.Meshes[meshIndex];
@@ -172,6 +173,8 @@ public abstract class OriginalModelScene : Entity
 			UpdateParts();
 		}
 
+		private readonly bool dynamicMeshes;
+
 		public ModelFile File { get; }
 		public ObjectAnimator Animator { get; }
 
@@ -193,7 +196,7 @@ public abstract class OriginalModelScene : Entity
 			{
 				var (entity, node, mesh, vertices, model, version) = meshParts[index];
 				var current = Animator.GetVertexVersion( mesh );
-				if ( current != version )
+				if ( dynamicMeshes && current != version )
 				{
 					ObjectRenderParts.WritePositions( File.Meshes[mesh], Animator.GetVertexPositions( mesh ), vertices );
 					ObjectRenderParts.WriteTexCoords( File.Meshes[mesh], Animator.GetTexCoords( mesh ), vertices );

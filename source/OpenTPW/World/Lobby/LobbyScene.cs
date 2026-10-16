@@ -9,9 +9,9 @@ namespace OpenTPW;
 /// heightfield) with the four theme islands and their gates placed at the ISLANDCAMERAPOSITION of
 /// their index, turned by the ISLAND angle (docs/UI.md). Node transforms are composed up the
 /// hierarchy (parent-relative, docs/MD2-MODELS.md); MD2 (x, y-up, z) maps to engine (x, z, y-up).
-/// The flying meshes follow <see cref="LobbyFlyingMeshes"/>; rain and lightning come from LobbyEffects and the weather renderer.
+/// The island models play their own clips (<c>M1</c>/<c>M2</c>) and the flying meshes follow <see cref="LobbyFlyingMeshes"/>; rain and lightning come from LobbyEffects and the weather renderer.
 /// </summary>
-// [APPROX:UI-018] the island and gate animations are not drawn
+// [APPROX:UI-018] the gates stay closed: their opening and closing clips belong to the enter sequence (0x5e06e4, 0x5e136a), which is not built
 public sealed class LobbyScene : OriginalModelScene
 {
 	private const string TerrainDirectory = "/lobby/terrain";
@@ -43,12 +43,10 @@ public sealed class LobbyScene : OriginalModelScene
 					continue;
 				var (x, z) = definition.PositionOf( slot );
 				var placement = NMatrix4x4.CreateRotationY( island.Angle * MathF.PI / 180 ) * NMatrix4x4.CreateTranslation( x, 0, z );
-				foreach ( var name in new[] { island.IslandModel, island.GateModel } )
-				{
-					var file = FindModel( name );
-					if ( file != null )
-						AddModel( new ModelFile( file ), placement );
-				}
+				// [BIN:TPW-EXE:0x5dfa60 island models] the island and its gate are animated lobby models (0x5d8870; the island with two animation channels, the gate with one), both at (x, 0, z) turned by the ISLAND angle
+				var isle = AddIslandModel( island.IslandModel, placement );
+				var gate = AddIslandModel( island.GateModel, placement );
+				IslandModels.Add( new IslandModel( island, isle.Model, isle.Clips, gate.Model, gate.Clips ) );
 				IslandCount++;
 				Slots.Add( (island, slot) );
 				// [BIN:TPW-EXE:0x5e36b3 flying-mesh centre] a FLYINGMESH group's centre is the island's camera target (x, height, z) (+0x3c) with 50 added to the height
@@ -64,6 +62,29 @@ public sealed class LobbyScene : OriginalModelScene
 	}
 
 	public LobbyDefinition Definition { get; }
+	/// <summary>A placed island's animated island and gate models and their <c>&lt;model&gt;M&lt;n&gt;</c> clips (index n − 1; null when absent).</summary>
+	protected sealed record IslandModel( LobbyIslandInfo Island, AnimatedModel? Isle, ModelAnimation?[] IsleClips, AnimatedModel? Gate, ModelAnimation?[] GateClips );
+
+	/// <summary>The placed islands' models, in placement order.</summary>
+	protected List<IslandModel> IslandModels { get; } = new();
+
+	/// <summary>The clip each island model plays now (<c>M1</c> or <c>M2</c>, 0 before the first), for tests and the smoke test.</summary>
+	public IReadOnlyList<int> IslandClips => IslandModels.Select( model => model.Isle?.Animator.GetAnimationId( 0 ) == 5 && model.Isle.Animator.GetClip( 0 ) is { } clip
+		? clip.EndsWith( "2", StringComparison.Ordinal ) ? 2 : 1 : 0 ).ToList();
+
+	/// <summary>
+	/// The stand-in for the C runtime's <c>rand()</c> the island clips are picked with: the MSVC formula on a stream of
+	/// its own seeded from the clock (the original's stream is shared with the rest of the game, so its values cannot be
+	/// reproduced). Presentation only.
+	/// </summary>
+	// [APPROX:UI-018] the island clips are picked with rand() & 1 (0x5e11ea, CRT rand 0x67b5c0), whose process-wide stream is replaced by a local clock-seeded stand-in; no world or guest stream is used
+	private uint crtRand = (uint)Environment.TickCount;
+	private int Rand()
+	{
+		crtRand = unchecked(crtRand * 214013u + 2531011u);
+		return (int)((crtRand >> 16) & 0x7FFF);
+	}
+
 	/// <summary>The bats and butterflies of the placed islands (null without a generator).</summary>
 	public LobbyFlyingMeshes? FlyingMeshes { get; }
 
@@ -76,11 +97,11 @@ public sealed class LobbyScene : OriginalModelScene
 	/// </summary>
 	public void Step( float seconds )
 	{
-		if ( FlyingMeshes == null || !float.IsFinite( seconds ) || seconds < 0 )
+		if ( !float.IsFinite( seconds ) || seconds < 0 )
 			return;
 		var step = Math.Clamp( seconds * 1000f, 0f, LobbyCameraMode.MaximumStepMilliseconds ) * LobbyCameraMode.StepPerMillisecond;
-		FlyingMeshes.Step( step );
-		foreach ( var group in FlyingMeshes.Groups )
+		FlyingMeshes?.Step( step );
+		foreach ( var group in FlyingMeshes?.Groups ?? Array.Empty<LobbyFlyingMeshes.Group>() )
 		{
 			foreach ( var instance in group.Instances )
 			{
@@ -94,6 +115,55 @@ public sealed class LobbyScene : OriginalModelScene
 				flyer.Advance( seconds );
 			}
 		}
+		StepIslands( seconds );
+	}
+
+	/// <summary>
+	/// Every island model whose clip has (almost) run out starts <c>M1</c> or <c>M2</c> at random, once; the island and
+	/// gate models then take the frame.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5e11d0 island clips] at the end of the islands update every island model whose channel 0 has under 1 ms left (0x5d8440 → 0x473f50) plays AnimID 5 sub rand() & 1, not looping (0x5d83f0(sub, 0)): M1 or M2
+	private void StepIslands( float seconds )
+	{
+		foreach ( var model in IslandModels )
+		{
+			if ( model.Isle is { } isle && isle.Animator.RemainingMilliseconds( 0 ) < 1 )
+			{
+				var sub = Rand() & 1;
+				var clip = model.IsleClips[sub];
+				isle.Animator.Trigger( 0, clip, $"{model.Island.IslandModel}M{sub + 1}", animationId: 5, variant: sub, loop: false, speed: 1f );
+			}
+			model.Isle?.Advance( seconds );
+			model.Gate?.Advance( seconds );
+		}
+	}
+
+	/// <summary>
+	/// Builds an island or gate model with its <c>&lt;name&gt;M1</c>..<c>M3</c> clips, or nothing when the lobby lacks the
+	/// model; its vertices are rewritable when a clip moves them.
+	/// </summary>
+	private (AnimatedModel? Model, ModelAnimation?[] Clips) AddIslandModel( string name, NMatrix4x4 placement )
+	{
+		var clips = new ModelAnimation?[3];
+		if ( FindModel( name ) is not { } path )
+			return (null, clips);
+		for ( var index = 0; index < clips.Length; index++ )
+		{
+			try
+			{
+				if ( FindModel( $"{name}M{index + 1}" ) is { } clipPath )
+					clips[index] = new ModelFile( clipPath ).Clip;
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or NotSupportedException )
+			{
+				Log?.Warning( $"Lobby clip {name}M{index + 1}: {exception.Message}" );
+			}
+		}
+		var animatedMeshes = clips.Any( clip => clip?.Tracks.Any( track => track.VertexAnimation != null || track.UvAnimation != null ) == true );
+		var model = AddAnimatedModel( new ModelFile( path ), animatedMeshes );
+		model.Placement = placement;
+		model.UpdateParts();
+		return (model, clips);
 	}
 
 	/// <summary>A model of <paramref name="mesh"/> playing its first clip in a loop, or null when the lobby lacks the mesh.</summary>

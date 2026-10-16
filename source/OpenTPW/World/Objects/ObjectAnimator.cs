@@ -334,6 +334,14 @@ public sealed class ObjectAnimator
 		return Fctiwz( milliseconds );
 	}
 
+	/// <summary>
+	/// The clip time left on a channel in whole milliseconds: (total − frame) × 33.333332, truncated; 0 for a channel
+	/// that never played.
+	/// </summary>
+	// [BIN:TPW-EXE:0x473f50 channel remaining time] the query returns ftol((record +0x1c − record +0x20) × [0x6fec10]) for the channel record, the same remaining-time formula as the deferred trigger
+	public int RemainingMilliseconds( int channel ) => channels.TryGetValue( channel, out var state )
+		? Fctiwz( RemainingMillisecondsPerTick * (state.Clip.Animation.Duration - state.Player.Tick) ) : 0;
+
 	/// <summary>FLUSHANIM / FLUSHANIM_CH (0xa6c90): clears only the channel's deferred clip; true when one was queued.</summary>
 	public bool Flush( int channel )
 	{

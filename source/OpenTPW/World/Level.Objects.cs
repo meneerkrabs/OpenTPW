@@ -386,6 +386,33 @@ public partial class Level
 		return EnterQueueTool( ride );
 	}
 
+	/// <summary>
+	/// Removes the queue cell at (x, y): with its owner (<see cref="QueueRideAt"/>) that cell and every cell behind it
+	/// (<see cref="QueuePaths.RemoveFrom"/>); a queue cell no ride's queue reaches (a stray piece, such as one an older save left)
+	/// goes alone. Returns the cells removed; <paramref name="owner"/> is the ride whose queue lost them, null for a stray cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005367A0 ClearCell queue case] the original clears a queue cell by itself, whatever ride owns it; OpenTPW's queue is the line its ride walks from the entrance, so an owned cell takes the cells behind it along and a stray cell, outside every such line, goes alone
+	internal static int RemoveQueueCellAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y, out RideVisitorBridge? owner )
+	{
+		owner = QueueRideAt( grid, attractions, x, y );
+		if ( owner == null && grid.IsQueue( x, y ) )
+		{
+			// The rides' queue lines are cached: walk them again before a cell counts as stray.
+			foreach ( var ride in attractions.OfType<RideVisitorBridge>().Where( item => item.HasQueue ) )
+			{
+				if ( ride.RecomputeQueue( grid ) )
+					ride.NotifyQueueEdited();
+			}
+			owner = QueueRideAt( grid, attractions, x, y );
+		}
+		if ( owner != null )
+			return QueuePaths.RemoveFrom( grid, owner, x, y );
+		if ( !grid.IsQueue( x, y ) )
+			return 0;
+		grid.ClearQueue( x, y );
+		return 1;
+	}
+
 	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null.</summary>
 	internal static RideVisitorBridge? QueueRideAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y )
 	{
@@ -571,17 +598,16 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Removes the queue cell at (x, y) and every cell behind it. Each removed cell refunds
-	/// <c>Costs.QueueCell</c> × the ride's scrap percentage / 100 (<see cref="ParkEconomy.RefundQueueCell"/>).
+	/// Removes the queue cell at (x, y) and every cell behind it (a stray queue cell alone, <see cref="RemoveQueueCellAt"/>). Each
+	/// removed cell of a ride's queue refunds <c>Costs.QueueCell</c> × the ride's scrap percentage / 100 (<see cref="ParkEconomy.RefundQueueCell"/>); a stray cell refunds nothing.
 	/// </summary>
 	public int RemoveQueueCell( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null )
 			return 0;
-		var ride = QueueRideAt( Guests.Grid, Guests.Attractions, x, y );
+		var removed = RemoveQueueCellAt( Guests.Grid, Guests.Attractions, x, y, out var ride );
 		if ( ride == null )
-			return 0;
-		var removed = QueuePaths.RemoveFrom( Guests.Grid, ride, x, y );
+			return removed;
 		var owner = Objects.Objects.FirstOrDefault( item => item.Visitors == ride );
 		if ( Park != null && owner != null && GetEconomyInstance( owner ) is int instance )
 		{

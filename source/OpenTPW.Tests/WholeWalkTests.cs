@@ -240,7 +240,8 @@ public class WholeWalkTests
 			if ( recalled.State != GuestState.LeavingPark )
 				break;
 		}
-		Assert.AreEqual( GuestState.DoingNothing, recalled.State, "on a path cell with a counter, happiness and an open park, the guest changes its mind" );
+		// the recall returns the guest to state 6, whose handler may start a wander in the same update (the world generator decides)
+		Assert.IsTrue( recalled.State is GuestState.DoingNothing or GuestState.WalkingAround, $"on a path cell with a counter, happiness and an open park, the guest changes its mind: {recalled.State}" );
 		Assert.AreNotEqual( GuestState.DoingNothing, committed.State, "standing on the gate's walkway it walks on" );
 		Assert.AreEqual( 0, recalled.Navigation.Mask, "the recall clears the walk mask" );
 		Assert.IsNotNull( grid );

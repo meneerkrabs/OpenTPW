@@ -17,8 +17,10 @@ Follow-up to the path and queue work, read in tp.exe via REA:
 - **Design choices, approved by the user:** WALK-003's per-cell lists (`[EXT:guest-cell-lists]`) and QUEUE-021's click at the back cell
   (`[EXT:queue-click-at-back-cell]`) are split out.
 
-The pinned run hash moves (docs/DETERMINISM.md). Saves gain no fields; state 20 is a new accepted guest state and older saves load
-unchanged. Verified with 4597 tests passing without game data, 5046 with it, and all five native smokes.
+The pinned run hash moves (docs/DETERMINISM.md, `0x9DB7A7AAEA8D1CE2` after merging the one world generator, #235; before that `0x7AED41D19433D4B2`). The stop walk's draws
+(`0x500AD0`, `0x500BD0`: the cell pick and the two sub-cell bytes) come from the shared world generator in the original's order. Saves gain no fields; state 20 is a new
+accepted guest state, states 19 and 21 on the cell map carry no lane, and older saves load unchanged. A walk to the stop that ends stuck stays in state 20, as
+`0x5019F0` leaves it. Verified with the full test run with and without the game data and the five native smokes.
 
 Still open: the queue tool's line writer and per-cell owner word (QUEUE-014, `0x532FC0`, validator `0x535670`), the avoid-walls corner
 branches (WALK-002) and the neighbour query order (WALK-003).

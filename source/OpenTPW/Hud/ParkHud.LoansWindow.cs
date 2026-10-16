@@ -17,7 +17,7 @@ public sealed partial class ParkHud
 	private static readonly UiRect LoanKnob = LoansTable.Model( "b_scroller" ).Rect;
 
 	// [BIN:TPW-EXE:0x4a02b0 loans list row] the loans list's row factory makes each row as high as font slot 7's line height x 1536 / screen height + 6, computed once
-	// ([0x7cb264]), the formula and slot of the buy list's rows (0x4ad240, [0x752934] = 7), so the two lists share one pitch
+	// ([0x7cb264]), the formula and slot of the buy list's rows (0x4ad240; the cells [0x755134] and [0x752934] both hold 7), so the two lists share one pitch
 	// [APPROX:UI-044] the loans list takes the buy list's measured pitch
 	private const float LoanRowHeight = BuyRowHeight;
 	/// <summary>Rows of the loans list that fit its content region at the row pitch.</summary>

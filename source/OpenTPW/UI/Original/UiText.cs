@@ -90,7 +90,7 @@ public sealed class UiFonts
 	{
 		this.load = load;
 		Tier = tier;
-		// [APPROX:UI-002] which shipped font serves which role per tier: the original's controls name a bank slot (0x485a70; options labels 6, buy list rows 7) whose fonts differ per bank (docs/UI.md) — evidence needed: the slot each screen's controls use
+		// [APPROX:UI-002] which shipped font serves which role per tier: the original's controls name a bank slot (0x485a70: menu lines 0, HUD cash 1, HUD date 3, window labels 6, list rows 7) whose fonts differ per bank (docs/UI.md); OpenTPW's Label and Small roles do not follow slot 6 — evidence needed: captures of the original's window text at each mode
 		var (title, menu, label, small, cash, heading) = tier switch
 		{
 			UiFontTier.Small => ("TITLESMALL", "MENUSMALL", "GAME10AA", "GAME8AA", "GAMEBOLD10", "SESHSMALL"),

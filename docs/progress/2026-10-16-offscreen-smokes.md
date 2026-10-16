@@ -12,5 +12,5 @@ The native smokes no longer open a visible Theme Park World window:
 - **One present target**: the renderer, the overlay pipelines' output description, the output capture and the smoke's size checks go through
   `PresentTarget` (`SwapchainPresentTarget` or `OffscreenPresentTarget`) instead of the swapchain directly.
 - **Window state**: an offscreen `Window` keeps a virtual logical size (windowed size, or the desktop size for borderless) instead of
-  asking SDL, and reports itself focused. The sandbox smoke's fullscreen toggle therefore verifies the logical window change and logs that
+  asking SDL, and reports itself unfocused (as the window of a visible smoke is; a focused one would edge-scroll the park camera from the pointer's corner position and drift the screenshots). The sandbox smoke's fullscreen toggle therefore verifies the logical window change and logs that
   the OS-level fullscreen transition is skipped; run it with `OPENTPW_OFFSCREEN=0` to cover that part. Normal game runs stay visible.

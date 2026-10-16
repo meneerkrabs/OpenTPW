@@ -36,8 +36,11 @@ public class Window
 		SdlWindow_Resized();
 	}
 
-	/// <summary>Whether the window has input focus; an offscreen window counts as focused so focus-gated input still runs.</summary>
-	public bool Focused => IsOffscreen || SdlWindow.Focused;
+	/// <summary>
+	/// Whether the window has input focus. An offscreen window is never focused, like the unfocused window of a visible smoke: its
+	/// pointer rests in the window corner, and a focused window would edge-scroll the park camera there (pushscroll) and drift every screenshot.
+	/// </summary>
+	public bool Focused => !IsOffscreen && SdlWindow.Focused;
 
 	/// <summary>Logical size (desktop units; SDL mouse coordinates use these).</summary>
 	public unsafe Point2 Size

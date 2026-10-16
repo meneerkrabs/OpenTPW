@@ -21,6 +21,7 @@ ADVISOR-020 docs/progress/2026-10-15-economy-rules-bankruptcy-challenges-cell-ty
 ADVISOR-022 docs/LIPS.md
 ADVISOR-023 docs/PROGRESS.md
 ADVISOR-027 docs/LIPS.md
+ARRIVAL-002 docs/GUESTS.md
 ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 AUDIO-002 docs/AUDIO.md
@@ -142,6 +143,7 @@ GATEM4-002 docs/M4-GATE.md
 GUEST-001 docs/PROGRESS.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
+GUEST-018 docs/GUESTS.md
 HEADS-001 docs/GUESTS.md
 HEADS-002 docs/PROGRESS.md
 HEADS-003 docs/PROGRESS.md
@@ -176,6 +178,7 @@ PATH-008 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-
 PATH-009 docs/PROGRESS.md
 PATH-011 docs/PROGRESS.md
 PATH-012 docs/reverse/REVIEW-PATH.md
+PATH-013 docs/GUESTS.md
 PATH-014 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PATH-016 docs/PATHS.md
 PTCL-901 docs/PROGRESS.md
@@ -184,15 +187,19 @@ PTCL-903 docs/PARTICLES.md
 PTCL-907 docs/PARTICLES.md
 QUEUE-001 docs/PROGRESS.md
 QUEUE-002 docs/PROGRESS.md
+QUEUE-004 docs/GUESTS.md
 QUEUE-006 docs/reverse/BOARD-plan.md
 QUEUE-007 docs/reverse/BOARD-plan.md
 QUEUE-008 docs/GUESTS.md
 QUEUE-009 docs/GUESTS.md
 QUEUE-011 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
+QUEUE-013 docs/reverse/REVIEW-ORACLE.md
 QUEUE-016 docs/GUESTS.md
 QUEUE-017 docs/GUESTS.md
 QUEUE-018 docs/GUESTS.md
 QUEUE-019 docs/GUESTS.md
+QUEUE-020 docs/GUESTS.md
+QUEUE-022 docs/GUESTS.md
 RIDES-001 docs/reverse/APPROX-TRACE.md
 RIDES-002 docs/reverse/APPROX-TRACE.md
 RIDES-003 docs/OBJECTS.md

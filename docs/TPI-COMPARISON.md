@@ -65,15 +65,19 @@ inputs without storing them in Git. The 2,745,817-byte full audit is preserved
 at `/Users/sander/server/game-assets/theme-park-inc/analysis/tpi-full-evidence.json`;
 its exact SHA-256 and removed-array fingerprints are in the compact artifact.
 
-### Unsupported opcodes and partial sound banks
+### Opcodes used by Theme Park Inc only, and partial sound banks
 
 All TPI opcode IDs fall within the current 0..105 enum. TPI uses 72 distinct
-IDs, whereas TPW/Patch 2 use 84. However, the reviewed VM source lacks
-registered handlers for two TPI-used IDs: WAITABS (45), 34 instructions in
-19 scripts; MULT (48), one instruction in `vegetation.RSE`. The full artifact
-pins enum/handler source hashes and each affected script hash. A declared
-opcode name is not execution support, and Hooked statuses remain dependent
-on host effects rather than proving complete TPI behavior.
+IDs, whereas TPW/Patch 2 use 84. Two TPI-used IDs are used by no TPW script:
+WAITABS (45), 34 instructions in 19 scripts, and MULT (48), one instruction in
+`vegetation.RSE`. They are not TPI-only opcodes: `tp.exe` has both in its
+interpreter's jump table (`0x5567d8`) and the VM implements them from there
+(`[BIN:TPW-EXE:0x553828]`, `[BIN:TPW-EXE:0x553eb9]`). The TPI `Game.exe` table
+(`0x6ab5f0`) has handlers with the same operand decoding and effect
+(`[BIN:TPI-EXE:0x6a8b7e]`, `[BIN:TPI-EXE:0x6a9108]`); only the clock object
+differs. The full artifact pins enum/handler source hashes and each affected
+script hash. Hooked statuses remain dependent on host effects and do not prove
+complete TPI behavior.
 
 Arabian `MusicHD.sdt` SHA-256
 `193c976c3d07fda05ef507d00ba97867073dda42e51d99d87040f1fee094d66f`

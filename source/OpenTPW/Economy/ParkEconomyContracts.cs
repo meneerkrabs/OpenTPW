@@ -153,7 +153,7 @@ public interface IParkEconomy : IParkClock
 	IParkGuestStatistics GuestStatistics { get; set; }
 	event Action<ParkEvent>? EventRaised;
 
-	/// <summary>Charges the entrance fee at the gate. False when the park is closed or the visitor cannot pay.</summary>
+	/// <summary>Charges the entrance fee at the booth (no park-closed test: the guests' walk to the booth makes it). False when the park is bankrupt or the visitor cannot pay.</summary>
 	bool TryAdmitVisitor( long visitorCash, out int feePaid );
 	/// <summary>Sells one item of a shop. False when the shop is unknown/closed or the visitor cannot pay.</summary>
 	bool TryBuy( int instanceId, long visitorCash, out int pricePaid );
@@ -177,6 +177,11 @@ public sealed class ParkObjectState
 	public int Level { get; set; }
 	/// <summary>Level being installed by a mechanic, or 0.</summary>
 	public int PendingLevel { get; set; }
+	/// <summary>
+	/// The pending upgrade's cost is still to be debited when the mechanic installs it (tp.exe <c>0x004DF8F0</c>). False for an upgrade restored from a
+	/// save written while OpenTPW charged the purchase, which has been paid already.
+	/// </summary>
+	public bool UpgradeCostDue { get; set; }
 	public long TotalSpent { get; set; }
 	public int Price { get; set; }
 	public int CostOfGoods { get; set; }

@@ -90,10 +90,11 @@ public class RideUpgradeIngressTests
 		Open( hud, context ); Assert.AreEqual( cash, economy.Balance ); StringAssert.Contains( ((UiLabel)hud.Stack.Top!.Find( "preview" )!).Text(), "ui29 1" ); StringAssert.Contains( ((UiLabel)hud.Stack.Top.Find( "preview" )!).Text(), "400" );
 		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false );
 		economy.TryGetObject( level.GetEconomyInstance( first )!.Value, out var state ); economy.TryGetObject( level.GetEconomyInstance( second )!.Value, out var other );
-		Assert.AreEqual( cash - 400, economy.Balance ); Assert.AreEqual( ledger + 400, economy.Ledger.CurrentTotals[LedgerCategory.OtherCosts] ); Assert.AreEqual( 400L, state.TotalSpent ); Assert.AreEqual( 1, state.PendingLevel ); Assert.AreEqual( 0, state.Level ); Assert.AreEqual( 0, other.PendingLevel ); Assert.IsFalse( first.IsOpen ); Assert.IsTrue( second.IsOpen );
+		// tp.exe 0x4af480 only requests the upgrade (0x4e0050(1)); the installation 0x4df8f0 debits it
+		Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( ledger, economy.Ledger.CurrentTotals.GetValueOrDefault( LedgerCategory.OtherCosts ) ); Assert.AreEqual( 0L, state.TotalSpent ); Assert.IsTrue( state.UpgradeCostDue ); Assert.AreEqual( 1, state.PendingLevel ); Assert.AreEqual( 0, state.Level ); Assert.AreEqual( 0, other.PendingLevel ); Assert.IsFalse( first.IsOpen ); Assert.IsTrue( second.IsOpen );
 		economy.AdvanceDays( 1 ); Assert.AreEqual( 0, state.Level, "No mechanic means pending, not refusal/refund." );
 		EconomyTestData.HireBest( economy, StaffType.Mechanic ); for ( var i = 0; i < 20 && state.Level < 1; i++ ) economy.AdvanceDays( 1 );
-		Assert.AreEqual( 1, state.Level ); Assert.AreEqual( 3, first.Visitors.Capacity ); Assert.AreEqual( 1, second.Visitors.Capacity ); Assert.AreEqual( 3, first.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "the completion 0x4df8f0 writes the level's InitCapacity through SetCapacity 0x4dd7f0" ); Assert.AreEqual( 1, second.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) );
+		Assert.AreEqual( 1, state.Level ); Assert.AreEqual( 400L, state.TotalSpent ); Assert.IsFalse( state.UpgradeCostDue ); Assert.AreEqual( 3, first.Visitors.Capacity ); Assert.AreEqual( 1, second.Visitors.Capacity ); Assert.AreEqual( 3, first.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "the completion 0x4df8f0 writes the level's InitCapacity through SetCapacity 0x4dd7f0" ); Assert.AreEqual( 1, second.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) );
 	}
 	private static void Research( ParkEconomy economy )
 	{
@@ -202,18 +203,20 @@ public class RideUpgradeIngressTests
 	public void SimultaneousMouseApplyAndAcceptPostsOnlyOneUpgrade()
 	{
 		var hud = Fixture( BuildCategory.Rides, out _, out var economy, out _, out _, out _ ); var context = Context(); Research( economy ); var cash = economy.Balance; Open( hud, context );
+		var requests = 0; economy.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeBought ) requests++; };
 		var apply = (UiButton)hud.Stack.Top!.Find( "apply" )!; var at = apply.ScreenRect( context.Canvas ).Center;
 		hud.Update( context, new UiInput( at, true, true, false, false, UiKeys.None ), false, false, false );
 		hud.Update( context, new UiInput( at, false, false, true, false, UiKeys.Accept ), false, false, false );
-		Assert.AreEqual( cash - 400, economy.Balance ); Assert.AreEqual( "hud", hud.Stack.Top!.Name );
+		Assert.AreEqual( cash, economy.Balance ); Assert.AreEqual( 1, requests ); Assert.AreEqual( "hud", hud.Stack.Top!.Name );
 	}
 	[TestMethod]
 	public void RefusedPurchaseCanRetryAfterResearchAndOldCallbacksCannotAffectFreshModal()
 	{
 		var hud = Fixture( BuildCategory.Rides, out _, out var economy, out _, out _, out _ ); var context = Context(); Open( hud, context ); var old = hud.Stack.Top!;
 		hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreSame( old, hud.Stack.Top );
-		Research( economy ); var cash = economy.Balance; hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreEqual( cash - 400, economy.Balance );
-		Open( hud, context ); var fresh = hud.Stack.Top!; ((UiButton)old.Find( "apply" )!).Activate(); old.Back!(); Assert.AreSame( fresh, hud.Stack.Top ); Assert.AreEqual( cash - 400, economy.Balance );
+		var requests = 0; economy.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeBought ) requests++; };
+		Research( economy ); var cash = economy.Balance; hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreEqual( 1, requests ); Assert.AreEqual( cash, economy.Balance );
+		Open( hud, context ); var fresh = hud.Stack.Top!; ((UiButton)old.Find( "apply" )!).Activate(); old.Back!(); Assert.AreSame( fresh, hud.Stack.Top ); Assert.AreEqual( 1, requests ); Assert.AreEqual( cash, economy.Balance );
 	}
 	[TestMethod]
 	public void CaptureHeldUntilReleaseCannotOpenTheActionAndShopSlotIsExclusive()

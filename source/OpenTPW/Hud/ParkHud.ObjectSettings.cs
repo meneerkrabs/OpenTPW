@@ -144,7 +144,7 @@ public sealed partial class ParkHud
 	private static string SettingNumber( int value ) => value.ToString( CultureInfo.InvariantCulture );
 
 	/// <summary>The duration label's UITEXT by <c>Info.DurationUnit</c> (<c>0x4aec30</c>), null when the label is hidden (unit 0).</summary>
-	// [BIN:TPW-EXE:0x4aec30 slider labels] the labels take the 1-based UI text 0x1aa ("Speed : "), for the capacity 0x1cf (track type 3), 0x1cd (track type 2) or 0x1ab, and for the duration by Info.DurationUnit 0x1ac (unit 1 and a value of 1), 0x1ad (unit 1), 0x1ae (2), 0x1af (3) or 0x1b0 (4), each followed by the value; unit 0 hides the label
+	// [BIN:TPW-EXE:0x4aec30 slider labels] the labels take UI text 0x1aa ("Speed : "; OpenTPW's 425, as tp.exe's ids above 207 are one more), for the capacity 0x1cf (track type 3), 0x1cd (track type 2) or 0x1ab, and for the duration by Info.DurationUnit 0x1ac (unit 1 and a value of 1), 0x1ad (unit 1), 0x1ae (2), 0x1af (3) or 0x1b0 (4), each with the value as its parameter (0x6acd60); unit 0 hides the label
 	internal static UIStrings? DurationLabel( int unit, int value ) => unit switch
 	{
 		1 => value == 1 ? UIStrings.Duration : UIStrings.Durations,
@@ -197,9 +197,9 @@ public sealed partial class ParkHud
 		rideDurationSlider = Slider( "rideDuration", Durations, () => pending.Ride.Duration, value => pending.Ride = pending.Ride with { Duration = value } );
 		rideSpeedRedLine = Info( new SliderRedLine( () => selectedObject is { } item ? RedLineFraction( RedLine( item, "RedLineSpeed" ), Speeds( item ).Item1, Speeds( item ).Item2 ) : 0f ) { Id = "rideSpeedRedLine" } );
 		rideCapacityRedLine = Info( new SliderRedLine( () => selectedObject is { } item ? RedLineFraction( RedLine( item, "RedLineCapacity" ), Capacities( item ).Item1, Capacities( item ).Item2 ) : 0f ) { Id = "rideCapacityRedLine" } );
-		rideSpeedLabel = Label( "rideSpeedLabel", () => strings[UIStrings.Speed] + SettingNumber( pending.Ride.Speed ) );
-		rideCapacityLabel = Label( "rideCapacityLabel", () => selectedObject is { } item ? strings[CapacityLabel( Setting( item, "Bumper.WhichTrackType" ) )] + SettingNumber( pending.Ride.Capacity ) : "" );
-		rideDurationLabel = Label( "rideDurationLabel", () => selectedObject is { } item && DurationLabel( Setting( item, "Info.DurationUnit" ), pending.Ride.Duration ) is { } label ? strings[label] + SettingNumber( pending.Ride.Duration ) : "" );
+		rideSpeedLabel = Label( "rideSpeedLabel", () => strings.Format( UIStrings.Speed, SettingNumber( pending.Ride.Speed ) ) );
+		rideCapacityLabel = Label( "rideCapacityLabel", () => selectedObject is { } item ? strings.Format( CapacityLabel( Setting( item, "Bumper.WhichTrackType" ) ), SettingNumber( pending.Ride.Capacity ) ) : "" );
+		rideDurationLabel = Label( "rideDurationLabel", () => selectedObject is { } item && DurationLabel( Setting( item, "Info.DurationUnit" ), pending.Ride.Duration ) is { } label ? strings.Format( label, SettingNumber( pending.Ride.Duration ) ) : "" );
 
 		shopQualitySlider = Slider( "shopQuality", _ => (0, 2), () => pending.QualityStep, value => pending.QualityStep = value );
 		// [BIN:TPW-EXE:0x4b0b30 quality lamps] the shop window procedure turns a quality step s (message 0x800 from 0xc06b) into the value 1 << s of the group 0xc07f, which lights lamp s of the group 0xc07f (value 1 << s: l_low, l_med, l_high)

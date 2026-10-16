@@ -154,7 +154,7 @@ internal static class SaveTestPayloads
 	public sealed record AdvisorRecordFields( ushort ThingId, uint Secondary, uint Message, int Score, byte Valid, int ResponseNo, byte Override, byte Overridden );
 
 	/// <summary>Advisor controller body: pending records (0xCD-filled and invalid past <paramref name="pending"/>), history entries by message.</summary>
-	public static byte[] AdvisorController( IReadOnlyList<AdvisorRecordFields> pending, IReadOnlyDictionary<int, (uint Tick, int Variant, byte Played, uint Slaps)> history )
+	public static byte[] AdvisorController( IReadOnlyList<AdvisorRecordFields> pending, IReadOnlyDictionary<int, (uint Tick, int Variant, byte Played, uint Slaps)> history, AdvisorRecordFields? current = null )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
@@ -184,7 +184,7 @@ internal static class SaveTestPayloads
 			writer.Write( new byte[] { 0xCD, 0xCD, 0xCD } );
 			writer.Write( slaps );
 		}
-		Record( new AdvisorRecordFields( 0, 0, 346, 1000, 0, -1, 0, 0 ) );
+		Record( current ?? new AdvisorRecordFields( 0, 0, 346, 1000, 0, -1, 0, 0 ) );
 		writer.Write( (byte)0xCD );
 		writer.Write( 282u );
 		writer.Flush();

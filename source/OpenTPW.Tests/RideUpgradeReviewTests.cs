@@ -40,7 +40,8 @@ public class RideUpgradeReviewTests
 		Assert.IsTrue( ((UiLabel)screen.Find( "error" )!).Text().Length > 0 );
 		screen.Back!(); Open( w.Hud, context );
 		Assert.AreEqual( $"{context.Strings[UIStrings.UpgradeToLevel]} 1\n{context.Strings[UIStrings.EstimatedPrice]} {context.Strings[UIStrings.Dollar]}450", ((UiLabel)w.Hud.Stack.Top!.Find( "preview" )!).Text() );
-		w.Hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreEqual( cash - 450, w.Economy.Balance );
+		long requested = 0; w.Economy.EventRaised += item => { if ( item.Kind == ParkEventKind.UpgradeBought ) requested = item.Amount; };
+		w.Hud.Update( context, UiInput.Key( UiKeys.Accept ), false, false, false ); Assert.AreEqual( 450L, requested ); Assert.AreEqual( cash, w.Economy.Balance, "the request debits nothing (0x4af480)" );
 	}
 
 	[TestMethod]

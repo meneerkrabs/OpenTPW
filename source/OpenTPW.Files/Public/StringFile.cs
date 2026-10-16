@@ -13,6 +13,8 @@ public sealed class StringFile : BaseFormat
 	private BFMUReader table;
 
 	public string[] Entries { get; private set; }
+	/// <summary>Every entry as a whole record with its parameter slots (see <see cref="StringTemplate"/>), in <see cref="Entries"/> order.</summary>
+	public StringTemplate[] Templates { get; private set; } = Array.Empty<StringTemplate>();
 
 	/// <summary>
 	/// Reads a string table from the game file system, using <c>MBToUni.dat</c> from the same
@@ -35,11 +37,15 @@ public sealed class StringFile : BaseFormat
 	public string this[int val] => Entries[val];
 
 	/// <summary>Removes entry <paramref name="index"/>, moving the later entries down by one.</summary>
-	public void RemoveEntryAt( int index ) => Entries = Entries.Where( ( _, position ) => position != index ).ToArray();
+	public void RemoveEntryAt( int index )
+	{
+		Entries = Entries.Where( ( _, position ) => position != index ).ToArray();
+		Templates = Templates.Where( ( _, position ) => position != index ).ToArray();
+	}
 
 	protected override void ReadFromStream( Stream stream )
 	{
 		var reader = new BFSTReader( stream, table );
-		Entries = reader.ReadFile();
+		(Entries, Templates) = reader.Read();
 	}
 }

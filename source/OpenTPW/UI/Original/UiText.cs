@@ -14,8 +14,10 @@ public sealed class UiStringTable
 	private readonly string[] objectNames;
 	private readonly string[] lenderNames;
 	private readonly string[] ingredientNames;
+	private readonly StringTemplate[] uiTemplates;
 
-	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null, string[]? ingredientNames = null )
+	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null,
+		StringTemplate[]? uiTemplates = null, string[]? ingredientNames = null )
 	{
 		Language = language;
 		this.uiText = uiText;
@@ -23,13 +25,17 @@ public sealed class UiStringTable
 		this.themeNames = themeNames;
 		this.objectNames = objectNames;
 		this.lenderNames = lenderNames ?? Array.Empty<string>();
+		this.uiTemplates = uiTemplates ?? Array.Empty<StringTemplate>();
 		this.ingredientNames = ingredientNames ?? Array.Empty<string>();
 	}
 
-	public static UiStringTable Load( GameLanguage language ) => new( language.Name,
-		language.LoadStrings( "UITEXT.str" ).Entries, language.LoadStrings( "UIHELPTEXT.str" ).Entries,
-		language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries,
-		language.LoadStrings( "LOANNAMES.str" ).Entries, OptionalStrings( language, "INGREDIENT.str" ) );
+	public static UiStringTable Load( GameLanguage language )
+	{
+		var uiText = language.LoadStrings( "UITEXT.str" );
+		return new( language.Name, uiText.Entries, language.LoadStrings( "UIHELPTEXT.str" ).Entries,
+			language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries,
+			language.LoadStrings( "LOANNAMES.str" ).Entries, uiText.Templates, OptionalStrings( language, "INGREDIENT.str" ) );
+	}
 
 	private static string[]? OptionalStrings( GameLanguage language, string name )
 	{
@@ -47,10 +53,35 @@ public sealed class UiStringTable
 	public string Ingredient( int index ) => Get( ingredientNames, index );
 	public string Extra( OpenTpwText key ) => SupplementaryStrings.Get( key, Language );
 
+	/// <summary>
+	/// A UITEXT record with its parameter slots filled by <paramref name="values"/> (the original's formatter); a table loaded without the
+	/// records' parameter chunks appends the values to the entry's text.
+	/// </summary>
+	public string Format( UIStrings id, params string[] values ) => Format( (int)id, values );
+
+	/// <summary>UITEXT record <paramref name="index"/> filled by <paramref name="values"/>; also the records whose first text run is empty (<see cref="UiTextRecord"/>).</summary>
+	public string Format( int index, params string[] values ) => index >= 0 && index < uiTemplates.Length
+		? uiTemplates[index].Fill( values ) : Get( uiText, index ) + string.Concat( values );
+
 	/// <summary>A UITEXT entry without the leading space the original uses for option values.</summary>
 	public string Value( UIStrings id ) => this[id].Trim();
 
 	private static string Get( string[] table, int index ) => index >= 0 && index < table.Length ? table[index] : "";
+}
+
+/// <summary>
+/// UITEXT records that start with a parameter, so their first text run is empty and the <see cref="UIStrings"/> enum (whose every entry
+/// has text) does not name them; read them with <see cref="UiStringTable.Format(int, string[])"/>. The values are OpenTPW's UITEXT
+/// indices (tp.exe's ids above 207 are one more, the 474-entry edition).
+/// </summary>
+public static class UiTextRecord
+{
+	/// <summary>"%d hours" (tp.exe 0x1b9).</summary>
+	public const int Hours = 440;
+	/// <summary>"%d day" (tp.exe 0x1ba).</summary>
+	public const int Day = 441;
+	/// <summary>"%d days" (tp.exe 0x1bb).</summary>
+	public const int Days = 442;
 }
 
 /// <summary>

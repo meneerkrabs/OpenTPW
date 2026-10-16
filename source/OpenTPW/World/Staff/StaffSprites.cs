@@ -57,7 +57,7 @@ public static class StaffSpriteRules
 	private static readonly int[] PerformanceSlots = { 4, 10, 3, 11 };
 
 	/// <summary>The key a person's sprite bank derives from: the same for the candidate and the member it becomes.</summary>
-	// [APPROX:GUEST-014] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010); OpenTPW keeps no variant: the bank is (NameIndex + Id) modulo the folder's banks, in file order, and every bank of the folder is loaded where 0x541310 stops a flagged category at the limit of 0x41aa40 (1 or 2 by the graphics setting 0x7858d0) — evidence needed: which categories 0x541310 flags and the bank order within a folder
+	// [APPROX:GUEST-014] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010); OpenTPW makes the variant draw in its place (ParkStaff) but keeps no variant: the bank is (NameIndex + Id) modulo the folder's banks, in file order, and every bank of the folder is loaded where 0x541310 stops a flagged category at the limit of 0x41aa40 (1 or 2 by the graphics setting 0x7858d0) — evidence needed: which categories 0x541310 flags and the bank order within a folder
 	public static int VariantKey( int nameIndex, int id ) => (nameIndex + id) & int.MaxValue;
 
 	/// <summary>Index of a variant's bank among <paramref name="count"/> banks.</summary>

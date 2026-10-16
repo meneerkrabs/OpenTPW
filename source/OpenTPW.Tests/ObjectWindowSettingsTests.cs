@@ -42,7 +42,7 @@ public class ObjectWindowSettingsTests
 		var w = World( BuildCategory.Rides, RideData + "Info.DurationUnit 1\n" ); var context = Context(); Frame( w.Hud, context );
 		Assert.IsTrue( Slider( w.Hud, "rideSpeed" ).Visible && Slider( w.Hud, "rideCapacity" ).Visible && Slider( w.Hud, "rideDuration" ).Visible );
 		Assert.AreEqual( new RideSettingWords( 60, 1, 10 ), w.Hud.PendingSettings.Ride, "the window loads the ride's SPEED, CAPACITY and DURATION words" );
-		Assert.AreEqual( "ui42560", ((UiLabel)w.Hud.Screen.Find( "rideSpeedLabel" )!).Text(), "UITEXT 425 \"Speed : \" and the value (1-based 0x1aa)" );
+		Assert.AreEqual( "ui42560", ((UiLabel)w.Hud.Screen.Find( "rideSpeedLabel" )!).Text(), "UITEXT 425 \"Speed : \" with the value (tp.exe 0x1aa)" );
 		Drag( Slider( w.Hud, "rideSpeed" ), 90, 1 ); Drag( Slider( w.Hud, "rideCapacity" ), 7, 1 ); Drag( Slider( w.Hud, "rideDuration" ), 40, 5 );
 		Frame( w.Hud, context );
 		Assert.AreEqual( 60, w.Owner.Runtime.Script!.SpeedBias, "the sliders change only the window until it applies" );
@@ -137,8 +137,8 @@ public class ObjectWindowSettingsTests
 	public void SliderLabelsFollowTheTrackTypeAndTheDurationUnit()
 	{
 		Assert.AreEqual( UIStrings.Capacity, ParkHud.CapacityLabel( 0 ) );
-		Assert.AreEqual( 460, (int)ParkHud.CapacityLabel( 2 ), "0x1cd, 1-based" );
-		Assert.AreEqual( 462, (int)ParkHud.CapacityLabel( 3 ), "0x1cf, 1-based" );
+		Assert.AreEqual( 460, (int)ParkHud.CapacityLabel( 2 ), "tp.exe 0x1cd" );
+		Assert.AreEqual( 462, (int)ParkHud.CapacityLabel( 3 ), "tp.exe 0x1cf" );
 		Assert.IsNull( ParkHud.DurationLabel( 0, 10 ) );
 		Assert.AreEqual( (UIStrings.Duration, UIStrings.Durations, UIStrings.Laps, UIStrings.Cycles, UIStrings.Repetitions),
 			(ParkHud.DurationLabel( 1, 1 ), ParkHud.DurationLabel( 1, 2 ), ParkHud.DurationLabel( 2, 2 ), ParkHud.DurationLabel( 3, 2 ), ParkHud.DurationLabel( 4, 2 )) );

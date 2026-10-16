@@ -13,6 +13,9 @@ namespace OpenTPW.Tests;
 public class LocatorPanelTests
 {
 	private RideUpgradeIngressTests? fixture;
+	// a visitor row click plays the visitor click, which logs
+	[TestInitialize]
+	public void Init() => Log ??= new();
 	[TestCleanup]
 	public void Cleanup() => fixture?.Cleanup();
 

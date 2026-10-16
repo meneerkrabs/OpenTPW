@@ -103,7 +103,7 @@ public sealed record ModSettings
 	public byte[] Serialize() => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes( new Document
 	{
 		Enabled = Enabled.OrderBy( pair => pair.Key, StringComparer.Ordinal ).ToDictionary( pair => pair.Key, pair => pair.Value ),
-		Order = Order.ToList(),
+		Order = Order.ToList<string?>(),
 		Inputs = Inputs.OrderBy( pair => pair.Key, StringComparer.Ordinal )
 			.ToDictionary( pair => pair.Key, pair => (Dictionary<string, string>?)pair.Value.OrderBy( input => input.Key, StringComparer.Ordinal ).ToDictionary( input => input.Key, input => input.Value ) ),
 	}, WriteOptions );

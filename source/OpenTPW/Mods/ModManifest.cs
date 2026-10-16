@@ -114,7 +114,7 @@ public sealed record ModManifest
 		var after = new List<string>();
 		foreach ( var other in Bounded( document.After, MaximumDependencies, "after" ) )
 		{
-			if ( !IsValidId( other ) || other == id || after.Contains( other ) )
+			if ( !IsValidId( other ) || other == id || after.Contains( other! ) )
 				throw Invalid( $"'after' entry '{other}' is not another mod's id, or is listed twice" );
 			after.Add( other! );
 		}

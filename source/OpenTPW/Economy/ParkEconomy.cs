@@ -694,11 +694,19 @@ public sealed class ParkEconomy : IParkEconomy
 		// Research comes from researchers only (Mac 0xf0728 has no staffless path); an imported seed park brings its own.
 		foreach ( var ability in abilities )
 		{
-			foreach ( var item in Research.AddResearcherPoints( ability ) )
+			var researched = Research.AddResearcherPoints( ability );
+			foreach ( var item in researched )
 			{
 				Counters.Add( ParkCounters.Researched( item.Category ), 1 );
-				Raise( ParkEventKind.ItemResearched, item.Level, 0, item.InfoId, Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "" );
+				// the instance field is 1 for an item finished by research points, 0 for a free item that followed one: only the first is the completion message 0x11 the advisor answers
+				Raise( ParkEventKind.ItemResearched, item.Level, Research.LastResearched.Contains( item ) ? 1 : 0, item.InfoId, Catalog.TryGet( item.InfoId, out var info ) ? info.Name : "" );
 			}
+			// [BIN:TPW-EXE:0x00503D40 research completion] the lab's handler of the completion message opens the groups (0x503B80), which posts the new-group advice when one rose and the category still has unresearched items, then checks whether anything is left (0x503E3F)
+			foreach ( var category in Research.LastGroupsOpened )
+				if ( Research.HasUnresearched( category ) )
+					Raise( ParkEventKind.ResearchGroupOpened, (int)category, 0, 0, category.ToString() );
+			if ( Research.LastResearched.Count > 0 && Research.AllResearched )
+				Raise( ParkEventKind.ResearchAllDone, 0, 0, 0, "" );
 		}
 	}
 

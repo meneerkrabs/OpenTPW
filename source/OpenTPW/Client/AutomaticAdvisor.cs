@@ -144,7 +144,40 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x00509031 staff messages] the staff manager's month routine sends the staff info message (type 0x17, kind and role) that 0x59AFC0 turns into the advice 33-57; the kind and role are those of the strike message, whose text the advisor's caption then posts
 		if ( item.Kind == ParkEventKind.StaffStrikeMessage )
 			PostEventAdvice( AdvisorTables.StaffMessage( new StrikeMessage( (StaffType)item.InfoId, (StrikeMessageKind)item.Amount ) ), "a staff strike message" );
+		// the research completion message 0x11 (0x504630 sends it as the project reaches its target) reaches the lab and the advisor; a free item that followed one sends none
+		if ( item.Kind == ParkEventKind.ItemResearched && item.InstanceId == 1 && park != null )
+		{
+			var category = item.Amount > 0 ? ResearchCategory.Upgrade : park.Economy.Catalog.TryGet( item.InfoId, out var info ) ? info.ResearchCategory : ResearchCategory.Feature;
+			PostEventAdvice( ResearchDoneMessage( category ), $"research of {item.Detail} ({category})" );
+		}
+		if ( item.Kind == ParkEventKind.ResearchGroupOpened && NewResearchGroupMessage( (ResearchCategory)item.Amount ) is { } groupAdvice )
+			PostEventAdvice( groupAdvice, $"a new {(ResearchCategory)item.Amount} research group" );
+		// [BIN:TPW-EXE:0x00503E8E all research done] 0x167 (167) is posted in Instant Action (the game-type word 0xFB3B7C is 2) without further test; in the full simulation only when the player's ledger has the flag +0xB9 of every park (0x5B0C40), which OpenTPW's ledger lacks
+		if ( item.Kind == ParkEventKind.ResearchAllDone && GameType == 2 )
+			PostEventAdvice( 167, "all research done" );
 	}
+
+	/// <summary>The advice of each research category's completion (0x59B060, message type 0x11: ride 93, add-on 94, shop 95, sideshow 96, feature 97).</summary>
+	// [BIN:TPW-EXE:0x0059B0E6 research done] the category in the message's +0xC picks the advice: 0 queues 0x5D, 1 0x5F, 2 0x60, 3 0x61 and 4 0x5E; the project's category is the object's own, or 4 for an upgrade level
+	internal static int ResearchDoneMessage( ResearchCategory category ) => category switch
+	{
+		ResearchCategory.Ride => 93,
+		ResearchCategory.Shop => 95,
+		ResearchCategory.Sideshow => 96,
+		ResearchCategory.Feature => 97,
+		_ => 94,
+	};
+
+	/// <summary>The advice of a new research group (0x503B80: ride 133, shop 134, sideshow 135, feature 136; none for the upgrades).</summary>
+	// [BIN:TPW-EXE:0x00503C6E group advice] the switch on the category posts 0x85, 0x86, 0x87 or 0x88 through 0x59B590 and 0x59A940
+	internal static int? NewResearchGroupMessage( ResearchCategory category ) => category switch
+	{
+		ResearchCategory.Ride => 133,
+		ResearchCategory.Shop => 134,
+		ResearchCategory.Sideshow => 135,
+		ResearchCategory.Feature => 136,
+		_ => null,
+	};
 
 	/// <summary>Advice posted by game code (the original builds the record through 0x59B590 with the descriptor's score and queues it through 0x59A940).</summary>
 	internal void PostEventAdvice( int message, string source )

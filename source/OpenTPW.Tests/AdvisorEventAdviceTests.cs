@@ -137,4 +137,24 @@ public class AdvisorEventAdviceTests
 		Assert.Fail( $"{relative} not found above the test directory." );
 		return "";
 	}
+
+	[TestMethod]
+	public void ResearchDoneAdviceFollowsTheCategory()
+	{
+		Assert.AreEqual( 93, AutomaticAdvisor.ResearchDoneMessage( ResearchCategory.Ride ) );
+		Assert.AreEqual( 94, AutomaticAdvisor.ResearchDoneMessage( ResearchCategory.Upgrade ) );
+		Assert.AreEqual( 95, AutomaticAdvisor.ResearchDoneMessage( ResearchCategory.Shop ) );
+		Assert.AreEqual( 96, AutomaticAdvisor.ResearchDoneMessage( ResearchCategory.Sideshow ) );
+		Assert.AreEqual( 97, AutomaticAdvisor.ResearchDoneMessage( ResearchCategory.Feature ) );
+	}
+
+	[TestMethod]
+	public void NewResearchGroupAdviceHasNoneForUpgrades()
+	{
+		Assert.AreEqual( 133, AutomaticAdvisor.NewResearchGroupMessage( ResearchCategory.Ride ) );
+		Assert.AreEqual( 134, AutomaticAdvisor.NewResearchGroupMessage( ResearchCategory.Shop ) );
+		Assert.AreEqual( 135, AutomaticAdvisor.NewResearchGroupMessage( ResearchCategory.Sideshow ) );
+		Assert.AreEqual( 136, AutomaticAdvisor.NewResearchGroupMessage( ResearchCategory.Feature ) );
+		Assert.IsNull( AutomaticAdvisor.NewResearchGroupMessage( ResearchCategory.Upgrade ) );
+	}
 }

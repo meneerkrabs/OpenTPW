@@ -269,7 +269,7 @@ public sealed partial class ParkHud
 			return WorkloadKnobRange;
 		var abilities = economy.Settings.ResearchAbility;
 		var sum = economy.Staff.OfType( StaffType.Researcher ).Sum( member => abilities[Math.Clamp( member.Grade, 0, abilities.Count - 1 )] );
-		return WorkloadKnobLimit( sum, economy.Settings[StaffType.Researcher].MaximumInPark, abilities[^1] );
+		return WorkloadKnobLimit( sum, economy.Settings[StaffType.Researcher].MaximumInPark, abilities[BalanceSettings.GradeCount - 1] );
 	}
 
 	private sealed class ResearchWorkloadKnob : UiElement, IUiDragTarget

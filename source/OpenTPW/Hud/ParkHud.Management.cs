@@ -6,6 +6,8 @@ public sealed partial class ParkHud
 {
 	private UiScreen? entryPriceScreen;
 	private UiScreen? staffCostsScreen;
+	// each training row's gauge fill, by role, set when the window opens (null without a park economy)
+	private readonly float?[] trainingGaugeFills = new float?[Enum.GetValues<StaffType>().Length];
 	public bool EntryPriceWindowOpen => entryPriceScreen != null && Stack.Screens.Contains( entryPriceScreen );
 	public bool StaffCostsWindowOpen => staffCostsScreen != null && Stack.Screens.Contains( staffCostsScreen );
 
@@ -27,6 +29,7 @@ public sealed partial class ParkHud
 		SetInfoArm( false );
 		level.CellTool.Cancel();
 		staffCostsScreen ??= CreateTrainingBudgetScreen();
+		SetTrainingGauges();
 		Stack.Push( staffCostsScreen );
 	}
 
@@ -109,7 +112,7 @@ public sealed partial class ParkHud
 			screen.Add( new UiLabel { Id = $"budget{role}Value", Text = () => FormatMoney( FinanceEconomy?.Staff.GetTrainingBudget( role ) ?? 0 ), Font = fonts => fonts.Label,
 				Color = UiColors.Text, Align = UiAlign.Center, Fit = true, Bounds = row.Inner!.Value, Anchor = UiAnchor.Center } );
 			var gauge = row.Children.First( node => node.Type == 9 );
-			screen.Add( new UiGaugeBar { Id = $"skill{role}", Value = () => TrainingGrades( role ) is { } grades ? TrainingGaugeFill( grades ) : null,
+			screen.Add( new UiGaugeBar { Id = $"skill{role}", Value = () => trainingGaugeFills[(int)role],
 				Help = strings.Help( gauge.Help ), Bounds = gauge.Rect, Anchor = UiAnchor.Center } );
 			foreach ( var (node, delta) in new[] { (minus, -1), (plus, 1) } )
 			{
@@ -148,7 +151,7 @@ public sealed partial class ParkHud
 	public static long StepTrainingBudget( long current, int direction ) =>
 		Math.Clamp( current + Math.Sign( direction ) * TrainingBudgetStep, 0, TrainingBudgetMaximum );
 
-	/// <summary>The fill of a training row's gauge for the grades (0..4) of the role's employees: the integer share of the best grade, then of 1024.</summary>
+	/// <summary>The fill of a training row's gauge for the grades (0..4) of the role's employees: the integer share of grade 5, one above the best grade, then of 1024, so grade-4 staff fill 80% (tp.exe 0x4c9c00: sum × 100 / (count × 5); 0x4b28eb: × 1024 / 100).</summary>
 	public static float TrainingGaugeFill( IReadOnlyCollection<int> grades )
 	{
 		if ( grades.Count == 0 )
@@ -157,7 +160,13 @@ public sealed partial class ParkHud
 		return share * 1024 / 100 / 1024f;
 	}
 
-	private IReadOnlyCollection<int>? TrainingGrades( StaffType role ) => FinanceEconomy?.Staff.OfType( role ).Select( member => member.Grade ).ToArray();
+	/// <summary>Sets every training row's gauge from the employees' grades, as the original does once when the window opens (0x4b28e4..0x4b2906).</summary>
+	private void SetTrainingGauges()
+	{
+		var economy = FinanceEconomy;
+		foreach ( var role in Enum.GetValues<StaffType>() )
+			trainingGaugeFills[(int)role] = economy == null ? null : TrainingGaugeFill( economy.Staff.OfType( role ).Select( member => member.Grade ).ToArray() );
+	}
 
 	private string TrainingBalanceText( int row )
 	{

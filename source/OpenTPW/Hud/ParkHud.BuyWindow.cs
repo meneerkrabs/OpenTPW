@@ -111,10 +111,12 @@ public sealed partial class ParkHud
 	// [DATA:video 1:50 buy window] four rides and no scroll bar, track or arrows; at 17:20 the longer features list shows them
 	public static bool BuyScrollShown( int maxFirstRow ) => maxFirstRow > 0;
 
+	private static readonly string[] BuyScrollIds = { "buyScroll", "scrollUp", "scrollDown" };
+
 	private void UpdateBuyScrollVisibility( UiScreen screen )
 	{
 		var shown = BuyScrollShown( BuyMaxFirstRow );
-		foreach ( var id in new[] { "buyScroll", "scrollUp", "scrollDown" } )
+		foreach ( var id in BuyScrollIds )
 			if ( screen.Find( id ) is { } element )
 				element.Visible = shown;
 	}

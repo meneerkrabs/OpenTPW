@@ -1,6 +1,10 @@
+using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
+using OpenTPW.UI.Original;
 
 namespace OpenTPW.Tests;
 
@@ -53,6 +57,58 @@ public class UiRegisterReadTests
 	}
 
 	[TestMethod]
+	public void AnActivePlaceToolReportsTheHiresAdvisorHelpOpenUntilTheToolEnds()
+	{
+		// tp.exe 0x49b9dd posts 0x135 once the hire window is closed; the Place tool's end 0x46c890 withdraws it at 0x46c8d4, placed or cancelled
+		static void Set( object target, string field, object? value ) =>
+			target.GetType().GetField( field, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( target, value );
+		var grid = new GuestPathGrid( 20, 20 );
+		for ( var x = 0; x < 16; x++ )
+			grid.SetPath( x, 5, true );
+		var park = EconomyTestData.Park();
+		park.OpenPark();
+		park.Litter.Cells = grid.Cells;
+		var world = new StaffWorldSimulation( grid, () => park.Staff.Members, _ => null, (0, 5) );
+		park.StaffWorld = world;
+		var placement = new StaffPlacement( () => park, () => grid.Cells, ( _, _ ) => false );
+		var level = (Level)RuntimeHelpers.GetUninitializedObject( typeof( Level ) );
+		Set( level, "<StaffPlacement>k__BackingField", placement );
+
+		var events = new List<string>();
+		var hud = (ParkHud)RuntimeHelpers.GetUninitializedObject( typeof( ParkHud ) );
+		Set( hud, "level", level );
+		Set( hud, "host", new HudHost { WindowOpened = name => events.Add( "+" + name ), WindowClosed = name => events.Add( "-" + name ) } );
+		Set( hud, "reportedScreens", new HashSet<string>( System.StringComparer.Ordinal ) );
+		Set( hud, "openScreens", new HashSet<string>( System.StringComparer.Ordinal ) );
+		Set( hud, "screenChanges", new List<string>() );
+		var hudScreen = new UiScreen( "hud" ) { Modal = false };
+		Set( hud, "hud", hudScreen );
+		Set( hud, "<Stack>k__BackingField", new UiScreenStack() );
+		hud.Stack.Push( hudScreen );
+		var report = typeof( ParkHud ).GetMethod( "ReportScreens", BindingFlags.Instance | BindingFlags.NonPublic )!;
+
+		report.Invoke( hud, null );
+		Assert.AreEqual( 0, events.Count, "no tool, no help" );
+
+		Assert.IsTrue( placement.BeginHire( park.Staff.Candidates.First( item => item.Type == StaffType.Guard ).Id ) );
+		report.Invoke( hud, null );
+		report.Invoke( hud, null );
+		CollectionAssert.AreEqual( new[] { "+" + ParkHud.StaffPlacementHelp }, events, "the Place tool opens help 309 once" );
+		Assert.AreEqual( 309, AdvisorUiHelp.MessageFor( ParkHud.StaffPlacementHelp ) );
+
+		placement.Cancel();
+		report.Invoke( hud, null );
+		CollectionAssert.AreEqual( new[] { "+" + ParkHud.StaffPlacementHelp, "-" + ParkHud.StaffPlacementHelp }, events, "cancelling the tool withdraws it" );
+
+		events.Clear();
+		Assert.IsTrue( placement.BeginHire( park.Staff.Candidates.First( item => item.Type == StaffType.Handyman ).Id ) );
+		report.Invoke( hud, null );
+		Assert.AreEqual( StaffClickResult.Placed, placement.Click( 7, 9 ) );
+		report.Invoke( hud, null );
+		CollectionAssert.AreEqual( new[] { "+" + ParkHud.StaffPlacementHelp, "-" + ParkHud.StaffPlacementHelp }, events, "placing the member ends the tool and withdraws it" );
+	}
+
+	[TestMethod]
 	public void TrainingBudgetsMoveInStepsOf25WithinTheSpinnersRange()
 	{
 		// tp.exe 0x4b2797: range 0..10000, step 25; 0x66a71c clamps
@@ -65,10 +121,10 @@ public class UiRegisterReadTests
 	[TestMethod]
 	public void TrainingGaugesShowTheMeanGradeInIntegerSteps()
 	{
-		// tp.exe 0x4c9c00: sum × 100 / (count × 5); the row sets share × 1024 / 100
+		// tp.exe 0x4c9c00: sum × 100 / (count × 5); the row sets share × 1024 / 100 (0x4b28eb); grades are 0..4
 		Assert.AreEqual( 0f, ParkHud.TrainingGaugeFill( System.Array.Empty<int>() ) );
 		Assert.AreEqual( 409 / 1024f, ParkHud.TrainingGaugeFill( new[] { 2 } ), 1e-6f );
-		Assert.AreEqual( 1f, ParkHud.TrainingGaugeFill( new[] { 5 } ), 1e-6f );
+		Assert.AreEqual( 819 / 1024f, ParkHud.TrainingGaugeFill( new[] { 4 } ), 1e-6f, "the best grade fills 80%: the divisor is 5, one above it" );
 		Assert.AreEqual( (33 * 1024 / 100) / 1024f, ParkHud.TrainingGaugeFill( new[] { 1, 2, 2 } ), 1e-6f, "5 × 100 / 15 = 33" );
 	}
 

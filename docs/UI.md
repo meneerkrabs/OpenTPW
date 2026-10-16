@@ -361,8 +361,8 @@ glyph in all 14 UI fonts of each language.
   and staff-cost detail buttons open their management screens (`ParkHud.Management.cs`), disabled
   while no park economy runs. The training-budget window's minus and plus buttons move a budget by the
   original spinner's step of 25 within 0..10000, and each row's gauge shows the role's employees' mean
-  grade as a share of the best grade (tp.exe `0x4b2797`, `0x4c9c00`); the entry-price window is a host
-  layout (UI-061).
+  grade as a share of grade 5, one above the best grade (0..4), so grade-4 staff fill 80% (tp.exe
+  `0x4b2797`, `0x4c9c00`, scaled at `0x4b28eb`); the entry-price window is a host layout (UI-061).
 - The Loans window (`ParkHud.LoansWindow.cs`) uses the Mac `w_big`/`f_loans` table, six columns,
   Available/Outstanding tabs, a scroll control and the four summary cells. Offers and outstanding
   accounts come directly from `ParkEconomy`. Borrowing and repayment use its existing methods,

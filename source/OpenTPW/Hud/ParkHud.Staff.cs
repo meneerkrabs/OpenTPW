@@ -138,7 +138,7 @@ public sealed partial class ParkHud
 	/// Hires the still-available selected applicant: the window closes and the Place tool starts with the applicant still in the pool; the employee
 	/// exists only after a click on a valid cell (docs/STAFF-PLACEMENT.md). Without a park view the economy hires at once.
 	/// </summary>
-	// [BIN:TPW-EXE:0x507bf0 hire] the hire creates no object, it builds the place tool; [BIN:TPW-EXE:0x49b9dd hire handler] the handler posts advisor message 0x135 and closes the window
+	// [BIN:TPW-EXE:0x507bf0 hire] the hire creates no object, it builds the place tool; [BIN:TPW-EXE:0x49b9dd hire help] the handler closes the window (0x658d9f, message 4) and then posts advisor message 0x135
 	// [BIN:TPW-EXE:0x46c890 place tool end] the advisor help 0x135 (309) is posted after the window closes and withdrawn when the Place tool ends (ParkHud.StaffPlacementHelp); no message-area line
 	public bool HireSelectedStaff()
 	{

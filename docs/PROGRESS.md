@@ -18,7 +18,7 @@ Twenty-two more interface approximations were read again in tp.exe:
   OpenTPW's own hint line.
 - **Training budgets** step by 25 within 0..10000 with each row's grade gauge (`0x4b27d7`, `0x4c9c00`), and **the research workload
   knob** maps to the original's workload of 70..100 (`0x4aacce`, `0x4a985b`).
-- UI-910 (the left mouse button is button 0, `0x634963`) is retired; 15 interface items are narrowed.
+- UI-910 (the left mouse button is button 0, `0x634963`) is retired; 12 interface items are narrowed.
 
 ## Coaster trains and pylons from tp.exe (October 15, 2026)
 

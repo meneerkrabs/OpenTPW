@@ -365,8 +365,10 @@ def build(mac_bin: str, repo: str) -> str:
                     functions[j].callers.append(i)
 
     labels, conflicts = labeller.label(functions)
-    register_path = os.path.join(repo, "docs", "FIDELITY-REGISTER.md")
-    register = open(register_path, encoding="utf-8").read() if os.path.exists(register_path) else ""
+    # The register document is a build artifact; render it from the sources instead of reading a committed copy.
+    import fidelity_register
+    from pathlib import Path
+    register = fidelity_register.render(fidelity_register.collect(Path(repo)))
     approximations = open_approximations(register, config["approximations"])
     libraries = library_summary(mac_bin, repo, labeller)
     return render(config, functions, labels, conflicts, approximations, classes, libraries, data_ranges)

@@ -79,24 +79,52 @@ public class TrackAssetTests
 		Assert.IsTrue( jungle.FileSystem.GetFiles( jungle.ArchivePath ).Any( file => file.EndsWith( "wr_ring.md2", StringComparison.OrdinalIgnoreCase ) ) );
 	}
 
-	/// <summary>The surface a boat floats on is the piece's water mesh: the straight's channel is a plane about 3.25 units above the tile, and its banks have none.</summary>
+	/// <summary>
+	/// The original's sampler modes over the shipped objects (0x00450EA0): the flat pieces and the stations of the jungle and fantasy rides are terrain plus their header's
+	/// +0xA0 (3.254 the water level, 3.1 or 5 the kart floor), the hill pieces read their surface record's 0x8000 faces, and the bumper rides stand on a platform +0xA0
+	/// above the terrain.
+	/// </summary>
 	[TestMethod]
-	public void ThePieceWaterMeshesGiveTheBoatSurface()
+	public void ThePiecesStationsAndArenasTakeTheOriginalsSamplerModes()
 	{
-		var entry = ObjectCatalog.Load( "jungle" ).Get( 1160 );
-		var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, TrackFamily.Water );
-		var straight = TrackSurface.FromModel( kit.GetModel( TrackPieceSelector.PieceStraight )! );
-		Assert.IsTrue( straight.TriangleCount > 0 );
-		Assert.AreEqual( 3.25f, straight.HeightAt( 10, 10 )!.Value, 0.2f, "the channel's water plane" );
-		Assert.AreEqual( 3.25f, straight.HeightAt( 8, 2 )!.Value, 0.2f );
-		Assert.IsNull( straight.HeightAt( 1, 10 ), "the bank beside the channel has no water face" );
-		var bend = TrackSurface.FromModel( kit.GetModel( TrackPieceSelector.PieceCorner )! );
-		Assert.IsTrue( bend.HeightAt( 14, 14 ).HasValue, "a bend's channel runs through its diagonal" );
-		Assert.IsNull( bend.HeightAt( 1, 1 ) );
-		// a boat across the straight sits level at the water plane
-		var pose = TrackSurface.Pose( 10, 10, 0, 3.33f, ( x, y ) => straight.HeightAt( x, y ) ?? 0 );
-		Assert.AreEqual( 3.25f, pose.Height, 0.2f );
-		Assert.AreEqual( 0f, pose.Pitch, 0.05f );
+		var water = TrackPieceKit.Load( ObjectCatalog.Load( "jungle" ).Get( 1160 ).FileSystem, ObjectCatalog.Load( "jungle" ).Get( 1160 ).ArchivePath, TrackFamily.Water );
+		var straight = TrackSurface.FromObject( water.GetModel( TrackPieceSelector.PieceStraight )! );
+		Assert.AreEqual( TrackSamplerMode.Terrain, straight.Mode );
+		Assert.AreEqual( 3.254f, straight.HeightAt( 10, 10 )!.Value, 1e-4f, "the water level: the header's +0xA0" );
+		Assert.AreEqual( 3.254f, straight.HeightAt( 1, 10 )!.Value, 1e-4f, "the whole tile, banks included" );
+		var hill = TrackSurface.FromObject( water.GetModel( TrackPieceSelector.PieceBridgeUp )! );
+		Assert.AreEqual( TrackSamplerMode.SurfaceRecords, hill.Mode, "the ramp reads its surface record's faces" );
+		Assert.IsTrue( hill.TriangleCount > 0 );
+		foreach ( var theme in new[] { "jungle", "hallow", "space", "fantasy" } )
+		{
+			foreach ( var entry in new[] { KartRide( theme ) }.Concat( TrackRides( 2 ).Where( item => item.ArchivePath.Contains( $"/{theme}/", StringComparison.OrdinalIgnoreCase ) ) ) )
+			{
+				var kit = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, entry.Settings.GetInt( "Bumper.WhichTrackType" ) == 1 ? TrackFamily.Kart : TrackFamily.Water );
+				var flat = TrackSurface.FromObject( kit.GetModel( TrackPieceSelector.PieceStraight )! );
+				Assert.AreEqual( TrackSamplerMode.Terrain, flat.Mode, $"{theme} {entry.DisplayName}: the straight" );
+				Assert.IsTrue( flat.TerrainOffset is > 3f and < 5.1f, $"{theme} {entry.DisplayName}: the floor {flat.TerrainOffset}" );
+				foreach ( var piece in new[] { TrackPieceSelector.PieceBridgeUp, TrackPieceSelector.PieceBridgeDown } )
+				{
+					var ramp = TrackSurface.FromObject( kit.GetModel( piece )! );
+					Assert.AreEqual( TrackSamplerMode.SurfaceRecords, ramp.Mode, $"{theme} {entry.DisplayName}: piece {piece}" );
+					Assert.IsTrue( ramp.TriangleCount > 0 );
+				}
+			}
+		}
+		// the stations: the jungle karts' and every water ride's model is terrain plus its floor; the Halloween and space karts' station reads its faces
+		Assert.AreEqual( 3.1f, TrackSurface.FromObject( ObjectAssets.LoadModel( KartRide( "jungle" ).FileSystem, KartRide( "jungle" ).ModelPath ) ).TerrainOffset!.Value, 1e-4f );
+		Assert.AreEqual( TrackSamplerMode.SurfaceRecords, TrackSurface.FromObject( ObjectAssets.LoadModel( KartRide( "hallow" ).FileSystem, KartRide( "hallow" ).ModelPath ) ).Mode );
+		// the bumper rides stand on a platform above the terrain
+		var platforms = new Dictionary<string, float>();
+		foreach ( var entry in TrackRides( 0 ).Where( item => BumperTemplates.ForRide( 0, item.Settings.GetInt( "Bumper.BumperType" ) ) != null ) )
+		{
+			var surface = TrackSurface.FromObject( ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath ) );
+			Assert.AreEqual( TrackSamplerMode.Terrain, surface.Mode, entry.DisplayName );
+			platforms[entry.DisplayName] = surface.TerrainOffset!.Value;
+		}
+		Assert.AreEqual( 29.8f, platforms["The Hot Pot"], 1e-4f, "the jungle pot's floor" );
+		Assert.AreEqual( 15.005f, platforms["Pumpkin Castle"], 1e-4f );
+		Assert.AreEqual( 10.924f, platforms["Uforia"], 1e-4f );
 	}
 
 	[TestMethod]

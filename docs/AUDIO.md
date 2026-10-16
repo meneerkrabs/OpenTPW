@@ -232,7 +232,15 @@ a placeholder's four slots hold the event's code (event `+0x12`), the current so
 `+0x1A`, refreshed whenever the sentence moves to another sound) and 0, and a call whose code matches slot 1-3
 recomputes the volume (unless a fixed volume was set) and redraws the pitch. The crowd event's code is 7 and sounds
 1-6 of its twelve bind 7 in slot 1 under the volume mask, so every crowd update moves the playing section's volume
-and pitch; sounds 7-12 have selector 0. The PC's main loop sends the crowd update (`0x51E7B0`) and the music
+and pitch; sounds 7-12 have selector 0. Every sentence holds this table (`SoundParameterTable`): the crowd, the ride
+and tour vehicles' engines (EventMap variable 10, `0x51BC40`), the level rain voice (code 8, `0x51E870`; its
+sounds bind 8 under the volume mask, so the drop level also sets the rain's volume within 1 to 2..5 percent) and the park music
+(code 4, `0x51E79E`; no music sound binds a selector, so it only steers the branching) go through the same call, and only a call with the event's own code (slot 0) sets the value the branch
+picker reads (`0x6be5e0` → `0x6be450`, table `+4`). One-shots and chains build the same table from the event and
+the chosen sound (every placeholder class sets up with `0x6bbf60` and queries with `0x6bc040`). The
+query `0x6bc040` tests only the masks: a bound sound takes its slot's value whether or not a matching call came, a value
+never set being 0, so the weather's own rain voice (no parameter call) plays at the bottom of its range. The Mac reading
+of `GetRandomVolume` kept a random volume for an unset parameter; the PC's is followed. The PC's main loop sends the crowd update (`0x51E7B0`) and the music
 parameter on every 32nd world step of 31 ms of the game timer (`0x54F82D`, `WorldStepCadence`), about once a
 second, so the crowd also starts and stops on that beat.
 
@@ -580,7 +588,7 @@ implemented yet.
 
 | ID | Approximation | Evidence needed |
 | --- | --- | --- |
-| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. Not applied: a parameter-bound pitch slot (ride engine loops), a placeholder's fixed-pitch flag (`0x10000`, which replaces the draw with the short at `+0x4A`), the delay of non-chain sounds (u16 + `r % range`, `0x6bc343`) and reverb (`SndReverb.map`); chain delays are milliseconds (video, 2026-10-15); position is applied only by the positioned playback path | The delay of non-chain sounds; `SndReverb.map`; the parameter-bound pitch slot; which placeholder sets the fixed-pitch flag `0x10000` (the event's flags are 16-bit) |
+| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. A parameter-bound pitch slot is applied to every playback (sentences, one-shots and chains) through its placeholder table (`0x6bbf60`, `0x6bc040`, `0x6bc170`): a one-shot of a pitch-bound sound with no parameter call plays at the bottom of its range, as the kart and bumper stop sounds do. Not applied: a placeholder's fixed-pitch flag (`0x10000`, which replaces the draw with the short at `+0x4A`), the delay of non-chain sounds (u16 + `r % range`, `0x6bc343`) and reverb (`SndReverb.map`); chain delays are milliseconds (video, 2026-10-15); position is applied only by the positioned playback path | The delay of non-chain sounds; `SndReverb.map`; which placeholder sets the fixed-pitch flag `0x10000` (the event's flags are 16-bit) |
 | AUDIO-004 | `0xBD` plays for a control whose construction style (`+0x48`, `0x65bcad` arg 2) has bit `0x10` (`0x4857cb`); no OpenTPW control plays it | Which original controls are created with style bit `0x10` (the creation sites or UI resources) |
 | AUDIO-008 | The repair family comes from the owner object's word `+0x14` (band 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87, 0 silent; `0x55635f`/`0x551320`); OpenTPW uses band 1 (75) and plays it at the object as the original does | The band word's meaning and source |
 | AUDIO-009 | A rejected placement ("Cannot build") plays the error feedback 0x1D; the traced 0x1D callers are buy and hire money and limit checks (tp.exe `0x4879d0`, `0x4ac590`, `0x4af500`), no placement-tool site was found | The object-placement refusal cases of the build tool's 0x35-way tool switch (`0x524acd`) |

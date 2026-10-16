@@ -261,8 +261,17 @@ public sealed class ParkPathBuilder : ICellLineWriter
 			}
 			var cost = CellCost;
 			// [BIN:TPW-EXE:0x5344E5 cell op 0x87] the commit's first LayLine pass (0x524960: 0x536100(0x87, ...)) demolishes the owner of every type 4, 9 or 10 cell of the line whose priority 0x818C14 is below the tool's 0x818C10 (0x527EE0, crediting its scrap value) before the type pass
+			// tp.exe lets a line commit only when its ghost passed the money test, so nothing is demolished for a cell that cannot be paid for
 			if ( write && ObjectGivesWay?.Invoke( x, y ) == true )
+			{
+				if ( Economy is { } park && !park.CanSpendCell( CellPurchase.Path ) )
+				{
+					stoppedBy = CellBuildResult.NotEnoughMoney;
+					stoppedAt = (x, y);
+					break;
+				}
 				DemolishObject?.Invoke( x, y );
+			}
 			if ( write && !WritePath( x, y ) )
 			{
 				stoppedBy = CellBuildResult.NotEnoughMoney;

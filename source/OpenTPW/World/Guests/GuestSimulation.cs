@@ -1362,17 +1362,21 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// clears it): each walking guest on such a cell is put on the nearest path cell, its walk ended, and goes on in its state as after a broken
 	/// walk (<see cref="EndBrokenWalks"/>). Returns the number of guests moved.
 	/// </summary>
-	// [APPROX:RIDES-018] guests on a path cell an object's placement clears are set down on the nearest path cell; tp.exe's placement (0x528A70) and ClearCell (0x5367A0) write cells and the block stamp (0x4D8C60, through SetCellType 0x5346D0), which reroutes walking things, and what a guest standing inside the new footprint does next is not traced
+	// Approximation (RIDES-018, registered at ParkObjects.Check): guests on a path cell an object's placement clears are set down on the nearest path cell; tp.exe's placement (0x528A70) and ClearCell (0x5367A0) write cells and the block stamp (0x4D8C60, through SetCellType 0x5346D0), which reroutes walking things, and what a guest standing inside the new footprint does next is not traced
 	public int SetDownOffCells( IReadOnlySet<(int X, int Y)> cells )
 	{
 		var moved = 0;
 		foreach ( var guest in guests )
 		{
-			if ( !guest.OnGrid || guest.Navigation.OffGrid || !cells.Contains( (guest.CellX, guest.CellY) ) || Grid.IsWalkable( guest.CellX, guest.CellY )
+			if ( !guest.OnGrid || guest.Navigation.OffGrid
 				|| guest.State is not (GuestState.DoingNothing or GuestState.WalkingAround or GuestState.ThrowingAwayLitter or GuestState.GoingToRide
 					or GuestState.LeavingPark or GuestState.ExitingRide) )
 				continue;
-			if ( Grid.FindNearestWalkable( guest.CellX, guest.CellY ) is not { } cell )
+			// The cell it stands on, and the cell a one-cell step is heading for (CellX/CellY move ahead with SetCellWaypoint).
+			var here = guest.Navigation.Cell;
+			if ( !(cells.Contains( here ) && !Grid.IsWalkable( here.X, here.Y )) && !(cells.Contains( guest.Cell ) && !Grid.IsWalkable( guest.CellX, guest.CellY )) )
+				continue;
+			if ( (Grid.IsWalkable( here.X, here.Y ) ? here : Grid.FindNearestWalkable( here.X, here.Y )) is not { } cell )
 				continue;
 			PlaceOnGrid( guest, cell.X, cell.Y );
 			moved++;

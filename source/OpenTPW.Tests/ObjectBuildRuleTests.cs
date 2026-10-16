@@ -157,6 +157,13 @@ public class ObjectBuildRuleTests
 		Assert.IsTrue( park.Grid.IsWalkable( standing.Cell.X, standing.Cell.Y ), $"set down on a path cell, not {standing.Cell}" );
 		Assert.AreEqual( 1, Math.Abs( standing.Cell.X - 5 ) + Math.Abs( standing.Cell.Y - 5 ), "the nearest path cell" );
 		Assert.AreEqual( (6, 5), beside.Cell, "guests elsewhere stay" );
+		// A guest stepping off the cell it stands on (its CellX/CellY already the next cell) is found by where it stands.
+		var stepping = guests.SpawnInPark( 3, 5 );
+		stepping.State = GuestState.GoingToRide;
+		(stepping.CellX, stepping.CellY) = (2, 5);
+		Assert.IsNotNull( park.Objects.TryPlace( Bush(), 3, 5, 0, out _ ) );
+		Assert.AreNotEqual( (3, 5), stepping.Navigation.Cell );
+		Assert.IsTrue( park.Grid.IsWalkable( stepping.CellX, stepping.CellY ) );
 	}
 
 	// ---- Overwrite priority ------------------------------------------------------------------------
@@ -239,6 +246,15 @@ public class ObjectBuildRuleTests
 		Assert.AreEqual( 0, park.Grid.Cells.RawTypeAt( 9, 6 ), "the pillar's cells off the line are emptied" );
 		park.Objects.TryPlace( Ride(), 6, 10, 0, out _ );
 		Assert.AreEqual( CellBuildResult.Occupied, park.Paths.CheckCell( 7, 11 ), "a ride (priority 5) refuses a path" );
+		// A path cell that cannot be paid for demolishes nothing.
+		var flower = park.Objects.TryPlace( Bush(), 15, 15, 0, out _ )!;
+		var broke = new ParkPathBuilder( park.Grid.Cells, park.Grid, EconomyTestData.Park( initialCash: 0 ), park.Objects.Grid, ( x, y ) => park.Objects.FindAt( x, y ) != null )
+		{
+			ObjectGivesWay = park.Paths.ObjectGivesWay,
+			DemolishObject = park.Demolish
+		};
+		Assert.AreEqual( CellBuildResult.NotEnoughMoney, broke.BuildSegment( (15, 15), (15, 15) ).StoppedBy );
+		Assert.IsFalse( flower.IsDeleted );
 	}
 
 	[TestMethod]

@@ -22,8 +22,13 @@ public sealed class SpriteFrame
 	public int OriginX { get; }
 	/// <summary>Signed offset of the frame's top edge from the hotspot; kid frames put the hotspot at the feet.</summary>
 	public int OriginY { get; }
-	/// <summary>Two u16 header words, 128/128 in every kid frame; meaning unknown.</summary>
+	/// <summary>
+	/// Pixels per sprite unit across (A) and down (B). [BIN:TPW-EXE:0x005890E0 sprite placement] the quad spans
+	/// <c>originX / A · scale</c> to <c>(width + originX) / A · scale</c> (Y likewise with height, origin Y and B), read by the
+	/// frame reader 0x588660; 128 in every frame of all 29 FPC and 46 TPC banks.
+	/// </summary>
 	public ushort UnknownA { get; }
+	/// <inheritdoc cref="UnknownA"/>
 	public ushort UnknownB { get; }
 	/// <summary>Row-major palette indices; 0 is transparent, n ≥ 1 is palette entry n − 1.</summary>
 	public byte[] Indices { get; }
@@ -31,7 +36,8 @@ public sealed class SpriteFrame
 
 /// <summary>
 /// Paletted RLE sprite bank (<c>.FPC</c>/<c>.TPC</c> inside <c>esprites.wad</c>), see docs/GUESTS.md.
-/// Layout (little-endian): u16 3, u16 3, u32 frame count, u32 0, 255 BGRA palette entries, then per frame
+/// Layout (little-endian): u16 3 (the format; the loader 0x587DB0 takes 2 another way), u16 (read and ignored), u32 frame count,
+/// a 256-entry BGRA palette whose entry 0 (all zero) is the transparent index (stored here as 255 entries after it), then per frame
 /// u32 data size, u16 width, u16 height, u16 ×2 (unknown), i32 origin X, i32 origin Y and the RLE rows.
 /// Each row is a byte length followed by control bytes: c &lt; 0 repeats the next byte −c times, c &gt; 0
 /// copies c literal bytes.
@@ -171,13 +177,26 @@ public sealed class SpriteAnimationFile : BaseFormat
 	public const string Magic = "ESP_FILE2.00";
 	public const int FileBytes = 350;
 	public const int SlotOffset = 0x10E;
-	public const int SlotCount = 20;
+	/// <summary>Animation slots: the first 16 of the file's 20 four-byte entries (the last four are <see cref="ExtraSlotBytes"/>).</summary>
+	public const int SlotCount = 16;
 
 	public string BankName { get; private set; } = "";
-	/// <summary>Byte 0x10C: 1 for every walking character (kids, staff), 0 for heads, thoughts, particles. Meaning unknown.</summary>
+	/// <summary>
+	/// Byte 0x10C: the set has a full-detail <c>.FPC</c> bank. [BIN:TPW-EXE:0x005410D3 sprite bank extension] the ESP loader 0x540D90
+	/// opens <c>.fpc</c> when this byte and the sprite-detail flag (set to 1 at start-up, 0x54E688) are both non-zero, else <c>.tpc</c>
+	/// (the <c>.fps</c>/<c>.tps</c> pair of the other branch is never selected on the PC). 27 of the 27 sets with 1 ship an FPC; Jungle
+	/// SPR_EX and Space SPR_SK ship one too but have 0, so the game draws their TPC.
+	/// </summary>
 	public byte FlagA { get; private set; }
-	/// <summary>Byte 0x10D: 1 for kid sets CH, KI, SA, SU and their heads (girl sprites by visual inspection). Meaning unknown.</summary>
+	/// <summary>Byte 0x10D: 1 for kid sets CH, KI, SA, SU and their heads. Stored by the ESP loader (object +0x206) but read nowhere in tp.exe.</summary>
 	public byte FlagB { get; private set; }
+	/// <summary>The bank the game opens with full sprite detail (<see cref="FlagA"/>): <c>.FPC</c> or <c>.TPC</c>.</summary>
+	public string BankExtension => FlagA != 0 ? ".FPC" : ".TPC";
+	/// <summary>
+	/// The 16 bytes after the 16 animation slots (entries 16–19 of the 4-byte grid). The loader 0x540D90 reads them as four separate bytes
+	/// per entry, not as animations; entry 16 is <c>01 05 00 00</c> in 11 files and <c>01 05 02 28</c> in one, the rest zero. Their use is unknown.
+	/// </summary>
+	public byte[] ExtraSlotBytes { get; private set; } = Array.Empty<byte>();
 	public IReadOnlyList<SpriteAnimation> Animations { get; private set; } = Array.Empty<SpriteAnimation>();
 
 	public SpriteAnimationFile( string path ) => ReadFromFile( path );
@@ -203,5 +222,6 @@ public sealed class SpriteAnimationFile : BaseFormat
 			slots[slot] = new SpriteAnimation( slot, BinaryPrimitives.ReadUInt16LittleEndian( data.AsSpan( offset ) ), data[offset + 2], data[offset + 3] );
 		}
 		Animations = slots;
+		ExtraSlotBytes = data.AsSpan( SlotOffset + 16 * 4, 16 ).ToArray();
 	}
 }

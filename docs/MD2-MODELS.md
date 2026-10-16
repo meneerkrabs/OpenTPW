@@ -49,7 +49,14 @@ Header, 0xB8 bytes:
 Texture slots: 8-byte records (`u32 flags`, `u32 0`) at 0x50, then contiguous
 20-byte NUL-terminated `.tga` names, then 16-byte slot records at 0x54
 (`u32 opaque 0/1`, `u32 0`, `u16 0`, `u16 frame count`, `u32 first-name pointer`).
-124 slots have several frame names. Flag bits (observed 0x1..0x43) are retained raw.
+124 slots have several frame names. Flag bits (observed 0x1..0x73) are retained raw. tp.exe reads them
+(loader 0x462F80, texture setup 0x575E9C): **0x40** = multi-frame (set exactly on the 124 animated slots;
+it makes instances copy their texture tables, 0x462FEE), **0x10/0x20** become texture bits 0x10000/0x20000,
+which choose the U/V texel bias and a render state (0x590422/0x59043B; per-axis clamp is a likely reading,
+not proven), **0x80** is a procedural texture (not in the corpus). No reader of **0x1** (always set by
+generated models, 0x42539E) or **0x2** (on cut-out art: grass, webs, fences) was found. Material word +0xC
+bit 0x1 draws the mesh in one constant colour instead of per-vertex lighting (0x580C51; on signs, fire,
+glow, water, flames and lava, i.e. self-lit art).
 
 Nodes: one tree rooted at 0x78. Mesh records are 160 bytes, dummy records 88:
 `u32 type`, parent/next-sibling/first-child record pointers, 4×4 float row-major
@@ -85,11 +92,20 @@ Mesh data (all arrays must lie inside the header region for their kind):
 
 Kept opaque: the 20-byte dummy attribute records (`u32` type such as
 0x100000B1, `u32` value, 12 bytes; count differs from the dummy count in 170
-files) and 27 extra 16-byte records. The 0x6C block, found only in the four
+files); the 16-byte records at 0xAC are paths (below). The 0x6C block, found only in the four
 level `terrain.wad/base.MD2` files (96×85 cells) and lobby `terrain/Base.MD2`
 (111×110), is decoded as a terrain heightfield (`ModelFile.Heightfield`: corner
-heights, hole/ground-texture-slot cell words; layout and evidence in MAP.md); its
-header words and cell-word low bits stay opaque. Node types (mesh 0x1/0x401/0x2 empty; dummy 0x200/0x208/0x300/0x600)
+heights, hole/ground-texture-slot cell words; layout and evidence in MAP.md). Header +4/+6 are
+the corner and cell counts, +8/+0xC the grid origin (0x452560). Cell-word low bits, from tp.exe:
+0x1 hole (no height: 0x452560 returns FLT_MAX; the renderer skips it); **0x4** splits the cell
+along (x+1, z)–(x, z+1) instead of (x, z)–(x+1, z+1) in every height lookup (0x452560, 0x4527F0,
+0x46A34C), and **0x2**, set on exactly the other surface cells, orders the renderer's corners
+(0x56F670) for the same split (`ModelHeightfield.SplitsAlongAntiDiagonal`, `GetHeight`; the terrain
+mesh and ground heights follow it); **0x8/0x10/0x20** turn the ground texture by one, two or three
+corner steps and **0x40** mirrors it first (0x56F4F0; set 0x8 on 3, 0x10 on 17, 0x20 on 284 cells,
+0x40 on about 95 %); 0x80/0x100/0x200/0x400/0x800 are runtime bits never stored (overlay placed,
+dirty, footprint scan, darkened land outside the park, bent cell). The high 16 bits index the model's
+textures (0x56F443). The texture turn and mirror are not drawn yet. Node types (mesh 0x1/0x401/0x2 empty; dummy 0x200/0x208/0x300/0x600)
 are not interpreted.
 
 ### Node transform space
@@ -215,8 +231,9 @@ Mac build (Totem cycle 430 ticks ≈ 14.3 s); scene-clock scaling and pause are 
   scale (+32)` and 20-byte groups `u16 keys, u16 vertices, ptr indices, ptr
   ticks, ptr keys × vertices packed words (key-major), u32 runtime cursor`.
   Words are signed 10:10:10 (bits 30–31 unused), `value = q × scale + offset`.
-  Group 0 holds two virtual vertices just past the mesh (a padded per-key
-  bounding box, not geometry); with block flag 0x2 group 1 is static (key 0);
+  Group 0 holds two virtual vertices just past the mesh: the per-key culling box
+  (the sampler 0x4711D0 writes them into the mesh record's bounds +0x78…+0x8C, which the
+  frustum test 0x561A30 in the draw walk reads), not geometry; with block flag 0x2 group 1 is static (key 0);
   the other groups interpolate mesh positions linearly between keys. In all
   1,735 paired blocks the static and animated groups list every position of the
   node's mesh exactly once. `ModelVertexAnimation`.
@@ -357,7 +374,9 @@ that `Model.UpdateVertices` refreshes through the frame command list when the
 pose version changes; texture-coordinate tracks write the same parts' texture
 coordinates. Channels mix by ascending index, the highest channel writing a
 component winning (0xa7960). Node-state bit 0x10 from node lists and toggles
-hides the node's mesh (RIDES-042; the draw-path reader is not traced).
+hides the node's mesh: the draw walk 0x57A530 skips a node's own mesh when its state word has any of
+0x8210 (0x57A5E3) and still draws its children; only bit 0x20 prunes a subtree. (The bit 0x10 tested at
+0x57A797 belongs to an object render record, not to an MD2 node.)
 Relative-animation models play their vertex tracks in set mode, because the
 default ride load path strips header flag 0x4 (the loader 0x461F10 keeps it only for the TrackMaster coaster loader, whose
 Add mode is registered under COAST-026). Texture-frame tracks
@@ -411,8 +430,8 @@ console harness referencing `OpenTPW.Tests.csproj`, on the main thread, with
 `OPENTPW_TEXTURE_FRAME_GPU=1` and `OPENTPW_GAME_PATH` set; MSTest's pool thread
 cannot create a Cocoa window. Native SDL2, cimgui and veldrid-spirv libraries
 must be available beside the harness. No original assets or native binaries
-are committed. Not played: group-0
-bounds (no consumer traced). `LobbyIsland` (not instantiated by the game yet) uses the composed
+are committed. Not played: the group-0
+culling boxes (OpenTPW does not cull per mesh). `LobbyIsland` (not instantiated by the game yet) uses the composed
 hierarchy, swaps normal axes like positions, and renders untextured materials
 white instead of requesting `lobby/terrain/textures/.wct`.
 
@@ -493,11 +512,11 @@ count and offset fields, but that does not verify the rest of its layout.
 ## Remaining gates and sources
 
 Next: the object-list replay without a bind (RIDES-032), and game-speed scaling
-of the scene clock; consumers of node bit 0x10 and the group-0 box; the original
+of the scene clock; the original
 draw-path reader of a texture slot's current frame (the applied binding follows
 this port's material-slot mapping, RIDES-035/MD2-900..902);
-texture/material flag bits from original captures;
-the heightfield cell-word low bits. CPU parsing and sandbox playback do not qualify original
+texture flag bits 0x1/0x2 and the exact render state of 0x10/0x20;
+the heightfield's texture turn and mirror in the terrain renderer. CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.
 
 Sources: upstream OpenTPW docs page is a TODO stub

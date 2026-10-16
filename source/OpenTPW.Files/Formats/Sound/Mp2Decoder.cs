@@ -8,6 +8,18 @@ public sealed record Mp2Audio( int SampleRate, int Channels, short[] Samples, in
 {
 	public int SampleFrames => Samples.Length / Channels;
 	public double DurationSeconds => (double)SampleFrames / SampleRate;
+
+	/// <summary>
+	/// The audio cut to <paramref name="playbackBytes"/> bytes of 16-bit PCM (whole sample frames), the length an SDT entry's
+	/// header gives (<see cref="SdtEntryHeader.PlaybackBytes"/>); unchanged when null or not shorter than the decoded audio.
+	/// </summary>
+	public Mp2Audio TrimTo( int? playbackBytes )
+	{
+		if ( playbackBytes is not { } bytes || bytes < 0 )
+			return this;
+		var samples = bytes / (2 * Channels) * Channels;
+		return samples >= Samples.Length ? this : this with { Samples = Samples[..samples] };
+	}
 }
 
 /// <summary>
@@ -95,18 +107,21 @@ public static partial class Mp2Decoder
 		return matrix;
 	}
 
-	public static Mp2Audio Decode( ReadOnlySpan<byte> data )
+	public static Mp2Audio Decode( ReadOnlySpan<byte> data ) => Decode( data, null );
+
+	/// <summary>Decodes, keeping at most <paramref name="playbackBytes"/> bytes of PCM (<see cref="Mp2Audio.TrimTo"/>) without a second copy.</summary>
+	public static Mp2Audio Decode( ReadOnlySpan<byte> data, int? playbackBytes )
 	{
 		if ( data.Length > MaximumInputBytes )
 			throw new InvalidDataException( "MP2 stream exceeds the input byte limit." );
 		var state = new DecodeState();
 		state.Process( data, int.MaxValue );
-		return state.Finish( data.Length );
+		return state.Finish( data.Length, playbackBytes );
 	}
 
 	/// <summary>Decodes the same PCM in bounded frame batches, yielding to a task between batches for threadless browser hosts.</summary>
 	/// <param name="yieldBatch">Optional scheduler hook; the default uses a timer task so browser rendering and input can run.</param>
-	public static async Task<Mp2Audio> DecodeCooperativelyAsync( ReadOnlyMemory<byte> data, int framesPerBatch = 4, Func<Task>? yieldBatch = null )
+	public static async Task<Mp2Audio> DecodeCooperativelyAsync( ReadOnlyMemory<byte> data, int framesPerBatch = 4, Func<Task>? yieldBatch = null, int? playbackBytes = null )
 	{
 		if ( data.Length > MaximumInputBytes )
 			throw new InvalidDataException( "MP2 stream exceeds the input byte limit." );
@@ -115,7 +130,7 @@ public static partial class Mp2Decoder
 		var state = new DecodeState();
 		while ( state.Process( data.Span, framesPerBatch ) )
 			await (yieldBatch?.Invoke() ?? Task.Delay( 1 ));
-		return state.Finish( data.Length );
+		return state.Finish( data.Length, playbackBytes );
 	}
 
 	private sealed class DecodeState
@@ -163,11 +178,15 @@ public static partial class Mp2Decoder
 			return data.Length - offset >= 4;
 		}
 
-		public Mp2Audio Finish( int inputLength )
+		public Mp2Audio Finish( int inputLength, int? playbackBytes = null )
 		{
 			if ( frames == 0 )
 				throw new InvalidDataException( "MP2 stream contains no complete frame." );
-			return new Mp2Audio( sampleRate, channels, output.ToArray(), frames, inputLength - offset, crcChecks, crcFailures, emphasis );
+			var kept = output.Count;
+			if ( playbackBytes is { } bytes && bytes >= 0 )
+				kept = Math.Min( kept, bytes / (2 * channels) * channels );
+			var samples = System.Runtime.InteropServices.CollectionsMarshal.AsSpan( output )[..kept].ToArray();
+			return new Mp2Audio( sampleRate, channels, samples, frames, inputLength - offset, crcChecks, crcFailures, emphasis );
 		}
 	}
 

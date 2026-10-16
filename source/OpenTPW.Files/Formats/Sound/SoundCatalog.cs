@@ -177,6 +177,28 @@ public sealed class SoundCatalog
 	private static ushort U16( byte[] data, int offset ) => BinaryPrimitives.ReadUInt16LittleEndian( data.AsSpan( offset, 2 ) );
 }
 
+/// <summary>Fields of an SDT entry header that the game's sound objects read.</summary>
+public static class SdtEntryHeader
+{
+	/// <summary>Type byte (+27) bit: the u32 at +32 is the playback length.</summary>
+	public const byte PlaybackLengthFlag = 0x04;
+
+	/// <summary>
+	/// The number of 16-bit PCM bytes (all channels) the game plays, or null when the entry does not give one.
+	/// [BIN:TPW-EXE:0x006C82C0 SDT playback length] the MPEG sound object copies the u32 at entry +0x20 when type byte +0x1B has
+	/// bit 0x04, and its fill routine 0x6C83C0 delivers at most that many decoded bytes before the end/loop handler, so the
+	/// decoder's tail past it (one frame plus the encoder delay in the corpus: every one of the 5,674 entries has the bit and a
+	/// length no longer than its decoded PCM) is never heard.
+	/// </summary>
+	public static int? PlaybackBytes( ReadOnlySpan<byte> header )
+	{
+		if ( header.Length < 0x24 || (header[0x1B] & PlaybackLengthFlag) == 0 )
+			return null;
+		var bytes = BinaryPrimitives.ReadInt32LittleEndian( header[0x20..] );
+		return bytes >= 0 ? bytes : null;
+	}
+}
+
 /// <summary>
 /// A sample bank (<c>.sdt</c>) read by entry number: entries keep their position in the offset table even
 /// when a damaged entry is skipped, because catalogues address samples by number.
@@ -251,25 +273,45 @@ public sealed class SoundBank
 	/// <summary>Reads a selected entry, or returns null and its positive payload size when the caller's bound refuses it.</summary>
 	/// <param name="rejectedPayloadBytes">Zero unless validated entry metadata exceeds the bound. Source errors still propagate.</param>
 	public byte[]? GetMpeg( uint number, int maximumBytes, out int rejectedPayloadBytes )
+		=> GetMpeg( number, maximumBytes, out rejectedPayloadBytes, out _ );
+
+	/// <summary>
+	/// <see cref="GetMpeg(uint, int, out int)"/>, also giving the entry's playback length (<see cref="SdtEntryHeader.PlaybackBytes"/>)
+	/// from the same header read, so a file-backed bank cannot pair one entry's audio with another version's length.
+	/// </summary>
+	public byte[]? GetMpeg( uint number, int maximumBytes, out int rejectedPayloadBytes, out int? playbackBytes )
 	{
 		rejectedPayloadBytes = 0;
+		playbackBytes = null;
 		ArgumentOutOfRangeException.ThrowIfNegative( maximumBytes );
 		if ( number == 0 || number > count )
 			return null;
 		var offset = offsets[number - 1];
 		if ( offset < 4 + count * 4 || offset > length - SdtArchive.MinimumEntryHeaderBytes )
 			return null;
-		var head = Read( offset, 8 );
+		var head = Read( offset, SdtArchive.MinimumEntryHeaderBytes );
 		var header = BinaryPrimitives.ReadInt32LittleEndian( head );
 		var size = BinaryPrimitives.ReadInt32LittleEndian( head.AsSpan( 4 ) );
 		if ( header < SdtArchive.MinimumEntryHeaderBytes || size < 0 || (long)offset + header + size > length )
 			return null;
+		playbackBytes = SdtEntryHeader.PlaybackBytes( head );
 		if ( size > maximumBytes )
 		{
 			rejectedPayloadBytes = size;
 			return null;
 		}
 		return Read( (long)offset + header, size );
+	}
+
+	/// <summary>The PCM byte length the game plays of entry <paramref name="number"/> (<see cref="SdtEntryHeader.PlaybackBytes"/>), or null.</summary>
+	public int? GetPlaybackBytes( uint number )
+	{
+		if ( number == 0 || number > count )
+			return null;
+		var offset = offsets[number - 1];
+		if ( offset < 4 + count * 4 || offset > length - SdtArchive.MinimumEntryHeaderBytes )
+			return null;
+		return SdtEntryHeader.PlaybackBytes( Read( offset, SdtArchive.MinimumEntryHeaderBytes ) );
 	}
 
 	/// <summary>The name stored in an entry's header (16 bytes, NUL padded).</summary>

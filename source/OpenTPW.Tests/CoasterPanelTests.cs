@@ -812,4 +812,25 @@ public class CoasterPanelTests
 		Assert.IsTrue( CoasterToolPanel.WithinReach( new System.Numerics.Vector3( 205, 0, 205 ), 50, 20 ), "(500 − 205)² + (200 − 205)² = 87050" );
 		Assert.IsFalse( CoasterToolPanel.WithinReach( new System.Numerics.Vector3( 205, 0, 205 ), 51, 20 ), "(510 − 205)² = 93025" );
 	}
+
+	/// <summary>COAST-035: the build cursor of a loop pylon carries node flag 0x80 only while it stands for the first pylon of the pair (counter 0x79c664 = 2, tp.exe 0x4362f6).</summary>
+	[TestMethod]
+	public void TheLoopCursorIsMarkedAsFirstOfPairOnlyWhileTheCounterIsTwo()
+	{
+		var (builder, _) = NewCoaster();
+		builder.Height = 40;
+		Assert.IsFalse( builder.FirstOfPair, "no loop mode, no pair" );
+		builder.LoopMode = true;
+		Assert.IsTrue( builder.FirstOfPair );
+		var first = builder.Track.BuildPreviewChain( (24, 20), 40, true, builder.FirstOfPair );
+		var ghost = first!.Value.Chain.Single( node => (node.Flags & CoasterNodeFlags.Cursor) != 0 );
+		Assert.AreEqual( CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst, ghost.Flags & (CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst) );
+		builder.Place( 24, 20 );
+		Assert.IsFalse( builder.FirstOfPair, "the counter is 1 for the second pylon of the pair" );
+		var second = builder.Track.BuildPreviewChain( (28, 24), 40, true, builder.FirstOfPair );
+		var next = second!.Value.Chain.Single( node => (node.Flags & CoasterNodeFlags.Cursor) != 0 );
+		Assert.AreEqual( CoasterNodeFlags.Loop, next.Flags & (CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst) );
+		var plain = builder.Track.BuildPreviewChain( (28, 24), 40, false, false );
+		Assert.AreEqual( CoasterNodeFlags.None, plain!.Value.Chain.Single( node => (node.Flags & CoasterNodeFlags.Cursor) != 0 ).Flags & (CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst) );
+	}
 }

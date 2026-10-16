@@ -48,6 +48,9 @@ public sealed class CoasterBuilder
 		}
 	}
 
+	/// <summary>The loop edit mode is on and the next pylon is the first of the pair (the counter 0x79c664 is still 2).</summary>
+	public bool FirstOfPair => loopMode && loopPylonsLeft == LoopPair;
+
 	/// <summary>Loop pylons a loop edit mode places before it ends.</summary>
 	public const int LoopPair = 2;
 	/// <summary>The requested height of the next pylon (world units above the ground; clamped when placed).</summary>

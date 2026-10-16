@@ -1400,9 +1400,9 @@ public sealed class CoasterTrack
 	// [BIN:TPW-EXE:0x435d50 build cursor] every frame the edited coaster (data 0x790fec, flag 4) runs this edit step: for a hovered cell within 300 units of the last node it fills the coaster's spare cursor node (controller +0x68, 0x436190, 0x436230) with the cell and links it after the last node, then rebuilds the track (0x444700) — the cursor node is a regular node of the chain, so the curve is drawn through it before the pylon is placed; a hovered cell that already holds a node of the chain marks the chain's start as closing (flag 0x8) instead
 	// [BIN:TPW-EXE:0x436230 cursor node fill] the spare node (created model-less, node flag 0x2000) takes the hovered cell, the height of the last placed pylon (controller +0x118) and, in loop mode, node flag 0x40 and the LoopPylon control; no pylon is drawn for it and the mesh builder draws the link into it with the blue marker, the red one when the validator refused the cell (0x43f4e0)
 	// [BIN:TPW-EXE:0x4360c4 closing target] a hovered cell that holds the chain's start sets controller flag 8, clears 0x50000 (the cut end's markers) on the chain's end node (+0x60) and 0xa0000 on its start (+0x64), and marks the start 0x800000, or 0x804000 when the closing link fails the validator; the section builder draws a link into a node with 0x800000, and that node's own tag pairs, with the blue or red marker (0x43f4e0)
-	// [APPROX:COAST-035] the closing target's marks are not set here: the cursor cell's colour alone shows the closing target — evidence needed: which link 0x43eb70 draws into the marked start while the cell is hovered (the end node's next link +0x64)
-	// [APPROX:COAST-035] the cursor node of a loop pylon takes node flag 0x40 alone, where 0x436230 adds 0x80 while 0x79c664 is 2 — evidence needed: the writers of 0x79c664 (the loop placement step)
-	public (IReadOnlyList<CoasterNode> Chain, bool Closed)? BuildPreviewChain( (int X, int Y)? cursor, float height, bool loop )
+	// [APPROX:COAST-035] the closing target's marks are not set here: the cursor cell's colour alone shows the closing target; 0x4360c0 also sets 0x200000 on both ends and their neighbours (reader not traced) — evidence needed: which link 0x43eb70 draws into the marked start while the cell is hovered (it walks next links +0x64 from the list head 0x790fe4+0x18 and stops at a null)
+	// [BIN:TPW-EXE:0x00436230 cursor flags] the cursor node takes 0x40 in loop mode and 0x80 as well while the counter 0x79c664 is 2 (0x4362f6, 0x43632a); the counter is written 2 only by the loop button 0x442cd0 (0x442cf4) and its key 0x444650 (0x444677), decremented by every placed pylon (0x4352bf) and zeroed when the mode ends (0x4446dd), so 0x80 marks the first pylon of the pair
+	public (IReadOnlyList<CoasterNode> Chain, bool Closed)? BuildPreviewChain( (int X, int Y)? cursor, float height, bool loop, bool firstOfPair = false )
 	{
 		if ( (IsComplete && !IsCut) || nodes.Count < StationNodeCount || DepartCell == null )
 			return null;
@@ -1420,7 +1420,7 @@ public sealed class CoasterTrack
 			var last = nodes[LastIndex];
 			if ( last.X != cell.X || last.Y != cell.Y )
 			{
-				var ghost = new CoasterNode( cell.X, cell.Y, clamped, t, loop, stack, false ) { Flags = (loop ? CoasterNodeFlags.Loop : CoasterNodeFlags.None) | CoasterNodeFlags.Cursor };
+				var ghost = new CoasterNode( cell.X, cell.Y, clamped, t, loop, stack, false ) { Flags = (loop ? CoasterNodeFlags.Loop | (firstOfPair ? CoasterNodeFlags.LoopFirst : CoasterNodeFlags.None) : CoasterNodeFlags.None) | CoasterNodeFlags.Cursor };
 				chain.Insert( InsertIndex, ghost );
 				if ( IsCut )
 				{

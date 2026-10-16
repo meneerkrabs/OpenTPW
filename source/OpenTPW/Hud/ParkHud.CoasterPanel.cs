@@ -207,7 +207,7 @@ public sealed partial class ParkHud
 			CoasterGhost = (cursor.X, cursor.Y, cursor.Result, cursor.Cost);
 			// the build cursor's pending link: the track through a cursor node at the cell (a click on the chain start closes instead and shows none)
 			if ( !cursor.Closing )
-				level.CoasterPreview = new CoasterPreview( cursor.X, cursor.Y, cursor.Result == CoasterPlaceResult.Ok, builder.Height, builder.LoopMode );
+				level.CoasterPreview = new CoasterPreview( cursor.X, cursor.Y, cursor.Result == CoasterPlaceResult.Ok, builder.Height, builder.LoopMode, builder.FirstOfPair );
 		}
 		if ( consumed )
 			toolPress = true;

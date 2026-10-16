@@ -4,7 +4,7 @@ Phase 1 of the original kart and water tracks was **one water ride, Splish Splas
 tool, the circuit walk, the section geometry, the boat physics and the script bridge). Phase 2 adds **the go-karts in all four themes**, run end to end
 for the Jungle's Dino Karts (see "Go-karts" below); they share the piece tables, the templates, the tool and the controller with the water rides. Rules are traced from the Mac container (`STP-PPC`) and the Windows `tp.exe` (`TPW-EXE`, through the
 shared REA session over the decrypted executable); every approximation carries a `TRACK-` ID in
-[the register](FIDELITY-REGISTER.md).
+[the register](https://opentpw.io/docs/FIDELITY-REGISTER.html).
 
 Code: `source/OpenTPW/World/Tracks/`, the track layer in `ParkCellMap`, the tool mode in `CellBuildTool`, `Level.Tracks.cs`, the `BUMP` bridge in
 `OriginalObjectEffects`, `HmpFile` in `OpenTPW.Files`.
@@ -301,7 +301,7 @@ Retired as already matching: TRACK-013 (worn is read only by the kart exhaust br
 
 - Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre (TRACK-030), the water animation and arm masks, the
   advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
-  untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
+  untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 
 ## Go-karts (phase 2)

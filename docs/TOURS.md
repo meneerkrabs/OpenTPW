@@ -2,7 +2,7 @@
 
 The four original tour rides (Jurassic Tours `jungle/rides/tourride`, Flightmare Tours `hallow/rides/tourride`, Star Tours `space/rides/scitour`, Tweety Tours
 `fantasy/rides/twetours`) take and release riders through the `TOUR` opcode. Rules are traced from the Windows `tp.exe` (`TPW-EXE`, through the shared REA
-session over the decrypted executable); every approximation carries a `TOUR-` ID in [the register](FIDELITY-REGISTER.md).
+session over the decrypted executable); every approximation carries a `TOUR-` ID in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html).
 
 Code: `source/OpenTPW/World/Tours/` (`TourController`, `TourCar`, `TourWorld`, `TourSave`), the `TOUR` routing in `OriginalObjectRuntime.Tours.cs`, the launch pad in
 `OriginalObject.ComputeTourStation`, `Level.Tours.cs`.

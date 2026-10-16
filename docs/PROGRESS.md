@@ -6,6 +6,11 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
+> **New entries:** since October 16, 2026 every pull request adds its entry as its own file,
+> `docs/progress/YYYY-MM-DD-<slug>.md`, and this file keeps the earlier entries as frozen history.
+> `python3 tools/progress.py` assembles both into the full log, newest first; the website's
+> [progress notes](https://opentpw.io/docs/PROGRESS.html) show that log.
+
 ## Ride vehicles: engine voices, tour cars and the shared bump module (October 15, 2026)
 
 Vehicle effects and the bump rides' shared state now follow tp.exe:

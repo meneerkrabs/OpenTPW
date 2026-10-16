@@ -194,7 +194,7 @@ Performance 0..100 (the script's speed bias, default 50) interpolates each pair 
 - **Integration** (`0x547F50`): `v = v · d / 1024` with d the damping (1000 while the ride is broken, × 7/10 under flag 0x80000), the post-damping velocity is kept
   for the collisions, `position += v`. Water boats also keep a wall-hit spin (decays by 0.998 above 0x30), a roll `spin / 128` clamped to ±16 and a spray
   chance every 32nd tick from the module LCG: in phase 2, `(s >> 16) & 7 == 2` raises particle 96 (`P_EFFECT_SmallSplash`) at the boat (`[TPW-EXE:0x5480B7]`; TRACK-016 retired). The LCG
-  `s · 214013 + 2531011` only gates cosmetics; gameplay draws use the world generator (the park's seeded stream, DET-013). A boat's first launch (`0x54A909`) starts an engine voice
+  `s · 214013 + 2531011` only gates cosmetics; gameplay draws use the world generator (the park's one stream, shared with the guests and the scripts, DET-013). A boat's first launch (`0x54A909`) starts an engine voice
   from the ride's EventMap slot 0 (kept until the boat unloads); the water types have no crash cue, no horn and no smoke, and their templates hold one model (no variants).
 - **Walls** (`0x5497B0`): outside its object a boat first looks for another object that holds it; else the velocity is reflected about the radial direction
   (circle: rotation by `2(h_radial − 128) − 256 − (h_v − 256) − h_v`, × restitution; box: the offending component flips), the boat is projected back to the

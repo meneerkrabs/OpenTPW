@@ -673,7 +673,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void CheckGoldenTickets()
 	{
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ), CoveredCells() ) )
+		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ), CoveredCells(), SecurityCoveragePercent() ) )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 	}
 
@@ -1272,6 +1272,31 @@ public sealed class ParkEconomy : IParkEconomy
 			}
 		}
 		return total;
+	}
+
+	/// <summary>
+	/// The share of the cells with terrain that carry a security level, in whole percent (tp.exe <c>0x004CD720</c>): over the 128 × 128 cells without type 2, 7 or 30, those whose
+	/// environment word +6 (the security coefficient the cameras and the guards spread, <see cref="ParkEnvironment"/>) is above 0, times 100 over their number; 0 without such a cell.
+	/// Null without a cell map.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CD720 camera coverage] each cell is skipped when 0x00536300 (type 2), 0x00536360 (type 7 or 30) or 0x005D60C0 (always 0) answers; the count of the rest and the count whose 10-byte environment cell has the short at +6 above 0 (0x004D8410, the guard prank test 0x00508A30 calls it the security level) give coverage * 100 / count
+	internal int? SecurityCoveragePercent()
+	{
+		if ( Litter.Cells is not { } cells )
+			return null;
+		long coverable = 0, covered = 0;
+		for ( var y = 0; y < cells.Height; y++ )
+		{
+			for ( var x = 0; x < cells.Width; x++ )
+			{
+				if ( CellForValue( cells, x, y ).Type is 2 or 7 or 30 )
+					continue;
+				coverable++;
+				if ( Litter.Environment.At( x, y ).Security > 0 )
+					covered++;
+			}
+		}
+		return coverable == 0 ? 0 : (int)(covered * 100 / coverable);
 	}
 
 	/// <summary>

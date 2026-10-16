@@ -92,7 +92,9 @@ public enum ParkRecordKind
 	KartSections,
 	WaterLength,
 	CellsOwned,
+	/// <summary>Kept only so older saves' record lists still read; the camera ticket reads the security coverage of the cells (tp.exe 0x4cd720), not a record.</summary>
 	CellsCoveredByCameras,
+	/// <summary>Kept only so older saves' record lists still read; tp.exe awards no all-land ticket.</summary>
 	OwnsAllLand,
 	ToiletCleanlinessPercent
 }

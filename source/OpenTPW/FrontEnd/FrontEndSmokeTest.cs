@@ -313,7 +313,12 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( ++effectFrames < 200, "the enter-park effect draws screen-space particles over the lobby" );
 			return flow.EnterParkEffectDraws > 0;
 		}) );
-		Do( "enter-park effect shown", () => CaptureFrame( "lobby-enter-effect.png" ) );
+		Wait( "enter-park effect develops", 20 );
+		Do( "enter-park effect shown", () =>
+		{
+			Require( flow.EnterParkEffectDraws > 0, "the enter-park effect is still drawing a few frames in" );
+			CaptureFrame( "lobby-enter-effect.png" );
+		} );
 		Do( "click next island", () => Click( flow.Menu!.Main, "nextIsland" ) );
 		Wait( "island changes", 3 );
 		Do( "island selected", () =>

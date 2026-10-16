@@ -282,6 +282,28 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings[UIStrings.Options], "Options line" );
 			flow.Menu.Stack.Pop();
 		} );
+		// [BIN:TPW-EXE:0x5e0490 enter sequence] the lobby's enter turns the camera, opens the selected island's gate with M1 and zooms in; cancelled here before it reaches the park
+		Do( "lobby enter", () =>
+		{
+			var camera = (LobbyCameraMode)Camera.Mode;
+			Require( flow.Lobby!.GateClips.All( clip => clip == 0 ), "the gates start closed" );
+			flow.BeginLobbyEnter( flow.Menu!.Selected.Level );
+			Require( camera.Entering && flow.LobbyEntering, "the enter sequence starts" );
+		} );
+		var enterFrames = 0;
+		steps.Enqueue( ("lobby enter turns", () =>
+		{
+			Require( ++enterFrames < 2000, "the enter's turn finishes" );
+			return ((LobbyCameraMode)Camera.Mode).Phase == LobbyCameraMode.EnterPhase.Zoom;
+		}) );
+		Do( "lobby enter zooms", () =>
+		{
+			var camera = (LobbyCameraMode)Camera.Mode;
+			Require( flow.Lobby!.GateClips.Any( clip => clip == 1 ), "the selected island's gate plays its M1 clip" );
+			camera.CancelEnter();
+			Require( !flow.LobbyEntering, "a cancelled enter resumes the lobby" );
+		} );
+		Wait( "lobby fade clears", 60 );
 		Do( "click next island", () => Click( flow.Menu!.Main, "nextIsland" ) );
 		Wait( "island changes", 3 );
 		Do( "island selected", () =>

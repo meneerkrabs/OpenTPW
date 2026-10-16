@@ -52,6 +52,7 @@ internal sealed partial class GameFlow
 			if ( mode == GameMode.InstantAction )
 			{
 				QueueLevel( theme, () => { if ( Owns( screen ) ) StartInstantPark( theme ); }, prepareBuyWindow: true );
+				if ( owner != null ) BeginLobbyEnter( theme );
 				return;
 			}
 			if ( !GameEditions.Capabilities.Economy || GameEditions.IsThemeParkInc || !ObjectCatalog.Themes.Contains( theme, StringComparer.Ordinal ) )
@@ -69,6 +70,7 @@ internal sealed partial class GameFlow
 						() => Owns( lease ), () => RequireProgressSaved( newPark: true ) );
 					if ( offeredCost.HasValue ) admission.Validate();
 					QueueLevel( theme, () => TryBeginProgressPark( admission ), prepareBuyWindow: true );
+					if ( owner != null ) BeginLobbyEnter( theme );
 				}
 				catch ( Exception error ) when ( ProgressFailure( error ) ) { ShowProgressFailure( error ); }
 			}

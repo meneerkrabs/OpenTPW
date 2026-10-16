@@ -75,4 +75,66 @@ public class LobbyCameraModeTests
 		LobbyCameraMode.IslandFieldOfView = 100;
 		Assert.AreEqual( 100f, new LobbyCameraMode().FieldOfView );
 	}
+
+	[TestMethod]
+	public void TheEnterTurnsToTheIslandAnglePlusPiThenOpensTheGateAndZooms()
+	{
+		// tp.exe 0x5e0490 states 1 and 2: 0.05 × step a frame the short way round, the gate within half a step, then the zoom
+		LobbyCameraMode.SpinSpeed = 0;
+		var camera = new LobbyCameraMode();
+		var opened = 0;
+		var entered = 0;
+		camera.BeginEnter( 1f, () => opened++, () => entered++ );
+		var goal = 1f + System.MathF.PI;
+		camera.Advance( 0.1f );
+		// one step: the angle 0 is 2π - goal = 2.14 behind the goal (under π), so it moves 0.05 the short way round, to -0.05 (6.233 unwrapped)
+		Assert.AreEqual( LobbyCameraMode.EnterPhase.Turn, camera.Phase );
+		Assert.AreEqual( System.MathF.Tau - 0.05f, camera.Angle, 1e-4f );
+		Assert.AreEqual( 0, opened );
+		var frames = 0;
+		while ( camera.Phase == LobbyCameraMode.EnterPhase.Turn && frames++ < 1000 )
+			camera.Advance( 0.1f );
+		Assert.AreEqual( 1, opened, "the gate opens once when the turn is done" );
+		Assert.AreEqual( LobbyCameraMode.EnterPhase.Zoom, camera.Phase );
+		Assert.AreEqual( 0, entered );
+		var radius = camera.CurrentRadius;
+		camera.Advance( 0.1f );
+		Assert.AreEqual( goal, camera.Angle, 1e-5f, "the zoom holds the island angle + π" );
+		Assert.AreEqual( radius * (1 - 0.07f), camera.CurrentRadius, 1e-3f );
+		frames = 0;
+		while ( entered == 0 && frames++ < 1000 )
+			camera.Advance( 0.1f );
+		Assert.AreEqual( 1, entered, "the park starts once the radius is below 8" );
+		Assert.IsTrue( camera.CurrentRadius < 8f );
+		Assert.AreEqual( 0x10000, camera.FadeTarget );
+		camera.Advance( 0.1f );
+		Assert.AreEqual( 1, entered );
+	}
+
+	[TestMethod]
+	public void TheEnterFadeTracksTheClosedShareOfTheRadiusAndEasesAnEighthAFrame()
+	{
+		LobbyCameraMode.SpinSpeed = 0;
+		var camera = new LobbyCameraMode();
+		camera.BeginEnter( 0f, null, null );
+		while ( camera.Phase != LobbyCameraMode.EnterPhase.Zoom )
+			camera.Advance( 0.1f );
+		var before = camera.FadeCurrent;
+		camera.Advance( 0.1f );
+		var expected = (int)((1f - (camera.CurrentRadius - 8f) / (LobbyCameraMode.Radius - 8f)) * 65536f);
+		Assert.AreEqual( expected, camera.FadeTarget );
+		Assert.AreEqual( before + ((expected - before) >> 3), camera.FadeCurrent );
+		Assert.AreEqual( (byte)(camera.FadeCurrent >> 8), camera.FadeAlpha );
+	}
+
+	[TestMethod]
+	public void ACancelledEnterResumesTheOrbit()
+	{
+		var camera = new LobbyCameraMode();
+		camera.BeginEnter( 0f, null, null );
+		Assert.IsTrue( camera.Entering );
+		camera.CancelEnter();
+		Assert.IsFalse( camera.Entering );
+		Assert.AreEqual( 0, camera.FadeTarget );
+	}
 }

@@ -81,6 +81,29 @@ internal sealed partial class GameFlow : IDisposable
 	}
 
 	/// <summary>Queues a transition into <paramref name="level"/>; it waits until <see cref="LevelDataReady"/> says the level's files are there.</summary>
+	/// <summary>The lobby's enter sequence holds a queued park until the camera has zoomed in (tp.exe 0x5e1e50 starts it).</summary>
+	private bool enterHold;
+
+	/// <summary>
+	/// Starts the lobby's enter sequence on the selected island: the menu is hidden, the camera turns to the island's angle + π, the gate opens
+	/// and the camera zooms in under a black fade, and the queued park starts when the radius is below 8 (tp.exe 0x5e1e30, 0x5e0490 states 1 and 2).
+	/// </summary>
+	// [BIN:TPW-EXE:0x5e1e30 enter] a park started from the lobby's island menu plays the sequence first; a park started by the CLI, a load or a restart skips it, as the original's loads do not pass the island
+	internal void BeginLobbyEnter( string theme )
+	{
+		if ( Lobby == null || backdrop != Backdrop.Lobby || Camera.Mode is not LobbyCameraMode camera || Menu == null || camera.Entering )
+			return;
+		var island = Menu.Selected;
+		if ( !string.Equals( island.Level, theme, StringComparison.OrdinalIgnoreCase ) )
+			return;
+		var lobby = Lobby;
+		enterHold = true;
+		camera.BeginEnter( island.Angle * MathF.PI / 180f, () => lobby.PlayGate( island, open: true ), () => enterHold = false );
+	}
+
+	/// <summary>The enter sequence is running: the lobby menu is hidden and a queued park waits.</summary>
+	internal bool LobbyEntering => Camera.Mode is LobbyCameraMode { Entering: true };
+
 	public void QueueLevel( string level, Action transition, bool prepareBuyWindow = false )
 	{
 		AbandonParkBuild();
@@ -127,6 +150,7 @@ internal sealed partial class GameFlow : IDisposable
 	public void ShowFrontEnd( string? selectLevel = null )
 	{
 		TearDown();
+		enterHold = false;
 		lobbyDefinition ??= LobbyDefinition.Load();
 		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw );
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
@@ -470,7 +494,7 @@ internal sealed partial class GameFlow : IDisposable
 			PumpParkBuild();
 		// A park waits for a language chosen just before it (its speech files may still be coming) and is then entered in it:
 		// the transition's tear-down applies the choice before the park is built.
-		else if ( pending != null )
+		else if ( pending != null && !(enterHold && LobbyEntering) )
 		{
 			var ready = pendingLevel == null || (SettlePendingLanguage() && LevelDataReady?.Invoke( pendingLevel ) != false);
 			if ( ready )
@@ -557,7 +581,8 @@ internal sealed partial class GameFlow : IDisposable
 		UpdateGlobeView();
 		Camera.Update();
 		UpdateLobbyEffects();
-		Menu?.Stack.Update( Context, input );
+		if ( !LobbyEntering )
+			Menu?.Stack.Update( Context, input );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
 		// After the frame's input and once every dialog is closed (a display change may still wait for confirmation), so the
@@ -864,8 +889,11 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		else if ( IncHud != null )
 			IncHud.Draw( Context );
-		else
+		else if ( !LobbyEntering )
 			Menu?.Stack.Draw( Context );
+		// [BIN:TPW-EXE:0x5d8d22 lobby fade] the enter's fade is a black overlay whose alpha is the eased fade value >> 8
+		if ( Camera.Mode is LobbyCameraMode { FadeAlpha: > 0 } fading )
+			Context.Batch.AddRectangle( new UiRect( 0, 0, Context.Canvas.Width, Context.Canvas.Height ), new RgbaByte( 0, 0, 0, fading.FadeAlpha ) );
 		// [EXT:texture-pack] a running texture switch shows its progress without blocking the game
 		if ( TexturePackSwitch.Current is { } textureSwitch )
 			OptionsScreen.DrawTextureSwitchProgress( Context, Strings, textureSwitch );

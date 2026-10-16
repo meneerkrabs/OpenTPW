@@ -6,7 +6,7 @@ namespace OpenTPW.UI.Original;
 public static class UiDialogs
 {
 	/// <summary>Authored rectangle of a centred window of the given canvas size.</summary>
-	// [APPROX:UI-013] the sizes of the load screen and of OpenTPW's own windows — evidence needed: the original's load dialog
+	// [APPROX:UI-013] the sizes of OpenTPW's own windows; the original's windows come from their layout tables (OriginalLayoutTables)
 	public static UiRect CenteredWindow( float width, float height ) =>
 		UiRect.FromCenter( new NVector2( UiCanvas.VirtualWidth / 2, UiCanvas.VirtualHeight / 2 ), width, height );
 

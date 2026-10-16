@@ -631,6 +631,27 @@ public static class OriginalLayoutTables
 			new( 1, 0x1u, 0x12C4CAu, 805, 80, 1277, 159, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
 		} ),
 	} );
+
+	/// <summary>[BIN:TPW-EXE:0x7523f0] layout table LoadDialog.</summary>
+	public static readonly LayoutTable LoadDialog = new( "LoadDialog", 0x7523F0, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x23BCDFu, 248, 30, 1800, 1007, -1, -1, "window2", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xFFFFFFFEu, 1671, 818, 1754, 901, -1, -1, "b_exit", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0xFFFFFFFFu, 1660, 730, 1743, 813, -1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 7, 0x81u, 0x23BCE0u, 341, 203, 1614, 772, -1, -1, "f_load", null, new[] { 371, 229, 1511, 733 }, new LayoutNode[]
+			{
+				new( 3, 0x10u, 0x1u, 1528, 285, 1587, 691, -1, -1, null, "!slider", new[] { 1528, 285, 1587, 691 }, new LayoutNode[]
+				{
+					new( 2, 0x21u, 0x2u, 1528, 696, 1588, 756, -1, -1, "b_down", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x1u, 0x3u, 1520, 433, 1587, 500, -1, -1, "b_scroller", null, null, System.Array.Empty<LayoutNode>() ),
+					new( 2, 0x21u, 0x1u, 1528, 224, 1588, 284, -1, -1, "b_up", null, null, System.Array.Empty<LayoutNode>() ),
+				} ),
+			} ),
+			new( 1, 0x1u, 0x23BCE1u, 746, 83, 1218, 162, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 5, 0x1u, 0x23BCE2u, 605, 811, 1343, 895, -1, -1, "!frame", null, new[] { 638, 830, 1317, 874 }, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
 }
 
 /// <summary>The original game pointers: their ids and .tga files, and the tool-to-pointer switch.</summary>

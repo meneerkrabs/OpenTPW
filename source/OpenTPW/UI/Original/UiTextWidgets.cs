@@ -111,6 +111,12 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public bool ClicksOnActivate { get; set; } = true;
 	/// <summary>Whether new rows keep the view at the bottom (chat).</summary>
 	public bool FollowEnd { get; set; }
+	/// <summary>Whether the list draws its own background (off when an original frame model is drawn behind it).</summary>
+	public bool Background { get; set; } = true;
+	/// <summary>Whether the list draws its thin position bar (off when an original scroller stands beside it).</summary>
+	public bool PositionBar { get; set; } = true;
+	/// <summary>The first visible row.</summary>
+	public int FirstRow => Math.Clamp( first, 0, Math.Max( 0, Rows().Count - VisibleRows ) );
 	public override bool Focusable => Visible && Enabled;
 	/// <summary>Up/Down keep moving the focus between elements; Left/Right change the selection.</summary>
 	public bool ArrowsSelect => false;
@@ -165,7 +171,7 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		var rect = ScreenRect( context.Canvas );
-		if ( Model == null || !context.DrawModel( Model, 0, rect ) )
+		if ( Background && (Model == null || !context.DrawModel( Model, 0, rect )) )
 			context.Batch.AddRectangle( rect, UiColors.HelpBackground );
 		var rows = Rows();
 		if ( FollowEnd && following && Selected < 0 )
@@ -207,7 +213,7 @@ public sealed class UiScrollList : UiElement, IUiRowList
 			}
 		}
 		// A thin position bar when not all rows fit.
-		if ( rows.Count > VisibleRows )
+		if ( PositionBar && rows.Count > VisibleRows )
 		{
 			var track = new UiRect( rect.Right - margin * 0.6f, rect.Y + margin, margin * 0.3f, rect.Height - margin * 2 );
 			var thumb = track.Height * VisibleRows / rows.Count;

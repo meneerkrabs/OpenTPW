@@ -217,15 +217,28 @@ public sealed partial class FrontEndMenu
 
 	public void ShowLoad() => Stack.Push( CreateLoadScreen( Stack, strings, actions.LoadEntries(), actions.Load ) );
 
-	/// <summary>The Load Park screen (UITEXT 202), shared with the pause menu.</summary>
+	/// <summary>The Load Park screen (UITEXT 202), shared with the pause menu: tp.exe's load dialog, table 0x7523f0.</summary>
+	// [BIN:TPW-EXE:0x7523f0 load dialog] root window2 (248,30)-(1800,1007), the title 0x23bce1 (746,83)-(1218,162), the f_load list 0x23bce0 (341,203)-(1614,772) with
+	// the content (371,229)-(1511,733) and its scroller (1528,285)-(1587,691) with b_up, b_down and b_scroller, b_exit (1671,818) and b_okay (1660,730), and the name field
+	// !frame 0x23bce2 (605,811)-(1343,895)
+	// [BIN:TPW-EXE:0x49efb0 load dialog build] the load (pause line 1, the lobby's 22) titles the window UITEXT 202 and hides b_okay and the name field (0x65d9dd(0)); the list
+	// rows come from the row factory 0x49f0b0, the slot-7 rule of the buy list (font slot 7's line height x 1536 / screen height + 6, [0x7cb24c]), so (733 - 229) / 41 = 12
+	// rows show (0x663718); the list has no header sort (attribute 0x81) and keeps the save enumeration's order (0x49ec80); a row's activation (message 0x400) loads it and b_exit
+	// closes the dialog (0x49e880)
+	// [APPROX:UI-013] the rows show only the park's name: the original's second column, the save file's local date and time (UITEXT 0x1c0 and " %02d:%02d", 0x49ec80), is not drawn
+	// [APPROX:UI-044] the rows take the buy list's measured pitch
 	public static UiScreen CreateLoadScreen( UiScreenStack stack, UiStringTable strings, IReadOnlyList<ParkLoadEntry> entries, Action<ParkLoadEntry> load )
 	{
 		var screen = new LoadChooserScreen();
-		var window = UiDialogs.CenteredWindow( 1500, 1100 );
-		UiDialogs.AddWindow( screen, window, "w_med", () => strings[UIStrings.LoadPark] );
+		var table = OriginalLayoutTables.LoadDialog;
+		screen.Add( new UiModelImage { Id = "window", Model = table.Root.Model!, Bounds = table.Root.Rect, Anchor = UiAnchor.Center } );
+		screen.Add( new UiLabel { Id = "title", Text = () => strings[UIStrings.LoadPark], Font = fonts => fonts.Title, Color = UiColors.Title, Align = UiAlign.Center,
+			Fit = true, Bounds = table.Control( 0x23BCE1 ).Rect, Anchor = UiAnchor.Center } );
+		var frame = table.Control( 0x23BCE0 );
+		var content = frame.Inner!.Value;
+		screen.Add( new UiModelImage { Id = "listFrame", Model = frame.Model!, Bounds = frame.Rect, Anchor = UiAnchor.Center } );
 		if ( entries.Count == 0 )
-			screen.Add( new UiLabel { Id = "empty", Text = () => strings.Extra( OpenTpwText.NoSavedParks ), Align = UiAlign.Center, Bounds = new UiRect( window.X + 100, window.Y + 200, window.Width - 400, 80 ), Anchor = UiAnchor.Center } );
-		// [EXT:load-chooser] the eight-row scroll viewport and the selection/activation controls are host UI; there is no original rule to match
+			screen.Add( new UiLabel { Id = "empty", Text = () => strings.Extra( OpenTpwText.NoSavedParks ), Align = UiAlign.Center, Bounds = content, Anchor = UiAnchor.Center } );
 		var parks = entries.ToArray();
 		var list = screen.Add( new UiScrollList
 		{
@@ -238,11 +251,23 @@ public sealed partial class FrontEndMenu
 			Visible = parks.Length != 0,
 			ClicksOnActivate = false,
 			RowActivated = index => { if ( screen.TryBeginActivation() ) { GameAudio.PlayUi( GameAudio.ClickEvent ); load( parks[index] ); } },
-			RowHeight = 90,
-			Margin = 10,
-			Bounds = new UiRect( window.X + 100, window.Y + 170, window.Width - 360, 740 ),
+			RowHeight = OpenTPW.Hud.ParkHud.BuyRowHeight,
+			Margin = 0,
+			Background = false,
+			PositionBar = false,
+			Bounds = content,
 			Anchor = UiAnchor.Center
 		} );
+		// [BIN:TPW-EXE:0x664495 list scroller] the scroller and its arrows show only while the rows do not fit
+		var slider = table.All.First( node => node.Model2 == "!slider" );
+		var knob = table.Model( "b_scroller" );
+		bool Scrolls() => parks.Length > list.VisibleRows;
+		screen.Add( new LoadScrollBar( list, slider.Rect, knob.Rect, slider.Model2!, knob.Model! ) { Id = "loadScroll", Bounds = slider.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
+		var up = table.Model( "b_up" );
+		var down = table.Model( "b_down" );
+		screen.Add( new UiButton { Id = "scrollUp", Model = up.Model, Clicked = () => list.Scroll( -1 ), Bounds = up.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
+		screen.Add( new UiButton { Id = "scrollDown", Model = down.Model, Clicked = () => list.Scroll( 1 ), Bounds = down.Rect, Anchor = UiAnchor.Center, Visible = Scrolls() } );
+		// [EXT:load-chooser] a text button that loads the selected row, at the place of the name field the load hides; the original loads only by activating a row
 		screen.Add( new UiButton
 		{
 			Id = "loadSelected",
@@ -250,16 +275,17 @@ public sealed partial class FrontEndMenu
 			Help = strings.Help( 318 ),
 			Enabled = parks.Length != 0,
 			Clicked = list.Activate,
-			Bounds = new UiRect( window.X + 620, window.Bottom - 190, 420, 104 ),
+			Bounds = table.Control( 0x23BCE2 ).Rect,
 			Anchor = UiAnchor.Center
 		} );
+		var exit = table.Model( "b_exit" );
 		screen.Add( new UiButton
 		{
 			Id = "back",
-			Text = () => strings.Extra( OpenTpwText.Back ),
+			Model = exit.Model,
 			Help = strings.Help( 2 ),
 			Clicked = CloseChooser,
-			Bounds = new UiRect( window.X + 120, window.Bottom - 190, 420, 104 ),
+			Bounds = exit.Rect,
 			Anchor = UiAnchor.Center
 		} );
 		screen.Back = CloseChooser;
@@ -269,6 +295,17 @@ public sealed partial class FrontEndMenu
 		}
 		screen.Focus( screen.FocusableElements.First() );
 		return screen;
+	}
+
+	/// <summary>The load list's slider: the <c>!slider</c> track and the <c>b_scroller</c> ball at the list's first row (0x66b088, as in the buy list).</summary>
+	private sealed class LoadScrollBar( UiScrollList list, UiRect track, UiRect knob, string trackModel, string knobModel ) : UiElement
+	{
+		public override void Draw( UiContext context, bool focused, bool pressed )
+		{
+			var max = Math.Max( 0, list.Rows().Count - list.VisibleRows );
+			context.DrawModel( trackModel, 0, context.Canvas.Map( track, Anchor ) );
+			context.DrawModel( knobModel, UiButton.NormalFrame, context.Canvas.Map( OpenTPW.Hud.ParkHud.ListScrollKnobRect( track, knob, list.FirstRow, max ), Anchor ) );
+		}
 	}
 
 	/// <summary>Load-only dispatch ownership; other screens keep their existing input policy.</summary>

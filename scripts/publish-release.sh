@@ -10,7 +10,7 @@ if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ || ! "$preview
   echo 'Invalid release version or preview flag.' >&2
   exit 1
 fi
-if [[ "$source_commit" != "$(git rev-parse "${GITHUB_SHA:?source SHA required}^{commit}")" ]]; then
+if [[ "$source_commit" != "$(git rev-parse "${RELEASE_COMMIT:-${GITHUB_SHA:?source SHA required}}^{commit}")" ]]; then
   echo 'Release checkout does not match the built commit.' >&2
   exit 1
 fi
@@ -49,7 +49,9 @@ PY
   # Incomplete versions must not advertise a partial set of downloadable builds.
   gh release edit "$version" --repo "$repository" --draft=true
 else
-  gh release create "$version" --repo "$repository" --verify-tag --draft --title "OpenTPW $version" --generate-notes
+  notes=()
+  if [[ -n "${RELEASE_EXTRA_NOTES:-}" ]]; then notes=(--notes "$RELEASE_EXTRA_NOTES"); fi
+  gh release create "$version" --repo "$repository" --verify-tag --draft --title "OpenTPW $version" --generate-notes ${notes[@]+"${notes[@]}"}
 fi
 
 python3 - "$directory" "$source_commit" "${archives[@]}" <<'PY'

@@ -13,8 +13,8 @@ namespace OpenTPW;
 /// the sequence table) is built (<see cref="AdvisorSequences"/>), sets the response's span, when the model hides and the audio's
 /// delayed start (<see cref="AdvisorSpeechStart"/>), and its clips play one after the other (<see cref="AdvisorTimeline"/>): the
 /// node tracks move the model (the rise in, the gestures, the sink out), the blink toggles swap the eyes, and the response's
-/// accessory selectors (<see cref="AdvisorCostume"/>, <see cref="AdvisorAccessories"/>) put on a hat. The clips' vertex tracks are not
-/// played (ADVISOR-006).
+/// accessory selectors (<see cref="AdvisorCostume"/>, <see cref="AdvisorAccessories"/>) put on a hat; the vertex and texture-coordinate
+/// tracks play as an object's do, and the ticket advice starts its screen-space effects (<see cref="AdvisorEffectGroups"/>).
 /// </summary>
 internal sealed class Advisor : IDisposable
 {
@@ -43,8 +43,8 @@ internal sealed class Advisor : IDisposable
 		("ADVISOR-017", "the advisor clock starts at 0 for a new park and an original-save import; the original's save carries it as the second word of the SSEM (MESS) block (writer 0x402E00 after the snapshot 0x402E60, reader 0x402E30, marker check 0x41555A) and the load sets the clock to it (0x415140 -> 0x402E80 -> 0x403160), which the import does not read; it stands still whenever 0x4092A0 pauses the timer: 0x46B600 (main window procedure, WM_ACTIVATEAPP deactivation) and 0x47F020 (message box builder) are identified, the other six callers' screens are not"),
 		("ADVISOR-020", "event 2 comes from the economy's six-month bankruptcy, not 0x4D0370's monthly guard (balance and previous balance < 0, and the red-time term from 0x4F88B0 over 2.592e13 >= 6, with the turn entered red at +0x120); events 3/4 are raised on every open/close button press as in the original"),
 		("ADVISOR-022", "an original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129, 323 and the help messages are bound) are dropped on import; OpenTPW's own park save stores the controller"),
-		("ADVISOR-025", "a fixed sequence's timer (sequences 28 and 29, the ticket/key advice) plays cat_ui 0xC6 when the advisor clock reaches it, but the particle effect 0x521E60 (87, 90000, 0, 7000) it also starts is not (template 87, Key, is screen-space, which OpenTPW does not draw), nor the HUD golden-ticket/key counter refresh 0x4B9340 (OpenTPW has no such counter, UI-051), which shows or hides the controls 0x1E0EA-0x1E0F1, formats \"%d x\" with the key count (0x5AF680) into 0x1E0EE and starts particle 0x61 at the counter when the ticket count drops"),
-		("ADVISOR-026", "the level advisors' props are shown and hidden by the clips' node lists and blink toggles carried from clip to clip, with the accessory bit 0x10000 hiding the bug head and the mouth, but the screen-space effects of the accessory bits 0x20000-0x200000 (UI particle pool 0x5ED5A0, 0x5ED660, 0x5ED700) are not started, and the node state is rebuilt from the model's base state at every response (the original keeps the bits on the model instance)"),
+		("ADVISOR-025", "a fixed sequence's timer (sequences 28 and 29, the ticket/key advice) starts the screen-space Key effect (template 87 at native (90000, 0, 7000), the top right) and plays cat_ui 0xC6 when the advisor clock reaches it, as 0x599991 does; its call 0x4B9340 refreshes only the lobby's key panel (window 0x7CC4B4), which OpenTPW's lobby lacks (shows or hides 0x1E0EA-0x1E0F1, \"%d x\" with the key count 0x5AF680 into 0x1E0EE, particle 0x61 when the count drops); screen-space particles are drawn in the world pass, under the HUD and the advisor image, whose order against the original's particle pass is not read"),
+		("ADVISOR-026", "the level advisors' props are shown and hidden by the clips' node lists and blink toggles carried from clip to clip, with the accessory bit 0x10000 hiding the bug head and the mouth, and the bits 0x20000-0x200000 start and move the screen-space ticket effects of group 0 (0x598EAA, 0x5ED5A0-0x5ED770) in single precision (the x87 precision the Direct3D set-up leaves is not read); the node state is rebuilt from the model's base state at every response, while the original keeps the bits on the model instance"),
 	};
 
 	private readonly AdvisorRig globalRig;
@@ -65,6 +65,22 @@ internal sealed class Advisor : IDisposable
 	private bool timerFired;
 	/// <summary>Plays a <c>cat_ui</c> sound (the sequence timer's); tests substitute a recorder.</summary>
 	internal Action<uint> PlayUiSound { get; set; } = sound => GameAudio.PlayUi( sound );
+	/// <summary>The particle pool the screen effects start in: the current level's; tests substitute a recorder.</summary>
+	internal IAdvisorParticlePool ParticlePool
+	{
+		get => particlePool;
+		set
+		{
+			particlePool = value ?? throw new ArgumentNullException( nameof( value ) );
+			effects = new AdvisorEffectGroups( value );
+		}
+	}
+	private IAdvisorParticlePool particlePool = ParticleRendererModule.AdvisorPool;
+	private AdvisorEffectGroups effects = new( ParticleRendererModule.AdvisorPool );
+	// The response is active (0xF7966C): set when it starts, cleared at the end of its span or by a kill, which empties effect group 0.
+	private bool responseActive;
+	/// <summary>The screen effects of the accessory bits (group 0) and the others; read by tests.</summary>
+	internal AdvisorEffectGroups Effects => effects;
 	// The generated sequences draw from their own stream (see AdvisorRandom).
 	private readonly AdvisorRandom sequenceRandom = new();
 	// The clip lengths of the model that plays (a level advisor's clips 16-20 exist only there), by archive.
@@ -368,6 +384,9 @@ internal sealed class Advisor : IDisposable
 		costumeHidden.Clear();
 		sequenceHidden.Clear();
 		startedClipIndex = -1;
+		// [BIN:TPW-EXE:0x005993B3 response player] a new response empties effect group 0 (0x5ED5A0(0, 0, 0))
+		effects.SetCount( 0, 0, 0 );
+		responseActive = response != null && clock != null;
 		if ( response != null && clock != null )
 		{
 			var now = clock();
@@ -397,23 +416,44 @@ internal sealed class Advisor : IDisposable
 	/// </summary>
 	public void Update()
 	{
-		if ( disposed || clock == null || speechStart is not { } start )
+		if ( disposed || clock == null )
 			return;
-		// A clip whose accessory bits are exactly the key effect plays its sound as it starts (the accessory update runs once per clip start).
+		var now = unchecked((int)clock());
+		if ( speechStart is not { } start )
+		{
+			effects.Update( now );
+			return;
+		}
+		// [BIN:TPW-EXE:0x0059992D response end] the response stops being active once its speech has ended (0x51C270) and the clock has reached the request plus the builder's clip sum (0xF79668, set at 0x59949D); group 0 is emptied (0x59993E)
+		if ( responseActive && !start.Within( clock(), (uint)Math.Max( 0, Sequence?.SumMilliseconds ?? 0 ) ) && player is not { IsStarted: true, IsFinished: false } )
+		{
+			responseActive = false;
+			effects.SetCount( 0, 0, 0 );
+		}
+		// The accessory update runs once per clip start: the key effect's sound, then the screen effects of the accessory bits.
 		if ( Sequence?.AccessoryBits is { } accessoryBits && clipDurations != null
 			&& AdvisorTimeline.At( Sequence, clipDurations, unchecked((uint)(clock() - start.RequestMilliseconds)) ) is { } playing && playing.Index != startedClipIndex )
 		{
 			for ( var index = startedClipIndex + 1; index <= playing.Index; index++ )
-				if ( index < accessoryBits.Count && (accessoryBits[index] & AdvisorAccessories.EffectBits) == AdvisorAccessories.KeyEffectBit )
+			{
+				if ( index >= accessoryBits.Count )
+					continue;
+				if ( responseActive && (accessoryBits[index] & AdvisorAccessories.EffectBits) == AdvisorAccessories.KeyEffectBit )
 					PlayUiSound( AdvisorAccessories.KeySound );
+				effects.ApplyAccessoryBits( accessoryBits[index], responseActive, clipDurations.Of( Sequence.Clips[index] ), now );
+			}
 			startedClipIndex = playing.Index;
 		}
 		// The sequence timer fires once while the response is current (a kill clears the request, so a cut-off response never fires it).
 		if ( !timerFired && Sequence?.TimerMilliseconds is { } timer && start.TimerDue( clock(), timer ) )
 		{
 			timerFired = true;
+			// [BIN:TPW-EXE:0x005999A0 timer effect] the Key effect (template 87, screen-space) at native (90000, 0, 7000): screen (0.8, -0.8), the top right; its handle is not kept
+			particlePool.Create( AdvisorSequences.TimerEffect, AdvisorSequences.TimerEffectPosition );
 			PlayUiSound( AdvisorSequences.TimerSound );
 		}
+		// [BIN:TPW-EXE:0x00599800 advisor frame] every frame moves the effect groups (0x5ED770)
+		effects.Update( now );
 		// The last clip's end hides the model (see DrawnSpanMilliseconds); the next response shows it again.
 		if ( ModelShown && !start.Within( clock(), DrawnSpanMilliseconds ) )
 			ModelShown = false;
@@ -451,6 +491,9 @@ internal sealed class Advisor : IDisposable
 	{
 		Silence();
 		ModelShown = false;
+		// [BIN:TPW-EXE:0x0059972A kill path] the stop path clears the active flag and empties effect group 0
+		responseActive = false;
+		effects.SetCount( 0, 0, 0 );
 	}
 
 	public void Say( int number, GameLanguage? language = null )

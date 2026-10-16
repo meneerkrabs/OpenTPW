@@ -432,13 +432,14 @@ public class OriginalSaveImportTests
 		""";
 
 	[TestMethod]
-	public void ImportsTheAdvisorControllerForBoundMessages()
+	public void ImportsTheAdvisorControllerForEveryMessageOfTheDescriptorTable()
 	{
 		var pending = new[]
 		{
 			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 188, 1000, 0, -1, 0, 0 ),
 			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 90, 1000, 1, -1, 0, 0 ),
 			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 128, 20, 1, 1, 1, 0 ),
+			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 351, 5, 1, -1, 0, 0 ),
 		};
 		var history = new Dictionary<int, (uint, int, byte, uint)> { [0] = (1, 0, 1, 0), [129] = (400, 1, 1, 2), [77] = (9, 0, 1, 0) };
 		var things = SaveTestPayloads.ParkThings();
@@ -450,14 +451,15 @@ public class OriginalSaveImportTests
 		var controller = new AdvisorController( AdvisorBalance.Parse( Encoding.ASCII.GetBytes( AdvisorSettings ), "test.sam" ) );
 		controller.HandleGameEvent( AdvisorGameEvent.Bankrupted, 0, 0, true );
 		var report = controller.ImportOriginal( saved );
-		Assert.AreEqual( 1, controller.Queue.Count, "only the valid record of a bound message is pending; the session's own advice is replaced" );
+		Assert.AreEqual( 2, controller.Queue.Count, "the valid records of messages with a descriptor are pending (90 has one, 351 is past the table); the session's own advice is replaced" );
+		Assert.AreEqual( new AdvisorPendingAdvice( 90, 1000, -1, false ), controller.Queue.GetSlot( 1 ), "message 90 keeps its saved score although nothing produces it yet" );
 		Assert.AreEqual( new AdvisorPendingAdvice( 128, 20, 1, true ), controller.Queue.GetSlot( 2 ), "the record keeps its slot, score, response number and override" );
+		Assert.AreEqual( new AdvisorMessageHistory( 9, 0, true, 0 ), controller.Queue.GetHistory( 77 ), "the history of message 77 is kept (its group is in the settings)" );
 		Assert.AreEqual( new AdvisorMessageHistory( 1, 0, true, 0 ), controller.Queue.GetHistory( 0 ) );
 		Assert.AreEqual( new AdvisorMessageHistory( 400, 1, true, 2 ), controller.Queue.GetHistory( 129 ) );
 		Assert.AreEqual( AdvisorMessageHistory.Empty, controller.Queue.GetHistory( 106 ) );
-		StringAssert.Contains( report, "dropped 1 pending advice of unbound messages (90)" );
-		StringAssert.Contains( report, "1 unbound history entries" );
-		StringAssert.Contains( report, "[APPROX:ADVISOR-022]" );
+		StringAssert.Contains( report, "dropped 1 pending advice of messages without a descriptor (351)" );
+		StringAssert.Contains( report, "0 history entries without one" );
 		StringAssert.Contains( report, "message 128 thing 0 secondary 0 score overridden 0" );
 
 		// The level start that follows (events 10 then 0) keeps the saved ticks and adds Welcome next to the saved advice.
@@ -465,7 +467,7 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( 1u, controller.Queue.GetHistory( 0 ).SavedGameTick );
 		Assert.IsFalse( controller.Queue.GetHistory( 0 ).HasBeenPlayed );
 		controller.HandleGameEvent( AdvisorGameEvent.LevelStarted, 755, 0, true );
-		Assert.AreEqual( 2, controller.Queue.Count );
+		Assert.AreEqual( 3, controller.Queue.Count );
 		var selection = controller.Update( () => 0, () => 755, _ => 100 );
 		Assert.AreEqual( 0, selection!.Value.Advice.MessageId, "Welcome outscores the saved ParkNowOpen advice" );
 	}
@@ -496,7 +498,7 @@ public class OriginalSaveImportTests
 		controller = Fresh();
 		report = controller.ImportOriginal( Saved( new SaveTestPayloads.AdvisorRecordFields( 0, 0, 128, 20, 1, -1, 0, 0 ) ) );
 		Assert.IsNull( controller.Queue.LastTutorial );
-		StringAssert.Contains( report, "last tutorial advice message 128 dropped (unbound or not a tutorial)" );
+		StringAssert.Contains( report, "last tutorial advice message 128 dropped (no descriptor or not a tutorial)" );
 	}
 
 	[TestMethod]

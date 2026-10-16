@@ -190,7 +190,7 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   The original fixes the mode per player and resumes each theme's autosave; OpenTPW has no player
   profiles, so every entry starts a new park (`[EXT:no-player-profiles]`, a design decision; the original's
   GameType is derived from flag bits 0x2000000/0x1000000 of 0x7a1a8c, tp.exe `0x550ca0`). The enter-park sound
-  (`cat_globallobbysfx` 4) plays when the park starts, except in Instant Action (game type 2).
+  (`cat_globallobbysfx` 4) plays when the park starts, and the screen-space particle effect 0x62 starts over the key panel with it (`LobbyEnterEffect`, docs/PARTICLES.md), except in Instant Action (game type 2), which skips both.
 - Load Park (202): own saved parks, original Easymode parks (read-only) and the
   OpenTPW sandbox save. The shared lobby/pause chooser is tp.exe's load dialog (table `0x7523f0`, built by
   `0x49efb0`): `window2`, the title (202), the `f_load` list whose rows have the buy list's slot-7 pitch, so twelve show

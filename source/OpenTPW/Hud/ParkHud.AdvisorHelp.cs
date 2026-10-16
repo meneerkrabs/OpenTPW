@@ -1,3 +1,5 @@
+using OpenTPW.UI.Original;
+
 namespace OpenTPW.Hud;
 
 public sealed partial class ParkHud
@@ -29,6 +31,8 @@ public sealed partial class ParkHud
 				openScreens.Add( screens[index].Name );
 		if ( level.StaffPlacement is { Kind: StaffToolKind.Place } )
 			openScreens.Add( StaffPlacementHelp );
+		if ( ObjectInfoHelpWindow() is { } objectWindow )
+			openScreens.Add( objectWindow );
 		if ( openScreens.SetEquals( reportedScreens ) )
 			return;
 		screenChanges.Clear();
@@ -49,5 +53,32 @@ public sealed partial class ParkHud
 			reportedScreens.Add( opened );
 			host.WindowOpened?.Invoke( opened );
 		}
+	}
+
+	private OriginalObject? objectHelpItem;
+	private string? objectHelpName;
+	private int objectHelpOpenings;
+
+	/// <summary>
+	/// The name under which the open object window (the info arm) is reported: it carries the window kind and, for a ride, the repair choice made
+	/// when the window was shown, and changes with each object shown (<see cref="ObjectInfoHelp"/>); null while no object window is open.
+	/// </summary>
+	private string? ObjectInfoHelpWindow()
+	{
+		if ( !InfoArmOpen || selectedObject is not { IsDeleted: false, Runtime: not null } item || ObjectLayout is not { } layout )
+		{
+			objectHelpItem = null;
+			objectHelpName = null;
+			return null;
+		}
+		if ( !ReferenceEquals( item, objectHelpItem ) || objectHelpName == null )
+		{
+			var kind = layout.Table == OriginalLayoutTables.RideWindow ? ObjectInfoKind.Ride
+				: layout.Table == OriginalLayoutTables.SideshowWindow ? ObjectInfoKind.Sideshow : ObjectInfoKind.Shop;
+			var repair = LiveState( item )?.Repair ?? level.PublishedObjectState( item )?.Repair;
+			objectHelpItem = item;
+			objectHelpName = ObjectInfoHelp.WindowName( kind, repair, ++objectHelpOpenings );
+		}
+		return objectHelpName;
 	}
 }

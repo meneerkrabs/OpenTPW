@@ -77,6 +77,23 @@ public static class ContentSoundRoots
 			roots.Clear();
 	}
 
+	/// <summary>The registered roots, to put back with <see cref="Restore"/> (the mod scopes of tests).</summary>
+	internal static IReadOnlyDictionary<BaseFileSystem, SoundRoot> Snapshot()
+	{
+		lock ( roots )
+			return new Dictionary<BaseFileSystem, SoundRoot>( roots );
+	}
+
+	internal static void Restore( IReadOnlyDictionary<BaseFileSystem, SoundRoot> snapshot )
+	{
+		lock ( roots )
+		{
+			roots.Clear();
+			foreach ( var (fileSystem, root) in snapshot )
+				roots[fileSystem] = root;
+		}
+	}
+
 	/// <summary>The sound source of a catalogue entry: its root's banks and the theme folder its archive sits in; null for entries read from the game's own data.</summary>
 	public static RseSoundSource? SourceOf( ObjectCatalogEntry entry )
 	{

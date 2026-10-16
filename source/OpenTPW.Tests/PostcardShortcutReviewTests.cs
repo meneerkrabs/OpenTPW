@@ -108,8 +108,8 @@ public class PostcardShortcutReviewTests
 				Input.UpdateButtons();
 				hud.Update( Context(), press, false, false, false );
 			}
-			Assert.IsTrue( hud.VisitorWindowOpen, "A new ordinary visitor click must work after the consumed release." );
-			Assert.AreEqual( guest.Id, hud.SelectedVisitorId );
+			Assert.IsTrue( hud.VisitorInfoWindowOpen, "A new ordinary visitor click must work after the consumed release." );
+			Assert.AreEqual( guest.Id, hud.InfoVisitor?.Id );
 		}
 		finally
 		{

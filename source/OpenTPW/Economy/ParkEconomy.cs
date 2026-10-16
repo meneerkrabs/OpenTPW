@@ -1568,6 +1568,11 @@ public sealed class ParkEconomy : IParkEconomy
 		return PurchaseResult.Ok;
 	}
 
+	/// <summary>The golden tickets a buy list row of <paramref name="infoId"/> asks (the type's GoldenTicketCost) while the next copy is paid with tickets; null for a cash row.</summary>
+	// [BIN:TPW-EXE:0x4ab034 buy list row] the row filler shows the ticket cost (type +0xc4, negated) for a type with a cost above 0 until 0x4d4b70 (the player's bought-with-tickets set, 0x5af780) holds it
+	public int? ListedTicketCost( int infoId ) =>
+		Catalog.TryGet( infoId, out var info ) && PaysWithTickets( info ) ? info.GoldenTicketCost : null;
+
 	// [BIN:STP-PPC:0x100DA874 object purchase] an object with a GoldenTicketCost (+0xC4) above 0 that the park has not yet bought with tickets costs that many tickets (0x100D3000; allowed when cost <= earned - spent) and no cash; it joins the owned set, and later copies and ticket-free objects take the cash path
 	private bool PaysWithTickets( EconomyObjectInfo info ) =>
 		Settings.CanSpendTickets && info.GoldenTicketCost > 0 && !ticketItems.Contains( info.InfoId );

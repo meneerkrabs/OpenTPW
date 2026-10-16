@@ -25,6 +25,8 @@ public interface IHudParkStatus
 	object? EconomySource => null;
 	/// <summary>Purchase price shown in the build menu, null when unknown.</summary>
 	long? PriceOf( BuildItem item );
+	/// <summary>The golden tickets the item's next copy costs while the buy list shows it as a ticket row (the original's mystery-ride rows), null for a cash row.</summary>
+	int? TicketCostOf( BuildItem item ) => null;
 	/// <summary>Whether the item can be bought now (researched, in the catalogue).</summary>
 	bool IsAvailable( BuildItem item );
 }

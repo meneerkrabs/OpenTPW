@@ -136,6 +136,37 @@ public partial class Texture : Asset
 	}
 
 	/// <summary>
+	/// Decodes a texture of another file system than the game data (an official bonus archive, or the install a mod reads objects from), by its extension:
+	/// a Bullfrog `.wct`, an EA `.fsh` (Theme Park Inc) or an stb image such as the `.tga` files inside Theme Park Inc's WADs. No GPU access, no texture pack.
+	/// </summary>
+	// [EXT:cross-edition-objects] Theme Park Inc textures reach a Theme Park World park as `.fsh` and `.tga`, not only `.wct`
+	internal static (byte[] Data, int Width, int Height) DecodeImage( BaseFileSystem fileSystem, string path )
+	{
+		using var stream = fileSystem.OpenRead( path );
+		if ( path.HasExtension( ".wct" ) )
+		{
+			var wct = new TextureFile( stream ).Data;
+			return (wct.Data, wct.Width, wct.Height);
+		}
+		if ( path.HasExtension( ".fsh" ) )
+		{
+			var fsh = new FshFile( stream ).Images[0];
+			return (fsh.Rgba, fsh.Width, fsh.Height);
+		}
+		using var memory = new MemoryStream();
+		stream.CopyTo( memory );
+		var image = ImageResult.FromMemory( memory.ToArray(), ColorComponents.RedGreenBlueAlpha );
+		return (image.Data, image.Width, image.Height);
+	}
+
+	/// <summary>A repeating texture made from <paramref name="path"/> of <paramref name="fileSystem"/> (see <see cref="DecodeImage(BaseFileSystem, string)"/>).</summary>
+	internal static Texture FromFileSystem( BaseFileSystem fileSystem, string path, TextureFlags flags )
+	{
+		var (data, width, height) = DecodeImage( fileSystem, path );
+		return new Texture( data, width, height, flags );
+	}
+
+	/// <summary>
 	/// Update from a Bullfrog WCT file
 	/// </summary>
 	private void UpdateFromWct( string path, TextureFlags flags )

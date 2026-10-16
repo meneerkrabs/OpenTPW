@@ -12,7 +12,7 @@ namespace OpenTPW;
 internal sealed class AutomaticAdvisor : IDisposable
 {
 	// [BIN:TPW-EXE:0x00402D63 clock offset] the clock's offset word starts at 0 and is rewritten only by the savegame load (0x415140 → 0x402E80 → 0x403160: the saved advisor clock minus the live clock); pause is 0x4092A0 and resume 0x409300
-	// [APPROX:ADVISOR-017] the clock starts at 0 for a new park, carries the saved word on an original-save import (AttachLevel), is sampled once per frame and stands still while the pause menu is open; the original stands still whenever 0x4092A0 pauses the timer: 0x46B74C in the main window procedure 0x46B600 (WM_ACTIVATEAPP deactivation, unless 0xF82884), 0x47F26C in the message box builder 0x47F020, 0x49EFB0 (load window) and 0x49F280 (save window) are identified — evidence needed: the screens of the callers 0x48C87E (0x48C830, flag 0x7C2534), 0x4A3A6C (0x4A3A30), 0x4A93D7 (0x4A9380, the level exit path) and 0x5F0B7F (0x5F0B40)
+	// [APPROX:ADVISOR-017] the clock starts at 0 for a new park, carries the saved word on an original-save import (AttachLevel), is sampled once per frame and stands still while the pause menu is open; the original stands still whenever 0x4092A0 pauses the timer: 0x46B74C in the main window procedure 0x46B600 (WM_ACTIVATEAPP deactivation, unless 0xF82884), 0x47F26C in the message box builder 0x47F020, 0x49EFB0 (load window), 0x49F280 (save window), 0x48C87E (the Escape menu 0x48C830, opened by VK_ESCAPE at 0x4A2933 and 0x4BE537: OpenTPW's pause menu) and 0x4A3A6C (the Game Options dialog 0x4A3A30, title 0x1D4D4, opened from that menu's items 0x48B977 and 0x48BF28) are identified, and 0x4092A0 acts only while the pause object's enable word (0x786BA4) is 1 and clears it — evidence needed: the screens of the callers 0x4A93D7 (0x4A9380, the level exit path: it sets 0x7CC150 to 3) and 0x5F0B7F (0x5F0B40, a modal with controls 0x990-0x995)
 	private readonly PausableClock clock;
 	// Tests substitute a controllable speech state for the presentation (see the internal constructor).
 	private readonly Func<bool>? speechActive;
@@ -127,8 +127,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 		staffWorld = null;
 		// Help still pending or speaking belongs to the windows of this park, which close without reporting.
 		if ( level != null )
-			foreach ( var window in AdvisorUiHelp.Windows.Keys )
-				Controller.Withdraw( AdvisorUiHelp.Windows[window], AdvisorClock );
+			foreach ( var message in AdvisorUiHelp.AllWindowMessages )
+				Controller.Withdraw( message, AdvisorClock );
 		park = null;
 		level = null;
 		CaptionSink = null;
@@ -201,7 +201,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		if ( level == null )
 			return;
-		OnModeChanged();
+		// the object window builders (0x4AF980, 0x4B0E30, 0x4B2430) only build the window and post its help; whether the window creator 0x48CEA0 changes the interface mode is not read, so the tools' help stays
+		if ( !window.StartsWith( ObjectInfoHelp.Prefix, StringComparison.Ordinal ) )
+			OnModeChanged();
 		if ( AdvisorUiHelp.MessageFor( window ) is { } message )
 			PostHelp( message, $"window {window}" );
 	}
@@ -222,7 +224,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	// [BIN:TPW-EXE:0x00486B40 unadvise] the window close handlers withdraw their message through 0x486B40 → 0x59AA70
 	public void OnWindowClosed( string window )
 	{
-		if ( AdvisorUiHelp.MessageFor( window ) is { } message )
+		foreach ( var message in AdvisorUiHelp.WithdrawnWith( window ) )
 			WithdrawHelp( message, $"window {window}" );
 	}
 

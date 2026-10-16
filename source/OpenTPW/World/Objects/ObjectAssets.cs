@@ -142,8 +142,11 @@ public static class ObjectAssets
 	public static IEnumerable<(BaseFileSystem FileSystem, string Directory)> TextureDirectories( ObjectCatalogEntry entry )
 	{
 		// The theme's shared folders live in the game data (FileSystem), the archive's own in the entry's file system.
-		foreach ( var name in TextureDirectoryNames( entry.ArchivePath, entry.Theme ) )
-			yield return (name.StartsWith( entry.ArchivePath + "/", StringComparison.Ordinal ) ? entry.FileSystem : FileSystem, name);
+		// [EXT:cross-edition-objects] an object read from another game's install (a registered sound root) shares that install's textures: its archive path names the theme
+		// folder it was authored in (Theme Park Inc's science objects use its levels/science/sharetex, not the Theme Park World theme they are listed under)
+		var other = ContentSoundRoots.SourceOf( entry ) is { Theme: { } sourceTheme } ? sourceTheme : null;
+		foreach ( var name in TextureDirectoryNames( entry.ArchivePath, other ?? entry.Theme ) )
+			yield return (name.StartsWith( entry.ArchivePath + "/", StringComparison.Ordinal ) || other != null ? entry.FileSystem : FileSystem, name);
 	}
 
 	/// <summary>The directory names of <see cref="TextureDirectories"/> for an archive and theme, in search order.</summary>

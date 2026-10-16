@@ -23,7 +23,7 @@ internal sealed class M4GateRun
 	{
 		this.options = options;
 		this.runIndex = runIndex;
-		// [APPROX:GATEM4-001] a working attraction admits a queued guest within W, releases a boarded guest within W, and after closing releases its riders within W; W = 5 simulated minutes (18,000 fixed ticks) by default — evidence needed: a traced bound on one ride cycle (admission, ride, unload) per ride type
+		// [EXT:m4-gate-use-window] the use window W (a working attraction admits a queued guest, releases a boarded guest and, after closing, releases its riders within W; 5 simulated minutes, 18,000 fixed ticks, by default) is the OpenTPW test harness's own tolerance: the original has no gate and no such bound, and a pass criterion needs some finite window
 		window = M3Gate.TicksForMinutes( options.UseWindowMinutes );
 	}
 
@@ -695,7 +695,7 @@ internal sealed class M4GateRun
 		var problems = new List<string>();
 		if ( scriptProblem != null )
 			problems.Add( scriptProblem );
-		// [APPROX:GATEM4-002] closing ends use: no guest boards a closed attraction — evidence needed: a trace of the host's admission test against VAR_RIDECLOSED (QUEUE-plan) and of what happens to riders and queue on closing
+		// [EXT:m4-gate-closing-ends-use] the gate's criterion that no guest boards a closed attraction is the OpenTPW test harness's own pass rule: the original has no gate, and the criterion only asks the host to honour VAR_RIDECLOSED
 		if ( track.Boardings > 0 )
 			problems.Add( $"{track.Boardings} guest(s) boarded after closing (first at tick {track.Boarded})" );
 		if ( riders > 0 && scriptProblem == null )

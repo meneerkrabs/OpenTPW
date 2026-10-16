@@ -326,7 +326,7 @@ public sealed class TourController
 		}
 		if ( car != null && Ejected.Count > 0 )
 		{
-			// [APPROX:TOUR-002] riders a severe breakdown threw off are handed out at the station like unloaded riders (which also lowers VAR_ONRIDE); the original drops them from the car without any hand-over (the loop in 0x0055DA70 discards the ids 0x0055D720 returns), so the script never releases them and VAR_ONRIDE keeps counting them
+			// [EXT:tour-thrown-riders-released] riders a severe breakdown threw off are handed out at the station like unloaded riders (which also lowers VAR_ONRIDE): a deliberate fix of the original's bug, where the loop in 0x0055DA70 discards the id 0x0055D720 returns, so the script never releases them, VAR_ONRIDE keeps counting them and the guest is never released
 			var guest = Ejected[^1];
 			Ejected.RemoveAt( Ejected.Count - 1 );
 			Released++;

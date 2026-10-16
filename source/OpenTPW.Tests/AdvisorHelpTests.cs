@@ -223,6 +223,44 @@ public class AdvisorHelpTests
 		Assert.IsTrue( AdvisorUiHelp.ModeHelpMessages.All( message => rows.Any( row => row.MessageId == message ) ) );
 	}
 
+	[TestMethod]
+	public void DescriptorTableParsesStrictly()
+	{
+		var rows = AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, callback = 0x59c8c0 },\n]\n" );
+		Assert.AreEqual( new AdvisorDescriptorRow( 0, 1, 1, 0, 1, 2, 0x59C8C0 ), rows.Single() );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0 },\n]\n" ) );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 1, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, callback = 0x1 },\n]\n" ), "records are in message order" );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 0, group = 0, duplicates = 1, mode = 2, callback = 0x1 },\n]\n" ) );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, callback = 0x1 },\n" ), "unclosed" );
+	}
+
+	[TestMethod]
+	public void ShippedDescriptorTableHasTheOriginals351RecordsAndAgreesWithTheBoundRows()
+	{
+		var rows = AdvisorDescriptorTable.Parse( File.ReadAllText( Shipped( AdvisorDescriptorTable.RelativePath ) ) );
+		Assert.AreEqual( AdvisorDescriptorTable.Count, rows.Count );
+		// [BIN:TPW-EXE:0x0076E300 descriptor table] the hand-bound event rows and the help rows are rows of the same table
+		foreach ( var message in AdvisorTables.AllMessages )
+		{
+			var row = rows[message.MessageId];
+			Assert.AreEqual( (message.FirstResponseId, message.ResponseCount, message.Group, message.MaximumPendingDuplicates, message.GameMode), (row.FirstResponseId, row.ResponseCount, row.Group, row.MaximumPendingDuplicates, row.GameMode), $"message {message.MessageId}" );
+		}
+		Assert.AreEqual( 351 - AdvisorTables.AllMessages.Count(), AdvisorTables.UnproducedMessages.Count );
+		Assert.AreEqual( 82, rows.Count( row => row.Callback == 0x59E8C0 ), "the help messages share one score callback" );
+		CollectionAssert.AreEquivalent( new[] { 0, 1, 2, 3, 4, 5, 9 }, rows.Select( row => (int)row.Group ).Distinct().ToArray() );
+	}
+
+	[TestMethod]
+	public void EveryMessageGroupOfTheDescriptorTableIsInTheShippedSettings()
+	{
+		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
+		var sam = gamePath == null ? null : Path.Combine( gamePath, "Data", "Advisor", "Advisor.sam" );
+		if ( sam == null || !File.Exists( sam ) )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the original Advisor.sam." );
+		var balance = AdvisorBalance.Parse( File.ReadAllBytes( sam ), sam );
+		Assert.AreEqual( AdvisorDescriptorTable.Count, balance.Descriptors().Count(), "every descriptor of the table is bound with the group's controls" );
+	}
+
 	private const string Sam = """
 		GeneralAdvisor.MinTimeAnyMessage	5
 		GeneralAdvisor.MinTimeSameMessage	120

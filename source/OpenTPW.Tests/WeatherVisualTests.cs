@@ -112,6 +112,30 @@ public class WeatherVisualTests
 	}
 
 	[TestMethod]
+	public void AnEyeModeCameraShiftsTheFieldByThreeTenthsOfItsMovement()
+	{
+		// [BIN:TPW-EXE:0x580003-0x58000B] the factor is 0.3 (0x3E99999A) while the camera-mode byte has bits 0x16
+		var state = Field( 8 );
+		var before = state.Offset;
+		var camera = WeatherCamera.Looking( new NVector3( 5, 0, 0 ) ) with { EyeMode = true };
+		state.Update( 0f, new Source { DropCount = 8 }, camera );
+		var moved = state.Offset.X - before.X;
+		if ( moved > WeatherVisualState.BoxHalfExtent )
+			moved -= 2 * WeatherVisualState.BoxHalfExtent;
+		Assert.AreEqual( -5 * WeatherVisualState.EyeModeParallaxScale, moved, 1e-3f );
+	}
+
+	[TestMethod]
+	public void TheWrappedParallaxTermIsTruncatedToASixteenThousandthAndWrapsAtEight()
+	{
+		Assert.AreEqual( 0.25f, WeatherVisualState.QuantisedParallax( 0.25f ), 1e-7f );
+		Assert.AreEqual( 0f, WeatherVisualState.QuantisedParallax( 0.00001f ), 1e-9f, "the integer step truncates below 1/16384" );
+		Assert.AreEqual( 3.5f, WeatherVisualState.QuantisedParallax( -4.5f ), 1e-6f, "-4.5 wraps by 8 into [-4, 4)" );
+		Assert.AreEqual( -4f, WeatherVisualState.QuantisedParallax( 4f ), 1e-6f, "4 is the wrap point" );
+		Assert.AreEqual( 1.0f / 16384f, WeatherVisualState.QuantisedParallax( 1.0f / 16384f + 1e-6f ), 1e-9f );
+	}
+
+	[TestMethod]
 	public void TheParallaxIsTheAbsoluteCameraPositionSoAReturnRestoresTheField()
 	{
 		// [BIN:TPW-EXE:0x57efd0] the drops move by -0.1 x the camera's position (wrapped), not by an accumulated delta
@@ -287,6 +311,7 @@ public class WeatherVisualTests
 			var spread = 1f + offset.Z / WeatherVisualState.SnowSpreadDepth;
 			Assert.AreEqual( offset.X * spread, centre.X, 0.03f, $"flake {index} x" );
 			Assert.AreEqual( offset.Y * spread, centre.Y, 0.03f, $"flake {index} y" );
+			Assert.AreEqual( offset.Z + WeatherVisualState.SnowProjectionBias, centre.Z, 0.03f, $"flake {index} depth: the original's w is the depth + 0.1501" );
 			quad++;
 			compared++;
 		}
@@ -302,31 +327,61 @@ public class WeatherVisualTests
 		var second = WeatherVisualState.BuildBolt( top, bottom, 7 );
 		CollectionAssert.AreEqual( first.ToList(), second.ToList(), "the shape is fixed per seed" );
 		CollectionAssert.AreNotEqual( first.ToList(), WeatherVisualState.BuildBolt( top, bottom, 8 ).ToList() );
-		Assert.AreEqual( top, first[0].A, "the trunk starts at the top" );
-		Assert.IsTrue( first.Count > 64 && first.Count <= WeatherVisualState.MaximumBoltSegments, $"segments of 2 to 3 units over 300 units: {first.Count}" );
+		Assert.IsTrue( first.Count > 64 && first.Count <= WeatherVisualState.MaximumBoltSegments, $"segments of about 2 to 3 units over 300 units: {first.Count}" );
 		var trunk = first.Where( segment => segment.Depth == 0 ).ToList();
-		Assert.AreEqual( bottom, trunk[^1].B, "the trunk ends at the ground point" );
-		for ( var index = 0; index + 1 < trunk.Count; index++ )
-			Assert.AreEqual( trunk[index].B, trunk[index + 1].A, "the trunk is one connected path" );
-		var lengths = trunk.Select( segment => (segment.B - segment.A).Length() ).ToList();
-		Assert.IsTrue( lengths.Max() < 3.5f, $"a segment stops splitting under squared length 4..8: {lengths.Max()}" );
+		// The trunk is one connected path: the sky and the ground point end one segment each, every point between two.
+		var ends = trunk.SelectMany( segment => new[] { segment.A, segment.B } ).GroupBy( point => point ).ToDictionary( group => group.Key, group => group.Count() );
+		Assert.AreEqual( 1, ends[top], "the trunk starts at the sky point" );
+		Assert.AreEqual( 1, ends[bottom], "the trunk ends at the ground point" );
+		Assert.AreEqual( 2, ends.Count( pair => pair.Value == 1 ), "no other loose end" );
+		Assert.IsTrue( ends.Where( pair => pair.Key != top && pair.Key != bottom ).All( pair => pair.Value == 2 ) );
+		// 0x57E810 tests each half against the threshold 4..8 (squared), so every final segment is shorter than sqrt(8).
+		Assert.IsTrue( first.All( segment => (segment.B - segment.A).LengthSquared() < 8f ), "a final segment stops splitting under squared length 4..8" );
 		Assert.IsTrue( first.All( segment => segment.Depth <= WeatherVisualState.MaximumBranchDepth ) );
 	}
 
 	[TestMethod]
-	public void NoBoltPassesTheSegmentCapWhateverTheSeed()
+	public void TheBoltStreamIsTheOriginalsRotateMultiplyRecurrence()
+	{
+		// 0x57E53C: state = rotl4( rotl3( state x 0x13D573 ) + 0xE0423 ), the whole state being the draw.
+		var rng = new CRainRandom( 1 );
+		Assert.AreEqual( 0x0ACAFBB0u, rng.Next() );
+		Assert.AreEqual( 0x55204A65u, rng.Next() );
+		Assert.AreEqual( 0x741A7200u, rng.Next() );
+	}
+
+	[TestMethod]
+	public void ASplitsMidpointFollowsTheOriginalsDisplacement()
+	{
+		// Values from an independent evaluation of 0x57E4B0's formulas on the same stream: pick 0 (x axis, falling to y
+		// where the segment has no x extent), and a pick of -2 (a negative state remainder takes the z-first case).
+		var rng = new CRainRandom( 1 );
+		var middle = WeatherVisualState.Midpoint( ref rng, new NVector3( 0, 300, 0 ), new NVector3( 10, 0, 5 ) );
+		Assert.AreEqual( -29.7755f, middle.X, 1e-2f );
+		Assert.AreEqual( 152.3203f, middle.Y, 1e-2f );
+		Assert.AreEqual( 2.5387f, middle.Z, 1e-2f );
+		rng = new CRainRandom( 12345 );
+		middle = WeatherVisualState.Midpoint( ref rng, new NVector3( 100, 300, 50 ), new NVector3( 120, 0, 80 ) );
+		Assert.AreEqual( 115.4654f, middle.X, 1e-2f );
+		Assert.AreEqual( 157.4529f, middle.Y, 1e-2f );
+		Assert.AreEqual( 3.9278f, middle.Z, 1e-2f );
+	}
+
+	[TestMethod]
+	public void NoBoltPassesTheSegmentCapWhateverTheSeedAndOrdinaryBoltsRarelyHitIt()
 	{
 		var most = 0;
+		var capped = 0;
 		for ( ulong seed = 1; seed <= 3000; seed++ )
 		{
-			var count = WeatherVisualState.BuildBolt( new NVector3( 0, 300, 0 ), new NVector3( 0, 0, 0 ), seed ).Count;
+			var count = WeatherVisualState.BuildBolt( new NVector3( 120, 300, 80 ), new NVector3( 100, 0, 60 ), seed ).Count;
 			Assert.IsTrue( count <= WeatherVisualState.MaximumBoltSegments, $"seed {seed} made {count} segments" );
+			if ( count == WeatherVisualState.MaximumBoltSegments )
+				capped++;
 			most = Math.Max( most, count );
 		}
 		Assert.IsTrue( most > 100, "ordinary bolts still reach their natural length" );
-		var capped = WeatherVisualState.BuildBolt( new NVector3( 0, 300, 0 ), new NVector3( 0, 0, 0 ), 576 );
-		Assert.IsTrue( capped.Count <= WeatherVisualState.MaximumBoltSegments );
-		Assert.AreEqual( new NVector3( 0, 0, 0 ), capped.Where( segment => segment.Depth == 0 ).Last().B, "a capped bolt still reaches the ground" );
+		Assert.IsTrue( capped == 0, $"{capped} of 3000 bolts hit OpenTPW's buffer bound" );
 	}
 
 	[TestMethod]
@@ -374,7 +429,7 @@ public class WeatherVisualTests
 			source.Tops.Add( new NVector3( strike, 300, strike ) );
 		state.Update( 0f, source, Eye );
 		Assert.AreEqual( WeatherVisualState.MaximumBolts, state.Bolts.Count, "at most 16 live bolts" );
-		Assert.AreEqual( 3f, state.Bolts[0].Segments[0].A.X, "the oldest three were replaced" );
+		Assert.IsTrue( state.Bolts[0].Segments.Any( segment => segment.A == new NVector3( 3, 300, 3 ) || segment.B == new NVector3( 3, 300, 3 ) ), "the oldest three were replaced" );
 		Assert.AreEqual( 0, source.Tops.Count, "the tops were taken" );
 		state.Update( 0f, new Source(), Eye );
 		Assert.AreEqual( WeatherVisualState.MaximumBolts, state.Bolts.Count, "a paused park keeps its bolts" );
@@ -385,25 +440,35 @@ public class WeatherVisualTests
 	}
 
 	[TestMethod]
-	public void TheBoltColourPulsesInHalfSecondCyclesBetween192And255()
+	public void TheBoltColourFollowsTheOriginalsRemainingTimeCurve()
 	{
 		var bolt = new WeatherVisualState().AddBolt( new NVector3( 0, 300, 0 ), 2f );
-		var seen = new List<float>();
-		for ( var step = 0; step <= 20; step++ )
-		{
-			bolt.Age = step * 0.025f;
-			bolt.Flicker = 0;
-			seen.Add( WeatherVisualState.BoltGrey( bolt ) );
-		}
-		Assert.IsTrue( seen.All( grey => grey >= 192f / 255f - 1e-6f && grey <= 1f ), "the base stays within 192..255" );
-		Assert.IsTrue( seen.Max() - seen.Min() > 0.2f, "it pulses" );
-		bolt.Age = 0.1f;
 		bolt.Flicker = 0;
+		// remaining 2000 ms: x = 0, 255 - trunc(0.9 x 1.11 x 64) = 192
+		bolt.Age = 0f;
+		Assert.AreEqual( 192f / 255f, WeatherVisualState.BoltGrey( bolt ), 1e-6f );
+		// remaining 1750 ms: x = 0.5, 255 - trunc(0.4 x 71.04) = 227
+		bolt.Age = 0.25f;
+		Assert.AreEqual( 227f / 255f, WeatherVisualState.BoltGrey( bolt ), 1e-6f );
+		// remaining 1550 ms: x = 0.1, 255 - trunc(0.8 x 71.04) = 199; the cycle repeats every 500 ms
+		bolt.Age = 0.45f;
 		var low = WeatherVisualState.BoltGrey( bolt );
-		bolt.Age = 0.6f;
-		Assert.AreEqual( low, WeatherVisualState.BoltGrey( bolt ), 1e-5f, "the cycle repeats every 500 ms" );
-		bolt.Flicker = 63;
-		Assert.IsTrue( WeatherVisualState.BoltGrey( bolt ) <= 1f, "the flicker is capped at 255" );
+		bolt.Age = 0.95f;
+		Assert.AreEqual( low, WeatherVisualState.BoltGrey( bolt ), 1e-6f );
+		// from x = 0.9 up the base is 192 + trunc((1 - x) x 640)
+		bolt.Age = 0.04f;
+		Assert.AreEqual( (192 + 51) / 255f, WeatherVisualState.BoltGrey( bolt ), 1e-6f, "x = 0.92: 192 + trunc(0.08 x 640)" );
+	}
+
+	[TestMethod]
+	public void TheBoltFlickerWrapsAboveTwoFiftyFiveAsTheOriginalsOrIntoTheChannelsDoes()
+	{
+		var bolt = new WeatherVisualState().AddBolt( new NVector3( 0, 300, 0 ), 2f );
+		bolt.Age = 0.25f;
+		bolt.Flicker = 20;
+		Assert.AreEqual( 247f / 255f, WeatherVisualState.BoltGrey( bolt ), 1e-6f, "227 + 20 still fits" );
+		bolt.Flicker = 40;
+		Assert.AreEqual( 11f / 255f, WeatherVisualState.BoltGrey( bolt ), 1e-6f, "227 + 40 = 267 keeps only its low byte: ((v | 0xFFFFFF00) << 8 | v) << 8 | v loses bit 8" );
 	}
 
 	// ---- the simulation side the renderer drains ----
@@ -441,6 +506,26 @@ public class WeatherVisualTests
 		Assert.AreEqual( 1, tops.Count, "the strike reports its bolt top once" );
 		Assert.AreEqual( ParkWeather.BoltTopHeight, tops[0].Y, "the bolt's top is the thunder's sky point (x, 300, z)" );
 		Assert.AreEqual( 0, weather.TakeBoltTops().Count, "the second take draws nothing new" );
+	}
+
+	[TestMethod]
+	public void AStrikesBoltRunsFromItsGroundPointToASkyPointOffsetByUpTo50()
+	{
+		// 0x512C50: the ground point is (x, 0, z) from the strike's own draws, the sky point (x + 100u - 50, 300, z + 100u' - 50).
+		var weather = new ParkWeather( Jungle(), 11, 10, 10 );
+		weather.AdvanceTo( 0 );
+		weather.ApplyQuality( 5 );
+		weather.Step( 0 );
+		var points = new List<(System.Numerics.Vector3 Top, System.Numerics.Vector3 Ground)>();
+		weather.DrainStrikePoints( points );
+		Assert.AreEqual( 1, points.Count );
+		var (top, ground) = points[0];
+		Assert.AreEqual( 0f, ground.Y, "the ground point is at y = 0" );
+		Assert.AreEqual( ParkWeather.BoltTopHeight, top.Y );
+		Assert.IsTrue( MathF.Abs( top.X - ground.X ) <= 50 && MathF.Abs( top.Z - ground.Z ) <= 50, "the sky point lies within 50 of the ground point on x and z" );
+		Assert.IsTrue( ground.X >= 1 && ground.Z >= 1, "the ground point is clamped to at least 1" );
+		var source = new ParkWeatherVisualSource( weather );
+		Assert.AreEqual( 0, source.TakeStrikes().Count, "the strike was drained" );
 	}
 
 	[TestMethod]

@@ -126,14 +126,16 @@ public class LobbyEffectsTests
 	}
 
 	[TestMethod]
-	public void TicksFollowWallClockTimeAtThirtyASecond()
+	public void TicksFollowWallClockTimeAtSixtyASecond()
 	{
+		// [EXT:frame-driven-at-60hz] the islands update runs once per rendered frame in the original; OpenTPW runs it per 60 Hz reference frame
+		Assert.AreEqual( ReferenceFrameClock.FrameSeconds, LobbyEffects.TickSeconds );
 		var effects = new LobbyEffects( 3 );
 		var jungle = new LobbyEffects.Island( Island( "jungle", (0, 0, 0) ), 0, 0 );
 		effects.Draw();
 		var reference = new LobbyEffects( 3 );
 		reference.Draw();
-		effects.Step( 1f / 60f, new[] { jungle }, 0, 0 );
+		effects.Step( 1f / 120f, new[] { jungle }, 0, 0 );
 		Assert.AreEqual( reference.Draw(), effects.Draw(), "half a tick draws nothing" );
 	}
 }

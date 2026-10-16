@@ -4,8 +4,8 @@
 /// Front-end lobby camera, the original's island view (tp.exe 0x5e0490, state 0, and 0x5e1210): the eye orbits
 /// the selected island at the lobby's SPINRADIUS and VERTICALOFFSET (lobby.txt) while the angle advances by
 /// SPINSPEED per tenth of a second, the eye and the target each move a fixed share of the way to their
-/// goals every frame (the glide to a newly selected island; a per-frame share as in tp.exe, so its convergence depends
-/// slightly on the frame rate), and the field of view is ISLANDFOV, applied by the camera method 0x5d8cb0 (vertical,
+/// goals every frame (the glide to a newly selected island; a per-frame share as in tp.exe, stepped at the 60 Hz reference
+/// frame rate, <see cref="ReferenceFrameClock"/>), and the field of view is ISLANDFOV, applied by the camera method 0x5d8cb0 (vertical,
 /// inferred from 0x582eb0/0x56b790).
 /// </summary>
 public class LobbyCameraMode : CameraMode
@@ -85,9 +85,16 @@ public class LobbyCameraMode : CameraMode
 	internal Vector3 Eye => eye;
 	internal Vector3 LookTarget => target;
 
-	public override void Update() => Advance( Time.Delta );
+	// [EXT:frame-driven-at-60hz] the camera steps once per 60 Hz reference frame, where the original steps once per rendered frame (0x5d5c50 -> 0x5e0470), so the glide and the fade, which are shares per frame, converge at the same speed on every display
+	private readonly ReferenceFrameClock frames = new();
 
-	/// <summary>Advances the camera by a frame of <paramref name="seconds"/>.</summary>
+	public override void Update()
+	{
+		for ( var count = frames.Advance( Time.Delta ); count > 0; count-- )
+			Advance( ReferenceFrameClock.FrameSeconds );
+	}
+
+	/// <summary>Advances the camera by one frame of <paramref name="seconds"/>.</summary>
 	internal void Advance( float seconds )
 	{
 		var step = Math.Clamp( seconds * 1000f, 0f, MaximumStepMilliseconds ) * StepPerMillisecond;

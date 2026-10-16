@@ -336,7 +336,8 @@ public class PathBuilderTests
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
 		Assert.AreEqual( 60, simulation.Admissions, $"{simulation.Admissions}" );
-		Assert.AreEqual( 0x4AFCF82F0A7796C1UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		// the guests walk whole walks to the ride (0x4FFBC0 -> 0x510100) and out of the park, which moves the run's hash (admissions stay 60) from 0x4AFCF82F0A7796C1
+		Assert.AreEqual( 0xD2F05F91D6567215UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

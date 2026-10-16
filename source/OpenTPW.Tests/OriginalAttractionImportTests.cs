@@ -39,6 +39,19 @@ public class OriginalAttractionImportTests
 	}
 
 	[TestMethod]
+	public void TheSixDailyRingsAreImportedWithTheirHeadAndWindowSums()
+	{
+		// the saved rings are 30 slots of 4 each with head 1 and the full flag: the 30-day window sums them all (0x00495C20), the running value stays today's
+		var (_, import, ride) = Import( Bouncy with { RingToday = 3, RingEntry = 4 } );
+		foreach ( var ring in new[] { ride.CostsRing, ride.TakingsRing, ride.CustomersRing, ride.WinnersRing, ride.SatisfactionRing } )
+			Assert.AreEqual( (1, true, 3, 30, 120L), (ring.Head, ring.Wrapped, ring.Today, ring.Count, ring.Total) );
+		Assert.AreEqual( 120L, ride.CustomersLast30Days );
+		Assert.AreEqual( 0L, ride.ProfitLast30Days, "the takings sum less the costs sum" );
+		Assert.AreEqual( (30, 3L), (ride.WalkAwayDays.Count, ride.WalkAwaysToday), "the walk-aways ring becomes the day list" );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "daily rings", StringComparison.Ordinal ) ), "the rings are no longer reported as not imported" );
+	}
+
+	[TestMethod]
 	public void ImportsTheStateChanceOfWinningTotalProfitAndMaintenanceCall()
 	{
 		var (economy, import, ride) = Import( Bouncy with { State = 1, Chance = 30, Takings = 900, Costs = 150, RequestedService = 1 } );

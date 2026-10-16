@@ -10,6 +10,7 @@ internal static class Game
 	{
 		Log = new();
 		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ) );
+		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		var tgqExportIndex = Array.IndexOf(args, "--export-tgq-png");
 		if (tgqExportIndex >= 0)
 		{
@@ -441,7 +442,7 @@ internal static class Game
 					for ( var radius = 0; radius < 40 && built == null; radius++ )
 						for ( var dx = -radius; dx <= radius && built == null; dx++ )
 							for ( var dy = -radius; dy <= radius && built == null; dy++ )
-								if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) == radius && level.CheckObject( entry, cellX + dx, cellY + dy, 0 ) == OriginalPlacementResult.Allowed )
+								if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) == radius && level.CheckFreeObject( entry, cellX + dx, cellY + dy, 0 ) == OriginalPlacementResult.Allowed )
 									built = level.PlaceObject( entry, cellX + dx, cellY + dy, 0 );
 					Log.Trace( $"--debug-object-effect: built {entry.DisplayName} (effect {entry.CreateParticleEffect}): {(built == null ? level.LastActionMessage : "placed")}." );
 					builtAtFrame = objectFrames;
@@ -661,6 +662,19 @@ internal static class Game
 		args.Contains( "--silent" ) || silentEnvironment == "1"
 		|| ((args.Contains( "--smoke-test" ) || args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) ) || args.Contains( "--park-resume-smoke" ))
 			&& !args.Contains( "--smoke-audio" ));
+
+	/// <summary>
+	/// [EXT:offscreen-automated-runs] smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>) create their window hidden and render into
+	/// an offscreen framebuffer, so no window appears, focus is not stolen and a locked screen does not matter. <c>--offscreen</c> or
+	/// <c>OPENTPW_OFFSCREEN=1</c> does the same for any run; <c>OPENTPW_OFFSCREEN=0</c> or <c>--no-offscreen</c> keeps the visible window.
+	/// </summary>
+	internal static bool IsOffscreenRun( string[] args, string? offscreenEnvironment )
+	{
+		if ( args.Contains( "--no-offscreen" ) || offscreenEnvironment == "0" )
+			return false;
+		return args.Contains( "--offscreen" ) || offscreenEnvironment == "1"
+			|| args.Contains( "--smoke-test" ) || args.Contains( "--tpi-smoke-test" ) || args.Contains( "--park-resume-smoke" );
+	}
 
 	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
 	{

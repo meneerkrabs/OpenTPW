@@ -89,6 +89,8 @@ public sealed class BumpController
 	public int State { get; internal set; }
 	public int VehicleCount { get; private set; }
 	public int RiderCount { get; private set; }
+	/// <summary>Whether this ride was restored from a park saved before the station followed the original's line (<see cref="TrackStation.FromPlacementLegacy"/>); saved with the controller.</summary>
+	public bool LegacyStationLayout { get; set; }
 	/// <summary>The station reference (+0x74/+0x78): where boats launch.</summary>
 	public int StationX { get; private set; }
 	public int StationY { get; private set; }

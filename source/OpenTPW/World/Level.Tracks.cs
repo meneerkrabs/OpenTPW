@@ -56,20 +56,53 @@ public partial class Level
 			return;
 		}
 		var station = TrackStation.FromPlacement( item.Placement.X, item.Placement.Y, item.Placement.Rotation );
-		trackStations[item] = station;
+		SetTrackStation( item, bump, station );
 		if ( !waterPieceHandlers.ContainsKey( item ) )
 		{
 			Action<bool> handler = play => TriggerTrackPieces( item, play );
 			waterPieceHandlers[item] = handler;
 			bump.WaterPiecesTriggered += handler;
 		}
-		var centre = TrackStation.Centre( station.First );
-		bump.SetStation( centre.X, centre.Y, station.Heading );
 		// A restored park carries its tiles and boats in the save's track part; the restore walks the circuit then.
 		if ( resumeState != null )
 			return;
 		BuilderOf( item )!.PlaceStation( station );
 		RewalkTrack( item, TrackWalkCause.Placement );
+	}
+
+	/// <summary>Records a placed ride's station and puts its controller's reference there (<see cref="TrackStationReference"/>; a saved legacy ride's is the first tile's centre).</summary>
+	private void SetTrackStation( OriginalObject item, BumpController bump, TrackStation station )
+	{
+		trackStations[item] = station;
+		bump.LegacyStationLayout = station.Legacy;
+		var reference = station.Legacy
+			? TrackStation.Centre( station.First )
+			: TrackStationReference( item.Entry.Settings, item.Placement.X, item.Placement.Y, item.Placement.Rotation );
+		bump.SetStation( reference.X, reference.Y, station.Heading );
+	}
+
+	/// <summary>
+	/// The controller reference of a kart or water ride in section units: the cell between the station's two tiles on their centre line, where boats launch.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00545890 track controller] the kart and water types store the creation cell as the station reference (+0x74/+0x78) without the arena's 0x600 (0x545F13, 0x5460D9); 0x529E10 hands it anchor + Bumper.*Adjust + the rotation's fixed offset, times 0xC00
+	public static (int X, int Y) TrackStationReference( ObjectSettings settings, int anchorX, int anchorY, int rotation )
+	{
+		var (cellX, cellY) = ReferenceCell( settings, anchorX, anchorY, rotation );
+		return (cellX * TrackStation.CellUnits, cellY * TrackStation.CellUnits);
+	}
+
+	private static (int X, int Y) ReferenceCell( ObjectSettings settings, int anchorX, int anchorY, int rotation )
+	{
+		ArgumentNullException.ThrowIfNull( settings );
+		var (side, fixedX, fixedY) = rotation switch
+		{
+			0 => ("North", 4, 1),
+			90 => ("East", 1, -5),
+			180 => ("South", -5, -2),
+			270 => ("West", -2, 4),
+			_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+		};
+		return (anchorX + settings.GetInt( $"Bumper.{side}XAdjust" ) + fixedX, anchorY + settings.GetInt( $"Bumper.{side}YAdjust" ) + fixedY);
 	}
 
 	/// <summary>
@@ -85,17 +118,7 @@ public partial class Level
 	// scales by 307.2 × 10 = 0xC00 (0x529F2F) and hands the cell to the arena builder 0x545890, which adds 0x600 on both axes for the bumper types (0x545CA8, 0x545D1E, 0x545D91)
 	public static (int X, int Y) BumperArenaCentre( ObjectSettings settings, int anchorX, int anchorY, int rotation )
 	{
-		ArgumentNullException.ThrowIfNull( settings );
-		var (side, fixedX, fixedY) = rotation switch
-		{
-			0 => ("North", 4, 1),
-			90 => ("East", 1, -5),
-			180 => ("South", -5, -2),
-			270 => ("West", -2, 4),
-			_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
-		};
-		var cellX = anchorX + settings.GetInt( $"Bumper.{side}XAdjust" ) + fixedX;
-		var cellY = anchorY + settings.GetInt( $"Bumper.{side}YAdjust" ) + fixedY;
+		var (cellX, cellY) = ReferenceCell( settings, anchorX, anchorY, rotation );
 		return (cellX * TrackStation.CellUnits + TrackStation.CellUnits / 2, cellY * TrackStation.CellUnits + TrackStation.CellUnits / 2);
 	}
 
@@ -283,7 +306,7 @@ public partial class Level
 				{
 					var entry = first.Entry;
 					var kit = family == TrackFamily.Bumper ? null : TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, family );
-					renderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ) );
+					renderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ), ( x, y ) => Objects.Grid.GetCornerHeight( x, y ), ( x, y ) => Objects.Grid.GetTerrainHeight( x, y ) );
 					trackRenderers[family] = renderer;
 				}
 				renderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers.Where( controller => controller.Template.RenderFamily == family ), trackPieceAnimations );
@@ -384,6 +407,12 @@ public partial class Level
 		}
 		if ( Guests == null || waterTracks == null )
 			throw new InvalidDataException( "The saved park has tracks, but this level has no track layer." );
+		// a controller saved before the station followed the original's line (no station layout field) keeps its old station tiles and reference
+		foreach ( var entry in saved.Controllers.Where( entry => entry.StationLayout == 0 ) )
+		{
+			if ( controllers.FirstOrDefault( item => item.Runtime.AttractionId == entry.AttractionId ) is { } ride && ride.Runtime.Bump is { Template.IsBumper: false } track )
+				SetTrackStation( ride, track, TrackStation.FromPlacementLegacy( ride.Placement.X, ride.Placement.Y, ride.Placement.Rotation ) );
+		}
 		TrackSave.RestoreCells( Guests.Grid.Cells, saved );
 		var module = Objects.ScriptWorld.Bumpers;
 		// a save of the shared module (it carries the module clock and every controller's object slots) is trusted: saved pool slots, verdicts and object slots

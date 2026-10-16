@@ -27,7 +27,7 @@ public class BumpControllerTests
 	{
 		public readonly ParkCellMap Cells = new( 40, 40 );
 		public readonly TrackBuilder Builder;
-		public readonly TrackStation Station = TrackStation.FromPlacement( 10, 10, 0 );
+		public readonly TrackStation Station = TrackStation.FromPlacement( 10, 9, 0 );
 		public readonly BumpController Controller;
 		public readonly TrackCircuit Circuit;
 		private uint rng = 12345;
@@ -42,7 +42,7 @@ public class BumpControllerTests
 			writer.Commit( (8, 12), (8, 10) );
 			Circuit = TrackCircuitWalker.WalkAndRefresh( Builder, Station );
 			Controller = new BumpController( BumperTemplates.Get( type ), () => { rng = unchecked( rng * 1664525u + 1013904223u ); return rng >> 8; } );
-			var centre = TrackStation.Centre( Station.First );
+			var centre = Station.Reference;
 			Controller.SetStation( centre.X, centre.Y, Station.Heading );
 			Controller.Rebuild( Circuit );
 		}
@@ -209,12 +209,12 @@ public class BumpControllerTests
 		Assert.AreEqual( (45180, 34692), (corner.Buoy!.X, corner.Buoy.Y), "the 45° point of the centreline arc: pivot + (0x87C, −0x87C)" );
 		Assert.AreEqual( corner.Objects[0], corner.Buoy.Object );
 		// the buoy list: the finish buoy first, then the section buoys in walk order
-		var station = TrackStation.Centre( loop.Station.First );
-		Assert.AreEqual( (33792, 33792), station );
+		var station = loop.Station.Reference;
+		Assert.AreEqual( (36864, 33792), station, "the junction between the two station tiles" );
 		var finish = c.Buoys[0];
-		Assert.AreEqual( (5, 30720, 33792), (finish.Flags, finish.X, finish.Y), "0xC00 behind the station reference" );
-		Assert.AreEqual( (32768, 33792), (c.UnloadX, c.UnloadY), "a third of that offset from the station" );
-		CollectionAssert.AreEqual( new[] { (30720, 33792), (45180, 34692), (45180, 39036), (39936, 39936), (33792, 39936), (28548, 39036), (28548, 34692) },
+		Assert.AreEqual( (5, 33792, 33792), (finish.Flags, finish.X, finish.Y), "0xC00 behind the station reference: the first tile's centre" );
+		Assert.AreEqual( (35840, 33792), (c.UnloadX, c.UnloadY), "a third of that offset from the station" );
+		CollectionAssert.AreEqual( new[] { (33792, 33792), (45180, 34692), (45180, 39036), (39936, 39936), (33792, 39936), (28548, 39036), (28548, 34692) },
 			c.Buoys.Select( buoy => (buoy.X, buoy.Y) ).ToArray() );
 		Assert.AreEqual( c.Buoys[1], c.FirstAfterFinish );
 		// the four corner kinds: pivots and buoy offsets in a 0x1800 tile at the origin
@@ -276,27 +276,27 @@ public class BumpControllerTests
 		c.AddGuest( 8 );
 		Assert.IsTrue( c.Launch() );
 		var boat = c.Vehicles.Single();
-		Assert.AreEqual( (33792, 33792, 0, -1), (boat.X, boat.Y, boat.Heading, boat.Laps), "the boat starts at the station reference with heading 0 (+Y, TRACK-012), one lap to go" );
+		Assert.AreEqual( (36864, 33792, 0, -1), (boat.X, boat.Y, boat.Heading, boat.Laps), "the boat starts at the station reference with heading 0 (+Y, TRACK-012), one lap to go" );
 		Assert.AreEqual( c.FirstAfterFinish!.Index, boat.TargetBuoy );
 		Assert.AreEqual( BumpVehicle.Live | BumpVehicle.Steerable | BumpVehicle.LapMode | BumpVehicle.Retarget | BumpVehicle.Launched, boat.Flags );
 		loop.Run( 1 );
-		Assert.AreEqual( (33792, 33792, 0, 0, 10), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading), "the boat turns toward its aim by the turn rate (10) before it thrusts: it stands still while the angle error is large" );
+		Assert.AreEqual( (36864, 33792, 0, 0, 10), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading), "the boat turns toward its aim by the turn rate (10) before it thrusts: it stands still while the angle error is large" );
 		loop.Run( 3 );
-		Assert.AreEqual( (33792, 0, 40), (boat.X, boat.VX, boat.Heading) );
+		Assert.AreEqual( (36864, 0, 40), (boat.X, boat.VX, boat.Heading) );
 		loop.Run( 97 );
-		Assert.AreEqual( (40994, 33792, 101, 0, 110), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading), "tick 101: on the straight, aiming at the first corner buoy with its jitter" );
+		Assert.AreEqual( (44011, 33928, 91, 10, 80), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading), "tick 101: on the straight, aiming at the first corner buoy with its jitter" );
 		loop.Run( 200 );
-		Assert.AreEqual( (42425, 39823, -68, 0, 382, 3, 6), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.ObjectIndex), "tick 301: on the far straight" );
-		Assert.AreEqual( (134, -28, 593, 4), (boat.JitterX, boat.JitterY, boat.Spin, boat.Roll) );
+		Assert.AreEqual( (39733, 39855, -101, 0, 382, 4, 6), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.ObjectIndex), "tick 301: on the far straight" );
+		Assert.AreEqual( (190, 134, -424, -3), (boat.JitterX, boat.JitterY, boat.Spin, boat.Roll) );
 		loop.Run( 285 );
-		Assert.AreEqual( (30363, 33725, 50, -24, 142, 0, -1), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.Laps), "tick 586: nearing the finish buoy, the lap counter still at -1" );
-		loop.Run( 11 );
-		Assert.AreEqual( (30925, 33535, 56, 12, 122, 1, 0), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.Laps), "tick 597: past the finish buoy, the lap counter at 0" );
+		Assert.AreEqual( (31659, 33929, 76, 0, 142, 0, -1), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.Laps), "tick 586: nearing the finish buoy, the lap counter still at -1" );
+		loop.Run( 23 );
+		Assert.AreEqual( (33682, 33911, 98, -7, 182, 1, 0), (boat.X, boat.Y, boat.VX, boat.VY, boat.Heading, boat.TargetBuoy, boat.Laps), "tick 609: past the finish buoy (the first tile's centre), the lap counter at 0" );
 		Assert.AreNotEqual( 0, boat.Flags & BumpVehicle.ToUnload, "the finished boat heads for the unload point" );
-		loop.Run( 20 );
-		Assert.AreEqual( 1, c.VehicleCount, "tick 617: still on its way" );
+		loop.Run( 19 );
+		Assert.AreEqual( 1, c.VehicleCount, "tick 628: still on its way" );
 		loop.Run( 1 );
-		Assert.AreEqual( 0, c.VehicleCount, "tick 618: unloaded" );
+		Assert.AreEqual( 0, c.VehicleCount, "tick 629: unloaded" );
 		Assert.AreEqual( 1, c.CompletedRuns );
 		CollectionAssert.AreEqual( new[] { 7, 8 }, c.Leaving, "the guests wait for BUMP 2 in boarding order" );
 		Assert.AreEqual( 0, c.RiderCount );

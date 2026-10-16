@@ -9,7 +9,8 @@ namespace OpenTPW;
 /// <param name="Heading">The heading bit the circuit's flow runs along at the station.</param>
 /// <param name="First">Origin cell of the first station tile (the circuit's start cell).</param>
 /// <param name="Second">Origin cell of the second station tile.</param>
-public readonly record struct TrackStation( int Rotation, byte Heading, (int X, int Y) First, (int X, int Y) Second )
+/// <param name="Legacy">The layout of a park saved before the station followed the original's line (<see cref="FromPlacementLegacy"/>).</param>
+public readonly record struct TrackStation( int Rotation, byte Heading, (int X, int Y) First, (int X, int Y) Second, bool Legacy = false )
 {
 	/// <summary>Cells per tile edge.</summary>
 	public const int TileCells = 2;
@@ -20,6 +21,19 @@ public readonly record struct TrackStation( int Rotation, byte Heading, (int X, 
 	public (int X, int Y) Entry => (First.X - TileCells * TrackHeading.Dx( Heading ), First.Y - TileCells * TrackHeading.Dy( Heading ));
 	/// <summary>The tile cell after the second station tile, where the player's first line starts.</summary>
 	public (int X, int Y) Exit => (Second.X + TileCells * TrackHeading.Dx( Heading ), Second.Y + TileCells * TrackHeading.Dy( Heading ));
+
+	/// <summary>
+	/// The controller's station reference in section units: the point between the two tiles on their centre line, one cell along the heading from the first tile's centre
+	/// (the original's <c>0x529E10</c> reference, <see cref="Level.TrackStationReference"/>). A legacy station's reference is the first tile's centre.
+	/// </summary>
+	public (int X, int Y) Reference
+	{
+		get
+		{
+			var centre = Centre( First );
+			return Legacy ? centre : (centre.X + CellUnits * TrackHeading.Dx( Heading ), centre.Y + CellUnits * TrackHeading.Dy( Heading ));
+		}
+	}
 
 	/// <summary>The origin cells of both station tiles in circuit order.</summary>
 	public IEnumerable<(int X, int Y)> Tiles
@@ -32,14 +46,35 @@ public readonly record struct TrackStation( int Rotation, byte Heading, (int X, 
 	}
 
 	/// <summary>
-	/// The station of a ride whose footprint anchor is (<paramref name="anchorX"/>, <paramref name="anchorY"/>): the two tile columns of the
-	/// rows next to the entrance, in the ride's rotation.
+	/// The station of a ride whose placement anchor is (<paramref name="anchorX"/>, <paramref name="anchorY"/>) (the original's attraction cell, <c>0x528B44</c>): the line of
+	/// <c>0x52A1A0</c>, two tiles one row beside the entrance row, in the ride's rotation.
 	/// </summary>
-	// [APPROX:TRACK-005] the station tile layout is OpenTPW's: two tiles on the footprint's first two tile columns along the heading, in the rows beside the entrance, with the circuit starting at the first; the original's station is the line of 0x52A1A0 ([BIN:TPW-EXE:0x0052A1A0]: two tiles of type 13 (kart) or 18 (water) from the attraction cell (x, y): rot 0 (x, y+1)..(x+2, y+1), walk start (x, y+1), exit (x+4, y+1); rot 90 (x+1, y)..(x+1, y−3), exit (x+1, y−5); rot 180 (x−1, y−2)..(x−3, y−2), exit (x−5, y−2); rot 270 (x−2, y)..(x−2, y+2), exit (x−2, y+4)); the placement's cursor cell is OpenTPW's anchor (0x818C3C, written at 0x528E12 from the build click's anchor 0x528B44), but the attraction 0x52A1A0 reads (the object 0x528A70 returns) is constructed at that cell plus the per-rotation offset 0x4D9CC0 returns from type +0x4B0 (0x529F86–0x529FD5) — evidence needed: that offset (0x4D9CC0) and whether the attraction's +8/+0xC is the constructed cell, and the line modes 0x80, 0x82 and 0x83 of 0x53AAC0
+	// [BIN:TPW-EXE:0x0052A1A0 station line] from the attraction cell (x, y) the line runs, per rotation, 0°: (x, y+1) → (x+2, y+1), exit (x+4, y+1); 90°: (x+1, y−1) → (x+1, y−3), exit (x+1, y−5); 180°: (x−1, y−2) → (x−3, y−2), exit (x−5, y−2); 270°: (x−2, y) → (x−2, y+2), exit (x−2, y+4) (0x52A1E1..0x52A28C: the start cell is the walk's start 0x7639E0/E4); the tiles are the footprint's rows 1 and 2 across the heading, the entrance row 0 beside them
+	// [BIN:TPW-EXE:0x00529E10 ride placement] the controller's reference is the cell between the two tiles on their centre line (anchor + the type's Bumper.*Adjust + (4, 1), (1, −5), (−5, −2) or (−2, 4) by rotation, 0x529EDF..0x529F2B), see Level.TrackStationReference
+	// [APPROX:TRACK-005] the line modes 0x80 and 0x83 of 0x53AAC0 (0x82 is the flow link, TRACK-004) and what they write on the station tiles are not traced; the tiles are typed and linked as the placement of the player's own lines is
 	public static TrackStation FromPlacement( int anchorX, int anchorY, int rotation )
 	{
 		var heading = TrackHeading.FromRotation( rotation );
-		return new TrackStation( rotation, heading, OriginOf( anchorX, anchorY, rotation, 0 ), OriginOf( anchorX, anchorY, rotation, 1 ) );
+		var (first, second) = rotation switch
+		{
+			0 => ((anchorX, anchorY + 1), (anchorX + 2, anchorY + 1)),
+			90 => ((anchorX + 1, anchorY - 1), (anchorX + 1, anchorY - 3)),
+			180 => ((anchorX - 1, anchorY - 2), (anchorX - 3, anchorY - 2)),
+			270 => ((anchorX - 2, anchorY), (anchorX - 2, anchorY + 2)),
+			_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+		};
+		return new TrackStation( rotation, heading, first, second );
+	}
+
+	/// <summary>
+	/// The station layout of a park saved before the station followed the original's line: the two tile columns of the footprint's rows 0 and 1 across the heading (one row
+	/// nearer the entrance than the original's), with the station reference at the centre of the first tile. Only a restored ride of such a save keeps it.
+	/// </summary>
+	// [EXT:legacy-station-layout] a ride of a park saved before the station followed the original's line keeps the tiles and the reference it was saved with (its saved tiles lie there)
+	public static TrackStation FromPlacementLegacy( int anchorX, int anchorY, int rotation )
+	{
+		var heading = TrackHeading.FromRotation( rotation );
+		return new TrackStation( rotation, heading, OriginOf( anchorX, anchorY, rotation, 0 ), OriginOf( anchorX, anchorY, rotation, 1 ), Legacy: true );
 	}
 
 	private static (int X, int Y) OriginOf( int anchorX, int anchorY, int rotation, int column )

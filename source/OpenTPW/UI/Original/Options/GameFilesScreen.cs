@@ -310,7 +310,7 @@ public static class GameFilesScreen
 	}
 
 	/// <summary>A typed folder path, for platforms without a folder dialog.</summary>
-	private static UiScreen PathEntry( UiScreenStack stack, UiStringTable strings, string? initial, Action<string> chosen )
+	internal static UiScreen PathEntry( UiScreenStack stack, UiStringTable strings, string? initial, Action<string> chosen )
 	{
 		var screen = new UiScreen( "folderEntry" );
 		var window = UiDialogs.CenteredWindow( 1400, 640 );

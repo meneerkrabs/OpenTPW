@@ -82,6 +82,12 @@ public sealed class OriginalParkImport
 	public IReadOnlyList<SaveGuest> Guests { get; }
 	public SaveStaffHq? StaffHq { get; }
 	public SaveAdvisorController? Advisor { get; }
+	/// <summary>
+	/// The advisor clock the save carries: the second word of the clock block that follows the MESS delimiter (writer 0x402E00 after the
+	/// snapshot 0x402E60, which stores the scaled clock at +0x4C and the advisor clock at +0x74; reader 0x402E30 behind the marker check 0x41555A).
+	/// Null for the Theme Park Inc viewer profile.
+	/// </summary>
+	public uint? SavedAdvisorClockMilliseconds { get; private init; }
 	public SaveResearchLab? ResearchLab { get; }
 	public int GuestCount => Guests.Count;
 	public IReadOnlyList<(int X, int Y)> PathCells { get; }
@@ -236,10 +242,13 @@ public sealed class OriginalParkImport
 			return matches.Count == 1 ? coasterTrains( matches[0].InfoId ) : null;
 		};
 		var coasters = SaveCoasterBlock.Parse( span, layout, map.CellCountX, map.CellCountY, trainLayouts );
+		var clockBlock = layout[SaveBlock.Clock];
+		var savedClock = clockBlock.Length == SavePayloadLayout.FixedBlockBytes[SaveBlock.Clock] ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( span.Slice( clockBlock.Offset + 4, 4 ) ) : (uint?)null;
 		return new OriginalParkImport( map, layout, world, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly(),
 			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters )
 		{
 			RuntimeBlocks = SaveRuntimeBlocks.Read( span, layout ),
+			SavedAdvisorClockMilliseconds = savedClock,
 		};
 	}
 

@@ -159,6 +159,19 @@ public class OriginalParkImportTests
 		Assert.IsFalse( objects[4].TryGetFootprint( out _, out _, out _, out _ ) );
 	}
 
+	[TestMethod]
+	public void ReadsTheSavedAdvisorClockFromTheSecondWordOfTheClockBlock()
+	{
+		// 0x402E00 writes the scaled clock (+0x4C) then the advisor clock (+0x74); the load (0x402E30 -> 0x402E80) sets the advisor clock from the second word.
+		var map = CreateMap( 3, 3, ( _, _ ) => 0 );
+		var clock = new byte[8];
+		BinaryPrimitives.WriteUInt32LittleEndian( clock, 111 );
+		BinaryPrimitives.WriteUInt32LittleEndian( clock.AsSpan( 4 ), 654_321 );
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( map ), SaveTestPayloads.Things( SaveTestPayloads.ParkThings() ) ),
+			blocks: new Dictionary<SaveBlock, byte[]> { [SaveBlock.Clock] = clock } );
+		Assert.AreEqual( 654_321u, OriginalParkImport.Import( payload, map ).SavedAdvisorClockMilliseconds );
+	}
+
 	private static void AssertFootprint( SaveObject item, int minX, int minY, int maxX, int maxY )
 	{
 		Assert.IsTrue( item.TryGetFootprint( out var actualMinX, out var actualMinY, out var actualMaxX, out var actualMaxY ) );

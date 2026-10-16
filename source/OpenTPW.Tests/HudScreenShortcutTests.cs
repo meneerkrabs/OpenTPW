@@ -98,8 +98,8 @@ public class HudScreenShortcutTests
 	public void HappinessGaugeFillFollowsTheSampledVisitors()
 	{
 		Assert.AreEqual( 0f, ParkHud.GaugeFill( 0f ) );
-		Assert.AreEqual( 0.5f, ParkHud.GaugeFill( 50f ) );
-		Assert.AreEqual( 1f, ParkHud.GaugeFill( 100f ) );
+		Assert.AreEqual( 511 / 1024f, ParkHud.GaugeFill( 50f ), "the value is truncated to an integer of 1024 as the original's setter takes it" );
+		Assert.AreEqual( 1023 / 1024f, ParkHud.GaugeFill( 100f ), "the original's 0.01f factor is a hair under 0.01, so a mean of 100 sets 1023 of 1024" );
 		Assert.AreEqual( 1f, ParkHud.GaugeFill( 140f ), "the fill clamps at a full dish" );
 		Assert.AreEqual( 0f, ParkHud.GaugeFill( -20f ), "a negative mean does not fill below empty" );
 		Assert.IsNull( ParkHud.GaugeFill( null ), "no visitors in the park leaves the dish empty" );
@@ -108,6 +108,29 @@ public class HudScreenShortcutTests
 		Assert.IsTrue( empty.R > pleased.R && empty.G < pleased.G, "unhappy visitors fill red, happy visitors green" );
 		Assert.AreEqual( 210, empty.A );
 		Assert.AreEqual( (empty.R, empty.G, empty.B), (ParkHud.GaugeColour( 0 ).R, ParkHud.GaugeColour( 0 ).G, ParkHud.GaugeColour( 0 ).B), "the colour is deterministic for tests and drawing" );
+	}
+
+	[TestMethod]
+	public void HappinessGaugeValueIsTheOriginals0To1024Integer()
+	{
+		// tp.exe 0x4a1d3b-0x4a1d57: ftol( mean x 1024.0 x 0.01f ), then the type-9 gauge's setter 0x66d885 clamps to 0..1024
+		Assert.AreEqual( 0, ParkHud.GaugeValue( 0f ) );
+		Assert.AreEqual( 511, ParkHud.GaugeValue( 50f ), "50 x 10.24 is 512 less the float error of 0.01f, truncated" );
+		Assert.AreEqual( 1023, ParkHud.GaugeValue( 100f ) );
+		Assert.AreEqual( 1024, ParkHud.GaugeValue( 120f ), "the setter clamps at 1024" );
+		Assert.AreEqual( 0, ParkHud.GaugeValue( -5f ), "the setter clamps at 0" );
+	}
+
+	[TestMethod]
+	public void HappinessGaugeMeanIsTheOriginalsByteTruncatedMeanAndZeroWhileClosed()
+	{
+		// tp.exe 0x4c7bb0: 0 while the park-closed word is set, else the mean of the byte-truncated happiness of the in-park guests
+		Assert.AreEqual( 74.5f, ParkHud.HappinessMean( new[] { 75.9f, 74.9f }, parkOpen: true ), "(75 + 74) / 2, not the mean of the raw values" );
+		Assert.IsNull( ParkHud.HappinessMean( new[] { 80f, 90f }, parkOpen: false ), "a closed park leaves the dish empty even with visitors still in it" );
+		Assert.IsNull( ParkHud.HappinessMean( System.Array.Empty<float>(), parkOpen: true ), "nobody in the park leaves the dish empty" );
+		Assert.AreEqual( 0f, ParkHud.HappinessMean( new[] { 0.9f, 0f }, parkOpen: true ), "an unhappy park is a mean of zero, not an absent one" );
+		Assert.AreEqual( 22f, ParkHud.HappinessMean( new[] { 300f, 0f }, parkOpen: true ), "the truncation keeps the low byte as the original's 'and 0xff' does: 300 is 44" );
+		Assert.AreEqual( 2f, ParkHud.HappinessSampleSeconds, "the original's timer (0x4a1cea) re-arms the gauge every 2000 ms" );
 	}
 
 	[TestMethod]

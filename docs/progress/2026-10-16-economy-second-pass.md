@@ -15,8 +15,14 @@ A second pass over the economy approximations, read in tp.exe via REA:
 - **Research order** (ECON-017): the table follows the original scan order (Ride, Feature, Upgrade, Shop, Sideshow), checked against
   the shipped Jungle lab, with the dynamic category-4 table and the golden-ticket add-on (`0x5AF780`, `0x4D4B70`).
 - **Also:** hoardings count in net worth and the big park count (ECON-026); the analyser's saved state (`0x4C5D70` → `0x4C85B0`,
-  ECON-020), the object destructor (ECON-050), the guest event ring (debug only, ECON-044) and the renderer's precision-control writes
+  ECON-020), the object destructor (ECON-050), the guest event ring (debug only, `APPROX:ECON-044` is closed as `EXT:guest-event-ring`) and the renderer's precision-control writes
   (ECON-059) are read.
+
+- **Design choices recorded as EXT labels** (user decision): ECON-014 sheds the headless economy (`EXT:headless-economy`), ECON-020 the stamps OpenTPW's park
+  save keeps (`EXT:save-analyser-stamps`) and ECON-057 the calendar-month sums old saves seed their rings from (`EXT:ring-month-sums`); each keeps its original-behaviour
+  remainder open.
+- **Save validation** also refuses a challenge time outside the range or apart from its offer day, an upgrade-order entry that is not a pair, a null or unsigned-negative ring and
+  a wrapped ring without a head.
 
 The pinned run hash moves because the new saved rings are part of the economy digest (excluding them reproduces the previous pin; no
 behaviour changed); docs/DETERMINISM.md records it. The new save fields are optional and validated, and older saves seed the first rings

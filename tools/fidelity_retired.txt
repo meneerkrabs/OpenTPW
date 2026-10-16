@@ -122,6 +122,7 @@ ECON-040 docs/reverse/APPROX-TRACE.md
 ECON-041 docs/reverse/APPROX-TRACE.md
 ECON-042 docs/reverse/APPROX-TRACE.md
 ECON-043 docs/reverse/APPROX-TRACE.md
+ECON-044 docs/ECONOMY.md
 ECON-045 docs/reverse/APPROX-TRACE.md
 ECON-046 docs/reverse/APPROX-TRACE.md
 ECON-047 docs/reverse/RIDE-WEAR.md

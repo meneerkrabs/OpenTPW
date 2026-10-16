@@ -120,7 +120,7 @@ public sealed class DailyRing
 	/// <summary>Restores a ring from the raw slots of the original's serializer.</summary>
 	internal static DailyRing FromSlots( int head, bool wrapped, int today, IReadOnlyList<int> slots )
 	{
-		if ( head is < -1 or >= Size || slots.Count != Size )
+		if ( head is < -1 or >= Size || wrapped && head < 0 || slots.Count != Size )
 			throw new InvalidDataException( $"A daily ring with head {head} and {slots.Count} slots does not fit the original's 30." );
 		var ring = new DailyRing { Head = head, Wrapped = wrapped, Today = today };
 		for ( var index = 0; index < Size; index++ )

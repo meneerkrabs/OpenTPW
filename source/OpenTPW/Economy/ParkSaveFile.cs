@@ -19,6 +19,8 @@ public static class ParkSaveFile
 	/// <summary>Version 2: the clock follows the original's 248 ms turns and civil calendar, so version 1 tick counts and month indices no longer match.</summary>
 	public const int CurrentVersion = 2;
 	public const int MaximumFileSize = 16 * 1024 * 1024;
+	/// <summary>The most park seconds a saved challenge time may hold (about 31,000 years), so the arithmetic on it cannot overflow.</summary>
+	internal const long MaximumParkSeconds = 1_000_000_000_000L;
 
 	private static readonly JsonSerializerOptions Options = new()
 	{
@@ -589,6 +591,7 @@ public static class ParkSaveFile
 			TurnEnteredRed = park.TurnEnteredRed,
 			BatchCredit = park.BatchCredit,
 			Litter = park.Litter.Snapshot().Select( cell => new LitterData { X = cell.X, Y = cell.Y, Type = (int)cell.Type, Collector = cell.Collector, ClaimTurn = cell.ClaimTurn } ).ToList(),
+			// [EXT:save-analyser-stamps] OpenTPW's park save keeps the analyser caches' stamps (the original's serializer keeps none, 0x004C5D70 → 0x004C85B0) so a load continues the run exactly, which is a design choice for the saves OpenTPW writes (the save-load test of the pinned run, docs/DETERMINISM.md)
 			AnalyserCaches = new AnalyserCacheData
 			{
 				NetWorth = park.CachedNetWorth is { } worth ? new CachedCount { Value = worth.Value, Stamp = worth.Stamp } : null,
@@ -736,6 +739,7 @@ public static class ParkSaveFile
 	}
 
 	/// <summary>The ring of an object record; a save without rings seeds the first four with last month's totals as one day, so the windows' 30-day values stay continuous.</summary>
+	// [EXT:ring-month-sums] the calendar-month sums (this and last month) stay in the park save and the object records so a save written before the rings seeds its rings from last month's totals; the original keeps only the rings, so this is an OpenTPW compatibility choice
 	private static DailyRing RingAt( ObjectData item, int index )
 	{
 		if ( item.Rings is { } rings )
@@ -754,13 +758,14 @@ public static class ParkSaveFile
 	{
 		if ( rings is null )
 			return true;
-		if ( rings.Length != 5 )
+		if ( rings.Length != 5 || rings.Any( ring => ring is null || ring.Entries is null ) )
 			return false;
 		try
 		{
 			foreach ( var ring in rings )
 				ring.ToRing();
-			return true;
+			// the four counting rings hold unsigned words in the original; the satisfaction change (the last) is signed
+			return rings.Take( 4 ).All( ring => ring.Today >= 0 );
 		}
 		catch ( InvalidDataException )
 		{
@@ -823,6 +828,9 @@ public static class ParkSaveFile
 		Require( data.TurnEnteredRed is not { } enteredRed || enteredRed >= 0 && enteredRed <= ParkCalendar.Turn( data.Tick ), "turn entered red" );
 		Require( data.BatchCredit >= 0, "batch credit" );
 		Require( data.Objectives.ActualThing >= 0 && (data.Objectives.CarriedThings?.All( pair => pair.Key >= 0 && pair.Value > 0 ) ?? true), "carried challenge object" );
+		Require( data.Objectives.NextOfferSeconds is null or >= 0 and <= MaximumParkSeconds
+			&& (data.Objectives.NextOfferSeconds is not { } offerSeconds || offerSeconds / ParkCalendar.SecondsPerDay == data.Objectives.NextOfferDay)
+			&& (data.Objectives.Current is not { } running || running.DeadlineSeconds is >= 0 and <= MaximumParkSeconds), "challenge times" );
 		var littered = new HashSet<(int, int)>();
 		foreach ( var cell in data.Litter )
 			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type is >= 1 and <= (int)LitterType.Stinkbomb
@@ -848,7 +856,7 @@ public static class ParkSaveFile
 			Require( item.QualityOfGoods is null or >= 0 and <= 255, $"object {item.Id} quality of goods" );
 			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
 			Require( item.ClaimTurn >= 0 && item.ClaimTurn <= ParkCalendar.Turn( data.Tick ) && (item.ClaimTurn == 0 || item.MechanicId != 0), $"object {item.Id} claim turn" );
-			Require( RingsValid( item.Rings ) && item.Rings?.All( ring => ring.Today >= 0 ) != false, $"object {item.Id} daily rings" );
+			Require( RingsValid( item.Rings ), $"object {item.Id} daily rings" );
 			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
 				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
@@ -893,7 +901,7 @@ public static class ParkSaveFile
 		if ( data.Staff.Strikes is { } strikes )
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
-		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );

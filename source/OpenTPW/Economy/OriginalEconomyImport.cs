@@ -556,7 +556,8 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"[APPROX:SAVE-005] Challenge state not imported: the save's {slots.Count} slots do not match the level's {level.Count} challenges; the first offer is due on day {economy.Objectives.NextOfferDay}." );
 			return;
 		}
-		long Seconds( long stamp ) => (stamp - calendarStart) / OriginalEconomyImport.TimeStampUnitsPerSecond;
+		// a stamp before the calendar start (or a wild one) is cut to the range a park save accepts
+		long Seconds( long stamp ) => Math.Clamp( (stamp - calendarStart) / OriginalEconomyImport.TimeStampUnitsPerSecond, 0, ParkSaveFile.MaximumParkSeconds );
 		long Day( long stamp ) => Seconds( stamp ) / ParkCalendar.SecondsPerDay;
 		var finished = slots.Select( ( slot, index ) => (slot, index) ).Where( entry => entry.slot.Won ).Select( entry => level[entry.index] ).ToList();
 		var declines = slots.Select( ( slot, index ) => (slot, index) ).Where( entry => entry.slot.Declined > 0 ).ToDictionary( entry => level[entry.index], entry => entry.slot.Declined );

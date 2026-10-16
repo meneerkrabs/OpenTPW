@@ -426,6 +426,24 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( files, flow.Strings.Extra( OpenTpwText.BonusFolder ), "bonus content label" );
 			flow.Menu.Stack.Pop();
 		} );
+		// [EXT:mods-ui] Options > Extensions and mods with a throw-away mods.json: both columns render, the online extension is listed and switching it is pending until OK.
+		Do( "open mods", () => flow.Menu!.Stack.Push( ModsScreen.Create( flow.Menu.Stack, flow.Strings, new ModsServices { SettingsPath = Path.Combine( temporaryDirectory, OpenTPW.Mods.ModSettings.FileName ) } ) ) );
+		Wait( "mods renders", 3 );
+		Do( "mods capture", () =>
+		{
+			var mods = flow.Menu!.Stack.Top!;
+			Require( mods.Name == "mods", "mods screen opens" );
+			var list = (UiScrollList)mods.Find( "extensions" )!;
+			list.Select( 0 );
+			Require( list.Rows().Count > 0 && list.Rows()[0].StartsWith( OpenTPW.Mods.OfficialExtensions.Online.Name, StringComparison.Ordinal ) && list.Trailing!( 0 ) == flow.Strings.Extra( OpenTpwText.ModOn ), "the online extension is listed as on" );
+			var capture = CaptureFrame( "mods.png" );
+			VerifyText( capture, flow.Strings.Extra( OpenTpwText.ModsPage ), "mods title" );
+			VerifyText( capture, flow.Strings.Extra( OpenTpwText.ModsExtensions ), "extensions column" );
+			VerifyText( capture, flow.Strings.Extra( OpenTpwText.ModsCommunity ), "community column" );
+			Click( mods, "cancel" );
+		} );
+		Wait( "mods cancel", 3 );
+		Do( "mods closed", () => Require( flow.Menu!.Stack.Top?.Name != "mods", "cancel leaves the mods screen" ) );
 		PlanTexturePackSwitch();
 		PlanLanguageSwitch();
 		Do( "open lobby menu", () => flow.Menu!.ShowMenu() );

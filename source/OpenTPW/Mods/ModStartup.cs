@@ -14,6 +14,12 @@ public static class ModStartup
 	public const string DisableExtensionOption = "--disable-extension";
 
 	/// <summary>
+	/// The mod folders found at startup, valid or not: the Extensions and mods screen lists them ([EXT:mods-ui]). Like the
+	/// resolved set it does not change until the next start, and the browser build has none.
+	/// </summary>
+	public static IReadOnlyList<DiscoveredMod> Discovered { get; private set; } = Array.Empty<DiscoveredMod>();
+
+	/// <summary>
 	/// This build's OpenTPW version for <c>openTpw</c> ranges: the assembly's informational version, or null for a
 	/// development build without one (the SDK default 1.0.0), in which case the ranges are not checked.
 	/// </summary>
@@ -49,6 +55,7 @@ public static class ModStartup
 		var set = Resolve( discovered, settings, Values( args, DisableExtensionOption, "an extension or mod id such as opentpw.online" ), diagnostics );
 		Report( set, diagnostics, trace, warning );
 		OpenTpwExtensions.Activate( set );
+		Discovered = discovered;
 		return set;
 	}
 

@@ -15,8 +15,23 @@ public sealed record ResolvedMod( ModManifest Manifest, string Directory, ModSou
 	public string Id => Manifest.Id;
 }
 
+/// <summary>Why a mod cannot run, in terms the mods screen can word in every language ([EXT:mods-ui]).</summary>
+public enum ModRefusalKind
+{
+	/// <summary>Anything else: unreadable files, a shadowed or duplicate id, an invalid manifest.</summary>
+	Other,
+	/// <summary>The mod needs another OpenTPW version or the other game edition.</summary>
+	Incompatible,
+	/// <summary>An input folder is not chosen or no longer exists.</summary>
+	MissingInput,
+	/// <summary>Another enabled mod overrides the same file.</summary>
+	Conflict,
+	/// <summary>A dependency is missing, disabled, refused, out of range, or part of a cycle.</summary>
+	Dependency,
+}
+
 /// <summary>A mod that was found or enabled but cannot run, and why.</summary>
-public sealed record ModRefusal( string Id, string Reason );
+public sealed record ModRefusal( string Id, string Reason, ModRefusalKind Kind = ModRefusalKind.Other );
 
 /// <summary>
 /// The extensions and mods of one run (docs/MODS.md), resolved once at startup: dependency order first, then official
@@ -90,7 +105,7 @@ public sealed class ModSet
 			// files-based mods are opt-in
 			node.Enabled = !disabled.Contains( manifest.Id ) && settings.IsEnabled( manifest.Id, false );
 			if ( node.Enabled && Incompatibility( manifest, settings, openTpwVersion, edition ) is { } reason )
-				Refuse( node, reason, refused );
+				Refuse( node, reason.Text, refused, reason.Kind );
 			if ( !node.Enabled )
 				continue;
 			var (files, error) = ReadFiles( mod.Directory );
@@ -110,11 +125,11 @@ public sealed class ModSet
 				foreach ( var dependency in node.Manifest?.Dependencies ?? Array.Empty<ModDependency>() )
 				{
 					if ( !nodes.TryGetValue( dependency.Id, out var target ) )
-						changed |= Refuse( node, $"needs {dependency.Id} {dependency.Version}, which is not installed", refused );
+						changed |= Refuse( node, $"needs {dependency.Id} {dependency.Version}, which is not installed", refused, ModRefusalKind.Dependency );
 					else if ( !target.Enabled )
-						changed |= Refuse( node, $"needs {dependency.Id} {dependency.Version}, which is disabled or refused", refused );
+						changed |= Refuse( node, $"needs {dependency.Id} {dependency.Version}, which is disabled or refused", refused, ModRefusalKind.Dependency );
 					else if ( !dependency.Version.Contains( target.Version ) )
-						changed |= Refuse( node, $"needs {dependency.Id} {dependency.Version}, not {target.Version}", refused );
+						changed |= Refuse( node, $"needs {dependency.Id} {dependency.Version}, not {target.Version}", refused, ModRefusalKind.Dependency );
 					if ( !node.Enabled )
 						break;
 				}
@@ -122,7 +137,7 @@ public sealed class ModSet
 			changed |= RefuseConflicts( nodes, refused );
 			order = Sort( nodes, settings, out var cyclic );
 			foreach ( var node in cyclic )
-				changed |= Refuse( node, "is part of, or needs a mod in, a dependency or 'after' cycle", refused );
+				changed |= Refuse( node, "is part of, or needs a mod in, a dependency or 'after' cycle", refused, ModRefusalKind.Dependency );
 			if ( !changed )
 				break;
 		}
@@ -206,18 +221,18 @@ public sealed class ModSet
 	/// <summary>The key two paths share when a case-insensitive or normalizing file system would treat them as one.</summary>
 	private static string FoldKey( string path ) => path.Normalize( NormalizationForm.FormC ).ToLowerInvariant();
 
-	private static string? Incompatibility( ModManifest manifest, ModSettings settings, ModVersion? openTpwVersion, GameEdition edition )
+	private static (string Text, ModRefusalKind Kind)? Incompatibility( ModManifest manifest, ModSettings settings, ModVersion? openTpwVersion, GameEdition edition )
 	{
 		if ( manifest.OpenTpw != null && openTpwVersion is { } version && !manifest.OpenTpw.Contains( version ) )
-			return $"needs OpenTPW {manifest.OpenTpw}, not {version}";
+			return ($"needs OpenTPW {manifest.OpenTpw}, not {version}", ModRefusalKind.Incompatible);
 		if ( manifest.Edition is { } wanted && wanted != edition )
-			return $"is for {ModManifest.EditionToken( wanted )}, not {ModManifest.EditionToken( edition )}";
+			return ($"is for {ModManifest.EditionToken( wanted )}, not {ModManifest.EditionToken( edition )}", ModRefusalKind.Incompatible);
 		foreach ( var input in manifest.Inputs )
 		{
 			if ( !settings.Inputs.TryGetValue( manifest.Id, out var inputs ) || !inputs.TryGetValue( input.Id, out var path ) )
-				return $"needs the input '{input.Id}' ({input.Kind}{(input.Edition == null ? "" : ", " + input.Edition)}), which is not chosen";
+				return ($"needs the input '{input.Id}' ({input.Kind}{(input.Edition == null ? "" : ", " + input.Edition)}), which is not chosen", ModRefusalKind.MissingInput);
 			if ( !Directory.Exists( path ) )
-				return $"needs the input '{input.Id}', but its folder '{path}' does not exist";
+				return ($"needs the input '{input.Id}', but its folder '{path}' does not exist", ModRefusalKind.MissingInput);
 		}
 		return null;
 	}
@@ -256,7 +271,7 @@ public sealed class ModSet
 				}
 		var changed = false;
 		foreach ( var (node, reason) in reasons.OrderBy( pair => pair.Key.Id, StringComparer.Ordinal ) )
-			changed |= Refuse( node, reason, refused );
+			changed |= Refuse( node, reason, refused, ModRefusalKind.Conflict );
 		return changed;
 	}
 
@@ -299,12 +314,12 @@ public sealed class ModSet
 		return order;
 	}
 
-	private static bool Refuse( Node node, string reason, List<ModRefusal> refused )
+	private static bool Refuse( Node node, string reason, List<ModRefusal> refused, ModRefusalKind kind = ModRefusalKind.Other )
 	{
 		if ( !node.Enabled )
 			return false;
 		node.Enabled = false;
-		refused.Add( new ModRefusal( node.Id, reason ) );
+		refused.Add( new ModRefusal( node.Id, reason, kind ) );
 		return true;
 	}
 

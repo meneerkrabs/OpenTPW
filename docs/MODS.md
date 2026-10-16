@@ -21,11 +21,44 @@ This is the first step of the mod system:
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
 - the only official extension is `opentpw.online` (below);
+- the **Extensions and mods screen** (below) edits `mods.json`;
 - **nothing consumes mod content yet**. Enabling a mod checks it, orders it and computes its digest, but its files
-  do not change the game. Content roots, the Extensions and mods screen and recording mods in park saves are later
-  steps. Until saves record mods, no mod may change the simulation.
+  do not change the game. Content roots and recording mods in park saves are later steps. Until saves record mods, no mod may change the simulation.
 
 Changes to `mods.json` apply at the next start; nothing is swapped while the game runs.
+
+## The Extensions and mods screen
+
+Options > OpenTPW > **Extensions and mods** (`UI/Original/Options/ModsScreen.cs`, `[EXT:mods-ui]`) is the in-game way to edit
+`mods.json`. It uses the original options frame (`f_screen`) with two `f_optpanel` columns, **OpenTPW extensions** and
+**Community mods**, each a scrolling list. The selected row of a column is switched on or off with that column's original
+`b_on` switch (or by activating the row). Each row shows the name, the version and a status:
+
+| Status | Meaning |
+| --- | --- |
+| On / Off | Switched on and accepted, or switched off. |
+| Incompatible | For another OpenTPW version or the other game edition. |
+| Missing input folder | An `inputs` folder is not chosen or no longer exists. |
+| Conflict | Another enabled mod overrides the same file and neither lists the other in `after`. |
+| Needs another mod | A dependency is missing, off, refused or out of range, or is part of a cycle. |
+| Cannot be used | The folder has no valid manifest, is shadowed by the same id elsewhere, or its files cannot be read. |
+
+The statuses are not a second rule set: the screen resolves the real `ModSet` with the pending choices (away from the
+game's thread) and words the refusal it gets (`ModRefusal.Kind`). The details pane under the lists shows the selected
+row's author, version, description, content digest (once the mod is on and accepted), dependencies, folder and the reason
+it is refused. A mod folder that cannot be read has no switch.
+
+A mod with an `original-data` input shows an input row below the details: the chosen folder, **Change...** (the platform
+folder dialog of the Game files screen, or a typed path where there is none), **Enter path...**, **Remove** and, for a
+mod with several inputs, **Next input**. A chosen folder is inspected by the same helper process as Game files, and
+`GameEditions.Detect` (which uses `GameEditions.HasKnownStandardSam` for the known retail Theme Park Inc `Standard.sam`, else the
+folder structure) must find the edition the input asks for; the result is shown ("Theme Park Inc data found (known retail
+Standard.sam)", "This folder holds Theme Park World data, not Theme Park Inc", "No game data folder found here"). A folder of
+the wrong edition is not saved. Saved folders go to `inputs` in `mods.json`.
+
+**OK** writes `mods.json` (only when a choice changed) and shows a restart notice; **Cancel** and Escape discard the edits.
+Nothing is applied while the game runs. The texts are in the six languages (`OpenTpwText`, `SupplementaryStrings`). The
+browser build has no mod folders, so the community list is empty there and the screen lists the official extensions only.
 
 ## Manifest
 

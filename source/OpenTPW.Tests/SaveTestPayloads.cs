@@ -325,7 +325,7 @@ internal static class SaveTestPayloads
 	public static List<(uint Id, uint Model, byte[] Body)> ParkThings() => new()
 	{
 		(30, (uint)SaveThingModel.Researcher, Staff( SaveThingModel.Researcher )),
-		(12, (uint)SaveThingModel.Attraction, Attraction( new AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, IngredientAmount = 80 } )),
+		(12, (uint)SaveThingModel.Attraction, Attraction( new AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, IngredientAmount = 80, Quality = 100, Chance = 30 } )),
 		(10, (uint)SaveThingModel.ChallengeSystem, ChallengeSystem( new[] { (3, 60, 30, 5000), (9, 60, 15, 3000) } )),
 		(9, (uint)SaveThingModel.UIMsgReceiver, Fixed( SaveThingModel.UIMsgReceiver )),
 		(8, (uint)SaveThingModel.Bank, Bank()),

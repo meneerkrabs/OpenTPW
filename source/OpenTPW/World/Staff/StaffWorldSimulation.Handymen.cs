@@ -210,16 +210,18 @@ public sealed partial class StaffWorldSimulation
 				member.LitterCell = null;
 				break;
 			case StaffJob.ToToilet:
+				// [BIN:TPW-EXE:0x004D7790 to a toilet] the walk step: held (2) or arrived anywhere but the toilet's access cell +0x36, or with its claim
+				// (0x004E0220) no longer his, sets state 0; +0x21A keeps the toilet, so his claim holds while he targets it and lapses 100 turns after it
+				// was taken once his next search moves +0x21A on
 				switch ( Walk( member, maxSpeed, maxForce ) )
 				{
 					case WalkResult.Walking:
 						return;
 					case WalkResult.Arrived when Toilets?.Invoke().FirstOrDefault( site => site.Id == member.ToiletId ) is { } site && site.Access == cell
-						&& economy.TryGetObject( member.ToiletId, out var toilet ) && toilet.MechanicId == member.Id:
+						&& economy.TryGetObject( member.ToiletId, out var toilet ) && economy.Claimant( toilet ) == member.Id:
 						SetJob( economy, member, StaffJob.Cleaning, turn );
 						return;
 				}
-				ReleaseToilet( economy, member );
 				SetJob( economy, member, StaffJob.Idle, turn );
 				return;
 			case StaffJob.Cleaning:
@@ -258,14 +260,19 @@ public sealed partial class StaffWorldSimulation
 				}
 				member.LitterCell = null;
 			}
-			else if ( FindToilet( economy, member, cell ) is { } toilet )
+			else
 			{
-				member.ToiletId = toilet.Id;
-				if ( economy.TryGetObject( toilet.Id, out var state ) )
-					state.MechanicId = member.Id;
-				Route( member, toilet.Access, GuestWander.CentreByte, GuestWander.CentreByte );
-				SetJob( economy, member, StaffJob.ToToilet, turn );
-				return;
+				// the toilet search's result is the handyman's target +0x21A, 0 when it finds none
+				var toilet = FindToilet( economy, member, cell );
+				member.ToiletId = toilet?.Id ?? 0;
+				if ( toilet is { } found )
+				{
+					if ( economy.TryGetObject( found.Id, out var state ) )
+						economy.Claim( state, member );
+					Route( member, found.Access, GuestWander.CentreByte, GuestWander.CentreByte );
+					SetJob( economy, member, StaffJob.ToToilet, turn );
+					return;
+				}
 			}
 		}
 		SetJob( economy, member, Patrol( economy, member, cell ) ? StaffJob.Patrol : StaffJob.Idle, turn );
@@ -295,7 +302,7 @@ public sealed partial class StaffWorldSimulation
 	}
 
 	/// <summary>
-	/// The toilet search (tp.exe <c>0x004D7880</c>): the relief objects in list order that nobody else has claimed, by squared distance from the
+	/// The toilet search (tp.exe <c>0x004D7880</c>): the relief objects in list order (newest first) that nobody else has claimed, by squared distance from the
 	/// handyman's cell to the object's; a dirty one (gauge byte below 25) within DetectionRange² is taken whatever the best so far, when a route
 	/// reaches its access cell, so the last such one wins.
 	/// </summary>
@@ -309,7 +316,7 @@ public sealed partial class StaffWorldSimulation
 		var best = uint.MaxValue;
 		foreach ( var toilet in economy.Toilets() )
 		{
-			if ( toilet.MechanicId != 0 && toilet.MechanicId != member.Id || sites.FirstOrDefault( item => item.Id == toilet.Id ) is not { Id: > 0 } site )
+			if ( economy.Claimant( toilet ) is var claimant && claimant != 0 && claimant != member.Id || sites.FirstOrDefault( item => item.Id == toilet.Id ) is not { Id: > 0 } site )
 				continue;
 			var dx = site.Cell.X - cell.X;
 			var dy = site.Cell.Y - cell.Y;
@@ -320,13 +327,6 @@ public sealed partial class StaffWorldSimulation
 				(found, best) = (site, distance);
 		}
 		return found;
-	}
-
-	private static void ReleaseToilet( ParkEconomy economy, StaffMember member )
-	{
-		if ( economy.TryGetObject( member.ToiletId, out var toilet ) && toilet.MechanicId == member.Id )
-			toilet.MechanicId = 0;
-		member.ToiletId = 0;
 	}
 
 	/// <summary>

@@ -63,19 +63,22 @@ public sealed partial class StaffWorldSimulation
 	}
 
 	/// <summary>
-	/// The rest finder (tp.exe <c>0x00506910</c>): the objects in list order with flag <c>+0x32</c> bit 1 (<c>UsageInfo.ChillsYouOut</c>), the smallest
-	/// squared distance between their cell and the member's, the first on a tie; null when there is none.
+	/// The rest finder (tp.exe <c>0x00506910</c>): the objects in list order (newest first) with flag <c>+0x32</c> bit 1 (<c>UsageInfo.ChillsYouOut</c>),
+	/// the smallest squared distance between their cell and the member's, the first on a tie (the newest); null when there is none. The level lists
+	/// the sites in placement order, so they are walked from the last.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00506910 rest finder] the object list (game +0x1DA746, next at +0xC), flag +0x32 & 2, dx² + dy² of the cells unsigned and strictly smaller replaces, from 0xFFFFFFFF; no route test (the gate routes to the winner)
-	private RestSite? FindRestArea( StaffMember member )
+	private RestSite? FindRestArea( StaffMember member, int excluded = 0 )
 	{
-		if ( RestAreas?.Invoke() is not { Count: > 0 } sites )
+		if ( RestAreas?.Invoke() is not { Count: > 0 } all )
 			return null;
+		var sites = excluded == 0 ? all : all.Where( site => site.Id != excluded ).ToList();
 		var (x, y) = Cell( member );
 		RestSite? best = null;
 		var bestDistance = uint.MaxValue;
-		foreach ( var site in sites )
+		for ( var index = sites.Count - 1; index >= 0; index-- )
 		{
+			var site = sites[index];
 			var dx = site.Cell.X - x;
 			var dy = site.Cell.Y - y;
 			var distance = (uint)(dx * dx + dy * dy);

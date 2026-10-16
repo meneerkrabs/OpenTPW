@@ -212,8 +212,10 @@ public sealed class ParkObjectState
 	/// each tick by the level and the M3/M4 gate loops; it is not saved, so it is true until the first sync after a load or a purchase.
 	/// </summary>
 	public bool QueueHasRoom { get; set; } = true;
-	/// <summary>Employee repairing or upgrading the object, 0 when none.</summary>
+	/// <summary>Employee repairing or upgrading the object, 0 when none: the original's claim word <c>+0x5E</c> (a mechanic, or a handyman for a toilet).</summary>
 	public int MechanicId { get; set; }
+	/// <summary>The park turn the claim was taken (<c>+0x60</c>, <see cref="ParkEconomy.Claim"/>); a claim lapses 100 turns on once its claimant no longer targets the object.</summary>
+	public long ClaimTurn { get; set; }
 	/// <summary>
 	/// The player called a mechanic (a handyman for a toilet) to the object: the original's <c>mRequestedService</c> (<c>+0x64</c> on the PC). It closes a ride
 	/// until the repair clears it (<see cref="ParkEconomy.RequestMaintenance"/>).

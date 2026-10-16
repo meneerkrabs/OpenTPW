@@ -74,6 +74,9 @@ public static class ParkSaveFile
 		public required ResearchData Research { get; init; }
 		public required ObjectivesData Objectives { get; init; }
 		public required Dictionary<string, long> Counters { get; init; }
+		/// <summary>The mechanic HQ's cursor into the object list (<see cref="ParkEconomy.MechanicCursor"/>); absent in older saves and while 0.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int MechanicCursor { get; init; }
 		/// <summary>The park's perception statistics, the categories that hold a value; absent in older saves and while none does.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public List<PriceStatisticData>? PriceStatistics { get; init; }
@@ -136,6 +139,9 @@ public static class ParkSaveFile
 		public double? LifeGauge { get; init; }
 		public required bool IsBrokenDown { get; init; }
 		public required int MechanicId { get; init; }
+		/// <summary>The turn the claim was taken; absent in older saves and while 0 (an older claim then lapses on the first look, as one taken at turn 0).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long ClaimTurn { get; init; }
 		/// <summary>The player's call for a mechanic (<c>mRequestedService</c>); absent: none.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public bool MaintenanceRequested { get; init; }
@@ -499,6 +505,7 @@ public static class ParkSaveFile
 				LifeGauge = item.LifeGauge,
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
+				ClaimTurn = item.ClaimTurn,
 				MaintenanceRequested = item.MaintenanceRequested,
 				FireworksSpent = item.FireworksSpent,
 				TimesUsed = item.TimesUsed,
@@ -567,6 +574,7 @@ public static class ParkSaveFile
 				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList()
 			},
 			Counters = new Dictionary<string, long>( park.Counters.Values ),
+			MechanicCursor = park.MechanicCursor,
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
 				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
 			World = world == null ? null : new WorldData { Seed = world.Seed, GuestRandom = world.GuestRandom, ScriptRandom = world.ScriptRandom, SoundSeed = world.SoundSeed }
@@ -650,6 +658,7 @@ public static class ParkSaveFile
 			Require( item.BuiltTick <= data.Tick && item.Price >= 0 && item.CostOfGoods >= 0 && item.ChanceOfLosingPercent is >= 0 and <= 100, $"object {item.Id} values" );
 			Require( item.Repair is null || (double.IsFinite( item.Repair.Value ) && item.Repair.Value is >= 0 and <= 100 && (int)item.Repair.Value == item.StateOfRepair), $"object {item.Id} repair" );
 			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
+			Require( item.ClaimTurn >= 0 && item.ClaimTurn <= ParkCalendar.Turn( data.Tick ) && (item.ClaimTurn == 0 || item.MechanicId != 0), $"object {item.Id} claim turn" );
 			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
 				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
@@ -666,8 +675,8 @@ public static class ParkSaveFile
 				&& float.IsFinite( world.SmoothedSpeed ) && (world.ToiletId == 0 || member.Type == StaffType.Handyman && ids.Contains( world.ToiletId ))
 				&& (world.TargetGuestId == 0 || member.Type == StaffType.Guard && world.TargetGuestId > 0)
 				&& (world.EffectCell is null || ParkEconomy.EffectRow( member.Type ) != null && world.EffectCell is [>= 0 and < ParkLitter.MapSize, >= 0 and < ParkLitter.MapSize])
-				&& (world.RideId == 0 || member.Type == StaffType.Mechanic && ids.Contains( world.RideId ) && world.Job is StaffJob.ToRide or StaffJob.Repairing)
-				&& (world.RestAreaId == 0 || ids.Contains( world.RestAreaId ) && world.Job is StaffJob.ToRestArea or StaffJob.Resting)
+				&& (world.RideId == 0 || member.Type == StaffType.Mechanic && ids.Contains( world.RideId ))
+				&& (world.RestAreaId == 0 || ids.Contains( world.RestAreaId ) && world.Job is StaffJob.ToRestArea or StaffJob.Resting or StaffJob.Idle)
 				&& (world.OffGridLeg is null || world.OffGridLeg.Length % 4 == 0 && world.OffGridLeg.Chunk( 4 ).All( point =>
 					point[0] is >= 0 and < ParkLitter.MapSize && point[1] is >= 0 and < ParkLitter.MapSize && point[2] is >= 0 and < 256 && point[3] is >= 0 and < 256 ))
 				&& (world.Navigation is null || world.Navigation.IsValid)), $"staff {member.Id} world state" );
@@ -692,6 +701,7 @@ public static class ParkSaveFile
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
 		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( data.MechanicCursor >= 0, "mechanic cursor" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
 		foreach ( var loan in data.Loans )
@@ -733,6 +743,7 @@ public static class ParkSaveFile
 				LifeGauge = item.LifeGauge ?? 100,
 				IsBrokenDown = item.IsBrokenDown,
 				MechanicId = item.MechanicId,
+				ClaimTurn = item.ClaimTurn,
 				MaintenanceRequested = item.MaintenanceRequested,
 				FireworksSpent = item.FireworksSpent,
 				TimesUsed = item.TimesUsed ?? item.Statistics[0] + item.Statistics[1],
@@ -787,6 +798,7 @@ public static class ParkSaveFile
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets );
 		park.Counters.Restore( data.Counters );
+		park.MechanicCursor = data.MechanicCursor;
 		if ( data.PriceStatistics is { } statistics )
 			park.PriceStatistics.Restore( statistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() );
 		return park;

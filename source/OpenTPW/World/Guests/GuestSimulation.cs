@@ -2563,7 +2563,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.StateTimer = ExitRideSeconds;
 		guest.LastAttractionId = ride.AttractionId;
 		guest.SecondsSinceRide = 0;
-		guest.RidesTaken++;
+		// [BIN:TPW-EXE:0x4FD9B1 visit count] the use routine 0x4FD970 sorts a finished visit by the type's Info.WhichUIType (+0x4AC): 0 raises the rides ridden (+0x1C4), 1 the shops visited (+0x1C8), 2 the sideshows played (+0x1CC), won or lost; any other kind (toilets, bins) counts none
+		switch ( ride.Kind )
+		{
+			case RideVisitorKind.Ride: guest.RidesTaken++; break;
+			case RideVisitorKind.Shop: guest.ShopsVisited++; break;
+			case RideVisitorKind.Sideshow: guest.SideshowsVisited++; break;
+		}
 		Payments?.VisitFinished( ride );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
 		PushHistory( guest.UsedHistory, ride.AttractionId );
@@ -2613,7 +2619,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// type's own effects (<see cref="UseEffects"/>): thirst and hunger fall, illness and happiness rise. A relief object still sets the toilet meter to 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x100EA318 ride outcome] executed by the PowerPC oracle (ride-outcome, 561 inputs; C# agrees)
-	// [APPROX:GUEST-005] the use routine 0x004FE1E0 is followed in its order except a won sideshow's tail (0x004FE802..0x004FE8D9, type kind +0x4AC 2: +0x1D0 += 1, happiness += trunc(medium step × log2(object +0x188 / object +0x194)), "Sideshow won - happiness up", then one discarded world draw), the thirst or hunger sound (0x004FAA00, cat_kids 0x83 when ThirstEffect is above HungerEffect, 0x84 when below) and its guest event records (0x0050C100: 8, 0x11, 0x12; read only by the debug dump 0x004FAA60); the small-portion draws are taken (0x004FE43C, 0x004FE48E) but the tail's one (0x004FE8D9) is not — evidence needed: none (read)
+	// [APPROX:GUEST-005] the use routine 0x004FE1E0 is followed in its order except a won sideshow's tail (0x004FE802..0x004FE8D9, type kind +0x4AC 2: happiness += trunc(medium step × log2(object +0x188 / object +0x194)), "Sideshow won - happiness up", then one discarded world draw), the thirst or hunger sound (0x004FAA00, cat_kids 0x83 when ThirstEffect is above HungerEffect, 0x84 when below) and its guest event records (0x0050C100: 8, 0x11, 0x12; read only by the debug dump 0x004FAA60); the small-portion draws are taken (0x004FE43C, 0x004FE48E) but the tail's one (0x004FE8D9) is not — evidence needed: none (read)
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
@@ -2623,6 +2629,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// [BIN:TPW-EXE:0x004FDB66 sideshow thought] only a sideshow (thing kind 2) sets a thought at the end of a use: 5 after a win, 6 after a loss (0x004FDC25); rides and shops set none
 		if ( ride.Kind == RideVisitorKind.Sideshow )
 			Think( guest, (guest.SideshowWon ?? guest.Happiness - before > 0) ? GuestThought.Pleased : GuestThought.Dissatisfied );
+		// [BIN:TPW-EXE:0x4FE816 sideshow won count] a sideshow's use routine tail raises the sideshows won (+0x1D0); a lost play skips the routine
+		if ( ride.Kind == RideVisitorKind.Sideshow )
+			guest.SideshowsWon++;
 		guest.SideshowWon = null;
 		// the type's own effects follow the outcome in the original's use routine (0xeaaf8: 0xea318, then the effects fragment 0xeabb8)
 		var effects = UseEffects.Apply( new GuestMeters( guest.Happiness, guest.Thirst, guest.Hunger, guest.Toilet, guest.Nausea ),
@@ -2823,6 +2832,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			TimeInParkSeconds = guest.TimeInParkSeconds,
 			SecondsSinceRide = guest.SecondsSinceRide,
 			RidesTaken = guest.RidesTaken,
+			ShopsVisited = guest.ShopsVisited,
+			SideshowsVisited = guest.SideshowsVisited,
+			SideshowsWon = guest.SideshowsWon,
 			Thought = guest.Thought,
 			BubbleThought = guest.BubbleThought,
 			BubbleTurn = guest.BubbleTurn,
@@ -3118,6 +3130,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} Money {guest.Money} is negative." );
 			if ( guest.RidesTaken < 0 )
 				Error( $"Guest {guest.Id} RidesTaken {guest.RidesTaken} is negative." );
+			if ( guest.ShopsVisited < 0 || guest.SideshowsVisited < 0 || guest.SideshowsWon < 0 )
+				Error( $"Guest {guest.Id} holds a negative shop, sideshow or win count." );
 			if ( guest.QueueMoveDelay < 0 )
 				Error( $"Guest {guest.Id} QueueMoveDelay {guest.QueueMoveDelay} is negative." );
 			if ( guest.QueueCellIndex < 0 )
@@ -3355,6 +3369,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.TimeInParkSeconds = snapshot.TimeInParkSeconds;
 		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
 		guest.RidesTaken = snapshot.RidesTaken;
+		(guest.ShopsVisited, guest.SideshowsVisited, guest.SideshowsWon) = (snapshot.ShopsVisited, snapshot.SideshowsVisited, snapshot.SideshowsWon);
 		// Saves before schema 7 hold OpenTPW's former thoughts: "Super happy" and "Okay", which the original never thinks, become "Happy!" and no thought.
 		guest.Thought = schemaVersion < 7 ? snapshot.Thought switch
 		{
@@ -3480,6 +3495,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			hash.Add( guest.ExitLevel );
 			hash.Add( guest.SecondsSinceRide );
 			hash.Add( guest.RidesTaken );
+			hash.Add( guest.ShopsVisited );
+			hash.Add( guest.SideshowsVisited );
+			hash.Add( guest.SideshowsWon );
 			hash.Add( (int)guest.Thought );
 			hash.Add( guest.AttractionId );
 			hash.Add( guest.LastAttractionId );

@@ -168,6 +168,25 @@ public class OriginalGuestImportTests
 	}
 
 	[TestMethod]
+	public void TheVisitCountsAndTheArrivalStampAreImported()
+	{
+		var simulation = Simulation();
+		var saved = new[]
+		{
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 3 ), At( 5 )), State = 7, NumRides = 4, NumShops = 3, NumSideshows = 2, NumSideshowsWon = 1, ArrivalDate = 1_000 }, 41 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 4 ), At( 5 )), State = 7, ArrivalDate = 5_000 }, 42 ),
+		};
+		var report = simulation.ImportOriginal( saved, 1_100, _ => 0, _ => 0 );
+		var first = simulation.Guests.Single( guest => guest.Id == 41 );
+		Assert.AreEqual( (4, 3, 2, 1), (first.RidesTaken, first.ShopsVisited, first.SideshowsVisited, first.SideshowsWon) );
+		// [BIN:TPW-EXE:0x4FD950] mArrivalDate is the game tick of the stamp: 100 turns before the save's turn of 1100
+		Assert.AreEqual( 100 * ParkCalendar.TurnMilliseconds / 1000.0, first.TimeInParkSeconds!.Value, 0.001 );
+		Assert.AreEqual( 100L, (long)Math.Floor( first.TimeInParkSeconds.Value * 1000 / ParkCalendar.TurnMilliseconds ), "the roster's floor gives the exact turn count" );
+		Assert.IsNull( simulation.Guests.Single( guest => guest.Id == 42 ).TimeInParkSeconds, "a stamp after the save's turn is not a date: the time in park stays unknown" );
+		Assert.IsFalse( report.Any( line => line.Contains( "shop/sideshow/win counts", StringComparison.Ordinal ) ), "the counts are no longer reported as not imported" );
+	}
+
+	[TestMethod]
 	public void OriginalJungleEasymodeGuestsWalkIntoThePark()
 	{
 		var dataPath = OriginalParkImportTests.OriginalDataPath();

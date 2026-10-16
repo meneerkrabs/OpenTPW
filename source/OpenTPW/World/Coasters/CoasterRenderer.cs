@@ -25,6 +25,27 @@ internal sealed class CoasterHeadSources : IHeadSourceProvider
 // [APPROX:COAST-026] self-illuminated textures (asTextureData bIsSelfIlluminating, texture flag 4) and the marker textures (flags 7) are lit by the scene light like the rest: the shader has no unlit path and its browser build cannot be regenerated here; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc; the coaster MD2 models' Add-mode UV animation (the add paths of 0x471860) is not modelled, the pylons' vertex and position keys are added (CoasterPylonRig)
 public sealed class CoasterRenderer : Entity
 {
+	/// <summary>
+	/// The marker texture of the pair of knots starting at <paramref name="node"/> and ending in <paramref name="next"/> (the same node for a pair between two tags of one pylon), or null.
+	/// </summary>
+	internal static int? LinkMarker( IReadOnlyList<CoasterNode> chain, IReadOnlyList<IReadOnlyList<int>> crossings, bool cursorValid, int node, int next )
+	{
+		// [BIN:TPW-EXE:0x43f4e0 marker links] crossings (+0xb0) give the red marker; a link into the build cursor's spare node (0x2000) the blue one, or red when the validator refused its cell (0x4000)
+		if ( node < crossings.Count && crossings[node].Count > 0 )
+			return CoasterTrackMesh.RefusedMarker;
+		// [BIN:TPW-EXE:0x43f4e0 closing marker] a node's own tag pairs (both nodes the same) take the marker while the node carries 0x800000: blue, or red when it also carries 0x4000 (the closing link is refused)
+		if ( next == node && node >= 0 && node < chain.Count && (chain[node].Flags & CoasterNodeFlags.ClosingTarget) != 0 )
+			return (chain[node].Flags & CoasterNodeFlags.Invalid) != 0 ? CoasterTrackMesh.RefusedMarker : CoasterTrackMesh.CursorMarker;
+		if ( next == node || next < 0 || next >= chain.Count )
+			return null;
+		if ( (chain[next].Flags & CoasterNodeFlags.Cursor) != 0 )
+			return cursorValid ? CoasterTrackMesh.CursorMarker : CoasterTrackMesh.RefusedMarker;
+		// [APPROX:COAST-026] a link between two nodes a kept edit left invalid (0x4000) is drawn with the red marker; the original's marker needs 0x800000 or 0x2000 on the next node besides 0x4000 (the drag's moved node), and which of them a released move leaves is not traced — evidence needed: the flags of a moved node after the release 0x445a70
+		if ( (chain[node].Flags & CoasterNodeFlags.Invalid) != 0 && (chain[next].Flags & CoasterNodeFlags.Invalid) != 0 )
+			return CoasterTrackMesh.RefusedMarker;
+		return null;
+	}
+
 	/// <summary>The knot ranges (first knot, last knot, closed) the mesh builder draws as separate chains.</summary>
 	internal static List<(int From, int To, bool Closed)> ChainSpans( IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, bool closed )
 	{
@@ -282,7 +303,7 @@ public sealed class CoasterRenderer : Entity
 			bool closed;
 			if ( Ride.IsOperational )
 				(chain, closed) = (track.Nodes, true);
-			else if ( track.BuildPreviewChain( preview is { } cursor ? (cursor.X, cursor.Y) : null, preview?.Height ?? 0, preview?.Loop ?? false, preview?.FirstOfPair ?? false ) is { } open )
+			else if ( track.BuildPreviewChain( preview is { } cursor ? (cursor.X, cursor.Y) : null, preview?.Height ?? 0, preview?.Loop ?? false, preview?.FirstOfPair ?? false, preview?.Valid ?? true ) is { } open )
 				(chain, closed) = (open.Chain, open.Closed);
 			else
 				return;
@@ -290,20 +311,7 @@ public sealed class CoasterRenderer : Entity
 			var knots = pass.Knots;
 			var crossings = Ride.IsOperational ? Ride.CollisionLists : Array.Empty<IReadOnlyList<int>>();
 			var cursorValid = preview?.Valid ?? true;
-			int? Marker( int node, int next )
-			{
-				// [BIN:TPW-EXE:0x43f4e0 marker links] crossings (+0xb0) give the red marker; a link into the build cursor's spare node (0x2000) the blue one, or red when the validator refused its cell (0x4000)
-				if ( node < crossings.Count && crossings[node].Count > 0 )
-					return CoasterTrackMesh.RefusedMarker;
-				if ( next == node || next < 0 || next >= chain.Count )
-					return null;
-				if ( (chain[next].Flags & CoasterNodeFlags.Cursor) != 0 )
-					return cursorValid ? CoasterTrackMesh.CursorMarker : CoasterTrackMesh.RefusedMarker;
-				// [APPROX:COAST-026] a link between two nodes a kept edit left invalid (0x4000) is drawn with the red marker; the original's marker needs 0x800000 or 0x2000 on the next node besides 0x4000 (the drag's moved node), and which of them a released move leaves is not traced — evidence needed: the flags of a moved node after the release 0x445a70
-				if ( (chain[node].Flags & CoasterNodeFlags.Invalid) != 0 && (chain[next].Flags & CoasterNodeFlags.Invalid) != 0 )
-					return CoasterTrackMesh.RefusedMarker;
-				return null;
-			}
+			int? Marker( int node, int next ) => LinkMarker( chain, crossings, cursorValid, node, next );
 			var matrix = owner.ToEngine();
 			// A circuit the demolish button cut open is two chains: the nodes before the cut and the nodes after it (the cut ends are marked, 0x446740), each drawn on its own.
 			// [BIN:TPW-EXE:0x43ef02 cut end] the mesh builder stops drawing at a node with 0x10000 (neither its own knot pairs nor its link) and starts again at one with 0x20000 (0x43ef0d)

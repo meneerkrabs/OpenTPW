@@ -11,6 +11,23 @@ namespace OpenTPW.Tests;
 public class SignWaveletDecoderTests
 {
 	[TestMethod]
+	public void AColourByteRoundsToNearestEvenAndWrapsLikeTheNativeMagicNumberConversion()
+	{
+		// tp.exe 0x5935A0: the sum plus 12583040.0 is stored as a float32 and its low 9 bits index clamp(i - 128)
+		Assert.AreEqual( 0, SignWaveletDecoder.ColourByte( 0.4f ) );
+		Assert.AreEqual( 0, SignWaveletDecoder.ColourByte( 0.5f ), "ties go to the even neighbour" );
+		Assert.AreEqual( 2, SignWaveletDecoder.ColourByte( 1.5f ) );
+		Assert.AreEqual( 2, SignWaveletDecoder.ColourByte( 2.5f ) );
+		Assert.AreEqual( 1, SignWaveletDecoder.ColourByte( 0.6f ), "truncation would give 0" );
+		Assert.AreEqual( 255, SignWaveletDecoder.ColourByte( 254.6f ) );
+		Assert.AreEqual( 255, SignWaveletDecoder.ColourByte( 300f ) );
+		Assert.AreEqual( 0, SignWaveletDecoder.ColourByte( -100f ) );
+		Assert.AreEqual( 255, SignWaveletDecoder.ColourByte( 383f ), "the last sum before the wrap" );
+		Assert.AreEqual( 0, SignWaveletDecoder.ColourByte( 384f ), "a sum past 383 wraps through the 9 index bits" );
+		Assert.AreEqual( 255, SignWaveletDecoder.ColourByte( -129f ), "a sum below -128 wraps to the top" );
+	}
+
+	[TestMethod]
 	public void PlanarCoefficientHalvesReconstructUniformAlpha()
 	{
 		var alpha = new byte[8 * 8];

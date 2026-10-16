@@ -55,6 +55,12 @@ public sealed record GuestSnapshot
 	public double? TimeInParkSeconds { get; init; }
 	public required float SecondsSinceRide { get; init; }
 	public required int RidesTaken { get; init; }
+	/// <summary>The shops visited. Absent in older saves (0).</summary>
+	public int ShopsVisited { get; init; }
+	/// <summary>The sideshows played, won or lost. Absent in older saves (0).</summary>
+	public int SideshowsVisited { get; init; }
+	/// <summary>The sideshows won. Absent in older saves (0).</summary>
+	public int SideshowsWon { get; init; }
 	public required GuestThought Thought { get; init; }
 	/// <summary>The thought the bubble shows (None: no bubble). Absent before schema 7.</summary>
 	public GuestThought BubbleThought { get; init; }

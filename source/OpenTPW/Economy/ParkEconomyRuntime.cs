@@ -134,7 +134,6 @@ public sealed class ParkEconomyRuntime
 			case ParkEventKind.YearEnded:
 			case ParkEventKind.WagesPaid:
 			case ParkEventKind.Bankrupt:
-			case ParkEventKind.BankruptcyWarning:
 			case ParkEventKind.ItemResearched:
 			case ParkEventKind.ChallengeOffered:
 			case ParkEventKind.ChallengeCompleted:

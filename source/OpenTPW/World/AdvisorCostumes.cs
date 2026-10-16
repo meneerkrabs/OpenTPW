@@ -182,7 +182,7 @@ internal static class AdvisorAccessories
 	/// bug head and the mouth: the close-ups of the ticket advice (clips 19 and 20).
 	/// </summary>
 	public const int SuppressCostumeBit = 1;
-	/// <summary>The accessory bits of a fixed sequence's clip that start the screen-space effects (<c>0x20000</c>-<c>0x200000</c>, bits 1-5).</summary>
+	/// <summary>The accessory bits of a fixed sequence's clip that start the screen-space effects (<c>0x20000</c>-<c>0x200000</c>, bits 1-5; <see cref="AdvisorEffectGroups.ApplyAccessoryBits"/>).</summary>
 	public const int EffectBits = 0x3E;
 	/// <summary>The effect bit (<c>0x40000</c>) whose effect also plays <c>cat_ui</c> <see cref="KeySound"/>.</summary>
 	public const int KeyEffectBit = 4;
@@ -197,7 +197,7 @@ internal static class AdvisorAccessories
 	/// at a time, see <see cref="AdvisorMouth"/>). Every other mesh (hats, spatula, bow tie, blink meshes, level props) starts hidden.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00472E75 clip start] every clip lists the accessory, prop and blink nodes in its node list (clip 14 of the global advisor: spatula, seven hats and the bow tie, nodes 14 and 16-24; of a level advisor: tickets, map, costume pieces and the mutant eye) and sets node bit 0x10 on them (hidden) as it starts
-	// [APPROX:ADVISOR-026] The level advisors' props are shown and hidden by the clips' node lists and blink toggles carried from clip to clip (SequenceHiddenNodes), but the screen-space effects of the accessory bits 0x20000-0x200000 (the UI particle pool 0x5ED5A0, 0x5ED660, 0x5ED700: effects 0x2C and 0x31) are not started, and the state is rebuilt from the model's base state at every response, while the original's node bits live on the model instance (whether a later response shows the body a ticket close-up hid is not read) — evidence needed: the screen-space particle draw path and the node-bit reset between responses
+	// [APPROX:ADVISOR-026] The level advisors' props are shown and hidden by the clips' node lists and blink toggles carried from clip to clip (SequenceHiddenNodes), and the screen-space effects of the accessory bits 0x20000-0x200000 run (AdvisorEffectGroups, single precision), but the state is rebuilt from the model's base state at every response, while the original's node bits live on the model instance (whether a later response shows the body a ticket close-up hid is not read) — evidence needed: the node-bit state of a freshly loaded advisor model and its reset between responses, and the x87 precision control during the advisor update
 	public static bool IsBaseMesh( string name ) => Advisor.BodyMeshes.Contains( name ) || Advisor.Mouths.Contains( name );
 
 	/// <summary>

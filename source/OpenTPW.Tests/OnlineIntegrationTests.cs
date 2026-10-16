@@ -96,7 +96,7 @@ public class OnlineIntegrationTests
 	[TestMethod]
 	public void ChatLinesFormatBuddyEntriesAndPositions()
 	{
-		// A buddy entry (APPROX:ONLINE-024) reads as one line naming the buddy and the park.
+		// A buddy entry (EXT:online-buddy-enters-text) reads as one line naming the buddy and the park.
 		var entered = ChatFormatter.Format( new ChatEvent( ChatEventKind.System, Text: "buddy-enters", Args: new[] { "Ann", "The Fairground" } ),
 			null, _ => "Online World", OnlineStrings.Get );
 		Assert.AreEqual( "Your buddy Ann has entered The Fairground", entered );

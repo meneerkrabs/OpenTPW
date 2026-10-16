@@ -126,7 +126,7 @@ internal sealed class AdvisorClipDurations
 /// <param name="TimerMilliseconds">
 /// The effect timer a fixed row's timer entry sets (the clip sum before the entry plus its milliseconds), on the advisor
 /// clock relative to the clip start; null without one. When the clock reaches it, the advisor plays <c>cat_ui</c>
-/// <see cref="AdvisorSequences.TimerSound"/> (its particle and HUD counter effects are ADVISOR-025).
+/// <see cref="AdvisorSequences.TimerSound"/> and starts the screen-space effect <see cref="AdvisorSequences.TimerEffect"/>.
 /// </param>
 /// <param name="AccessoryBits">
 /// For a fixed row, the accessory bits (<c>entry &amp; 0x7F0000</c> shifted down by 16) of each clip, parallel to <paramref name="Clips"/>;
@@ -181,6 +181,10 @@ internal static class AdvisorSequences
 	/// <summary>The <c>cat_ui</c> sound a fixed sequence's timer plays (the ticket/key advice, sequences 28 and 29).</summary>
 	// [BIN:TPW-EXE:0x005999B2 advisor timer] 0x51BFC0(0, [0x803A2C] = global cat_ui (0x51EBE7), 0xC6, 0, 0, 0): flat, handle not kept
 	public const uint TimerSound = 0xC6;
+	/// <summary>The screen-space effect a fixed sequence's timer starts: template 87 (Key) at native (90000, 0, 7000), screen (0.8, −0.8).</summary>
+	// [BIN:TPW-EXE:0x005999AD advisor timer] 0x521E60(0x57, 0x15F90, 0, 0x1B58) before the sound; the handle is not kept
+	public const int TimerEffect = 87;
+	public static readonly (int X, int Y, int Z) TimerEffectPosition = (90000, 0, 7000);
 
 	/// <summary>A sequence holds at most this many clips before the closing clip 15.</summary>
 	public const int MaximumClips = 19;
@@ -252,8 +256,9 @@ internal static class AdvisorSequences
 		{
 			if ( entry.IsTimer )
 			{
-				// [BIN:TPW-EXE:0x00599880 advisor update] when the advisor clock reaches the timer (0x599991) the update calls the particle effect 0x521E60 (87, 90000, 0, 7000), plays sound 0xC6 (0x51BFC0) and calls 0x4B9340, the HUD golden-ticket/key counter refresh (shows or hides controls 0x1E0EA-0x1E0F1, formats "%d x" with the key count 0x5AF680, particle 0x61 when the ticket count drops)
-				// [APPROX:ADVISOR-025] the timer's sound plays (Advisor.Update), but its particle 87 at native (90000, 0, 7000) is not started — template 87 (Key) is screen-space (+5), which OpenTPW's particle renderer does not draw, and the coordinates' screen mapping is not read — and the HUD ticket/key counter refresh 0x4B9340 has no counter to refresh (UI-051) — evidence needed: the screen-space particle draw path and the HUD counter
+				// [BIN:TPW-EXE:0x00599880 advisor update] when the advisor clock reaches the timer (0x599991) the update starts the particle effect 0x521E60 (87, 90000, 0, 7000), plays sound 0xC6 (0x51BFC0) and calls 0x4B9340 (Advisor.Update)
+				// [BIN:TPW-EXE:0x004B9340 lobby key panel refresh] it returns at once unless the lobby's key panel window exists (0x7CC4B4, created by 0x4B8CA0 from the lobby 0x5E19B8 and cleared by its window procedure 0x4B8B70): in the park it does nothing; the park HUD's key counter is refreshed by the HUD's own message 0x1E handler (0x4A0FB0, ParkStatus.GoldenKeys)
+				// [APPROX:ADVISOR-025] OpenTPW's lobby has no key panel, so the refresh it gets when the timer fires there (show or hide 0x1E0EA-0x1E0F1, "%d x" with the key count 0x5AF680 into 0x1E0EE, particle 0x61 when the count drops) is not made; the screen-space effects are drawn in the world pass under the HUD and the advisor image — evidence needed: whether the lobby says sequences 28 and 29, and the order of the particle pass against the HUD and the advisor
 				timer = sum + entry.TimerMilliseconds;
 				continue;
 			}

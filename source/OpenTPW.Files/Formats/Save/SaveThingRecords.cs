@@ -11,16 +11,14 @@ public readonly record struct SaveThingBase( ushort X, ushort Y, ushort MapChild
 public readonly record struct SaveTimestamp( int Year, int Month, int Day, int Hour, int Minute, int Second );
 
 /// <summary>
-/// One model-3 thing (ride, shop, sideshow, feature, gate, traffic lights or bus): serializer 0xdaf04
-/// (docs/TPWS-PAYLOAD.md, "Attraction records"). <see cref="Offset"/> is the body offset, <see cref="Length"/>
-/// the body length. <see cref="PositionX"/>/<see cref="PositionY"/> are the base thing's X/Y in 1/256 cell units;
-/// for buildable objects the cell equals the RideSystem record cell, fixed items store 128, 128.
-/// <see cref="StateOfRepair"/>, <see cref="LifeGauge"/> and <see cref="Gauge48"/> are the three floats the original
-/// saves as whole numbers 0–255. <see cref="TotalCosts"/>/<see cref="TotalTakings"/> are read as signed 32-bit
-/// values; their sign convention is unverified. Kept raw (meaning not traced): the timestamp's two trailing words,
-/// <c>mFlags</c>, the script/track handles, the 24 bytes from <c>mTopLeft</c> to <c>mUpgradeParent</c>, the six history
-/// buffers, <c>mPersonBeingLoaded</c>, <c>mAmountOfSpecialIngredient</c>, <c>mRequestedService</c>,
-/// <c>mTimeMarkedForMaintenance</c> and <c>mUpgradeBalloonSprite</c>; <see cref="State"/> is the raw state enum.
+/// One model-3 thing (ride, shop, sideshow, feature, gate, traffic lights or bus): tp.exe's attraction serializer <c>0x004DB7D0</c>
+/// (docs/TPWS-PAYLOAD.md, "Attraction records"). <see cref="Offset"/> is the body offset, <see cref="Length"/> the body length.
+/// <see cref="PositionX"/>/<see cref="PositionY"/> are the base thing's X/Y in 1/256 cell units; for buildable objects the cell equals the
+/// RideSystem record cell, fixed items store 128, 128. The loader puts the three floats at thing +0x4C (<see cref="Gauge48"/>, the Mac's +0x48),
+/// +0x48 (<see cref="LifeGauge"/>) and +0x44 (<see cref="StateOfRepair"/>); the original saves each as a whole number 0–255.
+/// <see cref="TotalCosts"/>/<see cref="TotalTakings"/> are read as signed 32-bit values (+0x184/+0x180; the panel's total profit 0x004E1C60 is their
+/// difference). <see cref="State"/> is <c>mState</c> (+0x19C) and the other properties name the remaining fields; only the time stamp's two trailing words are skipped
+/// (<see cref="AmountOfSpecialIngredient"/> is <c>mAmountOfSpecialIngredient</c>).
 /// </summary>
 public readonly record struct SaveAttraction(
 	int Offset, int Id, SaveThingBase Base, int InfoId, int Angle, SaveTimestamp Timestamp,
@@ -29,6 +27,9 @@ public readonly record struct SaveAttraction(
 	uint CustomerCount, uint WalkAwayCount, int TotalCosts, int TotalTakings, float Gauge48, float LifeGauge, float StateOfRepair,
 	int UpgradeLevel, int Length )
 {
+	/// <summary><c>mAmountOfSpecialIngredient</c> (ride <c>+0x198</c>), the signed word after <c>mPricePerUse</c>; the original loader takes it unclamped (tp.exe <c>0x4dcdc1</c>).</summary>
+	public int AmountOfSpecialIngredient { get; init; }
+
 	public const int NameCharacters = 33;
 	/// <summary>History buffers hold at most this many entries (head and count are bounded by it).</summary>
 	public const int MaximumRingEntries = 31;
@@ -59,36 +60,41 @@ public readonly record struct SaveAttraction(
 			throw new InvalidDataException( $"Save attraction thing {id} has an invalid game-time stamp {stamp[0]}-{stamp[1]}-{stamp[2]} {stamp[3]}:{stamp[4]}:{stamp[5]}." );
 		var timestamp = new SaveTimestamp( (int)stamp[0], (int)stamp[1], (int)stamp[2], (int)stamp[3], (int)stamp[4], (int)stamp[5] );
 		var meshInstance = reader.U32();
-		reader.Skip( 2 );
+		var flags = reader.U16();
 		var line1 = new char[NameCharacters];
 		var line2 = new char[NameCharacters];
 		for ( var index = 0; index < NameCharacters; index++ )
 			(line1[index], line2[index]) = ((char)reader.U16(), (char)reader.U16());
-		// mRideScriptHandle, mTrackRideHandle, then mState.
-		reader.Skip( 8 );
+		var (scriptHandle, trackHandle) = (reader.U32(), reader.U32());
 		var state = reader.U32();
 		if ( state > ushort.MaxValue )
 			throw new InvalidDataException( $"Save attraction thing {id} has state {state}." );
-		reader.Skip( 24 );
-		SkipHistory( ref reader, id );
-		SkipHistory( ref reader, id );
+		var (topLeft, entryPos, next, assigned, backOfQueue) = (reader.U16(), reader.U16(), reader.U16(), reader.U16(), reader.U16());
+		var canLoad = reader.U32();
+		var (exitPos, firstInQueue) = (reader.U16(), reader.U16());
+		var trackValid = reader.U32();
+		var upgradeParent = reader.U16();
+		var histories = new SaveAttractionHistory[HistoryBuffers];
+		histories[0] = ReadHistory( ref reader, id );
+		histories[1] = ReadHistory( ref reader, id );
 		var customers = reader.U32();
-		SkipHistory( ref reader, id );
+		histories[2] = ReadHistory( ref reader, id );
 		var walkAways = reader.U32();
-		SkipHistory( ref reader, id );
-		SkipHistory( ref reader, id );
-		SkipHistory( ref reader, id );
+		histories[3] = ReadHistory( ref reader, id );
+		histories[4] = ReadHistory( ref reader, id );
+		histories[5] = ReadHistory( ref reader, id );
 		var capacity = reader.U8();
 		var duration = reader.U8();
 		var speed = reader.U32();
-		reader.Skip( 2 );
+		var personBeingLoaded = reader.U16();
 		var costOfGoods = reader.I32();
 		var quality = reader.I32();
 		var chance = reader.I32();
 		var price = reader.U32();
 		if ( price > MaximumPricePerUse )
 			throw new InvalidDataException( $"Save attraction thing {id} has price {price}; the original loader allows 0–{MaximumPricePerUse}." );
-		reader.Skip( 4 );
+		// [BIN:TPW-EXE:0x4dcdc1 attraction loader] mAmountOfSpecialIngredient (+0x198) follows mPricePerUse (+0x194, clamped to 0..500) as a 4-byte word read without a clamp, then mQueueSizeInCells (+0x40)
+		var ingredient = reader.I32();
 		var queueCells = reader.U32();
 		if ( queueCells > ushort.MaxValue )
 			throw new InvalidDataException( $"Save attraction thing {id} has {queueCells} queue cells." );
@@ -97,28 +103,69 @@ public readonly record struct SaveAttraction(
 		var repair = reader.F32();
 		if ( !IsGauge( gauge48 ) || !IsGauge( lifeGauge ) || !IsGauge( repair ) )
 			throw new InvalidDataException( $"Save attraction thing {id} has a gauge outside 0–{MaximumGauge}." );
-		reader.Skip( 8 );
+		var (requested, marked) = (reader.U32(), reader.U32());
 		var costs = reader.I32();
 		var takings = reader.I32();
-		reader.Skip( 4 );
+		var balloonSprite = reader.U32();
 		var level = reader.U8();
 		if ( level > MaximumUpgradeLevel )
 			throw new InvalidDataException( $"Save attraction thing {id} has upgrade level {level}." );
 		return new SaveAttraction( offset, id, thingBase, infoId, (int)angle, timestamp, meshInstance, Text( line1 ), Text( line2 ),
 			(int)state, capacity, duration, speed, costOfGoods, quality, chance, (int)price, (int)queueCells, customers, walkAways,
-			costs, takings, gauge48, lifeGauge, repair, level, reader.Position - offset );
+			costs, takings, gauge48, lifeGauge, repair, level, reader.Position - offset )
+		{
+			Flags = flags, RideScriptHandle = scriptHandle, TrackRideHandle = trackHandle, TopLeft = topLeft, EntryPos = entryPos, Next = next,
+			AssignedStaffMember = assigned, BackOfQueue = backOfQueue, CanLoad = canLoad, ExitPos = exitPos, FirstInQueue = firstInQueue,
+			IsTrackRideValid = trackValid, UpgradeParent = upgradeParent, Histories = histories, PersonBeingLoaded = personBeingLoaded,
+			AmountOfSpecialIngredient = ingredient, RequestedService = requested, TimeMarkedForMaintenance = marked, UpgradeBalloonSprite = balloonSprite,
+		};
 	}
 
-	/// <summary>History buffer: u32 head, u32 count, u8 flag, u32 first, then <c>count</c> u32 entries.</summary>
-	private static void SkipHistory( ref SaveFieldReader reader, int id )
+	/// <summary><c>mFlags</c> (+0x32): the type's flag word the constructor builds (bit 0 relief, bit 1 rest area, bit 2 choosable).</summary>
+	public ushort Flags { get; init; }
+	public uint RideScriptHandle { get; init; }
+	public uint TrackRideHandle { get; init; }
+	/// <summary><c>mTopLeft</c>, <c>mEntryPos</c> and <c>mExitPos</c> (+0x34, +0x36, +0x38): cell ids of the footprint corner, the entrance and the exit.</summary>
+	public ushort TopLeft { get; init; }
+	public ushort EntryPos { get; init; }
+	public ushort ExitPos { get; init; }
+	/// <summary><c>mNext</c> (+0xC): the next attraction thing of the object list.</summary>
+	public ushort Next { get; init; }
+	/// <summary><c>mAssignedStaffMember</c> (+0x5E): the staff thing that claimed the object (0x004E01F0), 0 when none.</summary>
+	public ushort AssignedStaffMember { get; init; }
+	/// <summary><c>mBackOfQueue</c> (+0x3A) and <c>mFirstInQ</c> (+0x3C): guest thing ids of the queue's ends.</summary>
+	public ushort BackOfQueue { get; init; }
+	public ushort FirstInQueue { get; init; }
+	/// <summary><c>mCanLoad</c> (+0x68): the open word; SetState (0x004E0E60) clears it for states 1, 2 and 4.</summary>
+	public uint CanLoad { get; init; }
+	public uint IsTrackRideValid { get; init; }
+	public ushort UpgradeParent { get; init; }
+	/// <summary>
+	/// The six 30-day rings in serializer order: costs (+0xF8), takings (+0x70), customers (+0x1A8), walk-aways (+0x230), visits (+0x2B8) and the
+	/// visits' averaged happiness change (+0x340); each ring's current value rolls into the ring on the day message 0xB (0x004DD320).
+	/// </summary>
+	public IReadOnlyList<SaveAttractionHistory> Histories { get; init; } = Array.Empty<SaveAttractionHistory>();
+	/// <summary><c>mPersonBeingLoaded</c> (+0x6C): the guest called forward, 0 when none.</summary>
+	public ushort PersonBeingLoaded { get; init; }
+	/// <summary><c>mRequestedService</c> (+0x64): the player's maintenance call (0x004DFE30).</summary>
+	public uint RequestedService { get; init; }
+	/// <summary><c>mTimeMarkedForMaintenance</c> (+0x60): the turn the claim was made (0x004E01F0).</summary>
+	public uint TimeMarkedForMaintenance { get; init; }
+	public uint UpgradeBalloonSprite { get; init; }
+
+	/// <summary>History ring (0x004CED70 / 0x004CEE50): u32 <c>mCurrentEntry</c>, u32 <c>mNumEntries</c>, u8 <c>mWrappedAround</c>, u32 <c>mTemp</c>, then <c>count</c> u32 <c>mData[i]</c>.</summary>
+	private static SaveAttractionHistory ReadHistory( ref SaveFieldReader reader, int id )
 	{
 		var head = reader.U32();
 		var count = reader.U32();
 		var flag = reader.U8();
-		reader.Skip( 4 );
+		var current = reader.I32();
 		if ( head > MaximumRingEntries || count > MaximumRingEntries || flag > 1 )
 			throw new InvalidDataException( $"Save attraction thing {id} has a history buffer with head {head}, count {count}, flag {flag}." );
-		reader.Skip( (int)count * 4 );
+		var data = new int[count];
+		for ( var index = 0; index < data.Length; index++ )
+			data[index] = reader.I32();
+		return new SaveAttractionHistory( (int)head, flag != 0, current, data );
 	}
 
 	private static bool IsGauge( float value ) => float.IsFinite( value ) && value >= 0f && value <= MaximumGauge;
@@ -130,26 +177,63 @@ public readonly record struct SaveAttraction(
 	}
 }
 
-/// <summary>
-/// Staff suffix 0xf2c28 (105 bytes) of models 4–8. <see cref="Happiness"/>/<see cref="Energy"/> are the saved
-/// floats (the writer truncates the runtime value to its low byte first). <see cref="GradePercentage"/> is the
-/// percentage through the grade. <see cref="Name"/> is stored inline (33 UTF-16 units); there is no name index.
-/// <see cref="HiredTimestamp"/> counts 100 ns since 1601-01-01 like the calendar. Raw (meaning not traced):
-/// <see cref="Jobs"/>, <see cref="PatrolRegion"/>, <see cref="RestAreaId"/>, the <see cref="State"/> enum and
-/// <see cref="IdleTick"/>.
-/// </summary>
-public readonly record struct SaveStaffRecord( int Grade, float Happiness, uint Jobs, string Name, uint PatrolRegion, int GradePercentage,
-	ushort RestAreaId, uint State, uint IdleTick, long HiredTimestamp, float Energy );
+/// <summary>One 30-day ring of an attraction: the entry last written, whether it has wrapped, the running value (<c>mTemp</c>) and the entries.</summary>
+public sealed record SaveAttractionHistory( int CurrentEntry, bool WrappedAround, int Current, IReadOnlyList<int> Entries );
 
 /// <summary>
-/// A staff thing (models 4 Mechanic, 5 Handyman, 6 Entertainer, 7 Guard, 8 Researcher): base, the 382 opaque
-/// person bytes after the base (sprite, scalars, navigation, thoughts), the staff suffix and the role suffix.
-/// <see cref="RoleNextId"/> is the role's linked-list next ID (the role suffix's last u16, after <c>mFirst&lt;Role&gt;</c>);
-/// the other role-suffix bytes are kept in <see cref="RoleBytes"/> (mechanic: repair 4, object 2; handyman: litter
-/// cell 2, start 4, toilet 2; entertainer and researcher: start tick 4; guard: perpetrator 2, prosecution 4).
+/// Staff suffix (105 bytes) of models 4–8, in the order of tp.exe's staff serializer <c>0x00504DE0</c>: <c>mCurrentPayGrade</c> (+0x1E4), happiness
+/// (+0x1F8, written as its truncated low byte), <c>mJobsDone</c> (+0x204), the inline name <c>mName[i]</c> (+0x1A0, 33 UTF-16 units; the staff carry
+/// no name index), <c>mPatrolRegionBL</c> (+0x20A) and <c>mPatrolRegionTR</c> (+0x20C) as cell ids (y × 128 + x + 1, the area test <c>0x00506ED0</c>),
+/// <c>mPercentageThroughGrade</c> (+0x1E8), <c>mRestArea</c> (+0x208, a thing id), <c>mState</c> (+0x19C, the member's own state word),
+/// <c>mTimeStartedIdling</c> (+0x200, a park turn), <c>mTimeHired</c> (+0x1F0, 100 ns since 1601-01-01 like the calendar) and energy (+0x1FC).
+/// </summary>
+public readonly record struct SaveStaffRecord( int Grade, float Happiness, uint JobsDone, string Name, ushort PatrolRegionBottomLeft, ushort PatrolRegionTopRight,
+	int GradePercentage, ushort RestAreaId, uint State, uint TimeStartedIdling, long HiredTimestamp, float Energy )
+{
+	/// <summary>The cells of a map 128 cells wide: cell id = y × 128 + x + 1 (tp.exe <c>0x00506ED0</c>, <c>0x00506E90</c>).</summary>
+	public const int MapWidth = 128;
+	public const int CellIds = MapWidth * MapWidth;
+
+	/// <summary>The cell of a staff cell id (y × 128 + x + 1); null for 0 or an id past the map.</summary>
+	public static (int X, int Y)? CellOf( ushort id ) => id is >= 1 and <= CellIds ? ((id - 1) & (MapWidth - 1), (id - 1) / MapWidth) : null;
+}
+
+/// <summary>
+/// A staff thing (models 4 Mechanic, 5 Handyman, 6 Entertainer, 7 Guard, 8 Researcher): base, the 382 person bytes after the base (decoded by
+/// <see cref="Person"/>), the staff suffix and the role suffix. <see cref="RoleNextId"/> is the role's linked-list next ID (<c>mNext</c>, +0x210, the
+/// suffix's last u16); <see cref="RoleBytes"/> holds the role fields before it (role serializers <c>0x004DA110</c> mechanic, <c>0x004D6D60</c> handyman,
+/// <c>0x004D4460</c> entertainer, <c>0x004D6000</c> guard, <c>0x00502760</c> researcher), read by <see cref="RoleTimer"/>, <see cref="RoleTarget"/> and
+/// <see cref="RoleToilet"/>.
 /// </summary>
 public sealed record SaveStaff( int Id, SaveThingModel Model, SaveThingBase Base, byte[] PersonBytes, SaveStaffRecord Staff, byte[] RoleBytes, ushort RoleNextId )
 {
+	/// <summary>The decoded person block (position, the walk's accurate destination, speeds, thoughts).</summary>
+	public SavePerson Person => SavePerson.Read( Base, PersonBytes, $"{Model} thing {Id}" );
+
+	/// <summary>
+	/// The role's word at +0x214: a mechanic's <c>mDurationOfRepair</c> (the repair timer), a handyman's <c>mTimeStartedCleaning</c>, an entertainer's
+	/// <c>mTimeStartedEntertaining</c>, a guard's <c>mProsecutionTimestamp</c> (the chase timer) and a researcher's <c>mTimeStartedResearching</c>.
+	/// </summary>
+	public uint RoleTimer => Model switch
+	{
+		SaveThingModel.Handyman or SaveThingModel.Guard => BinaryPrimitives.ReadUInt32LittleEndian( RoleBytes.AsSpan( 2 ) ),
+		_ => BinaryPrimitives.ReadUInt32LittleEndian( RoleBytes ),
+	};
+
+	/// <summary>
+	/// The role's target: a mechanic's <c>mObjectToRepair</c> (+0x218, a thing id), a handyman's <c>mTargetLitterCell</c> (+0x218, a cell id) and a
+	/// guard's <c>mPerp</c> (+0x212, a guest thing id); 0 for the entertainer and the researcher.
+	/// </summary>
+	public ushort RoleTarget => Model switch
+	{
+		SaveThingModel.Mechanic => BinaryPrimitives.ReadUInt16LittleEndian( RoleBytes.AsSpan( 4 ) ),
+		SaveThingModel.Handyman or SaveThingModel.Guard => BinaryPrimitives.ReadUInt16LittleEndian( RoleBytes ),
+		_ => 0,
+	};
+
+	/// <summary>A handyman's <c>mToiletToClean</c> (+0x21A, a thing id); 0 for the other roles.</summary>
+	public ushort RoleToilet => Model == SaveThingModel.Handyman ? BinaryPrimitives.ReadUInt16LittleEndian( RoleBytes.AsSpan( 6 ) ) : (ushort)0;
+
 	public static SaveStaff Read( ReadOnlySpan<byte> payload, SaveThing thing )
 	{
 		if ( thing.Model is < SaveThingModel.Mechanic or > SaveThingModel.Researcher )
@@ -157,7 +241,7 @@ public sealed record SaveStaff( int Id, SaveThingModel Model, SaveThingBase Base
 		var reader = new SaveFieldReader( payload[..thing.End], thing.BodyOffset, $"{thing.Model} thing {thing.Id}" );
 		var thingBase = reader.Base();
 		var person = reader.Bytes( SaveThingChain.PersonBytes - SaveThingBase.Bytes );
-		var staff = new SaveStaffRecord( reader.I32(), reader.F32(), reader.U32(), reader.Utf16( 33 ), reader.U32(), reader.U8(),
+		var staff = new SaveStaffRecord( reader.I32(), reader.F32(), reader.U32(), reader.Utf16( 33 ), reader.U16(), reader.U16(), reader.U8(),
 			reader.U16(), reader.U32(), reader.U32(), reader.I64(), reader.F32() );
 		if ( staff.Grade is < 0 or > 4 || !float.IsFinite( staff.Happiness ) || !float.IsFinite( staff.Energy ) || staff.GradePercentage is < 0 or > 100 )
 			throw new InvalidDataException( $"Save {thing.Model} thing {thing.Id} has grade {staff.Grade}, percentage {staff.GradePercentage}, happiness {staff.Happiness}, energy {staff.Energy}." );

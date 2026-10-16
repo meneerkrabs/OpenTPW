@@ -47,6 +47,14 @@ public sealed class CoasterCrossSections
 	/// <summary>The sections, index 0 = <c>asCrossSections[0]</c> (referenced 1-based).</summary>
 	public IReadOnlyList<CoasterCrossSection> Sections { get; private set; } = Array.Empty<CoasterCrossSection>();
 	public IReadOnlyList<CoasterSectionSelect> Selects { get; private set; } = Array.Empty<CoasterSectionSelect>();
+	/// <summary>
+	/// <c>sCoasterType.uiInvalidCrossSection</c> (1-based; no PC <c>coaster.sam</c> sets it, so 0): the section the loader copies to an extra last section for the
+	/// links drawn in a marker texture (<c>0x42d5a0</c>), the first section when 0.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42d5a0 invalid cross section] the section array holds the sections plus one: the last entry is a copy of section (uiInvalidCrossSection − 1, or 0 when it is 0) with its own copy of the edges, whose textures the slice emitter overwrites (definition +0x80)
+	public int InvalidSection { get; private set; }
+	/// <summary>The index (0-based into <see cref="Sections"/>) of the section the marker links copy.</summary>
+	public int InvalidSectionIndex => InvalidSection >= 1 && InvalidSection <= Sections.Count ? InvalidSection - 1 : 0;
 	/// <summary><c>sCoasterType.uiWinchCrossSection</c> (1-based), 0 for none: the section a chain-lift segment uses.</summary>
 	public int WinchSection { get; private set; }
 	/// <summary>The value added to every point Y (<c>fTrackHeightAdjust</c>).</summary>
@@ -66,6 +74,7 @@ public sealed class CoasterCrossSections
 		var sectionBlend = new Dictionary<int, float>();
 		var selects = new SortedDictionary<int, (int Section, float? Min, float? Max, int From, int To)>();
 		var winch = 0;
+		var invalid = 0;
 		var adjust = 0f;
 		foreach ( var (key, value) in values )
 		{
@@ -139,10 +148,12 @@ public sealed class CoasterCrossSections
 			}
 			else if ( string.Equals( key, "sCoasterType.uiWinchCrossSection", StringComparison.OrdinalIgnoreCase ) )
 				winch = (int)Float( value );
+			else if ( string.Equals( key, "sCoasterType.uiInvalidCrossSection", StringComparison.OrdinalIgnoreCase ) )
+				invalid = (int)Float( value );
 			else if ( string.Equals( key, "sCoasterType.fTrackHeightAdjust", StringComparison.OrdinalIgnoreCase ) )
 				adjust = Float( value );
 		}
-		var result = new CoasterCrossSections { HeightAdjust = adjust, WinchSection = winch };
+		var result = new CoasterCrossSections { HeightAdjust = adjust, WinchSection = winch, InvalidSection = invalid };
 		result.Textures = Dense( textures, entry => new CoasterTrackTexture( entry.File ?? "", entry.Scroll, entry.Lit ), new CoasterTrackTexture( "", 0, false ) );
 		result.PointBlocks = DenseBlocks( points, fields => new CoasterSectionPoint( fields[0], fields[1] + adjust, fields[2], fields[3], fields[4] ) );
 		result.EdgeBlocks = DenseBlocks( edges, fields => new CoasterSectionEdge( fields[0], fields[1], fields[2] ) );

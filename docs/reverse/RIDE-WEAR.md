@@ -201,8 +201,13 @@ The speed is the script's own field `+0xC0` (`0x100B5B40`). The wear step calls 
   because OpenTPW has no speed control. Objects without a linked running script do not wear.
 - The state of repair (`Repair`, shown truncated as `StateOfRepair`) and the life gauge (`LifeGauge`) are kept
   exactly and saved in OpenTPW's park save.
-- A breakdown happens when the truncated life gauge or state of repair is 0. Repair sets 100 (`RideRepair.FullGauge`), does not
-  restore the life gauge and opens the ride (`Level.OpenAfterRepair`; a coaster with an incomplete circuit stays closed).
+- A breakdown starts when the truncated life gauge or state of repair is 0 (`0x4E0B90`). For an object a script runs it goes through the script as in tp.exe: the
+  economy writes `VAR_BREAKSTAT = 1`, the script answers with `VAR_BROKEN`, and the ride update's state 1 (`0x4E14E0`, read in OpenTPW through the visitor bridge's
+  broken state) breaks the object down on its rising edge and calls a mechanic. The mechanic's repair writes `VAR_BREAKSTAT = 0` when its timer ends and waits while
+  `VAR_BROKEN` stays set (`0x4DA830`), on the headless and on the world path. The repair (`0x4DF8F0`) sets 100 (`RideRepair.FullGauge`), writes `VAR_WORN = 0`, does
+  not restore the life gauge and opens the ride (`Level.OpenAfterRepair`; a coaster with an incomplete circuit stays closed). The last observed state 1 is saved, so a
+  load counts no second breakdown.
+- The wear step writes `VAR_WORN = 1` when the repair byte falls below 20 (`0x4DF670`); a relief object (toilet) writes it below 25 on every update (`0x4E0D16`).
 - The park door and the open buttons ask the reopening guard (`RideOpening.MayOpen`, `ParkGate.MayOpen`): a ride the economy has broken down, a ride with an upgrade on its
   way and a coaster without a complete circuit stay closed; the script's `VAR_BROKEN` still counts as a breakdown.
 
@@ -210,13 +215,11 @@ Still approximations:
 
 | ID | What |
 | --- | --- |
-| ECON-023 | The wear step and the breakdown check do not know relief objects (toilets are not simulated), and the ride's state is derived from the economy and the script's VAR_BROKEN instead of a state word; a breakdown that only the script reports (VAR_BROKEN) gets no mechanic, because the economy does not write VAR_BREAKSTAT and the job could not wait for the script as 0xd9e04 does. |
+| ECON-023 | The ride's state word is split between the visitor bridge (state 1) and the economy's broken flag, which the level joins on the rising edge of state 1; state 4 is told apart only by the economy's life gauge (QUEUE-019); a headless economy without ride scripts breaks an object down at once and repairs it without the wait. |
 | ECON-049 | The back-of-queue link test of the reopening guard runs only for rides with real queue cells (entrance cells keep no link byte). |
 
 Not in OpenTPW yet:
 
-- The breakdown and worn state reaching the ride script (`VAR_BREAKSTAT`, `VAR_WORN`): the economy does not write them, so a ride that breaks down in the economy keeps running for
-  guests until the script reports `VAR_BROKEN` itself. Guests and queues read `VAR_BROKEN` only.
 - The message when the state of repair crosses below 10.
 - Online mode, which OpenTPW does not have.
 - OpenTPW's own `RideWorn` event and mechanic dispatch keep the Advisor.sam threshold 25.

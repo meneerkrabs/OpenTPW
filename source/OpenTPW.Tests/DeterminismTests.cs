@@ -179,7 +179,35 @@ public class DeterminismTests
 	{
 		var park = new SyntheticPark( WorldSeed.Default );
 		park.Run( 3600 );
-		Assert.AreEqual( 0x442386A12C9665D6UL, park.Hash, $"0x{park.Hash:X16}" );
+		Assert.AreEqual( FixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+	}
+
+	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
+	internal const ulong FixedRunHash = 0x09894103FAFB8D45UL;
+
+	/// <summary>
+	/// Switching only the <c>opentpw.online</c> extension (docs/MODS.md) leaves the pinned digests unchanged: this fixed run,
+	/// the guest pathing of a cross park and the empty mod set's digest.
+	/// </summary>
+	[TestMethod]
+	public void TogglingOnlyTheOnlineExtensionKeepsThePinnedDigests()
+	{
+		ulong? pathing = null;
+		foreach ( var online in new[] { true, false } )
+		{
+			var set = OnlineExtensionGateTests.WithOnline( online );
+			using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( set );
+			Assert.AreEqual( online, FeatureGates.Online );
+			Assert.AreEqual( "", set.Digest, "no files-based mods" );
+			var park = new SyntheticPark( WorldSeed.Default );
+			park.Run( 3600 );
+			Assert.AreEqual( FixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
+			var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
+			for ( var tick = 0; tick < 120 * 60; tick++ )
+				simulation.Tick( Tick );
+			pathing ??= simulation.ComputeStateHash();
+			Assert.AreEqual( pathing, simulation.ComputeStateHash(), "the guest pathing hash does not depend on the online extension" );
+		}
 	}
 
 	[TestMethod]

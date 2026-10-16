@@ -6,14 +6,10 @@ namespace OpenTPW;
 /// </summary>
 internal sealed class CoasterAssets : IDisposable
 {
-	/// <summary>The track texture slot of the flat red texture an invalid segment shows.</summary>
-	public const int InvalidSlot = 15;
-
 	private readonly Dictionary<string, Texture> textures = new( StringComparer.OrdinalIgnoreCase );
 	private readonly Dictionary<bool, CoasterPylonRig?> pylons = new();
 	private readonly Dictionary<int, CoasterCarRig?> cars = new();
 	private readonly Dictionary<CoasterCarRig, Model[]> carModels = new();
-	private Texture? red;
 	private bool disposed;
 
 	public CoasterAssets( ObjectCatalogEntry entry, CoasterDefinition definition )
@@ -28,7 +24,7 @@ internal sealed class CoasterAssets : IDisposable
 	public CoasterDefinition Definition { get; }
 	public CoasterCrossSections Sections { get; }
 	public CoasterCarTypes CarTypes { get; }
-	/// <summary>The 16 texture slots of the track mesh: the <c>asTextureData</c> files, then the red texture of invalid segments.</summary>
+	/// <summary>The 16 texture slots of the track mesh: the <c>asTextureData</c> files, then the marker textures (<c>m_erase</c>, <c>red</c>, <c>blue</c> of the dynamic texture folder).</summary>
 	public Texture[]? TrackSlots { get; private set; }
 
 	/// <summary>The track textures, loaded on first use.</summary>
@@ -38,32 +34,19 @@ internal sealed class CoasterAssets : IDisposable
 			return TrackSlots;
 		var slots = new Texture[16];
 		Array.Fill( slots, Texture.Missing );
-		for ( var index = 0; index < Sections.Textures.Count && index < InvalidSlot; index++ )
+		var own = Math.Min( Sections.Textures.Count, slots.Length );
+		for ( var index = 0; index < own; index++ )
 		{
 			if ( Sections.Textures[index].FileName.Length > 0 )
 				slots[index] = Load( Sections.Textures[index].FileName );
 		}
-		// [APPROX:COAST-026] an invalid segment is a flat red texture; the original draws its invalid cross section (uiInvalidCrossSection)
-		red ??= new Texture( new byte[] { 210, 50, 40, 255, 210, 50, 40, 255, 210, 50, 40, 255, 210, 50, 40, 255 }, 2, 2 );
-		slots[InvalidSlot] = red;
+		// [BIN:TPW-EXE:0x42f390 marker textures] the three marker textures follow the coaster's own; the dynamic texture table holds them in Data/Generic/Dynamic/Textures
+		for ( var marker = 0; marker < CoasterTrackMesh.MarkerTextureNames.Length && own + marker < slots.Length; marker++ )
+			slots[own + marker] = markers[marker] ??= BlueprintMarkers.LoadDynamicTexture( CoasterTrackMesh.MarkerTextureNames[marker] );
 		return TrackSlots = slots;
 	}
 
-	private Texture? ghostBlue, ghostRed;
-
-	/// <summary>
-	/// The 16 slots of the build cursor's ribbon: translucent blue where the cursor's cell is valid, translucent red where the validator refuses it.
-	/// </summary>
-	// [BIN:TPW-EXE:0x435d50 cursor node] the cursor node carries 0x8000 and 0x4000 when the validator refuses its cell; the video (73:20-75:58) shows the pending link as a wide translucent ribbon, blue or red
-	// [APPROX:COAST-035] the ribbon is OpenTPW's own mesh (a strip along the pending link, 6 units wide, lifted 0.6 units) in a generated translucent blue or red; the original's renderer consumers of node flags 0x8000/0x4000 and of uiInvalidCrossSection are not found — evidence needed: those consumers
-	public Texture[] GhostSlots( bool valid )
-	{
-		ghostBlue ??= new Texture( new byte[] { 70, 120, 255, 140, 70, 120, 255, 140, 70, 120, 255, 140, 70, 120, 255, 140 }, 2, 2 );
-		ghostRed ??= new Texture( new byte[] { 235, 55, 45, 140, 235, 55, 45, 140, 235, 55, 45, 140, 235, 55, 45, 140 }, 2, 2 );
-		var slots = new Texture[16];
-		Array.Fill( slots, valid ? ghostBlue : ghostRed );
-		return slots;
-	}
+	private readonly Texture?[] markers = new Texture?[3];
 
 	/// <summary>A texture of the archive by name (cached), or <see cref="Texture.Missing"/>.</summary>
 	public Texture Load( string name )
@@ -149,11 +132,11 @@ internal sealed class CoasterAssets : IDisposable
 	/// Poses a pylon for a node. The mesh conversion happens here, after the model loaded, so a vertex the converter refuses (a nonfinite position) is caught
 	/// here: the rig is switched off for the level and the pylon is left out.
 	/// </summary>
-	public IReadOnlyList<CoasterModelPart> PosePylon( bool loop, CoasterPylonRig rig, CoasterPylonPose pose, bool stackedAbove )
+	public IReadOnlyList<CoasterModelPart> PosePylon( bool loop, CoasterPylonRig rig, CoasterPylonPose pose, CoasterStackPlace place )
 	{
 		try
 		{
-			return rig.Pose( pose, stackedAbove );
+			return rig.Pose( pose, place );
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or ArgumentException or IndexOutOfRangeException )
 		{
@@ -234,7 +217,8 @@ internal sealed class CoasterAssets : IDisposable
 		carModels.Clear();
 		foreach ( var texture in textures.Values )
 			texture.ReleaseOwned();
-		red?.ReleaseOwned();
+		foreach ( var texture in markers )
+			texture?.ReleaseOwned();
 		textures.Clear();
 	}
 }

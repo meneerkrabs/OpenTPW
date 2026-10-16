@@ -278,7 +278,7 @@ public sealed class GuestPathGrid
 	}
 
 	/// <summary>Builds the grid from an original level: save path cells with their connection bits, plus MAP InitialPath cells.</summary>
-	public static GuestPathGrid FromOriginal( MapFile map, OriginalParkImport? save ) => new( ParkCellMap.FromOriginal( map, save ) );
+	public static GuestPathGrid FromOriginal( MapFile map, OriginalParkImport? save, ModelHeightfield? terrain = null ) => new( ParkCellMap.FromOriginal( map, save, terrain ) );
 
 	/// <summary>Maps the save's cardinal connection bits to <see cref="Directions"/> order.</summary>
 	public static byte ToLinks( SavePathConnections connections )

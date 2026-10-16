@@ -77,10 +77,11 @@ public sealed partial class OriginalObjectRuntime
 				ResolveScript = ResolveChildScript
 			} );
 			// Upgrade level 0 values from the .sam layers.
-			// [DATA:<object>.sam:Upgrades[0].InitCapacity]
-			SetVariable( nameof( RideVariables.VAR_CAPACITY ), entry.InitialCapacity );
+			// [BIN:TPW-EXE:0x4db54f ride init capacity] [DATA:<object>.sam:Upgrades[0].InitCapacity] written only when above 0, through the capacity setter 0x4dd7f0 (its low byte clamped to UsageInfo.MinCapacity..MaxCapacity when the two sum above 0) into script variable 2 and ride +0x5d
+			if ( entry.InitialCapacity > 0 )
+				SetVariable( nameof( RideVariables.VAR_CAPACITY ), ClampCapacity( entry.Settings, entry.InitialCapacity ) );
 			var level0 = entry.Upgrades.FirstOrDefault( level => level.Level == 0 );
-			// [BIN:TPW-EXE:0x4db565 ride init duration] [DATA:<object>.sam:Upgrades[0].InitDuration] written only when above 0: the low byte, clamped to [UsageInfo.MinDuration, UsageInfo.MaxDuration] (type +0x12c/+0x130), into script variable 3 and ride +0x5c; DurationUnit is never read. The same clamp runs at ride settings (0x4dd720) and upgrade (0x4df8f0).
+			// [BIN:TPW-EXE:0x4db565 ride init duration] [DATA:<object>.sam:Upgrades[0].InitDuration] written only when above 0: the low byte, clamped to [UsageInfo.MinDuration, UsageInfo.MaxDuration] (type +0x12c/+0x130), into script variable 3 and ride +0x5c; DurationUnit is not read here (the ride window reads it, 0x4af030). The same clamp runs at ride settings (0x4dd720) and upgrade (0x4df8f0).
 			if ( ClampInitDuration( entry.Settings, level0?.GetInt( "InitDuration" ) ?? 0 ) is { } duration )
 				SetVariable( nameof( RideVariables.VAR_DURATION ), duration );
 			// [BIN:TPW-EXE:0x4db51c ride init speed] [DATA:<object>.sam:Upgrades[0].InitSpeed] the script speed bias, written only when above 0 (setter 0x55a300).
@@ -215,6 +216,8 @@ public sealed partial class OriginalObjectRuntime
 			Bump.SetPerformance( ScriptPerformance );
 			Bump.Advance( deltaSeconds );
 		}
+		// the object pass then moves the kept ADDOBJ effects to their keys ([BIN:TPW-EXE:0x55189D ADDOBJ follow])
+		FollowParticleObjects();
 		Tour?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
@@ -307,7 +310,10 @@ public sealed partial class OriginalObjectRuntime
 			StoppedScriptFault = stopped && Script is { State: RideVMState.Faulted } ? Script.FaultMessage : null,
 			ParticleObjects = CaptureParticleObjects(),
 			RepairParticle = CaptureRepairParticle(),
-			ScriptHoldsScream = effects.ScriptHoldsScream
+			ScriptHoldsScream = effects.ScriptHoldsScream,
+			RideSpeed = speedWord,
+			RideCapacity = capacityWord,
+			RideDuration = durationWord
 		};
 	}
 
@@ -358,6 +364,7 @@ public sealed partial class OriginalObjectRuntime
 		RestoreParticleObjects( snapshot.Stopped ? null : snapshot.ParticleObjects );
 		RestoreRepairParticle( snapshot.Stopped ? 0 : snapshot.RepairParticle );
 		effects.ScriptHoldsScream = snapshot.ScriptHoldsScream ?? snapshot.HeldScream;
+		RestoreSettingWords( snapshot.RideSpeed, snapshot.RideCapacity, snapshot.RideDuration );
 		CompletedCycles = snapshot.CompletedCycles;
 		AnimationsPlayed = snapshot.AnimationsPlayed;
 		unresolvedAnimations.Clear();
@@ -463,9 +470,10 @@ public sealed partial class OriginalObjectRuntime
 	private static QueueParameters QueueParametersFor( ObjectCatalogEntry entry, ObjectUpgradeLevel? level )
 	{
 		var settings = entry.Settings;
-		static int Clamp( int value, int minimum, int maximum ) => maximum >= minimum && maximum > 0 ? Math.Clamp( value, minimum, maximum ) : value;
-		var capacity = Clamp( level?.GetInt( "InitCapacity" ) ?? 0, settings.GetInt( "UsageInfo.MinCapacity" ), settings.GetInt( "UsageInfo.MaxCapacity" ) );
-		var duration = Clamp( level?.GetInt( "InitDuration" ) ?? 0, settings.GetInt( "UsageInfo.MinDuration" ), settings.GetInt( "UsageInfo.MaxDuration" ) );
+		// the CAPACITY (+0x5d) and DURATION (+0x5c) words as ride init writes them with script variables 2 and 3 (0x4db54f, 0x4db565): the setters' clamps, only for a value above 0; 0 otherwise
+		var initCapacity = level?.GetInt( "InitCapacity" ) ?? 0;
+		var capacity = initCapacity > 0 ? ClampCapacity( settings, initCapacity ) : 0;
+		var duration = ClampInitDuration( settings, level?.GetInt( "InitDuration" ) ?? 0 ) ?? 0;
 		var initSpeed = level?.GetInt( "InitSpeed" ) ?? 0;
 		var trackType = settings.GetInt( "Bumper.WhichTrackType" );
 		return new QueueParameters( entry.HasQueue, settings.GetBool( "Info.RunsContinuously" ), trackType is 2 or 3,
@@ -689,8 +697,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
-		// ADDOBJ type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
-		if ( call.Opcode == Opcode.ADDOBJ )
+		// ADDOBJ and ADDOBJ_EXT type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
+		if ( call.Opcode is Opcode.ADDOBJ or Opcode.ADDOBJ_EXT )
 		{
 			ride.ObserveParticleObject(call);
 			return UnimplementedRideScriptEffects.Instance.Perform( call );

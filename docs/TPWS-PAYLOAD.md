@@ -100,26 +100,30 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
 `SavePayloadLayout.Parse` (span or `SaveReader`, payload capped at 64 MiB):
 
 - reads the action-recording header (published flag 0/1, size within the payload);
-- splits the payload at the 17 delimiters in writer order. A block whose writer
-  width is traced ends exactly there, like the original loader: Clock 8 (two
-  clock words, `0x10e944`), VanillaTime 4 (`0x127ac8`), Camera 40 (`0x2cb90`),
-  and an empty Coasters block is exactly its 16-byte count and globals (the
-  World block is checked by its thing list, below). The other delimiters may be
-  any later copy of their four bytes, and the payload must split in exactly one
-  way. A copy of a block's delimiter bytes is harmless only inside an earlier
-  block or where taking it as that block's end leaves no valid split of the
-  rest (a later delimiter missing or out of order, or a traced width broken).
-  A copy inside the block itself or any later block that forms a second valid
-  split throws, for example the block's own delimiter bytes inside it with
-  every later delimiter still in order, or the AdvisorScoring (`ADSC`) bytes
-  anywhere in the trailing UI block. A missing or out-of-order delimiter, a
-  broken width and a payload holding one delimiter's bytes more than 256 times
-  throw as well. The count-based original loader accepts the ambiguous cases
-  (SAVE-011);
+- splits the payload at the 17 delimiters in writer order. Every block but two ends exactly where its tp.exe
+  reader stops (`SaveBlockWidths`; the loader `0x415270` runs each reader and then compares the next four bytes with the
+  block's tag, `0x415371` and the following checks), so a delimiter's bytes inside a block are data:
+  Scripts `0x475730` (`u32 'SCPT'`, `u32 0x118`, `u32 n`, n slot words and `0x118` bytes for each nonzero slot 1 to n-1),
+  Particles `0x51f7a0` (`u32 'PCLT'`, `u32 on`, then `0x9e68` and `0x8b60` byte tables and a counted tail),
+  message centre `0x40fd60` (a word and 29 counted `u16` lists), Clock 8 (`0x402e30`), VanillaTime 4 (`0x403260`),
+  GameSystem 36 (`0x5506e0`), RideSystem `0x4647a0` (`u32` length and that many bytes), TrackRides `0x543560` (a chunk
+  whose container header `u32 1, u32, u32 size` carries the width; the close `0x544290` seeks to its start plus the size,
+  and the sub-chunk sizes must add up to it), FlyingRides `0x55e020` (`'FLY_'`, an on word, a counted slot table, ten
+  words and one block per nonzero slot), RSSE `0x5597a0` (`'RSSE'`, a counted header, five words, a record count and size,
+  then per record its struct, nine counted buffers and an `'OBJ '` list), Camera 40 (`0x42cec0`), Advisor `0x599d00`
+  (`'ADV_'`, two counted buffers), Sound `0x51c400` (the settings, and with sound on a chunk the loader skips by its
+  length word), Cheat 2 (`0x405570`), AdvisorScoring 4 (`0x59c860`) and UI `0x481680` (`u32 count`, count x `0x21c`).
+  The Jungle Easymode save's seventeen widths all agree with these readers. An empty Coasters block is exactly its
+  16-byte count and globals. Only the World block (its control manager and macro AI are not traced; its thing list closes
+  at the delimiter, below) and a Coasters block with a coaster (its trains and cars depend on the coaster type, SAVE-920)
+  are located by their delimiter's bytes, and the payload must split in exactly one way there; a copy of those delimiters
+  that forms a second valid split throws, as does a payload holding one of them more than 256 times, although the
+  count-based original loader accepts those cases (SAVE-011). A missing or out-of-order delimiter, a block that does not
+  read as its block and a block not followed by its tag throw as well;
 - reports the 19 blocks (offset, length, delimiter offset); UI is everything
   after the AdvisorScoring delimiter. No partial result on error.
 
-Blocks other than World and RideSystem stay raw, size-checked byte spans — except the Coasters
+Blocks other than World and RideSystem stay raw byte spans, measured by `SaveBlockWidths` — except the Coasters
 block, which has a bounded structural reader (next section).
 
 ## World block (`SaveWorld`)

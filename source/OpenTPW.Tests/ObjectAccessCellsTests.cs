@@ -222,11 +222,11 @@ public class ObjectAccessCellsTests
 
 	// ---------------------------------------------------------------- add-ons (RIDES-011, TRACK-008) and track ends
 
-	/// <summary>The eight-tile water loop of the circuit tests on a rig's cell map: station (10, 10), corners (14, 10), (14, 12), (8, 12), (8, 10); the straights (12, 12) and (10, 12) lie between the corners.</summary>
+	/// <summary>The eight-tile water loop of the circuit tests on a rig's cell map (station placed at (10, 9), whose first tile is (10, 10)), corners (14, 10), (14, 12), (8, 12), (8, 10); the straights (12, 12) and (10, 12) lie between the corners.</summary>
 	private static (TrackBuilder Builder, TrackStation Station, int Owner) Loop( ParkCellMap cells )
 	{
 		var builder = new TrackBuilder( cells, TrackFamily.Water, () => null, new SandboxParkGrid() );
-		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		var station = TrackStation.FromPlacement( 10, 9, 0 );
 		builder.PlaceStation( station );
 		var owner = builder.OwnerOf( station );
 		var writer = new TrackLineWriter( builder, null, owner );

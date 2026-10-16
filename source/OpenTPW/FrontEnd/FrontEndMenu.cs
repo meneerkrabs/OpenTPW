@@ -11,7 +11,7 @@ public enum GameMode { InstantAction, FullSimulation }
 
 /// <summary>A park that can be loaded from the Load Park screen.</summary>
 /// <param name="Sandbox">True for the OpenTPW sandbox save (jungle sandbox), false for an original read-only park.</param>
-public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null );
+public sealed record ParkLoadEntry( string Level, int ThemeNameIndex, bool Sandbox, string? OwnSavePath = null, string? DisplayName = null, DateTime? SavedAt = null );
 
 /// <summary>What the front-end screens ask of the game.</summary>
 public sealed class FrontEndActions
@@ -225,7 +225,7 @@ public sealed partial class FrontEndMenu
 	// rows come from the row factory 0x49f0b0, the slot-7 rule of the buy list (font slot 7's line height x 1536 / screen height + 6, [0x7cb24c]), so (733 - 229) / 41 = 12
 	// rows show (0x663718); the list has no header sort (attribute 0x81) and keeps the save enumeration's order (0x49ec80); a row's activation (message 0x400) loads it and b_exit
 	// closes the dialog (0x49e880)
-	// [APPROX:UI-013] the rows show only the park's name: the original's second column, the save file's local date and time (UITEXT 0x1c0 and " %02d:%02d", 0x49ec80), is not drawn
+	// [BIN:TPW-EXE:0x49ec80 save list rows] each row is the park name and the save file's local last-write date (UITEXT 0x1c0 = OpenTPW's 447 with day, month, year, 0x5fc660) plus " %02d:%02d" hour and minute, in a second right-aligned cell (0x49f170)
 	// [APPROX:UI-044] the rows take the buy list's measured pitch
 	public static UiScreen CreateLoadScreen( UiScreenStack stack, UiStringTable strings, IReadOnlyList<ParkLoadEntry> entries, Action<ParkLoadEntry> load )
 	{
@@ -245,6 +245,8 @@ public sealed partial class FrontEndMenu
 			Id = "parks",
 			Rows = () => parks.Select( entry => entry.OwnSavePath != null ? entry.DisplayName ?? entry.Level : entry.Sandbox ? strings.Extra( OpenTpwText.SandboxParkEntry )
 				: string.Format( strings.Extra( OpenTpwText.OriginalParkEntry ), entry.ThemeNameIndex >= 0 ? strings.Theme( entry.ThemeNameIndex ) : entry.Level ) ).ToArray(),
+			Trailing = index => parks[index].SavedAt is { } saved
+				? strings.Format( UiTextRecord.SaveDate, saved.Day.ToString(), saved.Month.ToString(), saved.Year.ToString() ) + $" {saved.Hour:00}:{saved.Minute:00}" : "",
 			Help = strings.Help( 318 ),
 			Selected = parks.Length == 0 ? -1 : 0,
 			Enabled = parks.Length != 0,

@@ -433,7 +433,11 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )
 			return false;
-		return EnterQueueTool( ride );
+		if ( !EnterQueueTool( ride ) )
+			return false;
+		// [BIN:TPW-EXE:0x00530379 corner walk link clear] the walk the click runs also takes the link between the queue's back cell and the path it ends on off both cells, and a cancel restores nothing (QueuePaths.DetachFromPath)
+		QueuePaths.DetachFromPath( Guests.Grid, ride );
+		return true;
 	}
 
 	/// <summary>
@@ -742,7 +746,7 @@ public partial class Level
 	/// The money side of a ride's demolition for its queue, while the cells are still laid: each queue cell refunds <c>Costs.QueueCell</c> × the ride's scrap percentage
 	/// / 100 and the demolition then debits one such amount (<see cref="ParkEconomy.ChargeQueueDemolition"/>). A park load or clear removes nothing through here.
 	/// </summary>
-	// [BIN:TPW-EXE:0x00527F87 ride demolition queue] a type with a queue (Info.HasQueue, def +0x40, 0x527F87..0x527F93) fills the corner stack with 0x530120 (0x527F9A), enters mode 3 (0x527FA5) with the forced-clear flag 0x81D7A8 set (0x527FAA) and, when the ride's own word +0x40 is above 0 (0x527FB4..0x527FBC; read here as its queue having cells), calls Back 0x52FE50 until it returns 0 (0x527FBE..0x527FDA): every cell goes and credits its refund, and 0x527FDC..0x528007 then debits one cell's refund; the ride's entrance cell is not part of the stack
+	// [BIN:TPW-EXE:0x00527F87 ride demolition queue] a type with a queue (Info.HasQueue, def +0x40, 0x527F87..0x527F93) fills the corner stack with 0x530120 (0x527F9A), enters mode 3 (0x527FA5) with the forced-clear flag 0x81D7A8 set (0x527FAA) and, when the ride's own word +0x40 is above 0 (0x527FB4..0x527FBC; +0x40 is the count of the chain cells the queue re-evaluation 0x4DE130 visits from the entrance's outside cell, that cell included whatever its type, so it is 1 for a ride whose front cell is a path cell, a case in which the original still debits one cell and OpenTPW charges nothing, QUEUE-015), calls Back 0x52FE50 until it returns 0 (0x527FBE..0x527FDA): every cell goes and credits its refund, and 0x527FDC..0x528007 then debits one cell's refund; the ride's entrance cell is not part of the stack
 	private void SettleDemolishedQueue( OriginalObject item )
 	{
 		if ( IsReadOnlyVisit || Guests == null || !item.Entry.HasQueue || item.Visitors is not RideVisitorBridge ride )

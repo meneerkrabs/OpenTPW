@@ -95,6 +95,42 @@ public class QueueUndoTests
 	}
 
 	[TestMethod]
+	public void TheCornerWalkTakesTheBackCellOffThePathItEndsOn()
+	{
+		var (grid, ride) = Rig();
+		grid.SetPath( 3, 3, true );
+		Lay( grid, ride, (2, 1), (2, 2), (2, 3) );
+		Assert.IsTrue( QueuePaths.Connect( grid, ride, (2, 3), (3, 3) ) );
+		Assert.IsNotNull( ride.JoinCell, "joined to the path" );
+		var stackBefore = QueuePaths.CornerStack( grid, ride ).ToArray();
+
+		Assert.IsTrue( QueuePaths.DetachFromPath( grid, ride ), "0x530379..0x5303A1: the link between the back cell and the path goes" );
+		Assert.AreEqual( 0, grid.Cells.LinksAt( 2, 3 ) & 4, "the step bit on the back cell" );
+		Assert.AreEqual( 0, grid.Cells.LinksAt( 3, 3 ) & 64, "the reverse bit on the path cell" );
+		Assert.IsFalse( grid.AreConnected( 2, 3, 1 ), "the cells no longer connect" );
+		Assert.IsNull( ride.JoinCell, "the queue's back is not connected to a path" );
+		CollectionAssert.AreEqual( new[] { (2, 1), (2, 2), (2, 3) }, ride.QueueCells.ToArray(), "the queue cells stay" );
+		CollectionAssert.AreEqual( new[] { (2, 1), (2, 3) }, QueuePaths.CornerStack( grid, ride ).ToArray(), "the back cell now ends the walk on its own" );
+		Assert.AreEqual( 3, stackBefore.Length );
+
+		Assert.IsFalse( QueuePaths.DetachFromPath( grid, ride ), "a second entry finds nothing joined" );
+
+		// nothing restores the link on a cancel; a line that ends on the path again joins it (code 8)
+		Assert.IsTrue( QueuePaths.Connect( grid, ride, (2, 3), (3, 3) ) );
+		Assert.IsNotNull( ride.JoinCell );
+	}
+
+	[TestMethod]
+	public void ANeverJoinedQueueHasNothingToTakeOffThePath()
+	{
+		var (grid, ride) = Rig();
+		Lay( grid, ride, (2, 1), (2, 2), (2, 3) );
+		Assert.IsFalse( QueuePaths.DetachFromPath( grid, ride ) );
+		var (emptyGrid, emptyRide) = Rig();
+		Assert.IsFalse( QueuePaths.DetachFromPath( emptyGrid, emptyRide ), "no queue cells yet" );
+	}
+
+	[TestMethod]
 	public void TheUndoTakesTheQueueBackBySegmentsAndNeverTheFrontCell()
 	{
 		var (grid, ride) = Rig();

@@ -34,16 +34,17 @@ Narrowed:
   never takes the front cell and a stack of one point has nothing to undo. A ride's demolition (`0x527EE0`) now takes every queue cell with it
   (before, the cells stayed behind as orphans): the forced clear drops the NoModify front cell too, each cell refunds `Costs.QueueCell` x scrap
   percentage / 100 and the demolition debits one such amount (`ParkEconomy.ChargeQueueDemolition`). Nothing new is saved: the stack is rebuilt
-  from the cells at every entry. Still open: the walk also clears the link between a queue's back cell and the path it ends on (`0x530379`
-  to `0x5303A1`), so an edited queue stays unjoined until a line ends on the path again; OpenTPW's tool leaves the links alone. The removal from
+  from the cells at every entry. The corner walk's other effect is ported too (`QueuePaths.DetachFromPath`, `0x530379` to `0x5303A1`): clicking a queue to edit it takes the link
+  between its back cell and the path it ends on off both cells, and a cancel restores nothing (the exits `0x52FE50`, `0x52F200`, `0x52F580` only
+  reset the tool; the relink pass `0x52FC80` serves the track modes only), so the queue stays unjoined until a line ends on the path again. What stays
+  open is the placement counters and the guests set down off removed cells. The removal from
   a clicked cell on is kept only as `EXT:dev-one-click-remove` (the developer's remove tool) and `EXT:queue-backtrack` (Backspace).
 - **WALK-008**: records the arrival chain (`0x4FF520`, `0x4FF730`, `0x4FF7F0`, `0x4FFB20`) but does not port it (about 25 sites).
 - **GATE-006**: text corrected, since avoid_walls' corner branches are ported (WALK-002 is retired).
 
-Determinism: the pin is unchanged at `0xDB3EA9A7AF384B5B`. The new stranded mark joins the state hash only while non-zero. Saves gain an
+Determinism: the pin is unchanged at `0x01946A39A53F851E`. The new stranded mark joins the state hash only while non-zero. Saves gain an
 optional `StrandedMark` per guest; old saves restore it as 0 (covered by a test).
 
 Verification (on main with #267 and #268): 5068 tests pass without game data (595 skipped) and 5540 with it (123 skipped), including the determinism run
 against main's pin `0x01946A39A53F851E`, which these changes leave as it is; all five native smokes pass (the sandbox smoke now lays a queue and demolishes the
-ride, checking that the cells go); the register, progress and evidence checks pass. Open decision for the user: whether to port the link clearing of the corner
-walk (QUEUE-015, above).
+ride, checking that the cells go); the register, progress and evidence checks pass. The corner walk's link clearing is ported (QUEUE-015, above).

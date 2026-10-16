@@ -23,12 +23,6 @@ public static class GuestWander
 	public readonly record struct Destination( (int X, int Y) Cell, int ByteX, int ByteY );
 
 	/// <summary>
-	/// Picks the destination from <paramref name="start"/>, drawing from <paramref name="draw"/> in the original's order: the step
-	/// count, a start index for every step with two or more candidates, then the two sub-cell bytes. A path cell without links gives
-	/// its own centre; null when the start is no path cell or its links lead to no path cell (stranded).
-	/// </summary>
-	// [BIN:TPW-EXE:0x004F9490 wander destination] rand % 5 at entry (0x004F9534); a do-while over the steps whose counter becomes 1 again when a step ends on the start cell with the counter at 0 (0x004F98F5); per step the current cell's links (0x00522770, & 0x55) in the order 16, 4, 1, 64, the count from 0x00522810; fewer than two left: the first in order (no draw); else the first from rand & 3 (0x004F9874) that is neither empty nor the way back ((i − 2) & 3 of the last step, 9999 before the first); then two draws & 0x7F, each clamped to 5..123 (0x004F9922)
-	/// <summary>
 	/// The links of <paramref name="cell"/> the original keeps as candidates of a step (<c>0x004F9490</c>): every cardinal link except, on a path cell, those toward
 	/// queue cells (types 3 and 9), on a queue cell (not the ride's entrance cell) its own queue link's direction, and on any cell those toward type-10 cells. A guest
 	/// whose count is 0 is stranded.
@@ -98,6 +92,12 @@ public static class GuestWander
 		return false;
 	}
 
+	/// <summary>
+	/// Picks the destination from <paramref name="start"/>, drawing from <paramref name="draw"/> in the original's order: the step
+	/// count, a start index for every step with two or more candidates, then the two sub-cell bytes. A path cell without links gives
+	/// its own centre; null when the start is no path cell or its links lead to no path cell (stranded).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F9490 wander destination] rand % 5 at entry (0x004F9534); a do-while over the steps whose counter becomes 1 again when a step ends on the start cell with the counter at 0 (0x004F98F5); per step the current cell's links (0x00522770, & 0x55) in the order 16, 4, 1, 64, the count from 0x00522810; fewer than two left: the first in order (no draw); else the first from rand & 3 (0x004F9874) that is neither empty nor the way back ((i − 2) & 3 of the last step, 9999 before the first); then two draws & 0x7F, each clamped to 5..123 (0x004F9922)
 	public static Destination? Pick( GuestPathGrid grid, (int X, int Y) start, Func<uint> draw, Func<int, int, bool>? inArea = null ) =>
 		Pick( grid, start, draw, inArea, out _ );
 

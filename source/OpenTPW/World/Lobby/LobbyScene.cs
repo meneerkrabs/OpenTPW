@@ -11,7 +11,7 @@ namespace OpenTPW;
 /// hierarchy (parent-relative, docs/MD2-MODELS.md); MD2 (x, y-up, z) maps to engine (x, z, y-up).
 /// The island models play their own clips (<c>M1</c>/<c>M2</c>) and the flying meshes follow <see cref="LobbyFlyingMeshes"/>; rain and lightning come from LobbyEffects and the weather renderer.
 /// </summary>
-// [APPROX:UI-018] the enter sequence is not built, so the gates stay closed: tp.exe's enter (0x5e1e30, state 1) turns the camera to the island angle + π at 0.05 × step per frame, opens the gate with M1 (0x5e06e4) and zooms in under a black fade (state 2) until the radius is below 8 (0x5e1e50 starts the park); leaving early closes it with M2 (0x5e1350, 0x5e1890, 0x5e2360, 0x5e2660)
+// [BIN:TPW-EXE:0x5e0490 enter sequence] LobbyCameraMode runs the enter (state 1: turn to the island angle + π at 0.05 × step per frame, open the gate with M1 (0x5e06e4); state 2: radius × (1 − 0.07 × step), height × (1 − 0.6 × step), black fade by the closed share of SPINRADIUS − 8, park start below 8, 0x5e1e50); the gate plays M1 here
 public sealed class LobbyScene : OriginalModelScene
 {
 	private const string TerrainDirectory = "/lobby/terrain";
@@ -128,6 +128,26 @@ public sealed class LobbyScene : OriginalModelScene
 		}
 		StepIslands( seconds );
 	}
+
+	/// <summary>
+	/// Plays the gate clip of <paramref name="island"/>: <c>M1</c> opens it, <c>M2</c> closes it (not looping).
+	/// </summary>
+	// [BIN:TPW-EXE:0x5e06e4 gate open] when the camera has turned to the island's angle + π the enter sequence calls 0x5d83f0 (AnimID 5, sub 0, not looping) on the island's gate object: the gate's M1 clip; an early leave plays M2 (0x5e1350, 0x5e1890, 0x5e2360, 0x5e2660)
+	public void PlayGate( LobbyIslandInfo island, bool open )
+	{
+		foreach ( var model in IslandModels )
+		{
+			if ( !ReferenceEquals( model.Island, island ) && model.Island.Index != island.Index || model.Gate is not { } gate )
+				continue;
+			var sub = open ? 0 : 1;
+			gate.Animator.Trigger( 0, model.GateClips[sub], $"{island.GateModel}M{sub + 1}", animationId: 5, variant: sub, loop: false, speed: 1f );
+			return;
+		}
+	}
+
+	/// <summary>The clip each gate model plays now (1 <c>M1</c>, 2 <c>M2</c>, 0 none), for tests.</summary>
+	public IReadOnlyList<int> GateClips => IslandModels.Select( model => model.Gate?.Animator.GetAnimationId( 0 ) == 5 && model.Gate.Animator.GetClip( 0 ) is { } clip
+		? clip.EndsWith( "2", StringComparison.Ordinal ) ? 2 : 1 : 0 ).ToList();
 
 	/// <summary>
 	/// Every island model whose clip has (almost) run out starts <c>M1</c> or <c>M2</c> at random, once; the island and

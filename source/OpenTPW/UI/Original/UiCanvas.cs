@@ -41,7 +41,7 @@ public readonly record struct UiCanvas( int Width, int Height, int UiScale = 1, 
 	/// 1280×720, BIG above (inferred from the three shipped sizes).
 	/// </summary>
 	// [BIN:TPW-EXE:0x419710 font banks] the original loads one bank of 13 font slots by screen mode: Res.RESOLUTION [0x7858ec] 1, 2, 3, 4+ (512×384, 640×480, 800×600, 1024×768 and up) or else the options resolution index [0x78d8dc] 0, 1, 2, 3+ give bank 0, 1, 2, 3 (MENU/TITLE/SESH/CASH SMALL, MED, BIG, BIG)
-	// [APPROX:UI-002] font tier thresholds 0.36 / 0.6 of logical scale, not the original's bank per screen mode — evidence needed: a bank rule for OpenTPW's output sizes
+	// [EXT:ui-font-tier-by-scale] the font tier follows the output scale (thresholds 0.36 / 0.6 of the logical scale), not the original's font bank per screen mode (0x419710): the original had four fixed modes, OpenTPW runs at any output size
 	public UiFontTier FontTier => LogicalScale < 0.36f ? UiFontTier.Small : LogicalScale < 0.6f ? UiFontTier.Medium : UiFontTier.Big;
 
 	/// <summary>Maps an authored canvas point to framebuffer pixels.</summary>

@@ -124,8 +124,10 @@ class Source(unittest.TestCase):
     def test_breakdown_guards_are_registered(self):
         sources = read(GUESTS / 'GuestSimulation.cs') + read(GUESTS / 'RideVisitorBridge.cs')
         register = read(GUESTS / 'QueueApproximations.cs')
-        self.assertIn('[APPROX:QUEUE-019]', sources)
-        self.assertIn('("QUEUE-019",', register)
+        # QUEUE-019 is retired: the bridge tells state 4 (life gauge 0) from state 1 (tp.exe 0x4e14e0) and the move-up holds in state 1 only (0x4e0370).
+        self.assertIn('[BIN:TPW-EXE:0x004E14E0 state 1 or 4]', sources)
+        self.assertIn('[BIN:TPW-EXE:0x004E0370 state-1 predicate]', sources)
+        self.assertNotIn('("QUEUE-019",', register)
         # QUEUE-018 is retired: the join reads neither the ride state nor the open word (tp.exe 0x4ffbc0), and a closed ride drains one head per turn.
         self.assertIn('[BIN:TPW-EXE:0x004FFBC0 state-10 join]', sources)
         self.assertIn('[BIN:TPW-EXE:0x004E1220 closed ride admission]', sources)

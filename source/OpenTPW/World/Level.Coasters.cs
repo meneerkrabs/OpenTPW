@@ -9,20 +9,18 @@ public partial class Level
 	/// <summary>Every coaster controller of the park.</summary>
 	public IReadOnlyList<CoasterRide> Coasters => Objects.ScriptWorld.Coasters.Rides;
 	/// <summary>The station whose track the coaster tool edits, or null when the tool is off.</summary>
-	public OriginalObject? CoasterToolStation
+	public OriginalObject? CoasterToolStation { get; private set; }
+
+	/// <summary>Points the tool at a station (or none) and moves the coaster-being-edited mark with it.</summary>
+	// [BIN:TPW-EXE:0x00790FEC coaster being edited] the global names the controller the tool edits (written by 0x00430AC0 from the tool's entry and exit 0x00447520); the guest predicate 0x00441970 refuses it
+	private void SetCoasterToolStation( OriginalObject? station )
 	{
-		get => coasterToolStation;
-		private set
-		{
-			// [BIN:TPW-EXE:0x00790FEC coaster being edited] the global names the controller the tool edits; the guest predicate 0x00441970 refuses it
-			if ( coasterToolStation?.Runtime.Coaster is { } previous )
-				previous.BeingEdited = false;
-			coasterToolStation = value;
-			if ( value?.Runtime.Coaster is { } current )
-				current.BeingEdited = true;
-		}
+		if ( CoasterToolStation?.Runtime?.Coaster is { } previous )
+			previous.BeingEdited = false;
+		CoasterToolStation = station;
+		if ( station?.Runtime?.Coaster is { } current )
+			current.BeingEdited = true;
 	}
-	private OriginalObject? coasterToolStation;
 	/// <summary>The builder the coaster tool drives, or null.</summary>
 	public CoasterBuilder? CoasterTool => CoasterToolStation is { } station ? GetCoasterBuilder( station ) : null;
 	public bool IsCoasterToolActive => CoasterToolStation != null;
@@ -196,7 +194,7 @@ public partial class Level
 			CoasterPanel = null;
 			CoasterPreview = null;
 			DemoPreview = null;
-			CoasterToolStation = null;
+			SetCoasterToolStation( null );
 		}
 		if ( coasterBuilders.Remove( item, out var builder ) )
 			builder.Delete();
@@ -235,7 +233,7 @@ public partial class Level
 		CellTool.Cancel();
 		station.Close();
 		builder.Ride.EnterTool();
-		CoasterToolStation = station;
+		SetCoasterToolStation( station );
 		CoasterPanel = new CoasterToolPanel( builder, IsCoasterCellFree );
 		return true;
 	}
@@ -247,7 +245,7 @@ public partial class Level
 		var station = CoasterToolStation;
 		CoasterPanel?.Close();
 		CoasterPanel = null;
-		CoasterToolStation = null;
+		SetCoasterToolStation( null );
 		CoasterPreview = null;
 		if ( station is { IsDeleted: false } && station.Runtime.Coaster is { State: CoasterControllerState.Built } )
 			station.Open();

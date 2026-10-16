@@ -22,7 +22,7 @@ Six interface surfaces rebuilt from tp.exe's generated layout tables and handler
 
 UI-002 font-slot table (callers of the slot getter `0x485a70`): slot 0 pause lines (`0x48c150`), 1 HUD cash (`0x4a21e4`), 2 meter labels (`0x4a1e7b`),
 3 date (`0x4a2519`), 6 window labels and values, 7 buy/loans/load list rows and the help box (`0x492180`), 11 postcard fields and the locator name
-(`0x4a8df3`, `0x4b3e1d`).
+(`0x4a8df3`, `0x4b3e80`).
 
 Verification: build clean; the suite without game data passes 4420 (544 skipped), with the game files 4855 (109 skipped), the fixed-run hash pin
 (`0xA2FAA54FEB56DA05`) is unchanged; the five native smokes (front end, sandbox, plain smoke, park-resume capture and restore) pass. A review pass

@@ -143,7 +143,7 @@ internal static class AdvisorUiHelp
 		ObjectInfoHelp.TryParse( window, out _, out var withdrawn ) ? withdrawn : MessageFor( window ) is { } message ? new[] { message } : Array.Empty<int>();
 
 	/// <summary>Every message some window posts (the ones a park that ends withdraws).</summary>
-	public static IEnumerable<int> AllWindowMessages => Windows.Values.Concat( ObjectInfoHelp.Messages ).Distinct();
+	public static IEnumerable<int> AllWindowMessages => Windows.Values.Concat( ObjectInfoHelp.Messages ).Concat( AdvisorToolHelp.All ).Append( Hud.ParkHud.CameraPanelHelp ).Append( Hud.ParkHud.MessagePanelHelp ).Distinct();
 
 	/// <summary>
 	/// The ten help messages the original withdraws whenever the interface mode changes (0x52F200, 0x52F580): the help of the tools
@@ -213,4 +213,21 @@ internal static class ObjectInfoHelp
 				return true;
 		}
 	}
+}
+
+/// <summary>
+/// The help the tools and panels post through 0x486B00: ids of the descriptor table (<c>advisor-help-messages.toml</c>) with the places that post them (see
+/// <c>docs/LIPS.md</c> "Contextual help").
+/// </summary>
+internal static class AdvisorToolHelp
+{
+	// [BIN:TPW-EXE:0x004982A0 coaster panel] the press of its buttons posts 0x121 (move, control 0x1B), 0x125 (build, 0x1F), 0x126 (loop, 0x20: 0x127 when the coaster is a flume, mask bit 0x200) and 0x124 (demolish, 0x21); the close message 0x1001D8 withdraws all five
+	public const int CoasterMove = 289, CoasterDemolish = 292, CoasterBuild = 293, CoasterLoop = 294, CoasterTrough = 295;
+	/// <summary>The messages the coaster panel's close withdraws.</summary>
+	public static readonly IReadOnlyList<int> CoasterPanelMessages = new[] { CoasterBuild, CoasterTrough, CoasterLoop, CoasterMove, CoasterDemolish };
+	/// <summary>Posted after every click of the coaster tool (the click handler's mode 0x15, 0x52644C).</summary>
+	public const int CoasterToolClick = 205;
+
+	/// <summary>Every message a tool or panel posts, for the withdrawal when a park ends.</summary>
+	public static IEnumerable<int> All => CoasterPanelMessages.Append( CoasterToolClick );
 }

@@ -57,11 +57,14 @@ public sealed partial class ParkHud
 
 	// The help of the tools. A tool start in the original is SetMode (0x52F200), which withdraws the ten mode help messages whenever the mode changes and only
 	// then posts the new tool's help (0x486B00); a help the HUD wants posted is held until the frame's mode change has been reported, so the order survives the poll.
-	private readonly List<int> toolHelp = new();
+	private readonly List<(int Message, string Mode)> toolHelp = new();
 	private string? reportedMode;
 
-	/// <summary>Asks the advisor for the help message of a tool that just started or acted; it is posted after this frame's mode change is reported.</summary>
-	private void PostToolHelp( int message ) => toolHelp.Add( message );
+	/// <summary>
+	/// Asks the advisor for the help message of a tool that just started or acted; it is posted after this frame's mode change is reported, and dropped when that
+	/// change ended the mode it was posted in (the original withdraws the mode help in SetMode, which then ran after the post).
+	/// </summary>
+	private void PostToolHelp( int message ) => toolHelp.Add( (message, InterfaceMode()) );
 
 	/// <summary>
 	/// The interface mode as a key: which tool the park view runs, or "park". Two frames with different keys are a mode change (the original's SetMode with a new mode).
@@ -97,8 +100,9 @@ public sealed partial class ParkHud
 		reportedMode = mode;
 		if ( toolHelp.Count == 0 )
 			return;
-		foreach ( var message in toolHelp )
-			host?.HelpPosted?.Invoke( message );
+		foreach ( var (message, postedIn) in toolHelp )
+			if ( postedIn == mode )
+				host?.HelpPosted?.Invoke( message );
 		toolHelp.Clear();
 	}
 

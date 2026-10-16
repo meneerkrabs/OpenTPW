@@ -72,4 +72,81 @@ public class AdvisorToolHelpTests
 		CollectionAssert.AreEqual( new[] { 304 }, AdvisorUiHelp.WithdrawnWith( ParkHud.MapScreenName ).ToArray() );
 		Assert.IsTrue( AdvisorUiHelp.AllWindowMessages.Contains( 304 ), "a park that ends withdraws it" );
 	}
+
+	// ---- The coaster tool ----------------------------------------------------------------------------------
+
+	private static void SetField( object target, string name, object? value ) =>
+		target.GetType().GetField( name, Private )!.SetValue( target, value );
+
+	/// <summary>Runs the coaster tool's panel on the first object of the fixture's level (the panel and the tool's station are all the HUD reads here).</summary>
+	private static CoasterToolPanel StartCoasterTool( ParkHud hud, Level level, bool flume = false )
+	{
+		var settings = CoasterTests.PcSettings();
+		if ( flume )
+			settings["sCoasterType.bSpecialIsTrough"] = "1";
+		var ride = new CoasterRide( CoasterDefinition.FromValues( settings ), new CoasterWorld( 1 ), "Test Coaster" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		var panel = new CoasterToolPanel( builder );
+		SetField( level, "<CoasterToolStation>k__BackingField", level.Objects.Objects.First() );
+		SetField( level, "<CoasterPanel>k__BackingField", panel );
+		return panel;
+	}
+
+	private static void Press( ParkHud hud, string id )
+	{
+		var button = (UiButton)hud.Screen.Find( id )!;
+		Assert.IsTrue( button.Enabled, id );
+		button.Clicked!();
+	}
+
+	[TestMethod]
+	public void TheCoasterPanelsButtonsPostTheirHelpAndTheCloseWithdrawsAllFive()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		StartCoasterTool( hud, level );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode" }, events, "the tool start is a mode change" );
+		events.Clear();
+		Press( hud, "coasterBuild" );
+		Press( hud, "coasterMove" );
+		Press( hud, "coasterLoop" );
+		Press( hud, "coasterTilt" );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "post 293", "post 289", "post 294" }, events, "build 0x125, move 0x121, loop 0x126; the tilt button posts none (0x4982A0)" );
+		events.Clear();
+		level.ExitCoasterTool();
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "withdraw 293", "withdraw 295", "withdraw 294", "withdraw 289", "withdraw 292", "mode" }, events,
+			"the close message withdraws 0x125, 0x127, 0x126, 0x121 and 0x124 in that order" );
+	}
+
+	[TestMethod]
+	public void TheLoopButtonOfAFlumeCoasterPostsHelp295()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		StartCoasterTool( hud, level, flume: true );
+		Frame( hud );
+		events.Clear();
+		Press( hud, "coasterLoop" );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "post 295" }, events, "mask bit 0x200 (definition flag 0x100) posts 0x127 instead of 0x126" );
+	}
+
+	[TestMethod]
+	public void ADisabledCoasterButtonPostsNothing()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var panel = StartCoasterTool( hud, level );
+		Frame( hud );
+		events.Clear();
+		Assert.IsFalse( panel.IsEnabled( CoasterToolButton.Demolish ), "an unfinished circuit has no demolish button" );
+		var button = (UiButton)hud.Screen.Find( "coasterDemolish" )!;
+		Assert.IsFalse( button.Enabled );
+		Frame( hud );
+		Assert.AreEqual( 0, events.Count );
+	}
 }

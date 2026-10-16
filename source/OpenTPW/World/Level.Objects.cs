@@ -141,8 +141,28 @@ public partial class Level
 	/// </summary>
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
-		if ( Guests != null )
-			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation );
+		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation ) )
+			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
+	}
+
+	/// <summary>
+	/// The queue re-evaluation after an edit of a ride's cells (tp.exe <c>0x004DE1F0</c>): a closed ride whose state is not 1, 2 or 4 (broken down, upgrading,
+	/// condemned), without a maintenance call, whose queue is connected (<c>0x004DE4A0</c>), a coaster that passes <c>0x00441970</c> and a kart or water ride
+	/// with a valid track (the track word <c>+0x2C</c>) is opened.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation] the ride is skipped when its open word +0x68 is set or its state +0x19C is 1 or 4, +0x64 (the call) is set, state 2, or 0x4DE4A0 reports the queue unconnected; a type-3 ride (coaster) must pass 0x441970 and a kind 1, 2 or 3 ride needs its track word +0x2C; then +0x68 = 1, the script variable 6 (VAR_RIDECLOSED) = 0 and SetState(0) (0x4E0E60); +0x5E is cleared on every path
+	// [APPROX:QUEUE-023] the model call 0x4547C0 on the type's table entry 0x7A4610 that the opening makes (the open sound is not among the traced effects) is not made
+	private void ReevaluateQueuedRide( OriginalObjectRuntime runtime )
+	{
+		if ( runtime.IsOpen || Gate?.MayOpen( runtime ) != true )
+			return;
+		// a HasQueue ride without queue cells has no back cell, which the original's connection test 0x004DE4A0 reports as not connected (ECON-049 takes it as connected)
+		if ( runtime.Visitors.HasQueue && (runtime.Visitors.QueueFrontCell is not { } front || Guests?.Grid.IsQueue( front.X, front.Y ) != true) )
+			return;
+		if ( runtime.Coaster is { AcceptsGuests: false } || runtime.Bump is { HasTrack: true, IsTrackValid: false } )
+			return;
+		runtime.Open();
+		SyncOpenState( runtime );
 	}
 
 	/// <summary>

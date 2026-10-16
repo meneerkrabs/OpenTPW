@@ -226,6 +226,35 @@ public class GuestSnapshotTests
 		Assert.AreEqual( JsonSerializer.Serialize( snapshot ), JsonSerializer.Serialize( resumed.Simulation.CaptureSnapshot() ), "re-capturing the restored park gives the same snapshot" );
 	}
 
+	/// <summary>RideWalkCount and BoothWait are optional save fields: a snapshot without them (older saves read the defaults) restores, and set values round-trip.</summary>
+	[TestMethod]
+	public void RideWalkCountAndBoothWaitRoundTripAndDefaultForOlderSaves()
+	{
+		var park = new Rig();
+		RunUntil( park, rig => rig.Simulation.TickCount >= 600, 0, 601 );
+		var guest = park.Simulation.Guests.First();
+		guest.RideWalkCount = 7;
+		guest.BoothWait = 63;
+		var snapshot = park.Simulation.CaptureSnapshot();
+		var restored = new Rig();
+		restored.Simulation.RestoreSnapshot( snapshot );
+		Assert.AreEqual( 7, restored.Simulation.Guests.First( g => g.Id == guest.Id ).RideWalkCount );
+		Assert.AreEqual( 63, restored.Simulation.Guests.First( g => g.Id == guest.Id ).BoothWait );
+		// an older save has neither property: the guest record deserializes with the defaults and the snapshot validates
+		var json = JsonSerializer.Serialize( snapshot.Guests.First( g => g.Id == guest.Id ) );
+		var old = System.Text.RegularExpressions.Regex.Replace( json, "\"(RideWalkCount|BoothWait)\":\\d+,?", "" ).Replace( ",}", "}" );
+		Assert.IsFalse( old.Contains( "RideWalkCount" ) || old.Contains( "BoothWait" ) );
+		var olderGuest = JsonSerializer.Deserialize<GuestSnapshot>( old )!;
+		Assert.AreEqual( 0, olderGuest.RideWalkCount );
+		Assert.AreEqual( 0, olderGuest.BoothWait );
+		var older = snapshot with { Guests = snapshot.Guests.Select( g => g.Id == guest.Id ? olderGuest : g ).ToArray() };
+		Assert.IsTrue( park.Simulation.ValidateSnapshot( older ).IsValid );
+		var target = new Rig();
+		target.Simulation.RestoreSnapshot( older );
+		Assert.AreEqual( 0, target.Simulation.Guests.First( g => g.Id == guest.Id ).RideWalkCount );
+		Assert.AreEqual( 0, target.Simulation.Guests.First( g => g.Id == guest.Id ).BoothWait );
+	}
+
 	/// <summary>Snapshots with duplicate or missing references, bad bounds or inconsistent state are rejected, and a
 	/// rejected restore leaves the lived-in target untouched.</summary>
 	[TestMethod]
@@ -260,6 +289,9 @@ public class GuestSnapshotTests
 			( "guest id beyond the allocator", WithGuest( 0, guest => guest with { Id = snapshot.NextGuestId } ) ),
 			( "guest ids out of order", snapshot with { Guests = new[] { snapshot.Guests[1], snapshot.Guests[0] }.Concat( snapshot.Guests.Skip( 2 ) ).ToArray() } ),
 			( "already gone", WithGuest( 0, guest => guest with { State = GuestState.Gone } ) ),
+			( "ride-walk count past its reset", WithGuest( 0, guest => guest with { RideWalkCount = 12 } ) ),
+			( "negative booth wait", WithGuest( 0, guest => guest with { BoothWait = -1 } ) ),
+			( "booth wait beyond the longest verdict wait", WithGuest( 0, guest => guest with { BoothWait = 101 } ) ),
 			( "route cell outside the map", WithGuest( 0, guest => guest with { Navigation = guest.Navigation with { Route = new[] { (99, 99) }.Concat( guest.Navigation.Route.Skip( 1 ) ).ToArray() } } ) ),
 			( "queueing guest no longer held", WithGuest( queuedIndex, guest => guest with { State = GuestState.WalkingAround } ) ),
 			( "attraction reference not registered", WithGuest( boundIndex, guest => guest with { State = GuestState.GoingToRide, AttractionId = 42 } ) ),

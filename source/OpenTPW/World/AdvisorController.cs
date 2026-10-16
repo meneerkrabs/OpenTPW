@@ -19,7 +19,8 @@ internal enum AdvisorGameEvent
 /// A scored advice message: descriptor fields plus the Advisor.sam key of its configured score. <paramref name="GameMode"/> is the
 /// descriptor's game-mode selector (0: full simulation only, 1: Instant Action only, 2: always).
 /// </summary>
-internal readonly record struct AdvisorMessageDefinition( int MessageId, int FirstResponseId, int ResponseCount, byte Group, byte MaximumPendingDuplicates, string ScoreKey, byte GameMode = 2 );
+/// <param name="FixedScore">The score of a callback that returns a constant (the original's <c>mov eax, imm</c> callbacks), else null: the score is the Advisor.sam value of <paramref name="ScoreKey"/>.</param>
+internal readonly record struct AdvisorMessageDefinition( int MessageId, int FirstResponseId, int ResponseCount, byte Group, byte MaximumPendingDuplicates, string ScoreKey, byte GameMode = 2, int? FixedScore = null );
 
 /// <summary>
 /// The rows of the original 351-record descriptor table reached by the wired game events
@@ -88,8 +89,66 @@ internal static class AdvisorTables
 		.Select( message => new AdvisorMessageDefinition( message.MessageId, message.FirstResponseId, message.ResponseCount, message.Group, message.MaximumPendingDuplicates, HelpScoreKey, message.GameMode ) )
 		.ToArray();
 
-	/// <summary>The bound game-event messages and the help messages.</summary>
-	public static IEnumerable<AdvisorMessageDefinition> AllMessages => Messages.Concat( HelpMessages );
+	/// <summary>The bound game-event messages, the help messages and the advice game code posts with a getter score.</summary>
+	public static IEnumerable<AdvisorMessageDefinition> AllMessages => Messages.Concat( HelpMessages ).Concat( EventMessages );
+
+	/// <summary>The first of the 25 staff messages (33 + 5 × kind + the role's position), the <see cref="StrikeMessage"/> TAG_SYSTEM index less 5.</summary>
+	public const int FirstStaffMessage = 33;
+
+	/// <summary>The staff message of a strike message: the kind's block of five and the role's place in it (mechanic, handyman, guard, entertainer, researcher).</summary>
+	// [BIN:TPW-EXE:0x0059AFC0 staff info] a message of type 0x17 with the kind in +0xC and the role in +8 queues 0x21 + 5 × kind + 1 for a role of 0 (handyman), + 0 for 1 (mechanic), + 3 for 2 (entertainer), + 2 for 3 (guard) and + 4 for 4 (researcher), the order of the StaffType enum; the staff manager's month routine (0x509031-0x5092AA) sends kinds 0 (once), 2 (four sites) and 3 (once)
+	public static int StaffMessage( StrikeMessage message ) => message.TagSystemIndex - StrikeMessage.FirstTagSystemIndex + FirstStaffMessage;
+
+	private static readonly string[] StaffMessageFamilies = { "StaffUnhappy", "StaffVeryUnhappy", "StaffStriking", "StaffHappier", "StrikeEndBad" };
+	private static readonly string[] StaffMessageRoles = { "Mechanics", "Handymen", "Guards", "Entertainers", "Researchers" };
+
+	/// <summary>
+	/// The advice game code posts, with the score key of its callback (or the constant it returns): each callback is a getter of one Advisor.sam score, at the object's
+	/// offset of the key in the schema 0x72E124 (fields from +0xA0 in schema order), so the staff messages 33-57 read +0x1BC-+0x21C.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059D800 staff score getters] the callbacks of the descriptors 33-57 return the fields +0x1BC to +0x21C, StaffUnhappy, StaffVeryUnhappy, StaffStriking, StaffHappier and StrikeEnd(Bad) for the five roles in turn
+	// [BIN:TPW-EXE:0x0059DC60 breakdown score getters] 66, 68 and 69 return +0x248, +0x24C and +0x250 (RidesBreakdownImminent, NoMechanics, BusyMechanics; 70 is +0x254)
+	// [BIN:TPW-EXE:0x0059E7F0 research score getters] 93-97 return +0x300 to +0x310 (the ride, add-on, shop, sideshow and feature researched scores), 133-136 +0x3F4 to +0x400 (NewResearchGroup ride, shop, sideshow, feature) and 167 the constant 0x2710
+	public static readonly IReadOnlyList<(int MessageId, string ScoreKey, int? FixedScore)> EventScoreKeys = BuildEventScoreKeys();
+
+	private static IReadOnlyList<(int, string, int?)> BuildEventScoreKeys()
+	{
+		var rows = new List<(int, string, int?)>();
+		for ( var family = 0; family < StaffMessageFamilies.Length; family++ )
+			for ( var role = 0; role < StaffMessageRoles.Length; role++ )
+				rows.Add( (FirstStaffMessage + 5 * family + role, $"{StaffMessageFamilies[family]}{StaffMessageRoles[role]}.Score", null) );
+		rows.Add( (66, "RidesBreakdownImminent.Score", null) );
+		rows.Add( (68, "RidesBreakdownNoMechanics.Score", null) );
+		rows.Add( (69, "RidesBreakdownBusyMechanics.Score", null) );
+		rows.Add( (93, "ResearchRideResearched.Score", null) );
+		rows.Add( (94, "ResearchAddonResearched.Score", null) );
+		rows.Add( (95, "ResearchShopResearched.Score", null) );
+		rows.Add( (96, "ResearchSideshowResearched.Score", null) );
+		rows.Add( (97, "ResearchFeatureResearched.Score", null) );
+		rows.Add( (133, "NewResearchGroupRide.Score", null) );
+		rows.Add( (134, "NewResearchGroupShop.Score", null) );
+		rows.Add( (135, "NewResearchGroupSideshow.Score", null) );
+		rows.Add( (136, "NewResearchGroupFeature.Score", null) );
+		rows.Add( (167, "", 0x2710) );
+		return rows;
+	}
+
+	private static IReadOnlyList<AdvisorMessageDefinition>? events;
+
+	/// <summary>The definitions of <see cref="EventScoreKeys"/>: the response, group, pending-duplicate limit and game mode of each from the shipped descriptor table.</summary>
+	public static IReadOnlyList<AdvisorMessageDefinition> EventMessages => events ??= BuildEventMessages();
+
+	private static IReadOnlyList<AdvisorMessageDefinition> BuildEventMessages()
+	{
+		var rows = AdvisorDescriptorTable.Rows;
+		return EventScoreKeys.Where( entry => entry.MessageId < rows.Count )
+			.Select( entry =>
+			{
+				var row = rows[entry.MessageId];
+				return new AdvisorMessageDefinition( entry.MessageId, row.FirstResponseId, row.ResponseCount, row.Group, row.MaximumPendingDuplicates, entry.ScoreKey, row.GameMode, entry.FixedScore );
+			} )
+			.ToArray();
+	}
 
 	private static IReadOnlyList<AdvisorMessageDefinition>? unproduced;
 
@@ -187,8 +246,9 @@ internal sealed class AdvisorBalance
 			Groups = groups,
 			// The help score is optional: a settings file without it leaves the help silent instead of disabling the advisor.
 			ContextHelpScore = settings.GetInt( AdvisorTables.ContextHelpScoreKey, 0, optional: true ),
-			Scores = AdvisorTables.AllMessages.Select( message => message.ScoreKey ).Distinct( StringComparer.OrdinalIgnoreCase )
+			Scores = AdvisorTables.AllMessages.Where( message => message.FixedScore == null ).Select( message => message.ScoreKey ).Distinct( StringComparer.OrdinalIgnoreCase )
 				.ToDictionary( key => key, key => key == AdvisorTables.HelpScoreKey || key == AdvisorTables.ChallengeScoreKey || key == AdvisorTables.MechanicOnTheWayScoreKey || AdvisorTables.PrankScoreKeys.Contains( key, StringComparer.OrdinalIgnoreCase )
+					|| AdvisorTables.EventScoreKeys.Any( entry => string.Equals( entry.ScoreKey, key, StringComparison.OrdinalIgnoreCase ) )
 					? settings.GetInt( key, 0, optional: true ) : settings.GetInt( key ), StringComparer.OrdinalIgnoreCase ),
 		};
 	}
@@ -200,7 +260,11 @@ internal sealed class AdvisorBalance
 			group.RepeatGroups, group.SayOnlyOnce, group.DiscardAfterSlaps, message.MaximumPendingDuplicates );
 	} );
 
-	public int ScoreOf( int messageId ) => Scores[AdvisorTables.AllMessages.Single( message => message.MessageId == messageId ).ScoreKey];
+	public int ScoreOf( int messageId )
+	{
+		var message = AdvisorTables.AllMessages.Single( item => item.MessageId == messageId );
+		return message.FixedScore ?? Scores[message.ScoreKey];
+	}
 }
 
 /// <summary>

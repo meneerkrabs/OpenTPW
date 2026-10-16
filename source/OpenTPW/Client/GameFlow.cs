@@ -444,6 +444,7 @@ internal sealed partial class GameFlow : IDisposable
 		HelpPosted = message => Advisor?.PostHelp( message ),
 		HelpWithdrawn = message => Advisor?.WithdrawHelp( message ),
 		ModeChanged = () => Advisor?.OnModeChanged(),
+		AdvisorSaysStaffMessages = () => Advisor != null,
 		HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
 	};
 

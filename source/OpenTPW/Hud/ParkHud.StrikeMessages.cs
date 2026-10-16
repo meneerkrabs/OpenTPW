@@ -14,6 +14,9 @@ public sealed partial class ParkHud
 	{
 		if ( item.Kind != ParkEventKind.StaffStrikeMessage )
 			return;
+		// [BIN:TPW-EXE:0x0059B620 caption] the message's text reaches the tube as the caption of the advisor's response (the responses 97-171 of the advice 33-57 caption TAG_SYSTEM entries 38-62, the advice number plus 5), so with an advisor it is posted when that is said
+		if ( host?.AdvisorSaysStaffMessages?.Invoke() == true )
+			return;
 		string[] table;
 		try
 		{

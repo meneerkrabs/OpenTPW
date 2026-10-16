@@ -141,6 +141,18 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
+		// [BIN:TPW-EXE:0x00509031 staff messages] the staff manager's month routine sends the staff info message (type 0x17, kind and role) that 0x59AFC0 turns into the advice 33-57; the kind and role are those of the strike message, whose text the advisor's caption then posts
+		if ( item.Kind == ParkEventKind.StaffStrikeMessage )
+			PostEventAdvice( AdvisorTables.StaffMessage( new StrikeMessage( (StaffType)item.InfoId, (StrikeMessageKind)item.Amount ) ), "a staff strike message" );
+	}
+
+	/// <summary>Advice posted by game code (the original builds the record through 0x59B590 with the descriptor's score and queues it through 0x59A940).</summary>
+	internal void PostEventAdvice( int message, string source )
+	{
+		if ( level == null )
+			return;
+		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
+		Log.Trace( $"Advisor advice for {source}: message {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
 	}
 
 	/// <summary>A mechanic set off for a broken-down ride: advice 70 reaches the advisor's queue at once.</summary>

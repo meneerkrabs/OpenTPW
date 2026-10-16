@@ -39,6 +39,11 @@ public sealed class HudHost
 	public Action<int>? HelpWithdrawn { get; init; }
 	/// <summary>The interface mode changed (a tool started or ended): the advisor withdraws the help of the tools (0x52F200).</summary>
 	public Action? ModeChanged { get; init; }
+	/// <summary>
+	/// Whether an advisor says the staff strike messages: it queues them as advice 33-57 and posts the text of each as the caption of its speech, so the HUD does not
+	/// post the text itself. Null (no advisor) leaves the HUD to post it when the event happens.
+	/// </summary>
+	public Func<bool>? AdvisorSaysStaffMessages { get; init; }
 	/// <summary>F1 was pressed in a HUD window that passes keys to the original's default window procedure; the advisor repeats the last tutorial advice.</summary>
 	public Action? HelpKeyPressed { get; init; }
 }

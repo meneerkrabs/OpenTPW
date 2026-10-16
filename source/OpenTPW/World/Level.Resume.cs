@@ -1,3 +1,5 @@
+using OpenTPW.Mods;
+
 namespace OpenTPW;
 
 public partial class Level
@@ -52,6 +54,8 @@ public partial class Level
 			Tours = CaptureToursSnapshot(),
 			Prototype = prototype,
 			Particles = ParticlesCaptured?.Invoke( this ),
+			// [EXT:mods] null unless a simulation-changing extension or mod is active, so unmodded saves keep their bytes
+			Mods = ParkResumeMods.Capture( OpenTpwExtensions.Active ),
 			AssetHashes = assets
 		};
 		ParkResumeSaveFile.ValidateSnapshot( snapshot, Objects.Catalog, Park.Economy.Settings, Park.Economy.Catalog, assets );

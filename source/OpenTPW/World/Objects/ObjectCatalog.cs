@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using OpenTPW.Mods;
 
 namespace OpenTPW;
 
@@ -41,10 +42,11 @@ public sealed class ObjectCatalogEntry
 {
 	internal ObjectCatalogEntry( string theme, ObjectCategory category, string archivePath, ObjectSettings settings, ObjectShape shape,
 		string modelPath, string? previewModelPath, string? scriptPath, IReadOnlyList<string> scripts, IReadOnlyList<ObjectAnimationFile> animations,
-		IReadOnlyList<string> auxiliaryModels, IReadOnlyList<string> allModels, BaseFileSystem fileSystem, int? bonusNumber )
+		IReadOnlyList<string> auxiliaryModels, IReadOnlyList<string> allModels, BaseFileSystem fileSystem, int? bonusNumber, ContentRoot? root = null )
 	{
 		FileSystem = fileSystem;
 		BonusNumber = bonusNumber;
+		Root = root ?? ( bonusNumber != null ? ContentRoot.Bonus : ContentRoot.Data );
 		Theme = theme;
 		Category = category;
 		ArchivePath = archivePath;
@@ -81,7 +83,10 @@ public sealed class ObjectCatalogEntry
 	public BaseFileSystem FileSystem { get; }
 	/// <summary>The N of a bonus archive <c>_name_N</c> (official bonus content), else null.</summary>
 	public int? BonusNumber { get; }
-	public bool IsBonus => BonusNumber != null;
+	/// <summary>The content root the archive comes from (game data, official bonus content or a mod); it prefixes the entry's asset-manifest keys.</summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public ContentRoot Root { get; }
+	public bool IsBonus => Root.IsBonus;
 	public string Theme { get; }
 	public ObjectCategory Category { get; }
 	/// <summary>Data-root-relative archive path, e.g. <c>/levels/jungle/rides/totem</c>.</summary>
@@ -319,7 +324,8 @@ public sealed class ObjectCatalog
 			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
 		var fileSystem = FileSystem;
 		// The names come from the language's OBJECT_NAMES: a catalog loaded in another language is not reused.
-		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}";
+		// [EXT:mods] the active mods' digest is part of the key: the same files-based mods give the same catalog, other mods another one
+		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}|{OpenTpwExtensions.Active.Digest}";
 		ObjectCatalog? cached;
 		lock ( cache )
 			cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) ).TryGetValue( key, out cached );

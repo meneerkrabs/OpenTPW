@@ -2,7 +2,8 @@
 
 Usage: python3 -I tools/site_status.py [--repo CHECKOUT] [--pulls-json FILE] [--write-front] [--no-front-check]
 
-Reads docs/FIDELITY-REGISTER.md, docs/reverse/ORACLE.md, docs/FEATURE-MATRIX.md, the README format table,
+Reads the fidelity register (rendered in memory by the checkout's tools/fidelity_register.py, since
+docs/FIDELITY-REGISTER.md is a build artifact that is not committed), docs/reverse/ORACLE.md, docs/FEATURE-MATRIX.md, the README format table,
 the merged pull requests and the checked-out commit, and writes website/docs/status.json and
 website/docs/status.html (ignored build output, like the rest of website/docs). The front page's
 "You can / You cannot yet" block comes from tools/site_status_curated.json: it is committed in
@@ -60,9 +61,31 @@ def parse_register(text: str) -> dict:
     # Since the online extension's approximations became EXT design choices, every ID is in an original area.
     every_original = "All of them belong to the original-fidelity areas" in text
     if not total or not (split or every_original) or not areas:
-        raise ValueError("docs/FIDELITY-REGISTER.md: header counts or area table not found")
+        raise ValueError("fidelity register: header counts or area table not found")
     original, online = (int(split.group(1)), int(split.group(2))) if split else (int(total.group(1)), 0)
     return {"total": int(total.group(1)), "original": original, "online": online, "areas": areas}
+
+
+def register_document(repo: Path) -> str:
+    """The fidelity register text as the checkout's tools/fidelity_register.py renders it from the sources.
+
+    The document is a build artifact (not committed), so a local copy may be missing or stale; it is read only
+    from a checkout without the generator."""
+    tool = repo / "tools" / "fidelity_register.py"
+    if not tool.is_file():
+        return (repo / "docs" / "FIDELITY-REGISTER.md").read_text(encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("fidelity_register_for_site_status", tool)
+    module = importlib.util.module_from_spec(spec)
+    # dataclasses resolve their module through sys.modules (Python < 3.13 fails otherwise)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+        data = module.collect(repo)
+    finally:
+        sys.modules.pop(spec.name, None)
+    if data.errors:
+        raise ValueError("tools/fidelity_register.py: inconsistent sources (run --check): " + "; ".join(data.errors[:5]))
+    return module.render(data)
 
 
 def csharp_status(cell: str) -> str:
@@ -198,7 +221,7 @@ def collect(repo: Path, pulls_json: Path | None = None) -> dict:
     read = lambda name: (repo / name).read_text(encoding="utf-8")
     matrix = parse_matrix(read("docs/FEATURE-MATRIX.md"))
     return {"commit": commit_info(repo),
-            "fidelity": parse_register(read("docs/FIDELITY-REGISTER.md")),
+            "fidelity": parse_register(register_document(repo)),
             "oracle": parse_oracle(read("docs/reverse/ORACLE.md")),
             "features": matrix,
             "formats": parse_formats(read("README.md")),

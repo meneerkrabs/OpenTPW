@@ -343,9 +343,10 @@ The online service is an allowed OpenTPW extension: it does not have to reproduc
 service, whose servers are gone. Where an online feature imitates something of the original that
 is not (fully) recovered, OpenTPW's behavior is an explicit design choice with an `EXT:online-*`
 label in the code. These labels replaced the eighteen former `APPROX:ONLINE-*` IDs (closed
-October 16, 2026); the IDs stay reserved in the [fidelity register](FIDELITY-REGISTER.md) and are
-not reused. A label does not claim the original's behavior: the last column keeps what is known
-about the original, so a later fidelity pass can start from it. Traces of the Mac build
+October 16, 2026); the IDs stay reserved in `tools/fidelity_retired.txt` (listed in the
+[fidelity register](https://opentpw.io/docs/FIDELITY-REGISTER.html)) and are not reused. A label
+does not claim the original's behavior: the last column keeps what is known about the original, so
+a later fidelity pass can start from it. Traces of the Mac build
 (`STP-PPC`) are in [APPROX-TRACE.md](reverse/APPROX-TRACE.md); tp.exe addresses are from the
 Windows v2.0 executable.
 

@@ -5,7 +5,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fidelity_register import CLOSED_AREAS, REGISTERS, Inventory, annotations, collect, in_words, render
+from fidelity_register import (CLOSED_AREAS, DOCUMENT, REGISTERS, RETIRED_LIST, Inventory, annotations, collect, in_words,
+                               render, write_retired)
 
 
 class FidelityRegisterTests(unittest.TestCase):
@@ -110,7 +111,8 @@ var text = "[APPROX:TEST-002] runtime string";
             self.assertIn('ONLINE-003: ONLINE is a closed area without APPROX IDs: online choices take EXT labels', collect(root, {}, closed).errors)
         self.assertIn('ONLINE', CLOSED_AREAS)
 
-    def test_cli_check_detects_stale_and_incomplete_document(self):
+    def test_cli_check_validates_sources_without_a_document_and_write_generates_it(self):
+        # The register document is a build artifact: --check needs no committed copy and writes nothing.
         tool = Path(__file__).with_name('fidelity_register.py')
         with TemporaryDirectory() as directory:
             root = Path(directory)
@@ -125,16 +127,67 @@ var text = "[APPROX:TEST-002] runtime string";
                 file.write_text(text)
             data = collect(root)
             self.assertEqual(data.errors, [])
-            document = root / 'docs/FIDELITY-REGISTER.md'
-            document.write_text(render(data))
-            command = [sys.executable, str(tool), '--root', str(root), '--check']
-            result = subprocess.run(command, capture_output=True, text=True)
+            check = [sys.executable, str(tool), '--root', str(root), '--check']
+            result = subprocess.run(check, capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertIn(f"{len(REGISTERS)} unresolved unique APPROX IDs", result.stdout)
-            document.write_text(render(data).replace('| ECON-001 |', '| ECON-999 |'))
-            result = subprocess.run(command, capture_output=True, text=True)
+            self.assertFalse((root / DOCUMENT).exists())
+            self.assertFalse((root / RETIRED_LIST).exists())
+            # A stale local copy is irrelevant to the check.
+            (root / DOCUMENT).write_text('stale\n')
+            self.assertEqual(subprocess.run(check, capture_output=True, text=True).returncode, 0)
+            output = root / 'out/register.md'
+            result = subprocess.run([sys.executable, str(tool), '--root', str(root), '--write', '--output', str(output)],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(output.read_text(), render(data))
+            self.assertEqual((root / DOCUMENT).read_text(), 'stale\n')
+            result = subprocess.run([sys.executable, str(tool), '--root', str(root), '--write'], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((root / DOCUMENT).read_text(), render(data))
+            # A source inconsistency fails the check.
+            (root / 'source/extra.cs').write_text('// [APPROX:ECON-002] undeclared\n')
+            result = subprocess.run(check, capture_output=True, text=True)
             self.assertEqual(result.returncode, 1)
-            self.assertIn('missing or stale', result.stderr)
+            self.assertIn('ECON-002: annotation has no declaration', result.stderr)
+            # A new APPROX ID in the closed ONLINE area fails with a pointer to EXT labels.
+            (root / 'source/extra.cs').write_text('// [APPROX:ONLINE-002] new online uncertainty\n')
+            result = subprocess.run(check, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(f"ONLINE-002: ONLINE is a closed area without APPROX IDs: {CLOSED_AREAS['ONLINE']}", result.stderr)
+
+    def test_cli_check_requires_retired_ids_to_be_recorded(self):
+        tool = Path(__file__).with_name('fidelity_register.py')
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'source').mkdir()
+            (root / 'docs').mkdir()
+            (root / 'tools').mkdir()
+            (root / 'source/online.cs').write_text('// [EXT:online-fixture] design choice\n')
+            online = '## Online design choices\n| [EXT:online-fixture] | Choice |\n\n## Notes\n| ONLINE-007 | retired |\n'
+            (root / 'docs/ONLINE.md').write_text(online)
+            for relative in set(REGISTERS.values()):
+                file = root / relative
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text('// register-empty: fixture\n')
+            check = [sys.executable, str(tool), '--root', str(root), '--check']
+            result = subprocess.run(check, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(f'ONLINE-007: retired or reserved (docs/ONLINE.md) but not recorded in {RETIRED_LIST}', result.stderr)
+            (root / RETIRED_LIST).write_text('# header kept\n\nZZZ-001 kept\n')
+            result = subprocess.run([sys.executable, str(tool), '--root', str(root), '--write', '--output', str(root / 'r.md')],
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual((root / RETIRED_LIST).read_text(), '# header kept\n\nONLINE-007 docs/ONLINE.md\nZZZ-001 kept\n')
+            self.assertEqual(subprocess.run(check, capture_output=True, text=True).returncode, 0)
+            # The entry stays recorded after its doc row is gone; a union merge may leave the list unsorted.
+            (root / 'docs/ONLINE.md').write_text(online.split('## Notes')[0])
+            (root / RETIRED_LIST).write_text('ZZZ-001 kept\nONLINE-007 docs/ONLINE.md\nONLINE-007 docs/ONLINE.md\n')
+            self.assertEqual(subprocess.run(check, capture_output=True, text=True).returncode, 0)
+            (root / RETIRED_LIST).write_text('ONLINE-007\n')
+            result = subprocess.run(check, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 1)
+            self.assertIn(f'{RETIRED_LIST}:1: expected `ID where`', result.stderr)
 
     def test_ids_used_only_in_docs_cannot_be_declared_again(self):
         with TemporaryDirectory() as directory:
@@ -150,13 +203,13 @@ var text = "[APPROX:TEST-002] runtime string";
             data = collect(root, config)
             self.assertEqual(data.errors, [])
             self.assertEqual(data.retired, {'TEST-002': 'docs/reverse/TRACE.md'})
-            (root / 'docs/FIDELITY-REGISTER.md').write_text(render(data))
+            write_retired(root, data.retired)
             # Reusing the retired number fails, even after its doc row is gone.
             (root / 'docs/reverse/TRACE.md').write_text('| TEST-001 | same rule |\n')
             code.write_text('// [APPROX:TEST-001] one\n// [APPROX:TEST-002] another meaning\n')
             register.write_text('("TEST-001", "rule"),\n("TEST-002", "another meaning"),\n')
             errors = collect(root, config).errors
-            self.assertTrue(any(e.startswith('TEST-002: declared, but docs/FIDELITY-REGISTER.md lists it as retired') for e in errors), errors)
+            self.assertTrue(any(e.startswith(f'TEST-002: declared, but {RETIRED_LIST} lists it as retired') for e in errors), errors)
             self.assertIn('TEST-002', collect(root, config).retired)
 
     def test_ids_retired_in_docs_prose_cannot_be_declared_again(self):
@@ -174,11 +227,11 @@ var text = "[APPROX:TEST-002] runtime string";
             data = collect(root, config)
             self.assertEqual(data.errors, [])
             self.assertEqual(data.retired, {'TEST-004': 'docs/GATE.md'})
-            (root / 'docs/FIDELITY-REGISTER.md').write_text(render(data))
+            write_retired(root, data.retired)
             code.write_text('// [APPROX:TEST-001] one\n// [APPROX:TEST-004] another meaning\n')
             register.write_text('("TEST-001", "rule"),\n("TEST-004", "another meaning"),\n')
             errors = collect(root, config).errors
-            self.assertTrue(any(e.startswith('TEST-004: declared, but docs/FIDELITY-REGISTER.md lists it as retired') for e in errors), errors)
+            self.assertTrue(any(e.startswith(f'TEST-004: declared, but {RETIRED_LIST} lists it as retired') for e in errors), errors)
 
     def test_register_count_sentence_follows_the_configuration(self):
         # Review WV-10: a merge that adds a register to REGISTERS must not leave a stale count in the document.

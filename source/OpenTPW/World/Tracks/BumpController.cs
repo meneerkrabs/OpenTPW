@@ -5,7 +5,7 @@ namespace OpenTPW;
 /// collision objects and buoys, the guests waiting to board and to leave, and the vehicles. It runs the module's integer physics once per 31 ms
 /// world substep (about 32.26 per second) and answers the ride script's <c>BUMP</c> commands. It runs water boats (types −5, −8, −12, −13), go-karts (types −4,
 /// −7, −9, −10: the grid start, the race, the finish and the kart effects) and bumper cars (types −1, −6, −11, −14: cars that wander an arena
-/// and hand their riders over when the session's countdown ends); the add-on handler 0x00548E80 (jumps, tunnels) is TRACK-008.
+/// and hand their riders over when the session's countdown ends); the add-ons' vehicle hook (0x00548E80: the Space Racers Teleport hides a vehicle between its two tiles) is TRACK-008.
 /// </summary>
 // [APPROX:TRACK-019] the shared pools are allocated first-free as the original's, but their order after a park-resume restore of a save from before the shared pools follows the restore (controllers by attraction id), the module ticks where the first controller's ride advances (the rides placed before it run their script step first; the original ticks the module before every script), and the bumper cars' chase candidates and drop-in overlap test still read their own ride's cars
 
@@ -104,6 +104,17 @@ public sealed class BumpController
 	public bool IsTrackValid { get; private set; }
 	/// <summary>The water pieces' animation state set by BUMP 17: true while they run (animation 5), false when stopped (animation 12).</summary>
 	public bool WaterRunning { get; private set; } = true;
+	/// <summary>
+	/// The last BUMP 17 parameter (the script's word +0xE6), −1 when none was given since the ride was placed or the park was loaded. A BUMP 17 with the same value
+	/// does nothing. Presentation only: not saved and not hashed (the original's load resets the word too).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00558C71 script attach] the word +0xE6 starts at −1 (or ecx, -1 at 0x558C22) when the ride's script is attached, and the savegame load's script restore 0x5597A0 (from 0x415270) sets it to 0xFFFF again (0x559F29)
+	public int WaterCommand { get; private set; } = -1;
+	/// <summary>
+	/// Raised when BUMP 17 changes <see cref="WaterCommand"/>: true starts the pieces' water animation (animation 5), false stops it (12). The level walks the
+	/// circuit from both station sides and triggers every piece it passes (<see cref="TrackPieceWalk"/>).
+	/// </summary>
+	public event Action<bool>? WaterPiecesTriggered;
 	/// <summary>The module ticks this controller has run (statistics; the 32-tick gates read the module's frame counter, <see cref="BumpWorld.FrameCount"/>).</summary>
 	public long TickCount { get; internal set; }
 
@@ -455,7 +466,7 @@ public sealed class BumpController
 			case 16:
 				return UnloadOne() ? 1 : 0;
 			case 17:
-				SetWater( parameter == 0 );
+				SetWater( parameter );
 				return 0;
 			default:
 				return 0;
@@ -594,10 +605,15 @@ public sealed class BumpController
 		}
 	}
 
-	private void SetWater( bool running )
+	// [BIN:TPW-EXE:0x005549ED BUMP 17] the parameter is compared with the sign-extended word +0xE6 and an equal value does nothing (0x554A09); otherwise the word takes it and
+	// 0x0052A490 and 0x0052A700 walk the circuit from the station's two sides with flag 1 for a zero parameter (0x554A39) and 0 for any other (0x554A1A)
+	private void SetWater( int parameter )
 	{
-		// [BIN:TPW-EXE:0x0052A490 water pieces] BUMP 17 walks the circuit from both station sides and triggers animation 5 (parameter 0) or 12 (nonzero) on channel 7 of every piece; the stored value (script +0xE6) makes a repeated value a no-op
-		WaterRunning = running;
+		if ( (short)WaterCommand == parameter )
+			return;
+		WaterCommand = (short)parameter;
+		WaterRunning = parameter == 0;
+		WaterPiecesTriggered?.Invoke( parameter == 0 );
 	}
 
 	// ---- Vehicles ----------------------------------------------------------------------------------
@@ -1808,6 +1824,8 @@ public sealed class BumpController
 			module.FrameCount = data.TickCount;
 		}
 		WaterRunning = data.WaterRunning;
+		// the load's script restore (0x005597A0) sets the BUMP 17 word to −1, so the next BUMP 17 always triggers the pieces
+		WaterCommand = -1;
 		Pending.Clear();
 		Pending.AddRange( data.Pending );
 		Leaving.Clear();

@@ -6,9 +6,9 @@ name: Website
 on:
   push:
     branches: [main]
-    paths: ['website/**', 'docs/**', 'README.md', 'source/**/*.cs', 'tools/fidelity_register.py', 'tools/fidelity_retired.txt', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
+    paths: ['website/**', 'docs/**', 'README.md', 'source/**/*.cs', 'tools/fidelity_register.py', 'tools/fidelity_retired.txt', 'tools/progress.py', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
   pull_request:
-    paths: ['website/**', 'docs/**', 'README.md', 'source/**/*.cs', 'tools/fidelity_register.py', 'tools/fidelity_retired.txt', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
+    paths: ['website/**', 'docs/**', 'README.md', 'source/**/*.cs', 'tools/fidelity_register.py', 'tools/fidelity_retired.txt', 'tools/progress.py', 'LICENSE.md', 'tools/**/*.md', 'tools/site_docs.py', 'tools/test_site_docs.py', 'tools/site_status.py', 'tools/site_status_curated.json', 'tools/test_site_status.py', 'tools/check_site.py', 'tools/test_check_site.py', '.github/workflows/website.yml']
   workflow_dispatch:
 permissions:
   contents: read

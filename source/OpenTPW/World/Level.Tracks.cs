@@ -120,7 +120,7 @@ public partial class Level
 	/// </summary>
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
 	// [BIN:TPW-EXE:0x00527EE0 ride demolition] the replays run with flag 0x81B46C = 1, so ClearCell 0x53B280 refunds every cleared kart or water tile (0x53B54A..0x53B57F: a tile whose overlap word +0x20 went negative is cleared and refunds unless it is an end of the replayed line while the flag is clear; the flag is set, the type 0x19 and online cases aside), and 0x5280F0..0x528179 then debits twice the cell cost × the scrap percentage / 100 once
-	// [APPROX:TRACK-007] every tile laid for the ride refunds once, as a replay that visits each laid line once would (a tile written again refunds on its last clearing visit); the replay itself, the per-ride action list popped by 0x52FE50, is not modelled, so whether it still holds every line after a park load or an edit is not traced
+	// [APPROX:TRACK-007] every tile the ride owns refunds once, where the original refunds and clears only what its two walks from the station reach (0x530830 and 0x530B70 collect the circuit's corner points, at most 0x401, and 0x52FE50 replays the lines between them), so a tile cut off from its station stays and refunds nothing there; a tile written again refunds on its last clearing visit
 	private void OnTrackStationRemoving( OriginalObject item )
 	{
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || BuilderOf( item ) is not { } builder )

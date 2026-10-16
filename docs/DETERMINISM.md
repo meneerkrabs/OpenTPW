@@ -320,6 +320,17 @@ Guests, Scripts })`. The gate's own `--seed` sets only the guest seed. Passing
 `new WorldSeed(seed)` and using its streams would tie the economy and scripts to
 the same seed as well.
 
+## Mods
+
+Extensions and mods (MODS.md) are resolved once at startup and never change during a run. With no files-based mods
+and the default extensions nothing in the simulation changes: the online extension `opentpw.online` touches no
+simulation state, and `DeterminismTests.TogglingOnlyTheOnlineExtensionKeepsThePinnedDigests` runs the pinned fixed
+run (`FixedRunHash`) and the guest-pathing run with it on and off and gets the same digests. The M4 gate and the
+browser digest need the original game data and run outside the unit tests, so they are not part of that test; they
+read no extension switch. Mods do not consume content yet. Before any mod may change the simulation, park saves will
+record each active mod's id, version and content digest (`ResolvedMod.ContentSha256`) and refuse a mismatched set,
+and the object catalog's cache key will include `ModSet.Digest`; an unmodded save stays byte-identical.
+
 ## Tests
 
 `DeterminismTests` (no game data needed):

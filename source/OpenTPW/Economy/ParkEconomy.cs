@@ -1541,10 +1541,10 @@ public sealed class ParkEconomy : IParkEconomy
 	/// Buys and registers an object. Requires research, <c>UsageInfo.GoldenTicketCost</c> golden tickets
 	/// (spent) and, as an <b>approximation</b> of the original rule, a balance covering the cost.
 	/// </summary>
-	public PurchaseResult TryBuild( int infoId, out ParkObjectState? built )
+	public PurchaseResult TryBuild( int infoId, out ParkObjectState? built, bool moving = false )
 	{
 		built = null;
-		var check = CheckBuild( infoId );
+		var check = CheckBuild( infoId, moving );
 		if ( check != PurchaseResult.Ok )
 			return check;
 		Catalog.TryGet( infoId, out var info );
@@ -1562,16 +1562,19 @@ public sealed class ParkEconomy : IParkEconomy
 		return PurchaseResult.Ok;
 	}
 
-	/// <summary>The purchase rules of <see cref="TryBuild"/> without buying (the build tool's ghost uses it).</summary>
-	public PurchaseResult CheckBuild( int infoId )
+	/// <summary>
+	/// The purchase rules of <see cref="TryBuild"/> without buying (the build tool's ghost uses it). The Move tool (<paramref name="moving"/>) places a type the park already holds, so it asks
+	/// for neither the buy list's availability nor research: the constructor 0x4db090 charges the price and nothing else.
+	/// </summary>
+	public PurchaseResult CheckBuild( int infoId, bool moving = false )
 	{
 		if ( IsBankrupt )
 			return PurchaseResult.Bankrupt;
 		if ( !Catalog.TryGet( infoId, out var info ) )
 			return PurchaseResult.UnknownObject;
-		if ( !info.IsBuyable )
+		if ( !moving && !info.IsBuyable )
 			return PurchaseResult.NotBuyable;
-		if ( !Research.IsAvailable( infoId ) )
+		if ( !moving && !Research.IsAvailable( infoId ) )
 			return PurchaseResult.NotResearched;
 		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
 			return PurchaseResult.MissingTargetRide;

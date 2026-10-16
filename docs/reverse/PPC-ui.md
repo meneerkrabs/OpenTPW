@@ -822,6 +822,22 @@ nonzero morphology is rejected. The private corpus has **78 zero-iteration and
 90 nonzero-iteration slot records**, all with a positive blur parameter. Thus
 this is a bounded supported branch, not complete mask support.
 
+The PC v2.0 twin settles the shaping for the game OpenTPW reproduces. tp.exe
+`0x5EBF10` is called with the paint records at layer +0x430 and +0x444
+(`0x5ECC76`, `0x5ECCA7`): `0x5EA3F0` copies the glyph coverage, unchanged, to the
+record's offsets (+0xC, +0x10) in a cleared mask; a negative word (+4) erodes by its
+negation (`0x5EA6D0`: separable window minimum, and a band of that width along every
+edge becomes 0), a positive word dilates (`0x5EA510`: separable window maximum,
+windows clipped at the edges); a parameter (+8) that is not 0.0 or NaN (`fcomp` and
+a skip on C3 at `0x5EBF80`) blurs with `0x5EA8A0`. That blur builds one 1-D kernel
+of `3 - _ftol(-2.5*sigma)` taps centred on tap `(n-1)/2` (constants `0x702F38`,
+`0x702F30`, `0x702F28`), normalised by its sum, and runs it along the rows and then
+the columns; taps that fall off the mask are dropped without renormalising, and each
+sum is truncated to a byte. With two style-2 selectors the two shaped masks are
+combined by maximum (`0x5E77C0`, `0x5E7EF0`) before paint 0's colour blit `0x5E7F60`.
+`SignMaskShaping` implements this; only the x87 precision-control state of the sums
+is open.
+
 Four-byte `Bitmap::alphablt` at engine `0x3efc0` stores `max(sourceA,destA)` and
 `dest + ((sourceA*(source-dest)) >> 8)` per RGB channel. The right shift is signed;
 this is not division by 255 or ordinary premultiplied-alpha GPU blending.
@@ -1050,11 +1066,11 @@ Relevant compatibility IDs:
 | --- | --- |
 | COMPAT-001 | Partial replacement: two 128×128 ride destinations and 512-wide text raster are integrated; original lower DIB rows and GPU UV orientation remain open. |
 | COMPAT-002 | Partial replacement: OS-measured centering and LOGFONT-width search, no evidenced eight-texel margin; trace empty/overlong/multi-line text and final texture coordinates. |
-| COMPAT-003 | Ride paints, material strips, coefficients and integer layer blending are integrated. OpenTPW text coverage, unshaped masks, source-height resampling and float rounding still need native fixtures and original-platform pixels. |
+| COMPAT-003 | Ride paints, material strips, coefficients, integer layer blending and the PC paint-mask shaping (tp.exe `0x5EBF10`: offset copy, erosion/dilation, separable Gaussian with truncated edge taps) are integrated. OpenTPW text coverage, source-height upsampling and the x87 precision of the blur still need native fixtures and original-platform pixels. |
 | COMPAT-004 | Gate and ride boards decode and alpha-blit. Compare gate-specific board/text placement with original-platform pixels. |
 | COMPAT-005 | Open: SGN scale integer is read separately from LOGFONT width; width-search proof does not assign the 85..141 field a unit or prove it is ignored. Trace its consumers. |
 | COMPAT-006 | Partial: identified Mac sign call reaches QuickDraw StdText/StdTxMeas; no Windows GDI pair-kerning conclusion follows. Inspect backend/font settings or obtain original-platform glyph-spacing oracle. |
-| COMPAT-007 | Open: trace saved park name and resource/object-name selection into both sign text inputs. |
+| COMPAT-007 | Narrowed: the gate's two lines start as its OBJECT_NAMES row (tp.exe `0x4DB6F9`), the ticket price window opens the rename dialog (`0x4990F0`, handler `0x4993E0`), the gate redraws from the lines and OpenTPW saves them in the world save; original-save import and the handler's online copies and secret name remain. |
 | COMPAT-008 | Open: mesh/textured face render depth and offsets need engine consumer proof; arbitrary normal lift is not supported by text raster helper. |
 | COMPAT-009 | Partial replacement: two-times DIB dimensions and integer 2×2 mask averaging are proved; OS hinting/AA coverage and later sign filtering remain unverified. |
 | COMPAT-011 | Partial resource accessor identity only; missing string/empty currency fallback branch needs the original resource implementation, not current six-language success. |

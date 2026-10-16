@@ -179,12 +179,14 @@ object's `mCurrentDrops`, the drops its tick ramps toward the rain or snow targe
 smaller while rain or snow is falling and the factor is 1.2 otherwise. OpenTPW uses 0.8 while `ParkWeather.CurrentDrops`
 is above 0 (`GuestSimulation.WeatherDropsFalling`); a scene without weather has no drops and uses 1.2. (An earlier reading took the
 thing to be the Traffic Lights fixed item at `+0x1da734`; that offset was miscalculated, see ORACLE.md F9.) Online parks (GameType 1) are cut at
-500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`, an assumption,
-ARRIVAL-002). A group cut with more guests than the limit becomes
-negative; OpenTPW stops at 0 (ARRIVAL-004). Executing the update routine `0xcb2ac` over repeated calls (F11)
-shows that this changes nothing in behaviour: a group at or below 0 creates no guest and, at the next stop of
-the arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does, so nothing
-holds. Only the stored group word and one vehicle step for an exactly empty group differ (effect not traced).
+500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`): tp.exe sets GameType 1 when a
+published park is entered (`0x4c0830`) and runs the arrival step there. A visit still reads `Standard.sam` instead of the original's
+`online_Standard.sam` and counts no park points (ARRIVAL-002). Both cuts compare unsigned, and a group cut with more
+guests than the limit becomes negative, in OpenTPW as in the original (tp.exe `0x4cf6e5`, no floor). Executing the update
+routine `0xcb2ac` over repeated calls (F11) shows that a group at or below 0 creates no guest and, at the next stop of the
+arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does; on the PC every other reader
+of the word treats it as 0 too (the vehicle size `0x4cf48f`, the boarding gate `0x51a844`, the advisor score `0x59f220`
+over the group history).
 
 Park points are summed over the placed rides and sideshows: each adds its `Info.AttractionValue` plus the
 `Attraction[n].NewBonus` of its age bracket (n = age in game days / `Info.NewAttractionDecayTime`, no
@@ -196,12 +198,15 @@ from its own build and counts in full. The jungle `Rides.sam` gives 20 and a 60-
 25 and bonuses 10/7/4. The original counts only things that pass the test at `0xdc834` (executed in the oracle, F10): the type is
 choosable (`Info.IsChoosable`), the ride is neither broken down nor condemned and is open, its entrance connects
 to a cell, its queue holds fewer guests than four per queue cell, a coaster carries no riders, and a kart or water
-ride has its track word (set when the ride is built). OpenTPW applies all but the last two (`IsChoosable`,
-`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`, and `QueueHasRoom`, which the level syncs: queue cells from the entrance and
-fewer guests than four per cell; tp.exe `0x4dd920`, ORACLE.md X15), so a closed, broken, queue-less or full ride gives no points, while
-its copies still count in the divisor of an untracked type; the coaster and kart/water conditions have no state in the economy
-(ARRIVAL-003). Objects imported from an original save or placed as fixed items set the first
-purchase to the current turn (ARRIVAL-005). Open points are ARRIVAL-001..005 (`ArrivalApproximations`).
+ride has its track word (set when the ride is built). OpenTPW applies all of it (tp.exe `0x4dd920`, ORACLE.md X15): `IsChoosable`,
+`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`, `QueueHasRoom` (queue cells from the entrance and fewer guests than four per
+cell), for a coaster its controller test (`0x441970`: no self-intersection, complete and closed, `CoasterRide.AcceptsGuests`) and for
+a kart or water ride its track word (the circuit walk's verdict, `BumpController.IsTrackValid`); the level syncs them each tick. So a
+closed, broken, queue-less, full, crossing or invalid ride gives no points, while its copies still count in the divisor of an untracked
+type. Only things whose type's `Info.WhichUIType` is 0 or 2 count (`0x4c8240`), which includes the shipped add-ons that declare 0. The
+coaster test also needs three track samples and has no edited-coaster term, the track word starts false before the first walk, and a
+coaster imported from an original save has no controller (its track is not imported), so it gives no points (ARRIVAL-003). Objects imported from an original save set the first purchase to the import turn, where
+the original restores each type's record from the save (tp.exe `0x4d3aa0`, ARRIVAL-005); fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002, 003, 005 and 006 (`ArrivalApproximations`).
 
 ## Simulation
 
@@ -233,7 +238,7 @@ home (21) → removed.
 
 | Item | OpenTPW choice |
 | --- | --- |
-| Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once the bus stands at its stop (tp.exe `0x4cf3e0`, run once per world turn). The bus itself is not modelled, so its drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
+| Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once its arrival vehicle reports script variable 1 = 2 at the stop (tp.exe `0x4cf3e0`, run once per world turn). The vehicle (a bus up to 35 guests, a seaplane up to 60, a Ferry above, `0x4cf48c`) is not modelled, so its level script's drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | traced ([below](#needs-and-starting-values)); the energy meter is tp.exe's unnamed float +0x1B8: 0 at creation, a completed use takes the type's `FatigueEffect` off it (`0x4fd970`, clamped to 0..100; 5 in the shipped data, so it stays 0), and only the save reads it; thoughts as in tp.exe ([Thoughts](#thoughts)) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)); the presentation turns are not (GUEST-010) |
@@ -274,13 +279,16 @@ same sum as the arrival rule's, `0x4c8240`), N = `PeepInfo.ExcitementToCostDivis
 `MinimumEntryFee` (20) are fair. Otherwise the fee, against GP in single precision, is:
 
 - from `ExpensivePriceMultiplier` × GP (2.0): far too expensive — the guest thinks 6 and goes home;
-- from `AveragePriceMultiplier` × GP (1.25): on the expensive side — the guest thinks 6, loses `MediumHappinessChange` and waits 50 + R % 50
-  park turns before asking again; once its happiness truncates to 0 it goes home instead (ARRIVAL-006);
+- from `AveragePriceMultiplier` × GP (1.25): on the expensive side — the guest thinks 6, loses `MediumHappinessChange` and waits: the counter
+  of 50 + R % 50 counts down one per park turn and the verdict runs on the turn after it reaches 0, N + 1 turns in all (OpenTPW times
+  them on the frame clock, ARRIVAL-006); once its happiness truncates to 0 it goes home instead;
 - up to `CheapPriceMultiplier` × GP (0.75): cheap — the guest gains `MediumHappinessChange` and pays;
 - otherwise fair — the guest pays.
 
-An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. OpenTPW charges the fee from the guest's purse and turns back a
-guest who cannot pay; the original's booth books the fee (`0x4d0600`) without reading the guest's cash (ARRIVAL-007).
+An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. A paying guest's fee is booked to the bank (tp.exe `0x4d0600`,
+`ParkEconomy.TryAdmitVisitor`) without reading or debiting the guest's purse, as in the original. The booth has no park-closed test: a
+closed park stops its visitors on the walk to the booth ([GATES.md](GATES.md), "What closing does to guests"); OpenTPW's economy refuses an
+admission only while the park is bankrupt (tp.exe's bankruptcy stops the thing loop, ECON-030).
 
 ### Needs and starting values
 

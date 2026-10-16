@@ -64,4 +64,14 @@ public class BoothVerdictTests
 		Assert.IsTrue( expensive.AtBooth > far.AtBooth, $"expensive: guests wait at the booth ({expensive.AtBooth}); far too expensive: they turn at once ({far.AtBooth})" );
 		Assert.IsTrue( far.Departed >= expensive.Departed, $"{far.Departed} / {expensive.Departed}" );
 	}
+
+	[TestMethod]
+	public void AnExpensiveVerdictRunsAgainOneTurnAfterItsCounterEmpties()
+	{
+		// 0x004FF9D0 stores 50 + R % 50 and returns; the updates decrement it, and the one that finds 0 runs the verdict: N + 1 turns.
+		Assert.AreEqual( 51, BoothVerdict.ExpensiveWaitTurns( 0 ) );
+		Assert.AreEqual( 100, BoothVerdict.ExpensiveWaitTurns( 49 ) );
+		Assert.AreEqual( 51, BoothVerdict.ExpensiveWaitTurns( 50 ) );
+		Assert.AreEqual( 100, BoothVerdict.ExpensiveWaitTurns( uint.MaxValue - 46 ) );
+	}
 }

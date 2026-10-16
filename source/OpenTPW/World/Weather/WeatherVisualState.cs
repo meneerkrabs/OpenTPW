@@ -203,9 +203,10 @@ public sealed class WeatherVisualState
 	/// <summary>
 	/// Advances the field by <paramref name="deltaSeconds"/> (already capped, see <see cref="FrameSeconds"/>) and
 	/// reads the source's drop count and weather kind. The box scrolls along the fall direction at the rain or snow
-	/// velocity and by the camera's parallax; bolts age and expire.
+	/// velocity and by the camera's parallax; bolts age and expire. <paramref name="drawFrame"/> is true for a frame that
+	/// redraws the random snow jitter and the bolts' flicker (see the note in the body).
 	/// </summary>
-	public void Update( float deltaSeconds, IWeatherVisualSource source, WeatherCamera camera )
+	public void Update( float deltaSeconds, IWeatherVisualSource source, WeatherCamera camera, bool drawFrame = true )
 	{
 		drawn = Math.Clamp( source.DropCount, 0, FieldSize );
 		snow = source.Snow;
@@ -213,7 +214,8 @@ public sealed class WeatherVisualState
 		if ( deltaSeconds > 0 )
 			fall += FallDirection * ((snow ? SnowVelocity : RainVelocity) * deltaSeconds);
 		// the original draws a new jitter for every flake in every draw, paused or not
-		if ( snow )
+		// [EXT:frame-driven-at-60hz] a draw of the original is a rendered frame (0x54e360), so the jitter changes once per 60 Hz reference frame (drawFrame), whatever OpenTPW's own frame rate; the scroll and the bolts' age follow the real time
+		if ( snow && drawFrame )
 			for ( var index = 0; index < drawn; index++ )
 				jitter[index] = new NVector3( JitterStep(), JitterStep(), JitterStep() ) * SnowJitter;
 		var span = 2 * BoxHalfExtent;
@@ -230,7 +232,7 @@ public sealed class WeatherVisualState
 			bolt.Age += deltaSeconds;
 			if ( bolt.Age >= bolt.Lifetime )
 				bolts.RemoveAt( index );
-			else if ( deltaSeconds > 0 )
+			else if ( deltaSeconds > 0 && drawFrame )
 				bolt.Flicker = random.Next( 64 );
 		}
 

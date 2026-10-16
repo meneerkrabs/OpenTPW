@@ -45,6 +45,19 @@ public sealed class ResearchFluid
 		Speed = speed;
 	}
 
+	/// <summary>
+	/// Steps <paramref name="fluids"/> once for each reference frame (60 Hz, <see cref="ReferenceFrameClock"/>) that <paramref name="deltaSeconds"/> of
+	/// real time completes, as one message 0x1e per rendered frame steps every panel's fluid in the original; returns the frames stepped.
+	/// </summary>
+	internal static int StepFrames( ReferenceFrameClock clock, IEnumerable<ResearchFluid> fluids, float deltaSeconds )
+	{
+		var frames = clock.Advance( deltaSeconds );
+		for ( var frame = 0; frame < frames; frame++ )
+			foreach ( var fluid in fluids )
+				fluid.Tick();
+		return frames;
+	}
+
 	/// <summary>One message 0x1e of the panel control.</summary>
 	public void Tick()
 	{

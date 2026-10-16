@@ -91,8 +91,11 @@ public sealed class WeatherRenderer : Entity
 	protected override void OnUpdate()
 	{
 		var step = WeatherVisualState.FrameSeconds( Time.Delta, timeScale() );
-		visual.Update( step, source, CurrentCamera() );
+		visual.Update( step, source, CurrentCamera(), drawFrames.Advance( Time.Delta ) > 0 );
 	}
+
+	/// <summary>The 60 Hz reference frames at which the snow jitter and the bolt flicker are redrawn (real time, paused or not).</summary>
+	private readonly ReferenceFrameClock drawFrames = new();
 
 	/// <summary>The engine camera as the field reads it: eye and view axes in original units (Y up).</summary>
 	private WeatherCamera CurrentCamera()

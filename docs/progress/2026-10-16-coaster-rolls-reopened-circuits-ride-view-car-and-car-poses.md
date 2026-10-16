@@ -24,9 +24,9 @@ Four coaster items were settled in tp.exe, read via REA:
   play `<model>m` at 0.1 × train speed (`0x43ce20` → `0x474050`), UV-only tracks on the wheel meshes; the two flume boats are the only bend
   cars, ported from `0x438ab0` and `0x438800`.
 
-Also fixed: `Vector2.Equals(Vector2)` called itself, so `==` and `!=` overflowed the stack. The run pin is unchanged; coaster hash content
+Also fixed: `Vector2.Equals(Vector2)` called itself, so `==` and `!=` overflowed the stack (now covered by `Vector2EqualityTests`). The run pin is unchanged; coaster hash content
 changes because sample rolls feed the ride's hash, and sample rolls are now near zero where node banks used to enter the rating step.
-Saves gain no fields (samples are re-derived on load). Verified with 4464 tests passing without game data, 4912 with it, and all five
+`CoasterRide.TryGetRideView` rolls with the camera car's frame, not the sample's second-rail roll, and a bend car pointing straight up or down is left unbent instead of reading a zero-length heading. Saves gain no fields (samples are re-derived on load). Verified with 4464 tests passing without game data, 4912 with it, and all five
 native smokes.
 
 Still open: the wheel clip's start stamp, the bend's use of this build's sample yaw, riders not bending with their boat, the boats' own

@@ -52,6 +52,15 @@ public class CoasterCarBendTests
 	}
 
 	[TestMethod]
+	public void ACarPointingStraightUpHasNoHeadingAndIsNotBent()
+	{
+		var tables = CoasterCarBend.Tables( Straight( 12 ), Spacing, 0.5f, 2f, 5f, 4f, Vector3.UnitY, 5.3f );
+		Assert.AreEqual( 0, tables.Count, "no heading, no tables (the original divides by zero there)" );
+		var vertex = new Vector3( 0.7f, 1.2f, 2.5f );
+		Assert.AreEqual( vertex, CoasterCarBend.Bend( tables, Spacing, vertex ), "a mesh without tables stays as it is, never NaN" );
+	}
+
+	[TestMethod]
 	public void ASampleOnTheChainLiftRaisesTheCarByTheHighElevation()
 	{
 		var samples = Straight( 12 );

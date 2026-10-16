@@ -79,10 +79,15 @@ public static class CoasterCarBend
 		var yaw = (float)AngleLerp( a.Yaw, b.Yaw, f );
 		// the car's heading: the horizontal part of its direction, and its (y, z) after turning by the sample yaw
 		var h = MathF.Sqrt( forward.X * forward.X + forward.Z * forward.Z );
+		// a car pointing straight up or down has no heading (the original divides by zero): its tables stay empty and the mesh is not bent
+		if ( !(h > 1e-6f) )
+			return tables;
 		var carX = forward.X / h;
 		var carZ = forward.Z / h;
 		var turned = CoasterTrack.TurnY( forward, -yaw );
 		var carQ = MathF.Sqrt( forward.Y * forward.Y + turned.Z * turned.Z );
+		if ( !(carQ > 1e-6f) )
+			return tables;
 		var carY = forward.Y / carQ;
 		var carPitchZ = turned.Z / carQ;
 		float Elevation( int k ) =>

@@ -129,7 +129,9 @@ public class CoasterTrainLayoutTests
 		for ( var index = 0; index < ride.Trains.Count; index++ )
 			ride.Trains[index].Position = 42f;
 		Assert.AreEqual( 0, ride.RideViewTrain, "equal positions keep the first train" );
-		Assert.IsTrue( ride.TryGetRideView( ride.RideViewTrain, out _, out _, out _ ) );
+		Assert.IsTrue( ride.TryGetRideView( ride.RideViewTrain, out _, out _, out var roll ) );
+		var cameraCoordinate = ride.CarCoordinate( ride.Trains[ride.RideViewTrain], ride.Definition.RideCameraCar );
+		Assert.AreEqual( ride.CarPose( cameraCoordinate ).Roll, roll, "the ride view rolls with the camera car's frame, not the sample's second-rail roll" );
 	}
 
 	[TestMethod]

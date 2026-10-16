@@ -291,7 +291,7 @@ public sealed class CoasterRide
 	}
 
 	/// <summary>
-	/// The ride view of a train's camera car (<see cref="CoasterDefinition.RideCameraCar"/>): position from the interpolated sample, forward from the sample direction, roll from the sample roll.
+	/// The ride view of a train's camera car (<see cref="CoasterDefinition.RideCameraCar"/>): position from the interpolated sample, forward from the sample direction, roll from the car's frame (<see cref="CarPose"/>).
 	/// False without that train.
 	/// </summary>
 	// [APPROX:COAST-011] the settings FIRSTPERSONVIEWDISTANCE, COASTERSMOOTHNESS and Info.FirstPersonSprites are not read by the ride view: tp.exe's option table (0x7442c0, entries 17 and 22) has no reader that was found (the accessor 0x402bf0 has no direct caller, no code addresses the entries) — evidence needed: a runtime read of the option entries, or a capture of the original ride view at other distances
@@ -301,8 +301,10 @@ public sealed class CoasterRide
 		roll = 0;
 		if ( !IsOperational || train < 0 || train >= trains.Count )
 			return false;
-		var sample = SampleAt( CarCoordinate( trains[train], Definition.RideCameraCar ) );
-		(position, forward, roll) = (sample.Position, sample.Direction, sample.Bank);
+		var coordinate = CarCoordinate( trains[train], Definition.RideCameraCar );
+		var sample = SampleAt( coordinate );
+		// the roll is the car's frame roll (0x43e6b0), the one the car's matrix turns by: the sample roll is the second rail's alone and carries no node bank
+		(position, forward, roll) = (sample.Position, sample.Direction, CarPose( coordinate ).Roll);
 		return true;
 	}
 

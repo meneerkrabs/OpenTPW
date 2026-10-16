@@ -78,6 +78,7 @@ public class AdvisorControllerTests
 			(0, 1, 1, true), (106, 274, 424, false), (106, 275, 425, false), (128, 308, 342, false), (128, 309, 343, false),
 			(129, 310, 344, false), (129, 311, 345, false), (323, 587, 606, false),
 			(271, 523, 540, false), (271, 524, 541, false), (271, 525, 542, false),
+			(70, 204, 202, false), (70, 205, 203, false), (70, 206, 204, false),
 		};
 		foreach ( var (message, responseId, sample, local) in expected )
 		{
@@ -87,7 +88,7 @@ public class AdvisorControllerTests
 			Assert.AreEqual( sample, table[responseId].Lip, $"response {responseId} LIP" );
 			Assert.AreEqual( local, table[responseId].Local, $"response {responseId} bank" );
 		}
-		Assert.AreEqual( 9, AdvisorTables.Messages.Length, "five game-event messages, the three prank lines and the challenge warning" );
+		Assert.AreEqual( 10, AdvisorTables.Messages.Length, "five game-event messages, the three prank lines, the challenge warning and the mechanics' message" );
 		Assert.AreEqual( (byte)0, AdvisorTables.Messages.Single( item => item.MessageId == 271 ).GameMode, "the challenge warning is full simulation only" );
 		Assert.AreEqual( 1, AdvisorTables.Messages.Single( item => item.MessageId == 323 ).Group, "PrebuiltPark is a tutorial-group message" );
 	}

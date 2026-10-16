@@ -35,7 +35,7 @@ internal sealed partial class SandboxSmokeTest
 	/// <summary>Whether every track phase that started has finished (the smoke test completes after them).</summary>
 	private bool TrackSmokesDone => (waterSmoke.Done || !waterSmoke.Verified) && (kartSmoke.Done || !kartSmoke.Verified) && (bumperSmoke.Done || !bumperSmoke.Verified);
 
-	/// <summary>Cell offsets from the footprint anchor (rotation 0) of the circuit's three corner clicks: right of the station, above it, back down the left side.</summary>
+	/// <summary>Cell offsets from the first station tile (rotation 0) of the circuit's three corner clicks: right of the station, above it, back down the left side.</summary>
 	private static readonly (int X, int Y)[] WaterCircuit = { (4, 0), (4, 4), (-2, 4), (-2, 0) };
 
 	private void VerifyHudWaterTrack()
@@ -71,7 +71,7 @@ internal sealed partial class SandboxSmokeTest
 			var candidate = Level.GetCentredAnchor( entry!, cell.X, cell.Y, 0 );
 			if ( level.Objects.CheckFree( entry!, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
 				continue;
-			// the footprint rows, the loop tiles around it (x from −2 to +5, y from 0 to 5) and the queue's front cell must be free
+			// the footprint rows, the loop tiles around it (x from −2 to +5, y from 1 to 6: the station lies on the footprint's rows 1 and 2) and the queue's front cell must be free
 			var cells = Enumerable.Range( candidate.X - 2, 9 ).SelectMany( x => Enumerable.Range( candidate.Y - 1, 8 ).Select( y => (X: x, Y: y) ) );
 			if ( cells.All( loopCell => Free( loopCell.X, loopCell.Y ) && OnScreen( loopCell ) ) )
 				anchor = candidate;
@@ -85,7 +85,9 @@ internal sealed partial class SandboxSmokeTest
 		station!.Open();
 		run.Station = station;
 		var layout = level.TrackStations[station!];
-		Require( layout.First == (anchor.Value.X, anchor.Value.Y) && layout.Heading == TrackHeading.PosX, "the station tiles sit on the footprint's first tile column" );
+		// the line of 0x52A1A0 at rotation 0 runs from (x, y+1) to (x+2, y+1) of the attraction cell (docs/TRACKS.md, "The station")
+		Require( layout == TrackStation.FromPlacement( anchor.Value.X, anchor.Value.Y, 0 ) && layout.First == (anchor.Value.X, anchor.Value.Y + 1) && layout.Heading == TrackHeading.PosX,
+			$"the station tiles sit on the footprint's rows 1 and 2 (first tile {layout.First}, anchor {anchor.Value})" );
 		var builder = level.BuilderOf( station! )!;
 		var originType = water ? TrackCellTypes.WaterOrigin : TrackCellTypes.KartOrigin;
 		var mode = water ? CellToolMode.WaterTrack : CellToolMode.KartTrack;
@@ -93,7 +95,7 @@ internal sealed partial class SandboxSmokeTest
 		var balance = economy?.Balance ?? 0;
 		Require( level.EnterTrackTool( station ) && level.CellTool.IsActive && level.CellTool.Mode == mode && level.CellTool.Start == layout.Exit,
 			$"the {kind} track tool starts at the tile after the station" );
-		var corners = WaterCircuit.Select( offset => (X: anchor.Value.X + offset.X, Y: anchor.Value.Y + offset.Y) ).ToArray();
+		var corners = WaterCircuit.Select( offset => (X: layout.First.X + offset.X, Y: layout.First.Y + offset.Y) ).ToArray();
 		var tiles = 0;
 		foreach ( var corner in corners.Skip( 1 ) )
 		{

@@ -88,7 +88,7 @@ public sealed class CoasterToolPanel
 	/// turns the two build buttons off and any other track the demolish button.
 	/// </summary>
 	// [BIN:TPW-EXE:0x445910 enabled buttons] the mask starts at 0x1fc; bit 1 (build) is added unless the last node is the first of a loop pair (0x444c00 / node flag 0x80), bit 2 (loop) with definition flag 0x80 and 0x200 with 0x100; then a complete track whose circuit is not cut open (controller flags &1 set, &2 clear) clears bits 1 and 2, any other track clears bit 0x40
-	// [APPROX:COAST-028] definition flag 0x80 is set for every coaster (the loader ORs 0xA0), so the loop button is enabled by OpenTPW's own test: the coaster has a loop pylon control; the original hides it on the mine coaster by another test (the object's +0x50) — evidence needed: that field
+	// [BIN:TPW-EXE:0x004980D1 loop button] the panel enables the loop button (control 0x20) only when the mask has bit 2 and the ride's level byte (thing +0x50, the upgrade level 0x4DF8F0 raises) is at least 1 (0x4980D6), and the refresh 0x4987F0 hides it at level 0 (0x49880F); the descriptor's flag 0x80 is set for every coaster (the loader ORs 0xA0), so the level is the only gate; OpenTPW adds that the coaster has a loop pylon control
 	public CoasterToolButton EnabledMask
 	{
 		get
@@ -96,7 +96,7 @@ public sealed class CoasterToolPanel
 			var mask = (uint)0x1fc;
 			if ( !PairPending )
 				mask |= 1;
-			if ( builder.Ride.Definition.HasLoopPylon )
+			if ( LoopUnlocked )
 				mask |= 2;
 			if ( IsFinished )
 				mask &= ~3u;
@@ -105,6 +105,9 @@ public sealed class CoasterToolPanel
 			return (CoasterToolButton)mask;
 		}
 	}
+
+	/// <summary>The loop button exists: the coaster has a loop pylon and its ride is upgraded to level 1 or more (a station without an economy counts as unlocked).</summary>
+	public bool LoopUnlocked => builder.Ride.Definition.HasLoopPylon && (builder.UpgradeLevel is not int level || level >= 1);
 
 	/// <summary>Whether the last node is the first pylon of a loop pair: the second one is still to place and only the loop button builds.</summary>
 	public bool PairPending => Track.LastIndex >= CoasterTrack.StationNodeCount && Track.Nodes[Track.LastIndex] is { } last && (last.Flags & CoasterNodeFlags.LoopFirst) != 0 && (last.Flags & CoasterNodeFlags.Loop) != 0

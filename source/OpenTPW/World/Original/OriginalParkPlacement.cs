@@ -19,9 +19,9 @@ public enum OriginalPlacementResult
 /// <summary>
 /// Grid mapping and build rules for imported original levels. One original cell is 10 MD2 units,
 /// which is <see cref="CellSize"/> engine units at the prototype ride's 0.2 model scale; the
-/// heightfield is centred on the engine origin. The rules only use verified data: MAP flags
-/// (docs/MAP.md), heightfield holes, and imported save paths/objects. They are OpenTPW sandbox
-/// rules grounded in that data, not a reproduction of the original game's build checks.
+/// heightfield is centred on the engine origin. A cell's terrain rule is the original's: the type
+/// the map start gives it (holes, the initial path; docs/MAP.md) and imported save paths/objects.
+/// Ownership and the object rules live with the callers (ParkObjects, the path and queue builders).
 /// </summary>
 public static class OriginalParkPlacement
 {
@@ -72,20 +72,26 @@ public static class OriginalParkPlacement
 		return OriginalPlacementResult.Allowed;
 	}
 
+	// [BIN:TPW-EXE:0x535670 cell validator] the placement 0x528a70 tests each footprint cell through 0x532fc0 (mode 0x200) with 0x535670, which reads the cell's type (+8), flags (+0xE: 0x40 unowned, 0x20 path) and links, never its MAP byte (+0x26)
+	// [BIN:TPW-EXE:0x536490 map init] the cell types come from the map start: holes are 2, 0x1e or 7 (refused by type), a surface cell is 1 for InitialPath or else 0 whatever its other MAP bits (Blocked, Water, EntranceArea and FixedWalkway on a surface pick types the init overwrites, 0x536524..0x536548)
 	private static OriginalPlacementResult CheckCell( MapFile map, ModelHeightfield field, OriginalParkImport? save, int x, int y )
 	{
 		var flags = map.GetFlagsAt( x, y );
-		if ( flags.HasFlag( MapCellFlags.Water ) )
-			return OriginalPlacementResult.Water;
-		if ( flags.HasFlag( MapCellFlags.EntranceArea ) )
-			return OriginalPlacementResult.EntranceArea;
-		if ( flags.HasFlag( MapCellFlags.FixedWalkway ) )
-			return OriginalPlacementResult.FixedWalkway;
-		if ( flags.HasFlag( MapCellFlags.Blocked ) )
-			return OriginalPlacementResult.Blocked;
-		if ( field.IsHole( x, y ) )
-			return OriginalPlacementResult.NoTerrainSurface;
-		if ( flags.HasFlag( MapCellFlags.InitialPath ) || (save != null && save.Cells[x, y].IsPath) )
+		var surface = (field.GetCellWord( x, y ) & 1) == 0;
+		switch ( ParkLand.OriginalCellType( flags, surface ) )
+		{
+			case 2:
+				return OriginalPlacementResult.Water;
+			case 0x1e:
+				return OriginalPlacementResult.FixedWalkway;
+			case 7:
+				// the reason only names the hole; a Blocked (rock) hole keeps its own reason, which the coaster site does not count as missing ground
+				return flags.HasFlag( MapCellFlags.EntranceArea ) ? OriginalPlacementResult.EntranceArea
+					: flags.HasFlag( MapCellFlags.Blocked ) ? OriginalPlacementResult.Blocked : OriginalPlacementResult.NoTerrainSurface;
+			case 1:
+				return OriginalPlacementResult.Path;
+		}
+		if ( save != null && save.Cells[x, y].IsPath )
 			return OriginalPlacementResult.Path;
 		if ( save != null && (save.Cells[x, y].IsOccupied || save.IsOccupiedByObject( x, y )) )
 			return OriginalPlacementResult.Occupied;

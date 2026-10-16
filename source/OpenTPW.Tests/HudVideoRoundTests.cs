@@ -63,7 +63,7 @@ public class HudVideoRoundTests
 	public void AChallengeOffersAcceptAndDeclineThatAnswerTheWaitingOffer()
 	{
 		var hud = Hud();
-		var park = EconomyTestData.Park();
+		var park = EconomyTestData.Park(); park.OpenPark();
 		park.AdvanceDays( 541 );
 		Assert.IsNotNull( park.Objectives.Current, "the first offer waits for its answer" );
 		var actions = hud.ChallengeActions( () => park );
@@ -77,19 +77,19 @@ public class HudVideoRoundTests
 		Assert.IsFalse( hud.AnswerChallenge( park, accept: false ) );
 		Assert.IsTrue( park.Objectives.Current!.Accepted );
 
-		var declined = EconomyTestData.Park();
+		var declined = EconomyTestData.Park(); declined.OpenPark();
 		declined.AdvanceDays( 541 );
 		var index = declined.Objectives.Current!.DefinitionIndex;
 		hud.ChallengeActions( () => declined )[1].Clicked();
 		Assert.IsNull( declined.Objectives.Current, "Decline calls the decline (0x4d2ec0)" );
-		Assert.AreEqual( 1, declined.Objectives.Declines[index] );
+		Assert.IsFalse( declined.Objectives.Declines.ContainsKey( index ), "the decline never raises the slot's declined count (0x4d2ec0)" );
 	}
 
 	[TestMethod]
 	public void AnUnansweredOfferWhoseMessageIsGoneIsPostedAgain()
 	{
 		var hud = Hud();
-		var park = EconomyTestData.Park();
+		var park = EconomyTestData.Park(); park.OpenPark();
 		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "nothing waits yet" );
 		park.AdvanceDays( 541 );
 		Assert.IsNotNull( park.Objectives.Current );

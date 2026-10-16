@@ -42,6 +42,9 @@ public sealed class BumpWorld
 	/// <summary>The vehicle in pool slot <paramref name="slot"/>, or null.</summary>
 	public BumpVehicle? VehicleAt( int slot ) => slot >= 0 && slot < VehiclePool ? vehicleSlots[slot] : null;
 
+	/// <summary>Every live vehicle of every ride, in pool order (the original's drop-in overlap test walks the whole pool, 0x54A040).</summary>
+	public IEnumerable<BumpVehicle> LiveVehicles => vehicleSlots.Where( vehicle => vehicle != null && vehicle.IsLive )!;
+
 	/// <summary>Draws the next cosmetic value: the LCG state as a signed 32-bit word.</summary>
 	public int NextCosmetic()
 	{
@@ -68,7 +71,7 @@ public sealed class BumpWorld
 	}
 
 	/// <summary>The vehicles of other rides that sat in <paramref name="owner"/>'s objects lose them (the objects are rebuilt or gone; the original keeps a stale pointer).</summary>
-	// [APPROX:TRACK-019] a vehicle of another ride whose object is rebuilt or removed loses it (object −1, so it searches afresh); the original keeps its pointer to the freed or reused pool record
+	// [EXT:bump-foreign-object-forget] a vehicle of another ride whose object is rebuilt or removed loses it (object -1, so it searches afresh); the original keeps a pointer to the freed or reused pool record, which is undefined behaviour to copy
 	internal void ForgetObjectsOf( BumpController owner )
 	{
 		foreach ( var controller in controllers )
@@ -213,10 +216,29 @@ public sealed class BumpWorld
 	/// Advances the module clock when <paramref name="caller"/> drives it (the first controller: the module ticks once per world step, not once per ride);
 	/// whole 31 ms ticks run, the rest carries over.
 	/// </summary>
-	// [BIN:TPW-EXE:0x0054F55F world substep] every substep calls the module tick once, before the scripts (0x5516B0); OpenTPW ticks the module where the first controller's ride advances, so the rides placed before it run their script step first
 	internal void Advance( BumpController caller, double deltaSeconds )
 	{
-		if ( controllers.Count == 0 || controllers[0] != caller || !double.IsFinite( deltaSeconds ) || deltaSeconds <= 0 )
+		if ( HostDriven || controllers.Count == 0 || controllers[0] != caller )
+			return;
+		AdvanceClock( deltaSeconds );
+	}
+
+	/// <summary>The object pass drives the module itself (<see cref="AdvanceModule"/>): the controllers' own advance no longer ticks it.</summary>
+	internal bool HostDriven { get; set; }
+
+	/// <summary>
+	/// The module tick of one world step, run by the object pass before any ride's script step, as the original's substep does (0x54F55F before the RSSE tick 0x5516B0).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0054F55F world substep] every substep calls the module tick once, before the scripts (0x5516B0), whatever rides exist
+	internal void AdvanceModule( double deltaSeconds )
+	{
+		if ( controllers.Count > 0 )
+			AdvanceClock( deltaSeconds );
+	}
+
+	private void AdvanceClock( double deltaSeconds )
+	{
+		if ( !double.IsFinite( deltaSeconds ) || deltaSeconds <= 0 )
 			return;
 		tickRemainder += deltaSeconds;
 		while ( tickRemainder >= BumpController.TickSeconds - 1e-9 )

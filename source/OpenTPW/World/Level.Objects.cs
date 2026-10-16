@@ -213,6 +213,8 @@ public partial class Level
 
 	/// <summary>The headless path builder over the level's cell map (original levels; null in the generic sandbox).</summary>
 	public ParkPathBuilder? Paths { get; private set; }
+	/// <summary>The area clear tool (the bulldozer: Clear Land and the Clear key); null without paths or on a read-only visit.</summary>
+	public AreaClearTool? AreaClearTool { get; private set; }
 	/// <summary>The path and queue build tool the park view drives (PATH-plan §9.4).</summary>
 	public CellBuildTool CellTool { get; } = new();
 
@@ -240,6 +242,7 @@ public partial class Level
 		{
 			Effects = new LinkEffects( QueueNeighbour: ( x, y ) => GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) ) )
 		};
+		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Objects.FindAt( x, y ), RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell );
 	}
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do.

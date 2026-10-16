@@ -25,6 +25,7 @@ public partial class Level : IDisposable
 				StaffPlacement?.Cancel();
 				PatrolTool?.Cancel();
 				BuyLandTool?.Cancel();
+				AreaClearTool?.Cancel();
 			}
 			isPlacing = value;
 		}
@@ -845,6 +846,7 @@ public partial class Level : IDisposable
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();
+		AreaClearTool?.Cancel();
 		AttachStaffWorld();
 		AttachCoasterChallenges();
 		// The gate holds the economy it was built over; the load replaced it.

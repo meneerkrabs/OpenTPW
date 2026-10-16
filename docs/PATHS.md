@@ -57,10 +57,16 @@ beyond is a queue), and no link to a queue cell; a link to a queue cell clears t
 two diagonals beside it. A queue cell under the writer becomes a path cell and keeps
 its links. A queue neighbour that links back is refreshed and plays `cat_ui` 139.
 
-Removal is `ClearCell`'s forced path case (the original's area-clear tool,
-tp.exe `0x52bdd0`): every bit of the cell's link byte, diagonals included, is
+The area clear tool (`AreaClearTool`, tp.exe tool mode 0x3a: the buy window's
+Clear Land row and the Clear key, Delete by default) takes two clicks: the first
+stores a corner, the second clears the rectangle and ends the tool (tp.exe
+`0x525da3`). Row by row, each object met is demolished when its runs of cells
+along the row and the column through that cell end inside the rectangle and none
+of the scanned cells (the first cell past each run included) has the cell flag
+0x10; then every path cell in the rectangle is removed. Queue cells stay
+(tp.exe `0x52bdd0`). Removal is `ClearCell`'s forced path case (tp.exe `0x52c11f`): every bit of the cell's link byte, diagonals included, is
 cleared on both sides (tp.exe `0x5367A0`), no refund. A `NoModify` cell that still has linked neighbours stays; without
-neighbours the flag is dropped and the cell is removed (PATH-005).
+neighbours the flag is dropped and the cell is removed.
 Backspace over a path cell with no tool on uses the counted case (tp.exe
 `0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
 when it was laid once (`ParkPathBuilder.RemoveOnce`).
@@ -153,7 +159,7 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
-| PATH-005 | PATH-REMOVE | forced removal (a = b = 0) matches the original's area clear (tool 0x3a, 0x52bdd0); OpenTPW removes one clicked cell, the original a rectangle of type-1 cells and whole objects |
+| PATH-005 | PATH-REMOVE | the area clear (tool 0x3a, 0x52bdd0) is ported: the Clear Land row and the Clear key; objects are footprint cells here, and the writer of the cell flag 0x10 that keeps an object from the clear is untraced; the developer panel's one-click remove tool is OpenTPW's |
 | PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |
 | PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause opens a full-screen layer (0x47ed80 → 0x65dd7b) under its panel, whose effect on park clicks is untraced |

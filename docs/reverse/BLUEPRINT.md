@@ -84,7 +84,7 @@ So in the routines read, the entrance and exit symbols (`m_enter`, `m_exit`, `m_
 `m_cross` and `m_nocash` are never chosen as constants, and nothing marks an object's entrance or exit
 cell. The arrow symbols that do appear belong to track building (`m_direct`, `m_link`, `m_end`,
 `m_break`, `m_erase`). The only open source of other codes is the cell byte returned by `0x1006E0E4`.
-OpenTPW therefore draws an object footprint in blue or red only, without entrance or exit arrows.
+(Superseded October 16, 2026: the PC placement `0x528A70` does choose `m_front`, `m_enter` and `m_exit`, see BLUEPRINT-003 below, and OpenTPW draws them.)
 
 ## In OpenTPW
 
@@ -94,29 +94,26 @@ an object is being placed, the object's footprint under the cursor. The cost tex
 
 Open points (`BlueprintApproximations`):
 
-- BLUEPRINT-001: every cell takes its corner height rounded up. The PC SetCell `0x532FC0` (October 15) passes 0 for a
-  plain cell and `10 × ((int)H + 9) / 10` of the cell height `0x452AE0` (the owner object's `.hmp`, else the terrain
-  sampler `0x4527F0`) for a second-layer cell of type 11, 12, 16, 17 or 25 and then a map cell of type 4, 7, 9, 10 or
-  30 (`0x5330AD`–`0x533189`); the neighbour raise `0x536CA0` belongs only to the 2 × 2 track ghost `0x5370E0`. The
-  vertex writer `0x53DDD0` adds to every vertex of a texture 0–14 face the terrain at that vertex and `sin(phase + x + z)`
-  (phase `0x874FC0`, + 0.1 per unpaused frame at `0x53C762`), so the original's markers drape over the ground and ripple
-  by ±1 unit. Neither is reproduced.
+- BLUEPRINT-001: marker height. The PC SetCell `0x532FC0` (October 15) passes 0 for a plain cell and `10 × ((int)H + 9) / 10` of the cell
+  height `0x452AE0` (the owner object's `.hmp`, else the terrain sampler `0x4527F0`) for a second-layer cell of type 11, 12, 16, 17 or 25 and then a map
+  cell of type 4, 7, 9, 10 or 30 (`0x5330AD`–`0x533189`); the neighbour raise `0x536CA0` belongs only to the 2 × 2 track ghost `0x5370E0`. The
+  vertex writer `0x53DDD0` adds to every vertex of a texture 0–14 face the terrain at that vertex and `sine[round((phase + x + z) × 4096 / 2π) & 4095]`
+  (table `0x7B0968` filled by `0x4708D0` with `sin(i / 4096 × 2π)`, phase `0x874FC0`, + 0.1 per unpaused frame at `0x53C762`), so the markers drape over the
+  ground, 1.5 above it, and ripple by ±1 unit. October 16: OpenTPW does this for every cell (`BlueprintMarkers.VertexHeight`, `Ripple`, `Update`), steps the phase
+  0.1 per 1/30 s because the original's frame rate is not known, and has no walls (equal heights need none). Still open: the raise of a cell that already holds an
+  object or track (OpenTPW's cell map does not type those cells).
 - BLUEPRINT-002 (retired October 14, 2026): texture coordinates. The PC table `0x871EE8` holds the unit square in entries 0–3 and (0.5, 0.5) in
   entry 4 (filled by `0x53C3F0`); entries 5–8 are the rotating ±0.4 square of the track symbols. The face builder `0x53DF30` uses the rotating set only
   for textures 8–14 and the unit square for all others, with the corner order by direction byte (default 0,1,2,3; `0x40`: 1,3,0,2; `0x10`: 3,2,1,0;
   4: 2,0,3,1), which shows only on a non-uniform texture. The blue and red markers match (a whole texture per face, both sides drawn), so nothing changed
-  in the code; the corner order is not applied.
-- BLUEPRINT-003: which cells get which marker. Existing path cells of a line are drawn blue, and a footprint
-  is red when the build rule or the purchase refuses it; the chooser's exact result for existing cells and
-  the footprint caller `0x10075618` were not read in full. The PC twins (October 14, 2026): AddFace `0x53C8D0` (face records `0x820B00 + i·0xA0`; callers
-  `0x46C480`, `0x4FA030`, `0x532FC0`, `0x5370E0`), the ghost routine `0x5370E0` (called from `0x52BA50` and `0x53AAC0`) with chooser `0x539760` (1: the refused
-  branch `0x537A1B`, 0: the default texture, otherwise that texture) and `0x532FC0` (called from `0x452D30`, `0x5286A0`, `0x528A70`, `0x536100`); still to read:
-  the chooser's result for existing path cells and the footprint caller among the `0x532FC0` callers. October 15: the line preview
-  `LayLine 0x536100` draws every cell of the line (the ghost `SetCell` returns 1 for allowed and refused cells, `0x53391D`/`0x534009`), and the
-  validator `0x535670` refuses every later cell once its flag `0x816D50` is set (`0x5358A0`; reset at `0x527C52`); OpenTPW stops at the first refused
-  cell. The footprint caller is the object placement `0x528A70` in ghost mode: row 0 of the shape is drawn with `m_front` (texture 6, turned to the build
-  direction, `0x52967E`), the other cells blue, each red when refused; the entrance's outside cell gets `m_enter` (3, `0x52989A`), or `m_inout` (7,
-  `0x5299AE`) when option `0x81B0CC` lays no queue, and the exit's outside cell `m_exit` (4, `0x529B1C`). So the entrance and exit symbols are chosen
-  after all (correcting the section above, which read only the Mac `0x10080C50` path); OpenTPW does not draw them yet. The track symbols (`m_direct`, `m_link`, `m_end`,
-  `m_break`, `m_erase`) and the arrow models `garrow.MD2`/`rarrow.MD2` are not drawn yet; entrance and exit
-  arrows are not drawn because no routine read chooses them (see above).
+  in the code. October 16: the arrow markers (`m_front`, `m_enter`, `m_exit`) are the non-uniform ones, so the corner order is now applied (`BlueprintMarkers.CornerOrder`).
+- BLUEPRINT-003: which cells get which marker. The PC twins (October 14-16, 2026): AddFace `0x53C8D0` (face records `0x820B00 + i·0xA0`; callers
+  `0x46C480`, `0x4FA030`, `0x532FC0`, `0x5370E0`), the ghost routine `0x5370E0` with chooser `0x539760` and `0x532FC0` (called from `0x452D30`, `0x5286A0`,
+  `0x528A70`, `0x536100`). The line preview `LayLine 0x536100` draws every cell of the line (the ghost `SetCell` returns 1 for allowed and refused cells,
+  `0x53391D`/`0x534009`), and the validator `0x535670` refuses every later cell once its flag `0x816D50` is set (`0x5358A0`; reset at `0x527C52`): OpenTPW now
+  marks every cell and turns the refused cell and all later cells red (`BlueprintGhosts.LineCells`). The footprint caller is the object placement `0x528A70`
+  in ghost mode: the cells of row 0 of the shape (the last text row) are drawn with `m_front` (texture 6) turned by the build direction byte (1, `0x40`, `0x10`, 4 for
+  0, 90, 180, 270; `0x52967E`), the other cells blue, each red when refused; with the queue option (`0x52FAB0`, default on) the entrance's outside cell gets `m_enter` (3, `0x52989A`)
+  and, after an entrance, the exit's outside cell `m_exit` (4, `0x529B1C`), each turned to the opposite of its rotated symbol direction (`0x4D8C00` after `0x4D8C20`);
+  without the queue option the entrance's outside cell gets `m_inout` (7, `0x5299AE`). OpenTPW draws all of these (`BlueprintGhosts.Footprint`) except `m_inout`. The track symbols (`m_direct`,
+  `m_link`, `m_end`, `m_break`, `m_erase`) and the arrow models `garrow.MD2`/`rarrow.MD2` are not drawn yet; the validator's answer for a line cell that already holds the line's type is not read.

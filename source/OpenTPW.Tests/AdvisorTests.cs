@@ -22,6 +22,21 @@ public class AdvisorTests
 	}
 
 	[TestMethod]
+	public void AdvisorShaderLightsEachVertexWithTheOriginalAmbientAndLightColour()
+	{
+		// 0x573FD0 default ambient 0.15 grey, 0x5741B0 per-vertex ambient + colour x max(0, -L.N) clamped per channel; the advisor's light colour is 1.0 (0x429BA0).
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !(File.Exists( Path.Combine( directory.FullName, "content", "shaders", "advisor.shader" ) ) && Directory.Exists( Path.Combine( directory.FullName, "source" ) )) )
+			directory = directory.Parent;
+		Assert.IsNotNull( directory, "The repository checkout must be available for this test." );
+		var source = File.ReadAllText( Path.Combine( directory.FullName, "content", "shaders", "advisor.shader" ) );
+		StringAssert.Contains( source, "vs_out.vLight = clamp(vec3(0.15) + max(dot(N, L), 0.0) * g_oUbo.g_vLightColor, 0.0, 1.0);" );
+		Assert.IsFalse( source.Contains( "fog", StringComparison.OrdinalIgnoreCase ), "the fog of the advisor pass is not read, so none is drawn" );
+		var advisor = File.ReadAllText( Path.Combine( directory.FullName, "source", "OpenTPW", "World", "Advisor.cs" ) );
+		StringAssert.Contains( advisor, "g_vLightColor = System.Numerics.Vector3.One," );
+	}
+
+	[TestMethod]
 	public void AdvisorTransformMatchesTheOriginalAt4By3()
 	{
 		// Composed model point → clip space of the whole 640×480 screen (box clip × box half side + centre).
@@ -85,8 +100,9 @@ public class AdvisorTests
 		// 11 (a deliberate extension), 16 (the fixed rows) and 18 (the model hides at the end of the last clip) left in the MISC round of October 14;
 		// 7 (no face test before the submit's transform) and 10 (the game's mouth runs on the advisor clock; the tools' audio clock is an extension) in the read-audio round;
 		// 27 (the slap on cut-off and the F1 replay) in the advisor presentation round;
-		// 20 (event 2 is the bank's monthly message, 0x4D0370) in the economy rules round.
-		var retired = new[] { 1, 2, 3, 4, 7, 8, 10, 11, 13, 14, 15, 16, 18, 19, 20, 21, 23, 24, 27 };
+		// 20 (event 2 is the bank's monthly message, 0x4D0370) in the economy rules round;
+		// 6 (a clip the archive lacks: the start 0x472F60 clears the animation of the model, which keeps its rest pose) and 22 (all 351 descriptors of table 0x76E300 are bound, so an original save's controller is imported whole) in the audio-fx sweep.
+		var retired = new[] { 1, 2, 3, 4, 6, 7, 8, 10, 11, 13, 14, 15, 16, 18, 19, 20, 21, 22, 23, 24, 27 };
 		CollectionAssert.AreEqual( Enumerable.Range( 1, 27 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 

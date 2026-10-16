@@ -16,7 +16,9 @@ namespace OpenTPW;
 // [BIN:STP-PPC:engine_shared 0x1001CF38 CRain::GameLoad] the images are loaded from Data/Generic/Weather: raindrop.tga, snow.tga, lightning.tga (generic/sweather holds smaller copies; which set the park selects is not traced, so the full-size set is used)
 // [BIN:STP-PPC:engine_shared 0x1001DE6C bolt ribbon] a camera-facing ribbon of half-width 1.3 / (branch depth + 1) textured with lightning.tga; opaque grey; no screen flash and no sky darkening in the park
 // [BIN:TPW-EXE:0x567620 render states] the rain (0x57efd0) and the bolts (0x57ec50) are submitted with state 0x200D52: source alpha over one (low byte 0x52 -> SRCBLEND 5, DESTBLEND 2), blending on (0x100), the alpha test (0x400, reference 0x10 of 255, ALPHAFUNC greater-or-equal from 0x566840) and no depth writes (0x800); the snow (0x57f490) with 0x556: source alpha over inverse source alpha, blending and the alpha test on, depth writes on; the rain's 0x200D22 (one plus one, 0x57f1a7) applies only on the chips flagged at 0x566840 (engine flag 0x8bcbc8 bit 2)
-// [APPROX:AUDIO-904] the rain field lives within +-4 original units (0.8 engine units) of the eye, so the camera's 0.1 near plane clips the nearest drops (those within 0.5 original units of the eye plane), where the original's near plane is 0.1 original units (0x54e86f -> 0x578be0: near 0.1, far 1000, fov 90; the park camera 0x578ca0 changes only the far plane) and its polygon clipper (clip codes 0x561bc0, clipping 0x562a70, called from 0x565bb0) cuts the streaks there, drawing only drops in front of the eye (0x57f1f0); the vertex buffer is sized once for 1024 drops plus 16 bolts of 512 segments, so a browser session allocates no further per-frame GPU memory
+// [EXT:weather-near-plane] the weather draws with the scene camera's 0.1 near plane (0.5 original units) and its vertex buffer is sized once (1024 drops plus 16 bolts of 512 segments, so a browser session allocates no further per-frame memory): a near plane of the weather's own would change its depth values against the scene and one for the whole camera would cost scene depth precision
+// [APPROX:AUDIO-904] the rain field lives within +-4 original units (0.8 engine units) of the eye, so that near plane clips the nearest drops (within 0.5 original units of the eye plane), where the original's near plane is 0.1 original units (0x54e86f and the camera init 0x42a990 -> 0x578be0: near 0.1, far 1000, field of view 90) and its polygon clipper (clip codes 0x561bc0, clipping 0x562a70, called from 0x565bb0) cuts the streaks there, drawing only drops in front of the eye (0x57f1f0)
+// [BIN:TPW-EXE:0x57ec50 bolt ribbon] the vertex buffer is sized once for 1024 drops plus 16 bolts of 1024 segments (the original has no bound of its own), so a browser session allocates no further per-frame GPU memory
 public sealed class WeatherRenderer : Entity
 {
 	/// <summary>The weather images relative to the game's data root, as the game file system reads them: any letter case, on any mount (the desktop's Data folder, the browser's /game/Data).</summary>
@@ -102,7 +104,8 @@ public sealed class WeatherRenderer : Entity
 			ToOriginalAxes( eye ) / scale,
 			ToOriginalAxes( new SVector3( view.M11, view.M21, view.M31 ) ),
 			ToOriginalAxes( new SVector3( view.M12, view.M22, view.M32 ) ),
-			ToOriginalAxes( -new SVector3( view.M13, view.M23, view.M33 ) ) );
+			ToOriginalAxes( -new SVector3( view.M13, view.M23, view.M33 ) ),
+			Camera.Mode is FreeWalkCameraMode or RideCameraMode );
 	}
 
 	protected override void OnRender()
@@ -172,6 +175,7 @@ public sealed class WeatherRenderer : Entity
 	}
 
 	/// <summary>Adds the ribbon quads of one bolt in engine world space; false when nothing fit.</summary>
+	// [APPROX:AUDIO-902] each segment is a camera-facing world quad of half-width 1.3 / (depth + 1) original units without joins; the original's emitter 0x57dd10 builds the ribbon of a segment in clip xy: the perpendicular of the projected segment (clip x and y before the divide) scaled to 1.3 / (depth + 1) clip units, with the corner pairs shared mitre-wise between consecutive segments of one depth, so its width on the screen is 1.3 / (depth + 1) / w and its world width 1.3 / (depth + 1) / cos(fov / 2) under the original's 90 degree camera
 	private bool AddBolt( WeatherBolt bolt, ref int vertexCount )
 	{
 		var eye = Camera.Position.GetSystemVector3();
@@ -217,7 +221,7 @@ public sealed class WeatherRenderer : Entity
 /// <summary>The park's weather as the renderer reads it: the simulated drops, kind and bolt tops, with the bolt lifetime from the settings.</summary>
 internal sealed class ParkWeatherVisualSource( ParkWeather weather ) : IWeatherVisualSource
 {
-	private readonly List<SVector3> tops = new();
+	private readonly List<(SVector3 Top, SVector3 Ground)> points = new();
 	private readonly List<WeatherStrike> strikes = new();
 
 	// [BIN:STP-PPC:engine_shared 0x1001FCE4 drawn count] the drawn count is min(CurrentDrops, MaxRaindrops) of the field's 1024 points
@@ -228,11 +232,11 @@ internal sealed class ParkWeatherVisualSource( ParkWeather weather ) : IWeatherV
 	/// <summary>The strikes since the last call, in reusable storage valid until the next call, so a frame without strikes allocates nothing.</summary>
 	public IReadOnlyList<WeatherStrike> TakeStrikes()
 	{
-		tops.Clear();
+		points.Clear();
 		strikes.Clear();
-		weather.DrainBoltTops( tops );
-		foreach ( var top in tops )
-			strikes.Add( WeatherStrike.Below( top ) );
+		weather.DrainStrikePoints( points );
+		foreach ( var (top, ground) in points )
+			strikes.Add( new WeatherStrike( top, ground ) );
 		return strikes;
 	}
 }

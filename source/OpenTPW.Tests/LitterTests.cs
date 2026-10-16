@@ -270,9 +270,9 @@ public class LitterTests
 		rig.Ride.LitterEffect = 50;
 		var guest = rig.Send();
 		var deadline = rig.Simulation.ParkTurn + 400;
-		while ( guest.RidesTaken == 0 && rig.Simulation.ParkTurn < deadline )
+		while ( guest.Litter == 0 && rig.Simulation.ParkTurn < deadline )
 			rig.Step();
-		Assert.AreEqual( 1, guest.RidesTaken );
+		Assert.AreEqual( 0, guest.RidesTaken, "a facility (Info.WhichUIType 3) counts as no ride, shop or sideshow (0x4FD9B1)" );
 		Assert.AreEqual( 50f, guest.Litter, "tp.exe 0x004FE1E0 adds LitterEffect (+0x154), clamped to 0..100" );
 	}
 
@@ -303,5 +303,39 @@ public class LitterTests
 		{
 			FileSystem = previous;
 		}
+	}
+
+	private sealed class RecordingPool : IAdvisorParticlePool
+	{
+		public readonly List<(int Id, (int X, int Y, int Z) At)> Created = new();
+		public readonly List<object> Killed = new();
+		public object? Create( int effectId, (int X, int Y, int Z) native ) { Created.Add( (effectId, native) ); return Created.Count; }
+		public void Move( object handle, (int X, int Y, int Z) native ) { }
+		public void Kill( object handle ) => Killed.Add( handle );
+	}
+
+	[TestMethod]
+	public void AStinkbombStartsEffect50AtItsSpriteAndEndsItWhenSwept()
+	{
+		// tp.exe 0x4D95BD: effect 0x32 at the sprite's position in original units times 1024; 0x4D9620 ends it with the sprite
+		var litter = new ParkLitter();
+		var pool = new RecordingPool();
+		var effects = new ParkLitterEffects( litter, pool );
+		Assert.IsTrue( litter.Drop( 5, 7, LitterType.Stinkbomb ) );
+		Assert.AreEqual( 1, pool.Created.Count );
+		Assert.AreEqual( 50, pool.Created[0].Id );
+		var (dx, dz) = ParkLitter.SpriteOffset( 5, 7 );
+		Assert.AreEqual( ((5 * 10 + dx) * 1024, 0, (7 * 10 + dz) * 1024), pool.Created[0].At );
+		Assert.IsTrue( dx is >= 1 and <= 9 && dz is >= 1 and <= 9 );
+		Assert.AreEqual( 1, effects.Count );
+		Assert.IsTrue( litter.Drop( 6, 7, LitterType.Vomit ), "vomit has no particle" );
+		Assert.AreEqual( 1, pool.Created.Count );
+		Assert.IsFalse( litter.Drop( 5, 7, LitterType.Stinkbomb ), "a cell that holds litter keeps it" );
+		Assert.AreEqual( 1, pool.Created.Count );
+		Assert.IsTrue( litter.Remove( 6, 7 ) );
+		Assert.AreEqual( 0, pool.Killed.Count );
+		Assert.IsTrue( litter.Remove( 5, 7 ) );
+		CollectionAssert.AreEqual( new object[] { 1 }, pool.Killed );
+		Assert.AreEqual( 0, effects.Count );
 	}
 }

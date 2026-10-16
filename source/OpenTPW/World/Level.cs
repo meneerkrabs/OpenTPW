@@ -38,6 +38,7 @@ public partial class Level : IDisposable
 	public BlueprintMarkers? Blueprint { get; private set; }
 	/// <summary>Park management simulation (money, clock, staff, research); original levels only for now.</summary>
 	public ParkEconomyRuntime? Park { get; private set; }
+	private ParkLitterEffects? litterEffects;
 	/// <summary>The park's weather, created on the first simulation step of a park; null without a park economy.</summary>
 	public ParkWeather? Weather { get; private set; }
 
@@ -410,7 +411,10 @@ public partial class Level : IDisposable
 				Guests.WeatherDropsFalling = () => Weather is { CurrentDrops: > 0 };
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
+			if ( Park != null )
+				litterEffects = new ParkLitterEffects( Park.Economy.Litter, ParticleRendererModule.AdvisorPool );
 			ImportOriginalGuests();
+			ImportOriginalRideSettings();
 			SetupStaff();
 			SetupParkGate();
 		}

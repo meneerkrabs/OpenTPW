@@ -251,6 +251,17 @@ public class CrowdAudioTests
 	}
 
 	[TestMethod]
+	public void ALostParkSendsNoCrowdToTheSentence()
+	{
+		// [BIN:TPW-EXE:0x0054F8BB crowd in a lost park] world state 4 zeroes the count the update sends
+		GameAudio.EnterPark( "missing", seed: 11 );
+		GameAudio.UpdateCrowd( 1000, () => 12 );
+		Assert.IsNotNull( GameAudio.Crowd, "guests near the camera start the sentence" );
+		GameAudio.UpdateCrowd( 1000, () => 12, parkLost: true );
+		Assert.IsNull( GameAudio.Crowd, "the lost park's count is 0, which stops it" );
+	}
+
+	[TestMethod]
 	public void TheCrowdUpdatesOnEveryThirtySecondWorldStepOfTheGameTimer()
 	{
 		var cadence = new WorldStepCadence();

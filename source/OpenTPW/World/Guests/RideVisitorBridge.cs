@@ -639,8 +639,17 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// <summary>Raised after an edit of this ride's queue cells (tp.exe's re-evaluation 0x004DE1F0), once the queue is recomputed.</summary>
 	public event Action? QueueEdited;
 
-	/// <summary>Reports a queue edit to the level (<see cref="QueueEdited"/>).</summary>
-	internal void NotifyQueueEdited() => QueueEdited?.Invoke();
+	/// <summary>
+	/// Reports a queue edit to the level (<see cref="QueueEdited"/>). With the <paramref name="grid"/> the re-evaluation's own stamp is made first:
+	/// the queue's back cell gets a new block stamp, so a guest whose walk crosses its block searches again.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation stamp] after the back cell is recomputed (0x4DE130) the counter 0x7CDB98 is raised by one (0x4D8C50, 0x4DE233) and written into the 16 x 16 block of that back cell (0x4D8C60, 0x4DE266) before the open test; the callers are the queue tool's cell click and the cell setter and clear (0x4DE1F0 callers)
+	internal void NotifyQueueEdited( GuestPathGrid? grid = null )
+	{
+		if ( grid != null )
+			grid.Cells.StampBlockAt( QueueBackCell.X, QueueBackCell.Y );
+		QueueEdited?.Invoke();
+	}
 
 	/// <summary>The queue cell behind (x, y): a neighbour of type 3 whose link points back at (x, y) (<c>0xdda18</c>).</summary>
 	// [BIN:TPW-EXE:0x004DE670 queue predecessor] the neighbours are tried −Y (its link 16), +Y (link 1), +X (link 64), −X (link 4), through the run-time table 0x007CDBA0 (entries 0, 1, 5, 6); the first queue cell (type 3, not 9) whose link points back is taken

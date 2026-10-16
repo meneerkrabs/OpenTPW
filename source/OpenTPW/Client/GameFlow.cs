@@ -400,6 +400,8 @@ internal sealed partial class GameFlow : IDisposable
 				Advisor ??= AutomaticAdvisor.TryCreate();
 			advisorUnavailable = Advisor == null;
 			Advisor?.AttachLevel( level );
+			if ( Advisor != null )
+				Advisor.CaptionSink = Hud.PostAdvisorCaption;
 		}
 		if ( Advisor?.IsAttached != true && level.Park?.Import is { } import && level.OriginalPark?.Save?.Advisor is { } saved )
 		{
@@ -590,10 +592,11 @@ internal sealed partial class GameFlow : IDisposable
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
-			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
+			var parkLost = Level.Park?.Economy.IsBankrupt == true;
+			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
 			// The game timer the steps follow stands still while the park is paused, as the advisor's clock does.
 			var crowdLevel = Level;
-			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ) );
+			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ), parkLost );
 			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1, Level.StaffWorld?.DrivesStaff == true );
 			if ( Level.StaffWorld != null )
 				GameAudio.PlayStaffVoices( Level.StaffWorld.TakeVoices() );
@@ -914,6 +917,13 @@ internal sealed partial class GameFlow : IDisposable
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		if ( Level != null )
 		{
+			// The park's backdrop: the level's fog colour (what the original's viewport clear and the sky's haze blend with), then the sky over it.
+			// [BIN:TPW-EXE:0x4080e0 fog colour] the level load copies ThemeEngine.FogColour into the fog colour [0x8bd47c]; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses it when render flags & 0x4002000, else black
+			// [APPROX:UI-107] the clear is always the fog colour, since the park's render flags (0x4002000 bits of [0x8bcbc8]) are not traced; the sky is Level.DrawSky (World/Sky.cs)
+			backgroundBatch.Clear();
+			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.BackdropColour );
+			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
+			Level.DrawSky();
 			Level.Render();
 			Advisor?.Render();
 		}

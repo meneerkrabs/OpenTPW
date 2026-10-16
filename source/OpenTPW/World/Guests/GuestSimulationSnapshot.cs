@@ -89,6 +89,8 @@ public sealed record GuestSnapshot
 	public int RideWalkCount { get; init; }
 	/// <summary>The park turns left of the booth's wait (<see cref="Guest.BoothWait"/>). Absent in older saves, which hold none.</summary>
 	public int BoothWait { get; init; }
+	/// <summary>The stranded mark (<see cref="Guest.StrandedMark"/>). Absent in older saves, which hold none.</summary>
+	public int StrandedMark { get; init; }
 	public required long InterludeTurn { get; init; }
 	public required bool InQueueInterlude { get; init; }
 	/// <summary>The state-6 activity (the original's state 8), <see cref="GuestActivity.None"/> when there is none. Absent in saves

@@ -100,6 +100,28 @@ class ReleasePublicationTests(unittest.TestCase):
         self.assertNotEqual(self.publish().returncode, 0)
         self.assertEqual(json.loads(self.state.read_text())['calls'], [])
 
+    def test_requested_commit_is_pinned_even_when_the_dispatch_ref_moved(self):
+        self.run_git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-qm', 'moved')
+        self.env['RELEASE_COMMIT'] = self.run_git('rev-parse', 'HEAD').stdout.strip()
+        self.env['GITHUB_SHA'] = self.sha  # the ref the run was dispatched on, now behind the checkout
+        result = self.publish()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        tag_call = [c for c in json.loads(self.state.read_text())['calls'] if c[:1] == ['api']][0]
+        self.assertIn('sha=' + self.env['RELEASE_COMMIT'], tag_call)
+
+    def test_checkout_must_match_the_requested_commit(self):
+        self.env['RELEASE_COMMIT'] = self.sha
+        self.run_git('-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', 'commit', '--allow-empty', '-qm', 'other')
+        self.assertNotEqual(self.publish().returncode, 0)
+        self.assertEqual(json.loads(self.state.read_text())['calls'], [])
+
+    def test_extra_notes_are_added_to_the_generated_notes(self):
+        self.env['RELEASE_EXTRA_NOTES'] = '## Progress notes'
+        self.assertEqual(self.publish().returncode, 0)
+        create = [c for c in json.loads(self.state.read_text())['calls'] if c[:2] == ['release', 'create']][0]
+        self.assertIn('--generate-notes', create)
+        self.assertEqual(create[create.index('--notes') + 1], '## Progress notes')
+
 
 if __name__ == '__main__':
     unittest.main()

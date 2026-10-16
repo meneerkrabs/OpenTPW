@@ -112,21 +112,53 @@ public class ChallengeCarriedObjectTests
 	}
 
 	[TestMethod]
-	public void ARideUseRaisesTheObjectsOwnCountAndTheEconomyNamesTheBestKart()
+	public void ARideUseRaisesTheObjectsOwnCount()
 	{
 		var park = EconomyTestData.Park();
 		var ride = park.RegisterExisting( 1180 );
 		park.RecordRideUse( ride.Id );
 		park.RecordRideUse( ride.Id );
 		Assert.AreEqual( (2L, 2L), (park.Counters[ParkCounters.RideUses( 1180 )], park.Counters[ParkCounters.RideUsesOfThing( ride.Id )]) );
+	}
+
+	[TestMethod]
+	public void ChallengeType15MeasuresAndCarriesTheKartWithTheMostCrossingsNow()
+	{
+		// [BIN:TPW-EXE:0x4cc4b0 best kart] the live count of the host's kart rides, not a record kept from the past
+		var park = EconomyTestData.Park();
 		var first = park.RegisterExisting( 1106 );
 		var second = park.RegisterExisting( 1106 );
-		park.ReportRecord( ParkRecordKind.KartCrossroads, first.Id, 4 );
-		park.ReportRecord( ParkRecordKind.KartCrossroads, second.Id, 4 );
-		park.ReportRecord( ParkRecordKind.KartCrossroads, second.Id, 3 );
-		var kart = park.Settings.Challenges[7] with { Type = 15, TargetObject = 1106 };
+		var kart = park.Settings.Challenges[7] with { Type = 15, TargetObject = 0 };
 		var best = typeof( ParkEconomy ).GetMethod( "BestObjectOf", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
-		Assert.AreEqual( first.Id, best.Invoke( park, new object[] { kart } ), "the first of equal records keeps the title (strictly greater replaces, 0x004CC4B0)" );
+		var measure = typeof( ParkEconomy ).GetMethod( "MeasureChallenge", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
+		Assert.AreEqual( 0L, measure.Invoke( park, new object[] { kart } ), "a park without karts measures 0" );
+		Assert.AreEqual( 0, best.Invoke( park, new object[] { kart } ) );
+		var crossings = new System.Collections.Generic.Dictionary<int, long> { [first.Id] = 4, [second.Id] = 3 };
+		park.KartBestCrossings = () => crossings.OrderByDescending( pair => pair.Value ).Select( pair => (pair.Value, pair.Key) ).First();
+		Assert.AreEqual( 4L, measure.Invoke( park, new object[] { kart } ) );
+		Assert.AreEqual( first.Id, best.Invoke( park, new object[] { kart } ) );
+		crossings[first.Id] = 2;
+		Assert.AreEqual( 3L, measure.Invoke( park, new object[] { kart } ), "a kart that lost crossings no longer holds the count" );
+		Assert.AreEqual( second.Id, best.Invoke( park, new object[] { kart } ) );
+	}
+
+	[TestMethod]
+	public void ChallengeType21CountsTheSectionsOfTheTrackRidesOfItsInfoId()
+	{
+		// [BIN:TPW-EXE:0x4cc5d0 best track ride] the sections of the rides of the Info.Id (any for 0) now
+		var park = EconomyTestData.Park();
+		var section = park.Settings.Challenges[7] with { Type = 21, TargetObject = 1106 };
+		var measure = typeof( ParkEconomy ).GetMethod( "MeasureChallenge", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )!;
+		Assert.AreEqual( 0L, measure.Invoke( park, new object[] { section } ) );
+		park.TrackRideSections = infoId => infoId == 1106 ? 12 : 30;
+		Assert.AreEqual( 12L, measure.Invoke( park, new object[] { section } ) );
+	}
+
+	[TestMethod]
+	public void TheAdmissionEventCarriesNoObjectSoACarriedObjectStopsIt()
+	{
+		// [BIN:TPW-EXE:0x4c757d admission message] the analyser posts (type 11, amount 1, object 0, carried 0) for every admission
+		Assert.IsTrue( ParkObjectives.TakesObjectlessEvents( 11 ) );
 	}
 
 	[TestMethod]

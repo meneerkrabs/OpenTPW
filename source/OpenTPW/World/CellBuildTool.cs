@@ -61,17 +61,32 @@ public sealed class CellBuildTool
 	/// <summary>Starts <paramref name="writer"/>'s mode with <paramref name="start"/> as the first vertex, or without a start (null): the next click sets it.</summary>
 	// [BIN:STP-PPC:0x1007B320 SetMode] tool mode 1 = path, 3 = queue; the drag writes the cell type equal to the mode
 	// [BIN:TPW-EXE:0x0052F200 SetMode] a new mode stores the mode (0x81AE2C) and sets the start to −1 (0x52F340)
-	public void Enter( ICellLineWriter writer, (int X, int Y)? start )
+	public void Enter( ICellLineWriter writer, (int X, int Y)? start ) => Enter( writer, start, null, null );
+
+	/// <summary>
+	/// <see cref="Enter(ICellLineWriter, ValueTuple{int, int}?)"/> with the stack of corner points and the segments between them already filled, as the
+	/// queue tool's entry fills them from the ride's queue (<see cref="QueuePaths.CornerStack"/>, tp.exe <c>0x530120</c>): <see cref="Undo"/> then takes the
+	/// existing queue back one segment at a time. <paramref name="segmentsBetween"/> has one segment per point after the first.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052FE50 Back] the undo pops the stack's last point and clears the line from it to the new last point; a stack of one point has nothing to undo (0x52FE6F..0x52FE8C)
+	public void Enter( ICellLineWriter writer, (int X, int Y)? start, IReadOnlyList<(int X, int Y)>? stack, IReadOnlyList<SegmentResult>? segmentsBetween )
 	{
 		ArgumentNullException.ThrowIfNull( writer );
 		if ( writer.Mode == CellToolMode.None )
 			throw new ArgumentException( "A writer lays path or queue cells.", nameof( writer ) );
+		if ( stack != null && (segmentsBetween == null || stack.Count == 0 || segmentsBetween.Count != stack.Count - 1) )
+			throw new ArgumentException( "A stack of corner points has one segment between each two points.", nameof( segmentsBetween ) );
 		vertices.Clear();
 		segments.Clear();
 		Writer = writer;
 		Mode = writer.Mode;
 		Start = start;
-		if ( start is { } first )
+		if ( stack != null )
+		{
+			vertices.AddRange( stack.Take( VertexCapacity ) );
+			segments.AddRange( segmentsBetween!.Take( Math.Max( 0, vertices.Count - 1 ) ) );
+		}
+		else if ( start is { } first )
 			vertices.Add( first );
 		Ghost = null;
 		LastCommit = null;

@@ -6269,7 +6269,7 @@ CALENDAR_FIRST_TARGET = Target('calendar-first-update', 'First calendar update a
                                [(0xE3F0C, 0xE41CC), (0xE3C90, 0xE3D30), (0xE4348, 0xE4394), (0xE4394, 0xE44A8)] + CAL_ALLOWED,
                                calendar_stubs, calendar_update_binary, calendar_update_plan, calendar_first_inputs,
                                equal=calendar_subset_equal, alternatives={'routine-reading': calendar_update_reading},
-                               notes=['No C# hook: OpenTPW starts its calendar synchronised with the first turn (APPROX:ECON-001 text), so a constructed '
+                               notes=['No C# hook: OpenTPW starts its calendar synchronised with the first turn (the ECON-001 text, now EXT:fixed-60hz-clock), so a constructed '
                                       'calendar has no counterpart. The plan is the synchronised rule.',
                                       'Executed: the constructor 0xe3c90 (month 0, day -1, year 0, rate 15000) with the start initializer 0xe4348, and '
                                       '0xe3f0c; stubs as calendar-update plus the host clock GetLocalTime and SetTime.'])

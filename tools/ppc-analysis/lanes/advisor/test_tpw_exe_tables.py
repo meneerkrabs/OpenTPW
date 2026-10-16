@@ -37,6 +37,28 @@ class ReplayTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             tables.replay_stores(Flat(b'\xC3'), 0, end=4)
 
+    def test_caption_rows_render_and_skip_the_tag_of_no_text(self):
+        responses = [(0, 638, 0, -1, 0, 0, 0, tables.NO_CAPTION), (274, 424, 424, -1, 0, 11, 12, 6)]
+        tags = [(index, 383, 0, 2, 0, 0, 30000, 0) for index in range(8)]
+        tags[3] = (6, 383, 1, 99, 0, 0, 0, 0)
+        tags[6] = (6, 383, 1, 123, 0, 0, 0, 0)
+
+        class Image(Flat):
+            def read(self, va, length):
+                if va >= tables.RESPONSE_TABLE:
+                    index = (va - tables.RESPONSE_TABLE) // tables.RESPONSE_RECORD
+                    if index < len(responses):
+                        return struct.pack('<8i', *responses[index])
+                    return struct.pack('<8i', tables.SENTINEL, 0, 0, 0, 0, 0, 0, 0)
+                index = (va - tables.TAG_TABLE) // tables.TAG_RECORD
+                return struct.pack('<8i', *(tags[index] if index < len(tags) else (0,) * 8))
+
+        image = Image(b'')
+        # tag 6 is at position 6 and its id matches: the record there, not the first one with the id
+        self.assertEqual(123, tables.tag_entry(image, 6))
+        self.assertEqual([(274, 6, 123)], tables.captions(image))
+        self.assertIn('{ response = 274, tag = 128, text = 127 },', tables.render_captions([(274, 128, 127)]))
+
     def test_costumes_and_help_rows_render(self):
         self.assertIn('{ response = 5, hat = -1, hat2 = 14 }', tables.render_costumes([(5, -1, 14)]))
         text = tables.render_help([{'message': 188, 'first': 407, 'count': 1, 'group': 1, 'duplicates': 1, 'mode': 2}])

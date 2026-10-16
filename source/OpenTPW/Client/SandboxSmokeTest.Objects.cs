@@ -88,7 +88,7 @@ internal sealed partial class SandboxSmokeTest
 				Require( !level.Park.Guests.TryGetInstance( placed.Visitors.AttractionId, out _ ), "unlink payments after removal" );
 				var rebuilt = level.PlaceObject( entry, site.X, site.Y, rotation );
 				Require( rebuilt != null, "rebuild on freed footprint through the economy" );
-				// the rebuilt ride starts closed like the first build (RIDES-015, 0x4DB712): without opening it no guest boards it and the ride-head readback never finds a rider
+				// the rebuilt ride starts closed as well (RIDES-015, 0x4DB712); the rider-head readback needs guests on it (Crazy Ape is the jungle's only built ADDHEAD ride)
 				rebuilt!.Open();
 				if ( level.Guests != null && entry.HasQueue )
 					QueuePaths.TryConnect( level.Guests.Grid, rebuilt.Visitors );

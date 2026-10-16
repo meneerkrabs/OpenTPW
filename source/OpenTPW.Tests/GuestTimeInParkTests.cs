@@ -33,38 +33,39 @@ public class GuestTimeInParkTests
 	}
 
 	[TestMethod]
-	public void AdmissionStartsAtZeroAfterOutsideTravelAndBoothWaiting()
+	public void TheCounterStartsAtCreationAndRunsThroughTheBoothAndTheRoadHome()
 	{
+		// [BIN:TPW-EXE:0x004FAFDB] the stamp +0x1D4 is written by the person constructor only: nothing resets it at admission or stops it on the road home
 		var park = Park();
 		var guest = park.SpawnArrival()!;
+		Assert.AreEqual( 0d, guest.TimeInParkSeconds, "created at zero" );
 		var sawBooth = false;
+		var last = 0d;
 		for ( var i = 0; i < 20000 && guest.State != GuestState.EnteringPark; i++ )
 		{
-			Assert.IsNull( guest.TimeInParkSeconds );
 			sawBooth |= guest.State == GuestState.AtTicketBooth;
 			Steps( park, 1 );
+			Assert.IsTrue( guest.TimeInParkSeconds >= last, "the road crossing and the booth count" );
+			last = guest.TimeInParkSeconds!.Value;
 		}
 		Assert.IsTrue( sawBooth, "the real arrival path must include the booth" );
-		Assert.AreEqual( GuestState.EnteringPark, guest.State );
 		Assert.AreEqual( 1L, park.Admissions );
-		Assert.AreEqual( 0d, guest.TimeInParkSeconds );
-		Steps( park, 1 );
-		Assert.AreEqual( (double)(float)FixedStepClock.TickDuration, guest.TimeInParkSeconds );
+		Assert.IsTrue( guest.TimeInParkSeconds > 5, $"the admission did not reset it ({guest.TimeInParkSeconds})" );
 		guest.State = GuestState.WaitingToGoHome;
 		var atExit = guest.TimeInParkSeconds;
 		Steps( park, 2 );
-		Assert.AreEqual( atExit, guest.TimeInParkSeconds, "travel and waiting outside the park stop the duration" );
+		Assert.IsTrue( guest.TimeInParkSeconds > atExit, "the road home counts too" );
 	}
 
 	[TestMethod]
-	public void RefusedAdmissionNeverStartsTheCounter()
+	public void ARefusedVisitorsCounterRunsAsWell()
 	{
 		var park = Park( int.MaxValue );
 		var guest = park.SpawnArrival()!;
 		for ( var i = 0; i < 20000 && guest.State is not (GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone); i++ ) Steps( park, 1 );
 		Assert.AreEqual( 0L, park.Admissions );
 		Assert.IsTrue( guest.LaneReversed, "the booth must refuse and turn this guest home" );
-		Assert.IsNull( guest.TimeInParkSeconds );
+		Assert.IsTrue( guest.TimeInParkSeconds > 0 );
 	}
 
 	[TestMethod]

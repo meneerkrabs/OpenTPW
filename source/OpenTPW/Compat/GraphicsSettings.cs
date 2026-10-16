@@ -127,8 +127,11 @@ public enum TextureFilterMode
 }
 
 /// <summary>What the renderer actually uses for a set of detail settings.</summary>
-public sealed record RenderQuality( TextureFilterMode Filter, int MaxAnisotropy, bool Mipmaps, float ViewDistanceScale )
+public sealed record RenderQuality( TextureFilterMode Filter, int MaxAnisotropy, bool Mipmaps, float ViewDistanceScale, int SkyLayers = RenderQuality.AllSkyLayers )
 {
+	/// <summary>The most sky cloud layers the engine draws (SKYQUALITY 4, the engine's default before the options apply, 0x584EF0).</summary>
+	public const int AllSkyLayers = 4;
+
 	/// <summary>The renderer's settings before the graphics options existed (anisotropic 16x, mipmaps, view distance 1).</summary>
 	public static RenderQuality Legacy { get; } = new( TextureFilterMode.Anisotropic, 16, true, 1 );
 }
@@ -214,7 +217,9 @@ public static class GraphicsPresets
 			_ => TextureFilterMode.Anisotropic
 		};
 		return new RenderQuality( filter, filter == TextureFilterMode.Anisotropic ? Math.Clamp( anisotropy, 1, MaximumAnisotropy ) : 1, detail.Mipmap != 0,
-			Math.Clamp( viewDistanceScale, MinimumViewDistanceScale, MaximumViewDistanceScale ) );
+			Math.Clamp( viewDistanceScale, MinimumViewDistanceScale, MaximumViewDistanceScale ),
+			// [BIN:TPW-EXE:0x44D8F0 sky quality] the option apply hands 0, 1, 2 or 4 to the sky's layer count (0x585710) and ignores any other value, which leaves the constructor's 4 (0x584EF0)
+			detail.SkyQuality is 0 or 1 or 2 or 4 ? detail.SkyQuality : RenderQuality.AllSkyLayers );
 	}
 
 	/// <summary>How each original option is handled by OpenTPW today (docs/COMPATIBILITY.md mirrors this).</summary>
@@ -228,7 +233,7 @@ public static class GraphicsPresets
 		["GraphicalOptions.PROCEDURALTEXTURING"] = "Not applied: no procedural terrain texturing yet.",
 		["GraphicalOptions.PROCEDURALTEXTURECACHE"] = "Not applied: no procedural texturing yet.",
 		["GraphicalOptions.ANIMATINGTEXTURES"] = "Applied: object texture-frame animations (0 shows each slot's first frame, as the original's bind does).",
-		["GraphicalOptions.SKYQUALITY"] = "Not applied: sky layers are not implemented.",
+		["GraphicalOptions.SKYQUALITY"] = "Applied: the number of scrolling cloud layers of the sky (0 draws no sky, as the original does).",
 		["GraphicalOptions.SKYDETAIL"] = "Not applied.",
 		["GraphicalOptions.SKYSHADOW"] = "Not applied: no cloud shadows.",
 		["GraphicalOptions.MESHSHADOW"] = "Not applied: no shadows.",

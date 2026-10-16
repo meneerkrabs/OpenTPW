@@ -23,6 +23,7 @@ ADVISOR-023 docs/PROGRESS.md
 ADVISOR-027 docs/LIPS.md
 ARRIVAL-002 docs/GUESTS.md
 ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
+ARRIVAL-005 docs/GUESTS.md
 ARRIVAL-007 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
 AUDIO-002 docs/AUDIO.md
 AUDIO-008 docs/AUDIO.md
@@ -93,6 +94,7 @@ DET-010 docs/reverse/DET-plan.md
 DET-011 docs/reverse/DET-plan.md
 DET-012 docs/reverse/DET-plan.md
 DET-016 docs/DETERMINISM.md
+ECON-001 docs/ECONOMY.md
 ECON-002 docs/reverse/APPROX-TRACE.md
 ECON-003 docs/reverse/APPROX-TRACE.md
 ECON-004 docs/reverse/APPROX-TRACE.md
@@ -105,10 +107,12 @@ ECON-010 docs/reverse/APPROX-TRACE.md
 ECON-011 docs/reverse/APPROX-TRACE.md
 ECON-012 docs/reverse/APPROX-TRACE.md
 ECON-013 docs/reverse/APPROX-TRACE.md
+ECON-014 docs/ECONOMY.md
 ECON-015 docs/reverse/APPROX-TRACE.md
 ECON-016 docs/reverse/APPROX-TRACE.md
 ECON-018 docs/reverse/APPROX-TRACE.md
 ECON-019 docs/reverse/APPROX-TRACE.md
+ECON-020 docs/ECONOMY.md
 ECON-021 docs/reverse/APPROX-TRACE.md
 ECON-024 docs/reverse/APPROX-TRACE.md
 ECON-025 docs/reverse/APPROX-TRACE.md
@@ -134,6 +138,8 @@ ECON-046 docs/reverse/APPROX-TRACE.md
 ECON-047 docs/reverse/RIDE-WEAR.md
 ECON-048 docs/reverse/ORACLE.md
 ECON-052 docs/PROGRESS.md
+ECON-054 docs/ECONOMY.md
+ECON-055 docs/ECONOMY.md
 ECON-056 docs/progress/2026-10-16-economy-and-saves-sweep.md
 GATE-001 docs/M3-GATE.md
 GATE-002 docs/reverse/PATH-plan.md
@@ -183,6 +189,7 @@ PATH-011 docs/PROGRESS.md
 PATH-012 docs/reverse/REVIEW-PATH.md
 PATH-013 docs/GUESTS.md
 PATH-014 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
+PATH-016 docs/PATHS.md
 PTCL-901 docs/PROGRESS.md
 PTCL-902 docs/PARTICLES.md
 PTCL-903 docs/PARTICLES.md
@@ -192,6 +199,7 @@ QUEUE-002 docs/PROGRESS.md
 QUEUE-004 docs/GUESTS.md
 QUEUE-006 docs/reverse/BOARD-plan.md
 QUEUE-007 docs/reverse/BOARD-plan.md
+QUEUE-008 docs/GUESTS.md
 QUEUE-009 docs/GUESTS.md
 QUEUE-011 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 QUEUE-013 docs/reverse/REVIEW-ORACLE.md
@@ -200,6 +208,7 @@ QUEUE-017 docs/GUESTS.md
 QUEUE-018 docs/GUESTS.md
 QUEUE-019 docs/GUESTS.md
 QUEUE-020 docs/GUESTS.md
+QUEUE-021 docs/GUESTS.md
 QUEUE-022 docs/GUESTS.md
 RIDES-001 docs/reverse/APPROX-TRACE.md
 RIDES-002 docs/reverse/APPROX-TRACE.md
@@ -298,8 +307,8 @@ UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md
 UI-065 docs/PROGRESS.md
-UI-080 docs/UI.md
 UI-066 docs/COMPATIBILITY.md
+UI-080 docs/UI.md
 UI-083 docs/PROGRESS.md
 UI-084 docs/PROGRESS.md
 UI-088 docs/UI.md

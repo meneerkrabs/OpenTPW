@@ -27,6 +27,12 @@ public partial class Level
 		StaffWorld.RideCells = instance => economyInstances.FirstOrDefault( pair => pair.Value == instance && !pair.Key.IsDeleted ).Key is { } ride
 			? (ride.Placement.X, ride.Placement.Y) : null;
 		Guests.IsEscorted = StaffWorld.IsEscorting;
+		// state 6 turns a guest toward a show object (fireworks and laser shows whose script variable 0 is 0) or a performing entertainer (tp.exe 0x501020, 0x500F00)
+		Guests.ShowCells = () => Objects.Objects.Where( item => !item.IsDeleted && item.Entry.Settings.GetBool( "UsageInfo.IsFireworks" )
+			&& item.Runtime.GetVariableByName( FireworksStatusVariable ) == 0 ).Reverse().Select( item => (item.Placement.X, item.Placement.Y) );
+		Guests.StaffOnMapView = () => Park!.Economy.Staff.Members.Where( member => member.Navigation != null && member.Job is not (StaffJob.PickedUp or StaffJob.Resting) && member.State != StaffState.PickedUp )
+			.OrderByDescending( member => member.Id ).Select( member => new GuestSimulation.StaffOnMap( member.Id, member.Type == StaffType.Entertainer,
+				member.Job == StaffJob.Performing, member.Navigation!.Cell, member.Navigation ) );
 		Guests.Pranked += ( guest, _ ) =>
 		{
 			if ( Park != null )

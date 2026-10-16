@@ -137,6 +137,7 @@ public class AudioTests
 		Assert.AreEqual( 14, GameAudio.MusicParameter( 29 ), "guests / 2" );
 		Assert.AreEqual( 15, GameAudio.MusicParameter( 30 ) );
 		Assert.AreEqual( 89, GameAudio.MusicParameter( 1000 ), "capped at 0x59" );
+		Assert.AreEqual( 0, GameAudio.MusicParameter( 1000, parkLost: true ), "world state 4 sends 0 (0x0054F86D)" );
 	}
 
 	private static Mp2Audio Constant( short value, int frames, int rate = AudioMixer.OutputRate, int channels = 1 ) =>

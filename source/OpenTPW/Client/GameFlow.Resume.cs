@@ -48,6 +48,7 @@ internal sealed partial class GameFlow
 			if ( candidateAdvisor != null )
 			{
 				candidateAdvisor.AttachLevel( candidate );
+				candidateAdvisor.CaptionSink = candidateHud.PostAdvisorCaption;
 				candidateAdvisor.RestoreSnapshot( snapshot.Advisor! );
 			}
 			RequireProgressSaved();

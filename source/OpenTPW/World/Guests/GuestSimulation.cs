@@ -101,6 +101,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public Func<long>? ArrivalClock { get; set; }
 	/// <summary>The park's attraction points for the arrival rule (the economy's attractions); 0 without one.</summary>
 	public Func<int>? ParkPoints { get; set; }
+
+	/// <summary>
+	/// Whether the entrance gate's script reports itself open (its script variable 1, <c>VAR_STATUS</c>; null reads as open, a level without a gate). A paid guest walks in only
+	/// while it is (tp.exe's state 3, <c>0x004FF80F</c> with <c>0x0051A290</c>).
+	/// </summary>
+	public Func<bool>? EntranceGateOpen { get; set; }
 	/// <summary>True while no group arrives (a bankrupt park).</summary>
 	public Func<bool>? ArrivalsHalted { get; set; }
 	/// <summary>
@@ -250,6 +256,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var start = GuestStart.FromDraws( Settings.Types, Settings.ExitLevelSeconds, Settings.ExitLevelVarSeconds, Settings.StartingCashVarPercent, () => random.NextWord(),
 			Settings.PrankeryLikelihood, nextId );
 		var guest = new Guest( nextId++, start.Type );
+		// [BIN:TPW-EXE:0x004FAFDB arrival stamp] the person constructor stamps the world turn into +0x1D4, the one write of the visitor's time in the park
+		guest.TimeInParkSeconds = 0;
 		guest.PrankFlag = start.PrankFlag;
 		guest.Money = start.Money;
 		guest.Happiness = start.Happiness;
@@ -320,7 +328,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var guest = Create();
 		PlaceOnGrid( guest, x, y );
 		guest.State = GuestState.DoingNothing;
-		guest.TimeInParkSeconds = 0;
 		return guest;
 	}
 
@@ -374,6 +381,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				throw new OverflowException( $"Guest {guest.Id} time in park exceeds the supported duration." );
 		TickCount++;
 		TimeSeconds += deltaSeconds;
+		staffOnMap = StaffOnMapView?.Invoke().ToArray();
 		turnStarted = ParkCalendar.Turn( TickCount ) != ParkCalendar.Turn( TickCount - 1 );
 		SyncQueues();
 		UpdateArrivals( deltaSeconds );
@@ -590,7 +598,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool InPark( Guest guest ) => guest.State is not (GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
 		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome or GuestState.Gone);
 
-	private bool CountsParkTime( Guest guest ) => InPark( guest ) && !guest.LaneReversed;
+	/// <summary>
+	/// Whether the guest's time in the park runs: from its creation on, through the road crossing and the booth to the road home, as the stamp
+	/// <c>+0x1D4</c> (the world turn at the constructor) is never rewritten.
+	/// </summary>
+	private static bool CountsParkTime( Guest guest ) => guest.State != GuestState.Gone;
 
 	/// <summary>
 	/// State 21, waiting at the stop to go home: with the park's vehicles a guest boards (and is gone) on a park turn the vehicle at
@@ -618,7 +630,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private void UpdateGuest( Guest guest, float dt )
 	{
-		// [APPROX:GUEST-920] elapsed simulated seconds begin at successful admission (seeded guests at zero), stop on road-home travel, and omit the admission tick; tp.exe's stamp +0x1D4 (the world turn) is written only by the guest constructor (0x4FAFDB, at the bus drop-off 0x4CF720) and the load, and the visitor panel shows (turn − stamp) >> 2 (0x4FD950) as whole hours — evidence needed: the seconds per world turn, and whether guests on the road home stay in the visitors list
+		// [APPROX:GUEST-920] the elapsed seconds accumulate per step (display metadata) where tp.exe subtracts two integer world turns (0x4FD950: the turn at +0x1DA70C minus the stamp +0x1D4, >> 2); the turn count a visitor shows is the seconds over the turn's 248 ms, floored
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
 		if ( turnStarted )
@@ -628,6 +640,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			UpdateNeedsTurn( guest );
 			// The leaving test itself runs in state 6 (UpdateDeciding). Closing the park pulls nobody out of a queue or a booking here.
 			// [BIN:TPW-EXE:0x00519EF0 park door closes the rides] the door closes every openable object (0x004DF300: open word 0, loading slot cleared; ParkGate.DoorMoved), and a closed ride's update dismisses its queue head, one per turn (RideVisitorBridge.HostStep, 0x004E1220 → 0x004E0450 → 0x005012F0), after which state 6 sends the guest home; a guest walking to a ride drops its target in state 10 (UpdateGoingToRide, 0x004FFEB9)
+			// [APPROX:GUEST-011] the close 0x4DF300 clears the call of a guest on its way to the stand point at once, where OpenTPW withdraws it at the ride's next update (the head dismissal); whether shops and stalls carry the openable flag 4 of +0x32 (type record word +0x3C) is not read
 			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
 			// [BIN:TPW-EXE:0x00500A50 recall cell test] the recall also demands the guest's own cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType): the walk out of the park crosses the gate's walkway cells (type 0x1E, 7 outside the terrain) and a guest on one cannot change its mind; the lane walk after the gate (OpenTPW's stand-in for states 19 to 21, ARRIVAL-001) is no state 18 and never recalls, like the booth refusal that enters it with a zeroed counter (0xecacc)
@@ -954,24 +967,36 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool IsOpenForStep( int x, int y ) => stepping!.IsOnWalk( x, y );
 
 	/// <summary>
-	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests standing in the 3 × 3 cells around its
+	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests and the staff standing in the 3 × 3 cells around its
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
-	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone); the original's query (tp.exe 0x5102f0, Mac 0x10087c) visits each cell's things in the order they were head-inserted when they entered it (0x50b6a0 via 0x4d91f0), keeps class-1 guests whatever their state, and also keeps staff (classes 4-8) and the online avatar (class 18); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
+	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone) followed by the staff on each cell; the original's query (tp.exe 0x5102f0, Mac 0x10087c) visits each cell's things in the order they were head-inserted when they entered it (0x50b6a0 via 0x4d91f0), keeps class-1 guests whatever their state, and also keeps staff (classes 4-8, kept here) and the online avatar (class 18, not kept); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
 		var (cellX, cellY) = self.Cell;
+		var staff = staffOnMap;
 		for ( var y = cellY - 1; y <= cellY + 1; y++ )
 		{
 			for ( var x = cellX - 1; x <= cellX + 1; x++ )
 			{
-				if ( x < 0 || y < 0 || x >= Grid.CountX || y >= Grid.CountY || !occupants.TryGetValue( (x, y), out var list ) )
+				if ( x < 0 || y < 0 || x >= Grid.CountX || y >= Grid.CountY )
 					continue;
-				foreach ( var other in list )
+				if ( occupants.TryGetValue( (x, y), out var list ) )
 				{
-					if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
-						neighbours.Add( other.Navigation );
+					foreach ( var other in list )
+					{
+						if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
+							neighbours.Add( other.Navigation );
+					}
+				}
+				// the staff on the cell follow its guests (classes 4 to 8 of the thing list 0x5102F0 visits; the staff sweep does the same with the guests, StaffWorldSimulation.StaffSeparation)
+				if ( staff == null )
+					continue;
+				foreach ( var member in staff )
+				{
+					if ( member.Walk is { } walk && !ReferenceEquals( walk, self ) && walk.Cell == (x, y) )
+						neighbours.Add( walk );
 				}
 			}
 		}
@@ -1128,13 +1153,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		}
 		// [BIN:TPW-EXE:0x004FFAD5 booth fee] the paying verdict books the fee with the bank deposit 0x004D0600 (ECX = the bank, 0x005195D0) and sets the guest's +0x204 and state 3; the guest's purse +0x1A0 is neither tested nor debited
-		guest.TimeInParkSeconds = 0;
 		Admissions++;
 		if ( fee > 0 )
 			MoneySpent?.Invoke( guest, fee, 0 );
 		// [BIN:TPW-EXE:0x004FF80A paid at a closed park] state 3 sends a paid guest home (state 18, no refund, no thought) while the park is closed, as an arriving one
-		// [APPROX:GUEST-011] the entrance gate's script variable 1 (0x0051A290), which state 3 also requires to be 1 before a paid guest walks in, is not read
-		if ( Payments?.ParkClosed == true )
+		// [BIN:TPW-EXE:0x004FF80F gate status] state 3 also reads the entrance gate's script variable 1 (0x0051A290, VAR_STATUS) and takes the same way home unless it is 1 (0x004FF814), the wait +0x200 of a paid guest being 0
+		if ( Payments?.ParkClosed == true || EntranceGateOpen?.Invoke() == false )
 		{
 			StartLeavingLane( guest, guest.Lane!, guest.LaneIndex );
 			return;
@@ -1348,7 +1372,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			choice = ChooseAttraction( guest );
 			return choice != null;
-		}, () => Wander( guest ), () => guest.Happiness );
+		}, () => Wander( guest ), () => guest.Happiness, () => TurnToShowOrPerformer( guest ) );
 		switch ( outcome )
 		{
 			case GuestDecision.Outcome.Cheer:
@@ -1377,6 +1401,74 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				guest.QueueStandingSinceTurn = turn;
 				break;
 		}
+	}
+
+	/// <summary>A staff member standing on the map, as the guests' state 6 sees it (the original's staff list, newest first).</summary>
+	/// <param name="Id">The staff member's id.</param>
+	/// <param name="Entertainer">The thing's type byte is 6 (an entertainer).</param>
+	/// <param name="Performing">The member's own state word is 14 (an entertainer's performance).</param>
+	/// <param name="Cell">The cell of the thing's position.</param>
+	/// <param name="Walk">The member's walk, whose position the separation of a stepping guest measures (null where the member has none).</param>
+	public readonly record struct StaffOnMap( int Id, bool Entertainer, bool Performing, (int X, int Y) Cell, GuestNavigation? Walk = null );
+
+	/// <summary>The cells of the show objects a guest's state 6 turns toward (fireworks and laser shows whose script variable 0 is 0), newest placed first; null for none.</summary>
+	public Func<IEnumerable<(int X, int Y)>>? ShowCells { get; set; }
+
+	private StaffOnMap[]? staffOnMap;
+
+	/// <summary>The staff on the map in the original's list order (the last one created first); null for none.</summary>
+	public Func<IEnumerable<StaffOnMap>>? StaffOnMapView { get; set; }
+
+	/// <summary>
+	/// Steps 5 and 6 of state 6: the guest turns toward the nearest show object within squared distance 5 or, with an entertainer within one cell, toward the
+	/// nearest staff member when that one is performing, and the call ends there (before the pranks and the decision) unless the guest already stands on that cell's
+	/// diagonal (the sum of the two offsets is 0). True when it turned.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00501020 nearest show] the objects chain (world +0x1DA746, next +0xC) is walked for a thing with flag +0x32 bit 0x80 (UsageInfo.IsFireworks, 0x4DB46F) whose script variable 0 is 0; the squared cell distance must be below 5 and below the best so far (a tie keeps the first)
+	// [BIN:TPW-EXE:0x004FEF25 show turn] a found show with an offset sum (dx + dy, unsigned test) of 0 goes on to step 6, else the heading +0x1C takes the angle of the offset (0x6E7074) and the call ends
+	// [BIN:TPW-EXE:0x004FEFF4 performer turn] with a thing of type 6 within one cell (0x4C8EB0, the cells x ± 1, y ± 1) the nearest member of the staff list (0x500F00, world +0x1DA740, next +0x210, no distance cap) must be in state 14 (0x4FF04A); the same offset sum test, event 0xE recorded for the debug dump, the same heading and end
+	// [APPROX:GUEST-010] the heading is the unit vector of the offset, where the original writes the 11-bit angle of 0x6E7074 into +0x1C
+	private bool TurnToShowOrPerformer( Guest guest )
+	{
+		var (gx, gy) = (guest.CellX, guest.CellY);
+		(int X, int Y)? show = null;
+		var best = int.MaxValue;
+		if ( ShowCells != null )
+		{
+			foreach ( var cell in ShowCells() )
+			{
+				var distance = (cell.X - gx) * (cell.X - gx) + (cell.Y - gy) * (cell.Y - gy);
+				if ( distance < 5 && distance < best )
+					(show, best) = (cell, distance);
+			}
+		}
+		if ( show is { } found && Turn( guest, found.X - gx, found.Y - gy ) )
+			return true;
+		if ( staffOnMap == null )
+			return false;
+		var staff = staffOnMap.Select( member => member.Walk is { } walk ? member with { Cell = walk.Cell } : member ).ToArray();
+		if ( !staff.Any( member => member.Entertainer && Math.Abs( member.Cell.X - gx ) <= 1 && Math.Abs( member.Cell.Y - gy ) <= 1 ) )
+			return false;
+		StaffOnMap? nearest = null;
+		best = int.MaxValue;
+		foreach ( var member in staff )
+		{
+			var distance = (member.Cell.X - gx) * (member.Cell.X - gx) + (member.Cell.Y - gy) * (member.Cell.Y - gy);
+			if ( distance < best )
+				(nearest, best) = (member, distance);
+		}
+		return nearest is { Performing: true } performer && Turn( guest, performer.Cell.X - gx, performer.Cell.Y - gy );
+	}
+
+	/// <summary>Turns the guest toward the offset when its two parts do not sum to 0; true when it turned.</summary>
+	private static bool Turn( Guest guest, int dx, int dy )
+	{
+		if ( dx + dy == 0 )
+			return false;
+		var length = MathF.Sqrt( dx * dx + dy * dy );
+		guest.HeadingX = dx / length;
+		guest.HeadingY = dy / length;
+		return true;
 	}
 
 	/// <summary>
@@ -1560,7 +1652,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		foreach ( var guest in guests )
 		{
 			// A walk of the original kind notices a changed block itself (the stamp reroute of follow_path, ParkCellMap.BlockStamp).
-			// [APPROX:WALK-007] a route walk (WALK-006) restored from a save made before the original walk ends without a replan when a grid edit takes a cell or link of its route, and the queue recompute's own stamp of its back cell (tp.exe 0x4de1f0, after one of its queue cells became path) is not made; the block stamps of every cell type change (0x4d8c60 from 0x5346d0, 0x5348d0, 0x538fc0) and the walk's comparison (0x50ed6c, a search in mode 1) are ported — still open: the 0x4de1f0 stamp
+			// [EXT:legacy-save-route-walk] a route walk restored from an OpenTPW save made before the original walk (WALK-006) has no original follow_path behind it, so a grid edit that takes a cell or link of its route ends it where the guest stands instead of replanning; the original has no such walks, and OpenTPW cannot rebuild the walk state such a save never held
+			// [APPROX:WALK-007] the queue recompute's own stamp of its back cell (tp.exe 0x4de1f0: the counter raised by 0x4d8c50 and written into the back cell's block by 0x4d8c60) is made after the queue tool's edits, but not yet after a path laid over a queue end or a cell clear of a queue cell (0x5346d0, 0x5367a0 call 0x4de1f0 on the owning ride, found through the cell's owner word +0x10, which OpenTPW's cells do not keep); the block stamps of every cell type change (0x4d8c60 from 0x5346d0, 0x5348d0, 0x538fc0) and the walk's comparison (0x50ed6c, a search in mode 1) are ported — still open: the 0x4de1f0 stamp after a path over a queue end and a queue cell clear (the owner word)
 			if ( guest.State is not (GuestState.WalkingAround or GuestState.ThrowingAwayLitter) || !guest.HasWaypoint || guest.Navigation.Original
 				|| RouteAheadHolds( guest.Navigation ) )
 				continue;
@@ -1653,9 +1746,42 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool Wander( Guest guest )
 	{
 		var start = (X: guest.CellX, Y: guest.CellY);
-		if ( GuestWander.Pick( Grid, start, () => random.NextWord() ) is not { } destination )
+		var cells = Grid.Cells;
+		// [BIN:TPW-EXE:0x004F94C6 stranded hold] a guest that found no way on is marked with the stamp counter (+0x198): while no block around its cell (the queue's tail for a queue cell) has been stamped above the mark (0x004FA770) the wander thinks "Confused" (0x0050BE80, 0x11) and returns before any draw
+		if ( guest.StrandedMark != 0 && cells.StampCounter + 1 < guest.StrandedMark )
+			guest.StrandedMark = 0;
+		if ( guest.StrandedMark != 0 && StrandedHolds( guest, start ) )
+		{
+			Think( guest, GuestThought.Confused );
 			return false;
-		// [BIN:TPW-EXE:0x004F9490 wander route] the picked destination is a SetDest (0x00510100), whose search decides success; a failed search leaves the walk stuck (the route cells below are the M3 gate's bookkeeping)
+		}
+		guest.StrandedMark = 0;
+		bool Route( (int X, int Y) cell )
+		{
+			// [BIN:TPW-EXE:0x004F9490 wander route] the picked destination is a SetDest (0x00510100), whose search decides success; a failed search leaves the walk stuck (the route cells below are the M3 gate's bookkeeping)
+			var path = Grid.FindPath( start.X, start.Y, cell.X, cell.Y );
+			SetDestination( guest, GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte ), path );
+			if ( !guest.Navigation.Stuck )
+				return true;
+			guest.HasWaypoint = false;
+			return false;
+		}
+		if ( (cells.LinksAt( start.X, start.Y ) & 0x55) == 0 )
+		{
+			// [BIN:TPW-EXE:0x004F9490 start without links] the step count R % 5 is drawn first, then the search for a path cell around the start (0x522810 below 1)
+			random.NextWord();
+			return GuestWander.OffPath( Grid, start, () => random.NextWord(), Route );
+		}
+		if ( GuestWander.Pick( Grid, start, () => random.NextWord() ) is not { } destination )
+		{
+			// [BIN:TPW-EXE:0x004F9D6E stranded] a guest (not a staff member) whose cell has links but no candidate is "stranded at time": thought Confused and the mark, raised stamp counter
+			if ( (Grid.IsWalkable( start.X, start.Y ) || Grid.IsQueue( start.X, start.Y )) && GuestWander.OriginalCandidates( Grid, start ) == 0 && (cells.LinksAt( start.X, start.Y ) & 0x55) != 0 )
+			{
+				Think( guest, GuestThought.Confused );
+				guest.StrandedMark = cells.StampCounter + 1;
+			}
+			return false;
+		}
 		var route = Grid.FindPath( start.X, start.Y, destination.Cell.X, destination.Cell.Y );
 		SetDestination( guest, GuestNavigation.BytePoint( destination.Cell, destination.ByteX, destination.ByteY ), route );
 		if ( guest.Navigation.Stuck )
@@ -1664,6 +1790,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return false;
 		}
 		return true;
+	}
+
+	/// <summary>Whether the stranded guest stays stranded: no block of the nine cells around its cell, or around its queue's tail, carries a stamp at or above its mark (<c>0x004FA770</c>).</summary>
+	// [BIN:TPW-EXE:0x004FA770 stranded test] the reference is the guest's cell, or for a queue cell (0x00536320) the cell reached by following the predecessor links (0x004DE670) to the end; the nine cell offsets (−1..1, −1..1) of the table 0x007CED88 give block stamps (0x004D8CA0) and the guest stays stranded while their largest is below the mark
+	private bool StrandedHolds( Guest guest, (int X, int Y) start )
+	{
+		var cell = start;
+		if ( Grid.IsQueue( cell.X, cell.Y ) )
+		{
+			for ( var guard = 0; guard < 1024; guard++ )
+			{
+				if ( RideVisitorBridge.NextQueueCell( Grid, cell ) is not { } behind )
+					break;
+				cell = behind;
+			}
+		}
+		var id = (ushort)(cell.Y * 128 + cell.X + 1);
+		var largest = 0;
+		for ( var dy = -1; dy <= 1; dy++ )
+		{
+			for ( var dx = -1; dx <= 1; dx++ )
+			{
+				var offset = (uint)(ushort)(id + dy * 128 + dx) - 1;
+				largest = Math.Max( largest, Grid.Cells.BlockStamp( (int)((offset & 0x7F) >> 4), (int)(offset >> 11) ) );
+			}
+		}
+		return largest < guest.StrandedMark;
 	}
 
 	/// <summary>
@@ -2290,7 +2443,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		// 3. The ride failed: 0xdfe34, a relief object whose wear gauge is below 25 (ORACLE.md F15), not a breakdown. A broken or closed ride
 		// dismisses its queue head first from the ride update (RideVisitorBridge.DismissHead), the others keep waiting.
-		// [APPROX:QUEUE-008] the predicate follows the original; relief objects wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning), and the swaps of the RegionFX rows 1 and 6 at the toilet's cell are the original's (0x004D8460 / 0x004D8440 are the remove and add wrappers of the region writer 0x004D8480, ParkEconomy.SwapToiletEffect). Not modelled: the branch of 0x004E2440 for game type 1 (the word 0x00FB3B7C), where a use wears nothing and a toilet whose gauge byte is below 25 is cleaned at once (rows 6 → 1, script variable 8 = 0, gauge 100, +0x5E and +0x64 cleared); OpenTPW wears toilets in every game — evidence needed: what game type 1 is in OpenTPW's terms
+		// [BIN:TPW-EXE:0x004E2440 toilet wear] relief objects wear by use and are cleaned by handymen (ParkEconomy.UseRelief, DispatchToiletCleaning), and the swaps of the RegionFX rows 1 and 6 at the toilet's cell are the original's (0x004D8460 / 0x004D8440 are the remove and add wrappers of the region writer 0x004D8480, ParkEconomy.SwapToiletEffect); the branch for game type 1, the online visit, is ParkEconomy.OnlineVisit
 		// [BIN:TPW-EXE:0x005004AA queue exit] every state-11 exit unlinks the guest (0x004DDD20), dismisses it (0x005012F0: "dismissed from queue", the medium happiness drop 0x004FEA70(1), the queue words cleared) and sets state 6; the thought, if any, is set before the jump (DismissFromQueue)
 		if ( attraction.ReliefWornOut )
 		{
@@ -2855,6 +3008,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			QueueStandingSinceTurn = guest.QueueStandingSinceTurn,
 			RideWalkCount = guest.RideWalkCount,
 			BoothWait = guest.BoothWait,
+			StrandedMark = guest.StrandedMark,
 			InterludeTurn = guest.InterludeTurn,
 			InQueueInterlude = guest.InQueueInterlude,
 			Activity = guest.Activity,
@@ -3142,6 +3296,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} QueueCellIndex {guest.QueueCellIndex} is negative." );
 			if ( guest.RideWalkCount is < 0 or > 11 )
 				Error( $"Guest {guest.Id} RideWalkCount {guest.RideWalkCount} is outside 0..11 (the byte +0x2C resets past 11)." );
+			if ( guest.StrandedMark < 0 )
+				Error( $"Guest {guest.Id} StrandedMark {guest.StrandedMark} is negative." );
 			if ( guest.BoothWait is < 0 or > 2 * BoothVerdict.ExpensiveWaitBase )
 				Error( $"Guest {guest.Id} BoothWait {guest.BoothWait} is outside 0..{2 * BoothVerdict.ExpensiveWaitBase}." );
 			Finite( guest.Id, guest.HeadingX, nameof( guest.HeadingX ) );
@@ -3396,6 +3552,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueStandingSinceTurn = snapshot.QueueStandingSinceTurn;
 		guest.RideWalkCount = Math.Clamp( snapshot.RideWalkCount, 0, 11 );
 		guest.BoothWait = Math.Clamp( snapshot.BoothWait, 0, 2 * BoothVerdict.ExpensiveWaitBase );
+		guest.StrandedMark = Math.Max( 0, snapshot.StrandedMark );
 		guest.InterludeTurn = snapshot.InterludeTurn;
 		guest.InQueueInterlude = snapshot.InQueueInterlude;
 		guest.Activity = snapshot.Activity;
@@ -3550,6 +3707,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				hash.Add( 0x52574B00L + guest.RideWalkCount );
 			if ( guest.BoothWait != 0 )
 				hash.Add( 0x42574100L + guest.BoothWait );
+			if ( guest.StrandedMark != 0 )
+				hash.Add( 0x53545200L + guest.StrandedMark );
 			hash.Add( guest.InterludeTurn );
 			hash.Add( guest.InQueueInterlude );
 			hash.Add( guest.QueueJoinHappiness );

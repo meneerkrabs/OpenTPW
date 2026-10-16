@@ -8,6 +8,9 @@ advisor's tables live:
   0x598CA0. A selector is the dummy-attribute value of the mesh node to show (5 to 14 are the hats, the
   spatula and the bow tie of the global advisor), 0 shows no accessory, -1 the level's theme costume. Only
   responses with a nonzero selector are listed.
+* ``advisor-captions.toml``: field +0x1C of the same response rows, the tag of the text the advisor posts to the message
+  tube when it says the response (0x59B620 posts it through 0x5997B0), and the TAG_SYSTEM.str entry of that tag (field +0xC
+  of its record in the tag table 0x75ECA8, found as 0x50AF40 does); 0x17F, the tag of no text, is not listed.
 * ``advisor-descriptors.toml``: all 351 descriptors of the same table (message, first response, response count,
   group, pending duplicates, game-mode selector and the score callback address), which the save import binds so
   that an original save's pending advice and history of every message are kept.
@@ -40,6 +43,10 @@ INITIALIZER_END = 0x5A86FB
 PUSHES = (0x53, 0x55, 0x56, 0x57)
 POPS = (0x5B, 0x5D, 0x5E, 0x5F)
 HELP_SCORE_CALLBACK = 0x59E8C0
+NO_CAPTION = 0x17F
+TAG_TABLE = 0x75ECA8
+TAG_RECORD = 32
+TAG_TABLE_END = 0x761C68
 
 REGISTERS = ['eax', 'ecx', 'edx', 'ebx', 'esp', 'ebp', 'esi', 'edi']
 
@@ -144,6 +151,31 @@ def costumes(image: Image) -> list[tuple[int, int, int]]:
     return [(row[0], row[5], row[6]) for row in response_rows(image) if row[5] != 0 or row[6] != 0]
 
 
+def tag_entry(image: Image, tag: int) -> int | None:
+    """The TAG_SYSTEM.str entry of a tag: field +0xC of its record, found as 0x50AF40 does (the record at the tag's own
+    position when its id matches, else the first record with the id); None when no record has the id."""
+    count = (TAG_TABLE_END - TAG_TABLE) // TAG_RECORD
+    records = [struct.unpack('<8i', image.read(TAG_TABLE + index * TAG_RECORD, TAG_RECORD)) for index in range(count)]
+    if 0 <= tag < count and records[tag][0] == tag:
+        return records[tag][3]
+    for record in records:
+        if record[0] == tag:
+            return record[3]
+    return None
+
+
+def captions(image: Image) -> list[tuple[int, int, int]]:
+    rows = []
+    for row in response_rows(image):
+        if row[7] == NO_CAPTION:
+            continue
+        entry = tag_entry(image, row[7])
+        if entry is None:
+            raise ValueError(f'response {row[0]} has the tag {row[7]}, which no record of the tag table has')
+        rows.append((row[0], row[7], entry))
+    return rows
+
+
 def help_messages(image: Image) -> list[dict[str, int]]:
     responses = {row[0] for row in response_rows(image)}
     table = descriptors(image)
@@ -173,6 +205,25 @@ def render_costumes(rows: list[tuple[int, int, int]]) -> str:
     ]
     for response, hat, hat2 in rows:
         lines.append(f'  {{ response = {response}, hat = {hat}, hat2 = {hat2} }},')
+    lines.append(']')
+    return '\n'.join(lines) + '\n'
+
+
+def render_captions(rows: list[tuple[int, int, int]]) -> str:
+    lines = [
+        '# Advisor captions of Sim Theme Park World (Windows v2.0), for interoperability: the TAG_SYSTEM.str tag of the text',
+        '# each advisor response posts to the message tube. Copied field by field from the response table at 0x768FB8 of tp.exe',
+        f'# (SHA-256 {TPW_SHA}) by',
+        '# tools/ppc-analysis/lanes/advisor/tpw_exe_tables.py; see docs/LIPS.md ("Captions").',
+        '#',
+        '# response: response ID (the first field of its 32-byte record); tag: field +0x1C, the tag of the text; text: the entry of',
+        '# TAG_SYSTEM.str (0-based) the tag shows, field +0xC of the tag\'s record in the table at 0x75ECA8 (0x50AF40 finds it by the',
+        '# id in field +0). Responses that are not listed have the tag 0x17F, which has no text.',
+        '',
+        'captions = [',
+    ]
+    for response, tag, text in rows:
+        lines.append(f'  {{ response = {response}, tag = {tag}, text = {text} }},')
     lines.append(']')
     return '\n'.join(lines) + '\n'
 
@@ -236,6 +287,7 @@ def main() -> None:
     image = Image(raw)
     outputs = {
         'advisor-costumes.toml': render_costumes(costumes(image)),
+        'advisor-captions.toml': render_captions(captions(image)),
         'advisor-help-messages.toml': render_help(help_messages(image)),
         'advisor-descriptors.toml': render_descriptors(descriptors(image)),
     }

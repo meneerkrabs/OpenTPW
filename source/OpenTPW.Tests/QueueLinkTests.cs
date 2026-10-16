@@ -46,6 +46,20 @@ public class QueueLinkTests
 			( x, y ) => QueuePaths.RemoveFrom( grid, ride, x, y ), () => 0 );
 
 	[TestMethod]
+	public void AQueueEditStampsTheBlockOfTheBackCell()
+	{
+		// [BIN:TPW-EXE:0x004DE1F0] the re-evaluation raises the stamp counter and writes it into the block of the back cell
+		var (grid, ride) = Park();
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 5 ) );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 4 ) );
+		var before = grid.Cells.StampCounter;
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 3 ) );
+		Assert.AreEqual( (2, 3), ride.QueueBackCell );
+		Assert.AreEqual( before + 2, grid.Cells.StampCounter, "the cell type write stamps once and the re-evaluation once more" );
+		Assert.AreEqual( grid.Cells.StampCounter, grid.Cells.BlockStamp( 2 / 16, 3 / 16 ), "the back cell's block carries the re-evaluation's stamp" );
+	}
+
+	[TestMethod]
 	public void AQueueLineEndingOnAPathConnectsTheQueueToIt()
 	{
 		var (grid, ride) = Park();

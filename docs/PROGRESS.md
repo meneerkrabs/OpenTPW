@@ -11,8 +11,9 @@ files remain outside that publication.
 The lobby's animations read in tp.exe and built (UI-018 narrowed):
 
 - **The lobby generator** returns its step rotated right by 13 bits (`ror 0xd` at `0x5e0f4b`, also `0x5d98d1`, `0x5da0d4`, `0x5e113f`).
-- **The sky** clears to the scene's fog colour `0xFF44DDFF` (`0x5d8b50`, `0x5737aa`); the island's SKYCOLOUR eases the engine sky's
-  colour grid by (target − current) >> 4 a frame from black, the red channel moving toward the blue target (`0x5d96c0`).
+- **The sky**: the original clears to the scene's fog colour `0xFF44DDFF` (`0x5d8b50`, `0x5737aa`) and the island's SKYCOLOUR eases
+  the engine sky's colour grid by (target − current) >> 4 a frame from black, the red channel moving toward the blue target (`0x5d96c0`);
+  until the cloud layer is drawn, OpenTPW paints the backdrop with that eased colour as a stand-in (UI-018).
 - **Bats and butterflies** (FLYINGMESH) spawn as groups 50 units above their island's camera target (`0x5d9db0`, `0x5da020`), turn 0.1 ×
   step toward a random point, fly at their speed and pick a new point within √500 (`0x5d9830`, `0x5d9b50`), facing their direction and
   looping their `m1` wing cycle (`0x5d81c0`); their draws come from the lobby generator ahead of the islands (`0x5d5c50`).

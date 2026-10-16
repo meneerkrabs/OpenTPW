@@ -10,6 +10,14 @@ public class LobbyEffectsTests
 	private static LobbyIslandInfo Island( string level, (byte, byte, byte) sky, bool rainy = false, int lightning = 0 ) =>
 		new( 0, level, level, "island", "gate", level, 0, 0, sky, System.Array.Empty<string>(), rainy, lightning );
 
+	/// <summary>The park's backdrop is the fog colour the original clears to, never black (the low video camera showed a black sky).</summary>
+	[TestMethod]
+	public void ParkBackdropIsTheFogColourNotBlack()
+	{
+		var colour = GameFlow.ParkBackdropColour;
+		Assert.AreEqual( (0x44, 0xDD, 0xFF, 255), (colour.R, colour.G, colour.B, colour.A) );
+	}
+
 	/// <summary>One draw of tp.exe's lobby generator from <paramref name="state"/>: the LCG step rotated right by 13 bits.</summary>
 	internal static uint NextDraw( uint state ) => System.Numerics.BitOperations.RotateRight( unchecked(state * 0x19660Du + 0x3C6EF35Fu), 13 );
 

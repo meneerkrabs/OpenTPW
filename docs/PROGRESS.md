@@ -18,6 +18,83 @@ files remain outside that publication.
   postcards and the online command-line switches refuse, and no online session or chat overlay is ever created. The pinned hashes are the
   same with the extension on or off.
 
+## Interface reading round, part B (October 15, 2026)
+
+Twenty-two more interface approximations were read again in tp.exe:
+
+- **The buy window** hides its scroll bar while nothing scrolls (`0x664495`, as the video shows with four rides; UI-049 retired) and its
+  working-life gauge keeps its fixed 100/1024 (`0x4abae0`).
+- **The park map** draws its overlay cells on the original's grid, one pixel left of and above the art's terrain (`0x5f23dc`; UI-085
+  retired), and opens with only the rides layer.
+- **Placing staff** posts the advisor's help 309 (`0x49b9dd`, withdrawn by the Place tool at `0x46c8d4`; UI-097 retired) instead of
+  OpenTPW's own hint line.
+- **Training budgets** step by 25 within 0..10000 with each row's grade gauge (`0x4b27d7`, `0x4c9c00`), and **the research workload
+  knob** maps to the original's workload of 70..100 (`0x4aacce`, `0x4a985b`).
+- The left mouse button is button 0 (`0x634963`), so UI-910 keeps only the per-visitor window `0x4b79b0`, which is not ported;
+  13 interface items are narrowed.
+
+## Online, economy and path reading round (October 15, 2026)
+
+Nineteen approximations were read again in tp.exe:
+
+- **Chat**: blanks before a `/` are skipped (`0x5e45d0`; ONLINE-002 retired). **The globe** starts at yaw 0, pitch 0 whenever a globe screen
+  opens (`0x5dcfe0`; ONLINE-008 retired), edge steering works only in the Pushscroll option and right-button steering only in the other,
+  and the pitch limit stops the turn. **Pins** replace their root matrix instead of composing it (`0x5d81c0`, no doubled scale).
+- **The online world screen** puts the city labels at the top right (table `0x7581a0`), empty when no city is hovered; satellite counts are
+  centred in white (`0x4c4fb0`); the publish globe has no back button.
+- ONLINE-011, -015, -016 and -018, ECON-005 (bank `+0x10` is the batch balance, only cleared; OpenTPW's finer ledger split carries
+  `[EXT:ECON-LEDGER-SPLIT]`) and PATH-009 (bank `+0x114` is the withdrawals flag) are retired; 11 items are narrowed.
+
+## The per-employee window and All Visitors from tp.exe's tables (October 15, 2026)
+
+- **The per-employee window** (`0x4b6080`, table `0x756f48`) opens from the staff list as the original's All Staff list does: the name as
+  title, days employed, wage, skill, happiness and energy bars and the status, refreshed every 4 s; dismiss (with the Confirmations
+  option's yes/no box), pick-up (`0x505c50`), the patrol toggle (`0x4b5b50`), the cycle arrows, all staff, locate and the tick; locate and Ctrl+S
+  open the staff locator panel on the employee (`0x4b5f07`, `0x481790`) (UI-098 retired, UI-092 narrowed).
+- **All Visitors** is built from table `0x7506c8` and its builder `0x493530`: six sortable columns (number, cash, time in park in hours or
+  days, rides, thought, happiness), a value refresh every 2 s and the park info, all staff and all attractions buttons (UI-907 narrowed).
+- **The hire window's balance** reads the last closed month (`0x49bdd0`), and the string table keeps whole records, so "%d hours/day/days"
+  (UITEXT 440–442) are no longer empty.
+
+## Coaster trains and pylons from tp.exe (October 15, 2026)
+
+- **Trains** are laid out around their middle car, (n − 1) >> 1, from the last car forward, placed after each rating pass with the release
+  time as their spacing (`0x43c450`, `0x43c1f0`), and run at the mean speed of the samples under their cars; the hops queue by remaining
+  budget, the middle car giving the hop and the front car braking (`0x43ced8`; COAST-022 retired). The ride view and camera follow the
+  front car.
+- **Seats** are only in the centre-type cars (`0x43ba90`); COAST 6 bounds the capacity by the fleet's and the train's head counts, a head
+  being a dummy record with flag `0x80` (`0x43b330`, `0x44b2b0`; COAST-023 retired). The Caterpillar has 16 heads, not 12.
+- **Pylons** play all five clips (loft, rotate, incline, bank, loop tilt; `0x430ca0`, `0x430ed0`) through their clip maps, with each dummy
+  record on its own node (`0x44ab90`); the station ends take the auto bank (`0x4310c8`). Cars stand on the curve at their knot-pair
+  parameter (`0x43c0a0` → `0x43e6b0`) and riders sit on the PC head sockets (COAST-015, -017, -033 and -034 narrowed).
+- Saves gain two optional fields (a train's reference car, the ride's lead-car coordinate, which also joins the state hash); older saves
+  convert from the front car. The coaster hash content changes with all of this (docs/DETERMINISM.md); no pinned hash depended on it.
+
+## Nine divergences from tp.exe fixed (October 15, 2026)
+
+Divergences found while reading other areas, each checked in tp.exe and fixed in its own commit:
+
+- **Upgrades are paid at installation** (`0x4df8f0`, debit at `0x4dfa96` with no balance check); buying (`0x4af4e9`) only requests the
+  upgrade when the balance is above the cost. A save's pending upgrade gains the optional `UpgradeCostDue`; one loaded from an older
+  save, already charged at purchase, is not charged again.
+- **A sideshow play wins** when R % 100 ≤ the win byte (100 − InitChanceOfLoosing, `0x4e26e2`, `0x4db3a1`).
+- **A sale or play at price 0 books no takings** (`0x4fe1a0` skips `0x4e16b0`); the cost of goods and the customer count still apply
+  (ECON-034 narrowed).
+- **A cleaned toilet opens** through `0x4df390` without the reopening guard (ECON-049 text extended).
+- **A called ride gets its mechanic** in any state, condemned included (`0x4da740`, `0x4daa90`).
+- **Removing an attraction or bin** sends its guests the original's removal message (`0x4fb360`, message 10): riders get their model
+  back, queued guests are dismissed, every targeting guest goes to state 6, and every guest's history slots naming the object are
+  cleared (GUEST-004 and GUEST-005 narrowed).
+- **A closed park stops visitors on the walk to the booth** (`0x4ff730`, `0x4ff7f0`): they go home with no thought; the booth and the
+  booking read no closed state, so a guest who paid at a closed park is sent home without a refund. A bankrupt park still takes no fee
+  (its thing loop stops in tp.exe, ECON-030).
+- **A staff candidate draws** variant, spare, grade, name and timeout in tp.exe's order (`0x507600`, GUEST-014 narrowed).
+- **A new park starts with only the research-free objects researched** (`Upgrades[0].CostOfResearch` = 0, `0x5031a0`): Jungle's Wooden
+  Log now has to be researched.
+
+A tenth candidate (the dismissal leaving VAR_LETMEON set) does not hold: every caller unlinks first (`0x4ddd20`). The pinned run hash
+moves to `0xDB1DDEE4817DE5B0` (the staff candidate draws; docs/DETERMINISM.md).
+
 ## Advisor presentation, crowd sound and particle density from tp.exe (October 15, 2026)
 
 - **The advisor moves**: its antennae, hands and eyes vertex tracks and the level advisors' eye texture tracks play through the shared
@@ -89,6 +166,32 @@ Twenty-two interface approximations were read again in tp.exe:
 - Nine items are narrowed with what was read: the font bank chosen by screen mode (`0x419710`), control colours and the single-pass
   text renderer without a shadow (`0x48f830`), the four readers of RMBCancelOn (`0x4881a0`), the greedy text wrap (`0x6aec80`), the
   slider class, the options labels and the buy-list row pitch (font slot 7's line height, `0x4ad240`).
+
+## MD2 paths: vehicles and karts follow their routes (October 15, 2026)
+
+The path parameters decoded earlier today index a part of the geometry models that was still opaque: the
+16-byte "extra records" (header 0x40/0xAC) are paths, 18 of them in 15 distinct models (Bézier, one linear).
+
+- **Paths** (`ModelPath`, `ModelFile.Paths`): kind (closed, Bézier, linear, otherwise Catmull-Rom), point count and
+  points. A node follows one when its parent is a type-0x208 dummy (`Kart_path01`, `Flightpath`, `FERRYSPLINE`…);
+  the dummy's stored index selects the path in its high 16 bits.
+- **Playback** from tp.exe's sampler 0x471860: the per-tick value (0x474EA0: per-tick blend, seam across 100 → 0)
+  becomes `fmod(v + 1000, 100)` percent of the path's segments, evaluated by 0x474840/0x474BF0/0x474CC0; flag 0x400
+  turns the node along the path (0x474A20/0x474C70, rows built by 0x470780). `ObjectAnimator` and
+  `ModelAnimationPlayer` play it, so the Haunted House karts, the go-karts, the bus, ferry, seaplane and slide car
+  and the Halloween advisor's bats follow their routes instead of standing at their stored pose (every such record
+  evaluates on its path; moving playback is checked for the Haunted House karts).
+- **Checks:** every flag-0x200 node hangs under a path dummy; where a clip starts on the stored pose (Haunted House
+  B/E/M/S, Busm1, slidec) tick 0 lands within 0.02 of the stored translation and faces within a few degrees of the
+  stored orientation; a placed Haunted House moves its four karts along their paths. The open Bézier routes store a
+  closing control pair the sampler never reads, so the bus and ferry jump back to their route's start when the
+  value wraps past 100, as the original does.
+- Not played: flag 0x400 together with position keys (no record has it). OpenTPW guards: path tables decode at
+  most four times the member, empty or non-finite paths are rejected, and a direction parallel to up (a division
+  by zero in the original) faces +X. No native render was run.
+- Verification (macOS arm64, original data): the full test suite passes (4,496 passed, 109 skipped); an independent
+  Codex review's findings (path-table allocation budget, non-finite and empty paths, scale after facing across
+  channels, a vertical direction, claims beyond the tests) are fixed.
 
 ## Format table reconciled; SAM reader, LIP checks and MD2 path parameters (October 15, 2026)
 

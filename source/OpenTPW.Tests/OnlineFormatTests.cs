@@ -291,6 +291,11 @@ public class OnlineFormatTests
 		Assert.IsTrue( table.TryParse( "/queue too long", out command, out _ ) );
 		Assert.AreEqual( ChatCommand.QueueTooLong, command );
 		Assert.IsFalse( table.TryParse( "/sayy x", out _, out _ ) );
+		// Leading blanks before the slash are skipped, as the original's tokenizer does (tp.exe 0x5E45D0); a say keeps the whole line.
+		Assert.IsTrue( table.TryParse( " \t/tell Bob hi", out command, out argument ) );
+		Assert.AreEqual( (ChatCommand.Tell, "Bob hi"), (command, argument) );
+		Assert.IsTrue( table.TryParse( "  hello /tell", out command, out argument ) );
+		Assert.AreEqual( (ChatCommand.Say, "  hello /tell"), (command, argument) );
 		Assert.AreEqual( ChatNotice.YouCheer, ChatCommands.MoodNotice( ChatCommand.Cheer ) );
 		Assert.IsNull( ChatCommands.MoodNotice( ChatCommand.Think ) );
 		Assert.AreEqual( (ChatNotice)151, ChatCommands.MoodNotice( ChatCommand.Confused ) );

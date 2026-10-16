@@ -89,10 +89,15 @@ public class CoasterPresentationAssetTests
 		Assert.IsTrue( sections.Textures.Any( texture => texture.ScrollRate != 0 ), "the flume's water and ratchet scroll" );
 	}
 
-	/// <summary>Every standard pylon poses: its tag reaches the node height, stretched by the loft clip, and it has drawable parts.</summary>
+	/// <summary>
+	/// Every pylon poses with its five clips (<c>0x430ca0</c>): the loft clip raises its tag to h0 + t(h1 − h0) and stops at the loft's ends, the incline
+	/// and bank clips tilt the tag, and it has drawable parts.
+	/// </summary>
 	[TestMethod]
-	public void EveryPylonPosesToTheNodeHeight()
+	public void EveryPylonPosesItsClipsToTheNodeValues()
 	{
+		var inclines = 0;
+		var banks = 0;
 		foreach ( var entry in PcCoasters() )
 		{
 			var definition = CoasterDefinition.FromEntry( entry );
@@ -100,39 +105,58 @@ public class CoasterPresentationAssetTests
 			{
 				if ( loop && !definition.HasLoopPylon )
 					continue;
-				var name = definition.Pylon( loop ).MeshName;
+				var control = definition.Pylon( loop );
+				var name = control.MeshName;
 				var geometry = Find( entry, name );
 				if ( geometry == null )
 				{
 					Assert.IsTrue( loop && definition.IsTrough, $"{entry.InfoId}: the pylon model {name} exists" );
 					continue;
 				}
-				var rig = new CoasterPylonRig( geometry, Find( entry, name + "L" )?.Clip, (Find( entry, name + "R" ) ?? Find( entry, name + "R1" ))?.Clip );
-				// Some loop pylons (the Space themes') carry no tag motion in their loft clip: they are scaled to the node instead.
+				var rig = new CoasterPylonRig( geometry, Find( entry, name + "L" )?.Clip, (Find( entry, name + "R" ) ?? Find( entry, name + "R1" ))?.Clip, control,
+					Find( entry, name + "I" )?.Clip, Find( entry, name + "B" )?.Clip, Find( entry, name + "R2" )?.Clip );
+				// Some loop pylons (the Space themes') carry no tag motion in their loft clip.
 				Assert.IsTrue( rig.HasLoft || loop, $"{entry.InfoId} {name}: the loft clip raises the track tag ({rig.TagLow}..{rig.TagHigh})" );
 				if ( !rig.HasLoft )
 				{
-					Assert.IsTrue( rig.Pose( 20, 0 ).Count > 0 );
+					Assert.IsTrue( rig.Pose( new CoasterPylonPose( 0.2f ) ).Count > 0 );
 					continue;
 				}
-				foreach ( var height in new[] { rig.TagLow, (rig.TagLow + rig.TagHigh) / 2, rig.TagHigh, rig.TagHigh + 3 } )
-					Assert.AreEqual( height, rig.PosedTagHeight( height ), 1e-2f, $"{entry.InfoId} {name}: the posed tag stands at {height}" );
-				// The pylon ends at the track: no part floats above the node, and a bridge-type pylon's top is the node height.
-				foreach ( var height in new[] { MathF.Max( definition.Pylon( loop ).MinHeight, rig.TagLow ), 40f, 70f, MathF.Min( definition.Pylon( loop ).MaxHeight, rig.TagHigh ) } )
+				float Tag( CoasterPylonPose pose ) => rig.NodeMatrix( rig.TagNode, pose ).Translation.Y;
+				foreach ( var t in new[] { 0f, 0.5f, 1f } )
+					Assert.AreEqual( rig.TagLow + t * (rig.TagHigh - rig.TagLow), Tag( new CoasterPylonPose( t ) ), 1e-2f, $"{entry.InfoId} {name}: the tag stands at h0 + t(h1 − h0) for t {t}" );
+				Assert.AreEqual( rig.TagHigh, Tag( new CoasterPylonPose( 1.3f ) ), 1e-3f, $"{entry.InfoId} {name}: a parameter above 1 stops the pylon at the loft's top (0x430ca0)" );
+				Assert.AreEqual( rig.TagLow, Tag( new CoasterPylonPose( -0.4f ) ), 1e-3f, "and one below 0 at its bottom" );
+				var level = rig.NodeMatrix( rig.TagNode, new CoasterPylonPose( 0.5f ) );
+				if ( rig.HasIncline )
 				{
-					var posed = rig.Pose( height, 0.7f );
+					var tilted = rig.NodeMatrix( rig.TagNode, new CoasterPylonPose( 0.5f, Pitch: 0.4f ) );
+					Assert.IsTrue( MathF.Abs( tilted.M32 - level.M32 ) > 0.05f, $"{entry.InfoId} {name}: the incline clip tips the tag's forward axis" );
+					inclines++;
+				}
+				if ( rig.HasBank )
+				{
+					var banked = rig.NodeMatrix( rig.TagNode, new CoasterPylonPose( 0.5f, Bank: 0.3f ) );
+					Assert.IsTrue( MathF.Abs( banked.M12 - level.M12 ) > 0.05f, $"{entry.InfoId} {name}: the bank clip rolls the tag's side axis" );
+					banks++;
+				}
+				foreach ( var t in new[] { 0f, 0.5f, 1f } )
+				{
+					var posed = rig.Pose( new CoasterPylonPose( t, 0.7f ) );
+					var height = rig.TagLow + t * (rig.TagHigh - rig.TagLow);
 					Assert.IsTrue( posed.All( part => part.Vertices.Min( vertex => vertex.Position.GetSystemVector3().Z ) <= height + 0.05f ), $"{entry.InfoId} {name}: no part above the node at {height}" );
 					if ( !loop && entry.InfoId is 1180 or 2180 or 3190 or 4180 or 4190 )
 						Assert.AreEqual( height, posed.SelectMany( part => part.Vertices ).Max( vertex => vertex.Position.GetSystemVector3().Z ), 1f, $"{entry.InfoId} {name}: the pylon's top meets the node at {height}" );
-					Assert.IsTrue( rig.Pose( height, 0.7f, stackedAbove: true ).Count >= posed.Count );
+					Assert.IsTrue( rig.Pose( new CoasterPylonPose( t, 0.7f ), stackedAbove: true ).Count >= posed.Count );
 				}
-				var parts = rig.Pose( (rig.TagLow + rig.TagHigh) / 2, 1.0f );
+				var parts = rig.Pose( new CoasterPylonPose( 0.5f, 1.0f ) );
 				Assert.IsTrue( parts.Count > 0 && parts.All( part => part.Vertices.Length > 0 && part.Indices.Length % 3 == 0 ) );
 				var top = parts.SelectMany( part => part.Vertices ).Max( vertex => vertex.Position.GetSystemVector3().Z );
-				var tall = rig.Pose( rig.TagHigh, 0 ).SelectMany( part => part.Vertices ).Max( vertex => vertex.Position.GetSystemVector3().Z );
+				var tall = rig.Pose( new CoasterPylonPose( 1f ) ).SelectMany( part => part.Vertices ).Max( vertex => vertex.Position.GetSystemVector3().Z );
 				Assert.IsTrue( tall > top + 1, $"{entry.InfoId} {name}: a higher node gives a taller pylon" );
 			}
 		}
+		Assert.IsTrue( inclines >= 10 && banks >= 5, $"{inclines} incline and {banks} bank clips were posed" );
 	}
 
 	/// <summary>Every car type loads, has extents along its length and a seat socket per head.</summary>
@@ -151,6 +175,7 @@ public class CoasterPresentationAssetTests
 				var rig = new CoasterCarRig( geometry! );
 				Assert.IsTrue( rig.Parts.Count > 0, $"{entry.InfoId} {type.MeshName} has mesh parts" );
 				Assert.IsTrue( rig.FrontExtent + rig.RearExtent > 1, $"{entry.InfoId} {type.MeshName} has a length" );
+				Assert.AreEqual( rig.HeadSockets, rig.Seats.Count, $"{entry.InfoId} {type.MeshName}: a socket per 0x80 record, in record order (0x4301f5)" );
 				foreach ( var part in rig.Parts )
 				{
 					foreach ( var name in part.Textures )

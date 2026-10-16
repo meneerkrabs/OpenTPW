@@ -179,6 +179,19 @@ public class OriginalUiAssetTests
 		Assert.AreEqual( 0.58f, uvs.Max( uv => uv.Y ), 0.01f );
 	}
 
+	/// <summary>The icon models of the per-employee and All Visitors windows have a frame per status and per thought.</summary>
+	[TestMethod]
+	public void TheStatusAndThoughtIconsHaveTheirFrames()
+	{
+		var models = new UiModels();
+		// the root names the per-employee and All Visitors windows draw (tables 0x756f48 and 0x7506c8)
+		foreach ( var name in OriginalLayoutTables.EmployeeWindow.All.Concat( OriginalLayoutTables.VisitorsWindow.All ).Select( node => node.Model ).OfType<string>() )
+			Assert.IsNotNull( models.Get( name ), name );
+		var thoughts = models.Get( "ti_hungry" )!.Frames.Count;
+		var statuses = models.Get( "staffstat" )!.Frames.Count;
+		Assert.AreEqual( (17, 4), (thoughts, statuses), "ti_hungry: one frame per THOUGHTS entry 1-17 (frame = thought - 1); staffstat: frames 0-3 of 0x485ec0" );
+	}
+
 	[TestMethod]
 	public void EveryModelAndTextureTheScreensUseExists()
 	{

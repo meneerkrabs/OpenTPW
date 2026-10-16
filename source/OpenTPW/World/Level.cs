@@ -451,8 +451,10 @@ public partial class Level : IDisposable
 				OpenAfterRepair( item.InstanceId );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
 				CloseForUpgrade( item.InstanceId );
-			else if ( item.Kind == ParkEventKind.MaintenanceCancelled || item.Kind == ParkEventKind.ToiletCleaned && item.Amount == 1 )
+			else if ( item.Kind == ParkEventKind.MaintenanceCancelled )
 				OpenAfterCancelledCall( item.InstanceId );
+			else if ( item.Kind == ParkEventKind.ToiletCleaned )
+				OpenAfterClean( item.InstanceId );
 			else if ( item.Kind == ParkEventKind.UpgradeCompleted )
 			{
 				ApplyCompletedCatalogueTier( item.InstanceId );
@@ -521,11 +523,7 @@ public partial class Level : IDisposable
 	/// </summary>
 	// [BIN:STP-PPC:0x100DF4D4 repair opens the ride] 0xdf4a0 open word = 1, 0xdf4c8 VAR_RIDECLOSED = 0, SetState(0); 0xdf4dc closes an incomplete coaster again
 	// [BIN:STP-PPC:0x100DF928 upgrade end] the upgrade's end leaves state 2 through SetState(0) like the repair (ORACLE.md F27, static): the same reopening, an incomplete coaster closed again
-	/// <summary>
-	/// A cancelled call for a mechanic reopens the ride unless its state keeps it closed (tp.exe <c>0x004DFE30</c> off, the reopen guard); so does the clean
-	/// that answered a toilet's call.
-	/// </summary>
-	// Approximation (ECON-049, registered at ParkGate.MayOpen): the toilet a call closed opens again after the handyman's clean; the original's clean (0x004DFD80) clears the call, and how the toilet reopens is not traced
+	/// <summary>A cancelled call for a mechanic reopens the ride unless its state keeps it closed (tp.exe <c>0x004DFE30</c> off, the reopen guard).</summary>
 	private void OpenAfterCancelledCall( int instance )
 	{
 		if ( AttractionRuntimeOf( instance ) is { } runtime && Gate?.MayOpen( runtime ) == true )
@@ -533,6 +531,19 @@ public partial class Level : IDisposable
 			runtime.Open();
 			SyncOpenState( runtime );
 		}
+	}
+
+	/// <summary>
+	/// A handyman's finished clean opens the toilet whatever the reopening guard says, called or not, the park open or closed (tp.exe <c>0x004D73C0</c>
+	/// state 11: the clean <c>0x004DFD80</c>, then <c>0x004DF390</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DF390 open after clean] the guard's refusal (states 1, 4, 2, the call +0x64, the queue link 0x004DE4A0, a broken track) only logs "Opening non-openable" five times; it then writes the open word +0x68 = 1, script variable 6 (VAR_RIDECLOSED) = 0 and SetState(0) (0x004E0E60)
+	private void OpenAfterClean( int instance )
+	{
+		if ( AttractionRuntimeOf( instance ) is not { } runtime )
+			return;
+		runtime.Open();
+		SyncOpenState( runtime );
 	}
 
 	private void OpenAfterRepair( int instance )

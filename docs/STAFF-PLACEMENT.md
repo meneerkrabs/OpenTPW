@@ -7,13 +7,13 @@ buttons), `Hud/ParkHud.cs` (`UpdateStaffTool`).
 ## Hire and place
 
 A hire (0x507bf0) creates no object: it builds the Place tool (CMMPlaceStaff) and flags the candidate as being placed. OpenTPW keeps the candidate in the
-pool (`ParkStaff.PendingPlacementId`, exempt from expiry); the staff window closes and an OpenTPW hint line replaces the advisor message 0x135
-(UI-097). A click on a valid cell calls `ParkEconomy.Hire` and puts the member on the cell centre: state Idle, happiness and energy 100, patrol rectangle
+pool (`ParkStaff.PendingPlacementId`, exempt from expiry); the staff window closes and the advisor's help 0x135 (309, place your new staff member) is posted as the
+original's hire handler does (0x49b9dd); the Place tool withdraws it when it ends (0x46c890). A click on a valid cell calls `ParkEconomy.Hire` and puts the member on the cell centre: state Idle, happiness and energy 100, patrol rectangle
 the whole map; the state machines decide the first job on their next update. Right click or Escape (`RmbCancel`) only clears the flag.
 
 ## Pick up and drop
 
-The staff window's employee view has a Pick up button (the original's control 0x50e, UI-098), enabled by `CanBePickedUp` (0x505bd0): refused on strike (states 4,
+The per-employee window (opened from the staff window's employee view) has a Pick up button (the original's control 0x50e, `b_pick`), enabled by `CanBePickedUp` (0x505bd0): refused on strike (states 4,
 5), in hand (7), repairing (13: `StaffJob.Repairing`) and escorting (18: `StaffMember.Escorting`), and when the member's own cell is not type 0, 1, 3, 9 or 10. The member becomes
 `StaffState.PickedUp`; a mechanic's ride assignment and a handyman's litter and toilet claims are released at once. The Carry tool drops it on a valid cell
 (0x509af0 → 0x505ea0): cell centre, `Navigation = null`, Idle, idle stamp 0, no jobs; the patrol rectangle is untouched. Cancelling drops it back on the cell

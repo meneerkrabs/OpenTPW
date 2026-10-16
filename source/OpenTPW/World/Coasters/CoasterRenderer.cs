@@ -22,9 +22,29 @@ internal sealed class CoasterHeadSources : IHeadSourceProvider
 /// </summary>
 // [BIN:TPW-EXE:0x43eb70 track rebuild] the original rebuilds the track mesh as a dynamic model when the track changes (0x43eb70 from 0x435a30/0x447d30), animates the scrolling textures by shifting the V of the faces of scrolling textures every frame (0x435a30) and poses each car from its sample coordinate (0x43ce20)
 // [BIN:TPW-EXE:0x435adf scroll shift] the per-frame tick shifts V by δ = (now − ctl+0x138)·P·0.001 for every polygon of a texture the loader flagged (definition flag 4, set when any fScrollRate is nonzero; texture flag 0x20), P the power factor at controller +0x2c; the stored fScrollRate (texture +0xc) is not read in that loop
-// [APPROX:COAST-026] see CoasterTrackMesh: the extruded mesh draws both faces and takes cross-section changes per segment and self-illuminated textures are lit like the rest; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc; the coaster MD2 models' Add-mode vertex and UV animation (TrackMaster loader 0x42fad0 keeps header flag 4: keys added to a per-update base copy, the add paths of 0x471860) is not modelled (formerly the remainder of RIDES-043)
+// [APPROX:COAST-026] self-illuminated textures (asTextureData bIsSelfIlluminating, texture flag 4) and the marker textures (flags 7) are lit by the scene light like the rest: the shader has no unlit path and its browser build cannot be regenerated here; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc; the coaster MD2 models' Add-mode UV animation (the add paths of 0x471860) is not modelled, the pylons' vertex and position keys are added (CoasterPylonRig)
 public sealed class CoasterRenderer : Entity
 {
+	/// <summary>The knot ranges (first knot, last knot, closed) the mesh builder draws as separate chains.</summary>
+	internal static List<(int From, int To, bool Closed)> ChainSpans( IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, bool closed )
+	{
+		var spans = new List<(int, int, bool)>();
+		var start = 0;
+		for ( var index = 0; index < chain.Count; index++ )
+		{
+			var last = index == chain.Count - 1;
+			var cutEnd = (chain[index].Flags & CoasterNodeFlags.CutEnd) != 0;
+			if ( !last && (closed || !cutEnd) )
+				continue;
+			// [BIN:TPW-EXE:0x43eb70 chain end] the mesh builder's loop runs only while a next node exists: the link ends at the last node's first knot, its own tag pairs are never drawn
+			var end = last || (cutEnd && !closed) ? pass.FirstKnot[index] : pass.LastKnot( index );
+			if ( index - start >= 1 )
+				spans.Add( (pass.FirstKnot[start], end, closed && start == 0 && last) );
+			start = index + 1;
+		}
+		return spans;
+	}
+
 	/// <summary>
 	/// The scroll phase after a frame (<c>0x435adf..0x435b20</c>): the accumulator gains P·Δt and wraps above 1. A breakdown (power factor 0) stops the scroll.
 	/// </summary>
@@ -243,9 +263,13 @@ public sealed class CoasterRenderer : Entity
 
 		// ---- Track and pylons ----------------------------------------------------------------------
 
+		// [BIN:TPW-EXE:0x43eb70 parity] the triangle parity flag 0x7923e4 is reset once per rebuild and carries across the chains a cut circuit is drawn in
+		private bool meshParity;
+
 		private void Rebuild( CoasterPreview? preview )
 		{
 			ClearStatic();
+			meshParity = false;
 			var track = Ride.Track;
 			var definition = Ride.Definition;
 			IReadOnlyList<CoasterNode>? chain;
@@ -256,133 +280,89 @@ public sealed class CoasterRenderer : Entity
 				(chain, closed) = (open.Chain, open.Closed);
 			else
 				return;
-			var knots = track.BuildKnots( Ride.Site, chain, writeBanks: false );
-			var invalid = new HashSet<int>();
-			for ( var pair = 0; pair < chain.Count; pair++ )
+			var pass = track.BuildKnotPass( Ride.Site, chain, writeBanks: false );
+			var knots = pass.Knots;
+			var crossings = Ride.IsOperational ? Ride.CollisionLists : Array.Empty<IReadOnlyList<int>>();
+			var cursorValid = preview?.Valid ?? true;
+			int? Marker( int node, int next )
 			{
-				var next = pair + 1;
-				if ( next < chain.Count && (chain[pair].Flags & CoasterNodeFlags.Invalid) != 0 && (chain[next].Flags & CoasterNodeFlags.Invalid) != 0 )
-					invalid.Add( pair );
+				// [BIN:TPW-EXE:0x43f4e0 marker links] crossings (+0xb0) give the red marker; a link into the build cursor's spare node (0x2000) the blue one, or red when the validator refused its cell (0x4000)
+				if ( node < crossings.Count && crossings[node].Count > 0 )
+					return CoasterTrackMesh.RefusedMarker;
+				if ( next == node || next < 0 || next >= chain.Count )
+					return null;
+				if ( (chain[next].Flags & CoasterNodeFlags.Cursor) != 0 )
+					return cursorValid ? CoasterTrackMesh.CursorMarker : CoasterTrackMesh.RefusedMarker;
+				// [APPROX:COAST-026] a link between two nodes a kept edit left invalid (0x4000) is drawn with the red marker; the original's marker needs 0x800000 or 0x2000 on the next node besides 0x4000 (the drag's moved node), and which of them a released move leaves is not traced — evidence needed: the flags of a moved node after the release 0x445a70
+				if ( (chain[node].Flags & CoasterNodeFlags.Invalid) != 0 && (chain[next].Flags & CoasterNodeFlags.Invalid) != 0 )
+					return CoasterTrackMesh.RefusedMarker;
+				return null;
 			}
 			var matrix = owner.ToEngine();
 			// A circuit the demolish button cut open is two chains: the nodes before the cut and the nodes after it (the cut ends are marked, 0x446740), each drawn on its own.
-			var cursorIndex = chain.ToList().FindIndex( node => (node.Flags & CoasterNodeFlags.Cursor) != 0 );
-			var start = 0;
-			for ( var index = 0; index < chain.Count; index++ )
-			{
-				var last = index == chain.Count - 1;
-				if ( !last && (closed || (chain[index].Flags & CoasterNodeFlags.CutEnd) == 0) )
-					continue;
-				if ( index - start >= 1 )
-					BuildChain( knots.Skip( start ).Take( index - start + 1 ).ToArray(), definition.Curviness, closed && start == 0 && last, invalid, cursorIndex == index && cursorIndex > start ? preview?.Valid ?? true : null, matrix );
-				start = index + 1;
-			}
-			BuildPylons( chain, knots, track.BuildKnots( Ride.Site, chain, writeBanks: false, applyManual: false ), track.PylonsTurnedBack( chain, knots ), matrix );
+			// [BIN:TPW-EXE:0x43ef02 cut end] the mesh builder stops drawing at a node with 0x10000 (neither its own knot pairs nor its link) and starts again at one with 0x20000 (0x43ef0d)
+			foreach ( var (first, final, isClosed) in CoasterRenderer.ChainSpans( chain, pass, closed ) )
+				BuildChain( knots[first..(final + 1)], definition.Curviness, isClosed, Marker, matrix );
+			BuildPylons( chain, pass, matrix );
 		}
 
-		/// <summary>
-		/// Draws one chain of knots: the track through them, and the last link as the translucent cursor ribbon when the chain ends in the build cursor's node
-		/// (<paramref name="ribbonValid"/> is whether its cell passed the validator, null when the chain has no cursor).
-		/// </summary>
-		private void BuildChain( CoasterKnot[] knots, float curviness, bool closed, IReadOnlyCollection<int> invalid, bool? ribbonValid, Matrix4x4 matrix )
-		{
-			var slices = HermiteCoasterCurve.Slices( knots, curviness, closed );
-			if ( ribbonValid is { } valid && slices.Length > HermiteCoasterCurve.SliceSegments )
-			{
-				// the pending link is the last knot pair: its slices are the ribbon, the others the track
-				var split = slices.Length - 1 - HermiteCoasterCurve.SliceSegments;
-				BuildRibbon( slices[split..], valid, matrix );
-				slices = slices[..(split + 1)];
-			}
-			BuildTrack( slices, Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), invalid, matrix );
-		}
+		/// <summary>Draws one chain of knots: the track through them, the links <paramref name="marker"/> names in a marker texture.</summary>
+		private void BuildChain( CoasterKnot[] knots, float curviness, bool closed, Func<int, int, int?> marker, Matrix4x4 matrix ) =>
+			BuildTrack( HermiteCoasterCurve.Slices( knots, curviness, closed ), Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), marker, matrix );
 
-		/// <summary>The half width of the cursor ribbon (original units) and its lift above the track.</summary>
-		private const float RibbonHalfWidth = 3f, RibbonLift = 0.6f;
-
-		private void BuildRibbon( CoasterSlice[] slices, bool valid, Matrix4x4 matrix )
-		{
-			if ( slices.Length < 2 )
-				return;
-			var vertices = new List<Vertex>( slices.Length * 2 );
-			var indices = new List<uint>( slices.Length * 6 );
-			var length = 0f;
-			for ( var index = 0; index < slices.Length; index++ )
-			{
-				var slice = slices[index];
-				if ( index > 0 )
-					length += SVector3.Distance( slices[index - 1].Position, slice.Position );
-				var (right, up) = CoasterTrackMesh.Frame( slice.Yaw, slice.Pitch, slice.Roll );
-				var centre = slice.Position + up * RibbonLift;
-				vertices.Add( new Vertex( Swap( centre - right * RibbonHalfWidth ), Swap( up ), new SVector2( 0, length / CoasterTrackMesh.MetersPerRepeat ) ) { TexIndex = 0 } );
-				vertices.Add( new Vertex( Swap( centre + right * RibbonHalfWidth ), Swap( up ), new SVector2( 1, length / CoasterTrackMesh.MetersPerRepeat ) ) { TexIndex = 0 } );
-				if ( index == 0 )
-					continue;
-				var first = (uint)(vertices.Count - 4);
-				indices.Add( first );
-				indices.Add( first + 1 );
-				indices.Add( first + 3 );
-				indices.Add( first );
-				indices.Add( first + 3 );
-				indices.Add( first + 2 );
-			}
-			trackTriangles += indices.Count / 3;
-			AddModel( vertices.ToArray(), indices.ToArray(), assets.GhostSlots( valid ), matrix, doubleSided: true, dynamic: false, out _ );
-		}
-
-		private void BuildTrack( CoasterSlice[] slices, IReadOnlyCollection<int> winch, IReadOnlyCollection<int> invalid, Matrix4x4 matrix )
+		private void BuildTrack( CoasterSlice[] slices, IReadOnlyCollection<int> winch, Func<int, int, int?> marker, Matrix4x4 matrix )
 		{
 			var sections = assets.Sections;
-			// The slices of a finished track end on the station end node, which stands on the first knot: the mesh needs no wrap segment.
-			var mesh = CoasterTrackMesh.Build( sections, slices, closed: false, winch, invalid );
+			// The slices of a finished track end on the station end node, which stands on S0's track dummy: the mesh needs no wrap segment.
+			var mesh = CoasterTrackMesh.Build( sections, slices, closed: false, winch, marker, meshParity );
+			meshParity = mesh.EndParity;
 			trackTriangles += mesh.TriangleCount;
 			if ( mesh.TriangleCount == 0 )
 				return;
+			// The mesh's vertices are shared along the strips, each of one texture: a scrolling texture's vertices (and triangles) move to their own dynamic model.
+			bool Scrolls( int texture ) => texture >= 0 && texture < sections.Textures.Count && sections.Textures[texture].ScrollRate != 0;
 			var fixedVertices = new List<Vertex>();
 			var fixedIndices = new List<uint>();
 			var movingVertices = new List<Vertex>();
 			var movingIndices = new List<uint>();
 			var moveBase = new List<float>();
 			var moveU = new List<float>();
-			// The mesh emits one quad (four vertices, six indices) per edge and segment, all of one texture.
-			for ( var quad = 0; quad < mesh.Vertices.Count / 4; quad++ )
+			var remap = new uint[mesh.Vertices.Count];
+			for ( var index = 0; index < mesh.Vertices.Count; index++ )
 			{
-				var texture = mesh.Vertices[quad * 4].Texture;
-				var rate = texture >= 0 && texture < sections.Textures.Count ? sections.Textures[texture].ScrollRate : 0f;
-				var vertices = rate != 0 ? movingVertices : fixedVertices;
-				var indices = rate != 0 ? movingIndices : fixedIndices;
-				var first = (uint)vertices.Count;
-				for ( var corner = 0; corner < 4; corner++ )
+				var source = mesh.Vertices[index];
+				var moving = Scrolls( source.Texture );
+				var vertices = moving ? movingVertices : fixedVertices;
+				remap[index] = (uint)vertices.Count;
+				vertices.Add( new Vertex( Swap( source.Position ), Swap( source.Normal ), new SVector2( source.U, source.V ) ) { TexIndex = source.Texture } );
+				if ( moving )
 				{
-					var source = mesh.Vertices[quad * 4 + corner];
-					vertices.Add( new Vertex( Swap( source.Position ), Swap( source.Normal ), new SVector2( source.U, source.V ) ) { TexIndex = source.Texture == CoasterTrackMesh.InvalidTexture ? CoasterAssets.InvalidSlot : source.Texture } );
-					if ( rate != 0 )
-					{
-						moveBase.Add( source.V );
-						moveU.Add( source.U );
-					}
+					moveBase.Add( source.V );
+					moveU.Add( source.U );
 				}
-				indices.Add( first );
-				indices.Add( first + 1 );
-				indices.Add( first + 2 );
-				indices.Add( first );
-				indices.Add( first + 2 );
-				indices.Add( first + 3 );
 			}
+			for ( var triangle = 0; triangle < mesh.Indices.Count; triangle += 3 )
+			{
+				var moving = Scrolls( mesh.Vertices[(int)mesh.Indices[triangle]].Texture );
+				var indices = moving ? movingIndices : fixedIndices;
+				for ( var corner = 0; corner < 3; corner++ )
+					indices.Add( remap[mesh.Indices[triangle + corner]] );
+			}
+			// [BIN:TPW-EXE:0x43f4e0 slice strips] the strips are single-sided: the culling keeps the faces the emitter's winding turns toward the camera, as for the models
 			if ( fixedVertices.Count > 0 )
-				AddModel( fixedVertices.ToArray(), fixedIndices.ToArray(), assets.GetTrackSlots(), matrix, doubleSided: true, dynamic: false, out _ );
+				AddModel( fixedVertices.ToArray(), fixedIndices.ToArray(), assets.GetTrackSlots(), matrix, doubleSided: false, dynamic: false, out _ );
 			if ( movingVertices.Count > 0 )
 			{
 				scrollVertices = movingVertices.ToArray();
 				scrollBase = moveBase.ToArray();
 				scrollU = moveU.ToArray();
-				AddModel( scrollVertices, movingIndices.ToArray(), assets.GetTrackSlots(), matrix, doubleSided: true, dynamic: true, out scrollModel );
+				AddModel( scrollVertices, movingIndices.ToArray(), assets.GetTrackSlots(), matrix, doubleSided: false, dynamic: true, out scrollModel );
 			}
 		}
 
-		/// <summary>The pylons of a chain, each posed with its node's clip values (<c>0x430ed0</c>): the height parameter, the yaw and pitch of its automatic knot direction or the hand-set ones, its bank and its loop rotate.</summary>
+		/// <summary>The pylons of a chain, each posed with its node's clip values (<c>0x430ed0</c>): the height parameter, the yaw and pitch of its node tangent or the hand-set ones, its bank and its loop rotate; the pose its knots were taken from.</summary>
 		// [BIN:TPW-EXE:0x431057 pylon pose values] the knot pass turns the node tangent T+ into the automatic yaw (+0xd4) and pitch with 0x43e590 (yaw = atan2(T.x, T.z), pitch = atan2(−T.y, T.z′) with T turned by −yaw through the sine table) and copies them to +0xe0 and +0xdc unless node flags 1 and 2 hold hand-set values; +0xd8 is 0 unless flag 4 holds a hand-set bank, then the auto-bank (0x43c160) fills it
-		private void BuildPylons( IReadOnlyList<CoasterNode> chain, IReadOnlyList<CoasterKnot> knots, IReadOnlyList<CoasterKnot> automatic, bool[] turnedBack, Matrix4x4 matrix )
+		private void BuildPylons( IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, Matrix4x4 matrix )
 		{
 			var accumulators = new Dictionary<(CoasterPylonRig Rig, int Part), (List<Vertex> Vertices, List<uint> Indices, string[] Textures)>();
 			var definition = Ride.Definition;
@@ -393,12 +373,11 @@ public sealed class CoasterRenderer : Entity
 				if ( node.IsPylonless || (node.Flags & CoasterNodeFlags.Cursor) != 0 || assets.GetPylon( node.LoopPylon ) is not { } rig )
 					continue;
 				var lift = CoasterTrack.PylonHeight( definition.Pylon( node.LoopPylon ), node.T );
-				var knot = knots[index];
-				var baseHeight = knot.Position.Y - definition.TrackHeightAdjust - lift;
-				var (yaw, pitch) = HermiteCoasterCurve.Orientation( automatic[index].Direction );
-				var pose = new CoasterPylonPose( node.T, (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : yaw, (node.Flags & CoasterNodeFlags.ManualIncline) != 0 ? node.Incline : pitch, knot.Roll, node.LoopRotate, turnedBack[index] );
-				var stackedAbove = chain.Any( other => !other.IsPylonless && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
-				var parts = assets.PosePylon( node.LoopPylon, rig, pose, stackedAbove );
+				var baseHeight = pass.Positions[index].Y - lift;
+				var pose = pass.Poses[index] ?? new CoasterPylonPose( node.T, (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : pass.AutomaticYaw[index],
+					(node.Flags & CoasterNodeFlags.ManualIncline) != 0 ? node.Incline : pass.AutomaticPitch[index], pass.Banks[index], node.LoopRotate, pass.TurnedBack[index] );
+				var above = chain.FirstOrDefault( other => !other.IsPylonless && (other.Flags & CoasterNodeFlags.Cursor) == 0 && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
+				var parts = assets.PosePylon( node.LoopPylon, rig, pose, new CoasterStackPlace( node.StackIndex == 0, above == null, above != null ) );
 				var shift = new SVector3( node.X * CoasterTrack.CellUnits, node.Y * CoasterTrack.CellUnits, baseHeight );
 				for ( var part = 0; part < parts.Count; part++ )
 				{

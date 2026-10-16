@@ -144,10 +144,12 @@ public class CoasterPresentationAssetTests
 				{
 					var posed = rig.Pose( new CoasterPylonPose( t, 0.7f ) );
 					var height = rig.TagLow + t * (rig.TagHigh - rig.TagLow);
-					Assert.IsTrue( posed.All( part => part.Vertices.Min( vertex => vertex.Position.GetSystemVector3().Z ) <= height + 0.05f ), $"{entry.InfoId} {name}: no part above the node at {height}" );
+					// A lone pylon hides its stack parts 1 (the bridge a pylon above stands on) and 3 (the connector onto a pylon below), 0x432df0.
+					foreach ( var value in new[] { 1, 3 } )
+						Assert.IsFalse( rig.StackPart( value ) >= 0 && posed.Any( part => rig.Model.Meshes.Any( mesh => mesh.Name == part.MeshName && mesh.NodeIndex == rig.StackPart( value ) ) ), $"{entry.InfoId} {name}: stack part {value} is hidden" );
 					if ( !loop && entry.InfoId is 1180 or 2180 or 3190 or 4180 or 4190 )
 						Assert.AreEqual( height, posed.SelectMany( part => part.Vertices ).Max( vertex => vertex.Position.GetSystemVector3().Z ), 1f, $"{entry.InfoId} {name}: the pylon's top meets the node at {height}" );
-					Assert.IsTrue( rig.Pose( new CoasterPylonPose( t, 0.7f ), stackedAbove: true ).Count >= posed.Count );
+					Assert.IsTrue( rig.Pose( new CoasterPylonPose( t, 0.7f ), new CoasterStackPlace( Bottom: true, Top: false ) ).Count >= posed.Count - (rig.StackPart( 2 ) >= 0 ? 1 : 0), "a lower node of a stack shows part 1 (the bridge) and hides part 2" );
 				}
 				var parts = rig.Pose( new CoasterPylonPose( 0.5f, 1.0f ) );
 				Assert.IsTrue( parts.Count > 0 && parts.All( part => part.Vertices.Length > 0 && part.Indices.Length % 3 == 0 ) );
@@ -157,6 +159,37 @@ public class CoasterPresentationAssetTests
 			}
 		}
 		Assert.IsTrue( inclines >= 10 && banks >= 5, $"{inclines} incline and {banks} bank clips were posed" );
+	}
+
+	/// <summary>
+	/// The stack parts (<c>0x430590</c>, <c>0x432df0</c>): the Gorilla Thrilla pylon's roots (part 4) stand only on the ground and its stacker (part 3) only on a pylon below; the
+	/// bridge (part 1) of the Temple Of Gloom pylon is drawn only under a pylon with a model.
+	/// </summary>
+	[TestMethod]
+	public void StackPartsShowByThePylonsPlaceInItsStack()
+	{
+		CoasterPylonRig Rig( int id )
+		{
+			var entry = PcCoasters().Single( candidate => candidate.InfoId == id );
+			var control = CoasterDefinition.FromEntry( entry ).StandardPylon;
+			var name = control.MeshName;
+			return new CoasterPylonRig( Find( entry, name )!, Find( entry, name + "L" )?.Clip, (Find( entry, name + "R" ) ?? Find( entry, name + "R1" ))?.Clip, control,
+				Find( entry, name + "I" )?.Clip, Find( entry, name + "B" )?.Clip, Find( entry, name + "R2" )?.Clip );
+		}
+		string[] Drawn( CoasterPylonRig rig, CoasterStackPlace place ) => rig.Pose( new CoasterPylonPose( 0.5f ), place ).Select( part => part.MeshName ).Distinct().ToArray();
+		var gorilla = Rig( 1190 );
+		Assert.AreEqual( "ROOTS", gorilla.Model.Nodes[gorilla.StackPart( 4 )].Name );
+		Assert.AreEqual( "STACKER", gorilla.Model.Nodes[gorilla.StackPart( 3 )].Name );
+		CollectionAssert.Contains( Drawn( gorilla, CoasterStackPlace.Alone ), "ROOTS" );
+		CollectionAssert.DoesNotContain( Drawn( gorilla, CoasterStackPlace.Alone ), "STACKER" );
+		var stacked = new CoasterStackPlace( Bottom: false, Top: true, CarriesModel: false );
+		CollectionAssert.DoesNotContain( Drawn( gorilla, stacked ), "ROOTS" );
+		CollectionAssert.Contains( Drawn( gorilla, stacked ), "STACKER" );
+		var temple = Rig( 1180 );
+		Assert.AreEqual( "mc_bridge", temple.Model.Nodes[temple.StackPart( 1 )].Name );
+		CollectionAssert.DoesNotContain( Drawn( temple, CoasterStackPlace.Alone ), "mc_bridge", "the top of a stack hides part 1" );
+		CollectionAssert.Contains( Drawn( temple, new CoasterStackPlace( Bottom: true, Top: false, CarriesModel: true ) ), "mc_bridge", "under a pylon it shows" );
+		CollectionAssert.DoesNotContain( Drawn( temple, new CoasterStackPlace( Bottom: true, Top: false, CarriesModel: false ) ), "mc_bridge", "under the cursor's model-less node it stays as the last pass left it" );
 	}
 
 	/// <summary>Every car type loads, has extents along its length and a seat socket per head.</summary>

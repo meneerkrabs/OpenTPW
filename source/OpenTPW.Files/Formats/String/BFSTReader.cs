@@ -17,7 +17,8 @@ namespace OpenTPW;
 ///   1 byte  - Unknown, always 0x01
 ///   3 bytes - String length, little-endian 24-bit (two shipped UITEXT.str entries exceed 255)
 ///   n bytes - Each character, a 1-based index into the language's BFMU table (MBToUni.dat)
-///   Padding
+///   Padding to a multiple of four bytes, then further chunks with the same 4-byte header: 1 another text run,
+///   2 a parameter (the 24-bit field is the parameter's type, no payload), 0 the end of the record
 /// </remarks>
 internal sealed class BFSTReader
 {
@@ -33,7 +34,10 @@ internal sealed class BFSTReader
 		buffer = memory.ToArray();
 	}
 
-	public string[] ReadFile()
+	public string[] ReadFile() => Read().Entries;
+
+	/// <summary>Every entry as its first text run (<see cref="ReadFile"/>) and as the whole record with its parameter slots.</summary>
+	public (string[] Entries, StringTemplate[] Templates) Read()
 	{
 		if ( buffer.Length < HeaderLength || Encoding.ASCII.GetString( buffer, 0, 4 ) != "BFST" )
 			throw new InvalidDataException( "String table magic number did not match BFST." );
@@ -44,6 +48,9 @@ internal sealed class BFSTReader
 
 		var characters = table.Characters;
 		var output = new string[stringCount];
+		var templates = new StringTemplate[stringCount];
+		var starts = Enumerable.Range( 0, stringCount ).Select( i => HeaderLength + (long)BinaryPrimitives.ReadInt32LittleEndian( buffer.AsSpan( HeaderLength + i * 4, 4 ) ) )
+			.Distinct().Order().ToArray();
 		var builder = new StringBuilder();
 		for ( var i = 0; i < stringCount; i++ )
 		{
@@ -70,8 +77,80 @@ internal sealed class BFSTReader
 			}
 
 			output[i] = builder.ToString();
+			var next = Array.BinarySearch( starts, position - 4 ) is var at and >= 0 && at + 1 < starts.Length ? starts[at + 1] : buffer.Length;
+			templates[i] = ReadTemplate( output[i], position + length, next, characters );
 		}
 
-		return output;
+		return (output, templates);
+	}
+
+	/// <summary>
+	/// The parts of a record after its first text run: further text runs and parameter slots up to the end chunk. A chunk that
+	/// does not fit before the next record or has another type ends the record, so a table without such chunks reads exactly as before.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6acd60 string format] the formatter fills a UITEXT record's parameter chunks (type 2) with the caller's typed values (the 'MRAV' argument records)
+	private StringTemplate ReadTemplate( string first, long position, long end, IReadOnlyList<char> characters )
+	{
+		var parts = new List<StringTemplatePart> { new( first, -1 ) };
+		var builder = new StringBuilder();
+		while ( true )
+		{
+			position = (position + 3) & ~3L;
+			if ( position + 4 > end )
+				break;
+			var type = buffer[position];
+			var field = buffer[position + 1] | buffer[position + 2] << 8 | buffer[position + 3] << 16;
+			position += 4;
+			if ( type == 2 )
+			{
+				parts.Add( new( "", field ) );
+				continue;
+			}
+			if ( type != 1 || position + field > end )
+				break;
+			builder.Clear();
+			for ( var j = 0; j < field; j++ )
+			{
+				var index = buffer[position + j];
+				if ( index < 1 || index > characters.Count )
+					return new StringTemplate( parts );
+				builder.Append( characters[index - 1] );
+			}
+			parts.Add( new( builder.ToString(), -1 ) );
+			position += field;
+		}
+		return new StringTemplate( parts );
+	}
+}
+
+/// <summary>One part of a <see cref="StringTemplate"/>: a text run (<see cref="ParameterType"/> -1) or a parameter slot of a type.</summary>
+public readonly record struct StringTemplatePart( string Text, int ParameterType )
+{
+	public bool IsParameter => ParameterType >= 0;
+}
+
+/// <summary>A whole string-table record: its text runs and parameter slots in order (the first part is the entry's first text run).</summary>
+public sealed class StringTemplate
+{
+	public StringTemplate( IReadOnlyList<StringTemplatePart> parts ) => Parts = parts;
+
+	public IReadOnlyList<StringTemplatePart> Parts { get; }
+	public int ParameterCount => Parts.Count( part => part.IsParameter );
+
+	/// <summary>The record with its parameter slots filled in order by <paramref name="values"/> (a missing value fills nothing).</summary>
+	public string Fill( params string[] values )
+	{
+		var builder = new StringBuilder();
+		var next = 0;
+		foreach ( var part in Parts )
+		{
+			if ( !part.IsParameter )
+				builder.Append( part.Text );
+			else if ( next < values.Length )
+				builder.Append( values[next++] );
+			else
+				next++;
+		}
+		return builder.ToString();
 	}
 }

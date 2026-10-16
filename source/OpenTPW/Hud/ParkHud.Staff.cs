@@ -40,7 +40,8 @@ public sealed partial class ParkHud
 	private Dictionary<StaffType, string[]>? staffNames;
 	private string[]? staffTypes;
 	private string[]? staffStates;
-	// [EXT:list-row-pitch] ten equal staff rows fill the table's 470-unit content area, a design choice: the original list class takes its pitch from the font's text height (0x663718: 0x65d865 into +0x170) and shows (bottom - top) / pitch rows (0x663786), which resolution-independent output sizes cannot copy (UI-002); the video's list (12:00) has a pitch of about 19 px at 720p, about 40 units
+	// [EXT:list-row-pitch] the staff rows take the table's content area rather than a font bank's pitch, a design choice: the original list class takes its pitch from the font's text height (0x663718: 0x65d865 into +0x170), which resolution-independent output sizes cannot copy (UI-002)
+	// [APPROX:UI-080] ten equal rows fill the table's 470-unit content area (47 units each), where the video's list (12:00) has a pitch of about 19 px at 720p, about 40 units, and shows (bottom - top) / pitch rows (0x663786), about twelve — evidence needed: the staff list font's text height
 	// [BIN:TPW-EXE:0x665c35 list wheel] the list forwards a wheel message (0x1000d, one notch = WM_MOUSEWHEEL delta / 120 at 0x46b600) to its scroll bar child as position - notches, so the wheel moves one row per notch
 	public const int StaffVisibleRows = 10;
 	public const float StaffRowHeight = 470f / StaffVisibleRows;

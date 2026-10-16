@@ -251,7 +251,6 @@ UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md
 UI-065 docs/PROGRESS.md
-UI-080 docs/UI.md
 UI-083 docs/PROGRESS.md
 UI-084 docs/PROGRESS.md
 UI-088 docs/UI.md
@@ -261,7 +260,6 @@ UI-093 docs/PROGRESS.md
 UI-097 docs/PROGRESS.md
 UI-098 docs/PROGRESS.md
 UI-099 docs/STAFF-PLACEMENT.md
-UI-100 docs/UI.md
 UI-902 docs/PROGRESS.md
 UI-903 docs/PROGRESS.md
 UI-906 docs/PROGRESS.md

@@ -67,6 +67,9 @@ public class UiRegisterRound2Tests
 		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 2f, new[] { "hud", "confirmDelete" } ) );
 		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 2f, new[] { "hud", "attractions", "confirmDeleteAttraction" } ) );
 		Assert.AreEqual( 2f, ParkHud.TimeScaleFor( 2f, new[] { "hud", "loanConfirm" } ), "the loan box is not mapped to a 0x47f020 call site" );
+		// the pause follows the open screens each frame and holds no state, so closing, Escape, a removed screen or a new park always resume the speed setting
+		Assert.AreEqual( 2f, ParkHud.TimeScaleFor( 2f, new[] { "hud" } ) );
+		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 0f, new[] { "hud", ParkHud.PostcardScreen } ), "the paused speed setting stays paused" );
 	}
 
 	[TestMethod]

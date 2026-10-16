@@ -4,7 +4,8 @@ A sweep over the second half of the interface approximations, read in tp.exe via
 
 - **Retired:** UI-093 (key events go to exactly one window, `0x6698e6`; the ride view takes the focus, `0x48ac40`, so the HUD keys are
   unreachable while riding, which OpenTPW already matched), UI-099 (the staff tools' queue face is type 1, red.tga in the texture table
-  `0x763b38`) and UI-080 (a wheel notch moves one row, `0x46b600`, `0x665c35`; the row pitch is `[EXT:list-row-pitch]`).
+  `0x763b38`). UI-080 stays open, narrowed: a wheel notch moves one row (`0x46b600`, `0x665c35`), which OpenTPW matches, but the
+  staff list's pitch is 47 units where the video measures about 40 (the rest of the pitch is `[EXT:list-row-pitch]`).
 - **List order** (UI-905, UI-907): the refresh handlers (`0x493230`, `0x4955e0`) rewrite cells in place and never move a row; a new row
   goes in through the sorted insert (`0x66403b`, compare `0x663edc`), and only a header press re-sorts. OpenTPW re-sorted on every
   refresh and now keeps the order.
@@ -15,8 +16,9 @@ A sweep over the second half of the interface approximations, read in tp.exe via
 - **Modal pauses** (UI-096): the postcard and the delete confirmations (`0x48cd10`, the message box `0x47f020`) pause the park.
 - **Read, text only:** the gauge crop (`0x477ff0`, UI-046), the slider ball's drag offset (`0x66bb9b`, UI-064), the candidate byte
   writer (`0x507600`, UI-081), the cell colours (`0x5f0700`, `0x5f2380`, UI-086) and the render-pass pick (`0x7b05a8`, UI-930).
-- **Design choices, approved by the user:** UI-061 (`[EXT:entry-price-window]`), UI-100's pointer art (`[EXT:software-pointers]`) and
-  UI-940 (`[EXT:lobby-fixed-step]`) are closed; UI-041, UI-905, UI-907 and UI-941 are split.
+- **Design choices, approved by the user:** UI-061 (`[EXT:entry-price-window]`) and UI-940 (`[EXT:lobby-fixed-step]`) are closed;
+  UI-100's pointer art (`[EXT:software-pointers]`), UI-041, UI-905, UI-907 and UI-941 are split, so those IDs stay open for the original
+  behaviour that remains.
 
 The pinned run hash and saves are unchanged. Verified with 4579 tests passing without game data, 5027 with it, and all five native
 smokes.

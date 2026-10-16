@@ -366,9 +366,7 @@ public class OriginalObject : Entity
 		var key = fileSystem.GetAbsolutePath( path );
 		if ( !bonusTextures.TryGetValue( key, out var texture ) )
 		{
-			using var stream = fileSystem.OpenRead( path );
-			var data = new TextureFile( stream ).Data;
-			texture = new Texture( data.Data, data.Width, data.Height, TextureFlags.Repeat );
+			texture = Texture.FromFileSystem( fileSystem, path, TextureFlags.Repeat );
 			bonusTextures[key] = texture;
 		}
 		return texture;

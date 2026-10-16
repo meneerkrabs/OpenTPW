@@ -51,6 +51,24 @@ public sealed class TrackBuilder
 		return cell.IsExtension ? Tracks.CellOf( cell.Parent ) : (x, y);
 	}
 
+	/// <summary>
+	/// Whether the '+' or '#' cell of an add-on may stand on (x, y), as the validator's add-on mode accepts it: the cell lies on a tile (its head for an extension cell) that is
+	/// not a corner and has no junction, is not flagged as carrying an add-on already (the map cell's flag 0x10), and belongs to <paramref name="rideOwner"/>, the ride the add-on is
+	/// for (<see cref="OwnerOf"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00535953 add-on validation] with the upgrade selection set (0x8187F8) a cell asked for as type 0xB or 0x10 is refused when its flag word has 0x10 (0x535961), when the head's cell is no track cell (0x53AD30, 0x53596D), a corner (0x53AE00) or a junction (0x53AE90) (0x53597C..0x535990), when the head's owner word +0x10 is not the selected ride's (0x818698, 0x535998) and when the cell is a queue (0x5359A9); otherwise it passes (0x5359B3); without the selection a track under the cell refuses it (0x535831)
+	public bool CanStandAddOn( int x, int y, int rideOwner )
+	{
+		if ( OriginOf( x, y ) is not { } origin )
+			return false;
+		var head = Tracks.Get( origin.X, origin.Y );
+		if ( !head.IsOrigin || Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.AddOn ) || (Tracks.Get( x, y ).Flags & TrackCell.FlagAddOn) != 0 )
+			return false;
+		var arms = TrackHeading.Count( head.Mask );
+		var corner = arms == 2 && (head.Mask & 0x11) != 0 && (head.Mask & 0x44) != 0;
+		return !corner && arms <= 2 && head.Owner == rideOwner && Cells.RawTypeAt( x, y ) != (byte)ParkCellType.Queue;
+	}
+
 	/// <summary>Whether (x, y) is the origin cell of a track tile (station tiles included).</summary>
 	public bool IsTile( int x, int y ) => Tracks.Get( x, y ).IsOrigin;
 

@@ -22,7 +22,10 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
 - **content roots** are live on the desktop: an enabled mod's `overrides`, `strings` and `objects` change what the game
-  reads (see [Content](#content)). The browser build has no files-based mods, so nothing changes there.
+  reads (see [Content](#content)). The browser build has no files-based mods, so nothing changes there;
+- **Theme Park Inc attractions in Theme Park World** work end to end through a data mod and the cross-edition objects
+  extension: they are listed, priced, researched, bought, placed, run and saved (see
+  [Making a Theme Park Inc rides mod](#making-a-theme-park-inc-rides-mod)).
 
 Changes to `mods.json` apply at the next start; nothing is swapped while the game runs.
 
@@ -147,7 +150,9 @@ a startup warning and the defaults are used; invalid entries in an otherwise val
 with a warning. Smoke tests (`--smoke-test`) ignore `mods.json` and `<config>/mods`, like the compatibility settings.
 
 `--disable-extension <id>` (repeatable) switches an extension or mod off for one run without changing `mods.json`;
-an id that names no extension or installed mod is an error.
+an id that names no extension or installed mod is an error. `--enable-mod <id>` (repeatable) switches an extension or mod on, and
+`--mod-input <mod id>:<input id>=<folder>` (repeatable) chooses an input folder, for one run each (also in smoke tests, which otherwise
+ignore `mods.json`); a malformed `--mod-input` or an unknown id is an error.
 
 ## Content
 
@@ -320,6 +325,99 @@ for Theme Park World's economy. Theme Park Inc's `Upgrades[n].RunningCost` has n
 ignored; its `Research.Group` values reach 6, and the research table already treats groups past `ResearchTech` as
 threshold 0, as the original's zero-filled block does.
 
-Loading the archives themselves is the content roots' job (`objects.json` with an `input`); the sound banks of a root
-are registered by the code that opens the Theme Park Inc input, which does not exist yet, so `ContentSoundRoots` has no
-root to route to and every object keeps the running game's banks.
+Loading the archives themselves is the content roots' job (`objects.json` with an `input`). When the extension is on, the
+engine registers each input that the manifest declares as `theme-park-inc` **and** that `GameEditions.Detect` recognises as
+Theme Park Inc data (`ModContentRoots`) as a sound root, as a root of shared textures and as a source of economy data, as the next
+section describes; an input folder that is not Theme Park Inc data gets a warning and no sound root, and with the extension off no
+input is registered, so every object keeps the running game's banks.
+
+## Making a Theme Park Inc rides mod
+
+A mod that brings Theme Park Inc attractions into Theme Park World is two small text files. It copies nothing: the player's own
+Theme Park Inc install is the mod's input and the archives are read where they are.
+
+1. Make a folder named after the mod's id, for example `community.tpi-rides`, in `<config>/mods/` (or anywhere, with `--mod-dir`).
+2. Write `opentpw-mod.json` in it. The mod needs the cross-edition objects extension, one `original-data` input for the install
+   and an `objects.json`:
+
+   ```json
+   { "schema": 1, "id": "community.tpi-rides", "name": "Theme Park Inc rides", "version": "1.0.0", "category": "community",
+     "edition": "theme-park-world",
+     "dependencies": [ { "id": "opentpw.cross-edition-objects", "version": ">=1.0.0" } ],
+     "inputs": [ { "id": "tpi", "kind": "original-data", "edition": "theme-park-inc" } ],
+     "content": { "objects": "objects.json" } }
+   ```
+
+3. Write `objects.json` next to it. Each entry names one archive of the install (the path below its `Data` folder, without `.wad`), the
+   Theme Park World theme and category it joins, an `infoId` from the range the mod reserves, and its names:
+
+   ```json
+   { "schema": 1, "idRange": { "first": 40000, "last": 40099 }, "objects": [
+     { "archive": "levels/arabian/rides/tbounce", "input": "tpi", "theme": "jungle", "category": "rides", "infoId": 40001,
+       "names": { "English": "Turban Bounce", "German": "Turban-Huepfer" } },
+     { "archive": "levels/science/rides/robot", "input": "tpi", "theme": "space", "category": "rides", "infoId": 40002,
+       "names": { "English": "Giant Robot Swing" } },
+     { "archive": "levels/science/Facilities/litbin", "input": "tpi", "theme": "space", "category": "features", "infoId": 40003,
+       "names": { "English": "Science Litter Bin" } },
+     { "archive": "levels/arabian/shops/drinks", "input": "tpi", "theme": "jungle", "category": "shops", "infoId": 40004,
+       "names": { "English": "Desert Drinks" } } ] }
+   ```
+
+   - **Which archives.** Theme Park Inc keeps its objects below `Data/levels/<world>/` in `rides`, `shops`, `sideshow`, `features`,
+     `upgrades` and `Facilities` (litter bins, toilets, staff rooms); `archive` may name any of them, and `category` says where the object
+     is listed in Theme Park World (the litter bin above is a feature). Its worlds are `arabian`, `science` and `water`; the example
+     puts them into the `jungle`, `space` and `fantasy` parks.
+   - **Which ids.** Pick a range of at most 4096 ids in 5000 to 65535 (see [Cross-edition objects](#cross-edition-objects-opentpwcross-edition-objects))
+     and keep each object's id when you update the mod: saves and layouts join on it.
+   - **What an archive brings.** The `.sam` with the model, its textures, its animations and its RSE script, and the object's own
+     price, research cost and group. Theme Park World's category defaults (`Rides.sam`, ...) fill in what the archive does not say, as for the
+     official bonus objects. The name in `names` replaces the archive's `.sam` name in the build lists, the HUD and the economy.
+   - **What does not load.** An archive whose name the park already lists (the game's own `gates`, `bus`, `end`, `tvsim`, ...; the original
+     keeps the first), an archive with no `.sam` that declares an `Info.Id` (`ptract`) and a broken archive are skipped with a warning in the log.
+     The example mod's scale is fine: all 217 archives of the install's three worlds can be listed (the test `EveryArchiveOfTheInstallLoads...`
+     does), 182 of them load, and the 35 others are the skipped names above.
+4. Turn it on. In the **Extensions and mods** screen switch on *Cross-edition objects* and the mod, then choose the install as the
+   `tpi` input (the screen checks that the folder holds Theme Park Inc data); or edit `mods.json`:
+
+   ```json
+   { "enabled": { "opentpw.cross-edition-objects": true, "community.tpi-rides": true },
+     "inputs": { "community.tpi-rides": { "tpi": "/games/Theme Park Inc" } } }
+   ```
+
+   or for one run: `--enable-mod opentpw.cross-edition-objects --enable-mod community.tpi-rides --mod-input 'community.tpi-rides:tpi=/games/Theme Park Inc'`
+   (`--mod-input <mod id>:<input id>=<folder>`; both options are repeatable and change nothing on disk). Start a Theme Park World
+   park: the mod's objects are in the buy lists of their theme, after the game's own.
+
+What the engine does with such an object (all `[EXT:cross-edition-objects]` unless it says otherwise):
+
+- **Catalogue and economy.** The object joins its theme's object catalogue (`ObjectCatalog`) and the economy catalogue
+  (`EconomyObjectCatalog`) with the layers a game object has (the theme's category `.sam`, the archive's `.sam`, `Easy_` in easy mode) and
+  the `Info.Id` and English name of `objects.json`. It is priced from `Upgrades[0].CostOfUpgrade`, researched like any other (a ride with
+  a research cost waits in the lab), listed in the buy window's tab of its `Info.WhichUIType`, bought through `ParkEconomy.TryBuild`,
+  placed through the normal build path (`Level.PlaceObject`, the build tool, the queue tool), linked to the guests and sold or scrapped
+  like a game object.
+- **Textures.** The archive's own `textures` folder, then the shared textures of the **world the archive was authored in**
+  (`levels/science/sharetex` of the install, not the park theme's), both read from the install; `.fsh` and `.tga` textures are decoded
+  as well as `.wct`.
+- **Script and sounds.** The RSE script runs as in Theme Park Inc, including the two Theme Park Inc only opcodes (`WAITABS`, `MULT`). Its
+  `EVENT` ids are looked up in the install's own sound categories (`ContentSoundRoots`), never in the running game's. A litter bin's
+  trigger sets the script variable at index 0 (as the original does), which Theme Park Inc's bin calls `VAR_USE`. Variables only Theme
+  Park Inc's own engine writes stay 0: [APPROX:RIDES-045] (docs/OBJECTS.md).
+- **Saves.** The extension and the mod are recorded in a park save with their versions and content digests, the asset manifest pins the
+  install's members the park uses (`mod:community.tpi-rides:/levels/arabian/rides/tbounce/...`), and loading without them (or with another
+  version of the mod) is refused with `needs community.tpi-rides 1.0.0`; the load list keeps the park and says which mod it needs. A different
+  Theme Park Inc install with other bytes is refused by the manifest hashes.
+
+What is not verified: Theme Park Inc's track rides (coasters, water and kart tracks) and tours in a Theme Park World park, the
+sound-driven synchronisation of TPI scripts with its engine events, and the TPI scripts' variables above.
+
+### Checking a TPI rides mod
+
+- Tests (`source/OpenTPW.Tests/TpiRidesWiringTests.cs`, always; `TpiRidesEndToEndTests.cs`, over the real install): the example mod is
+  generated at test time (`TpiRidesFixture`, no Theme Park Inc bytes) and checked with `OPENTPW_TPI_PATH` (an install or its `Data`
+  folder) next to `OPENTPW_GAME_PATH`: catalogue, economy, buy list, textures, sound routes, a placed object's script (the litter bin runs
+  `WAITABS`), the M3 gate's guests boarding a Theme Park Inc ride in the jungle and in the space park, and the save records. Without the
+  variables they are inconclusive.
+- Native smokes: `OPENTPW_TPI_PATH=... bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` writes the example mod to a temporary
+  folder and runs the sandbox smoke (it builds the mod's objects), and the park-resume smoke pair with `OPENTPW_SMOKE_MODS=1`, whose
+  fixture park is built from the mod's Turban Bounce through the HUD build menu and queue tool, saved and restored.

@@ -78,6 +78,7 @@ internal sealed partial class SandboxSmokeTest
 				Require( level.PlaceObject( entry, site.X, site.Y, rotation ) != null, "rebuild on freed footprint through the economy" );
 			}
 			Require( built >= 2, "build original objects through the park economy in the original level" );
+			PlaceModObjects( economy, siteX, siteY );
 			if ( economy != null )
 			{
 				Log.Trace( $"Built {built} original objects for ${balanceBefore - economy.Balance} through the park economy." );
@@ -100,9 +101,48 @@ internal sealed partial class SandboxSmokeTest
 			Require( builtBonus is { PartCount: > 0 }, $"build bonus object {bonus.ArchiveName}" );
 			builtBonus!.Open();
 		}
+		// the sandbox has no park economy: a mod's objects are built free, at sites searched from the middle of the grid
+		PlaceModObjects( null, 16, 16 );
 		var first = level.Objects.Objects[0];
 		var cell = first.Cells.First();
 		Require( level.PlaceObject( first.Entry, cell.X, cell.Y, 0 ) == null, "reject overlapping footprints" );
+	}
+
+	/// <summary>
+	/// With a mod that adds objects (docs/MODS.md, <c>scripts/smoke-tpi-rides.sh</c>) the smoke also builds up to four of them through the park economy
+	/// and the normal placement path, opens them, and requires them to be drawn, linked to the economy and the guests and, with the checks that follow
+	/// for every placed object, to run their scripts without faults. Without such a mod nothing is placed and nothing changes.
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	private void PlaceModObjects( ParkEconomy? economy, int siteX, int siteY )
+	{
+		var candidates = level.Objects.Catalog.Buildable.Where( entry => entry.ModId != null && entry.ScriptPath != null
+			&& (economy == null || economy.Research.IsAvailable( entry.InfoId ) && economy.Catalog.TryGet( entry.InfoId, out _ )) )
+			.OrderBy( entry => entry.Category ).ThenBy( entry => entry.InfoId ).Take( 4 ).ToArray();
+		var any = level.Objects.Catalog.Entries.Any( entry => entry.ModId != null );
+		if ( !any )
+			return;
+		Require( candidates.Length > 0, "a mod's objects are buildable in the original level (enable the mod, its extension and its input)" );
+		var built = 0;
+		foreach ( var (entry, index) in candidates.Select( ( entry, index ) => (entry, index) ) )
+		{
+			var rotation = index % 4 * 90;
+			var site = Enumerable.Range( 0, 61 * 61 ).Select( cellIndex => (X: siteX - 30 + cellIndex % 61, Y: siteY - 30 + cellIndex / 61) )
+				.OrderBy( cell => Math.Abs( cell.X - siteX ) + Math.Abs( cell.Y - siteY ) )
+				.FirstOrDefault( cell => cell.X >= 0 && cell.Y >= 0 && level.CheckFreeObject( entry, cell.X, cell.Y, rotation ) == OriginalPlacementResult.Allowed, (X: -1, Y: -1) );
+			Require( site.X >= 0, $"find a site for the mod's {entry.DisplayName}" );
+			var cash = economy?.Balance ?? 0;
+			var placed = level.PlaceObject( entry, site.X, site.Y, rotation );
+			Require( placed is { PartCount: > 0 }, $"build the mod's {entry.DisplayName} ({entry.ModId}, Info.Id {entry.InfoId}) with drawable parts" );
+			placed!.Open();
+			built++;
+			if ( economy != null )
+			{
+				Require( cash - economy.Balance == entry.BuildCost, $"charge the mod's {entry.DisplayName} exactly its catalog build cost" );
+				Require( level.GetEconomyInstance( placed ) is int instance && economy.TryGetObject( instance, out _ ), $"link the mod's {entry.DisplayName} to its economy instance" );
+			}
+		}
+		Log.Trace( $"Mod objects built {( economy == null ? "free (no park economy)" : "through the park economy" )}: {string.Join( ", ", candidates.Select( entry => $"{entry.DisplayName} ({entry.ModId} {entry.InfoId})" ) )}." );
 	}
 
 	private int rideHeadFrames;

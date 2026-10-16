@@ -50,6 +50,9 @@ public partial class Level
 		// Objects keep off queue and track cells. Path cells are the cell map's to judge (PathAt: a plain path is cleared by the placement, a
 		// NoModify one refuses), and object cells (types 4, 9 and 10) are left to ParkObjects, which lets a higher overwrite priority replace their owner.
 		// [BIN:TPW-EXE:0x535BB3 track cells] for an object cell (type 4) the validator refuses a second-layer track cell (0x53AD30: types 0xB, 0xD, 0x10, 0x12, 0x19; the extensions 0xC and 0x11 through their head, 0x535811) and any other map type but 0, 1 and the object types (0x535C4C..0x535D5D)
+		// A path cell without NoModify gives way to an object (the validator's 0x535D21 rule, the commit clearing the path), and the entrance's and exit's outside cells are
+		// validated as well (ParkObjects.CheckAccessCells): the outside cell by the path rule takes empty ground and path cells only.
+		// [BIN:TPW-EXE:0x00535D21 object over path] an object (type 4) over a type-1 cell is allowed (0x535D21 returns 0) unless the cell carries NoModify, which the validator refuses first for every object type (0x5356A6..0x5356B3); the commit clears the path (0x5290F6..0x52910C: 0x87, then 0x5367A0(0, 0))
 		Objects = new ParkObjects( catalog!, grid, Seed )
 		{
 			IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type
@@ -100,6 +103,16 @@ public partial class Level
 			+ (skipped == null ? "" : $"; skipped (not in the local catalog): {skipped}") + "." );
 	}
 
+	/// <summary>Set while <see cref="PlaceObject"/> places an object: the access cells are laid for it.</summary>
+	private bool layingAccessCells;
+
+	/// <summary>Whether the placed objects type their footprint cells in the guest grid (not in a visit, a Theme Park Inc layout or Theme Park Inc itself).</summary>
+	// [APPROX:RIDES-031] a Theme Park Inc world keeps the cells its layout was given and types none of its footprints, so the road signs' '@' cells ("*@*", "*@@*") are plain occupied cells; tp.exe's commit stamps '@' as a type-1 NoModify path cell linked to its path neighbours (0x529173–0x529208) and 'Q' as a queue cell (0x529119), which ParkCellMap.WriteFootprint does for Theme Park World (whose shapes have neither) — evidence needed: Theme Park Inc's own placement (its executable), which is not traced
+	private bool TypesFootprints => !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
+
+	/// <summary>The owner word the placement stores on an object's cells: the cell word of its anchor (<see cref="ParkCellMap.OwnerAt"/>).</summary>
+	internal static ushort OwnerWord( OriginalObject item ) => ParkCellMap.CellWord( item.Placement.X, item.Placement.Y );
+
 	/// <summary>Every placed object that guests may choose becomes a live attraction; new and removed objects follow.</summary>
 	private void ConnectObjectsToGuests()
 	{
@@ -109,17 +122,34 @@ public partial class Level
 		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
 		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint, tp.exe 0x00528A70); a visit, a Theme Park Inc layout and
 		// Theme Park Inc itself (whose placement is not traced) keep the cells they were given
-		var typesFootprints = !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
+		var typesFootprints = TypesFootprints;
 		if ( typesFootprints )
 		{
 			var cells = Guests.Grid.Cells;
 			foreach ( var item in Objects.Objects )
-				cells.WriteFootprint( item.Cells );
+				cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
 		}
 		if ( typesFootprints )
 		{
-			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells );
-			Objects.ObjectRemoved += item => Guests?.Grid.Cells.ClearFootprint( item.Cells );
+			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
+			// The cells outside the entrance and exit are laid by a build (PlaceObject), not by an import or a restore, and before the object registers with the guests, which read them.
+			Objects.ObjectPlaced += item =>
+			{
+				// [BIN:TPW-EXE:0x00534767 laid cells' money test] the cell setter refuses a path or queue type when the park's money is on and its balance is below zero, even though the placement's cells are free (0x5346D0 with 0x8186D4 set)
+				if ( layingAccessCells && Guests?.Grid.Cells is { } laid && (Park == null || Park.Economy.Balance >= 0) )
+				{
+					ObjectAccessCells.Lay( laid, item.AccessPoints, OwnerWord( item ), item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
+					// the entrance's outside cell becomes a queue cell, over a plain path the player built: guests walking there step off
+					Guests?.SetDownOffCells( item.AccessPoints.Select( point => (point.OutsideX, point.OutsideY) ).ToHashSet() );
+				}
+			};
+			Objects.ObjectRemoved += item =>
+			{
+				if ( Guests?.Grid.Cells is not { } removed )
+					return;
+				removed.ClearFootprint( item.Cells );
+				ObjectAccessCells.ClearQueue( removed, OwnerWord( item ) );
+			};
 		}
 		// A placement over path cells clears them (ParkObjects.ClearPath): guests standing there step off
 		Objects.ObjectPlaced += item => Guests?.SetDownOffCells( item.Cells.Select( cell => (cell.X, cell.Y) ).ToHashSet() );
@@ -141,7 +171,7 @@ public partial class Level
 	/// </summary>
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
-		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation ) )
+		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ) ) )
 			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
 	}
 
@@ -216,17 +246,26 @@ public partial class Level
 	{
 		foreach ( var (item, id) in economyInstances )
 			if ( id == instance && !item.IsDeleted )
-				item.Runtime.SetVariable( BinTriggerVariable, 1 );
+				SetBinTrigger( item.Runtime );
+	}
+
+	/// <summary>Sets the script variable at index 0 of a litter bin to 1: <see cref="BinTriggerVariable"/> in Theme Park World's bins, <c>VAR_USE</c> in the Theme Park Inc bin a mod brings.</summary>
+	// [EXT:cross-edition-objects] the original sets variable 0 by index (0x0055A0B0); a Theme Park Inc litter bin names it VAR_USE, so the index, not the Theme Park World name, is used
+	internal static void SetBinTrigger( OriginalObjectRuntime runtime )
+	{
+		var names = runtime.Script?.Script.VariableNames;
+		runtime.SetVariable( names is { Count: > 0 } ? names[0] : BinTriggerVariable, 1 );
 	}
 
 	/// <summary>
 	/// Registers a placed object's visitor bridge with <paramref name="guests"/> the way the build flow does
 	/// (also used by the headless M3 gate): attractions only, cells from <see cref="ResolveVisitorCells"/>.
 	/// </summary>
-	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0 )
+	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0, ushort ownerWord = 0 )
 	{
 		if ( !runtime.IsAttraction || ResolveVisitorCells( accessPoints, guests.Grid ) is not { } cells )
 			return false;
+		runtime.Visitors.OwnerWord = ownerWord;
 		runtime.Visitors.EntranceCell = cells.Entrance;
 		runtime.Visitors.ExitCell = cells.Exit;
 		runtime.Visitors.QueueFrontCell = cells.QueueFront;
@@ -298,6 +337,8 @@ public partial class Level
 	{
 		if ( Guests == null )
 			return;
+		if ( Objects.Grid is OriginalParkGrid originalGrid )
+			originalGrid.LiveCells = () => Guests?.Grid.Cells;
 		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBlocked )
 		{
 			// [BIN:TPW-EXE:0x00534A91 queue neighbour sound] the writer plays cat_ui 139 only while game+36 (0x785A2C, the park's money) is clear: here, while a park economy runs
@@ -309,7 +350,7 @@ public partial class Level
 			ObjectGivesWay = ( x, y ) => Objects.GivesWay( x, y, ParkObjects.PathOverwritePriority ),
 			DemolishObject = DemolishObjectAt
 		};
-		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Objects.FindAt( x, y ), RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell );
+		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
 	}
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
@@ -392,8 +433,16 @@ public partial class Level
 	/// goes alone. Returns the cells removed; <paramref name="owner"/> is the ride whose queue lost them, null for a stray cell.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005367A0 ClearCell queue case] the original clears a queue cell by itself, whatever ride owns it; OpenTPW's queue is the line its ride walks from the entrance, so an owned cell takes the cells behind it along and a stray cell, outside every such line, goes alone
-	internal static int RemoveQueueCellAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y, out RideVisitorBridge? owner )
+	internal static int RemoveQueueCellAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y, out RideVisitorBridge? owner, bool removeFixed = false ) =>
+		RemoveQueueCellAt( grid, attractions, x, y, out owner, out _, removeFixed );
+
+	/// <summary>
+	/// <see cref="RemoveQueueCellAt(GuestPathGrid, IEnumerable{IRideVisitorBridge}, int, int, out RideVisitorBridge?, bool)"/> that also reports the cells it emptied. With
+	/// <paramref name="removeFixed"/> a NoModify queue cell (the front a placement laid) goes too, as [EXT:removable-access-cells] allows.
+	/// </summary>
+	internal static int RemoveQueueCellAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y, out RideVisitorBridge? owner, out IReadOnlySet<(int X, int Y)> removedCells, bool removeFixed = false )
 	{
+		removedCells = new HashSet<(int X, int Y)>();
 		owner = QueueRideAt( grid, attractions, x, y );
 		if ( owner == null && grid.IsQueue( x, y ) )
 		{
@@ -406,19 +455,31 @@ public partial class Level
 			owner = QueueRideAt( grid, attractions, x, y );
 		}
 		if ( owner != null )
-			return QueuePaths.RemoveFrom( grid, owner, x, y );
+		{
+			// the cells RemoveFrom takes: the cell and the chain behind it, or a free-standing cell alone
+			owner.RecomputeQueue( grid );
+			var taken = owner.QueueCells.Contains( (x, y) ) ? owner.QueueCells.SkipWhile( cell => cell != (x, y) ).ToHashSet() : new HashSet<(int X, int Y)> { (x, y) };
+			var count = QueuePaths.RemoveFrom( grid, owner, x, y, removeFixed );
+			if ( count > 0 )
+				removedCells = taken;
+			return count;
+		}
 		if ( !grid.IsQueue( x, y ) )
 			return 0;
 		grid.ClearQueue( x, y );
+		grid.Cells.SetFlags( x, y, grid.Cells.FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+		removedCells = new HashSet<(int X, int Y)> { (x, y) };
 		return 1;
 	}
 
-	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null.</summary>
+	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null: the ride whose chain reaches the cell, else the ride the cell's owner word names (a free-standing cell).</summary>
 	internal static RideVisitorBridge? QueueRideAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y )
 	{
 		if ( !grid.IsQueue( x, y ) )
 			return null;
-		return attractions.OfType<RideVisitorBridge>().FirstOrDefault( item => item.HasQueue && item.QueueCells.Contains( (x, y) ) );
+		var rides = attractions.OfType<RideVisitorBridge>().Where( item => item.HasQueue ).ToArray();
+		var owner = grid.Cells.OwnerAt( x, y );
+		return rides.FirstOrDefault( item => item.QueueCells.Contains( (x, y) ) ) ?? (owner == 0 ? null : rides.FirstOrDefault( item => item.OwnerWord == owner ));
 	}
 
 	/// <summary>
@@ -510,10 +571,52 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return CellBuildResult.NotPath;
-		var result = Paths.Remove( x, y );
+		// [EXT:removable-access-cells] the path cell the placement laid outside an entrance or exit (flag 0x20) can be removed, where tp.exe's cell clear keeps a NoModify cell that has neighbours (the forced clear 0x5367A0(0, 0) refuses it with "Removing path cell with no neighbours but NOMODIFY set" otherwise); the map start's initial path stays fixed
+		var access = IsAccessCell( x, y );
+		var result = access ? Paths.RemoveFixed( x, y ) : Paths.Remove( x, y );
 		if ( result == CellBuildResult.Ok )
+		{
 			LastActionMessage = "Removed a path cell.";
+			if ( access )
+				AfterAccessCellRemoved( new HashSet<(int X, int Y)> { (x, y) } );
+		}
 		return result;
+	}
+
+	/// <summary>Whether (x, y) is a cell outside the entrance or exit of a placed object (the cells its placement lays, <see cref="ObjectAccessCells"/>).</summary>
+	private bool IsAccessCell( int x, int y ) =>
+		Objects.Objects.Any( item => ObjectAccessCells.IsOutsideCell( item.AccessPoints, x, y ) );
+
+	/// <summary>
+	/// After cells a placement laid were removed: guests standing on them are set down, and each ride whose entrance or exit resolved to one resolves it again, which falls back to the
+	/// nearest walkable path as for a cell nothing laid (<see cref="ResolveVisitorCells"/>).
+	/// </summary>
+	private void AfterAccessCellRemoved( IReadOnlySet<(int X, int Y)> removed )
+	{
+		if ( Guests == null )
+			return;
+		Guests.SetDownOffCells( removed );
+		RefreshVisitorCells( Objects.Objects.Where( item => item.Runtime.IsAttraction ).Select( item => (item.AccessPoints, item.Runtime.Visitors) ), Guests.Grid, removed );
+	}
+
+	/// <summary>
+	/// Resolves the entrance and exit cells again of each ride that used one of the <paramref name="removed"/> cells (as its entrance, exit or outside cell), and recomputes its queue:
+	/// the entrance falls back to the nearest walkable path as for a ride nothing laid cells for. A ride the grid has no path for keeps its cells (the guests' own checks drop a goal they cannot reach).
+	/// </summary>
+	internal static void RefreshVisitorCells( IEnumerable<(IEnumerable<ObjectAccessPoint> Points, RideVisitorBridge Bridge)> rides, GuestPathGrid grid, IReadOnlySet<(int X, int Y)> removed )
+	{
+		foreach ( var (points, bridge) in rides )
+		{
+			var access = points.ToArray();
+			if ( !bridge.HasCells )
+				continue;
+			var affected = removed.Contains( bridge.EntranceCell ) || removed.Contains( bridge.ExitCell ) || access.Any( point => removed.Contains( (point.OutsideX, point.OutsideY) ) );
+			if ( !affected || ResolveVisitorCells( access, grid ) is not { } cells )
+				continue;
+			bridge.EntranceCell = cells.Entrance;
+			bridge.ExitCell = cells.Exit;
+			bridge.RecomputeQueue( grid );
+		}
 	}
 
 	/// <summary>
@@ -605,7 +708,14 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Guests == null )
 			return 0;
-		var removed = RemoveQueueCellAt( Guests.Grid, Guests.Attractions, x, y, out var ride );
+		// [EXT:removable-access-cells] the queue front the placement laid (flag 0x20) goes with the queue behind it, where tp.exe's cell clear keeps a NoModify cell unless it is forced (0x5367D4..0x5367E0)
+		var removed = RemoveQueueCellAt( Guests.Grid, Guests.Attractions, x, y, out var ride, out var removedCells, removeFixed: true );
+		if ( removed > 0 )
+		{
+			// the guests standing on the emptied cells leave the queue on the nearest path; the ride's entrance resolves again when it used one of them
+			Guests.SetDownOffQueueCells( removedCells );
+			AfterAccessCellRemoved( removedCells );
+		}
 		if ( ride == null )
 			return removed;
 		var owner = Objects.Objects.FirstOrDefault( item => item.Visitors == ride );
@@ -634,9 +744,12 @@ public partial class Level
 	/// <summary>An object a queue cell may cover and demolish: its overwrite priority is below the queue tool's (tp.exe <c>0x818C10</c> = 3).</summary>
 	private bool QueueGivesWay( int x, int y ) => Objects.GivesWay( x, y, ParkObjects.QueueOverwritePriority );
 
-	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell. The original placement 0x528A70 lays the access cells itself: on commit with 0x52FAB0 true (option 0x81B0CC, the type's Info.HasQueue from the build tool's enter 0x46D644, and 0x8187F8 clear) the entrance's outside cell becomes a queue cell linked to the entrance (0x5297BD–0x529890) and the exit's outside cell a path cell linked to its path neighbours (0x529A58–0x529B1A); with it false the entrance's outside cell becomes a path cell and the exit gets none. The placement's checks of these cells are ported (ParkObjects.CheckAccessCells); OpenTPW lays neither cell — evidence needed: the cell ops 0x81/0x85/0x86 that link the laid cells, and a model of the laid cells' cost
+	// [BIN:TPW-EXE:0x0052977F access cells] the placement lays the cells outside the entrance and exit itself (ObjectAccessCells: the entrance's queue cell for a type with Info.HasQueue, else a path cell; the exit's path cell), free of charge and NoModify; Easymode's eight rides carry exactly these cells (18 cells compared)
+	// [BIN:TPW-EXE:0x0052FAB0 queue option] the option 0x81B0CC is set by the build tool from the type's +0x40 (0x52FA90 at 0x527986 and 0x46D644) and is 1 after SetMode (0x52F139); 0x8187F8 is the upgrade selection (0x52F880), which no OpenTPW build uses
+	// [BIN:TPW-EXE:0x00534115 bridge ops] the refresh ops after the laid cell run 0x81 (the tile refresh 0x5365D0, RefreshTile) and 0x85 and 0x86, which act on a track cell of the second layer (0x53AD30 first) and so do nothing for a cell that holds none
+	// A cell nothing laid (an imported or restored park, Theme Park Inc) keeps the nearest walkable cell as the guests' entrance, which their route graph needs to be a path cell (QUEUE-003, WALK-005).
 	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
-		grid.IsWalkable( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
+		grid.IsWalkable( x, y ) || grid.IsQueue( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
 
 	public void RotateBuild() => BuildRotation = (BuildRotation + 90) % 360;
 
@@ -736,7 +849,16 @@ public partial class Level
 			}
 		}
 		// [BIN:TPW-EXE:0x004DB712 built ride closes] the constructor opens the object (open word +0x68 = 1, 0x4DB3B9) and then, for a type with Info.HasQueue (flag 8 at 0x4DB420), logs "Object %d Closing", clears the open word and writes VAR_RIDECLOSED = 1 (script variable 6, 0x55A070/0x55A0B0), so a built ride with a queue waits closed until the player opens it
-		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ) )!;
+		layingAccessCells = true;
+		OriginalObject placed;
+		try
+		{
+			placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ) )!;
+		}
+		finally
+		{
+			layingAccessCells = false;
+		}
 		// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
 		placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 		if ( bought != null )
@@ -842,6 +964,7 @@ public partial class Level
 	}
 
 	/// <summary>The remove tool: the object under the cursor, else a queue cell, else a path cell.</summary>
+	// [EXT:dev-one-click-remove] the developer panel's one-click remove tool takes whatever stands on the clicked cell (an object, else a queue cell, else a path cell); the original removes each through its own tool (the bulldozer 0x52BDD0, the queue and path tools' undo, the sale of a ride) and has no combined click
 	public bool RemoveAt( int x, int y ) =>
 		RemoveObjectAt( x, y ) || RemoveQueueCell( x, y ) > 0 || RemovePathCell( x, y ) == CellBuildResult.Ok;
 

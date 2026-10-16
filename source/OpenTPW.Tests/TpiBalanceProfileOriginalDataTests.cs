@@ -59,7 +59,9 @@ public class TpiBalanceProfileOriginalDataTests
 			.Select( entry => entry.Key )
 			.Where( key => !key.StartsWith( "LoanInfo[", StringComparison.Ordinal ) && !key.StartsWith( "ChallengesInThisLevel[", StringComparison.Ordinal ) )
 			.Distinct( StringComparer.OrdinalIgnoreCase ).OrderBy( key => key, StringComparer.Ordinal ).ToArray();
-		Assert.AreEqual( 152, fixedKeys.Length );
+		// The schema is the repository's own and grows with every economy rule that reads another key (152 when this test was written, 167
+		// after the staff and queue rules); it does not depend on the TPI install, so pin a floor, not the count.
+		Assert.IsTrue( fixedKeys.Length >= 152, $"{fixedKeys.Length} fixed Standard reads" );
 		var missing = fixedKeys.Where( key => !tpi.Contains( key ) ).ToArray();
 		TestContext.WriteLine( $"Current fixed Standard reads: {fixedKeys.Length}; missing from retail TPI global Standard: {missing.Length}." );
 		TestContext.WriteLine( string.Join( "\n", missing ) );

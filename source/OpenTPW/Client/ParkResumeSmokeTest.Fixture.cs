@@ -32,11 +32,13 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( laid >= SpineLength, $"lay at least {SpineLength} fresh path cells (laid {laid})" );
 
 		// One ride from the HUD build menu, as a player would: the cheapest available HasQueue ride.
+		// [EXT:mods] the mod variant takes the build menu's cheapest ride that a mod brings (OPENTPW_SMOKE_MODS=1), whose copies, queues and save are then the mod's
 		var item = hud.Catalog.GetItems( BuildCategory.Rides )
-			.Where( candidate => candidate.Entry is { HasQueue: true } && hud.Status.IsAvailable( candidate )
+			.Where( candidate => candidate.Entry is { HasQueue: true } && ( !ModVariant || candidate.Entry.ModId != null ) && hud.Status.IsAvailable( candidate )
 				&& (hud.Status.PriceOf( candidate ) ?? candidate.Cost) <= hud.Status.Money )
 			.OrderBy( candidate => hud.Status.PriceOf( candidate ) ?? candidate.Cost ).FirstOrDefault();
-		Require( item?.Entry != null, "find an available, affordable HasQueue ride in the build menu" );
+		Require( item?.Entry != null, ModVariant ? "find an available, affordable HasQueue ride that a mod brings in the build menu (enable the mod, its extension and its input: scripts/smoke-tpi-rides.sh)" : "find an available, affordable HasQueue ride in the build menu" );
+		Require( !ModVariant || ParkResumeMods.Capture( OpenTPW.Mods.OpenTpwExtensions.Active ) != null, "a park with a mod's ride records the mod that brings it" );
 		var entry = item!.Entry!;
 		var rideA = PlaceRideThroughHud( hud, hudContext, item, entry );
 
@@ -52,11 +54,15 @@ internal sealed partial class ParkResumeSmokeTest
 		var lineB = LineOut( doorB, QueueLength + 1 );
 		foreach ( var cell in lineB )
 		{
+			// the placement lays the queue cell outside the entrance itself (ObjectAccessCells), so the line starts on it
+			if ( level.Guests!.Grid.IsQueue( cell.X, cell.Y ) && bridge.QueueCells.Contains( cell ) )
+				continue;
 			Require( level.BuildQueueCell( bridge, cell.X, cell.Y ) == QueueBuildResult.Ok, $"build the second copy's queue cell {(cell.X, cell.Y)}" );
 			Require( level.Guests!.Grid.IsQueue( cell.X, cell.Y ), $"the built queue cell {(cell.X, cell.Y)} is a queue cell" );
 		}
 		Require( level.RemoveQueueCell( lineB[^1].X, lineB[^1].Y ) >= 1, "edit the queue: remove its last cell again" );
 		Require( bridge.QueueCells.Count >= QueueLength, $"the edited queue keeps {QueueLength} cells" );
+		QueuePaths.TryConnect( level.Guests!.Grid, bridge );
 
 		Require( !ReferenceEquals( rideA, rideB ) && rideA.Visitors.AttractionId != bridge.AttractionId,
 			"the two copies of the ride are distinct attractions" );
@@ -184,6 +190,7 @@ internal sealed partial class ParkResumeSmokeTest
 		hud.Update( hudContext, new UiInput( endPoint, true, true, false, false, UiKeys.None ) );
 		hud.Update( hudContext, new UiInput( endPoint, false, false, true, false, UiKeys.None ) );
 		Require( !level.CellTool.IsActive, "clicking the queue's end again ends the queue tool" );
+		Require( QueuePaths.TryConnect( level.Guests!.Grid, placed!.Visitors ), "the queue's back is linked to the spine path" );
 		Require( placed!.Visitors.QueueCells.Count >= QueueLength, "the HUD clicks laid the ride's queue" );
 		return placed;
 	}
@@ -214,8 +221,16 @@ internal sealed partial class ParkResumeSmokeTest
 		{
 			if ( level.CheckFreeObject( entry, cell.X, cell.Y, rotation ) != OriginalPlacementResult.Allowed || ( requireOnScreen && !Clickable( cell, out _ ) ) )
 				continue;
+			// a ride may now stand on plain path (the placement clears it), which would cut the spine this fixture's queues join: keep off it
+			var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, rotation );
+			if ( ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Any( part => grid.IsWalkable( part.X, part.Y ) || grid.IsQueue( part.X, part.Y ) ) )
+				continue;
 			var door = DoorAt( entry, cell.X, cell.Y, rotation );
 			var line = LineOut( door, QueueLength + 1 );
+			// the queue's back must touch the spine, as a player ends a queue line on a path cell: the placement no longer leaves a walkable entrance for guests to fall back on
+			var back = line[QueueLength - 1];
+			if ( requireOnScreen && !new[] { (0, -1), (1, 0), (0, 1), (-1, 0) }.Any( step => grid.IsWalkable( back.X + step.Item1, back.Y + step.Item2 ) ) )
+				continue;
 			if ( line.All( queueCell => level.Paths!.CheckCell( queueCell.X, queueCell.Y ) == CellBuildResult.Ok )
 				&& ( !requireOnScreen || line.All( queueCell => Clickable( queueCell, out _ ) ) ) )
 			{
@@ -348,7 +363,8 @@ internal sealed partial class ParkResumeSmokeTest
 		if ( totem != null )
 			Seed( totem, 3 );
 		// Wanderers spread along the actually-laid spine cells, so the park is not only commuters.
-		foreach ( var cell in spineCells.Where( ( _, index ) => index % Math.Max( 1, spineCells.Count / 4 ) == 0 ).Take( 4 ) )
+		// a ride placed over the spine takes its footprint cells (the placement clears a plain path under it), so only live path cells seed
+		foreach ( var cell in spineCells.Where( cell => level.Guests!.Grid.IsWalkable( cell.X, cell.Y ) ).Where( ( _, index ) => index % Math.Max( 1, spineCells.Count / 4 ) == 0 ).Take( 4 ) )
 			guests.SpawnInPark( cell.X, cell.Y );
 		Require( guests.Guests.Count >= 14, $"seed {guests.Guests.Count} guests around the rides, shops and paths" );
 	}
@@ -381,7 +397,7 @@ internal sealed partial class ParkResumeSmokeTest
 		if ( populateTicks >= MaximumPopulateTicks )
 			Require( false, $"guests never reached the rich save state in {MaximumPopulateTicks} ticks: {DescribeGuests()}; queues "
 				+ string.Join( ", ", level.Objects.Objects.Where( item => item.Visitors.HasQueue )
-					.Select( item => $"{item.Entry.DisplayName}#{item.Visitors.AttractionId}: {item.Visitors.QueueLength} queued, open {item.Visitors.IsOpen}" ) ) );
+					.Select( item => $"{item.Entry.DisplayName}#{item.Visitors.AttractionId}: {item.Visitors.QueueLength} queued, open {item.Visitors.IsOpen}, join {item.Visitors.JoinCell}, cells {string.Join( ">", item.Visitors.QueueCells )}, entrance {item.Visitors.EntranceCell}" ) ) );
 	}
 
 	private bool RichMoment()

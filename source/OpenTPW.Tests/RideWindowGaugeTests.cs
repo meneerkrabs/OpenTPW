@@ -167,4 +167,16 @@ public class RideWindowGaugeTests
 		Assert.AreEqual( 100, ParkHud.LocalHappiness( new[] { (127, 127, 100f), (128, 127, 0f) }, 127, 127 ), "the walk stops at cell 0x7f" );
 		Assert.AreEqual( 251, ParkHud.LocalHappiness( new[] { (0, 0, -5f) }, 0, 0 ), "ftol -5 is -5, whose low byte is 251" );
 	}
+
+	[TestMethod]
+	public void ASliderWithoutAnInnerRectangleRunsItsBallAlongItsWholeRectangle()
+	{
+		// 0x66ac00: attribute 0x40 copies the control's own rectangle into the track; the ride sliders have the layout command 3, the shop's and sideshow's do not
+		var shop = World( BuildCategory.Shops, "UsageInfo.SpecialIngredient 4\n" ); var context = Context(); Frame( shop.Hud, context );
+		var quality = (UiSlider)shop.Hud.Screen.Find( "shopQuality" )!;
+		Assert.AreEqual( quality.Bounds, quality.Track, "the track is the slider's rectangle" );
+		var ride = World( BuildCategory.Rides, RideData ); Frame( ride.Hud, Context() );
+		var speed = (UiSlider)ride.Hud.Screen.Find( "rideSpeed" )!;
+		Assert.AreEqual( new UiRect( 348, 643, 370, 58 ), speed.Track, "the ride speed slider keeps its command 3 rectangle (348,643)-(718,701)" );
+	}
 }

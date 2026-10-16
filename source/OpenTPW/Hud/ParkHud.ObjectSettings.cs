@@ -104,7 +104,7 @@ public sealed partial class ParkHud
 		if ( !TryPriceTarget( item, out _, out var state ) )
 			return;
 		// [BIN:TPW-EXE:0x66a71c variable box SetPos] the variable box class (vtable 0x705af0, slot +0x1c 0x66a6ae) lowers a value above its maximum (+0x13c) to it, else raises one below its minimum (+0x138), and sends 0x800 on a change and always on its first set (flag +0x154 from the constructor 0x66a558); its SetRange 0x66a5c4 clamps the value too
-		// [APPROX:UI-024] the window loads each object's own values; the original's window object is static and its controls are rebuilt on each open (+0x10 cleared at 0x48d26f) with a slider starting at position 0 (constructor 0x66ad5a) that sends 0x800 only on a change, so a loaded value equal to the new slider's starting position may leave the previous object's window value (low confidence)
+		// [BIN:TPW-EXE:0x66bb9b slider creation] the original's window object is static and its controls are rebuilt on each open, with sliders that start at position 0 and send 0x800 only on a change (0x66b088); but each slider's ball child forces one notification of the slider's value when it is created (message 0x15 calls 0x66b088 with -2, always sending), which puts 0 into the window's word, and SetRange 0x66b47d only stores the bounds, so the load's SetPos reaches the window as a message whenever it differs from 0 and needs none when it is 0: the window's words always end up as the loaded values, as here
 		pending.Price = SliderPosition( state.Price, 0, MaximumPrice );
 		pending.Prize = SliderPosition( state.CostOfGoods, 0, MaximumPrize );
 		pending.QualityStep = SliderPosition( (state.QualityOfGoods & 0xFF) / 50, 0, 2 );
@@ -288,8 +288,8 @@ public sealed partial class ParkHud
 		slider.TrackModel = node.Model;
 		slider.Help = HelpOf( node.Help );
 		var thumb = node.Children.FirstOrDefault( child => child.Model == "b_scrollera" );
-		// [APPROX:UI-024] a slider without an inner rectangle in its table (the shop's and the sideshow's) runs its ball along the ride sliders' inset of its rectangle (30 units left, 25 right)
-		slider.Track = node.Inner ?? new UiRect( node.Rect.X + 30, node.Rect.Y, node.Rect.Width - 55, node.Rect.Height );
+		// [BIN:TPW-EXE:0x66ac00 slider default track] a slider created with the 0x40 attribute (0x61 in these tables) copies its own rectangle into its track rectangle (+0x2c, 0x66ace3..0x66acf0) and only the layout command 3 replaces it, so the shop's and the sideshow's sliders, which have no such command (none of the three object tables holds a command 3 on them or a command 10), run the ball along their whole rectangle: left = track left + (position - minimum) × (track width - ball width) / range (0x66b088)
+		slider.Track = node.Inner ?? node.Rect;
 		if ( thumb != null )
 		{
 			slider.KnobSize = new NVector2( thumb.Rect.Width, thumb.Rect.Height );

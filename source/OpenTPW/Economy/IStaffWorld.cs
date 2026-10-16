@@ -9,4 +9,6 @@ public interface IStaffWorld
 {
 	/// <summary>One park turn of every member the world drives, in member order.</summary>
 	void UpdateStaff( ParkEconomy economy, long turn );
+	/// <summary>An object was sold or removed (the removal message 10 every staff member hears); the economy's own release runs after it.</summary>
+	void ObjectRemoved( ParkEconomy economy, int instanceId ) { }
 }

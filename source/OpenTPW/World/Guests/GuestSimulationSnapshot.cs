@@ -90,6 +90,9 @@ public sealed record GuestSnapshot
 	public int BinId { get; init; }
 	/// <summary>The prankery flag (0, 100, 101 or 102). Absent before schema 5: no pranksters.</summary>
 	public int PrankFlag { get; init; }
+	/// <summary>The way out a guard's set-down drew (<see cref="Guest.ExitSide"/>); absent for every other guest and in older saves.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public int? ExitSide { get; init; }
 	/// <summary>The balloon's remaining life (0..255). Absent before schema 6, which then holds no balloons.</summary>
 	public int BalloonLife { get; init; }
 	/// <summary>Whether the guest holds its balloon. Absent before schema 6.</summary>

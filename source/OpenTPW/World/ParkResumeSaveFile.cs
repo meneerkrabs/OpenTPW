@@ -518,6 +518,11 @@ internal static class ParkResumeSaveFile
 			Require( actorIds.SetEquals( membersById.Keys ),
 				$"the staff world holds {actorIds.Count} actors, but the economy employs {membersById.Count}" );
 		}
+		// A staff walk of the original kind keeps the stamp counter of its set-up, as a guest's does (WALK-007).
+		if ( snapshot.Layout?.Cells is { } layoutCells )
+			foreach ( var member in snapshot.Economy.Staff!.Members! )
+				Require( member.WorldState?.Navigation?.OriginalWalk is not { } staffWalk || staffWalk.Stamp <= layoutCells.StampCounter,
+					$"staff {member.Id} walk stamp {member.WorldState?.Navigation?.OriginalWalk?.Stamp} is above the layout's stamp counter {layoutCells.StampCounter}" );
 		if ( snapshot.Advisor is { } advisor )
 		{
 			Require( advisor.Controller != null, "the advisor snapshot has no controller state" );

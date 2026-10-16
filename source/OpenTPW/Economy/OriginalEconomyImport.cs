@@ -209,6 +209,8 @@ public sealed class OriginalEconomyImport
 				unmatched++;
 				continue;
 			}
+			// [BIN:TPW-EXE:0x004DC12B walk-away load] the attraction loader reads mNumWalkAways (key 0x0075B508) into +0x1A4, the count the refusal raises (0x004E1670)
+			state.WalkAways = attraction.WalkAwayCount;
 			things.TryAdd( attraction.Id, state );
 			// [BIN:STP-PPC:0x100DAF04 attraction serializer] mPricePerUse, mCostOfGoods, mUpgradeLevel and the gauges at +0x40 (state of repair) and +0x44 (life gauge)
 			// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the PC loader puts the three floats at +0x4C, +0x48 (life gauge) and +0x44 (state of repair) and clamps mPricePerUse to 0–500
@@ -235,9 +237,9 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"{unmatched} objects have no matching attraction thing; outside OpenTPW's ranges and kept at their defaults: {string.Join( ", ", notImported )}." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Attraction value adjusted on import: {line}." );
-		// [BIN:TPW-EXE:0x004E1670 walk-away count] mNumWalkAways (+0x1A4) is raised there (from 0x005006B0) and otherwise touched only by the constructor (0x004DB17B) and the serializer: nothing reads it, so it needs no import
-		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} need no import (nothing reads mNumWalkAways)." );
-		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a closed open word of a working attraction (mCanLoad, the park door opens it), the six daily 30-day rings (OpenTPW keeps this and last month), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (OpenTPW releases a claim at once, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the readers of the daily rings and of +0x4C
+		// [BIN:TPW-EXE:0x004DC12B walk-away load] the loader reads mNumWalkAways (+0x1A4) back with the other fields, so it is imported (ImportObjects); 0x004E1670 raises it (from 0x005006B0) and nothing else reads the field
+		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} imported (mNumWalkAways, +0x1A4)." );
+		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a closed open word of a working attraction (mCanLoad, the park door opens it), the six daily 30-day rings (OpenTPW keeps this and last month and, apart, a 30-day ring of walk-aways that starts empty at the import, ECON-057), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (an imported job's claim is taken again with its saved turn, 0x004E01F0; any other claim is dropped, and a claim lapses 100 turns after its turn unless its claimant still targets the object, 0x004E0220, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the readers of the daily rings and of +0x4C
 		foreach ( var item in save.Attractions )
 			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, open word {item.CanLoad}, third gauge {item.Gauge48}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", daily rings {string.Join( "/", item.Histories.Select( ring => ring.Current ) )} (today), claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
 		return (objects, fixedItems, things);
@@ -295,7 +297,7 @@ public sealed class OriginalEconomyImport
 			// [BIN:TPW-EXE:0x005054D0 staff state setter] +0x200 is the turn an idle spell started (0 after any state but a patrol), which the idle states compare with IdleDuration[grade]
 			member.IdleStamp = staff.TimeStartedIdling;
 			ImportPatrolArea( saved, member, adjusted );
-			ImportJob( economy, saved, member, things, chaseable, jobs );
+			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs );
 			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407);
 			// the walk speeds are the person's mBaseSpeed (+0xC0), mPurposeSpeed (+0xC2, the bonus a walk to a job or a chase takes) and mPreviousSpeed (+0xC8)
 			var person = saved.Person;
@@ -421,7 +423,7 @@ public sealed class OriginalEconomyImport
 	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
 	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
 	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
-	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlySet<int> chaseable, List<string> evidence )
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence )
 	{
 		var word = saved.Staff.State;
 		var what = $"{saved.Model} thing {saved.Id}";
@@ -432,6 +434,13 @@ public sealed class OriginalEconomyImport
 		}
 		var job = (StaffJob)word;
 		ParkObjectState? Thing( ushort id ) => id != 0 && things.TryGetValue( id, out var item ) ? item : null;
+		// [BIN:TPW-EXE:0x004E01F0 claim] an attraction names its claimant (+0x5E) and the turn the claim was made (+0x60); the world that places the member takes the claim again with that turn when the target names him
+		// (a turn after the save's own clock is taken as now), so it lapses 100 turns after it was made unless he still targets the object (0x004E0220)
+		void NoteClaim( ushort thingId )
+		{
+			if ( attractions.FirstOrDefault( entry => entry.Id == thingId ) is { } held && held.AssignedStaffMember == saved.Id )
+				member.ResumeClaimTurn = Math.Min( held.TimeMarkedForMaintenance, ParkCalendar.Turn( economy.Tick ) );
+		}
 		string? dropped = null;
 		switch ( job )
 		{
@@ -439,6 +448,7 @@ public sealed class OriginalEconomyImport
 				if ( Thing( saved.RoleTarget ) is { } ride )
 				{
 					member.RideId = ride.Id;
+					NoteClaim( saved.RoleTarget );
 					if ( job == StaffJob.Repairing )
 						member.JobStamp = saved.RoleTimer;
 				}
@@ -449,6 +459,7 @@ public sealed class OriginalEconomyImport
 				if ( Thing( saved.RoleToilet ) is { } toilet && economy.Catalog.TryGet( toilet.InfoId, out var info ) && info.ProvidesRelief )
 				{
 					member.ToiletId = toilet.Id;
+					NoteClaim( saved.RoleToilet );
 					if ( job == StaffJob.Cleaning )
 						member.JobStamp = saved.RoleTimer;
 				}

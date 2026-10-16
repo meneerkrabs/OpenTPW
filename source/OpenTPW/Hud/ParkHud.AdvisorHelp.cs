@@ -143,6 +143,11 @@ public sealed partial class ParkHud
 			PostToolHelp( AdvisorToolHelp.QueueEnd );
 	}
 
+	/// <summary>The window kind of a feature by its type's flags: relief first (thing bit 0), then rest (bit 1), else the generic feature window.</summary>
+	private static ObjectInfoKind FeatureKind( ObjectCatalogEntry entry ) =>
+		entry.Settings.GetInt( "UsageInfo.ProvidesRelief" ) != 0 ? ObjectInfoKind.Relief
+		: entry.Settings.GetInt( "UsageInfo.ChillsYouOut" ) != 0 ? ObjectInfoKind.Rest : ObjectInfoKind.Feature;
+
 	private OriginalObject? objectHelpItem;
 	private string? objectHelpName;
 	private int objectHelpOpenings;
@@ -153,7 +158,8 @@ public sealed partial class ParkHud
 	/// </summary>
 	private string? ObjectInfoHelpWindow()
 	{
-		if ( !InfoArmOpen || selectedObject is not { IsDeleted: false, Runtime: not null } item || ObjectLayout is not { } layout )
+		// a fixed item (Info.WhichUIType 4) has no window in the original: the dispatcher's jump table ends at 3 (0x486920, cmp ecx, 3; ja)
+		if ( !InfoArmOpen || selectedObject is not { IsDeleted: false, Runtime: not null } item || item.Entry.WhichUIType > 3 || ObjectLayout is not { } layout )
 		{
 			objectHelpItem = null;
 			objectHelpName = null;
@@ -161,8 +167,10 @@ public sealed partial class ParkHud
 		}
 		if ( !ReferenceEquals( item, objectHelpItem ) || objectHelpName == null )
 		{
+			// the layout tables of OpenTPW's windows are the original's ride, shop and sideshow tables; a feature (Info.WhichUIType 3) takes the shop table here but opens its own windows in the original
 			var kind = layout.Table == OriginalLayoutTables.RideWindow ? ObjectInfoKind.Ride
-				: layout.Table == OriginalLayoutTables.SideshowWindow ? ObjectInfoKind.Sideshow : ObjectInfoKind.Shop;
+				: layout.Table == OriginalLayoutTables.SideshowWindow ? ObjectInfoKind.Sideshow
+				: item.Entry.WhichUIType == 3 ? FeatureKind( item.Entry ) : ObjectInfoKind.Shop;
 			var repair = LiveState( item )?.Repair ?? level.PublishedObjectState( item )?.Repair;
 			objectHelpItem = item;
 			objectHelpName = ObjectInfoHelp.WindowName( kind, repair, ++objectHelpOpenings );

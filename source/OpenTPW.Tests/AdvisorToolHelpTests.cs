@@ -25,11 +25,11 @@ public class AdvisorToolHelpTests
 	public void Cleanup() => fixture?.Cleanup();
 
 	/// <summary>A HUD whose host records every help post, withdrawal and mode change in <paramref name="events"/> ("post N", "withdraw N", "mode").</summary>
-	private ParkHud NewHud( out List<string> events, out Level level, BuildCategory category = BuildCategory.Rides )
+	private ParkHud NewHud( out List<string> events, out Level level, BuildCategory category = BuildCategory.Rides, string extra = "", bool recordWindows = false )
 	{
 		fixture = new();
 		fixture.Setup();
-		object?[] args = { category, null, null, null, null, null, ParkGameMode.FullSimulation, "" };
+		object?[] args = { category, null, null, null, null, null, ParkGameMode.FullSimulation, extra };
 		var hud = (ParkHud)typeof( RideUpgradeIngressTests ).GetMethod( "Fixture", Private )!.Invoke( fixture, args )!;
 		context = (UiContext)typeof( RideUpgradeIngressTests ).GetMethod( "Context", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, null )!;
 		var recorded = new List<string>();
@@ -38,7 +38,9 @@ public class AdvisorToolHelpTests
 		{
 			HelpPosted = message => recorded.Add( $"post {message}" ),
 			HelpWithdrawn = message => recorded.Add( $"withdraw {message}" ),
-			ModeChanged = () => recorded.Add( "mode" )
+			ModeChanged = () => recorded.Add( "mode" ),
+			WindowOpened = window => { if ( recordWindows ) recorded.Add( $"open {window}" ); },
+			WindowClosed = window => { if ( recordWindows ) recorded.Add( $"close {window}" ); }
 		} );
 		level = (Level)typeof( ParkHud ).GetField( "level", Private )!.GetValue( hud )!;
 		return hud;
@@ -407,5 +409,45 @@ public class AdvisorToolHelpTests
 		hud.OpenStaffLocator();
 		Assert.AreEqual( 3, hud.Locator.Role );
 		CollectionAssert.AreEqual( new[] { "post 198" }, events );
+	}
+
+	// ---- The feature windows -----------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void TheFeatureWindowsPostTheirMessagesAndWithdrawThem()
+	{
+		Assert.AreEqual( 213, AdvisorUiHelp.MessageFor( ObjectInfoHelp.WindowName( ObjectInfoKind.Relief, 24.9, 1 ) ), "0x4979c3: the low byte below 0x19 posts 0xD5" );
+		Assert.AreEqual( 299, AdvisorUiHelp.MessageFor( ObjectInfoHelp.WindowName( ObjectInfoKind.Relief, 25, 2 ) ), "0x4979d6: otherwise 0x12B" );
+		Assert.AreEqual( 213, AdvisorUiHelp.MessageFor( ObjectInfoHelp.WindowName( ObjectInfoKind.Relief, 0, 3 ) ), "a state of 0 is below 25 (a ride's repair 0 is not low)" );
+		Assert.AreEqual( 299, AdvisorUiHelp.MessageFor( ObjectInfoHelp.WindowName( ObjectInfoKind.Relief, null, 4 ) ) );
+		Assert.AreEqual( 213, AdvisorUiHelp.MessageFor( ObjectInfoHelp.WindowName( ObjectInfoKind.Relief, 256 + 10, 5 ) ), "the original tests the low byte (cmp al, 0x19)" );
+		CollectionAssert.AreEqual( new[] { 299, 213 }, AdvisorUiHelp.WithdrawnWith( ObjectInfoHelp.WindowName( ObjectInfoKind.Relief, 80, 1 ) ).ToArray(), "0x4976A0 then 0x4976AD" );
+		Assert.AreEqual( 300, AdvisorUiHelp.MessageFor( ObjectInfoHelp.WindowName( ObjectInfoKind.Rest, 50, 1 ) ) );
+		CollectionAssert.AreEqual( new[] { 300 }, AdvisorUiHelp.WithdrawnWith( ObjectInfoHelp.WindowName( ObjectInfoKind.Rest, 50, 1 ) ).ToArray() );
+		Assert.AreEqual( 298, AdvisorUiHelp.MessageFor( ObjectInfoHelp.WindowName( ObjectInfoKind.Feature, 50, 1 ) ) );
+		CollectionAssert.AreEqual( new[] { 298 }, AdvisorUiHelp.WithdrawnWith( ObjectInfoHelp.WindowName( ObjectInfoKind.Feature, 50, 1 ) ).ToArray() );
+		Assert.IsTrue( new[] { 213, 298, 299, 300 }.All( AdvisorUiHelp.AllWindowMessages.Contains ) );
+	}
+
+	[TestMethod]
+	[DataRow( "", 298, "Feature" )]
+	[DataRow( "UsageInfo.ProvidesRelief 1\n", 299, "Relief" )]
+	[DataRow( "UsageInfo.ChillsYouOut 1\n", 300, "Rest" )]
+	[DataRow( "UsageInfo.ProvidesRelief 1\nUsageInfo.ChillsYouOut 1\n", 299, "Relief" )]
+	public void AFeatureOpensTheWindowItsFlagsChoose( string extra, int message, string kind )
+	{
+		var hud = NewHud( out var events, out _, BuildCategory.Features, extra, recordWindows: true );
+		Frame( hud );
+		var opened = events.Single( entry => entry.StartsWith( "open objectInfo/", System.StringComparison.Ordinal ) );
+		StringAssert.StartsWith( opened, $"open objectInfo/{kind}/" );
+		Assert.AreEqual( message, AdvisorUiHelp.MessageFor( opened["open ".Length..] ), "the repair of a fresh object is not below 25" );
+	}
+
+	[TestMethod]
+	public void AFixedItemHasNoWindowAndPostsNoHelp()
+	{
+		var hud = NewHud( out var events, out _, (BuildCategory)4, recordWindows: true );
+		Frame( hud );
+		Assert.IsFalse( events.Any( entry => entry.StartsWith( "open objectInfo/", System.StringComparison.Ordinal ) ), "0x486920: the jump table ends at kind 3" );
 	}
 }

@@ -158,8 +158,11 @@ internal static class AdvisorUiHelp
 	public static readonly IReadOnlyList<int> ModeHelpMessages = new[] { 184, 203, 214, 205, 201, 206, 193, 345, 346, 337 };
 }
 
-/// <summary>The kinds of object window the original opens for a placed object (one layout table each).</summary>
-internal enum ObjectInfoKind { Ride, Shop, Sideshow }
+/// <summary>
+/// The kinds of object window the original opens for a placed object (one layout table each): <see cref="Relief"/> is the window of a feature that provides relief
+/// (a toilet), <see cref="Rest"/> of one that chills you out and <see cref="Feature"/> of any other feature.
+/// </summary>
+internal enum ObjectInfoKind { Ride, Shop, Sideshow, Relief, Rest, Feature }
 
 /// <summary>
 /// The help of the object windows. The original opens one of three windows for a placed object, by its layout table, and each builder posts its
@@ -171,13 +174,26 @@ internal enum ObjectInfoKind { Ride, Shop, Sideshow }
 // [BIN:TPW-EXE:0x004B0E30 shop window builder] the window of layout table 0x755908 posts 0xD1 (209) at 0x4B0E5C; its close handler withdraws it (0x4B0BE3)
 // [BIN:TPW-EXE:0x004B2430 sideshow window builder] the window of layout table 0x755E80 posts 0xD0 (208) at 0x4B245C; its close handler withdraws it (0x4B2203)
 // [BIN:TPW-EXE:0x00486900 thing window dispatcher] the object's window is chosen by its kind: 0x4AF980 (calls at 0x4869CB and 0x4869F1), 0x4B0E30 (0x486A01) or 0x4B2430 (0x486A11)
+// [BIN:TPW-EXE:0x00486920 thing window dispatcher] a placed object (thing type 3) opens its window by its kind word +0x4AC (Info.WhichUIType): 0 the ride window (0x4AF980), 1 the shop window (0x4B0E30), 2 the sideshow window (0x4B2430), 3 a feature's window by the thing flags +0x32, and no window for a larger value (the jump table 0x486A90 ends at 3); a feature with bit 0 (UsageInfo.ProvidesRelief) opens 0x497990, with bit 1 (UsageInfo.ChillsYouOut) 0x4B5290, any other 0x499EB0
+// [BIN:TPW-EXE:0x00497990 relief window] after building the window of layout table 0x751190 it truncates the float at the object's +0x44 (the state, as the ride window's repair) and posts 0xD5 (213) at 0x4979CA when its low byte is below 0x19, else 0x12B (299) at 0x4979DB; the close handler withdraws 0x12B and then 0xD5 (0x4976A0, 0x4976AD)
+// [BIN:TPW-EXE:0x004B5290 rest window] the window posts 0x12C (300) at 0x4B52B9 and its close handler withdraws it (0x4B50D4)
+// [BIN:TPW-EXE:0x00499EB0 feature window] the window posts 0x12A (298) at 0x499ED9 and its close handler withdraws it (0x499C10)
 internal static class ObjectInfoHelp
 {
 	public const string Prefix = "objectInfo/";
 	public const int RideMessage = 207, RideRepairMessage = 297, ShopMessage = 209, SideshowMessage = 208;
+	public const int ReliefDirtyMessage = 213, ReliefMessage = 299, RestMessage = 300, FeatureMessage = 298;
 
 	/// <summary>The messages any object window posts.</summary>
-	public static readonly IReadOnlyList<int> Messages = new[] { RideMessage, RideRepairMessage, ShopMessage, SideshowMessage };
+	public static readonly IReadOnlyList<int> Messages = new[] { RideMessage, RideRepairMessage, ShopMessage, SideshowMessage, ReliefDirtyMessage, ReliefMessage, RestMessage, FeatureMessage };
+
+	/// <summary>Whether the truncated state of a relief feature posts the first message: the low byte of the integer is below 25 (a missing state counts as clean).</summary>
+	public static bool IsDirty( double? state )
+	{
+		if ( state is not { } value || !double.IsFinite( value ) )
+			return false;
+		return (byte)(int)Math.Truncate( value ) < 25;
+	}
 
 	/// <summary>Whether the truncated state of repair posts the repair message: the low byte of the integer is 1 to 20.</summary>
 	public static bool IsLowRepair( double? repair )
@@ -190,7 +206,7 @@ internal static class ObjectInfoHelp
 
 	/// <summary>The window name for the <paramref name="opening"/>th object window shown; <paramref name="repair"/> matters for a ride only.</summary>
 	public static string WindowName( ObjectInfoKind kind, double? repair, int opening ) =>
-		$"{Prefix}{kind}{(kind == ObjectInfoKind.Ride && IsLowRepair( repair ) ? "/repair" : "")}/{opening.ToString( CultureInfo.InvariantCulture )}";
+		$"{Prefix}{kind}{(kind == ObjectInfoKind.Ride && IsLowRepair( repair ) ? "/repair" : kind == ObjectInfoKind.Relief && IsDirty( repair ) ? "/dirty" : "")}/{opening.ToString( CultureInfo.InvariantCulture )}";
 
 	/// <summary>Reads a window name made by <see cref="WindowName"/>: the message it posts and the messages its close withdraws.</summary>
 	public static bool TryParse( string window, out int posted, out IReadOnlyList<int> withdrawn )
@@ -211,6 +227,18 @@ internal static class ObjectInfoHelp
 			case ObjectInfoKind.Shop:
 				posted = ShopMessage;
 				withdrawn = new[] { ShopMessage };
+				return true;
+			case ObjectInfoKind.Relief:
+				posted = parts.Length == 3 && parts[1] == "dirty" ? ReliefDirtyMessage : ReliefMessage;
+				withdrawn = new[] { ReliefMessage, ReliefDirtyMessage };
+				return true;
+			case ObjectInfoKind.Rest:
+				posted = RestMessage;
+				withdrawn = new[] { RestMessage };
+				return true;
+			case ObjectInfoKind.Feature:
+				posted = FeatureMessage;
+				withdrawn = new[] { FeatureMessage };
 				return true;
 			default:
 				posted = SideshowMessage;

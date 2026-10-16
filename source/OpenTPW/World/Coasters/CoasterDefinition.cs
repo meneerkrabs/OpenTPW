@@ -112,6 +112,11 @@ public sealed class CoasterPylonControl
 	public CoasterClipMap LoftMap => new( LoftStartCap, LoftEndCap, LoftMultiplier, LoftAdd );
 	/// <summary>Whether the pylon model has set the mesh heights, the stack offset and the raised minimum (<see cref="CoasterDefinition.ApplyPylonModel"/>).</summary>
 	public bool HasModelHeights { get; internal set; }
+	/// <summary>
+	/// The pylon model the knot pass poses for every node of this pylon (<c>0x430ed0</c>): its posed track tags are the node's knots. Null without the model
+	/// (no game data), when every node is one knot at its position.
+	/// </summary>
+	public ICoasterTagModel? TagModel { get; internal set; }
 
 	public bool IsLoop => (Flags & CoasterPylonFlags.Loop) != 0;
 	public bool IsTrough => (Flags & CoasterPylonFlags.Trough) != 0;
@@ -460,6 +465,8 @@ public sealed class CoasterDefinition
 		pylon.MinHeight = MathF.Max( pylon.MinHeight, rig.TagLow );
 		pylon.StackOffset = rig.StackOffset;
 		pylon.HasModelHeights = true;
+		if ( rig.HasTags )
+			pylon.TagModel = rig;
 	}
 
 	/// <summary>

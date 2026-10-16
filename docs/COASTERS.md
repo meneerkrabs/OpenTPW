@@ -67,6 +67,17 @@ same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-stati
   (loop, `0x20`, `0x80`), the second loop rotate 0.5 and `0x60` (`0x434153`, `0x435020`); the
   first pylon's tangents and knot sides are mirrored (flag `0x80`), a loop pair counts as a
   section of the rating's final, and both pay the StdPylon length and height rates.
+- **Knots.** The knot pass (`0x430ed0`) poses each pylon's model with its clips (yaw and pitch of the node tangent unless
+  set by hand, the bank) and takes the node's knots from the posed track tags of its table (`0x4344c0`): the attribute records
+  with `0x400000` whose values are the table's base + k, each knot at its tag's position with the tag's forward row as its
+  direction (`0x4321c0`; a tag of a pylon turned back is turned back by −π first, `0x4315f0`). A model with one `0x1000000`
+  record has one table (the In, Centre and Out tags 3 to 5 units apart on most PC standard pylons, one tag on the Gorilla,
+  Skull and Ape pylons and every loop pylon); one with two such records (pylon flag 8, the Temple Of Gloom's) has a
+  one-tag table and a three-tag table for the lower nodes of a cell's stack, which the stack pass (`0x432d50`) marks `0x100`
+  (no bank). The table's centre is the track dummy's tag: its knot's sample coordinate is the node's sample index (`+0xfc`).
+  The sampler walks every knot, the closing pair runs from the end knot to S1's first knot and the station window ends at
+  S2's first knot. `fTrackHeightAdjust` lowers only the drawn cross section (`0x42d6d0`); the knots stand at the posed tags.
+  Without the pylon model (a definition from settings alone, the headless tests) every node is one knot at its position.
 - **Validation.** The validator `0x36ba4` runs its tests in order: the map
   bounds; a no-ground cell (new pylons only); the pylon control (LoopPylon after
   a loop node or in loop mode); the same cell as the previous node; the squared
@@ -457,3 +468,8 @@ car's seated list (`0x43b600` → `0x44b410`: socket j is the node of the car mo
 `CoasterCarRig.Seats`). The ride camera
 is not implemented. `CoasterRide.TryGetRideView` gives the front car's pose
 (COAST-011).
+
+The pylon tag round of October 16 built the knot pass over the pylon models' posed track tags (COAST-015 narrowed to the
+knot pass's write-back of the clamped height parameter and the no-model fallback; COAST-028's guessed clip angles apply only
+without the model; COAST-029 lost its middle-knot height-adjust clause, the knots taking no `fTrackHeightAdjust`). Saves record
+the knot pass (`KnotPass`): a save from before it places the trains of a coaster with pylon models again and its riders leave.

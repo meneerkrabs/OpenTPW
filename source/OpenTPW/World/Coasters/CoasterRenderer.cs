@@ -256,7 +256,8 @@ public sealed class CoasterRenderer : Entity
 				(chain, closed) = (open.Chain, open.Closed);
 			else
 				return;
-			var knots = track.BuildKnots( Ride.Site, chain, writeBanks: false );
+			var pass = track.BuildKnotPass( Ride.Site, chain, writeBanks: false );
+			var knots = pass.Knots;
 			var invalid = new HashSet<int>();
 			for ( var pair = 0; pair < chain.Count; pair++ )
 			{
@@ -274,10 +275,10 @@ public sealed class CoasterRenderer : Entity
 				if ( !last && (closed || (chain[index].Flags & CoasterNodeFlags.CutEnd) == 0) )
 					continue;
 				if ( index - start >= 1 )
-					BuildChain( knots.Skip( start ).Take( index - start + 1 ).ToArray(), definition.Curviness, closed && start == 0 && last, invalid, cursorIndex == index && cursorIndex > start ? preview?.Valid ?? true : null, matrix );
+					BuildChain( knots[pass.FirstKnot[start]..(pass.LastKnot( index ) + 1)], definition.Curviness, closed && start == 0 && last, invalid, cursorIndex == index && cursorIndex > start ? preview?.Valid ?? true : null, matrix );
 				start = index + 1;
 			}
-			BuildPylons( chain, knots, track.BuildKnots( Ride.Site, chain, writeBanks: false, applyManual: false ), track.PylonsTurnedBack( chain, knots ), matrix );
+			BuildPylons( chain, pass, matrix );
 		}
 
 		/// <summary>
@@ -380,9 +381,9 @@ public sealed class CoasterRenderer : Entity
 			}
 		}
 
-		/// <summary>The pylons of a chain, each posed with its node's clip values (<c>0x430ed0</c>): the height parameter, the yaw and pitch of its automatic knot direction or the hand-set ones, its bank and its loop rotate.</summary>
+		/// <summary>The pylons of a chain, each posed with its node's clip values (<c>0x430ed0</c>): the height parameter, the yaw and pitch of its node tangent or the hand-set ones, its bank and its loop rotate; the pose its knots were taken from.</summary>
 		// [BIN:TPW-EXE:0x431057 pylon pose values] the knot pass turns the node tangent T+ into the automatic yaw (+0xd4) and pitch with 0x43e590 (yaw = atan2(T.x, T.z), pitch = atan2(−T.y, T.z′) with T turned by −yaw through the sine table) and copies them to +0xe0 and +0xdc unless node flags 1 and 2 hold hand-set values; +0xd8 is 0 unless flag 4 holds a hand-set bank, then the auto-bank (0x43c160) fills it
-		private void BuildPylons( IReadOnlyList<CoasterNode> chain, IReadOnlyList<CoasterKnot> knots, IReadOnlyList<CoasterKnot> automatic, bool[] turnedBack, Matrix4x4 matrix )
+		private void BuildPylons( IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, Matrix4x4 matrix )
 		{
 			var accumulators = new Dictionary<(CoasterPylonRig Rig, int Part), (List<Vertex> Vertices, List<uint> Indices, string[] Textures)>();
 			var definition = Ride.Definition;
@@ -393,10 +394,9 @@ public sealed class CoasterRenderer : Entity
 				if ( node.IsPylonless || (node.Flags & CoasterNodeFlags.Cursor) != 0 || assets.GetPylon( node.LoopPylon ) is not { } rig )
 					continue;
 				var lift = CoasterTrack.PylonHeight( definition.Pylon( node.LoopPylon ), node.T );
-				var knot = knots[index];
-				var baseHeight = knot.Position.Y - definition.TrackHeightAdjust - lift;
-				var (yaw, pitch) = HermiteCoasterCurve.Orientation( automatic[index].Direction );
-				var pose = new CoasterPylonPose( node.T, (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : yaw, (node.Flags & CoasterNodeFlags.ManualIncline) != 0 ? node.Incline : pitch, knot.Roll, node.LoopRotate, turnedBack[index] );
+				var baseHeight = pass.Positions[index].Y - lift;
+				var pose = pass.Poses[index] ?? new CoasterPylonPose( node.T, (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : pass.AutomaticYaw[index],
+					(node.Flags & CoasterNodeFlags.ManualIncline) != 0 ? node.Incline : pass.AutomaticPitch[index], pass.Banks[index], node.LoopRotate, pass.TurnedBack[index] );
 				var stackedAbove = chain.Any( other => !other.IsPylonless && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
 				var parts = assets.PosePylon( node.LoopPylon, rig, pose, stackedAbove );
 				var shift = new SVector3( node.X * CoasterTrack.CellUnits, node.Y * CoasterTrack.CellUnits, baseHeight );

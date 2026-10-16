@@ -34,13 +34,29 @@ public struct CoasterSample
 	public int Section;
 	/// <summary>The Bézier parameter of the sample on its pair (sample <c>+52</c>).</summary>
 	public float T;
+	/// <summary>The index of the knot that starts the sample's pair (sample <c>+0x2c</c>, the knot pointer): <see cref="Section"/> names its node.</summary>
+	public int Knot;
 }
 
 /// <summary>
-/// One knot of the track (COAST-plan §13.1): its position, the unit direction its tangents run along, its roll, the
-/// node (section) it belongs to, on loop pylons the factor K, and whether the next node carries node flag 0x40.
+/// One knot of the track (COAST-plan §13.1): its position, the unit direction its tangents run along, its roll (the node's bank, <c>+0xd8</c>), the
+/// node (section) it belongs to, on loop pylons the factor K, whether the next node carries node flag 0x40, and the roll of its node's posed track tag
+/// (<see cref="TagRoll"/>, node <c>+0xe4</c>; the bank where the node has no posed tag).
 /// </summary>
-public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false, bool Reversed = false, bool PreviousIsLoopNode = false );
+public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false, bool Reversed = false, bool PreviousIsLoopNode = false, float TagRoll = 0 );
+
+/// <summary>
+/// The knot pass of a node chain (<c>0x430ed0</c>): the knots in order (a posed pylon gives the knots of its tag table, every other node one), per node the index of
+/// its first knot, its knot count and the knot on its track dummy (the table's centre, whose sample coordinate is the node's sample index, node <c>+0xfc</c>), the node
+/// position (<c>+0x4c</c>), the automatic yaw and pitch of its tangent (<c>+0xd4</c>), its bank (<c>+0xd8</c>), the pose its pylon model took (null without one), whether
+/// its pylon is turned back (node flag <c>0x10000000</c>) and whether it took the stack table.
+/// </summary>
+public sealed record CoasterKnotPass( CoasterKnot[] Knots, int[] FirstKnot, int[] KnotCount, int[] CentreKnot, SVector3[] Positions, float[] AutomaticYaw, float[] AutomaticPitch,
+	float[] Banks, CoasterPylonPose?[] Poses, bool[] TurnedBack, bool[] StackTable )
+{
+	/// <summary>The last knot of node <paramref name="node"/>.</summary>
+	public int LastKnot( int node ) => FirstKnot[node] + KnotCount[node] - 1;
+}
 
 /// <summary>
 /// One cross-section slice of the drawn track mesh: the curve point at a parameter step of one knot pair, the yaw and
@@ -197,10 +213,24 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var forwardFactor = knot.LoopPylon ? (knot.Reversed ? knot.LoopSideFactor : knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent) : curviness;
 			// [BIN:STP-PPC:0x10032990 knot chord] without a neighbour the chord is 1.0
 			var backChord = index > 0 ? Chord( knots[index - 1].Position, knot.Position ) : 1f;
-			var forwardChord = index < count - 1 ? Chord( knot.Position, knots[index + 1].Position ) : closed && count > 1 ? Chord( knot.Position, knots[1].Position ) : 1f;
+			var forwardChord = index < count - 1 ? Chord( knot.Position, knots[index + 1].Position ) : closed && count > 1 ? Chord( knot.Position, knots[ClosingKnot( knots )].Position ) : 1f;
 			controls[index] = KnotControls( knot.Position, knot.Direction, backChord, forwardChord, backFactor, forwardFactor );
 		}
 		return controls;
+	}
+
+	/// <summary>
+	/// The knot the closing pair of a closed chain runs to: the first knot of the second node (S1), the knot after the first node's knots (<c>0x440c10</c>: head
+	/// <c>+0x64</c>'s knot table).
+	/// </summary>
+	public static int ClosingKnot( IReadOnlyList<CoasterKnot> knots )
+	{
+		for ( var index = 1; index < knots.Count; index++ )
+		{
+			if ( knots[index].Section != knots[0].Section )
+				return index;
+		}
+		return Math.Min( 1, knots.Count - 1 );
 	}
 
 	/// <summary>Slices per knot pair of the drawn track mesh.</summary>
@@ -249,8 +279,9 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			throw new ArgumentException( "A closed track needs its station's knots and the station end knot.", nameof( knots ) );
 		var controls = Controls( knots, curviness, closed: true );
 		var samples = new List<CoasterSample>();
-		// The closing pair runs from the last knot (the station end node, on the first knot) to the second knot.
-		int NextKnot( int pair ) => pair == count - 1 ? 1 : pair + 1;
+		// The closing pair runs from the last knot (the station end node, on S0's track dummy) to the first knot of S1.
+		var closingKnot = ClosingKnot( knots );
+		int NextKnot( int pair ) => pair == count - 1 ? closingKnot : pair + 1;
 		var coordinates = new float[count];
 		SVector3 Point( int pair, float t )
 		{
@@ -269,7 +300,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var next = NextKnot( pair );
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
 			var (yaw, pitch) = Orientation( tangent );
-			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the original's slice roll (0x43e6b0): the second rail's roll about the slice tangent plus the lerp of the two nodes' tag rolls (+0xe4); a non-loop knot's second rail is the knot + (0, 1, 0), a loop node's 2 × its tag's up row (pylon, 0x430ed0) or (−sin a, 0, −cos a) (pylon-less, 0x43137c..0x4313e6) — blocked on the pylon tag knots (COAST-015)
+			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the original's slice roll (0x43e6b0): the second rail's roll about the slice tangent plus the lerp of the two nodes' tag rolls (+0xe4); a non-loop knot's second rail is the knot + (0, 1, 0), a loop node's 2 × its tag's up row (pylon, 0x430ed0) or (−sin a, 0, −cos a) (pylon-less, 0x43137c..0x4313e6) — the knot pass keeps the tag rolls on the knots (CoasterKnot.TagRoll) but builds no second rail
 			var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
 			samples.Add( new CoasterSample
 			{
@@ -279,7 +310,8 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 				Direction = tangent.LengthSquared() > 0 ? SVector3.Normalize( tangent ) : SVector3.UnitZ,
 				Bank = roll,
 				Section = knots[pair].Section,
-				T = t
+				T = t,
+				Knot = pair
 			} );
 		}
 

@@ -14,6 +14,25 @@ public sealed record CoasterModelPart( string MeshName, string[] Textures, Verte
 public readonly record struct CoasterPylonPose( float Loft, float Yaw = 0, float Pitch = 0, float Bank = 0, float LoopRotate = 0, bool TurnedBack = false );
 
 /// <summary>
+/// A pylon's track-tag table (pylon <c>+0x30</c> or <c>+0x44</c>): <see cref="Count"/> tags, the tag records whose value is <see cref="Base"/> + k
+/// (<c>0x4344c0</c>), and the index of the tag on the track dummy (<see cref="Centre"/>), whose knot carries the node's sample index (node <c>+0xfc</c>).
+/// </summary>
+public readonly record struct CoasterTagTable( int Centre, int Count, int Base );
+
+/// <summary>
+/// What the knot pass needs of a pylon model (<c>0x430ed0</c>): its tag tables and, for a node's clip values, the posed matrices of a table's tags and of its track
+/// dummy (MD2 axes, relative to the model's origin: the pylon's cell corner at its base height).
+/// </summary>
+public interface ICoasterTagModel
+{
+	CoasterTagTable SingleTable { get; }
+	CoasterTagTable? StackTable { get; }
+	Matrix4x4[] TagMatrices( CoasterPylonPose pose, bool stackTable );
+	/// <summary>The posed matrix of the track dummy (the node of the first 0x800000 record), null when the model has none.</summary>
+	Matrix4x4? TrackDummyMatrix( CoasterPylonPose pose );
+}
+
+/// <summary>
 /// A pylon model (<c>StdPylon.MD2</c> or <c>LoopPylon.MD2</c>) posed for one node with its five clips (<c>0x430ca0</c>): the loft clip <c>L</c> stretches
 /// the pylon to a height (it adds a vertex animation to the pylon mesh and a position key to the track tag and stack-height dummies), the rotate clip
 /// <c>R</c> (<c>R1</c>) turns it about the cell centre, the incline clip <c>I</c> and the bank clip <c>B</c> tilt the track tag (and bend the pylon mesh
@@ -24,7 +43,7 @@ public readonly record struct CoasterPylonPose( float Loft, float Yaw = 0, float
 // [BIN:TPW-EXE:0x430ca0 pylon clip times] slot 0 (loft) = duration × map(clamp(+0xe8, 0, 1)), the node's +0xe8 written back clamped; slot 1 (rotate) = map(+0xec), +0xec = frac(yaw/2π) (+1 when negative, 0x43110c), frac(+0xec + ½) on node flag 0x10000000; slot 2 (incline) = map(+0xf0 · mult + add + 0.5), +0xf0 = pitch/2π; slot 3 (bank) = map(+0xf4 · mult + add + 0.5), +0xf4 = frac(bank/2π + ½) − ½ (0x431177..0x4311b7); slot 4 (loop tilt) = map(+0xf8), +0xf8 = frac(+0xf8); each map raises to its start cap, then lowers to its end cap
 // [BIN:TPW-EXE:0x470d10 relative rotation] a model loaded with the relative-animation flag (header +0x30 & 0x4) multiplies a clip's rotation key into the node's matrix (key × node, 0x470d10) instead of setting it (0x46fbb0), and adds position and vertex keys (0x471860); the slots run in order loft, rotate, incline, bank, loop tilt (0x473c70 → 0x4735d0)
 // [APPROX:COAST-033] the bridge or stacker head above the track tag is drawn only when a pylon is stacked on it (an assumption: the model's 0x80000 records, values 1..4 → pylon +0x1c..+0x28 and pylon flags 0x400..0x2000, name these parts, but the code that shows or hides them is not traced); the rotation keys are slerped by the shared clip sampler, where the original lerps their components when 0x7b4980 bit 2 is set — evidence needed: the consumer of pylon +0x1c..+0x28 and flags 0x400..0x2000 and the run-time value of 0x7b4980
-public sealed class CoasterPylonRig
+public sealed class CoasterPylonRig : ICoasterTagModel
 {
 	/// <summary>The five clip slots in the original's order: loft, rotate, incline, bank, loop tilt (<c>0x74ca70</c>: types 3, 10, 2, 9, 10 index 1).</summary>
 	public const int SlotCount = 5;
@@ -73,6 +92,7 @@ public sealed class CoasterPylonRig
 		// [BIN:TPW-EXE:0x430590 pylon track dummy] the track dummy is the node of the first attribute record with bit 0x800000 (0x4306be..0x4306e9: the record index at pylon +0x2c; +0x30 is the record's value − 1, the base of the knot tags), the stack dummy the node of the first record with 0x100000 (0x430780..0x4307a6); in the PC models it is the dummy the loft, incline and bank clips move (Skull Coaster's TrackCentreDummy, not its TrackHeightDummy); a model without such a record falls back to the first dummy named Track* or animated by the loft clip
 		TagNode = DummyByAttribute( model, TrackDummyAttribute ) ?? FindTag( model, tracks[LoftSlot] );
 		StackNode = DummyByAttribute( model, StackDummyAttribute ) ?? -1;
+		ReadTagTables( model );
 		Duration = loft?.Duration ?? 0;
 		if ( control != null )
 			(loftMap, rotateMap, inclineMap, bankMap, loopRotateMap) = (control.LoftMap, control.RotateMap, control.InclineMap, control.BankMap, control.LoopRotateMap);
@@ -83,6 +103,86 @@ public sealed class CoasterPylonRig
 		TagHigh = TagHeightAtFraction( LoftFraction( 1 ) );
 		StackOffset = StackNode >= 0 ? NodeHeightAtFraction( StackNode, first ) - low : 0;
 	}
+
+	/// <summary>Attribute bit of the records that name a pylon's track tags (the knots, <c>0x4344c0</c>).</summary>
+	public const uint TagAttribute = 0x400000;
+	/// <summary>Attribute bit of a tag record that may start a tag table (<c>0x430590</c>: two such records give a pylon two tag tables, pylon flag 8).</summary>
+	public const uint TagTableAttribute = 0x1000000;
+
+	/// <summary>The tag table of a pylon node (pylon <c>+0x30</c>): every node of this pylon but the lower nodes of a stack when <see cref="StackTable"/> exists.</summary>
+	public CoasterTagTable SingleTable { get; private set; }
+	/// <summary>The second tag table (pylon <c>+0x44</c>) of a model with two 0x1000000 tag records (pylon flag 8): the In, Centre and Out tags of a node a pylon stands on.</summary>
+	public CoasterTagTable? StackTable { get; private set; }
+	/// <summary>The model nodes of the tags of <see cref="SingleTable"/> and <see cref="StackTable"/> in table order (-1 where the model lacks a record).</summary>
+	private int[] singleTags = Array.Empty<int>(), stackTags = Array.Empty<int>();
+	/// <summary>Whether the model names its track tags (records with 0x400000), so the knot pass can take its knots from them.</summary>
+	public bool HasTags => singleTags.Length > 0 && singleTags.All( node => node >= 0 ) && (StackTable == null || stackTags.All( node => node >= 0 ));
+
+	/// <summary>The model nodes of a tag table's tags (<c>0x4344c0</c>: the record with 0x400000 and value <see cref="TagTable.Base"/> + k, 0x44b220).</summary>
+	public IReadOnlyList<int> TagNodes( bool stackTable ) => stackTable && StackTable != null ? stackTags : singleTags;
+
+	// [BIN:TPW-EXE:0x430590 pylon tag tables] with one record carrying 0x1000000 the pylon gets one table (pylon +0x30..+0x40): the count of 0x400000 records (+0x3c), base 1 (+0x40) and the track dummy's record value − 1 as its centre index (+0x30); with two such records it sets pylon flag 8 and gets two tables: +0x30 with centre 0, one tag and base 2 (+0x3c = 1), and +0x44 with centre 1, three tags and base 1 (+0x44 = 1, +0x50 = 3, +0x54 = 1)
+	private void ReadTagTables( ModelFile model )
+	{
+		var tableRecords = model.DummyAttributes.Count( record => (record.Type & TagTableAttribute) != 0 );
+		var trackRecord = model.DummyAttributes.FirstOrDefault( record => (record.Type & TrackDummyAttribute) != 0 );
+		if ( tableRecords >= 2 )
+		{
+			SingleTable = new CoasterTagTable( 0, 1, 2 );
+			StackTable = new CoasterTagTable( 1, 3, 1 );
+		}
+		else
+		{
+			var count = model.DummyAttributes.Count( record => (record.Type & TagAttribute) != 0 );
+			// No PC pylon lacks the 0x1000000 record; without one the table's base keeps the control's zero.
+			var centre = trackRecord != null ? (int)trackRecord.Value - 1 : 0;
+			SingleTable = new CoasterTagTable( Math.Clamp( centre, 0, Math.Max( 0, count - 1 ) ), count, tableRecords == 1 ? 1 : 0 );
+			StackTable = null;
+		}
+		singleTags = Tags( model, SingleTable );
+		stackTags = StackTable is { } stack ? Tags( model, stack ) : Array.Empty<int>();
+	}
+
+	private static int[] Tags( ModelFile model, CoasterTagTable table )
+	{
+		var nodes = new int[table.Count];
+		for ( var k = 0; k < table.Count; k++ )
+		{
+			var value = (uint)(table.Base + k);
+			var record = -1;
+			for ( var index = 0; index < model.DummyAttributes.Count && record < 0; index++ )
+			{
+				if ( model.DummyAttributes[index].Value == value && (model.DummyAttributes[index].Type & TagAttribute) != 0 )
+					record = index;
+			}
+			nodes[k] = record >= 0 ? NodeOfRecord( model, record ) ?? -1 : -1;
+		}
+		return nodes;
+	}
+
+	/// <summary>The node of attribute record <paramref name="record"/>: the node stored as header +0x46 + record (<c>0x44ab90</c>).</summary>
+	private static int? NodeOfRecord( ModelFile model, int record )
+	{
+		var stored = model.Counts.Unknown46 + record;
+		return model.Nodes.FirstOrDefault( candidate => candidate.StoredIndex == stored )?.Index;
+	}
+
+	/// <summary>
+	/// The posed matrices of a tag table's tags for a node's clip values (MD2 axes, relative to the pylon's cell corner and base), the matrices the knot pass reads
+	/// the knots from (<c>0x430ed0</c>: the record table entry of each knot's tag record).
+	/// </summary>
+	public Matrix4x4[] TagMatrices( CoasterPylonPose pose, bool stackTable )
+	{
+		var tags = TagNodes( stackTable );
+		var matrices = new Matrix4x4[model.Nodes.Count];
+		Worlds( Ticks( pose ), matrices );
+		var result = new Matrix4x4[tags.Count];
+		for ( var k = 0; k < tags.Count; k++ )
+			result[k] = tags[k] >= 0 && tags[k] < matrices.Length ? matrices[tags[k]] : Matrix4x4.Identity;
+		return result;
+	}
+
+	public Matrix4x4? TrackDummyMatrix( CoasterPylonPose pose ) => TagNode >= 0 ? NodeMatrix( TagNode, pose ) : null;
 
 	/// <summary>Attribute bit of the record that names a pylon's track dummy.</summary>
 	public const uint TrackDummyAttribute = 0x800000;

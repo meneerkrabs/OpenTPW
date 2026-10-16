@@ -197,6 +197,49 @@ public class CoasterAssetTests
 		Assert.AreEqual( 12, stations );
 	}
 
+	/// <summary>
+	/// The PC pylon models' tag tables (<c>0x430590</c>): three tags (In, Centre, Out by record value) for most standard pylons, one for the Gorilla, Skull and Ape pylons and
+	/// every loop pylon, and two tables for a model with two 0x1000000 records (the Temple Of Gloom's: its centre tag alone, and the stacked In, Centre and Out tags). On the
+	/// flat circuit every posed pylon's knots run along the heading of its node tangent (the rotate clip turns the tags by the node's yaw) and the centre knot stands by the node.
+	/// </summary>
+	[TestMethod]
+	public void PcPylonModelsGiveTheKnotsOfTheirTagTables()
+	{
+		var tables = new Dictionary<int, (CoasterTagTable Single, CoasterTagTable? Stack)>();
+		foreach ( var entry in PcCoasters() )
+		{
+			var definition = CoasterDefinition.FromCatalogEntry( entry );
+			Assert.IsNotNull( definition.StandardPylon.TagModel, $"{entry.InfoId}: the standard pylon's model names its tags" );
+			var rig = (CoasterPylonRig)definition.StandardPylon.TagModel!;
+			tables[entry.InfoId] = (rig.SingleTable, rig.StackTable);
+			if ( definition.HasLoopPylon )
+				Assert.AreEqual( new CoasterTagTable( 0, 1, 1 ), ((CoasterPylonRig)definition.LoopPylon.TagModel!).SingleTable, $"{entry.InfoId}: a loop pylon has one tag" );
+			var ride = new CoasterRide( definition, new CoasterWorld( 3 ), entry.DisplayName );
+			var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+			CoasterTests.PlaceStation( builder, (20, 20) );
+			builder.Height = 40;
+			foreach ( var (dx, dy) in CoasterTests.Circuit )
+				Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( 20 + dx, 20 + dy ), $"{entry.InfoId}" );
+			Assert.AreEqual( CoasterPlaceResult.Ok, CoasterTests.CloseAndComplete( builder ), $"{entry.InfoId}" );
+			var pass = builder.Track.BuildKnotPass( builder.Site, writeBanks: false );
+			for ( var index = CoasterTrack.StationNodeCount; index < builder.Track.Nodes.Count - 1; index++ )
+			{
+				Assert.AreEqual( rig.SingleTable.Count, pass.KnotCount[index], $"{entry.InfoId} node {index}" );
+				var yaw = pass.AutomaticYaw[index];
+				var centre = pass.Knots[pass.CentreKnot[index]];
+				// The rotate clip turns a model about its own pivot (Moonshot's lies off the cell centre): the centre tag stays within 1.5 units of the node.
+				Assert.IsTrue( System.Numerics.Vector3.Distance( pass.Positions[index], centre.Position ) < 1.5f, $"{entry.InfoId} node {index}: the centre knot {centre.Position} near the node {pass.Positions[index]}" );
+				foreach ( var knot in pass.Knots.Skip( pass.FirstKnot[index] ).Take( pass.KnotCount[index] ) )
+					Assert.AreEqual( 0f, MathF.Abs( MathF.IEEERemainder( MathF.Atan2( knot.Direction.X, knot.Direction.Z ) - yaw, 2 * MathF.PI ) ), 0.01f, $"{entry.InfoId} node {index}: the tag runs along the node's heading" );
+			}
+			Assert.AreEqual( ride.Samples.Count > 0, true );
+			Assert.AreEqual( pass.Knots.Length, ride.KnotCoordinates.Count, $"{entry.InfoId}: the sampler walked every knot" );
+		}
+		Assert.AreEqual( (new CoasterTagTable( 1, 3, 1 ), (CoasterTagTable?)null), tables[1185], "Chac Atak: TrackDummyIn, Centre and Out (values 1..3), the centre's value 2" );
+		Assert.AreEqual( (new CoasterTagTable( 0, 1, 1 ), (CoasterTagTable?)null), tables[1190], "Gorilla Thrilla: TrackDummyCentre alone" );
+		Assert.AreEqual( (new CoasterTagTable( 0, 1, 2 ), (CoasterTagTable?)new CoasterTagTable( 1, 3, 1 )), tables[1180], "Temple Of Gloom: two 0x1000000 records give pylon flag 8 and two tables" );
+	}
+
 	/// <summary>Every PC coaster builds the same circuit on a flat site, completes, rates within [0, 100] and runs.</summary>
 	[TestMethod]
 	public void EveryPcCoasterBuildsRatesAndRuns()

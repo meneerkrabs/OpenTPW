@@ -520,7 +520,7 @@ public sealed class TrackRenderer : IDisposable
 	/// The meshes whose texture coordinates <paramref name="clip"/> moves and whose drawn parts keep one vertex per corner (the copies are rewritten corner by
 	/// corner), or null when the clip moves none or the animator cannot bind the mesh.
 	/// </summary>
-	// [APPROX:TRACK-018] only texture-coordinate tracks are drawn: the shipped water clips and the space kart clips carry nothing else, but the Crypt Karts' bridge clips (gk_trckH*m) are texture-frame tracks, which stay still; they are started only by the track tool's edit sub-modes 0xE/0x13 (0x00526BD0), which OpenTPW does not have — evidence needed: the edit sub-modes' clicks (0x00527960 enters them; a second picked tile runs 0x0052B400 on the two tiles)
+	// [DATA:levels/hallow/rides/gokarts gk_trckH*m.MD2] only texture-coordinate tracks are drawn, which is all the shipped piece clips need: the water clips and the space kart clips carry texture-coordinate tracks, the Crypt Karts' bridge clips (gk_trckH, _u, _d and _a with their m members) carry no node track and one texture-frame track on slot 0 (h_trkunder.tga, a slot of one frame) whose 20 keys all name frame 0, so the clip update (0xa56f8) rewrites the frame the slot already shows, and no other member of the archive animates the flame slot 7 (fire0.tga..flame2.tga); TrackPieceClipDataTests
 	private static bool[]? PlayableUvMeshes( ModelFile model, ModelAnimation clip, PieceGeometry geometry )
 	{
 		var moved = new bool[model.Meshes.Count];

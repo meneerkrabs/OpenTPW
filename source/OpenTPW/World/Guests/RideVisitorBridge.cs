@@ -36,6 +36,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	private readonly Queue<int> walkingOff = new();     // WALKOFF done, waiting for WALKGET
 	private readonly Queue<double> walkingOffReady = new(); // the script time at which WALKGET may hand the guest out (parallel to walkingOff)
 	private readonly HashSet<int> hopped = new();
+	private readonly Dictionary<int, (int From, int To, int Mode)> walkSlots = new(); // WALKON: the walker's slot nodes (operands u3, u4) and walk action, read by WALKOFF (0x005571A0)
 	private readonly List<(int Guest, double Until)> limbo = new();
 	private readonly List<(int Guest, double Until, double Start)> bouncing = new(); // BOUNCE slot table in index order: visitor (0 = free), deadline, start; trailing free slots are trimmed
 	private readonly List<(int X, int Y)> queueCells = new();
@@ -263,6 +264,13 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			hash.Add( WalkOffMilliseconds );
 			foreach ( var ready in walkingOffReady )
 				hash.Add( ready );
+			foreach ( var (guest, slot) in walkSlots.OrderBy( pair => pair.Key ) )
+			{
+				hash.Add( guest );
+				hash.Add( slot.From );
+				hash.Add( slot.To );
+				hash.Add( slot.Mode );
+			}
 		}
 		AddList( hopped.Order().ToArray() );
 		AddTimed( limbo );
@@ -312,6 +320,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		OnRide = onRide.ToArray(),
 		WalkingOff = walkingOff.ToArray(),
 		WalkingOffReady = WalkOffMilliseconds > 0 ? walkingOffReady.ToArray() : null,
+		WalkSlots = walkSlots.Count > 0 ? walkSlots.OrderBy( pair => pair.Key ).Select( pair => (pair.Key, pair.Value.From, pair.Value.To, pair.Value.Mode) ).ToArray() : null,
 		Hopped = hopped.Order().ToArray(),
 		Limbo = limbo.ToArray(),
 		Bounce = bouncing.ToArray(),
@@ -392,6 +401,14 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				Error( $"walking-off guest {guestId} is not aboard." );
 		if ( snapshot.WalkingOff.Distinct().Count() != snapshot.WalkingOff.Length )
 			Error( "the walking-off list repeats a guest." );
+		if ( snapshot.WalkSlots != null )
+		{
+			if ( snapshot.WalkSlots.Select( slot => slot.Guest ).Distinct().Count() != snapshot.WalkSlots.Length )
+				Error( "the walk slots repeat a guest." );
+			foreach ( var slot in snapshot.WalkSlots )
+				if ( !riders.Contains( slot.Guest ) || snapshot.WalkingOff.Contains( slot.Guest ) )
+					Error( $"walk slot guest {slot.Guest} is not aboard or already walking off." );
+		}
 		if ( snapshot.WalkingOffReady != null && (snapshot.WalkingOffReady.Length != snapshot.WalkingOff.Length || snapshot.WalkingOffReady.Any( ready => !double.IsFinite( ready ) )) )
 			Error( "the walking-off times do not match the walking-off list." );
 		foreach ( var guestId in snapshot.Hopped )
@@ -477,6 +494,9 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			walkingOff.Enqueue( snapshot.WalkingOff[index] );
 			walkingOffReady.Enqueue( snapshot.WalkingOffReady?[index] ?? 0 );
 		}
+		walkSlots.Clear();
+		foreach ( var slot in snapshot.WalkSlots ?? Array.Empty<(int Guest, int From, int To, int Mode)>() )
+			walkSlots[slot.Guest] = (slot.From, slot.To, slot.Mode);
 		hopped.Clear();
 		hopped.UnionWith( snapshot.Hopped );
 		limbo.Clear();
@@ -964,6 +984,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		// Host cleanup: do not leave a presentation slot on the previous ride after release.
 		Heads?.Remove( guest );
 		hopped.Remove( guest );
+		walkSlots.Remove( guest );
 		limbo.RemoveAll( entry => entry.Guest == guest );
 		for ( var index = 0; index < bouncing.Count; index++ )
 			if ( bouncing[index].Guest == guest )
@@ -996,13 +1017,27 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			Release( guest );
 		walkingOff.Clear();
 		walkingOffReady.Clear();
+		walkSlots.Clear();
 	}
 
 	/// <summary>
 	/// How long a guest takes to walk off after WALKOFF before WALKGET hands it out, in script milliseconds; 0 (the default) completes at once. The tour rides set
 	/// it: their unload loops count walkers and leave the loop when WALKGET returns the walker immediately (docs/TOURS.md, TOUR-007).
+	/// A ride that also gets <see cref="WalkNodeDistance"/> measures its WALKOFF walks between the slot's nodes and uses this value only when a slot or node is unknown.
 	/// </summary>
 	public int WalkOffMilliseconds { get; set; }
+
+	/// <summary>
+	/// The model-unit distance between two nodes of the ride as WALKOFF measures it: the walk action (4 = head: the start node is of class 0x80, else 0x800), the slot's start node number and its
+	/// end node number (class 0x800); null when a node is missing. Set by the ride's runtime for a tour ride; without it every WALKOFF takes <see cref="WalkOffMilliseconds"/>.
+	/// </summary>
+	public Func<int, int, int, float?>? WalkNodeDistance { get; set; }
+
+	/// <summary>
+	/// The time a WALKOFF walk takes for a walker of the given slot: <c>ftol(distance between the slot's two nodes) x 100</c> ms, 100 ms for a distance below one model unit
+	/// ([BIN:TPW-EXE:0x005571A0 WALKOFF]); <see cref="WalkOffMilliseconds"/> when the slot or a node is not known.
+	/// </summary>
+	internal static int WalkOffDuration( float distance ) => (int)distance * 100 is var milliseconds and not 0 ? milliseconds : 100;
 
 	/// <summary>Performs a visitor opcode; false for opcodes the bridge does not own.</summary>
 	public bool TryPerform( RideEffectCall call, out int result )
@@ -1015,8 +1050,15 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				MarkBoarded( call.Argument( 0 ) );
 				return true;
 			case Opcode.WALKON:
-				MarkBoarded( call.Argument( 0 ) );
+			{
+				var guest = call.Argument( 0 );
+				MarkBoarded( guest );
+				// [APPROX:TOUR-011] WALKON boards the rider at once and WALKOFF's action 2 spawns no effect; the original's WALKON also holds the rider for ftol(distance between nodes u1 and u2) x 100 ms (100 ms for 0; the start node is of class 0x80 for the head action 4; the walk table entry's times at +0x8 and +0xC, 0x00556F40), and WALKOFF's action 2 creates an effect of type 0x13 at the walk's start node (0x00521E60 from 0x005572EB)
+				// [BIN:TPW-EXE:0x00556F40 WALKON slot] the walk table entry keeps the operands in order: start node u1, end node u2, u3 and u4 (the nodes WALKOFF walks between), the walk action
+				if ( WalkNodeDistance != null && onRide.Contains( guest ) )
+					walkSlots[guest] = (call.Argument( 3 ), call.Argument( 4 ), call.Argument( 5 ));
 				return true;
+			}
 			case Opcode.HOP:
 				result = onRide.FirstOrDefault( guest => !hopped.Contains( guest ) );
 				if ( result != 0 )
@@ -1029,7 +1071,10 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				{
 					hopped.Add( guest );
 					walkingOff.Enqueue( guest );
-					walkingOffReady.Enqueue( now + WalkOffMilliseconds );
+					var duration = WalkOffMilliseconds;
+					if ( WalkNodeDistance != null && walkSlots.Remove( guest, out var slot ) && WalkNodeDistance( slot.Mode, slot.From, slot.To ) is { } distance )
+						duration = WalkOffDuration( distance );
+					walkingOffReady.Enqueue( now + duration );
 				}
 				return true;
 			}

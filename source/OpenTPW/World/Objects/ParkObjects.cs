@@ -11,6 +11,8 @@ public interface IParkGrid
 	OriginalPlacementResult CheckTerrain( int x, int y );
 	/// <summary>Engine height of the ground at a cell (mean of its corners).</summary>
 	float GetCellHeight( int x, int y );
+	/// <summary>Engine height of the ground at grid corner (x, y), the original's terrain vertex; a grid without corner heights gives the height of the cell there.</summary>
+	float GetCornerHeight( int x, int y ) => GetCellHeight( x, y );
 }
 
 /// <summary>The generic sandbox: the 32×32 tile park of <see cref="ParkPlacement"/>, flat at height 0.</summary>
@@ -68,6 +70,34 @@ public sealed class OriginalParkGrid : IParkGrid
 	}
 
 	public float GetCellHeight( int x, int y ) => OriginalParkPlacement.GetCellCenter( park.Heightfield, x, y ).Z;
+
+	public float GetCornerHeight( int x, int y )
+	{
+		var field = park.Heightfield;
+		x = Math.Clamp( x, 0, field.CellCountX );
+		y = Math.Clamp( y, 0, field.CellCountZ );
+		return OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x * field.CellSizeX, field.GetCornerHeight( x, y ), y * field.CellSizeZ ) ).Z;
+	}
+}
+
+/// <summary>How a host's live cell holds a path for the object build rule (<see cref="ParkObjects.PathAt"/>).</summary>
+public enum ObjectPathCell
+{
+	/// <summary>No path cell.</summary>
+	None,
+	/// <summary>A path cell an object may stand on; the placement clears it.</summary>
+	Path,
+	/// <summary>A path cell with the NoModify flag (the map start's initial path), which refuses an object.</summary>
+	FixedPath
+}
+
+/// <summary>What an allowed placement changes besides its own footprint: the objects it demolishes and the path cells it clears.</summary>
+public sealed record ObjectPlacementPlan( IReadOnlyList<OriginalObject> Overwritten, IReadOnlyList<(int X, int Y)> ClearedPaths )
+{
+	public static ObjectPlacementPlan None { get; } = new( Array.Empty<OriginalObject>(), Array.Empty<(int X, int Y)>() );
+
+	/// <summary>True when the placement demolishes no object and clears no path (the smokes' and demos' site searches keep their own layout).</summary>
+	public bool KeepsTheRest => Overwritten.Count == 0 && ClearedPaths.Count == 0;
 }
 
 /// <summary>
@@ -102,6 +132,15 @@ public sealed class ParkObjects
 	public Func<int, int, bool>? IsReserved { get; set; }
 	/// <summary>Cells the park does not own (the level's cell map, flag 0x40); null owns every cell.</summary>
 	public Func<int, int, bool>? IsUnowned { get; set; }
+	/// <summary>
+	/// The host's live path cells (the level's cell map): null where it has none, when the terrain rule's path cells (the save's and the map
+	/// start's) refuse as before. A <see cref="ObjectPathCell.Path"/> under a footprint is cleared by <see cref="ClearPath"/> on commit.
+	/// </summary>
+	public Func<int, int, ObjectPathCell?>? PathAt { get; set; }
+	/// <summary>Clears a path cell under a new footprint (the level: ParkPathBuilder.Remove, no refund); called by <see cref="TryPlace"/> before the object is added.</summary>
+	public Action<int, int>? ClearPath { get; set; }
+	/// <summary>The path tool's rule for an access cell's outside cell, objects aside (the level: ParkPathBuilder.CheckPathRule); without it, or where it answers null, the terrain and the reserved cells decide.</summary>
+	public Func<int, int, bool?>? PathRuleAllows { get; set; }
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -114,51 +153,145 @@ public sealed class ParkObjects
 		Check( entry, anchorX, anchorY, rotation, out _ );
 
 	/// <summary>
-	/// <see cref="Check(ObjectCatalogEntry, int, int, int)"/> with the objects the placement would overwrite: an object whose
-	/// <see cref="ObjectCatalogEntry.OverwritePriority"/> is below the new one's gives way (a ride over a bush), any other overlap refuses.
+	/// <see cref="Check(ObjectCatalogEntry, int, int, int)"/> with what the commit changes besides the new footprint (<see cref="ObjectPlacementPlan"/>):
+	/// an object whose <see cref="ObjectCatalogEntry.OverwritePriority"/> is below the new one's gives way (a ride over a bush) and is
+	/// demolished, a path cell under the footprint is cleared, and any other overlap refuses. The outside cells of the entrances and exits
+	/// must pass the rules the original lays its access cells with.
 	/// </summary>
-	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + save paths/objects + overlap by overwrite priority + owned land; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases — evidence needed: the placement's own path cells (an object may stand on a path cell that is not NoModify, 0x535D21, the commit clearing it, 0x534549), the entrance and exit outside cells (0x5298B9, 0x529A2F: the path rule 0x201 there) and the overwrite of objects by the path and queue tools (0x535D66 with 0x818C10 = 2 and 3)
+	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + save paths/objects + overlap by overwrite priority + plain path cells cleared + owned land + the access cells' rules; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases — evidence needed: the second-layer link tests 0x53AE00 and 0x53AE90 (a corner or junction on the cell's second layer, 0x535BD7) and the pending cost of the access cells the commit lays (0x535600, 0x52FBA0; RIDES-028), and which types carry +0x288 = 1, whose Bumper.WhichTrackType turns the access-cell option off at the build tool's enter (0x46D605; OpenTPW follows Info.HasQueue alone)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] after its early returns for a few tool modes the validator 0x535670 refuses a cell with flag 0x40 for whatever it places, paths, queues and objects alike
 	// [BIN:TPW-EXE:0x535D66 overwrite priority] a cell of type 4, 9 or 10 is allowed when 0x818C10, the placed type's +0x54 (Info.OverwritePriority, sam schema 0x745020; set by the hover 0x5234D0), is greater than 0x818C14, the +0x54 of the type of the object owning the cell (0x53570E: the thing at the cell's owner index +0x10, class 3); otherwise the cell is refused and the sticky refusal 0x816D50 set
-	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out IReadOnlyList<OriginalObject> overwritten )
+	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out ObjectPlacementPlan plan )
 	{
-		var giving = new List<OriginalObject>();
-		overwritten = giving;
-		bool Blocks( int x, int y )
-		{
-			// the host's reservation (path, queue and track cells, the Totem) refuses whatever owns the cell
-			if ( IsReserved?.Invoke( x, y ) == true )
-				return true;
-			if ( !occupied.TryGetValue( (x, y), out var item ) )
-				return false;
-			if ( item.Entry.OverwritePriority >= entry.OverwritePriority )
-				return true;
-			if ( !giving.Contains( item ) )
-				giving.Add( item );
-			return false;
-		}
-		var result = Check( Grid, Blocks, entry, anchorX, anchorY, rotation );
+		var overwritten = new List<OriginalObject>();
+		var paths = new List<(int X, int Y)>();
+		plan = ObjectPlacementPlan.None;
+		var result = CheckFootprint( entry, anchorX, anchorY, rotation, overwritten, paths );
 		if ( result == OriginalPlacementResult.Allowed && IsUnowned is { } unowned )
 		{
 			foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
 			{
 				if ( unowned( x, y ) )
-				{
-					result = OriginalPlacementResult.NotOwned;
-					break;
-				}
+					return OriginalPlacementResult.NotOwned;
 			}
 		}
-		if ( result != OriginalPlacementResult.Allowed )
-			giving.Clear();
+		if ( result == OriginalPlacementResult.Allowed )
+			result = CheckAccessCells( entry, anchorX, anchorY, rotation, overwritten );
+		if ( result == OriginalPlacementResult.Allowed )
+			plan = new ObjectPlacementPlan( overwritten, paths );
 		return result;
 	}
 
-	/// <summary><see cref="Check(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing: an overwrite counts as occupied (fixtures and demo builders).</summary>
+	/// <summary>Whether a path (<see cref="PathOverwritePriority"/>) or queue (<see cref="QueueOverwritePriority"/>) tool may lay its cell over the object at (x, y), demolishing it: its overwrite priority is below the tool's.</summary>
+	// [BIN:TPW-EXE:0x524571 tool priority] the hover 0x5234D0 sets 0x818C10 to 2 for the path tool (tool 1) and 3 for the queue tool (tool 3), as the click 0x524960 does at 0x527200 and 0x527218; the validator 0x535670 compares it with the owner's +0x54 for a type 4, 9 or 10 cell before any path or queue rule (0x535D66), so a path or queue may cover a feature of priority 0 or 1 but no ride, shop or sideshow (5)
+	public bool GivesWay( int x, int y, int toolPriority ) => FindAt( x, y ) is { } item && item.Entry.OverwritePriority < toolPriority;
+
+	/// <summary>The overwrite priority the path tool places with (tp.exe <c>0x818C10</c> = 2).</summary>
+	public const int PathOverwritePriority = 2;
+	/// <summary>The overwrite priority the queue tool places with (tp.exe <c>0x818C10</c> = 3).</summary>
+	public const int QueueOverwritePriority = 3;
+
+	/// <summary>
+	/// <see cref="Check(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing and clears no path: an overwrite or a cleared path
+	/// counts as occupied (fixtures and demo builders keep their own layout).
+	/// </summary>
 	public OriginalPlacementResult CheckFree( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
-		var result = Check( entry, anchorX, anchorY, rotation, out var overwritten );
-		return result == OriginalPlacementResult.Allowed && overwritten.Count > 0 ? OriginalPlacementResult.Occupied : result;
+		var result = Check( entry, anchorX, anchorY, rotation, out var plan );
+		return result == OriginalPlacementResult.Allowed && !plan.KeepsTheRest ? OriginalPlacementResult.Occupied : result;
+	}
+
+	private OriginalPlacementResult CheckFootprint( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, List<OriginalObject> overwritten, List<(int X, int Y)> paths )
+	{
+		if ( !ObjectFootprint.IsValidRotation( rotation ) )
+			throw new ArgumentOutOfRangeException( nameof( rotation ) );
+		if ( entry.IsTool )
+			return OriginalPlacementResult.Blocked;
+		foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
+		{
+			var result = CheckObjectCell( entry, x, y, overwritten );
+			if ( result != OriginalPlacementResult.Allowed )
+				return result;
+			if ( PathAt?.Invoke( x, y ) == ObjectPathCell.Path && !paths.Contains( (x, y) ) )
+				paths.Add( (x, y) );
+		}
+		return OriginalPlacementResult.Allowed;
+	}
+
+	/// <summary>
+	/// The validator's rule for one cell of type 4 (a footprint cell, or an entrance's outside cell): terrain, a fixed (NoModify) path refused and a
+	/// plain one allowed, an object by overwrite priority, the host's reserved cells.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5356B5 NoModify] a cell with flag 0x20 (the map start's initial path, 0x536490) refuses type 4, 9 and 10 before any other test
+	// [BIN:TPW-EXE:0x535D21 object over path] type 4 over a type-1 cell returns 0 (allowed); the commit's cell op 0x87 clears the path with ClearCell 0x5367A0(0, 0) when 0x818C14 is below 0x818C10 (0x534549, the build tool being neither path nor queue), and the footprint write clears every cell with ClearCell(0, 0) anyway before typing it (0x52910C), so the path goes whatever the priorities; the path case of ClearCell spends nothing (ParkPathBuilder.Remove)
+	private OriginalPlacementResult CheckObjectCell( ObjectCatalogEntry entry, int x, int y, List<OriginalObject> overwritten )
+	{
+		if ( x < 0 || y < 0 || x >= Grid.Width || y >= Grid.Height )
+			return OriginalPlacementResult.OutsideTerrain;
+		var path = PathAt?.Invoke( x, y );
+		if ( path == ObjectPathCell.FixedPath )
+			return OriginalPlacementResult.Path;
+		var terrain = Grid.CheckTerrain( x, y );
+		// With a live cell map the terrain rule's path cells (the save's and the map start's) are the map's to judge: a path still there was tested above.
+		if ( terrain == OriginalPlacementResult.Path && path != null )
+			terrain = OriginalPlacementResult.Allowed;
+		if ( terrain != OriginalPlacementResult.Allowed )
+			return terrain;
+		// the host's reservation (queue and track cells, the Totem) refuses whatever owns the cell
+		if ( IsReserved?.Invoke( x, y ) == true )
+			return OriginalPlacementResult.Occupied;
+		return CheckOwner( entry, x, y, overwritten ) ?? OriginalPlacementResult.Allowed;
+	}
+
+	/// <summary>The object at (x, y) against the placed type's overwrite priority: null without one, Occupied when it does not give way.</summary>
+	private OriginalPlacementResult? CheckOwner( ObjectCatalogEntry entry, int x, int y, List<OriginalObject> overwritten )
+	{
+		if ( !occupied.TryGetValue( (x, y), out var item ) )
+			return null;
+		if ( item.Entry.OverwritePriority >= entry.OverwritePriority )
+			return OriginalPlacementResult.Occupied;
+		if ( !overwritten.Contains( item ) )
+			overwritten.Add( item );
+		return OriginalPlacementResult.Allowed;
+	}
+
+	/// <summary>
+	/// The outside cells of the entrances and exits, by the rules the original lays its access cells with: a type with a queue
+	/// (<see cref="ObjectCatalogEntry.HasQueue"/>) has its entrance's outside cell checked as an object cell (it becomes the queue's first cell)
+	/// and its exit's by the path rule (<see cref="PathRuleAllows"/>); any other type has its entrance's checked by the path rule and its exit's
+	/// not at all. An object there of a lower priority gives way. Refusals are <see cref="OriginalPlacementResult.AccessBlocked"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x529744 access cells] the placement refuses an entrance's outside cell off the map (0x4D8300); with 0x52FAB0 true the check pass validates it as type 4 (op 0x204, 0x5297A4; the commit lays a queue cell there, 0x529801), else as a path (op 0x201, 0x5298B9; the commit lays a path); only with 0x52FAB0 true does it test the exit's outside cell, off the map refused (0x5299E2), as a path (op 0x201, 0x529A2F). The commit's op 0x87 on either cell (0x529801, 0x529A61, 0x5298EE) demolishes a lower-priority owner
+	// [BIN:TPW-EXE:0x46D644 queue option] 0x52FAB0 is option 0x81B0CC while 0x8187F8 is clear; entering the build tool (tool 4 or 0x3B, 0x46D5A0) sets 0x81B0CC to the type's Info.HasQueue (+0x40) and 0x8187F8 through 0x52F880 to its Bumper.WhichTrackType (+0x9C) when the type's +0x288 is 1, else 0
+	private OriginalPlacementResult CheckAccessCells( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, List<OriginalObject> overwritten )
+	{
+		foreach ( var point in ObjectFootprint.GetAccessPoints( entry.Shape, anchorX, anchorY, rotation ) )
+		{
+			if ( point.Kind == ObjectCellKind.Exit && !entry.HasQueue )
+				continue;
+			var (x, y) = (point.OutsideX, point.OutsideY);
+			if ( x < 0 || y < 0 || x >= Grid.Width || y >= Grid.Height )
+				return OriginalPlacementResult.OutsideTerrain;
+			var result = point.Kind == ObjectCellKind.Entrance && entry.HasQueue ? CheckObjectCell( entry, x, y, overwritten ) : CheckPathRule( entry, x, y, overwritten );
+			if ( result == OriginalPlacementResult.Allowed && IsUnowned?.Invoke( x, y ) == true )
+				result = OriginalPlacementResult.NotOwned;
+			if ( result != OriginalPlacementResult.Allowed )
+				return OriginalPlacementResult.AccessBlocked;
+		}
+		return OriginalPlacementResult.Allowed;
+	}
+
+	/// <summary>The validator's path rule for an access cell: an object by the placed type's priority, else the host's path rule (without one: the terrain and the reserved cells).</summary>
+	private OriginalPlacementResult CheckPathRule( ObjectCatalogEntry entry, int x, int y, List<OriginalObject> overwritten )
+	{
+		if ( CheckOwner( entry, x, y, overwritten ) is { } owner )
+			return owner;
+		if ( PathRuleAllows?.Invoke( x, y ) is { } allowed )
+			return allowed ? OriginalPlacementResult.Allowed : OriginalPlacementResult.Occupied;
+		var terrain = Grid.CheckTerrain( x, y );
+		if ( terrain is not (OriginalPlacementResult.Allowed or OriginalPlacementResult.Path) )
+			return terrain;
+		return IsReserved?.Invoke( x, y ) == true ? OriginalPlacementResult.Occupied : OriginalPlacementResult.Allowed;
 	}
 
 	/// <summary>The same build rule for any grid and occupancy (the headless M3 gate has no <see cref="OriginalObject"/>s).</summary>
@@ -183,15 +316,19 @@ public sealed class ParkObjects
 
 	/// <summary>Places an object when the build rules allow it.</summary>
 	// [BIN:TPW-EXE:0x5344E5 overwrite] the commit runs cell op 0x87 on every footprint cell first (0x528D2C, 0x5290FA): with 0x818C14 below 0x818C10 an object cell's owner is demolished whole (0x527EE0, which credits its scrap value), before the new footprint is written
+	// [BIN:TPW-EXE:0x52910C footprint clear] each footprint cell then gets ClearCell 0x5367A0(0, 0) before its type is written (op 4 / 9 / 10, then the link op 0x81)
 	public OriginalObject? TryPlace( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out OriginalPlacementResult result, bool open = true )
 	{
-		result = Check( entry, anchorX, anchorY, rotation, out var overwritten );
+		result = Check( entry, anchorX, anchorY, rotation, out var plan );
 		if ( result != OriginalPlacementResult.Allowed )
 			return null;
-		// the new object is built (models, script) before anything is demolished, so a failed build leaves the park as it was
-		var item = new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open );
-		foreach ( var victim in overwritten )
+		// the new object is built (models, script) before anything is demolished or cleared, so a failed build leaves the park as it was;
+		// like Add, its script draws from the world generator (DET-013)
+		var item = new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false );
+		foreach ( var victim in plan.Overwritten )
 			Remove( victim );
+		foreach ( var (x, y) in plan.ClearedPaths )
+			ClearPath?.Invoke( x, y );
 		return Register( item );
 	}
 
@@ -208,16 +345,17 @@ public sealed class ParkObjects
 	/// Add it applies no build rules and charges nothing; the seed allocator itself is restored separately with
 	/// <see cref="RestoreSeedAllocator"/> so objects placed after the load continue the saved seed sequence.
 	/// </summary>
-	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId ) =>
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, seed, open, attractionId, seedScript: false ) );
+	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId, bool legacyBaseHeight = false ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation, legacyBaseHeight ), ScriptWorld, seed, open, attractionId, seedScript: false ) );
 
 	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
 	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
-	private ObjectPlacement ComputePlacement( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
+	internal ObjectPlacement ComputePlacement( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool legacyBaseHeight = false ) =>
 		entry.IsFixedItem && !GameEditions.IsThemeParkInc
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
 			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin,
-				entry.IsFixedItem ? 0 : GetBaseHeight( entry, anchorX, anchorY, rotation ) );
+				entry.IsFixedItem ? 0 : legacyBaseHeight ? GetLegacyBaseHeight( entry, anchorX, anchorY, rotation ) : GetBaseHeight( entry, anchorX, anchorY, rotation ),
+				legacyBaseHeight && !entry.IsFixedItem );
 
 	private OriginalObject Register( OriginalObject item )
 	{
@@ -255,11 +393,33 @@ public sealed class ParkObjects
 	}
 
 	/// <summary>
-	/// Base height: the mean ground height under the footprint. Rides flatten their ground in the original
-	/// (<c>Info.DontDeformBase</c>, per-archive <c>.hmp</c> files not decoded), so this is an approximation.
+	/// Base height of an object: the midpoint of the lowest and the highest terrain vertex under its footprint. The vertices are the four corners of every shape cell whose cell type has a
+	/// non-zero low nibble (so <c>#</c>, type 16, adds none), at the anchor and rotation; the object's ground blend under the ride is not modelled (RIDES-014).
 	/// </summary>
-	// [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes
-	public float GetBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	// [BIN:TPW-EXE:0x00466D70 base height] the creator 0x463060 (flags 0x32f, bit 8, shape pointer def+0x18) calls 0x466D70, which samples the four corners of each shape cell (entries 8 bytes, low nibble of the first byte non-zero, 0x469930) through 0x454050 and returns (lowest + highest vertex height) x 0.5 (0x466E60..0x466F70); the vertex of a corner is ftol(lerp + 0.1) of the unrotated shape position turned about the anchor, which is exactly ObjectFootprint.ToGrid of the corner (box origin 0x466F90)
+	// [APPROX:RIDES-014] the object's base height is that midpoint of the footprint's terrain vertices; the original then blends the ground under the ride flat (0x467030, 0x57ACE0), which is not modelled, and the instance words +0xF0/+0xF4 it takes as the shape size are taken to be the shape's width and height — evidence needed: the blend, and a capture of an instance height on a slope
+	public float GetBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) => GetBaseHeight( entry.Shape, Grid, anchorX, anchorY, rotation );
+
+	/// <summary><see cref="GetBaseHeight(ObjectCatalogEntry,int,int,int)"/> for a shape on a grid.</summary>
+	internal static float GetBaseHeight( ObjectShape shape, IParkGrid grid, int anchorX, int anchorY, int rotation )
+	{
+		var lowest = float.PositiveInfinity;
+		var highest = float.NegativeInfinity;
+		foreach ( var cell in shape.Cells.Where( cell => (cell.CellType & 0xF) != 0 ) )
+		{
+			for ( var corner = 0; corner < 4; corner++ )
+			{
+				var point = ObjectFootprint.ToGrid( anchorX, anchorY, rotation, new System.Numerics.Vector2( cell.U + (corner & 1), cell.V + (corner >> 1) ) );
+				var height = grid.GetCornerHeight( (int)MathF.Round( point.X ), (int)MathF.Round( point.Y ) );
+				lowest = Math.Min( lowest, height );
+				highest = Math.Max( highest, height );
+			}
+		}
+		return float.IsInfinity( lowest ) ? 0 : (lowest + highest) * 0.5f;
+	}
+
+	/// <summary>The earlier rule, the mean ground height of the footprint's cells: only a park-resume save made before the vertex rule keeps it (<see cref="ParkLayoutSnapshot"/>).</summary>
+	internal float GetLegacyBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
 		var heights = ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation )
 			.Where( cell => cell.X >= 0 && cell.Y >= 0 && cell.X < Grid.Width && cell.Y < Grid.Height )
@@ -325,9 +485,9 @@ public sealed class ParkObjects
 	/// <summary>
 	/// Replaces the Easymode markers with the real objects: every SYSG placed record at its saved anchor and
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
-	/// Imported objects are opened: the save's ride state is not decoded.
+	/// Imported objects are opened (the saved open word is not imported, SAVE-006).
 	/// </summary>
-	// [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too, while the original's object constructor 0x4DB090 sets the open word +0x68 = 1 (0x4DB3B9) and then, for a type with Info.HasQueue (def+0x40, flag 8 at 0x4DB420), logs "Object %d Closing", clears the open word and writes VAR_RIDECLOSED = 1 (0x4DB712–0x4DB779), so a built ride with a queue starts closed — evidence needed: the TPWS ride-state fields (save loader 0x415270)
+	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad), which this port does not import and opens every imported object instead (SAVE-006)
 	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
 
 	/// <summary><see cref="ImportOriginal"/> one object at a time: after each, the objects placed so far and the share of the records done.</summary>
@@ -357,7 +517,7 @@ public sealed class ParkObjects
 	/// </summary>
 	// [BIN:TPW-EXE:0x005156A0 world setup fixed items] world setup creates the definitions named "gates" (wide literal 0x762448) and "lights" (0x762454) through 0x4db090 (case-insensitive compare 0x67b140); a missing definition logs "Could not find the gates feature" or the LIGHTSNAME message; a loaded save then restores the handles (writer 0x517076)
 	// [BIN:TPW-EXE:0x0051A2F0 vehicle on demand] the bus, seaplane and Ferry are created by the vehicle dispatch the first time each is sent (0x004DB090 at 0x0051A57E), never at setup
-	// [APPROX:RIDES-019] End (0x762464) is not created: the original creates it through 0x516b00, called from the message handler 0x503d40 (message type 0x11, from 0x50b550), not at setup; Theme Park Inc worlds without a prebuilt save keep a Bus from setup — evidence needed: what sends the End message, and how Theme Park Inc places its arrival vehicle
+	// [APPROX:RIDES-019] End (0x762464) is not created: the original creates it through 0x516b00 from the lab's message handler 0x503d40 (message type 0x11, dispatched by 0x50b550), which runs when a research item completes (0x504630) and, once every research item is complete (the loop over the 0x145c items at +0x18, stride 0x14: progress +4 not below cost +0, 0x503e00), in the game modes DAT_00fb3b7c 2 (or 0 with 0x5b0c40 true) clears a flag (0x409cd0), posts the advisor message 0xa7 (0x59b590, 0x59a940) and creates End; Theme Park Inc worlds without a prebuilt save keep a Bus from setup — evidence needed: what DAT_00fb3b7c names and what the advisor message 0xa7 is, and how Theme Park Inc places its arrival vehicle (no TPI executable in scope)
 	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
 
 	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>

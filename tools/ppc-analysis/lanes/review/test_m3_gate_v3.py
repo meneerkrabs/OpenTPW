@@ -176,7 +176,8 @@ class StaticRound3(unittest.TestCase):
         steps = ['QueuePaths.CheckExtend(', 'TrySpendCell( CellPurchase.Queue )', 'QueuePaths.TryExtend(']
         self.assertEqual(sorted(old.find(step) for step in steps), [old.find(step) for step in steps])
         instance = v1.method_body(new, 'public QueueBuildResult BuildQueueCell( RideVisitorBridge ride, int x, int y )')
-        self.assertIn('BuildQueueCell( Guests.Grid, Park?.Economy, ride, x, y, IsQueueBlocked, out var message );', instance)
+        # the queue tool's overwrite priority (tp.exe 0x818C10 = 3) passes the scenery it may cover and its demolition along
+        self.assertIn('BuildQueueCell( Guests.Grid, Park?.Economy, ride, x, y, IsQueueBlocked, out var message, QueueGivesWay, DemolishObjectAt );', instance)
         helper = v1.method_body(new, 'internal static QueueBuildResult BuildQueueCell(')
         if 'QueuePaths.CheckExtend(' not in helper:
             # GATE-V4: after the merge with PATH-FIX (PATH-V2's recipe) the check goes through the static CheckQueueCell,

@@ -188,8 +188,16 @@ public class DeterminismTests
 		Assert.AreEqual( FixedRunHash, park.Hash, $"0x{park.Hash:X16}" );
 	}
 
+	/// <summary>The hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run, for tests that repeat it under other conditions.</summary>
+	internal static ulong RunFixedPark()
+	{
+		var park = new SyntheticPark( WorldSeed.Default );
+		park.Run( 3600 );
+		return park.Hash;
+	}
+
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
-	internal const ulong FixedRunHash = 0x7AED41D19433D4B2UL;
+	internal const ulong FixedRunHash = 0x205523C08061A05DUL;
 
 	/// <summary>
 	/// Switching only the <c>opentpw.online</c> extension (docs/MODS.md) leaves the pinned digests unchanged: this fixed run,

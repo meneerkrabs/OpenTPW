@@ -31,6 +31,8 @@ internal static class SaveTestPayloads
 		public uint MarkedTurn { get; init; }
 		/// <summary>The running value of every ring (mTemp).</summary>
 		public int RingToday { get; init; }
+		/// <summary>Every saved slot of every ring.</summary>
+		public int RingEntry { get; init; }
 		public uint RingCount { get; init; } = 30;
 		public byte RingFlag { get; init; } = 1;
 		public uint Customers { get; init; } = 7;
@@ -84,7 +86,8 @@ internal static class SaveTestPayloads
 			writer.Write( fields.RingCount );
 			writer.Write( fields.RingFlag );
 			writer.Write( fields.RingToday );
-			writer.Write( new byte[(int)Math.Min( fields.RingCount, 64 ) * 4] );
+			for ( var slot = 0; slot < (int)Math.Min( fields.RingCount, 64 ); slot++ )
+				writer.Write( fields.RingEntry );
 		}
 		Ring();
 		Ring();

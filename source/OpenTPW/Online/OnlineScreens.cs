@@ -246,7 +246,7 @@ public sealed class OnlineScreens
 				() => { if ( Session.IsLoggedIn ) Guard( () => { Session.Disconnect(); localStatus = ""; } ); else ShowLogin(); }, () => true),
 			("news", () => OnlineStrings.Get( OnlineLabel.News ), ShowNews, () => Session.Client != null),
 			("findParks", () => OnlineStrings.Ui( OnlineStrings.FindParks, "Find parks" ), ShowFindParks, () => Session.IsLoggedIn),
-			("publish", () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ), ShowPublish, () => level != null && !level.IsReadOnlyVisit),
+			("publish", () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish park" ), ShowPublish, () => level != null && !level.IsReadOnlyVisit && ParkSharing.ModsRefusal() == null),
 			("sendPostcard", () => OnlineStrings.Ui( OnlineStrings.SendPostcard, "Send postcard" ), ShowSendPostcard, () => true),
 			("outbox", () => OnlineStrings.Ui( OnlineStrings.UnsentPostcards, "Unsent postcards" ), ShowOutbox, () => true),
 			("inbox", () => OnlineStrings.Get( OnlineLabel.Inbox ), ShowInbox, () => true),
@@ -815,7 +815,7 @@ public sealed class OnlineScreens
 		var publish = screen.Add( new UiButton { Id = "publish", Text = () => OnlineStrings.Ui( OnlineStrings.PublishPark, "Publish Park" ),
 			Clicked = () => Guard( () => Session.Publish( ParkSharing.ExportLevel( level, name.Text, Session.Settings.PlayerName ?? "", description.Text ), showOnWebsite, city?.Id ?? 0 ) ),
 			Bounds = new UiRect( 1660, 731, 83, 84 ), Anchor = UiAnchor.Center } );
-		screen.Add( new UiButton { Id = "export", Text = () => OnlineStrings.Get( OnlineLabel.ExportPark ),
+		var export = screen.Add( new UiButton { Id = "export", Text = () => OnlineStrings.Get( OnlineLabel.ExportPark ),
 			Clicked = () => Guard( () =>
 			{
 				var package = ParkSharing.ExportLevel( level, name.Text, Session.Settings.PlayerName ?? "", description.Text );
@@ -825,7 +825,8 @@ public sealed class OnlineScreens
 			} ),
 			Bounds = new UiRect( 500, 1080, 480, 110 ), Anchor = UiAnchor.Center } );
 		AddCloseButton( screen, 1671, 820 );
-		screen.Updating += _ => publish.Enabled = Session.IsLoggedIn && Session.Busy == 0;
+		// [EXT:mods] a park that records mods cannot be exported or published yet (ParkSharing.ModsRefusal): both buttons are hidden
+		screen.Updating += _ => { publish.Enabled = Session.IsLoggedIn && Session.Busy == 0; publish.Visible = export.Visible = ParkSharing.ModsRefusal() == null; };
 		AddStatus( screen, window );
 		screen.Back = stack.Pop;
 		screen.Focus( name );

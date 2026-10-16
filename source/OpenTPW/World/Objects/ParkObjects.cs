@@ -110,17 +110,55 @@ public sealed class ParkObjects
 	public bool IsOccupied( int x, int y ) => occupied.ContainsKey( (x, y) ) || IsReserved?.Invoke( x, y ) == true;
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
-	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + save paths/objects + no overlap + owned land; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases — evidence needed: 0x535670's object branches (ride cells 4/9/10 against the count 0x818c10, the entrance/exit cells 9/10 and their path cell 0x5286a0, the cost test 0x52fbc0)
+	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
+		Check( entry, anchorX, anchorY, rotation, out _ );
+
+	/// <summary>
+	/// <see cref="Check(ObjectCatalogEntry, int, int, int)"/> with the objects the placement would overwrite: an object whose
+	/// <see cref="ObjectCatalogEntry.OverwritePriority"/> is below the new one's gives way (a ride over a bush), any other overlap refuses.
+	/// </summary>
+	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + save paths/objects + overlap by overwrite priority + owned land; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases — evidence needed: the placement's own path cells (an object may stand on a path cell that is not NoModify, 0x535D21, the commit clearing it, 0x534549), the entrance and exit outside cells (0x5298B9, 0x529A2F: the path rule 0x201 there) and the overwrite of objects by the path and queue tools (0x535D66 with 0x818C10 = 2 and 3)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] after its early returns for a few tool modes the validator 0x535670 refuses a cell with flag 0x40 for whatever it places, paths, queues and objects alike
-	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	// [BIN:TPW-EXE:0x535D66 overwrite priority] a cell of type 4, 9 or 10 is allowed when 0x818C10, the placed type's +0x54 (Info.OverwritePriority, sam schema 0x745020; set by the hover 0x5234D0), is greater than 0x818C14, the +0x54 of the type of the object owning the cell (0x53570E: the thing at the cell's owner index +0x10, class 3); otherwise the cell is refused and the sticky refusal 0x816D50 set
+	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out IReadOnlyList<OriginalObject> overwritten )
 	{
-		var result = Check( Grid, IsOccupied, entry, anchorX, anchorY, rotation );
-		if ( result != OriginalPlacementResult.Allowed || IsUnowned is not { } unowned )
-			return result;
-		foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
-			if ( unowned( x, y ) )
-				return OriginalPlacementResult.NotOwned;
+		var giving = new List<OriginalObject>();
+		overwritten = giving;
+		bool Blocks( int x, int y )
+		{
+			// the host's reservation (path, queue and track cells, the Totem) refuses whatever owns the cell
+			if ( IsReserved?.Invoke( x, y ) == true )
+				return true;
+			if ( !occupied.TryGetValue( (x, y), out var item ) )
+				return false;
+			if ( item.Entry.OverwritePriority >= entry.OverwritePriority )
+				return true;
+			if ( !giving.Contains( item ) )
+				giving.Add( item );
+			return false;
+		}
+		var result = Check( Grid, Blocks, entry, anchorX, anchorY, rotation );
+		if ( result == OriginalPlacementResult.Allowed && IsUnowned is { } unowned )
+		{
+			foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
+			{
+				if ( unowned( x, y ) )
+				{
+					result = OriginalPlacementResult.NotOwned;
+					break;
+				}
+			}
+		}
+		if ( result != OriginalPlacementResult.Allowed )
+			giving.Clear();
 		return result;
+	}
+
+	/// <summary><see cref="Check(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing: an overwrite counts as occupied (fixtures and demo builders).</summary>
+	public OriginalPlacementResult CheckFree( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	{
+		var result = Check( entry, anchorX, anchorY, rotation, out var overwritten );
+		return result == OriginalPlacementResult.Allowed && overwritten.Count > 0 ? OriginalPlacementResult.Occupied : result;
 	}
 
 	/// <summary>The same build rule for any grid and occupancy (the headless M3 gate has no <see cref="OriginalObject"/>s).</summary>
@@ -144,10 +182,17 @@ public sealed class ParkObjects
 	}
 
 	/// <summary>Places an object when the build rules allow it.</summary>
+	// [BIN:TPW-EXE:0x5344E5 overwrite] the commit runs cell op 0x87 on every footprint cell first (0x528D2C, 0x5290FA): with 0x818C14 below 0x818C10 an object cell's owner is demolished whole (0x527EE0, which credits its scrap value), before the new footprint is written
 	public OriginalObject? TryPlace( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out OriginalPlacementResult result, bool open = true )
 	{
-		result = Check( entry, anchorX, anchorY, rotation );
-		return result == OriginalPlacementResult.Allowed ? Add( entry, anchorX, anchorY, rotation, open ) : null;
+		result = Check( entry, anchorX, anchorY, rotation, out var overwritten );
+		if ( result != OriginalPlacementResult.Allowed )
+			return null;
+		// the new object is built (models, script) before anything is demolished, so a failed build leaves the park as it was
+		var item = new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open );
+		foreach ( var victim in overwritten )
+			Remove( victim );
+		return Register( item );
 	}
 
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>

@@ -160,6 +160,7 @@ public sealed class TourController
 			car.Random = data.Random;
 			car.Animation = data.Animation;
 			car.AnimationLoops = data.AnimationLoops;
+			car.Emitter = data.Emitter;
 		}
 		foreach ( var data in saved.FreeSlots ?? new List<TourFreeSlotSaveData>() )
 		{
@@ -218,6 +219,9 @@ public sealed class TourController
 	/// <summary>The riders a severe breakdown (<c>TOUR 9 4</c>) threw off a flying car, handed out by <c>TOUR 4</c> once a car is docked.</summary>
 	public List<int> Ejected { get; } = new();
 	public IReadOnlyList<TourCar> Cars => cars;
+
+	/// <summary>The slot of <paramref name="car"/> in this controller, −1 when it is not one of its cars.</summary>
+	public int SlotOf( TourCar car ) => Array.IndexOf( cars, car );
 	/// <summary>Ticks run so far.</summary>
 	public long TickCount { get; private set; }
 	/// <summary>Riders handed to the cars and handed back (statistics).</summary>
@@ -393,22 +397,32 @@ public sealed class TourController
 				Wanted = Requested;
 				if ( first.Broken )
 				{
+					// [BIN:TPW-EXE:0x0055DACB TOUR 9 1] the repair: animation 10 (channel 0, once), then the global cat_rides sound 0xBB at the car (x / 300, height / 300, z / 300; 0x51BFC0)
 					SetAnimation( first, 10, false );
+					Raise( TourEffectKind.RepairSound, first, TourEffects.SoundRepair );
 					first.Broken = false;
 				}
 				if ( first.Thrust != 0 )
 					first.Thrust = TourMath.Abs( Random() ) % 100 + Wait;
+				// [BIN:TPW-EXE:0x0055DB5C TOUR 9 1] the first car's emitter is destroyed (0x51FEB0)
+				StopEmitter( first );
 				break;
 			case 2:
 				Wanted = Requested;
+				// [BIN:TPW-EXE:0x0055DB7D TOUR 9 2] worn: the first car's emitter is replaced by particle 0x27 (FlySmoke) created at the car's raw module coordinates taken as particle units (0x521E60(0x27, x, height, z), not scaled like 3 and 4); the next draw moves it to the car's node
+				StartEmitter( first, TourEffects.ParticleFlySmoke, first.X, first.Y, first.Z );
 				break;
 			case 3:
 				first.Broken = true;
 				first.Timer = 0;
+				// [BIN:TPW-EXE:0x0055DBB5 TOUR 9 3] broken: the emitter is replaced by particle 0x28 (FlyFire) at (x << 10) / 300 etc., the car's place in particle units
+				StartEmitter( first, TourEffects.ParticleFlyFire, unchecked(first.X << 10) / 300, unchecked(first.Y << 10) / 300, unchecked(first.Z << 10) / 300 );
 				break;
 			case 4:
 				first.Broken = true;
 				first.Timer = 0;
+				// [BIN:TPW-EXE:0x0055DC34 TOUR 9 4] as 3, then the flying riders are thrown off
+				StartEmitter( first, TourEffects.ParticleFlyFire, unchecked(first.X << 10) / 300, unchecked(first.Y << 10) / 300, unchecked(first.Z << 10) / 300 );
 				EjectFlyingRiders();
 				Wanted = 1;
 				break;
@@ -430,12 +444,53 @@ public sealed class TourController
 		}
 	}
 
-	// [BIN:TPW-EXE:0x0055AA80 car animation] the mesh animation is triggered through 0x004732A0 (looping when the last operand is set) and logs "FLY: Failed to trigger a flying car anim" on failure
-	// [APPROX:TOUR-004] not played: the engine sound (0x0051EEB0, 0x0051BC40, 0x0051C270), the breakdown smoke (effects 0x27 and 0x28), the repair sound (event 0xBB) and the car clips; the animation id is kept on the car
-	private static void SetAnimation( TourCar car, int animation, bool loops )
+	// [BIN:TPW-EXE:0x0055AA80 car animation] (animation, channel, loops) is compared with the car's last trigger (+0xCC/+0xD0/+0xD4, all −1 after creation) and only a change triggers the mesh clip through 0x004732A0(instance, animation, channel, loops, 1.0, 0) and logs "FLY: Failed to trigger a flying car anim" on failure; every call site passes channel 0
+	private void SetAnimation( TourCar car, int animation, bool loops )
 	{
+		if ( car.Animation == animation && car.AnimationLoops == loops )
+			return;
 		car.Animation = animation;
 		car.AnimationLoops = loops;
+		car.AnimationSerial++;
+		Raise( TourEffectKind.Animation, car, animation, loops ? 1 : 0 );
+	}
+
+	/// <summary>Raised for every cosmetic effect of a car (engine voice, smoke, repair sound, clip triggers). Presentation only: handlers must not change the controller.</summary>
+	public event Action<TourEffect>? Effect;
+
+	private void Raise( TourEffectKind kind, TourCar car, int id = 0, int value = 0 ) =>
+		Effect?.Invoke( new TourEffect( kind, SlotOf( car ), id, value, car.X, car.Y, car.Z ) );
+
+	/// <summary>The engine voice's parameter after a state's animation call: code = EventMap variable 10 (the host resolves it), <paramref name="value"/> as traced.</summary>
+	// [BIN:TPW-EXE:0x0055ACCE engine parameter] after each animation call the state code reads EventMap variable 10 (0x55A3E0) and, while the car holds a voice (+0xE0), sets it through 0x51BC40: 80 docked (0x55B09F) and landed (0x55BBF5), 15 taking off (0x55B65B), 60 broken or 30 for the cruising states and the descent (0x55ACE4/0x55AD11 and the matching pairs)
+	private void EngineParameter( TourCar car, int value ) => Raise( TourEffectKind.EngineParameter, car, 0, value );
+
+	private void CruiseParameter( TourCar car ) => EngineParameter( car, car.Broken ? TourEffects.ParameterBroken : TourEffects.ParameterFlying );
+
+	/// <summary>
+	/// Moves a car's emitter to its drawn smoke node: the renderer calls it every draw with the node's engine place (presentation only).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0055CE60 car draw] for a live car holding an emitter (+0xC4) the draw finds the node class 0x100 number 1 (0x44B220) and moves the emitter to its world place × 1024 (0x51FE30)
+	internal void DrawEmitter( int slot, System.Numerics.Vector3 node )
+	{
+		if ( slot < 0 || slot >= cars.Length || cars[slot] is not { IsLive: true, Emitter: not 0 } car )
+			return;
+		Effect?.Invoke( new TourEffect( TourEffectKind.EmitterMove, slot, car.Emitter, 0, car.X, car.Y, car.Z, node ) );
+	}
+
+	private void StartEmitter( TourCar car, int particle, int x, int y, int z )
+	{
+		StopEmitter( car );
+		car.Emitter = particle;
+		Effect?.Invoke( new TourEffect( TourEffectKind.EmitterStart, SlotOf( car ), particle, 0, x, y, z ) );
+	}
+
+	private void StopEmitter( TourCar car )
+	{
+		if ( car.Emitter == 0 )
+			return;
+		car.Emitter = 0;
+		Raise( TourEffectKind.EmitterStop, car );
 	}
 
 	// ---- The tick -----------------------------------------------------------------------------------
@@ -472,6 +527,9 @@ public sealed class TourController
 				car.Leaving = true;
 			RunState( index, car );
 			Move( index, car );
+			// [BIN:TPW-EXE:0x0055C1B5 engine move] at the end of every car's tick a held voice (+0xE0) moves to (x / 300, height / 300, z / 300) (0x51C270); a removed car's voice is gone
+			if ( car.IsLive )
+				Raise( TourEffectKind.EngineMove, car );
 		}
 	}
 
@@ -493,7 +551,8 @@ public sealed class TourController
 		car.RiderCount = 0;
 		car.Broken = false;
 		car.Leaving = false;
-		car.Animation = 0;
+		// [BIN:TPW-EXE:0x0055A8D9 car creation] the last-trigger triple is set to −1, so the creation's animation 0 always triggers
+		car.Animation = -1;
 		car.AnimationLoops = false;
 		car.TargetY = 14000;
 		car.Thrust = TourMath.Abs( Random() ) % 100 + Wait;
@@ -515,6 +574,8 @@ public sealed class TourController
 		car.PreviousTargetY = car.TargetY;
 		car.PreviousTargetZ = car.TargetZ;
 		CarCount++;
+		// [BIN:TPW-EXE:0x0055A944 engine start] the car's engine voice: EventMap variable 0 submitted to the level cat_rides at (x / 300, height / 300, z / 300) (0x51EEB0), its handle kept in +0xE0
+		Raise( TourEffectKind.EngineStart, car );
 		car.Random = TourMath.Abs( Random() );
 		car.Generation++;
 		if ( CarCount == 1 )
@@ -542,11 +603,13 @@ public sealed class TourController
 		{
 			case TourCar.StateDocked:
 				car.Pitch = TourMath.Div2( car.Pitch );
+				EngineParameter( car, TourEffects.ParameterDocked );
 				if ( !Ready && !car.Broken && (IsOpen || index != 0 || CarCount != 1) )
 					TakeOff( car );
 				break;
 			case TourCar.StateTakeoff:
 				SetAnimation( car, 4, true );
+				EngineParameter( car, TourEffects.ParameterTakeoff );
 				if ( car.TargetY <= car.Y )
 				{
 					LandingReserved = false;
@@ -610,12 +673,13 @@ public sealed class TourController
 
 	private int HorizontalDistance( TourCar car ) => TourMath.Distance32( car.X - car.TargetX, car.Z - car.TargetZ ) * 32;
 
-	private static void RunCruiseAnimation( TourCar car )
+	private void RunCruiseAnimation( TourCar car )
 	{
 		if ( !car.Broken )
 			SetAnimation( car, 5, true );
 		else
 			SetAnimation( car, 9, true );
+		CruiseParameter( car );
 	}
 
 	/// <summary>The car at the station takes off: thrust, flight timer and the first target 20000 units ahead along the heading, at a height clearing the ground.</summary>
@@ -634,10 +698,7 @@ public sealed class TourController
 
 	private void RunTour( TourCar car )
 	{
-		if ( !car.Broken )
-			SetAnimation( car, 5, true );
-		else
-			SetAnimation( car, 9, true );
+		RunCruiseAnimation( car );
 		if ( car.Broken )
 		{
 			if ( Condition == 3 )
@@ -686,6 +747,7 @@ public sealed class TourController
 		if ( StationY < car.Y )
 		{
 			SetAnimation( car, 6, false );
+			CruiseParameter( car );
 			return;
 		}
 		// down: the car stands at the station, ready, and the riders it carries start leaving
@@ -698,6 +760,7 @@ public sealed class TourController
 		if ( car.RiderCount > 0 )
 			car.RiderCount = -car.RiderCount;
 		SetAnimation( car, 3, false );
+		EngineParameter( car, TourEffects.ParameterDocked );
 	}
 
 	private void RunPatrol( TourCar car )
@@ -734,10 +797,13 @@ public sealed class TourController
 		}
 	}
 
+	// [BIN:TPW-EXE:0x0055CDA0 remove car] the car's emitter (+0xC4) is destroyed (0x51FEB0), its mesh instance freed and its engine voice stopped (0x51C2C0)
 	private void RemoveCar( TourCar car )
 	{
 		car.State = TourCar.StateFree;
 		CarCount--;
+		StopEmitter( car );
+		Raise( TourEffectKind.EngineStop, car );
 	}
 
 	/// <summary>The next of the four patrol corners round the station, 25000 units out on each diagonal, at least 14000 up.</summary>

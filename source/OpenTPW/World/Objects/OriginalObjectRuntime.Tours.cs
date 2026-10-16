@@ -50,6 +50,9 @@ public sealed partial class OriginalObjectRuntime
 		if ( Tour != null || stopped || scriptWorld.Tours.Controllers.Count >= TourWorld.MaximumControllers )
 			return Tour;
 		Tour = new TourController( CurrentTourStation, scriptWorld.NextWorldDraw, scriptWorld.Tours, small ) { AttractionId = AttractionId };
+		Tour.Effect += OnTourEffect;
+		// the controller's first car was created inside its constructor, before anyone listened: its engine starts now
+		ResumeTourEffects();
 		return Tour;
 	}
 
@@ -59,8 +62,14 @@ public sealed partial class OriginalObjectRuntime
 		if ( Tour != null )
 			throw new InvalidDataException( $"'{Entry.ArchivePath}': the tour controller exists before the save restored it." );
 		Tour = new TourController( saved, scriptWorld.NextWorldDraw, scriptWorld.Tours );
+		Tour.Effect += OnTourEffect;
+		ResumeTourEffects();
 	}
 
 	/// <summary>The controller leaves the module (a removed or faulted ride); its riders go with <see cref="Visitors"/>.</summary>
-	private void ReleaseTour() => Tour?.Release();
+	private void ReleaseTour()
+	{
+		StopTourEffects();
+		Tour?.Release();
+	}
 }

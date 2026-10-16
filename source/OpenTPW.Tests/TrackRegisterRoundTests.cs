@@ -40,7 +40,7 @@ public class TrackRegisterRoundTests
 			if ( template.IsBumper )
 				return;
 			var builder = new TrackBuilder( cells, template.IsWater ? TrackFamily.Water : TrackFamily.Kart, () => null, new FlatGrid() );
-			var station = TrackStation.FromPlacement( 10, 10, 0 );
+			var station = TrackStation.FromPlacement( 10, 9, 0 );
 			builder.PlaceStation( station );
 			var writer = new TrackLineWriter( builder );
 			writer.Commit( (14, 10), (14, 12) );

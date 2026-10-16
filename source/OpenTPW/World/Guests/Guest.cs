@@ -148,6 +148,10 @@ public sealed class Guest
 	public bool? SideshowWon { get; internal set; }
 	/// <summary>Attraction the guest is heading to, queueing for or riding (0 = none).</summary>
 	public int AttractionId { get; internal set; }
+	/// <summary>The byte at +0x2C that state 10 counts while the guest walks to a ride with the park open; every twelfth count the minor decision runs (tp.exe 0x004FFEF2).</summary>
+	public int RideWalkCount { get; internal set; }
+	/// <summary>Park turns an expensive verdict still holds the guest at the booth (+0x200, tp.exe 0x004FF9D0): one is counted per turn, the verdict runs again as the last reaches 0.</summary>
+	public int BoothWait { get; internal set; }
 	public int LastAttractionId { get; internal set; }
 	/// <summary>The attractions the guest used last, newest first (guest <c>+480..+486</c>); the score divides by 5, 4, 3 or 2 for the first match. 0 = empty slot.</summary>
 	public int[] UsedHistory { get; } = new int[HistorySlots];

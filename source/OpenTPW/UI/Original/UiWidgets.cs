@@ -72,7 +72,7 @@ public sealed class UiContext
 		var y = height <= rect.Height ? rect.Y + (rect.Height - height) / 2 : rect.Y;
 		var ix = (int)MathF.Round( x );
 		var iy = (int)MathF.Round( y );
-		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow — evidence needed: the draw calls of the other original text paths
+		// [APPROX:UI-007] drop shadow one text pixel down-right; the original's control text renderer (0x48f830) draws each string once, without a shadow, and the glyph draw entry 0x6ae0f0 is reached only through the text box routine 0x492750 (single call per caller; BF4 glyphs hold coverage only) — evidence needed: the sprite draw of a text control's bitmap (0x48f410 → 0x588c20) and what in the capture looks like a shadow
 		if ( shadow )
 			Batch.AddText( font, layout, ix + scale, iy + scale, UiColors.Shadow, scale );
 		Batch.AddText( font, layout, ix, iy, color, scale, text );
@@ -531,7 +531,7 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	/// inside the track's left end to half a ball inside its right end.
 	/// </summary>
 	// [BIN:TPW-EXE:0x66b088 slider thumb] the original's slider class (vtable 0x705b20) places the thumb at track left + (value - min) × (track width - thumb width) / (max - min) in integer units; the options page's sliders are 0..100 (0x4a455a)
-	// [APPROX:UI-036] value index 0..Steps-1 from the knob's centre, nearest step on a click or drag; the original truncates a drag (0x66af19) and moves one page toward a track click (0x66b8aa), and its options change handlers are not traced — evidence needed: the options page's slider change handlers
+	// [APPROX:UI-036] value index 0..Steps-1 from the knob's centre, nearest step on a click or drag; the original truncates a drag (0x66af19) and moves one page toward a track click (0x66b8aa), and its options change handler 0x4a2e90 maps the 0..100 value to a resolution index (v × 2) / 100 and a quality index (k × v) / 100 (k 2, or 1 when [0x78d8d8] is 0) and passes the volume sliders on raw, where OpenTPW's sliders step its own presets and 11 volume steps — evidence needed: whether OpenTPW's option steps should follow the 0..100 value
 	public UiRect KnobRect( int value )
 	{
 		var steps = Math.Max( 2, Steps() );

@@ -90,6 +90,26 @@ internal sealed partial class SandboxSmokeTest
 		Require( !level.CellTool.IsActive && level.Blueprint!.Cells.Count == 0, "clicking the queue's end again ends the tool and clears the markers" );
 		Log.Trace( $"HUD queue tool: placed {entry.DisplayName} at {site} and laid {SmokeQueueLength + 1} queue cells from {(entrance.OutsideX, entrance.OutsideY)} to {end}." );
 
+		// The queue front the placement laid is NoModify, and the remove tool takes it with the queue behind it ([EXT:removable-access-cells]); the ride's entrance then resolves to the nearest path again.
+		var front = (X: entrance.OutsideX, Y: entrance.OutsideY);
+		var bridge = placed.Visitors;
+		Require( grid.Cells.FlagsAt( front.X, front.Y ).HasFlag( ParkCellFlags.NoModify ), "the queue front the placement laid is NoModify" );
+		Require( level.RemoveAt( front.X, front.Y ) && !grid.IsQueue( front.X, front.Y ) && !bridge.QueueCells.Any( cell => grid.IsQueue( cell.X, cell.Y ) ), "the remove tool takes the laid queue front and the queue behind it" );
+		Require( grid.Cells.FlagsAt( front.X, front.Y ) == ParkCellFlags.None || !grid.Cells.FlagsAt( front.X, front.Y ).HasFlag( ParkCellFlags.NoModify ), "the removed front is no NoModify cell any more" );
+		Require( grid.IsWalkable( bridge.EntranceCell.X, bridge.EntranceCell.Y ), $"the ride's entrance falls back to a walkable path cell, {bridge.EntranceCell}" );
+		Require( level.BuildQueueCell( bridge, front.X, front.Y ) == QueueBuildResult.Ok && grid.IsQueue( front.X, front.Y ) && bridge.QueueCells.Contains( front ), "the queue can be laid on the removed front again" );
+		// A free-standing queue cell (touching neither the front nor the back) is the ride's by its owner word and goes with the remove tool.
+		(int X, int Y)? lone = null;
+		for ( var index = 0; index < grid.CountX * grid.CountY && lone == null; index++ )
+		{
+			var cell = (X: index % grid.CountX, Y: index / grid.CountX);
+			if ( Math.Abs( cell.X - front.X ) + Math.Abs( cell.Y - front.Y ) is >= 3 and <= 8 && level.Objects.FindAt( cell.X, cell.Y ) == null && level.CheckQueueCell( bridge, cell.X, cell.Y, Array.Empty<(int X, int Y)>() ) == QueueBuildResult.Ok )
+				lone = cell;
+		}
+		Require( lone is { } free && level.BuildQueueCell( bridge, free.X, free.Y ) == QueueBuildResult.Ok && grid.IsQueue( free.X, free.Y ) && !bridge.QueueCells.Contains( free ),
+			"a free-standing queue cell can be laid" );
+		Require( level.RemoveAt( lone!.Value.X, lone.Value.Y ) && !grid.IsQueue( lone.Value.X, lone.Value.Y ), "the remove tool takes the free-standing queue cell" );
+
 		for ( var step = SmokeQueueLength; step >= 0; step-- )
 			level.RemoveAt( entrance.OutsideX + stepX * step, entrance.OutsideY + stepY * step );
 		level.RemoveObjectAt( entrance.X, entrance.Y );

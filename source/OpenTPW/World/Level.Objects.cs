@@ -395,12 +395,14 @@ public partial class Level
 		return EnterQueueTool( ride );
 	}
 
-	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null.</summary>
+	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null: the ride whose chain reaches the cell, else the ride the cell's owner word names (a free-standing cell).</summary>
 	internal static RideVisitorBridge? QueueRideAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y )
 	{
 		if ( !grid.IsQueue( x, y ) )
 			return null;
-		return attractions.OfType<RideVisitorBridge>().FirstOrDefault( item => item.HasQueue && item.QueueCells.Contains( (x, y) ) );
+		var rides = attractions.OfType<RideVisitorBridge>().Where( item => item.HasQueue ).ToArray();
+		var owner = grid.Cells.OwnerAt( x, y );
+		return rides.FirstOrDefault( item => item.QueueCells.Contains( (x, y) ) ) ?? (owner == 0 ? null : rides.FirstOrDefault( item => item.OwnerWord == owner ));
 	}
 
 	/// <summary>
@@ -469,10 +471,52 @@ public partial class Level
 	{
 		if ( IsReadOnlyVisit || Paths == null )
 			return CellBuildResult.NotPath;
-		var result = Paths.Remove( x, y );
+		// [EXT:removable-access-cells] the path cell the placement laid outside an entrance or exit (flag 0x20) can be removed, where tp.exe's cell clear keeps a NoModify cell that has neighbours (the forced clear 0x5367A0(0, 0) refuses it with "Removing path cell with no neighbours but NOMODIFY set" otherwise); the map start's initial path stays fixed
+		var access = IsAccessCell( x, y );
+		var result = access ? Paths.RemoveFixed( x, y ) : Paths.Remove( x, y );
 		if ( result == CellBuildResult.Ok )
+		{
 			LastActionMessage = "Removed a path cell.";
+			if ( access )
+				AfterAccessCellRemoved( new HashSet<(int X, int Y)> { (x, y) } );
+		}
 		return result;
+	}
+
+	/// <summary>Whether (x, y) is a cell outside the entrance or exit of a placed object (the cells its placement lays, <see cref="ObjectAccessCells"/>).</summary>
+	private bool IsAccessCell( int x, int y ) =>
+		Objects.Objects.Any( item => ObjectAccessCells.IsOutsideCell( item.AccessPoints, x, y ) );
+
+	/// <summary>
+	/// After cells a placement laid were removed: guests standing on them are set down, and each ride whose entrance or exit resolved to one resolves it again, which falls back to the
+	/// nearest walkable path as for a cell nothing laid (<see cref="ResolveVisitorCells"/>).
+	/// </summary>
+	private void AfterAccessCellRemoved( IReadOnlySet<(int X, int Y)> removed )
+	{
+		if ( Guests == null )
+			return;
+		Guests.SetDownOffCells( removed );
+		RefreshVisitorCells( Objects.Objects.Where( item => item.Runtime.IsAttraction ).Select( item => (item.AccessPoints, item.Runtime.Visitors) ), Guests.Grid, removed );
+	}
+
+	/// <summary>
+	/// Resolves the entrance and exit cells again of each ride that used one of the <paramref name="removed"/> cells (as its entrance, exit or outside cell), and recomputes its queue:
+	/// the entrance falls back to the nearest walkable path as for a ride nothing laid cells for. A ride the grid has no path for keeps its cells (the guests' own checks drop a goal they cannot reach).
+	/// </summary>
+	internal static void RefreshVisitorCells( IEnumerable<(IEnumerable<ObjectAccessPoint> Points, RideVisitorBridge Bridge)> rides, GuestPathGrid grid, IReadOnlySet<(int X, int Y)> removed )
+	{
+		foreach ( var (points, bridge) in rides )
+		{
+			var access = points.ToArray();
+			if ( !bridge.HasCells )
+				continue;
+			var affected = removed.Contains( bridge.EntranceCell ) || removed.Contains( bridge.ExitCell ) || access.Any( point => removed.Contains( (point.OutsideX, point.OutsideY) ) );
+			if ( !affected || ResolveVisitorCells( access, grid ) is not { } cells )
+				continue;
+			bridge.EntranceCell = cells.Entrance;
+			bridge.ExitCell = cells.Exit;
+			bridge.RecomputeQueue( grid );
+		}
 	}
 
 	/// <summary>
@@ -567,7 +611,15 @@ public partial class Level
 		var ride = QueueRideAt( Guests.Grid, Guests.Attractions, x, y );
 		if ( ride == null )
 			return 0;
-		var removed = QueuePaths.RemoveFrom( Guests.Grid, ride, x, y );
+		// [EXT:removable-access-cells] the queue front the placement laid (flag 0x20) can be removed with the queue behind it, where tp.exe's cell clear keeps a NoModify cell unless it is forced (0x5367D4..0x5367E0)
+		var removedCells = ride.QueueCells.Contains( (x, y) ) ? ride.QueueCells.SkipWhile( cell => cell != (x, y) ).ToHashSet() : new HashSet<(int X, int Y)> { (x, y) };
+		var removed = QueuePaths.RemoveFrom( Guests.Grid, ride, x, y, removeFixed: true );
+		if ( removed > 0 )
+		{
+			// the guests standing on the emptied cells leave the queue on the nearest path; the ride's entrance resolves again when it used one of them
+			Guests.SetDownOffQueueCells( removedCells );
+			AfterAccessCellRemoved( removedCells );
+		}
 		var owner = Objects.Objects.FirstOrDefault( item => item.Visitors == ride );
 		if ( Park != null && owner != null && GetEconomyInstance( owner ) is int instance )
 		{
@@ -814,6 +866,7 @@ public partial class Level
 	}
 
 	/// <summary>The remove tool: the object under the cursor, else a queue cell, else a path cell.</summary>
+	// [EXT:dev-one-click-remove] the developer panel's one-click remove tool takes whatever stands on the clicked cell (an object, else a queue cell, else a path cell); the original removes each through its own tool (the bulldozer 0x52BDD0, the queue and path tools' undo, the sale of a ride) and has no combined click
 	public bool RemoveAt( int x, int y ) =>
 		RemoveObjectAt( x, y ) || RemoveQueueCell( x, y ) > 0 || RemovePathCell( x, y ) == CellBuildResult.Ok;
 

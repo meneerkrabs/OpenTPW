@@ -369,7 +369,8 @@ NoModify, an object of lower overwrite priority) and the exit's as a path cell (
 and a NoModify path cell outside the exit, linked by the path link writer. For any other type the entrance's outside cell is validated as a path cell and laid as the exit's is,
 and the exit gets nothing. A cell off the map refuses the placement. The cells are free (the commit runs with the free flag `0x8186D4` set, so the cell setter
 charges nothing), unless the balance is negative, when the cell setter refuses them. Easymode's eight rides, shops and toilets carry exactly these cells
-(tested). The placement also lays the first track tile of a kart or water ride (option `0x81ECAC`, `0x5286A0`), which is not modelled (the station-derived start,
+(tested). The remove tools take these cells although they are `NoModify` (`[EXT:removable-access-cells]`, [PATHS.md](PATHS.md)); the commit's op 0x87 on them demolishes a lower-priority
+owner, and in the corpus every type with a queue has one entrance and one exit and every other type at most one entrance and no exit. The placement also lays the first track tile of a kart or water ride (option `0x81ECAC`, `0x5286A0`), which is not modelled (the station-derived start,
 TRACK-005).
 
 ## The cell record the placement writes

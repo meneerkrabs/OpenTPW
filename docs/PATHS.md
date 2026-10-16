@@ -70,9 +70,12 @@ end inside the rectangle and none of the scanned cells (the first cell past each
 footprints). The flag 0x10 is written only by the placement's `+` and `#` footprint cells, the track add-ons (`ParkCellMap.WriteFootprint`).
 `APPROX:PATH-005` (the missing owner word and the untraced writer of the flag) is retired. A park whose objects do not type their cells (a
 Theme Park Inc layout, whose placement is not traced) clears by the object standing on each cell. The developer panel's one-click remove tool
-(an object, else a queue cell, else a path cell) is OpenTPW's and has no original counterpart. Removal is `ClearCell`'s forced path case (tp.exe `0x52c11f`): every bit of the cell's link byte, diagonals included, is
+(an object, else a queue cell, else a path cell) is `[EXT:dev-one-click-remove]`: it is OpenTPW's and has no original counterpart. Removal is `ClearCell`'s forced path case (tp.exe `0x52c11f`): every bit of the cell's link byte, diagonals included, is
 cleared on both sides (tp.exe `0x5367A0`), no refund. A `NoModify` cell that still has linked neighbours stays; without
-neighbours the flag is dropped and the cell is removed.
+neighbours the flag is dropped and the cell is removed. The one exception is `[EXT:removable-access-cells]`: the cells a placement lays outside an
+entrance or exit (the queue front and the path stubs, all `NoModify`) can be removed by the path and queue removal tools, which the original's cell clear keeps (`0x5367D4`).
+The map start's initial path stays fixed. The ride's entrance and exit then resolve to the nearest walkable path as for a ride nothing laid cells for, the guests standing
+on the emptied cells are set down (queued guests leave the queue, QUEUE-015), a queue or path can be laid on the cell again, and demolishing the ride clears what is left.
 Backspace over a path cell with no tool on uses the counted case (tp.exe
 `0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
 when it was laid once (`ParkPathBuilder.RemoveOnce`).

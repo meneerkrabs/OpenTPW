@@ -166,6 +166,8 @@ internal static class ParkResumeSaveFile
 						$"a train of coaster {ride.AttractionId} holds {train.Cars.Count} cars, not the definition's {definition.MaxCars}" );
 					Require( train.BoardingCars == null || train.BoardingCars.Count == definition.MaxCars,
 						$"a train of coaster {ride.AttractionId} holds {train.BoardingCars?.Count} boarding lists, not the definition's {definition.MaxCars}" );
+					Require( train.ReferenceCar == null || train.ReferenceCar == definition.ReferenceCar,
+						$"a train of coaster {ride.AttractionId} is placed by car {train.ReferenceCar}, not the definition's reference car {definition.ReferenceCar}" );
 				}
 			}
 		}
@@ -1023,6 +1025,8 @@ internal static class ParkResumeSaveFile
 			Require( ride.SpeedSetting >= 0, $"coaster {ride.AttractionId}'s speed setting {ride.SpeedSetting} is negative" );
 			Require( ride.SeatsPerTrain >= 0, $"coaster {ride.AttractionId}'s trains seat {ride.SeatsPerTrain}" );
 			Require( float.IsFinite( ride.SpeedCap ) && ride.SpeedCap >= 0, $"coaster {ride.AttractionId}'s speed cap {ride.SpeedCap} is negative or not finite" );
+			Require( ride.LeadCarCoordinate is null || (float.IsFinite( ride.LeadCarCoordinate.Value ) && ride.LeadCarCoordinate >= 0),
+				$"coaster {ride.AttractionId}'s lead car coordinate {ride.LeadCarCoordinate} is negative or not finite" );
 			Require( ride.PaidCost >= 0, $"coaster {ride.AttractionId} paid {ride.PaidCost} for its track" );
 			Require( double.IsFinite( ride.TimeSeconds ) && ride.TimeSeconds >= 0, $"coaster {ride.AttractionId}'s clock {ride.TimeSeconds}s is negative or not finite" );
 			Require( ride.LastDispatch is null || double.IsFinite( ride.LastDispatch.Value ),
@@ -1065,6 +1069,8 @@ internal static class ParkResumeSaveFile
 					$"coaster {ride.AttractionId}'s train {train} state {saved.State} is not a train state" );
 				Require( saved.Flags is null || (saved.Flags.Value & ~(int)(CoasterTrainFlags.Braking | CoasterTrainFlags.InStation | CoasterTrainFlags.Bumped | CoasterTrainFlags.Headway)) == 0,
 					$"coaster {ride.AttractionId}'s train {train} carries unknown flags {saved.Flags}" );
+				Require( saved.ReferenceCar is null || (saved.ReferenceCar >= 0 && saved.ReferenceCar < Math.Max( 1, saved.Cars?.Count ?? 0 )),
+					$"coaster {ride.AttractionId}'s train {train} is placed by car {saved.ReferenceCar}, outside its cars" );
 				Require( saved.FirstBoardingCar >= 0 && saved.LastBoardingCar >= saved.FirstBoardingCar && saved.LastBoardingCar < Math.Max( 1, saved.Cars?.Count ?? 0 ),
 					$"coaster {ride.AttractionId}'s train {train} boards cars {saved.FirstBoardingCar}..{saved.LastBoardingCar}, outside its cars" );
 				Require( float.IsFinite( saved.Position ) && saved.Position >= 0,

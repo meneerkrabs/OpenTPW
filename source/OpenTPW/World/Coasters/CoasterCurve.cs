@@ -184,7 +184,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	/// The knot controls of every knot; the first knot has no previous neighbour and the last none after it (a closed chain's last knot, the station
 	/// end node, has the second knot as its next one), so those chords are 1.0.
 	/// </summary>
-	private static (SVector3 Back, SVector3 Forward)[] Controls( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed )
+	internal static (SVector3 Back, SVector3 Forward)[] Controls( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed )
 	{
 		var count = knots.Count;
 		var controls = new (SVector3 Back, SVector3 Forward)[count];
@@ -269,7 +269,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var next = NextKnot( pair );
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
 			var (yaw, pitch) = Orientation( tangent );
-			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the second rail B(t) of the slice frame: at pylon-less knots the PC offset is (0, 1, 0), roll 0, as here (0x4313f0), and (−sin a, 0, −cos a) only on loop-flagged ones (0x43137c..0x4313e6); between knots the second rail needs the pylon tag frames (COAST-015) — evidence needed: the pylon mesh tags
+			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the original's slice roll (0x43e6b0): the second rail's roll about the slice tangent plus the lerp of the two nodes' tag rolls (+0xe4); a non-loop knot's second rail is the knot + (0, 1, 0), a loop node's 2 × its tag's up row (pylon, 0x430ed0) or (−sin a, 0, −cos a) (pylon-less, 0x43137c..0x4313e6) — blocked on the pylon tag knots (COAST-015)
 			var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
 			samples.Add( new CoasterSample
 			{
@@ -286,7 +286,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		// [BIN:STP-PPC:0x10044FF4 sampler] from t = 0 (sample 0 = the first knot) walk t in steps of 0.05, sum the chord lengths, place a sample on the current chord where the sum reaches 3.0 (fraction (3 − sum before)/d), restart the sum and realign t to the next multiple of 0.05
 		// [BIN:TPW-EXE:0x440c10 closing pair] the walk covers every pair of the node list; at the end node (no next node) the closing pair runs from the last knot to the second node's first knot (head +0x64), emits ONE sample (t may pass 1: no pair follows, 0x4416f0), then the count n is the number of samples written, the last sample is copied into slot n (0x441783) and n grows by one when n ≤ trunc(c) + (frac(c) ≠ 0) with c the coordinate of the end knot (ctl +0xa8, 0x4417a0..0x4417d5)
 		// [BIN:TPW-EXE:0x440c10 knot coordinate] a knot's coordinate is the index of the last sample before it plus (the distance walked since that sample + the distance from the last walked point to the knot) / spacing (0x4410e0..), the first knot's is 0; the station window and the swing's fade read the coordinates of S2 and the end node
-		// [BIN:TPW-EXE:0x441783 slot n copy] the copy of the last sample in slot n (the car point of the last sample reads it, 0x4409b0) is not kept: the car point wraps to sample 0 (COAST-022); the growth of n is applied literally and cannot happen here, the end knot's coordinate lying less than one sample past the last one before it
+		// [BIN:TPW-EXE:0x441783 slot n copy] the copy of the last sample in slot n (the car point of the last sample reads it, 0x4409b0) is the controller's Slot(n): the point after the last sample is the last sample itself (CoasterRide.SampleAt); the growth of n is applied literally and cannot happen here, the end knot's coordinate lying less than one sample past the last one before it
 		var pair = 0;
 		var previousPoint = Point( 0, 0 );
 		var tPrevious = 0f;

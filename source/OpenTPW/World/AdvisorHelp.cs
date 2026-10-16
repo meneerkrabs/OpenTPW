@@ -94,19 +94,30 @@ internal static class AdvisorUiHelp
 	// [BIN:TPW-EXE:0x0049FB30 loans window] lender columns 0xAA-0xB0: posts 0xC3 (195) at 0x4A0286, withdraws it at 0x49F53E
 	// [BIN:TPW-EXE:0x0049AC60 financial information window] titles 0xA2-0xA9 (Bank Balance .. Staff Costs): posts 0xC5 (197) at 0x49B503, withdraws it at 0x49A139
 	// [BIN:TPW-EXE:0x004A52A0 park information window] titles 0x97-0x9E (People In Park .. Top 3 Thoughts): posts 0xC7 (199) at 0x4A5DF3, withdraws it at 0x4A49F0
+	// [BIN:TPW-EXE:0x004B6080 employee window] posts 0xC0 (192) at 0x4B60B9, withdraws it at 0x4B5CF8 (message 0x14, with 0xD4 at 0x4B5D05)
 	// [BIN:TPW-EXE:0x00493530 all visitors window] columns 0x71-0x76 (Visitor Number .. Happiness): posts 0x11E (286) at 0x4937CA, withdraws it at 0x4933D2
 	// [BIN:TPW-EXE:0x00498D80 ticket price window] title text 0xA0 (Ticket Price): posts 0x12F (303) at 0x499038, withdraws it at 0x498CC7
+	// [BIN:TPW-EXE:0x0049B9DD hire help] the hire posts 0x135 (309, place your new staff member) at 0x49B9DD once the hire window is closed; the Place tool's end (0x46C890) withdraws it at 0x46C8D4
 	public static readonly IReadOnlyDictionary<string, int> Windows = new Dictionary<string, int>( StringComparer.Ordinal )
 	{
 		["buy"] = 188,
 		["staff"] = 189,
 		["attractions"] = 191,
+		["employee"] = 192,
 		["loans"] = 195,
 		["finance"] = 197,
 		["parkInfo"] = 199,
 		["visitors"] = 286,
 		["entryPrice"] = 303,
+		[Hud.ParkHud.StaffPlacementHelp] = 309,
 	};
+
+	/// <summary>
+	/// Whether F1 in the HUD window named <paramref name="window"/> repeats the last tutorial advice: the procedures of the eight help
+	/// windows pass the key messages they do not handle to the default window procedure, whose F1 row replays it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00488BA0 default window procedure] called with the window message from the procedures of the buy (0x4AC80B), hire staff (0x49B768), all attractions (0x495331), loans (0x49F81B), finance (0x49A100, 0x49A149, 0x49A1B7), park information (0x4A4A9B), all visitors (0x49337C) and ticket price (0x498D53, in 0x498C60 with its withdrawal 0x498CC7) windows, each beside its window's withdrawal call; seven more callers (0x48D27E, 0x495EE5, 0x4A8111, 0x4A9B3A, 0x4B26F7, 0x4B7ADA and one of the finance sites) belong to windows not identified
+	public static bool RepeatsTutorialOnHelpKey( string? window ) => window != null && Windows.ContainsKey( window );
 
 	/// <summary>The help message of the HUD window named <paramref name="window"/>, or null when it has none.</summary>
 	public static int? MessageFor( string window ) => Windows.TryGetValue( window, out var message ) ? message : null;

@@ -125,7 +125,8 @@ internal sealed class AdvisorClipDurations
 /// </summary>
 /// <param name="TimerMilliseconds">
 /// The effect timer a fixed row's timer entry sets (the clip sum before the entry plus its milliseconds), on the advisor
-/// clock relative to the clip start; null without one. The timer's effect is not ported (ADVISOR-025).
+/// clock relative to the clip start; null without one. When the clock reaches it, the advisor plays <c>cat_ui</c>
+/// <see cref="AdvisorSequences.TimerSound"/> (its particle and HUD counter effects are ADVISOR-025).
 /// </param>
 /// <param name="AccessoryBits">
 /// For a fixed row, the accessory bits (<c>entry &amp; 0x7F0000</c> shifted down by 16) of each clip, parallel to <paramref name="Clips"/>;
@@ -177,6 +178,10 @@ internal static class AdvisorFixedSequences
 /// <summary>The advisor's animation sequences: the generator of the original's 550 generated responses.</summary>
 internal static class AdvisorSequences
 {
+	/// <summary>The <c>cat_ui</c> sound a fixed sequence's timer plays (the ticket/key advice, sequences 28 and 29).</summary>
+	// [BIN:TPW-EXE:0x005999B2 advisor timer] 0x51BFC0(0, [0x803A2C] = global cat_ui (0x51EBE7), 0xC6, 0, 0, 0): flat, handle not kept
+	public const uint TimerSound = 0xC6;
+
 	/// <summary>A sequence holds at most this many clips before the closing clip 15.</summary>
 	public const int MaximumClips = 19;
 	/// <summary>The milliseconds added to the speech length for the generator's budget.</summary>
@@ -248,7 +253,7 @@ internal static class AdvisorSequences
 			if ( entry.IsTimer )
 			{
 				// [BIN:TPW-EXE:0x00599880 advisor update] when the advisor clock reaches the timer (0x599991) the update calls the particle effect 0x521E60 (87, 90000, 0, 7000), plays sound 0xC6 (0x51BFC0) and calls 0x4B9340, the HUD golden-ticket/key counter refresh (shows or hides controls 0x1E0EA-0x1E0F1, formats "%d x" with the key count 0x5AF680, particle 0x61 when the ticket count drops)
-				// [APPROX:ADVISOR-025] the timer is recorded on the sequence (the clip sum so far plus its milliseconds), but its effect (particle 87, sound 0xC6, the HUD ticket/key counter refresh 0x4B9340) is not ported — evidence needed: the effects of 0x521E60 with these arguments and of 0x4B9340
+				// [APPROX:ADVISOR-025] the timer's sound plays (Advisor.Update), but its particle 87 at native (90000, 0, 7000) is not started — template 87 (Key) is screen-space (+5), which OpenTPW's particle renderer does not draw, and the coordinates' screen mapping is not read — and the HUD ticket/key counter refresh 0x4B9340 has no counter to refresh (UI-051) — evidence needed: the screen-space particle draw path and the HUD counter
 				timer = sum + entry.TimerMilliseconds;
 				continue;
 			}
@@ -329,6 +334,15 @@ internal readonly record struct AdvisorSpeechStart( long RequestMilliseconds, bo
 
 	/// <summary>Milliseconds the LIP clock reads at advisor-clock time <paramref name="nowMilliseconds"/> (wrap-safe): the clock minus <see cref="LipBaseMilliseconds"/>.</summary>
 	public long LipMilliseconds( long nowMilliseconds ) => unchecked((uint)(nowMilliseconds - LipBaseMilliseconds));
+
+	/// <summary>
+	/// Whether a sequence timer <paramref name="timerMilliseconds"/> after the request is due: the deadline minus the clock, as a signed
+	/// 32-bit difference, is not positive.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005994A5 response player] a set timer is moved to the request's clock value (+ esi) when the response starts
+	// [BIN:TPW-EXE:0x00599991 advisor update] it fires when timer - now (sub, signed test) is not above 0, then clears (0x5999D1)
+	public bool TimerDue( long nowMilliseconds, int timerMilliseconds ) =>
+		unchecked((int)((uint)(RequestMilliseconds + timerMilliseconds) - (uint)nowMilliseconds)) <= 0;
 
 	/// <summary>Whether <paramref name="spanMilliseconds"/> have not yet passed since the request (wrap-safe).</summary>
 	public bool Within( long nowMilliseconds, uint spanMilliseconds ) => unchecked((uint)(nowMilliseconds - RequestMilliseconds)) < spanMilliseconds;

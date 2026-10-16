@@ -5,7 +5,7 @@ namespace OpenTPW.FrontEnd;
 public sealed partial class FrontEndMenu
 {
 	/// <summary>Whether the enter-park sound (cat_globallobbysfx 4) plays for the game mode that follows: not in Instant Action (game type 2).</summary>
-	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action plays cat_globallobbysfx 4 unless the game type that follows is 2 (Instant Action); Mac-traced, the PC enter action was not checked
+	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action plays cat_globallobbysfx 4 unless the game type that follows is 2 (Instant Action); the PC enter routine 0x4b8fd0 skips it the same way while the game-mode global 0xfb3b7c is 2
 	internal static bool EnterParkSoundPlays( bool instantAction ) => !instantAction;
 
 	private static void PlayEnterPark( bool instantAction )

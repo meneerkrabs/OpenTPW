@@ -71,6 +71,13 @@ public sealed class CoasterCarTypes
 	private static float Float( string text ) => float.TryParse( text.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value ) && float.IsFinite( value ) ? value : 0;
 }
 
+/// <summary>
+/// What a car type contributes to its train (car type record <c>+0x24</c>, <c>+0x28</c>, <c>+0x30</c>, set by <c>0x430130</c>): the distance
+/// from the car's pivot to its front and to its rear in world units, each with the type's distance add, and its head sockets (seats).
+/// </summary>
+// [BIN:TPW-EXE:0x430130 car type metrics] +0x24 = fFrontDistanceAdd + (model bounds max Z − root node Z), +0x28 = fRearDistanceAdd − (bounds min Z − root node Z) with the bounds of the MD2 header (+0x80..+0x94) and the root node's translation Z (node +0x48); +0x30 = the number of dummy attribute records with flag 0x80 (0x44b2b0); a type whose model does not load keeps the zero-initialised fields (no extent beyond nothing, no seat)
+public readonly record struct CoasterCarMetrics( float FrontExtent, float RearExtent, int Heads );
+
 /// <summary>A car pose on the track: the point, the yaw and pitch of its direction and the roll.</summary>
 public readonly record struct CoasterCarPose( NVector3 Position, float Yaw, float Pitch, float Roll );
 
@@ -78,8 +85,9 @@ public readonly record struct CoasterCarPose( NVector3 Position, float Yaw, floa
 /// A train car model (an MD2 such as <c>CrocCar.MD2</c>, <c>cart.MD2</c> or <c>ape.MD2</c>) baked at its rest pose around its root node: the mesh parts, the extents
 /// along the car (the model's forward axis is +Z, the car's front is its maximum Z) and the head sockets of its seats.
 /// </summary>
-// [BIN:TPW-EXE:0x43ce20 car pose] each frame a car stands at the curve point of its coordinate (the train's coordinate plus the car's offset over the sample spacing, interpolated between two samples, 0x43c0a0) with the yaw, pitch and roll of that point turned into a matrix (0x43d8f0: roll, then pitch, then yaw) and the car type's fYOffset added along the turned up axis; the car's own wheel animation runs at +0x1c times the train speed
-// [APPROX:COAST-034] cars are posed at the interpolated sample point with the sample direction and bank, spaced by their model extents plus the car type's distance adds, and drawn as the static rest mesh: the bend of flume cars (bBendCar with fBendElevationLow/High), the wheel and head animation clips (M1..M3) and the train's front-car reference are not reproduced, and the model's forward axis is taken as +Z — evidence needed: the car matrix consumer of node +0x78 (0x474050) and the bend-car pose
+// [BIN:TPW-EXE:0x43ce20 car pose] each frame a car stands at the curve point of its coordinate (the train's coordinate plus the car's offset over the sample spacing, CoasterRide.CarPose, 0x43c0a0) with the yaw, pitch and roll of that point turned into a matrix (0x43d8f0: roll, then pitch, then yaw) and the car type's fYOffset added along the turned up axis; the car's own wheel animation runs at +0x1c times the train speed
+// [BIN:TPW-EXE:0x43d8f0 car matrix] the car's model root node gets the rotation roll (+0xc), then pitch (+8), then yaw (+4) from identity, so the model's +Z runs along the track, and the root's translation (+0x40..+0x48) the car point plus the turned fYOffset (0x43d6b2)
+// [APPROX:COAST-034] cars are drawn as their static rest mesh: the bend of bBendCar types (0x438800 with the angle tables of 0x438ab0: every vertex of the car's mesh, at its local Z over the samples around the car, takes the yaw and pitch of the track there relative to the car's and rises by fBendElevationLow, or fBendElevationHigh on flag-8 samples) and the model clip of slot 0 (set up by 0x43be10 and played at the car type's +0x1c × the train speed through 0x474050, on non-bend cars only) are not reproduced
 public sealed class CoasterCarRig
 {
 	public CoasterCarRig( ModelFile model )
@@ -115,16 +123,24 @@ public sealed class CoasterCarRig
 		Parts = parts;
 		FrontExtent = parts.Count == 0 ? 0 : MathF.Max( maxZ, 0 );
 		RearExtent = parts.Count == 0 ? 0 : MathF.Max( -minZ, 0 );
+		// [BIN:TPW-EXE:0x4301f5 car head sockets] the car type's socket j is the node of the (j + 1)-th attribute record with flag 0x80 (0x44b270(model, 0x80, j + 1), the record index; record i belongs to the node stored as header +0x46 + i, 0x44ab90), in record order whatever the records' values
 		var seats = new List<(int Node, Matrix4x4 Local)>();
-		for ( var id = 1; id < 64; id++ )
+		for ( var index = 0; index < model.DummyAttributes.Count; index++ )
 		{
-			var node = RideHeadSpace.NodeForHead( model, id );
-			if ( node == RideHeadSpace.NoRecord )
-				break;
+			if ( (model.DummyAttributes[index].Type & RideHeadSpace.HeadFlag) == 0 )
+				continue;
+			var stored = model.Counts.Unknown46 + index;
+			var node = model.Nodes.FirstOrDefault( candidate => candidate.StoredIndex == stored )?.Index ?? -1;
 			if ( node >= 0 )
 				seats.Add( (node, rest[node] * shift) );
 		}
 		Seats = seats;
+		// [BIN:TPW-EXE:0x430130 car extents] the header bounds and the root node's local translation (the original reads the loaded header, +0x80..+0x94, and [+0x78]+0x48)
+		var rootZ = model.RootNodeIndex >= 0 ? model.Nodes[model.RootNodeIndex].Transform.M43 : 0f;
+		ModelFrontExtent = model.BoundsMax.Z - rootZ;
+		ModelRearExtent = rootZ - model.BoundsMin.Z;
+		// [BIN:TPW-EXE:0x44b2b0 head count] the dummy attribute records whose flag word has bit 0x80
+		HeadSockets = model.DummyAttributes.Count( attribute => (attribute.Type & RideHeadSpace.HeadFlag) != 0 );
 		var seat = RideSeat.FindNode( model );
 		CameraSeat = seat >= 0 ? rest[seat] * shift : null;
 	}
@@ -137,23 +153,19 @@ public sealed class CoasterCarRig
 	public float FrontExtent { get; }
 	/// <summary>Distance from the pivot to the car's rear (minimum Z) in model units.</summary>
 	public float RearExtent { get; }
+	/// <summary>The MD2 header's maximum Z minus the root node's Z: how far the model reaches in front of its pivot (<c>0x430130</c>).</summary>
+	public float ModelFrontExtent { get; }
+	/// <summary>The root node's Z minus the MD2 header's minimum Z: how far the model reaches behind its pivot.</summary>
+	public float ModelRearExtent { get; }
+	/// <summary>The number of head sockets (dummy attribute records with flag 0x80): the seats a car of this model offers.</summary>
+	public int HeadSockets { get; }
+	/// <summary>The car type's contribution to its train: the model's extents plus the type's distance adds, and the head sockets.</summary>
+	public CoasterCarMetrics Metrics( CoasterCarType type ) => new( type.FrontAdd + ModelFrontExtent, type.RearAdd + ModelRearExtent, HeadSockets );
 	/// <summary>The head sockets in head-id order: the model node and its matrix relative to the pivot (MD2 axes).</summary>
 	public IReadOnlyList<(int Node, Matrix4x4 Local)> Seats { get; }
 	/// <summary>The car model's camera seat (<see cref="RideSeat"/>) relative to the pivot in MD2 axes, null when the model has none.</summary>
 	// [BIN:TPW-EXE:0x42a560 ride camera] a coaster's ride camera takes the node the seat lookup 0x44b220(model, 0x1000, 1) finds in the car model (coasta/megacost cart, minecart cart node 5 "camera")
 	public Matrix4x4? CameraSeat { get; }
-
-	/// <summary>
-	/// The distance from the front car's pivot back to each car's pivot: the previous car's rear extent plus the car's front extent (each with the type's distance add).
-	/// </summary>
-	// [BIN:TPW-EXE:0x42fad0 car spacing] the loader sums the rear extent of the car before and the front extent of the car itself between neighbouring cars (definition +0x30c..+0x314 for front, centre and rear pairs) and adds one such distance per car to the train length
-	public static float[] CarOffsets( IReadOnlyList<(float Front, float Rear)> extents )
-	{
-		var offsets = new float[extents.Count];
-		for ( var car = 1; car < offsets.Length; car++ )
-			offsets[car] = offsets[car - 1] + extents[car - 1].Rear + extents[car].Front;
-		return offsets;
-	}
 
 	/// <summary>The pose at a position in samples of a closed track: the point interpolated between the two samples, the direction and bank interpolated the same way.</summary>
 	public static CoasterCarPose PoseAt( IReadOnlyList<CoasterSample> samples, float position )

@@ -260,7 +260,8 @@ public sealed partial class ParkHud
 	}
 
 	/// <summary>A left click on a row: opens the object's info panel (the info arm) and keeps the list.</summary>
-	// [BIN:TPW-EXE:0x6655a2 list click] a click of button 0 selects the row and posts 0x400, which opens the object's info panel and keeps the list (button 0 = left is medium confidence, [APPROX:UI-910])
+	// [BIN:TPW-EXE:0x6655a2 list click] a click of button 0 selects the row and posts 0x400, which opens the object's info panel and keeps the list
+	// [BIN:TPW-EXE:0x634963 mouse button codes] button 0 is the primary (left) button: DirectInput's DIMOFS_BUTTON0 (dwOfs 0xc) becomes code 0xf0 (0x63497c), kept primary when Windows swaps the buttons (0x634420), and 0x486ca1 turns 0xf0 into button 0
 	private void OpenSelectedAttractionInfo()
 	{
 		var match = level.ListAttractions().FirstOrDefault( item => item.Runtime.AttractionId == selectedAttractionId );

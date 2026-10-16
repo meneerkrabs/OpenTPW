@@ -16,6 +16,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 	private readonly PausableClock clock;
 	// Tests substitute a controllable speech state for the presentation (see the internal constructor).
 	private readonly Func<bool>? speechActive;
+	// The slap's one-of-three choice: a local presentation stub (the original's CRT rand()), never a world or guest stream.
+	private readonly Func<int> slapDraw;
+	private readonly Action<uint> playSlap;
 	private Advisor? presentation;
 	private bool presentationFailed;
 	private Level? level;
@@ -31,11 +34,16 @@ internal sealed class AutomaticAdvisor : IDisposable
 
 	/// <param name="milliseconds">The running clock the pause snapshots resume (tests supply a controllable one).</param>
 	/// <param name="speechActive">The speech state (tests substitute a controllable one for the presentation); null reads the presentation.</param>
-	internal AutomaticAdvisor( AdvisorController controller, Func<long> milliseconds, Func<bool>? speechActive = null )
+	/// <param name="slapDraw">The draw that picks the cut-off slap (tests supply a fixed one); null uses a local unseeded generator.</param>
+	/// <param name="playSlap">Plays the slap's sound id (tests record it); null plays it through <see cref="GameAudio.PlaySpeechEffect"/>.</param>
+	internal AutomaticAdvisor( AdvisorController controller, Func<long> milliseconds, Func<bool>? speechActive = null, Func<int>? slapDraw = null, Action<uint>? playSlap = null )
 	{
 		Controller = controller;
 		clock = new PausableClock( milliseconds );
 		this.speechActive = speechActive;
+		var random = slapDraw == null ? new Random() : null;
+		this.slapDraw = slapDraw ?? (() => random!.Next( 0x8000 ));
+		this.playSlap = playSlap ?? (sound => GameAudio.PlaySpeechEffect( sound ));
 	}
 
 	public AdvisorController Controller { get; }
@@ -48,7 +56,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 		try
 		{
 			var balance = AdvisorBalance.Load();
-			Log.Trace( $"Advisor scoring: {AdvisorBalance.Path}, minimum score {balance.MinimumScore}, {AdvisorTables.AllMessages.Count()} bound messages ({string.Join( ", ", AdvisorTables.Messages.Select( message => $"{message.MessageId}: {message.ScoreKey} {balance.ScoreOf( message.MessageId )}" ) ) + $", and the help messages at {balance.Scores.GetValueOrDefault( AdvisorTables.HelpScoreKey )}"})." );
+			Log.Trace( $"Advisor scoring: {AdvisorBalance.Path}, minimum score {balance.MinimumScore}, {AdvisorTables.AllMessages.Count()} bound messages ({string.Join( ", ", AdvisorTables.Messages.Select( message => $"{message.MessageId}: {message.ScoreKey} {balance.ScoreOf( message.MessageId )}" ) ) + $", and the help messages at {balance.Scores.GetValueOrDefault( AdvisorTables.HelpScoreKey )} (F1 replay {balance.ContextHelpScore})"})." );
 			return new AutomaticAdvisor( new AdvisorController( balance ) );
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException or UnauthorizedAccessException or OverflowException )
@@ -160,9 +168,41 @@ internal sealed class AutomaticAdvisor : IDisposable
 			CutOffSpeech();
 	}
 
-	/// <summary>A withdrawn message was being spoken: the advisor stops and vanishes (the original's slap path 0x5994E0 → "Kill advisor" 0x429D60).</summary>
-	// [APPROX:ADVISOR-027] The slap sound the cut-off plays (0x27F-0x281 through 0x51BFC0 once the speech handle is stopped) is not played and the last-tutorial copy the queue keeps at controller +0x16D0 (0x59A940) is not kept, nor is the branch 0x59AA7B-0x59AAC8 that clears the last-tutorial record's valid byte (+0x16E4) when the message is of group 1 (0x59C500 == 1) and +0x16DC is the message — a PC v2.0 video supports the sound (three cut-offs, each followed 0.27-0.30 s later by a loud 250-300 ms burst as the next advisor rises; an uninterrupted entry has none), but one cut-off coincides with a ride placement — evidence needed: the sound ids' samples in the global bank and the reader of +0x16D0/+0x16E8 (0x59A550)
-	private void CutOffSpeech() => presentation?.Kill();
+	/// <summary>The first of the three slap sounds of the global <c>cat_speech</c> category a cut-off plays.</summary>
+	internal const uint FirstSlapSound = 0x27F;
+
+	/// <summary>The slap a cut-off plays for a draw: <c>cat_speech</c> 0x27F, 0x280 or 0x281 for the draw modulo 3.</summary>
+	// [BIN:TPW-EXE:0x005995A4 slap choice] rand() (0x67B5C0, the CRT generator) modulo 3 (idiv by 3) picks 0x27F, 0x280 or 0x281, each submitted flat to the global cat_speech bank [0x803A34] (0x51EC42) through 0x51BFC0 with handle 0 and position 0, 0, 0; the handle it returns is not kept
+	internal static uint SlapSound( int draw ) => FirstSlapSound + (uint)(Math.Abs( draw % 3 ));
+
+	/// <summary>
+	/// A withdrawn message was being spoken: the advisor stops and vanishes (the original's slap path 0x5994E0 → "Kill advisor" 0x429D60),
+	/// and while its speech sound was still playing a slap sounds (<see cref="SlapSound"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x005994E0 slap path] with the advisor active (0xF7966C) and a speech handle (0xF79680) it stops the speech (0x51C0E0), kills the advisor (0x429D60), releases the handle (0x51C2C0) and then plays the slap; without a handle it takes the branch 0x599620, which does the same without the slap. The update 0x599902 re-validates the handle each frame (0x51C270) and zeroes it once the speech sound has ended, so a cut-off after the speech ended (within the 1000 ms the reservation adds) is silent
+	// OpenTPW plays the slap on the speech channel, as it plays the advisor's other cat_speech sounds
+	internal void CutOffSpeech()
+	{
+		var speaking = IsSpeechActive;
+		presentation?.Kill();
+		if ( speaking )
+			playSlap( SlapSound( slapDraw() ) );
+	}
+
+	/// <summary>
+	/// F1 in a HUD window whose procedure passes keys to the default window procedure: the last tutorial advice is offered again
+	/// (<see cref="AdvisorController.ReplayLastTutorial"/>).
+	/// </summary>
+	public void OnHelpKeyPressed()
+	{
+		if ( level == null )
+			return;
+		var admission = Controller.ReplayLastTutorial( GameTick, TutorialEnabled );
+		Log.Trace( admission is { } result
+			? $"Advisor F1: last tutorial advice {Controller.Queue.LastTutorial?.MessageId} {result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : "")}."
+			: "Advisor F1: no tutorial advice to repeat." );
+	}
+
 
 	private void Raise( AdvisorGameEvent gameEvent )
 	{

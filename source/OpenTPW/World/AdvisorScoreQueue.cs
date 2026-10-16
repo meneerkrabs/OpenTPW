@@ -43,13 +43,13 @@ internal sealed record AdvisorHistorySnapshot( uint SavedGameTick, int PreviousV
 
 /// <summary>
 /// The queue's own-format state for a park save: the eight pending records in slot order, the per-message
-/// history of the bound messages, and the action reservation the current speech holds. The controller has
-/// no other mutable state; an outstanding playback attempt cannot be captured (it exists only inside one
-/// <see cref="AdvisorController.Update"/> call).
+/// history of the bound messages, the action reservation the current speech holds and the last tutorial
+/// record (absent in saves from before it was kept: none). The controller has no other mutable state; an
+/// outstanding playback attempt cannot be captured (it exists only inside one <see cref="AdvisorController.Update"/> call).
 /// </summary>
 internal sealed record AdvisorQueueSnapshot(
 	IReadOnlyList<AdvisorPendingAdviceSnapshot?> Slots, IReadOnlyDictionary<int, AdvisorHistorySnapshot> History,
-	uint LastActionStarted, uint LastActionDuration, int? CurrentMessageId = null );
+	uint LastActionStarted, uint LastActionDuration, int? CurrentMessageId = null, AdvisorPendingAdviceSnapshot? LastTutorial = null );
 
 /// <summary>
 /// The original advisor controller's pending-advice queue and per-message history, ported from the
@@ -90,12 +90,19 @@ internal sealed class AdvisorScoreQueue
 	/// <summary>The message whose response started last (what the original keeps at controller +0x16EC); null before the first one and after a restore.</summary>
 	public int? CurrentMessageId { get; private set; }
 	public int Count => slots.Count( slot => slot != null );
+	/// <summary>
+	/// The last tutorial (group 1) advice offered to the queue, whether or not it was admitted (the original's record at controller
+	/// +0x16D0, its valid byte at +0x16E4); F1 in a HUD window offers it again (<see cref="ReplayLastTutorial"/>). Null when none is kept.
+	/// </summary>
+	public AdvisorPendingAdvice? LastTutorial { get; private set; }
 	public bool IsAttemptOutstanding => playbackAttempt.HasValue;
 
 	public AdvisorPendingAdvice? GetSlot( int index ) => slots[index];
 	public AdvisorMessageHistory GetHistory( int messageId ) =>
 		history.TryGetValue( messageId, out var value ) ? value : AdvisorMessageHistory.Empty;
 	public bool HasDescriptor( int messageId ) => descriptors.ContainsKey( messageId );
+	/// <summary>Whether the message is bound and of group 1 (tutorial), the group 0x59C500 reports as 1.</summary>
+	public bool IsTutorial( int messageId ) => descriptors.TryGetValue( messageId, out var descriptor ) && descriptor.MessageGroup == 1;
 
 	/// <summary>
 	/// Replaces the pending records and history with a loaded controller's. <paramref name="pending"/> has one entry
@@ -132,7 +139,8 @@ internal sealed class AdvisorScoreQueue
 				? new AdvisorPendingAdviceSnapshot( advice.MessageId, advice.Score, advice.ResponseVariantOverride, advice.OverrideOnlyOnce )
 				: null ).ToArray(),
 			history.ToDictionary( pair => pair.Key, pair => new AdvisorHistorySnapshot( pair.Value.SavedGameTick, pair.Value.PreviousVariant, pair.Value.HasBeenPlayed, pair.Value.SlapCount ) ),
-			LastActionStarted, LastActionDuration, CurrentMessageId );
+			LastActionStarted, LastActionDuration, CurrentMessageId,
+			LastTutorial is { } tutorial ? new AdvisorPendingAdviceSnapshot( tutorial.MessageId, tutorial.Score, tutorial.ResponseVariantOverride, tutorial.OverrideOnlyOnce ) : null );
 	}
 
 	/// <summary>
@@ -153,6 +161,12 @@ internal sealed class AdvisorScoreQueue
 		}
 		Require( snapshot.Slots.Count == Capacity, $"supply all {Capacity} pending slots" );
 		Require( snapshot.CurrentMessageId is not { } current || descriptors.ContainsKey( current ), "the current message has no bound descriptor" );
+		if ( snapshot.LastTutorial is { } tutorial )
+		{
+			Require( descriptors.TryGetValue( tutorial.MessageId, out var tutorialDescriptor ), $"the last tutorial message {tutorial.MessageId} has no bound descriptor" );
+			Require( tutorialDescriptor.MessageGroup == 1, $"the last tutorial message {tutorial.MessageId} is not of the tutorial group" );
+			Require( tutorial.ResponseVariantOverride >= -1, $"the last tutorial message {tutorial.MessageId}'s variant override is below none" );
+		}
 		foreach ( var item in snapshot.Slots )
 			if ( item != null )
 			{
@@ -182,6 +196,16 @@ internal sealed class AdvisorScoreQueue
 		LastActionDuration = snapshot.LastActionDuration;
 		// The reservation resumes with the message it belongs to (absent in saves from before help withdrawal: none).
 		CurrentMessageId = snapshot.CurrentMessageId;
+		LastTutorial = snapshot.LastTutorial is { } tutorial
+			? new AdvisorPendingAdvice( tutorial.MessageId, tutorial.Score, tutorial.ResponseVariantOverride, tutorial.OverrideOnlyOnce ) : null;
+	}
+
+	/// <summary>Replaces the last tutorial record with a loaded controller's (an original save's record at +0x16D0); it must be a bound tutorial message.</summary>
+	public void RestoreLastTutorial( AdvisorPendingAdvice? tutorial )
+	{
+		if ( tutorial != null && !IsTutorial( tutorial.MessageId ) )
+			throw new ArgumentException( "The last tutorial record needs a bound tutorial-group descriptor.", nameof( tutorial ) );
+		LastTutorial = tutorial;
 	}
 
 	/// <summary>
@@ -239,6 +263,10 @@ internal sealed class AdvisorScoreQueue
 
 	public AdvisorQueueAdmission Enqueue( AdvisorPendingAdvice advice, uint liveGameTick, bool tutorialEnabled )
 	{
+		ArgumentNullException.ThrowIfNull( advice );
+		// [BIN:TPW-EXE:0x0059A940 advisor enqueue] before the eligibility check 0x59ABC0, a record whose message is of group 1 (0x59C500 == 1) is copied whole (rep movsd, 6 dwords) to controller +0x16D0, admitted or not
+		if ( IsTutorial( advice.MessageId ) )
+			LastTutorial = advice;
 		var eligibility = Eligibility( advice, liveGameTick, tutorialEnabled );
 		if ( eligibility != AdvisorEligibility.Eligible )
 			return new( eligibility, false, -1 );
@@ -344,8 +372,11 @@ internal sealed class AdvisorScoreQueue
 	/// for good, its group's DiscardAfterSlaps) and the action reservation ends, which frees the controller for the next advice at once.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0059AA70 unadvise] drops the pending records with the message (0x59AA94-0x59AAB8); if the busy test (now < +0xD8 + +0xDC) holds and +0x16EC is the message, it stops the speech (0x5994E0), clears the played byte (+0xE8), adds one to the slap count (+0xEC) and zeroes +0xDC
+	// [BIN:TPW-EXE:0x0059AA7B unadvise] first, while the last tutorial record is valid (+0x16E4), a message of group 1 (0x59C500 == 1) that is the record's message (+0x16DC) clears its valid byte (0x59AAC8)
 	public AdvisorWithdrawal Withdraw( int messageId, uint advisorClock )
 	{
+		if ( LastTutorial?.MessageId == messageId && IsTutorial( messageId ) )
+			LastTutorial = null;
 		var removed = 0;
 		for ( var index = 0; index < Capacity; index++ )
 		{
@@ -363,5 +394,18 @@ internal sealed class AdvisorScoreQueue
 			LastActionDuration = 0;
 		}
 		return new AdvisorWithdrawal( removed, cancelled );
+	}
+
+	/// <summary>
+	/// F1 in a HUD window: the last tutorial record, when one is kept, is offered to the queue again at <paramref name="contextHelpScore"/>
+	/// with its once-only and slap checks overridden (the record itself keeps those changes, admitted or not). Null when none is kept.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059AB50 replay last tutorial] with +0x16E4 set: the record's score (+0x16E0) becomes the balance field +0x32C (HelpMessage.ContextHelpScore), its score-overridden byte (+0x16E6) and once-only override (+0x16E5) become 1, and it goes through the enqueue 0x59A940 again
+	public AdvisorQueueAdmission? ReplayLastTutorial( int contextHelpScore, uint liveGameTick, bool tutorialEnabled )
+	{
+		if ( LastTutorial is not { } tutorial )
+			return null;
+		LastTutorial = tutorial with { Score = contextHelpScore, OverrideOnlyOnce = true };
+		return Enqueue( LastTutorial, liveGameTick, tutorialEnabled );
 	}
 }

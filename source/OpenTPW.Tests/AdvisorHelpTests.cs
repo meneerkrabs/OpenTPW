@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace OpenTPW.Tests;
@@ -237,7 +238,8 @@ public class AdvisorHelpTests
 		ParkNowOpen.Score	20
 		ParkNowClosed.Score	20
 		PrebuiltPark.Score	700
-		HelpMessage.ContextHelpScore	1000
+		HelpMessage.Score	1000
+		HelpMessage.ContextHelpScore	1500
 		""";
 
 	private static AdvisorController Controller() => new( AdvisorBalance.Parse( Encoding.ASCII.GetBytes( Sam ), "test.sam" ) );
@@ -261,6 +263,106 @@ public class AdvisorHelpTests
 		Assert.IsNotNull( controller.Advise( 195, 100, 0, true ), "loans help: full simulation" );
 		Assert.IsNull( Controller().Advise( 195, 100, 2, true ), "not in Instant Action" );
 		Assert.IsNull( controller.Advise( 99999, 100, 0, true ), "no descriptor" );
+	}
+
+	[TestMethod]
+	public void HelpScoresHelpMessageScoreAndTheReplayContextHelpScore()
+	{
+		var controller = Controller();
+		Assert.AreEqual( 1000, controller.Balance.ScoreOf( 188 ), "the help descriptors' callback 0x59E8C0 reads +0x328, HelpMessage.Score" );
+		Assert.AreEqual( 1500, controller.Balance.ContextHelpScore, "the F1 replay reads +0x32C, HelpMessage.ContextHelpScore" );
+	}
+
+	[TestMethod]
+	public void EveryTutorialRecordOfferedIsKeptAdmittedOrNot()
+	{
+		var controller = Controller();
+		Assert.IsNull( controller.Queue.LastTutorial );
+		controller.HandleGameEvent( AdvisorGameEvent.Bankrupted, 100, 0, true );
+		Assert.IsNull( controller.Queue.LastTutorial, "event advice of group 0 is not a tutorial" );
+		Assert.AreEqual( AdvisorEligibility.TutorialDisabled, controller.Advise( 188, 100, 0, tutorialEnabled: false )!.Value.Eligibility );
+		Assert.AreEqual( new AdvisorPendingAdvice( 188, 1000 ), controller.Queue.LastTutorial, "copied before the eligibility check" );
+		controller.Advise( 189, 100, 0, true );
+		Assert.AreEqual( 189, controller.Queue.LastTutorial!.MessageId, "the latest tutorial record replaces it" );
+		controller.Withdraw( 188, 1000 );
+		Assert.AreEqual( 189, controller.Queue.LastTutorial!.MessageId, "withdrawing another message keeps it" );
+		controller.Withdraw( 189, 1000 );
+		Assert.IsNull( controller.Queue.LastTutorial, "withdrawing its own message clears it" );
+	}
+
+	[TestMethod]
+	public void F1OffersTheLastTutorialAgainAtTheContextScoreBypassingOnceOnly()
+	{
+		var controller = Controller();
+		Assert.IsNull( controller.ReplayLastTutorial( 100, true ), "nothing kept" );
+		controller.Advise( 188, 100, 0, true );
+		var played = new List<int>();
+		controller.Update( () => 1000, () => 100, response => { played.Add( response ); return 4000; } );
+		Assert.AreEqual( AdvisorEligibility.AlreadyPlayed, controller.Advise( 188, 100, 0, true )!.Value.Eligibility, "a plain repeat is once-only" );
+		var replay = controller.ReplayLastTutorial( 100, true );
+		Assert.AreEqual( new AdvisorQueueAdmission( AdvisorEligibility.Eligible, true, 0 ), replay );
+		Assert.AreEqual( new AdvisorPendingAdvice( 188, 1500, -1, true ), controller.Queue.GetSlot( 0 ) );
+		Assert.AreEqual( controller.Queue.GetSlot( 0 ), controller.Queue.LastTutorial, "the kept record carries the replay's score and override" );
+		controller.Update( () => 1000 + 4000 + 1000, () => 100, response => { played.Add( response ); return 4000; } );
+		CollectionAssert.AreEqual( new[] { 407, 407 }, played );
+		Assert.AreEqual( AdvisorEligibility.TutorialDisabled, controller.ReplayLastTutorial( 100, false )!.Value.Eligibility, "the tutorial option still gates it" );
+	}
+
+	[TestMethod]
+	public void TheLastTutorialRecordSurvivesASnapshotAndOldSnapshotsHaveNone()
+	{
+		var controller = Controller();
+		controller.Advise( 199, 100, 0, true );
+		var snapshot = controller.CaptureSnapshot();
+		Assert.AreEqual( new AdvisorPendingAdviceSnapshot( 199, 1000, -1, false ), snapshot.Queue.LastTutorial );
+		var restored = Controller();
+		restored.Advise( 188, 100, 0, true );
+		restored.RestoreSnapshot( snapshot );
+		Assert.AreEqual( new AdvisorPendingAdvice( 199, 1000 ), restored.Queue.LastTutorial );
+		restored.RestoreSnapshot( snapshot with { Queue = snapshot.Queue with { LastTutorial = null } } );
+		Assert.IsNull( restored.Queue.LastTutorial, "a save from before the record was kept restores none" );
+		Assert.ThrowsException<InvalidDataException>( () => restored.ValidateSnapshot( snapshot with { Queue = snapshot.Queue with { LastTutorial = new AdvisorPendingAdviceSnapshot( 106, 1000, -1, false ) } } ),
+			"only a tutorial-group message can be the last tutorial" );
+	}
+
+	[TestMethod]
+	public void AQueueSavedBeforeTheLastTutorialWasKeptLoadsWithNone()
+	{
+		var controller = Controller();
+		controller.Advise( 199, 100, 0, true );
+		var json = JsonNode.Parse( ParkResumeJson.Serialize( controller.CaptureSnapshot().Queue ) )!.AsObject();
+		Assert.IsTrue( json.Remove( "LastTutorial" ), "the current format writes the record" );
+		var queue = ParkResumeJson.Deserialize<AdvisorQueueSnapshot>( Encoding.UTF8.GetBytes( json.ToJsonString() ) );
+		Assert.IsNull( queue.LastTutorial, "a save written before the record was kept has none" );
+		var restored = Controller();
+		restored.RestoreSnapshot( controller.CaptureSnapshot() with { Queue = queue } );
+		Assert.IsNull( restored.Queue.LastTutorial );
+	}
+
+	[TestMethod]
+	public void ACutOffSlapsOnlyWhileTheSpeechPlays()
+	{
+		var slaps = new List<uint>();
+		var speaking = true;
+		var draws = new Queue<int>( new[] { 7, 9, 32767 } );
+		var advisor = new AutomaticAdvisor( Controller(), () => 0L, speechActive: () => speaking, slapDraw: draws.Dequeue, playSlap: slaps.Add );
+		advisor.CutOffSpeech();
+		advisor.CutOffSpeech();
+		advisor.CutOffSpeech();
+		CollectionAssert.AreEqual( new uint[] { 0x280, 0x27F, 0x27F + 32767 % 3 }, slaps, "cat_speech 0x27F + rand() % 3" );
+		speaking = false;
+		advisor.CutOffSpeech();
+		Assert.AreEqual( 3, slaps.Count, "without a playing speech sound the slap path is silent and draws nothing" );
+		Assert.AreEqual( 0, draws.Count );
+	}
+
+	[TestMethod]
+	public void F1RepeatsTutorialsInTheHelpWindowsOnly()
+	{
+		foreach ( var window in AdvisorUiHelp.Windows.Keys )
+			Assert.IsTrue( AdvisorUiHelp.RepeatsTutorialOnHelpKey( window ), window );
+		Assert.IsFalse( AdvisorUiHelp.RepeatsTutorialOnHelpKey( "pause" ) );
+		Assert.IsFalse( AdvisorUiHelp.RepeatsTutorialOnHelpKey( null ), "the park itself has no F1 row" );
 	}
 
 	[TestMethod]

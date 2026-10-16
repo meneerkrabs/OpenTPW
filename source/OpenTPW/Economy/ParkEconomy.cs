@@ -1244,6 +1244,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>Ends the jobs on a removed object: a mechanic's timed job, and a world handyman's walk to the toilet or its clean (he searches again).</summary>
 	private void ReleaseJobsOn( int instanceId )
 	{
+		StaffWorld?.ObjectRemoved( this, instanceId );
 		foreach ( var member in Staff.Members )
 		{
 			if ( member.AssignedInstanceId == instanceId )
@@ -1266,7 +1267,7 @@ public sealed class ParkEconomy : IParkEconomy
 			}
 			if ( member.RestAreaId == instanceId )
 			{
-				// the rest area went: a walk to it or a rest in it ends; the original's removal message 10 (0x004DD0A0, handled by 0x00504C70) also ends both and sends a resting member on to the nearest other rest area, which is not modelled (ECON-022)
+				// the rest area went: a walk to it or a rest in it ends (a world's members heard the removal message first, StaffWorldSimulation.ObjectRemoved)
 				member.RestAreaId = 0;
 				if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting )
 				{

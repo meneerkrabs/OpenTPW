@@ -133,6 +133,28 @@ public sealed partial class StaffWorldSimulation
 		}
 	}
 
+	/// <summary>
+	/// The removal message an object's removal sends (tp.exe <c>0x004DD0A0</c>, message 10), as each staff member handles it (<c>0x00504C70</c>): a member
+	/// resting in the removed rest area ends his rest and, when another rest area is in reach, takes it as his rest area and routes to it, idle until
+	/// his next search; one walking to it stops and idles.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00504C70 staff removal message] message 10 naming +0x208: in state 3 the rest's end 0x00506D10 (the room's variable 0 − 1, +0x208 = 0, the model back, state 0), then the rest finder 0x00506910 and a route to the winner's access cell +0x36 (0x004FA530): +0x208 = it ("Found a rest area"), the state staying 0; in state 2 +0x208 = 0 and state 0. The removal (0x004DD0A0) unlinks the object (0x00519DC0) before it sends the message (0x0040FB10, delivered at once), so the finder no longer meets it
+	public void ObjectRemoved( ParkEconomy economy, int instanceId )
+	{
+		foreach ( var member in economy.Staff.Members )
+		{
+			if ( member.RestAreaId != instanceId || member.Navigation == null )
+				continue;
+			var resting = member.Job == StaffJob.Resting;
+			if ( !resting && member.Job != StaffJob.ToRestArea )
+				continue;
+			member.RestAreaId = 0;
+			SetJob( economy, member, StaffJob.Idle, economy.Turn );
+			if ( resting && FindRestArea( member, instanceId ) is { } rest && Route( member, rest.Access, GuestWander.CentreByte, GuestWander.CentreByte ) )
+				member.RestAreaId = rest.Id;
+		}
+	}
+
 	/// <summary>The members resting in each rest area (its script's <c>VAR_STAFFIN</c>, which the original counts up on arrival and down at the rest's end).</summary>
 	private void CountRestingStaff( ParkEconomy economy )
 	{

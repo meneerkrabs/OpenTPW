@@ -160,6 +160,28 @@ public static class StaffSpriteRules
 		return new StaffClip( 13, slot, StaffPlayback.Loop );
 	}
 
+	/// <summary>The hire window's figure: the walk slot (ESP slot 1), frames 0..7 in turn, looping.</summary>
+	public const int PortraitSlot = 1;
+	/// <summary>The hire window's figure faces script direction 5 (of eight).</summary>
+	public const int PortraitDirection = 5;
+	/// <summary>The frames the hire window's script steps through.</summary>
+	public const int PortraitFrames = 8;
+
+	/// <summary>
+	/// The hire window's figure <paramref name="elapsed"/> seconds after it was created (tp.exe <c>0x0049BA00</c> creates it through <c>0x00475A10</c>
+	/// with the script <c>0x0074F758</c>): the walk slot, the frame of the script's step, and the stored direction and mirroring of script direction 5
+	/// for a bank of <paramref name="directions"/> directions.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0074F758 hire figure script] register 0x10 (the flags +0xC4) = 0x51000 (0x40000: a screen-space sprite, no camera turn), slot +0xB4 = 1 (0x004768B0), register 0xF (the direction +0xC0) = 5 (0x004766D0), then the frames 0..7 (0x00476940, one per script step) and back to the start (0x00476020)
+	// [BIN:TPW-EXE:0x00542010 sprite draw] the direction is (+0xC0 + 0, a screen sprite taking no camera turn) & 7; above the bank's direction count − 1 it is mirrored and becomes 8 − direction
+	public static (int Slot, int Direction, bool Mirror, int Step) Portrait( float elapsed, int directions )
+	{
+		var step = (int)MathF.Max( 0, elapsed * FramesPerSecond ) % PortraitFrames;
+		var direction = PortraitDirection;
+		var mirror = direction > directions - 1;
+		return (PortraitSlot, mirror ? 8 - direction : direction, mirror, step);
+	}
+
 	/// <summary>The slot and frame step of a clip <paramref name="elapsed"/> seconds after it started.</summary>
 	public static (int Slot, int Step) Resolve( StaffClip clip, float elapsed, IReadOnlyList<SpriteAnimation> animations )
 	{

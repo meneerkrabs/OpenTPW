@@ -57,8 +57,8 @@ internal static class TpiRidesFixture
 		return items;
 	}
 
-	public static string ObjectsJson( IEnumerable<Item> items ) =>
-		$$"""{ "schema": 1, "idRange": { "first": 40000, "last": 40999 }, "objects": [{{string.Join( ",", items.Select( item =>
+	public static string ObjectsJson( IEnumerable<Item> items, int last = 40099 ) =>
+		$$"""{ "schema": 1, "idRange": { "first": 40000, "last": {{last}} }, "objects": [{{string.Join( ",", items.Select( item =>
 			$$"""{ "archive": "{{item.Archive}}", "input": "tpi", "theme": "{{item.Theme}}", "category": "{{item.Category}}", "infoId": {{item.InfoId}}, "names": { "English": "{{item.English}}"{{(item.German == null ? "" : $$""", "German": "{{item.German}}" """)}} } }""" ) )}}] }""";
 
 	public const string Manifest = """
@@ -70,12 +70,12 @@ internal static class TpiRidesFixture
 		""";
 
 	/// <summary>Writes the mod below <paramref name="parent"/> and returns its folder.</summary>
-	public static string Write( string parent, IEnumerable<Item>? items = null )
+	public static string Write( string parent, IEnumerable<Item>? items = null, int last = 40099 )
 	{
 		var directory = Path.Combine( parent, Id );
 		Directory.CreateDirectory( directory );
 		File.WriteAllText( Path.Combine( directory, ModManifest.FileName ), Manifest );
-		File.WriteAllText( Path.Combine( directory, "objects.json" ), ObjectsJson( items ?? Items ), new UTF8Encoding( false ) );
+		File.WriteAllText( Path.Combine( directory, "objects.json" ), ObjectsJson( items ?? Items, last ), new UTF8Encoding( false ) );
 		return directory;
 	}
 

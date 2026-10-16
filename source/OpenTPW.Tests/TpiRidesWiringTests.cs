@@ -115,6 +115,21 @@ public class TpiRidesWiringTests
 		StringAssert.Contains( off.Refused.Single().Reason, "opentpw.cross-edition-objects" );
 	}
 
+	[TestMethod]
+	public void TheSmokeScriptWritesTheSameExampleModAsTheTests()
+	{
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !File.Exists( Path.Combine( directory.FullName, "scripts", "smoke-tpi-rides.sh" ) ) )
+			directory = directory.Parent;
+		if ( directory == null )
+			Assert.Inconclusive( "The repository's scripts folder is not beside the test binaries." );
+		var script = File.ReadAllText( Path.Combine( directory!.FullName, "scripts", "smoke-tpi-rides.sh" ) );
+		var documents = System.Text.RegularExpressions.Regex.Matches( script, "<<'JSON'\n(.*?)\nJSON", System.Text.RegularExpressions.RegexOptions.Singleline ).Select( match => match.Groups[1].Value ).ToArray();
+		Assert.AreEqual( 2, documents.Length );
+		Assert.IsTrue( System.Text.Json.Nodes.JsonNode.DeepEquals( System.Text.Json.Nodes.JsonNode.Parse( TpiRidesFixture.Manifest ), System.Text.Json.Nodes.JsonNode.Parse( documents[0] ) ), "the manifests differ" );
+		Assert.IsTrue( System.Text.Json.Nodes.JsonNode.DeepEquals( System.Text.Json.Nodes.JsonNode.Parse( TpiRidesFixture.ObjectsJson( TpiRidesFixture.Items ) ), System.Text.Json.Nodes.JsonNode.Parse( documents[1] ) ), "the objects differ" );
+	}
+
 	// ---- Command line ----------------------------------------------------------------------------------------
 
 	[TestMethod]

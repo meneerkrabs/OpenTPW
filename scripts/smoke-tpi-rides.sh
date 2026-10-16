@@ -28,7 +28,7 @@ cat > "$mod/opentpw-mod.json" <<'JSON'
 JSON
 cat > "$mod/objects.json" <<'JSON'
 { "schema": 1, "idRange": { "first": 40000, "last": 40099 }, "objects": [
-  { "archive": "levels/arabian/rides/tbounce", "input": "tpi", "theme": "jungle", "category": "rides", "infoId": 40001, "names": { "English": "Turban Bounce" } },
+  { "archive": "levels/arabian/rides/tbounce", "input": "tpi", "theme": "jungle", "category": "rides", "infoId": 40001, "names": { "English": "Turban Bounce", "German": "Turban-Huepfer" } },
   { "archive": "levels/science/rides/robot", "input": "tpi", "theme": "space", "category": "rides", "infoId": 40002, "names": { "English": "Giant Robot Swing" } },
   { "archive": "levels/science/Facilities/litbin", "input": "tpi", "theme": "space", "category": "features", "infoId": 40003, "names": { "English": "Science Litter Bin" } },
   { "archive": "levels/arabian/shops/drinks", "input": "tpi", "theme": "jungle", "category": "shops", "infoId": 40004, "names": { "English": "Desert Drinks" } } ] }

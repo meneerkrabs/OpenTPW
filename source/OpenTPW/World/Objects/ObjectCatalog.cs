@@ -561,6 +561,7 @@ public sealed class ObjectCatalog
 		var easyFile = easy ? files.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "Easy_" + Path.GetFileName( mainFile ), StringComparison.OrdinalIgnoreCase ) ) : null;
 		if ( easyFile != null )
 			layers.Add( ObjectSettingsFile.Load( fileSystem, easyFile ) );
+		// [APPROX:RIDES-045] a Theme Park Inc object a mod brings runs its own script, but the variables only Theme Park Inc's engine writes (VAR_FPBYPASS, VAR_SPECIAL, VAR_SPEED, the litter bin's VAR_BOMB, ...) stay 0 in a Theme Park World park
 		// [EXT:mods] a mod's object gets the Info.Id its objects.json assigns, whatever its own .sam says (Layout records join on Info.Id, so the id is the mod's to keep stable)
 		if ( modObject != null )
 			layers.Add( new ObjectSettingsFile( ModLayerText( modObject ), "objects.json" ) );

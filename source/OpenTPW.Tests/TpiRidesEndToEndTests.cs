@@ -129,12 +129,11 @@ public class TpiRidesEndToEndTests
 	{
 		var data = DataRoots.FindDataDirectory( tpiFolder )!;
 		var items = TpiRidesFixture.ArchivesOf( data );
-		Assert.IsTrue( items.Count > 150, $"{items.Count} archives in the install's rides, shops, sideshow, features and upgrades folders" );
 		var install = new BaseFileSystem( data );
 		install.RegisterArchiveHandler<WadArchive>( ".wad" );
 		scope!.Dispose();
 		scope = null;
-		var bulk = TpiRidesFixture.Resolve( TpiRidesFixture.Write( Path.Combine( root, "bulk" ), items ), TpiRidesFixture.Settings( tpiFolder ) );
+		var bulk = TpiRidesFixture.Resolve( TpiRidesFixture.Write( Path.Combine( root, "bulk" ), items, last: 40999 ), TpiRidesFixture.Settings( tpiFolder ) );
 		Assert.AreEqual( 0, bulk.Refused.Count, string.Join( "; ", bulk.Refused.Select( refusal => refusal.Reason ) ) );
 		using var all = ModContentRoots.Use( bulk, FileSystem );
 		var loaded = 0;
@@ -159,7 +158,8 @@ public class TpiRidesEndToEndTests
 				Assert.IsTrue( economy.Catalog.TryGet( item.InfoId, out _ ), $"{item.Archive} is in the {theme} economy catalogue" );
 			}
 		}
-		Assert.IsTrue( loaded > items.Count * 3 / 4, $"{loaded} of {items.Count} archives loaded" );
+		// the retail install: 217 archives in the rides, shops, sideshow, features and upgrades folders of its three worlds, 182 of which the parks list
+		Assert.AreEqual( (217, 182), (items.Count, loaded) );
 	}
 
 	/// <summary>Whether a .sam of the archive declares an Info.Id: Theme Park Inc's ptract holds none, so no object can be made of it (the catalogue says so and skips it).</summary>

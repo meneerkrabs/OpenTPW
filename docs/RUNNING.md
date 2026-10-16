@@ -93,10 +93,15 @@ or full gameplay and does not download proprietary game files.
 | Option | Meaning |
 | --- | --- |
 | `--disable-extension <id>` | Switches an official extension (such as `opentpw.online`) or an installed mod off for this run; repeatable. An unknown id is an error. |
+| `--enable-mod <id>` | Switches an official extension or an installed mod on for this run; repeatable. An unknown id is an error. |
+| `--mod-input <mod id>:<input id>=<folder>` | Chooses the folder of a mod input (such as the Theme Park Inc install of a rides mod) for this run; repeatable. |
 | `--mod-dir <folder>` | Adds one mod folder (with its `opentpw-mod.json`) ahead of the installed mods; repeatable. |
 | `OPENTPW_MOD_DIRS` | Mod folders separated by the platform's path separator (`:` or `;`), after `--mod-dir`. |
 
 The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Changes apply at the next start.
+
+`OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the example Theme Park Inc rides mod
+([MODS.md](MODS.md#making-a-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
 
 ## Diagnostic model inspection
 

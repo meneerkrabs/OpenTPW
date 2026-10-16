@@ -769,7 +769,8 @@ public class QueueTests
 		Assert.AreEqual( GuestThought.Unhappy, thought );
 		Assert.AreEqual( GuestSimulation.NeedsWindowTurns + 1, leftAt, "turn − +520 must exceed 30" );
 		Assert.AreEqual( 0f, leftHappiness, "the dismissal's medium step (0x4fea70(1)) clamps at 0" );
-		Assert.AreEqual( (2, 0), leftCell, "back on the path at the join cell" );
+		// [BIN:TPW-EXE:0x005004AA queue exit position] the exit writes no position: the guest stands on the queue cell it was on (QUEUE-010)
+		Assert.IsTrue( rig.Grid.IsQueue( leftCell.Item1, leftCell.Item2 ), $"it stays on its queue cell: {leftCell}" );
 	}
 
 	[TestMethod]

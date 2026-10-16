@@ -988,7 +988,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <paramref name="alsoOpen"/> are bookkeeping for the M3 gate; off the grid (the arrival lanes) and for a queue walk
 	/// (<paramref name="alongCells"/>) the guest walks the cells themselves.
 	/// </summary>
-	private void SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool alongCells = false )
+	private bool SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool alongCells = false )
 	{
 		var navigation = guest.Navigation;
 		var route = new List<(int X, int Y)>( cells.Count + 1 ) { navigation.Cell };
@@ -997,11 +997,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( route[^1] != cell )
 				route.Add( cell );
 		}
+		var found = true;
 		if ( navigation.OffGrid || alongCells )
 			navigation.SetDestination( target.X, target.Y, route, alsoOpen );
 		else
-			navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
+			found = navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
 		guest.HasWaypoint = true;
+		return found;
 	}
 
 	private void SetLaneWaypoint( Guest guest )
@@ -1673,19 +1675,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( position < 0 || position >= room )
 			{
 				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id is a multiple of 3 thinks 13 (Angry); the others think nothing
+				// [APPROX:QUEUE-005] a guest sent away thinks Angry by OpenTPW's guest id modulo 3 rather than its thing id (word at thing +0, 0x00501496), and its dismissal (0x005012f0) neither records event 6 with the ride id in the guest's event ring (0x0050C100 with ECX = guest + 0x30; the ring feeds only the debug dump 0x004FAA60, GUEST-005) nor plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D); its medium happiness drop is applied — evidence needed: the thing-id numbering (WALK-010)
 				DismissFromQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
 				continue;
 			}
 			if ( guest.State == GuestState.Boarding )
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
-			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs) and state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0, from wherever it stands; OpenTPW's queue walk cannot route a guest standing off the queue back, so a guest whose cell left the queue leaves (Confused) at once. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 neither records event 6 with the ride id in the guest's event ring (0x0050C100 with ECX = guest + 0x30; the ring feeds only the debug dump 0x004FAA60, GUEST-005) nor plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D); its medium happiness drop is applied — evidence needed: whether the generic route reaches a queue place from a cell off the queue, and the thing-id numbering (WALK-010)
-			if ( index < 0 && !onJoinCell )
-			{
-				DismissFromQueue( guest, attraction, GuestThought.Confused );
-				continue;
-			}
+			// [BIN:TPW-EXE:0x00501160 queue place route] a guest whose cell left the queue is not sent away here: it keeps its place and, when its place changed, state 11 routes it to the new slot from wherever it stands with the generic search (MoveToQueuePosition); the dismissal comes only if that search fails
 			guest.QueueCellIndex = index < 0 ? cells.Count : index;
 		}
 	}
@@ -1722,13 +1719,18 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var position = attraction.GetQueuePosition( guest.Id );
 		if ( position < 0 )
 		{
-			// the move-up's failure in 0x004FFFF0 ("Couldn't get to my intended queue position") leaves through the dismissal too
-			DismissFromQueue( guest, attraction, GuestThought.Confused );
+			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts, "Problem with a queue"); OpenTPW sends it away like state 11's lookup does
+			DismissFromQueue( guest, attraction, GuestThought.None );
 			return;
 		}
 		guest.QueuePosition = position;
 		var (index, x, y) = QueueSlotPoint( attraction, position, NextLateral() );
-		SetQueueDestination( guest, attraction, index, (x, y), toEntrance: false );
+		// [BIN:TPW-EXE:0x00501160 queue place route] the generic route request 0x004FA5F0 from wherever the guest stands to the place's slot: a route sets state 12; none leaves "Couldn't get to my intended queue position" (move-up, 0x004FFFF0) or "Couldn't get to my place" (the join, 0x004FFBC0) through the dismissal with no thought, 0x005004AA
+		if ( !SetQueueDestination( guest, attraction, index, (x, y), toEntrance: false ) )
+		{
+			DismissFromQueue( guest, attraction, GuestThought.None );
+			return;
+		}
 		guest.State = GuestState.MovingUpQueue;
 	}
 
@@ -1736,7 +1738,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A queue walk (states 12 and 13): from the guest's cell along the queue cells to cell <paramref name="index"/>,
 	/// then into the ride's entrance cell for the stand point (<paramref name="toEntrance"/>).
 	/// </summary>
-	private void SetQueueDestination( Guest guest, IRideVisitorBridge attraction, int index, (int X, int Y) target, bool toEntrance )
+	private bool SetQueueDestination( Guest guest, IRideVisitorBridge attraction, int index, (int X, int Y) target, bool toEntrance )
 	{
 		var cells = attraction.QueueCells;
 		var route = new List<(int X, int Y)>();
@@ -1772,7 +1774,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueTargetX = target.X / (float)Fixed16.One;
 		guest.QueueTargetY = target.Y / (float)Fixed16.One;
 		// [BIN:TPW-EXE:0x004D8750 queue walk] a queue walk is the search and edge-test walk of every guest (Navigate): the edge test opens a step between queue cells, and between the join path and the back cell, through the link bytes the queue tool wrote (QueuePaths); the walk into the ride's entrance cell stays a route walk (WALK-006)
-		SetDestination( guest, target, route, alsoOpen, alongCells: toEntrance );
+		return SetDestination( guest, target, route, alsoOpen, alongCells: toEntrance );
 	}
 
 	/// <summary>The ride's entrance cell: the front queue cell's neighbour towards the ride.</summary>
@@ -2097,8 +2099,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		LeaveQueue( guest, attraction, GuestThought.None );
 	}
 
-	/// <summary>The guest leaves the queue without riding and steps back onto the path at the join cell.</summary>
-	// [APPROX:QUEUE-010] a guest leaving a queue is placed on the queue's join path cell at once; in tp.exe every state-11 exit (0x005004AA: unlink 0x004DDD20, dismissal 0x005012F0, SetState(6)) and the queue-edit exit write no position, so the guest stays on its queue cell in state 6 until the state-6 handler 0x004FEC90 starts its next walk from there — evidence needed: the state-6 handler's walk from a queue cell and the route it takes
+	/// <summary>The guest leaves the queue without riding: state 6 where it stood.</summary>
+	// [BIN:TPW-EXE:0x005004AA queue exit position] every state-11 exit (0x005004AA: unlink 0x004DDD20, dismissal 0x005012F0, SetState(6)) and the queue-edit exit write no position: the guest stays where it stood, in state 6, until the decision handler 0x004FEC90 starts its next walk from there (a route search from a queue cell, or a wander along the cell's links minus its own queue link)
+	// [APPROX:QUEUE-010] a guest that leaves from the ride's entrance cell (the stand point of a price refusal or a dismissed head, where OpenTPW's untyped ride cells have no links to walk off by, WALK-005) is placed on the queue's front cell instead of standing there
 	private void LeaveQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
 	{
 		attraction.LeaveQueue( guest.Id );
@@ -2106,6 +2109,29 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( thought != GuestThought.None )
 			Think( guest, thought );
 		guest.LastAttractionId = attraction.AttractionId;
+		StandAfterQueue( guest, attraction );
+	}
+
+	/// <summary>State 6 on the cell the guest stands on; a guest on the ride's entrance cell steps back onto the front cell of the queue (QUEUE-010).</summary>
+	private void StandAfterQueue( Guest guest, IRideVisitorBridge attraction )
+	{
+		guest.AttractionId = 0;
+		var cell = guest.Navigation.Cell;
+		if ( Grid.IsWalkable( cell.X, cell.Y ) || Grid.IsQueue( cell.X, cell.Y ) )
+		{
+			if ( cell != (guest.CellX, guest.CellY) )
+				(guest.PreviousCellX, guest.PreviousCellY, guest.CellX, guest.CellY) = (guest.CellX, guest.CellY, cell.X, cell.Y);
+			guest.HasWaypoint = false;
+			guest.State = GuestState.DoingNothing;
+			return;
+		}
+		var front = attraction.QueueCells[0];
+		if ( Grid.IsQueue( front.X, front.Y ) || Grid.IsWalkable( front.X, front.Y ) )
+		{
+			PlaceOnGrid( guest, front.X, front.Y );
+			guest.State = GuestState.DoingNothing;
+			return;
+		}
 		ReturnToPath( guest, JoinCellOf( attraction ) );
 	}
 
@@ -2263,7 +2289,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
 		ClearQueueState( guest );
-		ReturnToPath( guest, JoinCellOf( ride ) );
+		StandAfterQueue( guest, ride );
 	}
 
 	void IRideVisitorHost.OnVisitorTurnedAway( IRideVisitorBridge ride, int guestId )
@@ -2272,7 +2298,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		ClearQueueState( guest );
 		Think( guest, GuestThought.Dissatisfied );
-		ReturnToPath( guest, JoinCellOf( ride ) );
+		StandAfterQueue( guest, ride );
 	}
 
 	/// <summary>

@@ -91,6 +91,44 @@ public class OriginalAttractionImportTests
 	}
 
 	[TestMethod]
+	public void TheShippedJungleSavesOperatingWordsLeaveEveryAttractionRuntimeUnchanged()
+	{
+		var dataPath = OriginalParkImportTests.OriginalDataPath();
+		if ( !File.Exists( Path.Combine( dataPath, "levels", "Standard.sam" ) ) )
+			Assert.Inconclusive( "Original levels/Standard.sam is missing." );
+		var original = FileSystem;
+		var entities = Entity.All;
+		Entity.All = new();
+		FileSystem = new BaseFileSystem( dataPath );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		try
+		{
+			var level = OriginalPark.Load( "jungle" );
+			var catalog = ObjectCatalog.Load( "jungle" );
+			var checkedRides = 0;
+			foreach ( var attraction in level.Save!.Attractions )
+			{
+				if ( catalog.Find( attraction.InfoId ) is not { IsTool: false } entry )
+					continue;
+				var runtime = new OriginalObjectRuntime( entry, seed: 1 );
+				runtime.TryInitializeCatalogueTier( (int)attraction.UpgradeLevel, out _ );
+				var before = runtime.Settings;
+				Assert.AreEqual( 0, runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration ).Count, $"Info.Id {attraction.InfoId}: the saved words are the tier's" );
+				Assert.AreEqual( before, runtime.Settings );
+				checkedRides++;
+			}
+			Assert.IsTrue( checkedRides > 0 );
+		}
+		finally
+		{
+			foreach ( var item in Entity.All.ToArray() )
+				item.Delete();
+			Entity.All = entities;
+			FileSystem = original;
+		}
+	}
+
+	[TestMethod]
 	public void OriginalJungleEasymodeAttractionsImportTheirStatesAndKeepTheirInitOperatingValues()
 	{
 		var dataPath = OriginalParkImportTests.OriginalDataPath();

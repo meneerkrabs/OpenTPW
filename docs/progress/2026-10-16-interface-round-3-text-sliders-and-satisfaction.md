@@ -22,7 +22,7 @@ A third pass over the interface approximations, read in tp.exe via REA:
   flag, and `0x588c20` releases sprites rather than drawing), UI-008 (tp.exe holds no `purple_button` string), UI-018 (the
   original's lobby update has no globe branch), UI-027 (the sprite-pick leads), UI-037 (the `0x588c20` correction).
 
-Determinism: the fixed-run pin moved `0xDB3EA9A7AF384B5B` -> `0x8C18F758DEC43F9E` (main after #261) because the economy state now
+Determinism: the fixed-run pin moved `0x0487112FF9FF20DB` -> `0x01946A39A53F851E` (main after #271) because the economy state now
 holds the satisfaction rings' values (`docs/DETERMINISM.md`). The branch alone had moved `0x205523C08061A05D` -> `0xAEB43E01FFE5FEE0`.
 No draws were added to the world or guest random streams.
 

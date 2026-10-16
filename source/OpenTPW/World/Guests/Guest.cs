@@ -135,7 +135,14 @@ public sealed class Guest
 	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>
 	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }
+	/// <summary>The rides ridden (guest <c>+0x1C4</c>): only an attraction of kind <c>Info.WhichUIType</c> 0 counts (the use routine 0x4FD970 sorts a finished visit by the type's <c>+0x4AC</c>).</summary>
 	public int RidesTaken { get; internal set; }
+	/// <summary>The shops visited (guest <c>+0x1C8</c>, kind 1), shown by the visitor info window (<c>0x4B72A0</c>, control 0x372F+).</summary>
+	public int ShopsVisited { get; internal set; }
+	/// <summary>The sideshows played (guest <c>+0x1CC</c>, kind 2), won or lost.</summary>
+	public int SideshowsVisited { get; internal set; }
+	/// <summary>The sideshows won (guest <c>+0x1D0</c>), counted where the use routine's won-sideshow tail runs (<c>0x4FE816</c>).</summary>
+	public int SideshowsWon { get; internal set; }
 	public GuestThought Thought { get; internal set; }
 	/// <summary>
 	/// The thought the guest's bubble shows (the thought object's script, guest <c>+0x30 +0x84</c>), <see cref="GuestThought.None"/> without a bubble; presentation

@@ -153,7 +153,7 @@ public sealed class BlueprintMarkers : ModelEntity
 	/// dynamic-mesh flush and the vertex writer rebuilds every face from it, so the markers' height keeps moving.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0053C762 ripple phase] the per-frame flush subtracts the constant 0x700DF8 (-0.1) from the global 0x874FC0 unless the pause test 0x402DF0 answers true
-	// [APPROX:BLUEPRINT-001] the original steps the phase once per rendered frame and its frame rate is not known; OpenTPW steps 0.1 per 1/30 s of real time
+	// [EXT:blueprint-phase-step] the original steps the phase once per rendered frame (frame-rate dependent); OpenTPW steps 0.1 per 1/30 s of real time so the ripple speed does not depend on the display's frame rate
 	public void Update( float deltaSeconds, bool paused )
 	{
 		if ( paused || shown.Length == 0 || !(deltaSeconds > 0) )

@@ -47,6 +47,32 @@ public class QueueEditTests
 	}
 
 	[TestMethod]
+	public void RemovingAQueueCellTakesTheCellsBehindItOrAStrayCellAlone()
+	{
+		var (grid, ride) = QueuedRide();
+		// A stray piece no ride's queue reaches (as an older save can leave): two cells away from the ride's line.
+		grid.SetQueue( 6, 6, 3 );
+		grid.SetQueue( 7, 6, 3 );
+		var attractions = new[] { ride };
+		Assert.IsNull( Level.QueueRideAt( grid, attractions, 7, 6 ) );
+		// A cell the ride's cached line does not hold yet is the ride's after the walk is redone, not a stray cell.
+		grid.SetQueue( 2, 3, 2 );
+		Assert.IsFalse( ride.QueueCells.Contains( (2, 3) ) );
+		Assert.AreEqual( 1, Level.RemoveQueueCellAt( grid, attractions, 2, 3, out var late ) );
+		Assert.AreSame( ride, late );
+
+		Assert.AreEqual( 1, Level.RemoveQueueCellAt( grid, attractions, 7, 6, out var stray ), "a stray cell goes alone" );
+		Assert.IsNull( stray, "no ride to refund" );
+		Assert.IsFalse( grid.IsQueue( 7, 6 ) );
+		Assert.IsTrue( grid.IsQueue( 6, 6 ), "the rest of the stray piece stays" );
+
+		Assert.AreEqual( 2, Level.RemoveQueueCellAt( grid, attractions, 2, 5, out var owner ), "the front cell takes the whole queue" );
+		Assert.AreSame( ride, owner );
+		Assert.IsFalse( grid.IsQueue( 2, 5 ) || grid.IsQueue( 2, 4 ) );
+		Assert.AreEqual( 0, Level.RemoveQueueCellAt( grid, attractions, 2, 5, out _ ), "grass: nothing to remove" );
+	}
+
+	[TestMethod]
 	public void QueueCellNamesItsHasQueueOwner()
 	{
 		var (grid, ride) = QueuedRide();

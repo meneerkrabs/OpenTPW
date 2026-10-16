@@ -386,6 +386,33 @@ public partial class Level
 		return EnterQueueTool( ride );
 	}
 
+	/// <summary>
+	/// Removes the queue cell at (x, y): with its owner (<see cref="QueueRideAt"/>) that cell and every cell behind it
+	/// (<see cref="QueuePaths.RemoveFrom"/>); a queue cell no ride's queue reaches (a stray piece, such as one an older save left)
+	/// goes alone. Returns the cells removed; <paramref name="owner"/> is the ride whose queue lost them, null for a stray cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005367A0 ClearCell queue case] the original clears a queue cell by itself, whatever ride owns it; OpenTPW's queue is the line its ride walks from the entrance, so an owned cell takes the cells behind it along and a stray cell, outside every such line, goes alone
+	internal static int RemoveQueueCellAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y, out RideVisitorBridge? owner )
+	{
+		owner = QueueRideAt( grid, attractions, x, y );
+		if ( owner == null && grid.IsQueue( x, y ) )
+		{
+			// The rides' queue lines are cached: walk them again before a cell counts as stray.
+			foreach ( var ride in attractions.OfType<RideVisitorBridge>().Where( item => item.HasQueue ) )
+			{
+				if ( ride.RecomputeQueue( grid ) )
+					ride.NotifyQueueEdited();
+			}
+			owner = QueueRideAt( grid, attractions, x, y );
+		}
+		if ( owner != null )
+			return QueuePaths.RemoveFrom( grid, owner, x, y );
+		if ( !grid.IsQueue( x, y ) )
+			return 0;
+		grid.ClearQueue( x, y );
+		return 1;
+	}
+
 	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null.</summary>
 	internal static RideVisitorBridge? QueueRideAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y )
 	{
@@ -571,17 +598,16 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Removes the queue cell at (x, y) and every cell behind it. Each removed cell refunds
-	/// <c>Costs.QueueCell</c> × the ride's scrap percentage / 100 (<see cref="ParkEconomy.RefundQueueCell"/>).
+	/// Removes the queue cell at (x, y) and every cell behind it (a stray queue cell alone, <see cref="RemoveQueueCellAt"/>). Each
+	/// removed cell of a ride's queue refunds <c>Costs.QueueCell</c> × the ride's scrap percentage / 100 (<see cref="ParkEconomy.RefundQueueCell"/>); a stray cell refunds nothing.
 	/// </summary>
 	public int RemoveQueueCell( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null )
 			return 0;
-		var ride = QueueRideAt( Guests.Grid, Guests.Attractions, x, y );
+		var removed = RemoveQueueCellAt( Guests.Grid, Guests.Attractions, x, y, out var ride );
 		if ( ride == null )
-			return 0;
-		var removed = QueuePaths.RemoveFrom( Guests.Grid, ride, x, y );
+			return removed;
 		var owner = Objects.Objects.FirstOrDefault( item => item.Visitors == ride );
 		if ( Park != null && owner != null && GetEconomyInstance( owner ) is int instance )
 		{
@@ -684,7 +710,7 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — evidence needed: which polygons the test walks (the node face arrays and node states 0x10, 0x20, 0x8210 of the model at +0x78) and which object the cell yields (0x452ae0)
+	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — the model test 0x45d090 is read (it walks a node's face records, 8 bytes each: a normal index and three vertex indices, unless the node state has 0x10 or 0x8210, and recurses into the children unless 0x20; a hit is the plane hit inside the triangle by the 2 pi angle sum, accepted only when nearer than the terrain hit), but which object a cell yields (0x452ae0), the distance window and the object skip rule (0x473c30) are not
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )
@@ -907,6 +933,28 @@ public partial class Level
 		int Bin( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bins.Contains( instance ) ? instance : 0;
 		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin ) )
 		{
+			import.Report( line );
+			Log.Trace( $"Park economy import: {line}" );
+		}
+	}
+
+	/// <summary>
+	/// An original save's operating words (speed, capacity and duration, SAVE-006) become the linked ride runtimes' words where they differ from the tier's values. Only a park started
+	/// from the shipped save does this; a resumed park restores its own words (<see cref="OriginalObjectRuntimeSnapshot"/>).
+	/// </summary>
+	private void ImportOriginalRideSettings()
+	{
+		if ( resumeState != null || Park?.Import is not { } import || OriginalPark?.Save is not { } save )
+			return;
+		var runtimes = economyInstances.ToDictionary( pair => pair.Value, pair => pair.Key.Runtime );
+		foreach ( var attraction in save.Attractions )
+		{
+			if ( !import.AttractionInstances.TryGetValue( attraction.Id, out var instance ) || !runtimes.TryGetValue( instance, out var runtime ) )
+				continue;
+			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
+			if ( taken.Count == 0 )
+				continue;
+			var line = $"Ride settings imported for attraction thing {attraction.Id} (Info.Id {attraction.InfoId}): {string.Join( ", ", taken )}.";
 			import.Report( line );
 			Log.Trace( $"Park economy import: {line}" );
 		}

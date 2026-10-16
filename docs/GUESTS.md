@@ -186,12 +186,14 @@ object's `mCurrentDrops`, the drops its tick ramps toward the rain or snow targe
 smaller while rain or snow is falling and the factor is 1.2 otherwise. OpenTPW uses 0.8 while `ParkWeather.CurrentDrops`
 is above 0 (`GuestSimulation.WeatherDropsFalling`); a scene without weather has no drops and uses 1.2. (An earlier reading took the
 thing to be the Traffic Lights fixed item at `+0x1da734`; that offset was miscalculated, see ORACLE.md F9.) Online parks (GameType 1) are cut at
-500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`, an assumption,
-ARRIVAL-002). A group cut with more guests than the limit becomes
-negative; OpenTPW stops at 0 (ARRIVAL-004). Executing the update routine `0xcb2ac` over repeated calls (F11)
-shows that this changes nothing in behaviour: a group at or below 0 creates no guest and, at the next stop of
-the arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does, so nothing
-holds. Only the stored group word and one vehicle step for an exactly empty group differ (effect not traced).
+500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`): tp.exe sets GameType 1 when a
+published park is entered (`0x4c0830`) and runs the arrival step there. A visit still reads `Standard.sam` instead of the original's
+`online_Standard.sam` and counts no park points (ARRIVAL-002). Both cuts compare unsigned, and a group cut with more
+guests than the limit becomes negative, in OpenTPW as in the original (tp.exe `0x4cf6e5`, no floor). Executing the update
+routine `0xcb2ac` over repeated calls (F11) shows that a group at or below 0 creates no guest and, at the next stop of the
+arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does; on the PC every other reader
+of the word treats it as 0 too (the vehicle size `0x4cf48f`, the boarding gate `0x51a844`, the advisor score `0x59f220`
+over the group history).
 
 Park points are summed over the placed rides and sideshows: each adds its `Info.AttractionValue` plus the
 `Attraction[n].NewBonus` of its age bracket (n = age in game days / `Info.NewAttractionDecayTime`, no
@@ -203,12 +205,15 @@ from its own build and counts in full. The jungle `Rides.sam` gives 20 and a 60-
 25 and bonuses 10/7/4. The original counts only things that pass the test at `0xdc834` (executed in the oracle, F10): the type is
 choosable (`Info.IsChoosable`), the ride is neither broken down nor condemned and is open, its entrance connects
 to a cell, its queue holds fewer guests than four per queue cell, a coaster carries no riders, and a kart or water
-ride has its track word (set when the ride is built). OpenTPW applies all but the last two (`IsChoosable`,
-`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`, and `QueueHasRoom`, which the level syncs: queue cells from the entrance and
-fewer guests than four per cell; tp.exe `0x4dd920`, ORACLE.md X15), so a closed, broken, queue-less or full ride gives no points, while
-its copies still count in the divisor of an untracked type; the coaster and kart/water conditions have no state in the economy
-(ARRIVAL-003). Objects imported from an original save or placed as fixed items set the first
-purchase to the current turn (ARRIVAL-005). Open points are ARRIVAL-001..005 (`ArrivalApproximations`).
+ride has its track word (set when the ride is built). OpenTPW applies all of it (tp.exe `0x4dd920`, ORACLE.md X15): `IsChoosable`,
+`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`, `QueueHasRoom` (queue cells from the entrance and fewer guests than four per
+cell), for a coaster its controller test (`0x441970`: no self-intersection, complete and closed, `CoasterRide.AcceptsGuests`) and for
+a kart or water ride its track word (the circuit walk's verdict, `BumpController.IsTrackValid`); the level syncs them each tick. So a
+closed, broken, queue-less, full, crossing or invalid ride gives no points, while its copies still count in the divisor of an untracked
+type. Only things whose type's `Info.WhichUIType` is 0 or 2 count (`0x4c8240`), which includes the shipped add-ons that declare 0. The
+coaster test also needs three track samples and has no edited-coaster term, the track word starts false before the first walk, and a
+coaster imported from an original save has no controller (its track is not imported), so it gives no points (ARRIVAL-003). Objects imported from an original save set the first purchase to the import turn, where
+the original restores each type's record from the save (tp.exe `0x4d3aa0`, ARRIVAL-005); fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002, 003, 005 and 006 (`ArrivalApproximations`).
 
 ## Simulation
 
@@ -240,7 +245,7 @@ home (21) → removed.
 
 | Item | OpenTPW choice |
 | --- | --- |
-| Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once the bus stands at its stop (tp.exe `0x4cf3e0`, run once per world turn). The bus itself is not modelled, so its drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
+| Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once its arrival vehicle reports script variable 1 = 2 at the stop (tp.exe `0x4cf3e0`, run once per world turn). The vehicle (a bus up to 35 guests, a seaplane up to 60, a Ferry above, `0x4cf48c`) is not modelled, so its level script's drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | traced ([below](#needs-and-starting-values)); the energy meter is tp.exe's unnamed float +0x1B8: 0 at creation, a completed use takes the type's `FatigueEffect` off it (`0x4fd970`, clamped to 0..100; 5 in the shipped data, so it stays 0), and only the save reads it; thoughts as in tp.exe ([Thoughts](#thoughts)) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)); the presentation turns are not (GUEST-010) |
@@ -281,13 +286,16 @@ same sum as the arrival rule's, `0x4c8240`), N = `PeepInfo.ExcitementToCostDivis
 `MinimumEntryFee` (20) are fair. Otherwise the fee, against GP in single precision, is:
 
 - from `ExpensivePriceMultiplier` × GP (2.0): far too expensive — the guest thinks 6 and goes home;
-- from `AveragePriceMultiplier` × GP (1.25): on the expensive side — the guest thinks 6, loses `MediumHappinessChange` and waits 50 + R % 50
-  park turns before asking again; once its happiness truncates to 0 it goes home instead (ARRIVAL-006);
+- from `AveragePriceMultiplier` × GP (1.25): on the expensive side — the guest thinks 6, loses `MediumHappinessChange` and waits: the counter
+  of 50 + R % 50 counts down one per park turn and the verdict runs on the turn after it reaches 0, N + 1 turns in all (OpenTPW times
+  them on the frame clock, ARRIVAL-006); once its happiness truncates to 0 it goes home instead;
 - up to `CheapPriceMultiplier` × GP (0.75): cheap — the guest gains `MediumHappinessChange` and pays;
 - otherwise fair — the guest pays.
 
-An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. OpenTPW charges the fee from the guest's purse and turns back a
-guest who cannot pay; the original's booth books the fee (`0x4d0600`) without reading the guest's cash (ARRIVAL-007).
+An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. A paying guest's fee is booked to the bank (tp.exe `0x4d0600`,
+`ParkEconomy.TryAdmitVisitor`) without reading or debiting the guest's purse, as in the original. The booth has no park-closed test: a
+closed park stops its visitors on the walk to the booth ([GATES.md](GATES.md), "What closing does to guests"); OpenTPW's economy refuses an
+admission only while the park is bankrupt (tp.exe's bankruptcy stops the thing loop, ECON-030).
 
 ### Needs and starting values
 
@@ -436,7 +444,8 @@ see Rendering.
 ### Walking
 
 Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WALK-I;
-`GuestNavigation`, `GuestSpeed`). There is no global walk speed and no energy factor.
+`GuestNavigation`, `GuestSpeed`) and, for the walk itself, from tp.exe (`WalkSearch`,
+`WalkEdges`, `GuestNavigation.Navigate`). There is no global walk speed and no energy factor.
 
 - **Speed** (§4). Each guest draws a base speed (`+192`) from {60, 80, 100, 120, 140}
   with the guest stream at creation. Once per park turn (248 ms), before its state
@@ -451,46 +460,75 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
   The speed setter (`0xffe38`) gives the max speed max(655, trunc(min(s, 2) · 0.2 ·
   65536)) and the max force with 0.4, in 16.16 cells per turn: 0.48 cell/s at s = 0.6,
   0.81 cell/s at s = 1 and 1.61 cell/s at s = 2.
-- **Steering** (§3, §5–§7). Positions and velocities are 16.16 fixed point. On the
-  tick that starts a park turn, a walking guest takes one step: avoid_walls (0.9; the
-  first edge of +x, −x, +y, −y that pushes), follow_path (0.5) and separation (0.1),
-  each truncated to the max force, summed and
-  truncated, added to the velocity, which is truncated to the max speed. The position
-  is committed only when the new cell is walkable for the walk. A new destination
-  keeps the velocity. Routes start with the guest's own cell; waypoints are cell
-  centres, passed at octile < 0.4 cell; the last segment arrives at octile < 0.32 cell
-  of the exact destination, with the desired speed min(max speed, d / 2). Arrival is
-  tested before the step moves. A routing failure arrives at once. Six non-improving
-  steps among the last 15 reroute.
+- **Steering** (§3, §5–§7; tp.exe `0x50f3b0`). Positions and velocities are 16.16 fixed point. On the
+  tick that starts a park turn, a walking guest takes one step: avoid_walls (0.9),
+  follow_path (0.5) and separation (0.1), each truncated to the max force, summed and
+  truncated, added to the velocity, which is truncated to the max speed. A new
+  destination keeps the velocity. On the park's cells this is tp.exe's walk
+  (`GuestNavigation.Navigate`), checked against the original routines in the x86 oracle
+  ([ORACLE.md](reverse/ORACLE.md) X25):
+  - **Route.** Every destination (SetDest `0x510100` → set-up `0x50f8e0`) searches from
+    the guest's cell (`WalkSearch`, `0x511420`): a four-connected line towards the
+    goal; at a blocked edge two boundary tracers (one turning each way) follow the wall
+    until one may leave it towards the goal; shortcuts over up to four waypoints
+    (`0x5110d0`) and a refinement (`0x5108a0`). The waypoints are cell centres after the
+    start, the goal last; five are buffered, and passing the fifth searches again
+    (`0x50efce`). A failed search leaves the walk arrived and stuck (`+0xb8`): the walk
+    step returns 2, which states 7 and 9 treat as the original does.
+  - **Cells.** Walls, commits and searches ask the edge test `0x4d8750` (`WalkEdges`)
+    with the walk mask (`+0xb4`, guest `+0x188`: 0 in the park, 1 after a guard's
+    set-down, cleared by the recall): path to path is always open whatever the links,
+    queue boundaries need the target's link back, mask 1 also opens steps from a path
+    cell to ground. A step commits through `0x510510`: one cell at most, a diagonal
+    through either L-shaped route; a refused step adds a history bit.
+  - **Walls.** avoid_walls (`0x50e4a0`) takes the position's cell: the first edge in the
+    direction of motion that the probe penetrates pushes back with twice the
+    penetration; else the corner of the motion's quadrant whose diagonal cell is cut
+    off pushes where the velocity's ray meets the circle of the radius around it
+    (`0x50cc20`).
+  - **Progress.** ONE − trunc(remaining × ONE / route length) (`0x50fd40`), the length
+    taken over the whole route at every set-up; a step that does not raise it adds a
+    history bit, and six bits among the last 15 search again from the current cell.
+    Waypoints are passed at octile < 0.4 cell; the last one arrives at octile < 0.32
+    cell of the exact destination, with the desired speed min(max speed, d / 2).
+  - **Changed ground.** A cell type change stamps its 16 × 16-cell block
+    (`ParkCellMap.BlockStamp`, `0x4d8c60`); a walk whose block's stamp is above its own
+    searches again (`0x50ed6c`).
+  - The arithmetic is tp.exe's: FixMul rounds towards −∞ (`0x50df70`), FixDiv towards 0
+    (`0x50e080`).
+  Queue walks, the arrival lanes and walks restored from older saves keep OpenTPW's
+  route walk (WALK-006, WALK-008): the route's cells are the walkable ones,
+  avoid_walls has its edge branch only, and the Mac's rounding applies.
 - **Separation** (`0xfd778`, `0x10087c`, `0xfd5f4`). Off on the last segment within
   ONE + radius of its waypoint; else every guest in the 3 × 3 cells around the walker
   (rows from the top) whose 1/256-cell position lies within 0.4 cell pushes it away by
   FixDiv(offset, octile(offset)), at most five of them.
-- **Geometry.** Sub-cell destination bytes are byte / 256 of a cell. Path walks go one
-  path cell at a time to the guest's offset point in it; lane walks (bus stop to
-  entrance) have no walls. Queue walks follow the queue cells; the cell ahead of the
-  destination and the cell behind the start are walkable too. The stand point is in
-  the ride's entrance cell at trunc(255 × `EntryCellStandPos`) after rotating it with
-  the object (`0xde1d8`): (0.5, 0.5) gives (127, 127).
+- **Geometry.** Sub-cell destination bytes are byte / 256 of a cell. Walks to a ride and
+  out of the park go one path cell at a time to the guest's offset point in it
+  (WALK-004); lane walks (bus stop to entrance) have no walls. Queue walks follow the
+  queue cells; the cell ahead of the destination and the cell behind the start are
+  walkable too. The stand point is in the ride's entrance cell at trunc(255 ×
+  `EntryCellStandPos`) after rotating it with the object (`0xde1d8`): (0.5, 0.5) gives
+  (127, 127).
 - **Presentation.** The drawn position and walk distance interpolate between the last
   two steps over a turn (`Guest.DrawX`, `DrawY`, `DrawDistanceWalked`); they are not
   simulation state.
 
 **Walk approximation register** (`WalkApproximations.cs`; also in
-[FIDELITY-REGISTER](FIDELITY-REGISTER.md)):
+[FIDELITY-REGISTER](https://opentpw.io/docs/FIDELITY-REGISTER.html)):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
 | WALK-001 | The boost `+196` comes from the Sugar ingredient only, with the ride build's amount 50 (tp.exe `0x4db3b3`; +3 per visit, `0x4fe5f8`); the original's per-object amount is set by a 0..100 slider that only ingredient shops show (`0x4b06d2`, `0x4b0950`), written by `0x4b0aa0`/`0x4b0ae0` and saved as `mAmountOfSpecialIngredient` (`0x4db7d0`) | Nothing statically; OpenTPW has no slider and does not keep the saved amount |
-| WALK-002 | avoid_walls (tp.exe `0x50e4a0`) models its edge branch (the first pushing edge of +x, −x, +y, −y) with the probe's cell; the original uses the position's cell (`0x50e4eb`) and, when no edge pushes, one corner block for the motion quadrant (`0x50e75e`, `0x50e8b3`, `0x50ea07`, `0x50eb5e`, ray test `0x50cc20`) | A port of the corner branch (it needs the edge test of WALK-005) |
 | WALK-003 | Separation's neighbours are the guests outside rides and shops in OpenTPW's per-turn rebuilt cell lists (guest order, movers appended); the original (tp.exe `0x5102f0`) walks per-cell thing lists head-inserted on cell entry (`0x50b6a0` via `0x4d91f0`), keeps class-1 guests in any state and also staff (classes 4–8) and the online avatar (class 18); the position (`+4/+6` = navigation position >> 8, `0x4fa2a0`) matches | Where the thing position of a guest on a ride, held by a guard or leaving lies |
-| WALK-004 | Routes are OpenTPW's cell sequences from the guest's own cell, refilled five waypoints at a time from the stored route; the reroute prepends the current cell to the rest. The original searches again at every SetDest, refill (`0x50efce`) and stuck reroute (`0x50ee79`) through `0x50f8e0` → `0x511420` (search `0x511470`, refinement `0x5108a0`) and ends the walk when a search fails (`0x50f945`) | A port of the search `0x511470` and refinement `0x5108a0` |
-| WALK-005 | A cell is walkable when it is on the current walk (its route and extra open cells); path cells beside the route are walls. The original commits a step through `0x510510` (one cell at most, diagonals through either L-shaped route) and the edge test `0x4d8750` with the walk mask `+0xb4`: path-to-path is always open, queue boundaries need the target's link back | A port of `0x4d8750` on `ParkCellMap` and the mask writers |
-| WALK-006 | A queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route; the original's edge test `0x4d8750` opens a path, queue or queue-end neighbour whose link points back, or a type-`0x1e` walkway when the mask is not 2 | The same port as WALK-005, on the queue links |
-| WALK-007 | No map-edit reroute: the original stamps the changed cell's 16 × 16 block (`0x4d8c60`) and follow_path compares the stamp with `+72` every step (`0x50ed6c`), searching again (`0x50f8e0` mode 1); a failed search sets `+184` and ends the walk as arrived | Block stamps in OpenTPW's cell map |
-| WALK-008 | Guests on the arrival lanes walk off the path grid: no wall force, every position committed; the original walks them through the same route search, commit `0x510510` and edge test `0x4d8750` over lane cells typed `0x1e` or path by map init `0x536490` | The same port as WALK-005 for the lanes |
-| WALK-009 | The progress history compares raw remaining distances in the five-waypoint window and skips the first step after route setup; the original compares ONE − trunc(remaining × ONE / `+160`) (`0x50fd40`) with `+172` (`0x50f5c7`, ≤), `+160` being the full route's length from the position, and resets `+172` and the history at setup and every refill (`0x50f8e0`) | The `+160` length and the resets ported (the refill timing is WALK-004) |
+| WALK-004 | The walks to a ride (state 10) and out of the park (state 18) set a destination one path cell at a time (`Grid.TryStep` over the links, each a fresh search); tp.exe's states set one destination for the whole walk (state 10 `0x4ffbc0` → `0x4fa5f0`, the gate's crossing cell `0x4d86d0`) and its search string-pulls the route. The search, set-up, refill and reroutes are ported | The destinations of states 10 and 18 |
+| WALK-005 | The edge test `0x4d8750` (`WalkEdges`) reads only the cell map: no object on a target cell blocks (`0x5363f0`, `0x53ad20`), no ride thing decides a mask-2 step into a type-9 cell (`0x42a440`, `0x4dd4e0`), the underground link byte `+0x22` is not kept, and the types are those OpenTPW's tools write (map init `0x536490`'s 2, 5, 7 and `0x1e` are not, WALK-008) | Object and thing references in the cell map |
+| WALK-006 | Queue walks (states 12, 13), the arrival lanes (WALK-008) and walks restored from older saves keep OpenTPW's route walk: the route's cells (and a queue walk's next queue cells) are walkable, avoid_walls has its edge branch only, refills come from the stored route, progress compares raw remaining distances, the Mac's rounding applies. tp.exe walks the queue with its search and edge test (a queue cell opens into a neighbour whose `+0x0c` link points back) | The queue tool's `+0x0c` neighbour links (QUEUE-003) and the ride entrance cells' type |
+| WALK-007 | Route walks restored from older saves end without a replan when a grid edit takes a cell or link of their route, and the queue recompute's own stamp of its back cell (`0x4de1f0`) is not made; the block stamps of every cell type change (`0x4d8c60`) and the walk's comparison (`0x50ed6c`) are ported | The `0x4de1f0` stamp |
+| WALK-008 | Guests on the arrival lanes walk off the path grid: no wall force, every position committed; the original walks them through the same route search, commit `0x510510` and edge test `0x4d8750` over lane cells typed `0x1e` or path by map init `0x536490`, which OpenTPW's cell map does not type (outside the park: 7, or `0x1e` and 2 by the MAP attributes `0x80` and 2) | The lane cells' types in the cell map |
 | WALK-010 | The needs phase that gates the toilet term compares the park turn with OpenTPW's guest id; the original compares it with the thing id (`0x501676`) from one pool of 10239 slots shared by every thing kind (`0x516270`, last-in first-out reuse) | A shared thing pool with the construction and destroy order of every thing kind |
+
+Retired: `APPROX:WALK-002` (avoid_walls' corner blocks and the position's cell: tp.exe `0x50e4a0` with the ray test `0x50cc20`, ported for walks on the park's cells). `APPROX:WALK-009` (the progress measure `0x50fd40` over the whole route's length, reset at every set-up `0x50f8e0`).
 
 An isolated [GuestOriginalRules helper](../tools/ppc-analysis/lanes/guests/rules/README.md)
 and 23 synthetic regression cases preserve selected Feral arithmetic: four
@@ -746,7 +784,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 τ (boarding latency) is not derived and must stay an explicit parameter.
 
 **Queue approximation register** (`QueueApproximations.cs`; also in
-[FIDELITY-REGISTER](FIDELITY-REGISTER.md)):
+[FIDELITY-REGISTER](https://opentpw.io/docs/FIDELITY-REGISTER.html)):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
@@ -819,7 +857,7 @@ OpenTPW (`RideHeadSpace`, `HeadPresentation`, `RideHeadRenderer`): each script k
 
 The original-level smoke test requires submitted head quads and separately compares visible/hidden GPU captures on one identified, naturally boarded animating ride. Simulation, animation, camera and shader time are frozen; repeated visible frames and repeated hidden frames must each be byte-identical, and toggling only that attraction's head renderer must change pixels. This establishes visible OpenTPW head geometry, not original visual equivalence.
 
-Approximations ([HEADS register](FIDELITY-REGISTER.md)): the slot draw uses the original formula, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`), on a per-ride stream, not the shared world generator `0x516330`, which rotates its state right by 13 after the LCG step (`s * 1664525 + 1013904223`, `ror 13`, absolute value) and is not ported (HEADS-001, depends on DET-013; the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the azimuth origin and sense of column 0 (local +X towards +Z is used), the reference frame of the roll (the node matrix in world axes), and costume heads (guests wear none). A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
+Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)): the slot draw uses the original formula, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`), on a per-ride stream, not the shared world generator `0x516330`, which rotates its state right by 13 after the LCG step (`s * 1664525 + 1013904223`, `ror 13`, absolute value) and is not ported (HEADS-001, depends on DET-013; the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the azimuth origin and sense of column 0 (local +X towards +Z is used), the reference frame of the roll (the node matrix in world axes), and costume heads (guests wear none). A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
 
 Not done in OpenTPW: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
 records with a handle and no head table (maexah `saves.md`, "A head on a node"); the Mac code that places a car's rider is not

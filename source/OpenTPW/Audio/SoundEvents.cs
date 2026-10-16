@@ -302,25 +302,30 @@ public sealed class SoundEventSystem
 		return 0;
 	}
 
+	/// <summary>The volume of a playback without a parameter binding: min + r % (max - min) percent, an empty range drawing nothing.</summary>
 	// [BIN:STP-PPC:sound_shared 0x1000F32C GetRandomVolume] volume = min + random % (max - min), in percent
-	internal int Volume( SoundEntry sound, byte? parameterCode = null, int parameter = 0 )
+	// [BIN:TPW-EXE:0x6bc090] volume = min + ror13(chooser) % (max - min); an empty range draws nothing (0x6bc11b)
+	internal int Volume( SoundEntry sound )
 	{
 		var low = Math.Min( sound.MinimumVolume, sound.MaximumVolume );
 		var range = Math.Abs( sound.MaximumVolume - sound.MinimumVolume );
-		// [BIN:STP-PPC:sound_shared 0x1000F2E0 GetParameterValue] the first slot whose +24/+28 mask contains bit 1 supplies volume; selectors +22/+26 are truncated to bytes when loaded (0x100100D8–0x100100EC)
-		byte? volumeCode = null;
-		if ( sound.Raw.Length >= 30 )
-		{
-			if ( (sound.Raw[24] & 1) != 0 )
-				volumeCode = sound.Raw[22];
-			else if ( (sound.Raw[28] & 1) != 0 )
-				volumeCode = sound.Raw[26];
-		}
-		// [BIN:STP-PPC:sound_shared 0x1000F3C8–0x1000F3F4 GetRandomVolume] a matching parameter yields low + floor((high-low) * byte value / 100), including the high endpoint at 100
-		if ( parameterCode != null && volumeCode == parameterCode )
-			return low + range * unchecked((byte)parameter) / 100;
-		// [BIN:TPW-EXE:0x6bc090] volume = min + ror13(chooser) % (max - min); an empty range draws nothing (0x6bc11b)
 		return range == 0 ? low : (int)(low + DrawBelow( (uint)range ));
+	}
+
+	/// <summary>
+	/// The volume a placeholder playing <paramref name="sound"/> evaluates after one parameter call (<paramref name="parameterCode"/>, <paramref name="parameter"/>),
+	/// or after none when the code is null: the table the sound's setup creates (selectors +0x16/+0x1A), the call stored in it, then <see cref="Volume(SoundEntry, SoundParameterTable?)"/>.
+	/// </summary>
+	internal int Volume( SoundEntry sound, byte? parameterCode, int parameter )
+	{
+		SoundParameterTable? table = null;
+		SoundParameterTable.SelectSound( ref table, sound );
+		if ( parameterCode is { } code )
+		{
+			table ??= new SoundParameterTable();
+			table.Set( code, unchecked((byte)parameter) );
+		}
+		return Volume( sound, table );
 	}
 
 	/// <summary>
@@ -329,12 +334,41 @@ public sealed class SoundEventSystem
 	// [BIN:TPW-EXE:0x6bc170 pitch draw] swaps the signed bytes +0xE/+0xF of the sound record when max < min, range = max - min, and without a parameter-bound pitch slot (the vf+0x40 query for parameter kind 2) draws ror13(chooser) % range + min; 0x6bc410 calls it right after the volume draw (0x6bc090) and hands it to 0x6c5170, unless the placeholder flag 0x10000 fixes the pitch
 	// [BIN:TPW-EXE:0x6bc410 sample start] the order of draws for one playback is sound, sample, volume, pitch, then the delay (0x6bc343)
 	// [DATA:global/sound,levels/*/Sound cat_*SFX.map] 1,343 shipped sounds have no pitch range; the chain, scream and crowd sounds draw 0..6 (steps 0-5 are played), the others signed ranges from -24..36 to -2..0
-	// [APPROX:AUDIO-003] the placeholder flag 0x10000 (pitch fixed at the short +0x4A) and a parameter-bound pitch slot are not modelled: every playback draws from the range
+	// [APPROX:AUDIO-003] the placeholder flag 0x10000 (pitch fixed at the short +0x4A) is not modelled: an unbound pitch always draws from the range
 	internal int Pitch( SoundEntry sound )
 	{
 		var low = Math.Min( sound.MinimumPitch, sound.MaximumPitch );
 		var range = Math.Abs( sound.MaximumPitch - sound.MinimumPitch );
 		return range == 0 ? low : low + (int)DrawBelow( (uint)range );
+	}
+
+	/// <summary>The volume of a playback whose placeholder has a parameter table: a sound bound to a parameter for volume (kind 1) takes it, any other draws.</summary>
+	// [BIN:TPW-EXE:0x006BC090 volume] with a table (+0x4C) the vf+0x40 query for kind 1 (0x6BC040) yields the bound value v and the volume is min + (v × (max − min)) / 100 in unsigned arithmetic; without a binding it draws
+	// [BIN:TPW-EXE:0x006BC040 parameter query] only the masks are tested: a sound whose mask +0x18 (or +0x1C) has the kind's bit takes slot 1's (or 2's) value byte whenever the placeholder has a table, a value never set being 0, so such a sound plays at its minimum until a matching call arrives
+	// [BIN:STP-PPC:sound_shared 0x1000F2E0 GetParameterValue] the first slot whose +24/+28 mask contains bit 1 supplies volume; selectors +22/+26 are truncated to bytes when loaded (0x100100D8–0x100100EC)
+	// [BIN:STP-PPC:sound_shared 0x1000F3C8–0x1000F3F4 GetRandomVolume] the Mac interpolates the same way, low + floor((high - low) × byte value / 100), the high endpoint included at 100
+	internal int Volume( SoundEntry sound, SoundParameterTable? table )
+	{
+		if ( table != null && table.TryValue( sound, SoundParameterTable.KindVolume, out var value ) )
+		{
+			var low = Math.Min( sound.MinimumVolume, sound.MaximumVolume );
+			var range = (uint)Math.Abs( sound.MaximumVolume - sound.MinimumVolume );
+			return low + (int)((uint)value * range / 100);
+		}
+		return Volume( sound );
+	}
+
+	/// <summary>The pitch step of a playback whose placeholder has a parameter table: a sound bound to a parameter for pitch (kind 2) takes it, any other draws.</summary>
+	// [BIN:TPW-EXE:0x006BC170 pitch] with a table (+0x4C) the vf+0x40 query for kind 2 (0x6BC040) yields the bound value v and the step is (v × (max − min)) / 100 + min (unsigned multiply and divide, no clamp), without a draw
+	internal int Pitch( SoundEntry sound, SoundParameterTable? table )
+	{
+		if ( table != null && table.TryValue( sound, SoundParameterTable.KindPitch, out var value ) )
+		{
+			var low = Math.Min( sound.MinimumPitch, sound.MaximumPitch );
+			var range = (uint)Math.Abs( sound.MaximumPitch - sound.MinimumPitch );
+			return low + (int)((uint)value * range / 100);
+		}
+		return Pitch( sound );
 	}
 
 	private bool TryDecoded( SoundCategory category, SoundSample sample, out Mp2Audio? audio )
@@ -482,9 +516,11 @@ public sealed class SoundEventSystem
 		// [APPROX:AUDIO-003] the pitch is applied (Pitch, AudioVoice.SetPitch); the delay of non-chain sounds (u16 + r % range, 0x6bc343) and reverb (SndReverb.map) are not applied, chain delays are milliseconds (video, 2026-10-15)
 		// [BIN:TPW-EXE:0x6bc4e7 sample setup] the fixed (flat) branch and the positioned branch both reach the loop test 0x6bc621: a placeholder with flag 0x8 (+0x30 bit 4) loops its sample (0x6c5110, 9999 times), so a flat one-shot loops exactly as a positioned one does
 		// [EXT:inaudible-loop-advance] a loop whose source is inaudible is assumed to keep advancing silently and resume when the listener returns; the early exit 0x6bcb60 -> 0x6bc643 that skips starting in some cases is not read
-		var volume = Volume( sound ) / 100f;
+		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] every placeholder class (vtables 0x70a338, 0x70a3e8, 0x70a440, 0x70a498, 0x70a7e0, 0x70a878, 0x70a8d0) sets up at +0x10 with 0x6BBF60 and queries at +0x40 with 0x6BC040: a one-shot whose event has a code or whose sound has a selector gets a table, and a bound volume or pitch reads its slot (0 with no parameter call)
+		var table = SoundParameterTable.ForPlayback( soundEvent, sound );
+		var volume = Volume( sound, table ) / 100f;
 		var voice = mixer.Play( audio, channel, volume );
-		voice.SetPitch( Pitch( sound ) );
+		voice.SetPitch( Pitch( sound, table ) );
 		voice.Loops = (soundEvent.Flags & 0x8) != 0;
 		oneShots.Add( (voice, soundEvent.Priority, soundEvent.Flags) );
 		return voice;
@@ -507,9 +543,11 @@ public sealed class SoundEventSystem
 		// [DATA:global/sound/cat_ambientSFX.map] events 7 and 8 (the waterfall and river) are one-shots (no 0x4) flagged 0x8
 		// [LEAD:maexah/OpenTPW docs/exe/audio.md "A voice's range" table: bit 0x8 loops the sample, the voice lives on] PC addresses unverifiable (packed exe)
 		// [BIN:TPW-EXE:0x6bc621 loop test] flag 0x8 loops the sample after both the positioned and the fixed branch (see Play)
-		var volume = Volume( sound ) / 100f;
+		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] as in Play: the one-shot's table, its bound volume and pitch read their slots
+		var table = SoundParameterTable.ForPlayback( soundEvent, sound );
+		var volume = Volume( sound, table ) / 100f;
 		var voice = mixer.Play( audio, channel, volume, position, range ?? sound.Rolloff );
-		voice.SetPitch( Pitch( sound ) );
+		voice.SetPitch( Pitch( sound, table ) );
 		voice.Loops = (soundEvent.Flags & 0x8) != 0;
 		oneShots.Add( (voice, soundEvent.Priority, soundEvent.Flags) );
 		return voice;
@@ -531,8 +569,10 @@ public sealed class SoundEventSystem
 		if ( index < 0 )
 			return null;
 		// [BIN:TPW-EXE:0x6bc621 loop test] as in PlayAt: the loop flag 0x8 applies
-		var volume = Volume( sound ) / 100f;
-		var pitch = Pitch( sound );
+		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] as in Play: the one-shot's table, its bound volume and pitch read their slots
+		var table = SoundParameterTable.ForPlayback( soundEvent, sound );
+		var volume = Volume( sound, table ) / 100f;
+		var pitch = Pitch( sound, table );
 		var placed = new PlacedSound( mixer, channel, volume, position, range ?? sound.Rolloff, (soundEvent.Flags & 0x8) != 0,
 			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority, Flags = soundEvent.Flags, Pitch = pitch };
 		if ( !placed.Pump() )
@@ -672,6 +712,8 @@ public sealed class SoundSentence
 	private AudioVoice? voice;
 	private Task<(int Sound, int Sample, Mp2Audio? Audio)>? next;
 	private bool waiting;
+	/// <summary>The placeholder's parameter table (+0x4C), null until the event's code, a sound's selector or a parameter call creates it.</summary>
+	private SoundParameterTable? parameters;
 
 	internal SoundSentence( SoundEventSystem system, SoundCategory category, SoundEvent soundEvent, AudioChannel channel, Func<uint>? sampleDraw = null )
 	{
@@ -680,37 +722,42 @@ public sealed class SoundSentence
 		this.soundEvent = soundEvent;
 		this.channel = channel;
 		this.sampleDraw = sampleDraw ?? system.Draw;
+		parameters = SoundParameterTable.ForEvent( soundEvent );
 	}
 
-	/// <summary>The place a positioned sentence plays at (null: flat).</summary>
-	public Vector3? Position { get; init; }
+	/// <summary>The place a positioned sentence plays at (null: flat); <see cref="MoveTo"/> moves it.</summary>
+	public Vector3? Position { get; internal set; }
 	/// <summary>The range of a positioned sentence.</summary>
 	public float Range { get; init; }
-	/// <summary>The value branching links are matched against (the original's parameter 4; for park music the guest count / 2, capped).</summary>
+	/// <summary>The value branching links are matched against (slot 0's value byte; for park music the guest count / 2, capped); <see cref="SetParameter"/> with the event's code sets it.</summary>
 	public int Parameter { get; set; }
-	/// <summary>The known native code of <see cref="Parameter"/>; only the crowd's code 7 is currently wired.</summary>
-	public byte? ParameterCode { get; set; }
 	public int CurrentSound => soundIndex;
 	internal int CurrentSample => lastSample;
 	/// <summary>The playing voice of the current segment (null between segments).</summary>
 	internal AudioVoice? Voice => voice;
 
 	/// <summary>
-	/// The library's parameter call: stores <paramref name="value"/> under <paramref name="code"/>, and when the code is one of the
-	/// current sound's bound slots (1-3), re-evaluates the playing segment's volume and pitch at once.
+	/// The library's parameter call (the original's 0x51BC40 → 0x6BBB80): <paramref name="value"/> as a byte goes into every slot of the placeholder's table coded
+	/// <paramref name="code"/>, and a match in slot 1-3 re-evaluates the playing segment's volume and pitch at once. A call with the event's own code (slot 0)
+	/// also sets the branching <see cref="Parameter"/>. The crowd (7), the park music (4), the level rain (8) and the ride and tour vehicles' engines
+	/// (EventMap variable 10, tour 80/15/30/60) call it.
 	/// </summary>
-	// [BIN:TPW-EXE:0x6bbb80 SetParameter] the code is compared with the four slot codes of the placeholder's table (+0x4C) and the byte value stored in each match; a match in slot 1-3, with placeholder flag 0x4000 clear, calls vf+0x34 (0x6bbbe0)
+	// [BIN:TPW-EXE:0x6bbb80 SetParameter] the table is created when missing (0x6b7150); the code is compared with all four slot codes of the placeholder's table (+0x4C) and the byte value stored in each match; a match in slot 1-3, with placeholder flag 0x4000 clear, calls vf+0x34 (0x6bbbe0)
 	// [BIN:TPW-EXE:0x6bbf60 placeholder setup] slot 0 holds the event's code (event record +0x12), slots 1 and 2 the current sound's selectors +0x16 and +0x1A truncated to bytes and slot 3 is 0 (0x6bbf00, run again whenever the sentence moves to another sound, 0x6bc8d7); the volume query 0x6bc040 reads slot 1 under mask +0x18 and slot 2 under mask +0x1C
-	// [BIN:TPW-EXE:0x6bbbe0 re-evaluate] with a sample playing (+0x24) it recomputes the volume (0x6bc090) unless the fixed-volume flag 0x400 (set only by vf+0x30, 0x6b7130) is set, and always redraws the pitch (0x6bc170), and sends both to the mixer; OpenTPW sets no fixed volume on a sentence and never suspends one (the 0x4000 flag marks a sample stopped by the options' sound switches, 0x6bc760), so neither flag applies
-	public void SetParameter( byte code, int value )
+	// [BIN:TPW-EXE:0x6bbbe0 re-evaluate] with a sample playing (+0x24) it recomputes the volume (0x6bc090) unless the fixed-volume flag 0x400 (set only by vf+0x30, 0x6b7130) is set, and always evaluates the pitch again (0x6bc170: the bound value, or a fresh draw for an unbound pitch), and sends both to the mixer; OpenTPW sets no fixed volume on a sentence and never suspends one (the 0x4000 flag marks a sample stopped by the options' sound switches, 0x6bc760), so neither flag applies
+	// [BIN:TPW-EXE:0x006BDA90 sentence SetParameter] the sentence containers (vtables 0x70a390, 0x70a2e0) allocate the table in their constructor and override the call: 0x6bbb80, then the wait flag 0x40 (+0x30) is cleared unless slot 0's value is 0x7f; OpenTPW's waiting branching sentence is restarted by its callers' Resume after the call (GameAudio), and the 0x7f exception and what sets 0x40 are not read
+	// [BIN:TPW-EXE:0x006BDAC0 sentence re-evaluate] the container's vf+0x34 walks its child placeholders (+0x18 chain) and re-evaluates each, and a child's queries read the parent's table (0x6c3d80); OpenTPW's sentence holds the table and its one playing segment, so re-evaluating the segment is the same walk
+	public void SetParameter( int code, int value )
 	{
-		ParameterCode = code;
-		Parameter = value;
-		if ( voice is not { IsFinished: false } playing || !BindsSlot( soundEvent.Sounds[soundIndex], code ) )
+		parameters ??= new SoundParameterTable();
+		// [BIN:TPW-EXE:0x006BE5E0 branch choice] the branch picker (0x6BE450) reads slot 0's value byte (table +4), which a call writes only when its code is the event's code (slot 0)
+		if ( unchecked((byte)code) == parameters.Code( 0 ) )
+			Parameter = unchecked((byte)value);
+		if ( !parameters.Set( unchecked((byte)code), unchecked((byte)value) ) || voice is not { IsFinished: false } playing )
 			return;
 		var sound = soundEvent.Sounds[soundIndex];
-		playing.Gain = system.Volume( sound, code, value ) / 100f;
-		playing.SetPitch( system.Pitch( sound ) );
+		playing.Gain = system.Volume( sound, parameters ) / 100f;
+		playing.SetPitch( system.Pitch( sound, parameters ) );
 	}
 
 	/// <summary>Whether <paramref name="code"/> is in slot 1, 2 or 3 of a sound: its selectors +0x16 and +0x1A (low bytes), or slot 3's 0.</summary>
@@ -724,6 +771,9 @@ public sealed class SoundSentence
 	{
 		// [BIN:STP-PPC:sound_shared 0x100192F0 AssignSoundToNextBranch] a branching sentence starts on the event's first sound
 		var first = soundEvent.Player == SoundEventPlayer.BranchingSentence ? 0 : Math.Max( 0, system.PickSound( soundEvent.Sounds ) );
+		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] the chosen sound's selectors are in the table from the creation (0x6BBF00), so a parameter set before the first sample plays is kept
+		soundIndex = first;
+		SoundParameterTable.SelectSound( ref parameters, soundEvent.Sounds[first] );
 		Prefetch( first );
 		waiting = true;
 	}
@@ -784,10 +834,13 @@ public sealed class SoundSentence
 			return true;
 		soundIndex = sound;
 		lastSample = sample;
-		// [BIN:TPW-EXE:0x6bc410 sample start] a new segment evaluates its volume (0x6bc090) with the values the slot table holds; a later parameter change re-evaluates it (SetParameter)
-		var gain = system.Volume( soundEvent.Sounds[sound], ParameterCode, Parameter ) / 100f;
+		// [BIN:TPW-EXE:0x6bc8d7 sound change] moving to a sound runs the placeholder's sound setup again (0x6bbf00): slots 1 and 2 take the new sound's selectors, the values stay
+		SoundParameterTable.SelectSound( ref parameters, soundEvent.Sounds[sound] );
+		// [BIN:TPW-EXE:0x6bc410 sample start] a new segment evaluates its volume (0x6bc090) and pitch (0x6bc170) with the values the slot table holds; a later parameter change re-evaluates them (SetParameter)
+		var gain = system.Volume( soundEvent.Sounds[sound], parameters ) / 100f;
+		var pitch = system.Pitch( soundEvent.Sounds[sound], parameters );
 		voice = Position is { } place ? system.Mixer.Play( audio, channel, gain, place, Range ) : system.Mixer.Play( audio, channel, gain );
-		voice.SetPitch( system.Pitch( soundEvent.Sounds[sound] ) );
+		voice.SetPitch( pitch );
 		voice.Completed += _ => OnCompleted();
 		// [EXT:sentence-prefetch] a sentence's next segment is chosen and decoded ahead when the current one starts, so the draw and the parameter are taken one segment early; the original chooses when the current segment's data runs out (sound_shared GetDataChunk 0x10008CC4 -> 0x1001A1F0), but its chooser is the shared clock-seeded one (see Advance), so the draw's timing has no observable rule to match
 		var successor = Successor();
@@ -806,6 +859,19 @@ public sealed class SoundSentence
 	}
 
 	private bool OutOfRange => (soundEvent.Flags & SoundEventSystem.AnyDistanceFlag) == 0 && !SoundEventSystem.Audible( Position, Range );
+
+	/// <summary>Moves a positioned sentence and its playing segment (the original's placeholder position call).</summary>
+	// [BIN:TPW-EXE:0x006BBCE0 placeholder position] the place is stored at +0x10 and, while a sample plays (+0x24), handed to it
+	public void MoveTo( Vector3 position )
+	{
+		AudioListener.ValidatePosition( position, nameof( position ) );
+		Position = position;
+		if ( voice is { } playing )
+			playing.Position = position;
+	}
+
+	/// <summary>The value a sound's parameter binding of <paramref name="kind"/> reads (1 volume, 2 pitch), or null without a table or binding (tests).</summary>
+	internal int? ParameterValue( int kind ) => parameters != null && parameters.TryValue( soundEvent.Sounds[soundIndex], kind, out var value ) ? value : null;
 
 	internal void Pump()
 	{
@@ -839,4 +905,82 @@ public sealed class SoundSentence
 			waiting = voice == null;
 		}
 	}
+}
+
+/// <summary>
+/// A placeholder's parameter table (four code bytes, four value bytes): slot 0 holds the event's parameter code, slots 1 and 2 the playing sound's two
+/// parameter selectors; a sound binds a selector to volume (kind 1) or pitch (kind 2) through the mask that follows it.
+/// </summary>
+// [BIN:TPW-EXE:0x006B7150 parameter table] 0x20 bytes at placeholder +0x4C: codes at +0..3, values at +4..7, created zeroed on first need
+internal sealed class SoundParameterTable
+{
+	public const int KindVolume = 1;
+	public const int KindPitch = 2;
+	private readonly byte[] codes = new byte[4];
+	private readonly byte[] values = new byte[4];
+
+	/// <summary>The table an event's placeholder starts with: one when the event's short +0x12 is nonzero, its low byte as slot 0's code.</summary>
+	// [BIN:TPW-EXE:0x006BBF60 placeholder setup] a nonzero event short +0x12 creates the table and stores its low byte as code 0
+	public static SoundParameterTable? ForEvent( SoundEvent soundEvent )
+	{
+		if ( soundEvent.Extra == 0 )
+			return null;
+		var table = new SoundParameterTable();
+		table.codes[0] = unchecked((byte)soundEvent.Extra);
+		return table;
+	}
+
+	/// <summary>The table of a placeholder that plays <paramref name="sound"/> of <paramref name="soundEvent"/> with no parameter call (a one-shot or a chain): the event's code and the sound's selectors, or null when both are 0.</summary>
+	// [BIN:TPW-EXE:0x006BBF60 placeholder setup] the event's code (0x6B7150 when nonzero), then the chosen sound's selectors (0x6BBF00)
+	public static SoundParameterTable? ForPlayback( SoundEvent soundEvent, SoundEntry sound )
+	{
+		var table = ForEvent( soundEvent );
+		SelectSound( ref table, sound );
+		return table;
+	}
+
+	/// <summary>Takes the selectors of the sound the placeholder chose.</summary>
+	// [BIN:TPW-EXE:0x006BBF00 sound parameters] with both shorts +0x16 and +0x1A of the sound 0, an existing table's codes 1–3 are cleared; otherwise the table is created as needed and codes 1 and 2 take their low bytes, code 3 is cleared (the values are kept)
+	public static void SelectSound( ref SoundParameterTable? table, SoundEntry sound )
+	{
+		var first = sound.Raw.Length >= 24 ? BitConverter.ToUInt16( sound.Raw, 22 ) : (ushort)0;
+		var second = sound.Raw.Length >= 28 ? BitConverter.ToUInt16( sound.Raw, 26 ) : (ushort)0;
+		if ( first == 0 && second == 0 )
+		{
+			if ( table != null )
+				table.codes[1] = table.codes[2] = table.codes[3] = 0;
+			return;
+		}
+		table ??= new SoundParameterTable();
+		table.codes[1] = unchecked((byte)first);
+		table.codes[2] = unchecked((byte)second);
+		table.codes[3] = 0;
+	}
+
+	/// <summary>Stores <paramref name="value"/> in every slot coded <paramref name="code"/>; true when a slot 1–3 matched (the playing sample is evaluated again).</summary>
+	public bool Set( byte code, byte value )
+	{
+		var reevaluate = false;
+		for ( var slot = 0; slot < 4; slot++ )
+		{
+			if ( codes[slot] != code )
+				continue;
+			values[slot] = value;
+			if ( slot != 0 )
+				reevaluate = true;
+		}
+		return reevaluate;
+	}
+
+	/// <summary>The value bound to <paramref name="kind"/> for <paramref name="sound"/>: the first mask (short +0x18) selects slot 1, else the second (short +0x1C) slot 2.</summary>
+	// [BIN:TPW-EXE:0x006BC040 parameter query] kind &amp; mask +0x18 returns value byte +5, else kind &amp; mask +0x1C returns value byte +6, else nothing
+	public bool TryValue( SoundEntry sound, int kind, out int value )
+	{
+		var first = sound.Raw.Length >= 26 ? BitConverter.ToUInt16( sound.Raw, 24 ) : 0;
+		var second = sound.Raw.Length >= 30 ? BitConverter.ToUInt16( sound.Raw, 28 ) : 0;
+		value = (kind & first) != 0 ? values[1] : (kind & second) != 0 ? values[2] : 0;
+		return (kind & (first | second)) != 0;
+	}
+
+	internal byte Code( int slot ) => codes[slot];
 }

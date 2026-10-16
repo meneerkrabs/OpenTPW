@@ -208,7 +208,22 @@ your own edition of the game.
 2. Keep repository text in English, never commit original game files or binaries, and tag every
    behaviour you could not trace to the original as an approximation (see the
    [fidelity register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
-3. Run the tests (`dotnet test source/OpenTPW.Tests`; tests that need original files run when
+   `python3 tools/fidelity_register.py --check` validates the tags and their declarations;
+   `python3 tools/fidelity_register.py --write` generates the register locally as
+   `docs/FIDELITY-REGISTER.md`. That file is a build artifact: it is not committed, and the website
+   publishes the copy generated from `main`. When an ID is retired, `--write` also records it in
+   `tools/fidelity_retired.txt`, which is committed.
+3. Describe your change for the progress log in a new file of its own,
+   `docs/progress/YYYY-MM-DD-<slug>.md` (date and a short lowercase slug, for example
+   `docs/progress/2026-10-16-buy-window-scroll-bar.md`). Its first line is the entry heading
+   `## Title (Month D, YYYY)` with the same date; use `###` or deeper inside the entry, and write relative
+   links as seen from `docs/progress/` (for example `../TRACKS.md`). Do not
+   edit the top of `docs/PROGRESS.md`: it is the frozen history from before this convention.
+   `python3 tools/progress.py --check` validates the fragments, and `python3 tools/progress.py`
+   prints the assembled log (newest first) that the website publishes as the
+   [progress notes](https://opentpw.io/docs/PROGRESS.html). One file per pull request means
+   parallel pull requests never conflict over the log.
+4. Run the tests (`dotnet test source/OpenTPW.Tests`; tests that need original files run when
    `OPENTPW_GAME_PATH` points at your game folder) and open a pull request.
 
 ## Legal

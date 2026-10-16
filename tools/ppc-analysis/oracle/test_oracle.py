@@ -71,15 +71,12 @@ EXPECTED = {
                                            'sections': [5678, 64, 10262, 128, 64]}),
     ('coast-rating-final', 'plan-both-flags'): AGREE,
     # F9: 0xcb4e8 uses the factor 0.8 while the 0x1083c8 thing's +48 word is positive (the weather thing's mCurrentDrops: GUESTS.md
-    # and C# take that), cuts to 500 − guests in limit mode 1 (online; C#: OnlineVisit, ARRIVAL-002), and both cuts compare
-    # guests + group unsigned without a floor at 0 (GUESTS.md and C# floor at 0, ARRIVAL-004). 49 of the 515 inputs remain:
-    # 36 in limit mode 1 and 12 in the other modes where the group is cut below 0 (guests above the limit), plus 1 where a
-    # negative group (MinPeople −5) wraps the unsigned compare.
-    ('arrival-group', 'plan'): (49, {'world_mode': 0, 'guests': 600, 'points': 0, 'bonus': 20, 'per_visitor': 6,
-                                     'min_people': 1, 'obj48': 0, 'limit_mode': 1}),
+    # and C# take that), cuts to 500 − guests in limit mode 1 (online; C#: OnlineVisit, tp.exe 0x4c0830 sets GameType 1 for a
+    # visit), and both cuts compare guests + group unsigned without a floor at 0 (fixed in GUESTS.md and C#, tp.exe 0x4cf6e5:
+    # the group above the limit is negative, a negative group wraps the compare). All 515 inputs agree.
+    ('arrival-group', 'plan'): AGREE,
     ('arrival-group', 'routine-reading'): AGREE,
-    ('arrival-group', 'csharp'): (49, {'world_mode': 0, 'guests': 600, 'points': 0, 'bonus': 20, 'per_visitor': 6,
-                                       'min_people': 1, 'obj48': 0, 'limit_mode': 1}),
+    ('arrival-group', 'csharp'): AGREE,
     # F11: executed over scripts of 0xcb2ac calls, a negative group (1700 counted guests: 1500 − 1700 = −200) ends at the
     # next stop exactly like 0: guests created, active byte and timer restart agree with the floored plan. The group word
     # keeps the negative value and the "group == 0" vehicle event (slot 74) is missing. The static reading (only exactly 0
@@ -101,11 +98,12 @@ EXPECTED = {
     ('park-points', 'routine-reading'): AGREE,
     ('park-points', 'csharp'): AGREE,
     # ARRIVAL-003: 0xdc834 executed (the entrance cell, the queue count and the coaster controller stubbed) agrees with the
-    # reading on the returned word and the stub call order. The part C# implements (Info.IsChoosable, not broken down or
-    # condemned, open) differs wherever one of the other conditions fails.
+    # reading on the returned word and the stub call order. The C# rule with the level's sync (every condition) differs only
+    # where four times the queue cells wraps 32 bits, which C# ints do not reach.
     ('park-points-counts-test', 'plan'): AGREE,
-    ('park-points-counts-test', 'implemented-subset'): (205, {'flags': 4, 'state': 0, 'open': 1, 'cell': 0, 'cells': 2,
-                                                              'track': 0, 'thing40': 1, 'coaster': 1, 'count': 7}),
+    ('park-points-counts-test', 'implemented-subset'): (47, {'flags': 4, 'state': 0, 'open': 1, 'cell': 4660,
+                                                             'cells': 0x40000000, 'track': 0, 'thing40': 1, 'coaster': 1,
+                                                             'count': 0xFFFFFFFF}),
     # F12/F13 (fixed in C#): 0xcb7a8 stores monthly = trunc(P x pow(1 + APR/100, N/24) / N), not an annuity (3651 for 100000
     # at 20 % over 36 months), and 0xcc21c deducts exactly that for N months (no balance, interest or last-month remainder,
     # profit down by (M x N - P) / N). LoanMath.MonthlyRepayment / Pay and the plan now do the same.
@@ -2063,7 +2061,7 @@ class CSharpMutation(unittest.TestCase):
         ('queue-join-difference', 'csharp', 'source/OpenTPW/World/Guests/QueueJoinRules.cs',
          'Math.Clamp( terms.CostOfGoods - terms.PricePerUse, 0, 100 )', 'Math.Clamp( terms.CostOfGoods - terms.PricePerUse, 0, 99 )'),
         ('park-points', 'csharp', 'source/OpenTPW/Economy/ParkEconomy.cs',
-         '!item.ScriptBroken && item.IsOpen && item.QueueHasRoom;', '!item.ScriptBroken && item.QueueHasRoom;'),
+         '!item.ScriptBroken && item.IsOpen && item.QueueHasRoom\n', '!item.ScriptBroken && item.QueueHasRoom\n'),
         ('loan-offers', 'csharp', 'source/OpenTPW/Economy/ParkLedger.cs',
          'return TruncateUnsigned( amount * power / months );', 'return TruncateUnsigned( amount * power / months + 1.0 );'),
         ('loan-term', 'csharp', 'source/OpenTPW/Economy/ParkLedger.cs',

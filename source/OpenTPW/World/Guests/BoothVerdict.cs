@@ -22,6 +22,14 @@ public static class BoothVerdict
 	public const int ExpensiveWaitBase = 50;
 
 	/// <summary>
+	/// Park turns from an expensive verdict to the next one: the verdict stores the wait N = 50 + R % 50 in the guest's counter
+	/// without counting it down, each later state-4 update (one per park turn) decrements it, and the update that finds it at 0
+	/// runs the verdict again, so N + 1 turns later.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FF9D0 booth wait] +0x200 = R % 50 + 50 at 0x004FFA77 and return; a nonzero counter is decremented and the update returns (0x004FFB01), so the verdict 0x004FF5B0 runs on the update after the one that reaches 0
+	public static int ExpensiveWaitTurns( uint draw ) => ExpensiveWaitBase + (int)(draw % ExpensiveWaitBase) + 1;
+
+	/// <summary>
 	/// The park value GP = points / (N + R % (N / 2 + 1)) + base in unsigned integers, with N = <c>ExcitementToCostDivisor</c> and
 	/// base = <c>MinimumEntryFee</c>.
 	/// </summary>

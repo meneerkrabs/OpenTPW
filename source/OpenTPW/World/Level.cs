@@ -48,6 +48,44 @@ public partial class Level : IDisposable
 
 	/// <summary>Park name on the gate sign of an imported original level (TrueType sign text demo).</summary>
 	public OriginalGateSign? GateSign { get; private set; }
+
+	/// <summary>The park's name: the gate's two sign lines (saved with the park), or null for a level without a gate sign.</summary>
+	public ParkNameLines? ParkName { get; private set; }
+
+	/// <summary>
+	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
+	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
+	/// </summary>
+	private void SetupParkName()
+	{
+		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : null;
+		if ( OriginalPark != null )
+		{
+			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
+			{
+				Log.Warning( $"Gate sign: {exception.Message}" );
+			}
+		}
+		ParkName = savedName ?? GateSign?.Lines;
+	}
+
+	/// <summary>
+	/// Renames the park (the ticket price window's rename dialog): stores the two lines and redraws the gate sign. False for
+	/// a read-only visit, a level without a park name, or lines a save could not hold (<see cref="ParkNameLines.IsValid"/>).
+	/// </summary>
+	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0); the handler's copies to the online park record (0x409410, 0x5B0940/0x5B0970) and its secret name ("Kevin the" / "Cosmic Cow" at 0x751A34/0x751A38, calling 0x4053C0) are not built, and gate lines of original saves are not imported — evidence needed: the gate-line field of original saves and what 0x5B0940/0x5B0970 and 0x4053C0 drive
+	public bool RenamePark( string line1, string line2 )
+	{
+		if ( IsReadOnlyVisit || ParkName == null || line1 == null || line2 == null )
+			return false;
+		var lines = new ParkNameLines( line1, line2 );
+		if ( !lines.IsValid )
+			return false;
+		ParkName = lines;
+		GateSign?.Rename( lines );
+		return true;
+	}
 	private bool wasMouseDown;
 	private int renderedCellVersion;
 	/// <summary>Set each frame by the original HUD when the pointer is over it, so HUD clicks do not build.</summary>
@@ -298,11 +336,7 @@ public partial class Level : IDisposable
 			}
 			yield return 0.35f;
 			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield );
-			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global ); }
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
-			{
-				Log.Warning( $"Gate sign: {exception.Message}" );
-			}
+			SetupParkName();
 			var origin = OriginalParkPlacement.GetOrigin( OriginalPark.Heightfield );
 			ParkCameraMode.TargetExtent = Math.Max( origin.X, origin.Y );
 			var save = OriginalPark.Save;

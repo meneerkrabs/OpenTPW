@@ -539,20 +539,25 @@ any one of them brings mismatches back (`test_arrival_reading_is_sharp`).
     `GuestSimulation.WeatherDropsFalling`, set by `Level` as `ParkWeather.CurrentDrops > 0`; with no weather (the headless M3
     and M4 gates, or before the first weather tick) it is 1.2. The snow target was an approximation (AUDIO-028: target 0)
     that this tracing resolved, so `ParkWeather` now ramps snow drops too (the rain voice level stays rain only).
-- **500 cut in online parks (ARRIVAL-002, open).** When word 0 of the GameType object (`data:0x53d98`, PPC-review "New
+- **500 cut in online parks (ARRIVAL-002; the GameType part settled on the PC).** When word 0 of the GameType object (`data:0x53d98`, PPC-review "New
   binding": 0 Full Simulation, 1 online, 2 Instant Action) is 1, the group is first cut to `500 − guests`. Otherwise the
   1500 cut applies. Offline parks use 1500. C# now cuts to 500 − guests for an OpenTPW online visit (`GuestSimulation.OnlineVisit`, set by
-  `Level` for a non-sandbox park visit). That a visit is the original's GameType 1 is an assumption (ARRIVAL-002); so is
-  whether a hosted online park runs this routine.
-- **No floor.** Both cuts compare `guests + group` with `cmplwi` (unsigned) and store `limit − guests` as is. With more
-  guests counted than the limit, the group is negative: 1700 guests give −200, where C# gives 0. Statically, the caller
-  `0xcb2ac` creates guests only while the count is above 0 (`0xcb3bc`). Executing it with a negative group is F11
-  (ARRIVAL-004): the group does not hold the arrival state.
+  `Level` for a non-sandbox park visit). tp.exe settles both former assumptions: the park-info dialog's completion
+  `0x4c0830` calls SetGameType(1) when a published park is entered, and the main loop runs the park turn for GameType 1
+  through `0x5166b0` (call at `0x54f760`), so the visited park runs the arrival step with the 500 cut. ARRIVAL-002 keeps
+  the visit's inputs: the original loads `online_Standard.sam` for GameType 1 (`0x51573c`), OpenTPW reads `Standard.sam`,
+  and a read-only visit counts no park points.
+- **No floor (fixed in C#).** Both cuts compare `guests + group` with `cmplwi` (unsigned) and store `limit − guests` as is.
+  With more guests counted than the limit, the group is negative: 1700 guests give −200. C# gave 0 until the PC twin
+  confirmed the rule (tp.exe `0x4cf6e5`, `jbe` at `0x4cf690`/`0x4cf6ee`) and every reader of the word was found to treat a
+  negative group as 0; it now keeps the negative group and compares unsigned. Statically, the caller `0xcb2ac` creates guests
+  only while the count is above 0 (`0xcb3bc`). Executing it with a negative group is F11: the group does not hold the
+  arrival state.
 
-After the factor and the online cut 49 of the 515 inputs still differ from GUESTS.md and C# (the plan and C# pin the same
-inputs). All are the missing floor (ARRIVAL-004): 36 in limit mode 1 and 12 in the other modes, where more guests are
-counted than the limit and the original's group is negative while C# gives 0, plus 1 where a negative group (MinPeople −5)
-wraps the unsigned compare. The 42 limit-mode-1 mismatches of the first fix fell by only 6, because most of them had
+After the factor and the online cut 49 of the 515 inputs still differed from GUESTS.md and C# (the plan and C# pinned the
+same inputs). All were the missing floor (the former ARRIVAL-004): 36 in limit mode 1 and 12 in the other modes, where more
+guests are counted than the limit and the original's group is negative while C# gave 0, plus 1 where a negative group
+(MinPeople −5) wraps the unsigned compare. With the floor removed and the compare unsigned, the plan and C# agree on all 515. The 42 limit-mode-1 mismatches of the first fix fell by only 6, because most of them had
 guests above 500. First counterexample: shipped values, 600 guests counted, limit mode 1: the original gives −100 and
 the plan and C# give 0. Before the fix the first one was the shipped values with the word positive: the
 original gave 2 (0.8 × 20 / 6) and the plan 4; 125 inputs differed. Integer and float steps agree with the plan wherever
@@ -639,8 +644,11 @@ Scripts of repeated calls, with the vehicle phase and report flag chosen per cal
   `+17` through `0xca20`). A saved game therefore restores the group and active byte as saved. No other writer was
   found; a store through a pointer copied elsewhere would not show up in this search (static reading).
 
-Result: ARRIVAL-004 changes no guest or timer behaviour. The C# floor at 0 produces the same guests and timer as the
-original's negative group, differing only in the stored group word and the untraced empty-group vehicle step. The
+Result: the floor changed no guest or timer behaviour. The C# floor at 0 produced the same guests and timer as the
+original's negative group, differing only in the stored group word and the empty-group vehicle step. On the PC that step
+(`0x4cf4de`) only writes the vehicle script's variable 0 again (`0x51a2f0` with a vehicle current, `0x51a649`), and the other
+readers of the word, the boarding gate `0x51a760` (`cmp 0xa` at `0x51a83d`) and the advisor score `0x59f220` over the group
+history, treat a negative group as 0; C# now keeps the negative word (the former ARRIVAL-004 is retired). The
 brief's static reading, a negative group holding the state, differs on 66 scripts and is refuted. The
 `plan` side models the stop gate as the vehicle phase 2. `UpdateArrivals` steps once per park turn from the turn after a group starts, because tp.exe's twin `0x4cf3e0` runs once per world turn (at the end of `0x516380`, through `0x4d7b20`); only the bus's drive to the stop is missing (ARRIVAL-001). C# is not compared.
 
@@ -1608,6 +1616,10 @@ image, which a relocated load skips and counts in `Image.skipped_relocations`). 
 | `tpw-exe-region-effect` | tp.exe `0x4d8480`..`0x4d8607` (thiscall, `ecx` = cell manager; add flag, effect index, cell id) | none; a synthetic cell manager with the effect table at `+0x1d9104` and the grid at `+0x1b1104` | 520 (random tables up to radius 9, words near the 16-bit limits, cells at the map's corners) | **X22**: **agree** 520/520 with `ParkEnvironment.Apply` (the 19 × 19 window around the source) | (the plan is the routine reading) |
 | `tpw-exe-guard-choice` | tp.exe `0x5099c0`..`0x509ade` (thiscall, `ecx` = the receiving thing; out, prankster cell id) and the state test `0x4d6330` | none but the debug print; synthetic guard things in the thing table `0x7cfb90` behind game word `+0x1da744` | 520 (up to six guards in all states, equal distances, the receiver at (0, 0) and elsewhere) | **X24**: **agree** 520/520 with `StaffWorldSimulation.ChooseGuard`; measuring from the prankster or giving a tie to the later guard disagrees | (the plan is the routine reading) |
 | `tpw-exe-litter-finder` | tp.exe `0x4c8ed0`..`0x4c9033` (thiscall, `ecx` = park; out, collector id, cell id, range) | none but the debug print; synthetic cell records at `[0x8023a0]` and the park's scratch buffer at `+0x1f020` | 520 (ranges 0..5, claims by others and by him, cells at the map's corners) | **X23**: **agree** 520/520 with `StaffWorldSimulation.FindLitter` | (the plan is the routine reading) |
+| `tpw-exe-walk-edge-test`, `tpw-exe-walk-commit` | tp.exe edge test `0x4d8750` and step commit `0x510510` (cdecl), with the cell readers `0x522770` / `0x522850` / `0x536300`..`0x53645f`, the object test `0x5363f0` through `0x4d0af0` and `0x53ad20`, the bounds test `0x4d8300` | none but the debug print; a synthetic 128 × 128 map at `[0x7cf6ec]` (cells `0x44` bytes from `+0x294`, id = y × 128 + x + 1; type `+8`, link `+0xc`, queue link `+0xd`, flags `+0xe`), no objects | 501 maps each (park-like windows of path corridors with queue, walkway and other cells, random links and queue links, the `0x400` flag; the map's corners), 12 edges or 12 steps of up to two cells per map, masks 0, 1 and 2 | **X25**: **agree** 501/501 with `WalkEdges.Blocked` and `WalkEdges.Commit`; a reading that ignores the mask differs on 226 | (the plan is the routine reading, `walk_reading.py`) |
+| `tpw-exe-walk-search` | tp.exe `0x511420` and its line search `0x511470`, tracers `0x511c90`, shortcuts `0x5110d0`, refinement `0x5108a0`, the edge test and commit above, the library `memmove` `0x67bb90` | none but the debug print; the same synthetic maps | 500 (start on a path cell, goal on a path cell or anywhere in the window; 120 fail) | **X25**: **agree** 500/500 with `WalkSearch.Find` (the waypoint list, or the failure `0x70000000`); ignoring the mask, 220 differ | (the plan is the routine reading) |
+| `tpw-exe-walk-avoid-walls` | tp.exe avoid_walls `0x50e4a0` (out, walk; `ret 8`) with the ray test `0x50cc20`, the fixed-point multiply `0x50df70`, divide `0x50e080`, length and `_ftol` | none but the debug print; the same maps, a walk object with radius `+4`, position `+8`, velocity `+0x10`, mask `+0xb4` | 500 (a quarter beside a queue cell that cuts a corner, positions near cell edges, zero velocities) | **X25**: **agree** 500/500 with `GuestNavigation.AvoidWallsOriginal` (the force) | (the plan is the routine reading) |
+| `tpw-exe-walk-steering` | tp.exe set-up `0x50f8e0`, steering step `0x50f3b0` (truncate `0x50f600`, follow_path `0x50ed10`, avoid_walls, separation `0x50e0e0`), progress `0x50fd40`, the block stamps `0x4d8c50` / `0x4d8cd0` | the debug print, and separation's neighbour query `0x5102f0` (no neighbours); the behaviour list (avoid_walls `0xe666`, follow_path `0x8000`, separation `0x1999`) written as the registration `0x50fdf0` leaves it; the block stamps at game `+0x2d8 + 0x1b0000` | 40 whole walks of 80 steering steps (92 set-ups, 23 map edits that stamp their block; 499 arrived, 1746 walking and 1047 stuck results) | **X25**: **agree** 40/40 with `GuestNavigation.Navigate` / `StepOriginal`: every walk field the step reads after each set-up and step, the buffered centres, and the walk step's result (`0x4fa2a0`) | (the plan is the routine reading) |
 | `tpw-exe-queue-reevaluate` | tp.exe `0x501390`..`0x5014d1` (thiscall, `ecx` = guest; the Mac `0xee8f8`) | `0x50b350` guest id, `0x4ddf50` queue position (chosen), `0x4754e0` table read (outputs unused), `0x50be80` animation, `0x4ddd20` unlink, `0x5012f0` dismissal, `0x501db0` state (each checked for its object), `0x5da3c0` log; the whole call sequence, the ride word and the stack balance are checked | 548 (48 edges around 4 × cells for states 11 to 14, 500 random; guests in the queue list) | **X14**: **agree** 548/548 with the routine reading and with the leave-for-room rule of `GuestSimulation.ReevaluateQueue`; without the state-14 exemption 70 differ | (the plan is the routine reading) |
 | `tpw-exe-scrap-value` | tp.exe `0x4e2400` (thiscall, `ecx` = thing; the Mac `0xe25e8`), the percentage `0x4e2290` (the Mac `0xe2424`), the clock stamp `0x4f8690` with the stamp add / subtract `0x5fc530` / `0x5fc550`, the 64-bit divide and multiply helpers | `0x412e90` type record (registry and type id checked), `0x5fc660` FileTimeToSystemTime wrapper (the eight field pointers null and the status pointer set, checked; the status 0 is written to a slot the caller does not read) | 572 (the Mac target's inputs, each with a clock base of 0, below 2^32 or anywhere in 64 bits) | **X13**: **agree** 572/572 with the Mac routine reading (F21, what C# follows) | readings with all levels' costs, without the first-month refund or with the base level's row differ on 221, 57 and 181 |
 
@@ -2156,9 +2168,17 @@ It agrees with that reading on 515 inputs.
 one-cell fallback on a path cell (RIDES-028) does not count, just as the original's back-of-queue walk finds no cell there. The rule then
 requires the queue list to be shorter than 4 × those cells. The level, the M3 and M4 gate loops and the prototype ride sync the result
 into `ParkObjectState.QueueHasRoom` each tick, and `CountsForParkPoints` requires it. A ride without a queue, or with a full one, no
-longer counts. Transcribed into the routine's terms, the C# rule agrees for every attraction that is not a coaster, kart or water ride.
-ARRIVAL-003 keeps the controller test and the track word (29 inputs differ, all of those types). The flag is not saved; it is true until
-the first sync after a load or a purchase.
+longer counts. The flag is not saved; it is true until the first sync after a load or a purchase.
+
+**Fixed in C# (track types).** `CountsForParkPoints` now applies condition 6 too: a coaster counts only while
+`ParkObjectState.CoasterAcceptsGuests`, which the level syncs from `CoasterRide.AcceptsGuests` (no controller fails, as the
+original's lookup `0x436860` returns 0), holds; the coaster test `0x441970` reads the controller's `+0x140` (its self-intersection
+count, which `0x439c40` increments for each crossing of the track with itself; not a rider count) and the `+0x3c` bits complete and
+closed. A kart or water ride counts only with `TrackValid`, the circuit walk's verdict; other types ignore both. The park points sum
+`0x4c8240` filters by the type's `Info.WhichUIType` (`+0x4ac`) 0 or 2, which C# now reads (`EconomyObjectInfo.RatingType`) instead
+of the object kind. Transcribed, the C# rule agrees on every input (`csharp-rule`). ARRIVAL-003 keeps two residuals: the C# coaster
+test also needs three track samples and has no edited-coaster term (`0x790fec`), and the track word starts false before a kart or water
+ride's first walk where the original's constructor stores 1 (`0x4db0df`).
 
 ### 7.12 Finding X16: guests test the price when they are called forward
 
@@ -2367,3 +2387,23 @@ prankster. Two wrong readings fail: measuring from the prankster (56 differ) and
 
 **Fixed in C#.** In a level the guards walk and answer pranks (`StaffWorldSimulation.ReportPrank`, the chase, the catch and the escort of
 WANDER-plan §4); entertainers patrol and perform. The guard list's order is the hire order (ECON-022).
+
+### 7.19 Finding X25: guests walk with the original's search, cells and steering
+
+Question (WALK-002, WALK-004 .. WALK-009): how does a guest's walk find its way over the park's cells? OpenTPW walked a cell route
+from its own grid search, refilled from that route and measured progress in a five-waypoint window (docs/GUESTS.md, "Walking").
+
+**X25, the walk (`0x4d8750`, `0x510510`, `0x511420`, `0x50e4a0`, `0x50f8e0` / `0x50f3b0`).** Five targets execute the routines on
+synthetic park-like maps; `tools/ppc-analysis/oracle_x86/walk_reading.py` states them in Python and each agrees with it on every input
+(table above), and `WalkSearch` / `GuestNavigation` port the same reading. The edge test is the only cell rule: a step between two path
+cells is open whatever their links, a queue boundary needs the target's link back, mask 1 also opens a step from a path cell to ground,
+mask 2 refuses the `0x1e` walkway. The search draws a four-connected line to the goal; at a blocked edge two tracers follow the wall, one
+turning each way, until one may leave towards the goal; then shortcuts over up to four waypoints and a refinement. A step commits one
+cell at most, a diagonal through either L-shaped route. avoid_walls pushes back from the first edge the probe penetrates, else from the
+corner of the motion's quadrant whose diagonal cell cuts it. The steering sums the three behaviours with the original's multiply
+(rounding towards −∞) and divide (towards 0); a failed search leaves the walk arrived and stuck, and a stamp change in a waypoint's block
+makes the walk search again. A reading that ignores the walk's mask differs on 226 edge inputs and 220 searches.
+
+**Fixed in C#.** Guests walking the park's cells use this walk (WALK-002 and WALK-009 retired; WALK-004 .. WALK-008 narrowed). Its
+limits: the oracle maps hold no objects or things (WALK-005), separation runs without neighbours here (WALK-003), and queue walks,
+arrival lanes and walks from older saves keep the route walk (WALK-006).

@@ -343,8 +343,8 @@ public class PathBuilderTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		Assert.AreEqual( 62, simulation.Admissions, $"{simulation.Admissions}" );
-		Assert.AreEqual( 0x310892E5973200C3UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 61, simulation.Admissions, $"{simulation.Admissions}" );
+		Assert.AreEqual( 0xBE56BB444866D576UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

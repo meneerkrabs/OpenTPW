@@ -403,7 +403,7 @@ public sealed class ThemeParkIncHud
 			cursorX = cursorY = -1;
 		var toolClick = UpdateCellTool( context, input, inPark );
 		UpdateBlueprint( inPark, context.Delta );
-		// [APPROX:UI-027] select by occupied grid cell; original cursor picking is not verified.
+		// [APPROX:UI-027] select by occupied grid cell; the original picks a ride, shop or other object by its pick sprite (0x5890e0, 0x532bd0, window 0x4b6080)
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsRemovingObjects && input.LeftReleased && !toolPress )
 			selectedObject = level.Objects.FindAt( cursorX, cursorY );
 		if ( input.LeftReleased )

@@ -4,8 +4,8 @@ namespace OpenTPW.Mods;
 
 /// <summary>
 /// Resolves the run's extensions and mods once at startup (docs/MODS.md) and makes them active for the whole process.
-/// Changes to <c>mods.json</c> apply at the next start. Phase 1 mods are data only: nothing is loaded or executed, and
-/// nothing consumes their content yet.
+/// Changes to <c>mods.json</c> apply at the next start. Mods are data only: nothing is loaded or executed; their overrides,
+/// strings and objects are installed by <see cref="ModContentRoots"/>.
 /// </summary>
 // [EXT:mods] OpenTPW's own mod system; the original game had no mods
 public static class ModStartup
@@ -56,6 +56,8 @@ public static class ModStartup
 		Report( set, diagnostics, trace, warning );
 		OpenTpwExtensions.Activate( set );
 		Discovered = discovered;
+		// [EXT:mods] the mods' overrides, strings and objects become visible to the game (docs/MODS.md)
+		ModContentRoots.Activate( set, trace );
 		return set;
 	}
 

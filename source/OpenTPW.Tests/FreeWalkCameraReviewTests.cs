@@ -116,6 +116,7 @@ public class FreeWalkCameraReviewTests
 		using var state = new Globals();
 		var hud = Fixture( out var level, out var simulation );
 		var guest = new Guest( 7, 0 ) { State = GuestState.WalkingAround, DrawX = 5, DrawY = 5 };
+		guest.Navigation.X = 1 << 16; guest.Navigation.Y = 1 << 16; // the picked visitor must stand near the cursor's terrain cell (0x532bd0)
 		Set( simulation, "guests", new List<Guest> { guest } );
 		var hash = Hash( simulation );
 		Input.Keyboard.KeysDown.Add( Key.C ); Input.UpdateButtons();
@@ -138,7 +139,12 @@ public class FreeWalkCameraReviewTests
 		Assert.AreEqual( hash, Hash( simulation ) );
 		Input.Keyboard.KeysDown.Clear(); Input.UpdateButtons();
 		hud.Update( Context(), UiInput.Idle( click.Mouse ), false, false, false );
-		hud.Update( Context(), click, false, false, false );
+		// [BIN:TPW-EXE:0x487013 hover mode 7] a visitor press needs Shift alone (or the visitor locator panel out)
+		using ( Input.InjectKeyDown( Key.ShiftLeft ) )
+		{
+			Input.UpdateButtons();
+			hud.Update( Context(), click, false, false, false );
+		}
 		Assert.AreEqual( guest.Id, hud.SelectedVisitorId, "A fresh park press recovers the existing visitor route." );
 	}
 

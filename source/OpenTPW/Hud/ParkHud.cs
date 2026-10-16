@@ -120,8 +120,8 @@ public sealed partial class ParkHud
 	// calls the game pause 0x10110518 (0x10198580) and clears the gate; the menu's close routine 0x101985C0 sets the gate
 	// and calls the resume 0x10110598. The pause freezes the scaled clock (0x1010E888 → 0x10117C54) that drives the
 	// scheduler's 31 ms substeps and park turns, together with the advisor's unscaled clock (0x10117AE8).
-	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), and by the generic dialog 0x47f020 (0x47f26c; probably the message box, medium confidence). Callers 0x46b74c, 0x49efba, 0x49f29f and 0x4a3a6c are unidentified, so the park only pauses here for the screens whose original pauses (the pause menu with the screens opened from it, and the map window)
-	// [APPROX:UI-096] the message dialog, the postcard (Ctrl+P) and the four unidentified callers pause in the original but not here — evidence needed: which screens 0x47f020's callers and 0x46b74c/0x49efba/0x49f29f/0x4a3a6c open
+	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), by the generic message box 0x47f020 (0x47f26c), by the main window procedure 0x46b600 when the application is deactivated (0x46b74c) and by the three screens the pause menu's handler 0x48b6a0 opens (0x49efba, 0x49f29f, 0x4a3a6c); the park pauses here for the pause menu with the screens opened from it and for the map window
+	// [APPROX:UI-096] the pause menu's own screens keep the pause (its cases 1/22 → 0x49efb0, 2 → 0x49f280, 5 → 0x4a3a30 pause at 0x49efba, 0x49f29f, 0x4a3a6c; jump table 0x48bbc8 of 0x48b6a0), but the postcard (Ctrl+P), every generic message box 0x47f020 (table 0x74f920, b_okay/b_exit buttons, 27 callers, pause at 0x47f26c) and the application's deactivation (WM_ACTIVATEAPP in 0x46b600, 0x46b74c) pause in the original and not here — evidence needed: which OpenTPW dialogs are 0x47f020's message boxes
 	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
 	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
 		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" ) ? 0 : speedScale;
@@ -178,7 +178,7 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the mode objects whose type (vtable +0x24) is 3, 4 or 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; type 3 is the tool-mode object 0x6fe9e0 that every build tool runs in; it is no sum of balance changes
 	// [DATA:video 2:05, 74:00-76:00] "$ 2500" while the blueprint of a 2500 ride is held, "$ 150" in the path tool, "$ 10000" for the coaster station and "$ 70" to "$ 130" per track segment; absent outside the build tools even when the balance changes
-	// [APPROX:UI-047] the mode-object types that show the text are 3 (the tool-mode object that wraps every build tool: blueprint, path and queue line, coaster segment), 4 and 8 (gated by 0x447990), which are not identified; the staff and patrol tools show nothing
+	// [APPROX:UI-047] type 3 is the tool-mode object (vtable 0x6fe9e0) of every build tool; type 8 is the coaster panel's mode object (vtable 0x6feaa0, 0x46cfc0, made by 0x497bc0 when a panel button is pressed), which shows the cost only while bit 0 of 0x79c658 is set (0x447990, set at 0x441a5d), a sub-state OpenTPW does not track, so the coaster tool shows its cost in every sub-mode; no mode-object class returns 4 (the classes 0x6fe980-0x6fead0 return 7, 3, 1, 5, 6, 8, 9; 5 and 6 are the staff place and carry tools, which show nothing) — evidence needed: what bit 0 of 0x79c658 stands for
 	public long? BuildActionCost
 	{
 		get
@@ -691,7 +691,7 @@ public sealed partial class ParkHud
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;
 			camera.ModalOpen = Stack.Screens.Any( screen => screen != hud && screen.Modal );
 		}
-		// [APPROX:UI-093] the camcorder's message procedure (0x488a00) acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf) and passes every other key on, so the pause key and the park door shortcuts are not offered while the ride view is open (whether the default procedure 0x65f66e forwards them to the HUD is not traced)
+		// [APPROX:UI-093] the camcorder's message procedure (0x488a00) acts only on Escape, the C shortcut (action 0x10) and the postcard action (0xf) and passes every other key to 0x65f66e, which calls the window's default handler (+0x118, 0x65f6d1 for ordinary windows, set at 0x65bd42) that has no key case and returns 0, so the pause key and the park door shortcuts are not offered while the ride view is open — evidence needed: whether a key the top window returns 0 for still reaches the HUD's key groups (0x488921)
 		if ( !paused && !IsRiding && input.Has( UiKeys.Pause ) )
 			Status.Speed = Status.Speed == GameSpeed.Paused ? GameSpeed.Normal : GameSpeed.Paused;
 
@@ -972,7 +972,7 @@ public sealed partial class ParkHud
 				cells.Add( (cursor.X, cursor.Y, cursor.Result == CoasterPlaceResult.Ok ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
 		}
 		else if ( level.StaffPlacement is { IsActive: true, HoverValid: false, HoverCell: { } staffCell } )
-			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell is the blueprint's red face; the original queues "square dynamic faces" with 0x53c8d0 (face type 1, queued only when [0x763c98] is set, unit-square UVs 0x871ee8; its 10th argument is a per-face flag, not a texture index) — evidence needed: the texture binding of face type 1 and the staff tool's caller among 0x53c8d0's 10 callers
+			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell is the blueprint's red face; the staff tools' per-frame method 0x46c480 (slot +0x18 of the place tool 0x6fea40 and the carry tool 0x6fea70) queues a square dynamic face with 0x53c8d0 at (x - 5, 1.0, z - 5), face type 1 (queued only when [0x763c98] is set; its 10th argument is a per-face flag, not a texture index), when one of the cell tests 0x5363f0, 0x535db0(0x40), 0x536450 holds or none of 0x536390, 0x536310, 0x536320 does; the renderer (0x53da49) takes type 1's material from slot [+0x50] + 16 × type — evidence needed: the texture of that material
 			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
 		else if ( level.BuyLandTool is { IsActive: true } landTool )
 		{

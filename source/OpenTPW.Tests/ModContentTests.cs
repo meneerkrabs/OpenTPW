@@ -95,8 +95,10 @@ public class ModContentTests
 
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "objects/zoom", 20010 ) ), "outside the declared range" );
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "objects/a", 20001 ), ObjectJson( "objects/b", 20001 ) ), "more than one object" );
-		AssertInvalid( ObjectsJson( 1000, 1009 ), "'idRange' must lie between" );
-		AssertInvalid( ObjectsJson( 20000, 30000 ), "'idRange' must lie between" );
+		AssertInvalid( ObjectsJson( 1000, 1009 ), "'idRange' 1000..1009 must lie within 5000..65535" );
+		AssertInvalid( ObjectsJson( 20000, 30000 ), "'idRange' 20000..30000 may hold at most 4096 ids" );
+		AssertInvalid( ObjectsJson( 65000, 65536 ), "must lie within 5000..65535" );
+		AssertInvalid( ObjectsJson( 20009, 20000 ), "'idRange' 20009..20000 must not end before it starts" );
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "../outside/zoom", 20001 ) ), "leaves the mod's folder" );
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "/abs/zoom", 20001 ) ), "leaves the mod's folder" );
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "objects/zoom.wad", 20001 ) ), ".wad extension" );
@@ -190,9 +192,11 @@ public class ModContentTests
 		var overlap = Resolve( Enable( "community.one", "community.two" ), one, two );
 		Assert.AreEqual( 0, overlap.Mods.Count );
 		StringAssert.Contains( overlap.Refused[0].Reason, "overlap" );
+		Assert.IsTrue( overlap.Refused.All( refusal => refusal.Kind == ModRefusalKind.Conflict ), "the mods screen words an overlap as a conflict" );
 		var same = Resolve( Enable( "community.one", "community.three" ), one, three );
 		Assert.AreEqual( 0, same.Mods.Count );
 		StringAssert.Contains( same.Refused[0].Reason, "object archive" );
+		Assert.IsTrue( same.Refused.All( refusal => refusal.Kind == ModRefusalKind.Conflict ) );
 		var apart = Mod( "community.apart", ", \"content\": { \"objects\": \"objects.json\" }", ("objects.json", ObjectsJson( 40000, 40009, ObjectJson( "objects/zoom", 40001, category: "features" )) ) );
 		Assert.AreEqual( 2, Resolve( Enable( "community.one", "community.apart" ), one, apart ).Mods.Count, "the same name in another category is another archive" );
 	}

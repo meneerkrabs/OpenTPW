@@ -233,7 +233,8 @@ public sealed partial class ParkHud
 				if ( right > left && bottom > top )
 					context.Batch.AddRectangle( new UiRect( left, top, right - left, bottom - top ), color );
 			}
-			// [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art; the original colours a cell from the tables 0xf86a28-0xf86c20 (filled at run time; the per-object ones through 0x5f09a0 from a value) and outlines it where its neighbour differs (0x5f2380) — evidence needed: which table entry and gradient value each cell kind and layer mode of 0x5f2380 uses (the base colours are immediates written by 0x5f0700)
+			// [BIN:TPW-EXE:0x5f2050 map cell classes] the writer gives a cell without an object the class 10 (path, 0x536310), 11 (queue, 0x536320) or 12 (unowned land, flag 0x40) in that order, filled with the records 0xf86b00 (31,166,31), 0xf86b24 (37,198,37) and 0xf86b6c (0,23,0 at alpha 128) by 0x5f2380
+			// [APPROX:UI-086] placed-object cells and footprints use one plain colour over the original map art (and the staff, visitor, track and happiness layers theirs); the original gives an object cell the class of its WhichUIType (1 rides, 2 shops, 3 sideshows, 4-7 features, 8 track cells), colours it from the 0xf86bd8/0xf86bfc/0xf86c20 ramp (red 0, orange 50, green 100, 0x5f09a0) of a value (+0x44 of its object record, not identified) and outlines it where a neighbour differs (0x5f2380); its footprints (kind 2 items, 0xf86b90 / 0xf86bb4) and the layer buttons' land and value modes (2444-2447, 2455-2457) are not ported
 			if ( imagePath == null )
 			{
 				// [EXT:sandbox-map] the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base (OpenTPW content)
@@ -247,11 +248,8 @@ public sealed partial class ParkHud
 			if ( cells != null )
 				for ( var y = 0; y < Math.Min( cells.Height, height ); y++ )
 					for ( var x = 0; x < Math.Min( cells.Width, width ); x++ )
-						switch ( cells.TypeAt( x, y ) )
-					{
-							case ParkCellType.Path: Mark( x, y, new RgbaByte( 242, 218, 90, 220 ) ); break;
-							case ParkCellType.Queue: Mark( x, y, new RgbaByte( 235, 139, 55, 220 ) ); break;
-					}
+						if ( ParkMapPalette.CellFill( cells.TypeAt( x, y ), cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ) ) is { } fill )
+							Mark( x, y, fill );
 			foreach ( var item in owner.level.Objects.Objects.Where( item => !item.IsDeleted &&
 				owner.MapShowsCategory( item.Entry.WhichUIType ) ) )
 				foreach ( var cell in item.Cells )
@@ -325,6 +323,23 @@ internal readonly record struct MapViewState( float Zoom, NVector2 Cell )
 }
 
 /// <summary>Projects live park cells onto the shipped 512-pixel map image or a sandbox grid.</summary>
+/// <summary>The fills of the original map's cell classes 10 to 12.</summary>
+// [BIN:TPW-EXE:0x5f0700 map colour records] the records 0xf86b00 (31,166,31,255), 0xf86b24 (37,198,37,255) and 0xf86b6c (0,23,0,128) are written by immediates in 0x5f0700-0x5f0964 through the helper 0x5f0970 (blue, green, red, alpha)
+internal static class ParkMapPalette
+{
+	public static readonly RgbaByte Path = new( 31, 166, 31, 255 );
+	public static readonly RgbaByte Queue = new( 37, 198, 37, 255 );
+	public static readonly RgbaByte Unowned = new( 0, 23, 0, 128 );
+
+	/// <summary>The fill of an object-free cell: a path, else a queue, else unowned land; null leaves the map art.</summary>
+	public static RgbaByte? CellFill( ParkCellType type, bool unowned ) => type switch
+	{
+		ParkCellType.Path => Path,
+		ParkCellType.Queue => Queue,
+		_ => unowned ? Unowned : null
+	};
+}
+
 internal static class ParkMapGeometry
 {
 	public const float ImagePixels = 512f;

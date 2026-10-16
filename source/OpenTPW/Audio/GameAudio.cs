@@ -421,7 +421,7 @@ public static class GameAudio
 
 	/// <summary>Starts the globe's music (<c>cat_globallobbysfx</c> 2) and ambience (3) as looping sentences while the online globe is up.</summary>
 	// [BIN:STP-PPC:0x100923A8 globe audio] the globe component starts cat_globallobbysfx 2 (globe music) and 3 (globe ambience) and keeps both handles; closing stops them by handle (0x1009261C)
-	// [APPROX:UI-942] the lobby's own music and ambience are stopped while the globe plays and restarted after it; what the original does with them is not traced
+	// [EXT:online-globe-audio] the globe is the online extension's screen: its music and ambience replace the lobby's, which OpenTPW stops while the globe plays and restarts after it
 	public static void EnterGlobe()
 	{
 		if ( events == null || globeMusic != null )
@@ -792,17 +792,18 @@ public static class GameAudio
 	/// </summary>
 	// [BIN:TPW-EXE:0x5575c7 RSE EVENT dispatch] the PC dispatcher submits type 3 to the level cat_rides (0x803a3c) and type 4 to the level cat_ambient with no handle check and no global retry (the submit 0x51bfc0 returns 0 for event id 0 or with sound off, 0x802bc8/0x802bd4; an empty category slot returns in 0x6b9b30)
 	// [BIN:TPW-EXE:0x6b87d0 event lookup] the submit takes the category by its handle (0x6b9b30, a deque index; an empty slot returns) and searches only that category's 20-byte event records for the id (0x6c5870, linear, null when absent), returning without a voice (0x6b8919); the level category is loaded from the level's own data under its own path key (0x51ec50 -> 0x51b530 -> 0x6bf330, path joined at 0x6b8690), so nothing falls back to the global category
-	public static (SoundCategory Category, SoundEvent Event)? FindRseEvent( int type, uint eventId )
+	public static (SoundCategory Category, SoundEvent Event)? FindRseEvent( int type, uint eventId, RseSoundSource? source = null )
 	{
-		var category = RseEventCategory( type );
+		// [EXT:cross-edition-objects] an object from another content root looks the event up in that root's categories only, with no fallback to the running game's
+		var category = source is { } other ? other.Category( type ) : RseEventCategory( type );
 		var soundEvent = category?.Catalog.Find( eventId );
 		return soundEvent == null || category == null ? null : (category, soundEvent);
 	}
 
 	/// <summary>Plays an RSE <c>EVENT</c> instruction's sound at the object's place (see <see cref="RseEventCategory"/>); returns the voice, or null when the type is untraced or nothing plays.</summary>
-	public static AudioVoice? PlayRseEvent( int type, uint eventId, Vector3? position = null )
+	public static AudioVoice? PlayRseEvent( int type, uint eventId, Vector3? position = null, RseSoundSource? source = null )
 	{
-		var sound = FindRseEvent( type, eventId );
+		var sound = FindRseEvent( type, eventId, source );
 		if ( sound == null || events == null )
 			return null;
 		// The traced switch submits every routed event at the object's position; the sound's own range applies when the object has one.
@@ -814,9 +815,9 @@ public static class GameAudio
 	/// (<see cref="SoundSentence.SetParameter"/>, <see cref="SoundSentence.MoveTo"/>); null when the event is missing or is not a repeating sentence (play those with <see cref="PlayRseEvent"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0051EEB0 sound-variable submit] the vehicle code resolves an EventMap variable to an event id (0x55A3E0) and submits it through 0x51BFC0, keeping the handle for the per-tick 0x51C270 (position) and 0x51BC40 (parameter) calls
-	public static SoundSentence? StartRseSentence( int type, uint eventId, Vector3 position )
+	public static SoundSentence? StartRseSentence( int type, uint eventId, Vector3 position, RseSoundSource? source = null )
 	{
-		var sound = FindRseEvent( type, eventId );
+		var sound = FindRseEvent( type, eventId, source );
 		if ( sound == null || events == null || sound.Value.Event.Player is not (SoundEventPlayer.Sentence or SoundEventPlayer.BranchingSentence) )
 			return null;
 		return events.StartSentence( sound.Value.Category, eventId, AudioChannel.Effects, position: position );

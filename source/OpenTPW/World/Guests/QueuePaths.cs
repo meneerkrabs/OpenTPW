@@ -27,9 +27,9 @@ public enum QueueBuildResult
 /// </summary>
 public static class QueuePaths
 {
-	/// <summary>Most cells one queue may have: 4 × 25 = 100 positions.</summary>
-	// [APPROX:QUEUE-013] maximum queue length 25 cells (100 positions); tp.exe's queue-cell setter 0x005346D0, the cell validator 0x00535670 and the line layer 0x00536100 compare no cell count, and the back-of-queue walk 0x004DE130 stops only after 1,000 cells ("GetBackOfQueue() crashed!"); a HasQueue ride's limit is its QueueWaitTimeConstant formula (Belly Bounce 21), so the cap only shortens queues of rides whose limit exceeds 100 — evidence needed: the rest of the tool's cell handler (0x00524960, 0x00532FC0)
-	public const int MaximumCells = 25;
+	/// <summary>Most cells one queue may have: the bound of the original's back-of-queue walk.</summary>
+	// [BIN:TPW-EXE:0x004DE130 back of queue] the original compares no cell count anywhere in the queue tool (the click 0x524960, the setter 0x5346D0, the validator 0x535670 and the line layer 0x536100 test none); only the back-of-queue walk stops after 1,000 cells and logs "GetBackOfQueue() crashed!", so a queue can be that long and no longer
+	public const int MaximumCells = 1000;
 
 	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
 	// [APPROX:QUEUE-014] Queue lines start on the entrance's outside cell and lay empty cells that each touch the current back cell, where tp.exe's queue tool lays straight segments along the dominant axis (0x536100, ported) from a start the player clicks (SetMode 0x52f200 clears it), each cell validated by 0x535670: an empty cell is accepted, a path cell is replaced unless its flag 0x20 (NoModify) is set, a path cell on the line's last cell is code 8, the connection (ported), an object cell is refused, a queue cell of another ride (owner word +0x10 against the tool's ride, 0x818698) is refused and the tool's own passed; the commit 0x532fc0 then types the cell (0x5346D0, which clears a path first), links it (pass 0x80, the link writer in mode 3), gives it the queue link toward the previous cell (pass 0x82) and the tool's ride as owner word (pass 0x83); OpenTPW keeps no owner word (a queue cell belongs to the ride whose chain reaches it) and lays no queue over a path cell, and a queue line must start on the front cell and touch the back cell — evidence needed: the validator's object-cell branch (0x818C10 and 0x818C14), the rest of the commit 0x532fc0 and the refund of the cell clear 0x5367A0, which reads the owner word
@@ -96,6 +96,7 @@ public static class QueuePaths
 		else
 			PathLinkWriter.LinkQueueStep( grid.Cells, x, y, x - back.X, y - back.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
 		ride.RecomputeQueue( grid );
+		ride.NotifyQueueEdited();
 		return QueueBuildResult.Ok;
 	}
 
@@ -133,13 +134,14 @@ public static class QueuePaths
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052744E queue line ending on a path] the type pass refuses the last cell (queue over path is not allowed there, 0x535600), but the link pass 0x80 still runs on it with the mode of the last type written (3): mode 3 links the path cell to the queue cell before it (0x53538C); the pass 0x82 then gives the path cell a queue link +0x0D toward it, which no reader of a type-1 cell uses (0x4D8750 and 0x5348D0 read it for types 9 and 10, 0x535DD0 and 0x4DE670 for type 3), and pass 0x83 its owner word
 	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation] once the queue is connected (0x4DE4A0) a closed ride whose state +0x19C is not 1, 2 or 4 is opened (+0x68 = 1, message 0x4E0E60)
-	// [APPROX:QUEUE-023] connecting a queue does not open the ride; OpenTPW leaves the open state to the player and the economy — the callers of 0x4DE1F0 are the queue tool's cell click 0x524960, the placement 0x528A70, 0x52FE50, the cell type setter 0x5346D0 and the cell clear 0x5367A0, so the original re-evaluates (and may open) the ride after every edit of its cells — evidence needed: none for the rule; OpenTPW has no queue-edit hook on cell writes that could open a ride
+	// [BIN:TPW-EXE:0x004DE1F0 re-evaluation callers] 0x4DE1F0 runs after the queue tool's cell click 0x524960, the placement 0x528A70, 0x52FE50, the cell type setter 0x5346D0 and the cell clear 0x5367A0: every queue edit raises RideVisitorBridge.QueueEdited, and the level opens a closed ride that passes the original's tests (Level.ReevaluateQueuedRide)
 	public static bool Connect( GuestPathGrid grid, RideVisitorBridge ride, (int X, int Y) before, (int X, int Y) path )
 	{
 		if ( !grid.IsWalkable( path.X, path.Y ) || GuestPathGrid.DirectionBetween( before.X, before.Y, path.X, path.Y ) < 0 )
 			return false;
 		PathLinkWriter.LinkQueueStep( grid.Cells, path.X, path.Y, path.X - before.X, path.Y - before.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
 		ride.RecomputeQueue( grid );
+		ride.NotifyQueueEdited();
 		return true;
 	}
 
@@ -215,6 +217,7 @@ public static class QueuePaths
 		foreach ( var cell in removed )
 			grid.ClearQueue( cell.X, cell.Y );
 		ride.RecomputeQueue( grid );
+		ride.NotifyQueueEdited();
 		return removed.Length;
 	}
 }

@@ -256,6 +256,13 @@ public sealed partial class ParkHud
 		return (int)MathF.Floor( above * WorkloadKnobRange / (701 - 220 - 67) + 1e-4f );
 	}
 
+	/// <summary>The ball's height in table units (the b_scroller model, 67).</summary>
+	public const float KnobBallHeight = 67;
+
+	/// <summary>The ball's centre after the pointer moved from <paramref name="from"/> to <paramref name="to"/>: moved by the difference, held inside the track.</summary>
+	public static float DragBall( float centre, float from, float to ) =>
+		Math.Clamp( centre + (to - from), 220 + KnobBallHeight / 2f, 701 - KnobBallHeight / 2f );
+
 	private int WorkloadLimit()
 	{
 		if ( ResearchEconomy is not { } economy )
@@ -265,7 +272,7 @@ public sealed partial class ParkHud
 		return WorkloadKnobLimit( sum, economy.Settings[StaffType.Researcher].MaximumInPark, abilities[BalanceSettings.GradeCount - 1] );
 	}
 
-	private sealed class ResearchWorkloadKnob : UiElement, IUiDragTarget
+	private sealed class ResearchWorkloadKnob : UiElement, IUiDragTarget, IUiDragStart
 	{
 		private readonly ParkHud owner;
 		public ResearchWorkloadKnob( ParkHud owner ) => this.owner = owner;
@@ -274,13 +281,45 @@ public sealed partial class ParkHud
 		public override void Adjust( int direction ) => TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit,
 			Math.Clamp( (owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload) + direction, MinimumKnobWorkload, MaximumKnobWorkload ) );
 		// [BIN:TPW-EXE:0x66afe5 vertical slider drag] the value is read back from the ball: trunc((bottom - ball bottom) × (min - max) / (height - ball height)) + max
-		// [APPROX:UI-064] the ball centres on the pointer during a drag; the original's ball proc 0x66bb9b moves it by the pointer's offset from the press point (0x10005 stores the press in 0xfaa59a/0xfaa59c) from the rectangle saved at the press or release (0x65cf3d) and clamps it to the track (0x66b771), whether that rectangle is the press-time ball is not settled; the value's meaning, its limit and the ball's travel are the original's
+		// [BIN:TPW-EXE:0x66b771 slider ball move] a drag translates the ball's rectangle by the pointer's movement and clamps it to the track (0x66b771 adds the delta to both ends, then pulls the ball back inside the limits), so the ball keeps the offset at which it was grabbed
+		// [APPROX:UI-064] the ball proc 0x66bb9b moves the ball from the rectangle saved at the press or release (0x65cf3d); that it is the ball's rectangle at the press, as done here, is not settled; a press in the track outside the ball puts the ball's centre under the pointer where the slider class pages by its step (0x66b8aa, 0x66b088 with the page word +0x148, whose value is not found); the knob's children 0xd2d12 and 0xd2d11 are not drawn
+		private float? ballCentre;
+		private float lastPointerY;
+
+		private float PointerY( UiCanvas canvas, NVector2 point )
+		{
+			var rect = ScreenRect( canvas );
+			return Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
+		}
+
+		public void DragStart( UiCanvas canvas, NVector2 point )
+		{
+			ballCentre = null;
+			if ( !Enabled || ScreenRect( canvas ).Height <= 0 )
+				return;
+			var y = PointerY( canvas, point );
+			var workload = owner.ResearchEconomy?.Research.Workload ?? MinimumKnobWorkload;
+			var top = WorkloadKnobTop( KnobFromWorkload( workload, owner.WorkloadLimit() ) );
+			if ( y >= top && y <= top + KnobBallHeight )
+			{
+				ballCentre = top + KnobBallHeight / 2f;
+				lastPointerY = y;
+			}
+		}
+
 		public void DragTo( UiCanvas canvas, NVector2 point )
 		{
 			if ( !Enabled ) return;
 			var rect = ScreenRect( canvas );
 			if ( rect.Height <= 0 ) return;
-			var y = Bounds.Y + (point.Y - rect.Y) / rect.Height * Bounds.Height;
+			var y = PointerY( canvas, point );
+			if ( ballCentre is { } centre )
+			{
+				centre = DragBall( centre, lastPointerY, y );
+				ballCentre = centre;
+				lastPointerY = y;
+				y = centre;
+			}
 			TrySetResearchWorkload( owner.ResearchEconomy, owner.level.IsReadOnlyVisit, WorkloadFromKnob( KnobValueAt( y ), owner.WorkloadLimit() ) );
 		}
 		public override void Draw( UiContext context, bool focused, bool pressed )

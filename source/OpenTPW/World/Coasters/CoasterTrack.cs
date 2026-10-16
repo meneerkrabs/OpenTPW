@@ -211,7 +211,7 @@ public sealed class CoasterTrack
 	/// </summary>
 	// [BIN:TPW-EXE:0x436ac0 station nodes] S0: creation parameters 0x274 = node flags 0x400 | 0x1800 (winch) | 0x80000 (no previous link), bit 4 skips the height clamp (0x433bd0 → 0x433790), bit 0x200 registers the pylon in its cell; S1: 0x3c = 0x200 | 0x400 | 0x1800, the exact dummy position as knot (node +0x4c..+0x54); S2: 0x28c = 0x200 | 0x40000 (no next link); ordinals 0, 1, 2
 	// [BIN:TPW-EXE:0x434060 node creation parameters] the constructor maps its parameter bits to node flags: 8 → 0x200, 0x10 → 0x400, 0x20 → 0x1800, 0x40 → 0x80000, 0x80 → 0x40000, 0x100 → 0x100000 (0x4343a6..0x4343eb); bit 0x200 puts the pylon in its map cell (0x452d30)
-	// [APPROX:COAST-029] the middle node's winch mark is re-derived by the rating pass instead of kept from the creation parameter; the station's pylon nodes below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Candy Coaster 7.09 against 10) are the original's: the knot pass clamps their height parameter to 0 and writes it back (0x430ca0) and stands them at ground + h0 (0x430ed0), so S0 and S2 sit above the middle node by h0 − h
+	// [APPROX:COAST-029] the middle node's winch mark is re-derived by the rating pass (CoasterRide sets or clears every node's mark) where the PC pass 0x43C450 only sets 0x800 on a floor speed and clears nothing there (what else clears it is not traced); the station's pylon nodes below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Candy Coaster 7.09 against 10) are the original's: the knot pass clamps their height parameter to 0 and writes it back (0x430ca0) and stands them at ground + h0 (0x430ed0), so S0 and S2 sit above the middle node by h0 − h
 	public void SetStation( (int X, int Y) depart, (int X, int Y) @return, CoasterStationLayout layout )
 	{
 		if ( depart == @return )
@@ -953,7 +953,7 @@ public sealed class CoasterTrack
 	// [BIN:STP-PPC:0x10033398 node position] descriptor +28 = 10x, +36 = 10y, +32 = terrain height; the node is at the cell centre (+5.0, 0x100333EC); Y = ground + h(t), or Y below + pylon +196 + h(t) when stacked
 	// [BIN:TPW-EXE:0x434060 pylon-less knot] a pylon-less node's knot is its descriptor's exact position (node +0x4c..+0x54); the station end node's descriptor holds the world position of S0's pylon track dummy (0x435570), so the end node stands on the knot of S0
 	// [BIN:TPW-EXE:0x430ed0 node position] the knot pass stands a pylon node at its descriptor's cell corner + 5 in X and Z and the descriptor's height + h0 + t(h1 − h0), a stacked one on the node below's +0x50 plus the stack offset (+0xc4); fTrackHeightAdjust is not added (the cross-section loader adds it to the drawn points only, 0x42d6d0)
-	// [APPROX:COAST-015] the knot pass writes the clamped height parameter back to the node (0x430ca0) so that its later passes stand the node at the clamped height; OpenTPW keeps a parameter outside [0, 1] (a height dragged above the model's top) for the node position on every pass — evidence needed: whether a loft above 1 survives the next rebuild in the running game
+	// [BIN:TPW-EXE:0x00430CA0 pose clamp] the knot pass clamps the node's loft parameter (+0xE8) to [0, 1] and writes it back, so its later passes stand the node at the clamped height; every parameter built here is clamped to [0, 1] when the node is made (ClampHeight, StationHeight), which is what the write-back leaves
 	public SVector3 NodePosition( CoasterSite site, CoasterNode node )
 	{
 		if ( node.IsStationEnd )

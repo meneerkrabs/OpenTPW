@@ -327,12 +327,12 @@ public class QueueTests
 		Assert.AreEqual( QueueBuildResult.NoFrontCell, QueuePaths.CheckExtend( rig.Grid, onPath, 5, 0 ) );
 		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( rig.Grid, rig.Ride, 2, 5 ) );
 		Assert.AreEqual( QueueBuildResult.Blocked, QueuePaths.CheckExtend( rig.Grid, rig.Ride, 2, 5 ), "already a queue cell" );
-		// A long queue: the 26th cell is refused.
+		// A long queue: the original tests no cell count (QUEUE-013 retired), so 30 cells are laid; only the back-of-queue walk's 1,000 bound ends a queue.
 		var grid = new GuestPathGrid( 40, 40 );
 		var ride = new RideVisitorBridge( 11, "Long", RideVisitorKind.Ride, 1, 0, 10 ) { EntranceCell = (0, 0), QueueFrontCell = (0, 1), QueueEntranceDirection = 0, Parameters = rig.Ride.Parameters };
-		Assert.AreEqual( QueuePaths.MaximumCells, QueuePaths.TryExtend( grid, ride, Enumerable.Range( 1, 30 ).Select( y => (0, y) ) ) );
-		Assert.AreEqual( QueueBuildResult.TooLong, QueuePaths.CheckExtend( grid, ride, 0, 26 ) );
-		Assert.AreEqual( 25, ride.QueueSizeInCells );
+		Assert.AreEqual( 30, QueuePaths.TryExtend( grid, ride, Enumerable.Range( 1, 30 ).Select( y => (0, y) ) ) );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.CheckExtend( grid, ride, 0, 31 ), "no 25-cell cap" );
+		Assert.AreEqual( 30, ride.QueueSizeInCells );
 		Assert.AreEqual( 21, ride.MaximumQueueLength, "room 100, but the HasQueue limit trunc(130 × 5 / 30) = 21 decides" );
 	}
 

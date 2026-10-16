@@ -833,6 +833,7 @@ internal static class ParkResumeSaveFile
 				$"track controller {controller.AttractionId} names no collision-object slots, or a slot another object of the module holds" );
 			Require( controller.BuoyCount is null or >= 0 and <= BumpWorld.BuoyPool && (!shared || controller.BuoyCount != null),
 				$"track controller {controller.AttractionId} holds no or a bad buoy count" );
+			Require( controller.StationLayout is 0 or 1, $"track controller {controller.AttractionId} has the unknown station layout {controller.StationLayout}" );
 			var slots = new HashSet<int>();
 			// the engine voice belongs to one bumper car at most: the first carrying car of a running ride (never to a kart; every boat holds one)
 			var engines = controller.Vehicles.Where( car => car.Engine ).ToList();

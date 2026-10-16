@@ -114,6 +114,26 @@ public sealed record ModSettings
 		return this with { Enabled = copy };
 	}
 
+	/// <summary>The settings with the folder of one mod input set, or cleared when <paramref name="path"/> is null.</summary>
+	// [EXT:mods-ui] the mods screen chooses input folders
+	public ModSettings WithInput( string id, string input, string? path )
+	{
+		var copy = Inputs.ToDictionary( pair => pair.Key, pair => (IReadOnlyDictionary<string, string>)new Dictionary<string, string>( pair.Value, StringComparer.Ordinal ), StringComparer.Ordinal );
+		var values = copy.TryGetValue( id, out var existing ) ? (Dictionary<string, string>)existing : new Dictionary<string, string>( StringComparer.Ordinal );
+		if ( path == null )
+			values.Remove( input );
+		else
+			values[input] = path;
+		if ( values.Count == 0 )
+			copy.Remove( id );
+		else
+			copy[id] = values;
+		return this with { Inputs = copy };
+	}
+
+	/// <summary>The folder chosen for an input of a mod, or null.</summary>
+	public string? InputPath( string id, string input ) => Inputs.TryGetValue( id, out var values ) && values.TryGetValue( input, out var path ) ? path : null;
+
 	private sealed class Document
 	{
 		public Dictionary<string, bool>? Enabled { get; init; }

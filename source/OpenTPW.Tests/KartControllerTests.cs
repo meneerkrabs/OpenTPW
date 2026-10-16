@@ -37,7 +37,7 @@ public class KartControllerTests
 		{
 			rng = seed;
 			Builder = new TrackBuilder( Cells, TrackFamily.Kart, () => null, new FlatGrid() );
-			Station = TrackStation.FromPlacement( 10, 10, 0 );
+			Station = TrackStation.FromPlacement( 10, 9, 0 );
 			Builder.PlaceStation( Station );
 			var writer = new TrackLineWriter( Builder );
 			writer.Commit( (14, 10), (14, 12) );
@@ -46,7 +46,7 @@ public class KartControllerTests
 			Circuit = TrackCircuitWalker.WalkAndRefresh( Builder, Station );
 			Controller = new BumpController( BumperTemplates.Get( type ), () => { rng = unchecked( rng * 1664525u + 1013904223u ); return rng >> 8; }, World );
 			Controller.Effect += Effects.Add;
-			var centre = TrackStation.Centre( Station.First );
+			var centre = Station.Reference;
 			Controller.SetStation( centre.X, centre.Y, Station.Heading );
 			Controller.Rebuild( Circuit );
 		}
@@ -115,7 +115,7 @@ public class KartControllerTests
 	{
 		var rig = new KartLoop();
 		var c = rig.Controller;
-		var centre = TrackStation.Centre( rig.Station.First );
+		var centre = rig.Station.Reference;
 		Assert.AreEqual( (centre.X, centre.Y), (c.StationX, c.StationY) );
 		Assert.AreEqual( (c.StationX, c.StationY), (c.UnloadX, c.UnloadY), "karts spawn and unload at the station" );
 		Assert.IsTrue( c.Buoys.Take( 8 ).All( buoy => buoy.IsSkipped ), "eight grid buoys first" );
@@ -139,6 +139,9 @@ public class KartControllerTests
 			var vehicle = c.Vehicles.Last();
 			Assert.AreEqual( car, vehicle.TargetBuoy, $"car {car + 1} aims at grid slot {car}" );
 			Assert.AreEqual( BumpVehicle.Retarget | BumpVehicle.GridMode | BumpVehicle.LapMode, vehicle.Flags & (BumpVehicle.Retarget | BumpVehicle.GridMode | BumpVehicle.LapMode), "flags 0x10048" );
+			// the cars arrive one by one as guests board: the grid reaches two cells past the station reference (the junction of the station's two tiles), where a kart that is
+			// pushed by one still on the move runs into the end of the station
+			rig.Run( 60 );
 		}
 		rig.Run( 400 );
 		foreach ( var vehicle in c.Vehicles )

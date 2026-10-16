@@ -6,8 +6,9 @@ namespace OpenTPW;
 /// Draws the track tiles and the vehicles of one track family of a level (docs/TRACKS.md): each track tile is the piece mesh its cell chose, instanced at the
 /// tile's origin with the engine rotation 360 − rotation (the pieces are 20 world units wide), and each vehicle is one of the ride's supplemental meshes
 /// (<c>wr_ring.md2</c> for the boats, <c>gk_*.md2</c> for the karts) at the vehicle position divided by 307.2. The meshes are baked with their rest
-/// transforms and drawn as static parts; the water texture animation and the arm masks of tee pieces are not reproduced (TRACK-018). A kart's riders are
-/// drawn by the ride-head renderer at the kart's head dummies (<see cref="CollectHeads"/>).
+/// transforms; a piece hides the end caps of its arm mask, and a tile whose piece plays its water clip (<see cref="TrackPieceAnimations"/>) draws the moving
+/// meshes from a copy shared by the tiles that started together. A kart's riders are drawn by the ride-head renderer at the kart's head dummies
+/// (<see cref="CollectHeads"/>).
 /// </summary>
 public sealed class TrackRenderer : IDisposable
 {
@@ -16,7 +17,30 @@ public sealed class TrackRenderer : IDisposable
 	public const float UnitsPerModelUnit = 307.2f;
 
 	/// <summary>A drawable mesh set with the surface it provides and, for a vehicle mesh, the rest transforms and flags of its rider head dummies (head 1, head 2).</summary>
-	private sealed record PieceGeometry( List<Model> Models, TrackSurface Surface, Matrix4x4[] HeadNodes, uint[] HeadFlags, Matrix4x4?[] SparksNodes );
+	private sealed record PieceGeometry( List<Model> Models, TrackSurface Surface, Matrix4x4[] HeadNodes, uint[] HeadFlags, Matrix4x4?[] SparksNodes )
+	{
+		/// <summary>The drawable parts with the mesh each came from (one per model of <see cref="Models"/>, same order).</summary>
+		public List<PiecePart> Parts { get; init; } = new();
+		/// <summary>The piece's mesh, for the clip's animator.</summary>
+		public ModelFile? Mesh { get; init; }
+		/// <summary>The piece's water clip (animation 5), or null when it has none or it cannot be played on the mesh.</summary>
+		public (ModelAnimation Clip, string Name)? Water { get; init; }
+		/// <summary>Per mesh: the water clip moves its texture coordinates and a playing tile draws a copy of it.</summary>
+		public bool[] UvMeshes { get; init; } = Array.Empty<bool>();
+	}
+
+	/// <summary>One drawable part of a piece: its model, the mesh it came from, and the vertices, indices and material a playing tile's copy starts from.</summary>
+	private sealed record PiecePart( Model Model, int Mesh, Vertex[] Vertices, uint[] Indices, Material Material );
+
+	/// <summary>The tiles of one piece that started their water clip at the same moment (and froze at the same moment): one animator and one copy of the moving meshes.</summary>
+	private sealed class PieceClipGroup
+	{
+		public required ObjectAnimator Animator { get; init; }
+		public double Shown;
+		public bool Used;
+		/// <summary>The copies of the moving parts, by part index, with the animator version they show.</summary>
+		public readonly Dictionary<int, (Model Model, Vertex[] Vertices, int Version)> Copies = new();
+	}
 
 	/// <summary>The entities of one vehicle: its body, its shadow (hovering karts) and the transform the heads hang from.</summary>
 	private sealed class VehicleVisual
@@ -38,6 +62,9 @@ public sealed class TrackRenderer : IDisposable
 	private readonly Dictionary<int, PieceGeometry> pieces = new();
 	private readonly Dictionary<int, PieceGeometry?> vehicleMeshes = new();
 	private readonly List<ModelEntity> tiles = new();
+	private readonly Dictionary<(int Piece, double Start, double? Stop), PieceClipGroup> clipGroups = new();
+	private TrackPieceAnimations? animations;
+	private int animationVersion = -1;
 	private readonly List<VehicleVisual> visuals = new();
 	private readonly List<(BumpController Controller, BumpVehicle Vehicle)> wanted = new();
 	private float? kartStationHeight;
@@ -71,38 +98,119 @@ public sealed class TrackRenderer : IDisposable
 	/// <summary>Shadow instances of hovering karts after the last <see cref="Update"/>.</summary>
 	public int ShadowCount => visuals.Count( visual => visual.Shadow.Count > 0 );
 
-	/// <summary>Rebuilds the tile instances when the layer changed and moves a vehicle instance to every vehicle of <paramref name="controllers"/>.</summary>
-	public void Update( TrackCellLayer layer, IEnumerable<BumpController> controllers )
+	/// <summary>
+	/// Rebuilds the tile instances when the layer or the pieces' clips changed, plays the clips to the clock of <paramref name="pieceAnimations"/> and moves a
+	/// vehicle instance to every vehicle of <paramref name="controllers"/>.
+	/// </summary>
+	public void Update( TrackCellLayer layer, IEnumerable<BumpController> controllers, TrackPieceAnimations? pieceAnimations = null )
 	{
 		if ( disposed )
 			return;
-		if ( layer.Version != version )
+		if ( layer.Version != version || !ReferenceEquals( pieceAnimations, animations ) || (pieceAnimations?.Version ?? -1) != animationVersion )
 		{
 			version = layer.Version;
+			animations = pieceAnimations;
+			animationVersion = pieceAnimations?.Version ?? -1;
 			RebuildTiles( layer );
 		}
+		PlayClips();
 		UpdateVehicles( layer, controllers );
 	}
 
-	// [APPROX:TRACK-018] the pieces are static: the water texture animation (BUMP 17, animation 5 or 12 on channel 7) is stored on the controller but not played, and the tee pieces show all four arms instead of the arm mask the instancer passes — evidence needed: the instancer 0x0005A4DC and 0x00059F00 and the piece animation clips (wr_trck*m.md2, gk_trck*m.md2)
+	/// <summary>Piece clips playing or frozen after the last <see cref="Update"/> (groups of tiles that started together).</summary>
+	public int ClipGroupCount => clipGroups.Count;
+
 	private void RebuildTiles( TrackCellLayer layer )
 	{
 		foreach ( var entity in tiles )
 			entity.Delete();
 		tiles.Clear();
-		if ( kit == null )
-			return;
-		foreach ( var (x, y, cell) in layer.Cells() )
+		foreach ( var group in clipGroups.Values )
+			group.Used = false;
+		if ( kit != null )
 		{
-			if ( !cell.IsOrigin || cell.Piece == 0 || cell.Family != (int)kit.Family )
-				continue;
-			var geometry = GeometryOf( cell.Piece );
-			if ( geometry == null )
-				continue;
-			var transform = TileTransform( x, y, cell.Rotation );
-			foreach ( var model in geometry.Models )
-				tiles.Add( new ModelEntity { Model = model, Name = $"track:{x},{y}", TransformOverride = transform, Position = new Vector3( transform.M41, transform.M42, transform.M43 ) } );
+			foreach ( var (x, y, cell) in layer.Cells() )
+			{
+				if ( !cell.IsOrigin || cell.Piece == 0 || cell.Family != (int)kit.Family )
+					continue;
+				var geometry = GeometryOf( cell.Piece );
+				if ( geometry == null )
+					continue;
+				var group = animations?.At( layer, x, y ) is { } play && geometry.Water is { } water ? ClipGroup( cell.Piece, geometry, water, play ) : null;
+				var transform = TileTransform( x, y, cell.Rotation );
+				for ( var index = 0; index < geometry.Parts.Count; index++ )
+				{
+					var model = group != null && group.Copies.TryGetValue( index, out var copy ) ? copy.Model : geometry.Parts[index].Model;
+					tiles.Add( new ModelEntity { Model = model, Name = $"track:{x},{y}", TransformOverride = transform, Position = new Vector3( transform.M41, transform.M42, transform.M43 ) } );
+				}
+			}
 		}
+		foreach ( var key in clipGroups.Where( pair => !pair.Value.Used ).Select( pair => pair.Key ).ToList() )
+		{
+			ReleaseGroup( clipGroups[key] );
+			clipGroups.Remove( key );
+		}
+	}
+
+	/// <summary>The clip group of the tiles of <paramref name="piece"/> that started (and froze) with <paramref name="play"/>, created on first use with the clip started at its frame 0.</summary>
+	// [BIN:TPW-EXE:0x0052A490 forward piece walk] every piece the walk passes gets 0x004732A0(instance, 5, 0, 7, 1.0, 0): animation 5 (the mesh's m clip), variant 0, flags 7 (loop, at once), speed 1, channel 0
+	private PieceClipGroup ClipGroup( int piece, PieceGeometry geometry, (ModelAnimation Clip, string Name) water, TrackPieceAnimations.Play play )
+	{
+		var key = (piece, play.Start, play.Stop);
+		if ( !clipGroups.TryGetValue( key, out var group ) )
+		{
+			var animator = new ObjectAnimator( geometry.Mesh! );
+			animator.Trigger( 0, water.Clip, water.Name, TrackPieceKit.WaterAnimation, 0, loop: true );
+			group = new PieceClipGroup { Animator = animator };
+			for ( var index = 0; index < geometry.Parts.Count; index++ )
+			{
+				var part = geometry.Parts[index];
+				if ( !geometry.UvMeshes[part.Mesh] )
+					continue;
+				var vertices = (Vertex[])part.Vertices.Clone();
+				group.Copies[index] = (new Model( vertices, part.Indices, part.Material, true ), vertices, -1);
+			}
+			clipGroups[key] = group;
+		}
+		group.Used = true;
+		return group;
+	}
+
+	/// <summary>Plays every clip group to its tiles' time (frozen groups stop at their freeze) and rewrites the texture coordinates of the copies that changed.</summary>
+	private void PlayClips()
+	{
+		if ( animations == null )
+			return;
+		foreach ( var ((piece, start, stop), group) in clipGroups )
+		{
+			var target = Math.Max( 0, (stop ?? animations.Clock) - start );
+			// a long gap is played in steps shorter than a clip, so a looping clip replays as often as it would frame by frame
+			while ( target - group.Shown > 1e-9 )
+			{
+				var step = Math.Min( target - group.Shown, 0.5 );
+				group.Animator.Advance( step );
+				group.Shown += step;
+			}
+			if ( pieces.GetValueOrDefault( piece ) is not { } geometry )
+				continue;
+			foreach ( var (index, copy) in group.Copies.ToList() )
+			{
+				var mesh = geometry.Parts[index].Mesh;
+				var current = group.Animator.GetVertexVersion( mesh );
+				if ( current == copy.Version )
+					continue;
+				ObjectRenderParts.WriteTexCoords( geometry.Mesh!.Meshes[mesh], group.Animator.GetTexCoords( mesh ), copy.Vertices );
+				copy.Model.UpdateVertices( copy.Vertices );
+				group.Copies[index] = copy with { Version = current };
+			}
+		}
+	}
+
+	private static void ReleaseGroup( PieceClipGroup group )
+	{
+		foreach ( var copy in group.Copies.Values )
+			copy.Model.ReleaseBuffers();
+		group.Copies.Clear();
 	}
 
 	/// <summary>
@@ -349,7 +457,9 @@ public sealed class TrackRenderer : IDisposable
 		PieceGeometry? geometry = null;
 		if ( kit?.GetModel( piece ) is { } model )
 		{
-			geometry = Build( model, entry, TrackSurface.FromObject( model ) );
+			geometry = Build( model, entry, TrackSurface.FromObject( model ), TrackPieceKit.ArmMaskedNodes( model, kit.Entries[piece].ArmMask ) );
+			if ( kit.GetAnimation( piece, TrackPieceKit.WaterAnimation ) is { } water && PlayableUvMeshes( model, water.Clip, geometry ) is { } uvMeshes )
+				geometry = geometry with { Water = water, UvMeshes = uvMeshes };
 		}
 		pieces[piece] = geometry!;
 		return geometry;
@@ -381,16 +491,55 @@ public sealed class TrackRenderer : IDisposable
 		return geometry;
 	}
 
-	/// <summary>Bakes every mesh of a piece with its rest transform and builds one drawable model per mesh part.</summary>
-	private static PieceGeometry Build( ModelFile model, ObjectCatalogEntry entry, TrackSurface? surface )
+	/// <summary>
+	/// The meshes whose texture coordinates <paramref name="clip"/> moves and whose drawn parts keep one vertex per corner (the copies are rewritten corner by
+	/// corner), or null when the clip moves none or the animator cannot bind the mesh.
+	/// </summary>
+	// [APPROX:TRACK-018] only texture-coordinate tracks are drawn: the shipped water clips and the space kart clips carry nothing else, but the Crypt Karts' bridge clips (gk_trckH*m) are texture-frame tracks, which stay still; they are started only by the track tool's edit sub-modes 0xE/0x13 (0x00526BD0), which OpenTPW does not have — evidence needed: the edit sub-modes' clicks (0x00527960 enters them; a second picked tile runs 0x0052B400 on the two tiles)
+	private static bool[]? PlayableUvMeshes( ModelFile model, ModelAnimation clip, PieceGeometry geometry )
+	{
+		var moved = new bool[model.Meshes.Count];
+		foreach ( var track in clip.Tracks.Where( track => track.UvAnimation != null ) )
+		{
+			for ( var mesh = 0; mesh < model.Meshes.Count; mesh++ )
+			{
+				if ( model.Meshes[mesh].NodeIndex == track.NodeIndex )
+					moved[mesh] = true;
+			}
+		}
+		foreach ( var part in geometry.Parts.Where( part => moved[part.Mesh] && part.Vertices.Length != model.Meshes[part.Mesh].CornerPositionIndices.Length ) )
+			moved[part.Mesh] = false;
+		if ( !moved.Any( value => value ) )
+			return null;
+		try
+		{
+			_ = new ObjectAnimator( model );
+		}
+		catch ( ArgumentException )
+		{
+			// two meshes on one node: the animator cannot bind the piece, which then stays static
+			return null;
+		}
+		return moved;
+	}
+
+	/// <summary>
+	/// Bakes every mesh of a piece with its rest transform and builds one drawable model per mesh part, leaving out the meshes on <paramref name="hidden"/>
+	/// nodes (the end caps the piece's arm mask hides).
+	/// </summary>
+	private static PieceGeometry Build( ModelFile model, ObjectCatalogEntry entry, TrackSurface? surface, IReadOnlySet<int>? hidden = null )
 	{
 		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		var models = new List<Model>();
-		foreach ( var mesh in model.Meshes )
+		var parts = new List<PiecePart>();
+		for ( var meshIndex = 0; meshIndex < model.Meshes.Count; meshIndex++ )
 		{
+			var mesh = model.Meshes[meshIndex];
 			if ( ObjectAssets.GetUnrenderableReason( mesh ) != null && ObjectAssets.GetUnrenderableReason( mesh ) != "more than 16 texture slots" )
 				continue;
 			var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < model.Nodes.Count ? mesh.NodeIndex : model.RootNodeIndex;
+			if ( hidden != null && node >= 0 && hidden.Contains( node ) )
+				continue;
 			var bake = node >= 0 ? rest[node] : Matrix4x4.Identity;
 			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( mesh, bake ) )
 			{
@@ -400,7 +549,9 @@ public sealed class TrackRenderer : IDisposable
 					slots[index] = LoadTexture( entry, textures[index] );
 				var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 				material.Set( TextureArrayName, slots );
-				models.Add( new Model( vertices, indices, material, false ) );
+				var drawable = new Model( vertices, indices, material, false );
+				models.Add( drawable );
+				parts.Add( new PiecePart( drawable, meshIndex, vertices, indices, material ) );
 			}
 		}
 		var heads = new List<Matrix4x4>();
@@ -419,7 +570,7 @@ public sealed class TrackRenderer : IDisposable
 			var node = SparksNode( model, number );
 			sparks[number] = node >= 0 && node < rest.Length ? rest[node] : null;
 		}
-		return new PieceGeometry( models, surface ?? TrackSurface.FromObject( model ), heads.ToArray(), flags.ToArray(), sparks );
+		return new PieceGeometry( models, surface ?? TrackSurface.FromObject( model ), heads.ToArray(), flags.ToArray(), sparks ) { Parts = parts, Mesh = model };
 	}
 
 	/// <summary>The model node of a vehicle's sparks dummy: the first dummy record with class bit 0x100 and the number, or −1.</summary>
@@ -460,6 +611,9 @@ public sealed class TrackRenderer : IDisposable
 			entity.Delete();
 		tiles.Clear();
 		visuals.Clear();
+		foreach ( var group in clipGroups.Values )
+			ReleaseGroup( group );
+		clipGroups.Clear();
 		foreach ( var geometry in pieces.Values.Concat( vehicleMeshes.Values ).Where( item => item != null ) )
 		{
 			foreach ( var model in geometry!.Models )

@@ -22,9 +22,8 @@ Code: `source/OpenTPW/World/Tracks/`, the track layer in `ParkCellMap`, the tool
 - Pieces are drawn from the ride's `wr_trck*.md2` meshes, boats from the supplemental mesh `wr_ring.md2`.
 - The cells, the controller and its boats are saved in the park-resume envelope (optional `Tracks` part) and restored exactly.
 
-Not in phases 1 and 2: jumps and tunnels (add-ons), the tee pieces' arm masks and the
-water texture animation; the three other themes' water rides were checked for data only (the
-tables and kits load for all four; only the Jungle ride was run).
+Not in phases 1 and 2: jumps and tunnels (add-ons); the three other themes' water rides were checked for data only (the
+tables and kits load for all four; only the Jungle ride was run). The pieces' arm masks and their water clips came later ("Piece animation and arm masks").
 
 ## Cells
 
@@ -62,7 +61,7 @@ Bridges: a straight tile over water (or over the paths it cleared, TRACK-010) ge
 the second pass (`[STP-PPC:0x1007A354]`) turns it into H (neither neighbour bridged), H_U (only ahead), H_D (only behind) or H_A (both), ahead
 and behind following the flow link.
 
-Piece tables (12 bytes: handle, name, arm byte): kart 20 entries, water 25: 0 none; 1 Q; 2 S; 3 B; 4 X; 5–8 X with arm masks 0x15/0x54/0x51/0x45; 9–11 H;
+Piece tables (12 bytes: handle, name, arm byte; PC kart `0x7633E8`, water `0x7634D8`): kart 20 entries, water 25: 0 none; 1 Q; 2 S; 3 B; 4 X; 5–8 X with arm masks 0x15/0x54/0x51/0x45; 9–11 H;
 12–14 H_U; 15–17 H_D; 18 H_A; 19 B2; 20–24 X2 (water only). `TrackPieceKit` loads `wr_trck<stem>.md2` / `.hmp` (water) or `gk_trck…` (kart) from the
 ride's archive; all four water and all four kart archives load completely.
 
@@ -218,7 +217,7 @@ The PC dispatch (`0x554726..0x554A3D`, table at `0x556A18`) differs from the fir
 | 12 | load the waiting guests into the first empty boat |
 | 13 / 14 | laps ← parameter × 30 (a duration) / −parameter |
 | 16 | unload one boat (the first without guests) |
-| 17 | water pieces on (0) / off (nonzero); stored and saved, not played (TRACK-018) |
+| 17 | water pieces on (0) / off (nonzero): a value equal to the stored word (−1 after the ride's placement and after a load) does nothing, any other triggers the pieces from both station sides ("Piece animation and arm masks") |
 
 Guests board through the existing ride-visitor protocol: the host writes the id to `VAR_LETMEON`, the script moves it with `BUMP 1`, and `BUMP 2`
 writes it to `VAR_LETMEOFF` when the boat has unloaded.
@@ -229,7 +228,34 @@ writes it to `VAR_LETMEOFF` when the boat has unloaded.
 centre (the original's one-cell instance offset is unresolved, TRACK-003; the `Bumper.*Adjust` keys are the station-reference offsets, not a mesh pivot) and stands on the mean ground height of its four cells; boats are
 `wr_ring.md2` at `position / 307.2` model units. A boat's height, pitch and roll follow the original's four probes (`[TPW-EXE:0x546280]`): ± the vehicle radius
 along the facing and across it, each sampling the object on the probed cell ("Vehicle height" below); the mean is the height, the front/back and right/left differences the
-pitch and roll. The pieces are static (TRACK-018).
+pitch and roll.
+
+### Piece animation and arm masks (October 16, 2026)
+
+**Arm masks.** The instancer (`0x522D50` water, `0x522B90` kart) passes the low byte of the piece table entry's arm word to the mesh creation `0x463060`, which
+hides (node flags `0x80000010`, `0x44B140`) every dummy record's node whose third word shares a bit with it. The pieces' end caps are such dummies, each naming
+its arm (`wr_end01` 0x01, `wr_end02` 0x10, the crossing's four 0x01/0x04/0x10/0x40), so a straight shows no caps, an end stub (arm 0x01) loses the cap of its connected arm,
+a tee only its missing arm's and a crossing none; bends and the bridge pieces 9, 12, 15 and 18 (arm 0) keep theirs. `TrackPieceKit.ArmMaskedNodes`; the renderer leaves those meshes out.
+
+**Water clips.** A piece's animation 5 is its mesh's `m` member (`wr_trckSm.md2`: a texture-coordinate scroll of the water mesh, 50 ticks in the jungle kit, 100
+in Halloween and space; the space kart pieces scroll too, the Halloween kart bridges flicker by texture frames). Two walks trigger it, `0x52A490` from the
+tile after the station along the flow and `0x52A700` from the tile before it against the flow (`TrackPieceWalk`): each turns at corners, runs straight through
+junctions, and stops at a tile with no arm ahead or before a station tile, and on every tile with a piece instance calls `0x4732A0(instance, 5 or 12, 0, 7, 1.0, 0)`:
+animation 5 (start) or 12 (stop), flags 7 (loop, at once; on a stop the tile keeps its last frame). Callers (`TrackPieceAnimations.ForWalk`):
+
+| Caller | Valid circuit | Invalid circuit |
+| --- | --- | --- |
+| ride placement walk (`0x524D0A`) | start, forward | stop, both walks |
+| a track line ends (`0x526F02`) | stop, forward | stop, both walks |
+| edit sub-modes 0xE/0x13 (`0x526BD0`) | start, forward | stop, both walks (no OpenTPW counterpart, TRACK-018) |
+| `BUMP 17` (`0x5549ED`) | 0: start, other: stop, both walks | same |
+
+A new or re-chosen piece is a new instance without a clip (`0x53AFA0`), and the load creates every piece that way. `BUMP 17` compares its value with the word
+`+0xE6` of the ride's script, which the script attach (`0x558C71`) and the load's script restore (`0x5597A0`) set to −1, so the first `BUMP 17 0` of the water
+ride's loop starts the water and the later ones do nothing; a track edit stops it until the ride closes (`BUMP 17 1`) and opens again. The state is presentation only
+(`Level.TrackPieceAnimations`, a clock advanced with the world step, not saved or hashed); the renderer plays one animator per group of tiles of a piece that started
+(and froze) together and draws their moving meshes from one copy. The walks start at OpenTPW's station exit and entry, whose relation to the original's
+cells is TRACK-005 (the original's backward walk starts one cell off the tile grid for rotation 90). Open (TRACK-018): the edit sub-modes and texture-frame clips.
 
 **Vehicle height** (TRACK-001 narrowed, TRACK-031 retired). Each probe of `0x546280` takes the object on its cell (`0x450AC0`: the cell's owner, a track cell through `0x53BF30`)
 and samples it in the mode `0x450EA0` chooses (`TrackSurface.FromObject`):
@@ -281,8 +307,8 @@ exist (the hash schema stays at 14). The digest covers every restored boat field
 
 `TrackSelectorTests` (the 16 masks, adjustments, tables, templates), `TrackCircuitTests` (tool, cost, clearing, closed loop, open track, tee refusal, crossing,
 bridges), `BumpControllerTests` (sine table, section and buoy geometry golden values, commands, a golden boat run, determinism, collisions, saves),
-`TrackRegisterRoundTests` (the 31 ms tick, start headings, the crossing flag and its effect on boat collisions, spray, engine voice and unload cues, the break smoke emitter, the unclamped bank), `HmpFileTests`, `TrackSaveTests` (shape check, codec, round trip, hash gating) and, with `OPENTPW_GAME_PATH`, `TrackAssetTests` (the kits and profiles of all eight
-ride archives, the real `Wateride.RSE` against the controller). The native smoke run lays a small closed circuit on the Jungle level and runs a boat, and the park-resume smoke with `OPENTPW_SMOKE_WATER=1` (both phases) buys the ride, saves a park with a boat on the water, restores it through the menu load and matches 600 continuation ticks of canonical hashes.
+`TrackPieceAnimationTests` (the two piece walks, the clip state, the walk causes and BUMP 17's stored word), `TrackRegisterRoundTests` (the 31 ms tick, start headings, the crossing flag and its effect on boat collisions, spray, engine voice and unload cues, the break smoke emitter, the unclamped bank), `HmpFileTests`, `TrackSaveTests` (shape check, codec, round trip, hash gating) and, with `OPENTPW_GAME_PATH`, `TrackAssetTests` (the kits and profiles of all eight
+ride archives, the arm masks and water clips of the jungle kit, the real `Wateride.RSE` against the controller). The native smoke run lays a small closed circuit on the Jungle level and runs a boat, and the park-resume smoke with `OPENTPW_SMOKE_WATER=1` (both phases) buys the ride, saves a park with a boat on the water, restores it through the menu load and matches 600 continuation ticks of canonical hashes.
 The golden values freeze this implementation of the traced rules; they are not captures of the original game.
 
 ## Design decisions and retired items (October 14 register round)
@@ -299,13 +325,13 @@ OpenTPW decisions with no original rule (`[EXT:name]` at the code sites):
 - `[EXT:kart-roll-convention]`: the absolute sign of a kart's roll (above).
 
 Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start heading), 016 (boat spray, engine voice, unload), 017 (crossing flag), 024 (bank clamp), 029 (chase, already ported).
-October 16: TRACK-006 retired as already matching (the walk posts no message, above).
+October 16: TRACK-006 retired as already matching (the walk posts no message, above); TRACK-018 narrowed (arm masks and water clips built).
 Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 026, 030 (texts in the register); TRACK-025 and 031 were retired in a later round (below).
 
 ## Open points
 
-- Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre (TRACK-030), the water animation and arm masks, the
-  demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
+- Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre (TRACK-030), the edit sub-modes' piece trigger and
+  texture-frame piece clips (TRACK-018), the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](FIDELITY-REGISTER.md)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 

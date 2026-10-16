@@ -18,7 +18,7 @@ public partial class Level
 		// The deferred gate-close retry follows the thing sweep (Mac 0x10536c).
 		Gate?.Tick();
 		StaffWorld?.Tick( deltaTime );
-		UpdateTrackRendering();
+		UpdateTrackRendering( deltaTime );
 		UpdateTourRendering( deltaTime );
 	} );
 }

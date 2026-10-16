@@ -169,9 +169,10 @@ public class AdvisorToolHelpTests
 	{
 		var hadStart = tool.Start != null;
 		var mode = tool.Mode;
+		var before = hud.InterfaceMode();
 		var result = tool.Click( cell );
 		if ( result is not { GhostRefused: true } )
-			hud.ReportCellToolClick( hadStart, mode, tool, joinedPath );
+			hud.ReportCellToolClick( hadStart, mode, tool, joinedPath, before );
 		return result;
 	}
 
@@ -467,5 +468,24 @@ public class AdvisorToolHelpTests
 		var hud = NewHud( out var events, out _, BuildCategory.Rides, "AddOn.UpgradeType 1\n", recordWindows: true );
 		Frame( hud );
 		StringAssert.StartsWith( events.Single( entry => entry.StartsWith( "open objectInfo/", System.StringComparison.Ordinal ) ), "open objectInfo/Ride" );
+	}
+
+	[TestMethod]
+	public void TheThirdLaterClickThatEndsTheToolLeavesNoHelp214Pending()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		tool.Enter( new LineWriter( CellToolMode.Path ), null );
+		Frame( hud );
+		ToolClick( hud, tool, (2, 2) );
+		ToolClick( hud, tool, (2, 6) );
+		ToolClick( hud, tool, (6, 6) );
+		Frame( hud );
+		events.Clear();
+		ToolClick( hud, tool, (6, 6) );
+		Assert.IsFalse( tool.IsActive, "a click on the start ends the tool" );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode" }, events, "0xD6 is posted before the line is laid and the tool's end (SetMode(0)) withdraws it" );
 	}
 }

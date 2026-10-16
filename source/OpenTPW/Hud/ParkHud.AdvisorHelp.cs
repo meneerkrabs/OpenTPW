@@ -64,7 +64,9 @@ public sealed partial class ParkHud
 	/// Asks the advisor for the help message of a tool that just started or acted; it is posted after this frame's mode change is reported, and dropped when that
 	/// change ended the mode it was posted in (the original withdraws the mode help in SetMode, which then ran after the post).
 	/// </summary>
-	private void PostToolHelp( int message ) => (toolHelp ??= new()).Add( (message, InterfaceMode()) );
+	/// <param name="message">The advisor message.</param>
+	/// <param name="mode">The interface mode the original posts it in, when that is not the mode now (a post that came before the click ended the tool).</param>
+	private void PostToolHelp( int message, string? mode = null ) => (toolHelp ??= new()).Add( (message, mode ?? InterfaceMode()) );
 
 	/// <summary>
 	/// The interface mode as a key: which tool the park view runs, or "park". Two frames with different keys are a mode change (the original's SetMode with a new mode).
@@ -121,10 +123,11 @@ public sealed partial class ParkHud
 	/// <param name="hadStart">The tool had a start before the click.</param>
 	/// <param name="mode">The tool's mode before the click.</param>
 	/// <param name="joinedPath">The queue line ends on a path cell, which links the queue to it (the original's flag 0x816D60).</param>
+	/// <param name="modeBefore"><see cref="InterfaceMode"/> before the click.</param>
 	// [BIN:TPW-EXE:0x00527222 first click] with the start unset a start the cell check accepts is stored (0x5272B3), and the path mode (0x52F860(1)) then posts 0xB8 through 0x59B590 (0x5272FE); the counter 0x8186DC is cleared (0x527316)
 	// [BIN:TPW-EXE:0x0052732F later click] a click with a start set increments the counter and posts 0xD6 when it reaches 3 (0x52733D-0x52735A), in either mode
 	// [BIN:TPW-EXE:0x005275B1 tool end] a click that ends the tool (the start reached, or the line ending on an existing path or queue cell) sets the mode to 0 (0x5275F2); in the queue mode (the check 0x52F860(3) before it) with the layout replay word 0x785A2C and the link flag 0x816D60 both clear it then posts 0x151 (0x527629)
-	internal void ReportCellToolClick( bool hadStart, CellToolMode mode, CellBuildTool tool, bool joinedPath )
+	internal void ReportCellToolClick( bool hadStart, CellToolMode mode, CellBuildTool tool, bool joinedPath, string? modeBefore = null )
 	{
 		if ( mode is not (CellToolMode.Path or CellToolMode.Queue) )
 			return;
@@ -137,8 +140,9 @@ public sealed partial class ParkHud
 				PostToolHelp( AdvisorToolHelp.PathStart );
 			return;
 		}
+		// the post comes before the line is laid, so a click that ends the tool takes it back through SetMode's withdrawal: it belongs to the mode before the click
 		if ( ++cellToolClicks == 3 )
-			PostToolHelp( AdvisorToolHelp.PathLaterClick );
+			PostToolHelp( AdvisorToolHelp.PathLaterClick, modeBefore );
 		if ( mode == CellToolMode.Queue && !tool.IsActive && !joinedPath )
 			PostToolHelp( AdvisorToolHelp.QueueEnd );
 	}

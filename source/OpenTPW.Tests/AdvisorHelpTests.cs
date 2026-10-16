@@ -227,12 +227,12 @@ public class AdvisorHelpTests
 	[TestMethod]
 	public void DescriptorTableParsesStrictly()
 	{
-		var rows = AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, callback = 0x59c8c0 },\n]\n" );
-		Assert.AreEqual( new AdvisorDescriptorRow( 0, 1, 1, 0, 1, 2, 0x59C8C0 ), rows.Single() );
+		var rows = AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, scan = 0, callback = 0x59c8c0 },\n]\n" );
+		Assert.AreEqual( new AdvisorDescriptorRow( 0, 1, 1, 0, 1, 2, false, 0x59C8C0 ), rows.Single() );
 		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0 },\n]\n" ) );
-		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 1, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, callback = 0x1 },\n]\n" ), "records are in message order" );
-		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 0, group = 0, duplicates = 1, mode = 2, callback = 0x1 },\n]\n" ) );
-		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, callback = 0x1 },\n" ), "unclosed" );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 1, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, scan = 0, callback = 0x1 },\n]\n" ), "records are in message order" );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 0, group = 0, duplicates = 1, mode = 2, scan = 0, callback = 0x1 },\n]\n" ) );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, scan = 0, callback = 0x1 },\n" ), "unclosed" );
 	}
 
 	[TestMethod]

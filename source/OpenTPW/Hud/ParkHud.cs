@@ -964,6 +964,7 @@ public sealed partial class ParkHud
 		var queueJoin = level.QueueJoinCell( tool );
 		var hadStart = tool.Start != null;
 		var modeBefore = tool.Mode;
+		var interfaceBefore = InterfaceMode();
 		cellToolClicking = true;
 		SegmentResult? result;
 		try
@@ -975,7 +976,7 @@ public sealed partial class ParkHud
 			cellToolClicking = false;
 		}
 		if ( result is not { GhostRefused: true } )
-			ReportCellToolClick( hadStart, modeBefore, tool, queueJoin != null );
+			ReportCellToolClick( hadStart, modeBefore, tool, queueJoin != null, interfaceBefore );
 		ResolveQueueRearm( result );
 		// [BIN:TPW-EXE:0x527587 queue-join sound] it follows every commit; a click on a refused ghost lays nothing and returns before the commit (0x524A63)
 		if ( result is { GhostRefused: false } )

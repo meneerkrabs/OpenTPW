@@ -261,14 +261,16 @@ def render_descriptors(table: dict[int, dict[str, int]]) -> str:
         '# message: message ID (the record index); response: first response ID (response numbers are consecutive, count of them;',
         '# 291 names response 551, which the response table does not have); group: message group; duplicates: pending duplicates',
         '# allowed; mode: the descriptor\'s game-mode selector (0: full simulation only, 1: Instant Action only, 2: always);',
-        '# callback: the address of the score callback (a getter of an Advisor.sam score, 0x5D60C0 for a score of 0, or a computation).',
+        '# callback: the address of the score callback (a getter of an Advisor.sam score, 0x5D60C0 for a score of 0, or a computation);',
+        '# scan: 1 when the background scan 0x59C680 scores the message each update (the record\'s first word, +0x0, is 0), 0 when it skips it (1: the',
+        '# message is posted by game code, as the help messages are).',
         '',
         'messages = [',
     ]
     for message in range(DESCRIPTOR_COUNT):
         row = table[message]
         lines.append(f'  {{ message = {message}, response = {row["first"]}, count = {row["count"]}, group = {row["group"]}, '
-                     f'duplicates = {row["duplicates"]}, mode = {row["mode"]}, callback = {row["callback"]:#x} }},')
+                     f'duplicates = {row["duplicates"]}, mode = {row["mode"]}, scan = {0 if row["skip_scan"] else 1}, callback = {row["callback"]:#x} }},')
     lines.append(']')
     return '\n'.join(lines) + '\n'
 

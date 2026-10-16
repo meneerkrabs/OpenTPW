@@ -86,10 +86,10 @@ implementation against those inputs, not equivalence to an executed PC game.
   timestamp; a script created later starts at the clock's current value. The
   WAITANIM(_CH) deadlines use the same 32-bit clock word; WAIT, SETTIMER and the
   wake times count from the script's own creation, which only shifts their base.
-  The clock starts at 0 with the park's script world (`[EXT:park-clock-origin]`, from RIDES-044): the PC clock is the app-lifetime scaled
+  The clock starts at 0 with the park's script world (`[EXT:park-clock-origin]`; `APPROX:RIDES-044` retired): the PC clock is the app-lifetime scaled
   timer 0x785970 (started once at 0x54DCF0, read by 0x402D70, set only by the save writer 0x4164C0 and loader
   0x415270, never reset for a new park), so a new park's first script sees the time since program start;
-  `GETTIME` (PC handler `0x551F1E`) stores that clock unchanged and every shipped script uses it only as a deadline or in a difference (`RideClockCorpusTests`); the only visible effect of the origin is the 32-bit wrapping `WAITANIM_CH` sum inside a park's first 134 ms (RIDES-044).
+  `GETTIME` (PC handler `0x551F1E`) stores that clock unchanged and every shipped script uses it only as a deadline or in a difference (`RideClockCorpusTests`); the only possible effect of the origin is the 32-bit wrapping `WAITANIM_CH` sum (PC handler `0x55320A`) inside a park's first 134 ms, and none of the 308 Theme Park World or 282 Theme Park Inc scripts issues `WAITANIM_CH`.
 - `JSR`/`RETURN` use a LIFO stack limited to the header stack size (every
   script that uses JSR declares ≥ 3); the old VM used a FIFO queue.
 - Children: `SPAWNCHILD` and `SPAWNSOUND` load a script from the parent's
@@ -465,7 +465,7 @@ handler attributes diverge.
 | 21 | `TRIGANIMSPEED` | 4 | hooked | STP-PPC 0xaffc4: trigger channel 0 at script speed × operand / 1000; out = max(ret − 300, 300); deadline = now + out × 1000 / operand (signed divw); LOOPANIM token reset |
 | 22 | `FLUSHANIM_CH` | 0 | hooked | STP-PPC 0xb00f4 → 0xa6c90: clears only the operand channel's deferred clip |
 | 23 | `TRIGANIM_CH` | 63 | hooked | STP-PPC 0xb013c: as TRIGANIM on channel operand 4 (Totem `TRIGANIM_CH 5 1 0 1`); leaves the LOOPANIM token |
-| 24 | `WAITANIM_CH` | 0 | hooked | STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline |
+| 24 | `WAITANIM_CH` | 0 | hooked | STP-PPC 0xb0268, PC 0x55320A (same arithmetic): as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline |
 | 25 | `LOOPANIM_CH` | 1 | hooked | STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline |
 | 26 | `TRIGWAITANIM_CH` | 0 | hooked | STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token |
 | 27 | `GETANIM_CH` | 15 | hooked | STP-PPC 0xb05b8: `GETANIM_CH dest channel`: the channel's AnimID, −1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`) |

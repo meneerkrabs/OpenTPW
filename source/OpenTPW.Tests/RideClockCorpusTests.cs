@@ -8,7 +8,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The shipped scripts read the scheduler clock only through differences (inconclusive without OPENTPW_GAME_PATH), which is why the port's
-/// per-world clock origin (it starts at 0) and the original's app-lifetime clock (0x785970, never reset for a new park) behave alike (RIDES-044 narrowed to the WAITANIM_CH sum).
+/// per-world clock origin (it starts at 0) and the original's app-lifetime clock (0x785970, never reset for a new park) behave alike (RIDES-044 retired; the one origin-dependent sum, WAITANIM_CH, is issued by no script).
 /// </summary>
 [TestClass]
 public class RideClockCorpusTests
@@ -59,6 +59,23 @@ public class RideClockCorpusTests
 			}
 		}
 		Assert.IsTrue( uses > 100, "the corpus uses GETTIME" );
+	}
+
+	/// <summary>
+	/// PC 0x55320A: the WAITANIM_CH deadline is the clock plus max(ret - 300, 300) as a wrapping 32-bit sum, the one place where the clock's absolute value could
+	/// show (a clip under 300 ms and a clock below the shortfall). No shipped script issues it (Theme Park World: 308 scripts; Theme Park Inc: 282; run once per data root).
+	/// </summary>
+	[TestMethod]
+	public void NoShippedScriptIssuesWaitAnimChannel()
+	{
+		var total = 0;
+		foreach ( var (name, data) in RseScriptTests.LoadCorpusBytes() )
+		{
+			total++;
+			var script = new RideScriptFile( new MemoryStream( data ) );
+			Assert.IsFalse( script.Instructions.Any( instruction => instruction.Opcode == (ushort)Opcode.WAITANIM_CH ), $"{name} issues WAITANIM_CH" );
+		}
+		Assert.IsTrue( total is 308 or 282, $"unexpected corpus size {total}" );
 	}
 
 	private static bool IsVariable( IReadOnlyList<RideScriptOperand> operands, int index, int variable ) =>

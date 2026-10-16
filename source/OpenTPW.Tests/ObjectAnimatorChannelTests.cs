@@ -128,6 +128,63 @@ public class ObjectAnimatorChannelTests
 		Assert.AreEqual( 0f, animator.GetTick( 0 ) );
 	}
 
+	/// <summary>
+	/// RIDES-003 (PC 0x4737D7): an instance with flag 0x10 holds the last frame when a clip ends with nothing deferred, whether it loops or not,
+	/// and the channel then reads AnimID 12 with GETANIM -1 where the ordinary route reads AnimID 14.
+	/// </summary>
+	[TestMethod]
+	public void HoldRouteEndsAnyClipAsAnimationTwelve()
+	{
+		var model = Geometry();
+		var clip = Vertex( 30 );
+		foreach ( var loop in new[] { false, true } )
+		{
+			var animator = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
+			animator.Trigger( 0, clip, "c1", 0, 0, loop );
+			animator.Advance( 1.0 );
+			Assert.IsTrue( animator.IsChannelPlaying( 0 ), "a frame equal to the duration is not past the end" );
+			animator.Advance( 0.001 );
+			Assert.IsFalse( animator.IsChannelPlaying( 0 ), $"loop {loop}" );
+			Assert.AreEqual( ObjectAnimator.NoAnimation, animator.GetAnimationId( 0 ) );
+			Assert.AreEqual( -1, animator.GetAnimation( 0 ) );
+			Assert.AreEqual( 30f, animator.GetTick( 0 ) );
+			animator.Advance( 5 );
+			Assert.AreEqual( 30f, animator.GetTick( 0 ), "the last frame stays" );
+			animator.Trigger( 0, clip, "c2", 0, 0, false );
+			Assert.AreEqual( 0, animator.GetAnimation( 0 ), "a new trigger replaces the held clip" );
+		}
+		var ordinary = new ObjectAnimator( model );
+		ordinary.Trigger( 0, clip, "c1", 0, 0, true );
+		ordinary.Advance( 2.5 );
+		Assert.IsTrue( ordinary.IsChannelPlaying( 0 ), "without the flag a looping clip loops" );
+	}
+
+	/// <summary>A deferred clip still follows on the hold route (the deferral test precedes the flag test, 0x473760), and a held channel survives a snapshot round trip.</summary>
+	[TestMethod]
+	public void HoldRouteFollowsADeferredClipAndRestores()
+	{
+		var model = Geometry();
+		var clip = Vertex( 30 );
+		var animator = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
+		animator.Trigger( 0, clip, "a", 0, 0, loop: false );
+		animator.Trigger( 0, clip, "b", 1, 0, loop: false, defer: true );
+		animator.Advance( 1.1 );
+		Assert.AreEqual( 1, animator.GetAnimationId( 0 ), "the deferred clip started" );
+		animator.Advance( 2 );
+		Assert.AreEqual( ObjectAnimator.NoAnimation, animator.GetAnimationId( 0 ) );
+		var snapshot = animator.CaptureSnapshot();
+		Assert.IsTrue( snapshot.Channels.Single().Held );
+		var restored = new ObjectAnimator( model, holdsLastFrameAtClipEnd: true );
+		restored.RestoreSnapshot( snapshot, identity => new ResolvedAnimatorClip( identity.Name, clip ) );
+		Assert.AreEqual( ObjectAnimator.NoAnimation, restored.GetAnimationId( 0 ) );
+		Assert.AreEqual( -1, restored.GetAnimation( 0 ) );
+		// An older save has no Held field: its ended channel reads AnimID 14 as before.
+		var older = new ObjectAnimator( model );
+		older.RestoreSnapshot( snapshot with { Channels = snapshot.Channels.Select( channel => channel with { Held = false } ).ToArray() }, identity => new ResolvedAnimatorClip( identity.Name, clip ) );
+		Assert.AreEqual( ObjectAnimator.EndedAnimation, older.GetAnimationId( 0 ) );
+		Assert.ThrowsException<InvalidDataException>( () => older.RestoreSnapshot( snapshot with { Channels = snapshot.Channels.Select( channel => channel with { Ended = false, Held = true } ).ToArray() }, identity => new ResolvedAnimatorClip( identity.Name, clip ) ) );
+	}
+
 	[TestMethod]
 	public void MissingClipLeavesTheChannelAndReportsOneSecond()
 	{

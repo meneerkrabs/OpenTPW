@@ -44,7 +44,7 @@ public sealed class ParkEconomy : IParkEconomy
 		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
-		Research = new ParkResearch( settings, catalog );
+		Research = new ParkResearch( settings, catalog ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
 		Objectives = new ParkObjectives( settings, catalog );
 		EntranceFee = settings.InitialAdmissionFee;
 		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );

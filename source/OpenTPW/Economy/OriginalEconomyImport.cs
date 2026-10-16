@@ -628,7 +628,10 @@ public sealed class OriginalEconomyImport
 				progress.Add( (key, (long)Math.Round( project.Done * (double)ParkResearch.PointScale )) );
 		}
 		var effort = Enumerable.Range( 0, SaveResearchLab.GroupRecords ).Select( index => lab.Group( index ).Effort ).ToArray();
-		research.Restore( completed, progress, effort );
+		// [BIN:TPW-EXE:0x504580 upgrade level project] the lab's category-4 projects (the add-ons and the appended level projects) keep the saved table's order
+		var upgradeOrder = Enumerable.Range( 0, used ).Select( lab.Project ).Where( project => project.Category == (uint)ResearchCategory.Upgrade && research.HasItem( project.ObjectId, project.UpgradeLevel ) )
+			.Select( project => ((int)project.ObjectId, (int)project.UpgradeLevel) ).ToList();
+		research.Restore( completed, progress, effort, null, upgradeOrder.Count == 0 ? null : upgradeOrder );
 		research.SetWorkload( lab.WorkLoad );
 		var current = new List<string>();
 		var refused = new List<string>();

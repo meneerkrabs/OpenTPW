@@ -535,6 +535,9 @@ public static class ParkSaveFile
 		public List<int[]>? Current { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int? Workload { get; init; }
+		/// <summary>The category-4 table's order as (Info.Id, level) pairs (ECON-017); absent in older saves and while the completions give the order a restore would rebuild.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int[]>? UpgradeOrder { get; init; }
 	}
 
 	public sealed class ObjectivesData
@@ -699,7 +702,8 @@ public static class ParkSaveFile
 				Progress = park.Research.ProgressEntries.OrderBy( entry => entry.Key.InfoId ).ThenBy( entry => entry.Key.Level ).Select( entry => new[] { entry.Key.InfoId, entry.Key.Level, entry.Points } ).ToList(),
 				Effort = park.Research.Effort.ToList(),
 				Current = park.Research.CurrentEntries.Any() ? park.Research.CurrentEntries.Select( entry => new[] { (int)entry.Category, entry.InfoId, entry.Level } ).ToList() : null,
-				Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload
+				Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload,
+				UpgradeOrder = park.Research.UpgradeTableToSave?.Select( key => new[] { key.InfoId, key.Level } ).ToList()
 			},
 			Objectives = new ObjectivesData
 			{
@@ -1010,7 +1014,7 @@ public static class ParkSaveFile
 			park.Staff.Strikes.Restore( strikes.Levels, strikes.Active, strikes.LastConsidered );
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),
 			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
-			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ) );
+			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList() );
 		if ( data.Research.Workload is int workload )
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,

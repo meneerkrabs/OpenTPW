@@ -120,7 +120,7 @@ public sealed class ParkObjects
 	public bool IsOccupied( int x, int y ) => occupied.ContainsKey( (x, y) ) || IsReserved?.Invoke( x, y ) == true;
 
 	/// <summary>Build rule for a catalog object anchored at (x, y) with a rotation.</summary>
-	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap + owned land; no slope or path rule; Level.PlaceObject enforces economy purchases — evidence needed: original build checks (binary/captures)
+	// [APPROX:RIDES-018] Build rules = footprint inside grid + MAP/save terrain rules + no overlap with objects, paths and queues (IsReserved) + owned land; no slope rule, as the validator 0x535670 has no float operation; Level.PlaceObject enforces economy purchases. The validator accepts an object cell (type 4) over an existing path cell (its closing 'type 4 over type 1' test) where this port refuses any footprint cell that holds a path or queue — evidence needed: the placement's own pre-checks (0x528A70, ghost 0x5370E0, chooser 0x539760) and what 0x53AE00 / 0x53AE90 refuse
 	// [BIN:TPW-EXE:0x5357c7 placement validator] after its early returns for a few tool modes the validator 0x535670 refuses a cell with flag 0x40 for whatever it places, paths, queues and objects alike
 	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{

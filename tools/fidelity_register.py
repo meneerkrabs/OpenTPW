@@ -57,6 +57,25 @@ RETIRED_LINE = re.compile(r"^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\s+(\S.*?
 RETIRED_HEADING = "## Retired and reserved IDs"
 DOC_ROW = re.compile(r"^\|\s*([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\s*\|")
 DOC_MENTION = re.compile(r"APPROX:([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\b")
+# Docs prose that retires IDs without an `APPROX:` citation: an ID list right before "retired" ("TRACK-012 and TRACK-023
+# retired", "UI-001, 038 and 040 are retired") or right after a "Retired ...:" lead ("Retired with a code change: TRACK-009
+# (snap), 011 (tick)"). A list item is a full ID, or a bare number that takes the prefix of the full ID before it, with an
+# optional `/NNN` tail and one parenthetical; items join with ", ", " and " or ", and ". Anything else between the list
+# and "retired" ("collided with main's retired", "is not retired", "narrowed, ...") does not match, and prose_retired()
+# skips negated, conditional and questioned claims (HEDGE, NEGATION).
+_PROSE_ID = r"[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3}(?![\w-])"
+_PROSE_TAIL = r"[`\]]{0,2}(?:/\d{3}(?![\w-]))*(?:\s\([^()\n]{0,200}\))?"
+_PROSE_LIST = (rf"[`\[]{{0,2}}(?:APPROX:)?{_PROSE_ID}{_PROSE_TAIL}"
+               rf"(?:(?:,\s+(?:and\s+)?|\s+and\s+)[`\[]{{0,2}}(?:APPROX:)?(?:{_PROSE_ID}|\d{{3}}(?![\w-])){_PROSE_TAIL})*")
+PROSE_RETIRED = re.compile(rf"(?<![\w-])(?P<before>{_PROSE_LIST})\s+(?:(?:is|are|was|were)\s+)?retired\b"
+                           rf"|(?<![\w-])[Rr]etired\b(?P<lead>[^:.;|\n]{{0,60}}):\s+(?P<after>{_PROSE_LIST})")
+# Words that make a "retired" claim negated, conditional or a question: before the list or in a lead ("Not retired:",
+# "Retired once tests pass:", "Is TRACK-009 retired"), in a parenthetical of the list ("TRACK-005 (not) retired").
+NEGATION = re.compile(r"\b(?:not|never|no|nor)\b", re.IGNORECASE)
+HEDGE = re.compile(r"\b(?:not|never|no|nor|neither|if|unless|when|whether|once|until|only|after|before|pending|planned"
+                   r"|will|would|should|could|may|might|can|be|is|are|was|were)\b", re.IGNORECASE)
+PROSE_PARENTHETICAL = re.compile(r"\([^()\n]*\)")
+PROSE_ITEM = re.compile(rf"({_PROSE_ID})|(?<![\w-])(\d{{3}})(?!\w)")
 
 
 @dataclass(frozen=True)
@@ -236,10 +255,37 @@ def write_retired(root: Path, retired: dict[str, str]) -> None:
     path.write_text("\n".join(header + body) + "\n", encoding="utf-8")
 
 
+def prose_retired(line: str) -> list[str]:
+    """IDs that one docs line retires in prose (PROSE_RETIRED), in order; parentheticals are skipped, so an ID cited
+    inside one is not taken for a list item."""
+    labels: list[str] = []
+    if "retired" not in line.lower():
+        return labels
+    for match in PROSE_RETIRED.finditer(line):
+        # The words right before the match (one before a list, three before a lead; not across punctuation, so "at once
+        # (AUDIO-027 is retired)" stands) and the lead.
+        words = 1 if match.group("before") else 3
+        preceding = re.search(r"(?:\w+[ \t]+){0,%d}\Z" % words, line[max(0, match.start() - 40):match.start()]).group(0)
+        if HEDGE.search(preceding + " " + (match.group("lead") or "")):
+            continue  # "Not retired: ...", "Retired once tests pass: ...", "Is TRACK-009 retired"
+        if match.group("before") and (line[match.end():].lstrip().startswith("?")
+                                      or any(NEGATION.search(text) for text in PROSE_PARENTHETICAL.findall(match.group("before")))):
+            continue  # "TRACK-009 retired?", "TRACK-005 (not) retired"
+        prefix = None
+        for item in PROSE_ITEM.finditer(PROSE_PARENTHETICAL.sub("", match.group("before") or match.group("after"))):
+            if item.group(1):
+                labels.append(item.group(1))
+                prefix = item.group(1).rsplit("-", 1)[0]
+            elif prefix:
+                labels.append(f"{prefix}-{item.group(2)}")
+    return labels
+
+
 def retired_ids(root: Path, prefixes: set[str], declarations: dict[str, Declaration], errors: list[str],
                 listed: dict[str, str] | None = None) -> dict[str, str]:
-    """IDs that a Markdown table row under docs keys, or docs prose cites as `APPROX:ID`, but no register declares
-    (retired, or reserved by a plan; prose mentions since REVIEW-WALK-2 WV2-2).
+    """IDs that a Markdown table row under docs keys, or docs prose cites as `APPROX:ID` or retires in plain words
+    ("TRACK-009 retired", PROSE_RETIRED), but no register declares (retired, or reserved by a plan; prose mentions
+    since REVIEW-WALK-2 WV2-2).
 
     The committed list (tools/fidelity_retired.txt, formerly a section of the committed document) only grows: an ID
     listed there may not be declared again, so a new approximation cannot take a number the docs already use with
@@ -257,6 +303,7 @@ def retired_ids(root: Path, prefixes: set[str], declarations: dict[str, Declarat
             match = DOC_ROW.match(line)
             labels = [match.group(1)] if match else []
             labels += [mention.group(1) for mention in DOC_MENTION.finditer(line)]
+            labels += prose_retired(line)
             for label in labels:
                 if label.rsplit("-", 1)[0] in prefixes:
                     found.setdefault(label, relative)

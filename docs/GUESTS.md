@@ -233,8 +233,7 @@ a kart or water ride its track word (the circuit walk's verdict, `BumpController
 closed, broken, queue-less, full, crossing or invalid ride gives no points, while its copies still count in the divisor of an untracked
 type. Only things whose type's `Info.WhichUIType` is 0 or 2 count (`0x4c8240`), which includes the shipped add-ons that declare 0. The
 coaster test also needs three track samples (its edited-coaster term is `CoasterRide.BeingEdited`), the track word starts false before the first walk, and a
-coaster imported from an original save has no controller (its track is not imported), so it gives no points (ARRIVAL-003). Objects imported from an original save set the first purchase to the import turn, where
-the original restores each type's record from the save (tp.exe `0x4d3aa0`, ARRIVAL-005); fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002, 003, 005 and 006 (`ArrivalApproximations`).
+coaster imported from an original save has no controller (its track is not imported), so it gives no points (ARRIVAL-003). Objects imported from an original save find each type's first purchase restored from the save's object-control table (tp.exe `0x4d3aa0`, `+0x1c`) and stamp the import turn only into a type still at 0, as the original does; fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002, 003 and 006 (`ArrivalApproximations`).
 
 ## Simulation
 
@@ -558,6 +557,8 @@ Retired: `APPROX:WALK-002` (avoid_walls' corner blocks and the position's cell: 
 Retired (wave 3): `APPROX:QUEUE-008` (the wear step's branch for game type 1: the type is the online one, `SetGameType(1)` at the online entries `0x4c0830` and `0x5e2700`, read through the game-type object `0xfb3b7c` and built by `0x550ca0` from the flag word `0x7a1a8c`; the branch wears nothing and cleans a relief object whose gauge byte is below 25 at once, row 6 off and row 1 on, script variable 8 = 0, gauge 100, claim and call cleared, `0x4e2478..0x4e252a`; `ParkEconomy.OnlineVisit` follows it for the online visit).
 
 Retired (wave 3): `APPROX:QUEUE-021` (where the queue tool goes on after the click on a queue cell: the first click enters tool 0x14, the next cell click collects the queue's corners with `0x530120`, runs `0x4de1f0` and enters mode 3, and `0x530120` ends by setting the line start `0x81ede4`/`0x81ede8` to the queue's last corner, so the line goes on from the back cell as OpenTPW starts it; the two-click entry itself is the design choice `EXT:queue-click-at-back-cell`).
+
+Retired (wave 3): `APPROX:ARRIVAL-005` (the first purchase of an imported object: the world loader reads the object-control table `0x4d3aa0` before the saved things, every record's `+0x1c` comes back verbatim and a constructed object stamps the turn into a record only while it is 0, `0x4db690`; `OriginalEconomyImport.ImportFirstPurchases` restores the saved turns before the objects are registered).
 
 An isolated [GuestOriginalRules helper](../tools/ppc-analysis/lanes/guests/rules/README.md)
 and 23 synthetic regression cases preserve selected Feral arithmetic: four

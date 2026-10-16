@@ -72,6 +72,7 @@ public sealed class OriginalEconomyImport
 		var evidence = new List<string>();
 		var world = save.World;
 		ImportTurn( economy, world, evidence );
+		ImportFirstPurchases( economy, world.ObjectControls, evidence );
 		Verify( economy.Settings, save.Economy, evidence );
 		ImportBank( economy, save.Economy.BankAccount, evidence );
 		if ( save.ResearchLab is { } lab )
@@ -100,6 +101,32 @@ public sealed class OriginalEconomyImport
 		// [BIN:TPW-EXE:0x0051710F world generator word] the world writer saves the u32 at world +0x1DA708 raw under the name "mRandomSeed" (0x00517123 with the name at 0x00762924) and the loader reads it back raw (0x00517DFC): it is the whole state of the one world generator 0x00516330, which the park continues from
 		economy.World.Restore( world.Variables.RandomSeed );
 		evidence.Add( $"World generator state mRandomSeed 0x{world.Variables.RandomSeed:X8} imported: the park's draws continue the saved stream." );
+	}
+
+	/// <summary>
+	/// Restores every object type's first-purchase turn from the save's object-control table, before the saved objects are registered: the registration stamps the import turn into a
+	/// type only while it is still 0, as the original's constructor does.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D3AA0 object controls] the world loader reads the control manager's table (0x005179C0 calls 0x004D3AA0 at 0x005181E7) before the saved things, so every record's +0x1C (the first purchase, 0x004DB690) comes back verbatim
+	// [BIN:TPW-EXE:0x004DB690 first purchase] a constructed object stamps the game turn into its type's record +0x1C only while it is 0, so a type the table lacks (0x004D3E00 adds a zeroed record) or holds at 0 is stamped when its first saved object is built, at the saved turn that ImportTurn has restored
+	internal static void ImportFirstPurchases( ParkEconomy economy, SaveObjectControls? controls, List<string> evidence )
+	{
+		ArgumentNullException.ThrowIfNull( economy );
+		ArgumentNullException.ThrowIfNull( evidence );
+		if ( controls == null )
+		{
+			evidence.Add( "First purchases not imported: the save's object-control table does not read; each type is stamped with the import turn." );
+			return;
+		}
+		var restored = 0;
+		foreach ( var control in controls.Controls )
+		{
+			if ( control.Word1C == 0 )
+				continue;
+			economy.Counters.Max( ParkCounters.FirstPurchaseTurn( control.Id ), control.Word1C );
+			restored++;
+		}
+		evidence.Add( $"First purchases imported: {restored} object types carry the turn of their first purchase from the save's object-control table." );
 	}
 
 	/// <summary>Checks the save's loan offers and challenge list against the balance settings.</summary>

@@ -275,6 +275,29 @@ public class OriginalSaveImportTests
 	}
 
 	[TestMethod]
+	public void RestoresTheFirstPurchaseTurnsOfTheObjectControlsAndStampsOnlyTypesAtZero()
+	{
+		// [BIN:TPW-EXE:0x004DB690] the constructor stamps a type's first purchase only while it is 0; the saved table comes back first
+		var economy = EconomyTestData.Park();
+		economy.StartAtOriginalTurn( 900 );
+		var controls = new SaveObjectControls( 0, new[]
+		{
+			new SaveObjectControl( 0, 1402, 100, 5, 0, true, 2, 3, 604 ),
+			new SaveObjectControl( 1, 1100, 100, 5, 0, true, 2, 0, 0 ),
+		}, 0 );
+		var evidence = new List<string>();
+		OriginalEconomyImport.ImportFirstPurchases( economy, controls, evidence );
+		StringAssert.Contains( evidence.Single(), "1 object types" );
+		economy.RegisterExisting( 1402 );
+		economy.RegisterExisting( 1100 );
+		Assert.AreEqual( 604L, economy.Counters[ParkCounters.FirstPurchaseTurn( 1402 )], "the saved turn survives the registration" );
+		Assert.AreEqual( economy.Turn, economy.Counters[ParkCounters.FirstPurchaseTurn( 1100 )], "a type saved at 0 is stamped with the import turn" );
+		var without = EconomyTestData.Park();
+		OriginalEconomyImport.ImportFirstPurchases( without, null, evidence );
+		Assert.AreEqual( 0L, without.Counters[ParkCounters.FirstPurchaseTurn( 1402 )] );
+	}
+
+	[TestMethod]
 	public void ReportsStaffHqValuesAndLaterImportSteps()
 	{
 		var settings = Settings();

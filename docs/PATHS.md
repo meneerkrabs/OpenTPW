@@ -89,8 +89,12 @@ In the park view the hover help is 441 over an empty owned cell, 442 over a
 path and 444 over a queue; inside the tools it is 443 and 445. A left click on a
 queue cell (444, "Left-click to edit this queue") starts the queue tool for the
 HasQueue ride that owns it, at that queue's back cell (QUEUE-021). A left click on
-an empty owned cell or a path cell starts the path tool (PATH-001; there is no
-menu button). After a HasQueue ride is placed, the queue tool starts at the
+an empty owned cell or a path cell enters the path tool without a start (tp.exe
+`0x4879d0`, SetMode(1) `0x52f200`; there is no menu button), and the same click
+is the tool's first click: a refused single-cell ghost ends the tool again (with
+the refused click's sound), otherwise the start check (`0x535670(1, 0)`) makes the
+cell the start, or leaves the tool on without one when it refuses the cell; a
+later click without a start does the same. After a HasQueue ride is placed, the queue tool starts at the
 entrance's outside cell and lays QUEUE-I's queue cells through the same tool.
 The remove tool clears an object, else a queue cell, else a path cell. Built
 path and queue cells are drawn as described in [Path textures](#path-textures).
@@ -149,7 +153,6 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
-| PATH-001 | PATH-ENTER | a click on an object-less cell or a path starts the tool (tp.exe 0x4879d0, SetMode(1) 0x52f200); the original enters even when the start check 0x535670(1, 0) refuses the cell (then without a start), OpenTPW does not enter |
 | PATH-005 | PATH-REMOVE | forced removal (a = b = 0) matches the original's area clear (tool 0x3a, 0x52bdd0); OpenTPW removes one clicked cell, the original a rectangle of type-1 cells and whole objects |
 | PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |

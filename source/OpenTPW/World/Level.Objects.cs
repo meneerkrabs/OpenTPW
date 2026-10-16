@@ -245,21 +245,27 @@ public partial class Level
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do.
 	private bool IsPathBlocked( int x, int y ) => Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y );
 
-	/// <summary>Starts the path tool at (x, y) (a click in the park view on an empty owned cell or a path cell).</summary>
+	/// <summary>
+	/// A click in the park view on an empty owned cell or a path cell enters the path tool without a start, then the same click is the
+	/// tool's first click (<see cref="CellBuildTool.Click"/>): a refused cell ends the tool again (the refused ghost is returned), an
+	/// accepted one becomes the start. False when no path tool can run (a read-only visit, no builder).
+	/// </summary>
 	// [BIN:STP-PPC:0x10139C64 park-view hover] empty cell: hover state 2, help 441 "build path"; path (type 1): state 1, help 442 "extend this path"; queue (type 3): help 444
-	// [APPROX:PATH-001] PATH-ENTER: a left click on an object-less cell (hover state 2, help 441) or a path cell (state 1, help 442) enters the path tool (tp.exe click dispatch 0x4879d0 builds the tool object 0x46c580(1), whose enter 0x46d5a0 calls SetMode(1) 0x52f200); the click's release sets that cell as the start only when the start check 0x535670(1, 0) does not refuse it (0x527222..0x5272b8), else the tool stays on without a start; OpenTPW instead refuses to enter when CheckCell fails, the re-preview while game+36 is set (0x5249b6) is not modelled, and the release-time ghost gate (0x524a63) is modelled for clicks after a start (CellBuildTool.Click) but not for the entering click — still open: OpenTPW refuses entry on a failed CheckCell; the entering click's release-time ghost gate and the game+36 re-preview
-	public bool EnterPathTool( int x, int y )
+	// [BIN:TPW-EXE:0x004879D0 park click] hover states 1 and 2 build the tool object 0x46C580(1), whose enter 0x46D5A0 calls SetMode(1) (0x52F200: the start −1); the click handler 0x524960 then takes the click as the tool's first click (CellBuildTool.ClickWithoutStart); OpenTPW's HUD hands it the click it reports, the press, as it does every tool click
+	public bool EnterPathTool( int x, int y ) => EnterPathTool( x, y, out _ );
+
+	/// <summary><see cref="EnterPathTool(int, int)"/>, with the refused ghost when the click ended the tool again.</summary>
+	public bool EnterPathTool( int x, int y, out SegmentResult? refused )
 	{
+		refused = null;
 		if ( IsReadOnlyVisit || Paths == null )
 			return false;
-		var check = Paths.CheckCell( x, y );
-		if ( check is not (CellBuildResult.Ok or CellBuildResult.Existing) )
-		{
-			LastActionMessage = $"Cannot build a path here: {check}.";
-			return false;
-		}
 		StaffPlacement?.Cancel();
-		CellTool.Enter( Paths, (x, y) );
+		CellTool.Enter( Paths, null );
+		CellTool.Hover( (x, y) );
+		refused = CellTool.Click( (x, y) );
+		if ( refused != null )
+			LastActionMessage = $"Cannot build a path here: {refused.StoppedBy}.";
 		return true;
 	}
 

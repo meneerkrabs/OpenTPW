@@ -22,6 +22,8 @@ public interface ICellLineWriter
 	SegmentResult Commit( (int X, int Y) start, (int X, int Y) end );
 	/// <summary>Takes back a committed segment.</summary>
 	void Undo( SegmentResult segment );
+	/// <summary>The start check of a click without a start (tp.exe <c>0x535670(mode, 0)</c>): false when it refuses the cell; a writer without one accepts every cell.</summary>
+	bool CanStart( (int X, int Y) cell ) => true;
 }
 
 /// <summary>
@@ -56,9 +58,10 @@ public sealed class CellBuildTool
 	/// <summary>Raised when the tool turns off (end of line, refusal, cancel).</summary>
 	public event Action? Ended;
 
-	/// <summary>Starts <paramref name="writer"/>'s mode with <paramref name="start"/> as the first vertex.</summary>
+	/// <summary>Starts <paramref name="writer"/>'s mode with <paramref name="start"/> as the first vertex, or without a start (null): the next click sets it.</summary>
 	// [BIN:STP-PPC:0x1007B320 SetMode] tool mode 1 = path, 3 = queue; the drag writes the cell type equal to the mode
-	public void Enter( ICellLineWriter writer, (int X, int Y) start )
+	// [BIN:TPW-EXE:0x0052F200 SetMode] a new mode stores the mode (0x81AE2C) and sets the start to −1 (0x52F340)
+	public void Enter( ICellLineWriter writer, (int X, int Y)? start )
 	{
 		ArgumentNullException.ThrowIfNull( writer );
 		if ( writer.Mode == CellToolMode.None )
@@ -68,7 +71,8 @@ public sealed class CellBuildTool
 		Writer = writer;
 		Mode = writer.Mode;
 		Start = start;
-		vertices.Add( start );
+		if ( start is { } first )
+			vertices.Add( first );
 		Ghost = null;
 		LastCommit = null;
 	}
@@ -91,8 +95,10 @@ public sealed class CellBuildTool
 	// [BIN:STP-PPC:0x10070F84 path commit] push and LayLine(mode, start, end) unless the end equals the start with more than one vertex stored (0x7107c..0x71084 bf eq to 0x71174: then nothing is laid); end the tool (start −1, SetMode(0)) when end == start
 	public SegmentResult? Click( (int X, int Y) cell )
 	{
-		if ( Writer == null || Start is not { } start )
+		if ( Writer == null )
 			return null;
+		if ( Start is not { } start )
+			return ClickWithoutStart( cell );
 		var end = ParkPathBuilder.SnapEnd( start, cell );
 		// [BIN:TPW-EXE:0x524A63 refused ghost] a click while the ghost of the line has a refused cell (0x816D48, set at 0x533933 when the preview's validator 0x535670 refuses a cell) ends the path or queue tool and lays nothing (mode table 0x52766C: SetMode(0, 0) at 0x5266A3)
 		// A ghost stopped only by OpenTPW's queue length cap is not a refusal of the original's validator (QUEUE-013): the click commits up to the cap
@@ -144,6 +150,28 @@ public sealed class CellBuildTool
 		else
 			Start = end;
 		return result;
+	}
+
+	/// <summary>
+	/// A click while the tool has no start (the click that entered it): a refused single-cell ghost ends the tool, as after a start;
+	/// otherwise the cell becomes the start when the writer's start check accepts it, else the tool stays on without one.
+	/// Returns the refused ghost when it ended the tool, else null.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00524A63 refused ghost] the click handler 0x524960 tests the latch 0x816D48 before the mode dispatch whether or not a start is set: a single-cell ghost the preview 0x5234D0 refused (LayLine(mode | 0x100) from the cursor) ends the path or queue tool (0x5266A3: SetMode(0, 0)); while game+36 (0x785A2C) is set the click first previews its own cell again (0x5249B6), which this re-preview always does
+	// [BIN:TPW-EXE:0x00527222 first click] with the start at −1 (0x81EDE4/0x81EDE8) the path mode runs the start check 0x535670(1, 0) and the queue mode 0x535670(3, 0) on the clicked cell: a refusal (1) leaves the tool on without a start (0x52765B), anything else (0, 8, 0xB) makes the cell the start (0x5272B3) and the first vertex (0x52FBD0, 0x52FBF0)
+	private SegmentResult? ClickWithoutStart( (int X, int Y) cell )
+	{
+		if ( Mode is CellToolMode.Path or CellToolMode.Queue && Writer!.Preview( cell, cell ) is { Completed: false, StoppedByOwnLimit: false } refused )
+		{
+			End();
+			return refused with { GhostRefused = true };
+		}
+		if ( !Writer!.CanStart( cell ) )
+			return null;
+		Start = cell;
+		vertices.Add( cell );
+		Ghost = null;
+		return null;
 	}
 
 	/// <summary>Backspace: takes back the last committed segment and continues from its start.</summary>

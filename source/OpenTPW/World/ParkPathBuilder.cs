@@ -210,6 +210,10 @@ public sealed class ParkPathBuilder : ICellLineWriter
 
 	SegmentResult ICellLineWriter.Commit( (int X, int Y) start, (int X, int Y) end ) => BuildSegment( start, end );
 
+	/// <summary>The path mode's start check: <see cref="CheckCell"/> accepts the cell (a new cell, an existing path or a queue end).</summary>
+	// [BIN:TPW-EXE:0x0052727B start check] 0x535670(1, 0) on the clicked cell: only 1 refuses; path over path (0 or 0xB) and a queue end (8) start a line
+	bool ICellLineWriter.CanStart( (int X, int Y) cell ) => CheckCell( cell.X, cell.Y ) is CellBuildResult.Ok or CellBuildResult.Existing;
+
 	private SegmentResult Run( (int X, int Y) start, (int X, int Y) end, bool write )
 	{
 		var line = LayLine( start, end );

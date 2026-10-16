@@ -123,7 +123,7 @@ items; the science save contains no Bus record, so none is inferred for that par
 scripts report unimplemented effects in the log; the two opcodes only Theme Park Inc scripts use
 (`WAITABS`, `MULT`) have VM handlers since October 13, 2026 (see RSE-VM.md's gap-opcode section;
 the science smoke never reached them, so retail execution is not claimed). Textures are not
-checked against the original game's alpha or colour handling (COMPAT-014/015).
+checked against the original game's alpha or colour handling (the palette converter's `0x24` reading is read at instruction level, `APPROX:COMPAT-014` retired; COMPAT-015 stays).
 
 **Textures.** `Texture` now loads `.fsh` (first image of the SHPI file, `FshFile`) and stb images
 (`.tga`, `.png`) from the game data as well as from disk; decoding is GPU-free
@@ -171,7 +171,7 @@ The slice's own scope decisions are OpenTPW design decisions, not approximations
 the Theme Park World guest rules over Theme Park Inc data, the capability gates and the Theme Park World tool flow (`[EXT:tpi-*]` at their sites; TPI-900 to
 TPI-904 are retired).
 
-**Approximations and open questions.** COMPAT-014, COMPAT-015 (palettes), COMPAT-019 (lake),
+**Approximations and open questions.** COMPAT-015 (the `0x2D` palette), COMPAT-019 (lake),
 RIDES-031 (`@`), RIDES-030 (non-finite texture coordinates in ten vertices of `science/sideshow/natnav`,
 drawn as 0, 0), RIDES-019 (default fixed items without a save), RIDES-040 (zero-coordinate fixed
 scene records). Open: how the original game transforms the zero-coordinate scene records and
@@ -310,7 +310,7 @@ about the readers.
    decodes all 7,283 files and WAD members to RGBA, with `--inspect-fsh`; see
    [FSH.md](FSH.md). The [level viewer](#theme-park-inc-playable-slice) uses them (October 11, 2026).
    Not done: checking them against the original game's rendering. Opaque `0x24`
-   palettes are approximation COMPAT-014.
+   palettes match the original's converter (`APPROX:COMPAT-014` retired).
 2. Use the `.rss` evidence in the VM: name `LIMBO`'s second operand as the limbo
    duration and cite the source comments in the opcode handlers.
 3. Other TPI save profiles, untraced prebuilt fields and the new `Standard.sam` keys,

@@ -476,7 +476,7 @@ public class FshFileTests
 			Assert.IsTrue( Mean( "Rgb24 tga24", channel ) < 12, $"0x24 channel {channel}: {Mean( "Rgb24 tga24", channel )}" );
 		Assert.IsTrue( Mean( "Rgb24 tga24", 4 ) > 50 );
 		// Four grey 0x24 badges have 32-bit thumbnails whose alpha is 0 everywhere, while OpenTPW decodes
-		// 0x24 as opaque (approximation COMPAT-014); this pins that the thumbnails do not support the choice.
+		// 0x24 as opaque (as the original's palette converter 0x6B7000 does, COMPAT-014 retired); this pins that the thumbnails do not support the choice.
 		Assert.AreEqual( 4, count["Rgb24 tga32"] );
 		Assert.AreEqual( 255, Mean( "Rgb24 tga32", 3 ), 1e-9 );
 		for ( var channel = 0; channel < 3; channel++ )

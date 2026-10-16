@@ -65,6 +65,7 @@ COMPAT-009 docs/COMPATIBILITY.md
 COMPAT-011 docs/reverse/APPROX-TRACE.md
 COMPAT-012 docs/reverse/APPROX-TRACE.md
 COMPAT-013 docs/reverse/APPROX-TRACE.md
+COMPAT-014 docs/FORMAT-BACKLOG.md
 COMPAT-016 docs/progress/2026-10-16-park-name-and-sign-paint-read-in-tp-exe.md
 COMPAT-017 docs/COMPATIBILITY.md
 COMPAT-030 docs/COMPATIBILITY.md

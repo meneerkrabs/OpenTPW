@@ -11,7 +11,8 @@ tp.exe read it from the level's Standard.sam (UI-107):
   its clear colour). The precompiled web shaders (`content/shaders/web`) are regenerated.
 - **The range** (read, not applied): the fog is linear in view depth (`D3DRS_FOGTABLEMODE` 3, no range fog, `0x567AD0`; the vertex
   path `0x5747D0` blends the same way) with start and end from FIRSTPERSONVIEWDISTANCE 0-3 (`0x44D8F0` -> `0x583280`, far plane `0x8BD4C0`):
-  50-60, 100-110, 135-150 and 230-250 original units (0.2 engine units each), 100-130 before the options apply. The per-primitive state
+  50-60, 100-110, 135-150 and 230-250 original units (0.2 engine units each); the table fog is switched off altogether when the render
+  flags `[0x8BCBC8] & 0xC000` are set (`0x567AD0`). The per-primitive state
   bit `0x100000` switches `D3DRS_FOGENABLE` (`0x567620`). OpenTPW keeps its own distance curve, because its park camera is not the original's
   (UI-101) and the literal range, seen from the default camera, fogs the whole park out; the high-preset captures confirmed that.
 - Checked with offscreen native captures of the jungle, hallow and space parks from the overview camera: the far scenery fades into cyan,

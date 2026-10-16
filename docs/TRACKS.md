@@ -343,15 +343,18 @@ Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start hea
 October 16: `APPROX:TRACK-006` retired as already matching (the walk posts no message, above); TRACK-018 narrowed (arm masks and water clips built).
 Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 026, 030 (texts in the register); TRACK-025 and 031 were retired in a later round (below).
 
-## Add-ons (read, not built: TRACK-008)
+## Add-ons (placement built, the rest read: TRACK-008)
 
 The track add-ons are objects of the Upgrades category with `AddOn.UpgradesId` = their ride and `AddOn.UpgradeType` 1: Dino Karts Jump 1500 and Tunnel 1501,
 Splish Splash Tunnel 1502, CryptKarts Chopper 2500 and Jump 2501, Ooze Crooz Ogre 2502, Space Racers Teleport 3500, Blobulator Tunnel 3501, Bumble Buggies Jump
 4500 and Tunnel 4501 (Tubes Of Zob Extra Tube 3502 is type 2). Each has its own script, an `m` clip and footprint codes 0xB (kart) or 0x10 (water track). What the original
 does with them (`TPW-EXE`):
 
-- **Placement** (`0x528A70`): a footprint cell with code 0xB or 0x10 must lie on track of that kind (validator passes 0x10B/0x110, 0x20B/0x210), and placing the
-  object writes the cell's flags word to 0x10 (`0x53A510`, also on a second cell). A flagged tile gets no piece instance (`0x53AFA0`): the add-on's mesh replaces it.
+- **Placement** (`0x528A70`): a footprint cell with code 0xB or 0x10 must lie on a straight, unflagged tile of the selected ride's kart or water track (validator passes 0x10B/0x110,
+  0x20B/0x210 in the validator's add-on mode, `0x535953`–`0x5359B3`: the head's owner word is the ride's, no corner, no junction, no flag 0x10 on the cell yet), and placing the object writes the cell's flags word to 0x10
+  (`0x53A510`, also on the second-layer cell). A flagged tile gets no piece instance (`0x53AFA0`): the add-on's mesh replaces it. OpenTPW: `TrackBuilder.CanStandAddOn` is the rule, `ParkObjects.AddOnCellRule`
+  applies it to the '+' and '#' cells, `ParkCellMap.WriteFootprint` and `ClearFootprint` write and take off the flag on both layers (selling the add-on is the ordinary removal), and `Level.CheckAddOn` and
+  `Level.PlaceAddOn` are the headless entry points (the build panel does not offer add-ons, RIDES-017). The next circuit walk reads the flag into kind 12 and 13 sections.
 - **Walk** (`0x52A970`): a flagged straight builds section kind 12 (0x44) or 13 (0x11) with +8 = its place in the run of add-on tiles (0, 1, …; any other tile resets it),
   +0xC = the add-on's instance and +0x10 = its type id; on the run's second tile it shows or hides the add-on's class-1 dummies 1 and 0x10 (its open ends) by whether the
   tiles ahead and behind are plain pieces or stations ("Found upgrade... modify?").
@@ -359,12 +362,12 @@ does with them (`TPW-EXE`):
   section's axis is hidden (`0x548E80`: flag 0x200, the vehicle's instance, its shadow and its riders' heads), remembering the side it came from (0x800000), and the
   teleport plays animation 5 and then animation 2 looping; past 0x4B0 on the far side of the second tile the vehicle shows again, as it does on leaving add-on objects.
 
-Not traced: where a ride's add-ons are sold (the object window code around `0x481BC0..0x486D90` reads an add-on's ride through `0x4E2710`) and the placement's cell
-writes for the footprint codes (`0x532FC0`).
+Not traced: where a ride's add-ons are offered and sold (the object window code around `0x481BC0..0x486D90` reads an add-on's ride through `0x4E2710`). Not built: the sections'
+run counters and values, the dummies' show and hide, the Teleport's vehicle hook and the walk after a placement.
 
 ## Open points
 
-- Jumps and tunnels (TRACK-008: the add-ons are neither sold nor placed; their placement, sections and the teleport hook are read, see "Add-ons"), the edit
+- Jumps and tunnels (TRACK-008: the add-ons' placement is built headless; their offer and sale, section values and the teleport hook are not, see "Add-ons"), the edit
   sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition's replayed action list, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.

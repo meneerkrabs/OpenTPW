@@ -73,6 +73,7 @@ public class ObjectAccessCellsTests
 				AccessCells = ObjectAccessCells.CellsToCheck
 			};
 			Objects.ObjectPlaced += item => Cells.WriteFootprint( item.Cells, Level.OwnerWord( item ), item.Placement.Rotation );
+			Objects.ObjectRemoved += item => Cells.ClearFootprint( item.Cells );
 			Objects.ObjectPlaced += item =>
 			{
 				if ( Laying )
@@ -211,5 +212,82 @@ public class ObjectAccessCellsTests
 		Assert.AreEqual( 0x01, ObjectFootprint.RotateDirectionByte( 0x10, 180 ) );
 		Assert.AreEqual( 0x40, ObjectFootprint.RotateDirectionByte( 0x10, 270 ) );
 		Assert.AreEqual( 0x40, ObjectFootprint.RotateDirectionByte( 0x01, 90 ) );
+	}
+
+	// ---------------------------------------------------------------- add-ons (RIDES-011, TRACK-008) and track ends
+
+	/// <summary>The eight-tile water loop of the circuit tests on a rig's cell map: station (10, 10), corners (14, 10), (14, 12), (8, 12), (8, 10); the straights (12, 12) and (10, 12) lie between the corners.</summary>
+	private static (TrackBuilder Builder, TrackStation Station, int Owner) Loop( ParkCellMap cells )
+	{
+		var builder = new TrackBuilder( cells, TrackFamily.Water, () => null, new SandboxParkGrid() );
+		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		builder.PlaceStation( station );
+		var owner = builder.OwnerOf( station );
+		var writer = new TrackLineWriter( builder, null, owner );
+		writer.Commit( (14, 10), (14, 12) );
+		writer.Commit( (14, 12), (8, 12) );
+		writer.Commit( (8, 12), (8, 10) );
+		return (builder, station, owner);
+	}
+
+	[TestMethod]
+	public void AnAddOnCellStandsOnAStraightUnflaggedTileOfItsRidesTrack()
+	{
+		var rig = new Rig();
+		var (builder, station, owner) = Loop( rig.Cells );
+		foreach ( var (x, y) in TrackStation.TileCellsOf( 12, 12 ) )
+			Assert.IsTrue( builder.CanStandAddOn( x, y, owner ), $"({x}, {y}) of the straight tile (12, 12)" );
+		Assert.IsFalse( builder.CanStandAddOn( 12, 12, owner + 1 ), "another ride's track (the head's owner word, 0x535998)" );
+		Assert.IsFalse( builder.CanStandAddOn( 14, 12, owner ), "a corner (0x53AE00)" );
+		Assert.IsFalse( builder.CanStandAddOn( 20, 20, owner ), "free ground holds no track cell (0x53AD30)" );
+		rig.Cells.SetFlags( 13, 13, ParkCellFlags.AddOn );
+		Assert.IsFalse( builder.CanStandAddOn( 13, 13, owner ), "a cell flagged 0x10 already carries an add-on (0x535961)" );
+		Assert.IsTrue( builder.CanStandAddOn( 12, 12, owner ), "the other cells of the tile still pass" );
+	}
+
+	[TestMethod]
+	public void AnAddOnIsPlacedOnItsTrackFlagsItAndTheWalkReadsTheFlagIntoItsSections()
+	{
+		var jump = Entry( 1500, 3, false, "++", "++" );
+		var rig = new Rig( jump );
+		var (builder, station, owner) = Loop( rig.Cells );
+		Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( jump, 12, 12, 0 ), "without the add-on rule the cells are ordinary object cells, and track refuses them" );
+		rig.Objects.AddOnCellRule = ( x, y ) => builder.CanStandAddOn( x, y, owner );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( jump, 12, 12, 0 ) );
+		Assert.AreEqual( OriginalPlacementResult.Blocked, rig.Objects.Check( jump, 13, 12, 0 ), "half on the corner tile" );
+		Assert.AreEqual( OriginalPlacementResult.Blocked, rig.Objects.Check( jump, 20, 20, 0 ), "on free ground" );
+		var circuitBefore = TrackCircuitWalker.Walk( builder, station );
+		Assert.IsTrue( circuitBefore.IsValid );
+		Assert.AreEqual( 9, circuitBefore.Steps.Single( step => (step.X, step.Y) == (12, 12) ).Kind, "a plain straight is kind 9" );
+		var item = rig.Place( jump, 12, 12 );
+		Assert.IsNotNull( item );
+		foreach ( var (x, y) in TrackStation.TileCellsOf( 12, 12 ) )
+		{
+			Assert.AreEqual( TrackCell.FlagAddOn, rig.Cells.Tracks.Get( x, y ).Flags, $"track cell ({x}, {y})" );
+			Assert.AreEqual( ParkCellFlags.AddOn, rig.Cells.FlagsAt( x, y ) );
+		}
+		Assert.AreEqual( OriginalPlacementResult.Blocked, rig.Objects.Check( jump, 12, 12, 0 ), "a second add-on does not fit on the flagged tile" );
+		var circuit = TrackCircuitWalker.Walk( builder, station );
+		Assert.IsTrue( circuit.IsValid );
+		Assert.AreEqual( 12, circuit.Steps.Single( step => (step.X, step.Y) == (12, 12) ).Kind, "the flagged straight builds the add-on kind 12 (0x52AC68)" );
+		Assert.AreEqual( 9, circuit.Steps.Single( step => (step.X, step.Y) == (10, 12) ).Kind );
+		rig.Objects.Remove( item! );
+		foreach ( var (x, y) in TrackStation.TileCellsOf( 12, 12 ) )
+			Assert.AreEqual( 0, rig.Cells.Tracks.Get( x, y ).Flags & TrackCell.FlagAddOn, "selling the add-on takes the flag off the tile" );
+		Assert.AreEqual( 9, TrackCircuitWalker.Walk( builder, station ).Steps.Single( step => (step.X, step.Y) == (12, 12) ).Kind );
+	}
+
+	[TestMethod]
+	public void ATrackEndNeedsTheCellBeyondItOnTheMap()
+	{
+		// [BIN:TPW-EXE:0x005295A8 track end beyond cell] a coaster station "<*>" on one row: '<' opens towards −X, '>' towards +X
+		var station = Entry( 1185, 5, true, "<2>" );
+		var rig = new Rig( station );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( station, 10, 10, 0 ) );
+		Assert.AreEqual( OriginalPlacementResult.OutsideTerrain, rig.Objects.Check( station, 0, 10, 0 ), "no cell beyond the '<' at x = 0" );
+		Assert.AreEqual( OriginalPlacementResult.OutsideTerrain, rig.Objects.Check( station, ParkPlacement.TileCount - 3, 10, 0 ), "none beyond the '>' on the last column" );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( station, 1, 10, 0 ) );
+		// rotated by 90 the ends open towards ±Y
+		Assert.AreEqual( OriginalPlacementResult.OutsideTerrain, rig.Objects.Check( station, 10, ParkPlacement.TileCount - 1, 90 ) );
 	}
 }

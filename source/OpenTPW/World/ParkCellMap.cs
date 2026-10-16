@@ -27,8 +27,9 @@ public static class ParkCellTypes
 	/// <summary>A fixed walkway outside the terrain (MAP bit 0x80: the bridge deck, the entrance crossings).</summary>
 	public const byte FixedWalkway = 30;
 	/// <summary>
-	/// The marker the placement writes on the cell beyond a track end (<c>&lt;</c>, <c>&gt;</c>, <c>D</c>) with the ride's owner word; the track
-	/// tools' validator modes 0x15 and 0x16 accept it (<c>0x535B53</c>). OpenTPW does not write it: its track tools find their start from the station.
+	/// The coaster module's cell marker (<c>SetCell(0x15)</c> of <c>0x452D30</c>, called by the coaster tool code <c>0x434412</c>, <c>0x443057</c>, <c>0x444EE7</c> and <c>0x445B50</c>), which the
+	/// placement also writes on the cell beyond a track end (<c>&lt;</c>, <c>&gt;</c>, <c>D</c> of a coaster station) with the ride's owner word; the validator's modes 0x15 and 0x16
+	/// accept it (<c>0x535B53</c>). OpenTPW's coaster builder keeps its own area test and writes none.
 	/// </summary>
 	public const byte TrackConnection = 0x15;
 	/// <summary>A park fence post on the structure layer.</summary>
@@ -329,9 +330,11 @@ public sealed class ParkCellMap
 			var fresh = RawTypeAt( x, y ) == 0;
 			if ( fresh )
 				SetType( x, y, type );
-			if ( RawTypeAt( x, y ) != type )
+			// An add-on stands on its ride's track: OpenTPW's map keeps the track's own type on such a cell (the original's first layer holds the object type 4 above the track on the second layer).
+			var onTrack = cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash && (TrackCellTypes.IsWalkable( RawTypeAt( x, y ) ) || RawTypeAt( x, y ) == TrackCellTypes.Extension);
+			if ( RawTypeAt( x, y ) != type && !onTrack )
 				continue;
-			if ( owner != 0 && OwnerAt( x, y ) != owner )
+			if ( owner != 0 && !onTrack && OwnerAt( x, y ) != owner )
 				SetOwner( x, y, owner );
 			switch ( cell.CellType )
 			{
@@ -377,20 +380,25 @@ public sealed class ParkCellMap
 		foreach ( var (x, y, cell) in footprint )
 		{
 			var type = FootprintType( cell.CellType );
-			if ( type == 0 || !InBounds( x, y ) || RawTypeAt( x, y ) != type )
+			if ( type == 0 || !InBounds( x, y ) )
+				continue;
+			var addOn = cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash;
+			var onTrack = addOn && (TrackCellTypes.IsWalkable( RawTypeAt( x, y ) ) || RawTypeAt( x, y ) == TrackCellTypes.Extension);
+			if ( RawTypeAt( x, y ) != type && !onTrack )
 				continue;
 			if ( cell.CellType == ObjectShapeSymbols.TypeAt )
 			{
 				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false );
 				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
 			}
-			else if ( cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash )
+			else if ( addOn )
 			{
 				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.AddOn );
 				if ( Tracks.Get( x, y ) is { Type: not 0 } track && (track.Flags & TrackCell.FlagAddOn) != 0 )
 					Tracks.Set( x, y, track with { Flags = (byte)(track.Flags & ~TrackCell.FlagAddOn) } );
 			}
-			SetType( x, y, ParkCellType.Empty );
+			if ( !onTrack )
+				SetType( x, y, ParkCellType.Empty );
 		}
 	}
 

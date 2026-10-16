@@ -83,21 +83,36 @@ public class ParkCellOwnerTests
 	{
 		// [BIN:TPW-EXE:0x0052950D '+' and '#' footprint cell] the flag word 0x10 on the cell and on the second-layer cell at the same coordinates
 		var cells = new ParkCellMap( 12, 12 );
-		var tile = new TrackCell { Type = TrackCellTypes.KartOrigin, Flags = TrackCell.FlagBridge | TrackBuilder.FlagOverPath, Parent = -1 };
-		cells.Tracks.Set( 4, 4, tile );
-		cells.SetType( 4, 4, TrackCellTypes.KartOrigin );
-		var plus = ObjectFootprint.GetCells( new ObjectShape( new[] { "+#" } ), 4, 4, 0 ).ToList();
-		// the cell map's own type of the track cell is stood in for by the layer: the footprint rule types empty cells only
-		cells.SetType( 4, 4, ParkCellType.Empty );
+		// a kart track tile over (4, 4)..(5, 5): the map keeps the track's types, the layer its tile records
+		foreach ( var (x, y) in TrackStation.TileCellsOf( 4, 4 ) )
+		{
+			var origin = (x, y) == (4, 4);
+			cells.SetType( x, y, origin ? TrackCellTypes.KartOrigin : TrackCellTypes.Extension );
+			cells.Tracks.Set( x, y, new TrackCell { Type = origin ? TrackCellTypes.KartOrigin : TrackCellTypes.Extension, Flags = TrackCell.FlagBridge | TrackBuilder.FlagOverPath, Parent = origin ? -1 : cells.Tracks.IndexOf( 4, 4 ) } );
+		}
+		var plus = ObjectFootprint.GetCells( new ObjectShape( new[] { "++", "++" } ), 4, 4, 0 ).ToList();
 		cells.WriteFootprint( plus, ParkCellMap.CellWord( 4, 4 ) );
-		Assert.AreEqual( ParkCellFlags.AddOn, cells.FlagsAt( 4, 4 ) );
-		Assert.AreEqual( ParkCellFlags.AddOn, cells.FlagsAt( 5, 4 ), "'#' like '+'" );
-		Assert.AreEqual( (byte)ParkCellTypes.Object, cells.RawTypeAt( 4, 4 ), "stored as an object cell" );
-		Assert.AreEqual( TrackCell.FlagAddOn, cells.Tracks.Get( 4, 4 ).Flags, "the track cell's flag word is set to exactly 0x10, the bridge bits gone" );
-		Assert.AreEqual( 0, cells.Tracks.Get( 5, 4 ).Type, "no track cell, none written" );
+		foreach ( var (x, y, _) in plus )
+		{
+			Assert.AreEqual( ParkCellFlags.AddOn, cells.FlagsAt( x, y ), $"({x}, {y}) map cell" );
+			Assert.AreEqual( TrackCell.FlagAddOn, cells.Tracks.Get( x, y ).Flags, $"({x}, {y}) track cell: exactly 0x10, the bridge bits gone" );
+			Assert.AreNotEqual( ParkCellTypes.Object, cells.RawTypeAt( x, y ), "the map keeps the track's own type on such a cell" );
+			Assert.AreEqual( 0, cells.OwnerAt( x, y ), "and no owner word" );
+		}
 		cells.ClearFootprint( plus );
-		Assert.AreEqual( 0, cells.Tracks.Get( 4, 4 ).Flags & TrackCell.FlagAddOn );
-		Assert.AreEqual( TrackCellTypes.KartOrigin, cells.Tracks.Get( 4, 4 ).Type, "the track stays" );
+		foreach ( var (x, y, _) in plus )
+		{
+			Assert.AreEqual( 0, cells.Tracks.Get( x, y ).Flags & TrackCell.FlagAddOn );
+			Assert.AreEqual( ParkCellFlags.None, cells.FlagsAt( x, y ) );
+			Assert.AreNotEqual( 0, cells.Tracks.Get( x, y ).Type, "the track stays" );
+			Assert.AreNotEqual( 0, cells.RawTypeAt( x, y ) );
+		}
+		// beside track the cells are plain object cells with the flag
+		var bare = new ParkCellMap( 12, 12 );
+		bare.WriteFootprint( ObjectFootprint.GetCells( new ObjectShape( new[] { "+#" } ), 4, 4, 0 ).ToList(), ParkCellMap.CellWord( 4, 4 ) );
+		Assert.AreEqual( ParkCellFlags.AddOn, bare.FlagsAt( 4, 4 ) );
+		Assert.AreEqual( ParkCellFlags.AddOn, bare.FlagsAt( 5, 4 ), "'#' like '+'" );
+		Assert.AreEqual( (byte)ParkCellTypes.Object, bare.RawTypeAt( 4, 4 ) );
 	}
 
 	[TestMethod]

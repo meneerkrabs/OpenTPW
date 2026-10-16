@@ -115,6 +115,11 @@ public sealed class ParkObjects
 	public Func<ObjectCatalogEntry, int, int, int, (IReadOnlyList<(int X, int Y)> Object, IReadOnlyList<(int X, int Y)> Path)>? AccessCells { get; set; }
 	/// <summary>The cells the path rule of <see cref="AccessCells"/> refuses besides objects and the unowned land (the level's cell map: any type but empty and path); null refuses none.</summary>
 	public Func<int, int, bool>? IsReservedForPath { get; set; }
+	/// <summary>
+	/// The rule for the '+' and '#' cells of an add-on (<see cref="TrackBuilder.CanStandAddOn"/> for the ride it is for): such a cell lies on its ride's track instead of free ground, so the
+	/// occupancy rules do not apply to it and this one does. Null: they are ordinary object cells.
+	/// </summary>
+	public Func<int, int, bool>? AddOnCellRule { get; set; }
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -150,7 +155,26 @@ public sealed class ParkObjects
 				giving.Add( item );
 			return false;
 		}
-		var result = Check( Grid, Blocks, entry, anchorX, anchorY, rotation );
+		var addOnCells = AddOnCellRule == null ? null : ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation )
+			.Where( cell => cell.Cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash ).Select( cell => (cell.X, cell.Y) ).ToHashSet();
+		var result = Check( Grid, ( x, y ) => addOnCells?.Contains( (x, y) ) != true && Blocks( x, y ), entry, anchorX, anchorY, rotation );
+		if ( result == OriginalPlacementResult.Allowed && addOnCells != null && addOnCells.Any( cell => !AddOnCellRule!( cell.X, cell.Y ) ) )
+			result = OriginalPlacementResult.Blocked;
+		// [BIN:TPW-EXE:0x005295A8 track end beyond cell] a track end (type 23: '<', '>', 'D') needs the cell beyond it in its rotated direction (0x4D97E0 answers none off the map or for a symbol without a direction), and the placement is refused when there is none
+		if ( result == OriginalPlacementResult.Allowed )
+		{
+			foreach ( var (x, y, cell) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
+			{
+				if ( cell.CellType != ObjectShapeSymbols.TypeTrackEnd )
+					continue;
+				var direction = GuestPathGrid.LinkDirection( ObjectFootprint.RotateDirectionByte( cell.Direction, rotation ) );
+				if ( direction < 0 || x + GuestPathGrid.Directions[direction].DX is var bx && y + GuestPathGrid.Directions[direction].DY is var by && (bx < 0 || by < 0 || bx >= Grid.Width || by >= Grid.Height) )
+				{
+					result = OriginalPlacementResult.OutsideTerrain;
+					break;
+				}
+			}
+		}
 		if ( result == OriginalPlacementResult.Allowed && IsUnowned is { } unowned )
 		{
 			foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )

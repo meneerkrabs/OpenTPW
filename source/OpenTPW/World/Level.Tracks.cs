@@ -172,6 +172,47 @@ public partial class Level
 		return circuit;
 	}
 
+	/// <summary>
+	/// The build check of a track add-on (a jump or tunnel, the objects of <c>AddOn.UpgradeType</c> 1) for <paramref name="ride"/>: its '+' and '#' cells must lie on straight, unflagged
+	/// tiles of the ride's track (<see cref="TrackBuilder.CanStandAddOn"/>), its other cells on free ground, as for any object.
+	/// </summary>
+	public OriginalPlacementResult CheckAddOn( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride )
+	{
+		if ( !trackStations.TryGetValue( ride, out var station ) || BuilderOf( ride ) is not { } builder )
+			return OriginalPlacementResult.Blocked;
+		var owner = builder.OwnerOf( station );
+		Objects.AddOnCellRule = ( cx, cy ) => builder.CanStandAddOn( cx, cy, owner );
+		try
+		{
+			return CheckObject( entry, x, y, rotation, out _ );
+		}
+		finally
+		{
+			Objects.AddOnCellRule = null;
+		}
+	}
+
+	/// <summary>
+	/// Builds a track add-on for <paramref name="ride"/> (<see cref="PlaceObject"/> with the add-on rule of <see cref="CheckAddOn"/>): the placement writes the flag 0x10 on its '+' cells
+	/// and the track beneath (<see cref="ParkCellMap.WriteFootprint"/>), and the ride's next walk of the circuit reads it into its sections.
+	/// </summary>
+	// OpenTPW's build panel does not offer add-ons (RIDES-017), so this is a headless API; the original's walk after the placement and the offer and sale of an add-on in the ride's object window are not traced (TRACK-008)
+	public OriginalObject? PlaceAddOn( ObjectCatalogEntry entry, int x, int y, int rotation, OriginalObject ride )
+	{
+		if ( !trackStations.TryGetValue( ride, out var station ) || BuilderOf( ride ) is not { } builder )
+			return null;
+		var owner = builder.OwnerOf( station );
+		Objects.AddOnCellRule = ( cx, cy ) => builder.CanStandAddOn( cx, cy, owner );
+		try
+		{
+			return PlaceObject( entry, x, y, rotation );
+		}
+		finally
+		{
+			Objects.AddOnCellRule = null;
+		}
+	}
+
 	/// <summary>Starts the water track tool on a station: the line starts at the tile after the station's exit.</summary>
 	public bool EnterTrackTool( OriginalObject station )
 	{

@@ -72,6 +72,8 @@ public sealed class ObjectAnimator
 		public long StartMilliseconds { get; set; }
 		/// <summary>AnimID 14 semantics: frozen at the last frame (channel flags 0x14), still posing.</summary>
 		public bool Ended { get; set; }
+		/// <summary>The hold route ended this channel (instance flag 0x10): AnimID 12 with flag 0x4 rather than AnimID 14.</summary>
+		public bool Held { get; set; }
 		/// <summary>DeferredAnimID/SubAnim/flags (+36/+40/+44) and speed; null = 12 (none).</summary>
 		public Clip? Deferred { get; set; }
 	}
@@ -98,6 +100,7 @@ public sealed class ObjectAnimator
 	private int textureFrameVersion;
 	private readonly SortedSet<string> vertexLimitations = new( StringComparer.Ordinal );
 	private readonly bool keepsPoseOnClipChange;
+	private readonly bool holdsLastFrameAtClipEnd;
 	private long serial;
 	private double clockMilliseconds;
 	private int hiddenVersion;
@@ -111,7 +114,11 @@ public sealed class ObjectAnimator
 	/// True for fixed items (<c>Info.DontApplyOffset</c>): a mesh keeps its last vertex pose and texture
 	/// coordinates when its track ends instead of showing its stored ones.
 	/// </param>
-	public ObjectAnimator( ModelFile model, float ticksPerSecond = DefaultTicksPerSecond, bool keepsPoseOnClipChange = false )
+	/// <param name="holdsLastFrameAtClipEnd">
+	/// True for an instance with flag 0x10 (<see cref="ObjectAnimations.HasOnlyBaseClips"/>): a clip that ends with nothing
+	/// deferred holds its last frame as AnimID 12 instead of looping or restarting as AnimID 14.
+	/// </param>
+	public ObjectAnimator( ModelFile model, float ticksPerSecond = DefaultTicksPerSecond, bool keepsPoseOnClipChange = false, bool holdsLastFrameAtClipEnd = false )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
@@ -123,6 +130,7 @@ public sealed class ObjectAnimator
 		// The bind copies the stored mesh back always under header flag 0x4, but the ride loader strips that flag on the
 		// default load path (see GetVertexLimitation), so the fixed-item gate decides for every model.
 		this.keepsPoseOnClipChange = keepsPoseOnClipChange;
+		this.holdsLastFrameAtClipEnd = holdsLastFrameAtClipEnd;
 		rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		world = (Matrix4x4[])rest.Clone();
 		restComponents = new (NVector3, Quaternion, NVector3)[model.Nodes.Count];
@@ -271,7 +279,7 @@ public sealed class ObjectAnimator
 	/// <see cref="EndedAnimation"/> once a non-looping clip ended, otherwise the triggered animation.
 	/// </summary>
 	public int GetAnimationId( int channel ) => !channels.TryGetValue( channel, out var state ) ? NoAnimation
-		: state.Ended ? EndedAnimation : state.Clip.AnimationId;
+		: state.Held ? NoAnimation : state.Ended ? EndedAnimation : state.Clip.AnimationId;
 
 	/// <summary>GETANIM / GETANIM_CH (0xaff80, 0xb0614): −1 once the channel's clip ended (flag 0x4), else its AnimID.</summary>
 	public int GetAnimation( int channel ) => channels.TryGetValue( channel, out var state ) && state.Ended ? -1 : GetAnimationId( channel );
@@ -391,7 +399,14 @@ public sealed class ObjectAnimator
 					Start( index, next, now );
 					continue;
 				}
-				if ( channel.Clip.Loop )
+				if ( holdsLastFrameAtClipEnd )
+				{
+					// [BIN:TPW-EXE:0x4737D7 hold route] with instance flag 0x10 and 0x8 clear the end of a clip with nothing deferred (looping or not) sets the frame to the total, ORs 0x40400000 into the instance flags, clears channel flag 0x8 and, after the sampler has run on the last frame, restarts the channel as AnimID 12 with flags 0x4 (0x473a30: 0x472f60 with AnimID 0xc, sub 0, flags 4): ended (GETANIM -1) with the AnimID 12 the next start's copy-back skips. The flag is set by 0x473e30 (0x473f32) when only animation group 0 (AnimID 0, letter C) holds clips
+					channel.Ended = true;
+					channel.Held = true;
+					frame = duration;
+				}
+				else if ( channel.Clip.Loop )
 				{
 					channel.StartMilliseconds = now - GetCarryMilliseconds( frame - duration, duration, channel.Clip.Speed );
 					channel.Serial = ++serial;
@@ -402,7 +417,7 @@ public sealed class ObjectAnimator
 				{
 					// [BIN:STP-PPC:0x100A7498 clip end] a non-looping clip with nothing deferred restarts as AnimID 14, which sets channel flags 0x14 (0x100A68AC) and branches past the bind (0x100A694C): frozen on the last frame, no copy-back, GETANIM -1
 					// [BIN:TPW-EXE:0x4735D0 clip end] a non-looping clip with nothing deferred restarts as AnimID 14 (0x473866: 0x472f60 with 0xe), which only sets the channel flags 0x14 (frozen on the last frame, ended: GETANIM -1) and leaves the channel's AnimID and sub as they were, so the next start's copy-back (0x472f60 -> 0x472310) runs against the ended clip itself, which is what this does; the AnimID-14 table slot is never read
-					// [APPROX:RIDES-003] a finished clip always takes that route here; the original stops (AnimID 12, 0x47376E) when the object's flag 0x8 is set at clip end and holds the last frame (0x4737D7) for flag 0x10 alone, and no writer of those two instance flags (+4) was found: the creator 0x463060 sets only 0x4, 0x4000 and 0x8000 from its flags and the one 'or [reg+4]' of 0x8 and 0x10 (0x685749, 0x68575A) is outside the model code — evidence needed: a scan of every writer of the instance flag word for bits 0x8 and 0x10
+					// [BIN:TPW-EXE:0x47376E clip-end routes] the end of a clip with nothing deferred tests the instance flag word (+4) & 0x18: clear = the loop or AnimID 14 route modelled here (every ride, shop and scenery object that has a clip beyond AnimID 0), 0x10 alone = the hold route (<see cref="holdsLastFrameAtClipEnd"/>), 0x8 = stop as AnimID 12 and hide, which only the advisor model has (its loader 0x429ba0 passes inner flag 0x100, the one path to record flag 0x8 at 0x461f10; objects never do: the object loader passes no outer 0x200, 0x4629d0 maps outer 0x200 to inner 0x100) and which AdvisorRig does not take through this class (RIDES-003 retired)
 					channel.Ended = true;
 					frame = duration;
 				}
@@ -481,6 +496,7 @@ public sealed class ObjectAnimator
 			Serial = pair.Value.Serial,
 			StartMilliseconds = pair.Value.StartMilliseconds,
 			Ended = pair.Value.Ended,
+			Held = pair.Value.Held,
 			Tick = pair.Value.Player.Tick,
 			ClipDurationTicks = pair.Value.Clip.Animation.Duration,
 			Deferred = pair.Value.Deferred is { } deferred
@@ -571,6 +587,7 @@ public sealed class ObjectAnimator
 			state.Serial = captured.Serial;
 			state.StartMilliseconds = captured.StartMilliseconds;
 			state.Ended = captured.Ended;
+			state.Held = captured.Held;
 			state.Player.SetTick( captured.Tick );
 			if ( captured.Deferred is { } deferred )
 				state.Deferred = ResolveSnapshotClip( resolveClip, deferred.Name, deferred.AnimationId, deferred.Variant, deferred.ClipDurationTicks, deferred.Loop, deferred.Speed, $"channel {captured.ChannelIndex} deferred" );

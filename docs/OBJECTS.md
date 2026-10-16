@@ -182,8 +182,11 @@ Playback (`ObjectAnimator`) follows the channel records of the Feral Mac build
 plain opcodes use channel 0, `_CH` opcodes the channel in their operand
 (sideshows use 0–2, the Totem 1–3). Channels update in ascending index, so for
 each node component (translation, rotation, scale, mesh positions, texture
-coordinates) the highest channel that writes it wins. A finished non-looping
-clip becomes AnimID 14: frozen on its last frame, pose kept (RIDES-003), and
+coordinates) the highest channel that writes it wins. A finished clip with
+nothing deferred takes one of three routes by the instance flags (`0x47376E`): an object that has a clip beyond AnimID 0 becomes
+AnimID 14 (a non-looping clip: frozen on its last frame, pose kept), an object whose only clips are AnimID 0, the construction
+clip C (88 of the 274 catalog entries, instance flag 0x10 set by `0x473e30`), holds its last frame as AnimID 12 whether the clip
+loops or not (`0x4737D7`), and the advisor model alone (flag 0x8) stops (`0x473778`); `APPROX:RIDES-003` retired.
 GETANIM(_CH) then returns −1 (otherwise the AnimID, 12 when empty). FLUSHANIM
 clears only the deferred clip. The scripts' waits use the trigger's result
 (`trunc(1000 × ticks / 30)` ms, 1000 for a missing member): TRIGANIM-family
@@ -341,7 +344,6 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 
 | Id | Site | Current value / rule | Evidence needed |
 | --- | --- | --- | --- |
-| RIDES-003 | World/Objects/ObjectAnimator.cs | A finished non-looping clip holds its last pose. PC: the clip end `0x4735D0` restarts it as AnimID 14 (`0x473866`), which only sets the channel flags 0x14 and keeps the channel's clip id (`0x472F60`), so the next start's copy-back (`0x472310`) runs against the ended clip, as here; the AnimID-14 table slot is never read | The writers of the instance flags 0x8 (stop, `0x47376E`) and 0x10 (hold, `0x4737D7`): `0x463060` sets only 0x4, 0x4000 and 0x8000 |
 | RIDES-011 | World/Objects/ObjectShape.cs | `+` is an overlay cell over the parent ride's track, the track ends `<` `>` station connections. The original placement `0x528A70` stamps `+`, `#` and the ends as occupied type 4 (`0x5290C7`–`0x5290EE`), checks `+` with cell op 0x10B and `#` with 0x110 and on commit writes the flags word 0x10 on the cell and its second-layer cell (`0x52950D`); an end with a direction needs the cell beyond it and on commit makes it type 0x15 (`0x5295F7`) | What cell ops 0x10B/0x110 require and what type 0x15 is |
 | RIDES-014 | World/Objects/ParkObjects.cs | Base height = (lowest + highest) / 2 of the terrain vertex heights at the corners of the footprint's shape cells (`0x466D70`, cells with a non-zero type nibble, `0x469930`; the vertex is `ftol(lerp + 0.1)` of `0x454050`, equal to `ObjectFootprint.ToGrid` of the corner: `ObjectBaseHeightTests`). The original then blends the ground flat under the ride (`0x467030`, `0x57ACE0`), which is not modelled; a park-resume save from before the rule restores with the earlier cell mean (`BaseHeightRule` absent) | The blend; the instance words +0xF0/+0xF4 taken as the shape size; an instance height captured on a slope |
 | RIDES-018 | World/Objects/ParkObjects.cs | Build rules: grid, the original's map-start cell types (holes refused; `Blocked` surface cells buildable, as in tp.exe), save paths/objects, owned land and no overlap with objects, paths or queues; no slope test (none in tp.exe either); Level enforces economy purchases. The validator accepts an object cell (type 4) over a path cell (its closing "type 4 over type 1" test, as `CanChangeCellType` allows 4 over path) where the port refuses any footprint cell holding a path or queue | The object branches of tp.exe's validator `0x535670` (ride cells, entrance/exit cells, cost); the placement's own pre-checks (`0x528A70`, ghost `0x5370E0`, chooser `0x539760`); what `0x53AE00` / `0x53AE90` refuse |

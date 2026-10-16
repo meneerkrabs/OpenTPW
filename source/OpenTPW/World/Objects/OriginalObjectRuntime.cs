@@ -63,7 +63,7 @@ public sealed partial class OriginalObjectRuntime
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
 		Visitors.Heads = RideHeadSpace.Create( Model, world.NextWorldDraw );
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
-		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem );
+		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem, holdsLastFrameAtClipEnd: ObjectAnimations.HasOnlyBaseClips( entry.Animations ) );
 		effects = new OriginalObjectEffects( this );
 		if ( entry.ScriptPath != null )
 		{

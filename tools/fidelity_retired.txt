@@ -156,6 +156,7 @@ ONLINE-076 docs/ONLINE.md
 PATH-001 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PATH-003 docs/PROGRESS.md
 PATH-004 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
+PATH-006 docs/progress/2026-10-16-original-build-check.md
 PATH-008 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PATH-009 docs/PROGRESS.md
 PATH-011 docs/PROGRESS.md
@@ -177,6 +178,7 @@ QUEUE-018 docs/GUESTS.md
 QUEUE-019 docs/GUESTS.md
 RIDES-001 docs/reverse/APPROX-TRACE.md
 RIDES-002 docs/reverse/APPROX-TRACE.md
+RIDES-003 docs/OBJECTS.md
 RIDES-004 docs/reverse/APPROX-TRACE.md
 RIDES-005 docs/reverse/APPROX-TRACE.md
 RIDES-006 docs/reverse/APPROX-TRACE.md
@@ -278,4 +280,3 @@ VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
-PATH-006 docs/progress/2026-10-16-original-build-check.md

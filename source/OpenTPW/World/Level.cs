@@ -53,9 +53,28 @@ public partial class Level : IDisposable
 	public ParkNameLines? ParkName { get; private set; }
 
 	/// <summary>
+	/// The park name and the gate sign of an original level: a resumed park keeps its saved lines, which the sign draws as the
+	/// original's rebuild after loading does (0x468500); a new park takes the gate's default lines.
+	/// </summary>
+	private void SetupParkName()
+	{
+		var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : null;
+		if ( OriginalPark != null )
+		{
+			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
+			{
+				Log.Warning( $"Gate sign: {exception.Message}" );
+			}
+		}
+		ParkName = savedName ?? GateSign?.Lines;
+	}
+
+	/// <summary>
 	/// Renames the park (the ticket price window's rename dialog): stores the two lines and redraws the gate sign. False for
 	/// a read-only visit, a level without a park name, or lines a save could not hold (<see cref="ParkNameLines.IsValid"/>).
 	/// </summary>
+	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0); the handler's copies to the online park record (0x409410, 0x5B0940/0x5B0970) and its secret name ("Kevin the" / "Cosmic Cow" at 0x751A34/0x751A38, calling 0x4053C0) are not built, and gate lines of original saves are not imported — evidence needed: the gate-line field of original saves and what 0x5B0940/0x5B0970 and 0x4053C0 drive
 	public bool RenamePark( string line1, string line2 )
 	{
 		if ( IsReadOnlyVisit || ParkName == null || line1 == null || line2 == null )
@@ -317,14 +336,7 @@ public partial class Level : IDisposable
 			}
 			yield return 0.35f;
 			Blueprint = new BlueprintMarkers( OriginalPark.Heightfield );
-			// A resumed park keeps its saved lines; the sign draws them as the original's rebuild after loading does (0x468500).
-			var savedName = resumeState?.ParkName is { } saved ? new ParkNameLines( saved.Line1, saved.Line2 ) : null;
-			try { GateSign = OriginalGateSign.TryCreate( OriginalPark, Global, savedName, reloaded: savedName != null ); }
-			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException )
-			{
-				Log.Warning( $"Gate sign: {exception.Message}" );
-			}
-			ParkName = savedName ?? GateSign?.Lines;
+			SetupParkName();
 			var origin = OriginalParkPlacement.GetOrigin( OriginalPark.Heightfield );
 			ParkCameraMode.TargetExtent = Math.Max( origin.X, origin.Y );
 			var save = OriginalPark.Save;

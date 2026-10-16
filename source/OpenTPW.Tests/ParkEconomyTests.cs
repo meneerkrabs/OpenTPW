@@ -131,7 +131,7 @@ public class ParkEconomyTests
 	{
 		var park = EconomyTestData.Park( initialCash: 0 );
 		park.OpenPark();
-		park.TryAdmitVisitor( 100, out _ );
+		park.TryAdmitVisitor( out _ );
 		var entry = park.Ledger.ProfitThisYear;
 		Assert.IsTrue( entry > 0, "gate takings raise the year's profit" );
 		var account = park.TakeLoan( 2 );
@@ -448,11 +448,10 @@ public class ParkEconomyTests
 	{
 		var park = EconomyTestData.Park();
 		park.OpenPark();
-		Assert.IsTrue( park.TryAdmitVisitor( 100, out var fee ) );
+		Assert.IsTrue( park.TryAdmitVisitor( out var fee ) );
 		Assert.AreEqual( 20, fee );
-		Assert.IsFalse( park.TryAdmitVisitor( 19, out _ ) );
 		park.SetEntranceFee( 35 );
-		Assert.IsTrue( park.TryAdmitVisitor( 35, out fee ) );
+		Assert.IsTrue( park.TryAdmitVisitor( out fee ) );
 		Assert.AreEqual( 55, park.Ledger.CurrentTotals[LedgerCategory.GateTakings] );
 		Assert.AreEqual( 2, park.Counters[ParkCounters.Admissions] );
 
@@ -1131,7 +1130,7 @@ public class ParkEconomyTests
 			var park = EconomyTestData.Park( mode: mode );
 			park.OpenPark();
 			for ( var visitor = 0; visitor < 101; visitor++ )
-				park.TryAdmitVisitor( 100, out _ );
+				park.TryAdmitVisitor( out _ );
 			park.Advance( ParkCalendar.TickOfTurn( ParkEconomy.GoldenTicketCheckInterval ) - 1 );
 			Assert.AreEqual( 0, park.Objectives.GoldenTickets.Count, $"{mode}: not checked before turn 100" );
 			park.Advance( 1 );
@@ -1277,7 +1276,7 @@ public class ParkEconomyTests
 		park.EventRaised += events.Add;
 		park.OpenPark();
 		for ( var visitor = 0; visitor < 101; visitor++ )
-			park.TryAdmitVisitor( 100, out _ );
+			park.TryAdmitVisitor( out _ );
 		park.ReportRecord( ParkRecordKind.CoasterHeight, 0, 110 );
 		park.AdvanceMonths( 1 );
 		CollectionAssert.AreEquivalent( new[] { GoldenTicketKind.Visitors, GoldenTicketKind.CoasterHeight }, park.Objectives.GoldenTickets.ToArray() );
@@ -1350,7 +1349,7 @@ public class ParkEconomyTests
 			}
 		}
 		for ( var visitor = 0; visitor < 5 + day % 7; visitor++ )
-			park.TryAdmitVisitor( 300, out _ );
+			park.TryAdmitVisitor( out _ );
 		if ( park.Objectives.Current is { Accepted: false } )
 			park.AcceptChallenge();
 		park.AdvanceDays( 1 );

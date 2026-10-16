@@ -61,10 +61,12 @@ public sealed class SoundChain
 		var sample = system.PickSample( soundEvent.Sounds[soundIndex].Samples, -1, avoidRepeat: false );
 		if ( sample >= 0 && system.Decode( category, soundEvent.Sounds[soundIndex].Samples[sample] ) is { } audio )
 		{
-			var volume = system.Volume( soundEvent.Sounds[soundIndex] ) / 100f;
+			// [BIN:TPW-EXE:0x006BBF60 placeholder setup] a chain's placeholder has the table of its event and sound like every placeholder; the shipped chain sounds bind no selector, so they draw
+			var table = SoundParameterTable.ForPlayback( soundEvent, soundEvent.Sounds[soundIndex] );
+			var volume = system.Volume( soundEvent.Sounds[soundIndex], table ) / 100f;
 			var child = system.Mixer.Play( audio, channel, volume, position, range );
 			// [BIN:TPW-EXE:0x6bc410 sample start] volume, then pitch, then (below) the wait: the order of the original's draws
-			child.SetPitch( system.Pitch( soundEvent.Sounds[soundIndex] ) );
+			child.SetPitch( system.Pitch( soundEvent.Sounds[soundIndex], table ) );
 			children.Add( child );
 			lastSample = sample;
 		}

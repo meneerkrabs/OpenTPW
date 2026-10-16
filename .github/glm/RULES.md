@@ -6,7 +6,7 @@ This run is unattended on a GitHub runner without game data. Follow these rules 
 ## Scope
 
 - Do only the task you were given. Do not refactor, rename or "improve" anything else.
-- Never edit `.github/`, `docs/FIDELITY-REGISTER.md` by hand, `source/OpenTPW/Client/M3Gate*`,
+- Never edit `.github/`, `tools/fidelity_retired.txt` by hand, `source/OpenTPW/Client/M3Gate*`,
   `source/OpenTPW/Client/M4Gate*` or any `tools/ppc-analysis/lanes/review/` file unless the task says so.
 - If production behaviour looks wrong, do not fix it: write the test for the current behaviour
   and list the doubt in `GLM-REPORT.md` at the repository root.
@@ -19,7 +19,8 @@ This run is unattended on a GitHub runner without game data. Follow these rules 
   neighbours. Tabs for indentation, spaces inside parentheses: `Foo( a, b )`.
 - Python paths that end up in output use `Path.as_posix()`.
 - Every approximation of original behaviour carries `[APPROX:AREA-NNN]` and is registered;
-  run `python3 tools/fidelity_register.py --write` then `--check` when you add one.
+  run `python3 tools/fidelity_register.py --check` when you add one. `docs/FIDELITY-REGISTER.md` is
+  generated (`--write`) and not committed; never add it to git.
 
 ## Checks before you finish (all must pass)
 

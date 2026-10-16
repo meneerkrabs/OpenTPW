@@ -97,6 +97,13 @@ public sealed class ObjectCatalogEntry
 	/// archive's &lt;language&gt;.txt (English as fallback); else <see cref="SettingsName"/>.
 	/// </summary>
 	public string DisplayName { get; internal set; }
+	/// <summary>
+	/// The original's info-record name (+0x410) that the sign generator draws for an object built from the catalogue: the
+	/// joined OBJECT_NAMES entries of the object's Info.Id row, or the empty string when the id is not in the table (or its
+	/// row names the empty entry). Null where OpenTPW has no such binding (Theme Park Inc, no OBJECT_NAMES, bonus objects),
+	/// and then <see cref="DisplayName"/> stands in.
+	/// </summary>
+	public string? SignName { get; internal set; }
 	/// <summary>Index of the first OBJECT_NAMES entry of this object (names may span two entries), or null.</summary>
 	public int? ObjectNameIndex { get; internal set; }
 
@@ -497,14 +504,31 @@ public static class ObjectNames
 		var localized = GameLanguage.IsSelected ? TryLoadCurrent() ?? english : english;
 		var entries = catalog.Entries.Where( entry => !entry.IsBonus ).ToList();
 		// The Info.Id table is tp.exe's; Theme Park Inc ships another OBJECT_NAMES.str (other order and length) and keeps the English-name matcher.
-		var bound = GameEditions.Current == GameEdition.ThemeParkWorld ? Bind( entries ) : Match( entries, english );
+		var tpw = GameEditions.Current == GameEdition.ThemeParkWorld;
+		Assign( entries, tpw ? Bind( entries ) : Match( entries, english ), localized, tpw );
+	}
+
+	/// <summary>
+	/// Pure naming step, exposed for tests: each bound entry gets its OBJECT_NAMES index and (when not empty) its display name;
+	/// with the Info.Id table (<paramref name="infoIdTable"/>) every entry also gets its info-record <see cref="ObjectCatalogEntry.SignName"/>,
+	/// empty for an entry that is not bound.
+	/// </summary>
+	internal static void Assign( IReadOnlyList<ObjectCatalogEntry> entries, IReadOnlyList<(ObjectCatalogEntry Entry, int Index, int Length)> bound, IReadOnlyList<string> localized, bool infoIdTable )
+	{
+		// [BIN:TPW-EXE:0x004146B0 object name getter] an id outside the table 0x7488D8 formats two empty parts with an empty separator ("%s%s%s" 0x74985C) into an empty info name
+		if ( infoIdTable )
+			foreach ( var entry in entries )
+				entry.SignName = "";
 		foreach ( var (entry, index, length) in bound )
 		{
 			entry.ObjectNameIndex = index;
 			entry.ObjectNameLength = length;
+			var joined = index + length <= localized.Count ? Join( localized.Skip( index ).Take( length ) ) : "";
+			if ( infoIdTable )
+				entry.SignName = joined;
 			// An empty bound name (the four End items, entry 0) keeps the .sam name as display name.
-			if ( index + length <= localized.Length && Join( localized.Skip( index ).Take( length ) ) is { Length: > 0 } name )
-				entry.DisplayName = name;
+			if ( joined.Length > 0 )
+				entry.DisplayName = joined;
 		}
 	}
 
@@ -666,14 +690,14 @@ public static class BonusNames
 	/// <summary>
 	/// The <c>SIGNA</c>/<c>SIGNB</c> lines of a bonus archive's selected-language file (no English fallback), or null when the
 	/// archive has no file for that language (the caller then draws the display name, not traced for NULL lines). A section the file lacks reads <see cref="MissingString"/>.
-	/// Each line is cut to <see cref="SignLineCharacters"/> characters; line 1 loses a trailing "--" (<see cref="StripTrailingDashes"/>).
+	/// Each line is cut to <see cref="SignLineCharacters"/> characters; line 1 ending in "--" loses one of its dashes (<see cref="StripTrailingDash"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00412C65 object definition constructor] the object text is read from the selected language's file only; without that file the definition's text pointers stay NULL (0x412C65/0x412C6B); what the sign code does with a NULL line is untraced, so OpenTPW's caller (ObjectSigns.Lines) falls back to the object's display name
 	// [BIN:TPW-EXE:0x00413600 object text] before parsing, NAME, SIGNA, SIGNB and +0x500 are set to L"MISSING STRING" (0x6FD880, 0x41360D–0x41361D), so a file without a SIGNA or SIGNB key shows that string on the line
 	// [BIN:TPW-EXE:0x004E2860 sign line 1] an empty line 1 is formatted from the never-written .bss buffer 0x78A374 (the empty string), so an empty line stays empty
 	// [BIN:TPW-EXE:0x004DB6F9 placed object sign lines] a placed object copies line 1 with 0x413020 and line 2 with 0x4130B0, both reading the OBJECT_NAMES row (table 0x7488D8) when the object is listed there and otherwise def+0x4F8 (SIGNA) and def+0x4FC (SIGNB)
 	// [BIN:TPW-EXE:0x00413600 object text] the object text file's NAME, SIGNA and SIGNB sections are parsed with the default "MISSING STRING"; SIGNA/SIGNB are copied into each placed object as two 32-character lines (0x413020/0x4130B0, called at 0x4DB6F9/0x4DB70D)
-	// [BIN:TPW-EXE:0x00468500 sign rebuild] the sign rebuild of the types with flag 0x8000000 reads line 1 through 0x4E2860 (which strips a trailing "--") and line 2 through 0x4E2920
+	// [BIN:TPW-EXE:0x00468500 sign rebuild] the sign rebuild of the types with flag 0x8000000 reads line 1 through 0x4E2860 (which drops the last dash of a trailing "--") and line 2 through 0x4E2920
 	public static (string Line1, string Line2)? ReadSignLines( ObjectCatalogEntry entry, string? language = null )
 	{
 		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
@@ -686,7 +710,7 @@ public static class BonusNames
 				var sections = Parse( entry.FileSystem.ReadAllBytes( entry.FileSystem.GetRelativePath( entry.FileSystem.GetAbsolutePath( file ) ) ) );
 				var first = sections.GetValueOrDefault( "SIGNA" ) ?? MissingString;
 				var second = sections.GetValueOrDefault( "SIGNB" ) ?? MissingString;
-				return (StripTrailingDashes( Truncate( first ) ), Truncate( second ));
+				return (StripTrailingDash( Truncate( first ) ), Truncate( second ));
 			}
 		}
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or ArgumentException or DecoderFallbackException )
@@ -705,9 +729,9 @@ public static class BonusNames
 		return line[..length];
 	}
 
-	/// <summary>A sign's line 1 as the original's reader returns it: a trailing "--" (two hyphens, on a line of at least two characters) is dropped.</summary>
-	// [BIN:TPW-EXE:0x004E2860 sign line 1] when the line is longer than one character and ends in two '-' (0x2D), it is copied without them
-	public static string StripTrailingDashes( string line ) => line.Length > 1 && line.EndsWith( "--", StringComparison.Ordinal ) ? line[..^2] : line;
+	/// <summary>A sign's line 1 as the original's reader returns it: a line of at least two characters that ends in "--" loses its last '-' (one of the two).</summary>
+	// [BIN:TPW-EXE:0x004E2860 sign line 1] when the line is longer than one character and its last two characters are '-' (0x2D) (0x4E28A1, 0x4E28AB), it is copied to the buffer 0x7CDC58 and terminated at index length - 1 (0x4E28DB: mov word [esi*2+0x7CDC56], 0), so one dash is dropped: "Super--" reads "Super-"
+	public static string StripTrailingDash( string line ) => line.Length > 1 && line.EndsWith( "--", StringComparison.Ordinal ) ? line[..^1] : line;
 
 	/// <summary>Sections of a bonus text file: a section name line followed by its text line(s) up to a blank line.</summary>
 	public static IReadOnlyDictionary<string, string> Parse( byte[] bytes )

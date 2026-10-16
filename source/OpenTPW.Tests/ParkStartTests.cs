@@ -74,7 +74,7 @@ public class ParkStartTests
 			park.EventRaised += events[mode].Add;
 			park.OpenPark();
 			for ( var visitor = 0; visitor < 100; visitor++ )
-				park.TryAdmitVisitor( 100, out _ );
+				park.TryAdmitVisitor( out _ );
 			park.ReportRecord( ParkRecordKind.CoasterHeight, 0, 110 );
 			park.AdvanceDays( 540 );
 			if ( mode == ParkGameMode.InstantAction )

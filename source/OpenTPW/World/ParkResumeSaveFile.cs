@@ -492,6 +492,9 @@ internal static class ParkResumeSaveFile
 		}
 		if ( snapshot.Gate is { } gate )
 			Require( gate.LastObservedTurn >= 0, $"the park gate's last observed turn {gate.LastObservedTurn} is negative" );
+		if ( snapshot.ParkName is { } parkName )
+			Require( ParkNameLines.IsValidLine( parkName.Line1 ) && ParkNameLines.IsValidLine( parkName.Line2 ),
+				$"the park name lines are missing, longer than {ParkNameLines.MaximumLength} characters or hold control characters" );
 		if ( snapshot.Staff is { } staff )
 		{
 			Require( staff.Actors != null, "the staff-world snapshot has no actor list" );
@@ -563,7 +566,6 @@ internal static class ParkResumeSaveFile
 		Require( guests.NextGuestId >= 1, $"the next guest id {guests.NextGuestId} is not positive" );
 		Require( guests.Admissions >= 0 && guests.Departed >= 0, "the guest snapshot holds negative admission counters" );
 		Require( float.IsFinite( guests.SpawnTimer ), "the arrival spawn timer is not finite" );
-		Require( guests.PendingArrivals >= 0, $"the guest snapshot holds {guests.PendingArrivals} pending arrivals" );
 		Require( guests.LaneToggle >= 0, $"the arrival lane toggle {guests.LaneToggle} is negative" );
 
 		// Attractions: queue invariants, unique ids the park really places, and cells inside the cell map.
@@ -788,7 +790,13 @@ internal static class ParkResumeSaveFile
 		var limitY = (long)height * TrackStation.CellUnits + 0x1800;
 		bool Inside( int x, int y ) => x >= -0x1800L && x <= limitX && y >= -0x1800L && y <= limitY;
 		bool Small( int value, int limit ) => value >= -limit && value <= limit;
+		Require( tracks.FrameCount is null or >= 0 && (tracks.TickRemainder is not { } clock || double.IsFinite( clock ) && clock >= 0 && clock < BumpController.MaximumSavedRemainder ),
+			"the track module's frame counter or clock is out of range" );
 		var previous = 0;
+		// a save of the shared module (it carries the module clock) is restored as saved: every vehicle keeps its module pool slot and every object its pool slot, unique across the rides
+		var shared = tracks.FrameCount != null;
+		var moduleVehicleSlots = new HashSet<int>();
+		var moduleObjectSlots = new HashSet<int>();
 		foreach ( var controller in tracks.Controllers )
 		{
 			Require( controller != null, "a track controller is missing" );
@@ -802,6 +810,12 @@ internal static class ParkResumeSaveFile
 			Require( controller.Pending.Count + controller.Leaving.Count <= TrackSave.MaximumGuests && controller.Pending.Concat( controller.Leaving ).All( guest => guestIds.Contains( guest ) && listedGuests.Add( guest ) ),
 				$"track controller {controller.AttractionId} holds a guest list with a guest the park does not hold, or one listed twice" );
 			Require( controller.Laps is >= -1000 and <= 0x10000, $"track controller {controller.AttractionId} has laps {controller.Laps} out of range" );
+			Require( controller.ObjectSlots == null || controller.ObjectSlots.Count <= BumpWorld.ObjectPool && controller.ObjectSlots.All( slot => slot is >= 0 and < BumpWorld.ObjectPool ),
+				$"track controller {controller.AttractionId} places collision objects outside the module's pool" );
+			Require( !shared || controller.ObjectSlots != null && controller.ObjectSlots.All( moduleObjectSlots.Add ),
+				$"track controller {controller.AttractionId} names no collision-object slots, or a slot another object of the module holds" );
+			Require( controller.BuoyCount is null or >= 0 and <= BumpWorld.BuoyPool && (!shared || controller.BuoyCount != null),
+				$"track controller {controller.AttractionId} holds no or a bad buoy count" );
 			var slots = new HashSet<int>();
 			// the engine voice belongs to one bumper car at most: the first carrying car of a running ride (never to a kart; every boat holds one)
 			var engines = controller.Vehicles.Where( car => car.Engine ).ToList();
@@ -811,10 +825,16 @@ internal static class ParkResumeSaveFile
 			foreach ( var vehicle in controller.Vehicles )
 			{
 				Require( vehicle != null && vehicle.Slot is >= 0 and < BumpController.VehiclePool && slots.Add( vehicle.Slot ), $"track controller {controller.AttractionId} holds a boat with a bad or repeated slot" );
+				Require( !shared || moduleVehicleSlots.Add( vehicle.Slot ), $"a vehicle of track controller {controller.AttractionId} names module pool slot {vehicle.Slot}, which another ride's vehicle holds" );
 				Require( vehicle.Heading is >= 0 and < BumpMath.Turn && vehicle.Riders.Count <= TrackSave.MaximumGuests && vehicle.Riders.All( guest => guestIds.Contains( guest ) && listedGuests.Add( guest ) ),
 					$"a boat of track controller {controller.AttractionId} has a bad heading or a rider the park does not hold, or one listed twice" );
-				// a bumper car always sits in the arena's one object (the creation search finds it from the station, and nothing but the keep-in step changes it)
-				Require( BumperTemplates.TryGet( controller.Type ) is not { IsBumper: true } || vehicle.ObjectIndex == 0, $"a bumper car of track controller {controller.AttractionId} is not in the arena object" );
+				// a bumper car always sits in the arena's one object (the creation search finds it from the station, and nothing but the keep-in step changes it), or in another ride's object the module-wide search found first;
+				// an arena the shared pools could not hold leaves its cars in no object
+				Require( BumperTemplates.TryGet( controller.Type ) is not { IsBumper: true } || vehicle.ObjectIndex == 0 || vehicle.ObjectAttraction >= 0
+					|| vehicle.ObjectIndex == -1 && controller.ObjectSlots is { Count: 0 }, $"a bumper car of track controller {controller.AttractionId} is not in the arena object" );
+				// an object of another ride names that ride (the park restore checks the object exists)
+				Require( vehicle.ObjectAttraction == -1 || vehicle.ObjectAttraction != controller.AttractionId && placedAttractions.Contains( vehicle.ObjectAttraction ) && vehicle.ObjectIndex >= 0,
+					$"a boat of track controller {controller.AttractionId} sits in an object of attraction {vehicle.ObjectAttraction}, which is not another placed ride" );
 				Require( vehicle.ObjectIndex >= -1 && vehicle.TargetBuoy >= -1, $"a boat of track controller {controller.AttractionId} has a negative object or buoy index" );
 				Require( !vehicle.Smoke || BumperTemplates.TryGet( controller.Type ) is { IsWater: false }, $"a boat of track controller {controller.AttractionId} holds a smoke emitter, which only karts and bumper cars have" );
 				Require( (vehicle.Flags & BumpVehicle.Live) != 0, $"a boat of track controller {controller.AttractionId} is not live" );

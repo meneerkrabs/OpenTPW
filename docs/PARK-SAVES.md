@@ -13,7 +13,7 @@ creation seed and attraction ID, the ID/seed allocators and world seed. Load exp
 replacing the current world and starting a **new experimental session**: guests, queues' live
 membership, script instruction/variable/animation progress, fixed-step clock and audio restart.
 The saved queue geometry remains. Camera, speed and menu focus start fresh. This is layout
-persistence, never continuation or original TPI parity (SAVE-930). Prototype and coaster layouts
+persistence, never continuation or original TPI parity (an OpenTPW extension, `EXT:tpi-layout-checkpoint`). Prototype and coaster layouts
 are refused instead of losing their state.
 
 The format uses the existing trusted simulation-asset manifest without constructing TPW economy

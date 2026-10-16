@@ -23,6 +23,6 @@ public partial class Level
 		if ( !lost )
 			StaffWorld?.Tick( deltaTime );
 		UpdateTrackRendering();
-		UpdateTourRendering();
+		UpdateTourRendering( deltaTime );
 	} );
 }

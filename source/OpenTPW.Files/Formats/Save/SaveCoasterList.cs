@@ -17,8 +17,8 @@ public readonly record struct SaveCoasterSection(
 {
 	public const int Bytes = 34;
 
-	// [APPROX:SAVE-921] the section's flags are the remapped section+8 node flags whose mapping the traced serializer does not state; they are kept raw and no bit is interpreted (0x40 loop node, 0x800 winch and 0x80 are node-flag names, not verified wire bits) — evidence needed: the remap in the saver 0x394b8 / loader 0x39f98
-	// [APPROX:SAVE-922] the word section+112 and the floats section+220/+224/+248 are saved but their meaning is not traced (+248 matches the loop-rotate slider's node +248 by offset only); they are reported raw — evidence needed: their writers in the section serializer
+	// [APPROX:SAVE-921] the section's flags are the remapped section+8 node flags; they are kept raw and no bit is interpreted. tp.exe's saver writes memory 0x80/0x40/0x100 as wire 0x8/0x10/0x20 and 0x10000..0x400000 as wire 0x40..0x800 (0x437615..0x4376E0); its loader restores 0x1/0x2/0x4 and 0x10000..0x400000 but not 0x80/0x40/0x100 (0x437EA6..0x437F58) — evidence needed: the meaning of the remapped bits and of wire 0x8/0x10/0x20 on load
+	// [APPROX:SAVE-922] the word section+112 and the floats section+220/+224/+248 are saved but their meaning is not traced (+248 matches the loop-rotate slider's node +248 by offset only); they are reported raw — evidence needed: their readers in the original coaster loader 0x437B60
 }
 
 /// <summary>
@@ -161,13 +161,13 @@ public sealed record SaveCoasterBlock( uint Count, uint Global1, uint Global2, u
 			}
 
 			// The last coaster's train payload is whatever remains of the block.
-			// [APPROX:SAVE-923] the train/car/passenger payload that follows each coaster's sections (serializer 0x38da4) is not decoded; it is preserved as raw bytes and never interpreted — evidence needed: the nested helper's field layout
+			// [APPROX:SAVE-923] the train/car/passenger payload that follows each coaster's sections is not decoded; it is preserved as raw bytes and never interpreted. tp.exe writes one 27-byte record per train slot of the coaster type (0x43783B), then per car an 11-byte record (0x4378A5) with two counts and the two counted u32 lists — evidence needed: the meanings of the train and car words
 			coasters[index] = new SaveCoaster( baseOffset + coasterOffset, flags, controller8, controller12, controller16,
 				controller20, controller28, controller32, power, sectionCount, controller244, controller240, riders,
 				ordinals, sections, data[reader.Position..].ToArray(), baseOffset + reader.Position );
 			if ( index + 1 >= count )
 				continue;
-			// [APPROX:SAVE-920] a Coasters block with more than one coaster is refused because the extent of each coaster's undecoded train payload is unknown, so the next header cannot be located — evidence needed: the train payload layout of 0x38da4
+			// [APPROX:SAVE-920] a Coasters block with more than one coaster is refused: tp.exe's loader 0x437B60 reads every coaster, but each coaster's train payload spans its type's train slots (type +0x2E8, 0x438386) and car counts, which this reader does not have, so the next header cannot be located — evidence needed: the coaster type's train slot and car counts at this layer
 			throw new InvalidDataException( reader.Position == data.Length
 				? $"Save coasters block lists {count} coasters but ends after {what}; coaster {index + 1}'s header is missing."
 				: $"Save coasters block lists {count} coasters; the train payload that follows {what}'s sections is not decoded, so coaster {index + 1}'s header cannot be located." );

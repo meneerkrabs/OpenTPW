@@ -164,7 +164,7 @@ public partial class Level
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
 		if ( Guests != null )
-			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation );
+			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation, OwnerWord( item ) );
 	}
 
 	/// <summary>
@@ -225,10 +225,11 @@ public partial class Level
 	/// Registers a placed object's visitor bridge with <paramref name="guests"/> the way the build flow does
 	/// (also used by the headless M3 gate): attractions only, cells from <see cref="ResolveVisitorCells"/>.
 	/// </summary>
-	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0 )
+	internal static bool RegisterWithGuests( OriginalObjectRuntime runtime, IEnumerable<ObjectAccessPoint> accessPoints, GuestSimulation guests, int rotation = 0, ushort ownerWord = 0 )
 	{
 		if ( !runtime.IsAttraction || ResolveVisitorCells( accessPoints, guests.Grid ) is not { } cells )
 			return false;
+		runtime.Visitors.OwnerWord = ownerWord;
 		runtime.Visitors.EntranceCell = cells.Entrance;
 		runtime.Visitors.ExitCell = cells.Exit;
 		runtime.Visitors.QueueFrontCell = cells.QueueFront;

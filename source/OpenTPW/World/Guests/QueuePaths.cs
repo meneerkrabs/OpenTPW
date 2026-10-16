@@ -32,7 +32,8 @@ public static class QueuePaths
 	public const int MaximumCells = 25;
 
 	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
-	// [APPROX:QUEUE-014] a queue is laid cell by cell from the entrance's outside cell; each cell must touch the current back cell, must not be a path or queue cell, and is linked toward that back cell. tp.exe's tool lays straight segments along the dominant axis (0x00536100), each from the previous end, the first from the cell the player clicks (SetMode 0x0052F200 sets the start to −1 at 0x0052F340); the validator 0x00535670 lets a queue cell replace a path cell that is not NoModify (0x005346D0 clears the path first), and the last cell may end on a path cell (code 8, the connection) — evidence needed: the writer of the queue link +0x0D and the segment commit in 0x00524960 (UI-031)
+	// [BIN:TPW-EXE:0x0053402E queue link writer] the segment commit 0x527403..0x527517 runs LayLine once per pass: the types, the links (0x5348D0 in the mode of the last type written), 0x82, 0x85, 0x86, 0x83 and the refresh 0x81; the pass 0x82 writes the queue link +0xD of a cell that has none from the line's step, towards the previous cell of the line (dx −1 gives 0x04, dx 1 0x40, dy −1 0x10, dy 1 0x01: 0x53402E..0x53407B), and the pass 0x83 the ride's owner word (0x5340E9, RideVisitorBridge.OwnerWord)
+	// [APPROX:QUEUE-014] the queue tool lays straight segments along the dominant axis from the ride's back cell (CellBuildTool, QueueLineWriter), ending on a path cell to connect the queue (code 8 on the last cell), as tp.exe's does (0x536100); tp.exe starts a segment at a cell the player clicks (SetMode 0x52F200 clears the start) and lays a queue cell anywhere, which joins a ride's queue only through its links, where each cell here must be an empty cell touching the current back cell, because a queue cell no ride owns has no removal tool; the validator also lets a queue replace a path cell that is not NoModify, except on a line's last cell (0x5346D0 clears the path first, 0x535C8A refuses NoModify), and an object of a lower overwrite priority (0x535D66 with 0x818C10 = 3, the commit demolishing it with op 0x87) — evidence needed: the segment commit's first-click handling in 0x524960 (UI-031)
 	public static QueueBuildResult CheckExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null ) =>
 		CheckExtend( grid, ride, x, y, Array.Empty<(int X, int Y)>(), isBlocked );
 
@@ -53,7 +54,7 @@ public static class QueuePaths
 		var hasCells = frontIsQueue || pending.Count > 0;
 		if ( hasCells && (frontIsQueue ? ride.QueueSizeInCells : 0) + pending.Count >= MaximumCells )
 			return QueueBuildResult.TooLong;
-		// CanChangeCellType allows a queue over an empty cell (and over a path except on a line's last cell); this tool also refuses path cells (QUEUE-014).
+		// CanChangeCellType allows a queue over an empty cell (and over a path except on a line's last cell); this tool also refuses path cells and objects (QUEUE-014).
 		if ( grid.Cells.TypeAt( x, y ) != ParkCellType.Empty || !ParkCellMap.CanChangeCellType( grid.Cells.RawTypeAt( x, y ), (byte)ParkCellType.Queue, lastCell: false )
 			|| grid.IsWalkable( x, y ) || isBlocked?.Invoke( x, y ) == true || pending.Contains( (x, y) ) )
 			return QueueBuildResult.Blocked;
@@ -79,6 +80,8 @@ public static class QueuePaths
 		var back = ride.QueueBackCell;
 		var towards = first ? ride.QueueEntranceDirection : GuestPathGrid.DirectionBetween( x, y, back.X, back.Y );
 		grid.SetQueue( x, y, towards );
+		if ( ride.OwnerWord != 0 )
+			grid.Cells.SetOwner( x, y, ride.OwnerWord );
 		if ( first )
 			LinkFront( grid.Cells, x, y, ride.QueueEntranceDirection );
 		else
@@ -127,6 +130,8 @@ public static class QueuePaths
 		if ( !grid.IsWalkable( path.X, path.Y ) || GuestPathGrid.DirectionBetween( before.X, before.Y, path.X, path.Y ) < 0 )
 			return false;
 		PathLinkWriter.LinkQueueStep( grid.Cells, path.X, path.Y, path.X - before.X, path.Y - before.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
+		if ( ride.OwnerWord != 0 )
+			grid.Cells.SetOwner( path.X, path.Y, ride.OwnerWord );
 		ride.RecomputeQueue( grid );
 		return true;
 	}

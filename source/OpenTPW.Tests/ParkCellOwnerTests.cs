@@ -241,4 +241,33 @@ public class ParkCellOwnerTests
 		Assert.IsTrue( compared >= 14, $"{compared} cells compared" );
 		Assert.AreEqual( 0, mismatches.Count, string.Join( "; ", mismatches.Take( 20 ) ) );
 	}
+
+	[TestMethod]
+	public void TheQueueToolWritesTheRidesOwnerWordOnItsQueueCellsAndTheConnectingPathCell()
+	{
+		// [BIN:TPW-EXE:0x005340E9 owner pass] the line's pass 0x83 stores the tool's ride as the owner word of every cell of the line and of the path cell it ends on
+		var grid = new GuestPathGrid( 12, 12 );
+		for ( var x = 0; x < 10; x++ )
+			grid.SetPath( x, 0, true );
+		var owner = ParkCellMap.CellWord( 2, 6 );
+		var ride = new RideVisitorBridge( 1, "Queue ride", RideVisitorKind.Ride, 5, 55, 30 )
+		{
+			EntranceCell = (2, 0),
+			ExitCell = (2, 0),
+			QueueFrontCell = (2, 5),
+			QueueEntranceDirection = 2,
+			OwnerWord = owner,
+			Parameters = new QueueParameters( true, false, false, 130, 60, 60, 5, 30 )
+		};
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 5 ) );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 4 ) );
+		Assert.AreEqual( owner, grid.Cells.OwnerAt( 2, 5 ) );
+		Assert.AreEqual( owner, grid.Cells.OwnerAt( 2, 4 ) );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 3 ) );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 2 ) );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 1 ) );
+		Assert.AreEqual( QueueBuildResult.Connected, QueuePaths.TryExtend( grid, ride, 2, 0 ) );
+		Assert.AreEqual( owner, grid.Cells.OwnerAt( 2, 0 ), "the path cell the queue ends on" );
+		Assert.AreEqual( 0, grid.Cells.OwnerAt( 3, 0 ), "its path neighbours stay unowned" );
+	}
 }

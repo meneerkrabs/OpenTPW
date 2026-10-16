@@ -86,9 +86,13 @@ saved part) and the ride runtime measures the model's dummies (`OriginalObjectRu
 10.03, the Tweety Tours' exactly 10), so both ride 1000 ms, as before (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`). TOUR-007 retired. WALKON's own walk-on
 time (`ftol(distance between u1 and u2) x 100`, 0x00556F40) and the beam effect of action 2 at WALKOFF are not modelled: riders board at once.
 
+## Pose sines (TOUR-008 narrowed)
+
+The rotation builder behind the car pose (`0x0046F6F0`) reads sine and cosine from a 4096-entry table filled at start (`0x004708D0`: `float(fsin(i / 4096 x 2 pi))`, index `round(angle x 4096 / 2 pi) & 4095`, a cosine the sine of the angle plus a quarter turn). `OriginalSineTable` is that table and `TourPose.Rotation` turns the matrix with it; the quantisation is up to 7.7e-4 on a sine. Only the shadow question stays under TOUR-008.
+
 ## Not done
 
-A shadow under the cars and the angle table's sines (TOUR-008: whether the original draws a shadow is not read), the mesh-derived and thing-owned ground (TOUR-005); see the register.
+A shadow under the cars (TOUR-008: the car draw and the MESHSHADOW flag show none, the generic instance draw was not read for one), the mesh-derived and thing-owned ground (TOUR-005); see the register.
 
 ## Drawing
 

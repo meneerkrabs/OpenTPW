@@ -10,6 +10,7 @@ internal static class Game
 	{
 		Log = new();
 		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ) );
+		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		var tgqExportIndex = Array.IndexOf(args, "--export-tgq-png");
 		if (tgqExportIndex >= 0)
 		{
@@ -61,7 +62,7 @@ internal static class Game
 			Console.WriteLine( $"SHPI: id {fsh.Id}; {fsh.Images.Count} image(s)." );
 			foreach ( var image in fsh.Images )
 				Console.WriteLine( $"Image '{image.Tag}' name '{image.Name}': {image.Width}x{image.Height}, code 0x{(image.Compressed ? 0xFB : 0x7B):X2}, palette 0x{(byte)image.PaletteFormat:X2} {image.PaletteFormat} with {image.PaletteEntries} entries; RGBA SHA-256 {Convert.ToHexString( System.Security.Cryptography.SHA256.HashData( image.Rgba ) ).ToLowerInvariant()}." );
-			Console.WriteLine( "Read-only CPU decoding of Theme Park Inc textures: 0x24 palettes are decoded opaque (approximation COMPAT-014) and the 0x2D palette as A1R5G5B5 (approximation COMPAT-015); no comparison with the original game's rendering." );
+			Console.WriteLine( "Read-only CPU decoding of Theme Park Inc textures: 0x24 palettes are decoded opaque, as the original's palette converter does, and the 0x2D palette as A1R5G5B5 (OpenTPW's own reading, [EXT:fsh-0x2d-palette]); no comparison with the original game's rendering." );
 			return;
 		}
 		var ps2Index = Array.IndexOf( args, "--export-ps2" );
@@ -661,6 +662,19 @@ internal static class Game
 		args.Contains( "--silent" ) || silentEnvironment == "1"
 		|| ((args.Contains( "--smoke-test" ) || args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) ) || args.Contains( "--park-resume-smoke" ))
 			&& !args.Contains( "--smoke-audio" ));
+
+	/// <summary>
+	/// [EXT:offscreen-automated-runs] smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>) create their window hidden and render into
+	/// an offscreen framebuffer, so no window appears, focus is not stolen and a locked screen does not matter. <c>--offscreen</c> or
+	/// <c>OPENTPW_OFFSCREEN=1</c> does the same for any run; <c>OPENTPW_OFFSCREEN=0</c> or <c>--no-offscreen</c> keeps the visible window.
+	/// </summary>
+	internal static bool IsOffscreenRun( string[] args, string? offscreenEnvironment )
+	{
+		if ( args.Contains( "--no-offscreen" ) || offscreenEnvironment == "0" )
+			return false;
+		return args.Contains( "--offscreen" ) || offscreenEnvironment == "1"
+			|| args.Contains( "--smoke-test" ) || args.Contains( "--tpi-smoke-test" ) || args.Contains( "--park-resume-smoke" );
+	}
 
 	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
 	{

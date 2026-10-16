@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using OpenTPW.Mods;
 
 namespace OpenTPW;
 
@@ -41,10 +42,11 @@ public sealed class ObjectCatalogEntry
 {
 	internal ObjectCatalogEntry( string theme, ObjectCategory category, string archivePath, ObjectSettings settings, ObjectShape shape,
 		string modelPath, string? previewModelPath, string? scriptPath, IReadOnlyList<string> scripts, IReadOnlyList<ObjectAnimationFile> animations,
-		IReadOnlyList<string> auxiliaryModels, IReadOnlyList<string> allModels, BaseFileSystem fileSystem, int? bonusNumber )
+		IReadOnlyList<string> auxiliaryModels, IReadOnlyList<string> allModels, BaseFileSystem fileSystem, int? bonusNumber, ContentRoot? root = null )
 	{
 		FileSystem = fileSystem;
 		BonusNumber = bonusNumber;
+		Root = root ?? ( bonusNumber != null ? ContentRoot.Bonus : ContentRoot.Data );
 		Theme = theme;
 		Category = category;
 		ArchivePath = archivePath;
@@ -81,7 +83,14 @@ public sealed class ObjectCatalogEntry
 	public BaseFileSystem FileSystem { get; }
 	/// <summary>The N of a bonus archive <c>_name_N</c> (official bonus content), else null.</summary>
 	public int? BonusNumber { get; }
-	public bool IsBonus => BonusNumber != null;
+	/// <summary>The content root the archive comes from (game data, official bonus content or a mod); it prefixes the entry's asset-manifest keys.</summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public ContentRoot Root { get; }
+	public bool IsBonus => Root.IsBonus;
+	/// <summary>The mod that adds this object (docs/MODS.md), or null.</summary>
+	public string? ModId => Root.ModId;
+	/// <summary>Whether the object is not game data: an official bonus archive or a mod's object. Such objects have no OBJECT_NAMES row.</summary>
+	public bool IsExternal => !Root.IsData;
 	public string Theme { get; }
 	public ObjectCategory Category { get; }
 	/// <summary>Data-root-relative archive path, e.g. <c>/levels/jungle/rides/totem</c>.</summary>
@@ -222,6 +231,26 @@ public sealed class ObjectCatalog
 	private static readonly ConditionalWeakTable<BaseFileSystem, Dictionary<string, ObjectCatalog>> cache = new();
 	private static string? bonusDataRoot;
 	private static bool bonusFromEnvironment = true;
+	private static IReadOnlyList<CatalogContentRoot> modRoots = Array.Empty<CatalogContentRoot>();
+
+	/// <summary>
+	/// The content roots the mods add (docs/MODS.md), in mod load order. Set at startup by <c>ModContentRoots</c> together with the active mod
+	/// set, whose digest is part of the catalog cache key; empty by default, where the catalog is exactly the game's and the bonus content's.
+	/// </summary>
+	internal static IReadOnlyList<CatalogContentRoot> ContentRoots
+	{
+		get
+		{
+			lock ( cache )
+				return modRoots;
+		}
+	}
+
+	internal static void SetContentRoots( IReadOnlyList<CatalogContentRoot> roots )
+	{
+		lock ( cache )
+			modRoots = roots;
+	}
 
 	/// <summary>
 	/// Optional official bonus-content directory (read-only), from <c>--bonus-data</c>, <c>OPENTPW_BONUS_DATA</c>, the saved setup or <c>&lt;config&gt;/bonus</c> (see <c>BonusContent.ResolveRoot</c>).
@@ -319,7 +348,11 @@ public sealed class ObjectCatalog
 			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
 		var fileSystem = FileSystem;
 		// The names come from the language's OBJECT_NAMES: a catalog loaded in another language is not reused.
-		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}";
+		// [EXT:mods] the active mods' digest is part of the key: the same files-based mods give the same catalog, other mods another one
+		IReadOnlyList<CatalogContentRoot> roots;
+		lock ( cache )
+			roots = modRoots;
+		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}|{OpenTpwExtensions.Active.Digest}";
 		ObjectCatalog? cached;
 		lock ( cache )
 			cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) ).TryGetValue( key, out cached );
@@ -329,7 +362,7 @@ public sealed class ObjectCatalog
 			yield break;
 		}
 		var entries = new List<ObjectCatalogEntry>();
-		foreach ( var _ in LoadEntries( theme, fileSystem, OpenBonusFileSystem(), easy, entries ) )
+		foreach ( var _ in LoadEntries( theme, fileSystem, OpenBonusFileSystem(), roots, easy, entries ) )
 			yield return null;
 		ObjectCatalog catalog;
 		lock ( cache )
@@ -356,7 +389,7 @@ public sealed class ObjectCatalog
 	// name equals a listed archive's (0x0041EDE0 over the list at +0x4C, _stricmp 0x00424CF0) is destroyed unread, any other is listed
 	// (0x0041EAA0) and then loaded (0x00413C10), so the first archive of a name in scan order wins; definitions with a taken Info.Id
 	// load too (see the constructor)
-	private static IEnumerable<bool> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? bonusFileSystem, bool easy, List<ObjectCatalogEntry> entries )
+	private static IEnumerable<bool> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? bonusFileSystem, IReadOnlyList<CatalogContentRoot> contentRoots, bool easy, List<ObjectCatalogEntry> entries )
 	{
 		foreach ( var (directory, category, defaultsName) in CategoryDirectories )
 		{
@@ -364,7 +397,8 @@ public sealed class ObjectCatalog
 			var listed = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
 			var categoryPath = CategoryPath( fileSystem, theme, directory );
 			var bonusPath = bonusFileSystem == null ? null : CategoryPath( bonusFileSystem, theme, directory );
-			if ( categoryPath == null && bonusPath == null )
+			var modObjects = contentRoots.SelectMany( root => root.Objects.Where( definition => definition.Theme == theme && definition.Category == category ).Select( definition => (Root: root, Definition: definition) ) ).ToList();
+			if ( categoryPath == null && bonusPath == null && modObjects.Count == 0 )
 				continue;
 			var defaultsDirectory = categoryPath ?? $"/levels/{theme}/{directory}";
 			var defaults = fileSystem.DirectoryExists( defaultsDirectory )
@@ -396,6 +430,53 @@ public sealed class ObjectCatalog
 					entries.Add( entry );
 				yield return true;
 			}
+			// [EXT:mods] The objects of the enabled mods follow the game's and the bonus archives, in mod order (docs/MODS.md). An archive name that is
+			// already listed, an Info.Id that is taken (see the constructor) and a broken archive are reported, not silently dropped.
+			foreach ( var (root, definition) in modObjects )
+			{
+				var archive = ResolveModArchive( root, definition );
+				if ( archive == null )
+				{
+					Log?.Warning( $"Mod {root.ModId} object {definition.Archive} is skipped: no archive or folder of that name in {(definition.Input ?? "the mod")}." );
+					yield return true;
+					continue;
+				}
+				if ( !listed.Add( ArchiveKey( Path.GetFileName( archive ) ) ) )
+				{
+					Log?.Warning( $"Mod {root.ModId} object {definition.Archive} is skipped: an archive named {ArchiveKey( Path.GetFileName( archive ) )} is already loaded." );
+					yield return true;
+					continue;
+				}
+				ObjectCatalogEntry? entry = null;
+				try
+				{
+					entry = LoadEntry( theme, category, archive, defaultLayer, root.FileSystem, easy, root, definition );
+				}
+				// a mod's archive is untrusted: whatever its parsers throw, the object is skipped and the catalog still loads
+				catch ( Exception exception ) when ( exception is not OutOfMemoryException )
+				{
+					Log?.Warning( $"Mod {root.ModId} object {definition.Archive} is skipped: {exception.Message}" );
+				}
+				if ( entry == null )
+					Log?.Warning( $"Mod {root.ModId} object {definition.Archive} is skipped: the archive has no .sam file with an Info.Id." );
+				else
+					entries.Add( entry );
+				yield return true;
+			}
+		}
+	}
+
+	/// <summary>The archive of a mod's object in its root's file system ('/' path without extension), case-corrected, or null when there is none.</summary>
+	private static string? ResolveModArchive( CatalogContentRoot root, ModObjectDefinition definition )
+	{
+		try
+		{
+			return DataRoots.ResolveIn( root.Directory, definition.Archive ) is { } corrected ? "/" + corrected : null;
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			Log?.Warning( $"Mod {root.ModId} object {definition.Archive} cannot be looked up: {exception.Message}" );
+			return null;
 		}
 	}
 
@@ -436,7 +517,8 @@ public sealed class ObjectCatalog
 
 	private static string Relative( BaseFileSystem fileSystem, string entry ) => fileSystem.GetRelativePath( fileSystem.GetAbsolutePath( entry ) );
 
-	private static ObjectCatalogEntry? LoadEntry( string theme, ObjectCategory category, string archive, ObjectSettingsFile? defaults, BaseFileSystem fileSystem, bool easy )
+	private static ObjectCatalogEntry? LoadEntry( string theme, ObjectCategory category, string archive, ObjectSettingsFile? defaults, BaseFileSystem fileSystem, bool easy,
+		CatalogContentRoot? contentRoot = null, ModObjectDefinition? modObject = null )
 	{
 		var files = fileSystem.GetFiles( archive ).Select( file => Relative( fileSystem, file ) ).ToArray();
 		// Official bonus archives are named _name_N (N = bonus number); their members use _name, the archive's name (ArchiveKey).
@@ -477,6 +559,9 @@ public sealed class ObjectCatalog
 		var easyFile = easy ? files.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), "Easy_" + Path.GetFileName( mainFile ), StringComparison.OrdinalIgnoreCase ) ) : null;
 		if ( easyFile != null )
 			layers.Add( ObjectSettingsFile.Load( fileSystem, easyFile ) );
+		// [EXT:mods] a mod's object gets the Info.Id its objects.json assigns, whatever its own .sam says (Layout records join on Info.Id, so the id is the mod's to keep stable)
+		if ( modObject != null )
+			layers.Add( new ObjectSettingsFile( $"Info.Id {modObject.InfoId.ToString( CultureInfo.InvariantCulture )}\n", "objects.json" ) );
 		var settings = new ObjectSettings( layers );
 		// [DATA:<object>.sam:Info.Shape]
 		var shapeRows = settings.GetBlock( "Info.Shape" );
@@ -506,12 +591,23 @@ public sealed class ObjectCatalog
 			if ( candidates.Length == 1 )
 				script = candidates[0];
 		}
-		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber );
+		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber, contentRoot?.Root );
 		if ( shared.Count > 0 )
 			entry.SharedSettings = new ObjectSettings( shared );
 		if ( bonusNumber != null )
 			entry.DisplayName = BonusNames.Read( entry ) ?? entry.SettingsName;
+		if ( modObject != null )
+		{
+			entry.DisplayName = ModName( modObject ) ?? entry.SettingsName;
+		}
 		return entry;
+	}
+
+	/// <summary>The name objects.json gives a mod's object: the selected language, then English; null when it gives neither.</summary>
+	private static string? ModName( ModObjectDefinition definition )
+	{
+		var language = GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
+		return definition.Names.TryGetValue( language, out var name ) || definition.Names.TryGetValue( GameLanguage.DefaultLanguage, out name ) ? name : null;
 	}
 
 	// Entries inside archives come back data-root-relative, loose entries absolute.
@@ -534,7 +630,7 @@ public static class ObjectNames
 		if ( english == null )
 			return;
 		var localized = GameLanguage.IsSelected ? TryLoadCurrent() ?? english : english;
-		var entries = catalog.Entries.Where( entry => !entry.IsBonus ).ToList();
+		var entries = catalog.Entries.Where( entry => !entry.IsExternal ).ToList();
 		// The Info.Id table is tp.exe's; Theme Park Inc ships another OBJECT_NAMES.str (other order and length) and keeps the English-name matcher.
 		var tpw = GameEditions.Current == GameEdition.ThemeParkWorld;
 		Assign( entries, tpw ? Bind( entries ) : Match( entries, english ), localized, tpw );
@@ -688,7 +784,7 @@ public static class ObjectNames
 /// </summary>
 public static class BonusNames
 {
-	// [APPROX:RIDES-025] The original reads only <selected language>.txt (0x41f350, language buffer 0xf7f230) from the bonus archive and falls back to the OBJECT_NAMES id table (empty for bonus ids except 3301) with no English or .sam fallback; this port also tries English and then the .sam Info.Name for a language the archive lacks (OpenTPW extension for third-party content; all 35 shipped bonus archives carry the four shipped languages)
+	// [EXT:bonus-name-fallback] third-party bonus content may lack the selected language, so a missing language file falls back to English and then to the .sam Info.Name where the original reads only <selected language>.txt (0x41f350, language buffer 0xf7f230) and the OBJECT_NAMES id table (empty for bonus ids except 3301); an archive never loses its display name, and all 35 shipped bonus archives carry the four shipped languages, so no shipped name differs
 	public static string? Read( ObjectCatalogEntry entry, string? language = null )
 	{
 		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;
@@ -804,4 +900,31 @@ public static class BonusNames
 		Close();
 		return sections;
 	}
+}
+
+/// <summary>
+/// A place catalog entries are read from besides the game data (docs/MODS.md): a file system with WAD and SDT handlers rooted
+/// at a mod's folder or at the data folder of a mod input (a user-supplied original install), and the mod's objects to take from it.
+/// Its entries are keyed in saved asset manifests by <see cref="Root"/> (<c>mod:&lt;id&gt;:/…</c>); one mod never lists the same
+/// archive path in its own folder and in an input, since the same theme, category and archive name are refused.
+/// </summary>
+// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+internal sealed class CatalogContentRoot
+{
+	public CatalogContentRoot( ContentRoot root, string directory, IReadOnlyList<ModObjectDefinition> objects )
+	{
+		Root = root;
+		Directory = Path.GetFullPath( directory );
+		Objects = objects;
+		FileSystem = new BaseFileSystem( Directory );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
+	}
+
+	public ContentRoot Root { get; }
+	/// <summary>Absolute root folder of <see cref="FileSystem"/>.</summary>
+	public string Directory { get; }
+	public IReadOnlyList<ModObjectDefinition> Objects { get; }
+	public BaseFileSystem FileSystem { get; }
+	public string ModId => Root.ModId!;
 }

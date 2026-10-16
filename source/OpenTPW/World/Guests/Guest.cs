@@ -26,7 +26,13 @@ public enum GuestState : byte
 	/// <summary>Caught by a guard: carried, out of sight, until the guard sets it down (original state 17, set by 0x004FEB10).</summary>
 	HeldByGuard = 17,
 	LeavingPark = 18,
+	/// <summary>
+	/// At the gate's crossing, waiting for the arrival vehicle to let a leaving guest walk to its stop (original state 19); a guest that walks OpenTPW's lane home is in
+	/// this state too, with <see cref="Guest.Lane"/> set.
+	/// </summary>
 	CrossingRoadHome = 19,
+	/// <summary>Walking to the arrival vehicle's stop cells over the cell map (original state 20).</summary>
+	WalkingToVehicle = 20,
 	WaitingToGoHome = 21,
 	/// <summary>Not a KIDSTATES entry: removed from the simulation at the end of the tick.</summary>
 	Gone = 255

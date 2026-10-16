@@ -273,4 +273,50 @@ public class SaveWorldTests
 		Assert.AreEqual( park.Economy.ChallengeSystem.Challenges.Count, park.Economy.Challenges.Count );
 		Assert.IsTrue( park.Economy.Challenges.Count is > 0 and <= SaveChallengeSystem.Slots );
 	}
+
+	/// <summary>The control manager's table (tp.exe 0x4D3AA0): 150 records of 32 bytes, the used count and the previous search key.</summary>
+	private static byte[] ObjectControlTable( params (uint Id, uint Cost, bool Researched, uint Level)[] controls )
+	{
+		var table = new byte[SaveObjectControls.Bytes];
+		for ( var index = 0; index < controls.Length; index++ )
+		{
+			var record = table.AsSpan( index * SaveObjectControl.Bytes, SaveObjectControl.Bytes );
+			BitConverter.GetBytes( controls[index].Id ).CopyTo( record );
+			BitConverter.GetBytes( controls[index].Cost ).CopyTo( record[4..] );
+			record[0x10] = (byte)(controls[index].Researched ? 1 : 0);
+			BitConverter.GetBytes( controls[index].Level ).CopyTo( record[0x14..] );
+			BitConverter.GetBytes( 15u ).CopyTo( record[0x1c..] );
+		}
+		BitConverter.GetBytes( (uint)controls.Length ).CopyTo( table.AsSpan( SaveObjectControls.Slots * SaveObjectControl.Bytes ) );
+		BitConverter.GetBytes( (ushort)1100 ).CopyTo( table.AsSpan( SaveObjectControls.Slots * SaveObjectControl.Bytes + 4 ) );
+		return table;
+	}
+
+	[TestMethod]
+	public void ReadsTheObjectControlTableRightAfterTheVariables()
+	{
+		var table = ObjectControlTable( (1100, 500, true, 2), (1140, 2000, false, 0), (1600, 0, true, 0) );
+		var things = SaveTestPayloads.Things( SaveTestPayloads.ParkThings() );
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( Map ), things, opaque: table ) );
+		var world = Parse( payload );
+		var controls = world.ObjectControls!;
+		Assert.AreEqual( world.VariablesOffset + SaveWorldVariables.Bytes, controls.Offset );
+		Assert.AreEqual( 3, controls.Controls.Count );
+		Assert.AreEqual( 1100, controls.PreviousSearchKey );
+		Assert.AreEqual( new SaveObjectControl( 0, 1100, 500, 0, 0, true, 2, 0, 15 ), controls.Controls[0] );
+		Assert.IsFalse( controls.Find( 1140 )!.Value.Researched );
+		Assert.IsTrue( controls.Find( 1600 )!.Value.Researched );
+		Assert.IsNull( controls.Find( 1234 ) );
+		// A table that is cut short, counts more than the 150 slots or holds a researched byte beyond 0 and 1 is not one.
+		var short_ = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( Map ), things, opaque: table[..^1] ) );
+		Assert.IsNull( Parse( short_ ).ObjectControls );
+		var many = table.ToArray();
+		BitConverter.GetBytes( 151u ).CopyTo( many, SaveObjectControls.Slots * SaveObjectControl.Bytes );
+		Assert.IsNull( Parse( SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( Map ), things, opaque: many ) ) ).ObjectControls );
+		var flag = table.ToArray();
+		flag[0x10] = 7;
+		Assert.IsNull( Parse( SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( Map ), things, opaque: flag ) ) ).ObjectControls );
+		// Without the table (the default synthetic opaque bytes are 37 long) the world has none.
+		Assert.IsNull( Parse( Payload() ).ObjectControls );
+	}
 }

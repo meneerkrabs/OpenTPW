@@ -357,7 +357,8 @@ public partial class Level
 	/// (<see cref="EnterQueueTool"/>). False when the cell is not a queue cell of a HasQueue ride.
 	/// </summary>
 	// [DATA:UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it"] [BIN:STP-PPC:0x139c64 park-view hover] queue cell → hover state 3 (PATH-plan §4.1)
-	// [APPROX:QUEUE-021] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool); tp.exe's park-view click 0x004879D0 (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the vertex list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580) — evidence needed: where mode 3 goes on laying after 0x00530120's list
+	// [EXT:queue-click-at-back-cell] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool): an OpenTPW design choice, the first click is the whole edit gesture here
+	// [APPROX:QUEUE-021] tp.exe's park-view click 0x004879D0 (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the vertex list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580); that first-click step is not ported — evidence needed: where mode 3 goes on laying after 0x00530120's list
 	public bool EditQueueAt( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )
@@ -394,20 +395,43 @@ public partial class Level
 	/// <summary>Where a cell's sounds play: the original submits them at (x*10, 0, z*10), a cell is ten units at height 0.</summary>
 	internal Vector3 CellSoundPosition( int x, int y ) => GameAudio.CellSoundPosition( x, y );
 
+	/// <summary>What Backspace with no build tool on takes off a cell (<see cref="Level.BacktrackAt"/>).</summary>
+	internal enum BacktrackTarget { None, Path, Queue }
+
+	/// <summary>
+	/// Backspace's target at (x, y): a path cell (the original's backtrack), a queue cell (OpenTPW's extension), else none.
+	/// </summary>
+	internal static BacktrackTarget BacktrackTargetAt( ParkCellMap cells, int x, int y ) => cells.TypeAt( x, y ) switch
+	{
+		ParkCellType.Path => BacktrackTarget.Path,
+		ParkCellType.Queue => BacktrackTarget.Queue,
+		_ => BacktrackTarget.None
+	};
+
 	/// <summary>
 	/// Backspace in the park view with no build tool on (<see cref="GameAudio.BacktrackEvent"/>): over a path cell it plays the
 	/// backtrack sound, then takes one placement off that cell, which goes only when it was laid once; the sound plays even
-	/// when the cell stays (a fixed or a re-laid cell). False when the cell under the cursor is not a path cell, so the key
-	/// does nothing there.
+	/// when the cell stays (a fixed or a re-laid cell). Over a queue cell it plays the same sound and removes that cell and
+	/// every cell behind it, with the remove tool's refund (<see cref="RemoveQueueCell"/>). False on any other cell, so the
+	/// key does nothing there.
 	/// </summary>
 	// [BIN:TPW-EXE:0x40BE8B backtrack click] the key handler clicks the cell in mode 0x32, whose one-cell LayLine (0x536100) calls SetCell(0x32, 0, 1) and so ClearCell 0x5367A0 with (0, 1): the counted removal, not the forced one
+	// [EXT:queue-backtrack] tp.exe's key handler backtracks only a type-1 (path) cell: it tests the tile's +8 through 0x536310 at 0x40BE3C and does nothing over a queue cell, whose cells the original takes back only with Backspace inside the queue tool (Back 0x52FE50, the segment just laid); OpenTPW also takes a queue back from the cursor, as the remove tool does (QueuePaths.RemoveFrom, so the queue stays one line from the ride)
 	public bool BacktrackAt( int x, int y )
 	{
-		if ( IsReadOnlyVisit || Paths == null || Paths.Cells.TypeAt( x, y ) != ParkCellType.Path )
+		if ( IsReadOnlyVisit || Paths == null )
+			return false;
+		var target = BacktrackTargetAt( Paths.Cells, x, y );
+		if ( target == BacktrackTarget.None )
 			return false;
 		GameAudio.PlayUiAt( GameAudio.BacktrackEvent, CellSoundPosition( x, y ) );
-		if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )
-			LastActionMessage = "Removed a path cell.";
+		if ( target == BacktrackTarget.Path )
+		{
+			if ( Paths.RemoveOnce( x, y ) == CellBuildResult.Ok )
+				LastActionMessage = "Removed a path cell.";
+		}
+		else if ( RemoveQueueCell( x, y ) is var removed and > 0 )
+			LastActionMessage = removed == 1 ? "Removed a queue cell." : $"Removed {removed} queue cells.";
 		return true;
 	}
 
@@ -589,16 +613,36 @@ public partial class Level
 	public bool TryGetGridCell( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, out int x, out int y )
 	{
 		x = y = -1;
-		if ( !ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out var ground ) )
+		if ( !TryGetGroundHit( mousePosition, viewportSize, out var ground ) )
 			return false;
 		return TryGetGridCell( ground.X, ground.Y, out x, out y );
 	}
 
-	/// <summary>Screen position of cell (x, y)'s centre on the Z = 0 plane the cursor picks on (for build ghosts).</summary>
+	/// <summary>
+	/// The point under the cursor: on an original level the ray's nearest hit on the terrain heightfield (<see cref="TerrainRayPick"/>), in the generic sandbox the Z = 0 plane.
+	/// </summary>
+	// [BIN:TPW-EXE:0x45d560 hover cell] the cell under the cursor is the ray's hit point divided by the cell size (x, z) and clamped to the grid; the frame loop 0x54e2b0 refreshes it every frame from the pick 0x45bf90
+	// [EXT:build-cursor-ground-plane] the generic sandbox has no heightfield: its cursor ray hits the Z = 0 plane
+	public bool TryGetGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, out Vector3 point ) =>
+		TryGetGroundHit( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out point );
+
+	internal bool TryGetGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection, out Vector3 point )
+	{
+		point = default;
+		if ( OriginalPark is not { } park )
+			return ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, view, projection, out point );
+		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, view, projection, out var origin, out var direction )
+			|| !TerrainRayPick.TryPick( park.Heightfield, origin, direction, out var hit ) )
+			return false;
+		point = hit;
+		return true;
+	}
+
+	/// <summary>Screen position of cell (x, y)'s centre on the surface the cursor picks (the terrain's mean corner height on an original level, Z = 0 in the sandbox; for build ghosts).</summary>
 	public bool TryProjectCell( int x, int y, System.Numerics.Vector2 viewportSize, out System.Numerics.Vector2 screen )
 	{
 		var origin = Objects.Grid.Origin;
-		var point = new System.Numerics.Vector4( origin.X + (x + 0.5f) * ObjectPlacement.CellSize, origin.Y + (y + 0.5f) * ObjectPlacement.CellSize, 0, 1 );
+		var point = new System.Numerics.Vector4( origin.X + (x + 0.5f) * ObjectPlacement.CellSize, origin.Y + (y + 0.5f) * ObjectPlacement.CellSize, Objects.Grid.GetCellHeight( x, y ), 1 );
 		var clip = System.Numerics.Vector4.Transform( point, Camera.ViewMatrix * Camera.ProjMatrix );
 		screen = default;
 		if ( clip.W <= 0 )
@@ -620,7 +664,7 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the cursor ray hits the Z = 0 plane to pick the clicked cell; the original's mouse-to-cell picking (the cell the build tool hands to 0x528A70) is not traced — evidence needed: the build tool's cursor pick (0x524960 → 0x528A70)
+	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — evidence needed: which polygons the test walks (the node face arrays and node states 0x10, 0x20, 0x8210 of the model at +0x78) and which object the cell yields (0x452ae0)
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )
@@ -645,7 +689,8 @@ public partial class Level
 				return null;
 			}
 		}
-		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _ )!;
+		// [BIN:TPW-EXE:0x004DB712 built ride closes] the constructor opens the object (open word +0x68 = 1, 0x4DB3B9) and then, for a type with Info.HasQueue (flag 8 at 0x4DB420), logs "Object %d Closing", clears the open word and writes VAR_RIDECLOSED = 1 (script variable 6, 0x55A070/0x55A0B0), so a built ride with a queue waits closed until the player opens it
+		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ) )!;
 		// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
 		placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 		if ( bought != null )
@@ -655,6 +700,9 @@ public partial class Level
 			: $"Built {entry.DisplayName} (sandbox: no economy, not charged); it runs its original script.";
 		return placed;
 	}
+
+	/// <summary>Whether a newly built object starts open: the constructor opens it and then closes one whose type has a queue (<c>Info.HasQueue</c>, 0x004DB712).</summary>
+	internal static bool BuiltObjectStartsOpen( ObjectCatalogEntry entry ) => !entry.HasQueue;
 
 	/// <summary>Anchor that centres the footprint on cell (x, y).</summary>
 	public static (int X, int Y) GetCentredAnchor( ObjectCatalogEntry entry, int x, int y, int rotation ) => GetCentredAnchor( entry.Shape, x, y, rotation );

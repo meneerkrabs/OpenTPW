@@ -375,8 +375,8 @@ public class WalkTests
 	}
 
 	/// <summary>
-	/// The per-cell term C = 9 with w₂ = 15 (<see cref="M3GateRun.QueueCellWalkTurns"/>): every enumerated queue walk that
-	/// crosses k cells arrives within k × 9 + 15 updates. Reduced grid; the full run is <see cref="QueueWalkTermFullEnumeration"/>.
+	/// The per-cell term C = 27 with w₂ = 15 (<see cref="M3GateRun.QueueCellWalkTurns"/>): every enumerated queue walk that
+	/// crosses k cells arrives within k × 27 + 15 updates. Reduced grid; the full run is <see cref="QueueWalkTermFullEnumeration"/>.
 	/// </summary>
 	[TestMethod]
 	public void QueueWalkTermIsDerivedByEnumeration()
@@ -407,6 +407,45 @@ public class WalkTests
 			Console.WriteLine( $"{result} bound {M3GateRun.QueueWalkTurns( result.Crossings )}" );
 		foreach ( var result in results )
 			AssertWithinQueueWalkTerm( result );
+	}
+
+	/// <summary>
+	/// The same term over tp.exe's own walk (<see cref="WalkEnumeration.WalkOriginal"/>: whole-walk destination 0x510100, search 0x511420,
+	/// edge test 0x4D8750, corner turns): C = 27 since that walk reroutes around neighbours' cells (the full run: 3 crossings 93, 4 crossings
+	/// 118, long shapes 13.7 per cell). Reduced grid; the full run is <see cref="QueueWalkTermFullEnumerationOriginal"/>.
+	/// </summary>
+	[TestMethod]
+	public void QueueWalkTermHoldsOverTheOriginalWalk()
+	{
+		var speeds = new[] { 0.59f, 1.0f, 2.0f };
+		for ( var crossings = 0; crossings <= 3; crossings++ )
+			AssertWithinQueueWalkTerm( WalkEnumeration.WorstQueueWalkOriginal( crossings, WalkEnumeration.TurnSequences( crossings ), speeds, 3, 2, Depths, Laterals ) );
+		AssertWithinQueueWalkTerm( WalkEnumeration.WorstQueueWalkOriginal( 12, LongShapes( 12 ), new[] { 0.59f }, 3, 4, new[] { 0, 191 }, new[] { 114, 141 } ) );
+	}
+
+	/// <summary>The move-up from slots 1 to 3 to slot 0 over the original walk on a typed strip stays within w2 = 15 (the full run: 12 at s = 0.59).</summary>
+	[TestMethod]
+	public void MoveUpWalkTermHoldsOverTheOriginalWalk()
+	{
+		foreach ( var speed in new[] { 0.59f, 1.0f, 2.0f } )
+		{
+			var (worst, failures, _) = WalkEnumeration.WorstStripMoveUpOriginal( speed, 3 );
+			Assert.AreEqual( 0, failures );
+			Assert.IsTrue( worst <= M3GateRun.MoveUpWalkTurns, $"s {speed}: {worst} > {M3GateRun.MoveUpWalkTurns}" );
+		}
+	}
+
+	/// <summary>The full original-walk enumeration (about 20 minutes; OPENTPW_WALK_DERIVE=1): the grid of <see cref="QueueWalkTermFullEnumeration"/> over tp.exe's walk.</summary>
+	[TestMethod]
+	public void QueueWalkTermFullEnumerationOriginal()
+	{
+		if ( Environment.GetEnvironmentVariable( "OPENTPW_WALK_DERIVE" ) != "1" )
+			Assert.Inconclusive( "Set OPENTPW_WALK_DERIVE=1 to run the full enumeration." );
+		var speeds = new[] { 0.59f }.Concat( Enumerable.Range( 0, 29 ).Select( index => 0.6f + 0.05f * index ) ).ToArray();
+		for ( var crossings = 0; crossings <= 4; crossings++ )
+			AssertWithinQueueWalkTerm( WalkEnumeration.WorstQueueWalkOriginal( crossings, WalkEnumeration.TurnSequences( crossings ), speeds, 5, 1, Depths, Laterals ) );
+		foreach ( var crossings in new[] { 5, 8, 12, 16, 20, 25 } )
+			AssertWithinQueueWalkTerm( WalkEnumeration.WorstQueueWalkOriginal( crossings, LongShapes( crossings ), speeds, 3, 1, new[] { 0, 191 }, new[] { 114, 141 } ) );
 	}
 
 	[TestMethod]

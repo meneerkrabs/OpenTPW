@@ -323,11 +323,11 @@ world; the curve samples, rating, winch marks and braking point are re-derived
 on load by the same rebuild completion ran, so a loaded coaster continues
 bit-for-bit. The original's own coaster chunks between EMAK and SAOC are read
 structurally (`SaveCoasterBlock`: each coaster's 32-byte header, auxiliary link
-block, 34-byte sections with links, and the train payload as raw bytes; docs/
-TPWS-PAYLOAD.md "Coasters block") — proven on the static Mac contract, the
-Easymode empty boundary and a labelled Theme Park Inc cross-check — but nothing
-is imported into a runtime coaster and nothing is written (COAST-025, SAVE-920
-to SAVE-923). `CoasterSections` exposes recognized scene records and attraction
+block, 34-byte sections with links, and the train slots and cars once the coaster
+type's train and car counts are known; docs/TPWS-PAYLOAD.md "Coasters block") — proven
+on the tp.exe saver and loader, the Easymode empty boundary and a labelled Theme Park
+Inc cross-check of the sections — but nothing is imported into a runtime coaster and
+nothing is written (SAVE-920 to SAVE-923). `CoasterSections` exposes recognized scene records and attraction
 ids joined by cell and `Info.Id`; this does not identify a controller's station.
 Nonempty original TPW controllers are refused at `ParkObjects.ImportOriginal`
 before any runtime object is created. This includes controllers with no saved

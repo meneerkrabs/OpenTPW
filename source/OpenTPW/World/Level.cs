@@ -75,7 +75,7 @@ public partial class Level : IDisposable
 	/// Renames the park (the ticket price window's rename dialog): stores the two lines and redraws the gate sign. False for
 	/// a read-only visit, a level without a park name, or lines a save could not hold (<see cref="ParkNameLines.IsValid"/>).
 	/// </summary>
-	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0); the handler's copies to the online park record (0x409410, 0x5B0940/0x5B0970) and its secret name ("Kevin the" / "Cosmic Cow" at 0x751A34/0x751A38, calling 0x4053C0) are not built, and gate lines of original saves are not imported — evidence needed: the gate-line field of original saves and what 0x5B0940/0x5B0970 and 0x4053C0 drive
+	// [APPROX:COMPAT-007] the rename stores the lines and redraws the gate (0x4993E0), but the handler's other effects are not built: the setters 0x4E2950/0x4E2A50 also copy the lines to the online park record (0x409410, 0x5B0940/0x5B0970: wide characters into +0x34 and +0x76 of the 0x50-byte record DAT_00F7C58C with its dirty byte +0xB8, unless the GameType word is 1), and the secret name ("Kevin the" / "Cosmic Cow", the XOR-by-index forms at 0x751A34/0x751A38, found by the compare 0x67C290) calls 0x4053C0(1) on the object 0xFB3520, which stores a flag (+10, saved and loaded by 0x4164C0/0x415270, read at 0x488902/0x488991) and dispatches event type 0x15 (0x40FB10); gate lines of a user-supplied original save are not imported (the attraction record carries them, SaveAttraction.NameLine1/2, and the shipped Easymode save holds the default row) — evidence needed: what the listeners of event 0x15 and the object 0x78733C that the flag forwards to do
 	public bool RenamePark( string line1, string line2 )
 	{
 		if ( IsReadOnlyVisit || ParkName == null || line1 == null || line2 == null )
@@ -485,15 +485,24 @@ public partial class Level : IDisposable
 	}
 
 	/// <summary>The visitor under the mouse, in or out of costume: the nearer of the two renderers' picks.</summary>
+	// [BIN:TPW-EXE:0x532bd0 sprite to thing] the sprite pass picks the nearest pickable sprite, and the visitor (a thing of type 1) that owns it is then looked up only in the hovered cell and its eight neighbours
+	// (offset table 0x81ed40, filled by 0x532b30: the cell itself first, then the others), so a visitor that is none of those cells is not picked, and the next best sprite is not tried; the hovered cell is the cursor ray's terrain hit
+	// (0x45d560), which a hill or a tall object between the camera and the visitor moves away. The gate runs on original levels, where a heightfield gives the ray a hit
 	internal Guest? PickVisitor( System.Numerics.Vector2 mouse, System.Numerics.Vector2 viewport, System.Numerics.Matrix4x4 view, System.Numerics.Matrix4x4 projection )
 	{
 		float kidDepth = float.PositiveInfinity, costumeDepth = float.PositiveInfinity;
 		var kid = GuestRenderer?.PickVisitor( mouse, viewport, view, projection, out kidDepth );
 		var costumed = CostumeRenderer?.PickVisitor( mouse, viewport, view, projection, out costumeDepth );
-		if ( kid == null || costumed == null )
-			return kid ?? costumed;
-		return costumeDepth < kidDepth || (costumeDepth == kidDepth && costumed.Id < kid.Id) ? costumed : kid;
+		var picked = kid == null || costumed == null ? kid ?? costumed
+			: costumeDepth < kidDepth || (costumeDepth == kidDepth && costumed.Id < kid.Id) ? costumed : kid;
+		if ( picked == null || OriginalPark is not { } park )
+			return picked;
+		return TryGetGroundHit( mouse, viewport, view, projection, out var ground ) && OriginalParkPlacement.TryGetCell( park.Heightfield, ground.X, ground.Y, out var x, out var y ) && IsInHoveredNeighbourhood( (x, y), ((int)MathF.Floor( picked.X ), (int)MathF.Floor( picked.Y )) ) ? picked : null;
 	}
+
+	/// <summary>Whether a thing's cell is the hovered cell or one of its eight neighbours (the offsets of tp.exe's table 0x81ed40).</summary>
+	internal static bool IsInHoveredNeighbourhood( (int X, int Y) hovered, (int X, int Y) thing ) =>
+		Math.Abs( thing.X - hovered.X ) <= 1 && Math.Abs( thing.Y - hovered.Y ) <= 1;
 
 	/// <summary>
 	/// Wires the park door (docs/GATES.md): the economy's open/close events command the entrance gate's script
@@ -689,7 +698,7 @@ public partial class Level : IDisposable
 			position = sandboxPosition;
 			return found;
 		}
-		if ( !ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out var ground ) )
+		if ( !TryGetGroundHit( mousePosition, viewportSize, out var ground ) )
 			return false;
 		if ( !OriginalParkPlacement.TryGetCell( OriginalPark.Heightfield, ground.X, ground.Y, out var x, out var y ) )
 			return false;

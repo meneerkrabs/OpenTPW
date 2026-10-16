@@ -77,10 +77,8 @@ public sealed partial class ParkHud
 	// The five panels' fluids in ResearchCategories[n] order, rebuilt whenever the window opens (the original builds the window anew, 0x4aa480).
 	private readonly ResearchFluid[] researchFluids = Enumerable.Range( 0, 5 ).Select( _ => new ResearchFluid() ).ToArray();
 	private string? researchFluidKey;
-	private float researchFluidTime;
-
-	/// <summary>Seconds per fluid step (one message 0x1e, assumed at 30 frames a second).</summary>
-	public const float ResearchFluidTickSeconds = 1f / 30f;
+	// [EXT:frame-driven-at-60hz] one fluid step per reference frame, where the original steps once per rendered frame (message 0x1e, see ReferenceFrameClock)
+	private readonly ReferenceFrameClock researchFluidClock = new( 0.25f );
 
 	internal ResearchFluid ResearchFluidOf( ResearchCategory category ) => researchFluids[(int)category];
 
@@ -89,7 +87,7 @@ public sealed partial class ParkHud
 		for ( var index = 0; index < researchFluids.Length; index++ )
 			researchFluids[index] = new ResearchFluid();
 		researchFluidKey = null;
-		researchFluidTime = 0;
+		researchFluidClock.Reset();
 		RefreshResearchFluids();
 	}
 
@@ -123,14 +121,9 @@ public sealed partial class ParkHud
 	private void StepResearchFluids( float delta )
 	{
 		RefreshResearchFluids();
-		// [APPROX:UI-066] the fluids step at a fixed 30 ticks a second; the original steps them on every message 0x1e, sent once per rendered frame (0x48a580 → 0x658f6c) — evidence needed: the original's frame rate
-		researchFluidTime = Math.Min( researchFluidTime + Math.Max( 0, delta ), ResearchFluidTickSeconds * 8 );
-		while ( researchFluidTime >= ResearchFluidTickSeconds )
-		{
-			researchFluidTime -= ResearchFluidTickSeconds;
-			foreach ( var fluid in researchFluids )
-				fluid.Tick();
-		}
+		// [BIN:TPW-EXE:0x4a9fc0 fluid tick] each panel's fluid control steps on every message 0x1e, which the UI sends once per rendered frame (0x48a580 -> 0x658f6c -> 0x658f97)
+		// [EXT:frame-driven-at-60hz] OpenTPW steps the fluids at the 60 Hz reference rate (one frame of the original's frame-driven timing), whatever its own frame rate
+		ResearchFluid.StepFrames( researchFluidClock, researchFluids, delta );
 	}
 
 	public static bool TrySetResearchWorkload( ParkEconomy? economy, bool readOnly, int workload )

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using OpenTPW.Mods;
 
 namespace OpenTPW;
 
@@ -113,12 +114,14 @@ internal static class ParkResumeSaveFile
 	/// candidate level.
 	/// </summary>
 	public static void ValidateSnapshot( ParkResumeSnapshot snapshot, ObjectCatalog catalog, BalanceSettings settings,
-		IEconomyObjectCatalog economyCatalog, IReadOnlyDictionary<string, string> currentAssetHashes )
+		IEconomyObjectCatalog economyCatalog, IReadOnlyDictionary<string, string> currentAssetHashes, ModSet? activeMods = null )
 	{
 		ArgumentNullException.ThrowIfNull( catalog );
 		ArgumentNullException.ThrowIfNull( settings );
 		ArgumentNullException.ThrowIfNull( economyCatalog );
 		ValidateShape( snapshot );
+		// [EXT:mods] the mods the park was saved with must be the ones that are active, before anything else is judged (docs/MODS.md)
+		ParkResumeMods.Require( snapshot.Mods, activeMods ?? OpenTpwExtensions.Active );
 		void Require( bool condition, string message )
 		{
 			if ( !condition )
@@ -274,6 +277,9 @@ internal static class ParkResumeSaveFile
 		Require( snapshot.EconomyBindings != null, "the economy-binding list is missing" );
 		Require( snapshot.Clock != null, "the clock snapshot is missing" );
 		Require( snapshot.AssetHashes != null, "the asset manifest is missing" );
+		// [EXT:mods] the recorded mods: bounded, valid ids and digests, and every mod: asset key names a recorded mod
+		if ( ParkResumeMods.ShapeProblem( snapshot.Mods, snapshot.AssetHashes ) is { } modProblem )
+			Require( false, modProblem );
 
 		// Layout: the pure identity and allocator rules (catalog resolution is ValidateSnapshot's).
 		var layout = snapshot.Layout!;
@@ -686,7 +692,7 @@ internal static class ParkResumeSaveFile
 			Require( InBounds( navigation.TargetX >> 16, navigation.TargetY >> 16 ),
 				$"guest {guest.Id} navigation target ({navigation.TargetX >> 16}, {navigation.TargetY >> 16}) is outside the cell map" );
 			var onLane = guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
-				or GuestState.AtTicketBooth or GuestState.EnteringPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome;
+				or GuestState.AtTicketBooth or GuestState.EnteringPark || guest.State is GuestState.CrossingRoadHome or GuestState.WaitingToGoHome && guest.Lane != null;
 			if ( onLane )
 			{
 				Require( guest.Lane != null && guest.Lane.Length >= 2,

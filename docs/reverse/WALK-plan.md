@@ -482,7 +482,7 @@ accounting of a walk in progress. Review WALK-V's adversarial harness covered th
 10⁹ walks, no single walk above k × 9 + 15; redirect chains up to 66 of 66 turns), and the gate now
 charges each head its walks as set up instead of its queue cell index (WV-12, docs/M3-GATE.md).
 
-**The gate** (WV-1 to WV-4, WV-11). C = 9, J(p), the head's own walk and the head-not-ready bound are
+**The gate** (WV-1 to WV-4, WV-11). C = 9 (27 since the original walk of WALK-004: M3-GATE.md), J(p), the head's own walk and the head-not-ready bound are
 registered as `[APPROX:GATE-006]`: they come from enumerating OpenTPW's own port, not from a proof for
 the original. The owner accepted on October 10, 2026 that the derived head-not-ready bound is looser
 than the retired GATE-005 check (110 against 84 turns for the 6-cell Belly Bounce queue, 65 against

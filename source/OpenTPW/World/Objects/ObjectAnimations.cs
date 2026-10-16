@@ -57,6 +57,20 @@ public static class ObjectAnimations
 		return result.OrderBy( file => file.Letter ).ThenBy( file => file.Variant ).ToList().AsReadOnly();
 	}
 
+	/// <summary>
+	/// True when the object has no clip in AnimIDs 1 to 11, only (or no) AnimID 0 (letter C) clips: the original sets the instance flag
+	/// 0x10 then, and a clip that ends with nothing deferred holds its last frame instead of looping or restarting as AnimID 14.
+	/// </summary>
+	// [BIN:TPW-EXE:0x473F2B instance flag 0x10] 0x473e30 (called by the creator 0x463060 at 0x4631d6 with (instance, 1, 0, 0)) walks the twelve animation groups of the instance (count word at +0x1c + 12 × group, the groups being the letter table 0x6fe6bc in order) and ORs 0x10 into the instance flag word (+4) at 0x473f32 when no group other than group 0 has any clip; the flag has no other writer or clearer
+	public static bool HasOnlyBaseClips( IReadOnlyList<ObjectAnimationFile> animations )
+	{
+		ArgumentNullException.ThrowIfNull( animations );
+		for ( var animation = 1; animation < Letters.Length; animation++ )
+			if ( Resolve( animations, animation, 0 ) != null )
+				return false;
+		return true;
+	}
+
 	/// <summary>The member a script's (animation, variant) pair plays, or null when the archive has none.</summary>
 	public static ObjectAnimationFile? Resolve( IReadOnlyList<ObjectAnimationFile> animations, int animation, int variant )
 	{

@@ -227,7 +227,7 @@ public static class GraphicsPresets
 		["GraphicalOptions.TEXTUREQUALITY"] = "Not applied: textures are always uploaded at full resolution.",
 		["GraphicalOptions.PROCEDURALTEXTURING"] = "Not applied: no procedural terrain texturing yet.",
 		["GraphicalOptions.PROCEDURALTEXTURECACHE"] = "Not applied: no procedural texturing yet.",
-		["GraphicalOptions.ANIMATINGTEXTURES"] = "Not applied: texture animation is not implemented.",
+		["GraphicalOptions.ANIMATINGTEXTURES"] = "Applied: object texture-frame animations (0 shows each slot's first frame, as the original's bind does).",
 		["GraphicalOptions.SKYQUALITY"] = "Not applied: sky layers are not implemented.",
 		["GraphicalOptions.SKYDETAIL"] = "Not applied.",
 		["GraphicalOptions.SKYSHADOW"] = "Not applied: no cloud shadows.",

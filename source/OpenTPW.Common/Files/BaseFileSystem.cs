@@ -3,6 +3,14 @@ using System.Text;
 
 namespace OpenTPW;
 
+/// <summary>Loose files that stand in for files of a <see cref="BaseFileSystem"/> (mod overrides, docs/MODS.md).</summary>
+// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+public interface IFileOverrides
+{
+	/// <summary>The file on disk that replaces <paramref name="relativePath"/> (root-relative, '/' separators, any case), or false.</summary>
+	bool TryGetFile( string relativePath, out string absolutePath );
+}
+
 public class BaseFileSystem
 {
 	private readonly string basePath;
@@ -56,6 +64,18 @@ public class BaseFileSystem
 	/// </summary>
 	public Func<string, (BaseFileSystem FileSystem, string RelativePath)?>? FallbackResolver { get; set; }
 
+	/// <summary>
+	/// Replacement files consulted before the root's own: <see cref="OpenRead"/>, <see cref="FileExists"/>, <see cref="GetSize"/> and
+	/// <see cref="GetModifiedTime"/> of a path they know read the replacement instead. Directory listings and writes stay those of this root.
+	/// Null (the default) changes nothing. Set once at startup, before the first lookup that should see it; call
+	/// <see cref="InvalidateLookups"/> after changing it.
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public IFileOverrides? Overrides { get; set; }
+
+	private string? Overridden( string relativePath ) =>
+		Overrides != null && Overrides.TryGetFile( GetRelativePath( GetAbsolutePath( relativePath ) ), out var file ) ? file : null;
+
 	private bool ExistsHere( string absolutePath ) =>
 		File.Exists( absolutePath ) || Directory.Exists( absolutePath ) || !string.IsNullOrEmpty( FindArchivePath( absolutePath ).ArchivePath );
 
@@ -84,6 +104,8 @@ public class BaseFileSystem
 
 	public bool FileExists( string relativePath )
 	{
+		if ( Overridden( relativePath ) != null )
+			return true;
 		var absolutePath = GetAbsolutePath( relativePath );
 		if ( Fallback( relativePath, absolutePath ) is { } fallback )
 			return fallback.FileSystem.FileExists( fallback.RelativePath );
@@ -117,6 +139,8 @@ public class BaseFileSystem
 
 	public Stream OpenRead( string relativePath )
 	{
+		if ( Overridden( relativePath ) is { } overridden )
+			return File.Open( overridden, FileMode.Open, FileAccess.Read, FileShare.Read );
 		var absolutePath = GetAbsolutePath( relativePath );
 		if ( Fallback( relativePath, absolutePath ) is { } fallback )
 			return fallback.FileSystem.OpenRead( fallback.RelativePath );
@@ -133,6 +157,8 @@ public class BaseFileSystem
 
 	public long GetSize( string relativePath )
 	{
+		if ( Overridden( relativePath ) is { } overridden )
+			return new FileInfo( overridden ).Length;
 		var absolutePath = GetAbsolutePath( relativePath );
 		if ( Fallback( relativePath, absolutePath ) is { } fallback )
 			return fallback.FileSystem.GetSize( fallback.RelativePath );
@@ -149,6 +175,8 @@ public class BaseFileSystem
 
 	public DateTime GetModifiedTime( string relativePath )
 	{
+		if ( Overridden( relativePath ) is { } overridden )
+			return new FileInfo( overridden ).LastWriteTime;
 		var absolutePath = GetAbsolutePath( relativePath );
 		var (archivePath, internalPath) = FindArchivePath( absolutePath );
 

@@ -374,9 +374,29 @@ and the default extensions nothing in the simulation changes: the online extensi
 simulation state, and `DeterminismTests.TogglingOnlyTheOnlineExtensionKeepsThePinnedDigests` runs the pinned fixed
 run (`FixedRunHash`) and the guest-pathing run with it on and off and gets the same digests. The M4 gate and the
 browser digest need the original game data and run outside the unit tests, so they are not part of that test; they
-read no extension switch. Mods do not consume content yet. Before any mod may change the simulation, park saves will
-record each active mod's id, version and content digest (`ResolvedMod.ContentSha256`) and refuse a mismatched set,
-and the object catalog's cache key will include `ModSet.Digest`; an unmodded save stays byte-identical.
+read no extension switch.
+
+Park saves record the mods that can change the simulation (`ParkResumeSnapshot.Mods`, `ParkModRecord`: id, version and
+content digest). An extension that sets `AffectsSimulation` is recorded with the digest of no bytes; a files-based mod is
+recorded when it adds objects (`content.objects`) or overrides a file that is not plainly presentation media (textures,
+sounds, text and fonts; an unknown file type counts as simulation). The field is **null, and left out of the file, when
+nothing of that kind is active**, so a park saved without such a mod is byte-identical to one from before mods existed.
+Online and presentation-only mods are never recorded. Loading (`ParkResumeSaveFile.ValidateSnapshot`) needs every recorded
+mod active in the same version with the same content digest, in the same order, and no other simulation-changing mod
+active; an extra presentation-only mod is fine. A missing mod, another version or another digest refuses the load with a
+named reason such as `needs community.tpi-rides 1.0.0`. The load and Continue menus keep such a save listed and add
+"requires mod X" instead of hiding it. The shape check bounds the list (256 entries), the ids, versions and lowercase hex
+digests, and every `mod:<id>:` key of the asset manifest must name a recorded mod. A build from before this field rejects a
+save that has it (the codec refuses unknown members), which is intended. `ParkSharing.ExportLevel` refuses to export while a
+simulation-changing mod is active, because a park package records none yet.
+
+The asset manifest names the content root of every archive member: `data:` for the game data, `bonus:` for the official
+bonus content and `mod:<id>:` for a mod (`ContentRoot.KeyPrefix`, `ObjectCatalogEntry.Root`). A mod's override of a
+game-data path keeps the `data:` key, and its changed hash makes the existing manifest comparison refuse a mismatched park.
+The object catalog's cache key includes `ModSet.Digest`, so a catalog is never shared between two sets of files-based mods.
+`ModSaveTests.EmptyOnlineOnlyAndPresentationOnlyModSetsKeepThePinnedDigests` runs the fixed run and the guest pathing under an
+empty set, with only the online extension toggled and with a presentation-only mod, and checks the same digests and no
+record; the M4 gate and browser digests read the same code paths and are checked by the smokes.
 
 ## Tests
 
@@ -395,7 +415,7 @@ and the object catalog's cache key will include `ModSet.Digest`; an unmodded sav
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xC92A25B3D77EAE17`, schema 20: the attractions' six 30-day daily rings (ECON-057) join the economy digest through the park save's optional `Rings` field, written once a ring holds
+  (`0x205523C08061A05D`, schema 20, two causes on top of the previous pin `0xC92A25B3D77EAE17`: (1) guests walk whole walks as tp.exe does: one destination for the whole walk to a ride (state 10, `0x4FFBC0` -> `0x4FA530` -> `0x510100`) and out of the park (state 18, `0x500A50`, walk mask 1), a guest leaving a queue stays where it stood until the decision (QUEUE-010), the guests leaving through the gate walk to the vehicle's stop cells (states 19 to 21, `0x500AD0`, `0x500BD0`, `0x51AAD0`: the cell pick and the two sub-cell bytes are draws of the shared world generator, in the original's order) and the guard release goes to the gate cell, so the guests' positions, the joins and the world stream move; without the rings below, this change alone gave `0x9DB7A7AAEA8D1CE2` on the world-generator tree (`0x7AED41D19433D4B2`). No save field is added by the walks (the walk's destination and route are the navigation state the guest save already carries, and the saved guest state gains the value 20, WalkingToVehicle, which the validators accept; older saves load unchanged). (2) The rings: ECON-057 below, which moved the pin from `0x7AED41D19433D4B2` to `0xC92A25B3D77EAE17` only through the saved `Rings` field in the economy digest. Before that, `0xC92A25B3D77EAE17`, schema 20: the attractions' six 30-day daily rings (ECON-057) join the economy digest through the park save's optional `Rings` field, written once a ring holds
   a running value or a day: the synthetic park's shop and its sales make today's customers, takings and costs non-zero, so the digest changes; the hash without the
   ring field is the previous pin `0x7AED41D19433D4B2`, so no simulated behaviour moved. The challenge system's exact times (`NextOfferSeconds`, `DeadlineSeconds`), the carried object and the
   challenge update on every park turn (ECON-055, ECON-058) add optional save fields that are written only when they differ from the defaults. Before that,

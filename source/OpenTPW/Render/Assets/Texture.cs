@@ -121,7 +121,7 @@ public partial class Texture : Asset
 	/// exists there, else from the game data (Theme Park Inc keeps `.tga` textures inside its WADs). No GPU access, so
 	/// workers may call it.
 	/// </summary>
-	// [EXT:tpi-viewer] `.fsh` textures exist only in Theme Park Inc data. Opaque 0x24 palettes: see COMPAT-014.
+	// [EXT:tpi-viewer] `.fsh` textures exist only in Theme Park Inc data. Opaque 0x24 palettes: the original converter does the same (docs/FSH.md).
 	internal static (byte[] Data, int Width, int Height) DecodeImage( string path )
 	{
 		using var profile = LoadProfile.Measure( "image-decode" );

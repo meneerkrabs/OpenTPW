@@ -1,7 +1,7 @@
 namespace OpenTPW.FrontEnd;
 
 /// <summary>Menu metadata from an existing application-owned save; never a new save or an original-format import.</summary>
-public sealed record ParkContinueEntry( ParkLoadEntry Park, ParkStartKind StartKind, ParkGameMode Mode, bool Easy );
+public sealed record ParkContinueEntry( ParkLoadEntry Park, ParkStartKind StartKind, ParkGameMode Mode, bool Easy, string? Requires = null );
 
 internal static class ThemeContinuation
 {
@@ -19,7 +19,9 @@ internal static class ThemeContinuation
 			if ( !File.Exists( path ) ) return null;
 			var saved = ParkResumeSaveFile.Load( path );
 			if ( !saved.Theme.Equals( Theme( theme ), StringComparison.OrdinalIgnoreCase ) ) return null;
-			return new( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName ), saved.StartKind, saved.Economy.Mode, saved.Economy.Easy );
+			// [EXT:mods] the entry stays offered and names the mods it needs when they are not all active
+			var requires = ParkResumeMods.MissingText( saved.Mods, Mods.OpenTpwExtensions.Active );
+			return new( new ParkLoadEntry( saved.Theme, -1, false, path, saved.DisplayName, Requires: requires ), saved.StartKind, saved.Economy.Mode, saved.Economy.Easy, requires );
 		}
 		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or System.Text.Json.JsonException or ArgumentException )
 		{

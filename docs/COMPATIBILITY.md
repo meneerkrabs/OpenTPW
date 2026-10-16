@@ -161,7 +161,7 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | TEXTUREFILTERING (0 point, 1 bilinear, 2 trilinear, 3 anisotropic) | 0 | 1 | 2 | 3 (16x) | **applied** to world samplers |
 | PROCEDURALTEXTURING | 0 | 2 | 2 | 3 | not applied |
 | PROCEDURALTEXTURECACHE | 0 | 1 | 1 | 1 | not applied |
-| ANIMATINGTEXTURES | 0 | 1 | 1 | 1 | not applied |
+| ANIMATINGTEXTURES | 0 | 1 | 1 | 1 | **applied** to the object texture-frame tracks (0 = each slot shows its first frame, tp.exe `0x57A420`) |
 | SKYQUALITY (layers) | 1 | 2 | 4 | 4 | not applied |
 | SKYDETAIL / SKYSHADOW | 0/0 | 1/0 | 1/0 | 1/0 | not applied |
 | MESHSHADOW / SPRITESHADOW | 0/0 | 0/1 | 1/2 | 1/3 | not applied |
@@ -225,6 +225,45 @@ applies only when the fix is enabled and the hash matches, in memory, never on d
   mappings that round-trip through `MBToUni.dat` are used. Every codepage character and
   every string of all 21 tables round-trips in all six languages.
 
+## Frame-driven timing (`[EXT:frame-driven-at-60hz]`)
+
+tp.exe's main loop (`0x54e360`) has no frame limiter: it calls no `Sleep` and no timer wait. `GetTickCount` only drives the fixed 31 ms
+simulation substeps (`0x54f4c4`, a catch-up of at most 2 s in a park and 500 ms in the lobby, `0x54e768`); after them it draws one frame, and
+the UI sends message `0x1e` to every window once per drawn frame (`0x48a580` → `0x658f6c` → `0x658f97`, which also recurses over the child windows
+through `0x658d9f`). Whatever the original steps from `0x1e`, or from the per-frame lobby update (`0x5d5c50`, at `0x54e73a`), therefore ran at the
+speed of the PC's frame rate. PCGamingWiki's page for Theme Park World reports that the game "runs too fast and becomes unplayable" at high frame
+rates and advises limiting the frame rate to 60 FPS. OpenTPW steps each frame-driven original behaviour at a fixed 60 Hz reference rate
+(`ReferenceFrameClock`), whatever its own frame rate; this is presentation only, so it never moves the determinism pin. This replaces the
+guessed rates of `APPROX:UI-066` (research fluids, 30 ticks a second) and `APPROX:UI-940` (lobby effects, 30 ticks a second), both retired, and
+the fixed-step part of `APPROX:UI-941` (the islands stepped at 30 a second while the flyers ran per frame).
+
+What steps per rendered frame in tp.exe, and what OpenTPW does (READ at instruction level unless noted):
+
+| Behaviour | tp.exe | OpenTPW |
+| --- | --- | --- |
+| Research fluids (64-frame bubbling, fill and drain) | window proc `0x4a9fc0`, message `0x1e`: position += 2 × speed (16.16) | `ResearchFluid.StepFrames` at 60 Hz (built) |
+| Lobby island effects: sky ease, rain count, lightning, island one-shots | islands component vf2 `0x5e0470` (vtable `0x702cb0`, slot 2), called by `0x5d5c50` once per drawn frame; the 31 ms substep of the lobby (`0x54e789`) runs only `0x520130` | `LobbyEffects` at 60 Hz (built) |
+| Lobby flying meshes and island clip picks | flying-mesh vf2 `0x5da3a0`, then `0x5e0470` → `0x5e11d0`, in registration order, one frame | `LobbyScene.StepFrame` per reference frame, flyers before islands (built, also for the online city lobby's islands); clips and wings animate by real time |
+| Lobby camera: spin, glide shares 0.1 and 0.2, enter sequence, fade eighth | `0x5e0470` (state machine `0x5e0490`), `0x5e1210`, `0x5d8cf2`, step = frame ms (at most 500) × 0.01 | `LobbyCameraMode` per reference frame (built) |
+| Rain and snow: per-flake jitter and the bolts' flicker | `CRain` draw `0x57f490`, redrawn on every draw, paused or not | redrawn per reference frame (built); the scroll and bolt age stay by real time |
+| Park camera: mouse rotation | `0x42a760` message `0x1e` while the middle-button mode bit `0x790aac & 2` is set: yaw += (X × 2048 / width − 1024) / 2048 per frame (up to ±0.5 rad a frame) | not built, `APPROX:UI-102` (the host camera is OpenTPW's own tuning, by real time) |
+| Pause-menu line hover ramp | `0x48b2a0` → `0x48b220`: message `0x10001` (read as the pointer entering) starts eight frames from grey 0x21 to white in steps of 0x20, then idle; `0x10002` (leaving) restores (0, 175, 190) | not built, part of `APPROX:UI-013` (the line turns white at once) |
+| HUD balance text and sign | `0x4a0db0`: every third message `0x1e` calls `0x4a0ab0`, which redraws only when the balance changed | live every frame, up to 50 ms earlier at 60 Hz (noted, not built) |
+| Edge scroll of the view built by `0x5f0b40` (from `0x4a0840`) | `0x5f1130` / `0x5f18d0`: (pointer − 0.99) × 250 and (0.01 − pointer) × 250 view units a frame in the 1 % edge band (`0x5f35b0`) | not built, `APPROX:UI-103` (the view is the map window, `ParkHud.Map.cs`) |
+| Online globe | `0x5d5c50` → `0x5dc860` once per frame (not a Ghidra function; called through a vtable) | continuous time at 30 ticks a second (`[EXT:online-globe-tick]`), unchanged |
+| 3-frame delay before a deferred action | `0x4a9350`: `0x7cc150` counts down once per frame from 3 (set at `0x4a9413`), then `0x4a9180` runs | not needed: no blocking step to hide |
+
+Message `0x1e` handlers that only re-read state, so any frame rate gives the same result: research effort gauge `0x4a96b0`, HUD counters `0x4a0e30`
+(`0x4a0fb0`), locator `0x4b3790`, employee window `0x4b5cb0`, text refresh `0x4bc660`, chat poll `0x4c56e0` → `0x4c4bb0` and the list forwarding
+`0x665c35` → `0x6650d4`.
+
+Not frame-driven (real time or substep, nothing to match): the timer list polled by `0x6622d2` / `0x661fe5` (elapsed milliseconds with catch-up: the arm drawer
+`0x4a14f0`, 20 ms steps), scripted window moves `0x65e9a4` (through the default window proc `0x65f6d1` → `0x65c357`) and press timers `0x668dd9` (milliseconds), the preview-object windows
+`0x4af600`, `0x4b0b30`, `0x4b2150`, `0x497640` and `0x4b7720` (message `0x1e` → `0x4864f0` / `0x486610` → `0x468e50`, whose turn is per millisecond), the park camera `0x42b1c0` (frame milliseconds clamped
+to 1..200), scrolling textures `0x435a30` and thing animation clocks `0x557ab0` (clock reads), the render interpolation fractions `0x519060`, `0x55ce60`,
+`0x518f90` (time since the last substep), and every simulation step on the 31 ms substep
+(`0x520130`, `0x546c80`, `0x5516b0`, `0x55abf0`, `0x475360`, `0x516380`, `0x55a470`, `0x55ab50`).
+
 ## Tests
 
 `TrueTypeFontTests` (synthetic fonts: metrics, cmap, kerning, exact coverage, non-zero
@@ -244,14 +283,11 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | COMPAT-002 | Sign text | lfWidth applied as a horizontal scale with the Win32 rule (average character width = lfWidth); the width search itself is traced (`0x100A9F9C`: no margin, height unchanged, bisection over lfWidth). The Mac GDI layer's width rounding is not reproduced | captures of long names (Mac GDI width rounding) |
 | COMPAT-003 | Sign text | Ride signs apply paint RGBA, material strips and coefficients with native integer layer blending, and shape each paint mask as `0x5EBF10` does: offset copy, erosion or dilation by the mask word (+4), separable Gaussian by the parameter (+8) (Wilde Aap's drop shadow, the gate's shadow, Azteekse Tekens' outline). The nearest-row upsampling of relief strips taller than their source remains approximate | the strip resampler's upsampling branch; a capture where the sign fonts load |
 | COMPAT-004 | Sign text | The gate is composed from its decoded board with the park name as two lines and the stored paint (a 60 % black shadow under dark relief stone text, as in the video); board placement and relief strength are compared with a 720p capture only | native-resolution gate capture |
-| COMPAT-006 | Sign text | No pair kerning: tp.exe has no TextOut/DrawText/ExtTextOut imports, sign text goes through Uniscribe (`0x5EAB70`: ScriptStringAnalyse flag 0x80, ScriptStringGetLogicalWidths, the percent scaling, a second ScriptStringAnalyse with the game's advance array `0xF85F00`, ScriptStringOut) and no kerning API is called | whether usp10's natural widths include kerning |
-| COMPAT-007 | Sign text | The park name is the gate's two sign lines: default from the gate's OBJECT_NAMES row (`0x4DB6F9`), renamed in the entry price window's dialog (`0x4990F0`, OK `0x4993E0`), saved in the world save. Gate lines of original saves are not imported, and the OK handler's copies to the online park record (`0x409410`, `0x5B0940`/`0x5B0970`) and its secret name ("Kevin the" / "Cosmic Cow", `0x4053C0`) are not built | the gate-line field of original saves; what `0x5B0940`/`0x5B0970` and `0x4053C0` drive |
-| COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified | native bitmap pixel oracle and ride-sign capture |
+| COMPAT-006 | Sign text | No pair kerning: tp.exe has no TextOut/DrawText/ExtTextOut imports, sign text goes through Uniscribe (`0x5EAB70`: ScriptStringAnalyse flag 0x80, ScriptStringGetLogicalWidths, the percent scaling, a second ScriptStringAnalyse with the game's advance array `0xF85F00`, ScriptStringOut) and no kerning API is called; all 17 shipped fonts carry only the legacy `kern` table (464 to 12,657 pairs) and no `GPOS` or `GSUB` table (`TrueTypeFontTests`) | whether the classic Uniscribe path applies a legacy `kern` table to the natural widths (usp10.dll is not among the binaries in scope) |
+| COMPAT-007 | Sign text | The park name is the gate's two sign lines: default from the gate's OBJECT_NAMES row (`0x4DB6F9`), renamed in the entry price window's dialog (`0x4990F0`, OK `0x4993E0`), saved in the world save. Not built: the OK handler's copies to the online park record (`0x409410`, `0x5B0940`/`0x5B0970`, unless GameType is 1) and its secret name ("Kevin the" / "Cosmic Cow", obfuscated at `0x751A34`/`0x751A38`), which calls `0x4053C0(1)`: a flag on the object `0xFB3520` (saved by `0x4164C0`, loaded by `0x415270`, read at `0x488902`/`0x488991`) and event type `0x15` (`0x40FB10`). The gate lines are the attraction record's `mNameA`/`mNameB` (thing `+0x3C8`/`+0x40A`); the shipped Easymode save holds the default row, and a user-supplied original save is not imported | what the listeners of event `0x15` and the object `0x78733C` do |
+| COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified; tp.exe compares the BILZ chunk tag at `0x6193D0` (the inflate step) and its inverse transform and colour conversion are not located | the PC wavelet transform, a native bitmap pixel oracle and a ride-sign capture |
 | COMPAT-032 | Sign text | The original's face state follows the texture's alpha type (`0x590C40`: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque; depth writes on; decoder `0x567620`) | the generated sign texture's alpha type; a distant capture |
 | COMPAT-010 | Graphics | tp.exe: option `[0x785898]` 0 → engine flag 0x20000 (MAGFILTER point), 1 → 0x40000 (MIPFILTER none), 2/3 → the device's mip mode; 0x400000 → wrap + linear MINFILTER, else clamp + point (`0x44D8F0`, `0x567620`); OpenTPW's Veldrid sampler modes stand in for these states | that `[0x785898]` is TEXTUREFILTERING; the path from the engine flags into the state word |
-| COMPAT-014 | Theme Park Inc textures | FSH palette 0x24 has no alpha and decodes opaque; no colour key (see [FSH.md](FSH.md)) | Theme Park Inc texture upload code or captures |
-| COMPAT-015 | Theme Park Inc textures | FSH palette 0x2D (one file) read as A1R5G5B5, bit 15 = opaque | Theme Park Inc palette conversion code or a capture |
-| COMPAT-019 | Theme Park Inc lake | Theme Park Inc's lake is mission obstacle 1703 (`lake.MD2`, drained by a gardener's Water Drainage in mission 1) with the drained state 1704 (`dlake.MD2`); the viewer always draws `dlake.MD2` and ignores the obstacle state and the `idle`/`lakem` animations | Theme Park Inc's obstacle code or a capture ([THEME-PARK-INC.md](THEME-PARK-INC.md)) |
 
 Extensions by design (not approximations): `[EXT:COMPAT-GFX-ENHANCED]` Enhanced preset
 values, `[EXT:COMPAT-GFX-ANISOTROPY]` anisotropy degree, `[EXT:COMPAT-GFX-VIEWDISTANCE]`
@@ -275,13 +311,13 @@ COMPAT-011 (the localized-string fallback order) and COMPAT-012 (the UniToMB enc
 `WideCharToMultiByte`, `0x424DB0`, and `Encode` has no runtime caller) are OpenTPW decisions or helpers now:
 `[EXT:locale-fallback]` and `[EXT:text-encode-helper]` (COMPAT-031, the cream gate paint, was an OpenTPW decision too and is contradicted by the video, see COMPAT-004). The original opens one language folder
 (`Data\Language\<selected>`, `0x419710`) and has no English-then-identifier chain; the missing-id result of the table lookup (`0x6ACB70`) is untraced.
-COMPAT-019 is narrowed: Theme Park Inc's `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704 "New Science Drained Lake
+COMPAT-019 is an extension (`[EXT:tpi-lake-drained]`, `APPROX:COMPAT-019` retired: the viewer runs no missions, so it has no obstacle state to follow): Theme Park Inc's `Data/Objects.txt` lists 1703 "New Science Lake Obstacle" and 1704 "New Science Drained Lake
 Obstacle", `levels/science/obstacles/` holds `lake.wad` and `dlake.wad`, `terrain.wad` holds dlake, dlakem, lake, lakem1 and lakem2, and
 `missions/miss01.sam` sets `Obstacle.Type 1703 # lake`, cleared by one gardener with ability 10 ("Water Drainage"); so "dlake" is the
-drained lake, not a finished one (the viewer's drawing is unchanged). COMPAT-006 (kerning) stays open but its answer is in the shipped
+drained lake, not a finished one. COMPAT-006 (kerning) stays open but its answer is in the shipped
 usp10.dll: tp.exe imports only ScriptStringAnalyse, ScriptStringGetLogicalWidths, ScriptStringOut, ScriptString_pSize and ScriptStringFree
-from USP10 and no kerning or ABC-width call from GDI32. COMPAT-018 needs pixel captures, COMPAT-001, -003 and -004 native-resolution ones; COMPAT-014 and -015 need
-Theme Park Inc's own FSH loader.
+from USP10 and no kerning or ABC-width call from GDI32. COMPAT-018 needs pixel captures, COMPAT-001, -003 and -004 native-resolution ones; the 0x2D palette (`[EXT:fsh-0x2d-palette]`, `APPROX:COMPAT-015` retired) has no reading in
+Theme Park Inc's FSH loader to match, so its A1R5G5B5 decode is OpenTPW's choice.
 COMPAT-008 and COMPAT-013 are OpenTPW design decisions: `[EXT:gate-sign-depth-lift]` (the gate sign faces' depth lift) and
 `[EXT:graphics-preset-cpu]` (the processor clock taken as 450 MHz or faster).
 October 16, 2026 (user approved): COMPAT-009 is retired: `APPROX:COMPAT-009` became `[EXT:sign-text-antialias]` (16 sub-scanline coverage instead of GDI ANTIALIASED_QUALITY).

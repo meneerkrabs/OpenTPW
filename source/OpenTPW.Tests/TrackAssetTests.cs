@@ -208,6 +208,74 @@ public class TrackAssetTests
 		GC.KeepAlive( rig );
 	}
 
+	/// <summary>
+	/// The instancer's arm masks on the shipped pieces: the end caps are dummy records whose third word is their arm, and a piece hides the caps of the arms
+	/// its table entry names (a straight both, an end stub the connected one, a tee three, a crossing all four, a bend none).
+	/// </summary>
+	[TestMethod]
+	public void TheArmMasksHideTheEndCapsOfTheConnectedArms()
+	{
+		var water = TrackPieceKit.Load( ObjectCatalog.Load( "jungle" ).Get( 1160 ).FileSystem, ObjectCatalog.Load( "jungle" ).Get( 1160 ).ArchivePath, TrackFamily.Water );
+		string[] Hidden( int piece )
+		{
+			var model = water.GetModel( piece )!;
+			return TrackPieceKit.ArmMaskedNodes( model, water.Entries[piece].ArmMask ).Order().Select( node => model.Nodes[node].Name ).ToArray();
+		}
+		CollectionAssert.AreEqual( new[] { "wr_end01", "wr_end02" }, Hidden( TrackPieceSelector.PieceStraight ) );
+		CollectionAssert.AreEqual( new[] { "wr_endQ" }, Hidden( TrackPieceSelector.PieceEnd ) );
+		CollectionAssert.AreEqual( Array.Empty<string>(), Hidden( TrackPieceSelector.PieceCorner ) );
+		CollectionAssert.AreEqual( new[] { "wr_xend01", "wr_xend2", "wr_xend3", "wr_xend04" }, Hidden( TrackPieceSelector.PieceCrossing ) );
+		// tee 5 (arms 0x15) keeps only the cap of its open −X arm
+		Assert.AreEqual( 3, Hidden( 5 ).Length );
+		CollectionAssert.DoesNotContain( Hidden( 5 ), "wr_xend04", "the −X cap (third word 0x40) stays" );
+		CollectionAssert.AreEqual( new[] { "wr_hend02", "wr_hend01" }, Hidden( 11 ), "a straight bridge hides both caps" );
+		CollectionAssert.AreEqual( Array.Empty<string>(), Hidden( 9 ), "piece 9 has arm byte 0" );
+	}
+
+	/// <summary>The pieces' water clips are their own <c>m</c> members (animation 5): texture-coordinate scrolls on the water pieces, none in the jungle kart kit.</summary>
+	[TestMethod]
+	public void TheWaterPiecesCarryTheirWaterClip()
+	{
+		var entry = ObjectCatalog.Load( "jungle" ).Get( 1160 );
+		var water = TrackPieceKit.Load( entry.FileSystem, entry.ArchivePath, TrackFamily.Water );
+		var straight = water.GetAnimation( TrackPieceSelector.PieceStraight, TrackPieceKit.WaterAnimation );
+		Assert.IsNotNull( straight );
+		Assert.AreEqual( "wr_trcksm", straight.Value.Name, ignoreCase: true );
+		Assert.AreEqual( 50, straight.Value.Clip.Duration );
+		Assert.IsTrue( straight.Value.Clip.Tracks.All( track => track.UvAnimation != null ), "the water clip only scrolls texture coordinates" );
+		foreach ( var piece in water.Entries.Where( item => item.Index != 0 ) )
+			Assert.IsNotNull( water.GetAnimation( piece.Index, TrackPieceKit.WaterAnimation ), $"water piece {piece.Index} {water.StemOf( piece.Index )}" );
+		var karts = TrackPieceKit.Load( KartRide( "jungle" ).FileSystem, KartRide( "jungle" ).ArchivePath, TrackFamily.Kart );
+		Assert.IsTrue( karts.Entries.Where( item => item.Index != 0 ).All( piece => karts.GetAnimation( piece.Index, TrackPieceKit.WaterAnimation ) == null ) );
+		// a playing tile's clip moves the straight's water mesh: the animator's texture coordinates differ from the stored ones after a quarter second
+		var model = water.GetModel( TrackPieceSelector.PieceStraight )!;
+		var animator = new ObjectAnimator( model );
+		animator.Trigger( 0, straight.Value.Clip, straight.Value.Name, TrackPieceKit.WaterAnimation, 0, loop: true );
+		animator.Advance( 0.25 );
+		var mesh = model.Meshes.FindIndex( item => item.NodeIndex == straight.Value.Clip.Tracks[0].NodeIndex );
+		var moved = animator.GetTexCoords( mesh );
+		Assert.IsNotNull( moved );
+		Assert.IsTrue( moved.Select( ( uv, corner ) => (uv, corner) ).Any( item => item.uv.X != model.Meshes[mesh].TexCoords[item.corner].X || item.uv.Y != model.Meshes[mesh].TexCoords[item.corner].Y ) );
+	}
+
+	/// <summary>Splish Splash's script starts the water when the circuit becomes valid and BUMP 17 only acts when its value changes.</summary>
+	[TestMethod]
+	public void SplishSplashsBumpSeventeenStartsTheWaterOnce()
+	{
+		var entry = ObjectCatalog.Load( "jungle" ).Get( 1160 );
+		var world = new RideScriptWorld( 3 );
+		var runtime = new OriginalObjectRuntime( entry, world, seed: 5, open: true );
+		var bump = runtime.Bump!;
+		var raised = new List<bool>();
+		bump.WaterPiecesTriggered += raised.Add;
+		var rig = BuildCircuit( bump );
+		for ( var tick = 0; tick < 10 * 60; tick++ )
+			runtime.Simulate( Tick );
+		CollectionAssert.AreEqual( new[] { true }, raised, "the loop's BUMP 17 0 runs every pass, but only the first one changes the word" );
+		runtime.Stop();
+		GC.KeepAlive( rig );
+	}
+
 	// ---- Go-karts ------------------------------------------------------------------------------------
 
 	private static ObjectCatalogEntry KartRide( string theme ) =>

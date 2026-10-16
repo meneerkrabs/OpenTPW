@@ -22,7 +22,7 @@ public partial class Level
 		Gate?.Tick();
 		if ( !lost )
 			StaffWorld?.Tick( deltaTime );
-		UpdateTrackRendering();
+		UpdateTrackRendering( deltaTime );
 		UpdateTourRendering( deltaTime );
 	} );
 }

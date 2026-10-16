@@ -8,6 +8,8 @@ public partial class Level
 	private readonly Dictionary<OriginalObject, TrackStation> trackStations = new();
 	private readonly Dictionary<TrackFamily, TrackRenderer> trackRenderers = new();
 	private bool trackRenderFailed;
+	private readonly TrackPieceAnimations trackPieceAnimations = new();
+	private readonly Dictionary<OriginalObject, Action<bool>> waterPieceHandlers = new();
 	private static readonly TrackFamily[] TrackFamilies = { TrackFamily.Water, TrackFamily.Kart, TrackFamily.Bumper };
 
 	/// <summary>The headless water track builder over the level's cell map (null in the generic sandbox).</summary>
@@ -24,6 +26,8 @@ public partial class Level
 	public IReadOnlyDictionary<OriginalObject, TrackStation> TrackStations => trackStations;
 	/// <summary>Tile and boat instances the track renderer holds.</summary>
 	public (int Tiles, int Boats) TrackInstances => (trackRenderers.Values.Sum( renderer => renderer.TileCount ), trackRenderers.Values.Sum( renderer => renderer.BoatCount ));
+	/// <summary>Which track pieces play their water clip (presentation only).</summary>
+	public TrackPieceAnimations TrackPieceAnimations => trackPieceAnimations;
 	/// <summary>The renderer of one track family (null until a station of the family exists and the first frame ran).</summary>
 	internal TrackRenderer? TrackRendererOf( TrackFamily family ) => trackRenderers.GetValueOrDefault( family );
 
@@ -52,13 +56,19 @@ public partial class Level
 		}
 		var station = TrackStation.FromPlacement( item.Placement.X, item.Placement.Y, item.Placement.Rotation );
 		trackStations[item] = station;
+		if ( !waterPieceHandlers.ContainsKey( item ) )
+		{
+			Action<bool> handler = play => TriggerTrackPieces( item, play );
+			waterPieceHandlers[item] = handler;
+			bump.WaterPiecesTriggered += handler;
+		}
 		var centre = TrackStation.Centre( station.First );
 		bump.SetStation( centre.X, centre.Y, station.Heading );
 		// A restored park carries its tiles and boats in the save's track part; the restore walks the circuit then.
 		if ( resumeState != null )
 			return;
 		BuilderOf( item )!.PlaceStation( station );
-		RewalkTrack( item );
+		RewalkTrack( item, TrackWalkCause.Placement );
 	}
 
 	/// <summary>
@@ -90,7 +100,11 @@ public partial class Level
 
 	private void OnTrackStationRemoved( OriginalObject item )
 	{
-		if ( waterTracks == null || !trackStations.Remove( item, out var station ) )
+		if ( waterTracks == null )
+			return;
+		if ( waterPieceHandlers.Remove( item, out var handler ) && item.Runtime.Bump is { } bump )
+			bump.WaterPiecesTriggered -= handler;
+		if ( !trackStations.Remove( item, out var station ) )
 			return;
 		if ( TrackToolStation == item )
 			CellTool.Cancel();
@@ -113,19 +127,22 @@ public partial class Level
 
 	/// <summary>
 	/// Walks the circuit of <paramref name="item"/> again after a track edit: the controller takes the new sections and validity (the boats leave and the
-	/// ride closes, as a re-walk does in the original), and a valid circuit ends the track tool and starts the queue tool.
+	/// ride closes, as a re-walk does in the original), and a valid circuit ends the track tool and starts the queue tool. <paramref name="cause"/> says which
+	/// of the original's walks this is, for the pieces' water clip: the ride's placement starts it on a valid circuit, a track line stops it.
 	/// </summary>
-	public TrackCircuit? RewalkTrack( OriginalObject item )
+	public TrackCircuit? RewalkTrack( OriginalObject item, TrackWalkCause cause = TrackWalkCause.Restore )
 	{
 		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || item.Runtime.Bump is not { } bump )
 			return null;
 		var circuit = TrackCircuitWalker.WalkAndRefresh( BuilderOf( item )!, station );
 		bump.Rebuild( circuit );
+		if ( TrackPieceAnimations.ForWalk( cause, circuit.IsValid ) is { } pieces )
+			trackPieceAnimations.TriggerTrack( BuilderOf( item )!.Tracks, station, pieces.Play, pieces.Backward );
 		if ( !circuit.IsValid )
 			return circuit;
 		LastActionMessage = $"The track is complete: {circuit.Steps.Count} tiles.";
-		// [BIN:TPW-EXE:0x0052A970 circuit walk] a valid circuit closes the tool; an invalid one plays animation 12 on the pieces and the tool continues from the last end
-		// [APPROX:TRACK-006] the advisor and event messages the original raises after a walk (ids 0xCC, 0x151, 0xB8, 0xD6) are not shown: their texts and triggers are not resolved — evidence needed: the message table at 0x0059B590
+		// [BIN:TPW-EXE:0x0052A970 circuit walk] a valid circuit closes the tool; the walk itself posts no advisor or event message (it calls no message builder 0x0059B590)
+		// [BIN:TPW-EXE:0x00526D41 track tool help] the kart and water tool posts tool help 0xCC (204) only for a click with no line start (0x0081EDE4/E8 = −1), which sets the start (0x00525A1C → 0x00526CB3); the placement presets the start at the station's exit (0x0052A1A0), so it is reached only when the tool stays on without one after a line closes with exactly Ctrl and no queue to follow (0x00526FB3, UI-031); 0xB8, 0xD6 and 0x151 are the path and queue tool's help (0x005272F5, 0x00527351, 0x00527620)
 		if ( TrackToolStation == item )
 		{
 			CellTool.Cancel();
@@ -144,7 +161,7 @@ public partial class Level
 		StaffPlacement?.Cancel();
 		var builder = BuilderOf( station )!;
 		CellTool.Cancel();
-		CellTool.Enter( new TrackLineWriter( builder, () => RewalkTrack( station ), builder.OwnerOf( layout ) ), layout.Exit );
+		CellTool.Enter( new TrackLineWriter( builder, () => RewalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( layout ) ), layout.Exit );
 		trackToolStation = station;
 		return true;
 	}
@@ -169,16 +186,25 @@ public partial class Level
 			return null;
 		}
 		var builder = BuilderOf( station )!;
-		var result = new TrackLineWriter( builder, () => RewalkTrack( station ), builder.OwnerOf( trackStations[station] ) ).Commit( from, to );
+		var result = new TrackLineWriter( builder, () => RewalkTrack( station, TrackWalkCause.Line ), builder.OwnerOf( trackStations[station] ) ).Commit( from, to );
 		LastActionMessage = result.Completed ? $"Built {result.Built.Count} track tiles for ${result.Charged}." : $"Cannot build a track here: {result.StoppedBy}.";
 		return result;
 	}
 
-	/// <summary>Updates the track renderers (one per track family): tile instances after a layer change, vehicles at their positions.</summary>
-	private void UpdateTrackRendering()
+	/// <summary>BUMP 17 changed a ride's water word: the pieces of its track start or stop from both station sides.</summary>
+	private void TriggerTrackPieces( OriginalObject item, bool play )
+	{
+		if ( trackStations.TryGetValue( item, out var station ) && BuilderOf( item ) is { } builder )
+			trackPieceAnimations.TriggerTrack( builder.Tracks, station, play, backward: true );
+	}
+
+	/// <summary>Updates the track renderers (one per track family): tile instances after a layer change, vehicles at their positions, piece clips <paramref name="seconds"/> on.</summary>
+	private void UpdateTrackRendering( double seconds = 0 )
 	{
 		if ( trackRenderFailed || waterTracks == null )
 			return;
+		trackPieceAnimations.Prune( waterTracks.Tracks );
+		trackPieceAnimations.Advance( seconds );
 		try
 		{
 			foreach ( var family in TrackFamilies )
@@ -200,7 +226,7 @@ public partial class Level
 					renderer = new TrackRenderer( entry, kit, () => Objects.Grid.Origin, ( x, y ) => Objects.Grid.GetCellHeight( x, y ) );
 					trackRenderers[family] = renderer;
 				}
-				renderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers.Where( controller => controller.Template.RenderFamily == family ) );
+				renderer.Update( waterTracks.Tracks, Objects.ScriptWorld.Bumpers.Controllers.Where( controller => controller.Template.RenderFamily == family ), trackPieceAnimations );
 			}
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or NotSupportedException )

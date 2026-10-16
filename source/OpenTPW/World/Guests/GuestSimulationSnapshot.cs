@@ -288,6 +288,8 @@ public sealed record RideVisitorBridgeSnapshot
 	public required long LastAdmissionTurn { get; init; }
 	/// <summary>The ride is in state 1 (<see cref="RideVisitorBridge.IsBrokenDown"/>); absent in older saves, which held no state: the ride update reads VAR_BROKEN again.</summary>
 	public bool BrokenDown { get; init; }
+	/// <summary>The ride is in state 4 (condemned: the life gauge was 0 when the ride update entered the state, <c>0x004E14E0</c>); null or absent in older saves and for state 1.</summary>
+	public bool? Condemned { get; init; }
 	public required long CalledTurn { get; init; }
 	/// <summary>Computed queue cells from the front (index 0) to the back.</summary>
 	public required (int X, int Y)[] QueueCells { get; init; }

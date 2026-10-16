@@ -156,6 +156,20 @@ public class CoasterCollisionTests
 	}
 
 	[TestMethod]
+	public void TheCoasterTheToolEditsRefusesGuestsEvenWhileItsTrackStillRuns()
+	{
+		// 0x441970 also fails for the controller named by the global 0x790fec, the coaster the tool edits (set at the tool's entry 0x447520 through 0x430ac0, cleared at its exit)
+		var (ride, _) = Build( CoasterTests.Circuit, 20 );
+		Assert.IsTrue( ride.IsOperational );
+		Assert.IsTrue( ride.AcceptsGuests );
+		ride.BeingEdited = true;
+		Assert.IsTrue( ride.IsOperational, "the track still runs" );
+		Assert.IsFalse( ride.AcceptsGuests, "but guests refuse the coaster being edited" );
+		ride.BeingEdited = false;
+		Assert.IsTrue( ride.AcceptsGuests );
+	}
+
+	[TestMethod]
 	public void RaisingOnePylonOverTheCrossingRemovesIt()
 	{
 		var (ride, builder) = Build( FigureEight, 20 );

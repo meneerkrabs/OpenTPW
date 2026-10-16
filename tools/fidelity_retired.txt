@@ -50,6 +50,7 @@ COAST-016 docs/COASTERS.md
 COAST-017 docs/reverse/COAST-plan.md
 COAST-018 docs/COASTERS.md
 COAST-019 docs/reverse/COAST-plan.md
+COAST-024 docs/COASTERS.md
 COAST-020 docs/reverse/REVIEW-COAST-2.md
 COAST-021 docs/reverse/REVIEW-COAST-2.md
 COAST-022 docs/PROGRESS.md
@@ -167,6 +168,7 @@ QUEUE-011 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 QUEUE-016 docs/GUESTS.md
 QUEUE-017 docs/GUESTS.md
 QUEUE-018 docs/GUESTS.md
+QUEUE-019 docs/GUESTS.md
 RIDES-001 docs/reverse/APPROX-TRACE.md
 RIDES-002 docs/reverse/APPROX-TRACE.md
 RIDES-004 docs/reverse/APPROX-TRACE.md

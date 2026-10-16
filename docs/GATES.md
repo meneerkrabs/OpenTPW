@@ -46,8 +46,8 @@ The grid holds the original's types: the world init types the cells without terr
   is then sent home without a refund while the park stays closed. A bankrupt park takes no fee: tp.exe's bankruptcy
   stops the whole thing loop (world state 4, `0x516380`, ECON-030), where OpenTPW's guests keep updating.
 - Guests already inside keep their place and carry on. Their rides are closed; a queue for a closed ride is
-  turned away, one head at a time (the fork's `FUN_004e0450`, `docs/exe/ride-operation.md`, "The closed
-  ride"; not reproduced by `ParkGate`).
+  turned away, one head at a time (tp.exe `0x4e1220` → `0x4e0450` → `0x5012f0`, the ride's own update, `RideVisitorBridge.HostStep`;
+  the door only closes the rides), and a guest still walking to a ride drops it and takes the big drop (`0x4ffeb9`); nobody is pulled out of a queue by the closing itself (GUEST-011).
 - The gate stays open while any guest stands on a counted cell, and shuts only when the park is empty.
 - Opening reopens the attractions, but only those the may-open guard allows (`0xde654`, ORACLE.md F27: not broken down, condemned or upgrading, a coaster with a complete circuit; `ECON-049`).
 
@@ -60,7 +60,7 @@ The grid holds the original's types: the world init types the cells without terr
 - `ECON-050`: a removed object empties the cells it typed; the original's removal path to its cells is not traced, and the placement's other cell
   writes (the link to the path in front of an entrance) are not modelled.
 - `GUEST-011`: a paid visitor walks in without waiting for the entrance gate's script variable 1, which the original's
-  state 3 requires (`0x51a290`); the closed-ride queue turn-away is not traced here.
+  state 3 requires (`0x51a290`); the closed-ride queue turn-away is the original's (the door closes the rides, whose update dismisses the queue head, one per turn).
 - The keyboard shortcuts are the door button's own help rows; the original's shortcut table row for Ctrl-C
   is a fork lead (`park-engine.md`, PC `0x0040c410`), not verified statically.
 

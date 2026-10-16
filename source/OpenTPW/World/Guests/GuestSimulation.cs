@@ -620,23 +620,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( turnStarted )
 		{
 			UpdateNeedsTurn( guest );
-			// The leaving test itself runs in state 6 (UpdateDeciding). The closure clause only, for the states the state-6 test never sees: a closed park also pulls guests out of queues and drops reservations, or it
-			// would strand every guest whose ride holds admission (OpenTPW's rides do not close with the park, and a queued guest's happiness rarely sinks below the
-			// queue's leave level). Guests on a ride finish it and are sent home by the test above once they walk again.
-			// [APPROX:GUEST-011] OpenTPW pulls queued, called and boarding guests out at once when the park closes and sends them home with one big drop; tp.exe closes every openable object (0x519EF0 → 0x4DF300: open word +0x68 = 0), and a closed ride's update dismisses its queue head, one per update (0x4E1220 → 0x4E0450 → 0x5012F0: event 6, the medium drop, state 6, whose leaving gate takes the big drop at 0x4FEE87), a head the script already took rides (0x500870) and AdmitPerson 0x4E0900 refuses a called guest; a guest walking to a ride takes the big drop in state 10 (0x4FFEB9) and again in state 6, where OpenTPW takes it once — evidence needed: whether shops and stalls carry the openable flag 4 of +0x32
-			if ( Payments?.ParkClosed == true )
-			{
-				if ( guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding && FindAttraction( guest.AttractionId ) is { } closed )
-				{
-					LeaveQueue( guest, closed, GuestThought.None );
-					StartLeaving( guest );
-				}
-				else if ( guest.State == GuestState.GoingToRide )
-				{
-					guest.AttractionId = 0;
-					StartLeaving( guest );
-				}
-			}
+			// The leaving test itself runs in state 6 (UpdateDeciding). Closing the park pulls nobody out of a queue or a booking here.
+			// [BIN:TPW-EXE:0x00519EF0 park door closes the rides] the door closes every openable object (0x004DF300: open word 0, loading slot cleared; ParkGate.DoorMoved), and a closed ride's update dismisses its queue head, one per turn (RideVisitorBridge.HostStep, 0x004E1220 → 0x004E0450 → 0x005012F0), after which state 6 sends the guest home; a guest walking to a ride drops its target in state 10 (UpdateGoingToRide, 0x004FFEB9)
 			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
 			// [APPROX:GUEST-012] tp.exe's recall (0x500A50) also demands the guest's cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType); OpenTPW's imported grid writes only 0, 1 and 3 (ECON-050), so the test would pass everywhere, and OpenTPW stands in for it with the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane). The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc) — evidence needed: which cells the original's state-18 walk crosses before state 19 (0x500AD0) and their types
@@ -1513,7 +1498,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void UpdateGoingToRide( Guest guest, float dt )
 	{
 		if ( guest.HasWaypoint && !Move( guest ) )
+		{
+			DropRideTargetForClosedPark( guest );
 			return;
+		}
 		var attraction = FindAttraction( guest.AttractionId );
 		// [BIN:TPW-EXE:0x004FFBC0 walk to the queue] state 10 reads neither the ride's state nor its open word: a guest keeps walking to a ride closed or broken meanwhile, joins, and the ride sends it away from the queue head (RideVisitorBridge.HostStep)
 		if ( attraction == null || !attraction.AcceptsJoins )
@@ -1561,13 +1549,31 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		}
 		if ( Grid.TryStep( guest.CellX, guest.CellY, tx, ty, out var nx, out var ny ) )
+		{
 			SetCellWaypoint( guest, nx, ny );
+			DropRideTargetForClosedPark( guest );
+		}
 		else
 		{
 			Think( guest, GuestThought.Confused );
 			guest.AttractionId = 0;
 			guest.State = GuestState.DoingNothing;
 		}
+	}
+
+	/// <summary>
+	/// A guest still walking to its ride when the park is closed (state 10, once per park turn): "The park has closed underneath me", the big happiness drop,
+	/// the ride target dropped and state 6, whose leaving gate takes the big drop again and sends the guest home.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FFEB9 park closed underneath me] after the walk step 0x004FA2A0 returns "still walking" (neither 0 nor 2) the handler reads the closed word (0x0051A280, mParkClosed): closed gives the log line, 0x004FEA70(2) (PeepInfo.BigHappinessChange), target +0x1DC = 0 and SetState(6) (0x00501DB0); open counts a byte at +0x2C and calls 0x004FD570 every twelfth update
+	private void DropRideTargetForClosedPark( Guest guest )
+	{
+		// [APPROX:GUEST-018] with the park open the original counts +0x2C here and calls 0x004FD570 every twelfth update; OpenTPW's walk to a ride has no such call
+		if ( !turnStarted || Payments?.ParkClosed != true )
+			return;
+		guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.BigHappinessChange );
+		guest.AttractionId = 0;
+		guest.State = GuestState.DoingNothing;
 	}
 
 	// ---- Queues (docs/reverse/QUEUE-plan.md §4–6) ----------------------------------------------
@@ -1592,11 +1598,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// "Queue edited" (<c>0xdd57c</c>): every queued guest except the called one re-evaluates. A guest whose place
-	/// is beyond the new room leaves ("queue was shortened"), unless it is already waiting to be taken (state 14);
-	/// the others walk to their position again.
+	/// "Queue edited" (<c>0xdd57c</c>, tp.exe <c>0x004DE1F0</c>): every queued guest except the called one re-evaluates. A guest whose place
+	/// is beyond the new room leaves ("queue was shortened"), unless it is already waiting to be taken (state 14); the others change nothing
+	/// here: a guest whose place changed walks to it from its own state 11 (<see cref="UpdateStanding"/>, <c>0x00501160</c>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00501390 queue re-evaluation] the only exit is position ≥ 4 × cells (unsigned) with the guest not in state 14; "Queue edited underneath me while Standing In Queue" is the entry log every guest prints, not an exit; the caller 0x004DE1F0 visits every guest in the queue list but the called one (ride +0x6C); executed by the x86 oracle target tpw-exe-queue-reevaluate (ORACLE.md X14)
+	// [BIN:TPW-EXE:0x00501160 state 11 re-route] a guest whose place changed (0x004FFFF0 at 0x005002C2) takes the new place's queue slot (0x004DDF50, 0x004DE7E0) and routes to it with the generic route 0x004FA5F0 (state 12), or leaves through the dismissal when the route fails
 	private void ReevaluateQueue( IRideVisitorBridge attraction )
 	{
 		var cells = attraction.QueueCells;
@@ -1617,14 +1624,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
 			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs): state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0; OpenTPW's queue walk cannot route a guest standing off the queue back, so such a guest leaves (Confused) and the guests that stay are given their walk again. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 records event 6 with the ride id in the guest's own event history (0x0050C100 with ECX = guest + 0x30) and plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D), which OpenTPW does not (its medium happiness drop is applied) — evidence needed: whether the generic route reaches a queue place from a cell off the queue, the thing-id numbering, and what the event history feeds
+			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs) and state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0, from wherever it stands; OpenTPW's queue walk cannot route a guest standing off the queue back, so a guest whose cell left the queue leaves (Confused) at once. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 neither records event 6 with the ride id in the guest's event ring (0x0050C100 with ECX = guest + 0x30; the ring feeds only the debug dump 0x004FAA60, GUEST-005) nor plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D); its medium happiness drop is applied — evidence needed: whether the generic route reaches a queue place from a cell off the queue, and the thing-id numbering (WALK-010)
 			if ( index < 0 && !onJoinCell )
 			{
 				DismissFromQueue( guest, attraction, GuestThought.Confused );
 				continue;
 			}
 			guest.QueueCellIndex = index < 0 ? cells.Count : index;
-			MoveToQueuePosition( guest, attraction );
 		}
 	}
 
@@ -1946,7 +1952,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// 5. Moving up: wait out the delay while the gap is at most 2, else walk to the new position.
 		// While the ride is in state 1 (broken) 0xed4b0 (0xdfe0c) skips the walk and goes straight to the needs window (0xed58c), so the
 		// guests keep their physical places as the head is dismissed.
-		// [BIN:STP-PPC:0x100ED4B0 broken ride holds the queue] only state 1 holds; state 4 (condemned, life gauge 0) is not told apart from it here (QUEUE-019)
+		// [BIN:STP-PPC:0x100ED4B0 broken ride holds the queue] only state 1 holds (0x004E0370 on the PC); state 4 (condemned, life gauge 0, 0x004E14E0) does not, so the guests behind a dismissed head walk on
 		// [BIN:TPW-EXE:0x005002C2 move-up] a changed place decrements the delay (0x005002EB), holds for a broken ride (0x004E0370) or starts the
 		// walk (0x00501160, state 12); each continues into the needs window at 0x005002F2, and only an unchanged place reaches the limit test (0x0050059D)
 		var moved = position != guest.QueuePosition;
@@ -1955,7 +1961,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			var gap = guest.QueuePosition - position;
 			if ( guest.QueueMoveDelay != 0 && gap is >= 0 and <= MoveUpWaitGap )
 				guest.QueueMoveDelay--;
-			else if ( !attraction.IsBrokenDown )
+			else if ( !attraction.HoldsQueuedGuests )
 				MoveToQueuePosition( guest, attraction );
 		}
 		// 6. Beyond the limit.

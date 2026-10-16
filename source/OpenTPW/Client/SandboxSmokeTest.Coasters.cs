@@ -147,8 +147,9 @@ internal sealed partial class SandboxSmokeTest
 		Require( ride.State is CoasterControllerState.Built or CoasterControllerState.Open or CoasterControllerState.Closed && smokeStation.IsOpen, "the extended coaster is back in service" );
 		// Taking a finished coaster into the tool again closes the ride and puts it out of service without removing its trains; leaving it opens the ride.
 		Require( level.EnterCoasterTool( smokeStation ) && !smokeStation.IsOpen && ride.State == CoasterControllerState.Built && ride.Trains.Count > 0 && ride.RidersOnBoard == 0, "the tool on a finished coaster closes the ride (state 2, trains stay, no riders)" );
+		Require( ride.BeingEdited && !ride.AcceptsGuests, "the coaster being edited refuses guests while its track still runs (0x441970 against 0x790fec)" );
 		level.ExitCoasterTool();
-		Require( smokeStation.IsOpen, "leaving the tool opens the ride again" );
+		Require( smokeStation.IsOpen && !ride.BeingEdited, "leaving the tool opens the ride again and it is no longer the coaster being edited" );
 		var economy = level.Park?.Economy;
 		var balance = economy?.Balance ?? 0;
 		// The track is taken out through the panel: the tool on a finished coaster opens on the height button with the demolish button enabled; two clicks of the demolish button on the station's

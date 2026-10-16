@@ -181,6 +181,8 @@ public interface IRideVisitorBridge
 	bool IsBroken { get; }
 	/// <summary>The ride is in state 1 (broken down) until it is opened again; choices and the queue's move-up read this, not <c>VAR_BROKEN</c>.</summary>
 	bool IsBrokenDown { get; }
+	/// <summary>A queued guest's move-up holds its walk while the ride is in state 1 only (<c>0x004E0370</c>); hosts without the state 4 distinction report <see cref="IsBrokenDown"/>.</summary>
+	bool HoldsQueuedGuests => IsBrokenDown;
 	/// <summary>The original's ride-failure predicate <c>0xdfe34</c>: a relief object whose wear gauge is below 25. Queueing guests leave "feeling sick".</summary>
 	bool ReliefWornOut { get; }
 	/// <summary>The ride script's <c>VAR_RUNNING</c> is non-zero.</summary>

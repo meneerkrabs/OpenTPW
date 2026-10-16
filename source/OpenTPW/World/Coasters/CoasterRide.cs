@@ -217,11 +217,13 @@ public sealed class CoasterRide
 	public IReadOnlyList<IReadOnlyList<int>> CollisionLists { get; private set; } = Array.Empty<IReadOnlyList<int>>();
 	public bool IsOperational => Track.IsRunnable && samples.Length >= 3;
 	/// <summary>
-	/// The guest predicate <c>0x441970</c>: the coaster is complete and its track crosses itself nowhere (controller <c>+0x140 == 0</c>); guests do not
-	/// join or board a coaster that fails it.
+	/// The guest predicate <c>0x441970</c>: the coaster is complete, its track crosses itself nowhere (controller <c>+0x140 == 0</c>) and it is not the
+	/// coaster being edited; guests do not join or board a coaster that fails it, and queued guests at an unchanged place leave with thought 13.
 	/// </summary>
-	// [BIN:TPW-EXE:0x441988 guest predicate] +0x140 must be 0 (the self-intersection count of 0x439c40), +0x3C bit 0 set (complete) and bit 1 clear (circuit not open), and the coaster is not the one being edited (0x790fec: OpenTPW's edits un-complete the track)
-	public bool AcceptsGuests => IsOperational && IntersectionCount == 0;
+	// [BIN:TPW-EXE:0x441988 guest predicate] +0x140 must be 0 (the self-intersection count of 0x439c40), +0x3C bit 0 set (complete) and bit 1 clear (circuit not open), and the controller is not the global 0x790fec, the coaster the tool is editing (set by the tool's entry 0x447520, cleared by its exit)
+	public bool AcceptsGuests => IsOperational && IntersectionCount == 0 && !BeingEdited;
+	/// <summary>The coaster tool is editing this coaster (the original's global <c>0x790fec</c>); set and cleared by the level's tool.</summary>
+	public bool BeingEdited { get; internal set; }
 	/// <summary>Raised after a track edit that changes the samples (built, reopened, deleted).</summary>
 	public event Action<CoasterRide>? TrackChanged;
 

@@ -480,9 +480,8 @@ public class QueueTests
 		Assert.AreEqual( 6, rig.Simulation.GetStatistics().Queueing );
 	}
 
-	/// <summary>The leaving test only reads the closing word for guests that decide (state 6); the closure clause also
-	/// pulls queued guests out and drops reservations, or a closed park strands everyone whose ride holds admission
-	/// (APPROX:GUEST-011).</summary>
+	/// <summary>The leaving test only reads the closing word for guests that decide (state 6) and for guests walking to a ride (state 10); the park door
+	/// closes the rides (<c>ParkGate.DoorMoved</c>, tests set <c>Rig.Open</c>), whose update dismisses the queue head one guest per turn (GUEST-011).</summary>
 	internal sealed class ClosedPayments : IGuestPayments
 	{
 		public bool Closed;
@@ -521,40 +520,62 @@ public class QueueTests
 		Assert.AreEqual( 0f, guest.Nausea );
 	}
 
+	private static bool GoingHome( Guest guest ) => guest.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone;
+
 	[TestMethod]
-	public void ClosingTheParkPullsQueuedGuestsOutAndDropsGoingToRideReservations()
+	public void ClosingTheParkDismissesTheQueueHeadOfTheClosedRideOnePerTurnAndDropsGoingToRideReservations()
 	{
+		// tp.exe 0x00519EF0 closes the rides (0x004DF300: open word 0); the closed ride's update runs the admission 0x004E1220, which only runs the head step
+		// 0x004E0450 (unlink, dismissal 0x005012F0: the medium drop, state 6) once per update, and state 6 sends the guest home when the park is closed
 		var rig = new Rig();
 		rig.HoldAdmission();
 		var queued = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
 		Assert.IsTrue( queued.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", queued.Select( guest => guest.State ) ) );
 		Assert.AreEqual( 3, rig.Ride.QueueLength );
+		var happiness = queued.Select( guest => guest.Happiness ).ToList();
 
 		var payments = new ClosedPayments();
 		rig.Simulation.Payments = payments;
 		payments.Closed = true;
 		rig.RunTurns( 1 );
-		// The rig's path row is short, so a closed park turn is enough for some guests to be fully out the gate.
-		Assert.IsTrue( queued.All( guest => guest.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone ),
-			string.Join( ", ", queued.Select( guest => guest.State ) ) );
-		Assert.AreEqual( 0, rig.Ride.QueueLength, "the closed park emptied the queue" );
+		Assert.AreEqual( 3, rig.Ride.QueueLength, "closing the park alone pulls nobody out: the rides are still open" );
+		Assert.IsTrue( queued.All( guest => guest.State == GuestState.Queueing ) );
 
-		// A guest still on its way drops the reservation instead of walking up to a ride that will not take it.
+		rig.Open = false;   // the park door's close walk
+		for ( var gone = 1; gone <= 3; gone++ )
+		{
+			rig.RunTurns( 1 );
+			Assert.AreEqual( 3 - gone, rig.Ride.QueueLength, $"{gone} turns after the ride closed: one head per update" );
+			Assert.IsTrue( queued.Take( gone ).All( guest => !guest.IsInQueue ), "the head leaves first" );
+			Assert.IsTrue( queued.Skip( gone ).All( guest => guest.State == GuestState.Queueing ), "the others keep their places" );
+		}
+		Assert.AreEqual( 3, rig.Ride.Dismissed );
+		rig.RunTurns( 60 );
+		Assert.IsTrue( queued.All( GoingHome ), string.Join( ", ", queued.Select( guest => guest.State ) ) );
+		var big = rig.Simulation.Settings.BigHappinessChange;
+		var medium = rig.Simulation.Settings.MediumHappinessChange;
+		Assert.IsTrue( queued.Select( ( guest, index ) => (guest, index) ).All( pair => pair.guest.Happiness <= Math.Max( 0, happiness[pair.index] - medium - big ) + 0.01f ),
+			"the dismissal's medium drop, then the leaving gate's big drop" );
+
+		// A guest still on its way drops the reservation (state 10, 0x004FFEB9) instead of walking up to a ride that will not take it.
 		var walker = rig.Send();
+		walker.Happiness = 90;
 		Assert.AreEqual( GuestState.GoingToRide, walker.State );
 		rig.RunTurns( 1 );
-		Assert.IsTrue( walker.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone, $"{walker.State}" );
 		Assert.AreEqual( 0, walker.AttractionId, "the reservation is dropped" );
+		Assert.IsTrue( walker.State is GuestState.DoingNothing || GoingHome( walker ), $"{walker.State}" );
+		Assert.IsTrue( walker.Happiness <= 100 - big + 0.01f, $"the big drop at 0x004FEA70(2) (the needs phase may have added up to the cap first): {walker.Happiness}" );
+		rig.RunTurns( 5 );
+		Assert.IsTrue( GoingHome( walker ), $"state 6 sends it home: {walker.State}" );
 	}
 
 	/// <summary>
-	/// The closure clause also covers the fourth queue state: a guest that was called and walks to the stand point
-	/// (Boarding) is pulled out with the rest — it is still in the queue list, so leaving it behind would strand it
-	/// at a ride that no longer takes anyone.
+	/// A guest that was called and walks to the stand point (Boarding) is still the queue head when the ride closes (the close 0x004DF300 withdraws the call, +0x6C = 0): the closed
+	/// ride's head step dismisses it like any other head, or it would stand at a ride that no longer takes anyone.
 	/// </summary>
 	[TestMethod]
-	public void ClosingTheParkAlsoPullsAGuestCalledToBoardOutOfItsQueue()
+	public void ClosingTheRideDismissesAGuestCalledToBoardAsTheQueueHead()
 	{
 		// QWTC 600 with one guest per take: the first guest is called early and walks to the stand point (Boarding)
 		// over several turns, so the closing turn catches it mid-walk, before the script can take it.
@@ -573,10 +594,13 @@ public class QueueTests
 		var payments = new ClosedPayments();
 		rig.Simulation.Payments = payments;
 		payments.Closed = true;
-		rig.RunTurns( 1 );
-		Assert.IsTrue( boarding.State is GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone, $"{boarding.State}" );
-		Assert.AreEqual( -1, rig.Ride.GetQueuePosition( boarding.Id ), "the closed park dropped it from the queue" );
+		rig.Open = false;
+		rig.RunTurns( 2 );
+		Assert.IsFalse( boarding.IsInQueue, $"{boarding.State}" );
+		Assert.AreEqual( -1, rig.Ride.GetQueuePosition( boarding.Id ), "the closed ride dismissed it from the queue" );
 		Assert.AreNotEqual( boarding.Id, rig.Ride.CalledGuest, "the call was withdrawn" );
+		rig.RunTurns( 60 );
+		Assert.IsTrue( GoingHome( boarding ), $"state 6 sends it home: {boarding.State}" );
 	}
 
 	/// <summary>
@@ -866,6 +890,32 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void AQueueEditChangesNothingForTheGuestsThatStay()
+	{
+		// tp.exe 0x00501390 only dismisses a guest whose place is beyond the new room (and not waiting to be taken); the others are left to their own state 11,
+		// which re-routes a guest whose place changed (0x00501160) and does nothing for one whose place did not
+		var rig = new Rig();
+		rig.HoldAdmission();
+		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
+		rig.RunTurns( 120 );
+		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", guests.Select( guest => guest.State ) ) );
+		var before = guests.Select( guest => (guest.QueuePosition, guest.Cell, guest.Navigation.X, guest.Navigation.Y) ).ToList();
+		// five cells cut to two: room 8, the six guests stay
+		QueuePaths.RemoveFrom( rig.Grid, rig.Ride, 2, 3 );
+		rig.Step();
+		Assert.AreEqual( 2, rig.Ride.QueueSizeInCells );
+		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), "nobody is sent walking by the edit: " + string.Join( ", ", guests.Select( guest => guest.State ) ) );
+		CollectionAssert.AreEqual( before, guests.Select( guest => (guest.QueuePosition, guest.Cell, guest.Navigation.X, guest.Navigation.Y) ).ToList(), "places and positions are untouched" );
+		// the guests beyond the new room leave, the called guest and the others stay
+		QueuePaths.RemoveFrom( rig.Grid, rig.Ride, 2, 4 );
+		rig.Step();
+		Assert.AreEqual( 1, rig.Ride.QueueSizeInCells );
+		Assert.AreEqual( 4, rig.Ride.QueueLength );
+		Assert.IsTrue( guests.Take( 4 ).All( guest => guest.IsInQueue && guest.State == GuestState.Queueing ) );
+		Assert.IsTrue( guests.Skip( 4 ).All( guest => !guest.IsInQueue ) );
+	}
+
+	[TestMethod]
 	public void QueueSlotsFollowTheOriginalAxisPerLink()
 	{
 		// tp.exe 0x004DE840: the rig's queue runs from (2, 5) back to (2, 1), its front towards +Y (link 16), so a place sits at
@@ -939,6 +989,73 @@ public class QueueTests
 	}
 
 	[TestMethod]
+	public void ACondemnedRideDismissesItsHeadButItsGuestsWalkOn()
+	{
+		// tp.exe 0x004E14E0 gives state 4 when the life gauge truncates to a zero byte, state 1 otherwise; both dismiss the head each update (0x004E0E00), but the guest's
+		// move-up holds its walk only in state 1 (0x004E0370 at 0x00500523), so behind a condemned ride's dismissed head the guests keep moving up
+		var movedUp = new Dictionary<double, int>();
+		foreach ( var life in new[] { 40.0, 0.0 } )
+		{
+			var rig = new Rig();
+			rig.HoldAdmission();
+			var guests = Enumerable.Range( 0, 8 ).Select( _ => rig.Send() ).ToList();
+			rig.RunTurns( 120 );
+			Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", guests.Select( guest => guest.State ) ) );
+			rig.Ride.LifeGauge = life;
+			var places = guests.Select( guest => guest.QueuePosition ).ToList();
+			rig.Script[RideVariables.VAR_BROKEN] = 1;
+			rig.RunTurns( 4 );
+			Assert.IsTrue( rig.Ride.IsBrokenDown, "state 1 or 4 refuses new guests alike" );
+			Assert.AreEqual( life == 0, rig.Ride.IsCondemned );
+			Assert.AreEqual( life != 0, rig.Ride.HoldsQueuedGuests );
+			Assert.AreEqual( 4, rig.Ride.Dismissed, "both states dismiss one head per update" );
+			movedUp[life] = guests.Skip( 4 ).Where( ( guest, index ) => guest.QueuePosition != places[index + 4] ).Count();
+		}
+		Assert.AreEqual( 0, movedUp[40.0], "state 1 holds the guests behind the head where they stand" );
+		Assert.IsTrue( movedUp[0.0] > 0, "state 4 does not hold them" );
+	}
+
+	[TestMethod]
+	public void TheLifeGaugeAtTheRideUpdateDecidesStateFourAndSurvivesASave()
+	{
+		var rig = new Rig();
+		var ride = rig.Ride;
+		ride.LifeGauge = 0.99;   // truncates to a zero byte
+		rig.Script[RideVariables.VAR_BROKEN] = 1;
+		rig.RunTurns( 2 );
+		Assert.IsTrue( ride.IsCondemned && !ride.HoldsQueuedGuests && ride.IsBrokenDown );
+		// the gauge is read when the update enters the state, not afterwards
+		ride.LifeGauge = 80;
+		rig.RunTurns( 2 );
+		Assert.IsTrue( ride.IsCondemned );
+		var snapshot = ride.CaptureSnapshot();
+		Assert.AreEqual( true, snapshot.Condemned );
+		Assert.AreEqual( 0, RideVisitorBridge.ValidateSnapshot( snapshot ).Count );
+		RideVisitorBridge Restored( RideVisitorBridgeSnapshot saved )
+		{
+			var other = new Rig();
+			other.Script[RideVariables.VAR_RIDECLOSED] = 1;
+			other.Ride.RestoreSnapshot( saved );
+			return other.Ride;
+		}
+		Assert.IsTrue( Restored( snapshot ).IsCondemned );
+		// an older save holds no such field: the restored ride is in state 1
+		var third = Restored( snapshot with { Condemned = null } );
+		Assert.IsTrue( third.InBrokenState && third.IsBrokenDown && !third.IsCondemned && third.HoldsQueuedGuests );
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { BrokenDown = false } ).Any( error => error.Contains( "condemned" ) ), "state 4 needs the broken-down state" );
+		var one = new Rig();
+		one.Ride.LifeGauge = 50;
+		one.Script[RideVariables.VAR_BROKEN] = 1;
+		one.RunTurns( 2 );
+		Assert.IsTrue( one.Ride.IsBrokenDown && !one.Ride.IsCondemned );
+		// leaving the state (opened again) forgets it
+		rig.Script[RideVariables.VAR_BROKEN] = 0;
+		rig.Script[RideVariables.VAR_RIDECLOSED] = 0;
+		rig.RunTurns( 2 );
+		Assert.IsFalse( ride.IsBrokenDown || ride.IsCondemned );
+	}
+
+	[TestMethod]
 	public void ABrokenRideDrainsEvenWhenItsScriptClosedIt()
 	{
 		// SetState(1) writes VAR_RIDECLOSED = 1 itself; the queue still drains head first instead of emptying at once.
@@ -994,7 +1111,8 @@ public class QueueTests
 	public void QueuedGuestsLeaveAngryWhenTheTrackRefusesGuests()
 	{
 		// tp.exe 0x500612: at its position, after the limit test, a guest queueing for a coaster failing 0x441970 (or a track-type-1 ride whose
-		// track word is 0) thinks 13 and leaves through 0x5004aa; the ride itself calls nobody forward meanwhile (COAST-024).
+		// track word is 0) thinks 13 and leaves through 0x5004aa. The admission 0x4e1220 does not call 0x441970 (see the next test), and the join
+		// 0x4ffbc0 does not either, so a guest walking to the refusing coaster still joins.
 		var rig = new Rig();
 		rig.HoldAdmission();
 		var takes = true;
@@ -1004,7 +1122,7 @@ public class QueueTests
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
 		takes = false;
 		Assert.IsTrue( rig.Ride.TrackRefusesGuests );
-		Assert.IsFalse( rig.Ride.AcceptsJoins );
+		Assert.IsTrue( rig.Ride.AcceptsJoins, "the join reads neither the coaster predicate nor the open word" );
 		var thoughts = new GuestThought?[guests.Count];
 		// The head leaves on the next update; the guests behind walk up first (their position changed) and leave once standing at it.
 		rig.RunTurns( 60, () =>
@@ -1015,7 +1133,28 @@ public class QueueTests
 		} );
 		CollectionAssert.AreEqual( Enumerable.Repeat<GuestThought?>( GuestThought.Angry, guests.Count ).ToArray(), thoughts );
 		Assert.AreEqual( 0, rig.Ride.Dismissed, "each guest leaves on its own state-11 update, not from the ride's head step" );
-		Assert.AreEqual( QueueJoinResult.Closed, rig.Ride.JoinQueue( 99 ), "COAST-024: nobody joins" );
+		Assert.AreEqual( QueueJoinResult.Joined, rig.Ride.JoinQueue( 99 ), "a guest that was already walking to the refusing coaster joins (0x4ffbc0 reads no coaster test)" );
+	}
+
+	[TestMethod]
+	public void AnOpenRideWhoseCoasterRefusesGuestsStillCallsItsHeadForward()
+	{
+		// tp.exe 0x4e1220 reads the open word, LETMEON, capacity, running, the pending visitor and the queue head: it never calls the coaster predicate 0x441970,
+		// so an open ride whose coaster refuses guests calls its head forward like any other, and the guests' own state 11 sends the others away (thought 13)
+		foreach ( var refuses in new[] { false, true } )
+		{
+			var (ride, script, host) = CreateAdmission();
+			ride.Attach( script, () => true, () => !refuses, () => refuses );
+			Assert.AreEqual( refuses, ride.TrackRefusesGuests );
+			Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 1 ), "the join does not read the coaster predicate" );
+			host.AtFront.Add( 1 );
+			Assert.AreEqual( 1, NextTurn( ride, host ).CalledGuest, $"refuses {refuses}: the head is called" );
+			// a refusing ride that is also broken enters state 1 after the admission's own step, as any other
+			script[RideVariables.VAR_BROKEN] = 1;
+			Assert.AreEqual( QueueJoinResult.Joined, ride.JoinQueue( 2 ) );
+			NextTurn( ride, host );
+			Assert.IsTrue( ride.IsBrokenDown );
+		}
 	}
 
 	[TestMethod]

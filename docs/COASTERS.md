@@ -198,9 +198,7 @@ excitement is `trunc(0.5·E + 50)`, where `E` is the coaster's excitement rating
 (COAST-013 retired: the guest rating `0x4e0560` fetches it from `0x43e0b0` and discards it). The guest predicate
 `0x441970` tests controller `+0x140 == 0`, which is the **self-intersection count** (not riders on board: its only writers
 are the pass `0x439c40` and its inverse `0x43ad50`), that the track is complete and not open, and that the coaster is not the
-one being edited (`0x790fec`). OpenTPW refuses a coaster whose count is nonzero (`CoasterRide.AcceptsGuests`); it has no
-edited-coaster state. The queue's state 11 gives a guest queueing for a failing coaster thought 13 and sends it on (tp.exe `0x500612`,
-modelled in GuestSimulation); the ride's own admission is skipped meanwhile (COAST-024).
+one being edited (`0x790fec`). `CoasterRide.AcceptsGuests` is that predicate: `BeingEdited` stands for the global `0x790fec`, which the tool's entry (`0x447520` through `0x430ac0`) sets and its exit clears (`Level.EnterCoasterTool`, `ExitCoasterTool`). The choice (`0x4dd920`), the reopen guard and the queue's state 11 read it: a guest queueing for a failing coaster, an edited one included, thinks 13 and is dismissed at its own update (tp.exe `0x500612`, in GuestSimulation), while the join (`0x4ffbc0`) and the ride's own admission (`0x4e1220`) do not read it, so a guest already walking to the coaster joins and an open ride still calls its head forward (`APPROX:COAST-024`, retired).
 
 The count comes from `CoasterCollision` (`0x439ab0` → `0x439c40` → `0x43a2b0`, COAST-004). Every node with a successor has a
 box of the samples of its link grown by its pylon's `fCollisionPossibleRadius` (`0x439920`). A link is tested against every link

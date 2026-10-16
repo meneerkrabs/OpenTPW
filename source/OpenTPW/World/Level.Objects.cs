@@ -157,6 +157,9 @@ public partial class Level
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
 		Objects.ObjectRemoved += item => Guests?.Unregister( item.Visitors );
+		// A ride with queue cells takes them with it: the refunds are settled while the cells are laid, the cells go once its guests are set down
+		Objects.ObjectRemoving += SettleDemolishedQueue;
+		Objects.ObjectRemoved += ClearDemolishedQueue;
 		// The arrival update sends the level's bus, seaplane or Ferry (tp.exe 0x004CF3E0); a Theme Park Inc world keeps the vehicle-less step-off.
 		if ( !GameEditions.IsThemeParkInc && ArrivalVehicles.Available( Objects.Catalog ) )
 		{
@@ -407,8 +410,14 @@ public partial class Level
 		StaffPlacement?.Cancel();
 		ride.RecomputeQueue( Guests.Grid );
 		var start = Guests.Grid.IsQueue( front.X, front.Y ) ? ride.QueueBackCell : front;
+		// [BIN:TPW-EXE:0x00530120 corner walk] the tool's entry walks the queue into the stack of corner points (0x81B740) and sets the line start to its last point; the tool's undo then takes the queue back segment by segment (Back 0x52FE50)
+		// a queue of its front cell alone (a ride just placed) keeps the one-point stack the placement leaves, so its first click lays from the front cell
+		var stack = Guests.Grid.IsQueue( front.X, front.Y ) && ride.QueueCells.Count >= 2 ? QueuePaths.CornerStack( Guests.Grid, ride ) : null;
+		if ( stack is not { Count: >= 2 } || stack[^1] != start )
+			stack = null;
 		CellTool.Enter( new QueueLineWriter( Guests.Grid, ride, ( x, y, pending ) => CheckQueueCell( ride, x, y, pending ),
-			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 ), start );
+			( x, y ) => BuildQueueCell( ride, x, y ), RemoveQueueCell, () => Park?.Economy.CellCost( CellPurchase.Queue ) ?? 0 ), start,
+			stack, stack == null ? null : QueuePaths.StackSegments( ride, stack ) );
 		return true;
 	}
 
@@ -419,12 +428,16 @@ public partial class Level
 	/// </summary>
 	// [DATA:UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it"] [BIN:STP-PPC:0x139c64 park-view hover] queue cell → hover state 3 (PATH-plan §4.1)
 	// [EXT:queue-click-at-back-cell] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool): an OpenTPW design choice, the first click is the whole edit gesture here
-	// [APPROX:QUEUE-021] tp.exe's park-view click 0x004879D0 (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the vertex list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580); that first-click step is not ported — evidence needed: where mode 3 goes on laying after 0x00530120's list
+	// [BIN:TPW-EXE:0x004879D0 queue click] the park-view click (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell (0x005234D0) and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the corner list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580), and 0x00530120 ends by setting the line start 0x81EDE4/0x81EDE8 to the queue's last corner (its tail, 0x00530120's last stores), so the line goes on from the queue's back cell, as EnterQueueTool starts it
 	public bool EditQueueAt( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )
 			return false;
-		return EnterQueueTool( ride );
+		if ( !EnterQueueTool( ride ) )
+			return false;
+		// [BIN:TPW-EXE:0x00530379 corner walk link clear] the walk the click runs also takes the link between the queue's back cell and the path it ends on off both cells, and a cancel restores nothing (QueuePaths.DetachFromPath)
+		QueuePaths.DetachFromPath( Guests.Grid, ride );
+		return true;
 	}
 
 	/// <summary>
@@ -727,6 +740,35 @@ public partial class Level
 		return removed;
 	}
 
+	private readonly HashSet<OriginalObject> demolishedQueues = new();
+
+	/// <summary>
+	/// The money side of a ride's demolition for its queue, while the cells are still laid: each queue cell refunds <c>Costs.QueueCell</c> × the ride's scrap percentage
+	/// / 100 and the demolition then debits one such amount (<see cref="ParkEconomy.ChargeQueueDemolition"/>). A park load or clear removes nothing through here.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00527F87 ride demolition queue] a type with a queue (Info.HasQueue, def +0x40, 0x527F87..0x527F93) fills the corner stack with 0x530120 (0x527F9A), enters mode 3 (0x527FA5) with the forced-clear flag 0x81D7A8 set (0x527FAA) and, when the ride's own word +0x40 is above 0 (0x527FB4..0x527FBC; +0x40 is the count of the chain cells the queue re-evaluation 0x4DE130 visits from the entrance's outside cell, that cell included whatever its type, so it is 1 for a ride whose front cell is a path cell, a case in which the original still debits one cell and OpenTPW charges nothing, QUEUE-015), calls Back 0x52FE50 until it returns 0 (0x527FBE..0x527FDA): every cell goes and credits its refund, and 0x527FDC..0x528007 then debits one cell's refund; the ride's entrance cell is not part of the stack
+	private void SettleDemolishedQueue( OriginalObject item )
+	{
+		if ( IsReadOnlyVisit || Guests == null || !item.Entry.HasQueue || item.Visitors is not RideVisitorBridge ride )
+			return;
+		ride.RecomputeQueue( Guests.Grid );
+		if ( ride.QueueFrontCell is not { } front || !Guests.Grid.IsQueue( front.X, front.Y ) )
+			return;
+		demolishedQueues.Add( item );
+		if ( Park?.Economy is not { } economy || GetEconomyInstance( item ) is not int instance )
+			return;
+		for ( var cell = 0; cell < ride.QueueCells.Count; cell++ )
+			economy.RefundQueueCell( instance );
+		economy.ChargeQueueDemolition( instance );
+	}
+
+	/// <summary>Takes the queue cells of a demolished ride off the map (<see cref="QueuePaths.ClearAll"/>), once its guests have been set down.</summary>
+	private void ClearDemolishedQueue( OriginalObject item )
+	{
+		if ( demolishedQueues.Remove( item ) && Guests != null && item.Visitors is RideVisitorBridge ride )
+			QueuePaths.ClearAll( Guests.Grid, ride );
+	}
+
 	// [APPROX:QUEUE-012] queue cells need terrain the object build rule allows (Objects.Grid.CheckTerrain: the map start's cell types and the Easymode save's occupied cells), no object footprint of the queue tool's overwrite priority 3 or more (a lower one is demolished, QueueGivesWay) and owned land; tp.exe's cell validator 0x00535670 for the queue tool refuses a cell whose flag byte +0x0E has bit 0x40 (the park's land, ParkCellMap.Land), compares an object cell's owner priority with 0x818C10 = 3 (0x535D66), allows empty cells, lets a queue replace a path cell unless NoModify (+0x0E bit 0x20) and reads no MAP terrain bit (map setup turns inside water, blocked and walkway cells into type 0) — evidence needed: none for the validator; the save's occupied cells stand in for its cell types (ECON-050)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
 	private bool IsQueueBlocked( int x, int y ) =>
@@ -797,13 +839,18 @@ public partial class Level
 		return true;
 	}
 
-	/// <summary>Screen position of cell (x, y)'s centre on the surface the cursor picks (the terrain's mean corner height on an original level, Z = 0 in the sandbox; for build ghosts).</summary>
+	/// <summary>
+	/// Screen position of cell (x, y)'s centre on the surface the cursor picks (the terrain's mean corner height on an original level, Z = 0 in the sandbox; for build ghosts).
+	/// False for a cell outside the object grid, which has no ground to project (the guest grid can be larger than the level's heightfield).
+	/// </summary>
 	public bool TryProjectCell( int x, int y, System.Numerics.Vector2 viewportSize, out System.Numerics.Vector2 screen )
 	{
+		screen = default;
+		if ( x < 0 || y < 0 || x >= Objects.Grid.Width || y >= Objects.Grid.Height )
+			return false;
 		var origin = Objects.Grid.Origin;
 		var point = new System.Numerics.Vector4( origin.X + (x + 0.5f) * ObjectPlacement.CellSize, origin.Y + (y + 0.5f) * ObjectPlacement.CellSize, Objects.Grid.GetCellHeight( x, y ), 1 );
 		var clip = System.Numerics.Vector4.Transform( point, Camera.ViewMatrix * Camera.ProjMatrix );
-		screen = default;
 		if ( clip.W <= 0 )
 			return false;
 		screen = new System.Numerics.Vector2( (clip.X / clip.W + 1) / 2 * viewportSize.X, (1 - clip.Y / clip.W) / 2 * viewportSize.Y );

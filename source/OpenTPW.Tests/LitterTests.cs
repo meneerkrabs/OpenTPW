@@ -88,6 +88,26 @@ public class LitterTests
 		Assert.AreEqual( 0, litter.LitteredInBlock( block, 4, 121 ), "a load forgets the counts" );
 	}
 
+	[TestMethod]
+	public void ALoadedBlockCacheCarriesTheConstructorsStampZero()
+	{
+		// [BIN:TPW-EXE:0x004C58C0 analyser constructor] the stamps start at 0 and the serializer keeps none, so a loaded valid cache is stamp 0
+		var grid = new GuestPathGrid( 12, 12 );
+		for ( var x = 0; x < 4; x++ )
+			grid.SetPath( x, 0, true );
+		var litter = new ParkLitter { Cells = grid.Cells };
+		var block = ParkLitter.BlockOf( 2, 0 );
+		litter.RestoreBlockCaches( new[] { (block, 7, 0L) }, new[] { (block, 9, 0L) } );
+		Assert.AreEqual( 7, litter.LitteredInBlock( block, 1, 7 ), "(7 >> 2) - 0 = 1 is not above the age 1: the saved count is served" );
+		Assert.AreEqual( 0, litter.LitteredInBlock( block, 1, 8 ), "(8 >> 2) - 0 = 2 is above the age: counted again" );
+		Assert.AreEqual( 9, litter.PathCellsInBlock( block, 4, 19 ), "(19 >> 2) - 0 = 4 is not above the age 4: the saved count is served" );
+		Assert.AreEqual( 4, litter.PathCellsInBlock( block, 4, 20 ), "from turn 20 the age 4 reader counts again" );
+		// a park whose caches were left empty by the import counts at its first read: the same numbers once the turn is past the age
+		var imported = new ParkLitter { Cells = grid.Cells };
+		Assert.AreEqual( 4, imported.PathCellsInBlock( block, 4, 20 ) );
+		Assert.AreEqual( 0, imported.LitteredInBlock( block, 1, 8 ) );
+	}
+
 	private static (ParkEconomy Park, StaffMember Handyman) Sweeping()
 	{
 		var park = EconomyTestData.Park();

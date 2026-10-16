@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -61,6 +62,27 @@ public class ChallengeUpdateTests
 		Assert.AreEqual( ParkEventKind.ChallengeCompleted, objectives.Update( start + 3750, 5, Sold ).Single( item => item.Kind == ParkEventKind.ChallengeCompleted ).Kind, "a pass wins on the first checked turn" );
 		Assert.IsNull( objectives.Current );
 		Assert.AreEqual( start + 3750 + 270 * Day, objectives.NextOfferSeconds );
+	}
+
+	[TestMethod]
+	public void ARunningChallengeWarnsWhileFewerDaysAreLeftThanTheSettingAllows()
+	{
+		// [BIN:TPW-EXE:0x4d21fd challenge time warning] (whole days left x 100) / TargetTime below Challenges.ShortTimeLeftWarningAt (20 here), TargetTime 60 days
+		var (objectives, start) = Offered();
+		objectives.AcceptAt( start, 0 );
+		var deadline = start + 60 * Day;
+		var warned = new List<int>();
+		objectives.TimeShort += warned.Add;
+		objectives.Update( deadline - 12 * Day, 1, _ => 0 ).ToList();
+		Assert.AreEqual( 0, warned.Count, "12 days left: 12 x 100 / 60 = 20 is not below 20" );
+		objectives.Update( deadline - 12 * Day + 3750, 1, _ => 0 ).ToList();
+		Assert.AreEqual( 1, warned.Count, "11 whole days left: 18 is below 20" );
+		objectives.Update( deadline - 3 * Day, 4, _ => 0 ).ToList();
+		Assert.AreEqual( 1, warned.Count, "turn 4 only posts the progress message" );
+		objectives.Update( deadline - 3 * Day, 5, _ => 0 ).ToList();
+		Assert.AreEqual( 2, warned.Count, "posted again on every checked turn while it holds" );
+		objectives.Update( deadline - 3 * Day, 6, definition => 30 ).ToList();
+		Assert.AreEqual( 2, warned.Count, "a challenge that passes wins instead" );
 	}
 
 	[TestMethod]

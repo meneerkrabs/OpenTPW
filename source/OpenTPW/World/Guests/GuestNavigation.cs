@@ -164,7 +164,7 @@ public sealed class GuestNavigation
 	public int Progress;
 
 	/// <summary>Walking off the path grid (the arrival lanes): no walls and every position is accepted.</summary>
-	// [APPROX:WALK-008] guests arriving on the arrival lanes, and guests whose map leaves a lane or stop cell untyped, walk off the path grid, with no wall force and every position committed; the original walks every guest through the route search 0x50f8e0, the commit 0x510510 and the edge test 0x4d8750 with the walk mask — still open: the arriving walk (states 0 to 5, 0x4ff520, 0x4ff730, 0x4ff7f0, 0x4ffb20); a leaving guest walks the map from the gate to the stop cells where the lane is typed
+	// [APPROX:WALK-008] guests arriving on the arrival lanes, and guests whose map leaves a lane or stop cell untyped, walk off the path grid, with no wall force and every position committed; the original walks every guest through the route search 0x50f8e0, the commit 0x510510 and the edge test 0x4d8750 with the walk mask — still open: the arriving walk (states 0 to 5, read: 0x4ff520 picks the side, the ticket booth cell 0x4d8610 and one route from the bus stop, 0x4ff730 walks it to the booth, 0x4ff7f0 lets a paid guest on to the entrance cell 0x4d8690 as the head of its cell's list, 0x4ffb20 walks it in); a leaving guest walks the map from the gate to the stop cells where the lane is typed
 	public bool OffGrid;
 	public int Reroutes;
 

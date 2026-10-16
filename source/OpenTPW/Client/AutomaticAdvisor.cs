@@ -24,6 +24,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	private Level? level;
 	private ParkEconomyRuntime? park;
 	private GuestSimulation? guests;
+	private StaffWorldSimulation? staffWorld;
 
 	private AutomaticAdvisor( AdvisorController controller ) : this( controller, StopwatchSource() ) { }
 
@@ -85,10 +86,16 @@ internal sealed class AutomaticAdvisor : IDisposable
 		level = started;
 		park = started.Park;
 		if ( park != null )
+		{
 			park.EventRaised += OnParkEvent;
+			park.Economy.Objectives.TimeShort += OnChallengeTimeShort;
+		}
 		guests = started.Guests;
 		if ( guests != null )
 			guests.Pranked += OnPrank;
+		staffWorld = started.StaffWorld;
+		if ( staffWorld != null )
+			staffWorld.MechanicOnTheWay += OnMechanicOnTheWay;
 		// A park started from an original save takes its saved controller first; the main loop's events follow.
 		if ( started.Park?.Import is { } import && started.OriginalPark?.Save?.Advisor is { } saved )
 		{
@@ -108,16 +115,23 @@ internal sealed class AutomaticAdvisor : IDisposable
 	public void DetachLevel()
 	{
 		if ( park != null )
+		{
 			park.EventRaised -= OnParkEvent;
+			park.Economy.Objectives.TimeShort -= OnChallengeTimeShort;
+		}
 		if ( guests != null )
 			guests.Pranked -= OnPrank;
 		guests = null;
+		if ( staffWorld != null )
+			staffWorld.MechanicOnTheWay -= OnMechanicOnTheWay;
+		staffWorld = null;
 		// Help still pending or speaking belongs to the windows of this park, which close without reporting.
 		if ( level != null )
 			foreach ( var message in AdvisorUiHelp.AllWindowMessages )
 				Controller.Withdraw( message, AdvisorClock );
 		park = null;
 		level = null;
+		CaptionSink = null;
 		presentation?.Kill();
 	}
 
@@ -127,6 +141,31 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
+	}
+
+	/// <summary>A mechanic set off for a broken-down ride: advice 70 reaches the advisor's queue at once.</summary>
+	// [BIN:TPW-EXE:0x004DA6C5 mechanic on the way] the mechanic update builds the advice record (0x0059B590) and queues it (0x0059A940) as the mechanic claims the ride; the record's arguments (his id, the ride's Info.Id) are not kept, as for every advice OpenTPW queues (GUEST-007)
+	internal void OnMechanicOnTheWay( int rideId, int mechanicId )
+	{
+		if ( level == null )
+			return;
+		var admission = Controller.Advise( AdvisorTables.MechanicOnTheWayMessage, GameTick, GameType, TutorialEnabled );
+		if ( admission is { Stored: true } )
+			Log.Trace( $"Advisor mechanic message for ride {rideId} (mechanic {mechanicId}): advice {AdvisorTables.MechanicOnTheWayMessage} {admission.Value.Eligibility} in slot {admission.Value.Slot}." );
+	}
+
+	/// <summary>
+	/// A running challenge's time is short (the warning of 0x4D21FD): the challenge message reaches the advisor at once, which queues advice 271 with the
+	/// challenge score. The challenge system posts it on every checked turn while it holds; the queue admits one pending copy and the repeat interval holds the rest back.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059B060 challenge message receiver] the advisor queues the advice id in +0xC of a category-25 message (0x0059B540, 0x0059B590, 0x0059A940)
+	internal void OnChallengeTimeShort( int challengeIndex )
+	{
+		if ( level == null )
+			return;
+		var admission = Controller.Advise( AdvisorTables.ChallengeTimeShortMessage, GameTick, GameType, TutorialEnabled );
+		if ( admission is { Stored: true } )
+			Log.Trace( $"Advisor challenge warning for challenge {challengeIndex}: advice {AdvisorTables.ChallengeTimeShortMessage} {admission.Value.Eligibility} in slot {admission.Value.Slot}." );
 	}
 
 	/// <summary>
@@ -262,15 +301,35 @@ internal sealed class AutomaticAdvisor : IDisposable
 		if ( !GameOptions.Current.Advisor )
 		{
 			presentation?.Kill();
-			Controller.Update( () => AdvisorClock, () => GameTick, _ => 0u );
+			Controller.Update( () => AdvisorClock, () => GameTick, responseId =>
+			{
+				PostCaption( responseId );
+				return 0u;
+			} );
 			return;
 		}
 		presentation?.Update();
 		Controller.Update( () => AdvisorClock, () => GameTick, Play );
 	}
 
+	/// <summary>
+	/// Where the caption of a chosen response goes: the entry of <c>TAG_SYSTEM.str</c> the response's tag shows (the park HUD posts it to the message tube); null posts none.
+	/// </summary>
+	internal Action<int>? CaptionSink { get; set; }
+
+	/// <summary>
+	/// A response is chosen to be said: its caption goes to the message tube, whether or not the advisor is heard (the speech switched off, the clip missing).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059B620 advisor caption] the player of the next response (0x0059A550) asks the speech (0x00599050, 0 when the advisor is off), then posts a category-24 message with the response's tag (field +0x1C of its row, 0x005997B0; 0x17F without a caption) to the tag system (0x00509BF0), which shows the tag's text in the message tube
+	internal void PostCaption( int responseId )
+	{
+		if ( AdvisorCaptionTable.For( responseId ) is { } caption )
+			CaptionSink?.Invoke( caption.TextEntry );
+	}
+
 	private uint? Play( int responseId )
 	{
+		PostCaption( responseId );
 		if ( presentationFailed || level == null )
 			return null;
 		try

@@ -184,5 +184,6 @@ public sealed class ParkEconomyRuntime
 	{
 		Economy.Litter.Cells = guests.Grid.Cells;
 		Economy.Litter.Disabled = guests.OnlineVisit;
+		Economy.OnlineVisit = guests.OnlineVisit;
 	}
 }

@@ -12,6 +12,16 @@ on:
         description: 'Mark as preview (not the latest download)'
         default: false
         type: boolean
+      commit:
+        description: 'Optional full commit SHA on main to build and tag (default: the selected ref). Used by the hourly preview train.'
+        required: false
+        default: ''
+        type: string
+      notes:
+        description: 'Optional extra release notes, added to the generated list of merged pull requests'
+        required: false
+        default: ''
+        type: string
 concurrency:
   group: release-${{ inputs.version || github.ref_name }}
   cancel-in-progress: false
@@ -23,12 +33,20 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      commit: ${{ steps.version.outputs.commit }}
     steps:
       - id: version
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
           PREVIEW: ${{ inputs.prerelease }}
+          REQUESTED_COMMIT: ${{ inputs.commit }}
         run: |
+          commit="${REQUESTED_COMMIT:-$GITHUB_SHA}"
+          if [[ ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo 'The commit must be a full lowercase SHA.' >&2
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
           version="${REQUESTED_VERSION:-$GITHUB_REF_NAME}"
           if [[ ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
             echo 'Use a version such as v0.7.2 or v0.7.2-preview.1.' >&2
@@ -39,6 +57,14 @@ jobs:
           if [[ "$version" == *-* ]]; then preview=true; fi
           echo "prerelease=$preview" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ steps.version.outputs.commit }}
+          fetch-depth: 0
+      - name: Require a requested commit to be on main
+        if: ${{ inputs.commit != '' }}
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor HEAD FETCH_HEAD || { echo 'The requested commit is not on main.' >&2; exit 1; }
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
@@ -63,6 +89,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.configure.outputs.commit }}
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
@@ -76,7 +104,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: natives
+    needs: [configure, natives]
     strategy:
       fail-fast: false
       matrix:
@@ -90,6 +118,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ needs.configure.outputs.commit }}
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9
         with:
           global-json-file: global.json
@@ -129,6 +159,7 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          ref: ${{ needs.configure.outputs.commit }}
           fetch-depth: 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -140,6 +171,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.configure.outputs.version }}
           RELEASE_PRERELEASE: ${{ needs.configure.outputs.prerelease }}
+          RELEASE_COMMIT: ${{ needs.configure.outputs.commit }}
+          RELEASE_EXTRA_NOTES: ${{ inputs.notes }}
         run: bash scripts/publish-release.sh release
       # A tag created by GITHUB_TOKEN does not trigger push workflows. Dispatch the exact
       # published tag explicitly; ordinary tag pushes already have their own image/deploy run.

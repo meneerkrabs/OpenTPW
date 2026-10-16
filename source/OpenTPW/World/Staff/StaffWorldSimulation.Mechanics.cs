@@ -71,7 +71,6 @@ public sealed partial class StaffWorldSimulation
 	/// reaches, which he claims and walks to; otherwise a patrol, else idle.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004DA5B0 mechanic search] 0x00506A40; too tired (0x00506680): "Too tired to fix rides"; the ride finder 0x004DAA90 (the object list from a cursor that moves one object on per search; rides broken down (state 1), upgrading (state 2) or with mRequestedService +0x64 that are no toilet; the claim +0x5E free or his; the smallest dx² + dy² from his cell, strictly smaller replaces) stores the ride at +0x218; a route to its access cell +0x36 claims it (0x004E01F0: +0x5E = him, +0x60 = the turn), posts the advisor's "on the way" message unless requested or upgrading, and sets state 12 (no speed bonus, 0x004DA370); without one 0x004F9490 patrols or he idles
-	// Approximation (ECON-022, registered at UpdateStaff): the advisor's "mechanic on the way" message 0x46 (0x0059B590 at 0x004DA672) is not posted
 	private void SearchMechanic( ParkEconomy economy, StaffMember member, long turn )
 	{
 		if ( StrikeOrRest( economy, member, turn ) )
@@ -85,12 +84,18 @@ public sealed partial class StaffWorldSimulation
 			if ( ride != null && RideAccess( ride.Id ) is { } access && Route( member, access, GuestWander.CentreByte, GuestWander.CentreByte ) )
 			{
 				economy.Claim( ride, member );
+				// [BIN:TPW-EXE:0x004DA6A5 mechanic on the way] a ride that is neither called for (mRequestedService 0x004E03D0) nor upgrading (0x004E03E0) puts the advice 0x46 (70, "a mechanic is on his way") in the advisor's queue (0x0059B590, 0x0059A940)
+				if ( !ride.MaintenanceRequested && ParkEconomy.ObjectState( ride ) != RideObjectStates.Upgrading )
+					MechanicOnTheWay?.Invoke( ride.Id, member.Id );
 				SetJob( economy, member, StaffJob.ToRide, turn );
 				return;
 			}
 		}
 		SetJob( economy, member, Patrol( economy, member, cell ) ? StaffJob.Patrol : StaffJob.Idle, turn );
 	}
+
+	/// <summary>A mechanic set off for a ride that broke down (the ride's economy id, the mechanic's id): the advisor's advice 70.</summary>
+	public event Action<int, int>? MechanicOnTheWay;
 
 	/// <summary>A ride's own cell (its thing's position), null when the level does not know it.</summary>
 	private (int X, int Y)? RideCell( int instanceId ) => RideCells?.Invoke( instanceId ) ?? jobAccess( instanceId );

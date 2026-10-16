@@ -186,7 +186,7 @@ class StaticFindings(unittest.TestCase):
         calendar = show('source/OpenTPW/Economy/ParkCalendar.cs')
         self.assertIn('[BIN:STP-PPC:0x101C22E0 scheduler]', calendar)
         self.assertIn('[BIN:STP-PPC:0x100E4394 calendar conversion]', calendar)
-        self.assertIn('[APPROX:ECON-001]', calendar)
+        self.assertIn('[EXT:fixed-60hz-clock]', calendar)
         turn_ms = int(re.search(r'TurnMilliseconds = (\d+);', calendar).group(1))
         per_turn = eval(re.search(r'SecondsPerTurn = ([\d /]+);', calendar).group(1))  # "15000 / 4"
         ticks = 30 * 60 * 60

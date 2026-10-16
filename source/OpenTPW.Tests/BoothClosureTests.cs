@@ -66,6 +66,27 @@ public class BoothClosureTests
 		Assert.IsTrue( waiting.TimeInParkSeconds is not null, "the admission was taken" );
 	}
 	[TestMethod]
+	public void APaidVisitorWaitsNoLongerThanTheGateIsShutAndIsSentHome()
+	{
+		// tp.exe's state 3 (0x004FF7F0) walks a paid guest in only while the entrance gate's script variable 1 is 1 (0x0051A290), else it takes the way home as at a closed park
+		var gate = new Gate();
+		var simulation = Simulation( gate );
+		var open = true;
+		simulation.EntranceGateOpen = () => open;
+		Guest? waiting = null;
+		for ( var tick = 0; tick < 90 * 60 && waiting == null; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			waiting = simulation.Guests.FirstOrDefault( guest => guest.State == GuestState.AtTicketBooth );
+		}
+		Assert.IsNotNull( waiting );
+		open = false;
+		for ( var tick = 0; tick < 30 * 60 && waiting.State == GuestState.AtTicketBooth; tick++ )
+			simulation.Tick( GuestSnapshotTests.Tick );
+		Assert.IsTrue( waiting.State is GuestState.LeavingPark or GuestState.CrossingRoadHome, $"a paid guest at a shut gate goes home ({waiting.State})" );
+	}
+
+	[TestMethod]
 	public void ABoothGuestPaysNothingOnceTheParkIsBankrupt()
 	{
 		// tp.exe's bankruptcy sets world state 4, which stops the per-turn thing loop (0x516380, ECON-030): no guest pays any more

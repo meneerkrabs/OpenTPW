@@ -26,6 +26,45 @@ public class PathLinkWriterTests
 
 	private static void Type( ParkCellMap cells, int x, int y, byte type ) => cells.SetType( x, y, type );
 
+	/// <summary>A 4 x 4 attribute map (file layout: column fastest, <c>cells[x * 4 + y]</c>) with the InitialPath bit (0x08) on the given cells.</summary>
+	private static MapFile InitialPathMap( params (int X, int Y)[] initial )
+	{
+		var cells = new byte[16];
+		foreach ( var (x, y) in initial )
+			cells[x * 4 + y] = 0x08;
+		var data = new byte[36 + 8 + 28 + cells.Length + 8];
+		"TP2M"u8.CopyTo( data );
+		"Theme Park 2 Attribute Map File"u8.CopyTo( data.AsSpan( 4 ) );
+		"MAP "u8.CopyTo( data.AsSpan( 36 ) );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( 40 ), (uint)(28 + cells.Length) );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( 44 ), 4 );
+		System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian( data.AsSpan( 48 ), 4 );
+		cells.CopyTo( data, 72 );
+		"END "u8.CopyTo( data.AsSpan( 72 + cells.Length ) );
+		return new MapFile( new System.IO.MemoryStream( data ) );
+	}
+
+	[TestMethod]
+	public void MapInitLinksInitialPathCellsInIndexOrderThroughTheWriter()
+	{
+		// [BIN:TPW-EXE:0x004D7F3D] cells are initialised in index order and each is linked with mode 1 (0x53653B) against the cells before it, so a 2 x 2 block
+		// gets cardinal links only toward path cells, and its diagonals once the block's last cell is set.
+		var cells = ParkCellMap.FromOriginal( InitialPathMap( (1, 1), (2, 1), (1, 2), (2, 2) ), null );
+		Assert.AreEqual( 0x1C, cells.LinksAt( 1, 1 ), "+X, +Y and the +X+Y corner" );
+		Assert.AreEqual( 0x70, cells.LinksAt( 2, 1 ), "−X, +Y and the −X+Y diagonal the last cell added" );
+		Assert.AreEqual( 0x07, cells.LinksAt( 1, 2 ), "−Y, +X and the +X−Y diagonal the last cell added" );
+		Assert.AreEqual( 0xC1, cells.LinksAt( 2, 2 ), "−Y, −X and the −X−Y corner" );
+		Assert.AreEqual( 0, cells.LinksAt( 0, 0 ) );
+	}
+
+	[TestMethod]
+	public void MapInitDoesNotLinkAnInitialPathCellTowardAGapOrANeighbourThatIsNotPath()
+	{
+		var cells = ParkCellMap.FromOriginal( InitialPathMap( (1, 1), (3, 1) ), null );
+		Assert.AreEqual( 0, cells.LinksAt( 1, 1 ), "no path neighbour, no link (the old import linked all four)" );
+		Assert.AreEqual( 0, cells.LinksAt( 3, 1 ) );
+	}
+
 	[TestMethod]
 	public void ASquareOfPathGetsEveryDiagonalBothWays()
 	{

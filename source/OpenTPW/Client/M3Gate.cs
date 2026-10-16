@@ -123,7 +123,7 @@ public static class M3Gate
 	/// ticks of the 60 Hz <see cref="FixedStepClock"/> that drives guests, scripts and the economy (one economy
 	/// tick per fixed tick at <see cref="GameSpeed.Normal"/>).
 	/// </summary>
-	// [EXT:m3-gate-minute] the M3 gate's "in-game minute" is OpenTPW's harness unit: 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute; the original has no gate and paces play by scaled real time (OpenTPW samples its 60 Hz ticks into park turns, ECON-001)
+	// [EXT:m3-gate-minute] the M3 gate's "in-game minute" is OpenTPW's harness unit: 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute; the original has no gate and paces play by scaled real time (OpenTPW samples its 60 Hz ticks into park turns, EXT:fixed-60hz-clock)
 	// [BIN:TPW-EXE:0x0054F668 park turn cadence] the main loop 0x0054E360 adds 31 ms per substep (0x0054F4C4) and runs a park turn when the substep counter 0x00877D34 & 7 == 0, one turn per 248 ms
 	// [BIN:TPW-EXE:0x004F8260 park date] the date is the start plus turn × [calendar +0x1C] / 4 seconds (__allmul, __alldiv, × 10,000,000), and the constructor 0x004F7E80 sets the rate to 15,000 (0x004F7EA9), so one turn is 3,750 park-clock seconds
 	public static long TicksForMinutes( double minutes ) => (long)Math.Round( minutes * 60 * FixedStepClock.TicksPerSecond );
@@ -138,7 +138,7 @@ public static class M3Gate
 		["parkClockSecondsPerTurn"] = ParkCalendar.SecondsPerTurn,
 		["parkClockDays"] = ParkCalendar.DayIndex( ticks ),
 		["parkDateAtEnd"] = ParkCalendar.ToDate( ticks ).ToString(),
-		["sources"] = "EXT:m3-gate-minute; ParkCalendar (BIN:TPW-EXE:0x0054F668 turn every 8th 31 ms substep, 0x004F8260 3,750 s per turn; Mac BIN:STP-PPC:0x101C22E0, 0x100E4394); APPROX:ECON-001 (60 Hz ticks sampled into turns)"
+		["sources"] = "EXT:m3-gate-minute; ParkCalendar (BIN:TPW-EXE:0x0054F668 turn every 8th 31 ms substep, 0x004F8260 3,750 s per turn; Mac BIN:STP-PPC:0x101C22E0, 0x100E4394); EXT:fixed-60hz-clock (60 Hz ticks sampled into turns)"
 	};
 
 	public static M3GateReport Run( M3GateOptions options )
@@ -1246,7 +1246,7 @@ internal sealed class M3GateRun
 	/// (<see cref="QueueWalkTurns"/>). Each head is also held to its own remaining walk where that is smaller
 	/// (<see cref="HeadNotReadyLimit"/>).
 	/// </summary>
-	// [APPROX:GATE-006] the walk term N x C + 2 x w2 rests on C = 27 from a bounded enumeration of tp.exe's walk as OpenTPW ports it (WALK-002, WALK-003, WALK-009), not on a proof for the original; it is looser than the retired GATE-005 check (owner decision 2026-10-10) — evidence needed: the corner branches, edge flags and route search of the original traced, then C re-derived
+	// [APPROX:GATE-006] the walk term N x C + 2 x w2 rests on C = 27 from a bounded enumeration of tp.exe's walk as OpenTPW ports it (WALK-003, WALK-005, WALK-009), not on a proof for the original; it is looser than the retired GATE-005 check (owner decision 2026-10-10) — evidence needed: the neighbour query order and the edge flags of the original traced, then C re-derived
 	internal static (long Turns, string Derivation) HeadNotReadyBound( int queueCells )
 	{
 		var cells = Math.Max( 1, queueCells );
@@ -1359,7 +1359,7 @@ internal sealed class M3GateRun
 	/// per cell (25 crossings 358). Under the first enumeration over OpenTPW's former per-cell search C was 9.
 	/// Holds under W2 (the guest is at least 15 updates old).
 	/// </summary>
-	// [APPROX:GATE-006] C = 27 bounds tp.exe's walk as OpenTPW ports it, an enumeration and not a proof: the corner branches of avoid_walls (WALK-002) and the neighbour query order of the separation (WALK-003) are not matched to the instruction, and the enumeration puts the neighbours' cells as the only blockers — evidence needed: those traced, then C re-derived
+	// [APPROX:GATE-006] C = 27 bounds tp.exe's walk as OpenTPW ports it, an enumeration and not a proof: avoid_walls' corner branches are ported (WALK-002 is retired) but the neighbour query order of the separation (WALK-003) is not matched to the instruction, and the enumeration puts the neighbours' cells as the only blockers — evidence needed: those traced, then C re-derived
 	internal const long QueueCellWalkTurns = 27;
 
 	/// <summary>One queue walk crossing <paramref name="cells"/> cells to a slot: k × C + w₂ updates.</summary>

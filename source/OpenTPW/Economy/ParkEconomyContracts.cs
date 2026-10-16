@@ -88,7 +88,9 @@ public enum ParkRecordKind
 	/// <summary>Kept only so older saves' record lists still read; type 19 now reads the coasters' counted sections (tp.exe 0x4d1660).</summary>
 	CoasterLoops,
 	GokartExcitement,
+	/// <summary>Kept only so older saves' record lists still read; challenge type 15 counts the live karts' crossings (tp.exe 0x4cc4b0).</summary>
 	KartCrossroads,
+	/// <summary>Kept only so older saves' record lists still read; challenge type 21 counts the live track rides' sections (tp.exe 0x4cc5d0).</summary>
 	KartSections,
 	WaterLength,
 	CellsOwned,

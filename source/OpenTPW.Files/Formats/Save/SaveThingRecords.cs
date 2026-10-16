@@ -11,16 +11,14 @@ public readonly record struct SaveThingBase( ushort X, ushort Y, ushort MapChild
 public readonly record struct SaveTimestamp( int Year, int Month, int Day, int Hour, int Minute, int Second );
 
 /// <summary>
-/// One model-3 thing (ride, shop, sideshow, feature, gate, traffic lights or bus): serializer 0xdaf04
-/// (docs/TPWS-PAYLOAD.md, "Attraction records"). <see cref="Offset"/> is the body offset, <see cref="Length"/>
-/// the body length. <see cref="PositionX"/>/<see cref="PositionY"/> are the base thing's X/Y in 1/256 cell units;
-/// for buildable objects the cell equals the RideSystem record cell, fixed items store 128, 128.
-/// <see cref="StateOfRepair"/>, <see cref="LifeGauge"/> and <see cref="Gauge48"/> are the three floats the original
-/// saves as whole numbers 0–255. <see cref="TotalCosts"/>/<see cref="TotalTakings"/> are read as signed 32-bit
-/// values; their sign convention is unverified. Kept raw (meaning not traced): the timestamp's two trailing words,
-/// <c>mFlags</c>, the script/track handles, the 24 bytes from <c>mTopLeft</c> to <c>mUpgradeParent</c>, the six history
-/// buffers, <c>mPersonBeingLoaded</c>, <c>mAmountOfSpecialIngredient</c>, <c>mRequestedService</c>,
-/// <c>mTimeMarkedForMaintenance</c> and <c>mUpgradeBalloonSprite</c>; <see cref="State"/> is the raw state enum.
+/// One model-3 thing (ride, shop, sideshow, feature, gate, traffic lights or bus): tp.exe's attraction serializer <c>0x004DB7D0</c>
+/// (docs/TPWS-PAYLOAD.md, "Attraction records"). <see cref="Offset"/> is the body offset, <see cref="Length"/> the body length.
+/// <see cref="PositionX"/>/<see cref="PositionY"/> are the base thing's X/Y in 1/256 cell units; for buildable objects the cell equals the
+/// RideSystem record cell, fixed items store 128, 128. The loader puts the three floats at thing +0x4C (<see cref="Gauge48"/>, the Mac's +0x48),
+/// +0x48 (<see cref="LifeGauge"/>) and +0x44 (<see cref="StateOfRepair"/>); the original saves each as a whole number 0–255.
+/// <see cref="TotalCosts"/>/<see cref="TotalTakings"/> are read as signed 32-bit values (+0x184/+0x180; the panel's total profit 0x004E1C60 is their
+/// difference). <see cref="State"/> is <c>mState</c> (+0x19C) and the other properties name the remaining fields; only <c>mAmountOfSpecialIngredient</c>
+/// and the time stamp's two trailing words are skipped.
 /// </summary>
 public readonly record struct SaveAttraction(
 	int Offset, int Id, SaveThingBase Base, int InfoId, int Angle, SaveTimestamp Timestamp,
@@ -59,29 +57,33 @@ public readonly record struct SaveAttraction(
 			throw new InvalidDataException( $"Save attraction thing {id} has an invalid game-time stamp {stamp[0]}-{stamp[1]}-{stamp[2]} {stamp[3]}:{stamp[4]}:{stamp[5]}." );
 		var timestamp = new SaveTimestamp( (int)stamp[0], (int)stamp[1], (int)stamp[2], (int)stamp[3], (int)stamp[4], (int)stamp[5] );
 		var meshInstance = reader.U32();
-		reader.Skip( 2 );
+		var flags = reader.U16();
 		var line1 = new char[NameCharacters];
 		var line2 = new char[NameCharacters];
 		for ( var index = 0; index < NameCharacters; index++ )
 			(line1[index], line2[index]) = ((char)reader.U16(), (char)reader.U16());
-		// mRideScriptHandle, mTrackRideHandle, then mState.
-		reader.Skip( 8 );
+		var (scriptHandle, trackHandle) = (reader.U32(), reader.U32());
 		var state = reader.U32();
 		if ( state > ushort.MaxValue )
 			throw new InvalidDataException( $"Save attraction thing {id} has state {state}." );
-		reader.Skip( 24 );
-		SkipHistory( ref reader, id );
-		SkipHistory( ref reader, id );
+		var (topLeft, entryPos, next, assigned, backOfQueue) = (reader.U16(), reader.U16(), reader.U16(), reader.U16(), reader.U16());
+		var canLoad = reader.U32();
+		var (exitPos, firstInQueue) = (reader.U16(), reader.U16());
+		var trackValid = reader.U32();
+		var upgradeParent = reader.U16();
+		var histories = new SaveAttractionHistory[HistoryBuffers];
+		histories[0] = ReadHistory( ref reader, id );
+		histories[1] = ReadHistory( ref reader, id );
 		var customers = reader.U32();
-		SkipHistory( ref reader, id );
+		histories[2] = ReadHistory( ref reader, id );
 		var walkAways = reader.U32();
-		SkipHistory( ref reader, id );
-		SkipHistory( ref reader, id );
-		SkipHistory( ref reader, id );
+		histories[3] = ReadHistory( ref reader, id );
+		histories[4] = ReadHistory( ref reader, id );
+		histories[5] = ReadHistory( ref reader, id );
 		var capacity = reader.U8();
 		var duration = reader.U8();
 		var speed = reader.U32();
-		reader.Skip( 2 );
+		var personBeingLoaded = reader.U16();
 		var costOfGoods = reader.I32();
 		var quality = reader.I32();
 		var chance = reader.I32();
@@ -97,28 +99,69 @@ public readonly record struct SaveAttraction(
 		var repair = reader.F32();
 		if ( !IsGauge( gauge48 ) || !IsGauge( lifeGauge ) || !IsGauge( repair ) )
 			throw new InvalidDataException( $"Save attraction thing {id} has a gauge outside 0–{MaximumGauge}." );
-		reader.Skip( 8 );
+		var (requested, marked) = (reader.U32(), reader.U32());
 		var costs = reader.I32();
 		var takings = reader.I32();
-		reader.Skip( 4 );
+		var balloonSprite = reader.U32();
 		var level = reader.U8();
 		if ( level > MaximumUpgradeLevel )
 			throw new InvalidDataException( $"Save attraction thing {id} has upgrade level {level}." );
 		return new SaveAttraction( offset, id, thingBase, infoId, (int)angle, timestamp, meshInstance, Text( line1 ), Text( line2 ),
 			(int)state, capacity, duration, speed, costOfGoods, quality, chance, (int)price, (int)queueCells, customers, walkAways,
-			costs, takings, gauge48, lifeGauge, repair, level, reader.Position - offset );
+			costs, takings, gauge48, lifeGauge, repair, level, reader.Position - offset )
+		{
+			Flags = flags, RideScriptHandle = scriptHandle, TrackRideHandle = trackHandle, TopLeft = topLeft, EntryPos = entryPos, Next = next,
+			AssignedStaffMember = assigned, BackOfQueue = backOfQueue, CanLoad = canLoad, ExitPos = exitPos, FirstInQueue = firstInQueue,
+			IsTrackRideValid = trackValid, UpgradeParent = upgradeParent, Histories = histories, PersonBeingLoaded = personBeingLoaded,
+			RequestedService = requested, TimeMarkedForMaintenance = marked, UpgradeBalloonSprite = balloonSprite,
+		};
 	}
 
-	/// <summary>History buffer: u32 head, u32 count, u8 flag, u32 first, then <c>count</c> u32 entries.</summary>
-	private static void SkipHistory( ref SaveFieldReader reader, int id )
+	/// <summary><c>mFlags</c> (+0x32): the type's flag word the constructor builds (bit 0 relief, bit 1 rest area, bit 2 choosable).</summary>
+	public ushort Flags { get; init; }
+	public uint RideScriptHandle { get; init; }
+	public uint TrackRideHandle { get; init; }
+	/// <summary><c>mTopLeft</c>, <c>mEntryPos</c> and <c>mExitPos</c> (+0x34, +0x36, +0x38): cell ids of the footprint corner, the entrance and the exit.</summary>
+	public ushort TopLeft { get; init; }
+	public ushort EntryPos { get; init; }
+	public ushort ExitPos { get; init; }
+	/// <summary><c>mNext</c> (+0xC): the next attraction thing of the object list.</summary>
+	public ushort Next { get; init; }
+	/// <summary><c>mAssignedStaffMember</c> (+0x5E): the staff thing that claimed the object (0x004E01F0), 0 when none.</summary>
+	public ushort AssignedStaffMember { get; init; }
+	/// <summary><c>mBackOfQueue</c> (+0x3A) and <c>mFirstInQ</c> (+0x3C): guest thing ids of the queue's ends.</summary>
+	public ushort BackOfQueue { get; init; }
+	public ushort FirstInQueue { get; init; }
+	/// <summary><c>mCanLoad</c> (+0x68): the open word; SetState (0x004E0E60) clears it for states 1, 2 and 4.</summary>
+	public uint CanLoad { get; init; }
+	public uint IsTrackRideValid { get; init; }
+	public ushort UpgradeParent { get; init; }
+	/// <summary>
+	/// The six 30-day rings in serializer order: costs (+0xF8), takings (+0x70), customers (+0x1A8), walk-aways (+0x230), visits (+0x2B8) and the
+	/// visits' averaged happiness change (+0x340); each ring's current value rolls into the ring on the day message 0xB (0x004DD320).
+	/// </summary>
+	public IReadOnlyList<SaveAttractionHistory> Histories { get; init; } = Array.Empty<SaveAttractionHistory>();
+	/// <summary><c>mPersonBeingLoaded</c> (+0x6C): the guest called forward, 0 when none.</summary>
+	public ushort PersonBeingLoaded { get; init; }
+	/// <summary><c>mRequestedService</c> (+0x64): the player's maintenance call (0x004DFE30).</summary>
+	public uint RequestedService { get; init; }
+	/// <summary><c>mTimeMarkedForMaintenance</c> (+0x60): the turn the claim was made (0x004E01F0).</summary>
+	public uint TimeMarkedForMaintenance { get; init; }
+	public uint UpgradeBalloonSprite { get; init; }
+
+	/// <summary>History ring (0x004CED70 / 0x004CEE50): u32 <c>mCurrentEntry</c>, u32 <c>mNumEntries</c>, u8 <c>mWrappedAround</c>, u32 <c>mTemp</c>, then <c>count</c> u32 <c>mData[i]</c>.</summary>
+	private static SaveAttractionHistory ReadHistory( ref SaveFieldReader reader, int id )
 	{
 		var head = reader.U32();
 		var count = reader.U32();
 		var flag = reader.U8();
-		reader.Skip( 4 );
+		var current = reader.I32();
 		if ( head > MaximumRingEntries || count > MaximumRingEntries || flag > 1 )
 			throw new InvalidDataException( $"Save attraction thing {id} has a history buffer with head {head}, count {count}, flag {flag}." );
-		reader.Skip( (int)count * 4 );
+		var data = new int[count];
+		for ( var index = 0; index < data.Length; index++ )
+			data[index] = reader.I32();
+		return new SaveAttractionHistory( (int)head, flag != 0, current, data );
 	}
 
 	private static bool IsGauge( float value ) => float.IsFinite( value ) && value >= 0f && value <= MaximumGauge;
@@ -129,6 +172,9 @@ public readonly record struct SaveAttraction(
 		return new string( characters, 0, end < 0 ? characters.Length : end );
 	}
 }
+
+/// <summary>One 30-day ring of an attraction: the entry last written, whether it has wrapped, the running value (<c>mTemp</c>) and the entries.</summary>
+public sealed record SaveAttractionHistory( int CurrentEntry, bool WrappedAround, int Current, IReadOnlyList<int> Entries );
 
 /// <summary>
 /// Staff suffix (105 bytes) of models 4–8, in the order of tp.exe's staff serializer <c>0x00504DE0</c>: <c>mCurrentPayGrade</c> (+0x1E4), happiness

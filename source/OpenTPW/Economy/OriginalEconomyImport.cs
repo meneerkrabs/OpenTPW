@@ -187,11 +187,13 @@ public sealed class OriginalEconomyImport
 		var fixedItems = 0;
 		var unmatched = 0;
 		var notImported = new List<string>();
+		var adjusted = new List<string>();
 		// The order matches ParkObjects.ImportOriginal (placed, unverified footprints, fixed items), which Level.ConnectObjectsToEconomy pairs by Info.Id
 		foreach ( var record in save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ) )
 		{
 			var matched = save.FindAttraction( record );
 			// [BIN:STP-PPC:0x100DAD90 object purchase] thing +20 is the clock's stamp at the purchase; the saved attraction time stamp is taken as it, and the saved customer count as the use word +412 (raised with the history record at +420 when a guest leaves, 0x100EAA00 → 0x100E1B44), so an imported used or old object never gets the unused first-30-days scrap refund
+			// [BIN:TPW-EXE:0x004DC89E attraction loader stamp] on the PC the saved date-time is the stamp at +0x18 and the count mNumCustomers (+0x1A0) that the scrap rule 0x004E2290 reads
 			var state = economy.RegisterExisting( record.InfoId, matched is { } stamped ? SavedBuildTick( stamped.Timestamp ) : null, matched is { } counted ? counted.CustomerCount : 0 );
 			if ( record.IsFixedItem )
 				fixedItems++;
@@ -204,6 +206,7 @@ public sealed class OriginalEconomyImport
 			}
 			things.TryAdd( attraction.Id, state );
 			// [BIN:STP-PPC:0x100DAF04 attraction serializer] mPricePerUse, mCostOfGoods, mUpgradeLevel and the gauges at +0x40 (state of repair) and +0x44 (life gauge)
+			// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the PC loader puts the three floats at +0x4C, +0x48 (life gauge) and +0x44 (state of repair) and clamps mPricePerUse to 0–500
 			if ( attraction.UpgradeLevel <= 2 && attraction.StateOfRepair <= 100 && attraction.LifeGauge <= 100 && attraction.CostOfGoods >= 0 )
 			{
 				state.Price = attraction.PricePerUse;
@@ -211,20 +214,21 @@ public sealed class OriginalEconomyImport
 				state.Level = attraction.UpgradeLevel;
 				state.Repair = attraction.StateOfRepair;
 				state.LifeGauge = attraction.LifeGauge;
+				ImportAttractionState( economy, attraction, state, adjusted );
 			}
 			else
 				notImported.Add( $"{record.InfoId} (level {attraction.UpgradeLevel}, repair {attraction.StateOfRepair}, life {attraction.LifeGauge}, cost of goods {attraction.CostOfGoods})" );
 		}
-		evidence.Add( $"Registered {objects} placed objects ({save.UnresolvedObjects.Count} with an unverified footprint{(save.UnresolvedObjects.Count == 0 ? "" : $": {string.Join( ", ", save.UnresolvedObjects.Select( item => $"{item.InfoId} at ({item.X}, {item.Y}) {item.Width}x{item.Height} turned {item.Rotation}" ) )}")}) and {fixedItems} fixed items without charge; {objects + fixedItems - unmatched - notImported.Count} took their attraction's price, cost of goods, upgrade level, state of repair and life gauge." );
+		evidence.Add( $"Registered {objects} placed objects ({save.UnresolvedObjects.Count} with an unverified footprint{(save.UnresolvedObjects.Count == 0 ? "" : $": {string.Join( ", ", save.UnresolvedObjects.Select( item => $"{item.InfoId} at ({item.X}, {item.Y}) {item.Width}x{item.Height} turned {item.Rotation}" ) )}")}) and {fixedItems} fixed items without charge; {objects + fixedItems - unmatched - notImported.Count} took their attraction's price, cost of goods, upgrade level, state of repair, life gauge, state, chance of winning, total profit and maintenance call." );
 		if ( unmatched != 0 || notImported.Count != 0 )
 			evidence.Add( $"{unmatched} objects have no matching attraction thing; outside OpenTPW's ranges and kept at their defaults: {string.Join( ", ", notImported )}." );
-		// [APPROX:SAVE-006] an attraction's saved state enum, chance of winning, third gauge, histories, totals, name lines, operating capacity, duration and speed, quality of goods, queue size, walk-away counts and mesh instance ID are not imported (the customer count is taken as the use word +412 and the time stamp as the build time +20, unverified) (open/broken state comes from its script, the queue from the laid queue cells) — evidence needed: the attraction state values, the chance-of-winning/losing relation and OpenTPW counterparts of the operating and count fields
-		evidence.Add( $"[APPROX:SAVE-006] Not imported for {save.Attractions.Count} attraction things: state ({string.Join( ", ", save.Attractions.Select( item => item.State ).Distinct().Order() )}), chance of winning, third gauge, histories, totals, name lines, operating capacity, duration and speed, quality of goods, queue size, walk-away counts, mesh instance ID (the customer count is the use count and the time stamp the build time, evidence needed: that the save's time stamp is thing +20 and its customer count +412)." );
+		foreach ( var line in adjusted )
+			evidence.Add( $"Attraction value adjusted on import: {line}." );
+		// [BIN:TPW-EXE:0x004E1670 walk-away count] mNumWalkAways (+0x1A4) is raised there (from 0x005006B0) and otherwise touched only by the constructor (0x004DB17B) and the serializer: nothing reads it, so it needs no import
+		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} need no import (nothing reads mNumWalkAways)." );
+		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a quality of goods other than the built 50 (no quality control, UI-024), a closed open word of a working attraction (mCanLoad, the park door opens it), the six daily 30-day rings (OpenTPW keeps this and last month), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (OpenTPW releases a claim at once, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the readers of the daily rings and of +0x4C
 		foreach ( var item in save.Attractions )
-		{
-			var stamp = item.Timestamp;
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: state {item.State}, chance of winning {item.ChanceOfWinning}, third gauge {item.Gauge48}, total costs {item.TotalCosts}, total takings {item.TotalTakings}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, quality of goods {item.QualityOfGoods}, queue size {item.QueueSizeInCells} cells, customers {item.CustomerCount}, walk-aways {item.WalkAwayCount}, time stamp {stamp.Year:D4}-{stamp.Month:D2}-{stamp.Day:D2} {stamp.Hour:D2}:{stamp.Minute:D2}:{stamp.Second:D2}, mesh instance {item.MeshInstanceId}." );
-		}
+			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, quality of goods {item.QualityOfGoods}, open word {item.CanLoad}, third gauge {item.Gauge48}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", daily rings {string.Join( "/", item.Histories.Select( ring => ring.Current ) )} (today), claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
 		return (objects, fixedItems, things);
 	}
 
@@ -330,6 +334,48 @@ public sealed class OriginalEconomyImport
 		else
 			evidence.Add( $"[APPROX:SAVE-004] The save's hiring pool does not read before the calendar ({save.World.OpaqueMacroAiLength} macro-AI bytes); {economy.Staff.Candidates.Count} candidates were drawn." );
 		return imported;
+	}
+
+	/// <summary>
+	/// An attraction's state word, chance of winning, total profit and maintenance call. State 1 (broken down) and 4 (condemned: its life gauge
+	/// truncated to 0) break the object down; 2 (an upgrade requested, 0x004E0050) waits for a mechanic to install the next level, whose cost is
+	/// debited then; 0 is a working choosable object and 3 one that is not choosable (the constructor's SetState at 0x004DB4FB). The chance of winning
+	/// is 100 − InitChanceOfLoosing (the constructor's 0x004DB3A1), the total profit takings − costs (0x004E1C60). A state that does not fit the type is
+	/// reported and the object kept working.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E0E60 attraction SetState] states 0 and 3 only store the word; 1, 2 and 4 close the object (open word +0x68 = 0, called guest cleared, script variable 6 = 1, the queue dismissed by 0x004E0450) first; any other value logs "Unknown state in CObject::SetState"
+	// [BIN:TPW-EXE:0x004E16B0 takings] a payment adds to mTotalTakings (+0x180) and today's takings (+0x70); [BIN:TPW-EXE:0x004E1920 costs] a cost to mTotalCosts (+0x184) and today's costs (+0xF8)
+	// [BIN:TPW-EXE:0x004E2290 scrap value] the scrap rule reads the stamp at +0x18 (the loader's date-time, 0x004DC89E) against the clock and mNumCustomers (+0x1A0, raised by 0x004E1690 at every visit's end 0x004FD970)
+	private static void ImportAttractionState( ParkEconomy economy, SaveAttraction attraction, ParkObjectState state, List<string> adjusted )
+	{
+		var what = $"attraction thing {attraction.Id} (Info.Id {attraction.InfoId})";
+		economy.Catalog.TryGet( attraction.InfoId, out var info );
+		if ( attraction.ChanceOfWinning is >= 0 and <= 100 )
+			state.ChanceOfLosingPercent = 100 - attraction.ChanceOfWinning;
+		else
+			adjusted.Add( $"{what} chance of winning {attraction.ChanceOfWinning} is outside 0-100, kept at the type's {100 - state.ChanceOfLosingPercent}" );
+		state.TotalProfit = (long)attraction.TotalTakings - attraction.TotalCosts;
+		state.MaintenanceRequested = attraction.RequestedService != 0;
+		var choosable = info?.IsChoosable ?? false;
+		switch ( attraction.State )
+		{
+			case 0 when choosable:
+			case 3 when !choosable:
+				break;
+			case 1 or 4 when choosable:
+				state.IsBrokenDown = true;
+				// OpenTPW tells state 4 from 1 by the life gauge's byte (ParkEconomy.ObjectState), as the ride update 0x004E14E0 sets it
+				if ( (attraction.State == 4) != (RideBreakdownRules.GaugeByte( attraction.LifeGauge ) == 0) )
+					adjusted.Add( $"{what} state {attraction.State} with life gauge {attraction.LifeGauge} is imported broken down; OpenTPW reads it as state {ParkEconomy.ObjectState( state )}" );
+				break;
+			case 2 when choosable && info!.Upgrades.Count > state.Level + 1:
+				state.PendingLevel = state.Level + 1;
+				state.UpgradeCostDue = true;
+				break;
+			default:
+				adjusted.Add( $"{what} state {attraction.State} does not fit a {(choosable ? "choosable" : "not choosable")} type{(attraction.State == 2 ? " with a next level" : "")}, imported working" );
+				break;
+		}
 	}
 
 	/// <summary>

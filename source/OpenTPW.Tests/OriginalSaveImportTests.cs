@@ -213,10 +213,11 @@ public class OriginalSaveImportTests
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
 		{
-			foreach ( var value in new[] { "state ", "chance of winning ", "third gauge ", "total costs ", "total takings ", "name \"", "operating capacity ", "duration ", "speed ",
-				"quality of goods ", "queue size ", "customers ", "walk-aways ", "time stamp ", "mesh instance " } )
+			foreach ( var value in new[] { "operating capacity ", "duration ", "speed ", "quality of goods ", "open word ", "third gauge ", "name \"", "daily rings ",
+				"claim by thing ", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}
+		StringAssert.Contains( Line( "Attraction walk-away counts " ), "need no import" );
 		StringAssert.Contains( Line( "Staff jobs-done counts " ), "need no import" );
 		var hq = Line( "[APPROX:SAVE-009]" );
 		foreach ( var value in new[] { "force strike ", "picked up ", "trained " } )

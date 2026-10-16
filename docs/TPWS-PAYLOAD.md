@@ -238,12 +238,12 @@ and bus. Its body is 1,091 bytes while the history buffers hold 30 entries:
 | 8 × 4 | `tv[t]`: game-time stamp year, month, day, hour, minute, second, two opaque values |
 | 4 + 2 | `MeshInstanceID` (110–125 in Easymode), `mFlags` |
 | 33 × (2 + 2) | `mNameA[i]`, `mNameB[i]` interleaved: the two UTF-16 sign lines ("Belly"/"Bounce", gates "LOST"/"Kingdom") |
-| 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` |
-| 24 | `mTopLeft`, `mEntryPos`, `mNext`, `mAssignedStaffMember`, `mBackOfQueue` (u16), `mCanLoad` (u32), `mExitPos`, `mFirstInQ` (u16), `mIsTrackRideValid` (u32), `mUpgradeParent` (u16) |
-| 6 history buffers | each `u32` head, `u32` count, `u8` flag, `u32` first, then count × `u32`; `mNumCustomers` follows the second buffer and `mNumWalkAways` the third |
+| 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` (+0x19c: 0 working, 1 broken down, 2 upgrade requested, 3 not choosable, 4 condemned; SetState `0x4e0e60` closes the object for 1, 2 and 4) |
+| 24 | `mTopLeft`, `mEntryPos`, `mNext`, `mAssignedStaffMember` (+0x5e, the claiming staff thing), `mBackOfQueue` (u16), `mCanLoad` (u32, the open word +0x68), `mExitPos`, `mFirstInQ` (u16), `mIsTrackRideValid` (u32), `mUpgradeParent` (u16) |
+| 6 history buffers | each `u32` `mCurrentEntry`, `u32` `mNumEntries`, `u8` `mWrappedAround`, `u32` `mTemp` (today's running value), then count × `u32`; `mNumCustomers` (+0x1a0) follows the second buffer and `mNumWalkAways` (+0x1a4) the third. The rings are, in order, the daily costs (+0xf8), takings (+0x70), customers (+0x1a8), walk-aways (+0x230), visits (+0x2b8) and the visits' averaged happiness change (+0x340); the day message 0xb rolls each into its ring (`0x4dd320`) |
 | 1 + 1 + 4 + 2 | `mOperatingCapacity`, `mOperatingDuration`, `mOperatingSpeed`, `mPersonBeingLoaded` |
 | 6 × 4 | `mCostOfGoods`, `mQualityOfGoods`, `mChanceOfWinning`, `mPricePerUse` (the loader clamps it to 0–500), `mAmountOfSpecialIngredient`, `mQueueSizeInCells` |
-| 3 × 4 | three `float32` gauges, read into object offsets +0x48, +0x44, +0x40. +0x40 is the state of repair and +0x44 the life gauge of the wear and breakdown code. The original writes each as a whole number 0–255 |
+| 3 × 4 | three `float32` gauges, read into object offsets +0x48, +0x44, +0x40 on the Mac and +0x4c, +0x48, +0x44 on the PC (`0x4db7d0`): the third gauge, the life gauge and the state of repair of the wear and breakdown code. The original writes each as a whole number 0–255 |
 | 4 × 5 + 1 | `mRequestedService`, `mTimeMarkedForMaintenance`, `mTotalCosts`, `mTotalTakings`, `mUpgradeBalloonSprite`, `mUpgradeLevel` (u8) |
 
 `SaveAttraction.Read` parses the body completely and rejects it outside these bounds: non-zero Info.Id;

@@ -25,6 +25,12 @@ internal static class SaveTestPayloads
 		public string Line1 { get; init; } = "Belly";
 		public string Line2 { get; init; } = "Bounce";
 		public uint State { get; init; }
+		public ushort AssignedStaff { get; init; }
+		public uint CanLoad { get; init; } = 1;
+		public uint RequestedService { get; init; }
+		public uint MarkedTurn { get; init; }
+		/// <summary>The running value of every ring (mTemp).</summary>
+		public int RingToday { get; init; }
 		public uint RingCount { get; init; } = 30;
 		public byte RingFlag { get; init; } = 1;
 		public uint Customers { get; init; } = 7;
@@ -66,13 +72,17 @@ internal static class SaveTestPayloads
 		}
 		writer.Write( new byte[8] );
 		writer.Write( fields.State );
-		writer.Write( new byte[24] );
+		writer.Write( new byte[6] );
+		writer.Write( fields.AssignedStaff );
+		writer.Write( (ushort)0 );
+		writer.Write( fields.CanLoad );
+		writer.Write( new byte[10] );
 		void Ring()
 		{
 			writer.Write( 1u );
 			writer.Write( fields.RingCount );
 			writer.Write( fields.RingFlag );
-			writer.Write( 0u );
+			writer.Write( fields.RingToday );
 			writer.Write( new byte[(int)Math.Min( fields.RingCount, 64 ) * 4] );
 		}
 		Ring();
@@ -96,7 +106,8 @@ internal static class SaveTestPayloads
 		writer.Write( fields.Gauge48 );
 		writer.Write( fields.LifeGauge );
 		writer.Write( fields.Repair );
-		writer.Write( new byte[8] );
+		writer.Write( fields.RequestedService );
+		writer.Write( fields.MarkedTurn );
 		writer.Write( fields.Costs );
 		writer.Write( fields.Takings );
 		writer.Write( 0u );

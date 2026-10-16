@@ -87,6 +87,8 @@ public static class UiTextRecord
 	/// last-write time (0x49ec80 fills the tags 0x10, 0x11 and 0x12 from the SYSTEMTIME's day, month and year, 0x5fc660).
 	/// </summary>
 	public const int SaveDate = 447;
+	/// <summary>The golden-ticket price "%d gt" (tp.exe 0x1c7; parameter 23): the buy list's price cell of a row that costs tickets (0x490650).</summary>
+	public const int GoldenTicketPrice = 454;
 }
 
 /// <summary>

@@ -84,7 +84,7 @@ public sealed partial class ParkHud
 		this.host = host;
 		Status = status;
 		Catalog = catalog;
-		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
+		buy = new BuyListModel( catalog, ListName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
 		lastLevelMessage = level.LastActionMessage;
 		level.Objects.ObjectPlaced += OnObjectPlaced;
 		// Harnesses that build a Level without its constructor have no tool object.

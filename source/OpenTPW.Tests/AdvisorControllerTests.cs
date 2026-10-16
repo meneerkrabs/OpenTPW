@@ -77,6 +77,7 @@ public class AdvisorControllerTests
 		{
 			(0, 1, 1, true), (106, 274, 424, false), (106, 275, 425, false), (128, 308, 342, false), (128, 309, 343, false),
 			(129, 310, 344, false), (129, 311, 345, false), (323, 587, 606, false),
+			(271, 523, 540, false), (271, 524, 541, false), (271, 525, 542, false),
 		};
 		foreach ( var (message, responseId, sample, local) in expected )
 		{
@@ -86,8 +87,29 @@ public class AdvisorControllerTests
 			Assert.AreEqual( sample, table[responseId].Lip, $"response {responseId} LIP" );
 			Assert.AreEqual( local, table[responseId].Local, $"response {responseId} bank" );
 		}
-		Assert.AreEqual( 8, AdvisorTables.Messages.Length, "five game-event messages and the three prank lines" );
+		Assert.AreEqual( 9, AdvisorTables.Messages.Length, "five game-event messages, the three prank lines and the challenge warning" );
+		Assert.AreEqual( (byte)0, AdvisorTables.Messages.Single( item => item.MessageId == 271 ).GameMode, "the challenge warning is full simulation only" );
 		Assert.AreEqual( 1, AdvisorTables.Messages.Single( item => item.MessageId == 323 ).Group, "PrebuiltPark is a tutorial-group message" );
+	}
+
+	[TestMethod]
+	public void TheChallengeWarningIsFullSimulationAdviceWithTheChallengeScore()
+	{
+		// [BIN:TPW-EXE:0x0076E300 challenge descriptor] message 271, responses 523 to 525, game mode 0; the challenge system's short-time warning posts it (0x4D21FD)
+		var controller = new AdvisorController( Balance( Settings + "\nChallenge.Score 200\n" ) );
+		Assert.IsNull( controller.Advise( AdvisorTables.ChallengeTimeShortMessage, 100, 2, true ), "Instant Action excludes it" );
+		var admission = controller.Advise( AdvisorTables.ChallengeTimeShortMessage, 100, 0, true );
+		Assert.IsTrue( admission is { Stored: true } );
+		Assert.AreEqual( 1, controller.Queue.Count );
+		var played = new List<int>();
+		controller.Update( () => 1000u, () => 100u, response =>
+		{
+			played.Add( response );
+			return 4000u;
+		} );
+		CollectionAssert.AreEqual( new[] { 523 }, played, "the first of its three responses" );
+		var silent = new AdvisorController( Balance() );
+		Assert.AreEqual( 0, silent.Balance.Scores[AdvisorTables.ChallengeScoreKey], "a settings file without the key leaves the warning silent" );
 	}
 
 	[TestMethod]

@@ -85,7 +85,10 @@ internal sealed class AutomaticAdvisor : IDisposable
 		level = started;
 		park = started.Park;
 		if ( park != null )
+		{
 			park.EventRaised += OnParkEvent;
+			park.Economy.Objectives.TimeShort += OnChallengeTimeShort;
+		}
 		guests = started.Guests;
 		if ( guests != null )
 			guests.Pranked += OnPrank;
@@ -108,7 +111,10 @@ internal sealed class AutomaticAdvisor : IDisposable
 	public void DetachLevel()
 	{
 		if ( park != null )
+		{
 			park.EventRaised -= OnParkEvent;
+			park.Economy.Objectives.TimeShort -= OnChallengeTimeShort;
+		}
 		if ( guests != null )
 			guests.Pranked -= OnPrank;
 		guests = null;
@@ -127,6 +133,20 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
+	}
+
+	/// <summary>
+	/// A running challenge's time is short (the warning of 0x4D21FD): the challenge message reaches the advisor at once, which queues advice 271 with the
+	/// challenge score. The challenge system posts it on every checked turn while it holds; the queue admits one pending copy and the repeat interval holds the rest back.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059B060 challenge message receiver] the advisor queues the advice id in +0xC of a category-25 message (0x0059B540, 0x0059B590, 0x0059A940)
+	internal void OnChallengeTimeShort( int challengeIndex )
+	{
+		if ( level == null )
+			return;
+		var admission = Controller.Advise( AdvisorTables.ChallengeTimeShortMessage, GameTick, GameType, TutorialEnabled );
+		if ( admission is { Stored: true } )
+			Log.Trace( $"Advisor challenge warning for challenge {challengeIndex}: advice {AdvisorTables.ChallengeTimeShortMessage} {admission.Value.Eligibility} in slot {admission.Value.Slot}." );
 	}
 
 	/// <summary>

@@ -263,7 +263,9 @@ public sealed class ParkObjectives
 	// the accept 0x4d2df0 (accepted +0x3d9, the deadline from mTargetTime) or the decline 0x4d2ec0 clears
 	// [BIN:TPW-EXE:0x4d1f99 challenge update] a running challenge is checked on the park turns whose low two bits (+0x1da70c) are not 0, on the others the update only posts the progress message 0x4d3390 (tag 0x160) and returns; the check is made at once when the clock has not reached the deadline (0x4d1660 with the at-end flag clear, a pass wins) and, once it has, with the flag set (a pass wins, else the challenge is lost)
 	// [BIN:TPW-EXE:0x4d1e90 challenge update] the idle system offers (0x4d2a70) on the first update at or after the next event time (+0x3d0), not at a day end
-	// [APPROX:ECON-058] the challenge system runs tp.exe's update on every park turn (an idle system offers on the first turn at or after its next event time, a running challenge is checked on the turns whose low two bits are not 0 and ends at its exact second, 0x4d1e90, 0x4d1f99), but the progress message 0x4d3390 (tag 0x160) that the other turns post and the warning that the time left is short (0x4d21fd: days left × 100 / TargetTime below the word 0x7857d0, which looks like Challenges.ShortTimeLeftWarningAt, posting the event 0x17f) have no OpenTPW message — evidence needed: what the message 0x160 and the event 0x17f feed, and which settings key the word 0x7857d0 is
+	// [BIN:TPW-EXE:0x4d21fd challenge time warning] on a checked turn that neither passed nor ended the challenge, a slot with a TargetTime (+4) posts the message tag 0x17f with advice 0x10f when (days left × 100) / TargetTime (days left: the deadline +0x3d0 minus the park time, divided by 8.64e11; signed 32-bit division) is below the word 0x7857d0, the settings key Challenges.ShortTimeLeftWarningAt (the 60-byte descriptor records at 0x743c70 list DaysAfterCompletedChallenge, DaysAfterDeclinedChallenge, DaysUntilFirstChallenge, DeclinesToForfeit, ShortTimeLeftWarningAt in the order of the words 0x7857c0..0x7857d0)
+	// [BIN:TPW-EXE:0x59b060 challenge message receivers] a challenge message (category 25, vtable 0x006FD830) carries a text tag in +8 and an advice id in +0xc: the advisor queues the advice (0x59B540, 0x59B590, 0x59A940) unless it is 0x160, and the tag system (0x509BF0) shows the tag's text; the warning's advice 0x10f is message 271 of the advisor table (Challenge.Score, getter 0x5A0A30 = +0x62C), whose tag 0x17f has no text
+	// [APPROX:ECON-058] the challenge system runs tp.exe's update on every park turn (an idle system offers on the first turn at or after its next event time, a running challenge is checked on the turns whose low two bits are not 0 and ends at its exact second, 0x4d1e90, 0x4d1f99), but the progress message that the other turns post (tag 0x4d3390 by type, advice 0x160, which the advisor skips) has no OpenTPW message: the tag system shows the tag's TAG_SYSTEM text with the slot's numbers in the message tube, replacing the offer's message in place, while OpenTPW's tube shows its own description of the offer (Describe) — evidence needed: the placeholder grammar of the TAG_SYSTEM entries (the substitution 0x509e10 from the message's fields) and the tube's in-place update (0x48eb20)
 	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> Update( long seconds, long turn, Func<ChallengeDefinition, long> measure, bool parkOpen = true, Func<ChallengeDefinition, int>? bestThing = null )
 	{
 		if ( Current == null )
@@ -309,7 +311,26 @@ public sealed class ParkObjectives
 			Current = null;
 			NextOfferSeconds = seconds + settings.ChallengeTiming.DaysAfterCompletedChallenge * ParkCalendar.SecondsPerDay;
 			yield return (ParkEventKind.ChallengeFailed, definition.Index, value, Describe( definition ));
+			yield break;
 		}
+		// the warning is posted on every checked turn while it holds; the advisor's queue admits one pending copy
+		if ( IsTimeShort( definition, seconds ) )
+			TimeShort?.Invoke( definition.Index );
+	}
+
+	/// <summary>The challenge system posted its short-time-left warning for the challenge with this definition index (the advisor's advice 271).</summary>
+	public event Action<int>? TimeShort;
+
+	/// <summary>
+	/// Whether the running challenge's warning holds at <paramref name="seconds"/>: a TargetTime, and the whole days left times 100 over it below
+	/// <c>Challenges.ShortTimeLeftWarningAt</c> (signed 32-bit division, as the original's).
+	/// </summary>
+	private bool IsTimeShort( ChallengeDefinition definition, long seconds )
+	{
+		if ( Current == null || definition.TargetTime == 0 )
+			return false;
+		var daysLeft = (int)Math.Max( 0, (Current.EndSeconds - seconds) / ParkCalendar.SecondsPerDay );
+		return daysLeft * 100 / definition.TargetTime < settings.ChallengeTiming.ShortTimeLeftWarningAt;
 	}
 
 	/// <summary>

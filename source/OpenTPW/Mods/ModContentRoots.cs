@@ -36,6 +36,7 @@ public static class ModContentRoots
 		var previousFileSystem = fileSystem?.Overrides;
 		var previousStrings = GameLanguage.StringOverride;
 		var previousRoots = ObjectCatalog.ContentRoots;
+		var previousSoundRoots = ContentSoundRoots.Snapshot();
 		var activeScope = OpenTpwExtensions.Use( set );
 		Install( set, fileSystem );
 		return new Restore( () =>
@@ -45,6 +46,7 @@ public static class ModContentRoots
 				fileSystem.Overrides = previousFileSystem;
 			GameLanguage.StringOverride = previousStrings;
 			ObjectCatalog.SetContentRoots( previousRoots );
+			ContentSoundRoots.Restore( previousSoundRoots );
 		} );
 	}
 
@@ -60,10 +62,37 @@ public static class ModContentRoots
 				fileSystem.InvalidateLookups();
 		}
 		GameLanguage.StringOverride = index.HasStrings ? index.OpenString : null;
-		ObjectCatalog.SetContentRoots( CatalogRoots( set ) );
+		var roots = CatalogRoots( set );
+		ObjectCatalog.SetContentRoots( roots );
+		RegisterSoundRoots( set, roots );
 	}
 
-	/// <summary>The catalog content roots of the mods that add objects, in mod order: the mod's own folder, then each input it reads from.</summary>
+	/// <summary>
+	/// [EXT:cross-edition-objects] With the extension on, the install of another original game (a mod input that names Theme Park Inc) becomes a sound
+	/// root: its objects look their <c>EVENT</c> ids up in that install's own categories (<see cref="ContentSoundRoots"/>), and nothing falls back to
+	/// the running game's. With the extension off, or without such an input, no root is registered and every object keeps the running game's banks.
+	/// </summary>
+	private static void RegisterSoundRoots( ModSet set, IReadOnlyList<CatalogContentRoot> roots )
+	{
+		ContentSoundRoots.Clear();
+		if ( !set.IsEnabled( OfficialExtensions.CrossEditionObjects.Id ) )
+			return;
+		foreach ( var root in roots.Where( root => root.InputEdition == GameEdition.ThemeParkInc ) )
+		{
+			// the folder is what the player chose: only a folder that really holds Theme Park Inc data gets that game's sound banks
+			if ( GameEditions.Detect( root.Directory ).Edition == GameEdition.ThemeParkInc )
+				ContentSoundRoots.Register( root.FileSystem );
+			else
+				Log?.Warning( $"Mod {root.ModId}: the input folder {root.Directory} is declared as Theme Park Inc data but is not recognised as such; its objects keep the running game's sound banks." );
+		}
+	}
+
+	private static readonly Dictionary<(string ModId, string Digest, string? Input), CatalogContentRoot> rootCache = new();
+
+	/// <summary>
+	/// The catalog content roots of the mods that add objects, in mod order: the mod's own folder, then each input it reads from. A root is
+	/// made once per mod content and input, so the catalogs cached for it keep the file system the sound roots are registered for.
+	/// </summary>
 	internal static IReadOnlyList<CatalogContentRoot> CatalogRoots( ModSet set )
 	{
 		var roots = new List<CatalogContentRoot>();
@@ -71,11 +100,25 @@ public static class ModContentRoots
 		{
 			var own = mod.Objects!.Objects.Where( definition => definition.Input == null ).ToList();
 			if ( own.Count > 0 )
-				roots.Add( new CatalogContentRoot( ContentRoot.Mod( mod.Id ), mod.Directory, own ) );
+				roots.Add( Root( (mod.Id, mod.ContentSha256, null), () => new CatalogContentRoot( ContentRoot.Mod( mod.Id ), mod.Directory, own ) ) );
 			foreach ( var input in mod.Objects.Objects.Where( definition => definition.Input != null ).GroupBy( definition => definition.Input!, StringComparer.Ordinal ).OrderBy( group => group.Key, StringComparer.Ordinal ) )
-				roots.Add( new CatalogContentRoot( ContentRoot.Mod( mod.Id ), mod.InputDirectories[input.Key], input.ToList() ) );
+			{
+				var directory = mod.InputDirectories[input.Key];
+				var edition = mod.Manifest.Inputs.FirstOrDefault( declared => declared.Id == input.Key ) is { } declared ? ModInputCheck.EditionOf( declared ) : null;
+				roots.Add( Root( (mod.Id, mod.ContentSha256, input.Key + "|" + directory), () => new CatalogContentRoot( ContentRoot.Mod( mod.Id ), directory, input.ToList(), edition ) ) );
+			}
 		}
 		return roots;
+	}
+
+	private static CatalogContentRoot Root( (string ModId, string Digest, string? Input) key, Func<CatalogContentRoot> create )
+	{
+		lock ( rootCache )
+		{
+			if ( !rootCache.TryGetValue( key, out var root ) )
+				rootCache[key] = root = create();
+			return root;
+		}
 	}
 
 	private static string Describe( ModSet set )

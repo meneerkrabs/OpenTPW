@@ -36,6 +36,8 @@ internal sealed partial class ParkResumeSmokeTest
 		public string ManifestSha256 { get; init; } = "";
 		/// <summary>Whether both phases ran the prototype-Totem fixture option (they must agree).</summary>
 		public bool PrototypeVariant { get; init; }
+		/// <summary>Whether both phases ran the mod-rides fixture option (they must agree).</summary>
+		public bool ModVariant { get; init; }
 		/// <summary>Whether both phases ran the water-ride fixture option (they must agree).</summary>
 		public bool WaterVariant { get; init; }
 		/// <summary>The water ride's track tiles and boats at the save boundary (capture phase), the restore phase's oracle.</summary>
@@ -229,6 +231,7 @@ internal sealed partial class ParkResumeSmokeTest
 			$"the parks match (theme {capture.Theme}/{restore.Theme}, start {capture.StartKind}/{restore.StartKind}, seed {capture.Seed}/{restore.Seed})" );
 		Require( capture.PrototypeVariant == restore.PrototypeVariant,
 			$"both phases ran the same fixture (prototype variant {capture.PrototypeVariant}/{restore.PrototypeVariant})" );
+		Require( capture.ModVariant == restore.ModVariant, $"both phases ran the same fixture (mod variant {capture.ModVariant}/{restore.ModVariant})" );
 		Require( capture.WaterVariant == restore.WaterVariant && (!capture.WaterVariant || capture.WaterAtSave == restore.WaterAtSave),
 			$"both phases ran the same water fixture (variant {capture.WaterVariant}/{restore.WaterVariant}, {capture.WaterAtSave}/{restore.WaterAtSave})" );
 		Require( capture.TourVariant == restore.TourVariant && (!capture.TourVariant || capture.TourAtSave == restore.TourAtSave),

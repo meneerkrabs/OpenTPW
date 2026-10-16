@@ -12,6 +12,10 @@ public static class ModStartup
 {
 	public const string ModDirOption = "--mod-dir";
 	public const string DisableExtensionOption = "--disable-extension";
+	/// <summary><c>--enable-mod &lt;id&gt;</c> (repeatable): switches an extension or mod on for this run.</summary>
+	public const string EnableModOption = "--enable-mod";
+	/// <summary><c>--mod-input &lt;mod id&gt;:&lt;input id&gt;=&lt;folder&gt;</c> (repeatable): the folder of a mod input for this run.</summary>
+	public const string ModInputOption = "--mod-input";
 
 	/// <summary>
 	/// The mod folders found at startup, valid or not: the Extensions and mods screen lists them ([EXT:mods-ui]). Like the
@@ -52,6 +56,8 @@ public static class ModStartup
 		var discovered = ModDiscovery.Discover( Values( args, ModDirOption, "a mod folder containing " + ModManifest.FileName ),
 			ModDiscovery.SplitEnvironment( modDirsEnvironment ),
 			smokeTest ? null : configDirectory, programDirectory );
+		settings = WithCommandLine( settings, discovered, Values( args, EnableModOption, "an extension or mod id such as opentpw.cross-edition-objects" ),
+			Values( args, ModInputOption, "<mod id>:<input id>=<folder>" ) );
 		var set = Resolve( discovered, settings, Values( args, DisableExtensionOption, "an extension or mod id such as opentpw.online" ), diagnostics );
 		Report( set, diagnostics, trace, warning );
 		OpenTpwExtensions.Activate( set );
@@ -59,6 +65,30 @@ public static class ModStartup
 		// [EXT:mods] the mods' overrides, strings and objects become visible to the game (docs/MODS.md)
 		ModContentRoots.Activate( set, trace );
 		return set;
+	}
+
+	/// <summary>
+	/// The saved choices with this run's <c>--enable-mod</c> and <c>--mod-input</c> on top (they change nothing on disk). An id that names no
+	/// extension or installed mod, or an input that is not <c>&lt;mod id&gt;:&lt;input id&gt;=&lt;folder&gt;</c>, is an error, like <c>--disable-extension</c>.
+	/// </summary>
+	internal static ModSettings WithCommandLine( ModSettings settings, IReadOnlyList<DiscoveredMod> discovered, IReadOnlyList<string> enabled, IReadOnlyList<string> inputs )
+	{
+		foreach ( var id in enabled )
+		{
+			if ( OfficialExtensions.Find( id ) == null && !discovered.Any( mod => mod.Id == id ) )
+				throw new ArgumentException( $"{EnableModOption} '{id}' names no OpenTPW extension or installed mod (extensions: {string.Join( ", ", OfficialExtensions.All.Select( extension => extension.Id ) )})." );
+			settings = settings.WithEnabled( id, true );
+		}
+		foreach ( var text in inputs )
+		{
+			var colon = text.IndexOf( ':' );
+			var equals = text.IndexOf( '=' );
+			var (mod, input, folder) = colon > 0 && equals > colon ? (text[..colon], text[(colon + 1)..equals], text[(equals + 1)..]) : ("", "", "");
+			if ( !ModManifest.IsValidId( mod ) || !ModManifest.IsValidInputId( input ) || string.IsNullOrWhiteSpace( folder ) || folder.Length > ModSettings.MaximumInputPathLength || folder.Any( char.IsControl ) )
+				throw new ArgumentException( $"{ModInputOption} '{text}' is not <mod id>:<input id>=<folder> (for example community.tpi-rides:tpi=/games/Theme Park Inc)." );
+			settings = settings.WithInput( mod, input, folder );
+		}
+		return settings;
 	}
 
 	/// <summary>The browser startup: official extensions only, with the choices saved in <c>/config/mods.json</c>.</summary>

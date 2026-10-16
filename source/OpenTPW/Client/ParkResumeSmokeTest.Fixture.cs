@@ -32,11 +32,13 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( laid >= SpineLength, $"lay at least {SpineLength} fresh path cells (laid {laid})" );
 
 		// One ride from the HUD build menu, as a player would: the cheapest available HasQueue ride.
+		// [EXT:mods] the mod variant takes the build menu's cheapest ride that a mod brings (OPENTPW_SMOKE_MODS=1), whose copies, queues and save are then the mod's
 		var item = hud.Catalog.GetItems( BuildCategory.Rides )
-			.Where( candidate => candidate.Entry is { HasQueue: true } && hud.Status.IsAvailable( candidate )
+			.Where( candidate => candidate.Entry is { HasQueue: true } && ( !ModVariant || candidate.Entry.ModId != null ) && hud.Status.IsAvailable( candidate )
 				&& (hud.Status.PriceOf( candidate ) ?? candidate.Cost) <= hud.Status.Money )
 			.OrderBy( candidate => hud.Status.PriceOf( candidate ) ?? candidate.Cost ).FirstOrDefault();
-		Require( item?.Entry != null, "find an available, affordable HasQueue ride in the build menu" );
+		Require( item?.Entry != null, ModVariant ? "find an available, affordable HasQueue ride that a mod brings in the build menu (enable the mod, its extension and its input: scripts/smoke-tpi-rides.sh)" : "find an available, affordable HasQueue ride in the build menu" );
+		Require( !ModVariant || ParkResumeMods.Capture( OpenTPW.Mods.OpenTpwExtensions.Active ) != null, "a park with a mod's ride records the mod that brings it" );
 		var entry = item!.Entry!;
 		var rideA = PlaceRideThroughHud( hud, hudContext, item, entry );
 

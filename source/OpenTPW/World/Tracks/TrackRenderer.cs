@@ -597,9 +597,7 @@ public sealed class TrackRenderer : IDisposable
 		var (fileSystem, path) = resolved.Value;
 		if ( fileSystem == FileSystem )
 			return new Texture( path, TextureFlags.Repeat );
-		using var stream = fileSystem.OpenRead( path );
-		var data = new TextureFile( stream ).Data;
-		return new Texture( data.Data, data.Width, data.Height, TextureFlags.Repeat );
+		return Texture.FromFileSystem( fileSystem, path, TextureFlags.Repeat );
 	}
 
 	public void Dispose()

@@ -89,6 +89,8 @@ public sealed class ObjectCatalogEntry
 	public bool IsBonus => Root.IsBonus;
 	/// <summary>The mod that adds this object (docs/MODS.md), or null.</summary>
 	public string? ModId => Root.ModId;
+	/// <summary>The <c>objects.json</c> entry that listed this object, for the objects a mod adds.</summary>
+	internal ModObjectDefinition? ModDefinition { get; init; }
 	/// <summary>Whether the object is not game data: an official bonus archive or a mod's object. Such objects have no OBJECT_NAMES row.</summary>
 	public bool IsExternal => !Root.IsData;
 	public string Theme { get; }
@@ -561,7 +563,7 @@ public sealed class ObjectCatalog
 			layers.Add( ObjectSettingsFile.Load( fileSystem, easyFile ) );
 		// [EXT:mods] a mod's object gets the Info.Id its objects.json assigns, whatever its own .sam says (Layout records join on Info.Id, so the id is the mod's to keep stable)
 		if ( modObject != null )
-			layers.Add( new ObjectSettingsFile( $"Info.Id {modObject.InfoId.ToString( CultureInfo.InvariantCulture )}\n", "objects.json" ) );
+			layers.Add( new ObjectSettingsFile( ModLayerText( modObject ), "objects.json" ) );
 		var settings = new ObjectSettings( layers );
 		// [DATA:<object>.sam:Info.Shape]
 		var shapeRows = settings.GetBlock( "Info.Shape" );
@@ -591,7 +593,7 @@ public sealed class ObjectCatalog
 			if ( candidates.Length == 1 )
 				script = candidates[0];
 		}
-		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber, contentRoot?.Root );
+		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber, contentRoot?.Root ) { ModDefinition = modObject };
 		if ( shared.Count > 0 )
 			entry.SharedSettings = new ObjectSettings( shared );
 		if ( bonusNumber != null )
@@ -601,6 +603,19 @@ public sealed class ObjectCatalog
 			entry.DisplayName = ModName( modObject ) ?? entry.SettingsName;
 		}
 		return entry;
+	}
+
+	/// <summary>
+	/// The settings layer a mod's <c>objects.json</c> puts over the object's own .sam (also the economy catalogue's): the reserved <c>Info.Id</c> and, when it
+	/// gives an English name, that as <c>Info.Name</c> (the designers' name every language falls back to, as for a game object).
+	/// </summary>
+	internal static string ModLayerText( ModObjectDefinition definition )
+	{
+		var text = $"Info.Id {definition.InfoId.ToString( CultureInfo.InvariantCulture )}\n";
+		// the .sam format has no escapes: a name with a quote cannot be written as a value, the object keeps its own
+		if ( definition.Names.TryGetValue( GameLanguage.DefaultLanguage, out var name ) && !name.Contains( '"' ) )
+			text += $"Info.Name \"{name}\"\n";
+		return text;
 	}
 
 	/// <summary>The name objects.json gives a mod's object: the selected language, then English; null when it gives neither.</summary>
@@ -911,9 +926,10 @@ public static class BonusNames
 // [EXT:mods] OpenTPW's own mod system; the original game had no mods
 internal sealed class CatalogContentRoot
 {
-	public CatalogContentRoot( ContentRoot root, string directory, IReadOnlyList<ModObjectDefinition> objects )
+	public CatalogContentRoot( ContentRoot root, string directory, IReadOnlyList<ModObjectDefinition> objects, GameEdition? inputEdition = null )
 	{
 		Root = root;
+		InputEdition = inputEdition;
 		Directory = Path.GetFullPath( directory );
 		Objects = objects;
 		FileSystem = new BaseFileSystem( Directory );
@@ -922,6 +938,8 @@ internal sealed class CatalogContentRoot
 	}
 
 	public ContentRoot Root { get; }
+	/// <summary>The edition the mod's manifest names for the input this root reads from (an original game's install), or null for the mod's own folder or an input without one.</summary>
+	public GameEdition? InputEdition { get; }
 	/// <summary>Absolute root folder of <see cref="FileSystem"/>.</summary>
 	public string Directory { get; }
 	public IReadOnlyList<ModObjectDefinition> Objects { get; }

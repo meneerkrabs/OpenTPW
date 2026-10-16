@@ -183,11 +183,13 @@ public class ObjectTextureFrameOriginalDataTests
 	{
 		var root = Environment.GetEnvironmentVariable( "OPENTPW_TPI_PATH" );
 		if ( string.IsNullOrWhiteSpace( root ) || !Directory.Exists( root ) )
-			Assert.Inconclusive( "Set OPENTPW_TPI_PATH to Theme Park Inc Data." );
+			Assert.Inconclusive( "Set OPENTPW_TPI_PATH to a Theme Park Inc installation or its Data folder." );
+		// An installation (or an extracted CD) holds the game files in its Data folder, like the other original-data tests accept.
+		var dataFolder = Directory.EnumerateDirectories( root! ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? root!;
 		var previous = FileSystem;
 		try
 		{
-			FileSystem = new BaseFileSystem( root! );
+			FileSystem = new BaseFileSystem( dataFolder );
 			FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 			GameEditions.Select( GameEdition.ThemeParkInc );
 			var decoded = new HashSet<string>( StringComparer.OrdinalIgnoreCase );

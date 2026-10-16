@@ -203,6 +203,49 @@ public sealed class EconomyObjectCatalog : IEconomyObjectCatalog
 				}
 			}
 		}
+		AddModObjects( theme, easy, result );
 		return new EconomyObjectCatalog( result );
+	}
+
+	/// <summary>
+	/// [EXT:mods] The objects the enabled mods add to <paramref name="theme"/> (docs/MODS.md), after the game's: each catalogue entry of a mod root gets the same
+	/// layers as a game object (the theme's category file from the game data, the object's .sam, <c>Easy_</c> in easy mode) plus the Info.Id its
+	/// <c>objects.json</c> assigns, so a bought mod object is priced, researched and listed like any other. With no mod objects nothing is added or read.
+	/// </summary>
+	private static void AddModObjects( string theme, bool easy, List<EconomyObjectInfo> result )
+	{
+		if ( ObjectCatalog.ContentRoots.Count == 0 )
+			return;
+		foreach ( var entry in ObjectCatalog.Load( theme, easy ).Entries.Where( entry => entry.ModDefinition != null ) )
+		{
+			var (directory, categoryFile, kind) = Categories.First( category => category.Directory == OpenTPW.Mods.ModObjectsFile.CategoryName( entry.Category ) );
+			var categoryPath = $"/levels/{theme}/{directory}";
+			var categoryLayer = FileSystem.FileExists( $"{categoryPath}/{categoryFile}" )
+				? SamDocument.Parse( FileSystem.ReadAllText( $"{categoryPath}/{categoryFile}" ), $"{categoryPath}/{categoryFile}" )
+				: new SamDocument( categoryFile, Array.Empty<SamEntry>() );
+			var files = entry.FileSystem.GetFiles( entry.ArchivePath )
+				.Where( file => file.EndsWith( ".sam", StringComparison.OrdinalIgnoreCase ) )
+				.Select( file => entry.FileSystem.GetRelativePath( entry.FileSystem.GetAbsolutePath( file ) ) )
+				.ToDictionary( file => Path.GetFileName( file ), StringComparer.OrdinalIgnoreCase );
+			SamDocument? objectLayer = null;
+			string? objectFile = null;
+			foreach ( var (name, path) in files.OrderBy( item => item.Key, StringComparer.OrdinalIgnoreCase ) )
+			{
+				if ( name.StartsWith( "Easy_", StringComparison.OrdinalIgnoreCase ) || name.StartsWith( "Online_", StringComparison.OrdinalIgnoreCase ) )
+					continue;
+				var layer = SamDocument.Parse( entry.FileSystem.ReadAllText( path ), path );
+				if ( !layer.Entries.Any( item => item.Key.Equals( "Info.Id", StringComparison.OrdinalIgnoreCase ) ) )
+					continue;
+				(objectLayer, objectFile) = (layer, name);
+				break;
+			}
+			if ( objectLayer == null )
+				continue;
+			var layers = new List<SamDocument> { categoryLayer, objectLayer };
+			if ( easy && files.TryGetValue( "Easy_" + objectFile, out var easyPath ) )
+				layers.Add( SamDocument.Parse( entry.FileSystem.ReadAllText( easyPath ), easyPath ) );
+			layers.Add( SamDocument.Parse( ObjectCatalog.ModLayerText( entry.ModDefinition! ), "objects.json" ) );
+			result.Add( FromSettings( new SamSettings( layers ), kind, entry.ArchivePath ) );
+		}
 	}
 }

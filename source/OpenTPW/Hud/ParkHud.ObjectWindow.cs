@@ -51,8 +51,8 @@ public sealed partial class ParkHud
 		_ => ShopLabels
 	};
 
-	/// <summary>The sideshow's winners gauge, 0..1: <c>trunc(100 × winners / customers) / 100</c>, 0 without customers (<c>0x4e1f20</c>).</summary>
-	internal static float WinnersGauge( long winners, long customers ) => customers <= 0 ? 0f : Math.Clamp( winners * 100 / customers, 0, 100 ) / 100f;
+	/// <summary>The sideshow's winners gauge, 0..1: <c>trunc(100 × winners / customers)</c> as the window sets it, <c>(percent &lt;&lt; 10) / 100</c> of 1024 (<c>0x4b16c0</c>), 0 without customers (<c>0x4e1f20</c>).</summary>
+	internal static float WinnersGauge( long winners, long customers ) => customers <= 0 ? 0f : UiGauge.OfPercent( (int)Math.Clamp( winners * 100 / customers, 0, 100 ) );
 
 	/// <summary>One object window table with the nodes the HUD places its controls on, found once.</summary>
 	private sealed class ObjectWindowLayout

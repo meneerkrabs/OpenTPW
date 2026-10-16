@@ -109,7 +109,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		{
 			var anchor = Level.GetCentredAnchor( armedEntry!, site.X, site.Y, 0 );
 			var footprint = ObjectFootprint.GetCells( armedEntry!.Shape, anchor.X, anchor.Y, 0 ).Count();
-			Require( Level.Blueprint is { } blueprint && blueprint.Cells.Count == footprint && blueprint.Cells.All( cell => cell.Marker == BlueprintMarker.Allowed ),
+			Require( Level.Blueprint is { } blueprint && blueprint.Cells.Count( cell => cell.Marker is BlueprintMarker.Allowed or BlueprintMarker.Front ) == footprint && blueprint.Cells.All( cell => cell.Marker != BlueprintMarker.Refused ),
 				"hovering the site shows its footprint as allowed blueprint markers" );
 		} );
 		Do( "place through the world click", () =>
@@ -305,7 +305,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		for ( var index = 0; index < grid.CountX * grid.CountY; index++ )
 		{
 			var cell = (X: index % grid.CountX, Y: index / grid.CountX);
-			if ( Level.CheckObject( entry, cell.X, cell.Y, 0 ) != OriginalPlacementResult.Allowed )
+			if ( Level.CheckFreeObject( entry, cell.X, cell.Y, 0 ) != OriginalPlacementResult.Allowed )
 				continue;
 			var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
 			var door = ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, 0 ).FirstOrDefault( point => point.Kind == ObjectCellKind.Entrance );

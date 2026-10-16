@@ -13,7 +13,7 @@ public enum CellPurchase
 /// <summary>
 /// The park management simulation: calendar, bank account, prices, construction and scrap,
 /// loans, bankruptcy, staff, maintenance, litter, research, challenges, golden tickets and park
-/// rating. Deterministic: all randomness comes from one saved <see cref="DeterministicRandom"/> and
+/// rating. Deterministic: all randomness comes from the one saved <see cref="WorldRng"/> (the original's world generator) and
 /// time advances in whole fixed ticks. Values come from the original settings wherever they exist;
 /// every approximation is listed in docs/ECONOMY.md and in the member documentation.
 /// </summary>
@@ -41,14 +41,15 @@ public sealed class ParkEconomy : IParkEconomy
 		Catalog = catalog ?? throw new ArgumentNullException( nameof( catalog ) );
 		Mode = mode;
 		Features = ParkModeFeatures.For( mode );
-		Random = new DeterministicRandom( seed );
+		World = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Ledger = new ParkLedger( settings.InitialCash );
 		Staff = new ParkStaff( settings );
-		Research = new ParkResearch( settings, catalog );
+		Research = new ParkResearch( settings, catalog ) { OwnsTicketItem = infoId => ticketItems.Contains( infoId ) };
 		Objectives = new ParkObjectives( settings, catalog );
 		EntranceFee = settings.InitialAdmissionFee;
 		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
-		Staff.CreateInitialPool( Random, 0 );
+		Litter.World = () => World;
+		Staff.CreateInitialPool( World, 0 );
 		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
 		foreach ( var offer in settings.Loans )
 			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
@@ -62,7 +63,15 @@ public sealed class ParkEconomy : IParkEconomy
 	public IEconomyObjectCatalog Catalog { get; }
 	public ParkGameMode Mode { get; }
 	public ParkModeFeatures Features { get; }
-	public DeterministicRandom Random { get; }
+	/// <summary>
+	/// The park's world generator (tp.exe 0x00516330): the economy's staff pool and the staff walks draw from it, and the level attaches the guests'
+	/// and the scripts' draws to the same instance (<see cref="AttachWorld"/>), as the original has one generator for everything.
+	/// </summary>
+	// [APPROX:DET-015] the staff pool's and the staff walks' draws are the world generator's, but the staff members have no person-thing constructor draws (base speed, reseed, sprite variant), the month end is not ordered against the thing sweep, and the advisor's pick and the weather stay off the stream
+	public WorldRng World { get; private set; }
+
+	/// <summary>Makes <paramref name="world"/> this park's generator (the level's shared one); its state is not touched.</summary>
+	public void AttachWorld( WorldRng world ) => World = world ?? throw new ArgumentNullException( nameof( world ) );
 	public ParkLedger Ledger { get; }
 	public ParkStaff Staff { get; }
 	public ParkResearch Research { get; }
@@ -228,6 +237,11 @@ public sealed class ParkEconomy : IParkEconomy
 	/// any coaster for 0, and 0 when none matches. Null in a headless economy, which has no coasters (type 18 then measures 0).
 	/// </summary>
 	public Func<int, long>? CoasterCountedSections { get; set; }
+	/// <summary>
+	/// The economy instance id of the coaster that <see cref="CoasterCountedSections"/> counts for an Info.Id (0: any), 0 when none: the object the checks of challenge
+	/// types 14 and 18 carry into the follow-up (ECON-055). Null in a headless economy.
+	/// </summary>
+	public Func<int, int>? CoasterBestObject { get; set; }
 	/// <summary>New mechanic jobs await this host world; null keeps new headless jobs immediate.</summary>
 	public IMechanicJobWorld? MechanicJobWorld { get; set; }
 	/// <summary>The world that moves the handymen and runs their state machine; null keeps the economy's own dispatch (no positions).</summary>
@@ -298,6 +312,8 @@ public sealed class ParkEconomy : IParkEconomy
 			DoResearch();
 		// [BIN:TPW-EXE:0x004E0B90 object update] every live object thing runs its update each turn; the wear and the breakdown check inside it run when the turn counter is a multiple of 8
 		UpdateRides( turn );
+		// [BIN:TPW-EXE:0x0050B360 thing update] the challenge system is a thing (type 0x13) of the same loop, which a lost park no longer runs
+		UpdateChallenges( turn );
 	}
 
 	/// <summary>
@@ -306,7 +322,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
 	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
 	/// </summary>
-	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines (tp.exe month gate 0x508E70, escalation 0x508F70, grievance 0x509360; the month message comes from the calendar update 0x4F8260 with no game-type test, and the age stamp 0x4F8800 counts floor(turn × 3750) seconds from world turn 0, both as here); without a staff world (a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the month gate counts the guests on a counted cell (types 0, 1, 3, 9, 10) at once, where the original reads the analyser's cached census (0x4C7FA0 with age 5: recounted when (turn >> 2) − (stamp >> 2) exceeds 5), which the crowd sound's read (0x4C81E0, age 0, every 32nd substep of the main loop 0x54E360) refreshes, so its count can be a few turns old; the handymen's litter share counts the live map (ECON-020); the forced-strike word (zero at creation 0x5089FE, written only by the save 0x508BB0) is not imported (SAVE-009) — evidence needed: the main loop's substep count at a level's first turn (the phase of the crowd sound's refresh), for the census cache
+	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines (tp.exe month gate 0x508E70, escalation 0x508F70, grievance 0x509360; the month message comes from the calendar update 0x4F8260 with no game-type test, and the age stamp 0x4F8800 counts floor(turn × 3750) seconds from world turn 0, both as here); the month gate counts the guests on a counted cell (types 0, 1, 3, 9, 10) at once, where the original reads the analyser's cached census (0x4C7FA0 with age 5: recounted when (turn >> 2) − (stamp >> 2) exceeds 5), which the crowd sound's read (0x4C81E0, age 0, every 32nd substep of the main loop 0x54E360) refreshes, so its count can be a few turns old; the handymen's litter share counts the live map (ECON-020); the forced-strike word (zero at creation 0x5089FE, written only by the save 0x508BB0) is not imported (SAVE-009) — evidence needed: which main-loop iterations run the world update (0x0054F7BB → 0x00516380) against the iteration counter 0x00877D34 (reset to 0 at the loop's start, 0x0054EDB0; +1 per iteration, 0x0054F4D3; the crowd read of 0x004C81E0 runs when its low five bits are 0, 0x0054F82D), for the phase of the census cache's refresh
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -322,6 +338,7 @@ public sealed class ParkEconomy : IParkEconomy
 					Staff.Strikes.End( member.Type );
 				continue;
 			}
+			// [EXT:headless-economy] without a staff world (the gate harnesses and tests; a level with guests always attaches one, Level.SetupStaff) the vitals skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; in a level the original's state machines run them (ECON-022)
 			switch ( member.State )
 			{
 				case StaffState.PickedUp:
@@ -619,7 +636,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// (the original's working member finishes its job first, then reaches this decision).
 	/// </summary>
 	// [BIN:STP-PPC:0x100F4900 strike or rest] a free member of a striking role walks to the strike area (raw state 4); the original also needs the world state 0x1091B8 to be 1, which is not modelled
-	// [APPROX:DET-015] the world draw of the no-rest-area happiness hit (0x100F4AD4 takes it from the shared world LCG 0x105328, which OpenTPW has not ported) comes from the economy's own stream
+	// [BIN:STP-PPC:0x100F4AD4 no rest area draw] the happiness hit without a rest area takes one world draw (the shared generator 0x105328, PC 0x00516330); OpenTPW takes it from the park's one world generator
 	private bool StrikeOrRest( StaffMember member, bool restArea )
 	{
 		if ( Staff.Strikes.IsActive( member.Type ) )
@@ -627,7 +644,7 @@ public sealed class ParkEconomy : IParkEconomy
 			member.State = StaffState.OnStrike;
 			return true;
 		}
-		if ( !StaffVitals.SeekRest( member, Settings.RestLevel, Settings.HappyHitCosNoRestArea, restArea, () => (uint)Random.NextUInt64() ) )
+		if ( !StaffVitals.SeekRest( member, Settings.RestLevel, Settings.HappyHitCosNoRestArea, restArea, () => World.NextWord() ) )
 			return false;
 		member.State = StaffState.Resting;
 		return true;
@@ -668,7 +685,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void CheckGoldenTickets()
 	{
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ), CoveredCells() ) )
+		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ), CoveredCells(), SecurityCoveragePercent() ) )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 	}
 
@@ -681,7 +698,7 @@ public sealed class ParkEconomy : IParkEconomy
 	private void UpdateHour()
 	{
 		// [BIN:TPW-EXE:0x005084F0 staff pool update] the staff manager's update runs from the world turn's tail (0x004D7B20), in every world state
-		Staff.UpdatePool( Random, Tick );
+		Staff.UpdatePool( World, Tick );
 		// the dispatch belongs to the mechanics' and rides' thing updates, which a lost park no longer runs
 		if ( !IsBankrupt )
 			DispatchMechanics();
@@ -1005,15 +1022,36 @@ public sealed class ParkEconomy : IParkEconomy
 	private void EndDay( long day )
 	{
 		// [BIN:TPW-EXE:0x0050B360 thing update] the challenge system's day (0x004D1E90) is its thing update (type 0x13), which a lost park no longer runs
-		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge, IsParkOpen ).ToList() : new();
-		foreach ( var (kind, index, amount, detail) in challenges )
+		// [BIN:TPW-EXE:0x004D2860 daily challenge message] the day message adds a running daily-average challenge's value to its sum
+		if ( Features.Challenges && !IsBankrupt )
+			Objectives.AccumulateDaily( MeasureChallenge );
+		Raise( ParkEventKind.DayEnded, Balance );
+	}
+
+	/// <summary>The challenge system's thing update, once per park turn (tp.exe <c>0x004D1E90</c>): the switch, the offers and a running challenge's check.</summary>
+	private void UpdateChallenges( long turn )
+	{
+		if ( !Features.Challenges )
+			return;
+		foreach ( var (kind, index, amount, detail) in Objectives.Update( turn * ParkCalendar.SecondsPerTurn, turn, MeasureChallenge, IsParkOpen, BestObjectOf ).ToList() )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
 				Post( LedgerCategory.OtherIncome, amount );
 			Raise( kind, amount, 0, index, detail );
 		}
-		Raise( ParkEventKind.DayEnded, Balance );
 	}
+
+	/// <summary>The object a passing check of type 14, 15 or 18 carries (ECON-055): the best coaster, or for the kart type the instance that reported the highest crossroads record.</summary>
+	private int BestObjectOf( ChallengeDefinition definition )
+	{
+		// [APPROX:ECON-055] the carried object follows tp.exe (the checks of types 14 and 18 store the best coaster's id, the newest first and replaced only by a strictly higher count, 0x4cc810; the win 0x4d2fb0 copies it to the challenge system's filter (+0x3e0) and into the follow-up slot; the accumulator 0x4d27a0 then adds only the carried ride's uses and none of the object-less events of the sales, profits and daily messages), but type 15's best object is the instance that reported the highest crossroads record so far, where the original walks the karts as they are now (0x4cc4b0, the type record's +0x9c and the count 0x545310), and the events of type 11 were not traced to their accumulator call, so the filter does not stop them — evidence needed: the kart ride's current crossroads count (0x545310) and the producer of type 11's accumulator event
+	// [BIN:TPW-EXE:0x4d1660 challenge check] type 14 asks the best coaster of any kind (0x4cc810 with 0), type 18 the best of the info id TargetObj, type 15 the best kart ride (0x4cc4b0)
+		if ( definition.Type == 15 )
+			return recordBest.TryGetValue( (ParkRecordKind.KartCrossroads, definition.TargetObject), out var best ) && objects.ContainsKey( best.Instance ) ? best.Instance : 0;
+		return CoasterBestObject?.Invoke( definition.Type == 14 ? 0 : definition.TargetObject ) ?? 0;
+	}
+
+	private readonly Dictionary<(ParkRecordKind Kind, int InfoId), (long Value, int Instance)> recordBest = new();
 
 	private long MeasureChallenge( ChallengeDefinition definition ) => Objectives.Measure( definition, Counters, Staff, objects.Values, guestStatistics, CoasterCountedSections );
 
@@ -1071,7 +1109,8 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		foreach ( var item in objects.Values )
 		{
-			// [APPROX:ECON-057] an attraction keeps this and last month's sums; the original keeps six 30-day daily rings per attraction rolled on the day message 0xB (0x004DD320) — evidence needed: which panel or graph reads the rings
+			// [EXT:ring-month-sums] the calendar-month sums roll here as before the rings, kept for saves written without them (see ParkSaveFile.RingAt); the original has only the rings
+			// [APPROX:ECON-057] an attraction's six daily 30-day rings follow tp.exe (costs +0xF8, takings +0x70, customers +0x1A8, walk-aways +0x230, winners +0x2B8 and the visits' averaged happiness change +0x340: the constructor 0x004DB090 starts each at head -1, size 30; the day message 0x004DD320 rolls them; the windows and lists sum them over their counts, 0x004E1C70, 0x00495C20, 0x004B01D0, 0x004B16C0, 0x004955E0, 0x00493CD0), but the happiness-change ring has no writer (the use routine 0x004FD970 averages the visit's change into it, 0x004E1E00; OpenTPW's guests keep no per-visit change, UI-024), the walk-aways stay a list beside the ring type and the customers row's second number (the text variables 0x19 and 0x1A of its UITEXT) is not formatted — evidence needed: the per-visit happiness change a guest takes from an attraction (0x004FD970 with the guest's mood) and the UITEXT 32 and 41 templates
 			item.CustomersLastMonth = item.CustomersThisMonth;
 			item.TakingsLastMonth = item.TakingsThisMonth;
 			item.CostsLastMonth = item.CostsThisMonth;
@@ -1111,7 +1150,7 @@ public sealed class ParkEconomy : IParkEconomy
 	// [BIN:TPW-EXE:0x004D02D0 bank message] a type-19 message (CMsgEvent) with value 2 calls 0x005168F0 only while the world state (+0x1DA738) is not 4 and 0x00516C00 (a winning sequence's thing id at 0x7CF4F4) answers false
 	// [BIN:TPW-EXE:0x005168F0 park lost] world state = 4; every live thing of type 3 with flag +0x32 bit 4 gets VAR_BREAKSTAT = 1 (0x004E0DB0, "Object %d requested breakdown"); the door routine 0x00519EF0(0, 1) writes only the gate script's variable 0 = 2
 	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
-	// [APPROX:ECON-030] the lost park follows the bank's handler and the world update, and the advisor plays its advice 106 for every bank message (game event 2, AutomaticAdvisor), but the HUD shows none of the TAG_SYSTEM 123–127 texts ("If you stay in the red for six months you will be made bankrupt", "the banks have closed your park"), whose producer is not traced; OpenTPW still refuses purchases, hiring and opening the park in state 4 where the original's interface answer is not traced, and the camera move and the sound state of 0x005168F0 (0x00481B50, 0x005408F0) are not modelled — evidence needed: the producer of the TAG_SYSTEM 123–127 messages and the interface's tests of world state 4
+	// [APPROX:ECON-030] the lost park follows the bank's handler and the world update (the thing loop stops and the arrival target 0x004CF5B0 is 0 in state 4), and the advisor plays its advice 106 for every bank message (game event 2, AutomaticAdvisor), but the HUD shows none of the TAG_SYSTEM 123–127 texts ("If you stay in the red for six months you will be made bankrupt", "the banks have closed your park"), whose producer is not traced, nor the panel tp.exe builds in state 4 (0x004815E0 → 0x0048ADB0, and the state-4 branch of 0x0048C150 with UITEXT group 3, id 0x16), the zeroed crowd and ambient volumes of the main loop (0x0054E360 → 0x0051E790, 0x0051E7B0) and the camera move of 0x005168F0 (0x00481B50, 0x005408F0); tp.exe's interface tests world state 4 only at 0x004815F0, 0x0048C27A, 0x004A2925 (a function not read) and 0x004A2AC9 (the pause and play buttons are left alone), none of them a purchase, hiring or opening test found, so OpenTPW's refusal of those in state 4 is not shown to be the original's — evidence needed: the producer of the TAG_SYSTEM 123–127 messages, the panel 0x0048ADB0 and the function around 0x004A2925
 	private void HandleBankruptcyMessage()
 	{
 		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )
@@ -1258,15 +1297,42 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
+	/// The share of the cells with terrain that carry a security level, in whole percent (tp.exe <c>0x004CD720</c>): over the 128 × 128 cells without type 2, 7 or 30, those whose
+	/// environment word +6 (the security coefficient the cameras and the guards spread, <see cref="ParkEnvironment"/>) is above 0, times 100 over their number; 0 without such a cell.
+	/// Null without a cell map.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CD720 camera coverage] each cell is skipped when 0x00536300 (type 2), 0x00536360 (type 7 or 30) or 0x005D60C0 (always 0) answers; the count of the rest and the count whose 10-byte environment cell has the short at +6 above 0 (0x004D8410, the guard prank test 0x00508A30 calls it the security level) give coverage * 100 / count
+	internal int? SecurityCoveragePercent()
+	{
+		if ( Litter.Cells is not { } cells )
+			return null;
+		long coverable = 0, covered = 0;
+		for ( var y = 0; y < cells.Height; y++ )
+		{
+			for ( var x = 0; x < cells.Width; x++ )
+			{
+				if ( CellForValue( cells, x, y ).Type is 2 or 7 or 30 )
+					continue;
+				coverable++;
+				if ( Litter.Environment.At( x, y ).Security > 0 )
+					covered++;
+			}
+		}
+		return coverable == 0 ? 0 : (int)(covered * 100 / coverable);
+	}
+
+	/// <summary>
 	/// A cell's map type and whether its structure record counts 50, from OpenTPW's cell map: a track tile keeps its type in the map's type byte as well as in the track
 	/// layer (the original's structure records), so its map type is taken as the empty cell's 0.
 	/// </summary>
-	// [APPROX:ECON-026] the cell points follow tp.exe 0x004C7DB0 on OpenTPW's cell map and its land (the cells without the unowned flag 0x40: the level fence's enclosure, the strip at the gate and Buy Land's purchases, or an imported save's saved flags, PATH-007), but a track tile's map type is taken as 0 (OpenTPW keeps the track's type in the map's type byte as well as in the track layer, where the original's map cell keeps its own type under the structure record) and the fence's hoardings (structure type 25) are not counted, 50 each in the original, because OpenTPW keeps the fence as a ring of posts (ParkLand) without structure records; a map without the level's land (a level without a fence setup, a Theme Park Inc map, a read-only visit) counts every cell over the terrain as owned — evidence needed: the map cell's type under a laid track tile (tp.exe's track tool 0x0053B280 and its callers) and the hoarding structure records the fence setup writes (0x005323F0)
+	// [APPROX:ECON-026] the cell points follow tp.exe 0x004C7DB0 on OpenTPW's cell map and its land (the cells without the unowned flag 0x40: the level fence's enclosure, the strip at the gate and Buy Land's purchases, or an imported save's saved flags, PATH-007), but a track tile's map type is taken as 0 (OpenTPW keeps the track's type in the map's type byte as well as in the track layer, where the original's map cell keeps its own type under the structure record) and the fence's hoardings (structure type 25) count 50 each on the owned post cells of the land's ring, one cell per post, where the original lays them with the track tool (0x005323F0 → 0x00524960 in mode 0x19, the positions from the level's Hoardings.sam) and their footprint is not read; a map without the level's land (a level without a fence setup, a Theme Park Inc map, a read-only visit) counts every cell over the terrain as owned — evidence needed: the map cell's type under a laid track tile (tp.exe's track tool 0x0053B280 and its callers) and the footprint of a hoarding piece (the cells that carry its structure record)
 	private static (byte Type, bool Structure) CellForValue( ParkCellMap cells, int x, int y )
 	{
 		var track = cells.Tracks.Get( x, y );
+		// [BIN:TPW-EXE:0x005323F0 park fence] the fence setup lays the level's Hoardings.sam clicks with the track tool in mode 0x19 (0x00524960), each post a structure record of type 25, which the net worth
+		// counts 50 for through 0x005363F0; the land keeps the posts as a ring (ParkLand), so a post cell is a structure cell here
 		if ( track.IsEmpty )
-			return (cells.RawTypeAt( x, y ), false);
+			return (cells.RawTypeAt( x, y ), cells.Land?.IsPost( x, y ) == true);
 		var record = track.Type;
 		if ( track.IsExtension && track.Parent >= 0 )
 		{
@@ -1856,15 +1922,14 @@ public sealed class ParkEconomy : IParkEconomy
 	public void AcceptChallenge()
 	{
 		var definition = Objectives.CurrentDefinition ?? throw new InvalidOperationException( "No challenge is offered." );
-		var day = ParkCalendar.DayIndex( Tick );
-		Objectives.Accept( day, MeasureChallenge( definition ) );
+		Objectives.AcceptAt( ParkCalendar.Seconds( Tick ), MeasureChallenge( definition ) );
 		Raise( ParkEventKind.ChallengeAccepted, definition.Prize, 0, definition.Index );
 	}
 
 	public void DeclineChallenge()
 	{
 		var definition = Objectives.CurrentDefinition;
-		var index = Objectives.Decline( ParkCalendar.DayIndex( Tick ) );
+		var index = Objectives.DeclineAt( ParkCalendar.Seconds( Tick ) );
 		// [BIN:TPW-EXE:0x4d2ec0 challenge declined] a declined challenge whose mIndependent (+0x1d) is clear, a follow-up, credits half its prize (+0x14 / 2,
 		// truncated toward zero, 0x4d2f1d..0x4d2f33) through the bank credit 0x4d0190; an independent one pays nothing
 		var half = definition is { Independent: false } ? definition.Prize / 2 : 0;
@@ -1908,6 +1973,7 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			Post( LedgerCategory.ShopTakings, item.Price );
 			item.TakingsThisMonth += item.Price;
+			item.TakingsRing.Today += item.Price;
 			if ( Catalog.TryGet( item.InfoId, out var info ) )
 				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
 		}
@@ -1915,7 +1981,9 @@ public sealed class ParkEconomy : IParkEconomy
 		var goods = Catalog.TryGet( item.InfoId, out var shopInfo ) ? ShopGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, shopInfo.SpecialIngredient ) : item.CostOfGoods;
 		Post( LedgerCategory.OtherCosts, goods );
 		item.CustomersThisMonth++;
+		item.CustomersRing.Today++;
 		item.CostsThisMonth += goods;
+		item.CostsRing.Today += goods;
 		item.TotalProfit += item.Price - goods;
 		Counters.Add( ParkCounters.ShopProfit, item.Price - goods );
 		if ( item.Price != 0 )
@@ -1938,20 +2006,26 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) || item.Kind != ParkObjectKind.Sideshow || !item.IsOpen || IsBankrupt || visitorCash < item.Price )
 			return false;
 		pricePaid = item.Price;
-		won = SideshowWins( item.ChanceOfLosingPercent, Random.Next( 100 ) );
+		won = SideshowWins( item.ChanceOfLosingPercent, (int)World.Next( 100u ) );
 		var prize = won ? item.CostOfGoods : 0;
 		// [BIN:TPW-EXE:0x004FE1A0 price taken] a free play skips the takings (0x004E16B0) as a free sale does; the prize is still paid
 		if ( item.Price != 0 )
 		{
 			Post( LedgerCategory.SideshowTakings, item.Price );
 			item.TakingsThisMonth += item.Price;
+			item.TakingsRing.Today += item.Price;
 		}
 		Post( LedgerCategory.OtherCosts, prize );
 		item.CustomersThisMonth++;
+		item.CustomersRing.Today++;
 		item.CostsThisMonth += prize;
+		item.CostsRing.Today += prize;
 		item.TotalProfit += item.Price - prize;
 		if ( won )
+		{
 			item.WinnersThisMonth++;
+			item.WinnersRing.Today++;
+		}
 		Counters.Add( ParkCounters.SideshowProfit, item.Price - prize );
 		if ( item.Price != 0 )
 			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.SideshowTakings ) );
@@ -1964,7 +2038,10 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( !objects.TryGetValue( instanceId, out var item ) )
 			return;
 		item.CustomersThisMonth++;
+		item.CustomersRing.Today++;
 		Counters.Add( ParkCounters.RideUses( item.InfoId ), 1 );
+		// [BIN:TPW-EXE:0x5021c5 ride use] the event carries the used ride's thing id as its object (parameter B of 0x004D27A0), which a carried object (ECON-055) must equal
+		Counters.Add( ParkCounters.RideUsesOfThing( item.Id ), 1 );
 	}
 
 	/// <summary>
@@ -2004,6 +2081,11 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( item.WalkAwayDays.Count > WalkAwayHistoryDays )
 				item.WalkAwayDays.RemoveAt( 0 );
 			item.WalkAwaysToday = 0;
+			item.CostsRing.Roll();
+			item.TakingsRing.Roll();
+			item.CustomersRing.Roll();
+			item.WinnersRing.Roll();
+			item.SatisfactionRing.Roll();
 		}
 	}
 
@@ -2014,6 +2096,9 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		var infoId = objects.TryGetValue( instanceId, out var item ) ? item.InfoId : 0;
 		Counters.Max( ParkCounters.Record( kind, infoId ), value );
+		// the instance that holds a record, a later one replacing it only when strictly above (the best-object walks keep the first of equals, 0x004CC810, 0x004CC4B0)
+		if ( objects.ContainsKey( instanceId ) && (!recordBest.TryGetValue( (kind, infoId), out var held ) || value > held.Value || !objects.ContainsKey( held.Instance )) )
+			recordBest[(kind, infoId)] = (value, instanceId);
 	}
 
 
@@ -2062,8 +2147,11 @@ public sealed class ParkEconomy : IParkEconomy
 	/// declined challenges, and a challenge that is running (accepted, with its deadline and the value it has reached) or offered and unanswered.
 	/// </summary>
 	internal void RestoreOriginalChallenges( long nextOfferDay, int nextListPosition, int? runningIndex, long deadlineDay, long value, int? offeredIndex,
-		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished, bool switchedOn = true )
+		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished, bool switchedOn = true, int actualThing = 0, IReadOnlyDictionary<int, int>? carriedThings = null,
+		long? nextOfferSeconds = null, long? deadlineSeconds = null )
 	{
+		// the carried object first: the baseline of a ride-use type counts that object's uses
+		Objectives.RestoreCarried( actualThing, carriedThings );
 		ActiveChallenge? current = null;
 		if ( runningIndex is int running && Settings.Challenges.TryGetValue( running, out var definition ) )
 		{
@@ -2071,12 +2159,13 @@ public sealed class ParkEconomy : IParkEconomy
 			// to give the saved value now
 			// the daily-average types keep the system's accumulated value itself
 			var baseline = ParkObjectives.IsCountSinceAcceptance( definition.Type ) ? MeasureChallenge( definition ) - value : ParkObjectives.IsDailyAverage( definition.Type ) ? value : 0;
-			var start = deadlineDay - definition.TargetTime;
-			current = new ActiveChallenge( running, start, true, start, deadlineDay, baseline );
+			var endSeconds = deadlineSeconds ?? deadlineDay * ParkCalendar.SecondsPerDay;
+			var start = (endSeconds - definition.TargetTime * ParkCalendar.SecondsPerDay) / ParkCalendar.SecondsPerDay;
+			current = new ActiveChallenge( running, start, true, start, endSeconds / ParkCalendar.SecondsPerDay, baseline, endSeconds );
 		}
 		else if ( offeredIndex is int offered && Settings.Challenges.ContainsKey( offered ) )
 			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0 );
-		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn );
+		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn, actualThing, carriedThings, nextOfferSeconds );
 	}
 
 	/// <summary>Takes an original save's bank account: balance, admission fee, the year's profit and the bought loans.</summary>

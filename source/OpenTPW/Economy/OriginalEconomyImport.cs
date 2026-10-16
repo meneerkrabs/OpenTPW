@@ -73,11 +73,12 @@ public sealed class OriginalEconomyImport
 		var world = save.World;
 		ImportTurn( economy, world, evidence );
 		Verify( economy.Settings, save.Economy, evidence );
-		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, evidence );
 		ImportBank( economy, save.Economy.BankAccount, evidence );
 		if ( save.ResearchLab is { } lab )
 			ImportResearch( economy, lab, evidence );
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
+		// after the objects: the carried object of a follow-up is one of their thing ids
+		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, things, evidence );
 		var staff = ImportStaff( economy, save, things, evidence );
 		ReportNotImported( save, evidence );
 		// [BIN:STP-PPC:0x10106708 world reader] mParkClosed is restored with the world variables (0 = open)
@@ -96,8 +97,9 @@ public sealed class OriginalEconomyImport
 		var matches = calendar.FunnyTimeStart == epoch && calendar.FunnySecsPerRealSec == ParkCalendar.SecondsPerTurn * 4
 			&& calendar.MonthAtLastUpdate == date.Month - 1 && calendar.DayAtLastUpdate == date.Day;
 		evidence.Add( $"Park turn {world.Variables.GameTick} imported ({ParkCalendar.ToDate( economy.Tick )}); the save's calendar (rate {calendar.FunnySecsPerRealSec}, month cache {calendar.MonthAtLastUpdate}, day cache {calendar.DayAtLastUpdate}) {(matches ? "agrees" : "does not agree")} with that date." );
-		// [APPROX:SAVE-001] the save's world generator word (mRandomSeed) is reported but not imported: it is the whole state of the original's one shared world LCG (tp.exe 0x516330, world +0x1DA708), saved and loaded raw (0x51710E, 0x517DE7), while OpenTPW's economy, guest and script streams are separate generators derived from the world seed — evidence needed: DET-I2 port of the world LCG and its call order (DET-005, DET-013)
-		evidence.Add( $"[APPROX:SAVE-001] World generator state mRandomSeed 0x{world.Variables.RandomSeed:X8} is not imported; the park's streams come from its world seed." );
+		// [BIN:TPW-EXE:0x0051710F world generator word] the world writer saves the u32 at world +0x1DA708 raw under the name "mRandomSeed" (0x00517123 with the name at 0x00762924) and the loader reads it back raw (0x00517DFC): it is the whole state of the one world generator 0x00516330, which the park continues from
+		economy.World.Restore( world.Variables.RandomSeed );
+		evidence.Add( $"World generator state mRandomSeed 0x{world.Variables.RandomSeed:X8} imported: the park's draws continue the saved stream." );
 	}
 
 	/// <summary>Checks the save's loan offers and challenge list against the balance settings.</summary>
@@ -213,6 +215,7 @@ public sealed class OriginalEconomyImport
 			}
 			// [BIN:TPW-EXE:0x004DC12B walk-away load] the attraction loader reads mNumWalkAways (key 0x0075B508) into +0x1A4, the count the refusal raises (0x004E1670)
 			state.WalkAways = attraction.WalkAwayCount;
+			ImportRings( state, attraction );
 			things.TryAdd( attraction.Id, state );
 			// [BIN:STP-PPC:0x100DAF04 attraction serializer] mPricePerUse, mCostOfGoods, mUpgradeLevel and the gauges at +0x40 (state of repair) and +0x44 (life gauge)
 			// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the PC loader puts the three floats at +0x4C, +0x48 (life gauge) and +0x44 (state of repair) and clamps mPricePerUse to 0–500
@@ -241,10 +244,42 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"Attraction value adjusted on import: {line}." );
 		// [BIN:TPW-EXE:0x004DC12B walk-away load] the loader reads mNumWalkAways (+0x1A4) back with the other fields, so it is imported (ImportObjects); 0x004E1670 raises it (from 0x005006B0) and nothing else reads the field
 		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} imported (mNumWalkAways, +0x1A4)." );
-		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a closed open word of a working attraction (mCanLoad, the park door opens it), the six daily 30-day rings (OpenTPW keeps this and last month and, apart, a 30-day ring of walk-aways that starts empty at the import, ECON-057), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (an imported job's claim is taken again with its saved turn, 0x004E01F0; any other claim is dropped, and a claim lapses 100 turns after its turn unless its claimant still targets the object, 0x004E0220, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the readers of the daily rings and of +0x4C
+		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a closed open word of a working attraction (mCanLoad, the park door opens it), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (an imported job's claim is taken again with its saved turn, 0x004E01F0; any other claim is dropped, and a claim lapses 100 turns after its turn unless its claimant still targets the object, 0x004E0220, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the reader of +0x4C
 		foreach ( var item in save.Attractions )
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, open word {item.CanLoad}, third gauge {item.Gauge48}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", daily rings {string.Join( "/", item.Histories.Select( ring => ring.Current ) )} (today), claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
+			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, open word {item.CanLoad}, third gauge {item.Gauge48}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
 		return (objects, fixedItems, things);
+	}
+
+	/// <summary>
+	/// The six daily rings of an attraction record (the serializer order costs, takings, customers, walk-aways, winners, satisfaction change); a ring that
+	/// does not fit the original's 30 slots is left as it was.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the six rings follow in the order +0xF8 costs, +0x70 takings, +0x1A8 customers (after the word +0x1A0), +0x230 walk-aways (after +0x1A4), +0x2B8 winners and +0x340 the visits' averaged happiness change; each is its head, its size, the full flag, its running value and the 30 slots
+	private static void ImportRings( ParkObjectState state, SaveAttraction attraction )
+	{
+		if ( attraction.Histories.Count != SaveAttraction.HistoryBuffers || attraction.Histories.Any( ring => ring.Entries.Count != DailyRing.Size ) )
+			return;
+		DailyRing Ring( int index )
+		{
+			var saved = attraction.Histories[index];
+			return DailyRing.FromSlots( saved.CurrentEntry, saved.WrappedAround, saved.Current, saved.Entries );
+		}
+		try
+		{
+			var (costs, takings, customers, walkAways, winners, satisfaction) = (Ring( 0 ), Ring( 1 ), Ring( 2 ), Ring( 3 ), Ring( 4 ), Ring( 5 ));
+			state.CostsRing = costs;
+			state.TakingsRing = takings;
+			state.CustomersRing = customers;
+			state.WinnersRing = winners;
+			state.SatisfactionRing = satisfaction;
+			state.WalkAwayDays.Clear();
+			state.WalkAwayDays.AddRange( walkAways.Entries.Select( entry => (long)Math.Max( 0, entry ) ) );
+			state.WalkAwaysToday = Math.Max( 0, walkAways.Today );
+		}
+		catch ( InvalidDataException )
+		{
+			// a head outside the ring leaves the object's rings new
+		}
 	}
 
 	private static int ImportStaff( ParkEconomy economy, OriginalParkImport save, IReadOnlyDictionary<int, ParkObjectState> things, List<string> evidence )
@@ -510,7 +545,7 @@ public sealed class OriginalEconomyImport
 	/// </summary>
 	// [BIN:TPW-EXE:0x4d2320 challenge system serializer] after the 20 slots: mCurrentChallenge (+0x3cc, −1 none), mNextChallengeEventTime (+0x3d0, an absolute 100 ns stamp), mSystemSwitchedOn (+0x3d8), mChallengeOn (+0x3d9, accepted and running), mWaitingForReply (+0x3da, an offer is open), mValue (+0x3dc), mActualThing (+0x3e0)
 	// [BIN:TPW-EXE:0x4d1e90 daily challenges] before the switch is on, the first offer comes once the park's elapsed day (0x4f8800 / 864e9) reaches DaysUntilFirstChallenge while the park is open (0x4c9050), and the switch is set; then an idle system offers when the clock passes the next event time, and a running challenge ends at its deadline, which the accept (0x4d2df0) stores in the same word
-	private static void ImportChallenges( ParkEconomy economy, SaveChallengeSystem system, long calendarStart, List<string> evidence )
+	private static void ImportChallenges( ParkEconomy economy, SaveChallengeSystem system, long calendarStart, IReadOnlyDictionary<int, ParkObjectState> things, List<string> evidence )
 	{
 		var settings = economy.Settings;
 		var level = settings.ChallengesInThisLevel;
@@ -521,7 +556,9 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"[APPROX:SAVE-005] Challenge state not imported: the save's {slots.Count} slots do not match the level's {level.Count} challenges; the first offer is due on day {economy.Objectives.NextOfferDay}." );
 			return;
 		}
-		long Day( long stamp ) => (stamp - calendarStart) / (OriginalEconomyImport.TimeStampUnitsPerSecond * ParkCalendar.SecondsPerDay);
+		// a stamp before the calendar start (or a wild one) is cut to the range a park save accepts
+		long Seconds( long stamp ) => Math.Clamp( (stamp - calendarStart) / OriginalEconomyImport.TimeStampUnitsPerSecond, 0, ParkSaveFile.MaximumParkSeconds );
+		long Day( long stamp ) => Seconds( stamp ) / ParkCalendar.SecondsPerDay;
 		var finished = slots.Select( ( slot, index ) => (slot, index) ).Where( entry => entry.slot.Won ).Select( entry => level[entry.index] ).ToList();
 		var declines = slots.Select( ( slot, index ) => (slot, index) ).Where( entry => entry.slot.Declined > 0 ).ToDictionary( entry => level[entry.index], entry => entry.slot.Declined );
 		var current = system.CurrentChallenge >= 0 && system.CurrentChallenge < slots.Count ? system.CurrentChallenge : -1;
@@ -529,15 +566,16 @@ public sealed class OriginalEconomyImport
 		long nextOffer = settings.ChallengeTiming.DaysUntilFirstChallenge;
 		int? running = null, offered = null;
 		long deadline = 0;
+		long? nextSeconds = null, deadlineSeconds = null;
 		string state;
 		if ( system.Switch1 == 0 )
 			state = $"not started: the first offer is due on park day {nextOffer}";
 		else if ( system.Switch2 != 0 && current >= 0 )
 		{
 			running = level[current];
-			// the deadline is passed at the first daily update after the stamp
-			deadline = Day( system.NextEventTime ) + 1;
-			nextOffer = deadline;
+			// [BIN:TPW-EXE:0x4d1e90 challenge update] the running challenge ends at the stamp itself (the accept stored the clock plus mTargetTime there), tested on every park turn
+			deadlineSeconds = nextSeconds = Seconds( system.NextEventTime );
+			deadline = nextOffer = deadlineSeconds.Value / ParkCalendar.SecondsPerDay;
 			state = $"challenge {running} running until day {deadline} with value {system.Value}";
 		}
 		else if ( system.Switch3 != 0 && current >= 0 )
@@ -547,14 +585,18 @@ public sealed class OriginalEconomyImport
 		}
 		else
 		{
-			// an idle system offers at the first daily update after the stamp
-			nextOffer = Day( system.NextEventTime ) + 1;
+			// an idle system offers on the first park turn at or after the stamp
+			nextSeconds = Seconds( system.NextEventTime );
+			nextOffer = nextSeconds.Value / ParkCalendar.SecondsPerDay;
 			state = $"the next offer is due on day {nextOffer}";
 		}
-		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished, system.Switch1 != 0 );
-		evidence.Add( $"Challenges imported: {state}; {finished.Count} won, {declines.Count} declined." );
-		// [APPROX:SAVE-005] the loss counts, the follow-up's carried object (mActualThing and the slots' mThingIdForFollowup, ECON-055) and the day an unanswered offer was made are not imported — evidence needed: what reads the loss counts and how the follow-up types read the carried object
-		evidence.Add( $"[APPROX:SAVE-005] Challenge values not imported: losses {string.Join( "/", slots.Select( slot => slot.Lost ) )}, ActualThing {system.ActualThing}, follow-up things {string.Join( "/", slots.Select( slot => slot.FollowupThing ) )}." );
+		// [BIN:TPW-EXE:0x4d2fb0 challenge won] the carried object (+0x3e0) and the slots' ids (+0x2e) are thing ids of the saved park; an object the import restored keeps its id as its economy instance
+		int Carried( int thing ) => things.TryGetValue( thing, out var carriedState ) ? carriedState.Id : 0;
+		var carriedThings = slots.Select( ( slot, index ) => (Index: level[index], Thing: Carried( slot.FollowupThing )) ).Where( entry => entry.Thing != 0 ).ToDictionary( entry => entry.Index, entry => entry.Thing );
+		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished, system.Switch1 != 0, Carried( system.ActualThing ), carriedThings, nextSeconds, deadlineSeconds );
+		evidence.Add( $"Challenges imported: {state}; {finished.Count} won, {declines.Count} declined, carried object {(system.ActualThing == 0 ? "none" : Carried( system.ActualThing ) == 0 ? $"thing {system.ActualThing} (not an imported object)" : $"thing {system.ActualThing}")}." );
+		// [APPROX:SAVE-005] the loss counts (slot +0x24, which the loss 0x4d3140 raises and no reader of the challenge code, the offer scan 0x4d2a70 or the follow-up scan 0x4d2b60 tests) and the day an unanswered offer was made (slot +0x20) are not imported — evidence needed: a reader of the slot's +0x24 and +0x20 words outside the challenge system
+		evidence.Add( $"[APPROX:SAVE-005] Challenge values not imported: losses {string.Join( "/", slots.Select( slot => slot.Lost ) )}." );
 	}
 
 	/// <summary>
@@ -587,7 +629,10 @@ public sealed class OriginalEconomyImport
 				progress.Add( (key, (long)Math.Round( project.Done * (double)ParkResearch.PointScale )) );
 		}
 		var effort = Enumerable.Range( 0, SaveResearchLab.GroupRecords ).Select( index => lab.Group( index ).Effort ).ToArray();
-		research.Restore( completed, progress, effort );
+		// [BIN:TPW-EXE:0x504580 upgrade level project] the lab's category-4 projects (the add-ons and the appended level projects) keep the saved table's order
+		var upgradeOrder = Enumerable.Range( 0, used ).Select( lab.Project ).Where( project => project.Category == (uint)ResearchCategory.Upgrade && research.HasItem( project.ObjectId, project.UpgradeLevel ) )
+			.Select( project => ((int)project.ObjectId, (int)project.UpgradeLevel) ).ToList();
+		research.Restore( completed, progress, effort, null, upgradeOrder.Count == 0 ? null : upgradeOrder );
 		research.SetWorkload( lab.WorkLoad );
 		var current = new List<string>();
 		var refused = new List<string>();

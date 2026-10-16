@@ -13,7 +13,9 @@ public enum OriginalPlacementResult
 	Path,
 	Occupied,
 	/// <summary>The park does not own the cell (map flag 0x40; Buy Land adds land).</summary>
-	NotOwned
+	NotOwned,
+	/// <summary>An entrance's or exit's outside cell refuses the access the original lays there (tp.exe <c>0x528A70</c>).</summary>
+	AccessBlocked
 }
 
 /// <summary>

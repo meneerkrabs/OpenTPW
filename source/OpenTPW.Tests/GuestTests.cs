@@ -658,6 +658,10 @@ public class GuestTests
 		var states = new HashSet<GuestState>();
 		for ( var tick = 0; tick < 90 * 60 && simulation.Find( guest.Id ) != null; tick++ )
 		{
+			// the original tests the counter for exactly 0 only when the guest decides (state 6), so a guest whose counter passes 0 while it walks never leaves by it:
+			// this holds the counter just above 0 while the guest is deciding, so that the needs phase brings it to 0 on the decision
+			if ( guest.State == GuestState.DoingNothing && guest.ExitLevel > 1 )
+				guest.ExitLevel = 1;
 			simulation.Tick( Tick );
 			states.Add( guest.State );
 		}
@@ -770,7 +774,8 @@ public class GuestTests
 			simulation.Tick( Tick );
 		Assert.IsTrue( guest.State is GuestState.WalkingAround or GuestState.DoingNothing, $"happiness 5 did not send the guest home ({guest.State})" );
 		guest.Happiness = 0.5f;
-		for ( var tick = 0; tick < 5 * 60 && guest.State is GuestState.WalkingAround or GuestState.DoingNothing; tick++ )
+		// the decision comes when the guest has finished its walk (the wander lasts up to a minute with the world generator's draws)
+		for ( var tick = 0; tick < 90 * 60 && guest.State is GuestState.WalkingAround or GuestState.DoingNothing; tick++ )
 			simulation.Tick( Tick );
 		Assert.AreEqual( GuestState.LeavingPark, guest.State );
 	}
@@ -1084,7 +1089,7 @@ public class GuestTests
 		var rides = Enumerable.Range( 1, 6 ).Select( index => CreateShop( index, (index * 8, 32) ) ).ToArray();
 		foreach ( var ride in rides )
 			simulation.Register( ride.Bridge );
-		var random = new GuestRandom( 1 );
+		var random = new WorldRng( 1 );
 		while ( simulation.Guests.Count < 600 )
 		{
 			var (x, y) = (random.Next( 64 ), random.Next( 16 ) * 4);

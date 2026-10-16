@@ -14,7 +14,7 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x755150 b_callmech] the call button is b_callmech at (1114,800)-(1268,953), help 8, in the ride window's bottom row; a toilet (a shop) takes the same place
 	private void AddCallStaffButton()
 	{
-		// ui.wad lacks the highlight textures b_callmechg and b_callhandyg (the model's frame 2), so a focused button keeps its normal frame
+		// the disable frame (1) names b_callmechg and b_callhandyg, which ui.wad lacks: UiButton draws the normal frame greyed instead
 		callStaffButton = hud.Add( new UiButton { Id = "callStaff", Model = "b_callmech", Clicked = ToggleCallStaff, KeepNormalFrameWhenFocused = true,
 			Selected = () => CallTarget( selectedObject, out _, out var item, out _ ) && item.MaintenanceRequested,
 			Bounds = new UiRect( 1114, 800, 154, 153 ), Anchor = UiAnchor.Center, Visible = false, Enabled = false } );

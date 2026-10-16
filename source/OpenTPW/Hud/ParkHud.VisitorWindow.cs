@@ -13,7 +13,8 @@ namespace OpenTPW.Hud;
 // (rows 0x38 = 56 units high; cells 0x490c30, 0x490250, 0x490e60, 0x48fde0, the ti_hungry model and a happygrad.wct bar), makes all six columns sortable,
 // applies the sort word 0x7508bc, adds a row for every guest thing (0x481bc0 with mask 0x40 → 0x493800), selects the visitor it was opened on, titles the
 // headers 0x10-0x15 with UITEXT 0x71-0x76 (help 0x81-0x86), arms the 2000 ms timer 0x80083 and posts help 0x11e; message 0x15 titles 0x1e498 with UITEXT 0x70
-// [APPROX:UI-907] rows re-sort whenever their values refresh, where the original's list (0x6644ea) may keep its order until a header press; the list selects its first row when nothing is chosen, where the original opens with no selection unless it was opened on a visitor; the rides column is centred, where its cell (0x48fde0, no 0x65c428 call) keeps the class default alignment — evidence needed: the list class's re-sort on a row update and its default text alignment
+// [EXT:list-selection-by-id] the selected row follows its visitor while rows are added or removed, where the original keeps the selected position (+0x14c, 0x66525c) — a design choice that keeps a live list from highlighting another visitor
+// [BIN:TPW-EXE:0x6644ea row refresh, 0x66403b sorted row insert] the 2000 ms refresh rewrites the cells in place and never moves a row, a new row is inserted by the list's sorted insert (ListRowOrder), and the first row added selects row 0 (0x66403b → 0x66525c); [APPROX:UI-907] the rides column is centred, where its cell (0x48fde0, no 0x65c428 call) keeps the class default alignment — evidence needed: the cell text object's default alignment
 public sealed partial class ParkHud
 {
 	private static LayoutTable VisitorTable => OriginalLayoutTables.VisitorsWindow;
@@ -53,7 +54,22 @@ public sealed partial class ParkHud
 	public (int Column, bool Descending) VisitorSort => (visitorSortColumn, visitorSortDescending);
 	private IEnumerable<Guest> ListedGuests => (level.Guests?.Guests ?? Array.Empty<Guest>()).Where( guest => level.Guests?.IsInPark( guest ) ?? false );
 	/// <summary>Live in-park visitors in list order.</summary>
-	public IReadOnlyList<Guest> VisitorItems => ParkVisitorRoster.Rows( ListedGuests, _ => true, VisitorValuesOf, visitorSortColumn, visitorSortDescending );
+	public IReadOnlyList<Guest> VisitorItems => OrderVisitors( ListedGuests.ToArray() );
+
+	/// <summary>The row order the open list holds (visitor ids); null before the window's first fill and after a header press, which sort it afresh.</summary>
+	private List<int>? visitorOrder;
+
+	/// <summary>The listed visitors in the list's order: sorted when the list is filled or a header is pressed, afterwards kept with new rows inserted (<see cref="ListRowOrder"/>).</summary>
+	private IReadOnlyList<Guest> OrderVisitors( Guest[] listed )
+	{
+		if ( visitorOrder == null )
+		{
+			var sorted = ParkVisitorRoster.Rows( listed, _ => true, VisitorValuesOf, visitorSortColumn, visitorSortDescending );
+			visitorOrder = sorted.Select( guest => guest.Id ).ToList();
+			return sorted;
+		}
+		return ParkVisitorRoster.Keep( visitorOrder, listed, VisitorValuesOf, visitorSortColumn, visitorSortDescending );
+	}
 
 	/// <summary>
 	/// The window's rows for one frame: the screen refreshes them when it updates and every action that changes the order refreshes them again,
@@ -79,7 +95,7 @@ public sealed partial class ParkHud
 			foreach ( var id in visitorValues.Keys.Where( id => !present.Contains( id ) ).ToArray() )
 				visitorValues.Remove( id );
 		}
-		return visitorRows = ParkVisitorRoster.Rows( listed, _ => true, VisitorValuesOf, visitorSortColumn, visitorSortDescending );
+		return visitorRows = OrderVisitors( listed );
 	}
 
 	/// <summary>The cells of a listed visitor: the ones its row holds, or a new row's for a visitor not seen since the last refresh.</summary>
@@ -113,6 +129,7 @@ public sealed partial class ParkHud
 		visitorValues.Clear();
 		visitorValueAge = 0;
 		visitorInfoId = 0;
+		visitorOrder = null;
 		RefreshVisitorRows();
 		EnsureVisitorSelection();
 		visitorScreen ??= CreateVisitorScreen();
@@ -153,6 +170,7 @@ public sealed partial class ParkHud
 	{
 		visitorSortDescending = visitorSortColumn == column && !visitorSortDescending;
 		visitorSortColumn = column;
+		visitorOrder = null;
 		RefreshVisitorRows();
 		var index = VisitorRowIndex( selectedVisitorId );
 		EnsureVisitorSelection();

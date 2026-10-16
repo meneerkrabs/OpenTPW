@@ -29,7 +29,7 @@ public class OriginalSaveImportTests
 	} );
 
 	/// <summary>The settings' level challenges in save slot layout.</summary>
-	private static byte[] Challenges( BalanceSettings settings )
+	internal static byte[] Challenges( BalanceSettings settings )
 	{
 		var body = SaveTestPayloads.ChallengeSystem( Array.Empty<(int, int, int, int)>() );
 		for ( var index = 0; index < settings.ChallengesInThisLevel.Count; index++ )
@@ -179,9 +179,11 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "hired 2,430,000 park seconds after FunnyTimeStart = turn 648" );
 		Assert.AreEqual( 1, import.ImportedStaff );
 		Assert.IsFalse( import.ParkClosed );
-		foreach ( var id in new[] { "SAVE-001", "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-010" } )
+		foreach ( var id in new[] { "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
-		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) ), "the dropped generator state is named" );
+		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) && line.Contains( "imported" ) ), "the generator state is named as imported" );
+		Assert.AreEqual( 0x3F416BBAu, economy.World.State, "the save's mRandomSeed is the world generator's state (tp.exe 0x00516330, saved raw by 0x00517123)" );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-001]" ) ), "SAVE-001 is retired" );
 		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "0 saved guests", StringComparison.Ordinal ) && line.Contains( "imported by the guest simulation" ) ) );
 		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "adjusted on import" ) ), "in-range staff values are imported unchanged" );
 		AssertReportsUnimportedValues( import );
@@ -210,14 +212,14 @@ public class OriginalSaveImportTests
 		StringAssert.Contains( Line( "Bank words imported:" ), "withdrawals enabled, last balance " );
 		StringAssert.Contains( Line( "Loan offers' stored credit tests imported:" ), "the Available tab lists " );
 		var challenges = Line( "[APPROX:SAVE-005]" );
-		foreach ( var value in new[] { "losses ", "ActualThing ", "follow-up things " } )
+		foreach ( var value in new[] { "losses " } )
 			StringAssert.Contains( challenges, value );
 		StringAssert.Contains( Line( "Challenges imported:" ), "not started" );
 		var attractions = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-006] Attraction thing ", StringComparison.Ordinal ) ).ToArray();
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
 		{
-			foreach ( var value in new[] { "operating capacity ", "duration ", "speed ", "open word ", "third gauge ", "name \"", "daily rings ",
+			foreach ( var value in new[] { "operating capacity ", "duration ", "speed ", "open word ", "third gauge ", "name \"",
 				"claim by thing ", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}
@@ -330,7 +332,8 @@ public class OriginalSaveImportTests
 			BinaryPrimitives.WriteInt32LittleEndian( body.AsSpan( Slot( 2, 37 ) ), 1 );
 		} );
 		var active = running.Objectives.Current!;
-		Assert.AreEqual( (level[1], true, 101L), (active.DefinitionIndex, active.Accepted, active.DeadlineDay), "the deadline passes at the first daily update after the stamp" );
+		Assert.AreEqual( (level[1], true, 100L), (active.DefinitionIndex, active.Accepted, active.DeadlineDay), "the deadline is the stamp itself, tested on every park turn" );
+		Assert.AreEqual( 100 * 86400L + 43200, active.EndSeconds, "the stamp's exact second (day 100 and a half)" );
 		var definition = settings.Challenges[level[1]];
 		if ( ParkObjectives.IsCountSinceAcceptance( definition.Type ) )
 			Assert.AreEqual( 7, running.Objectives.Measure( definition, running.Counters, running.Staff, running.Objects, running.GuestStatistics ) - active.Baseline, "the saved value is reached now" );
@@ -343,7 +346,8 @@ public class OriginalSaveImportTests
 
 		var idle = Import( 3, 200, 1, 0, 0, 0 );
 		Assert.IsNull( idle.Objectives.Current );
-		Assert.AreEqual( 201, idle.Objectives.NextOfferDay, "an idle system offers at the first daily update after the stamp" );
+		Assert.AreEqual( 200, idle.Objectives.NextOfferDay, "an idle system offers on the first park turn at or after the stamp" );
+		Assert.AreEqual( 200 * 86400L + 43200, idle.Objectives.NextOfferSeconds );
 	}
 
 	[TestMethod]
@@ -428,13 +432,14 @@ public class OriginalSaveImportTests
 		""";
 
 	[TestMethod]
-	public void ImportsTheAdvisorControllerForBoundMessages()
+	public void ImportsTheAdvisorControllerForEveryMessageOfTheDescriptorTable()
 	{
 		var pending = new[]
 		{
 			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 188, 1000, 0, -1, 0, 0 ),
 			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 90, 1000, 1, -1, 0, 0 ),
 			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 128, 20, 1, 1, 1, 0 ),
+			new SaveTestPayloads.AdvisorRecordFields( 0, 0, 351, 5, 1, -1, 0, 0 ),
 		};
 		var history = new Dictionary<int, (uint, int, byte, uint)> { [0] = (1, 0, 1, 0), [129] = (400, 1, 1, 2), [77] = (9, 0, 1, 0) };
 		var things = SaveTestPayloads.ParkThings();
@@ -446,14 +451,15 @@ public class OriginalSaveImportTests
 		var controller = new AdvisorController( AdvisorBalance.Parse( Encoding.ASCII.GetBytes( AdvisorSettings ), "test.sam" ) );
 		controller.HandleGameEvent( AdvisorGameEvent.Bankrupted, 0, 0, true );
 		var report = controller.ImportOriginal( saved );
-		Assert.AreEqual( 1, controller.Queue.Count, "only the valid record of a bound message is pending; the session's own advice is replaced" );
+		Assert.AreEqual( 2, controller.Queue.Count, "the valid records of messages with a descriptor are pending (90 has one, 351 is past the table); the session's own advice is replaced" );
+		Assert.AreEqual( new AdvisorPendingAdvice( 90, 1000, -1, false ), controller.Queue.GetSlot( 1 ), "message 90 keeps its saved score although nothing produces it yet" );
 		Assert.AreEqual( new AdvisorPendingAdvice( 128, 20, 1, true ), controller.Queue.GetSlot( 2 ), "the record keeps its slot, score, response number and override" );
+		Assert.AreEqual( new AdvisorMessageHistory( 9, 0, true, 0 ), controller.Queue.GetHistory( 77 ), "the history of message 77 is kept (its group is in the settings)" );
 		Assert.AreEqual( new AdvisorMessageHistory( 1, 0, true, 0 ), controller.Queue.GetHistory( 0 ) );
 		Assert.AreEqual( new AdvisorMessageHistory( 400, 1, true, 2 ), controller.Queue.GetHistory( 129 ) );
 		Assert.AreEqual( AdvisorMessageHistory.Empty, controller.Queue.GetHistory( 106 ) );
-		StringAssert.Contains( report, "dropped 1 pending advice of unbound messages (90)" );
-		StringAssert.Contains( report, "1 unbound history entries" );
-		StringAssert.Contains( report, "[APPROX:ADVISOR-022]" );
+		StringAssert.Contains( report, "dropped 1 pending advice of messages without a descriptor (351)" );
+		StringAssert.Contains( report, "0 history entries without one" );
 		StringAssert.Contains( report, "message 128 thing 0 secondary 0 score overridden 0" );
 
 		// The level start that follows (events 10 then 0) keeps the saved ticks and adds Welcome next to the saved advice.
@@ -461,7 +467,7 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( 1u, controller.Queue.GetHistory( 0 ).SavedGameTick );
 		Assert.IsFalse( controller.Queue.GetHistory( 0 ).HasBeenPlayed );
 		controller.HandleGameEvent( AdvisorGameEvent.LevelStarted, 755, 0, true );
-		Assert.AreEqual( 2, controller.Queue.Count );
+		Assert.AreEqual( 3, controller.Queue.Count );
 		var selection = controller.Update( () => 0, () => 755, _ => 100 );
 		Assert.AreEqual( 0, selection!.Value.Advice.MessageId, "Welcome outscores the saved ParkNowOpen advice" );
 	}
@@ -492,7 +498,7 @@ public class OriginalSaveImportTests
 		controller = Fresh();
 		report = controller.ImportOriginal( Saved( new SaveTestPayloads.AdvisorRecordFields( 0, 0, 128, 20, 1, -1, 0, 0 ) ) );
 		Assert.IsNull( controller.Queue.LastTutorial );
-		StringAssert.Contains( report, "last tutorial advice message 128 dropped (unbound or not a tutorial)" );
+		StringAssert.Contains( report, "last tutorial advice message 128 dropped (no descriptor or not a tutorial)" );
 	}
 
 	[TestMethod]

@@ -395,7 +395,7 @@ once through the existing path texture cache, then swaps the
 (`Material.SetTextureArrayElement`; nothing is reallocated while the frame
 holds; resource sets are retired and rebuilt only when native texture identity
 changes. Missing art is registered with the animator and holds its effective
-selected frame, MD2-902). Sign-owned slots (`sign1`/`sign2`) are never frame-swapped.
+selected frame, `[EXT:missing-frame-keeps-visible]`, retired `APPROX:MD2-902`). Sign-owned slots (`sign1`/`sign2`) are never frame-swapped.
 Corpus (catalogue objects): 37 entries carry enabled texture-frame clips, 203
 clips apply in-range tracks, 155 of them change the frame while playing
 (Belly Bounce eyes `sp_eye01..06`, arcade/arc2x3 attract screens `sf_01..10`,

@@ -152,7 +152,7 @@ internal sealed class AdvisorRig : IDisposable
 					textureSlots[slot] = texture;
 				}
 				// [BIN:TPW-EXE:0x00566957 device init] the only Direct3D CULLMODE write is D3DCULL_NONE; no other constant-state SetRenderState sets it and the register-driven setter 0x567A10 only toggles ALPHABLENDENABLE, so the original draws both faces
-				var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader", MaterialFlags.DoubleSided );
+				var material = new Material<ObjectUniformBuffer>( "content/shaders/advisor.shader", MaterialFlags.DoubleSided );
 				material.Set( "Color", textureSlots );
 				// [BIN:TPW-EXE:0x581CD0 mesh submit] the submit queues the primitive (at most 0x1000, queue 0x8BCBB8) after transforming its vertices through [0x87B1D8] vtable +8, the per-CPU 4x4 transform chosen at 0x5781D0 (x87 0x579250, 3DNow 0x5F4730, 0x5F4F81) with no face test, and the batcher 0x581DB0 orders by state and texture only; the mesh path before it (0x57A750, 0x57AA10, 0x574110 through 0x574660) has no back-face test either, so the original draws both faces
 				var positions = new System.Numerics.Vector3[mesh.Vertices.Length];
@@ -317,7 +317,7 @@ internal sealed class AdvisorRig : IDisposable
 			SampledTick = 0;
 			return Rest;
 		}
-		// [APPROX:ADVISOR-006] The clips' node tracks, blink toggles, vertex tracks (antennae, hands, eyes) and texture-coordinate tracks (the level advisors' eyes) are played; the blink toggles set the mesh-node bit, which hides that mesh in the original's draw walk (0x57A5E3 tests 0x8210), and a clip the archive lacks leaves the bind pose — evidence needed: what the original shows for a clip its archive lacks
+		// [BIN:TPW-EXE:0x00472F60 animation start] a clip the model's archive lacks has no loaded flag in its slot ((slot + 2) * 12, bits 3): the start clears the animation (current clip 0xC = none, the previous one ends through 0x472310) and 0x4732A0 still returns the 1000 ms floor, so the model keeps its rest pose; the node tracks, blink toggles, vertex tracks (antennae, hands, eyes) and texture-coordinate tracks (the level advisors' eyes) of a clip it has are played, and a toggled mesh-node bit hides that mesh in the draw walk (0x57A5E3 tests 0x8210)
 		player.SetTick( tick );
 		SampledTick = player.Tick;
 		player.ComputeWorldTransforms( worlds );

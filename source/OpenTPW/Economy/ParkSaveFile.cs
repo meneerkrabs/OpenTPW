@@ -19,6 +19,8 @@ public static class ParkSaveFile
 	/// <summary>Version 2: the clock follows the original's 248 ms turns and civil calendar, so version 1 tick counts and month indices no longer match.</summary>
 	public const int CurrentVersion = 2;
 	public const int MaximumFileSize = 16 * 1024 * 1024;
+	/// <summary>The most park seconds a saved challenge time may hold (about 31,000 years), so the arithmetic on it cannot overflow.</summary>
+	internal const long MaximumParkSeconds = 1_000_000_000_000L;
 
 	private static readonly JsonSerializerOptions Options = new()
 	{
@@ -42,7 +44,14 @@ public static class ParkSaveFile
 		public bool SeedResearcherStandIn { get; init; }
 		public required long Tick { get; init; }
 		public required GameSpeed Speed { get; init; }
+		/// <summary>The world generator's state as a number (written for older readers' sake); older saves hold the economy's own SplitMix64 stream here, which a load ignores (see <see cref="WorldGenerator"/>).</summary>
 		public required ulong RandomState { get; init; }
+		/// <summary>
+		/// The state of the park's one world generator (tp.exe 0x00516330; the original's <c>mRandomSeed</c>). Absent in saves written before the generator was ported: such a
+		/// load derives the state from the saved world seed (<see cref="WorldSeed.GeneratorState"/>), or from the economy's old stream state when the save has no world section.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public uint? WorldGenerator { get; init; }
 		public required bool ParkOpen { get; init; }
 		public required int EntranceFee { get; init; }
 		public required bool Bankrupt { get; init; }
@@ -96,12 +105,16 @@ public static class ParkSaveFile
 		public WorldData? World { get; init; }
 	}
 
-	/// <summary><see cref="WorldRandomState"/> as saved; the economy's own stream stays in <see cref="Data.RandomState"/>.</summary>
+	/// <summary><see cref="WorldRandomState"/> as saved; the world generator itself is <see cref="Data.WorldGenerator"/>.</summary>
 	public sealed class WorldData
 	{
 		public required ulong Seed { get; init; }
-		public required ulong GuestRandom { get; init; }
-		public required ulong ScriptRandom { get; init; }
+		/// <summary>The guests' own SplitMix64 state of saves written before the world generator was ported; read and ignored, never written.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ulong? GuestRandom { get; init; }
+		/// <summary>The script seed stream's state of saves written before the world generator was ported; read and ignored, never written.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public ulong? ScriptRandom { get; init; }
 		public required uint SoundSeed { get; init; }
 	}
 
@@ -186,6 +199,25 @@ public static class ParkSaveFile
 		/// </summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public long[]? WalkAwayDays { get; init; }
+		/// <summary>
+		/// The 30-day rings of costs, takings, customers, winners and the satisfaction change, in that order (ECON-057); absent in older saves, which seed the
+		/// first four with last month's totals as one day, and while all five are still new.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public DailyRingData[]? Rings { get; init; }
+	}
+
+	/// <summary>One 30-day ring: the newest slot (-1 before the first day), whether it has wrapped, today's running value and the entries oldest first.</summary>
+	public sealed class DailyRingData
+	{
+		public required int Head { get; init; }
+		public required bool Wrapped { get; init; }
+		public required int Today { get; init; }
+		public required int[] Entries { get; init; }
+
+		internal static DailyRingData Of( DailyRing ring ) => new() { Head = ring.Head, Wrapped = ring.Wrapped, Today = ring.Today, Entries = ring.Entries.ToArray() };
+
+		internal DailyRing ToRing() => DailyRing.FromState( Head, Wrapped, Today, Entries );
 	}
 
 	/// <summary>One category of the park's perception statistics (<see cref="ParkPriceStatistics"/>).</summary>
@@ -505,11 +537,17 @@ public static class ParkSaveFile
 		public List<int[]>? Current { get; init; }
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public int? Workload { get; init; }
+		/// <summary>The category-4 table's order as (Info.Id, level) pairs (ECON-017); absent in older saves and while the completions give the order a restore would rebuild.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<int[]>? UpgradeOrder { get; init; }
 	}
 
 	public sealed class ObjectivesData
 	{
 		public required long NextOfferDay { get; init; }
+		/// <summary>The exact park second of the next offer (<see cref="ParkObjectives.NextOfferSeconds"/>); absent in older saves, which take the start of <see cref="NextOfferDay"/>.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public long? NextOfferSeconds { get; init; }
 		public required int NextListPosition { get; init; }
 		public required ActiveChallenge? Current { get; init; }
 		public required Dictionary<int, int> Declines { get; init; }
@@ -518,6 +556,12 @@ public static class ParkSaveFile
 		/// <summary>The challenge system's switch (<see cref="ParkObjectives.SwitchedOn"/>); absent in older saves (then on once the first offer day has passed) and while off.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public bool? SwitchedOn { get; init; }
+		/// <summary>The carried object (<see cref="ParkObjectives.ActualThing"/>, an economy instance id); absent in older saves and while none.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int ActualThing { get; init; }
+		/// <summary>The object each challenge's slot carries (<see cref="ParkObjectives.CarriedThings"/>); absent in older saves and while none.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public Dictionary<int, int>? CarriedThings { get; init; }
 	}
 
 	/// <param name="world">The level's other random streams (<see cref="Level.CaptureRandomState"/>); null saves the economy alone.</param>
@@ -536,7 +580,8 @@ public static class ParkSaveFile
 			SeedResearcherStandIn = false,
 			Tick = park.Tick,
 			Speed = park.Speed,
-			RandomState = park.Random.State,
+			RandomState = world?.Generator ?? park.World.State,
+			WorldGenerator = world?.Generator ?? park.World.State,
 			ParkOpen = park.IsParkOpen,
 			EntranceFee = park.EntranceFee,
 			Bankrupt = park.IsBankrupt,
@@ -546,6 +591,7 @@ public static class ParkSaveFile
 			TurnEnteredRed = park.TurnEnteredRed,
 			BatchCredit = park.BatchCredit,
 			Litter = park.Litter.Snapshot().Select( cell => new LitterData { X = cell.X, Y = cell.Y, Type = (int)cell.Type, Collector = cell.Collector, ClaimTurn = cell.ClaimTurn } ).ToList(),
+			// [EXT:save-analyser-stamps] OpenTPW's park save keeps the analyser caches' stamps (the original's serializer keeps none, 0x004C5D70 → 0x004C85B0) so a load continues the run exactly, which is a design choice for the saves OpenTPW writes (the save-load test of the pinned run, docs/DETERMINISM.md)
 			AnalyserCaches = new AnalyserCacheData
 			{
 				NetWorth = park.CachedNetWorth is { } worth ? new CachedCount { Value = worth.Value, Stamp = worth.Stamp } : null,
@@ -604,7 +650,8 @@ public static class ParkSaveFile
 				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit },
 				WalkAways = item.WalkAways,
 				WalkAwaysToday = item.WalkAwaysToday,
-				WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.ToArray() : null
+				WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.ToArray() : null,
+				Rings = RingsOf( item )
 			} ).ToList(),
 			Loans = park.Loans.Select( loan => new LoanData
 			{
@@ -658,27 +705,73 @@ public static class ParkSaveFile
 				Progress = park.Research.ProgressEntries.OrderBy( entry => entry.Key.InfoId ).ThenBy( entry => entry.Key.Level ).Select( entry => new[] { entry.Key.InfoId, entry.Key.Level, entry.Points } ).ToList(),
 				Effort = park.Research.Effort.ToList(),
 				Current = park.Research.CurrentEntries.Any() ? park.Research.CurrentEntries.Select( entry => new[] { (int)entry.Category, entry.InfoId, entry.Level } ).ToList() : null,
-				Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload
+				Workload = park.Research.Workload == Math.Clamp( park.Settings.ResearchStartingWorkLoad, 0, 100 ) ? null : park.Research.Workload,
+				UpgradeOrder = park.Research.UpgradeTableToSave?.Select( key => new[] { key.InfoId, key.Level } ).ToList()
 			},
 			Objectives = new ObjectivesData
 			{
 				NextOfferDay = park.Objectives.NextOfferDay,
+				// only a second that is not the start of its day needs the field; the others are NextOfferDay
+				NextOfferSeconds = park.Objectives.NextOfferSeconds % ParkCalendar.SecondsPerDay == 0 ? null : park.Objectives.NextOfferSeconds,
 				NextListPosition = park.Objectives.NextListPosition,
 				Current = park.Objectives.Current,
 				Declines = new Dictionary<int, int>( park.Objectives.Declines ),
 				Finished = park.Objectives.Finished.OrderBy( index => index ).ToList(),
 				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList(),
-				SwitchedOn = park.Objectives.SwitchedOn ? true : null
+				SwitchedOn = park.Objectives.SwitchedOn ? true : null,
+				ActualThing = park.Objectives.ActualThing,
+				CarriedThings = park.Objectives.CarriedThings.Count == 0 ? null : new Dictionary<int, int>( park.Objectives.CarriedThings )
 			},
 			Counters = new Dictionary<string, long>( park.Counters.Values ),
 			MechanicCursor = park.MechanicCursor,
 			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
 				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
-			World = world == null ? null : new WorldData { Seed = world.Seed, GuestRandom = world.GuestRandom, ScriptRandom = world.ScriptRandom, SoundSeed = world.SoundSeed }
+			World = world == null ? null : new WorldData { Seed = world.Seed, SoundSeed = world.SoundSeed }
 		};
 	}
 
 	public static string Serialize( ParkEconomy park, WorldRandomState? world = null ) => JsonSerializer.Serialize( Capture( park, world ), Options );
+
+	private static DailyRingData[]? RingsOf( ParkObjectState item )
+	{
+		var rings = new[] { item.CostsRing, item.TakingsRing, item.CustomersRing, item.WinnersRing, item.SatisfactionRing };
+		return rings.All( ring => ring.Head < 0 && ring.Today == 0 ) ? null : rings.Select( DailyRingData.Of ).ToArray();
+	}
+
+	/// <summary>The ring of an object record; a save without rings seeds the first four with last month's totals as one day, so the windows' 30-day values stay continuous.</summary>
+	// [EXT:ring-month-sums] the calendar-month sums (this and last month) stay in the park save and the object records so a save written before the rings seeds its rings from last month's totals; the original keeps only the rings, so this is an OpenTPW compatibility choice
+	private static DailyRing RingAt( ObjectData item, int index )
+	{
+		if ( item.Rings is { } rings )
+			return rings[index].ToRing();
+		var seed = index switch { 0 => item.Statistics[5], 1 => item.Statistics[3], 2 => item.Statistics[1], 3 => item.Statistics[7], _ => 0L };
+		var ring = new DailyRing();
+		if ( seed > 0 )
+		{
+			ring.Today = (int)Math.Min( seed, int.MaxValue );
+			ring.Roll();
+		}
+		return ring;
+	}
+
+	private static bool RingsValid( DailyRingData[]? rings )
+	{
+		if ( rings is null )
+			return true;
+		if ( rings.Length != 5 || rings.Any( ring => ring is null || ring.Entries is null ) )
+			return false;
+		try
+		{
+			foreach ( var ring in rings )
+				ring.ToRing();
+			// the four counting rings hold unsigned words in the original; the satisfaction change (the last) is signed
+			return rings.Take( 4 ).All( ring => ring.Today >= 0 );
+		}
+		catch ( InvalidDataException )
+		{
+			return false;
+		}
+	}
 
 	private static StrikeData? CaptureStrikes( StaffStrikeBoard board )
 	{
@@ -734,6 +827,10 @@ public static class ParkSaveFile
 		Require( data.EntranceFee >= 0 && data.MonthsInRed >= 0 && data.LitterScaled >= 0 && data.TicketsSpent >= 0, "park values" );
 		Require( data.TurnEnteredRed is not { } enteredRed || enteredRed >= 0 && enteredRed <= ParkCalendar.Turn( data.Tick ), "turn entered red" );
 		Require( data.BatchCredit >= 0, "batch credit" );
+		Require( data.Objectives.ActualThing >= 0 && (data.Objectives.CarriedThings?.All( pair => pair.Key >= 0 && pair.Value > 0 ) ?? true), "carried challenge object" );
+		Require( data.Objectives.NextOfferSeconds is null or >= 0 and <= MaximumParkSeconds
+			&& (data.Objectives.NextOfferSeconds is not { } offerSeconds || offerSeconds / ParkCalendar.SecondsPerDay == data.Objectives.NextOfferDay)
+			&& (data.Objectives.Current is not { } running || running.DeadlineSeconds is >= 0 and <= MaximumParkSeconds), "challenge times" );
 		var littered = new HashSet<(int, int)>();
 		foreach ( var cell in data.Litter )
 			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type is >= 1 and <= (int)LitterType.Stinkbomb
@@ -759,6 +856,7 @@ public static class ParkSaveFile
 			Require( item.QualityOfGoods is null or >= 0 and <= 255, $"object {item.Id} quality of goods" );
 			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
 			Require( item.ClaimTurn >= 0 && item.ClaimTurn <= ParkCalendar.Turn( data.Tick ) && (item.ClaimTurn == 0 || item.MechanicId != 0), $"object {item.Id} claim turn" );
+			Require( RingsValid( item.Rings ), $"object {item.Id} daily rings" );
 			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
 				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
@@ -803,7 +901,7 @@ public static class ParkSaveFile
 		if ( data.Staff.Strikes is { } strikes )
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
-		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && (data.Research.UpgradeOrder?.All( key => key is { Length: 2 } ) ?? true) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
@@ -826,7 +924,8 @@ public static class ParkSaveFile
 		if ( !string.Equals( settings.Theme, data.Theme, StringComparison.OrdinalIgnoreCase ) || settings.IsEasy != data.Easy )
 			throw new InvalidDataException( $"Park save is for {data.Theme}{(data.Easy ? " (easy)" : "")}, not {settings.Theme}{(settings.IsEasy ? " (easy)" : "")}." );
 		var park = new ParkEconomy( settings, catalog, data.Mode, 0 );
-		park.Random.Restore( data.RandomState );
+		// [EXT:legacy-generator-state] a save from before the world generator was ported has no state for it: it starts from the saved world seed (or from the old economy stream's state when the save has no world section), deterministically
+		park.World.Restore( data.WorldGenerator ?? (data.World is { } legacyWorld ? new WorldSeed( legacyWorld.Seed ).GeneratorState : WorldRng.StateFromSeed( data.RandomState )) );
 		park.Ledger.Restore( data.Ledger.Balance, data.Ledger.OpeningBalance, data.Ledger.MonthIndex, data.Ledger.CurrentTotals,
 			data.Ledger.History.Select( month => new LedgerMonth( month.MonthIndex, month.Totals, month.OpeningBalance, month.ClosingBalance, month.ParkRating, month.ParkValue ) ) );
 		park.Ledger.RestoreProfitThisYear( data.Ledger.ProfitThisYear );
@@ -872,7 +971,8 @@ public static class ParkSaveFile
 				TotalProfit = item.Statistics[8],
 				WalkAways = item.WalkAways,
 				WalkAwaysToday = item.WalkAwaysToday,
-				WalkAwayDays = item.WalkAwayDays?.ToList() ?? new()
+				WalkAwayDays = item.WalkAwayDays?.ToList() ?? new(),
+				CostsRing = RingAt( item, 0 ), TakingsRing = RingAt( item, 1 ), CustomersRing = RingAt( item, 2 ), WinnersRing = RingAt( item, 3 ), SatisfactionRing = RingAt( item, 4 )
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
 		if ( data.AnalyserCaches is { } caches )
@@ -922,11 +1022,12 @@ public static class ParkSaveFile
 			park.Staff.Strikes.Restore( strikes.Levels, strikes.Active, strikes.LastConsidered );
 		park.Research.Restore( data.Research.Completed.Select( key => (key[0], key[1]) ),
 			data.Research.Progress.Select( entry => (((int)entry[0], (int)entry[1]), entry[2]) ), data.Research.Effort,
-			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ) );
+			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ), data.Research.UpgradeOrder?.Select( key => (key[0], key[1]) ).ToList() );
 		if ( data.Research.Workload is int workload )
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,
-			data.Objectives.SwitchedOn ?? (data.Objectives.Current != null || ParkCalendar.DayIndex( data.Tick ) >= settings.ChallengeTiming.DaysUntilFirstChallenge) );
+			data.Objectives.SwitchedOn ?? (data.Objectives.Current != null || ParkCalendar.DayIndex( data.Tick ) >= settings.ChallengeTiming.DaysUntilFirstChallenge),
+			data.Objectives.ActualThing, data.Objectives.CarriedThings, data.Objectives.NextOfferSeconds );
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
 		if ( data.PriceStatistics is { } statistics )
@@ -946,7 +1047,7 @@ public static class ParkSaveFile
 	}
 
 	public static WorldRandomState? ToWorldState( Data data ) =>
-		data.World is { } world ? new WorldRandomState( world.Seed, world.GuestRandom, world.ScriptRandom, world.SoundSeed ) : null;
+		data.World is { } world ? new WorldRandomState( world.Seed, data.WorldGenerator ?? new WorldSeed( world.Seed ).GeneratorState, world.SoundSeed ) : null;
 
 	/// <summary>Loads a save using the original data of its theme from the game file system.</summary>
 	public static ParkEconomy Load( string path ) => Load( path, ( theme, easy ) => (BalanceSettings.Load( theme, easy ), EconomyObjectCatalog.Load( theme, easy )) );

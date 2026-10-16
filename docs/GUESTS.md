@@ -187,7 +187,7 @@ level lacks falls back to the Ferry, then the seaplane, then the bus. While the 
 its stop) one guest steps off per world turn; the turn that finds the group empty restarts the timer and sets
 the trigger, and the vehicle drives off. Status 6 (gone) releases it (`0x51a690` writes 0 back). Guests
 waiting to go home call a vehicle when none is at work (size 0: one world draw picks the kind, `0x51a34b`;
-OpenTPW draws it from the economy stream, DET-014) and keep it at status 4 until the last has boarded
+OpenTPW draws it from the park's one world generator) and keep it at status 4 until the last has boarded
 (`0x500bd0`). The time to the stop is the script's: the jungle bus waits 2 s, plays its drive-in clip
 `Busm1` for the time its trigger reports (the clip's 7,333 ms less 300) and waits 1 s more, so its first guest steps off about 10 s after
 the group starts. A park without any vehicle definition (the original stops with a fatal error) steps its
@@ -235,8 +235,8 @@ the original restores each type's record from the save (tp.exe `0x4d3aa0`, ARRIV
 ## Simulation
 
 All on the 60 Hz `FixedStepClock` in `Level.Update`, guests first, then the
-placed ride (bridge host step, then script slice). One SplitMix64 stream
-(`GuestRandom`) per park, seeded with `Level.GuestSeed`; guests are updated in id
+placed ride (bridge host step, then script slice). One world generator
+(`WorldRng`, tp.exe `0x516330`) per park, shared with the economy, the staff and the scripts and reseeded with a guest's id at its creation (docs/DETERMINISM.md); guests are updated in id
 order and attractions in `AttractionId` order, so the same seed and inputs give
 the same `ComputeStateHash` (FNV-1a over all guest fields, RNG state, counters).
 `System.Random` is not used.
@@ -333,7 +333,7 @@ Using an attraction then applies its own effects after the outcome of [Attractio
 The rest of tp.exe's use routine `0x4fe1e0` follows, with the object's ingredient amount (50 when built): for a nonzero hunger, then thirst effect a world draw `r`
 and a small happiness loss when `(r & 7) + amount + effect` is below 30; happiness `+ trunc(amount × HappinessEffect / 100)`; the special ingredient (Fat: toilet
 `+ amount`, Salt: thirst `+ amount`, Ice: thirst `+ trunc(amount × ThirstEffect / 100)`, Sugar: the speed boost); the appearance; and a relief visit's toilet speed term of 25.
-Open: the draws (OpenTPW's own stream, DET-014). There is no boredom loss: nothing in tp.exe reads `BoredomThreshold`.
+The draws come from the park's one world generator (DET-014). There is no boredom loss: nothing in tp.exe reads `BoredomThreshold`.
 
 ### Lifecycle
 
@@ -469,7 +469,7 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
 `WalkEdges`, `GuestNavigation.Navigate`). There is no global walk speed and no energy factor.
 
 - **Speed** (§4). Each guest draws a base speed (`+192`) from {60, 80, 100, 120, 140}
-  with the guest stream at creation. Once per park turn (248 ms), before its state
+  from the world generator at creation (the base constructor's first draw, `0x4F89E1`). Once per park turn (248 ms), before its state
   logic, it smooths s ← (3·s + (base + toilet term + boost) / 100) · 0.25 from s = 0,
   in single precision with one fused multiply-add (`fmadds`, PPC oracle F6). The toilet
   term (`+194`) is 25 while toilet > 80 (the truncated toilet's low byte, unsigned),
@@ -729,8 +729,7 @@ OpenTPW rule "4 × capacity" is gone.
 **Positions** (§3.4). Four positions per cell from the front. The depth along
 the cell is trunc(255 × 0.25 × r) = 0, 63, 127 or 191 from the edge toward the
 previous cell, in bytes of 1/256 cell. The sideways byte is 114 + (rand mod 28), drawn from
-the simulation's seeded `GuestRandom` (the world-seeded stream guests already
-use; `System.Random` is not used). Guests walk along the queue cells to their
+the park's world generator (`System.Random` is not used). Guests walk along the queue cells to their
 position (state 12) with the traced steering ([Walking](#walking)).
 
 **Standing** (§5, state 11, once per park turn = 248 ms of the fixed clock,
@@ -833,7 +832,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 | QUEUE-005 | The leave-for-room rule is the original's (position ≥ 4 × cells, not in state 14; tp.exe `0x501390`, ORACLE.md X14), and the guests that stay change nothing at the edit: state 11 re-routes a guest whose place changed (`0x501160`). A guest whose cell left the queue leaves at once (Confused), where the original leaves it to state 11 and the generic route (`0x4fa5f0`); Angry uses the guest id, not the thing id; the dismissal's event 6 in the guest's event ring and its sound (thing id & 7 = 0, `0x5012f0`) are not modelled | Whether the generic route (`0x4fa5f0`) reaches a place from off the queue; the thing-id numbering (WALK-010); the readers of the event ring |
 | QUEUE-008 | Toilets wear by use (tp.exe `0x4e2440`: 0.05 × the guest's toilet byte) and handymen clean them back to 100 after WorkDuration park turns (`0x4d7880`, state 11, `0x4dfd80`), so the worn-toilet exit fires, and the RegionFX row swaps (`0x4d8440`/`0x4d8460` → `0x4d8480`) are modelled; the wear step's branch for game type 1 (no wear; a dirty toilet is cleaned on use) is not | What game type 1 (`0xfb3b7c`) is in OpenTPW's terms |
 | QUEUE-010 | A guest leaving a queue reappears on the join cell at once; tp.exe's exit (`0x5004aa`: `0x4ddd20`, `0x5012f0`, state 6) writes no position, so the guest stays where it stood | The state-6 handler's walk from a queue cell (`0x4fec90`) |
-| QUEUE-012 | Queue cells need allowed terrain and no object; tp.exe's validator (`0x535670`) tests the flag bit 0x40 (set by map setup `0x536490` outside the park and on inside cells but the initial path) and the cell type, not MAP terrain | What clears bit 0x40; the validator's ride-cell count test |
+| QUEUE-012 | Queue cells need allowed terrain and no object of the queue tool's overwrite priority 3 or more (a lower one, a feature of priority 0 or 1, is demolished: `0x535D66` with `0x818C10` = 3); tp.exe's validator (`0x535670`) tests the flag bit 0x40 (set by map setup `0x536490` outside the park and on inside cells but the initial path) and the cell type, not MAP terrain | The Easymode save's occupied cells stand in for their cell types in the terrain rule (ECON-050) |
 | QUEUE-013 | At most 25 cells per queue; tp.exe's setter (`0x5346d0`), validator (`0x535670`) and line layer (`0x536100`) test no count, and the back walk (`0x4de130`) stops at 1,000 | The rest of the tool's cell handler (`0x524960`, `0x532fc0`) |
 | QUEUE-014 | Laid cell by cell from the front, each touching the back, on empty cells; tp.exe lays straight segments (`0x536100`) from a clicked start, over ordinary path cells, ending on a path cell to connect | The queue-link (`+0x0D`) writer and the commit in `0x524960` (UI-031) |
 | QUEUE-015 | Removing a queue cell removes every cell behind it; the original's cell clear (tp.exe `0x5367a0`) removes only that cell, and the bulldozer's rectangle (`0x52bdd0`) clears only path cells | The route that clears a queue cell (`0x527ee0`, `0x452ca0`) |
@@ -896,7 +895,7 @@ OpenTPW (`RideHeadSpace`, `HeadPresentation`, `RideHeadRenderer`): each script k
 
 The original-level smoke test requires submitted head quads and separately compares visible/hidden GPU captures on one identified, naturally boarded animating ride. Simulation, animation, camera and shader time are frozen; repeated visible frames and repeated hidden frames must each be byte-identical, and toggling only that attraction's head renderer must change pixels. This establishes visible OpenTPW head geometry, not original visual equivalence.
 
-Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)): the slot draw uses the original formula, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`), on a per-ride stream, not the shared world generator `0x516330`, which rotates its state right by 13 after the LCG step (`s * 1664525 + 1013904223`, `ror 13`, absolute value) and is not ported (HEADS-001, depends on DET-013; the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the azimuth origin and sense of column 0 (local +X towards +Z is used), the reference frame of the roll (the node matrix in world axes), and costume heads (guests wear none). A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
+Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)): the slot draw is the original's, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`, repeated until a free slot), on the one shared world generator `0x516330` that the park's guests, staff and scripts draw from, so HEADS-001 is retired (the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired too). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the reference frame of the roll (the node matrix in world axes is used; the PC routine `0x44B510` turns the sprite by the angle between the chosen frame's pre-rendered up direction and the view), and costume heads (guests wear none). The frame choice is read (October 16, 2026): `0x44B510` takes the (row, column) of the 7 by 8 table whose direction has the largest dot product with the camera direction in the node's frame (first on a tie; rows 0 and 6 use column 0), where row r is r times 30 degrees from +Y towards +Z and column 0 faces local +Z, each column turning 45 degrees about Y from +Z towards -X. A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
 
 Not done in OpenTPW: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
 records with a handle and no head table (maexah `saves.md`, "A head on a node"); the Mac code that places a car's rider is not

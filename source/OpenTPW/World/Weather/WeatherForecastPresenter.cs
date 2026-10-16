@@ -22,7 +22,7 @@ public sealed class WeatherForecastPresenter : Entity
 	private static readonly RgbaByte TextColor = new( 255, 255, 255, 255 );
 
 	private readonly ParkWeather weather;
-	private readonly WeatherForecastState forecast = new();
+	private readonly WeatherForecastState forecast = new( () => GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage );
 	private readonly TextBatch batch = new();
 	private FontAtlas? font;
 	private TextRenderer? renderer;

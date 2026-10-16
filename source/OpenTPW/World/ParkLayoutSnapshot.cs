@@ -129,6 +129,12 @@ public static class ParkLayoutSnapshot
 		public required int AttractionId { get; init; }
 		/// <summary>Base height the terrain gave the footprint at capture; a different terrain under the same anchor fails the restore.</summary>
 		public required float BaseHeight { get; init; }
+		/// <summary>
+		/// How <see cref="BaseHeight"/> was taken: 1 = the midpoint of the footprint's lowest and highest terrain vertex (<see cref="ParkObjects.GetBaseHeight"/>); absent in a save from before that rule,
+		/// which took the mean ground height of the footprint's cells and restores with it.
+		/// </summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+		public int? BaseHeightRule { get; init; }
 		/// <summary>Whether the entry is a fixed item (<c>Info.DontApplyOffset</c>); must match the catalog at load.</summary>
 		public required bool IsFixedItem { get; init; }
 	}
@@ -172,6 +178,7 @@ public static class ParkLayoutSnapshot
 				CreationSeed = seed,
 				AttractionId = item.Visitors.AttractionId,
 				BaseHeight = item.Placement.BaseHeight,
+				BaseHeightRule = 1,
 				IsFixedItem = item.Entry.IsFixedItem
 			} );
 		}
@@ -250,6 +257,7 @@ public static class ParkLayoutSnapshot
 			Require( entry.IsFixedItem == record.IsFixedItem, $"object {index} ({entry.DisplayName}) is fixed-item {entry.IsFixedItem}, not the saved {record.IsFixedItem}" );
 			Require( ObjectFootprint.IsValidRotation( record.Rotation ), $"object {index} has rotation {record.Rotation}" );
 			Require( float.IsFinite( record.BaseHeight ), $"object {index} has a non-finite base height" );
+			Require( record.BaseHeightRule is null or 1, $"object {index} has an unknown base height rule {record.BaseHeightRule}" );
 			if ( entry.IsFixedItem )
 			{
 				Require( fixedItems.Add( entry.InfoId ), $"fixed item {entry.DisplayName} is placed more than once" );
@@ -439,7 +447,7 @@ public static class ParkLayoutSnapshot
 				var entry = target.Catalog.Find( record.InfoId )!;
 				// The runtime adopts the record's saved attraction id; validation has already proven the ids increase
 				// with placement order, so no id is taken twice and no dead id is ever replayed.
-				var item = target.AddRestored( entry, record.X, record.Y, record.Rotation, record.Open, record.CreationSeed, record.AttractionId );
+				var item = target.AddRestored( entry, record.X, record.Y, record.Rotation, record.Open, record.CreationSeed, record.AttractionId, legacyBaseHeight: record.BaseHeightRule == null );
 				var placement = item.Placement;
 				if ( placement.X != record.X || placement.Y != record.Y || placement.Rotation != record.Rotation )
 					throw new InvalidDataException(

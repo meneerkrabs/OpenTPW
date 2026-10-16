@@ -350,7 +350,7 @@ public class ParkResumeCatalogValidationTests
 				Open = true,
 				CreationSeed = ordinal ^ seed.ObjectScriptKey,
 				AttractionId = ordinal,
-				BaseHeight = objects.GetBaseHeight( Shop, x, y, rotation ),
+				BaseHeight = objects.GetBaseHeight( Shop, x, y, rotation ), BaseHeightRule = 1,
 				IsFixedItem = false
 			};
 
@@ -497,6 +497,7 @@ public class ParkResumeCatalogValidationTests
 			CreationSeed = 3 ^ seed.ObjectScriptKey,
 			AttractionId = 3,
 			BaseHeight = 0,
+			BaseHeightRule = 1,
 			IsFixedItem = false
 		};
 		var withCoaster = fixture.Snapshot with

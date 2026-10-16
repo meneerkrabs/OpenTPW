@@ -119,6 +119,7 @@ public class ParkResumeSaveFileTests
 					CreationSeed = 1 ^ seed.ObjectScriptKey,
 					AttractionId = 1,
 					BaseHeight = 0,
+					BaseHeightRule = 1,
 					IsFixedItem = false
 				}
 			},

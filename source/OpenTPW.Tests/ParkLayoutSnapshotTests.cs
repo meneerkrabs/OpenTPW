@@ -148,7 +148,7 @@ public class ParkLayoutSnapshotTests
 				Open = true,
 				CreationSeed = ordinal ^ key,
 				AttractionId = ordinal,
-				BaseHeight = objects.GetBaseHeight( entry, x, y, rotation ),
+				BaseHeight = objects.GetBaseHeight( entry, x, y, rotation ), BaseHeightRule = 1,
 				IsFixedItem = entry.IsFixedItem
 			} );
 			ordinal++;
@@ -194,6 +194,7 @@ public class ParkLayoutSnapshotTests
 			CreationSeed = ordinal ^ key,
 			AttractionId = ordinal,
 			BaseHeight = 0,
+			BaseHeightRule = 1,
 			IsFixedItem = false
 		};
 		var ordinal = snapshot.NextSeed;
@@ -233,6 +234,9 @@ public class ParkLayoutSnapshotTests
 		Rejects( snapshot with { Objects = snapshot.Objects.Select( ( record, index ) => index == 0 ? record with { CreationSeed = snapshot.NextSeed ^ key } : record ).ToList() }, "not the 0-keyed ordinal" );
 		Rejects( snapshot with { Objects = snapshot.Objects.Select( ( record, index ) => index == 1 ? record with { CreationSeed = snapshot.Objects[0].CreationSeed } : record ).ToList() }, "share one placement ordinal" );
 		Rejects( snapshot with { Objects = snapshot.Objects.Select( ( record, index ) => index == 0 ? record with { BaseHeight = float.NaN } : record ).ToList() }, "non-finite base height" );
+		Rejects( snapshot with { Objects = snapshot.Objects.Select( ( record, index ) => index == 0 ? record with { BaseHeightRule = 2 } : record ).ToList() }, "unknown base height rule 2" );
+		// a save from before the vertex rule carries no rule and validates (it restores with the earlier mean-height rule)
+		ParkLayoutSnapshot.ValidateSnapshot( snapshot with { Objects = snapshot.Objects.Select( record => record with { BaseHeightRule = null } ).ToList() }, catalog );
 		// A second fixed item needs its own unused ordinal, so the allocator grows with it.
 		var first = snapshot.Objects.First( record => record.IsFixedItem );
 		var duplicated = snapshot with

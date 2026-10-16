@@ -578,7 +578,7 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the cursor ray hits the Z = 0 plane to pick the clicked cell; the original's mouse-to-cell picking (the cell the build tool hands to 0x528A70) is not traced — evidence needed: the build tool's cursor pick (0x524960 → 0x528A70)
+	// [APPROX:RIDES-021] the cursor ray hits the Z = 0 plane to pick the clicked cell; the original's mouse-to-cell picking is not found: the build tool 0x524960 takes the cell from the replayed command (0x4045B0, commands 0x14 and 0x2D) and none of the terrain-height callers (0x4511A0, 0x4F9E60, 0x4FA470, 0x452AE0, 0x53DDD0, 0x542010) is the pick — evidence needed: the producer of those commands
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )

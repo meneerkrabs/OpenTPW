@@ -133,7 +133,7 @@ object's height (`+0x44` of its instance matrix). The table index is `width x ro
 turned by the instance rotation (0, 90, 180, 270 swap and reflect the two offsets, the `+10` terms being a cell's width). `ObjectHeightMaps` reads `<mesh>.hmp` of the catalogue entry and does the same
 from OpenTPW's placement: the instance position is the model-to-engine translation, the rotation the placement's. All 274 catalogue objects ship their map and every footprint cell of every one of
 them lies inside it at all four rotations (`TourAssetTests`, `TourRegisterRoundTests.TheMapIndexFollowsThePlacementsRotation`), which fixes the orientation. Still terrain: cells whose owner
-the original finds through the track redirect or a type-3 thing, and objects whose map the original rebuilds from the mesh (`0x00451880`). RIDES-014's base height stays the footprint mean.
+the original finds through the track redirect or a type-3 thing, and objects whose map the original rebuilds from the mesh (`0x00451880`). The object's base height is RIDES-014's vertex midpoint.
 
 ## Register changes (October 15 round)
 

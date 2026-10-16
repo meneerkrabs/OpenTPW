@@ -124,7 +124,7 @@ public class CoasterSaveAssetTests
 				Open = true,
 				CreationSeed = ordinal ^ seed.ObjectScriptKey,
 				AttractionId = ordinal,
-				BaseHeight = objects.GetBaseHeight( Coaster, x, y, 0 ),
+				BaseHeight = objects.GetBaseHeight( Coaster, x, y, 0 ), BaseHeightRule = 1,
 				IsFixedItem = false
 			};
 			Snapshot = new ParkResumeSnapshot

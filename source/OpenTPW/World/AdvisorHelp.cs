@@ -96,6 +96,7 @@ internal static class AdvisorUiHelp
 	// [BIN:TPW-EXE:0x004A52A0 park information window] titles 0x97-0x9E (People In Park .. Top 3 Thoughts): posts 0xC7 (199) at 0x4A5DF3, withdraws it at 0x4A49F0
 	// [BIN:TPW-EXE:0x004B6080 employee window] posts 0xC0 (192) at 0x4B60B9, withdraws it at 0x4B5CF8 (message 0x14, with 0xD4 at 0x4B5D05)
 	// [BIN:TPW-EXE:0x00493530 all visitors window] columns 0x71-0x76 (Visitor Number .. Happiness): posts 0x11E (286) at 0x4937CA, withdraws it at 0x4933D2
+	// [BIN:TPW-EXE:0x004AA480 research window] controls 0xD2D0B-0xD2D10 (the effort sliders and fluid panels of the research window): its builder posts 0xC8 (200) as its last act (0x4AAE9D), the window procedure 0x4A96B0 withdraws it when it closes (0x4A97C7) and passes the keys it does not handle to the default window procedure (0x4A9B3A), so F1 repeats the advice there too
 	// [BIN:TPW-EXE:0x00498D80 ticket price window] title text 0xA0 (Ticket Price): posts 0x12F (303) at 0x499038, withdraws it at 0x498CC7
 	// [BIN:TPW-EXE:0x0049B9DD hire help] the hire posts 0x135 (309, place your new staff member) at 0x49B9DD once the hire window is closed; the Place tool's end (0x46C890) withdraws it at 0x46C8D4
 	public static readonly IReadOnlyDictionary<string, int> Windows = new Dictionary<string, int>( StringComparer.Ordinal )
@@ -107,6 +108,7 @@ internal static class AdvisorUiHelp
 		["loans"] = 195,
 		["finance"] = 197,
 		["parkInfo"] = 199,
+		["research"] = 200,
 		["visitors"] = 286,
 		["entryPrice"] = 303,
 		[Hud.ParkHud.StaffPlacementHelp] = 309,

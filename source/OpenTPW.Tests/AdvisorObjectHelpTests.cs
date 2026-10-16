@@ -62,6 +62,8 @@ public class AdvisorObjectHelpTests
 	{
 		Assert.AreEqual( 188, AdvisorUiHelp.MessageFor( "buy" ) );
 		CollectionAssert.AreEqual( new[] { 188 }, AdvisorUiHelp.WithdrawnWith( "buy" ).ToArray() );
+		Assert.AreEqual( 200, AdvisorUiHelp.MessageFor( "research" ), "the research window posts 0xC8 (0x4AAE9D)" );
+		Assert.IsTrue( AdvisorUiHelp.RepeatsTutorialOnHelpKey( "research" ), "its procedure passes the keys on (0x4A9B3A)" );
 		Assert.IsNull( AdvisorUiHelp.MessageFor( "options" ) );
 		Assert.AreEqual( 0, AdvisorUiHelp.WithdrawnWith( "options" ).Count );
 		Assert.IsNull( AdvisorUiHelp.MessageFor( "objectInfo/Mystery/1" ) );

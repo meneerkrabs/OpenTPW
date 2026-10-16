@@ -817,6 +817,8 @@ public partial class Level
 			// the balloon's life reads the shop's quality of goods (0x004FE615, +0x18C)
 			item.Visitors.QualityOfGoods = state.QualityOfGoods;
 			item.Visitors.WearGauge = state.Repair;
+			// the ride update's state 1 or 4 reads the life gauge when it reads VAR_BROKEN (0x004E14E0)
+			item.Visitors.LifeGauge = state.LifeGauge;
 			// the attraction score's "new ride" test reads the object's own age in days (0xdc520)
 			item.Visitors.AgeDays = Park.Economy.ObjectAgeDays( state );
 		}

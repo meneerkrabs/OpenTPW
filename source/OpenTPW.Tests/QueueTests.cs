@@ -949,6 +949,73 @@ public class QueueTests
 		// tp.exe 0x4e1220: with the open word +0x68 at 0 the admission only runs the head step 0x4e0450 (unlink 0x4ddd20, dismissal 0x5012f0):
 		// one head per park turn, no thought, the medium happiness drop; the others keep their places. The join (0x4ffbc0) reads no open word.
 		var rig = new Rig();
+	[TestMethod]
+	public void ACondemnedRideDismissesItsHeadButItsGuestsWalkOn()
+	{
+		// tp.exe 0x004E14E0 gives state 4 when the life gauge truncates to a zero byte, state 1 otherwise; both dismiss the head each update (0x004E0E00), but the guest's
+		// move-up holds its walk only in state 1 (0x004E0370 at 0x00500523), so behind a condemned ride's dismissed head the guests keep moving up
+		var movedUp = new Dictionary<double, int>();
+		foreach ( var life in new[] { 40.0, 0.0 } )
+		{
+			var rig = new Rig();
+			rig.HoldAdmission();
+			var guests = Enumerable.Range( 0, 8 ).Select( _ => rig.Send() ).ToList();
+			rig.RunTurns( 120 );
+			Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", guests.Select( guest => guest.State ) ) );
+			rig.Ride.LifeGauge = life;
+			var places = guests.Select( guest => guest.QueuePosition ).ToList();
+			rig.Script[RideVariables.VAR_BROKEN] = 1;
+			rig.RunTurns( 4 );
+			Assert.IsTrue( rig.Ride.IsBrokenDown, "state 1 or 4 refuses new guests alike" );
+			Assert.AreEqual( life == 0, rig.Ride.IsCondemned );
+			Assert.AreEqual( life != 0, rig.Ride.HoldsQueuedGuests );
+			Assert.AreEqual( 4, rig.Ride.Dismissed, "both states dismiss one head per update" );
+			movedUp[life] = guests.Skip( 4 ).Where( ( guest, index ) => guest.QueuePosition != places[index + 4] ).Count();
+		}
+		Assert.AreEqual( 0, movedUp[40.0], "state 1 holds the guests behind the head where they stand" );
+		Assert.IsTrue( movedUp[0.0] > 0, "state 4 does not hold them" );
+	}
+
+	[TestMethod]
+	public void TheLifeGaugeAtTheRideUpdateDecidesStateFourAndSurvivesASave()
+	{
+		var rig = new Rig();
+		var ride = rig.Ride;
+		ride.LifeGauge = 0.99;   // truncates to a zero byte
+		rig.Script[RideVariables.VAR_BROKEN] = 1;
+		rig.RunTurns( 2 );
+		Assert.IsTrue( ride.IsCondemned && !ride.HoldsQueuedGuests && ride.IsBrokenDown );
+		// the gauge is read when the update enters the state, not afterwards
+		ride.LifeGauge = 80;
+		rig.RunTurns( 2 );
+		Assert.IsTrue( ride.IsCondemned );
+		var snapshot = ride.CaptureSnapshot();
+		Assert.AreEqual( true, snapshot.Condemned );
+		Assert.AreEqual( 0, RideVisitorBridge.ValidateSnapshot( snapshot ).Count );
+		RideVisitorBridge Restored( RideVisitorBridgeSnapshot saved )
+		{
+			var other = new Rig();
+			other.Script[RideVariables.VAR_RIDECLOSED] = 1;
+			other.Ride.RestoreSnapshot( saved );
+			return other.Ride;
+		}
+		Assert.IsTrue( Restored( snapshot ).IsCondemned );
+		// an older save holds no such field: the restored ride is in state 1
+		var third = Restored( snapshot with { Condemned = null } );
+		Assert.IsTrue( third.InBrokenState && third.IsBrokenDown && !third.IsCondemned && third.HoldsQueuedGuests );
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { BrokenDown = false } ).Any( error => error.Contains( "condemned" ) ), "state 4 needs the broken-down state" );
+		var one = new Rig();
+		one.Ride.LifeGauge = 50;
+		one.Script[RideVariables.VAR_BROKEN] = 1;
+		one.RunTurns( 2 );
+		Assert.IsTrue( one.Ride.IsBrokenDown && !one.Ride.IsCondemned );
+		// leaving the state (opened again) forgets it
+		rig.Script[RideVariables.VAR_BROKEN] = 0;
+		rig.Script[RideVariables.VAR_RIDECLOSED] = 0;
+		rig.RunTurns( 2 );
+		Assert.IsFalse( ride.IsBrokenDown || ride.IsCondemned );
+	}
+
 		rig.HoldAdmission();
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );

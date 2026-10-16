@@ -28,7 +28,7 @@ Narrowed:
 - **GUEST-011**: a paid guest walks in only while the entrance gate's script variable 1 (`VAR_STATUS`, `0x51A290`) is 1. Open: the close
   `0x4DF300` clears a walking guest's call at once (OpenTPW does it at the ride's next update), and the openable flag of shops.
 - **GUEST-920**: the counter starts at creation and never stops (`0x4FAFDB`, `0x4FD950`). Open: which guests the visitor list holds.
-- **QUEUE-015** (narrowed, built after the first review): the queue tool's entry now fills its stack of corner points the way `0x530120` does
+- **QUEUE-015** (narrowed): the queue tool's entry now fills its stack of corner points the way `0x530120` does
   (`QueuePaths.CornerStack`: the front cell, every corner cell, the back cell, at most 0x401 points; a corner back cell or front cell comes up
   twice, as in the original) and the tool's undo (`0x52FE50`) pops it one segment at a time, also for a queue laid in an earlier session; it
   never takes the front cell and a stack of one point has nothing to undo. A ride's demolition (`0x527EE0`) now takes every queue cell with it
@@ -43,6 +43,7 @@ Narrowed:
 Determinism: the pin is unchanged at `0xDB3EA9A7AF384B5B`. The new stranded mark joins the state hash only while non-zero. Saves gain an
 optional `StrandedMark` per guest; old saves restore it as 0 (covered by a test).
 
-Verification: 4962 tests pass without game data (577 skipped) and 5426 with it (113 skipped), including the determinism run against the unchanged
-pin; all five native smokes pass (the sandbox smoke now demolishes the ride with its queue laid and checks that the cells go); the register,
-progress and evidence checks pass. Open decisions for the user: whether to port the link clearing of the corner walk (QUEUE-015, above).
+Verification (on main with #267 and #268): 5068 tests pass without game data (595 skipped) and 5540 with it (123 skipped), including the determinism run
+against main's pin `0x01946A39A53F851E`, which these changes leave as it is; all five native smokes pass (the sandbox smoke now lays a queue and demolishes the
+ride, checking that the cells go); the register, progress and evidence checks pass. Open decision for the user: whether to port the link clearing of the corner
+walk (QUEUE-015, above).

@@ -140,4 +140,38 @@ public class QueueLinkTests
 		Assert.IsFalse( QueuePaths.RebuildMissingLinks( grid, ride ) );
 		Assert.AreEqual( before, grid.Cells.Version );
 	}
+
+	[TestMethod]
+	public void APathOverTheQueueEndTurnsItIntoAChargedPathCell()
+	{
+		var (grid, ride) = Park();
+		Assert.AreEqual( 5, QueuePaths.TryExtend( grid, ride, Enumerable.Range( 0, 5 ).Select( index => (2, 5 - index) ) ) );
+		var economy = EconomyTestData.Park( initialCash: 50000 );
+		var reported = new List<(int, int)>();
+		var paths = new ParkPathBuilder( grid.Cells, grid, economy, new FlatGrid() )
+		{
+			Effects = new LinkEffects( QueueNeighbour: ( x, y ) => reported.Add( (x, y) ) )
+		};
+		Assert.IsTrue( ParkPathBuilder.IsQueueEnd( grid.Cells, 2, 1 ), "the unconnected back: one link, to a queue cell" );
+		Assert.IsFalse( ParkPathBuilder.IsQueueEnd( grid.Cells, 2, 3 ), "a middle cell has two links" );
+		Assert.IsFalse( ParkPathBuilder.IsQueueEnd( grid.Cells, 2, 5 ), "the front links to the ride, not a queue cell" );
+		Assert.AreEqual( CellBuildResult.QueueCell, paths.CheckCell( 2, 3 ) );
+		Assert.AreEqual( CellBuildResult.Ok, paths.CheckCell( 2, 1 ), "code 8 is accepted (the start check and the ghost)" );
+		var balance = economy.Balance;
+		var result = paths.BuildSegment( (2, 0), (2, 1) );
+		Assert.IsTrue( result.Completed );
+		CollectionAssert.AreEqual( new[] { (2, 1) }, result.Built.ToArray() );
+		Assert.AreEqual( balance - paths.CellCost, economy.Balance, "the converted cell is charged as a path cell" );
+		Assert.AreEqual( ParkCellType.Path, grid.Cells.TypeAt( 2, 1 ) );
+		Assert.AreEqual( 0x00, grid.Cells.QueueLinkAt( 2, 1 ) );
+		// It keeps its link to the queue (+Y) and links to the path (−Y); the path cell (2, 0) gave it the diagonals toward its own side
+		// neighbours (3, 0) and (1, 0), and its link to the queue clears only the two diagonals beside +Y.
+		Assert.AreEqual( 0x10 | 0x01 | 0x02 | 0x80, grid.Cells.LinksAt( 2, 1 ) );
+		CollectionAssert.AreEqual( new[] { (2, 1) }, reported, "the queue cell before it links back: cat_ui 139" );
+		ride.RecomputeQueue( grid );
+		CollectionAssert.AreEqual( new[] { (2, 5), (2, 4), (2, 3), (2, 2) }, ride.QueueCells.ToArray(), "the ride's queue ends one cell earlier" );
+		Assert.AreEqual( (2, 1), ride.JoinCell, "and is connected to the new path cell" );
+		Assert.IsTrue( ParkGate.QueueConnected( grid, ride ) );
+		Assert.IsTrue( grid.IsWalkable( 2, 1 ) && grid.Distance( 0, 0, 2, 1 ) >= 0 );
+	}
 }

@@ -28,7 +28,11 @@ Per cell, in this order (`ParkPathBuilder.Validate`):
 2. `Unowned` refuses (`NotOwned`);
 3. `CanChangeCellType` (empty, path, or queue under its own rules), else `Occupied`;
 4. path over path is `Existing`: free, the placement counter goes up;
-5. path over a queue cell is refused (`QueueCell`, PATH-008);
+5. path over a queue cell is refused (`QueueCell`), except over a queue end: a
+   queue cell with one link bit, toward another queue cell (the unconnected back
+   of a queue; tp.exe's code 8, `0x535D06`), which the write turns into a path
+   cell charged as one; it keeps its link to the queue, so the queue's new back is
+   connected to it, and the ride's queue is recomputed with the next map edit;
 6. objects, fixed items and the sandbox Totem refuse (`Occupied`);
 7. the object terrain rule must allow the cell; the save's own path cells count
    as buildable (`Terrain`, PATH-006);
@@ -149,7 +153,6 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | PATH-005 | PATH-REMOVE | forced removal (a = b = 0) matches the original's area clear (tool 0x3a, 0x52bdd0); OpenTPW removes one clicked cell, the original a rectangle of type-1 cells and whole objects |
 | PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |
-| PATH-008 | PATH-CODE8 | path over a queue cell is refused; the original turns a queue end (validator code 8, 0x535d00) into a path cell |
 | PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause opens a full-screen layer (0x47ed80 → 0x65dd7b) under its panel, whose effect on park clicks is untraced |
 | PATH-014 | PATH-VARIANT | built straights and edges pick `str1`/`str2` and `edg1`/`edg2` by a hash of the cell; the original rolls CRT `rand() & 1` on every recomputation (0x535dd0, 0x53602c) |
 | PATH-015 | QUEUE-TEXTURES | queue cells use `QueueTex` ground textures; the original places queue models (0x5229e0, `quedead`..`quebin2.md2`) and no `QueueTex` texture |

@@ -12,7 +12,7 @@ public enum CellBuildResult
 	NotOwned,
 	/// <summary>Refused by <c>CanChangeCellType</c>, or covered by an object, a fixed item or the prototype ride.</summary>
 	Occupied,
-	/// <summary>Path over a queue cell.</summary>
+	/// <summary>Path over a queue cell that is not a queue end (a queue end is turned into a path cell).</summary>
 	QueueCell,
 	/// <summary>The object terrain rule refuses the cell (water, blocked, entrance area, hole, the save's occupied cells).</summary>
 	Terrain,
@@ -139,6 +139,19 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	public CellBuildResult CheckCell( int x, int y ) => Validate( x, y, ParkCellType.Path, lastCell: false );
 
 	/// <summary>
+	/// A queue end (the validator's code 8): a queue cell with exactly one set link bit, whose neighbour along it is a queue cell
+	/// too: the back of a queue not connected to a path. A path can be built over it, which turns it into a path cell.
+	/// </summary>
+	public static bool IsQueueEnd( ParkCellMap cells, int x, int y )
+	{
+		if ( cells.TypeAt( x, y ) != ParkCellType.Queue || PathLinkWriter.LinkCount( cells, x, y ) != 1 )
+			return false;
+		var bit = System.Numerics.BitOperations.TrailingZeroCount( cells.LinksAt( x, y ) );
+		var (dx, dy) = PathTiles.Offsets[bit];
+		return cells.RawTypeAt( x + dx, y + dy ) == (byte)ParkCellType.Queue;
+	}
+
+	/// <summary>
 	/// The per-cell rules of PATH-plan §9.2 in order, without writing: bounds, owned land, <c>CanChangeCellType</c>,
 	/// path over queue, objects, the terrain rule and money (balance − cost ≥ 0).
 	/// </summary>
@@ -159,12 +172,10 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		// [BIN:STP-PPC:0x10084864 placement validator] path over path returns 0 (allowed); SetCellType 0x10082AC4 then only bumps the placement counter
 		if ( old == (byte)type )
 			return CellBuildResult.Existing;
-		if ( type == ParkCellType.Path && old == (byte)ParkCellType.Queue )
-		{
-			// [BIN:STP-PPC:0x100849A4 placement validator] path over a queue cell: code 8 for a queue end (one link, linked neighbour also a queue), else refused
-			// [APPROX:PATH-008] PATH-CODE8: path over any queue cell is refused; the original's validator returns code 8 for a queue end (one link whose neighbour is a queue; tp.exe 0x535670 at 0x535d00), and code 8 is not a refusal: the start check (0x527280) and the ghost accept it, and the commit's SetCellType (0x5346d0; rule 0x535600 allows type 1 over type 3) turns the queue end into a charged path cell; OpenTPW has no queue-to-path conversion — still open: the queue-to-path conversion of a queue end and its ride-queue update are not ported
+		// [BIN:STP-PPC:0x100849A4 placement validator] path over a queue cell: code 8 for a queue end (one link, linked neighbour also a queue), else refused
+		// [BIN:TPW-EXE:0x00535CE0 path over a queue end] a type-3 cell with one set link bit (0x522790) whose neighbour along it (0x4D97E0) is type 3 returns 8 (0x535D06), which the start check (0x527280) and the ghost accept; any other queue cell is refused (0x535D12: 0x816D50 set, 1); the commit's SetCellType (rule 0x535600 allows type 1 over 3) then types it 1 and charges the path cost (WritePath)
+		if ( type == ParkCellType.Path && old == (byte)ParkCellType.Queue && !IsQueueEnd( Cells, x, y ) )
 			return CellBuildResult.QueueCell;
-		}
 		if ( isOccupied?.Invoke( x, y ) == true )
 			return CellBuildResult.Occupied;
 		// [APPROX:PATH-006] PATH-SLOPE: no slope or height test, as in the original (tp.exe LayLine 0x536100, SetCell 0x532fc0 reads heights only for the ghost, validator 0x535670 has no float operation, SetCellType 0x5346d0); the object terrain rule OpenTPW applies (water, blocked, entrance area, fixed walkway, holes) stands in for the original's cell types: map init 0x536490 types only hole cells (2, 0x1e, 7, refused by type) and leaves every other non-InitialPath cell type 0, whose unowned flag 0x40 the land now sets (PATH-007) — still open: the original cell types the terrain stand-in replaces
@@ -269,6 +280,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		// [BIN:STP-PPC:0x10082BC8 SetCellType money test] the 32-bit balance − cost test before the store (ParkEconomy.CanSpendCell, the test TrySpendCell repeats)
 		if ( park != null && !park.CanSpendCell( CellPurchase.Path ) )
 			return false;
+		// [BIN:TPW-EXE:0x005346D0 SetCellType] type 1 over a type-3 cell (a queue end, code 8) passes rule 0x535600 and is charged the path cost (0x52FB20) like any path cell; the cell keeps its link byte, and the ride owning it (owner word +0x10, a type-4/9/10 cell) gets its queue edit 0x4DE1F0 at once, which OpenTPW's guests run with their queue recompute on this map edit
 		Cells.SetType( x, y, ParkCellType.Path );
 		// [BIN:TPW-EXE:0x534879 path Spend] SetCellType spends the path cost through 0x4D01F0, which adds it to the park's total costs (+0x1F5A0); the finance and hire panels show other costs as total costs minus staff costs (0x49BDD0, [0x7CA300]), so path spending is an other cost, as OpenTPW's OtherCosts within MoneyOut minus StaffCosts
 		park?.TrySpendCell( CellPurchase.Path );

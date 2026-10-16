@@ -103,7 +103,7 @@ public class PathBuilderTests
 			Assert.AreEqual( CellBuildResult.Occupied, builder.CheckCell( 2, 2 ), $"type {type}" );
 		}
 		rig.Cells.SetType( 2, 2, ParkCellType.Empty );
-		// 4. Path over a queue cell (CanChangeCellType allows it, the validator refuses: PATH-008).
+		// 4. Path over a queue cell that is not a queue end (CanChangeCellType allows it, the validator refuses).
 		rig.Grid.SetQueue( 3, 3, 0 );
 		Assert.AreEqual( CellBuildResult.QueueCell, builder.CheckCell( 3, 3 ) );
 		// 5. Object footprints and fixed items.
@@ -730,8 +730,8 @@ public class PathBuilderTests
 	public void PathRegisterHasThePlanUnknowns()
 	{
 		var names = PathApproximations.Entries.Select( entry => entry.Rule.Split( ':' )[0] ).ToArray();
-		// PATH-UNDO (002), PATH-ENDFLAG (003), PATH-CONNECT (004), PATH-FREE (009), PATH-LEDGER (010), PATH-CANCEL (011) and PATH-ENDREFUSE (012) are retired: traced in tp.exe and matched.
-		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-PAUSE", "PATH-VARIANT", "QUEUE-TEXTURES" }, names );
-		CollectionAssert.AreEqual( new[] { 1, 5, 6, 7, 8, 13, 14, 15 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
+		// PATH-UNDO (002), PATH-ENDFLAG (003), PATH-CONNECT (004), PATH-CODE8 (008), PATH-FREE (009), PATH-LEDGER (010), PATH-CANCEL (011) and PATH-ENDREFUSE (012) are retired: traced in tp.exe and matched.
+		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-PAUSE", "PATH-VARIANT", "QUEUE-TEXTURES" }, names );
+		CollectionAssert.AreEqual( new[] { 1, 5, 6, 7, 13, 14, 15 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
 	}
 }

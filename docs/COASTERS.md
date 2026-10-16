@@ -28,6 +28,7 @@ of this work.
 | `World/Coasters/CoasterRenderer.cs`, `CoasterAssets.cs` | Presentation: per coaster the track mesh, the pylon models and the cars, rebuilt only when the track or the build cursor changes (see "Presentation" below). |
 | `World/Coasters/CoasterCrossSections.cs`, `CoasterTrackMesh.cs` | The `coaster.sam` cross sections and their extrusion along the curve slices. |
 | `World/Coasters/CoasterPylonRig.cs`, `CoasterCarRig.cs` | The pylon models posed with their loft and rotate clips, the car models, their extents, spacing and pose. |
+| `World/Coasters/CoasterCarBend.cs` | The bend of a `bBendCar` boat's mesh along the samples around it (`0x438800`, `0x438ab0`). |
 | `World/Level.Coasters.cs`, `Hud/ParkHud.cs` | The coaster tool of the park view. |
 
 ## Building
@@ -376,7 +377,12 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   and rear extents come from the model's header bounds plus `fFrontDistanceAdd`/`fRearDistanceAdd`, the train's pair distances
   space the cars around its middle car (see "The train"), and a car stands on the curve itself at its coordinate (`0x43c0a0`:
   the knot pair whose knot coordinates enclose it, at t = (c − c₀)/(c₁ − c₀)) with the roll, pitch and yaw of that point and
-  `fYOffset` along its up axis; the model's +Z runs along the track (`0x43d8f0`).
+  `fYOffset` along its up axis; the model's +Z runs along the track (`0x43d8f0`), the pose of the root node replacing the model's own
+  root rest (the mine carts', the Candy cars' and the caterpillar's roots are turned half a circle, which would face them backward).
+  A car of a type without `bBendCar` plays its model's clip `<model>m` (`cartm`, `carm`: the texture coordinates of the four wheel
+  meshes) at 0.1 × the train's speed (`0x43ce20` → `0x474050`); the two flumes' boats (`bBendCar`) bend instead, every vertex of the
+  mesh taking the yaw and pitch of the track at its distance along the car relative to the car's heading and rising by
+  `fBendElevationLow` (`fBendElevationHigh` on a chain-lift sample) (`0x438800`, `0x438ab0`, `CoasterCarBend`).
 - **Debug.** In a Debug build `--debug-coaster built|open [--debug-coaster-id N] [--debug-coaster-height H]` with
   `--load-original-level` builds a small coaster for captures (`--capture-world`): finished with trains, or open after
   four pylons with the cursor on the fifth cell.
@@ -439,6 +445,8 @@ the dummy its loft, incline and bank clips move) with the stack dummy `TrackHeig
   orientation, bank, V), an open and a closed unfinished track, the pylon height fit and the car pose and spacing;
   `CoasterPresentationAssetTests` (`OPENTPW_GAME_PATH`): every coaster wad's cross sections, track textures, pylon
   models (the tag reaches the node height) and car models.
+- `CoasterRollTests` (no game data): the second rail's roll, the second rail's points, the sample roll that is the second rail's alone and the slice,
+  car and suspended-coaster frame rolls; `CoasterCarBendTests` (no game data): the bend tables on straight, curved and crested tracks and the vertex bend.
 - The native smoke test of an original level builds a coaster through HUD clicks
   (pylons, close, complete), sees a train leave and the track drawn, and cuts it out
   through the panel's demolish button.
@@ -448,7 +456,7 @@ the dummy its loft, incline and bank clips move) with the stack dummy `TrackHeig
 
 ## Approximation register
 
-`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: fourteen open
+`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: twelve open
 IDs. COAST-022 (the train layout, the hop queue and the placement by the release time) and COAST-023 (the seat types, COAST 6's bounds
 and the ring sizes) were retired by the coaster train round of October 15 (`[EXT:coaster-fixed-step]`, `[EXT:coaster-car-fallback]` and
 `[EXT:coaster-full-ring]` are its deliberate differences). COAST-012 (the controller states and the tool's entry and exit) and COAST-019 (the sampler's closing pair) were retired by the
@@ -479,9 +487,10 @@ beyond the 300-unit reach of `0x435D50`, as the original does.
 The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
 COAST-034 (cars) and COAST-035 (the build cursor's ribbon). A rider's head hangs from its car's socket of its index in the
 car's seated list (`0x43b600` → `0x44b410`: socket j is the node of the car model's (j + 1)-th attribute record with flag `0x80`,
-`CoasterCarRig.Seats`). The ride camera
-is not implemented. `CoasterRide.TryGetRideView` gives the front car's pose
-(COAST-011).
+`CoasterCarRig.Seats`). The ride view (`RideCameraMode`) rides the car `0x436880` selects: the train with the smallest reference
+position (controller `+0x124`, `0x43d7dd`) and its car 0, or car 1 behind a front car of another type than the seats' (train `+0x34`, `0x436f15`), on that
+car model's camera seat; `CoasterRide.TryGetRideView` gives the same car's pose. `FIRSTPERSONVIEWDISTANCE`, `COASTERSMOOTHNESS` and
+`Info.FirstPersonSprites` have no reader in tp.exe that was found (COAST-011).
 
 The pylon tag round of October 16 built the knot pass over the pylon models' posed track tags (COAST-015 narrowed to the
 knot pass's write-back of the clamped height parameter and the no-model fallback; COAST-028's guessed clip angles apply only
@@ -490,3 +499,15 @@ the knot pass (`KnotPass`): a save from before it places the trains of a coaster
 stack parts (`0x432df0`) and the kept half turn (COAST-033 narrowed), the mesh's slices, shared rings, winding and marker links
 (COAST-026 narrowed to the cross-section runs and blends, lighting and the Add-mode UV animation) and the cursor link (COAST-035
 narrowed: the ribbon is gone; the closing target's marks are not set).
+
+The coaster rest round of October 16 settled COAST-017 and COAST-030 and narrowed COAST-011 and COAST-034. COAST-017: a sample's roll is the
+angle of the second rail's point about the sample's tangent (`0x440c10`), a slice's or a car frame's adds the lerp of the nodes' tag rolls
+by the fraction of the nodes' ordinals' lerp (`0x43e6b0`), and a suspended coaster's frames lerp the swing's sample rolls instead; the second
+rail stands one unit above every knot, two units along the tag's up row on a loop pylon and at (−sin a, 0, −cos a) on a model-less loop node
+(`0x430ed0`), fitted with its own chords (`0x4321c0`). The node's tag roll is written only for a posed pylon without node flag `0x40`, so the
+rating step reads sample rolls that are zero up to the sag of the sampler's chords where the nodes' banks used to enter; the coaster hash
+content changes with the rolls (the run pin does not). COAST-030: no edit is refused for riders any more (`0x446300`, `0x446740` have no such
+test; the tool's entry already put the controller in state 2), the move validator skips the turn test across the cut of a reopened circuit
+(`0x4348af..0x4348d8`) and stops re-validating at a cut end (`0x434e06`, `0x434ea1`), and the close step OpenTPW keeps for a fresh circuit
+is the extension `[EXT:coaster-closing-check]` (the original closes a reopened circuit by a click without a test and completes a fresh one
+by `0x435570`); APPROX:COAST-030 and APPROX:COAST-017 no longer exist.

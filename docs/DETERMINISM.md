@@ -284,6 +284,14 @@ run hash is unchanged (the synthetic park has no coaster), and a coaster without
 an A/B against main). The coaster save gains the optional `KnotPass` (null or 2); a save without it, for a coaster with pylon models,
 re-places its trains.
 
+Coaster rolls (October 16, 2026): the coaster hash content changes for every coaster, with and without pylon models: a sample's roll
+(`CoasterSample.Bank`, hashed with the samples) is now the angle of the second rail's point about the sample's tangent (`0x440c10`) instead of
+the interpolated node banks, so it is zero up to the chords' sag except on loop pylons and suspended coasters (whose swing reads it), the rating
+step reads these rolls, and a coaster's rating, sickness and excitement can move with it; the car poses (not hashed) take the slice roll of
+`0x43e6b0`. The earlier A/B hash of a coaster without pylon models (`0xDB31A60AFE5F1CD6`, above) therefore no longer holds. No pinned
+golden or resume hash depended on a coaster's content (the pinned run has none) and no test pins a coaster digest, so none was re-pinned;
+the coaster save gains no field, the samples are re-derived on load, and a save from before places its trains as it did.
+
 Rides register round 2 (October 14): upgrade completion now sets the script speed bias to the new level's `InitSpeed` when
 above 0 (tp.exe 0x4DF8F0; `OriginalObjectRuntime.TryApplyCatalogueTierDefaults` with `completion`, called from
 `Level.ApplyCompletedCatalogueTier` only; a resume or import still seeds the tier without touching the bias, since the saved VM

@@ -141,7 +141,8 @@ public sealed class CoasterBuilder
 	}
 
 	/// <summary>Closes the circuit (no node is added).</summary>
-	// [APPROX:COAST-030] closing needs two pylons, and the closing link and the arrival turn into the station are validated by OpenTPW's own rule (the last pylon is marked invalid when they fail); the original validates a reopened circuit's open start through the validator's re-validation of the next node (0x434d6b..0x434d92, 0x434e5a) and closes a fresh circuit by completion (COAST-016); the closing click 0x442c70 itself tests nothing — evidence needed: none for the original; the rule is OpenTPW's
+	// [BIN:TPW-EXE:0x435020 closing click] the original has a close click only on a reopened circuit (track flag 2): a click on a cell of the chain start the cut left (+0x64) joins the chain through 0x442c70 and takes the tool out of its mode (0x442880), with no validator test; a fresh circuit has no close step, it is completed by the click of 0x524960 → 0x435570
+	// [EXT:coaster-closing-check] OpenTPW keeps a close step for a fresh circuit (a click on the station's cells, [EXT:coaster-station-end-click]) and requires two pylons, then validates the closing link and the arrival turn by the validator's rule (the last pylon is marked invalid when they fail, CoasterTrack.CheckClosure), so completion never hands the sampler a closing link of any length; the original completes without such a test
 	public bool Close()
 	{
 		if ( !Track.Close() )
@@ -157,10 +158,10 @@ public sealed class CoasterBuilder
 	/// </summary>
 	// [BIN:STP-PPC:0x1004A43C drop node] dropping on another cell credits trunc(stored node cost) [+ trunc(stored next)] and debits ceil(cost(node)) [+ ceil(cost(next))], the bracketed terms only on a complete track; the same cell (0x1004A5A8..0x1004A5BC) moves no money
 	// [BIN:STP-PPC:0x1004A228 pick up node] the station node (descriptor flag 2) cannot be picked up
-	// [APPROX:COAST-030] moving a pylon or its height is refused while riders are on board a complete track: OpenTPW's guard (the Mac reading of the guest predicate); the original pick-up 0x446300 excludes only descriptor flag 2 and has no rider or state test, and cutting a range (0x446740) sets state 1, whose setter takes the trains off (0x43bf20)
+	// [BIN:TPW-EXE:0x446300 pick up] the pick-up excludes only descriptor flag 2 and has no rider or state test: the tool's entry has put the controller in state 2 (0x447520) and its riders are off, so an edit is never refused for riders (OpenTPW's former rider guard is gone; Level.EnterCoasterTool is the tool entry)
 	public CoasterPlaceResult Move( int index, int x, int y )
 	{
-		if ( index < CoasterTrack.StationNodeCount || index >= Track.Nodes.Count || !Track.Nodes[index].IsPlayerPylon || (Track.IsComplete && Ride.RidersOnBoard != 0) )
+		if ( index < CoasterTrack.StationNodeCount || index >= Track.Nodes.Count || !Track.Nodes[index].IsPlayerPylon )
 			return CoasterPlaceResult.NotEditable;
 		var node = Track.Nodes[index];
 		if ( (node.X, node.Y) == (x, y) )
@@ -179,7 +180,7 @@ public sealed class CoasterBuilder
 	// [BIN:STP-PPC:0x10045FC4 height slider] releasing the height slider credits trunc(stored cost) and debits ceil(new cost)
 	public bool SetHeight( int index, float requested )
 	{
-		if ( index < CoasterTrack.StationNodeCount || index >= Track.Nodes.Count || !Track.Nodes[index].IsPlayerPylon || (Track.IsComplete && Ride.RidersOnBoard != 0) )
+		if ( index < CoasterTrack.StationNodeCount || index >= Track.Nodes.Count || !Track.Nodes[index].IsPlayerPylon )
 			return false;
 		var node = Track.Nodes[index];
 		var (clamped, t) = CoasterTrack.ClampHeight( Track.Definition.Pylon( node.LoopPylon ), requested );
@@ -235,10 +236,10 @@ public sealed class CoasterBuilder
 	}
 
 	/// <summary>Reopens a completed track for editing (removes the station end nodes, opens the circuit); refused while riders are on board.</summary>
-	// [BIN:STP-PPC:0x10045EAC reopen guard] the Mac predicate adds riders +320 == 0 (written by passenger removal 0x3d6f8..0x3d85c); the PC predicate 0x441970 reads controller +0x140 instead, which is the self-intersection count (its only writers are 0x439c40 and 0x43ad50), so the rider test is the Mac's reading and OpenTPW keeps it as its own edit guard (COAST-030)
+	// [BIN:STP-PPC:0x10045EAC reopen guard] the Mac predicate adds riders +320 == 0 (written by passenger removal 0x3d6f8..0x3d85c); the PC predicate 0x441970 reads controller +0x140 instead, which is the self-intersection count (its only writers are 0x439c40 and 0x43ad50), so the PC has no rider test on this path: reopening takes the trains off with their riders (state 1, 0x435730 → 0x43bf20)
 	public bool Reopen()
 	{
-		if ( !Track.IsComplete || Ride.RidersOnBoard != 0 )
+		if ( !Track.IsComplete )
 			return false;
 		Ride.EnterState( CoasterControllerState.Incomplete );
 		Track.Reopen();
@@ -251,10 +252,10 @@ public sealed class CoasterBuilder
 	/// are marked and building continues in the gap; a cut that reaches the end of the chain leaves an incomplete track again. Nothing is refunded.
 	/// </summary>
 	// [BIN:TPW-EXE:0x446740 cut range] the cut removes the nodes between the two clicked ends without a refund (0x444cb0 calls no money routine), sets controller state 1 through 0x435730 and flag 2 (a cut that reaches the last node clears flags 1 and 2), and reselects the build button
-	// [APPROX:COAST-030] the cut is refused while riders are on board (OpenTPW's edit guard, see Move); the original has no such test — the tool's state 2 has already let them off
+	// [BIN:TPW-EXE:0x446740 cut guard] the cut has no rider test: the tool's state 2 has already let the riders off, and the cut's own state 1 takes the trains away
 	public CoasterTrack.CutResult Cut( int first, int second )
 	{
-		if ( !Track.IsRunnable || Ride.RidersOnBoard != 0 )
+		if ( !Track.IsRunnable )
 			return CoasterTrack.CutResult.Refused;
 		var result = Track.Cut( first, second );
 		if ( result == CoasterTrack.CutResult.Refused )
@@ -268,8 +269,6 @@ public sealed class CoasterBuilder
 	/// <summary>Swaps pylon <paramref name="index"/> with the one above or below it in its cell's stack (<c>0x4423f0</c>, <c>0x4425c0</c>); no money moves.</summary>
 	public bool SwapStack( int index, bool up )
 	{
-		if ( Track.IsComplete && Ride.RidersOnBoard != 0 )
-			return false;
 		if ( !Track.SwapStack( index, up ) )
 			return false;
 		Track.Revalidate( Site, Ride.World, Ride );
@@ -286,8 +285,8 @@ public sealed class CoasterBuilder
 	/// <param name="Refund">The truncated cost of the node (and, on a complete track, of the node after it) before the edit.</param>
 	public sealed record NodeEdit( int Index, CoasterNode Start, long Refund, int? Next );
 
-	/// <summary>Whether pylon <paramref name="index"/> may be edited by hand: a pylon the player placed, and no riders on board of a finished track.</summary>
-	public bool CanEdit( int index ) => index >= CoasterTrack.StationNodeCount && index < Track.Nodes.Count && Track.Nodes[index].IsPlayerPylon && !(Track.IsComplete && !Track.IsCut && Ride.RidersOnBoard != 0);
+	/// <summary>Whether pylon <paramref name="index"/> may be edited by hand: a pylon the player placed (the pick-up 0x446300 excludes the station nodes only).</summary>
+	public bool CanEdit( int index ) => index >= CoasterTrack.StationNodeCount && index < Track.Nodes.Count && Track.Nodes[index].IsPlayerPylon;
 
 	/// <summary>Picks a pylon up for an edit (the press of a drag): its cost is noted so the release settles it.</summary>
 	public NodeEdit? BeginEdit( int index, bool includeNext = false )

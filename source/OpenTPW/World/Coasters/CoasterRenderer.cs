@@ -82,15 +82,15 @@ public sealed class CoasterRenderer : Entity
 	}
 
 	/// <summary>
-	/// The camera seat of the first train's front car in engine axes (the car model's seat node placed on the car), null when the coaster has no drawn
+	/// The camera seat of a train's camera car in engine axes (the car model's seat node placed on the car), null when the coaster has no drawn
 	/// car yet or its car model has no seat.
 	/// </summary>
-	internal Matrix4x4? TryGetSeat( CoasterRide ride )
+	internal Matrix4x4? TryGetSeat( CoasterRide ride, int train )
 	{
 		foreach ( var view in views )
 		{
 			if ( ReferenceEquals( view.Ride, ride ) )
-				return view.FrontCarSeat();
+				return view.CameraCarSeat( train );
 		}
 		return null;
 	}
@@ -191,8 +191,14 @@ public sealed class CoasterRenderer : Entity
 		public required float YOffset { get; init; }
 		public required int Train { get; init; }
 		public required int Car { get; init; }
+		/// <summary>The index of the car's type: its metrics reach the bend tables.</summary>
+		public required int TypeIndex { get; init; }
 		/// <summary>The car-to-world matrix of the last update (original axes).</summary>
 		public Matrix4x4 World { get; set; } = Matrix4x4.Identity;
+		/// <summary>The controller time the car's wheel clip started at (set on the first update).</summary>
+		public double? StartSeconds { get; set; }
+		/// <summary>The models of the parts whose texture coordinates follow the car's own wheel clip (null for the shared ones), released with the car.</summary>
+		public Model?[]? OwnModels { get; set; }
 	}
 
 	/// <summary>
@@ -302,13 +308,17 @@ public sealed class CoasterRenderer : Entity
 			// A circuit the demolish button cut open is two chains: the nodes before the cut and the nodes after it (the cut ends are marked, 0x446740), each drawn on its own.
 			// [BIN:TPW-EXE:0x43ef02 cut end] the mesh builder stops drawing at a node with 0x10000 (neither its own knot pairs nor its link) and starts again at one with 0x20000 (0x43ef0d)
 			foreach ( var (first, final, isClosed) in CoasterRenderer.ChainSpans( chain, pass, closed ) )
-				BuildChain( knots[first..(final + 1)], definition.Curviness, isClosed, Marker, matrix );
+				BuildChain( knots[first..(final + 1)], first, definition.Curviness, isClosed, Marker, matrix );
 			BuildPylons( chain, pass, matrix );
 		}
 
 		/// <summary>Draws one chain of knots: the track through them, the links <paramref name="marker"/> names in a marker texture.</summary>
-		private void BuildChain( CoasterKnot[] knots, float curviness, bool closed, Func<int, int, int?> marker, Matrix4x4 matrix ) =>
-			BuildTrack( HermiteCoasterCurve.Slices( knots, curviness, closed ), Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), marker, matrix );
+		private void BuildChain( CoasterKnot[] knots, int firstKnot, float curviness, bool closed, Func<int, int, int?> marker, Matrix4x4 matrix )
+		{
+			// [BIN:TPW-EXE:0x43e6b0 suspended roll] a suspended coaster's slices take the swing's sample rolls at the knots' coordinates (the controller's samples; none before the track is finished)
+			var suspended = Ride.Definition.IsSuspended ? new CoasterSuspendedRolls( Ride.Samples, Ride.KnotCoordinates, firstKnot ) : null;
+			BuildTrack( HermiteCoasterCurve.Slices( knots, curviness, closed, suspended: suspended ), Ride.IsOperational ? Ride.WinchSections : Array.Empty<int>(), marker, matrix );
+		}
 
 		private void BuildTrack( CoasterSlice[] slices, IReadOnlyCollection<int> winch, Func<int, int, int?> marker, Matrix4x4 matrix )
 		{
@@ -445,6 +455,11 @@ public sealed class CoasterRenderer : Entity
 			{
 				foreach ( var part in car.Parts )
 					part.Delete();
+				foreach ( var own in car.OwnModels ?? Array.Empty<Model?>() )
+				{
+					own?.ReleaseBuffers();
+					own?.Material.ReleaseOwnedResources();
+				}
 			}
 			cars.Clear();
 			carTriangles = 0;
@@ -468,12 +483,16 @@ public sealed class CoasterRenderer : Entity
 						continue;
 					var carModels = assets.GetCarModels( rig );
 					var parts = new ModelEntity[carModels.Length];
+					Model?[]? own = null;
 					for ( var part = 0; part < parts.Length; part++ )
 					{
-						parts[part] = new ModelEntity { Model = carModels[part], Name = "coaster car" };
+						// a part whose texture coordinates follow the car's wheel clip has a model of its own: every car turns its wheels at its own speed
+						if ( rig.IsDynamic( part ) )
+							(own ??= new Model?[parts.Length])[part] = assets.CreateOwnPartModel( rig, part );
+						parts[part] = new ModelEntity { Model = own?[part] ?? carModels[part], Name = "coaster car" };
 						carTriangles += rig.Parts[part].Indices.Length / 3;
 					}
-					cars.Add( new CarInstance { Rig = rig, Parts = parts, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
+					cars.Add( new CarInstance { Rig = rig, Parts = parts, OwnModels = own, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car, TypeIndex = typeIndex } );
 				}
 			}
 		}
@@ -495,27 +514,47 @@ public sealed class CoasterRenderer : Entity
 				car.World = CoasterCarRig.Matrix( pose, car.YOffset );
 				var transform = ObjectPlacement.SwapAxes( car.World ) * engine;
 				var position = new SVector3( transform.M41, transform.M42, transform.M43 );
-				foreach ( var part in car.Parts )
+				// [BIN:TPW-EXE:0x43ce20 wheel clip] a car of a non-bend type plays its model's clip at the type's factor × the train's speed: the parts of animated nodes follow it
+				Matrix4x4[]? wheels = null;
+				if ( car.Rig.WheelClip is { } clip )
 				{
-					part.TransformOverride = transform;
+					car.StartSeconds ??= Ride.TimeSeconds;
+					var tick = CoasterCarRig.WheelTick( (Ride.TimeSeconds - car.StartSeconds.Value) * 1000.0, Ride.Trains[car.Train].Speed, clip.Duration );
+					wheels = car.Rig.WheelPartMatrices( tick );
+					for ( var partIndex = 0; partIndex < car.Parts.Length; partIndex++ )
+					{
+						if ( car.OwnModels?[partIndex] is { } own && car.Rig.WheelVertices( partIndex, tick ) is { } vertices )
+							own.UpdateVertices( vertices );
+					}
+				}
+				if ( car.Rig.Bend )
+				{
+					// [BIN:TPW-EXE:0x43ce20 bend car] a car of a bend type bends its mesh along the samples around it every tick (0x438800) instead of playing a clip: the tables take the car's coordinate, its direction (the third row of its matrix) and its type's extents
+					var metrics = Ride.Definition.CarTypeMetrics( car.TypeIndex );
+					var forward = new SVector3( car.World.M31, car.World.M32, car.World.M33 );
+					var tables = CoasterCarBend.Tables( Ride.Samples, Ride.Spacing, Ride.Definition.BendElevationLow, Ride.Definition.BendElevationHigh, metrics.RearExtent, metrics.FrontExtent, forward, coordinate );
+					for ( var partIndex = 0; partIndex < car.Parts.Length; partIndex++ )
+					{
+						if ( car.OwnModels?[partIndex] is { } own && car.Rig.BendVertices( partIndex, tables, Ride.Spacing ) is { } vertices )
+							own.UpdateVertices( vertices );
+					}
+				}
+				for ( var partIndex = 0; partIndex < car.Parts.Length; partIndex++ )
+				{
+					var part = car.Parts[partIndex];
+					part.TransformOverride = wheels == null ? transform : ObjectPlacement.SwapAxes( wheels[partIndex] * car.World ) * engine;
 					part.Position = position;
 				}
 			}
 		}
 
-		/// <summary>The seat of the first train's first car: its model's seat node on the car's last pose, in engine axes.</summary>
-		public Matrix4x4? FrontCarSeat()
+		/// <summary>The seat of a train's camera car (<see cref="CoasterDefinition.RideCameraCar"/>): its model's seat node on the car's last pose, in engine axes.</summary>
+		public Matrix4x4? CameraCarSeat( int train )
 		{
 			foreach ( var car in cars )
 			{
-				if ( car.Train == 0 && car.Car == 0 && car.Rig.CameraSeat is { } local )
+				if ( car.Train == train && car.Car == Ride.Definition.RideCameraCar && car.Rig.CameraSeat is { } local )
 				{
-					// [APPROX:COAST-034] the cars drive along their model's +Z, but the mine cart's camera node (and so its front row) faces -Z, the original's front: the seat is turned half a circle about its own up axis so the view looks along the track
-					if ( local.M33 < 0 )
-					{
-						local.M11 = -local.M11; local.M12 = -local.M12; local.M13 = -local.M13;
-						local.M31 = -local.M31; local.M32 = -local.M32; local.M33 = -local.M33;
-					}
 					return ObjectPlacement.SwapAxes( local * car.World ) * owner.ToEngine();
 				}
 			}

@@ -41,9 +41,17 @@ public struct CoasterSample
 /// <summary>
 /// One knot of the track (COAST-plan §13.1): its position, the unit direction its tangents run along, its roll (the node's bank, <c>+0xd8</c>), the
 /// node (section) it belongs to, on loop pylons the factor K, whether the next node carries node flag 0x40, and the roll of its node's posed track tag
-/// (<see cref="TagRoll"/>, node <c>+0xe4</c>; the bank where the node has no posed tag).
+/// (<see cref="TagRoll"/>, node <c>+0xe4</c>: written by the knot pass for a posed pylon without node flag 0x40 only, zero otherwise) and the point on the second rail
+/// (<see cref="SecondRailPosition"/>). <see cref="Roll"/> is the node's bank (<c>+0xd8</c>), which the sampler and the slices no longer read.
 /// </summary>
-public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false, bool Reversed = false, bool PreviousIsLoopNode = false, float TagRoll = 0 );
+public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false, bool Reversed = false, bool PreviousIsLoopNode = false, float TagRoll = 0, SVector3? SecondRail = null )
+{
+	/// <summary>
+	/// The knot's point on the second rail (knot record <c>+0x40</c> of the second list, <c>0x430ed0</c>): one unit above the knot, two units along the posed tag's up row
+	/// on a loop node, or (−sin a, 0, −cos a) on a model-less loop node. The roll of a sample or slice is the angle of this rail's point about the first rail's tangent.
+	/// </summary>
+	public SVector3 SecondRailPosition => SecondRail ?? Position + SVector3.UnitY;
+}
 
 /// <summary>
 /// The knot pass of a node chain (<c>0x430ed0</c>): the knots in order (a posed pylon gives the knots of its tag table, every other node one), per node the index of
@@ -67,6 +75,16 @@ public readonly record struct CoasterSlice( SVector3 Position, float Yaw, float 
 {
 	/// <summary>Whether the slice lies on a pair between two knots of one node (the tags of one pylon).</summary>
 	public bool InsideNode => NextSection == Section;
+}
+
+/// <summary>
+/// What the roll of a slice or car frame reads on a suspended coaster (<c>0x43e6b0</c> with the controller's flag 8): the controller's samples and the sample coordinate of each knot
+/// (<see cref="CoasterSampling.KnotCoordinates"/>), <paramref name="KnotOffset"/> being the index of the first knot of the slices' span.
+/// </summary>
+public sealed record CoasterSuspendedRolls( IReadOnlyList<CoasterSample> Samples, IReadOnlyList<float> Coordinates, int KnotOffset = 0 )
+{
+	/// <summary>The coordinate of the span's knot <paramref name="index"/> (0 when the knot has none).</summary>
+	public float Coordinate( int index ) => KnotOffset + index < Coordinates.Count ? Coordinates[KnotOffset + index] : 0f;
 }
 
 /// <summary>
@@ -238,6 +256,55 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		return Math.Min( 1, knots.Count - 1 );
 	}
 
+	/// <summary>The knots with their positions replaced by the points of the second rail (the second list of the knot records, <c>0x430ed0</c>), whose controls the curve fits like the first rail's.</summary>
+	// [BIN:TPW-EXE:0x4321c0 second rail controls] every knot's controls are built twice with the same direction (0x432430): once from the first rail's records with the chords of 0x432840 over the first list, once from the second list (+8 of the node's table) with the chords over the second rail's own points; the loop factors and the flags come from the node, so the second rail is the same fit through its own points
+	internal static CoasterKnot[] SecondRail( IReadOnlyList<CoasterKnot> knots )
+	{
+		var rail = new CoasterKnot[knots.Count];
+		for ( var index = 0; index < rail.Length; index++ )
+			rail[index] = knots[index] with { Position = knots[index].SecondRailPosition };
+		return rail;
+	}
+
+	/// <summary>The roll of a frame: the second rail's point relative to the first rail's, turned by −yaw about Y and −pitch about X with the PC table, then atan2(−x, y).</summary>
+	// [BIN:TPW-EXE:0x43e6b0 second rail roll] d = second(t) − first(t) (0x43e1b0 on each rail), x′ = dx cos(−yaw) + dz sin(−yaw), z′ = dz cos(−yaw) − dx sin(−yaw), y′ = dy cos(−pitch) − z′ sin(−pitch) with the nearest-index table lookups (0x7b0968), roll = fpatan(−x′, y′) (0x46f230) into the frame's +0xc; the sampler 0x440c10 takes the same angle for the sample's roll (+0x18 of the 56-byte record) from the sample's own point (0x44121f..0x4413bc)
+	public static float SecondRailRoll( SVector3 firstPoint, SVector3 secondPoint, float yaw, float pitch ) => (float)SecondRailAngle( firstPoint, secondPoint, yaw, pitch );
+
+	private static double SecondRailAngle( SVector3 firstPoint, SVector3 secondPoint, float yaw, float pitch )
+	{
+		var difference = secondPoint - firstPoint;
+		difference = CoasterTrack.TurnY( difference, -yaw );
+		difference = CoasterTrack.TurnX( difference, -pitch );
+		return Math.Atan2( -difference.X, difference.Y );
+	}
+
+	/// <summary>
+	/// The roll of a slice or a car frame (<c>0x43e6b0</c>): the second rail's roll plus the lerp of the two nodes' tag rolls by the fractional part of the nodes' ordinals' lerp, or on a suspended
+	/// coaster the lerp of the swinging samples' rolls at the two knots' coordinates plus the second rail's roll.
+	/// </summary>
+	// [BIN:TPW-EXE:0x43e6b0 tag roll lerp] without controller flag 8: u = ordinal(A node)·(1 − t) + ordinal(B node)·t (node +0 from 0x444700; the knot records' +0xc fraction is read as 0: the records come zeroed from 0x4344c0 and no store to it was found in 0x430000..0x448000), f = frac(u) clamped to [0, 1] (the frac of the float u, 0x67b280), roll += (1 − f)·roll(A node, +0xe4) + f·roll(B node): a pair inside one node takes its roll, a link between consecutive nodes lerps by t
+	// [BIN:TPW-EXE:0x43e86e suspended roll] with flag 8 (the controller's suspended-coaster flag) the roll is the sample roll at ftol(coordinate of B)·t + the sample roll at ftol(coordinate of A)·(1 − t) plus the second rail's roll; the samples hold the swing there (0x43c450)
+	internal static float FrameRoll( SVector3 firstPoint, SVector3 secondPoint, float yaw, float pitch, in CoasterKnot a, in CoasterKnot b, float t,
+		IReadOnlyList<CoasterSample>? suspendedSamples = null, float coordinateA = 0, float coordinateB = 0 )
+	{
+		var angle = SecondRailAngle( firstPoint, secondPoint, yaw, pitch );
+		var oneMinusT = 1f - t;
+		if ( suspendedSamples != null )
+		{
+			if ( suspendedSamples.Count == 0 )
+				return (float)angle;
+			int Index( float coordinate ) => Math.Clamp( (int)coordinate, 0, suspendedSamples.Count - 1 );
+			return (float)(suspendedSamples[Index( coordinateB )].Bank * (double)t + suspendedSamples[Index( coordinateA )].Bank * (double)oneMinusT + angle);
+		}
+		var ordinal = (float)(b.Section * (double)t + a.Section * (double)oneMinusT);
+		var fraction = (double)ordinal - Math.Truncate( (double)ordinal );
+		if ( fraction <= 0 )
+			fraction = 0;
+		if ( !(fraction < 1) )
+			fraction = 1;
+		return (float)((1.0 - fraction) * a.TagRoll + b.TagRoll * fraction + (float)angle);
+	}
+
 	/// <summary>Slices per knot pair of the drawn track mesh.</summary>
 	// [BIN:TPW-EXE:0x43f030 mesh slice parameters] the mesh builder 0x43eb70 walks the nodes; for the link to the next node 0x43f030 lists 0xb values i/10 over one knot pair (plus run boundaries where the cross section changes), and 0x43f4e0 emits one slice per value
 	public const int SliceSegments = 10;
@@ -248,16 +315,18 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	/// chain ends with its last knot's own slice: a finished track's last knot is the station end node on S0's track dummy, so the slices close the circuit
 	/// without a pair of their own (the mesh builder pairs every node with its next node until there is none), and a track still being built ends at its build cursor.
 	/// </summary>
-	// [BIN:TPW-EXE:0x43e6b0 slice frame] the slice position is the cubic Bézier of the knot pair (0x43e1b0: P0, P0 + T+/3, P1 + T−/3, P1 at +0x40/+0x4c/+0x34/+0x40), its yaw and pitch come from the tangent and its roll from the second rail; the roll here is the interpolated knot roll (APPROX:COAST-017)
+	// [BIN:TPW-EXE:0x43e6b0 slice frame] the slice position is the cubic Bézier of the knot pair (0x43e1b0: P0, P0 + T+/3, P1 + T−/3, P1 at +0x40/+0x4c/+0x34/+0x40), its yaw and pitch come from the tangent and its roll from the second rail plus the tag roll lerp (FrameRoll)
 	// [BIN:TPW-EXE:0x43eb70 slice lists] for every node the mesh builder lists, when the node has more than one knot, one value per knot over its own knot pairs (0x43f030 with the node as both ends: a value per knot, scaled by the count − 1), then 0xb values i/10 over the link to its next node; the slice emitter 0x43f4e0 skips each list's first value, the previous list's last
 	// [APPROX:COAST-026] the cross-section run boundaries the builder adds to these lists (0x43f030 inserts the run positions of 0x4402d0, found on the sample coordinate in steps of 0.25) are not inserted: a section change takes effect at the slice before the segment that changes — evidence needed: the run list builder 0x4402d0 and the blend path of 0x43fd60 run on a real flume track
-	public static CoasterSlice[] Slices( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, int segments = SliceSegments )
+	public static CoasterSlice[] Slices( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, int segments = SliceSegments, CoasterSuspendedRolls? suspended = null )
 	{
 		ArgumentNullException.ThrowIfNull( knots );
 		var count = knots.Count;
 		if ( count < 2 || segments < 1 )
 			return Array.Empty<CoasterSlice>();
 		var controls = Controls( knots, curviness, closed );
+		var rail = SecondRail( knots );
+		var secondControls = Controls( rail, curviness, closed );
 		var pairs = count - 1;
 		var slices = new List<CoasterSlice>( pairs * segments + 1 );
 		for ( var pair = 0; pair < pairs; pair++ )
@@ -271,8 +340,11 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 				var t = (float)step / steps;
 				var position = Bezier( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
 				var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
-				var (yaw, pitch) = tangent.LengthSquared() > 0 ? Orientation( tangent ) : (0f, 0f);
-				var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * t;
+				var (yaw, pitch) = tangent.LengthSquared() > 0 ? CoasterTrack.PcOrientation( tangent ) : (0f, 0f);
+				var second = Bezier( rail[pair].Position, secondControls[pair].Forward, secondControls[next].Back, rail[next].Position, t );
+				var roll = suspended is { } rolls
+					? FrameRoll( position, second, yaw, pitch, knots[pair], knots[next], t, rolls.Samples, rolls.Coordinate( pair ), rolls.Coordinate( next ) )
+					: FrameRoll( position, second, yaw, pitch, knots[pair], knots[next], t );
 				slices.Add( new CoasterSlice( position, yaw, pitch, roll, knots[pair].Section, t, knots[next].Section ) );
 			}
 		}
@@ -286,6 +358,8 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		if ( count < 3 )
 			throw new ArgumentException( "A closed track needs its station's knots and the station end knot.", nameof( knots ) );
 		var controls = Controls( knots, curviness, closed: true );
+		var rail = SecondRail( knots );
+		var secondControls = Controls( rail, curviness, closed: true );
 		var samples = new List<CoasterSample>();
 		// The closing pair runs from the last knot (the station end node, on S0's track dummy) to the first knot of S1.
 		var closingKnot = ClosingKnot( knots );
@@ -309,8 +383,15 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
 			var (yaw, pitch) = Orientation( tangent );
 			// [BIN:TPW-EXE:0x440c10 closing sample roll] the sample taken on the closing pair (no next node, 0x440c10 line `local_a0 = 0` before 0x43e590) gets roll 0, whatever the rolls of the end node and S1 are
-			// [APPROX:COAST-017] every other sample's roll is interpolated between the knots' rolls instead of the original's: the second rail's roll about the slice tangent (0x440c10 → 0x46f230) of a non-loop knot's second rail knot + (0, 1, 0), a loop node's 2 × its tag's up row (pylon, 0x430ed0) or (−sin a, 0, −cos a) (pylon-less, 0x43137c..0x4313e6) — the knot pass keeps the tag rolls on the knots (CoasterKnot.TagRoll, read by tests only: the sampler does not use it) but builds no second rail
-			var roll = closingSample ? 0f : knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
+			// [BIN:TPW-EXE:0x440c10 sample roll] every other sample's roll (+0x18) is the second rail's roll about the slice tangent: the second rail's point at the sample's t on the pair (0x43e1b0 over the second records) relative to the sample's own point, turned by −yaw and −pitch of the tangent (0x43e590) and atan2(−x, y) (0x46f230); the node's tag roll (+0xe4) is not added here, only in the slice frames 0x43e6b0
+			var roll = 0f;
+			if ( !closingSample )
+			{
+				var clamped = Math.Clamp( t, 0f, 1f );
+				var second = Bezier( rail[pair].Position, secondControls[pair].Forward, secondControls[next].Back, rail[next].Position, clamped );
+				var (frameYaw, framePitch) = tangent.LengthSquared() > 0 ? CoasterTrack.PcOrientation( tangent ) : (0f, 0f);
+				roll = SecondRailRoll( position, second, frameYaw, framePitch );
+			}
 			samples.Add( new CoasterSample
 			{
 				Position = position,

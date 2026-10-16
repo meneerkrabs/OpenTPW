@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Numerics;
 using System.Text.RegularExpressions;
+using NVector2 = System.Numerics.Vector2;
 using NVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW;
@@ -87,7 +88,9 @@ public readonly record struct CoasterCarPose( NVector3 Position, float Yaw, floa
 /// </summary>
 // [BIN:TPW-EXE:0x43ce20 car pose] each frame a car stands at the curve point of its coordinate (the train's coordinate plus the car's offset over the sample spacing, CoasterRide.CarPose, 0x43c0a0) with the yaw, pitch and roll of that point turned into a matrix (0x43d8f0: roll, then pitch, then yaw) and the car type's fYOffset added along the turned up axis; the car's own wheel animation runs at +0x1c times the train speed
 // [BIN:TPW-EXE:0x43d8f0 car matrix] the car's model root node gets the rotation roll (+0xc), then pitch (+8), then yaw (+4) from identity, so the model's +Z runs along the track, and the root's translation (+0x40..+0x48) the car point plus the turned fYOffset (0x43d6b2)
-// [APPROX:COAST-034] cars are drawn as their static rest mesh: the bend of bBendCar types (0x438800 with the angle tables of 0x438ab0: every vertex of the car's mesh, at its local Z over the samples around the car, takes the yaw and pitch of the track there relative to the car's and rises by fBendElevationLow, or fBendElevationHigh on flag-8 samples) and the model clip of slot 0 (set up by 0x43be10 and played at the car type's +0x1c × the train speed through 0x474050, on non-bend cars only) are not reproduced
+// [BIN:TPW-EXE:0x43ce20 wheel clip] a car of a type without the bend flag plays its model's animation id 5 (the member <model>m or <model>m1, sub 0, looping, 0x43be10 → 0x4732a0) at the type's +0x1c (0.1) × the train's speed, set every tick through 0x474050 (the clip's speed, slot +0xc); the PC clips animate the wheel meshes' texture coordinates, which WheelVertices applies per car
+// [BIN:TPW-EXE:0x438800 bend car] a car of a bBendCar type (the Croc and Maggot flume boats) bends every vertex of its mesh along the samples around it each tick (CoasterCarBend), where the other cars play the wheel clip
+// [APPROX:COAST-034] the wheel clip starts when the car is first drawn where the original's start stamp is 0x43be10's; the bend uses the samples' yaw of this build's curve and clamps a vertex beyond its tables; a rider's head socket is not bent with its boat
 public sealed class CoasterCarRig
 {
 	public CoasterCarRig( ModelFile model )
@@ -98,7 +101,9 @@ public sealed class CoasterCarRig
 		Model = model;
 		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		Pivot = model.RootNodeIndex >= 0 ? rest[model.RootNodeIndex].Translation : NVector3.Zero;
-		var shift = Matrix4x4.CreateTranslation( -Pivot );
+		// [BIN:TPW-EXE:0x43d8f0 root node pose] the car's root node matrix is built from identity (roll, pitch, yaw) and its translation set to the car point every tick, so the root's own rest rotation and translation are gone: every node stands relative to the root (the mine cart, caterpillar body and Candy cars have a root rest turned half a circle about Y, which would otherwise face their meshes and seats backward)
+		var shift = model.RootNodeIndex >= 0 && Matrix4x4.Invert( rest[model.RootNodeIndex], out var inverse ) ? inverse : Matrix4x4.CreateTranslation( -Pivot );
+		Shift = shift;
 		var parts = new List<CoasterModelPart>();
 		var maxZ = float.MinValue;
 		var minZ = float.MaxValue;
@@ -117,7 +122,7 @@ public sealed class CoasterCarRig
 					maxZ = MathF.Max( maxZ, z );
 					minZ = MathF.Min( minZ, z );
 				}
-				parts.Add( new CoasterModelPart( mesh.Name, textures, vertices, indices ) );
+				parts.Add( new CoasterModelPart( mesh.Name, textures, vertices, indices, node, bake, vertices.Length == mesh.Vertices.Length ? mesh.Vertices.Select( vertex => vertex.Position.GetSystemVector3() ).ToArray() : null ) );
 			}
 		}
 		Parts = parts;
@@ -146,6 +151,125 @@ public sealed class CoasterCarRig
 	}
 
 	public ModelFile Model { get; }
+	/// <summary>The inverse of the root node's rest matrix: the parts are baked relative to the root, whose pose the car's own matrix replaces.</summary>
+	private Matrix4x4 Shift { get; }
+
+	/// <summary>
+	/// The model clip a car of a non-bend type plays in its slot 0 (animation id 5, the member <c>&lt;model&gt;m</c> or <c>&lt;model&gt;m1</c>): the wheels, null when the archive has none.
+	/// The clips of the PC car models carry texture-coordinate tracks only (the wheel meshes' UV), which <see cref="WheelVertices"/> applies.
+	/// </summary>
+	public ModelAnimation? WheelClip { get; private set; }
+
+	private ModelUvAnimation?[] wheelUvs = Array.Empty<ModelUvAnimation?>();
+	private bool wheelNodes;
+
+	/// <summary>Sets the wheel clip and finds which parts it animates: the UV block of the track of a part's node, bound to the part's corner count.</summary>
+	internal void SetWheelClip( ModelAnimation? clip )
+	{
+		WheelClip = clip;
+		wheelPlayer = null;
+		wheelUvs = new ModelUvAnimation?[Parts.Count];
+		wheelNodes = false;
+		if ( clip == null )
+			return;
+		foreach ( var track in clip.Tracks )
+			wheelNodes |= (track.Flags & (ModelAnimationTrack.PositionFlag | ModelAnimationTrack.RotationFlags | ModelAnimationTrack.ScaleFlags)) != 0;
+		for ( var index = 0; index < Parts.Count; index++ )
+		{
+			var track = clip.Tracks.FirstOrDefault( candidate => candidate.NodeIndex == Parts[index].NodeIndex && candidate.UvAnimation != null );
+			if ( track?.UvAnimation is { } uv && uv.CornerCount == Parts[index].Vertices.Length )
+				wheelUvs[index] = uv;
+		}
+	}
+
+	/// <summary>The default of a car type's wheel animation speed factor (car type record <c>+0x1c</c>, no PC <c>.sam</c> names it).</summary>
+	// [BIN:TPW-EXE:0x42f1a0 wheel factor] the car type setup stores 0.1 at +0x1c and no key of the coaster loader writes it
+	public const float WheelSpeedFactor = 0.1f;
+
+	/// <summary>Clip ticks per second of the car's model clip (the engine's 30).</summary>
+	public const float WheelTicksPerSecond = 30f;
+
+	/// <summary>Whether the car's type has <c>bBendCar</c>: its mesh bends along the track (<see cref="CoasterCarBend"/>) instead of playing the wheel clip.</summary>
+	public bool Bend { get; internal set; }
+
+	/// <summary>Whether part <paramref name="part"/> is drawn from vertices of its own: it bends, or its texture coordinates follow the wheel clip.</summary>
+	public bool IsDynamic( int part ) => (Bend && Parts[part].Local != null) || AnimatesUv( part );
+
+	/// <summary>
+	/// The part's vertices bent along the track (<c>0x438800</c>): every vertex's node-local position through <see cref="CoasterCarBend.Bend"/>, then the part's bake and the engine axes as the rest mesh is built.
+	/// </summary>
+	public Vertex[]? BendVertices( int part, CoasterBendTables tables, float spacing )
+	{
+		var source = Parts[part];
+		if ( !Bend || source.Local is not { } local || source.Bake is not { } bake )
+			return null;
+		var result = (Vertex[])source.Vertices.Clone();
+		for ( var corner = 0; corner < result.Length; corner++ )
+		{
+			var bent = NVector3.Transform( CoasterCarBend.Bend( tables, spacing, local[corner] ), bake );
+			result[corner].Position = ObjectAssets.ConvertAxes( bent );
+		}
+		return result;
+	}
+
+	/// <summary>Whether part <paramref name="part"/>'s texture coordinates follow the wheel clip.</summary>
+	public bool AnimatesUv( int part ) => part >= 0 && part < wheelUvs.Length && wheelUvs[part] != null;
+
+	/// <summary>The part's vertices with the texture coordinates of the wheel clip at <paramref name="tick"/> (a new array), or null for a part without a UV track.</summary>
+	// [BIN:TPW-EXE:0x471860 wheel UV pass] the sampler's UV pass (0x4745c0, gated as in ObjectAnimator) writes every corner's texture coordinate from the track of the part's node at the clip's tick
+	public Vertex[]? WheelVertices( int part, float tick )
+	{
+		if ( !AnimatesUv( part ) )
+			return null;
+		var source = Parts[part].Vertices;
+		var coordinates = new NVector2[source.Length];
+		wheelUvs[part]!.Apply( tick, coordinates );
+		var result = (Vertex[])source.Clone();
+		for ( var corner = 0; corner < result.Length; corner++ )
+			result[corner].TexCoords = new Vector2( coordinates[corner].X, coordinates[corner].Y );
+		return result;
+	}
+
+	/// <summary>
+	/// The clip frame of a car's wheels: the milliseconds since the clip started times the clip's speed (the type's factor times the train's speed, set every tick through 0x474050) times 0.03,
+	/// wrapped into the clip (the clip loops, flag 1).
+	/// </summary>
+	// [BIN:TPW-EXE:0x43ce20 wheel clip speed] each tick a non-bend car's model channel 0 gets speed = car type +0x1c × train +0x78 (0x474050 stores it in the slot at +0xc), the start of the clip being 0x43be10's (animation id 5, sub 0, flags 1, speed 1.0, 0x4732a0); the frame is (now − start) · speed · 0.03 (0x473490, ObjectAnimator)
+	public static float WheelTick( double elapsedMilliseconds, float trainSpeed, int duration )
+	{
+		if ( duration <= 0 )
+			return 0;
+		var elapsed = (uint)Math.Max( 0, elapsedMilliseconds );
+		var frame = elapsed * (WheelSpeedFactor * trainSpeed) * 0.03f;
+		var tick = frame % duration;
+		return float.IsFinite( tick ) && tick >= 0 ? tick : 0;
+	}
+
+	/// <summary>
+	/// The matrix that moves a part from its baked rest pose to the pose of the wheel clip at <paramref name="tick"/> (the part's node animated, its vertices unchanged); identity for a part of an unanimated node.
+	/// </summary>
+	public Matrix4x4[] WheelPartMatrices( float tick )
+	{
+		var matrices = new Matrix4x4[Parts.Count];
+		Array.Fill( matrices, Matrix4x4.Identity );
+		if ( WheelClip is not { } clip || !wheelNodes )
+			return matrices;
+		wheelPlayer ??= new ModelAnimationPlayer( Model, clip, WheelTicksPerSecond ) { Loop = true };
+		wheelPlayer.SetTick( tick );
+		var worlds = new Matrix4x4[Model.Nodes.Count];
+		wheelPlayer.ComputeWorldTransforms( worlds );
+		for ( var index = 0; index < matrices.Length; index++ )
+		{
+			var part = Parts[index];
+			if ( part.NodeIndex < 0 || part.Bake is not { } bake || !Matrix4x4.Invert( bake, out var inverse ) )
+				continue;
+			matrices[index] = inverse * (worlds[part.NodeIndex] * Shift);
+		}
+		return matrices;
+	}
+
+	private ModelAnimationPlayer? wheelPlayer;
+
 	/// <summary>The root node's position in the model (subtracted so the car's origin is its pivot).</summary>
 	public NVector3 Pivot { get; }
 	public IReadOnlyList<CoasterModelPart> Parts { get; }

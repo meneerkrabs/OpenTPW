@@ -137,4 +137,45 @@ public class LobbyCameraModeTests
 		Assert.IsFalse( camera.Entering );
 		Assert.AreEqual( 0, camera.FadeTarget );
 	}
+
+	[TestMethod]
+	public void ACancelledZoomEasesTheFadeOutAndRestoresTheOrbit()
+	{
+		LobbyCameraMode.SpinSpeed = 0;
+		var camera = new LobbyCameraMode();
+		camera.BeginEnter( 0f, null, null );
+		while ( camera.Phase != LobbyCameraMode.EnterPhase.Zoom )
+			camera.Advance( 0.1f );
+		for ( var frame = 0; frame < 20; frame++ )
+			camera.Advance( 0.1f );
+		Assert.IsTrue( camera.FadeCurrent > 0 && camera.CurrentRadius < LobbyCameraMode.Radius );
+		camera.CancelEnter();
+		for ( var frame = 0; frame < 400; frame++ )
+			camera.Advance( 0.1f );
+		Assert.AreEqual( 0, camera.FadeCurrent, "the fade eases all the way out" );
+		Assert.AreEqual( 0, camera.FadeAlpha );
+		Assert.AreEqual( LobbyCameraMode.Radius, camera.CurrentRadius );
+		Assert.AreEqual( LobbyCameraMode.VerticalOffset, camera.CurrentHeight );
+	}
+
+	[TestMethod]
+	public void TheEnterPutsTheEyeOppositeTheIslandAngleThroughTheTarget()
+	{
+		// tp.exe 0x5e1210: the eye goal is the target plus (sin a, cos a) × radius with a = the island angle + π, so the eye sits on the side of the gate,
+		// which the island models carry at local -z (rotated by the island angle with the lobby scene's row-vector RotationY: (-sin θ, -cos θ))
+		LobbyCameraMode.SpinSpeed = 0;
+		foreach ( var degrees in new[] { 0f, 90f, 180f, 270f } )
+		{
+			var island = degrees * System.MathF.PI / 180f;
+			var camera = new LobbyCameraMode();
+			camera.BeginEnter( island, null, null );
+			for ( var frame = 0; frame < 3000 && camera.Phase != LobbyCameraMode.EnterPhase.Zoom; frame++ )
+				camera.Advance( 0.1f );
+			camera.Advance( 0.1f );
+			var gate = new System.Numerics.Vector2( -System.MathF.Sin( island ), -System.MathF.Cos( island ) );
+			// the orbit's own direction (the eye's goal is Target + radius × (sin a, cos a))
+			var away = new System.Numerics.Vector2( System.MathF.Sin( camera.Angle ), System.MathF.Cos( camera.Angle ) );
+			Assert.IsTrue( System.Numerics.Vector2.Dot( away, gate ) > 0.999f, $"the eye goal is on the gate's side for {degrees} degrees" );
+		}
+	}
 }

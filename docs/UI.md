@@ -155,8 +155,10 @@ screens, options), `FrontEnd/`, `Hud/`, `World/Lobby/LobbyScene.cs`,
   frame the short way round, plays the gate's `M1` clip, then zooms in (radius × (1 − 0.07 × step), height
   × (1 − 0.6 × step)) under a black fade that eases an eighth of the way a frame to the closed share of
   SPINRADIUS − 8; below radius 8 the queued park starts (`0x5e1e50`). Not rendered: the cloud layer
-  (coloured from SKYCOLOUR), the fog and the key-award animation; the early-leave `M2` gate close has no
-  front-end trigger here.
+  (coloured from SKYCOLOUR), the fog and the key-award animation; the early-leave `M2` gate close
+  plays only when the enter is abandoned (the park it was to start was refused: the orbit resumes,
+  the fade eases out and the menu returns); the browser's level copy starts when the sequence
+  does and the park waits for both.
 - Menu: the `islandlobby` panel + `f_lobbutbg` and the globe (`b_worldview`, 346; opens the online
   world), enter (`b_entpark`, 345), previous and next (`b_lobleft`, `b_lobright`, 343, 344) buttons at the
   rectangles of the original lobby table (tp.exe `0x757f60`, generated into `UI/Original/OriginalLayoutTables.cs`

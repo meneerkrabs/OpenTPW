@@ -80,9 +80,9 @@ internal sealed partial class GameFlow : IDisposable
 		pendingLevel = null;
 	}
 
-	/// <summary>Queues a transition into <paramref name="level"/>; it waits until <see cref="LevelDataReady"/> says the level's files are there.</summary>
 	/// <summary>The lobby's enter sequence holds a queued park until the camera has zoomed in (tp.exe 0x5e1e50 starts it).</summary>
 	private bool enterHold;
+	private LobbyIslandInfo? enterIsland;
 
 	/// <summary>
 	/// Starts the lobby's enter sequence on the selected island: the menu is hidden, the camera turns to the island's angle + π, the gate opens
@@ -98,12 +98,30 @@ internal sealed partial class GameFlow : IDisposable
 			return;
 		var lobby = Lobby;
 		enterHold = true;
+		enterIsland = island;
 		camera.BeginEnter( island.Angle * MathF.PI / 180f, () => lobby.PlayGate( island, open: true ), () => enterHold = false );
 	}
 
 	/// <summary>The enter sequence is running: the lobby menu is hidden and a queued park waits.</summary>
 	internal bool LobbyEntering => Camera.Mode is LobbyCameraMode { Entering: true };
 
+	/// <summary>
+	/// Abandons the enter sequence when the park it was to start did not start (the transition was refused or its dialog needs the menu):
+	/// the orbit resumes, the fade eases out, the menu is back and an opened gate closes again with M2 (tp.exe 0x5e1350 and the early-leave
+	/// callers play M2).
+	/// </summary>
+	internal void CancelLobbyEnter()
+	{
+		enterHold = false;
+		if ( Camera.Mode is not LobbyCameraMode { Entering: true } camera )
+			return;
+		var opened = camera.Phase == LobbyCameraMode.EnterPhase.Zoom;
+		camera.CancelEnter();
+		if ( opened && Lobby != null && enterIsland != null )
+			Lobby.PlayGate( enterIsland, open: false );
+	}
+
+	/// <summary>Queues a transition into <paramref name="level"/>; it waits until <see cref="LevelDataReady"/> says the level's files are there.</summary>
 	public void QueueLevel( string level, Action transition, bool prepareBuyWindow = false )
 	{
 		AbandonParkBuild();
@@ -494,10 +512,11 @@ internal sealed partial class GameFlow : IDisposable
 			PumpParkBuild();
 		// A park waits for a language chosen just before it (its speech files may still be coming) and is then entered in it:
 		// the transition's tear-down applies the choice before the park is built.
-		else if ( pending != null && !(enterHold && LobbyEntering) )
+		else if ( pending != null )
 		{
+			// The readiness is polled while the lobby's enter sequence plays too (the browser starts copying the level's files then), but the park waits for the zoom.
 			var ready = pendingLevel == null || (SettlePendingLanguage() && LevelDataReady?.Invoke( pendingLevel ) != false);
-			if ( ready )
+			if ( ready && !(enterHold && LobbyEntering) )
 			{
 				var transition = pending;
 				pending = null;
@@ -509,7 +528,7 @@ internal sealed partial class GameFlow : IDisposable
 				if ( parkBuild == null )
 					Transitioned?.Invoke();
 			}
-			else if ( prepareBuyWindowArt && TexturePackSwitch.Current == null )
+			else if ( !ready && prepareBuyWindowArt && TexturePackSwitch.Current == null )
 			{
 				// Global UI files are ready while the browser copies theme files. Prepare only
 				// buy-window art here; previews and signs still load only when requested.
@@ -519,6 +538,10 @@ internal sealed partial class GameFlow : IDisposable
 					() => System.Diagnostics.Stopwatch.GetElapsedTime( start ).TotalMilliseconds, 6 );
 			}
 		}
+		// An enter sequence that has zoomed in with no park queued or being built (the transition was refused, or it left the lobby as it was) must
+		// not leave the lobby black with its menu hidden, where the refusal's dialog could not be answered
+		else if ( LobbyEntering && !enterHold )
+			CancelLobbyEnter();
 		Context.Canvas = CurrentCanvas();
 		Context.Time = Time.Now;
 		Context.Delta = Time.Delta;

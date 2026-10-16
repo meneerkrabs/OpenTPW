@@ -300,8 +300,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var camera = (LobbyCameraMode)Camera.Mode;
 			Require( flow.Lobby!.GateClips.Any( clip => clip == 1 ), "the selected island's gate plays its M1 clip" );
-			camera.CancelEnter();
+			flow.CancelLobbyEnter();
 			Require( !flow.LobbyEntering, "a cancelled enter resumes the lobby" );
+			Require( flow.Lobby!.GateClips.Any( clip => clip == 2 ), "a cancelled enter closes the opened gate with M2" );
 		} );
 		Wait( "lobby fade clears", 60 );
 		Do( "click next island", () => Click( flow.Menu!.Main, "nextIsland" ) );

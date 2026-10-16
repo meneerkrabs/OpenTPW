@@ -6,7 +6,7 @@ namespace OpenTPW.UI.Original;
 /// </summary>
 // [BIN:TPW-EXE:0x489ca0 pointer init] the cursor init loads the .ani set and the .tga set (0x4899c0), hides the system pointer (ShowCursor 0) and starts with pointer 1 (busy)
 // [BIN:TPW-EXE:0x52f950 tool pointer] the tool mode (0x81ae2c) picks the pointer; then noplace (8) when 0x527950 is true and cash (20) when 0x816d5c is set override it
-// [APPROX:UI-100] what the flags 0x816d60 (link) and 0x816d4c (end) and 0x816d5c (cash) mean is not traced, so OpenTPW never sets them; the crosshair's art (CCro.tga) is not in the game data, so OpenTPW keeps the system pointer there
+// [APPROX:UI-100] what the flags 0x816d60 (link) and 0x816d4c (end) mean is not traced, so OpenTPW never sets them; 0x816d5c (cash) is the money refusal of the object purchase gate (0x523662), the placement validator (0x53593f) and Buy Land (0x5323c1), and OpenTPW sets it for Buy Land only; the crosshair's art (CCro.tga) is not in the game data, so OpenTPW keeps the system pointer there
 public static class OriginalPointers
 {
 	public const int Count = 22;

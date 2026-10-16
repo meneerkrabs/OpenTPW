@@ -28,10 +28,8 @@ public sealed partial class ParkHud
 	};
 
 	private UiScreen? staffScreen;
-	private UiButton? dismissStaffButton;
-	private UiButton? pickUpStaffButton;
-	private UiButton? setPatrolButton;
-	private UiButton? clearPatrolButton;
+	/// <summary>The hire window's money samples, taken when the window opens (null without an economy).</summary>
+	private (long MoneyIn, long StaffCosts, long MoneyOut)? hireBalanceSample;
 	private StaffType? staffFilter = StaffType.Handyman;
 	private bool showingEmployedStaff;
 	// [BIN:TPW-EXE:0x49b85e hire list sort word 0x7523e4] the hire window writes its sort word back on a sort change, so the order outlives the window for the session (UI-084)
@@ -85,6 +83,7 @@ public sealed partial class ParkHud
 			return;
 		staffFilter = StaffType.Handyman;
 		ShowEmployedStaff( false );
+		hireBalanceSample = FinanceEconomy is { } economy ? HireBalanceSample( economy.Ledger.History ) : null;
 		staffScreen ??= CreateStaffScreen();
 		Stack.Push( staffScreen );
 		staffScreen.Focus( staffScreen.Find( "staffList" ) );
@@ -111,7 +110,8 @@ public sealed partial class ParkHud
 	/// <summary>Switches between the original applicant list and a view of existing employees.</summary>
 	// [EXT:staff-employee-view] The original hire window only lists applicants; its employee list is the separate All Staff window
 	// (table 0x750e10, screen 0x11d, S key), which OpenTPW does not port. This view of existing employees inside the hire window,
-	// reached by the labelled "staffViewExt" button, is an OpenTPW extension that also hosts the dismiss button.
+	// reached by the labelled "staffViewExt" button, is an OpenTPW extension; like the All Staff list (0x400 → 0x4b6080 at 0x496088) a click
+	// on an employee opens the per-employee window (ParkHud.EmployeeWindow.cs), which holds the dismiss, pick-up and patrol buttons.
 	public void ShowEmployedStaff( bool employed )
 	{
 		showingEmployedStaff = employed;
@@ -171,79 +171,8 @@ public sealed partial class ParkHud
 		GameAudio.PlayUi( GameAudio.ErrorEvent );
 	}
 
-	/// <summary>Whether the selected employee may be picked up now (tp.exe <c>CanBePickedUp</c> 0x505bd0, read each tick by the window).</summary>
-	public bool CanPickUpSelectedStaff => showingEmployedStaff && !level.IsReadOnlyVisit && SelectedStaff is { } member
-		&& level.StaffPlacement != null && level.Guests?.Grid.Cells is { } cells && StaffPlacementRules.CanBePickedUp( member, cells );
-
-	/// <summary>The pick-up button: puts the selected employee in the player's hand, closes the window and starts the Carry tool.</summary>
-	// [BIN:TPW-EXE:0x4b5ed9 pick-up button] control 0x50e of the staff info window runs 0x505c50 and the window closes
-	public bool PickUpSelectedStaff()
-	{
-		if ( !showingEmployedStaff || RejectReadOnlyAction() || SelectedStaff is not { } member || level.StaffPlacement is not { } placement )
-			return false;
-		if ( !placement.PickUp( member ) )
-			return false;
-		level.EndBuildTools();
-		CloseStaffWindow();
-		return true;
-	}
-
-	/// <summary>Whether the selected employee's patrol area may be set or cleared now.</summary>
-	public bool CanSetPatrolArea => showingEmployedStaff && !level.IsReadOnlyVisit && SelectedStaff != null && level.PatrolTool != null;
-
-	/// <summary>The set button: the window closes and the patrol tool starts for the selected employee (tp.exe <c>0x004B5B50</c> with 1, mouse mode 0x36).</summary>
-	// [BIN:TPW-EXE:0x004B5B50 patrol buttons] 0 clears the area (0x00506E90); 1 builds the tool's state, sets mouse mode 0x36 (0x0046C580) and closes the window
-	public bool SetSelectedStaffPatrolArea()
-	{
-		if ( !CanSetPatrolArea || RejectReadOnlyAction() || SelectedStaff is not { } member || level.PatrolTool is not { } tool )
-			return false;
-		level.EndBuildTools();
-		level.StaffPlacement?.Cancel();
-		if ( !tool.Begin( member ) )
-			return false;
-		PostMessage( strings.Extra( OpenTpwText.PatrolAreaHint ) );
-		CloseStaffWindow();
-		return true;
-	}
-
-	/// <summary>The clear button: the selected employee patrols the whole park again (tp.exe <c>0x00506E90</c>).</summary>
-	public bool ClearSelectedStaffPatrolArea()
-	{
-		if ( !CanSetPatrolArea || RejectReadOnlyAction() || SelectedStaff is not { } member )
-			return false;
-		member.ClearPatrolArea();
-		return true;
-	}
-
-	/// <summary>Dismisses the selected employee through the existing park economy operation.</summary>
-	public bool DismissSelectedStaff()
-	{
-		if ( !showingEmployedStaff || RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy )
-			return false;
-		var member = SelectedStaff;
-		if ( member == null || economy.Staff.Members.All( item => item.Id != member.Id ) )
-			return false;
-		economy.Fire( member.Id );
-		selectedStaffId = 0;
-		EnsureStaffSelection();
-		return true;
-	}
-
-	private void ConfirmDismissSelectedStaff()
-	{
-		if ( !showingEmployedStaff || SelectedStaff == null || RejectReadOnlyAction() )
-			return;
-		// [BIN:TPW-EXE:0x4b5e5d dismiss] b_fire (control 0x50c) confirms with UITEXT 0x18d only when the Confirmations option (ConfirmDeleteOn, options byte 0x78d90f = +0x37) is on
-		if ( !GameOptions.Current.Confirmations )
-		{
-			DismissSelectedStaff();
-			return;
-		}
-		var targetName = SelectedName;
-		Stack.Push( UiDialogs.Message( "confirmDismissStaff", () => strings[UIStrings.DismissEmployee] + "\n" + targetName,
-			(() => strings.Value( UIStrings.Yes ), () => { Stack.Pop(); DismissSelectedStaff(); }),
-			(() => strings.Value( UIStrings.No ), Stack.Pop) ) );
-	}
+	/// <summary>Opens the per-employee window on the employee view's selected employee (a click on the row, as the All Staff list does).</summary>
+	public bool OpenSelectedEmployee() => showingEmployedStaff && SelectedStaff is { } member && OpenEmployeeWindow( member );
 
 	public void SelectStaff( int index )
 	{
@@ -270,14 +199,6 @@ public sealed partial class ParkHud
 		else if ( !visibleIds.Contains( selectedStaffId ) )
 			selectedStaffId = visibleIds[0];
 		SetStaffFirstRow( staffFirstRow );
-		if ( dismissStaffButton != null )
-			dismissStaffButton.Enabled = showingEmployedStaff && selectedStaffId != 0;
-		if ( pickUpStaffButton != null )
-			pickUpStaffButton.Enabled = CanPickUpSelectedStaff;
-		if ( setPatrolButton != null )
-			setPatrolButton.Enabled = CanSetPatrolArea;
-		if ( clearPatrolButton != null )
-			clearPatrolButton.Enabled = CanSetPatrolArea && SelectedStaff is { HasPatrolArea: true };
 	}
 
 	private string StaffName( StaffMember member ) => StaffName( member.Type, member.NameIndex, member.Id );
@@ -336,21 +257,31 @@ public sealed partial class ParkHud
 	};
 
 	/// <summary>
-	/// The hire window's mini balance (control 9349) for <paramref name="candidate"/>: the current month's money in, the staff costs with the candidate's monthly wage added, the other costs
-	/// (money out minus staff costs) and what is left once the wage is paid.
+	/// The hire window's mini balance (control 9349) for <paramref name="candidate"/>: the last closed month's money in, its staff costs with the candidate's monthly wage
+	/// added, its other costs (money out minus staff costs) and what is left once the wage is paid. The month is the one the window found when it opened.
 	/// </summary>
-	// [BIN:TPW-EXE:0x49b927 hire window mini balance] on a selection the staff-costs row (0x248c) shows [0x7ca2fc] + the candidate's wage (0x5077f0) and the balance row (0x2487) [0x7ca2f0] - wage - [0x7ca2fc] - [0x7ca300]; the globals are the newest samples of the finance graph's money-in (+0x1fc90), staff-costs (+0x1f7f0) and money-out (+0x1f5a0) series (0x49c53d..0x49c705), other costs [0x7ca300] being money out minus staff costs (0x49c705)
+	// [BIN:TPW-EXE:0x49b927 hire window mini balance] on a selection the staff-costs row (0x248c) shows [0x7ca2fc] + the candidate's wage (0x5077f0) and the balance row (0x2487) [0x7ca2f0] - wage - [0x7ca2fc] - [0x7ca300]; other costs [0x7ca300] are money out minus staff costs (0x49c705)
+	// [BIN:TPW-EXE:0x49c53d hire window samples] the builder 0x49bdd0 copies the newest entry of the money-in (+0x1fc94, index +0x1fed4), staff-costs (+0x1f7f4, index +0x1fa34) and money-out (+0x1f5a4, index +0x1f7e4) sample rings into those globals, 0 while a ring is still empty (index -1, not wrapped); a ring entry is written only by the month close 0x4c7720, which pushes each month's accumulator (+0x1fc90, +0x1f7f0, +0x1f5a0) through 0x4ce290 and zeroes it, so the window reads the last closed month as it was when the window opened
 	// [DATA:video 12:00 hire window] Inkomsten, - Werknemerskosten, - Overige kosten and Saldo; Saldo follows the selected candidate and the two cost rows are red
 	public (long Income, long StaffCosts, long OtherCosts, long Balance)? CandidateBalance( StaffCandidate? candidate )
 	{
-		if ( candidate == null || FinanceMonths() is not { Count: > 0 } months )
+		if ( candidate == null || hireBalanceSample is not { } sample )
 			return null;
-		var month = months[^1];
-		var wage = CandidateWageAmount( candidate );
-		var moneyOut = month.MoneyOut;
-		var staff = month[LedgerCategory.StaffCosts];
-		return (month.MoneyIn, staff + wage, moneyOut - staff, month.MoneyIn - wage - moneyOut);
+		return HireBalance( sample, CandidateWageAmount( candidate ) );
 	}
+
+	/// <summary>The hire window's three samples (money in, staff costs, money out) of the last closed month in <paramref name="closedMonths"/>; zeros before the first month closes.</summary>
+	public static (long MoneyIn, long StaffCosts, long MoneyOut) HireBalanceSample( IReadOnlyList<LedgerMonth> closedMonths )
+	{
+		if ( closedMonths.Count == 0 )
+			return (0, 0, 0);
+		var month = closedMonths[^1];
+		return (month.MoneyIn, month[LedgerCategory.StaffCosts], month.MoneyOut);
+	}
+
+	/// <summary>The four mini-balance rows from the window's samples and a candidate's monthly wage.</summary>
+	public static (long Income, long StaffCosts, long OtherCosts, long Balance) HireBalance( (long MoneyIn, long StaffCosts, long MoneyOut) sample, long wage ) =>
+		(sample.MoneyIn, sample.StaffCosts + wage, sample.MoneyOut - sample.StaffCosts, sample.MoneyIn - wage - sample.MoneyOut);
 
 	private string BalanceRowText( int row )
 	{
@@ -453,24 +384,6 @@ public sealed partial class ParkHud
 		screen.Add( new UiButton { Id = "staffViewExt", Text = () => showingEmployedStaff ? HireTitle : strings[UIStrings.AllStaff],
 			Clicked = () => ShowEmployedStaff( !showingEmployedStaff ), Font = fonts => fonts.Label,
 			Bounds = Rect( 320, 610, 909, 690 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-092] an explicit dismiss button below the portrait in the employee view; the original dismisses with b_fire (control 0x50c = 1292, rectangle (380,694)-(534,847), help UIHELPTEXT 89 "Left-click to dismiss the employee") on the per-employee panel (0x4b6080, table 0x756f48); the confirmation (UITEXT 0x18d) follows the Confirmations option as the original's [0x78d90f] gate does — evidence needed: porting that panel
-		dismissStaffButton = new UiButton { Id = "dismissStaff", Text = () => strings[UIStrings.DismissEmployee].Split( '\n' )[0].Trim(),
-			Clicked = ConfirmDismissSelectedStaff, Font = fonts => fonts.Label, Enabled = false,
-			Bounds = Rect( 320, 449, 909, 518 ), Anchor = UiAnchor.Center };
-		screen.Add( dismissStaffButton );
-		// [BIN:TPW-EXE:0x4b5ed9 pick-up button] control 0x50e (1294) of the per-employee window (table 0x756f48) is a type-2 model button b_pick (name hash 0x1d406292) without a text label, rectangle (539,694)-(692,847), help UIHELPTEXT 88 "Left-click to pick up the employee"; it runs 0x505c50 and the window closes
-		// [APPROX:UI-098] the employee view is embedded in the hire window, whose stat rows occupy the original rectangle (539,694)-(692,847) of the separate per-employee window, so the button keeps the original model, size (153 x 153) and help at the right of the portrait — evidence needed: porting the per-employee window
-		pickUpStaffButton = new UiButton { Id = "pickUpStaff", Model = "b_pick", Help = strings.Help( 88 ),
-			Clicked = () => PickUpSelectedStaff(), Enabled = false, Visible = true,
-			Bounds = Rect( 770, 290, 923, 443 ), Anchor = UiAnchor.Center };
-		screen.Add( pickUpStaffButton );
-		// Approximation (UI-098, registered at the pick-up button): the employee window's patrol buttons (UIHELPTEXT 86 set, 87 clear) sit on the left of the portrait with OpenTPW labels; their models and rectangles are untraced
-		setPatrolButton = new UiButton { Id = "setPatrol", Text = () => strings.Extra( OpenTpwText.SetPatrolArea ), Help = strings.Help( 86 ),
-			Clicked = () => SetSelectedStaffPatrolArea(), Font = fonts => fonts.Label, Enabled = false, Bounds = Rect( 259, 190, 470, 290 ), Anchor = UiAnchor.Center };
-		screen.Add( setPatrolButton );
-		clearPatrolButton = new UiButton { Id = "clearPatrol", Text = () => strings.Extra( OpenTpwText.ClearPatrolArea ), Help = strings.Help( 87 ),
-			Clicked = () => ClearSelectedStaffPatrolArea(), Font = fonts => fonts.Label, Enabled = false, Bounds = Rect( 259, 300, 470, 400 ), Anchor = UiAnchor.Center };
-		screen.Add( clearPatrolButton );
 		// [DATA:Mac staff-button table 0x4e45c:2397-2404] Locate-role and locate-visitor buttons at the authored HUD rectangles.
 		Model( "staffLocateFrame", "!f_plain", Rect( 526, 1191, 893, 1439 ) );
 		Model( "visitorLocateFrame", "!f_plain", Rect( 12, 1191, 379, 1439 ) );
@@ -540,7 +453,7 @@ public sealed partial class ParkHud
 		public void Scroll( int rows ) => owner.ScrollStaff( rows );
 		public bool HoverSelects => true;
 		public int HoveredRow { get; private set; } = -1;
-		// [BIN:TPW-EXE:0x6656a0 list hover] the applicant list selects the row under the pointer (the details, the skill gauge and the mini balance follow it, video 12:00); the employee view (EXT) only highlights, because its dismiss, pick-up and patrol buttons act on the selection
+		// [BIN:TPW-EXE:0x6656a0 list hover] the applicant list selects the row under the pointer (the details, the skill gauge and the mini balance follow it, video 12:00); the employee view (EXT) only highlights, as a click opens the employee under the pointer
 		public void Hover( int index )
 		{
 			// only a pointer that moved to another row selects it, so the arrow keys keep the selection while the pointer rests
@@ -556,12 +469,21 @@ public sealed partial class ParkHud
 			if ( !left )
 				return false;
 			Select( index );
+			// [BIN:TPW-EXE:0x496056 all staff row] the All Staff list routes its 0x400 to the per-employee window (0x4b6080), the employee view's stand-in does the same
+			if ( owner.showingEmployedStaff )
+				return owner.OpenSelectedEmployee();
 			if ( !owner.HireSelectedStaff() )
 				owner.RefuseHire();
 			return true;
 		}
-		// [EXT:staff-enter-hire] Enter hires the selected applicant too (no original key emits 0x400); it is the keyboard analogue of the click.
-		public override void Activate() => owner.HireSelectedStaff();
+		// [EXT:staff-enter-hire] Enter hires the selected applicant too (no original key emits 0x400); it is the keyboard analogue of the click, and in the employee view it opens the employee's window.
+		public override void Activate()
+		{
+			if ( owner.showingEmployedStaff )
+				owner.OpenSelectedEmployee();
+			else
+				owner.HireSelectedStaff();
+		}
 		public override void Adjust( int direction ) => owner.SelectStaff( Math.Max( 0, Selected ) + direction );
 		public int RowAt( UiCanvas canvas, NVector2 point )
 		{

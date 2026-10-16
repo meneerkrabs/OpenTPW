@@ -98,6 +98,10 @@ public class CrowdAudioTests
 		return mixer.Voices.Single( voice => !voice.IsFinished );
 	}
 
+	/// <summary>
+	/// Records <paramref name="count"/> segments in the order they start: each recorded voice is mixed in short chunks until it ends, so a successor that starts
+	/// (and could end) inside one long mix is not skipped when its sample was already decoded.
+	/// </summary>
 	private (int Sound, int Sample)[] ReadSequence( SoundSentence sentence, int count, Action? beforeMix = null )
 	{
 		var sequence = new (int Sound, int Sample)[count];
@@ -106,8 +110,10 @@ public class CrowdAudioTests
 			var voice = WaitForVoice();
 			sequence[index] = (sentence.CurrentSound, sentence.CurrentSample);
 			beforeMix?.Invoke();
-			var frames = (int)Math.Ceiling( voice.Frames * (double)AudioMixer.OutputRate / voice.SampleRate );
-			Assert.IsTrue( mixer.Mix( frames ).Any( value => value != 0 ), "the selected sample reaches decoded PCM" );
+			var audible = false;
+			while ( !voice.IsFinished )
+				audible |= mixer.Mix( 8 ).Any( value => value != 0 );
+			Assert.IsTrue( audible, "the selected sample reaches decoded PCM" );
 		}
 		return sequence;
 	}
@@ -194,6 +200,71 @@ public class CrowdAudioTests
 		system.Pump();
 		Assert.IsTrue( mixer.Mix( 128 ).All( value => value == 0 ) );
 		Assert.AreEqual( 0, mixer.Voices.Count );
+	}
+
+	[TestMethod]
+	public void AParameterBoundToThePlayingSoundReEvaluatesItsVolumeAndPitchAtOnce()
+	{
+		// Every crowd sound binds code 7 in slot 1 under the volume mask (as the shipped sounds 1-6 do), 14-22 percent, pitch 0..6.
+		var sounds = (IList<SoundEntry>)kids.Catalog.Find( GameAudio.CrowdEvent )!.Sounds;
+		for ( var sound = 0; sound < sounds.Count; sound++ )
+		{
+			var raw = (byte[])sounds[sound].Raw.Clone();
+			raw[22] = 7;
+			raw[24] = 1;
+			sounds[sound] = sounds[sound] with { Raw = raw, MinimumVolume = 14, MaximumVolume = 22, MinimumPitch = 0, MaximumPitch = 6 };
+		}
+		GameAudio.EnterPark( "missing", seed: 11 );
+		GameAudio.SetCrowd( 100 );
+		var sentence = GameAudio.Crowd!;
+		var voice = WaitForVoice();
+		Assert.AreEqual( 0.22f, voice.Gain, 1e-6f, "the segment starts at the parameter's volume" );
+		var seed = system.Seed;
+		sentence.SetParameter( GameAudio.CrowdParameterCode, 50 );
+		Assert.AreEqual( 0.18f, voice.Gain, 1e-6f, "14 + (22 - 14) * 50 / 100 percent, on the playing voice" );
+		Assert.AreNotEqual( seed, system.Seed, "the pitch is drawn again from the shared chooser" );
+		Assert.IsTrue( voice.PitchStep is >= 0 and < 6 );
+		seed = system.Seed;
+		sentence.SetParameter( 4, 10 );
+		Assert.AreEqual( 0.18f, voice.Gain, 1e-6f, "a code the sound does not bind leaves the playing voice alone" );
+		Assert.AreEqual( seed, system.Seed, "and draws nothing" );
+	}
+
+	[TestMethod]
+	public void AParameterTheSoundDoesNotBindLeavesThePlayingVoiceAlone()
+	{
+		GameAudio.EnterPark( "missing", seed: 11 );
+		GameAudio.SetCrowd( 30 );
+		var voice = WaitForVoice();
+		var (gain, pitch) = (voice.Gain, voice.PitchStep);
+		GameAudio.SetCrowd( 90 );
+		Assert.AreEqual( (gain, pitch), (voice.Gain, voice.PitchStep), "selector 0 is not code 7 (the shipped sounds 7-12)" );
+		Assert.IsFalse( SoundSentence.BindsSlot( GameAudio.Crowd!.Event.Sounds[GameAudio.Crowd.CurrentSound], GameAudio.CrowdParameterCode ) );
+		Assert.AreEqual( 90, GameAudio.Crowd!.Parameter, "the branching parameter still follows the count" );
+	}
+
+	[TestMethod]
+	public void TheCrowdUpdatesOnEveryThirtySecondWorldStepOfTheGameTimer()
+	{
+		var cadence = new WorldStepCadence();
+		Assert.AreEqual( 0, cadence.Advance( 31 * 31 ), "31 steps of 31 ms" );
+		Assert.AreEqual( 31, cadence.Steps );
+		Assert.AreEqual( 1, cadence.Advance( 0.5 ), "the 32nd step runs as soon as the timer is past its time" );
+		Assert.AreEqual( 0, cadence.Advance( 0 ), "a paused timer runs no step" );
+		cadence.Reset();
+		Assert.AreEqual( 2, cadence.Advance( 60_000 ), "a backlog over 2000 ms is dropped: 65 steps" );
+		Assert.AreEqual( 65, cadence.Steps );
+
+		GameAudio.EnterPark( "missing", seed: 11 );
+		var counted = 0;
+		GameAudio.UpdateCrowd( 900, () => { counted++; return 12; } );
+		Assert.AreEqual( 0, counted, "no update before the 32nd step" );
+		Assert.IsNull( GameAudio.Crowd );
+		GameAudio.UpdateCrowd( 100, () => { counted++; return 12; } );
+		Assert.AreEqual( 1, counted );
+		Assert.IsNotNull( GameAudio.Crowd, "the crowd starts at the first update" );
+		GameAudio.EnterPark( "missing", seed: 11 );
+		Assert.AreEqual( 0, GameAudio.SoundCadence.Steps, "a park starts counting again" );
 	}
 
 	[TestMethod]
@@ -349,16 +420,27 @@ public class CrowdAudioTests
 	}
 
 	[TestMethod]
-	public void UnmatchedVolumeParametersPreserveTheFrozenRandomFallbackAndFirstMaskWins()
+	public void AVolumeMaskReadsItsSlotWhetherOrNotTheCodeWasSetAndOnlyAnUnboundSoundDraws()
 	{
-		// the fallback is the advancing random draw, so each pair starts from the same chooser state
+		// tp.exe 0x6BC040 tests only the masks: a sound whose mask +0x18 (or +0x1C) has bit 1 takes slot 1's (or 2's) value byte, 0 until a call with the
+		// slot's code arrives, so it plays at its minimum without a draw. (The Mac reading kept a random volume for an unset parameter; the PC is followed.)
 		int Fresh( SoundEntry sound, byte? code = null, int parameter = 0 ) { system.Reseed( 11 ); return system.Volume( sound, code, parameter ); }
-		foreach ( var sound in new[] { VolumeSound( 14, 22, 19, 1 ), VolumeSound( 14, 22, 7, 2 ),
-			VolumeSound( 14, 22, 19, 1, 7, 1 ), VolumeSound( 14, 22, 0, 0, 7, 2 ) } )
-			Assert.AreEqual( Fresh( sound ), Fresh( sound, 7, 100 ), "an unrelated selector or pitch-only mask does not change volume" );
-		var matching = VolumeSound( 14, 22, 7, 1 );
-		Assert.AreEqual( Fresh( matching ), Fresh( matching, null, 100 ), "unwired sentence codes preserve existing volume" );
-		Assert.AreEqual( Fresh( matching ), Fresh( matching with { Raw = Array.Empty<byte>() }, 7, 100 ) );
+		foreach ( var sound in new[] { VolumeSound( 14, 22, 19, 1 ), VolumeSound( 14, 22, 19, 1, 7, 1 ), VolumeSound( 14, 22, 7, 1 ) } )
+		{
+			Assert.AreEqual( 14, Fresh( sound ), "bound, never set: the bottom of the range" );
+			Assert.AreEqual( 11u, system.Seed, "and no draw" );
+		}
+		Assert.AreEqual( 14, Fresh( VolumeSound( 14, 22, 19, 1 ), 7, 100 ), "a code the sound does not bind leaves its slot at 0" );
+		Assert.AreEqual( 22, Fresh( VolumeSound( 14, 22, 19, 1, 7, 1 ), 19, 100 ), "the first mask wins: slot 1 under +0x18" );
+		Assert.AreEqual( 14, Fresh( VolumeSound( 14, 22, 19, 1, 7, 1 ), 7, 100 ), "slot 2 is read only when the first mask lacks the bit" );
+		// a pitch-only mask or no selector at all: the volume is drawn as without a table
+		foreach ( var sound in new[] { VolumeSound( 14, 22, 7, 2 ), VolumeSound( 14, 22, 0, 0, 7, 2 ), VolumeSound( 14, 22, 7, 1 ) with { Raw = Array.Empty<byte>() } } )
+		{
+			system.Reseed( 11 );
+			var drawn = system.Volume( sound );
+			Assert.AreNotEqual( 11u, system.Seed, "the unbound volume draws" );
+			Assert.AreEqual( drawn, Fresh( sound, 7, 100 ) );
+		}
 	}
 
 	[TestMethod]

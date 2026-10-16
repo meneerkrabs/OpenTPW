@@ -226,9 +226,21 @@ the sentence now applies the original `low + floor((high - low) × parameter / 1
 interpolation (`sound_shared` `0x1000F32C`, `0x1000F3C8–0x1000F3F4`), using the first
 volume-mask slot (`0x1000F2E0`). The shipped crowd bounds are 14–22 percent. Sections
 without that selector retain their range-based volume, and the other parameter
-producers remain outside this crowd fix. Gain is evaluated when a segment starts; the original
-re-evaluates the playing sample's volume and pitch when a parameter in slots 1-3 changes (`0x6bbb80` ->
-`0x6bbbe0`), and which slot carries the crowd's parameter 7 is not read (AUDIO-036).
+producers remain outside this crowd fix. A segment evaluates its volume when it starts, and a parameter
+call re-evaluates the playing one as the PC library does (`0x6bbb80` -> `0x6bbbe0`, `SoundSentence.SetParameter`):
+a placeholder's four slots hold the event's code (event `+0x12`), the current sound's two selectors (`+0x16`,
+`+0x1A`, refreshed whenever the sentence moves to another sound) and 0, and a call whose code matches slot 1-3
+recomputes the volume (unless a fixed volume was set) and redraws the pitch. The crowd event's code is 7 and sounds
+1-6 of its twelve bind 7 in slot 1 under the volume mask, so every crowd update moves the playing section's volume
+and pitch; sounds 7-12 have selector 0. Every sentence holds this table (`SoundParameterTable`): the crowd, the ride
+and tour vehicles' engines (EventMap variable 10, `0x51BC40`), the level rain voice (code 8, `0x51E870`; its
+sounds bind 8 under the volume mask, so the drop level also sets the rain's 1 to 2..5 percent) and the park music
+(code 4, `0x51E79E`; no music sound binds a selector, so it only steers the branching) go through the same call. The
+query `0x6bc040` tests only the masks: a bound sound takes its slot's value whether or not a matching call came, a value
+never set being 0, so the weather's own rain voice (no parameter call) plays at the bottom of its range. The Mac reading
+of `GetRandomVolume` kept a random volume for an unset parameter; the PC's is followed. The PC's main loop sends the crowd update (`0x51E7B0`) and the music
+parameter on every 32nd world step of 31 ms of the game timer (`0x54F82D`, `WorldStepCadence`), about once a
+second, so the crowd also starts and stops on that beat.
 
 ## On-demand bank boundaries
 
@@ -574,7 +586,7 @@ implemented yet.
 
 | ID | Approximation | Evidence needed |
 | --- | --- | --- |
-| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. A parameter-bound pitch slot is applied only for sentences started with a parameter channel (the ride vehicles' engines, `0x6bc040`); other playbacks always draw. Not applied: a placeholder's fixed-pitch flag (`0x10000`, which replaces the draw with the short at `+0x4A`), the delay of non-chain sounds (u16 + `r % range`, `0x6bc343`) and reverb (`SndReverb.map`); chain delays are milliseconds (video, 2026-10-15); position is applied only by the positioned playback path | The delay of non-chain sounds; `SndReverb.map`; parameter-bound pitch slots outside the vehicle engines; which placeholder sets the fixed-pitch flag `0x10000` (the event's flags are 16-bit) |
+| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. A parameter-bound pitch slot is applied to every sentence through its placeholder table (`0x6bc040`, `0x6bc170`); one-shot playbacks keep no table and always draw. Not applied: a placeholder's fixed-pitch flag (`0x10000`, which replaces the draw with the short at `+0x4A`), the delay of non-chain sounds (u16 + `r % range`, `0x6bc343`) and reverb (`SndReverb.map`); chain delays are milliseconds (video, 2026-10-15); position is applied only by the positioned playback path | The delay of non-chain sounds; `SndReverb.map`; the tables of one-shot placeholders; which placeholder sets the fixed-pitch flag `0x10000` (the event's flags are 16-bit) |
 | AUDIO-004 | `0xBD` plays for a control whose construction style (`+0x48`, `0x65bcad` arg 2) has bit `0x10` (`0x4857cb`); no OpenTPW control plays it | Which original controls are created with style bit `0x10` (the creation sites or UI resources) |
 | AUDIO-008 | The repair family comes from the owner object's word `+0x14` (band 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87, 0 silent; `0x55635f`/`0x551320`); OpenTPW uses band 1 (75) and plays it at the object as the original does | The band word's meaning and source |
 | AUDIO-009 | A rejected placement ("Cannot build") plays the error feedback 0x1D; the traced 0x1D callers are buy and hire money and limit checks (tp.exe `0x4879d0`, `0x4ac590`, `0x4af500`), no placement-tool site was found | The object-placement refusal cases of the build tool's 0x35-way tool switch (`0x524acd`) |
@@ -590,7 +602,6 @@ implemented yet.
 | AUDIO-904 | The camera's near plane (0.1 engine units = 0.5 original units) clips the nearest drops; the original's near plane is 0.1 original units (`0x54e86f` → `0x578be0`) and its clipper cuts the streaks there; the vertex buffer is sized once (1024 drops, 16 bolts of 512 segments) | A near clip of 0.1 original units for the weather without changing the scene's depth mapping |
 | AUDIO-033 | Minimum distance 2 is confirmed in both builds; the exponent 0.8 (the fork's QMixer lead) and the missing 2.1 maximum floor stand | The gain curve inside QMixer/SoundSprocket (outside the analysable binaries) |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The PC library's sentence classes (vtables `0x70a7e0`/`0x70a8d0`) |
-| AUDIO-036 | Crowd parameter-controlled volume is evaluated at PCM segment start; the original re-evaluates the playing sample when a parameter in slots 1-3 changes (`0x6bbb80` -> `0x6bbbe0`) | Which slot carries the crowd's parameter 7 |
 | AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) ranks the held chains (screams) with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`); a voice enters only while its rank exceeds the pool's lowest (`0x6b6bc0` compares strictly), so equal ranks keep the order of the manager's voice list; out-of-range voices without the any-distance flag have their sample stopped (`0x6bca70` → `0x6b8d60` → `0x6bb7c0`); OpenTPW stops one-shots and sentence segments and a chain starts no new child, but looping voices and a chain's playing children are not stopped | The voice list's insertion order; what restarts a stopped loop (the waterfall resumes) and how a stopped sentence resumes |
 
 ### Register round 2 (October 14)
@@ -631,6 +642,9 @@ evidence as `[BIN:TPW-EXE:...]` notes.
 * **Chooser contradiction**: the Mac reading of the chooser (frozen seed, top 16 bits without the rotate,
   `SoundEvents.cs` line 151 before this round) disagrees with the PC instructions (advancing, stored,
   rotated by 13); the PC reading is used and the Mac reading is to be rechecked.
+* **Retired October 15**: 036 (a parameter call re-evaluates the playing segment's volume and pitch when its code is
+  in slot 1-3; the crowd's code 7 is the event's and sounds 1-6's slot-1 selector; the crowd update runs on every
+  32nd world step).
 
 
 The option volumes are percentages (0–100) like the original's `{on, percent}` pairs, with the

@@ -128,13 +128,13 @@ public class VehicleEngineVoiceTests
 		Assert.AreNotEqual( seed, system.Seed + 1, "sanity" );
 	}
 
-	// ---- the sentence with a parameter channel --------------------------------------------------------
+	// ---- the sentence's parameter table ---------------------------------------------------------------
 
 	[TestMethod]
 	public void AParameterChangesThePlayingSegmentsPitchAndAMoveItsPlace()
 	{
 		var category = Category( 0x6, 0, EngineSound() );
-		var sentence = Playing( system.StartSentence( category, 5, AudioChannel.Effects, position: new Vector3( 1, 0, 1 ), parameterChannel: true )! );
+		var sentence = Playing( system.StartSentence( category, 5, AudioChannel.Effects, position: new Vector3( 1, 0, 1 ) )! );
 		var voice = mixer.Voices.Last();
 		Assert.AreEqual( -24, voice.PitchStep, "before any parameter the bound value is 0: the bottom of the range" );
 		sentence.SetParameter( 0x10, 30 );
@@ -152,7 +152,7 @@ public class VehicleEngineVoiceTests
 	public void AParameterSetBeforeTheFirstSegmentIsKept()
 	{
 		var category = Category( 0x6, 0, EngineSound() );
-		var sentence = system.StartSentence( category, 5, AudioChannel.Effects, position: new Vector3( 1, 0, 1 ), parameterChannel: true )!;
+		var sentence = system.StartSentence( category, 5, AudioChannel.Effects, position: new Vector3( 1, 0, 1 ) )!;
 		sentence.SetParameter( 0x10, 30 );
 		Playing( sentence );
 		Assert.AreEqual( -6, mixer.Voices.Last().PitchStep, "the selectors are in the table from the creation (0x6BBF60 -> 0x6BBF00)" );
@@ -160,14 +160,18 @@ public class VehicleEngineVoiceTests
 	}
 
 	[TestMethod]
-	public void ASentenceWithoutAChannelIgnoresParameters()
+	public void EverySentenceTakesParametersButOnlyBoundCodesReEvaluate()
 	{
-		var category = Category( 0x6, 0, EngineSound( selector: 0x10 ) );
+		// a sentence whose event and sounds bind nothing: the call creates the table (0x6BBB80 -> 0x6B7150), matches no slot 1-3 and leaves the voice alone
+		var category = Category( 0x6, 0, EngineSound( selector: 0, firstMask: 0 ) );
 		var sentence = Playing( system.StartSentence( category, 5, AudioChannel.Effects, position: new Vector3( 1, 0, 1 ) )! );
 		var step = mixer.Voices.Last().PitchStep;
+		var seed = system.Seed;
 		sentence.SetParameter( 0x10, 30 );
 		Assert.AreEqual( step, mixer.Voices.Last().PitchStep );
+		Assert.AreEqual( seed, system.Seed, "nothing is evaluated again" );
 		Assert.IsNull( sentence.ParameterValue( SoundParameterTable.KindPitch ) );
+		Assert.AreEqual( 30, sentence.Parameter, "the value is still the branching parameter" );
 		sentence.Stop();
 	}
 

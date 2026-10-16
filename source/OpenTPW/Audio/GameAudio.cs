@@ -63,6 +63,12 @@ internal sealed class ScreamStatistics
 /// </summary>
 public static class GameAudio
 {
+	/// <summary>The crowd sentence's parameter code (cat_kids 0x5B's event code).</summary>
+	public const byte CrowdParameterCode = 7;
+	/// <summary>The park music's parameter code (<c>0x51E790</c>: 0x51BC40(handle, 4, value)).</summary>
+	public const byte MusicParameterCode = 4;
+	/// <summary>The level rain voice's parameter code (<c>0x51E830</c>: 0x51BC40(handle, 8, level); cat_ambient 0x21's event code, its sounds bind it under the volume mask).</summary>
+	public const byte RainParameterCode = 8;
 	/// <summary>The park music event the original starts when a park opens (<c>0x100BC144</c>: event 2 of the level's music category).</summary>
 	public const uint ParkMusicEvent = 2;
 	/// <summary>The music parameter's cap (<c>0x101C2448</c>: values above 0x59 become 0x59).</summary>
@@ -248,6 +254,7 @@ public static class GameAudio
 			return;
 		LeaveLobby();
 		LeavePark();
+		SoundCadence.Reset();
 		if ( seed is uint value )
 			events!.Reseed( value );
 		staffRandom = new DeterministicRandom( events!.Seed ^ 0x53544146u );
@@ -446,6 +453,20 @@ public static class GameAudio
 	/// </summary>
 	// [BIN:STP-PPC:0x101C2490 park turn] guests within four cells of the camera are counted (0x100C313C, radius argument 4) and capped at 100 (0x101C2498)
 	// [BIN:STP-PPC:0x100BC210 crowd update] a count above 0 starts cat_kids event 0x5B and sets its parameter; 0 stops it (the start/stop wrapper is 0x100BC2E0)
+	/// <summary>The world-step gate of the park's music and crowd parameter updates (<see cref="WorldStepCadence"/>).</summary>
+	public static WorldStepCadence SoundCadence { get; } = new();
+
+	/// <summary>
+	/// Advances the park's world steps by the game timer's <paramref name="elapsedMilliseconds"/> (0 while paused) and runs the crowd update
+	/// (<see cref="SetCrowd"/>) once for every 32nd step, as the original's main loop does; the count is read only when an update falls due.
+	/// </summary>
+	public static void UpdateCrowd( double elapsedMilliseconds, Func<int> guestsNearCamera )
+	{
+		ArgumentNullException.ThrowIfNull( guestsNearCamera );
+		for ( var due = SoundCadence.Advance( elapsedMilliseconds ); due > 0; due-- )
+			SetCrowd( guestsNearCamera() );
+	}
+
 	public static void SetCrowd( int guestsNearCamera )
 	{
 		if ( events == null )
@@ -462,8 +483,8 @@ public static class GameAudio
 			if ( crowd != null )
 			{
 				// [BIN:STP-PPC:0x100BC298–0x100BC29C crowd update] the capped nearby count is sent with parameter code 7 to 0x100BAF70
-				crowd.ParameterCode = 7;
-				crowd.Parameter = parameter;
+				// [BIN:TPW-EXE:0x0051E7FC crowd update] the PC sends it on every update through 0x51BC40(handle, 7, count); code 7 is the crowd event's own code (cat_kids 0x5B, event +0x12 = 7) and sounds 1-6 of the twelve bind it in slot 1 under the volume mask (selector +0x16 = 7, mask +0x18 = 1), so while one of them plays each update re-evaluates its volume (14 + 8 * count / 100) and redraws its pitch (0..6); sounds 7-12 have selector 0 and are untouched
+				crowd.SetParameter( CrowdParameterCode, parameter );
 				crowd.Resume();
 			}
 		}
@@ -499,7 +520,8 @@ public static class GameAudio
 			}
 			if ( rain != null )
 			{
-				rain.Parameter = parameter;
+				// [BIN:TPW-EXE:0x0051E870 rain level] the level (clamped to 0..100) goes to the voice with 0x51BC40(handle, 8, level): the event's code and the volume selector of its sounds, so the level also sets the rain's volume (the shipped sections span 1 to 2..5 percent)
+				rain.SetParameter( RainParameterCode, parameter );
 				rain.Resume();
 			}
 		}
@@ -516,6 +538,7 @@ public static class GameAudio
 	/// beside the level-driven voice of <see cref="SetRain"/>, which keeps following the drop count in every weather (snow included) until the drops reach 0.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5131f0 weather mode setter] mode 0 (rain) submits cat_ambient 0x21 (0x51327c) with no parameter into the thing's +0x54 (mRainSoundHandle, saved); mode 1 (snow) and mode 2 (clear) stop it
+	// [BIN:TPW-EXE:0x006BC040 parameter query] with no parameter call its table still exists (the event's code 8 and the sounds' selector 8), so its sounds take their volume from a value of 0: the bottom of their range
 	// [BIN:TPW-EXE:0x512a7f level rain voice] the level-driven voice 0x51e830 (parameter 8) is fed every tick from the current drops * 100 / MaxRaindrops, also in snow
 	public static void SetWeatherRain( bool raining )
 	{
@@ -782,7 +805,7 @@ public static class GameAudio
 	}
 
 	/// <summary>
-	/// Starts a held RSE event voice that takes parameters and moves (a ride vehicle's engine): a sentence event runs as a sentence with a parameter channel
+	/// Starts a held RSE event voice that takes parameters and moves (a ride vehicle's engine): a sentence event runs as a sentence
 	/// (<see cref="SoundSentence.SetParameter"/>, <see cref="SoundSentence.MoveTo"/>); null when the event is missing or is not a repeating sentence (play those with <see cref="PlayRseEvent"/>).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0051EEB0 sound-variable submit] the vehicle code resolves an EventMap variable to an event id (0x55A3E0) and submits it through 0x51BFC0, keeping the handle for the per-tick 0x51C270 (position) and 0x51BC40 (parameter) calls
@@ -791,7 +814,7 @@ public static class GameAudio
 		var sound = FindRseEvent( type, eventId );
 		if ( sound == null || events == null || sound.Value.Event.Player is not (SoundEventPlayer.Sentence or SoundEventPlayer.BranchingSentence) )
 			return null;
-		return events.StartSentence( sound.Value.Category, eventId, AudioChannel.Effects, position: position, parameterChannel: true );
+		return events.StartSentence( sound.Value.Category, eventId, AudioChannel.Effects, position: position );
 	}
 
 	/// <summary>
@@ -846,7 +869,8 @@ public static class GameAudio
 			var parameter = MusicParameter( guests );
 			if ( parameter != music.Parameter )
 			{
-				music.Parameter = parameter;
+				// [BIN:TPW-EXE:0x0051E79E music parameter] the update sends the value with 0x51BC40(handle, 4, value); the shipped park music sounds bind no selector, so it only steers the branching
+				music.SetParameter( MusicParameterCode, parameter );
 				music.Resume();
 			}
 		}
@@ -892,6 +916,9 @@ public static class GameAudio
 
 	/// <summary>Plays a <c>cat_ui</c> event (control activation clicks, drawer and error feedback).</summary>
 	public static AudioVoice? PlayUi( uint eventId ) => events?.Play( Ui, eventId, AudioChannel.Effects );
+
+	/// <summary>Plays one event of the global <c>cat_speech</c> category flat on the speech channel (the advisor's cut-off slap); null when nothing plays.</summary>
+	public static AudioVoice? PlaySpeechEffect( uint eventId ) => events?.Play( Speech, eventId, AudioChannel.Speech );
 
 	/// <summary>Plays one event of any loaded category on the effects channel; null when nothing plays.</summary>
 	public static AudioVoice? Play( SoundCategory? category, uint eventId ) => events?.Play( category, eventId, AudioChannel.Effects );

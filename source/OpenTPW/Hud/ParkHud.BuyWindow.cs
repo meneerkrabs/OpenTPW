@@ -130,14 +130,14 @@ public sealed partial class ParkHud
 	}
 
 	public string PriceText( BuildItem item ) =>
-		string.Format( CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], Status.PriceOf( item ) ?? item.Cost ).Replace( "  ", " " );
+		string.Format( CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], BuyPrice( item ) ).Replace( "  ", " " );
 
 	public int NumberOwned( BuildItem item ) => level.Objects.Objects.Count( owned => !owned.IsDeleted && owned.Entry.InfoId == item.InfoId );
 
 	/// <summary>Stat rows of <paramref name="item"/> for its category: the UITEXT labels 125-129 (rides), 130 (shops), 131-132 (sideshows), 133 (features).</summary>
 	public IReadOnlyList<BuyStat> BuyStats( BuildItem? item )
 	{
-		if ( item == null )
+		if ( item == null || IsLandRow( item ) )
 			return Array.Empty<BuyStat>();
 		var owned = NumberOwned( item ).ToString( CultureInfo.InvariantCulture );
 		// [DATA:UITEXT.str:125-133] the labels per category (rides list five values, as the five rows of frame 493)
@@ -395,7 +395,7 @@ public sealed partial class ParkHud
 				var index = owner.buy.FirstRow + visible;
 				var item = items[index];
 				var row = RowRect( canvas, visible );
-				var available = owner.Status.IsAvailable( item );
+				var available = owner.IsBuyAvailable( item );
 				if ( index == selected )
 					context.Batch.AddRectangle( row, new RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)120 ) );
 				var color = index == selected ? UiColors.Highlight : !available ? UiColors.Disabled : UiColors.Text;

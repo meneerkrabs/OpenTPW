@@ -1,4 +1,4 @@
-using System.Buffers.Binary;
+﻿using System.Buffers.Binary;
 using System.Text;
 using Matrix4x4 = System.Numerics.Matrix4x4;
 
@@ -45,8 +45,20 @@ public partial class ModelFile : BaseFormat
 	public IReadOnlyList<ModelNode> Nodes { get; private set; } = Array.Empty<ModelNode>();
 	public int RootNodeIndex { get; private set; } = -1;
 	public IReadOnlyList<ModelDummyAttribute> DummyAttributes { get; private set; } = Array.Empty<ModelDummyAttribute>();
-	/// <summary>Opaque 16-byte records counted by the u16 at 0x40 and located by the u32 at 0xAC.</summary>
+	/// <summary>The raw 16-byte path records counted by the u16 at 0x40 and located by the u32 at 0xAC (<see cref="Paths"/>).</summary>
 	public IReadOnlyList<byte[]> ExtraRecords { get; private set; } = Array.Empty<byte[]>();
+	/// <summary>The paths of the 0xAC table, in record order; a type-0x208 dummy selects one with its stored index's high 16 bits.</summary>
+	public IReadOnlyList<ModelPath> Paths { get; private set; } = Array.Empty<ModelPath>();
+
+	/// <summary>The path a node follows (its parent is a path dummy, type bit 0x8), or null.</summary>
+	public ModelPath? GetPathOf( int node )
+	{
+		var parent = node >= 0 && node < Nodes.Count ? Nodes[node].ParentIndex : -1;
+		if ( parent < 0 || (Nodes[parent].Type & 0x8) == 0 )
+			return null;
+		var index = (int)(Nodes[parent].StoredIndex >> 16);
+		return index < Paths.Count ? Paths[index] : null;
+	}
 	/// <summary>Block pointer at 0x6C (only observed in terrain base models); 0 when absent.</summary>
 	public uint UnknownBlockOffset { get; private set; }
 	/// <summary>Terrain heightfield decoded from the 0x6C block; null when the pointer is 0. See docs/MAP.md.</summary>
@@ -272,6 +284,34 @@ public partial class ModelFile : BaseFormat
 				extra[index] = data.AsSpan( (int)extraOffset + index * 16, 16 ).ToArray();
 		}
 		ExtraRecords = extra;
+		var paths = new ModelPath[extra.Length];
+		// OpenTPW resource limit, not original behaviour: point tables may share bytes, but all of them together may
+		// decode at most four times the member, charged before each array is allocated.
+		long pathBytes = 0;
+		for ( var index = 0; index < paths.Length; index++ )
+		{
+			var record = extra[index];
+			var count = BinaryPrimitives.ReadUInt16LittleEndian( record.AsSpan( 4 ) );
+			var pointsOffset = BinaryPrimitives.ReadUInt32LittleEndian( record.AsSpan( 8 ) );
+			// The sampler divides by the point count, so an empty path is not a path.
+			if ( count == 0 )
+				throw new InvalidDataException( $"MD2 path {index} has no points." );
+			Require( data, pointsOffset, count * 12L, "path points" );
+			pathBytes += count * 12L;
+			if ( pathBytes > 4L * data.Length )
+				throw new InvalidDataException( "MD2 path tables exceed four times the member." );
+			var points = new System.Numerics.Vector3[count];
+			for ( var point = 0; point < count; point++ )
+			{
+				var at = (int)pointsOffset + point * 12;
+				points[point] = new System.Numerics.Vector3( F32( data, at ), F32( data, at + 4 ), F32( data, at + 8 ) );
+				if ( !float.IsFinite( points[point].X ) || !float.IsFinite( points[point].Y ) || !float.IsFinite( points[point].Z ) )
+					throw new InvalidDataException( $"MD2 path {index} point {point} is not finite." );
+			}
+			paths[index] = new ModelPath( BinaryPrimitives.ReadUInt32LittleEndian( record ), points,
+				BinaryPrimitives.ReadUInt16LittleEndian( record.AsSpan( 6 ) ), BinaryPrimitives.ReadUInt32LittleEndian( record.AsSpan( 12 ) ) );
+		}
+		Paths = paths;
 		if ( UnknownBlockOffset != 0 )
 			Heightfield = ReadHeightfield( data, UnknownBlockOffset );
 	}

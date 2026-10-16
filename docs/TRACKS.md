@@ -349,7 +349,7 @@ The controller raises `BumpEffect`s (`BumpController.Effect`); the runtime plays
 | crash | impulse above 130, once per tick per pair | request 3: global `cat_rides` 12 |
 | horn | phase 2, every 32 ticks, speed above 230 | request 2: the module LCG draws every tick until `(lcg & 0x70000) == 0`, then EventMap slot 3 |
 | exhaust | worn, every 32 ticks, speed above 80 | draw r = (lcg >> 16) & 7: r < 2 particle 1 (Sparks), r = 2 particle 10 + request 1 (`cat_rides` 24) |
-| engine | every tick | EventMap slot 0 as a sentence with a parameter channel: every tick the voice moves to the vehicle's voice place and takes parameter code = EventMap variable 10 at speed / 3 (below) |
+| engine | every tick | EventMap slot 0 as a sentence: every tick the voice moves to the vehicle's voice place and takes parameter code = EventMap variable 10 at speed / 3 (below) |
 | smoke | `BUMP 8` break | a persistent particle-2 emitter per car (below) |
 | animation | speed above 40 / at most 40 | 5 / 12 (the hovering karts stay on 5) |
 

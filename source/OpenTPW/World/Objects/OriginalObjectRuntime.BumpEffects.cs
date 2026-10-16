@@ -42,7 +42,7 @@ public sealed partial class OriginalObjectRuntime
 		return new Vector3( origin.X + vx, origin.Y, origin.Z + vz );
 	}
 
-	/// <summary>A vehicle's engine voice: a sentence with a parameter channel, or a plain voice when the engine event is not a repeating sentence.</summary>
+	/// <summary>A vehicle's engine voice: a sentence, or a plain voice when the engine event is not a repeating sentence.</summary>
 	private sealed record EngineVoice( SoundSentence? Sentence, AudioVoice? Voice )
 	{
 		public void Stop()
@@ -71,10 +71,10 @@ public sealed partial class OriginalObjectRuntime
 		return child.Variables[index];
 	}
 
-	/// <summary>Starts a vehicle's engine voice at its place: a sentence with a parameter channel, or a plain voice for a non-sentence event.</summary>
+	/// <summary>Starts a vehicle's engine voice at its place: a sentence, or a plain voice for a non-sentence event.</summary>
 	private EngineVoice? StartEngineVoice( int engineEvent, int x, int y, Vector3? fallback ) => StartEngineVoice( engineEvent, VehicleVoicePlace( x, y ) ?? fallback );
 
-	/// <summary>Starts an engine voice (level cat_rides, RSE type 3) at a sound-space place: a sentence with a parameter channel, or a plain voice for a non-sentence event.</summary>
+	/// <summary>Starts an engine voice (level cat_rides, RSE type 3) at a sound-space place: a sentence, or a plain voice for a non-sentence event.</summary>
 	private EngineVoice? StartEngineVoice( int engineEvent, Vector3? place )
 	{
 		if ( place is { } at && GameAudio.StartRseSentence( 3, (uint)engineEvent, at ) is { } sentence )

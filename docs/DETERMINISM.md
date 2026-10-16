@@ -96,7 +96,7 @@ Found in `source/OpenTPW` (World, Guests, Economy, Objects, VM, Audio) and
 | `OriginalObjectRuntime.nextAttractionId` (static counter) | attraction ids, and through them guest state and the raw guest hash, depended on how many objects the process had created before | ids are now allocated by the park's `RideScriptWorld`; every park starts at 1 |
 | `RideVM`: `new Random()` when no seed was given (prototype Totem, `Ride`, standalone VMs) | RAND/FINDSCRIPTRAND differed on every run | a script without a seed draws from its `RideScriptWorld`'s world generator (the park's one stream); a world-less VM gets its own default world (state from seed 0) |
 | `Level.RestoreVisitedRide`: prototype ride in its own script world | its attraction id could collide with id 1 of the park's objects | uses `Objects.ScriptWorld` |
-| `GameAudio`: `SoundEventSystem(mixer, Environment.TickCount)` | sound choice (presentation) | the clock seed matches the original's start-up seeding (`QueryPerformanceCounter`, tp.exe `0x72e09c`) and only affects front-end sounds: each park reseeds the chooser in `GameAudio.EnterPark` from `WorldSeed.SoundStream` and saves it (AUDIO-037, the one deviation from the original's unsaved chooser) |
+| `GameAudio`: `SoundEventSystem(mixer, Environment.TickCount)` | sound choice (presentation) | the clock seed matches the original's start-up seeding (`QueryPerformanceCounter`, tp.exe `0x72e09c`) and only affects front-end sounds: each park reseeds the chooser in `GameAudio.EnterPark` from `WorldSeed.SoundStream` and saves it (`[EXT:sound-chooser-seed]`, the one deviation from the original's unsaved chooser) |
 | `Extensions.RandomVector3` → `Random.Shared` | none: it has no callers | kept for presentation and documented as such; `DeterminismTests` fails if simulation folders reference it |
 | `Advisor`: `AdvisorMouth(new Random())` | mouth mesh choice while talking (presentation, clock B) | unchanged; the original also uses the C-library `rand` there (ADVISOR-001 area) |
 | `ParkEconomy.CreateForTheme(seed: 1)` / `Level.GuestSeed` | fixed, not tied to one seed | now derived from the world seed (same values for the default) |
@@ -215,7 +215,7 @@ library init `0x100118C8` writes `CAudioPlaceHolder::mRandomSeed`), which contra
 the PC instructions; the PC reading is used and the Mac reading is to be rechecked
 (docs/AUDIO.md "Mac versus PC"). Because UI clicks and mixer-timed sentence segments now move the
 chooser, its state depends on wall-clock events whenever sound is on: it is not a
-replay guarantee. The park still saves it (AUDIO-037) and reseeds it from the world
+replay guarantee. The park still saves it (`[EXT:sound-chooser-seed]`) and reseeds it from the world
 seed at entry, so headless (`--mute`) runs and tests start from a known state, and it
 stays out of the canonical hash and out of the resume smoke test's composite hash
 (DET-plan §3 D9, §4.5).
@@ -415,7 +415,11 @@ record; the M4 gate and browser digests read the same code paths and are checked
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x7AED41D19433D4B2`, schema 20: the world generator (DET-013 to DET-015). Guests, staff, the economy's staff pool and the scripts draw from the original's one
+  (`0xC92A25B3D77EAE17`, schema 20: the attractions' six 30-day daily rings (ECON-057) join the economy digest through the park save's optional `Rings` field, written once a ring holds
+  a running value or a day: the synthetic park's shop and its sales make today's customers, takings and costs non-zero, so the digest changes; the hash without the
+  ring field is the previous pin `0x7AED41D19433D4B2`, so no simulated behaviour moved. The challenge system's exact times (`NextOfferSeconds`, `DeadlineSeconds`), the carried object and the
+  challenge update on every park turn (ECON-055, ECON-058) add optional save fields that are written only when they differ from the defaults. Before that,
+  `0x7AED41D19433D4B2`, schema 20: the world generator (DET-013 to DET-015). Guests, staff, the economy's staff pool and the scripts draw from the original's one
   generator (`0x516330`), so `world_rng_state` is one state where there were three; a guest is created with the original's draw order (base speed, the eight starting
   values, the reseed with its id `0x4FB19E`, the sprite variant and, for an arrival, the entrance side and sideways byte), so its speed, offsets, lane and every draw
   after it move, and the staff pool, the scripts' RAND and the bump and tour rides move with the shared stream; placed objects' scripts draw from the generator

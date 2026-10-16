@@ -12,7 +12,7 @@ namespace OpenTPW;
 internal sealed class AutomaticAdvisor : IDisposable
 {
 	// [BIN:TPW-EXE:0x00402D63 clock offset] the clock's offset word starts at 0 and is rewritten only by the savegame load (0x415140 → 0x402E80 → 0x403160: the saved advisor clock minus the live clock); pause is 0x4092A0 and resume 0x409300
-	// [APPROX:ADVISOR-017] the clock starts at 0 for a new park and an original-save import, is sampled once per frame and stands still while the pause menu is open; the original saves it as the second word of the SSEM (MESS) block (the first is the scaled clock +0x4C; writer 0x402E00 after the snapshot 0x402E60 stores +0x4C and the advisor clock +0x74, reader 0x402E30 behind the marker check 0x41555A) and its load sets the advisor clock to that word (0x415140 -> 0x402E80 -> 0x403160), and it stands still whenever 0x4092A0 pauses the timer: 0x46B74C in the main window procedure 0x46B600 (WM_ACTIVATEAPP deactivation, unless 0xF82884) and 0x47F26C in the message box builder 0x47F020 are identified — evidence needed: an import of the saved word and the screens of the callers 0x48C87E, 0x49EFBA, 0x49F29F, 0x4A3A6C, 0x4A93D7 and 0x5F0B7F
+	// [APPROX:ADVISOR-017] the clock starts at 0 for a new park, carries the saved word on an original-save import (AttachLevel), is sampled once per frame and stands still while the pause menu is open; the original stands still whenever 0x4092A0 pauses the timer: 0x46B74C in the main window procedure 0x46B600 (WM_ACTIVATEAPP deactivation, unless 0xF82884), 0x47F26C in the message box builder 0x47F020, 0x49EFB0 (load window) and 0x49F280 (save window) are identified — evidence needed: the screens of the callers 0x48C87E (0x48C830, flag 0x7C2534), 0x4A3A6C (0x4A3A30), 0x4A93D7 (0x4A9380, the level exit path) and 0x5F0B7F (0x5F0B40)
 	private readonly PausableClock clock;
 	// Tests substitute a controllable speech state for the presentation (see the internal constructor).
 	private readonly Func<bool>? speechActive;
@@ -96,6 +96,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 			import.Report( report );
 			Log.Trace( report );
 		}
+		// [BIN:TPW-EXE:0x00415270 clock load] behind the MESS marker check (0x41555A) the load reads the clock block (0x402E30): the scaled clock at +0x4C and the saved advisor clock, whose load sets the clock's offset so it reads the saved value from then on (0x402E80 -> 0x403160)
+		if ( started.Park?.Import is not null && started.OriginalPark?.Save?.SavedAdvisorClockMilliseconds is { } savedClock )
+			clock.RestoreMilliseconds( savedClock );
 		// [BIN:STP-PPC:0x101C2108 main loop] CMsgEvent 10 (history reset of variant, played flag and slaps) followed by CMsgEvent 0 at 0x101C2174
 		Raise( AdvisorGameEvent.ResetForEasyMode );
 		Raise( AdvisorGameEvent.LevelStarted );

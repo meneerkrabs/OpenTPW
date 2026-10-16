@@ -406,9 +406,9 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		var metrics = Render.Metrics;
 		var scaling = Render.Scaling;
 		var settings = Render.DisplaySettings;
-		var swapchain = Device.MainSwapchain.Framebuffer;
+		var swapchain = Render.Target.Framebuffer;
 		var expected = RenderScaling.Compute( metrics.PixelSize, settings.Upscale, settings.RenderScale, uint.MaxValue, Render.WorldScalingAllowed );
-		Require( swapchain.Width == metrics.PixelSize.X && swapchain.Height == metrics.PixelSize.Y, "swapchain matches the drawable pixel size" );
+		Require( swapchain.Width == metrics.PixelSize.X && swapchain.Height == metrics.PixelSize.Y, "present target (swapchain or offscreen framebuffer) matches the drawable pixel size" );
 		if ( Window.TestPixelScale > 1 )
 			Require( metrics.PixelSize.X >= metrics.LogicalSize.X * Window.TestPixelScale && metrics.PixelSize.Y >= metrics.LogicalSize.Y * Window.TestPixelScale, "test pixel scale enlarges the drawable" );
 		Require( expected.InternalSize.Equals( scaling.InternalSize ) && expected.Mode == scaling.Mode, "renderer uses the computed internal size" );
@@ -418,7 +418,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( output.Width == metrics.PixelSize.X && output.Height == metrics.PixelSize.Y, "output capture has the output size" );
 		Require( Screen.UiScale == UiScaling.Resolve( settings.UiScale, metrics.PixelSize, metrics.IntegerPixelDensity ), "UI scale follows the output size and pixel density" );
 		displaySummary = $"output {metrics}, world {world.Width}x{world.Height} ({scaling.Mode} {scaling.EffectivePercent}%), UI scale {Screen.UiScale}";
-		Log.Trace( $"Display readback: {displaySummary}; swapchain {swapchain.Width}x{swapchain.Height}; {Render.OwnedTargetResourceCount} owned target resources." );
+		Log.Trace( $"Display readback: {displaySummary}; present target {swapchain.Width}x{swapchain.Height} ({(Render.Target.IsOffscreen ? "offscreen" : "swapchain")}); {Render.OwnedTargetResourceCount} owned target resources." );
 	}
 
 	/// <summary>
@@ -513,7 +513,11 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		Require( reverted == beforeConfirmation && display.Current == beforeConfirmation, "unconfirmed change reverts after its timeout" );
 		VerifyApplied( 100 );
 
-		// Fullscreen toggle and back (Alt+Enter / F11 call the same method).
+		// Fullscreen toggle and back (Alt+Enter / F11 call the same method). An offscreen window has no OS fullscreen state:
+		// the toggle then changes its logical (virtual) size, which is what the checks below verify; the OS-level
+		// transition needs a visible run (OPENTPW_OFFSCREEN=0).
+		if ( Render.Window.IsOffscreen )
+			Log.Trace( "Offscreen mode: the fullscreen toggle is verified on the logical window size only; the OS-level fullscreen transition is skipped (run with OPENTPW_OFFSCREEN=0 to cover it)." );
 		var before = Render.Metrics.LogicalSize;
 		Render.ToggleFullscreen();
 		foreach ( var wait in WaitFor( () => !Render.Metrics.LogicalSize.Equals( before ), 10 ) )
@@ -552,7 +556,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		var output = Render.Metrics.PixelSize;
 		Require( scaling.EffectivePercent == percent, $"render scale {percent}% applies" );
 		Require( Render.ResolveColorTexture.Width == RenderScaling.ScaleDimension( output.X, percent ) && Render.ResolveColorTexture.Height == RenderScaling.ScaleDimension( output.Y, percent ), $"world target follows {percent}%" );
-		Require( Device.MainSwapchain.Framebuffer.Width == output.X && Render.OutputCaptureTexture!.Width == output.X, "output stays at the drawable size" );
+		Require( Render.Target.Framebuffer.Width == output.X && Render.OutputCaptureTexture!.Width == output.X, "output stays at the drawable size" );
 		Require( Render.OwnedTargetResourceCount == originalResourceCount, "owned GPU targets do not grow" );
 	}
 

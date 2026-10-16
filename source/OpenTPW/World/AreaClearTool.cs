@@ -107,7 +107,7 @@ public sealed class AreaClearTool
 	/// carrying flag 0x10, is demolished; then every path cell in the rectangle is cleared (forced, a NoModify cell with neighbours stays).
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052BDD0 area clear] the rectangle is normalised; rows from the top, cells from the left: a ride cell (type 4, 9 or 10) starts four scans along the cells of the same owner (+0x10) and of a ride type, to the right, the left, down and up, each refused when a scanned cell has flag 0x10 (0x535DB0(0x10)) or the run passes the rectangle's edge (0x52BEC6..0x52C06A), and when all four pass the object is demolished (0x527EE0(x, y, 0)); then every type-1 cell of the rectangle (0x536310) is cleared with 0x5367A0(0, 0) (0x52C0D8..0x52C11F), queue cells and ride cells staying
-	// [APPROX:PATH-005] OpenTPW's cell map types no ride cells: an object's cells are its footprint cells (ParkObjects), its owner the object; the writer of the cell flag 0x10 that keeps an object from the clear is not traced, and OpenTPW's map never carries it — evidence needed: the writer of the cell flag word +0x0E bit 0x10
+	// [APPROX:PATH-005] OpenTPW's cell map keeps no owner word (+0x10): an object's cells are its footprint cells (ParkObjects) rather than the type-4/9/10 cells of one owner, its owner the object; the writer of the cell flag 0x10 that keeps an object from the clear is not traced, and OpenTPW's map never carries it — evidence needed: the writer of the cell flag word +0x0E bit 0x10
 	public (int Objects, int Paths) Clear( (int X, int Y) a, (int X, int Y) b )
 	{
 		var (x0, x1) = (Math.Min( a.X, b.X ), Math.Max( a.X, b.X ));

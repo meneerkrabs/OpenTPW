@@ -563,7 +563,7 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	/// </summary>
 	// [BIN:TPW-EXE:0x66b088 slider thumb] the original's slider class (vtable 0x705b20) places the thumb at track left + (value - min) × (track width - thumb width) / (max - min) in integer units; the options page's sliders are 0..100 (0x4a455a)
 	// [EXT:options-slider-steps] OpenTPW's option sliders step through its own graphics presets and 11 volume steps and take the nearest step; the original's are 0..100 with the change handler 0x4a2e90 mapping the value to a resolution index (v × 2) / 100 and a quality index (k × v) / 100 (k 2, or 1 when [0x78d8d8] is 0)
-	// [APPROX:UI-036] the options page's sliders take the nearest step of their own presets ([EXT:options-slider-steps]) and snap the knob to the value, where the original (0x4a2e90) leaves the knob where it was dragged; the original-class sliders (Truncates: research effort, object settings) truncate a drag, grab the thumb at an offset and page on a track click
+	// [BIN:TPW-EXE:0x4a455a options slider range] the options page creates its sliders with the range 0..100 and no page setting (the default 1 stays), its change handler 0x4a2e90 only updates the setting's text and leaves the knob where it was dragged; the original-class mechanics are built for the sliders that use Truncates (research effort, object settings), and the options page's own presets and volume steps are [EXT:options-slider-steps]
 	public UiRect KnobRect( int value )
 	{
 		var steps = Math.Max( 2, Steps() );

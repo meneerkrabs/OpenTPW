@@ -75,7 +75,10 @@ internal sealed partial class SandboxSmokeTest
 				Require( level.RemoveObjectAt( removalCell.X, removalCell.Y ), "remove bought object" );
 				Require( economy.Balance == afterBuild + refund && !economy.TryGetObject( id, out _ ), "credit the economy scrap value exactly once" );
 				Require( !level.Park.Guests.TryGetInstance( placed.Visitors.AttractionId, out _ ), "unlink payments after removal" );
-				Require( level.PlaceObject( entry, site.X, site.Y, rotation ) != null, "rebuild on freed footprint through the economy" );
+				var rebuilt = level.PlaceObject( entry, site.X, site.Y, rotation );
+				Require( rebuilt != null, "rebuild on freed footprint through the economy" );
+				// the rebuilt ride starts closed like the first build (RIDES-015, 0x4DB712): without opening it no guest boards it and the ride-head readback never finds a rider
+				rebuilt!.Open();
 			}
 			Require( built >= 2, "build original objects through the park economy in the original level" );
 			PlaceModObjects( economy, siteX, siteY );

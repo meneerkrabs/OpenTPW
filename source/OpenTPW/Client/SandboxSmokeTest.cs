@@ -10,7 +10,9 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private readonly string temporaryDirectory = Path.Combine( Path.GetTempPath(), $"opentpw-smoke-{Guid.NewGuid():N}" );
 	// The Totem limits below are measured on the ride script's own clock (the time the script actually waits), so a
 	// slow frame rate cannot fail them; the wall-clock watchdog (MaximumSeconds) still fails a run that stops advancing.
-	private const double MaximumSecondsUntilMotion = 30;
+	// The Totem starts once its queue has guests: on the jungle that took 24 to 26 s of script time with the park's rides closed or open, and longer when the
+	// guests spread over more open rides (the rebuilt Crazy Ape is open), so the limit leaves room for a slow first rider instead of failing on the guests' luck.
+	private const double MaximumSecondsUntilMotion = 60;
 	private double startScriptMilliseconds;
 	private int frame;
 	private int motionFrame;
@@ -20,6 +22,8 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 	private System.Numerics.Matrix4x4[]? earlyPose;
 	private float earlyTick;
 	private bool guestsVerified;
+	/// <summary>Set once the guest checks pass: the motion check that follows must see the next ride cycle, not the tail of the one the guests rode.</summary>
+	private bool awaitingNextCycle;
 	private int guestCaptureFrame;
 	private byte[]? guestPixels;
 	private double motionScriptMilliseconds;
@@ -125,6 +129,15 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 		{
 			// Totem.RSE waits up to 10 s for passengers before it triggers its main animation.
 			// Totem.RSE first plays its create clip (totemc); the cart cycle is ANIM_Main (totemm1).
+			if ( awaitingNextCycle )
+			{
+				// the guest checks can finish while the cycle they watched is still playing (a busy level, such as the jungle, stretches them); arming on that tail
+				// would see the animation end within the ten-frame check, so wait for it to stop and give the next cycle its own start time
+				if ( level.PlacedRide!.IsPlayingMainAnimation )
+					return;
+				awaitingNextCycle = false;
+				startScriptMilliseconds = level.PlacedRide.Script.TimeMilliseconds;
+			}
 			if ( level.PlacedRide!.IsPlayingMainAnimation && level.PlacedRide.MotionHeight > 0 )
 			{
 				motionFrame = frame;
@@ -150,6 +163,7 @@ internal sealed partial class SandboxSmokeTest : IDisposable
 			{
 				// Run the animation/close/remove checks on the next ride cycle.
 				motionFrame = 0;
+				awaitingNextCycle = true;
 				startScriptMilliseconds = level.PlacedRide!.Script.TimeMilliseconds;
 			}
 			return;

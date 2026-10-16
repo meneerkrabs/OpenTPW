@@ -35,7 +35,7 @@ internal sealed partial class SandboxSmokeTest
 	/// <summary>Whether every track phase that started has finished (the smoke test completes after them).</summary>
 	private bool TrackSmokesDone => (waterSmoke.Done || !waterSmoke.Verified) && (kartSmoke.Done || !kartSmoke.Verified) && (bumperSmoke.Done || !bumperSmoke.Verified);
 
-	/// <summary>Cell offsets from the footprint anchor (rotation 0) of the circuit's three corner clicks: right of the station, above it, back down the left side.</summary>
+	/// <summary>Cell offsets from the station's first tile (rotation 0) of the circuit's three corner clicks (the line starts at the tile after the station): right of the station, above it, back down the left side.</summary>
 	private static readonly (int X, int Y)[] WaterCircuit = { (4, 0), (4, 4), (-2, 4), (-2, 0) };
 
 	private void VerifyHudWaterTrack()
@@ -85,7 +85,9 @@ internal sealed partial class SandboxSmokeTest
 		station!.Open();
 		run.Station = station;
 		var layout = level.TrackStations[station!];
-		Require( layout.First == (anchor.Value.X, anchor.Value.Y) && layout.Heading == TrackHeading.PosX, "the station tiles sit on the footprint's first tile column" );
+		// [BIN:TPW-EXE:0x0052A1A0 station line] at rotation 0 the tiles are the footprint's rows 1 and 2 across the heading: (x, y+1) and (x+2, y+1), the entrance row 0 beside them
+		Require( layout.First == (anchor.Value.X, anchor.Value.Y + 1) && layout.Second == (anchor.Value.X + 2, anchor.Value.Y + 1) && layout.Heading == TrackHeading.PosX, "the station tiles sit on the footprint's row 1, two tiles along the heading" );
+		Require( layout.Reference == ((layout.First.X + 2) * TrackStation.CellUnits, (layout.First.Y + 1) * TrackStation.CellUnits), "the controller reference is the cell between the two station tiles" );
 		var builder = level.BuilderOf( station! )!;
 		var originType = water ? TrackCellTypes.WaterOrigin : TrackCellTypes.KartOrigin;
 		var mode = water ? CellToolMode.WaterTrack : CellToolMode.KartTrack;
@@ -93,7 +95,7 @@ internal sealed partial class SandboxSmokeTest
 		var balance = economy?.Balance ?? 0;
 		Require( level.EnterTrackTool( station ) && level.CellTool.IsActive && level.CellTool.Mode == mode && level.CellTool.Start == layout.Exit,
 			$"the {kind} track tool starts at the tile after the station" );
-		var corners = WaterCircuit.Select( offset => (X: anchor.Value.X + offset.X, Y: anchor.Value.Y + offset.Y) ).ToArray();
+		var corners = WaterCircuit.Select( offset => (X: layout.First.X + offset.X, Y: layout.First.Y + offset.Y) ).ToArray();
 		var tiles = 0;
 		foreach ( var corner in corners.Skip( 1 ) )
 		{

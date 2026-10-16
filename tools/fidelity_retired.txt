@@ -50,11 +50,11 @@ COAST-016 docs/COASTERS.md
 COAST-017 docs/reverse/COAST-plan.md
 COAST-018 docs/COASTERS.md
 COAST-019 docs/reverse/COAST-plan.md
-COAST-024 docs/COASTERS.md
 COAST-020 docs/reverse/REVIEW-COAST-2.md
 COAST-021 docs/reverse/REVIEW-COAST-2.md
 COAST-022 docs/PROGRESS.md
 COAST-023 docs/PROGRESS.md
+COAST-024 docs/COASTERS.md
 COAST-025 docs/COASTERS.md
 COAST-027 docs/COASTERS.md
 COAST-030 docs/COASTERS.md
@@ -260,4 +260,5 @@ VM-901 docs/PROGRESS.md
 VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
+WALK-004 docs/GUESTS.md
 WALK-009 docs/GUESTS.md

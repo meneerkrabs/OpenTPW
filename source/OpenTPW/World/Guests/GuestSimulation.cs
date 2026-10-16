@@ -624,8 +624,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPW-EXE:0x00519EF0 park door closes the rides] the door closes every openable object (0x004DF300: open word 0, loading slot cleared; ParkGate.DoorMoved), and a closed ride's update dismisses its queue head, one per turn (RideVisitorBridge.HostStep, 0x004E1220 → 0x004E0450 → 0x005012F0), after which state 6 sends the guest home; a guest walking to a ride drops its target in state 10 (UpdateGoingToRide, 0x004FFEB9)
 			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
-			// [APPROX:GUEST-012] tp.exe's recall (0x500A50) also demands the guest's cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType); OpenTPW's imported grid writes only 0, 1 and 3 (ECON-050), so the test would pass everywhere, and OpenTPW stands in for it with the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane). The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc) — evidence needed: which cells the original's state-18 walk crosses before state 19 (0x500AD0) and their types
-			if ( guest.State == GuestState.LeavingPark && guest.Lane == null && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
+			// [BIN:TPW-EXE:0x00500A50 recall cell test] the recall also demands the guest's own cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType): the walk out of the park crosses the gate's walkway cells (type 0x1E, 7 outside the terrain) and a guest on one cannot change its mind; the lane walk after the gate (OpenTPW's stand-in for states 19 to 21, ARRIVAL-001) is no state 18 and never recalls, like the booth refusal that enters it with a zeroed counter (0xecacc)
+			if ( guest.State == GuestState.LeavingPark && guest.Lane == null && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false )
+				&& Grid.Cells.RawTypeAt( guest.Navigation.Cell.X, guest.Navigation.Cell.Y ) is 0 or 1 or 3 or 9 or 10 )
 			{
 				// [BIN:TPW-EXE:0x00500AB9 recall clears the walk mask] guest +0x188 (walk +0xB4) = 0 before state 6
 				guest.Navigation.Mask = 0;
@@ -799,11 +800,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>
 	/// The guard sets the guest down on <paramref name="cell"/> (tp.exe <c>0x004FEB50</c>): the guest stands at the cell's centre and leaves the park
-	/// (state 18) by the way out <paramref name="side"/> drew when it is in reach; otherwise it is removed. True when it walks out. Without a drawn
-	/// side the nearer reachable lane is taken.
+	/// (state 18) towards the gate cell <paramref name="side"/> drew when a route reaches it; otherwise it is removed. True when it walks out. Without a drawn
+	/// side the first gate cell with a route is taken.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FEB50 guard sets a guest down] the guest at the cell's centre (0x004FA930 with the bytes 0x80, 0x80), its model back (0x004D4140), cat_kids 128 at it, +0x188 = 1, a route (0x004FA530) to the one gate cell a world draw's bit 0 picks (0x004D86D0: 0 CrossingParkSideA, 1 CrossingParkSideB's X with side A's Y): state 18 ("<Humph>"); no route destroys it (0x0050B780)
-	// Approximation (GUEST-007, registered at Prank): the drawn side's walk out reaches its arrival lane's park entrance and leaves along the lane, the leaving walk of every guest in OpenTPW (GUEST-010, WALK-004), where the original routes to the gate cell itself
+	// Approximation (GUEST-007, registered at Prank): from the gate cell OpenTPW's lane walk takes the guest on to the bus stop (ARRIVAL-001), where the original walks it to the arrival vehicle's stop cells (states 19 to 21)
 	bool IGuardGuests.Release( int guestId, (int X, int Y) cell, int? side )
 	{
 		if ( Find( guestId ) is not { } guest )
@@ -817,10 +818,17 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		UpdatePresentation( guest );
 		// [BIN:TPW-EXE:0x004FEBAB set-down walk mask] guest +0x188 (walk +0xB4) = 1: the walk out may leave the paths (WalkEdges.Blocked)
 		navigation.Mask = 1;
-		var lanes = side is { } drawn ? new[] { ValidLane( (drawn & 1) == 0 ? Settings.ArrivalLaneA : Settings.ArrivalLaneB ) }
-			: new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
-		var reachable = lanes.Any( lane => lane != null && Grid.Distance( cell.X, cell.Y, lane[^1].X, lane[^1].Y ) >= 0 );
-		guest.ExitSide = side is { } chosen ? chosen & 1 : null;
+		// [BIN:TPW-EXE:0x004FEB50 set-down route] one route request (0x004FA530) to the one gate cell the draw's bit 0 picks (0x004D86D0); a route sets state 18, none destroys the guest
+		var reachable = false;
+		foreach ( var candidate in side is { } drawn ? new[] { drawn & 1 } : new[] { 0, 1 } )
+		{
+			if ( GateCell( candidate ) is { } gate && RouteToCell( guest, gate ) )
+			{
+				guest.ExitSide = candidate;
+				reachable = true;
+				break;
+			}
+		}
 		// The leaving handler's recall (0x00500A50) applies to it like any leaving guest: with its exit counter and happiness byte above 0, the
 		// park open and its cell a path, it decides again on its next turn (and clears +0x188), so a guard sends home only a guest that wants to go.
 		guest.State = reachable ? GuestState.LeavingPark : GuestState.Gone;
@@ -996,19 +1004,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.HasWaypoint = true;
 	}
 
-	/// <summary>The next path cell: a destination at the guest's offset point in it, routed through the current cell.</summary>
-	// [APPROX:WALK-004] the walk out of the park (state 18) sets a destination one path cell at a time (Grid.TryStep over the cell links, each a fresh search from the guest's cell), where tp.exe's state 6 requests one route to the gate's crossing cell (0x4d86d0, through 0x4fa530) and the guest walks it whole; the walk to a ride (state 10) is built (RouteToCell, UpdateGoingToRide)
-	private void SetCellWaypoint( Guest guest, int x, int y )
-	{
-		var current = (guest.CellX, guest.CellY);
-		guest.PreviousCellX = guest.CellX;
-		guest.PreviousCellY = guest.CellY;
-		guest.CellX = x;
-		guest.CellY = y;
-		var (bx, by) = OffsetBytes( guest );
-		SetDestination( guest, GuestNavigation.BytePoint( (x, y), bx, by ), [current, (x, y)] );
-	}
-
 	private void SetLaneWaypoint( Guest guest )
 	{
 		var cell = guest.Lane![guest.LaneIndex];
@@ -1124,6 +1119,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		SetLaneWaypoint( guest );
 	}
 
+	// [APPROX:GUEST-012] a guest that walks a lane (the booth refusal, whose state 18 walks to a crossing cell with the counter zeroed, 0x4FF9D0, and the walk after the gate, states 19 to 21) takes OpenTPW's lane walk, which never recalls — evidence needed: the lanes' cells in the map (ARRIVAL-001, WALK-008)
 	private void StartLeavingLane( Guest guest, (int X, int Y)[] lane, int fromIndex )
 	{
 		guest.ExitSide = null;
@@ -1153,8 +1149,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		}
 		IRideVisitorBridge? choice = null;
+		var draw = random.NextWord();
 		var input = new GuestDecision.Input( turn, (uint)guest.InterludeTurn, (uint)guest.QueueStandingSinceTurn, guest.Happiness, guest.Nausea, guest.Litter,
-			guest.ExitLevel, Payments?.ParkClosed ?? false, random.NextWord(), guest.PrankFlag, Settings.StinkbombLikelihood );
+			guest.ExitLevel, Payments?.ParkClosed ?? false, draw, guest.PrankFlag, Settings.StinkbombLikelihood );
 		var outcome = GuestDecision.Decide( input, () =>
 		{
 			if ( SeekBin( guest ) )
@@ -1165,7 +1162,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}, () =>
 		{
 			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.BigHappinessChange );
-			if ( !HasWayOut( guest ) )
+			if ( !RouteToGate( guest, draw ) )
 				return false;
 			guest.State = GuestState.LeavingPark;
 			return true;
@@ -1205,19 +1202,44 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// True when a path leads from the guest's cell to the end of an arrival lane, the way out <see cref="UpdateLeaving"/> takes. A park
-	/// without arrival lanes has no modelled gate: its guests leave and vanish, as <see cref="UpdateLeaving"/> handles it.
+	/// The gate's crossing cell <paramref name="index"/> (tp.exe <c>0x004D86D0</c>: 0 is <c>CrossingParkSideA</c>, 1 is side B's X on side A's Y), the cell a guest
+	/// on its way out of the park walks to; null when the level has no arrival lane for it.
 	/// </summary>
-	private bool HasWayOut( Guest guest )
+	// [BIN:TPW-EXE:0x004D86D0 gate crossing cell] FixedItemInfo.CrossingParkSide at 0x007855CC/0x007855D0 (side A) and 0x007855D4 (side B's x); both cells take the row of side A (0x007855D0): the cell id is y × 128 + x + 1
+	private (int X, int Y)? GateCell( int index )
 	{
-		var lanes = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
-		if ( lanes.All( lane => lane == null ) )
-			return true;
-		foreach ( var lane in lanes )
+		var a = ValidLane( Settings.ArrivalLaneA );
+		var b = ValidLane( Settings.ArrivalLaneB );
+		if ( index == 0 )
+			return a is { Length: > 2 } ? a[2] : null;
+		return b is { Length: > 2 } ? (b[2].X, (a is { Length: > 2 } ? a[2] : b[2]).Y) : null;
+	}
+
+	/// <summary>
+	/// The leaving gate's route (state 6, tp.exe <c>0x004FEC90</c>): one route request to each of the gate's two crossing cells, the order picked by the bit 0 of the
+	/// state's draw, first with the guest's walk mask and then (a second pass) with the mask 1 that lets a walker leave the paths; the first route found is the walk of
+	/// state 18. None found leaves the mask 0 and the guest in state 6. A level without a gate crossing keeps OpenTPW's way out: the guest leaves and is removed.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FEE87 leaving gate route] 0x004D86D0(0) and (1) packed in two words, swapped when the draw is odd; two passes of two route requests 0x004FA530 (the cell's centre 0x80, 0x80), the walk mask +0x188 set to 1 after the first pass and back to 0 when no route was found; a route sets state 18
+	internal bool RouteToGate( Guest guest, uint draw )
+	{
+		if ( GateCell( 0 ) == null && GateCell( 1 ) == null )
+			return ValidLane( Settings.ArrivalLaneA ) == null && ValidLane( Settings.ArrivalLaneB ) == null;
+		var navigation = guest.Navigation;
+		for ( var pass = 0; pass < 2; pass++ )
 		{
-			if ( lane != null && Grid.Distance( guest.CellX, guest.CellY, lane[^1].X, lane[^1].Y ) >= 0 )
-				return true;
+			for ( var attempt = 0; attempt < 2; attempt++ )
+			{
+				var side = (int)((draw & 1) ^ (uint)attempt);
+				if ( GateCell( side ) is { } gate && RouteToCell( guest, gate ) )
+				{
+					guest.ExitSide = side;
+					return true;
+				}
+			}
+			navigation.Mask = 1;
 		}
+		navigation.Mask = 0;
 		return false;
 	}
 
@@ -1324,7 +1346,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; the prank line is chosen by OpenTPW's guest id where the original takes the prankster's thing id (WALK-010), and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's park entrance and out along the arrival lane (GUEST-010, WALK-004) where the original routes to the side's gate cell (0x4D86D0) — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
+	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; the prank line is chosen by OpenTPW's guest id where the original takes the prankster's thing id (WALK-010), and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's gate cell (0x4D86D0, the original's route) and on along OpenTPW's arrival lane (ARRIVAL-001), where the original's states 19 to 21 walk it to the arrival vehicle's stop cells — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )
@@ -2102,39 +2124,48 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.InQueueInterlude = false;
 	}
 
+	/// <summary>
+	/// State 18 (<c>0x00500A50</c>), the walk out of the park to the gate's crossing cell: one step per park turn; arriving there starts the way along the arrival lane
+	/// (the original's states 19 to 21), and a walk that ends stuck is given up ("I'm stuck in the park": mask 0, state 6). The recall of a guest that wants to stay
+	/// runs before this in <see cref="UpdateGuest"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500A50 state 18] the recall test (counter above 0, happiness byte nonzero, park open and the guest's cell of type 0, 1, 3, 9 or 10, 0x004FA990) clears the mask and returns to state 6 ("Make up your mind"); else the walk step 0x004FA2A0: arrived is state 19, stuck is "I'm stuck in the park, even though ..." with the mask cleared and state 6
 	private void UpdateLeaving( Guest guest, float dt )
 	{
-		if ( guest.HasWaypoint && !Move( guest ) )
-			return;
-		var lanes = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
-		// a guest a guard set down leaves by the side its set-down drew while that side stays in reach
-		if ( guest.ExitSide is { } side && lanes[side] is { } drawn && Grid.Distance( guest.CellX, guest.CellY, drawn[^1].X, drawn[^1].Y ) >= 0 )
-			lanes = [drawn];
-		(int X, int Y)[]? bestLane = null;
-		var bestDistance = int.MaxValue;
-		foreach ( var lane in lanes )
+		if ( ValidLane( Settings.ArrivalLaneA ) == null && ValidLane( Settings.ArrivalLaneB ) == null )
 		{
-			if ( lane == null )
-				continue;
-			var distance = Grid.Distance( guest.CellX, guest.CellY, lane[^1].X, lane[^1].Y );
-			if ( distance >= 0 && distance < bestDistance )
+			guest.State = GuestState.Gone; // a level without an arrival lane has no modelled gate: the guest leaves and vanishes
+			return;
+		}
+		if ( guest.HasWaypoint )
+		{
+			var result = MoveAlongStep( guest );
+			if ( result == WalkResult.Walking )
+				return;
+			if ( result == WalkResult.Stuck )
 			{
-				bestDistance = distance;
-				bestLane = lane;
+				guest.Navigation.Mask = 0;
+				guest.ExitSide = null;
+				guest.State = GuestState.DoingNothing;
+				return;
 			}
 		}
-		if ( bestLane == null )
+		// Arrived: on a gate cell the way along the lane starts (the first crossing cell is where the lane's walk begins); anywhere else (a walk restored from an older save,
+		// whose per-cell steps ended on the way) the route to the gate is asked for again, nearer side first.
+		var cell = guest.Navigation.Cell;
+		for ( var side = 0; side < 2; side++ )
 		{
-			guest.State = GuestState.Gone; // no way out: the original would eject; documented simplification
-			return;
+			if ( GateCell( side ) is { } gate && gate == cell && ValidLane( side == 0 ? Settings.ArrivalLaneA : Settings.ArrivalLaneB ) is { } lane )
+			{
+				StartLeavingLane( guest, lane, 2 );
+				return;
+			}
 		}
-		if ( bestDistance == 0 )
-		{
-			StartLeavingLane( guest, bestLane, bestLane.Length - 1 );
+		if ( RouteToGate( guest, (uint)(guest.ExitSide ?? (int)(ParkTurn & 1)) ) )
 			return;
-		}
-		if ( Grid.TryStep( guest.CellX, guest.CellY, bestLane[^1].X, bestLane[^1].Y, out var nx, out var ny ) )
-			SetCellWaypoint( guest, nx, ny );
+		guest.Navigation.Mask = 0;
+		guest.ExitSide = null;
+		guest.State = GuestState.DoingNothing;
 	}
 
 	private void ReturnToPath( Guest guest, (int X, int Y) cell )

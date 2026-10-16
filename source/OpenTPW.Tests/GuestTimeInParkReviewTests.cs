@@ -118,13 +118,14 @@ public class GuestTimeInParkReviewTests
 		var rig = new GuestSnapshotTests.Rig();
 		rig.Simulation.ArrivalsEnabled = false;
 		var guest = rig.Simulation.SpawnInPark( 5, 0 );
-		rig.Grid.SetPath( 4, 0, false );
-		rig.Grid.SetPath( 6, 0, false );
+		// a level without an arrival lane has no gate to walk to: its leaving guests vanish (a level with a gate whose route fails keeps its guest in state 6, WALK-004)
+		rig.Simulation.Settings.ArrivalLaneA = null;
+		rig.Simulation.Settings.ArrivalLaneB = null;
 		guest.State = GuestState.LeavingPark;
 		guest.ExitLevel = 0;
 		guest.Happiness = 0;
 		rig.Simulation.Tick( GuestSnapshotTests.Tick );
-		Assert.AreEqual( GuestState.Gone, guest.State, "an isolated exit walker has no reachable arrival lane" );
+		Assert.AreEqual( GuestState.Gone, guest.State, "a level without an arrival lane has no gate" );
 		Assert.AreEqual( (double)GuestSnapshotTests.Tick, guest.TimeInParkSeconds );
 		Assert.AreEqual( 0, rig.Simulation.Guests.Count );
 	}

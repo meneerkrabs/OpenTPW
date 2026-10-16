@@ -18,7 +18,7 @@ public static class GuestLifecycle
 	/// <summary>
 	/// The state-18 recall (the leaving handler's opening test, <c>0xedc98</c>): a leaving guest whose counter is above 0, happiness byte nonzero and park
 	/// open turns back to state 6 (<c>0xef700</c>, selector 6), so a closed-park dismissal unwinds when the park reopens. The original also demands the
-	/// guest's cell pass <c>0xe6c6c</c> (see <c>[APPROX:GUEST-012]</c> at the call site).
+	/// guest's cell pass <c>0xe6c6c</c> (tp.exe <c>0x004FA990</c>, applied at the call site).
 	/// </summary>
 	// [BIN:STP-PPC:0x100EDC98 leaving handler head] read in the disassembly (not executed by the oracle): +444 above 0 (cmpwi, branch when GT clear), the happiness byte (fctiwz, clrlwi 24) nonzero, 0x1091ac zero, then the cell predicate 0xe6c6c nonzero
 	public static bool ShouldRecall( float happiness, int exitLevel, bool parkClosed ) =>

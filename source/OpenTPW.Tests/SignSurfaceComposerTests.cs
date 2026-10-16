@@ -142,15 +142,65 @@ public class SignSurfaceComposerTests
 	[TestMethod]
 	public void ShiftMovesAMaskRightAndDownAndDropsWhatLeavesTheSurface()
 	{
-		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.Height];
+		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight];
 		mask[0] = 9;
-		mask[(SignSurfaceComposer.Height - 1) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 1] = 7;
+		mask[(SignSurfaceComposer.SurfaceHeight - 1) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 1] = 7;
 		var shifted = SignSurfaceComposer.Shift( mask, 2, 3 );
 		Assert.AreEqual( 9, shifted[3 * SignSurfaceComposer.Width + 2] );
 		Assert.AreEqual( 9, shifted.Sum( value => (int)value ), "the texel that left the surface is gone" );
 		Assert.AreSame( mask, SignSurfaceComposer.Shift( mask, 0, 0 ) );
 		var back = SignSurfaceComposer.Shift( mask, -1, -1 );
-		Assert.AreEqual( 7, back[(SignSurfaceComposer.Height - 2) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 2] );
+		Assert.AreEqual( 7, back[(SignSurfaceComposer.SurfaceHeight - 2) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 2] );
+	}
+
+	/// <summary>The 512x512 text raster is reduced to the 256x256 mask by summing every 2x2 block of coverage bytes and shifting right by 2 (tp.exe 0x5EAFC3), not by two truncated halvings.</summary>
+	[TestMethod]
+	public void TextReductionSumsEachTwoByTwoBlockAndShiftsRightByTwo()
+	{
+		const int textWidth = SignSurfaceComposer.Width * 2;
+		var text = new byte[textWidth * SignSurfaceComposer.SurfaceHeight * 2 * 4];
+		void Coverage( int x, int y, byte value ) => text[(y * textWidth + x) * 4 + 3] = value;
+		// block (0, 0): 1, 0 / 3, 0 sums to 4 and gives 1 (two truncated halvings would give 0)
+		Coverage( 0, 0, 1 );
+		Coverage( 0, 1, 3 );
+		// block (1, 0): 3, 3 / 3, 2 sums to 11 and gives 2
+		Coverage( 2, 0, 3 ); Coverage( 3, 0, 3 ); Coverage( 2, 1, 3 ); Coverage( 3, 1, 2 );
+		// block (2, 0): all 255 stays 255; block (3, 0): three 255 and one 0 gives 191
+		for ( var dy = 0; dy < 2; dy++ )
+		for ( var dx = 0; dx < 2; dx++ )
+			Coverage( 4 + dx, dy, 255 );
+		Coverage( 6, 0, 255 ); Coverage( 7, 0, 255 ); Coverage( 6, 1, 255 );
+		// the lowest block: DIB rows 510 and 511 reach mask row 255
+		Coverage( 20, 510, 255 ); Coverage( 21, 511, 255 );
+		var mask = SignSurfaceComposer.ReduceText( text );
+		Assert.AreEqual( SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight, mask.Length );
+		CollectionAssert.AreEqual( new byte[] { 1, 2, 255, 191 }, mask[..4] );
+		Assert.AreEqual( 127, mask[255 * SignSurfaceComposer.Width + 10] );
+	}
+
+	private static SignEffect Relief( float p0, float @base, float diffuse, float specular, float exponent, float theta, float phi, uint maskWord = 0, float blur = 0f ) =>
+		new( 1, maskWord, new[] { p0, blur, @base, diffuse, specular, exponent, theta, phi }, 0, 0 );
+
+	private static SignBitmap Strip( int width, int height, Func<int, byte> red ) =>
+		new( width, height, 4, Enumerable.Range( 0, width * height ).SelectMany( i => new byte[] { 255, red( i / width ), red( i / width ), red( i / width ) } ).ToArray() );
+
+	/// <summary>The measured text extent spans the whole 256-row mask, not only the 128 rows that reach the textures: the material strip is resampled to it (tp.exe 0x5EB035, 0x5ECCC5).</summary>
+	[TestMethod]
+	public void TheReliefExtentCoversTextBelowThePackedRows()
+	{
+		var mask = new byte[SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight];
+		for ( var x = 10; x < 20; x++ )
+		{
+			mask[10 * SignSurfaceComposer.Width + x] = 255;
+			mask[200 * SignSurfaceComposer.Width + x] = 255;
+		}
+		var destination = new byte[mask.Length * 4];
+		// 191 strip rows for the 191 rows between the first and the last text row: the strip row of each text row is its distance from the top
+		SignSurfaceComposer.Effect( destination, mask, Strip( 1, 191, row => (byte)row ), Relief( 0f, 1f, 0f, 0f, 1f, 0f, 0f ), new List<string>() );
+		var top = destination[(10 * SignSurfaceComposer.Width + 15) * 4 + 1];
+		var bottom = destination[(200 * SignSurfaceComposer.Width + 15) * 4 + 1];
+		Assert.IsTrue( top <= 1, $"the first text row samples strip row 0, got {top}" );
+		Assert.IsTrue( Math.Abs( bottom - 190 ) <= 1, $"the row 190 below it samples strip row 190, got {bottom}" );
 	}
 
 	/// <summary>

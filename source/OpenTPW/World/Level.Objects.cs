@@ -664,7 +664,7 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — evidence needed: which polygons the test walks (the node face arrays and node states 0x10, 0x20, 0x8210 of the model at +0x78) and which object the cell yields (0x452ae0)
+	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — the model test 0x45d090 is read (it walks a node's face records, 8 bytes each: a normal index and three vertex indices, unless the node state has 0x10 or 0x8210, and recurses into the children unless 0x20; a hit is the plane hit inside the triangle by the 2 pi angle sum, accepted only when nearer than the terrain hit), but which object a cell yields (0x452ae0), the distance window and the object skip rule (0x473c30) are not
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )

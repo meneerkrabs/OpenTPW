@@ -4,7 +4,9 @@ public sealed partial class OriginalObjectRuntime
 {
 	private Func<int, int, float, System.Numerics.Vector3>? bumpToEngine;
 	private Func<System.Numerics.Vector3, Vector3?>? engineToSound;
-	private readonly Dictionary<int, AudioVoice> engineVoices = new();
+	private Func<Vector3>? gridSoundOrigin;
+	private Func<System.Numerics.Vector2>? gridEngineOrigin;
+	private readonly Dictionary<int, EngineVoice> engineVoices = new();
 	/// <summary>The break-smoke emitter handle of each vehicle slot (presentation only).</summary>
 	private readonly Dictionary<int, ParticleRendererModule.EmitterRef> smokeEmitters = new();
 
@@ -19,6 +21,65 @@ public sealed partial class OriginalObjectRuntime
 	{
 		bumpToEngine = toEngine;
 		engineToSound = toSound;
+	}
+
+	/// <summary>
+	/// Gives the runtime the park grid's origin, in sound units (the vehicles' voices: the karts' voice place, the tour cars' module units / 300) and in engine
+	/// units (the tour cars' emitters). Presentation only; a headless runtime has neither and places nothing.
+	/// </summary>
+	internal void SetVehicleOrigin( Func<Vector3> soundOrigin, Func<System.Numerics.Vector2> engineOrigin )
+	{
+		gridSoundOrigin = soundOrigin;
+		gridEngineOrigin = engineOrigin;
+	}
+
+	/// <summary>The sound-space place of a kart's, bumper car's or boat's engine voice: <see cref="BumpEffects.VoicePlace"/> from the grid's sound origin, or null headless.</summary>
+	private Vector3? VehicleVoicePlace( int x, int y )
+	{
+		if ( gridSoundOrigin?.Invoke() is not { } origin )
+			return null;
+		var (vx, vz) = BumpEffects.VoicePlace( x, y );
+		return new Vector3( origin.X + vx, origin.Y, origin.Z + vz );
+	}
+
+	/// <summary>A vehicle's engine voice: a sentence, or a plain voice when the engine event is not a repeating sentence.</summary>
+	private sealed record EngineVoice( SoundSentence? Sentence, AudioVoice? Voice )
+	{
+		public void Stop()
+		{
+			Sentence?.Stop();
+			Voice?.Stop();
+		}
+
+		public void MoveTo( Vector3 place )
+		{
+			Sentence?.MoveTo( place );
+			if ( Voice != null )
+				Voice.Position = place;
+		}
+	}
+
+	/// <summary>The engine voices held per vehicle slot (tests).</summary>
+	internal IReadOnlyDictionary<int, SoundSentence?> EngineSentences => engineVoices.ToDictionary( pair => pair.Key, pair => pair.Value.Sentence );
+
+	/// <summary>The value of the ride's EventMap child's variable <paramref name="index"/> (by position), or null while the ride has no EventMap script or the index is out of range.</summary>
+	// [BIN:TPW-EXE:0x0055A3E0 sound variable] the child script of the ride's script (+0x14) is found and variable index i is read from its array (+0x1C) when 0 ≤ i < the count (+0x8C), else 0 with a log line
+	internal int? EventMapVariable( int index )
+	{
+		if ( Script?.SoundChild is not { } child || index < 0 || index >= child.Variables.Length )
+			return null;
+		return child.Variables[index];
+	}
+
+	/// <summary>Starts a vehicle's engine voice at its place: a sentence, or a plain voice for a non-sentence event.</summary>
+	private EngineVoice? StartEngineVoice( int engineEvent, int x, int y, Vector3? fallback ) => StartEngineVoice( engineEvent, VehicleVoicePlace( x, y ) ?? fallback );
+
+	/// <summary>Starts an engine voice (level cat_rides, RSE type 3) at a sound-space place: a sentence, or a plain voice for a non-sentence event.</summary>
+	private EngineVoice? StartEngineVoice( int engineEvent, Vector3? place )
+	{
+		if ( place is { } at && GameAudio.StartRseSentence( 3, (uint)engineEvent, at ) is { } sentence )
+			return new EngineVoice( sentence, null );
+		return GameAudio.PlayRseEvent( 3, (uint)engineEvent, place ) is { } voice ? new EngineVoice( null, voice ) : null;
 	}
 
 	/// <summary>The EventMap child's event id of a slot (<c>VAR_EVT0…9</c>), or null while the ride has no EventMap script.</summary>
@@ -47,7 +108,8 @@ public sealed partial class OriginalObjectRuntime
 				}
 				break;
 			case BumpEffectKind.EmitterStart:
-				if ( engine is { } start && !smokeEmitters.ContainsKey( effect.Slot ) )
+				// [BIN:TPW-EXE:0x00544D4D smoke start] BUMP 8 creates the emitter at the sparks node's world place (the node at the car's +0x24 in the instance's node table +0x28, its matrix +0x30..+0x38 × 1024); the node position comes from the last draw, the car's point without one
+				if ( (effect.Node ?? engine) is { } start && !smokeEmitters.ContainsKey( effect.Slot ) )
 				{
 					BumpEffectStats = BumpEffectStats with { Particles = BumpEffectStats.Particles + 1 };
 					if ( ParticleRendererModule.StartEmitter( effect.Id, start ) is { } started )
@@ -55,7 +117,8 @@ public sealed partial class OriginalObjectRuntime
 				}
 				break;
 			case BumpEffectKind.EmitterMove:
-				if ( engine is { } moved && smokeEmitters.TryGetValue( effect.Slot, out var following ) )
+				// [BIN:TPW-EXE:0x00548593 smoke follow] every tick the emitter (+0x2C) moves to the sparks node's world place (0x51FE30), as at its creation
+				if ( (effect.Node ?? engine) is { } moved && smokeEmitters.TryGetValue( effect.Slot, out var following ) )
 					ParticleRendererModule.MoveEmitter( following, moved );
 				break;
 			case BumpEffectKind.EmitterStop:
@@ -75,7 +138,8 @@ public sealed partial class OriginalObjectRuntime
 				}
 				break;
 			case BumpEffectKind.EngineStart:
-				if ( EventMapEvent( BumpEffects.SlotEngine ) is { } engineEvent && GameAudio.PlayRseEvent( 3, (uint)engineEvent, sound ) is { } voice )
+				// [BIN:TPW-EXE:0x0054A366 engine start] the voice is submitted at (0, 0, 0) (0x51EEB0) and moved to the vehicle's voice place at once (0x51C270, 0x54A39A)
+				if ( EventMapEvent( BumpEffects.SlotEngine ) is { } engineEvent && StartEngineVoice( engineEvent, effect.X, effect.Y, sound ) is { } voice )
 				{
 					// a voice already held by the slot (a restored boat, a reused slot) ends first, so none is left running unreachable
 					if ( engineVoices.Remove( effect.Slot, out var previous ) )
@@ -98,7 +162,14 @@ public sealed partial class OriginalObjectRuntime
 					halted.Stop();
 				break;
 			case BumpEffectKind.EngineParameter:
-				// [APPROX:TRACK-025] the engine's pitch parameter (EventMap variable 10 = speed / 3, pushed into the voice by 0x51BC40 every tick) is raised, but the voice is a plain event voice: no parameter reaches it, and the voice does not follow its vehicle (the original moves it every tick, 0x51C270); the smoke emitter likewise sits at the car's reference point, not on its sparks node
+				// [BIN:TPW-EXE:0x00548104 engine voice tick] while the vehicle holds a voice (+0x20) the integration moves it to the vehicle's voice place (0x51C270: (int)(x × 0.0033036), 0, (int)(y × 0.0033036)) and then sets parameter code = EventMap variable 10 (0x55A3E0) to speed / 3 (0x51BC40 -> 0x6B5B80 -> the placeholder's SetParameter 0x6BBB80); the water, kart and bumper branches do the same (0x548132/0x5481E7, 0x5484C7/0x54857C, 0x548A81/0x548B63)
+				if ( engineVoices.TryGetValue( effect.Slot, out var engineVoice ) )
+				{
+					if ( (VehicleVoicePlace( effect.X, effect.Y ) ?? sound) is { } place )
+						engineVoice.MoveTo( place );
+					if ( EventMapVariable( BumpEffects.EngineParameterVariable ) is { } code )
+						engineVoice.Sentence?.SetParameter( code, effect.Value );
+				}
 				break;
 		}
 	}
@@ -113,7 +184,7 @@ public sealed partial class OriginalObjectRuntime
 			return;
 		foreach ( var vehicle in bump.Vehicles )
 		{
-			if ( vehicle.Smoke && !smokeEmitters.ContainsKey( vehicle.Slot ) && bumpToEngine?.Invoke( vehicle.X, vehicle.Y, vehicle.Height ) is { } smokeAt )
+			if ( vehicle.Smoke && !smokeEmitters.ContainsKey( vehicle.Slot ) && (vehicle.SparksNode ?? bumpToEngine?.Invoke( vehicle.X, vehicle.Y, vehicle.Height )) is { } smokeAt )
 			{
 				if ( ParticleRendererModule.StartEmitter( BumpEffects.ParticleSmoke, smokeAt ) is { } started )
 					smokeEmitters[vehicle.Slot] = started;
@@ -128,7 +199,7 @@ public sealed partial class OriginalObjectRuntime
 				continue;
 			var engine = bumpToEngine?.Invoke( vehicle.X, vehicle.Y, vehicle.Height );
 			var sound = engine is { } point ? engineToSound?.Invoke( point ) : null;
-			if ( GameAudio.PlayRseEvent( 3, (uint)engineEvent, sound ) is { } voice )
+			if ( StartEngineVoice( engineEvent, vehicle.X, vehicle.Y, sound ) is { } voice )
 			{
 				BumpEffectStats = BumpEffectStats with { Engines = BumpEffectStats.Engines + 1 };
 				engineVoices[vehicle.Slot] = voice;

@@ -30,6 +30,10 @@ public sealed class CollisionObject
 	public int ExtentY { get; init; }
 	/// <summary>The index in the controller's object list.</summary>
 	public int Index { get; internal set; }
+	/// <summary>The controller that built the object.</summary>
+	public BumpController? Owner { get; internal set; }
+	/// <summary>The object's record in the module's shared pool of 2048 (−1 outside the pool): the searches walk the pool in this order.</summary>
+	public int ModuleSlot { get; internal set; } = -1;
 	public TrackSection? Section { get; internal set; }
 	public Buoy? Buoy { get; internal set; }
 

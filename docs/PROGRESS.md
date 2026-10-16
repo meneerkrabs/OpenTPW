@@ -6,18 +6,39 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
-## Rides, coaster and track reading round (October 15, 2026)
+> **New entries:** since October 16, 2026 every pull request adds its entry as its own file,
+> `docs/progress/YYYY-MM-DD-<slug>.md`, and this file keeps the earlier entries as frozen history.
+> `python3 tools/progress.py` assembles both into the full log, newest first; the website's
+> [progress notes](https://opentpw.io/docs/PROGRESS.html) show that log.
 
-Twenty-nine ride, coaster and track approximations were read again in tp.exe:
+## Ride vehicles: engine voices, tour cars and the shared bump module (October 15, 2026)
 
-- **A build click becomes the anchor the original's way** (`0x528b44`: the click lands on the footprint's local (W/2, H/2)), so even-sided
-  objects no longer land one cell off (RIDES-021 narrowed).
-- **The coaster build cursor** keeps its last cell beyond 300 units from the last node (`0x435e2a`; COAST-035 narrowed).
-- **Track tiles become bridges only over paths and queues** (`0x538b0b`), not over terrain water, which map setup turns into type 0 inside
-  the park (TRACK-010 narrowed).
-- RIDES-012 (entrance and exit outside cells, `0x529323`, `0x529239`) and RIDES-013 (the footprint stamping is a rigid rotation about the
-  anchor) are retired; 16 more items are narrowed, among them the blueprint ghost (`0x532fc0`, a draped, rippling marker) and the
-  coaster cost's x87 arithmetic (`0x447830`).
+Vehicle effects and the bump rides' shared state now follow tp.exe:
+
+- **Engine voices** move with their vehicle every tick (`0x51C270`, place `x × 0.0033036`, `y × 0.0033036`) and take EventMap variable 10
+  = speed / 3 (`0x51BC40` → `0x6BBB80`), bound to pitch as min + v × range / 100 (`0x6BC170`; the shipped kart and bumper engines bind
+  selector 16, 17 in Fantasy). Break smoke sits on the sparks node (class `0x100`). Water boats' spray, engine voice and unload
+  particles now play: the runtime had subscribed to bump effects only for non-water rides (TRACK-025 retired).
+- **Tour cars** start their engine at `0x55A944` with parameter 80 docked or landed, 15 taking off, 60 broken and 30 otherwise, move the
+  voice every tick and stop it on removal; TOUR 9 plays FlySmoke and FlyFire, and the mend plays clip 10 and cat_rides `0xBB`; clips
+  retrigger only on an animation change and play from the car's own letter files (TOUR-004 retired, TOUR-008 narrowed).
+- **Vehicle heights** use the original's three sampler modes (`0x450EA0`: faces, terrain plus the model's header float `+0xA0`, the
+  collision mesh); vehicles never read the `.hmp`. Bumper cars stand on their ride's platform and the jungle wake is the original's
+  second instance behind the car (TRACK-031 retired, TRACK-001 narrowed).
+- **One bump module for every bump ride** (TRACK-019 narrowed): one frame counter (`0x877B5C`), a 256-vehicle pool stepped and collided
+  in pool order across rides (restitution from the other vehicle's controller, `0x546E52`), a 2048-object pool and a 1024-buoy budget.
+  Because those pools' overflow verdicts depend on the order the rides were built in, a resume restores the saved slots, verdicts and
+  buoy counts instead of replaying the checks, so a park near the limits loads as saved.
+- **Sound parameters**: one placeholder table per sentence (`0x6BBB80`, `0x6BBF00`, `0x6BC040`) serves the crowd, the vehicle engines, the
+  rain (code 8, `0x51E870`, which now also sets the rain's volume) and the park music (code 4, `0x51E79E`); a bound volume or pitch takes
+  its slot's value, 0 until a matching call, for sentences, one-shots and chains alike, so the kart and bumper stop sounds play at the
+  bottom of their pitch range; only a call with the event's own code sets the branching value (AUDIO-003 narrowed to the fixed-pitch flag,
+  the non-chain delay and reverb).
+
+No world or guest draws were added and the pinned run hash is unchanged; parks with a bump controller hash the frame counter and pool
+order. New optional, validated save fields: the tour car's `Emitter`, the track world's `FrameCount`/`TickRemainder`, per controller
+`ObjectSlots` and `BuoyCount` and per vehicle `ObjectAttraction`; a vehicle's `Slot` is now its pool slot (unique across the rides in a
+save that has the module clock), and older saves load.
 
 ## Guests walk with tp.exe's walk (October 15, 2026)
 

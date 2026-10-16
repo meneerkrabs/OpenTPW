@@ -27,7 +27,7 @@ public sealed partial class ParkHud
 	/// Keeps a waiting offer answerable: while the challenge system waits on an answer and neither the tube nor the open panel holds the offer's
 	/// message (it was closed, deleted, pushed out of a full tube, or the park was loaded), the offer is posted again.
 	/// </summary>
-	// [APPROX:UI-025] what the original does with an offer whose message is deleted unanswered is not traced: OpenTPW posts it again, so the challenge system (which waits on the answer) never stalls
+	// [EXT:challenge-offer-repost] an offer whose message is deleted unanswered is posted again, so the challenge system (which waits on the answer) never stalls; the original's handling of a deleted offer is not traced and matching an unknown would risk a hang
 	internal bool KeepChallengeOfferPosted( ParkEconomy? economy )
 	{
 		if ( economy?.Objectives.Current is not { Accepted: false } || economy.Objectives.CurrentDefinition is not { } definition )

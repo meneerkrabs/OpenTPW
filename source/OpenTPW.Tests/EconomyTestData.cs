@@ -95,7 +95,7 @@ internal static class EconomyTestData
 	public static ParkEconomy Park( int initialCash = 50000, int apr = 20, ulong seed = 7, ParkGameMode mode = ParkGameMode.FullSimulation ) =>
 		new( Settings( initialCash, apr ), Catalog(), mode, seed );
 
-	/// <summary>A park whose <c>Costs.PathCell</c> and <c>Costs.QueueCell</c> are replaced (negative costs model a modified Standard.sam).</summary>
+	/// <summary>A park whose <c>Costs.PathCell</c> and <c>Costs.QueueCell</c> are replaced (a negative cost fails the balance load, as in tp.exe 0x00401D7C).</summary>
 	public static ParkEconomy CellCostPark( int initialCash, int pathCost, int queueCost ) => new(
 		new BalanceSettings( new SamSettings( new[] { SamDocument.Parse( StandardText( initialCash )
 			.Replace( "Costs.QueueCell 75\nCosts.PathCell 20\n", $"Costs.QueueCell {queueCost}\nCosts.PathCell {pathCost}\n" ), "Standard.sam" ) } ), null, null, "jungle", false ),

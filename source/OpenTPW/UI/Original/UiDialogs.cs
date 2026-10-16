@@ -6,7 +6,7 @@ namespace OpenTPW.UI.Original;
 public static class UiDialogs
 {
 	/// <summary>Authored rectangle of a centred window of the given canvas size.</summary>
-	// [APPROX:UI-013] the sizes of OpenTPW's own windows; the original's windows come from their layout tables (OriginalLayoutTables)
+	// [EXT:own-window-sizes] the sizes of OpenTPW's own windows (no original table exists for them); the original's windows come from their layout tables (OriginalLayoutTables)
 	public static UiRect CenteredWindow( float width, float height ) =>
 		UiRect.FromCenter( new NVector2( UiCanvas.VirtualWidth / 2, UiCanvas.VirtualHeight / 2 ), width, height );
 
@@ -112,7 +112,7 @@ public static class UiDialogs
 	// [BIN:TPW-EXE:0x48c150 pause menu lines] the builder adds each line through 0x492f60(top, text, id, font slot 0, 128, 128, 128): the first at top 10 and each next at the
 	// previous line's bottom + 5 (0x48c240); 0x492f60 measures the text in the slot's font (0x4929f0) and makes the line (text width + 1) x 2048 / screen width wide and
 	// (text height + 5) x 1536 / screen height high, centred in its parent, the full-canvas lolight window (0,0)-(2047,1535) of 0x492e80
-	// [APPROX:UI-013] the line height follows OpenTPW's menu font, which is not the original's bank pick (UI-002), and its text layout box stands in for the measure 0x4929f0;
+	// [APPROX:UI-013] the line height follows OpenTPW's menu font, which is not the original's bank pick ([EXT:ui-font-tier-by-scale]), and its text layout box stands in for the measure 0x4929f0;
 	// the online state's top of 0 (FUN_005b6450) is not followed, and the focused line's ramp from dark grey to white (0x48b220, 0x20 a tick) is drawn as plain white
 	public static UiScreen TextMenu( string name, IReadOnlyList<(string Id, Func<string> Text, Action Clicked, bool Enabled)> items, Action back, string? focus = null )
 	{

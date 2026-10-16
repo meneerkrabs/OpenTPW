@@ -128,10 +128,11 @@ public static class TrackPieceSelector
 		if ( type is TrackCellTypes.KartOrigin or TrackCellTypes.WaterOrigin && piece == PieceCorner
 			&& (link, mask) is (TrackHeading.NegX, 0x50) or (TrackHeading.PosY, 0x14) or (TrackHeading.NegY, 0x41) or (TrackHeading.PosX, 0x05) )
 			piece += SecondFamilyOffset;
-		// 4. water crossings and tees by their flow bits (multi-bit links come from crossings walked twice, TRACK-004)
+		// 4. water crossings and tees by their flow bits (multi-bit links come from the line op that crosses two lines, TRACK-004)
 		if ( type == TrackCellTypes.WaterOrigin && piece is >= PieceCrossing and <= 8 )
 		{
-			// [APPROX:TRACK-004] the multi-bit links of the X2 rule (0x14, 0x41, 0x50) are applied as traced, but the walk that writes them is not: OpenTPW ORs the headings of a crossing walked twice, so only crossings of two flows reach it (the walk 0x0052A970 writes +0xD only at corners, 0x0052B1A9–0x0052B1F5) — evidence needed: the writer of +0xD for junction cells among the other callers of 0x005227E0 (the type-25 walk 0x0052BA50 picks the first linked arm by rotation) and the meaning of the other link combinations
+			// [BIN:TPW-EXE:0x00539670 junction links] the multi-bit links come from the line op (op 0x82 of 0x53AAC0, handler 0x539670): a tile with more than two arms ORs the line's direction into +0xD (a crossing of two lines gets 0x14, 0x41, 0x50 or 0x05), a tile with two arms or fewer takes the direction alone; the circuit walk 0x52A970 writes +0xD only at corners (0x52B1A9..0x52B1F5)
+			// [APPROX:TRACK-004] the clear op (ClearCell 0x53B280 → 0x5227F0) removes the direction bits of a cleared line from a junction's link where OpenTPW removes the whole tile or only counts the overlap down, and the other writers of +0xD (the type-25 walk 0x52BA50 takes the first linked arm by rotation, the edit sub-modes 0x52B400) have no counterpart
 			if ( link == 0x14 )
 				rotation = 90;
 			else if ( link == 0x41 )

@@ -61,6 +61,44 @@ public class BumpModuleTests
 		Assert.AreEqual( 16, world.FrameCount );
 	}
 
+	/// <summary>TRACK-019: the object pass ticks the module once per world step before any ride's script step; the controllers' own advance then no longer ticks it (tp.exe 0x54F55F).</summary>
+	[TestMethod]
+	public void TheObjectPassTicksTheModuleOncePerStepForEveryRide()
+	{
+		var world = new BumpWorld();
+		var first = Bumper( world, 5 * 0xC00, 5 * 0xC00 );
+		var second = Bumper( world, 20 * 0xC00, 5 * 0xC00 );
+		// without a host the first controller drives the module and the second one does not
+		second.Advance( BumpController.TickSeconds );
+		Assert.AreEqual( 0, world.FrameCount );
+		first.Advance( BumpController.TickSeconds );
+		Assert.AreEqual( 1, world.FrameCount );
+		// with the object pass driving, no controller ticks the module and the pass ticks it once whatever the controllers are
+		world.HostDriven = true;
+		first.Advance( BumpController.TickSeconds );
+		second.Advance( BumpController.TickSeconds );
+		Assert.AreEqual( 1, world.FrameCount, "a ride's advance never ticks a host-driven module" );
+		world.AdvanceModule( BumpController.TickSeconds );
+		Assert.AreEqual( 2, world.FrameCount );
+		world.AdvanceModule( 2 * BumpController.TickSeconds );
+		Assert.AreEqual( 4, world.FrameCount, "whole 31 ms ticks run, once per elapsed tick" );
+	}
+
+	/// <summary>TRACK-019: a bumper car's first drop-in avoids every live car of the module, other rides' cars included (tp.exe 0x54A040 walks the whole pool).</summary>
+	[TestMethod]
+	public void ADropInAvoidsTheCarsOfOtherRidesToo()
+	{
+		var world = new BumpWorld();
+		var a = Bumper( world, 5 * 0xC00, 5 * 0xC00, seed: 3 );
+		var b = Bumper( world, 5 * 0xC00, 5 * 0xC00, seed: 4 );
+		Start( a, 4, 100 );
+		Start( b, 4, 200 );
+		Assert.AreEqual( 8, world.LiveVehicles.Count(), "the pool counts every ride's cars" );
+		foreach ( var car in b.Vehicles )
+			foreach ( var other in a.Vehicles )
+				Assert.IsTrue( BumpMath.Distance( other.X - car.X, other.Y - car.Y ) >= other.Radius + car.Radius || car.Flags == 0, "a dropped-in car overlaps no car of the other ride" );
+	}
+
 	[TestMethod]
 	public void VehiclesShareOnePoolAndItsOrderAcrossTheRides()
 	{

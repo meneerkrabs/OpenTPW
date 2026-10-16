@@ -82,15 +82,15 @@ public sealed class CoasterRenderer : Entity
 	}
 
 	/// <summary>
-	/// The camera seat of the first train's front car in engine axes (the car model's seat node placed on the car), null when the coaster has no drawn
+	/// The camera seat of a train's camera car in engine axes (the car model's seat node placed on the car), null when the coaster has no drawn
 	/// car yet or its car model has no seat.
 	/// </summary>
-	internal Matrix4x4? TryGetSeat( CoasterRide ride )
+	internal Matrix4x4? TryGetSeat( CoasterRide ride, int train )
 	{
 		foreach ( var view in views )
 		{
 			if ( ReferenceEquals( view.Ride, ride ) )
-				return view.FrontCarSeat();
+				return view.CameraCarSeat( train );
 		}
 		return null;
 	}
@@ -507,12 +507,12 @@ public sealed class CoasterRenderer : Entity
 			}
 		}
 
-		/// <summary>The seat of the first train's first car: its model's seat node on the car's last pose, in engine axes.</summary>
-		public Matrix4x4? FrontCarSeat()
+		/// <summary>The seat of a train's camera car (<see cref="CoasterDefinition.RideCameraCar"/>): its model's seat node on the car's last pose, in engine axes.</summary>
+		public Matrix4x4? CameraCarSeat( int train )
 		{
 			foreach ( var car in cars )
 			{
-				if ( car.Train == 0 && car.Car == 0 && car.Rig.CameraSeat is { } local )
+				if ( car.Train == train && car.Car == Ride.Definition.RideCameraCar && car.Rig.CameraSeat is { } local )
 				{
 					// [APPROX:COAST-034] the cars drive along their model's +Z, but the mine cart's camera node (and so its front row) faces -Z, the original's front: the seat is turned half a circle about its own up axis so the view looks along the track
 					if ( local.M33 < 0 )

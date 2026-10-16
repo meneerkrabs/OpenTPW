@@ -273,17 +273,35 @@ public sealed class CoasterRide
 	}
 
 	/// <summary>
-	/// The ride view of a train's front car (COAST-plan §7, §18): position from the interpolated sample, forward from the
-	/// sample direction, roll from the sample roll. False without that train.
+	/// The train the ride view rides: the one with the smallest reference position (controller <c>+0x124</c>), the earliest of equal ones; train 0 without trains.
 	/// </summary>
-	// [APPROX:COAST-011] the ride view is the front car's sample pose; no camera mode uses it yet and Info.FirstPersonSprites, FIRSTPERSONVIEWDISTANCE and COASTERSMOOTHNESS are not read; no camera code calls the coaster module — evidence needed: the camera methods 0x10093D08/0x10094474 for a follow mode fed by car +72..+80, or a capture of the original ride view
+	// [BIN:TPW-EXE:0x43d7dd ride view train] the hop loop (0x43d7dd..0x43d7f3) compares each train's position (+0x74) with the one controller +0x124 names (reset to train 0 at the start of every tick, 0x43ce50) and takes the train when its position is smaller (fcomp, C0 set); 0x436880 returns the camera object of that train's camera car, which the ride camera 0x42a560 takes once, when the ride view opens
+	public int RideViewTrain
+	{
+		get
+		{
+			var best = 0;
+			for ( var index = 1; index < trains.Count; index++ )
+			{
+				if ( trains[index].Position < trains[best].Position )
+					best = index;
+			}
+			return best;
+		}
+	}
+
+	/// <summary>
+	/// The ride view of a train's camera car (<see cref="CoasterDefinition.RideCameraCar"/>): position from the interpolated sample, forward from the sample direction, roll from the sample roll.
+	/// False without that train.
+	/// </summary>
+	// [APPROX:COAST-011] the settings FIRSTPERSONVIEWDISTANCE, COASTERSMOOTHNESS and Info.FirstPersonSprites are not read by the ride view: tp.exe's option table (0x7442c0, entries 17 and 22) has no reader that was found (the accessor 0x402bf0 has no direct caller, no code addresses the entries) — evidence needed: a runtime read of the option entries, or a capture of the original ride view at other distances
 	public bool TryGetRideView( int train, out System.Numerics.Vector3 position, out System.Numerics.Vector3 forward, out float roll )
 	{
 		position = forward = default;
 		roll = 0;
 		if ( !IsOperational || train < 0 || train >= trains.Count )
 			return false;
-		var sample = SampleAt( CarCoordinate( trains[train], 0 ) );
+		var sample = SampleAt( CarCoordinate( trains[train], Definition.RideCameraCar ) );
 		(position, forward, roll) = (sample.Position, sample.Direction, sample.Bank);
 		return true;
 	}

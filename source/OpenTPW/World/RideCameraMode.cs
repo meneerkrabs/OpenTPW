@@ -23,6 +23,7 @@ public sealed class RideCameraMode : CameraMode
 	public const float LookDeadZoneX = 0.2f;
 
 	private readonly OriginalObject ride;
+	private readonly int train;
 	private readonly Vector3 heading;
 	private readonly Func<Matrix4x4?>? seat;
 	private NVector3 up = NVector3.UnitZ;
@@ -31,9 +32,11 @@ public sealed class RideCameraMode : CameraMode
 	/// <param name="ride">The placed ride to ride: a ride whose model has a camera seat, a coaster station with a completed track, or the prototype ride.</param>
 	/// <param name="heading">Horizontal look direction until a seat gives one (the view the player had when boarding).</param>
 	/// <param name="seat">The seat's world matrix in engine axes (X/Y ground, Z up), null when it is not available; defaults to the ride model's seat node (a coaster has none by default).</param>
-	public RideCameraMode( OriginalObject ride, Vector3 heading, Func<Matrix4x4?>? seat = null )
+	/// <param name="train">The train of a coaster the view rides, taken once when the view opens (<see cref="CoasterRide.RideViewTrain"/>); the default is the one that is smallest in position now.</param>
+	public RideCameraMode( OriginalObject ride, Vector3 heading, Func<Matrix4x4?>? seat = null, int? train = null )
 	{
 		this.ride = ride;
+		this.train = train ?? ride?.Runtime?.Coaster?.RideViewTrain ?? 0;
 		this.heading = heading;
 		this.seat = seat ?? DefaultSeat( ride );
 		FieldOfView = ViewFieldOfView;
@@ -41,6 +44,9 @@ public sealed class RideCameraMode : CameraMode
 
 	/// <summary>The ride being ridden.</summary>
 	public OriginalObject Ride => ride;
+
+	/// <summary>The train of a coaster being ridden (the ride view keeps its car until it closes).</summary>
+	public int Train => train;
 
 	/// <summary>The camera's up vector: the seat's, so the horizon rolls with the car.</summary>
 	public override Vector3 Up => new( up.X, up.Y, up.Z );
@@ -78,7 +84,7 @@ public sealed class RideCameraMode : CameraMode
 	{
 		if ( seat?.Invoke() is not { } node )
 		{
-			var (eye, look) = Frame( ride, heading );
+			var (eye, look) = Frame( ride, heading, train );
 			Position = eye;
 			Rotation = FrameRotation( eye, look );
 			up = NVector3.UnitZ;
@@ -194,18 +200,18 @@ public sealed class RideCameraMode : CameraMode
 	public static bool CanRide( OriginalObjectRuntime runtime ) => runtime.Coaster is { IsOperational: true, Trains.Count: > 0 };
 
 	/// <summary>The camera frame without a seat: where the eye is and where it looks (a coaster's sampled track, the prototype's height).</summary>
-	public static (Vector3 Eye, Vector3 Look) Frame( OriginalObject ride, Vector3 heading )
+	public static (Vector3 Eye, Vector3 Look) Frame( OriginalObject ride, Vector3 heading, int? train = null )
 	{
 		if ( CanRide( ride.Runtime ) )
-			return CoasterFrame( ride.Runtime.Coaster!, ride.Placement.GridOrigin );
+			return CoasterFrame( ride.Runtime.Coaster!, ride.Placement.GridOrigin, train );
 		return PrototypeFrame( ride.Position, ride is PrototypeRide prototype ? prototype.MotionHeight : 0, heading );
 	}
 
-	/// <summary>The front car of the coaster's first train: the eye on its sample, the view along the track's direction.</summary>
-	public static (Vector3 Eye, Vector3 Look) CoasterFrame( CoasterRide coaster, System.Numerics.Vector2 gridOrigin )
+	/// <summary>The camera car of the ride view's train (the smallest in position unless <paramref name="train"/> names one): the eye on its sample, the view along the track's direction.</summary>
+	public static (Vector3 Eye, Vector3 Look) CoasterFrame( CoasterRide coaster, System.Numerics.Vector2 gridOrigin, int? train = null )
 	{
-		// The train's position is its middle car's; the front car stands its offset ahead.
-		var sample = coaster.SampleAt( coaster.CarCoordinate( coaster.Trains[0], 0 ) );
+		// The train's position is its middle car's; the camera car stands its offset ahead (the first car, or the second behind a front car of another type than the seats').
+		var sample = coaster.SampleAt( coaster.CarCoordinate( coaster.Trains[Math.Clamp( train ?? coaster.RideViewTrain, 0, coaster.Trains.Count - 1 )], coaster.Definition.RideCameraCar ) );
 		var eye = ToEngine( gridOrigin, sample.Position ) + new Vector3( 0, 0, CoasterSeatHeight );
 		var direction = ToEngineDirection( sample.Direction );
 		return (eye, eye + direction);

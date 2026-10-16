@@ -26,8 +26,10 @@ public partial class Level
 			return false;
 		parkCameraBeforeRide = Camera.Mode;
 		var coaster = ride.Runtime?.Coaster;
+		// the ride camera takes the coaster's train once, as it opens (0x42a560 → 0x436880)
+		var train = coaster?.RideViewTrain ?? 0;
 		RideView = new RideCameraMode( ride, Camera.Rotation.Forward,
-			coaster != null && coasterRenderer is { } renderer ? () => renderer.TryGetSeat( coaster ) : null );
+			coaster != null && coasterRenderer is { } renderer ? () => renderer.TryGetSeat( coaster, train ) : null, train );
 		RideViewOpenedAt = Time.Now;
 		Camera.Mode = RideView;
 		return true;

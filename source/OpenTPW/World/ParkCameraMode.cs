@@ -56,7 +56,7 @@ public class ParkCameraMode : CameraMode
 		var io = ImGuiNET.ImGui.GetIO();
 		Update( new CameraControlInput
 		{
-			HasFocus = Window.Current?.SdlWindow.Focused == true,
+			HasFocus = Window.Current?.Focused == true,
 			LogicalSize = Screen.Size, MousePosition = Input.Mouse.Position, MouseDelta = Input.Mouse.Delta,
 			CaptureMouse = io.WantCaptureMouse || Level.Current?.UiCapturesMouse == true,
 			CaptureKeyboard = io.WantCaptureKeyboard || UiCapturesKeyboard,

@@ -12,11 +12,40 @@ public class Window
 	public static Window Current { get; set; }
 	public Sdl2Window SdlWindow { get; private set; }
 
+	/// <summary>
+	/// Set before the renderer is created (<c>--offscreen</c>, <c>OPENTPW_OFFSCREEN=1</c>, or implied by a smoke flag):
+	/// the renderer then keeps its window hidden and draws into an offscreen target. See <see cref="IsOffscreen"/>.
+	/// </summary>
+	public static bool OffscreenRequested { get; set; }
+
+	/// <summary>
+	/// True for a window that is never shown. It has no OS-level size or fullscreen state: <see cref="Size"/> is the
+	/// virtual size the window would have had, and <see cref="PixelSize"/> follows it at pixel density 1 times
+	/// <see cref="TestPixelScale"/>.
+	/// </summary>
+	public bool IsOffscreen { get; }
+
+	private Point2 virtualSize;
+
+	/// <summary>Offscreen windows only: the logical size the window would have (windowed size, or the desktop size in fullscreen).</summary>
+	public void SetVirtualSize( Point2 size )
+	{
+		if ( !IsOffscreen || size.Equals( virtualSize ) )
+			return;
+		virtualSize = size;
+		SdlWindow_Resized();
+	}
+
+	/// <summary>Whether the window has input focus; an offscreen window counts as focused so focus-gated input still runs.</summary>
+	public bool Focused => IsOffscreen || SdlWindow.Focused;
+
 	/// <summary>Logical size (desktop units; SDL mouse coordinates use these).</summary>
 	public unsafe Point2 Size
 	{
 		get
 		{
+			if ( IsOffscreen )
+				return virtualSize;
 			// Ask SDL directly: Sdl2Window caches the size until it processes the resize event.
 			int width = 0, height = 0;
 			Sdl2Native.SDL_GetWindowSize( SdlWindow.SdlWindowHandle, &width, &height );
@@ -33,6 +62,8 @@ public class Window
 		get
 		{
 			var logical = Size;
+			if ( IsOffscreen )
+				return new Point2( logical.X * TestPixelScale, logical.Y * TestPixelScale );
 			if ( logical.X <= 0 || logical.Y <= 0 || SdlWindow.WindowState == Veldrid.WindowState.Minimized )
 				return new Point2( 0, 0 );
 			var pixels = SdlDisplay.GetPixelSize( SdlWindow, logical );
@@ -53,12 +84,23 @@ public class Window
 	public bool Visible
 	{
 		get => SdlWindow.Visible;
-		set => SdlWindow.Visible = value;
+		set
+		{
+			if ( IsOffscreen && value )
+				return; // an offscreen window is never shown
+			SdlWindow.Visible = value;
+		}
 	}
 
-	public Window( int width, int height, string title, bool startHidden = false )
+	/// <summary>SDL_GetWindowFlags: lets a log line prove an offscreen window stayed hidden.</summary>
+	public SDL_WindowFlags SdlFlags => Sdl2Native.SDL_GetWindowFlags( SdlWindow.SdlWindowHandle );
+
+	public Window( int width, int height, string title, bool startHidden = false, bool offscreen = false )
 	{
 		Current ??= this;
+		IsOffscreen = offscreen;
+		startHidden |= offscreen;
+		virtualSize = new Point2( width, height );
 
 		// Same flags as VeldridStartup.CreateWindow plus AllowHighDpi, so Retina drawables are full resolution.
 		var flags = SDL_WindowFlags.OpenGL | SDL_WindowFlags.Resizable | SDL_WindowFlags.AllowHighDpi

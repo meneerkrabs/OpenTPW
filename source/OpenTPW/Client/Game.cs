@@ -10,6 +10,7 @@ internal static class Game
 	{
 		Log = new();
 		SdlMovieAudioOutput.Suppressed = IsSilentRun( args, Environment.GetEnvironmentVariable( "OPENTPW_SILENT" ) );
+		Window.OffscreenRequested = IsOffscreenRun( args, Environment.GetEnvironmentVariable( "OPENTPW_OFFSCREEN" ) );
 		var tgqExportIndex = Array.IndexOf(args, "--export-tgq-png");
 		if (tgqExportIndex >= 0)
 		{
@@ -661,6 +662,19 @@ internal static class Game
 		args.Contains( "--silent" ) || silentEnvironment == "1"
 		|| ((args.Contains( "--smoke-test" ) || args.Any( arg => arg.StartsWith( "--capture-", StringComparison.Ordinal ) ) || args.Contains( "--park-resume-smoke" ))
 			&& !args.Contains( "--smoke-audio" ));
+
+	/// <summary>
+	/// [EXT:offscreen-automated-runs] smokes (<c>--smoke-test</c>, <c>--tpi-smoke-test</c>, <c>--park-resume-smoke</c>) create their window hidden and render into
+	/// an offscreen framebuffer, so no window appears, focus is not stolen and a locked screen does not matter. <c>--offscreen</c> or
+	/// <c>OPENTPW_OFFSCREEN=1</c> does the same for any run; <c>OPENTPW_OFFSCREEN=0</c> or <c>--no-offscreen</c> keeps the visible window.
+	/// </summary>
+	internal static bool IsOffscreenRun( string[] args, string? offscreenEnvironment )
+	{
+		if ( args.Contains( "--no-offscreen" ) || offscreenEnvironment == "0" )
+			return false;
+		return args.Contains( "--offscreen" ) || offscreenEnvironment == "1"
+			|| args.Contains( "--smoke-test" ) || args.Contains( "--tpi-smoke-test" ) || args.Contains( "--park-resume-smoke" );
+	}
 
 	private static AutorunScreen? CreateAutorun( string[] args, SetupSettings settings, string dataDirectory )
 	{

@@ -89,7 +89,8 @@ public readonly record struct CoasterCarPose( NVector3 Position, float Yaw, floa
 // [BIN:TPW-EXE:0x43ce20 car pose] each frame a car stands at the curve point of its coordinate (the train's coordinate plus the car's offset over the sample spacing, CoasterRide.CarPose, 0x43c0a0) with the yaw, pitch and roll of that point turned into a matrix (0x43d8f0: roll, then pitch, then yaw) and the car type's fYOffset added along the turned up axis; the car's own wheel animation runs at +0x1c times the train speed
 // [BIN:TPW-EXE:0x43d8f0 car matrix] the car's model root node gets the rotation roll (+0xc), then pitch (+8), then yaw (+4) from identity, so the model's +Z runs along the track, and the root's translation (+0x40..+0x48) the car point plus the turned fYOffset (0x43d6b2)
 // [BIN:TPW-EXE:0x43ce20 wheel clip] a car of a type without the bend flag plays its model's animation id 5 (the member <model>m or <model>m1, sub 0, looping, 0x43be10 → 0x4732a0) at the type's +0x1c (0.1) × the train's speed, set every tick through 0x474050 (the clip's speed, slot +0xc); the PC clips animate the wheel meshes' texture coordinates, which WheelVertices applies per car
-// [APPROX:COAST-034] the bend of bBendCar types (0x438800 with the angle tables of 0x438ab0: every vertex of the car's mesh, at its local Z over the samples around the car, takes the yaw and pitch of the track there relative to the car's and rises by fBendElevationLow, or fBendElevationHigh on flag-8 samples) is not reproduced: those cars (the Croc and Maggot flume boats) are drawn as their static rest mesh, and the mine cart's camera seat is turned to look along the track; the wheel clip starts when the car is first drawn where the original's start stamp is 0x43be10's
+// [BIN:TPW-EXE:0x438800 bend car] a car of a bBendCar type (the Croc and Maggot flume boats) bends every vertex of its mesh along the samples around it each tick (CoasterCarBend), where the other cars play the wheel clip
+// [APPROX:COAST-034] the wheel clip starts when the car is first drawn where the original's start stamp is 0x43be10's; the bend uses the samples' yaw of this build's curve and clamps a vertex beyond its tables; a rider's head socket is not bent with its boat
 public sealed class CoasterCarRig
 {
 	public CoasterCarRig( ModelFile model )
@@ -100,7 +101,8 @@ public sealed class CoasterCarRig
 		Model = model;
 		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		Pivot = model.RootNodeIndex >= 0 ? rest[model.RootNodeIndex].Translation : NVector3.Zero;
-		var shift = Matrix4x4.CreateTranslation( -Pivot );
+		// [BIN:TPW-EXE:0x43d8f0 root node pose] the car's root node matrix is built from identity (roll, pitch, yaw) and its translation set to the car point every tick, so the root's own rest rotation and translation are gone: every node stands relative to the root (the mine cart, caterpillar body and Candy cars have a root rest turned half a circle about Y, which would otherwise face their meshes and seats backward)
+		var shift = model.RootNodeIndex >= 0 && Matrix4x4.Invert( rest[model.RootNodeIndex], out var inverse ) ? inverse : Matrix4x4.CreateTranslation( -Pivot );
 		Shift = shift;
 		var parts = new List<CoasterModelPart>();
 		var maxZ = float.MinValue;
@@ -120,7 +122,7 @@ public sealed class CoasterCarRig
 					maxZ = MathF.Max( maxZ, z );
 					minZ = MathF.Min( minZ, z );
 				}
-				parts.Add( new CoasterModelPart( mesh.Name, textures, vertices, indices, node, bake ) );
+				parts.Add( new CoasterModelPart( mesh.Name, textures, vertices, indices, node, bake, vertices.Length == mesh.Vertices.Length ? mesh.Vertices.Select( vertex => vertex.Position.GetSystemVector3() ).ToArray() : null ) );
 			}
 		}
 		Parts = parts;
@@ -149,7 +151,7 @@ public sealed class CoasterCarRig
 	}
 
 	public ModelFile Model { get; }
-	/// <summary>The translation that moves the root node to the origin (the parts are baked through it).</summary>
+	/// <summary>The inverse of the root node's rest matrix: the parts are baked relative to the root, whose pose the car's own matrix replaces.</summary>
 	private Matrix4x4 Shift { get; }
 
 	/// <summary>
@@ -186,6 +188,29 @@ public sealed class CoasterCarRig
 
 	/// <summary>Clip ticks per second of the car's model clip (the engine's 30).</summary>
 	public const float WheelTicksPerSecond = 30f;
+
+	/// <summary>Whether the car's type has <c>bBendCar</c>: its mesh bends along the track (<see cref="CoasterCarBend"/>) instead of playing the wheel clip.</summary>
+	public bool Bend { get; internal set; }
+
+	/// <summary>Whether part <paramref name="part"/> is drawn from vertices of its own: it bends, or its texture coordinates follow the wheel clip.</summary>
+	public bool IsDynamic( int part ) => (Bend && Parts[part].Local != null) || AnimatesUv( part );
+
+	/// <summary>
+	/// The part's vertices bent along the track (<c>0x438800</c>): every vertex's node-local position through <see cref="CoasterCarBend.Bend"/>, then the part's bake and the engine axes as the rest mesh is built.
+	/// </summary>
+	public Vertex[]? BendVertices( int part, CoasterBendTables tables, float spacing )
+	{
+		var source = Parts[part];
+		if ( !Bend || source.Local is not { } local || source.Bake is not { } bake )
+			return null;
+		var result = (Vertex[])source.Vertices.Clone();
+		for ( var corner = 0; corner < result.Length; corner++ )
+		{
+			var bent = NVector3.Transform( CoasterCarBend.Bend( tables, spacing, local[corner] ), bake );
+			result[corner].Position = ObjectAssets.ConvertAxes( bent );
+		}
+		return result;
+	}
 
 	/// <summary>Whether part <paramref name="part"/>'s texture coordinates follow the wheel clip.</summary>
 	public bool AnimatesUv( int part ) => part >= 0 && part < wheelUvs.Length && wheelUvs[part] != null;

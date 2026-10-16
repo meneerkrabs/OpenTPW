@@ -109,6 +109,59 @@ public class CoasterPresentationAssetTests
 		}
 	}
 
+	/// <summary>
+	/// The car's root node pose replaces the model's root rest matrix (<c>0x43d8f0</c>), so every car's camera seat looks along the car's +Z, the way the car runs, whether or not its model's root is
+	/// turned half a circle (the mine carts', the Candy cars' and the caterpillar's are).
+	/// </summary>
+	[TestMethod]
+	public void EveryCarsCameraSeatLooksAlongTheTrackOnceTheRootPoseReplacesTheRootRest()
+	{
+		var turnedRoots = 0;
+		foreach ( var entry in PcCoasters() )
+		{
+			var definition = CoasterDefinition.FromCatalogEntry( entry );
+			using var assets = new CoasterAssets( entry, definition );
+			var rig = assets.GetCar( definition.CarTypes.CentreIndex )!;
+			var root = rig.Model.Nodes[rig.Model.RootNodeIndex].Transform;
+			turnedRoots += root.M33 < 0 ? 1 : 0;
+			var seat = rig.CameraSeat ?? throw new AssertFailedException( $"{entry.InfoId} has a camera seat" );
+			Assert.IsTrue( seat.M33 > 0.99f, $"{entry.InfoId}: the seat looks along +Z of the car (M33 {seat.M33})" );
+			Assert.IsTrue( seat.M22 > 0.99f, $"{entry.InfoId}: up stays up" );
+		}
+		Assert.AreEqual( 5, turnedRoots, "the mine carts (1180, 2180, 3190), the Candy coaster (4190) and the caterpillar (4185) have a root turned half a circle" );
+	}
+
+	/// <summary>The two flumes' boats bend: their parts draw from vertices of their own, which the bend tables move (the elevation lifts the whole boat on a straight track).</summary>
+	[TestMethod]
+	public void TheFlumeBoatsBendTheirVerticesAlongTheTrack()
+	{
+		foreach ( var entry in PcCoasters().Where( entry => entry.InfoId is 1185 or 2185 ) )
+		{
+			var definition = CoasterDefinition.FromCatalogEntry( entry );
+			using var assets = new CoasterAssets( entry, definition );
+			var rig = assets.GetCar( definition.CarTypes.CentreIndex )!;
+			Assert.IsTrue( rig.Bend, $"{entry.InfoId}: bBendCar" );
+			Assert.IsNull( rig.WheelClip, $"{entry.InfoId}: a bend car plays no wheel clip" );
+			Assert.IsTrue( definition.BendElevationLow > 0 || definition.BendElevationHigh > 0, $"{entry.InfoId}: the flume names its bend elevation ({definition.BendElevationLow}, {definition.BendElevationHigh})" );
+			var samples = Enumerable.Range( 0, 20 ).Select( index => new CoasterSample { Position = new System.Numerics.Vector3( 0, 4, index * 3f ) } ).ToArray();
+			var metrics = definition.CarTypeMetrics( definition.CarTypes.CentreIndex );
+			var tables = CoasterCarBend.Tables( samples, 3f, definition.BendElevationLow, definition.BendElevationHigh, metrics.RearExtent, metrics.FrontExtent, System.Numerics.Vector3.UnitZ, 10.5f );
+			for ( var part = 0; part < rig.Parts.Count; part++ )
+			{
+				Assert.IsTrue( rig.IsDynamic( part ), $"{entry.InfoId}: part {part} has a model of its own" );
+				var bent = rig.BendVertices( part, tables, 3f )!;
+				Assert.AreEqual( rig.Parts[part].Vertices.Length, bent.Length );
+				for ( var corner = 0; corner < bent.Length; corner++ )
+				{
+					var rest = rig.Parts[part].Vertices[corner].Position;
+					Assert.AreEqual( rest.X, bent[corner].Position.X, 1e-2f, $"{entry.InfoId}: straight track keeps x" );
+					Assert.AreEqual( rest.Y, bent[corner].Position.Y, 1e-2f, $"{entry.InfoId}: straight track keeps the forward axis" );
+					Assert.AreEqual( rest.Z + definition.BendElevationLow, bent[corner].Position.Z, 0.05f, $"{entry.InfoId}: lifted by the elevation (engine up is Z)" );
+				}
+			}
+		}
+	}
+
 	/// <summary>The clip frame is the milliseconds since the start times speed (0.1 × the train's) times 0.03, wrapped into the clip.</summary>
 	[TestMethod]
 	public void TheWheelFrameIsTheElapsedTimeTimesTheScaledTrainSpeed()

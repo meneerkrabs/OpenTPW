@@ -159,7 +159,7 @@ internal sealed class CoasterAssets : IDisposable
 			{
 				if ( !string.IsNullOrEmpty( name ) && FindModel( name ) is { Kind: ModelFileKind.Geometry } geometry )
 				{
-					rig = new CoasterCarRig( geometry );
+					rig = new CoasterCarRig( geometry ) { Bend = CarTypes.Types[typeIndex].Bend };
 					// [BIN:TPW-EXE:0x43be10 wheel clip] a car of a type without the bend flag starts the model's animation id 5 (the letter m of the animation table: <model>m1, else <model>m), sub 0, looping on channel 0 (0x4732a0)
 					if ( !CarTypes.Types[typeIndex].Bend )
 						rig.SetWheelClip( FindWheelClip( name ) );

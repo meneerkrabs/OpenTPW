@@ -4,7 +4,7 @@ using NVector3 = System.Numerics.Vector3;
 namespace OpenTPW;
 
 /// <summary>One mesh part of a posed coaster model (a pylon or a car): the vertices (original units, engine axis order X, Z, Y; a pylon's are relative to its cell's corner, a car's to its pivot) and indices with the part's texture names.</summary>
-public sealed record CoasterModelPart( string MeshName, string[] Textures, Vertex[] Vertices, uint[] Indices, int NodeIndex = -1, Matrix4x4? Bake = null );
+public sealed record CoasterModelPart( string MeshName, string[] Textures, Vertex[] Vertices, uint[] Indices, int NodeIndex = -1, Matrix4x4? Bake = null, NVector3[]? Local = null );
 
 /// <summary>
 /// The node values the knot pass feeds a pylon's clips (<c>0x430ed0</c> → <c>0x430ca0</c>): the stored height parameter (node <c>+0xe8</c>), the yaw

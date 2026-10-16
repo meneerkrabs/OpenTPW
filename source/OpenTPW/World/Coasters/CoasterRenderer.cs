@@ -191,6 +191,8 @@ public sealed class CoasterRenderer : Entity
 		public required float YOffset { get; init; }
 		public required int Train { get; init; }
 		public required int Car { get; init; }
+		/// <summary>The index of the car's type: its metrics reach the bend tables.</summary>
+		public required int TypeIndex { get; init; }
 		/// <summary>The car-to-world matrix of the last update (original axes).</summary>
 		public Matrix4x4 World { get; set; } = Matrix4x4.Identity;
 		/// <summary>The controller time the car's wheel clip started at (set on the first update).</summary>
@@ -485,12 +487,12 @@ public sealed class CoasterRenderer : Entity
 					for ( var part = 0; part < parts.Length; part++ )
 					{
 						// a part whose texture coordinates follow the car's wheel clip has a model of its own: every car turns its wheels at its own speed
-						if ( rig.AnimatesUv( part ) )
+						if ( rig.IsDynamic( part ) )
 							(own ??= new Model?[parts.Length])[part] = assets.CreateOwnPartModel( rig, part );
 						parts[part] = new ModelEntity { Model = own?[part] ?? carModels[part], Name = "coaster car" };
 						carTriangles += rig.Parts[part].Indices.Length / 3;
 					}
-					cars.Add( new CarInstance { Rig = rig, Parts = parts, OwnModels = own, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
+					cars.Add( new CarInstance { Rig = rig, Parts = parts, OwnModels = own, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car, TypeIndex = typeIndex } );
 				}
 			}
 		}
@@ -525,6 +527,18 @@ public sealed class CoasterRenderer : Entity
 							own.UpdateVertices( vertices );
 					}
 				}
+				if ( car.Rig.Bend )
+				{
+					// [BIN:TPW-EXE:0x43ce20 bend car] a car of a bend type bends its mesh along the samples around it every tick (0x438800) instead of playing a clip: the tables take the car's coordinate, its direction (the third row of its matrix) and its type's extents
+					var metrics = Ride.Definition.CarTypeMetrics( car.TypeIndex );
+					var forward = new SVector3( car.World.M31, car.World.M32, car.World.M33 );
+					var tables = CoasterCarBend.Tables( Ride.Samples, Ride.Spacing, Ride.Definition.BendElevationLow, Ride.Definition.BendElevationHigh, metrics.RearExtent, metrics.FrontExtent, forward, coordinate );
+					for ( var partIndex = 0; partIndex < car.Parts.Length; partIndex++ )
+					{
+						if ( car.OwnModels?[partIndex] is { } own && car.Rig.BendVertices( partIndex, tables, Ride.Spacing ) is { } vertices )
+							own.UpdateVertices( vertices );
+					}
+				}
 				for ( var partIndex = 0; partIndex < car.Parts.Length; partIndex++ )
 				{
 					var part = car.Parts[partIndex];
@@ -541,12 +555,6 @@ public sealed class CoasterRenderer : Entity
 			{
 				if ( car.Train == train && car.Car == Ride.Definition.RideCameraCar && car.Rig.CameraSeat is { } local )
 				{
-					// [APPROX:COAST-034] the cars drive along their model's +Z, but the mine cart's camera node (and so its front row) faces -Z, the original's front: the seat is turned half a circle about its own up axis so the view looks along the track
-					if ( local.M33 < 0 )
-					{
-						local.M11 = -local.M11; local.M12 = -local.M12; local.M13 = -local.M13;
-						local.M31 = -local.M31; local.M32 = -local.M32; local.M33 = -local.M33;
-					}
 					return ObjectPlacement.SwapAxes( local * car.World ) * owner.ToEngine();
 				}
 			}

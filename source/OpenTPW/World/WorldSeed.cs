@@ -22,11 +22,17 @@ public readonly record struct WorldSeed( ulong Value )
 
 	public static WorldSeed Default => new( DefaultValue );
 
-	/// <summary>Seed of <see cref="GuestSimulation"/>'s <see cref="GuestRandom"/>.</summary>
+	/// <summary>Seed of a standalone <see cref="GuestSimulation"/>'s world generator (a level shares the park's one, <see cref="GeneratorState"/>).</summary>
 	public ulong GuestStream => Value;
 
-	/// <summary>Seed of <see cref="ParkEconomy.Random"/>.</summary>
+	/// <summary>Seed of <see cref="ParkEconomy.World"/>, the park's world generator.</summary>
 	public ulong EconomyStream => Value ^ EconomyKey;
+
+	/// <summary>
+	/// The state the park's one world generator (tp.exe 0x00516330) starts from (<see cref="WorldRng.StateFromSeed"/> of <see cref="EconomyStream"/>, the seed the economy that
+	/// holds it is built with), so that a level with and without an economy start the same.
+	/// </summary>
+	public uint GeneratorState => WorldRng.StateFromSeed( EconomyStream );
 
 	/// <summary>Seed of a park's <see cref="RideScriptWorld"/> (scripts created without an explicit seed draw from it).</summary>
 	public ulong ScriptStream => Value ^ ScriptKey;
@@ -44,7 +50,7 @@ public readonly record struct WorldSeed( ulong Value )
 }
 
 /// <summary>
-/// Every random stream state of a running park besides the economy's own (saved as <c>RandomState</c>),
-/// persisted in OpenTPW's park save so a save → load continues the same streams.
+/// Every random state of a running park: the one world generator (tp.exe 0x00516330, the original's <c>mRandomSeed</c>) that guests, staff, scripts and the economy draw from,
+/// and the sound chooser's seed, persisted in OpenTPW's park save so a save → load continues the same streams.
 /// </summary>
-public sealed record WorldRandomState( ulong Seed, ulong GuestRandom, ulong ScriptRandom, uint SoundSeed );
+public sealed record WorldRandomState( ulong Seed, uint Generator, uint SoundSeed );

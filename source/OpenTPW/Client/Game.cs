@@ -441,7 +441,7 @@ internal static class Game
 					for ( var radius = 0; radius < 40 && built == null; radius++ )
 						for ( var dx = -radius; dx <= radius && built == null; dx++ )
 							for ( var dy = -radius; dy <= radius && built == null; dy++ )
-								if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) == radius && level.IsUntouchedSite( entry, cellX + dx, cellY + dy, 0 ) )
+								if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) == radius && level.CheckFreeObject( entry, cellX + dx, cellY + dy, 0 ) == OriginalPlacementResult.Allowed )
 									built = level.PlaceObject( entry, cellX + dx, cellY + dy, 0 );
 					Log.Trace( $"--debug-object-effect: built {entry.DisplayName} (effect {entry.CreateParticleEffect}): {(built == null ? level.LastActionMessage : "placed")}." );
 					builtAtFrame = objectFrames;

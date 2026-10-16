@@ -131,7 +131,6 @@ public partial class Level
 		if ( !GameEditions.IsThemeParkInc && ArrivalVehicles.Available( Objects.Catalog ) )
 		{
 			Guests.ArrivalVehicles = new ArrivalVehicles( Objects );
-			Guests.WorldDraw = () => Park is { } park ? (uint)(park.Economy.Random.NextUInt64() >> 33) : 0u;
 		}
 	}
 
@@ -699,9 +698,12 @@ public partial class Level
 		return Objects.Check( entry, anchor.X, anchor.Y, rotation, out plan );
 	}
 
-	/// <summary>A site the smokes and demos may build on without demolishing or clearing anything of their own layout.</summary>
-	internal bool IsUntouchedSite( ObjectCatalogEntry entry, int x, int y, int rotation ) =>
-		CheckObject( entry, x, y, rotation, out var plan ) == OriginalPlacementResult.Allowed && plan.KeepsTheRest;
+	/// <summary><see cref="CheckObject(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing and clears no path (<see cref="ParkObjects.CheckFree"/>).</summary>
+	public OriginalPlacementResult CheckFreeObject( ObjectCatalogEntry entry, int x, int y, int rotation )
+	{
+		var anchor = GetCentredAnchor( entry, x, y, rotation );
+		return Objects.CheckFree( entry, anchor.X, anchor.Y, rotation );
+	}
 
 	public bool RemoveObjectAt( int x, int y )
 	{

@@ -1,30 +1,5 @@
 namespace OpenTPW;
 
-/// <summary>Deterministic SplitMix64 stream; independent of System.Random's implementation.</summary>
-// [APPROX:DET-014] guests draw from their own SplitMix64 stream seeded from the world seed, not from the original's shared world LCG reseeded to each new guest's id — evidence needed: DET-I2 port of WorldRng (docs/reverse/DET-plan.md §2.3, §4.3)
-public struct GuestRandom
-{
-	public ulong State;
-
-	public GuestRandom( ulong seed ) => State = seed;
-
-	public ulong NextULong()
-	{
-		var z = State += 0x9E3779B97F4A7C15UL;
-		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
-		z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
-		return z ^ (z >> 31);
-	}
-
-	/// <summary>Uniform integer in [0, maximumExclusive).</summary>
-	public int Next( int maximumExclusive ) => maximumExclusive <= 0 ? 0 : (int)(NextULong() % (ulong)maximumExclusive);
-	public int Next( int minimum, int maximumInclusive ) => minimum + Next( maximumInclusive - minimum + 1 );
-	public float NextFloat() => (NextULong() >> 40) / (float)(1UL << 24);
-
-	/// <summary>A word in [0, 2³¹): the range of the original's world generator, which returns the absolute value of its state (<c>0x105328</c>), for formulas that take a draw modulo something.</summary>
-	public uint NextWord() => (uint)(NextULong() >> 33);
-}
-
 /// <summary>Counts for overlays, logs and tests.</summary>
 public readonly record struct GuestStatistics( int InPark, int Walking, int Queueing, int OnRides, int Arriving, int Leaving, float AverageHappiness, GuestThought CommonThought, long Admissions );
 
@@ -34,7 +9,7 @@ public readonly record struct GuestStatistics( int InPark, int Walking, int Queu
 /// choice with the .sam decision weights, queues and rides through <see cref="IRideVisitorBridge"/>, and
 /// leaving. Queues follow the original state 10/11/12/13/14 handlers (docs/reverse/QUEUE-plan.md): guests
 /// join at the back cell, walk the queue cells to their position, stand and move up on park turns, and
-/// are called forward by the attraction. All randomness comes from one seeded <see cref="GuestRandom"/>
+/// are called forward by the attraction. All randomness comes from the park's one <see cref="WorldRng"/>
 /// (also the queue positions' sideways offsets); guests and attractions are
 /// updated in id order, so the same seed and inputs give the same <see cref="ComputeStateHash"/>.
 /// Rates and thresholds without an original source are labelled approximations in
@@ -64,7 +39,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private readonly List<Guest> guests = new();
 	private readonly Dictionary<int, Guest> byId = new();
 	private readonly List<IRideVisitorBridge> attractions = new();
-	private GuestRandom random;
+	private WorldRng random;
 	private int nextId = 1;
 	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
 	private long arrivalTimerStart;
@@ -75,6 +50,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private int arrivalVehicle = -1;
 	// Stop cells a leaving guest boarded from this park turn (one per cell and turn, see UpdateWaitingToGoHome).
 	private readonly HashSet<(int X, int Y)> boardedThisTurn = new();
+	// kept for the save format and the hash: the arrival lane is now the entrance draw of SpawnArrival, so this stays 0
 	private int laneToggle;
 	private int seenGridVersion = -1;
 	private readonly Dictionary<int, int> seenQueueEdits = new();
@@ -92,7 +68,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		Grid = grid;
 		Settings = settings;
 		Seed = seed;
-		random = new GuestRandom( seed );
+		random = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		isOpenForStep = IsOpenForStep;
 		separationForStep = SeparationForStep;
 	}
@@ -100,8 +76,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public GuestPathGrid Grid { get; }
 	public GuestSettings Settings { get; }
 	public ulong Seed { get; }
-	/// <summary>Current <see cref="GuestRandom"/> state (saved with the park; see <see cref="WorldRandomState"/>).</summary>
+	/// <summary>Current state of the world generator the guests draw from (saved with the park; see <see cref="WorldRandomState"/>).</summary>
 	public ulong RandomState => random.State;
+	/// <summary>The world generator (tp.exe 0x00516330) every guest decision draws from: the park's one stream, shared with the economy, the staff and the scripts.</summary>
+	public WorldRng World => random;
+	/// <summary>Makes <paramref name="world"/> the generator the guests draw from (the level's shared one); its state is not touched.</summary>
+	public void AttachWorld( WorldRng world ) => random = world ?? throw new ArgumentNullException( nameof( world ) );
 	public IReadOnlyList<Guest> Guests => guests;
 	public IReadOnlyList<IRideVisitorBridge> Attractions => attractions;
 	public long TickCount { get; private set; }
@@ -115,8 +95,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <see cref="WaitForBusSeconds"/>.
 	/// </summary>
 	public IArrivalVehicleHost? ArrivalVehicles { get; set; }
-	/// <summary>One draw of the world generator (tp.exe <c>0x00516330</c>, inlined at <c>0x0051A34B</c>; OpenTPW's economy stream, DET-014) for the vehicle of a pick-up without a group.</summary>
-	public Func<uint>? WorldDraw { get; set; }
 	/// <summary>The arrival vehicle at work (<see cref="ArrivalVehicleKind"/>), -1 for none.</summary>
 	public int ArrivalVehicle => arrivalVehicle;
 	/// <summary>The park turn the arrival timer reads: the economy's when attached, else <see cref="ParkTurn"/>.</summary>
@@ -172,8 +150,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>Raised when the script takes a queued guest: (guest, attraction, wait in park turns from joining).</summary>
 	public event Action<Guest, IRideVisitorBridge, long>? QueueWaitCompleted;
 
-	/// <summary>Continues the guest stream from a saved state.</summary>
-	public void RestoreRandomState( ulong state ) => random = new GuestRandom( state );
+	/// <summary>Continues the world generator from a saved state.</summary>
+	public void RestoreRandomState( uint state ) => random.Restore( state );
 
 	public Guest? Find( int id ) => byId.TryGetValue( id, out var guest ) ? guest : null;
 
@@ -265,7 +243,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private Guest Create()
 	{
+		// [BIN:TPW-EXE:0x004F89E1 base speed draw] the thing base constructor 0x004F8940 draws first: R mod 5 (unsigned) indexes the speed table {60, 80, 100, 120, 140} (0x0075C7F8) for +0xC0
+		var baseSpeed = GuestSpeed.BaseSpeeds[(int)random.Next( (uint)GuestSpeed.BaseSpeeds.Length )];
 		// [BIN:STP-PPC:0x100E7644 guest constructor] the starting values come from GuestStart (ORACLE.md F25): eight draws in the constructor's order
+		// [BIN:TPW-EXE:0x004FAFF8 guest constructor draws] the person constructor 0x004FAEC0 takes the eight draws of GuestStart right after the base constructor's (0x004FAFF8, 0x004FB01F, 0x004FB046, 0x004FB085, 0x004FB0AB, 0x004FB0D1, 0x004FB109, 0x004FB114), all from the one world generator
 		var start = GuestStart.FromDraws( Settings.Types, Settings.ExitLevelSeconds, Settings.ExitLevelVarSeconds, Settings.StartingCashVarPercent, () => random.NextWord(),
 			Settings.PrankeryLikelihood, nextId );
 		var guest = new Guest( nextId++, start.Type );
@@ -277,24 +258,50 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.Toilet = start.Toilet;
 		guest.Nausea = start.Illness;
 		guest.ExitLevel = start.ExitLevel;
-		guest.OffsetX = (random.NextFloat() - 0.5f) * 0.5f;
-		guest.OffsetY = (random.NextFloat() - 0.5f) * 0.5f;
-		guest.BaseSpeed = GuestSpeed.BaseSpeeds[random.Next( GuestSpeed.BaseSpeeds.Length )];
+		// [BIN:TPW-EXE:0x004FB19E guest reseed] the constructor then reseeds the world generator with the thing's id (zero-extended u16, through 0x0050B350), so everything the guest and the world draw after its creation starts from a state that depends on the id alone
+		// [APPROX:DET-014] OpenTPW's guest ids are its own counter (WALK-010), not the original's thing ids (a pool slot of the 10239), so the reseed uses the id the guest has here
+		random.Reseed( (ushort)guest.Id );
+		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's bank count (0x00541F85) for the guest's sprite bank +0x20: the draw is taken, its value is not used (the sprite choice is OpenTPW's own, GUEST-017)
+		random.NextWord();
+		// A guest placed without the arrival constructor's position draws (the park's own start cell, tests, imports) is spread by a stable hash of its id: OpenTPW's own placement
+		// jitter, not a draw of the world generator (presentation of the start; the original sets +0x18/+0x1A from the entrance draws of SpawnArrival)
+		var jitter = PlacementJitter( guest.Id );
+		guest.OffsetX = jitter.X;
+		guest.OffsetY = jitter.Y;
+		guest.BaseSpeed = baseSpeed;
 		guests.Add( guest );
 		byId.Add( guest.Id, guest );
 		return guest;
 	}
 
+	/// <summary>A stable offset inside a cell (±0.25 of a cell each way) from the guest id alone: the start point of a guest that was not made by the arrival constructor.</summary>
+	private static (float X, float Y) PlacementJitter( int id )
+	{
+		var z = (ulong)(uint)id * 0x9E3779B97F4A7C15UL + 0x9E3779B97F4A7C15UL;
+		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+		z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+		z ^= z >> 31;
+		return (((z >> 40) / (float)(1UL << 24) - 0.5f) * 0.5f, (((z & 0xFFFFFF)) / (float)(1UL << 24) - 0.5f) * 0.5f);
+	}
+
 	/// <summary>Spawns a guest at a bus stop; it crosses the road, pays at the ticket booth and enters.</summary>
+	// [BIN:TPW-EXE:0x004FB201 arrival entrance] a guest whose cell is not a path cell (0x004FA990 false, every guest of the arrival vehicle) takes two draws after its reseed: R & 1 picks the entrance cell (0x004D8710: the cell at world words 0x007855DC or 0x007855E4 with the row 0x007855E0) and the low byte of R is the sideways point in the cell (0x004FB21C), the other byte is 0xC8; 0x004FA5F0 stores both as the position (+0x18, +0x1A)
+	// [APPROX:DET-014] the two entrance cells are the first cells of the settings' lanes A and B (Arrival.Lane), whose link to the world words 0x007855DC..0x007855E4 is not read; the lane the guest then walks is the one its entrance starts
 	public Guest? SpawnArrival()
 	{
-		var lane = PickLane( laneToggle++ );
-		if ( lane == null )
+		var a = ValidLane( Settings.ArrivalLaneA );
+		var b = ValidLane( Settings.ArrivalLaneB );
+		if ( a == null && b == null )
 		{
 			var start = FindSpawnCell();
 			return start == null ? null : SpawnInPark( start.Value.X, start.Value.Y );
 		}
 		var guest = Create();
+		var side = random.NextWord() & 1;
+		var sideways = (int)(random.NextWord() & 0xFF);
+		var lane = (side == 0 ? a ?? b : b ?? a)!;
+		guest.OffsetX = sideways / 256f - 0.5f;
+		guest.OffsetY = 0xC8 / 256f - 0.5f;
 		guest.Lane = lane;
 		guest.LaneIndex = 1;
 		guest.LaneReversed = false;
@@ -315,15 +322,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.State = GuestState.DoingNothing;
 		guest.TimeInParkSeconds = 0;
 		return guest;
-	}
-
-	private (int X, int Y)[]? PickLane( int index )
-	{
-		var a = ValidLane( Settings.ArrivalLaneA );
-		var b = ValidLane( Settings.ArrivalLaneB );
-		if ( a != null && b != null )
-			return (index & 1) == 0 ? a : b;
-		return a ?? b;
 	}
 
 	private (int X, int Y)[]? ValidLane( (int X, int Y)[]? lane ) =>
@@ -535,7 +533,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			int kind;
 			if ( tried == 0 )
-				kind = size == 0 ? (int)((WorldDraw?.Invoke() ?? 0) % 3) : size - 1;
+				kind = size == 0 ? (int)(random.NextWord() % 3) : size - 1;
 			else if ( (tried & 4) == 0 )
 				kind = ArrivalVehicleKind.Ferry;
 			else if ( (tried & 2) == 0 )
@@ -646,7 +644,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// on the guest's phase the exit counter loses 1 and the needs grow or cost happiness, the toilet speed term follows the toilet byte, and every 20th turn a 0
 	/// enters the temporary history.
 	/// </summary>
-	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, but the pick's one-in-ten draw is a hash of the guest and the turn where 0x501919 takes a world draw on every needs phase of a guest outside states 16 and 17 on a park cell; the pick's voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0) is not played; bubbles are always on where 0x50BE80 skips them online (0xFB3B7C = 1; none of its 22 callers passes the override) and while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); a load puts back the row an object's saved state implies — evidence needed: whether the original saves or rebuilds the environment table, and what bits 0x16 of 0x790AB0 mean
+	// [APPROX:GUEST-006] the environment sources, the thought pick 0x4FC8A0, the setters of 0x50BE80, the bubble's 12 turns and its cooldown by priority follow tp.exe, but the pick's voice (0x4FAA00, [0x803A24] event 0x85 for thought 4 when the thing id's low nibble is 0) is not played; bubbles are always on where 0x50BE80 skips them online (0xFB3B7C = 1; none of its 22 callers passes the override) and while bits 0x16 of 0x790AB0 are set; a show's row 7 comes off once (FireworksSpent) where 0x4E0B90 removes it whenever VAR_STATUS is 1, a variable native code also writes (0x4E0900, 0x4E0AC0); a load puts back the row an object's saved state implies — evidence needed: whether the original saves or rebuilds the environment table, and what bits 0x16 of 0x790AB0 mean
 	private void UpdateNeedsTurn( Guest guest )
 	{
 		var turn = (uint)ParkTurn;
@@ -662,8 +660,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		if ( guest.State is not (GuestState.Using or GuestState.HeldByGuard) && IsOnParkCell( guest ) )
 		{
-			// [BIN:TPW-EXE:0x00501919 thought pick] outside states 16 and 17 and on a park cell (0x004FA990), a world draw modulo 10 of 0 runs the pick 0x004FC8A0
-			if ( GuestThoughts.PickDraw( guest.Id, turn ) % GuestThoughts.PickOdds == 0
+			// [BIN:TPW-EXE:0x00501919 thought pick] outside states 16 and 17 and on a park cell (0x004FA990), a world draw modulo 10 of 0 runs the pick 0x004FC8A0 (the draw is the park's one generator's, taken whenever the condition holds)
+			if ( random.NextWord() % GuestThoughts.PickOdds == 0
 				&& GuestThoughts.Pick( guest.Hunger, guest.Thirst, guest.Toilet, guest.Nausea, guest.Happiness, () => MessyShare( guest ) ) is { } thought )
 				Think( guest, thought );
 			// [BIN:TPW-EXE:0x00501932 balloon life] then +0x214 loses 1 when it is above 0, and at 0 the balloon goes (0x004FE950)
@@ -1072,7 +1070,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.MediumHappinessChange );
 			if ( ((int)guest.Happiness & 0xFF) != 0 )
 			{
-				// [APPROX:ARRIVAL-006] the N + 1 turns of the wait are timed as seconds of the frame clock (248 ms each), not counted at park-turn boundaries, turns the original's loop drops (at most 3 per pass, 0x0054F680) are not dropped, and the draws come from the guest stream rather than the world generator 0x00516330 (DET-014)
+				// [APPROX:ARRIVAL-006] the N + 1 turns of the wait are timed as seconds of the frame clock (248 ms each), not counted at park-turn boundaries, turns the original's loop drops (at most 3 per pass, 0x0054F680) are not dropped
 				guest.StateTimer = wait * ParkCalendar.TurnMilliseconds / 1000f;
 				return;
 			}
@@ -2039,7 +2037,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		}
 		// 8. A 1-in-10 facing change of −400..+399 of 2048 of a turn.
-		// [BIN:TPW-EXE:0x004FFFF0 queue facing change] one draw (0x00516330) mod 10 must be 0 (else return), then a second draw gives heading +0x1C += (r mod 800) − 400, wrapped by 0x800; OpenTPW draws both from its GuestRandom (DET-014) and turns the heading vector by the same angle
+		// [BIN:TPW-EXE:0x004FFFF0 queue facing change] one draw (0x00516330) mod 10 must be 0 (else return), then a second draw gives heading +0x1C += (r mod 800) − 400, wrapped by 0x800; OpenTPW draws both from the world generator and turns the heading vector by the same angle
 		if ( random.Next( 10 ) != 0 )
 			return;
 		var angle = (random.Next( FacingChangeRange ) - FacingChangeRange / 2) * MathF.Tau / 2048;
@@ -2244,7 +2242,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// type's own effects (<see cref="UseEffects"/>): thirst and hunger fall, illness and happiness rise. A relief object still sets the toilet meter to 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x100EA318 ride outcome] executed by the PowerPC oracle (ride-outcome, 561 inputs; C# agrees)
-	// [APPROX:GUEST-005] the use routine 0x004FE1E0 is followed in its order except a won sideshow's tail (0x004FE802..0x004FE8D9, type kind +0x4AC 2: +0x1D0 += 1, happiness += trunc(medium step × log2(object +0x188 / object +0x194)), "Sideshow won - happiness up", then one discarded world draw), the thirst or hunger sound (0x004FAA00, cat_kids 0x83 when ThirstEffect is above HungerEffect, 0x84 when below) and its guest event records (0x0050C100: 8, 0x11, 0x12; read only by the debug dump 0x004FAA60); the small-portion draws come from OpenTPW's guest stream (DET-014) — evidence needed: none (read)
+	// [APPROX:GUEST-005] the use routine 0x004FE1E0 is followed in its order except a won sideshow's tail (0x004FE802..0x004FE8D9, type kind +0x4AC 2: +0x1D0 += 1, happiness += trunc(medium step × log2(object +0x188 / object +0x194)), "Sideshow won - happiness up", then one discarded world draw), the thirst or hunger sound (0x004FAA00, cat_kids 0x83 when ThirstEffect is above HungerEffect, 0x84 when below) and its guest event records (0x0050C100: 8, 0x11, 0x12; read only by the debug dump 0x004FAA60); the small-portion draws are taken (0x004FE43C, 0x004FE48E) but the tail's one (0x004FE8D9) is not — evidence needed: none (read)
 	private void ApplyVisit( Guest guest, IRideVisitorBridge ride )
 	{
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
@@ -2316,16 +2314,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FE615 appearance effect] type +0x15C: 1 creates the balloon model (+0x210, sprite set 10) and sets +0x214 to the balloon life, guest event 12; 2 with +0x24 == 2 ("Customer returning a costume") sets +0x24 to 0 and the sprite bank +0x20 back, otherwise +0x24 = 2, the costume bank and guest event 11; another value logs "Balance file error"
 	// [BIN:TPW-EXE:0x004FE615 balloon life] the balloon's life is BalloonLife of the shop's own quality of goods (+0x18C: 50 at build, 0x004DB389; 50 × the shop window's quality step, 0x004B0AA0, 0x004B0AE0), mirrored from ParkObjectState.QualityOfGoods
-	// [APPROX:ECON-044] the balloon model's world reseed (0x00516370, DET-014) is not followed and the guest events 11 and 12 (0x0050C100, a 32-entry ring in the guest) are not recorded; a balloon's life counts down, and the challenge percentages count, while the guest is in the park by its state and on the grid rather than on a cell of type 0, 1, 3, 9 or 10 (0x004FA990, as ECON-027) — evidence needed: none for the rules (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0); the reader of the guest event ring is untraced
-	private static void ApplyAppearance( Guest guest, int effect, int qualityOfGoods )
+	// [BIN:TPW-EXE:0x004FE6FC balloon variant draw] a balloon reseeds the world generator with the guest's thing id (0x00516370) and draws the model's sprite set (0x00541F70 with category 10) and colour (0x00541FD0); returning a costume reseeds the same way (0x004FE6A1) and draws the guest's own bank (category 0), putting one on draws the costume bank (category 2, 0x004FE652) without a reseed
+	// [APPROX:ECON-044] the guest events 11 and 12 (0x0050C100, a 32-entry ring in the guest) are not recorded; a balloon's life counts down, and the challenge percentages count, while the guest is in the park by its state and on the grid rather than on a cell of type 0, 1, 3, 9 or 10 (0x004FA990, as ECON-027) — evidence needed: none for the rules (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0); the reader of the guest event ring is untraced
+	private void ApplyAppearance( Guest guest, int effect, int qualityOfGoods )
 	{
 		switch ( effect )
 		{
 			case GuestAppearance.Balloon:
+				random.Reseed( (ushort)guest.Id );
+				random.NextWord();   // the balloon model's sprite set (0x00541F70 with 10) and its colour (0x00541FD0): both draws are taken, their values are not used (GUEST-017)
+				random.NextWord();
 				guest.HasBalloon = true;
 				guest.BalloonLife = GuestAppearance.BalloonLife( qualityOfGoods );
 				break;
 			case GuestAppearance.Costume:
+				if ( guest.InCostume )
+					random.Reseed( (ushort)guest.Id );
+				random.NextWord();   // the sprite bank's variant (the guest's own on return, the costume's on putting one on): taken, not used
 				guest.InCostume = !guest.InCostume;
 				break;
 		}
@@ -2370,7 +2375,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// ---- Snapshots (park save/load) ------------------------------------------------------------
 
 	/// <summary>
-	/// Captures the whole guest system between ticks as a typed deep copy: the explicit <see cref="GuestRandom"/>
+	/// Captures the whole guest system between ticks as a typed deep copy: the world generator's
 	/// state, tick/counters, the arrival stream, every guest in update order and every registered attraction's queue
 	/// state (with the simulation's seen queue-edit counters). Economy bindings (<see cref="Payments"/>,
 	/// <see cref="ArrivalClock"/>, <see cref="ParkPoints"/>, <see cref="ArrivalsHalted"/>) are live references the
@@ -2397,6 +2402,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			SchemaVersion = GuestSimulationSnapshot.CurrentSchemaVersion,
 			Seed = Seed,
 			RandomState = random.State,
+			WorldGenerator = random.State,
 			TickCount = TickCount,
 			TimeSeconds = TimeSeconds,
 			NextGuestId = nextId,
@@ -2925,7 +2931,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		seenQueueEdits.Clear();
 		foreach ( var (attractionId, seen) in snapshot.SeenQueueEdits )
 			seenQueueEdits[attractionId] = seen;
-		random = new GuestRandom( snapshot.RandomState );
+		if ( snapshot.WorldGenerator is { } generator )
+			random.Restore( generator );
 		nextId = snapshot.NextGuestId;
 		TickCount = snapshot.TickCount;
 		TimeSeconds = snapshot.TimeSeconds;

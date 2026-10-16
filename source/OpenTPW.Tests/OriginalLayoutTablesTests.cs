@@ -101,6 +101,23 @@ public class OriginalLayoutTablesTests
 	}
 
 	[TestMethod]
+	public void TheCashPointerFollowsTheToolsCostAgainstTheBalance()
+	{
+		// [BIN:TPW-EXE:0x523662 blueprint cash flag] cost > balance, equal allowed
+		Assert.IsTrue( OpenTPW.Hud.ParkHud.CashPointerShown( 4, 2500, 2499, null ) );
+		Assert.IsFalse( OpenTPW.Hud.ParkHud.CashPointerShown( 4, 2500, 2500, null ), "equal is allowed" );
+		Assert.IsFalse( OpenTPW.Hud.ParkHud.CashPointerShown( 4, null, 0, null ), "no tool cost" );
+		var stopped = new SegmentResult( (0, 0), System.Array.Empty<(int X, int Y)>(), 0, CellBuildResult.NotEnoughMoney, false );
+		var fine = stopped with { };
+		Assert.IsTrue( OpenTPW.Hud.ParkHud.CashPointerShown( 1, null, 0, stopped ), "a path line stopped for money" );
+		Assert.IsTrue( OpenTPW.Hud.ParkHud.CashPointerShown( 3, null, 0, stopped ), "a queue line stopped for money" );
+		Assert.IsFalse( OpenTPW.Hud.ParkHud.CashPointerShown( 1, null, 0, new SegmentResult( (0, 0), System.Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) ) );
+		Assert.IsFalse( OpenTPW.Hud.ParkHud.CashPointerShown( 0, 9999, 0, stopped ), "other tools" );
+		Assert.AreEqual( OriginalPointers.Cash, OriginalPointers.ForTool( 4, cash: true ), "cash overrides the placing pointer" );
+		Assert.IsNotNull( fine );
+	}
+
+	[TestMethod]
 	public void TheToolSwitchPicksThePointerWithItsFlagOverrides()
 	{
 		Assert.AreEqual( 3, OriginalPointers.ForTool( 1 ), "path tool" );

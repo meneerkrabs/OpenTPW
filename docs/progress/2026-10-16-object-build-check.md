@@ -17,5 +17,10 @@ commits), which sends each footprint cell through cell op `0x204` of `0x532FC0` 
 - **Money.** The pending cost (`0x52FBC0`, the type's price `+0x1B8`, set by the hover) above the balance refuses the build unless
   `0x785A2C` is set; OpenTPW's economy purchase already refuses it.
 
-The rest of the object rules (objects on plain path cells, the access cells, paths and queues over scenery) followed in the same
-pull request (2026-10-16-objects-over-paths-and-access-cells.md).
+The new object is built before anything is demolished, so a failed build leaves the park as it was. The native smokes', park-resume
+fixtures' and demo builders' site searches use `ParkObjects.CheckFree` / `Level.CheckFreeObject`, which treat an overwrite as
+occupied, so they keep demolishing nothing. Verified with the full test suite (5029 passing with game data, 109 skipped).
+
+Still open (RIDES-018): an object may stand on a path cell without NoModify (`0x535D21`), whose commit clears the path
+(`0x534549`); the entrance and exit outside cells take the path rule (cell op `0x201`, `0x5298B9`, `0x529A2F`); and the path and
+queue tools use the same comparison with `0x818C10` = 2 and 3, so they replace scenery.

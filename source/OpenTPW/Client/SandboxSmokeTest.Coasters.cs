@@ -31,7 +31,7 @@ internal sealed partial class SandboxSmokeTest
 		for ( var index = 0; index < grid.Width * grid.Height && anchor == null; index++ )
 		{
 			var candidate = (X: index % grid.Width, Y: index / grid.Width);
-			if ( level.Objects.Check( entry!, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed )
+			if ( level.Objects.CheckFree( entry!, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed )
 				continue;
 			if ( CoasterBuilder.StationEnds( entry!.Shape, candidate.X, candidate.Y, 0 ) is not { } ends )
 				continue;

@@ -41,7 +41,7 @@ internal sealed partial class SandboxSmokeTest
 		for ( var index = 0; index < grid.CountX * grid.CountY && site.X < 0; index++ )
 		{
 			var cell = (X: index % grid.CountX, Y: index / grid.CountX);
-			if ( !Clickable( cell, out _ ) || !level.IsUntouchedSite( entry, cell.X, cell.Y, 0 ) )
+			if ( !Clickable( cell, out _ ) || level.CheckFreeObject( entry, cell.X, cell.Y, 0 ) != OriginalPlacementResult.Allowed )
 				continue;
 			var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
 			var door = ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, 0 ).FirstOrDefault( point => point.Kind == ObjectCellKind.Entrance );

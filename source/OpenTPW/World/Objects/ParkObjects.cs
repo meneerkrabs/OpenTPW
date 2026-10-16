@@ -181,6 +181,16 @@ public sealed class ParkObjects
 	/// <summary>The overwrite priority the queue tool places with (tp.exe <c>0x818C10</c> = 3).</summary>
 	public const int QueueOverwritePriority = 3;
 
+	/// <summary>
+	/// <see cref="Check(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing and clears no path: an overwrite or a cleared path
+	/// counts as occupied (fixtures and demo builders keep their own layout).
+	/// </summary>
+	public OriginalPlacementResult CheckFree( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	{
+		var result = Check( entry, anchorX, anchorY, rotation, out var plan );
+		return result == OriginalPlacementResult.Allowed && !plan.KeepsTheRest ? OriginalPlacementResult.Occupied : result;
+	}
+
 	private OriginalPlacementResult CheckFootprint( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, List<OriginalObject> overwritten, List<(int X, int Y)> paths )
 	{
 		if ( !ObjectFootprint.IsValidRotation( rotation ) )
@@ -217,7 +227,10 @@ public sealed class ParkObjects
 			terrain = OriginalPlacementResult.Allowed;
 		if ( terrain != OriginalPlacementResult.Allowed )
 			return terrain;
-		return CheckOwner( entry, x, y, overwritten ) ?? (IsReserved?.Invoke( x, y ) == true ? OriginalPlacementResult.Occupied : OriginalPlacementResult.Allowed);
+		// the host's reservation (queue and track cells, the Totem) refuses whatever owns the cell
+		if ( IsReserved?.Invoke( x, y ) == true )
+			return OriginalPlacementResult.Occupied;
+		return CheckOwner( entry, x, y, overwritten ) ?? OriginalPlacementResult.Allowed;
 	}
 
 	/// <summary>The object at (x, y) against the placed type's overwrite priority: null without one, Occupied when it does not give way.</summary>
@@ -299,16 +312,20 @@ public sealed class ParkObjects
 		result = Check( entry, anchorX, anchorY, rotation, out var plan );
 		if ( result != OriginalPlacementResult.Allowed )
 			return null;
-		foreach ( var item in plan.Overwritten )
-			Remove( item );
+		// the new object is built (models, script) before anything is demolished or cleared, so a failed build leaves the park as it was;
+		// like Add, its script draws from the world generator (DET-013)
+		var item = new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false );
+		foreach ( var victim in plan.Overwritten )
+			Remove( victim );
 		foreach ( var (x, y) in plan.ClearedPaths )
 			ClearPath?.Invoke( x, y );
-		return Add( entry, anchorX, anchorY, rotation, open );
+		return Register( item );
 	}
 
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
 	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true ) =>
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open ) );
+		// the placement ordinal stays the object's creation seed (identity and save bookkeeping); its script draws from the world generator like the original's (DET-013)
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false ) );
 
 	/// <summary>
 	/// Places a saved object back (<see cref="ParkLayoutSnapshot"/> restore): the placement rules of <see cref="Add"/>
@@ -319,7 +336,7 @@ public sealed class ParkObjects
 	/// <see cref="RestoreSeedAllocator"/> so objects placed after the load continue the saved seed sequence.
 	/// </summary>
 	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId ) =>
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, seed, open, attractionId ) );
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, seed, open, attractionId, seedScript: false ) );
 
 	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
 	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.

@@ -232,7 +232,7 @@ public sealed partial class ParkHud
 				if ( right > left && bottom > top )
 					context.Batch.AddRectangle( new UiRect( left, top, right - left, bottom - top ), color );
 			}
-			// [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art; the original colours a cell from the tables 0xf86a28-0xf86c20 (filled at run time; the per-object ones through 0x5f09a0 from a value) and outlines it where its neighbour differs (0x5f2380) — evidence needed: those colour tables
+			// [APPROX:UI-086] live paths/queues and placed-object footprints use plain coloured cells over the original map art; the original colours a cell from the tables 0xf86a28-0xf86c20 (filled at run time; the per-object ones through 0x5f09a0 from a value) and outlines it where its neighbour differs (0x5f2380) — evidence needed: which table entry and gradient value each cell kind and layer mode of 0x5f2380 uses (the base colours are immediates written by 0x5f0700)
 			if ( imagePath == null )
 			{
 				// [EXT:sandbox-map] the generic sandbox has no shipped theme map image; its live grid and heights form a simple terrain base (OpenTPW content)

@@ -49,7 +49,7 @@ internal sealed partial class SandboxSmokeTest
 				var rotation = index % 4 * 90;
 				var site = Enumerable.Range( 0, 41 * 41 ).Select( cellIndex => (X: siteX - 20 + cellIndex % 41, Y: siteY - 20 + cellIndex / 41) )
 					.OrderBy( cell => Math.Abs( cell.X - siteX ) + Math.Abs( cell.Y - siteY ) )
-					.FirstOrDefault( cell => cell.X >= 0 && cell.Y >= 0 && level.IsUntouchedSite( entry, cell.X, cell.Y, rotation ), (X: -1, Y: -1) );
+					.FirstOrDefault( cell => cell.X >= 0 && cell.Y >= 0 && level.CheckFreeObject( entry, cell.X, cell.Y, rotation ) == OriginalPlacementResult.Allowed, (X: -1, Y: -1) );
 				if ( site.X < 0 )
 					continue;
 				var cash = economy?.Balance ?? 0;

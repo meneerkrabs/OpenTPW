@@ -17,8 +17,8 @@ public class StaffCandidateDrawTests
 	{
 		var settings = EconomyTestData.Settings();
 		var staff = new ParkStaff( settings );
-		var random = new DeterministicRandom( 0x1234 );
-		var replay = new DeterministicRandom( 0x1234 );
+		var random = new WorldRng( 0x1234 );
+		var replay = new WorldRng( 0x1234 );
 		staff.CreateInitialPool( random, 0 );
 		var taken = new HashSet<(StaffType, int)>();
 		var expected = new List<(StaffType Type, int Name, int Grade)>();
@@ -26,8 +26,8 @@ public class StaffCandidateDrawTests
 		{
 			for ( var count = 0; count < Math.Min( role.BeginningNumberInPool, Math.Max( role.MaximumInPool, role.MinimumInPool ) ); count++ )
 			{
-				replay.NextUInt64(); // the sprite variant, 0x541f70
-				replay.NextUInt64(); // discarded, 0x50762d
+				replay.NextWord(); // the sprite variant, 0x541f70
+				replay.NextWord(); // discarded, 0x50762d
 				var raw = (role.AverageGrade + replay.Next( 3 ) - 1) & 0xFF;
 				var grade = raw > BalanceSettings.GradeCount - 1 ? BalanceSettings.GradeCount - 1 : raw;
 				int name, draws = 0;

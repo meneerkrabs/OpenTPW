@@ -5,15 +5,16 @@ A second audio pass over tp.exe via REA, building on the earlier audio, advisor,
 - **Retired AUDIO-034 (sound chains):** `SoundChain` now follows tp.exe. The link is walked when the next child is made, with the
   parameter of that moment (`0x6bdb50` -> `0x6bdbb0` -> `0x6c3e00`). A sound without links makes the chain start over at the first
   sound on the next tick. Links that exist but do not cover the parameter write 0x7f into the root's parameter byte and set root
-  flag 0x40 (`0x6c3f49`); nothing in the sound library clears it, so the chain never makes another child. The pick is
+  flag 0x40 (`0x6c3f49`); only the root's parameter setter (`0x6bda90`) clears it, and only for a stored byte other than 0x7f, so the chain makes no child
+  until a different parameter is set (`SoundChain.Parameter`; the ride scripts set it only at the start). The pick is
   `ror13(state) % total`, drawn only when a link covers it. The old `Resume()` is gone.
 - **Retired AUDIO-033 (rolloff), reversing the earlier fragment:** the earlier sweep
   (`2026-10-16-audio-advisor-effects-and-models-sweep.md`) said QMixer's distance law matches OpenTPW's form and left the rolloff value
   open at 0.8. The exponent is now 0.2: `0x6b9bb0` returns 0.2 (`0x70a624`) when the sound system object's flag 0x40 is set and
   0.8 (`0x70a628`) otherwise; `0x6b9006` sets the flag from descriptor bit 0x100 unless the capability filter `0x6b7d70` clears it;
   the driver factory `0x6c4190` builds the QMixer class first, whose +0x4c is `mov al,1` (`0x5d1400`), so the filter never clears it.
-  Positioned voices are louder toward the edge of their range. The step "the factory builds QMixer first" comes from a short
-  disassembly of `0x6c4190` and `0x6d2d70` and is not yet re-verified.
+  Positioned voices are louder toward the edge of their range. The factory step was re-verified in review (vtable `0x711b08` +0x4c
+  is `0x5d1400`; the fallback class `0x6d1e30` has `xor al, al`); it assumes the QMixer class initialises (`0x6d2de0`).
 - **Narrowed AUDIO-038 (voice pool):** equal ranks keep the newer voice (`0x6b6a80`, `0x6b6bc0`); rank 0 never enters the pool
   (`0x6b6ba0`). Still unknown: how a stopped loop or sentence resumes.
 - **Narrowed AUDIO-003 (sample delay):** the start delay is drawn after volume and pitch (`0x6bc2d0`, `0x6bc4f4`); a non-chain voice

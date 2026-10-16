@@ -32,7 +32,18 @@ public sealed class SoundChain
 	private bool halted;
 
 	/// <summary>The value the links are matched against (the original's per-voice parameter; for a scream, clamp((operand + script speed) / 2, 0, 100)).</summary>
-	public int Parameter { get; set; }
+	public int Parameter
+	{
+		get => parameter;
+		set
+		{
+			parameter = value;
+			// [BIN:TPW-EXE:0x6bda90 held-chain parameter setter] the root's setter (vtable 0x70a2e0 +0x28) writes the slot (0x6bbb80) and then clears the root flag 0x40 unless the stored byte is 0x7f, so a parameter set after a halt restarts the walk at the next tick
+			if ( halted && value != HaltedParameter )
+				halted = false;
+		}
+	}
+	private int parameter;
 	public bool IsStopped => stopped;
 	/// <summary>The chain's place (null: flat) and range, for the voice pool (<see cref="SoundEventSystem.Pump"/>).</summary>
 	internal Vector3? Position => position;
@@ -72,8 +83,8 @@ public sealed class SoundChain
 					started = false;
 					return;
 				case LinkWalk.Uncovered:
-					// [BIN:TPW-EXE:0x6c3f49 uncovered parameter] links exist but none holds the parameter: 0x7f goes into the root's parameter byte and the root flag 0x40 is set; its tick 0x6bdae0 does nothing while flags & 0x50, and no instruction of the sound library clears 0x40 (the parameter setter 0x6bbb80 writes the slot only), so the root makes no child again; the voice lives until it is stopped
-					Parameter = HaltedParameter;
+					// [BIN:TPW-EXE:0x6c3f49 uncovered parameter] links exist but none holds the parameter: 0x7f goes into the root's parameter byte and the root flag 0x40 is set; its tick 0x6bdae0 does nothing while flags & 0x50, so the root makes no child until a parameter is set to something other than 0x7f (the root's setter 0x6bda90 clears 0x40 then, see Parameter); the voice lives until it is stopped
+					parameter = HaltedParameter;
 					halted = true;
 					return;
 				default:
@@ -103,7 +114,7 @@ public sealed class SoundChain
 	/// <summary>The value the root's parameter byte takes when no link covers the parameter (tp.exe 0x6c3f4c).</summary>
 	internal const int HaltedParameter = 0x7f;
 
-	/// <summary>True once no link covered the parameter: the chain makes no further child.</summary>
+	/// <summary>True once no link covered the parameter: the chain makes no further child until a parameter other than 0x7f is set.</summary>
 	internal bool IsHalted => halted;
 
 	/// <summary>The outcome of walking the links of the newest child's sound.</summary>

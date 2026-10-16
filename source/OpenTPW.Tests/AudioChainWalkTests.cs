@@ -78,7 +78,7 @@ public class AudioChainWalkTests
 	}
 
 	[TestMethod]
-	public void LinksThatDoNotHoldTheParameterHaltTheChainForGood()
+	public void LinksThatDoNotHoldTheParameterHaltTheChainUntilAParameterIsSet()
 	{
 		var (category, _) = Category( Sound( 1, Link( 2, 10, 20 ) ), Sound( 1 ) );
 		var chain = system.StartChain( category, 5, AudioChannel.Effects, 50, null )!;
@@ -89,14 +89,21 @@ public class AudioChainWalkTests
 		Assert.IsTrue( chain.IsHalted, "links exist, none holds 50" );
 		Assert.AreEqual( SoundChain.HaltedParameter, chain.Parameter, "0x7f goes into the root's parameter byte" );
 		Assert.IsFalse( chain.IsStopped, "the voice lives until it is stopped" );
-		// nothing of the sound library clears the root flag 0x40: a parameter that a link would now cover does not restart the walk
-		chain.Parameter = 15;
+		// without a parameter call nothing clears the root flag 0x40: no further child
 		MakeDue( chain );
 		var voices = mixer.Voices.Count;
 		system.Pump();
 		system.Pump();
 		Assert.AreEqual( voices, mixer.Voices.Count, "no further child" );
 		Assert.IsTrue( chain.IsHalted );
+		// 0x6bda90: the root's parameter setter keeps the flag only when the stored byte is 0x7f
+		chain.Parameter = SoundChain.HaltedParameter;
+		Assert.IsTrue( chain.IsHalted, "0x7f leaves the flag set" );
+		chain.Parameter = 15;
+		Assert.IsFalse( chain.IsHalted, "any other value clears the flag" );
+		system.Pump();
+		Assert.IsFalse( chain.IsHalted );
+		Assert.AreEqual( 1, Field<int>( chain, "soundIndex" ), "the walk resumes with the new parameter" );
 	}
 
 	[TestMethod]

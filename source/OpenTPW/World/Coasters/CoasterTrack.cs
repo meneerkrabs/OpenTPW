@@ -78,6 +78,8 @@ public enum CoasterNodeFlags : uint
 	CutEnd = 0x10000,
 	/// <summary>The node after the cut of a reopened circuit: its tangent ignores the previous node (<c>0x446740</c> marks it 0xa0000 = 0x20000 | no previous link).</summary>
 	CutStart = 0x20000,
+	/// <summary>A suspended coaster's pylon turned half a turn to stand on the outside of its turn (node flag 0x10000000): set or cleared by the curve branch of the tangent routine, kept by every other branch.</summary>
+	TurnedBack = 0x10000000,
 	/// <summary>The build cursor's spare node, linked after the last node while the cursor hovers a cell (node flag 0x8000; the original adds 0x4000 when the cell fails the validator).</summary>
 	// [BIN:TPW-EXE:0x435d50 cursor node] the spare node (controller +0x6c) gets 0x8000 as the cursor and 0x4000 when the validator 0x434740 refuses the hovered cell, otherwise 0x4000 is cleared
 	Cursor = 0x8000
@@ -1008,30 +1010,42 @@ public sealed class CoasterTrack
 	/// pylon is not a loop pylon and whose turn is a curve (neither straight case) gets it when b.x·a.z − b.z·a.x &lt; 0 with a and b the vectors to its
 	/// previous and next node, so the pylon stands on the outside of the turn; every other curve node loses it.
 	/// </summary>
+	public static bool PylonTurnedBack( SVector3 previous, SVector3 position, SVector3 next, float? straightDot, bool loopPylon, bool suspended, bool loopNode ) =>
+		PylonTurnedBackInCurve( previous, position, next, straightDot, loopPylon, suspended, loopNode ) ?? false;
+
+	/// <summary>
+	/// The curve branch's verdict on node flag <c>0x10000000</c>: set or cleared for a curve node of a pylon that is not a loop pylon, null (the flag stays as it was) for
+	/// a loop pylon and for both straight cases.
+	/// </summary>
 	// [BIN:TPW-EXE:0x431f06 suspended pylon side] in the curve branch of the tangent routine, definition flag 8 set, node flag 0x40 clear and the Y component of b × a below 0 set node flag 0x10000000 (0x431f29), else it is cleared (0x431f34); the straight and loop-pylon branches leave it as it was
-	// [APPROX:COAST-033] a straight or loop-pylon node keeps the flag from its last curve pass in the original; here it is clear there
-	public static bool PylonTurnedBack( SVector3 previous, SVector3 position, SVector3 next, float? straightDot, bool loopPylon, bool suspended, bool loopNode )
+	public static bool? PylonTurnedBackInCurve( SVector3 previous, SVector3 position, SVector3 next, float? straightDot, bool loopPylon, bool suspended, bool loopNode )
 	{
-		if ( !suspended || loopNode || loopPylon )
-			return false;
+		if ( loopPylon )
+			return null;
 		var a = previous - position;
 		var b = next - position;
 		var ua = SVector3.Normalize( a );
 		var ub = SVector3.Normalize( b );
 		var dot = ua.X * ub.X + ua.Y * ub.Y + ua.Z * ub.Z;
 		if ( dot < (straightDot ?? -0.999f) || dot > 0.999f )
-			return false;
-		return b.X * a.Z - b.Z * a.X < 0;
+			return null;
+		return suspended && !loopNode && b.X * a.Z - b.Z * a.X < 0;
 	}
 
-	/// <summary>The <see cref="PylonTurnedBack"/> flag of every node of a chain whose neighbours its tangent uses (the flag-masked previous and next node).</summary>
-	internal bool[] PylonsTurnedBack( IReadOnlyList<CoasterNode> chain, IReadOnlyList<SVector3> positions )
+	/// <summary>
+	/// The node flag <c>0x10000000</c> of every node of a chain: the curve branch's verdict where the node's tangent takes the curve branch (both flag-masked
+	/// neighbours present, a curve, not a loop pylon), else the flag the node holds from its last curve pass. <paramref name="write"/> stores the verdicts on the nodes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x431660 kept half turn] the flag lives in the node (+8): the straight, loop-pylon and end branches of the tangent routine do not touch it, so such a node keeps the half turn of its last curve pass
+	// [APPROX:COAST-033] only the controller's rebuild of a finished track stores the verdicts; the original's edit step rebuilds the track every frame of the build (0x435d50 → 0x444700), so a node's kept half turn can also come from a cursor position — evidence needed: a capture of a suspended coaster built with the cursor passing its straight nodes
+	internal bool[] PylonsTurnedBack( IReadOnlyList<CoasterNode> chain, IReadOnlyList<SVector3> positions, bool write = false )
 	{
 		var count = chain.Count;
 		var result = new bool[count];
 		for ( var index = 0; index < count; index++ )
 		{
 			var node = chain[index];
+			result[index] = (node.Flags & CoasterNodeFlags.TurnedBack) != 0;
 			if ( node.IsPylonless || index == 0 || (node.Flags & (CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.CutStart)) != 0 )
 				continue;
 			int? next = (node.Flags & (CoasterNodeFlags.NoNextLink | CoasterNodeFlags.CutEnd)) != 0 ? null
@@ -1039,8 +1053,12 @@ public sealed class CoasterTrack
 				: index + 1 < count ? index + 1 : null;
 			if ( next is not int after )
 				continue;
-			result[index] = PylonTurnedBack( positions[index - 1], positions[index], positions[after], Definition.Pylon( node.LoopPylon ).StraightDotThreshold,
-				IsLoopPylon( node ), Definition.IsSuspended, (node.Flags & CoasterNodeFlags.Loop) != 0 );
+			if ( PylonTurnedBackInCurve( positions[index - 1], positions[index], positions[after], Definition.Pylon( node.LoopPylon ).StraightDotThreshold,
+				IsLoopPylon( node ), Definition.IsSuspended, (node.Flags & CoasterNodeFlags.Loop) != 0 ) is not bool verdict )
+				continue;
+			result[index] = verdict;
+			if ( write )
+				node.Flags = verdict ? node.Flags | CoasterNodeFlags.TurnedBack : node.Flags & ~CoasterNodeFlags.TurnedBack;
 		}
 		return result;
 	}
@@ -1179,7 +1197,7 @@ public sealed class CoasterTrack
 			for ( var index = 0; index < count; index++ )
 				chain[index].Bank = banks[index];
 		}
-		var turnedBack = PylonsTurnedBack( chain, positions );
+		var turnedBack = PylonsTurnedBack( chain, positions, write: writeBanks );
 		var knots = new List<CoasterKnot>( count );
 		var first = new int[count];
 		var knotCount = new int[count];

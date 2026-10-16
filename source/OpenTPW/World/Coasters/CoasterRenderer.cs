@@ -397,8 +397,8 @@ public sealed class CoasterRenderer : Entity
 				var baseHeight = pass.Positions[index].Y - lift;
 				var pose = pass.Poses[index] ?? new CoasterPylonPose( node.T, (node.Flags & CoasterNodeFlags.ManualYaw) != 0 ? node.Yaw : pass.AutomaticYaw[index],
 					(node.Flags & CoasterNodeFlags.ManualIncline) != 0 ? node.Incline : pass.AutomaticPitch[index], pass.Banks[index], node.LoopRotate, pass.TurnedBack[index] );
-				var stackedAbove = chain.Any( other => !other.IsPylonless && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
-				var parts = assets.PosePylon( node.LoopPylon, rig, pose, stackedAbove );
+				var above = chain.FirstOrDefault( other => !other.IsPylonless && (other.Flags & CoasterNodeFlags.Cursor) == 0 && other.X == node.X && other.Y == node.Y && other.StackIndex == node.StackIndex + 1 );
+				var parts = assets.PosePylon( node.LoopPylon, rig, pose, new CoasterStackPlace( node.StackIndex == 0, above == null, above != null ) );
 				var shift = new SVector3( node.X * CoasterTrack.CellUnits, node.Y * CoasterTrack.CellUnits, baseHeight );
 				for ( var part = 0; part < parts.Count; part++ )
 				{

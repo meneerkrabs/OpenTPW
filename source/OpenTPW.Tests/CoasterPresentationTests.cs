@@ -241,6 +241,44 @@ public class CoasterPresentationTests
 		Assert.AreEqual( 0.75f, CoasterPylonRig.Fractions( null, new CoasterPylonPose( 0, MathF.PI / 2, TurnedBack: true ) ).Rotate, 1e-6f, "frac(¼ + ½)" );
 	}
 
+	/// <summary>
+	/// The flag lives in the node (0x431660): the curve branch sets or clears it, a straight node or a loop pylon keeps the half turn of its last curve pass, and the
+	/// controller's rebuild writes the verdicts while a preview pass leaves the nodes untouched.
+	/// </summary>
+	[TestMethod]
+	public void AStraightNodeKeepsTheHalfTurnOfItsLastCurvePass()
+	{
+		Assert.IsNull( CoasterTrack.PylonTurnedBackInCurve( new SVector3( 0, 0, -10 ), SVector3.Zero, new SVector3( 0, 0, 10 ), -0.999f, false, suspended: true, loopNode: false ), "a straight leaves the flag" );
+		Assert.IsNull( CoasterTrack.PylonTurnedBackInCurve( new SVector3( 0, 0, -10 ), SVector3.Zero, new SVector3( 10, 0, 10 ), -0.999f, true, suspended: true, loopNode: false ), "so does the loop-pylon branch" );
+		Assert.AreEqual( false, CoasterTrack.PylonTurnedBackInCurve( new SVector3( 0, 0, -10 ), SVector3.Zero, new SVector3( 10, 0, 10 ), -0.999f, false, suspended: false, loopNode: false ), "a curve of a coaster that does not hang clears it" );
+		var settings = CoasterTests.PcSettings();
+		settings["sCoasterType.bIsSuspendedCoaster"] = "1";
+		var ride = new CoasterRide( CoasterDefinition.FromValues( settings ), new CoasterWorld( 1 ), "Suspended" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ) );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		builder.Height = 40;
+		// (24, 20) turns toward (28, 24); (28, 24) runs on straight to (32, 28).
+		foreach ( var (x, y) in new[] { (24, 20), (28, 24), (32, 28), (36, 28) } )
+			Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( x, y ) );
+		var track = builder.Track;
+		var chain = track.Nodes;
+		var positions = chain.Select( node => track.NodePosition( builder.Site, node ) ).ToArray();
+		var straight = chain.ToList().FindIndex( node => node.X == 28 && node.Y == 24 );
+		var curve = chain.ToList().FindIndex( node => node.X == 24 && node.Y == 20 );
+		var preview = track.PylonsTurnedBack( chain, positions );
+		Assert.IsFalse( preview[straight], "a straight node without the flag stays without it" );
+		Assert.IsTrue( chain.All( node => (node.Flags & CoasterNodeFlags.TurnedBack) == 0 ), "a pass that does not write leaves the nodes alone" );
+		chain[straight].Flags |= CoasterNodeFlags.TurnedBack;
+		chain[curve].Flags |= CoasterNodeFlags.TurnedBack;
+		var verdict = CoasterTrack.PylonTurnedBack( positions[curve - 1], positions[curve], positions[curve + 1], -0.8f, false, suspended: true, loopNode: false );
+		var written = track.PylonsTurnedBack( chain, positions, write: true );
+		Assert.IsTrue( written[straight], "the straight node keeps the half turn it holds" );
+		Assert.IsTrue( (chain[straight].Flags & CoasterNodeFlags.TurnedBack) != 0 );
+		Assert.AreEqual( verdict, written[curve], "the curve node takes the curve branch's verdict" );
+		Assert.AreEqual( verdict, (chain[curve].Flags & CoasterNodeFlags.TurnedBack) != 0, "and the rebuild stores it" );
+		Assert.IsTrue( (CoasterSave.KnownNodeFlags & (uint)CoasterNodeFlags.TurnedBack) != 0, "a save may carry the flag" );
+	}
+
 	[TestMethod]
 	public void ACarSitsOnTheInterpolatedSampleWithItsDirectionAndBank()
 	{

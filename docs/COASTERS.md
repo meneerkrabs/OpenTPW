@@ -361,8 +361,11 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   (wrapped into [−½, ½)), both centred on ½; and a loop pylon's `<name>R2` at its loop rotate parameter. Each value goes through
   the pylon control's map `f…AnimMultiplier`/`Add` and the caps `f…AnimStartCap`/`EndCap` (defaults 1, 0, 0, 1; the PC sets
   `fInclineAnimMultiplier` 4.5, 3 or −3 and `fBankAnimMultiplier` −1 or −4.5). The yaw and pitch are the node tangent's
-  (`0x43e590`) unless set by hand, the bank the auto-bank or the hand-set one. Every mesh of the model is drawn, the ground tile
-  too.
+  (`0x43e590`) unless set by hand, the bank the auto-bank or the hand-set one. A suspended coaster's pylon on the outside of a
+  turn takes the rotate clip half a turn on (node flag `0x10000000`), which a straight or loop-pylon node keeps from its last
+  curve pass. Every mesh of the model is drawn, the ground tile too, except the stack parts the pylon's place in its cell's stack
+  hides (`0x432df0`; the first four `0x80000` records by value): part 1 (the bridge a pylon above stands on) only under a pylon,
+  part 2 only on the top, part 3 (the connector onto a pylon below) only on a stacked pylon, part 4 only on the ground.
 - **Cars.** The `asCarTypes` meshes, front, centre and rear by `sTrainType`. A car's pivot is its root node; its front
   and rear extents come from the model's header bounds plus `fFrontDistanceAdd`/`fRearDistanceAdd`, the train's pair distances
   space the cars around its middle car (see "The train"), and a car stands on the curve itself at its coordinate (`0x43c0a0`:

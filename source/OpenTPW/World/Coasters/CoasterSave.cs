@@ -81,7 +81,7 @@ internal static class CoasterSave
 	/// <summary>The node flag bits a save may carry; anything else is a format this code does not know, and load refuses it.</summary>
 	public const uint KnownNodeFlags = (uint)(CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.LoopMark | CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst | CoasterNodeFlags.ZeroBank | CoasterNodeFlags.Winch | CoasterNodeFlags.Invalid
 		| CoasterNodeFlags.StationTail | CoasterNodeFlags.StationHead | CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.NoNextLink | CoasterNodeFlags.EndNextIsSecond
-		| CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline | CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart);
+		| CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline | CoasterNodeFlags.CutEnd | CoasterNodeFlags.CutStart | CoasterNodeFlags.TurnedBack);
 
 	/// <summary>
 	/// Captures the park's coasters: one entry per live coaster station in placement (attraction-id) order, or null when

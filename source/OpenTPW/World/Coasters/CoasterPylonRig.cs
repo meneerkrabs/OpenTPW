@@ -14,6 +14,15 @@ public sealed record CoasterModelPart( string MeshName, string[] Textures, Verte
 public readonly record struct CoasterPylonPose( float Loft, float Yaw = 0, float Pitch = 0, float Bank = 0, float LoopRotate = 0, bool TurnedBack = false );
 
 /// <summary>
+/// Where a pylon stands in its cell's stack, which shows or hides the model's stack parts (<c>0x432df0</c>): at the bottom (on the ground), at the top (no pylon on it)
+/// and whether the pylon on it has a model of its own (not the build cursor's node).
+/// </summary>
+public readonly record struct CoasterStackPlace( bool Bottom = true, bool Top = true, bool CarriesModel = true )
+{
+	public static readonly CoasterStackPlace Alone = new( Bottom: true, Top: true, CarriesModel: true );
+}
+
+/// <summary>
 /// A pylon's track-tag table (pylon <c>+0x30</c> or <c>+0x44</c>): <see cref="Count"/> tags, the tag records whose value is <see cref="Base"/> + k
 /// (<c>0x4344c0</c>), and the index of the tag on the track dummy (<see cref="Centre"/>), whose knot carries the node's sample index (node <c>+0xfc</c>).
 /// </summary>
@@ -42,7 +51,10 @@ public interface ICoasterTagModel
 // [BIN:TPW-EXE:0x430590 pylon model tags] the loft, rotate, incline and bank clips and the track and stack dummies are looked up on the loaded model by node attribute (0x2, 0x3, 0x9, 0xa, 0x1000000, 0x800000, 0x2000000, 0x100000, 0x80000) when the control is set up (0x42eb70)
 // [BIN:TPW-EXE:0x430ca0 pylon clip times] slot 0 (loft) = duration × map(clamp(+0xe8, 0, 1)), the node's +0xe8 written back clamped; slot 1 (rotate) = map(+0xec), +0xec = frac(yaw/2π) (+1 when negative, 0x43110c), frac(+0xec + ½) on node flag 0x10000000; slot 2 (incline) = map(+0xf0 · mult + add + 0.5), +0xf0 = pitch/2π; slot 3 (bank) = map(+0xf4 · mult + add + 0.5), +0xf4 = frac(bank/2π + ½) − ½ (0x431177..0x4311b7); slot 4 (loop tilt) = map(+0xf8), +0xf8 = frac(+0xf8); each map raises to its start cap, then lowers to its end cap
 // [BIN:TPW-EXE:0x470d10 relative rotation] a model loaded with the relative-animation flag (header +0x30 & 0x4) multiplies a clip's rotation key into the node's matrix (key × node, 0x470d10) instead of setting it (0x46fbb0), and adds position and vertex keys (0x471860); the slots run in order loft, rotate, incline, bank, loop tilt (0x473c70 → 0x4735d0)
-// [APPROX:COAST-033] the bridge or stacker head above the track tag is drawn only when a pylon is stacked on it (an assumption: the model's 0x80000 records, values 1..4 → pylon +0x1c..+0x28 and pylon flags 0x400..0x2000, name these parts, but the code that shows or hides them is not traced); the rotation keys are slerped by the shared clip sampler, where the original lerps their components when 0x7b4980 bit 2 is set — evidence needed: the consumer of pylon +0x1c..+0x28 and flags 0x400..0x2000 and the run-time value of 0x7b4980
+// [BIN:TPW-EXE:0x430590 pylon stack parts] the first four attribute records with 0x80000 name the stack parts by their value: 1 → pylon +0x1c (flag 0x400), 2 → +0x20 (0x800), 3 → +0x24 (0x1000), 4 → +0x28 (0x2000)
+// [BIN:TPW-EXE:0x432df0 stack part visibility] for every node of a cell's stack the pose pass shows (clears node flag 0x10) or hides (sets 0x80000010, 0x433220) the parts: part 1 is hidden on the top node and shown on a lower one whose upper neighbour has a model (not 0x2000), part 2 shown on the top node and hidden on a lower one, part 3 hidden on the bottom node and shown on a stacked one, part 4 shown on the bottom node and hidden on a stacked one
+// [BIN:TPW-EXE:0x4740d0 rotation blend] 0x7b4980 is written only by its setter 0x4740d0, which start-up (0x457a90) calls once with 0, so bit 2 is clear and the clip sampler slerps the rotation keys (0x474490 → 0x4742a0)
+// [APPROX:COAST-033] the bottom node's model shadow (model +0x2c, placed at the cell's ground height by 0x469940) and its hiding on a stacked node unless pylon flag 0x10 is set are not modelled; a part's flag hides its own mesh here, its children are not hidden with it (no PC pylon hangs a mesh under a part); the clip sampler's slerp takes exact sines where 0x4742a0 reads the runtime table — evidence needed: the renderer's use of node flag 0x10 for a dummy's children, the shadow object at model +0x2c and the source of pylon flag 0x10
 public sealed class CoasterPylonRig : ICoasterTagModel
 {
 	/// <summary>The five clip slots in the original's order: loft, rotate, incline, bank, loop tilt (<c>0x74ca70</c>: types 3, 10, 2, 9, 10 index 1).</summary>
@@ -93,6 +105,7 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 		TagNode = DummyByAttribute( model, TrackDummyAttribute ) ?? FindTag( model, tracks[LoftSlot] );
 		StackNode = DummyByAttribute( model, StackDummyAttribute ) ?? -1;
 		ReadTagTables( model );
+		ReadStackParts( model );
 		Duration = loft?.Duration ?? 0;
 		if ( control != null )
 			(loftMap, rotateMap, inclineMap, bankMap, loopRotateMap) = (control.LoftMap, control.RotateMap, control.InclineMap, control.BankMap, control.LoopRotateMap);
@@ -158,6 +171,43 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 			nodes[k] = record >= 0 ? NodeOfRecord( model, record ) ?? -1 : -1;
 		}
 		return nodes;
+	}
+
+	/// <summary>The attribute bit of the records that name a pylon's stack parts (values 1..4).</summary>
+	public const uint StackPartAttribute = 0x80000;
+	/// <summary>The model node of each stack part, index value − 1 (-1 where the model names none).</summary>
+	private readonly int[] stackParts = { -1, -1, -1, -1 };
+
+	/// <summary>The node of stack part <paramref name="value"/> (1..4), -1 when the model names none.</summary>
+	public int StackPart( int value ) => value is >= 1 and <= 4 ? stackParts[value - 1] : -1;
+
+	private void ReadStackParts( ModelFile model )
+	{
+		var seen = 0;
+		for ( var index = 0; index < model.DummyAttributes.Count && seen < 4; index++ )
+		{
+			var record = model.DummyAttributes[index];
+			if ( (record.Type & StackPartAttribute) == 0 )
+				continue;
+			seen++;
+			if ( record.Value is >= 1 and <= 4 )
+				stackParts[record.Value - 1] = NodeOfRecord( model, index ) ?? -1;
+		}
+	}
+
+	/// <summary>Whether a node of the model is hidden in a stack place (<c>0x432df0</c>).</summary>
+	public bool IsHidden( int node, CoasterStackPlace place )
+	{
+		if ( node < 0 )
+			return false;
+		// Under a node without a model (the build cursor's) the original leaves part 1 as the last pass set it; it was the top then, so it stays hidden.
+		if ( node == stackParts[0] && (place.Top || !place.CarriesModel) )
+			return true;
+		if ( node == stackParts[1] && !place.Top )
+			return true;
+		if ( node == stackParts[2] && place.Bottom )
+			return true;
+		return node == stackParts[3] && !place.Bottom;
 	}
 
 	/// <summary>The node of attribute record <paramref name="record"/>: the node stored as header +0x46 + record (<c>0x44ab90</c>).</summary>
@@ -293,22 +343,23 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 	}
 
 	/// <summary>
-	/// The pylon's mesh parts for a node's clip values; positions relative to the cell corner (engine axis order). A part that lies above the track tag
-	/// (the bridge or stacker head that carries a pylon stacked on this one) is left out unless <paramref name="stackedAbove"/>: a pylon ends at the
-	/// track's underside. A height parameter outside [0, 1] stands the pylon at the end of its loft (the original clamps the parameter, 0x430ca0).
+	/// The pylon's mesh parts for a node's clip values; positions relative to the cell corner (engine axis order). The stack parts its place in the cell's stack
+	/// hides are left out (<see cref="IsHidden"/>). A height parameter outside [0, 1] stands the pylon at the end of its loft (the original clamps the parameter, 0x430ca0).
 	/// </summary>
-	public IReadOnlyList<CoasterModelPart> Pose( CoasterPylonPose pose, bool stackedAbove = false )
+	public IReadOnlyList<CoasterModelPart> Pose( CoasterPylonPose pose, CoasterStackPlace? place = null )
 	{
+		var stack = place ?? CoasterStackPlace.Alone;
 		var ticks = Ticks( pose );
 		var matrices = new Matrix4x4[model.Nodes.Count];
 		Worlds( ticks, matrices );
-		var tagHeight = TagNode >= 0 ? matrices[TagNode].Translation.Y : 0;
 		var parts = new List<CoasterModelPart>();
 		foreach ( var mesh in model.Meshes )
 		{
 			if ( ObjectAssets.GetUnrenderableReason( mesh ) is { } reason && reason != "more than 16 texture slots" )
 				continue;
 			var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < matrices.Length ? mesh.NodeIndex : model.RootNodeIndex;
+			if ( IsHidden( mesh.NodeIndex, stack ) )
+				continue;
 			var source = mesh;
 			if ( node >= 0 )
 			{
@@ -328,23 +379,7 @@ public sealed class CoasterPylonRig : ICoasterTagModel
 			}
 			var bake = node >= 0 ? matrices[node] : Matrix4x4.Identity;
 			foreach ( var (vertices, indices, textures, _) in ObjectAssets.ConvertMeshParts( source, bake ) )
-			{
-				if ( !stackedAbove && TagNode >= 0 && vertices.Length > 0 )
-				{
-					var low = float.MaxValue;
-					var high = float.MinValue;
-					foreach ( var vertex in vertices )
-					{
-						// Engine axis order: Z is the model's up.
-						var z = vertex.Position.GetSystemVector3().Z;
-						low = MathF.Min( low, z );
-						high = MathF.Max( high, z );
-					}
-					if ( (low + high) / 2 > tagHeight + 0.01f )
-						continue;
-				}
 				parts.Add( new CoasterModelPart( mesh.Name, textures, vertices, indices ) );
-			}
 		}
 		return parts;
 	}

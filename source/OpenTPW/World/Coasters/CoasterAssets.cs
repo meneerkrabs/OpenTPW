@@ -149,11 +149,11 @@ internal sealed class CoasterAssets : IDisposable
 	/// Poses a pylon for a node. The mesh conversion happens here, after the model loaded, so a vertex the converter refuses (a nonfinite position) is caught
 	/// here: the rig is switched off for the level and the pylon is left out.
 	/// </summary>
-	public IReadOnlyList<CoasterModelPart> PosePylon( bool loop, CoasterPylonRig rig, CoasterPylonPose pose, bool stackedAbove )
+	public IReadOnlyList<CoasterModelPart> PosePylon( bool loop, CoasterPylonRig rig, CoasterPylonPose pose, CoasterStackPlace place )
 	{
 		try
 		{
-			return rig.Pose( pose, stackedAbove );
+			return rig.Pose( pose, place );
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or ArgumentException or IndexOutOfRangeException )
 		{

@@ -137,6 +137,102 @@ public class WanderTests
 	}
 
 	[TestMethod]
+	public void AWatchingGuestEndsStateSixBeforeThePranksAndTheDecision()
+	{
+		// [BIN:TPW-EXE:0x004FEFCA] steps 5 and 6 end the call of a guest that turned
+		var calls = "";
+		var outcome = GuestDecision.Decide( Input( draw: 4 ), () => { calls += "B"; return false; }, () => { calls += "L"; return false; }, ( _, _ ) => { calls += "P"; return false; },
+			() => { calls += "C"; return false; }, () => { calls += "W"; return true; }, null, () => { calls += "T"; return true; } );
+		Assert.AreEqual( (GuestDecision.Outcome.Watch, "T"), (outcome, calls) );
+		Assert.AreEqual( (GuestDecision.Outcome.Wander, "TW"), (GuestDecision.Decide( Input( draw: 4 ), () => false, () => false, ( _, _ ) => false, () => false, () => true, null, () => { return false; } ),
+			"TW") );
+	}
+
+	private static (GuestSimulation Simulation, Guest Guest) WatchRig( params GuestSimulation.StaffOnMap[] staff )
+	{
+		var settings = GuestTests.CreateSettings();
+		settings.ExitLevelSeconds = 100_000;
+		settings.SmallHappinessChange = 0;
+		var simulation = new GuestSimulation( Row( 10 ), settings, 3 ) { ArrivalsEnabled = false };
+		simulation.StaffOnMapView = () => staff;
+		var guest = simulation.SpawnInPark( 4, 0 );
+		guest.Happiness = 60;
+		return (simulation, guest);
+	}
+
+	[TestMethod]
+	public void AGuestNextToAPerformingEntertainerTurnsAndStaysWhereItIs()
+	{
+		// the nearest staff member of the whole list is the performer (0x500F00), an entertainer stands within one cell (0x4C8EB0): the guest turns toward it (0x4FF04A..0x4FF0F4)
+		var (simulation, guest) = WatchRig( new GuestSimulation.StaffOnMap( 1, true, true, (5, 0) ) );
+		for ( var tick = 0; tick < 120 * 60; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			Assert.AreEqual( GuestState.DoingNothing, guest.State, "a guest that watches makes no decision" );
+		}
+		Assert.AreEqual( 1f, guest.HeadingX, 1e-4f );
+		Assert.AreEqual( 0f, guest.HeadingY, 1e-4f );
+	}
+
+	[TestMethod]
+	public void AnEntertainerWhoDoesNotPerformOrIsNotTheNearestStaffLeavesTheGuestToDecide()
+	{
+		var idle = WatchRig( new GuestSimulation.StaffOnMap( 1, true, false, (5, 0) ) );
+		var behind = WatchRig( new GuestSimulation.StaffOnMap( 1, true, true, (5, 0) ), new GuestSimulation.StaffOnMap( 2, false, false, (4, 0) ) );
+		foreach ( var (simulation, guest) in new[] { idle, behind } )
+		{
+			var wandered = false;
+			for ( var tick = 0; tick < 300 * 60 && !wandered; tick++ )
+			{
+				simulation.Tick( GuestSnapshotTests.Tick );
+				wandered |= guest.State == GuestState.WalkingAround;
+			}
+			Assert.IsTrue( wandered, "the guest decides as usual" );
+		}
+	}
+
+	[TestMethod]
+	public void AShowObjectWithinTheSquaredDistanceFiveTurnsAGuestButADiagonalOffsetOfSumZeroDoesNot()
+	{
+		var (simulation, guest) = WatchRig();
+		simulation.ShowCells = () => [(6, 1), (4, 0)];   // (6, 1): squared distance 5 is not below 5; (4, 0) is the guest's own cell, offset 0
+		var wandered = false;
+		for ( var tick = 0; tick < 300 * 60 && !wandered; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			wandered |= guest.State == GuestState.WalkingAround;
+		}
+		Assert.IsTrue( wandered, "no show turns it" );
+		var (other, watcher) = WatchRig();
+		other.ShowCells = () => [(6, 0)];
+		for ( var tick = 0; tick < 120 * 60; tick++ )
+		{
+			other.Tick( GuestSnapshotTests.Tick );
+			Assert.AreEqual( GuestState.DoingNothing, watcher.State );
+		}
+		Assert.AreEqual( 1f, watcher.HeadingX, 1e-4f );
+	}
+
+	[TestMethod]
+	public void AStaffMemberBesideAGuestPushesItAwayLikeAGuestDoes()
+	{
+		// [BIN:TPW-EXE:0x005102F0] the neighbour query keeps the classes 1, 4 to 8 and 18 of a cell's thing list
+		var settings = GuestTests.CreateSettings();
+		var simulation = new GuestSimulation( Row( 10 ), settings, 3 ) { ArrivalsEnabled = false };
+		var guest = simulation.SpawnInPark( 4, 0 );
+		var staffWalk = new GuestNavigation { X = guest.Navigation.X + (1 << 13), Y = guest.Navigation.Y };
+		simulation.StaffOnMapView = () => [new GuestSimulation.StaffOnMap( 1, false, false, staffWalk.Cell, staffWalk )];
+		simulation.Tick( GuestSnapshotTests.Tick );
+		var separation = (Func<GuestNavigation, (int X, int Y)>)Delegate.CreateDelegate( typeof( Func<GuestNavigation, (int X, int Y)> ), simulation,
+			typeof( GuestSimulation ).GetMethod( "SeparationForStep", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic )! );
+		var (x, y) = separation( guest.Navigation );
+		Assert.IsTrue( x < 0 && y == 0, $"the staff member stands on the +X side, so the push is toward −X ({x}, {y})" );
+		simulation.StaffOnMapView = null;
+		simulation.Tick( GuestSnapshotTests.Tick );
+		Assert.AreEqual( (0, 0), separation( guest.Navigation ) );
+	}
+
+	[TestMethod]
 	public void ACantDecidePauseLastsTenTurnsCostsTheSmallChangeAndStampsTheTurn()
 	{
 		var grid = Row( 10 );

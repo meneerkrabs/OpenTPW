@@ -381,6 +381,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				throw new OverflowException( $"Guest {guest.Id} time in park exceeds the supported duration." );
 		TickCount++;
 		TimeSeconds += deltaSeconds;
+		staffOnMap = StaffOnMapView?.Invoke().ToArray();
 		turnStarted = ParkCalendar.Turn( TickCount ) != ParkCalendar.Turn( TickCount - 1 );
 		SyncQueues();
 		UpdateArrivals( deltaSeconds );
@@ -966,24 +967,36 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool IsOpenForStep( int x, int y ) => stepping!.IsOnWalk( x, y );
 
 	/// <summary>
-	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests standing in the 3 × 3 cells around its
+	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests and the staff standing in the 3 × 3 cells around its
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
-	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone); the original's query (tp.exe 0x5102f0, Mac 0x10087c) visits each cell's things in the order they were head-inserted when they entered it (0x50b6a0 via 0x4d91f0), keeps class-1 guests whatever their state, and also keeps staff (classes 4-8) and the online avatar (class 18); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
+	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone) followed by the staff on each cell; the original's query (tp.exe 0x5102f0, Mac 0x10087c) visits each cell's things in the order they were head-inserted when they entered it (0x50b6a0 via 0x4d91f0), keeps class-1 guests whatever their state, and also keeps staff (classes 4-8, kept here) and the online avatar (class 18, not kept); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
 		var (cellX, cellY) = self.Cell;
+		var staff = staffOnMap;
 		for ( var y = cellY - 1; y <= cellY + 1; y++ )
 		{
 			for ( var x = cellX - 1; x <= cellX + 1; x++ )
 			{
-				if ( x < 0 || y < 0 || x >= Grid.CountX || y >= Grid.CountY || !occupants.TryGetValue( (x, y), out var list ) )
+				if ( x < 0 || y < 0 || x >= Grid.CountX || y >= Grid.CountY )
 					continue;
-				foreach ( var other in list )
+				if ( occupants.TryGetValue( (x, y), out var list ) )
 				{
-					if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
-						neighbours.Add( other.Navigation );
+					foreach ( var other in list )
+					{
+						if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
+							neighbours.Add( other.Navigation );
+					}
+				}
+				// the staff on the cell follow its guests (classes 4 to 8 of the thing list 0x5102F0 visits; the staff sweep does the same with the guests, StaffWorldSimulation.StaffSeparation)
+				if ( staff == null )
+					continue;
+				foreach ( var member in staff )
+				{
+					if ( member.Walk is { } walk && !ReferenceEquals( walk, self ) && walk.Cell == (x, y) )
+						neighbours.Add( walk );
 				}
 			}
 		}
@@ -1359,7 +1372,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			choice = ChooseAttraction( guest );
 			return choice != null;
-		}, () => Wander( guest ), () => guest.Happiness );
+		}, () => Wander( guest ), () => guest.Happiness, () => TurnToShowOrPerformer( guest ) );
 		switch ( outcome )
 		{
 			case GuestDecision.Outcome.Cheer:
@@ -1388,6 +1401,74 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				guest.QueueStandingSinceTurn = turn;
 				break;
 		}
+	}
+
+	/// <summary>A staff member standing on the map, as the guests' state 6 sees it (the original's staff list, newest first).</summary>
+	/// <param name="Id">The staff member's id.</param>
+	/// <param name="Entertainer">The thing's type byte is 6 (an entertainer).</param>
+	/// <param name="Performing">The member's own state word is 14 (an entertainer's performance).</param>
+	/// <param name="Cell">The cell of the thing's position.</param>
+	/// <param name="Walk">The member's walk, whose position the separation of a stepping guest measures (null where the member has none).</param>
+	public readonly record struct StaffOnMap( int Id, bool Entertainer, bool Performing, (int X, int Y) Cell, GuestNavigation? Walk = null );
+
+	/// <summary>The cells of the show objects a guest's state 6 turns toward (fireworks and laser shows whose script variable 0 is 0), newest placed first; null for none.</summary>
+	public Func<IEnumerable<(int X, int Y)>>? ShowCells { get; set; }
+
+	private StaffOnMap[]? staffOnMap;
+
+	/// <summary>The staff on the map in the original's list order (the last one created first); null for none.</summary>
+	public Func<IEnumerable<StaffOnMap>>? StaffOnMapView { get; set; }
+
+	/// <summary>
+	/// Steps 5 and 6 of state 6: the guest turns toward the nearest show object within squared distance 5 or, with an entertainer within one cell, toward the
+	/// nearest staff member when that one is performing, and the call ends there (before the pranks and the decision) unless the guest already stands on that cell's
+	/// diagonal (the sum of the two offsets is 0). True when it turned.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00501020 nearest show] the objects chain (world +0x1DA746, next +0xC) is walked for a thing with flag +0x32 bit 0x80 (UsageInfo.IsFireworks, 0x4DB46F) whose script variable 0 is 0; the squared cell distance must be below 5 and below the best so far (a tie keeps the first)
+	// [BIN:TPW-EXE:0x004FEF25 show turn] a found show with an offset sum (dx + dy, unsigned test) of 0 goes on to step 6, else the heading +0x1C takes the angle of the offset (0x6E7074) and the call ends
+	// [BIN:TPW-EXE:0x004FEFF4 performer turn] with a thing of type 6 within one cell (0x4C8EB0, the cells x ± 1, y ± 1) the nearest member of the staff list (0x500F00, world +0x1DA740, next +0x210, no distance cap) must be in state 14 (0x4FF04A); the same offset sum test, event 0xE recorded for the debug dump, the same heading and end
+	// [APPROX:GUEST-010] the heading is the unit vector of the offset, where the original writes the 11-bit angle of 0x6E7074 into +0x1C
+	private bool TurnToShowOrPerformer( Guest guest )
+	{
+		var (gx, gy) = (guest.CellX, guest.CellY);
+		(int X, int Y)? show = null;
+		var best = int.MaxValue;
+		if ( ShowCells != null )
+		{
+			foreach ( var cell in ShowCells() )
+			{
+				var distance = (cell.X - gx) * (cell.X - gx) + (cell.Y - gy) * (cell.Y - gy);
+				if ( distance < 5 && distance < best )
+					(show, best) = (cell, distance);
+			}
+		}
+		if ( show is { } found && Turn( guest, found.X - gx, found.Y - gy ) )
+			return true;
+		if ( staffOnMap == null )
+			return false;
+		var staff = staffOnMap.Select( member => member.Walk is { } walk ? member with { Cell = walk.Cell } : member ).ToArray();
+		if ( !staff.Any( member => member.Entertainer && Math.Abs( member.Cell.X - gx ) <= 1 && Math.Abs( member.Cell.Y - gy ) <= 1 ) )
+			return false;
+		StaffOnMap? nearest = null;
+		best = int.MaxValue;
+		foreach ( var member in staff )
+		{
+			var distance = (member.Cell.X - gx) * (member.Cell.X - gx) + (member.Cell.Y - gy) * (member.Cell.Y - gy);
+			if ( distance < best )
+				(nearest, best) = (member, distance);
+		}
+		return nearest is { Performing: true } performer && Turn( guest, performer.Cell.X - gx, performer.Cell.Y - gy );
+	}
+
+	/// <summary>Turns the guest toward the offset when its two parts do not sum to 0; true when it turned.</summary>
+	private static bool Turn( Guest guest, int dx, int dy )
+	{
+		if ( dx + dy == 0 )
+			return false;
+		var length = MathF.Sqrt( dx * dx + dy * dy );
+		guest.HeadingX = dx / length;
+		guest.HeadingY = dy / length;
+		return true;
 	}
 
 	/// <summary>

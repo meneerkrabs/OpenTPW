@@ -7,7 +7,7 @@ nothing of the install copied) puts them into a Theme Park World park, where the
   `GameEditions.Detect` recognises is registered as a sound root while the extension is on, so the objects' `EVENT` ids play from the install's own
   banks; the economy catalogue (`EconomyObjectCatalog`) adds the mod's objects after the game's, with the archive's own price, research and group, the
   `Info.Id` of `objects.json` and its English name; the shared textures of such an object come from the install's world folder it was authored in
-  (`levels/science/sharetex`), not from the park's theme. Content roots are made once per mod digest, so cached catalogues keep the file system the sound
+  (`levels/science/sharetex`), not from the park's theme. Content roots are made once per mod digest, folder and input, so cached catalogues keep the file system the sound
   roots are registered for. With no mod active none of this runs and the pinned digests are unchanged.
 - **Textures of another file system**: bonus, tour and track objects decoded every non-game texture as `.wct`; `Texture.DecodeImage(fileSystem, path)` now
   follows the extension (`.wct`, `.fsh`, stb images such as the `.tga` files inside Theme Park Inc's WADs). The native smoke caught this

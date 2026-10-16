@@ -91,7 +91,7 @@ public static class ModContentRoots
 
 	/// <summary>
 	/// The catalog content roots of the mods that add objects, in mod order: the mod's own folder, then each input it reads from. A root is
-	/// made once per mod content and input, so the catalogs cached for it keep the file system the sound roots are registered for.
+	/// made once per mod content, folder and input (the digest does not name the folder: the same files copied elsewhere must not keep reading the old one), so the catalogs cached for it keep the file system the sound roots are registered for.
 	/// </summary>
 	internal static IReadOnlyList<CatalogContentRoot> CatalogRoots( ModSet set )
 	{
@@ -100,7 +100,7 @@ public static class ModContentRoots
 		{
 			var own = mod.Objects!.Objects.Where( definition => definition.Input == null ).ToList();
 			if ( own.Count > 0 )
-				roots.Add( Root( (mod.Id, mod.ContentSha256, null), () => new CatalogContentRoot( ContentRoot.Mod( mod.Id ), mod.Directory, own ) ) );
+				roots.Add( Root( (mod.Id, mod.ContentSha256, "|" + Path.GetFullPath( mod.Directory )), () => new CatalogContentRoot( ContentRoot.Mod( mod.Id ), mod.Directory, own ) ) );
 			foreach ( var input in mod.Objects.Objects.Where( definition => definition.Input != null ).GroupBy( definition => definition.Input!, StringComparer.Ordinal ).OrderBy( group => group.Key, StringComparer.Ordinal ) )
 			{
 				var directory = mod.InputDirectories[input.Key];

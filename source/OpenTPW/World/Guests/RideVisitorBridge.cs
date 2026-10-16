@@ -738,7 +738,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 				return QueueJoinRules.SideshowExcitement( Sideshow );
 			if ( ExcitementSource is { } source )
 				return source();
-			// [APPROX:QUEUE-022] a bridge without any operating values (speed, design speed, duration and design duration all 0: a synthetic object, every original object has them) is read at its design speed and duration; tp.exe's 0x004E0560 divides with no zero guard and its clamps take the 0.75 floor for a NaN ratio (FCOM against 0.75 sets C0 when unordered: 0x004E07D2, 0x004E0802), so 0/0 gives trunc(0.5625 × level), and QueueJoinRules.ClampRatio lets NaN through — evidence needed: none, no original object lacks them (the Mac reading, NaN → excitement 0, is not re-checked here)
+			// [EXT:synthetic-ride-zero-guard] a bridge without any operating values (speed, design speed, duration and design duration all 0) is a synthetic object, since every original object has InitSpeed and InitDuration; it is read at its design speed and duration, where tp.exe's 0x004E0560 divides with no guard and would score trunc(0.5625 × level) from the 0.75 floor on a NaN ratio (0x004E07D2, 0x004E0802); no original object reaches that
 			var level = ExcitementBase?.Invoke( excitementLevel ) ?? excitementLevel;
 			if ( Parameters is { Speed: 0, InitSpeed: 0, Duration: 0, InitDuration: null or 0 } )
 				return level;
@@ -1152,7 +1152,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// With every slot taken nothing is stored and the visitor is not bouncing.
 	/// </summary>
 	// [BIN:STP-PPC:0x100ADF40 BOUNCE] scan the +100 slots of the +40 table in index order; the first with visitor word 0 gets visitor, deadline now + 1000 × dur and start now, +108 goes up, return 1; a full table returns 0 and stores nothing; the deadline comes from one clock call (0xadfb0) and the start from a second (0xadfcc)
-	// [APPROX:QUEUE-020] one script-clock reading stands for both of BOUNCE's clock calls: OpenTPW's clock does not advance inside an opcode; tp.exe's BOUNCE 0x00555674 calls the clock 0x00402D70 (timer 0x00785970) once for the deadline (0x00555753, + 1000 × dur) and again for the start (0x00555770), so a millisecond tick between them puts the start 1 ms after the deadline's base and moves UNBOUNCE's 200 ms window by 1 ms — evidence needed: none for the reading; a stepped clock cannot reproduce a live tick
+	// [EXT:bounce-single-clock-read] one script-clock reading stands for both of BOUNCE's clock calls: OpenTPW's clock is stepped and does not advance inside an opcode, so the two live reads of tp.exe's BOUNCE (0x00555674: the deadline 0x00555753 and the start 0x00555770 through 0x00402D70, up to 1 ms apart, which moves UNBOUNCE's 200 ms window by 1 ms) cannot differ; a determinism design choice
 	internal static bool TakeBounceSlot( List<(int Guest, double Until, double Start)> slots, int capacity, int guest, double until, double now )
 	{
 		for ( var index = 0; index < capacity; index++ )

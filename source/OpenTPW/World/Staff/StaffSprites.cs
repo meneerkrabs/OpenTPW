@@ -58,7 +58,7 @@ public static class StaffSpriteRules
 	private static readonly int[] PerformanceSlots = { 4, 10, 3, 11 };
 
 	/// <summary>The key a person's sprite bank derives from: the same for the candidate and the member it becomes.</summary>
-	// [APPROX:GUEST-014] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010); OpenTPW makes the variant draw in its place (ParkStaff) but keeps no variant: the bank is (NameIndex + Id) modulo the folder's banks, in file order, and every bank of the folder is loaded where 0x541310 stops a flagged category at the limit of 0x41aa40 (1 or 2 by the graphics setting 0x7858d0) — read: 0x541310 flags the staff folders handymen, mechanics, guards and researchers (limit 0x41AA40: 1 on the lowest graphics setting, else 2) and the kids' heads (0x41A9D0: 2, 4, 6 or 8); the entertainers' folders are unflagged; banks come in archive enumeration order (0x41D570, 0x41D710); a save holds no variant
+	// [APPROX:GUEST-014] tp.exe draws a candidate's variant first in its constructor (0x507600 → 0x541f70: (world draw >> 2) mod the category's loaded bank count; candidate +9, member +0x20) and draws bank = the category's first bank + variant (0x542010); OpenTPW makes the variant draw in its place (ParkStaff) but keeps no variant: the bank is (NameIndex + Id) modulo the folder's banks, in file order (the shipped save carries no variant field, so an imported member's bank is not known; the loaded banks are GUEST-020)
 	public static int VariantKey( int nameIndex, int id ) => (nameIndex + id) & int.MaxValue;
 
 	/// <summary>Index of a variant's bank among <paramref name="count"/> banks.</summary>
@@ -74,6 +74,7 @@ public static class StaffSpriteRules
 		_ => null
 	};
 
+	// [APPROX:GUEST-020] every bank of a role's folder is loaded in file order whatever the graphics setting: tp.exe's 0x541310 flags the staff folders handymen, mechanics, guards and researchers and stops them at the limit of 0x41AA40 (1 bank on the lowest graphics setting 0x7858D0 = 0, else 2; the shipped mechanics folder holds two banks, the others one), takes the banks in the archive's enumeration order (0x41D570, 0x41D710) and leaves the entertainers' folders unflagged (evidence needed: whether the graphics setting changes while a park runs)
 	// [BIN:TPW-EXE:0x763f88 sprite categories] by thing type: handymen Generic\Handymen SPR_HA; mechanics Generic\Mechanics SPR_FA, SPR_OM; guards Generic\Guards SPR_GU; researchers Generic\Researchers SPR_RE; entertainers per theme: Jungle DI, EX, NA; Fantasy FL, GN, LA; Hallow DR, FK, HU; Space MO, SM, SP
 	/// <summary>The sprite folder and banks of a role; entertainers belong to the level's theme (null for an unknown level).</summary>
 	public static StaffBankSet? Banks( StaffType type, string level )

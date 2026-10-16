@@ -795,8 +795,8 @@ public class PathBuilderTests
 	public void PathRegisterHasThePlanUnknowns()
 	{
 		var names = PathApproximations.Entries.Select( entry => entry.Rule.Split( ':' )[0] ).ToArray();
-		// PATH-ENTER (001), PATH-UNDO (002), PATH-ENDFLAG (003), PATH-CONNECT (004), PATH-CODE8 (008), PATH-FREE (009), PATH-LEDGER (010), PATH-CANCEL (011), PATH-ENDREFUSE (012), PATH-VARIANT (014) and PATH-SLOPE (006) are retired: traced in tp.exe and matched.
-		CollectionAssert.AreEqual( new[] { "PATH-REMOVE", "PATH-LAND", "PATH-PAUSE", "QUEUE-MODELS", "PATH-INITIAL" }, names );
-		CollectionAssert.AreEqual( new[] { 5, 7, 13, 15, 16 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
+		// PATH-ENTER (001), PATH-UNDO (002), PATH-ENDFLAG (003), PATH-CONNECT (004), PATH-CODE8 (008), PATH-FREE (009), PATH-LEDGER (010), PATH-CANCEL (011), PATH-ENDREFUSE (012), PATH-VARIANT (014) and PATH-SLOPE (006) are retired: traced in tp.exe and matched; PATH-REMOVE (005) too (the area clear reads the cells' owner words and flags).
+		CollectionAssert.AreEqual( new[] { "PATH-LAND", "PATH-PAUSE", "QUEUE-MODELS", "PATH-INITIAL" }, names );
+		CollectionAssert.AreEqual( new[] { 7, 13, 15, 16 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
 	}
 }

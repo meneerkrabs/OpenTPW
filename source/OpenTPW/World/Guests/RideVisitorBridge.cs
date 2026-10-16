@@ -589,7 +589,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		var previous = queueCells.ToArray();
 		queueCells.Clear();
 		var front = QueueFrontCell ?? EntranceCell;
-		// A front cell that is neither a queue nor a path cell falls back to EntranceCell, the nearest walkable path cell (RIDES-028 in Level.Objects), as a one-cell queue.
+		// A front cell that is neither a queue nor a path cell falls back to EntranceCell, the nearest walkable path cell (a cell nothing laid: imports, restores, the gates), as a one-cell queue.
 		if ( !grid.IsQueue( front.X, front.Y ) && !grid.IsWalkable( front.X, front.Y ) )
 			front = EntranceCell;
 		queueCells.Add( front );

@@ -50,11 +50,20 @@ public partial class Level
 		// Objects keep off built path, queue and track cells; imported path cells are refused by the terrain rule as before. Object cells
 		// (types 4, 9 and 10) are left to ParkObjects, which lets a higher overwrite priority replace their owner.
 		// [BIN:TPW-EXE:0x535BB3 track cells] for an object cell (type 4) the validator refuses a second-layer track cell (0x53AD30: types 0xB, 0xD, 0x10, 0x12, 0x19; the extensions 0xC and 0x11 through their head, 0x535811) and any other map type but 0, 1 and the object types (0x535C4C..0x535D5D)
+		// A path cell without NoModify gives way to an object (the validator's 0x535D21 rule, the commit clearing the path), and the entrance's and exit's outside cells are
+		// validated as well (ObjectAccessCells): the outside cell by the path rule takes empty ground and path cells only.
+		// [BIN:TPW-EXE:0x00535D21 object over path] an object (type 4) over a type-1 cell is allowed (0x535D21 returns 0) unless the cell carries NoModify, which the validator refuses first for every object type (0x5356A6..0x5356B3); the commit clears the path (0x5290F6..0x52910C: 0x87, then 0x5367A0(0, 0))
 		Objects = new ParkObjects( catalog!, grid, Seed )
 		{
-			IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type
-				&& type is not (0 or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit),
-			IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned )
+			IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells is { } cells && cells.InBounds( x, y )
+				&& cells.RawTypeAt( x, y ) is var type && type is not (0 or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit)
+				&& !(type == (byte)ParkCellType.Path && !cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify )),
+			IsReservedForPath = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells is { } cells && cells.InBounds( x, y )
+				&& cells.RawTypeAt( x, y ) is var type && type is not (0 or (byte)ParkCellType.Path),
+			IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ),
+			AccessCells = ( entry, x, y, rotation ) => TypesFootprints && Guests != null
+				? ObjectAccessCells.CellsToCheck( entry, x, y, rotation )
+				: (Array.Empty<(int X, int Y)>(), Array.Empty<(int X, int Y)>())
 		};
 		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes, for every removal but a park load or clear
 		Objects.ObjectRemoving += item => item.Runtime.StartObjectEffect( ObjectParticleEffect.Destroy );
@@ -97,6 +106,9 @@ public partial class Level
 			+ (skipped == null ? "" : $"; skipped (not in the local catalog): {skipped}") + "." );
 	}
 
+	/// <summary>Set while <see cref="PlaceObject"/> places an object: the access cells are laid for it.</summary>
+	private bool layingAccessCells;
+
 	/// <summary>Whether the placed objects type their footprint cells in the guest grid (not in a visit, a Theme Park Inc layout or Theme Park Inc itself).</summary>
 	// [APPROX:RIDES-031] a Theme Park Inc world keeps the cells its layout was given and types none of its footprints, so the road signs' '@' cells ("*@*", "*@@*") are plain occupied cells; tp.exe's commit stamps '@' as a type-1 NoModify path cell linked to its path neighbours (0x529173–0x529208) and 'Q' as a queue cell (0x529119), which ParkCellMap.WriteFootprint does for Theme Park World (whose shapes have neither) — evidence needed: Theme Park Inc's own placement (its executable), which is not traced
 	private bool TypesFootprints => !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
@@ -118,11 +130,18 @@ public partial class Level
 		{
 			var cells = Guests.Grid.Cells;
 			foreach ( var item in Objects.Objects )
-				cells.WriteFootprint( item.Cells, OwnerWord( item ) );
+				cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
 		}
 		if ( typesFootprints )
 		{
-			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells, OwnerWord( item ) );
+			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells, OwnerWord( item ), item.Placement.Rotation );
+			// The cells outside the entrance and exit are laid by a build (PlaceObject), not by an import or a restore, and before the object registers with the guests, which read them.
+			Objects.ObjectPlaced += item =>
+			{
+				// [BIN:TPW-EXE:0x00534767 laid cells' money test] the cell setter refuses a path or queue type when the park's money is on and its balance is below zero, even though the placement's cells are free (0x5346D0 with 0x8186D4 set)
+				if ( layingAccessCells && Guests?.Grid.Cells is { } laid && (Park == null || Park.Economy.Balance >= 0) )
+					ObjectAccessCells.Lay( laid, item.AccessPoints, OwnerWord( item ), item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
+			};
 			Objects.ObjectRemoved += item => Guests?.Grid.Cells.ClearFootprint( item.Cells );
 		}
 		foreach ( var item in Objects.Objects )
@@ -281,6 +300,8 @@ public partial class Level
 	{
 		if ( Guests == null )
 			return;
+		if ( Objects.Grid is OriginalParkGrid originalGrid )
+			originalGrid.LiveCells = () => Guests?.Grid.Cells;
 		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBlocked )
 		{
 			// [BIN:TPW-EXE:0x00534A91 queue neighbour sound] the writer plays cat_ui 139 only while game+36 (0x785A2C, the park's money) is clear: here, while a park economy runs
@@ -532,7 +553,10 @@ public partial class Level
 		Objects.Grid.CheckTerrain( x, y ) != OriginalPlacementResult.Allowed || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ));
 
-	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell. The original placement 0x528A70 lays the access cells itself: on commit with 0x52FAB0 true (option 0x81B0CC, default 1 at 0x52F139, and 0x8187F8 clear) the entrance's outside cell becomes a queue cell linked to the entrance (0x5297BD–0x529890) and the exit's outside cell a path cell linked to its path neighbours (0x529A58–0x529B1A); with it false the entrance's outside cell becomes a path cell and the exit gets none; an outside cell off the map refuses the placement (0x529744, 0x5299E2), and validation runs ops 0x204/0x201 on it — evidence needed: the cell ops 0x81/0x85/0x86 that link the laid cells, and a model of the laid cells' cost
+	// [BIN:TPW-EXE:0x0052977F access cells] the placement lays the cells outside the entrance and exit itself (ObjectAccessCells: the entrance's queue cell for a type with Info.HasQueue, else a path cell; the exit's path cell), free of charge and NoModify; Easymode's eight rides carry exactly these cells (18 cells compared)
+	// [BIN:TPW-EXE:0x0052FAB0 queue option] the option 0x81B0CC is set by the build tool from the type's +0x40 (0x52FA90 at 0x527986 and 0x46D644) and is 1 after SetMode (0x52F139); 0x8187F8 is the upgrade selection (0x52F880), which no OpenTPW build uses
+	// [BIN:TPW-EXE:0x00534115 bridge ops] the refresh ops after the laid cell run 0x81 (the tile refresh 0x5365D0, RefreshTile) and 0x85 and 0x86, which act on a track cell of the second layer (0x53AD30 first) and so do nothing for a cell that holds none
+	// A cell nothing laid (an imported or restored park, Theme Park Inc) keeps the nearest walkable cell as the guests' entrance, which their route graph needs to be a path cell (QUEUE-003, WALK-005).
 	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
 		grid.IsWalkable( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
 
@@ -613,7 +637,16 @@ public partial class Level
 				return null;
 			}
 		}
-		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _ )!;
+		layingAccessCells = true;
+		OriginalObject placed;
+		try
+		{
+			placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _ )!;
+		}
+		finally
+		{
+			layingAccessCells = false;
+		}
 		// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
 		placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 		if ( bought != null )

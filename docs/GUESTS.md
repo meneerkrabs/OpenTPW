@@ -659,7 +659,7 @@ entrance (`QueueFrontCell`). The queue is the chain of type-3 cells whose link
 points back at the previous cell, followed from the front at most 1,000 steps
 (`RideVisitorBridge.RecomputeQueue`). That gives the back cell and the size in
 cells, at least 1. A front cell that is neither a queue nor a path cell falls
-back to the nearest walkable path cell as a one-cell queue (RIDES-028). Guests
+back to the nearest walkable path cell as a one-cell queue (a cell nothing laid: an imported or restored park; a build lays the queue cell, see OBJECTS.md). Guests
 step onto the back cell from the **join cell**, the path cell attached to the
 back cell: the first cardinal neighbour (order 1, 4, 16, 64) whose bit is set in
 the back cell's link byte `+0x0C` (tp.exe `0x4de840`). A queue whose back links

@@ -172,6 +172,25 @@ public static class ObjectFootprint
 		_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
 	};
 
+	/// <summary>
+	/// A shape symbol's direction byte (0x01, 0x04, 0x10 or 0x40) turned by the build rotation, the byte the placement stores in an entrance or exit cell's queue link:
+	/// shifted left by 0, 6, 4 or 2 bits (rotation 0, 90, 180, 270); a result above 0x80 is taken as its overflow, the value shifted right by 8.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D8C20 rotate direction byte] the byte is shifted left by log2 of the step byte (1, 0x40, 0x10, 4 for 0, 90, 180, 270); a result above 0x80 is shifted right by 8 (0x4D8C45), so the bit that left the byte comes back at the bottom: 0x10 turned by 90 is 0x04, by 180 0x01, by 270 0x40; Easymode's saved entrance and exit cells carry these bytes (Staff Room at 90: 0x04, Small Toilets at 270: 0x40)
+	public static byte RotateDirectionByte( byte direction, int rotation )
+	{
+		var shift = rotation switch
+		{
+			0 => 0,
+			90 => 6,
+			180 => 4,
+			270 => 2,
+			_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+		};
+		var value = direction << shift;
+		return (byte)(value > 0x80 ? value >> 8 : value);
+	}
+
 	/// <summary>Turns a local direction (du, dv) like <see cref="ToGrid(int,int,int,int,int)"/> turns offsets.</summary>
 	public static (int X, int Y) RotateDirection( int rotation, int du, int dv ) => rotation switch
 	{

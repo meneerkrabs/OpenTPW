@@ -54,10 +54,16 @@ public sealed class OriginalParkGrid : IParkGrid
 	public int Height => Math.Min( park.Heightfield.CellCountZ, park.Map.CellCountY );
 	public System.Numerics.Vector2 Origin => -OriginalParkPlacement.GetOrigin( park.Heightfield );
 
+	/// <summary>
+	/// The level's live cell map, once it has one. Its types and flags then decide path, queue and object cells (the host's reservation), so the saved path and occupancy bits
+	/// are no longer consulted: they describe the park as it was saved, not as the player has built on it since.
+	/// </summary>
+	public Func<ParkCellMap?>? LiveCells { get; set; }
+
 	public OriginalPlacementResult CheckTerrain( int x, int y )
 	{
 		var result = OriginalParkPlacement.Check( park.Map, park.Heightfield, null, x, y, x, y );
-		if ( result != OriginalPlacementResult.Allowed || park.Save == null )
+		if ( result != OriginalPlacementResult.Allowed || park.Save == null || LiveCells?.Invoke() != null )
 			return result;
 		var cell = park.Save.Cells[x, y];
 		if ( cell.IsPath )
@@ -102,6 +108,13 @@ public sealed class ParkObjects
 	public Func<int, int, bool>? IsReserved { get; set; }
 	/// <summary>Cells the park does not own (the level's cell map, flag 0x40); null owns every cell.</summary>
 	public Func<int, int, bool>? IsUnowned { get; set; }
+	/// <summary>
+	/// The cells beyond the footprint a placement also validates (the entrance's and exit's outside cells, <see cref="ObjectAccessCells.CellsToCheck"/>), by the object rule (they
+	/// may give way to a lower overwrite priority like a footprint cell) and by the path rule (empty ground or a path cell only); null checks the footprint alone.
+	/// </summary>
+	public Func<ObjectCatalogEntry, int, int, int, (IReadOnlyList<(int X, int Y)> Object, IReadOnlyList<(int X, int Y)> Path)>? AccessCells { get; set; }
+	/// <summary>The cells the path rule of <see cref="AccessCells"/> refuses besides objects and the unowned land (the level's cell map: any type but empty and path); null refuses none.</summary>
+	public Func<int, int, bool>? IsReservedForPath { get; set; }
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -117,7 +130,7 @@ public sealed class ParkObjects
 	/// <see cref="Check(ObjectCatalogEntry, int, int, int)"/> with the objects the placement would overwrite: an object whose
 	/// <see cref="ObjectCatalogEntry.OverwritePriority"/> is below the new one's gives way (a ride over a bush), any other overlap refuses.
 	/// </summary>
-	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + save paths/objects + overlap by overwrite priority + owned land; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases — evidence needed: the placement's own path cells (an object may stand on a path cell that is not NoModify, 0x535D21, the commit clearing it, 0x534549), the entrance and exit outside cells (0x5298B9, 0x529A2F: the path rule 0x201 there) and the overwrite of objects by the path and queue tools (0x535D66 with 0x818C10 = 2 and 3)
+	// [APPROX:RIDES-018] Build rules = footprint inside grid + the original's map-start cell types (holes refused, OriginalParkPlacement) + overlap by overwrite priority + owned land, a path cell without NoModify giving way and the entrance's and exit's outside cells validated by their own rules; no slope test, as in tp.exe's validator 0x535670; Level.PlaceObject enforces economy purchases — evidence needed: none for the object rules; paths and queues still refuse scenery where the validator lets them replace objects of a lower overwrite priority (0x535D66 with 0x818C10 = 2 and 3, the commit demolishing them with op 0x87)
 	// [BIN:TPW-EXE:0x5357c7 placement validator] after its early returns for a few tool modes the validator 0x535670 refuses a cell with flag 0x40 for whatever it places, paths, queues and objects alike
 	// [BIN:TPW-EXE:0x535D66 overwrite priority] a cell of type 4, 9 or 10 is allowed when 0x818C10, the placed type's +0x54 (Info.OverwritePriority, sam schema 0x745020; set by the hover 0x5234D0), is greater than 0x818C14, the +0x54 of the type of the object owning the cell (0x53570E: the thing at the cell's owner index +0x10, class 3); otherwise the cell is refused and the sticky refusal 0x816D50 set
 	public OriginalPlacementResult Check( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, out IReadOnlyList<OriginalObject> overwritten )
@@ -149,9 +162,39 @@ public sealed class ParkObjects
 				}
 			}
 		}
+		// [BIN:TPW-EXE:0x00529744 access cells] the entrance's and exit's outside cells are validated after the footprint (ops 0x204 and 0x201, 0x5297A9 and 0x529A2F); a cell off the map refuses the placement
+		if ( result == OriginalPlacementResult.Allowed && AccessCells is { } access && !entry.IsTool )
+		{
+			var (objectCells, pathCells) = access( entry, anchorX, anchorY, rotation );
+			foreach ( var (x, y) in objectCells )
+			{
+				if ( (result = CheckAccessCell( x, y, Blocks )) != OriginalPlacementResult.Allowed )
+					break;
+			}
+			if ( result == OriginalPlacementResult.Allowed )
+			{
+				foreach ( var (x, y) in pathCells )
+				{
+					if ( (result = CheckAccessCell( x, y, ( cx, cy ) => occupied.ContainsKey( (cx, cy) ) || (IsReservedForPath ?? IsReserved)?.Invoke( cx, cy ) == true )) != OriginalPlacementResult.Allowed )
+						break;
+				}
+			}
+		}
 		if ( result != OriginalPlacementResult.Allowed )
 			giving.Clear();
 		return result;
+	}
+
+	private OriginalPlacementResult CheckAccessCell( int x, int y, Func<int, int, bool> blocks )
+	{
+		if ( x < 0 || y < 0 || x >= Grid.Width || y >= Grid.Height )
+			return OriginalPlacementResult.OutsideTerrain;
+		var terrain = Grid.CheckTerrain( x, y );
+		if ( terrain != OriginalPlacementResult.Allowed )
+			return terrain;
+		if ( blocks( x, y ) )
+			return OriginalPlacementResult.Occupied;
+		return IsUnowned?.Invoke( x, y ) == true ? OriginalPlacementResult.NotOwned : OriginalPlacementResult.Allowed;
 	}
 
 	/// <summary><see cref="Check(ObjectCatalogEntry, int, int, int)"/> for a site that demolishes nothing: an overwrite counts as occupied (fixtures and demo builders).</summary>

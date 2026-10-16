@@ -199,6 +199,9 @@ public static class QueuePaths
 		}
 		if ( index < 0 || !grid.IsQueue( x, y ) )
 			return 0;
+		// The cell the placement laid outside the entrance carries NoModify, and the cell clear leaves such a cell alone unless it is forced (0x5367D4..0x5367E0).
+		if ( grid.Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )
+			return 0;
 		var removed = cells.Skip( index ).ToArray();
 		foreach ( var cell in removed )
 			grid.ClearQueue( cell.X, cell.Y );

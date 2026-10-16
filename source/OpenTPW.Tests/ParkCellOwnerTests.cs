@@ -171,4 +171,59 @@ public class ParkCellOwnerTests
 			for ( var x = 0; x < cells.Width; x++ )
 				Assert.AreEqual( 0, park.Save.Cells[x, y].MapFlags & (ushort)ParkCellFlags.AddOn, $"({x}, {y}) carries flag 0x10" );
 	}
+
+	[TestMethod]
+	public void TheCellsAPlacementWritesAreTheCellsEasymodeSaved()
+	{
+		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );
+		if ( string.IsNullOrWhiteSpace( gamePath ) || !Directory.Exists( gamePath ) )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the Jungle Easymode save." );
+		Log = new();
+		originalFileSystem = FileSystem;
+		FileSystem = new BaseFileSystem( OriginalParkImportTests.OriginalDataPath() );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		initialized = true;
+		var park = OriginalPark.Load( "jungle" );
+		if ( park.Save == null )
+			Assert.Inconclusive( "The Jungle Easymode.TPWI save is missing." );
+		var catalog = ObjectCatalog.Load( "jungle" );
+		// A bare map: the placement alone writes every cell compared below, so what the save holds there is what the placement wrote (the player's own queue and path cells are elsewhere).
+		var cells = new ParkCellMap( park.Save.Cells.CountX, park.Save.Cells.CountY );
+		var mismatches = new List<string>();
+		var compared = 0;
+		foreach ( var record in park.Save.PlacedObjects.Select( item => item.Record ).Concat( park.Save.UnresolvedObjects ) )
+		{
+			if ( catalog.Find( record.InfoId ) is not { IsTool: false, IsFixedItem: false } entry )
+				continue;
+			var owner = ParkCellMap.CellWord( record.X, record.Y );
+			var footprint = ObjectFootprint.GetCells( entry.Shape, record.X, record.Y, record.Rotation ).ToList();
+			var points = ObjectFootprint.GetAccessPoints( entry.Shape, record.X, record.Y, record.Rotation ).ToList();
+			cells.WriteFootprint( footprint, owner, record.Rotation );
+			ObjectAccessCells.Lay( cells, points, owner, entry.HasQueue );
+			void Compare( string what, int x, int y, bool queueLink, bool linkBits )
+			{
+				var saved = park.Save.Cells[x, y].Record.Span;
+				var savedType = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian( saved.Slice( 25, 4 ) );
+				var savedFlags = (ushort)(System.Buffers.Binary.BinaryPrimitives.ReadUInt16LittleEndian( saved.Slice( 2, 2 ) ) & 0x3F);
+				compared++;
+				if ( savedType != cells.RawTypeAt( x, y ) )
+					mismatches.Add( $"{entry.DisplayName} {what} ({x}, {y}) type saved {savedType}, written {cells.RawTypeAt( x, y )}" );
+				if ( savedFlags != (ushort)cells.FlagsAt( x, y ) )
+					mismatches.Add( $"{entry.DisplayName} {what} ({x}, {y}) flags saved {savedFlags:X}, written {(ushort)cells.FlagsAt( x, y ):X}" );
+				if ( queueLink && saved[1] != cells.QueueLinkAt( x, y ) )
+					mismatches.Add( $"{entry.DisplayName} {what} ({x}, {y}) queue link saved {saved[1]:X2}, written {cells.QueueLinkAt( x, y ):X2}" );
+				if ( linkBits && (saved[8] & cells.LinksAt( x, y )) != cells.LinksAt( x, y ) )
+					mismatches.Add( $"{entry.DisplayName} {what} ({x}, {y}) link byte {cells.LinksAt( x, y ):X2} not within the saved {saved[8]:X2}" );
+			}
+			foreach ( var point in points )
+			{
+				// the entrance and exit cells: type, queue link (the rotated direction, or for a queue ride's entrance the way to its outside cell) and the link bit toward the outside cell
+				Compare( point.Kind.ToString(), point.X, point.Y, queueLink: true, linkBits: true );
+				if ( point.Kind == ObjectCellKind.Entrance || entry.HasQueue )
+					Compare( point.Kind + " outside", point.OutsideX, point.OutsideY, queueLink: point.Kind == ObjectCellKind.Entrance && entry.HasQueue, linkBits: false );
+			}
+		}
+		Assert.IsTrue( compared >= 14, $"{compared} cells compared" );
+		Assert.AreEqual( 0, mismatches.Count, string.Join( "; ", mismatches.Take( 20 ) ) );
+	}
 }

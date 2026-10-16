@@ -102,7 +102,7 @@ remaining copies are listed under "Divergences from the player's build flow". If
    `GuestPathGrid.Directions` order, so it is deterministic. The object is bought with
    `ParkEconomy.TryBuild`, registered with guests by `Level.RegisterWithGuests`
    (attractions only; this sets `QueueFrontCell`/`QueueEntranceDirection`; a non-path
-   outside cell snaps to the nearest path cell, `RIDES-028`) and linked to the guest
+   outside cell snaps to the nearest path cell: the gate does not lay the cells a build lays, OBJECTS.md) and linked to the guest
    payment bridge.
 4. **Queue**: right after the ride, as in the HUD (placing a HasQueue ride switches to
    the queue tool, `BIN:STP-PPC:0x1007497C`). N = ⌈queue limit / 4 per cell⌉, capped at
@@ -343,7 +343,7 @@ M3-GATE-V, divergences D1 to D6, after the fixes above):
 
 Fixed since the review: D1 (fixed items registered after `AttachGuests`, linked and
 open-state synced), D2 (`ParkObjects.Check` itself instead of a copied terrain rule),
-D3 (`Level.ResolveVisitorCells`' RIDES-028 snap instead of a charged 7-cell
+D3 (`Level.ResolveVisitorCells`' nearest-path snap instead of a charged 7-cell
 connector) and D5 (`Level.RegisterWithGuests` applies `Runtime.IsAttraction`).
 
 ## Baseline (jungle, seed `Level.GuestSeed` = 6075451861746676596, 30 minutes)
@@ -419,7 +419,7 @@ Passing rows that rest on approximations rather than original rules:
 - arrival rate and needs (GUESTS.md approximation table);
 - wear, repair and cleaning (`ECON-021` to `ECON-024`), which also set the staff windows;
 - opening the park at the start: a new park starts closed (tp.exe `0x51562d`), and the gate run opens it as the player's door button would;
-- the entrance/exit snap (`RIDES-028`);
+- the entrance/exit snap (the gate does not lay the access cells a build lays, formerly `RIDES-028`);
 - the build rule (`RIDES-018`);
 - the queue build rules (`QUEUE-012` to `QUEUE-014`);
 - the boarding bound's assumptions: the nominal 248 ms clock and per-turn cadence

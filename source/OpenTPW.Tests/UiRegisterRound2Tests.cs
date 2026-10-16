@@ -52,6 +52,14 @@ public class UiRegisterRound2Tests
 	}
 
 	[TestMethod]
+	public void TheConfirmationBoxesAndThePostcardPauseThePark()
+	{
+		// the generic message box 0x47f020 pauses at 0x47f251 (ride erase 0x48cd10, employee dismiss 0x4b5e5d) and the postcard window at 0x4a93d7
+		foreach ( var name in new[] { "confirmDelete", "confirmDismissStaff", "sendPostcard" } )
+			Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 2f, new[] { "hud", name } ), name );
+	}
+
+	[TestMethod]
 	public void TheMapWindowPausesThePark()
 	{
 		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 2f, new[] { "hud", "map" } ), "0x5f0b40 calls the game pause 0x4092a0" );

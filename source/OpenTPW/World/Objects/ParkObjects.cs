@@ -162,7 +162,8 @@ public sealed class ParkObjects
 
 	/// <summary>Places an object without build rules (imported original records and fixed items).</summary>
 	public OriginalObject Add( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open = true ) =>
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open ) );
+		// the placement ordinal stays the object's creation seed (identity and save bookkeeping); its script draws from the world generator like the original's (DET-013)
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, nextSeed++ ^ scriptKey, open, attractionId: null, seedScript: false ) );
 
 	/// <summary>
 	/// Places a saved object back (<see cref="ParkLayoutSnapshot"/> restore): the placement rules of <see cref="Add"/>
@@ -173,7 +174,7 @@ public sealed class ParkObjects
 	/// <see cref="RestoreSeedAllocator"/> so objects placed after the load continue the saved seed sequence.
 	/// </summary>
 	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId, bool legacyBaseHeight = false ) =>
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation, legacyBaseHeight ), ScriptWorld, seed, open, attractionId ) );
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation, legacyBaseHeight ), ScriptWorld, seed, open, attractionId, seedScript: false ) );
 
 	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
 	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.

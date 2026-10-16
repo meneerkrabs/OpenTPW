@@ -1064,7 +1064,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				"enumeration preserves the prototype object identity" );
 			// A different object can carry the same id in a different script world: removal must check ownership.
 			var foreign = new OriginalObject( reviewedPrototype!.Entry, reviewedPrototype.Placement,
-				new RideScriptWorld(), seed: null, open: false, attractionId: prototypeAttractionId );
+				new RideScriptWorld(), seed: null, open: false, attractionId: prototypeAttractionId, seedScript: true );
 			try
 			{
 				var balance = level.Park!.Economy.Balance;

@@ -162,7 +162,7 @@ public static partial class Program
 		var park = ParkEconomyRuntime.ForOriginalLevel( original, ParkStartKind.OriginalSaveReference, seed );
 		var guests = new GuestSimulation( GuestPathGrid.FromOriginal( original.Map, original.Save, original.Heightfield ), GuestSettings.Load( theme ), seed.GuestStream );
 		park.AttachGuests( guests );
-		var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream, RideScriptWorld.FixedClock ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) );
+		var streams = new ParkWorldStreams( seed, park, guests, new RideScriptWorld( seed.ScriptStream, RideScriptWorld.FixedClock ), new SoundEventSystem( new AudioMixer( null ), seed.SoundStream ) ).LinkGenerator();
 		park.Economy.Speed = GameSpeed.Fastest;
 		for ( var tick = 0; tick < 3000; tick++ )
 		{

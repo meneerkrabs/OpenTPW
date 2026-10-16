@@ -284,6 +284,31 @@ public class AudioRegisterRound2Tests
 		Assert.AreEqual( new Vector3( 30, 0, 40 ), voice.Position );
 	}
 
+	[TestMethod]
+	public void ARefusedPathClickSoundsAtTheReleaseThatFollowsAParkPress()
+	{
+		// [BIN:TPW-EXE:0x524a6f] the release plays 0xAF with the refusal latch set, the press latch 0x8186d8 set and no layout replay
+		var gate = new PathRefusalClick();
+		gate.Press();
+		gate.Refused( 3, 4 );
+		Assert.AreEqual( (3, 4), gate.Release() );
+	}
+
+	[TestMethod]
+	public void ARefusedPathClickIsSilentWithoutItsPressOrDuringALayoutReplay()
+	{
+		// [BIN:TPW-EXE:0x524ae6] every release clears the press latch, so a second release without a press is silent
+		var gate = new PathRefusalClick();
+		gate.Refused( 3, 4 );
+		Assert.IsNull( gate.Release(), "no press reached the park view" );
+		gate.Press();
+		gate.Refused( 3, 4 );
+		Assert.IsNull( gate.Release( layoutReplay: true ), "0x785a2c set: a layout replay runs" );
+		Assert.IsNull( gate.Release(), "the release consumed the latch and the refusal" );
+		gate.Press();
+		Assert.IsNull( gate.Release(), "an accepted click is silent" );
+	}
+
 	// ---- AUDIO-015 ----
 
 	[TestMethod]

@@ -136,8 +136,7 @@ public static class GameAudio
 	// [BIN:STP-PPC:0x10070DE0 path lay click] cat_ui 101 under tool mode 1 or 3 with the latch clear; the PC doc's 0x005271B7 is a lead (packed PC exe)
 	public const uint PathLayEvent = 101;
 	/// <summary>The path tool's refused click: <c>cat_ui</c> 175 (Mac <c>0x10073D1C</c>, reached behind the latch and a byte test; the mapping to a refusal is inferred from the fork).</summary>
-	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [BIN:TPW-EXE:0x524a80] the click handler 0x52496e plays cat_ui 0xAF at (x*10, 0, z*10) of the clicked cell (0x524a80-0x524aae) before its tool switch, while tool 0x38 is off, the refusal latch (0x816d48) is set, no line drag is running (0x785a2c == 0) and the mouse has moved since a hover (0x8186d8)
-	// [APPROX:AUDIO-022] OpenTPW plays it on a click whose ghost is refused (the latch's trigger), but does not test the drag word 0x785a2c or the moved-since-hover byte 0x8186d8
+	// [BIN:STP-PPC:0x10073D1C refused click] cat_ui 175 behind the latch test; [BIN:TPW-EXE:0x524a80] the release handler 0x524960 plays cat_ui 0xAF at (x*10, 0, z*10) of the clicked cell (0x524a80-0x524aae) before its tool switch, while tool 0x38 is off, the refusal latch (0x816d48) is set, no layout replay runs (0x785a2c == 0) and the park view's press handler ran since the last release (0x8186d8, PathRefusalClick)
 	public const uint PathRefusedEvent = 175;
 	/// <summary>
 	/// A queue joined to a path: <c>cat_ui</c> 139 at the cell. The queue tool's commit plays it at the clicked end when the

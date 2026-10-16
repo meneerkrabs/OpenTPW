@@ -43,6 +43,8 @@ public sealed class ThemeParkIncHud
 	private int cursorY = -1;
 	/// <summary>Set by a press the path/queue tool used, so its release does not select an object.</summary>
 	private bool toolPress;
+	/// <summary>The refused path click's press latch: its sound plays at the release (GameAudio.PathRefusedEvent).</summary>
+	private readonly PathRefusalClick refusalClick = new();
 	private OriginalObject? selectedObject;
 	private bool retiredByLayoutLoad;
 
@@ -404,7 +406,11 @@ public sealed class ThemeParkIncHud
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsRemovingObjects && input.LeftReleased && !toolPress )
 			selectedObject = level.Objects.FindAt( cursorX, cursorY );
 		if ( input.LeftReleased )
+		{
 			toolPress = false;
+			if ( refusalClick.Release() is { } refused )
+				GameAudio.PlayPathRefused( refused.X, refused.Y );
+		}
 
 		for ( var index = messages.Count - 1; index >= 0; index-- )
 		{
@@ -460,6 +466,7 @@ public sealed class ThemeParkIncHud
 		if ( !input.LeftPressed )
 			return false;
 		// The commit click; Level skips it because this frame's pointer is reported as captured.
+		refusalClick.Press();
 		var queueJoin = level.QueueJoinCell( tool );
 		var result = tool.Click( (cursorX, cursorY) );
 		// [BIN:TPW-EXE:0x527587 queue-join sound] it follows every commit; a click on a refused ghost lays nothing and returns before the commit (0x524A63)
@@ -471,7 +478,7 @@ public sealed class ThemeParkIncHud
 		{
 			// a commit stopped only by OpenTPW's own queue cap is not one of the original's refusals (QUEUE-013)
 			if ( !result.StoppedByOwnLimit )
-				GameAudio.PlayPathRefused( cursorX, cursorY );
+				refusalClick.Refused( cursorX, cursorY );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
 		}
 		return toolPress = true;

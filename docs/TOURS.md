@@ -73,9 +73,13 @@ decision). Bridge walkers carry an optional ready time (`WalkingOffReady`, absen
 a save from the 31 ms clock holds less than 31 ms and restores unchanged (the value is elapsed seconds, so the first advance runs it off). The `FreeSlots` and the full seat lists are trailing optional
 parts: a save without them restores with zero stale words. No schema version moved: the canonical digest still includes the tour module only while a controller exists.
 
+## Launch pad (TOUR-003 retired)
+
+TOUR 1 (`0x005542FE`) reads the pad node live (`0x0044B220`, class 0x800 number 99, then `0x004386D0`) and the instance angle `+0x10` (`0x00554385`). `+0x10` is the build angle the constructor stores in degrees (`0x004DB0CD`, handed over by the placement `0x00529E10`) and, for a saved ride, the save's `mAngle`, which the attraction reader (`0x004DB7D0`) loads straight into `+0x10`: the placement rotation is the angle either way. All four tour scripts run TOUR 1 before any clip is triggered (`WAITANIM 0 0` on an idle channel, then `TOUR 1`), so the live node is the model's rest pose; `TourAssetTests.TheLaunchPadIsReadBeforeAnyClipPlays` pins that. TOUR-003 retired.
+
 ## Not done
 
-A shadow under the cars and the angle table's sines (TOUR-008: whether the original draws a shadow is not read), the pad's live-instance read and an imported ride's saved rotation (TOUR-003; for a built ride the instance angle +0x10 is the build angle, `0x4DB0CD`), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
+A shadow under the cars and the angle table's sines (TOUR-008: whether the original draws a shadow is not read), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
 
 ## Drawing
 
@@ -128,7 +132,7 @@ the original finds through the track redirect or a type-3 thing, and objects who
   TOUR-010 (the Ready override on closing is gone, see Q3).
 - Reclassified: TOUR-006 is `[EXT:legacy-tour-save]`.
 - Narrowed: TOUR-002 (the original drops thrown-off riders: the script never releases them, so **thrown-off riders inflate the ride's rider count**, VAR_ONRIDE, for ever; OpenTPW hands them out through TOUR 4
-  and lowers it; the guest-side consequence of a boarded guest nobody releases is the guest owner's), TOUR-003 (formula verified, only the rest-pose read and the rotation identity remain), TOUR-004 (all
+  and lowers it; the guest-side consequence of a boarded guest nobody releases is the guest owner's), TOUR-004 (all
   triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-007 (the walk-off duration is `ftol(distance between the walker's two slot nodes) x 100` ms, 100 ms for 0, `0x005571A0`;
   OpenTPW's WALKON keeps no walk nodes, so this stays at 1 s until the walk owner supplies them: **note for the walk owner**, evidence needed: the nodes a WALKON slot holds when WALKOFF runs), TOUR-008 (animations and
   shadow only).

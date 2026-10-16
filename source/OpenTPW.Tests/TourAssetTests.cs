@@ -65,6 +65,25 @@ public class TourAssetTests
 		}
 	}
 
+	/// <summary>
+	/// TOUR-003: a tour script runs TOUR 1 (the launch pad read: node lookup 0x0044B220 then position 0x004386D0) before it triggers any clip, so the live node instance
+	/// it reads is the model's rest pose, which the port reads.
+	/// </summary>
+	[TestMethod]
+	public void TheLaunchPadIsReadBeforeAnyClipPlays()
+	{
+		var triggers = new[] { Opcode.TRIGANIM, Opcode.LOOPANIM, Opcode.TRIGWAITANIM, Opcode.TRIGANIMSPEED, Opcode.TRIGANIM_CH, Opcode.LOOPANIM_CH, Opcode.TRIGWAITANIM_CH }.Select( x => (ushort)x ).ToHashSet();
+		foreach ( var (theme, infoId, _) in Tours )
+		{
+			var entry = ObjectCatalog.Load( theme ).Get( infoId );
+			using var stream = entry.FileSystem.OpenRead( entry.ScriptPath! );
+			var file = new RideScriptFile( stream );
+			var before = file.Instructions.TakeWhile( instruction => !(instruction.Opcode == (ushort)Opcode.TOUR && instruction.Operands[0].Value == 1) ).ToList();
+			Assert.IsTrue( before.Count < file.Instructions.Count, $"{theme}: the script issues TOUR 1" );
+			Assert.IsFalse( before.Any( instruction => triggers.Contains( instruction.Opcode ) ), $"{theme}: no clip is triggered before TOUR 1" );
+		}
+	}
+
 	/// <summary>The ride's flying-car mesh is the supplemental mesh 0 and carries the rider seats (head dummies numbered from 1, one more than the script's per-car load).</summary>
 	[TestMethod]
 	public void TheCarMeshesCarryTheRiderSeats()

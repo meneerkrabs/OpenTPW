@@ -216,7 +216,8 @@ public class OriginalObject : Entity
 	/// number 99; the ride origin when it has none) with each coordinate truncated to whole model units first, as the original's creation command does, and the placement rotation.
 	/// </summary>
 	// [BIN:TPW-EXE:0x005542FE TOUR 1] the node lookup 0x0044B220 (class 0x800, number 0x63), its world position 0x004386D0, each coordinate converted to an integer and multiplied by 300
-	// [APPROX:TOUR-003] the pad is read from the model's rest pose (the original reads the live node instance); the placement's rotation is the original's instance angle for a built ride (0x00529E10 hands the build angle to the constructor 0x004DB090, stored in degrees at +0x10 by 0x004DB0CD and read by TOUR 1 at 0x00554385); evidence needed: the live pad node at TOUR 1 time and the rotation field the save loader restores for an imported tour ride
+	// [BIN:TPW-EXE:0x00554385 TOUR 1 pad rotation] the instance angle read by TOUR 1 is the thing's word +0x10, written in degrees by the constructor from the build angle (0x004DB0CD, handed over by the placement 0x00529E10) and, for a saved ride, read back from the save's mAngle (the attraction reader 0x004DB7D0 loads mAngle straight into +0x10), so the placement rotation is the instance angle for built and imported rides alike
+	// [BIN:TPW-EXE:0x00554342 TOUR 1 pad node] the pad node is read live (0x0044B220 then 0x004386D0), but all four tour scripts run TOUR 1 before they trigger any clip (WAITANIM 0 0 on an idle channel, then TOUR 1: TourAssetTests.TheLaunchPadIsReadBeforeAnyClipPlays), so the live node instance is still the model's rest pose, which is what this reads
 	internal TourStation ComputeTourStation()
 	{
 		var model = Runtime.Model;

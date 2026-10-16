@@ -123,6 +123,19 @@ class ProgressTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("2026-10-16-bad.md:1", result.stderr)
 
+    def test_migrate_moves_entries_above_the_frozen_history_into_fragments(self):
+        old = HISTORY.replace(progress.FROZEN_TOP, "## Branch work: part 2! (October 17, 2026)\n\nTwo.\n\n"
+                              "## Branch work (October 16, 2026)\n\n### Detail\n\nOne.\n\n" + progress.FROZEN_TOP)
+        written = progress.migrate(self.root, old)
+        self.assertEqual([path.name for path in written], ["2026-10-17-branch-work-part-2.md", "2026-10-16-branch-work.md"])
+        self.assertEqual(written[1].read_text(encoding="utf-8"), "## Branch work (October 16, 2026)\n\n### Detail\n\nOne.\n")
+        self.assertEqual(progress.check(self.root), [])
+        with self.assertRaises(ValueError):
+            progress.migrate(self.root, old)  # never overwrites
+        self.assertEqual(progress.migrate(self.root, HISTORY), [])
+        with self.assertRaises(ValueError):
+            progress.migrate(self.root, "## Unrelated (October 1, 2026)\n")
+
     def test_repository_log_is_consistent(self):
         root = Path(__file__).resolve().parents[1]
         self.assertEqual(progress.check(root), [])

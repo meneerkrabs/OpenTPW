@@ -1,6 +1,6 @@
 """Assemble the progress log from one fragment per pull request (Python standard library only).
 
-Usage: python3 tools/progress.py [--root CHECKOUT] [--check | --output PATH]
+Usage: python3 tools/progress.py [--root CHECKOUT] [--check | --output PATH | --migrate OLD_PROGRESS_MD]
 
 Every pull request adds its entry as its own file, docs/progress/YYYY-MM-DD-<slug>.md, whose first line is the
 entry heading `## Title (Month D, YYYY)` with the same date as the file name. Separate files never conflict, unlike
@@ -12,6 +12,10 @@ date: by file name), then the history. --output writes it to a file instead; the
 assembly for its "Progress notes" page. Relative links in a fragment are written as seen from docs/progress/ and
 are rewritten to resolve from docs/. --check validates fragment names and headings and that docs/PROGRESS.md has
 not grown new entries.
+
+--migrate helps a branch that still added its entry to docs/PROGRESS.md: given that branch's copy of the file (for
+example `git show HEAD:docs/PROGRESS.md > /tmp/old.md` before merging main), it writes every entry above the frozen
+history into its own fragment. Links are written as found (from docs/); fix them to start from docs/progress/.
 """
 from __future__ import annotations
 
@@ -177,13 +181,54 @@ def assemble(root: Path) -> str:
     return "\n\n".join(part for part in parts if part) + "\n"
 
 
+def slug(title: str) -> str:
+    words = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    return words[:60].rstrip("-") or "entry"
+
+
+def migrate(root: Path, old: str) -> list[Path]:
+    """Write the entries above FROZEN_TOP in an old copy of docs/PROGRESS.md as fragments."""
+    _, entries = split_history(old)
+    frozen = re.search(r"^%s$" % re.escape(FROZEN_TOP), entries, re.M)
+    if frozen is None:
+        raise ValueError(f"the old log does not contain the frozen history's first entry {FROZEN_TOP!r}")
+    new = entries[:frozen.start()]
+    blocks = [block for block in re.split(r"^(?=## )", new, flags=re.M) if block.strip()]
+    planned = []
+    for block in blocks:
+        heading = block.splitlines()[0]
+        date = heading_date(heading)
+        if date is None:
+            raise ValueError(f"no `## Title (Month D, YYYY)` heading: {heading!r}")
+        path = root / FRAGMENTS / f"{date.isoformat()}-{slug(HEADING.fullmatch(heading).group(1))}.md"
+        if path.exists() or path in (target for target, _ in planned):
+            raise ValueError(f"{path.relative_to(root).as_posix()} exists already")
+        planned.append((path, block.strip() + "\n"))
+    for path, text in planned:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+    return [path for path, _ in planned]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--check", action="store_true", help="validate the fragments and the frozen history; writes nothing")
     mode.add_argument("--output", type=Path, help="write the assembled log to this file instead of standard output")
+    mode.add_argument("--migrate", type=Path, metavar="OLD_PROGRESS_MD",
+                      help="write the entries above the frozen history in this old copy of docs/PROGRESS.md as fragments")
     args = parser.parse_args()
+    if args.migrate:
+        try:
+            written = migrate(args.root, args.migrate.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            print(f"progress: {error}", file=sys.stderr)
+            return 1
+        for path in written:
+            print(f"Wrote {path.relative_to(args.root).as_posix()}")
+        print(f"{len(written)} entr{'y' if len(written) == 1 else 'ies'} moved; check their relative links and run --check.")
+        return 0
     if args.check:
         errors = check(args.root)
         if errors:

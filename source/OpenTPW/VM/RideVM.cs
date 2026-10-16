@@ -485,7 +485,7 @@ public sealed class RideVM
 
 	/// <summary>Script speed of the animation opcodes: <c>0.5 + bias / 100</c> in single precision (constants −0.01 and 0.5 at 0x551769).</summary>
 	// [BIN:TPW-EXE:0x551769 script speed] speed = 0.5 + bias / 100; the bias is the ride's SPEED: ride init 0x4db51c..0x4db54c, children copy the parent's (0x551888), creation default 50 (0x558c3c), setter 0x55a300.
-	// [APPROX:RIDES-033] Ride-settings speed changes (the UI command 0x4af440 → ride SetSpeed 0x4dd6e0, bias 0x55a300) are not modelled, as OpenTPW has no ride speed control — evidence needed: the ride-settings UI of the original
+	// [BIN:TPW-EXE:0x4af440 ride window speed] the ride window's speed slider (0x3e30, MinSpeed..MaxSpeed) sets the bias through SetSpeed 0x4dd6e0 (0x55a300) when the window applies on closing or stepping (OriginalObjectRuntime.ApplyRideWindow)
 	public float ScriptSpeed => 0.5f + SpeedBias / 100f;
 
 	/// <summary>WAIT4ANIM deadline (script +164) in script-clock milliseconds; 0 = none. Each trigger overwrites it.</summary>

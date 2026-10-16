@@ -838,9 +838,9 @@ public sealed class ServerStore
 	/// park summaries mark "visited before" with.
 	/// </summary>
 	// [EXT:ONLINE-075] the visit counter counts accepted visit reports; a ticket award hooked here sees one call per visit.
-	// [APPROX:ONLINE-076] every visit earned the owner Platinum Tickets (FAQ, S2), but the original's guard against
-	// repeated or self visits is not recovered: an owner's visits to their own park never count, and one visitor counts
-	// at most once per UTC day per park, so tickets cannot be farmed by re-entering a park.
+	// [EXT:online-visit-count-guard] every visit earned the owner Platinum Tickets (FAQ, S2); OpenTPW's guard: an owner's
+	// visits to their own park never count, and one visitor counts at most once per UTC day per park, so tickets cannot be
+	// farmed by re-entering a park. The original service's guard against repeated or self visits is not recovered.
 	public CounterResult Visit( AccountRecord visitor, string id )
 	{
 		lock ( gate )

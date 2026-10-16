@@ -163,7 +163,7 @@ public sealed class CoasterToolPanel
 	/// The pointer hovers cell (x, y) (<c>0x435d50</c>): in the build modes the cursor shows what a pylon there would do, a closing target when the cell holds the chain start. Other modes show nothing.
 	/// </summary>
 	// [BIN:TPW-EXE:0x435d50 build cursor] a hovered cell within 300 units of the last node fills the spare cursor node (flag 0x8000, plus 0x4000 when the validator 0x434740 refuses the cell); the chain start marks the closing flag 8 instead; the cost preview is 0x447830
-	// [APPROX:COAST-035] the 300-unit reach is not applied: the cursor follows every hovered cell and the validator refuses the far ones as too far
+	// [BIN:TPW-EXE:0x435e2a build cursor reach] (10x − X)² + (10y − Z)² of the hovered cell's corner against the reference node's position (+0x4c/+0x54) is compared with 90000 (0x6fdeec); a farther cell returns at once (0x435e37 → 0x4360b8), so the cursor node keeps its last fill, closing target included
 	public void Hover( int x, int y )
 	{
 		if ( !IsBuilding )
@@ -171,6 +171,8 @@ public sealed class CoasterToolPanel
 			Cursor = null;
 			return;
 		}
+		if ( Track.Nodes.Count > 0 && !WithinReach( Track.NodePosition( builder.Site, Track.Nodes[Track.LastIndex] ), x, y ) )
+			return;
 		if ( Track.IsChainStart( x, y ) && (!Track.IsComplete || Track.IsCut) )
 		{
 			var closing = Track.IsCut ? Track.CheckClosure() : Track.IsClosed ? builder.CheckComplete() : Track.CheckClosure();
@@ -183,6 +185,13 @@ public sealed class CoasterToolPanel
 
 	/// <summary>The pointer left the park.</summary>
 	public void HoverNothing() => Cursor = null;
+
+	/// <summary>The cursor's reach (<c>0x435d50</c>): cell (x, y)'s corner lies within 300 units of the reference node's position in X and Z.</summary>
+	internal static bool WithinReach( System.Numerics.Vector3 reference, int x, int y )
+	{
+		double dx = (float)(x * 10.0) - reference.X, dz = (float)(y * 10.0) - reference.Z;
+		return dx * dx + dz * dz <= 90000.0;
+	}
 
 	/// <summary>
 	/// The cells the build buttons mark yellow: the validator-passing, empty cells in the box around the last node (<c>0x434f10</c>, drawn by <c>0x5234d0</c>). Empty while another button is selected.

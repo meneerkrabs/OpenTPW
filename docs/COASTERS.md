@@ -470,6 +470,12 @@ The coaster tool panel round of October 15 narrowed COAST-028 (the panel, every 
 picking by cell, the area's occupancy test, the guessed clip angles of the hand-set yaw and incline and the panel's window position stay approximations) and COAST-035 (the cursor node and its flags
 are built as a translucent ribbon; the original's renderer for the flags is not found) and the cut-end flags of COAST-030.
 
+The read round of October 15 (tp.exe) narrowed COAST-004 (the collision count +0xB0 is read by the section builder `0x43F4E0`, which draws a
+crossing link with material variant 2; flag 0x400000 at `0x4376CC` is the coaster save writer's), COAST-014 (the PC cost `0x447830` is the Mac
+formula with x87 steps scaled by 0.1), COAST-032 (tp.exe sets single precision only around the renderer `0x576EC0`; the simulation runs with
+the start-up or 64-bit precision) and COAST-035 (the section builder recolours a link into a node with 0x800000/0x2000, or 0x4000); the cursor now keeps its last cell
+beyond the 300-unit reach of `0x435D50`, as the original does.
+
 The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
 COAST-034 (cars) and COAST-035 (the build cursor's ribbon). A rider's head hangs from its car's socket of its index in the
 car's seated list (`0x43b600` → `0x44b410`: socket j is the node of the car model's (j + 1)-th attribute record with flag `0x80`,
@@ -483,4 +489,4 @@ without the model; COAST-029 lost its middle-knot height-adjust clause, the knot
 the knot pass (`KnotPass`): a save from before it places the trains of a coaster with pylon models again and its riders leave. The same round traced the
 stack parts (`0x432df0`) and the kept half turn (COAST-033 narrowed), the mesh's slices, shared rings, winding and marker links
 (COAST-026 narrowed to the cross-section runs and blends, lighting and the Add-mode UV animation) and the cursor link (COAST-035
-narrowed: the ribbon is gone, the closing target's mark colours no drawn link).
+narrowed: the ribbon is gone; the closing target's marks are not set).

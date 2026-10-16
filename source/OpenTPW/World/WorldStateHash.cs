@@ -105,7 +105,13 @@ public static class WorldStateHash
 		}
 		// economy_digest: everything the park save stores, with object keys sorted.
 		if ( economy != null )
-			hash.Add( Canonical( JsonSerializer.SerializeToNode( ParkSaveFile.Capture( economy ) ) ) );
+		{
+			// the analyser's caches are saved for an exact continuation but are a reading aid, not park state: they stay out of the digest
+			var node = JsonSerializer.SerializeToNode( ParkSaveFile.Capture( economy ) );
+			if ( node is JsonObject root )
+				root.Remove( nameof( ParkSaveFile.Data.AnalyserCaches ) );
+			hash.Add( Canonical( node ) );
+		}
 		return hash.Value;
 	}
 

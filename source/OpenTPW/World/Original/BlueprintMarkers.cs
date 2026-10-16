@@ -140,11 +140,11 @@ public sealed class BlueprintMarkers : ModelEntity
 	}
 
 	/// <summary>
-	/// The marker height of a cell: the original passes 0 for plain ground and the terrain height rounded up to a
-	/// multiple of 10 next to rides and track; OpenTPW rounds the cell's corner height up for every cell.
+	/// The marker height of a cell: the original passes 0 for plain ground (its vertices then follow the terrain) and the
+	/// cell height rounded up to a multiple of 10 on ride and track cells; OpenTPW rounds the cell's corner height up for every cell.
 	/// </summary>
 	// [BIN:STP-PPC:0x10086794 SetCell ghost height] plain cells start at 0.0 (TOC −0x306c); cells of types 4, 7, 9, 10, 0xb, 0x10, 0x19 take 10 × ((int)h + 9) / 10 with h from 0x100509E8 (the terrain height at the cell corner x·10, y·10); 0x10086030 raises the height next to those types
-	// [APPROX:BLUEPRINT-001] every cell takes its corner height rounded up to a multiple of 10 (the original's plain cells use 0, its flat park ground; ride and track neighbours, 0x10086030, are not reproduced) — evidence needed: original captures of ghosts on raised or sloped ground
+	// [APPROX:BLUEPRINT-001] every cell is a flat face at its corner height rounded up to a multiple of 10; the PC SetCell 0x532FC0 passes 0 for a plain cell (0x5330A5) and 10 × ((int)H + 9) / 10 of the cell height 0x452AE0 (the owner object's .hmp, else the terrain sampler 0x4527F0) for a second-layer cell (0x4D0AF0) of type 11, 12, 16, 17 or 25 and then a map cell of type 4, 7, 9, 10 or 30 (0x5330AD–0x533189; no neighbour raise: 0x536CA0 serves only the 2 × 2 track ghost 0x5370E0), and the face builder's vertex writer 0x53DDD0 adds to every vertex of a texture 0–14 face the terrain at that vertex (0x4527F0) and sin(phase + x + z) from the sine table (phase 0x874FC0 + 0.1 per unpaused frame at 0x53C762), so plain markers drape over the ground and ripple by ±1 unit; neither the drape, the ripple nor the typed raise (OpenTPW's map does not type ride cells) is reproduced
 	public static float MarkerHeight( ModelHeightfield field, int x, int y )
 	{
 		var height = (int)field.GetCornerHeight( x, y );

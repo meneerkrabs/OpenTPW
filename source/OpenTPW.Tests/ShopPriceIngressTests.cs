@@ -115,14 +115,14 @@ public class ShopPriceIngressTests
 		((UiButton)hud.Stack.Top!.Find("categoryShops")!).Activate();hud.Update(context,UiInput.Key(UiKeys.Accept),false,false,false);
 		Assert.AreSame(first,hud.SelectedObject);Assert.IsTrue(hud.InfoArmOpen);Assert.AreEqual("hud",hud.Stack.Top!.Name);Open(hud,context);
 	}
-	[DataTestMethod,DataRow("0"),DataRow("2147483647")]
+	[DataTestMethod,DataRow("0"),DataRow("500")]
 	public void ExistingApiRangeIsAcceptedWithoutImmediateCharge(string number)
 	{
 		var hud=Fixture(BuildCategory.Shops,out var level,out var economy,out var item,out _,out _);var context=Context();economy.TryGetObject(level.GetEconomyInstance(item)!.Value,out var state);var cash=economy.Balance;
 		Open(hud,context);hud.Update(context,UiInput.Type(number,10),false,false,false);hud.Update(context,UiInput.Key(UiKeys.Accept),false,false,false);Assert.AreEqual(int.Parse(number),state.Price);Assert.AreEqual(cash,economy.Balance);
 	}
 
-	[DataTestMethod,DataRow(""),DataRow("-1"),DataRow("2147483648"),DataRow("21474836470"),DataRow("99999999999999999999999999999999999999999999999999999999999999999999999999"),DataRow("1.5"),DataRow("+1"),DataRow(" 1"),DataRow("text")]
+	[DataTestMethod,DataRow(""),DataRow("-1"),DataRow("501"),DataRow("2147483647"),DataRow("2147483648"),DataRow("21474836470"),DataRow("99999999999999999999999999999999999999999999999999999999999999999999999999"),DataRow("1.5"),DataRow("+1"),DataRow(" 1"),DataRow("text")]
 	public void InvalidInputRemainsOpenAndLeavesTheWorldUnchanged(string value)
 	{
 		var hud=Fixture(BuildCategory.Shops,out var level,out var economy,out var item,out _,out _);var context=Context();var id=level.GetEconomyInstance(item)!.Value;economy.TryGetObject(id,out var state);var price=state.Price;var cash=economy.Balance;var opened=item.IsOpen;

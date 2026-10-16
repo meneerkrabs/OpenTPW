@@ -72,7 +72,7 @@ public class RideUpgradeReviewTests
 		Assert.IsTrue( w.Economy.TryGetObject( w.Level.GetEconomyInstance( w.Owner )!.Value, out var state ) );
 		for ( var i = 0; i < 20 && state.Level < 1; i++ ) w.Economy.AdvanceDays( 1 );
 		Assert.AreEqual( 1, state.Level ); Assert.AreEqual( 3, bridge.Capacity ); Assert.AreEqual( 1, w.Other.Visitors.Capacity );
-		Assert.AreEqual( 9, w.Owner.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 77, w.Owner.Runtime.GetVariable( RideVariables.VAR_DURATION ) );
+		Assert.AreEqual( 3, w.Owner.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "QUEUE-011: the completion writes InitCapacity" ); Assert.AreEqual( 0, w.Owner.Runtime.GetVariable( RideVariables.VAR_DURATION ), "InitDuration 20 clamped to the absent MaxDuration 0 (0x4df8f0)" );
 		Assert.AreSame( bridge, w.Owner.Visitors ); Assert.AreSame( heads, bridge.Heads ); CollectionAssert.AreEqual( new[] { 42 }, bridge.Riders.ToArray() );
 		var after = w.Owner.Script.CaptureSnapshot(); Assert.AreEqual( before.Flags, after.Flags ); Assert.AreEqual( before.State, after.State ); Assert.AreEqual( before.ProgramCounter, after.ProgramCounter ); Assert.AreEqual( before.WakeTimeMilliseconds, after.WakeTimeMilliseconds );
 	}

@@ -160,6 +160,8 @@ public interface IRideVisitorBridge
 	int AppearanceEffect => 0;
 	/// <summary>The amount of the special ingredient (ride <c>+404</c> byte, 0..255); the ride build sets 50.</summary>
 	int IngredientAmount => GuestSpeed.DefaultIngredientAmount;
+	/// <summary>The shop's quality of goods (ride <c>+0x18C</c> byte); the ride build sets 50 (<see cref="GuestAppearance.BuiltQualityOfGoods"/>).</summary>
+	int QualityOfGoods => GuestAppearance.BuiltQualityOfGoods;
 	/// <summary>Walkable path cell where guests join the queue.</summary>
 	(int X, int Y) EntranceCell { get; }
 	/// <summary>Walkable path cell where released guests reappear.</summary>

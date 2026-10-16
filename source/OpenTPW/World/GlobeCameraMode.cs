@@ -8,11 +8,12 @@ namespace OpenTPW;
 // [BIN:TPW-EXE:0x005DC860 globe camera update] position r·(cos yaw·cos pitch, sin pitch, sin yaw·cos pitch) around the globe (pole axis up), looking at its centre; pitch clamped to ±1.5; r eases towards the zoom state's radius at 0.3; velocities are multiplied by the state's damping and integrated into the angles; zoomed out (rate, step, damping) = (0.4, 0.15, 0.5), zoomed in (0.2, 0.075, 0.25); field of view 60 (0x005DCFE0)
 public class GlobeCameraMode : CameraMode
 {
-	// [APPROX:ONLINE-007] the original has no fixed tick: the online front end updates the globe once a frame (tp.exe 0x54E360 state 2
+	// [EXT:online-globe-tick] OpenTPW turns the globe on a fixed 30 ticks per second: rates, steps, damping and the radius ease
+	// apply per tick and the angles move by velocity × ticks, so the turn does not depend on the frame rate. The original's
+	// per-frame update is not reproduced: the online front end updates the globe once a frame (tp.exe 0x54E360 state 2
 	// → 0x5D5C50 → 0x5DC860) with dt = min(elapsed ms, 500) × 0.01 (0x5D5C50), damps the velocities once a frame and then moves the
-	// angles by velocity × dt and eases the radius by 0.3 × dt; OpenTPW applies rates, steps, damping and the radius ease per tick at
-	// 30 ticks per second and moves the angles by velocity × ticks — evidence needed: the original's frame rate on the online screens
-	// (the per-frame damping and steering make its turning depend on it) and how often a held panel arrow sends its step (event
+	// angles by velocity × dt and eases the radius by 0.3 × dt; still unknown: its frame rate on the online screens (the per-frame
+	// damping and steering make its turning depend on it) and how often a held panel arrow sends its step (event
 	// 0x10008/0x10009, 0x4C53F0)
 	public const float TicksPerSecond = 30f;
 	public const float PitchLimit = 1.5f;
@@ -60,11 +61,11 @@ public class GlobeCameraMode : CameraMode
 	/// Continuous steering for this frame, -1..1 per axis (cursor at the screen edge, or the right button held off
 	/// centre), scaled by the zoom state's rate.
 	/// </summary>
-	// [APPROX:ONLINE-009] edge and right-button steering add rate × offset × step per tick to the velocity; the original (0x005DC860) adds,
-	// once a frame and without the step, rate × 50 × the cursor's depth into the 1% edge band (x = X / 2048 and y = Y / 1536 clamped to
-	// 0..1; the depth 0.01 − x below 0.01, x − 0.99 above 0.99, so at most rate / 2) or, with the right button held, rate × the offset from
-	// the centre ((X − 1024) / 1024, −(Y − 768) / 768); those increments need the original's per-frame integration (ONLINE-007) — evidence
-	// needed: the original's frame rate on the online screens
+	// [EXT:online-globe-steering] edge and right-button steering add rate × offset × step per tick (the fixed tick above) to the
+	// velocity. Not reproduced: the original (0x005DC860) adds, once a frame and without the step, rate × 50 × the cursor's depth
+	// into the 1% edge band (x = X / 2048 and y = Y / 1536 clamped to 0..1; the depth 0.01 − x below 0.01, x − 0.99 above 0.99, so
+	// at most rate / 2) or, with the right button held, rate × the offset from the centre ((X − 1024) / 1024, −(Y − 768) / 768);
+	// those increments need the original's per-frame integration and its frame rate on the online screens, which is unknown
 	public static void Steer( float yawAmount, float pitchAmount, float delta )
 	{
 		var ticks = Math.Min( delta, 0.1f ) * TicksPerSecond;

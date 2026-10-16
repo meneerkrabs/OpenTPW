@@ -48,8 +48,8 @@ public class UpgradeCatalogueRestoreReviewTests
 		typeof( Level ).GetMethod( "SetupParkGate", Private )!.Invoke( candidateLevel, null );
 		Assert.AreEqual( 3, candidate.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "The candidate derives tier1 before VM restore." );
 		typeof( Level ).GetMethod( "RestoreResumeSimulation", Private )!.Invoke( candidate.Level, new object[] { saved } );
-		Assert.AreEqual( state == "authored" ? 9 : state == "stopped" ? 3 : 1, candidate.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) );
-		Assert.AreEqual( state == "authored" ? 77 : state == "stopped" ? 20 : 10, candidate.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) );
+		Assert.AreEqual( 3, candidate.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "the saved VM holds the completion's InitCapacity" );
+		Assert.AreEqual( 20, candidate.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) );
 		Assert.AreEqual( 3, candidate.One.Visitors.Capacity );
 		Assert.AreEqual( 200f, candidate.One.Visitors.Parameters.QueueWaitTimeConstant );
 		Assert.AreEqual( 1, candidate.One.Runtime.CatalogueTier );

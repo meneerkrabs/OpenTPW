@@ -436,7 +436,7 @@ Static reads made during ANIM-I (Mac `SimThemePark`, read-only; not yet pinned i
 - TRIGANIMSPEED writes `max(ms − 300, 300)` to its out operand (`stwx` at 0xb00c4), like the other triggers;
   an equal-token LOOPANIM returns before clearing the WAIT4ANIM deadline (0xafd40).
 - Script creation sets the speed bias +192 to 50 (0xb3154/0xb318c), so the script speed is 1.0; two native
-  writers of +192 exist (0xb2a34, 0xb5b18) and are not modelled (RIDES-033).
+  writers of +192 exist (0xb2a34, 0xb5b18); the PC's setter 0x55a300 is modelled for ride init, upgrade completion and the ride window's SetSpeed (RIDES-033 retired).
 - 0xa65b8 has two callers, 0xa6370 (a per-channel loop whose routine was not identified) and 0xa6a28 inside
   the start 0xa67d8, the latter only with start flag 0x8 clear: the node list applies at every clip start, and nothing in that routine
   clears bit 0x10. In the corpus the listed nodes are never toggled by the same clip; 89 of 133 listed meshes

@@ -83,11 +83,14 @@ public sealed class WordFilter
 	}
 
 	/// <summary>
-	/// [APPROX:ONLINE-001] Matching rule — evidence needed: the original filter code is not
-	/// readable (TP.ICD is encrypted). Assumed: case-insensitive substring match of each entry
-	/// against the text padded with one space on each side (so leading/trailing spaces in entries
-	/// act as word boundaries); a hit is ignored when it lies inside an occurrence of an
-	/// <c>alloweds.txt</c> entry; hit characters (except spaces) are replaced by '*'.
+	/// [EXT:online-word-filter] OpenTPW's matching rule over the original lists: case-insensitive substring
+	/// match of each entry against the text padded with one space on each side (so leading/trailing spaces in
+	/// entries act as word boundaries); a hit is ignored when it lies inside an occurrence of an
+	/// <c>alloweds.txt</c> entry; hit characters (except spaces) are replaced by '*'. The original filter's own
+	/// matching rule is not reproduced. It is partly traced in the Mac build (docs/reverse/APPROX-TRACE.md,
+	/// ONLINE-001: '*'-prefixed entries match substrings, space-prefixed and other entries test a letter/digit
+	/// boundary, '#' lines are skipped, a flag turns the filter on) and in tp.exe (docs/ONLINE.md, Online design
+	/// choices).
 	/// </summary>
 	public string Apply( string text, out bool changed )
 	{

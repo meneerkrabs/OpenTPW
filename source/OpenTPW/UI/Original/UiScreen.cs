@@ -112,6 +112,8 @@ public class UiScreen
 		}
 		if ( pressed is UiButton { Repeat: { } repeat, HoldState: not 0 } held && input.LeftDown )
 			RunHold( held, repeat, context.Time, ReferenceEquals( hit, held ) );
+		if ( input.LeftPressed && pressed is { Enabled: true } and IUiDragTarget begin && input.Mouse.X >= 0 )
+			begin.DragBegin( canvas, input.Mouse );
 		// A slider follows the mouse while it is held, wherever the pointer has drifted to.
 		if ( pressed is { Enabled: true } and IUiDragTarget drag && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
 			drag.DragTo( canvas, input.Mouse );

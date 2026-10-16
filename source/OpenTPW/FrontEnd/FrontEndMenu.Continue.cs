@@ -8,8 +8,11 @@ public sealed partial class FrontEndMenu
 	// [BIN:STP-PPC:0x10183CC0 enter park] the theme islands' enter action plays cat_globallobbysfx 4 unless the game type that follows is 2 (Instant Action); the PC enter routine 0x4b8fd0 skips it the same way while the game-mode global 0xfb3b7c is 2
 	internal static bool EnterParkSoundPlays( bool instantAction ) => !instantAction;
 
-	private static void PlayEnterPark( bool instantAction )
+	// [BIN:TPW-EXE:0x4b8fd0 enter park] in the same block, before the sound, the routine starts the screen-space particle effect 0x62 over the key panel (LobbyEnterEffect)
+	private void PlayEnterPark( bool instantAction )
 	{
+		if ( LobbyEnterEffect.Starts( instantAction ) )
+			actions.StartEnterParkEffect();
 		if ( EnterParkSoundPlays( instantAction ) )
 			GameAudio.PlayEnterPark();
 	}

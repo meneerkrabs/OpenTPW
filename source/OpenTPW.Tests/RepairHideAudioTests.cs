@@ -36,9 +36,10 @@ public class RepairHideAudioTests
 			new ObjectShape( new[] { "*" } ), "/model.MD2", null, "/script.RSE", Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( root ), null );
 		mixer = new AudioMixer( null ); system = new SoundEventSystem( mixer, 7 ); var category = Empty<SoundCategory>(); var catalog = Empty<SoundCatalog>();
 		SoundEntry Sound( int bank ) => new( 100, 100, 0, 0, 0, 0, 1, 100, new[] { new SoundSample( 1, 65535, 0, (ushort)bank, 0 ) }, Array.Empty<SoundLink>(), Array.Empty<byte>() );
-		Set( catalog, "Events", new[] { new SoundEvent( 111, 0, 8, 0, new[] { Sound( 1 ) } ), new SoundEvent( 211, 0, 8, 0, new[] { Sound( 2 ) } ), new SoundEvent( 75, 0, 0, 0, new[] { Sound( 3 ) } ) } ); Set( category, "Catalog", catalog );
+		Set( catalog, "Events", new[] { new SoundEvent( 111, 0, 8, 0, new[] { Sound( 1 ) } ), new SoundEvent( 211, 0, 8, 0, new[] { Sound( 2 ) } ), new SoundEvent( 75, 0, 0, 0, new[] { Sound( 3 ) } ),
+			new SoundEvent( 79, 0, 0, 0, new[] { Sound( 4 ) } ), new SoundEvent( 83, 0, 0, 0, new[] { Sound( 5 ) } ), new SoundEvent( 87, 0, 0, 0, new[] { Sound( 6 ) } ) } ); Set( category, "Catalog", catalog );
 		var decoded = (Dictionary<(SoundCategory, int, uint), Mp2Audio?>)typeof( SoundEventSystem ).GetField( "decoded", BindingFlags.Instance | BindingFlags.NonPublic )!.GetValue( system )!;
-		for ( var bank = 1; bank <= 3; bank++ ) decoded[(category, bank, 1)] = Pcm( (short)(bank * 1000) );
+		for ( var bank = 1; bank <= 6; bank++ ) decoded[(category, bank, 1)] = Pcm( (short)(bank * 1000) );
 		AudioField( "events", system ); AudioField( "<Rides>k__BackingField", category ); AudioField( "<Kids>k__BackingField", category );
 	}
 	private static Mp2Audio Pcm( short sample ) => new( AudioMixer.OutputRate, 1, new[] { sample, sample, sample, sample }, 1, 0 );
@@ -49,10 +50,10 @@ public class RepairHideAudioTests
 		mixer.Dispose(); foreach ( var pair in oldAudio ) pair.Key.SetValue( null, pair.Value ); oldAudio.Clear(); Directory.Delete( root, true );
 		typeof( AudioListener ).GetMethod( "RestoreCaptured", BindingFlags.NonPublic | BindingFlags.Static )!.Invoke( null, new object[] { oldPosition, oldForward } );
 	}
-	private void Repair( OriginalObjectRuntime owner, int show = 0 )
+	private void Repair( OriginalObjectRuntime owner, int show = 0, int band = 1 )
 	{
-		using var data = new MemoryStream( new RideVMTests.Asm().I( Opcode.CMP, 1, 2 ).I( Opcode.REPAIREFFECT, show ).I( Opcode.ENDSLICE ).Build( Array.Empty<string>() ) );
-		var vm = new RideVM( data, new RideVMOptions { Effects = owner.Script!.Effects } ); vm.Advance( FixedStepClock.TickDuration );
+		using var data = new MemoryStream( new RideVMTests.Asm().I( Opcode.CMP, 1, 2 ).I( Opcode.REPAIREFFECT, show ).I( Opcode.ENDSLICE ).Build( Enum.GetNames<RideVariables>() ) );
+		var vm = new RideVM( data, new RideVMOptions { Effects = owner.Script!.Effects } ); vm.Variables[5] = band; vm.Advance( FixedStepClock.TickDuration );
 		Assert.AreNotEqual( RideVMState.Faulted, vm.State ); Assert.AreEqual( RideVM.VMFlags.Sign, vm.Flags, "The partial effect must preserve incoming flags." ); Assert.AreEqual( 1, vm.UnimplementedEffects[Opcode.REPAIREFFECT] ); vm.Stop();
 	}
 	[DataTestMethod]
@@ -110,6 +111,26 @@ public class RepairHideAudioTests
 		Repair( owner, show ); var voice = mixer.Voices.Single(); Assert.AreEqual( place, voice.Position ); Assert.IsFalse( voice.Loops ); Assert.AreEqual( 1, calls ); Assert.IsNotNull( owner.CaptureSnapshot() );
 		using var reference = new AudioMixer( null ); reference.Play( Pcm( 3000 ), AudioChannel.Effects, 1, position: place, range: 100 ); CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) );
 		owner.Stop(); Assert.IsFalse( voice.IsFinished ); mixer.Mix( 4 ); Assert.IsTrue( voice.IsFinished );
+	}
+	[DataTestMethod]
+	[DataRow( 0, 0 )]
+	[DataRow( 1, 3 )]
+	[DataRow( 2, 4 )]
+	[DataRow( 3, 4 )]
+	[DataRow( -5, 4 )]
+	[DataRow( 4, 5 )]
+	[DataRow( 7, 5 )]
+	[DataRow( 8, 6 )]
+	[DataRow( 100, 6 )]
+	public void TheRepairFamilyFollowsTheScriptsVariableSlot5( int band, int expectedBank )
+	{
+		// [BIN:TPW-EXE:0x551320] band 0 is silent, 1 picks event 75, 2-3 (and negative) 79, 4-7 83 and 8 up 87; the band is [[vm+0x1c]+0x14], variable slot 5 (0x55637a)
+		var owner = new OriginalObjectRuntime( entry ); var place = new Vector3( 4, 5, 6 ); Bind( owner, () => place );
+		Repair( owner, 1, band );
+		if ( expectedBank == 0 ) { Assert.AreEqual( 0, mixer.Voices.Count ); return; }
+		Assert.AreEqual( 1, mixer.Voices.Count );
+		using var reference = new AudioMixer( null ); reference.Play( Pcm( (short)(expectedBank * 1000) ), AudioChannel.Effects, 1, position: place, range: 100 );
+		CollectionAssert.AreEqual( reference.Mix( 1 ), mixer.Mix( 1 ) );
 	}
 	[TestMethod]
 	public void HideLoopsRefuseCaptureUntilFinishedAndRootFaultStopsOnlyTheirOwner()

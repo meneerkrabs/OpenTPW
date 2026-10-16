@@ -88,7 +88,9 @@ public class ObjectParticleEffectTests
 			Assert.AreEqual( 1000, request.Control );
 			Assert.AreEqual( 1, request.Type );
 			Assert.AreEqual( middle, request.EnginePosition, "the box middle at the object's base height" );
-			Assert.AreEqual( (3 * 5120, 0, 2 * 5120), request.VolumeExtent, "width and depth in original units (10 per cell) times 512, height 0" );
+			var height = (int)((placed.Runtime.Model.BoundsMax.Y - placed.Runtime.Model.BoundsMin.Y) * 256f);
+			Assert.IsTrue( height > 0, "the test model has a box height" );
+			Assert.AreEqual( (3 * 5120, height, 2 * 5120), request.VolumeExtent, "width and depth in original units (10 per cell) times 512, the model box's height times 256" );
 		}
 	}
 
@@ -197,6 +199,16 @@ public class ObjectParticleEffectTests
 			FileSystem = previous;
 			ObjectCatalog.BonusDataRoot = bonus;
 		}
+	}
+
+	[TestMethod]
+	public void TheVolumeExtentTakesTheBoxHeightTimes256()
+	{
+		// 0x558f53-0x558fac: (x1 - x0) x 512, (y1 - y0) x 256, (z1 - z0) x 512, the footprint in cells of 10 units
+		Assert.AreEqual( (2 * 10 * 512, 0, 3 * 10 * 512), OriginalObjectRuntime.ExtentOf( new ParticleFootprint( N.Vector3.Zero, 2, 3 ) ), "a footprint without a box height keeps the flat volume" );
+		Assert.AreEqual( (10 * 512, 640, 10 * 512), OriginalObjectRuntime.ExtentOf( new ParticleFootprint( N.Vector3.Zero, 1, 1, 2.5f ) ) );
+		Assert.AreEqual( 0, OriginalObjectRuntime.ExtentOf( new ParticleFootprint( N.Vector3.Zero, 1, 1, float.NaN ) ).Y );
+		Assert.AreEqual( 0, OriginalObjectRuntime.ExtentOf( new ParticleFootprint( N.Vector3.Zero, 1, 1, -4f ) ).Y );
 	}
 
 	[TestMethod]

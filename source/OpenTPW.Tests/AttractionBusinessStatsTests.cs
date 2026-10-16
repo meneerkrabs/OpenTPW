@@ -27,6 +27,8 @@ public class AttractionBusinessStatsTests
 		var context = (UiContext)typeof( RideUpgradeIngressTests ).GetMethod( "Context", BindingFlags.Static | BindingFlags.NonPublic )!.Invoke( null, null )!;
 		return new( hud, (Level)args[1]!, (ParkEconomy)args[2]!, (OriginalObject)args[3]!, (OriginalObject)args[4]!, (GuestEconomyBridge)args[5]!, context, category );
 	}
+	/// <summary>A ring holding one day of <paramref name="value"/> (what a 30-day window then shows).</summary>
+	private static DailyRing Day( int value ) { var ring = new DailyRing { Today = value }; ring.Roll(); return ring; }
 	private static ParkObjectState State( World w, OriginalObject owner ) { Assert.IsTrue( w.Economy.TryGetObject( w.Level.GetEconomyInstance( owner )!.Value, out var state ) ); return state; }
 	// one frame past the list's 2 s value refresh (tp.exe timer 0x80083)
 	private static void Frame( World w )
@@ -78,29 +80,29 @@ public class AttractionBusinessStatsTests
 			w.Payments.Link( owner.Runtime.AttractionId, fresh.Id );
 		}
 		if ( category == BuildCategory.Sideshows ) w.Economy.SetPrices( State( w, w.Owner ).Id, 20, 50, 0 );
-		Pay( w, 2 ); w.Economy.AdvanceMonths( 1 ); var state = State( w, w.Owner );
-		Assert.AreEqual( 2L, state.CustomersLastMonth ); Assert.AreEqual( category == BuildCategory.Shops ? 20L : -60L, state.ProfitLastMonth ); Assert.AreEqual( 0L, State( w, w.Other ).CustomersLastMonth );
-		Show( w ); Assert.AreEqual( w.Owner.Runtime.AttractionId, w.Hud.SelectedAttractionId ); Check( w, 2, state.ProfitLastMonth, state.TotalProfit );
-		w.Hud.SelectAttraction( 1 ); Check( w, 0, 0, 0 ); w.Hud.SelectAttraction( 0 ); Check( w, 2, state.ProfitLastMonth, state.TotalProfit );
+		Pay( w, 2 ); w.Economy.AdvanceDays( 1 ); var state = State( w, w.Owner );
+		Assert.AreEqual( 2L, state.CustomersLast30Days ); Assert.AreEqual( category == BuildCategory.Shops ? 20L : -60L, state.ProfitLast30Days ); Assert.AreEqual( 0L, State( w, w.Other ).CustomersLast30Days );
+		Show( w ); Assert.AreEqual( w.Owner.Runtime.AttractionId, w.Hud.SelectedAttractionId ); Check( w, 2, state.ProfitLast30Days, state.TotalProfit );
+		w.Hud.SelectAttraction( 1 ); Check( w, 0, 0, 0 ); w.Hud.SelectAttraction( 0 ); Check( w, 2, state.ProfitLast30Days, state.TotalProfit );
 	}
 
 	[TestMethod]
 	public void CurrentMonthAndCopiedFrameRefreshStayDistinctWithoutMutatingSimulation()
 	{
 		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); Show( w ); Check( w, 0, 0, 20 );
-		w.Economy.AdvanceMonths( 1 ); Frame( w ); Check( w, 2, 20, 20 );
+		w.Economy.AdvanceDays( 1 ); Frame( w ); Check( w, 2, 20, 20 );
 		Pay( w, 1 ); Frame( w ); Check( w, 2, 20, 30 );
-		var state = State( w, w.Owner ); state.CustomersLastMonth = 7; state.TakingsLastMonth = 900; state.CostsLastMonth = 100; state.TotalProfit = 1000;
+		var state = State( w, w.Owner ); state.CustomersRing = Day( 7 ); state.TakingsRing = Day( 900 ); state.CostsRing = Day( 100 ); state.TotalProfit = 1000;
 		Check( w, 2, 20, 30 ); // Label reads use the existing frame, not live mutable model references.
 		var economy = ParkSaveFile.Serialize( w.Economy ); var guests = w.Level.Guests!.ComputeStateHash();
 		Frame( w ); Check( w, 7, 800, 1000 ); Assert.AreEqual( economy, ParkSaveFile.Serialize( w.Economy ) ); Assert.AreEqual( guests, w.Level.Guests.ComputeStateHash() );
-		w.Economy.AdvanceMonths( 1 ); Frame( w ); Check( w, 1, 10, 1000 );
+		w.Economy.AdvanceDays( 1 ); Frame( w ); Check( w, 7, 800, 1000 ); // the seeded day stays in the 30-day window; the replaced ring held no sale of today
 	}
 
 	[TestMethod]
 	public void ExistingSaveRestoreAndFreshReopenUseTheSameRecordedCounters()
 	{
-		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceMonths( 1 ); Show( w ); Check( w, 2, 20, 20 );
+		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceDays( 1 ); Show( w ); Check( w, 2, 20, 20 );
 		var restored = ParkSaveFile.Restore( ParkSaveFile.Capture( w.Economy ), EconomyTestData.Settings(), EconomyTestData.Catalog() );
 		Set( w.Level, "<Park>k__BackingField", ParkEconomyRuntime.ForResume( restored, ParkStartKind.FullSimulation ) ); Set( w.Hud, "<Status>k__BackingField", new EconomyParkStatus( () => restored ) );
 		Frame( w ); Check( w, 2, 20, 20 ); w.Hud.CloseAttractionsWindow(); Show( w ); Check( w, 2, 20, 20 );
@@ -109,7 +111,7 @@ public class AttractionBusinessStatsTests
 	[DataTestMethod, DataRow( "unmapped" ), DataRow( "wrongKind" ), DataRow( "wrongInfo" ), DataRow( "noEconomy" ), DataRow( "readonly" ), DataRow( "tpi" ), DataRow( "foreignEconomy" )]
 	public void UnsupportedOrChangedBindingsClearPreviouslyKnownFrameData( string gate )
 	{
-		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceMonths( 1 ); Show( w ); Check( w, 2, 20, 20 );
+		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceDays( 1 ); Show( w ); Check( w, 2, 20, 20 );
 		if ( gate == "unmapped" ) ((Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", Private )!.GetValue( w.Level )!).Remove( w.Owner );
 		if ( gate is "wrongKind" or "wrongInfo" )
 		{
@@ -136,7 +138,7 @@ public class AttractionBusinessStatsTests
 	[TestMethod]
 	public void RemovalEmptyCategorySortingAndReopenCannotRetainAnotherOwnerStats()
 	{
-		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceMonths( 1 ); Show( w );
+		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceDays( 1 ); Show( w );
 		w.Hud.SortAttractions(); Assert.AreEqual( w.Owner.Runtime.AttractionId, w.Hud.SelectedAttractionId ); Check( w, 2, 20, 20 );
 		w.Owner.Delete(); Frame( w ); Assert.AreEqual( w.Other.Runtime.AttractionId, w.Hud.SelectedAttractionId ); Check( w, 0, 0, 0 );
 		w.Hud.Stack.Top!.Find( "categoryFeatures" )!.Activate(); Assert.AreEqual( 0, w.Hud.SelectedAttractionId ); Assert.AreEqual( w.Context.Strings.Extra( OpenTpwText.NotSimulated ), Value( w, 0 ) );
@@ -146,11 +148,11 @@ public class AttractionBusinessStatsTests
 	[TestMethod]
 	public void MixedVisibleCategoriesKeepOnlyTheirOwnFrameCounters()
 	{
-		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceMonths( 1 );
+		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceDays( 1 );
 		var side = (OriginalObject)typeof( RideUpgradeIngressTests ).GetMethod( "Object", Private )!.Invoke( fixture, new object[] { 1303, BuildCategory.Sideshows, w.Level.Objects.ScriptWorld, "" } )!;
 		((List<OriginalObject>)w.Level.Objects.Objects).Add( side ); var state = w.Economy.RegisterExisting( 1303 );
 		typeof( Level ).GetMethod( "LinkEconomy", Private )!.Invoke( w.Level, new object[] { side, state.Id } );
-		state.CustomersLastMonth = 5; state.TakingsLastMonth = 60; state.CostsLastMonth = 9; state.TotalProfit = 51;
+		state.CustomersRing = Day( 5 ); state.TakingsRing = Day( 60 ); state.CostsRing = Day( 9 ); state.TotalProfit = 51;
 		Show( w ); Check( w, 2, 20, 20 );
 		Assert.IsFalse( w.Hud.AttractionItems.Any( row => row.AttractionId == side.Runtime.AttractionId ), "the shops tab lists no sideshow" );
 		w.Hud.Stack.Top!.Find( "categorySideshows" )!.Activate(); Check( w with { Category = BuildCategory.Sideshows, Owner = side }, 5, 51, 51 );
@@ -161,19 +163,19 @@ public class AttractionBusinessStatsTests
 	[TestMethod]
 	public void SameInfoRemappingAndRecordReplacementRefreshOnlyAtTheNextFrame()
 	{
-		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceMonths( 1 ); Show( w ); Check( w, 2, 20, 20 );
-		var other = State( w, w.Other ); other.CustomersLastMonth = 9; other.TakingsLastMonth = 7; other.CostsLastMonth = 20; other.TotalProfit = -13;
+		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceDays( 1 ); Show( w ); Check( w, 2, 20, 20 );
+		var other = State( w, w.Other ); other.CustomersRing = Day( 9 ); other.TakingsRing = Day( 7 ); other.CostsRing = Day( 20 ); other.TotalProfit = -13;
 		var mapping = (Dictionary<OriginalObject, int>)typeof( Level ).GetField( "economyInstances", Private )!.GetValue( w.Level )!;
 		mapping[w.Owner] = other.Id; Check( w, 2, 20, 20 ); Frame( w ); Check( w, 9, -13, -13 );
 		var states = (SortedDictionary<int, ParkObjectState>)typeof( ParkEconomy ).GetField( "objects", Private )!.GetValue( w.Economy )!;
-		states[other.Id] = new ParkObjectState { Id = other.Id, InfoId = other.InfoId, Kind = ParkObjectKind.Shop, CustomersLastMonth = 4, TakingsLastMonth = 20, CostsLastMonth = 3, TotalProfit = 17 };
+		states[other.Id] = new ParkObjectState { Id = other.Id, InfoId = other.InfoId, Kind = ParkObjectKind.Shop, CustomersRing = Day( 4 ), TakingsRing = Day( 20 ), CostsRing = Day( 3 ), TotalProfit = 17 };
 		Check( w, 9, -13, -13 ); Frame( w ); Check( w, 4, 17, 17 );
 	}
 	[TestMethod]
 	public void ForeignStatusEconomyCannotSupplyMatchingIdsAndFrameRefreshRestoresTrustedValues()
 	{
-		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceMonths( 1 ); Show( w );
-		var foreign = EconomyTestData.Park(); var foreignState = foreign.RegisterExisting( 1203 ); foreignState.CustomersLastMonth = 999; foreignState.TotalProfit = 999;
+		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceDays( 1 ); Show( w );
+		var foreign = EconomyTestData.Park(); var foreignState = foreign.RegisterExisting( 1203 ); foreignState.CustomersRing = Day( 999 ); foreignState.TotalProfit = 999;
 		Set( w.Hud, "<Status>k__BackingField", new EconomyParkStatus( () => foreign ) ); Frame( w );
 		for ( var i = 0; i < 3; i++ ) Assert.AreEqual( w.Context.Strings.Extra( OpenTpwText.NotSimulated ), Value( w, i ) );
 		Set( w.Hud, "<Status>k__BackingField", new EconomyParkStatus( () => w.Economy ) ); Frame( w ); Check( w, 2, 20, 20 );
@@ -197,8 +199,8 @@ public class AttractionBusinessStatsTests
 	public void TheValuesRefreshEveryTwoSeconds()
 	{
 		// tp.exe 0x4955e0: timer 0x80083 refreshes the rows every 2000 ms
-		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceMonths( 1 ); Show( w ); Check( w, 2, 20, 20 );
-		State( w, w.Owner ).CustomersLastMonth = 9;
+		var w = Create( BuildCategory.Shops ); Pay( w, 2 ); w.Economy.AdvanceDays( 1 ); Show( w ); Check( w, 2, 20, 20 );
+		State( w, w.Owner ).CustomersRing = Day( 9 );
 		w.Context.Delta = ParkHud.AttractionValueRefreshSeconds / 4;
 		for ( var frame = 0; frame < 3; frame++ ) w.Hud.Update( w.Context, UiInput.Idle( new System.Numerics.Vector2( -1 ) ), false, false, false );
 		Assert.AreEqual( "2", Value( w, 0 ), "1.5 s after the last refresh the row keeps its value" );

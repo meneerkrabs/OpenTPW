@@ -81,7 +81,7 @@ public partial class Level
 		foreach ( var cell in Enumerable.Range( 0, grid.Width * grid.Height ).Select( index => (X: index % grid.Width, Y: index / grid.Width) )
 			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )
 		{
-			if ( Objects.Check( entry, cell.X, cell.Y, 0 ) != OriginalPlacementResult.Allowed || CoasterBuilder.StationEnds( entry.Shape, cell.X, cell.Y, 0 ) is not { } ends )
+			if ( Objects.CheckFree( entry, cell.X, cell.Y, 0 ) != OriginalPlacementResult.Allowed || CoasterBuilder.StationEnds( entry.Shape, cell.X, cell.Y, 0 ) is not { } ends )
 				continue;
 			var cells = DemoCircuit.Select( offset => (X: ends.Depart.X + offset.X, Y: ends.Depart.Y + offset.Y) ).Append( ends.Return ).ToArray();
 			if ( !cells.All( target => Free( target.X, target.Y ) ) )
@@ -159,11 +159,32 @@ public partial class Level
 		return best;
 	}
 
+	/// <summary>The economy instance of the coaster a check of challenge types 14 and 18 hands on (<see cref="ParkEconomy.CoasterBestObject"/>), 0 when none.</summary>
+	// [BIN:TPW-EXE:0x4cc810 best coaster] the walk starts at the head of the thing list, the newest object, takes the first matching coaster whatever its count and replaces it only by a strictly higher count (an unrated coaster counts 0)
+	private int CoasterBestObject( int infoId )
+	{
+		OriginalObject? best = null;
+		long bestSections = 0;
+		for ( var index = Objects.Objects.Count - 1; index >= 0; index-- )
+		{
+			var item = Objects.Objects[index];
+			if ( item.IsDeleted || item.Runtime.Coaster is not { } ride || infoId != 0 && item.Entry.InfoId != infoId )
+				continue;
+			var sections = ride.Rating?.CountedSections ?? 0;
+			if ( best == null || bestSections < sections )
+				(best, bestSections) = (item, sections);
+		}
+		return best != null && GetEconomyInstance( best ) is int instance ? instance : 0;
+	}
+
 	/// <summary>Points the current economy's challenge type 18 at the park's coasters; a park load replaces the economy, so it runs again then.</summary>
 	private void AttachCoasterChallenges()
 	{
 		if ( Park != null )
+		{
 			Park.Economy.CoasterCountedSections = CoasterCountedSections;
+			Park.Economy.CoasterBestObject = CoasterBestObject;
+		}
 	}
 
 	/// <summary>The station object a coaster belongs to (a plain loop: the renderer asks every frame).</summary>

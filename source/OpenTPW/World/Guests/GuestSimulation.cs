@@ -584,7 +584,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public bool IsInPark( Guest guest ) => InPark( guest );
 
 	/// <summary>Whether the guest stands on a park cell: in the park and on the grid (not on the leaving lanes).</summary>
-	// Approximation (ECON-044, registered at ApplyAppearance): the original's park-cell test (0x004FA990, cell types 0, 1, 3, 9 and 10) is a guest in the park by its state that stands on the grid
+	// Approximation (a guest event ring is not kept, [EXT:guest-event-ring]): the original's park-cell test (0x004FA990, cell types 0, 1, 3, 9 and 10) is a guest in the park by its state that stands on the grid
 	public bool IsOnParkCell( Guest guest ) => InPark( guest ) && guest.OnGrid;
 
 	private bool InPark( Guest guest ) => guest.State is not (GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
@@ -1568,6 +1568,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				PlaceOnGrid( guest, x, y );
 			}
 		}
+	}
+
+	/// <summary>
+	/// Sets down the guests that stand on <paramref name="cells"/> after those stopped being path (an object built over a path, whose placement
+	/// clears it): each walking guest on such a cell is put on the nearest path cell, its walk ended, and goes on in its state as after a broken
+	/// walk (<see cref="EndBrokenWalks"/>). Returns the number of guests moved.
+	/// </summary>
+	// Approximation (RIDES-018, registered at ParkObjects.Check): guests on a path cell an object's placement clears are set down on the nearest path cell; tp.exe's placement (0x528A70) and ClearCell (0x5367A0) write cells and the block stamp (0x4D8C60, through SetCellType 0x5346D0), which reroutes walking things, and what a guest standing inside the new footprint does next is not traced
+	public int SetDownOffCells( IReadOnlySet<(int X, int Y)> cells )
+	{
+		var moved = 0;
+		foreach ( var guest in guests )
+		{
+			if ( !guest.OnGrid || guest.Navigation.OffGrid
+				|| guest.State is not (GuestState.DoingNothing or GuestState.WalkingAround or GuestState.ThrowingAwayLitter or GuestState.GoingToRide
+					or GuestState.LeavingPark or GuestState.ExitingRide) )
+				continue;
+			// The cell it stands on, and the cell a one-cell step is heading for (CellX/CellY move ahead with SetCellWaypoint).
+			var here = guest.Navigation.Cell;
+			if ( !(cells.Contains( here ) && !Grid.IsWalkable( here.X, here.Y )) && !(cells.Contains( guest.Cell ) && !Grid.IsWalkable( guest.CellX, guest.CellY )) )
+				continue;
+			if ( (Grid.IsWalkable( here.X, here.Y ) ? here : Grid.FindNearestWalkable( here.X, here.Y )) is not { } cell )
+				continue;
+			PlaceOnGrid( guest, cell.X, cell.Y );
+			moved++;
+		}
+		return moved;
 	}
 
 	/// <summary>True when the route from the guest's cell on is still path cells, each linked to the next (a wander route is a shortest path, so no cell repeats).</summary>
@@ -2556,7 +2583,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x004FE615 appearance effect] type +0x15C: 1 creates the balloon model (+0x210, sprite set 10) and sets +0x214 to the balloon life, guest event 12; 2 with +0x24 == 2 ("Customer returning a costume") sets +0x24 to 0 and the sprite bank +0x20 back, otherwise +0x24 = 2, the costume bank and guest event 11; another value logs "Balance file error"
 	// [BIN:TPW-EXE:0x004FE615 balloon life] the balloon's life is BalloonLife of the shop's own quality of goods (+0x18C: 50 at build, 0x004DB389; 50 × the shop window's quality step, 0x004B0AA0, 0x004B0AE0), mirrored from ParkObjectState.QualityOfGoods
 	// [BIN:TPW-EXE:0x004FE6FC balloon variant draw] a balloon reseeds the world generator with the guest's thing id (0x00516370) and draws the model's sprite set (0x00541F70 with category 10) and colour (0x00541FD0); returning a costume reseeds the same way (0x004FE6A1) and draws the guest's own bank (category 0), putting one on draws the costume bank (category 2, 0x004FE652) without a reseed
-	// [APPROX:ECON-044] the guest events 11 and 12 (0x0050C100, a 32-entry ring in the guest) are not recorded; a balloon's life counts down, and the challenge percentages count, while the guest is in the park by its state and on the grid rather than on a cell of type 0, 1, 3, 9 or 10 (0x004FA990, as ECON-027) — evidence needed: none for the rules (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0); the reader of the guest event ring is untraced
+	// [EXT:guest-event-ring] the guest events 11 and 12 are not recorded in the original's 32-entry event ring (0x0050C100, the guest's thing at +0x30): its only reader is the guest destructor's debug dump (0x004FB330 → 0x004F8AE0 → 0x004FAA60 through the getter 0x0050C190, log level 2), so it has no gameplay effect to match and OpenTPW keeps no ring
 	private void ApplyAppearance( Guest guest, int effect, int qualityOfGoods )
 	{
 		switch ( effect )

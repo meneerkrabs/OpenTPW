@@ -81,6 +81,8 @@ internal sealed partial class SandboxSmokeTest
 		var centre = Level.GetClickCell( entry!, anchor!.Value.X, anchor.Value.Y, 0 );
 		var station = level.PlaceObject( entry!, centre.X, centre.Y, 0 ) ?? level.Objects.TryPlace( entry!, anchor.Value.X, anchor.Value.Y, 0, out _ );
 		Require( station?.Runtime.Bump is not null, $"place a {kind} ride with its controller" );
+		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
+		station!.Open();
 		run.Station = station;
 		var layout = level.TrackStations[station!];
 		Require( layout.First == (anchor.Value.X, anchor.Value.Y) && layout.Heading == TrackHeading.PosX, "the station tiles sit on the footprint's first tile column" );
@@ -169,6 +171,8 @@ internal sealed partial class SandboxSmokeTest
 		var click = Level.GetClickCell( entry, anchor!.Value.X, anchor.Value.Y, 0 );
 		var station = level.PlaceObject( entry, click.X, click.Y, 0 ) ?? level.Objects.TryPlace( entry, anchor.Value.X, anchor.Value.Y, 0, out _ );
 		Require( station?.Runtime.Bump is { Template.IsBumper: true }, "place a bumper ride with its controller" );
+		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
+		station!.Open();
 		var bump = station!.Runtime.Bump!;
 		Require( !level.TrackStations.ContainsKey( station ) && bump.IsTrackValid && bump.Objects.Count == 1 && bump.Buoys.Count == 8, "a bumper ride has an arena, no station tiles and a valid ride" );
 		var (arenaX, arenaY) = Level.BumperArenaCentre( station );

@@ -603,7 +603,8 @@ public partial class Level
 				return null;
 			}
 		}
-		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _ )!;
+		// [BIN:TPW-EXE:0x004DB712 built ride closes] the constructor opens the object (open word +0x68 = 1, 0x4DB3B9) and then, for a type with Info.HasQueue (flag 8 at 0x4DB420), logs "Object %d Closing", clears the open word and writes VAR_RIDECLOSED = 1 (script variable 6, 0x55A070/0x55A0B0), so a built ride with a queue waits closed until the player opens it
+		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ) )!;
 		// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
 		placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 		if ( bought != null )
@@ -613,6 +614,9 @@ public partial class Level
 			: $"Built {entry.DisplayName} (sandbox: no economy, not charged); it runs its original script.";
 		return placed;
 	}
+
+	/// <summary>Whether a newly built object starts open: the constructor opens it and then closes one whose type has a queue (<c>Info.HasQueue</c>, 0x004DB712).</summary>
+	internal static bool BuiltObjectStartsOpen( ObjectCatalogEntry entry ) => !entry.HasQueue;
 
 	/// <summary>Anchor that centres the footprint on cell (x, y).</summary>
 	public static (int X, int Y) GetCentredAnchor( ObjectCatalogEntry entry, int x, int y, int rotation ) => GetCentredAnchor( entry.Shape, x, y, rotation );

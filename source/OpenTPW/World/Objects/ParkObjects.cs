@@ -276,9 +276,9 @@ public sealed class ParkObjects
 	/// <summary>
 	/// Replaces the Easymode markers with the real objects: every SYSG placed record at its saved anchor and
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
-	/// Imported objects are opened: the save's ride state is not decoded.
+	/// Imported objects are opened (the saved open word is not imported, SAVE-006).
 	/// </summary>
-	// [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too, while the original's object constructor 0x4DB090 sets the open word +0x68 = 1 (0x4DB3B9) and then, for a type with Info.HasQueue (def+0x40, flag 8 at 0x4DB420), logs "Object %d Closing", clears the open word and writes VAR_RIDECLOSED = 1 (0x4DB712–0x4DB779), so a built ride with a queue starts closed — evidence needed: the TPWS ride-state fields (save loader 0x415270)
+	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object takes its open word from the save (mCanLoad, SAVE-006 holds that this port opens every imported object)
 	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
 
 	/// <summary><see cref="ImportOriginal"/> one object at a time: after each, the objects placed so far and the share of the records done.</summary>

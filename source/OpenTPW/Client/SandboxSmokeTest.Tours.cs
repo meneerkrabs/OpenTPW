@@ -150,6 +150,8 @@ internal sealed partial class SandboxSmokeTest
 		Require( centre != null, "find an on-screen site for the tour ride" );
 		var ride = level.PlaceObject( entry, centre!.Value.X, centre.Value.Y, 0 ) ?? level.Objects.TryPlace( entry, Level.GetCentredAnchor( entry, centre.Value.X, centre.Value.Y, 0 ).X, Level.GetCentredAnchor( entry, centre.Value.X, centre.Value.Y, 0 ).Y, 0, out _ );
 		Require( ride?.Runtime.UsesTour == true, "place the tour ride" );
+		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
+		ride!.Open();
 		run.Ride = ride;
 		Require( ride!.Runtime.Tour == null, "no controller before the script ran TOUR 1" );
 		var entrance = ride.Visitors.EntranceCell;

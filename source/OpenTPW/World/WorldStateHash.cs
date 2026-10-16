@@ -53,7 +53,7 @@ public sealed record WorldStateSources
 public static class WorldStateHash
 {
 	/// <summary>Bumped whenever the hashed fields or their order change.</summary>
-	public const int SchemaVersion = 19;
+	public const int SchemaVersion = 20;
 
 	public static ulong Compute( WorldStateSources sources )
 	{
@@ -67,10 +67,8 @@ public static class WorldStateHash
 		hash.Add( economy != null );
 		if ( economy != null )
 			hash.Add( economy.Turn );
-		// world_rng_state: OpenTPW has one stream per system instead of the original's one world generator.
-		hash.Add( economy?.Random.State ?? 0 );
-		hash.Add( sources.Guests?.RandomState ?? 0 );
-		hash.Add( sources.Scripts?.RandomState ?? 0 );
+		// world_rng_state: the one world generator (tp.exe 0x00516330) every system draws from; the economy's, else the guests', else the scripts'.
+		hash.Add( (economy?.World ?? sources.Guests?.World ?? sources.Scripts?.World)?.State ?? 0 );
 		// sound_seed is not hashed: it is presentation state that draws never move (sound_shared 0x100118C8 is
 		// its only store); the park save keeps it.
 		if ( economy != null )

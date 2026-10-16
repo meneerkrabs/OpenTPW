@@ -26,20 +26,20 @@ public class SideshowWinTests
 	}
 
 	[TestMethod]
-	public void PlaysDrawOnceFromTheEconomyStreamAndUseTheByteTest()
+	public void PlaysDrawOnceFromTheWorldGeneratorAndUseTheByteTest()
 	{
 		var park = EconomyTestData.Park();
 		var sideshow = park.RegisterExisting( 1303 );
 		park.SetPrices( sideshow.Id, sideshow.Price, sideshow.CostOfGoods, 100 );
-		var expected = new DeterministicRandom( park.Random.State );
+		var expected = new WorldRng( park.World.State );
 		var wins = 0;
 		for ( var play = 0; play < 400; play++ )
 		{
 			Assert.IsTrue( park.PlaySideshow( sideshow.Id, 1000, out _, out var won ) );
-			Assert.AreEqual( expected.Next( 100 ) == 0, won );
+			Assert.AreEqual( expected.Next( 100u ) == 0, won );
 			wins += won ? 1 : 0;
 		}
 		Assert.IsTrue( wins > 0, "a 100 % chance of losing still pays out on a zero draw" );
-		Assert.AreEqual( expected.State, park.Random.State );
+		Assert.AreEqual( expected.State, park.World.State );
 	}
 }

@@ -325,7 +325,14 @@ public sealed record GuestSimulationSnapshot
 	public required int SchemaVersion { get; init; }
 	/// <summary>The seed the simulation was constructed with; informational (the restored <see cref="RandomState"/> supersedes it).</summary>
 	public required ulong Seed { get; init; }
+	/// <summary>The world generator's state as <see cref="GuestSimulation.RandomState"/> (the park's one stream the guests draw from; docs/DETERMINISM.md).</summary>
 	public required ulong RandomState { get; init; }
+	/// <summary>
+	/// Non-null in a snapshot written with the world generator: the generator state (equal to <see cref="RandomState"/>). Older snapshots hold the guests'
+	/// own SplitMix64 stream in <see cref="RandomState"/> instead, which the restore ignores (the generator then keeps the state it was built with).
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public uint? WorldGenerator { get; init; }
 	public required long TickCount { get; init; }
 	public required double TimeSeconds { get; init; }
 	/// <summary>The next guest id the allocator hands out.</summary>

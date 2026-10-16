@@ -5,10 +5,12 @@ give the same state. This holds for two runs in one process and for runs in
 separate processes only when external host-civil-time query samples are also
 the same. A seed and player inputs alone do not pin those samples. This page
 covers the DET-I1 slice of the contract in
-[reverse/DET-plan.md](reverse/DET-plan.md) §4. The simulation still runs on the
-60 Hz `FixedStepClock` (`EXT:fixed-60hz-clock`; ECON-001 keeps the substeps) and keeps its own generators. Moving to the
-original's 31 ms substep and its world LCG is DET-I2, a later fidelity step.
-That step changes every balance outcome.
+[reverse/DET-plan.md](reverse/DET-plan.md) §4. The simulation runs on the
+60 Hz `FixedStepClock` (`EXT:fixed-60hz-clock`; ECON-001 keeps the substeps) and, since the world generator was ported,
+draws every random decision from the original's one generator (below). Moving
+to the original's 31 ms substep and its thing sweep order is what remains of
+DET-I2 (DET-013 to DET-015), a later fidelity step that changes the order of the
+draws and with it every balance outcome.
 
 ### External host civil time
 
@@ -42,19 +44,46 @@ derives every simulation stream from it:
 
 | Stream | Seed | Generator | Owner |
 | --- | --- | --- | --- |
-| Guests | `GuestStream` = seed | SplitMix64 `GuestRandom` (DET-014) | `GuestSimulation` |
-| Economy | `EconomyStream` = seed XOR (default XOR 1) | SplitMix64 `DeterministicRandom` (DET-015) | `ParkEconomy` |
-| Placed object scripts | placement ordinal XOR `ObjectScriptKey` | per-VM `ScriptRandom(seed)` (System.Random-compatible) (DET-013) | `ParkObjects` |
-| Scripts without a seed (prototype ride, `Ride`) | drawn from the script world's SplitMix64 stream, start `ScriptStream` | per-VM `ScriptRandom(seed)` (System.Random-compatible) (DET-013) | `RideScriptWorld` |
-| Script children (SPAWNCHILD/SPAWNSOUND) | drawn from the parent VM | per-VM `ScriptRandom(seed)` (System.Random-compatible) | parent `RideVM` |
+| World generator (guests, staff, the economy's staff pool, script RAND and FINDSCRIPTRAND, the bump and tour rides, rider heads, litter) | `GeneratorState` = `WorldRng.StateFromSeed( EconomyStream )` | the original's `WorldRng` (tp.exe `0x516330`: `s = rotr(s·1664525 + 1013904223, 13)`, the rotated value is the new state, the result its absolute value) (DET-013 to DET-015) | `ParkEconomy.World`; guests and script world attach to it |
+| Scripts created with an explicit seed (tests, standalone scripts, older saves) | the explicit seed | per-VM `ScriptRandom(seed)` (System.Random-compatible) | the VM |
 | Coaster boarding (`CoasterRng`) | `ScriptStream` XOR a fixed key, folded to 32 bits (`[EXT:coaster-rng-seed]`, formerly COAST-027) | the original's 214013/2531011 LCG (`CoasterRandom`) | `RideScriptWorld.Coasters` |
 | Sound chooser (presentation) | `SoundStream`, set by `GameAudio.EnterPark` | the library's one shared LCG, `s·0x19660D + 0x3C6EF35F` stored on every draw, `ror(s, 13)` then `>> 16` or `% range` (tp.exe `0x6bc839`; AUDIO-037) | `SoundEventSystem` |
 | Weather (presentation and sim) | `ParkWeather` seed from the park's weather key | SplitMix64 `DeterministicRandom`; the PC draws from the shared world LCG `0x516330` (`[EXT:weather-stream]`) | `ParkWeather` |
 
-The stream keys are chosen so that the default seed reproduces the seeds each
-system used before world seeds existed: guests `Level.GuestSeed`, economy 1,
-placed objects 1, 2, 3, … As a result, existing balance results and the M3
-gate baseline stay the same. The original seeds its world generator from
+### The one world generator (DET-013 to DET-015)
+
+The original has one generator for the whole simulation (tp.exe `0x516330`, the u32 at world `+0x1DA708`, saved raw as
+`mRandomSeed`, `0x517123` write and `0x517DFC` read). `WorldRng` (`source/OpenTPW/World/WorldRng.cs`) is that generator;
+the economy owns the park's instance and the level attaches the guests and the script world to it
+(`Level.LinkWorldGenerator`, `ParkEconomyRuntime.AttachGuests`, `ParkWorldStreams.LinkGenerator`), so everything that draws
+shares one stream:
+
+- guests: the creation draws in the original's order (the base constructor's speed index `0x4F89E1`, the eight starting
+  values `0x4FAFF8..0x4FB114`, the reseed with the guest's id `0x4FB19E`, the sprite variant `0x541F85`, and for an arrival the
+  entrance side `R & 1` and the sideways byte `0x4FB201`, `0x4FB21C`), the balloon and costume reseeds (`0x4FE6A1`,
+  `0x4FE6FC`), the thought pick's draw on every needs phase (`0x501919`), and the wander, booth, queue, litter and
+  small-portion draws that were already traced;
+- the economy's staff pool and the staff walks (candidates, the rest gate, the no-rest-area happiness hit, the guards' set-down,
+  the handymen), and the litter drop and sweep reseeds with the cell id (`0x4D94E2`, `0x4D71CA`);
+- scripts without an explicit seed (every script of a park, children included): RAND, FINDSCRIPTRAND and ADDHEAD take the
+  original's projections of one draw (`0x55398A`, `0x5560CB`, `0x554CB5`), and the bump and tour rides their own;
+- the arrival vehicle's pick when a leaving guest calls one (`0x51A34B`).
+
+Presentation (particles, voices, the sound chooser, the weather's visuals, the advisor, animation and the texture roll of
+PATH-014) stays off it; `WorldRngTests.PresentationCodeNeverReachesTheWorldGenerator` checks the folders. The explicit
+seeds remain for what the original seeds explicitly or OpenTPW seeds for itself: the coaster LCG, the weather, the sound
+chooser and a script made with a seed.
+
+What is still unlike the original, and recorded in DET-013 to DET-015: the order of the draws (OpenTPW ticks guests, the
+placed objects' scripts, the economy and the staff in its own order, not the substep scheduler and the newest-first thing
+sweep); the guest id the reseed takes (OpenTPW's counter, not a thing pool slot, WALK-010); the guest and staff sites with
+no counterpart here (the arrival lane picks of later states, the gate wait, the won sideshow's tail, the staff
+constructors' draws); and the weather and the advisor, which keep their own streams.
+
+The stream keys still derive the seeds a standalone guest simulation, economy or script world starts from
+(guests `Level.GuestSeed`, economy 1), and the placement ordinal XOR `ObjectScriptKey` stays an object's creation seed (its identity in
+the layout and the save), but the world generator does not reproduce the old per-system streams: every balance outcome moved once when
+it was ported (the re-pin under "Tests"). The original seeds its world generator from
 `time(NULL)`, so no seed is "the original one"; the explicit seed is OpenTPW's replay policy (`[EXT:explicit-world-seed]`, formerly DET-002).
 
 ## Global and unseeded sources
@@ -65,7 +94,7 @@ Found in `source/OpenTPW` (World, Guests, Economy, Objects, VM, Audio) and
 | Source | Effect | Handling |
 | --- | --- | --- |
 | `OriginalObjectRuntime.nextAttractionId` (static counter) | attraction ids, and through them guest state and the raw guest hash, depended on how many objects the process had created before | ids are now allocated by the park's `RideScriptWorld`; every park starts at 1 |
-| `RideVM`: `new Random()` when no seed was given (prototype Totem, `Ride`, standalone VMs) | RAND/FINDSCRIPTRAND differed on every run | the seed is drawn from the `RideScriptWorld` stream; a world-less VM gets its own default world (state 0) |
+| `RideVM`: `new Random()` when no seed was given (prototype Totem, `Ride`, standalone VMs) | RAND/FINDSCRIPTRAND differed on every run | a script without a seed draws from its `RideScriptWorld`'s world generator (the park's one stream); a world-less VM gets its own default world (state from seed 0) |
 | `Level.RestoreVisitedRide`: prototype ride in its own script world | its attraction id could collide with id 1 of the park's objects | uses `Objects.ScriptWorld` |
 | `GameAudio`: `SoundEventSystem(mixer, Environment.TickCount)` | sound choice (presentation) | the clock seed matches the original's start-up seeding (`QueryPerformanceCounter`, tp.exe `0x72e09c`) and only affects front-end sounds: each park reseeds the chooser in `GameAudio.EnterPark` from `WorldSeed.SoundStream` and saves it (`[EXT:sound-chooser-seed]`, the one deviation from the original's unsaved chooser) |
 | `Extensions.RandomVector3` → `Random.Shared` | none: it has no callers | kept for presentation and documented as such; `DeterminismTests` fails if simulation folders reference it |
@@ -109,29 +138,31 @@ code (`GameFlow`, the M3 gate) is not scanned.
 ## Park save
 
 The economy-only park save (`ParkSaveFile`, still version 2; docs/ECONOMY.md
-"Save format") has an optional `World` section:
+"Save format") carries the world generator as the optional `WorldGenerator` (a u32, the original's `mRandomSeed`) and has an optional `World` section:
 
 ```json
-"World": { "Seed": 6075451861746676596, "GuestRandom": …, "ScriptRandom": …, "SoundSeed": … }
+"WorldGenerator": 3290436124, "World": { "Seed": 6075451861746676596, "SoundSeed": … }
 ```
 
-The economy stream stays in `RandomState`. `Level.SavePark` writes
-both. `Level.LoadPark` restores the economy and, when the section is present,
-continues the guest, script and sound streams. Both delegate to
-`ParkWorldStreams` (`source/OpenTPW/World/ParkWorldStreams.cs`), which holds no
-state and needs no renderer, so tests run the same save, load and hash code. Saves without the section
-(older files and economy-only callers) still load, but those streams are not
-restored. This legacy file does not hold guests, queues or object script state, so a
-`LoadPark` keeps the running guests and scripts (DET-016). Coaster tracks, trains and
+`RandomState` (kept for the format) holds the same number. `Level.SavePark` writes both. `Level.LoadPark` restores the economy and its
+generator, attaches the guests and the script world to the loaded economy's generator, and, when the section is present,
+continues the sound seed. Both delegate to `ParkWorldStreams` (`source/OpenTPW/World/ParkWorldStreams.cs`), which holds no
+state and needs no renderer, so tests run the same save, load and hash code. Saves written before the port have no `WorldGenerator`
+(their `RandomState` is the economy's own SplitMix64 state and `GuestRandom` and `ScriptRandom` in the `World` section are streams that no longer exist):
+the load ignores those words and starts the generator from the saved world seed (`WorldSeed.GeneratorState`), or, for a save without a `World`
+section, from `WorldRng.StateFromSeed( RandomState )`; both are deterministic, neither continues the old draws (`[EXT:legacy-generator-state]`: an old save has no generator state, so there is nothing of the original's to match). This legacy file does not hold guests, queues or
+object script state, so a `LoadPark` keeps the running guests and scripts (DET-016). Coaster tracks, trains and
 the coaster generator are not saved by it either (the own-format park save holds them, `[EXT:coaster-own-save]`).
 
 The park-resume world save (docs/PARK-SAVES.md) is separate: its
 `opentpw-world` envelope captures the whole running park — layout, guests,
 script world, per-object runtimes, clock and the attraction→economy links —
 and restores it into a fresh candidate park, continuing the run exactly. The
-streams still ride inside the embedded economy's `World` section, and the
-envelope's shape check requires them to agree with the typed guest and script
-fields, so a resumed park continues the same streams this page describes. The
+generator rides inside the embedded economy (`WorldGenerator`) and, as an optional marker, in the typed guest and script-world parts
+(`GuestSimulationSnapshot.WorldGenerator`, `RideScriptWorldSnapshot.WorldGenerator`); the envelope's shape check requires the three to
+agree, so a resumed park continues the one stream this page describes. A script's snapshot says how it draws
+(`RideVMSnapshot.UsesWorldRandom`; an older one carries its own seeded generator, which the restore keeps); a head space of the world generator
+holds no state of its own. Snapshots without the markers restore as before and leave the generator as the economy's restore set it. The
 envelope's optional `Particles` part (the particle pool's emitters, effectors and
 private generator, docs/PARTICLES.md) is presentation: it is neither hashed nor
 drawn from any of these streams, so the hash schema stays 14.
@@ -156,7 +187,7 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `substep_counter` | 60 Hz fixed-step count (`GuestSimulation.TickCount`) | substitute |
 | `manager_pass_counter` | no RSE manager pass; per-VM `SliceCount` is in the script digest | **missing** |
 | `park_turn` | `ParkEconomy.Turn` | yes |
-| `world_rng_state` | economy, guest and script-world stream states | substitute (three streams) |
+| `world_rng_state` | `ParkEconomy.World.State` (the economy's, else the guests', else the scripts'): the one world generator, tp.exe `0x516330` | yes (schema 20; before it three stream states) |
 | `coaster_rng_state` | `CoasterWorld.Random` (the original's `s·214013 + 2531011` LCG, started from the world seed, `[EXT:coaster-rng-seed]`) | yes (after the script digest, with the coasters) |
 | `clib_rng_state` | no C-library generator | **missing** |
 | `sound_seed` | `SoundEventSystem.Seed` | **not hashed** (saved; see below) |
@@ -192,9 +223,9 @@ stays out of the canonical hash and out of the resume smoke test's composite has
 A park started from an original save (SAVE-I, docs/ECONOMY.md "Original save
 import") sets the economy's tick, bank, loans, objects and staff before its first
 tick. All of it is in the economy digest, and the run that the pinned hash
-covers starts no original save, so the schema and the pin are unchanged. The
-save's `mRandomSeed` is not imported (SAVE-001): OpenTPW has no world LCG yet,
-so its streams still come from the world seed.
+covers starts no original save, so the pin is not affected by it. The
+save's `mRandomSeed` is imported (SAVE-001 retired): it is the state of the one world generator (`0x516330`, saved raw at world `+0x1DA708`,
+written at `0x517123` and read back at `0x517DFC`), and the park continues the saved stream.
 
 Other OpenTPW state that is **not in the hash**:
 
@@ -225,10 +256,10 @@ change held day indices there; `ParkWeather.MigrateSchedule` recognises them (al
 
 The weather's own draws still come from its own stream, not from the PC's world LCG (`0x516330`:
 `world +0x1da708 = ror13(s·0x19660D + 0x3C6EF35F)`, the rotated value stored and `|value|` returned,
-seeded with `time(NULL)` at world creation `0x51586b`, setter `0x516370`). That LCG is shared by about 139
-call sites, so reproducing the weather's draws needs the draws of every other user in their original
-order; until the world LCG exists the weather stream is OpenTPW's design (`[EXT:weather-stream]`,
-formerly AUDIO-030).
+seeded with `time(NULL)` at world creation `0x51586b`, setter `0x516370`). That LCG is shared by 139
+call sites and is now ported (`WorldRng`), but the weather's draws only land where the original puts them once the
+draws of every other user come in the original's order (DET-013's update order); until then the weather keeps its own
+stream, OpenTPW's design (`[EXT:weather-stream]`, formerly AUDIO-030).
 
 Rides register round (October 14): a script's speed bias (`RideVM.SpeedBias`, the ride's `InitSpeed`; 50 at creation) is
 part of the script digest only when it differs from 50, and is carried by the script snapshot (default 50, so older
@@ -354,17 +385,22 @@ and the object catalog's cache key will include `ModSet.Digest`; an unmodded sav
 - same seed twice in one process ⇒ equal hash; different seed ⇒ different hash
   (the synthetic park: economy, paying guests, a shop script, unseeded RAND
   scripts);
-- save at mid-run, move the economy and the script stream by advancing and
-  drawing from them, load ⇒ the hash at the save point is restored, and the
+- save at mid-run, move the world generator by advancing the economy and
+  drawing from it, load ⇒ the hash at the save point is restored, and the
   final hash equals the uninterrupted run;
-- save, then draw from every stream (guest ticks, a script seed, sound draws),
-  load ⇒ the guest, script and sound streams equal the saved values; a
+- save, then draw (guest ticks, a script draw, sound draws), load ⇒ the one generator and
+  the sound seed equal the saved values and the guests and the scripts draw from the loaded economy's generator; a
   `RestoreRandomState` that does nothing fails this test. The scramble never
   goes through the restore path under test;
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x09894103FAFB8D45`, schema 19: tp.exe's path links, queue cells and queue walk (PATH-004, QUEUE-006, QUEUE-003) on top of the loan offers, the ticket booth, tp.exe's guest walk and the staff candidate draws (`0xA2FAA54FEB56DA05`; main's pin after the staff walks, #229, left it unchanged). The synthetic park's queue now carries the links the queue tool writes (the link writer `0x5348D0` from the commit link pass `0x52744E`: the front toward the entrance, each cell to the one before it, the back to the path cell it ends on, with the cells' queue links `+0x0D`), and guests reach the back of the queue by the original's queue walk and edge test (`0x4D8750`) over those links instead of OpenTPW's earlier search, so the guests' positions, the joins and the world stream move; no save field is added. Before that, `0xA2FAA54FEB56DA05`, schema 19: the bank's stored credit test (`0x4D06B0`, run when the loans dialog opens or a tab is selected)
+  (`0x7AED41D19433D4B2`, schema 20: the world generator (DET-013 to DET-015). Guests, staff, the economy's staff pool and the scripts draw from the original's one
+  generator (`0x516330`), so `world_rng_state` is one state where there were three; a guest is created with the original's draw order (base speed, the eight starting
+  values, the reseed with its id `0x4FB19E`, the sprite variant and, for an arrival, the entrance side and sideways byte), so its speed, offsets, lane and every draw
+  after it move, and the staff pool, the scripts' RAND and the bump and tour rides move with the shared stream; placed objects' scripts draw from the generator
+  instead of a per-placement seed. The park save gains the optional `WorldGenerator`; no other field. Before that,
+  `0x09894103FAFB8D45`, schema 19: tp.exe's path links, queue cells and queue walk (PATH-004, QUEUE-006, QUEUE-003) on top of the loan offers, the ticket booth, tp.exe's guest walk and the staff candidate draws (`0xA2FAA54FEB56DA05`; main's pin after the staff walks, #229, left it unchanged). The synthetic park's queue now carries the links the queue tool writes (the link writer `0x5348D0` from the commit link pass `0x52744E`: the front toward the entrance, each cell to the one before it, the back to the path cell it ends on, with the cells' queue links `+0x0D`), and guests reach the back of the queue by the original's queue walk and edge test (`0x4D8750`) over those links instead of OpenTPW's earlier search, so the guests' positions, the joins and the world stream move; no save field is added. Before that, `0xA2FAA54FEB56DA05`, schema 19: the bank's stored credit test (`0x4D06B0`, run when the loans dialog opens or a tab is selected)
   decides which offers the Available tab lists, and the park save gains the optional `AvailableLoanOffers` field, so the hashed save
   text moves, on top of the ticket booth, tp.exe's guest walk and the staff candidate draws (`0x944788E41E278016`). The loan-offer field
   on the walk and the staff draws only was `0x650CEA6712B82D88`, on the staff draws only `0x0C9F0042AD44A3E3`. Before that,
@@ -465,9 +501,10 @@ and the object catalog's cache key will include `ModSet.Digest`; an unmodded sav
   admitted, and the queue needs window compares truncated happiness and toilet.
   Schema 3 (`0x8E84E46AA3C8D9EE`) added the queue cells, links, admission state
   and queue edits of each attraction when real queue cells landed);
-- the default seed keeps the previous stream seeds; per-park attraction ids;
-  unseeded scripts follow their world stream; `World` save section round trip
-  and older saves;
+- the default seed gives the same world generator start state (`WorldSeed.GeneratorState`); per-park attraction ids;
+  unseeded scripts draw from the park's one generator; the `WorldGenerator` save field round trip and older saves (with and without a `World` section);
+- the two guest-path digests moved with the generator (`PathAssetTests`: 22 → 21 admissions, `0xF55B1DF82DFF7F3F`; `PathBuilderTests`: 61 → 60 admissions,
+  `0x4AFCF82F0A7796C1`): a guest's reseed and its entrance draws move every offset, lane and walk, and each guest's admission with them;
 - the source guard above.
 
 `DeterminismAssetTests` (`OPENTPW_GAME_PATH`): original jungle objects get
@@ -481,22 +518,24 @@ itself needs a renderer and is not constructed by tests.
 
 | ID | Rule |
 | --- | --- |
-| DET-013 | script RAND/FINDSCRIPTRAND use per-VM `System.Random` seeded from the park stream, not the world generator (tp.exe `0x516330`: LCG, rotate right by 13, abs) |
-| DET-014 | guests use their own SplitMix64 stream, not the world generator reseeded per guest id |
-| DET-015 | the economy uses its own SplitMix64 stream, not the world generator |
+| DET-013 | scripts, bump and tour rides and rider heads draw from the one world generator with the original's projections, but in OpenTPW's update order, not the substep scheduler's; an explicitly seeded script keeps a private generator |
+| DET-014 | guests draw from the world generator in the original's creation order and at the traced sites, but reseed with OpenTPW's guest id, take the entrance from lanes A and B and have no counterpart for the later arrival-lane picks, the gate wait and the sideshow tail |
+| DET-015 | the economy's staff pool and the staff walks draw from the world generator, but hired staff have no constructor draws, the month end is not ordered against the thing sweep, and the advisor and the weather keep their own streams |
+
+The full text of the three is in the register (`DeterminismApproximations.cs`). They were narrowed, not retired: the update order is not ported.
 
 DET-016 is retired (October 14, 2026): the economy-only park save is the legacy `ParkSaveFile` (`[EXT:legacy-economy-save]`), used by the
 determinism tests; the player's save (`GameFlow.SaveCurrentPark` → `ParkResumeSaveFile`) stores the economy and its streams, the layout,
 the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks (docs/PARK-SAVES.md).
 
-Port requirements for DET-013 to DET-015 (tp.exe, static evidence, nothing missing; the port is not done): the one world generator is
-`s = rotr(s * 1664525 + 1013904223, 13)` returning `abs((int)s)` with `int.MinValue` staying negative (`0x516330`); one `WorldRng` per level
-holds the u32 at world+0x1DA708; `0x516370` reseeds it with the zero-extended u16 thing id at eight sites (`0x4D71CA` and `0x4D94E2` in litter,
-`0x4F7B7E`, `0x4FB19E` in guest creation with eight draws, the reseed and two more draws, `0x4FCAFD`, `0x4FE6A1` and `0x4FE6FC` for the balloon,
-`0x50205F`), all taking the id through `0x50B350`; the state is seeded from `time()` at world setup and saved as `mRandomSeed` next to
-`mGameTick` (save `0x51710F`, load `0x517DE8`); every consumer shares the one stream with its own projection (RAND `labs(labs(r >>> 1) % (int16 + 1))`,
-ADDHEAD and FINDSCRIPTRAND `(labs(r >>> 1) % n) + 1`, tour and flying cars `labs(r) % 100`, 139 direct calls plus four inline copies); the original
-call order (substeps and the RSE pass schedule, things newest first, economy month-end) is needed for the right sequence, not only the distribution.
+The port followed these requirements (tp.exe, static evidence): the one world generator is `s = rotr(s * 1664525 + 1013904223, 13)` returning
+`abs((int)s)` with `int.MinValue` staying negative (`0x516330`; the test vectors are the instructions executed in an x86 emulator, see
+`WorldRngTests`); one `WorldRng` per park holds the u32 at world+0x1DA708; `0x516370` reseeds it with the zero-extended u16 thing id at eight sites,
+of which OpenTPW follows `0x4D71CA` and `0x4D94E2` (litter), `0x4FB19E` (guest creation: base speed draw, eight draws, the reseed, the sprite variant and, for an arrival,
+two more draws) and `0x4FE6A1` and `0x4FE6FC` (costume and balloon), and does not follow `0x4F7B7E` and `0x50205F` (person things OpenTPW does not model) nor `0x4FCAFD` (the sprite lookup `0x4FCAC0`, called from the drawing routine `0x44B410`: when `0x541F60(3)` returns 0 it reseeds with the thing id and draws, so the original's generator depends on what is drawn; OpenTPW keeps drawing off the generator); the
+state is saved as `mRandomSeed` (`0x517123`, `0x517DFC`) and an original save's word is imported; the consumers share the stream with their own projections (RAND
+`labs(labs(r >>> 1) % (int16 + 1))`, FINDSCRIPTRAND `(labs(r >>> 1) % n) + 1`, ADDHEAD `labs(r >>> 1) % length`, tour and flying cars `labs(r) % 100`). What is not ported is
+the original call order (substeps and the RSE pass schedule, things newest first, economy month end), which the right sequence needs and not only the distribution.
 
 The remaining IDs proposed in DET-plan §4.6 (DET-001, DET-003 to DET-011) belong
 to the substep scheduler and the original generators. DET-I2 will register them

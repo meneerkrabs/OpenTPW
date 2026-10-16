@@ -44,67 +44,79 @@ public sealed record TrackCircuit( bool IsValid, IReadOnlyList<TrackStep> Steps,
 /// </summary>
 public static class TrackCircuitWalker
 {
-	/// <summary>Walks the circuit that starts at <paramref name="station"/>'s first tile. With <paramref name="commit"/> the visited cells are written, otherwise only the verdict is computed.</summary>
-	// [BIN:TPW-EXE:0x0052A970 circuit walk] start = the station cell, each step needs a cell of type 11/13/16/18/25 with at least two arms, a corner sets the new heading from the mask and the entry arm and rewrites +0xD, a 3-arm junction fails when the cell ahead has type 0, the segment number goes to +0x24 and the walk moves 2 cells; success is arriving back at the start cell exactly, with no minimum length
-	// [APPROX:TRACK-014] a tee or crossing continues straight ahead only when that arm and the tile ahead exist, a tile without an arm toward the flow fails, the walk is cut off after as many steps as the layer has tiles plus the station, tiles are numbered from 1 and nothing is written without commit; the original 0x0052A970 keeps the heading on every non-corner cell without testing arms, fails a non-track cell (0x0053AD30) or one with fewer than two arms (0x0052B20C), fails a three-arm cell when the cell two ahead has type 0 or is a track cell without arms while the heading is 0x01 (a literal bit test, 0x0052B234–0x0052B280), has no step limit, arrives on reaching the start cell from any side (0x0052B2DE) and in both modes rewrites +0xD at corners and writes the 0-based step to +0x24 (0x0052B295) — evidence needed: whether the 0-based step and the side-entry cases matter to the section consumers (0x0054B2F0)
+	/// <summary>
+	/// Walks the circuit that starts at <paramref name="station"/>'s first tile. The cells are written as the walk goes, as the original's walk does in both of its modes:
+	/// a corner takes its new heading as the flow link and every visited tile its 0-based step number.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052A970 circuit walk] start = the station cell, each step needs a cell of type 11/13/16/18/25 (0x53AD30), a corner (0x53AE00: two perpendicular arms) takes the new heading mask ^ opposite(heading) (the heading itself when the opposite arm is missing) and rewrites +0xD, a non-corner keeps the heading, the step number goes to +0x24 (0x53AEF0, 0-based) and the walk moves 2 cells by a single-bit heading; success is arriving back at the start cell exactly, from any side, with no minimum length
+	// [BIN:TPW-EXE:0x0052B20C walk failures] the walk fails (the flag [esp+0x28] clears) on a non-track cell, a heading of 0 or a cell with fewer than two arms (0x52B20C..0x52B220), and on a three-arm cell (0x522790 = 3) when the cell two ahead has type 0 (0x52B26F..0x52B280) or is a track cell without arms while the heading has bit 0x01 (a literal bit test, 0x52B238..0x52B267); a four-arm cell has no rule, no arm toward the flow is tested, the walk arriving at the start with the flag clear still fails
+	// [EXT:track-walk-step-limit] the walk is cut off after as many steps as the layer has tiles plus the station; the original 0x52A970 has no step limit and would hang on a flow that never returns to the start
+	// [APPROX:TRACK-014] the step number the walk writes to +0x24 (0-based) and the side-entry arrival have no reader here: the readers (0x53AEE6) are the track tool's edit sub-modes 0xE/0x13 (0x5234D0, 0x524960, 0x527960, 0x52B400) and its highlight, which OpenTPW has not
 	// [BIN:TPW-EXE:0x00528A70 add-on placement] an object whose footprint has code 0xB or 0x10 (the track add-ons) must stand on kart or water track (validator passes 0x10B/0x110, 0x20B/0x210) and its placement writes cell flags 0x10 (0x53A510 at 0x529511 and 0x52951C); a flagged tile gets no piece instance (0x0053AFA0 skips +0xE & 0x10)
 	// [BIN:TPW-EXE:0x0052AC68 add-on sections] a straight with flag 0x10 builds kind 12 (0x44) or 13 (0x11) with +8 = its place in the run of add-on tiles (0 for the first, reset by any other tile), +0xC = the add-on's instance (thing +0x20) and +0x10 = its type id (0x4DD4E0 +0x10); the vehicle hook is the Space Racers Teleport only (type 0xDAC, 3500): [BIN:TPW-EXE:0x00548CA5] within ±0x4B0 of the first tile's centre a vehicle is hidden (0x548E80: flag 0x200, its instance, shadow and riders' heads) and the teleport plays animation 5, past 0x4B0 on the far side of the second tile it shows again
 	// [APPROX:TRACK-008] no add-on is offered or placed, so the flag is read into the section kind but never set and no kind 12 or 13 section, run value or teleport exists — evidence needed: where the original sells a ride's add-ons (the object window code 0x481BC0..0x486D90 reads an add-on's ride through 0x4E2710) and the placement's cell writes for codes 0xB/0x10 (0x00532FC0)
-	public static TrackCircuit Walk( TrackBuilder builder, TrackStation station, bool commit )
+	public static TrackCircuit Walk( TrackBuilder builder, TrackStation station )
 	{
 		ArgumentNullException.ThrowIfNull( builder );
 		var tracks = builder.Tracks;
 		var heading = station.Heading;
 		var position = station.First;
 		var steps = new List<TrackStep>();
-		var visited = new HashSet<(int X, int Y)>();
 		var limit = tracks.Count / 4 * 4 + 16;
+		string? failure = null;
 		while ( true )
 		{
 			var tile = tracks.Get( position.X, position.Y );
-			if ( !tile.IsOrigin )
-				return TrackCircuit.Invalid( $"no track tile at ({position.X}, {position.Y})", steps );
+			var entry = heading;
 			var mask = tile.Mask;
-			var arms = TrackHeading.Count( mask );
-			if ( arms < 2 )
-				return TrackCircuit.Invalid( $"the tile at ({position.X}, {position.Y}) has fewer than two arms", steps );
-			var back = TrackHeading.Opposite( heading );
-			if ( (mask & back) == 0 )
-				return TrackCircuit.Invalid( $"the tile at ({position.X}, {position.Y}) has no arm toward the flow", steps );
-			byte exit;
-			if ( arms == 2 )
+			if ( !tile.IsOrigin )
 			{
-				// a straight keeps the heading; a corner leaves by the arm that is not the entry arm
-				exit = (mask & heading) != 0 ? heading : (byte)(mask & ~back);
+				failure ??= $"no track tile at ({position.X}, {position.Y})";
+				heading = 0;
 			}
 			else
 			{
-				var ahead = tracks.Get( position.X + TrackStation.TileCells * TrackHeading.Dx( heading ), position.Y + TrackStation.TileCells * TrackHeading.Dy( heading ) );
-				if ( (mask & heading) == 0 || ahead.Type == 0 )
-					return TrackCircuit.Invalid( $"the junction at ({position.X}, {position.Y}) has nothing ahead", steps );
-				exit = heading;
-			}
-			var segment = steps.Count + 1;
-			var first = visited.Add( position );
-			steps.Add( new TrackStep( position.X, position.Y, heading, exit, mask, segment, (tile.Flags & TrackCell.FlagAddOn) != 0 ) );
-			if ( commit )
-			{
-				tile.Link = first ? exit : (byte)(tile.Link | exit);
-				tile.Segment = segment;
+				if ( IsCorner( mask ) )
+				{
+					var back = OppositeBits( heading );
+					if ( (mask & back) == 0 )
+						back = heading;
+					heading = (byte)(mask ^ back);
+					if ( tile.Link != heading )
+						tile.Link = heading;
+				}
+				var arms = TrackHeading.Count( mask );
+				if ( heading == 0 || arms < 2 )
+					failure ??= $"the tile at ({position.X}, {position.Y}) has fewer than two arms";
+				else if ( arms == 3 )
+				{
+					var ahead = tracks.Get( position.X + TrackStation.TileCells * TrackHeading.Dx( heading ), position.Y + TrackStation.TileCells * TrackHeading.Dy( heading ) );
+					if ( (ahead.IsOrigin && ahead.Mask == 0 && (heading & 0x01) != 0) || ahead.Type == 0 )
+						failure ??= $"the junction at ({position.X}, {position.Y}) has nothing ahead";
+				}
+				tile.Segment = steps.Count;
 				var piece = TrackPieceSelector.Select( tile.Type, tile.Mask, tile.Link, tile.Flags );
 				tile.Family = piece.Family;
 				tile.Piece = piece.Piece;
 				tile.Rotation = piece.Rotation;
 				tracks.Set( position.X, position.Y, tile );
+				steps.Add( new TrackStep( position.X, position.Y, entry, heading, mask, tile.Segment, (tile.Flags & TrackCell.FlagAddOn) != 0 ) );
 			}
-			heading = exit;
 			position = (position.X + TrackStation.TileCells * TrackHeading.Dx( heading ), position.Y + TrackStation.TileCells * TrackHeading.Dy( heading ));
 			if ( position == station.First )
-				return new TrackCircuit( true, steps, null );
+				return failure == null ? new TrackCircuit( true, steps, null ) : TrackCircuit.Invalid( failure, steps );
+			if ( failure != null )
+				return TrackCircuit.Invalid( failure, steps );
 			if ( steps.Count > limit )
 				return TrackCircuit.Invalid( "the walk did not return to the start", steps );
 		}
 	}
+
+	/// <summary>A cell with exactly two perpendicular arms (the original's corner test 0x53AE00).</summary>
+	private static bool IsCorner( byte mask ) => TrackHeading.Count( mask ) == 2 && (mask & 0x11) != 0 && (mask & 0x44) != 0;
+
+	/// <summary>The original's opposite heading (0x4D8C00): bit 0x01 or 0x04 shifted up by four, 0x10 or 0x40 down, 0 kept, a multi-bit value shifted as a whole.</summary>
+	private static byte OppositeBits( byte heading ) => heading == 0 ? (byte)0 : heading < 0x10 ? (byte)(heading << 4) : (byte)(heading >> 4);
 
 	/// <summary>
 	/// Walks the circuit and refreshes the bridge pass of its tiles: the flow links the walk wrote decide which neighbour is ahead of a bridge
@@ -112,7 +124,7 @@ public static class TrackCircuitWalker
 	/// </summary>
 	public static TrackCircuit WalkAndRefresh( TrackBuilder builder, TrackStation station )
 	{
-		var circuit = Walk( builder, station, commit: true );
+		var circuit = Walk( builder, station );
 		foreach ( var step in circuit.Steps )
 			builder.Refresh( step.X, step.Y );
 		return circuit;

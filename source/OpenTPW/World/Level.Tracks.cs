@@ -38,6 +38,7 @@ public partial class Level
 		waterTracks = new TrackBuilder( Guests.Grid.Cells, TrackFamily.Water, () => Park?.Economy, Objects.Grid, IsPathBlocked );
 		kartTracks = new TrackBuilder( Guests.Grid.Cells, TrackFamily.Kart, () => Park?.Economy, Objects.Grid, IsPathBlocked );
 		Objects.ObjectPlaced += OnTrackStationPlaced;
+		Objects.ObjectRemoving += OnTrackStationRemoving;
 		Objects.ObjectRemoved += OnTrackStationRemoved;
 		foreach ( var item in Objects.Objects )
 			OnTrackStationPlaced( item );
@@ -114,10 +115,28 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Removes the track of a station: every tile laid for its ride (TRACK-021), then the station tiles. Nothing is charged or refunded.
+	/// The money side of a kart or water ride's demolition, while its tiles are still laid: every tile laid for the ride refunds the track cell cost × the ride's
+	/// scrap percentage / 100 and the demolition then charges twice that cost × the percentage / 100 once. A park load or clear removes nothing through here.
 	/// </summary>
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
-	// [APPROX:TRACK-007] the demolition clears the ride's own tiles and pays nothing. The original demolition 0x527EE0 replays the track tool from both station sides with flag 0x81B46C = 1; ClearCell 0x53B280 then earns (0x4D0190 at 0x53B622) the kart or water cell cost (0x52FB60/0x52FB80, chosen by the cell type at 0x53B299) × the ride's scrap percentage (0x4E2290) / 100 per cleared track cell that passes the +0x20/thing-id tests at 0x53B54A–0x53B57F, and after the replay the demolition charges (Spend 0x4D01F0) 2 × the cell cost × the scrap percentage / 100 once (0x52814A–0x528179) — evidence needed: the refund conditions of 0x53B54A–0x53B57F (which replayed cells refund)
+	// [BIN:TPW-EXE:0x00527EE0 ride demolition] the replays run with flag 0x81B46C = 1, so ClearCell 0x53B280 refunds every cleared kart or water tile (0x53B54A..0x53B57F: a tile whose overlap word +0x20 went negative is cleared and refunds unless it is an end of the replayed line while the flag is clear; the flag is set, the type 0x19 and online cases aside), and 0x5280F0..0x528179 then debits twice the cell cost × the scrap percentage / 100 once
+	// [APPROX:TRACK-007] every tile the ride owns refunds once, where the original refunds and clears only what its two walks from the station reach (0x530830 and 0x530B70 collect the circuit's corner points, at most 0x401, and 0x52FE50 replays the lines between them), so a tile cut off from its station stays and refunds nothing there; a tile written again refunds on its last clearing visit
+	private void OnTrackStationRemoving( OriginalObject item )
+	{
+		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || BuilderOf( item ) is not { } builder )
+			return;
+		// both the refunds and the charge run only for a type with a queue (Info.HasQueue, def +0x40: 0x527F5B..0x52817E)
+		if ( !item.Entry.HasQueue || Park?.Economy is not { } economy || GetEconomyInstance( item ) is not int instance )
+			return;
+		var tiles = builder.OwnedTileCount( builder.OwnerOf( station ) );
+		for ( var tile = 0; tile < tiles; tile++ )
+			economy.RefundTrackTile( builder.Purchase, instance );
+		economy.ChargeTrackDemolition( builder.Purchase, instance );
+	}
+
+	/// <summary>
+	/// Removes the track of a station: every tile laid for its ride (TRACK-021), then the station tiles. The money was settled by <see cref="OnTrackStationRemoving"/>.
+	/// </summary>
 	private void DemolishTrack( TrackStation station, TrackBuilder builder )
 	{
 		// exactly the tiles laid for this ride go, so a neighbouring ride's circuit that touches it stays

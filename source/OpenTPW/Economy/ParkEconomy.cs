@@ -1735,6 +1735,36 @@ public sealed class ParkEconomy : IParkEconomy
 		return amount;
 	}
 
+	/// <summary>
+	/// Refunds one cleared kart or water track tile of a ride being demolished: the track cell cost × the ride's scrap percentage / 100, an unsigned 32-bit
+	/// division as the queue cell refund. Returns the amount credited.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053B5FE track tile refund] ClearCell takes the cell cost of the tile type (0x52FB60 for a type 11 kart tile, 0x52FB80 for a type 16 water tile, 0x53B299) and, when the tile is cleared, credits (0x4D0190 at 0x53B622) the ride's scrap percentage (0x4E2290) × that cost / 100 (imul and unsigned mul by 0x51EB851F at 0x53B60A..0x53B617); the station tiles (types 13 and 18) refund nothing
+	public long RefundTrackTile( CellPurchase kind, int rideInstanceId )
+	{
+		if ( !TryGetObject( rideInstanceId, out var ride ) )
+			return 0;
+		var amount = unchecked( (uint)((int)CellCost( kind ) * ScrapPercent( ride! )) ) / 100;
+		if ( amount > 0 )
+			Post( LedgerCategory.OtherIncome, amount );
+		return amount;
+	}
+
+	/// <summary>
+	/// The one charge a kart or water ride's demolition makes after its tiles are cleared: twice the track cell cost × the ride's scrap percentage / 100, a signed
+	/// 32-bit division, debited without a balance test. Returns the amount debited.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00528157 demolition charge] after the replays of the track tool from both station sides (0x81B46C = 1), 0x527EE0 takes twice the cell cost (0x52FB60 or 0x52FB80 by the type record +0x9C, 0x5280F0..0x52814A), multiplies by the scrap percentage (0x4E2290) and divides by 100 signed (imul by 0x51EB851F, sar 5 and the sign correction), and debits it through 0x4D01F0 (0x528179)
+	public long ChargeTrackDemolition( CellPurchase kind, int rideInstanceId )
+	{
+		if ( !TryGetObject( rideInstanceId, out var ride ) )
+			return 0;
+		var amount = unchecked( ((int)CellCost( kind ) << 1) * ScrapPercent( ride! ) ) / 100;
+		if ( amount > 0 )
+			Post( LedgerCategory.OtherCosts, amount );
+		return amount;
+	}
+
 	// ---------------------------------------------------------------- loans
 
 	public LoanAccount TakeLoan( int offerIndex )

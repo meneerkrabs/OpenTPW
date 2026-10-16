@@ -285,6 +285,8 @@ public partial class Level
 			var station = PlaceObject( entry, cell.X, cell.Y, 0 ) ?? Objects.TryPlace( entry, anchor.X, anchor.Y, 0, out _ );
 			if ( station == null || !trackStations.TryGetValue( station, out var layout ) || !EnterTrackTool( station ) )
 				return null;
+			// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the capture helper opens it as the player's door button would
+			station.Open();
 			foreach ( var offset in new (int X, int Y)[] { (4, 4), (-2, 4), (-2, 0) } )
 				CellTool.Click( (layout.First.X + offset.X, layout.First.Y + offset.Y) );
 			CellTool.Cancel();

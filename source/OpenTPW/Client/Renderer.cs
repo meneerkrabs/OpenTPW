@@ -52,8 +52,10 @@ public partial class Renderer : IDisplaySettings
 	public Veldrid.Texture? OutputCaptureTexture { get; private set; }
 	/// <summary>The framebuffer the overlay pass is drawing into (swapchain or output capture).</summary>
 	public Framebuffer OverlayFramebuffer { get; private set; } = null!;
-	/// <summary>Output description of the swapchain; overlay pipelines use it.</summary>
-	public OutputDescription OutputDescription => Device.MainSwapchain.Framebuffer.OutputDescription;
+	/// <summary>Where composed frames go: the swapchain, or the offscreen target of a hidden-window run.</summary>
+	public PresentTarget Target { get; private set; } = null!;
+	/// <summary>Output description of the present target; overlay pipelines use it.</summary>
+	public OutputDescription OutputDescription => Target.OutputDescription;
 	/// <summary>Number of rendertarget resources this renderer currently owns (must not grow across changes).</summary>
 	public int OwnedTargetResourceCount => ownedTargets.Count;
 	/// <summary>How often the size-dependent targets were recreated.</summary>
@@ -94,14 +96,16 @@ public partial class Renderer : IDisplaySettings
 	{
 		DisplaySettings = settings;
 		this.settingsPath = settingsPath;
-		Window = new( settings.Width, settings.Height, "Theme Park World", true );
+		Window = new( settings.Width, settings.Height, "Theme Park World", true, Window.OffscreenRequested );
 		Window.OnResized = OnWindowResized;
 		ApplyWindowMode();
-		Window.Visible = true;
+		Window.Visible = true; // no-op for an offscreen window
 
 		CreateGraphicsDevice();
 		// Swap the buffers so that the screen isn't a mangled mess
-		Device.SwapBuffers();
+		Target.Present();
+		if ( Window.IsOffscreen )
+			Log.Trace( $"Offscreen mode: window hidden (SDL flags {Window.SdlFlags}), frames render into a {Target.Width}x{Target.Height} offscreen framebuffer, never presented." );
 		maximumTextureSize = QueryMaximumTextureSize();
 		ApplyDisplayChanges();
 		_ = AvailableResolutions;
@@ -231,6 +235,18 @@ public partial class Renderer : IDisplaySettings
 
 	private void ApplyWindowMode()
 	{
+		if ( Window.IsOffscreen )
+		{
+			// No OS window state to change: keep the logical state (size and mode) the window would have had.
+			var desktop = DisplaySettings.Mode == WindowMode.Borderless
+				? SdlDisplay.GetDesktopSize( SdlDisplay.GetWindowDisplayIndex( Window.SdlWindow ) )
+				: default;
+			Window.SetVirtualSize( DisplaySettings.Mode == WindowMode.Borderless && desktop.X > 0 && desktop.Y > 0
+				? desktop
+				: new Point2( DisplaySettings.Width, DisplaySettings.Height ) );
+			displayDirty = true;
+			return;
+		}
 		var window = Window.SdlWindow;
 		switch ( DisplaySettings.Mode )
 		{
@@ -331,7 +347,7 @@ public partial class Renderer : IDisplaySettings
 
 	private void CreateOutputCapture( Point2 size )
 	{
-		var format = Device.MainSwapchain.Framebuffer.ColorTargets[0].Target.Format;
+		var format = Target.ColorFormat;
 		OutputCaptureTexture = Own( Device.ResourceFactory.CreateTexture( TextureDescription.Texture2D(
 			(uint)size.X, (uint)size.Y, 1, 1, format, TextureUsage.RenderTarget ) ) );
 		outputCaptureFramebuffer = Own( Device.ResourceFactory.CreateFramebuffer( new FramebufferDescription( null, OutputCaptureTexture ) ) );
@@ -359,9 +375,8 @@ public partial class Renderer : IDisplaySettings
 		}
 		var previous = Scaling;
 		Device.WaitForIdle();
-		var swapchain = Device.MainSwapchain.Framebuffer;
-		if ( swapchain.Width != (uint)pixels.X || swapchain.Height != (uint)pixels.Y )
-			Device.MainSwapchain.Resize( (uint)pixels.X, (uint)pixels.Y );
+		if ( Target.Width != (uint)pixels.X || Target.Height != (uint)pixels.Y )
+			Target.Resize( (uint)pixels.X, (uint)pixels.Y );
 		DestroyTargets();
 		try
 		{
@@ -441,6 +456,9 @@ public partial class Renderer : IDisplaySettings
 	/// <summary>Frames updated and drawn since start; frames the cap skipped do not count.</summary>
 	public long FramesDrawn { get; private set; }
 
+	/// <summary>Frame rate of an offscreen run without a frame cap (pass <c>--no-vsync</c> for unpaced frames).</summary>
+	public const int OffscreenFrameRate = 60;
+
 	/// <summary>
 	/// Updates and draws one frame; false once the window has closed. Under a frame cap (<see cref="DisplaySettings.FrameCap"/>) a frame that
 	/// comes too early is skipped in the browser, which calls again at its next animation frame, and waited for on the desktop.
@@ -449,7 +467,9 @@ public partial class Renderer : IDisplaySettings
 	{
 		if ( !Window.SdlWindow.Exists )
 			return false;
-		var cap = DisplaySettings.FrameCap;
+		// An offscreen target is never presented, so nothing paces it: without a cap it would run thousands of frames per second and
+		// wall-clock-timed work (loading, construction) would span far fewer frames than on a vsynced window. Pace it like a 60 Hz display.
+		var cap = DisplaySettings.FrameCap > 0 ? DisplaySettings.FrameCap : Window.IsOffscreen && SyncToVerticalBlank ? OffscreenFrameRate : 0;
 		// The browser paces frames itself and cannot block its only thread.
 		if ( !OperatingSystem.IsBrowser() && frameLimiter.WaitSeconds( clock.Elapsed.TotalSeconds, cap ) is > 0 and var wait )
 			Thread.Sleep( TimeSpan.FromSeconds( wait ) );
@@ -512,7 +532,7 @@ public partial class Renderer : IDisplaySettings
 		// Scale to output size and draw the BF4 UI at output size
 		if ( outputCaptureFramebuffer != null )
 			Compose( outputCaptureFramebuffer );
-		Compose( Device.MainSwapchain.Framebuffer );
+		Compose( Target.Framebuffer );
 
 		// ImGui works in logical units; scale its clip rectangles to the drawable pixels.
 		ImGuiNET.ImGui.GetIO().DisplayFramebufferScale = Metrics.PixelsPerLogical;
@@ -523,7 +543,7 @@ public partial class Renderer : IDisplaySettings
 
 		var fence = frameFences[SlotOf( FrameNumber )];
 		Device.SubmitCommands( CommandList, fence );
-		Device.SwapBuffers();
+		Target.Present();
 		FrameStats?.FrameEnded();
 		AdvanceFrame();
 	}
@@ -621,6 +641,10 @@ public partial class Renderer : IDisplaySettings
 	private void CreateGraphicsDevice()
 	{
 		Device = CreateDevice( Window );
+		var pixels = Window.PixelSize;
+		Target = Window.IsOffscreen
+			? new OffscreenPresentTarget( Device, (uint)pixels.X, (uint)pixels.Y )
+			: new SwapchainPresentTarget( Device );
 		Log.Trace( $"Graphics backend: {Device.BackendType}; process: {System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}" );
 	}
 

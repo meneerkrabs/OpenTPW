@@ -49,6 +49,11 @@ public sealed partial class GuestSimulation
 			}
 			var position = (X: (int)person.Base.X, Y: (int)person.Base.Y);
 			var cell = (X: position.X >> 8, Y: position.Y >> 8);
+			if ( !Grid.InBounds( cell.X, cell.Y ) )
+			{
+				dropped.Add( $"{what} (state {save.State} outside the map at ({cell.X}, {cell.Y}))" );
+				continue;
+			}
 			var inPark = save.State is >= 6 and <= 10 || save.State == 18 && Grid.IsWalkable( cell.X, cell.Y );
 			if ( inPark && !Grid.IsWalkable( cell.X, cell.Y ) )
 			{
@@ -138,7 +143,7 @@ public sealed partial class GuestSimulation
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
-		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths; an imported guest in an activity (state 8) decides again at once, one waiting at the booth (4) waits OpenTPW's booth time rather than its saved wait (+0x200), a paid guest waiting for the gate (3) walks in at once (GUEST-011), an arriving or departing guest walks OpenTPW's nearest arrival lane from where it stands, a turn stamp before the save's turn counts from the import, and the arrival date and index, the admission flags, the shop, sideshow and win counts, the event ring and the queue links are not imported — evidence needed: an OpenTPW queue and rider restore for original guests, the booth's and gate's waits in OpenTPW's arrival model
+		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one waiting at the booth (4) waits OpenTPW's booth time rather than its saved wait (+0x200), a paid guest waiting for the gate (3) walks in at once (GUEST-011), an arriving or departing guest walks OpenTPW's nearest arrival lane from where it stands, a turn stamp before the save's turn counts from the import, and the arrival date and index, the admission flags, the shop, sideshow and win counts, the event ring and the queue links are not imported — evidence needed: an OpenTPW queue and rider restore for original guests, the booth's and gate's waits in OpenTPW's arrival model
 		if ( dropped.Count > 0 )
 			evidence.Add( $"[APPROX:SAVE-002] Guests not imported: {string.Join( ", ", dropped )}." );
 		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: arrival dates {string.Join( "/", saved.Select( item => item.ArrivalDate ) )}, waits {string.Join( "/", saved.Select( item => item.ParkOpeningWaitingTime ) )}, paid {string.Join( "/", saved.Select( item => item.PaidAdmission ) )}, shop/sideshow/win counts {string.Join( "/", saved.Select( item => $"{item.NumShops}-{item.NumSideshows}-{item.NumSideshowsWon}" ) )}, queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );
@@ -225,7 +230,7 @@ public sealed partial class GuestSimulation
 				(guest.LaneIndex, guest.State) = (booth, GuestState.GoingToTicketBooth);
 				break;
 			case 4:
-				(guest.LaneIndex, guest.State, guest.StateTimer) = (booth, GuestState.AtTicketBooth, TicketBoothSeconds);
+				(guest.LaneIndex, guest.State, guest.StateTimer) = (Math.Max( 0, booth ), GuestState.AtTicketBooth, TicketBoothSeconds);
 				return;
 			case 3 when !paid:
 				// OpenTPW sends a guest that reaches the booth of a closed park home at once
@@ -251,6 +256,8 @@ public sealed partial class GuestSimulation
 				(guest.LaneIndex, guest.State, guest.StateTimer) = (0, GuestState.WaitingToGoHome, WaitForBusSeconds);
 				return;
 		}
+		// a lane shorter than OpenTPW's five points ([bus stop, two crossing points, booth, entrance]) keeps every index on it
+		guest.LaneIndex = Math.Clamp( guest.LaneIndex, 0, lane.Length - 1 );
 		SetLaneWaypoint( guest );
 	}
 }

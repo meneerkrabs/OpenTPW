@@ -289,9 +289,18 @@ public sealed class OriginalEconomyImport
 			member.IdleStamp = staff.TimeStartedIdling;
 			ImportPatrolArea( saved, member, adjusted );
 			ImportJob( economy, saved, member, things, chaseable, jobs );
-			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407)
+			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407);
+			// the walk speeds are the person's mBaseSpeed (+0xC0), mPurposeSpeed (+0xC2, the bonus a walk to a job or a chase takes) and mPreviousSpeed (+0xC8)
 			var person = saved.Person;
-			member.ResumeDestination = (person.AccurateDestX, person.AccurateDestY);
+			if ( person.AccurateDestX < ParkLitter.MapSize * 256 && person.AccurateDestY < ParkLitter.MapSize * 256 )
+				member.ResumeDestination = (person.AccurateDestX, person.AccurateDestY);
+			else
+				adjusted.Add( $"{saved.Model} thing {saved.Id} walk destination ({person.AccurateDestX}, {person.AccurateDestY}) lies outside the map, not walked to" );
+			if ( GuestSpeed.BaseSpeeds.Contains( person.BaseSpeed ) )
+				member.BaseSpeed = person.BaseSpeed;
+			member.SpeedBonus = person.PurposeSpeed <= byte.MaxValue ? person.PurposeSpeed : 0;
+			var smoothed = BitConverter.Int32BitsToSingle( unchecked( (int)person.PreviousSpeed ) );
+			member.SmoothedSpeed = float.IsFinite( smoothed ) && smoothed >= 0 ? smoothed : 0;
 			imported++;
 		}
 		evidence.Add( $"Imported {imported} staff ({string.Join( ", ", save.Staff.Select( item => $"{item.Model} grade {item.Staff.Grade}" ) )})." );
@@ -595,7 +604,8 @@ public sealed class OriginalEconomyImport
 	private static void ReportNotImported( OriginalParkImport save, List<string> evidence )
 	{
 		// the guests are restored by the level's guest simulation (GuestSimulation.ImportOriginal), which reports its outcome through Report
-		evidence.Add( $"{save.GuestCount} saved guests ({string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) )}) are imported by the guest simulation when a level attaches it." );
+		var byState = string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) );
+		evidence.Add( $"{save.GuestCount} saved guests{(byState.Length == 0 ? "" : $" ({byState})")} are imported by the guest simulation when a level attaches it." );
 		// [APPROX:SAVE-010] the opaque blocks (scripts, particles, messages, clock words, cadence, track/flying rides, RSSE, camera, coasters, advisor presentation, sound, cheats, advisor scoring, UI), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival variables and arrival bytes, the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; of the cell map only path cells, occupancy, MAP attributes and each path cell's texture and turn are read (so a handyman walking to or sweeping litter is imported idle), and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours); object scripts restart from their archives — evidence needed: decoded block layouts and the original's post-load reconstruction
 		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.ParkAnalyser, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}." );
 		var variables = save.World.Variables;

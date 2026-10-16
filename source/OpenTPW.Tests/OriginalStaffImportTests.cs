@@ -111,6 +111,22 @@ public class OriginalStaffImportTests
 	}
 
 	[TestMethod]
+	public void TheSavedWalkSpeedsAreKeptAndADestinationOffTheMapIsReported()
+	{
+		var mechanic = SaveTestPayloads.Staff( SaveThingModel.Mechanic, destination: (40000, 300) );
+		BinaryPrimitives.WriteUInt16LittleEndian( mechanic.AsSpan( 26 ), 120 );
+		// mPurposeSpeed follows mStrandedTime after the navigation block (person offset 228)
+		BinaryPrimitives.WriteUInt16LittleEndian( mechanic.AsSpan( 228 ), 25 );
+		var (economy, import) = Import( (40, SaveThingModel.Mechanic, mechanic) );
+		var member = economy.Staff.Members.Single( item => item.Type == StaffType.Mechanic );
+		Assert.AreEqual( (120, 25), (member.BaseSpeed, member.SpeedBonus), "mBaseSpeed (+0xC0) and mPurposeSpeed (+0xC2)" );
+		Assert.IsNull( member.ResumeDestination );
+		StringAssert.Contains( import.Evidence.Single( line => line.StartsWith( "Staff value adjusted on import: Mechanic thing 40 walk destination", StringComparison.Ordinal ) ), "outside the map" );
+		// the economy's own save takes the member as it is
+		ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( economy ) ) ), economy.Settings, economy.Catalog );
+	}
+
+	[TestMethod]
 	public void TheNameAndTheWalkOnSurviveAnOwnSave()
 	{
 		var mechanic = SaveTestPayloads.Staff( SaveThingModel.Mechanic, name: "Mike Cooper", destination: (5 * 256 + 7, 6 * 256 + 9) );

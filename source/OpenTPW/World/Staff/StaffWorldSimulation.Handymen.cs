@@ -128,8 +128,11 @@ public sealed partial class StaffWorldSimulation
 	{
 		var destination = member.ResumeDestination!.Value;
 		member.ResumeDestination = null;
+		// the loaded member keeps its saved base speed; Place sets a new member's
+		var baseSpeed = member.BaseSpeed;
 		if ( !Place( member ) )
 			return;
+		member.BaseSpeed = baseSpeed;
 		var cell = (destination.X >> 8, destination.Y >> 8);
 		if ( grid.InBounds( cell.Item1, cell.Item2 ) )
 			Route( member, cell, destination.X & 0xFF, destination.Y & 0xFF );

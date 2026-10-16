@@ -132,6 +132,28 @@ public class OriginalGuestImportTests
 	}
 
 	[TestMethod]
+	public void AShortLaneAndAGuestOffTheMapAreHandled()
+	{
+		var grid = new GuestPathGrid( 20, 20 );
+		grid.SetPath( 10, 6, true );
+		var settings = new GuestSettings { ArrivalLaneA = new[] { (10, 8), (10, 6) } };
+		var simulation = new GuestSimulation( grid, settings, 5 ) { ArrivalsEnabled = false };
+		var saved = new[]
+		{
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), State = 18, PersonType = 0 }, 30 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), State = 1, PersonType = 0 }, 31 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 10 ), At( 7 )), State = 4, PersonType = 0 }, 32 ),
+			Decode( new SaveTestPayloads.GuestFields { Position = (At( 30 ), At( 7 )), State = 2, PersonType = 0 }, 33 ),
+		};
+		var report = simulation.ImportOriginal( saved, 755, _ => 0, _ => 0 );
+		CollectionAssert.AreEqual( new[] { 30, 31, 32 }, simulation.Guests.Select( guest => guest.Id ).ToArray() );
+		StringAssert.Contains( report.Single( line => line.StartsWith( "[APPROX:SAVE-002] Guests not imported:", StringComparison.Ordinal ) ), "guest 33 (state 2 outside the map at (30, 7))" );
+		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid, string.Join( "; ", simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).Errors ) );
+		for ( var tick = 0; tick < 600; tick++ )
+			simulation.Tick( 1f / 60 );
+	}
+
+	[TestMethod]
 	public void AGuardChasingAnImportedGuestKeepsHisChase()
 	{
 		var settings = OriginalSaveImportTests.Settings();

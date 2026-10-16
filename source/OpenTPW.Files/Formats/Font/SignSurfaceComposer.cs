@@ -20,7 +20,7 @@ public static class SignSurfaceComposer
 	// [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows.
 	// [EXT:sign-coverage-precision] glyph coverage comes from OpenTPW's rasterizer instead of GDI masks and the blur sums in double precision (OpenTPW design choices)
 	// [EXT:sign-relief-upsample] the strip resampler is tp.exe 0x5E80D0 (matched by DescimateStrip), which has no upsampling branch (a requested height above the strip divides by zero at 0x5E8364), so a strip shorter than the glyph rows is upsampled by nearest rows: an OpenTPW choice for a case the original does not define and where matching it would divide by zero
-	// [APPROX:COMPAT-003] the blur kernels run in x87 extended precision natively (0x5EA8A0) and the relief reads unclamped neighbours (0x5EB8A0), which this port approximates; paint-mask shaping (SignMaskShaping) and the material arithmetic follow the identified native path.
+	// [APPROX:COMPAT-003] the relief's floating-point arithmetic (0x5EB8A0: normals, light and half vectors, the colour sum and the integer conversion) runs here in double precision with a float store where the original stores a float; the x87 precision control word tp.exe's thread runs at (DDSCL_FPUSETUP sets single precision, the process default is 53 bits) is not read, so single-precision rounding in the original may move a colour byte by one
 	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, SignPaint? firstPaintOverride = null )
 	{
 		ArgumentNullException.ThrowIfNull( sign );
@@ -53,7 +53,7 @@ public static class SignSurfaceComposer
 			textPixels += masks[slot].Count( value => value != 0 );
 		}
 		if ( textPixels != 0 )
-			diagnostics.Add( "COMPAT-003: original GDI glyph coverage and the x87 precision of the paint-mask blur remain unverified." );
+			diagnostics.Add( "COMPAT-003: the relief arithmetic runs in double precision with float stores; the x87 precision control word of the original is not read." );
 
 		// [BIN:TPW-EXE:0x005ECC69..0x005ECCC0 paint masks] each slot whose selector is nonzero gets its paint mask shaped from its glyph mask by its own paint record (0x5EBF10); a zero selector leaves an empty paint mask
 		var paintMasks = new byte[masks.Length][];
@@ -222,15 +222,17 @@ public static class SignSurfaceComposer
 	/// <summary>The mask translated by (dx, dy) pixels (right and down are positive); pixels moved off the surface are lost, the uncovered edge is empty.</summary>
 	internal static byte[] Shift( byte[] mask, int dx, int dy ) => dx == 0 && dy == 0 ? mask : SignMaskShaping.Shift( mask, Width, SurfaceHeight, dx, dy );
 
+	// [BIN:TPW-EXE:0x005EB820 relief] for each effect the shape (SignEffectShape: the mask word's erosion levels, then the Gaussian of the first parameter) is built from the glyph coverage, and 0x5EB8A0 shades every pixel whose coverage byte is not 0 into an ARGB bitmap that is alpha-blitted onto the surface (0x5E7D70)
 	internal static void Effect( byte[] destination, byte[] mask, SignBitmap strip, SignEffect effect, ICollection<string> diagnostics )
 	{
 		if ( !mask.Any( value => value != 0 ) ) return;
 		if ( strip.BytesPerPixel != 4 || strip.Payload.Length != strip.Width * strip.Height * 4 || effect.Parameters.Any( value => !float.IsFinite( value ) ) )
 			throw new NotSupportedException( "Sign material pixels or coefficients are not supported by the compositor." );
+		// [BIN:TPW-EXE:0x005EB035 text extent] the first row with a nonzero coverage byte before its last pixel is the top, the last such row plus one is the bottom (0x5EB04E..0x5EB07C; a text of one row leaves the bottom at -1, which the original cannot shade), and the extent is bottom - top (0x5ECCC5); the mask is the whole 256-row surface mask
 		var top = SurfaceHeight;
 		var bottom = -1;
 		for ( var y = 0; y < SurfaceHeight; y++ )
-			if ( mask.AsSpan( y * Width, Width ).IndexOfAnyExcept( (byte)0 ) >= 0 )
+			if ( mask.AsSpan( y * Width, Width - 1 ).IndexOfAnyExcept( (byte)0 ) >= 0 )
 			{
 				top = Math.Min( top, y );
 				bottom = y;
@@ -240,47 +242,61 @@ public static class SignSurfaceComposer
 		var materialStrip = DescimateStrip( strip, extent );
 		if ( extent > strip.Height )
 			diagnostics.Add( "COMPAT-003: relief source upsampling uses nearest rows; the native resampler (0x5E80D0) has no upsampling branch." );
+		var shape = SignEffectShape.Build( mask, Width, SurfaceHeight, effect.MaskWord, effect.Parameters[1] );
 		var material = effect.Material;
 		var p = effect.Parameters;
-		var radians = 0.01745329238474369f;
-		var theta = -p[6] * radians;
-		var phi = p[7] * radians;
-		var lx = MathF.Cos( phi ) * MathF.Cos( theta );
-		var ly = -MathF.Sin( phi ) * MathF.Cos( theta );
-		var lz = -MathF.Sin( theta );
-		var lightLength = MathF.Sqrt( lx * lx + ly * ly + lz * lz );
-		lx /= lightLength; ly /= lightLength; lz /= lightLength;
+		// [BIN:TPW-EXE:0x005EB920 light] theta = p6 * -0.0174532924 and phi = p7 * 0.0174532924 (0x702F50, 0x702F54); the light is (cos(phi) cos(theta), -sin(phi) cos(theta), -sin(theta)) over its length, each component stored as a float, and the half vector is (lx / 2, ly / 2, (lz + 1) / 2) over its length (0x702F40 = 1.0, 0x702F58 = -1.0, 0x702F5C = 0.5)
+		var theta = (double)p[6] * -0.01745329238474369f;
+		var phi = (double)p[7] * 0.01745329238474369f;
+		var ax = Math.Cos( phi ) * (float)Math.Cos( theta );
+		var ay = -(Math.Sin( phi ) * (float)Math.Cos( theta ));
+		var az = -Math.Sin( (float)theta );
+		var lightScale = 1.0 / Math.Sqrt( ax * ax + az * az + ay * ay );
+		var lx = (float)(lightScale * ax);
+		var ly = (float)(lightScale * ay);
+		var lz = (float)(lightScale * az);
 		var hx = lx * 0.5f;
 		var hy = ly * 0.5f;
 		var hz = (lz + 1) * 0.5f;
-		var halfLength = MathF.Sqrt( hx * hx + hy * hy + hz * hz );
-		hx /= halfLength; hy /= halfLength; hz /= halfLength;
+		var halfScale = (float)(1.0 / Math.Sqrt( (double)hx * hx + (double)hz * hz + (double)hy * hy ));
+		var halfX = hx * halfScale;
+		var halfY = hy * halfScale;
+		var halfZ = hz * halfScale;
+		const double reciprocal255 = 0.003921568859368563;
 		for ( var y = top; y <= bottom; y++ )
 		for ( var x = 0; x < Width; x++ )
 		{
 			var at = y * Width + x;
 			var alpha = mask[at];
 			if ( alpha == 0 ) continue;
+			// [BIN:TPW-EXE:0x005EB8A0 relief normal] the shape differences to the next byte and to the byte one row below are read without any clamp (the last column reads the first pixel of the next row; a read past the end of the shape is heap memory in the original and 0 here), scaled by p0 and by 1/255 (0x702F60), and the normal is (dx, dy, 1) over sqrt(dx^2 + dy^2 + 1), each component a float
+			var right = at + 1 < shape.Length ? shape[at + 1] : 0;
+			var below = at + Width < shape.Length ? shape[at + Width] : 0;
+			var dx = (right - shape[at]) * (double)p[0] * reciprocal255;
+			var dy = (below - shape[at]) * (double)p[0] * reciprocal255;
+			var normalScale = (float)(1.0 / Math.Sqrt( dy * dy + dx * dx + 1.0 ));
+			var nx = (float)(normalScale * dx);
+			var ny = (float)(normalScale * dy);
+			var nz = normalScale;
+			var diffuseDot = (float)((double)nz * lz + (double)ny * ly + (double)nx * lx);
+			var specularDot = (float)((double)nx * halfX + (double)ny * halfY + (double)nz * halfZ);
+			// [BIN:TPW-EXE:0x005EB8A0 relief colour] the strip's bytes 1..3 over 255 times p2; a positive diffuse dot adds dot * p3 times the colour; a positive specular dot adds pow(dot, p5) * p4 to every channel; each sum stays a float, is multiplied by 255, clamped to 0..255 (0x5EBE50) and truncated (_ftol)
 			// [BIN:STP-PPC:0x100AB1C8,0x100AB3B8..0x100AB444] 16-pixel horizontal tiling and measured-height vertical phase.
 			var source = ((y - top) * strip.Width + x % strip.Width) * 4;
-			var right = mask[y * Width + Math.Min( Width - 1, x + 1 )];
-			var below = mask[Math.Min( SurfaceHeight - 1, y + 1 ) * Width + x];
-			var dx = (right - alpha) * p[0] / 255f;
-			var dy = (below - alpha) * p[0] / 255f;
-			var normalLength = MathF.Sqrt( dx * dx + dy * dy + 1 );
-			var nx = dx / normalLength;
-			var ny = dy / normalLength;
-			var nz = 1 / normalLength;
-			var diffuseDot = nx * lx + ny * ly + nz * lz;
-			var specularDot = nx * hx + ny * hy + nz * hz;
-			var strength = material.Base + (diffuseDot > 0 ? material.Diffuse * diffuseDot : 0);
-			var white = specularDot > 0 ? material.WhiteSpecular * MathF.Pow( specularDot, material.SpecularExponent ) : 0;
 			var target = at * 4;
 			destination[target] = Math.Max( destination[target], alpha );
+			var diffuse = diffuseDot > 0 ? (double)diffuseDot * material.Diffuse : 0.0;
+			var specular = specularDot > 0 ? (float)(Math.Pow( specularDot, material.SpecularExponent ) * material.WhiteSpecular) : 0f;
 			for ( var channel = 0; channel < 3; channel++ )
 			{
-				var colour = (byte)Math.Clamp( (int)(materialStrip[source + channel + 1] * strength + 255 * white), 0, 255 );
-				BlendChannel( destination, target + channel + 1, colour, alpha );
+				var unit = (float)(materialStrip[source + channel + 1] * reciprocal255);
+				var sum = unit * material.Base;
+				if ( diffuseDot > 0 )
+					sum += (float)(diffuse * unit);
+				if ( specularDot > 0 )
+					sum += specular;
+				var scaled = Math.Clamp( sum * 255f, 0f, 255f );
+				BlendChannel( destination, target + channel + 1, (byte)(int)scaled, alpha );
 			}
 		}
 	}

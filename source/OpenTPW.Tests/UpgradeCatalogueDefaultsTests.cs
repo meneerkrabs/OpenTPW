@@ -79,14 +79,44 @@ public class UpgradeCatalogueDefaultsTests
 		Assert.AreEqual( 200f, candidate.Visitors.Parameters.QueueWaitTimeConstant, "Actual restored instance binding does not consume the saved Level1." );
 	}
 	[TestMethod]
-	public void ExistingCompletionPreservesScriptAuthoredValuesAndHeldSeats()
+	public void CompletionWritesTheLevelsCapacityAndDurationOverScriptValuesAndKeepsHeldSeats()
 	{
 		var w = World(); w.One.Runtime.Simulate( .001 ); Assert.AreEqual( 9, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 77, w.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) );
 		var heads = RideHeadSpace.Of( new[] { 0, 0 }, 1 ); heads.Add( 42 ); w.One.Visitors.Heads = heads;
 		w.One.Visitors.RecomputeQueue( new GuestPathGrid( 3, 3 ) );
 		var visitors = w.One.Visitors.CaptureSnapshot(); w.One.Visitors.RestoreSnapshot( visitors with { OnRide = new[] { 42 }, BoardedTotal = 1 } );
 		var before = heads.CaptureSnapshot(); Complete( w );
-		Assert.AreEqual( 9, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 77, w.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) ); Assert.AreSame( heads, w.One.Visitors.Heads ); CollectionAssert.AreEqual( before.Visitors, heads.CaptureSnapshot().Visitors ); CollectionAssert.AreEqual( new[] { 42 }, w.One.Visitors.Riders.ToArray() );
+		Assert.AreEqual( 3, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 20, w.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) ); Assert.AreSame( heads, w.One.Visitors.Heads ); CollectionAssert.AreEqual( before.Visitors, heads.CaptureSnapshot().Visitors ); CollectionAssert.AreEqual( new[] { 42 }, w.One.Visitors.Riders.ToArray() );
+	}
+	/// <summary>QUEUE-011: the completion 0x4df8f0 writes CAP through SetCapacity 0x4dd7f0 (clamped to Min/MaxCapacity) and DUR clamped to Min/MaxDuration, each only when the level's value is above 0.</summary>
+	[TestMethod]
+	public void CompletionClampsTheLevelsCapacityAndDurationAndKeepsSettingsTheLevelLeavesAtZero()
+	{
+		var w = World( "Info.DurationUnit 1\nUpgrades[2].InitCapacity 250\nUpgrades[2].InitDuration 0\nUpgrades[2].InitSpeed 0\nUpgrades[2].QueueWaitTimeConstant 300\n" );
+		Complete( w );
+		Assert.AreEqual( new RideSettingWords( 100, 3, 20 ), w.One.Runtime.Settings );
+		w.One.Runtime.ApplyRideWindow( new RideSettingWords( 77, 2, 15 ) );
+		w.One.Runtime.Simulate( .001 );
+		Complete( w, 2 );
+		Assert.AreEqual( 100, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "InitCapacity 250 is clamped to MaxCapacity 100" );
+		Assert.AreEqual( new RideSettingWords( 77, 100, 77 ), w.One.Runtime.Settings with { Duration = w.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) },
+			"InitSpeed and InitDuration 0 write nothing: the player's speed stays; DUR is the script's own 77" );
+		Assert.AreEqual( 15, w.One.Runtime.Settings.Duration, "the DUR word keeps the player's setting" );
+	}
+	/// <summary>WALK-001: the shop sale reads the object's amount of the special ingredient, which the level mirrors from its economy record each tick.</summary>
+	[TestMethod]
+	public void TheLevelMirrorsTheEconomyRecordsIngredientAmountToTheBridge()
+	{
+		var w = World(); Assert.AreEqual( GuestSpeed.DefaultIngredientAmount, w.One.Visitors.IngredientAmount );
+		w.State.IngredientAmount = 80; w.State.QualityOfGoods = 100; Call( w.Level, "SyncObjectEconomy" ); Assert.AreEqual( 80, w.One.Visitors.IngredientAmount );
+		Assert.AreEqual( 100, w.One.Visitors.QualityOfGoods, "ECON-044: the balloon's life reads the record's quality of goods" );
+		Assert.AreEqual( GuestSpeed.DefaultIngredientAmount, w.Two.Visitors.IngredientAmount, "only the record's own object" );
+	}
+	/// <summary>The completion's common entry (0x4df8f0) sets the state of repair to 100.0 before its upgrade branch.</summary>
+	[TestMethod]
+	public void AnUpgradeCompletionRestoresTheStateOfRepair()
+	{
+		var w = World(); w.State.Repair = 62.5; Complete( w ); Assert.AreEqual( 100.0, w.State.Repair );
 	}
 	[TestMethod]
 	public void SameCatalogueOtherOwnerStaysAtTierZero()
@@ -134,8 +164,8 @@ public class UpgradeCatalogueDefaultsTests
 	[TestMethod]
 	public void TwoActualCompletedTiersPreserveLiveSlotsAndDoNotReseedAtZeroInstructions()
 	{
-		var w = World( Tier2 ); Complete( w ); Assert.AreEqual( 1, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "Completion never runs seed mode, even before the first slice." ); Assert.AreEqual( 10, w.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) );
-		w.One.Runtime.Simulate( .001 ); Complete( w, 2 ); Assert.AreEqual( 2, w.One.Runtime.CatalogueTier ); Assert.AreEqual( 5, w.One.Visitors.Capacity ); Assert.AreEqual( 300f, w.One.Visitors.Parameters.QueueWaitTimeConstant ); Assert.AreEqual( 9, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 77, w.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) );
+		var w = World( Tier2 ); Complete( w ); Assert.AreEqual( 3, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ), "the completion writes the level's CAP and DUR (0x4df8f0), even before the first slice" ); Assert.AreEqual( 20, w.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) );
+		w.One.Runtime.Simulate( .001 ); Complete( w, 2 ); Assert.AreEqual( 2, w.One.Runtime.CatalogueTier ); Assert.AreEqual( 5, w.One.Visitors.Capacity ); Assert.AreEqual( 300f, w.One.Visitors.Parameters.QueueWaitTimeConstant ); Assert.AreEqual( 5, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 30, w.One.Runtime.GetVariable( RideVariables.VAR_DURATION ) );
 		var parameters = w.One.Visitors.Parameters; var vars = w.One.Script!.Variables.ToArray(); var flags = w.One.Script.Flags; Call( w.Level, "ApplyCompletedCatalogueTier", w.State.Id ); Assert.AreSame( parameters, w.One.Visitors.Parameters ); CollectionAssert.AreEqual( vars, w.One.Script.Variables ); Assert.AreEqual( flags, w.One.Script.Flags );
 	}
 	[TestMethod]
@@ -145,7 +175,7 @@ public class UpgradeCatalogueDefaultsTests
 		var level = Empty<Level>(); var objects = new ParkObjects( null!, new SandboxParkGrid() ); Set( level, "<Park>k__BackingField", ParkEconomyRuntime.ForResume( restored, ParkStartKind.FullSimulation ) ); Set( level, "<Objects>k__BackingField", objects ); Set( level, "economyInstances", new Dictionary<OriginalObject, int>() );
 		var one = new OriginalObject( w.One.Entry, w.One.Placement, objects.ScriptWorld, 1 ^ objects.ObjectScriptKey, true, runtime.AttractionId ); var two = new OriginalObject( w.Two.Entry, w.Two.Placement, objects.ScriptWorld, 2 ^ objects.ObjectScriptKey, true, w.Two.Runtime.AttractionId ); ((List<OriginalObject>)objects.Objects).AddRange( new[] { one, two } ); Call( level, "LinkEconomy", one, w.State.Id ); Call( level, "LinkEconomy", two, w.Level.GetEconomyInstance( w.Two )!.Value );
 		Assert.AreEqual( 5, one.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 2, one.Runtime.CatalogueTier ); one.Runtime.RestoreSnapshot( runtime ); objects.ScriptWorld.RestoreSnapshot( scripts, new Dictionary<int, RideVM> { { w.One.Script!.ScriptId, one.Script! }, { w.Two.Script!.ScriptId, two.Script! } } );
-		Assert.AreEqual( 9, one.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 77, one.Runtime.GetVariable( RideVariables.VAR_DURATION ) ); Assert.AreEqual( 300f, one.Visitors.Parameters.QueueWaitTimeConstant ); Assert.AreEqual( 5, one.Visitors.Capacity );
+		Assert.AreEqual( 5, one.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 30, one.Runtime.GetVariable( RideVariables.VAR_DURATION ) ); Assert.AreEqual( 300f, one.Visitors.Parameters.QueueWaitTimeConstant ); Assert.AreEqual( 5, one.Visitors.Capacity );
 	}
 	[TestMethod]
 	public void SparseRowsNeverFallBackAndNonzeroReconstructionFailsExplicitly()
@@ -204,7 +234,7 @@ public class UpgradeCatalogueDefaultsTests
 	[TestMethod]
 	public void SnapshotEligibilityPreservesLiveOperatingValuesAndSupportsStoppedMatchingOwners()
 	{
-		var w = World(); Complete( w ); Assert.AreEqual( 1, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 3, w.One.Visitors.Capacity ); Assert.IsTrue( w.One.Runtime.CanCaptureCatalogueDefaults( 1, out _ ) ); w.One.Runtime.Stop(); Assert.IsTrue( w.One.Runtime.CanCaptureCatalogueDefaults( 1, out _ ) );
+		var w = World(); Complete( w ); Assert.AreEqual( 3, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 3, w.One.Visitors.Capacity ); Assert.IsTrue( w.One.Runtime.CanCaptureCatalogueDefaults( 1, out _ ) ); w.One.Runtime.Stop(); Assert.IsTrue( w.One.Runtime.CanCaptureCatalogueDefaults( 1, out _ ) );
 	}
 	[TestMethod]
 	public void SnapshotEligibilityRefusesUnrepresentableMetadataWithoutRepairingIt()
@@ -229,7 +259,7 @@ public class UpgradeCatalogueDefaultsTests
 	[TestMethod]
 	public void WholeParkCaptureAcceptsRepresentableCompletedAndStoppedMetadata()
 	{
-		var w = World(); Complete( w ); var assets = PrepareCapture( w ); var captured = w.Level.CaptureResumeSnapshot( null, "tier1", assets ); Assert.AreEqual( 1, captured.Economy.Objects.Single( o => o.Id == w.State.Id ).Level ); Assert.AreEqual( 1, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 3, w.One.Visitors.Capacity ); ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( captured ) ); w.One.Runtime.Stop(); w.Level.CaptureResumeSnapshot( null, "stopped", assets );
+		var w = World(); Complete( w ); var assets = PrepareCapture( w ); var captured = w.Level.CaptureResumeSnapshot( null, "tier1", assets ); Assert.AreEqual( 1, captured.Economy.Objects.Single( o => o.Id == w.State.Id ).Level ); Assert.AreEqual( 3, w.One.Runtime.GetVariable( RideVariables.VAR_CAPACITY ) ); Assert.AreEqual( 3, w.One.Visitors.Capacity ); ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( captured ) ); w.One.Runtime.Stop(); w.Level.CaptureResumeSnapshot( null, "stopped", assets );
 	}
 	[DataTestMethod, DataRow( "custom" ), DataRow( "refused" ), DataRow( "sparse" )]
 	public void WholeParkCaptureRefusesUnrepresentableDefaultsBeforeReplacingPriorFile( string change )

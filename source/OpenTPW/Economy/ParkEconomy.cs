@@ -765,6 +765,8 @@ public sealed class ParkEconomy : IParkEconomy
 		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
 		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
+			// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the routine's common entry, before its state-2 upgrade branch, sets the state of repair (+0x44) to 100.0 for an upgrade too
+			item.Repair = RideRepair.FullGauge;
 			item.Level = item.PendingLevel;
 			item.PendingLevel = 0;
 			// [BIN:TPW-EXE:0x004DFA96 upgrade installed] the completion 0x004DF8F0 raises the level byte +0x50 by one and debits Upgrades[new level].CostOfUpgrade (type record +0x1B8 + 0x40 · level, 0x004DFA81) through 0x004D01F0, without a balance test
@@ -1230,6 +1232,22 @@ public sealed class ParkEconomy : IParkEconomy
 			item.CostOfGoods = Math.Max( 0, costOfGoods.Value );
 		if ( chanceOfLosingPercent != null )
 			item.ChanceOfLosingPercent = Math.Clamp( chanceOfLosingPercent.Value, 0, 100 );
+	}
+
+	/// <summary>
+	/// The shop window's settings (<c>0x4b0aa0</c>): the amount of the special ingredient (<c>0x4e21e0</c> stores the word at <c>+0x198</c>) and the
+	/// quality of goods (<c>0x4e2190</c> stores its low byte at <c>+0x18C</c>); null leaves a value as it is.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4e2190 SetQualityOfGoods] ride +0x18c = the argument & 0xff; [BIN:TPW-EXE:0x4e21e0 SetAmountOfSpecialIngredient] ride +0x198 = the argument (no clamp)
+	public void SetShopSettings( int instanceId, int? qualityOfGoods = null, int? ingredientAmount = null )
+	{
+		var item = RequireObject( instanceId );
+		if ( item.Kind != ParkObjectKind.Shop )
+			throw new InvalidOperationException( "Only shops have a quality of goods and an ingredient amount." );
+		if ( qualityOfGoods != null )
+			item.QualityOfGoods = qualityOfGoods.Value & 0xFF;
+		if ( ingredientAmount != null )
+			item.IngredientAmount = ingredientAmount.Value;
 	}
 
 	private ParkObjectState RequireObject( int instanceId ) =>

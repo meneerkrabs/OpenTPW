@@ -203,6 +203,10 @@ public sealed class ParkObjectState
 	public int Price { get; set; }
 	public int CostOfGoods { get; set; }
 	public int ChanceOfLosingPercent { get; set; }
+	/// <summary>A shop's quality of goods (ride <c>+0x18C</c>, <c>mQualityOfGoods</c>): 50 when built (tp.exe <c>0x004DB389</c>), 50 × the shop window's quality step once applied (<c>0x4b0aa0</c>).</summary>
+	public int QualityOfGoods { get; set; } = GuestAppearance.BuiltQualityOfGoods;
+	/// <summary>The amount of the type's special ingredient (ride <c>+0x198</c>, <c>mAmountOfSpecialIngredient</c>): 50 when built (<c>0x4db3b3</c>), the shop window's 0..100 slider once applied (<c>0x4b0aa0</c>).</summary>
+	public int IngredientAmount { get; set; } = GuestSpeed.DefaultIngredientAmount;
 	public bool IsOpen { get; set; } = true;
 	/// <summary>Exact state of repair, 0–100. The original keeps a float and compares its truncated value.</summary>
 	public double Repair { get; set; } = 100;

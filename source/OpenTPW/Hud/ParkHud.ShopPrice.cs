@@ -10,10 +10,10 @@ public sealed partial class ParkHud
 
 	private void AddShopPriceButton()
 	{
-		// [EXT:shop-price-editor] the host price editor occupies the editable information arm's free ride-view slot; decimal input follows the existing nonnegative int API; there is no original rule to match
+		// [EXT:shop-price-editor] the price box (shop 0xc085, sideshow 0xa08f) shows the window's price; a click on it opens a typed price editor, which the original's box does not have (its b_minus and b_plus step the price); decimal input follows the existing nonnegative int API
 		shopPriceButton = hud.Add( new UiButton
 		{
-			Id = "shopPrice", Text = () => strings[SelectedObject?.Entry.WhichUIType == (int)BuildCategory.Shops ? UIStrings.SalePrice : UIStrings.PriceOfGame],
+			Id = "shopPrice", Model = "varibox", Text = () => PendingSettings.Price.ToString( CultureInfo.InvariantCulture ),
 			Font = fonts => fonts.Label, Clicked = OpenShopPriceEditor,
 			Bounds = UiRect.FromCenter( new System.Numerics.Vector2( 875, 1425 ), 200, 100 ), Anchor = UiAnchor.BottomLeft,
 			Visible = false, Enabled = false
@@ -76,12 +76,15 @@ public sealed partial class ParkHud
 		void Apply()
 		{
 			if ( Stack.Top != screen || PriceInputCaptured() ) return;
-			if ( number.Text.Length > 10 || !int.TryParse( number.Text, NumberStyles.None, CultureInfo.InvariantCulture, out var price ) )
+			// [BIN:TPW-EXE:0x4b0735 price box range] the price boxes hold 0..500, the range the original loader also clamps a saved price to (0x4dcda4)
+			if ( number.Text.Length > 10 || !int.TryParse( number.Text, NumberStyles.None, CultureInfo.InvariantCulture, out var price ) || price > MaximumPrice )
 			{ error = strings.Extra( OpenTpwText.InvalidPrice ); return; }
 			if ( !InfoArmOpen || !PriceViewAllowed || !ReferenceEquals( selectedObject, owner ) || !TryPriceTarget( owner, out var current, out var target )
 				|| !ReferenceEquals( current, economy ) || !ReferenceEquals( target, state ) )
 			{ error = strings.Extra( OpenTpwText.NotAvailable ); return; }
 			current.SetPrices( target.Id, price );
+			// the window's own price follows, so its apply on close keeps the typed price
+			PendingSettings.Price = price;
 			Cancel();
 		}
 		number.Submitted = Apply;

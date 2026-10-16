@@ -583,6 +583,7 @@ public partial class Level : IDisposable
 		SyncOpenState( runtime );
 	}
 
+	// [BIN:TPW-EXE:0x4df8f0 reopen tail] after a repair or an upgrade the ride opens (+0x68 = 1, script variable 6 = 0) whether or not its guard holds (it then logs "Opening non openable ride" five times), and a coaster (track type 3) failing 0x441970 closes again (+0x68 = 0, variable 6 = 1)
 	private void OpenAfterRepair( int instance )
 	{
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )

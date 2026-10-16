@@ -24,7 +24,6 @@ public static class RidesApproximations
 		("RIDES-028", "non-walkable object access cells use the nearest walkable path"),
 		("RIDES-031", "shape cell types of '@' (1), 'Q' (3) and '#' (16) differ from the occupied type 4, but their placement meaning is untraced; they count as occupied here (Theme Park Inc may differ)"),
 		("RIDES-032", "every placed instance takes the callback update route; the PC list pass 0x44e410 (updates without posing via 0x473c70(inst, 0, 8)) is not modelled, as the renderer's call site of the callback at model record +0x140 is not found"),
-		("RIDES-033", "ride-settings speed changes (UI command 0x4af440 -> 0x4dd6e0) are not modelled: OpenTPW has no ride speed control"),
 		("RIDES-035", "MD2 texture-frame tracks apply to rendering; the PC writer is 0x4721f0 -> 0x470c90 (slot record at model+0x50+slot*8), the draw-path reader of a slot's current frame is not traced, so the binding follows this port's material-slot mapping (see MD2-900..902)"),
 		("RIDES-040", "Theme Park Inc fixed scene records saved at (0, 0) use their local model origin; other transform fields are not decoded"),
 		("RIDES-044", "scheduler clock (GETTIME, WAITANIM(_CH) deadlines) starts at 0 per park script world; the PC clock is the app-lifetime scaled timer 0x785970 never reset for a new park (differs only in absolute GETTIME values)"),

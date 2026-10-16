@@ -53,6 +53,15 @@ public static class ParkLayoutSnapshot
 		public required int Version { get; init; }
 		public required List<CellData> Cells { get; init; }
 		/// <summary>
+		/// <see cref="ParkCellMap.BlockStamp"/> of every 16 × 16-cell block, row by row (the walk's changed-ground reroute, WALK-007); null
+		/// when no block is stamped, and in saves made before the stamps existed, which restore every block unstamped.
+		/// </summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? BlockStamps { get; init; }
+		/// <summary><see cref="ParkCellMap.StampCounter"/>; absent (0) in saves made before the stamps existed.</summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+		public int StampCounter { get; init; }
+		/// <summary>
 		/// The park's land (Buy Land): its fence and which cells it owns. Null in saves written before land existed and for
 		/// maps without land; the loader then sets the level's land up afresh. The cell records' flags omit the unowned bit,
 		/// which this record carries for the whole map.
@@ -166,9 +175,10 @@ public static class ParkLayoutSnapshot
 				IsFixedItem = item.Entry.IsFixedItem
 			} );
 		}
+		var stamps = cells.CaptureBlockStamps();
 		return new Data
 		{
-			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, Land = CaptureLand( cells ) },
+			Cells = new CellMapData { Width = cells.Width, Height = cells.Height, Version = cells.Version, Cells = cellRecords, BlockStamps = stamps, StampCounter = stamps == null ? 0 : cells.StampCounter, Land = CaptureLand( cells ) },
 			Objects = objectRecords,
 			NextSeed = objects.NextPlacementSeed,
 			NextAttractionId = objects.NextAttractionId,
@@ -294,6 +304,14 @@ public static class ParkLayoutSnapshot
 			Require( cells.Land == null || (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0,
 				$"cell ({cell.X}, {cell.Y}) carries the unowned flag beside a land record" );
 		}
+		if ( cells.BlockStamps is { } stamps )
+		{
+			var blocks = (long)((cells.Width + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock) * ((cells.Height + ParkCellMap.StampBlock - 1) / ParkCellMap.StampBlock);
+			Require( stamps.Length == blocks, $"the cell map has {stamps.Length} block stamps for {blocks} blocks" );
+			Require( Array.TrueForAll( stamps, stamp => stamp >= 0 && stamp <= cells.StampCounter ), "a block stamp is negative or above the stamp counter" );
+		}
+		else
+			Require( cells.StampCounter == 0, "the cell map has a stamp counter but no block stamps" );
 		if ( cells.Land is { } land )
 			ReadLand( land, cells.Width, cells.Height );
 	}
@@ -366,6 +384,8 @@ public static class ParkLayoutSnapshot
 		else
 			newLand?.Invoke( cells );
 		cells.RestoreVersion( snapshot.Cells.Version );
+		// The writes above stamped the blocks with restore-time versions; the saved stamps (none before WALK-007) replace them.
+		cells.RestoreBlockStamps( snapshot.Cells.StampCounter, snapshot.Cells.BlockStamps );
 		return cells;
 	}
 

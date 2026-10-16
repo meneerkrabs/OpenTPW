@@ -80,13 +80,18 @@ public class CoasterPresentationTests
 		Assert.AreEqual( 1, sections.SelectSection( -0.3f, winch: true ), "a chain-lift segment uses uiWinchCrossSection" );
 	}
 
+	/// <summary>
+	/// The extrusion (<c>0x43f4e0</c>, <c>0x43fd60</c>): one ring of vertices per slice that the strips before and after it share, two triangles per edge and
+	/// segment wound as the emitter winds them (the diagonal alternating with the parity flag), the points placed by the slice frame.
+	/// </summary>
 	[TestMethod]
-	public void ExtrusionEmitsAQuadPerEdgeAndSegmentAndPlacesPointsByTheSliceFrame()
+	public void ExtrusionSharesARingPerSliceAndWindsLikeTheOriginal()
 	{
 		var sections = CoasterCrossSections.FromValues( SectionSettings() );
 		var mesh = CoasterTrackMesh.Build( sections, StraightSlices( 5 ), closed: false );
 		Assert.AreEqual( 4, mesh.Segments );
-		Assert.AreEqual( 4 * 1 * 4, mesh.Vertices.Count, "four vertices per edge and segment" );
+		Assert.AreEqual( 5, mesh.Rings );
+		Assert.AreEqual( 5 * 2, mesh.Vertices.Count, "one vertex per section point and ring" );
 		Assert.AreEqual( 4 * 2, mesh.TriangleCount );
 		Assert.AreEqual( 12f, mesh.Length, 1e-4f );
 		var first = mesh.Vertices[0];
@@ -97,6 +102,8 @@ public class CoasterPresentationTests
 		Assert.AreEqual( 0f, first.V );
 		Assert.AreEqual( 3f / CoasterTrackMesh.MetersPerRepeat, mesh.Vertices[2].V, 1e-5f, "V grows by the slice distance over six" );
 		Assert.AreEqual( SVector3.UnitY, first.Normal );
+		// Ring 0 is vertices 0 (from) and 1 (to), ring 1 vertices 2 and 3: (Pf, Cf, Pt), (Ct, Pt, Cf), then with the parity set (Pf, Cf, Ct), (Ct, Pt, Pf).
+		CollectionAssert.AreEqual( new uint[] { 0, 2, 1, 3, 1, 2, 2, 4, 5, 5, 3, 2 }, mesh.Indices.Take( 12 ).ToArray() );
 		var closed = CoasterTrackMesh.Build( sections, StraightSlices( 5 ), closed: true );
 		Assert.AreEqual( 5, closed.Segments, "a closed chain joins its last slice to the first" );
 	}
@@ -125,16 +132,28 @@ public class CoasterPresentationTests
 		Assert.IsTrue( up.Y > 0 );
 	}
 
+	/// <summary>
+	/// A winch link takes uiWinchCrossSection, and a marker link (a crossing, the build cursor's link) the copy of the invalid cross section with every edge in the marker
+	/// texture (<c>0x43f4e0</c>); a change of section emits the previous slice's ring again for the new section.
+	/// </summary>
 	[TestMethod]
-	public void AWinchSegmentAndAnInvalidSegmentUseTheirOwnEdges()
+	public void AWinchLinkAndAMarkerLinkUseTheirOwnSections()
 	{
 		var sections = CoasterCrossSections.FromValues( SectionSettings() );
 		var slices = StraightSlices( 3 );
 		var winch = CoasterTrackMesh.Build( sections, slices, closed: false, winch: new HashSet<int> { 0 } );
-		Assert.AreEqual( 2 * 2 * 4, winch.Vertices.Count, "the winch section has two edges" );
+		Assert.AreEqual( 3 * 2, winch.Vertices.Count, "the winch section's two edges share the ring's two points (one texture)" );
+		Assert.AreEqual( 2 * 2 * 2, winch.TriangleCount );
 		Assert.IsTrue( winch.Vertices.All( vertex => vertex.Texture == 1 ) );
-		var invalid = CoasterTrackMesh.Build( sections, slices, closed: false, invalid: new HashSet<int> { 0 } );
-		Assert.IsTrue( invalid.Vertices.All( vertex => vertex.Texture == CoasterTrackMesh.InvalidTexture ) );
+		var marked = CoasterTrackMesh.Build( sections, slices, closed: false, marker: ( _, _ ) => CoasterTrackMesh.RefusedMarker );
+		Assert.AreEqual( 0, sections.InvalidSectionIndex, "no uiInvalidCrossSection: the first section is copied" );
+		Assert.IsTrue( marked.Vertices.All( vertex => vertex.Texture == CoasterTrackMesh.MarkerTexture( 2, CoasterTrackMesh.RefusedMarker ) ), "red.tga follows the coaster's two textures and m_erase.tga" );
+		Assert.AreEqual( 3, CoasterTrackMesh.MarkerTexture( 2, CoasterTrackMesh.RefusedMarker ) );
+		Assert.AreEqual( 4, CoasterTrackMesh.MarkerTexture( 2, CoasterTrackMesh.CursorMarker ), "blue.tga" );
+		var changing = CoasterTrackMesh.Build( sections, StraightSlices( 4 ), closed: false, marker: ( node, _ ) => null, winch: new HashSet<int>() );
+		Assert.AreEqual( 4, changing.Rings );
+		var switched = CoasterTrackMesh.Build( sections, StraightSlices( 4 ).Select( ( slice, index ) => slice with { Section = index } ).ToArray(), closed: false, marker: ( node, _ ) => node == 1 ? CoasterTrackMesh.CursorMarker : null );
+		Assert.AreEqual( 4 + 2, switched.Rings, "the ring is emitted again where the marker run starts and where it ends" );
 	}
 
 	// ---- A track under construction ----------------------------------------------------------------

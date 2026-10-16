@@ -170,7 +170,10 @@ placed once on the release. Backspace waits for a drag; a drag let go while the 
   A loop pair is never split and the same node twice cuts that node out. The cut ends carry `0x10000`/`0x20000` and the knots break there.
 - **Keyboard**: Backspace deletes the last pylon (`0x444f30`; the original reaches it only through its undo list, `[EXT:coaster-tool-controls]`); the mouse wheel and Tab are gone (the original has
   no wheel height, the loop button replaces Tab, and a new pylon takes the last pylon's height).
-- **Cursor ribbon** (COAST-035, `0x435d50`): the link to the cursor node is a translucent blue (valid) or red (refused) ribbon with no pylon, as the video shows it.
+- **Cursor link** (COAST-035, `0x435d50`, `0x43f4e0`): the cursor node is the original's model-less spare node, drawn without a pylon; the
+  link into it is drawn in a copy of the invalid cross section (the first section: no PC `coaster.sam` sets `uiInvalidCrossSection`)
+  with every edge in `blue.tga`, or `red.tga` when the validator refuses the cell (the marker textures the loader appends after the
+  coaster's own, `0x42f390`).
 
 ## Running
 
@@ -339,10 +342,13 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
 
 - **Track.** `coaster.sam` holds the track textures (`asTextureData`, with `fScrollRate`), the cross-section point
   blocks (X, Y, U, normal; `fTrackHeightAdjust` is added to every Y) and edge blocks (texture, point, point), the
-  sections and the selects. The mesh is the section extruded along slices: the curve at ten uniform steps per knot pair.
+  sections and the selects. The mesh is the section extruded along slices: the curve at ten uniform steps per link between two
+  nodes and at the knots alone between the tags of one pylon (`0x43eb70`, `0x43f030`).
   Each point is turned by the slice roll, pitch and yaw and moved to the slice position; U is the point's U and V grows
-  by the distance to the previous slice over six, so a texture repeats every six world units. Every edge is a strip of
-  quads between two slices. The select picks the section by pitch (a flume's climbing window of -90 to -1 degrees is its
+  by the distance to the previous slice over six, so a texture repeats every six world units. A slice is one ring of vertices
+  the strips before and after it share (emitted again where the section changes); every edge is a strip of two single-sided
+  triangles per segment, wound as the emitter winds them (the diagonal alternating edge by edge). A link whose node has
+  crossings is drawn with the red marker texture in the invalid cross section, as is the cursor's refused link. The select picks the section by pitch (a flume's climbing window of -90 to -1 degrees is its
   dry, ratcheted section, the rest is water) and a chain-lift segment uses `uiWinchCrossSection`. Rails, sleepers,
   struts, ropes, gutters and the flume's water all come from these sections and the textures of the coaster's wad
   (`gtexture` first). Scrolling textures (water, ratchet, chain) shift V by the power factor times the elapsed seconds on their own few
@@ -352,7 +358,7 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   its next node until there is none, and the edit step puts a cursor node at the hovered cell in the chain after the last
   node. OpenTPW draws the curve (an open chain: the end knots take the direction toward or away from their neighbour,
   chord 1.0) through the placed nodes and a ghost pylon at the cursor with the tool's height; a closed but unfinished
-  circuit ends in the station end node. An invalid link is flat red.
+  circuit ends in the station end node. A link between two nodes a kept edit left invalid takes the red marker.
 - **Pylons.** `StdPylon.MD2`/`LoopPylon.MD2` with five clips played in "add" mode, which only the TrackMaster loader asks for
   (`0x430ca0`; a position or vertex key is added, a rotation key multiplied into the node, `0x470d10`): the loft clip `<name>L`
   (a vertex animation of the pylon mesh and a 0 to 80 or 90 position key on the track tag and stack-height dummies) at the node's
@@ -375,7 +381,6 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   `--load-original-level` builds a small coaster for captures (`--capture-world`): finished with trains, or open after
   four pylons with the cursor on the fifth cell.
 
-Evidence found but not used: `uiInvalidCrossSection` and the node flags 0x800000/0x804000 mark the invalid presentation.
 Used since the register round 2 (a model whose track dummy is missing or does not move with the loft clip keeps the settings' heights, which no PC model needs since the clips turn the nodes relatively; the original applies them as they come): the pylon loft heights, the track dummy's height at loft 0 and 1 (15.56 and 95.56 for the Gorilla Thrilla pylon): they are the
 node heights h0 and h1, read when the coaster's definition is built from its catalogue entry
 (`CoasterDefinition.FromCatalogEntry`; a definition built from settings alone keeps fMinHeight and fMaxHeight). The model's attribute
@@ -475,4 +480,7 @@ is not implemented. `CoasterRide.TryGetRideView` gives the front car's pose
 The pylon tag round of October 16 built the knot pass over the pylon models' posed track tags (COAST-015 narrowed to the
 knot pass's write-back of the clamped height parameter and the no-model fallback; COAST-028's guessed clip angles apply only
 without the model; COAST-029 lost its middle-knot height-adjust clause, the knots taking no `fTrackHeightAdjust`). Saves record
-the knot pass (`KnotPass`): a save from before it places the trains of a coaster with pylon models again and its riders leave.
+the knot pass (`KnotPass`): a save from before it places the trains of a coaster with pylon models again and its riders leave. The same round traced the
+stack parts (`0x432df0`) and the kept half turn (COAST-033 narrowed), the mesh's slices, shared rings, winding and marker links
+(COAST-026 narrowed to the cross-section runs and blends, lighting and the Add-mode UV animation) and the cursor link (COAST-035
+narrowed: the ribbon is gone, the closing target's mark colours no drawn link).

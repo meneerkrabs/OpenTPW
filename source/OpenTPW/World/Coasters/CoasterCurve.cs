@@ -60,9 +60,14 @@ public sealed record CoasterKnotPass( CoasterKnot[] Knots, int[] FirstKnot, int[
 
 /// <summary>
 /// One cross-section slice of the drawn track mesh: the curve point at a parameter step of one knot pair, the yaw and
-/// pitch of its tangent, the roll and the pair's section (the node the pair starts at).
+/// pitch of its tangent, the roll, the pair's section (the node the pair starts at) and the node its end knot belongs to
+/// (<see cref="NextSection"/>: the same node for a pair between two tags of one pylon, the next node for a link).
 /// </summary>
-public readonly record struct CoasterSlice( SVector3 Position, float Yaw, float Pitch, float Roll, int Section, float T );
+public readonly record struct CoasterSlice( SVector3 Position, float Yaw, float Pitch, float Roll, int Section, float T, int NextSection = -1 )
+{
+	/// <summary>Whether the slice lies on a pair between two knots of one node (the tags of one pylon).</summary>
+	public bool InsideNode => NextSection == Section;
+}
 
 /// <summary>
 /// Samples of a closed track and their spacing in world units. <see cref="KnotCoordinates"/> holds, per knot, the coordinate of the knot on the sample
@@ -238,13 +243,14 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	public const int SliceSegments = 10;
 
 	/// <summary>
-	/// The cross-section slices of the track mesh (<c>0x43f4e0</c>): the curve evaluated at k/<paramref name="segments"/> of every knot pair
-	/// (<c>0x43e1b0</c>), the yaw and pitch of the Bézier derivative and the knot-interpolated roll. The chain ends with its last knot's own slice: a
-	/// finished track's last knot is the station end node on the first knot, so the slices close the circuit without a pair of their own (the mesh
-	/// builder pairs every node with its next node until there is none), and a track still being built ends at its build cursor.
+	/// The cross-section slices of the track mesh (<c>0x43f4e0</c>): the curve evaluated at k/<paramref name="segments"/> of every link between two nodes and at
+	/// the knots alone of a pair between two tags of one pylon (<c>0x43e1b0</c>), the yaw and pitch of the Bézier derivative and the knot-interpolated roll. The
+	/// chain ends with its last knot's own slice: a finished track's last knot is the station end node on S0's track dummy, so the slices close the circuit
+	/// without a pair of their own (the mesh builder pairs every node with its next node until there is none), and a track still being built ends at its build cursor.
 	/// </summary>
 	// [BIN:TPW-EXE:0x43e6b0 slice frame] the slice position is the cubic Bézier of the knot pair (0x43e1b0: P0, P0 + T+/3, P1 + T−/3, P1 at +0x40/+0x4c/+0x34/+0x40), its yaw and pitch come from the tangent and its roll from the second rail; the roll here is the interpolated knot roll (APPROX:COAST-017)
-	// [APPROX:COAST-026] the mesh slices use the 10 uniform steps per knot pair of the original but not its extra slices at cross-section changes (the dry/wet blends of the flumes) or at pylon-mesh track tags (one knot per node here) — evidence needed: the run list builder 0x4402d0 and the blend path of 0x43fd60 run on a real flume track
+	// [BIN:TPW-EXE:0x43eb70 slice lists] for every node the mesh builder lists, when the node has more than one knot, one value per knot over its own knot pairs (0x43f030 with the node as both ends: a value per knot, scaled by the count − 1), then 0xb values i/10 over the link to its next node; the slice emitter 0x43f4e0 skips each list's first value, the previous list's last
+	// [APPROX:COAST-026] the cross-section run boundaries the builder adds to these lists (0x43f030 inserts the run positions of 0x4402d0, found on the sample coordinate in steps of 0.25) are not inserted: a section change takes effect at the slice before the segment that changes — evidence needed: the run list builder 0x4402d0 and the blend path of 0x43fd60 run on a real flume track
 	public static CoasterSlice[] Slices( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, int segments = SliceSegments )
 	{
 		ArgumentNullException.ThrowIfNull( knots );
@@ -257,15 +263,17 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		for ( var pair = 0; pair < pairs; pair++ )
 		{
 			var next = pair + 1;
-			var last = pair == pairs - 1 ? segments : segments - 1;
+			// a pair between two tags of one pylon gets the slices of its knots alone
+			var steps = knots[pair].Section == knots[next].Section ? 1 : segments;
+			var last = pair == pairs - 1 ? steps : steps - 1;
 			for ( var step = 0; step <= last; step++ )
 			{
-				var t = (float)step / segments;
+				var t = (float)step / steps;
 				var position = Bezier( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
 				var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
 				var (yaw, pitch) = tangent.LengthSquared() > 0 ? Orientation( tangent ) : (0f, 0f);
 				var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * t;
-				slices.Add( new CoasterSlice( position, yaw, pitch, roll, knots[pair].Section, t ) );
+				slices.Add( new CoasterSlice( position, yaw, pitch, roll, knots[pair].Section, t, knots[next].Section ) );
 			}
 		}
 		return slices.ToArray();

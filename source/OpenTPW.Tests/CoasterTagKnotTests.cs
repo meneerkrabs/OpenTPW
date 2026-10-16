@@ -146,6 +146,28 @@ public class CoasterTagKnotTests
 	}
 
 	/// <summary>
+	/// The mesh slices (<c>0x43eb70</c>, <c>0x43f030</c>): ten steps over every link between two nodes, and over the pairs between the tags of one pylon a slice at each knot alone,
+	/// every slice naming its pair's node and the node its end knot belongs to.
+	/// </summary>
+	[TestMethod]
+	public void TheMeshSlicesAPylonsTagPairsAtTheirKnotsOnly()
+	{
+		var (builder, _, _) = NewCoaster();
+		BuildCircuit( builder );
+		var pass = builder.Track.BuildKnotPass( builder.Site, writeBanks: false );
+		var knots = pass.Knots;
+		var slices = HermiteCoasterCurve.Slices( knots, builder.Ride.Definition.Curviness, closed: true );
+		var inside = Enumerable.Range( 0, knots.Length - 1 ).Count( pair => knots[pair].Section == knots[pair + 1].Section );
+		var links = knots.Length - 1 - inside;
+		Assert.AreEqual( inside + links * HermiteCoasterCurve.SliceSegments + 1, slices.Length );
+		Assert.AreEqual( 2 * (builder.Track.Nodes.Count - 2), inside, "two tag pairs per pylon node" );
+		foreach ( var slice in slices.Where( slice => slice.InsideNode ) )
+			Assert.AreEqual( 0f, slice.T, "a tag pair is sliced at its first knot" );
+		for ( var knot = 0; knot < knots.Length; knot++ )
+			Assert.IsTrue( slices.Any( slice => Vector3.Distance( slice.Position, knots[knot].Position ) < 1e-3f ), $"knot {knot} has its slice" );
+	}
+
+	/// <summary>
 	/// A pylon the suspended coaster turns half a turn (node flag <c>0x10000000</c>, its rotate clip half a turn on) still gives knots that run along the track: the knot pass turns
 	/// each tag matrix back by −π about Y before reading the direction (<c>0x4315f0</c>), which leaves the position where the turned model put it.
 	/// </summary>

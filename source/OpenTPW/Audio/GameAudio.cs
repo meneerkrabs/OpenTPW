@@ -148,7 +148,7 @@ public static class GameAudio
 	/// ending one, while the park's money is on.
 	/// </summary>
 	// [BIN:STP-PPC:0x100711CC queue joins a path] queue mode (3), money on (game+36 == 0) and the flag 0x7C500 the validator 0x84154 sets when the queue line's last cell is a path cell: cat_ui 139 at (x·10, 0, y·10) after the ride is told its queue changed; [BIN:TPW-EXE:0x527587] the same
-	// [APPROX:AUDIO-023] the second source, a laid path cell linking to a neighbouring queue cell whose link points back (0x10082D6C, four sites; tp.exe 0x5348D0), is not played: OpenTPW's path linking has no queue-link check yet (PATH-004)
+	// [BIN:TPW-EXE:0x00534A76 queue neighbour sound] the link writer's mode 1, with its refresh flag set and 0x785A2C clear, plays cat_ui 0x8B for a laid path cell whose cardinal queue neighbour's +0x0C links back to it (four sites: 0x534ACA, 0x534CDA, 0x534EE9, 0x5350F8), at (10x, 0, 10x): both coordinates are taken from the cell's x (0x5348E0 stores (id − 1) & 0x7F into both locals); PathLinkWriter reports it, QueueNeighbourSoundPosition places it
 	public const uint QueueJoinEvent = 139;
 	/// <summary>Backspace in the park view over a path cell, with no build tool on: <c>cat_ui</c> 95 at that cell, then the cell is removed.</summary>
 	// [BIN:STP-PPC:0x10112430 backtrack key] the key command "backtrack" (Backspace, command table data 0x455B0): tool mode 0, mouse-mode state 0 or 1 and a path cell under the cursor play cat_ui 95 at (x·10, 0, y·10) before the single-cell removal (mode 0x32, build pass 0x10070B98, ClearCell's path case); [BIN:TPW-EXE:0x40BDA0] the same, its sound call at 0x40BE71
@@ -724,6 +724,12 @@ public static class GameAudio
 
 	/// <summary>Where a cell's sounds play: the original submits them at (x*10, 0, z*10) (a cell is ten units, height 0).</summary>
 	public static Vector3 CellSoundPosition( int x, int y ) => new( x * 10, 0, y * 10 );
+
+	/// <summary>
+	/// Where the link writer's queue-neighbour sound (<see cref="QueueJoinEvent"/>) plays for the laid path cell (<paramref name="x"/>, <paramref name="y"/>):
+	/// tp.exe takes both coordinates from the cell's x, so it plays at (10x, 0, 10x), not at the cell.
+	/// </summary>
+	public static Vector3 QueueNeighbourSoundPosition( int x, int y ) => new( x * 10, 0, x * 10 );
 
 	/// <summary>The path tool's refused click at the clicked cell (<see cref="PathRefusedEvent"/>, <c>cat_ui</c> 175 at (x*10, 0, z*10); tp.exe <c>0x524a80</c>).</summary>
 	public static void PlayPathRefused( int cellX, int cellY ) => PlayUiAt( PathRefusedEvent, CellSoundPosition( cellX, cellY ) );

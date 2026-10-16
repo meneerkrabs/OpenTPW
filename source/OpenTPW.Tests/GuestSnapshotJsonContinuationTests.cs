@@ -179,27 +179,25 @@ public class GuestSnapshotJsonContinuationTests
 	}
 
 	/// <summary>
-	/// A guest caught mid-route (past its fourth buffered waypoint, so <see cref="GuestNavigationSnapshot.Cursor"/> is
-	/// non-zero and the waypoint buffer must be rebuilt from inside the route) survives the codec and continues its
-	/// walk identically. Long routes only exist in the harness's early fill-up window, so this runs to that moment
-	/// instead of the rich moment.
+	/// A guest caught mid-walk up its queue (state 12, an original walk since WALK-006, moving) survives the codec and continues its walk identically: its search result's buffered waypoints and lengths are restored as
+	/// saved. Queue walks are original walks too (WALK-006), so the harness's queues give such a walker early.
 	/// </summary>
 	[TestMethod]
-	public void MidRouteNavigationBufferSurvivesParkResumeJsonAndContinues()
+	public void MidWalkNavigationSurvivesParkResumeJsonAndContinues()
 	{
 		var park = new GuestSnapshotTests.Rig();
-		var tick = GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.Guests.Any( guest => guest.Navigation.Cursor > 0 ), 0, 6000 );
-		var walker = park.Simulation.Guests.FirstOrDefault( guest => guest.Navigation.Cursor > 0 );
-		Assert.IsNotNull( walker, $"the harness reached a mid-route guest (tick {tick})" );
-		Assert.IsTrue( walker.Navigation.Count is > 0 and < GuestNavigation.BufferedWaypoints,
-			"a mid-route buffer holds the remaining waypoints" );
+		static bool MidWalk( Guest guest ) => guest.Navigation is { Original: true, Arrived: false, Count: > 0 } && guest.IsMoving && guest.State == GuestState.MovingUpQueue;
+		var tick = GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.Guests.Any( MidWalk ), 0, 6000 );
+		var walker = park.Simulation.Guests.FirstOrDefault( MidWalk );
+		Assert.IsNotNull( walker, $"the harness reached a mid-walk guest (tick {tick})" );
 
 		var snapshot = park.Simulation.CaptureSnapshot();
 		var loaded = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( snapshot ) );
 		var saved = loaded.Guests.Single( guest => guest.Id == walker.Id );
-		Assert.AreEqual( walker.Navigation.Cursor, saved.Navigation.Cursor, "the cursor survived the codec" );
+		Assert.AreEqual( walker.Navigation.Index, saved.Navigation.Index, "the waypoint index survived the codec" );
 		Assert.AreEqual( walker.Navigation.Count, saved.Navigation.Count, "the buffered count survived the codec" );
-		CollectionAssert.AreEqual( walker.Navigation.Route, saved.Navigation.Route, "the whole route survived the codec" );
+		Assert.IsNotNull( saved.Navigation.OriginalWalk, "the original walk's search state is saved" );
+		Assert.AreEqual( walker.Navigation.PathCount, saved.Navigation.OriginalWalk!.PathCount );
 
 		var resumed = new GuestSnapshotTests.Rig();
 		resumed.Simulation.RestoreSnapshot( loaded );
@@ -209,10 +207,8 @@ public class GuestSnapshotJsonContinuationTests
 		var restoredWalker = resumed.Simulation.Find( walker.Id );
 		Assert.IsNotNull( restoredWalker );
 		Assert.AreNotSame( walker, restoredWalker );
-		CollectionAssert.AreEqual( walker.Navigation.Route, restoredWalker.Navigation.Route, "the restored route deep-copies" );
 		for ( var index = 0; index < saved.Navigation.Count; index++ )
-			Assert.AreEqual( saved.Navigation.Route[saved.Navigation.Cursor + index], restoredWalker.Navigation.Buffer[index],
-				$"the waypoint buffer rebuilt from cursor {saved.Navigation.Cursor}" );
+			Assert.AreEqual( walker.Navigation.Buffer[index], restoredWalker.Navigation.Buffer[index], $"buffered waypoint {index}" );
 
 		Assert.AreEqual( GuestSnapshotTests.CanonicalHash( park ), GuestSnapshotTests.CanonicalHash( resumed ) );
 		var lastTick = tick + 400;
@@ -222,7 +218,7 @@ public class GuestSnapshotJsonContinuationTests
 			GuestSnapshotTests.Drive( park, tick );
 			resumed.Step();
 			GuestSnapshotTests.Drive( resumed, tick );
-			Assert.AreEqual( GuestSnapshotTests.CanonicalHash( park ), GuestSnapshotTests.CanonicalHash( resumed ), $"the parks diverged at tick {tick} with a mid-route walker restored" );
+			Assert.AreEqual( GuestSnapshotTests.CanonicalHash( park ), GuestSnapshotTests.CanonicalHash( resumed ), $"the parks diverged at tick {tick} with a mid-walk walker restored" );
 		}
 	}
 

@@ -115,6 +115,9 @@ EXPECTED = {
     ('tpw-exe-walk-search', 'plan'): AGREE,
     ('tpw-exe-walk-avoid-walls', 'plan'): AGREE,
     ('tpw-exe-walk-steering', 'plan'): AGREE,
+    # X26 (the TQI movie decoder, TGQ-MOVIES.md): the matrix builder 0x6710c0 for every quantiser and the transform pass 0x67673c.
+    ('tpw-exe-tqi-matrix', 'plan'): AGREE,
+    ('tpw-exe-tqi-transform-pass', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -865,6 +868,11 @@ class Oracle(CoastTests, unittest.TestCase):
 
     def test_walk_steering_agrees(self):
         self.check(('tpw-exe-walk-steering', 'plan'))
+
+    # ------------------------------------------------------------------ X26: the TQI movie decoder
+    def test_tqi_matrix_and_transform_agree(self):
+        self.check(('tpw-exe-tqi-matrix', 'plan'))
+        self.check(('tpw-exe-tqi-transform-pass', 'plan'))
 
     def test_walk_readings_are_sharp(self):
         # The walk's mask matters to the edge test and the search: a reading that ignores it disagrees.

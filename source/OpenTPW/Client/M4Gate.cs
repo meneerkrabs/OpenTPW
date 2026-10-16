@@ -22,7 +22,7 @@ public sealed record M4GateOptions
 	/// <summary>Themes whose catalogs are measured (default: all four, <see cref="ObjectCatalog.Themes"/>).</summary>
 	public IReadOnlyList<string> Themes { get; init; } = ObjectCatalog.Themes;
 	public WorldSeed Seed { get; init; } = WorldSeed.Default;
-	/// <summary>The use window W in simulated minutes (GATEM4-001; <see cref="M4Gate.DefaultUseWindowMinutes"/>).</summary>
+	/// <summary>The use window W in simulated minutes ([EXT:m4-gate-use-window]; <see cref="M4Gate.DefaultUseWindowMinutes"/>).</summary>
 	public double UseWindowMinutes { get; init; } = M4Gate.DefaultUseWindowMinutes;
 	/// <summary>Runs the whole scenario a second time with the same seed and compares the per-minute state hashes.</summary>
 	public bool DeterminismProbe { get; init; } = true;
@@ -135,7 +135,7 @@ public sealed record M4StepResult( string Object, M4GateVerdict Verdict, string 
 /// </summary>
 public static class M4Gate
 {
-	/// <summary>Default use window W (GATEM4-001, docs/M4-GATE.md).</summary>
+	/// <summary>Default use window W ([EXT:m4-gate-use-window], docs/M4-GATE.md).</summary>
 	public const double DefaultUseWindowMinutes = 5;
 
 	public const string LifecycleArea = "attractions";

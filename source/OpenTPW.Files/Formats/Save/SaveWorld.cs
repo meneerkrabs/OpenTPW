@@ -166,8 +166,9 @@ public sealed class SaveWorld
 	public const int ThingHeaderBytes = 8;
 
 	private SaveWorld( SavePayloadBlock block, SaveWorldVariables variables, int variablesOffset, SaveCalendar calendar, int arrivalOffset,
-		byte[] arrivals, SaveCellGrid cells, uint usedThingHead, IReadOnlyList<SaveThing> things, SaveStaffPool? staffPool )
+		byte[] arrivals, SaveCellGrid cells, uint usedThingHead, IReadOnlyList<SaveThing> things, SaveStaffPool? staffPool, SaveObjectControls? objectControls )
 	{
+		ObjectControls = objectControls;
 		StaffPool = staffPool;
 		Block = block;
 		Variables = variables;
@@ -186,6 +187,8 @@ public sealed class SaveWorld
 	public int OpaqueMacroAiOffset => VariablesOffset + SaveWorldVariables.Bytes;
 	public int OpaqueMacroAiLength => Calendar.Offset - OpaqueMacroAiOffset;
 	public SaveCalendar Calendar { get; }
+	/// <summary>The control manager's object-control table right after the variables (tp.exe 0x4D3AA0): each object's researched flag among others; null when it does not read as one.</summary>
+	public SaveObjectControls? ObjectControls { get; }
 	/// <summary>The staff hiring pool before the calendar; null when the bytes there are too few or do not read as one.</summary>
 	public SaveStaffPool? StaffPool { get; }
 	public int ArrivalOffset { get; }
@@ -241,7 +244,7 @@ public sealed class SaveWorld
 			throw new InvalidDataException( $"Save World calendar before the map is not a calendar (rate {calendar.FunnySecsPerRealSec}, month {calendar.MonthAtLastUpdate}, day {calendar.DayAtLastUpdate})." );
 		var (head, things) = SaveThingChain.Walk( span, cells.EndOffset, block.End );
 		var world = new SaveWorld( block, variables, block.Offset, calendar, arrival, span.Slice( arrival, ArrivalBytes ).ToArray(), cells, head, things,
-			SaveStaffPool.TryRead( span, reader.Position, calendarOffset ) );
+			SaveStaffPool.TryRead( span, reader.Position, calendarOffset ), SaveObjectControls.TryRead( span, reader.Position, calendarOffset ) );
 		foreach ( var (name, id, model) in variables.ThingReferences() )
 		{
 			if ( id == 0 )

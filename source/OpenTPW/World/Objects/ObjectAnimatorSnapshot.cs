@@ -39,6 +39,8 @@ public sealed record AnimatorChannelSnapshot
 	public required long StartMilliseconds { get; init; }
 	/// <summary>AnimID-14 semantics: frozen at the last frame, still posing, GETANIM −1.</summary>
 	public required bool Ended { get; init; }
+	/// <summary>Optional for older saves: the channel ended through the hold route (AnimID 12, ended), not as AnimID 14.</summary>
+	public bool Held { get; init; }
 	/// <summary>Current frame of the clip.</summary>
 	public required float Tick { get; init; }
 	/// <summary>Clip length in ticks, for the resolved-asset identity check.</summary>
@@ -144,6 +146,8 @@ public sealed record ObjectAnimatorSnapshot
 				throw new InvalidDataException( $"channel index {channel.ChannelIndex} is negative." );
 			if ( channel.ClipName == null )
 				throw new InvalidDataException( $"channel {channel.ChannelIndex} has a null clip name." );
+			if ( channel.Held && !channel.Ended )
+				throw new InvalidDataException( $"channel {channel.ChannelIndex} is held without having ended." );
 			if ( !float.IsFinite( channel.Speed ) || channel.Speed <= 0 )
 				throw new InvalidDataException( $"channel {channel.ChannelIndex} speed {channel.Speed} is not positive finite." );
 			if ( channel.Serial < 1 )

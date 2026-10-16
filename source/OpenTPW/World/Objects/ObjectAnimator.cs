@@ -23,9 +23,9 @@ namespace OpenTPW;
 /// texture coordinates (<see cref="GetVertexPositions"/>, <see cref="GetTexCoords"/>); the shared
 /// <see cref="ModelFile"/> is never written.
 /// </summary>
-// [APPROX:RIDES-032] Every instance takes the placement callback route (Mac 0xa7960 with r4 = 1) on every update. PC: the render callback 0x463030 at model record +0x140 (set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 updates instances without that flag via 0x473c70(inst, 0, 8) without posing and clears the flag on the others. Object flag 0x00400000 is set at 0x4737e8 when a non-looping clip ends with nothing deferred, flags & 0x10 set and & 0x8 clear (it also sets 0x40000000 and holds the last frame). The list-pass route is not modelled — evidence needed: the renderer's call site of the 0x140 callback
+// [APPROX:RIDES-032] Every instance takes the placement callback route (Mac 0xa7960 with r4 = 1) on every update. PC: the render callback 0x463030 at the model object's +0x140 (the model record's +0x1c; set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 (once per frame from 0x54e360) updates the instances without that flag via 0x473c70(inst, 0, 8), whose channel update 0x4735d0 poses only when instance flag 0x400000 is set (the hold route sets it once, 0x4737e8; 0x473c70 clears it at its end), and clears the flag on the others. The list-pass route is not modelled, so an instance the renderer does not pose (the choice depends on the view) is posed here — evidence needed: the callback's call site: no instruction in the executable calls or jumps through +0x140 of that object (the other +0x140 operands, at 0x43752c, 0x439fea, 0x441958, 0x441988, 0x4db378, 0x4fdf32 and the like, belong to other structures) and the renderer (0x579D95) only initialises the word to 0, so the call, if any, goes through a computed address
 // [BIN:TPW-EXE:0x473c70 idle restart] The idle restart (Mac 0xa798c–0xa79c8) never fires for placed rides: placement through 0x4db090 → 0x4dd500 (flags 0x361/0x32f) and script-spawned instances (0x55a720, 0x549faf, 0x54a237, 0x54a715; flags 0x101) always set bit 4; the creator 0x463060 sets bit 4 from argument bit 1 and 0x8000 from argument 0x80. (RIDES-034 retired.)
-// [APPROX:RIDES-035] MD2 texture-frame tracks (trailer word 12) now apply: the clip update 0xa56f8 runs them when trailer bit 0x2 is set and global option bit 0x8 is clear (its only store writes 0), and <see cref="GetTextureFrame"/> exposes the winning frame per slot; the PC writer is 0x4721f0 → 0x470c90 (slot record at model+0x50+slot·8: frame at +2, dirty bit 0x04 in byte +1 when the frame changes; trailer flags & 2 and option 0x7b4980 bit 0x8 clear), but its draw-path reader is not traced, so the binding to rendered textures follows this port's material-slot mapping — evidence needed: the draw-path reader of a texture slot's current frame (a write watchpoint on a slot's +2 at runtime, or the D3D texture-bind code)
+// [BIN:TPW-EXE:0x00580530 texture frame bind] MD2 texture-frame tracks (trailer word 12) now apply: the clip update 0xa56f8 runs them when trailer bit 0x2 is set and global option bit 0x8 is clear (its only store writes 0), and <see cref="GetTextureFrame"/> exposes the winning frame per slot; the PC writer is 0x4721f0 → 0x470c90 (slot record at model+0x50+slot·8: frame at +2, dirty bit 0x04 in byte +1 when the frame changes; trailer flags & 2 and option 0x7b4980 bit 0x8 clear), and the draw reads it per material group: 0x00580530 (the draw) and 0x0057A420 (the per-slot bind) bind frames[flags 0x40 of 0x8BD550 ? slot word +2 : 0] of the slot record the group points at, the flag being the ANIMATINGTEXTURES option (OriginalObject.TextureFrameToShow), so the material-slot mapping is the original's
 public sealed class ObjectAnimator
 {
 	/// <summary>Default rate shared with the Totem; 30 is proved for the Feral Mac channel formula, while Windows and runtime clock selection remain unverified.</summary>
@@ -72,6 +72,8 @@ public sealed class ObjectAnimator
 		public long StartMilliseconds { get; set; }
 		/// <summary>AnimID 14 semantics: frozen at the last frame (channel flags 0x14), still posing.</summary>
 		public bool Ended { get; set; }
+		/// <summary>The hold route ended this channel (instance flag 0x10): AnimID 12 with flag 0x4 rather than AnimID 14.</summary>
+		public bool Held { get; set; }
 		/// <summary>DeferredAnimID/SubAnim/flags (+36/+40/+44) and speed; null = 12 (none).</summary>
 		public Clip? Deferred { get; set; }
 	}
@@ -98,6 +100,7 @@ public sealed class ObjectAnimator
 	private int textureFrameVersion;
 	private readonly SortedSet<string> vertexLimitations = new( StringComparer.Ordinal );
 	private readonly bool keepsPoseOnClipChange;
+	private readonly bool holdsLastFrameAtClipEnd;
 	private long serial;
 	private double clockMilliseconds;
 	private int hiddenVersion;
@@ -111,7 +114,11 @@ public sealed class ObjectAnimator
 	/// True for fixed items (<c>Info.DontApplyOffset</c>): a mesh keeps its last vertex pose and texture
 	/// coordinates when its track ends instead of showing its stored ones.
 	/// </param>
-	public ObjectAnimator( ModelFile model, float ticksPerSecond = DefaultTicksPerSecond, bool keepsPoseOnClipChange = false )
+	/// <param name="holdsLastFrameAtClipEnd">
+	/// True for an instance with flag 0x10 (<see cref="ObjectAnimations.HasOnlyBaseClips"/>): a clip that ends with nothing
+	/// deferred holds its last frame as AnimID 12 instead of looping or restarting as AnimID 14.
+	/// </param>
+	public ObjectAnimator( ModelFile model, float ticksPerSecond = DefaultTicksPerSecond, bool keepsPoseOnClipChange = false, bool holdsLastFrameAtClipEnd = false )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		if ( model.Kind != ModelFileKind.Geometry )
@@ -123,6 +130,7 @@ public sealed class ObjectAnimator
 		// The bind copies the stored mesh back always under header flag 0x4, but the ride loader strips that flag on the
 		// default load path (see GetVertexLimitation), so the fixed-item gate decides for every model.
 		this.keepsPoseOnClipChange = keepsPoseOnClipChange;
+		this.holdsLastFrameAtClipEnd = holdsLastFrameAtClipEnd;
 		rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		world = (Matrix4x4[])rest.Clone();
 		restComponents = new (NVector3, Quaternion, NVector3)[model.Nodes.Count];
@@ -237,8 +245,9 @@ public sealed class ObjectAnimator
 	/// component (a null sample before a track's first key leaves the slot unchanged). A frame index outside
 	/// the slot's frame names is never returned; a slot every clip stops addressing shows frame 0 again.
 	/// </summary>
-	// [APPROX:MD2-900] The slot's current frame mixes like the node components (ascending channels, the highest non-null sample wins; null before the first key keeps the previous frame, initially 0) and a slot no bound clip addresses any more returns to frame 0 like a mesh that loses its track returns to its stored positions — evidence needed: the original draw-path reader of a slot's current frame (the clip update 0xa56f8 only writes it)
-	// [APPROX:MD2-901] Frame indices outside the slot's frame-name list are ignored (no corpus case among 458 in-range tracks; the one out-of-range track, Pmegacostm slot 12, addresses a slot its base model does not have, which the bind also ignores) — evidence needed: the original's behaviour on an out-of-range frame
+	// [BIN:TPW-EXE:0x00470C90 texture-frame track write] per clip update, for each track entry (slot word, key count word, key array: time in the low word, frame in the high word) it scans the keys from the last backwards for the first whose time is <= the clip time and, when its frame differs from the slot record's frame (model+0x50 + slot*8, frame at +2), stores it and sets dirty bit 0x04 of byte +1; a clip time before the first key writes nothing, so the slot keeps its previous frame; tracks run in array order, so a later track of the same slot overwrites an earlier one; no slot or frame range check
+	// [APPROX:MD2-900] the key selection above is the original's writer; what is not traced is the reader of a slot's current frame (the draw path) and whether a slot that no bound clip addresses any more returns to frame 0 (the writer never resets a slot; OpenTPW resets it, as a mesh that loses its track returns to its stored positions), and the fixed-item pose hold is not extended to frames
+	// [APPROX:MD2-901] Frame indices outside the slot's frame-name list are ignored (no corpus case among 458 in-range tracks; the one out-of-range track, Pmegacostm slot 12, addresses a slot its base model does not have, which the bind also ignores) — the PC writer 0x470C90 stores whatever slot and frame the track holds (it does not check them against the slot array or the frame names), so the original's behaviour depends on the unread consumer of the slot record
 	public int GetTextureFrame( int slot )
 	{
 		if ( (uint)slot >= (uint)frameBySlot.Length )
@@ -271,7 +280,7 @@ public sealed class ObjectAnimator
 	/// <see cref="EndedAnimation"/> once a non-looping clip ended, otherwise the triggered animation.
 	/// </summary>
 	public int GetAnimationId( int channel ) => !channels.TryGetValue( channel, out var state ) ? NoAnimation
-		: state.Ended ? EndedAnimation : state.Clip.AnimationId;
+		: state.Held ? NoAnimation : state.Ended ? EndedAnimation : state.Clip.AnimationId;
 
 	/// <summary>GETANIM / GETANIM_CH (0xaff80, 0xb0614): −1 once the channel's clip ended (flag 0x4), else its AnimID.</summary>
 	public int GetAnimation( int channel ) => channels.TryGetValue( channel, out var state ) && state.Ended ? -1 : GetAnimationId( channel );
@@ -391,7 +400,14 @@ public sealed class ObjectAnimator
 					Start( index, next, now );
 					continue;
 				}
-				if ( channel.Clip.Loop )
+				if ( holdsLastFrameAtClipEnd )
+				{
+					// [BIN:TPW-EXE:0x4737D7 hold route] with instance flag 0x10 and 0x8 clear the end of a clip with nothing deferred (looping or not) sets the frame to the total, ORs 0x40400000 into the instance flags, clears channel flag 0x8 and, after the sampler has run on the last frame, restarts the channel as AnimID 12 with flags 0x4 (0x473a30: 0x472f60 with AnimID 0xc, sub 0, flags 4): ended (GETANIM -1) with the AnimID 12 the next start's copy-back skips. The flag is set by 0x473e30 (0x473f32) when only animation group 0 (AnimID 0, letter C) holds clips
+					channel.Ended = true;
+					channel.Held = true;
+					frame = duration;
+				}
+				else if ( channel.Clip.Loop )
 				{
 					channel.StartMilliseconds = now - GetCarryMilliseconds( frame - duration, duration, channel.Clip.Speed );
 					channel.Serial = ++serial;
@@ -401,7 +417,8 @@ public sealed class ObjectAnimator
 				else
 				{
 					// [BIN:STP-PPC:0x100A7498 clip end] a non-looping clip with nothing deferred restarts as AnimID 14, which sets channel flags 0x14 (0x100A68AC) and branches past the bind (0x100A694C): frozen on the last frame, no copy-back, GETANIM -1
-					// [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced, and the next trigger restores stored components against the ended clip; the original's start passes the channel's AnimID 14, sub 0 entry as the old clip to the copy-back (0xa692c–0xa6948, 0xa69a4: only AnimID 12 skips it), and what that slot holds is not traced — evidence needed: capture after a TRIGANIM clip ends, the object's AnimID-14 table slot, and the ride-data sources of object flags 0x8/0x10 that stop or hold instead
+					// [BIN:TPW-EXE:0x4735D0 clip end] a non-looping clip with nothing deferred restarts as AnimID 14 (0x473866: 0x472f60 with 0xe), which only sets the channel flags 0x14 (frozen on the last frame, ended: GETANIM -1) and leaves the channel's AnimID and sub as they were, so the next start's copy-back (0x472f60 -> 0x472310) runs against the ended clip itself, which is what this does; the AnimID-14 table slot is never read
+					// [BIN:TPW-EXE:0x47376E clip-end routes] the end of a clip with nothing deferred tests the instance flag word (+4) & 0x18: clear = the loop or AnimID 14 route modelled here (every ride, shop and scenery object that has a clip beyond AnimID 0), 0x10 alone = the hold route (<see cref="holdsLastFrameAtClipEnd"/>), 0x8 = stop as AnimID 12 and hide, which only the advisor model has (its loader 0x429ba0 passes inner flag 0x100, the one path to record flag 0x8 at 0x461f10; objects never do: the object loader passes no outer 0x200, 0x4629d0 maps outer 0x200 to inner 0x100) and which AdvisorRig does not take through this class (RIDES-003 retired)
 					channel.Ended = true;
 					frame = duration;
 				}
@@ -480,6 +497,7 @@ public sealed class ObjectAnimator
 			Serial = pair.Value.Serial,
 			StartMilliseconds = pair.Value.StartMilliseconds,
 			Ended = pair.Value.Ended,
+			Held = pair.Value.Held,
 			Tick = pair.Value.Player.Tick,
 			ClipDurationTicks = pair.Value.Clip.Animation.Duration,
 			Deferred = pair.Value.Deferred is { } deferred
@@ -570,6 +588,7 @@ public sealed class ObjectAnimator
 			state.Serial = captured.Serial;
 			state.StartMilliseconds = captured.StartMilliseconds;
 			state.Ended = captured.Ended;
+			state.Held = captured.Held;
 			state.Player.SetTick( captured.Tick );
 			if ( captured.Deferred is { } deferred )
 				state.Deferred = ResolveSnapshotClip( resolveClip, deferred.Name, deferred.AnimationId, deferred.Variant, deferred.ClipDurationTicks, deferred.Loop, deferred.Speed, $"channel {captured.ChannelIndex} deferred" );

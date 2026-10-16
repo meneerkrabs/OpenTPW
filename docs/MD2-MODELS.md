@@ -395,7 +395,7 @@ once through the existing path texture cache, then swaps the
 (`Material.SetTextureArrayElement`; nothing is reallocated while the frame
 holds; resource sets are retired and rebuilt only when native texture identity
 changes. Missing art is registered with the animator and holds its effective
-selected frame, MD2-902). Sign-owned slots (`sign1`/`sign2`) are never frame-swapped.
+selected frame, `[EXT:missing-frame-keeps-visible]`, retired `APPROX:MD2-902`). Sign-owned slots (`sign1`/`sign2`) are never frame-swapped.
 Corpus (catalogue objects): 37 entries carry enabled texture-frame clips, 203
 clips apply in-range tracks, 155 of them change the frame while playing
 (Belly Bounce eyes `sp_eye01..06`, arcade/arc2x3 attract screens `sf_01..10`,
@@ -512,9 +512,8 @@ count and offset fields, but that does not verify the rest of its layout.
 ## Remaining gates and sources
 
 Next: the object-list replay without a bind (RIDES-032), and game-speed scaling
-of the scene clock; the original
-draw-path reader of a texture slot's current frame (the applied binding follows
-this port's material-slot mapping, RIDES-035/MD2-900..902);
+of the scene clock; the
+texture slot's current frame is read by the draw (`0x580530`) and the per-slot bind (`0x57A420`) only while the ANIMATINGTEXTURES option is on (RIDES-035 retired; MD2-900..902 stay);
 texture flag bits 0x1/0x2 and the exact render state of 0x10/0x20;
 the heightfield's texture turn and mirror in the terrain renderer. CPU parsing and sandbox playback do not qualify original
 rendering or animation behavior.

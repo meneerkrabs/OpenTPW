@@ -66,11 +66,9 @@ public class ObjectAccessCellsTests
 			var catalog = (ObjectCatalog)Activator.CreateInstance( typeof( ObjectCatalog ), BindingFlags.NonPublic | BindingFlags.Instance, null, new object[] { "jungle", entries }, null )!;
 			Objects = new ParkObjects( catalog, new SandboxParkGrid() )
 			{
-				IsReserved = ( x, y ) => Cells.RawTypeAt( x, y ) is var type && type is not (0 or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit)
-					&& !(type == (byte)ParkCellType.Path && !Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify )),
-				IsReservedForPath = ( x, y ) => Cells.RawTypeAt( x, y ) is var type && type is not (0 or (byte)ParkCellType.Path),
+				IsReserved = ( x, y ) => Cells.RawTypeAt( x, y ) is var type && type is not (0 or (byte)ParkCellType.Path or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit),
 				IsUnowned = ( x, y ) => Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ),
-				AccessCells = ObjectAccessCells.CellsToCheck
+				PathAt = ( x, y ) => Level.ObjectPathAt( Cells, x, y )
 			};
 			Objects.ObjectPlaced += item => Cells.WriteFootprint( item.Cells, Level.OwnerWord( item ), item.Placement.Rotation );
 			Objects.ObjectRemoved += item =>
@@ -169,7 +167,7 @@ public class ObjectAccessCellsTests
 		rig.Cells.SetType( 4, 6, ParkCellType.Path );
 		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( ride, 4, 5, 0 ), "a plain path cell under the footprint is cleared by the commit" );
 		rig.Cells.SetFlags( 4, 6, ParkCellFlags.NoModify );
-		Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( ride, 4, 5, 0 ), "the validator refuses NoModify for every object type (0x5356A6)" );
+		Assert.AreEqual( OriginalPlacementResult.Path, rig.Objects.Check( ride, 4, 5, 0 ), "the validator refuses NoModify for every object type (0x5356A6)" );
 	}
 
 	[TestMethod]
@@ -182,7 +180,7 @@ public class ObjectAccessCellsTests
 		// the entrance's outside cell (5, 4) of the queue ride is validated as an object cell: a NoModify path refuses it
 		cells.SetType( 5, 4, ParkCellType.Path );
 		cells.SetFlags( 5, 4, ParkCellFlags.NoModify );
-		Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( ride, 4, 5, 0 ) );
+		Assert.AreEqual( OriginalPlacementResult.AccessBlocked, rig.Objects.Check( ride, 4, 5, 0 ) );
 		// the shop's entrance cell is validated by the path rule: a NoModify path cell passes
 		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( shop, 4, 5, 0 ) );
 		// an object cell outside the exit refuses (the path rule), where an object cell of lower priority outside the entrance gives way
@@ -192,14 +190,18 @@ public class ObjectAccessCellsTests
 		var withBush = new Rig( ride, bush );
 		withBush.Objects.Add( bush, 5, 4, 0 );
 		Assert.AreEqual( OriginalPlacementResult.Allowed, withBush.Objects.Check( ride, 4, 5, 0, out var gives ), "a bush in front of the entrance gives way" );
-		Assert.AreEqual( 1, gives.Count );
+		Assert.AreEqual( 1, gives.Overwritten.Count );
 		withBush.Objects.Remove( withBush.Objects.FindAt( 5, 4 )! );
 		withBush.Objects.Add( bush, 6, 6, 0 );
-		Assert.AreEqual( OriginalPlacementResult.Occupied, withBush.Objects.Check( ride, 4, 5, 0 ), "an object outside the exit refuses, whatever its priority" );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, withBush.Objects.Check( ride, 4, 5, 0 ), "a lower-priority object outside the exit gives way too (0x535D66 comes before the path rule)" );
+		var other = Entry( 1402, 5, false, "*" );
+		var withRide = new Rig( ride, other );
+		withRide.Objects.Add( other, 6, 6, 0 );
+		Assert.AreEqual( OriginalPlacementResult.AccessBlocked, withRide.Objects.Check( ride, 4, 5, 0 ), "an object of equal priority outside the exit refuses" );
 		// off the map and unowned land refuse
 		Assert.AreEqual( OriginalPlacementResult.OutsideTerrain, rig.Objects.Check( ride, 4, 0, 0 ), "the entrance's outside cell lies off the map (0x529744)" );
 		rig.Cells.SetFlags( 6, 6, ParkCellFlags.Unowned );
-		Assert.AreEqual( OriginalPlacementResult.NotOwned, rig.Objects.Check( ride, 4, 5, 0 ) );
+		Assert.AreEqual( OriginalPlacementResult.AccessBlocked, rig.Objects.Check( ride, 4, 5, 0 ) );
 	}
 
 	[TestMethod]

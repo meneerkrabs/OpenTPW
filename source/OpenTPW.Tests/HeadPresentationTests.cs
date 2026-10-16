@@ -26,10 +26,10 @@ public class HeadPresentationTests
 	[TestMethod]
 	public void ElevationRowsStepThirtyDegreesAndSideRowsPickAnAzimuthColumn()
 	{
-		// 90 degrees from the pole is row 3; azimuth steps are 45 degrees.
+		// 90 degrees from the pole is row 3; column 0 faces local +Z (azimuth atan2(z, x) of 90 degrees) and each column adds 45 degrees (tp.exe 0x44B510).
 		for ( var column = 0; column < 8; column++ )
 		{
-			var azimuth = column * MathF.PI / 4;
+			var azimuth = MathF.PI / 2 + column * MathF.PI / 4;
 			var camera = Anchor + new System.Numerics.Vector3( MathF.Cos( azimuth ), 0, MathF.Sin( azimuth ) ) * 20;
 			var placement = HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, camera );
 			Assert.AreEqual( 3, placement.Row );
@@ -43,6 +43,37 @@ public class HeadPresentationTests
 			var camera = Anchor + new System.Numerics.Vector3( MathF.Sin( elevation ), MathF.Cos( elevation ), 0 ) * 20;
 			Assert.AreEqual( row, HeadPresentation.Compute( At( Matrix4x4.Identity ), 0, camera ).Row );
 		}
+	}
+
+	[TestMethod]
+	public void FrameDirectionsFollowTheOriginalRotationSteps()
+	{
+		AssertDirection( HeadPresentation.FrameDirection( 0, 0 ), 0, 1, 0 );
+		AssertDirection( HeadPresentation.FrameDirection( 3, 0 ), 0, 0, 1 );
+		AssertDirection( HeadPresentation.FrameDirection( 3, 2 ), -1, 0, 0 );
+		AssertDirection( HeadPresentation.FrameDirection( 3, 4 ), 0, 0, -1 );
+		AssertDirection( HeadPresentation.FrameDirection( 6, 0 ), 0, -1, 0 );
+		AssertDirection( HeadPresentation.FrameDirection( 1, 0 ), 0, MathF.Cos( MathF.PI / 6 ), 0.5f );
+	}
+
+	private static void AssertDirection( System.Numerics.Vector3 actual, float x, float y, float z )
+	{
+		Assert.AreEqual( x, actual.X, 1e-5f );
+		Assert.AreEqual( y, actual.Y, 1e-5f );
+		Assert.AreEqual( z, actual.Z, 1e-5f );
+	}
+
+	[TestMethod]
+	public void NearestFrameIsTheLargestDotProductAndTheFirstOnATie()
+	{
+		// straight along +X at the horizon: column 6 (azimuth 90 + 6 * 45 = 360 degrees)
+		Assert.AreEqual( (3, 6), HeadPresentation.NearestDirection( new System.Numerics.Vector3( 1, 0, 0 ) ) );
+		// the pole directions use column 0, whatever column won
+		Assert.AreEqual( (0, 0), HeadPresentation.NearestDirection( new System.Numerics.Vector3( 0, 1, 0 ) ) );
+		Assert.AreEqual( (6, 0), HeadPresentation.NearestDirection( new System.Numerics.Vector3( 0, -1, 0 ) ) );
+		// exactly between two columns the earlier one wins (a strict greater-than in the original)
+		var between = System.Numerics.Vector3.Normalize( HeadPresentation.FrameDirection( 3, 0 ) + HeadPresentation.FrameDirection( 3, 1 ) );
+		Assert.AreEqual( 0, HeadPresentation.NearestDirection( between ).Column );
 	}
 
 	[TestMethod]

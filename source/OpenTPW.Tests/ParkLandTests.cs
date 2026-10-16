@@ -50,6 +50,23 @@ public class ParkLandTests
 		Func<int, int, bool>? barrier = null ) =>
 		cells.Land!.CheckPurchase( cells, first, second, barrier ?? (( _, _ ) => false), cost, balance );
 
+	[TestMethod]
+	public void EveryOwnedFencePostCountsFiftyInTheParkValueAndTheBigParkCount()
+	{
+		// tp.exe 0x5323F0: the fence's posts are structure records of type 25 (0x00524960 in mode 0x19); 0x004C7DB0 adds 50 for each one on an owned cell (0x005363F0), 0x004CD7F0 counts it as covered
+		var park = EconomyTestData.Park();
+		var cells = NewPark();
+		park.Litter.Cells = cells;
+		var posts = cells.Land!.Ring.Distinct().Where( post => Owned( cells, post.X, post.Y ) ).ToList();
+		Assert.IsTrue( posts.Count > 0, "some posts stand on owned cells" );
+		var withPosts = park.ParkValue;
+		var coveredWithPosts = park.CoveredCells();
+		var distinctPosts = cells.Land.Ring.Distinct().Count();
+		cells.SetLand( null );
+		Assert.AreEqual( withPosts - 50 * posts.Count, park.ParkValue, "the park value without the posts" );
+		Assert.AreEqual( coveredWithPosts - distinctPosts, park.CoveredCells(), "the big park counts every post, owned or not" );
+	}
+
 	// --- Hoardings.sam ---
 
 	[TestMethod]

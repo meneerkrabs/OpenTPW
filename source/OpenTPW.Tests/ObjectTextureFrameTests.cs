@@ -428,4 +428,12 @@ public class ObjectTextureFrameTests
 		for ( var index = 0; index < values.Length; index++ )
 			BinaryPrimitives.WriteSingleLittleEndian( data.AsSpan( offset + index * 4 ), values[index] );
 	}
+	/// <summary>RIDES-035: the slot bind (0x0057A420) takes the track's frame only while the render flag 0x40 (the ANIMATINGTEXTURES option) is set, else frame 0.</summary>
+	[TestMethod]
+	public void ASlotShowsFrameZeroWhileTextureAnimationIsOff()
+	{
+		Assert.AreEqual( 3, OriginalObject.TextureFrameToShow( 3, animating: true ) );
+		Assert.AreEqual( 0, OriginalObject.TextureFrameToShow( 3, animating: false ) );
+		Assert.AreEqual( 0, OriginalObject.TextureFrameToShow( 0, animating: true ) );
+	}
 }

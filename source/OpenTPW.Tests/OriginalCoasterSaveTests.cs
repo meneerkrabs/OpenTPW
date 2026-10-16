@@ -58,10 +58,10 @@ public class OriginalCoasterSaveTests
 		SaveTestPayloads.Payload( world ?? new byte[8], rideSystem: new byte[6],
 			blocks: new Dictionary<SaveBlock, byte[]> { [SaveBlock.Coasters] = coasters } );
 
-	private static SaveCoasterBlock Parse( byte[] coasters, int countX = 128, int countY = 128 )
+	private static SaveCoasterBlock Parse( byte[] coasters, int countX = 128, int countY = 128, Func<ushort, SaveCoasterTrainLayout?>? trainLayouts = null )
 	{
 		var payload = Payload( coasters );
-		return SaveCoasterBlock.Parse( payload, SavePayloadLayout.Parse( payload ), countX, countY );
+		return SaveCoasterBlock.Parse( payload, SavePayloadLayout.Parse( payload ), countX, countY, trainLayouts );
 	}
 
 	[TestMethod]
@@ -106,14 +106,14 @@ public class OriginalCoasterSaveTests
 		var first = coaster.Sections[0];
 		Assert.AreEqual( layout[SaveBlock.Coasters].Offset + 16 + 32 + 4 + 4, first.Offset );
 		Assert.AreEqual( 0x280u, first.Flags );
-		Assert.AreEqual( 37u, first.Field112 );
+		Assert.AreEqual( 37u, first.MeshInstanceId );
 		Assert.AreEqual( (65, 67), (first.CellX, first.CellY) );
 		Assert.AreEqual( 0, first.StackOrdinal );
 		Assert.AreEqual( 0.25f, first.HeightParameter );
 		Assert.AreEqual( 0.5f, first.Bank );
-		Assert.AreEqual( -0.068084791f, first.Field220 );
-		Assert.AreEqual( 1.5707964f, first.Field224 );
-		Assert.AreEqual( 0.75f, first.Field248 );
+		Assert.AreEqual( -0.068084791f, first.Incline );
+		Assert.AreEqual( 1.5707964f, first.Yaw );
+		Assert.AreEqual( 0.75f, first.LoopRotate );
 		CollectionAssert.AreEqual( new ushort[] { 1 }, first.Links );
 		var second = coaster.Sections[1];
 		Assert.AreEqual( (66, 67), (second.CellX, second.CellY) );
@@ -213,13 +213,14 @@ public class OriginalCoasterSaveTests
 	}
 
 	/// <summary>A 3×3 synthetic park (Belly Bounce 1100 at (1, 1), the gates 1601 at (0, 0)) with the given coaster body.</summary>
-	private static OriginalParkImport Park( byte[]? coasters = null, bool matchingAttractionId = true, bool duplicateMatches = false )
+	private static OriginalParkImport Park( byte[]? coasters = null, bool matchingAttractionId = true, bool duplicateMatches = false,
+		Func<int, SaveCoasterTrainLayout?>? coasterTrains = null, uint rideMeshInstance = 110 )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
 		var things = SaveTestPayloads.ParkThings();
 		things.Insert( 2, (11, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields
 		{
-			PositionX = 128, PositionY = 128, Angle = 0, InfoId = 1601, Price = 0, Level = 0, Repair = 100, LifeGauge = 100
+			PositionX = 128, PositionY = 128, Angle = 0, InfoId = 1601, MeshInstance = 99, Price = 0, Level = 0, Repair = 100, LifeGauge = 100
 		} ) ) );
 		if ( !matchingAttractionId )
 		{
@@ -227,6 +228,14 @@ public class OriginalCoasterSaveTests
 			things[ride] = (12, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields
 			{
 				PositionX = 384, PositionY = 384, InfoId = 1101, Repair = 100, LifeGauge = 100
+			} ));
+		}
+		if ( rideMeshInstance != 110 )
+		{
+			var ride = things.FindIndex( thing => thing.Item1 == 12 );
+			things[ride] = (12, (uint)SaveThingModel.Attraction, SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields
+			{
+				PositionX = 384, PositionY = 384, InfoId = (ushort)(matchingAttractionId ? 1100 : 1101), MeshInstance = rideMeshInstance, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, IngredientAmount = 80, Quality = 100, Chance = 30
 			} ));
 		}
 		if ( duplicateMatches )
@@ -240,7 +249,7 @@ public class OriginalCoasterSaveTests
 			rideSystem = rideSystem.Concat( RideSystemRecord( 1100, 1, 1, SaveObject.PlacedObjectKind, 3 ) ).ToArray();
 		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), grid, SaveTestPayloads.Things( things ) ), rideSystem,
 			coasters == null ? null : new Dictionary<SaveBlock, byte[]> { [SaveBlock.Coasters] = coasters } );
-		return OriginalParkImport.Import( payload, map );
+		return OriginalParkImport.Import( payload, map, coasterTrains );
 	}
 
 	[TestMethod]
@@ -311,7 +320,7 @@ public class OriginalCoasterSaveTests
 		var park = Park( body.ToArray() );
 		Assert.AreEqual( 1u, park.CoasterBlock!.Count );
 		var error = Assert.ThrowsException<InvalidDataException>( park.RequireSupportedCoasterRuntime );
-		StringAssert.Contains( error.Message, "controller-to-station identity" );
+		StringAssert.Contains( error.Message, "no runtime track, controller or train is rebuilt" );
 		// No catalog lookup or object mutation may precede the unsupported-data refusal.
 		var objects = new ParkObjects( null!, new SandboxParkGrid() );
 		Assert.ThrowsException<InvalidDataException>( () => objects.ImportOriginal( park ) );
@@ -406,14 +415,14 @@ public class OriginalCoasterSaveTests
 		Assert.AreEqual( 0, coaster.AuxiliaryOrdinals.Length );
 		var section = coaster.Sections.Single();
 		Assert.AreEqual( 0x280u, section.Flags );
-		Assert.AreEqual( 37u, section.Field112 );
+		Assert.AreEqual( 37u, section.MeshInstanceId );
 		Assert.AreEqual( (65, 67), (section.CellX, section.CellY) );
 		Assert.AreEqual( 0, section.StackOrdinal );
 		Assert.AreEqual( 0.05555984750390053f, section.HeightParameter );
 		Assert.AreEqual( 0f, section.Bank );
-		Assert.AreEqual( -0.06808479130268097f, section.Field220 );
-		Assert.AreEqual( 1.5707963705062866f, section.Field224 );
-		Assert.AreEqual( 0f, section.Field248 );
+		Assert.AreEqual( -0.06808479130268097f, section.Incline );
+		Assert.AreEqual( 1.5707963705062866f, section.Yaw );
+		Assert.AreEqual( 0f, section.LoopRotate );
 		Assert.AreEqual( 0, section.Links.Length );
 		// The pylon's cell carries its own 1×1 record in the save's object list (Info.Id 1181 in this park).
 		Assert.AreEqual( 1140, coaster.Trains.Length );
@@ -435,5 +444,149 @@ public class OriginalCoasterSaveTests
 				pylonHeaders++;
 		Assert.AreEqual( 1, pylonHeaders );
 		Assert.IsTrue( objects.Any( record => record.InfoId == 1180 && record.Width == 6 && record.Height == 6 ) );
+	}
+
+	/// <summary>One train slot record (27 bytes) in the saver's order (0x43783B).</summary>
+	private static Body Train( Body body, uint flags = 0x20, byte cars = 2, float position = 12.5f, float speed = 5f, uint word38 = 7, uint word64 = 8, uint word68 = 9, ushort riders = 3 )
+	{
+		return body.U32( flags ).U8( cars ).U32( BitConverter.SingleToUInt32Bits( position ) ).U32( BitConverter.SingleToUInt32Bits( speed ) )
+			.U32( word38 ).U32( word64 ).U32( word68 ).U16( riders );
+	}
+
+	/// <summary>One car record (11 bytes, 0x4378A5) and its two counted lists.</summary>
+	private static Body Car( Body body, uint flags, uint mesh, byte byte44, uint[] lap, uint[] station )
+	{
+		body.U32( flags ).U8( (byte)lap.Length ).U8( (byte)station.Length ).U8( byte44 ).U32( mesh );
+		foreach ( var guest in lap.Concat( station ) )
+			body.U32( guest );
+		return body;
+	}
+
+	/// <summary>A coaster of <paramref name="station"/> with no section and the given train slots of two cars.</summary>
+	private static Body Coaster( Body body, ushort station, int trains, uint firstGuest )
+	{
+		Header( body, controller16: station, sections: 0 ).U32( 0 );
+		for ( var slot = 0; slot < trains; slot++ )
+		{
+			Train( body, cars: 2, position: 10f + slot, riders: (ushort)(slot + 1) );
+			Car( body, 1, (uint)(200 + slot * 2), 4, new[] { firstGuest + (uint)slot }, new uint[] { 50, 51 } );
+			Car( body, 0, (uint)(201 + slot * 2), 0, Array.Empty<uint>(), Array.Empty<uint>() );
+		}
+		return body;
+	}
+
+	[TestMethod]
+	public void TheTrainPayloadIsDecodedWithTheTypesTrainAndCarCounts()
+	{
+		var body = Coaster( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), 4, trains: 2, firstGuest: 700 );
+		var block = Parse( body.ToArray(), trainLayouts: station => station == 4 ? new SaveCoasterTrainLayout( 2, 2 ) : null );
+		var coaster = block.Coasters.Single();
+		Assert.AreEqual( 2, coaster.TrainSlots!.Count );
+		var first = coaster.TrainSlots[0];
+		Assert.AreEqual( (0x20u, (byte)2, 10f, 5f, (ushort)1), (first.Flags, first.CarCount, first.Position, first.Speed, first.Riders) );
+		Assert.AreEqual( (7u, 8u, 9u), (first.Word38, first.Word64, first.Word68) );
+		Assert.AreEqual( 2, first.Cars.Count );
+		Assert.AreEqual( (1u, (byte)4, 200u), (first.Cars[0].Flags, first.Cars[0].Car44, first.Cars[0].MeshInstanceId) );
+		CollectionAssert.AreEqual( new uint[] { 700 }, first.Cars[0].HeadsA );
+		CollectionAssert.AreEqual( new uint[] { 50, 51 }, first.Cars[0].HeadsB );
+		Assert.AreEqual( 0, first.Cars[1].HeadsA.Length );
+		Assert.AreEqual( 11f, coaster.TrainSlots[1].Position );
+		Assert.AreEqual( (ushort)2, coaster.TrainSlots[1].Riders );
+		CollectionAssert.AreEqual( new uint[] { 701 }, coaster.TrainSlots[1].Cars[0].HeadsA );
+		// The decoded slots take exactly the payload bytes and the offsets point at their records.
+		Assert.AreEqual( coaster.Trains.Length, coaster.TrainSlots.Sum( slot => slot.Bytes ) );
+		Assert.AreEqual( coaster.TrainsOffset, first.Offset );
+		Assert.AreEqual( first.Offset + SaveCoasterTrain.RecordBytes + first.Cars.Sum( car => car.Bytes ), coaster.TrainSlots[1].Offset );
+		Assert.AreEqual( SaveCoasterCar.RecordBytes + 4 * 3, first.Cars[0].Bytes );
+	}
+
+	[TestMethod]
+	public void SeveralCoastersReadWhenEveryTypeLayoutIsKnown()
+	{
+		var body = new Body().U32( 2 ).U32( 3 ).U32( 4 ).U32( 5 );
+		Coaster( body, 4, trains: 2, firstGuest: 700 );
+		Coaster( body, 9, trains: 1, firstGuest: 800 );
+		var layouts = new Dictionary<ushort, SaveCoasterTrainLayout> { [4] = new( 2, 2 ), [9] = new( 1, 2 ) };
+		var block = Parse( body.ToArray(), trainLayouts: station => layouts.TryGetValue( station, out var layout ) ? layout : null );
+		Assert.AreEqual( 2u, block.Count );
+		Assert.AreEqual( (4, 9), (block.Coasters[0].Controller16 + 0, block.Coasters[1].Controller16 + 0) );
+		Assert.AreEqual( 2, block.Coasters[0].TrainSlots!.Count );
+		Assert.AreEqual( 1, block.Coasters[1].TrainSlots!.Count );
+		Assert.AreEqual( 800u, block.Coasters[1].TrainSlots![0].Cars[0].HeadsA.Single() );
+		Assert.AreEqual( block.Coasters[0].TrainsOffset + block.Coasters[0].Trains.Length + SaveCoaster.HeaderBytes + 4, block.Coasters[1].TrainsOffset );
+		// Without the layouts only a single coaster reads.
+		var error = Assert.ThrowsException<InvalidDataException>( () => Parse( body.ToArray() ) );
+		StringAssert.Contains( error.Message, "needs the coaster type's train and car counts" );
+		// A coaster whose type is unknown stops the read at it, unless it is the last one, which keeps the rest of the block raw.
+		Assert.ThrowsException<InvalidDataException>( () => Parse( body.ToArray(), trainLayouts: station => station == 9 ? new SaveCoasterTrainLayout( 1, 2 ) : null ) );
+		var lastRaw = Parse( body.ToArray(), trainLayouts: station => station == 4 ? new SaveCoasterTrainLayout( 2, 2 ) : null );
+		Assert.IsNotNull( lastRaw.Coasters[0].TrainSlots );
+		Assert.IsNull( lastRaw.Coasters[1].TrainSlots );
+		Assert.AreEqual( 27 + (11 + 4 * 3) + 11, lastRaw.Coasters[1].Trains.Length );
+	}
+
+	[TestMethod]
+	public void ATrainLayoutThatDoesNotMatchTheSaveIsRefused()
+	{
+		var body = Coaster( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), 4, trains: 2, firstGuest: 700 ).ToArray();
+		var shorter = Assert.ThrowsException<InvalidDataException>( () => Parse( body, trainLayouts: _ => new SaveCoasterTrainLayout( 1, 2 ) ) );
+		StringAssert.Contains( shorter.Message, "do not match the save" );
+		var longer = Assert.ThrowsException<InvalidDataException>( () => Parse( body, trainLayouts: _ => new SaveCoasterTrainLayout( 3, 2 ) ) );
+		StringAssert.Contains( longer.Message, "truncated" );
+		Assert.ThrowsException<InvalidDataException>( () => Parse( body, trainLayouts: _ => new SaveCoasterTrainLayout( 2, SaveCoasterTrainLayout.MaximumCarsPerTrain + 1 ) ) );
+		Assert.ThrowsException<InvalidDataException>( () => Parse( body, trainLayouts: _ => new SaveCoasterTrainLayout( -1, 1 ) ) );
+		// A layout of no train slots leaves everything after the sections for the next header.
+		var none = Assert.ThrowsException<InvalidDataException>( () => Parse( body, trainLayouts: _ => new SaveCoasterTrainLayout( 0, 0 ) ) );
+		StringAssert.Contains( none.Message, "do not match the save" );
+	}
+
+	[TestMethod]
+	public void TheParkImportFindsACoastersTypeThroughItsStationsMeshInstance()
+	{
+		var body = Coaster( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), 321, trains: 2, firstGuest: 700 ).ToArray();
+		var asked = new List<int>();
+		var park = Park( body, coasterTrains: infoId => { asked.Add( infoId ); return new SaveCoasterTrainLayout( 2, 2 ); }, rideMeshInstance: 321 );
+		CollectionAssert.AreEqual( new[] { 1100 }, asked, "the station is the attraction whose mesh instance equals controller +0x10, and its Info.Id names the type" );
+		Assert.AreEqual( 2, park.CoasterBlock!.Coasters.Single().TrainSlots!.Count );
+		// No attraction with that mesh instance (or two) leaves the layout unknown: the single coaster's trains stay raw.
+		var unknown = Park( body, coasterTrains: _ => new SaveCoasterTrainLayout( 2, 2 ), rideMeshInstance: 322 );
+		Assert.IsNull( unknown.CoasterBlock!.Coasters.Single().TrainSlots );
+		Assert.AreEqual( body.Length - 16 - SaveCoaster.HeaderBytes - 4, unknown.CoasterBlock.Coasters.Single().Trains.Length );
+	}
+
+	[TestMethod]
+	public void SectionFlagsFollowTheSaversAndTheLoadersMaps()
+	{
+		// Saver 0x437615..0x4376E0: node flag -> wire bit.
+		var saver = new (uint Node, uint Wire)[]
+		{
+			(0x1, 0x1), (0x2, 0x2), (0x4, 0x4), (0x80, 0x8), (0x40, 0x10), (0x100, 0x20),
+			(0x10000, 0x40), (0x20000, 0x80), (0x40000, 0x100), (0x80000, 0x200), (0x200000, 0x400), (0x400000, 0x800),
+		};
+		foreach ( var (node, wire) in saver )
+			Assert.AreEqual( wire, SaveCoasterSectionFlags.ToWire( node ), $"0x{node:X}" );
+		// Loader 0x437EA6..0x437F58: wire bit -> node flag, except the three the node constructor derives again.
+		foreach ( var (node, wire) in saver )
+			Assert.AreEqual( (wire & (uint)SaveCoasterSectionFlags.NotRestored) != 0 ? 0u : node, SaveCoasterSectionFlags.ToNodeFlags( wire ), $"wire 0x{wire:X}" );
+		Assert.AreEqual( 0x8u | 0x10u | 0x20u, (uint)SaveCoasterSectionFlags.NotRestored );
+		Assert.AreEqual( 0x1u | 0x2 | 0x4 | 0x10000 | 0x20000 | 0x40000 | 0x80000 | 0x200000 | 0x400000, SaveCoasterSectionFlags.ToNodeFlags( 0xFFF ) );
+		// The section of a loop node says so, and a 34-byte record names its floats.
+		var loop = new SaveCoasterSection( 0, 0x10, 5, 1, 2, 0, 0.25f, 0f, 0f, 1f, 0.5f, Array.Empty<ushort>() );
+		Assert.IsTrue( loop.IsLoop );
+		Assert.AreEqual( SaveCoasterSectionWire.Loop, loop.Wire );
+	}
+
+	[TestMethod]
+	public void TheHeaderNamesTheStationTheStateAndTheTrackBits()
+	{
+		var body = Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), flags: 0x3, controller8: 0x24, controller16: 77, sections: 0 ).U32( 0 );
+		var coaster = Parse( body.ToArray() ).Coasters.Single();
+		Assert.AreEqual( (ushort)77, coaster.StationMeshInstanceId );
+		Assert.AreEqual( 4u, coaster.State, "the controller state's low nibble (4: open)" );
+		Assert.IsTrue( coaster.TrackComplete );
+		Assert.IsTrue( coaster.CircuitOpen );
+		var closed = Parse( Header( new Body().U32( 1 ).U32( 0 ).U32( 0 ).U32( 1 ), flags: 0x1, sections: 0 ).U32( 0 ).ToArray() ).Coasters.Single();
+		Assert.IsTrue( closed.TrackComplete );
+		Assert.IsFalse( closed.CircuitOpen );
 	}
 }

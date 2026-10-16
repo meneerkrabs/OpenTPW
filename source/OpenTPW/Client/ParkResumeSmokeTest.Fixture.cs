@@ -45,6 +45,8 @@ internal sealed partial class ParkResumeSmokeTest
 		var siteB = FindRideSite( entry, rotation: 180, near: spineEnd, requireOnScreen: false, out var doorB );
 		var rideB = level.PlaceObject( entry, siteB.X, siteB.Y, 180 );
 		Require( rideB != null && rideB!.Visitors.HasCells && rideB.Visitors.HasQueue, $"place the second {entry.DisplayName} copy at rotation 180" );
+		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
+		rideB.Open();
 		var bridge = rideB.Visitors;
 		Require( level.EnterQueueTool( bridge ), "start the queue tool for the second copy" );
 		var lineB = LineOut( doorB, QueueLength + 1 );
@@ -173,6 +175,8 @@ internal sealed partial class ParkResumeSmokeTest
 		level.UpdateWorldInput( false, false, sitePoint, viewport );
 		var placed = level.Objects.FindAt( entrance.X, entrance.Y );
 		Require( placed?.Entry == entry, $"a HUD park click places {entry.DisplayName}" );
+		Require( placed!.IsOpen == !entry.HasQueue, "a built ride with a queue starts closed (RIDES-015, 0x4DB712)" );
+		placed.Open();
 		Require( level.CellTool.IsActive && level.CellTool.Mode == CellToolMode.Queue && level.CellTool.Start == (entrance.OutsideX, entrance.OutsideY),
 			"placing the ride starts the queue tool at its entrance" );
 

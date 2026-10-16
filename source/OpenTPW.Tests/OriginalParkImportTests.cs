@@ -159,6 +159,19 @@ public class OriginalParkImportTests
 		Assert.IsFalse( objects[4].TryGetFootprint( out _, out _, out _, out _ ) );
 	}
 
+	[TestMethod]
+	public void ReadsTheSavedAdvisorClockFromTheSecondWordOfTheClockBlock()
+	{
+		// 0x402E00 writes the scaled clock (+0x4C) then the advisor clock (+0x74); the load (0x402E30 -> 0x402E80) sets the advisor clock from the second word.
+		var map = CreateMap( 3, 3, ( _, _ ) => 0 );
+		var clock = new byte[8];
+		BinaryPrimitives.WriteUInt32LittleEndian( clock, 111 );
+		BinaryPrimitives.WriteUInt32LittleEndian( clock.AsSpan( 4 ), 654_321 );
+		var payload = SaveTestPayloads.Payload( SaveTestPayloads.World( SaveTestPayloads.ParkVariables(), SaveTestPayloads.Grid( map ), SaveTestPayloads.Things( SaveTestPayloads.ParkThings() ) ),
+			blocks: new Dictionary<SaveBlock, byte[]> { [SaveBlock.Clock] = clock } );
+		Assert.AreEqual( 654_321u, OriginalParkImport.Import( payload, map ).SavedAdvisorClockMilliseconds );
+	}
+
 	private static void AssertFootprint( SaveObject item, int minX, int minY, int maxX, int maxY )
 	{
 		Assert.IsTrue( item.TryGetFootprint( out var actualMinX, out var actualMinY, out var actualMaxX, out var actualMaxY ) );
@@ -201,6 +214,13 @@ public class OriginalParkImportTests
 		var payload = ReadEasymodePayload();
 		var map = new MapFile( new MemoryStream( ReadArchiveMember( "levels/jungle/terrain.wad", "base.map" ) ) );
 		var park = OriginalParkImport.Import( payload, map );
+		// The control manager's table (0x4D3AA0) follows the 64 variable bytes: 50 controls, the researched byte at +0x10 set on 26 of them.
+		var controls = park.World.ObjectControls!;
+		Assert.AreEqual( park.World.VariablesOffset + SaveWorldVariables.Bytes, controls.Offset );
+		Assert.AreEqual( (50, 26, 1100), (controls.Controls.Count, controls.Controls.Count( control => control.Researched ), controls.PreviousSearchKey) );
+		Assert.AreEqual( new SaveObjectControl( 0, 1100, 500, 5, 0, true, 2, 1, 15 ), controls.Controls[0] );
+		Assert.IsFalse( controls.Find( 1150 )!.Value.Researched, "the ride the lab is researching" );
+		Assert.IsTrue( controls.Find( 1600 )!.Value.Researched, "a fixed item" );
 		Assert.AreEqual( 6765, park.Cells.StartOffset );
 		Assert.AreEqual( 1385521, park.Cells.EndOffset );
 		Assert.AreEqual( 78, park.PathCells.Count );

@@ -222,12 +222,14 @@ class Source(unittest.TestCase):
     def test_aw1_script_clock_versus_scheduler_clock_is_registered(self):
         # The original's waits and GETTIME read the shared scheduler clock (0x10e844 on the global r30); OpenTPW's
         # clock starts at VM creation. ANIM-F's u32 deadline makes the clock value observable (a WAITANIM_CH on a
-        # clip under 300 ms in the first 300 - ret ms of a script). Expect an APPROX tag naming it.
+        # clip under 300 ms in the first 300 - ret ms of a script). RIDES-044 is retired: the PC handler 0x55320A has
+        # the same arithmetic and no shipped script issues WAITANIM_CH, which the BIN label records.
         sources = self.read('source/OpenTPW/VM/RideVM.cs') + self.read('source/OpenTPW/VM/Handlers/Scheduling.cs') \
             + self.read('source/OpenTPW/VM/Handlers/Animation.cs')
-        tags = re.findall(r'\[APPROX:[A-Z]+-\d+\][^\n]*', sources)
-        self.assertTrue(any('scheduler' in tag or '0x10e844' in tag.lower() or '0x1010e844' in tag.lower()
-                            for tag in tags), tags)
+        tags = re.findall(r'\[(?:APPROX|BIN):[^\]]*\][^\n]*', sources)
+        self.assertTrue(any(('scheduler' in tag or '0x10e844' in tag.lower() or '0x1010e844' in tag.lower()
+                             or 'WAITANIM_CH clock' in tag) and 'RIDES-044 retired' in tag
+                            for tag in tags if 'WAITANIM_CH clock' in tag or 'scheduler' in tag), tags)
 
     def test_aw2_visitor_wrapper_forwards_the_animation_query(self):
         bridge = self.read('source/OpenTPW/World/Guests/RideVisitorBridge.cs')

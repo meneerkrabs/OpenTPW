@@ -174,12 +174,12 @@ or on the boarding bound below:
     another 30-turn window, and the guest is called first.
   - one evaluation for the update order.
 
-  Belly Bounce (6 cells since ORACLE-F): 6 × 9 + 2 × 15 = 84; 84 + 3 + 22 + 1 = **110 turns**.
-  One-cell queues (shop, toilet): 9 + 30 = 39; 39 + 3 + 22 + 1 = **65 turns**. Before
+  Belly Bounce (6 cells since ORACLE-F): 6 × 27 + 2 × 15 = 192; 192 + 3 + 22 + 1 = **218 turns** (110 while C was 9, before the original walk, 0x510100).
+  One-cell queues (shop, toilet): 27 + 30 = 57; 57 + 3 + 22 + 1 = **83 turns** (65 at C = 9). Before
   WALK-I the walk was N + 4 cells at OpenTPW's own 1 cell/s × 0.7 (`[APPROX:GATE-004]`,
   now retired): 84 and 50 turns with ORACLE-F's 6 cells, 194 and 50 with the 25-cell queue
   before it, 326 before S1. With 6 cells the derived bound is looser than the retired one
-  (110 against 84 turns, 65 against 50); the owner accepted that on October 10, 2026 on
+  (218 against 84 turns, 83 against 50); the owner accepted that on October 10, 2026 on
   the condition that it is registered (`[APPROX:GATE-006]`, at `HeadNotReadyBound`) and
   that each head is also held to its own walk:
 
@@ -227,8 +227,8 @@ DUR ≤ 30 s. Every term is read at run time:
 | w | **20** | the original's state-13 walk from slot 0 to the stand point, from its traced steering ([WALK-plan.md](reverse/WALK-plan.md) §9, `tools/ppc-analysis/lanes/walk/walk_evidence.py`): 12 with slot 0 at the entrance edge, 20 with the slot axis reversed; the link compass is not pinned, so the larger |
 | w₂ | **15** | the original's state-12 move-up from slots 1–3 to slot 0 (WALK-plan §9) |
 | H | 20 + 20 + 15 = **55** | H₀ + w + w₂ |
-| C | **9** per queue cell | one queue walk across k cells to a slot takes at most k × C + w₂ updates: the bounded enumeration of OpenTPW's port of the traced step (WALK-plan §15), `[APPROX:GATE-006]` |
-| J(p) | (N − cell of p) × 9 + 15 | the join walk from the join cell to the slot of position p: **69** turns at p = 0 for N = 6, 24 at p = 20 |
+| C | **27** per queue cell | one queue walk across k cells to a slot takes at most k × C + w₂ updates: the bounded enumeration of tp.exe's walk as OpenTPW ports it (whole-walk destination 0x510100; the worst walks are the short cornered ones around a neighbour, 3 crossings 93, 4 crossings 118; a long straight queue stays near 14 per cell), `[APPROX:GATE-006]` |
+| J(p) | (N − cell of p) × 27 + 15 | the join walk from the join cell to the slot of position p: **177** turns at p = 0 for N = 6, 42 at p = 20 |
 
 The walk terms rest on the speed floor at `0xffe38` (max speed ≥ 655 = 0.01 cell per
 update; the base speed `+192` is one of 60..140, so s ≥ 0.59 after 15 updates) and on
@@ -479,7 +479,7 @@ and after ORACLE-F they cast the BOUNCE slots to the old (guest, deadline) pairs
 (`Navigation.X/Y` with the velocity zeroed; the slots' deadline set with `with { Until = … }`).
 Every mutation that failed a row at c6c19ea still fails it. The pins that moved:
 - the baseline's W_max includes J(Qmax − 1) = 24 (WALK-I; the pin predated it);
-- the head bound is 110 / 65 / 65 turns (`[APPROX:GATE-006]`), and rule (a) holds each head
+- the head bound was 110 / 65 / 65 turns at that time (218 / 83 / 83 with C = 27 since the original walk) (`[APPROX:GATE-006]`), and rule (a) holds each head
   to its own remaining walk + 26: `head-held-250-turns`, `head-delayed-170-turns` and
   `head-delayed-60-turns` now fail rule (a) itself ("bound 26 from its own walk"); at WALK-I
   the first passed rule (a) (259 ≤ 281) and the last passed the row;

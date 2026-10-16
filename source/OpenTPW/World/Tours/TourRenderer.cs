@@ -8,7 +8,8 @@ namespace OpenTPW;
 /// clip members (<c>Bird?.md2</c>: C 0, L 3, S 4, M 5, E 6, B 9, R 10), and its riders hang from the mesh's head dummies like the go-karts' (<see cref="CollectHeads"/>).
 /// </summary>
 // [BIN:TPW-EXE:0x0055AA80 car animation] a changed (animation, channel, loops) triggers the car instance's clip through 0x004732A0(instance, animation, 0, loops, 1.0, 0); the instance is the ride's supplemental mesh 0 created by 0x00463060 (0x0055AA07), whose clips are the mesh's own letter members (the loader 0x461F10)
-// [APPROX:TOUR-008] no shadow is drawn under the cars: whether the original draws one is not read (the car instance is created with flags 0x101 by 0x00463060 at 0x0055AA07, and the draw 0x0055CE60 places only the instance and the emitter); the pose uses exact sines where the original reads its angle table
+// [BIN:TPW-EXE:0x0055CE60 car pose] the pose angles go through the engine's rotation builder 0x0046F6F0, which reads its sines from a 4096-entry table (OriginalSineTable, TourPose.Rotation)
+// [APPROX:TOUR-008] no shadow is drawn under the cars: the original's car draw 0x0055CE60 places only the instance and its emitter (it calls the node lookup, the matrix builder and the emitter move 0x0051FE30), the MESHSHADOW option's flag (bit 0x200 of 0x0079D86C, set at 0x0044DA8A) has no reader (none of the 26 instruction references to that word tests bit 0x200), the car instance is created with the generic flags 0x101 (0x00463060, a dynamic vertex buffer) and the instance's vertex writer 0x00580530 (texture coordinates, environment mapping and the vertex copy; callees 0x00561BC0, 0x00562ED0, 0x005630B0, 0x00565E70, 0x00575F90, 0x005812F0..0x00581410) holds no shadow code — evidence needed: a shadow pass in the draw that consumes those vertices (the batcher 0x00581DB0)
 public sealed class TourRenderer : IDisposable
 {
 	private const string TextureArrayName = "Color";

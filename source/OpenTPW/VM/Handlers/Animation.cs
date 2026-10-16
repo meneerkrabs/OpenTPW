@@ -83,7 +83,7 @@ public static partial class OpcodeHandlers
 			vm.Wait4AnimDeadline = vm.TimeMilliseconds + RideAnimationTiming.TriggerDelay( adjusted, vm.ScriptSpeed );
 		}
 
-		[OpcodeHandler( Opcode.WAITANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline" )]
+		[OpcodeHandler( Opcode.WAITANIM_CH, RideOpcodeStatus.Hooked, "STP-PPC 0xb0268, PC 0x55320A (same arithmetic): as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline" )]
 		public static void WaitAnimChannel( RideVM vm, Operand animation, Operand variant, Operand channel )
 		{
 			var wait = RideAnimationTiming.WaitAnimChannelDelay( Trigger( vm, Opcode.WAITANIM_CH, new[] { animation, variant, channel } ) );

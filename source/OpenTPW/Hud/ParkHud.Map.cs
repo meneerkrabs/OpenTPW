@@ -85,6 +85,7 @@ public sealed partial class ParkHud
 
 	public void PanMap( int x, int y )
 	{
+		// [APPROX:UI-103] the original's map view also scrolls on every drawn frame while the pointer is in the outer 1 per cent of the canvas, by (pointer - 0.99) x 250 or (0.01 - pointer) x 250 map units (0x5f1130, message 0x1e); not built
 		// [BIN:TPW-EXE:0x5f35b0 map pan] the pan buttons and arrow keys move the view centre by one map unit (cell) whatever the zoom,
 		// clamped to 0..dimension-1.
 		var (width, height) = MapDimensions();

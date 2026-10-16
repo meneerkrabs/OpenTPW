@@ -8,20 +8,6 @@ namespace OpenTPW;
 /// </summary>
 public static class ObjectAccessCells
 {
-	/// <summary>The cells the build check has to validate beyond the footprint: <c>Object</c> cells by the object rule (type 4, 0x204), <c>Path</c> cells by the path rule (type 1, 0x201).</summary>
-	// [BIN:TPW-EXE:0x0052977F access cell validation] with the queue option set the entrance's outside cell is validated as an object cell (op 0x204, 0x5297A9: empty ground, a path cell without NoModify and an object of lower overwrite priority pass) and the exit's outside cell as a path cell (op 0x201, 0x529A2F: empty ground and any path cell pass); without it the entrance's outside cell is validated as a path cell (0x5298B9) and the exit has none; a cell off the map refuses the placement (0x529744, 0x5299E2)
-	public static (IReadOnlyList<(int X, int Y)> Object, IReadOnlyList<(int X, int Y)> Path) CellsToCheck( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
-	{
-		var objectRule = new List<(int, int)>();
-		var pathRule = new List<(int, int)>();
-		var (entrance, exit) = Find( ObjectFootprint.GetAccessPoints( entry.Shape, anchorX, anchorY, rotation ) );
-		if ( entrance is { } enter )
-			( entry.HasQueue ? objectRule : pathRule ).Add( (enter.OutsideX, enter.OutsideY) );
-		if ( exit is { } leave && entry.HasQueue )
-			pathRule.Add( (leave.OutsideX, leave.OutsideY) );
-		return (objectRule, pathRule);
-	}
-
 	/// <summary>The last entrance and the last exit of a shape's access points: the placement's loop over the footprint keeps the last it meets.</summary>
 	private static (ObjectAccessPoint? Entrance, ObjectAccessPoint? Exit) Find( IEnumerable<ObjectAccessPoint> points )
 	{

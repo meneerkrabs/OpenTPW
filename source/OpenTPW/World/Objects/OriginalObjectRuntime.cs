@@ -63,7 +63,7 @@ public sealed partial class OriginalObjectRuntime
 			throw new InvalidDataException( $"{entry.ModelPath} is not a geometry model." );
 		Visitors.Heads = RideHeadSpace.Create( Model, world.NextWorldDraw );
 		// Fixed items keep their last vertex pose when a clip ends (ObjectAnimator.UpdateVertices).
-		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem );
+		Animator = new ObjectAnimator( Model, keepsPoseOnClipChange: entry.IsFixedItem, holdsLastFrameAtClipEnd: ObjectAnimations.HasOnlyBaseClips( entry.Animations ) );
 		effects = new OriginalObjectEffects( this );
 		if ( entry.ScriptPath != null )
 		{
@@ -94,9 +94,12 @@ public sealed partial class OriginalObjectRuntime
 			// the queue's own test at 0x00500612 sends queued guests away only for a coaster or a kart ride (track type 1), not a water ride
 			Visitors.Attach( Script, () => !stopped && IsOpen, () => (Coaster?.AcceptsGuests ?? true) && (Bump?.IsTrackValid ?? true),
 				() => !(Coaster?.AcceptsGuests ?? true) || Bump is { IsWater: false, IsTrackValid: false } );
-			// [APPROX:TOUR-007] a tour ride's riders take one second to walk off after WALKOFF; the original takes ftol(the distance between the walker's two slot nodes) x 100 ms (100 ms for 0, 0x005571A0) and OpenTPW's WALKON keeps no walk nodes (the walk owner supplies them); a walker that completes at once makes the unload loops of the Star and Tweety Tours scripts end after one rider
+			// [BIN:TPW-EXE:0x005571A0 WALKOFF] the walk takes ftol(the distance between the walker's two slot nodes) x 100 ms (100 ms for 0): the slot's start node (u3, class 0x800, or 0x80 for the head action 4) and end node (u4, class 0x800) are looked up in the ride model (0x0044B220: the first dummy whose class mask matches and whose number equals) and measured at the time of the WALKOFF (0x00556B90 reads the live node); the Star and Tweety Tours slots span 10 model units (1000 ms)
 			if ( UsesTour )
+			{
 				Visitors.WalkOffMilliseconds = 1000;
+				Visitors.WalkNodeDistance = WalkNodeDistance;
+			}
 		}
 	}
 
@@ -116,6 +119,34 @@ public sealed partial class OriginalObjectRuntime
 		if ( max < value )
 			return max & 0xFF;
 		return value;
+	}
+
+	/// <summary>
+	/// The distance in model units between a WALKON slot's two nodes at the current pose: the start node of class 0x80 (the head action 4) or 0x800 and the end node of class 0x800, each the first
+	/// dummy of the model whose class mask matches and whose number equals (0x0044B220); null when either is missing.
+	/// </summary>
+	internal float? WalkNodeDistance( int action, int fromNumber, int toNumber )
+	{
+		var from = FindDummyNode( action == 4 ? 0x80 : 0x800, fromNumber );
+		var to = FindDummyNode( 0x800, toNumber );
+		if ( from == null || to == null )
+			return null;
+		var transforms = Animator.NodeTransforms;
+		return System.Numerics.Vector3.Distance( transforms[from.Value].Translation, transforms[to.Value].Translation );
+	}
+
+	private int? FindDummyNode( int mask, int number )
+	{
+		for ( var index = 0; index < Model.DummyAttributes.Count; index++ )
+		{
+			var attribute = Model.DummyAttributes[index];
+			if ( (attribute.Type & mask) != 0 && attribute.Value == number )
+			{
+				var node = Model.Counts.Unknown46 + index;
+				return node < Animator.NodeTransforms.Count ? node : null;
+			}
+		}
+		return null;
 	}
 
 	public ObjectCatalogEntry Entry { get; }
@@ -221,7 +252,7 @@ public sealed partial class OriginalObjectRuntime
 		Tour?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
-		// [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting
+		// [EXT:ride-cycle-counter] CompletedCycles counts VAR_RUNNING 1 → 0 edges as OpenTPW's own diagnostic counter: nothing in the original counts ride cycles (it only reads VAR_RUNNING as a level), so there is no original behaviour to match
 		if ( wasRunning && !running )
 			CompletedCycles++;
 		wasRunning = running;
@@ -733,7 +764,9 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			// [BIN:TPW-EXE:0x5562bd REPAIREFFECT] the type's repair particle effect is switched before the sounds (0x556DE0)
 			ride.SetRepairParticle( show != 0 );
 			{
-				var voices = GameAudio.PlayRepairEffect( show, OriginalObjectRuntime.WholeUnits( ride.ReadEventOrigin() ) );
+				// [BIN:TPW-EXE:0x55637a repair band] the band is the script's variable slot 5 (a script with fewer variables has none here, so it stays silent)
+				var band = call.VM.Variables.Length > 5 ? call.VM.Variables[5] : 0;
+				var voices = GameAudio.PlayRepairEffect( show, OriginalObjectRuntime.WholeUnits( ride.ReadEventOrigin() ), band );
 				ownedEventLoops.RemoveAll( loop => loop.IsFinished );
 				if ( voices.First is { Loops: true } ) ownedEventLoops.Add( voices.First );
 				if ( voices.Second is { Loops: true } ) ownedEventLoops.Add( voices.Second );

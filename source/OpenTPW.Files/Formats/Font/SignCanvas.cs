@@ -66,7 +66,7 @@ public static class SignCanvas
 				diagnostics?.Add( $"Sign slot {index}: {slot.FontFileName} has no glyph for {string.Join( ", ", missing.Select( code => $"U+{code:X4}" ) )}; drawn as .notdef." );
 			// [DATA:*.sgn:LOGFONT lfHeight] em height; [DATA:*.sgn:slot offset] cell top (TA_TOP reading is inferred from the values).
 			// [BIN:TPW-EXE:0x005EAB70 sign text] tp.exe imports no TextOut, DrawText or ExtTextOut; the sign text goes through Uniscribe (ScriptStringAnalyse with flag 0x80, ScriptStringGetLogicalWidths, the percent scaling, a second ScriptStringAnalyse with the game's advance array 0xF85F00, ScriptStringOut), and no kerning API is called
-			// [APPROX:COMPAT-006] no pair kerning on signs, as the original calls no kerning API — evidence needed: whether usp10's natural widths (ScriptStringGetLogicalWidths) already include kerning
+			// [APPROX:COMPAT-006] no pair kerning on signs, as the original calls no kerning API; every shipped font has only the legacy kern table (464 to 12,657 pairs) and no GPOS or GSUB table — evidence needed: whether the classic Uniscribe path (ScriptShape and ScriptPlace behind ScriptStringAnalyse, whose natural widths ScriptStringGetLogicalWidths returns) applies a legacy kern table; usp10.dll is not among the binaries in scope
 			// [DATA:*.sgn:LOGFONT lfWidth] the line's width, narrowed until it fits (0x100A9F9C); centred on the canvas (the original's x = 256 - extent / 2 on its 512-wide text DC)
 			var emPixels = Math.Max( 1, slot.EmHeightPixels );
 			var line = text.Trim();

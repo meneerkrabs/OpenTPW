@@ -73,9 +73,26 @@ decision). Bridge walkers carry an optional ready time (`WalkingOffReady`, absen
 a save from the 31 ms clock holds less than 31 ms and restores unchanged (the value is elapsed seconds, so the first advance runs it off). The `FreeSlots` and the full seat lists are trailing optional
 parts: a save without them restores with zero stale words. No schema version moved: the canonical digest still includes the tour module only while a controller exists.
 
+## Launch pad (TOUR-003 retired)
+
+TOUR 1 (`0x005542FE`) reads the pad node live (`0x0044B220`, class 0x800 number 99, then `0x004386D0`) and the instance angle `+0x10` (`0x00554385`). `+0x10` is the build angle the constructor stores in degrees (`0x004DB0CD`, handed over by the placement `0x00529E10`) and, for a saved ride, the save's `mAngle`, which the attraction reader (`0x004DB7D0`) loads straight into `+0x10`: the placement rotation is the angle either way. All four tour scripts run TOUR 1 before any clip is triggered (`WAITANIM 0 0` on an idle channel, then `TOUR 1`), so the live node is the model's rest pose; `TourAssetTests.TheLaunchPadIsReadBeforeAnyClipPlays` pins that. TOUR-003 retired.
+
+## Walk-off time (TOUR-007 retired)
+
+WALKON (`0x00556F40`) stores its walker's slot in the ride's walk table: the operands in order are the visitor, nodes u1 and u2 (the walk on), nodes u3 and u4 and the walk action. WALKOFF
+(`0x005571A0`) finds the slot by visitor and takes `ftol(the distance between node u3 and node u4) x 100` ms (100 ms for 0) before WALKGET hands the walker out; u3 is the first dummy of class 0x800
+whose number matches (class 0x80 for the head action 4), u4 one of class 0x800 (`0x0044B220`), both read live (`0x00556B90`). `RideVisitorBridge` keeps the slot per rider (`WalkSlots`, an optional
+saved part) and the ride runtime measures the model's dummies (`OriginalObjectRuntime.WalkNodeDistance`). The Star and Tweety Tours' slots lie 10 model units apart (the Cosmic Cruiser's
+10.03, the Tweety Tours' exactly 10), so both ride 1000 ms, as before (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`). TOUR-007 retired. WALKON's own walk-on
+time (`ftol(distance between u1 and u2) x 100`, 0x00556F40) and the beam effect of action 2 at WALKOFF (`0x00521E60` with type 0x13, `0x005572EB`) are not modelled: riders board at once (TOUR-011).
+
+## Pose sines (TOUR-008 narrowed)
+
+The rotation builder behind the car pose (`0x0046F6F0`) reads sine and cosine from a 4096-entry table filled at start (`0x004708D0`: `float(fsin(i / 4096 x 2 pi))`, index `round(angle x 4096 / 2 pi) & 4095`, a cosine the sine of the angle plus a quarter turn). `OriginalSineTable` is that table and `TourPose.Rotation` turns the matrix with it; the quantisation is up to 7.7e-4 on a sine. Only the shadow question stays under TOUR-008.
+
 ## Not done
 
-A shadow under the cars and the angle table's sines (TOUR-008: whether the original draws a shadow is not read), the pad's live-instance read and an imported ride's saved rotation (TOUR-003; for a built ride the instance angle +0x10 is the build angle, `0x4DB0CD`), the walk-off duration (TOUR-007), the mesh-derived and second-layer-owned ground (TOUR-005); see the register.
+A shadow under the cars (TOUR-008: the car draw and the MESHSHADOW flag show none, the generic instance draw was not read for one), the mesh-derived and second-layer-owned ground (TOUR-005); see the register.
 
 ## Drawing
 
@@ -120,17 +137,16 @@ object's height (`+0x44` of its instance matrix). The table index is `width x ro
 turned by the instance rotation (0, 90, 180, 270 swap and reflect the two offsets, the `+10` terms being a cell's width). `ObjectHeightMaps` reads `<mesh>.hmp` of the catalogue entry and does the same
 from OpenTPW's placement: the instance position is the model-to-engine translation, the rotation the placement's. All 274 catalogue objects ship their map and every footprint cell of every one of
 them lies inside it at all four rotations (`TourAssetTests`, `TourRegisterRoundTests.TheMapIndexFollowsThePlacementsRotation`), which fixes the orientation. The object route is matched (the footprint cells
-are the typed cells of one owner word). Still terrain: cells with a second-layer mesh instance (a track piece of a kart or water ride, a park fence post), whose map and height the original reads, and objects whose map the original rebuilds from the mesh (`0x00451880`). RIDES-014's base height stays the footprint mean.
+are the typed cells of one owner word). Still terrain: cells with a second-layer mesh instance (a track piece of a kart or water ride, a park fence post), whose map and height the original reads, and objects whose map the original rebuilds from the mesh (`0x00451880`). The object's base height is RIDES-014's vertex midpoint.
 
 ## Register changes (October 15 round)
 
 - Retired: TOUR-001 (the tick is 62 ms; the wall-clock catch-up, its 2 s clamp and the parity phase against the script loop are a determinism decision, `[EXT:tour-fixed-step]`), TOUR-009 (stale slot words kept and saved) and
   TOUR-010 (the Ready override on closing is gone, see Q3).
 - Reclassified: TOUR-006 is `[EXT:legacy-tour-save]`.
-- Narrowed: TOUR-002 (the original drops thrown-off riders: the script never releases them, so **thrown-off riders inflate the ride's rider count**, VAR_ONRIDE, for ever; OpenTPW hands them out through TOUR 4
-  and lowers it; the guest-side consequence of a boarded guest nobody releases is the guest owner's), TOUR-003 (formula verified, only the rest-pose read and the rotation identity remain), TOUR-004 (all
-  triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-007 (the walk-off duration is `ftol(distance between the walker's two slot nodes) x 100` ms, 100 ms for 0, `0x005571A0`;
-  OpenTPW's WALKON keeps no walk nodes, so this stays at 1 s until the walk owner supplies them: **note for the walk owner**, evidence needed: the nodes a WALKON slot holds when WALKOFF runs), TOUR-008 (animations and
+- Reclassified: TOUR-002 is `[EXT:tour-thrown-riders-released]` (formerly `APPROX:TOUR-002`: riders a severe breakdown threw off are handed out through TOUR 4, which lowers VAR_ONRIDE; the original's loop in `0x0055DA70` discards the id `0x0055D720` returns, so the script never releases them and **thrown-off riders inflate the ride's rider count**, VAR_ONRIDE, for ever; OpenTPW fixes that on purpose).
+- Narrowed: TOUR-004 (all
+  triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-008 (animations and
   shadow only).
 
 ## Verification

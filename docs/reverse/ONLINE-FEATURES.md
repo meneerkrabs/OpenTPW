@@ -40,18 +40,18 @@ S5 the TPW-SE roadmap).
 
 | Feature | Evidence | OpenTPW status |
 | --- | --- | --- |
-| The globe fills the screen; camera circles it, zoom toggles two radii, arrows/edges/right button turn it with damping | BIN tp.exe 0x005DC860/0x005DCFE0; DATA data:0x523f0 (worldlob panel) | Done (rates per tick are [APPROX:ONLINE-007]…010) |
+| The globe fills the screen; camera circles it, zoom toggles two radii, arrows/edges/right button turn it with damping | BIN tp.exe 0x005DC860/0x005DCFE0; DATA data:0x523f0 (worldlob panel) | Done (start view, steering mode and pitch limit as tp.exe; per-frame timing [APPROX:ONLINE-007], steering increments [APPROX:ONLINE-009], move history [APPROX:ONLINE-012]) |
 | Cities as pins, taller with more parks; Bullfrog pin; hover shows name and "Parks: n" | BIN tp.exe 0x005DC3E0; UITEXT 461; S4 | Done; city list [EXT:ONLINE-059] |
 | Click a city → its lobby (sets the selected city for the top-10 request) | BIN tp.exe 0x005DD530, 0x005E23F0 | Done |
-| Five chat satellites around the globe, each showing the player count of its chat park; click to enter the park | DATA data:0x523f0 (i_sat 90120-90124); STP-PPC 0x1b8808 ("ONLINE CHATELLITES" connector, RoomInfo query, "%d" count); MAN p. 63; S5 | Done — the server names the five chat parks, the globe shows each count ([APPROX:ONLINE-018] count placement) and enters the room on click |
-| Publish globe: "Choose the city to publish in" over the globe; click a city opens the publish form | DATA UITEXT 419; STP-PPC 0x1018CE80 | Done ([APPROX:ONLINE-017] panel reuse) |
+| Five chat satellites around the globe, each showing the player count of its chat park; click to enter the park | DATA data:0x523f0 (i_sat 90120-90124); STP-PPC 0x1b8808 ("ONLINE CHATELLITES" connector, RoomInfo query, "%d" count); MAN p. 63; S5 | Done — the server names the five chat parks, the globe shows each count centred in the satellite's text region (tp.exe 0x4C4FB0) and enters the room on click |
+| Publish globe: "Choose the city to publish in" over the globe; click a city opens the publish form | DATA UITEXT 419; STP-PPC 0x1018CE80 | Done (panel read: tp.exe 0x5DD910; [APPROX:ONLINE-017] where UITEXT 419 showed) |
 | Back to your own lobby from the online world | DATA data:0x523f0 b_bck2lob, help 431 | Done |
 
 ## City lobby
 
 | Feature | Evidence | OpenTPW status |
 | --- | --- | --- |
-| The city's top 10 parks as lobby islands (one per theme at slot positions), ranked | BIN tp.exe 0x005E23C0 → 0x005E27B0 → 0x005E3210; DATA data:0x50172 (citylob panel) | Done ([APPROX:ONLINE-016] each island takes its park's theme) |
+| The city's top 10 parks as lobby islands (one per theme at slot positions), ranked | BIN tp.exe 0x005E23C0 → 0x005E27B0 → 0x005E3210; DATA data:0x50172 (citylob panel) | Done (each island is its park's theme's island at its list position: 0x005E3210's slot argument is the running counter) |
 | Selected island's rank at the top, name at the bottom (item detail overlay) | STP-PPC 0x101834A0 labels 0x49D9/0x49DA | Done |
 | "Other Parks In <city>": the chart of the parks outside the top 10, five columns | DATA data:0x5137e; UITEXT 446, 292-297 | Done — original composition and columns |
 | Enter this park (download and visit); "Entering…" | DATA data:0x50172 b_entpark; UITEXT 463 | Done (read-only visit) |
@@ -69,7 +69,7 @@ S5 the TPW-SE roadmap).
 | Un-publishing is separate from publishing (a publish removes nothing) | S5 | Done |
 | Every **visit** earns the park's owner **Platinum Tickets**, voting or not; tickets bought ride downloads | S2; MAN p. 62 | Done — the server counts one per recorded visit; Find Parks shows the player's total ([EXT:ONLINE-070]) |
 | Top-parks ranking is by votes | S2 | Done — lists and charts order by votes (then visits, then the earlier published) |
-| Swear words in park names shown as `****` | S2 | Done — the server masks names with its word filter ([APPROX:ONLINE-023]; the list itself is the operator's `swears.txt`, [APPROX:ONLINE-001]) |
+| Swear words in park names shown as `****` | S2 | Done — the server masks names with its word filter, where the original client masked at display (tp.exe 0x5D3230 from the park-name labels) ([APPROX:ONLINE-023]; the list itself is the operator's `swears.txt`, [APPROX:ONLINE-001]) |
 | Votes limited per day; one vote per park per day | DATA CHAT_COMMANDS 131 | Done (`MaximumVotesPerDay`, per-park per-day) |
 | Visited-before / voted-for flags in the details | DATA UITEXT 280/281 | Done (in the park summary the list carries) |
 | Parks built with cheats cannot be published | DATA UITEXT 417 | Missing: OpenTPW has no cheat detection to drive it |
@@ -80,7 +80,7 @@ S5 the TPW-SE roadmap).
 | Feature | Evidence | OpenTPW status |
 | --- | --- | --- |
 | Chat parks joinable from any menu (the satellites); players present together, moving around the park; the server relays movement; teleport | S5; MAN pp. 63, 67-68 ("Left click to walk to destination. Double click to teleport") | Done — movement is relayed to the room with its own rate limit; the view is a flat overhead map of markers [APPROX:ONLINE-019]; teleport is the same click (one speed, no obstacles decoded) |
-| Chat overlay: people-in-park list left with tabs, player buttons under it, message list and text entry at the bottom, action bar at the top | DATA data:0x50b2c (ids 0xc3123-0xc3128) and data:0x50d1a; MAN pp. 67-70 | Done — original composition; which action sat on which original button is not decoded [APPROX:ONLINE-021] |
+| Chat overlay: people-in-park list left with tabs, player buttons under it, message list and text entry at the bottom, action bar at the top | DATA data:0x50b2c (ids 0xc3123-0xc3128) and data:0x50d1a; MAN pp. 67-70 | Done — original composition; the original's buttons carried other actions (list: earmuffs, vote, 0x4A9380; the six-button table is a name popup) [APPROX:ONLINE-021] |
 | Say (default; "broadcast to people in your vicinity", shown "Dan: Hello") | MAN pp. 67-68; CHAT_COMMANDS words | Done — reaches the whole room; the hearing range has no positional effect [APPROX:ONLINE-005] |
 | Tell (private), reply, last | CHAT_COMMANDS; MAN | Done |
 | Shout / eshout; wshout / ushout to every park | CHAT_COMMANDS | Done |

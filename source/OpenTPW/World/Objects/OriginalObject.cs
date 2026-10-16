@@ -172,7 +172,8 @@ public class OriginalObject : Entity
 		if ( Entry.IsFixedItem )
 			return null;
 		var (minX, minY, maxX, maxY) = ObjectFootprint.GetBounds( Entry.Shape, Placement.X, Placement.Y, Placement.Rotation );
-		return new ParticleFootprint( FootprintMiddle(), maxX - minX + 1, maxY - minY + 1 );
+		var model = Runtime.Model;
+		return new ParticleFootprint( FootprintMiddle(), maxX - minX + 1, maxY - minY + 1, model.BoundsMax.Y - model.BoundsMin.Y );
 	}
 
 	public ObjectCatalogEntry Entry => Runtime.Entry;

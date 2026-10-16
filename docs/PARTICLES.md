@@ -153,17 +153,17 @@ the native pool, rule by rule. It needs no GPU, so tests build one directly, and
 pool and camera-facing quads rotated by the spin. The half-height is `size / 1024` original units for every particle
 (`[BIN:TPW-EXE:0x57C620]`: `(size << 1) * (1/1024) * 0.5`); only the width gets a factor, the frame record's float
 +8 for a sprite and `DAT_008BCBCC`, the display's height / width (`0x582EB0`), for an untextured quad in the original,
-which OpenTPW replaces with the frame's pixel aspect and 1 (`APPROX:PTCL-904`). Screen-space templates (byte +5) are drawn in clip
-space without the camera and without depth, after the world batches: the draw list maps their x and z to the screen
+which OpenTPW replaces with the frame's pixel aspect and 1 (`APPROX:PTCL-904`; the +8 is the frame's width / height, `0x588660`). Screen-space templates (byte +5) are drawn in clip
+space without the camera and without depth, in slot order with the world particles (one loop, `0x57C620`): the draw list maps their x and z to the screen
 (`0x51F01A`, `ParticleScreenSpace`, docs/LIPS.md "Screen effects"), the half-height is (size >> 6) / 2048 screen units and the
-quad turns in 1/256-turn steps (`0x591430`); OpenTPW's width factor there also takes the target's height / width (PTCL-904). Three batches, one per blend: source-alpha-over-one for flags
+quad turns in 1/256-turn steps (`0x591430`); OpenTPW's width factor there also takes the target's height / width (PTCL-904). Runs of one blend in the original's order: source-alpha-over-one for flags
 `0x2004`, one-plus-one for flags `0x4` (`MaterialFlags.OneOneBlend`), else the sprite's own alpha blend; the flags apply
 to untextured particles too, as in the original. The original submits one primitive per particle, slots 0..119 and
-newest particle first, each with its own state word; OpenTPW groups by blend instead, depth-tested without depth
+newest particle first, each with its own state word; OpenTPW keeps that order and merges neighbours of one blend into a draw, depth-tested without depth
 writes and without face culling. The original's state words (decoder `0x567620`) keep depth writes on unless flags
 `0x4000` add `0x800`, draw an untextured particle opaque (`0x1256`) when its alpha byte is 0 or >= 0xF0 and by alpha
 with an alpha test otherwise (`0x556`), and depth-sort the two triangles of a particle's own batch when the state lacks
-`0x1000`/`0x2000` (`0x565590`); the order across batches is not read (`APPROX:PTCL-905`). Emitters
+`0x1000`/`0x2000` (`0x565590`); `APPROX:PTCL-905`. Emitters
 outside the view are culled by their bounds. Vertex colour is packed into the normal slot (red, green, blue plus 256 x
 alpha as whole floats) so the existing vertex format and the web shader path need no integer attribute. The
 precompiled web shader is `content/shaders/web/particle.json` (`WebShaderTests`).
@@ -242,7 +242,7 @@ cell added to the far corner), at the object's base height, converted like every
 `(width * 512, (y1 - y0) * 256, depth * 512) >> 4` for the box, width and depth in original units (10 per cell), so the stars
 spread over the footprint; `ParticleSystem.SetVolumeExtent` replaces the extent after the creation burst, which ran with the
 template's. Repair keeps its template's volume. A fixed item has no footprint box and starts nothing in OpenTPW (the original's `0x559060` creates the effect anyway, at coordinates the box call leaves unset; `PTCL-908`), and the removal's mode in which the global at `+0x1da738` is 2 (no effect) is not modelled; headless hosts have no
-pool. The box height (record `+0x1C`/`+0x28`) is not traced and counts as zero (`PTCL-908`).
+pool; the vertical extent is the model box's height (record `+0x1C`/`+0x28`, which `0x451640` copies into the model header's bounds) times 256 (`0x558F53`-`0x558FAC`).
 
 Captured in the native jungle level (`--load-original-level jungle --debug-object-effect build|demolish --capture-camera 1,-38,7,-135
 --capture-world out.png --capture-frames 110 --capture-sequence 6,6`): building Belly Bounce shows green and yellow
@@ -260,11 +260,10 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
   animations 0 and 13 start), when it is drawn (the render node's per-frame callback `0x463030` -> `0x44E380` -> `0x473C70`
   -> `0x473E1B`) and from `0x42A6D6` and `0x438A53`, so it is about a render frame behind and stale while culled. What the two
   header and table bits mean and what the other two refreshes serve are not read.
-- `PTCL-904`: the quad's width factor: the frame record's float +8 is unread; `DAT_008BCBCC` is height / width (screen-space quads: the frame's aspect times the target's height / width).
-- `PTCL-905`: one batch per particle in the original against OpenTPW's three blend batches; the per-particle state
-  words are decoded (depth writes, opaque untextured particles), the order across batches is not read.
+- `PTCL-904`: the frame record's float +8 is the frame's width / height (`0x588660`) and `DAT_008BCBCC` the display's height / width; the extents are added in clip space, so a textured quad is wider on the screen by the display's width / height unless something rescales +8 (nothing found) and its world size depends on the original's 90 degree camera (OpenTPW: 55); a screen-space quad's width gets the target's height / width in OpenTPW and only the frame's aspect (1 untextured; height / width untextured) in the original.
+- `PTCL-905`: OpenTPW draws in the original's order (runs of one blend); the per-particle state words are decoded (depth writes, opaque untextured particles, alpha tests) but need an alpha test in the particle shader and depth-writing and opaque material variants.
 - `PTCL-906`: the pose conversion inverts OpenTPW's placement.
-- `PTCL-909`: screen-space particles are drawn in the world pass, after the world batches and without depth, so the HUD and the advisor's image draw over them; where the original submits the screen-space draw list (`0x51F01A`) against those layers is not read.
+- `PTCL-909`: screen-space particles are drawn in the world pass in slot order with the world particles and without depth, so the HUD and the advisor's image draw over them; the original draws them in the same loop (`0x57C620`, inside the scene view render `0x576A00`, before the weather), and which later view or callback draws the HUD windows and the advisor's model is not read.
 - `PTCL-908`: wired are EVENT 1/2, ADDOBJ and ADDOBJ_EXT 1/2 (`0x5520E8`: ADDOBJ with a control operand), their kept
   effects following the key node on every object pass (`0x55189D`: the node position truncated to whole units through
   `0x51FE30`, a type-2 effect turned through `0x51FD90`), a negative key at the footprint box middle (`0x556B90`/`0x466B70`),

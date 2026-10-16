@@ -95,6 +95,8 @@ public sealed class OriginalParkImport
 	/// Theme Park Inc viewer, whose coaster semantics are separate (no Theme Park Inc coaster chunk is inferred).
 	/// </summary>
 	public SaveCoasterBlock? CoasterBlock { get; }
+	/// <summary>The clock, vanilla-time, game-system, cheat, advisor-scoring, camera and UI-count blocks of a Theme Park World save, read for the import report; null for Theme Park Inc.</summary>
+	public SaveRuntimeBlocks? RuntimeBlocks { get; private init; }
 	/// <summary>Original TPW track sections joined to scene records and matching attraction things.
 	/// Missing or ambiguous matches stay visible; neither record index nor header words are guessed as station ids.</summary>
 	public IReadOnlyList<ImportedCoasterSection> CoasterSections { get; } = Array.Empty<ImportedCoasterSection>();
@@ -235,7 +237,10 @@ public sealed class OriginalParkImport
 		};
 		var coasters = SaveCoasterBlock.Parse( span, layout, map.CellCountX, map.CellCountY, trainLayouts );
 		return new OriginalParkImport( map, layout, world, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly(),
-			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters );
+			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters )
+		{
+			RuntimeBlocks = SaveRuntimeBlocks.Read( span, layout ),
+		};
 	}
 
 	/// <summary>

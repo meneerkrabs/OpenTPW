@@ -43,7 +43,7 @@ public static class CoasterCollision
 	/// before it. The last node starts no link.
 	/// </summary>
 	// [BIN:TPW-EXE:0x439ab0 intersection pass] a node marked 0x200000 (and not 0x10000) first drops its entries (0x43ad50), clears 0x600000, then tests its link against the links starting two nodes after it, and then those starting two nodes before it, with 0x439c40; the pass runs with the rounding mode set to truncate (0x439ac4), so every sine-table index below truncates
-	// [APPROX:COAST-004] a pass over the finished track stands in for the original's incremental passes; a node that drops out of another's overflowed list is marked for the next pass there and is not re-tested here (only nodes with more than 8 crossings are affected); the cut-end flag 0x10000 and the descriptor-equality skips (0x439c5f..0x439c81) have no case in OpenTPW's tracks; the x87 intermediates are carried in double
+	// [APPROX:COAST-004] a pass over the finished track stands in for the original's incremental passes; a node that drops out of another's overflowed list is marked for the next pass there and is not re-tested here (only nodes with more than 8 crossings are affected); the cut-end flag 0x10000 and the descriptor-equality skips (0x439c5f..0x439c81) have no case in OpenTPW's tracks; the x87 intermediates are carried in double; the count (+0xb0) feeds the section builder 0x43f4e0 (material variant 2 for a crossing link), the readers of the lists (+0xb4) are not traced
 	public static Result Run( IReadOnlyList<Node> nodes, IReadOnlyList<CoasterSample> samples, IReadOnlyList<(float X, float Y)>? points = null )
 	{
 		ArgumentNullException.ThrowIfNull( nodes );

@@ -56,7 +56,8 @@ public sealed class ParkResumeLoanContinuationTests
 		Assert.AreEqual( 24864L, restored.Balance, "early payoff withdraws 23 remaining instalments of 3651" );
 		Assert.AreEqual( -32451L, restored.Ledger.ProfitThisYear, "early payoff charges the whole-term interest share of 31428" );
 		Assert.AreEqual( 2, restored.Loans.Single().OfferIndex );
-		Assert.IsTrue( restored.AvailableLoans.Any( offer => offer.Index == 0 ) );
+		Assert.IsFalse( restored.Loans.Any( loan => loan.OfferIndex == 0 ), "the payoff clears the bought flag" );
+		Assert.IsFalse( restored.AvailableLoans.Any( offer => offer.Index == 0 ), "listed again only after a list build's credit test passes" );
 		SameEnvelope( "after early payoff" );
 
 		for ( var month = 14; month <= 24; month++ )
@@ -71,7 +72,8 @@ public sealed class ParkResumeLoanContinuationTests
 			SameEnvelope( $"after month {month}" );
 		}
 
-		Assert.IsTrue( restored.AvailableLoans.Any( offer => offer.Index == 2 ) );
+		Assert.IsFalse( restored.Loans.Any( loan => loan.OfferIndex == 2 ), "the last instalment clears the bought flag" );
+		Assert.AreEqual( economy.IsLoanAvailable( 2 ), restored.IsLoanAvailable( 2 ), "the stored credit test is part of the save" );
 		Assert.AreEqual( 153036L, restored.Ledger.History.Sum( month => month[LedgerCategory.LoanPayments] ),
 			"both loans repay their exact whole-term instalment totals" );
 		economy.AdvanceMonths( 1 );

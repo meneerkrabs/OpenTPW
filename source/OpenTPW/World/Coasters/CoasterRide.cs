@@ -249,9 +249,10 @@ public sealed class CoasterRide
 		if ( samples.Length == 0 || count < 2 || coordinates.Count < count )
 			return CoasterCarRig.PoseAt( samples, coordinate );
 		var c = StationCoordinate( coordinate );
-		int Next( int pair ) => pair == count - 1 ? 1 : pair + 1;
+		var closing = HermiteCoasterCurve.ClosingKnot( curveKnots );
+		int Next( int pair ) => pair == count - 1 ? closing : pair + 1;
 		float CoordinateOf( int pair, int next ) => next <= pair ? coordinates[next] + samples.Length : coordinates[next];
-		var a = Math.Clamp( samples[Math.Min( (int)c, samples.Length - 1 )].Section, 0, count - 1 );
+		var a = Math.Clamp( samples[Math.Min( (int)c, samples.Length - 1 )].Knot, 0, count - 1 );
 		var guard = 0;
 		while ( CoordinateOf( a, Next( a ) ) < c && guard++ < count )
 			a = Next( a );
@@ -301,14 +302,16 @@ public sealed class CoasterRide
 	private int RateTrack()
 	{
 		var nodes = Track.Nodes;
-		var knots = Track.BuildKnots( Site );
+		var pass = Track.BuildKnotPass( Site );
+		var knots = pass.Knots;
 		curveKnots = knots;
 		curveControls = HermiteCoasterCurve.Controls( knots, Definition.Curviness, closed: true );
 		var sampling = Curve.Sample( knots, Definition.Curviness );
 		samples = sampling.Samples;
 		Spacing = sampling.Spacing;
 		var tail = nodes.Count - 1;
-		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, tail, sampling.KnotCoordinates.Length > tail ? sampling.KnotCoordinates[tail] : null );
+		// The tail's coordinate is the end node's knot's, the last knot (ctl +0xa8, 0x441659).
+		var (result, winch) = CoasterRating.RatePass( Definition, samples, Spacing, SpeedCap, tail, sampling.KnotCoordinates.Length == knots.Length && knots.Length > 0 ? sampling.KnotCoordinates[^1] : null );
 		winchSections = winch;
 		for ( var index = 0; index < nodes.Count; index++ )
 		{
@@ -318,7 +321,7 @@ public sealed class CoasterRide
 		// Controller +264: the sections with both node flags 0x40 and 0x80 (CoasterRating.FinalFor; ORACLE F8).
 		var counted = CoasterRating.FinalFor( 0, 0, 0, 0, nodes.Select( node => (uint)node.Flags ), 0, 0, 0, 0 ).Sections;
 		Rating = result with { CountedSections = counted };
-		var collisions = CoasterCollision.Run( NodesForCollision( nodes, samples ), samples );
+		var collisions = CoasterCollision.Run( NodesForCollision( nodes, pass, sampling.KnotCoordinates, Definition ), samples );
 		IntersectionCount = collisions.Count;
 		CollisionLists = collisions.Lists;
 		// [BIN:TPW-EXE:0x43c72f braking start] ctl+0x134 = (n − 1) − v_last/spacing with n the sample count; the end node stands on the first station node, so the brake zone is the stretch just before the sample list's end, which is the start of the platform
@@ -326,32 +329,26 @@ public sealed class CoasterRide
 		// [BIN:TPW-EXE:0x43b750 station window] f8 = (1 − k)·A + k·(A + B)/2 and fc = (1 − k)·B + k·(A + B)/2 with k = definition +0x31c (fEntranceSizeInterval, copied unconditionally) and A, B the sample coordinates of the first and third station node ([[node+0x90]+4]+8): the first one's is 0, the third one's is where the sampler passed S2
 		KnotCoordinates = sampling.KnotCoordinates;
 		var windowStart = 0f;
-		var windowEnd = sampling.KnotCoordinates.Length > CoasterTrack.StationNodeCount - 1 ? sampling.KnotCoordinates[CoasterTrack.StationNodeCount - 1] : samples.Length;
+		var s2 = CoasterTrack.StationNodeCount - 1;
+		var windowEnd = nodes.Count > s2 && sampling.KnotCoordinates.Length > pass.FirstKnot[s2] ? sampling.KnotCoordinates[pass.FirstKnot[s2]] : samples.Length;
 		var k = Definition.EntranceSizeInterval;
 		var middle = (windowStart + windowEnd) * 0.5f;
 		StationWindow = ((1f - k) * windowStart + k * middle, (1f - k) * windowEnd + k * middle);
 		return result.Trains;
 	}
 
-	/// <summary>The nodes as the self-intersection pass sees them: the sample index of each knot and the radius of its pylon control.</summary>
+	/// <summary>The nodes as the self-intersection pass sees them: the sample index of each node and the radius of its pylon control.</summary>
 	// [BIN:STP-PPC:0x100457A0 node sample index] node +252 = the truncated sampler coordinate when the walk reaches the node: the last sample before its knot, or the sample on the knot when its t is 0 (0x43a060 reads it as the node's first sample)
-	private List<CoasterCollision.Node> NodesForCollision( IReadOnlyList<CoasterNode> nodes, IReadOnlyList<CoasterSample> samples )
+	// [BIN:TPW-EXE:0x44167f node sample index] the walk stores ftol of the reached knot's coordinate (knot +8) in node +0xfc when that knot is the node's table centre ([node +0x74] +0), or the node has no pylon table or carries 0x2000; the walk starts on the first node's first knot, so a first node whose centre is that knot keeps 0
+	private static List<CoasterCollision.Node> NodesForCollision( IReadOnlyList<CoasterNode> nodes, CoasterKnotPass pass, IReadOnlyList<float> coordinates, CoasterDefinition definition )
 	{
 		var result = new List<CoasterCollision.Node>( nodes.Count );
 		for ( var index = 0; index < nodes.Count; index++ )
 		{
-			var first = -1;
-			for ( var sample = 1; sample < samples.Count && index > 0; sample++ )
-			{
-				if ( samples[sample].Section == index )
-				{
-					first = sample;
-					break;
-				}
-			}
-			var at = index == 0 ? 0 : first < 0 ? (result.Count > 0 ? result[^1].SampleIndex : 0) : samples[first].T == 0 ? first : first - 1;
+			var knot = pass.CentreKnot[index];
+			var at = knot == 0 || knot >= coordinates.Count ? 0 : (int)coordinates[knot];
 			var node = nodes[index];
-			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : Definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless ) );
+			result.Add( new CoasterCollision.Node( at, node.IsPylonless ? null : definition.Pylon( node.LoopPylon ).CollisionPossibleRadius, node.IsPylonless ) );
 		}
 		return result;
 	}
@@ -1214,6 +1211,8 @@ public sealed class CoasterRide
 	internal void RestoreSnapshot( CoasterRideSaveData saved )
 	{
 		ArgumentNullException.ThrowIfNull( saved );
+		if ( saved.KnotPass is { } knotPass && knotPass != KnotPassVersion )
+			throw new InvalidDataException( $"Coaster '{Name}' was saved on knot pass {knotPass}; this version knows {KnotPassVersion}." );
 		if ( saved.State is { } checkedState && !Enum.IsDefined( (CoasterControllerState)checkedState ) )
 			throw new InvalidDataException( $"Coaster '{Name}' holds the controller state {checkedState}, which is not 1, 2, 4 or 8." );
 		var migrated = Track.RestoreSnapshot( saved.Track );
@@ -1242,8 +1241,10 @@ public sealed class CoasterRide
 		// A save of the older shape (no train flags, or the station of one node) was rated with the earlier pylon heights, minimum heights, end node flags
 		// and station, so the re-derived rating can place another number of trains or cars and the samples start elsewhere. Its trains are not kept: the new
 		// placement stands and every saved rider waits to leave (they are not lost). A save of the current shape must match exactly, or it is refused.
-		var olderShape = migrated || saved.Trains.Any( train => train.Flags is null );
-		var matches = !migrated && saved.Trains.Count == trains.Count
+		// A save from before the pylon tag knots stood its trains on a curve with one knot per node: where a pylon model gives the knots, the curve and the samples moved.
+		var olderKnots = saved.KnotPass is null && (Definition.StandardPylon.TagModel != null || (Definition.HasLoopPylon && Definition.Pylon( true ).TagModel != null));
+		var olderShape = migrated || olderKnots || saved.Trains.Any( train => train.Flags is null );
+		var matches = !migrated && !olderKnots && saved.Trains.Count == trains.Count
 			&& saved.Trains.Select( ( train, index ) => train.Cars.Count == trains[index].Cars.Count ).All( equal => equal );
 		if ( !matches && !olderShape )
 		{
@@ -1321,6 +1322,9 @@ public sealed class CoasterRide
 			train.LastBoardingCar = legacyBoarding ? train.CarLists.Length - 1 : 0;
 		}
 	}
+
+	/// <summary>The knot pass this version builds the curve on (2: a pylon with its model gives the knots of its posed track tags, <c>0x430ed0</c>); saves record it.</summary>
+	internal const int KnotPassVersion = 2;
 
 	/// <summary>The states of the stop-and-dispatch model saves made before the original's station rule hold: boarding at the station (0) and unloading (3); 1 ran and 2 waited before the station.</summary>
 	internal const int LegacyBoardingState = 0;

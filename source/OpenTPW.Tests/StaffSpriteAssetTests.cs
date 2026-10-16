@@ -56,7 +56,9 @@ public class StaffSpriteAssetTests
 				Assert.AreEqual( 8, animations[StaffSpriteRules.Walk.Slot].FramesPerDirection, $"{atlas.Name}: the 8-frame walk" );
 				Assert.IsTrue( atlas.Pixels.Where( ( value, index ) => index % 4 == 3 ).Any( value => value == 255 ), $"{atlas.Name} decodes to pixels" );
 				// the Jungle SPR_EX walk slot lists 8 frames x 5 directions from frame 179 of a 210-frame bank: the atlas clamps the last ones
-				var used = Enumerable.Range( 0, 20 ).Where( slot => !animations[slot].IsEmpty && animations[slot].Directions < 40 )
+				// Only the first 16 entries are animations (the last four hold bytes such as 01 05 02 28, SpriteAnimationFile.ExtraSlotBytes).
+				Assert.AreEqual( SpriteAnimationFile.SlotCount, animations.Count );
+				var used = Enumerable.Range( 0, animations.Count ).Where( slot => !animations[slot].IsEmpty )
 					.All( slot => animations[slot].FirstFrame < atlas.Frames.Length );
 				Assert.IsTrue( used, $"{atlas.Name}: every slot starts inside the bank" );
 			}

@@ -78,7 +78,7 @@ internal sealed partial class SandboxSmokeTest
 		}
 		Require( anchor != null, $"find an on-screen site for a {kind} ride and its circuit" );
 		var economy = level.Park?.Economy;
-		var centre = (X: anchor!.Value.X + 1, Y: anchor.Value.Y + 1);
+		var centre = Level.GetClickCell( entry!, anchor!.Value.X, anchor.Value.Y, 0 );
 		var station = level.PlaceObject( entry!, centre.X, centre.Y, 0 ) ?? level.Objects.TryPlace( entry!, anchor.Value.X, anchor.Value.Y, 0, out _ );
 		Require( station?.Runtime.Bump is not null, $"place a {kind} ride with its controller" );
 		run.Station = station;
@@ -166,7 +166,8 @@ internal sealed partial class SandboxSmokeTest
 				anchor = candidate;
 		}
 		Require( anchor != null, "find an on-screen site for a bumper ride" );
-		var station = level.PlaceObject( entry, anchor!.Value.X + 1, anchor.Value.Y + 1, 0 ) ?? level.Objects.TryPlace( entry, anchor.Value.X, anchor.Value.Y, 0, out _ );
+		var click = Level.GetClickCell( entry, anchor!.Value.X, anchor.Value.Y, 0 );
+		var station = level.PlaceObject( entry, click.X, click.Y, 0 ) ?? level.Objects.TryPlace( entry, anchor.Value.X, anchor.Value.Y, 0, out _ );
 		Require( station?.Runtime.Bump is { Template.IsBumper: true }, "place a bumper ride with its controller" );
 		var bump = station!.Runtime.Bump!;
 		Require( !level.TrackStations.ContainsKey( station ) && bump.IsTrackValid && bump.Objects.Count == 1 && bump.Buoys.Count == 8, "a bumper ride has an arena, no station tiles and a valid ride" );

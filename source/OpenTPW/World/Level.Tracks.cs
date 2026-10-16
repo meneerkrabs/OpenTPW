@@ -71,19 +71,31 @@ public partial class Level
 		RewalkTrack( item, TrackWalkCause.Placement );
 	}
 
-	/// <summary>The centre of a bumper ride's arena in section units: the middle of the bounding box of the ride's footprint cells.</summary>
-	// [BIN:TPW-EXE:0x00529E10 ride placement] the original places the arena at the placement cell plus a per-rotation offset read from the object type (+0xA4..+0xC0) and 0x600 on both axes
-	// [APPROX:TRACK-030] the arena centre is the middle of the footprint's bounding box; the original's is (cursor cell + Adjust[rotation] + fixed[rotation]) × 0xC00 + 0x600 ([BIN:TPW-EXE:0x00529E53]; shipped bumper Adjust North (−2, 1), East (1, 3), South (3, 0), West (0, −2), fixed (+4, +1), (+1, −5), (−5, −2), (−2, +4)) — evidence needed: the relation of OpenTPW's placement anchor to the original cursor cell (0x818C3C, object offset 0x4D9CC0 from type +0x4B0)
-	internal static (int X, int Y) BumperArenaCentre( OriginalObject item )
+	/// <summary>
+	/// The centre of a bumper ride's arena in section units, the original's controller reference: the placement anchor plus the type's
+	/// <c>Bumper.*Adjust</c> offset and a fixed offset for the rotation, at the middle of that cell. For the shipped bumper rides (5 × 5,
+	/// Adjust North (−2, 1), East (1, 3), South (3, 0), West (0, −2)) that is the middle of the footprint, local cell (2, 2).
+	/// </summary>
+	internal static (int X, int Y) BumperArenaCentre( OriginalObject item ) => BumperArenaCentre( item.Entry.Settings, item.Placement.X, item.Placement.Y, item.Placement.Rotation );
+
+	/// <inheritdoc cref="BumperArenaCentre(OriginalObject)"/>
+	// [BIN:TPW-EXE:0x00529E10 ride placement] the cursor cell is 0x818C3C = (anchorY << 7) + anchorX + 1, written at 0x528E12 from the build click's anchor (0x528B44, GetCentredAnchor) just before the call at 0x528E19;
+	// rotation 0/90/180/270 adds the type's +0xA4/+0xA8, +0xAC/+0xB0, +0xB4/+0xB8, +0xBC/+0xC0 (0x529E53–0x529ED7; the Bumper key table at 0x74541C lists WhichTrackType, BumperType, then North, East, South and West X/YAdjust, so +0x9C is WhichTrackType) and then (+4, +1), (+1, −5), (−5, −2), (−2, +4) (0x529EDF–0x529F2B),
+	// scales by 307.2 × 10 = 0xC00 (0x529F2F) and hands the cell to the arena builder 0x545890, which adds 0x600 on both axes for the bumper types (0x545CA8, 0x545D1E, 0x545D91)
+	public static (int X, int Y) BumperArenaCentre( ObjectSettings settings, int anchorX, int anchorY, int rotation )
 	{
-		var cells = item.Cells.ToArray();
-		if ( cells.Length == 0 )
-			return (item.Placement.X * TrackStation.CellUnits + TrackStation.CellUnits / 2, item.Placement.Y * TrackStation.CellUnits + TrackStation.CellUnits / 2);
-		var minX = cells.Min( cell => cell.X );
-		var maxX = cells.Max( cell => cell.X );
-		var minY = cells.Min( cell => cell.Y );
-		var maxY = cells.Max( cell => cell.Y );
-		return ((minX + maxX + 1) * TrackStation.CellUnits / 2, (minY + maxY + 1) * TrackStation.CellUnits / 2);
+		ArgumentNullException.ThrowIfNull( settings );
+		var (side, fixedX, fixedY) = rotation switch
+		{
+			0 => ("North", 4, 1),
+			90 => ("East", 1, -5),
+			180 => ("South", -5, -2),
+			270 => ("West", -2, 4),
+			_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+		};
+		var cellX = anchorX + settings.GetInt( $"Bumper.{side}XAdjust" ) + fixedX;
+		var cellY = anchorY + settings.GetInt( $"Bumper.{side}YAdjust" ) + fixedY;
+		return (cellX * TrackStation.CellUnits + TrackStation.CellUnits / 2, cellY * TrackStation.CellUnits + TrackStation.CellUnits / 2);
 	}
 
 	private void OnTrackStationRemoved( OriginalObject item )
@@ -105,7 +117,7 @@ public partial class Level
 	/// Removes the track of a station: every tile laid for its ride (TRACK-021), then the station tiles. Nothing is charged or refunded.
 	/// </summary>
 	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool and the kart/water track tool from both station sides to clear the circuit, with one Spend of 2 × cell cost × 0x100E2424() / 100
-	// [APPROX:TRACK-007] the demolition clears the ride's own tiles and pays nothing: the original's one Spend (2 × the cell cost scaled by a percentage) has an untraced sign and percentage — evidence needed: 0x100E2424 and the Spend's direction
+	// [APPROX:TRACK-007] the demolition clears the ride's own tiles and pays nothing. The original demolition 0x527EE0 replays the track tool from both station sides with flag 0x81B46C = 1; ClearCell 0x53B280 then earns (0x4D0190 at 0x53B622) the kart or water cell cost (0x52FB60/0x52FB80, chosen by the cell type at 0x53B299) × the ride's scrap percentage (0x4E2290) / 100 per cleared track cell that passes the +0x20/thing-id tests at 0x53B54A–0x53B57F, and after the replay the demolition charges (Spend 0x4D01F0) 2 × the cell cost × the scrap percentage / 100 once (0x52814A–0x528179) — evidence needed: the refund conditions of 0x53B54A–0x53B57F (which replayed cells refund)
 	private void DemolishTrack( TrackStation station, TrackBuilder builder )
 	{
 		// exactly the tiles laid for this ride go, so a neighbouring ride's circuit that touches it stays

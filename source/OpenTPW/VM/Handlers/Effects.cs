@@ -16,6 +16,9 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.ADDOBJ, RideOpcodeStatus.Hooked, "docs (`type parameter id slot`)" )]
 		public static void AddObj( RideVM vm, Operand type, Operand parameter, Operand id, Operand slot ) => vm.Effect( Opcode.ADDOBJ, new[] { type, parameter, id, slot } );
 
+		[OpcodeHandler( Opcode.ADDOBJ_EXT, RideOpcodeStatus.Hooked, "TPW-EXE 0x5520E8 (`type key effect control slot`): ADDOBJ with the control operand; no corpus use" )]
+		public static void AddObjExt( RideVM vm, Operand type, Operand key, Operand effect, Operand control, Operand slot ) => vm.Effect( Opcode.ADDOBJ_EXT, new[] { type, key, effect, control, slot } );
+
 		[OpcodeHandler( Opcode.KILLOBJ, RideOpcodeStatus.Hooked, "docs (`slot`); does not touch flags (`ADD VAR_COUNT 0xFFFF; KILLOBJ 200; BRANCH_PV`)" )]
 		public static void KillObj( RideVM vm, Operand slot ) => vm.Effect( Opcode.KILLOBJ, new[] { slot } );
 

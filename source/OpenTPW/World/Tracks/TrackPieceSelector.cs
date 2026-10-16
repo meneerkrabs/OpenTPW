@@ -131,7 +131,7 @@ public static class TrackPieceSelector
 		// 4. water crossings and tees by their flow bits (multi-bit links come from crossings walked twice, TRACK-004)
 		if ( type == TrackCellTypes.WaterOrigin && piece is >= PieceCrossing and <= 8 )
 		{
-			// [APPROX:TRACK-004] the multi-bit links of the X2 rule (0x14, 0x41, 0x50) are applied as traced, but the walk that writes them is not: OpenTPW ORs the headings of a crossing walked twice, so only crossings of two flows reach it — evidence needed: the writer of map cell +0xD for junction cells (the walk 0x0052A970 beyond its corner case) and the meaning of the other link combinations
+			// [APPROX:TRACK-004] the multi-bit links of the X2 rule (0x14, 0x41, 0x50) are applied as traced, but the walk that writes them is not: OpenTPW ORs the headings of a crossing walked twice, so only crossings of two flows reach it (the walk 0x0052A970 writes +0xD only at corners, 0x0052B1A9–0x0052B1F5) — evidence needed: the writer of +0xD for junction cells among the other callers of 0x005227E0 (the type-25 walk 0x0052BA50 picks the first linked arm by rotation) and the meaning of the other link combinations
 			if ( link == 0x14 )
 				rotation = 90;
 			else if ( link == 0x41 )

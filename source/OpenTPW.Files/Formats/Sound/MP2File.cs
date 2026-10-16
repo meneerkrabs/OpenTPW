@@ -24,11 +24,13 @@ public sealed class MP2File : ArchiveFile
 	public SoundTypes SoundType { get; set; }
 
 	/// <summary>
-	/// Raw 32-bit value at entry offset +32. Not proven to be a sample count: it is about
-	/// twice the frame-derived sample count for mono entries and about four times for stereo,
-	/// but with no exact relation, so it is kept unconverted.
+	/// Raw 32-bit value at entry offset +32: the number of 16-bit PCM bytes (all channels) the game plays when the
+	/// type byte has bit 0x04, which every shipped entry has (<see cref="SdtEntryHeader.PlaybackBytes"/>).
 	/// </summary>
 	public int RawSampleField { get; set; }
+
+	/// <summary>The playback length in PCM bytes, or null when the type byte lacks bit 0x04.</summary>
+	public int? PlaybackBytes => ((int)SoundType & SdtEntryHeader.PlaybackLengthFlag) != 0 && RawSampleField >= 0 ? RawSampleField : null;
 
 	public MP2File( int header, string name, byte[] soundData, int sampleRate, int bitsPerSample, int soundType, int rawSampleField, byte[] data )
 	{

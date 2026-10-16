@@ -132,6 +132,8 @@ public static partial class Program
 		// Use the same persisted graphics choice as the desktop, including an explicit Original choice.
 		TexturePack.RequestMissing = Page.RequestTexture;
 		CompatibilityStartup.Initialize( Array.Empty<string>(), dataDirectory );
+		// [EXT:mods] The browser has the official extensions only (no files-based mods yet), with the choices in /config/mods.json (docs/MODS.md).
+		OpenTPW.Mods.ModStartup.InitializeOfficial( Log.Trace, Log.Warning );
 
 		// Sound plays through WebAudio (Browser/WebAudioOutput.cs); movies are not in the browser yet.
 		GameAudio.Enabled = true;
@@ -144,7 +146,8 @@ public static partial class Program
 			Log.Warning( diagnostic );
 		renderer = new Renderer( displaySettings, displayPath );
 		Render = renderer;
-		flow = new GameFlow { OnlineFolders = new OnlineFolders( "/online" ) };
+		// [EXT:extension-online-gate] no online folder while the opentpw.online extension is off (docs/MODS.md)
+		flow = new GameFlow { OnlineFolders = FeatureGates.Online ? new OnlineFolders( "/online" ) : null };
 		// Level folders are copied when a park is first started; the lobby keeps running meanwhile.
 		// A language other than the installed one needs its speech files (about 27 MB) beside the text; they are copied when the
 		// language is chosen, at once for a saved choice, and a park or a switch waits for them so the advisor never mixes voices.

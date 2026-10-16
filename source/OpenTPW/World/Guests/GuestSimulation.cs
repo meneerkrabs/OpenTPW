@@ -471,7 +471,11 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
 			// [APPROX:GUEST-012] tp.exe's recall (0x500A50) also demands the guest's cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType); OpenTPW's imported grid writes only 0, 1 and 3 (ECON-050), so the test would pass everywhere, and OpenTPW stands in for it with the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane). The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc) — evidence needed: which cells the original's state-18 walk crosses before state 19 (0x500AD0) and their types
 			if ( guest.State == GuestState.LeavingPark && guest.Lane == null && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
+			{
+				// [BIN:TPW-EXE:0x00500AB9 recall clears the walk mask] guest +0x188 (walk +0xB4) = 0 before state 6
+				guest.Navigation.Mask = 0;
 				guest.State = GuestState.DoingNothing;
+			}
 		}
 		if ( InPark( guest ) )
 			UpdateNeeds( guest, dt );
@@ -652,6 +656,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( !Grid.IsWalkable( cell.X, cell.Y ) )
 			cell = Grid.FindNearestWalkable( cell.X, cell.Y ) ?? cell;
 		PlaceOnGrid( guest, cell.X, cell.Y );
+		// [BIN:TPW-EXE:0x004FEBAB set-down walk mask] guest +0x188 (walk +0xB4) = 1: the walk out may leave the paths (WalkEdges.Blocked)
+		guest.Navigation.Mask = 1;
 		var reachable = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) }
 			.Any( lane => lane != null && Grid.Distance( cell.X, cell.Y, lane[^1].X, lane[^1].Y ) >= 0 );
 		// The leaving handler's recall (0x00500A50) applies to it like any leaving guest: with its exit counter and happiness byte above 0, the
@@ -686,25 +692,26 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// The walk step (<c>0xe6454</c>): one steering step on the tick that starts a park turn. True when the guest has
-	/// arrived at its destination (tested on the position at the start of the step); the destination is then done.
+	/// The walk step (tp.exe <c>0x4FA2A0</c>): one steering step on the tick that starts a park turn. True when the walk is done:
+	/// arrived at its destination, or stuck (a route search of the walk failed, <see cref="WalkResult.Stuck"/>, which
+	/// <see cref="GuestNavigation.Stuck"/> keeps until the next destination); the destination is then done.
 	/// </summary>
 	private bool Move( Guest guest )
 	{
 		if ( !turnStarted )
 			return false;
-		if ( !Step( guest ) )
+		if ( Step( guest ) == WalkResult.Walking )
 			return false;
 		guest.HasWaypoint = false;
 		return true;
 	}
 
-	private bool Step( Guest guest )
+	private WalkResult Step( Guest guest )
 	{
 		var navigation = guest.Navigation;
 		var (x, y, distance) = (guest.X, guest.Y, guest.DistanceWalked);
 		stepping = navigation;
-		var arrived = navigation.Step( guest.MaxSpeed, guest.MaxForce, isOpenForStep, separationForStep );
+		var arrived = navigation.Step( guest.MaxSpeed, guest.MaxForce, Grid.Cells, isOpenForStep, separationForStep );
 		stepping = null;
 		Occupy( guest );
 		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (x, y, distance, TickCount);
@@ -722,10 +729,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// A cell is walkable for the stepping guest (the <c>+180</c> mask) when it is on its current walk: the route cells
-	/// and, for a queue walk, the queue's next cells ahead of the destination and behind the start.
+	/// A cell is walkable for a route walk (<see cref="GuestNavigation.Step(int, int, Func{int, int, bool}, Func{GuestNavigation, (int X, int Y)}?)"/>,
+	/// WALK-006) when it is on its current walk: the route cells and, for a queue walk, the queue's next cells ahead of the destination and
+	/// behind the start. A walk of the original kind asks <see cref="WalkEdges"/> instead.
 	/// </summary>
-	// [APPROX:WALK-005] a cell is walkable when it is on the current walk (route and extra open cells), so path cells beside the route are walls; the original commits a step through the callback 0x510510 (at most one cell, diagonal steps through either L-shaped route) and the edge test 0x4d8750 with the guest's mask (walk +0xb4): path-to-path steps are always open, queue boundaries need the target's link back, other cell types and the masks 1 and 2 have their own rules; none of this is modelled — still open: the edge test 0x4d8750 on ParkCellMap and the mask writers are not ported
 	private bool IsOpenForStep( int x, int y ) => stepping!.IsOnWalk( x, y );
 
 	/// <summary>
@@ -779,8 +786,13 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.OccupiedCell = cell;
 	}
 
-	/// <summary>Starts a walk to <paramref name="target"/> along <paramref name="cells"/>; the route starts at the guest's own cell.</summary>
-	private static void SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null )
+	/// <summary>
+	/// Starts a walk to <paramref name="target"/>. On the park's cells this is the original's SetDest (<see cref="GuestNavigation.Navigate"/>:
+	/// a route search from the guest's cell with its walk mask), and <paramref name="cells"/> (from the guest's own cell on) and
+	/// <paramref name="alsoOpen"/> are bookkeeping for the M3 gate; off the grid (the arrival lanes) and for a queue walk
+	/// (<paramref name="alongCells"/>) the guest walks the cells themselves.
+	/// </summary>
+	private void SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool alongCells = false )
 	{
 		var navigation = guest.Navigation;
 		var route = new List<(int X, int Y)>( cells.Count + 1 ) { navigation.Cell };
@@ -789,11 +801,15 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( route[^1] != cell )
 				route.Add( cell );
 		}
-		navigation.SetDestination( target.X, target.Y, route, alsoOpen );
+		if ( navigation.OffGrid || alongCells )
+			navigation.SetDestination( target.X, target.Y, route, alsoOpen );
+		else
+			navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
 		guest.HasWaypoint = true;
 	}
 
 	/// <summary>The next path cell: a destination at the guest's offset point in it, routed through the current cell.</summary>
+	// [APPROX:WALK-004] the walks to a ride (state 10) and out of the park (state 18) set a destination one path cell at a time (Grid.TryStep over the cell links, each a fresh search from the guest's cell), where tp.exe's states set one destination for the whole walk (state 10 0x4ffbc0 through 0x4fa5f0, the leaving gate's crossing cell 0x4d86d0) and its search (0x511420) string-pulls the route; the search, the set-up 0x50f8e0, the refill by a new search (0x50efce) and both reroutes are ported (WalkSearch, GuestNavigation.Navigate) — still open: the destinations states 10 and 18 set
 	private void SetCellWaypoint( Guest guest, int x, int y )
 	{
 		var current = (guest.CellX, guest.CellY);
@@ -1028,7 +1044,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// pick the next wander destination and keep walking; otherwise the guest decides again (state 6).
 	/// </summary>
 	// [BIN:TPW-EXE:0x00501ABB state 7] the walk step 0x004FA2A0 returns 0 (arrived), 1 (walking) or 2 (stuck); on 0 or 2 one draw, and when its low two bits are 0 the wander destination 0x004F9490 keeps state 7 on success; every other case sets state 6
-	// [APPROX:GUEST-010] OpenTPW's walk has no stuck result of its own (its steering reroutes, WALK-I): a walk ends on arrival, or as stuck when a grid edit takes a cell or link of its route (EndBrokenWalks), without a replan; tp.exe's walk +0xB8 (guest +0x18C) is set when a replan fails after the guest's ground changed or its progress stalled (0x50ED10) or a route request fails (0x50F8E0), and 0x4FA2A0 then returns 2 — evidence needed: none (read)
+	// [BIN:TPW-EXE:0x0050F8E0 stuck result] a failed search of a set-up (0x50F945) or of a reroute in follow_path (0x50ED7E, 0x50EE7E: the changed ground or a stalled progress) sets walk +0xB8 (guest +0x18C), and the walk step 0x004FA2A0 then returns 2 until the next destination (GuestNavigation.Stuck); the bin walk of state 9 drops its litter on 2 (0x004FFF20)
 	private void UpdateWalkingAround( Guest guest )
 	{
 		if ( !turnStarted )
@@ -1103,7 +1119,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var arrived = false;
 		if ( guest.HasWaypoint && !(arrived = MoveAlong( guest )) )
 			return;
-		if ( arrived && guest.BinId != 0 && Bins?.Invoke() is { } bins && bins.Any( bin => bin.Id == guest.BinId ) )
+		if ( arrived && !guest.Navigation.Stuck && guest.BinId != 0 && Bins?.Invoke() is { } bins && bins.Any( bin => bin.Id == guest.BinId ) )
 			LitterBinned?.Invoke( guest, guest.BinId );
 		else
 			DropLitter( guest, (LitterType)(1 + random.NextWord() % ParkLitter.OrdinaryKinds) );
@@ -1151,7 +1167,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		foreach ( var guest in guests )
 		{
-			if ( guest.State is not (GuestState.WalkingAround or GuestState.ThrowingAwayLitter) || !guest.HasWaypoint || RouteAheadHolds( guest.Navigation ) )
+			// A walk of the original kind notices a changed block itself (the stamp reroute of follow_path, ParkCellMap.BlockStamp).
+			// [APPROX:WALK-007] a route walk (WALK-006) restored from a save made before the original walk ends without a replan when a grid edit takes a cell or link of its route, and the queue recompute's own stamp of its back cell (tp.exe 0x4de1f0, after one of its queue cells became path) is not made; the block stamps of every cell type change (0x4d8c60 from 0x5346d0, 0x5348d0, 0x538fc0) and the walk's comparison (0x50ed6c, a search in mode 1) are ported — still open: the 0x4de1f0 stamp
+			if ( guest.State is not (GuestState.WalkingAround or GuestState.ThrowingAwayLitter) || !guest.HasWaypoint || guest.Navigation.Original
+				|| RouteAheadHolds( guest.Navigation ) )
 				continue;
 			var navigation = guest.Navigation;
 			navigation.SetDestination( navigation.X, navigation.Y, [] );
@@ -1473,7 +1492,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A queue walk (states 12 and 13): from the guest's cell along the queue cells to cell <paramref name="index"/>,
 	/// then into the ride's entrance cell for the stand point (<paramref name="toEntrance"/>).
 	/// </summary>
-	private static void SetQueueDestination( Guest guest, IRideVisitorBridge attraction, int index, (int X, int Y) target, bool toEntrance )
+	private void SetQueueDestination( Guest guest, IRideVisitorBridge attraction, int index, (int X, int Y) target, bool toEntrance )
 	{
 		var cells = attraction.QueueCells;
 		var route = new List<(int X, int Y)>();
@@ -1498,7 +1517,6 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			route.Add( EntranceCellOf( attraction ) );
 		// The queue goes on beyond both ends of the walk: the cell ahead of the destination (the entrance cell ahead of
 		// the front cell) and the cell behind the start (the join cell behind the back cell) are walkable too.
-		// [APPROX:WALK-006] a queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route; in the original a step from a queue cell is open (edge test 0x4d8750) into a path, queue or queue-end neighbour whose link points back at it, or into a type-0x1e fixed walkway when the mask is not 2, and blocked otherwise; OpenTPW does not read the cell links for this — still open: the edge test 0x4d8750 on the queue links is not ported (WALK-005)
 		(int X, int Y)? ahead = toEntrance ? null : index > 0 ? cells[index - 1] : EntranceCellOf( attraction );
 		var behind = from + 1 < cells.Count ? cells[from + 1] : attraction.JoinCell;
 		var alsoOpen = new List<(int X, int Y)>( 2 );
@@ -1509,7 +1527,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueTargetIndex = index;
 		guest.QueueTargetX = target.X / (float)Fixed16.One;
 		guest.QueueTargetY = target.Y / (float)Fixed16.One;
-		SetDestination( guest, target, route, alsoOpen );
+		// A queue walk stays a route walk along these cells (GuestNavigation.SetDestination, WALK-006): OpenTPW's queue cells carry no +0x0c neighbour links (QUEUE-003) for the edge test 0x4d8750
+		SetDestination( guest, target, route, alsoOpen, alongCells: true );
 	}
 
 	/// <summary>The ride's entrance cell: the front queue cell's neighbour towards the ride.</summary>
@@ -2248,7 +2267,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				History = navigation.History,
 				PreviousRemaining = navigation.PreviousRemaining,
 				OffGrid = navigation.OffGrid,
-				Reroutes = navigation.Reroutes
+				Reroutes = navigation.Reroutes,
+				OriginalWalk = navigation.CaptureOriginal(),
+				Waypoints = navigation.Buffer.ToArray(),
+				Mask = navigation.Mask
 			},
 			CellX = guest.CellX,
 			CellY = guest.CellY,
@@ -2615,42 +2637,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			error( $"Guest {guest.Id} navigation target ({navigation.TargetX >> 16}, {navigation.TargetY >> 16}) is outside the map." );
 		if ( Math.Abs( (long)navigation.VelocityX ) > GuestSpeed.VelocityBound || Math.Abs( (long)navigation.VelocityY ) > GuestSpeed.VelocityBound )
 			error( $"Guest {guest.Id} navigation velocity ({navigation.VelocityX}, {navigation.VelocityY}) exceeds the speed cap." );
-		if ( navigation.Route == null )
-			error( $"Guest {guest.Id} has no route." );
-		else
-		{
-			if ( navigation.Cursor < 0 || navigation.Cursor > navigation.Route.Length )
-				error( $"Guest {guest.Id} navigation cursor {navigation.Cursor} is outside its {navigation.Route.Length}-cell route." );
-			else
-			{
-				var buffered = Math.Min( GuestNavigation.BufferedWaypoints, navigation.Route.Length - navigation.Cursor );
-				if ( navigation.Count != buffered )
-					error( $"Guest {guest.Id} buffers {navigation.Count} waypoints, but its route from cursor {navigation.Cursor} gives {buffered}." );
-				if ( navigation.Count == 0 ? navigation.Index != 0 : (uint)navigation.Index >= (uint)navigation.Count )
-					error( $"Guest {guest.Id} waypoint index {navigation.Index} is outside its {navigation.Count} buffered waypoints." );
-			}
-			for ( var cell = 0; cell < navigation.Route.Length; cell++ )
-			{
-				var (x, y) = navigation.Route[cell];
-				if ( !Grid.InBounds( x, y ) )
-					error( $"Guest {guest.Id} route cell {cell} ({x}, {y}) is outside the map." );
-			}
-		}
-		if ( navigation.History is < 0 or > 0x7fff )
-			error( $"Guest {guest.Id} progress history {navigation.History} is outside its 15-bit window." );
-		if ( navigation.PreviousRemaining < -1 )
-			error( $"Guest {guest.Id} previous remaining distance {navigation.PreviousRemaining} is negative." );
-		if ( navigation.Reroutes < 0 || navigation.WalkCrossings < 0 )
-			error( $"Guest {guest.Id} navigation counters ({navigation.Reroutes} reroutes, {navigation.WalkCrossings} crossings) are negative." );
-		if ( navigation.AlsoOpen == null )
-			error( $"Guest {guest.Id} has no extra-open-cell list." );
-		else
-			for ( var cell = 0; cell < navigation.AlsoOpen.Length; cell++ )
-			{
-				var (x, y) = navigation.AlsoOpen[cell];
-				if ( !Grid.InBounds( x, y ) )
-					error( $"Guest {guest.Id} extra open cell {cell} ({x}, {y}) is outside the map." );
-			}
+		foreach ( var problem in navigation.Problems( guest.Id, Grid.InBounds ) )
+			error( char.ToUpperInvariant( problem[0] ) + problem[1..] + "." );
 		if ( guest.BaseSpeed is < 60 or > 140 )
 			error( $"Guest {guest.Id} base speed {guest.BaseSpeed} is not one of the walk speeds." );
 		if ( guest.MaxSpeed is < GuestSpeed.Floor or > GuestSpeed.VelocityBound )
@@ -2815,8 +2803,14 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		navigation.PreviousRemaining = navigationSnapshot.PreviousRemaining;
 		navigation.OffGrid = navigationSnapshot.OffGrid;
 		navigation.Reroutes = navigationSnapshot.Reroutes;
-		for ( var index = 0; index < navigationSnapshot.Count; index++ )
-			navigation.Buffer[index] = navigation.Route[navigationSnapshot.Cursor + index];
+		navigation.RestoreOriginal( navigationSnapshot.OriginalWalk );
+		navigation.Mask = navigationSnapshot.Mask;
+		Array.Clear( navigation.Buffer );
+		if ( navigationSnapshot.Waypoints is { } waypoints )
+			waypoints.AsSpan().CopyTo( navigation.Buffer );
+		else
+			for ( var index = 0; index < navigationSnapshot.Count; index++ )
+				navigation.Buffer[index] = navigation.Route[navigationSnapshot.Cursor + index];
 	}
 
 	/// <summary>Thing-table part of <see cref="WorldStateHash"/>: gameplay fields, in id order.

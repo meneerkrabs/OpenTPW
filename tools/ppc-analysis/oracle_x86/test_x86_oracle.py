@@ -109,6 +109,13 @@ EXPECTED = {
     # X23 (the handyman's litter finder 0x4c8ed0, ECON-022): StaffWorldSimulation.FindLitter, range square, claims, Manhattan, first on a tie.
     ('tpw-exe-litter-finder', 'plan'): AGREE,
     ('tpw-exe-guard-choice', 'plan'): AGREE,
+    # X25 (the guest walk, WALK-002 .. WALK-009): the edge test 0x4d8750, the step commit 0x510510, the route search 0x511420,
+    # avoid_walls 0x50e4a0 and whole walks through the set-up 0x50f8e0 and the steering step 0x50f3b0 (walk_reading.py).
+    ('tpw-exe-walk-edge-test', 'plan'): AGREE,
+    ('tpw-exe-walk-commit', 'plan'): AGREE,
+    ('tpw-exe-walk-search', 'plan'): AGREE,
+    ('tpw-exe-walk-avoid-walls', 'plan'): AGREE,
+    ('tpw-exe-walk-steering', 'plan'): AGREE,
     ('tpw-exe-queue-reevaluate', 'csharp-rule'): AGREE,
     ('tpw-exe-queue-reevaluate', 'no-state-14-exemption'): (70, {'cells': 1, 'position': 4, 'state': 14, 'id': 3}),
     ('tpw-exe-scrap-value', 'all-levels-cost'): (221, {'now': 1000, 'built': 1000, 'level': 1, 'used': 0, 'cost': [10000, 8000, 12000],
@@ -846,11 +853,49 @@ class Oracle(CoastTests, unittest.TestCase):
             [comparison] = [c for c in compare(targets.GUARD_TARGET, self.image, plan=plan) if c.side == 'plan']
             self.assertGreater(comparison.mismatches, 0, plan.__name__)
 
+    # ------------------------------------------------------------------ X25: the guest walk
+    def test_walk_edge_test_and_commit_agree(self):
+        self.check(('tpw-exe-walk-edge-test', 'plan'))
+        self.check(('tpw-exe-walk-commit', 'plan'))
+
+    def test_walk_search_agrees(self):
+        self.check(('tpw-exe-walk-search', 'plan'))
+
+    def test_walk_avoid_walls_agrees(self):
+        self.check(('tpw-exe-walk-avoid-walls', 'plan'))
+
+    def test_walk_steering_agrees(self):
+        self.check(('tpw-exe-walk-steering', 'plan'))
+
+    def test_walk_readings_are_sharp(self):
+        # The walk's mask matters to the edge test and the search: a reading that ignores it disagrees.
+        for target, plan in ((targets.WALK_EDGE_TARGET, lambda x: targets.walk_edge_plan(dict(x, mask=0))),
+                             (targets.WALK_SEARCH_TARGET, lambda x: targets.walk_search_plan(dict(x, mask=0)))):
+            [comparison] = [c for c in compare(target, self.image, 100, plan=plan) if c.side == 'plan']
+            self.assertGreater(comparison.mismatches, 0, target.key)
+
     def test_original_hash_refuses_a_modified_copy(self):
         raw = bytearray(TPW.read_bytes())
         raw[0x1000] ^= 1
         with self.assertRaises(IdentityError):
             Image(bytes(raw))
+
+
+class WalkReadingCoverage(unittest.TestCase):
+    """X25's inputs, on the reading alone (no Unicorn or executable): the whole walks reach every step result, and the
+    searches both succeed and fail."""
+
+    def test_steering_walks_arrive_walk_and_get_stuck(self):
+        target = targets.WALK_STEERING_TARGET
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        results = {result for x in inputs for kind, result, _ in targets.walk_steering_plan(x) if kind == 'step'}
+        self.assertEqual(results, {0, 1, 2})
+
+    def test_searches_succeed_and_fail(self):
+        target = targets.WALK_SEARCH_TARGET
+        inputs = target.inputs(__import__('x86_harness').seeded('oracle-v1:' + target.key), DEFAULT_COUNT)
+        found = [targets.walk_search_plan(x)[0] for x in inputs]
+        self.assertTrue(any(found) and not all(found))
 
 
 @unittest.skipUnless(UNICORN, UNICORN_HINT)

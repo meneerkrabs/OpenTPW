@@ -537,6 +537,12 @@ public static class ParkSaveFile
 		/// <summary>The challenge system's switch (<see cref="ParkObjectives.SwitchedOn"/>); absent in older saves (then on once the first offer day has passed) and while off.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public bool? SwitchedOn { get; init; }
+		/// <summary>The carried object (<see cref="ParkObjectives.ActualThing"/>, an economy instance id); absent in older saves and while none.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int ActualThing { get; init; }
+		/// <summary>The object each challenge's slot carries (<see cref="ParkObjectives.CarriedThings"/>); absent in older saves and while none.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public Dictionary<int, int>? CarriedThings { get; init; }
 	}
 
 	/// <param name="world">The level's other random streams (<see cref="Level.CaptureRandomState"/>); null saves the economy alone.</param>
@@ -688,7 +694,9 @@ public static class ParkSaveFile
 				Declines = new Dictionary<int, int>( park.Objectives.Declines ),
 				Finished = park.Objectives.Finished.OrderBy( index => index ).ToList(),
 				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList(),
-				SwitchedOn = park.Objectives.SwitchedOn ? true : null
+				SwitchedOn = park.Objectives.SwitchedOn ? true : null,
+				ActualThing = park.Objectives.ActualThing,
+				CarriedThings = park.Objectives.CarriedThings.Count == 0 ? null : new Dictionary<int, int>( park.Objectives.CarriedThings )
 			},
 			Counters = new Dictionary<string, long>( park.Counters.Values ),
 			MechanicCursor = park.MechanicCursor,
@@ -793,6 +801,7 @@ public static class ParkSaveFile
 		Require( data.EntranceFee >= 0 && data.MonthsInRed >= 0 && data.LitterScaled >= 0 && data.TicketsSpent >= 0, "park values" );
 		Require( data.TurnEnteredRed is not { } enteredRed || enteredRed >= 0 && enteredRed <= ParkCalendar.Turn( data.Tick ), "turn entered red" );
 		Require( data.BatchCredit >= 0, "batch credit" );
+		Require( data.Objectives.ActualThing >= 0 && (data.Objectives.CarriedThings?.All( pair => pair.Key >= 0 && pair.Value > 0 ) ?? true), "carried challenge object" );
 		var littered = new HashSet<(int, int)>();
 		foreach ( var cell in data.Litter )
 			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type is >= 1 and <= (int)LitterType.Stinkbomb
@@ -987,7 +996,8 @@ public static class ParkSaveFile
 		if ( data.Research.Workload is int workload )
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,
-			data.Objectives.SwitchedOn ?? (data.Objectives.Current != null || ParkCalendar.DayIndex( data.Tick ) >= settings.ChallengeTiming.DaysUntilFirstChallenge) );
+			data.Objectives.SwitchedOn ?? (data.Objectives.Current != null || ParkCalendar.DayIndex( data.Tick ) >= settings.ChallengeTiming.DaysUntilFirstChallenge),
+			data.Objectives.ActualThing, data.Objectives.CarriedThings );
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
 		if ( data.PriceStatistics is { } statistics )

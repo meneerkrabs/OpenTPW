@@ -73,11 +73,12 @@ public sealed class OriginalEconomyImport
 		var world = save.World;
 		ImportTurn( economy, world, evidence );
 		Verify( economy.Settings, save.Economy, evidence );
-		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, evidence );
 		ImportBank( economy, save.Economy.BankAccount, evidence );
 		if ( save.ResearchLab is { } lab )
 			ImportResearch( economy, lab, evidence );
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
+		// after the objects: the carried object of a follow-up is one of their thing ids
+		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, things, evidence );
 		var staff = ImportStaff( economy, save, things, evidence );
 		ReportNotImported( save, evidence );
 		// [BIN:STP-PPC:0x10106708 world reader] mParkClosed is restored with the world variables (0 = open)
@@ -543,7 +544,7 @@ public sealed class OriginalEconomyImport
 	/// </summary>
 	// [BIN:TPW-EXE:0x4d2320 challenge system serializer] after the 20 slots: mCurrentChallenge (+0x3cc, −1 none), mNextChallengeEventTime (+0x3d0, an absolute 100 ns stamp), mSystemSwitchedOn (+0x3d8), mChallengeOn (+0x3d9, accepted and running), mWaitingForReply (+0x3da, an offer is open), mValue (+0x3dc), mActualThing (+0x3e0)
 	// [BIN:TPW-EXE:0x4d1e90 daily challenges] before the switch is on, the first offer comes once the park's elapsed day (0x4f8800 / 864e9) reaches DaysUntilFirstChallenge while the park is open (0x4c9050), and the switch is set; then an idle system offers when the clock passes the next event time, and a running challenge ends at its deadline, which the accept (0x4d2df0) stores in the same word
-	private static void ImportChallenges( ParkEconomy economy, SaveChallengeSystem system, long calendarStart, List<string> evidence )
+	private static void ImportChallenges( ParkEconomy economy, SaveChallengeSystem system, long calendarStart, IReadOnlyDictionary<int, ParkObjectState> things, List<string> evidence )
 	{
 		var settings = economy.Settings;
 		var level = settings.ChallengesInThisLevel;
@@ -584,10 +585,13 @@ public sealed class OriginalEconomyImport
 			nextOffer = Day( system.NextEventTime ) + 1;
 			state = $"the next offer is due on day {nextOffer}";
 		}
-		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished, system.Switch1 != 0 );
-		evidence.Add( $"Challenges imported: {state}; {finished.Count} won, {declines.Count} declined." );
-		// [APPROX:SAVE-005] the loss counts, the follow-up's carried object (mActualThing and the slots' mThingIdForFollowup, ECON-055) and the day an unanswered offer was made are not imported — evidence needed: what reads the loss counts and how the follow-up types read the carried object
-		evidence.Add( $"[APPROX:SAVE-005] Challenge values not imported: losses {string.Join( "/", slots.Select( slot => slot.Lost ) )}, ActualThing {system.ActualThing}, follow-up things {string.Join( "/", slots.Select( slot => slot.FollowupThing ) )}." );
+		// [BIN:TPW-EXE:0x4d2fb0 challenge won] the carried object (+0x3e0) and the slots' ids (+0x2e) are thing ids of the saved park; an object the import restored keeps its id as its economy instance
+		int Carried( int thing ) => things.TryGetValue( thing, out var carriedState ) ? carriedState.Id : 0;
+		var carriedThings = slots.Select( ( slot, index ) => (Index: level[index], Thing: Carried( slot.FollowupThing )) ).Where( entry => entry.Thing != 0 ).ToDictionary( entry => entry.Index, entry => entry.Thing );
+		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished, system.Switch1 != 0, Carried( system.ActualThing ), carriedThings );
+		evidence.Add( $"Challenges imported: {state}; {finished.Count} won, {declines.Count} declined, carried object {(system.ActualThing == 0 ? "none" : Carried( system.ActualThing ) == 0 ? $"thing {system.ActualThing} (not an imported object)" : $"thing {system.ActualThing}")}." );
+		// [APPROX:SAVE-005] the loss counts (slot +0x24, which the loss 0x4d3140 raises and no reader of the challenge code, the offer scan 0x4d2a70 or the follow-up scan 0x4d2b60 tests) and the day an unanswered offer was made (slot +0x20) are not imported — evidence needed: a reader of the slot's +0x24 and +0x20 words outside the challenge system
+		evidence.Add( $"[APPROX:SAVE-005] Challenge values not imported: losses {string.Join( "/", slots.Select( slot => slot.Lost ) )}." );
 	}
 
 	/// <summary>

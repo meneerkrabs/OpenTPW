@@ -24,6 +24,8 @@ public sealed class ParkCounters
 
 	public static string Sold( int shopType, int ingredient ) => $"sold:{shopType}:{ingredient}";
 	public static string RideUses( int infoId ) => $"rideuse:{infoId}";
+	/// <summary>The uses of one ride object (its economy instance id), what a challenge filtered to the carried object counts (ECON-055).</summary>
+	public static string RideUsesOfThing( int instanceId ) => $"rideuse-thing:{instanceId}";
 	public static string Built( int infoId ) => $"built:{infoId}";
 	/// <summary>The park turn of the type's first purchase after turn 0 (park record +28 of the original); 0 while unset.</summary>
 	public static string FirstPurchaseTurn( int infoId ) => $"firstturn:{infoId}";
@@ -63,8 +65,7 @@ public enum GoldenTicketKind
 /// golden tickets. Data-driven: definitions, level order, prizes, target times/values/objects,
 /// follow-ups, <c>Independent</c>, <c>CheckAtEndOnly</c>, offer delays, declines to forfeit and every
 /// golden ticket threshold. The Easymode save stores the level's challenge list in exactly this order
-/// (docs/ECONOMY.md). <b>Approximations</b>: a follow-up does not keep the won
-/// part's object (ECON-055); types without a progress source (23, 26) never complete.
+/// (docs/ECONOMY.md). <b>Approximations</b>: types without a progress source (23, 26) never complete.
 /// </summary>
 public sealed class ParkObjectives
 {
@@ -88,6 +89,18 @@ public sealed class ParkObjectives
 	public bool SwitchedOn { get; private set; }
 	public int NextListPosition { get; private set; }
 	public ActiveChallenge? Current { get; private set; }
+	/// <summary>
+	/// The carried object (<c>mActualThing</c>, +0x3E0 of the challenge system): the economy instance id of the object a won challenge hands to its follow-up, 0 when none.
+	/// While it is set, an accepted challenge's accumulator takes only events of that object (0x004D27A0): ride uses of types 17, 20 and 22, and none of the object-less
+	/// events (sales, profits and the daily averages).
+	/// </summary>
+	public int ActualThing { get; private set; }
+	private readonly Dictionary<int, int> carried = new();
+	/// <summary>
+	/// The object each challenge's slot carries (<c>mThingIdForFollowup</c>, +0x2E of the slot): written by the checks of types 14, 15 and 18 when they pass and by
+	/// the follow-up offer from <see cref="ActualThing"/>, keyed by the challenge's Info index; 0 entries are not kept.
+	/// </summary>
+	public IReadOnlyDictionary<int, int> CarriedThings => carried;
 	public IReadOnlyCollection<int> Finished => finished;
 	public IReadOnlyDictionary<int, int> Declines => declines;
 	public IReadOnlyCollection<GoldenTicketKind> GoldenTickets => tickets;
@@ -151,7 +164,8 @@ public sealed class ParkObjectives
 			16 => counters[ParkCounters.Researched( ResearchCategory.Ride )],
 			// [BIN:TPW-EXE:0x5021e5 ride use] the event 16 of 0x501db0 adds 1 to the accumulator under 17, 20 and 22 alike (0x5021e5, 0x50224b, 0x5022b1), with the used
 			// object's Info.Id as the slot's object; 0x4d1660 compares 22 like 17 and 20
-			17 or 20 or 22 => counters[ParkCounters.RideUses( definition.TargetObject )],
+			// [BIN:TPW-EXE:0x4d27a0 challenge accumulator] with the carried object (+0x3e0) set an event counts only when its object (parameter B, the used ride's thing id at 0x5021c5) is that one
+			17 or 20 or 22 => ActualThing != 0 ? counters[ParkCounters.RideUsesOfThing( ActualThing )] : counters[ParkCounters.RideUses( definition.TargetObject )],
 			// [BIN:TPW-EXE:0x4d1873 challenge type 18] passes when TargetVal <= 0x4cc810(TargetObj): the unsigned maximum, over the rides of track type 3 (0x4e2b50) whose id is
 			// TargetObj (any when 0), of the controller's counted sections (+0x108 via 0x43e0e0, zeroed and counted by the rating final 0x43df90), 0 without one; no accumulator, no baseline
 			18 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
@@ -172,6 +186,29 @@ public sealed class ParkObjectives
 		};
 	}
 
+	/// <summary>
+	/// Types the accumulator reaches with events that carry no object (sales, profits and the daily messages: both shorts of 0x004E16B0, 0x004E1920 and 0x004D2860 are 0), which
+	/// the carried object's filter refuses.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4d27a0 challenge accumulator] the event counts when the slot's type and TargetObj match and the carried object (+0x3e0) is 0 or equals the event's object
+	public static bool TakesObjectlessEvents( int type ) => type is >= 1 and <= 8 or 12 or 13 or 16 or 24 or 25 or 27;
+
+	internal void RestoreCarried( int actualThing, IReadOnlyDictionary<int, int>? carriedThings )
+	{
+		ActualThing = actualThing;
+		carried.Clear();
+		foreach ( var (index, thing) in carriedThings ?? new Dictionary<int, int>() )
+			SetCarried( index, thing );
+	}
+
+	private void SetCarried( int challengeIndex, int thing )
+	{
+		if ( thing == 0 )
+			carried.Remove( challengeIndex );
+		else
+			carried[challengeIndex] = thing;
+	}
+
 	/// <summary>Types whose daily value (<see cref="Measure"/>) is added up from the acceptance and compared as the sum divided by TargetTime (0x4d2860, 0x4d1660).</summary>
 	public static bool IsDailyAverage( int type ) => type is 24 or 25 or 27;
 
@@ -187,7 +224,7 @@ public sealed class ParkObjectives
 	// [BIN:TPW-EXE:0x4d1e90 challenge day] nothing is offered, checked or timed out while an offer waits for its answer (+0x3da, set by 0x4d2a70 / 0x4d2b60), which only
 	// the accept 0x4d2df0 (accepted +0x3d9, the deadline from mTargetTime) or the decline 0x4d2ec0 clears
 	// [APPROX:ECON-058] an accepted challenge is evaluated once a day, and an idle system offers at the first day end after its next event time; the original's update 0x4d1e90 tests a running challenge on the park turns whose low two bits (+0x1da70c, 0x4d1f99) are not 0 and on the others only posts the progress message 0x4d3390 (tag 0x160) — evidence needed: what the message 0x160 feeds and the thing update's rate
-	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure, bool parkOpen = true )
+	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure, bool parkOpen = true, Func<ChallengeDefinition, int>? bestThing = null )
 	{
 		if ( Current == null )
 		{
@@ -211,13 +248,19 @@ public sealed class ParkObjectives
 		long value;
 		if ( IsDailyAverage( definition.Type ) )
 		{
-			// the baseline of these types is the running sum of the daily values
-			Current = Current with { Baseline = Current.Baseline + measure( definition ) };
+			// the baseline of these types is the running sum of the daily values; the daily message's events carry no object, so the carried object's filter refuses them
+			if ( ActualThing == 0 )
+				Current = Current with { Baseline = Current.Baseline + measure( definition ) };
 			value = definition.TargetTime > 0 ? Current.Baseline / definition.TargetTime : 0;
 		}
+		else if ( ActualThing != 0 && TakesObjectlessEvents( definition.Type ) )
+			value = 0;
 		else
 			value = measure( definition ) - (IsCountSinceAcceptance( definition.Type ) ? Current.Baseline : 0);
 		var reached = IsSupportedType( definition.Type ) && value >= Target( definition );
+		// [BIN:TPW-EXE:0x4d1660 challenge check] types 14, 15 and 18 write the best object's thing id (0x4cc810, 0x4cc4b0) into the slot's +0x2e when they pass; 19 only compares and leaves the slot's id as the follow-up offer put it
+		if ( reached && definition.Type is 14 or 15 or 18 )
+			SetCarried( definition.Index, bestThing?.Invoke( definition ) ?? 0 );
 		if ( reached && !definition.CheckAtEndOnly )
 		{
 			foreach ( var result in Complete( day, definition ) )
@@ -252,10 +295,15 @@ public sealed class ParkObjectives
 		{
 			// [BIN:TPW-EXE:0x4d2b60 follow-up offer] the slots are scanned from the first, in table order, for the follow-up type (+0x18) with mHaveWon (+0x2c) clear and
 			// mChallengeDeclined (+0x28) below DeclinesToForfeit; only the type is compared, not the object (0x4d2bc0..0x4d2bd8)
-			// [APPROX:ECON-055] the satisfying object a won challenge carries into its follow-up is not modelled: the checks of types 14, 15 and 18 store the best object's thing id in the slot (+0x2e, 0x4d1660), the win 0x4d2fb0 copies it to the challenge system's filter (+0x3e0) and into the follow-up slot, and while the filter is set the accumulator 0x4d27a0 adds only events of that one object (its parameter B, the object index: ride uses of types 17, 20 and 22, 0x501db0); OpenTPW counts the follow-up's uses of every object of its TargetObject type — evidence needed: none (read); OpenTPW keeps no per-object use counts
+			// [BIN:TPW-EXE:0x4d2bc0 follow-up offer] the follow-up scan compares only the type, so the carried object travels in the slot (+0x2e), not in the choice
 			followup = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
 				.FirstOrDefault( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) && !IsForfeited( item.Index ) );
 		}
+		// [BIN:TPW-EXE:0x4d2fb0 challenge won] a won challenge without a follow-up type clears the carried object (+0x3e0) before its prize; one with a follow-up type sets it from the slot's +0x2e
+		// first, whether or not the offer finds a follow-up, and the offered follow-up's slot takes it over (0x4d30c2)
+		ActualThing = definition.FollowupType == 0 ? 0 : carried.GetValueOrDefault( definition.Index );
+		if ( followup != null )
+			SetCarried( followup.Index, ActualThing );
 		finished.Add( (followup ?? definition).Index );
 		Current = null;
 		NextOfferDay = day + settings.ChallengeTiming.DaysAfterCompletedChallenge;
@@ -303,6 +351,8 @@ public sealed class ParkObjectives
 			throw new InvalidOperationException( "No challenge is waiting to be declined." );
 		var index = Current.DefinitionIndex;
 		Current = null;
+		// [BIN:TPW-EXE:0x4d2ec0 challenge declined] the decline clears the carried object (0x4d2f38)
+		ActualThing = 0;
 		NextOfferDay = day + settings.ChallengeTiming.DaysAfterDeclinedChallenge;
 		return index;
 	}
@@ -357,9 +407,11 @@ public sealed class ParkObjectives
 
 	/// <summary>Moves the next offer day by <paramref name="days"/> (a new park started at a later day).</summary>
 
-	internal void Restore( long nextOfferDay, int nextListPosition, ActiveChallenge? current, IReadOnlyDictionary<int, int> restoredDeclines, IEnumerable<int> restoredFinished, IEnumerable<GoldenTicketKind> restoredTickets, bool switchedOn = true )
+	internal void Restore( long nextOfferDay, int nextListPosition, ActiveChallenge? current, IReadOnlyDictionary<int, int> restoredDeclines, IEnumerable<int> restoredFinished, IEnumerable<GoldenTicketKind> restoredTickets, bool switchedOn = true,
+		int actualThing = 0, IReadOnlyDictionary<int, int>? carriedThings = null )
 	{
 		SwitchedOn = switchedOn;
+		RestoreCarried( actualThing, carriedThings );
 		if ( current != null && !settings.Challenges.ContainsKey( current.DefinitionIndex ) )
 			throw new InvalidDataException( $"Saved challenge {current.DefinitionIndex} is not defined in Challenges.sam." );
 		NextOfferDay = nextOfferDay;

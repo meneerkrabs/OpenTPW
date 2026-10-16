@@ -228,6 +228,11 @@ public sealed class ParkEconomy : IParkEconomy
 	/// any coaster for 0, and 0 when none matches. Null in a headless economy, which has no coasters (type 18 then measures 0).
 	/// </summary>
 	public Func<int, long>? CoasterCountedSections { get; set; }
+	/// <summary>
+	/// The economy instance id of the coaster that <see cref="CoasterCountedSections"/> counts for an Info.Id (0: any), 0 when none: the object the checks of challenge
+	/// types 14 and 18 carry into the follow-up (ECON-055). Null in a headless economy.
+	/// </summary>
+	public Func<int, int>? CoasterBestObject { get; set; }
 	/// <summary>New mechanic jobs await this host world; null keeps new headless jobs immediate.</summary>
 	public IMechanicJobWorld? MechanicJobWorld { get; set; }
 	/// <summary>The world that moves the handymen and runs their state machine; null keeps the economy's own dispatch (no positions).</summary>
@@ -1005,7 +1010,7 @@ public sealed class ParkEconomy : IParkEconomy
 	private void EndDay( long day )
 	{
 		// [BIN:TPW-EXE:0x0050B360 thing update] the challenge system's day (0x004D1E90) is its thing update (type 0x13), which a lost park no longer runs
-		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge, IsParkOpen ).ToList() : new();
+		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge, IsParkOpen, BestObjectOf ).ToList() : new();
 		foreach ( var (kind, index, amount, detail) in challenges )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
@@ -1014,6 +1019,18 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		Raise( ParkEventKind.DayEnded, Balance );
 	}
+
+	/// <summary>The object a passing check of type 14, 15 or 18 carries (ECON-055): the best coaster, or for the kart type the instance that reported the highest crossroads record.</summary>
+	private int BestObjectOf( ChallengeDefinition definition )
+	{
+		// [APPROX:ECON-055] the carried object follows tp.exe (the checks of types 14 and 18 store the best coaster's id, the newest first and replaced only by a strictly higher count, 0x4cc810; the win 0x4d2fb0 copies it to the challenge system's filter (+0x3e0) and into the follow-up slot; the accumulator 0x4d27a0 then adds only the carried ride's uses and none of the object-less events of the sales, profits and daily messages), but type 15's best object is the instance that reported the highest crossroads record so far, where the original walks the karts as they are now (0x4cc4b0, the type record's +0x9c and the count 0x545310), and the events of type 11 were not traced to their accumulator call, so the filter does not stop them — evidence needed: the kart ride's current crossroads count (0x545310) and the producer of type 11's accumulator event
+	// [BIN:TPW-EXE:0x4d1660 challenge check] type 14 asks the best coaster of any kind (0x4cc810 with 0), type 18 the best of the info id TargetObj, type 15 the best kart ride (0x4cc4b0)
+		if ( definition.Type == 15 )
+			return recordBest.TryGetValue( (ParkRecordKind.KartCrossroads, definition.TargetObject), out var best ) && objects.ContainsKey( best.Instance ) ? best.Instance : 0;
+		return CoasterBestObject?.Invoke( definition.Type == 14 ? 0 : definition.TargetObject ) ?? 0;
+	}
+
+	private readonly Dictionary<(ParkRecordKind Kind, int InfoId), (long Value, int Instance)> recordBest = new();
 
 	private long MeasureChallenge( ChallengeDefinition definition ) => Objectives.Measure( definition, Counters, Staff, objects.Values, guestStatistics, CoasterCountedSections );
 
@@ -1975,6 +1992,8 @@ public sealed class ParkEconomy : IParkEconomy
 		item.CustomersThisMonth++;
 		item.CustomersRing.Today++;
 		Counters.Add( ParkCounters.RideUses( item.InfoId ), 1 );
+		// [BIN:TPW-EXE:0x5021c5 ride use] the event carries the used ride's thing id as its object (parameter B of 0x004D27A0), which a carried object (ECON-055) must equal
+		Counters.Add( ParkCounters.RideUsesOfThing( item.Id ), 1 );
 	}
 
 	/// <summary>
@@ -2029,6 +2048,9 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		var infoId = objects.TryGetValue( instanceId, out var item ) ? item.InfoId : 0;
 		Counters.Max( ParkCounters.Record( kind, infoId ), value );
+		// the instance that holds a record, a later one replacing it only when strictly above (the best-object walks keep the first of equals, 0x004CC810, 0x004CC4B0)
+		if ( objects.ContainsKey( instanceId ) && (!recordBest.TryGetValue( (kind, infoId), out var held ) || value > held.Value || !objects.ContainsKey( held.Instance )) )
+			recordBest[(kind, infoId)] = (value, instanceId);
 	}
 
 
@@ -2077,8 +2099,10 @@ public sealed class ParkEconomy : IParkEconomy
 	/// declined challenges, and a challenge that is running (accepted, with its deadline and the value it has reached) or offered and unanswered.
 	/// </summary>
 	internal void RestoreOriginalChallenges( long nextOfferDay, int nextListPosition, int? runningIndex, long deadlineDay, long value, int? offeredIndex,
-		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished, bool switchedOn = true )
+		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished, bool switchedOn = true, int actualThing = 0, IReadOnlyDictionary<int, int>? carriedThings = null )
 	{
+		// the carried object first: the baseline of a ride-use type counts that object's uses
+		Objectives.RestoreCarried( actualThing, carriedThings );
 		ActiveChallenge? current = null;
 		if ( runningIndex is int running && Settings.Challenges.TryGetValue( running, out var definition ) )
 		{
@@ -2091,7 +2115,7 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		else if ( offeredIndex is int offered && Settings.Challenges.ContainsKey( offered ) )
 			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0 );
-		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn );
+		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn, actualThing, carriedThings );
 	}
 
 	/// <summary>Takes an original save's bank account: balance, admission fee, the year's profit and the bought loans.</summary>

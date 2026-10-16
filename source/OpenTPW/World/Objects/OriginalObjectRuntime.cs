@@ -150,6 +150,10 @@ public sealed partial class OriginalObjectRuntime
 	}
 
 	public ObjectCatalogEntry Entry { get; }
+
+	/// <summary>Where the script's sound events are looked up when the object comes from another content root (null: the running game's categories).</summary>
+	// [EXT:cross-edition-objects] a Theme Park Inc ride's event ids belong to Theme Park Inc's catalogues
+	internal RseSoundSource? SoundSource => ContentSoundRoots.SourceOf( Entry );
 	/// <summary>The attraction id this runtime's bridge carries (allocated at construction or restored; the allocator frontier moves past it).</summary>
 	public int AttractionId { get; }
 	/// <summary>The coaster controller of a coaster station (<c>Bumper.WhichTrackType 3</c>), else null.</summary>
@@ -749,10 +753,10 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			if (type is >= 3 and <= 9)
 			{
 				if (ride.ResolveEventAnchor(call.Argument(1), out var anchor) == OriginalObjectRuntime.EventAnchorStatus.Play)
-					voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), anchor);
+					voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), anchor, ride.SoundSource);
 			}
 			else
-				voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), null);
+				voice = GameAudio.PlayRseEvent(type, unchecked((uint)call.Argument(2)), null, ride.SoundSource);
 			ownedEventLoops.RemoveAll(loop => loop.IsFinished);
 			if (voice is { Loops: true }) ownedEventLoops.Add(voice);
 			return UnimplementedRideScriptEffects.Instance.Perform( call );

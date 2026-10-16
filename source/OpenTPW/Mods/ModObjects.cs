@@ -17,8 +17,8 @@ public sealed record ModObjectDefinition( string Archive, string? Input, string 
 /// <summary>
 /// A parsed and validated <c>objects.json</c>: the range of Info.Ids the mod reserves and its object definitions. Parsing is
 /// strict in the <see cref="StrictJson"/> style (unknown and duplicate fields, comments and trailing commas are refused), sizes
-/// are bounded, archive paths may not leave their folder, and every Info.Id must lie in the declared range, which must lie
-/// above every id the original games use. Layout records join on Info.Id, so ids stay stable across versions of a mod.
+/// are bounded, archive paths may not leave their folder, and every Info.Id must lie in the declared range, which follows the one rule
+/// of <see cref="CrossEditionObjects.RangeProblem"/> (above every id the original games use, inside the 16-bit Info.Id of their saves). Layout records join on Info.Id, so ids stay stable across versions of a mod.
 /// </summary>
 // [EXT:mods] OpenTPW's own mod system; the original game had no mods
 public sealed record ModObjectsFile
@@ -28,11 +28,6 @@ public sealed record ModObjectsFile
 	public const int MaximumObjects = 256;
 	public const int MaximumNames = 16;
 	public const int MaximumNameLength = 80;
-	/// <summary>The lowest Info.Id a mod may reserve; the original games' ids are well below it.</summary>
-	public const int MinimumInfoId = 10000;
-	public const int MaximumInfoId = 1_000_000_000;
-	public const int MaximumRangeSize = 1000;
-
 	public required int FirstId { get; init; }
 	public required int LastId { get; init; }
 	public required IReadOnlyList<ModObjectDefinition> Objects { get; init; }
@@ -61,8 +56,9 @@ public sealed record ModObjectsFile
 		var range = document.IdRange ?? throw Invalid( "'idRange' is required" );
 		if ( range.First is not { } first || range.Last is not { } last )
 			throw Invalid( "'idRange' needs 'first' and 'last'" );
-		if ( first < MinimumInfoId || last > MaximumInfoId || last < first || last - first >= MaximumRangeSize )
-			throw Invalid( $"'idRange' must lie between {MinimumInfoId} and {MaximumInfoId} and hold at most {MaximumRangeSize} ids" );
+		// [EXT:cross-edition-objects] the one id rule of every mod's range: above the original ids, inside the 16-bit Info.Id of original saves
+		if ( CrossEditionObjects.RangeProblem( first, last ) is { } problem )
+			throw Invalid( $"'idRange' {first}..{last} {problem}" );
 		var items = document.Objects ?? throw Invalid( "'objects' is required" );
 		if ( items.Count > MaximumObjects )
 			throw Invalid( $"'objects' has more than {MaximumObjects} entries" );

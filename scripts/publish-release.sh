@@ -51,7 +51,7 @@ PY
 else
   notes=()
   if [[ -n "${RELEASE_EXTRA_NOTES:-}" ]]; then notes=(--notes "$RELEASE_EXTRA_NOTES"); fi
-  gh release create "$version" --repo "$repository" --verify-tag --draft --title "OpenTPW $version" --generate-notes "${notes[@]}"
+  gh release create "$version" --repo "$repository" --verify-tag --draft --title "OpenTPW $version" --generate-notes ${notes[@]+"${notes[@]}"}
 fi
 
 python3 - "$directory" "$source_commit" "${archives[@]}" <<'PY'

@@ -67,12 +67,18 @@ def check_state(runs):
     return 'green'
 
 
-def plan(head, tags, tags_at_head, commits_since_last_tag, build_runs, release_runs_active):
+def plan(head, tags, tags_at_head, commits_since_last_tag, build_runs, release_runs_active, unfinished_at_head=()):
     """Return {'action': 'release'|'skip', 'reason': ..., 'version': ..., 'commit': ...}."""
     def skip(reason):
         return {'action': 'skip', 'reason': reason, 'version': '', 'commit': head}
     if release_runs_active:
         return skip('a release run is still queued or in progress')
+    # A preview tag whose release is missing or still a draft means an earlier run died after tagging.
+    # Retry that exact version (the publish script repairs it) instead of waiting for the next commit.
+    unfinished = [tag for tag in unfinished_at_head if parse_tag(tag) and parse_tag(tag)[3] is not None]
+    if unfinished and len(unfinished) == len(tags_at_head):
+        return {'action': 'release', 'reason': 'retrying the unfinished release of %s' % max(unfinished, key=sort_key),
+                'version': max(unfinished, key=sort_key), 'commit': head}
     if tags_at_head:
         return skip('HEAD is already tagged (%s)' % ', '.join(sorted(tags_at_head)))
     previous = last_tag(tags)
@@ -111,18 +117,26 @@ def workflow_runs(repository, workflow, **query):
     return json.loads(out or '[]')
 
 
+def release_is_unfinished(repository, tag):
+    """True when the tag has no GitHub release yet or its release is still a draft."""
+    result = subprocess.run(['gh', 'release', 'view', tag, '--repo', repository, '--json', 'isDraft', '--jq', '.isDraft'],
+                            capture_output=True, text=True)
+    return result.returncode != 0 or result.stdout.strip() == 'true'
+
+
 def gather(repository, head):
     tags = sh('git', 'tag', '--list', 'v*').split()
     at_head = [t for t in sh('git', 'tag', '--points-at', head).split() if parse_tag(t)]
     previous = last_tag(tags)
     since = int(sh('git', 'rev-list', '--count', '%s..%s' % (previous, head))) if previous else 1
-    builds = workflow_runs(repository, 'build.yml', head_sha=head, event='push')
+    builds = workflow_runs(repository, 'build.yml', head_sha=head, event='push', branch='main')
+    unfinished = [t for t in at_head if parse_tag(t)[3] is not None and release_is_unfinished(repository, t)]
     active = (workflow_runs(repository, 'release.yml', status='queued')
               + workflow_runs(repository, 'release.yml', status='in_progress'))
     fragments = []
     if previous:
         fragments = sh('git', 'diff', '--name-only', '--diff-filter=A', previous, head, '--', 'docs/progress/').split()
-    return tags, at_head, since, builds, active, fragments
+    return tags, at_head, since, builds, active, fragments, unfinished
 
 
 def main(argv=None):
@@ -136,8 +150,8 @@ def main(argv=None):
     head = args.head or sh('git', 'rev-parse', 'HEAD').strip()
     if not SHA_RE.match(head):
         parser.error('--head must be a full lowercase commit SHA')
-    tags, at_head, since, builds, active, fragments = gather(args.repository, head)
-    decision = plan(head, tags, at_head, since, builds, active)
+    tags, at_head, since, builds, active, fragments, unfinished = gather(args.repository, head)
+    decision = plan(head, tags, at_head, since, builds, active, unfinished)
     if args.notes_file:
         with open(args.notes_file, 'w') as handle:
             handle.write(release_notes(fragments, args.repository, head) if decision['action'] == 'release' else '')

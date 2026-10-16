@@ -1,6 +1,9 @@
 """Hourly preview release planning; no network, git or real releases are used."""
+from pathlib import Path
+import sys
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import release_train as rt
 
 HEAD = 'a' * 40
@@ -69,6 +72,19 @@ class PlanTests(unittest.TestCase):
 
     def test_cancelled_run_is_not_green(self):
         self.assertEqual(decide(['v0.8.6'], runs=[{'status': 'completed', 'conclusion': 'cancelled'}])['action'], 'skip')
+
+    def test_retries_an_unfinished_preview_at_head(self):
+        tag = 'v0.8.7-preview.1'
+        result = rt.plan(HEAD, ['v0.8.6', tag], [tag], 0, [], [], [tag])
+        self.assertEqual((result['action'], result['version']), ('release', tag))
+
+    def test_never_retries_a_stable_tag_at_head(self):
+        result = rt.plan(HEAD, ['v0.8.6'], ['v0.8.6'], 0, GREEN, [], ['v0.8.6'])
+        self.assertEqual(result['action'], 'skip')
+
+    def test_published_tag_at_head_is_skipped(self):
+        tag = 'v0.8.7-preview.1'
+        self.assertEqual(rt.plan(HEAD, ['v0.8.6', tag], [tag], 0, GREEN, [], [])['action'], 'skip')
 
     def test_skips_while_a_release_is_running(self):
         self.assertEqual(decide(['v0.8.6'], active=[{'id': 1}])['action'], 'skip')

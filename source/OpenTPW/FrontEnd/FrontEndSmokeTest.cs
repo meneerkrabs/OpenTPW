@@ -1198,6 +1198,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings[UIStrings.ResumeGame], "Resume Game" );
 			VerifyText( capture, flow.Strings[UIStrings.PublishPark], "Publish Park" );
 			VerifyText( capture, flow.Strings[UIStrings.ExitToLobby], "Exit To Lobby" );
+			var goOnline = flow.Hud.Stack.Top!.Find( nameof( UIStrings.GoOnline ) );
+			var publish = flow.Hud.Stack.Top.Find( nameof( UIStrings.PublishPark ) );
+			Require( online ? goOnline != null : goOnline == null, online ? "the pause menu offers Go Online" : "the disabled online extension removes the pause menu's Go Online line" );
+			Require( online || publish is { Enabled: false }, "the disabled online extension leaves Publish Park as a disabled line" );
 			Click( flow.Hud.Stack.Top!, nameof( UIStrings.Save ) );
 		} );
 		Wait( "save completes", 3 );

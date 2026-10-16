@@ -146,6 +146,7 @@ public static partial class Program
 			Log.Warning( diagnostic );
 		renderer = new Renderer( displaySettings, displayPath );
 		Render = renderer;
+		// [EXT:extension-online-gate] no online folder while the opentpw.online extension is off (docs/MODS.md)
 		flow = new GameFlow { OnlineFolders = FeatureGates.Online ? new OnlineFolders( "/online" ) : null };
 		// Level folders are copied when a park is first started; the lobby keeps running meanwhile.
 		// A language other than the installed one needs its speech files (about 27 MB) beside the text; they are copied when the

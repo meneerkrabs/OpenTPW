@@ -80,8 +80,16 @@ shadowed:
 4. `<program>/content/mods/<id>/`: data-only content shipped with OpenTPW (the only place `opentpw.` ids may come
    from).
 
-In the last two places the folder must be named after the mod's id. Symbolic links inside a mod folder refuse the
-mod (the mod folder itself may be a link), as do more than 20000 files or 2 GiB.
+In the last two places the folder must be named after the mod's id. A folder named on the command line or in
+`OPENTPW_MOD_DIRS` whose path cannot be used is reported as a refused entry.
+
+Mod folders are treated as untrusted. Only regular files are read: a manifest, `mods.json` or mod file that is a
+symbolic link, reparse point, FIFO, device or socket refuses the mod (or, for `mods.json`, falls back to the defaults
+with a warning) without being read, and documents are read through a stream that stops one byte past their limit.
+The mod folder itself may be a link. More than 20000 files or 2 GiB, or two names that differ only by case or Unicode
+normalization (such as `Foo.txt` and `foo.txt`), refuse the mod. Content paths may not use names Windows cannot
+hold: a component ending in `.` or a space, or a device name such as `CON`, `NUL`, `COM1` or `LPT1` (with or without
+an extension).
 
 The browser build has the official extensions only. Community mods there will come later as zips imported into the
 page's private file storage.
@@ -123,8 +131,11 @@ At startup, right after the compatibility settings, OpenTPW resolves the run's s
    then the ordinal id.
 
 Refused mods and the reasons go to the startup log. Each enabled mod gets a **content digest** (`ContentSha256`): the
-SHA-256 of one `path NUL sha256 LF` line per file of the mod's folder, the manifest included, with '/' paths in ordinal
-order and lowercase hex file hashes. Later steps will record it in park saves of mods that change the simulation.
+SHA-256 of one UTF-8 `path NUL sha256 LF` line per file of the mod's folder, the manifest included, with '/' paths in
+Unicode normalization form C sorted by ordinal (UTF-16 code unit) order, and lowercase hex file hashes. A copy of a mod
+on macOS, Windows or Linux therefore gets the same digest (`ModTests.TheGoldenDigestIsTheSameOnEveryPlatform` pins
+one). Operating-system clutter is not part of a mod and is skipped everywhere: `.DS_Store`, AppleDouble `._*` files,
+`Thumbs.db` and `desktop.ini`. Later steps will record the digest in park saves of mods that change the simulation.
 
 With no mods and the default extensions nothing changes: the pinned determinism hashes are the same with
 `opentpw.online` on or off (`DeterminismTests.TogglingOnlyTheOnlineExtensionKeepsThePinnedDigests`).
@@ -143,5 +154,16 @@ When it is switched off (`"opentpw.online": false` in `mods.json`, or `--disable
   disabled";
 - sharing features read `FeatureGates.Sharing` (the edition supports sharing and the extension is on).
 
-`--front-end --smoke-test --disable-extension opentpw.online` runs the front-end smoke test without its online steps
-and checks that the globe button is absent.
+To check the switched-off extension in the real game, run the front-end smoke test with it off (the repository has
+no script or CI job that runs native smokes):
+
+```sh
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --front-end --smoke-test --disable-extension opentpw.online
+```
+
+It skips the online steps and checks that the globe button and the pause menu's Go Online line are absent and that
+Publish Park is a disabled line.
+
+The browser page has no control for the extension yet; a `/config/mods.json` saved in the page's storage is honoured
+at the next start. The page's own scripts make no request to an online server at startup (only the game's online
+client does, after the player acts), so there is no page-level fetch to check when the extension is off.

@@ -12,6 +12,5 @@ script unloads it and boards nobody, and the queue is sent away. It never closes
 lift-off, because the original leaves such a car standing with its riders (docs/TOURS.md). The tour stage now ends about 20 s after the
 close, and the whole jungle smoke runs in about 85 s. A failure in this stage now reports the full controller and script state.
 
-The kart step of the same smoke failed every time on main, because its site search accepted land the park does not own and the track
-builder then refused it (`NotOwned`). The site searches of the sandbox and park-resume smokes now skip unowned cells too, and a failed
-preview reports what stopped it.
+A failed kart or water track preview now also reports what stopped it. (The kart step had failed on main because its site search
+accepted unowned land; #238 fixed that site search in parallel.)

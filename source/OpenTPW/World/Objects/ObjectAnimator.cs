@@ -401,7 +401,8 @@ public sealed class ObjectAnimator
 				else
 				{
 					// [BIN:STP-PPC:0x100A7498 clip end] a non-looping clip with nothing deferred restarts as AnimID 14, which sets channel flags 0x14 (0x100A68AC) and branches past the bind (0x100A694C): frozen on the last frame, no copy-back, GETANIM -1
-					// [APPROX:RIDES-003] A finished non-looping clip holds its last pose until replaced, and the next trigger restores stored components against the ended clip; the original's start passes the channel's AnimID 14, sub 0 entry as the old clip to the copy-back (0xa692c–0xa6948, 0xa69a4: only AnimID 12 skips it), and what that slot holds is not traced — evidence needed: capture after a TRIGANIM clip ends, the object's AnimID-14 table slot, and the ride-data sources of object flags 0x8/0x10 that stop or hold instead
+					// [BIN:TPW-EXE:0x4735D0 clip end] a non-looping clip with nothing deferred restarts as AnimID 14 (0x473866: 0x472f60 with 0xe), which only sets the channel flags 0x14 (frozen on the last frame, ended: GETANIM -1) and leaves the channel's AnimID and sub as they were, so the next start's copy-back (0x472f60 -> 0x472310) runs against the ended clip itself, which is what this does; the AnimID-14 table slot is never read
+					// [APPROX:RIDES-003] a finished clip always takes that route here; the original stops (AnimID 12, 0x47376E) when the object's flag 0x8 is set at clip end and holds the last frame (0x4737D7) for flag 0x10 alone, and no writer of those two instance flags (+4) was found: the creator 0x463060 sets only 0x4, 0x4000 and 0x8000 from its flags and the one 'or [reg+4]' of 0x8 and 0x10 (0x685749, 0x68575A) is outside the model code — evidence needed: a scan of every writer of the instance flag word for bits 0x8 and 0x10
 					channel.Ended = true;
 					frame = duration;
 				}

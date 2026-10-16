@@ -9,7 +9,7 @@ public static class RidesApproximations
 {
 	public static readonly IReadOnlyList<(string Id, string Rule)> Entries = new[]
 	{
-		("RIDES-003", "finished clips hold their last pose (AnimID 14 path traced; object flags 0x8/0x10 and the AnimID-14 copy-back slot untraced)"),
+		("RIDES-003", "a finished clip always holds its last pose (PC clip end 0x4735D0 restarts it as AnimID 14, which keeps the channel's clip id, so the next start restores against the ended clip as here); the original stops for object flag 0x8 and holds for 0x10 alone, and no writer of those instance flags was found"),
 		("RIDES-011", "'+' (11) is an overlay cell over the parent ride's track and the track ends '<' '>' are station connections here; the original placement 0x528a70 stamps '+', '#' (16) and the ends (23) as occupied type 4 (0x5290c7..0x5290ee), checks '+' with cell op 0x10b (0x20b when validating) and '#' with 0x110/0x210 and on commit overwrites the flags word +0xe of the cell and of its second-layer cell with 0x10 (0x52950d..0x52951c); an end with a direction ('>' 4, '<' 0x40) needs the cell beyond it in its rotated direction (refused when missing, 0x5295a8) and on commit turns that cell into type 0x15 (ops 0x87, 0x15, 0x83, 0x84, 0x81 at 0x5295f7..0x52963f); what ops 0x10b/0x110 and type 0x15 require is not decoded"),
 		("RIDES-014", "base height = mean footprint ground height"),
 		("RIDES-018", "terrain/overlap/owned-land rules without slope/path; Level enforces economy purchases"),

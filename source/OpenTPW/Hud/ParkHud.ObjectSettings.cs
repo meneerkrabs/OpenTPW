@@ -65,7 +65,8 @@ public sealed partial class ParkHud
 		}
 		if ( !TryPriceTarget( item, out _, out var state ) )
 			return;
-		// [APPROX:UI-024] the price and prize boxes are taken to clamp their values like the slider class; the variable box class (0x66a5c4 range, 0x66a68d step) is not decoded
+		// [BIN:TPW-EXE:0x66a71c variable box SetPos] the variable box class (vtable 0x705af0, slot +0x1c 0x66a6ae) lowers a value above its maximum (+0x13c) to it, else raises one below its minimum (+0x138), and sends 0x800 on a change and always on its first set (flag +0x154 from the constructor 0x66a558); its SetRange 0x66a5c4 clamps the value too
+		// [APPROX:UI-024] the window loads each object's own values; the original's window object is static and its controls are rebuilt on each open (+0x10 cleared at 0x48d26f) with a slider starting at position 0 (constructor 0x66ad5a) that sends 0x800 only on a change, so a loaded value equal to the new slider's starting position may leave the previous object's window value (low confidence)
 		pending.Price = SliderPosition( state.Price, 0, MaximumPrice );
 		pending.Prize = SliderPosition( state.CostOfGoods, 0, MaximumPrize );
 		pending.QualityStep = SliderPosition( (state.QualityOfGoods & 0xFF) / 50, 0, 2 );
@@ -218,7 +219,7 @@ public sealed partial class ParkHud
 		sideshowPrizeLabel = Label( "sideshowPrizeLabel", () => strings[UIStrings.CostOfPrize] );
 		prizeBox = Info( new ValueBox( () => SettingNumber( pending.Prize ) ) { Id = "prizeBox" } );
 		// [BIN:TPW-EXE:0x4b0735 price box] the variable boxes step by 1 (0x66a68d) through b_minus and b_plus
-		// [APPROX:UI-024] a click on b_minus or b_plus steps the value by one; the variable box's own repeat while held (attribute 0x21) is not decoded
+		// [APPROX:UI-024] a click on b_minus or b_plus steps the value by one; the variable box's repeat while a button is held (attribute 0x21) is not decoded
 		UiButton Step( string id, string model, Func<int> value, Action<int> set, int maximum, int direction ) => Info( new UiButton
 		{
 			Id = id, Model = model, Clicked = () => { if ( !RejectReadOnlyAction() ) set( SliderPosition( value() + direction, 0, maximum ) ); }
@@ -273,9 +274,11 @@ public sealed partial class ParkHud
 		var item = selectedObject!;
 		var table = layout.Table;
 		var ride = table == OriginalLayoutTables.RideWindow && item.Runtime.Script != null && !level.IsReadOnlyVisit;
-		var priced = TryPriceTarget( item, out _, out var state );
-		var shop = table == OriginalLayoutTables.ShopWindow && priced && state.Kind == ParkObjectKind.Shop;
-		var sideshow = table == OriginalLayoutTables.SideshowWindow && priced && state.Kind == ParkObjectKind.Sideshow;
+		// TryPriceTarget refuses a read-only visit, so the shop and sideshow controls hide there like the ride's
+		ParkObjectState? state = null;
+		var priced = !level.IsReadOnlyVisit && TryPriceTarget( item, out _, out state );
+		var shop = table == OriginalLayoutTables.ShopWindow && priced && state!.Kind == ParkObjectKind.Shop;
+		var sideshow = table == OriginalLayoutTables.SideshowWindow && priced && state!.Kind == ParkObjectKind.Sideshow;
 		var winnable = sideshow && !IsNonWinnable( item );
 
 		void Slider( UiSlider? slider, uint id, bool visible )

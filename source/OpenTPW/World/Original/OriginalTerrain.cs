@@ -264,7 +264,7 @@ public sealed class OriginalTerrain : Entity
 							Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : System.Numerics.Vector3.UnitZ,
 							TexCoords = mesh.TexCoords[index],
 							TexIndex = slotOfMaterial[materialIndex],
-							MatFlags = mesh.Materials[materialIndex].Flags
+							MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags )
 						} );
 					}
 					foreach ( var index in mesh.Indices )
@@ -394,7 +394,7 @@ public sealed class OriginalTerrain : Entity
 					Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( new System.Numerics.Vector3( normal.X, normal.Z, normal.Y ) ) : System.Numerics.Vector3.UnitZ,
 					TexCoords = mesh.TexCoords[index],
 					TexIndex = slotOfMaterial[materialIndex],
-					MatFlags = mesh.Materials[materialIndex].Flags
+					MatFlags = TextureSlotAddressing.VertexFlags( mesh.Materials[materialIndex].Flags )
 				} );
 			}
 			foreach ( var index in mesh.Indices )

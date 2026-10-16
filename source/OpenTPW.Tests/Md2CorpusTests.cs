@@ -21,7 +21,7 @@ public class Md2CorpusTests
 		int members = 0, geometry = 0, animation = 0;
 		long sharedTables = 0, tableBytes = 0;
 		long tracks = 0, trsTracks = 0, undecodedTracks = 0, bezierTracks = 0, linearTracks = 0, positionKeys = 0, rotationKeys = 0, easedKeys = 0, scaleKeys = 0;
-		long meshes = 0, nodes = 0, faces = 0, corners = 0, positions = 0, materials = 0, untextured = 0, textureSlots = 0, multiFrame = 0, extra = 0, attributes = 0;
+		long meshes = 0, nodes = 0, faces = 0, corners = 0, positions = 0, materials = 0, untextured = 0, textureSlots = 0, multiFrame = 0, wrappingSlots = 0, clampedCornersOutside = 0, wrappedCornersOutside = 0, extra = 0, attributes = 0;
 		var unsupported = new List<string>();
 		var failures = new List<string>();
 		foreach ( var wad in wads )
@@ -64,6 +64,19 @@ public class Md2CorpusTests
 					untextured += model.Meshes.Sum( mesh => mesh.Materials.Count( material => material.TextureIndex < 0 ) );
 					textureSlots += model.Textures.Count;
 					multiFrame += model.Textures.Count( texture => texture.FrameNames.Count > 1 );
+					wrappingSlots += model.Textures.Count( texture => TextureSlotAddressing.Wraps( texture.Flags ) );
+					foreach ( var mesh in model.Meshes )
+						for ( var corner = 0; corner < mesh.Vertices.Length && corner < mesh.TexCoords.Length; corner++ )
+						{
+							var material = mesh.Vertices[corner].TextureIndex;
+							var uv = mesh.TexCoords[corner];
+							if ( material >= mesh.Materials.Length || mesh.Materials[material].TextureIndex < 0 || (uv.X >= 0f && uv.X <= 1f && uv.Y >= 0f && uv.Y <= 1f) )
+								continue;
+							if ( TextureSlotAddressing.Wraps( mesh.Materials[material].Flags ) )
+								wrappedCornersOutside++;
+							else
+								clampedCornersOutside++;
+						}
 					extra += model.ExtraRecords.Count;
 					attributes += model.DummyAttributes.Count;
 				}
@@ -96,6 +109,11 @@ public class Md2CorpusTests
 		Assert.AreEqual( 3, untextured );
 		Assert.AreEqual( 7282, textureSlots );
 		Assert.AreEqual( 124, multiFrame );
+		// tp.exe wraps a slot with flag 0x10 or 0x20 and clamps the rest (TextureSlotAddressing): only wrapping slots have corners
+		// outside 0..1, so clamping changes no tiled texture, only how a clamped slot's edge texels filter (no bleed from the opposite edge).
+		Assert.AreEqual( 2457, wrappingSlots );
+		Assert.AreEqual( 67039, wrappedCornersOutside );
+		Assert.AreEqual( 0, clampedCornersOutside );
 		Assert.AreEqual( 27, extra );
 		Assert.AreEqual( 2452, attributes );
 		Assert.AreEqual( 6549, tracks );

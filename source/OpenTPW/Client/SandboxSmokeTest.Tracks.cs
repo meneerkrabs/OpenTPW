@@ -69,7 +69,7 @@ internal sealed partial class SandboxSmokeTest
 		{
 			var cell = (X: index % grid.Width, Y: index / grid.Width);
 			var candidate = Level.GetCentredAnchor( entry!, cell.X, cell.Y, 0 );
-			if ( level.Objects.Check( entry!, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
+			if ( level.Objects.CheckFree( entry!, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
 				continue;
 			// the footprint rows, the loop tiles around it (x from −2 to +5, y from 0 to 5) and the queue's front cell must be free
 			var cells = Enumerable.Range( candidate.X - 2, 9 ).SelectMany( x => Enumerable.Range( candidate.Y - 1, 8 ).Select( y => (X: x, Y: y) ) );
@@ -98,7 +98,7 @@ internal sealed partial class SandboxSmokeTest
 		foreach ( var corner in corners.Skip( 1 ) )
 		{
 			var ghost = level.CellTool.Hover( corner );
-			Require( ghost is { Completed: true } && ghost.Built.Count > 0, $"the tool previews the line to {corner}" );
+			Require( ghost is { Completed: true } && ghost.Built.Count > 0, $"the tool previews the line to {corner} (stopped by {ghost?.StoppedBy} at {ghost?.StoppedAt}, {ghost?.Built.Count} tiles)" );
 			var committed = level.CellTool.Click( corner );
 			Require( committed is { Completed: true }, $"the click lays the line to {corner}" );
 			tiles += committed!.Built.Count;
@@ -162,7 +162,7 @@ internal sealed partial class SandboxSmokeTest
 		{
 			var cell = (X: index % grid.Width, Y: index / grid.Width);
 			var candidate = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
-			if ( level.Objects.Check( entry, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
+			if ( level.Objects.CheckFree( entry, candidate.X, candidate.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
 				continue;
 			if ( Enumerable.Range( candidate.X - 1, 7 ).All( x => Enumerable.Range( candidate.Y - 1, 8 ).All( y => Free( x, y ) && OnScreen( (x, y) ) ) ) )
 				anchor = candidate;

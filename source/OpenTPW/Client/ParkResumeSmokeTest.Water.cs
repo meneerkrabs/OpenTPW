@@ -40,7 +40,7 @@ internal sealed partial class ParkResumeSmokeTest
 			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )
 		{
 			var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
-			if ( level.Objects.Check( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed )
+			if ( level.Objects.CheckFree( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed )
 				continue;
 			if ( Enumerable.Range( anchor.X - 2, 9 ).All( x => Enumerable.Range( anchor.Y - 1, 8 ).All( y => Free( x, y ) ) ) )
 			{

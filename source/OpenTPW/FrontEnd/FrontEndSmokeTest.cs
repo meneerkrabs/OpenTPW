@@ -1064,7 +1064,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				"enumeration preserves the prototype object identity" );
 			// A different object can carry the same id in a different script world: removal must check ownership.
 			var foreign = new OriginalObject( reviewedPrototype!.Entry, reviewedPrototype.Placement,
-				new RideScriptWorld(), seed: null, open: false, attractionId: prototypeAttractionId );
+				new RideScriptWorld(), seed: null, open: false, attractionId: prototypeAttractionId, seedScript: true );
 			try
 			{
 				var balance = level.Park!.Economy.Balance;
@@ -1766,7 +1766,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private static (int X, int Y) FindObjectSite( Level level, ObjectCatalogEntry entry ) =>
 		Enumerable.Range( 0, level.Objects.Grid.Width * level.Objects.Grid.Height )
 			.Select( index => (X: index % level.Objects.Grid.Width, Y: index / level.Objects.Grid.Width) )
-			.First( cell => level.CheckObject( entry, cell.X, cell.Y, level.BuildRotation ) == OriginalPlacementResult.Allowed );
+			.First( cell => level.CheckFreeObject( entry, cell.X, cell.Y, level.BuildRotation ) == OriginalPlacementResult.Allowed );
 
 	/// <summary>
 	/// Places the developer prototype Totem at the first buildable cell centre: <see cref="Level.PlaceRide"/>

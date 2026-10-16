@@ -26,7 +26,10 @@ public sealed class RideVMOptions
 	/// <summary>Loads a SPAWNCHILD/SPAWNSOUND script by its file name (resolved in the parent's archive). Null if missing.</summary>
 	public Func<string, RideScriptFile?>? ResolveScript { get; init; }
 
-	/// <summary>RAND / FINDSCRIPTRAND seed; null draws one from the <see cref="RideScriptWorld"/>'s seed stream.</summary>
+	/// <summary>
+	/// RAND / FINDSCRIPTRAND seed. Null (the default): the script has no generator of its own and draws from the <see cref="RideScriptWorld"/>'s world
+	/// generator, as every script of the original does (tp.exe 0x00516330 through 0x0055398A and 0x005560CB); a value gives the script a private seeded generator (tests, standalone scripts).
+	/// </summary>
 	public int? Seed { get; init; }
 
 	/// <summary>Instructions per slice. Default: the script header's time slice (50 in every corpus script).</summary>
@@ -53,11 +56,12 @@ public sealed class RideVM
 
 	private readonly Instruction[] instructions;
 	private readonly Stack<int> callStack = new();
-	// An owned seeded .NET-compatible generator whose full state the park-resume snapshot can store; its draws
-	// are exactly a seeded System.Random's (ScriptRandomTests proves it). The canonical hash still takes the seed
-	// plus the number of RNG calls, unchanged.
-	private readonly ScriptRandom random;
-	private readonly int seed;
+	// A private seeded .NET-compatible generator whose full state the park-resume snapshot can store; its draws
+	// are exactly a seeded System.Random's (ScriptRandomTests proves it). Null for a script created without a seed:
+	// it draws from the world generator (RideScriptWorld.World), whose state the world saves. The canonical hash takes the seed
+	// plus the number of RNG calls, and marks a world-generator script.
+	private ScriptRandom? random;
+	private int seed;
 	private long randomDraws;
 	private readonly RideVMOptions options;
 	private readonly Dictionary<Opcode, int> unimplementedEffects = new();
@@ -70,7 +74,7 @@ public sealed class RideVM
 	public int ScriptId { get; internal set; }
 	/// <summary>The constructor options (effects, world, resolver, seed) — children copy them when spawned and the restore reads them.</summary>
 	internal RideVMOptions Options => options;
-	/// <summary>The constructor seed (explicit or drawn from the world stream); hashed by the canonical state.</summary>
+	/// <summary>The constructor seed (0 for a script that draws from the world generator); hashed by the canonical state.</summary>
 	internal int Seed => seed;
 	public RideScriptWorld World { get; }
 	public IRideScriptEffects Effects { get; }
@@ -153,9 +157,9 @@ public sealed class RideVM
 		SourceName = options.SourceName ?? "script";
 		Effects = options.Effects ?? UnimplementedRideScriptEffects.Instance;
 		World = options.World ?? parent?.World ?? new RideScriptWorld();
-		seed = options.Seed ?? World.NextScriptSeed();
+		seed = options.Seed ?? 0;
 		ClockOriginMilliseconds = parent?.SchedulerMilliseconds ?? World.ClockMilliseconds;
-		random = new ScriptRandom( seed );
+		random = options.Seed is { } explicitSeed ? new ScriptRandom( explicitSeed ) : null;
 		SliceBudget = options.SliceBudget ?? script.TimeSlice;
 		if ( SliceBudget <= 0 )
 			throw new InvalidDataException( $"RSE slice budget {SliceBudget} is not positive." );
@@ -327,7 +331,8 @@ public sealed class RideVM
 			ScriptName = ScriptName,
 			ScriptIdentityHash = RideScriptIdentity.Hash( Script ),
 			Seed = seed,
-			RandomState = random.CaptureState(),
+			RandomState = random?.CaptureState(),
+			UsesWorldRandom = random == null,
 			RandomDraws = randomDraws,
 			State = State,
 			FaultMessage = FaultMessage,
@@ -400,7 +405,18 @@ public sealed class RideVM
 		foreach ( var (opcode, count) in snapshot.UnimplementedEffects )
 			unimplementedEffects[opcode] = count;
 		randomDraws = snapshot.RandomDraws;
-		random.RestoreState( snapshot.RandomState );
+		// the snapshot decides how this script draws: a script of the world generator has no state of its own to restore (the world restores the generator)
+		if ( snapshot.UsesWorldRandom )
+		{
+			seed = 0;
+			random = null;
+		}
+		else
+		{
+			seed = snapshot.Seed;
+			random = new ScriptRandom( snapshot.Seed );
+			random.RestoreState( snapshot.RandomState! );
+		}
 	}
 
 	/// <summary>Adopts a restored script id (the world rebinds the registration around it).</summary>
@@ -465,7 +481,7 @@ public sealed class RideVM
 		if ( maximumInclusive < 0 )
 			throw new RideScriptException( $"RAND maximum {maximumInclusive} is negative" );
 		randomDraws++;
-		return random.Next( 0, maximumInclusive + 1 );
+		return random != null ? random.Next( 0, maximumInclusive + 1 ) : World.ScriptRand( maximumInclusive );
 	}
 
 	internal void SetTimer( int milliseconds ) => timerEndMilliseconds = TimeMilliseconds + milliseconds;
@@ -558,14 +574,20 @@ public sealed class RideVM
 		hash.Add( SliceCount );
 		hash.Add( seed );
 		hash.Add( randomDraws );
+		// a script of the world generator is told from one with the seed 0 (the park's generator state is hashed once, with the world)
+		if ( random == null )
+			hash.Add( true );
 		// The object state a root script's animation opcodes read back (GETANIM, TRIGWAITANIM); children share it.
 		hash.Add( Parent == null && Effects is IRideCanonicalEffects );
 		if ( Parent == null && Effects is IRideCanonicalEffects canonical )
 			canonical.AddCanonicalState( hash );
 	}
 
-	private int NextChildSeed()
+	/// <summary>The seed of a spawned child: drawn from this script's own generator, or null (the world generator) for a script that has none, as the original's children are not seeded.</summary>
+	private int? NextChildSeed()
 	{
+		if ( random == null )
+			return null;
 		randomDraws++;
 		return random.Next();
 	}

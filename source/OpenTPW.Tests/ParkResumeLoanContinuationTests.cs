@@ -18,7 +18,16 @@ public sealed class ParkResumeLoanContinuationTests
 		economy.TakeLoan( 2 );
 		economy.TakeLoan( 0 );
 		economy.AdvanceMonths( 5 );
-		snapshot = snapshot with { Economy = ParkSaveFile.Capture( economy, world ) };
+		// the park's world generator is the economy's here: each capture carries its own economy's state
+		WorldRandomState Of( ParkEconomy park ) => world! with { Generator = park.World.State };
+		// the guests and the scripts draw from the same generator as the economy
+		ParkResumeSnapshot With( ParkResumeSnapshot envelope, ParkEconomy park ) => envelope with
+		{
+			Economy = ParkSaveFile.Capture( park, Of( park ) ),
+			Guests = envelope.Guests with { RandomState = park.World.State, WorldGenerator = park.World.State },
+			Scripts = envelope.Scripts with { RandomState = park.World.State, WorldGenerator = park.World.State }
+		};
+		snapshot = With( snapshot, economy );
 
 		// Go through the strict world codec, including its embedded economy and association checks.
 		var bytes = ParkResumeSaveFile.Serialize( snapshot );
@@ -33,8 +42,8 @@ public sealed class ParkResumeLoanContinuationTests
 		Assert.AreEqual( -5115L, restored.Ledger.ProfitThisYear );
 
 		void SameEnvelope( string stage ) => CollectionAssert.AreEqual(
-			ParkResumeSaveFile.Serialize( snapshot with { Economy = ParkSaveFile.Capture( economy, world ) } ),
-			ParkResumeSaveFile.Serialize( decoded with { Economy = ParkSaveFile.Capture( restored, world ) } ), stage );
+			ParkResumeSaveFile.Serialize( With( snapshot, economy ) ),
+			ParkResumeSaveFile.Serialize( With( decoded, restored ) ), stage );
 
 		SameEnvelope( "immediately after restoration" );
 		for ( var month = 6; month <= 13; month++ )

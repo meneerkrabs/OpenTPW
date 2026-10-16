@@ -22,7 +22,7 @@ public sealed partial class ParkHud
 		: item.InfoId == BuyLandRow.InfoId ? strings[UIStrings.BuyLand] : strings[UIStrings.ClearLand];
 
 	/// <summary>The value a buy list row shows and sorts by: a land row's own value, else the object's price.</summary>
-	public long BuyPrice( BuildItem item ) => !IsLandRow( item ) ? Status.PriceOf( item ) ?? item.Cost
+	public long BuyPrice( BuildItem item ) => !IsLandRow( item ) ? (Status.TicketCostOf( item ) is { } tickets ? -tickets : Status.PriceOf( item ) ?? item.Cost)
 		: item.InfoId == BuyLandRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.Land ) ?? 0) : 0;
 
 	/// <summary>Whether a buy list row can be used now: Buy Land with a land model, Clear Land with the area clear tool, else the catalogue's availability.</summary>

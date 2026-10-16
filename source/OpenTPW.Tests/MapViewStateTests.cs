@@ -100,3 +100,35 @@ public class MapViewStateTests
 		Assert.AreEqual( 512f, last.Bottom );
 	}
 }
+
+/// <summary>UI-103: the map view's edge scroll (tp.exe 0x5f1130 message 0x1e, 0x5f35b0).</summary>
+[TestClass]
+public class MapEdgeScrollTests
+{
+	[TestMethod]
+	public void TheStepIsTwoHundredFiftyCellsPerUnitOfDepthIntoTheOuterOnePerCent()
+	{
+		Assert.AreEqual( (0f, 0f), ParkHud.MapEdgeStep( 0.5f, 0.5f ) );
+		Assert.AreEqual( (0f, 0f), ParkHud.MapEdgeStep( 0.01f, 0.99f ), "the inner 98 per cent does nothing" );
+		Assert.AreEqual( 2.5f, ParkHud.MapEdgeStep( 1f, 0.5f ).X, 1e-5f, "the right edge: (1 - 0.99) x 250" );
+		Assert.AreEqual( -2.5f, ParkHud.MapEdgeStep( 0f, 0.5f ).X, 1e-5f, "the left edge moves x less (direction 0)" );
+		Assert.AreEqual( -1.25f, ParkHud.MapEdgeStep( 0.5f, 0.005f ).Y, 1e-5f, "the top edge is the up button's direction" );
+		Assert.AreEqual( 1.25f, ParkHud.MapEdgeStep( 0.5f, 0.995f ).Y, 1e-5f );
+		Assert.AreEqual( 2.5f, ParkHud.MapEdgeStep( 7f, 0.5f ).X, 1e-5f, "the share is clamped to 0..1" );
+	}
+
+	[TestMethod]
+	public void OnlyPushscrollScrollsAndTheCentreStaysInTheMap()
+	{
+		var view = MapViewState.Default.PanBy( 0, 0, 96, 85 );
+		var centre = view.Cell;
+		var edge = new System.Numerics.Vector2( 999, 400 );
+		Assert.AreEqual( centre, ParkHud.EdgeScrolled( view, 3, edge, 1000, 800, ScrollMode.RightButton, 96, 85 ).Cell, "the flag 0x78d910 set (Right button) disables it" );
+		Assert.AreEqual( centre, ParkHud.EdgeScrolled( view, 0, edge, 1000, 800, ScrollMode.Pushscroll, 96, 85 ).Cell, "no frame, no step" );
+		Assert.AreEqual( centre, ParkHud.EdgeScrolled( view, 3, new System.Numerics.Vector2( -1, -1 ), 1000, 800, ScrollMode.Pushscroll, 96, 85 ).Cell, "a pointer outside the window sends no message" );
+		var moved = ParkHud.EdgeScrolled( view, 2, edge, 1000, 800, ScrollMode.Pushscroll, 96, 85 );
+		Assert.AreEqual( centre.X + 2 * 2.25f, moved.Cell.X, 0.01f, "(0.999 - 0.99) x 250 = 2.25 a frame, two frames" );
+		Assert.AreEqual( centre.Y, moved.Cell.Y );
+		Assert.AreEqual( 95f, ParkHud.EdgeScrolled( moved, 100, edge, 1000, 800, ScrollMode.Pushscroll, 96, 85 ).Cell.X, "0x5f35b0 clamps the centre to the map" );
+	}
+}

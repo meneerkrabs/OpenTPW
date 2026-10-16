@@ -13,6 +13,7 @@ public readonly record struct CameraControlInput
 	public Vector2 MouseDelta { get; init; }
 	public Point2 LogicalSize { get; init; }
 	public bool RightButton { get; init; }
+	public bool MiddleButton { get; init; }
 	public float Wheel { get; init; }
 	public float Forward { get; init; }
 	public float Right { get; init; }

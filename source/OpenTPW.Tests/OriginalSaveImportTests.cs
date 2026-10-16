@@ -179,7 +179,7 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "hired 2,430,000 park seconds after FunnyTimeStart = turn 648" );
 		Assert.AreEqual( 1, import.ImportedStaff );
 		Assert.IsFalse( import.ParkClosed );
-		foreach ( var id in new[] { "SAVE-001", "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-008", "SAVE-010" } )
+		foreach ( var id in new[] { "SAVE-001", "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) ), "the dropped generator state is named" );
 		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "0 saved guests", StringComparison.Ordinal ) && line.Contains( "imported by the guest simulation" ) ) );
@@ -193,7 +193,7 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( (economy.Tick, economy.Balance, economy.Staff.Members.Count), (restored.Tick, restored.Balance, restored.Staff.Members.Count) );
 	}
 
-	/// <summary>Every World, thing and advisor-controller value the importer reads but does not import is named under SAVE-010 or SAVE-008.</summary>
+	/// <summary>Every World, thing and advisor-controller value the importer reads but does not import is named under SAVE-010.</summary>
 	private static void AssertReportsUnimportedValues( OriginalEconomyImport import )
 	{
 		string Line( string start ) => import.Evidence.Single( line => line.StartsWith( start, StringComparison.Ordinal ) );
@@ -206,7 +206,7 @@ public class OriginalSaveImportTests
 		var advisor = Line( "[APPROX:SAVE-010] Advisor controller values not imported:" );
 		foreach ( var value in new[] { "time signature ", "sound ", "raw words 0x", "current record (", "mRequestedLastTutorial 0x", "mMessagePlaying " } )
 			StringAssert.Contains( advisor, value );
-		StringAssert.Contains( Line( "[APPROX:SAVE-008] Not imported:" ), "batch balance " );
+		StringAssert.Contains( Line( "Bank batch credit imported:" ), "the month opens at the current balance" );
 		StringAssert.Contains( Line( "Bank words imported:" ), "withdrawals enabled, last balance " );
 		StringAssert.Contains( Line( "Loan offers' stored credit tests imported:" ), "the Available tab lists " );
 		var challenges = Line( "[APPROX:SAVE-005]" );

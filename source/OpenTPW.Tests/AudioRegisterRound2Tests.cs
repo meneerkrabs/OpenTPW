@@ -79,7 +79,8 @@ public class AudioRegisterRound2Tests
 			var (id, flags, frames) = events[index];
 			var sample = new SoundSample( 1, 65535, 0, (ushort)(index + 1), 0 );
 			var sound = new SoundEntry( 100, 100, 0, 0, 0, 0, 1, 100, new[] { sample }, Array.Empty<SoundLink>(), Array.Empty<byte>() );
-			list.Add( new SoundEvent( id, 0, flags, 0, new[] { sound } ) );
+			// the rain event carries the shipped event code 8 (cat_ambient 0x21, +0x12), which the level voice's parameter call targets
+			list.Add( new SoundEvent( id, 0, flags, id == GameAudio.RainEvent ? GameAudio.RainParameterCode : (ushort)0, new[] { sound } ) );
 			decoded[(category, index + 1, 1)] = new Mp2Audio( AudioMixer.OutputRate, 1, Enumerable.Repeat( (short)1000, frames ).ToArray(), 1, 0 );
 		}
 		Set( catalog, "Events", list.ToArray() );

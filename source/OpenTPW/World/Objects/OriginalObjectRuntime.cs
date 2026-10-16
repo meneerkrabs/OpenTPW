@@ -54,8 +54,8 @@ public sealed partial class OriginalObjectRuntime
 		{
 			Bump = new BumpController( template, world.NextWorldDraw, world.Bumpers ) { AttractionId = AttractionId };
 			world.Bumpers.Add( Bump );
-			if ( !template.IsWater )
-				Bump.Effect += OnBumpEffect;
+			// every family's effects are played: the karts' and bumper cars' cues, the boats' spray, engine voice and unload particle (0x547F50, 0x54A909, 0x54AE50)
+			Bump.Effect += OnBumpEffect;
 			Visitors.ExcitementBase = Bump.ExcitementBase;
 		}
 		Model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );

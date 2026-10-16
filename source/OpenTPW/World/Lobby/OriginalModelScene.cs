@@ -20,14 +20,20 @@ public abstract class OriginalModelScene : Entity
 
 	public int PartCount => parts.Count;
 
-	/// <summary>Shows or hides every part; the scene stays loaded.</summary>
+	private bool visible = true;
+	private readonly List<AnimatedModel> animatedModels = new();
+
+	/// <summary>Shows or hides every part (an animated model only while it is <see cref="AnimatedModel.Shown"/>); the scene stays loaded.</summary>
 	public bool Visible
 	{
-		get => parts.Count == 0 || !parts[0].Hidden;
+		get => visible;
 		set
 		{
+			visible = value;
 			foreach ( var part in parts )
 				part.Hidden = !value;
+			foreach ( var model in animatedModels )
+				model.ApplyVisibility();
 		}
 	}
 
@@ -114,7 +120,7 @@ public abstract class OriginalModelScene : Entity
 		indices.Clear();
 	}
 
-	private Texture LoadTexture( string name )
+	protected Texture LoadTexture( string name )
 	{
 		if ( name.Length == 0 )
 			return Texture.Missing;
@@ -125,6 +131,115 @@ public abstract class OriginalModelScene : Entity
 		textures[name] = texture;
 		return texture;
 	}
+
+	/// <summary>
+	/// An MD2 model drawn with its own <see cref="ObjectAnimator"/>: one part per mesh (split at 16 textures) moved by its
+	/// node's animated matrix and the model's <see cref="Placement"/>, and rewritten when a vertex or texture-coordinate
+	/// track changes the mesh, the way placed park objects are drawn (<see cref="OriginalObject"/>).
+	/// </summary>
+	protected sealed class AnimatedModel
+	{
+		private readonly List<(ModelEntity Entity, int Node, int Mesh, Vertex[] Vertices, Model Model, int Version)> meshParts = new();
+
+		private readonly OriginalModelScene scene;
+		private bool shown = true;
+
+		internal AnimatedModel( OriginalModelScene scene, ModelFile file, bool animatedMeshes )
+		{
+			this.scene = scene;
+			scene.animatedModels.Add( this );
+			File = file;
+			Animator = new ObjectAnimator( file );
+			dynamicMeshes = animatedMeshes;
+			for ( var meshIndex = 0; meshIndex < file.Meshes.Count; meshIndex++ )
+			{
+				var mesh = file.Meshes[meshIndex];
+				if ( ObjectAssets.GetUnrenderableReason( mesh ) is "no geometry" or "no materials" )
+					continue;
+				var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < file.Nodes.Count ? mesh.NodeIndex : file.RootNodeIndex;
+				IReadOnlyList<(Vertex[] Vertices, uint[] Indices, string[] Textures, int[] Slots)> converted;
+				try
+				{
+					converted = ObjectAssets.ConvertMeshParts( mesh );
+				}
+				catch ( InvalidDataException exception )
+				{
+					Log?.Warning( $"Lobby model mesh {mesh.Name}: {exception.Message}" );
+					continue;
+				}
+				foreach ( var (vertices, indices, textures, _) in converted )
+				{
+					var slots = new Texture[MaximumTextureSlots];
+					for ( var index = 0; index < slots.Length; index++ )
+						slots[index] = index < textures.Length ? scene.LoadTexture( textures[index] ) : slots[0] ?? Texture.Missing;
+					var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+					material.Set( "Color", slots );
+					var model = new Model( vertices, indices, material, animatedMeshes );
+					scene.models.Add( model );
+					var entity = new ModelEntity { Model = model, Name = $"{scene.GetType().Name} part {scene.parts.Count}" };
+					scene.parts.Add( entity );
+					meshParts.Add( (entity, node, meshIndex, vertices, model, -1) );
+				}
+			}
+			UpdateParts();
+		}
+
+		private readonly bool dynamicMeshes;
+
+		public ModelFile File { get; }
+		public ObjectAnimator Animator { get; }
+
+		/// <summary>Whether the model is drawn while its scene is visible (a model built ahead of its use stays hidden until then).</summary>
+		public bool Shown
+		{
+			get => shown;
+			set
+			{
+				shown = value;
+				ApplyVisibility();
+			}
+		}
+
+		internal void ApplyVisibility()
+		{
+			foreach ( var part in meshParts )
+				part.Entity.Hidden = !shown || !scene.visible;
+		}
+
+		/// <summary>Model-to-lobby matrix in MD2 axes (row vectors).</summary>
+		public NMatrix4x4 Placement { get; set; } = NMatrix4x4.Identity;
+
+		/// <summary>Advances the animator by <paramref name="seconds"/> and moves and reshapes the parts.</summary>
+		public void Advance( double seconds )
+		{
+			Animator.Advance( seconds );
+			UpdateParts();
+		}
+
+		/// <summary>Moves and reshapes the parts for the current pose and placement.</summary>
+		public void UpdateParts()
+		{
+			var nodes = Animator.NodeTransforms;
+			for ( var index = 0; index < meshParts.Count; index++ )
+			{
+				var (entity, node, mesh, vertices, model, version) = meshParts[index];
+				var current = Animator.GetVertexVersion( mesh );
+				if ( dynamicMeshes && current != version )
+				{
+					ObjectRenderParts.WritePositions( File.Meshes[mesh], Animator.GetVertexPositions( mesh ), vertices );
+					ObjectRenderParts.WriteTexCoords( File.Meshes[mesh], Animator.GetTexCoords( mesh ), vertices );
+					model.UpdateVertices( vertices );
+					meshParts[index] = (entity, node, mesh, vertices, model, current);
+				}
+				var transform = ObjectPlacement.SwapAxes( (node >= 0 && node < nodes.Count ? nodes[node] : NMatrix4x4.Identity) * Placement );
+				entity.TransformOverride = transform;
+				entity.Position = new Vector3( transform.M41, transform.M42, transform.M43 );
+			}
+		}
+	}
+
+	/// <summary>Adds an animated model (see <see cref="AnimatedModel"/>); <paramref name="animatedMeshes"/> makes its vertices rewritable.</summary>
+	protected AnimatedModel AddAnimatedModel( ModelFile file, bool animatedMeshes ) => new( this, file, animatedMeshes );
 
 	/// <summary>Removes one part and frees its buffers.</summary>
 	protected void RemovePart( ModelEntity part )

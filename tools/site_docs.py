@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import importlib.util
 import json
 import os
 import posixpath
@@ -22,6 +23,11 @@ import sys
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit
+
+# The progress log is assembled from docs/progress/ fragments and the frozen docs/PROGRESS.md (tools/progress.py).
+_PROGRESS_SPEC = importlib.util.spec_from_file_location("progress", Path(__file__).with_name("progress.py"))
+progress = importlib.util.module_from_spec(_PROGRESS_SPEC)
+_PROGRESS_SPEC.loader.exec_module(progress)
 
 GITHUB = "https://github.com/meneerkrabs/OpenTPW/blob/main/"
 GITHUB_TREE = "https://github.com/meneerkrabs/OpenTPW/tree/main/"
@@ -36,11 +42,20 @@ def document_path(source: str) -> str:
 
 
 def document_sources(repo: Path) -> list[str]:
-    """Publish public guides, never local agent contracts or private work notes."""
+    """Publish public guides, never local agent contracts or private work notes.
+
+    Progress fragments are not pages of their own: they appear in the assembled progress log."""
     sources = [name for name in ("README.md", "LICENSE.md") if (repo / name).is_file()]
     for folder in ("docs", "tools"):
         sources.extend(p.relative_to(repo).as_posix() for p in (repo / folder).rglob("*.md") if p.is_file() and not p.is_symlink())
-    return sorted(sources)
+    return sorted(source for source in sources if not source.startswith(progress.FRAGMENTS + "/"))
+
+
+def document_text(repo: Path, source: str) -> str:
+    """A published document's Markdown; the progress log is assembled from its fragments and history."""
+    if source == progress.HISTORY:
+        return progress.assemble(repo)
+    return (repo / source).read_text(encoding="utf-8")
 
 # Documents a player or server host is most likely to want, in this order, under their own heading.
 FEATURED = [
@@ -685,7 +700,7 @@ def build(repo: str, out: str) -> int:
     warnings: list[str] = []
     for rel in sorted(published):
         converter = Converter(rel, str(repo_root), published)
-        body = converter.convert((repo_root / rel).read_text(encoding="utf-8"))
+        body = converter.convert(document_text(repo_root, rel))
         title = converter.title or Path(rel).stem
         inner = document_path(rel)
         pages[inner] = page(title, body, inner.count("/"), rel)

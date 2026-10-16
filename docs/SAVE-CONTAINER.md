@@ -84,8 +84,8 @@ imported are reported as SAVE-001 to SAVE-010 and SAVE-920 to SAVE-923); the
 other blocks stay opaque.
 The split finds the delimiters of blocks whose width is not traced by their
 bytes, so a payload that splits in more than one way, or holds one delimiter's
-bytes more than 256 times, is rejected although the count-based original loader
-would read it (SAVE-011).
+bytes more than 256 times, is rejected although the original loader would read it:
+tp.exe `0x415270` runs each block's own reader and then checks the block's tag, never searching (SAVE-011).
 The four local `scape.omp` files start with `OBJ_`; this is not evidence that they
 are terrain tile grids. No save writer exists: original saves are never written,
 because round-trip evidence is missing and Easymode alone holds 18,288

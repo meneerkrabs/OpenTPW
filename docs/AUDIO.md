@@ -232,7 +232,15 @@ a placeholder's four slots hold the event's code (event `+0x12`), the current so
 `+0x1A`, refreshed whenever the sentence moves to another sound) and 0, and a call whose code matches slot 1-3
 recomputes the volume (unless a fixed volume was set) and redraws the pitch. The crowd event's code is 7 and sounds
 1-6 of its twelve bind 7 in slot 1 under the volume mask, so every crowd update moves the playing section's volume
-and pitch; sounds 7-12 have selector 0. The PC's main loop sends the crowd update (`0x51E7B0`) and the music
+and pitch; sounds 7-12 have selector 0. Every sentence holds this table (`SoundParameterTable`): the crowd, the ride
+and tour vehicles' engines (EventMap variable 10, `0x51BC40`), the level rain voice (code 8, `0x51E870`; its
+sounds bind 8 under the volume mask, so the drop level also sets the rain's volume within 1 to 2..5 percent) and the park music
+(code 4, `0x51E79E`; no music sound binds a selector, so it only steers the branching) go through the same call, and only a call with the event's own code (slot 0) sets the value the branch
+picker reads (`0x6be5e0` → `0x6be450`, table `+4`). One-shots and chains build the same table from the event and
+the chosen sound (every placeholder class sets up with `0x6bbf60` and queries with `0x6bc040`). The
+query `0x6bc040` tests only the masks: a bound sound takes its slot's value whether or not a matching call came, a value
+never set being 0, so the weather's own rain voice (no parameter call) plays at the bottom of its range. The Mac reading
+of `GetRandomVolume` kept a random volume for an unset parameter; the PC's is followed. The PC's main loop sends the crowd update (`0x51E7B0`) and the music
 parameter on every 32nd world step of 31 ms of the game timer (`0x54F82D`, `WorldStepCadence`), about once a
 second, so the crowd also starts and stops on that beat.
 
@@ -404,21 +412,24 @@ The front end's island effects follow the original's islands update (`CLBScreenC
 stepped by `LobbyEffects` 30 times a second (UI-940; the original runs once per rendered frame):
 
 * **The nearest island** to the camera drives everything, not the selected one.
-* **The lobby's own generator** (state × 0x19660D + 0x3C6EF35F, the full state returned, `0x100904A8`), seeded once from
-  the clock (`0x1008CDBC`). The original's flying meshes and camera wander draw from it too; OpenTPW has neither yet, so
-  the rhythm of strikes and one-shots differs (UI-941).
-* **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(state & LIGHTNING) == 1` strikes; four draws place the top
+* **The lobby's own generator** (state × 0x19660D + 0x3C6EF35F, `0x100904A8`; tp.exe rotates the step right by 13 bits
+  and stores and returns the rotated value, `0x5E0F4B`), seeded once from the clock (`0x1008CDBC`). The flying meshes draw from it too (`LobbyFlyingMeshes`); the camera
+  wander that also does is not built, so the rhythm of strikes and one-shots differs (UI-941).
+* **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(draw & LIGHTNING) == 1` strikes; four draws place the top
   within ±50 of the island at height 500 and the bottom within ±10 of it at height 0; the bolt lives 500 ms, the screen
   flashes white for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt is
   drawn by the park's weather renderer (CRain, "Weather visuals"), at the lobby's own scale; the flash is an opaque white
   frame under the menus (its blend is not decoded).
 * **Rain**: 10^17 / (mean squared distance from the camera to the rainy islands)^4 drops, none below 20, at most 400
   (`0x10094F8C`): about 173 at the orbit radius around hallow, drawn by the same renderer.
-* **Island one-shots**: a draw with `(state & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's
+* **Island one-shots**: a draw with `(draw & 15) == 1` plays event 3 + (fresh draw mod 3) of the island's
   `cat_locallobbysfx` (`0x10095340`), replacing OpenTPW's earlier 5–15 s timer (AUDIO-017 is resolved).
-* **Sky**: one flat colour eased 1/16 of the way toward the island's `SKYCOLOUR` each tick (`0x1008FAA0`, tp.exe
-  `0x5D96C0`). Both builds ease the red channel toward the blue target, and two settings flags gate the eased sky; neither
-  is reproduced before a capture confirms it (UI-018).
+* **Sky**: the original clears the screen to the lobby's fog colour 0x44DDFF (tp.exe `0x5D8B50`, `0x5737AA`). The colour of the
+  sky's cloud layer starts black and eases toward the island's `SKYCOLOUR` each tick by (target − current) >> 4 in 16.16
+  fixed point, the red channel toward the *blue* target (`0x1008FAA0`, tp.exe `0x5D96C0`); while it equals its target the
+  layer takes the fog colour. The capture's cloud layer is tinted that way (grey over Lost Kingdom, pink over Wonderland,
+  dark over Halloween World and Space Zone). The cloud layer itself is not drawn yet, so OpenTPW paints the whole backdrop
+  with that colour as a stand-in; two settings gate the eased colour whose runtime values are not read (UI-018).
 * **The globe** (`0x100923A8`) sets the rain to 0 and the sky target to (243, 203, 191) and starts its music
   (`cat_globallobbysfx` 2) and ambience (3), stopped when it closes; OpenTPW stops the lobby's own music meanwhile (UI-942).
 * **Entering a park** (`0x10183CC0`, PC `0x4b8fd0`) plays `cat_globallobbysfx` 4 flat; the original skips it for game type 2. The PC routine also plays global sound 0x62 there, which OpenTPW does not (UI-942).
@@ -580,7 +591,7 @@ implemented yet.
 
 | ID | Approximation | Evidence needed |
 | --- | --- | --- |
-| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. Not applied: a parameter-bound pitch slot (ride engine loops), a placeholder's fixed-pitch flag (`0x10000`, which replaces the draw with the short at `+0x4A`), the delay of non-chain sounds (u16 + `r % range`, `0x6bc343`) and reverb (`SndReverb.map`); chain delays are milliseconds (video, 2026-10-15); position is applied only by the positioned playback path | The delay of non-chain sounds; `SndReverb.map`; the parameter-bound pitch slot; which placeholder sets the fixed-pitch flag `0x10000` (the event's flags are 16-bit) |
+| AUDIO-003 | The pitch is applied: every sample playback draws a step `min + r % (max - min)` from the signed range of its sound (after the volume draw, from the shared chooser) and plays at ratio 1 for step 0, otherwise 2^(sign x (\|step\| + 1) / 96) (tp.exe `0x6bc170`, mixer wrapper `0x6d2820`, float tables `0x782f40`/`0x783540`); 141 playbacks in the original's video sit on exactly the six ratios of the range 0..6. A parameter-bound pitch slot is applied to every playback (sentences, one-shots and chains) through its placeholder table (`0x6bbf60`, `0x6bc040`, `0x6bc170`): a one-shot of a pitch-bound sound with no parameter call plays at the bottom of its range, as the kart and bumper stop sounds do. Not applied: a placeholder's fixed-pitch flag (`0x10000`, which replaces the draw with the short at `+0x4A`), the delay of non-chain sounds (u16 + `r % range`, `0x6bc343`) and reverb (`SndReverb.map`); chain delays are milliseconds (video, 2026-10-15); position is applied only by the positioned playback path | The delay of non-chain sounds; `SndReverb.map`; which placeholder sets the fixed-pitch flag `0x10000` (the event's flags are 16-bit) |
 | AUDIO-004 | `0xBD` plays for a control whose construction style (`+0x48`, `0x65bcad` arg 2) has bit `0x10` (`0x4857cb`); no OpenTPW control plays it | Which original controls are created with style bit `0x10` (the creation sites or UI resources) |
 | AUDIO-008 | The repair family comes from the owner object's word `+0x14` (band 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87, 0 silent; `0x55635f`/`0x551320`); OpenTPW uses band 1 (75) and plays it at the object as the original does | The band word's meaning and source |
 | AUDIO-009 | A rejected placement ("Cannot build") plays the error feedback 0x1D; the traced 0x1D callers are buy and hire money and limit checks (tp.exe `0x4879d0`, `0x4ac590`, `0x4af500`), no placement-tool site was found | The object-placement refusal cases of the build tool's 0x35-way tool switch (`0x524acd`) |

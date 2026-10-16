@@ -8,7 +8,7 @@ The tool click handler `0x524960` (about 1,200 lines of pseudocode) was read mod
   which places like mode 4 (`0x5253d5`). Only the type and the angle survive (`0x81b3ac` and `0x81b14c` are never read), the new object starts afresh, and cancelling leaves the object gone.
   The ride is paid by the constructor (`0x4db4e2`), so a move costs the whole price again less the pick-up's scrap credit; the flag `0x8186d4` frees only the path and queue cells the placement lays,
   and mode 4 sets it too. The ride window enables the button with `0x52c2b0`: always, except for a kart or water ride, whose two tiles beside the station must hold one arm each (`Level.MoveEnabled`).
-  The earlier reading, that the flag made the placement free, was wrong.
+  The earlier reading, that the flag made the placement free, was wrong. Mode 0x3b's hover (`0x523940`) has no balance compare and no cash pointer (mode 4's has, `0x523658`), so a move is not refused for cash.
 
 **Narrowed or settled**
 - **TRACK-018 narrowed**: the Crypt Karts' bridge clips (ten pieces) carry one texture-frame track whose 20 keys all name frame 0 of a one-frame slot, so there is nothing to draw

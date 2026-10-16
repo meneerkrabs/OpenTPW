@@ -81,11 +81,13 @@ public class MoveToolTests
 	}
 
 	[TestMethod]
-	public void APlacementWhileMovingStillNeedsTheMoneyAndGoldenTickets()
+	public void APlacementWhileMovingHasNoBalanceTestButKeepsTheGoldenTicketRule()
 	{
-		// the validator's cash gate (0x535927: price above the balance) and the golden ticket payment (0x4d4ad0) do not depend on the tool
+		// [BIN:TPW-EXE:0x523940 move hover] the build tool's hover refuses a price above the balance (0x523658), the Move tool's has no such compare and the debit 0x4d01f0 tests nothing;
+		// the golden ticket rule stays as the build tool's (a type bought with tickets once is a cash type afterwards; the unreachable ticket-short case is left as it was)
 		var poor = EconomyTestData.Park( initialCash: 1000 );
-		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, poor.CheckBuild( 1303, moving: true ) );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughMoney, poor.CheckBuild( 1303 ) );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, poor.CheckBuild( 1303, moving: true ) );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotEnoughGoldenTickets, poor.CheckBuild( 1112, moving: true ) );
 	}
 
@@ -109,13 +111,12 @@ public class MoveToolTests
 	}
 
 	[TestMethod]
-	public void TheMoveToolDrawsTheBuildToolsPointerAndTakesItsCashFlag()
+	public void TheMoveToolDrawsTheBuildToolsPlacingPointerWithoutACashFlag()
 	{
-		// [BIN:TPW-EXE:0x5234d0 move hover] mode 0x3b shares the placing pointer of mode 4 (OriginalPointers.ForTool) and the validator's cash flag
+		// [BIN:TPW-EXE:0x52f950 pointer switch] mode 0x3b shares the placing pointer of mode 4 (OriginalPointers.ForTool); [BIN:TPW-EXE:0x523940 move hover] its hover sets no cash flag (mode 4's does, 0x523658)
 		Assert.AreEqual( OriginalPointers.ForTool( 4 ), OriginalPointers.ForTool( OpenTPW.Hud.ParkHud.MoveToolMode ) );
-		Assert.IsTrue( OpenTPW.Hud.ParkHud.CashPointerShown( OpenTPW.Hud.ParkHud.MoveToolMode, 2500, 2499, null ) );
-		Assert.IsFalse( OpenTPW.Hud.ParkHud.CashPointerShown( OpenTPW.Hud.ParkHud.MoveToolMode, 2500, 2500, null ), "equal is allowed" );
-		Assert.AreEqual( OriginalPointers.Cash, OriginalPointers.ForTool( OpenTPW.Hud.ParkHud.MoveToolMode, cash: true ) );
+		Assert.IsTrue( OpenTPW.Hud.ParkHud.CashPointerShown( 4, 2500, 2499, null ) );
+		Assert.IsFalse( OpenTPW.Hud.ParkHud.CashPointerShown( OpenTPW.Hud.ParkHud.MoveToolMode, 2500, 2499, null ), "the move hover has no balance compare" );
 		Assert.AreEqual( OriginalPointers.NoPlace, OriginalPointers.ForTool( OpenTPW.Hud.ParkHud.MoveToolMode, noPlace: true ) );
 	}
 }

@@ -70,12 +70,12 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x53593f line cash flag] the cell validator 0x535670 sets the same flags and refuses the cell (returns 1) when the line's cost so far exceeds the balance (0x535927: cost > balance, equal allowed); the pointer switch 0x52f950 lets the cash flag override the tool's own pointer and noplace
 	private bool CashPointerShown( int mode ) => CashPointerShown( mode, BuildActionCost, Status.Money, level.CellTool.IsActive ? level.CellTool.Ghost : null );
 
-	/// <summary>The interface mode of the Move tool (<c>0x3b</c>), which draws the build tool's pointer and takes the same cash flag from the placement validator (<c>0x535927</c>).</summary>
+	/// <summary>The interface mode of the Move tool (<c>0x3b</c>), which draws the build tool's placing pointer (<c>0x52f950</c>: 4 and 0x3b share it) but never the cash pointer: its hover (<c>0x523940</c>) has no cash flag.</summary>
 	internal const int MoveToolMode = 0x3b;
 
 	internal static bool CashPointerShown( int mode, long? cost, long balance, SegmentResult? ghost ) => mode switch
 	{
-		4 or MoveToolMode => cost is { } price && price > balance,
+		4 => cost is { } price && price > balance,
 		(int)CellToolMode.Path or (int)CellToolMode.Queue or (int)CellToolMode.KartTrack or (int)CellToolMode.WaterTrack => ghost is { StoppedBy: CellBuildResult.NotEnoughMoney },
 		_ => false,
 	};

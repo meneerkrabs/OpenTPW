@@ -1564,7 +1564,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// The purchase rules of <see cref="TryBuild"/> without buying (the build tool's ghost uses it). The Move tool (<paramref name="moving"/>) places a type the park already holds, so it asks
-	/// for neither the buy list's availability nor research: the constructor 0x4db090 charges the price and nothing else.
+	/// for neither the buy list's availability, research nor the balance test of the build tool's hover: the constructor 0x4db090 charges the price and nothing else, and the debit 0x4d01f0 does not test the balance.
 	/// </summary>
 	public PurchaseResult CheckBuild( int infoId, bool moving = false )
 	{
@@ -1582,7 +1582,8 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
 			return PurchaseResult.NotEnoughGoldenTickets;
 		// [BIN:TPW-EXE:0x5234d0 purchase gate] a cash-priced object (GoldenTicketCost +0xc4 below 1, or already bought) is refused when its price (+0x1b8) is greater than the bank balance (+0xc), equal allowed (0x523658; the placement validator 0x535670 repeats it at 0x535927); the test is skipped only in layout replay (0x785a2c, set by 0x404140), and the debit 0x4d01f0 does not test the balance
-		if ( !payWithTickets && info.PurchaseCost > Balance )
+		// [BIN:TPW-EXE:0x523940 move hover] the Move tool's hover (mode 0x3b) stores the price (0x52fb90) but has no balance compare, no cash flag and no golden-ticket test, and neither the click (0x5253d5) nor the debit does: a move is never refused for cash
+		if ( !moving && !payWithTickets && info.PurchaseCost > Balance )
 			return PurchaseResult.NotEnoughMoney;
 		return PurchaseResult.Ok;
 	}

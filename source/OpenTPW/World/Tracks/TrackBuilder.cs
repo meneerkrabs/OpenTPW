@@ -245,6 +245,9 @@ public sealed class TrackBuilder
 		return true;
 	}
 
+	/// <summary>How many laid (non-station) tiles belong to <paramref name="owner"/>.</summary>
+	public int OwnedTileCount( int owner ) => owner == 0 ? 0 : Tracks.Cells().Count( item => item.Cell.IsOrigin && !TrackCellTypes.IsStation( item.Cell.Type ) && item.Cell.Owner == owner );
+
 	/// <summary>Removes every laid (non-station) tile that belongs to <paramref name="owner"/>, whatever it is connected to; returns how many went.</summary>
 	public int RemoveOwned( int owner )
 	{

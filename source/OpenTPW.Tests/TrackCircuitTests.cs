@@ -369,6 +369,31 @@ public class TrackCircuitTests
 		Assert.AreEqual( 0, rig.Builder.RemoveOwned( 0 ), "tiles laid without a ride are nobody's" );
 	}
 
+	/// <summary>TRACK-007: each cleared water or kart tile refunds cost × scrap percentage / 100 and the demolition charges twice that once (tp.exe 0x53B5FE, 0x528157).</summary>
+	[TestMethod]
+	public void ADemolitionRefundsEveryTileAndChargesTwoTilesOnce()
+	{
+		var economy = EconomyTestData.Park( initialCash: 100000 );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( 1100, out var ride ) );
+		var percent = economy.ScrapPercent( ride! );
+		Assert.IsTrue( percent > 0 );
+		var before = economy.Balance;
+		var refund = economy.RefundTrackTile( CellPurchase.WaterTrack, ride!.Id );
+		Assert.AreEqual( WaterCost * percent / 100, refund );
+		Assert.AreEqual( before + refund, economy.Balance );
+		var charge = economy.ChargeTrackDemolition( CellPurchase.WaterTrack, ride.Id );
+		Assert.AreEqual( 2 * WaterCost * percent / 100, charge );
+		Assert.AreEqual( before + refund - charge, economy.Balance );
+		Assert.AreEqual( 0, economy.RefundTrackTile( CellPurchase.WaterTrack, 12345 ), "an unknown ride refunds nothing" );
+		Assert.AreEqual( 0, economy.ChargeTrackDemolition( CellPurchase.WaterTrack, 12345 ) );
+		var rig = new Rig();
+		var owner = rig.Builder.OwnerOf( rig.Station );
+		var writer = new TrackLineWriter( rig.Builder, owner: owner );
+		Assert.IsTrue( writer.Commit( (14, 10), (14, 12) ).Completed );
+		Assert.AreEqual( 2, rig.Builder.OwnedTileCount( owner ), "the station tiles refund nothing and are not counted" );
+		Assert.AreEqual( 0, rig.Builder.OwnedTileCount( 0 ) );
+	}
+
 	[TestMethod]
 	public void ARideWalksOnlyItsOwnLineEvenWhenAnotherRideTouchesIt()
 	{

@@ -286,7 +286,7 @@ the tile's (bumper: the cell's) four corners and keeps the straight piece's floo
 
 Every tile records the ride it was laid for (`TrackCell.Owner`: the station's first-tile cell index plus one, saved and hashed; TRACK-021). A tile of one ride never
 connects to, links to or overwrites a tile of another, so two water rides can touch without sharing a circuit, and a demolition removes exactly the ride's own tiles
-and station. A circuit that overflows the section, collision-object or buoy pool (1024, 2048, 1024) is invalid whatever the walk said, with no geometry and no boats
+and station. The demolition pays as the original's (`0x527EE0`, TRACK-007): every tile laid for the ride refunds the track cell cost × the ride's scrap percentage / 100 (`ClearCell` `0x53B280` credits it at `0x53B622`; the replay runs with flag `0x81B46C` = 1, so end tiles refund too) and the demolition then charges 2 × the cell cost × the percentage / 100 once (`0x528157..0x528179`), both only for a type with a queue. A circuit that overflows the section, collision-object or buoy pool (1024, 2048, 1024) is invalid whatever the walk said, with no geometry and no boats
 (TRACK-020). A controller counts as live while its runtime is not stopped and it is in the park's controller list; the park-resume capture and restore both use that
 one rule, so a faulted or removed ride is skipped by both.
 
@@ -360,7 +360,7 @@ writes for the footprint codes (`0x532FC0`).
 ## Open points
 
 - Jumps and tunnels (TRACK-008: the add-ons are neither sold nor placed; their placement, sections and the teleport hook are read, see "Add-ons"), the edit
-  sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
+  sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition's replayed action list, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 

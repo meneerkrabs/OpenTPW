@@ -1041,7 +1041,7 @@ public class ParkEconomyTests
 	public void DecliningAFollowupPaysHalfItsPrize()
 	{
 		// tp.exe 0x4d2ec0: a declined challenge that is not independent credits prize / 2 (0x4d0190); an independent one pays nothing
-		var park = EconomyTestData.Park();
+		var park = EconomyTestData.Park(); park.OpenPark();
 		EconomyTestData.HireBest( park, StaffType.Researcher );
 		park.AdvanceDays( 540 );
 		var balance = park.Balance;
@@ -1064,7 +1064,7 @@ public class ParkEconomyTests
 	[TestMethod]
 	public void ChallengesAreOfferedCompletedAndFollowedUp()
 	{
-		var park = EconomyTestData.Park();
+		var park = EconomyTestData.Park(); park.OpenPark();
 		var events = new List<ParkEvent>();
 		park.EventRaised += events.Add;
 		EconomyTestData.HireBest( park, StaffType.Researcher );
@@ -1102,7 +1102,7 @@ public class ParkEconomyTests
 		park.AdvanceDays( 600 );
 		Assert.AreEqual( 7, park.Objectives.Current!.DefinitionIndex, "the won chain head stays open and is offered again" );
 
-		var failing = EconomyTestData.Park();
+		var failing = EconomyTestData.Park(); failing.OpenPark();
 		failing.AdvanceDays( 540 );
 		failing.AcceptChallenge();
 		var failed = new List<ParkEvent>();

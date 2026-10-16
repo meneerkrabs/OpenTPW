@@ -130,4 +130,38 @@ public class ChallengeAccumulatorTests
 		restored.Restore( 540, 0, null, new System.Collections.Generic.Dictionary<int, int> { [9] = 2 }, System.Array.Empty<int>(), System.Array.Empty<GoldenTicketKind>() );
 		Assert.AreEqual( 0, restored.AdvanceDay( 600, _ => 0 ).Count( item => item.Index == 9 ), "a saved count at the limit is skipped" );
 	}
+
+	[TestMethod]
+	public void TheFirstOfferWaitsForAnOpenParkAndAfterwardsOnlyTheNextEventTimeCounts()
+	{
+		// 0x4d1e90: switch off: park open (0x4c9050) and the park's age at DaysUntilFirstChallenge; then the switch stays on
+		var objectives = Objectives( 25, 50, 60 );
+		Assert.IsFalse( objectives.SwitchedOn );
+		Assert.AreEqual( 0, objectives.AdvanceDay( 540, _ => 0, parkOpen: false ).Count(), "day 540 with the park closed" );
+		Assert.AreEqual( 0, objectives.AdvanceDay( 700, _ => 0, parkOpen: false ).Count() );
+		Assert.IsFalse( objectives.SwitchedOn );
+		Assert.AreEqual( 9, objectives.AdvanceDay( 701, _ => 0, parkOpen: true ).Single().Index, "the park opens: the offer comes at once" );
+		Assert.IsTrue( objectives.SwitchedOn );
+		objectives.Decline( 701 );
+		Assert.AreEqual( ParkEventKind.ChallengeOffered, objectives.AdvanceDay( 701 + 270, _ => 0, parkOpen: false ).Single().Kind, "the next offer no longer needs an open park" );
+	}
+
+	[TestMethod]
+	public void TheChallengeSwitchSurvivesAParkSaveAndOlderSavesInferIt()
+	{
+		var park = EconomyTestData.Park();
+		park.OpenPark();
+		park.AdvanceDays( 540 );
+		Assert.IsTrue( park.Objectives.SwitchedOn );
+		var text = ParkSaveFile.Serialize( park );
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( text ) ), park.Settings, park.Catalog );
+		Assert.IsTrue( restored.Objectives.SwitchedOn );
+		var fresh = EconomyTestData.Park();
+		Assert.IsFalse( ParkSaveFile.Serialize( fresh ).Contains( "SwitchedOn" ), "absent while off" );
+		Assert.IsFalse( ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( fresh ) ) ), fresh.Settings, fresh.Catalog ).Objectives.SwitchedOn );
+		var node = System.Text.Json.Nodes.JsonNode.Parse( text )!;
+		Assert.IsTrue( node["Objectives"]!.AsObject().Remove( "SwitchedOn" ) );
+		var legacy = node.ToJsonString();
+		Assert.IsTrue( ParkSaveFile.Restore( ParkSaveFile.Deserialize( System.Text.Encoding.UTF8.GetBytes( legacy ) ), park.Settings, park.Catalog ).Objectives.SwitchedOn, "an older save past the first offer day counts as started" );
+	}
 }

@@ -82,6 +82,10 @@ public sealed class ParkObjectives
 	}
 
 	public long NextOfferDay { get; private set; }
+	/// <summary>
+	/// The challenge system's switch (+0x3d8): off until the park is open on or after day <c>DaysUntilFirstChallenge</c>; on, offers follow the next event time alone.
+	/// </summary>
+	public bool SwitchedOn { get; private set; }
 	public int NextListPosition { get; private set; }
 	public ActiveChallenge? Current { get; private set; }
 	public IReadOnlyCollection<int> Finished => finished;
@@ -182,10 +186,17 @@ public sealed class ParkObjectives
 	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0, for which no reader is found): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again, without limit; the next offer waits DaysAfterCompletedChallenge as after a win
 	// [BIN:TPW-EXE:0x4d1e90 challenge day] nothing is offered, checked or timed out while an offer waits for its answer (+0x3da, set by 0x4d2a70 / 0x4d2b60), which only
 	// the accept 0x4d2df0 (accepted +0x3d9, the deadline from mTargetTime) or the decline 0x4d2ec0 clears
-	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure )
+	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure, bool parkOpen = true )
 	{
 		if ( Current == null )
 		{
+			// [BIN:TPW-EXE:0x4d1e90 challenge system start] while the switch (+0x3d8) is off, the system offers only with the park open (0x4c9050: the park-closed word 0x1da710 clear) and the park's age in days (0x4f8800 / 864e9) at DaysUntilFirstChallenge (0x7857c8), then sets the switch and offers at once; afterwards only the next event time (+0x3d0) counts
+			if ( !SwitchedOn )
+			{
+				if ( !parkOpen || day < NextOfferDay )
+					yield break;
+				SwitchedOn = true;
+			}
 			if ( day >= NextOfferDay && settings.Challenges.Count > 0 && TryPickNext( out var index ) )
 			{
 				Current = new ActiveChallenge( index, day, false, 0, 0, 0 );
@@ -345,8 +356,9 @@ public sealed class ParkObjectives
 
 	/// <summary>Moves the next offer day by <paramref name="days"/> (a new park started at a later day).</summary>
 
-	internal void Restore( long nextOfferDay, int nextListPosition, ActiveChallenge? current, IReadOnlyDictionary<int, int> restoredDeclines, IEnumerable<int> restoredFinished, IEnumerable<GoldenTicketKind> restoredTickets )
+	internal void Restore( long nextOfferDay, int nextListPosition, ActiveChallenge? current, IReadOnlyDictionary<int, int> restoredDeclines, IEnumerable<int> restoredFinished, IEnumerable<GoldenTicketKind> restoredTickets, bool switchedOn = true )
 	{
+		SwitchedOn = switchedOn;
 		if ( current != null && !settings.Challenges.ContainsKey( current.DefinitionIndex ) )
 			throw new InvalidDataException( $"Saved challenge {current.DefinitionIndex} is not defined in Challenges.sam." );
 		NextOfferDay = nextOfferDay;

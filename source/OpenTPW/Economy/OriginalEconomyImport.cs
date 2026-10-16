@@ -551,9 +551,9 @@ public sealed class OriginalEconomyImport
 			nextOffer = Day( system.NextEventTime ) + 1;
 			state = $"the next offer is due on day {nextOffer}";
 		}
-		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished );
+		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished, system.Switch1 != 0 );
 		evidence.Add( $"Challenges imported: {state}; {finished.Count} won, {declines.Count} declined." );
-		// [APPROX:SAVE-005] the loss counts, the follow-up's carried object (mActualThing and the slots' mThingIdForFollowup, ECON-055) and the day an unanswered offer was made are not imported, and the first offer does not wait for an open park (0x4c9050) — evidence needed: what reads the loss counts and how the follow-up types read the carried object
+		// [APPROX:SAVE-005] the loss counts, the follow-up's carried object (mActualThing and the slots' mThingIdForFollowup, ECON-055) and the day an unanswered offer was made are not imported — evidence needed: what reads the loss counts and how the follow-up types read the carried object
 		evidence.Add( $"[APPROX:SAVE-005] Challenge values not imported: losses {string.Join( "/", slots.Select( slot => slot.Lost ) )}, ActualThing {system.ActualThing}, follow-up things {string.Join( "/", slots.Select( slot => slot.FollowupThing ) )}." );
 	}
 

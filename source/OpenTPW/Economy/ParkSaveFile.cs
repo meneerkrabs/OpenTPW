@@ -515,6 +515,9 @@ public static class ParkSaveFile
 		public required Dictionary<int, int> Declines { get; init; }
 		public required List<int> Finished { get; init; }
 		public required List<GoldenTicketKind> GoldenTickets { get; init; }
+		/// <summary>The challenge system's switch (<see cref="ParkObjectives.SwitchedOn"/>); absent in older saves (then on once the first offer day has passed) and while off.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public bool? SwitchedOn { get; init; }
 	}
 
 	/// <param name="world">The level's other random streams (<see cref="Level.CaptureRandomState"/>); null saves the economy alone.</param>
@@ -664,7 +667,8 @@ public static class ParkSaveFile
 				Current = park.Objectives.Current,
 				Declines = new Dictionary<int, int>( park.Objectives.Declines ),
 				Finished = park.Objectives.Finished.OrderBy( index => index ).ToList(),
-				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList()
+				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList(),
+				SwitchedOn = park.Objectives.SwitchedOn ? true : null
 			},
 			Counters = new Dictionary<string, long>( park.Counters.Values ),
 			MechanicCursor = park.MechanicCursor,
@@ -921,7 +925,8 @@ public static class ParkSaveFile
 			data.Research.Current?.Select( entry => ((ResearchCategory)entry[0], entry[1], entry[2]) ) );
 		if ( data.Research.Workload is int workload )
 			park.Research.SetWorkload( workload );
-		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets );
+		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,
+			data.Objectives.SwitchedOn ?? (data.Objectives.Current != null || ParkCalendar.DayIndex( data.Tick ) >= settings.ChallengeTiming.DaysUntilFirstChallenge) );
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
 		if ( data.PriceStatistics is { } statistics )

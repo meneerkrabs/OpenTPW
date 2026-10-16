@@ -1005,7 +1005,7 @@ public sealed class ParkEconomy : IParkEconomy
 	private void EndDay( long day )
 	{
 		// [BIN:TPW-EXE:0x0050B360 thing update] the challenge system's day (0x004D1E90) is its thing update (type 0x13), which a lost park no longer runs
-		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
+		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge, IsParkOpen ).ToList() : new();
 		foreach ( var (kind, index, amount, detail) in challenges )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
@@ -2032,7 +2032,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// declined challenges, and a challenge that is running (accepted, with its deadline and the value it has reached) or offered and unanswered.
 	/// </summary>
 	internal void RestoreOriginalChallenges( long nextOfferDay, int nextListPosition, int? runningIndex, long deadlineDay, long value, int? offeredIndex,
-		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished )
+		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished, bool switchedOn = true )
 	{
 		ActiveChallenge? current = null;
 		if ( runningIndex is int running && Settings.Challenges.TryGetValue( running, out var definition ) )
@@ -2046,7 +2046,7 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		else if ( offeredIndex is int offered && Settings.Challenges.ContainsKey( offered ) )
 			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0 );
-		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets );
+		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn );
 	}
 
 	/// <summary>Takes an original save's bank account: balance, admission fee, the year's profit and the bought loans.</summary>

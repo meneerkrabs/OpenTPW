@@ -1849,11 +1849,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>
 	/// The minor decision of a guest walking to a ride (tp.exe <c>0x004FD570</c>): the rides standing within a window of 4 × 4 cells round the guest
 	/// (x − 2..x + 1, y − 2..y + 1) and strictly nearer to the target's back cell than the guest is, other than the target, that pass the counts-test, are
-	/// scored (<see cref="ScoreAttraction"/>); the best one (a tie goes to the later one on an odd park turn) replaces the target when the route from its
-	/// access cell to the guest is shorter than that of the current target, and the guest walks to its back cell.
+	/// scored (<see cref="ScoreAttraction"/>); the best one (a tie goes to the later one on an odd park turn) replaces the target when the route from the target's
+	/// access cell to the best ride's access cell is shorter than the route from the target's access cell to the guest, and the guest walks to its back cell.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FD570 minor decision] needs a target +0x1DC; d0 = squared distance from the guest's cell to the target's back cell (0x004DE110); every thing of type 3 on the window's cells that is not the target and passes 0x004DD920 is scored with 0x004FCC30, kept when the score beats the best (starting at 0) or ties it on an odd turn (game +0x1DA70C bit 0); with a best the routes 0x004D8B40 (the sum of the legs' |dx| + |dy| of the search from the thing's access cell +0x36 to the guest's cell, mask +0x188; −1 when none) of the best and of the target must both exist and the best's be shorter; then event 0x17, +0x1DE = the old target, +0x1DC = the best and the route request 0x004FA530 to the best's back cell
-	// [APPROX:GUEST-019] a ride is placed on the window by its entrance cell where the original reads the cell its thing stands on (+5, +7) and walks the cell's thing list newest first (GUEST-002); the access cell of a ride is its entrance cell (+0x36, GUEST-005); the major destination +0x1DE and the event 0x17 are not kept (GUEST-004)
+	// [BIN:TPW-EXE:0x004FD570 minor decision] needs a target +0x1DC; d0 = squared distance from the guest's cell to the target's back cell (0x004DE110); every thing of type 3 on the window's cells that is not the target and passes 0x004DD920 is scored with 0x004FCC30, kept when the score beats the best (starting at 0) or ties it on an odd turn (game +0x1DA70C bit 0); with a best the routes 0x004D8B40 (the sum of the legs' |dx| + |dy| of the search, mask +0x188; −1 when none) from the TARGET's access cell +0x36 to the guest's cell and from the TARGET's access cell to the best's access cell must both exist and the second be shorter (the best is nearer to the target than the guest is); then event 0x17, +0x1DE = the old target, +0x1DC = the best and the route request 0x004FA530 to the best's access cell +0x36
+	// [APPROX:GUEST-019] the route request goes to the best's back cell where the original requests its access cell +0x36; a ride is placed on the window by its entrance cell where the original reads the cell its thing stands on (+5, +7) and walks the cell's thing list newest first (GUEST-002); the access cell of a ride is its entrance cell (+0x36, GUEST-005); the major destination +0x1DE and the event 0x17 are not kept (GUEST-004)
 	internal void MinorDecision( Guest guest )
 	{
 		if ( guest.AttractionId == 0 || FindAttraction( guest.AttractionId ) is not { } target || target.JoinCell == null )
@@ -1881,19 +1881,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		if ( best == null )
 			return;
-		var toBest = RouteLength( guest, best.EntranceCell );
-		var toTarget = RouteLength( guest, target.EntranceCell );
-		if ( toBest == -1 || toTarget == -1 || toBest >= toTarget )
+		var toGuest = RouteLength( guest, target.EntranceCell, (guest.CellX, guest.CellY) );
+		var toBest = RouteLength( guest, target.EntranceCell, best.EntranceCell );
+		if ( toGuest == -1 || toBest == -1 || toBest >= toGuest )
 			return;
 		guest.AttractionId = best.AttractionId;
 		RouteToCell( guest, best.QueueCells[^1] );
 	}
 
-	/// <summary>The original's route length <c>0x004D8B40</c> from <paramref name="from"/> to the guest's cell: the sum of the legs' |dx| + |dy|, −1 without a route.</summary>
-	private int RouteLength( Guest guest, (int X, int Y) from )
+	/// <summary>The original's route length <c>0x004D8B40</c> from <paramref name="from"/> to <paramref name="to"/>: the sum of the legs' |dx| + |dy|, −1 without a route.</summary>
+	private int RouteLength( Guest guest, (int X, int Y) from, (int X, int Y) to )
 	{
 		var path = new List<(int X, int Y)>();
-		if ( !WalkSearch.Find( Grid.Cells, (from.X & 0xFF, from.Y & 0xFF), (guest.CellX & 0xFF, guest.CellY & 0xFF), guest.Navigation.Mask, path ) )
+		if ( !WalkSearch.Find( Grid.Cells, (from.X & 0xFF, from.Y & 0xFF), (to.X & 0xFF, to.Y & 0xFF), guest.Navigation.Mask, path ) )
 			return -1;
 		var total = 0;
 		var previous = from;
@@ -3095,6 +3095,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} QueueMoveDelay {guest.QueueMoveDelay} is negative." );
 			if ( guest.QueueCellIndex < 0 )
 				Error( $"Guest {guest.Id} QueueCellIndex {guest.QueueCellIndex} is negative." );
+			if ( guest.RideWalkCount is < 0 or > 11 )
+				Error( $"Guest {guest.Id} RideWalkCount {guest.RideWalkCount} is outside 0..11 (the byte +0x2C resets past 11)." );
+			if ( guest.BoothWait is < 0 or > 2 * BoothVerdict.ExpensiveWaitBase )
+				Error( $"Guest {guest.Id} BoothWait {guest.BoothWait} is outside 0..{2 * BoothVerdict.ExpensiveWaitBase}." );
 			Finite( guest.Id, guest.HeadingX, nameof( guest.HeadingX ) );
 			Finite( guest.Id, guest.HeadingY, nameof( guest.HeadingY ) );
 			Finite( guest.Id, guest.DistanceWalked, nameof( guest.DistanceWalked ) );

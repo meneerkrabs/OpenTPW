@@ -98,7 +98,7 @@ public class HudScreenShortcutTests
 	public void HappinessGaugeFillFollowsTheSampledVisitors()
 	{
 		Assert.AreEqual( 0f, ParkHud.GaugeFill( 0f ) );
-		Assert.AreEqual( 0.5f, ParkHud.GaugeFill( 50f ) );
+		Assert.AreEqual( 511 / 1024f, ParkHud.GaugeFill( 50f ), "the value is truncated to an integer of 1024 as the original's setter takes it" );
 		Assert.AreEqual( 1023 / 1024f, ParkHud.GaugeFill( 100f ), "the original's 0.01f factor is a hair under 0.01, so a mean of 100 sets 1023 of 1024" );
 		Assert.AreEqual( 1f, ParkHud.GaugeFill( 140f ), "the fill clamps at a full dish" );
 		Assert.AreEqual( 0f, ParkHud.GaugeFill( -20f ), "a negative mean does not fill below empty" );

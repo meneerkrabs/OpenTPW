@@ -242,6 +242,16 @@ public sealed class ParkEconomy : IParkEconomy
 	/// types 14 and 18 carry into the follow-up (ECON-055). Null in a headless economy.
 	/// </summary>
 	public Func<int, int>? CoasterBestObject { get; set; }
+	/// <summary>
+	/// The host's kart rides for challenge type 15 (tp.exe <c>0x004CC4B0</c>): the most crossings of any kart ride now and the economy instance of the first ride that has
+	/// them (the newest object first, a strictly higher count replaces); 0 and 0 without a kart. Null in a headless economy, which has no karts.
+	/// </summary>
+	public Func<(long Crossings, int Instance)>? KartBestCrossings { get; set; }
+	/// <summary>
+	/// The host's track rides for challenge type 21 (tp.exe <c>0x004CC5D0</c>): the most sections of the kart, bumper and water rides of an Info.Id (any for 0) now, 0 without one.
+	/// Null in a headless economy, which has no track rides.
+	/// </summary>
+	public Func<int, long>? TrackRideSections { get; set; }
 	/// <summary>New mechanic jobs await this host world; null keeps new headless jobs immediate.</summary>
 	public IMechanicJobWorld? MechanicJobWorld { get; set; }
 	/// <summary>The world that moves the handymen and runs their state machine; null keeps the economy's own dispatch (no positions).</summary>
@@ -1050,19 +1060,25 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 	}
 
-	/// <summary>The object a passing check of type 14, 15 or 18 carries (ECON-055): the best coaster, or for the kart type the instance that reported the highest crossroads record.</summary>
+	/// <summary>The object a passing check of type 14, 15 or 18 carries: the best coaster, or for the kart type the kart ride with the most crossings now.</summary>
 	private int BestObjectOf( ChallengeDefinition definition )
 	{
-		// [APPROX:ECON-055] the carried object follows tp.exe (the checks of types 14 and 18 store the best coaster's id, the newest first and replaced only by a strictly higher count, 0x4cc810; the win 0x4d2fb0 copies it to the challenge system's filter (+0x3e0) and into the follow-up slot; the accumulator 0x4d27a0 then adds only the carried ride's uses and none of the object-less events of the sales, profits and daily messages), but type 15's best object is the instance that reported the highest crossroads record so far, where the original walks the karts as they are now (0x4cc4b0, the type record's +0x9c and the count 0x545310), and the events of type 11 were not traced to their accumulator call, so the filter does not stop them — evidence needed: the kart ride's current crossroads count (0x545310) and the producer of type 11's accumulator event
+		// [BIN:TPW-EXE:0x4cc810 best coaster] the checks of types 14 and 18 store the best coaster's id, the newest first and replaced only by a strictly higher count; the win 0x4d2fb0 copies it to the challenge system's filter (+0x3e0) and into the follow-up slot; the accumulator 0x4d27a0 then adds only the carried ride's uses and none of the object-less events (the sales, profits, admissions and daily messages)
 	// [BIN:TPW-EXE:0x4d1660 challenge check] type 14 asks the best coaster of any kind (0x4cc810 with 0), type 18 the best of the info id TargetObj, type 15 the best kart ride (0x4cc4b0)
 		if ( definition.Type == 15 )
-			return recordBest.TryGetValue( (ParkRecordKind.KartCrossroads, definition.TargetObject), out var best ) && objects.ContainsKey( best.Instance ) ? best.Instance : 0;
+			return KartBestCrossings?.Invoke().Instance ?? 0;
 		return CoasterBestObject?.Invoke( definition.Type == 14 ? 0 : definition.TargetObject ) ?? 0;
 	}
 
 	private readonly Dictionary<(ParkRecordKind Kind, int InfoId), (long Value, int Instance)> recordBest = new();
 
-	private long MeasureChallenge( ChallengeDefinition definition ) => Objectives.Measure( definition, Counters, Staff, objects.Values, guestStatistics, CoasterCountedSections );
+	// [BIN:TPW-EXE:0x4d1660 challenge check] type 15 compares TargetVal with the most crossings of any kart ride now (0x4cc4b0, no TargetObj test), type 21 with the most sections of the track rides of the Info.Id TargetObj (0x4cc5d0); a park without such a ride measures 0, as a headless economy does
+	private long MeasureChallenge( ChallengeDefinition definition ) => definition.Type switch
+	{
+		15 => KartBestCrossings?.Invoke().Crossings ?? 0,
+		21 => TrackRideSections?.Invoke( definition.TargetObject ) ?? 0,
+		_ => Objectives.Measure( definition, Counters, Staff, objects.Values, guestStatistics, CoasterCountedSections )
+	};
 
 	private void EndMonth( long nextMonthIndex )
 	{

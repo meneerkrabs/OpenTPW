@@ -171,7 +171,8 @@ public sealed class ParkObjectives
 			// [BIN:TPW-EXE:0x4d1660 challenge types 14 and 19] 14 passes when TargetVal <= 0x4cc810 for any coaster (the most counted sections, as type 18); 19 when
 			// 0x4cc810(TargetObj) is above 2, whatever TargetVal (Target gives 3)
 			14 => coasterSections?.Invoke( 0 ) ?? 0,
-			15 => counters[ParkCounters.Record( ParkRecordKind.KartCrossroads, definition.TargetObject )],
+			// types 15 and 21 count the live kart and track rides, which only the economy's host can walk (ParkEconomy.KartBestCrossings, TrackRideSections)
+			15 => 0,
 			16 => counters[ParkCounters.Researched( ResearchCategory.Ride )],
 			// [BIN:TPW-EXE:0x5021e5 ride use] the event 16 of 0x501db0 adds 1 to the accumulator under 17, 20 and 22 alike (0x5021e5, 0x50224b, 0x5022b1), with the used
 			// object's Info.Id as the slot's object; 0x4d1660 compares 22 like 17 and 20
@@ -181,7 +182,7 @@ public sealed class ParkObjectives
 			// TargetObj (any when 0), of the controller's counted sections (+0x108 via 0x43e0e0, zeroed and counted by the rating final 0x43df90), 0 without one; no accumulator, no baseline
 			18 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
 			19 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
-			21 => Built( definition.TargetObject ) > 0 ? counters[ParkCounters.Record( ParkRecordKind.KartSections, definition.TargetObject )] : 0,
+			21 => 0,
 			// the day's value of the three daily-average types (summed by AccumulateDaily)
 			24 => ToiletCleanliness(),
 			25 => AverageHappiness( null ),
@@ -198,11 +199,11 @@ public sealed class ParkObjectives
 	}
 
 	/// <summary>
-	/// Types the accumulator reaches with events that carry no object (sales, profits and the daily messages: both shorts of 0x004E16B0, 0x004E1920 and 0x004D2860 are 0), which
+	/// Types the accumulator reaches with events that carry no object (sales, profits, admissions and the daily messages: both shorts of 0x004E16B0, 0x004E1920 and 0x004D2860 are 0, and the admission message 0x004C757D posts (11, 1, 0, 0)), which
 	/// the carried object's filter refuses.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4d27a0 challenge accumulator] the event counts when the slot's type and TargetObj match and the carried object (+0x3e0) is 0 or equals the event's object
-	public static bool TakesObjectlessEvents( int type ) => type is >= 1 and <= 8 or 12 or 13 or 16 or 24 or 25 or 27;
+	public static bool TakesObjectlessEvents( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 24 or 25 or 27;
 
 	internal void RestoreCarried( int actualThing, IReadOnlyDictionary<int, int>? carriedThings )
 	{

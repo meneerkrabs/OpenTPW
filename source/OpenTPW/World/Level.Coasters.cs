@@ -177,13 +177,46 @@ public partial class Level
 		return best != null && GetEconomyInstance( best ) is int instance ? instance : 0;
 	}
 
-	/// <summary>Points the current economy's challenge type 18 at the park's coasters; a park load replaces the economy, so it runs again then.</summary>
+	/// <summary>The kart rides' challenge measure (<see cref="ParkEconomy.KartBestCrossings"/>): the most crossings of any kart ride now and the economy instance of the one that has them.</summary>
+	// [BIN:TPW-EXE:0x4cc4b0 best kart] the walk starts at the head of the thing list, the newest object; a ride counts when its type is a ride (WhichUIType 0) with the car track type (+0x9C 1) and its crossings are the track analysis's (0x545310, the sections of kind 11, halved for its doubled pass); the first match is taken whatever its count and a strictly higher count replaces it
+	private (long Crossings, int Instance) BestKartCrossings()
+	{
+		OriginalObject? best = null;
+		long bestCrossings = 0;
+		for ( var index = Objects.Objects.Count - 1; index >= 0; index-- )
+		{
+			var item = Objects.Objects[index];
+			if ( item.IsDeleted || item.Runtime.Bump is not { } bump || bump.Template.Family is not (TrackFamily.Kart or TrackFamily.Bumper) )
+				continue;
+			var crossings = bump.SectionStatistics().Crossings;
+			if ( best == null || bestCrossings < crossings )
+				(best, bestCrossings) = (item, crossings);
+		}
+		return best != null && GetEconomyInstance( best ) is int instance ? (bestCrossings, instance) : (0, 0);
+	}
+
+	/// <summary>The track rides' challenge measure (<see cref="ParkEconomy.TrackRideSections"/>): the most sections of the kart, bumper and water rides of an Info.Id, any for 0.</summary>
+	// [BIN:TPW-EXE:0x4cc5d0 best track ride] the rides with a car or water track type (0x4e2b80 also admits the coaster type, whose thing holds no track analysis and counts 0), the Info.Id when not 0, the sections 0x545310 returns (halved for its doubled pass)
+	private long TrackRideSections( int infoId )
+	{
+		long best = 0;
+		foreach ( var item in Objects.Objects )
+		{
+			if ( !item.IsDeleted && item.Runtime.Bump is { } bump && (infoId == 0 || item.Entry.InfoId == infoId) )
+				best = Math.Max( best, bump.SectionStatistics().Sections );
+		}
+		return best;
+	}
+
+	/// <summary>Points the current economy's challenge types 15, 18 and 21 at the park's coasters, karts and track rides; a park load replaces the economy, so it runs again then.</summary>
 	private void AttachCoasterChallenges()
 	{
 		if ( Park != null )
 		{
 			Park.Economy.CoasterCountedSections = CoasterCountedSections;
 			Park.Economy.CoasterBestObject = CoasterBestObject;
+			Park.Economy.KartBestCrossings = BestKartCrossings;
+			Park.Economy.TrackRideSections = TrackRideSections;
 		}
 	}
 

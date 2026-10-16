@@ -32,12 +32,14 @@ public static class Camera
 
 		var fieldOfView = CameraMode.FieldOfView;
 
-		ProjMatrix = Matrix4x4.CreatePerspectiveFieldOfView(
-			fieldOfView.DegreesToRadians(),
-			Screen.Aspect,
-			0.1f,
-			10000.0f
-		);
+		ProjMatrix = CameraMode.UsesOriginalProjection
+			? OriginalProjection.Create( Screen.Aspect, fieldOfView )
+			: Matrix4x4.CreatePerspectiveFieldOfView(
+				fieldOfView.DegreesToRadians(),
+				Screen.Aspect,
+				0.1f,
+				10000.0f
+			);
 	}
 
 	public static void SetCameraMode<T>() where T : CameraMode

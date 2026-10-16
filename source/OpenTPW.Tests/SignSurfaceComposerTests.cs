@@ -153,6 +153,30 @@ public class SignSurfaceComposerTests
 		Assert.AreEqual( 7, back[(SignSurfaceComposer.Height - 2) * SignSurfaceComposer.Width + SignSurfaceComposer.Width - 2] );
 	}
 
+	/// <summary>
+	/// COMPAT-006: sign text is never pair-kerned. The sign line goes through Uniscribe, whose placement (usp10.dll ScriptPlace 0x6510CEDE, the generic
+	/// routine 0x65113458 and the width cache 0x6510F241) sums per-glyph advances and reads no kern table, so a font with a kern pair for "AB"
+	/// gives the same mask as the same font without it.
+	/// </summary>
+	[TestMethod]
+	public void SignMasksIgnoreTheKernTableOfTheirFont()
+	{
+		byte[] Font( bool kern )
+		{
+			var builder = new TrueTypeFontTests.FontBuilder();
+			var a = builder.AddSimple( 600, 'A', TrueTypeFontTests.Square( 0, 0, 500, 500 ) );
+			var b = builder.AddSimple( 700, 'B', TrueTypeFontTests.Square( 0, 0, 500, 500 ) );
+			if ( kern )
+				builder.AddKerning( a, b, -300 );
+			return builder.Build();
+		}
+		var sign = new SignFile( SignFileTests.CreateNativeMetadataSign( (0, "Test", "TEST____.TTF", 100, 0, -100), (0, "Test", "TEST____.TTF", 100, 128, -90) ) );
+		byte[] Mask( bool kern ) => SignSurfaceComposer.RenderMask( sign, SignFontLibrary.FromFiles( new[] { ("TEST____.TTF", Font( kern )) } ), new string?[] { "AB", null }, 0, new List<string>() );
+		var plain = Mask( false );
+		Assert.IsTrue( plain.Any( value => value != 0 ), "the line is drawn" );
+		CollectionAssert.AreEqual( plain, Mask( true ), "a kern pair does not move the glyphs" );
+	}
+
 	private static int OpaqueKeyMagenta( byte[] rgba )
 	{
 		var count = 0;

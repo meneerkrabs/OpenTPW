@@ -26,12 +26,13 @@ var text = "[APPROX:TEST-002] runtime string";
         sites, errors = annotations('''// [BIN:STP-PPC:0x1010474C world setup] traced
 // [BIN:TPI-EXE:0x00401000] traced
 // [BIN:QMIXER-DLL:0x1800a0d0 distance gain] traced in the game's mixer
+// [BIN:USP10-DLL:0x6510CEDE ScriptPlace] traced in the game's Uniscribe
 /// <c>[BIN:STP-PPC:<address>]</c> documentation template
 ''', 'fixture.cs')
         self.assertEqual(errors, [])
         self.assertEqual([(s.kind, s.label) for s in sites],
                          [('BIN', 'STP-PPC:0x1010474C world setup'), ('BIN', 'TPI-EXE:0x00401000'),
-                          ('BIN', 'QMIXER-DLL:0x1800a0d0 distance gain')])
+                          ('BIN', 'QMIXER-DLL:0x1800a0d0 distance gain'), ('BIN', 'USP10-DLL:0x6510CEDE ScriptPlace')])
         for tag in ['[BIN:0x1010474C]', '[BIN:STP-PPC:]', '[BIN:manual:p12]', '[BIN:]']:
             with self.subTest(tag=tag):
                 sites, errors = annotations('// ' + tag, 'fixture.cs')

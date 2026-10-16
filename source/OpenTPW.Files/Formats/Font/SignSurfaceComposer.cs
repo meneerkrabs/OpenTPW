@@ -161,7 +161,7 @@ public static class SignSurfaceComposer
 			}
 	}
 
-	private static byte[] RenderMask( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, int index, ICollection<string> diagnostics )
+	internal static byte[] RenderMask( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, int index, ICollection<string> diagnostics )
 	{
 		var mask = new byte[Width * Height];
 		if ( index >= lines.Count || string.IsNullOrWhiteSpace( lines[index] ) )

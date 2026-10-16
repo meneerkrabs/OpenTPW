@@ -108,7 +108,8 @@ public class UpgradeCatalogueDefaultsTests
 	public void TheLevelMirrorsTheEconomyRecordsIngredientAmountToTheBridge()
 	{
 		var w = World(); Assert.AreEqual( GuestSpeed.DefaultIngredientAmount, w.One.Visitors.IngredientAmount );
-		w.State.IngredientAmount = 80; Call( w.Level, "SyncObjectEconomy" ); Assert.AreEqual( 80, w.One.Visitors.IngredientAmount );
+		w.State.IngredientAmount = 80; w.State.QualityOfGoods = 100; Call( w.Level, "SyncObjectEconomy" ); Assert.AreEqual( 80, w.One.Visitors.IngredientAmount );
+		Assert.AreEqual( 100, w.One.Visitors.QualityOfGoods, "ECON-044: the balloon's life reads the record's quality of goods" );
 		Assert.AreEqual( GuestSpeed.DefaultIngredientAmount, w.Two.Visitors.IngredientAmount, "only the record's own object" );
 	}
 	/// <summary>The completion's common entry (0x4df8f0) sets the state of repair to 100.0 before its upgrade branch.</summary>

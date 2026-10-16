@@ -2055,7 +2055,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, amount );
 				break;
 		}
-		ApplyAppearance( guest, ride.AppearanceEffect );
+		ApplyAppearance( guest, ride.AppearanceEffect, ride.QualityOfGoods );
 		if ( ride.ProvidesRelief )
 		{
 			// [BIN:TPW-EXE:0x004FE1E0 relief visit] for an object with the relief flag: the toilet wears by the guest's toilet meter as a byte (0x004E2440), the meter goes to 0, and an illness byte above 90 goes to 0 as well
@@ -2085,14 +2085,15 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// quality of goods (<see cref="GuestAppearance.BalloonLife"/>); a costume shop takes back the costume the guest wears or puts one on.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FE615 appearance effect] type +0x15C: 1 creates the balloon model (+0x210, sprite set 10) and sets +0x214 to the balloon life, guest event 12; 2 with +0x24 == 2 ("Customer returning a costume") sets +0x24 to 0 and the sprite bank +0x20 back, otherwise +0x24 = 2, the costume bank and guest event 11; another value logs "Balance file error"
-	// [APPROX:ECON-044] the balloon's life reads the build's quality of goods 50 (0x004DB389, ride +0x18C) rather than the shop's own, which the shop window's quality slider sets to 50 × the slider level (panel apply 0x004B0AA0, apply-all 0x004B0AE0; ParkObjectState.QualityOfGoods), so a balloon always lives 127 needs phases; the balloon model's world reseed (0x00516370, DET-014) is not followed and the guest events 11 and 12 (0x0050C100, a 32-entry ring in the guest) are not recorded; a balloon's life counts down, and the challenge percentages count, while the guest is in the park by its state and on the grid rather than on a cell of type 0, 1, 3, 9 or 10 (0x004FA990, as ECON-027) — evidence needed: none for the rules (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0); the reader of the guest event ring is untraced
-	private static void ApplyAppearance( Guest guest, int effect )
+	// [BIN:TPW-EXE:0x004FE615 balloon life] the balloon's life is BalloonLife of the shop's own quality of goods (+0x18C: 50 at build, 0x004DB389; 50 × the shop window's quality step, 0x004B0AA0, 0x004B0AE0), mirrored from ParkObjectState.QualityOfGoods
+	// [APPROX:ECON-044] the balloon model's world reseed (0x00516370, DET-014) is not followed and the guest events 11 and 12 (0x0050C100, a 32-entry ring in the guest) are not recorded; a balloon's life counts down, and the challenge percentages count, while the guest is in the park by its state and on the grid rather than on a cell of type 0, 1, 3, 9 or 10 (0x004FA990, as ECON-027) — evidence needed: none for the rules (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0); the reader of the guest event ring is untraced
+	private static void ApplyAppearance( Guest guest, int effect, int qualityOfGoods )
 	{
 		switch ( effect )
 		{
 			case GuestAppearance.Balloon:
 				guest.HasBalloon = true;
-				guest.BalloonLife = GuestAppearance.BalloonLife( GuestAppearance.BuiltQualityOfGoods );
+				guest.BalloonLife = GuestAppearance.BalloonLife( qualityOfGoods );
 				break;
 			case GuestAppearance.Costume:
 				guest.InCostume = !guest.InCostume;

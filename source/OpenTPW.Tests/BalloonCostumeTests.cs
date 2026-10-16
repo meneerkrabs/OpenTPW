@@ -53,6 +53,20 @@ public class BalloonCostumeTests
 	}
 
 	[TestMethod]
+	public void ABalloonsLifeFollowsTheShopsOwnQualityOfGoods()
+	{
+		var rig = new Rig();
+		var guest = rig.Simulation.SpawnInPark( 6, 5 );
+		var balloons = Rig.Shop( 1, GuestAppearance.Balloon );
+		balloons.QualityOfGoods = 100;
+		rig.Visit( guest, balloons );
+		Assert.AreEqual( (true, 255), (guest.HasBalloon, guest.BalloonLife), "the shop window's top quality step 100 (0x004B0AA0) gives a 255-phase balloon (0x004FE615)" );
+		balloons.QualityOfGoods = 0;
+		rig.Visit( guest, balloons );
+		Assert.AreEqual( 25, guest.BalloonLife, "quality 0: the floor of 25" );
+	}
+
+	[TestMethod]
 	public void ABalloonShopGivesABalloonThatARideputsAwayAndGivesBack()
 	{
 		var rig = new Rig();

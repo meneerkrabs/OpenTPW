@@ -748,6 +748,8 @@ public partial class Level
 			item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
 			// the shop sale reads the amount of the special ingredient of the ride (0x4fe5f8, +0x198)
 			item.Visitors.IngredientAmount = state.IngredientAmount;
+			// the balloon's life reads the shop's quality of goods (0x004FE615, +0x18C)
+			item.Visitors.QualityOfGoods = state.QualityOfGoods;
 			item.Visitors.WearGauge = state.Repair;
 			// the attraction score's "new ride" test reads the object's own age in days (0xdc520)
 			item.Visitors.AgeDays = Park.Economy.ObjectAgeDays( state );

@@ -155,6 +155,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	// [BIN:TPW-EXE:0x4b0aa0 ingredient amount] the amount is the economy record's (ParkObjectState.IngredientAmount): 50 when the ride is built (0x4db090 stores 0x32 at +0x198, 0x4db3b3), the shop window's 0..100 slider (range 0x4b06d2, shown for ingredients 1..4 by 0x4b0950) applied to the object (0x4b0aa0) or every object of the type (0x4b0ae0), saved with the park and imported as mAmountOfSpecialIngredient (0x4dcdc1); a Sugar visit adds trunc(6 x amount / 100) (0x4fe5f8)
 	// The level mirrors it from the object's economy record (ParkObjectState.IngredientAmount, saved) every tick; tests set it directly.
 	public int IngredientAmount { get; internal set; } = GuestSpeed.DefaultIngredientAmount;
+	/// <summary>The shop's quality of goods (PC <c>+0x18C</c>, <c>mQualityOfGoods</c>), 50 when built; the level mirrors it from the economy record (ParkObjectState.QualityOfGoods) every tick.</summary>
+	public int QualityOfGoods { get; internal set; } = GuestAppearance.BuiltQualityOfGoods;
 	/// <summary>Toilets (<c>UsageInfo.ProvidesRelief</c>): queueing guests do not leave for the toilet.</summary>
 	public bool ProvidesRelief => Satisfies.HasFlag( GuestNeeds.Toilet );
 	/// <summary>Walkable path cell the queue falls back to when the entrance's outside cell is neither a queue nor a path cell.</summary>

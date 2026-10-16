@@ -20,7 +20,7 @@ public class VisitorWorldSelectionTests
 	private static T Empty<T>() => (T)RuntimeHelpers.GetUninitializedObject(typeof(T));
 
 	[TestMethod]
-	public void ParkPressOpensExistingRosterWithClickedVisitorSelected()
+	public void ParkPressOpensTheVisitorWindowOnTheClickedVisitor()
 	{
 		var hud = Fixture(out var simulation, out var renderer);
 		var first = new Guest(1, 0) { State = GuestState.WalkingAround };
@@ -29,9 +29,9 @@ public class VisitorWorldSelectionTests
 		var method = typeof(ParkHud).GetMethod("SelectWorldVisitor", BindingFlags.Instance | BindingFlags.NonPublic);
 		Assert.IsNotNull(method, "There is no world visitor action yet.");
 		Assert.IsTrue((bool)method!.Invoke(hud, new object[] { clicked })!);
-		Assert.IsTrue(hud.VisitorWindowOpen);
-		Assert.AreEqual(8, hud.SelectedVisitorId);
-		Assert.AreSame(clicked, hud.VisitorItems[1]);
+		Assert.IsTrue(hud.VisitorInfoWindowOpen, "the press opens the per-visitor window (0x4879d0 mode 7 -> 0x4b79b0)");
+		Assert.IsFalse(hud.VisitorWindowOpen);
+		Assert.AreSame(clicked, hud.InfoVisitor);
 		clicked.State = GuestState.Gone;
 		Assert.IsFalse((bool)method.Invoke(hud, new object[] { clicked })!, "Removed visitor cannot reopen stale details.");
 	}
@@ -154,19 +154,19 @@ public class VisitorWorldSelectionTests
 				Input.UpdateButtons();
 				hud.Update(context, input, gate == "mouse", gate == "keyboard", gate == "text");
 			}
-			Assert.AreEqual(gate is "success" or "readonly" or "locator", hud.VisitorWindowOpen);
+			Assert.AreEqual(gate is "success" or "readonly" or "locator", hud.VisitorInfoWindowOpen);
 			if (gate is "miss" or "plain") Assert.IsTrue(level.CellTool.IsActive, "A visitor miss, or a plain press on one, preserves automatic path activation.");
 			if (gate is "success" or "readonly" or "locator")
 			{
-				Assert.AreEqual(8, hud.SelectedVisitorId);
+				Assert.AreEqual(8, hud.InfoVisitor?.Id);
 				hud.Update(context, UiInput.Click(input.Mouse), false, false, false);
-				Assert.AreEqual(8, hud.SelectedVisitorId, "Release keeps visitor selection and cannot fall through into object selection.");
+				Assert.AreEqual(8, hud.InfoVisitor?.Id, "Release keeps the visitor and cannot fall through into object selection.");
 				Assert.IsFalse(level.CellTool.IsActive, "Visitor press wins before automatic path activation.");
 				guest.State = GuestState.Gone;
 				var replacement = new Guest(3, 0) { State = GuestState.WalkingAround };
 				Set(simulation, "guests", new List<Guest> { replacement });
 				hud.Update(context, UiInput.Idle(input.Mouse), false, false, false);
-				Assert.AreEqual(3, hud.SelectedVisitorId, "Actual visitor screen heals its selection after removal.");
+				Assert.IsFalse(hud.VisitorInfoWindowOpen, "the visitor window closes when its visitor is gone (0x4b72a0 closes it without a selected thing)");
 			}
 		}
 		finally { Camera.Mode = previousMode; Camera.ViewMatrix = previousView; Camera.ProjMatrix = previousProjection; Input.TextEntryActive = previousText; Input.KeysDown = previousDown; Input.LastKeysDown = previousLast; Input.UpdateButtons(); }
@@ -174,6 +174,7 @@ public class VisitorWorldSelectionTests
 
 	internal static ParkHud Fixture(out GuestSimulation simulation, out GuestRenderer renderer)
 	{
+		Log ??= new();
 		simulation = new GuestSimulation(new GuestPathGrid(32, 32), GuestTests.CreateSettings(), 1) { ArrivalsEnabled = false };
 		renderer = Empty<GuestRenderer>();
 		var field = new ModelHeightfield(10, 10, 10, 10, 0, 0, Array.Empty<uint>(), Enumerable.Repeat(2.5f, 121).ToArray(), new uint[100]);

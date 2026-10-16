@@ -17,6 +17,8 @@ public class ParkCameraMode : CameraMode
 	public float Yaw { get; private set; } = -135f;
 	public ParkCameraView View { get; private set; }
 	private bool dragging;
+	private bool middleTurning, middleWasDown;
+	private readonly ReferenceFrameClock turnFrames = new();
 
 	public ParkCameraMode()
 	{
@@ -74,7 +76,7 @@ public class ParkCameraMode : CameraMode
 			CaptureMouse = io.WantCaptureMouse || Level.Current?.UiCapturesMouse == true,
 			CaptureKeyboard = io.WantCaptureKeyboard || UiCapturesKeyboard,
 			TextEntry = io.WantTextInput || Input.TextEntryActive, Modal = ModalOpen,
-			RightButton = Input.Mouse.Right, Wheel = Input.Mouse.Wheel,
+			RightButton = Input.Mouse.Right, MiddleButton = Input.Mouse.Middle, Wheel = Input.Mouse.Wheel,
 			Forward = Input.Forward, Right = Input.Right + (Input.Down( InputButton.ScrollRight ) ? 1 : 0) - (Input.Down( InputButton.ScrollLeft ) ? 1 : 0),
 			RotateLeft = Input.Down( InputButton.RotateLeft ), RotateRight = Input.Down( InputButton.RotateRight ),
 			RotateLeftPressed = Input.Pressed( InputButton.RotateLeft ), RotateRightPressed = Input.Pressed( InputButton.RotateRight ),
@@ -89,7 +91,7 @@ public class ParkCameraMode : CameraMode
 		var inside = input.LogicalSize.X > 0 && input.LogicalSize.Y > 0
 			&& input.MousePosition.X >= 0 && input.MousePosition.Y >= 0
 			&& input.MousePosition.X < input.LogicalSize.X && input.MousePosition.Y < input.LogicalSize.Y;
-		if ( !input.HasFocus || input.Modal || !inside ) { dragging = false; return; }
+		if ( !input.HasFocus || input.Modal || !inside ) { dragging = false; middleTurning = false; middleWasDown = input.MiddleButton; turnFrames.Reset(); return; }
 		var dt = float.IsFinite( input.DeltaSeconds ) ? Math.Clamp( input.DeltaSeconds, 0, 0.1f ) : 0;
 		var keyboard = !input.CaptureKeyboard && !input.TextEntry;
 		if ( keyboard )
@@ -98,10 +100,10 @@ public class ParkCameraMode : CameraMode
 			var rotation = options.Rotation == RotationMode.Smooth
 				? ((input.RotateRight ? 1 : 0) - (input.RotateLeft ? 1 : 0)) * HostRotationSpeed * dt
 				: ((input.RotateRightPressed ? 1 : 0) - (input.RotateLeftPressed ? 1 : 0)) * 90;
-			// [APPROX:UI-102] the original also turns the view with the middle button held, by (pointer X x 2048 / width - 1024) / 2048 radians on every drawn frame (0x42a760, message 0x1e, up to 0.5 radian a frame); not built
 			Yaw = (Yaw + rotation) % 360;
 			Height = Math.Clamp( Height - input.Zoom * HostZoomSpeed * dt, 12, MaximumHeight );
 		}
+		Yaw = (Yaw + MiddleTurn( input, dt )) % 360;
 		var radians = Yaw.DegreesToRadians();
 		var forward = new Vector3( -MathF.Cos( radians ), -MathF.Sin( radians ), 0 );
 		var right = new Vector3( forward.Y, -forward.X, 0 );
@@ -123,6 +125,33 @@ public class ParkCameraMode : CameraMode
 		if ( length > 1 ) { x /= length; y /= length; }
 		Focus( Target + (right * x + forward * y) * dt * HostPanSpeed );
 	}
+
+	/// <summary>
+	/// The yaw change, in degrees, of the middle-button turn for this frame: zero unless the middle button went down over the free view and is still held.
+	/// </summary>
+	// [BIN:TPW-EXE:0x42a760 park camera mouse turn] the button message 0x10005 with button 2 (DirectInput button 2, the middle button; 0 is left, 1 right) sets the mode bit 2 of 0x790aac, 0x10004 clears it, and the leave/focus messages 0x20 and 0x22 clear it too; while it is set every message 0x1e (once per drawn frame) adds (pointer X in whole pixels x 2048 / width - 1024) / 2048 = X / width - 0.5 to the yaw 0x790a38, in radians (the arrow keys turn it by 0.002 x frame milliseconds, 0x42b1c0)
+	// [BIN:TPW-EXE:0x42b1c0 yaw sign] the Left arrow (key 6) and numpad 9 (0x12) add to the yaw, the Right arrow (7) and numpad 7 (0x13) subtract, so a pointer right of the centre turns like the Left arrow: OpenTPW's yaw (degrees, rotate left = less) goes down
+	// [EXT:frame-driven-at-60hz] the original steps once per drawn frame; OpenTPW takes the elapsed time as that many 60 Hz reference frames
+	private float MiddleTurn( CameraControlInput input, float dt )
+	{
+		if ( !input.MiddleButton )
+		{
+			middleWasDown = false;
+			middleTurning = false;
+			turnFrames.Reset();
+			return 0;
+		}
+		var pressed = !middleWasDown;
+		middleWasDown = true;
+		if ( pressed && !input.CaptureMouse && !input.TextEntry )
+			middleTurning = true;
+		if ( !middleTurning )
+			return 0;
+		return -MiddleTurnRadians( input.MousePosition.X, input.LogicalSize.X ) * turnFrames.Advance( dt ) * 180f / MathF.PI;
+	}
+
+	/// <summary>The yaw added by one message 0x1e while the middle button is held, in radians: the pointer's whole-pixel X over the width, less one half.</summary>
+	public static float MiddleTurnRadians( float pointerX, int width ) => width <= 0 ? 0 : MathF.Floor( pointerX ) / width - 0.5f;
 
 	private static float Edge( float position, int size ) => position < size * HostEdgeFraction ? -1 : position >= size * (1 - HostEdgeFraction) ? 1 : 0;
 	private void UpdateTransform()

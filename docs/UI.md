@@ -79,6 +79,14 @@ passes 56 tests with zero skips. Original visual fidelity remains unverified.
   plain art, 3–5 (pressed states) the `…d` art (`b_door`: open door normally,
   closed door when down). `panel.MD2` stores four arm variants
   (`pan_money, pan_info, pan_buy, pan_staff`) the same way.
+- Missing state art: the disable frames (1) of `b_callmech`, `b_callhandy` and `b_upgrade` name
+  `b_callmechg`, `b_callhandyg` and `b_upgradeg`, and `b_loantog`'s pressed frames (3–5) name art
+  too, that `ui.wad` does not ship (pinned by `OnlyTheCallUpgradeAndLoanToggleStateFramesNameMissingTextures`).
+  Drawn as is they come out as untextured white squares; `UiButton` draws the normal frame instead,
+  greyed (160, 160, 160) when disabled (`[EXT:missing-state-texture]`). The original's texture binder
+  `0x46EAD0` (called by the UI model loaders `0x488D20`, `0x488EE0`, `0x489060`) logs "Could not load
+  texture '%s'" and binds entry 0 of its texture table instead; which texture that entry holds at run
+  time is not known, so the original's look of these frames is not known either.
 - Texture V runs bottom-up as in the 3D shaders: button UVs span v 0.42..1
   while the art occupies the top 58% of the texture. Pure pink (255, 0, 255)
   fills every unused texel and is the transparent key.

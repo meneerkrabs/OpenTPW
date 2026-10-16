@@ -264,6 +264,7 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
 - `PTCL-905`: one batch per particle in the original against OpenTPW's three blend batches; the per-particle state
   words are decoded (depth writes, opaque untextured particles), the order across batches is not read.
 - `PTCL-906`: the pose conversion inverts OpenTPW's placement.
+- `PTCL-909`: screen-space particles are drawn in the world pass, after the world batches and without depth, so the HUD and the advisor's image draw over them; where the original submits the screen-space draw list (`0x51F01A`) against those layers is not read.
 - `PTCL-908`: wired are EVENT 1/2, ADDOBJ and ADDOBJ_EXT 1/2 (`0x5520E8`: ADDOBJ with a control operand), their kept
   effects following the key node on every object pass (`0x55189D`: the node position truncated to whole units through
   `0x51FE30`, a type-2 effect turned through `0x51FD90`), a negative key at the footprint box middle (`0x556B90`/`0x466B70`),

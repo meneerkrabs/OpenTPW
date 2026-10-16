@@ -162,6 +162,7 @@ public sealed class ParticleRenderer : Entity
 			Draw( commandList, additiveMaterial!, eye, ranges[1] );
 		if ( ranges[2].Count > 0 )
 			Draw( commandList, oneOneMaterial!, eye, ranges[2] );
+		// [APPROX:PTCL-909] the screen-space batches are part of this world pass, so the HUD and the advisor's image draw over them; the original's frame position of that draw list is not read
 		if ( ranges[3].Count > 0 )
 			Draw( commandList, screenAlphaMaterial!, eye, ranges[3], screenSpace: true );
 		if ( ranges[4].Count > 0 )

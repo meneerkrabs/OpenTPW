@@ -313,6 +313,18 @@ public class ParticleEventRequestTests
 	}
 
 	[TestMethod]
+	public void AParticleRecordKeepsItsTypeAndKeyThroughJsonAndAnOldRecordWithoutThemLoads()
+	{
+		var placed = Placed();
+		var saved = placed.Runtime.CaptureSnapshot() with { ParticleObjects = new[] { new ParticleObjectRecord { Slot = 5, Handle = 0x10001, Type = 2, Key = 7 } } };
+		var back = System.Text.Json.JsonSerializer.Deserialize<OriginalObjectRuntimeSnapshot>( System.Text.Json.JsonSerializer.Serialize( saved ) )!;
+		back.ValidateSnapshot();
+		Assert.AreEqual( (5, 0x10001, 2, 7), (back.ParticleObjects![0].Slot, back.ParticleObjects[0].Handle, back.ParticleObjects[0].Type, back.ParticleObjects[0].Key) );
+		var old = System.Text.Json.JsonSerializer.Deserialize<ParticleObjectRecord>( "{\"Slot\":5,\"Handle\":65537}" )!;
+		Assert.AreEqual( (0, 0), (old.Type, old.Key), "a record written before the follow keeps neither" );
+	}
+
+	[TestMethod]
 	public void AKeyEntryWithoutAMatrixStartsTheEffectAtTheWorldOrigin()
 	{
 		var bytes = File.ReadAllBytes(Path.Combine(root, "model.MD2")); BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x1b0), 0x100); File.WriteAllBytes(Path.Combine(root, "origin.MD2"), bytes);

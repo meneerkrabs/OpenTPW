@@ -21,7 +21,10 @@ Everything is presentation-only and draws from no random stream; the determinism
 `Type` and `Key` fields (type 0–2); older saves load and their records simply do not follow a key. Verified with 4309 tests passing
 without game data, 4740 with it, and all five native smokes.
 
-Still open: OpenTPW's lobby has no key panel; the order of the screen particle pass against the HUD and the advisor image (they now draw
-in the world pass, under both); advisor node bits are rebuilt per response instead of living on the model instance; x87 precision; the
+Review fix: the coaster pylon debit comment in `CoasterBuilder` read `0x785a2c == 0` as "money on"; the word is the layout-replay
+recorder (the debit at `0x4352A0` is skipped only while a layout replays), so the comment now says so.
+
+Still open: OpenTPW's lobby has no key panel; the order of the screen particle pass against the HUD and the advisor image (PTCL-909: they
+draw in the world pass, under both); advisor node bits are rebuilt per response instead of living on the model instance; x87 precision; the
 scoped effects of `+0x4E0` loaded by `0x414420` into pool slots (`0x51FA20`) from names at `0x788F40`; and ADVISOR-006, which waits on
 the reader of mesh bit 0x10 (RIDES-042).

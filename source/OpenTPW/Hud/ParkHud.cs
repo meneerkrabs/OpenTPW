@@ -781,14 +781,14 @@ public sealed partial class ParkHud
 			{
 				// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
 				// [EXT:cannot-build-sound] a refused placement ('Cannot build') plays the error feedback 0x1D with OpenTPW's own message text: tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480), so the original plays nothing for a refused placement; the feedback is an OpenTPW addition
-				// [APPROX:AUDIO-009] within the build tools' code (0x524960-0x535100, which plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90) no refusal sound exists; whether a placement refusal plays a sound from code outside that range is not searched
+				// [APPROX:AUDIO-009] within the build tools' code (0x524960-0x535100, which plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90) no refusal sound exists, and none of the 82 call sites of the sound entry 0x51bfc0 lies between 0x535100 and 0x5471cd, where the refusal stages 0x535670 and 0x536100 are; the callees of those stages were not each traced for a sound
 				PostMessage( strings.Extra( OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}
 
 		// [BIN:TPW-EXE:0x485780 UI message hook] a 0x100 (activated) message plays cat_ui event 0x1F, or 0xBD when the control's construction style (+0x48) has bit 0x10 (0x4857cb)
-		// [APPROX:AUDIO-004] the controls created with style bit 0x10 are the list row templates and the table builder's type 3 controls (docs/AUDIO.md); which of them are activated and map to OpenTPW controls is not read, so the view always plays 0x1F
+		// [APPROX:AUDIO-004] the controls created with style bit 0x10 are the list row templates and the table builder's type 3 controls, the lists' sliders (docs/AUDIO.md); whether a press on them sends the activate message is not read, so the view always plays 0x1F
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 

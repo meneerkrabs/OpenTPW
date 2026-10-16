@@ -384,7 +384,7 @@ public class ParkResumeCatalogValidationTests
 			var miniature = new ParkResumeSaveFileTests.MiniaturePark();
 			for ( var tick = 0; tick < 1800; tick++ )
 				miniature.Step();
-			var guests = miniature.Simulation.CaptureSnapshot();
+			var guests = miniature.CaptureGuestsForUnstampedLayout();
 			var scripts = world.CaptureSnapshot();
 			var layout = ParkLayoutSnapshot.CaptureSnapshot( ParkCellMap.FromOriginal( park.Map, park.Save ), objects ) with
 			{

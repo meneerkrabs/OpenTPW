@@ -37,7 +37,6 @@ internal sealed class Advisor : IDisposable
 	internal static readonly (string Id, string Rule)[] Approximations =
 	{
 		("ADVISOR-005", "the advisor is lit like the original (advisor.shader: ambient 0.15 grey, 0x573FD0, plus the directional light of colour 1.0, 0x429BA0, per vertex, clamped; 0x574660 -> 0x5741B0), with the ambient of an ordinary park; the ambient and fog state of the lobby and other frontend screens (environment states 0x5D8B50/0x5D8D70/0x5DCFE0) and whether the original fogs the advisor model are not read, so no fog is drawn"),
-		("ADVISOR-006", "the clips' node tracks, blink toggles, accessory selectors, vertex tracks (antennae, hands, eyes) and the level advisors' texture-coordinate tracks are drawn; the blink toggles set the mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), which hides that mesh in the original's draw walk (0x57A5E3); a clip the archive lacks leaves the bind pose"),
 		("ADVISOR-009", "--advisor-say plays global clips by number and starts them at its first rendered frame; the controller says the five bound game-event messages and the help messages of the HUD windows with a traced message (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price); the other window and tool-start help messages and the 135 computed score producers (descriptor table 0x76E300) are not bound"),
 		("ADVISOR-012", "mono speech duplicated to both channels; the original submits it unpositioned (0x51BFC0 with 0,0,0) and the library places flat sounds at (0,1,0) (0x6BC51D); the left/right levels come from QMixer, outside tp.exe (AUDIO-018)"),
 		("ADVISOR-017", "the advisor clock starts at 0 for a new park and carries the saved word on an original-save import (the second word of the clock block behind the MESS marker, writer 0x402E00 after the snapshot 0x402E60, reader 0x402E30, marker check 0x41555A, load 0x415140 -> 0x402E80 -> 0x403160); it stands still whenever 0x4092A0 pauses the timer: 0x46B600 (main window procedure, WM_ACTIVATEAPP deactivation), 0x47F020 (message box builder), 0x49F280 (save window) and 0x49EFB0 (load window) are identified, the callers 0x48C830, 0x4A3A30, 0x4A9380 and 0x5F0B40 are not"),
@@ -206,8 +205,7 @@ internal sealed class Advisor : IDisposable
 	/// Model-space transform of a node from the shared MD2 hierarchy code
 	/// (<see cref="ModelAnimationPlayer.ComputeRestTransforms"/>: parent-relative, row-vector,
 	/// world = local × parent world). With the root "Position Dummy" applied the model stands
-	/// Y-up and faces −Z. The bind pose is used: the clips decode, but which one a sequence plays is
-	/// not drawn (ADVISOR-006).
+	/// Y-up and faces −Z. The bind pose is the pose without a clip (the sequence's clips pose the rig in <see cref="CurrentPose"/>).
 	/// </summary>
 	internal static Matrix4x4 NodeWorld( ModelFile model, int nodeIndex ) => ModelAnimationPlayer.ComputeRestTransforms( model )[nodeIndex];
 

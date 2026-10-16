@@ -76,7 +76,8 @@ w × h zero flags. A piece profile is 2 × 2 cells (156 bytes), the station's 4 
 offsets and the length, and rejects malformed files. The profile is the original's per-object height map (`[TPW-EXE:0x451640]`, called from the mesh loader
 `0x4629D0` after swapping the extension, checks magic 0xAB1E0003 and (5, 100), and rebuilds the map from the mesh with `0x451880` when the file is missing or the size
 differs). The vehicles' sampler never reads it (`0x4511A0` samples faces or the terrain, `0x4527F0` is the landscape's height, see "Vehicle height" below), so OpenTPW's
-vehicles do not either; the kit still parses it (TRACK-002). The `.hmp` is read by the cell-height lookup `0x452AE0`, whose callers are the build ghosts and the tour code.
+vehicles do not either; the kit still parses it (TRACK-002). The `.hmp` is read by the cell-height lookup `0x452AE0` (the build ghosts and the tour code), the instance bounding box `0x466B70` (the map's extremes plus the instance height; callers `0x556AF0`..`0x55A100`),
+the ride preview `0x4689F0` and the cell-flag copy of the mesh creation `0x463060` (map cells with bit 0x80 are written into the landscape cells; every shipped kit's flags are zero): no reader belongs to the kart and water vehicles (TRACK-002 narrowed to those readers' OpenTPW counterparts).
 
 ## The tool (`TrackLineWriter`, `TrackBuilder`)
 
@@ -93,23 +94,26 @@ closes and the queue tool starts. `Level.BuildTrack` is the headless entry.
 
 ### The station (TRACK-005)
 
-The 4 × 4 footprint holds two station tiles along the heading, on the rows beside the entrance (`TrackStation`). The circuit starts at the first one.
-The original's station is the line of `0x52A1A0` (`[TPW-EXE:0x52A1A0]`: attraction, &exitX, &exitY, kind; kind 1 writes cell type 13 for karts, 2 type 18 for water). From the
-attraction cell (x, y) it runs the line routine `0x53AAC0` over the station segment, stores the segment start as the walk's start cell (`DAT_007639E0/E4`) and returns the exit
-cell:
+The station is the line of `0x52A1A0` (`[TPW-EXE:0x52A1A0]`: attraction, &exitX, &exitY, kind; kind 1 writes cell type 13 for karts, 2 type 18 for water), run from the
+attraction cell (x, y) over the station segment with the line routine `0x53AAC0`. The attraction cell is the ride's anchor: `0x52A1A0` reads `+8`/`+0xC` of the placement record
+`0x818C20` that `0x528A70` returns, whose cell is the build click's anchor (`0x528B44`, `Level.GetCentredAnchor`; the ride object is constructed at the anchor plus the rotated
+`Info.MapOffsetX/Y` (def `+0x30/+0x34`, copied to `+0x4B0/+0x4B4` at `0x4134D3`, rotated by `0x4D9CC0` at `0x529F86`), and no shipped ride sets those keys). The segment start is stored as
+the walk's start cell (`DAT_007639E0/E4`) and the exit cell is returned:
 
 | rotation | station line (2 tiles) | walk start | exit | heading bit |
 | --- | --- | --- | --- | --- |
 | 0° | (x, y+1) → (x+2, y+1) | (x, y+1) | (x+4, y+1) | 0x04 +X |
-| 90° | (x+1, y) → (x+1, y−3) | (x+1, y) | (x+1, y−5) | 0x01 −Y |
+| 90° | (x+1, y−1) → (x+1, y−3) | (x+1, y−1) | (x+1, y−5) | 0x01 −Y |
 | 180° | (x−1, y−2) → (x−3, y−2) | (x−1, y−2) | (x−5, y−2) | 0x40 −X |
 | 270° | (x−2, y) → (x−2, y+2) | (x−2, y) | (x−2, y+4) | 0x10 +Y |
 
-The exit offsets equal the fixed offsets `0x529E10` adds to the controller reference (below). OpenTPW places its station on the footprint's first two tile columns.
-The placement's cursor cell is OpenTPW's anchor: `0x818C3C` = (anchorY << 7) + anchorX + 1 is written at `0x528E12` from the build click's anchor (`0x528B44`,
-`Level.GetCentredAnchor`) right before `0x529E10` is called (`0x528E19`). The attraction `0x52A1A0` reads (the object `0x528A70` returns) is constructed at that cell
-plus the per-rotation offset `0x4D9CC0` returns from type +0x4B0 (`0x529F86`); that offset, whether the attraction's +8/+0xC is the constructed cell, and the line
-modes 0x80, 0x82 and 0x83 are not traced (TRACK-005). The heading
+The tiles lie on the footprint's rows 1 and 2 across the heading (`TrackStation.FromPlacement`); row 0 is the entrance row (`*2N*`). Three more readers agree with the table:
+the forward piece walk `0x52A490` starts at the exit, the backward one `0x52A700` at the tile before the first (rotation 0: (x−2, y+1), 90: (x+1, y+1), 180: (x+1, y−2), 270: (x−2, y−2); both read the
+ride's constructed cell and rotation, `+5/+7/+0x10`), and the controller reference `0x529E10` hands `0x545890` is the cell between the two tiles on their centre line
+(anchor + the type's `Bumper.*Adjust` + (4, 1), (1, −5), (−5, −2) or (−2, 4) by rotation; the kart and water types keep it as the station reference `+0x74/+0x78` without the arena's 0x600,
+`Level.TrackStationReference`). The finish buoy lies 0xC00 behind it (the first tile's centre), the kart grid around it. OpenTPW's earlier layout (the footprint's rows 0 and 1, the reference at the first
+tile's centre) is kept only for a ride restored from a park saved before (`BumpControllerSaveData.StationLayout` 0, `TrackStation.FromPlacementLegacy`, `[EXT:legacy-station-layout]`).
+The modes 0x80 and 0x83 of the line routine (0x82 is the flow link, TRACK-004) and what they write on the station tiles are not traced (TRACK-005). The heading
 follows the rotation (0° +X, 90° −Y, 180° −X, 270° +Y). The tile before the first station tile (`Entry`) is where the player's loop returns; the tile after
 the second (`Exit`) is where the first line starts.
 
@@ -158,7 +162,7 @@ part in no vehicle–vehicle collision, as the mover or as the other vehicle, so
 
 Buoys: the station's finish buoy first (flag 4), then the section buoys in walk order. Water: the finish buoy lies 0xC00 from the station reference along
 the orientation word (controller +0xB0: bit 1 the axis, bits 2 and 4 the signs) and the unload point (+0x90/+0x94) a third of that offset
-(`[TPW-EXE:0x545890]`); OpenTPW puts the reference at the centre of the first station tile with the offset behind it (TRACK-005). A launched boat first aims
+(`[TPW-EXE:0x545890]`); the reference is the cell between the two station tiles ("The station"). A launched boat first aims
 at the buoy after the finish buoy (controller +0xA4).
 
 The excitement the guests see for a water ride is the controller's base: `level × 60 / 100 + clamp(2 × corners + longest straight run + 3 × crossings, 0, 40)`,
@@ -269,8 +273,7 @@ A new or re-chosen piece is a new instance without a clip (`0x53AFA0`), and the 
 `+0xE6` of the ride's script, which the script attach (`0x558C71`) and the load's script restore (`0x5597A0`) set to −1, so the first `BUMP 17 0` of the water
 ride's loop starts the water and the later ones do nothing; a track edit stops it until the ride closes (`BUMP 17 1`) and opens again. The state is presentation only
 (`Level.TrackPieceAnimations`, a clock advanced with the world step, not saved or hashed); the renderer plays one animator per group of tiles of a piece that started
-(and froze) together and draws their moving meshes from one copy. The walks start at OpenTPW's station exit and entry, whose relation to the original's
-cells is TRACK-005 (the original's backward walk starts one cell off the tile grid for rotation 90). Open (TRACK-018): the edit sub-modes and texture-frame clips.
+(and froze) together and draws their moving meshes from one copy. The walks start at the station's exit and entry, the cells `0x52A490` and `0x52A700` compute ("The station"). Open (TRACK-018): the edit sub-modes and texture-frame clips.
 
 **Vehicle height** (TRACK-001 narrowed, TRACK-031 retired). Each probe of `0x546280` takes the object on its cell (`0x450AC0`: the cell's owner, a track cell through `0x53BF30`)
 and samples it in the mode `0x450EA0` chooses (`TrackSurface.FromObject`):
@@ -302,7 +305,7 @@ other live vehicle of the pool whichever ride owns them (the restitution is the 
 keep-out circles), so a vehicle can enter a neighbouring ride's object (`BumpVehicle.ObjectOwner`), and the buoy budget of 1024 (`0x54B170`) counted over every ride. A circuit or arena
 that does not fit the shared pools is refused like an overflowing one. The module ticks once per world step before every ride's script step (`0x54F55F`), driven by the object pass. Saves carry the frame
 counter and clock (`TrackWorldSaveData.FrameCount`, `TickRemainder`), each controller's object pool slots (`ObjectSlots`) and live buoy count (`BuoyCount`) and a vehicle's foreign object (`ObjectAttraction`), all optional:
-an older save takes the first controller's clock, the slots the restore gives and no foreign object. A vehicle's `Slot` is its module pool slot (an older save whose rides
+an older save takes the first controller's clock, the slots the restore gives and no foreign object; `StationLayout` (1 for the original's station line, absent or 0 for the layout before it) is optional the same way. A vehicle's `Slot` is its module pool slot (an older save whose rides
 used the same slot gets the first free one; a save with the module clock must name slots unique across the rides). Because the shared pools' overflow verdicts depend on the
 order the rides were built in, a restore of a save with the module clock trusts the save (`[EXT:track-pool-overflow-refused]`): every vehicle and object keeps its saved slot,
 a ride saved invalid gets the station-only geometry even when its circuit walks valid now, a ride saved with no objects and no buoys stays without them, and no pool check runs
@@ -336,6 +339,7 @@ OpenTPW decisions with no original rule (`[EXT:name]` at the code sites):
 - `[EXT:bump-pre-shared-save-order]` (was part of `APPROX:TRACK-019`): a park-resume save from before the shared pools restores their order from the restore (controllers by attraction id); kept so older saves load.
 - `[EXT:track-walk-step-limit]` (was part of TRACK-014): the circuit walk stops after as many steps as the layer has tiles plus the station. The original `0x52A970` has no limit and would hang on a flow that never returns to the start.
 - `[EXT:track-tile-owner]` (was TRACK-021): every tile records its ride (`TrackCell.Owner`). The original's 40-byte cell has no owner field; its vehicles can cross into a neighbour ride's adjacent objects (TRACK-019).
+- `[EXT:legacy-station-layout]` (save compatibility): a ride of a park saved before the station followed the original's line (a controller entry without `StationLayout`) keeps its old station tiles and reference ("The station").
 - `[EXT:legacy-kart-save]` (was TRACK-027): a park-resume save from before the kart or bumper controllers restores its rides freshly (save compatibility).
 - `[EXT:late-kart-guard]` (was TRACK-028): `BUMP 4` on a kart ride in phase 3 is refused. The original creates a kart whose relaunch gives it no movement flags (`0x54A040`), so it never moves and keeps the
   controller's count above 0, which blocks the race reset; no shipped script issues `BUMP 4` in phase 3.
@@ -367,7 +371,7 @@ writes for the footprint codes (`0x532FC0`).
 ## Open points
 
 - Jumps and tunnels (TRACK-008: the add-ons are neither sold nor placed; their placement, sections and the teleport hook are read, see "Add-ons"), the edit
-  sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition's replayed action list, the station-derived start cell and buoy placement, the walk's
+  sub-modes' piece trigger and texture-frame piece clips (TRACK-018), the demolition's replayed action list, the station line's modes 0x80 and 0x83, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
 

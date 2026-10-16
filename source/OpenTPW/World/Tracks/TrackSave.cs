@@ -18,7 +18,7 @@ internal sealed record BumpVehicleSaveData( int Slot, int Flags, int Variant, in
 /// the pool slots of its collision objects and its live buoy count, so a restore can tell a build the shared pools refused (no objects and no buoys) from one that fitted.
 /// </summary>
 internal sealed record BumpControllerSaveData( int AttractionId, int Type, int Laps, int Performance, int Phase, int State, long TickCount, double TickRemainder, bool WaterRunning,
-	bool IsTrackValid, List<int> Pending, List<int> Leaving, List<TrackSectionSaveData> Sections, List<BumpVehicleSaveData> Vehicles, List<int>? ObjectSlots = null, int? BuoyCount = null );
+	bool IsTrackValid, List<int> Pending, List<int> Leaving, List<TrackSectionSaveData> Sections, List<BumpVehicleSaveData> Vehicles, List<int>? ObjectSlots = null, int? BuoyCount = null, int StationLayout = 0 );
 
 /// <summary>The kart and water tracks of one saved park (the park-resume envelope's optional track part): the cell layer, the controllers and the cosmetic generator.</summary>
 internal sealed record TrackWorldSaveData
@@ -67,7 +67,7 @@ internal static class TrackSave
 		controller.Vehicles.Select( vehicle => new BumpVehicleSaveData( vehicle.Slot, vehicle.Flags, vehicle.Variant, vehicle.X, vehicle.Y, vehicle.VX, vehicle.VY, vehicle.VX0, vehicle.VY0,
 			vehicle.Speed, vehicle.Heading, vehicle.Spin, vehicle.Roll, vehicle.Radius, vehicle.AccelBonus, vehicle.TargetX, vehicle.TargetY, vehicle.JitterX, vehicle.JitterY,
 			vehicle.TargetBuoy, vehicle.Laps, vehicle.BuoyCountdown, vehicle.Age, vehicle.ObjectIndex, vehicle.WallHits, vehicle.WallWindow, vehicle.Sprays, vehicle.Riders.ToList(), vehicle.VisualHeading, vehicle.YawRate, vehicle.YawDelta, vehicle.Animation, vehicle.EffectRequest, vehicle.EffectLatch, vehicle.Height, vehicle.ChaseTarget, vehicle.Engine, vehicle.Smoke, vehicle.ObjectOwner?.AttractionId ?? -1 ) ).ToList(),
-		controller.Objects.Select( item => item.ModuleSlot ).ToList(), controller.Buoys.Count );
+		controller.Objects.Select( item => item.ModuleSlot ).ToList(), controller.Buoys.Count, controller.LegacyStationLayout ? 0 : 1 );
 
 	/// <summary>The module part of a park-resume restore, once every controller is back: the cosmetic generator, the module clock and the objects' saved pool slots.</summary>
 	public static void RestoreModule( BumpWorld module, TrackWorldSaveData saved, IReadOnlyList<(BumpController Controller, IReadOnlyList<int>? Slots)> controllers )

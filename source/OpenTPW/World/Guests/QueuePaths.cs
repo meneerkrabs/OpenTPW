@@ -200,7 +200,7 @@ public static class QueuePaths
 	}
 
 	/// <summary>Removes queue cell (x, y) of <paramref name="ride"/> and every cell behind it; returns the number removed.</summary>
-	// [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller); the original's cell clear (tp.exe 0x005367A0, queue branch) refunds and clears only that cell, and the bulldozer's rectangle pass 0x0052BDD0 clears only path cells (type 1 test 0x00536310 at 0x0052C116 before 0x005367A0) and hands ride cells (types 4, 9, 10) to the demolition 0x00527EE0 — evidence needed: the route that clears a queue cell (0x00527EE0's own clears, and the edit-list clear 0x00452CA0 from 0x0043EAF0 / 0x00442EA0)
+	// [APPROX:QUEUE-015] removing a queue cell also removes every cell behind it (each one is refunded by the caller); tp.exe has no per-cell removal: its cell clear 0x005367A0 (queue branch) refunds and clears only that cell and is reached from the undo of the queue tool (0x0052FE50: the last point of the corner stack is popped and the line laid again up to the previous one, 0x00524960) and from the demolition of the ride (0x00527EE0 fills the stack from the queue with 0x00530120 and undoes every point), while the bulldozer's rectangle pass 0x0052BDD0 clears only path cells (type 1 test 0x00536310 at 0x0052C116 before 0x005367A0); the queue ends on whole segments there
 	public static int RemoveFrom( GuestPathGrid grid, RideVisitorBridge ride, int x, int y )
 	{
 		ride.RecomputeQueue( grid );

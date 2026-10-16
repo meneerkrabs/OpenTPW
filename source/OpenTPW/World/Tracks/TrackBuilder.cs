@@ -199,7 +199,8 @@ public sealed class TrackBuilder
 				ClearPath( cx, cy );
 				var origin = (cx, cy) == (x, y);
 				Cells.SetType( cx, cy, origin ? StartType : TrackCellTypes.Extension );
-				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner } );
+				// [BIN:TPW-EXE:0x00524F1E station link] the station tiles' flow link is the heading of the station's rotation (0x524EE9..0x524F19: 0 → 4, 90 → 1, 180 → 0x40, 270 → 0x10)
+				Tracks.Set( cx, cy, new TrackCell { Type = origin ? StartType : TrackCellTypes.Extension, Mask = origin ? axis : (byte)0, Link = origin ? station.Heading : (byte)0, Parent = origin ? -1 : originIndex, Owner = owner } );
 			}
 		}
 	}
@@ -284,6 +285,21 @@ public sealed class TrackBuilder
 		return true;
 	}
 
+	/// <summary>
+	/// The link op of a line (op 0x82 of the line tool, <c>0x539670</c>) on one tile of a line that runs in <paramref name="direction"/>: a tile with at most two arms takes the line's
+	/// direction as its flow link, a tile with more arms (a tee or crossing another line made) adds it to the bits it has.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00539670 line link op] the line op 0x53AAC0 calls the cell op handler once per tile of the line with the step (±2, 0) or (0, ±2) (0x538146, op 0x82); the handler sets +0xD (0x5227E0) to the direction bit (−X 0x40, +X 0x04, −Y 0x01, +Y 0x10) when the cell has two arms or fewer (0x522810), else to the old link ORed with it, which is how a crossing of two lines gets a two-bit link (0x14, 0x41, 0x50); the click handler runs op 0x80 (the arms) before it (0x525521, 0x525542)
+	public void ApplyLineLink( (int X, int Y) tile, byte direction )
+	{
+		if ( direction == 0 || !IsTile( tile.X, tile.Y ) )
+			return;
+		var cell = Tracks.Get( tile.X, tile.Y );
+		cell.Link = TrackHeading.Count( cell.Mask ) > 2 ? (byte)(cell.Link | direction) : direction;
+		Tracks.Set( tile.X, tile.Y, cell );
+		Refresh( tile.X, tile.Y );
+	}
+
 	/// <summary>The heading from tile <paramref name="a"/> to a tile two cells away, or 0.</summary>
 	public static byte HeadingBetween( (int X, int Y) a, (int X, int Y) b )
 	{
@@ -325,7 +341,7 @@ public sealed class TrackBuilder
 	/// </summary>
 	// [BIN:STP-PPC:0x1007A354 bridge pass] neither neighbour bridged → H; only ahead → H_U; only behind → H_D; both → H_A
 	// [BIN:TPW-EXE:0x00538A92 bridge flag] a kart or water tile (any type but 25) with at most two arms and no corner (0x538AA4–0x538B05) gets flag word +0xE = 1 when its map cell or the (0, +1), (+1, 0), (+1, +1) map cells hold a path or queue (type 1 or 3), the paths staying in the map layer under the track, and its four low bits cleared when all four are type 0 (0x538B0B–0x538BDB); only type 25 tests map types 2, 7 and 30 (0x53890F–0x538A82), which map setup 0x536490 gives to cells outside the park alone (inside, water becomes type 0 at 0x536548)
-	// [APPROX:TRACK-010] the bridge test reads the paths a tile cleared when it was laid (OpenTPW's track replaces path cells in the cell map, the original keeps them in the map layer under the track and re-tests when a path is laid later), and only exact straights (masks 0x11, 0x44) qualify where the original also bridges a single-arm end or an armless tile; the type-25 rule has no case (OpenTPW writes no type 25) and the ahead/behind neighbours follow the flow link (the positive axis direction before a walk) — evidence needed: the second pass's PC twin and which cell operations of 0x5370E0 re-run the bridge write
+	// [APPROX:TRACK-010] the bridge test reads the paths a tile cleared when it was laid (OpenTPW's track replaces path cells in the cell map, the original keeps them in the map layer under the track and re-tests when a path is laid later), and only exact straights (masks 0x11, 0x44) qualify where the original also bridges a single-arm end or an armless tile; the type-25 rule has no case (OpenTPW writes no type 25) and the ahead/behind neighbours follow the flow link (the line's drawing direction, +0xD) — evidence needed: the second pass's PC twin and which cell operations of 0x5370E0 re-run the bridge write
 	public void Refresh( int x, int y )
 	{
 		var region = new List<(int X, int Y)> { (x, y) };

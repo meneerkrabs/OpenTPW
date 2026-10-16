@@ -36,7 +36,7 @@ low confidence); 17 has no known writer; the walk accepts 11, 13, 16, 18 and 25.
 | --- | --- | --- |
 | type | +8 | cell type (above); the map's own type byte stays in sync, so guests and the object rules see an occupied cell |
 | mask | +0xC | connections: 0x01 −Y, 0x04 +X, 0x10 +Y, 0x40 −X |
-| link | +0xD | flow heading bit the last walk moved along here (ORed when a crossing is walked twice) |
+| link | +0xD | flow heading bit: the line's drawing direction at lay time (ORed on a tile with more than two arms), rewritten by the walk at corners |
 | flags | +0xE | bits 0–3 the bridge state, 0x10 add-on (TRACK-008); OpenTPW keeps 0x20 for "replaced path cells" (TRACK-010) |
 | parent | +0x10 | origin cell index in an extension cell |
 | family/piece/rotation | +0x14/+0x18/+0x1C | the chosen piece |
@@ -115,11 +115,14 @@ the second (`Exit`) is where the first line starts.
 
 ## The circuit walk (Q3)
 
-`TrackCircuitWalker`, `[TPW-EXE:0x52A970]`. From the start tile the walk follows the masks two cells at a time. Each step needs a track tile with at least
-two arms and an arm toward the flow; a bend leaves by the other arm and rewrites the link; a three- or four-arm tile continues straight ahead and fails
-when that arm is missing or the cell ahead has type 0 (**the tee refusal**). The original (read October 15) keeps the heading on every non-corner cell
-without testing arms, fails a three-arm cell when the cell two ahead has type 0 (or, by a literal bit test, is an armless track cell while the heading is
-0x01), has no step limit and numbers the steps from 0 (TRACK-014). The segment number goes to the tile. The circuit is
+`TrackCircuitWalker`, `[TPW-EXE:0x52A970]`. From the start tile the walk follows the masks two cells at a time. A cell that is not a track tile, has fewer than
+two arms or no heading fails the walk; a corner (two perpendicular arms) takes the new heading `mask ^ opposite(heading)` (the heading itself when the opposite
+arm is missing) and rewrites the flow link `+0xD`; every other cell keeps the heading without testing its arms. A three-arm cell fails when the cell two ahead
+has type 0 or is a track cell without arms while the heading has bit 0x01 (a literal bit test, `0x52B234..0x52B280`); a four-arm cell has no rule. The walk
+writes the 0-based step to `+0x24` and has no step limit in the original (OpenTPW cuts it off after as many steps as the layer has tiles plus the station, TRACK-014). The cells
+are written in both of the original's modes. The flow link of a straight or junction is written at lay time by the line op (`0x539670`, op `0x82` of
+`0x53AAC0`): a tile with at most two arms takes the line's direction, a tile with more arms ORs it in (a crossing of two lines gets a two-bit link such as `0x14`, TRACK-004), and the
+station tiles take the heading of the rotation (`0x524F1E`), so a straight drawn against the flow keeps its drawing direction. The circuit is
 valid when the walk arrives back at the start tile; no minimum length. The result is the attraction's validity flag, which `BUMP 5` returns and which the
 park points counts-test and guest boarding read. A re-walk (commit mode) also resets the controller: boats leave, the ride closes
 (`[TPW-EXE:0x545450]`).

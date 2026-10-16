@@ -256,6 +256,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var start = GuestStart.FromDraws( Settings.Types, Settings.ExitLevelSeconds, Settings.ExitLevelVarSeconds, Settings.StartingCashVarPercent, () => random.NextWord(),
 			Settings.PrankeryLikelihood, nextId );
 		var guest = new Guest( nextId++, start.Type );
+		// [BIN:TPW-EXE:0x004FAFDB arrival stamp] the person constructor stamps the world turn into +0x1D4, the one write of the visitor's time in the park
+		guest.TimeInParkSeconds = 0;
 		guest.PrankFlag = start.PrankFlag;
 		guest.Money = start.Money;
 		guest.Happiness = start.Happiness;
@@ -326,7 +328,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var guest = Create();
 		PlaceOnGrid( guest, x, y );
 		guest.State = GuestState.DoingNothing;
-		guest.TimeInParkSeconds = 0;
 		return guest;
 	}
 
@@ -596,7 +597,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool InPark( Guest guest ) => guest.State is not (GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
 		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome or GuestState.Gone);
 
-	private bool CountsParkTime( Guest guest ) => InPark( guest ) && !guest.LaneReversed;
+	/// <summary>
+	/// Whether the guest's time in the park runs: from its creation on, through the road crossing and the booth to the road home, as the stamp
+	/// <c>+0x1D4</c> (the world turn at the constructor) is never rewritten.
+	/// </summary>
+	private static bool CountsParkTime( Guest guest ) => guest.State != GuestState.Gone;
 
 	/// <summary>
 	/// State 21, waiting at the stop to go home: with the park's vehicles a guest boards (and is gone) on a park turn the vehicle at
@@ -624,7 +629,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private void UpdateGuest( Guest guest, float dt )
 	{
-		// [APPROX:GUEST-920] elapsed simulated seconds begin at successful admission (seeded guests at zero), stop on road-home travel, and omit the admission tick; tp.exe's stamp +0x1D4 (the world turn) is written only by the guest constructor (0x4FAFDB, at the bus drop-off 0x4CF720) and the load, and the visitor panel shows (turn − stamp) >> 2 (0x4FD950) as whole hours — evidence needed: the seconds per world turn, and whether guests on the road home stay in the visitors list
+		// [APPROX:GUEST-920] the elapsed seconds accumulate per step (display metadata) where tp.exe subtracts two integer world turns (0x4FD950: the turn at +0x1DA70C minus the stamp +0x1D4, >> 2); the turn count a visitor shows is the seconds over the turn's 248 ms, floored
 		if ( CountsParkTime( guest ) && guest.TimeInParkSeconds is { } elapsed )
 			guest.TimeInParkSeconds = elapsed + dt;
 		if ( turnStarted )
@@ -1135,7 +1140,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		}
 		// [BIN:TPW-EXE:0x004FFAD5 booth fee] the paying verdict books the fee with the bank deposit 0x004D0600 (ECX = the bank, 0x005195D0) and sets the guest's +0x204 and state 3; the guest's purse +0x1A0 is neither tested nor debited
-		guest.TimeInParkSeconds = 0;
 		Admissions++;
 		if ( fee > 0 )
 			MoneySpent?.Invoke( guest, fee, 0 );

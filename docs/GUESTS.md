@@ -18,11 +18,10 @@ Code: `source/OpenTPW/World/Guests/` (`GuestSimulation`, `Guest`, `GuestSettings
 ## All Visitors elapsed time
 
 `Guest.TimeInParkSeconds` records simulated elapsed seconds for the All Visitors
-detail row. Successful ticket-booth admission starts the counter at zero; the
-first increment is the following simulation tick. Bus/road travel and waiting
-before admission do not count. `SpawnInPark` starts seeded guests at a known zero.
-Walking, attraction queues, rides and walking toward the park exit count; travel
-along the road home and waiting for the bus do not.
+detail row. The counter starts at zero when the guest is created (an arrival at its
+drop-off, a seeded guest at setup), as the original's arrival stamp does, and the
+first increment is the following simulation tick. Bus/road travel, the booth and the
+way home all count; only a guest imported from an original save has no time.
 
 Only the guest simulation's supplied tick delta advances the counter. The level's
 fixed-step clock receives scaled simulation time, so pause supplies no steps and
@@ -33,7 +32,7 @@ past 24. A duration unknown from an older save displays an em dash (`—`).
 The own-format guest snapshot carries an optional nullable field. Missing/null
 durations remain unknown after restore and subsequent updates: elapsed time is
 not reconstructed from the guest's exit counter, needs or the park clock. A guest
-still outside the park when restored starts a known zero if later admitted.
+restored keeps its known duration.
 Known values must be finite, nonnegative and no greater than
 `TimeSpan.MaxValue.TotalSeconds`; the guest restore and world-file shape validators
 enforce the same bound. A tick that would exceed it rejects before changing the
@@ -49,7 +48,7 @@ range validation is a separate input/display failure: at the supported bound it
 can refuse a tick even though the gameplay digest excludes the counter. Hash
 equality alone does not establish that display metadata passes its range checks.
 
-The original keeps no visitor counter but an arrival stamp (+0x1D4 = the world turn) that only the guest constructor writes (tp.exe `0x4fafdb`, at the bus drop-off), so its time also covers the road crossing and the booth and does not stop on the road home; the seconds per world turn remain untraced (`GUEST-920`). The original visitors list's "Time In Park" column (tp.exe `0x49326c`) shows whole hours of the turns since the stamp in whole 4-turn steps (a new row a quarter of them until the 2 s refresh, `0x493800`), as "N hours" up to a day and "N day"/"N days" above (`0x490ff0`); OpenTPW's column does the same with the simulated seconds over the 248 ms turn standing in for the turns (`GUEST-920`).
+The original keeps no visitor counter but an arrival stamp (+0x1D4 = the world turn) that only the guest constructor writes (tp.exe `0x4fafdb`, at the bus drop-off), so its time also covers the road crossing and the booth and does not stop on the road home; OpenTPW's seconds start at the guest's creation and run to its end, and the visitors list (which guests the original's list holds is unread, `GUEST-920`) shows the guests in the park. The original visitors list's "Time In Park" column (tp.exe `0x49326c`) shows whole hours of the turns since the stamp in whole 4-turn steps (a new row a quarter of them until the 2 s refresh, `0x493800`), as "N hours" up to a day and "N day"/"N days" above (`0x490ff0`); OpenTPW's column does the same with the simulated seconds over the 248 ms turn standing in for the turns (`GUEST-920`).
 `GuestTimeInParkTests` verifies admission/refusal, seeded guests, pause/speed,
 known/unknown codec continuation, both validators, invalid/overflow rejection,
 the live UI model and hash exclusion using synthetic fixtures only. No original

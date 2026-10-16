@@ -199,7 +199,7 @@ public class ParkEconomyOriginalDataTests
 			while ( !park.Research.IsAllResearched && !park.IsBankrupt && park.Date.Year <= 40 )
 			{
 				for ( var visitor = 0; visitor < 1000; visitor++ )
-					park.TryAdmitVisitor( 100, out _ );
+					park.TryAdmitVisitor( out _ );
 				park.AdvanceMonths( 1 );
 			}
 			Assert.IsTrue( park.Research.IsAllResearched, $"{theme}: all research done by year {park.Date.Year}" );

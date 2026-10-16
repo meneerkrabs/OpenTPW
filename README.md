@@ -143,8 +143,9 @@ OpenTPW still uses a documented approximation. The
 ### File formats
 
 The **Decoding** column only says whether the bytes of the selected original-asset corpus are
-understood: ✅ means every observed file decodes and the meaning of its fields is known; ⚠️ means
-some bytes or field meanings in the files are still unknown. Whether the game *uses* a decoded file
+understood: ✅ means every observed file decodes and every field the original game reads is understood
+(fields it is shown to skip, such as the MAP header words, may stay raw); ⚠️ means some bytes or field
+meanings that matter are still unknown. Whether the game *uses* a decoded file
 the way the original does (triggers, gameplay, rendering, mixing) is listed separately under
 "Not yet in the game", because that is engine work rather than a missing decoder. Neither symbol
 certifies other editions or original-runtime parity.
@@ -153,16 +154,16 @@ certifies other editions or original-runtime parity.
 |---|---|---|---|---|
 | Textures ([.WCT](https://opentpw.gu3.me/formats/wct.html)) | ✅ | Every texture of the selected game, with bounded inflation and the retail BILZ/LZSS quirks | Other editions are unverified | — |
 | Settings ([.SAM](https://opentpw.gu3.me/formats/sam.html)) | ✅ | The line grammar of every shipped `.sam` file, loose and in WADs: one-token or quoted values, `#`/`//` comments and `---` blocks; the generic reader agrees with the object reader on all of them | — | How the original uses many keys is approximate |
-| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ⚠️ | SDT containers and sound catalogues; all audio: MPEG-1/2 Layer I and II in every observed mode (≤1 LSB against an independent decoder), CRC checks and de-emphasis | The entry word at +32 (not a sample count); modes no shipped file uses (Layer III, MPEG-2.5, free format, MPEG-2 Layer II joint stereo) are refused | Some triggers (positioned RSE EVENT types 1–2, staff actions, lobby effects, path link-end/undo) and the original mixer ([sound](https://opentpw.io/docs/AUDIO.html), [audio evidence](https://opentpw.io/docs/LIPS.html)) |
+| Sounds ([.SDT](https://opentpw.gu3.me/formats/sdt.html), .MP2) | ✅ | SDT containers, entry headers (type bits, bit depth, the playback length the game cuts each sound to) and sound catalogues; all audio: MPEG-1/2 Layer I and II in every observed mode (≤1 LSB against an independent decoder), CRC checks and de-emphasis | — (modes no shipped file uses (Layer III, MPEG-2.5, free format, MPEG-2 Layer II joint stereo, are refused) | Some triggers (positioned RSE EVENT types 1–2, staff actions, lobby effects, path link-end/undo) and the original mixer ([sound](https://opentpw.io/docs/AUDIO.html), [audio evidence](https://opentpw.io/docs/LIPS.html)) |
 | Strings ([.BFMU](https://opentpw.gu3.me/formats/bfmu.html), [.BFST](https://opentpw.gu3.me/formats/bfst.html), [.BFUM](https://opentpw.gu3.me/formats/bfum.html)) | ✅ | 21 string tables per language; character tables round-trip in six languages | Other codepages/editions are unverified ([languages](https://opentpw.io/docs/LANGUAGES.html)) | — |
 | Fonts ([.BF4](https://opentpw.gu3.me/formats/bf4.html)) | ✅ | All 33 fonts in six languages (four-bit, RLE, monochrome) | — | Original text layout/appearance is unverified ([fonts](https://opentpw.io/docs/BF4-FONTS.html), [UI](https://opentpw.io/docs/UI.html)) |
 | Lip Sync ([.LIP](https://opentpw.gu3.me/formats/lips.html)) | ✅ | Mark lists, signed conversion, talking toggles; checked against all 639 English global clips (638 end inside their audio) | — | Advisor animation/pose and a pausing clock ([lip sync](https://opentpw.io/docs/LIPS.html), [binary trace](https://opentpw.io/docs/reverse/APPROX-TRACE.html)) |
-| Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html)) | ⚠️ | 2,116/2,118 WAD members (the two 207.201 members and the two loose 24.23 arrows are refused by the original loader too); all 1,278 animation members: position/rotation/scale, quantised vertex groups, the 12-byte pose block, texture-coordinate and texture-frame tracks, node-flag toggles, path parameters and the models' paths (Bézier, linear, Catmull-Rom) | The meaning of node bit 0x10 and the group-0 box, texture/material flag bits ([models](https://opentpw.io/docs/MD2-MODELS.html)) | PC equivalence and rendering fidelity are unverified |
-| Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html)) | ⚠️ | All five TP2M terrain grids: grid mapping and five cell bits; the sound-catalogue MAPs are a separate, decoded format | Cell bit 0x04, five header words, the role of jungle `terrain.map` ([maps](https://opentpw.io/docs/MAP.html)) | — |
+| Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html)) | ⚠️ | 2,116/2,118 WAD members (the two 207.201 members and the two loose 24.23 arrows are refused by the original loader too); all 1,278 animation members: position/rotation/scale, quantised vertex groups, the 12-byte pose block, texture-coordinate and texture-frame tracks, node-flag toggles, path parameters and the models' paths (Bézier, linear, Catmull-Rom) | Texture flag bits 0x1/0x2 and the exact render state of 0x10/0x20 ([models](https://opentpw.io/docs/MD2-MODELS.html)) | The terrain's texture turn and mirror and the per-mesh culling boxes are not drawn; PC equivalence and rendering fidelity are unverified |
+| Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html)) | ✅ | All five TP2M terrain grids: grid mapping and every cell bit the game reads, as tp.exe's loader reads them (bit 0x04, the five header words and jungle `terrain.map` are never used by it); the sound-catalogue MAPs are a separate, decoded format | — | OpenTPW refuses building on `Blocked` cells, which the original's tile set-up ignores ([maps](https://opentpw.io/docs/MAP.html)) |
 | Ride Scripts ([.RSE](https://opentpw.gu3.me/formats/rsse.html)) | ⚠️ | All 308 scripts; all 84 used opcodes known with their operand counts | Operand meaning of the 51 opcodes that route to effect hooks is inferred ([VM](https://opentpw.io/docs/RSE-VM.html)) | The game systems behind those hooks |
 | Save Files ([.TPWS](https://opentpw.gu3.me/formats/tpws-ints-lays.html)) | ⚠️ | The TPWI container's 19 writer-order blocks; cell grid, placed objects, park turn and date, bank, staff and advisor state | Guests, research, RNG state and the script/particle/sound blocks (SAVE-001–010); one fixture only ([payload](https://opentpw.io/docs/TPWS-PAYLOAD.html), [inventory](https://opentpw.io/docs/reverse/SAVE-plan.html)) | Original-format saves are read, never written; OpenTPW saves [its own format](https://opentpw.io/docs/PARK-SAVES.html) |
-| Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Topology and the nine matrices of all 11 files | Whether the game reads them at all, the scale `s`/`M7` offset ([companions](https://opentpw.io/docs/MTR.html)) | — |
-| Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies; audio bit-exact, video close (84–95 % identical samples against FFmpeg) | The original quantiser-matrix builder and FPU precision, so video is not bit-exact ([movies](https://opentpw.io/docs/TGQ-MOVIES.html)) | Game trigger points; `--play-movie` plays them |
+| Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Topology and the nine matrices of all 11 files | The scale `s`/`M7` offset: no reader of MTR files was found in either build of the game ([companions](https://opentpw.io/docs/MTR.html)) | — (unused by the original) |
+| Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ⚠️ | All nine movies; audio bit-exact, video close (84–95 % identical samples against FFmpeg) | The live PC decoder is now located (matrix builder, transposed zigzag, 7-bit output) but not yet reproduced, so video is not bit-exact ([movies](https://opentpw.io/docs/TGQ-MOVIES.html)) | Game trigger points; `--play-movie` plays them |
 | Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 `.fsh` files/WAD members to RGBA (`--inspect-fsh`) | Transparency of opaque 24-bit palettes is approximated ([FSH](https://opentpw.io/docs/FSH.html)) | — |
 
 The experimental Theme Park Inc native slice (`[EXT:tpi-viewer]`, `--load-original-level
@@ -207,7 +208,22 @@ your own edition of the game.
 2. Keep repository text in English, never commit original game files or binaries, and tag every
    behaviour you could not trace to the original as an approximation (see the
    [fidelity register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
-3. Run the tests (`dotnet test source/OpenTPW.Tests`; tests that need original files run when
+   `python3 tools/fidelity_register.py --check` validates the tags and their declarations;
+   `python3 tools/fidelity_register.py --write` generates the register locally as
+   `docs/FIDELITY-REGISTER.md`. That file is a build artifact: it is not committed, and the website
+   publishes the copy generated from `main`. When an ID is retired, `--write` also records it in
+   `tools/fidelity_retired.txt`, which is committed.
+3. Describe your change for the progress log in a new file of its own,
+   `docs/progress/YYYY-MM-DD-<slug>.md` (date and a short lowercase slug, for example
+   `docs/progress/2026-10-16-buy-window-scroll-bar.md`). Its first line is the entry heading
+   `## Title (Month D, YYYY)` with the same date; use `###` or deeper inside the entry, and write relative
+   links as seen from `docs/progress/` (for example `../TRACKS.md`). Do not
+   edit the top of `docs/PROGRESS.md`: it is the frozen history from before this convention.
+   `python3 tools/progress.py --check` validates the fragments, and `python3 tools/progress.py`
+   prints the assembled log (newest first) that the website publishes as the
+   [progress notes](https://opentpw.io/docs/PROGRESS.html). One file per pull request means
+   parallel pull requests never conflict over the log.
+4. Run the tests (`dotnet test source/OpenTPW.Tests`; tests that need original files run when
    `OPENTPW_GAME_PATH` points at your game folder) and open a pull request.
 
 ## Legal

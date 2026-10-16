@@ -82,7 +82,7 @@ public class WadDirectoryPerformanceTests
 		var response = new AdvisorResponse( 587, 606, 606, -1, 1, false );
 		var loaded = Advisor.LoadResponse( fileSystem, response, "jungle" );
 		var bank = new SoundBank( File.ReadAllBytes( fileSystem.GetAbsolutePath( "/global/Speech/speechHD.SDT" ) ) );
-		var expected = Mp2Decoder.Decode( bank.GetMpeg( 606 )! );
+		var expected = Mp2Decoder.Decode( bank.GetMpeg( 606 )! ).TrimTo( bank.GetPlaybackBytes( 606 ) );
 		Assert.AreEqual( 182, loaded.Audio.FrameCount );
 		Assert.AreEqual( (expected.SampleRate, expected.Channels, expected.TrailingBytes, expected.CrcChecks, expected.CrcFailures, expected.Emphasis),
 			(loaded.Audio.SampleRate, loaded.Audio.Channels, loaded.Audio.TrailingBytes, loaded.Audio.CrcChecks, loaded.Audio.CrcFailures, loaded.Audio.Emphasis) );

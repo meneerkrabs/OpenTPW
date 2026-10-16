@@ -37,7 +37,7 @@ internal sealed class Advisor : IDisposable
 	internal static readonly (string Id, string Rule)[] Approximations =
 	{
 		("ADVISOR-005", "light colour 0.6, shared test.shader ambient/fog; the original lights each vertex (0x574660 -> 0x5741B0: ambient + the sum over directional lights of colour x max(0, -L.N), clamped per channel, alpha 0xFF, masked by the renderer colour +0x2C) with the advisor's directional light (constructor 0x429A60, type 2 at +0x50) of colour 1.0 (0x429BA0); the ambient during the advisor pass (default 0.15 grey, 0x573FD0) and its fog state are not read"),
-		("ADVISOR-006", "the clips' node tracks, blink toggles, accessory selectors, vertex tracks (antennae, hands, eyes) and the level advisors' texture-coordinate tracks are drawn; the blink toggles set the mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), whose reader in the draw is open (the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, RIDES-042), so hiding the toggled meshes is OpenTPW's reading"),
+		("ADVISOR-006", "the clips' node tracks, blink toggles, accessory selectors, vertex tracks (antennae, hands, eyes) and the level advisors' texture-coordinate tracks are drawn; the blink toggles set the mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), which hides that mesh in the original's draw walk (0x57A5E3); a clip the archive lacks leaves the bind pose"),
 		("ADVISOR-009", "--advisor-say plays global clips by number and starts them at its first rendered frame; the controller says the five bound game-event messages and the help messages of the HUD windows with a traced message (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price); the other window and tool-start help messages and the 135 computed score producers (descriptor table 0x76E300) are not bound"),
 		("ADVISOR-012", "mono speech duplicated to both channels; the original submits it unpositioned (0x51BFC0 with 0,0,0) and the library places flat sounds at (0,1,0) (0x6BC51D); the left/right levels come from QMixer, outside tp.exe (AUDIO-018)"),
 		("ADVISOR-017", "the advisor clock starts at 0 for a new park and an original-save import; the original's save carries it as the second word of the SSEM (MESS) block (writer 0x402E00 after the snapshot 0x402E60, reader 0x402E30, marker check 0x41555A) and the load sets the clock to it (0x415140 -> 0x402E80 -> 0x403160), which the import does not read; it stands still whenever 0x4092A0 pauses the timer: 0x46B600 (main window procedure, WM_ACTIVATEAPP deactivation) and 0x47F020 (message box builder) are identified, the other six callers' screens are not"),
@@ -270,7 +270,7 @@ internal sealed class Advisor : IDisposable
 		var headerBytes = BitConverter.ToInt32( entry, 0 );
 		if ( headerBytes < 8 || headerBytes >= entry.Length )
 			throw new InvalidDataException( $"Speech entry {name} has an invalid header size." );
-		var audio = Mp2Decoder.Decode( entry.AsSpan( headerBytes ) );
+		var audio = Mp2Decoder.Decode( entry.AsSpan( headerBytes ), SdtEntryHeader.PlaybackBytes( entry ) );
 		return (audio, new LipSyncTimeline( new LipSyncFile( new MemoryStream( lip ) ) ), source);
 	}
 
@@ -300,7 +300,7 @@ internal sealed class Advisor : IDisposable
 			bankBytes = File.ReadAllBytes( fileSystem.GetAbsolutePath( $"{root}/speechHD.SDT" ) );
 			source = $"{root}/speechHD.SDT";
 		}
-		var mpeg = new SoundBank( bankBytes ).GetMpeg( (uint)response.Sample )
+		var mpeg = new SoundBank( bankBytes ).GetMpeg( (uint)response.Sample, int.MaxValue, out _, out var playbackBytes )
 			?? throw new FileNotFoundException( $"Speech sample {response.Sample} of response {response.Id} is not in {source}." );
 		var marks = Array.Empty<uint>() as IReadOnlyList<uint>;
 		if ( response.Lip > 0 )
@@ -322,7 +322,7 @@ internal sealed class Advisor : IDisposable
 				lip = loosePath != null ? File.ReadAllBytes( loosePath ) : fileSystem.ReadAllBytes( $"{root}/lips/{lipName}" );
 			marks = new LipSyncFile( new MemoryStream( lip ) ).Marks;
 		}
-		return (Mp2Decoder.Decode( mpeg ), new LipSyncTimeline( marks ), source);
+		return (Mp2Decoder.Decode( mpeg, playbackBytes ), new LipSyncTimeline( marks ), source);
 	}
 
 	/// <summary>Plays advisor response <paramref name="responseId"/> from the response table; false when the table has no such response.</summary>

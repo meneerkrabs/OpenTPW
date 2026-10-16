@@ -20,10 +20,13 @@ public sealed record ObjectRenderPart( int NodeIndex, Vertex[] Vertices, uint[] 
 /// </summary>
 public static class ObjectRenderParts
 {
-	public static bool[] FindAnimatedNodes( ObjectCatalogEntry entry, ModelFile model )
+	public static bool[] FindAnimatedNodes( ObjectCatalogEntry entry, ModelFile model ) => FindAnimatedNodes( entry, model, entry.Animations );
+
+	/// <summary>The nodes that one of <paramref name="animations"/> (members of <paramref name="entry"/>'s archive) moves, with their descendants.</summary>
+	public static bool[] FindAnimatedNodes( ObjectCatalogEntry entry, ModelFile model, IReadOnlyList<ObjectAnimationFile> animations )
 	{
 		var animated = new bool[model.Nodes.Count];
-		foreach ( var file in entry.Animations )
+		foreach ( var file in animations )
 		{
 			ModelAnimation? clip;
 			try
@@ -57,10 +60,13 @@ public static class ObjectRenderParts
 	}
 
 	/// <summary>Meshes whose positions or texture coordinates a vertex or UV track of one of the object's animations changes.</summary>
-	public static bool[] FindVertexAnimatedMeshes( ObjectCatalogEntry entry, ModelFile model )
+	public static bool[] FindVertexAnimatedMeshes( ObjectCatalogEntry entry, ModelFile model ) => FindVertexAnimatedMeshes( entry, model, entry.Animations );
+
+	/// <summary>Meshes whose positions or texture coordinates a vertex or UV track of one of <paramref name="animations"/> changes.</summary>
+	public static bool[] FindVertexAnimatedMeshes( ObjectCatalogEntry entry, ModelFile model, IReadOnlyList<ObjectAnimationFile> animations )
 	{
 		var animated = new bool[model.Meshes.Count];
-		foreach ( var file in entry.Animations )
+		foreach ( var file in animations )
 		{
 			ModelAnimation? clip;
 			try
@@ -117,9 +123,12 @@ public static class ObjectRenderParts
 		}
 	}
 
-	public static IReadOnlyList<ObjectRenderPart> Build( ObjectCatalogEntry entry, ModelFile model )
+	public static IReadOnlyList<ObjectRenderPart> Build( ObjectCatalogEntry entry, ModelFile model ) => Build( entry, model, entry.Animations );
+
+	/// <summary>The render parts of <paramref name="model"/> with the nodes <paramref name="animations"/> move kept apart (a ride's supplemental mesh with its own clips).</summary>
+	public static IReadOnlyList<ObjectRenderPart> Build( ObjectCatalogEntry entry, ModelFile model, IReadOnlyList<ObjectAnimationFile> animations )
 	{
-		var animated = FindAnimatedNodes( entry, model );
+		var animated = FindAnimatedNodes( entry, model, animations );
 		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		var parts = new List<ObjectRenderPart>();
 		var batchVertices = new List<Vertex>();

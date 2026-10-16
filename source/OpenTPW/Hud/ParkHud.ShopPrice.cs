@@ -96,7 +96,7 @@ public sealed partial class ParkHud
 	// Cancellation owns the frame, including a simultaneous confirm or Apply release.
 	private sealed class ShopPriceScreen : UiScreen
 	{
-		public ShopPriceScreen() : base( "shopPrice" ) { }
+		public ShopPriceScreen( string id = "shopPrice" ) : base( id ) { }
 		public override bool Update( UiContext context, UiInput input )
 		{
 			if ( input.Has( UiKeys.Back ) || RightCancels( input ) )

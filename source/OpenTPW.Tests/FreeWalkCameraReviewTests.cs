@@ -28,9 +28,9 @@ public class FreeWalkCameraReviewTests
 		Assert.IsTrue( FreeWalkCameraMode.TryGround( field, -1.5f, -.5f, out var ground ) );
 		Assert.AreEqual( -1.5f, ground.X, .0001f );
 		Assert.AreEqual( -.5f, ground.Y, .0001f );
-		Assert.AreEqual( 3.875f, ground.Z, .0001f, "Bilinear height 19.375 model units maps to engine Z 3.875." );
+		Assert.AreEqual( 4f, ground.Z, .0001f, "The cell's ground triangle (ModelHeightfield.GetHeight, 0x452560) gives 20 model units, engine Z 4." );
 		var camera = new FreeWalkCameraMode( field, ground, Vector3.Forward );
-		Assert.AreEqual( 5.475f, camera.Position.Z, .0001f );
+		Assert.AreEqual( 5.6f, camera.Position.Z, .0001f );
 		Assert.IsFalse( FreeWalkCameraMode.TryGround( Surface( true ), -1.5f, -.5f, out _ ) );
 		var hole = Surface( true );
 		Assert.IsTrue( FreeWalkCameraMode.TryGround( hole, .1f, -.5f, out ground ) );

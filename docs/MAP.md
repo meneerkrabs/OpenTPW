@@ -4,7 +4,8 @@ October 9, 2026. Status: bounded container/grid reader verified against all five
 terrain MAP members. The grid-to-world mapping and five cell bits are now
 **supported by cross-format evidence** (terrain MD2 geometry and heightfield in all
 four themes, `Standard.sam` fixed-item positions, the Jungle `Easymode.TPWI` cell
-grid); bit 0x04 and the header values remain opaque. `MapCellFlags` drive the
+grid). tp.exe's loader (October 16, below) ignores the five header words and never opens `terrain.map`;
+bit 0x04 is stored but nothing reads it. `MapCellFlags` drive the
 read-only original-level build rules (`--load-original-level`). No original asset is
 included in the repository; no original executable was run.
 
@@ -99,8 +100,9 @@ two regions are adjacent and end at the block. `ModelFile.Heightfield` exposes i
   not, and value-1 cells are holes only where rock/volcano meshes replace the
   ground (jungle 363, fantasy 192, hallow 238, space 314 of them).
 - Otherwise the high 16 bits are an MD2 texture slot: always six distinct slots
-  per theme, all `*_bas1..6` ground textures. The low 16 bits (0x42, 0x44, 0x02,
-  0x04, 0x62, …) are not interpreted.
+  per theme, all `*_bas1..6` ground textures. The low 16 bits are read by tp.exe: the triangle
+  diagonal (0x4, with 0x2 its complement), the ground-texture turn (0x8/0x10/0x20) and mirror (0x40);
+  see MD2-MODELS.md ("Kept opaque" no longer applies to them).
 
 ## Cell bits (`MapCellFlags`)
 
@@ -115,7 +117,7 @@ four `base.map` files share identical counts at identical positions for 17 (490)
 | 0x08 | `InitialPath` | 8 | Starts at FixedItemInfo.EntranceA/B; all 10 cells are path cells in the Easymode save grid; heightfield present |
 | 0x10 | `EntranceArea` | 17, 144, 148 | Entrance complex meshes; holes in all four themes |
 | 0x80 | `FixedWalkway` | 128, 144, 148 | Bridge deck (128) and entrance crossings/strike area/ticket lane (144/148): not blocked, holes, covered by deck/road meshes |
-| 0x04 | — | 148 only | Ticket-booth lane cells (X 47–48, Y 10–16); meaning not established, masked out |
+| 0x04 | — | 148 only | Ticket-booth lane cells (X 47–48, Y 10–16); copied to tile flag 0x400 and never read (below), masked out |
 
 Exception: fantasy has one isolated value 16 at (27, 17) with no geometry and no
 heightfield hole; it is unexplained and reported as `EntranceArea` only.
@@ -126,13 +128,24 @@ heightfield hole; it is unexplained and reported as `EntranceArea` only.
 all with raw value 148. No other value has bit 0x04 in any of the four base maps. The
 jungle `terrain.map` has no bit-0x04 cells (values 0/1 only). The pinned test
 `OriginalRawBit04IsOnlyTicketLaneCellsWithValue148` checks this; `MapFile.EnumerateCellsWithRawBits(0x04)`
-exposes it without giving it a flag. In these fixtures 0x04 never occurs apart from
-value 148, so the terrain data alone cannot tell what the bit means; interpreting it
-needs evidence beyond the terrain map (original code or a capture).
+exposes it without giving it a flag. In tp.exe the tile initialiser 0x536490 copies it to tile flag
+word +0xE bit 0x400 (`or byte [tile+0xF], 4` at 0x536576), and no reader of that tile flag or of the raw bit
+was found (the flag accessor 0x535DB0 is only called with 0x4/0x10/0x20/0x40/0x80 and direction nibbles;
+the getter 0x53A520's seven callers touch 0x100/0x20/0x40). So the bit has no observed effect.
 
 The Jungle save (TPWS-PAYLOAD.md) carries a byte identical to `base.map` at every
 one of 16,384 cells and does **not** match `terrain.map` (0/1 only), so the
-Easymode park was built on `base.map`. What `terrain.map` is for is still unknown.
+Easymode park was built on `base.map`. tp.exe never loads `terrain.map`: 0x450900 builds only
+`"%s\Terrain\Base.map"`, and no other `.map` name is built anywhere.
+
+**Original loader (tp.exe, October 16, 2026).** 0x5192D0 reads the file through the generic chunk parser
+0x4D3860, which checks only `TP2M` and a minimum size of 0x2C, walks chunks from 0x24 and stops at an empty
+`END `; the title is not checked. The `MAP ` handler 0x4D8CF0 reads width and height, skips the five header
+words without reading them, and stores each byte at tile `(column << 7) + row + 1`, +0x26 (68-byte tiles at
+`[0x7CF83C] + 0x294`), keeping coordinates 0–127. The tile initialiser 0x536490 then interprets the cell:
+0x08 lays the initial path (0x5348D0); 0x10 sets tile flag 0x80; on a heightfield hole 0x02 gives kind 2,
+else 0x80 kind 0x1E, else 7. **Bit 0x01 is not consulted there**: blocking comes from the heightfield
+hole, so OpenTPW's refusal to build on `Blocked` surface cells (below) is stricter than this loader.
 
 The game rules derived from these bits in OpenTPW (`OriginalParkPlacement`) refuse
 building on Blocked, Water, EntranceArea, FixedWalkway, InitialPath, heightfield
@@ -193,8 +206,9 @@ inconclusive without `OPENTPW_GAME_PATH`.
 
 ## Remaining gates
 
-- Bit 0x04, the five opaque header values, and the purpose of jungle `terrain.map`.
-- The heightfield cell-word low bits (possibly triangle split; unverified) and the
-  opaque block header words.
+- Whether anything outside the tile initialiser reads `Blocked` (0x01) on surface cells (none found;
+  until then OpenTPW keeps refusing to build there).
+- Heightfield: the cell-word low bits are read by tp.exe (MD2-MODELS.md: triangle diagonal, texture turn
+  and mirror; the diagonal is applied); the texture turn and mirror are not drawn yet.
 - The original game's actual build/path rules (runtime observation needed).
 - Sound catalog `.map` schema: decoded separately, see [AUDIO.md](AUDIO.md).

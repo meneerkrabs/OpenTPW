@@ -74,22 +74,29 @@ WAD contains a kid/peep/visitor model (all 312 WADs listed). The sprites live in
 **`.FPC` / `.TPC` sprite bank** (little-endian): `u16 3, u16 3, u32 frameCount,
 u32 0`, then 255 palette entries of 4 bytes **B, G, R, A** (alpha varies: anti-
 aliased edges), then per frame: `u32 dataSize, u16 width, u16 height, u16 128,
-u16 128` (meaning unknown), `i32 originX, i32 originY` (offset of the frame's
+u16 128` (pixels per sprite unit across and down: the placement 0x5890E0 spans the quad from
+`originX / A · scale` to `(width + originX) / A · scale`, likewise down with B; 128 in every frame),
+`i32 originX, i32 originY` (offset of the frame's
 top-left corner from the hotspot; for walking kids the hotspot is at the feet),
 then `height` RLE rows. Each row is a length byte followed by control bytes:
 a signed control `c < 0` repeats the next byte `−c` times, `c > 0` copies `c`
 literal bytes. Pixel index 0 is transparent; index `n ≥ 1` is palette entry
-`n − 1`. Every row decodes to exactly `width` pixels and every bank ends exactly
+`n − 1` (tp.exe's loader 0x587DB0 reads the `u32 0` as palette entry 0 of 256, so index n is entry n there;
+the first u16 is the format, 3 = paletted, and the second is ignored). Every row decodes to exactly `width` pixels and every bank ends exactly
 after its last frame (121/121 members). `.FPC` frames are slightly larger than
-`.TPC` (kids: up to 37×45 vs 36×43); OpenTPW draws `.FPC`. Which detail level the
-original picks when is unknown.
+`.TPC` (kids: up to 37×45 vs 36×43). The ESP chooses (tp.exe 0x5410D3): `.fpc` when its byte 0x10C and
+the sprite-detail flag are both set, else `.tpc`. The detail flag is set to 1 at start-up (0x54E688), so the
+PC draws the FPC of every set with 0x10C = 1 (27 sets, each shipping one) and the TPC of the others; Jungle
+SPR_EX and Space SPR_SK ship an FPC the game never opens. OpenTPW follows this
+(`SpriteAnimationFile.BankExtension`); before October 16 it drew Space's costume set SPR_SK from its FPC.
 
 **`.ESP` animation table** (350 bytes): magic `ESP_FILE2.00`, NUL-terminated bank
 name (`SPR_BE.TPS`), zero padding, two flag bytes at `0x10C`, then 20 slots of
 `u16 firstFrame, u8 framesPerDirection, u8 directions` from `0x10E`. Frames are
-direction-major. Flag `0x10C` is 1 for every walking character; flag `0x10D` is 1
-for kid sets CH, KI, SA, SU and their heads, which look like girls (visual
-inspection only; meaning unverified).
+direction-major. Flag `0x10C` marks a full-detail FPC bank (above); flag `0x10D` is 1 for kid sets CH, KI,
+SA, SU and their heads, which look like girls; the loader 0x540D90 stores it and nothing in tp.exe reads it.
+Only the first 16 slots are animations: the loader reads the last four 4-byte entries as single bytes (slot 16 is
+`01 05 00 00` in 11 files and `01 05 02 28` in one; their use is unknown, `ExtraSlotBytes`).
 
 Kid slots (identical in all 8 sets; labels from viewing the frames, not traced):
 
@@ -179,12 +186,14 @@ object's `mCurrentDrops`, the drops its tick ramps toward the rain or snow targe
 smaller while rain or snow is falling and the factor is 1.2 otherwise. OpenTPW uses 0.8 while `ParkWeather.CurrentDrops`
 is above 0 (`GuestSimulation.WeatherDropsFalling`); a scene without weather has no drops and uses 1.2. (An earlier reading took the
 thing to be the Traffic Lights fixed item at `+0x1da734`; that offset was miscalculated, see ORACLE.md F9.) Online parks (GameType 1) are cut at
-500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`, an assumption,
-ARRIVAL-002). A group cut with more guests than the limit becomes
-negative; OpenTPW stops at 0 (ARRIVAL-004). Executing the update routine `0xcb2ac` over repeated calls (F11)
-shows that this changes nothing in behaviour: a group at or below 0 creates no guest and, at the next stop of
-the arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does, so nothing
-holds. Only the stored group word and one vehicle step for an exactly empty group differ (effect not traced).
+500 instead of 1,500; OpenTPW applies that to a visit of another player's park (`OnlineVisit`): tp.exe sets GameType 1 when a
+published park is entered (`0x4c0830`) and runs the arrival step there. A visit still reads `Standard.sam` instead of the original's
+`online_Standard.sam` and counts no park points (ARRIVAL-002). Both cuts compare unsigned, and a group cut with more
+guests than the limit becomes negative, in OpenTPW as in the original (tp.exe `0x4cf6e5`, no floor). Executing the update
+routine `0xcb2ac` over repeated calls (F11) shows that a group at or below 0 creates no guest and, at the next stop of the
+arrival vehicle, restarts the timer and clears the active byte exactly as an empty group does; on the PC every other reader
+of the word treats it as 0 too (the vehicle size `0x4cf48f`, the boarding gate `0x51a844`, the advisor score `0x59f220`
+over the group history).
 
 Park points are summed over the placed rides and sideshows: each adds its `Info.AttractionValue` plus the
 `Attraction[n].NewBonus` of its age bracket (n = age in game days / `Info.NewAttractionDecayTime`, no
@@ -196,12 +205,15 @@ from its own build and counts in full. The jungle `Rides.sam` gives 20 and a 60-
 25 and bonuses 10/7/4. The original counts only things that pass the test at `0xdc834` (executed in the oracle, F10): the type is
 choosable (`Info.IsChoosable`), the ride is neither broken down nor condemned and is open, its entrance connects
 to a cell, its queue holds fewer guests than four per queue cell, a coaster carries no riders, and a kart or water
-ride has its track word (set when the ride is built). OpenTPW applies all but the last two (`IsChoosable`,
-`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`, and `QueueHasRoom`, which the level syncs: queue cells from the entrance and
-fewer guests than four per cell; tp.exe `0x4dd920`, ORACLE.md X15), so a closed, broken, queue-less or full ride gives no points, while
-its copies still count in the divisor of an untracked type; the coaster and kart/water conditions have no state in the economy
-(ARRIVAL-003). Objects imported from an original save or placed as fixed items set the first
-purchase to the current turn (ARRIVAL-005). Open points are ARRIVAL-001..005 (`ArrivalApproximations`).
+ride has its track word (set when the ride is built). OpenTPW applies all of it (tp.exe `0x4dd920`, ORACLE.md X15): `IsChoosable`,
+`IsBrokenDown` or the script's VAR_BROKEN, `IsOpen`, `QueueHasRoom` (queue cells from the entrance and fewer guests than four per
+cell), for a coaster its controller test (`0x441970`: no self-intersection, complete and closed, `CoasterRide.AcceptsGuests`) and for
+a kart or water ride its track word (the circuit walk's verdict, `BumpController.IsTrackValid`); the level syncs them each tick. So a
+closed, broken, queue-less, full, crossing or invalid ride gives no points, while its copies still count in the divisor of an untracked
+type. Only things whose type's `Info.WhichUIType` is 0 or 2 count (`0x4c8240`), which includes the shipped add-ons that declare 0. The
+coaster test also needs three track samples and has no edited-coaster term, the track word starts false before the first walk, and a
+coaster imported from an original save has no controller (its track is not imported), so it gives no points (ARRIVAL-003). Objects imported from an original save set the first purchase to the import turn, where
+the original restores each type's record from the save (tp.exe `0x4d3aa0`, ARRIVAL-005); fixed items of a new park stamp turn 0 in both. Open points are ARRIVAL-001, 002, 003, 005 and 006 (`ArrivalApproximations`).
 
 ## Simulation
 
@@ -233,7 +245,7 @@ home (21) → removed.
 
 | Item | OpenTPW choice |
 | --- | --- |
-| Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once the bus stands at its stop (tp.exe `0x4cf3e0`, run once per world turn). The bus itself is not modelled, so its drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
+| Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once its arrival vehicle reports script variable 1 = 2 at the stop (tp.exe `0x4cf3e0`, run once per world turn). The vehicle (a bus up to 35 guests, a seaplane up to 60, a Ferry above, `0x4cf48c`) is not modelled, so its level script's drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | traced ([below](#needs-and-starting-values)); the energy meter is tp.exe's unnamed float +0x1B8: 0 at creation, a completed use takes the type's `FatigueEffect` off it (`0x4fd970`, clamped to 0..100; 5 in the shipped data, so it stays 0), and only the save reads it; thoughts as in tp.exe ([Thoughts](#thoughts)) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)); the presentation turns are not (GUEST-010) |
@@ -274,13 +286,16 @@ same sum as the arrival rule's, `0x4c8240`), N = `PeepInfo.ExcitementToCostDivis
 `MinimumEntryFee` (20) are fair. Otherwise the fee, against GP in single precision, is:
 
 - from `ExpensivePriceMultiplier` × GP (2.0): far too expensive — the guest thinks 6 and goes home;
-- from `AveragePriceMultiplier` × GP (1.25): on the expensive side — the guest thinks 6, loses `MediumHappinessChange` and waits 50 + R % 50
-  park turns before asking again; once its happiness truncates to 0 it goes home instead (ARRIVAL-006);
+- from `AveragePriceMultiplier` × GP (1.25): on the expensive side — the guest thinks 6, loses `MediumHappinessChange` and waits: the counter
+  of 50 + R % 50 counts down one per park turn and the verdict runs on the turn after it reaches 0, N + 1 turns in all (OpenTPW times
+  them on the frame clock, ARRIVAL-006); once its happiness truncates to 0 it goes home instead;
 - up to `CheapPriceMultiplier` × GP (0.75): cheap — the guest gains `MediumHappinessChange` and pays;
 - otherwise fair — the guest pays.
 
-An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. OpenTPW charges the fee from the guest's purse and turns back a
-guest who cannot pay; the original's booth books the fee (`0x4d0600`) without reading the guest's cash (ARRIVAL-007).
+An empty park is worth 20, so a fee of 24 is fair and 25 already expensive. A paying guest's fee is booked to the bank (tp.exe `0x4d0600`,
+`ParkEconomy.TryAdmitVisitor`) without reading or debiting the guest's purse, as in the original. The booth has no park-closed test: a
+closed park stops its visitors on the walk to the booth ([GATES.md](GATES.md), "What closing does to guests"); OpenTPW's economy refuses an
+admission only while the park is bankrupt (tp.exe's bankruptcy stops the thing loop, ECON-030).
 
 ### Needs and starting values
 
@@ -500,7 +515,7 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
   simulation state.
 
 **Walk approximation register** (`WalkApproximations.cs`; also in
-[FIDELITY-REGISTER](FIDELITY-REGISTER.md)):
+[FIDELITY-REGISTER](https://opentpw.io/docs/FIDELITY-REGISTER.html)):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
@@ -769,7 +784,7 @@ W_max = ⌈Qmax/CAP⌉ × (DUR + 1 s + τ) (QUEUE-plan §9):
 τ (boarding latency) is not derived and must stay an explicit parameter.
 
 **Queue approximation register** (`QueueApproximations.cs`; also in
-[FIDELITY-REGISTER](FIDELITY-REGISTER.md)):
+[FIDELITY-REGISTER](https://opentpw.io/docs/FIDELITY-REGISTER.html)):
 
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
@@ -842,7 +857,7 @@ OpenTPW (`RideHeadSpace`, `HeadPresentation`, `RideHeadRenderer`): each script k
 
 The original-level smoke test requires submitted head quads and separately compares visible/hidden GPU captures on one identified, naturally boarded animating ride. Simulation, animation, camera and shader time are frozen; repeated visible frames and repeated hidden frames must each be byte-identical, and toggling only that attraction's head renderer must change pixels. This establishes visible OpenTPW head geometry, not original visual equivalence.
 
-Approximations ([HEADS register](FIDELITY-REGISTER.md)): the slot draw uses the original formula, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`), on a per-ride stream, not the shared world generator `0x516330`, which rotates its state right by 13 after the LCG step (`s * 1664525 + 1013904223`, `ror 13`, absolute value) and is not ported (HEADS-001, depends on DET-013; the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the azimuth origin and sense of column 0 (local +X towards +Z is used), the reference frame of the roll (the node matrix in world axes), and costume heads (guests wear none). A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
+Approximations ([HEADS register](https://opentpw.io/docs/FIDELITY-REGISTER.html)): the slot draw uses the original formula, `labs(worldRand() >>> 1) % length` (tp.exe `0x554CB5`), on a per-ride stream, not the shared world generator `0x516330`, which rotates its state right by 13 after the LCG step (`s * 1664525 + 1013904223`, `ror 13`, absolute value) and is not ported (HEADS-001, depends on DET-013; the record-to-node link, the per-script allocation and the table-length rule, formerly HEADS-002/003, are traced and retired). The remaining head presentation uncertainty (HEADS-004): how sprite scale 1.0 maps to world units (the body's pixel scale times 0.685 is used), depth handling, the azimuth origin and sense of column 0 (local +X towards +Z is used), the reference frame of the roll (the node matrix in world axes), and costume heads (guests wear none). A child or sound script has no head table at all on the PC (it is created with thing id 0, which skips the table allocation, and copies the parent's thing id only afterwards; ADDHEAD and DELHEAD exit on the NULL table, tp.exe `0x558D2B`, `0x554C89`, `0x554D6F`), and OpenTPW does the same: their head opcodes do nothing (HEADS-005 retired, October 14, 2026); no associated child/sound script in this shipped corpus uses a head command.
 
 Not done in OpenTPW: heads of riders on coaster and tour cars. The cars carry head records (above) and the PC executable keeps them as
 records with a handle and no head table (maexah `saves.md`, "A head on a node"); the Mac code that places a car's rider is not

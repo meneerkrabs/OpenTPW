@@ -55,6 +55,9 @@ public sealed class ParkCellMap
 	private readonly byte[] links;
 	private readonly byte[] queueLinks;
 	private readonly int[] typeCounts = new int[256];
+	private readonly int[] blockStamps;
+	/// <summary>Cells per side of a stamp block (the original's 16 × 16-cell blocks).</summary>
+	public const int StampBlock = 16;
 
 	public ParkCellMap( int width, int height )
 	{
@@ -69,7 +72,46 @@ public sealed class ParkCellMap
 		links = new byte[width * height];
 		queueLinks = new byte[width * height];
 		typeCounts[0] = width * height;
+		BlocksX = (width + StampBlock - 1) / StampBlock;
+		BlocksY = (height + StampBlock - 1) / StampBlock;
+		blockStamps = new int[BlocksX * BlocksY];
 	}
+
+	/// <summary>Stamp blocks across and down the map.</summary>
+	public int BlocksX { get; }
+	public int BlocksY { get; }
+
+	/// <summary>
+	/// The stamp counter (tp.exe <c>0x7CDB98</c>): raised by every write that changes a cell type, which stamps the cell's block with it.
+	/// A walk keeps the counter of its set-up (<see cref="GuestNavigation.Stamp"/>). The original also raises it at every walk set-up and
+	/// route test (<c>0x4D8C50</c>), which changes no comparison of a block stamp with a walk's, so OpenTPW counts the edits only.
+	/// </summary>
+	public int StampCounter { get; private set; }
+
+	/// <summary>
+	/// The stamp of the 16 × 16-cell block (<paramref name="blockX"/>, <paramref name="blockY"/>): the <see cref="StampCounter"/> of the last
+	/// write that changed a cell type in it (or cleared one), 0 when none did (or outside the map). A walk set up at a lower counter searches again when it
+	/// stands in the block (tp.exe <c>0x4D8CD0</c>, follow_path <c>0x50ED6C</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D8C60 block stamp] a cell type change (0x5346D0, 0x5348D0, 0x538FC0; the queue length change 0x4DE1F0 stamps its back cell) writes the counter 0x7CDB98, raised by one (0x4D8C50), into the block (y >> 4) × 33 + (x >> 4); every walk set-up takes the counter raised by one too (0x50F8E0), so a later edit always stamps above the walk; an unchanged non-zero type (0x5346D0: the same-type return at 0x5346F5, only the placement count rises) and a link write (0x522700) stamp nothing, but clearing stamps even an empty cell (0x5346EC skips that return for type 0, the stamp at 0x5347AF)
+	public int BlockStamp( int blockX, int blockY ) =>
+		(uint)blockX < (uint)BlocksX && (uint)blockY < (uint)BlocksY ? blockStamps[blockY * BlocksX + blockX] : 0;
+
+	/// <summary>Restores the stamp counter and the block stamps a snapshot recorded (row by row); null leaves every block unstamped.</summary>
+	internal void RestoreBlockStamps( int counter, IReadOnlyList<int>? stamps )
+	{
+		Array.Clear( blockStamps );
+		StampCounter = counter >= 0 ? counter : throw new InvalidDataException( "the stamp counter is negative" );
+		if ( stamps == null )
+			return;
+		if ( stamps.Count != blockStamps.Length )
+			throw new InvalidDataException( $"the cell map has {blockStamps.Length} stamp blocks, the snapshot {stamps.Count}" );
+		for ( var index = 0; index < blockStamps.Length; index++ )
+			blockStamps[index] = stamps[index] >= 0 ? stamps[index] : throw new InvalidDataException( $"stamp block {index} is negative" );
+	}
+
+	/// <summary>The block stamps row by row, or null while no block is stamped.</summary>
+	internal int[]? CaptureBlockStamps() => Array.Exists( blockStamps, stamp => stamp != 0 ) ? (int[])blockStamps.Clone() : null;
 
 	/// <summary>
 	/// The map of an original level (PATH-plan §9.1): Easymode save path cells with their saved links, else MAP
@@ -106,6 +148,8 @@ public sealed class ParkCellMap
 					cells.SetFlags( x, y, flags );
 			}
 		}
+		// The level's own cells are written without stamps (map init 0x536490 sets the types directly).
+		cells.RestoreBlockStamps( 0, null );
 		return cells;
 	}
 
@@ -291,6 +335,8 @@ public sealed class ParkCellMap
 	public void SetType( int x, int y, byte type )
 	{
 		var index = Index( x, y );
+		// tp.exe's cell setter 0x5346D0 returns early for the same non-zero type only: clearing always stamps.
+		var changed = types[index] != type || type == 0;
 		typeCounts[types[index]]--;
 		typeCounts[type]++;
 		types[index] = type;
@@ -302,6 +348,8 @@ public sealed class ParkCellMap
 			placements[index] = 0;
 		}
 		Version++;
+		if ( changed )
+			blockStamps[y / StampBlock * BlocksX + x / StampBlock] = ++StampCounter;
 	}
 
 	public void SetType( int x, int y, ParkCellType type ) => SetType( x, y, (byte)type );
@@ -362,6 +410,14 @@ public sealed class ParkCellMap
 		// The track layer joins the digest only while a track exists, so every trackless park keeps its earlier pins.
 		if ( Tracks.Count > 0 )
 			Tracks.AddCanonicalState( hash );
+		// The block stamps (WALK-007) join it once a block is stamped.
+		if ( Array.Exists( blockStamps, stamp => stamp != 0 ) )
+		{
+			hash.Add( StampCounter );
+			hash.Add( blockStamps.Length );
+			foreach ( var stamp in blockStamps )
+				hash.Add( stamp );
+		}
 		// The land joins it only on a map that has one (an original level), for the same reason.
 		Land?.AddCanonicalState( hash );
 	}

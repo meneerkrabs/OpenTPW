@@ -36,7 +36,7 @@ public sealed class ParkWeather
 	private readonly int groundX;
 	private readonly int groundZ;
 	private readonly Queue<Vector3> strikes = new();
-	private readonly Queue<Vector3> boltTops = new();
+	private readonly Queue<(Vector3 Top, Vector3 Ground)> boltTops = new();
 	private bool started;
 	private long lastTurn;
 	private long lastChanged;
@@ -158,7 +158,7 @@ public sealed class ParkWeather
 	{
 		var struck = new List<Vector3>();
 		while ( boltTops.Count > 0 )
-			struck.Add( boltTops.Dequeue() );
+			struck.Add( boltTops.Dequeue().Top );
 		return struck;
 	}
 
@@ -166,7 +166,17 @@ public sealed class ParkWeather
 	internal void DrainBoltTops( List<System.Numerics.Vector3> into )
 	{
 		while ( boltTops.Count > 0 )
-			into.Add( boltTops.Dequeue().GetSystemVector3() );
+			into.Add( boltTops.Dequeue().Top.GetSystemVector3() );
+	}
+
+	/// <summary>Moves the bolts struck since the last call into <paramref name="into"/> as sky and ground points (System.Numerics vectors, original units), allocating nothing.</summary>
+	internal void DrainStrikePoints( List<(System.Numerics.Vector3 Top, System.Numerics.Vector3 Ground)> into )
+	{
+		while ( boltTops.Count > 0 )
+		{
+			var strike = boltTops.Dequeue();
+			into.Add( (strike.Top.GetSystemVector3(), strike.Ground.GetSystemVector3()) );
+		}
 	}
 
 	/// <summary>Bound for the pending bolt tops: strikes come at most once a park turn, and hosts drain them per frame.</summary>
@@ -429,7 +439,8 @@ public sealed class ParkWeather
 				var z = 1 + random.Next( groundZ );
 				lastTop = new Vector3( x + random.Next( 101 ) - 50, BoltTopHeight, z + random.Next( 101 ) - 50 );
 				// The bolt shows at the strike itself; its thunder follows later through the strikes queue.
-				boltTops.Enqueue( lastTop );
+				// [BIN:TPW-EXE:0x512C50 strike points] the original's bolt runs from the ground point (x, 0, z) it drew to the sky point 300 up and offset by up to 50 in x and z (0x512880 hands both to 0x580320), not straight down from the sky point
+				boltTops.Enqueue( (lastTop, new Vector3( x, 0, z )) );
 				while ( boltTops.Count > MaximumPendingBoltTops )
 					boltTops.Dequeue();
 				if ( thunderCountdown <= 0 )

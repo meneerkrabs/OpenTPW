@@ -379,7 +379,7 @@ Traced in the binary but not triggered yet:
   a path cell under the cursor it plays at that cell, then that cell loses one placement (ClearCell's counted path case,
   tp.exe `0x40BE8B`) and goes only when it was laid once; the sound plays even when the cell stays. Inside the path tool the original's Backspace is Back (tp.exe `0x52FE50`): it takes the last segment back without
   a refund and plays no sound, as OpenTPW's segment undo does.
-* The weather's own visuals are drawn now, as procedural approximations (AUDIO-900..904,
+* The weather's own visuals are drawn now, as procedural approximations (AUDIO-900..902, 904,
   "Weather visuals" below); the forecast's warning is shown as an OpenTPW extension (banner, wording
   and cadence are `[EXT:forecast-banner]`, `[EXT:forecast-wording]`, `[EXT:forecast-cadence]`): the PC has
   no forecast message (event type 2 has a single subscriber, the weather thing itself, `0x511fa9`/`0x511fb8`).
@@ -462,11 +462,13 @@ Behaviour worth knowing:
   is the wrapped absolute camera position times a factor (`CRain +0x3340`, 0.1; 0.3 while the camera-mode
   byte `0x790ab0 & 0x16` is set, `0x57fff8`-`0x58000b`), per axis `wrap(f x position + 4) - 4` into
   [-4, 4) (x and z `+f`, y `-f`; `0x580013`-`0x5800b7`), and the draw (`0x57efd0`) subtracts it from x and z
-  and adds it to y, so every axis moves by `-f x position`; OpenTPW wraps `fall - 0.1 x eye` the same way, but
-  the 0.3 case and the 1/16384 quantisation are not reproduced (AUDIO-900). At the original scale
+  and adds it to y, so every axis moves by `-f x position`; OpenTPW wraps `fall - f x eye` the same way on the same
+  1/16384 grid, with f = 0.3 in its free-walk and ride cameras (the listener's mapping of the camera-state bits `0x16`) and 0.1 otherwise;
+  which original views set those bits is not read (AUDIO-900). At the original scale
   (0.2 engine units a unit) the field is a small near-field around the eye: streaks are 0.1 units
   long and 0.2 x that wide. The camera's 0.1 near plane clips the nearest 0.5 units of it, where the
-  original's near plane is 0.1 units (`0x578be0`, AUDIO-904).
+  original's near plane is 0.1 units (`0x578be0`, AUDIO-904). The original's camera has a field of view of 90 degrees (`0x42a990` passes pi/2 to
+  `0x578be0`), OpenTPW's park camera 55.
 * Rain: grey `3 x max(0, int(12 x (6 - depth)))` (216 at the eye, 0 at depth 6), alpha 0x80 at the
   streak's trailing end and 0xFF at the leading end, only depth > 0 drawn. The render states come from tp.exe's
   decoder `0x567620`: rain and bolts `0x200D52` (source alpha over one, no depth writes), snow `0x556` (alpha blend,
@@ -476,20 +478,25 @@ Behaviour worth knowing:
   at the quadrant's lower corners, full white, x and y spread by `1 + depth/8`, jittering by
   `((rand & 31) - 16) / 2048` on every axis each frame (`0x57f490`). The original's other mode swirls flakes along
   a closed 128-point spline under engine flag `0x8bcbc8` bit `0x100`, which nothing in tp.exe sets, so the PC
-  draws only the jitter version; the flake's z + 0.1 and fourth word z + 0.1501 are not reproduced (AUDIO-901).
-* Bolts: from the strike's top (x, 300, z) straight down to original y = 0 (not the terrain; the
-  original's ground point is a float draw, so OpenTPW uses the top's x and z), recursive midpoint
-  displacement with roughness 0.6, splitting until a segment's squared length is under 6 + 2u (about
-  2 to 2.8 units), a 9/512 branch chance per split up to depth 4 (length `2.5 x (512..1535) / (96 x depth)`,
-  bent downward), shape fixed per bolt from a seeded generator, ribbon half-width `1.3 / (depth + 1)`,
-  grey (alpha 0xFF, blended source alpha over one) pulsing in 500 ms cycles, 192-255 plus rand(0..63), alive `WeatherEffects.LightningTime`
-  (2000 ms) with up to 16 at once. There is no screen flash and no sky darkening in the park. The
-  displacement, branch heading and pulse curve are OpenTPW's; tp.exe's displacement (`0x57e4b0`) and branch
-  heading (`0x57e810`) are read but not ported (AUDIO-902).
+  draws only the jitter version. The flake's vertices are homogeneous clip coordinates (x, y, z + 0.1, w = z + 0.1501), so OpenTPW
+  moves the flake's depth by 0.1501 for its screen position; the depth-buffer value is not reproduced (AUDIO-901).
+* Bolts: from the ground point (x, 0, z) the strike drew (the original's bolt does not follow the terrain) to the sky point 300 up and offset by up to
+  50 in x and z (`0x512C50`), a recursive midpoint walk (`0x57E810`) on the CRain stream (`0x57E4B0`: the midpoint moves along the
+  vector P, the segment's middle with one axis replaced by `M - |M|^2 / d`, by `|d| x 0.6 x r2 x r1^2`, r the signed remainder of a draw over 0x1FFF
+  divided by 8192) that splits a half again while its squared length is at least `6 + (draw & 0xFFF - 0x800) x 2 / 2048`
+  (tested on each half, so a final segment is under 2.83 units), a 9/512 branch chance per split up to depth 4 (the heading
+  `along-bolt x the bolt direction + along-segment x the segment direction`, lengths `(0x200 + draw & 0x3FF) / (96 x depth)`, along-segment x 2.5, the
+  along-bolt term halved and the sum halved when it points against the bolt), the shape fixed per bolt from its seed word, a ribbon of
+  half-width `1.3 / (depth + 1)`, grey pulsing with the remaining life (`0x57EE30`: x = (remaining ms mod 500) / 500; 255 - trunc((0.9 - x) x 71.04) below 0.9, else
+  192 + trunc((1 - x) x 640); plus rand & 63; the three channels take the sum's low byte, so a sum of 256 or more wraps dark), alive
+  `WeatherEffects.LightningTime` (2000 ms) with up to 16 at once. There is no screen flash and no sky darkening in the park. The ribbon of OpenTPW is
+  a camera-facing world quad per segment; the original's emitter `0x57DD10` builds it in clip xy with mitred joins (AUDIO-902). OpenTPW bounds a bolt
+  at 1024 segments for its vertex buffer (the longest of 20000 sampled bolts had 796).
 * Time is the frame time scaled by the simulation's time scale and capped at 500 ms, as the original's
   dt on its rate-scaled clock `0x402d70` (`0x57ff60`), so it stands still while the park is paused; the
-  engine also zeroes dt under flag `0x8bd508` bit 2, whose setter is not identified (AUDIO-903). The visual random stream is separate from
-  every simulation stream, so world hashes are unchanged.
+  engine also zeroes dt while the mask 0x4 of its word `0x8bd508` is set (`0x57ffb1`), which nothing in tp.exe ever sets (the word is .bss, the stores that
+  exist set 0x1, 0x40, 0x80000000, 0x8000000 or the constant 0x3000141 that clears it, or put back a copy of the word itself), so OpenTPW's never
+  zeroing it matches. The visual random stream is separate from every simulation stream, so world hashes are unchanged.
 * The renderer is created with the weather itself (`ParkWeather.Created`), inside the staged-candidate
   scope when a save is resumed, and deleted with the level's other entities. GPU allocations are made
   once (one vertex buffer, three materials), browser-safe; the shader is precompiled for the browser in
@@ -599,11 +606,10 @@ implemented yet.
 | AUDIO-018 | The positioned voice's pan is constant-power by bearing, not the original's pan law (inside QMixer) | QMixer.dll (a separate binary) or a capture |
 | AUDIO-025 | December's average is the storage of the unnamed type-0 `.sam` schema record after `Seasons` (`0x741d80`), taken as 4; the season is the FILETIME date's month / 3 (`0x4f8770`, wMonth 1-12, so December is row 4) and the word (`0x7854f4`) is in .bss with no code reference; its tolerance and chance are confirmed | The generic `.sam` loader's type-0 case (if it stores nothing the average would be 0, not 4) |
 | AUDIO-037 | The sound chooser is seeded from the clock at start-up (as the original) but a park reseeds it from its world seed at entry and saves it with the park, so headless runs and tests start from a known state (not a replay guarantee with sound on); the original's chooser is clock-seeded and unsaved | None (a deliberate determinism choice) |
-| AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops, its parallax the original's absolute `-0.1 x camera position` (`0x57efd0`), its states decoded (`0x567620`: rain and bolts `0x200D52`, snow `0x556`, alpha test at 0x10/255); the 0.3 factor under camera modes `0x790ab0 & 0x16` and the 1/16384 quantisation are not reproduced | Which views set the camera-mode bits `0x16` |
-| AUDIO-901 | Snow is the jitter version (((rand & 31) - 16) / 2048 a frame on every axis), the only one the PC draws (the swirl flag `0x8bcbc8` bit `0x100` is never set), each flake one triangle over its atlas quadrant (`0x57f490`) | The space of the flake's z + 0.1 and its fourth word z + 0.1501 (camera or clip); whether the base half-width h x `0x8bcbcc` (height / width) equals OpenTPW's h under its aspect-correct projection |
-| AUDIO-902 | The bolt follows the traced CRain shape (roughness 0.6, stop test, branch odds, depth and lengths, ground at y = 0, 2000 ms life, up to 16); the per-split displacement and the branch heading are OpenTPW's where tp.exe displaces the midpoint along one random-axis perpendicular by \|segment\| x roughness x r2 x r1² (`0x57e4b0`) and heads a branch along the segment plus the bolt's direction (`0x57e810`); the pulse curve is OpenTPW's and the ground point keeps the top's x and z | A port of `0x57e4b0`/`0x57e810`; the pulse in the segment emitter `0x57dd10`; the ground point's float draw |
-| AUDIO-903 | The weather's visuals advance by the frame time scaled by the simulation's time scale, capped at 500 ms, as the original's CRain dt on its rate-scaled clock (`0x402d70`, `0x57ff60`); tp.exe also zeroes dt while engine flag `0x8bd508` bit 2 is set (`0x57ffb1`) | What sets that bit (no instruction writes it alone) |
-| AUDIO-904 | The camera's near plane (0.1 engine units = 0.5 original units) clips the nearest drops; the original's near plane is 0.1 original units (`0x54e86f` → `0x578be0`) and its clipper cuts the streaks there; the vertex buffer is sized once (1024 drops, 16 bolts of 512 segments) | A near clip of 0.1 original units for the weather without changing the scene's depth mapping |
+| AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops, its parallax the original's absolute `-factor x camera position` on a 1/16384 grid (`0x57efd0`, `0x580013`-`0x5800b7`), its states decoded (`0x567620`: rain and bolts `0x200D52`, snow `0x556`, alpha test at 0x10/255); the factor 0.3 (`0x58000b`) applies in the free-walk and ride cameras (the listener's mapping of camera-state bits `0x16`) | What bits `0x2`, `0x4` and `0x10` of `0x790ab0` select in the original (which views): `0x42AB20` toggles `0x2` and `0x4` from input events 2 and 4, `0x576a00` turns any of them into render flag `0x100` of `0x8bd508`, nothing sets `0x10` alone |
+| AUDIO-901 | Snow is the jitter version (((rand & 31) - 16) / 2048 a frame on every axis), the only one the PC draws (the swirl flag `0x8bcbc8` bit `0x100` is never set), each flake one triangle over its atlas quadrant (`0x57f490`), its depth moved by the original's w term 0.1501 | The flake's depth-buffer value (z + 0.1) / (z + 0.1501) in the original's clip space (`0x57f490`: x, y, z + 0.1, w = z + 0.1501, clipped by `0x565bb0`): a clip-space vertex path in the weather shader and its precompiled browser JSON |
+| AUDIO-902 | The bolt follows tp.exe: ground point and offset sky point (`0x512C50`), the midpoint displacement and branch heading on the CRain stream (`0x57E4B0`, `0x57E810`: stop threshold tested on each half, branch 9/512, depth limit 4), the pulse colour (`0x57EE30`: 255 - trunc((0.9 - x) x 71.04) below x = 0.9 else 192 + trunc((1 - x) x 640), plus rand & 63, wrapping at 256) and the 2000 ms life; the ribbon is a camera-facing world quad per segment | The ribbon emitter `0x57DD10`: clip-xy perpendicular, 1.3 / (depth + 1) clip units wide, mitred joins between the segments of one depth |
+| AUDIO-904 | The camera's near plane (0.1 engine units = 0.5 original units) clips the nearest drops; the original's near plane is 0.1 original units (`0x54e86f`, `0x42a990` -> `0x578be0`) and its clipper cuts the streaks there | A near clip of 0.1 original units for the weather without changing the scene's depth mapping |
 | AUDIO-033 | Minimum distance 2 is confirmed in both builds; the exponent 0.8 (the fork's QMixer lead) and the missing 2.1 maximum floor stand | The gain curve inside QMixer/SoundSprocket (outside the analysable binaries) |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The PC library's sentence classes (vtables `0x70a7e0`/`0x70a8d0`) |
 | AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) ranks the held chains (screams) with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`); a voice enters only while its rank exceeds the pool's lowest (`0x6b6bc0` compares strictly), so equal ranks keep the order of the manager's voice list; out-of-range voices without the any-distance flag have their sample stopped (`0x6bca70` → `0x6b8d60` → `0x6bb7c0`); OpenTPW stops one-shots and sentence segments and a chain starts no new child, but looping voices and a chain's playing children are not stopped | The voice list's insertion order; what restarts a stopped loop (the waterfall resumes) and how a stopped sentence resumes |

@@ -25,7 +25,7 @@ public interface IWeatherVisualSource
 /// <summary>One strike handed to the renderer: <c>AddLightning(bottom, top, …)</c>'s two points, in original units with Y up.</summary>
 public readonly record struct WeatherStrike( NVector3 Top, NVector3 Bottom )
 {
-	/// <summary>The park's strike: the ground point at y = 0 straight below the top (the original's float ground draw is not traced).</summary>
+	/// <summary>A strike without a ground point of its own (the lobby, tests): the ground point at y = 0 straight below the top.</summary>
 	public static WeatherStrike Below( NVector3 top ) => new( top, new NVector3( top.X, WeatherVisualState.BoltGroundHeight, top.Z ) );
 }
 
@@ -34,7 +34,7 @@ public readonly record struct WeatherStrike( NVector3 Top, NVector3 Bottom )
 /// <see cref="Right"/>, <see cref="Up"/> and <see cref="Forward"/> are the camera's axes expressed in world axes, so
 /// a world direction <c>d</c> becomes camera space as <c>(Right·d, Up·d, Forward·d)</c>; the third component is the depth.
 /// </summary>
-public readonly record struct WeatherCamera( NVector3 Eye, NVector3 Right, NVector3 Up, NVector3 Forward )
+public readonly record struct WeatherCamera( NVector3 Eye, NVector3 Right, NVector3 Up, NVector3 Forward, bool EyeMode = false )
 {
 	/// <summary>Rotates a world direction into camera space (x right, y up, z forward = depth).</summary>
 	public NVector3 ToCamera( NVector3 direction ) => new( NVector3.Dot( Right, direction ), NVector3.Dot( Up, direction ), NVector3.Dot( Forward, direction ) );
@@ -82,9 +82,10 @@ public sealed class WeatherBolt
 // [BIN:STP-PPC:engine_shared 0x1001FCE4 dt] dt is the wall-clock frame time in ms capped at 500 ms, zeroed by an engine flag
 // [BIN:TPW-EXE:0x57fff8 rain parallax] the factor (CRain +0x3340, 0.1 from the init at 0x57d1fc) is 0.3 while the camera-mode byte 0x790ab0 has bits 0x16 (0x580003-0x58000b); per axis the field offset is wrap(factor x camera position + 4) - 4 into [-4, 4) (x and z use +factor, y uses -factor; the wrap is x16384 & 0x1FFFF, 0x580013-0x5800b7), an absolute position, not a per-frame delta
 // [BIN:TPW-EXE:0x57efd0 rain draw] the drop is (p.x - o.x, o.y + p.y, p.z - o.z) with o the scroll plus the wrapped parallax, whose y carries -factor: every axis moves by -factor x the camera's position, so the field here is wrapped (fall - 0.1 x eye)
-// [APPROX:AUDIO-900] the parallax factor is always 0.1: the 0.3 of the camera modes 0x790ab0 & 0x16 is not reproduced (which views set those bits is not read), and the original's 1/16384 quantisation of the wrapped term (x16384 & 0x1FFFF) is not
+// [APPROX:AUDIO-900] the factor 0.3 applies in OpenTPW's free-walk and ride cameras, the mapping the listener already uses for the same bits (EXT:listener-eye-mode); what the bits 0x2, 0x4 and 0x10 of the original's camera-state word 0x790ab0 mean (0x42AB20 toggles 2 and 4 from input events 2 and 4; no instruction sets 0x10 alone) is not read, so which original views take 0.3 is not known
 // [BIN:TPW-EXE:0x57f490 CRain snow] the swirl is selected by engine flag 0x8bcbc8 bit 0x100, which no instruction sets (the word is .bss, and its writers, among them 0x44d8f0, 0x40c830, 0x54fae9, 0x566840, 0x5673d0, 0x576f07, 0x583d30, 0x587950, set other bits or restore saved copies), so the PC always draws the jitter version: each frame every axis gets ((rand & 31) - 16) / 2048 before the camera transform; each flake is one triangle: apex (x, y + h) at the top middle of its atlas quadrant's row, base corners (x +- w, y - h) at the row's lower corners, h the half-size (+0x3354)
-// [APPROX:AUDIO-901] the flake's vertices carry z + 0.1 and a fourth word z + 0.1501 in the original (0x57f490's submit loop), whose space (camera or clip) is not read, and its base half-width is w = h x 0x8bcbcc (the display's height / width); OpenTPW places the triangle at the flake's camera-space depth with w = h, the same only if its aspect-correct projection stands for that factor (as for PTCL-904)
+// [BIN:TPW-EXE:0x57f490 flake vertex] the vertex is (x, y, z + 0.1, w = z + 0.1501) in the engine's homogeneous clip space (0x565bb0 clips it with the clip codes 0x561bc0, which compare |x|, |y|, |z| against w), x and y being the spread camera-space position (y negated), so the flake lands at x / (z + 0.1501) of the screen; its base half-width w = h x 0x8bcbcc (height / width) is in that clip x, which keeps the flake square on the screen
+// [APPROX:AUDIO-901] OpenTPW projects the flake through its scene camera with the depth moved by 0.1501 (the position the original's w gives) and w = h, which an aspect-correct projection makes square as well, but the original's depth-buffer value (z + 0.1) / (z + 0.1501), close to 1, cannot be written without a clip-space path in the weather shader (the precompiled browser shader has none), so snow's depth writes and the depth test against the scene differ
 public sealed class WeatherVisualState
 {
 	/// <summary>The presentation field's draw stream seed; it shares nothing with the park's simulation streams.</summary>
@@ -100,6 +101,10 @@ public sealed class WeatherVisualState
 	public const float SnowVelocity = 0.8f;
 	/// <summary>Weight of the camera's movement in the field's scroll.</summary>
 	public const float ParallaxScale = 0.1f;
+	/// <summary>The weight while the camera is in one of the original's eye modes (camera-mode byte 0x790AB0 bits 0x16).</summary>
+	public const float EyeModeParallaxScale = 0.3f;
+	/// <summary>The wrapped parallax term's grid: the original truncates it to 1/16384 of a unit.</summary>
+	public const float ParallaxGrid = 16384f;
 	/// <summary>The frame time cap: a hitch longer than this moves the field by 500 ms only.</summary>
 	public const float MaximumStepSeconds = 0.5f;
 	/// <summary>A rain streak's length along its fall, in original units.</summary>
@@ -114,6 +119,8 @@ public sealed class WeatherVisualState
 	public const float SnowJitter = 1f / 2048f;
 	/// <summary>Divisor of the snow's depth spread: x and y scale by 1 + depth / 8.</summary>
 	public const float SnowSpreadDepth = 8f;
+	/// <summary>The original adds this to a flake's depth to form the vertex's w (and 0.1 for its z), so the flake projects slightly farther than its depth.</summary>
+	public const float SnowProjectionBias = 0.1501f;
 	/// <summary>Vertices a snow flake takes: one triangle.</summary>
 	public const int SnowVerticesPerFlake = 3;
 
@@ -130,7 +137,7 @@ public sealed class WeatherVisualState
 	/// <summary>Half-width of a bolt's ribbon at branch depth 0, in original units; deeper branches get 1.3 / (depth + 1).</summary>
 	public const float BoltHalfWidth = 1.3f;
 	/// <summary>Bound on the segments of one bolt, so the GPU buffer is sized once.</summary>
-	public const int MaximumBoltSegments = 512;
+	public const int MaximumBoltSegments = 1024;
 
 	/// <summary>The original's wind term |w| &lt;= 0.0017 tilts the fall by under 0.04 degrees: straight down.</summary>
 	private static readonly NVector3 FallDirection = -NVector3.UnitY;
@@ -170,12 +177,19 @@ public sealed class WeatherVisualState
 	/// <see cref="MaximumStepSeconds"/>, zero while paused (scale 0) or for a non-finite or negative delta.
 	/// </summary>
 	// [BIN:TPW-EXE:0x57ff60 CRain dt] dt is min(now - last, 500) ms x 0.001 on the clock 0x402d70: the timer 0x785970's rate-scaled accumulator (0x4033a0, rate +0x20, 0.25..2 by the speed keys) minus its paused time, which stands still while paused (0x4030d0); OpenTPW's simulation time scale plays that rate
-	// [APPROX:AUDIO-903] tp.exe also zeroes dt while engine flag 0x8bd508 bit 2 is set (0x57ffb1, 0x57ffc9), and nothing writes that bit alone (only whole-word stores at 0x564342, 0x577326, 0x577446, 0x583555 (the constant 0x3000141, which clears bit 2) and 0x583893 (a saved copy)), so what sets it is not identified and OpenTPW never zeroes dt for it
+	// [BIN:TPW-EXE:0x57ffb1 dt flag] the test is the mask 0x4 on the engine word 0x8bd508 (mov al, 4); nothing sets that bit: the word is .bss (zero at the start), the direct writers set 0x1 (0x54e855 with ebx = 1, 0x58744f), 0x40 (0x44ddc3), 0x80000000, 0x8000000 and 0x3000141 (0x583555, which clears it), the members called on it (0x5836b0 sets 0x40000000, 0x5835c0 prints) leave it alone, and the other stores (0x564342, 0x577326, 0x577446, 0x583893) put back copies of the word itself, so the original never zeroes the weather's dt for it and OpenTPW does not either
 	/// <summary>The unscaled step for the other presentation clocks (the particles): wall-clock seconds capped at <see cref="MaximumStepSeconds"/>, zero while paused.</summary>
 	public static float FrameSeconds( float deltaSeconds, bool paused ) => FrameSeconds( deltaSeconds, paused ? 0f : 1f );
 
 	public static float FrameSeconds( float deltaSeconds, float timeScale ) =>
 		!(timeScale > 0) || !float.IsFinite( timeScale ) || !float.IsFinite( deltaSeconds ) || deltaSeconds <= 0 ? 0f : MathF.Min( deltaSeconds * timeScale, MaximumStepSeconds );
+
+	/// <summary>
+	/// One axis of the original's wrapped parallax: ((trunc((value + 4) x 16384) &amp; 0x1FFFF) / 16384) - 4, a value in [-4, 4) with the
+	/// camera's position times the factor wrapped on a 1/16384 grid (the integer is truncated toward zero before the mask).
+	/// </summary>
+	// [BIN:TPW-EXE:0x580013-0x5800B7 parallax quantisation] value - (-4) times 16384 through __ftol (0x67A830), and 0x1FFFF, times 1/16384 (0x701C60), minus 4 (0x701CF0), for each of the camera matrix's position floats at +0x30, +0x34 (negated) and +0x38
+	internal static float QuantisedParallax( float value ) => ((int)((value + BoxHalfExtent) * ParallaxGrid) & 0x1FFFF) / ParallaxGrid - BoxHalfExtent;
 
 	/// <summary>The drop point's position relative to the eye, in world axes (original units): the scrolled point wrapped into -4..4.</summary>
 	public NVector3 DropOffset( int index )
@@ -204,7 +218,10 @@ public sealed class WeatherVisualState
 		var span = 2 * BoxHalfExtent;
 		static NVector3 Wrap( NVector3 value, float span ) => new( value.X - MathF.Floor( value.X / span ) * span, value.Y - MathF.Floor( value.Y / span ) * span, value.Z - MathF.Floor( value.Z / span ) * span );
 		fall = Wrap( fall, span );
-		offset = Wrap( fall - camera.Eye * ParallaxScale, span );
+		var factor = camera.EyeMode ? EyeModeParallaxScale : ParallaxScale;
+		// x and z subtract the wrapped term, y adds the one wrapped from the negated position: every axis moves by -factor x the position.
+		var parallax = new NVector3( -QuantisedParallax( factor * camera.Eye.X ), QuantisedParallax( -factor * camera.Eye.Y ), -QuantisedParallax( factor * camera.Eye.Z ) );
+		offset = Wrap( fall + parallax, span );
 
 		for ( var index = bolts.Count - 1; index >= 0; index-- )
 		{
@@ -222,9 +239,8 @@ public sealed class WeatherVisualState
 
 	/// <summary>Starts a bolt from <paramref name="top"/> (original units) down to y = 0 directly below it.</summary>
 	// [BIN:STP-PPC:0x101035D4 bolt start] the strike hands the renderer the sky point (x, 300, z); up to 16 bolts are live
-	// [BIN:STP-PPC:engine_shared 0x10020150 bolt ground] the ground point is at original y = 0, not on the terrain: the bolt keeps the top's x and z (the original's ground point is a uniform float draw whose range is not traced)
-	// [BIN:STP-PPC:engine_shared 0x1001EA18 bolt shape] recursive midpoint displacement with roughness 0.6; a segment stops splitting when its squared length is under 6 + 2u (u in [-1,1)), so segments run about 2 to 2.8 units; each split has a 9/512 chance to branch, up to depth 4, a branch being 2.5 x (512..1535) / (96 x depth) long and bent downward; the shape is fixed per bolt from a seeded generator (the PC behaviour)
-	// [APPROX:AUDIO-902] the displacement per split is OpenTPW's: roughness x segment length x 0.25 x u along both axes perpendicular to the segment, the branch direction is half the parent's plus a random sideways term and a downward bias; tp.exe moves the midpoint along one perpendicular (0x57e4b0: from one of three axes picked by rand % 3) by |segment| x roughness x r2 x r1^2 with a random sign (r = (rand % 0x1fff) / 8192), and a branch (0x57e810: (rand & 0x1ff) < 9, depth below +0xa1a0) heads 2.5 x (0x200 + rand & 0x3ff) / (96 x depth) along the segment plus (0x200 + rand & 0x3ff) / (96 x depth) x the bolt's direction, halved when it points back
+	// [BIN:TPW-EXE:0x512C50 bolt ground] the ground point is at original y = 0, not on the terrain: x and z are the draws the strike made before the sky point's offset of up to 50 (ParkWeather hands both); a lobby strike without a ground point falls back to the point straight below the top
+	// [BIN:STP-PPC:engine_shared 0x1001EA18 bolt shape] recursive midpoint displacement with roughness 0.6, a 9/512 branch chance per split up to depth 4 and a stop threshold of 6 + 2u (u in [-1,1)); the PC's 0x57E810/0x57E4B0 (BuildBolt) agree on those numbers and differ in the displacement and branch heading, which BuildBolt follows
 	public WeatherBolt AddBolt( NVector3 top, float lifetimeSeconds ) => AddBolt( top, WeatherStrike.Below( top ).Bottom, lifetimeSeconds );
 
 	/// <summary>Starts a bolt between <paramref name="top"/> and <paramref name="bottom"/> (original units): the lobby hands both.</summary>
@@ -237,55 +253,146 @@ public sealed class WeatherVisualState
 		return bolt;
 	}
 
-	/// <summary>A bolt's fixed shape: the same seed always gives the same segments.</summary>
+	/// <summary>
+	/// A bolt's fixed shape: the same seed always gives the same segments. The shape is tp.exe's recursive midpoint
+	/// displacement <c>0x57E810</c> with the displacement of <c>0x57E4B0</c>, run on the original's own stream
+	/// (<see cref="CRainRandom"/>); <paramref name="top"/> is the sky end and <paramref name="bottom"/> the ground end.
+	/// </summary>
+	// [BIN:TPW-EXE:0x57EC50 bolt walk] the walk starts at depth 0 with the sky point first and the ground point second (0x57EE30 passes the record's second point, the sky one, as the first argument), the branch depth limit 4 (+0xA1A0, set by 0x57EE30 for a seeded bolt) and the roughness 0.6 (+0x3310 = 0x3F19999A, init 0x57D2AB)
+	// [BIN:TPW-EXE:0x57E810 split] each call draws the midpoint (0x57E4B0), then one word for the branch ((word & 0x1FF) < 9 and depth < 4), then one word for the stop threshold: threshold = 6 (+0xA180) + ((word & 0xFFF) - 0x800) x 2 (+0xA184) / 2048, i.e. 4 to 8; each half (midpoint to the far end, then the near end to the midpoint) splits again when its squared length is at least the threshold and is a final segment otherwise, so the test runs on the halves, not on the whole piece
+	// [BIN:TPW-EXE:0x57E810 branch] a branch takes depth + 1, scale 1 / (96 x depth) and two words: along-segment = ((w1 & 0x3FF) + 0x200) x scale x 2.5, along-bolt = ((w2 & 0x3FF) + 0x200) x scale; its heading is along-bolt x the bolt's unit direction (record +0x18, ground minus sky) + along-segment x the segment's unit direction, and when that points against the bolt direction the along-bolt term is halved and the sum is the halved term x the bolt direction + half the first heading; the branch starts at the segment's near end and runs along that heading, splitting from there
 	public static IReadOnlyList<WeatherBoltSegment> BuildBolt( NVector3 top, NVector3 bottom, ulong seed )
 	{
-		var rng = new DeterministicRandom( seed );
+		var rng = new CRainRandom( (uint)(seed ^ (seed >> 32)) | 1u );
 		var segments = new List<WeatherBoltSegment>();
-		float U() => rng.Next( 1 << 20 ) / (float)(1 << 19) - 1f;
-		// Every piece still to be split or already final counts once, so the leaves can never pass the bound however the recursion unwinds.
-		var pieces = 1;
+		var boltDirection = bottom - top;
+		var boltLength = boltDirection.Length();
+		if ( boltLength != 0 )
+			boltDirection /= boltLength;
+		var depth = 0;
+		// Guards of OpenTPW's fixed vertex buffer (the original grows its draw list): a piece that cannot split any further within the budget is dropped.
+		var calls = 0;
 
-		void Split( NVector3 a, NVector3 b, int depth )
+		void Leaf( NVector3 a, NVector3 b )
 		{
-			var lengthSquared = (b - a).LengthSquared();
-			if ( lengthSquared < 6f + 2f * U() || pieces + 1 > MaximumBoltSegments )
-			{
+			if ( segments.Count < MaximumBoltSegments )
 				segments.Add( new WeatherBoltSegment( a, b, depth ) );
-				return;
-			}
-			var length = MathF.Sqrt( lengthSquared );
-			var direction = (b - a) / length;
-			var side = NVector3.Cross( direction, MathF.Abs( direction.Y ) < 0.9f ? NVector3.UnitY : NVector3.UnitX );
-			side = NVector3.Normalize( side );
-			var lift = NVector3.Cross( direction, side );
-			var middle = (a + b) * 0.5f + (side * U() + lift * U()) * (BoltRoughness * length * 0.25f);
-
-			pieces++;
-
-			if ( depth < MaximumBranchDepth && pieces + 1 <= MaximumBoltSegments && rng.Next( 512 ) < 9 )
-			{
-				pieces++;
-				var branchDepth = depth + 1;
-				var branchLength = 2.5f * (512 + rng.Next( 1024 )) / (96f * branchDepth);
-				var heading = NVector3.Normalize( direction * 0.5f + new NVector3( U(), 0, U() ) * 0.5f + new NVector3( 0, -0.6f, 0 ) );
-				Split( middle, middle + heading * branchLength, branchDepth );
-			}
-			Split( a, middle, depth );
-			Split( middle, b, depth );
 		}
 
-		Split( top, bottom, 0 );
+		void Walk( NVector3 near, NVector3 far )
+		{
+			if ( ++calls > 4 * MaximumBoltSegments )
+				return;
+			var middle = Midpoint( ref rng, far, near );
+
+			if ( (rng.Next() & 0x1FF) < 9 && depth < MaximumBranchDepth )
+			{
+				depth++;
+				var scale = 1f / (depth * 96);
+				var along = far - near;
+				var alongLength = along.Length();
+				if ( alongLength != 0 )
+					along /= alongLength;
+				var alongSegment = ((rng.Next() & 0x3FF) + 0x200) * scale * 2.5f;
+				var alongBolt = ((rng.Next() & 0x3FF) + 0x200) * scale;
+				var heading = boltDirection * alongBolt + along * alongSegment;
+				if ( NVector3.Dot( boltDirection, heading ) < 0 )
+				{
+					alongBolt *= 0.5f;
+					heading = boltDirection * alongBolt + heading * 0.5f;
+				}
+				Walk( near + heading, near );
+				depth--;
+			}
+
+			var threshold = BoltStopBase + (int)((rng.Next() & 0xFFF) - 0x800) * BoltStopSpread * (1f / 2048f);
+			if ( threshold <= (middle - far).LengthSquared() )
+				Walk( middle, far );
+			else
+				Leaf( middle, far );
+			if ( threshold <= (middle - near).LengthSquared() )
+				Walk( near, middle );
+			else
+				Leaf( near, middle );
+		}
+
+		Walk( top, bottom );
 		return segments;
 	}
 
-	/// <summary>The bolt's colour grey 0..1: opaque, pulsing in 500 ms cycles from 192 up to 255, plus its 0..63 flicker, capped at 255.</summary>
-	// [APPROX:AUDIO-902] the 500 ms pulse is drawn as a sine between 192 and 255 plus rand(0..63); the original's exact curve (the segment emitter 0x57dd10) is not read
+	/// <summary>Squared length below which a half of a bolt stops splitting, before its draw (+0xA180).</summary>
+	public const float BoltStopBase = 6f;
+	/// <summary>Spread of that threshold's draw (+0xA184): the threshold is 6 + (-1..1) x 2.</summary>
+	public const float BoltStopSpread = 2f;
+
+	/// <summary>
+	/// A split's new midpoint, tp.exe's <c>0x57E4B0</c>: five draws, the displacement amplitude |segment| x roughness x r2 x r1^2
+	/// (r the signed remainder of a draw over 0x1FFF divided by 8192, a draw's bit 0 flipping the sign) along the vector P, which is the
+	/// segment's midpoint M with the component of the axis the third pick selects replaced by M.x - |M|^2 / segment.axis (the
+	/// original's axis scan order 0x57E6xx), normalised.
+	/// </summary>
+	// [BIN:TPW-EXE:0x57E4B0 midpoint] draws: r1 = (s % 0x1FFF) / 8192, r2 = (s % 0x1FFF) / 8192 x r1 x r1, a sign draw (state bit 0 flips r2), a draw that is discarded, and the axis pick (s % 3, a signed remainder, so a negative state lands in the z-first case with 2); M = (a + b) / 2, d = b - a; the displaced point is M + P x (|d| x 0.6 x r) / |P|, the cross product d x P being scaled by 0 / |d x P| in the original (0x701CA0 is 0.0), so it adds nothing
+	internal static NVector3 Midpoint( ref CRainRandom rng, NVector3 a, NVector3 b )
+	{
+		var middle = (a + b) * 0.5f;
+		var d = b - a;
+		var middleSquared = middle.LengthSquared();
+		var r1 = (int)rng.Next() % 0x1FFF * (1f / 8192f);
+		var amplitude = (int)rng.Next() % 0x1FFF * (1f / 8192f) * r1 * r1;
+		if ( (rng.Next() & 1) != 0 )
+			amplitude = -amplitude;
+		rng.Next();
+		var pick = (int)rng.Next() % 3;
+
+		var p = middle;
+		// The scan order of the axis cases: x first for pick 0, y first for pick 1 (falling to z then x), z first otherwise (then x, then y).
+		bool UseX() { p.X = middle.X - middleSquared / d.X; return true; }
+		bool UseZ() { p.Z = middle.Z - middleSquared / d.Z; return true; }
+		bool UseY() { p.Y = middle.Y - middleSquared / d.Y; return true; }
+		if ( pick == 0 )
+		{
+			if ( d.X != 0 ) UseX();
+			else if ( d.Y == 0 ) UseZ();
+			else UseY();
+		}
+		else if ( pick == 1 )
+		{
+			if ( d.Y == 0 )
+			{
+				if ( d.Z != 0 ) UseZ();
+				else UseX();
+			}
+			else UseY();
+		}
+		else
+		{
+			if ( d.Z != 0 ) UseZ();
+			else if ( d.X != 0 ) UseX();
+			else UseY();
+		}
+
+		var scale = d.Length() * BoltRoughness * amplitude / p.Length();
+		var result = middle + p * scale;
+		// A degenerate piece (a zero P or a zero axis divisor) gives the original NaN; OpenTPW keeps the midpoint.
+		return float.IsFinite( result.X ) && float.IsFinite( result.Y ) && float.IsFinite( result.Z ) ? result : middle;
+	}
+
+	/// <summary>
+	/// The bolt's colour grey 0..1, tp.exe's <c>0x57EE30</c>: with x = (remaining ms mod 500) / 500 the base is 255 - trunc((0.9 - x) x 71.04)
+	/// below 0.9 and 192 + trunc((1 - x) x 640) from 0.9 up, plus the frame's rand &amp; 63; the sum is written into the colour's three
+	/// channels through an OR with 0xFFFFFF00, so a sum of 256 or more wraps to its low byte (the bolt flickers dark).
+	/// </summary>
+	// [BIN:TPW-EXE:0x57EEBA-0x57EF61 bolt colour] x = (remaining % 500) x 0.002; x < 0.9: 255 - ftol((0.9 - x) x 1.11 x 64); else 192 - ftol((1 - x) x 10 x -64); the sum with (rand & 0x3F) is ORed into 0xFF000000 | v << 16 | v << 8 | v as ((v | 0xFFFFFF00) << 8 | v) << 8 | v, so bit 8 of v is lost
 	public static float BoltGrey( WeatherBolt bolt )
 	{
-		var phase = bolt.Age / BoltPulseSeconds;
-		var pulse = 192f + 63f * (0.5f + 0.5f * MathF.Sin( 2 * MathF.PI * phase ));
-		return MathF.Min( 255f, pulse + bolt.Flicker ) / 255f;
+		var remaining = Math.Max( 0, (int)MathF.Round( bolt.Lifetime * 1000f ) - (int)(bolt.Age * 1000f) );
+		var x = remaining % 500 * 0.002f;
+		var baseGrey = x < 0.9f
+			? 255 - (int)((0.9f - x) * 1.11f * 64f)
+			: 192 - (int)((1f - x) * 10f * -64f);
+		var value = (uint)(baseGrey + bolt.Flicker);
+		var word = (((value | 0xFFFFFF00u) << 8 | value) << 8) | value;
+		return (word & 0xFFu) / 255f;
 	}
 
 	/// <summary>A bolt branch's ribbon half-width in original units: 1.3 / (depth + 1).</summary>
@@ -338,7 +445,8 @@ public sealed class WeatherVisualState
 			if ( position.Z <= 0 )
 				continue;
 			var spread = 1f + position.Z / SnowSpreadDepth;
-			var centre = new NVector3( position.X * spread, position.Y * spread, position.Z );
+			// the original's homogeneous w is the depth + 0.1501 (0x57F490 submit loop), so a flake projects as x / (depth + 0.1501)
+			var centre = new NVector3( position.X * spread, position.Y * spread, position.Z + SnowProjectionBias );
 			var quadrant = index & 3;
 			var u0 = (quadrant & 1) * 0.5f;
 			var v0 = (quadrant >> 1) * 0.5f;

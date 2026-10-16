@@ -465,7 +465,7 @@ handler attributes diverge.
 | 21 | `TRIGANIMSPEED` | 4 | hooked | STP-PPC 0xaffc4: trigger channel 0 at script speed × operand / 1000; out = max(ret − 300, 300); deadline = now + out × 1000 / operand (signed divw); LOOPANIM token reset |
 | 22 | `FLUSHANIM_CH` | 0 | hooked | STP-PPC 0xb00f4 → 0xa6c90: clears only the operand channel's deferred clip |
 | 23 | `TRIGANIM_CH` | 63 | hooked | STP-PPC 0xb013c: as TRIGANIM on channel operand 4 (Totem `TRIGANIM_CH 5 1 0 1`); leaves the LOOPANIM token |
-| 24 | `WAITANIM_CH` | 0 | hooked | STP-PPC 0xb0268: as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline |
+| 24 | `WAITANIM_CH` | 0 | hooked | STP-PPC 0xb0268, PC 0x55320A (same arithmetic): as WAITANIM on channel operand 3 without the speed division or fctiwz: unsigned max(ret − 300, 300) added to the clock as a wrapping u32 (0xb035c), so a clip under 300 ms gives a deadline in the past and the script continues next slice; zeroes the deadline |
 | 25 | `LOOPANIM_CH` | 1 | hooked | STP-PPC 0xb037c: loops on channel operand 3 (flags 1) on every call, no token check; zeroes the deadline |
 | 26 | `TRIGWAITANIM_CH` | 0 | hooked | STP-PPC 0xb0404: as TRIGWAITANIM on channel operand 4; leaves the LOOPANIM token |
 | 27 | `GETANIM_CH` | 15 | hooked | STP-PPC 0xb05b8: `GETANIM_CH dest channel`: the channel's AnimID, −1 once ended; result sets flags (corpus `GETANIM_CH 0 n; BRANCH_PV x; BRANCH_Z x`) |

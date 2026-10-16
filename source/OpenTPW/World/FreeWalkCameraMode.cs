@@ -38,7 +38,7 @@ public sealed class FreeWalkCameraMode : CameraMode
 		var io = ImGuiNET.ImGui.GetIO();
 		Update( new CameraControlInput
 		{
-			HasFocus = Window.Current?.SdlWindow.Focused == true, LogicalSize = Screen.Size,
+			HasFocus = Window.Current?.Focused == true, LogicalSize = Screen.Size,
 			MousePosition = Input.Mouse.Position, MouseDelta = Input.Mouse.Delta, RightButton = Input.Mouse.Right,
 			CaptureMouse = io.WantCaptureMouse || UiCapturesMouse, CaptureKeyboard = io.WantCaptureKeyboard || UiCapturesKeyboard,
 			TextEntry = io.WantTextInput || Input.TextEntryActive, Modal = ModalOpen,

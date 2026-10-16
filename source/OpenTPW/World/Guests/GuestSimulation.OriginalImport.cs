@@ -194,7 +194,7 @@ public sealed partial class GuestSimulation
 				WalkOn();
 				break;
 			case 10 when attraction( save.MajorDest ) is var ride and not 0:
-				// state 10 sets its walk one path cell at a time from its next update (WALK-004)
+				// state 10 asks for its route to the ride's back cell on its next update (the original's saved destination is not decoded)
 				guest.State = GuestState.GoingToRide;
 				guest.AttractionId = ride;
 				break;

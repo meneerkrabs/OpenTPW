@@ -89,7 +89,26 @@ internal static class TourPose
 		var roll = 3.1415927f * pose.Roll * -0.00048828125f;
 		var pitch = 3.1415927f * pose.Pitch * -0.001953125f;
 		var yaw = (1f - (3072f - pose.Heading) * -0.00048828125f) * 3.1415927f;
-		return Matrix4x4.CreateRotationZ( roll ) * Matrix4x4.CreateRotationX( pitch ) * Matrix4x4.CreateRotationY( yaw );
+		return AboutZ( roll ) * AboutX( pitch ) * AboutY( yaw );
+	}
+
+	// [BIN:TPW-EXE:0x0046F6F0 rotation builder] each axis step takes its cosine and sine from the engine's sine table (OriginalSineTable) and turns the matrix rows by it (0x0046F5C0 about Z, 0x0046F350 about X, 0x0046F650 about Y): the same rotation as the System.Numerics one with the table's sine and cosine
+	private static Matrix4x4 AboutZ( float angle )
+	{
+		float cos = OriginalSineTable.Cos( angle ), sin = OriginalSineTable.Sin( angle );
+		return new Matrix4x4( cos, sin, 0, 0, -sin, cos, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 );
+	}
+
+	private static Matrix4x4 AboutX( float angle )
+	{
+		float cos = OriginalSineTable.Cos( angle ), sin = OriginalSineTable.Sin( angle );
+		return new Matrix4x4( 1, 0, 0, 0, 0, cos, sin, 0, 0, -sin, cos, 0, 0, 0, 0, 1 );
+	}
+
+	private static Matrix4x4 AboutY( float angle )
+	{
+		float cos = OriginalSineTable.Cos( angle ), sin = OriginalSineTable.Sin( angle );
+		return new Matrix4x4( cos, 0, -sin, 0, 0, 1, 0, 0, sin, 0, cos, 0, 0, 0, 0, 1 );
 	}
 
 	/// <summary>

@@ -111,6 +111,8 @@ public sealed class CoasterRide
 	private CoasterSample[] samples = Array.Empty<CoasterSample>();
 	private IReadOnlyList<CoasterKnot> curveKnots = Array.Empty<CoasterKnot>();
 	private (System.Numerics.Vector3 Back, System.Numerics.Vector3 Forward)[] curveControls = Array.Empty<(System.Numerics.Vector3, System.Numerics.Vector3)>();
+	private CoasterKnot[] curveSecondRail = Array.Empty<CoasterKnot>();
+	private (System.Numerics.Vector3 Back, System.Numerics.Vector3 Forward)[] curveSecondControls = Array.Empty<(System.Numerics.Vector3, System.Numerics.Vector3)>();
 	private HashSet<int> winchSections = new();
 	// The hop queue of MoveTrains, kept between ticks so a tick allocates nothing.
 	private float[] hopBudgets = Array.Empty<float>();
@@ -181,7 +183,7 @@ public sealed class CoasterRide
 	/// <summary>Seconds of fixed simulation steps this controller has run.</summary>
 	public double TimeSeconds { get; private set; }
 	/// <summary>The guests seated in the cars of the trains (riders on the lap and guests seated at the station).</summary>
-	// [APPROX:COAST-030] the original's controller +0x140 is the self-intersection count, not a rider count (0x439c40, 0x441970), and its pick-up (0x446300) has no rider test; OpenTPW refuses edits while a train carries guests, the Mac reading of the guest predicate
+	// [BIN:TPW-EXE:0x441970 controller +0x140] the original's controller +0x140 is the self-intersection count, not a rider count (0x439c40, 0x441970), and its pick-up (0x446300) has no rider test: no edit is refused for riders any more
 	public int RidersOnBoard => trains.Sum( train => train.Riders );
 	/// <summary>Guests handed over by <c>COAST 1</c> and waiting for a train in the station to seat them (the admission ring).</summary>
 	public int AdmissionCount => admission.Count;
@@ -239,8 +241,8 @@ public sealed class CoasterRide
 
 	/// <summary>
 	/// A car's pose at a coordinate on the sample list (<c>0x43c0a0</c>): the knot pair whose knot coordinates enclose it, starting from the pair of the
-	/// sample below it, and the curve itself at t = (c − c₀)/(c₁ − c₀) on that pair, with the yaw and pitch of the curve's derivative and the knot roll
-	/// interpolated by t (the sample pose when the curve has not been fitted).
+	/// sample below it, and the curve itself at t = (c − c₀)/(c₁ − c₀) on that pair, with the yaw and pitch of the curve's derivative and the slice roll
+	/// (the second rail's roll about the tangent plus the tag roll lerp; the sample pose when the curve has not been fitted).
 	/// </summary>
 	// [BIN:TPW-EXE:0x43c121 car curve point] the car stands on the slice frame 0x43e6b0 of the pair (A, B) with A the knot of sample[ftol(c)] (sample +0x2c) and B its next knot (+0x18), advanced while B's coordinate (+8) is below c, at t = (c − A +8)/(B +8 − A +8): the cubic Bézier point and its tangent's yaw and pitch, not the lerp of two samples
 	// [EXT:coaster-closing-pair-car] the closing pair's next knot is the second knot, whose coordinate is taken as one lap on (its own plus the sample count) so the car's parameter runs on; the original's walk compares the second knot's own coordinate
@@ -263,25 +265,48 @@ public sealed class CoasterRide
 		var t = span > 0 ? Math.Clamp( (c - coordinates[a]) / span, 0f, 1f ) : 0f;
 		var position = HermiteCoasterCurve.Bezier( curveKnots[a].Position, curveControls[a].Forward, curveControls[b].Back, curveKnots[b].Position, t );
 		var tangent = HermiteCoasterCurve.Derivative( curveKnots[a].Position, curveControls[a].Forward, curveControls[b].Back, curveKnots[b].Position, t );
-		var (yaw, pitch) = tangent.LengthSquared() > 0 ? HermiteCoasterCurve.Orientation( tangent ) : (0f, 0f);
-		// [APPROX:COAST-017] the car's roll is the knots' rolls interpolated by t, as the samples', where the original takes the slice roll of 0x43e6b0
-		var roll = curveKnots[a].Roll + (curveKnots[b].Roll - curveKnots[a].Roll) * t;
+		// [BIN:TPW-EXE:0x43e6b0 car frame] the frame's yaw and pitch are 0x43e590's of the derivative (the PC table, nearest index) and its roll the slice roll: the second rail's roll plus the tag roll lerp, or the swing's sample rolls on a suspended coaster
+		var (yaw, pitch) = tangent.LengthSquared() > 0 ? CoasterTrack.PcOrientation( tangent ) : (0f, 0f);
+		var second = HermiteCoasterCurve.Bezier( curveSecondRail[a].Position, curveSecondControls[a].Forward, curveSecondControls[b].Back, curveSecondRail[b].Position, t );
+		var roll = Definition.IsSuspended
+			? HermiteCoasterCurve.FrameRoll( position, second, yaw, pitch, curveKnots[a], curveKnots[b], t, samples, coordinates[a], coordinates[b] )
+			: HermiteCoasterCurve.FrameRoll( position, second, yaw, pitch, curveKnots[a], curveKnots[b], t );
 		return new CoasterCarPose( position, yaw, pitch, roll );
 	}
 
 	/// <summary>
-	/// The ride view of a train's front car (COAST-plan §7, §18): position from the interpolated sample, forward from the
-	/// sample direction, roll from the sample roll. False without that train.
+	/// The train the ride view rides: the one with the smallest reference position (controller <c>+0x124</c>), the earliest of equal ones; train 0 without trains.
 	/// </summary>
-	// [APPROX:COAST-011] the ride view is the front car's sample pose; no camera mode uses it yet and Info.FirstPersonSprites, FIRSTPERSONVIEWDISTANCE and COASTERSMOOTHNESS are not read; no camera code calls the coaster module — evidence needed: the camera methods 0x10093D08/0x10094474 for a follow mode fed by car +72..+80, or a capture of the original ride view
+	// [BIN:TPW-EXE:0x43d7dd ride view train] the hop loop (0x43d7dd..0x43d7f3) compares each train's position (+0x74) with the one controller +0x124 names (reset to train 0 at the start of every tick, 0x43ce50) and takes the train when its position is smaller (fcomp, C0 set); 0x436880 returns the camera object of that train's camera car, which the ride camera 0x42a560 takes once, when the ride view opens
+	public int RideViewTrain
+	{
+		get
+		{
+			var best = 0;
+			for ( var index = 1; index < trains.Count; index++ )
+			{
+				if ( trains[index].Position < trains[best].Position )
+					best = index;
+			}
+			return best;
+		}
+	}
+
+	/// <summary>
+	/// The ride view of a train's camera car (<see cref="CoasterDefinition.RideCameraCar"/>): position from the interpolated sample, forward from the sample direction, roll from the car's frame (<see cref="CarPose"/>).
+	/// False without that train.
+	/// </summary>
+	// [APPROX:COAST-011] the settings FIRSTPERSONVIEWDISTANCE, COASTERSMOOTHNESS and Info.FirstPersonSprites are not read by the ride view: tp.exe's option table (0x7442c0, entries 17 and 22) has no reader that was found (the accessor 0x402bf0 has no direct caller, no code addresses the entries) — evidence needed: a runtime read of the option entries, or a capture of the original ride view at other distances
 	public bool TryGetRideView( int train, out System.Numerics.Vector3 position, out System.Numerics.Vector3 forward, out float roll )
 	{
 		position = forward = default;
 		roll = 0;
 		if ( !IsOperational || train < 0 || train >= trains.Count )
 			return false;
-		var sample = SampleAt( CarCoordinate( trains[train], 0 ) );
-		(position, forward, roll) = (sample.Position, sample.Direction, sample.Bank);
+		var coordinate = CarCoordinate( trains[train], Definition.RideCameraCar );
+		var sample = SampleAt( coordinate );
+		// the roll is the car's frame roll (0x43e6b0), the one the car's matrix turns by: the sample roll is the second rail's alone and carries no node bank
+		(position, forward, roll) = (sample.Position, sample.Direction, CarPose( coordinate ).Roll);
 		return true;
 	}
 
@@ -308,6 +333,8 @@ public sealed class CoasterRide
 		var knots = pass.Knots;
 		curveKnots = knots;
 		curveControls = HermiteCoasterCurve.Controls( knots, Definition.Curviness, closed: true );
+		curveSecondRail = HermiteCoasterCurve.SecondRail( knots );
+		curveSecondControls = HermiteCoasterCurve.Controls( curveSecondRail, Definition.Curviness, closed: true );
 		var sampling = Curve.Sample( knots, Definition.Curviness );
 		samples = sampling.Samples;
 		Spacing = sampling.Spacing;
@@ -424,8 +451,8 @@ public sealed class CoasterRide
 	{
 		for ( var index = count; index < trains.Count; index++ )
 		{
-			// The original unloads them in the open and closed states only; in state 2 the trains are empty (4 → 2 and 8 → 2 unload them), and OpenTPW's
-			// headless edits never leave a rider on a train that goes, whatever the state.
+			// The original unloads them in the open and closed states only; in state 2 the trains are empty (4 → 2 and 8 → 2 unload them, the tool's entry), and a
+			// caller that edits outside the tool never leaves a rider on a train that goes, whatever the state.
 			Unload( trains[index], boardingList: true );
 			Unload( trains[index], boardingList: false );
 		}

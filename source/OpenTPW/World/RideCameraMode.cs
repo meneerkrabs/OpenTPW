@@ -10,7 +10,7 @@ namespace OpenTPW;
 /// (the player rides with <see cref="Level.EnterRideView"/>) and by read-only visits of a shared park. A coaster takes the seat of its first train's front car model.
 /// </summary>
 // [BIN:TPW-EXE:0x42b1c0 camera update] the per-frame camera update: with the ride flag set, the camera matrix is the seat node's world matrix (0x790a30) with the three rotation rows blended with the node's matrix of the previous frame (0x790948) and the translation copied exactly (0x42ca04-0x42cb96), then the free-look rotation is multiplied in (0x42cba0-0x42cbdf)
-// [APPROX:UI-094] the field of view (55) is OpenTPW's: the projection setup of the ride view is not traced; which car of the first train 0x436880 selects (record +0x49 -> +0x34 -> +0xc) is not decoded, so the front car stands in; the signs of the look rotations are read from the video (the view turns right and down with the pointer, 77:20-77:21), not from the matrix code; which of the seat's axes is the view direction (the model's Z) is taken from the car models
+// [APPROX:UI-094] the field of view (55) is OpenTPW's: the projection setup of the ride view is not traced; the car 0x436880 selects is decoded (the train with the smallest position, its car 0 or the second car behind a front car of another type, COAST-011), the eye is its model's camera seat; the signs of the look rotations are read from the video (the view turns right and down with the pointer, 77:20-77:21), not from the matrix code; which of the seat's axes is the view direction (the model's Z) is taken from the car models
 public sealed class RideCameraMode : CameraMode
 {
 	/// <summary>Engine units above the front car's sample the eye sits at when a coaster's car model has no seat (half of the drawn car height, CoasterRenderer).</summary>
@@ -23,6 +23,7 @@ public sealed class RideCameraMode : CameraMode
 	public const float LookDeadZoneX = 0.2f;
 
 	private readonly OriginalObject ride;
+	private readonly int train;
 	private readonly Vector3 heading;
 	private readonly Func<Matrix4x4?>? seat;
 	private NVector3 up = NVector3.UnitZ;
@@ -31,9 +32,11 @@ public sealed class RideCameraMode : CameraMode
 	/// <param name="ride">The placed ride to ride: a ride whose model has a camera seat, a coaster station with a completed track, or the prototype ride.</param>
 	/// <param name="heading">Horizontal look direction until a seat gives one (the view the player had when boarding).</param>
 	/// <param name="seat">The seat's world matrix in engine axes (X/Y ground, Z up), null when it is not available; defaults to the ride model's seat node (a coaster has none by default).</param>
-	public RideCameraMode( OriginalObject ride, Vector3 heading, Func<Matrix4x4?>? seat = null )
+	/// <param name="train">The train of a coaster the view rides, taken once when the view opens (<see cref="CoasterRide.RideViewTrain"/>); the default is the one that is smallest in position now.</param>
+	public RideCameraMode( OriginalObject ride, Vector3 heading, Func<Matrix4x4?>? seat = null, int? train = null )
 	{
 		this.ride = ride;
+		this.train = train ?? ride?.Runtime?.Coaster?.RideViewTrain ?? 0;
 		this.heading = heading;
 		this.seat = seat ?? DefaultSeat( ride );
 		FieldOfView = ViewFieldOfView;
@@ -41,6 +44,9 @@ public sealed class RideCameraMode : CameraMode
 
 	/// <summary>The ride being ridden.</summary>
 	public OriginalObject Ride => ride;
+
+	/// <summary>The train of a coaster being ridden (the ride view keeps its car until it closes).</summary>
+	public int Train => train;
 
 	/// <summary>The camera's up vector: the seat's, so the horizon rolls with the car.</summary>
 	public override Vector3 Up => new( up.X, up.Y, up.Z );
@@ -78,7 +84,7 @@ public sealed class RideCameraMode : CameraMode
 	{
 		if ( seat?.Invoke() is not { } node )
 		{
-			var (eye, look) = Frame( ride, heading );
+			var (eye, look) = Frame( ride, heading, train );
 			Position = eye;
 			Rotation = FrameRotation( eye, look );
 			up = NVector3.UnitZ;
@@ -194,18 +200,18 @@ public sealed class RideCameraMode : CameraMode
 	public static bool CanRide( OriginalObjectRuntime runtime ) => runtime.Coaster is { IsOperational: true, Trains.Count: > 0 };
 
 	/// <summary>The camera frame without a seat: where the eye is and where it looks (a coaster's sampled track, the prototype's height).</summary>
-	public static (Vector3 Eye, Vector3 Look) Frame( OriginalObject ride, Vector3 heading )
+	public static (Vector3 Eye, Vector3 Look) Frame( OriginalObject ride, Vector3 heading, int? train = null )
 	{
 		if ( CanRide( ride.Runtime ) )
-			return CoasterFrame( ride.Runtime.Coaster!, ride.Placement.GridOrigin );
+			return CoasterFrame( ride.Runtime.Coaster!, ride.Placement.GridOrigin, train );
 		return PrototypeFrame( ride.Position, ride is PrototypeRide prototype ? prototype.MotionHeight : 0, heading );
 	}
 
-	/// <summary>The front car of the coaster's first train: the eye on its sample, the view along the track's direction.</summary>
-	public static (Vector3 Eye, Vector3 Look) CoasterFrame( CoasterRide coaster, System.Numerics.Vector2 gridOrigin )
+	/// <summary>The camera car of the ride view's train (the smallest in position unless <paramref name="train"/> names one): the eye on its sample, the view along the track's direction.</summary>
+	public static (Vector3 Eye, Vector3 Look) CoasterFrame( CoasterRide coaster, System.Numerics.Vector2 gridOrigin, int? train = null )
 	{
-		// The train's position is its middle car's; the front car stands its offset ahead.
-		var sample = coaster.SampleAt( coaster.CarCoordinate( coaster.Trains[0], 0 ) );
+		// The train's position is its middle car's; the camera car stands its offset ahead (the first car, or the second behind a front car of another type than the seats').
+		var sample = coaster.SampleAt( coaster.CarCoordinate( coaster.Trains[Math.Clamp( train ?? coaster.RideViewTrain, 0, coaster.Trains.Count - 1 )], coaster.Definition.RideCameraCar ) );
 		var eye = ToEngine( gridOrigin, sample.Position ) + new Vector3( 0, 0, CoasterSeatHeight );
 		var direction = ToEngineDirection( sample.Direction );
 		return (eye, eye + direction);

@@ -158,7 +158,12 @@ internal sealed class CoasterAssets : IDisposable
 			try
 			{
 				if ( !string.IsNullOrEmpty( name ) && FindModel( name ) is { Kind: ModelFileKind.Geometry } geometry )
-					rig = new CoasterCarRig( geometry );
+				{
+					rig = new CoasterCarRig( geometry ) { Bend = CarTypes.Types[typeIndex].Bend };
+					// [BIN:TPW-EXE:0x43be10 wheel clip] a car of a type without the bend flag starts the model's animation id 5 (the letter m of the animation table: <model>m1, else <model>m), sub 0, looping on channel 0 (0x4732a0)
+					if ( !CarTypes.Types[typeIndex].Bend )
+						rig.SetWheelClip( FindWheelClip( name ) );
+				}
 			}
 			catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )
 			{
@@ -168,6 +173,23 @@ internal sealed class CoasterAssets : IDisposable
 		return cars[typeIndex] = rig;
 	}
 
+	/// <summary>The animation id 5 member of a car model (<c>ObjectAnimations</c>: id 5 is the letter m, sub 0 the first of them), or null.</summary>
+	private ModelAnimation? FindWheelClip( string stem )
+	{
+		string[] files;
+		try
+		{
+			files = Entry.FileSystem.GetFiles( Entry.ArchivePath ).ToArray();
+		}
+		catch ( Exception exception ) when ( exception is DirectoryNotFoundException or FileNotFoundException )
+		{
+			return null;
+		}
+		var members = files.Where( file => file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) );
+		var clip = ObjectAnimations.Resolve( ObjectAnimations.Find( stem, members ), ObjectAnimations.GetAnimation( 'm' ) ?? 5, 0 );
+		return clip == null ? null : ObjectAssets.LoadModel( Entry.FileSystem, clip.Path ).Clip;
+	}
+
 	/// <summary>The drawable models of a car rig's parts, shared by every car of the type.</summary>
 	public Model[] GetCarModels( CoasterCarRig rig )
 	{
@@ -175,12 +197,18 @@ internal sealed class CoasterAssets : IDisposable
 			return cached;
 		var list = new Model[rig.Parts.Count];
 		for ( var index = 0; index < list.Length; index++ )
-		{
-			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
-			material.Set( "Color", SlotsFor( rig.Parts[index].Textures ) );
-			list[index] = new Model( rig.Parts[index].Vertices, rig.Parts[index].Indices, material, false );
-		}
+			list[index] = CreatePartModel( rig, index, dynamicVertices: false );
 		return carModels[rig] = list;
+	}
+
+	/// <summary>A model of one part of a car rig that the caller owns (a car whose part's texture coordinates move with its wheel clip), with vertices that can be replaced.</summary>
+	public Model CreateOwnPartModel( CoasterCarRig rig, int part ) => CreatePartModel( rig, part, dynamicVertices: true );
+
+	private Model CreatePartModel( CoasterCarRig rig, int part, bool dynamicVertices )
+	{
+		var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+		material.Set( "Color", SlotsFor( rig.Parts[part].Textures ) );
+		return new Model( rig.Parts[part].Vertices, rig.Parts[part].Indices, material, dynamicVertices );
 	}
 
 	/// <summary>

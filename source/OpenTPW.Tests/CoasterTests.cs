@@ -710,12 +710,13 @@ public class CoasterTests
 		ride.Command( 4, 0 );
 		Assert.AreEqual( 16, ride.ControllerStateFlag );
 
-		// Reopening is refused with riders on board; deleting lets them off through COAST 3.
+		// Reopening is not refused for riders (the PC has no rider test on this path): the trains go with them; deleting lets the rest off through COAST 3.
 		ride.Board( 104 );
 		for ( var tick = 0; tick < 120 * 60 && ride.RidersOnBoard == 0; tick++ )
 			ride.Advance( Tick );
 		Assert.AreEqual( 1, ride.RidersOnBoard, "the next train that passes the station seats the guest" );
-		Assert.IsFalse( builder.Reopen() );
+		Assert.IsTrue( builder.Reopen(), "no rider test: the trains are taken off (state 1)" );
+		Assert.AreEqual( 0, ride.RidersOnBoard );
 		builder.Delete();
 		Assert.IsFalse( ride.IsOperational );
 		Assert.AreEqual( CoasterTrack.StationNodeCount, ride.Track.Nodes.Count, "only the station's three nodes are left" );

@@ -261,6 +261,12 @@ public sealed class CoasterDefinition
 		}
 	}
 
+	/// <summary>
+	/// The car the ride view rides: the first car of the train when its type is the centre type, else the second one (train <c>+0x34</c> points at car 0, or at car 1 when the front type differs from the centre type).
+	/// </summary>
+	// [BIN:TPW-EXE:0x436f15 ride view car] the train builder 0x436d10 points train +0x34 at the car array's first record when the train definition's front and centre type records are the same (+0x2fc == +0x300, 0x436f21), else at the second record (0x436f2d..0x436f33); the ride camera takes that car's object (0x436880: controller +0x124 → +0x34 → +0xc)
+	public int RideCameraCar => Math.Min( CarTypes.FrontIndex != CarTypes.CentreIndex ? 1 : 0, Math.Max( 0, CarCount - 1 ) );
+
 	/// <summary>The reference car of a train (train <c>+0x2c</c> = (cars − 1) ≫ 1, the middle car): the train's position is this car's.</summary>
 	// [BIN:TPW-EXE:0x43baef reference car] train +0x2c = (train +0xc − 1) >> 1 whenever the car count is set (0x43ba90)
 	public int ReferenceCar => (CarCount - 1) >> 1;

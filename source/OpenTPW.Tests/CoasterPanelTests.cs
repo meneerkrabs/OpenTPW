@@ -625,7 +625,7 @@ public class CoasterPanelTests
 	}
 
 	[TestMethod]
-	public void ACutOfAFinishedCircuitRefusesWhileGuestsAreOnBoard()
+	public void ACutOfAFinishedCircuitIsNotRefusedForRidersAndTheyLeaveWithTheTrains()
 	{
 		var (builder, ride) = Finished();
 		ride.Command( 8, 0 );
@@ -635,7 +635,72 @@ public class CoasterPanelTests
 		for ( var tick = 0; tick < 240 * 60 && ride.RidersOnBoard == 0; tick++ )
 			ride.Advance( Tick );
 		Assert.IsTrue( ride.RidersOnBoard > 0 );
-		Assert.AreEqual( CoasterTrack.CutResult.Refused, builder.Cut( First, 0 ), "OpenTPW's guard: nobody is cut off the track" );
+		// 0x446740 has no rider test (the tool's state 2 lets them off at its entry); the cut's own state 1 takes the trains away with whoever is still aboard
+		Assert.AreEqual( CoasterTrack.CutResult.Reopened, builder.Cut( First, 0 ), "the cut goes ahead" );
+		Assert.AreEqual( (CoasterControllerState.Incomplete, 0), (ride.State, ride.RidersOnBoard), "no train is left to carry them" );
+	}
+
+	/// <summary>The cells of the map (inside the placement radius of 12) where moving node <paramref name="index"/> gives each verdict.</summary>
+	private static Dictionary<(int X, int Y), CoasterPlaceResult> ScanMove( CoasterBuilder builder, CoasterRide ride, int index )
+	{
+		var verdicts = new Dictionary<(int X, int Y), CoasterPlaceResult>();
+		for ( var x = 8; x <= 40; x++ )
+		{
+			for ( var y = 8; y <= 40; y++ )
+				verdicts[(x, y)] = builder.Track.CheckPlacement( builder.Site, ride.World, ride, x, y, false, moving: index );
+		}
+		return verdicts;
+	}
+
+	/// <summary>
+	/// In move mode the validator skips the turn test of a node whose neighbours carry the cut ends 0x10000 and 0x20000 (<c>0x4348af..0x4348d8</c>): moving the first node after the
+	/// gap of a cut circuit is never refused for a turn at the last node before it, where the same move on an uncut chain is.
+	/// </summary>
+	[TestMethod]
+	public void MovingAcrossTheCutSkipsTheTurnTestAtTheCutEnd()
+	{
+		// the uncut chain: station, (24,20), (27,24): moving the second pylon is refused for its turn at the first for some cells
+		var (plain, plainRide) = NewCoaster();
+		plain.Height = 40;
+		Assert.AreEqual( CoasterPlaceResult.Ok, plain.Place( 24, 20 ) );
+		Assert.AreEqual( CoasterPlaceResult.Ok, plain.Place( 27, 24 ) );
+		var uncut = ScanMove( plain, plainRide, First + 1 );
+		var turned = uncut.Where( pair => pair.Value is CoasterPlaceResult.TurnTooSharp or CoasterPlaceResult.TurnTooWide ).Select( pair => pair.Key ).ToList();
+		Assert.IsTrue( turned.Count > 5, "an uncut chain refuses cells for the turn at its first pylon" );
+
+		// the cut chain: the same first pylon is the cut end, the pylon after the gap the moved node
+		var (builder, ride) = Finished();
+		Assert.AreEqual( CoasterTrack.CutResult.Cut, builder.Cut( First, First + 3 ) );
+		var track = builder.Track;
+		Assert.AreEqual( (24, 20), (track.Nodes[First].X, track.Nodes[First].Y) );
+		Assert.AreEqual( First, track.CutAfter );
+		Assert.IsTrue( (track.Nodes[First].Flags & CoasterNodeFlags.CutEnd) != 0 && (track.Nodes[First + 1].Flags & CoasterNodeFlags.CutStart) != 0 );
+		var cut = ScanMove( builder, ride, First + 1 );
+		foreach ( var cell in turned )
+			Assert.IsFalse( cut[cell] is CoasterPlaceResult.TurnTooSharp or CoasterPlaceResult.TurnTooWide, $"cell {cell}: no turn test across the cut, got {cut[cell]}" );
+		Assert.IsTrue( turned.Any( cell => cut[cell] == CoasterPlaceResult.Ok ), "some cell the turn test refused is now fine" );
+	}
+
+	/// <summary>
+	/// After a move the validator re-validates the next node unless the moved node carries the cut end (<c>0x434e06</c>): moving the last pylon before the gap never breaks a link across it.
+	/// </summary>
+	[TestMethod]
+	public void MovingTheCutEndDoesNotRevalidateTheLinkAcrossTheCut()
+	{
+		var (plain, plainRide) = NewCoaster();
+		plain.Height = 40;
+		foreach ( var (x, y) in new[] { (24, 20), (27, 24), (16, 28) } )
+			plain.Place( x, y );
+		var broken = ScanMove( plain, plainRide, First + 1 ).Where( pair => pair.Value == CoasterPlaceResult.BreaksNextLink ).Select( pair => pair.Key ).ToList();
+		Assert.IsTrue( broken.Count > 5, "on an uncut chain a move can break the link to the next pylon" );
+
+		var (builder, ride) = Finished();
+		// the cut leaves (24,20), (27,24) | (16,28): the second pylon is the cut end and the third the cut start
+		Assert.AreEqual( CoasterTrack.CutResult.Cut, builder.Cut( First + 1, First + 3 ) );
+		Assert.AreEqual( First + 1, builder.Track.CutAfter );
+		var cut = ScanMove( builder, ride, First + 1 );
+		foreach ( var cell in broken )
+			Assert.AreNotEqual( CoasterPlaceResult.BreaksNextLink, cut[cell], $"cell {cell}: the node after the gap is not re-validated" );
 	}
 
 	[TestMethod]

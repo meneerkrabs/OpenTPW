@@ -97,6 +97,43 @@ public class CoasterTrainLayoutTests
 		Assert.AreEqual( -two.CarPairDistances.Rear, two.CarOffsets[1], 1e-5f );
 	}
 
+	/// <summary>The ride view rides car 0 of a train whose front type is its centre type, car 1 behind a front car of another type (<c>0x436f15</c>: train +0x34).</summary>
+	[TestMethod]
+	public void TheRideViewRidesTheFirstSeatCar()
+	{
+		Assert.AreEqual( 1, Caterpillar().RideCameraCar, "a head car with no seats: the camera sits in the car behind it" );
+		var plain = CoasterDefinition.FromValues( CoasterTests.PcSettings() );
+		Assert.AreEqual( 0, plain.RideCameraCar, "the same front and centre type: the front car" );
+		var settings = CaterpillarSettings( 1 );
+		Assert.AreEqual( 0, CoasterDefinition.FromValues( settings ).RideCameraCar, "a one-car train has no second car" );
+	}
+
+	/// <summary>The ride view's train is the one with the smallest position, the earliest of equal ones (<c>0x43d7dd</c>: controller +0x124 takes a train whose +0x74 is smaller).</summary>
+	[TestMethod]
+	public void TheRideViewRidesTheTrainWithTheSmallestPosition()
+	{
+		var settings = CoasterTests.PcSettings();
+		settings["sCoasterType.uiTrainReleaseRate"] = "4000";
+		var ride = Built( CoasterDefinition.FromValues( settings ) );
+		Assert.IsTrue( ride.Trains.Count >= 2, "the placement gives several trains" );
+		var smallest = 0;
+		for ( var index = 1; index < ride.Trains.Count; index++ )
+		{
+			if ( ride.Trains[index].Position < ride.Trains[smallest].Position )
+				smallest = index;
+		}
+		Assert.AreEqual( smallest, ride.RideViewTrain );
+		for ( var index = 0; index < ride.Trains.Count; index++ )
+			ride.Trains[index].Position = 100f - index * 10f;
+		Assert.AreEqual( ride.Trains.Count - 1, ride.RideViewTrain, "the last train is the least advanced here" );
+		for ( var index = 0; index < ride.Trains.Count; index++ )
+			ride.Trains[index].Position = 42f;
+		Assert.AreEqual( 0, ride.RideViewTrain, "equal positions keep the first train" );
+		Assert.IsTrue( ride.TryGetRideView( ride.RideViewTrain, out _, out _, out var roll ) );
+		var cameraCoordinate = ride.CarCoordinate( ride.Trains[ride.RideViewTrain], ride.Definition.RideCameraCar );
+		Assert.AreEqual( ride.CarPose( cameraCoordinate ).Roll, roll, "the ride view rolls with the camera car's frame, not the sample's second-rail roll" );
+	}
+
 	[TestMethod]
 	public void OnlyTheCentreTypeCarsSeatAndCoastSixIsBoundedByTheHeadSockets()
 	{

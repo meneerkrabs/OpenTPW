@@ -92,7 +92,7 @@ public struct Vector2 : IEquatable<Vector2>
 		return false;
 	}
 
-	public bool Equals( Vector2 other ) => Equals( other );
+	public bool Equals( Vector2 other ) => other.X == X && other.Y == Y;
 
 	public static float Dot( Vector2 a, Vector2 b ) => System.Numerics.Vector2.Dot( a.internalVector, b.internalVector );
 

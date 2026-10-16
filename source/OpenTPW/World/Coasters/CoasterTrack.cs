@@ -308,8 +308,25 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>The point before node <paramref name="index"/> for its turn angle: the cell of the node before it (the first station node has none).</summary>
-	// [APPROX:COAST-030] the original skips the turn test when the nodes carry 0x10000 together with 0x20000 in move mode (0x4348af..0x4348d8, the cut ends of a reopened circuit, set by 0x434060 on a node added to an open circuit), flags OpenTPW never sets — evidence needed: a capture of a cut and reconnected circuit
 	private (int X, int Y)? Before( int index ) => index >= 1 ? (nodes[index - 1].X, nodes[index - 1].Y) : null;
+
+	/// <summary>
+	/// Whether the turn at node <paramref name="turnNode"/> is across the cut of a reopened circuit: one of the node before it, itself and the node after it carries the cut end (0x10000) and one the cut start (0x20000).
+	/// </summary>
+	// [BIN:TPW-EXE:0x4348af move mode cut test] in move mode (0x79c658 bit 0x100) the validator 0x434740 drops the node before the turn node (its turn test is skipped, the distance windows still apply) when the node, its previous node and its next node together carry 0x10000 and 0x20000 (0x4348af..0x4348d8, the next node of the last one being the head's next); the cut ends are marked by 0x446740 on the node before and after the cut, and 0x434060 moves the 0x50000 mark to every node built into the gap
+	private bool TurnCrossesTheCut( int turnNode )
+	{
+		var cutEnd = false;
+		var cutStart = false;
+		for ( var index = turnNode - 1; index <= turnNode + 1; index++ )
+		{
+			if ( index < 0 || index >= nodes.Count )
+				continue;
+			cutEnd |= (nodes[index].Flags & CoasterNodeFlags.CutEnd) != 0;
+			cutStart |= (nodes[index].Flags & CoasterNodeFlags.CutStart) != 0;
+		}
+		return cutEnd && cutStart;
+	}
 
 	/// <summary>
 	/// The validator <c>0x36ba4</c> for a new pylon after the last node (<paramref name="moving"/> null) or for node
@@ -334,7 +351,8 @@ public sealed class CoasterTrack
 		var position = moving ?? InsertIndex;
 		var previous = nodes[position - 1];
 		var pylon = ControlAfter( previous, loopMode );
-		var link = CheckLink( pylon, (x, y), (previous.X, previous.Y), Before( position - 1 ), entrance: previous.IsStation );
+		// in move mode a turn across the cut of a reopened circuit is not tested (0x4348af..0x4348d8)
+		var link = CheckLink( pylon, (x, y), (previous.X, previous.Y), moving != null && TurnCrossesTheCut( position - 1 ) ? null : Before( position - 1 ), entrance: previous.IsStation );
 		if ( link != CoasterPlaceResult.Ok )
 			return link;
 		// [BIN:TPW-EXE:0x439ab0 track collision] the original tests the track against itself only (CoasterCollision, run on every rebuild): no terrain or scenery query exists in 0x439ab0, 0x439c40 or 0x43a2b0, so a pylon placement is never refused for what stands under or beside the track
@@ -344,13 +362,18 @@ public sealed class CoasterTrack
 		if ( moving is int moved )
 		{
 			// [BIN:STP-PPC:0x10037318 move re-validation] moving a node re-validates the following node and the one after it with the moved position (0x10037318, 0x100373B4)
+			// [BIN:TPW-EXE:0x434e06 re-validation] after a move the PC validator calls itself for the node after the moved one (0x434e5a, with the moved cell as the next node's previous point) unless the moved node carries the cut end 0x10000 (0x434e06), then for the node after that (0x434ec9) unless the first re-validated node carries it (0x434ea1); the turn test of each is skipped across the cut (0x4348af..0x4348d8)
 			for ( var next = moved + 1; next <= moved + 2 && next < nodes.Count; next++ )
 			{
 				if ( !nodes[next].IsPlayerPylon )
 					break;
 				var after = nodes[next - 1];
+				if ( (after.Flags & CoasterNodeFlags.CutEnd) != 0 )
+					break;
 				var from = next - 1 == moved ? (x, y) : (after.X, after.Y);
 				var behind = next - 2 == moved ? (x, y) : next - 2 >= 0 ? (nodes[next - 2].X, nodes[next - 2].Y) : ((int X, int Y)?)null;
+				if ( TurnCrossesTheCut( next - 1 ) )
+					behind = null;
 				var control = Definition.Pylon( next - 1 == moved ? loopMode : (after.Flags & CoasterNodeFlags.Loop) != 0 );
 				if ( CheckLink( control, (nodes[next].X, nodes[next].Y), from, behind, entrance: after.IsStation ) != CoasterPlaceResult.Ok )
 					return CoasterPlaceResult.BreaksNextLink;
@@ -583,7 +606,7 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>Whether the last pylon joins the head of the chain, the cell of S0 (distance window, turn, and the arrival turn along the platform).</summary>
-	// [APPROX:COAST-030] OpenTPW's closure check: the closing link to the station's first node S0 and the arrival turn (entrance window at S0, toward S1) are validated and Revalidate marks the last pylon invalid when they fail; the original validates the open start of a reopened circuit through the validator's re-validation (0x434d6b, 0x434e5a) and a fresh circuit is closed by completion
+	// [EXT:coaster-closing-check] OpenTPW's closure check: the closing link to the station's first node S0 and the arrival turn (entrance window at S0, toward S1) are validated and Revalidate marks the last pylon invalid when they fail; the original closes a reopened circuit by a click on the chain start without a validator test (0x435020 → 0x442c70) and completes a fresh circuit by 0x435570 without one
 	public CoasterPlaceResult CheckClosure()
 	{
 		if ( nodes.Count < StationNodeCount )
@@ -614,7 +637,7 @@ public sealed class CoasterTrack
 		return angle < low ? CoasterPlaceResult.TurnTooSharp : angle > high ? CoasterPlaceResult.TurnTooWide : CoasterPlaceResult.Ok;
 	}
 
-	/// <summary>Whether a click on (x, y) is on the chain's open start: the cell of the head S0 (COAST-030), or a cell of the station itself where the track begins and ends.</summary>
+	/// <summary>Whether a click on (x, y) is on the chain's open start: the cell of the head S0, or a cell of the station itself where the track begins and ends.</summary>
 	// [BIN:TPW-EXE:0x435d50 closing target] the cell that holds the head node (S0) of a fresh track is the closing target (the closing flag, and the open-circuit close test of 0x435020)
 	// [EXT:coaster-station-end-click] a click on the station's '<' or '>' cell closes the circuit too, as it did when the station's ends were the track's ends; the original's own completion click takes any ride cell (types 4, 9, 10), see CoasterBuilder.Complete
 	public bool IsChainStart( int x, int y ) => CutAfter is int cut
@@ -1236,7 +1259,7 @@ public sealed class CoasterTrack
 				var table = stackTables[index] && rig.StackTable is { } stack ? stack : rig.SingleTable;
 				var matrices = rig.TagMatrices( pose, stackTables[index] );
 				var origin = NodeBase( site, node, positions[index] );
-				var roll = banks[index];
+				var roll = 0f;
 				var start = knots.Count;
 				for ( var k = 0; k < matrices.Length; k++ )
 				{
@@ -1247,12 +1270,13 @@ public sealed class CoasterTrack
 					var forwardRow = new SVector3( tag.M31, tag.M32, tag.M33 );
 					// [BIN:TPW-EXE:0x4321c0 knot direction] a knot of a posed pylon runs along its tag's forward row (+0x20..+0x28) normalised; a knot without a model along the node tangent (knot +0x28 = node +0x34) normalised, or (0, ∓1, 0) on a loop node
 					var direction = forwardRow.LengthSquared() > 0 ? SVector3.Normalize( forwardRow ) : SVector3.UnitZ;
+					// [BIN:TPW-EXE:0x430ed0 second rail] a posed knot's second rail point is its position + (0, 1, 0), or on a loop node (flag 0x40) + 2.0 × the tag's up row (+0x10..+0x18, the matrix after the half turn of a turned-back pylon)
+					var second = (node.Flags & CoasterNodeFlags.Loop) == 0 ? position + SVector3.UnitY : position + new SVector3( tag.M21, tag.M22, tag.M23 ) * 2f;
 					if ( (node.Flags & CoasterNodeFlags.Loop) == 0 )
 						roll = TagRoll( tag, yaw );
-					knots.Add( new CoasterKnot( position, direction, banks[index], index, node.LoopPylon, factor, nextIsLoop, reversed, previousIsLoop ) );
+					knots.Add( new CoasterKnot( position, direction, banks[index], index, node.LoopPylon, factor, nextIsLoop, reversed, previousIsLoop, SecondRail: second ) );
 				}
-				// [BIN:TPW-EXE:0x43106a tag roll] the node's roll (+0xe4), written by every knot of a node without flag 0x40 (the last tag's value stays): the tag's up row (+0x10) and forward row (+0x20) turned by −yaw (+0xe0, 0x431570), the pitch of the forward row (0x46f210), the up row turned by −pitch about X (0x4314f0) and its roll atan2(−x, y) (0x46f230)
-				// [APPROX:COAST-017] the knots keep the node's bank as their roll (the samples and slices interpolate it), where the original's sample roll is the second rail's and its slice roll adds the lerp of the tag rolls (0x440c10, 0x43e6b0)
+				// [BIN:TPW-EXE:0x43106a tag roll] the node's roll (+0xe4), written by every knot of a node without flag 0x40 (the last tag's value stays; a loop node's stays 0, as does a model-less node's: nothing else writes it and the node comes zeroed from 0x434060): the tag's up row (+0x10) and forward row (+0x20) turned by −yaw (+0xe0, 0x431570), the pitch of the forward row (0x46f210), the up row turned by −pitch about X (0x4314f0) and its roll atan2(−x, y) (0x46f230)
 				for ( var k = start; k < knots.Count; k++ )
 					knots[k] = knots[k] with { TagRoll = roll };
 				knotCount[index] = knots.Count - start;
@@ -1264,7 +1288,11 @@ public sealed class CoasterTrack
 				: tangent.LengthSquared() > 0 ? SVector3.Normalize( tangent ) : SVector3.UnitZ;
 			if ( applyManual && !node.IsPylonless && (node.Flags & CoasterNodeFlags.Cursor) == 0 )
 				plainDirection = ApplyManualPose( node, plainDirection );
-			knots.Add( new CoasterKnot( positions[index], plainDirection, banks[index], index, node.LoopPylon, factor, nextIsLoop, reversed, previousIsLoop, banks[index] ) );
+			// [BIN:TPW-EXE:0x430ed0 plain second rail] a knot without a posed model has its second rail point at its position + (0, 1, 0), or on a loop node (flag 0x40) at + (−sin a, 0, −cos a) with a the node's yaw (+0xe0, hand-set or automatic): the vector (0, 0, −1) turned about Y by 0x4314b0 with the PC table's cos and sin of a; its node roll (+0xe4) stays 0
+			var secondRail = positions[index] + SVector3.UnitY;
+			if ( (node.Flags & CoasterNodeFlags.Loop) != 0 )
+				secondRail = positions[index] + new SVector3( -CoasterTrig.PcSin( yaw ), 0, -CoasterTrig.PcCos( yaw ) );
+			knots.Add( new CoasterKnot( positions[index], plainDirection, banks[index], index, node.LoopPylon, factor, nextIsLoop, reversed, previousIsLoop, 0f, secondRail ) );
 			knotCount[index] = 1;
 			centre[index] = first[index];
 		}
@@ -1321,7 +1349,7 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>A vector turned about Y with the PC table (<c>0x431570</c>): x′ = x cos a + sin a·z, z′ = cos a·z − sin a·x.</summary>
-	private static SVector3 TurnY( SVector3 v, float angle )
+	internal static SVector3 TurnY( SVector3 v, float angle )
 	{
 		var s = CoasterTrig.PcSin( angle );
 		var c = CoasterTrig.PcCos( angle );
@@ -1329,7 +1357,7 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>A vector turned about X with the PC table (<c>0x4314f0</c>): y′ = y cos a − sin a·z, z′ = sin a·y + cos a·z.</summary>
-	private static SVector3 TurnX( SVector3 v, float angle )
+	internal static SVector3 TurnX( SVector3 v, float angle )
 	{
 		var s = CoasterTrig.PcSin( angle );
 		var c = CoasterTrig.PcCos( angle );

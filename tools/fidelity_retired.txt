@@ -47,6 +47,7 @@ COAST-010 docs/reverse/COAST-plan.md
 COAST-012 docs/reverse/COAST-plan.md
 COAST-013 docs/reverse/COAST-plan.md
 COAST-016 docs/COASTERS.md
+COAST-017 docs/reverse/COAST-plan.md
 COAST-018 docs/COASTERS.md
 COAST-019 docs/reverse/COAST-plan.md
 COAST-024 docs/COASTERS.md
@@ -56,6 +57,7 @@ COAST-022 docs/PROGRESS.md
 COAST-023 docs/PROGRESS.md
 COAST-025 docs/COASTERS.md
 COAST-027 docs/COASTERS.md
+COAST-030 docs/COASTERS.md
 COAST-031 docs/COASTERS.md
 COMPAT-005 docs/reverse/APPROX-TRACE.md
 COMPAT-008 docs/reverse/APPROX-TRACE.md

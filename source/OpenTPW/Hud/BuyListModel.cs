@@ -16,15 +16,18 @@ public sealed class BuyListModel
 	private readonly Func<BuildItem, string> name;
 	private readonly Func<BuildItem, long> price;
 	private readonly Func<BuildCategory, IEnumerable<BuildItem>>? extraRows;
+	private readonly Func<BuildItem, bool>? listed;
 	private IReadOnlyList<BuildItem>? items;
 
 	private readonly ListSortMemory memory;
 
 	/// <param name="memory">The session's remembered sort of this list (a fresh one starts by name ascending).</param>
 	/// <param name="extraRows">Rows a category lists besides its catalogue items (the Miscellaneous list's Buy Land and Clear Land).</param>
+	/// <param name="listed">Whether a catalogue item gets a row: the original lists only the types its control record marks available (null: all).</param>
 	public BuyListModel( IBuildCatalog catalog, Func<BuildItem, string> name, Func<BuildItem, long> price, ListSortMemory? memory = null,
-		Func<BuildCategory, IEnumerable<BuildItem>>? extraRows = null )
+		Func<BuildCategory, IEnumerable<BuildItem>>? extraRows = null, Func<BuildItem, bool>? listed = null )
 	{
+		this.listed = listed;
 		this.catalog = catalog;
 		this.name = name;
 		this.price = price;
@@ -50,7 +53,8 @@ public sealed class BuyListModel
 
 	private IReadOnlyList<BuildItem> Sorted()
 	{
-		var all = catalog.GetItems( Category ).Concat( extraRows?.Invoke( Category ) ?? Enumerable.Empty<BuildItem>() );
+		// [BIN:TPW-EXE:0x4aaff0 buy list filler] a type gets a row only when its model loaded, its UI type is the tab's, it is no add-on and its control record's byte +0x10 (0x4d3d10: set when the type is researched or available at the start) is nonzero (0x4ab023)
+		var all = catalog.GetItems( Category ).Where( item => listed?.Invoke( item ) != false ).Concat( extraRows?.Invoke( Category ) ?? Enumerable.Empty<BuildItem>() );
 		// [BIN:STP-PPC:0x10178768 list insert] the buy list (504, attribute 0x91 with the sorted-insert bit 0x10) inserts each row before the first row whose name is greater (wcscmp, 0x10178654); its sort word starts at 1 (column 0, the name, ascending), so equal names keep catalogue order
 		var sorted = Sort == BuySortColumn.Name
 			? all.OrderBy( name, StringComparer.Ordinal )

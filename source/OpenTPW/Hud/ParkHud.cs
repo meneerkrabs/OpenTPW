@@ -86,7 +86,7 @@ public sealed partial class ParkHud
 		this.host = host;
 		Status = status;
 		Catalog = catalog;
-		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows );
+		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
 		cashTracker = new CashChangeTracker( status.Money );
 		cashSource = status.EconomySource;
 		lastLevelMessage = level.LastActionMessage;

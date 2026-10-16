@@ -142,6 +142,24 @@ public class QueueLinkTests
 	}
 
 	[TestMethod]
+	public void AQueueWithAnyLinkByteIsNotRebuiltWhenTheRideRegisters()
+	{
+		var (grid, ride) = Park();
+		for ( var y = 5; y >= 1; y-- )
+			grid.SetQueue( 2, y, 2 );
+		// A queue the player left unconnected has links on its cells; one linked cell is enough to keep the rebuild away from the rest.
+		grid.Cells.SetLinks( 2, 3, 0x11 );
+		var simulation = new GuestSimulation( grid, GuestTests.CreateSettings(), 7 ) { ArrivalsEnabled = false };
+		simulation.Register( ride );
+		Assert.AreEqual( 0x11, grid.Cells.LinksAt( 2, 3 ) );
+		Assert.AreEqual( 0, grid.Cells.LinksAt( 2, 5 ), "the front stays as saved" );
+		Assert.AreEqual( 0, grid.Cells.LinksAt( 2, 1 ), "the back is not joined to the path" );
+		var before = grid.Cells.Version;
+		Assert.IsFalse( QueuePaths.RebuildMissingLinks( grid, ride ) );
+		Assert.AreEqual( before, grid.Cells.Version, "a second rebuild writes nothing" );
+	}
+
+	[TestMethod]
 	public void APathOverTheQueueEndTurnsItIntoAChargedPathCell()
 	{
 		var (grid, ride) = Park();

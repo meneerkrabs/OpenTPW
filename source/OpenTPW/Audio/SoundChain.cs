@@ -150,16 +150,8 @@ public sealed class SoundChain
 		return LinkWalk.Next;
 	}
 
-	/// <summary>The wait between children: nought when both bounds are nought, otherwise min + draw % (max − min), in seconds.</summary>
-	internal double WaitSeconds( SoundEntry sound )
-	{
-		var low = Math.Min( sound.MinimumDelay, sound.MaximumDelay );
-		var high = Math.Max( sound.MinimumDelay, sound.MaximumDelay );
-		if ( high == 0 )
-			return 0;
-		var milliseconds = low + (double)system.DrawBelow( (uint)Math.Max( 1, high - low ) );
-		return milliseconds / 1000;
-	}
+	/// <summary>The wait between children: nought when both bounds are nought, otherwise min + draw % (max − min), in seconds (<see cref="SoundEventSystem.DelaySeconds"/>).</summary>
+	internal double WaitSeconds( SoundEntry sound ) => system.DelaySeconds( sound );
 
 	public void Stop()
 	{

@@ -114,10 +114,11 @@ public sealed class SoundEventSystem
 			{
 				placements.Remove( placement );
 				if ( placement.Voice is { } started )
-					oneShots.Add( (started, placement.Priority, placement.Flags) );
+					oneShots.Add( (started, placement.Priority, placement.Flags, ExpiryFrame( started, placement.Flags, placement.Delay )) );
 			}
 		}
-		oneShots.RemoveAll( entry => entry.Voice.IsFinished );
+		var now = PoolClock();
+		oneShots.RemoveAll( entry => entry.ExpiresAt < 0 ? entry.Voice.IsFinished : now > entry.ExpiresAt );
 		StopVoicesOutOfRange();
 		foreach ( var sentence in sentences.ToArray() )
 			sentence.Pump();
@@ -155,7 +156,7 @@ public sealed class SoundEventSystem
 	// [APPROX:AUDIO-038] looping voices are not stopped: the range test also reaches them in the original, which stops the sample and keeps the voice's handle at +0x24 (0x6bca70 does not clear it, only the muted-group case 0x6bc760 does), but nothing read restarts a looped sample after the listener returns, and tp.exe's waterfall evidently resumes, so the restart path is unknown
 	private void StopVoicesOutOfRange()
 	{
-		foreach ( var (voice, _, flags) in oneShots )
+		foreach ( var (voice, _, flags, _) in oneShots )
 			if ( !voice.Loops && voice.Position != null && voice.Range > 0 && (flags & AnyDistanceFlag) == 0 && !Audible( voice.Position, voice.Range ) )
 				voice.Stop();
 	}
@@ -200,7 +201,10 @@ public sealed class SoundEventSystem
 	/// <summary>Whether the pool admits a voice: audible, or flagged audible at any distance (0x6bca10, flag 8 at 0x6bca44).</summary>
 	internal static bool Admitted( Vector3? position, float range, ushort flags ) => (flags & AnyDistanceFlag) != 0 || Audible( position, range );
 
-	private readonly List<(AudioVoice Voice, uint Priority, ushort Flags)> oneShots = new();
+	private readonly List<(AudioVoice Voice, uint Priority, ushort Flags, long ExpiresAt)> oneShots = new();
+
+	/// <summary>The clock the voice expiry reads (mixer output frames); tests replace it.</summary>
+	internal Func<long> PoolClock { get; set; } = null!;
 	private readonly List<(object Voice, uint Rank, long Serial)> poolCandidates = new();
 	private readonly HashSet<SoundChain> pooledChains = new();
 
@@ -236,8 +240,8 @@ public sealed class SoundEventSystem
 		foreach ( var placement in placements )
 			if ( Admitted( placement.Position, placement.Range, placement.Flags ) )
 				poolCandidates.Add( (placement, PoolRank( placement.Priority, placement.Position ), placement.Serial) );
-		foreach ( var (voice, priority, flags) in oneShots )
-			if ( !voice.IsFinished && Admitted( voice.Position, voice.Range, flags ) )
+		foreach ( var (voice, priority, flags, expiresAt) in oneShots )
+			if ( (expiresAt >= 0 || !voice.IsFinished) && Admitted( voice.Position, voice.Range, flags ) )
 				poolCandidates.Add( (voice, PoolRank( priority, voice.Position ), voice.Serial) );
 		foreach ( var chain in chains )
 			if ( !chain.IsStopped && Admitted( chain.Position, chain.Range, chain.Event.Flags ) )
@@ -250,10 +254,43 @@ public sealed class SoundEventSystem
 				pooledChains.Add( chain );
 	}
 
+	/// <summary>
+	/// The delay of a sample start: nought when both bounds are nought, otherwise min + draw % (max - min) milliseconds, in seconds. A chain
+	/// waits it between children; for any other voice it is the time the voice is kept after its sample's end (<see cref="ExpiryFrame"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x6bc2d0 delay draw] 0 when both u16 bounds are 0, else min + ror13(state) % (max - min), drawn at every sample start (0x6bc4f4) after the volume and the pitch, and stored at the placeholder's +0x3c (0x6bc4fa)
+	internal double DelaySeconds( SoundEntry sound )
+	{
+		var low = Math.Min( sound.MinimumDelay, sound.MaximumDelay );
+		var high = Math.Max( sound.MinimumDelay, sound.MaximumDelay );
+		if ( high == 0 )
+			return 0;
+		return (low + (double)DrawBelow( (uint)Math.Max( 1, high - low ) )) / 1000;
+	}
+
+	/// <summary>The extra time a finished voice keeps its place in the pool after its sample's nominal end (tp.exe 0x6bc01b adds 0xfa to the end time).</summary>
+	internal const double ExpiryTailSeconds = 0.25;
+
+	/// <summary>
+	/// The mixer frame after which a voice leaves the pool: its start plus the sample's nominal length, 250 ms and the drawn delay; -1 for a voice
+	/// that lives until it finishes (an event flagged 0x4 or 0x8, which the original exempts from the expiry test).
+	/// </summary>
+	// [BIN:TPW-EXE:0x6bc01b voice end time] a started voice's end (+0x1c) is the clock plus the sample's length (+8 of the sample record) plus 0xfa milliseconds
+	// [BIN:TPW-EXE:0x6bcb60 expiry test] a voice without voice flag 2 is expired once the clock passes its end plus its delay (+0x3c); the manager tick 0x6b62b0 then releases it (0x6b6440) without ranking it, whether or not its sample has finished
+	// [BIN:TPW-EXE:0x6bbe90 voice flags from the event] the event flag 0x4 makes voice flag 2 and 0x8 makes 6 (loops, with 2), which exempt a voice from the expiry
+	internal long ExpiryFrame( AudioVoice voice, ushort eventFlags, double delaySeconds )
+	{
+		if ( (eventFlags & 0xC) != 0 )
+			return -1;
+		var length = voice.SampleRate > 0 ? voice.Frames / (double)voice.SampleRate : 0;
+		return PoolClock() + mixer.SecondsToFrames( length + ExpiryTailSeconds + delaySeconds );
+	}
+
 	public SoundEventSystem( AudioMixer mixer, uint seed = 1 )
 	{
 		this.mixer = mixer;
 		this.seed = seed;
+		PoolClock = () => mixer.PlayedFrames;
 	}
 
 	public AudioMixer Mixer => mixer;
@@ -528,16 +565,17 @@ public sealed class SoundEventSystem
 		var index = PickSample( sound.Samples, -1, avoidRepeat: false );
 		if ( index < 0 || Decode( category, sound.Samples[index] ) is not { } audio )
 			return null;
-		// [APPROX:AUDIO-003] the pitch is applied (Pitch, AudioVoice.SetPitch); the delay of non-chain sounds (min + r % (max - min), 0x6bc2d0, stored at the placeholder's +0x3c by 0x6bc4fa) and reverb (SndReverb.map, loaded at 0x6c5d20) are not applied, chain delays are milliseconds (video, 2026-10-15)
+		// [APPROX:AUDIO-003] the pitch and the delay are applied (Pitch, AudioVoice.SetPitch, DelaySeconds, ExpiryFrame); reverb (SndReverb.map, loaded at 0x6c5d20) is not applied, chain delays are milliseconds (video, 2026-10-15)
 		// [BIN:TPW-EXE:0x6bc4e7 sample setup] the fixed (flat) branch and the positioned branch both reach the loop test 0x6bc621: a placeholder with flag 0x8 (+0x30 bit 4) loops its sample (0x6c5110, 9999 times), so a flat one-shot loops exactly as a positioned one does
-		// [EXT:inaudible-loop-advance] a loop whose source is inaudible is assumed to keep advancing silently and resume when the listener returns; the early exit 0x6bcb60 -> 0x6bc643 that skips starting in some cases is not read
+		// [EXT:inaudible-loop-advance] a loop whose source is inaudible is assumed to keep advancing silently and resume when the listener returns; the early exit 0x6bcb60 -> 0x6bc643 is the expiry test, which a loop (voice flags 6) is exempt from
 		// [BIN:TPW-EXE:0x006BBF60 placeholder setup] every placeholder class (vtables 0x70a338, 0x70a3e8, 0x70a440, 0x70a498, 0x70a7e0, 0x70a878, 0x70a8d0) sets up at +0x10 with 0x6BBF60 and queries at +0x40 with 0x6BC040: a one-shot whose event has a code or whose sound has a selector gets a table, and a bound volume or pitch reads its slot (0 with no parameter call)
 		var table = SoundParameterTable.ForPlayback( soundEvent, sound );
 		var volume = Volume( sound, table ) / 100f;
 		var voice = mixer.Play( audio, channel, volume );
 		voice.SetPitch( Pitch( sound, table ) );
 		voice.Loops = (soundEvent.Flags & 0x8) != 0;
-		oneShots.Add( (voice, soundEvent.Priority, soundEvent.Flags) );
+		// [BIN:TPW-EXE:0x6bc4f4 sample start] the delay is drawn after the volume and the pitch
+		oneShots.Add( (voice, soundEvent.Priority, soundEvent.Flags, ExpiryFrame( voice, soundEvent.Flags, DelaySeconds( sound ) )) );
 		return voice;
 	}
 
@@ -564,7 +602,7 @@ public sealed class SoundEventSystem
 		var voice = mixer.Play( audio, channel, volume, position, range ?? sound.Rolloff );
 		voice.SetPitch( Pitch( sound, table ) );
 		voice.Loops = (soundEvent.Flags & 0x8) != 0;
-		oneShots.Add( (voice, soundEvent.Priority, soundEvent.Flags) );
+		oneShots.Add( (voice, soundEvent.Priority, soundEvent.Flags, ExpiryFrame( voice, soundEvent.Flags, DelaySeconds( sound ) )) );
 		return voice;
 	}
 
@@ -589,11 +627,11 @@ public sealed class SoundEventSystem
 		var volume = Volume( sound, table ) / 100f;
 		var pitch = Pitch( sound, table );
 		var placed = new PlacedSound( mixer, channel, volume, position, range ?? sound.Rolloff, (soundEvent.Flags & 0x8) != 0,
-			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority, Flags = soundEvent.Flags, Pitch = pitch };
+			DecodeSentenceAsync( category, sound.Samples[index] ) ) { Priority = soundEvent.Priority, Flags = soundEvent.Flags, Pitch = pitch, Delay = DelaySeconds( sound ) };
 		if ( !placed.Pump() )
 			placements.Add( placed );
 		else if ( placed.Voice is { } started )
-			oneShots.Add( (started, soundEvent.Priority, soundEvent.Flags) );
+			oneShots.Add( (started, soundEvent.Priority, soundEvent.Flags, ExpiryFrame( started, soundEvent.Flags, placed.Delay )) );
 		return placed;
 	}
 
@@ -677,6 +715,8 @@ public sealed class PlacedSound
 	internal ushort Flags { get; init; }
 	/// <summary>The pitch step drawn when the sound was placed.</summary>
 	internal int Pitch { get; init; }
+	/// <summary>The delay drawn when the sound was placed, in seconds (<see cref="SoundEventSystem.DelaySeconds"/>).</summary>
+	internal double Delay { get; init; }
 
 	internal PlacedSound( AudioMixer mixer, AudioChannel channel, float volume, Vector3 position, float range, bool loops, Task<Mp2Audio?> decoding )
 	{
@@ -859,6 +899,8 @@ public sealed class SoundSentence
 		// [BIN:TPW-EXE:0x6bc410 sample start] a new segment evaluates its volume (0x6bc090) and pitch (0x6bc170) with the values the slot table holds; a later parameter change re-evaluates them (SetParameter)
 		var gain = system.Volume( soundEvent.Sounds[sound], parameters ) / 100f;
 		var pitch = system.Pitch( soundEvent.Sounds[sound], parameters );
+		// [BIN:TPW-EXE:0x6bc4f4 sample start] the delay is drawn after the volume and the pitch at every segment; a sentence's voice is ranked as the sentence itself, so the draw is all of it that is observable here
+		_ = system.DelaySeconds( soundEvent.Sounds[sound] );
 		voice = Position is { } place ? system.Mixer.Play( audio, channel, gain, place, Range ) : system.Mixer.Play( audio, channel, gain );
 		voice.SetPitch( pitch );
 		voice.Completed += _ => OnCompleted();

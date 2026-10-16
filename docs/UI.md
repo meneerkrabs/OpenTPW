@@ -768,7 +768,7 @@ ImGui, build/removal/cell/coaster and ride-view input ownership. An unavailable
 host callback or edition sharing capability reports the existing unavailable
 message. The chord opens a form once; it never sends a message automatically.
 The existing composer, local outbox and map-thumbnail attachment are reused
-(ONLINE-022 still qualifies the photo). A simultaneous park press/release belongs
+(`EXT:online-postcard-photo` still qualifies the photo). A simultaneous park press/release belongs
 to the opened composer, without activating a path or selecting a visitor/object.
 `PostcardShortcutIngressTests` exercises actual injected button rebuilding and
 the full HUD frame, including the GameFlow composer and a temporary local outbox.

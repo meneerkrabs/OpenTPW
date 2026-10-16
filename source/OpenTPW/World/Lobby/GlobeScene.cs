@@ -17,9 +17,10 @@ public sealed class GlobeScene : OriginalModelScene
 	// [BIN:TPW-EXE:0x005DC860 globe pick] the cursor ray meets a sphere of radius 116 (r² 13456); a city within 10 units (d² < 100) of that point is hovered
 	public const float PickRadius = 116f;
 	public const float PickDistance = 10f;
-	// [APPROX:ONLINE-013] pins stand on the mesh surface (radius 119.7): the original puts a pin's root node at the city record's
-	// position vector (+0x34..+0x3c, 0x005DC3E0 → 0x005D8190), which the city list from weacityr.dll fills and which is not decoded —
-	// evidence needed: the radius of the original city positions (a city list from the original service or a capture of its globe)
+	// [EXT:online-globe-pin-radius] pins stand on the mesh surface (radius 119.7); the cities come from the OpenTPW server's own
+	// list (the original city list is lost, see CityDirectory.cs). Not reproduced: the original puts a pin's root node at the city
+	// record's position vector (+0x34..+0x3c, 0x005DC3E0 → 0x005D8190), which the city list from weacityr.dll fills; the radius of
+	// those positions is not decoded (it needs a city list from the original service or a capture of its globe)
 	public const float PinRadius = 119.7f;
 	// [BIN:TPW-EXE:0x005DC3E0 city flag] the city named "North Pole" gets the Bullfrog pin, every other city the hpin model
 	public const string BullfrogCity = "North Pole";

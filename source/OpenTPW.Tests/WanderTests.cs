@@ -432,7 +432,10 @@ public class WanderTests
 		var schemaTwo = snapshot with
 		{
 			SchemaVersion = 2,
-			Guests = snapshot.Guests.Select( guest => guest with { DecisionTimer = 1.25f, Activity = GuestActivity.None } ).ToArray()
+			// a save from before the thing pool counts its guests: ascending ids below the counter
+			NextGuestId = snapshot.Guests.Max( guest => guest.Id ) + 1,
+			Things = null,
+			Guests = snapshot.Guests.OrderBy( guest => guest.Id ).Select( guest => guest with { DecisionTimer = 1.25f, Activity = GuestActivity.None } ).ToArray()
 		};
 		var fromTwo = new GuestSnapshotTests.Rig();
 		fromTwo.Simulation.RestoreSnapshot( ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( schemaTwo ) ) );

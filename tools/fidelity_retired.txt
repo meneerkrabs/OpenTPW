@@ -15,6 +15,7 @@ ADVISOR-011 docs/reverse/APPROX-TRACE.md
 ADVISOR-013 docs/reverse/APPROX-TRACE.md
 ADVISOR-014 docs/reverse/APPROX-TRACE.md
 AUDIO-017 docs/AUDIO.md
+AUDIO-022 docs/AUDIO.md
 COAST-001 docs/reverse/COAST-plan.md
 COAST-002 docs/reverse/COAST-plan.md
 COAST-003 docs/reverse/COAST-plan.md

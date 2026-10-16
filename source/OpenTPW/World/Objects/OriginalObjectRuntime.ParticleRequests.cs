@@ -6,8 +6,8 @@ public sealed partial class OriginalObjectRuntime
 {
 	private ObjectPlacement? particlePlacement;
 	private ParticleKeyResolver? particleKeys;
-	/// <summary>The particle effects this object's ADDOBJ records hold, by the record's slot operand (tp.exe's object list at obj+0xB0, record +0x18); KILLOBJ ends them.</summary>
-	private readonly List<(int Slot, int Handle)> particleObjects = new();
+	/// <summary>The particle effects this object's ADDOBJ records hold, by the record's slot operand (tp.exe's object list at obj+0xB0, record +0x18), with their type (+8) and key (+0x10); KILLOBJ ends them.</summary>
+	private readonly List<(int Slot, int Handle, int Type, int Key)> particleObjects = new();
 
 	/// <summary>Only the latest EVENT1/2 attempt: polling diagnostics, not a retained queue or particle delivery interface.</summary>
 	public ParticleEventAttempt? LastParticleEventAttempt { get; private set; }
@@ -27,6 +27,9 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>Whether a handle still names a live emitter; true when the host has no pool to ask. Used to drop records of effects that ended.</summary>
 	internal static Func<int, bool>? ParticleAlive { get; set; }
 
+	/// <summary>Moves a kept ADDOBJ effect to its key's current pose (and, for type 2, its direction); null in headless hosts.</summary>
+	internal static Action<int, ParticleFollow>? ParticleFollower { get; set; }
+
 	internal void BindParticlePlacement(ObjectPlacement placement) => particlePlacement = placement;
 
 	private ParticleEventAttempt PrepareParticle(int scriptId, int type, int key, int effect, int control)
@@ -36,6 +39,17 @@ public sealed partial class OriginalObjectRuntime
 		if ((effect & 0x8000) != 0) return Refuse(ParticleEventPreparationStatus.UnsupportedScopedEffect);
 		if (effect < 0 || effect > 104) return Refuse(ParticleEventPreparationStatus.InvalidEffectId);
 		if (particlePlacement is not { } placement) return Refuse(ParticleEventPreparationStatus.NoPlacement);
+		if (key < 0)
+		{
+			// [BIN:TPW-EXE:0x556B90 negative key] a negative key (or an object without a model) is the footprint box's middle at the object's base height (0x466B70, as the EVENT sounds use it), and (0, 0, 0) when the object has no box; the direction output is not written, so a type-2 effect would take the dispatcher's unset buffer (0x5573D0 local_c)
+			if (type == 2) return Refuse(ParticleEventPreparationStatus.UnresolvedKey);
+			if (particleFootprint is not { } footprint) return Refuse(ParticleEventPreparationStatus.NoPlacement);
+			return footprint() is { } box
+				? new ParticleEventAttempt(AttractionId, scriptId, type, key, effect, ParticleEventPreparationStatus.Prepared, ParticleKeyStatus.Resolved,
+					new ParticleEventRequest(AttractionId, scriptId, type, key, effect, control, box.EngineMiddle, null, -1, -1))
+				: new ParticleEventAttempt(AttractionId, scriptId, type, key, effect, ParticleEventPreparationStatus.Prepared, ParticleKeyStatus.ResolvedAtWorldOrigin,
+					new ParticleEventRequest(AttractionId, scriptId, type, key, effect, control, NVector3.Zero, null, -1, -1, AtWorldOrigin: true));
+		}
 		particleKeys ??= new ParticleKeyResolver(Model);
 		var pose = particleKeys.Resolve(key, ParticleKeyResolver.EventSelector, Animator.NodeTransforms, placement, includeDirection: type == 2);
 		return pose.Status switch
@@ -49,7 +63,7 @@ public sealed partial class OriginalObjectRuntime
 		};
 	}
 
-	// [APPROX:PTCL-908] only EVENT 1/2, ADDOBJ 1/2 and the per-type object effects (OriginalObjectRuntime.ObjectEffects.cs) start particles; a refusal (negative or unresolved key, scoped effect, headless runtime) starts nothing, and an ADDOBJ effect starts at the key's pose without following the node afterwards; the latest attempt stays as owner-local diagnostics, cleared on Stop, while the effect lives in the level's ParticleSystem (docs/PARTICLES.md)
+	// [APPROX:PTCL-908] EVENT 1/2, ADDOBJ and ADDOBJ_EXT 1/2 and the per-type object effects (OriginalObjectRuntime.ObjectEffects.cs) start particles; a refusal (unresolved key, scoped effect, a type-2 effect with a negative key, headless runtime) starts nothing; the latest attempt stays as owner-local diagnostics, cleared on Stop, while the effect lives in the level's ParticleSystem (docs/PARTICLES.md)
 	internal void ObserveParticleEvent(RideEffectCall call)
 	{
 		if (stopped || call.Opcode != Opcode.EVENT || call.Argument(0) is not (1 or 2)) return;
@@ -63,16 +77,43 @@ public sealed partial class OriginalObjectRuntime
 	/// RSE ADDOBJ (type key effect slot) with type 1 or 2: the same dispatcher as EVENT, but the handle is kept under the slot operand so KILLOBJ can end the effect.
 	/// </summary>
 	// [BIN:TPW-EXE:0x551F5F ADDOBJ] operands type, key, effect (each a signed word), slot; control 1000; 0x557970 calls the dispatcher 0x5573D0 and keeps the record (a zero handle frees it)
+	// [BIN:TPW-EXE:0x5520E8 ADDOBJ_EXT] opcode 9: operands type, key, effect, control, slot (an immediate is a signed word, a variable its whole value); the same record and 0x557970 call with the control operand in place of 1000, which the dispatcher sets on the emitter when it is not 1000 (0x51FFD0)
 	// [BIN:TPW-EXE:0x5522C5 KILLOBJ] every record with the slot: types 1 and 2 call 0x51FF70(handle, -2)
 	internal void ObserveParticleObject(RideEffectCall call)
 	{
-		if (stopped || call.OperandCount < 4 || call.Argument(0) is not (1 or 2)) return;
+		var extended = call.Opcode == Opcode.ADDOBJ_EXT;
+		if (stopped || call.OperandCount < (extended ? 5 : 4) || call.Argument(0) is not (1 or 2)) return;
 		PruneParticleObjects();
-		var attempt = PrepareParticle(call.VM.ScriptId, call.Argument(0), (short)call.Argument(1), (short)call.Argument(2), 1000);
+		var type = call.Argument(0);
+		var key = Word(call, 1);
+		var attempt = PrepareParticle(call.VM.ScriptId, type, key, Word(call, 2), extended ? Word(call, 3) : 1000);
 		LastParticleObjectAttempt = attempt;
 		// native keeps any non-zero handle (0x5579F9); -1 is this port's refusal, and a generation from 0x8000 makes handles negative
 		if (attempt.Request is { } request && ParticleStarter?.Invoke(request) is int handle && handle != 0 && handle != -1)
-			particleObjects.Add((call.Argument(3), handle));
+			particleObjects.Add((call.Argument(extended ? 4 : 3), handle, type, key));
+	}
+
+	/// <summary>An RSE operand as the handlers read it: a variable's whole value, an immediate's signed word.</summary>
+	private static int Word(RideEffectCall call, int index) => call.IsVariable(index) ? call.Argument(index) : (short)call.Argument(index);
+
+	/// <summary>
+	/// Every scheduler pass moves the effects of the type 1 and 2 records with a key to that key's node, the position truncated to whole
+	/// units, and turns a type-2 effect to the node's direction.
+	/// </summary>
+	// [BIN:TPW-EXE:0x55189D ADDOBJ follow] the object pass 0x5516B0 walks the records on every run (before the 8-pass script gate): with key +0x10 >= 0, type 1 calls 0x51FE30(handle, ftol(x) << 10, ftol(y) << 10, ftol(z) << 10) from the node's matrix +0x30/+0x34/+0x38 (0 without a matrix); type 2 does the same and then 0x51FD90 with the node's +0x20 row normalised (negated with the entry's bit 0x10, (0, 0, 1) without a matrix, 0x551B30) times 1024
+	private void FollowParticleObjects()
+	{
+		if (ParticleFollower is not { } follow || particleObjects.Count == 0 || particlePlacement is not { } placement) return;
+		foreach (var (_, handle, type, key) in particleObjects)
+		{
+			if (type is not (1 or 2) || key < 0) continue;
+			particleKeys ??= new ParticleKeyResolver(Model);
+			var pose = particleKeys.Resolve(key, ParticleKeyResolver.EventSelector, Animator.NodeTransforms, placement, includeDirection: type == 2);
+			if (pose.Status == ParticleKeyStatus.Resolved)
+				follow(handle, new ParticleFollow(pose.EnginePosition!.Value, type == 2 ? pose.EngineUnitDirection : null, false));
+			else if (pose.Status == ParticleKeyStatus.ResolvedAtWorldOrigin)
+				follow(handle, new ParticleFollow(NVector3.Zero, null, true, Directed: type == 2));
+		}
 	}
 
 	/// <summary>RSE KILLOBJ: ends the particle effects ADDOBJ started under the slot.</summary>
@@ -97,7 +138,7 @@ public sealed partial class OriginalObjectRuntime
 	private IReadOnlyList<ParticleObjectRecord>? CaptureParticleObjects()
 	{
 		PruneParticleObjects();
-		return particleObjects.Count == 0 ? null : particleObjects.Select(record => new ParticleObjectRecord { Slot = record.Slot, Handle = record.Handle }).ToArray();
+		return particleObjects.Count == 0 ? null : particleObjects.Select(record => new ParticleObjectRecord { Slot = record.Slot, Handle = record.Handle, Type = record.Type, Key = record.Key }).ToArray();
 	}
 
 	private void RestoreParticleObjects(IReadOnlyList<ParticleObjectRecord>? records)
@@ -105,7 +146,7 @@ public sealed partial class OriginalObjectRuntime
 		particleObjects.Clear();
 		// not pruned here: the pool is restored after the runtimes, the first ADDOBJ, KILLOBJ or capture drops the ones that ended
 		if (records != null)
-			foreach (var record in records) particleObjects.Add((record.Slot, record.Handle));
+			foreach (var record in records) particleObjects.Add((record.Slot, record.Handle, record.Type, record.Key));
 	}
 
 	private void ClearParticleRequests()

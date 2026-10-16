@@ -450,7 +450,7 @@ handler attributes diverge.
 | 6 | `ENDSLICE` | 396 | implemented | name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it |
 | 7 | `GETTIME` | 172 | implemented | STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted) |
 | 8 | `ADDOBJ` | 644 | hooked | docs (`type parameter id slot`) |
-| 9 | `ADDOBJ_EXT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
+| 9 | `ADDOBJ_EXT` | 0 | hooked | TPW-EXE 0x5520E8 (`type key effect control slot`): ADDOBJ with the control operand; no corpus use |
 | 10 | `KILLOBJ` | 235 | hooked | docs (`slot`); does not touch flags (`ADD VAR_COUNT 0xFFFF; KILLOBJ 200; BRANCH_PV`) |
 | 11 | `FADEOBJ` | 113 | hooked | docs (`slot`) |
 | 12 | `SETOBJPARAM` | 20 | hooked | docs (`slot parameter value`) |

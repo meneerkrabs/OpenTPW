@@ -136,6 +136,15 @@ public sealed class Guest
 	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }
 	public int RidesTaken { get; internal set; }
+	/// <summary>
+	/// The uses of rides (guest <c>+0x1c4</c>, the "Rides ridden" cell), shops (<c>+0x1c8</c>, "Purchases made") and sideshows (<c>+0x1cc</c>, "Sideshows played") and the won
+	/// plays (<c>+0x1d0</c>, "Sideshows won"): display counters that no rule reads. <see cref="RidesTaken"/> counts every kind of use.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004fd970 use counters] a completed use adds one to +0x1c4, +0x1c8 or +0x1cc by the used type's kind (+0x4ac 0, 1 or 2), won or lost; the use routine 0x4fe1e0 adds one to +0x1d0 for a sideshow that was not lost (0x4fe816); the constructor zeroes all four (0x4faf43)
+	public int RidesRidden { get; internal set; }
+	public int PurchasesMade { get; internal set; }
+	public int SideshowsPlayed { get; internal set; }
+	public int SideshowsWon { get; internal set; }
 	public GuestThought Thought { get; internal set; }
 	/// <summary>
 	/// The thought the guest's bubble shows (the thought object's script, guest <c>+0x30 +0x84</c>), <see cref="GuestThought.None"/> without a bubble; presentation

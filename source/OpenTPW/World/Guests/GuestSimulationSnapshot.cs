@@ -55,6 +55,11 @@ public sealed record GuestSnapshot
 	public double? TimeInParkSeconds { get; init; }
 	public required float SecondsSinceRide { get; init; }
 	public required int RidesTaken { get; init; }
+	/// <summary>The rides, shops, sideshows and won sideshows counters (guest +0x1c4, +0x1c8, +0x1cc, +0x1d0). Absent in older saves: the rides take <see cref="RidesTaken"/>, the others start at 0.</summary>
+	public int? RidesRidden { get; init; }
+	public int? PurchasesMade { get; init; }
+	public int? SideshowsPlayed { get; init; }
+	public int? SideshowsWon { get; init; }
 	public required GuestThought Thought { get; init; }
 	/// <summary>The thought the bubble shows (None: no bubble). Absent before schema 7.</summary>
 	public GuestThought BubbleThought { get; init; }

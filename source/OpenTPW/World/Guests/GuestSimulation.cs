@@ -2461,6 +2461,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.LastAttractionId = ride.AttractionId;
 		guest.SecondsSinceRide = 0;
 		guest.RidesTaken++;
+		// [BIN:TPW-EXE:0x004fd970 use counters] the display counters by the used type's kind (rides, shops, sideshows); facilities (the fourth kind) count in none
+		switch ( ride.Kind )
+		{
+			case RideVisitorKind.Ride: guest.RidesRidden++; break;
+			case RideVisitorKind.Shop: guest.PurchasesMade++; break;
+			case RideVisitorKind.Sideshow: guest.SideshowsPlayed++; break;
+		}
 		Payments?.VisitFinished( ride );
 		// [BIN:STP-PPC:0x100E9FD4 used history] the end of a use (0xe9fa4) pushes the attraction's id into the used history (0xea268) before the outcome
 		PushHistory( guest.UsedHistory, ride.AttractionId );
@@ -2515,6 +2522,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
 		var before = guest.Happiness;
+		// [BIN:TPW-EXE:0x004fe816 sideshows won] the use routine counts a sideshow that was not lost (a lost play never reaches it)
+		if ( ride.Kind == RideVisitorKind.Sideshow )
+			guest.SideshowsWon++;
 		(guest.Happiness, guest.Nausea) = RideOutcome.Apply( guest.Happiness, guest.Hunger, guest.Nausea, type.PreferredExcitement, ride.LiveExcitement,
 			Settings.PerfectRide, Settings.GoodRide, Settings.OkRide, Settings.RideVomitDivisor );
 		// [BIN:TPW-EXE:0x004FDB66 sideshow thought] only a sideshow (thing kind 2) sets a thought at the end of a use: 5 after a win, 6 after a loss (0x004FDC25); rides and shops set none
@@ -2720,6 +2730,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			TimeInParkSeconds = guest.TimeInParkSeconds,
 			SecondsSinceRide = guest.SecondsSinceRide,
 			RidesTaken = guest.RidesTaken,
+			RidesRidden = guest.RidesRidden,
+			PurchasesMade = guest.PurchasesMade,
+			SideshowsPlayed = guest.SideshowsPlayed,
+			SideshowsWon = guest.SideshowsWon,
 			Thought = guest.Thought,
 			BubbleThought = guest.BubbleThought,
 			BubbleTurn = guest.BubbleTurn,
@@ -3013,6 +3027,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} Money {guest.Money} is negative." );
 			if ( guest.RidesTaken < 0 )
 				Error( $"Guest {guest.Id} RidesTaken {guest.RidesTaken} is negative." );
+			if ( guest.RidesRidden < 0 || guest.PurchasesMade < 0 || guest.SideshowsPlayed < 0 || guest.SideshowsWon < 0 )
+				Error( $"Guest {guest.Id} display counters {guest.RidesRidden}/{guest.PurchasesMade}/{guest.SideshowsPlayed}/{guest.SideshowsWon} are negative." );
 			if ( guest.QueueMoveDelay < 0 )
 				Error( $"Guest {guest.Id} QueueMoveDelay {guest.QueueMoveDelay} is negative." );
 			if ( guest.QueueCellIndex < 0 )
@@ -3246,6 +3262,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.TimeInParkSeconds = snapshot.TimeInParkSeconds;
 		guest.SecondsSinceRide = snapshot.SecondsSinceRide;
 		guest.RidesTaken = snapshot.RidesTaken;
+		// Saves from before the display counters hold every use as RidesTaken: it stands in for the rides, the other counters start at 0
+		guest.RidesRidden = snapshot.RidesRidden ?? snapshot.RidesTaken;
+		guest.PurchasesMade = snapshot.PurchasesMade ?? 0;
+		guest.SideshowsPlayed = snapshot.SideshowsPlayed ?? 0;
+		guest.SideshowsWon = snapshot.SideshowsWon ?? 0;
 		// Saves before schema 7 hold OpenTPW's former thoughts: "Super happy" and "Okay", which the original never thinks, become "Happy!" and no thought.
 		guest.Thought = schemaVersion < 7 ? snapshot.Thought switch
 		{

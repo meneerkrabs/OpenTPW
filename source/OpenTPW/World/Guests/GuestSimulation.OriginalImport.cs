@@ -105,6 +105,11 @@ public sealed partial class GuestSimulation
 			guest.SmoothedSpeed = float.IsFinite( smoothed ) && smoothed >= 0 ? smoothed : 0;
 			guest.QueueMoveDelay = (int)Math.Min( save.QueueMoveDelay, int.MaxValue );
 			guest.RidesTaken = (int)Math.Min( save.NumRides, int.MaxValue );
+			// [BIN:TPW-EXE:0x004f8b10 person serializer] the saved counters are the guest's +0x1c4, +0x1c8, +0x1cc and +0x1d0
+			guest.RidesRidden = (int)Math.Min( save.NumRides, int.MaxValue );
+			guest.PurchasesMade = (int)Math.Min( save.NumShops, int.MaxValue );
+			guest.SideshowsPlayed = (int)Math.Min( save.NumSideshows, int.MaxValue );
+			guest.SideshowsWon = (int)Math.Min( save.NumSideshowsWon, int.MaxValue );
 			for ( var slot = 0; slot < Guest.HistorySlots; slot++ )
 			{
 				guest.UsedHistory[slot] = attraction( save.PreviousRides[slot] );

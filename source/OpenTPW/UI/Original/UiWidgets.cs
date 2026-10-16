@@ -130,7 +130,7 @@ public sealed class UiContext
 	/// otherwise it takes the largest smaller size that fits, or the smallest size when none does.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4a43b0 options label font] the original's options labels take font slot 6 of the screen mode's bank ([0x7537b4], 0x4a443c) with no fitting
-	// [EXT:option-label-fit] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles), shared per page; a label whose widest value does not fit drops alone to the largest size that does; the original does no fitting
+	// [EXT:option-label-fit] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles), shared per page; a label whose widest value does not fit drops alone to the largest size that does; the original does no fitting and wraps an overflowing label into its rectangle through the text library (0x6ae930, 0x6aeb10, 0x6aec80), where OpenTPW shrinks it
 	// [BIN:TPW-EXE:0x4a443c bank font] slot 6 is GAME5AA/GAME7/GAME8/GAME9 for banks 0-3; which shipped font serves the label per size tier is [EXT:ui-font-tier-by-scale], and a label that overflows is not shrunk in the original but laid out by the text library (wrapped into its rectangle: 0x6ae930, 0x6aeb10, 0x6aec80)
 	public (FontAtlas Font, int Scale) ChooseUniform( UiLabelGroup group, UiLabel label )
 	{

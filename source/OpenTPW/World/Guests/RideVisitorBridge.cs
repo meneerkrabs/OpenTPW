@@ -683,7 +683,7 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			return QueueJoinResult.NoRoom;
 		// [BIN:STP-PPC:0x100ECD6C join gate] 0xe9a84 then 0xe02ec(ride, 1) and the 45 test; executed in the oracle (ORACLE.md F16, queue-join-gate)
 		// [BIN:TPW-EXE:0x004E0560 live excitement] a ride with a controller behind it (thing +0x28) has the base level × 60 / 100 + clamp(3 × crossings + longest straight run + 2 × corners, 0, 40) from the section counts 0x00545310 (BumpController.ExcitementBase); water rides have one
-		// [APPROX:QUEUE-004] the controller base comes from OpenTPW's BumpController (BumperTemplates.ForRide: water and kart rides of their own family, and the bumper cars −1, −6, −11, −14); tp.exe's placement 0x00529E10 builds a controller through 0x00545890 for any nonzero type word +0xA0 (taken to be Bumper.BumperType), including the types −2 and −3 and a type of the other family, and 0x004E0560 then scores 60 % of the level plus the counts — evidence needed: whether a shipped ride uses BumperType −2 or −3 or a mixed pair, and whether a loaded ride keeps its controller handle
+		// [BIN:TPW-EXE:0x00529E10 controller types] the placement builds a controller through 0x00545890 for any nonzero ride type word +0xA0 (Bumper.BumperType); the shipped rides of all four themes (bonus entries included) use only −1 and −4..−14, each with the WhichTrackType of its family (0 bumper cars, 1 karts, 2 water), so BumperTemplates.ForRide covers every one (BumperTypeCoverageTests); the loader of a saved ride (0x00543560) restores the controller from the save
 		if ( preferredExcitement is { } preferred && ExcitementRefusal( preferred ) is { } refusal )
 			return refusal;
 		if ( count >= QueueLimit )

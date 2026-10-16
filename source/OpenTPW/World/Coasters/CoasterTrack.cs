@@ -82,7 +82,10 @@ public enum CoasterNodeFlags : uint
 	TurnedBack = 0x10000000,
 	/// <summary>The build cursor's spare node, linked after the last node while the cursor hovers a cell (node flag 0x8000; the original adds 0x4000 when the cell fails the validator).</summary>
 	// [BIN:TPW-EXE:0x435d50 cursor node] the spare node (controller +0x6c) gets 0x8000 as the cursor and 0x4000 when the validator 0x434740 refuses the hovered cell, otherwise 0x4000 is cleared
-	Cursor = 0x8000
+	Cursor = 0x8000,
+	/// <summary>The closing target: the chain start a hovered cell would close the circuit on (node flag 0x800000; the original adds 0x4000 when the closing link fails the validator).</summary>
+	// [BIN:TPW-EXE:0x4360c4 closing target] the hovered chain start gets 0x800000, or 0x804000 when the closing link is refused; the section builder (0x43f4e0) draws the node's own tag pairs with the blue or red marker while the next node of the pair has 0x800000 or 0x2000 (mask 0x802000, 0x4000 selects red)
+	ClosingTarget = 0x800000
 }
 
 /// <summary>
@@ -1400,9 +1403,10 @@ public sealed class CoasterTrack
 	// [BIN:TPW-EXE:0x435d50 build cursor] every frame the edited coaster (data 0x790fec, flag 4) runs this edit step: for a hovered cell within 300 units of the last node it fills the coaster's spare cursor node (controller +0x68, 0x436190, 0x436230) with the cell and links it after the last node, then rebuilds the track (0x444700) — the cursor node is a regular node of the chain, so the curve is drawn through it before the pylon is placed; a hovered cell that already holds a node of the chain marks the chain's start as closing (flag 0x8) instead
 	// [BIN:TPW-EXE:0x436230 cursor node fill] the spare node (created model-less, node flag 0x2000) takes the hovered cell, the height of the last placed pylon (controller +0x118) and, in loop mode, node flag 0x40 and the LoopPylon control; no pylon is drawn for it and the mesh builder draws the link into it with the blue marker, the red one when the validator refused the cell (0x43f4e0)
 	// [BIN:TPW-EXE:0x4360c4 closing target] a hovered cell that holds the chain's start sets controller flag 8, clears 0x50000 (the cut end's markers) on the chain's end node (+0x60) and 0xa0000 on its start (+0x64), and marks the start 0x800000, or 0x804000 when the closing link fails the validator; the section builder draws a link into a node with 0x800000, and that node's own tag pairs, with the blue or red marker (0x43f4e0)
-	// [APPROX:COAST-035] the closing target's marks are not set here: the cursor cell's colour alone shows the closing target; 0x4360c0 also sets 0x200000 on both ends and their neighbours (reader not traced) — evidence needed: which link 0x43eb70 draws into the marked start while the cell is hovered (it walks next links +0x64 from the list head 0x790fe4+0x18 and stops at a null)
+	// [BIN:TPW-EXE:0x43eb70 closing marker] the rebuild walks the next links (+0x64) from the list head and stops at a null, so no link is drawn into the marked start; its marker is the node's own tag pairs (0x43f4e0 with both nodes the same)
+	// [APPROX:COAST-035] 0x4360c0 also sets 0x200000 on both ends and their neighbours; its reader is not traced and nothing here marks it
 	// [BIN:TPW-EXE:0x00436230 cursor flags] the cursor node takes 0x40 in loop mode and 0x80 as well while the counter 0x79c664 is 2 (0x4362f6, 0x43632a); the counter is written 2 by the loop button 0x442cd0 (0x442cf4) and its key 0x444650 (0x444677), decremented by every placed pylon (0x4352bf) and zeroed when the mode ends (0x4446dd), so 0x80 marks the first pylon of the pair; the handlers of a selected pylon 0x442d10 (writes 1, 0x442d51) and 0x447a10 (1, or 2 at 0x447ab2 when the selected node's pylon control lacks flag 0x80 and the mode is off) also start the mode and have no counterpart here
-	public (IReadOnlyList<CoasterNode> Chain, bool Closed)? BuildPreviewChain( (int X, int Y)? cursor, float height, bool loop, bool firstOfPair = false )
+	public (IReadOnlyList<CoasterNode> Chain, bool Closed)? BuildPreviewChain( (int X, int Y)? cursor, float height, bool loop, bool firstOfPair = false, bool valid = true )
 	{
 		if ( (IsComplete && !IsCut) || nodes.Count < StationNodeCount || DepartCell == null )
 			return null;
@@ -1411,6 +1415,12 @@ public sealed class CoasterTrack
 		{
 			chain.Add( StationEnd() );
 			return (chain, true);
+		}
+		if ( cursor is { } target && IsChainStart( target.X, target.Y ) && ClosingStartIndex() is int startIndex )
+		{
+			// the closing target: the chain start takes the mark; the cursor node is not linked
+			chain[startIndex] = chain[startIndex] with { };
+			chain[startIndex].Flags |= CoasterNodeFlags.ClosingTarget | (valid ? CoasterNodeFlags.None : CoasterNodeFlags.Invalid);
 		}
 		if ( cursor is { } cell && !IsChainStart( cell.X, cell.Y ) )
 		{
@@ -1433,6 +1443,9 @@ public sealed class CoasterTrack
 		}
 		return chain.Count < 2 ? null : (chain, false);
 	}
+
+	/// <summary>The list position of the chain start a closing click would join: the node after the cut of a reopened circuit, else the first node.</summary>
+	private int? ClosingStartIndex() => CutAfter is int cut ? (cut + 1 < nodes.Count ? cut + 1 : null) : nodes.Count > 0 ? 0 : null;
 
 	private bool IsLoopPylon( CoasterNode node ) => !node.IsPylonless && Definition.Pylon( node.LoopPylon ).IsLoop;
 

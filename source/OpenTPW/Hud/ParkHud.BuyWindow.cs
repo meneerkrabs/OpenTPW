@@ -145,6 +145,8 @@ public sealed partial class ParkHud
 			BeginPlacing( item );
 	}
 
+	// [BIN:TPW-EXE:0x4ab034 buy list price cell] a type with GoldenTicketCost above 0 that the profile did not buy with tickets (0x4d4b70) shows UITEXT 137 and the ticket cost negated (0x4ab050..0x4ab067)
+	// [APPROX:UI-105] every row shows its cash price, so such a type is listed under its own name and its cash price; the row's own buying flow is not traced
 	public string PriceText( BuildItem item ) =>
 		string.Format( CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], BuyPrice( item ) ).Replace( "  ", " " );
 

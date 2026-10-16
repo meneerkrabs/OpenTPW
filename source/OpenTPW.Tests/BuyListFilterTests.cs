@@ -12,8 +12,11 @@ public class BuyListFilterTests
 {
 	private sealed class Catalog : IBuildCatalog
 	{
+		private readonly int[] ids;
+		public Catalog( params int[] ids ) => this.ids = ids.Length == 0 ? Enumerable.Range( 1, 5 ).ToArray() : ids;
+
 		public IReadOnlyList<BuildItem> GetItems( BuildCategory category ) => category == BuildCategory.Rides
-			? Enumerable.Range( 1, 5 ).Select( id => new BuildItem( $"r{id}", id, BuildCategory.Rides, id, id * 100, null, Array.Empty<string>() ) ).ToArray() : Array.Empty<BuildItem>();
+			? ids.Select( id => new BuildItem( $"r{id}", id, BuildCategory.Rides, id, id * 100, null, Array.Empty<string>() ) ).ToArray() : Array.Empty<BuildItem>();
 	}
 
 	[TestMethod]
@@ -36,5 +39,21 @@ public class BuyListFilterTests
 	{
 		var model = new BuyListModel( new Catalog(), item => $"ride {item.InfoId}", item => item.Cost );
 		Assert.AreEqual( 5, model.Items.Count );
+	}
+
+	[TestMethod]
+	public void ResearchingATypeListsItWhenTheWindowIsOpenedAgainAndALevelWithoutAnEconomyListsEverything()
+	{
+		var park = EconomyTestData.Park();
+		var project = park.Research.Items.First( item => item.Level == 0 && item.Cost > 0 && park.Catalog.TryGet( item.InfoId, out var info ) && info.Kind == ParkObjectKind.Ride );
+		var status = new EconomyParkStatus( () => park );
+		var catalog = new Catalog( project.InfoId );
+		var model = new BuyListModel( catalog, item => $"ride {item.InfoId}", item => item.Cost, listed: status.IsAvailable );
+		Assert.AreEqual( 0, model.Items.Count, "an unresearched ride has no row" );
+		park.Research.Restore( park.Research.Completed.Append( (project.InfoId, 0) ).ToArray(), Array.Empty<((int, int), long)>(), park.Research.Effort.ToArray(), null );
+		model.EnsureSelection();
+		CollectionAssert.AreEqual( new[] { project.InfoId }, model.Items.Select( item => item.InfoId ).ToArray(), "the researched ride is listed as soon as the window opens" );
+		var sandbox = new BuyListModel( catalog, item => $"ride {item.InfoId}", item => item.Cost, listed: new NoEconomyStatus().IsAvailable );
+		Assert.AreEqual( 1, sandbox.Items.Count, "a level without an economy lists the whole catalogue" );
 	}
 }

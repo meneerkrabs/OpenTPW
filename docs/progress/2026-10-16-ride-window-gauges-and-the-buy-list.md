@@ -17,6 +17,9 @@ The ride, shop and sideshow windows, read in tp.exe via REA:
 
 The pinned run hash and saves are unchanged. Verified with 4685 tests passing without game data, 5135 with it, and all five native smokes.
 
-Still open: the Move tool (mode `0x3b`), the customer, winner and satisfaction histories in the window, the golden-ticket mystery rows,
-the gauge colours (the WCT decode of `ridestatbar.wct` looks off), the original park camera pose (`0x42b1c0`), the FOV mapping and the
-projection scales (`0x5781d0`).
+New register IDs split out of the open parts: UI-104 (the Move tool, mode `0x3b`), UI-105 (the golden-ticket rows of the buy list) and UI-106
+(the gauge art `ridestatbar.wct` decoding without the red end; the video-read colours stay UI-046). The customer and winner histories are covered by
+the 30-day rings of ECON-057; the satisfaction history stays in UI-024 and UI-905. The ride view's field of view is UI-101's difference (UI-094
+cross-references it).
+
+Still open: the original park camera pose (`0x42b1c0`) and the projection scales (`0x5781d0`).

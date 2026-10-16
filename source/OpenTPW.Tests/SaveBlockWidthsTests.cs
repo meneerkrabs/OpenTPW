@@ -242,4 +242,40 @@ public class SaveBlockWidthsTests
 		Assert.IsTrue( SaveBlockWidths.TryMeasureWorld( payload, block.Offset, out var width ) );
 		Assert.AreEqual( block.Length, width );
 	}
+
+	[TestMethod]
+	public void MutatedStructuredWorldsOnlyEverFailAsInvalidData()
+	{
+		var random = new Random( 271 );
+		var world = StructuredWorld( cell => (byte)(cell % 8) );
+		var (measured, refused) = (0, 0);
+		for ( var iteration = 0; iteration < 600; iteration++ )
+		{
+			var bytes = world.ToArray();
+			for ( var edit = 1 + random.Next( 6 ); edit > 0; edit-- )
+			{
+				// bias the edits to the status bytes of the first cells, the thing chain at the end and random places
+				var at = random.Next( 3 ) switch { 0 => 64 + SaveObjectControls.Bytes + SaveStaffPool.Bytes + SaveCalendar.Bytes + SaveWorld.ArrivalBytes + random.Next( 400 ), 1 => bytes.Length - 1 - random.Next( 40 ), _ => random.Next( bytes.Length ) };
+				bytes[Math.Clamp( at, 0, bytes.Length - 1 )] = (byte)random.Next( 256 );
+			}
+			if ( random.Next( 4 ) == 0 )
+				bytes = bytes[..random.Next( bytes.Length )];
+			var payload = SaveTestPayloads.Payload( bytes );
+			try
+			{
+				if ( SaveBlockWidths.TryMeasureWorld( bytes, 0, out var width ) )
+				{
+					measured++;
+					Assert.IsTrue( width > 0 && width <= bytes.Length );
+				}
+				else
+					refused++;
+				SavePayloadLayout.Parse( payload );
+			}
+			catch ( InvalidDataException )
+			{
+			}
+		}
+		Assert.IsTrue( measured > 0 && refused > 0, $"both outcomes are exercised ({measured} measured, {refused} refused)" );
+	}
 }

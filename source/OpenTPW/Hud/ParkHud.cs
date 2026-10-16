@@ -125,10 +125,14 @@ public sealed partial class ParkHud
 	// and calls the resume 0x10110598. The pause freezes the scaled clock (0x1010E888 → 0x10117C54) that drives the
 	// scheduler's 31 ms substeps and park turns, together with the advisor's unscaled clock (0x10117AE8).
 	// [BIN:TPW-EXE:0x4092a0 game pause] the game pause (object 0x786b68, +0x1c = 1) is called by the pause menu 0x48c830 (0x48c87e, from Esc), by the full-screen map window 0x5f0b40 (0x5f0b7f, from Space) and by the postcard 0x4a9380 (0x4a93d7, Ctrl+P), by the generic message box 0x47f020 (0x47f26c), by the main window procedure 0x46b600 when the application is deactivated (0x46b74c) and by the three screens the pause menu's handler 0x48b6a0 opens (0x49efba, 0x49f29f, 0x4a3a6c); the park pauses here for the pause menu with the screens opened from it and for the map window
-	// [APPROX:UI-096] the pause menu's own screens keep the pause (its cases 1/22 → 0x49efb0, 2 → 0x49f280, 5 → 0x4a3a30 pause at 0x49efba, 0x49f29f, 0x4a3a6c; jump table 0x48bbc8 of 0x48b6a0), but the postcard (Ctrl+P), every generic message box 0x47f020 (table 0x74f920, b_okay/b_exit buttons, 27 callers, pause at 0x47f26c) and the application's deactivation (WM_ACTIVATEAPP in 0x46b600, 0x46b74c) pause in the original and not here — evidence needed: which OpenTPW dialogs are 0x47f020's message boxes
+	// [BIN:TPW-EXE:0x48cd10 delete confirmation] the delete confirmation of an object or staff member (the object windows 0x4af600, 0x4b0b30, 0x4b2150, the attractions window 0x497640 and the All Staff window 0x4b4fc0) is a generic message box 0x47f020 with UITEXT 0x18c and the b_exit and b_okay buttons when the Confirmations option is on, so it pauses (0x47f26c) and its close resumes (0x47eed0, message 0x14 → 0x409300); the postcard (Ctrl+P, 0x4a9380) pauses the same way: confirmDelete, confirmDeleteAttraction and the postcard screen stop the park here
+	// [APPROX:UI-096] the other message boxes (0x47f020's 27 call sites: the alert queue 0x47f620 that the goal and challenge code feeds through 0x47f410, the file errors of 0x4237f0, 0x4a77f0, the online notices 0x4bc500 and 0x4ec030) and the application's deactivation (WM_ACTIVATEAPP in 0x46b600, 0x46b74c) pause in the original and not here — evidence needed: which of OpenTPW's other dialogs (the dismissal box, whose original 0x4b5e5d is no 0x47f020 caller, the loan boxes, the restart and quit boxes) correspond to those call sites
 	// [EXT:texture-pack] A first-run download may take a long time; its modal keeps the park turn paused.
 	public static float TimeScaleFor( float speedScale, IEnumerable<string> openScreens ) =>
-		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" ) ? 0 : speedScale;
+		openScreens.Any( name => name is PauseMenuScreen or MapScreenName or "texturePackDownload" or PostcardScreen or "confirmDelete" or "confirmDeleteAttraction" ) ? 0 : speedScale;
+
+	/// <summary>The name of the postcard composer's screen (it pauses the park while open, as Ctrl+P does).</summary>
+	public const string PostcardScreen = "sendPostcard";
 
 	/// <summary>The name of the map window's screen (it pauses the park while open).</summary>
 	public const string MapScreenName = "map";

@@ -35,6 +35,31 @@ Economy rules read again in tp.exe and built:
 
 The pinned run hash moves to `0x0C9F0042AD44A3E3` on top of the staff candidate draws (docs/DETERMINISM.md).
 
+## The per-employee window and All Visitors from tp.exe's tables (October 15, 2026)
+
+- **The per-employee window** (`0x4b6080`, table `0x756f48`) opens from the staff list as the original's All Staff list does: the name as
+  title, days employed, wage, skill, happiness and energy bars and the status, refreshed every 4 s; dismiss (with the Confirmations
+  option's yes/no box), pick-up (`0x505c50`), the patrol toggle (`0x4b5b50`), the cycle arrows, all staff, locate and the tick; locate and Ctrl+S
+  open the staff locator panel on the employee (`0x4b5f07`, `0x481790`) (UI-098 retired, UI-092 narrowed).
+- **All Visitors** is built from table `0x7506c8` and its builder `0x493530`: six sortable columns (number, cash, time in park in hours or
+  days, rides, thought, happiness), a value refresh every 2 s and the park info, all staff and all attractions buttons (UI-907 narrowed).
+- **The hire window's balance** reads the last closed month (`0x49bdd0`), and the string table keeps whole records, so "%d hours/day/days"
+  (UITEXT 440–442) are no longer empty.
+
+## Coaster trains and pylons from tp.exe (October 15, 2026)
+
+- **Trains** are laid out around their middle car, (n − 1) >> 1, from the last car forward, placed after each rating pass with the release
+  time as their spacing (`0x43c450`, `0x43c1f0`), and run at the mean speed of the samples under their cars; the hops queue by remaining
+  budget, the middle car giving the hop and the front car braking (`0x43ced8`; COAST-022 retired). The ride view and camera follow the
+  front car.
+- **Seats** are only in the centre-type cars (`0x43ba90`); COAST 6 bounds the capacity by the fleet's and the train's head counts, a head
+  being a dummy record with flag `0x80` (`0x43b330`, `0x44b2b0`; COAST-023 retired). The Caterpillar has 16 heads, not 12.
+- **Pylons** play all five clips (loft, rotate, incline, bank, loop tilt; `0x430ca0`, `0x430ed0`) through their clip maps, with each dummy
+  record on its own node (`0x44ab90`); the station ends take the auto bank (`0x4310c8`). Cars stand on the curve at their knot-pair
+  parameter (`0x43c0a0` → `0x43e6b0`) and riders sit on the PC head sockets (COAST-015, -017, -033 and -034 narrowed).
+- Saves gain two optional fields (a train's reference car, the ride's lead-car coordinate, which also joins the state hash); older saves
+  convert from the front car. The coaster hash content changes with all of this (docs/DETERMINISM.md); no pinned hash depended on it.
+
 ## Nine divergences from tp.exe fixed (October 15, 2026)
 
 Divergences found while reading other areas, each checked in tp.exe and fixed in its own commit:

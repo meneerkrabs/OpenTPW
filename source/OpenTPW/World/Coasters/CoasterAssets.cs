@@ -128,11 +128,14 @@ internal sealed class CoasterAssets : IDisposable
 			{
 				var loft = FindModel( name + "L" )?.Clip;
 				var rotate = (FindModel( name + "R" ) ?? FindModel( name + "R1" ))?.Clip;
-				rig = new CoasterPylonRig( geometry, loft, rotate, Definition.Pylon( loop ) );
+				var incline = FindModel( name + "I" )?.Clip;
+				var bank = FindModel( name + "B" )?.Clip;
+				var loopTilt = FindModel( name + "R2" )?.Clip;
+				rig = new CoasterPylonRig( geometry, loft, rotate, Definition.Pylon( loop ), incline, bank, loopTilt );
 				// [BIN:TPW-EXE:0x430590 pylon capabilities] the model's animations by type: loft L, rotate R or R1, incline I, bank B and the second rotate clip R2
 				rig.Capabilities = (loft != null ? CoasterPylonCapabilities.Loft : 0) | (rotate != null ? CoasterPylonCapabilities.Rotate : 0)
-					| (FindModel( name + "I" )?.Clip != null ? CoasterPylonCapabilities.Incline : 0) | (FindModel( name + "B" )?.Clip != null ? CoasterPylonCapabilities.Bank : 0)
-					| (FindModel( name + "R2" )?.Clip != null ? CoasterPylonCapabilities.LoopTilt : 0);
+					| (incline != null ? CoasterPylonCapabilities.Incline : 0) | (bank != null ? CoasterPylonCapabilities.Bank : 0)
+					| (loopTilt != null ? CoasterPylonCapabilities.LoopTilt : 0);
 			}
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or IOException or ArgumentException )
@@ -146,11 +149,11 @@ internal sealed class CoasterAssets : IDisposable
 	/// Poses a pylon for a node. The mesh conversion happens here, after the model loaded, so a vertex the converter refuses (a nonfinite position) is caught
 	/// here: the rig is switched off for the level and the pylon is left out.
 	/// </summary>
-	public IReadOnlyList<CoasterModelPart> PosePylon( bool loop, CoasterPylonRig rig, float height, float yaw, bool stackedAbove )
+	public IReadOnlyList<CoasterModelPart> PosePylon( bool loop, CoasterPylonRig rig, CoasterPylonPose pose, bool stackedAbove )
 	{
 		try
 		{
-			return rig.Pose( height, yaw, stackedAbove );
+			return rig.Pose( pose, stackedAbove );
 		}
 		catch ( Exception exception ) when ( exception is InvalidDataException or NotSupportedException or ArgumentException or IndexOutOfRangeException )
 		{

@@ -73,7 +73,8 @@ public class RideCameraTests
 		void CheckFrame()
 		{
 			var (eye, look) = RideCameraMode.CoasterFrame( ride, origin );
-			var sample = ride.SampleAt( ride.Trains[0].Position );
+			// The train's position is its middle car's; the front car stands its offset ahead (0x43bc20).
+			var sample = ride.SampleAt( ride.CarCoordinate( ride.Trains[0], 0 ) );
 			Assert.AreEqual( origin.X + sample.Position.X * ObjectPlacement.ModelScale, eye.X, 1e-3f, "the eye sits on the front car's sample" );
 			Assert.AreEqual( origin.Y + sample.Position.Z * ObjectPlacement.ModelScale, eye.Y, 1e-3f );
 			Assert.AreEqual( sample.Position.Y * ObjectPlacement.ModelScale + RideCameraMode.CoasterSeatHeight, eye.Z, 1e-3f );

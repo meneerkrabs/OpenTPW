@@ -83,6 +83,7 @@ public sealed class ObjectAnimator
 	private readonly Matrix4x4[] world;
 	private readonly int[] order;
 	private readonly int[] meshByNode;
+	private readonly ModelPath?[] pathByNode;
 	private readonly NVector3[]?[] vertexPositions;
 	private readonly NVector2[]?[] texCoords;
 	private readonly int[] vertexVersions;
@@ -149,6 +150,9 @@ public sealed class ObjectAnimator
 		}
 		// Unreachable nodes (none in the corpus) keep their rest matrices.
 		order = sorted.ToArray();
+		pathByNode = new ModelPath?[model.Nodes.Count];
+		for ( var node = 0; node < pathByNode.Length; node++ )
+			pathByNode[node] = model.GetPathOf( node );
 		meshByNode = new int[model.Nodes.Count];
 		Array.Fill( meshByNode, -1 );
 		for ( var mesh = 0; mesh < model.Meshes.Count; mesh++ )
@@ -726,6 +730,8 @@ public sealed class ObjectAnimator
 		{
 			var any = false;
 			var (scale, rotation, translation) = restComponents[node];
+			Matrix4x4? facing = null;
+			NVector3 facingScale = NVector3.One;
 			Channel? vertexWinner = null, uvWinner = null;
 			foreach ( var channel in channels.Values )
 			{
@@ -735,12 +741,31 @@ public sealed class ObjectAnimator
 				any = true;
 				var tick = channel.Player.Tick;
 				// Before a component's first key the sampler leaves it unchanged, so a lower channel's value stays.
-				if ( track.SampleScale( tick ) is { } sampledScale )
-					scale = sampledScale;
+				// The sampler writes rotation rows, scales them, then the path's facing replaces them (0x471860).
 				if ( track.SampleRotation( tick ) is { } sampledRotation )
+				{
 					rotation = sampledRotation;
+					facing = null;
+				}
+				if ( track.SampleScale( tick ) is { } sampledScale )
+				{
+					scale = sampledScale;
+					facingScale = sampledScale;
+				}
 				if ( track.SampleTranslation( tick ) is { } sampledTranslation )
 					translation = sampledTranslation;
+				// [BIN:TPW-EXE:0x00471F1D path evaluation] a flag-0x200 record without position keys sets the node on its parent dummy's path; with 0x400 its rows face along the path (0x470780), row 1 from its rotation keys or +Y without them, and scale is dropped
+				if ( pathByNode[node] is { } path && track.TrySamplePath( path, tick, out var onPath, out var direction ) )
+				{
+					translation = onPath;
+					if ( direction is { } along )
+					{
+						facing = ModelPath.Facing( along, (track.Flags & 0x8) != 0 ? NVector3.Transform( NVector3.UnitY, rotation ) : NVector3.UnitY );
+						// The facing rows are unit length: an earlier scale is gone, a later channel's scale applies to them.
+						scale = NVector3.One;
+						facingScale = NVector3.One;
+					}
+				}
 				if ( track.SampleNodeFlag( tick ) is { } flag )
 					SetNodeStateBit( node, flag );
 				if ( channel.Vertices[node] != null || channel.Poses[node] != null )
@@ -748,9 +773,9 @@ public sealed class ObjectAnimator
 				if ( channel.Uvs[node] != null )
 					uvWinner = channel;
 			}
-			var local = any
-				? Matrix4x4.CreateScale( scale ) * Matrix4x4.CreateFromQuaternion( rotation ) * Matrix4x4.CreateTranslation( translation )
-				: model.Nodes[node].Transform;
+			var local = !any ? model.Nodes[node].Transform
+				: facing is { } facingRows ? Matrix4x4.CreateScale( facingScale ) * facingRows * Matrix4x4.CreateTranslation( translation )
+				: Matrix4x4.CreateScale( scale ) * Matrix4x4.CreateFromQuaternion( rotation ) * Matrix4x4.CreateTranslation( translation );
 			var parent = model.Nodes[node].ParentIndex;
 			world[node] = parent < 0 ? local : local * world[parent];
 			if ( meshByNode[node] >= 0 )

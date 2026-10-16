@@ -368,6 +368,7 @@ internal sealed partial class GameFlow : IDisposable
 			ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
 			WindowOpened = window => Advisor?.OnWindowOpened( window ),
 			WindowClosed = window => Advisor?.OnWindowClosed( window ),
+			HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
 		} );
 		return createdHud;
 	}
@@ -514,7 +515,9 @@ internal sealed partial class GameFlow : IDisposable
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
 			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
-			GameAudio.SetCrowd( GuestsNearCamera( Level ) );
+			// The game timer the steps follow stands still while the park is paused, as the advisor's clock does.
+			var crowdLevel = Level;
+			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ) );
 			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1, Level.StaffWorld?.DrivesStaff == true );
 			if ( Level.StaffWorld != null )
 				GameAudio.PlayStaffVoices( Level.StaffWorld.TakeVoices() );

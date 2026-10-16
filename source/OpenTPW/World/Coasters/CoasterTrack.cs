@@ -209,7 +209,7 @@ public sealed class CoasterTrack
 	/// </summary>
 	// [BIN:TPW-EXE:0x436ac0 station nodes] S0: creation parameters 0x274 = node flags 0x400 | 0x1800 (winch) | 0x80000 (no previous link), bit 4 skips the height clamp (0x433bd0 → 0x433790), bit 0x200 registers the pylon in its cell; S1: 0x3c = 0x200 | 0x400 | 0x1800, the exact dummy position as knot (node +0x4c..+0x54); S2: 0x28c = 0x200 | 0x40000 (no next link); ordinals 0, 1, 2
 	// [BIN:TPW-EXE:0x434060 node creation parameters] the constructor maps its parameter bits to node flags: 8 → 0x200, 0x10 → 0x400, 0x20 → 0x1800, 0x40 → 0x80000, 0x80 → 0x40000, 0x100 → 0x100000 (0x4343a6..0x4343eb); bit 0x200 puts the pylon in its map cell (0x452d30)
-	// [APPROX:COAST-029] the middle node's winch mark is re-derived by the rating pass instead of kept from the creation parameter; the middle knot takes fTrackHeightAdjust like every pylon knot (only the Big Dripper's −1.5 is nonzero) where the original's raw descriptor position may not; and a station whose dummies lie below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Escape Velocity 12.04 against 30, Candy Coaster 7.09 against 10) stands on pylon end nodes raised to h0, exactly as the loft clamp t = clamp((h − h0)/(h1 − h0), 0, 1) says, so S0 and S2 sit above the middle node by h0 − h; whether the original's pylon pose and the terrain height under the pylon's cell leave it so has not been traced
+	// [APPROX:COAST-029] the middle node's winch mark is re-derived by the rating pass instead of kept from the creation parameter; the middle knot takes fTrackHeightAdjust like every pylon knot (only the Big Dripper's −1.5 is nonzero) where the original's raw descriptor position may not; the station's pylon nodes below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Candy Coaster 7.09 against 10) are the original's: the knot pass clamps their height parameter to 0 and writes it back (0x430ca0) and stands them at ground + h0 (0x430ed0), so S0 and S2 sit above the middle node by h0 − h
 	public void SetStation( (int X, int Y) depart, (int X, int Y) @return, CoasterStationLayout layout )
 	{
 		if ( depart == @return )
@@ -927,7 +927,7 @@ public sealed class CoasterTrack
 	/// </summary>
 	// [BIN:STP-PPC:0x10033398 node position] descriptor +28 = 10x, +36 = 10y, +32 = terrain height; the node is at the cell centre (+5.0, 0x100333EC); Y = ground + h(t), or Y below + pylon +196 + h(t) when stacked
 	// [BIN:TPW-EXE:0x434060 pylon-less knot] a pylon-less node's knot is its descriptor's exact position (node +0x4c..+0x54); the station end node's descriptor holds the world position of S0's pylon track dummy (0x435570), so the end node stands on the knot of S0
-	// [APPROX:COAST-015] knots are the node positions (one knot per node), a pylon's knot axis is the node forward tangent and its roll the node bank; the pylon mesh track tags behind 0x1019B298 and the incline and bank clips are not read — evidence needed: the tag table builder and the tag data in the StdPylon/LoopPylon meshes
+	// [APPROX:COAST-015] knots are the node positions (one knot per node), a pylon's knot axis is the node forward tangent and its roll the node bank; the original's pylon knots are its model's tag dummies — the records with 0x400000 in the order of their values (0x4344c0; one tag on the PC's Gorilla, Skull and Ape pylons, the In, Centre and Out tags 3 to 5 units apart on the others; a model with two 0x1000000 records, pylon flag 8, gets two tag tables, 0x430590, and the stack pass 0x432d50 gives the lower nodes of a cell's stack, which it marks 0x100, the three-tag table +0x84 and the others the one-tag table +0x78), each knot at its tag's posed position with its tag's forward row as direction (0x430ed0, 0x4321c0), its second rail at +(0, 1, 0) or, on a loop node, 2 × the tag's up row, and its node's roll (+0xe4) the tag's up row with the yaw and pitch taken out — not built: the knot pass and sampler over several knots per node (the station's S0 tags against the end node on S0's track dummy), the stack pass's 0x100 marks, the tag turn of node flag 0x10000000 (0x4315f0 by −π) and the knot pass's clamp of the height parameter to [0, 1] (0x430ca0 writes it back)
 	public SVector3 NodePosition( CoasterSite site, CoasterNode node )
 	{
 		if ( node.IsStationEnd )
@@ -1003,6 +1003,48 @@ public sealed class CoasterTrack
 	}
 
 	/// <summary>
+	/// Whether a node's pylon is turned half a turn (node flag <c>0x10000000</c>, <c>0x431660</c>): on a suspended coaster, a node without flag 0x40 whose
+	/// pylon is not a loop pylon and whose turn is a curve (neither straight case) gets it when b.x·a.z − b.z·a.x &lt; 0 with a and b the vectors to its
+	/// previous and next node, so the pylon stands on the outside of the turn; every other curve node loses it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x431f06 suspended pylon side] in the curve branch of the tangent routine, definition flag 8 set, node flag 0x40 clear and the Y component of b × a below 0 set node flag 0x10000000 (0x431f29), else it is cleared (0x431f34); the straight and loop-pylon branches leave it as it was
+	// [APPROX:COAST-033] a straight or loop-pylon node keeps the flag from its last curve pass in the original; here it is clear there
+	public static bool PylonTurnedBack( SVector3 previous, SVector3 position, SVector3 next, float? straightDot, bool loopPylon, bool suspended, bool loopNode )
+	{
+		if ( !suspended || loopNode || loopPylon )
+			return false;
+		var a = previous - position;
+		var b = next - position;
+		var ua = SVector3.Normalize( a );
+		var ub = SVector3.Normalize( b );
+		var dot = ua.X * ub.X + ua.Y * ub.Y + ua.Z * ub.Z;
+		if ( dot < (straightDot ?? -0.999f) || dot > 0.999f )
+			return false;
+		return b.X * a.Z - b.Z * a.X < 0;
+	}
+
+	/// <summary>The <see cref="PylonTurnedBack"/> flag of every node of a chain whose neighbours its tangent uses (the flag-masked previous and next node).</summary>
+	internal bool[] PylonsTurnedBack( IReadOnlyList<CoasterNode> chain, IReadOnlyList<CoasterKnot> knots )
+	{
+		var count = chain.Count;
+		var result = new bool[count];
+		for ( var index = 0; index < count; index++ )
+		{
+			var node = chain[index];
+			if ( node.IsPylonless || index == 0 || (node.Flags & (CoasterNodeFlags.NoPreviousLink | CoasterNodeFlags.CutStart)) != 0 )
+				continue;
+			int? next = (node.Flags & (CoasterNodeFlags.NoNextLink | CoasterNodeFlags.CutEnd)) != 0 ? null
+				: (node.Flags & CoasterNodeFlags.EndNextIsSecond) != 0 ? (count > 1 ? 1 : null)
+				: index + 1 < count ? index + 1 : null;
+			if ( next is not int after )
+				continue;
+			result[index] = PylonTurnedBack( knots[index - 1].Position, knots[index].Position, knots[after].Position, Definition.Pylon( node.LoopPylon ).StraightDotThreshold,
+				IsLoopPylon( node ), Definition.IsSuspended, (node.Flags & CoasterNodeFlags.Loop) != 0 );
+		}
+		return result;
+	}
+
+	/// <summary>
 	/// The node bank of auto-banking (<c>0x3f548</c>): v(±π − θ)/4/(|prev − P| + |next − P|), +π when θ ≥ 0, 0 when θ = 0.
 	/// </summary>
 	// [BIN:STP-PPC:0x1003F548 auto-bank] bank = v × (±π − θ) / definition +16 (4.0) / (|prev − P| + |next − P|), sign of π from θ, 0 when θ = 0; stored in node +216
@@ -1067,20 +1109,23 @@ public sealed class CoasterTrack
 		for ( var index = 0; index < count; index++ )
 		{
 			var node = chain[index];
-			// [BIN:TPW-EXE:0x4310c8 auto-bank] a node banks unless it carries node flag 0x4 (or 0x100 forces bank 0) and only when it has a next node in the list (the test of the raw link, not the flag-masked neighbour); the PC build path never sets 0x4 and the station end node's 0x144 are creation parameters (0x434060)
-			// [APPROX:COAST-015] S0 has no previous node and is not banked (its angle needs both neighbours); S2, whose next link the tangent ignores but the bank pass does not, banks from S1 and the first pylon like any node; the speed estimate runs through the banked nodes only
+			// [BIN:TPW-EXE:0x4310c8 auto-bank] a node banks unless it carries node flag 0x4 and only when it has a next node in the list (the test of the raw link +0x64, not the flag-masked neighbour); the PC build path never sets 0x4 and the station end node's 0x144 are creation parameters (0x434060)
+			// [BIN:TPW-EXE:0x43c160 node bank] bank = (±π − turn)·v / definition +0x10 / (|next − P| + |prev − P|) over the raw links, 0 when the turn (+0x94) is 0 or node flag 0x100 is set; the tangent routine leaves the turn 0 on a node without a flag-masked previous or next neighbour (0x431660: S0, S2, the cut ends), so those bank 0
+			// [BIN:TPW-EXE:0x431101 bank speed estimate] after every node that passed the test the running speed estimate takes the step to the raw next node (0x43bfb0, floor definition +0x48 = fMinSpeed), whatever its bank: S0, S2 and the 0x100 nodes too
 			// [BIN:TPW-EXE:0x442010 manual bank] a node the tilt button banked by hand carries flag 4: the auto-bank pass skips it and its +0xD8 keeps the hand-set value
 			if ( (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) == CoasterNodeFlags.NoAutoBank && !node.IsPylonless )
 			{
 				banks[index] = node.Bank;
 				continue;
 			}
-			if ( !Definition.AutoBanks || (node.Flags & (CoasterNodeFlags.NoAutoBank | CoasterNodeFlags.ZeroBank)) != 0 || index == 0 || index == count - 1 )
+			if ( !Definition.AutoBanks || (node.Flags & CoasterNodeFlags.NoAutoBank) != 0 || index == count - 1 )
 				continue;
-			var previous = positions[index - 1];
 			var next = positions[index + 1];
-			var turn = TurnAngleXZ( previous, positions[index], next );
-			banks[index] = AutoBank( speed, turn, (previous - positions[index]).Length(), (next - positions[index]).Length() );
+			if ( (node.Flags & CoasterNodeFlags.ZeroBank) == 0 && Previous( index ) is int back && Next( index ) is int forward )
+			{
+				var turn = TurnAngleXZ( positions[back], positions[index], positions[forward] );
+				banks[index] = AutoBank( speed, turn, (positions[index - 1] - positions[index]).Length(), (next - positions[index]).Length() );
+			}
 			speed = SpeedEstimate( Definition, speed, Definition.MinSpeed, positions[index].Y, next.Y );
 		}
 		if ( writeBanks )
@@ -1128,7 +1173,7 @@ public sealed class CoasterTrack
 	/// A pylon node's direction with its hand-set yaw and incline: the pylon animation turns the track tag with them. The yaw replaces the heading of the direction; the incline pitches it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x430590 pylon clips] a pylon's animations by type: 3 loft (pylon flag 0x20), 10 rotate (0x40), 2 incline (0x80), 9 bank (0x100), 10 second (0x200); the pylon pose feeds node +0xE0 (yaw), +0xDC (incline) and +0xD8 (bank) to them and the track tag's pose is the knot's direction
-	// [APPROX:COAST-028] the hand-set yaw replaces the heading of the knot direction and the incline pitches it by half its value (±π maps to ±90°); the pose routine that feeds the values to the rotate and incline clips and the tag positions the clips move are not traced, so the angle each clip applies is a guess — evidence needed: the clip durations and the tag's pose at the extremes of the drag
+	// [APPROX:COAST-028] the hand-set yaw replaces the heading of the knot direction and the incline pitches it by half its value (±π maps to ±90°); in the original the knot direction is the posed tag's forward axis (COAST-015): the yaw turns the rotate clip by yaw/2π and the incline the incline clip by pitch/2π through fInclineAnimMultiplier (0x430ed0, 0x430ca0; CoasterPylonRig poses both), so a PC tag tilts about 36° to 60° at the clip's ends, a tilt the knots do not take here
 	private static SVector3 ApplyManualPose( CoasterNode node, SVector3 direction )
 	{
 		if ( (node.Flags & (CoasterNodeFlags.ManualYaw | CoasterNodeFlags.ManualIncline)) == 0 )

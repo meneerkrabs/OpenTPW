@@ -226,9 +226,15 @@ the sentence now applies the original `low + floor((high - low) × parameter / 1
 interpolation (`sound_shared` `0x1000F32C`, `0x1000F3C8–0x1000F3F4`), using the first
 volume-mask slot (`0x1000F2E0`). The shipped crowd bounds are 14–22 percent. Sections
 without that selector retain their range-based volume, and the other parameter
-producers remain outside this crowd fix. Gain is evaluated when a segment starts; the original
-re-evaluates the playing sample's volume and pitch when a parameter in slots 1-3 changes (`0x6bbb80` ->
-`0x6bbbe0`), and which slot carries the crowd's parameter 7 is not read (AUDIO-036).
+producers remain outside this crowd fix. A segment evaluates its volume when it starts, and a parameter
+call re-evaluates the playing one as the PC library does (`0x6bbb80` -> `0x6bbbe0`, `SoundSentence.SetParameter`):
+a placeholder's four slots hold the event's code (event `+0x12`), the current sound's two selectors (`+0x16`,
+`+0x1A`, refreshed whenever the sentence moves to another sound) and 0, and a call whose code matches slot 1-3
+recomputes the volume (unless a fixed volume was set) and redraws the pitch. The crowd event's code is 7 and sounds
+1-6 of its twelve bind 7 in slot 1 under the volume mask, so every crowd update moves the playing section's volume
+and pitch; sounds 7-12 have selector 0. The PC's main loop sends the crowd update (`0x51E7B0`) and the music
+parameter on every 32nd world step of 31 ms of the game timer (`0x54F82D`, `WorldStepCadence`), about once a
+second, so the crowd also starts and stops on that beat.
 
 ## On-demand bank boundaries
 
@@ -593,7 +599,6 @@ implemented yet.
 | AUDIO-904 | The camera's near plane (0.1 engine units = 0.5 original units) clips the nearest drops; the original's near plane is 0.1 original units (`0x54e86f` → `0x578be0`) and its clipper cuts the streaks there; the vertex buffer is sized once (1024 drops, 16 bolts of 512 segments) | A near clip of 0.1 original units for the weather without changing the scene's depth mapping |
 | AUDIO-033 | Minimum distance 2 is confirmed in both builds; the exponent 0.8 (the fork's QMixer lead) and the missing 2.1 maximum floor stand | The gain curve inside QMixer/SoundSprocket (outside the analysable binaries) |
 | AUDIO-034 | Held-chain child timing, first-sound selection and child hard stop follow fork-only PC leads | The PC library's sentence classes (vtables `0x70a7e0`/`0x70a8d0`) |
-| AUDIO-036 | Crowd parameter-controlled volume is evaluated at PCM segment start; the original re-evaluates the playing sample when a parameter in slots 1-3 changes (`0x6bbb80` -> `0x6bbbe0`) | Which slot carries the crowd's parameter 7 |
 | AUDIO-038 | The voice pool of 12 (tp.exe `0x6b62b0`) ranks the held chains (screams) with the running sentences, placed sounds and one-shots of the event system by priority and ground distance (`0x6bb9f0`); a voice enters only while its rank exceeds the pool's lowest (`0x6b6bc0` compares strictly), so equal ranks keep the order of the manager's voice list; out-of-range voices without the any-distance flag have their sample stopped (`0x6bca70` → `0x6b8d60` → `0x6bb7c0`); OpenTPW stops one-shots and sentence segments and a chain starts no new child, but looping voices and a chain's playing children are not stopped | The voice list's insertion order; what restarts a stopped loop (the waterfall resumes) and how a stopped sentence resumes |
 
 ### Register round 2 (October 14)
@@ -634,6 +639,9 @@ evidence as `[BIN:TPW-EXE:...]` notes.
 * **Chooser contradiction**: the Mac reading of the chooser (frozen seed, top 16 bits without the rotate,
   `SoundEvents.cs` line 151 before this round) disagrees with the PC instructions (advancing, stored,
   rotated by 13); the PC reading is used and the Mac reading is to be rechecked.
+* **Retired October 15**: 036 (a parameter call re-evaluates the playing segment's volume and pitch when its code is
+  in slot 1-3; the crowd's code 7 is the event's and sounds 1-6's slot-1 selector; the crowd update runs on every
+  32nd world step).
 
 
 The option volumes are percentages (0–100) like the original's `{on, percent}` pairs, with the

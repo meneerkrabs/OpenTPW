@@ -136,7 +136,7 @@ class Source(unittest.TestCase):
         cls.register = text(COASTERS / 'CoasterApproximations.cs')
 
     def test_cv2_1_partial_hop_is_not_floored(self):
-        move = re.search(r'private void Move\( CoasterTrain train.*?\n\t}\n', self.ride, re.S).group(0)
+        move = re.search(r'private bool HopTrain\( CoasterTrain train.*?\n\t}\n', self.ride, re.S).group(0)
         self.assertNotRegex(move, r'end = end < minimumFloor \? minimumFloor : end;')
 
     def test_cv2_2_end_node_knot_points_down(self):

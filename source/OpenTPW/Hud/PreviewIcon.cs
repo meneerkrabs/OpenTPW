@@ -8,15 +8,16 @@ namespace OpenTPW.Hud;
 /// <summary>
 /// Build-menu icon from an object's original preview model (<c>P&lt;name&gt;.MD2</c>, see
 /// <c>Info.PreviewAnimType</c>/<c>PreviewAnimNum</c> in Rides.sam). The original shows these previews
-/// turning in the menu; OpenTPW projects the model orthographically on the CPU with a fixed
-/// 30° tilt and painter-sorted triangles, which is an approximation of the original 3D draw.
+/// turning in the menu (tp.exe 0x486410 → 0x4689f0, updated by 0x468e50); OpenTPW projects the model orthographically on the CPU
+/// with painter-sorted triangles, which is an approximation of the original 3D draw.
 /// </summary>
-// [APPROX:UI-026] orthographic CPU projection, 30° tilt, painter sorting — evidence needed: capture of the original build menu
+// [APPROX:UI-026] orthographic CPU projection and painter sorting, the model centred in its frame; the original draws the preview object through its 3D object pipeline (0x463c80) with the placement terms of 0x468e50 and starts its animation 5 (0x4732a0)
 public sealed class PreviewIcon
 {
 	private readonly List<(NVector3 A, NVector3 B, NVector3 C, NVector2 UvA, NVector2 UvB, NVector2 UvC, UiTexture? Texture)> triangles = new();
 	private readonly NVector3 center;
 	private readonly float radius;
+	private readonly NVector3 minimum, maximum;
 
 	/// <param name="resolveTexture">Game image path for a material name (null: untextured).</param>
 	/// <param name="resolveRuntimeTexture">Textures the game makes at run time, e.g. the object's <c>sign1</c>/<c>sign2</c> text; asked first, null means "not one".</param>
@@ -57,6 +58,8 @@ public sealed class PreviewIcon
 			throw new InvalidDataException( "Preview model has no textured geometry." );
 		center = (min + max) / 2;
 		radius = Math.Max( 1e-3f, (max - min).Length() / 2 );
+		minimum = min;
+		maximum = max;
 	}
 
 	public int TriangleCount => triangles.Count;
@@ -66,10 +69,35 @@ public sealed class PreviewIcon
 	private static NVector2 Uv( ModelFile.Mesh mesh, int index ) => new( mesh.TexCoords[index].X, 1 - mesh.TexCoords[index].Y );
 
 	/// <summary>Adds the model turned by <paramref name="yaw"/> radians, fitted into <paramref name="rect"/>.</summary>
-	public void Draw( UiBatch batch, UiRect rect, float yaw )
+	public void Draw( UiBatch batch, UiRect rect, float yaw ) =>
+		Draw( batch, rect, yaw, 30f * MathF.PI / 180, Math.Min( rect.Width, rect.Height ) / (radius * 2) );
+
+	/// <summary>The buy window's preview tilt: 45 degrees (tp.exe 0x468e50 tilts by the sine-table entries of ±π/4, 0x6fe7e4 / 0x6fe7e8, through 0x46f240).</summary>
+	public const float BuyTilt = MathF.PI / 4;
+	/// <summary>The buy window's preview turn in radians per second: 0.0004 a millisecond (tp.exe 0x46908a, 0x6fe804).</summary>
+	public const float BuyTurnRate = 0.4f;
+
+	/// <summary>
+	/// The buy window's scale for a model of bounds <paramref name="min"/>..<paramref name="max"/> in a frame of <paramref name="width"/> x <paramref name="height"/>:
+	/// two thirds of the frame's normalized width over the half-diagonal of the model's ground footprint, or the frame's height over the distance from the
+	/// footprint's low corner on the ground to the bounds' high corner, whichever is smaller.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4689f0 buy preview fit] the preview object takes min(width x 2/3 / sqrt((dx/2)^2 + (dz/2)^2), height / |max - (min x, 0, min z)|) in the
+	// normalized screen units of 0x486410 (x over 1024, y over 768 canvas units) and later squeezes x by 0.75 (0x469067), so in canvas units the width term is
+	// width / 2 over the half-diagonal
+	public static float BuyScale( float width, float height, NVector3 min, NVector3 max )
 	{
-		var rotation = NMatrix4x4.CreateTranslation( -center ) * NMatrix4x4.CreateRotationY( yaw ) * NMatrix4x4.CreateRotationX( 30f * MathF.PI / 180 );
-		var scale = Math.Min( rect.Width, rect.Height ) / (radius * 2);
+		var halfDiagonal = MathF.Sqrt( MathF.Pow( (max.X - min.X) / 2, 2 ) + MathF.Pow( (max.Z - min.Z) / 2, 2 ) );
+		var reach = (max - new NVector3( min.X, 0, min.Z )).Length();
+		return Math.Min( width / 2 / Math.Max( 1e-3f, halfDiagonal ), height / Math.Max( 1e-3f, reach ) );
+	}
+
+	/// <summary>Adds the model as the buy window shows it: turned by <paramref name="yaw"/>, tilted 45 degrees and fitted to the frame <paramref name="rect"/> by the original's rule.</summary>
+	public void DrawBuyPreview( UiBatch batch, UiRect rect, float yaw ) => Draw( batch, rect, yaw, BuyTilt, BuyScale( rect.Width, rect.Height, minimum, maximum ) );
+
+	private void Draw( UiBatch batch, UiRect rect, float yaw, float tilt, float scale )
+	{
+		var rotation = NMatrix4x4.CreateTranslation( -center ) * NMatrix4x4.CreateRotationY( yaw ) * NMatrix4x4.CreateRotationX( tilt );
 		var middle = rect.Center;
 		NVector2 Project( NVector3 point, out float depth )
 		{

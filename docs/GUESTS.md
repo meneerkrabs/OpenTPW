@@ -177,6 +177,23 @@ passed since the last group emptied. A unit is four park turns (`(turn >> 2)`, a
 shipped 150 is about two and a half minutes. The timer starts unset, so a park loaded at a later turn (an
 original save) gets its first group at once, while a new park waits one interval.
 
+**The arrival vehicle.** The group comes by bus, seaplane or Ferry, the level's own fixed items run by their
+level scripts (`bus.RSE`, `seaplane.RSE`, `Ferry.RSE`). The arrival update (tp.exe `0x4cf3e0`, once per world
+turn, at the end of `0x516380`) talks to the vehicle at work through two script variables, 0 (the trigger) and
+1 (the status), as `GuestSimulation.ArrivalVehicles` does. A group that starts with no vehicle at work sends
+one by size (`0x51a2f0`): a bus up to 35 guests, a seaplane up to 60, a Ferry above. A vehicle the park
+already holds gets its trigger set; a new one is placed then (not at world setup) with status 1; a kind the
+level lacks falls back to the Ferry, then the seaplane, then the bus. While the vehicle reports status 2 (at
+its stop) one guest steps off per world turn; the turn that finds the group empty restarts the timer and sets
+the trigger, and the vehicle drives off. Status 6 (gone) releases it (`0x51a690` writes 0 back). Guests
+waiting to go home call a vehicle when none is at work (size 0: one world draw picks the kind, `0x51a34b`;
+OpenTPW draws it from the economy stream, DET-014) and keep it at status 4 until the last has boarded
+(`0x500bd0`). The time to the stop is the script's: the jungle bus waits 2 s, plays its drive-in clip
+`Busm1` for the time its trigger reports (the clip's 7,333 ms less 300) and waits 1 s more, so its first guest steps off about 10 s after
+the group starts. A park without any vehicle definition (the original stops with a fatal error) steps its
+guests off from the turn after the group starts, and its leaving guests go after 3 s. What still differs
+around the stop is ARRIVAL-001: the original first walks a leaving guest to the vehicle's own stop cells.
+
 The group size is `(int)(0.8 × (park points + NewParkBonus)) / PointsPerVisitor` (`PointsPerVisitor` below 2
 divides by 1), at least `MinPeople`, cut so that the guests in the park plus the group stay within 1,500;
 a bankrupt park gets none. With the shipped 20 and 6 a new park gets 2 guests per group. The PowerPC oracle
@@ -245,7 +262,7 @@ home (21) → removed.
 
 | Item | OpenTPW choice |
 | --- | --- |
-| Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once its arrival vehicle reports script variable 1 = 2 at the stop (tp.exe `0x4cf3e0`, run once per world turn). The vehicle (a bus up to 35 guests, a seaplane up to 60, a Ferry above, `0x4cf48c`) is not modelled, so its level script's drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
+| Arrival step-off | One guest steps off per park turn while the arrival vehicle reports status 2 at its stop, lanes A/B alternating (tp.exe `0x4cf3e0`, [Arrivals](#arrivals)); leaving guests wait at the lane's first cell and board at status 4 (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | traced ([below](#needs-and-starting-values)); the energy meter is tp.exe's unnamed float +0x1B8: 0 at creation, a completed use takes the type's `FatigueEffect` off it (`0x4fd970`, clamped to 0..100; 5 in the shipped data, so it stays 0), and only the save reads it; thoughts as in tp.exe ([Thoughts](#thoughts)) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)); the presentation turns are not (GUEST-010) |

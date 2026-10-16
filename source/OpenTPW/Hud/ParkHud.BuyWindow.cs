@@ -289,11 +289,10 @@ public sealed partial class ParkHud
 		{
 			if ( owner.buy.SelectedItem is not { } item )
 				return;
-			var rect = ScreenRect( context.Canvas );
-			var size = Math.Min( rect.Width, rect.Height );
-			var square = new UiRect( rect.X + (rect.Width - size) / 2, rect.Y + (rect.Height - size) / 2, size, size ).Inflate( -size * 0.06f );
-			// [APPROX:UI-026] icon turn speed 0.8 rad/s — evidence needed: capture of the original build menu
-			owner.GetIcon( item )?.Draw( context.Batch, square, context.Time * 0.8f );
+			// [BIN:TPW-EXE:0x468e50 buy preview turn] each update adds the clock's elapsed milliseconds (0x785970, 0x4031e0) x 0.0004 to the preview's angle (+0x48), and a
+			// new preview keeps the angle modulo 2 pi (0x468e2f), so the turn runs on across selections, as a clock-derived angle does
+			// [BIN:TPW-EXE:0x4ab1b0 buy preview] a selection makes the preview object (0x486410) in the inner rectangle (+0x2c, 0x65d4f6) of the preview frame 0x1ea, (437,202)-(797,565)
+			owner.GetIcon( item )?.DrawBuyPreview( context.Batch, ScreenRect( context.Canvas ), context.Time * PreviewIcon.BuyTurnRate );
 		}
 	}
 
@@ -348,11 +347,14 @@ public sealed partial class ParkHud
 	/// <summary>The scroll ball's authored rectangle for the first visible row <paramref name="firstRow"/> of <paramref name="maxFirstRow"/>.</summary>
 	// [BIN:TPW-EXE:0x66b088 slider ball] a vertical slider puts its ball (child 3) at top + (min - value) × (height - ball height) / (min - max) in integer table units, so with
 	// the list's range 0 .. count - visible (0x664495) the ball's top runs from the track's top for the first row to a ball height above its bottom for the last
-	internal static UiRect BuyScrollKnobRect( int firstRow, int maxFirstRow )
+	internal static UiRect BuyScrollKnobRect( int firstRow, int maxFirstRow ) => ListScrollKnobRect( BuyScrollTrack, BuyScrollKnob, firstRow, maxFirstRow );
+
+	/// <summary>The ball rectangle of a list's vertical slider on <paramref name="track"/> (the same 0x66b088 rule for every list).</summary>
+	internal static UiRect ListScrollKnobRect( UiRect track, UiRect knob, int firstRow, int maxFirstRow )
 	{
-		var travel = (int)BuyScrollTrack.Height - (int)BuyScrollKnob.Height;
-		var top = (int)BuyScrollTrack.Y + (maxFirstRow == 0 ? 0 : travel * firstRow / maxFirstRow);
-		return new UiRect( BuyScrollKnob.X, top, BuyScrollKnob.Width, BuyScrollKnob.Height );
+		var travel = (int)track.Height - (int)knob.Height;
+		var top = (int)track.Y + (maxFirstRow == 0 ? 0 : travel * firstRow / maxFirstRow);
+		return new UiRect( knob.X, top, knob.Width, knob.Height );
 	}
 
 	/// <summary>The vertical scroll bar: the <c>!slider</c> track with the <c>b_scroller</c> ball; dragging or clicking sets the first visible row.</summary>

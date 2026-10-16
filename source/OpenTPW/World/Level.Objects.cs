@@ -567,7 +567,8 @@ public partial class Level
 	/// <summary>
 	/// The anchor (the grid cell of local (0, 0)) the original placement takes for a build click on cell (x, y): the cell less half the
 	/// shape (truncated), then the rotation's offsets inside a 5 × 5 window, so the clicked cell is local (W/2, H/2) in every rotation
-	/// for shapes up to 5 cells or of odd size.
+	/// when each side is odd or at most 5 cells. A wider even side moves with the rotation: the only shipped case, space 3104 Orbiter (6 × 3),
+	/// is clicked on local (3, 1) at rotation 0 and (2, 2) at 90.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00528B44 build click anchor] the clicked cell less (W/2, H/2) (signed halves, 0x528B0F–0x528B68), with a = (5 − W)/2 and b = (5 − H)/2 truncated toward zero (0x528B31–0x528B4D): rotation 0 keeps it, 90 adds (b − a, 4 − a − b), 180 adds (4 − 2a, 4 − 2b), 270 adds (4 − a − b, a − b) (0x528D88–0x528E12); the other branch (0x81AF7C set) is dead, its only store writes 0 (0x52F074)
 	public static (int X, int Y) GetCentredAnchor( ObjectShape shape, int x, int y, int rotation )

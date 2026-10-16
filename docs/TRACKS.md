@@ -62,7 +62,8 @@ Bridges: a straight tile over the paths it cleared (TRACK-010) gets bit 1. The P
 tile with at most two arms and no corner whose four map cells hold a path or queue, which stay in the map layer under the track; water is no bridge
 (inside the park water cells are map type 0), and only type 25 tests map types 2, 7 and 30, which exist only outside the park;
 the second pass (`[STP-PPC:0x1007A354]`) turns it into H (neither neighbour bridged), H_U (only ahead), H_D (only behind) or H_A (both), ahead
-and behind following the flow link.
+and behind following the flow link. A park-resume load runs the bridge pass over every tile (`TrackSave.RestoreCells`), so a save written while
+straights over terrain water still became bridges loads with plain pieces there.
 
 Piece tables (12 bytes: handle, name, arm byte): kart 20 entries, water 25: 0 none; 1 Q; 2 S; 3 B; 4 X; 5–8 X with arm masks 0x15/0x54/0x51/0x45; 9–11 H;
 12–14 H_U; 15–17 H_D; 18 H_A; 19 B2; 20–24 X2 (water only). `TrackPieceKit` loads `wr_trck<stem>.md2` / `.hmp` (water) or `gk_trck…` (kart) from the
@@ -105,8 +106,11 @@ cell:
 | 180° | (x−1, y−2) → (x−3, y−2) | (x−1, y−2) | (x−5, y−2) | 0x40 −X |
 | 270° | (x−2, y) → (x−2, y+2) | (x−2, y) | (x−2, y+4) | 0x10 +Y |
 
-The exit offsets equal the fixed offsets `0x529E10` adds to the controller reference (below). OpenTPW places its station on the footprint's first two tile columns; the
-relation of the attraction's +8/+0xC to OpenTPW's placement anchor and the line modes 0x80, 0x82 and 0x83 are not traced (TRACK-005). The heading
+The exit offsets equal the fixed offsets `0x529E10` adds to the controller reference (below). OpenTPW places its station on the footprint's first two tile columns.
+The placement's cursor cell is OpenTPW's anchor: `0x818C3C` = (anchorY << 7) + anchorX + 1 is written at `0x528E12` from the build click's anchor (`0x528B44`,
+`Level.GetCentredAnchor`) right before `0x529E10` is called (`0x528E19`). The attraction `0x52A1A0` reads (the object `0x528A70` returns) is constructed at that cell
+plus the per-rotation offset `0x4D9CC0` returns from type +0x4B0 (`0x529F86`); that offset, whether the attraction's +8/+0xC is the constructed cell, and the line
+modes 0x80, 0x82 and 0x83 are not traced (TRACK-005). The heading
 follows the rotation (0° +X, 90° −Y, 180° −X, 270° +Y). The tile before the first station tile (`Entry`) is where the player's loop returns; the tile after
 the second (`Exit`) is where the first line starts.
 
@@ -226,7 +230,7 @@ writes it to `VAR_LETMEOFF` when the boat has unloaded.
 ## Rendering
 
 `TrackRenderer`: one entity per piece part per tile, the mesh baked with its rest transform; the tile turns counter-clockwise by its rotation about its own
-centre (the original's one-cell instance offset is unresolved, TRACK-003; the `Bumper.*Adjust` keys are the station-reference offsets, not a mesh pivot) and stands on the mean ground height of its four cells; boats are
+centre (the original's one-cell instance offset is unresolved, TRACK-003; the `Bumper.*Adjust` keys are the controller-reference offsets of the ride placement `0x529E10`, not a mesh pivot) and stands on the mean ground height of its four cells; boats are
 `wr_ring.md2` at `position / 307.2` model units. A boat's height, pitch and roll follow the original's four probes (`[TPW-EXE:0x546280]`): ± the vehicle radius
 along the facing and across it, each sampling the object on the probed cell ("Vehicle height" below); the mean is the height, the front/back and right/left differences the
 pitch and roll. The pieces are static (TRACK-018).
@@ -303,7 +307,7 @@ Retired as already matching: TRACK-013 (worn is read only by the kart exhaust br
 
 ## Open points
 
-- Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the bumper cars' arena centre (TRACK-030), the water animation and arm masks, the
+- Jumps and tunnels (the add-on hook is the end of `0x547F50`, TRACK-008), the water animation and arm masks, the
   advisor messages, the demolition payment, the height source and the instance offset, the station-derived start cell and buoy placement, the walk's
   untraced junction conditions (see the `TRACK-` entries in [the register](https://opentpw.io/docs/FIDELITY-REGISTER.html)).
 - The script performance value is the ride's speed bias (`Script.SpeedBias`, 50 at creation), pushed to the controller every tick.
@@ -455,7 +459,14 @@ only (`0x546280`); the riders' heads hang from the car's head dummy and the brea
 **Saves** (park-resume): the validator accepts a bumper session (durations up to 0x10000 ticks, the wall counter −1, the chase target). `OPENTPW_SMOKE_BUMPER=1` on both phases of the park-resume smoke buys and places the theme's
 bumper ride, saves with a session running and guests in the cars, restores through the menu load and matches the 600 continuation hashes. The digest holds the chase target and the drawn heading of bumper cars only.
 
-**Open**: the arena centre (TRACK-030); TRACK-031 retired (platform probes, the wake instance and the engine voice's parameter are the original's).
+**Arena centre** (TRACK-030 retired with a code change): the ride placement `0x529E10` (`[TPW-EXE:0x529E10]`) takes the cursor cell `0x818C3C`, which is the build click's
+anchor (written at `0x528E12` from `0x528B44`, OpenTPW's placement anchor), adds the type's `Bumper.<Side>X/YAdjust` for the rotation (0° North at type +0xA4/+0xA8, 90° East,
+180° South, 270° West; the key table at `0x74541C` puts them after `WhichTrackType` +0x9C and `BumperType` +0xA0) and the fixed offset (+4, +1), (+1, −5), (−5, −2), (−2, +4),
+scales by 0xC00, and the arena builder `0x545890` adds 0x600 on both axes. `Level.BumperArenaCentre` computes exactly that. All four shipped bumper rides are 5 × 5 with
+Adjust North (−2, 1), East (1, 3), South (3, 0), West (0, −2), so the arena sits on the middle of footprint cell (2, 2) in every rotation, the same point as the footprint's
+middle the earlier approximation used (`BumperArenaTests`).
+
+**Open**: nothing of the arena; TRACK-031 retired (platform probes, the wake instance and the engine voice's parameter are the original's).
 
 **Tests**: `BumperCarAssetTests` (with `OPENTPW_GAME_PATH`): each theme's real script with 16 guests for ten simulated minutes: every guest boards and is released, the ride cycles at least twice,
 nobody stays in `GuestState.Using`, the phase returns to loading after each session; `BumperControllerTests` (asset-free) pins the arena, the countdown, the release, the chase, the crash codes and the saves. The native smoke places a bumper ride, loads two riders, runs a short session and captures

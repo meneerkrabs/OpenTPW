@@ -331,13 +331,25 @@ public sealed class TrackBuilder
 		foreach ( var (rx, ry) in region )
 		{
 			if ( IsTile( rx, ry ) )
-				RefreshOne( rx, ry );
+				RefreshOne( Tracks, rx, ry );
 		}
 	}
 
-	private bool IsBridgeBase( int x, int y )
+	/// <summary>
+	/// Runs the bridge pass over every tile of <paramref name="tracks"/> (a restore): a save keeps each tile's flags and piece, and one written
+	/// before the bridge test dropped terrain water would otherwise keep its water bridges until an edit next to them refreshed them.
+	/// </summary>
+	public static void RefreshAll( TrackCellLayer tracks )
 	{
-		var tile = Tracks.Get( x, y );
+		ArgumentNullException.ThrowIfNull( tracks );
+		// the pass only rewrites the bridge bits and the piece, which no tile's test reads, so the order does not matter
+		foreach ( var (x, y) in tracks.Cells().Where( item => item.Cell.IsOrigin ).Select( item => (item.X, item.Y) ).ToList() )
+			RefreshOne( tracks, x, y );
+	}
+
+	private static bool IsBridgeBase( TrackCellLayer tracks, int x, int y )
+	{
+		var tile = tracks.Get( x, y );
 		if ( !tile.IsOrigin || TrackCellTypes.IsStation( tile.Type ) || !IsStraight( tile.Mask ) )
 			return false;
 		return (tile.Flags & FlagOverPath) != 0;
@@ -345,16 +357,16 @@ public sealed class TrackBuilder
 
 	internal static bool IsStraight( byte mask ) => mask is 0x11 or 0x44;
 
-	private void RefreshOne( int x, int y )
+	private static void RefreshOne( TrackCellLayer tracks, int x, int y )
 	{
-		var tile = Tracks.Get( x, y );
+		var tile = tracks.Get( x, y );
 		var flags = (byte)(tile.Flags & ~TrackCell.BridgeMask);
-		if ( IsBridgeBase( x, y ) )
+		if ( IsBridgeBase( tracks, x, y ) )
 		{
 			var ahead = AheadOf( tile );
 			var behind = TrackHeading.Opposite( ahead );
-			var aheadBridged = IsBridgeBase( x + TrackStation.TileCells * TrackHeading.Dx( ahead ), y + TrackStation.TileCells * TrackHeading.Dy( ahead ) );
-			var behindBridged = IsBridgeBase( x + TrackStation.TileCells * TrackHeading.Dx( behind ), y + TrackStation.TileCells * TrackHeading.Dy( behind ) );
+			var aheadBridged = IsBridgeBase( tracks, x + TrackStation.TileCells * TrackHeading.Dx( ahead ), y + TrackStation.TileCells * TrackHeading.Dy( ahead ) );
+			var behindBridged = IsBridgeBase( tracks, x + TrackStation.TileCells * TrackHeading.Dx( behind ), y + TrackStation.TileCells * TrackHeading.Dy( behind ) );
 			flags |= aheadBridged ? behindBridged ? TrackCell.FlagBridgeAbove : TrackCell.FlagBridgeUp : behindBridged ? TrackCell.FlagBridgeDown : TrackCell.FlagBridge;
 		}
 		tile.Flags = flags;
@@ -362,7 +374,7 @@ public sealed class TrackBuilder
 		tile.Family = piece.Family;
 		tile.Piece = piece.Piece;
 		tile.Rotation = piece.Rotation;
-		Tracks.Set( x, y, tile );
+		tracks.Set( x, y, tile );
 	}
 
 	private static byte AheadOf( TrackCell tile ) => tile.Link != 0 && (tile.Link & tile.Mask) != 0 && IsAlong( tile.Link, tile.Mask ) ? tile.Link : (tile.Mask == 0x11 ? TrackHeading.PosY : TrackHeading.PosX);

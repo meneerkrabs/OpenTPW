@@ -232,11 +232,4 @@ public static class ObjectFootprint
 		var b = ToGrid( anchorX, anchorY, rotation, shape.Width - 1, shape.Height - 1 );
 		return (Math.Min( a.X, b.X ), Math.Min( a.Y, b.Y ), Math.Max( a.X, b.X ), Math.Max( a.Y, b.Y ));
 	}
-
-	/// <summary>Anchor that puts the shape's bounding box at (minX, minY) for a rotation (used when building).</summary>
-	public static (int X, int Y) AnchorForBounds( ObjectShape shape, int minX, int minY, int rotation )
-	{
-		var (boxX, boxY, _, _) = GetBounds( shape, 0, 0, rotation );
-		return (minX - boxX, minY - boxY);
-	}
 }

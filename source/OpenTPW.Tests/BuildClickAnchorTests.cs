@@ -46,5 +46,11 @@ public class BuildClickAnchorTests
 		// W = 6: a = (5 − 6) / 2 truncates to 0, b = (5 − 1) / 2 = 2, so 90 adds (b − a, 4 − a − b) = (2, 2) to (x − 3, y).
 		Assert.AreEqual( (9, 12), Level.GetCentredAnchor( Shape( 6, 1 ), 10, 10, 90 ) );
 		Assert.AreEqual( (7, 10), Level.GetCentredAnchor( Shape( 6, 1 ), 10, 10, 0 ) );
+		// The Orbiter (space 3104, 6 × 3), the only shipped object with such a side: clicked on local (3, 1) at 0 but (2, 2) at 90.
+		var orbiter = Shape( 6, 3 );
+		var flat = Level.GetCentredAnchor( orbiter, 10, 10, 0 );
+		Assert.AreEqual( (10, 10), ObjectFootprint.ToGrid( flat.X, flat.Y, 0, 3, 1 ) );
+		var turned = Level.GetCentredAnchor( orbiter, 10, 10, 90 );
+		Assert.AreEqual( (10, 10), ObjectFootprint.ToGrid( turned.X, turned.Y, 90, 2, 2 ) );
 	}
 }

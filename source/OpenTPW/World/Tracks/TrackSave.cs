@@ -78,7 +78,10 @@ internal static class TrackSave
 		module.FinishRestore( saved.FrameCount, saved.TickRemainder, controllers );
 	}
 
-	/// <summary>Writes the saved cells into the (freshly restored) track layer; the map's type bytes were restored with the layout.</summary>
+	/// <summary>
+	/// Writes the saved cells into the (freshly restored) track layer and runs the bridge pass over them (<see cref="TrackBuilder.RefreshAll"/>), so a
+	/// save from before the bridges over terrain water were dropped (TRACK-010) loads with plain pieces there; the map's type bytes were restored with the layout.
+	/// </summary>
 	public static void RestoreCells( ParkCellMap cells, TrackWorldSaveData saved )
 	{
 		foreach ( var item in saved.Cells )
@@ -89,5 +92,6 @@ internal static class TrackSave
 				Rotation = item.Rotation, Overlap = item.Overlap, AltMask = item.AltMask, Segment = item.Segment, Owner = item.Owner
 			} );
 		}
+		TrackBuilder.RefreshAll( cells.Tracks );
 	}
 }

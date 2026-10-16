@@ -26,8 +26,8 @@ user's approval, the game's QMixer.dll for the mixer's distance law):
   where tp.exe's projection has 90 (`0x42A990` and `0x54E86F` hand 90 degrees to `0x578BE0`). The particle runs write their uniform
   block once per material, and the blueprint ghosts' per-frame ripple updates one dynamic vertex buffer instead of allocating a model.
 
-The pinned run hash and saves are unchanged; weather and particle presentation keep their own streams. Verified with 4680 tests passing
-without game data, 5131 with it, and all five native smokes.
+The pinned run hash and saves are unchanged; weather and particle presentation keep their own streams. Verified with 4684 tests passing
+without game data, 5135 with it, and all five native smokes.
 
 Still open: the mixer's rolloff value and its azimuth stage (AUDIO-018, AUDIO-033, ADVISOR-012), the lightning ribbon's clip-space
 quads, per-particle depth writes and the alpha test, the advisor's lobby key panel, the remaining advisor message producers, the

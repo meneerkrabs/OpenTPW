@@ -148,9 +148,11 @@ class Source(unittest.TestCase):
         construct = construct[:construct.index('};')]
         self.assertIn('grid, Seed )', construct)
         self.assertIn('IsReservedByPrototype( x, y )', construct)
-        # c213e81's queue-cell reservation is now part of the cell-type reservation (queue, path and track cells; tp.exe 0x535670)
+        # c213e81's queue-cell reservation is now part of the cell-type reservation (queue and track cells; tp.exe 0x535670); path cells
+        # are judged by the cell map (PathAt: a plain path is cleared by the placement, a NoModify one refuses)
         self.assertIn('Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type', construct)
-        self.assertIn('type is not (0 or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit)', construct)
+        self.assertIn('type is not (0 or (byte)ParkCellType.Path or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit)', construct)
+        self.assertIn('PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null', construct)
         resolve = level[level.index('ResolveVisitorCells( IEnumerable<ObjectAccessPoint>'):]
         resolve = resolve[:resolve.index('\n\t}\n')]
         self.assertIn('WalkableNear( grid, entrance.OutsideX, entrance.OutsideY )', resolve)  # main's static form

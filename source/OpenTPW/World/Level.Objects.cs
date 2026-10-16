@@ -547,16 +547,33 @@ public partial class Level
 	public bool TryGetGridCell( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, out int x, out int y )
 	{
 		x = y = -1;
-		if ( !ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out var ground ) )
+		if ( !TryGetGroundHit( mousePosition, viewportSize, out var ground ) )
 			return false;
 		return TryGetGridCell( ground.X, ground.Y, out x, out y );
 	}
 
-	/// <summary>Screen position of cell (x, y)'s centre on the Z = 0 plane the cursor picks on (for build ghosts).</summary>
+	/// <summary>
+	/// The point under the cursor: on an original level the ray's nearest hit on the terrain heightfield (<see cref="TerrainRayPick"/>), in the generic sandbox the Z = 0 plane.
+	/// </summary>
+	// [BIN:TPW-EXE:0x45d560 hover cell] the cell under the cursor is the ray's hit point divided by the cell size (x, z) and clamped to the grid; the frame loop 0x54e2b0 refreshes it every frame from the pick 0x45bf90
+	// [EXT:build-cursor-ground-plane] the generic sandbox has no heightfield: its cursor ray hits the Z = 0 plane
+	public bool TryGetGroundHit( System.Numerics.Vector2 mousePosition, System.Numerics.Vector2 viewportSize, out Vector3 point )
+	{
+		point = default;
+		if ( OriginalPark is not { } park )
+			return ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out point );
+		if ( !ParkPlacement.TryGetMouseRay( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out var origin, out var direction )
+			|| !TerrainRayPick.TryPick( park.Heightfield, origin, direction, out var hit ) )
+			return false;
+		point = hit;
+		return true;
+	}
+
+	/// <summary>Screen position of cell (x, y)'s centre on the surface the cursor picks (the terrain's mean corner height on an original level, Z = 0 in the sandbox; for build ghosts).</summary>
 	public bool TryProjectCell( int x, int y, System.Numerics.Vector2 viewportSize, out System.Numerics.Vector2 screen )
 	{
 		var origin = Objects.Grid.Origin;
-		var point = new System.Numerics.Vector4( origin.X + (x + 0.5f) * ObjectPlacement.CellSize, origin.Y + (y + 0.5f) * ObjectPlacement.CellSize, 0, 1 );
+		var point = new System.Numerics.Vector4( origin.X + (x + 0.5f) * ObjectPlacement.CellSize, origin.Y + (y + 0.5f) * ObjectPlacement.CellSize, Objects.Grid.GetCellHeight( x, y ), 1 );
 		var clip = System.Numerics.Vector4.Transform( point, Camera.ViewMatrix * Camera.ProjMatrix );
 		screen = default;
 		if ( clip.W <= 0 )
@@ -578,7 +595,7 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the cursor ray hits the Z = 0 plane to pick the clicked cell; the original's mouse-to-cell picking (the cell the build tool hands to 0x528A70) is not traced — evidence needed: the build tool's cursor pick (0x524960 → 0x528A70)
+	// [APPROX:RIDES-021] the clicked cell is the ray's terrain hit only: the original's nearest hit also includes the model triangles of the objects in the cells the ray crosses (0x45cdc0 → 0x45d090), so a ride or tree under the cursor takes the cell — evidence needed: which polygons the test walks (the node face arrays and node states 0x10, 0x20, 0x8210 of the model at +0x78) and which object the cell yields (0x452ae0)
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )

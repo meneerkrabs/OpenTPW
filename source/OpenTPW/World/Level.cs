@@ -677,7 +677,7 @@ public partial class Level : IDisposable
 			position = sandboxPosition;
 			return found;
 		}
-		if ( !ParkPlacement.TryGetGroundPoint( mousePosition, viewportSize, Camera.ViewMatrix, Camera.ProjMatrix, out var ground ) )
+		if ( !TryGetGroundHit( mousePosition, viewportSize, out var ground ) )
 			return false;
 		if ( !OriginalParkPlacement.TryGetCell( OriginalPark.Heightfield, ground.X, ground.Y, out var x, out var y ) )
 			return false;

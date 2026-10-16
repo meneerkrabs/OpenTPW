@@ -228,6 +228,11 @@ internal static class AdvisorToolHelp
 	/// <summary>Posted after every click of the coaster tool (the click handler's mode 0x15, 0x52644C).</summary>
 	public const int CoasterToolClick = 205;
 
+	// [BIN:TPW-EXE:0x00527200 path and queue tool click] the first click of the path tool posts 0xB8 (184), the third later click of either tool 0xD6 (214), the click that ends the queue tool without a path join 0x151 (337)
+	public const int PathStart = 184, PathLaterClick = 214, QueueEnd = 337;
+	/// <summary>Posted when the queue tool starts, by every way into it (SetMode(3), 0x52F4B0).</summary>
+	public const int QueueTool = 203;
+
 	/// <summary>Every message a tool or panel posts, for the withdrawal when a park ends.</summary>
-	public static IEnumerable<int> All => CoasterPanelMessages.Append( CoasterToolClick );
+	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool } );
 }

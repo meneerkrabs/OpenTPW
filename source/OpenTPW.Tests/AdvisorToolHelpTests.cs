@@ -149,4 +149,130 @@ public class AdvisorToolHelpTests
 		Frame( hud );
 		Assert.AreEqual( 0, events.Count );
 	}
+
+	// ---- The path and queue tools --------------------------------------------------------------------------
+
+	/// <summary>A line writer that accepts everything, in the mode under test.</summary>
+	private sealed class LineWriter( CellToolMode mode ) : ICellLineWriter
+	{
+		public CellToolMode Mode => mode;
+		public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) =>
+			new( cursor, System.Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start, Line = ParkPathBuilder.LayLine( start, cursor ) };
+		public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => Preview( start, end );
+		public void Undo( SegmentResult segment ) { }
+	}
+
+	/// <summary>One click of the HUD's tool handler: the tool's own click followed by the HUD's report of it.</summary>
+	private static SegmentResult? ToolClick( ParkHud hud, CellBuildTool tool, (int X, int Y) cell, bool joinedPath = false )
+	{
+		var hadStart = tool.Start != null;
+		var mode = tool.Mode;
+		var result = tool.Click( cell );
+		if ( result is not { GhostRefused: true } )
+			hud.ReportCellToolClick( hadStart, mode, tool, joinedPath );
+		return result;
+	}
+
+	[TestMethod]
+	public void ThePathToolsFirstClickPostsHelp184AndTheThirdLaterClickHelp214()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		tool.Enter( new LineWriter( CellToolMode.Path ), null );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode" }, events, "the tool start is a mode change and the path tool posts nothing by itself" );
+		events.Clear();
+		ToolClick( hud, tool, (2, 2) );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "post 184" }, events, "0x5272FE: the click that stores the start posts 0xB8" );
+		events.Clear();
+		ToolClick( hud, tool, (2, 6) );
+		ToolClick( hud, tool, (6, 6) );
+		Frame( hud );
+		Assert.AreEqual( 0, events.Count, "the first and second later click post nothing" );
+		ToolClick( hud, tool, (6, 2) );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "post 214" }, events, "0x52735A: the counter reaches 3 on the third click after the first" );
+		events.Clear();
+		ToolClick( hud, tool, (2, 2) );
+		Frame( hud );
+		Assert.AreEqual( 0, events.Count, "only the click that reaches 3 posts (cmp eax, 3; jne)" );
+	}
+
+	[TestMethod]
+	public void ARefusedStartPostsNothingAndTheCounterRestartsAtEachAcceptedFirstClick()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		tool.Enter( new LineWriter( CellToolMode.Path ), null );
+		Frame( hud );
+		events.Clear();
+		ToolClick( hud, tool, (2, 2) );
+		ToolClick( hud, tool, (2, 6) );
+		ToolClick( hud, tool, (6, 6) );
+		tool.Cancel();
+		Frame( hud );
+		events.Clear();
+		tool.Enter( new LineWriter( CellToolMode.Path ), null );
+		Frame( hud );
+		events.Clear();
+		ToolClick( hud, tool, (3, 3) );
+		ToolClick( hud, tool, (3, 7) );
+		ToolClick( hud, tool, (7, 7) );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "post 184" }, events, "the first click cleared the counter (0x527316): two later clicks only" );
+	}
+
+	[TestMethod]
+	public void TheQueueToolPostsHelp203WhenItStartsAndHelp337WhenItEndsWithoutJoiningAPath()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		tool.Enter( new LineWriter( CellToolMode.Queue ), (4, 4) );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode", "post 203" }, events, "SetMode(3) withdraws the tool help and then posts 0xCB" );
+		events.Clear();
+		ToolClick( hud, tool, (4, 9) );
+		Frame( hud );
+		Assert.AreEqual( 0, events.Count, "a queue line that continues posts nothing" );
+		ToolClick( hud, tool, (4, 9) );
+		Assert.IsFalse( tool.IsActive, "a click on the start ends the tool" );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode", "post 337" }, events, "the end posts 0x151 after the mode change" );
+	}
+
+	[TestMethod]
+	public void AQueueThatJoinsAPathEndsWithoutHelp337()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		tool.Enter( new LineWriter( CellToolMode.Queue ), (4, 4) );
+		Frame( hud );
+		events.Clear();
+		ToolClick( hud, tool, (4, 4), joinedPath: true );
+		Assert.IsFalse( tool.IsActive );
+		Frame( hud );
+		CollectionAssert.AreEqual( new[] { "mode" }, events, "the link flag 0x816D60 plays the join sound and posts no help" );
+	}
+
+	[TestMethod]
+	public void TheKartAndWaterToolsPostNoPathHelp()
+	{
+		var hud = NewHud( out var events, out var level );
+		Frame( hud );
+		var tool = level.CellTool;
+		tool.Enter( new LineWriter( CellToolMode.WaterTrack ), null );
+		Frame( hud );
+		events.Clear();
+		ToolClick( hud, tool, (2, 2) );
+		ToolClick( hud, tool, (2, 6) );
+		ToolClick( hud, tool, (6, 6) );
+		ToolClick( hud, tool, (6, 2) );
+		Frame( hud );
+		Assert.AreEqual( 0, events.Count, "the handler 0x527200 is the path and queue modes' only" );
+	}
 }

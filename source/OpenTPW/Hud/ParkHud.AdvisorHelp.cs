@@ -96,7 +96,12 @@ public sealed partial class ParkHud
 	{
 		var mode = InterfaceMode();
 		if ( reportedMode != null && reportedMode != mode )
+		{
 			host?.ModeChanged?.Invoke();
+			// [BIN:TPW-EXE:0x0052F4B0 queue tool start] SetMode(3) (and the variant 0x52F580, 0x52F7B2) posts 0xCB (203) after the withdrawal, for every way into the queue tool
+			if ( mode == $"cell/{CellToolMode.Queue}" )
+				toolHelp.Add( (AdvisorToolHelp.QueueTool, mode) );
+		}
 		reportedMode = mode;
 		if ( toolHelp.Count == 0 )
 			return;
@@ -104,6 +109,38 @@ public sealed partial class ParkHud
 			if ( postedIn == mode )
 				host?.HelpPosted?.Invoke( message );
 		toolHelp.Clear();
+	}
+
+	/// <summary>The clicks of the path and queue tool since its last first click (the original's counter 0x8186DC); the third later click posts help.</summary>
+	private int cellToolClicks;
+
+	/// <summary>
+	/// The advisor help of a path or queue tool click that was not refused: the first click that sets the start posts 0xB8 (184) in the path tool, the third click after
+	/// it 0xD6 (214), and a click that ends the queue tool without joining a path 0x151 (337).
+	/// </summary>
+	/// <param name="hadStart">The tool had a start before the click.</param>
+	/// <param name="mode">The tool's mode before the click.</param>
+	/// <param name="joinedPath">The queue line ends on a path cell, which links the queue to it (the original's flag 0x816D60).</param>
+	// [BIN:TPW-EXE:0x00527222 first click] with the start unset a start the cell check accepts is stored (0x5272B3), and the path mode (0x52F860(1)) then posts 0xB8 through 0x59B590 (0x5272FE); the counter 0x8186DC is cleared (0x527316)
+	// [BIN:TPW-EXE:0x0052732F later click] a click with a start set increments the counter and posts 0xD6 when it reaches 3 (0x52733D-0x52735A), in either mode
+	// [BIN:TPW-EXE:0x005275B1 tool end] a click that ends the tool (the start reached, or the line ending on an existing path or queue cell) sets the mode to 0 (0x5275F2); in the queue mode (the check 0x52F860(3) before it) with the layout replay word 0x785A2C and the link flag 0x816D60 both clear it then posts 0x151 (0x527629)
+	internal void ReportCellToolClick( bool hadStart, CellToolMode mode, CellBuildTool tool, bool joinedPath )
+	{
+		if ( mode is not (CellToolMode.Path or CellToolMode.Queue) )
+			return;
+		if ( !hadStart )
+		{
+			if ( tool.Start == null )
+				return;
+			cellToolClicks = 0;
+			if ( mode == CellToolMode.Path )
+				PostToolHelp( AdvisorToolHelp.PathStart );
+			return;
+		}
+		if ( ++cellToolClicks == 3 )
+			PostToolHelp( AdvisorToolHelp.PathLaterClick );
+		if ( mode == CellToolMode.Queue && !tool.IsActive && !joinedPath )
+			PostToolHelp( AdvisorToolHelp.QueueEnd );
 	}
 
 	private OriginalObject? objectHelpItem;

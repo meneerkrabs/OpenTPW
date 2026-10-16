@@ -940,6 +940,7 @@ public sealed partial class ParkHud
 			}
 			// [BIN:TPW-EXE:0x005271B7 lay click] every path or queue click past the refused-ghost test plays cat_ui 101 (0x65) before its start or line, the first click included
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
+			ReportCellToolClick( false, CellToolMode.Path, tool, false );
 			PostMessage( strings.Help( 443 ) );
 			tool.Hover( (cursorX, cursorY) );
 			return toolPress = true;
@@ -959,6 +960,8 @@ public sealed partial class ParkHud
 		// The commit click; Level skips it because the HUD reports the pointer as captured this frame.
 		refusalClick.Press();
 		var queueJoin = level.QueueJoinCell( tool );
+		var hadStart = tool.Start != null;
+		var modeBefore = tool.Mode;
 		cellToolClicking = true;
 		SegmentResult? result;
 		try
@@ -969,6 +972,8 @@ public sealed partial class ParkHud
 		{
 			cellToolClicking = false;
 		}
+		if ( result is not { GhostRefused: true } )
+			ReportCellToolClick( hadStart, modeBefore, tool, queueJoin != null );
 		ResolveQueueRearm( result );
 		// [BIN:TPW-EXE:0x527587 queue-join sound] it follows every commit; a click on a refused ghost lays nothing and returns before the commit (0x524A63)
 		if ( result is { GhostRefused: false } )

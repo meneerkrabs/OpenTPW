@@ -435,7 +435,7 @@ stepped by `LobbyEffects` at the 60 Hz reference rate (`[EXT:frame-driven-at-60h
   with that colour as a stand-in; two settings gate the eased colour whose runtime values are not read (UI-018).
 * **The globe** (`0x100923A8`) sets the rain to 0 and the sky target to (243, 203, 191) and starts its music
   (`cat_globallobbysfx` 2) and ambience (3), stopped when it closes; OpenTPW stops the lobby's own music meanwhile (UI-942).
-* **Entering a park** (`0x10183CC0`, PC `0x4b8fd0`) plays `cat_globallobbysfx` 4 flat; the original skips it for game type 2. The PC routine also plays global sound 0x62 there, which OpenTPW does not (UI-942).
+* **Entering a park** (`0x10183CC0`, PC `0x4b8fd0`) plays `cat_globallobbysfx` 4 flat; the original skips it for game type 2. The PC routine also starts the screen-space particle effect 0x62 over the key counter there (`0x521e60` is the particle creator, not a sound; read wrongly as a sound before), which OpenTPW does not (UI-942).
 
 ## Weather visuals
 

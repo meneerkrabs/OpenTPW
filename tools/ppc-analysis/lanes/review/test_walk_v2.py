@@ -234,12 +234,12 @@ class OracleFindings(unittest.TestCase):
 
     def test_bounce_start_reads_the_clock_again(self):
         """WV2-4 (closed): 0xadf40 calls the clock 0x10e844 twice, the deadline from the first call and the start from
-        the second; the port takes one `now` for both. The BIN label says so and QUEUE-020 registers it."""
+        the second; the port takes one `now` for both. The BIN label says so and `[EXT:bounce-single-clock-read]` records it (QUEUE-020 closed)."""
         bridge = current('source/OpenTPW/World/Guests/RideVisitorBridge.cs')
         label = bridge[bridge.index('[BIN:STP-PPC:0x100ADF40 BOUNCE]'):]
         self.assertRegex(label[:label.index('\n')], r'(second|two|twice).*clock|clock.*(second|twice)')
-        self.assertIn('[APPROX:QUEUE-020]', label[:label.index('TakeBounceSlot')])
-        self.assertIn('("QUEUE-020", ', current('source/OpenTPW/World/Guests/QueueApproximations.cs'))
+        self.assertIn('[EXT:bounce-single-clock-read]', label[:label.index('TakeBounceSlot')])
+        self.assertNotIn('("QUEUE-020", ', current('source/OpenTPW/World/Guests/QueueApproximations.cs'))
 
 
 @unittest.skipUnless(has_commit(SUBJECT), f'{SUBJECT} not in this repository')

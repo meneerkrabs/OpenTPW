@@ -540,7 +540,7 @@ internal sealed class M3GateRun
 
 	/// <summary>
 	/// Queue cells laid for a HasQueue ride: enough for its queue limit at four guests per cell, capped at
-	/// <see cref="QueuePaths.MaximumCells"/> (QUEUE-013), so that the data limit, not the cells, decides the queue length
+	/// <see cref="QueuePaths.MaximumCells"/>, so that the data limit, not the cells, decides the queue length
 	/// whenever the cap allows. A HasQueue ride's limit is its QueueWaitTimeConstant formula: Belly Bounce gets 21, so 6 cells.
 	/// </summary>
 	internal static int QueueCellsFor( ObjectCatalogEntry entry )
@@ -747,7 +747,7 @@ internal sealed class M3GateRun
 		var join = bridge.JoinCell;
 		var joinReachable = join is { } cell && grid.Distance( entranceCell.X, entranceCell.Y, cell.X, cell.Y ) >= 0;
 		evidence["cellsRequested"] = queueRoute.Count;
-		evidence["cellsRequestedRule"] = $"ceil(queue limit {bridge.QueueLimit} / {RideVisitorBridge.PositionsPerCell} per cell), capped at QueuePaths.MaximumCells {QueuePaths.MaximumCells} (QUEUE-013)";
+		evidence["cellsRequestedRule"] = $"ceil(queue limit {bridge.QueueLimit} / {RideVisitorBridge.PositionsPerCell} per cell), capped at QueuePaths.MaximumCells {QueuePaths.MaximumCells}";
 		evidence["cellsLaid"] = laid;
 		evidence["charged"] = charged;
 		evidence["expectedCharge"] = (long)queueRoute.Count * cellCost;

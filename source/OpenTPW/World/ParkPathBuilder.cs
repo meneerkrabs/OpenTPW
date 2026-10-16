@@ -38,7 +38,7 @@ public sealed record SegmentResult( (int X, int Y) SnappedEnd, IReadOnlyList<(in
 	public IReadOnlyList<(int X, int Y)> Existing { get; init; } = Array.Empty<(int X, int Y)>();
 	/// <summary>The refused cell, when <see cref="StoppedBy"/> is a refusal.</summary>
 	public (int X, int Y)? StoppedAt { get; init; }
-	/// <summary>True when the refusal is OpenTPW's own queue length cap (QUEUE-013), which the original does not have: such a ghost does not end the tool.</summary>
+	/// <summary>True when the refusal is the bound of the original's back-of-queue walk (QueuePaths.MaximumCells), the only queue length limit it has: such a ghost does not end the tool.</summary>
 	public bool StoppedByOwnLimit { get; init; }
 	/// <summary>True for the ghost a click returns when the line had a refused cell and nothing was committed (tp.exe <c>0x524A63</c>).</summary>
 	public bool GhostRefused { get; init; }

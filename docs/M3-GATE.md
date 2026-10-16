@@ -106,7 +106,7 @@ remaining copies are listed under "Divergences from the player's build flow". If
    payment bridge.
 4. **Queue**: right after the ride, as in the HUD (placing a HasQueue ride switches to
    the queue tool, `BIN:STP-PPC:0x1007497C`). N = ⌈queue limit / 4 per cell⌉, capped at
-   `QueuePaths.MaximumCells` (25, `QUEUE-013`). A HasQueue ride's limit is its
+   `QueuePaths.MaximumCells` (1,000, the bound of the original's back-of-queue walk). A HasQueue ride's limit is its
    QueueWaitTimeConstant formula (QUEUE-plan §4): Belly Bounce gets trunc(130 × 5 / 30)
    = 21, so **N = 6**. With it, the data limit, not the cells, decides how many guests
    queue (`MaximumQueueLength` = min(21, 4N) = 21). Until ORACLE-F the runtime read the

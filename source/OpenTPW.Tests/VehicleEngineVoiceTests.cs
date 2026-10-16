@@ -223,14 +223,14 @@ public class VehicleEngineVoiceTests
 		if ( template.IsBumper )
 			return (controller, effects);
 		var builder = new TrackBuilder( new ParkCellMap( 40, 40 ), template.IsWater ? TrackFamily.Water : TrackFamily.Kart, () => null, new FlatGrid() );
-		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		var station = TrackStation.FromPlacement( 10, 9, 0 );
 		builder.PlaceStation( station );
 		var writer = new TrackLineWriter( builder );
 		writer.Commit( (14, 10), (14, 12) );
 		writer.Commit( (14, 12), (8, 12) );
 		writer.Commit( (8, 12), (8, 10) );
 		var circuit = TrackCircuitWalker.WalkAndRefresh( builder, station );
-		var centre = TrackStation.Centre( station.First );
+		var centre = station.Reference;
 		controller.SetStation( centre.X, centre.Y, station.Heading );
 		controller.Rebuild( circuit );
 		return (controller, effects);

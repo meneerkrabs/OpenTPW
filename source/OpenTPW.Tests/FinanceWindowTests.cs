@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using OpenTPW.Hud;
 
@@ -31,5 +32,22 @@ public class FinanceWindowTests
 		Assert.AreEqual( 20L, ParkHud.FinanceValue( month, FinanceSeries.ShopTakings ) );
 		Assert.AreEqual( 30L, ParkHud.FinanceValue( month, FinanceSeries.SideshowTakings ) );
 		Assert.AreEqual( 40L, ParkHud.FinanceValue( month, FinanceSeries.StaffCosts ) );
+	}
+
+	[TestMethod]
+	public void TheSeriesToggleFollowsTheOriginalsSelectionMasks()
+	{
+		var visible = new HashSet<FinanceSeries> { FinanceSeries.BankBalance };
+		ParkHud.ApplyFinanceToggle( visible, FinanceSeries.ParkValue );
+		CollectionAssert.AreEquivalent( new[] { FinanceSeries.BankBalance, FinanceSeries.ParkValue }, visible.ToArray(), "bank balance and park value can show together (mask 0xfc clears only bits 2-7)" );
+		ParkHud.ApplyFinanceToggle( visible, FinanceSeries.GateTakings );
+		CollectionAssert.AreEquivalent( new[] { FinanceSeries.GateTakings }, visible.ToArray(), "a cash-flow series clears the pair (mask 0x03)" );
+		ParkHud.ApplyFinanceToggle( visible, FinanceSeries.MoneyIn );
+		ParkHud.ApplyFinanceToggle( visible, FinanceSeries.StaffCosts );
+		Assert.AreEqual( 3, visible.Count, "the cash-flow series are independent of each other" );
+		ParkHud.ApplyFinanceToggle( visible, FinanceSeries.MoneyIn );
+		CollectionAssert.AreEquivalent( new[] { FinanceSeries.GateTakings, FinanceSeries.StaffCosts }, visible.ToArray(), "deselecting clears just that series" );
+		ParkHud.ApplyFinanceToggle( visible, FinanceSeries.BankBalance );
+		CollectionAssert.AreEquivalent( new[] { FinanceSeries.BankBalance }, visible.ToArray(), "the bank balance clears the cash-flow series" );
 	}
 }

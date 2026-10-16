@@ -65,7 +65,7 @@ public sealed class UiModel
 		{
 			if ( node.MeshIndex < 0 || node.MeshIndex >= model.Meshes.Count )
 				continue;
-			// [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: binary UI model drawing code
+			// [APPROX:UI-003] state frames use the root pose (child translation dropped) — evidence needed: the node walk that submits the triangles of a control's model (the setter 0x65d070 is found, the draw is not)
 			var transform = node.Index == root.Index ? root.Transform : WithoutTranslation( node.Transform ) * root.Transform;
 			var frame = Flatten( model.Meshes[node.MeshIndex], node.Name, transform );
 			if ( frame != null )
@@ -135,7 +135,7 @@ public sealed class UiModel
 			maxX = Math.Max( maxX, point.X );
 			maxY = Math.Max( maxY, point.Y );
 		}
-		// [APPROX:UI-004] back-to-front by Z per texture group; the original's display object reserves a UI depth range in front of its scene ranges (0x5833c0), so it probably depth-tests — evidence needed: the UI model draw call
+		// [APPROX:UI-004] back-to-front by Z per texture group; the original's display object reserves a UI depth range in front of its scene ranges (0x5833c0), so it probably depth-tests (the device init 0x573080 enables Z test LESSEQUAL and Z write when the buffer is on) — evidence needed: the UI model draw call's own depth state and order
 		// Group triangles by material texture and order groups back to front (lower Z first), as the
 		// panels layer flat inner faces over their bevels.
 		var groups = new Dictionary<string, List<(float Depth, int A, int B, int C)>>( StringComparer.OrdinalIgnoreCase );

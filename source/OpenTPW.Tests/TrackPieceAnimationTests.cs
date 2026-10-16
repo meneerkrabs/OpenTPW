@@ -26,7 +26,7 @@ public class TrackPieceAnimationTests
 	{
 		public readonly ParkCellMap Cells = new( 40, 40 );
 		public readonly TrackBuilder Builder;
-		public readonly TrackStation Station = TrackStation.FromPlacement( 10, 10, 0 );
+		public readonly TrackStation Station = TrackStation.FromPlacement( 10, 9, 0 );
 
 		public Rig()
 		{

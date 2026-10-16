@@ -150,7 +150,7 @@ continues the sound seed. Both delegate to `ParkWorldStreams` (`source/OpenTPW/W
 state and needs no renderer, so tests run the same save, load and hash code. Saves written before the port have no `WorldGenerator`
 (their `RandomState` is the economy's own SplitMix64 state and `GuestRandom` and `ScriptRandom` in the `World` section are streams that no longer exist):
 the load ignores those words and starts the generator from the saved world seed (`WorldSeed.GeneratorState`), or, for a save without a `World`
-section, from `WorldRng.StateFromSeed( RandomState )`; both are deterministic, neither continues the old draws. This legacy file does not hold guests, queues or
+section, from `WorldRng.StateFromSeed( RandomState )`; both are deterministic, neither continues the old draws (`[EXT:legacy-generator-state]`: an old save has no generator state, so there is nothing of the original's to match). This legacy file does not hold guests, queues or
 object script state, so a `LoadPark` keeps the running guests and scripts (DET-016). Coaster tracks, trains and
 the coaster generator are not saved by it either (the own-format park save holds them, `[EXT:coaster-own-save]`).
 
@@ -256,10 +256,10 @@ change held day indices there; `ParkWeather.MigrateSchedule` recognises them (al
 
 The weather's own draws still come from its own stream, not from the PC's world LCG (`0x516330`:
 `world +0x1da708 = ror13(s·0x19660D + 0x3C6EF35F)`, the rotated value stored and `|value|` returned,
-seeded with `time(NULL)` at world creation `0x51586b`, setter `0x516370`). That LCG is shared by about 139
-call sites, so reproducing the weather's draws needs the draws of every other user in their original
-order; until the world LCG exists the weather stream is OpenTPW's design (`[EXT:weather-stream]`,
-formerly AUDIO-030).
+seeded with `time(NULL)` at world creation `0x51586b`, setter `0x516370`). That LCG is shared by 139
+call sites and is now ported (`WorldRng`), but the weather's draws only land where the original puts them once the
+draws of every other user come in the original's order (DET-013's update order); until then the weather keeps its own
+stream, OpenTPW's design (`[EXT:weather-stream]`, formerly AUDIO-030).
 
 Rides register round (October 14): a script's speed bias (`RideVM.SpeedBias`, the ride's `InitSpeed`; 50 at creation) is
 part of the script digest only when it differs from 50, and is carried by the script snapshot (default 50, so older
@@ -501,9 +501,10 @@ and the object catalog's cache key will include `ModSet.Digest`; an unmodded sav
   admitted, and the queue needs window compares truncated happiness and toilet.
   Schema 3 (`0x8E84E46AA3C8D9EE`) added the queue cells, links, admission state
   and queue edits of each attraction when real queue cells landed);
-- the default seed keeps the previous stream seeds; per-park attraction ids;
-  unseeded scripts follow their world stream; `World` save section round trip
-  and older saves;
+- the default seed gives the same world generator start state (`WorldSeed.GeneratorState`); per-park attraction ids;
+  unseeded scripts draw from the park's one generator; the `WorldGenerator` save field round trip and older saves (with and without a `World` section);
+- the two guest-path digests moved with the generator (`PathAssetTests`: 22 → 21 admissions, `0xF55B1DF82DFF7F3F`; `PathBuilderTests`: 61 → 60 admissions,
+  `0x4AFCF82F0A7796C1`): a guest's reseed and its entrance draws move every offset, lane and walk, and each guest's admission with them;
 - the source guard above.
 
 `DeterminismAssetTests` (`OPENTPW_GAME_PATH`): original jungle objects get
@@ -531,7 +532,7 @@ The port followed these requirements (tp.exe, static evidence): the one world ge
 `abs((int)s)` with `int.MinValue` staying negative (`0x516330`; the test vectors are the instructions executed in an x86 emulator, see
 `WorldRngTests`); one `WorldRng` per park holds the u32 at world+0x1DA708; `0x516370` reseeds it with the zero-extended u16 thing id at eight sites,
 of which OpenTPW follows `0x4D71CA` and `0x4D94E2` (litter), `0x4FB19E` (guest creation: base speed draw, eight draws, the reseed, the sprite variant and, for an arrival,
-two more draws) and `0x4FE6A1` and `0x4FE6FC` (costume and balloon), and does not follow `0x4F7B7E`, `0x4FCAFD` and `0x50205F` (person things OpenTPW does not model); the
+two more draws) and `0x4FE6A1` and `0x4FE6FC` (costume and balloon), and does not follow `0x4F7B7E` and `0x50205F` (person things OpenTPW does not model) nor `0x4FCAFD` (the sprite lookup `0x4FCAC0`, called from the drawing routine `0x44B410`: when `0x541F60(3)` returns 0 it reseeds with the thing id and draws, so the original's generator depends on what is drawn; OpenTPW keeps drawing off the generator); the
 state is saved as `mRandomSeed` (`0x517123`, `0x517DFC`) and an original save's word is imported; the consumers share the stream with their own projections (RAND
 `labs(labs(r >>> 1) % (int16 + 1))`, FINDSCRIPTRAND `(labs(r >>> 1) % n) + 1`, ADDHEAD `labs(r >>> 1) % length`, tour and flying cars `labs(r) % 100`). What is not ported is
 the original call order (substeps and the RSE pass schedule, things newest first, economy month end), which the right sequence needs and not only the distribution.

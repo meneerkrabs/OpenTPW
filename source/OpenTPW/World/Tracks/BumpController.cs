@@ -784,7 +784,7 @@ public sealed class BumpController
 	/// difference between the karts.
 	/// </summary>
 	// [BIN:TPW-EXE:0x0054A040 relaunch kart] the first launch of a hovering kart (types −9, −10) sets flags 0x3C00; flags &= 0xFFFBFF81 and the buoy countdown is 0; phase 1: +0x7C = the count-th buoy with flag 2, flags |= 0x10048 (retarget, grid, lap-mode bit); phase 2: flags |= 0x10008, a target outside the buoy list becomes +0xA4, +0x68 = (3 − (rand &amp; 7)) × (accel / 9); the first-launch flag 0x100000 is cleared in every case
-	// [BIN:TPW-EXE:0x0054A082 kart thrust draw] the draw is the world generator's (0x00516330): the park's one stream, shared with the guests, the staff and the scripts
+	// [BIN:TPW-EXE:0x0054A79E kart thrust draw] the draw is the world generator's (0x00516330): (3 - (draw & 7)) times accel / 9: the park's one stream, shared with the guests, the staff and the scripts
 	private void RelaunchKart( BumpVehicle vehicle )
 	{
 		if ( (vehicle.Flags & BumpVehicle.FirstLaunch) != 0 && Type is -9 or -10 )
@@ -1352,7 +1352,7 @@ public sealed class BumpController
 
 	/// <summary>Aims at <paramref name="next"/> with a fresh jitter: the new value on X, the previous X on Y.</summary>
 	// [BIN:TPW-EXE:0x00516330 world rng] the jitter is the buoy radius / 2 minus a world-generator draw modulo the radius; the new draw goes to X and the previous X to Y
-	// [BIN:TPW-EXE:0x0054A1A6 jitter draw] the draw is the world generator's (0x00516330): the park's one stream, shared with the guests, the staff and the scripts
+	// [BIN:TPW-EXE:0x00547B9A jitter draw] the draw is the world generator's (0x00516330; the same step is at 0x005470D3): radius / 2 - draw % radius: the park's one stream, shared with the guests, the staff and the scripts
 	private void AimAtNext( BumpVehicle vehicle, Buoy next )
 	{
 		vehicle.TargetBuoy = next.Index;

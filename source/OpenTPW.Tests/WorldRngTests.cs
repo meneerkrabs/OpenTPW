@@ -366,7 +366,10 @@ public class WorldRngTests
 
 	// ---- Boundaries ---------------------------------------------------------------------------------
 
-	/// <summary>Presentation (audio, particles, weather visuals, the advisor's mouth) takes no draw of the world generator.</summary>
+	/// <summary>
+	/// Presentation (audio, particles, the weather's visuals, the advisor, the guests' and balloons' drawing, the path tiles' texture roll of PATH-014) takes no draw of the world generator,
+	/// and the weather's own simulation stream ([EXT:weather-stream]) is not the world generator either. Every file named here must exist, so a rename cannot make the check pass by scanning nothing.
+	/// </summary>
 	[TestMethod]
 	public void PresentationCodeNeverReachesTheWorldGenerator()
 	{
@@ -375,14 +378,20 @@ public class WorldRngTests
 			root = root.Parent;
 		Assert.IsNotNull( root, "the repository root" );
 		var source = Path.Combine( root.FullName, "source", "OpenTPW" );
-		var offenders = new List<string>();
-		foreach ( var folder in new[] { "Audio", "World/Particles", "World/Weather" } )
-			foreach ( var file in Directory.EnumerateFiles( Path.Combine( source, folder ), "*.cs", SearchOption.AllDirectories ) )
-				if ( Regex.IsMatch( File.ReadAllText( file ), @"\bWorldRng\b|\.World\.(NextWord|Next|Reseed)\b|NextWorldDraw" ) )
-					offenders.Add( Path.GetRelativePath( source, file ) );
-		foreach ( var file in new[] { "World/Advisor.cs", "World/AdvisorController.cs", "World/Guests/GuestRenderer.cs", "World/Guests/BalloonRenderer.cs" } )
-			if ( File.Exists( Path.Combine( source, file ) ) && Regex.IsMatch( File.ReadAllText( Path.Combine( source, file ) ), @"\bWorldRng\b|NextWorldDraw" ) )
-				offenders.Add( file );
+		var files = new List<string>();
+		foreach ( var folder in new[] { "Audio", "World/Particles", "World/Weather", "World/Terrain" } )
+		{
+			Assert.IsTrue( Directory.Exists( Path.Combine( source, folder ) ), folder );
+			files.AddRange( Directory.EnumerateFiles( Path.Combine( source, folder ), "*.cs", SearchOption.AllDirectories ).Select( file => Path.GetRelativePath( source, file ) ) );
+		}
+		files.AddRange( Directory.EnumerateFiles( Path.Combine( source, "World" ), "Advisor*.cs" ).Select( file => Path.GetRelativePath( source, file ) ) );
+		foreach ( var file in new[] { "World/ParkWeather.cs", "World/Original/PathTileVariants.cs", "World/Guests/GuestRenderer.cs", "World/Guests/BalloonRenderer.cs", "World/Sky.cs", "World/Sun.cs" } )
+		{
+			Assert.IsTrue( File.Exists( Path.Combine( source, file ) ), file );
+			files.Add( file );
+		}
+		Assert.IsTrue( files.Count > 25, $"{files.Count} presentation files scanned" );
+		var offenders = files.Distinct().Where( file => Regex.IsMatch( File.ReadAllText( Path.Combine( source, file ) ), @"\bWorldRng\b|\.World\.(NextWord|Next|Reseed)\b|NextWorldDraw" ) ).ToList();
 		Assert.AreEqual( 0, offenders.Count, string.Join( ", ", offenders ) );
 	}
 }

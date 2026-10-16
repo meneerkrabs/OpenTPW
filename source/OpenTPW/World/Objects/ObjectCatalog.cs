@@ -42,10 +42,11 @@ public sealed class ObjectCatalogEntry
 {
 	internal ObjectCatalogEntry( string theme, ObjectCategory category, string archivePath, ObjectSettings settings, ObjectShape shape,
 		string modelPath, string? previewModelPath, string? scriptPath, IReadOnlyList<string> scripts, IReadOnlyList<ObjectAnimationFile> animations,
-		IReadOnlyList<string> auxiliaryModels, IReadOnlyList<string> allModels, BaseFileSystem fileSystem, int? bonusNumber )
+		IReadOnlyList<string> auxiliaryModels, IReadOnlyList<string> allModels, BaseFileSystem fileSystem, int? bonusNumber, ContentRoot? root = null )
 	{
 		FileSystem = fileSystem;
 		BonusNumber = bonusNumber;
+		Root = root ?? ( bonusNumber != null ? ContentRoot.Bonus : ContentRoot.Data );
 		Theme = theme;
 		Category = category;
 		ArchivePath = archivePath;
@@ -82,13 +83,14 @@ public sealed class ObjectCatalogEntry
 	public BaseFileSystem FileSystem { get; }
 	/// <summary>The N of a bonus archive <c>_name_N</c> (official bonus content), else null.</summary>
 	public int? BonusNumber { get; }
-	public bool IsBonus => BonusNumber != null;
-	/// <summary>The content root of a mod's object (<see cref="CatalogContentRoot"/>), or null for game data and official bonus archives.</summary>
-	internal CatalogContentRoot? ContentRoot { get; set; }
+	/// <summary>The content root the archive comes from (game data, official bonus content or a mod); it prefixes the entry's asset-manifest keys.</summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public ContentRoot Root { get; }
+	public bool IsBonus => Root.IsBonus;
 	/// <summary>The mod that adds this object (docs/MODS.md), or null.</summary>
-	public string? ModId => ContentRoot?.ModId;
+	public string? ModId => Root.ModId;
 	/// <summary>Whether the object is not game data: an official bonus archive or a mod's object. Such objects have no OBJECT_NAMES row.</summary>
-	public bool IsExternal => IsBonus || ContentRoot != null;
+	public bool IsExternal => !Root.IsData;
 	public string Theme { get; }
 	public ObjectCategory Category { get; }
 	/// <summary>Data-root-relative archive path, e.g. <c>/levels/jungle/rides/totem</c>.</summary>
@@ -230,28 +232,24 @@ public sealed class ObjectCatalog
 	private static string? bonusDataRoot;
 	private static bool bonusFromEnvironment = true;
 	private static IReadOnlyList<CatalogContentRoot> modRoots = Array.Empty<CatalogContentRoot>();
-	private static string modRootsKey = "";
 
 	/// <summary>
-	/// The content roots the mods add (docs/MODS.md), in mod load order, and the mod set's digest, which becomes part of the
-	/// catalog cache key. Set at startup (<c>ModContentRoots</c>); empty by default, where the catalog is exactly the game's and the bonus content's.
+	/// The content roots the mods add (docs/MODS.md), in mod load order. Set at startup by <c>ModContentRoots</c> together with the active mod
+	/// set, whose digest is part of the catalog cache key; empty by default, where the catalog is exactly the game's and the bonus content's.
 	/// </summary>
-	internal static (IReadOnlyList<CatalogContentRoot> Roots, string Key) ContentRoots
+	internal static IReadOnlyList<CatalogContentRoot> ContentRoots
 	{
 		get
 		{
 			lock ( cache )
-				return (modRoots, modRootsKey);
+				return modRoots;
 		}
 	}
 
-	internal static void SetContentRoots( IReadOnlyList<CatalogContentRoot> roots, string key )
+	internal static void SetContentRoots( IReadOnlyList<CatalogContentRoot> roots )
 	{
 		lock ( cache )
-		{
 			modRoots = roots;
-			modRootsKey = key;
-		}
 	}
 
 	/// <summary>
@@ -350,12 +348,11 @@ public sealed class ObjectCatalog
 			throw new ArgumentException( "Themes are plain level directory names such as 'jungle'.", nameof( theme ) );
 		var fileSystem = FileSystem;
 		// The names come from the language's OBJECT_NAMES: a catalog loaded in another language is not reused.
+		// [EXT:mods] the active mods' digest is part of the key: the same files-based mods give the same catalog, other mods another one
 		IReadOnlyList<CatalogContentRoot> roots;
-		string rootsKey;
 		lock ( cache )
-			(roots, rootsKey) = (modRoots, modRootsKey);
-		// The content roots of the mods are part of the identity: a mod set changes the entries and their names.
-		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}{(rootsKey.Length == 0 ? "" : "|mods:" + rootsKey)}";
+			roots = modRoots;
+		var key = $"{BonusDataRoot}|{theme}|{easy}|{(GameLanguage.IsSelected ? GameLanguage.Current.Name : "")}|{OpenTpwExtensions.Active.Digest}";
 		ObjectCatalog? cached;
 		lock ( cache )
 			cache.GetValue( fileSystem, _ => new Dictionary<string, ObjectCatalog>( StringComparer.OrdinalIgnoreCase ) ).TryGetValue( key, out cached );
@@ -583,14 +580,13 @@ public sealed class ObjectCatalog
 			if ( candidates.Length == 1 )
 				script = candidates[0];
 		}
-		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber );
+		var entry = new ObjectCatalogEntry( theme, category, archive, settings, shape, model, preview, script, scripts, animations, auxiliary, models, fileSystem, bonusNumber, contentRoot?.Root );
 		if ( shared.Count > 0 )
 			entry.SharedSettings = new ObjectSettings( shared );
 		if ( bonusNumber != null )
 			entry.DisplayName = BonusNames.Read( entry ) ?? entry.SettingsName;
 		if ( modObject != null )
 		{
-			entry.ContentRoot = contentRoot;
 			entry.DisplayName = ModName( modObject ) ?? entry.SettingsName;
 		}
 		return entry;
@@ -895,42 +891,29 @@ public static class BonusNames
 	}
 }
 
-/// <summary>What a content root adds to the catalog.</summary>
-internal enum CatalogRootKind
-{
-	/// <summary>An official bonus directory, scanned like a category directory of the game data.</summary>
-	Bonus,
-	/// <summary>The objects a mod's <c>objects.json</c> lists, each with its own Info.Id.</summary>
-	ModObjects
-}
-
 /// <summary>
 /// A place catalog entries are read from besides the game data (docs/MODS.md): a file system with WAD and SDT handlers rooted
-/// at a mod's folder or at the data folder of a mod input, and the objects to take from it. The key identifies the root in
-/// saved asset manifests (<c>mod:&lt;id&gt;:/…</c>, <c>mod:&lt;id&gt;/&lt;input&gt;:/…</c>).
+/// at a mod's folder or at the data folder of a mod input (a user-supplied original install), and the mod's objects to take from it.
+/// Its entries are keyed in saved asset manifests by <see cref="Root"/> (<c>mod:&lt;id&gt;:/…</c>); one mod never lists the same
+/// archive path in its own folder and in an input, since the same theme, category and archive name are refused.
 /// </summary>
 // [EXT:mods] OpenTPW's own mod system; the original game had no mods
 internal sealed class CatalogContentRoot
 {
-	public CatalogContentRoot( string key, string directory, CatalogRootKind kind, string? modId, IReadOnlyList<ModObjectDefinition> objects )
+	public CatalogContentRoot( ContentRoot root, string directory, IReadOnlyList<ModObjectDefinition> objects )
 	{
-		Key = key;
+		Root = root;
 		Directory = Path.GetFullPath( directory );
-		Kind = kind;
-		ModId = modId;
 		Objects = objects;
 		FileSystem = new BaseFileSystem( Directory );
 		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
 		FileSystem.RegisterArchiveHandler<SdtArchive>( ".sdt" );
 	}
 
-	public string Key { get; }
+	public ContentRoot Root { get; }
 	/// <summary>Absolute root folder of <see cref="FileSystem"/>.</summary>
 	public string Directory { get; }
-	public CatalogRootKind Kind { get; }
-	public string? ModId { get; }
 	public IReadOnlyList<ModObjectDefinition> Objects { get; }
 	public BaseFileSystem FileSystem { get; }
-	/// <summary>The key prefix of this root's members in asset manifests.</summary>
-	public string ManifestPrefix => Key + ":";
+	public string ModId => Root.ModId!;
 }

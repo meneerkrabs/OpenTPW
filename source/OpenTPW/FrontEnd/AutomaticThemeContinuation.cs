@@ -4,7 +4,7 @@ namespace OpenTPW.FrontEnd;
 
 /// <summary>Transient selection of a shape-checked automatic slot, not a persisted profile identity.</summary>
 internal sealed record AutomaticParkContinueEntry( BaseFileSystem Namespace, string Theme, string Path,
-	ParkStartKind StartKind, ParkGameMode Mode, bool Easy, string DisplayName, DateTimeOffset SavedUtc, string Digest );
+	ParkStartKind StartKind, ParkGameMode Mode, bool Easy, string DisplayName, DateTimeOffset SavedUtc, string Digest, string? Requires = null );
 
 internal static class AutomaticThemeContinuation
 {
@@ -36,7 +36,7 @@ internal static class AutomaticThemeContinuation
 			var snapshot = ParkResumeSaveFile.Load( path );
 			RequireSupported( snapshot, canonical );
 			return new( files, canonical, path, snapshot.StartKind, snapshot.Economy.Mode, snapshot.Economy.Easy,
-				snapshot.DisplayName, snapshot.SavedUtc, Digest( snapshot ) );
+				snapshot.DisplayName, snapshot.SavedUtc, Digest( snapshot ), ParkResumeMods.MissingText( snapshot.Mods, Mods.OpenTpwExtensions.Active ) );
 		}
 		catch ( Exception error ) when ( error is IOException or InvalidDataException or UnauthorizedAccessException or ArgumentException or NotSupportedException )
 		{

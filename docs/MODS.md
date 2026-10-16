@@ -19,12 +19,10 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
 - the only official extension is `opentpw.online` (below);
+- park saves record the mods that change the simulation and refuse a mismatched set (below);
 - **content roots** are live on the desktop: an enabled mod's `overrides`, `strings` and `objects` change what the game
   reads (see [Content](#content)). The browser build has no files-based mods, so nothing changes there;
-- the Extensions and mods screen and recording mods in park saves are later steps. A mod that replaces simulation
-  files (`.sam`, `.rse`, `.md2`) or adds objects belongs in a saved park's identity; the park's asset manifest already
-  pins the content of every object archive and settings file it uses (a replaced file gives another hash, so such a park
-  is refused when the mod set differs), but the mod list is not recorded yet.
+- the Extensions and mods screen is a later step.
 
 Changes to `mods.json` apply at the next start; nothing is swapped while the game runs.
 
@@ -174,8 +172,10 @@ Mod objects come after the game's and the official bonus objects in each categor
 its own file system (with WAD and SDT handlers); the catalog cache key includes the mod set's digest, so a different set
 never reuses a catalog.
 
-In a park's asset manifest the members of a mod's own archives are keyed `mod:<id>:/<path>` and those of an input
-`mod:<id>/<input>:/<path>`; game data stays `data:` and official bonus archives `bonus:`.
+In a park's asset manifest the members of a mod's archives, its own and those read from an input, are keyed
+`mod:<id>:/<path>` (`ContentRoot.Mod(id)`); game data stays `data:` and official bonus archives `bonus:`. The path is
+relative to the archive's file system, so an input archive keeps its game path (`/levels/jungle/rides/bumper/...`) and
+cannot collide with the mod's own, because one theme and category never lists two archives of one name.
 
 ## Resolution
 
@@ -196,10 +196,22 @@ SHA-256 of one UTF-8 `path NUL sha256 LF` line per file of the mod's folder, the
 Unicode normalization form C sorted by ordinal (UTF-16 code unit) order, and lowercase hex file hashes. A copy of a mod
 on macOS, Windows or Linux therefore gets the same digest (`ModTests.TheGoldenDigestIsTheSameOnEveryPlatform` pins
 one). Operating-system clutter is not part of a mod and is skipped everywhere: `.DS_Store`, AppleDouble `._*` files,
-`Thumbs.db` and `desktop.ini`. Later steps will record the digest in park saves of mods that change the simulation.
+`Thumbs.db` and `desktop.ini`. Park saves record the digest of mods that change the simulation (below).
 
 With no mods and the default extensions nothing changes: the pinned determinism hashes are the same with
 `opentpw.online` on or off (`DeterminismTests.TogglingOnlyTheOnlineExtensionKeepsThePinnedDigests`).
+
+## Mods in park saves
+
+A mod **changes the simulation** when it adds objects (`content.objects`) or overrides a file that is not plainly
+presentation media (`.fsh`, `.tga`, `.png`, `.jpg`, `.bmp`, `.wav`, `.mp3`, `.ogg`, `.flac`, `.str`, `.bf4`, `.ttf`, `.otf`; any
+other type counts as simulation); an extension does when it declares `AffectsSimulation`. A park save records exactly
+these (`Mods`: id, version, content digest) and nothing else, so a park saved without them has no `Mods` field and keeps
+its bytes. Loading it needs the same mods, versions and content, in the same order; presentation-only mods and the online
+extension may differ. A save that needs a mod you do not have refuses with `needs <id> <version>`; the load list and the
+Continue entries keep it and add "(requires mod <id> <version>)". Exporting a park to a `.tpwpark` package is refused
+while such a mod is active, because packages record no mods yet. The asset manifest keys archives of a mod `mod:<id>:/…`
+(`data:` and `bonus:` for the game data and the bonus content). Details: [DETERMINISM.md](DETERMINISM.md) "Mods".
 
 ## The online extension (`opentpw.online`)
 

@@ -10,7 +10,7 @@ public sealed record ResolvedExtension( IOpenTpwExtension Extension, bool Enable
 /// An enabled files-based mod in load order. <see cref="ContentSha256"/> is the SHA-256 of the sorted
 /// (mod-relative path, file SHA-256) list of every file in the mod's folder, the manifest included.
 /// </summary>
-public sealed record ResolvedMod( ModManifest Manifest, string Directory, ModSource Source, string ContentSha256 )
+public sealed record ResolvedMod( ModManifest Manifest, string Directory, ModSource Source, string ContentSha256, bool AffectsSimulation = false )
 {
 	public string Id => Manifest.Id;
 	/// <summary>Every file of the mod's folder with its SHA-256, by '/' path in Unicode normalization form C (what <see cref="ContentSha256"/> covers).</summary>
@@ -20,6 +20,12 @@ public sealed record ResolvedMod( ModManifest Manifest, string Directory, ModSou
 	/// <summary>The data folder of each input the mod's objects read from, by input id (the folder the player chose, or its Data folder).</summary>
 	public IReadOnlyDictionary<string, string> InputDirectories { get; init; } = new Dictionary<string, string>();
 }
+
+/// <summary>
+/// An enabled extension or mod that changes the park simulation, as a park save records it (docs/MODS.md, docs/DETERMINISM.md).
+/// An extension ships no files, so its <see cref="ContentSha256"/> is <see cref="ModSet.NoFilesSha256"/>.
+/// </summary>
+public sealed record SimulationMod( string Id, ModVersion Version, string ContentSha256 );
 
 /// <summary>A mod that was found or enabled but cannot run, and why.</summary>
 public sealed record ModRefusal( string Id, string Reason );
@@ -36,6 +42,9 @@ public sealed class ModSet
 	public const long MaximumBytesPerMod = 2L * 1024 * 1024 * 1024;
 	private const int MaximumDepth = 32;
 
+	/// <summary>The content digest recorded for an extension, which ships no files: the SHA-256 of no bytes.</summary>
+	public const string NoFilesSha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
 	private readonly HashSet<string> enabled;
 
 	private ModSet( IReadOnlyList<ResolvedExtension> extensions, IReadOnlyList<ResolvedMod> mods, IReadOnlyList<string> order, IReadOnlyList<ModRefusal> refused )
@@ -46,6 +55,17 @@ public sealed class ModSet
 		Refused = refused;
 		enabled = new HashSet<string>( order, StringComparer.Ordinal );
 		Digest = ComputeDigest( mods );
+		var byId = extensions.ToDictionary( extension => extension.Extension.Id, StringComparer.Ordinal );
+		var modsById = mods.ToDictionary( mod => mod.Id, StringComparer.Ordinal );
+		var simulation = new List<SimulationMod>();
+		foreach ( var id in order )
+		{
+			if ( byId.TryGetValue( id, out var extension ) && extension.Extension.AffectsSimulation )
+				simulation.Add( new SimulationMod( id, extension.Extension.Version, NoFilesSha256 ) );
+			else if ( modsById.TryGetValue( id, out var mod ) && mod.AffectsSimulation )
+				simulation.Add( new SimulationMod( id, mod.Manifest.Version, mod.ContentSha256 ) );
+		}
+		SimulationMods = simulation;
 	}
 
 	/// <summary>Every compiled-in extension, enabled or not, in declaration order.</summary>
@@ -59,7 +79,37 @@ public sealed class ModSet
 	/// <summary>SHA-256 over the enabled files-based mods' (id, version, content digest) in load order; empty without such mods.</summary>
 	public string Digest { get; }
 
+	/// <summary>
+	/// The enabled extensions and mods that change the simulation, in load order: what a park save records and what
+	/// loading it requires. Presentation-only mods and extensions (online, textures, sounds, strings) are not listed.
+	/// </summary>
+	public IReadOnlyList<SimulationMod> SimulationMods { get; }
+
 	public bool IsEnabled( string id ) => enabled.Contains( id );
+
+	/// <summary>
+	/// Whether a mod changes the park simulation, judged from its manifest and files: it adds objects
+	/// (<c>content.objects</c>), or it overrides a file that is not plainly presentation media (textures, sounds, text
+	/// and fonts: <see cref="IsPresentationFile"/>). Unknown file types count as simulation, the safe side: such a
+	/// mod is recorded in park saves.
+	/// </summary>
+	public static bool AffectsSimulation( ModManifest manifest, IEnumerable<string> files )
+	{
+		if ( manifest.Content.Objects != null )
+			return true;
+		if ( manifest.Content.Overrides == null )
+			return false;
+		var prefix = FoldKey( manifest.Content.Overrides ) + "/";
+		return files.Any( path => FoldKey( path ).StartsWith( prefix, StringComparison.Ordinal ) && !IsPresentationFile( path ) );
+	}
+
+	private static readonly HashSet<string> PresentationExtensions = new( StringComparer.OrdinalIgnoreCase )
+	{
+		".fsh", ".tga", ".png", ".jpg", ".jpeg", ".bmp", ".wav", ".mp3", ".ogg", ".flac", ".str", ".bf4", ".ttf", ".otf",
+	};
+
+	/// <summary>A file of media that only changes how the game looks, sounds or reads (by extension, ignoring case).</summary>
+	public static bool IsPresentationFile( string path ) => PresentationExtensions.Contains( Path.GetExtension( path ) );
 
 	/// <summary>The official extensions with their defaults and no files-based mods.</summary>
 	public static ModSet Defaults( IReadOnlyList<IOpenTpwExtension> extensions ) =>
@@ -139,7 +189,8 @@ public sealed class ModSet
 
 		var resolvedExtensions = extensions.Select( extension => new ResolvedExtension( extension, nodes[extension.Id].Enabled ) ).ToList();
 		var mods = order.Where( node => node.Discovered != null )
-			.Select( node => new ResolvedMod( node.Manifest!, node.Discovered!.Directory, node.Discovered.Source, ContentDigest( node.Files! ) )
+			.Select( node => new ResolvedMod( node.Manifest!, node.Discovered!.Directory, node.Discovered.Source, ContentDigest( node.Files! ),
+				AffectsSimulation( node.Manifest!, node.Files!.Select( file => file.Path ) ) )
 				{ Files = node.Files!, Objects = node.Objects, InputDirectories = node.InputDirectories } ).ToList();
 		return new ModSet( resolvedExtensions, mods, order.Select( node => node.Id ).ToList(), refused );
 	}

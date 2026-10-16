@@ -1,5 +1,5 @@
-using OpenTPW.Mods;
 using System.Security.Cryptography;
+using OpenTPW.Mods;
 
 namespace OpenTPW;
 
@@ -35,11 +35,9 @@ internal static class ParkResumeAssetManifest
 	/// <summary>Upper bound for the length of one key.</summary>
 	public const int MaximumKeyLength = 512;
 
-	// Root identity prefixes keep members of the official bonus content (their own file-system root)
-	// from colliding with game-data members of the same relative path. A mod's content root has the prefix
-	// "mod:<id>:" (the mod's own folder) or "mod:<id>/<input>:" (a folder the player supplied); see CatalogContentRoot.
-	private const string DataRootPrefix = "data:";
-	private const string BonusRootPrefix = "bonus:";
+	// Root identity prefixes (ContentRoot.KeyPrefix: data:, bonus:, mod:<id>:) keep members of the official bonus
+	// content and of mods (their own file-system roots) from colliding with game-data members of the same relative path.
+	private static readonly string DataRootPrefix = ContentRoot.Data.KeyPrefix;
 
 	// The category default .sam layered under every object file of a category. Mirrors ObjectCatalog's
 	// category directories (note <c>sideshow</c> → <c>SideShow.sam</c>); keep in sync with it.
@@ -55,7 +53,7 @@ internal static class ParkResumeAssetManifest
 	/// <summary>
 	/// Captures the asset manifest of a park from its trusted loaded catalog and balance settings. Keys are
 	/// root-prefixed data-relative identifiers (<c>data:/levels/jungle/rides/totem/totem.sam</c>,
-	/// <c>bonus:/…</c> for official bonus archives), enumeration is ordinal-sorted, and values are lowercase
+	/// <c>bonus:/…</c> for official bonus archives, <c>mod:&lt;id&gt;:/…</c> for a mod's), enumeration is ordinal-sorted, and values are lowercase
 	/// hex SHA-256 of the member's content — WAD members are hashed through <see cref="BaseFileSystem.OpenRead"/>,
 	/// i.e. decompressed, so re-packing an archive does not change a hash. Files absent from the root are absent
 	/// from the result; comparing against the saved manifest reports that as a difference. Read-only.
@@ -79,7 +77,7 @@ internal static class ParkResumeAssetManifest
 		// anything its catalogue offered at save time.
 		foreach ( var entry in catalog.Entries.OrderBy( entry => entry.ArchivePath, StringComparer.Ordinal ) )
 		{
-			var prefix = entry.ContentRoot?.ManifestPrefix ?? (entry.IsBonus ? BonusRootPrefix : DataRootPrefix);
+			var prefix = entry.Root.KeyPrefix;
 			foreach ( var member in SimulationMembers( entry.FileSystem, entry.ArchivePath ) )
 				Add( manifest, prefix + member, Hash( entry.FileSystem, member ) );
 		}
@@ -89,7 +87,7 @@ internal static class ParkResumeAssetManifest
 		foreach ( var (directory, defaults) in CategoryDefaults )
 		{
 			// A mod's object archive sits in its own root, but takes the same category defaults from the game data.
-			if ( !catalog.Entries.Any( entry => IsInCategoryDirectory( entry.ArchivePath, theme, directory ) || (entry.ContentRoot != null && ModObjectsFile.CategoryName( entry.Category ) == directory) ) )
+			if ( !catalog.Entries.Any( entry => IsInCategoryDirectory( entry.ArchivePath, theme, directory ) || (entry.Root.IsMod && ModObjectsFile.CategoryName( entry.Category ) == directory) ) )
 				continue;
 			AddWhenPresent( manifest, $"/levels/{theme}/{directory}/{defaults}" );
 		}

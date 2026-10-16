@@ -158,8 +158,8 @@ public class ModContentTests
 		Assert.AreEqual( Path.Combine( tpi, "Data" ), set.Mods.Single().InputDirectories["tpi"] );
 	}
 
-	private static ModSettings Inputs( string id, string folder ) =>
-		Enable( id ) with { Inputs = new Dictionary<string, IReadOnlyDictionary<string, string>> { [id] = new Dictionary<string, string> { ["tpi"] = folder } } };
+	private static ModSettings Inputs( string id, string folder, string input = "tpi" ) =>
+		Enable( id ) with { Inputs = new Dictionary<string, IReadOnlyDictionary<string, string>> { [id] = new Dictionary<string, string> { [input] = folder } } };
 
 	[TestMethod]
 	public void UnorderedConflictsAreRefusedAndOrderedOnesResolvedByAfter()
@@ -284,6 +284,7 @@ public class ModContentTests
 			Assert.AreEqual( "Zoom", zoom.DisplayName, "the name from objects.json replaces the .sam's" );
 			Assert.AreEqual( 20001, zoom.Settings.GetInt( "Info.Id" ), "the .sam's own Info.Id (5) is replaced by the assigned one" );
 			Assert.AreEqual( "community.rides", zoom.ModId );
+			Assert.AreEqual( ContentRoot.Mod( "community.rides" ), zoom.Root );
 			Assert.IsTrue( zoom.IsExternal );
 			Assert.IsFalse( zoom.IsBonus );
 			Assert.AreEqual( "Bumper Cars", catalog.Get( 20002 ).DisplayName );
@@ -297,7 +298,7 @@ public class ModContentTests
 			// the asset manifest pins each root under its own prefix
 			var manifest = ParkResumeAssetManifest.Capture( catalog, "jungle", false );
 			Assert.IsTrue( manifest.ContainsKey( "mod:community.rides:/objects/zoom/zoom.sam" ) );
-			Assert.IsTrue( manifest.ContainsKey( "mod:community.rides/tpi:/levels/jungle/rides/bumper/bumper.sam" ) );
+			Assert.IsTrue( manifest.ContainsKey( "mod:community.rides:/levels/jungle/rides/bumper/bumper.sam" ) );
 			Assert.IsTrue( manifest.ContainsKey( "data:/levels/jungle/rides/totem/totem.sam" ) );
 			Assert.IsFalse( manifest.Keys.Any( key => key.StartsWith( "bonus:", StringComparison.Ordinal ) ) );
 		}
@@ -347,5 +348,46 @@ public class ModContentTests
 			Assert.IsNull( GameLanguage.StringOverride );
 			Assert.AreSame( plain, ObjectCatalog.Load( "jungle" ), "an empty set keeps the catalog and its cache key" );
 		}
+	}
+
+	/// <summary>
+	/// Real data (OPENTPW_GAME_PATH, inconclusive without it): the original install as a mod input. The Jungle totem archive is added to the
+	/// Hallow rides under a new Info.Id, and a mod override replaces a real texture-folder file; the original objects stay as they were.
+	/// </summary>
+	[TestMethod]
+	public void AnOriginalInstallWorksAsAModInput()
+	{
+		var original = ObjectCatalogCorpusTests.UseOriginalData( out var previous );
+		if ( original == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game for the mod input corpus." );
+		FileSystem = previous;
+		var dataPath = OriginalParkImportTests.OriginalDataPath();
+		var directory = Mod( "community.original-input", ", \"inputs\": [{ \"id\": \"original\", \"kind\": \"original-data\" }], \"content\": { \"objects\": \"objects.json\" }",
+			("objects.json", ObjectsJson( 20000, 20009, ObjectJson( "levels/jungle/rides/totem", 20001, theme: "hallow", input: "original", names: "\"English\": \"Borrowed Totem\"" ) )) );
+		FileSystem = original;
+		ObjectCatalog.BonusDataRoot = null;
+		var plain = ObjectCatalog.Load( "hallow" );
+		var plainJungle = ObjectCatalog.Load( "jungle" );
+		var set = Resolve( Inputs( "community.original-input", dataPath, "original" ), directory );
+		Assert.AreEqual( 1, set.Mods.Count, string.Join( "; ", set.Refused.Select( refusal => refusal.Reason ) ) );
+		using ( ModContentRoots.Use( set, FileSystem ) )
+		{
+			var catalog = ObjectCatalog.Load( "hallow" );
+			Assert.AreEqual( plain.Entries.Count + 1, catalog.Entries.Count );
+			var borrowed = catalog.Get( 20001 );
+			Assert.AreEqual( "Borrowed Totem", borrowed.DisplayName );
+			Assert.AreEqual( ObjectCategory.Ride, borrowed.Category );
+			Assert.AreEqual( "hallow", borrowed.Theme );
+			Assert.AreEqual( 1110, ObjectCatalog.Load( "jungle" ).Get( 1110 ).InfoId, "the original is untouched" );
+			Assert.AreEqual( plainJungle.Entries.Count, ObjectCatalog.Load( "jungle" ).Entries.Count );
+			using ( var model = borrowed.FileSystem.OpenRead( borrowed.ModelPath ) )
+				Assert.IsTrue( model.Length > 0, "the model is read from the original's archive through the input root" );
+			Assert.IsTrue( borrowed.Shape.OccupiedCells.Any() );
+			Assert.AreEqual( ContentRoot.Mod( "community.original-input" ), borrowed.Root );
+			// each catalog entry's manifest members hash through the root they were read from
+			var manifest = ParkResumeAssetManifest.Capture( catalog, "hallow", false );
+			Assert.IsTrue( manifest.Keys.Any( key => key.StartsWith( "mod:community.original-input:/levels/jungle/rides/totem/", StringComparison.Ordinal ) ) );
+		}
+		Assert.AreEqual( plain.Entries.Count, ObjectCatalog.Load( "hallow" ).Entries.Count );
 	}
 }

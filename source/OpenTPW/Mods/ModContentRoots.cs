@@ -35,14 +35,16 @@ public static class ModContentRoots
 	{
 		var previousFileSystem = fileSystem?.Overrides;
 		var previousStrings = GameLanguage.StringOverride;
-		var (previousRoots, previousKey) = ObjectCatalog.ContentRoots;
+		var previousRoots = ObjectCatalog.ContentRoots;
+		var activeScope = OpenTpwExtensions.Use( set );
 		Install( set, fileSystem );
 		return new Restore( () =>
 		{
+			activeScope.Dispose();
 			if ( fileSystem != null )
 				fileSystem.Overrides = previousFileSystem;
 			GameLanguage.StringOverride = previousStrings;
-			ObjectCatalog.SetContentRoots( previousRoots, previousKey );
+			ObjectCatalog.SetContentRoots( previousRoots );
 		} );
 	}
 
@@ -58,7 +60,7 @@ public static class ModContentRoots
 				fileSystem.InvalidateLookups();
 		}
 		GameLanguage.StringOverride = index.HasStrings ? index.OpenString : null;
-		ObjectCatalog.SetContentRoots( CatalogRoots( set ), set.Digest );
+		ObjectCatalog.SetContentRoots( CatalogRoots( set ) );
 	}
 
 	/// <summary>The catalog content roots of the mods that add objects, in mod order: the mod's own folder, then each input it reads from.</summary>
@@ -69,9 +71,9 @@ public static class ModContentRoots
 		{
 			var own = mod.Objects!.Objects.Where( definition => definition.Input == null ).ToList();
 			if ( own.Count > 0 )
-				roots.Add( new CatalogContentRoot( $"mod:{mod.Id}", mod.Directory, CatalogRootKind.ModObjects, mod.Id, own ) );
+				roots.Add( new CatalogContentRoot( ContentRoot.Mod( mod.Id ), mod.Directory, own ) );
 			foreach ( var input in mod.Objects.Objects.Where( definition => definition.Input != null ).GroupBy( definition => definition.Input!, StringComparer.Ordinal ).OrderBy( group => group.Key, StringComparer.Ordinal ) )
-				roots.Add( new CatalogContentRoot( $"mod:{mod.Id}/{input.Key}", mod.InputDirectories[input.Key], CatalogRootKind.ModObjects, mod.Id, input.ToList() ) );
+				roots.Add( new CatalogContentRoot( ContentRoot.Mod( mod.Id ), mod.InputDirectories[input.Key], input.ToList() ) );
 		}
 		return roots;
 	}

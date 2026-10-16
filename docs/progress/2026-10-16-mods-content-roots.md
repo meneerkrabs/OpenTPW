@@ -15,5 +15,4 @@ Default `.sam` files still come from the game data, as for the official bonus ob
 
 Conflicts are refused, never resolved by "last wins": two mods that supply the same file need `after`, and overlapping Info.Id ranges or the
 same archive name in a theme and category refuse both mods. The catalog cache key now includes the mod set's digest, and a park's asset
-manifest keys mod members `mod:<id>:/...` (own folder) and `mod:<id>/<input>:/...` (input), so a saved park pins their content. Recording the
-mod list in saves, the mods screen, and the checks and engine work for Theme Park Inc objects (`opentpw.cross-edition-objects`) are later phases.
+manifest keys mod members `mod:<id>:/...` (`ContentRoot.Mod`, from the save-recording phase), so a saved park pins their content. The mods screen, and the checks and engine work for Theme Park Inc objects (`opentpw.cross-edition-objects`) are later phases.

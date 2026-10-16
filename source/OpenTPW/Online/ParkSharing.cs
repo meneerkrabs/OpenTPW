@@ -26,11 +26,25 @@ public static class ParkSharing
 		return ParkPackage.Create( snapshot, new ParkInfo( parkName, description, author, snapshot.Level ), new GameInfo( ParkSnapshotBuilder.Edition, language ), thumbnail );
 	}
 
+	/// <summary>
+	/// Why a park cannot be exported while simulation-changing extensions or mods are active, or null when it can: a park package does
+	/// not record mods yet, so such a park would play differently for whoever visits it (docs/MODS.md).
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	public static string? ModsRefusal()
+	{
+		var mods = OpenTPW.Mods.OpenTpwExtensions.Active.SimulationMods;
+		return mods.Count == 0 ? null
+			: $"This park records mods ({string.Join( ", ", mods.Select( mod => $"{mod.Id} {mod.Version}" ) )}) and cannot be exported yet; turn them off to share a park without mods.";
+	}
+
 	/// <summary>Exports the live level (used by the in-game panel).</summary>
 	public static ParkPackage ExportLevel( Level level, string parkName, string author, string description = "" )
 	{
 		if ( level.IsReadOnlyVisit )
 			throw new InvalidOperationException( "A visited park cannot be exported as the visitor's own park." );
+		if ( ModsRefusal() is { } refusal )
+			throw new InvalidOperationException( refusal );
 		var snapshot = ParkSnapshotBuilder.FromLevel( level );
 		MapFile? map = level.OriginalPark?.Map;
 		Func<float, float, (int X, int Y)?>? rideCell = level.OriginalPark == null ? null : ( x, y ) =>

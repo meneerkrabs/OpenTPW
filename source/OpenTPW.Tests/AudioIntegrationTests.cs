@@ -157,9 +157,12 @@ public class AudioIntegrationTests
 		var original = sounds[0];
 		try
 		{
-			// Fail the link walk after the first decoded child has been created; the first child starts in the pooled tick (tp.exe 0x6bdb50).
-			sounds[0] = original with { Links = null! };
+			// The first child starts in the pooled tick (tp.exe 0x6bdb50); the link walk fails when the next child is made (0x6bdbb0), with the first child alive.
 			var failing = system.StartChain( GameAudio.Kids, 71, AudioChannel.Effects, 50, null )!;
+			system.Pump();
+			Assert.AreEqual( 1, Children( failing ), "the first child is made before any link is read" );
+			sounds[0] = original with { Links = null! };
+			MakeDue( failing );
 			Assert.ThrowsException<ArgumentNullException>( () => system.Pump() );
 			Assert.IsTrue( failing.IsStopped );
 			Assert.IsTrue( mixer!.Voices.Count > 0 );
@@ -180,9 +183,10 @@ public class AudioIntegrationTests
 		var original = sounds[0];
 		try
 		{
-			// Force a later child due now, then fail its successor walk after creating it.
+			// Force a later child due now, then fail its link walk.
 			typeof( SoundChain ).GetField( "nextChildAt", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( failing, 0L );
 			typeof( SoundChain ).GetField( "soundIndex", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( failing, 0 );
+			typeof( SoundChain ).GetField( "started", BindingFlags.NonPublic | BindingFlags.Instance )!.SetValue( failing, true );
 			sounds[0] = original with { Links = null! };
 			Assert.ThrowsException<ArgumentNullException>( () => system.Pump() );
 			Assert.IsTrue( failing.IsStopped );

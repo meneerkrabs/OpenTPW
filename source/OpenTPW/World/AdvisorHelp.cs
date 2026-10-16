@@ -140,7 +140,12 @@ internal static class AdvisorUiHelp
 
 	/// <summary>The messages a closing window withdraws: its own, and for a ride window the one it did not post as well.</summary>
 	public static IReadOnlyList<int> WithdrawnWith( string window ) =>
-		ObjectInfoHelp.TryParse( window, out _, out var withdrawn ) ? withdrawn : MessageFor( window ) is { } message ? new[] { message } : Array.Empty<int>();
+		ObjectInfoHelp.TryParse( window, out _, out var withdrawn ) ? withdrawn
+			: MessageFor( window ) is { } message ? (ExtraWithdrawals.TryGetValue( window, out var extra ) ? new[] { message, extra } : new[] { message }) : Array.Empty<int>();
+
+	/// <summary>The second message a closing window withdraws: the employee window's close handler withdraws 0xD4 next to its own 0xC0.</summary>
+	// [BIN:TPW-EXE:0x004B5CF8 employee close] withdraws 0xC0 (192) and then 0xD4 (212, the patrol area help its refresh posts), 0x4B5D05
+	private static readonly Dictionary<string, int> ExtraWithdrawals = new( StringComparer.Ordinal ) { ["employee"] = AdvisorToolHelp.PatrolAreaSet };
 
 	/// <summary>Every message some window posts (the ones a park that ends withdraws).</summary>
 	public static IEnumerable<int> AllWindowMessages => Windows.Values.Concat( ObjectInfoHelp.Messages ).Concat( AdvisorToolHelp.All ).Append( Hud.ParkHud.CameraPanelHelp ).Append( Hud.ParkHud.MessagePanelHelp ).Distinct();
@@ -239,6 +244,9 @@ internal static class AdvisorToolHelp
 	/// <summary>The help a chosen buy item posts: 201 for a ride (<c>Info.WhichUIType</c> 0) while the park has no ride, else 206.</summary>
 	public static int BuildStart( int whichUiType, bool anyRidePlaced ) => whichUiType == 0 && !anyRidePlaced ? FirstRide : Placement;
 
+	// [BIN:TPW-EXE:0x004B5B50 patrol toggle] setting an area closes the employee window and posts 0xC1 (193); [BIN:TPW-EXE:0x004B5AB0 employee refresh] a refresh with an own area posts 0xD4 (212)
+	public const int PatrolTool = 193, PatrolAreaSet = 212;
+
 	/// <summary>Every message a tool or panel posts, for the withdrawal when a park ends.</summary>
-	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool, FirstRide, Placement, ClearLandTool, BuyLandTool } );
+	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool, FirstRide, Placement, ClearLandTool, BuyLandTool, PatrolTool, PatrolAreaSet } );
 }

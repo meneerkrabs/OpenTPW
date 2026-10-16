@@ -318,4 +318,64 @@ public class AdvisorToolHelpTests
 		Assert.AreEqual( 345, AdvisorToolHelp.ClearLandTool, "row -2 builds tool 0x3A and posts 0x159" );
 		Assert.AreEqual( 346, AdvisorToolHelp.BuyLandTool, "row -1 builds tool 0x39 and posts 0x15A" );
 	}
+
+	// ---- The employee window and the patrol tool ------------------------------------------------------------
+
+	private ParkHud NewEmployeeHud( out List<string> events, out ParkEconomy economy, params StaffType[] roles )
+	{
+		economy = EconomyTestData.Park();
+		foreach ( var role in roles )
+			EconomyTestData.HireBest( economy, role );
+		var hud = StaffWindowTests.Hud( economy );
+		var recorded = new List<string>();
+		events = recorded;
+		SetField( hud, "host", new HudHost
+		{
+			HelpPosted = message => recorded.Add( $"post {message}" ),
+			HelpWithdrawn = message => recorded.Add( $"withdraw {message}" ),
+			ModeChanged = () => recorded.Add( "mode" )
+		} );
+		return hud;
+	}
+
+	[TestMethod]
+	public void TheEmployeeWindowPostsHelp212OnlyForAnEmployeeWithAnOwnPatrolArea()
+	{
+		var hud = NewEmployeeHud( out var events, out var economy, StaffType.Guard, StaffType.Handyman );
+		var guard = economy.Staff.Members.Single( member => member.Type == StaffType.Guard );
+		var handyman = economy.Staff.Members.Single( member => member.Type == StaffType.Handyman );
+		guard.SetPatrolArea( (1, 1), (4, 4) );
+		Assert.IsTrue( hud.OpenEmployeeWindow( handyman ) );
+		Assert.AreEqual( 0, events.Count, "the whole park: 0x506eb0 answers 0" );
+		Assert.IsTrue( hud.CycleEmployee( true ) || hud.CycleEmployee( false ) );
+		Assert.AreEqual( guard.Id, hud.Employee!.Id );
+		CollectionAssert.AreEqual( new[] { "post 212" }, events, "the refresh after the cycle posts 0xD4" );
+		events.Clear();
+		hud.CloseEmployeeWindow();
+		Assert.IsTrue( hud.OpenEmployeeWindow( guard ) );
+		CollectionAssert.AreEqual( new[] { "post 212" }, events, "the window's own refresh posts it as it is built" );
+	}
+
+	[TestMethod]
+	public void TheEmployeeWindowsCloseWithdrawsBothOfItsMessages()
+	{
+		CollectionAssert.AreEqual( new[] { 192, 212 }, AdvisorUiHelp.WithdrawnWith( "employee" ).ToArray(), "0x4B5CF8 and 0x4B5D05" );
+		CollectionAssert.AreEqual( new[] { 188 }, AdvisorUiHelp.WithdrawnWith( "buy" ).ToArray() );
+	}
+
+	[TestMethod]
+	public void SettingAPatrolAreaPostsHelp193AfterTheWindowClosed()
+	{
+		var hud = NewEmployeeHud( out var events, out var economy, StaffType.Guard );
+		var level = (Level)typeof( ParkHud ).GetField( "level", Private )!.GetValue( hud )!;
+		SetField( level, "<PatrolTool>k__BackingField", new PatrolAreaTool( () => economy ) );
+		var guard = economy.Staff.Members[0];
+		Assert.IsTrue( hud.OpenEmployeeWindow( guard ) );
+		events.Clear();
+		Assert.IsTrue( hud.PressEmployeePatrol() );
+		Assert.IsFalse( hud.EmployeeWindowOpen, "the window closes" );
+		Assert.IsTrue( level.PatrolTool!.IsActive );
+		typeof( ParkHud ).GetMethod( "ReportInterfaceMode", Private )!.Invoke( hud, null );
+		CollectionAssert.AreEqual( new[] { "post 193" }, events, "0x4B5B50 posts 0xC1 once the tool is set (the first frame only records the mode)" );
+	}
 }

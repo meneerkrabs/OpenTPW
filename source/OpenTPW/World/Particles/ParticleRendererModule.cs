@@ -66,6 +66,35 @@ internal static class ParticleRendererModule
 		return handle is 0 or -1 ? null : new EmitterRef( renderer.Particles, handle, level );
 	}
 
+	/// <summary>The advisor's screen effects start in the current level's pool (at native positions, which screen-space templates read as screen points).</summary>
+	internal static IAdvisorParticlePool AdvisorPool { get; } = new LevelAdvisorPool();
+
+	private sealed class LevelAdvisorPool : IAdvisorParticlePool
+	{
+		public object? Create( int effectId, (int X, int Y, int Z) native )
+		{
+			if ( global::Global.Render == null || Level.Current is not { } level )
+				return null;
+			var renderer = RendererOf( level ) ?? ParticleRendererModule.Create( level );
+			if ( renderer == null )
+				return null;
+			var handle = renderer.Particles.Create( effectId, native );
+			return handle is 0 or -1 ? null : new EmitterRef( renderer.Particles, handle, level );
+		}
+
+		public void Move( object handle, (int X, int Y, int Z) native )
+		{
+			if ( handle is EmitterRef emitter )
+				emitter.System.Move( emitter.Handle, native );
+		}
+
+		public void Kill( object handle )
+		{
+			if ( handle is EmitterRef emitter )
+				emitter.System.Kill( emitter.Handle );
+		}
+	}
+
 	internal static void MoveEmitter( EmitterRef emitter, SVector3 engine ) =>
 		emitter.System.Move( emitter.Handle, ToNative( emitter.Level, engine ) );
 

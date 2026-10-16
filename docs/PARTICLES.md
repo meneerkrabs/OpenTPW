@@ -153,7 +153,10 @@ the native pool, rule by rule. It needs no GPU, so tests build one directly, and
 pool and camera-facing quads rotated by the spin. The half-height is `size / 1024` original units for every particle
 (`[BIN:TPW-EXE:0x57C620]`: `(size << 1) * (1/1024) * 0.5`); only the width gets a factor, the frame record's float
 +8 for a sprite and `DAT_008BCBCC`, the display's height / width (`0x582EB0`), for an untextured quad in the original,
-which OpenTPW replaces with the frame's pixel aspect and 1 (`APPROX:PTCL-904`). Three batches, one per blend: source-alpha-over-one for flags
+which OpenTPW replaces with the frame's pixel aspect and 1 (`APPROX:PTCL-904`). Screen-space templates (byte +5) are drawn in clip
+space without the camera and without depth, after the world batches: the draw list maps their x and z to the screen
+(`0x51F01A`, `ParticleScreenSpace`, docs/LIPS.md "Screen effects"), the half-height is (size >> 6) / 2048 screen units and the
+quad turns in 1/256-turn steps (`0x591430`); OpenTPW's width factor there also takes the target's height / width (PTCL-904). Three batches, one per blend: source-alpha-over-one for flags
 `0x2004`, one-plus-one for flags `0x4` (`MaterialFlags.OneOneBlend`), else the sprite's own alpha blend; the flags apply
 to untextured particles too, as in the original. The original submits one primitive per particle, slots 0..119 and
 newest particle first, each with its own state word; OpenTPW groups by blend instead, depth-tested without depth
@@ -253,7 +256,7 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
   animations 0 and 13 start), when it is drawn (the render node's per-frame callback `0x463030` -> `0x44E380` -> `0x473C70`
   -> `0x473E1B`) and from `0x42A6D6` and `0x438A53`, so it is about a render frame behind and stale while culled. What the two
   header and table bits mean and what the other two refreshes serve are not read.
-- `PTCL-904`: the quad's width factor: the frame record's float +8 is unread; `DAT_008BCBCC` is height / width.
+- `PTCL-904`: the quad's width factor: the frame record's float +8 is unread; `DAT_008BCBCC` is height / width (screen-space quads: the frame's aspect times the target's height / width).
 - `PTCL-905`: one batch per particle in the original against OpenTPW's three blend batches; the per-particle state
   words are decoded (depth writes, opaque untextured particles), the order across batches is not read.
 - `PTCL-906`: the pose conversion inverts OpenTPW's placement.

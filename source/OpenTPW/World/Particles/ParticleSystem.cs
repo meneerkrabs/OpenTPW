@@ -17,6 +17,8 @@ public struct ParticleSprite
 	/// <summary>Rotation in 1/65536 turn.</summary>
 	public int Spin;
 	public int RenderFlags;
+	/// <summary>The emitter's template is screen-space (+5): <see cref="X"/> and <see cref="Z"/> place it on the screen (see <see cref="ParticleScreenSpace"/>).</summary>
+	public bool ScreenSpace;
 }
 
 /// <summary>One live emitter slot's draw bounds (1/64 original unit).</summary>
@@ -1168,7 +1170,8 @@ public sealed partial class ParticleSystem
 					FrameCount = frames,
 					Frame = particle.Frame,
 					Spin = particle.Rotation,
-					RenderFlags = template.RenderFlags
+					RenderFlags = template.RenderFlags,
+					ScreenSpace = template.ScreenSpace
 				} );
 			}
 		}

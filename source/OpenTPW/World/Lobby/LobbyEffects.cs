@@ -10,11 +10,12 @@ namespace OpenTPW;
 /// island's one-shot sounds. GPU-free and testable; <see cref="GameFlow"/> plays the sounds and draws the result.
 /// </summary>
 // [BIN:STP-PPC:0x10094474 lobby islands update] the per-frame update of the islands component: nearest island to the camera, sky target, raindrops, lightning and the island one-shots
-// [APPROX:UI-940] the effects advance at a fixed 30 ticks a second; the original steps them once per rendered frame and its frame rate is not known
+// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby's per-frame step calls every component's vf2 (offset 8), and the islands component's is 0x5e0470 (vtable 0x7034b0, slot 2 at 0x7034b8): the effects run once per rendered frame, not on the 31 ms simulation substep (0x54e360 state 2 calls 0x5d5c50 at 0x54e73a once per drawn frame and runs only 0x520130 on the 31 ms substep, 0x54e768-0x54e789)
+// [EXT:frame-driven-at-60hz] the effects advance at the 60 Hz reference rate, whatever OpenTPW's own frame rate (docs/COMPATIBILITY.md "Frame-driven timing")
 public sealed class LobbyEffects
 {
-	/// <summary>Seconds per effects tick (one original frame, assumed at 30 frames a second).</summary>
-	public const float TickSeconds = 1f / 30f;
+	/// <summary>Seconds per effects tick: one original frame at the 60 Hz reference rate (<see cref="ReferenceFrameClock"/>).</summary>
+	public const float TickSeconds = ReferenceFrameClock.FrameSeconds;
 	/// <summary>A bolt's life: <c>AddLightning(bottom, top, 500, 1)</c>.</summary>
 	public const float BoltSeconds = 0.5f;
 	/// <summary>Live bolts the engine keeps at once.</summary>
@@ -69,7 +70,7 @@ public sealed class LobbyEffects
 	/// <summary>The generator's next draw: the LCG step rotated right by 13 bits, which is also the stored state.</summary>
 	// [BIN:STP-PPC:0x100904A8 lobby generator] state = state × 0x19660D + 0x3C6EF35F, stored at +0x34 (inlined in the islands update)
 	// [BIN:TPW-EXE:0x5e0f4b lobby generator draw] tp.exe stores the step at lobby +0x34, rotates it right by 13 (ror 0xd) and stores and uses the rotated value; every inlined draw does the same (0x5d98d1 flying-mesh placement, 0x5da0d4 flying-mesh spawn, 0x5e113f island one-shots)
-	// [APPROX:UI-941] the islands' draws and the flying meshes (LobbyFlyingMeshes) advance the generator, but the original's camera wander draws from it too (0x5e09da, Mac 0x1009476C) and the islands step 30 times a second while the flyers step per frame (UI-940), so the strikes come in a different rhythm
+	// [APPROX:UI-941] the islands' draws and the flying meshes (LobbyFlyingMeshes) advance the generator, in the original's order and at the same frame rate, but the original's camera wander draws from it too (0x5e09da, Mac 0x1009476C), so the strikes come in a different rhythm
 	public uint Draw()
 	{
 		state = System.Numerics.BitOperations.RotateRight( unchecked(state * 0x19660Du + 0x3C6EF35Fu), 13 );

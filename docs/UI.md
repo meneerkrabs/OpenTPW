@@ -100,8 +100,8 @@ target move 0.1 and 0.2 of the way to their goals per step (0x5e1210), and the
 field of view is ISLANDFOV (0x5e13ed; the globe's is 60, 0x5dd034), applied by the camera's
 method at 0x5d8cb0 to the projection 0x578be0 and the view gamut 0x56b790; it is vertical,
 inferred from 0x582eb0/0x56b790 (the gamut divides only the x extent by height/width). The glide
-is a share per frame, as in tp.exe, so how fast it converges depends a few percent on the frame
-rate (after one second the eye has 0.368 of the way left at a high frame rate, 0.360 at 25 fps);
+is a share per frame, as in tp.exe, stepped at the 60 Hz reference frame rate (`[EXT:frame-driven-at-60hz]`,
+docs/COMPATIBILITY.md "Frame-driven timing"), so it converges at the same speed on every display;
 the spin is linear in time.
 
 ## Implementation

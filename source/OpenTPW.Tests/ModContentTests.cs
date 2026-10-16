@@ -217,7 +217,8 @@ public class ModContentTests
 	public void OverridesReplaceGameFilesWithoutCaseAndOnlyForTheScope()
 	{
 		var directory = Mod( "community.look", ", \"content\": { \"overrides\": \"data/\" }",
-			("data/Levels/Jungle/ShareTex/LEAF.txt", "modded"), ("data/levels/jungle/sharetex/new.txt", "added") );
+			// one spelling per folder: a mod whose folders differ only by case is refused on every host
+			("data/Levels/Jungle/ShareTex/LEAF.txt", "modded"), ("data/Levels/Jungle/ShareTex/new.txt", "added") );
 		var set = Resolve( Enable( "community.look" ), directory );
 		using ( ModContentRoots.Use( set, FileSystem ) )
 		{

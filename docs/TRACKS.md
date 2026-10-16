@@ -347,6 +347,7 @@ OpenTPW decisions with no original rule (`[EXT:name]` at the code sites):
 
 Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start heading), 016 (boat spray, engine voice, unload), 017 (crossing flag), 024 (bank clamp), 029 (chase, already ported).
 October 16: `APPROX:TRACK-006` retired as already matching (the walk posts no message, above); TRACK-018 narrowed (arm masks and water clips built).
+October 16, second read round: `APPROX:TRACK-003` retired (the instancers `0x522B90` and `0x522D50` and the mesh creation `0x463060` → `0x466F90` offset a corner-pivoted piece by a whole tile, which is the tile turning about its centre; tested); TRACK-001 narrowed (the instance height is `0x466D70`'s midrange of the tile's 3 × 3 landscape vertices and the terrain mode samples `0x4527F0` at the probe); TRACK-002 narrowed to the other readers of the object height map; TRACK-005 narrowed (the station line, exit, piece walks and controller reference follow `0x52A1A0`, `0x52A490`, `0x52A700` and `0x529E10`); TRACK-026 narrowed (`0x44B410` is ADDHEAD's PC twin).
 Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 026, 030 (texts in the register); TRACK-025 and 031 were retired in a later round (below).
 
 ## Add-ons (read, not built: TRACK-008)

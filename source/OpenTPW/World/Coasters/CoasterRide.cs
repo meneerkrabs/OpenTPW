@@ -296,7 +296,7 @@ public sealed class CoasterRide
 	/// The ride view of a train's camera car (<see cref="CoasterDefinition.RideCameraCar"/>): position from the interpolated sample, forward from the sample direction, roll from the car's frame (<see cref="CarPose"/>).
 	/// False without that train.
 	/// </summary>
-	// [APPROX:COAST-011] the settings FIRSTPERSONVIEWDISTANCE, COASTERSMOOTHNESS and Info.FirstPersonSprites are not read by the ride view: tp.exe's option table (0x7442c0, entries 17 and 22) has no reader that was found (the accessor 0x402bf0 has no direct caller, no code addresses the entries) — evidence needed: a runtime read of the option entries, or a capture of the original ride view at other distances
+	// [APPROX:COAST-011] the settings FIRSTPERSONVIEWDISTANCE, COASTERSMOOTHNESS and Info.FirstPersonSprites are not read by the ride view: tp.exe's option table (0x7442c0, entries 17 and 22, 0x3C bytes each) has no reader that was found (no instruction addresses an entry, 0x402BF0 is only in a table of destructor-like stubs at 0x6FD618, so a reader would read the fields a generic key loader filled) — evidence needed: a runtime read of the option entries, or a capture of the original ride view at other distances
 	public bool TryGetRideView( int train, out System.Numerics.Vector3 position, out System.Numerics.Vector3 forward, out float roll )
 	{
 		position = forward = default;

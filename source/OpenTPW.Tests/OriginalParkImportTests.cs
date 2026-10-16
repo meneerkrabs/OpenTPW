@@ -201,6 +201,13 @@ public class OriginalParkImportTests
 		var payload = ReadEasymodePayload();
 		var map = new MapFile( new MemoryStream( ReadArchiveMember( "levels/jungle/terrain.wad", "base.map" ) ) );
 		var park = OriginalParkImport.Import( payload, map );
+		// The control manager's table (0x4D3AA0) follows the 64 variable bytes: 50 controls, the researched byte at +0x10 set on 26 of them.
+		var controls = park.World.ObjectControls!;
+		Assert.AreEqual( park.World.VariablesOffset + SaveWorldVariables.Bytes, controls.Offset );
+		Assert.AreEqual( (50, 26, 1100), (controls.Controls.Count, controls.Controls.Count( control => control.Researched ), controls.PreviousSearchKey) );
+		Assert.AreEqual( new SaveObjectControl( 0, 1100, 500, 5, 0, true, 2, 1, 15 ), controls.Controls[0] );
+		Assert.IsFalse( controls.Find( 1150 )!.Value.Researched, "the ride the lab is researching" );
+		Assert.IsTrue( controls.Find( 1600 )!.Value.Researched, "a fixed item" );
 		Assert.AreEqual( 6765, park.Cells.StartOffset );
 		Assert.AreEqual( 1385521, park.Cells.EndOffset );
 		Assert.AreEqual( 78, park.PathCells.Count );

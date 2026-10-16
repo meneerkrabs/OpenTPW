@@ -528,6 +528,10 @@ public class OriginalSaveImportTests
 			Assert.AreEqual( 30L * ParkResearch.PointScale, research.GetProgress( research.Current( ResearchCategory.Ride )! ) );
 			Assert.AreEqual( 7500L, research.GetProgress( research.Current( ResearchCategory.Feature )! ) );
 			Assert.IsFalse( runtime.Import!.ParkClosed );
+			// The saved object controls' researched bytes (0x4D3AA0) agree with the research OpenTPW derives from the lab and the objects' costs.
+			var controlsLine = runtime.Import!.Evidence.Single( line => line.StartsWith( "Research object controls:", StringComparison.Ordinal ) );
+			StringAssert.Contains( controlsLine, "50 records, 26 researched, 42 research items checked" );
+			StringAssert.Contains( controlsLine, "none disagree" );
 			// Every pending advice of the saved controller is either imported or reported.
 			var controller = new AdvisorController( AdvisorBalance.Load() );
 			var report = controller.ImportOriginal( save.Advisor! );

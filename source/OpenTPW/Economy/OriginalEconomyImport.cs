@@ -76,7 +76,7 @@ public sealed class OriginalEconomyImport
 		ImportChallenges( economy, save.Economy.ChallengeSystem, world.Calendar.FunnyTimeStart, evidence );
 		ImportBank( economy, save.Economy.BankAccount, evidence );
 		if ( save.ResearchLab is { } lab )
-			ImportResearch( economy, lab, evidence );
+			ImportResearch( economy, lab, save.World.ObjectControls, evidence );
 		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
 		var staff = ImportStaff( economy, save, things, evidence );
 		ReportNotImported( save, evidence );
@@ -354,7 +354,7 @@ public sealed class OriginalEconomyImport
 				.ToList();
 			economy.Staff.RestoreOriginalPool( saved, pool.TimeSig );
 			evidence.Add( $"Staff pool imported: {saved.Count} candidates ({string.Join( ", ", saved.Select( item => $"{item.Item1} grade {item.Item3} made on turn {item.Item4} for {item.Item5}" ) )}), last refill on turn {pool.TimeSig}." );
-			// [APPROX:SAVE-004] the pool's sub-type and on-pointer bytes are not imported: a candidate's sub-type (+9) is drawn at its creation (0x507600 → 0x541F70, (R >> 2) % a per-model count of the table 0x763F90 that is filled at run time) and handed to the placement object 0x46C6D0 when it is picked up (0x507BF0), which also sets its on-pointer byte (+0xB); OpenTPW keeps no staff sub-type and does not save the placement in hand. The people-in-category counts and stop-producing flags need no import: the census 0x508000 recomputes them from the park's staff before every read (the refill 0x5084F0, its top-up 0x508170 and the pick-up 0x507BF0), as UpdatePool counts the hired staff; the opening-pool flag only gates the opening pool 0x5087D0, which OpenTPW draws for a new park only — evidence needed: what the sub-type selects in the placement object 0x46C6D0 and the per-model counts at 0x763F90
+			// [APPROX:SAVE-004] the pool's sub-type and on-pointer bytes are not imported: a candidate's sub-type (+9) is its sprite variant, drawn at its creation (0x507600 → 0x541F70: (R >> 2) % the category's loaded bank count, the table 0x763F88 of 12-byte entries (category file name, loaded count at +8, filled by the sprite loader 0x541D90 → 0x541310) that GUEST-014 also describes) and handed to the placement object 0x46C6D0 when it is picked up (0x507BF0), which also sets its on-pointer byte (+0xB; the object only stores the variant and the flag, its constructor writes them to +0x10 and +0x11); OpenTPW keeps no staff variant (GUEST-014) and does not save the placement in hand. The people-in-category counts and stop-producing flags need no import: the census 0x508000 recomputes them from the park's staff before every read (the refill 0x5084F0, its top-up 0x508170 and the pick-up 0x507BF0), as UpdatePool counts the hired staff; the opening-pool flag only gates the opening pool 0x5087D0, which OpenTPW draws for a new park only — evidence needed: the staff variant of GUEST-014 (which sprite bank a hired member draws from the saved sub-type) and a placement in hand
 			evidence.Add( $"[APPROX:SAVE-004] Staff pool values not imported: sub-types {string.Join( "/", pool.Candidates.Where( candidate => candidate.Valid ).Select( candidate => candidate.SubType ) )}, on pointer {pool.Candidates.Count( candidate => candidate.Valid && candidate.OnPointer )}, people in category {string.Join( "/", pool.PeopleInCategory )}, stop producing {string.Join( "/", pool.StopProducing.Select( flag => flag ? 1 : 0 ) )}, opening pool generated {(pool.OpeningPoolGenerated ? 1 : 0)}." );
 		}
 		else
@@ -564,7 +564,7 @@ public sealed class OriginalEconomyImport
 	/// </summary>
 	// [BIN:TPW-EXE:0x502dc0 research lab serializer] 256 projects (0x504210), five category records (0x504760) in ResearchCategory order, then mNumProjects, mWorkLoad, mMostExpensiveProject, mLabActive; used projects are the first mNumProjects
 	// [BIN:TPW-EXE:0x504630 research points] points are added to mResearchDone while it is below mCost; reaching the cost marks the object researched (its object-table record +0x10) and notifies
-	private static void ImportResearch( ParkEconomy economy, SaveResearchLab lab, List<string> evidence )
+	private static void ImportResearch( ParkEconomy economy, SaveResearchLab lab, SaveObjectControls? controls, List<string> evidence )
 	{
 		var research = economy.Research;
 		var used = Math.Clamp( BitConverter.ToInt32( lab.Tail, 0 ), 0, SaveResearchLab.ProjectRecords );
@@ -606,14 +606,32 @@ public sealed class OriginalEconomyImport
 				evidence.Add( $"[APPROX:SAVE-007] Research category {category}: the save's highest open group {group.HighestGroup} differs from OpenTPW's {research.HighestOpenGroup( category )}, which is kept." );
 		}
 		evidence.Add( $"Research imported: {used} projects, {progress.Count} started, {completed.Count - initial} researched by the lab, effort {string.Join( "/", effort )}, work load {lab.WorkLoad}, current {(current.Count == 0 ? "none" : string.Join( ", ", current ))}." );
-		// [APPROX:SAVE-007] lab projects OpenTPW does not list are dropped, a saved current project OpenTPW would not research now is not selected (OpenTPW then picks its own), and the save's highest open group is recomputed from the researched items — evidence needed: the object table's researched flags (+0x10, not in the lab block), which mark items researched outside the lab
+		// [BIN:TPW-EXE:0x4D3AA0 object controls] the control manager's table (150 records of 32 bytes, the used ones first) is the first part of the World after its variables; a record's researched byte (+0x10) is written only by the lab's init 0x5031A0 (1 for an object without a research cost, so it starts researched) and by the research step 0x504630 when a project reaches its cost (1, with the upgrade level in +0x14), so the flags follow from the lab's projects and the objects' costs and are checked against OpenTPW's research here
+		var disagreements = new List<string>();
+		var checkedControls = 0;
+		if ( controls != null )
+		{
+			foreach ( var control in controls.Controls )
+			{
+				if ( !research.HasItem( control.Id, 0 ) )
+					continue;
+				checkedControls++;
+				if ( research.Completed.Contains( (control.Id, 0) ) != control.Researched )
+					disagreements.Add( $"{control.Id} (saved {(control.Researched ? "researched" : "not researched")})" );
+			}
+			evidence.Add( $"Research object controls: {controls.Controls.Count} records, {controls.Controls.Count( control => control.Researched )} researched, {checkedControls} research items checked against OpenTPW's research, {(disagreements.Count == 0 ? "none" : string.Join( ", ", disagreements ))} disagree." );
+		}
+		// [APPROX:SAVE-007] lab projects OpenTPW does not list are dropped, a saved current project OpenTPW would not research now is not selected, and the save's highest open group is recomputed from the researched items and kept where it differs — evidence needed: the original's research table order (ECON-017), which decides what the lab lists and which project is current
 		var dropped = new List<string>();
 		if ( unknown.Count > 0 )
 			dropped.Add( $"projects OpenTPW does not list ({string.Join( ", ", unknown )})" );
 		if ( refused.Count > 0 )
 			dropped.Add( $"current projects OpenTPW would not research now ({string.Join( ", ", refused )})" );
-		dropped.Add( "the object table's researched flags (items researched outside the lab keep OpenTPW's level start)" );
-		evidence.Add( $"[APPROX:SAVE-007] Research not imported: {string.Join( "; ", dropped )}." );
+		if ( disagreements.Count > 0 )
+			dropped.Add( $"object-control researched flags that disagree with OpenTPW's research ({string.Join( ", ", disagreements )})" );
+		if ( controls == null )
+			dropped.Add( "the object controls' researched flags (the save's control table does not read)" );
+		evidence.Add( $"[APPROX:SAVE-007] Research not imported: {(dropped.Count == 0 ? "nothing dropped" : string.Join( "; ", dropped ))}; the lab lists items in OpenTPW's table order (ECON-017) and the highest open group is recomputed." );
 	}
 
 	private static void ReportNotImported( OriginalParkImport save, List<string> evidence )

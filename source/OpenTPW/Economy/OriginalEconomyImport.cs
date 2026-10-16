@@ -162,12 +162,12 @@ public sealed class OriginalEconomyImport
 		economy.RestoreBankWords( account.WithdrawalsEnabled, account.LastBalance, account.TurnEnteredRed );
 		evidence.Add( $"Bank words imported: withdrawals {(account.WithdrawalsEnabled ? "enabled" : "disabled")}, last balance {account.LastBalance}, turn entered red {account.TurnEnteredRed}{(account.Balance < 0 && account.LastBalance < 0 ? $" ({economy.MonthsSinceEnteringRed()} months in the red)" : "")}." );
 		// [BIN:TPW-EXE:0x4d0850 loan payoff] a bought loan's outstanding amount is its monthly repayment (+0x24) times the months not yet repaid (+0x20 − +0x2C), compared unsigned with the balance (0x4d0898)
-		// [APPROX:SAVE-008] the batch balance (+0x10, a pending credit the month message folds into the balance, 0x4d0393) and the loan offers' Available flags (amount at most 10,000 at construction, 0x4cf84b) are not imported (OpenTPW offers every offer not taken); the ledger month opens at the current balance, the bank having no month-opening word (mLastBalance is the balance after the last debit, instalment or payoff) — evidence needed: the writer of the offers' Available flags after construction and the offer list that reads them
+		// [APPROX:SAVE-008] the batch balance is not imported: in tp.exe the batch word +0x10 is a pending credit that the bank's month message adds to the balance, the money-in total and the year's profit and then zeroes (0x4D0393..0x4D03DB); the loan offers' stored credit tests (Available, +0x14) are imported, the constructor having started each as amount at most 10,000 (0x4CF84B). The ledger month opens at the current balance; the bank keeps no month-opening word, mLastBalance being the balance after the last debit, instalment or payoff (0x4D0228, 0x4D08E1) — evidence needed: a save with a non-zero batch word
 		evidence.Add( $"[APPROX:SAVE-008] Not imported: batch balance {account.BatchBalance}; the month opens at the current balance {account.Balance}." );
-		// Available is neither the inverse of Bought nor of the taken offers (docs/reverse/PPC-economy.md), and OpenTPW offers every offer not taken
+		// [BIN:TPW-EXE:0x4d06b0 credit test] each offer's +0x14 is the stored result of the last list build's credit test (the constructor 0x4cf7c0 starts it as amount < 10001); the Available tab lists the offers not bought whose test passed
 		var available = bank.Loans.Where( loan => loan.Available ).Select( loan => loan.Index ).ToArray();
-		var offered = economy.AvailableLoans.Select( offer => offer.Index ).ToArray();
-		evidence.Add( $"[APPROX:SAVE-008] Loan offers' Available flags not imported: the save marks {(available.Length == 0 ? "no offer" : $"{(available.Length == 1 ? "offer" : "offers")} {string.Join( ", ", available )}")} available ({string.Join( ", ", bank.Loans.Select( loan => $"{loan.Index}:{(loan.Available ? 1 : 0)}" ) )}); OpenTPW offers {(offered.Length == 0 ? "none" : string.Join( ", ", offered ))}{(offered.SequenceEqual( available ) ? ", the same" : "")}." );
+		economy.RestoreLoanAvailability( available );
+		evidence.Add( $"Loan offers' stored credit tests imported: {(available.Length == 0 ? "no offer passed" : $"{(available.Length == 1 ? "offer" : "offers")} {string.Join( ", ", available )} passed")}; the Available tab lists {string.Join( ", ", economy.AvailableLoans.Select( offer => offer.Index ).DefaultIfEmpty( -1 ).Select( index => index < 0 ? "none" : index.ToString() ) )} until the dialog tests them again." );
 	}
 
 	/// <summary>The park tick of a saved attraction time stamp (a calendar date and time of the park clock); null when it is not a date.</summary>
@@ -219,21 +219,27 @@ public sealed class OriginalEconomyImport
 				state.Level = attraction.UpgradeLevel;
 				state.Repair = attraction.StateOfRepair;
 				state.LifeGauge = attraction.LifeGauge;
+				// [BIN:TPW-EXE:0x4dcdc1 attraction loader] mAmountOfSpecialIngredient is loaded into +0x198 as saved
+				state.IngredientAmount = attraction.AmountOfSpecialIngredient;
+				// [BIN:TPW-EXE:0x4dcd29 attraction loader] mQualityOfGoods (+0x18C) and mChanceOfWinning (+0x190) are 4-byte words read without a clamp; the quality getter 0x4e2180 and the win test 0x4e26e2 read their low bytes, the win byte being 100 − the chance of losing (0x4db3a1)
+				state.QualityOfGoods = attraction.QualityOfGoods & 0xFF;
+				// a win byte of 99 and up always wins (R mod 100 <= byte), as a chance of losing of 0 does
+				state.ChanceOfLosingPercent = Math.Clamp( 100 - (attraction.ChanceOfWinning & 0xFF), 0, 100 );
 				ImportAttractionState( economy, attraction, state, adjusted );
 			}
 			else
 				notImported.Add( $"{record.InfoId} (level {attraction.UpgradeLevel}, repair {attraction.StateOfRepair}, life {attraction.LifeGauge}, cost of goods {attraction.CostOfGoods})" );
 		}
-		evidence.Add( $"Registered {objects} placed objects ({save.UnresolvedObjects.Count} with an unverified footprint{(save.UnresolvedObjects.Count == 0 ? "" : $": {string.Join( ", ", save.UnresolvedObjects.Select( item => $"{item.InfoId} at ({item.X}, {item.Y}) {item.Width}x{item.Height} turned {item.Rotation}" ) )}")}) and {fixedItems} fixed items without charge; {objects + fixedItems - unmatched - notImported.Count} took their attraction's price, cost of goods, upgrade level, state of repair, life gauge, state, chance of winning, total profit and maintenance call." );
+		evidence.Add( $"Registered {objects} placed objects ({save.UnresolvedObjects.Count} with an unverified footprint{(save.UnresolvedObjects.Count == 0 ? "" : $": {string.Join( ", ", save.UnresolvedObjects.Select( item => $"{item.InfoId} at ({item.X}, {item.Y}) {item.Width}x{item.Height} turned {item.Rotation}" ) )}")}) and {fixedItems} fixed items without charge; {objects + fixedItems - unmatched - notImported.Count} took their attraction's price, cost of goods, upgrade level, state of repair, life gauge, amount of the special ingredient, quality of goods, chance of winning, state, total profit and maintenance call." );
 		if ( unmatched != 0 || notImported.Count != 0 )
 			evidence.Add( $"{unmatched} objects have no matching attraction thing; outside OpenTPW's ranges and kept at their defaults: {string.Join( ", ", notImported )}." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Attraction value adjusted on import: {line}." );
 		// [BIN:TPW-EXE:0x004E1670 walk-away count] mNumWalkAways (+0x1A4) is raised there (from 0x005006B0) and otherwise touched only by the constructor (0x004DB17B) and the serializer: nothing reads it, so it needs no import
 		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} need no import (nothing reads mNumWalkAways)." );
-		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a quality of goods other than the built 50 (no quality control, UI-024), a closed open word of a working attraction (mCanLoad, the park door opens it), the six daily 30-day rings (OpenTPW keeps this and last month), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (OpenTPW releases a claim at once, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the readers of the daily rings and of +0x4C
+		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a closed open word of a working attraction (mCanLoad, the park door opens it), the six daily 30-day rings (OpenTPW keeps this and last month), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (OpenTPW releases a claim at once, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the readers of the daily rings and of +0x4C
 		foreach ( var item in save.Attractions )
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, quality of goods {item.QualityOfGoods}, open word {item.CanLoad}, third gauge {item.Gauge48}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", daily rings {string.Join( "/", item.Histories.Select( ring => ring.Current ) )} (today), claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
+			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, open word {item.CanLoad}, third gauge {item.Gauge48}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", daily rings {string.Join( "/", item.Histories.Select( ring => ring.Current ) )} (today), claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
 		return (objects, fixedItems, things);
 	}
 
@@ -353,10 +359,9 @@ public sealed class OriginalEconomyImport
 	}
 
 	/// <summary>
-	/// An attraction's state word, chance of winning, total profit and maintenance call. State 1 (broken down) and 4 (condemned: its life gauge
+	/// An attraction's state word, total profit and maintenance call. State 1 (broken down) and 4 (condemned: its life gauge
 	/// truncated to 0) break the object down; 2 (an upgrade requested, 0x004E0050) waits for a mechanic to install the next level, whose cost is
-	/// debited then; 0 is a working choosable object and 3 one that is not choosable (the constructor's SetState at 0x004DB4FB). The chance of winning
-	/// is 100 − InitChanceOfLoosing (the constructor's 0x004DB3A1), the total profit takings − costs (0x004E1C60). A state that does not fit the type is
+	/// debited then; 0 is a working choosable object and 3 one that is not choosable (the constructor's SetState at 0x004DB4FB). The total profit is takings − costs (0x004E1C60). A state that does not fit the type is
 	/// reported and the object kept working.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004E0E60 attraction SetState] states 0 and 3 only store the word; 1, 2 and 4 close the object (open word +0x68 = 0, called guest cleared, script variable 6 = 1, the queue dismissed by 0x004E0450) first; any other value logs "Unknown state in CObject::SetState"
@@ -366,10 +371,6 @@ public sealed class OriginalEconomyImport
 	{
 		var what = $"attraction thing {attraction.Id} (Info.Id {attraction.InfoId})";
 		economy.Catalog.TryGet( attraction.InfoId, out var info );
-		if ( attraction.ChanceOfWinning is >= 0 and <= 100 )
-			state.ChanceOfLosingPercent = 100 - attraction.ChanceOfWinning;
-		else
-			adjusted.Add( $"{what} chance of winning {attraction.ChanceOfWinning} is outside 0-100, kept at the type's {100 - state.ChanceOfLosingPercent}" );
 		state.TotalProfit = (long)attraction.TotalTakings - attraction.TotalCosts;
 		state.MaintenanceRequested = attraction.RequestedService != 0;
 		var choosable = info?.IsChoosable ?? false;

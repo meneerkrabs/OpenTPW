@@ -233,7 +233,7 @@ public class OnlineServerTests
 
 			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
 			// Every visit earned the owner Platinum Tickets in the original, but re-entering the same day and visiting
-			// one's own park do not count again (ONLINE-076), so tickets cannot be farmed.
+			// one's own park do not count again (EXT:online-visit-count-guard), so tickets cannot be farmed.
 			Assert.AreEqual( 1, (await visitor.RecordVisitAsync( published.Id )).Visits );
 			Assert.AreEqual( 1, (await owner.RecordVisitAsync( published.Id )).Visits );
 			var vote = await visitor.VoteAsync( published.Id );

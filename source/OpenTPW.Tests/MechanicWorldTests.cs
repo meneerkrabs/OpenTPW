@@ -91,6 +91,32 @@ public class MechanicWorldTests
 	}
 
 	[TestMethod]
+	public void AWorldMechanicWaitsForTheFixAnimationOfAScriptHostedRide()
+	{
+		// [BIN:TPW-EXE:0x4da830 repairing] at the end of the timer a ride in state 1 gets VAR_BREAKSTAT = 0 and the repair waits while VAR_BROKEN stays set
+		var f = new Fixture();
+		var ride = f.Ride( (12, 6), (12, 5) );
+		var mechanic = f.Hire();
+		f.Turns( 2 );
+		ride.ScriptHosted = true;
+		ride.ScriptBroken = true;
+		ride.IsBrokenDown = true;
+		ride.Repair = 40;
+		var cleared = false;
+		f.Park.EventRaised += item => cleared |= item.Kind == ParkEventKind.RideScriptVariable && item.InstanceId == ride.Id && item.InfoId == (int)RideVariables.VAR_BREAKSTAT && item.Amount == 0;
+		f.Until( () => cleared, 400 );
+		Assert.IsTrue( cleared, "the timer ran out: VAR_BREAKSTAT = 0" );
+		f.Turns( 20 );
+		Assert.IsTrue( ride.IsBrokenDown, "still waiting for the script" );
+		Assert.AreEqual( StaffJob.Repairing, mechanic.Job );
+		Assert.AreEqual( mechanic.Id, ride.MechanicId, "he keeps the job" );
+		ride.ScriptBroken = false;
+		f.Turns( 2 );
+		Assert.IsFalse( ride.IsBrokenDown, "the repair completes once VAR_BROKEN is clear" );
+		Assert.AreEqual( 0, ride.MechanicId );
+	}
+
+	[TestMethod]
 	public void TheNearestRideThatNeedsHimWinsAndAnUpgradeIsInstalled()
 	{
 		var f = new Fixture();

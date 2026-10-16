@@ -94,7 +94,7 @@ satellite is the number of people currently in this chat park". A click enters t
 park the players are present together and **move around**: the chat screen shows the park from
 above with a marker per player, a click walks the player's marker there, and the server relays
 each position to everyone in the park. The original's three-dimensional chat-park scene is not
-decoded, so the overhead view is an approximation ([APPROX:ONLINE-019](#approximation-register));
+decoded, so the overhead view is an OpenTPW design choice ([EXT:online-chat-park-view](#online-design-choices));
 the movement itself — one position per walk step, relayed to the room, rate-limited separately
 from chat — follows the manual ("Left click to walk to destination"). Any published park's chat
 room works the same way: joining a park's chat from its details dialog or the city lobby.
@@ -122,14 +122,14 @@ its two tabs — the players in this park and the online buddies — the manual'
 it (buddy, ignore, blackmark, on a selected name), the action bar across the top (vote, earmuffs,
 postcards, goto, page, locate), the message list and the text entry at the bottom, all at their
 authored places. The original assigned them otherwise
-([APPROX:ONLINE-021](#approximation-register)): its list buttons were earmuffs, vote and an
+([EXT:online-chat-action-bar](#online-design-choices)): its list buttons were earmuffs, vote and an
 unidentified handler, and the six-button table was a popup on a name in the list (blackmark, goto,
 ignore, buddy, locate, page); OpenTPW's assignment covers every action the manual names. The commands themselves are typed or clicked: `/say`, `/tell`, `/shout`, `/emote`
 ("Dan is bouncing up and down"), `/earmuffs`, `/buddy`, `/ignore`, `/mark`, `/page` ("Dan pages
 you: Hello"), `/locate` ("Dan is currently in Halloween World in San Francisco" — the park and its
 city), `/goto`, `/afk`, `/vote` and the mood emotes, in the selected language's words. A player's
 online buddies are told when they enter a park
-([APPROX:ONLINE-024](#approximation-register)).
+(in OpenTPW's own words, [EXT:online-buddy-enters-text](#online-design-choices)).
 
 The ImGui Online panel remains as a developer tool in `--sandbox` and other developer
 starts. The front-end smoke test walks the screens and captures
@@ -313,7 +313,9 @@ They require no external server or original assets. Original-data tests opt in t
 `OPENTPW_GAME_PATH`; interactive Online panel behavior and BF4 chat rendering still
 need a graphics-capable manual run.
 
-All `EXT:ONLINE-*` tags describe OpenTPW choices, not recovered original behavior.
+All `EXT:ONLINE-*` tags and the named `EXT:online-*` labels describe OpenTPW choices, not
+recovered original behavior; the [design choices](#online-design-choices) list the labels that
+replaced the former approximations.
 The package/protocol/server code owns tags 001–059. The game adapters own:
 
 | Tag | OpenTPW choice |
@@ -335,34 +337,39 @@ The package/protocol/server code owns tags 001–059. The game adapters own:
 | 075 | The visit counter counts accepted visit reports, one per visit |
 | UI | Original-style online screens: window composition, places of code-positioned controls, text field art and caret, server address field, Inbox and Import screens, the News window title |
 
-## Approximation register
+## Online design choices
 
-The online service is an allowed OpenTPW extension. Its `EXT:ONLINE-*` choices
-remain separate from these unresolved interpretations of original words, data
-and behavior. An extension label does not resolve an `APPROX:ONLINE-*` uncertainty.
-The six entries below preserve the source comments' evidence requirements; they
-are not claims that the original online protocol or service has been recovered.
+The online service is an allowed OpenTPW extension: it does not have to reproduce the original
+service, whose servers are gone. Where an online feature imitates something of the original that
+is not (fully) recovered, OpenTPW's behavior is an explicit design choice with an `EXT:online-*`
+label in the code. These labels replaced the eighteen former `APPROX:ONLINE-*` IDs (closed
+October 16, 2026); the IDs stay reserved in `tools/fidelity_retired.txt` (listed in the
+[fidelity register](https://opentpw.io/docs/FIDELITY-REGISTER.html)) and are not reused. A label
+does not claim the original's behavior: the last column keeps what is known about the original, so
+a later fidelity pass can start from it. Traces of the Mac build
+(`STP-PPC`) are in [APPROX-TRACE.md](reverse/APPROX-TRACE.md); tp.exe addresses are from the
+Windows v2.0 executable.
 
-| ID | Assumption | Evidence needed |
-| --- | --- | --- |
-| ONLINE-001 | Word filtering uses case-insensitive substring matches in space-padded text; entry spaces act as boundaries; allowed substrings exempt matches; hit characters except spaces become asterisks. | Original word-filter code or observed original filtering behavior; the source comment says the encrypted TP.ICD implementation is unreadable. |
-| ONLINE-003 | Response strings 102 and 110 mean failure to add an ignored player and a buddy respectively, based on nearby string blocks. | Original response-code table. |
-| ONLINE-004 | Buddy response strings 111–113 mean online, offline and removed. | Localized variants or the original response-code table. |
-| ONLINE-005 | Chat command semantics follow command words, response strings and weachatr.dll export names; say/emote/shout reach a room, wshout/ushout all rooms; hearing has no positional effect; blackmark creates a moderation report. | Original chat server behavior, including command reach, hearing range and blackmark handling. |
-| ONLINE-006 | A visitor already inside a park must leave it before visiting another, inferred from CHAT_COMMANDS string 127. | Original park-visit transition behavior or an original chat/runtime trace. |
-| ONLINE-007 | The globe camera's rates, steps, damping and radius ease are applied per tick at 30 ticks per second, and the angles move by velocity × ticks. | The original (tp.exe 0x5D5C50 → 0x5DC860) runs once a frame with no fixed rate: it damps the velocities once a frame, then moves the angles by velocity × dt and eases the radius by 0.3 × dt, dt = min(elapsed ms, 500) × 0.01. Still unknown: its frame rate on the online screens and how often a held panel arrow repeats its step (0x4C53F0, events 0x10008/0x10009). |
-| ONLINE-009 | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The original (0x5DC860) adds, once a frame and without the step, rate × 50 × the cursor's depth into the 1 % edge band (at most rate / 2) or rate × the right button's offset from the centre; these need its per-frame integration (ONLINE-007), so the frame rate is still unknown. |
-| ONLINE-010 | The hovered city's name and park count are drawn at the top right in the labels' rectangles (tp.exe table 0x7581A0: 93201 (1477,90)-(2048,240), 93202 (1627,275)-(2048,395)), white and centred, without the `hilight` model their table entries bind. | Whether a label draws that model (highlight.MD2) behind its text. |
-| ONLINE-012 | Edge steering starts once the cursor has moved on the globe screen. | The original has no per-screen gate: it reads the online front end's last mouse-move position (0x5D5DD0), the canvas centre until the first move after the front end starts (0x5D5770), so it steers at once when the cursor already rests at an edge (for example back from a city lobby). Still unknown: an OpenTPW home for that move history across the online screens. |
-| ONLINE-013 | Pins stand on the mesh surface (radius 119.7) at the decoded (s, s, p) scale of their root node. | The original puts the pin's root node at the city record's position vector (0x5DC3E0 → 0x5D8190), which the city list from weacityr.dll fills; its radius is not decoded (a city list from the original service or a capture of its globe). |
-| ONLINE-017 | The publish globe shows UITEXT 419 in the city name label while no city is hovered. | Its panel is read (tp.exe 0x5DD910 → 0x4C4FB0(1): the worldlob table without the satellites, Find Parks and back, with the city labels); neither tp.exe nor the Mac publish globe code loads UITEXT 419 as an immediate, so where it showed is unknown. |
-| ONLINE-019 | A chat park is shown as a flat overhead view in which each player is a marker that the server's relayed movement moves; the player walks their own marker by clicking (one walk speed; the original's double-click teleport is not separated). | The original chat park's three-dimensional scene, avatar model and animation (manual pp. 63-68) are not decoded. |
-| ONLINE-021 | The chat overlay's action buttons are a fixed top bar (vote, earmuffs, postcards, goto, page, locate) and three list buttons (buddy, ignore, blackmark). | The original (tp.exe list handler 0x4BE820) gave 799016 earmuffs on/off, 799017 vote and 799018 the unidentified shared handler 0x4A9380, and the six-button table 6024-6031 (tp.exe 0x758CD8) is a popup on a name in the list (0x4BE290, at the cursor): blackmark, goto, ignore, remove buddy, locate, page (0x4BEDE0); other names get the popup 12290 (blackmark, goto, ignore, add buddy). Still unknown: what 0x4A9380 does and which list flag picks the popup. |
-| ONLINE-020 | The park details' eighth label row shows the players currently in the park's chat room (UITEXT 273). | The original's last row showed the Instant action mode flag (UITEXT 282), which the package format does not record. |
-| ONLINE-022 | The postcard photo attached by Send Postcard is the park's generated map thumbnail, and no park reference is attached. | The original attached a camcorder snapshot of the visited park (manual pp. 51/67); its content and encoding are not decoded. |
-| ONLINE-023 | Park names are masked with the word filter when published, and the stored masked name is what everyone sees. | The original masked at display on the client: the city lobby's park label (tp.exe 0x4B8850), the park details (0x4C0AE0), Find Parks (0x4BFC70) and the other-parks chart (0x4C1E40) pass the name through the filter 0x5D3230 while the filter flag (0x5B09B0) is set, with the local swears.txt/alloweds.txt (0x5AFD70, 0x5D3140). Still unknown: what sets the filter flag (the matching rules are ONLINE-001). |
-| ONLINE-024 | A buddy entering a park is reported as "Your buddy X has entered Y" from OpenTPW's own text. | The original notification's string; CHAT_COMMANDS 111-113 ("Your buddy ") have empty English suffixes and no enter-the-park variant is recovered. |
-| ONLINE-076 | An owner's visits to their own park never count, and one visitor counts at most once per UTC day per park | The original service's guard against repeated or self visits (every visit earned Platinum Tickets, FAQ S2) |
+| EXT label | Former ID | OpenTPW decision | Known original evidence (not reproduced) |
+| --- | --- | --- | --- |
+| `online-word-filter` | `APPROX:ONLINE-001` | Word filtering over the original `swears.txt`/`alloweds.txt` lists: case-insensitive substring matches in space-padded text, entry spaces as word boundaries, allowed entries exempt the hits inside them, hit characters except spaces become `*`. Simple and predictable for an operator's own server. | The original rule is partly traced in the Mac build (APPROX-TRACE.md ONLINE-001; STP-PPC 0x101a5664, 0x101a51e8, 0x101a5594, 0x1018b474): lines starting with `#` are skipped, matching is a case-insensitive wide compare, a pattern starting with `*` matches a substring, space-prefixed and default patterns check a letter/digit boundary, a match the allowed list matches is exempt, matched characters become asterisks, and a flag (mSwearFilterOn) turns the filter on. tp.exe's filter is 0x5D3230 (see `online-park-name-masking`). |
+| `online-chat-add-failure` | `APPROX:ONLINE-003` | The server answers a failed ignore with CHAT_COMMANDS 102 and a failed buddy add with 110 (both "Could not add "), by their place in the ignore (98-105) and buddy (106-113) blocks. | The texts are a text resource and the original server chose the code; its response table is not recovered (APPROX-TRACE.md ONLINE-003). |
+| `online-buddy-status-notices` | `APPROX:ONLINE-004` | 111, 112 and 113 announce a buddy coming online, going offline and being removed. | All three are "Your buddy " with empty English suffixes; the Mac client has the buddy and ignore files (`:buddy.dat`, `:ignore.dat`) but no status mapping; the meanings need the response text resource or a runtime capture (APPROX-TRACE.md ONLINE-004). |
+| `online-chat-command-semantics` | `APPROX:ONLINE-005` | Command meanings follow the command words, response strings and weachatr.dll export names: say/emote/shout/eshout reach the room, wshout/ushout every room, the hearing range has no positional effect, blackmark files a moderation report. | Reach, hearing and blackmark handling were server-side; the client only reports results ("You can't blackmark yourself", "You can't ignore yourself") and the original chat server is not among the available files (APPROX-TRACE.md ONLINE-005). |
+| `online-goto-leave-park` | `APPROX:ONLINE-006` | A goto into another park from inside a park is refused with CHAT_COMMANDS 127. | The text 127 shows the original had the rule; whether its server or client enforced it is not known (APPROX-TRACE.md ONLINE-006). |
+| `online-globe-tick` | `APPROX:ONLINE-007` | The globe camera's rates, steps, damping and radius ease apply per tick at 30 ticks per second, and the angles move by velocity × ticks, so turning does not depend on the frame rate. | The original (tp.exe 0x54E360 state 2 → 0x5D5C50 → 0x5DC860) runs once a frame with no fixed rate: it damps the velocities once a frame, then moves the angles by velocity × dt and eases the radius by 0.3 × dt, dt = min(elapsed ms, 500) × 0.01. Still unknown: its frame rate on the online screens and how often a held panel arrow repeats its step (0x4C53F0, events 0x10008/0x10009). |
+| `online-globe-steering` | `APPROX:ONLINE-009` | Edge and right-button steering add rate × offset × step per tick to the turn velocity. | The original (0x5DC860) adds, once a frame and without the step, rate × 50 × the cursor's depth into the 1 % edge band (at most rate / 2) or rate × the right button's offset from the centre; these need its per-frame integration (`online-globe-tick`), so the frame rate is still unknown. |
+| `online-globe-city-labels` | `APPROX:ONLINE-010` | The hovered city's name and park count are drawn as plain white centred text at the top right in the labels' rectangles (tp.exe table 0x7581A0: 93201 (1477,90)-(2048,240), 93202 (1627,275)-(2048,395)), without the `hilight` model their table entries bind. | Whether a label draws that model (highlight.MD2) behind its text. |
+| `online-globe-edge-gate` | `APPROX:ONLINE-012` | Edge steering starts once the cursor has moved on the globe screen, so a cursor resting at an edge does not spin a globe that just opened. | The original has no per-screen gate: it reads the online front end's last mouse-move position (0x5D5DD0), the canvas centre until the first move after the front end starts (0x5D5770), so it steers at once when the cursor already rests at an edge (for example back from a city lobby). OpenTPW keeps no move history across the online screens. |
+| `online-globe-pin-radius` | `APPROX:ONLINE-013` | Pins stand on the mesh surface (radius 119.7) at the decoded (s, s, p) scale of their root node; the cities are the OpenTPW server's own list, since the original list is lost. | The original puts the pin's root node at the city record's position vector (0x5DC3E0 → 0x5D8190), which the city list from weacityr.dll fills; its radius is not decoded (a city list from the original service or a capture of its globe). |
+| `online-publish-globe-prompt` | `APPROX:ONLINE-017` | The publish globe shows UITEXT 419 ("Choose the city to publish in") in the city name label while no city is hovered. | Its panel is read (tp.exe 0x5DD910 → 0x4C4FB0(1): the worldlob table without the satellites, Find Parks and back, with the city labels); neither tp.exe nor the Mac publish globe code loads UITEXT 419 as an immediate, so where it showed is unknown. |
+| `online-chat-park-view` | `APPROX:ONLINE-019` | A chat park is a flat overhead view in which each player is a marker that the server's relayed movement moves; the player walks their own marker by clicking (one walk speed; the double-click teleport is not separated). | The original chat park's three-dimensional scene, avatar model and animation (manual pp. 63-68) are not decoded. |
+| `online-park-details-players` | `APPROX:ONLINE-020` | The park details' eighth label row shows the players currently in the park's chat room (UITEXT 273). | The original's last row showed the Instant action mode flag (UITEXT 282), which the package format does not record. |
+| `online-chat-action-bar` | `APPROX:ONLINE-021` | The chat overlay's action buttons are a fixed top bar (vote, earmuffs, postcards, goto, page, locate) and three list buttons (buddy, ignore, blackmark), which covers every action the manual names. | The original (tp.exe list handler 0x4BE820) gave 799016 earmuffs on/off, 799017 vote and 799018 the unidentified shared handler 0x4A9380, and the six-button table 6024-6031 (tp.exe 0x758CD8) is a popup on a name in the list (0x4BE290, at the cursor): blackmark, goto, ignore, remove buddy, locate, page (0x4BEDE0); other names get the popup 12290 (blackmark, goto, ignore, add buddy). Still unknown: what 0x4A9380 does and which list flag picks the popup. |
+| `online-postcard-photo` | `APPROX:ONLINE-022` | The postcard photo attached by Send Postcard is the park's generated map thumbnail, and no park reference is attached (the live level has no package identity). | The original attached a camcorder snapshot of the visited park (manual pp. 51/67); its content and encoding are not decoded. |
+| `online-park-name-masking` | `APPROX:ONLINE-023` | Park names are masked with the word filter once, on the server at publish, and the stored masked name is what everyone sees. | The original masked at display on the client: the city lobby's park label (tp.exe 0x4B8850), the park details (0x4C0AE0), Find Parks (0x4BFC70) and the other-parks chart (0x4C1E40) pass the name through the filter 0x5D3230 while the filter flag (0x5B09B0) is set, with the local swears.txt/alloweds.txt (0x5AFD70, 0x5D3140). Still unknown: what sets the filter flag (the matching rules are under `online-word-filter`). |
+| `online-buddy-enters-text` | `APPROX:ONLINE-024` | A buddy entering a park is reported as "Your buddy X has entered Y", OpenTPW's own text. | The original notification's string is not recovered; CHAT_COMMANDS 111-113 ("Your buddy ") have empty English suffixes and no enter-the-park variant. |
+| `online-visit-count-guard` | `APPROX:ONLINE-076` | An owner's visits to their own park never count, and one visitor counts at most once per UTC day per park, so Platinum Tickets cannot be farmed. | Every visit earned the owner Platinum Tickets (FAQ, S2); the original service's guard against repeated or self visits is not recovered. |
 
 ## Retired ride-camera entry
 

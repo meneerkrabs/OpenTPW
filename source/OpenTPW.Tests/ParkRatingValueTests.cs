@@ -24,6 +24,36 @@ public class ParkRatingValueTests
 		Assert.AreEqual( 0, fixedItems.ParkRating, "fixed items declare the UI type 4 and count for nothing" );
 	}
 
+	private sealed class FlatGrid : IParkGrid
+	{
+		public int Width => 4;
+		public int Height => 4;
+		public System.Numerics.Vector2 Origin => default;
+		public OriginalPlacementResult CheckTerrain( int x, int y ) => OriginalPlacementResult.Allowed;
+		public float GetCellHeight( int x, int y ) => 0;
+	}
+
+	private sealed class Census( int inPark, int census ) : IParkGuestStatistics
+	{
+		public int PeopleInPark => inPark;
+		public int GuestCensus => census;
+		public float AverageHappiness => 0;
+		public int CountHappierThan( int happiness ) => 0;
+		public int KidsWithBalloonsPercent => 0;
+		public int KidsWithCostumesPercent => 0;
+	}
+
+	[TestMethod]
+	public void TheVisitorTermCountsTheGuestsOnCountedCells()
+	{
+		// [BIN:TPW-EXE:0x4cceb0 park rating] the guests on a cell of type 0, 1, 3, 9 or 10 (0x4fa990), at most 1000, × 20 / 1000; riders on a ride's body do not count
+		var park = EconomyTestData.Park();
+		park.GuestStatistics = new Census( inPark: 900, census: 100 );
+		Assert.AreEqual( 2, park.ParkRating );
+		park.GuestStatistics = new Census( inPark: 900, census: 1500 );
+		Assert.AreEqual( 20, park.ParkRating, "capped at 1000" );
+	}
+
 	[TestMethod]
 	public void AnExplicitUiTypeWinsOverTheDirectory()
 	{
@@ -59,6 +89,61 @@ public class ParkRatingValueTests
 		Assert.AreEqual( 0, park.ParkValue );
 		ride.LifeGauge = 60;
 		Assert.AreEqual( 1400, park.ParkValue, "broken down but not condemned: it still counts" );
+	}
+
+	[TestMethod]
+	public void TheOwnedCellsAddTheirPointsToTheParkValue()
+	{
+		// [BIN:TPW-EXE:0x4c7db0 net worth] 2 per empty cell, 3 per path, 5 per queue, 6 per entrance, 1 per exit and water, nothing for 4, 7 and 30; unowned cells (0x40) count nothing
+		var park = EconomyTestData.Park();
+		var cells = new ParkCellMap( 4, 2 );
+		cells.SetType( 1, 0, ParkCellType.Path );
+		cells.SetType( 2, 0, ParkCellType.Queue );
+		cells.SetType( 3, 0, ParkCellTypes.Entrance );
+		cells.SetType( 0, 1, ParkCellTypes.Exit );
+		cells.SetType( 1, 1, ParkCellTypes.Water );
+		cells.SetType( 2, 1, ParkCellTypes.Object );
+		cells.SetType( 3, 1, ParkCellTypes.NoTerrain );
+		park.Litter.Cells = cells;
+		Assert.AreEqual( 2 + 3 + 5 + 6 + 1 + 1 + 0 + 0, park.ParkValue );
+		cells.SetFlags( 0, 0, ParkCellFlags.Unowned );
+		cells.SetFlags( 1, 0, ParkCellFlags.Unowned );
+		Assert.AreEqual( 5 + 6 + 1 + 1, park.ParkValue, "unowned cells count nothing" );
+		park.RegisterExisting( 1100 );
+		Assert.AreEqual( 13 + 500, park.ParkValue, "then the objects" );
+		Assert.AreEqual( 2, ParkValueRules.CellPoints( 0, false ) );
+		Assert.AreEqual( 52, ParkValueRules.CellPoints( 0, true ), "a track or hoarding tile adds 50" );
+	}
+
+	[TestMethod]
+	public void ATrackTileCountsFiftyThroughItsOrigin()
+	{
+		var park = EconomyTestData.Park();
+		var cells = new ParkCellMap( 4, 4 );
+		park.Litter.Cells = cells;
+		var empty = park.ParkValue;
+		var builder = new TrackBuilder( cells, TrackFamily.Kart, () => null, new FlatGrid() );
+		Assert.AreEqual( CellBuildResult.Ok, builder.PlaceTile( 0, 0 ) );
+		Assert.AreEqual( empty + 4 * 50, park.ParkValue, "the origin (11) and its three extensions (12, naming the origin) add 50 each; their map type counts as an empty cell" );
+	}
+
+	[TestMethod]
+	public void TheNetWorthIsCountedAgainOnlyWhenTheReadersAgeIsExceeded()
+	{
+		// [BIN:TPW-EXE:0x4c7db0 net worth] the cached value serves while (turn >> 2) - (stamp >> 2) <= the reader's age
+		var park = EconomyTestData.Park();
+		Assert.AreEqual( 0, park.NetWorth( 20 ) );
+		park.RegisterExisting( 1100 );
+		Assert.AreEqual( 0, park.NetWorth( 20 ), "cached in the same turn" );
+		Assert.AreEqual( 500, park.ParkValue, "the live value" );
+		EconomyTestData.AdvanceToTurn( park, 4 * 20 + 3 );
+		Assert.AreEqual( 0, park.NetWorth( 20 ), "20 quarter-turns old: still served" );
+		EconomyTestData.AdvanceToTurn( park, 4 * 21 );
+		Assert.AreEqual( 500, park.NetWorth( 20 ), "21 quarter-turns: counted again" );
+		park.RegisterExisting( 1100 );
+		Assert.AreEqual( 500, park.NetWorth( 20 ) );
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 4 );
+		Assert.AreEqual( 1000, park.NetWorth( 0 ), "age 0 recounts once the quarter-turn changed" );
 	}
 
 	[TestMethod]

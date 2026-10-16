@@ -17,8 +17,8 @@ public readonly record struct SaveTimestamp( int Year, int Month, int Day, int H
 /// RideSystem record cell, fixed items store 128, 128. The loader puts the three floats at thing +0x4C (<see cref="Gauge48"/>, the Mac's +0x48),
 /// +0x48 (<see cref="LifeGauge"/>) and +0x44 (<see cref="StateOfRepair"/>); the original saves each as a whole number 0–255.
 /// <see cref="TotalCosts"/>/<see cref="TotalTakings"/> are read as signed 32-bit values (+0x184/+0x180; the panel's total profit 0x004E1C60 is their
-/// difference). <see cref="State"/> is <c>mState</c> (+0x19C) and the other properties name the remaining fields; only <c>mAmountOfSpecialIngredient</c>
-/// and the time stamp's two trailing words are skipped.
+/// difference). <see cref="State"/> is <c>mState</c> (+0x19C) and the other properties name the remaining fields; only the time stamp's two trailing words are skipped
+/// (<see cref="AmountOfSpecialIngredient"/> is <c>mAmountOfSpecialIngredient</c>).
 /// </summary>
 public readonly record struct SaveAttraction(
 	int Offset, int Id, SaveThingBase Base, int InfoId, int Angle, SaveTimestamp Timestamp,
@@ -27,6 +27,9 @@ public readonly record struct SaveAttraction(
 	uint CustomerCount, uint WalkAwayCount, int TotalCosts, int TotalTakings, float Gauge48, float LifeGauge, float StateOfRepair,
 	int UpgradeLevel, int Length )
 {
+	/// <summary><c>mAmountOfSpecialIngredient</c> (ride <c>+0x198</c>), the signed word after <c>mPricePerUse</c>; the original loader takes it unclamped (tp.exe <c>0x4dcdc1</c>).</summary>
+	public int AmountOfSpecialIngredient { get; init; }
+
 	public const int NameCharacters = 33;
 	/// <summary>History buffers hold at most this many entries (head and count are bounded by it).</summary>
 	public const int MaximumRingEntries = 31;
@@ -90,7 +93,8 @@ public readonly record struct SaveAttraction(
 		var price = reader.U32();
 		if ( price > MaximumPricePerUse )
 			throw new InvalidDataException( $"Save attraction thing {id} has price {price}; the original loader allows 0–{MaximumPricePerUse}." );
-		reader.Skip( 4 );
+		// [BIN:TPW-EXE:0x4dcdc1 attraction loader] mAmountOfSpecialIngredient (+0x198) follows mPricePerUse (+0x194, clamped to 0..500) as a 4-byte word read without a clamp, then mQueueSizeInCells (+0x40)
+		var ingredient = reader.I32();
 		var queueCells = reader.U32();
 		if ( queueCells > ushort.MaxValue )
 			throw new InvalidDataException( $"Save attraction thing {id} has {queueCells} queue cells." );
@@ -113,7 +117,7 @@ public readonly record struct SaveAttraction(
 			Flags = flags, RideScriptHandle = scriptHandle, TrackRideHandle = trackHandle, TopLeft = topLeft, EntryPos = entryPos, Next = next,
 			AssignedStaffMember = assigned, BackOfQueue = backOfQueue, CanLoad = canLoad, ExitPos = exitPos, FirstInQueue = firstInQueue,
 			IsTrackRideValid = trackValid, UpgradeParent = upgradeParent, Histories = histories, PersonBeingLoaded = personBeingLoaded,
-			RequestedService = requested, TimeMarkedForMaintenance = marked, UpgradeBalloonSprite = balloonSprite,
+			AmountOfSpecialIngredient = ingredient, RequestedService = requested, TimeMarkedForMaintenance = marked, UpgradeBalloonSprite = balloonSprite,
 		};
 	}
 

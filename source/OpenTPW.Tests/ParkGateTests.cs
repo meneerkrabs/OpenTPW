@@ -47,6 +47,26 @@ public class ParkGateTests
 		Assert.AreNotEqual( inside.Id, queueing.Id );
 	}
 
+	[TestMethod]
+	public void TheBridgesCensusSkipsGuestsOnAnObjectsBodyAndOffTheTerrain()
+	{
+		var (simulation, grid) = InsideGuests();
+		var onPath = simulation.SpawnInPark( 2, 0 );
+		var onBody = simulation.SpawnInPark( 3, 0 );
+		grid.Cells.SetType( 20, 20, ParkCellTypes.Object );
+		onBody.CellX = 20;
+		onBody.CellY = 20;
+		var outside = simulation.SpawnInPark( 4, 0 );
+		grid.Cells.SetType( 30, 30, ParkCellTypes.FixedWalkway );
+		outside.CellX = 30;
+		outside.CellY = 30;
+		var economy = new ParkEconomy( EconomyTestData.Settings(), EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 7 );
+		var bridge = new GuestEconomyBridge( () => economy, simulation );
+		Assert.AreEqual( 3, bridge.PeopleInPark );
+		Assert.AreEqual( 1, bridge.GuestCensus, "a rider on a body cell (4) and a guest on the walkway (30) are not counted (0x4fa990)" );
+		Assert.AreNotEqual( onPath.Id, onBody.Id );
+	}
+
 	// ---------------------------------------------------------------- gate script (original data)
 
 	private BaseFileSystem? originalFileSystem;
@@ -65,6 +85,22 @@ public class ParkGateTests
 			Assert.AreEqual( 0, runtime!.Script.GetVariableIndex( ParkGate.CommandVariable ), $"{theme} VAR_COMMAND index" );
 			Assert.AreEqual( 1, runtime.Script.GetVariableIndex( ParkGate.StatusVariable ), $"{theme} VAR_STATUS index" );
 		}
+	}
+
+	[TestMethod]
+	public void ALostParkRequestsEveryBreakdownAndTheGatesEndOfParkSequence()
+	{
+		UseOriginalData();
+		var (gate, gates, totem, economy) = Park();
+		economy.OpenPark();
+		gate.InitializeFromParkState();
+		Assert.AreEqual( 0, totem.GetVariable( RideVariables.VAR_BREAKSTAT ) );
+		gate.ParkLost();
+		// [BIN:TPW-EXE:0x5168f0 park lost] 0x4e0db0 writes VAR_BREAKSTAT = 1 on each attraction; 0x519ef0(0, 1) writes only the gate's variable 0 = 2
+		Assert.AreEqual( 1, totem.GetVariable( RideVariables.VAR_BREAKSTAT ) );
+		Assert.AreEqual( ParkGate.EndOfParkCommand, gates.GetVariableByName( ParkGate.CommandVariable ) );
+		Assert.IsTrue( totem.IsOpen, "nothing is closed" );
+		Assert.IsTrue( economy.IsParkOpen, "the park-closed word keeps its value" );
 	}
 
 	[TestMethod]

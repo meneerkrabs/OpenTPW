@@ -409,7 +409,7 @@ public partial class Level : IDisposable
 			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout, land == null ? null : cells => cells.SetUpLand( land, park.Save ) ) )
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
-			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land ) );
+			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );
 		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
 			: null;
@@ -481,6 +481,10 @@ public partial class Level : IDisposable
 		{
 			if ( item.Kind is ParkEventKind.ParkOpened or ParkEventKind.ParkClosed )
 				Gate?.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
+			else if ( item.Kind == ParkEventKind.Bankrupt )
+				Gate?.ParkLost();
+			else if ( item.Kind == ParkEventKind.RideScriptVariable && Enum.IsDefined( (RideVariables)item.InfoId ) )
+				AttractionRuntimeOf( item.InstanceId )?.SetVariable( ((RideVariables)item.InfoId).ToString(), (int)item.Amount );
 			else if ( item.Kind == ParkEventKind.RideRepaired )
 				OpenAfterRepair( item.InstanceId );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
@@ -580,6 +584,7 @@ public partial class Level : IDisposable
 		SyncOpenState( runtime );
 	}
 
+	// [BIN:TPW-EXE:0x4df8f0 reopen tail] after a repair or an upgrade the ride opens (+0x68 = 1, script variable 6 = 0) whether or not its guard holds (it then logs "Opening non openable ride" five times), and a coaster (track type 3) failing 0x441970 closes again (+0x68 = 0, variable 6 = 1)
 	private void OpenAfterRepair( int instance )
 	{
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )

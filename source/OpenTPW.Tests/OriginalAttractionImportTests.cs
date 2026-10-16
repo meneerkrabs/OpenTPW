@@ -71,7 +71,7 @@ public class OriginalAttractionImportTests
 		var (_, import, ride) = Import( Bouncy with { State = 3, Chance = 120 } );
 		Assert.AreEqual( (false, RideObjectStates.Idle, 0), (ride.IsBrokenDown, ParkEconomy.ObjectState( ride ), ride.ChanceOfLosingPercent) );
 		var adjusted = import.Evidence.Where( line => line.StartsWith( "Attraction value adjusted on import:", StringComparison.Ordinal ) ).ToArray();
-		Assert.IsTrue( adjusted.Any( line => line.Contains( "chance of winning 120 is outside 0-100" ) ) );
+		// a win byte above 100 always wins (the loader reads the low byte, 0x4e26e2) and is imported as a chance of losing of 0 without a report
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "state 3 does not fit a choosable type" ) ), "state 3 is the constructor's state of a type that is not choosable" );
 		var (_, broken, _) = Import( Bouncy with { State = 4, LifeGauge = 60 } );
 		StringAssert.Contains( broken.Evidence.Single( line => line.StartsWith( "Attraction value adjusted", StringComparison.Ordinal ) ), "OpenTPW reads it as state 1" );

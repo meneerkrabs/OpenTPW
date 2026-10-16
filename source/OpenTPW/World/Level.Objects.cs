@@ -137,7 +137,11 @@ public partial class Level
 			{
 				// [BIN:TPW-EXE:0x00534767 laid cells' money test] the cell setter refuses a path or queue type when the park's money is on and its balance is below zero, even though the placement's cells are free (0x5346D0 with 0x8186D4 set)
 				if ( layingAccessCells && Guests?.Grid.Cells is { } laid && (Park == null || Park.Economy.Balance >= 0) )
+				{
 					ObjectAccessCells.Lay( laid, item.AccessPoints, OwnerWord( item ), item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
+					// the entrance's outside cell becomes a queue cell, over a plain path the player built: guests walking there step off
+					Guests?.SetDownOffCells( item.AccessPoints.Select( point => (point.OutsideX, point.OutsideY) ).ToHashSet() );
+				}
 			};
 			Objects.ObjectRemoved += item =>
 			{

@@ -318,6 +318,8 @@ public static class ParkLayoutSnapshot
 			Require( cell.QueueLink == 0 || ParkCellTypes.CarriesQueueLink( cell.Type ), $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
 			Require( cell.Placements >= 0, $"cell ({cell.X}, {cell.Y}) has placement count {cell.Placements}" );
 			Require( cell.Owner == 0 || cell.Type != 0, $"cell ({cell.X}, {cell.Y}) has owner word {cell.Owner} but is empty" );
+			// an owner word is the cell word y * 128 + x + 1 of a cell of the 128 x 128 array (0x4D0AF0 decodes it as cell - 1)
+			Require( cell.Owner <= 128 * 128, $"cell ({cell.X}, {cell.Y}) has owner word {cell.Owner} beyond the cell array" );
 			// with a land record the unowned flag lives in the record's bits, never in a cell record (see CaptureSnapshot)
 			Require( cells.Land == null || (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0,
 				$"cell ({cell.X}, {cell.Y}) carries the unowned flag beside a land record" );

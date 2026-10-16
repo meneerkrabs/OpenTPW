@@ -132,6 +132,8 @@ public class ParkCellOwnerTests
 		Assert.AreEqual( 0, ParkLayoutSnapshot.RestoreCellMap( JsonSerializer.Deserialize<ParkLayoutSnapshot.Data>( old )! ).OwnerAt( 6, 5 ) );
 		var bad = snapshot with { Cells = snapshot.Cells with { Cells = snapshot.Cells.Cells.Append( new ParkLayoutSnapshot.CellData { X = 1, Y = 1, Type = 0, Flags = 0x20, Placements = 0, Links = 0, QueueLink = 0, Owner = 7 } ).ToList() } };
 		Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( bad ), "an owner word on an empty cell is refused" );
+		var wild = snapshot with { Cells = snapshot.Cells with { Cells = snapshot.Cells.Cells.Append( new ParkLayoutSnapshot.CellData { X = 1, Y = 1, Type = 4, Flags = 0, Placements = 0, Links = 0, QueueLink = 0, Owner = 128 * 128 + 1 } ).ToList() } };
+		Assert.ThrowsException<InvalidDataException>( () => ParkLayoutSnapshot.RestoreCellMap( wild ), "an owner word beyond the 128 x 128 cell array is refused" );
 	}
 
 	// ---------------------------------------------------------------- Easymode (original data)

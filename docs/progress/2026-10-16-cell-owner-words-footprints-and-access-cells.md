@@ -55,13 +55,11 @@ The park's cell map now follows tp.exe's placement commit (`0x528A70`), read via
   the sandbox smoke removes a laid queue front and a free-standing cell through the level.
 
 **Determinism and saves.** The pinned hash is unchanged: the owner words are derived state and are not hashed, and the merge with main's whole walks did not move
-the pin (main's `0x205523C08061A05D` after #244; `DeterminismTests` passes unchanged with and without game data). Saves keep the optional `Owner`; old saves load.
+the pin (main's `0xDB3EA9A7AF384B5B`; `DeterminismTests` passes unchanged with and without game data). Saves keep the optional `Owner`; old saves load.
 
 **Verification.** 4964 tests pass without game data (579 skipped) and 5430 with it (113 skipped), after merging main through #266; the fidelity register
 (`--write`, `--check`: 187 unresolved unique IDs), `tools/progress.py --check` and the evidence checks (`run_evidence_checks.py`) pass; the five native smokes pass offscreen
-(front end, sandbox, the plain smoke and the park-resume capture and restore). The `--load-original-level jungle --smoke-test` mode, which the smoke script does not run, reaches the new
-queue steps (removing the laid queue front, the entrance fallback, rebuilding, a free-standing cell) and passes them, then fails in the staff phase on a cell off the heightfield, in code this branch does not
-touch.
+(front end, sandbox, the plain smoke and the park-resume capture and restore). The `--load-original-level jungle --smoke-test` mode, which the smoke script does not run, also fails on origin/main (in the HUD queue step on a cell off the heightfield, and, once that step skips such cells as this branch does, in the water track step: the station tiles' first column); on this branch it passes the new queue steps (removing the laid queue front, the entrance fallback, rebuilding, a free-standing cell) and fails at the same water track step, in code this branch does not touch.
 
 **Still open (new IDs needed)**
 

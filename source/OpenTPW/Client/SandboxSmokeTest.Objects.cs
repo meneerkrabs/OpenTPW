@@ -47,10 +47,18 @@ internal sealed partial class SandboxSmokeTest
 			foreach ( var (entry, index) in candidates.Select( ( entry, index ) => (entry, index) ) )
 			{
 				var rotation = index % 4 * 90;
-				var site = Enumerable.Range( 0, 41 * 41 ).Select( cellIndex => (X: siteX - 20 + cellIndex % 41, Y: siteY - 20 + cellIndex / 41) )
+				var sites = Enumerable.Range( 0, 41 * 41 ).Select( cellIndex => (X: siteX - 20 + cellIndex % 41, Y: siteY - 20 + cellIndex / 41) )
 					.OrderBy( cell => Math.Abs( cell.X - siteX ) + Math.Abs( cell.Y - siteY ) )
-					.FirstOrDefault( cell => cell.X >= 0 && cell.Y >= 0 && level.CheckFreeObject( entry, cell.X, cell.Y, rotation ) == OriginalPlacementResult.Allowed, (X: -1, Y: -1) );
-				if ( site.X < 0 )
+					.Where( cell => cell.X >= 0 && cell.Y >= 0 && level.CheckFreeObject( entry, cell.X, cell.Y, rotation ) == OriginalPlacementResult.Allowed ).ToArray();
+				// the placement lays only the cell outside the entrance (RIDES-028), so a ride is reachable only when a path touches that cell: prefer such a site, nearest first
+				bool Reachable( (int X, int Y) cell )
+				{
+					var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, rotation );
+					var door = ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, rotation ).FirstOrDefault( point => point.Kind == ObjectCellKind.Entrance );
+					return door.Kind == ObjectCellKind.Entrance && level.Guests != null && GuestPathGrid.Directions.Any( step => level.Guests.Grid.IsWalkable( door.OutsideX + step.DX, door.OutsideY + step.DY ) );
+				}
+				var site = entry.HasQueue && sites.Any( Reachable ) ? sites.First( Reachable ) : sites.FirstOrDefault( (X: -1, Y: -1) );
+				if ( sites.Length == 0 )
 					continue;
 				var cash = economy?.Balance ?? 0;
 				var placed = level.PlaceObject( entry, site.X, site.Y, rotation );
@@ -58,6 +66,9 @@ internal sealed partial class SandboxSmokeTest
 					continue;
 				// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the smoke opens it as the player would, so its script runs and it animates
 				placed.Open();
+				// join the laid queue front to the path beside it, as ending a queue line on that cell does, so the park's guests can reach the ride
+				if ( level.Guests != null && entry.HasQueue )
+					QueuePaths.TryConnect( level.Guests.Grid, placed.Visitors );
 				built++;
 				if ( economy == null )
 					continue;
@@ -79,6 +90,8 @@ internal sealed partial class SandboxSmokeTest
 				Require( rebuilt != null, "rebuild on freed footprint through the economy" );
 				// the rebuilt ride starts closed like the first build (RIDES-015, 0x4DB712): without opening it no guest boards it and the ride-head readback never finds a rider
 				rebuilt!.Open();
+				if ( level.Guests != null && entry.HasQueue )
+					QueuePaths.TryConnect( level.Guests.Grid, rebuilt.Visitors );
 			}
 			Require( built >= 2, "build original objects through the park economy in the original level" );
 			PlaceModObjects( economy, siteX, siteY );

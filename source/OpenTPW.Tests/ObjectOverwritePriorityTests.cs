@@ -75,8 +75,8 @@ public class ObjectOverwritePriorityTests
 		var removed = new List<OriginalObject>();
 		objects.ObjectRemoved += removed.Add;
 
-		Assert.AreEqual( OriginalPlacementResult.Allowed, objects.Check( ride, 4, 4, 0, out var overwritten ) );
-		CollectionAssert.AreEquivalent( new[] { first, second }, overwritten.ToArray() );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, objects.Check( ride, 4, 4, 0, out var plan ) );
+		CollectionAssert.AreEquivalent( new[] { first, second }, plan.Overwritten.ToArray() );
 		Assert.AreEqual( 2, objects.Objects.Count, "checking demolishes nothing" );
 
 		var placed = objects.TryPlace( ride, 4, 4, 0, out var result );
@@ -96,18 +96,18 @@ public class ObjectOverwritePriorityTests
 		var objects = Objects( bush, otherBush, bin, ride );
 		var first = objects.Add( bush, 4, 4, 0 );
 		Assert.AreEqual( OriginalPlacementResult.Occupied, objects.Check( otherBush, 4, 4, 0, out var equal ) );
-		Assert.AreEqual( 0, equal.Count );
+		Assert.AreEqual( 0, equal.Overwritten.Count );
 		Assert.AreEqual( OriginalPlacementResult.Occupied, objects.Check( bin, 4, 4, 0 ) );
 		// a ride over the bush and another ride: the ride refuses, so the bush stays as well
 		objects.Add( ride, 5, 4, 0 );
 		Assert.AreEqual( OriginalPlacementResult.Occupied, objects.Check( ride, 4, 4, 0, out var none ) );
-		Assert.AreEqual( 0, none.Count );
+		Assert.AreEqual( 0, none.Overwritten.Count );
 		Assert.IsNull( objects.TryPlace( ride, 4, 4, 0, out _ ) );
 		Assert.IsTrue( objects.Objects.Contains( first ) );
 		// reserved cells (paths, queues and tracks in a level) refuse a higher priority, also where a lower object stands
 		objects.IsReserved = ( x, y ) => x == 4 && y == 4;
 		Assert.AreEqual( OriginalPlacementResult.Occupied, objects.Check( Entry( 1101, 5, "*" ), 4, 4, 0, out var reserved ) );
-		Assert.AreEqual( 0, reserved.Count );
+		Assert.AreEqual( 0, reserved.Overwritten.Count );
 		Assert.AreEqual( OriginalPlacementResult.Occupied, objects.CheckFree( ride, 3, 4, 0 ) );
 	}
 

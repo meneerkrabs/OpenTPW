@@ -118,6 +118,17 @@ public class PlacedAmbientTests
 	}
 
 	[TestMethod]
+	public void ARangeOfTwoOrLessGetsTheFarEndTwoPointOne()
+	{
+		// tp.exe 0x6c3b8a: the far end handed to the mixer is 2.1 when the sound's range is not above the minimum distance 2.0
+		Assert.AreEqual( 1f, AudioListener.RangeGain( 1.5f, 2 ), "at the minimum distance" );
+		Assert.AreEqual( MathF.Pow( (2.1f - 2.05f) / (2.1f - 2f), 0.8f ), AudioListener.RangeGain( 1.5f, 2.05f ), 1e-5f, "inside the 2.1 far end" );
+		Assert.AreEqual( 0f, AudioListener.RangeGain( 2f, 2.1f ), "at the far end" );
+		Assert.AreEqual( 0f, AudioListener.RangeGain( 1.5f, 3 ), "past it" );
+		Assert.AreEqual( MathF.Pow( (2.5f - 2.2f) / (2.5f - 2f), 0.8f ), AudioListener.RangeGain( 2.5f, 2.2f ), 1e-5f, "a range above 2 is its own far end" );
+	}
+
+	[TestMethod]
 	public void ASourceToTheListenersRightPansRightAndOutOfRangeIsSilent()
 	{
 		AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );

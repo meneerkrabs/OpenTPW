@@ -228,16 +228,16 @@ objects, TOUR and kart BUMP controllers (a water ride's BUMP goes to its control
 ## Building (`ParkObjects`)
 
 Footprint cells from the shape and rotation; per cell: inside the grid, terrain
-rule (original levels: MAP blocked/water/entrance/fixed walkway, heightfield
-holes, Easymode path cells and occupied non-object cells such as the Belly Bounce
-queue — see MAP.md), not occupied by another object, a built queue cell or the
-sandbox Totem. Queue paths for `Info.HasQueue` rides are laid from the cell
+rule (original levels: the map start's cell types, heightfield holes, the Easymode
+save's occupied non-object cells such as the Belly Bounce queue — see MAP.md), no
+NoModify path (a plain path is cleared), no object of an equal or higher overwrite
+priority, no queue, track or other typed cell and no sandbox Totem; then the
+entrance's and exit's outside cells ("Build rules" below). Queue paths for `Info.HasQueue` rides are laid from the cell
 outside the entrance (`QueuePaths`, `Level.BuildQueueCell`; GUESTS.md "Queues"). Removing
 an imported object frees its cells. In original levels, building now uses `ParkEconomy.TryBuild`: research, money and
 golden-ticket checks apply, costs are charged and removal credits the economy
-scrap value. The generic sandbox still builds free. These are
-OpenTPW rules grounded in the data, not the original build checks (no slope,
-path-connection or land-ownership rules). The ImGui build panel lists the
+scrap value. The generic sandbox still builds free. The cell rules
+follow tp.exe's validator ("Build rules" below; owned land included, no slope test). The ImGui build panel lists the
 buildable catalog per category; R rotates, click builds centred on the cell, the
 remove tool deletes the object under the cursor. Sandbox JSON saves still contain
 only the Totem.
@@ -322,20 +322,44 @@ bonus root is set (observed: Dizzy Dinos animating).
 The build tool's hover (`0x5234D0`) and click (`0x524960`) run the placement `0x528A70` over the footprint;
 each cell goes through cell op `0x204` (`0x532FC0`) into the validator `0x535670` with the cell type the
 footprint symbol asks for (4 for an occupied cell). For an object the validator refuses a cell flagged
-NoModify (0x20) or unowned (0x40), a fence post or track piece on the second layer (types 0x19, 0xB, 0xD,
-0x10, 0x12), a queue and any other non-empty type, and the build when the pending cost exceeds the balance
-(`0x52FBC0`, unless `0x785A2C`); it allows an empty cell, a path cell without NoModify (`0x535D21`, the
-commit then clears the path, `0x534549`) and an object cell whose owner has a lower **overwrite priority**:
-the hover loads the placed type's `Info.OverwritePriority` (type record +0x54, schema `0x745020`) into
-`0x818C10`, the validator the owner's into `0x818C14` and compares them (`0x535D66`). On commit cell op 0x87
-demolishes every such owner whole (`0x527EE0`, crediting its scrap value) before the new footprint is
-written. The path and queue tools use the same comparison with `0x818C10` = 2 and 3, so they may replace
-scenery. In the shipped catalogues rides, shops and sideshows have priority 5, small scenery (bushes,
-flowers, tiny rocks, speakers) 1 and the other features 0.
+NoModify (0x20, the map start's initial path) or unowned (0x40), a fence post or track piece on the second layer
+(types 0x19, 0xB, 0xD, 0x10, 0x12), a queue and any other non-empty type, and the build when the pending cost
+exceeds the balance (`0x52FBC0`, unless `0x785A2C`); it allows an empty cell, a path cell without NoModify
+(`0x535D21`) and an object cell whose owner has a lower **overwrite priority**: the hover loads the placed
+type's `Info.OverwritePriority` (type record +0x54, schema `0x745020`) into `0x818C10`, the validator the
+owner's into `0x818C14` and compares them (`0x535D66`). On commit cell op 0x87 (`0x5344E5`) demolishes every
+such owner whole (`0x527EE0`, crediting its scrap value) before the new footprint is written, and every
+footprint cell is cleared with ClearCell `0x5367A0(0, 0)` before its type is written (`0x52910C`), so a path
+cell under the footprint goes whatever the priorities (op 0x87 already clears it when the new priority is the
+higher, `0x534549`). The path case of ClearCell refunds nothing. In the shipped catalogues rides, shops,
+sideshows, upgrades, toilets, staff rooms, fantasy's Large Sign and the fixed items have priority 5, the
+small scenery (bushes, flowers, small rocks and trees, statues, speakers; 45 types) 1 and the other 48
+features 0 (test `OverwritePrioritiesAndAccessCellsFollowTheTypes`).
 
-OpenTPW follows the overwrite priority for objects (`ParkObjects.Check`, `TryPlace`) and refuses track,
-path and queue cells by their cell type (`Level`'s `IsReserved`); objects on path cells, the outside cells'
-path rule and paths or queues over scenery are still open (RIDES-018).
+**The path and queue tools.** The hover (`0x5234D0`, `0x524571`) and the click (`0x524960`, `0x527200`,
+`0x527218`) set `0x818C10` to 2 for the path tool and 3 for the queue tool, and the validator compares it
+with the owner's priority before any path or queue rule, so a path or queue may be laid over a feature of
+priority 0 or 1 but over no ride, shop, sideshow, toilet or staff room. The commit's first line pass
+(`0x536100(0x87, ...)`) demolishes each such feature whole before the cells are typed.
+
+**The access cells.** After the footprint the placement checks the outside cells of the entrance and the
+exit (`0x529744`, `0x5299E2`: off the map refuses). Entering the build tool sets option `0x81B0CC` to the
+type's `Info.HasQueue` (`0x46D644`; `0x8187F8` gets the type's `Bumper.WhichTrackType` when its record +0x288
+is 1, which turns the option off, `0x52FAB0`). With the option on the entrance's outside cell is checked as an
+object cell (op `0x204`, `0x5297A4`) and becomes the queue's first cell, and the exit's is checked by the path
+rule (op `0x201`, `0x529A2F`) and becomes a path cell; with it off only the entrance's cell is checked, by the
+path rule (`0x5298B9`), and becomes a path cell. The commit's op 0x87 there demolishes a lower-priority owner
+too. In the corpus every type with a queue has one entrance and one exit and every other type at most one
+entrance and no exit.
+
+OpenTPW follows these rules: `ParkObjects.Check` and `TryPlace` (overwrite priority, a plain path cell under
+the footprint cleared through `ParkPathBuilder.Remove`, a NoModify one refused, the access cells by
+`Info.HasQueue`, refusing with `AccessBlocked`), `ParkPathBuilder.ObjectGivesWay`/`DemolishObject` and the
+queue builder's `givesWay` (`QueuePaths`), and `Level`, which hands the cell map to these hooks and refuses
+track and queue cells by their type (`IsReserved`). Guests standing on a cleared path cell are set down on the
+nearest path cell (`GuestSimulation.SetDownOffCells`). Still open (RIDES-018): the second-layer link tests
+`0x53AE00`/`0x53AE90`, the cost of the access cells the commit lays (RIDES-028 lays none), the types whose
+record +0x288 is 1, and what tp.exe does with a guest inside a new footprint.
 
 ## Remaining gates
 
@@ -364,7 +388,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-003 | World/Objects/ObjectAnimator.cs | A finished non-looping clip holds its last pose. PC: the clip end `0x4735D0` restarts it as AnimID 14 (`0x473866`), which only sets the channel flags 0x14 and keeps the channel's clip id (`0x472F60`), so the next start's copy-back (`0x472310`) runs against the ended clip, as here; the AnimID-14 table slot is never read | The writers of the instance flags 0x8 (stop, `0x47376E`) and 0x10 (hold, `0x4737D7`): `0x463060` sets only 0x4, 0x4000 and 0x8000 |
 | RIDES-011 | World/Objects/ObjectShape.cs | `+` is an overlay cell over the parent ride's track, the track ends `<` `>` station connections. The original placement `0x528A70` stamps `+`, `#` and the ends as occupied type 4 (`0x5290C7`–`0x5290EE`), checks `+` with cell op 0x10B and `#` with 0x110 and on commit writes the flags word 0x10 on the cell and its second-layer cell (`0x52950D`); an end with a direction needs the cell beyond it and on commit makes it type 0x15 (`0x5295F7`) | What cell ops 0x10B/0x110 require and what type 0x15 is |
 | RIDES-014 | World/Objects/ParkObjects.cs | Base height = (lowest + highest) / 2 of the terrain vertex heights at the corners of the footprint's shape cells (`0x466D70`, cells with a non-zero type nibble, `0x469930`; the vertex is `ftol(lerp + 0.1)` of `0x454050`, equal to `ObjectFootprint.ToGrid` of the corner: `ObjectBaseHeightTests`). The original then blends the ground flat under the ride (`0x467030`, `0x57ACE0`), which is not modelled; a park-resume save from before the rule restores with the earlier cell mean (`BaseHeightRule` absent) | The blend; the instance words +0xF0/+0xF4 taken as the shape size; an instance height captured on a slope |
-| RIDES-018 | World/Objects/ParkObjects.cs:120 | Build rules: grid, the original's map-start cell types (holes refused; `Blocked` surface cells buildable, as in tp.exe), save paths/objects, overlap by `Info.OverwritePriority` (a lower-priority object gives way and is demolished, as in tp.exe), owned land; no slope test (none in tp.exe either); Level enforces economy purchases | Objects on plain path cells (tp.exe allows them and clears the path), the entrance/exit outside cells' path rule, and paths and queues over scenery |
+| RIDES-018 | World/Objects/ParkObjects.cs | Build rules: grid, the original's map-start cell types (holes refused; `Blocked` surface cells buildable, as in tp.exe), plain path cells cleared and NoModify ones refused, overlap by `Info.OverwritePriority` (a lower-priority object gives way and is demolished, for objects, paths and queues alike), the access cells by `Info.HasQueue`, owned land; no slope test (none in tp.exe either); Level enforces economy purchases. Guests on a cleared path cell are set down on the nearest path cell | The second-layer link tests `0x53AE00`/`0x53AE90`, the pending cost of the access cells the commit lays (RIDES-028), which types have record +0x288 = 1 (their `Bumper.WhichTrackType` turns the access-cell option off), and what tp.exe does with a guest inside a new footprint |
 | RIDES-019 | World/Objects/ParkObjects.cs | Levels without a save get Gates and Lights at setup, as the original's world setup (0x5156A0); the bus, seaplane and Ferry are placed when the arrival update first sends them (0x51A2F0, see GUESTS.md "Arrivals"). End is not created: the original creates it through 0x516B00 from the lab's message handler 0x503D40 (message 0x11, from 0x50B550) when the last research item completes (`ParkResearch.IsAllResearched`): in game mode DAT_00fb3b7c 2 (or 0 with 0x5B0C40 true) it clears a flag (0x409CD0), posts the advisor message 0xA7 and creates End. A Theme Park Inc world without a prebuilt save keeps a Bus from setup | What DAT_00fb3b7c names and the advisor message 0xA7; how Theme Park Inc places its arrival vehicle |
 | RIDES-021 | World/Level.Objects.cs | The original's mouse-to-cell pick: `0x524960` takes the cell as arguments from the replayed command (`0x4045B0`, commands 0x14 and 0x2D recorded at the top of `0x524960`), and none of the terrain-height callers (`0x4511A0` camera, `0x4F9E60`/`0x4FA470` guests, `0x452AE0`, `0x53DDD0`, `0x542010`) is the pick; its producer is not found. The port picks on the Z = 0 plane (`[EXT:build-cursor-ground-plane]`); the anchor taken from the picked cell is the original's (`0x528B44`, see Shape, footprint and rotation) | The producer of the replayed pick commands |
 
@@ -373,9 +397,8 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-032 | World/Objects/ObjectAnimator.cs | Every instance takes the callback route. PC: render callback 0x463030 (model record +0x140, set at 0x4638bd) poses via 0x44e380(inst, 1) and sets instance flag 0x200000; the list pass 0x44e410 updates instances without it via 0x473c70(inst, 0, 8) without posing and clears it on the others; object flag 0x00400000 is set at 0x4737e8 when a non-looping clip ends with nothing deferred, flags & 0x10 set and & 0x8 clear (also sets 0x40000000, holds the last frame). The list-pass route is not modelled | The callback's call site: the renderer (`0x579D95`) only initialises the +0x140 word to 0 and a byte scan of `0x560000`–`0x5A5000` finds no read of it, so any call goes through a computed address |
 | RIDES-040 | World/Objects/ParkObjects.cs | Theme Park Inc fixed scene records saved at (0, 0) use their local model origin | The original fixed-scene transform fields and a game capture |
 | RIDES-044 | VM/RideVM.cs | A script's first WAITANIM_CH inside a park's first 134 ms waits about 49.7 days under the per-park clock origin (`[EXT:park-clock-origin]`; the PC clock is the app-lifetime scaled timer 0x785970, read by 0x402D70, never reset for a new park). GETTIME (PC handler 0x551F1E) stores the clock unchanged and every shipped script uses it only as a deadline or a difference (`RideClockCorpusTests`), so only the 32-bit wrapping WAITANIM_CH sum can tell: its deadline lies in the past only once the clock exceeds the clip's shortfall | The PC WAITANIM_CH deadline arithmetic; whether a shipped script issues WAITANIM_CH in a park's first 134 ms |
-| MD2-900 | World/Objects/ObjectAnimator.cs | A texture-frame slot mixes like the node components: ascending channels and tracks, the last non-null frame wins (hyenasm1 carries two tracks on one slot; the constant 0 loses to the face cycle), null before the first key keeps the previous frame (initially 0), and a slot no clip addresses shows frame 0 again; the fixed-item pose hold is not extended to frames | The original draw-path reader of a slot's current frame (the clip update 0xa56f8 only writes it) |
-| MD2-901 | World/Objects/ObjectAnimator.cs | Texture-frame keys naming a frame outside the slot's frame names, or a slot the model does not have (Pmegacostm slot 12), are ignored | The original's behaviour on an out-of-range frame or slot |
-| MD2-902 | World/Objects/OriginalObject.cs | A frame whose art no searched texture directory has (including Theme Park Inc `tvsim` slot 39 frame 3, `lt1.tga`) keeps the effective selected frame; the renderer registers decoded-art availability with the animator so save history retains that visible frame | The original's fallback for a missing frame file |
+| MD2-900 | World/Objects/ObjectAnimator.cs | A texture-frame slot's frame selection is the PC writer `0x470C90`: the last key at or before the clip time wins, none before the first key keeps the previous frame, later tracks of a slot overwrite earlier ones (hyenasm1 carries two tracks on one slot); a slot no bound clip addresses shows frame 0 again here (the writer never resets), and the fixed-item pose hold is not extended to frames | The draw-path reader of a slot's current frame, and what resets a slot (the writer only sets it) |
+| MD2-901 | World/Objects/ObjectAnimator.cs | Texture-frame keys naming a frame outside the slot's frame names, or a slot the model does not have (Pmegacostm slot 12), are ignored; the PC writer `0x470C90` checks neither index | The unread consumer of the slot record (original behaviour on an out-of-range frame or slot) |
 
 ### Retired and reclassified (RIDES round 2, October 14)
 

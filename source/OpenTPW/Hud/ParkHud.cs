@@ -803,7 +803,7 @@ public sealed partial class ParkHud
 			LeaveBuildTool();
 			toolClick = true;
 		}
-		UpdateBlueprint( inPark && !rideOwnsInput );
+		UpdateBlueprint( inPark && !rideOwnsInput, context.Delta, paused || Status.Speed == GameSpeed.Paused );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
 			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && input.LeftReleased && !toolPress )
@@ -986,12 +986,13 @@ public sealed partial class ParkHud
 	// [BIN:STP-PPC:0x100866B8 SetCell ghost] LayLine(mode | 0x100) gives each previewed cell a BlueprintMesh face: blue (0) when the chooser 0x100895D8 accepts it, red (1) when it refuses it (money included)
 	// [BIN:STP-PPC:0x10080C50 cell ghost] the same blue or red faces for the cells of other build modes, checked by 0x10084154
 	// [BIN:TPW-EXE:0x0053C8D0 blueprint AddFace] the PC twins: AddFace 0x53C8D0 (face records at 0x820B00 + i * 0xA0, callers 0x46C480, 0x4FA030, 0x532FC0 and 0x5370E0), the ghost routine 0x5370E0 (called from 0x52BA50 and 0x53AAC0) whose chooser 0x539760 returns 1 for the refused branch 0x537A1B, 0 for the default texture and otherwise that texture, and 0x532FC0 (called from 0x452D30, 0x5286A0, 0x528A70 and 0x536100); the chooser walks neighbouring cell types (0x536340–0x536380, type 0x15)
-	// [APPROX:BLUEPRINT-003] a line marks every cell up to the refused one, existing cells blue; a footprint is blue when the build rule and the purchase allow it, red otherwise. PC: LayLine 0x536100 previews every cell of the line, as the ghost SetCell 0x532FC0 returns 1 for allowed (0x53391D) and refused (0x534009) cells, and the validator 0x535670 refuses every later cell (param 0) once its flag 0x816D50 is set (0x5358A0; reset at 0x527C52 and 0x5247AA); the footprint caller is the object placement 0x528A70 in ghost mode: row 0 of the shape gets SetCell(0x104, 6 = m_front, build direction) (0x52967E), every other cell SetCell(0x104, 0) (0x52969C), red where refused, and the outside cells of the access points get m_enter (3, op 0x104, 0x52989A) or m_inout (7, op 0x118, 0x5299AE, when option 0x81B0CC lays no queue) and m_exit (4, op 0x118, 0x529B1C), none drawn here — evidence needed: the validator's result for existing path cells (0x535670 after 0x5358B5)
-	private void UpdateBlueprint( bool inPark )
+	// The line preview and the footprint markers (every cell of the line, red from the refused one; m_front row, m_enter and m_exit arrows) are BlueprintGhosts; the PC evidence sits there (LayLine 0x536100, SetCell 0x532FC0, the placement 0x528A70)
+	private void UpdateBlueprint( bool inPark, float delta, bool paused )
 	{
 		if ( level.Blueprint is not { } blueprint )
 			return;
 		var cells = new List<(int X, int Y, BlueprintMarker Marker)>();
+		Dictionary<(int X, int Y), byte>? directions = null;
 		if ( level.IsCoasterToolActive && level.CoasterPanel is { } coasterPanel )
 		{
 			// [BIN:TPW-EXE:0x5234d0 coaster tool markers] the build buttons mark the placement area (face 0x11f) and the cell under the pointer (face 0x115, red when the validator refuses it)
@@ -1026,13 +1027,7 @@ public sealed partial class ParkHud
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{
-			foreach ( var cell in ghost.Line )
-			{
-				var refused = cell == ghost.StoppedAt;
-				cells.Add( (cell.X, cell.Y, refused ? BlueprintMarker.Refused : BlueprintMarker.Allowed) );
-				if ( refused )
-					break;
-			}
+			cells.AddRange( BlueprintGhosts.LineCells( ghost.Line, ghost.StoppedAt ) );
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
@@ -1041,12 +1036,14 @@ public sealed partial class ParkHud
 			var allowed = level.CheckObject( entry, cursorX, cursorY, rotation ) == OriginalPlacementResult.Allowed
 				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId ) == ParkEconomy.PurchaseResult.Ok);
 			placementRefused = !allowed;
-			foreach ( var (x, y, _) in ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ) )
-				cells.Add( (x, y, allowed ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
+			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, rotation, allowed );
+			cells.AddRange( footprint.Cells );
+			directions = footprint.Directions;
 		}
 		if ( level.BuildEntry == null || !inPark )
 			placementRefused = false;
-		blueprint.Show( cells );
+		blueprint.Update( delta, paused );
+		blueprint.Show( cells, directions );
 	}
 
 	/// <summary>The cost of the tool's preview line beside its end (the markers themselves are <see cref="BlueprintMarkers"/>).</summary>

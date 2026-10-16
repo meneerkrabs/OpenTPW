@@ -59,7 +59,7 @@ internal sealed partial class SandboxSmokeTest
 		Require( level.BuildEntry == entry, "choosing a ride in the build menu arms its placement" );
 		hud.Update( hudContext, UiInput.Idle( sitePoint ) );
 		var footprint = ObjectFootprint.GetCells( entry.Shape, Level.GetCentredAnchor( entry, site.X, site.Y, 0 ).X, Level.GetCentredAnchor( entry, site.X, site.Y, 0 ).Y, 0 ).Count();
-		Require( level.Blueprint is { } placing && placing.Cells.Count == footprint && placing.Cells.All( cell => cell.Marker == BlueprintMarker.Allowed ),
+		Require( level.Blueprint is { } placing && placing.Cells.Count( cell => cell.Marker is BlueprintMarker.Allowed or BlueprintMarker.Front ) == footprint && placing.Cells.All( cell => cell.Marker != BlueprintMarker.Refused ),
 			"hovering an allowed site shows the footprint as blue blueprint markers" );
 
 		// The park click: the HUD leaves it to Level while an object is being placed.

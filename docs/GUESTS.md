@@ -712,6 +712,12 @@ numbers, as the original does (`fctiwz`): "> 80" means at least 81.
 Every exit of state 11, like the queue edit's and the price refusal's, ends in the dismissal
 (tp.exe `0x5004aa` → `0x5012f0`): after its thought the guest loses `PeepInfo.MediumHappinessChange`
 (`0x4fea70` with 1); the dismissal's guest event 6 and its sound are not modelled (QUEUE-005).
+A guest called forward to a shop or sideshow with a price tests it at the stand point (`0x4fde50`) and records its view of the price,
+paid or refused, in the park's perception statistics (`0x4c74b0`: 20 rings of 50 values; categories 1–4 by the shop's special
+ingredient, 6 and 7 by its balloon or costume, 9 for a sideshow; min(100, (W + 5) × 10 − price × 10) as an unsigned word). A guest
+that refuses raises the ride's walk-away counts (`0x4e1670`: `mNumWalkAways`, saved and imported, and the day's count, which the day
+message rolls into a ring of 30 days, `0x4dd320`). Only the advisor's conditions read the statistics and the day ring; the guest's
+event records (`0x50c100`) feed only its debug dump (`0x4faa60`).
 
 **Breakdown** (ORACLE.md F15). While `VAR_BROKEN ≠ 0` the ride dismisses its queue head first,
 one guest per park turn: the ride update (`0xe0a8c`, executed in the oracle for its states 1, 2

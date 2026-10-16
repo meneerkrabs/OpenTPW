@@ -1645,7 +1645,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			EnterStanding( guest );
 		else if ( TooExpensive( guest, attraction ) )
 			// [BIN:TPW-EXE:0x005006B0 called forward] at the stand point the price test 0x004FDE50 comes before the ride takes the guest (AdmitPerson); a guest that refuses leaves the queue ("Object %d is too expensive, I'm leaving the queue") and keeps its thought
-			// [APPROX:GUEST-003] the refusal's thought 6, two medium drops (0x004FEA70 with 1 at 0x00500778, and the dismissal 0x005012F0) and leave match; not modelled: the ride's walk-away counters (0x004E1670: +0x1A4 and the period count +0x230, which 0x004DD320 rolls and 0x004CAAE0 sums per ShopType for the advisor), the dismissal's sound for a thing id whose low three bits are 0 and the price statistic 0x004C74B0 (recorded on every shop and sideshow test); the guest's event records (0x0050C100) feed only the debug dump 0x004FAA60 — evidence needed: none (read)
+			// [BIN:TPW-EXE:0x0050076F refusal records] the refusal's thought 6 (0x0050BE80), event 10 with the ride's id and the dismissal's event 6 (0x0050C100: a ring of 32 (event, argument) pairs at thought +4, index +0x88, a repeat of the last pair skipped) are read only by the guest's debug dump 0x004FAA60 (0x0050C190, its one caller 0x004FAAAB), so OpenTPW keeps no event ring
 			RefusePrice( guest, attraction );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			guest.State = GuestState.WaitingToBoard;
@@ -1656,15 +1656,28 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		// [BIN:TPW-EXE:0x00500756 price refusal] "Object is too expensive, I'm leaving the queue": thought 6, then the refusal's own 0x004FEA70(1) before the dismissal's
 		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
+		// [APPROX:GUEST-003] the refusal's dismissal does not play its sound for a guest whose thing id has its low three bits 0 (0x4FAA00, [0x803A24] event 0x80), OpenTPW's guest ids not being the original's thing ids (WALK-010; QUEUE-005 has the same sound) — evidence needed: none (read)
+		// [BIN:TPW-EXE:0x0050077F refusal walk-away] after 0x004FEA70(1) the ride's walk-away count (0x004E1670), then its loading slot (0x004E0AC0) and queue list (0x004DDD20) let the guest go and the dismissal 0x005012F0 runs
+		Payments?.WalkedAway( attraction );
 		DismissFromQueue( guest, attraction, GuestThought.Dissatisfied );
 	}
 
-	/// <summary>The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use.</summary>
-	private static bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
+	/// <summary>
+	/// The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use. A shop or sideshow with a price
+	/// records the guest's view of it in the park's statistics (<see cref="QueueJoinRules.PriceStatistics"/>), whether it pays or refuses.
+	/// </summary>
+	private bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
 			return false;
-		return QueueJoinRules.TooExpensive( PriceTermsOf( attraction ), guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
+		var terms = PriceTermsOf( attraction );
+		if ( Payments != null && terms.Price != 0 )
+		{
+			var willingness = QueueJoinRules.WillingnessToPay( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea );
+			foreach ( var (category, value) in QueueJoinRules.PriceStatistics( terms, willingness, attraction.SpecialIngredient, attraction.AppearanceEffect ) )
+				Payments.PriceTested( category, value );
+		}
+		return QueueJoinRules.TooExpensive( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
 	}
 
 	/// <summary>

@@ -74,6 +74,9 @@ public static class ParkSaveFile
 		public required ResearchData Research { get; init; }
 		public required ObjectivesData Objectives { get; init; }
 		public required Dictionary<string, long> Counters { get; init; }
+		/// <summary>The park's perception statistics, the categories that hold a value; absent in older saves and while none does.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<PriceStatisticData>? PriceStatistics { get; init; }
 		/// <summary>World seed and the guest, script and sound streams (absent in saves written before world seeds: those streams are not restored).</summary>
 		// [EXT:legacy-economy-save] this legacy economy-only park save (Level.SavePark/LoadPark, used by DeterminismTests) persists the economy and every random stream, not guests, queues or object script state, and a load keeps the running guests and scripts; the player's save (GameFlow.SaveCurrentPark -> ParkResumeSaveFile) already stores the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks
 		public WorldData? World { get; init; }
@@ -142,6 +145,27 @@ public static class ParkSaveFile
 		/// <summary>Guests that have used the object; absent in older saves, which then use this and last month's customers.</summary>
 		public long? TimesUsed { get; init; }
 		public required long[] Statistics { get; init; }
+		/// <summary>Guests that walked away from the price (mNumWalkAways); absent in older saves and when 0.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long WalkAways { get; init; }
+		/// <summary>Today's walk-aways; absent in older saves and when 0.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long WalkAwaysToday { get; init; }
+		/// <summary>
+		/// The walk-aways of the last days, oldest first; absent in older saves and while every day held none (only sums read the ring, the advisor's
+		/// per-ShopType test 0x004CAAE0, so days without a walk-away are dropped rather than saved).
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public long[]? WalkAwayDays { get; init; }
+	}
+
+	/// <summary>One category of the park's perception statistics (<see cref="ParkPriceStatistics"/>).</summary>
+	public sealed class PriceStatisticData
+	{
+		public required int Category { get; init; }
+		public required int Head { get; init; }
+		public required bool Full { get; init; }
+		public required byte[] Values { get; init; }
 	}
 
 	/// <summary>
@@ -478,7 +502,10 @@ public static class ParkSaveFile
 				MaintenanceRequested = item.MaintenanceRequested,
 				FireworksSpent = item.FireworksSpent,
 				TimesUsed = item.TimesUsed,
-				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit }
+				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit },
+				WalkAways = item.WalkAways,
+				WalkAwaysToday = item.WalkAwaysToday,
+				WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.ToArray() : null
 			} ).ToList(),
 			Loans = park.Loans.Select( loan => new LoanData
 			{
@@ -540,6 +567,8 @@ public static class ParkSaveFile
 				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList()
 			},
 			Counters = new Dictionary<string, long>( park.Counters.Values ),
+			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
+				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
 			World = world == null ? null : new WorldData { Seed = world.Seed, GuestRandom = world.GuestRandom, ScriptRandom = world.ScriptRandom, SoundSeed = world.SoundSeed }
 		};
 	}
@@ -621,6 +650,8 @@ public static class ParkSaveFile
 			Require( item.BuiltTick <= data.Tick && item.Price >= 0 && item.CostOfGoods >= 0 && item.ChanceOfLosingPercent is >= 0 and <= 100, $"object {item.Id} values" );
 			Require( item.Repair is null || (double.IsFinite( item.Repair.Value ) && item.Repair.Value is >= 0 and <= 100 && (int)item.Repair.Value == item.StateOfRepair), $"object {item.Id} repair" );
 			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
+			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
+				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
 		var staffIds = new HashSet<int>();
 		foreach ( var member in data.Staff.Members )
@@ -661,6 +692,8 @@ public static class ParkSaveFile
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
 		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
+			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
 		foreach ( var loan in data.Loans )
 			Require( loan.MonthsRemaining > 0 && loan.MonthsRemaining <= loan.Months && loan.MonthlyRepayment >= 0 && (loan.RemainingBalance is null or >= 0) && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
 	}
@@ -711,7 +744,10 @@ public static class ParkSaveFile
 				CostsLastMonth = item.Statistics[5],
 				WinnersThisMonth = item.Statistics[6],
 				WinnersLastMonth = item.Statistics[7],
-				TotalProfit = item.Statistics[8]
+				TotalProfit = item.Statistics[8],
+				WalkAways = item.WalkAways,
+				WalkAwaysToday = item.WalkAwaysToday,
+				WalkAwayDays = item.WalkAwayDays?.ToList() ?? new()
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
 		// Older saves keep only the months in the red: the stamp is counted back so that the bank counts as many 30-day months
@@ -751,6 +787,8 @@ public static class ParkSaveFile
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets );
 		park.Counters.Restore( data.Counters );
+		if ( data.PriceStatistics is { } statistics )
+			park.PriceStatistics.Restore( statistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() );
 		return park;
 	}
 

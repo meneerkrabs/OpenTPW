@@ -226,6 +226,8 @@ public sealed class ParkEconomy : IParkEconomy
 		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
 		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour && !IsBankrupt; hour++ )
 			UpdateHour();
+		if ( changes.HasFlag( CalendarChange.Day ) )
+			EndObjectDay();
 		if ( changes.HasFlag( CalendarChange.Day ) && !IsBankrupt )
 			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
 		if ( changes.HasFlag( CalendarChange.Month ) )
@@ -1593,6 +1595,39 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( objects.TryGetValue( instanceId, out var item ) )
 			item.TimesUsed++;
 	}
+
+	/// <summary>Days of walk-aways an object keeps (the ring <c>+0x234</c> the object constructor sizes to 30).</summary>
+	// [BIN:TPW-EXE:0x004DB090 object constructor] the ring heads +0x224/+0x2AC take -1 and the sizes +0x228/+0x2B0 take 0x1E, the full flags +0x22C/+0x2B4 0 (0x004DB187..0x004DB1AB)
+	public const int WalkAwayHistoryDays = 30;
+
+	/// <summary>
+	/// A guest refused the object's price at its stand point and walked away (tp.exe <c>0x004E1670</c>): <see cref="ParkObjectState.WalkAways"/>
+	/// and <see cref="ParkObjectState.WalkAwaysToday"/> each rise by one.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E1670 walk-away] +0x1A4 (mNumWalkAways, serializer key at 0x0075B508) += 1 and the day count +0x230 += 1; the state-13 refusal (0x0050077F) is its only caller
+	public void RecordWalkAway( int instanceId )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) )
+			return;
+		item.WalkAways++;
+		item.WalkAwaysToday++;
+	}
+
+	/// <summary>The day's end for the objects (tp.exe <c>0x004DD320</c> on the day message): today's walk-aways move into the history, which keeps the last 30 days.</summary>
+	// [BIN:TPW-EXE:0x004DD320 object day message] on message 0xB (the calendar update 0x004F8260 sends it when the day changes, 0x0040F4C0; 0xC at a new month) each of the object's six rings takes its day count: +0x2AC = head + 1, wrapping to 0 with the full flag set at the size; the ring entry = +0x230, then +0x230 = 0
+	private void EndObjectDay()
+	{
+		foreach ( var item in objects.Values )
+		{
+			item.WalkAwayDays.Add( item.WalkAwaysToday );
+			if ( item.WalkAwayDays.Count > WalkAwayHistoryDays )
+				item.WalkAwayDays.RemoveAt( 0 );
+			item.WalkAwaysToday = 0;
+		}
+	}
+
+	/// <summary>The park's perception statistics (<see cref="ParkPriceStatistics"/>), which the price test at a stand point records.</summary>
+	public ParkPriceStatistics PriceStatistics { get; } = new();
 
 	public void ReportRecord( ParkRecordKind kind, int instanceId, long value )
 	{

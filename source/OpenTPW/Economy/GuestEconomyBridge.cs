@@ -90,6 +90,14 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 			Economy().RecordUseFinished( instance );
 	}
 
+	public void WalkedAway( IRideVisitorBridge attraction )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().RecordWalkAway( instance );
+	}
+
+	public void PriceTested( int category, int value ) => Economy().PriceStatistics.Record( category, value );
+
 	public int PeopleInPark => Guests.GetStatistics().InPark;
 
 	// [BIN:STP-PPC:0x100C19E4 average happiness] 0.0 while the park is closed (0x100C3524), otherwise the single mean of each in-park guest's (u8)trunc(happiness), not the mean of the raw values (PPC-scenarios, golden tickets)

@@ -170,6 +170,7 @@ public class OriginalSaveImportTests
 		var stamp = attraction.Timestamp;
 		Assert.AreEqual( ParkCalendar.TickAtSeconds( (long)(new DateTime( stamp.Year, stamp.Month, stamp.Day, stamp.Hour, stamp.Minute, stamp.Second ) - ParkCalendar.Epoch).TotalSeconds ), bouncy.BuiltTick, "the saved time stamp is the build time" );
 		Assert.AreEqual( attraction.CustomerCount, (uint)bouncy.TimesUsed, "the saved customer count is the use count: an imported used object never refunds the unused 100 %" );
+		Assert.AreEqual( attraction.WalkAwayCount, (uint)bouncy.WalkAways, "mNumWalkAways is the walk-away count" );
 
 		var researcher = economy.Staff.Members.Single();
 		Assert.AreEqual( (StaffType.Researcher, 2, 0, 97, StaffState.Patrolling), (researcher.Type, researcher.Grade, researcher.TrainingPoints, researcher.Happiness, researcher.State) );
@@ -214,7 +215,7 @@ public class OriginalSaveImportTests
 		foreach ( var line in attractions )
 		{
 			foreach ( var value in new[] { "state ", "chance of winning ", "third gauge ", "total costs ", "total takings ", "name \"", "operating capacity ", "duration ", "speed ",
-				"quality of goods ", "queue size ", "customers ", "walk-aways ", "time stamp ", "mesh instance " } )
+				"quality of goods ", "queue size ", "customers ", "time stamp ", "mesh instance " } )
 				StringAssert.Contains( line, value );
 		}
 		foreach ( var line in import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-003] ", StringComparison.Ordinal ) && line.Contains( " values not imported:" ) ) )

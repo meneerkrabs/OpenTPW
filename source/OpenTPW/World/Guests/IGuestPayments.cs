@@ -26,6 +26,10 @@ public interface IGuestPayments
 	void VisitFinished( IRideVisitorBridge attraction ) { }
 	/// <summary>A guest used a relief object with this toilet meter (as a byte): the toilet's gauge wears (tp.exe 0x004E2440).</summary>
 	void ReliefUsed( IRideVisitorBridge attraction, int toiletByte ) { }
+	/// <summary>A guest refused the attraction's price at its stand point and walked away (the ride's walk-away count, tp.exe <c>0x004E1670</c>).</summary>
+	void WalkedAway( IRideVisitorBridge attraction ) { }
+	/// <summary>The price test recorded a perception value in a park statistic category (tp.exe <c>0x004C74B0</c>).</summary>
+	void PriceTested( int category, int value ) { }
 	/// <summary>The park's litter by cell, where guests drop theirs (null: litter is not kept).</summary>
 	ParkLitter? Litter => null;
 }

@@ -239,4 +239,16 @@ public sealed class ParkObjectState
 	public long WinnersLastMonth { get; set; }
 	public long TotalProfit { get; set; }
 	public long ProfitLastMonth => TakingsLastMonth - CostsLastMonth;
+	/// <summary>
+	/// Guests that refused the object's price at its stand point and walked away, since it was built: the original's <c>mNumWalkAways</c>
+	/// (<c>+0x1A4</c>), which the refusal raises (<see cref="ParkEconomy.RecordWalkAway"/>) and only the object constructor clears.
+	/// </summary>
+	public long WalkAways { get; set; }
+	/// <summary>Guests that walked away from the object's price today (<c>+0x230</c>), rolled into <see cref="WalkAwayDays"/> at the day's end.</summary>
+	public long WalkAwaysToday { get; set; }
+	/// <summary>
+	/// The walk-aways of the last days, oldest first, at most <see cref="ParkEconomy.WalkAwayHistoryDays"/> (the ring at <c>+0x234</c>, head
+	/// <c>+0x2AC</c>, size <c>+0x2B0</c> = 30, full flag <c>+0x2B4</c>).
+	/// </summary>
+	public List<long> WalkAwayDays { get; init; } = new();
 }

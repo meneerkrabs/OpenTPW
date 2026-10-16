@@ -84,7 +84,7 @@ public sealed partial class ParkHud
 		this.host = host;
 		Status = status;
 		Catalog = catalog;
-		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows );
+		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows, item => Status.IsAvailable( item ) );
 		lastLevelMessage = level.LastActionMessage;
 		level.Objects.ObjectPlaced += OnObjectPlaced;
 		// Harnesses that build a Level without its constructor have no tool object.
@@ -911,7 +911,7 @@ public sealed partial class ParkHud
 			context.HoverHelp = strings.Help( help );
 		if ( !tool.IsActive )
 		{
-			// Backspace over a path cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent).
+			// Backspace over a path or queue cell with no tool on: the backtrack sound, then that cell is removed (GameAudio.BacktrackEvent; a queue is [EXT:queue-backtrack]).
 			if ( inPark && input.Backspaces > 0 && Stack.Screens.Count == 1 && !Input.TextEntryActive && Camera.Mode is ParkCameraMode && level.BacktrackAt( cursorX, cursorY ) )
 				return true;
 			if ( !inPark || !input.LeftPressed || level.IsReadOnlyVisit || level.Objects.FindAt( cursorX, cursorY ) != null )

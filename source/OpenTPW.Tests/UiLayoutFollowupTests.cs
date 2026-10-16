@@ -52,7 +52,7 @@ public class UiLayoutFollowupTests
 	public void TheSideshowWinnersGaugeIsTheWinnersPercentageOfTheCustomers()
 	{
 		Assert.AreEqual( 0f, ParkHud.WinnersGauge( 5, 0 ), "no customers: 0 (0x4e1f20 returns before dividing)" );
-		Assert.AreEqual( 0.33f, ParkHud.WinnersGauge( 1, 3 ), 1e-6f, "trunc(100 / 3) = 33" );
+		Assert.AreEqual( 337 / 1024f, ParkHud.WinnersGauge( 1, 3 ), 1e-6f, "trunc(100 / 3) = 33, set as 33 × 1024 / 100 = 337 of 1024" );
 		Assert.AreEqual( 1f, ParkHud.WinnersGauge( 4, 4 ) );
 		Assert.AreEqual( ParkHud.ObjectRowKind.Winners, ParkHud.RowKinds( (int)BuildCategory.Sideshows )[1] );
 		Assert.IsTrue( ParkHud.IsGaugeRow( ParkHud.ObjectRowKind.Winners ) );

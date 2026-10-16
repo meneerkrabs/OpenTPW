@@ -83,6 +83,34 @@ public class ThemeParkIncSaveImportTests
 		Assert.ThrowsException<InvalidDataException>( () => SaveCellGrid.Parse( payload, payload.Length, 3, 1 ) );
 	}
 
+	/// <summary>
+	/// RIDES-040: each of the eleven scene records saved at (0, 0) has a thing record (tag <c>EJBO</c>, position X, Y in 1/256 cell, two links, angle, then the
+	/// Info.Id) in the thing list. The six whose archive exists carry the fixed-item default (128, 128), angle 0; the five without an archive carry real positions.
+	/// </summary>
+	[TestMethod]
+	public void ZeroAnchorSceneRecordsHaveTheirThingPositions()
+	{
+		using var reader = new SaveReader( Path.Combine( DataPath(), "PreBuilt/prebuilt.TPWS" ) );
+		var payload = reader.ReadFile().ToArray();
+		(int X, int Y, uint Angle) Thing( int infoId )
+		{
+			var found = new List<(int, int, uint)>();
+			for ( var i = 16; i + 2 <= payload.Length; i++ )
+			{
+				if ( BitConverter.ToUInt16( payload, i ) != infoId || payload[i - 16] != (byte)'E' || payload[i - 15] != (byte)'J' || payload[i - 14] != (byte)'B' || payload[i - 13] != (byte)'O' )
+					continue;
+				found.Add( (BitConverter.ToUInt16( payload, i - 12 ), BitConverter.ToUInt16( payload, i - 10 ), BitConverter.ToUInt32( payload, i - 4 )) );
+			}
+			return found.Single();
+		}
+		foreach ( var id in new[] { 1705, 1706, 1709, 3708, 1707, 1710, 1798 } )
+			Assert.AreEqual( (128, 128, 0u), Thing( id ), id.ToString() );
+		Assert.AreEqual( (15488, 4736, 0u), Thing( 1702 ) );
+		Assert.AreEqual( (12928, 9856, 0u), Thing( 1701 ) );
+		Assert.AreEqual( (10624, 12416, 0u), Thing( 1700 ) );
+		Assert.AreEqual( (12928, 3456, 0u), Thing( 1750 ) );
+	}
+
 	[TestMethod]
 	public void PrebuiltObjectIdsResolveAgainstScienceCatalog()
 	{

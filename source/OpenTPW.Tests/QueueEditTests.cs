@@ -30,6 +30,23 @@ public class QueueEditTests
 	}
 
 	[TestMethod]
+	public void BackspaceTakesBackPathAndQueueCellsOnly()
+	{
+		// [EXT:queue-backtrack] tp.exe's backtrack key takes only path cells; OpenTPW also takes a queue back from the cursor.
+		var (grid, ride) = QueuedRide();
+		Assert.AreEqual( Level.BacktrackTarget.Path, Level.BacktrackTargetAt( grid.Cells, 2, 0 ), "a path cell: one placement off (the original's backtrack)" );
+		Assert.AreEqual( Level.BacktrackTarget.Queue, Level.BacktrackTargetAt( grid.Cells, 2, 5 ), "the front queue cell" );
+		Assert.AreEqual( Level.BacktrackTarget.Queue, Level.BacktrackTargetAt( grid.Cells, 2, 4 ), "the back queue cell" );
+		Assert.AreEqual( Level.BacktrackTarget.None, Level.BacktrackTargetAt( grid.Cells, 5, 5 ), "grass: the key does nothing" );
+		Assert.AreEqual( Level.BacktrackTarget.None, Level.BacktrackTargetAt( grid.Cells, -1, 40 ), "outside the map" );
+
+		// The queue goes from the cell under the cursor to its back, as the remove tool takes it (Level.RemoveQueueCell).
+		Assert.AreEqual( 1, QueuePaths.RemoveFrom( grid, ride, 2, 4 ) );
+		CollectionAssert.AreEqual( new[] { (2, 5) }, ride.QueueCells.ToArray() );
+		Assert.AreEqual( Level.BacktrackTarget.None, Level.BacktrackTargetAt( grid.Cells, 2, 4 ), "the taken cell is grass again" );
+	}
+
+	[TestMethod]
 	public void QueueCellNamesItsHasQueueOwner()
 	{
 		var (grid, ride) = QueuedRide();

@@ -85,7 +85,7 @@ All values are little-endian unless stated otherwise.
   This fixes the byte order of both common palettes and shows that the `0x2A`
   alpha byte is the texture's alpha. The four `0x24` images with 32-bit
   thumbnails are two badge textures, each shipped twice; their TGA alpha is 0
-  everywhere (see COMPAT-014).
+  everywhere (see the retired COMPAT-014 note below).
 - **Duplicate textures.** Many objects ship a texture twice, in `stexture/` and
   `textures/`, often at different sizes and with different palette codes. For the
   12 such pairs whose `0x2A` copy is mostly opaque (mean alpha ≥ 200), the mean
@@ -102,15 +102,18 @@ All values are little-endian unless stated otherwise.
 
 ## Approximations
 
-- `[APPROX:COMPAT-014]` `0x24` palettes store no alpha, so their 4,308 images
-  decode fully opaque. No colour key or transparent index is applied. Nothing in
-  the data proves this; the four 32-bit thumbnails above even have alpha 0, and
-  some objects ship an opaque `0x24` copy of a texture whose `0x2A` copy is
-  fully transparent (e.g. `fruitb.wad` `grape.fsh`). Evidence needed: TPI's
-  texture upload code or captures.
-- `[APPROX:COMPAT-015]` The single `0x2D` palette is read as A1R5G5B5 with bit 15
-  meaning opaque. The colour order is supported only by the mean-colour match
-  above; the alpha bit has no effect on this file.
+- `APPROX:COMPAT-014` retired: `0x24` palettes store no alpha and decode fully opaque (4,308 images), with no colour key
+  or transparent index. The Theme Park Inc executable's palette converter (`Game.exe` `0x6B7000`) reads three bytes R, G, B per
+  `0x24` entry and stores alpha `0xFF` (`0x6B7211`); its alpha scan (`0x6B73F0`) gives such a palette a surface without an alpha
+  mask (`0x6B746F`, `0x6B74C0`), and the pixel loops (`0x6B76BD` on) copy the table entry of every index without a transparent
+  index. The four 32-bit thumbnails above (alpha 0) and the opaque `0x24` copy of a texture whose `0x2A` copy is fully
+  transparent (e.g. `fruitb.wad` `grape.fsh`) are data the loader does not look at.
+- `[EXT:fsh-0x2d-palette]` (formerly `APPROX:COMPAT-015`, retired) The single `0x2D` palette (water `snowtrac.wad` `icewall1.fsh`) is read as A1R5G5B5 with bit 15
+  meaning opaque: OpenTPW's own choice, as there is no original reading to match. The colour order is supported only by the mean-colour match above; the alpha bit has no effect on this
+  file. The Theme Park Inc executable's palette converter (`Game.exe` `0x6B7000`) handles only the codes `0x24` and `0x2A`
+  (`cmp` at `0x6B70FB` and `0x6B7108`) and returns at `0x6B72D6` for any other code with its 256-entry table unwritten, so the
+  executable has no reading of a `0x2D` palette to match (its alpha scan `0x6B73F0` would read such a palette as 32-bit
+  entries).
 
 ## Reader
 
@@ -181,7 +184,7 @@ An index is always required: multi-image files do not silently select image zero
 This route runs before game-folder, window and profile setup, and needs no game
 installation or graphics device. It uses `FshFile`'s existing bounded decoder and
 `PngImage` to preserve the selected image's current RGBA pixels and dimensions;
-the raw/RefPack and palette rules, including COMPAT-014/015, are unchanged.
+the raw/RefPack and palette rules, including the retired COMPAT-014 and the extension `[EXT:fsh-0x2d-palette]` (COMPAT-015), are unchanged.
 The existing reader still validates and decodes the complete bounded FSH file;
 the selected index controls which image is written, not which records are parsed.
 
@@ -212,7 +215,7 @@ This is host-specific race evidence, not Windows or power-loss qualification.
 ## Not verified
 
 - How TPI uses or draws these textures: filtering, mipmaps, blending, alpha test,
-  or whether `0x24` textures get a colour key (COMPAT-014).
+  or what a colour key on the uploaded surface does (the loader sets none: COMPAT-014 retired).
 - The meaning of the directory gap (`Buy ERTS`), the four position words and the
   repeated palette entry count; the reader keeps them raw or ignores them.
 - Which of the `stexture/` and `textures/` copies Theme Park Inc loads, and when (Theme Park World loads `stexture` and `ssharete` exactly with the Low detail preset, TEXTUREQUALITY 0 or 1: docs/OBJECTS.md).

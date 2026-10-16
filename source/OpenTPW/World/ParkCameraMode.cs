@@ -42,6 +42,18 @@ public class ParkCameraMode : CameraMode
 		Focus( target );
 	}
 
+	/// <summary>
+	/// Turns the camera to look along the ground direction <paramref name="direction"/> (engine X/Y), keeping the target and the height: the eye goes behind the
+	/// target, <c>Position = Target + (cos yaw, sin yaw) × Height</c>. A zero or non-finite direction changes nothing.
+	/// </summary>
+	public void LookAlong( System.Numerics.Vector2 direction )
+	{
+		if ( !float.IsFinite( direction.X ) || !float.IsFinite( direction.Y ) || direction.LengthSquared() < 1e-12f )
+			return;
+		Yaw = MathF.Atan2( -direction.Y, -direction.X ) * 180f / MathF.PI;
+		UpdateTransform();
+	}
+
 	public ParkCameraView CycleView()
 	{
 		View = (ParkCameraView)(((int)View + 1) % 3);

@@ -13,38 +13,27 @@ public sealed partial class ParkHud
 {
 	// [BIN:TPW-EXE:0x755150 object window tables] the three tables share the window rectangle, the preview box (348,162), the stats frame (853,162) with 7 or 8 rows of a label (x 876..1273) and a value (x 1315..1550), the title box at y 74..153 and the buttons b_door (1430,784), b_erase (300,800), b_okay (1671,818), b_arup/b_ardown (1662,126/216) and b_allthings (1648,583); the ride table also has b_queue, b_ride it!, b_callmech and b_upgrade in the bottom row
 	// [DATA:video 4:00, 10:40, 23:40, 24:20, 77:09, 78:20] the windows of Belly Bounce, Tempel der Duisternis, Wilde Aap, Drankwinkel, Klein Toilet and IJswinkeltje have this layout (title in yellow, preview, seven rows, bottom row of round buttons, right column of arrows, list and tick); labels and values are white
-	// [APPROX:UI-024] the sliders (speed, capacity, duration, price, quality, sugar, salt, ice, fat, chance of winning) and b_move are not drawn (ride settings and the move tool are not simulated), apply-all copies only the price; the preview is OpenTPW's orthographic icon
-	/// <summary>What a row of the stats frame shows; the labels are UITEXT 17-23 for rides and 32-37 and 23 for shops and sideshows.</summary>
-	internal enum ObjectRowKind { None, Users, Age, Excitement, Reliability, Repair, Life, Scrap, Customers, CostOfGoods, Takings, Profit, Satisfaction, Happiness }
+	// [APPROX:UI-024] b_move is not drawn (the move tool is not simulated); the preview is OpenTPW's orthographic icon; the settings controls are ParkHud.ObjectSettings
+	/// <summary>What a row of the stats frame shows; the labels are UITEXT 17-23 for rides, 32-38 for shops and 41-48 for sideshows (<see cref="RowLabels"/>).</summary>
+	internal enum ObjectRowKind { None, Users, Age, Excitement, Reliability, Repair, Life, Scrap, Customers, CostOfGoods, Takings, Profit, Satisfaction, Happiness, Winners }
 
 	// [BIN:TPW-EXE:0x4adfad ride window refresh] the ride window fills control 0x3e21 with the customer sum of the monthly history (0x495cf0), 0x3e1b with the age in days of the object (0x4dd670: the clock less the build time at +0x18, divided by the day), the gauges 0x3e16 and 0x3e18 from 0x4e0560 and 0x4df640 (the excitement and reliability from the three slider values +0x2c..+0x34), 0x3e19 from the float at +0x44, 0x3e17 from 0x4dd6d0 (the float at +0x48) and 0x3e23 with the scrap value (0x4e2400)
 	// [BIN:TPW-EXE:0x4b0454 shop window refresh] the shop window fills rows 0 (0xc070, a history sum) and 1 (0xc076, 0x4e1a30), 2 (0xc077, a history sum), 3 (0xc078, 0x4e1c70), the gauge row 4 (0xc079, 0x4e1e30), the scrap value in row 5 (0xc07d, 0x4e2400) and the gauge row 6 (0xc07c, help 23 "Happiness of visitors in the area around the shop")
 	// [BIN:TPW-EXE:0x4b1914 sideshow window refresh] the sideshow window's row 0 (0xa09d) is a history sum, row 1 a gauge (0xa096, 0x4e1f20), row 2 a history sum (0xa093), row 3 (0xa092) the shop's 0x4e1c70, the gauge row 4 (0xa099) the ride's excitement routine 0x4e0560, the gauge row 5 (0xa094) the shop's 0x4e1e30, the scrap value in row 6 (0xa0a0) and the happiness gauge in row 7 (0xa09e)
-	// [APPROX:UI-024] the labels of the shop and sideshow rows follow the consecutive UITEXT 32-37 (customers, cost of goods, takings, profit, customer satisfaction, local happiness) against those functions, which are not decoded; the sideshow's row 1 gauge (0x4e1f20) is not identified and stays empty; the satisfaction and happiness gauges are not simulated and draw empty
+	// [BIN:TPW-EXE:0x4afc10 shop window labels] the label controls 0xc075, 0xc071, 0xc072, 0xc073, 0xc074, 0xc07a and 0xc07b (rows 0-6 by their y) take UITEXT 0x20-0x26 (0x485b00): customers last month, cost of goods, takings last month, profit last month, customer satisfaction, scrap value, local happiness
+	// [BIN:TPW-EXE:0x4b1040 sideshow window labels] the label controls 0xa09c, 0xa095, 0xa09a, 0xa098, 0xa09b, 0xa097, 0xa0a1 and 0xa09f (rows 0-7) take UITEXT 0x29-0x30: customers last month, winners last month, takings last month, profit last month, excitement, customer satisfaction, scrap value, local happiness
+	// [BIN:TPW-EXE:0x4e1f20 winners gauge] the sideshow's row 1 gauge is 100 × the winners over the customers (0 without customers), the two summed over the 30-entry histories at +0x2bc and +0x1ac
+	// [APPROX:UI-024] the winners gauge divides last month's winners by last month's customers, the counts the customer row also uses, where 0x4e1f20 sums the 30-entry histories; the satisfaction and happiness gauges are not simulated and draw empty
 	private static readonly ObjectRowKind[] RideRows = { ObjectRowKind.Users, ObjectRowKind.Age, ObjectRowKind.Excitement, ObjectRowKind.Reliability, ObjectRowKind.Repair, ObjectRowKind.Life, ObjectRowKind.Scrap };
 	private static readonly ObjectRowKind[] ShopRows = { ObjectRowKind.Customers, ObjectRowKind.CostOfGoods, ObjectRowKind.Takings, ObjectRowKind.Profit, ObjectRowKind.Satisfaction, ObjectRowKind.Scrap, ObjectRowKind.Happiness };
-	private static readonly ObjectRowKind[] SideshowRows = { ObjectRowKind.Customers, ObjectRowKind.None, ObjectRowKind.Takings, ObjectRowKind.Profit, ObjectRowKind.Excitement, ObjectRowKind.Satisfaction, ObjectRowKind.Scrap, ObjectRowKind.Happiness };
+	private static readonly ObjectRowKind[] SideshowRows = { ObjectRowKind.Customers, ObjectRowKind.Winners, ObjectRowKind.Takings, ObjectRowKind.Profit, ObjectRowKind.Excitement, ObjectRowKind.Satisfaction, ObjectRowKind.Scrap, ObjectRowKind.Happiness };
+	private static readonly UIStrings[] RideLabels = { UIStrings.UsersLastMonth, UIStrings.Age, UIStrings.Excitement, UIStrings.Reliability, UIStrings.StateOfRepair, UIStrings.RemainingLife, UIStrings.ScrapValue };
+	private static readonly UIStrings[] ShopLabels = { UIStrings.CustomersLastMonth, UIStrings.CostOfGoods, UIStrings.TakingsLastMonth, UIStrings.ProfitLastMonth, UIStrings.CustomerSatisfaction, UIStrings.ShopScrapValue, UIStrings.LocalHappiness };
+	private static readonly UIStrings[] SideshowLabels = { UIStrings.SideshowCustomersLastMonth, UIStrings.WinnersLastMonth, UIStrings.SideshowTakingsLastMonth, UIStrings.SideshowProfitLastMonth,
+		UIStrings.SideshowExcitement, UIStrings.SideshowCustomerSatisfaction, UIStrings.SideshowScrapValue, UIStrings.SideshowLocalHappiness };
 
 	/// <summary>Whether the row kind is a red-to-green gauge (the type-9 value controls of the tables).</summary>
-	internal static bool IsGaugeRow( ObjectRowKind kind ) => kind is ObjectRowKind.Excitement or ObjectRowKind.Reliability or ObjectRowKind.Repair or ObjectRowKind.Life or ObjectRowKind.Satisfaction or ObjectRowKind.Happiness;
-
-	private static UIStrings RowLabel( ObjectRowKind kind ) => kind switch
-	{
-		ObjectRowKind.Users => UIStrings.UsersLastMonth,
-		ObjectRowKind.Age => UIStrings.Age,
-		ObjectRowKind.Excitement => UIStrings.Excitement,
-		ObjectRowKind.Reliability => UIStrings.Reliability,
-		ObjectRowKind.Repair => UIStrings.StateOfRepair,
-		ObjectRowKind.Life => UIStrings.RemainingLife,
-		ObjectRowKind.Scrap => UIStrings.ScrapValue,
-		ObjectRowKind.Customers => UIStrings.CustomersLastMonth,
-		ObjectRowKind.CostOfGoods => UIStrings.CostOfGoods,
-		ObjectRowKind.Takings => UIStrings.TakingsLastMonth,
-		ObjectRowKind.Profit => UIStrings.ProfitLastMonth,
-		ObjectRowKind.Satisfaction => UIStrings.CustomerSatisfaction,
-		ObjectRowKind.Happiness => UIStrings.LocalHappiness,
-		_ => UIStrings.Blank
-	};
+	internal static bool IsGaugeRow( ObjectRowKind kind ) => kind is ObjectRowKind.Excitement or ObjectRowKind.Reliability or ObjectRowKind.Repair or ObjectRowKind.Life or ObjectRowKind.Satisfaction or ObjectRowKind.Happiness or ObjectRowKind.Winners;
 
 	/// <summary>The row kinds of the table's stats frame, in row order.</summary>
 	internal static IReadOnlyList<ObjectRowKind> RowKinds( int category ) => category switch
@@ -53,6 +42,17 @@ public sealed partial class ParkHud
 		(int)BuildCategory.Sideshows => SideshowRows,
 		_ => ShopRows
 	};
+
+	/// <summary>The UITEXT labels of the table's stats frame, in row order.</summary>
+	internal static IReadOnlyList<UIStrings> RowLabels( int category ) => category switch
+	{
+		(int)BuildCategory.Rides => RideLabels,
+		(int)BuildCategory.Sideshows => SideshowLabels,
+		_ => ShopLabels
+	};
+
+	/// <summary>The sideshow's winners gauge, 0..1: <c>trunc(100 × winners / customers) / 100</c>, 0 without customers (<c>0x4e1f20</c>).</summary>
+	internal static float WinnersGauge( long winners, long customers ) => customers <= 0 ? 0f : Math.Clamp( winners * 100 / customers, 0, 100 ) / 100f;
 
 	/// <summary>One object window table with the nodes the HUD places its controls on, found once.</summary>
 	private sealed class ObjectWindowLayout
@@ -76,7 +76,6 @@ public sealed partial class ParkHud
 		public LayoutNode? Queue { get; init; }
 		public LayoutNode? Track { get; init; }
 		public LayoutNode? ApplyAll { get; init; }
-		public UiRect? PriceSlot { get; init; }
 
 		/// <summary>The table the original opens for an object of <paramref name="category"/>: rides, sideshows, and the shop table for every other object.</summary>
 		public static ObjectWindowLayout For( int category ) => Of( category switch
@@ -97,16 +96,13 @@ public sealed partial class ParkHud
 			var values = stats.Children.Where( node => node.Rect.X >= 1000 ).OrderBy( node => node.Rect.Y ).ToArray();
 			if ( labels.Length != values.Length )
 				throw new InvalidOperationException( $"Layout table {table.Name} has {labels.Length} labels and {values.Length} values." );
-			// [EXT:shop-price-editor] the price editor takes the place of the table's price slider (shop 0xc086, sideshow 0xa090)
-			var slot = table.All.FirstOrDefault( node => node.Type is 3 or 12 && node.Rect.X == 753 );
 			return cache[table] = new ObjectWindowLayout
 			{
 				Table = table, Stats = stats, Preview = preview, Title = title, Rows = labels.Zip( values ).ToArray(),
 				Door = table.TryModel( "b_door" ), Erase = table.TryModel( "b_erase" ), Okay = table.TryModel( "b_okay" ), Previous = table.TryModel( "b_arup" ),
 				Next = table.TryModel( "b_ardown" ), List = table.TryModel( "b_allthings" ), RideIt = table.TryModel( "b_ride it!" ),
 				// a toilet's call button (shops have none of their own) uses the ride table's slot
-				CallMech = table.TryModel( "b_callmech" ) ?? OriginalLayoutTables.RideWindow.Model( "b_callmech" ), Upgrade = table.TryModel( "b_upgrade" ), Queue = table.TryModel( "b_queue" ), Track = table.TryModel( "b_track" ), ApplyAll = table.TryModel( "b_applyall" ),
-				PriceSlot = slot == null ? null : UiRect.FromCenter( slot.Rect.Center, 340, 150 )
+				CallMech = table.TryModel( "b_callmech" ) ?? OriginalLayoutTables.RideWindow.Model( "b_callmech" ), Upgrade = table.TryModel( "b_upgrade" ), Queue = table.TryModel( "b_queue" ), Track = table.TryModel( "b_track" ), ApplyAll = table.TryModel( "b_applyall" )
 			};
 		}
 	}
@@ -125,19 +121,19 @@ public sealed partial class ParkHud
 	private IReadOnlyList<ObjectStat> ObjectStats( OriginalObject item )
 	{
 		var kinds = RowKinds( item.Entry.WhichUIType );
+		var labels = RowLabels( item.Entry.WhichUIType );
 		var rows = new ObjectStat[kinds.Count];
 		var state = LiveState( item );
 		var economy = Status.EconomySource as ParkEconomy;
 		for ( var index = 0; index < rows.Length; index++ )
-			rows[index] = ObjectStatOf( item, kinds[index], state, economy );
+			rows[index] = ObjectStatOf( item, kinds[index], state, economy, labels[index] );
 		return rows;
 	}
 
 	/// <summary>One stat of an object as its window shows it (the All Attractions list's bars use the same values).</summary>
-	private ObjectStat ObjectStatOf( OriginalObject item, ObjectRowKind kind, ParkObjectState? state, ParkEconomy? economy )
+	private ObjectStat ObjectStatOf( OriginalObject item, ObjectRowKind kind, ParkObjectState? state, ParkEconomy? economy, UIStrings label = UIStrings.Blank )
 	{
 		string Number( long value ) => value.ToString( System.Globalization.CultureInfo.InvariantCulture );
-		var label = RowLabel( kind );
 		return kind switch
 		{
 			ObjectRowKind.None => new ObjectStat( UIStrings.Blank, null ),
@@ -149,6 +145,7 @@ public sealed partial class ParkHud
 				: level.PublishedObjectState( item )?.Repair is { } repair ? Math.Clamp( (float)repair / 100f, 0f, 1f ) : null, true ),
 			ObjectRowKind.Life => new ObjectStat( label, null, state?.LifeGauge is { } life ? Math.Clamp( (float)life / 100f, 0f, 1f ) : null, true ),
 			ObjectRowKind.Satisfaction or ObjectRowKind.Happiness => new ObjectStat( label, null, null, true ),
+			ObjectRowKind.Winners => new ObjectStat( label, null, state == null ? null : WinnersGauge( state.WinnersLastMonth, state.CustomersLastMonth ), true ),
 			ObjectRowKind.Users or ObjectRowKind.Customers => new ObjectStat( label, state == null ? null : Number( state.CustomersLastMonth ) ),
 			ObjectRowKind.Age => new ObjectStat( label, state == null || economy == null ? null
 				: string.Format( strings.Extra( OpenTpwText.AgeDays ), Number( Math.Max( 0, ParkCalendar.DayIndex( economy.Tick ) - ParkCalendar.DayIndex( state.BuiltTick ) ) ) ) ),
@@ -211,7 +208,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x755150 b_queue, b_track, b_applyall] the ride window's queue button (help 9) lets the player edit the ride's queue, its track button (help 10) the track; the shop and sideshow windows' apply-all button (help 536, 537) copies the window's settings to every object of the type
 		objQueue = Info( new UiButton { Id = "editQueue", Model = "b_queue", Clicked = EditQueue } );
 		objTrack = Info( new UiButton { Id = "editTrack", Model = "b_track", Clicked = EditTrack } );
-		objApplyAll = Info( new UiButton { Id = "applyAll", Model = "b_applyall", Clicked = ApplyPriceToAll } );
+		objApplyAll = Info( new UiButton { Id = "applyAll", Model = "b_applyall", Clicked = ApplySettingsToAll } );
 		objRideIt = Info( new UiButton { Id = "rideView", Model = "b_ride it!", Clicked = () => { if ( IsRiding ) StopRide(); else StartRide( selectedObject ); } } );
 	}
 
@@ -243,21 +240,6 @@ public sealed partial class ParkHud
 		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.EnterTrackTool( item );
 		if ( entered )
 			PostMessage( item.Runtime.Coaster != null ? strings.Help( 0x125 ) : TrackToolHelp );
-	}
-
-	/// <summary>Copies the selected shop's or sideshow's price to every placed object of the same type.</summary>
-	// [APPROX:UI-024] the original's apply-all copies all of the window's settings (the sliders as well); OpenTPW's window has only the price
-	private void ApplyPriceToAll()
-	{
-		if ( selectedObject is not { IsDeleted: false } owner || !TryPriceTarget( owner, out var economy, out var state ) || RejectReadOnlyAction() )
-			return;
-		foreach ( var other in level.Objects.Objects )
-		{
-			if ( other.IsDeleted || ReferenceEquals( other, owner ) || other.Entry.InfoId != owner.Entry.InfoId || level.GetEconomyInstance( other ) is not int instance
-				|| !economy.TryGetObject( instance, out var target ) || target.InfoId != state.InfoId )
-				continue;
-			economy.SetPrices( target.Id, state.Price );
-		}
 	}
 
 	/// <summary>Moves the selection to the next (<paramref name="direction"/> 1) or previous placed object of the selected one's category, wrapping around.</summary>
@@ -323,11 +305,6 @@ public sealed partial class ParkHud
 			Place( objApplyAll, layout.ApplyAll, HelpOf( layout.ApplyAll?.Help ?? -1 ) );
 			Place( callStaffButton, layout.CallMech, HelpOf( layout.CallMech?.Help ?? -1 ) );
 			Place( rideUpgradeButton, layout.Upgrade, HelpOf( layout.Upgrade?.Help ?? -1 ) );
-			if ( shopPriceButton != null && layout.PriceSlot is { } slot )
-			{
-				shopPriceButton.Bounds = slot;
-				shopPriceButton.Anchor = UiAnchor.Center;
-			}
 			for ( var row = 0; row < ObjectWindowRows; row++ )
 			{
 				var present = row < layout.Rows.Length;
@@ -353,6 +330,7 @@ public sealed partial class ParkHud
 			if ( objValues[row] != null ) objValues[row]!.Visible = false;
 			if ( objGauges[row] != null ) objGauges[row]!.Visible = false;
 		}
+		ApplyObjectSettingLayout( layout );
 	}
 
 	/// <summary>The red-to-green gauge of a window row; rows whose stat is text draw nothing.</summary>

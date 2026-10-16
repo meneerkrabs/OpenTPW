@@ -102,6 +102,8 @@ public class SaveWorldTests
 			attraction.CostOfGoods, attraction.QualityOfGoods, attraction.ChanceOfWinning, attraction.PricePerUse, attraction.QueueSizeInCells) );
 		Assert.AreEqual( (7u, 2u, 150, 900, 100f, 97f, 64f, 1), (attraction.CustomerCount, attraction.WalkAwayCount, attraction.TotalCosts, attraction.TotalTakings,
 			attraction.Gauge48, attraction.LifeGauge, attraction.StateOfRepair, attraction.UpgradeLevel) );
+		Assert.AreEqual( 50, attraction.AmountOfSpecialIngredient );
+		Assert.AreEqual( -7, SaveAttraction.Read( SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { IngredientAmount = -7 } ), 0, 1 ).AmountOfSpecialIngredient, "the loader takes the word unclamped (0x4dcdc1)" );
 		Assert.AreEqual( body.Length, attraction.Length );
 		Assert.AreEqual( body.Length - 6 * 30 * 4, SaveAttraction.Read( SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { RingCount = 0 } ), 0, 1 ).Length );
 		var invalid = new[]

@@ -101,14 +101,30 @@ public class PrototypeEconomySyncTests
 		Invoke( "SyncObjectEconomy" );
 		Assert.IsTrue( prototype.Visitors.WearGauge < 100 );
 		Assert.AreEqual( ordinary.Visitors.WearGauge, prototype.Visitors.WearGauge );
+		var writes = new List<ParkEvent>();
+		economy.EventRaised += item => { if ( item.Kind == ParkEventKind.RideScriptVariable && item.InstanceId == prototypeState.Id ) writes.Add( item ); };
 		EconomyTestData.AdvanceToTurn( economy, 26 * ParkEconomy.WearInterval );
 		Invoke( "SyncObjectEconomy" );
-		Assert.IsTrue( prototypeState.IsBrokenDown );
+		// [BIN:TPW-EXE:0x4e0b90 breakdown check] a script-hosted ride only writes VAR_BREAKSTAT = 1; it breaks down when the ride update reads the script's VAR_BROKEN (state 1)
+		Assert.IsTrue( writes.Any( item => item.InfoId == (int)RideVariables.VAR_BREAKSTAT && item.Amount == 1 ) );
+		Assert.IsFalse( prototypeState.IsBrokenDown, "state 0 until the script reports VAR_BROKEN" );
 		Assert.AreEqual( 0d, prototype.Visitors.WearGauge );
+		prototype.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 1 );
+		Field( typeof( RideVisitorBridge ), "brokenDown" ).SetValue( prototype.Visitors, true ); // the ride update entered state 1 (0x4e14e0)
+		Invoke( "SyncObjectEconomy" );
+		Assert.IsTrue( prototypeState.IsBrokenDown, "state 1 breaks the object down and calls a mechanic" );
 		EconomyTestData.HireBest( economy, StaffType.Mechanic );
-		for ( var turn = 0; turn < 250 && prototypeState.IsBrokenDown; turn++ )
+		for ( var turn = 0; turn < 250 && prototypeState.MechanicId == 0; turn++ )
 			EconomyTestData.AdvanceToTurn( economy, economy.Turn + 1 );
+		for ( var turn = 0; turn < 250 && !writes.Any( item => item.InfoId == (int)RideVariables.VAR_BREAKSTAT && item.Amount == 0 ); turn++ )
+			EconomyTestData.AdvanceToTurn( economy, economy.Turn + 1 );
+		EconomyTestData.AdvanceToTurn( economy, economy.Turn + 5 );
+		Assert.IsTrue( prototypeState.IsBrokenDown, "0x4da830: the repair waits while the script still reports VAR_BROKEN (its fix animation)" );
+		prototype.Runtime.SetVariable( nameof( RideVariables.VAR_BROKEN ), 0 );
+		Invoke( "SyncObjectEconomy" );
+		EconomyTestData.AdvanceToTurn( economy, economy.Turn + 2 );
 		Assert.IsFalse( prototypeState.IsBrokenDown, "the existing economy mechanic completes the repair" );
+		Assert.IsTrue( writes.Any( item => item.InfoId == (int)RideVariables.VAR_WORN && item.Amount == 0 ), "0x4df8f0 clears VAR_WORN" );
 		Invoke( "SyncObjectEconomy" );
 		Assert.AreEqual( RideRepair.FullGauge, prototype.Visitors.WearGauge );
 	}

@@ -218,9 +218,12 @@ TRACK-029 docs/PROGRESS.md
 TRACK-030 docs/TRACKS.md
 TRACK-031 docs/PROGRESS.md
 UI-001 docs/reverse/APPROX-TRACE.md
+UI-002 docs/UI.md
+UI-005 docs/UI.md
 UI-009 docs/reverse/APPROX-TRACE.md
 UI-010 docs/reverse/APPROX-TRACE.md
 UI-011 docs/reverse/APPROX-TRACE.md
+UI-012 docs/UI.md
 UI-014 docs/reverse/APPROX-TRACE.md
 UI-015 docs/reverse/APPROX-TRACE.md
 UI-016 docs/reverse/APPROX-TRACE.md

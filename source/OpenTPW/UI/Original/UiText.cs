@@ -105,7 +105,7 @@ public sealed class UiFonts
 	{
 		this.load = load;
 		Tier = tier;
-		// [APPROX:UI-002] which shipped font serves which role per tier: the original's controls name a bank slot (0x485a70: menu lines 0, HUD cash 1, HUD date 3, window labels 6, list rows 7) whose fonts differ per bank (docs/UI.md); OpenTPW's Label and Small roles do not follow slot 6 — evidence needed: captures of the original's window text at each mode
+		// [EXT:ui-font-tier-by-scale] which shipped font serves which role per tier is OpenTPW's choice: the original's controls name a bank slot (0x485a70: menu lines 0, HUD cash 1, HUD date 3, window labels 6, list rows 7) whose fonts differ per bank (docs/UI.md), and OpenTPW has no mode-to-bank rule at its output sizes
 		var (title, menu, label, small, cash, heading) = tier switch
 		{
 			UiFontTier.Small => ("TITLESMALL", "MENUSMALL", "GAME10AA", "GAME8AA", "GAMEBOLD10", "SESHSMALL"),
@@ -118,12 +118,12 @@ public sealed class UiFonts
 		Small = Load( small );
 		Cash = Load( cash );
 		Heading = Load( heading );
-		// [APPROX:UI-002] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1; the original's banks 0-3 hold CASHSMALL/CASHMED/CASHBIG/CASHBIG, 0x419710)
+		// [EXT:ui-font-tier-by-scale] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1; the original's banks 0-3 hold CASHSMALL/CASHMED/CASHBIG/CASHBIG, 0x419710)
 		var balance = tier switch { UiFontTier.Small => "CASHSMALL", UiFontTier.Big => "CASHBIG", _ => "CASHMED" };
 		try { Balance = Load( balance ); }
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Balance = Cash; }
 		// [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per
-		// bank ([APPROX:UI-002] for the tier→bank pairing). Only official Patch 2 and the Mac version ship these files
+		// bank ([EXT:ui-font-tier-by-scale] for the tier→bank pairing). Only official Patch 2 and the Mac version ship these files
 		// (docs/PATCH-2.md); the 1999 data falls back to Small, which in the Medium tier is the same file as DATESMALL.
 		var date = tier switch { UiFontTier.Small => "DATETINY", UiFontTier.Big => "DATEMED", _ => "DATESMALL" };
 		try { Date = Load( date ); }

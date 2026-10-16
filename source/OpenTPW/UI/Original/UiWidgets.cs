@@ -130,7 +130,8 @@ public sealed class UiContext
 	/// otherwise it takes the largest smaller size that fits, or the smallest size when none does.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4a43b0 options label font] the original's options labels take font slot 6 of the screen mode's bank ([0x7537b4], 0x4a443c) with no fitting
-	// [APPROX:UI-039] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles), shared per page, instead of the bank's slot-6 font; a label whose widest value does not fit drops alone to the largest size that does — evidence needed: a bank rule for OpenTPW's output sizes (UI-002)
+	// [EXT:option-label-fit] option label size: letter box about 58 % of the label rectangle height (the capture's labels are ~26 of 1536 units for 45-unit rectangles), shared per page; a label whose widest value does not fit drops alone to the largest size that does; the original does no fitting
+	// [APPROX:UI-039] the original's labels use the bank's slot-6 font (GAME5AA/GAME7/GAME8/GAME9 for banks 0-3), which OpenTPW's fit rule does not select — evidence needed: what the original does with a label that overflows (UI-032)
 	public (FontAtlas Font, int Scale) ChooseUniform( UiLabelGroup group, UiLabel label )
 	{
 		var members = group.Members.Where( member => member.Visible ).ToList();
@@ -298,7 +299,8 @@ public sealed class UiLabel : UiElement
 			return;
 		}
 		// [BIN:TPW-EXE:0x6aec80 text wrap] the original's formatter wraps greedily: a line ends at the last break opportunity before the glyph that overflows, trailing spaces dropped, or before that glyph when the line has none
-		// [APPROX:UI-032] small-font fallback for long labels (the original's control renderer 0x48f830 keeps its one slot font) — evidence needed: what the original does with a single-line label that overflows
+		// [APPROX:UI-032] which glyphs the formatter flags as break opportunities (flag 0x10) and as spaces (flag 2), and whether the catalogue slots are multi-line text controls, are not read — evidence needed: the glyph flag table and the slots' control type
+		// [EXT:fit-button-text] the small-font fallback for long labels: the original's control renderer 0x48f830 keeps its one slot font, and a translated label that overflowed its art would be unreadable
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )
 			font = context.Fonts.Small;
@@ -531,7 +533,8 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	/// inside the track's left end to half a ball inside its right end.
 	/// </summary>
 	// [BIN:TPW-EXE:0x66b088 slider thumb] the original's slider class (vtable 0x705b20) places the thumb at track left + (value - min) × (track width - thumb width) / (max - min) in integer units; the options page's sliders are 0..100 (0x4a455a)
-	// [APPROX:UI-036] value index 0..Steps-1 from the knob's centre, nearest step on a click or drag; the original truncates a drag (0x66af19) and moves one page toward a track click (0x66b8aa), and its options change handler 0x4a2e90 maps the 0..100 value to a resolution index (v × 2) / 100 and a quality index (k × v) / 100 (k 2, or 1 when [0x78d8d8] is 0) and passes the volume sliders on raw, where OpenTPW's sliders step its own presets and 11 volume steps — evidence needed: whether OpenTPW's option steps should follow the 0..100 value
+	// [EXT:options-slider-steps] OpenTPW's option sliders step through its own graphics presets and 11 volume steps and take the nearest step; the original's are 0..100 with the change handler 0x4a2e90 mapping the value to a resolution index (v × 2) / 100 and a quality index (k × v) / 100 (k 2, or 1 when [0x78d8d8] is 0)
+	// [APPROX:UI-036] a click or drag takes the nearest step where the original truncates a drag (0x66af19) and moves one page toward a track click (0x66b8aa), and leaves the knob where it was dragged (0x4a2e90) — evidence needed: the knob's position after a drag for the 0..100 volume sliders
 	public UiRect KnobRect( int value )
 	{
 		var steps = Math.Max( 2, Steps() );

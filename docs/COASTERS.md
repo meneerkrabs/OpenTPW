@@ -67,6 +67,17 @@ same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-stati
   (loop, `0x20`, `0x80`), the second loop rotate 0.5 and `0x60` (`0x434153`, `0x435020`); the
   first pylon's tangents and knot sides are mirrored (flag `0x80`), a loop pair counts as a
   section of the rating's final, and both pay the StdPylon length and height rates.
+- **Knots.** The knot pass (`0x430ed0`) poses each pylon's model with its clips (yaw and pitch of the node tangent unless
+  set by hand, the bank) and takes the node's knots from the posed track tags of its table (`0x4344c0`): the attribute records
+  with `0x400000` whose values are the table's base + k, each knot at its tag's position with the tag's forward row as its
+  direction (`0x4321c0`; a tag of a pylon turned back is turned back by −π first, `0x4315f0`). A model with one `0x1000000`
+  record has one table (the In, Centre and Out tags 3 to 5 units apart on most PC standard pylons, one tag on the Gorilla,
+  Skull and Ape pylons and every loop pylon); one with two such records (pylon flag 8, the Temple Of Gloom's) has a
+  one-tag table and a three-tag table for the lower nodes of a cell's stack, which the stack pass (`0x432d50`) marks `0x100`
+  (no bank). The table's centre is the track dummy's tag: its knot's sample coordinate is the node's sample index (`+0xfc`).
+  The sampler walks every knot, the closing pair runs from the end knot to S1's first knot and the station window ends at
+  S2's first knot. `fTrackHeightAdjust` lowers only the drawn cross section (`0x42d6d0`); the knots stand at the posed tags.
+  Without the pylon model (a definition from settings alone, the headless tests) every node is one knot at its position.
 - **Validation.** The validator `0x36ba4` runs its tests in order: the map
   bounds; a no-ground cell (new pylons only); the pylon control (LoopPylon after
   a loop node or in loop mode); the same cell as the previous node; the squared
@@ -159,7 +170,10 @@ placed once on the release. Backspace waits for a drag; a drag let go while the 
   A loop pair is never split and the same node twice cuts that node out. The cut ends carry `0x10000`/`0x20000` and the knots break there.
 - **Keyboard**: Backspace deletes the last pylon (`0x444f30`; the original reaches it only through its undo list, `[EXT:coaster-tool-controls]`); the mouse wheel and Tab are gone (the original has
   no wheel height, the loop button replaces Tab, and a new pylon takes the last pylon's height).
-- **Cursor ribbon** (COAST-035, `0x435d50`): the link to the cursor node is a translucent blue (valid) or red (refused) ribbon with no pylon, as the video shows it.
+- **Cursor link** (COAST-035, `0x435d50`, `0x43f4e0`): the cursor node is the original's model-less spare node, drawn without a pylon; the
+  link into it is drawn in a copy of the invalid cross section (the first section: no PC `coaster.sam` sets `uiInvalidCrossSection`)
+  with every edge in `blue.tga`, or `red.tga` when the validator refuses the cell (the marker textures the loader appends after the
+  coaster's own, `0x42f390`).
 
 ## Running
 
@@ -328,10 +342,13 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
 
 - **Track.** `coaster.sam` holds the track textures (`asTextureData`, with `fScrollRate`), the cross-section point
   blocks (X, Y, U, normal; `fTrackHeightAdjust` is added to every Y) and edge blocks (texture, point, point), the
-  sections and the selects. The mesh is the section extruded along slices: the curve at ten uniform steps per knot pair.
+  sections and the selects. The mesh is the section extruded along slices: the curve at ten uniform steps per link between two
+  nodes and at the knots alone between the tags of one pylon (`0x43eb70`, `0x43f030`).
   Each point is turned by the slice roll, pitch and yaw and moved to the slice position; U is the point's U and V grows
-  by the distance to the previous slice over six, so a texture repeats every six world units. Every edge is a strip of
-  quads between two slices. The select picks the section by pitch (a flume's climbing window of -90 to -1 degrees is its
+  by the distance to the previous slice over six, so a texture repeats every six world units. A slice is one ring of vertices
+  the strips before and after it share (emitted again where the section changes); every edge is a strip of two single-sided
+  triangles per segment, wound as the emitter winds them (the diagonal alternating edge by edge). A link whose node has
+  crossings is drawn with the red marker texture in the invalid cross section, as is the cursor's refused link. The select picks the section by pitch (a flume's climbing window of -90 to -1 degrees is its
   dry, ratcheted section, the rest is water) and a chain-lift segment uses `uiWinchCrossSection`. Rails, sleepers,
   struts, ropes, gutters and the flume's water all come from these sections and the textures of the coaster's wad
   (`gtexture` first). Scrolling textures (water, ratchet, chain) shift V by the power factor times the elapsed seconds on their own few
@@ -341,7 +358,7 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   its next node until there is none, and the edit step puts a cursor node at the hovered cell in the chain after the last
   node. OpenTPW draws the curve (an open chain: the end knots take the direction toward or away from their neighbour,
   chord 1.0) through the placed nodes and a ghost pylon at the cursor with the tool's height; a closed but unfinished
-  circuit ends in the station end node. An invalid link is flat red.
+  circuit ends in the station end node. A link between two nodes a kept edit left invalid takes the red marker.
 - **Pylons.** `StdPylon.MD2`/`LoopPylon.MD2` with five clips played in "add" mode, which only the TrackMaster loader asks for
   (`0x430ca0`; a position or vertex key is added, a rotation key multiplied into the node, `0x470d10`): the loft clip `<name>L`
   (a vertex animation of the pylon mesh and a 0 to 80 or 90 position key on the track tag and stack-height dummies) at the node's
@@ -350,8 +367,11 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   (wrapped into [−½, ½)), both centred on ½; and a loop pylon's `<name>R2` at its loop rotate parameter. Each value goes through
   the pylon control's map `f…AnimMultiplier`/`Add` and the caps `f…AnimStartCap`/`EndCap` (defaults 1, 0, 0, 1; the PC sets
   `fInclineAnimMultiplier` 4.5, 3 or −3 and `fBankAnimMultiplier` −1 or −4.5). The yaw and pitch are the node tangent's
-  (`0x43e590`) unless set by hand, the bank the auto-bank or the hand-set one. Every mesh of the model is drawn, the ground tile
-  too.
+  (`0x43e590`) unless set by hand, the bank the auto-bank or the hand-set one. A suspended coaster's pylon on the outside of a
+  turn takes the rotate clip half a turn on (node flag `0x10000000`), which a straight or loop-pylon node keeps from its last
+  curve pass. Every mesh of the model is drawn, the ground tile too, except the stack parts the pylon's place in its cell's stack
+  hides (`0x432df0`; the first four `0x80000` records by value): part 1 (the bridge a pylon above stands on) only under a pylon,
+  part 2 only on the top, part 3 (the connector onto a pylon below) only on a stacked pylon, part 4 only on the ground.
 - **Cars.** The `asCarTypes` meshes, front, centre and rear by `sTrainType`. A car's pivot is its root node; its front
   and rear extents come from the model's header bounds plus `fFrontDistanceAdd`/`fRearDistanceAdd`, the train's pair distances
   space the cars around its middle car (see "The train"), and a car stands on the curve itself at its coordinate (`0x43c0a0`:
@@ -361,7 +381,6 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   `--load-original-level` builds a small coaster for captures (`--capture-world`): finished with trains, or open after
   four pylons with the cursor on the fifth cell.
 
-Evidence found but not used: `uiInvalidCrossSection` and the node flags 0x800000/0x804000 mark the invalid presentation.
 Used since the register round 2 (a model whose track dummy is missing or does not move with the loft clip keeps the settings' heights, which no PC model needs since the clips turn the nodes relatively; the original applies them as they come): the pylon loft heights, the track dummy's height at loft 0 and 1 (15.56 and 95.56 for the Gorilla Thrilla pylon): they are the
 node heights h0 and h1, read when the coaster's definition is built from its catalogue entry
 (`CoasterDefinition.FromCatalogEntry`; a definition built from settings alone keeps fMinHeight and fMaxHeight). The model's attribute
@@ -451,9 +470,23 @@ The coaster tool panel round of October 15 narrowed COAST-028 (the panel, every 
 picking by cell, the area's occupancy test, the guessed clip angles of the hand-set yaw and incline and the panel's window position stay approximations) and COAST-035 (the cursor node and its flags
 are built as a translucent ribbon; the original's renderer for the flags is not found) and the cut-end flags of COAST-030.
 
+The read round of October 15 (tp.exe) narrowed COAST-004 (the collision count +0xB0 is read by the section builder `0x43F4E0`, which draws a
+crossing link with material variant 2; flag 0x400000 at `0x4376CC` is the coaster save writer's), COAST-014 (the PC cost `0x447830` is the Mac
+formula with x87 steps scaled by 0.1), COAST-032 (tp.exe sets single precision only around the renderer `0x576EC0`; the simulation runs with
+the start-up or 64-bit precision) and COAST-035 (the section builder recolours a link into a node with 0x800000/0x2000, or 0x4000); the cursor now keeps its last cell
+beyond the 300-unit reach of `0x435D50`, as the original does.
+
 The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
 COAST-034 (cars) and COAST-035 (the build cursor's ribbon). A rider's head hangs from its car's socket of its index in the
 car's seated list (`0x43b600` → `0x44b410`: socket j is the node of the car model's (j + 1)-th attribute record with flag `0x80`,
 `CoasterCarRig.Seats`). The ride camera
 is not implemented. `CoasterRide.TryGetRideView` gives the front car's pose
 (COAST-011).
+
+The pylon tag round of October 16 built the knot pass over the pylon models' posed track tags (COAST-015 narrowed to the
+knot pass's write-back of the clamped height parameter and the no-model fallback; COAST-028's guessed clip angles apply only
+without the model; COAST-029 lost its middle-knot height-adjust clause, the knots taking no `fTrackHeightAdjust`). Saves record
+the knot pass (`KnotPass`): a save from before it places the trains of a coaster with pylon models again and its riders leave. The same round traced the
+stack parts (`0x432df0`) and the kept half turn (COAST-033 narrowed), the mesh's slices, shared rings, winding and marker links
+(COAST-026 narrowed to the cross-section runs and blends, lighting and the Add-mode UV animation) and the cursor link (COAST-035
+narrowed: the ribbon is gone; the closing target's marks are not set).

@@ -101,7 +101,7 @@ never occur in the Theme Park World corpus (SETLV, ADDOBJ_EXT, EVENT_EXT,
 GETANIM, FLUSHANIM_CH, WAITANIM_CH, TRIGWAITANIM_CH, DBGMSG, PUSH, POP, WAITABS,
 MULT, END, SETVARINPARENT, the four light opcodes, GETCUSTPTCLCODE,
 YEAR/MONTH/DAY), 16 remain without a handler: WAITABS and MULT gained handlers
-for the Theme Park Inc corpus (RSE-VM.md's gap-opcode section).
+for the Theme Park Inc corpus (RSE-VM.md's gap-opcode section), and ADDOBJ_EXT one read in tp.exe (`0x5520E8`: ADDOBJ with a control operand).
 
 ## Golden scripts
 

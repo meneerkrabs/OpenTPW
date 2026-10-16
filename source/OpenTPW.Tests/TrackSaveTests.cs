@@ -260,6 +260,37 @@ public class TrackSaveTests
 	}
 
 	[TestMethod]
+	public void ALoadRunsTheBridgePassSoOldWaterBridgesTurnPlain()
+	{
+		// a save from before TRACK-010 dropped terrain water kept bridge flags and pieces on straights over water; the restore re-runs the bridge pass
+		var cells = new ParkCellMap( 40, 40 );
+		var builder = new TrackBuilder( cells, TrackFamily.Water, () => null, new FlatGrid() );
+		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		builder.PlaceStation( station );
+		new TrackLineWriter( builder ).Commit( (14, 10), (20, 10) );
+		var saved = TrackSave.Capture( cells, new BumpWorld(), Array.Empty<(int, BumpController)>() )!;
+		var straights = saved.Cells.Where( item => TrackCellTypes.IsOrigin( item.Type ) && TrackBuilder.IsStraight( item.Mask ) && !TrackCellTypes.IsStation( item.Type ) ).ToList();
+		Assert.IsTrue( straights.Count >= 3, "the line lays plain straights" );
+		var old = saved with
+		{
+			Cells = saved.Cells.Select( item => straights.Contains( item )
+				? item with { Flags = (byte)(item.Flags | TrackCell.FlagBridge), Piece = TrackPieceSelector.Select( item.Type, item.Mask, item.Link, (byte)(item.Flags | TrackCell.FlagBridge) ).Piece }
+				: item ).ToList()
+		};
+		Assert.AreEqual( straights.Count, old.Cells.Count( item => (item.Flags & TrackCell.FlagBridge) != 0 ), "the old save holds bridge flags" );
+		Assert.IsTrue( old.Cells.Except( saved.Cells ).All( item => straights.All( plain => plain.Piece != item.Piece ) ), "and bridge pieces" );
+
+		var restored = new ParkCellMap( 40, 40 );
+		foreach ( var item in cells.Tracks.Cells() )
+			restored.SetType( item.X, item.Y, item.Cell.Type );
+		TrackSave.RestoreCells( restored, old );
+		var (hashA, hashB) = (new StateHasher(), new StateHasher());
+		cells.Tracks.AddCanonicalState( hashA );
+		restored.Tracks.AddCanonicalState( hashB );
+		Assert.AreEqual( hashA.Value, hashB.Value, "the loaded tiles carry the plain pieces again, without an edit next to them" );
+	}
+
+	[TestMethod]
 	public void TheTrackLayerJoinsTheCellDigestOnlyWhileATrackExists()
 	{
 		var empty = new StateHasher();

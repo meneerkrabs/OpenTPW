@@ -38,11 +38,15 @@ public sealed class ParticleRenderer : Entity
 	private readonly List<ParticleEmitterBounds> bounds = new();
 	private readonly HashSet<int> visibleEmitters = new();
 	private readonly Vertex[] vertices;
-	private readonly (int First, int Count)[] ranges = new (int First, int Count)[3];
+	// three blend batches of world particles, then the same three of screen-space particles
+	private readonly (int First, int Count)[] ranges = new (int First, int Count)[6];
 	private Texture? atlasTexture;
 	private Material<ObjectUniformBuffer>? alphaMaterial;
 	private Material<ObjectUniformBuffer>? additiveMaterial;
 	private Material<ObjectUniformBuffer>? oneOneMaterial;
+	private Material<ObjectUniformBuffer>? screenAlphaMaterial;
+	private Material<ObjectUniformBuffer>? screenAdditiveMaterial;
+	private Material<ObjectUniformBuffer>? screenOneOneMaterial;
 	private DeviceBuffer? vertexBuffer;
 	private bool deleted;
 
@@ -69,6 +73,10 @@ public sealed class ParticleRenderer : Entity
 			alphaMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided );
 			additiveMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
 			oneOneMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepthWrite | MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend );
+			// screen-space quads sit at the template's z (word +0x52, 0 in every shipped screen-space template): in front of the scene
+			screenAlphaMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepth | MaterialFlags.DoubleSided );
+			screenAdditiveMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepth | MaterialFlags.DoubleSided | MaterialFlags.AdditiveBlend );
+			screenOneOneMaterial = Prepare( atlasTexture, MaterialFlags.DisableDepth | MaterialFlags.DoubleSided | MaterialFlags.OneOneBlend );
 		}
 		catch
 		{
@@ -119,21 +127,25 @@ public sealed class ParticleRenderer : Entity
 		var right = new SVector3( view.M11, view.M21, view.M31 );
 		var up = new SVector3( view.M12, view.M22, view.M32 );
 
+		var target = global::Global.Render.MultisampledFramebuffer;
+		var screenAspect = target.Width > 0 ? (float)target.Height / target.Width : 1f;
 		var vertexCount = 0;
-		for ( var batchIndex = 0; batchIndex < ranges.Length; batchIndex++ )
+		for ( var rangeIndex = 0; rangeIndex < ranges.Length; rangeIndex++ )
 		{
-			var batch = (Batch)batchIndex;
+			var batch = (Batch)(rangeIndex % 3);
+			var screenSpace = rangeIndex >= 3;
 			var first = vertexCount;
 			foreach ( var sprite in sprites )
 			{
-				if ( BatchOf( sprite ) != batch || !visibleEmitters.Contains( sprite.Emitter ) )
+				// screen-space emitters have no world bounds to cull by (the original leaves their bounds empty)
+				if ( BatchOf( sprite ) != batch || sprite.ScreenSpace != screenSpace || !screenSpace && !visibleEmitters.Contains( sprite.Emitter ) )
 					continue;
 				if ( vertexCount + VerticesPerQuad > vertices.Length )
 					break;
-				if ( AddQuad( sprite, batch, right, up, ref vertexCount ) )
+				if ( screenSpace ? AddScreenQuad( sprite, batch, screenAspect, ref vertexCount ) : AddQuad( sprite, batch, right, up, ref vertexCount ) )
 					DrawnParticles++;
 			}
-			ranges[(int)batch] = (first, vertexCount - first);
+			ranges[rangeIndex] = (first, vertexCount - first);
 		}
 		if ( vertexCount == 0 )
 			return;
@@ -150,7 +162,17 @@ public sealed class ParticleRenderer : Entity
 			Draw( commandList, additiveMaterial!, eye, ranges[1] );
 		if ( ranges[2].Count > 0 )
 			Draw( commandList, oneOneMaterial!, eye, ranges[2] );
+		// [APPROX:PTCL-909] the screen-space batches are part of this world pass, so the HUD and the advisor's image draw over them; the original's frame position of that draw list is not read
+		if ( ranges[3].Count > 0 )
+			Draw( commandList, screenAlphaMaterial!, eye, ranges[3], screenSpace: true );
+		if ( ranges[4].Count > 0 )
+			Draw( commandList, screenAdditiveMaterial!, eye, ranges[4], screenSpace: true );
+		if ( ranges[5].Count > 0 )
+			Draw( commandList, screenOneOneMaterial!, eye, ranges[5], screenSpace: true );
 	}
+
+	/// <summary>The screen-space draw count of the last frame (tests and smokes).</summary>
+	public int DrawnScreenParticles => (ranges[3].Count + ranges[4].Count + ranges[5].Count) / VerticesPerQuad;
 
 	/// <summary>False when all eight corners of the emitter's particle bounds lie outside one frustum plane.</summary>
 	private bool InView( ParticleEmitterBounds emitter, System.Numerics.Matrix4x4 viewProjection )
@@ -192,17 +214,7 @@ public sealed class ParticleRenderer : Entity
 		var across = (right * cos + up * sin) * halfWidth;
 		var vertical = (up * cos - right * sin) * halfHeight;
 
-		var colour = sprite.Colour;
-		var alpha = (int)(colour >> 24);
-		var red = (int)((colour >> 16) & 0xFF);
-		var green = (int)((colour >> 8) & 0xFF);
-		var blue = (int)(colour & 0xFF);
-		if ( batch == Batch.OneOne )
-		{
-			// one plus one adds the colour as is: the particle's alpha scales it instead of blending it
-			red = red * alpha / 255; green = green * alpha / 255; blue = blue * alpha / 255; alpha = 255;
-		}
-		var tint = new SVector3( red, green, blue + 256 * alpha );
+		var tint = Tint( sprite.Colour, batch );
 
 		Vertex Corner( SVector3 position, float u, float v ) => new( position, tint, new SVector2( u, v ) );
 		var topLeft = Corner( centre - across + vertical, found.U0, found.V0 );
@@ -214,13 +226,57 @@ public sealed class ParticleRenderer : Entity
 		return true;
 	}
 
-	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, SVector3 eye, (int First, int Count) range )
+	/// <summary>
+	/// A screen-space particle's quad, its vertices in clip space (drawn without the camera). The width gets the frame's pixel aspect times the
+	/// target's height / width, so a square frame stays square on the screen.
+	/// </summary>
+	// [APPROX:PTCL-904] the width factor of a screen-space quad is the frame record's float +8 (textured) or DAT_008BCBCC (untextured) in the original; OpenTPW uses the frame's pixel aspect times the target's height / width, which keeps a frame's pixels square
+	private bool AddScreenQuad( in ParticleSprite sprite, Batch batch, float screenAspect, ref int vertexCount )
+	{
+		var frame = sprite.FrameCount == 0 ? atlas.White : atlas.Find( sprite.SpriteCode, sprite.Frame );
+		if ( frame is not { } found )
+			return false;
+		var halfHeight = ParticleScreenSpace.HalfHeight( sprite.Size );
+		var halfWidth = halfHeight * screenAspect * (sprite.FrameCount == 0 || found.Height <= 0 ? UntexturedWidthFactor : (float)found.Width / found.Height);
+		if ( !(halfWidth > 0 && halfHeight > 0) )
+			return false;
+		var (a, b, c, d) = ParticleScreenSpace.Corners( ParticleScreenSpace.Position( sprite.X, sprite.Z ), halfWidth, halfHeight, sprite.Spin );
+		var tint = Tint( sprite.Colour, batch );
+		Vertex Corner( SVector2 screen, float u, float v )
+		{
+			var clip = ParticleScreenSpace.ToClip( screen );
+			return new( new SVector3( clip.X, clip.Y, 0f ), tint, new SVector2( u, v ) );
+		}
+		var topLeft = Corner( a, found.U0, found.V0 );
+		var topRight = Corner( b, found.U1, found.V0 );
+		var bottomRight = Corner( c, found.U1, found.V1 );
+		var bottomLeft = Corner( d, found.U0, found.V1 );
+		vertices[vertexCount++] = topLeft; vertices[vertexCount++] = topRight; vertices[vertexCount++] = bottomLeft;
+		vertices[vertexCount++] = topRight; vertices[vertexCount++] = bottomRight; vertices[vertexCount++] = bottomLeft;
+		return true;
+	}
+
+	private static SVector3 Tint( uint colour, Batch batch )
+	{
+		var alpha = (int)(colour >> 24);
+		var red = (int)((colour >> 16) & 0xFF);
+		var green = (int)((colour >> 8) & 0xFF);
+		var blue = (int)(colour & 0xFF);
+		if ( batch == Batch.OneOne )
+		{
+			// one plus one adds the colour as is: the particle's alpha scales it instead of blending it
+			red = red * alpha / 255; green = green * alpha / 255; blue = blue * alpha / 255; alpha = 255;
+		}
+		return new SVector3( red, green, blue + 256 * alpha );
+	}
+
+	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, SVector3 eye, (int First, int Count) range, bool screenSpace = false )
 	{
 		material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 		{
 			g_mModel = System.Numerics.Matrix4x4.Identity,
-			g_mView = Camera.ViewMatrix,
-			g_mProj = Camera.ProjMatrix,
+			g_mView = screenSpace ? System.Numerics.Matrix4x4.Identity : Camera.ViewMatrix,
+			g_mProj = screenSpace ? System.Numerics.Matrix4x4.Identity : Camera.ProjMatrix,
 			g_vCameraPos = eye,
 			g_flTime = Time.Now
 		} );
@@ -240,7 +296,10 @@ public sealed class ParticleRenderer : Entity
 		alphaMaterial?.ReleaseOwnedResources();
 		additiveMaterial?.ReleaseOwnedResources();
 		oneOneMaterial?.ReleaseOwnedResources();
-		alphaMaterial = additiveMaterial = oneOneMaterial = null;
+		screenAlphaMaterial?.ReleaseOwnedResources();
+		screenAdditiveMaterial?.ReleaseOwnedResources();
+		screenOneOneMaterial?.ReleaseOwnedResources();
+		alphaMaterial = additiveMaterial = oneOneMaterial = screenAlphaMaterial = screenAdditiveMaterial = screenOneOneMaterial = null;
 		atlasTexture?.ReleaseOwned();
 		atlasTexture = null;
 		var buffer = vertexBuffer;

@@ -22,7 +22,7 @@ public sealed class OriginalParkImport
 
 	private OriginalParkImport( MapFile map, SavePayloadLayout layout, SaveWorld world, IReadOnlyList<(int X, int Y)> pathCells,
 		IReadOnlyList<ImportedParkObject> placedObjects, IReadOnlyList<SaveObject> fixedItems, IReadOnlyList<SaveObject> unresolvedObjects,
-		IReadOnlyList<SaveAttraction> attractions, SaveEconomyRecords economy, IReadOnlyList<SaveStaff> staff, SaveStaffHq? staffHq,
+		IReadOnlyList<SaveAttraction> attractions, SaveEconomyRecords economy, IReadOnlyList<SaveStaff> staff, IReadOnlyList<SaveGuest> guests, SaveStaffHq? staffHq,
 		SaveAdvisorController? advisor, SaveResearchLab? researchLab, SaveCoasterBlock coasters )
 		: this( map, layout, world.Cells, pathCells, placedObjects, fixedItems, unresolvedObjects )
 	{
@@ -30,6 +30,7 @@ public sealed class OriginalParkImport
 		Attractions = attractions;
 		this.economy = economy;
 		Staff = staff;
+		Guests = guests;
 		StaffHq = staffHq;
 		Advisor = advisor;
 		ResearchLab = researchLab;
@@ -61,6 +62,7 @@ public sealed class OriginalParkImport
 		this.cells = cells;
 		Attractions = Array.Empty<SaveAttraction>();
 		Staff = Array.Empty<SaveStaff>();
+		Guests = Array.Empty<SaveGuest>();
 		PathCells = pathCells;
 		PlacedObjects = placedObjects;
 		FixedItems = fixedItems;
@@ -76,10 +78,12 @@ public sealed class OriginalParkImport
 	public SaveEconomyRecords Economy => economy ?? throw new InvalidOperationException( "The Theme Park Inc viewer does not decode save economy state." );
 	/// <summary>Staff things (models 4–8) in list order.</summary>
 	public IReadOnlyList<SaveStaff> Staff { get; }
+	/// <summary>The saved guests (thing model 1) in thing-list order.</summary>
+	public IReadOnlyList<SaveGuest> Guests { get; }
 	public SaveStaffHq? StaffHq { get; }
 	public SaveAdvisorController? Advisor { get; }
 	public SaveResearchLab? ResearchLab { get; }
-	public int GuestCount => World.OfModel( SaveThingModel.Guest ).Count();
+	public int GuestCount => Guests.Count;
 	public IReadOnlyList<(int X, int Y)> PathCells { get; }
 	public IReadOnlyList<ImportedParkObject> PlacedObjects { get; }
 	public IReadOnlyList<SaveObject> FixedItems { get; }
@@ -210,6 +214,7 @@ public sealed class OriginalParkImport
 		var span = payload.Span;
 		var staff = world.Things.Where( thing => thing.Model is >= SaveThingModel.Mechanic and <= SaveThingModel.Researcher ).ToList()
 			.Select( thing => SaveStaff.Read( payload.Span, thing ) ).ToList();
+		var guests = world.OfModel( SaveThingModel.Guest ).ToList().Select( thing => SaveGuest.Read( payload.Span, thing ) ).ToList();
 		var hq = world.Variables.StaffHq == 0 ? null : SaveStaffHq.Read( span, world.Find( world.Variables.StaffHq )!.Value );
 		var advisor = world.OfModel( SaveThingModel.AdvisorController ).Any() ? SaveAdvisorController.Read( span, world.Single( SaveThingModel.AdvisorController ) ) : null;
 		var lab = world.Variables.ResearchLab == 0 ? null : SaveResearchLab.Read( span, world.Find( world.Variables.ResearchLab )!.Value );
@@ -217,7 +222,7 @@ public sealed class OriginalParkImport
 		// contract refuses the save instead of importing a guessed track.
 		var coasters = SaveCoasterBlock.Parse( span, layout, map.CellCountX, map.CellCountY );
 		return new OriginalParkImport( map, layout, world, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly(),
-			SaveAttractionList.Parse( span, world ), SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), hq, advisor, lab, coasters );
+			SaveAttractionList.Parse( span, world ), SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters );
 	}
 
 	/// <summary>

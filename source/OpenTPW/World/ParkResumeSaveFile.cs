@@ -518,6 +518,11 @@ internal static class ParkResumeSaveFile
 			Require( actorIds.SetEquals( membersById.Keys ),
 				$"the staff world holds {actorIds.Count} actors, but the economy employs {membersById.Count}" );
 		}
+		// A staff walk of the original kind keeps the stamp counter of its set-up, as a guest's does (WALK-007).
+		if ( snapshot.Layout?.Cells is { } layoutCells )
+			foreach ( var member in snapshot.Economy.Staff!.Members! )
+				Require( member.WorldState?.Navigation?.OriginalWalk is not { } staffWalk || staffWalk.Stamp <= layoutCells.StampCounter,
+					$"staff {member.Id} walk stamp {member.WorldState?.Navigation?.OriginalWalk?.Stamp} is above the layout's stamp counter {layoutCells.StampCounter}" );
 		if ( snapshot.Advisor is { } advisor )
 		{
 			Require( advisor.Controller != null, "the advisor snapshot has no controller state" );
@@ -1034,6 +1039,8 @@ internal static class ParkResumeSaveFile
 			Require( float.IsFinite( ride.SpeedCap ) && ride.SpeedCap >= 0, $"coaster {ride.AttractionId}'s speed cap {ride.SpeedCap} is negative or not finite" );
 			Require( ride.LeadCarCoordinate is null || (float.IsFinite( ride.LeadCarCoordinate.Value ) && ride.LeadCarCoordinate >= 0),
 				$"coaster {ride.AttractionId}'s lead car coordinate {ride.LeadCarCoordinate} is negative or not finite" );
+			Require( ride.KnotPass is null || ride.KnotPass == CoasterRide.KnotPassVersion,
+				$"coaster {ride.AttractionId} was saved on knot pass {ride.KnotPass}, this version builds {CoasterRide.KnotPassVersion}" );
 			Require( ride.PaidCost >= 0, $"coaster {ride.AttractionId} paid {ride.PaidCost} for its track" );
 			Require( double.IsFinite( ride.TimeSeconds ) && ride.TimeSeconds >= 0, $"coaster {ride.AttractionId}'s clock {ride.TimeSeconds}s is negative or not finite" );
 			Require( ride.LastDispatch is null || double.IsFinite( ride.LastDispatch.Value ),

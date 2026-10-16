@@ -82,6 +82,12 @@ public static class ParkSaveFile
 		public required ResearchData Research { get; init; }
 		public required ObjectivesData Objectives { get; init; }
 		public required Dictionary<string, long> Counters { get; init; }
+		/// <summary>The mechanic HQ's cursor into the object list (<see cref="ParkEconomy.MechanicCursor"/>); absent in older saves and while 0.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int MechanicCursor { get; init; }
+		/// <summary>The park's perception statistics, the categories that hold a value; absent in older saves and while none does.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public List<PriceStatisticData>? PriceStatistics { get; init; }
 		/// <summary>World seed and the guest, script and sound streams (absent in saves written before world seeds: those streams are not restored).</summary>
 		// [EXT:legacy-economy-save] this legacy economy-only park save (Level.SavePark/LoadPark, used by DeterminismTests) persists the economy and every random stream, not guests, queues or object script state, and a load keeps the running guests and scripts; the player's save (GameFlow.SaveCurrentPark -> ParkResumeSaveFile) already stores the guests with their queue bookkeeping, the script world and each object runtime, the advisor, the coasters and the tracks
 		public WorldData? World { get; init; }
@@ -153,6 +159,9 @@ public static class ParkSaveFile
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 		public bool? ScriptStateBroken { get; init; }
 		public required int MechanicId { get; init; }
+		/// <summary>The turn the claim was taken; absent in older saves and while 0 (an older claim then lapses on the first look, as one taken at turn 0).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long ClaimTurn { get; init; }
 		/// <summary>The player's call for a mechanic (<c>mRequestedService</c>); absent: none.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
 		public bool MaintenanceRequested { get; init; }
@@ -162,6 +171,27 @@ public static class ParkSaveFile
 		/// <summary>Guests that have used the object; absent in older saves, which then use this and last month's customers.</summary>
 		public long? TimesUsed { get; init; }
 		public required long[] Statistics { get; init; }
+		/// <summary>Guests that walked away from the price (mNumWalkAways); absent in older saves and when 0.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long WalkAways { get; init; }
+		/// <summary>Today's walk-aways; absent in older saves and when 0.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long WalkAwaysToday { get; init; }
+		/// <summary>
+		/// The walk-aways of the last days, oldest first; absent in older saves and while every day held none (only sums read the ring, the advisor's
+		/// per-ShopType test 0x004CAAE0, so days without a walk-away are dropped rather than saved).
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public long[]? WalkAwayDays { get; init; }
+	}
+
+	/// <summary>One category of the park's perception statistics (<see cref="ParkPriceStatistics"/>).</summary>
+	public sealed class PriceStatisticData
+	{
+		public required int Category { get; init; }
+		public required int Head { get; init; }
+		public required bool Full { get; init; }
+		public required byte[] Values { get; init; }
 	}
 
 	/// <summary>
@@ -210,6 +240,15 @@ public static class ParkSaveFile
 		public required int Id { get; init; }
 		public required StaffType Type { get; init; }
 		public required int NameIndex { get; init; }
+		/// <summary>A name kept from an original save (<see cref="StaffMember.Name"/>); absent for a member named by its name index.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public string? Name { get; init; }
+		/// <summary>The point (1/256 cell, x and y) an original-save member still walks on to once a world places it (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? ResumeDestination { get; init; }
+		/// <summary>The turn an original save recorded for the claim this member's job takes again once a world places it (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public long? ResumeClaimTurn { get; init; }
 		public required int Grade { get; init; }
 		public required int TrainingPoints { get; init; }
 		public required long HiredTick { get; init; }
@@ -356,6 +395,15 @@ public static class ParkSaveFile
 		public required int PreviousRemaining { get; init; }
 		public required bool OffGrid { get; init; }
 		public required int Reroutes { get; init; }
+		/// <summary>The fields of a walk of the original kind (the tp.exe search and steering step); null for a route walk and in older saves, which restore as route walks.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public OriginalWalkSnapshot? OriginalWalk { get; init; }
+		/// <summary>All five waypoint slots of an original walk as x, y pairs (a failed set-up keeps the old ones); null for a route walk.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? Waypoints { get; init; }
+		/// <summary>The walk mask (staff +0x188); 0, the default, is not written.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int Mask { get; init; }
 
 		private static int[] Pairs( IEnumerable<(int X, int Y)> cells ) => cells.SelectMany( cell => new[] { cell.X, cell.Y } ).ToArray();
 
@@ -376,12 +424,20 @@ public static class ParkSaveFile
 			History = navigation.History,
 			PreviousRemaining = navigation.PreviousRemaining,
 			OffGrid = navigation.OffGrid,
-			Reroutes = navigation.Reroutes
+			Reroutes = navigation.Reroutes,
+			OriginalWalk = navigation.CaptureOriginal(),
+			Waypoints = navigation.Original ? Pairs( navigation.Buffer ) : null,
+			Mask = navigation.Mask
 		};
 
 		internal bool IsValid => Position is { Length: 2 } && Velocity is { Length: 2 } && Target is { Length: 2 } && Route is { } route && route.Length % 2 == 0
 			&& AlsoOpen is { } open && open.Length % 2 == 0 && Count is >= 0 and <= GuestNavigation.BufferedWaypoints && Cursor >= 0
-			&& Cursor <= route.Length / 2 - Count && Index >= 0 && (Index < Count || Count == 0);
+			&& Index >= 0 && (Index < Count || Count == 0) && Mask is >= 0 and <= 2
+			&& (OriginalWalk is { } walk
+				? Waypoints is { Length: 2 * GuestNavigation.BufferedWaypoints } waypoints && waypoints.All( value => value is >= 0 and < ParkLitter.MapSize )
+					&& walk.PathCount is >= 0 and <= 0xFC && Count == Math.Min( walk.PathCount, GuestNavigation.BufferedWaypoints ) && !OffGrid
+					&& walk.Stamp >= 0 && walk.Total >= 0 && walk.Ahead >= 0 && walk.Beyond >= 0 && walk.Progress <= Fixed16.One && Cursor <= route.Length / 2
+				: Waypoints is null && Cursor <= route.Length / 2 - Count);
 
 		internal GuestNavigation Restore()
 		{
@@ -391,8 +447,13 @@ public static class ParkSaveFile
 				Arrived = Arrived, Index = Index, Count = Count, Route = Cells( Route ), Cursor = Cursor, WalkCrossings = WalkCrossings,
 				AlsoOpen = Cells( AlsoOpen ), History = History, PreviousRemaining = PreviousRemaining, OffGrid = OffGrid, Reroutes = Reroutes
 			};
-			for ( var index = 0; index < Count; index++ )
-				navigation.Buffer[index] = navigation.Route[Cursor + index];
+			navigation.RestoreOriginal( OriginalWalk );
+			navigation.Mask = Mask;
+			if ( Waypoints is { } waypoints )
+				Cells( waypoints ).AsSpan().CopyTo( navigation.Buffer );
+			else
+				for ( var index = 0; index < Count; index++ )
+					navigation.Buffer[index] = navigation.Route[Cursor + index];
 			return navigation;
 		}
 	}
@@ -528,10 +589,15 @@ public static class ParkSaveFile
 				IsBrokenDown = item.IsBrokenDown,
 				ScriptStateBroken = item.ScriptStateBroken,
 				MechanicId = item.MechanicId,
+				// the releases clear the claim word and leave its turn: a turn belongs to a claim only
+				ClaimTurn = item.MechanicId == 0 ? 0 : item.ClaimTurn,
 				MaintenanceRequested = item.MaintenanceRequested,
 				FireworksSpent = item.FireworksSpent,
 				TimesUsed = item.TimesUsed,
-				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit }
+				Statistics = new[] { item.CustomersThisMonth, item.CustomersLastMonth, item.TakingsThisMonth, item.TakingsLastMonth, item.CostsThisMonth, item.CostsLastMonth, item.WinnersThisMonth, item.WinnersLastMonth, item.TotalProfit },
+				WalkAways = item.WalkAways,
+				WalkAwaysToday = item.WalkAwaysToday,
+				WalkAwayDays = item.WalkAwayDays.Any( day => day != 0 ) ? item.WalkAwayDays.ToArray() : null
 			} ).ToList(),
 			Loans = park.Loans.Select( loan => new LoanData
 			{
@@ -554,6 +620,9 @@ public static class ParkSaveFile
 					Id = member.Id,
 					Type = member.Type,
 					NameIndex = member.NameIndex,
+					Name = member.Name,
+					ResumeDestination = member.ResumeDestination is { } resume ? new[] { resume.X, resume.Y } : null,
+					ResumeClaimTurn = member.ResumeClaimTurn,
 					Grade = member.Grade,
 					TrainingPoints = member.TrainingPoints,
 					HiredTick = member.HiredTick,
@@ -594,6 +663,9 @@ public static class ParkSaveFile
 				GoldenTickets = park.Objectives.GoldenTickets.OrderBy( kind => kind ).ToList()
 			},
 			Counters = new Dictionary<string, long>( park.Counters.Values ),
+			MechanicCursor = park.MechanicCursor,
+			PriceStatistics = park.PriceStatistics.Capture() is { Count: > 0 } rings
+				? rings.Select( ring => new PriceStatisticData { Category = ring.Category, Head = ring.Head, Full = ring.Full, Values = ring.Values } ).ToList() : null,
 			World = world == null ? null : new WorldData { Seed = world.Seed, GuestRandom = world.GuestRandom, ScriptRandom = world.ScriptRandom, SoundSeed = world.SoundSeed }
 		};
 	}
@@ -677,6 +749,9 @@ public static class ParkSaveFile
 			// the quality setter keeps a byte (0x4e2190); the ingredient amount is a raw word, as the original loader reads it (0x4dcdc1)
 			Require( item.QualityOfGoods is null or >= 0 and <= 255, $"object {item.Id} quality of goods" );
 			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
+			Require( item.ClaimTurn >= 0 && item.ClaimTurn <= ParkCalendar.Turn( data.Tick ) && (item.ClaimTurn == 0 || item.MechanicId != 0), $"object {item.Id} claim turn" );
+			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
+				&& (item.WalkAwayDays is null || item.WalkAwayDays.Length <= ParkEconomy.WalkAwayHistoryDays && item.WalkAwayDays.All( day => day >= 0 )), $"object {item.Id} walk-aways" );
 		}
 		var staffIds = new HashSet<int>();
 		foreach ( var member in data.Staff.Members )
@@ -684,6 +759,9 @@ public static class ParkSaveFile
 			Require( member.Id > 0 && member.Id < data.Staff.NextId && staffIds.Add( member.Id ), $"staff id {member.Id}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
+			Require( member.Name is null || (member.Name.Length is > 0 and <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
+			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
+			Require( member.ResumeClaimTurn is not { } resumeTurn || resumeTurn >= 0 && resumeTurn <= ParkCalendar.Turn( data.Tick ), $"staff {member.Id} resume claim turn" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
 			Require( member.WorldState is not { } world || (StaffWorldData.Fits( member.Type, world.Job ) && world.PatrolArea is { Length: 4 } area
 				&& area[0] is >= 0 and < ParkLitter.MapSize && area[2] >= area[0] && area[2] < ParkLitter.MapSize && area[1] is >= 0 and < ParkLitter.MapSize
@@ -691,8 +769,8 @@ public static class ParkSaveFile
 				&& float.IsFinite( world.SmoothedSpeed ) && (world.ToiletId == 0 || member.Type == StaffType.Handyman && ids.Contains( world.ToiletId ))
 				&& (world.TargetGuestId == 0 || member.Type == StaffType.Guard && world.TargetGuestId > 0)
 				&& (world.EffectCell is null || ParkEconomy.EffectRow( member.Type ) != null && world.EffectCell is [>= 0 and < ParkLitter.MapSize, >= 0 and < ParkLitter.MapSize])
-				&& (world.RideId == 0 || member.Type == StaffType.Mechanic && ids.Contains( world.RideId ) && world.Job is StaffJob.ToRide or StaffJob.Repairing)
-				&& (world.RestAreaId == 0 || ids.Contains( world.RestAreaId ) && world.Job is StaffJob.ToRestArea or StaffJob.Resting)
+				&& (world.RideId == 0 || member.Type == StaffType.Mechanic && ids.Contains( world.RideId ))
+				&& (world.RestAreaId == 0 || ids.Contains( world.RestAreaId ) && world.Job is StaffJob.ToRestArea or StaffJob.Resting or StaffJob.Idle)
 				&& (world.OffGridLeg is null || world.OffGridLeg.Length % 4 == 0 && world.OffGridLeg.Chunk( 4 ).All( point =>
 					point[0] is >= 0 and < ParkLitter.MapSize && point[1] is >= 0 and < ParkLitter.MapSize && point[2] is >= 0 and < 256 && point[3] is >= 0 and < 256 ))
 				&& (world.Navigation is null || world.Navigation.IsValid)), $"staff {member.Id} world state" );
@@ -717,6 +795,9 @@ public static class ParkSaveFile
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
 		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( data.MechanicCursor >= 0, "mechanic cursor" );
+		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
+			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
 		Require( data.AvailableLoanOffers == null || data.AvailableLoanOffers.Distinct().Count() == data.AvailableLoanOffers.Count && data.AvailableLoanOffers.All( index => index >= 0 ), "available loan offers" );
 		if ( data.AnalyserCaches is { } caches )
 		{
@@ -767,6 +848,7 @@ public static class ParkSaveFile
 				IsBrokenDown = item.IsBrokenDown,
 				ScriptStateBroken = item.ScriptStateBroken,
 				MechanicId = item.MechanicId,
+				ClaimTurn = item.ClaimTurn,
 				MaintenanceRequested = item.MaintenanceRequested,
 				FireworksSpent = item.FireworksSpent,
 				TimesUsed = item.TimesUsed ?? item.Statistics[0] + item.Statistics[1],
@@ -778,7 +860,10 @@ public static class ParkSaveFile
 				CostsLastMonth = item.Statistics[5],
 				WinnersThisMonth = item.Statistics[6],
 				WinnersLastMonth = item.Statistics[7],
-				TotalProfit = item.Statistics[8]
+				TotalProfit = item.Statistics[8],
+				WalkAways = item.WalkAways,
+				WalkAwaysToday = item.WalkAwaysToday,
+				WalkAwayDays = item.WalkAwayDays?.ToList() ?? new()
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
 		if ( data.AnalyserCaches is { } caches )
@@ -801,6 +886,9 @@ public static class ParkSaveFile
 			Id = member.Id,
 			Type = member.Type,
 			NameIndex = member.NameIndex,
+			Name = member.Name,
+			ResumeDestination = member.ResumeDestination is [var resumeX, var resumeY] ? (resumeX, resumeY) : null,
+			ResumeClaimTurn = member.ResumeClaimTurn,
 			Grade = member.Grade,
 			TrainingPoints = member.TrainingPoints,
 			HiredTick = member.HiredTick,
@@ -830,6 +918,9 @@ public static class ParkSaveFile
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets );
 		park.Counters.Restore( data.Counters );
+		park.MechanicCursor = data.MechanicCursor;
+		if ( data.PriceStatistics is { } statistics )
+			park.PriceStatistics.Restore( statistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() );
 		return park;
 	}
 

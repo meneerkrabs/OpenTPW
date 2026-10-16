@@ -296,13 +296,15 @@ public class TrackCircuitTests
 	// ---- Bridges -------------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void StraightsOverWaterBecomeBridgeVariantsByTheirNeighbours()
+	public void StraightsOverPathsBecomeBridgeVariantsByTheirNeighbours()
 	{
-		// a longer loop: the top row (14, 12) .. (6, 12) holds the straights (12, 12), (10, 12) and (8, 12) between two corners
+		// a longer loop: the top row (14, 12) .. (6, 12) holds the straights (12, 12), (10, 12) and (8, 12) between two corners;
+		// their cells hold paths, which the original keeps under the track and bridges over (tp.exe 0x538A92: map type 1 or 3)
 		var rig = new Rig();
+		var paths = new GuestPathGrid( rig.Cells );
 		foreach ( var tile in new[] { (12, 12), (10, 12), (8, 12) } )
 			foreach ( var cell in TrackStation.TileCellsOf( tile.Item1, tile.Item2 ) )
-				rig.Terrain.Terrain[cell] = OriginalPlacementResult.Water;
+				paths.SetPath( cell.X, cell.Y, true );
 		Assert.IsTrue( rig.Writer.Commit( (14, 10), (14, 12) ).Completed );
 		Assert.IsTrue( rig.Writer.Commit( (14, 12), (6, 12) ).Completed );
 		Assert.IsTrue( rig.Writer.Commit( (6, 12), (6, 10) ).Completed );
@@ -319,17 +321,18 @@ public class TrackCircuitTests
 		Assert.AreEqual( 17, tracks.Get( 8, 12 ).Piece, "H_D straight (2 + 15)" );
 		Assert.AreEqual( 270, tracks.Get( 12, 12 ).Rotation, "the bridge straight turns with the flow like a plain one" );
 		Assert.AreEqual( 3, tracks.Get( 14, 12 ).Piece, "a corner is never a bridge" );
-		// a straight with no bridged neighbour is the plain hump (piece 11) and one over cleared paths counts as a bridge too
+		// water under a straight is no bridge (inside the park water cells are map type 0, tp.exe 0x536548); a straight with no
+		// bridged neighbour over a cleared path is the plain hump (piece 11)
 		var lone = new Rig();
 		foreach ( var cell in TrackStation.TileCellsOf( 24, 24 ) )
 			lone.Terrain.Terrain[cell] = OriginalPlacementResult.Water;
 		Assert.IsTrue( lone.Writer.Commit( (22, 24), (26, 24) ).Completed );
-		Assert.AreEqual( 11, lone.Cells.Tracks.Get( 24, 24 ).Piece, "H straight" );
-		Assert.AreEqual( TrackCell.FlagBridge, lone.Cells.Tracks.Get( 24, 24 ).Flags & TrackCell.BridgeMask );
+		Assert.AreEqual( 0, lone.Cells.Tracks.Get( 24, 24 ).Flags & TrackCell.BridgeMask, "a straight over water stays on the water" );
 		var grid = new GuestPathGrid( lone.Cells );
 		grid.SetPath( 30, 30, true );
 		Assert.IsTrue( lone.Writer.Commit( (28, 30), (32, 30) ).Completed );
-		Assert.AreEqual( 11, lone.Cells.Tracks.Get( 30, 30 ).Piece, "the middle tile replaced a path cell: a bridge straight" );
+		Assert.AreEqual( 11, lone.Cells.Tracks.Get( 30, 30 ).Piece, "the middle tile replaced a path cell: a bridge straight (H)" );
+		Assert.AreEqual( TrackCell.FlagBridge, lone.Cells.Tracks.Get( 30, 30 ).Flags & TrackCell.BridgeMask );
 		Assert.AreEqual( 1, lone.Cells.Tracks.Get( 28, 30 ).Piece, "a stub end stays the plain end piece" );
 	}
 

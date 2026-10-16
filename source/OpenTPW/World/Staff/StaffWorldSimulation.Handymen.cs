@@ -36,7 +36,7 @@ public sealed partial class StaffWorldSimulation
 	public IGuardGuests? Guests { get; set; }
 
 	// [BIN:TPW-EXE:0x004D73C0 handyman update] once per park turn after the pre-update 0x004D7060 (the speed 0x004FA870 and, while idle, a litter scan every IdleDuration turns): 0 idle until the turn passes +0x200 + IdleDuration[grade] (0x00785330 + 16 × grade); 1 patrol: one walk step, the walk drain while walking (0x005066A0), the job search on arrival or stuck; 8 to litter (0x004D7580); 9 sweep (0x004D76A0); 10 to a toilet (0x004D7790); 11 clean until the turn passes +0x214 + WorkDuration[grade] (0x004DFD80, 0x004DF390); every other state runs the generic staff handler
-	// [APPROX:ECON-022] all staff in a level walk and work as the original's state machines (WANDER-plan §4, StaffWorldSimulation), with the shared walks to a rest area and to the strike area, but they step without the steering the original's shared walk step applies to staff as to guests (0x004FA2A0 → 0x0050F3B0 over the global list 0x007CF078); a striker walks out along arrival lane A (OpenTPW's path grid ends at the park entrance) and is not sent after a prankster until he is back on the paths; a resting member stays on the map, where the original frees his model on arrival (0x005054D0 state 3 → 0x004D4170) and recreates it when the rest ends (0x00506D10); a sold rest area ends the walk to it or the rest in it, where the original (removal message 10 from 0x004DD0A0, handled by 0x00504C70) also sends a resting member to the nearest other rest area; a toilet claim ends when the walk to it fails, and a mechanic's claim when his walk fails or the ride no longer needs him, where the original's claim (0x004E0220) lapses only once 100 turns have passed and the claimant no longer targets the object; a toilet's, bin's or rest area's access cell is its join or entrance cell or first path neighbour; a mechanic's finder scans the objects from the first, where the original keeps one cursor on the mechanic HQ (game +0x1DA71A, 0x004DAA90) that starts each search one object after the previous start, so the search after one that started at the last object finds no ride; an entertainer's performance has no animation (the original draws one, 0x004D46D0) and the guests do not turn to watch; the guard list runs in hire order, where the original's (game +0x1DA744, next +0x210) is head-inserted at hire (0x004D5DE0 → 0x00519AA0), so the newest guard wins a tie; a prank reaches the guards at once; a picked-up entertainer's or guard's row stays on the cell he was lifted from; a guard carries a caught guest to the park entrance when the ticket booth is no path cell, where the original routes only to the booth gate cell, twice (0x004D6790 → 0x004D8610), and otherwise sets the guest down (0x004FEB50); a headless economy without a world keeps its own handyman dispatch: the first unclaimed littered cell in the finder's order, park-wide, else the dirtiest toilet, timed from the dispatch — evidence needed: the +0x36 access-cell writer, the bus delivery time of a prank (0x0050B550), the guests' reaction to a performance, the animation counts (0x00541FA0 and the fix animations) and the contents of the steering list (filled at run time)
+	// [APPROX:ECON-022] all staff in a level walk and work as the original's state machines (WANDER-plan §4, StaffWorldSimulation) on the guests' walk (the route search, the steering step 0x004FA2A0 → 0x0050F3B0 with avoid_walls, follow_path and separation, the walk mask +0x188), with the shared walks to a rest area and to the strike area; a striker walks out along arrival lane A (OpenTPW's path grid ends at the park entrance) and is not sent after a prankster until he is back on the paths; separation meets a cell's guests in OpenTPW's cell lists and then the staff on it in member order, where the original walks the cell's head-inserted thing list (0x0050B6A0); the stranded stamp the wander sets (+0x198, 0x004FA670) and SetDest's quick failure while the cells around stay unchanged (0x004FA770) are not kept, as for the guests; the toilet, rest-area and ride searches take the objects newest first by OpenTPW's object id, where the original's list (game +0x1DA746) holds them in placement order (head insertion 0x00519D80) and thing ids are reused slots, and the order a load from an original save gives is not traced; a toilet's, bin's or rest area's access cell is its join or entrance cell or first path neighbour; an entertainer's performance has no animation (the original draws one, 0x004D46D0) and the guests do not turn to watch; the guard list runs in hire order, where the original's (game +0x1DA744, next +0x210) is head-inserted at hire (0x004D5DE0 → 0x00519AA0), so the newest guard wins a tie; a picked-up entertainer's or guard's row stays on the cell he was lifted from; a guard carries a caught guest to the park entrance when the ticket booth is no path cell, where the original routes only to the booth gate cell, twice (0x004D6790 → 0x004D8610), and otherwise sets the guest down (0x004FEB50); the mechanics' advice 0x46 (on the way to a ride) is not posted (0x004DA672); a headless economy without a world keeps its own handyman dispatch: the first unclaimed littered cell in the finder's order, park-wide, else the dirtiest toilet, timed from the dispatch — evidence needed: the +0x36 access-cell writer, the guests' reaction to a performance and the animation counts (0x00541FA0 and the fix animations)
 	// [BIN:TPW-EXE:0x0050B360 staff update] each staff thing in list order: the type's pre-update, then its state handler (4 mechanic 0x00505490 / 0x004DA490, 5 handyman 0x004D7060 / 0x004D73C0, 6 entertainer 0x004D4660 / 0x004D4810, 7 guard 0x004D6360 / 0x004D6410, 8 researcher 0x00502960 / 0x005029F0)
 	public void UpdateStaff( ParkEconomy economy, long turn )
 	{
@@ -44,6 +44,9 @@ public sealed partial class StaffWorldSimulation
 		if ( voices.Count > MaxQueuedVoices )
 			voices.RemoveRange( 0, voices.Count - MaxQueuedVoices );
 		Synchronize();
+		// members loaded from an original save walk on to their saved destination and take back the claims of their jobs before any member updates
+		foreach ( var member in economy.Staff.Members.Where( member => member.ResumeDestination != null && member.Navigation == null && economy.DrivenByWorld( member ) ).ToList() )
+			Resume( economy, member );
 		foreach ( var member in economy.Staff.Members.Where( economy.DrivenByWorld ).ToList() )
 		{
 			var placed = member.Navigation == null;
@@ -113,6 +116,40 @@ public sealed partial class StaffWorldSimulation
 			member.CellY = navigation.Y / (float)Fixed16.One;
 		}
 		CountRestingStaff( economy );
+	}
+
+	/// <summary>
+	/// Places a member loaded from an original save: its walk goes on to the saved destination (<see cref="StaffMember.ResumeDestination"/>) and its job
+	/// claims the ride or toilet it works on again (the attraction's <c>mAssignedStaffMember</c>, +0x5E). A destination no route reaches leaves the member
+	/// where it stands, as the original's loader does when it cannot route again ("Couldn't renav to my accurate dest", <c>0x004F9407</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F8B10 person serializer] after the person is read, 0x004FA5F0 routes it to (mAccurateDestX, mAccurateDestY) and only logs a failure
+	private void Resume( ParkEconomy economy, StaffMember member )
+	{
+		var destination = member.ResumeDestination!.Value;
+		member.ResumeDestination = null;
+		// the loaded member keeps its saved base speed; Place sets a new member's
+		var baseSpeed = member.BaseSpeed;
+		if ( !Place( member ) )
+			return;
+		member.BaseSpeed = baseSpeed;
+		var cell = (destination.X >> 8, destination.Y >> 8);
+		if ( grid.InBounds( cell.Item1, cell.Item2 ) )
+			Route( member, cell, destination.X & 0xFF, destination.Y & 0xFF );
+		var claimed = member.Job switch
+		{
+			StaffJob.ToRide or StaffJob.Repairing => member.RideId,
+			StaffJob.ToToilet or StaffJob.Cleaning => member.ToiletId,
+			_ => 0
+		};
+		// the claim is taken again with the turn the save recorded (0x004E01F0), the current turn when it recorded none
+		if ( claimed != 0 && economy.TryGetObject( claimed, out var item ) && item.MechanicId == 0 )
+		{
+			economy.Claim( item, member );
+			if ( member.ResumeClaimTurn is { } claimTurn )
+				item.ClaimTurn = claimTurn;
+		}
+		member.ResumeClaimTurn = null;
 	}
 
 	/// <summary>The type's search, run when a member is set down or ends a rest (0x00506D10 dispatches by type: 5 0x004D7100, 6 0x004D46D0, 7 0x004D63D0, 8 0x00502C70).</summary>
@@ -210,16 +247,18 @@ public sealed partial class StaffWorldSimulation
 				member.LitterCell = null;
 				break;
 			case StaffJob.ToToilet:
+				// [BIN:TPW-EXE:0x004D7790 to a toilet] the walk step: held (2) or arrived anywhere but the toilet's access cell +0x36, or with its claim
+				// (0x004E0220) no longer his, sets state 0; +0x21A keeps the toilet, so his claim holds while he targets it and lapses 100 turns after it
+				// was taken once his next search moves +0x21A on
 				switch ( Walk( member, maxSpeed, maxForce ) )
 				{
 					case WalkResult.Walking:
 						return;
 					case WalkResult.Arrived when Toilets?.Invoke().FirstOrDefault( site => site.Id == member.ToiletId ) is { } site && site.Access == cell
-						&& economy.TryGetObject( member.ToiletId, out var toilet ) && toilet.MechanicId == member.Id:
+						&& economy.TryGetObject( member.ToiletId, out var toilet ) && economy.Claimant( toilet ) == member.Id:
 						SetJob( economy, member, StaffJob.Cleaning, turn );
 						return;
 				}
-				ReleaseToilet( economy, member );
 				SetJob( economy, member, StaffJob.Idle, turn );
 				return;
 			case StaffJob.Cleaning:
@@ -258,14 +297,19 @@ public sealed partial class StaffWorldSimulation
 				}
 				member.LitterCell = null;
 			}
-			else if ( FindToilet( economy, member, cell ) is { } toilet )
+			else
 			{
-				member.ToiletId = toilet.Id;
-				if ( economy.TryGetObject( toilet.Id, out var state ) )
-					state.MechanicId = member.Id;
-				Route( member, toilet.Access, GuestWander.CentreByte, GuestWander.CentreByte );
-				SetJob( economy, member, StaffJob.ToToilet, turn );
-				return;
+				// the toilet search's result is the handyman's target +0x21A, 0 when it finds none
+				var toilet = FindToilet( economy, member, cell );
+				member.ToiletId = toilet?.Id ?? 0;
+				if ( toilet is { } found )
+				{
+					if ( economy.TryGetObject( found.Id, out var state ) )
+						economy.Claim( state, member );
+					Route( member, found.Access, GuestWander.CentreByte, GuestWander.CentreByte );
+					SetJob( economy, member, StaffJob.ToToilet, turn );
+					return;
+				}
 			}
 		}
 		SetJob( economy, member, Patrol( economy, member, cell ) ? StaffJob.Patrol : StaffJob.Idle, turn );
@@ -295,7 +339,7 @@ public sealed partial class StaffWorldSimulation
 	}
 
 	/// <summary>
-	/// The toilet search (tp.exe <c>0x004D7880</c>): the relief objects in list order that nobody else has claimed, by squared distance from the
+	/// The toilet search (tp.exe <c>0x004D7880</c>): the relief objects in list order (newest first) that nobody else has claimed, by squared distance from the
 	/// handyman's cell to the object's; a dirty one (gauge byte below 25) within DetectionRange² is taken whatever the best so far, when a route
 	/// reaches its access cell, so the last such one wins.
 	/// </summary>
@@ -309,7 +353,7 @@ public sealed partial class StaffWorldSimulation
 		var best = uint.MaxValue;
 		foreach ( var toilet in economy.Toilets() )
 		{
-			if ( toilet.MechanicId != 0 && toilet.MechanicId != member.Id || sites.FirstOrDefault( item => item.Id == toilet.Id ) is not { Id: > 0 } site )
+			if ( economy.Claimant( toilet ) is var claimant && claimant != 0 && claimant != member.Id || sites.FirstOrDefault( item => item.Id == toilet.Id ) is not { Id: > 0 } site )
 				continue;
 			var dx = site.Cell.X - cell.X;
 			var dy = site.Cell.Y - cell.Y;
@@ -320,13 +364,6 @@ public sealed partial class StaffWorldSimulation
 				(found, best) = (site, distance);
 		}
 		return found;
-	}
-
-	private static void ReleaseToilet( ParkEconomy economy, StaffMember member )
-	{
-		if ( economy.TryGetObject( member.ToiletId, out var toilet ) && toilet.MechanicId == member.Id )
-			toilet.MechanicId = 0;
-		member.ToiletId = 0;
 	}
 
 	/// <summary>
@@ -379,28 +416,85 @@ public sealed partial class StaffWorldSimulation
 		member.BubbleTurn = turn;
 	}
 
-	/// <summary>Sets the member's walk to a point of <paramref name="cell"/> along the shortest route; false when none reaches it.</summary>
+	/// <summary>
+	/// Sets the member's walk to a point of <paramref name="cell"/> (tp.exe <c>0x004FA530</c>, <c>0x004FA5F0</c>): on the park's cells this is the
+	/// original's SetDest (<see cref="GuestNavigation.Navigate"/>: the route search from the member's cell with his walk mask), which leaves the walk
+	/// arrived and stuck when it fails; off the path grid (the strike lane's legs) the member walks a shortest path-grid route. False when no route
+	/// reaches the cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA530 staff SetDest] the cell id becomes the target bytes (x, y) with 0x80 in each low byte, +0x18/+0x1A keep it, then 0x00510100 (the walk set-up 0x0050F8E0 with the walk mask +0x188); 0x004FA5F0 does the same for a byte point
+	// Approximation (ECON-022, registered at UpdateStaff): the stranded stamp the wander sets (+0x198, 0x004FA670) and SetDest's quick failure while the cells around stay unchanged (0x004FA770) are not kept, as for the guests
 	private bool Route( StaffMember member, (int X, int Y) cell, int byteX, int byteY )
 	{
 		var navigation = member.Navigation!;
+		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
+		if ( !navigation.OffGrid )
+			return navigation.Navigate( grid.Cells, x, y );
 		var start = navigation.Cell;
 		var route = grid.FindPath( start.X, start.Y, cell.X, cell.Y );
 		if ( route.Count == 0 )
 			return false;
-		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
 		navigation.SetDestination( x, y, route );
 		return true;
 	}
 
+	/// <summary>
+	/// separation's neighbours for a stepping member (tp.exe <c>0x005102F0</c>): the guests and the other placed staff on the 3 × 3 cells around his
+	/// cell, rows from the top and each row from the left, a cell's guests before its staff.
+	/// </summary>
+	// Approximation (ECON-022, registered at UpdateStaff): a cell's walkers are its guests in OpenTPW's cell lists (WALK-003) followed by the staff on it in member order, where the original walks the cell's head-inserted thing list (0x0050B6A0) of every class
+	private (int X, int Y) StaffSeparation( GuestNavigation self )
+	{
+		separationNeighbours.Clear();
+		var (cellX, cellY) = self.Cell;
+		for ( var y = cellY - 1; y <= cellY + 1; y++ )
+		{
+			for ( var x = cellX - 1; x <= cellX + 1; x++ )
+			{
+				if ( !grid.InBounds( x, y ) )
+					continue;
+				if ( Guests != null )
+					separationNeighbours.AddRange( Guests.WalkersOn( x, y ) );
+				foreach ( var other in members() )
+					if ( other.Navigation is { } walk && !ReferenceEquals( walk, self ) && walk.Cell == (x, y)
+						&& other.Job is not (StaffJob.PickedUp or StaffJob.Resting) && other.State != StaffState.PickedUp )
+						separationNeighbours.Add( walk );
+			}
+		}
+		return GuestNavigation.Separation( self, separationNeighbours );
+	}
+
+	private readonly List<GuestNavigation> separationNeighbours = new();
+
 	private enum WalkResult { Arrived, Walking, Stuck }
 
 	/// <summary>
-	/// One walk step (tp.exe <c>0x004FA2A0</c>): arrived, walking, or stuck when the route ahead lost a path cell. A walk with an off-grid leg goes on
-	/// past its path end along the leg's points; it arrives at the last one.
+	/// One walk step (tp.exe <c>0x004FA2A0</c>): arrived, walking, or stuck. A walk on the park's cells is the guests' steering step
+	/// (<see cref="GuestNavigation.Step(int, int, ParkCellMap, Func{int, int, bool}, Func{GuestNavigation, (int X, int Y)}?)"/>: avoid_walls, follow_path
+	/// and separation, the commit through the edge test, the progress), stuck when a search of the walk failed. A route walk (an off-grid leg, or a walk
+	/// restored from a save made before) steps along its cells, stuck when the route ahead lost a path cell. A walk with an off-grid leg goes on past
+	/// its end along the leg's points; it arrives at the last one.
 	/// </summary>
+	// [BIN:TPW-EXE:0x004FA2A0 staff walk step] the same walk step as the guests' (thing classes 1 and 4..8 call it): the steering step 0x0050F3B0 over the behaviour list 0x007CF078 (avoid_walls, follow_path, separation), the cell list update 0x0050B6A0, then 2 when the walk is stuck (+0x18C), 0 when the progress 0x0050FD40 is ONE, else 1
 	private WalkResult Walk( StaffMember member, int maxSpeed, int maxForce )
 	{
 		var navigation = member.Navigation!;
+		if ( navigation.Original )
+		{
+			switch ( navigation.Step( maxSpeed, maxForce, grid.Cells, static ( _, _ ) => false, StaffSeparation ) )
+			{
+				case OpenTPW.WalkResult.Walking:
+					return WalkResult.Walking;
+				case OpenTPW.WalkResult.Stuck:
+					return WalkResult.Stuck;
+			}
+			if ( member.OffGridLeg.Count > 0 )
+			{
+				NextLeg( member );
+				return WalkResult.Walking;
+			}
+			return WalkResult.Arrived;
+		}
 		if ( !navigation.Arrived )
 		{
 			if ( !navigation.OffGrid )

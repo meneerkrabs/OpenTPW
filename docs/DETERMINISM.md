@@ -276,6 +276,14 @@ the suite depended on a coaster's content (the Determinism, PathBuilder, PathAss
 had to be re-pinned; the coaster tests assert relations (the release walk, the hop queue order, the round trip of the lead car coordinate). A save
 from before the car layout holds the front car's coordinate and no reference car; it is moved back to the reference car on load.
 
+Coaster pylons and track tags (October 16, 2026): the coaster hash content changes for coasters built from catalogue entries, which now
+sample and rate on the knots of the pylon models' posed track tags (`0x430ed0`, `0x4344c0`, `0x430590`) instead of node positions (for
+example Gorilla Thrilla's excitement 18.20 → 18.78, Chac Atak 143 samples instead of 140); a nonzero `fTrackHeightAdjust` now only lowers
+the drawn cross section (`0x42d6d0`) and no longer reaches the simulation; suspended coasters' node flags gain `0x10000000`. The pinned
+run hash is unchanged (the synthetic park has no coaster), and a coaster without pylon models hashes as before (`0xDB31A60AFE5F1CD6` in
+an A/B against main). The coaster save gains the optional `KnotPass` (null or 2); a save without it, for a coaster with pylon models,
+re-places its trains.
+
 Rides register round 2 (October 14): upgrade completion now sets the script speed bias to the new level's `InitSpeed` when
 above 0 (tp.exe 0x4DF8F0; `OriginalObjectRuntime.TryApplyCatalogueTierDefaults` with `completion`, called from
 `Level.ApplyCompletedCatalogueTier` only; a resume or import still seeds the tier without touching the bias, since the saved VM

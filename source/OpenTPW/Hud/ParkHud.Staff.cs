@@ -200,7 +200,8 @@ public sealed partial class ParkHud
 		SetStaffFirstRow( staffFirstRow );
 	}
 
-	private string StaffName( StaffMember member ) => StaffName( member.Type, member.NameIndex, member.Id );
+	// [BIN:TPW-EXE:0x00504DE0 staff serializer] a member's name is the inline mName[i] (+0x1A0) of the staff thing; a member from an original save keeps the saved one
+	private string StaffName( StaffMember member ) => member.Name ?? StaffName( member.Type, member.NameIndex, member.Id );
 	private string CandidateName( StaffCandidate candidate ) => StaffName( candidate.Type, candidate.NameIndex, candidate.Id );
 	private string StaffName( StaffType type, int nameIndex, int id )
 	{
@@ -316,6 +317,26 @@ public sealed partial class ParkHud
 		var number = (balance < 0 ? -(decimal)balance : balance).ToString( CultureInfo.InvariantCulture );
 		return template.Contains( "%d" ) ? template.Replace( "%d", number ) : template + number;
 	}
+	private (StaffType Type, int Variant)? portraitKey;
+	private float portraitStart;
+
+	/// <summary>
+	/// The figure in the hire window's portrait box: the selected candidate's (or, in the employee view, employee's) role and variant walking on
+	/// the spot, restarting whenever another role or variant is selected.
+	/// </summary>
+	private UiSpriteFrame? PortraitFrame()
+	{
+		(StaffType Type, int Variant)? key = showingEmployedStaff
+			? SelectedStaff is { } member ? (member.Type, StaffSpriteRules.VariantKey( member.NameIndex, member.Id )) : null
+			: SelectedCandidate is { } candidate ? (candidate.Type, StaffSpriteRules.VariantKey( candidate.NameIndex, candidate.Id )) : null;
+		if ( key != portraitKey )
+		{
+			portraitKey = key;
+			portraitStart = Time.Now;
+		}
+		return key is { } chosen ? level.StaffRenderer?.PortraitFrame( chosen.Type, chosen.Variant, Time.Now - portraitStart ) : null;
+	}
+
 	private string HireTitle => strings[(UIStrings)( (int)UIStrings.HireCleaners + (int)( staffFilter ?? StaffType.Handyman ) )];
 	private string ListName( int index ) => showingEmployedStaff ? StaffName( StaffItems[index] ) : CandidateName( StaffCandidates[index] );
 	private string ListWage( int index ) => showingEmployedStaff ? StaffWage( StaffItems[index] ) : CandidateWage( StaffCandidates[index] );
@@ -341,9 +362,9 @@ public sealed partial class ParkHud
 			Bounds = Rect( 722, 536, 957, 575 ), Anchor = UiAnchor.Center } );
 		screen.Add( new UiGaugeBar { Id = "skillGauge", Value = () => showingEmployedStaff ? null : SkillGauge( SelectedCandidate ),
 			Bounds = Rect( 722, 538, 957, 573 ), Anchor = UiAnchor.Center } );
-		// [APPROX:UI-082] the portrait box shows the selected role and grade as text; the original spawns a live animated figure of the candidate's role in control 9348's rectangle (0x49ba00 -> 0x475a10 with descriptor 0x74f758, then 0x4755d0 plays animation 8 at speed 8.0; the figure is the role's sprite-bank character) - evidence needed: drawing that figure in the window (no further evidence needed)
-		screen.Add( new UiLabel { Id = "portraitText", Text = () => SelectedGrade.Length > 0 ? $"{SelectedRole}  {SelectedGrade}" : "",
-			Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true, Bounds = Rect( 513, 202, 723, 415 ), Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x0049BA00 hire figure] when the selected candidate's role (+0) or variant byte (+9) changes, the old figure goes (0x00475550) and a new one of thing type 5, 6, 4, 7 or 8 for the roles 0..4 (handyman, entertainer, mechanic, guard, researcher) with that variant is created in control 9348's rectangle (0x00475A10 with the script 0x0074F758), and its register 8 is set to 8.0 (0x004755D0)
+		// [APPROX:UI-082] the hire window's figure is drawn one sprite pixel to 3.2 canvas units (640 pixels across the 2048-unit canvas), where the original sets its register 8 to 8.0 (0x004755D0, the scale 0x00542010 copies to the draw record +0x2C, default 1.0); how the screen-sprite path (flag 0x40000, list 0x0087692C) turns that scale into pixels is not traced; the figure also shows for an employee selected in the employed view, where 0x49BA00 reads only the applicant pool (0x507BD0, 32 entries of 0x14 bytes) — evidence needed: the engine's screen-sprite quad size, or a capture of the hire window and of the employed view
+		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = PortraitFrame, Bounds = Rect( 484, 179, 748, 443 ), Anchor = UiAnchor.Center } );
 		for ( var row = 0; row < StaffStatRows.Length; row++ )
 		{
 			var index = row;

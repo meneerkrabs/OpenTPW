@@ -13,6 +13,10 @@ public sealed record ParticleObjectRecord
 {
 	public int Slot { get; init; }
 	public int Handle { get; init; }
+	/// <summary>The ADDOBJ type (1 or 2), or 0 in a save written before records kept it: such a record is not moved to its key.</summary>
+	public int Type { get; init; }
+	/// <summary>The ADDOBJ key the effect follows (a negative key follows nothing).</summary>
+	public int Key { get; init; }
 }
 
 public sealed record OriginalObjectRuntimeSnapshot
@@ -109,7 +113,7 @@ public sealed record OriginalObjectRuntimeSnapshot
 			throw new InvalidDataException( "runtime snapshot has a null unresolved animation." );
 		if ( OwnedScreamCount < 0 )
 			throw new InvalidDataException( "runtime snapshot has a negative scream-chain count." );
-		if ( ParticleObjects != null && ( ParticleObjects.Count > MaximumParticleObjects || ParticleObjects.Any( record => record == null || record.Handle == 0 ) ) )
+		if ( ParticleObjects != null && ( ParticleObjects.Count > MaximumParticleObjects || ParticleObjects.Any( record => record == null || record.Handle == 0 || record.Type is < 0 or > 2 ) ) )
 			throw new InvalidDataException( "runtime snapshot has too many or malformed particle object records." );
 		// the SPEED word +0x58 is a full dword (any int; only the script's bias word +0xc0 is a short), CAPACITY and DURATION are bytes
 		if ( RideCapacity is < 0 or > byte.MaxValue || RideDuration is < 0 or > byte.MaxValue )

@@ -51,6 +51,13 @@ public sealed class StaffMember
 	public required int Id { get; init; }
 	public required StaffType Type { get; init; }
 	public required int NameIndex { get; init; }
+	/// <summary>
+	/// The member's own name, stored inline in an original save (the staff suffix's <c>mName[i]</c>, +0x1A0, which the employee panels show); null
+	/// for a member hired in OpenTPW, whose name is <see cref="NameIndex"/> in the role's name table.
+	/// </summary>
+	public string? Name { get; init; }
+	/// <summary>The longest inline name an original save holds (33 UTF-16 units including the terminator).</summary>
+	public const int MaximumNameLength = 32;
 	public required int Grade { get; set; }
 	/// <summary>Training progress towards the next grade, 0–99 ("raise the training level by 1%").</summary>
 	public int TrainingPoints { get; set; }
@@ -134,6 +141,14 @@ public sealed class StaffMember
 	/// its sub-cell bytes. Empty on the paths.
 	/// </summary>
 	public List<(int X, int Y, int ByteX, int ByteY)> OffGridLeg { get; set; } = new();
+	/// <summary>
+	/// The point (1/256 cell) a member loaded from an original save walks on to: the person's <c>mAccurateDestX</c>/<c>mAccurateDestY</c>, to which the
+	/// original's person loader routes again once it has read the person (tp.exe <c>0x004FA5F0</c> at <c>0x004F9407</c>). A world takes it when it first
+	/// places the member; null otherwise.
+	/// </summary>
+	public (int X, int Y)? ResumeDestination { get; set; }
+	/// <summary>The turn an original save's claim of this member's ride or toilet was made (<c>+0x60</c>); the world that places him takes the claim again with it. Not saved: a member placed later claims at the current turn.</summary>
+	public long? ResumeClaimTurn { get; set; }
 }
 
 /// <summary>A job applicant in the hiring pool; leaves the pool at <see cref="ExpiresTick"/>.</summary>
@@ -375,9 +390,9 @@ public sealed class ParkStaff
 	};
 
 	/// <summary>Adds an employee taken from an original save (not hired from the pool).</summary>
-	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum )
+	internal StaffMember AddImported( StaffType type, int grade, int trainingPoints, float happiness, StaffState state, long hiredTick, float energy = StaffVitals.Maximum, string? name = null )
 	{
-		var member = new StaffMember { Id = AllocateId(), Type = type, NameIndex = 0, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
+		var member = new StaffMember { Id = AllocateId(), Type = type, NameIndex = 0, Name = string.IsNullOrEmpty( name ) ? null : name, Grade = grade, TrainingPoints = trainingPoints, Happiness = happiness, Energy = energy, State = state, HiredTick = hiredTick };
 		members.Add( member );
 		return member;
 	}

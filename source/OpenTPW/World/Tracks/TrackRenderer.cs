@@ -110,7 +110,7 @@ public sealed class TrackRenderer : IDisposable
 	/// <paramref name="rotation"/> degrees about its centre (the original's engine rotation is 360 − rotation), then moves to the tile and the ground.
 	/// </summary>
 	// [BIN:STP-PPC:0x1008B610 piece instancing] the instance sits at the origin cell plus an offset by rotation (90°: y+1; 180°: x+1, y+1; 270°: x+1) with engine rotation 360 − rotation, skipped for flag 0x10 or piece 0
-	// [APPROX:TRACK-003] the one-cell instance offset of the original is unresolved for 20-unit tiles; OpenTPW turns each tile about its own centre, which keeps every rotation inside the tile — evidence needed: the instancer 0x1008B610's PC twin (the Bumper.*Adjust keys are the station-reference offsets of TRACK-005 and TRACK-030, not a mesh pivot)
+	// [APPROX:TRACK-003] the one-cell instance offset of the original is unresolved for 20-unit tiles; OpenTPW turns each tile about its own centre, which keeps every rotation inside the tile — evidence needed: the instancer 0x1008B610's PC twin (the Bumper.*Adjust keys are the controller-reference offsets of the ride placement 0x529E10, not a mesh pivot)
 	// [APPROX:TRACK-001] a tile stands on the mean ground height of its four cells; the original's instance height for a piece is not read
 	public Matrix4x4 TileTransform( int x, int y, int rotation )
 	{

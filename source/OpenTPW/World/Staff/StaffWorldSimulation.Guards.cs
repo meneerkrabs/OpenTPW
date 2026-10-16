@@ -46,6 +46,7 @@ public sealed partial class StaffWorldSimulation
 					return;
 				// [BIN:TPW-EXE:0x004D6A50 escort] on arrival (or a broken walk) the guest is set down on the guard's cell (0x004FEB50), +0x188 = 0, and the guard routes to the park entrance (0x004D8690, the turn's bit 0): state 19, else 0
 				SetDown( economy, member );
+				member.Navigation!.Mask = 0;
 				SetJob( economy, member, RouteToGate( member, GateCell.Entrance, turn ) ? StaffJob.ReturningFromEscort : StaffJob.Idle, turn );
 				return;
 			case StaffJob.ReturningFromEscort:
@@ -70,7 +71,8 @@ public sealed partial class StaffWorldSimulation
 	/// the free guard (idle or patrolling) nearest the staff HQ sets off after the prankster.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00508A30 prank message] type 14: the prankster's cell's environment record (0x004D8410) word +6 (security) above 0, else nothing ("no security level"); the guard 0x005099C0: the guard list (game +0x1DA744, next at +0x210), states 0 and 1 (0x004D6330), the smallest dx² + dy² between the guard's cell and the receiver's (the staff HQ thing, always at cell (0, 0) in the shipped and played saves), strictly smaller replaces; none: "No guards available"; the chase starts in 0x004D6260
-	// Approximation (ECON-022, registered at UpdateStaff): the guard list's order is the staff list's (hire order), where the original head-inserts a hired guard (0x004D5DE0 → 0x00519AA0), so its list runs newest first and the newest wins a tie; the prank reaches the guards at once (the bus's delivery time is not traced)
+	// Approximation (ECON-022, registered at UpdateStaff): the guard list's order is the staff list's (hire order), where the original head-inserts a hired guard (0x004D5DE0 → 0x00519AA0), so its list runs newest first and the newest wins a tie
+	// [BIN:TPW-EXE:0x0040FB10 message bus] a message posted is delivered at once, in the poster's call, to every thing subscribed to its type (0x0050B550 by thing type), so the prank reaches the staff HQ (and the advisor) as it is made
 	public void ReportPrank( ParkEconomy economy, int guestId )
 	{
 		// a member hired since the last staff turn already stands with his row down (the constructors put it on their cell)
@@ -165,6 +167,13 @@ public sealed partial class StaffWorldSimulation
 			SetJob( economy, member, StaffJob.Escorting, turn );
 			return;
 		}
+		// the second try may leave the paths (+0x188 = 1, 0x004D6977)
+		member.Navigation!.Mask = 1;
+		if ( RouteToGate( member, GateCell.TicketBooth, turn ) )
+		{
+			SetJob( economy, member, StaffJob.Escorting, turn );
+			return;
+		}
 		SetDown( economy, member );
 		Abandon( economy, member, turn );
 	}
@@ -175,13 +184,17 @@ public sealed partial class StaffWorldSimulation
 		SetJob( economy, member, StaffJob.Idle, turn );
 	}
 
-	/// <summary>The guard sets his guest down where he stands (tp.exe <c>0x004FEB50</c>): cat_kids 128 there, and the guest walks out of the park or is removed.</summary>
+	/// <summary>
+	/// The guard sets his guest down where he stands (tp.exe <c>0x004FEB50</c>): cat_kids 128 there, and the guest walks out of the park by the side
+	/// a world draw's bit 0 picks, or is removed when that side is out of reach.
+	/// </summary>
 	private void SetDown( ParkEconomy economy, StaffMember member )
 	{
 		var cell = Cell( member );
-		Draw( economy ); // the gate side the guest's route takes (0x004FEB50 draws the world generator)
+		// [BIN:TPW-EXE:0x004FEBC1 set-down side] one world draw (0x00516330); its bit 0 is the gate cell 0x004D86D0 returns, 0 side A, 1 side B
+		var side = (int)(Draw( economy ) & 1);
 		Sound( member, SetDownEvent, kids: true, cell );
-		Guests?.Release( member.TargetGuestId, cell );
+		Guests?.Release( member.TargetGuestId, cell, side );
 	}
 
 	private enum GateCell { TicketBooth, Entrance }

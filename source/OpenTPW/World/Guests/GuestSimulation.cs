@@ -40,7 +40,7 @@ public readonly record struct GuestStatistics( int InPark, int Walking, int Queu
 /// Rates and thresholds without an original source are labelled approximations in
 /// <see cref="GuestSettings"/> and docs/GUESTS.md.
 /// </summary>
-public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
+public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 {
 	/// <summary>Move-up delay factor: entering state 11 sets the delay to trunc(1.2 × position) park turns.</summary>
 	// [BIN:STP-PPC:0x100EF868 state 11 entry] +508 = turn, +500 = trunc(1.2f × +497) (float data 0x55a0)
@@ -71,6 +71,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private bool deliveringArrivals;
 	private float spawnTimer;   // kept for the save format; arrivals step once per park turn (ARRIVAL-001)
 	private int pendingArrivals;
+	// The arrival vehicle at work (world +0x1DA72A): the kind of ArrivalVehicleKind, -1 for none.
+	private int arrivalVehicle = -1;
+	// Stop cells a leaving guest boarded from this park turn (one per cell and turn, see UpdateWaitingToGoHome).
+	private readonly HashSet<(int X, int Y)> boardedThisTurn = new();
 	private int laneToggle;
 	private int seenGridVersion = -1;
 	private readonly Dictionary<int, int> seenQueueEdits = new();
@@ -105,6 +109,16 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public long ParkTurn => ParkCalendar.Turn( TickCount );
 	public double TimeSeconds { get; private set; }
 	public bool ArrivalsEnabled { get; set; } = true;
+	/// <summary>
+	/// The park's arrival vehicles (bus, seaplane, Ferry and their scripts). Null keeps the vehicle-less step-off of a park without
+	/// them (headless scenes): a group's first guest steps off on the turn after it starts and leaving guests go after
+	/// <see cref="WaitForBusSeconds"/>.
+	/// </summary>
+	public IArrivalVehicleHost? ArrivalVehicles { get; set; }
+	/// <summary>One draw of the world generator (tp.exe <c>0x00516330</c>, inlined at <c>0x0051A34B</c>; OpenTPW's economy stream, DET-014) for the vehicle of a pick-up without a group.</summary>
+	public Func<uint>? WorldDraw { get; set; }
+	/// <summary>The arrival vehicle at work (<see cref="ArrivalVehicleKind"/>), -1 for none.</summary>
+	public int ArrivalVehicle => arrivalVehicle;
 	/// <summary>The park turn the arrival timer reads: the economy's when attached, else <see cref="ParkTurn"/>.</summary>
 	public Func<long>? ArrivalClock { get; set; }
 	/// <summary>The park's attraction points for the arrival rule (the economy's attractions); 0 without one.</summary>
@@ -363,7 +377,10 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		SyncQueues();
 		UpdateArrivals( deltaSeconds );
 		if ( turnStarted )
+		{
 			RebuildOccupants();
+			boardedThisTurn.Clear();
+		}
 		for ( var index = 0; index < guests.Count; index++ )
 			UpdateGuest( guests[index], deltaSeconds );
 		for ( var index = guests.Count - 1; index >= 0; index-- )
@@ -383,11 +400,18 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100CB2AC arrival update] if no group is active and 0x101210F8's (turn >> 2) − (start >> 2) exceeds Arrival.TimeBetweenArrivals (settings +0x2D4), the group size is set and the group starts; at each stop one guest is created and the count falls; at 0 the timer restarts (0x10121098)
 	// [BIN:TPW-EXE:0x004CF3E0 arrival update] runs once per park turn at the end of the world turn update 0x00516380 (through 0x004D7B20); the call that starts a group only sends the bus (0x0051A2F0 with size 1, 2 or 3 for groups under 36, up to 60, larger); while the bus is at its stop (vehicle state 2) each call creates one guest (0x004CF720) and counts the group down, and the call that finds it empty restarts the timer (0x0041A960) and sends the bus away
-	// [APPROX:ARRIVAL-001] no arrival vehicle is modelled: the first guest steps off on the turn after the group starts, where the original waits until the vehicle it dispatched (bus, seaplane or Ferry by group size, 0x004CF48C) reports script variable 1 = 2 at its stop (0x004CF46C), and guests appear at the arrival lanes — evidence needed: the vehicle level scripts' time from dispatch to state 2
+	// Without ArrivalVehicles (a park without vehicle definitions, which the original refuses with a fatal error, 0x0051A601) the
+	// group's guests step off from the turn after it starts, as if the vehicle stood at its stop.
 	private void UpdateArrivals( float deltaSeconds )
 	{
 		if ( !ArrivalsEnabled )
 			return;
+		if ( ArrivalVehicles != null )
+		{
+			if ( turnStarted )
+				UpdateArrivalVehicle();
+			return;
+		}
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
 		// A save loaded from an earlier turn replaces the clock: the timer starts unset again, as in a freshly started park.
 		if ( turn < arrivalTimerStart )
@@ -409,6 +433,127 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		pendingArrivals--;
 		if ( guests.Count < Settings.MaximumGuests )
 			SpawnArrival();
+	}
+
+	/// <summary>
+	/// The arrival update with the park's vehicles, once per park turn (tp.exe <c>0x004CF3E0</c>): a group that starts dispatches the
+	/// vehicle its size calls for; while the vehicle reports status 2 (at its stop) each turn one guest steps off, and the turn that
+	/// finds the group empty restarts the timer and sends the vehicle on. Leaving guests waiting at the stop call a vehicle (any kind,
+	/// one world draw) when none is at work and hold one at status 4 until the last has boarded.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CF3E0 arrival update] with no group active the timer test starts one (0x004CF5B0, "Bus about to arrive with %d people"); with a group active
+	// the vehicle's status (0x0051A690) decides: -1 (none at work) dispatches by group size (0x0051A2F0 with 1 up to 35 guests, 2 up to 60, else 3, signed
+	// compares at 0x004CF48C/0x004CF49A), 2 creates one guest (0x004CF720) while the group is above 0 (signed, jle at 0x004CF56B) and counts it down, else
+	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
+	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
+	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
+	// [APPROX:ARRIVAL-001] leaving guests wait at their lane's first cell and board at status 4 one per stop cell and turn, where the original walks them to the vehicle's stop cells at status 1 to 3 (0x00500BD0, 0x0051AAD0) and boards the head of each cell's thing list; the pick-up test asks for any guest in state 21, not the head things of the four stop cells (0x0051A9D0); this update runs before the turn's guest updates, the original's after its thing sweep — evidence needed: what cell 0x004D8650 returns for each level (the stop walk also needs the original walk, WALK-008)
+	private void UpdateArrivalVehicle()
+	{
+		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
+		if ( turn < arrivalTimerStart )
+			arrivalTimerStart = 0;
+		if ( !deliveringArrivals && (turn >> 2) - (arrivalTimerStart >> 2) > Settings.ArrivalTimeBetween )
+		{
+			pendingArrivals = ArrivalGroupSize();
+			deliveringArrivals = true;
+		}
+		if ( deliveringArrivals )
+		{
+			switch ( ReadArrivalVehicle() )
+			{
+				case -1:
+					DispatchArrivalVehicle( pendingArrivals <= 35 ? 1 : pendingArrivals <= 60 ? 2 : 3 );
+					break;
+				case 2 when pendingArrivals > 0:
+					if ( guests.Count < Settings.MaximumGuests )
+						SpawnArrival();
+					pendingArrivals--;
+					break;
+				case 2:
+					arrivalTimerStart = turn;
+					deliveringArrivals = false;
+					DispatchArrivalVehicle( 0 );
+					break;
+			}
+		}
+		if ( guests.Any( guest => guest.State == GuestState.WaitingToGoHome ) )
+		{
+			var status = ReadArrivalVehicle();
+			if ( status is -1 or 0 || status == 2 && pendingArrivals == 0 )
+				DispatchArrivalVehicle( 0 );
+		}
+		else if ( ReadArrivalVehicle() == 4 )
+			DispatchArrivalVehicle( 0 );
+	}
+
+	/// <summary>The status of the vehicle at work (script variable 1), -1 for none; a vehicle that reports 6 (gone) is released.</summary>
+	// [BIN:TPW-EXE:0x0051A690 vehicle status] no vehicle at work (+0x1DA72A 0) reads -1; else the script's variable 1 (0x0055A390); 6 writes 0 to it
+	// (0x0055A0B0), clears +0x1DA72A and reads -1
+	private int ReadArrivalVehicle()
+	{
+		if ( arrivalVehicle < 0 || ArrivalVehicles is not { } host )
+			return -1;
+		// A save whose vehicle object is not in the park (hand-edited, or a level without it) would otherwise hold the group for good.
+		if ( !host.Exists( arrivalVehicle ) )
+		{
+			arrivalVehicle = -1;
+			return -1;
+		}
+		var status = host.GetVariable( arrivalVehicle, ArrivalVehicleKind.StatusVariable );
+		if ( status != 6 )
+			return status;
+		host.SetVariable( arrivalVehicle, ArrivalVehicleKind.StatusVariable, 0 );
+		arrivalVehicle = -1;
+		return -1;
+	}
+
+	/// <summary>
+	/// Sends a vehicle (tp.exe <c>0x0051A2F0</c>): the one at work gets its trigger set; else size 1, 2 or 3 picks the bus, seaplane or
+	/// Ferry and size 0 one at random from the world generator. A kind the park already holds gets its trigger set, a new one is
+	/// placed with status 1; a kind the level lacks falls back to the Ferry, then the seaplane, then the bus.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0051A2F0 vehicle dispatch] with +0x1DA72A set only variable 0 = 1 (0x0051A649); else kind = size − 1, or for size 0 |rotr(s·0x19660D +
+	// 0x3C6EF35F, 13)| mod 3 on the world generator's state +0x1DA708 (0x0051A34B, the step of 0x00516330); a cached handle (+0x1DA72C/E/30) gets variable
+	// 0 = 1, else the first definition of that name (0x00412E60/0x00412E70 over 0x007890A0, _wcsicmp 0x0067B140) is created (0x004DB090) with variable 1 = 1
+	// (0x0051A59B); a missing one logs "Could not find the 'vehicle_name was here' feature" and tries the untried kinds Ferry, seaplane, bus (bit tests 4, 2,
+	// 1 from 0x0051A442) before the fatal "Could not find either the bus or the plane feature" (0x0051A601); the chosen handle becomes +0x1DA72A
+	private void DispatchArrivalVehicle( int size )
+	{
+		if ( ArrivalVehicles is not { } host )
+			return;
+		if ( arrivalVehicle >= 0 )
+		{
+			host.SetVariable( arrivalVehicle, ArrivalVehicleKind.TriggerVariable, 1 );
+			return;
+		}
+		var tried = 0;
+		while ( true )
+		{
+			int kind;
+			if ( tried == 0 )
+				kind = size == 0 ? (int)((WorldDraw?.Invoke() ?? 0) % 3) : size - 1;
+			else if ( (tried & 4) == 0 )
+				kind = ArrivalVehicleKind.Ferry;
+			else if ( (tried & 2) == 0 )
+				kind = ArrivalVehicleKind.Seaplane;
+			else if ( (tried & 1) == 0 )
+				kind = ArrivalVehicleKind.Bus;
+			else
+			{
+				Log?.Warning( "No arrival vehicle: the level has neither the bus, the seaplane nor the Ferry." );
+				return;
+			}
+			tried |= 1 << kind;
+			if ( host.Exists( kind ) )
+				host.SetVariable( kind, ArrivalVehicleKind.TriggerVariable, 1 );
+			else if ( host.Create( kind ) )
+				host.SetVariable( kind, ArrivalVehicleKind.StatusVariable, 1 );
+			else
+				continue;
+			arrivalVehicle = kind;
+			return;
+		}
 	}
 
 	/// <summary>
@@ -442,6 +587,25 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone);
 
 	private bool CountsParkTime( Guest guest ) => InPark( guest ) && !guest.LaneReversed;
+
+	/// <summary>
+	/// State 21, waiting at the stop to go home: with the park's vehicles a guest boards (and is gone) on a park turn the vehicle at
+	/// work reports status 4, one guest per stop cell and turn; without them it goes after <see cref="WaitForBusSeconds"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500BD0 state 21] status 4 (0x0051A690) boards the guest that heads its cell's thing list: event 0x13 (0x004FA470) and the guest
+	// is destroyed (0x0050B780)
+	private void UpdateWaitingToGoHome( Guest guest, float dt )
+	{
+		if ( ArrivalVehicles == null )
+		{
+			guest.StateTimer -= dt;
+			if ( guest.StateTimer <= 0 )
+				guest.State = GuestState.Gone;
+			return;
+		}
+		if ( turnStarted && ReadArrivalVehicle() == 4 && boardedThisTurn.Add( guest.Lane is { Length: > 0 } lane ? lane[0] : (guest.CellX, guest.CellY) ) )
+			guest.State = GuestState.Gone;
+	}
 
 	private void UpdateGuest( Guest guest, float dt )
 	{
@@ -477,6 +641,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			{
 				// [BIN:TPW-EXE:0x00500AB9 recall clears the walk mask] guest +0x188 (walk +0xB4) = 0 before state 6
 				guest.Navigation.Mask = 0;
+				guest.ExitSide = null;
 				guest.State = GuestState.DoingNothing;
 			}
 		}
@@ -579,9 +744,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 					PayAdmission( guest );
 				break;
 			case GuestState.WaitingToGoHome:
-				guest.StateTimer -= dt;
-				if ( guest.StateTimer <= 0 )
-					guest.State = GuestState.Gone;
+				UpdateWaitingToGoHome( guest, dt );
 				break;
 			case GuestState.WalkingAround:
 				UpdateWalkingAround( guest );
@@ -647,22 +810,29 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// The guard sets the guest down on <paramref name="cell"/> (tp.exe <c>0x004FEB50</c>): the guest leaves the park (state 18) when a way out is in
-	/// reach; otherwise it is removed. True when it walks out.
+	/// The guard sets the guest down on <paramref name="cell"/> (tp.exe <c>0x004FEB50</c>): the guest stands at the cell's centre and leaves the park
+	/// (state 18) by the way out <paramref name="side"/> drew when it is in reach; otherwise it is removed. True when it walks out. Without a drawn
+	/// side the nearer reachable lane is taken.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004FEB50 guard sets a guest down] the guest at the cell's centre (0x004FA930), its model back (0x004D4140), cat_kids 128 at it, +0x188 = 1, a route to one of the two gate cells by a world draw's bit 0 (0x004D86D0): state 18 ("<Humph>"); no route destroys it (0x0050B780)
-	// Approximation (GUEST-007, registered at Prank): the guest stands at its own offset in the cell and walks out by the nearer reachable arrival lane, where tp.exe's set-down 0x004FEB50 puts it at the cell's centre (0x004FA930), takes one world draw and routes it to the single park-side crossing cell the draw's bit 0 picks (0x004D86D0: CrossingParkSideA, or CrossingParkSideB's X with side A's Y), destroying it (0x0050B780) when that route fails
-	bool IGuardGuests.Release( int guestId, (int X, int Y) cell )
+	// [BIN:TPW-EXE:0x004FEB50 guard sets a guest down] the guest at the cell's centre (0x004FA930 with the bytes 0x80, 0x80), its model back (0x004D4140), cat_kids 128 at it, +0x188 = 1, a route (0x004FA530) to the one gate cell a world draw's bit 0 picks (0x004D86D0: 0 CrossingParkSideA, 1 CrossingParkSideB's X with side A's Y): state 18 ("<Humph>"); no route destroys it (0x0050B780)
+	// Approximation (GUEST-007, registered at Prank): the drawn side's walk out reaches its arrival lane's park entrance and leaves along the lane, the leaving walk of every guest in OpenTPW (GUEST-010, WALK-004), where the original routes to the gate cell itself
+	bool IGuardGuests.Release( int guestId, (int X, int Y) cell, int? side )
 	{
 		if ( Find( guestId ) is not { } guest )
 			return false;
 		if ( !Grid.IsWalkable( cell.X, cell.Y ) )
 			cell = Grid.FindNearestWalkable( cell.X, cell.Y ) ?? cell;
 		PlaceOnGrid( guest, cell.X, cell.Y );
+		var navigation = guest.Navigation;
+		(navigation.X, navigation.Y) = GuestNavigation.Centre( cell );
+		navigation.SetDestination( navigation.X, navigation.Y, [] );
+		UpdatePresentation( guest );
 		// [BIN:TPW-EXE:0x004FEBAB set-down walk mask] guest +0x188 (walk +0xB4) = 1: the walk out may leave the paths (WalkEdges.Blocked)
-		guest.Navigation.Mask = 1;
-		var reachable = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) }
-			.Any( lane => lane != null && Grid.Distance( cell.X, cell.Y, lane[^1].X, lane[^1].Y ) >= 0 );
+		navigation.Mask = 1;
+		var lanes = side is { } drawn ? new[] { ValidLane( (drawn & 1) == 0 ? Settings.ArrivalLaneA : Settings.ArrivalLaneB ) }
+			: new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
+		var reachable = lanes.Any( lane => lane != null && Grid.Distance( cell.X, cell.Y, lane[^1].X, lane[^1].Y ) >= 0 );
+		guest.ExitSide = side is { } chosen ? chosen & 1 : null;
 		// The leaving handler's recall (0x00500A50) applies to it like any leaving guest: with its exit counter and happiness byte above 0, the
 		// park open and its cell a path, it decides again on its next turn (and clears +0x188), so a guard sends home only a guest that wants to go.
 		guest.State = reachable ? GuestState.LeavingPark : GuestState.Gone;
@@ -683,6 +853,15 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				&& guest.CellY >= y0 && guest.CellY <= y1 )
 				return true;
 		return false;
+	}
+
+	IEnumerable<GuestNavigation> IGuardGuests.WalkersOn( int x, int y )
+	{
+		if ( !occupants.TryGetValue( (x, y), out var list ) )
+			yield break;
+		foreach ( var other in list )
+			if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
+				yield return other.Navigation;
 	}
 
 	(int X, int Y)[]? IGuardGuests.Lane( int side ) => side == 0 ? ValidLane( Settings.ArrivalLaneA ) : ValidLane( Settings.ArrivalLaneB );
@@ -941,6 +1120,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private void StartLeavingLane( Guest guest, (int X, int Y)[] lane, int fromIndex )
 	{
+		guest.ExitSide = null;
 		guest.OnGrid = false;
 		guest.Navigation.OffGrid = true;
 		guest.Lane = lane;
@@ -1135,7 +1315,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes and the guard reply (0x508A30) match, and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; the prank message reaches no advisor line where 0x59B060 queues the advice 0x7D, 0x7E or 0x7F by the prank kind; a guest the guard sets down is handled as at the set-down's own approximation — evidence needed: the advice rows 0x7D..0x7F and which guest states are on the cell thing lists
+	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; the prank line is chosen by OpenTPW's guest id where the original takes the prankster's thing id (WALK-010), and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's park entrance and out along the arrival lane (GUEST-010, WALK-004) where the original routes to the side's gate cell (0x4D86D0) — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )
@@ -1644,7 +1824,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			EnterStanding( guest );
 		else if ( TooExpensive( guest, attraction ) )
 			// [BIN:TPW-EXE:0x005006B0 called forward] at the stand point the price test 0x004FDE50 comes before the ride takes the guest (AdmitPerson); a guest that refuses leaves the queue ("Object %d is too expensive, I'm leaving the queue") and keeps its thought
-			// [APPROX:GUEST-003] the refusal's thought 6, two medium drops (0x004FEA70 with 1 at 0x00500778, and the dismissal 0x005012F0) and leave match; not modelled: the ride's walk-away counters (0x004E1670: +0x1A4 and the period count +0x230, which 0x004DD320 rolls and 0x004CAAE0 sums per ShopType for the advisor), the dismissal's sound for a thing id whose low three bits are 0 and the price statistic 0x004C74B0 (recorded on every shop and sideshow test); the guest's event records (0x0050C100) feed only the debug dump 0x004FAA60 — evidence needed: none (read)
+			// [BIN:TPW-EXE:0x0050076F refusal records] the refusal's thought 6 (0x0050BE80), event 10 with the ride's id and the dismissal's event 6 (0x0050C100: a ring of 32 (event, argument) pairs at thought +4, index +0x88, a repeat of the last pair skipped) are read only by the guest's debug dump 0x004FAA60 (0x0050C190, its one caller 0x004FAAAB), so OpenTPW keeps no event ring
 			RefusePrice( guest, attraction );
 		else if ( attraction.PresentForBoarding( guest.Id ) )
 			guest.State = GuestState.WaitingToBoard;
@@ -1655,15 +1835,28 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		// [BIN:TPW-EXE:0x00500756 price refusal] "Object is too expensive, I'm leaving the queue": thought 6, then the refusal's own 0x004FEA70(1) before the dismissal's
 		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
+		// [APPROX:GUEST-003] the refusal's dismissal does not play its sound for a guest whose thing id has its low three bits 0 (0x4FAA00, [0x803A24] event 0x80), OpenTPW's guest ids not being the original's thing ids (WALK-010; QUEUE-005 has the same sound) — evidence needed: none (read)
+		// [BIN:TPW-EXE:0x0050077F refusal walk-away] after 0x004FEA70(1) the ride's walk-away count (0x004E1670), then its loading slot (0x004E0AC0) and queue list (0x004DDD20) let the guest go and the dismissal 0x005012F0 runs
+		Payments?.WalkedAway( attraction );
 		DismissFromQueue( guest, attraction, GuestThought.Dissatisfied );
 	}
 
-	/// <summary>The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use.</summary>
-	private static bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
+	/// <summary>
+	/// The price test at the stand point (<see cref="QueueJoinRules.TooExpensive"/>): rides cost nothing per use. A shop or sideshow with a price
+	/// records the guest's view of it in the park's statistics (<see cref="QueueJoinRules.PriceStatistics"/>), whether it pays or refuses.
+	/// </summary>
+	private bool TooExpensive( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
 			return false;
-		return QueueJoinRules.TooExpensive( PriceTermsOf( attraction ), guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
+		var terms = PriceTermsOf( attraction );
+		if ( Payments != null && terms.Price != 0 )
+		{
+			var willingness = QueueJoinRules.WillingnessToPay( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea );
+			foreach ( var (category, value) in QueueJoinRules.PriceStatistics( terms, willingness, attraction.SpecialIngredient, attraction.AppearanceEffect ) )
+				Payments.PriceTested( category, value );
+		}
+		return QueueJoinRules.TooExpensive( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea, guest.Money );
 	}
 
 	/// <summary>
@@ -1872,6 +2065,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( guest.HasWaypoint && !Move( guest ) )
 			return;
 		var lanes = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
+		// a guest a guard set down leaves by the side its set-down drew while that side stays in reach
+		if ( guest.ExitSide is { } side && lanes[side] is { } drawn && Grid.Distance( guest.CellX, guest.CellY, drawn[^1].X, drawn[^1].Y ) >= 0 )
+			lanes = [drawn];
 		(int X, int Y)[]? bestLane = null;
 		var bestDistance = int.MaxValue;
 		foreach ( var lane in lanes )
@@ -2175,6 +2371,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			DeliveringArrivals = deliveringArrivals,
 			SpawnTimer = spawnTimer,
 			PendingArrivals = pendingArrivals,
+			ArrivalVehicle = arrivalVehicle < 0 ? null : arrivalVehicle,
 			LaneToggle = laneToggle,
 			ArrivalsEnabled = ArrivalsEnabled,
 			SeenGridVersion = seenGridVersion,
@@ -2234,6 +2431,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Litter = guest.Litter,
 			BinId = guest.BinId,
 			PrankFlag = guest.PrankFlag,
+			ExitSide = guest.ExitSide,
 			BalloonLife = guest.BalloonLife,
 			HasBalloon = guest.HasBalloon,
 			InCostume = guest.InCostume,
@@ -2331,6 +2529,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		// PendingArrivals may be negative: a group cut above the park limit keeps limit − guests, as the original's word does (0x004CF6E5), and ends at the next stop like 0.
 		if ( snapshot.PendingArrivals < OnlineArrivalParkLimit - MaximumThings )
 			Error( $"PendingArrivals {snapshot.PendingArrivals} is below the lowest cut remainder ({OnlineArrivalParkLimit - MaximumThings})." );
+		if ( snapshot.ArrivalVehicle is { } vehicle && (vehicle < 0 || vehicle >= ArrivalVehicleKind.Names.Count) )
+			Error( $"ArrivalVehicle {vehicle} is not a vehicle kind (0 to {ArrivalVehicleKind.Names.Count - 1})." );
 		if ( snapshot.LaneToggle < 0 )
 			Error( $"LaneToggle {snapshot.LaneToggle} is negative." );
 		// A file that lost one of its core lists (a JSON null) cannot be cross-checked; the hole is named and
@@ -2473,6 +2673,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Bounded( guest.Id, guest.Litter, nameof( guest.Litter ), 0, 100 );
 			if ( guest.PrankFlag is not (0 or 100 or 101 or 102) )
 				Error( $"Guest {guest.Id} prankery flag {guest.PrankFlag} is not 0, 100, 101 or 102." );
+			if ( guest.ExitSide is not (null or 0 or 1) )
+				Error( $"Guest {guest.Id} exit side {guest.ExitSide} is not 0 or 1." );
 			if ( guest.BalloonLife is < 0 or > GuestAppearance.MaximumBalloonLife || (guest.HasBalloon && guest.BalloonLife == 0) )
 				Error( $"Guest {guest.Id} balloon life {guest.BalloonLife} is outside 0..255 or holds a balloon at 0." );
 			if ( guest.BinId < 0 || (guest.BinId != 0) != (guest.State == GuestState.ThrowingAwayLitter) )
@@ -2698,6 +2900,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		deliveringArrivals = snapshot.DeliveringArrivals;
 		spawnTimer = snapshot.SpawnTimer;
 		pendingArrivals = snapshot.PendingArrivals;
+		arrivalVehicle = snapshot.ArrivalVehicle ?? -1;
 		laneToggle = snapshot.LaneToggle;
 		ArrivalsEnabled = snapshot.ArrivalsEnabled;
 		seenGridVersion = snapshot.SeenGridVersion;
@@ -2758,6 +2961,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.Litter = snapshot.Litter;
 		guest.BinId = snapshot.BinId;
 		guest.PrankFlag = snapshot.PrankFlag;
+		guest.ExitSide = snapshot.ExitSide;
 		guest.BalloonLife = snapshot.BalloonLife;
 		guest.HasBalloon = snapshot.HasBalloon;
 		guest.InCostume = snapshot.InCostume;
@@ -2827,6 +3031,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		hash.Add( deliveringArrivals );
 		hash.Add( spawnTimer );
 		hash.Add( pendingArrivals );
+		// Only a park with vehicles has one at work; the vehicle-less hash stays as it was.
+		if ( ArrivalVehicles != null )
+			hash.Add( arrivalVehicle );
 		hash.Add( laneToggle );
 		hash.Add( ArrivalsEnabled );
 		hash.Add( guests.Count );
@@ -2883,6 +3090,9 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 			hash.Add( guest.Litter );
 			hash.Add( guest.BinId );
 			hash.Add( guest.PrankFlag );
+			// a guard's drawn way out joins the digest only while a guest has one (every other park keeps its pins)
+			if ( guest.ExitSide is { } exitSide )
+				hash.Add( 0x45786974L + exitSide );
 			hash.Add( guest.BalloonLife );
 			hash.Add( guest.HasBalloon );
 			hash.Add( guest.InCostume );

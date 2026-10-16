@@ -90,6 +90,14 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 			Economy().RecordUseFinished( instance );
 	}
 
+	public void WalkedAway( IRideVisitorBridge attraction )
+	{
+		if ( instances.TryGetValue( attraction.AttractionId, out var instance ) )
+			Economy().RecordWalkAway( instance );
+	}
+
+	public void PriceTested( int category, int value ) => Economy().PriceStatistics.Record( category, value );
+
 	public int PeopleInPark => Guests.GetStatistics().InPark;
 
 	public int GuestCensus => ParkGate.CountCensus( Guests );

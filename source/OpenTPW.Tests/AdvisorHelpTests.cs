@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using OpenTPW.Hud;
 
 namespace OpenTPW.Tests;
 
@@ -226,12 +227,12 @@ public class AdvisorHelpTests
 	[TestMethod]
 	public void DescriptorTableParsesStrictly()
 	{
-		var rows = AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, callback = 0x59c8c0 },\n]\n" );
-		Assert.AreEqual( new AdvisorDescriptorRow( 0, 1, 1, 0, 1, 2, 0x59C8C0 ), rows.Single() );
+		var rows = AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, scan = 0, callback = 0x59c8c0 },\n]\n" );
+		Assert.AreEqual( new AdvisorDescriptorRow( 0, 1, 1, 0, 1, 2, false, 0x59C8C0 ), rows.Single() );
 		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0 },\n]\n" ) );
-		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 1, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, callback = 0x1 },\n]\n" ), "records are in message order" );
-		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 0, group = 0, duplicates = 1, mode = 2, callback = 0x1 },\n]\n" ) );
-		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, callback = 0x1 },\n" ), "unclosed" );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 1, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, scan = 0, callback = 0x1 },\n]\n" ), "records are in message order" );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 0, group = 0, duplicates = 1, mode = 2, scan = 0, callback = 0x1 },\n]\n" ) );
+		Assert.ThrowsException<InvalidDataException>( () => AdvisorDescriptorTable.Parse( "messages = [\n  { message = 0, response = 1, count = 1, group = 0, duplicates = 1, mode = 2, scan = 0, callback = 0x1 },\n" ), "unclosed" );
 	}
 
 	[TestMethod]
@@ -397,8 +398,9 @@ public class AdvisorHelpTests
 	[TestMethod]
 	public void F1RepeatsTutorialsInTheHelpWindowsOnly()
 	{
-		foreach ( var window in AdvisorUiHelp.Windows.Keys )
+		foreach ( var window in AdvisorUiHelp.Windows.Keys.Where( name => name != ParkHud.MapScreenName ) )
 			Assert.IsTrue( AdvisorUiHelp.RepeatsTutorialOnHelpKey( window ), window );
+		Assert.IsFalse( AdvisorUiHelp.RepeatsTutorialOnHelpKey( ParkHud.MapScreenName ), "the map window's procedure is not a caller of the default window procedure" );
 		Assert.IsFalse( AdvisorUiHelp.RepeatsTutorialOnHelpKey( "pause" ) );
 		Assert.IsFalse( AdvisorUiHelp.RepeatsTutorialOnHelpKey( null ), "the park itself has no F1 row" );
 	}
@@ -495,7 +497,8 @@ public class AdvisorHelpTests
 	{
 		Assert.AreEqual( 188, AdvisorUiHelp.MessageFor( "buy" ) );
 		Assert.AreEqual( 303, AdvisorUiHelp.MessageFor( "entryPrice" ) );
-		Assert.IsNull( AdvisorUiHelp.MessageFor( "map" ), "no traced message" );
+		Assert.AreEqual( 304, AdvisorUiHelp.MessageFor( "map" ), "the map window posts 0x130 (0x5F100D)" );
+		Assert.IsNull( AdvisorUiHelp.MessageFor( "options" ), "no traced message" );
 	}
 
 	[TestMethod]

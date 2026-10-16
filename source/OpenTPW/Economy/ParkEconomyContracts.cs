@@ -69,7 +69,14 @@ public enum ParkEventKind
 	/// are below 0 and more than five 30-day months have passed since the park went into the red; <see cref="ParkEvent.Amount"/> the months. The advisor
 	/// answers each one (its game event 2); the bank's own handler loses the park once (<see cref="Bankrupt"/>).
 	/// </summary>
-	BankruptcyMessage
+	BankruptcyMessage,
+	/// <summary>
+	/// A completion opened a higher research group of the category <see cref="ParkEvent.Amount"/> (a <see cref="ResearchCategory"/>) that still has unresearched items
+	/// (the lab's group opener, tp.exe <c>0x00503B80</c>); the advisor says its new-research-group advice.
+	/// </summary>
+	ResearchGroupOpened,
+	/// <summary>A completion left no item unresearched (the lab's check, tp.exe <c>0x00503D40</c>).</summary>
+	ResearchAllDone
 }
 
 /// <summary>

@@ -55,6 +55,103 @@ public sealed partial class ParkHud
 		}
 	}
 
+	// The help of the tools. A tool start in the original is SetMode (0x52F200), which withdraws the ten mode help messages whenever the mode changes and only
+	// then posts the new tool's help (0x486B00); a help the HUD wants posted is held until the frame's mode change has been reported, so the order survives the poll.
+	private List<(int Message, string Mode)>? toolHelp;
+	private string? reportedMode;
+
+	/// <summary>
+	/// Asks the advisor for the help message of a tool that just started or acted; it is posted after this frame's mode change is reported, and dropped when that
+	/// change ended the mode it was posted in (the original withdraws the mode help in SetMode, which then ran after the post).
+	/// </summary>
+	/// <param name="message">The advisor message.</param>
+	/// <param name="mode">The interface mode the original posts it in, when that is not the mode now (a post that came before the click ended the tool).</param>
+	private void PostToolHelp( int message, string? mode = null ) => (toolHelp ??= new()).Add( (message, mode ?? InterfaceMode()) );
+
+	/// <summary>
+	/// The interface mode as a key: which tool the park view runs, or "park". Two frames with different keys are a mode change (the original's SetMode with a new mode).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052F200 interface mode change] SetMode stores the new mode (0x81AE2C) after withdrawing the ten tool help messages when it differs from the stored one
+	internal string InterfaceMode()
+	{
+		if ( level.IsCoasterToolActive )
+			return "coaster";
+		if ( level.CellTool.IsActive )
+			return $"cell/{level.CellTool.Mode}";
+		if ( level.StaffPlacement is { IsActive: true } )
+			return "staffPlacement";
+		if ( level.PatrolTool is { IsActive: true } )
+			return "patrol";
+		if ( level.BuyLandTool is { IsActive: true } )
+			return "buyLand";
+		if ( level.AreaClearTool is { IsActive: true } )
+			return "areaClear";
+		if ( level.IsRemovingObjects )
+			return "remove";
+		if ( level.BuildEntry != null || level.IsPlacing )
+			return "build";
+		return "park";
+	}
+
+	/// <summary>Reports a change of the interface mode to the advisor, then posts the tool help asked for since the last frame.</summary>
+	private void ReportInterfaceMode()
+	{
+		var mode = InterfaceMode();
+		if ( reportedMode != null && reportedMode != mode )
+		{
+			host?.ModeChanged?.Invoke();
+			// [BIN:TPW-EXE:0x0052F4B0 queue tool start] SetMode(3) (and the variant 0x52F580, 0x52F7B2) posts 0xCB (203) after the withdrawal, for every way into the queue tool
+			if ( mode == $"cell/{CellToolMode.Queue}" )
+				(toolHelp ??= new()).Add( (AdvisorToolHelp.QueueTool, mode) );
+		}
+		reportedMode = mode;
+		if ( toolHelp is not { Count: > 0 } )
+			return;
+		foreach ( var (message, postedIn) in toolHelp )
+			if ( postedIn == mode )
+				host?.HelpPosted?.Invoke( message );
+		toolHelp.Clear();
+	}
+
+	/// <summary>The clicks of the path and queue tool since its last first click (the original's counter 0x8186DC); the third later click posts help.</summary>
+	private int cellToolClicks;
+
+	/// <summary>
+	/// The advisor help of a path or queue tool click that was not refused: the first click that sets the start posts 0xB8 (184) in the path tool, the third click after
+	/// it 0xD6 (214), and a click that ends the queue tool without joining a path 0x151 (337).
+	/// </summary>
+	/// <param name="hadStart">The tool had a start before the click.</param>
+	/// <param name="mode">The tool's mode before the click.</param>
+	/// <param name="joinedPath">The queue line ends on a path cell, which links the queue to it (the original's flag 0x816D60).</param>
+	/// <param name="modeBefore"><see cref="InterfaceMode"/> before the click.</param>
+	// [BIN:TPW-EXE:0x00527222 first click] with the start unset a start the cell check accepts is stored (0x5272B3), and the path mode (0x52F860(1)) then posts 0xB8 through 0x59B590 (0x5272FE); the counter 0x8186DC is cleared (0x527316)
+	// [BIN:TPW-EXE:0x0052732F later click] a click with a start set increments the counter and posts 0xD6 when it reaches 3 (0x52733D-0x52735A), in either mode
+	// [BIN:TPW-EXE:0x005275B1 tool end] a click that ends the tool (the start reached, or the line ending on an existing path or queue cell) sets the mode to 0 (0x5275F2); in the queue mode (the check 0x52F860(3) before it) with the layout replay word 0x785A2C and the link flag 0x816D60 both clear it then posts 0x151 (0x527629)
+	internal void ReportCellToolClick( bool hadStart, CellToolMode mode, CellBuildTool tool, bool joinedPath, string? modeBefore = null )
+	{
+		if ( mode is not (CellToolMode.Path or CellToolMode.Queue) )
+			return;
+		if ( !hadStart )
+		{
+			if ( tool.Start == null )
+				return;
+			cellToolClicks = 0;
+			if ( mode == CellToolMode.Path )
+				PostToolHelp( AdvisorToolHelp.PathStart );
+			return;
+		}
+		// the post comes before the line is laid, so a click that ends the tool takes it back through SetMode's withdrawal: it belongs to the mode before the click
+		if ( ++cellToolClicks == 3 )
+			PostToolHelp( AdvisorToolHelp.PathLaterClick, modeBefore );
+		if ( mode == CellToolMode.Queue && !tool.IsActive && !joinedPath )
+			PostToolHelp( AdvisorToolHelp.QueueEnd );
+	}
+
+	/// <summary>The window kind of a feature by its type's flags: relief first (thing bit 0), then rest (bit 1), else the generic feature window.</summary>
+	private static ObjectInfoKind FeatureKind( ObjectCatalogEntry entry ) =>
+		entry.Settings.GetInt( "UsageInfo.ProvidesRelief" ) != 0 ? ObjectInfoKind.Relief
+		: entry.Settings.GetInt( "UsageInfo.ChillsYouOut" ) != 0 ? ObjectInfoKind.Rest : ObjectInfoKind.Feature;
+
 	private OriginalObject? objectHelpItem;
 	private string? objectHelpName;
 	private int objectHelpOpenings;
@@ -65,7 +162,8 @@ public sealed partial class ParkHud
 	/// </summary>
 	private string? ObjectInfoHelpWindow()
 	{
-		if ( !InfoArmOpen || selectedObject is not { IsDeleted: false, Runtime: not null } item || ObjectLayout is not { } layout )
+		// a fixed item (Info.WhichUIType 4) has no window in the original: the dispatcher's jump table ends at 3 (0x486920, cmp ecx, 3; ja)
+		if ( !InfoArmOpen || selectedObject is not { IsDeleted: false, Runtime: not null } item || item.Entry.WhichUIType > 3 || ObjectLayout is not { } layout )
 		{
 			objectHelpItem = null;
 			objectHelpName = null;
@@ -73,8 +171,10 @@ public sealed partial class ParkHud
 		}
 		if ( !ReferenceEquals( item, objectHelpItem ) || objectHelpName == null )
 		{
-			var kind = layout.Table == OriginalLayoutTables.RideWindow ? ObjectInfoKind.Ride
-				: layout.Table == OriginalLayoutTables.SideshowWindow ? ObjectInfoKind.Sideshow : ObjectInfoKind.Shop;
+			// the layout tables of OpenTPW's windows are the original's ride, shop and sideshow tables; a feature (Info.WhichUIType 3) takes the shop table here but opens its own windows in the original
+			var kind = layout.Table == OriginalLayoutTables.RideWindow ? (item.Entry.Settings.GetInt( "AddOn.UpgradeType" ) == 2 ? ObjectInfoKind.AddOn : ObjectInfoKind.Ride)
+				: layout.Table == OriginalLayoutTables.SideshowWindow ? ObjectInfoKind.Sideshow
+				: item.Entry.WhichUIType == 3 ? FeatureKind( item.Entry ) : ObjectInfoKind.Shop;
 			var repair = LiveState( item )?.Repair ?? level.PublishedObjectState( item )?.Repair;
 			objectHelpItem = item;
 			objectHelpName = ObjectInfoHelp.WindowName( kind, repair, ++objectHelpOpenings );

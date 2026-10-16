@@ -50,6 +50,7 @@ public sealed partial class ParkHud
 		employeeScreen ??= CreateEmployeeScreen();
 		Stack.Push( employeeScreen );
 		employeeScreen.Focus( employeeScreen.Find( "exit" ) );
+		PostPatrolAreaHelp( member );
 		return true;
 	}
 
@@ -61,6 +62,14 @@ public sealed partial class ParkHud
 			Stack.Pop();
 		if ( Stack.Top == employeeScreen )
 			Stack.Pop();
+	}
+
+	/// <summary>The window's refresh posts help 212 for an employee with an own patrol area.</summary>
+	// [BIN:TPW-EXE:0x004b5ab0 employee refresh] the refresh (vtable +4, run as the window is built by 0x48cea0 and by the cycle buttons) asks 0x506eb0 whether the selected staff has an own area (corner words +0x20a/+0x20c other than 1 and 0x4000) and then posts help 0xd4 (212) through 0x486b00 (0x4b5b03); the window's close handler withdraws it next to 0xc0 (0x4b5d05)
+	private void PostPatrolAreaHelp( StaffMember member )
+	{
+		if ( member.HasPatrolArea )
+			host?.HelpPosted?.Invoke( AdvisorToolHelp.PatrolAreaSet );
 	}
 
 	private void RefreshEmployeeStats()
@@ -83,6 +92,7 @@ public sealed partial class ParkHud
 			return false;
 		employeeId = next.Id;
 		RefreshEmployeeStats();
+		PostPatrolAreaHelp( next );
 		return true;
 	}
 
@@ -128,6 +138,8 @@ public sealed partial class ParkHud
 			return false;
 		PostMessage( strings.Extra( OpenTpwText.PatrolAreaHint ) );
 		CloseEmployeeWindow();
+		// [BIN:TPW-EXE:0x004b5b50 patrol toggle] the tool set (0x46c580(0x36)) and the window closed (vtable +0x2c), it posts help 0xc1 (193) through 0x486b00; the interface mode change withdraws it (0x52f200)
+		PostToolHelp( AdvisorToolHelp.PatrolTool );
 		return true;
 	}
 

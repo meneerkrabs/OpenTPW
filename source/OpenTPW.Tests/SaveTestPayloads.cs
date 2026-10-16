@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -190,27 +191,40 @@ internal static class SaveTestPayloads
 		return stream.ToArray();
 	}
 
-	/// <summary>Staff body for <paramref name="model"/>: base, opaque person bytes, the staff suffix and a role suffix ending in <paramref name="roleNext"/>.</summary>
+	/// <summary>
+	/// Staff body for <paramref name="model"/>: base, person bytes (zero but for the base position and the walk's accurate destination), the staff suffix and a role
+	/// suffix (<paramref name="role"/>, zero when null) ending in <paramref name="roleNext"/>.
+	/// </summary>
 	public static byte[] Staff( SaveThingModel model, int grade = 2, float happiness = 97, string name = "Nicholas Ricks", uint state = 1, byte percentage = 0,
-		long hired = 125_935_884_000_000_000, ushort roleNext = 0 )
+		long hired = 125_935_884_000_000_000, ushort roleNext = 0, ushort patrolLow = 1, ushort patrolHigh = 0x4000, ushort restArea = 0, uint idle = 0, uint jobsDone = 0,
+		byte[]? role = null, (ushort X, ushort Y) position = default, (ushort X, ushort Y)? destination = null )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
-		writer.Write( new byte[SaveThingChain.PersonBytes] );
+		var person = new byte[SaveThingChain.PersonBytes];
+		BinaryPrimitives.WriteUInt16LittleEndian( person, position.X );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 2 ), position.Y );
+		var (destX, destY) = destination ?? position;
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 20 ), destX );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 22 ), destY );
+		writer.Write( person );
 		writer.Write( grade );
 		writer.Write( happiness );
-		writer.Write( 0u );
+		writer.Write( jobsDone );
 		for ( var index = 0; index < 33; index++ )
 			writer.Write( (ushort)(index < name.Length ? name[index] : 0) );
-		writer.Write( 0x40000001u );
+		writer.Write( patrolLow );
+		writer.Write( patrolHigh );
 		writer.Write( percentage );
-		writer.Write( (ushort)0 );
+		writer.Write( restArea );
 		writer.Write( state );
-		writer.Write( 0u );
+		writer.Write( idle );
 		writer.Write( hired );
 		writer.Write( 93f );
 		var size = SaveThingChain.FixedBodyBytes[model];
-		writer.Write( new byte[size - (int)stream.Length - 2] );
+		var suffix = new byte[size - (int)stream.Length - 2];
+		role?.CopyTo( suffix, 0 );
+		writer.Write( suffix );
 		writer.Write( roleNext );
 		writer.Flush();
 		return stream.ToArray();

@@ -18,7 +18,7 @@ public class OriginalSaveImportTests
 	private static readonly string ExtraLoans = string.Concat( Enumerable.Range( 3, 5 ).Select( index =>
 		$"LoanInfo[{index}].LoanAmount {10000 * index}\nLoanInfo[{index}].APRInPercent 0\nLoanInfo[{index}].RepaymentPeriodInMonths 36\nLoanInfo[{index}].Lendername {index}\n" ) );
 
-	private static BalanceSettings Settings() => EconomyTestData.Settings( apr: 0, extra: ExtraLoans );
+	internal static BalanceSettings Settings() => EconomyTestData.Settings( apr: 0, extra: ExtraLoans );
 
 	/// <summary>Bank loans equal to the settings' offers; <paramref name="bought"/> marks one offer bought with months repaid.</summary>
 	private static byte[] Bank( BalanceSettings settings, int balance = 87_987, (int Index, int Repaid)? bought = null ) => SaveTestPayloads.Bank( balance: balance, loans: index =>
@@ -62,7 +62,7 @@ public class OriginalSaveImportTests
 	/// A 3×3 park: Belly Bounce at (1, 1), the gates as a fixed item, a researcher, bank and challenges from <paramref name="settings"/>.
 	/// <paramref name="unverifiedFootprint"/> records Belly Bounce as 2×1 turned 90°, a footprint without a verified rule.
 	/// </summary>
-	private static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
+	internal static OriginalParkImport Park( BalanceSettings settings, byte[]? bank = null, uint parkClosed = 0, IEnumerable<(uint, uint, byte[])>? extraThings = null,
 		byte[]? researcher = null, byte[]? bellyBounce = null, byte[]? staffHq = null, bool unverifiedFootprint = false, byte[]? challenges = null, byte[]? staffPool = null )
 	{
 		var map = OriginalParkImportTests.CreateMap( 3, 3, ( _, _ ) => 0 );
@@ -176,10 +176,10 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "hired 2,430,000 park seconds after FunnyTimeStart = turn 648" );
 		Assert.AreEqual( 1, import.ImportedStaff );
 		Assert.IsFalse( import.ParkClosed );
-		foreach ( var id in new[] { "SAVE-001", "SAVE-002", "SAVE-003", "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-008", "SAVE-010" } )
+		foreach ( var id in new[] { "SAVE-001", "SAVE-002", "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-008", "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) ), "the dropped generator state is named" );
-		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "Adjusted on import" ) ), "in-range staff values are imported unchanged" );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "adjusted on import" ) ), "in-range staff values are imported unchanged" );
 		AssertReportsUnimportedValues( import );
 
 		// The imported park keeps running and its save round-trips.
@@ -217,11 +217,7 @@ public class OriginalSaveImportTests
 				"quality of goods ", "queue size ", "customers ", "walk-aways ", "time stamp ", "mesh instance " } )
 				StringAssert.Contains( line, value );
 		}
-		foreach ( var line in import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-003] ", StringComparison.Ordinal ) && line.Contains( " values not imported:" ) ) )
-		{
-			foreach ( var value in new[] { "idle tick ", "role bytes ", "role next ID " } )
-				StringAssert.Contains( line, value );
-		}
+		StringAssert.Contains( Line( "Staff jobs-done counts " ), "need no import" );
 		var hq = Line( "[APPROX:SAVE-009]" );
 		foreach ( var value in new[] { "force strike ", "picked up ", "trained " } )
 			StringAssert.Contains( hq, value );
@@ -236,13 +232,13 @@ public class OriginalSaveImportTests
 	{
 		var settings = Settings();
 		var economy = new ParkEconomy( settings, EconomyTestData.Catalog(), ParkGameMode.FullSimulation, 1 );
-		var save = Park( settings, researcher: SaveTestPayloads.Staff( SaveThingModel.Researcher, happiness: 150, state: 9, percentage: 100, hired: 125_935_884_000_000_000 + 5 * OriginalEconomyImport.TimeStampUnitsPerSecond ),
+		var save = Park( settings, researcher: SaveTestPayloads.Staff( SaveThingModel.Researcher, happiness: 150, state: 15, percentage: 100, hired: 125_935_884_000_000_000 + 5 * OriginalEconomyImport.TimeStampUnitsPerSecond ),
 			bellyBounce: SaveTestPayloads.Attraction( new SaveTestPayloads.AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, CostOfGoods = -4 } ) );
 		var import = OriginalEconomyImport.Apply( economy, save );
 
 		var researcher = economy.Staff.Members.Single();
-		Assert.AreEqual( (100, 99, StaffState.Working), (researcher.Happiness, researcher.TrainingPoints, researcher.State), "clamped to the traced happiness range and OpenTPW's 0-99 points; the state word 9 shows as working (tp.exe 0x5064f0)" );
-		var adjusted = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-003] Adjusted on import:", StringComparison.Ordinal ) ).ToArray();
+		Assert.AreEqual( (100, 99, StaffState.Working), (researcher.Happiness, researcher.TrainingPoints, researcher.State), "clamped to the traced happiness range and OpenTPW's 0-99 points; the state word 15 (researching) shows as working (tp.exe 0x5064f0)" );
+		var adjusted = import.Evidence.Where( line => line.StartsWith( "Staff value adjusted on import:", StringComparison.Ordinal ) ).ToArray();
 		Assert.AreEqual( 3, adjusted.Length );
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "happiness 150 imported as 100" ) ) );
 		Assert.IsTrue( adjusted.Any( line => line.Contains( "grade percentage 100 imported as 99" ) ) );

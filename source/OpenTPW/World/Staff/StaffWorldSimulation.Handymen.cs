@@ -44,6 +44,9 @@ public sealed partial class StaffWorldSimulation
 		if ( voices.Count > MaxQueuedVoices )
 			voices.RemoveRange( 0, voices.Count - MaxQueuedVoices );
 		Synchronize();
+		// members loaded from an original save walk on to their saved destination and take back the claims of their jobs before any member updates
+		foreach ( var member in economy.Staff.Members.Where( member => member.ResumeDestination != null && member.Navigation == null && economy.DrivenByWorld( member ) ).ToList() )
+			Resume( economy, member );
 		foreach ( var member in economy.Staff.Members.Where( economy.DrivenByWorld ).ToList() )
 		{
 			var placed = member.Navigation == null;
@@ -113,6 +116,31 @@ public sealed partial class StaffWorldSimulation
 			member.CellY = navigation.Y / (float)Fixed16.One;
 		}
 		CountRestingStaff( economy );
+	}
+
+	/// <summary>
+	/// Places a member loaded from an original save: its walk goes on to the saved destination (<see cref="StaffMember.ResumeDestination"/>) and its job
+	/// claims the ride or toilet it works on again (the attraction's <c>mAssignedStaffMember</c>, +0x5E). A destination no route reaches leaves the member
+	/// where it stands, as the original's loader does when it cannot route again ("Couldn't renav to my accurate dest", <c>0x004F9407</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F8B10 person serializer] after the person is read, 0x004FA5F0 routes it to (mAccurateDestX, mAccurateDestY) and only logs a failure
+	private void Resume( ParkEconomy economy, StaffMember member )
+	{
+		var destination = member.ResumeDestination!.Value;
+		member.ResumeDestination = null;
+		if ( !Place( member ) )
+			return;
+		var cell = (destination.X >> 8, destination.Y >> 8);
+		if ( grid.InBounds( cell.Item1, cell.Item2 ) )
+			Route( member, cell, destination.X & 0xFF, destination.Y & 0xFF );
+		var claimed = member.Job switch
+		{
+			StaffJob.ToRide or StaffJob.Repairing => member.RideId,
+			StaffJob.ToToilet or StaffJob.Cleaning => member.ToiletId,
+			_ => 0
+		};
+		if ( claimed != 0 && economy.TryGetObject( claimed, out var item ) && item.MechanicId == 0 )
+			item.MechanicId = member.Id;
 	}
 
 	/// <summary>The type's search, run when a member is set down or ends a rest (0x00506D10 dispatches by type: 5 0x004D7100, 6 0x004D46D0, 7 0x004D63D0, 8 0x00502C70).</summary>

@@ -131,25 +131,59 @@ public readonly record struct SaveAttraction(
 }
 
 /// <summary>
-/// Staff suffix 0xf2c28 (105 bytes) of models 4–8. <see cref="Happiness"/>/<see cref="Energy"/> are the saved
-/// floats (the writer truncates the runtime value to its low byte first). <see cref="GradePercentage"/> is the
-/// percentage through the grade. <see cref="Name"/> is stored inline (33 UTF-16 units); there is no name index.
-/// <see cref="HiredTimestamp"/> counts 100 ns since 1601-01-01 like the calendar. Raw (meaning not traced):
-/// <see cref="Jobs"/>, <see cref="PatrolRegion"/>, <see cref="RestAreaId"/>, the <see cref="State"/> enum and
-/// <see cref="IdleTick"/>.
+/// Staff suffix (105 bytes) of models 4–8, in the order of tp.exe's staff serializer <c>0x00504DE0</c>: <c>mCurrentPayGrade</c> (+0x1E4), happiness
+/// (+0x1F8, written as its truncated low byte), <c>mJobsDone</c> (+0x204), the inline name <c>mName[i]</c> (+0x1A0, 33 UTF-16 units; the staff carry
+/// no name index), <c>mPatrolRegionBL</c> (+0x20A) and <c>mPatrolRegionTR</c> (+0x20C) as cell ids (y × 128 + x + 1, the area test <c>0x00506ED0</c>),
+/// <c>mPercentageThroughGrade</c> (+0x1E8), <c>mRestArea</c> (+0x208, a thing id), <c>mState</c> (+0x19C, the member's own state word),
+/// <c>mTimeStartedIdling</c> (+0x200, a park turn), <c>mTimeHired</c> (+0x1F0, 100 ns since 1601-01-01 like the calendar) and energy (+0x1FC).
 /// </summary>
-public readonly record struct SaveStaffRecord( int Grade, float Happiness, uint Jobs, string Name, uint PatrolRegion, int GradePercentage,
-	ushort RestAreaId, uint State, uint IdleTick, long HiredTimestamp, float Energy );
+public readonly record struct SaveStaffRecord( int Grade, float Happiness, uint JobsDone, string Name, ushort PatrolRegionBottomLeft, ushort PatrolRegionTopRight,
+	int GradePercentage, ushort RestAreaId, uint State, uint TimeStartedIdling, long HiredTimestamp, float Energy )
+{
+	/// <summary>The cells of a map 128 cells wide: cell id = y × 128 + x + 1 (tp.exe <c>0x00506ED0</c>, <c>0x00506E90</c>).</summary>
+	public const int MapWidth = 128;
+	public const int CellIds = MapWidth * MapWidth;
+
+	/// <summary>The cell of a staff cell id (y × 128 + x + 1); null for 0 or an id past the map.</summary>
+	public static (int X, int Y)? CellOf( ushort id ) => id is >= 1 and <= CellIds ? ((id - 1) & (MapWidth - 1), (id - 1) / MapWidth) : null;
+}
 
 /// <summary>
-/// A staff thing (models 4 Mechanic, 5 Handyman, 6 Entertainer, 7 Guard, 8 Researcher): base, the 382 opaque
-/// person bytes after the base (sprite, scalars, navigation, thoughts), the staff suffix and the role suffix.
-/// <see cref="RoleNextId"/> is the role's linked-list next ID (the role suffix's last u16, after <c>mFirst&lt;Role&gt;</c>);
-/// the other role-suffix bytes are kept in <see cref="RoleBytes"/> (mechanic: repair 4, object 2; handyman: litter
-/// cell 2, start 4, toilet 2; entertainer and researcher: start tick 4; guard: perpetrator 2, prosecution 4).
+/// A staff thing (models 4 Mechanic, 5 Handyman, 6 Entertainer, 7 Guard, 8 Researcher): base, the 382 person bytes after the base (decoded by
+/// <see cref="Person"/>), the staff suffix and the role suffix. <see cref="RoleNextId"/> is the role's linked-list next ID (<c>mNext</c>, +0x210, the
+/// suffix's last u16); <see cref="RoleBytes"/> holds the role fields before it (role serializers <c>0x004DA110</c> mechanic, <c>0x004D6D60</c> handyman,
+/// <c>0x004D4460</c> entertainer, <c>0x004D6000</c> guard, <c>0x00502760</c> researcher), read by <see cref="RoleTimer"/>, <see cref="RoleTarget"/> and
+/// <see cref="RoleToilet"/>.
 /// </summary>
 public sealed record SaveStaff( int Id, SaveThingModel Model, SaveThingBase Base, byte[] PersonBytes, SaveStaffRecord Staff, byte[] RoleBytes, ushort RoleNextId )
 {
+	/// <summary>The decoded person block (position, the walk's accurate destination, speeds, thoughts).</summary>
+	public SavePerson Person => SavePerson.Read( Base, PersonBytes, $"{Model} thing {Id}" );
+
+	/// <summary>
+	/// The role's word at +0x214: a mechanic's <c>mDurationOfRepair</c> (the repair timer), a handyman's <c>mTimeStartedCleaning</c>, an entertainer's
+	/// <c>mTimeStartedEntertaining</c>, a guard's <c>mProsecutionTimestamp</c> (the chase timer) and a researcher's <c>mTimeStartedResearching</c>.
+	/// </summary>
+	public uint RoleTimer => Model switch
+	{
+		SaveThingModel.Handyman or SaveThingModel.Guard => BinaryPrimitives.ReadUInt32LittleEndian( RoleBytes.AsSpan( 2 ) ),
+		_ => BinaryPrimitives.ReadUInt32LittleEndian( RoleBytes ),
+	};
+
+	/// <summary>
+	/// The role's target: a mechanic's <c>mObjectToRepair</c> (+0x218, a thing id), a handyman's <c>mTargetLitterCell</c> (+0x218, a cell id) and a
+	/// guard's <c>mPerp</c> (+0x212, a guest thing id); 0 for the entertainer and the researcher.
+	/// </summary>
+	public ushort RoleTarget => Model switch
+	{
+		SaveThingModel.Mechanic => BinaryPrimitives.ReadUInt16LittleEndian( RoleBytes.AsSpan( 4 ) ),
+		SaveThingModel.Handyman or SaveThingModel.Guard => BinaryPrimitives.ReadUInt16LittleEndian( RoleBytes ),
+		_ => 0,
+	};
+
+	/// <summary>A handyman's <c>mToiletToClean</c> (+0x21A, a thing id); 0 for the other roles.</summary>
+	public ushort RoleToilet => Model == SaveThingModel.Handyman ? BinaryPrimitives.ReadUInt16LittleEndian( RoleBytes.AsSpan( 6 ) ) : (ushort)0;
+
 	public static SaveStaff Read( ReadOnlySpan<byte> payload, SaveThing thing )
 	{
 		if ( thing.Model is < SaveThingModel.Mechanic or > SaveThingModel.Researcher )
@@ -157,7 +191,7 @@ public sealed record SaveStaff( int Id, SaveThingModel Model, SaveThingBase Base
 		var reader = new SaveFieldReader( payload[..thing.End], thing.BodyOffset, $"{thing.Model} thing {thing.Id}" );
 		var thingBase = reader.Base();
 		var person = reader.Bytes( SaveThingChain.PersonBytes - SaveThingBase.Bytes );
-		var staff = new SaveStaffRecord( reader.I32(), reader.F32(), reader.U32(), reader.Utf16( 33 ), reader.U32(), reader.U8(),
+		var staff = new SaveStaffRecord( reader.I32(), reader.F32(), reader.U32(), reader.Utf16( 33 ), reader.U16(), reader.U16(), reader.U8(),
 			reader.U16(), reader.U32(), reader.U32(), reader.I64(), reader.F32() );
 		if ( staff.Grade is < 0 or > 4 || !float.IsFinite( staff.Happiness ) || !float.IsFinite( staff.Energy ) || staff.GradePercentage is < 0 or > 100 )
 			throw new InvalidDataException( $"Save {thing.Model} thing {thing.Id} has grade {staff.Grade}, percentage {staff.GradePercentage}, happiness {staff.Happiness}, energy {staff.Energy}." );

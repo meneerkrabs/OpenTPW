@@ -153,12 +153,38 @@ advisor controller, tag system, park analyser, research lab, weather, bank, UI
 message receiver and challenge system.
 
 Typed readers (`SaveThingRecords.cs`): `SaveAttraction` (model 3), `SaveStaff`
-(4–8: base, raw person bytes, the 105-byte staff suffix, role suffix and its next
+(4–8: base, the person block, the 105-byte staff suffix, role suffix and its next
 ID), `SaveStaffHq` (9), `SaveAdvisorController` (11: eight 21-byte pending
 records, three raw words, 351 history entries, the current record),
 `SaveResearchLab` (14, records raw), `SaveBank` (16) and `SaveChallengeSystem`
 (19). Guests (1), mechanic HQ (10), tag system (12), park analyser (13), weather
 (15) and UI receiver (17) are walked by width and not decoded.
+
+### Person and staff (`SavePerson`, `SaveStaff`)
+
+The person block (390 bytes) is tp.exe's person serializer `0x4f8b10`: the base thing
+(`0x50b090`), the sprite (`0x4d3ee0`: `mSpriteScript`, `mNextAnim`, `mNextServiceInterval`),
+`mAccurateDestX`/`Y` (2 + 2, 1/256 cell), `mAdjustorSpeed`, `mBaseSpeed` (2 + 2), `mCount` (1),
+`mESPSprite` (4, the sprite category: 2 is a costume), `mLastRecordedMapId` (2), the 177-byte
+navigation state (`0x50d150`, kept raw), `mPreviousSpeed`, `mPreviousX`, `mPreviousY`,
+`mStrandedTime` (4 each), `mPurposeSpeed` (2), `mSetDestSuccessfully`, `mSpriteAngle`, `mSpriteID`,
+`mSpriteUnderRideCtrl` (4 each), and the thought block (`0x50bad0`: `mActionHistIndex`, 32 ×
+`mEventHistory[i]`, `mLastThought`, `mThoughtScript`, `mTimeBubbleShown`). Once it has read the
+person the loader routes it again to its accurate destination (`0x4fa5f0` at `0x4f9407`; a
+failure only logs "Couldn't renav to my accurate dest").
+
+The staff suffix (`0x504de0`) holds `mCurrentPayGrade`, the happiness byte, `mJobsDone` (set
+to 0 by the constructor and otherwise only serialized), the 33-unit inline `mName`, the
+patrol corners `mPatrolRegionBL`/`TR` (cell ids y × 128 + x + 1, the area test `0x506ed0`),
+`mPercentageThroughGrade`, `mRestArea` (a thing id), `mState` (the member's own state word
++0x19c), `mTimeStartedIdling` (a park turn), `mTimeHired` (the clock's whole-turn stamp) and
+the energy byte. The role suffixes are: mechanic `mDurationOfRepair` 4, `mObjectToRepair` 2;
+handyman `mTargetLitterCell` 2, `mTimeStartedCleaning` 4, `mToiletToClean` 2; entertainer
+`mTimeStartedEntertaining` 4; guard `mPerp` 2, `mProsecutionTimestamp` 4; researcher
+`mTimeStartedResearching` 4; each followed by the role list's `mNext` 2. In Easymode the five
+staff patrol (state 1) or idle (the guard, since turn 752), their patrol rectangles are the
+whole map (researcher), (47, 18)–(48, 25) (entertainer) and (39, 21)–(56, 28), and they were
+hired on turns 15 and 648.
 
 ### Cell grid (verified structure)
 

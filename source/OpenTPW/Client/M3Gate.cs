@@ -475,7 +475,7 @@ internal sealed class M3GateRun
 	/// the HUD build flow's rules (Level.PlaceObject): a clicked cell is turned into an anchor with
 	/// <see cref="Level.GetCentredAnchor"/>, the site must pass <see cref="ParkObjects.Check(IParkGrid, Func{int, int, bool}, ObjectCatalogEntry, int, int, int)"/>,
 	/// the object is bought with <see cref="ParkEconomy.TryBuild"/> and registered with guests by
-	/// <see cref="Level.RegisterWithGuests"/> (attractions only; outside cells snapped to the nearest path, RIDES-028).
+	/// <see cref="Level.RegisterWithGuests"/> (attractions only; outside cells snapped to the nearest path: the gate does not lay the access cells a build lays).
 	/// The gate's own choice is the site: its entrance must open onto a spine cell.
 	/// </summary>
 	private void PlaceObject( string role, Func<ObjectCatalogEntry, bool> match )

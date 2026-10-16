@@ -1605,6 +1605,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return moved;
 	}
 
+	/// <summary>
+	/// Sets down the queued guests that stand on <paramref name="cells"/> after a removal emptied them (the queue tool took queue cells, front included): each such guest, queueing,
+	/// moving up, boarding or waiting to board, is put on the nearest path cell and leaves the queue as if dismissed ("queue was shortened"). Returns the number of guests moved.
+	/// </summary>
+	// Approximation (QUEUE-015, registered at QueuePaths.RemoveFrom): the original's cell clear (0x5367A0) writes no guest and what a guest standing on a cleared queue cell does next is not traced; the dismissal (0x005012F0) is the exit the queue-edited re-evaluation uses (0x00501390)
+	public int SetDownOffQueueCells( IReadOnlySet<(int X, int Y)> cells )
+	{
+		var moved = 0;
+		foreach ( var guest in guests.ToArray() )
+		{
+			if ( !guest.OnGrid || guest.Navigation.OffGrid || !guest.IsInQueue )
+				continue;
+			var here = guest.Navigation.Cell;
+			if ( !(cells.Contains( here ) || cells.Contains( (guest.CellX, guest.CellY) )) || Grid.IsWalkable( here.X, here.Y ) || Grid.IsQueue( here.X, here.Y ) )
+				continue;
+			if ( Grid.FindNearestWalkable( here.X, here.Y ) is not { } cell )
+				continue;
+			PlaceOnGrid( guest, cell.X, cell.Y );
+			if ( FindAttraction( guest.AttractionId ) is { } attraction )
+				DismissFromQueue( guest, attraction, GuestThought.None );
+			else
+				ReturnOrphanToPath( guest );
+			moved++;
+		}
+		return moved;
+	}
+
 	/// <summary>True when the route from the guest's cell on is still path cells, each linked to the next (a wander route is a shortest path, so no cell repeats).</summary>
 	private bool RouteAheadHolds( GuestNavigation navigation )
 	{
@@ -2556,7 +2583,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Think( guest, GuestThought.Dissatisfied );
 		}
 		else
+		{
 			ApplyVisit( guest, ride );
+			// [BIN:TPW-EXE:0x004FDA1B use satisfaction] after the use routine 0x004FE1E0 the change 3 × ((u8)trunc(happiness) - (u8)trunc(the happiness at joining the queue)) goes to the object's running average (0x004E1E00)
+			Payments?.UseSatisfaction( ride, ((int)guest.Happiness & 0xFF) * 3 - ((int)guest.QueueJoinHappiness & 0xFF) * 3 );
+		}
 		// [BIN:TPW-EXE:0x00501FD3 state 15 entry] after the use routine (0x005015F4, 0x004FD970) the state-15 entry gives a guest with balloon life its balloon back, except at a balloon shop, whose use routine has just made one
 		if ( guest.BalloonLife > 0 && ride.AppearanceEffect != GuestAppearance.Balloon )
 			guest.HasBalloon = true;

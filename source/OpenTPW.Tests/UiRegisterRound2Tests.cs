@@ -107,6 +107,33 @@ public class UiRegisterRound2Tests
 	}
 
 	[TestMethod]
+	public void AnOriginalClassSliderPagesOnATrackClickAndGrabsTheThumbAtAnOffset()
+	{
+		var canvas = new UiCanvas( 2048, 1536 );
+		var value = 50;
+		var slider = new UiSlider
+		{
+			Bounds = new UiRect( 0, 0, 1067, 67 ), Anchor = UiAnchor.TopLeft, Track = new UiRect( 0, 0, 1067, 67 ), KnobSize = new System.Numerics.Vector2( 67, 67 ),
+			Steps = () => 101, Truncates = true, Value = () => value, Changed = v => value = v
+		};
+		IUiDragTarget target = slider;
+		// the thumb of 50 spans 500..567; a click 100 units left of it lowers the value by one page, right of it raises it
+		target.DragBegin( canvas, canvas.Map( new UiRect( 400, 0, 1, 1 ), UiAnchor.TopLeft ).Center );
+		target.DragTo( canvas, canvas.Map( new UiRect( 400, 0, 1, 1 ), UiAnchor.TopLeft ).Center );
+		Assert.AreEqual( 49, value, "left of the thumb: one page down, and the held press does not drag" );
+		target.DragBegin( canvas, canvas.Map( new UiRect( 900, 0, 1, 1 ), UiAnchor.TopLeft ).Center );
+		Assert.AreEqual( 50, value, "right of the thumb: one page up" );
+		// grabbing the thumb 20 units off its centre does not move it; dragging keeps the offset
+		var thumb = slider.KnobRect( 50 );
+		var grab = thumb.X + thumb.Width / 2 + 20;
+		target.DragBegin( canvas, canvas.Map( new UiRect( grab, 0, 1, 1 ), UiAnchor.TopLeft ).Center );
+		target.DragTo( canvas, canvas.Map( new UiRect( grab, 0, 1, 1 ), UiAnchor.TopLeft ).Center );
+		Assert.AreEqual( 50, value, "a grab alone changes nothing" );
+		target.DragTo( canvas, canvas.Map( new UiRect( grab + 100, 0, 1, 1 ), UiAnchor.TopLeft ).Center );
+		Assert.AreEqual( 60, value, "100 units of travel are ten values (1000 units for 100)" );
+	}
+
+	[TestMethod]
 	public void TheEnterParkSoundSkipsInstantAction()
 	{
 		Assert.IsFalse( FrontEndMenu.EnterParkSoundPlays( instantAction: true ), "game type 2 skips cat_globallobbysfx 4" );

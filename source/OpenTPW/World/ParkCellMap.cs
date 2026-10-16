@@ -26,6 +26,30 @@ public static class ParkCellTypes
 	public const byte Exit = 10;
 	/// <summary>A fixed walkway outside the terrain (MAP bit 0x80: the bridge deck, the entrance crossings).</summary>
 	public const byte FixedWalkway = 30;
+	/// <summary>
+	/// The coaster module's cell marker (<c>SetCell(0x15)</c> of <c>0x452D30</c>, called by the coaster tool code <c>0x434412</c>, <c>0x443057</c>, <c>0x444EE7</c> and <c>0x445B50</c>), which the
+	/// placement also writes on the cell beyond a track end (<c>&lt;</c>, <c>&gt;</c>, <c>D</c> of a coaster station) with the ride's owner word; the validator's modes 0x15 and 0x16
+	/// accept it (<c>0x535B53</c>). OpenTPW's coaster builder keeps its own area test and writes none.
+	/// </summary>
+	public const byte TrackConnection = 0x15;
+	/// <summary>A park fence post on the structure layer.</summary>
+	public const byte Hoarding = 0x19;
+
+	/// <summary>The types of a track cell on the second layer (kart and water origins and stations, and the fence post): tp.exe's cell predicate <c>0x53AD30</c>.</summary>
+	// [BIN:TPW-EXE:0x0053AD30 track cell] true for the cell types 0xB, 0xD, 0x10, 0x12 and 0x19
+	public static bool IsTrackCell( byte type ) => type is TrackCellTypes.KartOrigin or TrackCellTypes.KartStart or TrackCellTypes.WaterOrigin or TrackCellTypes.WaterStart or Hoarding;
+
+	/// <summary>The types of a track tile's extension cells, whose head the cell lookups follow through the owner word: <c>0x53AD90</c>.</summary>
+	// [BIN:TPW-EXE:0x0053AD90 track extension] true for the cell types 0xC and 0x11
+	public static bool IsTrackExtension( byte type ) => type is TrackCellTypes.Extension or 0x11;
+
+	/// <summary>The cell types a ride object's footprint writes and the area clear and the owner lookup treat as the object's cells: 4, 9 and 10.</summary>
+	// [BIN:TPW-EXE:0x0052BE74 object cell types] the area clear tests the type with 4 and the range 9..10 (0x52BE74..0x52BE85); the owner lookup 0x527D60 tests 4, 9 and 10 (0x527DB3..0x527DC7)
+	public static bool IsObjectCell( byte type ) => type is Object or Entrance or Exit;
+
+	/// <summary>The cell types whose queue link (<c>+0xD</c>) means something: a queue cell's link to its predecessor, and the direction an entrance or exit cell opens.</summary>
+	// [BIN:TPW-EXE:0x004D8750 queue link readers] the edge test and the link writer read +0xD of types 9 and 10 (0x534A18..0x534A74), the queue walk and the cell models of type 3 (0x4DE670, 0x535DD0); Easymode's saved entrance and exit cells carry the rotated direction byte there
+	public static bool CarriesQueueLink( byte type ) => type is (byte)ParkCellType.Queue or Entrance or Exit;
 }
 
 /// <summary>Map cell flag bits the build tools read (PATH-plan §5.2, §5.4).</summary>
@@ -33,6 +57,11 @@ public static class ParkCellTypes
 public enum ParkCellFlags : ushort
 {
 	None = 0,
+	/// <summary>
+	/// The flag word is set to exactly this by the placement on the cells of a '+' or '#' footprint cell (an add-on over its ride's track; <c>0x53A510(0x10)</c>)
+	/// and on the track layer's cell beneath; the area clear refuses an object whose run meets it (<c>0x535DB0(0x10)</c>), and a flagged track tile gets no piece instance.
+	/// </summary>
+	AddOn = 0x10,
 	NoModify = 0x20,
 	Unowned = 0x40,
 	/// <summary>The world init's copy of MAP bit 0x10 (the entrance complex).</summary>
@@ -54,6 +83,7 @@ public sealed class ParkCellMap
 	private readonly short[] placements;
 	private readonly byte[] links;
 	private readonly byte[] queueLinks;
+	private readonly ushort[] owners;
 	private readonly int[] typeCounts = new int[256];
 	private readonly int[] blockStamps;
 	/// <summary>Cells per side of a stamp block (the original's 16 × 16-cell blocks).</summary>
@@ -71,6 +101,7 @@ public sealed class ParkCellMap
 		placements = new short[width * height];
 		links = new byte[width * height];
 		queueLinks = new byte[width * height];
+		owners = new ushort[width * height];
 		typeCounts[0] = width * height;
 		BlocksX = (width + StampBlock - 1) / StampBlock;
 		BlocksY = (height + StampBlock - 1) / StampBlock;
@@ -133,8 +164,14 @@ public sealed class ParkCellMap
 			{
 				var inside = HasTerrain( terrain, x, y );
 				var initial = inside && map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath );
+				var savedFlags = ParkCellFlags.None;
 				if ( inside && save != null && save.Cells[x, y].IsPath )
+				{
 					cells.SetPath( x, y, GuestPathGrid.ToCellLinks( GuestPathGrid.ToLinks( save.Cells[x, y].PathConnections ) ) );
+					// [BIN:TPW-EXE:0x0052989A saved NoModify path cells] a path cell the placement laid outside an entrance or exit carries the flag word 0x20 in the save as the initial path cells do (18 of the Jungle Easymode's 78 path cells: ten initial, eight laid outside its rides' entrances and exits)
+					if ( !GameEditions.IsThemeParkInc )
+						savedFlags = (ParkCellFlags)save.Cells[x, y].MapFlags & ParkCellFlags.NoModify;
+				}
 				else if ( initial )
 				{
 					// [BIN:TPW-EXE:0x00536490 map init] an InitialPath cell (attribute bit 0x08) is linked by the link writer 0x5348D0 called with mode 1 (0x53653B)
@@ -148,6 +185,7 @@ public sealed class ParkCellMap
 					flags &= ~ParkCellFlags.Unowned;
 				if ( type != (byte)ParkCellType.Path && type != 0 )
 					cells.SetType( x, y, type );
+				flags |= savedFlags;
 				if ( flags != ParkCellFlags.None )
 					cells.SetFlags( x, y, flags );
 			}
@@ -265,29 +303,92 @@ public sealed class ParkCellMap
 		terrain == null || (uint)x < (uint)terrain.CellCountX && (uint)y < (uint)terrain.CellCountZ && (terrain.GetCellWord( x, y ) & 1) == 0;
 
 	/// <summary>
-	/// The cell types a placed object writes over its footprint (tp.exe's placement commit <c>0x00528A70</c>): each shape cell's type from the
-	/// symbol table, with the track and overlay types 11, 16 and 23 stored as 4. Only empty cells are typed (OpenTPW keeps objects off path and
-	/// queue cells; an imported park's saved types stay).
+	/// The cells a placed object writes over its footprint (tp.exe's placement commit <c>0x00528A70</c>): each shape cell's type from the symbol table, with the track and overlay
+	/// types 11, 16 and 23 stored as 4, its owner word (<paramref name="owner"/>, <see cref="CellWord"/> of the object's anchor; 0 writes none), and by shape type the flags:
+	/// '@' (1) a path cell with the NoModify flag linked to its path neighbours, '+' (11) and '#' (16) the flag word 0x10 (<see cref="ParkCellFlags.AddOn"/>) on the cell and on
+	/// the track layer's cell beneath, and an entrance or exit cell's queue link its rotated direction byte (<paramref name="rotation"/>). Only empty cells are typed, after a path cell without
+	/// NoModify has been cleared (an imported park's saved types stay).
 	/// </summary>
-	// [BIN:TPW-EXE:0x00528A70 placement commit] for every shape cell of a nonzero type (the table 0x818C18) it clears the cell (0x005367A0(0, 0)) and calls 0x00532FC0 with the type, 0xB, 0x10 and 0x17 replaced by 4; a plain type is SetCellType 0x005346D0, which writes cell +8; Easymode's object cells are saved as 4, 9 and 10
-	public void WriteFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint )
+	// [BIN:TPW-EXE:0x00528A70 placement commit] for every shape cell of a nonzero type (the table 0x818C18) it clears the cell (0x005367A0(0, 0)) and calls 0x00532FC0 with the type, 0xB, 0x10 and 0x17 replaced by 4 (0x5290C7..0x5290EE); a plain type is SetCellType 0x005346D0, which writes cell +8; Easymode's object cells are saved as 4, 9 and 10
+	// [BIN:TPW-EXE:0x00529138 footprint owner] the commit then stores the new object's cell word as the cell's owner (0x539210, +0x10) and clears the track layer's bridge bits (0x53A530(0xF)); Easymode's saved cells carry y × 128 + x + 1 of the object's anchor on every cell of its footprint (all 67 object cells of the Jungle park)
+	// [BIN:TPW-EXE:0x00529173 '@' footprint cell] on commit a type-1 shape cell gets the flag word 0x20 (0x53A510, 0x529182), the path link writer in mode 1 (0x5348D0, 0x529198) and, for each cardinal link it then has to a path cell, the same writer on that neighbour (0x5291C5..0x5291DD, the loop over 1, 4, 16, 64 by 0x4D8C20)
+	// [BIN:TPW-EXE:0x0052950D '+' and '#' footprint cell] on commit the flag word of the cell and of the second-layer cell at the same coordinates is set to 0x10 (0x53A510(0x10) twice, 0x52950D..0x52951C); the 'Q' cell (3) takes the generic stamp only
+	// [BIN:TPW-EXE:0x005293B3 entrance and exit cells] on commit an entrance or exit cell's queue link +0xD is the symbol's direction byte turned by the build rotation (0x4D8C20, 0x5227E0: 0x5293B3..0x5293C3, 0x5292A7..0x5292B2); Easymode's saved entrance and exit cells carry these bytes (the path cell in front of them is linked by ObjectAccessCells.Lay)
+	public void WriteFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, ushort owner = 0, int rotation = 0 )
 	{
 		foreach ( var (x, y, cell) in footprint )
 		{
 			var type = FootprintType( cell.CellType );
-			if ( type != 0 && InBounds( x, y ) && RawTypeAt( x, y ) == 0 )
+			if ( type == 0 || !InBounds( x, y ) )
+				continue;
+			// A path cell that is not NoModify gives way: the commit clears the cell (0x5367A0(0, 0)) before it writes the type.
+			if ( RawTypeAt( x, y ) == (byte)ParkCellType.Path && !FlagsAt( x, y ).HasFlag( ParkCellFlags.NoModify ) )
+			{
+				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false );
+				SetType( x, y, ParkCellType.Empty );
+			}
+			var fresh = RawTypeAt( x, y ) == 0;
+			if ( fresh )
 				SetType( x, y, type );
+			// An add-on stands on its ride's track: OpenTPW's map keeps the track's own type on such a cell (the original's first layer holds the object type 4 above the track on the second layer).
+			var onTrack = cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash && (TrackCellTypes.IsWalkable( RawTypeAt( x, y ) ) || RawTypeAt( x, y ) == TrackCellTypes.Extension);
+			if ( RawTypeAt( x, y ) != type && !onTrack )
+				continue;
+			if ( owner != 0 && !onTrack && OwnerAt( x, y ) != owner )
+				SetOwner( x, y, owner );
+			switch ( cell.CellType )
+			{
+				case ObjectShapeSymbols.TypeAt when FlagsAt( x, y ) != ParkCellFlags.NoModify:
+					SetFlags( x, y, ParkCellFlags.NoModify );
+					PathLinkWriter.LinkPath( this, x, y );
+					for ( var direction = 0; direction < 4; direction++ )
+					{
+						var (nx, ny) = (x + GuestPathGrid.Directions[direction].DX, y + GuestPathGrid.Directions[direction].DY);
+						if ( (LinksAt( x, y ) & GuestPathGrid.LinkValue( direction )) != 0 && InBounds( nx, ny ) && RawTypeAt( nx, ny ) == (byte)ParkCellType.Path )
+							PathLinkWriter.LinkPath( this, nx, ny );
+					}
+					break;
+				case ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash when FlagsAt( x, y ) != ParkCellFlags.AddOn:
+					SetFlags( x, y, ParkCellFlags.AddOn );
+					if ( Tracks.Get( x, y ) is { Type: not 0 } track && track.Flags != TrackCell.FlagAddOn )
+						Tracks.Set( x, y, track with { Flags = TrackCell.FlagAddOn } );
+					break;
+				case ObjectShapeSymbols.TypeEntrance or ObjectShapeSymbols.TypeExit when fresh && cell.Direction != 0:
+					// The cell's queue link is the symbol's direction byte turned by the build rotation.
+					SetQueueLink( x, y, ObjectFootprint.RotateDirectionByte( cell.Direction, rotation ) );
+					break;
+			}
 		}
 	}
 
-	/// <summary>Empties the footprint cells a removed object typed (those still of its footprint type).</summary>
-	// [APPROX:ECON-050] the guest grid takes the world init's types and flags (tp.exe 0x00536490 with the terrain test 0x00450420: 7, 2 or 30 where no terrain lies, 1 with flag 0x20 for an InitialPath cell and 0 inside, flag 0x40 on every cell without 0x20, which the level's land then clears inside the fence) and the footprint types a placement writes (0x00528A70: 4, 9 and 10), but a removed object empties the cells it typed, where the original's clear of them is not found (its destructor writes no cell word), the placement's other cell writes (the clear before the write beyond a path cell under the footprint, which ParkObjects clears, the link to the path in front of an entrance, the '@' path links) are not modelled, and a read-only visit or a Theme Park Inc layout keeps the cells it was given — evidence needed: the sale path's clear of the footprint cells: tp.exe's destructor 0x004DD0A0 writes no cell word (it credits the scrap value, takes the RegionFX row off, kills the mesh 0x00559060 and posts message type 10, read only by the staff and guest handlers 0x004DA0CC, 0x004D6CFC and 0x004FB36D), so the clear is in the code that marks the object for it, whose caller of 0x0050B780 is not identified
+	/// <summary>
+	/// Empties the footprint cells a removed object typed (those still of its footprint type), unlinking an '@' path cell and taking the add-on flag off a '+' or '#' cell and its track
+	/// layer cell.
+	/// </summary>
+	// [APPROX:ECON-050] the guest grid takes the world init's types and flags (tp.exe 0x00536490 with the terrain test 0x00450420: 7, 2 or 30 where no terrain lies, 1 with flag 0x20 for an InitialPath cell and 0 inside, flag 0x40 on every cell without 0x20, which the level's land then clears inside the fence) and the footprint types a placement writes (0x00528A70: 4, 9 and 10, the owner word, the '@' and add-on cells, the cells outside the entrance and exit), but a removed object empties the cells it typed and its queue (the level clears the ride's queue cells, ObjectAccessCells.ClearQueue), where the original's clear of them is not found (its destructor writes no cell word; the demolition replays the queue tool from the entrance in the Stranger-than-paradise twin, 0x100748A0) and the cells its demolition writes are not traced, and a read-only visit or a Theme Park Inc layout keeps the cells it was given — evidence needed: the sale path's clear of the footprint cells: tp.exe's destructor 0x004DD0A0 writes no cell word (it credits the scrap value, takes the RegionFX row off, kills the mesh 0x00559060 and posts message type 10, read only by the staff and guest handlers 0x004DA0CC, 0x004D6CFC and 0x004FB36D), so the clear is in the code that marks the object for it, whose caller of 0x0050B780 is not identified
 	public void ClearFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint )
 	{
 		foreach ( var (x, y, cell) in footprint )
 		{
 			var type = FootprintType( cell.CellType );
-			if ( type != 0 && InBounds( x, y ) && RawTypeAt( x, y ) == type )
+			if ( type == 0 || !InBounds( x, y ) )
+				continue;
+			var addOn = cell.CellType is ObjectShapeSymbols.TypeUpgrade or ObjectShapeSymbols.TypeHash;
+			var onTrack = addOn && (TrackCellTypes.IsWalkable( RawTypeAt( x, y ) ) || RawTypeAt( x, y ) == TrackCellTypes.Extension);
+			if ( RawTypeAt( x, y ) != type && !onTrack )
+				continue;
+			if ( cell.CellType == ObjectShapeSymbols.TypeAt )
+			{
+				PathLinkWriter.Unlink( this, x, y, cardinalOnly: false );
+				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+			}
+			else if ( addOn )
+			{
+				SetFlags( x, y, FlagsAt( x, y ) & ~ParkCellFlags.AddOn );
+				if ( Tracks.Get( x, y ) is { Type: not 0 } track && (track.Flags & TrackCell.FlagAddOn) != 0 )
+					Tracks.Set( x, y, track with { Flags = (byte)(track.Flags & ~TrackCell.FlagAddOn) } );
+			}
+			if ( !onTrack )
 				SetType( x, y, ParkCellType.Empty );
 		}
 	}
@@ -336,6 +437,16 @@ public sealed class ParkCellMap
 	/// <summary>The queue link (map cell <c>+13</c>): one of 1, 4, 16, 64 toward the queue's predecessor, or 0.</summary>
 	public byte QueueLinkAt( int x, int y ) => InBounds( x, y ) ? queueLinks[y * Width + x] : (byte)0;
 
+	/// <summary>
+	/// The cell's owner word (map cell <c>+0x10</c>, the save's <c>mParentID</c>): the original cell word <see cref="CellWord"/> of the object's anchor cell for the cells of an object's
+	/// footprint (types 4, 9 and 10, and the path and queue cells a footprint lays), of the ride for its queue cells; 0 when nothing owns the cell. Readers test the cell's type first.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00528F26 owner word] the placement stores the word of the new object's cell (its x byte +5 and y byte +7, y × 128 + x + 1) through 0x539210 (+0x10) on every footprint cell it types (0x529138), the entrance's outside queue cell and its entrance cell's owner (0x52983C); the pass 0x83 stores the tool's ride, 0x818698, on a line's queue cell (0x5340E9); Easymode's saved map cells carry exactly these words (mParentID, record +11) on every object, entrance, exit and queue cell
+	public ushort OwnerAt( int x, int y ) => InBounds( x, y ) ? owners[y * Width + x] : (ushort)0;
+
+	/// <summary>The original cell word of (x, y): <c>y × 128 + x + 1</c>, what <c>+0x10</c> holds for an owner and what the cell lookups (0x4D0AF0, 0x532FC0) decode as <c>cell − 1</c>, <c>&amp; 0x7F</c> and <c>&gt;&gt; 7</c>.</summary>
+	public static ushort CellWord( int x, int y ) => unchecked((ushort)(y * 128 + x + 1));
+
 	public void SetType( int x, int y, byte type )
 	{
 		var index = Index( x, y );
@@ -344,12 +455,13 @@ public sealed class ParkCellMap
 		typeCounts[types[index]]--;
 		typeCounts[type]++;
 		types[index] = type;
-		if ( type != (byte)ParkCellType.Queue )
+		if ( !ParkCellTypes.CarriesQueueLink( type ) )
 			queueLinks[index] = 0;
 		if ( type == 0 )
 		{
 			links[index] = 0;
 			placements[index] = 0;
+			owners[index] = 0;
 		}
 		Version++;
 		if ( changed )
@@ -379,6 +491,13 @@ public sealed class ParkCellMap
 	public void SetPlacementCount( int x, int y, short value )
 	{
 		placements[Index( x, y )] = value;
+		Version++;
+	}
+
+	/// <summary>Sets the owner word (<see cref="OwnerAt"/>). Not part of the state digest: it is derived from the placed objects and the queues' rides.</summary>
+	public void SetOwner( int x, int y, ushort value )
+	{
+		owners[Index( x, y )] = value;
 		Version++;
 	}
 

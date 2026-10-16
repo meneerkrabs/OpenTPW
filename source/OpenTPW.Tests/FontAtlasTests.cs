@@ -151,6 +151,19 @@ public class FontAtlasTests
 	}
 
 	[TestMethod]
+	public void OnlySpaceAndTabAreBreakOpportunitiesAsInTheOriginalFormatter()
+	{
+		var atlas = new FontAtlas( CreateFont( 10,
+			new SyntheticGlyph( 'a', 3, 3, 0, 0, 4 ),
+			new SyntheticGlyph( '-', 3, 3, 0, 0, 4 ),
+			new SyntheticGlyph( '\t', 0, 0, 0, 0, 2 ),
+			new SyntheticGlyph( ' ', 0, 0, 0, 0, 2 ) ) );
+		// tp.exe 0x6aeab0 flags space and tab (0x12) as break opportunities and nothing else: a hyphen does not break, a tab does
+		Assert.AreEqual( 4, TextLayout.Create( atlas, "a-a-a-a", 8 ).LineCount, "no break at the hyphens: the run breaks between characters, two glyphs a line" );
+		Assert.AreEqual( 2, TextLayout.Create( atlas, "aa\taa", 8 ).LineCount, "the tab is a break opportunity and the line drops it" );
+	}
+
+	[TestMethod]
 	public void EveryOriginalEnglishFontPacksAllGlyphsWithoutOverlap()
 	{
 		var directory = OriginalFontDirectory();

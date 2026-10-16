@@ -61,13 +61,21 @@ its links. A queue neighbour that links back is refreshed and plays `cat_ui` 139
 The area clear tool (`AreaClearTool`, tp.exe tool mode 0x3a: the buy window's
 Clear Land row and the Clear key, Delete by default) takes two clicks: the first
 stores a corner, the second clears the rectangle and ends the tool (tp.exe
-`0x525da3`). Row by row, each object met is demolished when its runs of cells
-along the row and the column through that cell end inside the rectangle and none
-of the scanned cells (the first cell past each run included) has the cell flag
+`0x525da3`). Row by row, each object cell met (type 4, 9 or 10) starts four scans along the cells of the
+same owner word (cell `+0x10`, `ParkCellMap.OwnerAt`) and of an object type; the object is demolished when the runs
+end inside the rectangle and none of the scanned cells (the first cell past each run included) has the cell flag
 0x10; then every path cell in the rectangle is removed. Queue cells stay
-(tp.exe `0x52bdd0`). Removal is `ClearCell`'s forced path case (tp.exe `0x52c11f`): every bit of the cell's link byte, diagonals included, is
+(tp.exe `0x52bdd0`). The owner word of an object's cells is the cell word (`y × 128 + x + 1`) of its anchor, written by the placement
+(`0x528A70`, `0x539210`); Easymode's saved cells carry exactly these words (`mParentID`, tested on every cell of the Jungle park's
+footprints). The flag 0x10 is written only by the placement's `+` and `#` footprint cells, the track add-ons (`ParkCellMap.WriteFootprint`).
+`APPROX:PATH-005` (the missing owner word and the untraced writer of the flag) is retired. A park whose objects do not type their cells (a
+Theme Park Inc layout, whose placement is not traced) clears by the object standing on each cell. The developer panel's one-click remove tool
+(an object, else a queue cell, else a path cell) is `[EXT:dev-one-click-remove]`: it is OpenTPW's and has no original counterpart. Removal is `ClearCell`'s forced path case (tp.exe `0x52c11f`): every bit of the cell's link byte, diagonals included, is
 cleared on both sides (tp.exe `0x5367A0`), no refund. A `NoModify` cell that still has linked neighbours stays; without
-neighbours the flag is dropped and the cell is removed.
+neighbours the flag is dropped and the cell is removed. The one exception is `[EXT:removable-access-cells]`: the cells a placement lays outside an
+entrance or exit (the queue front and the path stubs, all `NoModify`) can be removed by the path and queue removal tools, which the original's cell clear keeps (`0x5367D4`).
+The map start's initial path stays fixed. The ride's entrance and exit then resolve to the nearest walkable path as for a ride nothing laid cells for, the guests standing
+on the emptied cells are set down (queued guests leave the queue, QUEUE-015), a queue or path can be laid on the cell again, and demolishing the ride clears what is left.
 Backspace over a path cell with no tool on uses the counted case (tp.exe
 `0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
 when it was laid once (`ParkPathBuilder.RemoveOnce`). The original's key does
@@ -176,7 +184,6 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
-| PATH-005 | PATH-REMOVE | the area clear (tool 0x3a, 0x52bdd0) is ported: the Clear Land row and the Clear key; objects are footprint cells here, and the writer of the cell flag 0x10 that keeps an object from the clear is untraced; the developer panel's one-click remove tool is OpenTPW's |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |
 | PATH-017 | PATH-PAUSE-WINDOW | the pause menu blocks tool clicks and the speed pause does not, as tp.exe's click gate (`0x48c8d0` reads the pause-menu object `0x7c2534`; `APPROX:PATH-013`, retired); the P key's full-screen layer (`0x47ed80` → `0x65dd7b`) under its panel is not drawn and whether it stops the park click route is not read | The window manager's hit test of the layer |
 | PATH-015 | QUEUE-MODELS | queue cells carry the theme's queue models as tp.exe places them (0x535dd0 class 2, 0x5229e0); baked at the cell's mean height, without their .hmp ground deformation, texture-frame animation (the fire0 torches) and quedead's load flag 0x100000 |

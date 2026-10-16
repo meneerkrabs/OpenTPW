@@ -68,8 +68,6 @@ public sealed partial class ParkHud
 	/// <summary>The session's remembered list sorts (UI-084); a HUD built without a host keeps its own.</summary>
 	private ListSortMemory Sorts => host?.ListSorts ?? (fallbackSorts ??= new());
 	private OriginalObject? selectedObject;
-	private CashChangeTracker cashTracker;
-	private object? cashSource;
 	private readonly List<UiElement> economyElements = new();
 	private int cursorX = -1;
 	/// <summary>Set by a press the path/queue tool used, so its release does not select an object.</summary>
@@ -87,8 +85,6 @@ public sealed partial class ParkHud
 		Status = status;
 		Catalog = catalog;
 		buy = new BuyListModel( catalog, ItemName, BuyPrice, Sorts, LandRows );
-		cashTracker = new CashChangeTracker( status.Money );
-		cashSource = status.EconomySource;
 		lastLevelMessage = level.LastActionMessage;
 		level.Objects.ObjectPlaced += OnObjectPlaced;
 		// Harnesses that build a Level without its constructor have no tool object.
@@ -177,8 +173,13 @@ public sealed partial class ParkHud
 	public static Veldrid.RgbaByte CashColor( long balance ) => CashColors[(int)Math.Clamp( (Math.Clamp( balance, -999, 6000 ) + 999) / 1000, 0, CashColors.Length - 1 )];
 	private string FormatMoney( long amount ) => string.Format( System.Globalization.CultureInfo.InvariantCulture, "{0}{1:#,0}", amount < 0 ? strings[UIStrings.NegativeDollar] : strings[UIStrings.Dollar], Math.Abs( (decimal)amount ) ).Replace( "  ", " " );
 
-	/// <summary>The balance change of the last <see cref="CashChangeTracker.Seconds"/>; it drives the trend arrow beside the balance (control 49), not the yellow cost text.</summary>
-	public long CashChange => cashTracker.Change;
+	/// <summary>
+	/// The frame of the trend arrow beside the balance (control 49, <c>green_up</c>): 1 (the red down arrow) when the last closed month spent more than it took, else 0;
+	/// 0 before the first month closes.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4a0e30 date refresh] at every date update (0x4815e0 daily, 0x481560) the arrow's frame becomes 1 when the newest entry of the money-out sample ring (+0x1f5a4, index +0x1f7e4) exceeds the newest of the money-in ring (+0x1fc94, index +0x1fed4); an empty ring reads as the year, so both sides tie and the frame is 0
+	// [BIN:TPW-EXE:0x4c7720 month samples] both rings take one entry per month close (month message 12; 144 entries each), the entries the hire window reads as its income and money-out rows (0x49bdd0); the builder 0x4a1d70 sets the arrow to frame 0 and never hides it, only the cost text (control 48)
+	public int CashTrendFrame => FinanceEconomy is { } economy && economy.Ledger.History is { Count: > 0 } history && history[^1].MoneyOut > history[^1].MoneyIn ? 1 : 0;
 
 	/// <summary>
 	/// The cost of the build action under way, shown in yellow under the balance (control 48): the held blueprint's price, the path or queue line's cost so far, or the coaster track
@@ -269,10 +270,10 @@ public sealed partial class ParkHud
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
 		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending
 		// [BIN:TPW-EXE:0x004a0c18 HUD balance refresh] 0x4a0ab0 sets i_dollar (control 0x32) to frame 1 for a negative balance and 0 otherwise, beside the balance's absolute value
-		// [APPROX:UI-051] green_up frame 1 while the balance fell in the last seconds; the ticket count is the park's available tickets — evidence needed: the trend arrow's visibility and the in-park ticket spend reaching the player ledger
+		// [APPROX:UI-051] the ticket count is the park's available tickets, where the original shows the player's earned tickets less the spent count (0x5af5d0) — evidence needed: the in-park ticket spend reaching the player ledger
 		economyElements.Add( hud.Add( new UiModelImage { Id = "dollar", Model = "i_dollar", Frame = () => Status.Money < 0 ? 1 : 0, Bounds = Rect( 37, 58, 242, 262 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.Highlight, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
-		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashChange < 0 ? 1 : 0, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
+		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashTrendFrame, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "goldenKey", Model = "gkey", Bounds = Rect( 1853, 165, 1955, 268 ), Anchor = UiAnchor.TopRight } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "goldenTicket", Model = "gtick", Bounds = Rect( 1853, 54, 1955, 156 ), Anchor = UiAnchor.TopRight } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "goldenKeys", Text = () => GoldenKeysText, Font = fonts => fonts.Balance, Align = UiAlign.Right, Fit = true, Bounds = Rect( 1688, 171, 1829, 261 ), Anchor = UiAnchor.TopRight } ) );
@@ -681,7 +682,7 @@ public sealed partial class ParkHud
 		UpdateShopPriceButton( mouseCaptured, keyboardCaptured, textCaptured );
 		UpdateRideUpgradeButton( input );
 		UpdateCallStaffButton();
-		TrackCashChange( context.Delta );
+		UpdateEconomyElements();
 		UpdateCameraPanel( context.Delta );
 		UpdateMessageTube( context.Delta );
 		UpdateLocatorPanels();
@@ -1067,7 +1068,7 @@ public sealed partial class ParkHud
 	private static readonly string[] TicketIds = { "goldenTicket", "goldenTickets" };
 	private static readonly string[] KeyIds = { "goldenKey", "goldenKeys" };
 
-	private void TrackCashChange( float delta )
+	private void UpdateEconomyElements()
 	{
 		foreach ( var element in economyElements )
 			element.Visible = Status.HasEconomy;
@@ -1076,17 +1077,8 @@ public sealed partial class ParkHud
 			if ( hud.Find( id ) is { } ticketElement ) ticketElement.Visible = Status.HasEconomy && Status.GoldenTickets > 0;
 		foreach ( var id in KeyIds )
 			if ( hud.Find( id ) is { } keyElement ) keyElement.Visible = Status.HasEconomy && Status.GoldenKeys > 0;
-		// A loaded save replaces the economy: start counting changes from its balance.
-		if ( !ReferenceEquals( Status.EconomySource, cashSource ) )
-		{
-			cashSource = Status.EconomySource;
-			cashTracker = new CashChangeTracker( Status.Money );
-		}
-		cashTracker.Update( Status.Money, delta );
 		if ( hud.Find( "cashChange" ) is { } text )
 			text.Visible = BuildActionCost != null;
-		if ( hud.Find( "cashTrend" ) is { } arrow )
-			arrow.Visible = Status.HasEconomy && CashChange != 0;
 	}
 
 	public void SelectObject( OriginalObject? item )

@@ -47,6 +47,21 @@ public class StaffWindowTests
 	}
 
 	[TestMethod]
+	public void TheTrendArrowShowsWhetherTheLastClosedMonthLostMoney()
+	{
+		// [BIN:TPW-EXE:0x4a0e30 date refresh] frame 1 when the newest money-out sample exceeds the newest money-in sample; empty rings tie, so the frame is 0
+		var economy = EconomyTestData.Park();
+		var hud = Hud( economy );
+		Assert.AreEqual( 0, hud.CashTrendFrame, "before the first month closes both rings are empty" );
+		var mechanic = EconomyTestData.HireBest( economy, StaffType.Mechanic );
+		economy.AdvanceMonths( 1 );
+		var closed = economy.Ledger.History[^1];
+		Assert.IsTrue( closed.MoneyOut > closed.MoneyIn, "a month with only a wage spent more than it took" );
+		Assert.AreEqual( 1, hud.CashTrendFrame );
+		Assert.IsNotNull( mechanic );
+	}
+
+	[TestMethod]
 	public void TheHireBalanceIsTakenWhenTheWindowOpens()
 	{
 		var economy = EconomyTestData.Park();

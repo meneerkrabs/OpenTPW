@@ -14,7 +14,7 @@ Paths and queues were read in tp.exe via REA and built; six unknowns are retired
   refused ghost gate `0x524A63`, the start check `0x527222`..`0x5272B8` and the lay sound `0x5271B7` follow.
 - **Path textures** (PATH-014 retired): the chooser roll (`0x535FCC`/`0x53602C`) and the refresh `0x5365D0` are a presentation stub with its own CRT generator, seed 1.
 - **Other**: ECON-049 (`0x4DE4A0`) and WALK-006 are narrowed, GATE-006 has a note only; QUEUE-014 and QUEUE-010 stay blocked.
-- **Two new approximations**: QUEUE-023 (a closed ride is not opened when its queue becomes connected, `0x4DE1F0` with `0x4DE4A0`) and PATH-016 (map init
+- **Two new approximations**: QUEUE-023 (a closed ride is not opened when its queue becomes connected, `0x4DE1F0` with `0x4DE4A0`, which every edit of the ride's cells calls: the queue tool click, the placement, the cell setter and the cell clear) and PATH-016 (map init
   `0x536490` links InitialPath cells with the link writer's mode 1, where OpenTPW gives them links `0x0F`). Both were checked in the executable's bytes.
 
 The pinned run hash moves from `0xA2FAA54FEB56DA05` to `0x09894103FAFB8D45` (schema 19): the synthetic park's queue now carries links and guests walk it with the original's
@@ -22,8 +22,8 @@ queue walk, so positions, joins and the world stream move. It is on top of main'
 
 No save field is new. An older save, and an imported original park, gets queue links rebuilt when its ride is registered (`QueuePaths.RebuildMissingLinks`, only when no
 cell of the queue has a link byte), so staff and guests restored from them walk the same links. `Level.RefreshRenderedCells()` redraws the path layer, which the park-resume
-smoke needed. Verified with 4510 tests passing without game data, 4950 with it, all five native smokes, the evidence checks (21 Python suites) and
-`tools/fidelity_register.py --check` (237 unresolved unique IDs).
+smoke needed. Verified (after the review's merge of main) with 4542 tests passing without game data, 4983 with it, the native smokes, the evidence checks (21 Python suites) and
+`tools/fidelity_register.py --check` (235 unresolved unique IDs).
 
 Still open: QUEUE-014 (the queue tool's straight segments from a clicked start) and QUEUE-010 (the guest's position after leaving a queue), QUEUE-023 and PATH-016 above, the
 owner word of the area clear (PATH-005), the queue models' ground deformation and torch animation (PATH-015).

@@ -1357,6 +1357,29 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 	}
 
+	/// <summary>
+	/// Sets down the guests that stand on <paramref name="cells"/> after those stopped being path (an object built over a path, whose placement
+	/// clears it): each walking guest on such a cell is put on the nearest path cell, its walk ended, and goes on in its state as after a broken
+	/// walk (<see cref="EndBrokenWalks"/>). Returns the number of guests moved.
+	/// </summary>
+	// [APPROX:RIDES-018] guests on a path cell an object's placement clears are set down on the nearest path cell; tp.exe's placement (0x528A70) and ClearCell (0x5367A0) write cells and the block stamp (0x4D8C60, through SetCellType 0x5346D0), which reroutes walking things, and what a guest standing inside the new footprint does next is not traced
+	public int SetDownOffCells( IReadOnlySet<(int X, int Y)> cells )
+	{
+		var moved = 0;
+		foreach ( var guest in guests )
+		{
+			if ( !guest.OnGrid || guest.Navigation.OffGrid || !cells.Contains( (guest.CellX, guest.CellY) ) || Grid.IsWalkable( guest.CellX, guest.CellY )
+				|| guest.State is not (GuestState.DoingNothing or GuestState.WalkingAround or GuestState.ThrowingAwayLitter or GuestState.GoingToRide
+					or GuestState.LeavingPark or GuestState.ExitingRide) )
+				continue;
+			if ( Grid.FindNearestWalkable( guest.CellX, guest.CellY ) is not { } cell )
+				continue;
+			PlaceOnGrid( guest, cell.X, cell.Y );
+			moved++;
+		}
+		return moved;
+	}
+
 	/// <summary>True when the route from the guest's cell on is still path cells, each linked to the next (a wander route is a shortest path, so no cell repeats).</summary>
 	private bool RouteAheadHolds( GuestNavigation navigation )
 	{

@@ -81,6 +81,13 @@ public sealed class ParkPathBuilder : ICellLineWriter
 
 	public ParkCellMap Cells { get; }
 	public GuestPathGrid? Walk { get; }
+	/// <summary>
+	/// An object at (x, y) a path may cover (the level: <see cref="ParkObjects.GivesWay"/> with <see cref="ParkObjects.PathOverwritePriority"/>: features of
+	/// overwrite priority 0 or 1); the cell then counts as empty and the commit demolishes the object (<see cref="DemolishObject"/>).
+	/// </summary>
+	public Func<int, int, bool>? ObjectGivesWay { get; set; }
+	/// <summary>Demolishes the object at (x, y) before a path cell is laid there (the level: <see cref="ParkObjects.Remove"/>, which sells it for its scrap value).</summary>
+	public Action<int, int>? DemolishObject { get; set; }
 	public IParkGrid Terrain { get; }
 	public ParkEconomy? Economy => economy();
 	public CellToolMode Mode => CellToolMode.Path;
@@ -139,6 +146,12 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	public CellBuildResult CheckCell( int x, int y ) => Validate( x, y, ParkCellType.Path, lastCell: false );
 
 	/// <summary>
+	/// The validator's path rule for (x, y) without the line's money test: the rule an object's placement applies to an access cell it lays a
+	/// path on (<see cref="ParkObjects.PathRuleAllows"/>), whose cost is the object's.
+	/// </summary>
+	public CellBuildResult CheckPathRule( int x, int y ) => Validate( x, y, ParkCellType.Path, lastCell: false, pending: null );
+
+	/// <summary>
 	/// A queue end (the validator's code 8): a queue cell with exactly one set link bit, whose neighbour along it is a queue cell
 	/// too: the back of a queue not connected to a path. A path can be built over it, which turns it into a path cell.
 	/// </summary>
@@ -166,7 +179,9 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		// [BIN:STP-PPC:0x1008432C placement validator] a cell with flag 0x40 (not owned; set by map initialisation 0x10085538 on every non-InitialPath cell) is refused
 		if ( Cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ) )
 			return CellBuildResult.NotOwned;
-		var old = Cells.RawTypeAt( x, y );
+		// [BIN:TPW-EXE:0x535D66 overwrite priority] a type 4, 9 or 10 cell is tested by its owner's overwrite priority alone: below the tool's 0x818C10 (2 for a path, set by the hover 0x5234D0) it is allowed, otherwise refused
+		var givesWay = ObjectGivesWay?.Invoke( x, y ) == true;
+		var old = givesWay ? (byte)0 : Cells.RawTypeAt( x, y );
 		if ( !ParkCellMap.CanChangeCellType( old, (byte)type, lastCell ) )
 			return CellBuildResult.Occupied;
 		// [BIN:STP-PPC:0x10084864 placement validator] path over path returns 0 (allowed); SetCellType 0x10082AC4 then only bumps the placement counter
@@ -176,7 +191,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		// [BIN:TPW-EXE:0x00535CE0 path over a queue end] a type-3 cell with one set link bit (0x522790) whose neighbour along it (0x4D97E0) is type 3 returns 8 (0x535D06), which the start check (0x527280) and the ghost accept; any other queue cell is refused (0x535D12: 0x816D50 set, 1); the commit's SetCellType (rule 0x535600 allows type 1 over 3) then types it 1 and charges the path cost (WritePath)
 		if ( type == ParkCellType.Path && old == (byte)ParkCellType.Queue && !IsQueueEnd( Cells, x, y ) )
 			return CellBuildResult.QueueCell;
-		if ( isOccupied?.Invoke( x, y ) == true )
+		if ( !givesWay && isOccupied?.Invoke( x, y ) == true )
 			return CellBuildResult.Occupied;
 		// [BIN:TPW-EXE:0x535670 cell validator] no slope or height test (LayLine 0x536100, SetCell 0x532fc0 reads heights only for the ghost, 0x535670 has no float operation, SetCellType 0x5346d0); the terrain rule is the map start's cell types (OriginalParkPlacement: holes 2, 0x1e and 7 refused, every other surface cell type 0 or the initial path), the unowned flag 0x40 is tested above
 		var terrain = Terrain.CheckTerrain( x, y );
@@ -245,6 +260,9 @@ public sealed class ParkPathBuilder : ICellLineWriter
 				break;
 			}
 			var cost = CellCost;
+			// [BIN:TPW-EXE:0x5344E5 cell op 0x87] the commit's first LayLine pass (0x524960: 0x536100(0x87, ...)) demolishes the owner of every type 4, 9 or 10 cell of the line whose priority 0x818C14 is below the tool's 0x818C10 (0x527EE0, crediting its scrap value) before the type pass
+			if ( write && ObjectGivesWay?.Invoke( x, y ) == true )
+				DemolishObject?.Invoke( x, y );
 			if ( write && !WritePath( x, y ) )
 			{
 				stoppedBy = CellBuildResult.NotEnoughMoney;

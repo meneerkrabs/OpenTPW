@@ -187,6 +187,9 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		}
 	}
 
+	/// <summary>The park name the capture phase gives the park before it saves.</summary>
+	private static readonly ParkNameLines SmokeParkName = new( "Kevin", "Park" );
+
 	// ---- Capture phase ---------------------------------------------------------------------------
 
 	private void SavePark()
@@ -194,6 +197,9 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		boundarySample = CaptureSample( 0 );
 		savedWater = WaterCounts();
 		savedTour = TourCounts();
+		// The park is renamed before the save (the rename dialog's level call); the restore phase checks the gate keeps the lines.
+		Require( level.RenamePark( SmokeParkName.Line1, SmokeParkName.Line2 ) && level.GateSign?.Lines == SmokeParkName && level.GateSign.Images.Line1 == SmokeParkName.Line1,
+			"rename the park and redraw its gate sign" );
 		// The actual HUD save handler (GameFlow.Resume.cs's SaveCurrentPark), writing the own-format world save.
 		flow.SaveCurrentPark();
 		var written = SaveFileSystem.GetAbsolutePath( "opentpw-jungle-world.json" );
@@ -246,6 +252,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 		Require( level.Park != null && level.Guests != null && level.Paths != null && level.OriginalPark != null, "the resumed park has its economy, guests, paths and original park" );
 		Require( ReferenceEquals( Level.Current, level ), "the resumed level is the current level" );
 		Require( level.Coasters.Count == 0, "the resumed park carries no coaster state" );
+		Require( level.ParkName == SmokeParkName && level.GateSign?.Lines == SmokeParkName && level.GateSign.Images.Line1 == SmokeParkName.Line1
+			&& level.GateSign.TextPixelCount > 0, "the resumed park keeps its renamed park name on the gate sign" );
 		VerifyWaterRestored();
 		VerifyTourRestored();
 		VerifyBumperRestored();

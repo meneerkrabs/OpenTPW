@@ -201,6 +201,11 @@ public sealed partial class ParkHud
 		UiButton? door = null;
 		if ( id == "entryPrice" )
 		{
+			// [BIN:TPW-EXE:0x00498D80 ticket price window] the park's name (0x4E2780 via 0x486280) is shown on the window's control 0x4F3AF, whose click (message 0x10006, handler 0x499060) opens the rename dialog 0x4990F0
+			// [EXT:park-rename-layout] the name button's place in OpenTPW's entry price window and the rename dialog's layout are OpenTPW's; the original window and dialog resources (0x751798, 0x751928) are not decoded
+			var parkNameButton = screen.Add( new UiButton { Id = "parkName", Text = () => level.ParkName?.DisplayName ?? "", Font = fonts => fonts.Label,
+				Clicked = OpenParkRenameDialog, Bounds = Rect( 370, 180, 1663, 270 ), Anchor = UiAnchor.Center } );
+			adjustmentButtons.Add( (parkNameButton, () => level.ParkName != null) );
 			Label( "priceLabel", () => strings[UIStrings.TicketPrice], Rect( 370, 300, 1000, 380 ) );
 			Adjustment( "price", 300, () => FinanceEconomy?.EntranceFee ?? 0,
 				value => TrySetEntryPrice( FinanceEconomy, level.IsReadOnlyVisit, (int)value ) );
@@ -248,5 +253,42 @@ public sealed partial class ParkHud
 		screen.Updating = _ => Refresh();
 		screen.Back = Close;
 		return screen;
+	}
+
+	/// <summary>
+	/// The park rename dialog: the park name's two lines as two fields of 14 characters; OK stores them and redraws the gate
+	/// sign (<see cref="Level.RenamePark"/>), the cross closes without a change.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004990F0 park rename dialog] title UITEXT 0xC2 (Rename Item), fields 0x3943C and 0x3943D filled from the gate's lines (0x4E2860, 0x4E2920) with a limit of 14; its handler 0x4993E0 applies the fields on OK and closes on cancel
+	internal void OpenParkRenameDialog()
+	{
+		if ( level.IsReadOnlyVisit || level.ParkName is not { } current ) return;
+		var screen = new ShopPriceScreen( "parkRename" );
+		var window = UiDialogs.CenteredWindow( 1100, 760 );
+		UiDialogs.AddWindow( screen, window, "w_dialog", () => strings[UIStrings.RenameItem] );
+		var (initial1, initial2) = current.DialogFields;
+		UiTextField Field( string id, string text, float y ) => screen.Add( new UiTextField
+		{
+			Id = id, Text = text, MaximumLength = ParkNameLines.DialogFieldLength, Model = "f_text1",
+			Bounds = new UiRect( window.X + 180, window.Y + y, 740, 100 ), Anchor = UiAnchor.Center
+		} );
+		var first = Field( "line1", initial1, 200 );
+		var second = Field( "line2", initial2, 330 );
+		void Cancel() { if ( Stack.Top == screen ) Stack.Pop(); }
+		void Apply()
+		{
+			// A refused name (a read-only visit, or lines a save could not hold) keeps the dialog open.
+			if ( Stack.Top != screen || !level.RenamePark( first.Text, second.Text ) ) return;
+			Cancel();
+		}
+		first.Submitted = () => screen.Focus( second );
+		second.Submitted = Apply;
+		screen.Add( new UiButton { Id = "apply", Model = "b_okay", Clicked = Apply,
+			Bounds = new UiRect( window.X + 180, window.Bottom - 180, 200, 100 ), Anchor = UiAnchor.Center } );
+		screen.Add( new UiButton { Id = "cancel", Model = "b_exit", Help = strings.Help( 2 ), Clicked = Cancel,
+			Bounds = new UiRect( window.Right - 400, window.Bottom - 180, 200, 100 ), Anchor = UiAnchor.Center } );
+		screen.Back = Cancel;
+		Stack.Push( screen );
+		screen.Focus( first );
 	}
 }

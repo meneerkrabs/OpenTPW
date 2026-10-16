@@ -478,3 +478,11 @@ digests are unchanged); a run in which a script faults now hashes differently fr
 script's `TimeMilliseconds` stays put and the released riders change the guest digest.
 
 Coaster tool panel (October 15): the coaster track hash gained the cut (`CutAfter`, only while the circuit is cut open) and, for a node with a hand-set yaw or incline, those two values, so every hash of a coaster without hand edits and without a cut is unchanged. The hand edits, the cut, the stack swaps and the panel's money settlements are simulation-side state of the owner's own tool; the panel's pointer scale and picking are host input.
+
+Park signs round (October 16): sign paint masks are now shaped as tp.exe 0x5EBF10 shapes them (offset copy, erosion or dilation by
+the mask word, the separable Gaussian by the parameter), so the composed sign halves of every sign with paint changed: 144 left/right
+half hashes of the frozen sign baseline and the five signs pinned in `RidesRound2CorpusTests` were re-pinned deliberately (no sign
+line, text pixel count or `.sgn` hash moved). Sign pixels are presentation only and never enter the world hash, so the pinned fixed
+run is untouched. Catalogue signs now draw the info-record name (empty for an Info.Id outside tp.exe's table), also presentation only.
+The park's name (the gate's two sign lines) is saved in the world save's optional `ParkName` part, but it is not hashed: renaming the
+park changes no simulation state, and a save from before the part restores with the gate's default lines.

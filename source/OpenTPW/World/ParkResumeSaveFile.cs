@@ -492,6 +492,9 @@ internal static class ParkResumeSaveFile
 		}
 		if ( snapshot.Gate is { } gate )
 			Require( gate.LastObservedTurn >= 0, $"the park gate's last observed turn {gate.LastObservedTurn} is negative" );
+		if ( snapshot.ParkName is { } parkName )
+			Require( ParkNameLines.IsValidLine( parkName.Line1 ) && ParkNameLines.IsValidLine( parkName.Line2 ),
+				$"the park name lines are missing, longer than {ParkNameLines.MaximumLength} characters or hold control characters" );
 		if ( snapshot.Staff is { } staff )
 		{
 			Require( staff.Actors != null, "the staff-world snapshot has no actor list" );

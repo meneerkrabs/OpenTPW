@@ -97,6 +97,14 @@ public sealed class ParkCellMap
 	public int BlockStamp( int blockX, int blockY ) =>
 		(uint)blockX < (uint)BlocksX && (uint)blockY < (uint)BlocksY ? blockStamps[blockY * BlocksX + blockX] : 0;
 
+	/// <summary>Raises the stamp counter and writes it into the block of (<paramref name="x"/>, <paramref name="y"/>) without a cell change (the queue re-evaluation 0x4DE1F0: 0x4D8C50, 0x4D8C60); outside the map nothing is stamped.</summary>
+	public void StampBlockAt( int x, int y )
+	{
+		var stamp = ++StampCounter;
+		if ( InBounds( x, y ) )
+			blockStamps[y / StampBlock * BlocksX + x / StampBlock] = stamp;
+	}
+
 	/// <summary>Restores the stamp counter and the block stamps a snapshot recorded (row by row); null leaves every block unstamped.</summary>
 	internal void RestoreBlockStamps( int counter, IReadOnlyList<int>? stamps )
 	{

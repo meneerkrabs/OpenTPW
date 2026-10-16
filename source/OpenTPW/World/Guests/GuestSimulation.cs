@@ -1560,7 +1560,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		foreach ( var guest in guests )
 		{
 			// A walk of the original kind notices a changed block itself (the stamp reroute of follow_path, ParkCellMap.BlockStamp).
-			// [APPROX:WALK-007] a route walk (WALK-006) restored from a save made before the original walk ends without a replan when a grid edit takes a cell or link of its route, and the queue recompute's own stamp of its back cell (tp.exe 0x4de1f0, after one of its queue cells became path) is not made; the block stamps of every cell type change (0x4d8c60 from 0x5346d0, 0x5348d0, 0x538fc0) and the walk's comparison (0x50ed6c, a search in mode 1) are ported — still open: the 0x4de1f0 stamp
+			// [APPROX:WALK-007] a route walk (WALK-006) restored from a save made before the original walk ends without a replan when a grid edit takes a cell or link of its route, and the queue recompute's own stamp of its back cell (tp.exe 0x4de1f0: the counter raised by 0x4d8c50 and written into the back cell's block by 0x4d8c60) is made after the queue tool's edits, but not yet after a path laid over a queue end or a cell clear of a queue cell (0x5346d0, 0x5367a0 call 0x4de1f0 on the owning ride, found through the cell's owner word +0x10, which OpenTPW's cells do not keep); the block stamps of every cell type change (0x4d8c60 from 0x5346d0, 0x5348d0, 0x538fc0) and the walk's comparison (0x50ed6c, a search in mode 1) are ported — still open: the 0x4de1f0 stamp after a path over a queue end and a queue cell clear (the owner word)
 			if ( guest.State is not (GuestState.WalkingAround or GuestState.ThrowingAwayLitter) || !guest.HasWaypoint || guest.Navigation.Original
 				|| RouteAheadHolds( guest.Navigation ) )
 				continue;

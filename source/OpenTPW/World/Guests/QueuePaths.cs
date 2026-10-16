@@ -96,7 +96,7 @@ public static class QueuePaths
 		else
 			PathLinkWriter.LinkQueueStep( grid.Cells, x, y, x - back.X, y - back.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
 		ride.RecomputeQueue( grid );
-		ride.NotifyQueueEdited();
+		ride.NotifyQueueEdited( grid );
 		return QueueBuildResult.Ok;
 	}
 
@@ -141,7 +141,7 @@ public static class QueuePaths
 			return false;
 		PathLinkWriter.LinkQueueStep( grid.Cells, path.X, path.Y, path.X - before.X, path.Y - before.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
 		ride.RecomputeQueue( grid );
-		ride.NotifyQueueEdited();
+		ride.NotifyQueueEdited( grid );
 		return true;
 	}
 
@@ -217,7 +217,7 @@ public static class QueuePaths
 		foreach ( var cell in removed )
 			grid.ClearQueue( cell.X, cell.Y );
 		ride.RecomputeQueue( grid );
-		ride.NotifyQueueEdited();
+		ride.NotifyQueueEdited( grid );
 		return removed.Length;
 	}
 }

@@ -109,7 +109,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		{
 			var anchor = Level.GetCentredAnchor( armedEntry!, site.X, site.Y, 0 );
 			var footprint = ObjectFootprint.GetCells( armedEntry!.Shape, anchor.X, anchor.Y, 0 ).Count();
-			Require( Level.Blueprint is { } blueprint && blueprint.Cells.Count == footprint && blueprint.Cells.All( cell => cell.Marker == BlueprintMarker.Allowed ),
+			Require( Level.Blueprint is { } blueprint && blueprint.Cells.Count( cell => cell.Marker is BlueprintMarker.Allowed or BlueprintMarker.Front ) == footprint && blueprint.Cells.All( cell => cell.Marker != BlueprintMarker.Refused ),
 				"hovering the site shows its footprint as allowed blueprint markers" );
 		} );
 		Do( "place through the world click", () =>

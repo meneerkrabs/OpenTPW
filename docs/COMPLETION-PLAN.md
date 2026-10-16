@@ -145,7 +145,8 @@ states its source and the application's SHA-256, and
 local copy of the application. No other table or code from the executable is copied.
 
 Evidence references get their own label, for example
-`[BIN:STP-PPC:<function or address>]` and `[BIN:TPI-EXE:<function or address>]`,
+`[BIN:STP-PPC:<function or address>]`, `[BIN:TPI-EXE:<function or address>]` and
+`[BIN:QMIXER-DLL:<address>]` (the game's QMixer.dll sound mixer, analysed statically),
 with the SHA-256 of the analyzed executable in `RECOMPILATION-ASSESSMENT.md`. The
 fidelity register (`tools/fidelity_register.py`) must still learn that label
 before the first rule is marked this way.

@@ -89,7 +89,7 @@ implementation against those inputs, not equivalence to an executed PC game.
   The clock starts at 0 with the park's script world (RIDES-044): the PC clock is the app-lifetime scaled
   timer 0x785970 (started once at 0x54DCF0, read by 0x402D70, set only by the save writer 0x4164C0 and loader
   0x415270, never reset for a new park), so a new park's first script sees the time since program start;
-  the two differ only in absolute `GETTIME` values, as every deadline is relative.
+  `GETTIME` (PC handler `0x551F1E`) stores that clock unchanged and every shipped script uses it only as a deadline or in a difference (`RideClockCorpusTests`); the only visible effect of the origin is the 32-bit wrapping `WAITANIM_CH` sum inside a park's first 134 ms (RIDES-044).
 - `JSR`/`RETURN` use a LIFO stack limited to the header stack size (every
   script that uses JSR declares ≥ 3); the old VM used a FIFO queue.
 - Children: `SPAWNCHILD` and `SPAWNSOUND` load a script from the parent's

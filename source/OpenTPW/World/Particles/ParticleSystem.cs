@@ -17,6 +17,8 @@ public struct ParticleSprite
 	/// <summary>Rotation in 1/65536 turn.</summary>
 	public int Spin;
 	public int RenderFlags;
+	/// <summary>The emitter's template is screen-space (+5): <see cref="X"/> and <see cref="Z"/> place it on the screen (see <see cref="ParticleScreenSpace"/>).</summary>
+	public bool ScreenSpace;
 }
 
 /// <summary>One live emitter slot's draw bounds (1/64 original unit).</summary>
@@ -300,6 +302,19 @@ public sealed partial class ParticleSystem
 		emitter.ExtentX = x >> 4;
 		emitter.ExtentY = y >> 4;
 		emitter.ExtentZ = z >> 4;
+		return true;
+	}
+
+	/// <summary>Turns a live emitter's particle velocity to a native direction (1024 = unit), times the template's directed speed; false for a dead handle.</summary>
+	// [BIN:TPW-EXE:0x51FD90 emitter direction] the handle is checked, then E+0x38/+0x3C/+0x40 = (d * E+0xB0 + (sign & 0x3FF)) >> 10, as the type-2 create does
+	public bool SetDirection( int handle, (int X, int Y, int Z) direction )
+	{
+		if ( Resolve( handle ) is not { } emitter )
+			return false;
+		var speed = emitter.Template.DirectedSpeed;
+		emitter.BaseX = Trunc1024( unchecked( direction.X * speed ) );
+		emitter.BaseY = Trunc1024( unchecked( direction.Y * speed ) );
+		emitter.BaseZ = Trunc1024( unchecked( direction.Z * speed ) );
 		return true;
 	}
 
@@ -1168,7 +1183,8 @@ public sealed partial class ParticleSystem
 					FrameCount = frames,
 					Frame = particle.Frame,
 					Spin = particle.Rotation,
-					RenderFlags = template.RenderFlags
+					RenderFlags = template.RenderFlags,
+					ScreenSpace = template.ScreenSpace
 				} );
 			}
 		}

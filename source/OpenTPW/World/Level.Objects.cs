@@ -740,6 +740,26 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// Restores the shipped save's guests into the new guest simulation (<see cref="GuestSimulation.ImportOriginal"/>): their remembered
+	/// attractions and bins are the reloaded objects the economy import paired with the saved attraction things. Only a park started from the
+	/// shipped save does this; a resumed park restores its own guests.
+	/// </summary>
+	private void ImportOriginalGuests()
+	{
+		if ( resumeState != null || Guests == null || Park?.Import is not { } import || OriginalPark?.Save is not { } save )
+			return;
+		var bridges = economyInstances.ToDictionary( pair => pair.Value, pair => pair.Key.Visitors.AttractionId );
+		var bins = LitterBins().Select( bin => bin.Id ).ToHashSet();
+		int Attraction( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bridges.TryGetValue( instance, out var id ) ? id : 0;
+		int Bin( int thing ) => import.AttractionInstances.TryGetValue( thing, out var instance ) && bins.Contains( instance ) ? instance : 0;
+		foreach ( var line in Guests.ImportOriginal( save.Guests, save.World.Variables.GameTick, Attraction, Bin ) )
+		{
+			import.Report( line );
+			Log.Trace( $"Park economy import: {line}" );
+		}
+	}
+
+	/// <summary>
 	/// The economy side of removing a placed object (the remove tool; also used by the headless M4 gate): unlinks its guest
 	/// payments and sells its economy record for <see cref="ParkEconomy.ScrapValue"/>. Null when it had no record.
 	/// </summary>

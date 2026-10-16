@@ -394,6 +394,7 @@ public partial class Level : IDisposable
 				Guests.WeatherDropsFalling = () => Weather is { CurrentDrops: > 0 };
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
+			ImportOriginalGuests();
 			SetupStaff();
 			SetupParkGate();
 		}

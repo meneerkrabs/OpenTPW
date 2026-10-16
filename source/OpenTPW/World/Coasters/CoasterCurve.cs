@@ -34,19 +34,40 @@ public struct CoasterSample
 	public int Section;
 	/// <summary>The Bézier parameter of the sample on its pair (sample <c>+52</c>).</summary>
 	public float T;
+	/// <summary>The index of the knot that starts the sample's pair (sample <c>+0x2c</c>, the knot pointer): <see cref="Section"/> names its node.</summary>
+	public int Knot;
 }
 
 /// <summary>
-/// One knot of the track (COAST-plan §13.1): its position, the unit direction its tangents run along, its roll, the
-/// node (section) it belongs to, on loop pylons the factor K, and whether the next node carries node flag 0x40.
+/// One knot of the track (COAST-plan §13.1): its position, the unit direction its tangents run along, its roll (the node's bank, <c>+0xd8</c>), the
+/// node (section) it belongs to, on loop pylons the factor K, whether the next node carries node flag 0x40, and the roll of its node's posed track tag
+/// (<see cref="TagRoll"/>, node <c>+0xe4</c>; the bank where the node has no posed tag).
 /// </summary>
-public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false, bool Reversed = false, bool PreviousIsLoopNode = false );
+public readonly record struct CoasterKnot( SVector3 Position, SVector3 Direction, float Roll, int Section, bool LoopPylon = false, float LoopSideFactor = 0, bool NextIsLoopNode = false, bool Reversed = false, bool PreviousIsLoopNode = false, float TagRoll = 0 );
+
+/// <summary>
+/// The knot pass of a node chain (<c>0x430ed0</c>): the knots in order (a posed pylon gives the knots of its tag table, every other node one), per node the index of
+/// its first knot, its knot count and the knot on its track dummy (the table's centre, whose sample coordinate is the node's sample index, node <c>+0xfc</c>), the node
+/// position (<c>+0x4c</c>), the automatic yaw and pitch of its tangent (<c>+0xd4</c>), its bank (<c>+0xd8</c>), the pose its pylon model took (null without one), whether
+/// its pylon is turned back (node flag <c>0x10000000</c>) and whether it took the stack table.
+/// </summary>
+public sealed record CoasterKnotPass( CoasterKnot[] Knots, int[] FirstKnot, int[] KnotCount, int[] CentreKnot, SVector3[] Positions, float[] AutomaticYaw, float[] AutomaticPitch,
+	float[] Banks, CoasterPylonPose?[] Poses, bool[] TurnedBack, bool[] StackTable )
+{
+	/// <summary>The last knot of node <paramref name="node"/>.</summary>
+	public int LastKnot( int node ) => FirstKnot[node] + KnotCount[node] - 1;
+}
 
 /// <summary>
 /// One cross-section slice of the drawn track mesh: the curve point at a parameter step of one knot pair, the yaw and
-/// pitch of its tangent, the roll and the pair's section (the node the pair starts at).
+/// pitch of its tangent, the roll, the pair's section (the node the pair starts at) and the node its end knot belongs to
+/// (<see cref="NextSection"/>: the same node for a pair between two tags of one pylon, the next node for a link).
 /// </summary>
-public readonly record struct CoasterSlice( SVector3 Position, float Yaw, float Pitch, float Roll, int Section, float T );
+public readonly record struct CoasterSlice( SVector3 Position, float Yaw, float Pitch, float Roll, int Section, float T, int NextSection = -1 )
+{
+	/// <summary>Whether the slice lies on a pair between two knots of one node (the tags of one pylon).</summary>
+	public bool InsideNode => NextSection == Section;
+}
 
 /// <summary>
 /// Samples of a closed track and their spacing in world units. <see cref="KnotCoordinates"/> holds, per knot, the coordinate of the knot on the sample
@@ -197,10 +218,24 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var forwardFactor = knot.LoopPylon ? (knot.Reversed ? knot.LoopSideFactor : knot.NextIsLoopNode ? knot.LoopSideFactor : LoopExitTangent) : curviness;
 			// [BIN:STP-PPC:0x10032990 knot chord] without a neighbour the chord is 1.0
 			var backChord = index > 0 ? Chord( knots[index - 1].Position, knot.Position ) : 1f;
-			var forwardChord = index < count - 1 ? Chord( knot.Position, knots[index + 1].Position ) : closed && count > 1 ? Chord( knot.Position, knots[1].Position ) : 1f;
+			var forwardChord = index < count - 1 ? Chord( knot.Position, knots[index + 1].Position ) : closed && count > 1 ? Chord( knot.Position, knots[ClosingKnot( knots )].Position ) : 1f;
 			controls[index] = KnotControls( knot.Position, knot.Direction, backChord, forwardChord, backFactor, forwardFactor );
 		}
 		return controls;
+	}
+
+	/// <summary>
+	/// The knot the closing pair of a closed chain runs to: the first knot of the second node (S1), the knot after the first node's knots (<c>0x440c10</c>: head
+	/// <c>+0x64</c>'s knot table).
+	/// </summary>
+	public static int ClosingKnot( IReadOnlyList<CoasterKnot> knots )
+	{
+		for ( var index = 1; index < knots.Count; index++ )
+		{
+			if ( knots[index].Section != knots[0].Section )
+				return index;
+		}
+		return Math.Min( 1, knots.Count - 1 );
 	}
 
 	/// <summary>Slices per knot pair of the drawn track mesh.</summary>
@@ -208,13 +243,14 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 	public const int SliceSegments = 10;
 
 	/// <summary>
-	/// The cross-section slices of the track mesh (<c>0x43f4e0</c>): the curve evaluated at k/<paramref name="segments"/> of every knot pair
-	/// (<c>0x43e1b0</c>), the yaw and pitch of the Bézier derivative and the knot-interpolated roll. The chain ends with its last knot's own slice: a
-	/// finished track's last knot is the station end node on the first knot, so the slices close the circuit without a pair of their own (the mesh
-	/// builder pairs every node with its next node until there is none), and a track still being built ends at its build cursor.
+	/// The cross-section slices of the track mesh (<c>0x43f4e0</c>): the curve evaluated at k/<paramref name="segments"/> of every link between two nodes and at
+	/// the knots alone of a pair between two tags of one pylon (<c>0x43e1b0</c>), the yaw and pitch of the Bézier derivative and the knot-interpolated roll. The
+	/// chain ends with its last knot's own slice: a finished track's last knot is the station end node on S0's track dummy, so the slices close the circuit
+	/// without a pair of their own (the mesh builder pairs every node with its next node until there is none), and a track still being built ends at its build cursor.
 	/// </summary>
 	// [BIN:TPW-EXE:0x43e6b0 slice frame] the slice position is the cubic Bézier of the knot pair (0x43e1b0: P0, P0 + T+/3, P1 + T−/3, P1 at +0x40/+0x4c/+0x34/+0x40), its yaw and pitch come from the tangent and its roll from the second rail; the roll here is the interpolated knot roll (APPROX:COAST-017)
-	// [APPROX:COAST-026] the mesh slices use the 10 uniform steps per knot pair of the original but not its extra slices at cross-section changes (the dry/wet blends of the flumes) or at pylon-mesh track tags (one knot per node here) — evidence needed: the run list builder 0x4402d0 and the blend path of 0x43fd60 run on a real flume track
+	// [BIN:TPW-EXE:0x43eb70 slice lists] for every node the mesh builder lists, when the node has more than one knot, one value per knot over its own knot pairs (0x43f030 with the node as both ends: a value per knot, scaled by the count − 1), then 0xb values i/10 over the link to its next node; the slice emitter 0x43f4e0 skips each list's first value, the previous list's last
+	// [APPROX:COAST-026] the cross-section run boundaries the builder adds to these lists (0x43f030 inserts the run positions of 0x4402d0, found on the sample coordinate in steps of 0.25) are not inserted: a section change takes effect at the slice before the segment that changes — evidence needed: the run list builder 0x4402d0 and the blend path of 0x43fd60 run on a real flume track
 	public static CoasterSlice[] Slices( IReadOnlyList<CoasterKnot> knots, float curviness, bool closed, int segments = SliceSegments )
 	{
 		ArgumentNullException.ThrowIfNull( knots );
@@ -227,15 +263,17 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 		for ( var pair = 0; pair < pairs; pair++ )
 		{
 			var next = pair + 1;
-			var last = pair == pairs - 1 ? segments : segments - 1;
+			// a pair between two tags of one pylon gets the slices of its knots alone
+			var steps = knots[pair].Section == knots[next].Section ? 1 : segments;
+			var last = pair == pairs - 1 ? steps : steps - 1;
 			for ( var step = 0; step <= last; step++ )
 			{
-				var t = (float)step / segments;
+				var t = (float)step / steps;
 				var position = Bezier( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
 				var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
 				var (yaw, pitch) = tangent.LengthSquared() > 0 ? Orientation( tangent ) : (0f, 0f);
 				var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * t;
-				slices.Add( new CoasterSlice( position, yaw, pitch, roll, knots[pair].Section, t ) );
+				slices.Add( new CoasterSlice( position, yaw, pitch, roll, knots[pair].Section, t, knots[next].Section ) );
 			}
 		}
 		return slices.ToArray();
@@ -249,15 +287,16 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			throw new ArgumentException( "A closed track needs its station's knots and the station end knot.", nameof( knots ) );
 		var controls = Controls( knots, curviness, closed: true );
 		var samples = new List<CoasterSample>();
-		// The closing pair runs from the last knot (the station end node, on the first knot) to the second knot.
-		int NextKnot( int pair ) => pair == count - 1 ? 1 : pair + 1;
+		// The closing pair runs from the last knot (the station end node, on S0's track dummy) to the first knot of S1.
+		var closingKnot = ClosingKnot( knots );
+		int NextKnot( int pair ) => pair == count - 1 ? closingKnot : pair + 1;
 		var coordinates = new float[count];
 		SVector3 Point( int pair, float t )
 		{
 			var next = NextKnot( pair );
 			return Bezier( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
 		}
-		void Emit( int pair, float t, SVector3 position )
+		void Emit( int pair, float t, SVector3 position, bool closingSample = false )
 		{
 			// [BIN:STP-PPC:0x10045320 sample before its pair] while the sample's t is below 0 its record moves to the previous knot pair (when the +20 link is not null) and t grows by 1 regardless (0x10045320..0x1004535C)
 			while ( t < 0 )
@@ -269,8 +308,9 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var next = NextKnot( pair );
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
 			var (yaw, pitch) = Orientation( tangent );
-			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the original's slice roll (0x43e6b0): the second rail's roll about the slice tangent plus the lerp of the two nodes' tag rolls (+0xe4); a non-loop knot's second rail is the knot + (0, 1, 0), a loop node's 2 × its tag's up row (pylon, 0x430ed0) or (−sin a, 0, −cos a) (pylon-less, 0x43137c..0x4313e6) — blocked on the pylon tag knots (COAST-015)
-			var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
+			// [BIN:TPW-EXE:0x440c10 closing sample roll] the sample taken on the closing pair (no next node, 0x440c10 line `local_a0 = 0` before 0x43e590) gets roll 0, whatever the rolls of the end node and S1 are
+			// [APPROX:COAST-017] every other sample's roll is interpolated between the knots' rolls instead of the original's: the second rail's roll about the slice tangent (0x440c10 → 0x46f230) of a non-loop knot's second rail knot + (0, 1, 0), a loop node's 2 × its tag's up row (pylon, 0x430ed0) or (−sin a, 0, −cos a) (pylon-less, 0x43137c..0x4313e6) — the knot pass keeps the tag rolls on the knots (CoasterKnot.TagRoll, read by tests only: the sampler does not use it) but builds no second rail
+			var roll = closingSample ? 0f : knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
 			samples.Add( new CoasterSample
 			{
 				Position = position,
@@ -279,13 +319,14 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 				Direction = tangent.LengthSquared() > 0 ? SVector3.Normalize( tangent ) : SVector3.UnitZ,
 				Bank = roll,
 				Section = knots[pair].Section,
-				T = t
+				T = t,
+				Knot = pair
 			} );
 		}
 
 		// [BIN:STP-PPC:0x10044FF4 sampler] from t = 0 (sample 0 = the first knot) walk t in steps of 0.05, sum the chord lengths, place a sample on the current chord where the sum reaches 3.0 (fraction (3 − sum before)/d), restart the sum and realign t to the next multiple of 0.05
 		// [BIN:TPW-EXE:0x440c10 closing pair] the walk covers every pair of the node list; at the end node (no next node) the closing pair runs from the last knot to the second node's first knot (head +0x64), emits ONE sample (t may pass 1: no pair follows, 0x4416f0), then the count n is the number of samples written, the last sample is copied into slot n (0x441783) and n grows by one when n ≤ trunc(c) + (frac(c) ≠ 0) with c the coordinate of the end knot (ctl +0xa8, 0x4417a0..0x4417d5)
-		// [BIN:TPW-EXE:0x440c10 knot coordinate] a knot's coordinate is the index of the last sample before it plus (the distance walked since that sample + the distance from the last walked point to the knot) / spacing (0x4410e0..), the first knot's is 0; the station window and the swing's fade read the coordinates of S2 and the end node
+		// [BIN:TPW-EXE:0x440c10 knot coordinate] a knot's coordinate is the index of the last sample before it plus (the distance walked since that sample + the length of the projected rest from the last walked point to the knot, 0x4410e0) / spacing, the first knot's is 0; the station window and the swing's fade read the coordinates of S2 and the end node
 		// [BIN:TPW-EXE:0x441783 slot n copy] the copy of the last sample in slot n (the car point of the last sample reads it, 0x4409b0) is the controller's Slot(n): the point after the last sample is the last sample itself (CoasterRide.SampleAt); the growth of n is applied literally and cannot happen here, the end knot's coordinate lying less than one sample past the last one before it
 		var pair = 0;
 		var previousPoint = Point( 0, 0 );
@@ -311,7 +352,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 				distance = 0;
 				var stepNow = ParameterStep - tPrevious % ParameterStep;
 				t = tPrevious + stepNow;
-				Emit( pair, tPrevious, previousPoint );
+				Emit( pair, tPrevious, previousPoint, closing );
 				// The closing pair gets one sample; then the walk ends.
 				if ( closing )
 					break;
@@ -325,7 +366,18 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			if ( t > 1f && !closing )
 			{
 				// The pair's end knot lies on the sample list after the last sample, by the distance walked since it plus the rest of the pair.
-				coordinates[pair + 1] = samples.Count - 1 + (distance + SVector3.Distance( knots[pair + 1].Position, previousPoint )) / Spacing;
+				// [BIN:TPW-EXE:0x4410e0 knot projection] the rest (knot − last walked point) is scaled by the cosine between its direction and the direction from the last walked point to the new pair's curve point at the new t (t − 1), unless the rest's normalised x is NaN (_isnan 0x67b410, a zero rest)
+				var rest = knots[pair + 1].Position - previousPoint;
+				var restLength = rest.Length();
+				if ( restLength > 0 )
+				{
+					var toCurve = Point( pair + 1, t - 1f ) - previousPoint;
+					var curveLength = toCurve.Length();
+					// a zero direction gives the original a NaN cosine (and a NaN coordinate); the rest is kept unscaled then
+					if ( curveLength > 0 )
+						rest *= SVector3.Dot( rest / restLength, toCurve / curveLength );
+				}
+				coordinates[pair + 1] = samples.Count - 1 + (rest.Length() + distance) / Spacing;
 				pair++;
 				tPrevious -= 1f;
 				t -= 1f;

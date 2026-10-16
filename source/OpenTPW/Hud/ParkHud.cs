@@ -70,6 +70,9 @@ public sealed partial class ParkHud
 	private int cursorX = -1;
 	/// <summary>Set by a press the path/queue tool used, so its release does not select an object.</summary>
 	private bool toolPress;
+	/// <summary>The refused path click's press latch: its sound plays at the release (GameAudio.PathRefusedEvent); created on first use.</summary>
+	private PathRefusalClick? refusalClickState;
+	private PathRefusalClick refusalClick => refusalClickState ??= new();
 	private int cursorY = -1;
 
 	public ParkHud( Level level, UiStringTable strings, IHudParkStatus status, IBuildCatalog catalog, HudHost host )
@@ -797,7 +800,11 @@ public sealed partial class ParkHud
 			&& level.BuyLandTool is not { IsActive: true } && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
 		if ( input.LeftReleased )
+		{
 			toolPress = false;
+			if ( refusalClick.Release() is { } refused )
+				GameAudio.PlayPathRefused( refused.X, refused.Y );
+		}
 
 		for ( var index = messages.Count - 1; index >= 0; index-- )
 		{
@@ -918,6 +925,7 @@ public sealed partial class ParkHud
 		if ( !input.LeftPressed )
 			return false;
 		// The commit click; Level skips it because the HUD reports the pointer as captured this frame.
+		refusalClick.Press();
 		var queueJoin = level.QueueJoinCell( tool );
 		cellToolClicking = true;
 		SegmentResult? result;
@@ -933,14 +941,14 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x527587 queue-join sound] it follows every commit; a click on a refused ghost lays nothing and returns before the commit (0x524A63)
 		if ( result is { GhostRefused: false } )
 			level.PlayQueueJoin( queueJoin );
-		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); a click on a refused ghost (or a refused track commit) plays cat_ui 175 at the clicked cell (AUDIO-022)
+		// [BIN:STP-PPC:0x10070DE0 path lay click] a committed path line plays cat_ui 101 (the tool's commit site, gated by its mode); a click on a refused ghost (or a refused track commit) plays cat_ui 175 at the clicked cell when the button is released (PathRefusalClick)
 		if ( result is { Completed: true } )
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )
 		{
 			// a commit stopped only by OpenTPW's own queue cap is not one of the original's refusals (QUEUE-013)
 			if ( !result.StoppedByOwnLimit )
-				GameAudio.PlayPathRefused( cursorX, cursorY );
+				refusalClick.Refused( cursorX, cursorY );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
 		}
 		return toolPress = true;

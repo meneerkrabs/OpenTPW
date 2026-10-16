@@ -210,6 +210,12 @@ public static class ParkSaveFile
 		public required int Id { get; init; }
 		public required StaffType Type { get; init; }
 		public required int NameIndex { get; init; }
+		/// <summary>A name kept from an original save (<see cref="StaffMember.Name"/>); absent for a member named by its name index.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public string? Name { get; init; }
+		/// <summary>The point (1/256 cell, x and y) an original-save member still walks on to once a world places it (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? ResumeDestination { get; init; }
 		public required int Grade { get; init; }
 		public required int TrainingPoints { get; init; }
 		public required long HiredTick { get; init; }
@@ -554,6 +560,8 @@ public static class ParkSaveFile
 					Id = member.Id,
 					Type = member.Type,
 					NameIndex = member.NameIndex,
+					Name = member.Name,
+					ResumeDestination = member.ResumeDestination is { } resume ? new[] { resume.X, resume.Y } : null,
 					Grade = member.Grade,
 					TrainingPoints = member.TrainingPoints,
 					HiredTick = member.HiredTick,
@@ -684,6 +692,8 @@ public static class ParkSaveFile
 			Require( member.Id > 0 && member.Id < data.Staff.NextId && staffIds.Add( member.Id ), $"staff id {member.Id}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
+			Require( member.Name is null || (member.Name.Length is > 0 and <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
+			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
 			Require( member.WorldState is not { } world || (StaffWorldData.Fits( member.Type, world.Job ) && world.PatrolArea is { Length: 4 } area
 				&& area[0] is >= 0 and < ParkLitter.MapSize && area[2] >= area[0] && area[2] < ParkLitter.MapSize && area[1] is >= 0 and < ParkLitter.MapSize
@@ -801,6 +811,8 @@ public static class ParkSaveFile
 			Id = member.Id,
 			Type = member.Type,
 			NameIndex = member.NameIndex,
+			Name = member.Name,
+			ResumeDestination = member.ResumeDestination is [var resumeX, var resumeY] ? (resumeX, resumeY) : null,
 			Grade = member.Grade,
 			TrainingPoints = member.TrainingPoints,
 			HiredTick = member.HiredTick,

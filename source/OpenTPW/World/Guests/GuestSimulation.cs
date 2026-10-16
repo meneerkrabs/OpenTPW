@@ -40,7 +40,7 @@ public readonly record struct GuestStatistics( int InPark, int Walking, int Queu
 /// Rates and thresholds without an original source are labelled approximations in
 /// <see cref="GuestSettings"/> and docs/GUESTS.md.
 /// </summary>
-public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
+public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 {
 	/// <summary>Move-up delay factor: entering state 11 sets the delay to trunc(1.2 × position) park turns.</summary>
 	// [BIN:STP-PPC:0x100EF868 state 11 entry] +508 = turn, +500 = trunc(1.2f × +497) (float data 0x55a0)

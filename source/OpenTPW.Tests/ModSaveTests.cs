@@ -46,7 +46,9 @@ public class ModSaveTests
 		ModSet.Resolve( mods.ToList(), new ModSettings { Enabled = mods.ToDictionary( mod => mod.Id, _ => true ) }, null, GameEdition.ThemeParkWorld, extensions );
 
 	private DiscoveredMod Rides( string version = "1.0.0", string text = "rides" ) =>
-		Mod( "community.tpi-rides", version, """, "content": { "objects": "objects.json" }""", ("objects.json", text) );
+		// a valid objects.json (the mod set validates it); the name carries the text that makes the content digest differ
+		Mod( "community.tpi-rides", version, """, "content": { "objects": "objects.json" }""",
+			("objects.json", $$"""{ "schema": 1, "idRange": { "first": 20000, "last": 20009 }, "objects": [{ "archive": "objects/zoom", "theme": "jungle", "category": "rides", "infoId": 20001, "names": { "English": "{{text}}" } }] }""") );
 
 	private DiscoveredMod Textures() =>
 		Mod( "community.pretty", "1.0.0", """, "content": { "overrides": "data/" }""", ("data/levels/jungle/ground.fsh", "pixels"), ("data/sounds/clip.wav", "audio") );

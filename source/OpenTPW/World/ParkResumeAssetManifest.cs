@@ -86,7 +86,8 @@ internal static class ParkResumeAssetManifest
 		// the game data root too, so they are keyed there once per category instead of per entry.
 		foreach ( var (directory, defaults) in CategoryDefaults )
 		{
-			if ( !catalog.Entries.Any( entry => IsInCategoryDirectory( entry.ArchivePath, theme, directory ) ) )
+			// A mod's object archive sits in its own root, but takes the same category defaults from the game data.
+			if ( !catalog.Entries.Any( entry => IsInCategoryDirectory( entry.ArchivePath, theme, directory ) || (entry.Root.IsMod && ModObjectsFile.CategoryName( entry.Category ) == directory) ) )
 				continue;
 			AddWhenPresent( manifest, $"/levels/{theme}/{directory}/{defaults}" );
 		}

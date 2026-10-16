@@ -16,14 +16,13 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 ## Current state
 
-This is the first step of the mod system:
-
 - manifests are parsed and validated, mod folders are discovered, `mods.json` is read and the run's set of extensions
   and mods is resolved once at startup;
 - the only official extension is `opentpw.online` (below);
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
-- **nothing consumes mod content yet**. Enabling a mod checks it, orders it and computes its digest, but its files
-  do not change the game. Content roots and the Extensions and mods screen are later steps.
+- **content roots** are live on the desktop: an enabled mod's `overrides`, `strings` and `objects` change what the game
+  reads (see [Content](#content)). The browser build has no files-based mods, so nothing changes there;
+- the Extensions and mods screen is a later step.
 
 Changes to `mods.json` apply at the next start; nothing is swapped while the game runs.
 
@@ -54,7 +53,7 @@ Each mod folder holds `opentpw-mod.json`:
 | `dependencies` | no | Up to 32 mods or extensions this mod needs, each with an optional version range (default `*`). |
 | `after` | no | Mods this one is ordered after when both are enabled; also lets its overrides win over theirs. |
 | `inputs` | no | Up to 16 folders the player supplies; `kind` is `original-data` (another original game's install). |
-| `content` | no | Mod-relative paths: `overrides` (a folder of files that replace game files), `objects` (object definitions), `strings` (a folder of text). |
+| `content` | no | Mod-relative paths: `overrides` (a folder of files that replace game files), `objects` (object definitions), `strings` (a folder of string tables). See [Content](#content). |
 
 Parsing is strict, like the online documents (`StrictJson`): unknown or duplicate fields, comments, trailing commas
 and numbers as strings are refused; the file may be at most 64 KiB; and every content path must stay inside the
@@ -117,6 +116,67 @@ with a warning. Smoke tests (`--smoke-test`) ignore `mods.json` and `<config>/mo
 `--disable-extension <id>` (repeatable) switches an extension or mod off for one run without changing `mods.json`;
 an id that names no extension or installed mod is an error.
 
+## Content
+
+`ModContentRoots.Activate` installs the enabled mods' content once at startup, after the set is resolved. With no files-based
+mod enabled nothing is installed and every lookup is the game's own (the pinned determinism digests do not change).
+Mods are consulted in load order, later over earlier; since two mods that supply the same thing are refused unless one
+is ordered after the other, the winner is always the one that said so.
+
+### `overrides`
+
+Loose files below the `overrides` folder replace the game file at the same data-relative path, whatever the case:
+`data/levels/jungle/sharetex/leaf.wct` replaces `/levels/jungle/sharetex/leaf.wct`, and
+`data/levels/jungle/rides/totem/totem.sam` replaces that member of the archive `totem.wad`. Textures, sounds, UI art
+and any other file read through the game's file system work the same way. A file the game lacks is added. Reads, sizes
+and `FileExists` see the replacement; directory listings stay the game's, so an override cannot add an object archive
+(use `objects`). The game's folder is never written.
+
+### `strings`
+
+`strings/<Language>/<NAME>.str` (for example `strings/German/UITEXT.str`) replaces that language's string table
+completely; it is also an override of `/Language/<Language>/<NAME>.str`. Any other file below `strings` refuses the mod.
+Tables must have the same layout as the original's. Two mods supplying the same table of a language conflict like two
+overrides do.
+
+### `objects`
+
+`objects.json` (at most 256 KiB, `StrictJson` style: unknown or duplicate fields, comments and trailing commas are
+refused) adds object archives to the theme catalogs:
+
+```json
+{ "schema": 1, "idRange": { "first": 20000, "last": 20099 },
+  "objects": [
+    { "archive": "objects/zoom", "theme": "jungle", "category": "rides", "infoId": 20001,
+      "names": { "English": "Zoom", "German": "Sause" } },
+    { "archive": "levels/jungle/rides/bumper", "input": "tpi", "theme": "jungle", "category": "rides", "infoId": 20002,
+      "names": { "English": "Bumper Cars" } } ] }
+```
+
+- `idRange`: the Info.Ids the mod reserves, between 10000 and 1000000000, at most 1000 of them. Every `infoId` lies in
+  it and is used once. Layout records and saves join on the Info.Id, so a mod keeps an object's id stable across
+  versions. The archive's own `Info.Id` is replaced by `infoId`. Two mods whose ranges overlap are refused.
+- `archive`: the archive's path without `.wad` (a plain folder works too), in the mod's folder, or, with `input`, in the
+  data folder of that input (the folder the player chose in `mods.json`, or the `Data` folder inside it). The path may
+  not leave its folder (the rules of the manifest's content paths).
+- `theme`: `jungle`, `hallow`, `space` or `fantasy`. `category`: `rides`, `shops`, `sideshow`, `features` or `upgrades`.
+- `names`: the object's name per language; the selected language, then English, then the archive's `.sam` name.
+- The archive must hold one `.sam` with an `Info.Id` and the main model, like the game's own. The category defaults
+  (`Rides.sam`, ...) are layered under it from the **game data**, as for the official bonus objects. An archive whose
+  name the catalog already lists (the original keeps the first), a missing archive and a broken one are skipped with a
+  warning, never silently. Two mods that add an archive of the same name to one theme and category are refused.
+- Only for Theme Park World parks. `input` must name an input of the manifest; a folder that holds no Data content
+  refuses the mod. Nothing from another game is copied: the archive is read from where the player keeps it.
+
+Mod objects come after the game's and the official bonus objects in each category, in mod order. Each content root has
+its own file system (with WAD and SDT handlers); the catalog cache key includes the mod set's digest, so a different set
+never reuses a catalog.
+
+In a park's asset manifest the members of a mod's archives, its own and those read from an input, are keyed
+`mod:<id>:/<path>` (`ContentRoot.Mod(id)`); game data stays `data:` and official bonus archives `bonus:`. The path is
+relative to the archive's file system, so an input archive keeps its game path (`/levels/jungle/rides/bumper/...`) and
+cannot collide with the mod's own, because one theme and category never lists two archives of one name.
+
 ## Resolution
 
 At startup, right after the compatibility settings, OpenTPW resolves the run's set once (`ModStartup`, `ModSet.Resolve`):
@@ -124,8 +184,9 @@ At startup, right after the compatibility settings, OpenTPW resolves the run's s
 1. Official extensions are on or off as chosen. Enabled mods are checked: the `openTpw` range, the edition and that
    every input has an existing folder.
 2. Every dependency must be installed, enabled and within its range; a refused mod refuses the mods that need it.
-3. Two enabled mods whose `overrides` folders hold the same file (compared without case) are **both refused** unless
-   one lists the other in `after`. There is no silent "last one wins".
+3. Two enabled mods that supply the same file (in `overrides` or `strings`, compared without case), the same object
+   archive name in a theme and category, or overlapping Info.Id ranges are **both refused**; for files, unless one lists
+   the other in `after`. There is no silent "last one wins".
 4. Dependency and `after` cycles refuse the mods involved.
 5. The rest is ordered: dependencies (and `after`) first, then official before community, then the player's `order`,
    then the ordinal id.

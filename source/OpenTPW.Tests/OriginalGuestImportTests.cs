@@ -93,7 +93,7 @@ public class OriginalGuestImportTests
 		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid, string.Join( "; ", simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).Errors ) );
 		StringAssert.Contains( report.Single( line => line.StartsWith( "Guests imported:", StringComparison.Ordinal ) ), "5 of 5" );
 		var spawned = simulation.SpawnInPark( 2, 5 );
-		Assert.AreEqual( 42, spawned.Id, "new guests take ids above the imported ones" );
+		Assert.AreEqual( 1, spawned.Id, "a new guest takes the lowest free slot of the pool: the imported guests keep their own slots, and a load rebuilds the free list ascending (0x00518D43)" );
 		for ( var tick = 0; tick < 600; tick++ )
 			simulation.Tick( 1f / 60 );
 		Assert.IsTrue( simulation.ValidateSnapshot( simulation.CaptureSnapshot() ).IsValid );

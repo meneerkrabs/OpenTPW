@@ -3,6 +3,22 @@ namespace OpenTPW;
 /// <summary>One used slot of the thing pool: the thing's id and its model (the class byte, <see cref="SaveThingModel"/>).</summary>
 public readonly record struct ThingSlot( int Id, SaveThingModel Model );
 
+/// <summary>One used slot of a <see cref="ThingPoolSnapshot"/>: the thing's id and its model number.</summary>
+public sealed record ThingSlotData( int Id, int Model );
+
+/// <summary>
+/// What a park-resume save keeps of the thing pool: the used list newest first (the original's save keeps the chain from its head, with each thing's id and model) and
+/// the head of the free list in its exact order. The original's load rebuilds the free list ascending (0x00518D43); OpenTPW's own save keeps the order the live pool had, so a
+/// resumed park hands out the ids a continuing one would.
+/// </summary>
+public sealed record ThingPoolSnapshot
+{
+	/// <summary>The used things, the one built last first.</summary>
+	public required IReadOnlyList<ThingSlotData> Used { get; init; }
+	/// <summary>The free ids that come before the ascending run of the others, in allocation order (empty for a pool rebuilt by a load).</summary>
+	public IReadOnlyList<int> FreeFirst { get; init; } = Array.Empty<int>();
+}
+
 /// <summary>
 /// The park's one thing pool: the ids of every thing the world holds (guests, staff, the attractions, the fixed items and the vehicles, and the world's own
 /// singletons) come from one table of <see cref="Capacity"/> slots, as tp.exe's allocator does. A thing's id is a pool slot, so it depends on the whole
@@ -214,8 +230,74 @@ public sealed class ThingPool
 		return true;
 	}
 
-	/// <summary>A copy of the used list newest first (what a save keeps of the pool).</summary>
+	/// <summary>A copy of the used list newest first.</summary>
 	public ThingSlot[] Capture() => UsedNewestFirst().ToArray();
+
+	/// <summary>What a save keeps of the pool: the used list and the free list's head in order (the longest ascending tail of the free list is left out, a restore rebuilds it).</summary>
+	public ThingPoolSnapshot CaptureSnapshot()
+	{
+		var free = FreeInOrder().ToList();
+		var tail = free.Count;
+		while ( tail > 0 && (tail == free.Count || free[tail - 1] < free[tail]) )
+			tail--;
+		return new ThingPoolSnapshot
+		{
+			Used = UsedNewestFirst().Select( slot => new ThingSlotData( slot.Id, (int)slot.Model ) ).ToArray(),
+			FreeFirst = free.Take( tail ).ToArray()
+		};
+	}
+
+	/// <summary>The problems that stop <paramref name="snapshot"/> from restoring (an id outside the pool or repeated, an unknown model, a free id that is in use); empty when it restores.</summary>
+	public static IReadOnlyList<string> Problems( ThingPoolSnapshot? snapshot )
+	{
+		var problems = new List<string>();
+		if ( snapshot?.Used == null || snapshot.FreeFirst == null )
+		{
+			problems.Add( "the thing pool snapshot has no used list or free list" );
+			return problems;
+		}
+		var used = new HashSet<int>();
+		foreach ( var slot in snapshot.Used )
+		{
+			if ( slot == null )
+				problems.Add( "a used thing slot is missing" );
+			else if ( slot.Id is < 1 or > Capacity )
+				problems.Add( $"thing id {slot.Id} is outside the pool's 1..{Capacity}" );
+			else if ( slot.Model is < 1 or > 19 )
+				problems.Add( $"thing {slot.Id} has model {slot.Model}, which is not a thing model" );
+			else if ( !used.Add( slot.Id ) )
+				problems.Add( $"thing id {slot.Id} appears more than once" );
+		}
+		var first = new HashSet<int>();
+		foreach ( var id in snapshot.FreeFirst )
+		{
+			if ( id is < 1 or > Capacity )
+				problems.Add( $"free thing id {id} is outside the pool's 1..{Capacity}" );
+			else if ( used.Contains( id ) )
+				problems.Add( $"free thing id {id} is in use" );
+			else if ( !first.Add( id ) )
+				problems.Add( $"free thing id {id} appears more than once" );
+		}
+		return problems;
+	}
+
+	/// <summary>Restores a <see cref="CaptureSnapshot"/>: the used list as saved and the free list as saved (its head, then the others ascending).</summary>
+	/// <exception cref="InvalidDataException">The snapshot has <see cref="Problems"/>.</exception>
+	public void RestoreSnapshot( ThingPoolSnapshot snapshot )
+	{
+		var problems = Problems( snapshot );
+		if ( problems.Count != 0 )
+			throw new InvalidDataException( problems[0] );
+		Restore( snapshot.Used.Select( slot => new ThingSlot( slot.Id, (SaveThingModel)slot.Model ) ) );
+		if ( snapshot.FreeFirst.Count == 0 )
+			return;
+		// the saved head first, then the unused ids that are not in it, ascending
+		var first = snapshot.FreeFirst.ToHashSet();
+		var order = snapshot.FreeFirst.Concat( FreeInOrder().Where( id => !first.Contains( id ) ) ).ToList();
+		for ( var index = 0; index < order.Count; index++ )
+			nextFree[order[index]] = index + 1 < order.Count ? order[index + 1] : 0;
+		freeHead = order[0];
+	}
 
 	private void Link( int id, SaveThingModel thingModel )
 	{

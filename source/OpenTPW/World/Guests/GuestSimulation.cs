@@ -40,7 +40,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private readonly Dictionary<int, Guest> byId = new();
 	private readonly List<IRideVisitorBridge> attractions = new();
 	private WorldRng random;
-	private int nextId = 1;
+	// the park's thing pool (tp.exe 0x516270): a guest's id is the slot its constructor takes (WALK-010); a simulation of its own owns a pool and drains its deferred destroys itself
+	private ThingPool things = new();
+	private bool ownsThings = true;
 	// The arrival timer's start turn (0 until the first group: the original's timer starts unset) and the group being dropped off.
 	private long arrivalTimerStart;
 	private bool deliveringArrivals;
@@ -82,6 +84,23 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public WorldRng World => random;
 	/// <summary>Makes <paramref name="world"/> the generator the guests draw from (the level's shared one); its state is not touched.</summary>
 	public void AttachWorld( WorldRng world ) => random = world ?? throw new ArgumentNullException( nameof( world ) );
+	/// <summary>
+	/// The park's thing pool (tp.exe 0x00516270): a guest's id is the slot its constructor takes, shared with every other kind of thing. A simulation without a level owns a
+	/// pool of its own (ids 1, 2, 3, ...).
+	/// </summary>
+	public ThingPool Things => things;
+	/// <summary>
+	/// Makes <paramref name="pool"/> the thing pool the guests take their ids from (the level's shared one); the host then ends the turn's deferred destroys
+	/// (<see cref="ThingPool.DestroyQueued"/>, the park turn's end 0x00516641). Only before any guest exists.
+	/// </summary>
+	public void AttachThings( ThingPool pool )
+	{
+		ArgumentNullException.ThrowIfNull( pool );
+		if ( guests.Count != 0 )
+			throw new InvalidOperationException( "The thing pool is attached before the first guest is built." );
+		things = pool;
+		ownsThings = false;
+	}
 	public IReadOnlyList<Guest> Guests => guests;
 	public IReadOnlyList<IRideVisitorBridge> Attractions => attractions;
 	public long TickCount { get; private set; }
@@ -247,15 +266,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 	}
 
-	private Guest Create()
+	private Guest? Create()
 	{
+		// [BIN:TPW-EXE:0x004F896A thing id] the base constructor 0x004F8940 takes the thing's id from the pool (0x0050AFE0 → the allocator 0x00516270) before its first draw; a full pool logs a fatal error and gives id 0 (here: no guest)
+		var id = things.Allocate( SaveThingModel.Guest );
+		if ( id == 0 )
+			return null;
 		// [BIN:TPW-EXE:0x004F89E1 base speed draw] the thing base constructor 0x004F8940 draws first: R mod 5 (unsigned) indexes the speed table {60, 80, 100, 120, 140} (0x0075C7F8) for +0xC0
 		var baseSpeed = GuestSpeed.BaseSpeeds[(int)random.Next( (uint)GuestSpeed.BaseSpeeds.Length )];
 		// [BIN:STP-PPC:0x100E7644 guest constructor] the starting values come from GuestStart (ORACLE.md F25): eight draws in the constructor's order
 		// [BIN:TPW-EXE:0x004FAFF8 guest constructor draws] the person constructor 0x004FAEC0 takes the eight draws of GuestStart right after the base constructor's (0x004FAFF8, 0x004FB01F, 0x004FB046, 0x004FB085, 0x004FB0AB, 0x004FB0D1, 0x004FB109, 0x004FB114), all from the one world generator
 		var start = GuestStart.FromDraws( Settings.Types, Settings.ExitLevelSeconds, Settings.ExitLevelVarSeconds, Settings.StartingCashVarPercent, () => random.NextWord(),
-			Settings.PrankeryLikelihood, nextId );
-		var guest = new Guest( nextId++, start.Type );
+			Settings.PrankeryLikelihood, id );
+		var guest = new Guest( id, start.Type );
 		// [BIN:TPW-EXE:0x004FAFDB arrival stamp] the person constructor stamps the world turn into +0x1D4, the one write of the visitor's time in the park
 		guest.TimeInParkSeconds = 0;
 		guest.PrankFlag = start.PrankFlag;
@@ -267,7 +290,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.Nausea = start.Illness;
 		guest.ExitLevel = start.ExitLevel;
 		// [BIN:TPW-EXE:0x004FB19E guest reseed] the constructor then reseeds the world generator with the thing's id (zero-extended u16, through 0x0050B350), so everything the guest and the world draw after its creation starts from a state that depends on the id alone
-		// [APPROX:DET-014] OpenTPW's guest ids are its own counter (WALK-010), not the original's thing ids (a pool slot of the 10239), so the reseed uses the id the guest has here
 		random.Reseed( (ushort)guest.Id );
 		// [BIN:TPW-EXE:0x004FB1A7 guest sprite variant] the next call, 0x00541F70 with category 0, draws (R >> 2) mod the category's bank count (0x00541F85) for the guest's sprite bank +0x20: the draw is taken, its value is not used (the sprite choice is OpenTPW's own, GUEST-017)
 		random.NextWord();
@@ -305,6 +327,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return start == null ? null : SpawnInPark( start.Value.X, start.Value.Y );
 		}
 		var guest = Create();
+		if ( guest == null )
+			return null;
 		var side = random.NextWord() & 1;
 		var sideways = (int)(random.NextWord() & 0xFF);
 		var lane = (side == 0 ? a ?? b : b ?? a)!;
@@ -325,7 +349,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( !Grid.IsWalkable( x, y ) )
 			throw new ArgumentException( $"Cell ({x}, {y}) is not a walkable path cell." );
-		var guest = Create();
+		var guest = Create() ?? throw new InvalidOperationException( $"The thing pool is full ({ThingPool.Capacity} things); no guest can be built." );
 		PlaceOnGrid( guest, x, y );
 		guest.State = GuestState.DoingNothing;
 		return guest;
@@ -396,10 +420,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			if ( guests[index].State != GuestState.Gone )
 				continue;
+			// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
+			things.QueueDestroy( guests[index].Id );
 			byId.Remove( guests[index].Id );
 			guests.RemoveAt( index );
 			Departed++;
 		}
+		if ( ownsThings )
+			things.DestroyQueued();
 	}
 
 	/// <summary>
@@ -2942,7 +2970,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			WorldGenerator = random.State,
 			TickCount = TickCount,
 			TimeSeconds = TimeSeconds,
-			NextGuestId = nextId,
+			NextGuestId = guests.Count == 0 ? 1 : guests.Max( guest => guest.Id ) + 1,
+			Things = ownsThings ? things.CaptureSnapshot() : null,
 			Admissions = Admissions,
 			Departed = Departed,
 			ArrivalTimerStart = arrivalTimerStart,
@@ -3216,6 +3245,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 
 		// Guests: identity, bounds and per-guest structure first, state cross-references after.
+		var poolIds = snapshot.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion;
+		if ( poolIds && snapshot.Things is { } ownPool )
+			foreach ( var problem in ThingPool.Problems( ownPool ) )
+				Error( $"Things: {problem}." );
 		var guestIds = new HashSet<int>();
 		var typeCount = Math.Max( 1, Settings.Types.Count );
 		GuestSnapshot? previous = null;
@@ -3229,13 +3262,24 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			}
 			if ( guest.Id < 1 )
 				Error( $"Guests[{index}] id {guest.Id} is not positive." );
-			if ( previous != null && guest.Id <= previous.Id )
-				Error( $"Guests[{index}] id {guest.Id} does not follow guest id {previous.Id}; guests are saved in ascending id order." );
+			// a save from before the thing pool counts its guests: ids ascend and stay below the counter; with the pool a guest's id is a slot (ids are reused, so the order is the build order)
+			if ( poolIds )
+			{
+				if ( guest.Id > ThingPool.Capacity )
+					Error( $"Guests[{index}] id {guest.Id} is not a slot of the thing pool (1..{ThingPool.Capacity})." );
+			}
+			else
+			{
+				if ( previous != null && guest.Id <= previous.Id )
+					Error( $"Guests[{index}] id {guest.Id} does not follow guest id {previous.Id}; guests are saved in ascending id order." );
+				if ( guest.Id >= snapshot.NextGuestId )
+					Error( $"Guest {guest.Id} is not below the next guest id {snapshot.NextGuestId}." );
+			}
 			previous = guest;
 			if ( !guestIds.Add( guest.Id ) )
 				Error( $"Guest {guest.Id} appears more than once." );
-			if ( guest.Id >= snapshot.NextGuestId )
-				Error( $"Guest {guest.Id} is not below the next guest id {snapshot.NextGuestId}." );
+			if ( poolIds && !ownsThings && guest.Id <= ThingPool.Capacity && (!things.IsUsed( guest.Id ) || things.ModelOf( guest.Id ) != SaveThingModel.Guest) )
+				Error( $"Guest {guest.Id} is not a guest slot of the park's thing pool." );
 			if ( !Enum.IsDefined( guest.State ) )
 				Error( $"Guest {guest.Id} state {(int)guest.State} is not a guest state." );
 			else if ( guest.State == GuestState.Gone )
@@ -3475,6 +3519,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			bridges.Add( attraction.AttractionId, (RideVisitorBridge)attraction );
 		foreach ( var attractionSnapshot in snapshot.Attractions )
 			bridges[attractionSnapshot.AttractionId].RestoreSnapshot( attractionSnapshot );
+		RestoreThings( snapshot, restored );
 		guests.Clear();
 		guests.AddRange( restored );
 		byId.Clear();
@@ -3485,7 +3530,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			seenQueueEdits[attractionId] = seen;
 		if ( snapshot.WorldGenerator is { } generator )
 			random.Restore( generator );
-		nextId = snapshot.NextGuestId;
 		TickCount = snapshot.TickCount;
 		TimeSeconds = snapshot.TimeSeconds;
 		Admissions = snapshot.Admissions;
@@ -3499,6 +3543,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		ArrivalsEnabled = snapshot.ArrivalsEnabled;
 		seenGridVersion = snapshot.SeenGridVersion;
 		RebuildOccupants();
+	}
+
+	/// <summary>
+	/// The guests' slots of the thing pool after a restore. A simulation with its own pool takes the saved pool (a save from before the pool: a pool of the guests' ids, newest last);
+	/// with the park's pool the guests' slots are already there (the park restored it first), or, for a save from before the pool, are taken one by one (ids above the pool's
+	/// size, which a counter reaches in a long park, stay outside it).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00518D43 free list rebuild] a load keeps each saved thing in its own slot and rebuilds the free list from the unused slots in ascending order
+	private void RestoreThings( GuestSimulationSnapshot snapshot, List<Guest> restored )
+	{
+		if ( ownsThings )
+		{
+			if ( snapshot.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion && snapshot.Things != null )
+				things.RestoreSnapshot( snapshot.Things );
+			else
+				things.Restore( Enumerable.Reverse( restored ).Where( guest => guest.Id <= ThingPool.Capacity ).Select( guest => new ThingSlot( guest.Id, SaveThingModel.Guest ) ) );
+			return;
+		}
+		foreach ( var current in guests )
+			things.Release( current.Id );
+		foreach ( var guest in restored )
+		{
+			if ( guest.Id > ThingPool.Capacity || (things.IsUsed( guest.Id ) && things.ModelOf( guest.Id ) == SaveThingModel.Guest) )
+				continue;
+			if ( !things.Occupy( guest.Id, SaveThingModel.Guest ) )
+				throw new InvalidDataException( $"Guest {guest.Id}'s thing slot is taken by a {things.ModelOf( guest.Id )}." );
+		}
 	}
 
 	/// <summary>Copies a validated guest snapshot into a fresh <see cref="Guest"/> (route, lane and buffer arrays are copied again).</summary>
@@ -3622,7 +3693,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		hash.Add( TickCount );
 		hash.Add( TimeSeconds );
-		hash.Add( nextId );
+		hash.Add( things.NextId );
 		hash.Add( Admissions );
 		hash.Add( Departed );
 		hash.Add( arrivalTimerStart );
@@ -3750,7 +3821,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		void AddFloat( float value ) => Add( BitConverter.SingleToInt32Bits( value ) );
 		Add( TickCount );
 		Add( (long)random.State );
-		Add( nextId );
+		Add( things.NextId );
 		Add( Admissions );
 		Add( guests.Count );
 		foreach ( var guest in guests )

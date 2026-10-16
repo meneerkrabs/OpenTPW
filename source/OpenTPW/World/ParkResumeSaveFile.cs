@@ -636,9 +636,15 @@ internal static class ParkResumeSaveFile
 		{
 			var guest = guests.Guests[index];
 			Require( guest != null, $"guest snapshot {index} is missing" );
-			Require( guest!.Id >= 1 && guest.Id < guests.NextGuestId,
-				$"guest {guest.Id} is not below the next guest id {guests.NextGuestId}" );
-			Require( guest.Id > previousId, $"guest {guest.Id} does not follow guest {previousId}; guests are saved in ascending id order" );
+			// before the thing pool a guest's id is a counter (ascending, below the next id); with it the id is a slot of the pool, so ids are reused and the list is in build order
+			if ( guests.SchemaVersion >= GuestSimulationSnapshot.ThingPoolSchemaVersion )
+				Require( guest!.Id >= 1 && guest.Id <= ThingPool.Capacity, $"guest {guest.Id} is not a slot of the thing pool (1..{ThingPool.Capacity})" );
+			else
+			{
+				Require( guest!.Id >= 1 && guest.Id < guests.NextGuestId,
+					$"guest {guest.Id} is not below the next guest id {guests.NextGuestId}" );
+				Require( guest.Id > previousId, $"guest {guest.Id} does not follow guest {previousId}; guests are saved in ascending id order" );
+			}
 			previousId = guest.Id;
 			Require( guestIds.Add( guest.Id ), $"guest {guest.Id} appears more than once" );
 			Require( Enum.IsDefined( guest.State ), $"guest {guest.Id} state {(int)guest.State} is not a guest state" );

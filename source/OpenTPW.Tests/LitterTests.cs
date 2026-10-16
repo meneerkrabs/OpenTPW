@@ -270,9 +270,9 @@ public class LitterTests
 		rig.Ride.LitterEffect = 50;
 		var guest = rig.Send();
 		var deadline = rig.Simulation.ParkTurn + 400;
-		while ( guest.RidesTaken == 0 && rig.Simulation.ParkTurn < deadline )
+		while ( guest.Litter == 0 && rig.Simulation.ParkTurn < deadline )
 			rig.Step();
-		Assert.AreEqual( 1, guest.RidesTaken );
+		Assert.AreEqual( 0, guest.RidesTaken, "a facility (Info.WhichUIType 3) counts as no ride, shop or sideshow (0x4FD9B1)" );
 		Assert.AreEqual( 50f, guest.Litter, "tp.exe 0x004FE1E0 adds LitterEffect (+0x154), clamped to 0..100" );
 	}
 

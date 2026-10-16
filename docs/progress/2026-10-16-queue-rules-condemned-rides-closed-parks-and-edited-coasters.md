@@ -17,8 +17,8 @@ Four queue items were settled in tp.exe, read via REA:
 - **The queue room** (QUEUE-005 narrowed): `0x501390` dismisses only guests beyond the room (position ≥ 4 × cells, not in state 14);
   OpenTPW no longer re-walks the guests that stay, which is left to state 11 (`0x501160`).
 
-The determinism pin is unchanged. The ride snapshot gains an optional `Condemned` flag (valid only with `BrokenDown`, hashed only while
-set); older saves load as state 1. Verified with 4453 tests passing without game data, 4897 with it, and all five native smokes.
+The determinism pin is unchanged (0x09894103FAFB8D45). The ride snapshot gains an optional `Condemned` flag (valid only with `BrokenDown`, hashed only while
+set); older saves load as state 1. Verified with 4547 tests passing without game data (550 skipped), 4988 with it (109 skipped), and all five native smokes.
 
 Still open: a guest whose cell left the queue still leaves Confused, Angry is chosen by guest id rather than thing id (WALK-010), event 6
 (a debug-only ring) and the dismissal sound; the entrance gate's variable 1 at the booth (`0x51A290`), AdmitPerson's refusal at a closed

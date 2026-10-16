@@ -117,7 +117,7 @@ public sealed class OriginalBuildCatalog : IBuildCatalog
 		// [BIN:STP-PPC:0x10059F00 mesh instance flag 0x400] the buy-window preview (0x10162584 -> 0x10139084 -> 0x1005C35C) instances the p<name> preview mesh when it loaded and the object's main mesh otherwise, so objects without a P model show their main model
 		categories = catalog.Buildable.OrderBy( entry => entry.InfoId ).Select( entry => new BuildItem(
 			$"{entry.Theme}/{entry.InfoId}", entry.InfoId, (BuildCategory)entry.WhichUIType, entry.ObjectNameIndex ?? -1,
-			entry.BuildCost, entry.IsBonus ? null : entry.PreviewModelPath ?? entry.ModelPath,
+			entry.BuildCost, entry.IsExternal ? null : entry.PreviewModelPath ?? entry.ModelPath,
 			ObjectAssets.TextureDirectories( entry ).Where( location => location.FileSystem == FileSystem ).Select( location => location.Directory ).ToArray(),
 			entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) : null, entry ) )
 			.GroupBy( item => item.Category ).ToDictionary( group => group.Key, group => group.ToArray() );

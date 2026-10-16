@@ -38,6 +38,44 @@ public sealed partial class ParkHud
 		return value;
 	}
 
+	/// <summary>
+	/// What a held b_minus or b_plus of a variable box with step 1 does (<c>0x66a7e1</c>): once the button has been held for 200 ms the plus button steps by 1 and either button
+	/// starts a count of 20 ticks at an increment of 1; every tick after that (more than 50 ms apart, so one per frame that long after the last) changes the value by the
+	/// increment and counts down, and when the count reaches 0 the increment is multiplied by 10 and the count restarts at 20. Letting go of a button that began repeating is not a click.
+	/// </summary>
+	// [BIN:TPW-EXE:0x66a7e1 variable box repeat] case 3 (child 1, b_plus, hold start 0x10009) and case 2 (b_minus): with step +0x148 == 1 counter +0x14c = 20 and increment +0x150 = 1, else counter 5; case 3 then value + step; cases 5 and 4 (the ticks 0x10008) with step 1: value ± the increment (0x66a71c clamps), counter - 1, at 0 the increment × 10 and the counter 20, with another step the value moves by the step each fifth tick; the plus button's hold start steps the value at once, the minus button's does not
+	internal sealed class VariableBoxHold
+	{
+		/// <summary>The delay before a held button repeats (0x66aa61: 0x6693f0(200) on children 1 and 2).</summary>
+		public const float Delay = 0.2f;
+		/// <summary>The interval between ticks (0x66aa61: 0x6693d0(0x32)).</summary>
+		public const float Interval = 0.05f;
+
+		public int Counter { get; private set; }
+		public int Increment { get; private set; } = 1;
+
+		/// <summary>The hold start (message 0x10009): arms the count; the plus button steps by one now. Returns the new value.</summary>
+		public int Start( int value, bool plus, int minimum, int maximum )
+		{
+			Counter = 20;
+			Increment = 1;
+			return plus ? SliderPosition( value + 1, minimum, maximum ) : value;
+		}
+
+		/// <summary>One tick (message 0x10008). Returns the new value.</summary>
+		public int Tick( int value, bool plus, int minimum, int maximum )
+		{
+			var next = SliderPosition( unchecked( value + (plus ? Increment : -Increment) ), minimum, maximum );
+			Counter--;
+			if ( Counter == 0 )
+			{
+				Increment = unchecked( Increment * 10 );
+				Counter = 20;
+			}
+			return next;
+		}
+	}
+
 	private static int Setting( OriginalObject item, string key ) => item.Entry.Settings.GetInt( key );
 
 	/// <summary>Whether a sideshow's type has <c>UsageInfo.NonWinnableSideshow</c> (type <c>+0x10c</c>): no chance or prize, its price is the price of entry.</summary>
@@ -204,7 +242,7 @@ public sealed partial class ParkHud
 
 		shopQualitySlider = Slider( "shopQuality", _ => (0, 2), () => pending.QualityStep, value => pending.QualityStep = value );
 		// [BIN:TPW-EXE:0x4b0b30 quality lamps] the shop window procedure turns a quality step s (message 0x800 from 0xc06b) into the value 1 << s of the group 0xc07f, which lights lamp s of the group 0xc07f (value 1 << s: l_low, l_med, l_high)
-		// [APPROX:UI-024] a lit lamp draws its model's frame 1 and an unlit one frame 0; the light switch control (type 13 with type-6 children) is not decoded
+		// [BIN:TPW-EXE:0x66c85a light switch] the type-13 control's SetValue(mask) sets the type-6 child 0x11100000 | i to lit for each set bit i and unlit for each clear one (0x65d3a3), and a lamp's SetState (0x66da4d) sends its two models message 1 carrying the state (1 lit, 0 unlit), which OpenTPW draws as the model's frame 1 and frame 0
 		for ( var lamp = 0; lamp < qualityLamps.Length; lamp++ )
 		{
 			var index = lamp;
@@ -218,16 +256,20 @@ public sealed partial class ParkHud
 		sideshowChanceLabel = Label( "sideshowChanceLabel", () => strings[UIStrings.ChanceOfWinning] );
 		sideshowPrizeLabel = Label( "sideshowPrizeLabel", () => strings[UIStrings.CostOfPrize] );
 		prizeBox = Info( new ValueBox( () => SettingNumber( pending.Prize ) ) { Id = "prizeBox" } );
-		// [BIN:TPW-EXE:0x4b0735 price box] the variable boxes step by 1 (0x66a68d) through b_minus and b_plus
-		// [APPROX:UI-024] a click on b_minus or b_plus steps the value by one; the variable box's repeat while a button is held (attribute 0x21) is not decoded
-		UiButton Step( string id, string model, Func<int> value, Action<int> set, int maximum, int direction ) => Info( new UiButton
+		// [BIN:TPW-EXE:0x4b0735 price box] the variable boxes step by 1 (0x66a68d) through b_minus and b_plus, which the table creates with attributes 0x21: 0x20 is the repeat style (the callback 0x66aa61 sets their delay to 200 ms and their interval to 50 ms)
+		(UiButton Minus, UiButton Plus) Steps( string minusId, string plusId, Func<int> value, Action<int> set, int maximum )
 		{
-			Id = id, Model = model, Clicked = () => { if ( !RejectReadOnlyAction() ) set( SliderPosition( value() + direction, 0, maximum ) ); }
-		} );
-		priceMinus = Step( "priceMinus", "b_minus", () => pending.Price, value => pending.Price = value, MaximumPrice, -1 );
-		pricePlus = Step( "pricePlus", "b_plus", () => pending.Price, value => pending.Price = value, MaximumPrice, 1 );
-		prizeMinus = Step( "prizeMinus", "b_minus", () => pending.Prize, value => pending.Prize = value, MaximumPrize, -1 );
-		prizePlus = Step( "prizePlus", "b_plus", () => pending.Prize, value => pending.Prize = value, MaximumPrize, 1 );
+			var hold = new VariableBoxHold();
+			void Change( bool plus, Func<int, bool, int, int, int> how ) { if ( !RejectReadOnlyAction() ) set( how( value(), plus, 0, maximum ) ); }
+			UiButton Step( string id, string model, bool plus ) => Info( new UiButton
+			{
+				Id = id, Model = model, Clicked = () => { if ( !RejectReadOnlyAction() ) set( SliderPosition( value() + (plus ? 1 : -1), 0, maximum ) ); },
+				Repeat = new UiButtonRepeat( VariableBoxHold.Delay, VariableBoxHold.Interval, () => Change( plus, hold.Start ), () => Change( plus, hold.Tick ) )
+			} );
+			return (Step( minusId, "b_minus", false ), Step( plusId, "b_plus", true ));
+		}
+		(priceMinus, pricePlus) = Steps( "priceMinus", "pricePlus", () => pending.Price, value => pending.Price = value, MaximumPrice );
+		(prizeMinus, prizePlus) = Steps( "prizeMinus", "prizePlus", () => pending.Prize, value => pending.Prize = value, MaximumPrize );
 	}
 
 	private static LayoutNode? Control( LayoutTable table, uint id ) => table.All.FirstOrDefault( node => node.Id == id );

@@ -690,6 +690,15 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return false;
 	}
 
+	IEnumerable<GuestNavigation> IGuardGuests.WalkersOn( int x, int y )
+	{
+		if ( !occupants.TryGetValue( (x, y), out var list ) )
+			yield break;
+		foreach ( var other in list )
+			if ( other.State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone) )
+				yield return other.Navigation;
+	}
+
 	(int X, int Y)[]? IGuardGuests.Lane( int side ) => side == 0 ? ValidLane( Settings.ArrivalLaneA ) : ValidLane( Settings.ArrivalLaneB );
 
 	// [BIN:TPW-EXE:0x004FD970 guest meter +0x1B8] the energy meter is the original's unnamed float +0x1B8: nothing changes it while walking, resting, queueing or riding (the needs phase 0x00501650 does not touch it), so OpenTPW keeps only its use step (OnVisitorReleased)

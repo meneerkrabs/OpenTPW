@@ -33,6 +33,8 @@ public sealed partial class StaffWorldSimulation
 			var byteX = (int)(Draw( economy ) & 0xFF);
 			var y = (int)(Draw( economy ) % (uint)area.Height) + area.Y;
 			var byteY = (int)(Draw( economy ) & 0xFF);
+			// +0x188 = 1: the walk to the strike may leave the paths (WalkEdges.Blocked)
+			member.Navigation!.Mask = 1;
 			if ( RouteToStrike( member, (x, y, byteX, byteY) ) )
 			{
 				SetJob( economy, member, StaffJob.ToStrike, turn );
@@ -90,6 +92,7 @@ public sealed partial class StaffWorldSimulation
 
 	// [BIN:TPW-EXE:0x00505FE0 walk to rest] the walk step: arrived, the rest area's script variable 0 (its thing +0x24, 0x0055A070 / 0x0055A0B0) + 1 and state 3; held (2): "couldn't get to his rest area", happiness −= HappyHitCosNoRestArea (clamped) and state 0
 	// [BIN:TPW-EXE:0x005061D0 resting] energy +0x1FC += RecuperationRate[grade] (0x00785334 + 16 × grade) and happiness +0x1F8 += HappinessRecuperationRate[grade] (0x00785338), each clamped to 0..100; at an energy byte of 100 the rest ends (0x00506D10: the variable − 1, +0x208 = 0, state 0) and the type's search runs
+	// [BIN:TPW-EXE:0x005054D0 rest model] state 3 takes the bubble away (0x0050C0D0) and frees the member's sprite model (0x004D4170); the rest's end 0x00506D10 creates it again with script 3, the stand (0x004D4140), before state 0: OpenTPW draws no sprite while he rests (StaffSpriteRules.SelectClip) and starts his clip afresh when the rest ends
 	// [BIN:TPW-EXE:0x005056E0 strike walk] state 4: the walk step and message 0x15; arrived or held: +0x188 = 0 and state 5
 	// [BIN:TPW-EXE:0x00506300 striking] a world draw turns the member's heading at (draw & 7) == 0 (presentation); the park closed and empty ends the role's strike (0x004C9130, 0x005099A0; the economy's turn here); with the role's strike flag clear a route to entrance A (FixedItemInfo.EntranceAPos, 0x007855BC / 0x007855C0): state 1, else "couldn't find park entrance" and state 0
 	private void UpdateRestOrStrike( ParkEconomy economy, StaffMember member, long turn, int maxSpeed, int maxForce )
@@ -122,6 +125,7 @@ public sealed partial class StaffWorldSimulation
 				Think( member, StaffThoughts.Strike, turn );
 				if ( Walk( member, maxSpeed, maxForce ) == WalkResult.Walking )
 					return;
+				member.Navigation!.Mask = 0;
 				SetJob( economy, member, StaffJob.Striking, turn );
 				return;
 			case StaffJob.Striking:

@@ -366,6 +366,15 @@ public static class ParkSaveFile
 		public required int PreviousRemaining { get; init; }
 		public required bool OffGrid { get; init; }
 		public required int Reroutes { get; init; }
+		/// <summary>The fields of a walk of the original kind (the tp.exe search and steering step); null for a route walk and in older saves, which restore as route walks.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public OriginalWalkSnapshot? OriginalWalk { get; init; }
+		/// <summary>All five waypoint slots of an original walk as x, y pairs (a failed set-up keeps the old ones); null for a route walk.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? Waypoints { get; init; }
+		/// <summary>The walk mask (staff +0x188); 0, the default, is not written.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public int Mask { get; init; }
 
 		private static int[] Pairs( IEnumerable<(int X, int Y)> cells ) => cells.SelectMany( cell => new[] { cell.X, cell.Y } ).ToArray();
 
@@ -386,12 +395,20 @@ public static class ParkSaveFile
 			History = navigation.History,
 			PreviousRemaining = navigation.PreviousRemaining,
 			OffGrid = navigation.OffGrid,
-			Reroutes = navigation.Reroutes
+			Reroutes = navigation.Reroutes,
+			OriginalWalk = navigation.CaptureOriginal(),
+			Waypoints = navigation.Original ? Pairs( navigation.Buffer ) : null,
+			Mask = navigation.Mask
 		};
 
 		internal bool IsValid => Position is { Length: 2 } && Velocity is { Length: 2 } && Target is { Length: 2 } && Route is { } route && route.Length % 2 == 0
 			&& AlsoOpen is { } open && open.Length % 2 == 0 && Count is >= 0 and <= GuestNavigation.BufferedWaypoints && Cursor >= 0
-			&& Cursor <= route.Length / 2 - Count && Index >= 0 && (Index < Count || Count == 0);
+			&& Index >= 0 && (Index < Count || Count == 0) && Mask is >= 0 and <= 2
+			&& (OriginalWalk is { } walk
+				? Waypoints is { Length: 2 * GuestNavigation.BufferedWaypoints } waypoints && waypoints.All( value => value is >= 0 and < ParkLitter.MapSize )
+					&& walk.PathCount is >= 0 and <= 0xFC && Count == Math.Min( walk.PathCount, GuestNavigation.BufferedWaypoints ) && !OffGrid
+					&& walk.Stamp >= 0 && walk.Total >= 0 && walk.Ahead >= 0 && walk.Beyond >= 0 && walk.Progress <= Fixed16.One && Cursor <= route.Length / 2
+				: Waypoints is null && Cursor <= route.Length / 2 - Count);
 
 		internal GuestNavigation Restore()
 		{
@@ -401,8 +418,13 @@ public static class ParkSaveFile
 				Arrived = Arrived, Index = Index, Count = Count, Route = Cells( Route ), Cursor = Cursor, WalkCrossings = WalkCrossings,
 				AlsoOpen = Cells( AlsoOpen ), History = History, PreviousRemaining = PreviousRemaining, OffGrid = OffGrid, Reroutes = Reroutes
 			};
-			for ( var index = 0; index < Count; index++ )
-				navigation.Buffer[index] = navigation.Route[Cursor + index];
+			navigation.RestoreOriginal( OriginalWalk );
+			navigation.Mask = Mask;
+			if ( Waypoints is { } waypoints )
+				Cells( waypoints ).AsSpan().CopyTo( navigation.Buffer );
+			else
+				for ( var index = 0; index < Count; index++ )
+					navigation.Buffer[index] = navigation.Route[Cursor + index];
 			return navigation;
 		}
 	}

@@ -255,12 +255,18 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 
 	private void Plan()
 	{
+		// the online extension is read once at startup (docs/MODS.md)
+		var online = FeatureGates.Online;
 		Wait( "lobby settles", 30 );
 		PlanMaterialRendering();
 		Do( "lobby renders", () =>
 		{
 			Require( flow.Lobby != null && flow.Lobby.IslandCount == 4 && flow.Lobby.PartCount > 4, "lobby scene has four islands and terrain" );
 			Require( flow.Menu != null && flow.Menu.Islands.Count == 4, "front-end menu lists four theme islands" );
+			// The jungle's butterflies (10 + 10) and the Halloween bats (50) spawn within the first frames.
+			Require( flow.Lobby!.FlyingMeshes is { } flyers && flyers.Groups.Count == 3 && flyers.Groups.Sum( group => group.Instances.Count ) == 70,
+				"the lobby flies its 70 bats and butterflies" );
+			Require( flow.Lobby.IslandClips.All( clip => clip is 1 or 2 ), "every island model plays its M1 or M2 clip" );
 			var capture = CaptureFrame( "frontend.png" );
 			// [BIN:TPW-EXE:0x757f60 lobby panel] the lobby has no title and no menu column: the panel, its four buttons and the island name; Escape opens the menu
 			Require( flow.Menu!.Main.Find( "logo" ) == null && flow.Menu.Main.Find( "title" ) == null && flow.Menu.Main.Find( "quit" ) == null, "the lobby has no logo, title or menu column" );
@@ -285,101 +291,107 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		} );
 		Wait( "keyboard previous island", 3 );
 		Do( "jungle selected", () => Require( flow.Menu!.Selected.Level == "jungle", "left key returns to the jungle island" ) );
-		// Original-style online screens (docs/ONLINE.md): Go Online, then each screen, captured offline.
-		Do( "go online", () => Click( flow.Menu!.Main, "worldView" ) );
-		Wait( "online world opens", 3 );
-		Do( "online world renders", () =>
+		// With opentpw.online disabled (--disable-extension opentpw.online) the lobby has no globe button and the online screens are skipped.
+		if ( !online )
+			Do( "no online entries", () => Require( flow.Menu!.Main.Find( "worldView" ) == null, "the disabled online extension hides the lobby's globe button" ) );
+		else
 		{
-			Require( flow.Menu!.Stack.Top?.Name == "onlineWorld", "Go Online opens the online world" );
-			Require( flow.Globe is { Visible: true } && flow.Globe.PartCount > 0 && flow.Lobby is { Visible: false }, "the online world shows the globe instead of the lobby" );
-			// the original's city labels stay empty until a city is hovered (tp.exe 0x4B9980), so the screen has no title text to read back
-			CaptureFrame( "online-world.png" );
-			// Offline there is no server city list; pins for a few cities exercise the flags and the picking.
-			flow.Globe.SetCities( new[]
+			// Original-style online screens (docs/ONLINE.md): Go Online, then each screen, captured offline.
+			Do( "go online", () => Click( flow.Menu!.Main, "worldView" ) );
+			Wait( "online world opens", 3 );
+			Do( "online world renders", () =>
 			{
-				new Online.Api.CityInfo( 1, GlobeScene.BullfrogCity, "", 90, 0, 3 ), new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 40 ),
-				new Online.Api.CityInfo( 3, "Timbuktu", "", 16.8f, -3, 5 ), new Online.Api.CityInfo( 4, "New York", "", 40.7f, -74, 120 ),
+				Require( flow.Menu!.Stack.Top?.Name == "onlineWorld", "Go Online opens the online world" );
+				Require( flow.Globe is { Visible: true } && flow.Globe.PartCount > 0 && flow.Lobby is { Visible: false }, "the online world shows the globe instead of the lobby" );
+				// the original's city labels stay empty until a city is hovered (tp.exe 0x4B9980), so the screen has no title text to read back
+				CaptureFrame( "online-world.png" );
+				// Offline there is no server city list; pins for a few cities exercise the flags and the picking.
+				flow.Globe.SetCities( new[]
+				{
+					new Online.Api.CityInfo( 1, GlobeScene.BullfrogCity, "", 90, 0, 3 ), new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 40 ),
+					new Online.Api.CityInfo( 3, "Timbuktu", "", 16.8f, -3, 5 ), new Online.Api.CityInfo( 4, "New York", "", 40.7f, -74, 120 ),
+				} );
 			} );
-		} );
-		Wait( "globe pins render", 3 );
-		Do( "globe pins", () =>
-		{
-			var london = Camera.Position.GetSystemVector3();
-			var target = GlobeScene.Centre.GetSystemVector3() + new System.Numerics.Vector3( GlobeScene.Direction( 51.5f, -0.1f ).X, GlobeScene.Direction( 51.5f, -0.1f ).Z, GlobeScene.Direction( 51.5f, -0.1f ).Y ) * GlobeScene.PickRadius;
-			Require( flow.Globe!.Pick( london, System.Numerics.Vector3.Normalize( target - london ) )?.Name == "London", "a ray from the camera to London picks London" );
-			CaptureFrame( "online-globe-cities.png" );
-			// A city lobby with three parks: their theme islands stand at the first three slots.
-			var city = new UI.CityLobbyScreen( new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 3 ) );
-			Online.Api.ParkSummary Park( string id, string level ) => new( id, $"Park {id}", "", "Ann", level, "English", DateTimeOffset.UnixEpoch, 0, 0, false, false, 0, false, 0, 2 );
-			city.Parks = new[] { Park( "a", "jungle" ), Park( "b", "space" ), Park( "c", "hallow" ) };
-			flow.Menu!.Stack.Push( city );
-		} );
-		Wait( "city lobby renders", 3 );
-		Do( "city lobby", () =>
-		{
-			Require( flow.CityIslandCount == 3 && flow.Globe is { Visible: false }, "a city lobby shows its parks' theme islands instead of the globe" );
-			CaptureFrame( "online-city-lobby.png" );
-			flow.Menu!.Stack.Pop();
-			Click( flow.Menu.Stack.Top!, "login" );
-		} );
-		Wait( "login opens", 3 );
-		Do( "login typing", () =>
-		{
-			Require( flow.Menu!.Stack.Top?.Name == "onlineLogin", "the login button opens the login dialog" );
-			flow.InjectedInput = UiInput.Type( "Alice" );
-		} );
-		Wait( "login renders", 3 );
-		Do( "login capture", () =>
-		{
-			var field = flow.Menu!.Stack.Top!.Find( "name" ) as UiTextField;
-			Require( field != null && field.Text == "Alice", "typing reaches the focused login name field" );
-			VerifyText( CaptureFrame( "online-login.png" ), OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), "login name label" );
-		} );
-		var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen, string? Verify)[]
-		{
-			("online-news.png", screens => screens.ShowNews(), "onlineNews", null),
-			("online-find-parks.png", screens => screens.ShowFindParks(), "findParks", null),
-			("online-send-postcard.png", screens => screens.ShowSendPostcard(), "sendPostcard", null),
-			("online-outbox.png", screens => screens.ShowOutbox(), "outbox", null),
-			("online-inbox.png", screens => screens.ShowInbox(), "inbox", null),
-			("online-chat.png", screens => screens.ShowChat(), "chat",
-				// The original chat overlay (data:0x50b2c): the park view answers a click with a walk.
-				OnlineStrings.Get( OnlineLabel.WalkHint )),
-			("online-import.png", screens => screens.ShowImport(), "import", null),
-			// A fixed example secret; the capture is checked by decoding its QR code (docs/ONLINE.md, "Two-step login").
-			("online-two-step.png", screens =>
+			Wait( "globe pins render", 3 );
+			Do( "globe pins", () =>
 			{
-				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
-					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ) );
-				screens.ShowEnrollment();
-			}, "twoStepSetup", null),
-			("online-two-step-email.png", screens =>
+				var london = Camera.Position.GetSystemVector3();
+				var target = GlobeScene.Centre.GetSystemVector3() + new System.Numerics.Vector3( GlobeScene.Direction( 51.5f, -0.1f ).X, GlobeScene.Direction( 51.5f, -0.1f ).Z, GlobeScene.Direction( 51.5f, -0.1f ).Y ) * GlobeScene.PickRadius;
+				Require( flow.Globe!.Pick( london, System.Numerics.Vector3.Normalize( target - london ) )?.Name == "London", "a ray from the camera to London picks London" );
+				CaptureFrame( "online-globe-cities.png" );
+				// A city lobby with three parks: their theme islands stand at the first three slots.
+				var city = new UI.CityLobbyScreen( new Online.Api.CityInfo( 2, "London", "", 51.5f, -0.1f, 3 ) );
+				Online.Api.ParkSummary Park( string id, string level ) => new( id, $"Park {id}", "", "Ann", level, "English", DateTimeOffset.UnixEpoch, 0, 0, false, false, 0, false, 0, 2 );
+				city.Parks = new[] { Park( "a", "jungle" ), Park( "b", "space" ), Park( "c", "hallow" ) };
+				flow.Menu!.Stack.Push( city );
+			} );
+			Wait( "city lobby renders", 3 );
+			Do( "city lobby", () =>
 			{
-				flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
-					Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ), EmailRequired: true );
-				screens.ShowEnrollment();
-			}, "twoStepSetup", null),
-			("online-recovery.png", screens => screens.ShowRecovery( "Alice" ), "recovery", null),
-		};
-		foreach ( var shot in onlineShots )
-		{
-			Do( $"open {shot.Screen}", () => shot.Show( new UI.OnlineScreens( flow.Menu!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online } ) ) );
-			Wait( $"{shot.Screen} renders", 3 );
-			Do( $"{shot.Screen} capture", () =>
+				Require( flow.CityIslandCount == 3 && flow.Globe is { Visible: false }, "a city lobby shows its parks' theme islands instead of the globe" );
+				CaptureFrame( "online-city-lobby.png" );
+				flow.Menu!.Stack.Pop();
+				Click( flow.Menu.Stack.Top!, "login" );
+			} );
+			Wait( "login opens", 3 );
+			Do( "login typing", () =>
 			{
-				Require( flow.Menu!.Stack.Top?.Name == shot.Screen, $"{shot.Screen} opens" );
-				var frame = CaptureFrame( shot.Name );
-				if ( shot.Verify != null )
-					VerifyText( frame, shot.Verify, $"{shot.Screen} text" );
-				flow.Online.Enrollment = null;
-				flow.Menu.Stack.Pop();
+				Require( flow.Menu!.Stack.Top?.Name == "onlineLogin", "the login button opens the login dialog" );
+				flow.InjectedInput = UiInput.Type( "Alice" );
+			} );
+			Wait( "login renders", 3 );
+			Do( "login capture", () =>
+			{
+				var field = flow.Menu!.Stack.Top!.Find( "name" ) as UiTextField;
+				Require( field != null && field.Text == "Alice", "typing reaches the focused login name field" );
+				VerifyText( CaptureFrame( "online-login.png" ), OnlineStrings.Ui( OnlineStrings.LoginName, "Login name" ), "login name label" );
+			} );
+			var onlineShots = new (string Name, Action<UI.OnlineScreens> Show, string Screen, string? Verify)[]
+			{
+				("online-news.png", screens => screens.ShowNews(), "onlineNews", null),
+				("online-find-parks.png", screens => screens.ShowFindParks(), "findParks", null),
+				("online-send-postcard.png", screens => screens.ShowSendPostcard(), "sendPostcard", null),
+				("online-outbox.png", screens => screens.ShowOutbox(), "outbox", null),
+				("online-inbox.png", screens => screens.ShowInbox(), "inbox", null),
+				("online-chat.png", screens => screens.ShowChat(), "chat",
+					// The original chat overlay (data:0x50b2c): the park view answers a click with a walk.
+					OnlineStrings.Get( OnlineLabel.WalkHint )),
+				("online-import.png", screens => screens.ShowImport(), "import", null),
+				// A fixed example secret; the capture is checked by decoding its QR code (docs/ONLINE.md, "Two-step login").
+				("online-two-step.png", screens =>
+				{
+					flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+						Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ) );
+					screens.ShowEnrollment();
+				}, "twoStepSetup", null),
+				("online-two-step-email.png", screens =>
+				{
+					flow.Online.Enrollment = new TotpEnrollment( "Alice", "smoke-ticket", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP",
+						Totp.Uri( "OpenTPW", "Alice", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP" ), DateTimeOffset.UtcNow.AddMinutes( 10 ), EmailRequired: true );
+					screens.ShowEnrollment();
+				}, "twoStepSetup", null),
+				("online-recovery.png", screens => screens.ShowRecovery( "Alice" ), "recovery", null),
+			};
+			foreach ( var shot in onlineShots )
+			{
+				Do( $"open {shot.Screen}", () => shot.Show( new UI.OnlineScreens( flow.Menu!.Stack, flow.Strings, Context.Models, new UI.OnlineHost { Session = flow.Online } ) ) );
+				Wait( $"{shot.Screen} renders", 3 );
+				Do( $"{shot.Screen} capture", () =>
+				{
+					Require( flow.Menu!.Stack.Top?.Name == shot.Screen, $"{shot.Screen} opens" );
+					var frame = CaptureFrame( shot.Name );
+					if ( shot.Verify != null )
+						VerifyText( frame, shot.Verify, $"{shot.Screen} text" );
+					flow.Online.Enrollment = null;
+					flow.Menu.Stack.Pop();
+				} );
+			}
+			Do( "leave online", () =>
+			{
+				while ( flow.Menu!.Stack.Screens.Count > 1 )
+					flow.Menu.Stack.Pop();
 			} );
 		}
-		Do( "leave online", () =>
-		{
-			while ( flow.Menu!.Stack.Screens.Count > 1 )
-				flow.Menu.Stack.Pop();
-		} );
 		// Options > Game files with a throw-away setup.json.
 		Do( "open game files", () => flow.Menu!.Stack.Push( GameFilesScreen.Create( flow.Menu.Stack, flow.Strings, Path.Combine( temporaryDirectory, SetupSettings.FileName ) ) ) );
 		Wait( "game files renders", 3 );
@@ -1190,6 +1202,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings[UIStrings.ResumeGame], "Resume Game" );
 			VerifyText( capture, flow.Strings[UIStrings.PublishPark], "Publish Park" );
 			VerifyText( capture, flow.Strings[UIStrings.ExitToLobby], "Exit To Lobby" );
+			var goOnline = flow.Hud.Stack.Top!.Find( nameof( UIStrings.GoOnline ) );
+			var publish = flow.Hud.Stack.Top.Find( nameof( UIStrings.PublishPark ) );
+			Require( online ? goOnline != null : goOnline == null, online ? "the pause menu offers Go Online" : "the disabled online extension removes the pause menu's Go Online line" );
+			Require( online || publish is { Enabled: false }, "the disabled online extension leaves Publish Park as a disabled line" );
 			Click( flow.Hud.Stack.Top!, nameof( UIStrings.Save ) );
 		} );
 		Wait( "save completes", 3 );
@@ -1206,23 +1222,28 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Wait( "pause again", 3 );
 		// The online globe over a park: it replaces the park and the HUD, and closing it restores the park camera.
 		CameraMode? parkCamera = null;
-		Do( "online globe in the park", () =>
+		if ( !online )
+			Do( "park camera", () => parkCamera = Camera.Mode );
+		else
 		{
-			parkCamera = Camera.Mode;
-			flow.ShowOnline( flow.Hud!.Stack );
-		} );
-		Wait( "park globe renders", 3 );
-		Do( "park globe", () =>
-		{
-			Require( flow.Globe is { Visible: true } && Camera.Mode is GlobeCameraMode, "Go Online in a park shows the globe with its camera" );
-			CaptureFrame( "online-park-globe.png" );
-			flow.Hud!.Stack.Pop();
-		} );
-		Wait( "park returns", 3 );
+			Do( "online globe in the park", () =>
+			{
+				parkCamera = Camera.Mode;
+				flow.ShowOnline( flow.Hud!.Stack );
+			} );
+			Wait( "park globe renders", 3 );
+			Do( "park globe", () =>
+			{
+				Require( flow.Globe is { Visible: true } && Camera.Mode is GlobeCameraMode, "Go Online in a park shows the globe with its camera" );
+				CaptureFrame( "online-park-globe.png" );
+				flow.Hud!.Stack.Pop();
+			} );
+			Wait( "park returns", 3 );
+		}
 		var parkLanguage = PlanLanguageInPark();
 		Do( "exit to lobby", () =>
 		{
-			Require( ReferenceEquals( Camera.Mode, parkCamera ) && flow.Globe is { Visible: false }, "closing the globe restores the park's camera" );
+			Require( ReferenceEquals( Camera.Mode, parkCamera ) && (flow.Globe is { Visible: false } || !online), "closing the globe restores the park's camera" );
 			// Capture the current generations: lazy pack downloads may have replaced individual atlas textures.
 			firstParkHeadAssets = flow.Level!.RideHeadRenderer!.OwnedAssets.ToArray();
 			firstParkGuestAssets = flow.Level.GuestRenderer!.OwnedAssets.ToArray();

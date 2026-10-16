@@ -8,7 +8,8 @@ namespace OpenTPW.UI;
 /// park was a three-dimensional park its visitors walked around in together; its scene, avatar model and animation
 /// are not decoded.
 /// </summary>
-// [APPROX:ONLINE-019] a flat overhead view with markers stands in for the original's chat-park scene and avatars
+// [EXT:online-chat-park-view] a flat overhead view with a marker per player, walked by clicking at one speed, stands in for
+// the original's chat-park scene and avatars (not decoded; the original's double-click teleport is not separated)
 public sealed class UiChatParkView : UiElement, IUiDragTarget
 {
 	private readonly OnlineSession session;

@@ -128,7 +128,7 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		TearDown();
 		lobbyDefinition ??= LobbyDefinition.Load();
-		Lobby = new LobbyScene( lobbyDefinition );
+		Lobby = new LobbyScene( lobbyDefinition, generator: lobbyEffects.Draw );
 		LobbyCameraMode.Radius = lobbyDefinition.SpinRadius;
 		LobbyCameraMode.VerticalOffset = lobbyDefinition.VerticalOffset;
 		LobbyCameraMode.SpinSpeed = lobbyDefinition.SpinSpeed;
@@ -152,7 +152,7 @@ internal sealed partial class GameFlow : IDisposable
 				GameAudio.EnterLobby( island.Level );
 			},
 			LoadEntries = FindLoadEntries,
-			GoOnline = ShowOnline,
+			GoOnline = WhenOnline( ShowOnline ),
 		} );
 		Menu = createdMenu;
 		Menu.SelectIsland( 0 );
@@ -351,27 +351,30 @@ internal sealed partial class GameFlow : IDisposable
 	private ParkHud CreateParkHud( Level level, IHudParkStatus status )
 	{
 		ParkHud? createdHud = null;
-		createdHud = new( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), new HudHost
-		{
-			ExitToLobby = () => RequestAutomaticExit( level, createdHud! ),
-			Quit = RequestProgressQuit,
-			SavePark = SaveCurrentPark,
-			OpenPostcard = ShowPostcard,
-			CreateOptions = CreateOptions,
-			CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
-			GoOnline = ShowOnline,
-			// [EXT:pause-menu-restart] Restart Park restarts an Instant Action park of a theme (no progress is spent); a Full Simulation park would pay its theme's entry cost again, which is not traced, so its entry stays disabled
-			RestartPark = AutomaticEligible( level ) && level.Park is { Start.Kind: ParkStartKind.InstantAction } ? () => RequestParkStart( level.LevelName, GameMode.InstantAction ) : null,
-			PublishPark = stack => CreateOnlineScreens( stack ).ShowPublish(),
-			ListSorts = listSorts,
-			OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
-			ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
-			WindowOpened = window => Advisor?.OnWindowOpened( window ),
-			WindowClosed = window => Advisor?.OnWindowClosed( window ),
-			HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
-		} );
+		createdHud = new( level, Strings, status, new OriginalBuildCatalog( level.Objects.Catalog ), CreateHudHost( level, () => createdHud! ) );
 		return createdHud;
 	}
+
+	/// <summary>The park HUD's connections to the flow; the online entries are null while the online extension is off.</summary>
+	internal HudHost CreateHudHost( Level level, Func<ParkHud> hud ) => new()
+	{
+		ExitToLobby = () => RequestAutomaticExit( level, hud() ),
+		Quit = RequestProgressQuit,
+		SavePark = SaveCurrentPark,
+		OpenPostcard = WhenOnline( ShowPostcard ),
+		CreateOptions = CreateOptions,
+		CreateLoad = stack => FrontEndMenu.CreateLoadScreen( stack, Strings, FindLoadEntries(), entry => QueueProgressLevel( entry.Level, () => LoadPark( entry, overFrames: true ) ) ),
+		GoOnline = WhenOnline( ShowOnline ),
+		// [EXT:pause-menu-restart] Restart Park restarts an Instant Action park of a theme (no progress is spent); a Full Simulation park would pay its theme's entry cost again, which is not traced, so its entry stays disabled
+		RestartPark = AutomaticEligible( level ) && level.Park is { Start.Kind: ParkStartKind.InstantAction } ? () => RequestParkStart( level.LevelName, GameMode.InstantAction ) : null,
+		PublishPark = WhenOnline( stack => CreateOnlineScreens( stack ).ShowPublish() ),
+		ListSorts = listSorts,
+		OptionsChanged = () => { if ( PersistSettings ) GameOptions.Current.Save( OptionsPath ); },
+		ParkDoorPressed = open => Advisor?.OnParkDoorPressed( open ),
+		WindowOpened = window => Advisor?.OnWindowOpened( window ),
+		WindowClosed = window => Advisor?.OnWindowClosed( window ),
+		HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
+	};
 
 	/// <summary>
 	/// Guests whose cell is within four cells of the camera's ground target — the crowd sentence's parameter
@@ -752,14 +755,18 @@ internal sealed partial class GameFlow : IDisposable
 			return;
 		if ( backdrop == Backdrop.Globe )
 		{
+			// [APPROX:UI-018] while the globe is up the lobby scene is not stepped, so its flyers and island clips hold still; whether the original's flying-mesh system and islands keep running behind the globe is not traced
 			lobbyEffects.StepGlobe( Time.Delta );
 			return;
 		}
 		if ( backdrop != Backdrop.Lobby )
 		{
 			lobbyEffects.StopRain();
+			cityScene?.Step( Time.Delta );
 			return;
 		}
+		// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby steps its subsystems in the order they registered: the flying-mesh system (0x5d5aed) before the islands component, so the flyers draw from the generator first
+		Lobby.Step( Time.Delta );
 		// The lobby's rain and bolts are drawn by the engine's weather renderer, as the original's are (CRain), at the lobby's own scale.
 		if ( lobbyWeather == null || !Entity.All.Contains( lobbyWeather ) )
 			lobbyWeather = new WeatherRenderer( new LobbyWeatherSource( lobbyEffects ), original => new System.Numerics.Vector3( original.X, original.Z, original.Y ), () => 1f, engineUnitsPerOriginal: 1f );
@@ -795,7 +802,7 @@ internal sealed partial class GameFlow : IDisposable
 			var themes = islands.Select( park => Lobby!.Definition.Islands.FirstOrDefault( island => string.Equals( island.Level, park.Level, StringComparison.OrdinalIgnoreCase ) ) ).ToList();
 			try
 			{
-				cityScene = new LobbyScene( Lobby!.Definition, themes );
+				cityScene = new LobbyScene( Lobby!.Definition, themes, lobbyEffects.Draw );
 				cityScene.Visible = backdrop == Backdrop.City;
 			}
 			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
@@ -824,9 +831,11 @@ internal sealed partial class GameFlow : IDisposable
 		}
 		else
 		{
-			// [DATA:lobby.wad:<theme>.txt SKYCOLOUR] Lobby sky: one flat colour eased toward the nearest island's SKYCOLOUR (LobbyEffects), behind the 3D scene.
+			// The lobby's backdrop. The original clears the screen to the lobby's fog colour (LobbyEffects.ClearColour) and tints only its
+			// cloud layer with the island's eased colour (LobbyEffects.Sky); until that layer is drawn, the backdrop shows the cloud colour flat.
+			// [APPROX:UI-018] stand-in for the cloud layer: the whole backdrop is painted with the cloud grid's colour (LobbyEffects.Sky) instead of the fog colour under tinted clouds; the engine sky (0x8c1828) loads <level>\sky\sky.tga for the lobby (0x5852b0 from 0x5d8b50, "Data\Levels\fantasy") and its draw (0x585ee0-0x586a00) colours it from the 16×16 grid at +0xf60 that LobbyEffects.Sky fills; that draw and the scene's fog (50 to 300) are not traced
 			backgroundBatch.Clear();
-			var sky = lobbyEffects.HasSky ? lobbyEffects.Sky : Menu?.Selected.SkyColour ?? ((byte)40, (byte)90, (byte)160);
+			var sky = lobbyEffects.Sky;
 			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), new RgbaByte( sky.R, sky.G, sky.B, 255 ) );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
 			foreach ( var entity in Entity.All.ToArray() )
@@ -865,11 +874,23 @@ internal sealed partial class GameFlow : IDisposable
 
 	// ---- Online ------------------------------------------------------------------------------
 
-	/// <summary>The online extension's session, created on the first Go Online and kept across parks.</summary>
+	/// <summary>
+	/// An online entry of the front end or the park HUD, or null while the <c>opentpw.online</c> extension is off: a null
+	/// entry hides its button or menu line (FrontEndMenu, HudHost), and the postcard shortcuts check it too.
+	/// </summary>
+	// [EXT:extension-online-gate] with the online extension off, the lobby's original globe button (b_worldview), Go Online, Publish Park and the postcard entries are hidden; the original always showed them
+	internal static Action<UiScreenStack>? WhenOnline( Action<UiScreenStack> entry ) => FeatureGates.Online ? entry : null;
+
+	/// <summary>
+	/// The online extension's session, created on the first Go Online and kept across parks. Throws while the
+	/// <c>opentpw.online</c> extension is off, so no session or chat overlay is ever created then.
+	/// </summary>
 	public OnlineSession Online
 	{
 		get
 		{
+			if ( !FeatureGates.Online )
+				throw new InvalidOperationException( FeatureGates.OnlineDisabledMessage + "." );
 			if ( onlineSession == null )
 			{
 				onlineSession = new OnlineSession( OnlineFolders ?? global::OpenTPW.OnlineFolders.FromEnvironment() );
@@ -886,8 +907,8 @@ internal sealed partial class GameFlow : IDisposable
 	/// <summary>Opens the existing composer only; sending remains an explicit outbox action.</summary>
 	internal void ShowPostcard( UiScreenStack stack )
 	{
-		if ( !GameEditions.Capabilities.Sharing )
-			throw new NotSupportedException( "Postcards are unavailable for this edition's experimental slice." );
+		if ( !FeatureGates.Sharing )
+			throw new NotSupportedException( FeatureGates.Online ? "Postcards are unavailable for this edition's experimental slice." : FeatureGates.OnlineDisabledMessage + "." );
 		CreateOnlineScreens( stack ).ShowSendPostcard();
 	}
 

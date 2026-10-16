@@ -31,6 +31,7 @@ public enum ParkEventKind
 	MonthEnded,
 	YearEnded,
 	InTheRed,
+	/// <summary>Not raised: the bank's month gives no warnings before the bankruptcy message (tp.exe <c>0x004D0370</c>, ECON-030); kept so the event numbering stays.</summary>
 	BankruptcyWarning,
 	Bankrupt,
 	ParkOpened,
@@ -57,7 +58,18 @@ public enum ParkEventKind
 	/// <summary>The player called a mechanic to the object (tp.exe 0x004DFE30): the ride closes. <see cref="ParkEvent.InstanceId"/> the object.</summary>
 	MaintenanceRequested,
 	/// <summary>The player cancelled the call (tp.exe 0x004DFE30): the ride reopens when its state allows. <see cref="ParkEvent.InstanceId"/> the object.</summary>
-	MaintenanceCancelled
+	MaintenanceCancelled,
+	/// <summary>
+	/// The object's script variable <see cref="ParkEvent.InfoId"/> (a <see cref="RideVariables"/> index: VAR_BREAKSTAT, VAR_WORN) takes the value
+	/// <see cref="ParkEvent.Amount"/>; the host writes it into the script of <see cref="ParkEvent.InstanceId"/>. Raised only for a script-hosted object.
+	/// </summary>
+	RideScriptVariable,
+	/// <summary>
+	/// The bank's month-end message type 2 (tp.exe <c>0x004D0370</c>): raised at every month end while the balance and the balance after the last debit
+	/// are below 0 and more than five 30-day months have passed since the park went into the red; <see cref="ParkEvent.Amount"/> the months. The advisor
+	/// answers each one (its game event 2); the bank's own handler loses the park once (<see cref="Bankrupt"/>).
+	/// </summary>
+	BankruptcyMessage
 }
 
 /// <summary>
@@ -113,6 +125,11 @@ public sealed class NoRideOperations : IRideOperations
 public interface IParkGuestStatistics
 {
 	int PeopleInPark { get; }
+	/// <summary>
+	/// The guests standing on a cell of type 0, 1, 3, 9 or 10, counted now (tp.exe <c>0x004C9130</c>, the predicate <c>0x004FA990</c>): park ground,
+	/// path, queue, entrance and exit, not the cells without terrain or an object's body. Statistics without a cell map answer <see cref="PeopleInPark"/>.
+	/// </summary>
+	int GuestCensus => PeopleInPark;
 	/// <summary>Average visitor happiness, 0–100, as the original's 0xc19e4 returns it: a single, the mean of each guest's truncated happiness, 0 while the park is closed.</summary>
 	float AverageHappiness { get; }
 	/// <summary>Visitors whose happiness is at least <see cref="GoldenTicketSettings.Happiness"/>.</summary>
@@ -153,8 +170,8 @@ public interface IParkEconomy : IParkClock
 	IParkGuestStatistics GuestStatistics { get; set; }
 	event Action<ParkEvent>? EventRaised;
 
-	/// <summary>Charges the entrance fee at the booth (no park-closed test: the guests' walk to the booth makes it). False when the park is bankrupt or the visitor cannot pay.</summary>
-	bool TryAdmitVisitor( long visitorCash, out int feePaid );
+	/// <summary>Books the entrance fee at the booth (no park-closed test: the guests' walk to the booth makes it; the visitor's cash is not read). False only when the park is bankrupt.</summary>
+	bool TryAdmitVisitor( out int feePaid );
 	/// <summary>Sells one item of a shop. False when the shop is unknown/closed or the visitor cannot pay.</summary>
 	bool TryBuy( int instanceId, long visitorCash, out int pricePaid );
 	/// <summary>One play of a sideshow; the economy draws the win with <c>UsageInfo.InitChanceOfLoosing</c> and pays the prize cost.</summary>
@@ -186,6 +203,10 @@ public sealed class ParkObjectState
 	public int Price { get; set; }
 	public int CostOfGoods { get; set; }
 	public int ChanceOfLosingPercent { get; set; }
+	/// <summary>A shop's quality of goods (ride <c>+0x18C</c>, <c>mQualityOfGoods</c>): 50 when built (tp.exe <c>0x004DB389</c>), 50 × the shop window's quality step once applied (<c>0x4b0aa0</c>).</summary>
+	public int QualityOfGoods { get; set; } = GuestAppearance.BuiltQualityOfGoods;
+	/// <summary>The amount of the type's special ingredient (ride <c>+0x198</c>, <c>mAmountOfSpecialIngredient</c>): 50 when built (<c>0x4db3b3</c>), the shop window's 0..100 slider once applied (<c>0x4b0aa0</c>).</summary>
+	public int IngredientAmount { get; set; } = GuestSpeed.DefaultIngredientAmount;
 	public bool IsOpen { get; set; } = true;
 	/// <summary>Exact state of repair, 0–100. The original keeps a float and compares its truncated value.</summary>
 	public double Repair { get; set; } = 100;
@@ -201,11 +222,32 @@ public sealed class ParkObjectState
 	/// <summary>The ride script reports VAR_BROKEN, which the original's ride update turns into ride state 1 or 4; mirrored each tick by the level, not saved.</summary>
 	public bool ScriptBroken { get; set; }
 	/// <summary>
+	/// A script runs the object (the level's objects; mirrored each tick, not saved): the breakdown then goes through the script (VAR_BREAKSTAT, the script's
+	/// VAR_BROKEN, the ride update's state 1); a headless economy breaks the object down at once.
+	/// </summary>
+	public bool ScriptHosted { get; set; }
+	/// <summary>The script's VAR_BREAKSTAT, mirrored each tick by the level (and set at once when the economy writes it); not saved.</summary>
+	public int ScriptBreakStat { get; set; }
+	/// <summary>The script's VAR_WORN, mirrored each tick by the level (and set at once when the economy writes it); not saved.</summary>
+	public int ScriptWorn { get; set; }
+	/// <summary>
+	/// The ride update's state 1 as the level last saw it (the visitor bridge keeps it): its rising edge breaks the object down. Saved; null until the first
+	/// observation (a new object, an older save), which then only records the state.
+	/// </summary>
+	internal bool? ScriptStateBroken { get; set; }
+	/// <summary>
 	/// The attraction's track validity (<c>mIsTrackRideValid</c>, +0x2C on the PC): a water ride whose circuit walk failed does not count for the park points
 	/// (the counts-test's built-track condition). Mirrored each tick by the level, not saved; true for every ride without a track.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00524960 track validity] the walk (0x0052A970) writes the flag after every track edit; the park points counts-test reads it for karts and water rides
 	public bool TrackValid { get; set; } = true;
+	/// <summary>
+	/// A coaster's controller passes the counts-test's coaster test: it exists, crosses itself nowhere, and is complete and closed
+	/// (<c>CoasterRide.AcceptsGuests</c>). Read only for a coaster type (Bumper.WhichTrackType 3); mirrored each tick by the level, not
+	/// saved; true until the first sync.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00441970 coaster test] the controller found by the thing's +0x20 (0x00436860, none: 0) must have +0x140 (its self-intersection count) 0, +0x3C bit 0 set and bit 1 clear, and must not be the coaster being edited (0x00790FEC)
+	public bool CoasterAcceptsGuests { get; set; } = true;
 	/// <summary>
 	/// The attraction has real queue cells from its entrance and room in them: the queue list is shorter than 4 × the queue cells
 	/// (the counts-test's 0x004DE130 back-of-queue walk and 0x004DDF50 list count; QueueJoinRules.QueueCountsForParkPoints). Synced

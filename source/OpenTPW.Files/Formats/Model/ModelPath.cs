@@ -80,6 +80,8 @@ public sealed class ModelPath
 	/// <c>normalize(up × direction)</c> and row 1 <c>direction × row 0</c>; <paramref name="up"/> is +Y unless the
 	/// record also has rotation keys, which supply their row 1. When up and direction are parallel the original divides
 	/// by zero; as an OpenTPW guard row 0 is then +X (or +Z for a direction along X) made perpendicular to the direction.
+	/// Before a record's first rotation key OpenTPW passes the rest (or lower-channel) rotation's row 1, where the original
+	/// reads the node's current row 1, which can be the previous tick's facing row; no corpus clip is known to reach that case.
 	/// </summary>
 	public static System.Numerics.Matrix4x4 Facing( NVector3 direction, NVector3 up )
 	{

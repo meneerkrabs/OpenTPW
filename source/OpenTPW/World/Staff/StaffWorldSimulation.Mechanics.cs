@@ -46,15 +46,15 @@ public sealed partial class StaffWorldSimulation
 				break;
 			case StaffJob.Repairing:
 				// [BIN:TPW-EXE:0x004DA830 repairing] the work drain (0x00506760); the timer +0x214 counts down and, at 0, a broken ride plays its fix animation to the end (0x004E03F0, 0x004E0410), then 0x004DF8F0 repairs or upgrades it fully (gauge 100, the claim and the request cleared) and the search runs
-				// Approximation (ECON-022, registered at UpdateStaff): the repair ends with the timer, without waiting for the ride's fix animation
 				StaffVitals.Work( member );
 				if ( member.JobStamp > 0 )
 				{
 					member.JobStamp--;
 					return;
 				}
-				if ( economy.TryGetObject( member.RideId, out var repaired ) && repaired.MechanicId == member.Id )
-					economy.FinishMechanicJob( member );
+				// a broken ride whose script still reports VAR_BROKEN plays its fix animation on: the mechanic stays at work and looks again next turn
+				if ( economy.TryGetObject( member.RideId, out var repaired ) && repaired.MechanicId == member.Id && !economy.FinishMechanicJob( member ) )
+					return;
 				member.RideId = 0;
 				break;
 		}

@@ -530,6 +530,25 @@ identity, output refusal/late-move cleanup and the real early `Game.Run` route.
 These are synthetic CPU tests; original movies and GPU/native-player parity were
 not exercised for this export slice.
 
+## The live PC decoder (tp.exe, October 16, 2026)
+
+A new static pass over the decrypted tp.exe found that the `cseg` routines described above
+(0x6F61E8…0x6F6770, matrix at 0xFAC690) are never called: no call, jump or pointer reaches them. The movies
+go through `.text`: dispatcher 0x66E5F0 (`pIQT` and `UV2f` are frame type 4), header 0x670900 (quantiser =
+header byte 4; byte 7 bits 0 and 1 are flags, the second choosing the pixel writer), frame decode 0x670C20,
+matrix builder 0x6710C0, block decoder 0x6747D0, transform passes 0x67673C/0x676965, colour tables 0x670350.
+Reported, to be implemented and checked next:
+
+- Matrix (one for luma and chroma): for q ≠ 100, `M[k] = (S[k] · trunc(W[k] · (float)((107 − q) · 0.0625) ·
+  65536) + 0x8000) >> 16` with the Q13 AAN prescales `S` at 0x705C88 and the MPEG-1 intra matrix `W` at
+  0x705D88, then `M[0] = 65536` (q = 100: `M = 8 · S`). The AC gain is about 0.75 of FFmpeg's at q = 99.
+- The zigzag table 0xFBB5B0 is transposed while the weights are not, so 21 asymmetric weights differ from
+  MPEG/FFmpeg.
+- The odd part rounds with the 1.5 · 2⁵² trick (round half to even, needs 53/64-bit FPU precision); the second
+  pass shifts right by 17 with no bias, so samples are 7-bit, expanded by runtime colour tables.
+
+So FFmpeg cannot serve as the bit-exactness reference; the next step reproduces these routines.
+
 ## Remaining gates
 
 Bit-exact IDCT: the original's kernel is located (see "Original IDCT") but its

@@ -219,7 +219,7 @@ public sealed class ObjectAnimator
 	/// <summary>
 	/// True when the mesh on <paramref name="node"/> is drawn hidden: its node-state bit 0x10 is set.
 	/// </summary>
-	// [APPROX:RIDES-042] Node-state bit 0x10 set (clip node lists at start, toggle entries ≤ 0) hides the node's mesh; the draw consumer of the bit was not found (the object save persists it, the advisor lists hats and accessories, Fireworks list their Destroyed mesh) — evidence needed: the reader of node bit 0x10 in the draw path, or captures
+	// [BIN:TPW-EXE:0x0057A5E3 hidden node mesh] the model draw walk 0x57a530 (and 0x57b610 at 0x57b664) skips a node's own mesh when its state word has any of 0x8210 (0x10 the toggled bit, 0x200 every dummy, 0x8000) but still walks its children (only bit 0x20 prunes the subtree), so bit 0x10 hides exactly that mesh
 	public bool IsNodeHidden( int node ) => meshByNode[node] >= 0 && nodeStateBit[node];
 
 	/// <summary>Changes whenever <see cref="IsNodeHidden"/> of some node changes.</summary>
@@ -337,6 +337,14 @@ public sealed class ObjectAnimator
 		milliseconds /= TicksPerSecond;
 		return Fctiwz( milliseconds );
 	}
+
+	/// <summary>
+	/// The clip time left on a channel in whole milliseconds: (total − frame) × 33.333332, truncated; 0 for a channel
+	/// that never played.
+	/// </summary>
+	// [BIN:TPW-EXE:0x473f50 channel remaining time] the query returns ftol((record +0x1c − record +0x20) × [0x6fec10]) for the channel record, the same remaining-time formula as the deferred trigger
+	public int RemainingMilliseconds( int channel ) => channels.TryGetValue( channel, out var state )
+		? Fctiwz( RemainingMillisecondsPerTick * (state.Clip.Animation.Duration - state.Player.Tick) ) : 0;
 
 	/// <summary>FLUSHANIM / FLUSHANIM_CH (0xa6c90): clears only the channel's deferred clip; true when one was queued.</summary>
 	public bool Flush( int channel )

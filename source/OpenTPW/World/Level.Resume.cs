@@ -44,6 +44,7 @@ public partial class Level
 			SoundSeed = random.SoundSeed,
 			Weather = Weather?.CaptureSnapshot(),
 			Gate = Gate?.CaptureSnapshot(),
+			ParkName = ParkName is { } name ? new ParkNameSaveData( name.Line1, name.Line2 ) : null,
 			Staff = StaffWorld?.CaptureSnapshot(),
 			Advisor = advisor?.CaptureSnapshot(),
 			Coasters = CaptureCoastersSnapshot(),

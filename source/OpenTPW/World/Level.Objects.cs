@@ -101,6 +101,20 @@ public partial class Level
 			return;
 		Guests.Bins = LitterBins;
 		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
+		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint, tp.exe 0x00528A70); a visit, a Theme Park Inc layout and
+		// Theme Park Inc itself (whose placement is not traced) keep the cells they were given
+		var typesFootprints = !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
+		if ( typesFootprints )
+		{
+			var cells = Guests.Grid.Cells;
+			foreach ( var item in Objects.Objects )
+				cells.WriteFootprint( item.Cells );
+		}
+		if ( typesFootprints )
+		{
+			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells );
+			Objects.ObjectRemoved += item => Guests?.Grid.Cells.ClearFootprint( item.Cells );
+		}
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
@@ -764,13 +778,24 @@ public partial class Level
 			state.IsOpen = item.IsOpen;
 			// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
 			state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;
-			// a water ride's circuit walk writes the attraction's track word (+0x2C on the PC), which the counts-test reads (docs/TRACKS.md)
+			// the breakdown goes through the script: the economy writes VAR_BREAKSTAT, the script reports VAR_BROKEN and the ride update's state 1 breaks the object down (ECON-023)
+			state.ScriptHosted = item.Runtime.Script != null;
+			state.ScriptBreakStat = item.Runtime.GetVariable( RideVariables.VAR_BREAKSTAT );
+			state.ScriptWorn = item.Runtime.GetVariable( RideVariables.VAR_WORN );
+			Park.Economy.ObserveScriptState( state, item.Visitors.InBrokenState );
+			// a kart or water ride's circuit walk writes the attraction's track word (+0x2C on the PC), which the counts-test reads (docs/TRACKS.md)
 			state.TrackValid = item.Runtime.Bump?.IsTrackValid ?? true;
+			// a coaster counts only while its controller accepts guests (0x00441970); without a controller the original's lookup fails
+			state.CoasterAcceptsGuests = item.Runtime.Coaster?.AcceptsGuests ?? false;
 			// the park points counts-test needs real queue cells from the entrance and room in them (0x004DE130, 0x004DDF50)
 			if ( Guests is { } guests )
 				state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, guests.Grid );
 			// The join gate reads the live sideshow words (0xdff70) and the wear gauge ride +64 (0xdfe34); both live in the economy.
 			item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
+			// the shop sale reads the amount of the special ingredient of the ride (0x4fe5f8, +0x198)
+			item.Visitors.IngredientAmount = state.IngredientAmount;
+			// the balloon's life reads the shop's quality of goods (0x004FE615, +0x18C)
+			item.Visitors.QualityOfGoods = state.QualityOfGoods;
 			item.Visitors.WearGauge = state.Repair;
 			// the attraction score's "new ride" test reads the object's own age in days (0xdc520)
 			item.Visitors.AgeDays = Park.Economy.ObjectAgeDays( state );

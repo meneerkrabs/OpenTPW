@@ -53,7 +53,7 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 
 	public ParkLitter? Litter => Economy().Litter;
 
-	public bool TryPayAdmission( long guestMoney, out int feePaid ) => Economy().TryAdmitVisitor( guestMoney, out feePaid );
+	public bool TryPayAdmission( out int feePaid ) => Economy().TryAdmitVisitor( out feePaid );
 
 	public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) => TryPayVisit( attraction, guestMoney, out pricePaid, out _ );
 
@@ -91,6 +91,8 @@ public sealed class GuestEconomyBridge : IGuestPayments, IParkGuestStatistics, I
 	}
 
 	public int PeopleInPark => Guests.GetStatistics().InPark;
+
+	public int GuestCensus => ParkGate.CountCensus( Guests );
 
 	// [BIN:STP-PPC:0x100C19E4 average happiness] 0.0 while the park is closed (0x100C3524), otherwise the single mean of each in-park guest's (u8)trunc(happiness), not the mean of the raw values (PPC-scenarios, golden tickets)
 	public float AverageHappiness

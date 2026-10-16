@@ -317,7 +317,7 @@ internal sealed class AdvisorRig : IDisposable
 			SampledTick = 0;
 			return Rest;
 		}
-		// [APPROX:ADVISOR-006] The clips' node tracks, blink toggles, vertex tracks (antennae, hands, eyes) and texture-coordinate tracks (the level advisors' eyes) are played; the blink toggles set the mesh-node bit, whose reader in the draw is open (mesh record +0, toggled at 0x472E75/0x472401; the draw-path bit 0x10 at 0x57A797 is a render-node deferral marker, RIDES-042), so hiding the toggled meshes is OpenTPW's reading, and a clip the archive lacks leaves the bind pose — evidence needed: the reader of the toggled mesh-node bit
+		// [APPROX:ADVISOR-006] The clips' node tracks, blink toggles, vertex tracks (antennae, hands, eyes) and texture-coordinate tracks (the level advisors' eyes) are played; the blink toggles set the mesh-node bit, which hides that mesh in the original's draw walk (0x57A5E3 tests 0x8210), and a clip the archive lacks leaves the bind pose — evidence needed: what the original shows for a clip its archive lacks
 		player.SetTick( tick );
 		SampledTick = player.Tick;
 		player.ComputeWorldTransforms( worlds );

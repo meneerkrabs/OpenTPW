@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace OpenTPW;
 
 /// <summary>An application-owned layout, explicitly starting a new experimental session, never a native save.</summary>
-// [APPROX:SAVE-930] TPI layout checkpoints preserve placement, not running guest/script/clock state; loading starts a fresh experimental session — evidence needed: original TPI continuation/save semantics
+// [EXT:tpi-layout-checkpoint] an application-owned layout format of the experimental Theme Park Inc slice (an OpenTPW design decision, docs/PARK-SAVES.md): it keeps placement, not running guest/script/clock state, and loading starts a fresh experimental session; no original Theme Park Inc save or layout format is claimed
 internal sealed record ThemeParkIncLayoutCheckpoint
 {
 	public required string Format { get; init; }

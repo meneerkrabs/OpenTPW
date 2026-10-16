@@ -13,7 +13,7 @@ creation seed and attraction ID, the ID/seed allocators and world seed. Load exp
 replacing the current world and starting a **new experimental session**: guests, queues' live
 membership, script instruction/variable/animation progress, fixed-step clock and audio restart.
 The saved queue geometry remains. Camera, speed and menu focus start fresh. This is layout
-persistence, never continuation or original TPI parity (SAVE-930). Prototype and coaster layouts
+persistence, never continuation or original TPI parity (an OpenTPW extension, `EXT:tpi-layout-checkpoint`). Prototype and coaster layouts
 are refused instead of losing their state.
 
 The format uses the existing trusted simulation-asset manifest without constructing TPW economy
@@ -127,6 +127,13 @@ refused this way before anything is replaced.
   finished loop voices and headless/stopped owners do not trigger it. No voice, music or audio state persists through a
   save.
 - **The camera and menu focus are not saved**; the view and interface start fresh after a load.
+- **Older saves keep their old cell types.** The cell map is saved as it was. A save made before the cells were typed as
+  tp.exe types them (no terrain, water, fixed walkway and the cell flags 0x80 and 0x400 at level start, and the 4/9/10 footprint types
+  of placed objects; `ParkCellMap.MapStartCell`, `WriteFootprint`) resumes with every such cell still empty (type 0). The load does
+  not type them again, because that would change a newer save's cell map version and the caches keyed on it; the census, the
+  litter counts and the park value of such a park count those cells as empty ground.
+- **The analyser's caches are saved outside the run hash.** The net worth and the litter/path block counts are cached with their
+  turn stamps as the original's analyser keeps them; an older save without them counts afresh at the first read.
 - **The save is pinned to the game data it was made with.** It carries a SHA-256 manifest of the
   simulation assets (the theme's object, balance and terrain files; see below). Load it with the
   same game files: when a simulation asset changed — another edition, modified data — loading is

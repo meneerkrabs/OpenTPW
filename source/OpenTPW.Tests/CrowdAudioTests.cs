@@ -33,6 +33,8 @@ public class CrowdAudioTests
 		Directory.CreateDirectory( Path.Combine( directory, "synthetic", "sound" ) );
 		var catalog = AudioTests.CreateCatalog();
 		BinaryPrimitives.WriteUInt32LittleEndian( catalog.AsSpan( 72, 4 ), GameAudio.CrowdEvent );
+		// the shipped crowd event's code (+0x12) is 7: the code its parameter call carries, and the value the branch picker reads
+		BinaryPrimitives.WriteUInt16LittleEndian( catalog.AsSpan( 90, 2 ), GameAudio.CrowdParameterCode );
 		File.WriteAllBytes( Path.Combine( directory, "synthetic", "sound", "cat_kidsSFX.map" ), catalog );
 		File.WriteAllBytes( Path.Combine( directory, "synthetic", "sound", "cat_kidsBANK.map" ), new byte[28] );
 		FileSystem = new BaseFileSystem( directory );
@@ -98,6 +100,10 @@ public class CrowdAudioTests
 		return mixer.Voices.Single( voice => !voice.IsFinished );
 	}
 
+	/// <summary>
+	/// Records <paramref name="count"/> segments in the order they start: each recorded voice is mixed in short chunks until it ends, so a successor that starts
+	/// (and could end) inside one long mix is not skipped when its sample was already decoded.
+	/// </summary>
 	private (int Sound, int Sample)[] ReadSequence( SoundSentence sentence, int count, Action? beforeMix = null )
 	{
 		var sequence = new (int Sound, int Sample)[count];
@@ -106,8 +112,15 @@ public class CrowdAudioTests
 			var voice = WaitForVoice();
 			sequence[index] = (sentence.CurrentSound, sentence.CurrentSample);
 			beforeMix?.Invoke();
-			var frames = (int)Math.Ceiling( voice.Frames * (double)AudioMixer.OutputRate / voice.SampleRate );
-			Assert.IsTrue( mixer.Mix( frames ).Any( value => value != 0 ), "the selected sample reaches decoded PCM" );
+			var audible = false;
+			// bounded: the voice's frames at the slowest pitch step (ratio > 1/2) plus slack; an overrun fails instead of hanging
+			var limit = (long)voice.Frames * AudioMixer.OutputRate / voice.SampleRate * 2 / 8 + 64;
+			for ( var chunk = 0; !voice.IsFinished; chunk++ )
+			{
+				Assert.IsTrue( chunk < limit, $"segment {index} did not end within {limit} chunks of 8 frames" );
+				audible |= mixer.Mix( 8 ).Any( value => value != 0 );
+			}
+			Assert.IsTrue( audible, "the selected sample reaches decoded PCM" );
 		}
 		return sequence;
 	}
@@ -414,16 +427,27 @@ public class CrowdAudioTests
 	}
 
 	[TestMethod]
-	public void UnmatchedVolumeParametersPreserveTheFrozenRandomFallbackAndFirstMaskWins()
+	public void AVolumeMaskReadsItsSlotWhetherOrNotTheCodeWasSetAndOnlyAnUnboundSoundDraws()
 	{
-		// the fallback is the advancing random draw, so each pair starts from the same chooser state
+		// tp.exe 0x6BC040 tests only the masks: a sound whose mask +0x18 (or +0x1C) has bit 1 takes slot 1's (or 2's) value byte, 0 until a call with the
+		// slot's code arrives, so it plays at its minimum without a draw. (The Mac reading kept a random volume for an unset parameter; the PC is followed.)
 		int Fresh( SoundEntry sound, byte? code = null, int parameter = 0 ) { system.Reseed( 11 ); return system.Volume( sound, code, parameter ); }
-		foreach ( var sound in new[] { VolumeSound( 14, 22, 19, 1 ), VolumeSound( 14, 22, 7, 2 ),
-			VolumeSound( 14, 22, 19, 1, 7, 1 ), VolumeSound( 14, 22, 0, 0, 7, 2 ) } )
-			Assert.AreEqual( Fresh( sound ), Fresh( sound, 7, 100 ), "an unrelated selector or pitch-only mask does not change volume" );
-		var matching = VolumeSound( 14, 22, 7, 1 );
-		Assert.AreEqual( Fresh( matching ), Fresh( matching, null, 100 ), "unwired sentence codes preserve existing volume" );
-		Assert.AreEqual( Fresh( matching ), Fresh( matching with { Raw = Array.Empty<byte>() }, 7, 100 ) );
+		foreach ( var sound in new[] { VolumeSound( 14, 22, 19, 1 ), VolumeSound( 14, 22, 19, 1, 7, 1 ), VolumeSound( 14, 22, 7, 1 ) } )
+		{
+			Assert.AreEqual( 14, Fresh( sound ), "bound, never set: the bottom of the range" );
+			Assert.AreEqual( 11u, system.Seed, "and no draw" );
+		}
+		Assert.AreEqual( 14, Fresh( VolumeSound( 14, 22, 19, 1 ), 7, 100 ), "a code the sound does not bind leaves its slot at 0" );
+		Assert.AreEqual( 22, Fresh( VolumeSound( 14, 22, 19, 1, 7, 1 ), 19, 100 ), "the first mask wins: slot 1 under +0x18" );
+		Assert.AreEqual( 14, Fresh( VolumeSound( 14, 22, 19, 1, 7, 1 ), 7, 100 ), "slot 2 is read only when the first mask lacks the bit" );
+		// a pitch-only mask or no selector at all: the volume is drawn as without a table
+		foreach ( var sound in new[] { VolumeSound( 14, 22, 7, 2 ), VolumeSound( 14, 22, 0, 0, 7, 2 ), VolumeSound( 14, 22, 7, 1 ) with { Raw = Array.Empty<byte>() } } )
+		{
+			system.Reseed( 11 );
+			var drawn = system.Volume( sound );
+			Assert.AreNotEqual( 11u, system.Seed, "the unbound volume draws" );
+			Assert.AreEqual( drawn, Fresh( sound, 7, 100 ) );
+		}
 	}
 
 	[TestMethod]

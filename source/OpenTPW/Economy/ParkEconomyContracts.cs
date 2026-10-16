@@ -153,8 +153,8 @@ public interface IParkEconomy : IParkClock
 	IParkGuestStatistics GuestStatistics { get; set; }
 	event Action<ParkEvent>? EventRaised;
 
-	/// <summary>Charges the entrance fee at the booth (no park-closed test: the guests' walk to the booth makes it). False when the park is bankrupt or the visitor cannot pay.</summary>
-	bool TryAdmitVisitor( long visitorCash, out int feePaid );
+	/// <summary>Books the entrance fee at the booth (no park-closed test: the guests' walk to the booth makes it; the visitor's cash is not read). False only when the park is bankrupt.</summary>
+	bool TryAdmitVisitor( out int feePaid );
 	/// <summary>Sells one item of a shop. False when the shop is unknown/closed or the visitor cannot pay.</summary>
 	bool TryBuy( int instanceId, long visitorCash, out int pricePaid );
 	/// <summary>One play of a sideshow; the economy draws the win with <c>UsageInfo.InitChanceOfLoosing</c> and pays the prize cost.</summary>
@@ -206,6 +206,13 @@ public sealed class ParkObjectState
 	/// </summary>
 	// [BIN:TPW-EXE:0x00524960 track validity] the walk (0x0052A970) writes the flag after every track edit; the park points counts-test reads it for karts and water rides
 	public bool TrackValid { get; set; } = true;
+	/// <summary>
+	/// A coaster's controller passes the counts-test's coaster test: it exists, crosses itself nowhere, and is complete and closed
+	/// (<c>CoasterRide.AcceptsGuests</c>). Read only for a coaster type (Bumper.WhichTrackType 3); mirrored each tick by the level, not
+	/// saved; true until the first sync.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00441970 coaster test] the controller found by the thing's +0x20 (0x00436860, none: 0) must have +0x140 (its self-intersection count) 0, +0x3C bit 0 set and bit 1 clear, and must not be the coaster being edited (0x00790FEC)
+	public bool CoasterAcceptsGuests { get; set; } = true;
 	/// <summary>
 	/// The attraction has real queue cells from its entrance and room in them: the queue list is shorter than 4 × the queue cells
 	/// (the counts-test's 0x004DE130 back-of-queue walk and 0x004DDF50 list count; QueueJoinRules.QueueCountsForParkPoints). Synced

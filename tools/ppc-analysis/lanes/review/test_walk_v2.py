@@ -44,6 +44,17 @@ def current(path: str) -> str:
     return (REPO / path).read_text(encoding='utf-8').lstrip('\ufeff')
 
 
+def register_document() -> str:
+    """The fidelity register as tools/fidelity_register.py generates it from the working tree (not committed)."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('fidelity_register', REPO / 'tools' / 'fidelity_register.py')
+    module = importlib.util.module_from_spec(spec)
+    # dataclasses resolve their module through sys.modules (Python < 3.13 fails otherwise)
+    sys.modules.setdefault(spec.name, module)
+    spec.loader.exec_module(module)
+    return module.render(module.collect(REPO))
+
+
 def has_commit(commit: str) -> bool:
     return subprocess.run(['git', '-C', str(REPO), 'cat-file', '-e', f'{commit}^{{commit}}'],
                           capture_output=True).returncode == 0
@@ -236,7 +247,7 @@ class RegisterFindings(unittest.TestCase):
     def test_prose_retired_gate_ids_are_protected(self):
         """WV2-2 (closed): the retired-ID guard read docs table rows only; it now also reads `APPROX:ID` mentions in
         docs prose, so GATE-002..GATE-005 cannot be declared again with another meaning."""
-        retired = current('docs/FIDELITY-REGISTER.md')
+        retired = register_document()
         retired = retired[retired.index('## Retired and reserved IDs'):]
         for label in ('GATE-002', 'GATE-003', 'GATE-004', 'GATE-005'):
             self.assertIn(f'`{label}`', retired)
@@ -262,7 +273,7 @@ class MergeOntoMain(unittest.TestCase):
         """WV2-1 (closed at the merge, WALK-M): fork main declared RIDES-029 for the Theme Park Inc '@' shape symbol
         (6820470), an ID APPROX-TRACE.md already uses for the retired Totem prototype; the merge renumbers it."""
         self.assertIn('("RIDES-029"', show('source/OpenTPW/World/Objects/RidesApproximations.cs', MAIN))
-        self.assertIn('- `RIDES-029` (docs/reverse/APPROX-TRACE.md)', current('docs/FIDELITY-REGISTER.md'))
+        self.assertIn('- `RIDES-029` (docs/reverse/APPROX-TRACE.md)', register_document())
         self.assertNotIn('("RIDES-029"', current('source/OpenTPW/World/Objects/RidesApproximations.cs'))
 
 

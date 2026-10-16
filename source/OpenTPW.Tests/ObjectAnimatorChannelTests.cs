@@ -31,6 +31,23 @@ public class ObjectAnimatorChannelTests
 		return parent < 0 ? local : local * ModelAnimationPlayer.ComputeRestTransforms( model )[parent];
 	}
 
+	/// <summary>tp.exe's channel query 0x473f50 (the lobby's island-clip check): (total − frame) × 33.333332 ms, truncated; 0 before any clip.</summary>
+	[TestMethod]
+	public void RemainingMillisecondsCountDownToTheClipEnd()
+	{
+		var model = Geometry();
+		var clip = Rigid();
+		var animator = new ObjectAnimator( model );
+		Assert.AreEqual( 0, animator.RemainingMilliseconds( 0 ), "a channel that never played reports nothing left" );
+		animator.Trigger( 0, clip, "full", 5, 0, loop: false );
+		var full = ObjectAnimator.Fctiwz( ObjectAnimator.RemainingMillisecondsPerTick * clip.Duration );
+		Assert.AreEqual( full, animator.RemainingMilliseconds( 0 ) );
+		animator.Advance( 0.5 );
+		Assert.AreEqual( ObjectAnimator.Fctiwz( ObjectAnimator.RemainingMillisecondsPerTick * (clip.Duration - animator.GetTick( 0 )) ), animator.RemainingMilliseconds( 0 ) );
+		animator.Advance( clip.Duration / 30.0 + 1 );
+		Assert.IsTrue( animator.RemainingMilliseconds( 0 ) < 1, "an ended clip has nothing left, so the lobby starts the next" );
+	}
+
 	/// <summary>
 	/// 0xa7960 updates channels in ascending order and each samples in set mode: per component the highest channel
 	/// that writes it wins, whichever started last (RIDES-002's "most recently started" rule is contradicted).
@@ -216,7 +233,7 @@ public class ObjectAnimatorChannelTests
 		Assert.AreEqual( "wide node 0: UV block animates 5 corners, the mesh has 4", wide.VertexLimitations.Single() );
 	}
 
-	/// <summary>Toggle entries and the clip's node list drive node-state bit 0x10, which hides the node's mesh (RIDES-042).</summary>
+	/// <summary>Toggle entries and the clip's node list drive node-state bit 0x10, which hides the node's mesh (draw walk 0x57A5E3).</summary>
 	[TestMethod]
 	public void NodeStateBitFollowsTogglesAndNodeLists()
 	{

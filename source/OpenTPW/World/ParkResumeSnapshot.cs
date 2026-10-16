@@ -24,6 +24,12 @@ internal sealed record ParkResumeRuntime( int RootScriptId, OriginalObjectRuntim
 internal sealed record ParkResumeEconomyBinding( int AttractionId, int InstanceId );
 
 /// <summary>
+/// The park's name as the gate's two sign lines (<see cref="ParkNameLines"/>), the optional park-name part of the envelope:
+/// saves from before it carry none and their park starts with the gate's default lines.
+/// </summary>
+internal sealed record ParkNameSaveData( string Line1, string Line2 );
+
+/// <summary>
 /// The whole park in one versioned own-format envelope (save/load milestone): the legacy economy snapshot
 /// (<see cref="ParkSaveFile.Data"/>, embedded by value — never re-implemented), the layout, the guests, the
 /// script world, one runtime per placed object, the attraction-to-economy associations, the fixed-step clock and
@@ -72,6 +78,8 @@ internal sealed record ParkResumeSnapshot
 	public ParkWeather.ParkWeatherSnapshot? Weather { get; init; }
 	/// <summary>The park gate's turn observation, or null when the park had no gate.</summary>
 	public ParkGate.ParkGateSnapshot? Gate { get; init; }
+	/// <summary>The park's name (the gate's two sign lines), or null when the park had none; saves from before the part carry none.</summary>
+	public ParkNameSaveData? ParkName { get; init; }
 	/// <summary>The staff world's actors, or null when the park had no staff world (the actors are the world-side authority).</summary>
 	public StaffWorldSimulation.StaffWorldStateSnapshot? Staff { get; init; }
 	/// <summary>The automatic advisor, or null when the park had none; never captured while a response is being spoken.</summary>

@@ -301,6 +301,20 @@ and corrupted words per layer, shelf coefficients against the published curves,
 per-channel filtering, mid-stream emphasis change rejection, and the corpus
 inventory).
 
+### Playback length (entry +32)
+
+Every SDT entry header's u32 at +32 is the length the game plays, in bytes of 16-bit PCM (all channels).
+tp.exe's MPEG sound object (constructor 0x6C82C0) copies it when type byte +27 has bit 0x04 (the type
+is a bit field: 0x20 MPEG, 0x10 another codec, 0x04 length present, 0x01 stereo; 36/37 = 0x24/0x25), and
+its fill routine 0x6C83C0 delivers at most that many decoded bytes before the end/loop handler, so the
+decoder's tail is never heard. +26 is the bit depth (16 plays 16-bit, anything else 8-bit, 0x6C6F40).
+All 5,674 entries (Data and the three language folders) have the bit, and a length of whole sample frames
+no longer than the decoded audio: about one frame plus the encoder delay shorter (Layer I mono 558–991
+samples, Layer II mono mostly 672–1,824, stereo 725–1,729; 212 Layer II entries are cut much earlier).
+`SdtEntryHeader.PlaybackBytes` and `Mp2Audio.TrimTo` apply it: sound events and advisor speech play exactly
+that length (sp_001: 92,320 of 93,312 decoded samples). The decoder and `--export-sdt-wav` keep the full
+decoded PCM.
+
 ## Advisor runtime slice
 
 `--advisor-say N` (1–637) takes `global/Speech/speechHD.SDT` and `lips.wad` from the
@@ -340,8 +354,8 @@ advisors add texture-coordinate tracks and one clip with path parameters
 built by `AdvisorSequences` (see "Sequences and timing" below) and played (see "Clip timeline"), vertex and texture-coordinate tracks included. The clips' node lists set node bit
 0x10 on the hats, spatula and bow tie, the hidden set of the base model. That bit is the clip-toggled word of the mesh-node record
 (+0, set at `0x472E75`, cleared at `0x472401`); the mesh draw's own bit 0x10 (`0x57A797`) is a different word, a render-node deferral
-marker (the draw defers a node of a model with flag 0x200000 to the list at `0x8BB220` and the drain `0x579C80` sets and clears it), so it
-does not answer which draw reads the toggled bit (RIDES-042). The fixed-sequence entries also carry accessory bits `0x7F0000`, stored at
+marker (the draw defers a node of a model with flag 0x200000 to the list at `0x8BB220` and the drain `0x579C80` sets and clears it); the
+toggled bit is read by the model draw walk `0x57A530`, which skips a node's own mesh when its word has any of 0x8210 (`0x57A5E3`). The fixed-sequence entries also carry accessory bits `0x7F0000`, stored at
 `0xF79660`, which the selector `0x598CA0` tests before it shows or hides nodes by dummy attribute (`0x429F60`, `0x429EE0`); see "Costumes".
 `Advisorm13` (330 ticks) is the only clip with tracks on all five mouth meshes, the
 likeliest original source of the mouth-shape choice.

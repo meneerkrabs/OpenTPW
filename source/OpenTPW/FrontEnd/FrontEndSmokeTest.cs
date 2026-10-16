@@ -888,6 +888,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			thirdObject = level.PlaceObject( item.Entry!, site.X, site.Y, level.BuildRotation );
 			thirdAttractionId = thirdObject!.Runtime.AttractionId;
 			Require( thirdObject != null, "a third catalogue object is placed for the attractions window" );
+			// a built ride with a queue starts closed (RIDES-015, 0x4DB712); the attractions window shows the working fixture, so it is opened as the player would
+			thirdObject.Open();
 			Log.Trace( $"Front-end smoke: placed {flow.Hud.ItemName( item )} as the attractions-window fixture." );
 		} );
 		Do( "attractions window opens", () =>

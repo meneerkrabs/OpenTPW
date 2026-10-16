@@ -204,7 +204,8 @@ internal static class ParticleRendererModule
 
 	/// <summary>The native position of an engine position: original units times 1024, Y up, truncated toward zero (the dispatcher's unit before the constructor's >> 4).</summary>
 	// [BIN:TPW-EXE:0x5573D0 EVENT dispatcher] world position * 1024.0 (constant 0x700FDC) through _ftol, which truncates
-	// [APPROX:PTCL-906] the conversion inverts OpenTPW's placement (the pool runs with the detail options' PARTICLEDENSITY, 2048 particles and the original's flat-zero ground stub, as the original does)
+	// [BIN:TPW-EXE:0x556B90 particle key resolver] the pose is the key node's world position in original units (Y up), which ToOriginal recovers by undoing, constant for constant, the placement that made the engine pose (ObjectPlacement.ModelToEngine: 0.2 per unit, the grid origin, Z up); the constants cancel, so the native value does not depend on them, and it differs from the original's only by the float32 rounding of the engine pose (at most one native unit, 1/1024 of an original unit)
+	// the pool runs with the detail options' PARTICLEDENSITY, 2048 particles and the original's flat-zero ground stub, as the original does
 	internal static (int X, int Y, int Z) ToNative( Level level, SVector3 engine )
 	{
 		var original = ToOriginal( level, engine );

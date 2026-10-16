@@ -14,6 +14,9 @@ A miscellaneous pass over open approximations, read in tp.exe via REA:
   (0x4D95BD, 0x4D9620). **PTCL-905** (narrowed): the batch depth sort has no visible effect.
 - **TOUR-011** (narrowed, partly built): WALKOFF action 2 creates effect 0x13 at the slot's start node (0x5571A0, 0x5572EB).
   The walk-on hold is not built.
+- **PTCL-906** (retired, user-checked): the engine-to-native pose conversion undoes `ObjectPlacement.ModelToEngine` constant for constant (0.2 scale, grid
+  origin, Z up), so the 0.2 and the centring cancel and need no BIN backing; what remains is float32 rounding of the engine pose, at most one native
+  unit. Pinned by a round-trip test over all four rotations.
 - **RIDES-021** (narrowed): the model triangle test 0x45D090 is read.
 - Unchanged readings: BLUEPRINT-001/-003, PTCL-900/-909, RIDES-019, COMPAT-007/-032. Blocked: COMPAT-002/-004/-006, MD2-900/-901,
   PTCL-904, RIDES-040.

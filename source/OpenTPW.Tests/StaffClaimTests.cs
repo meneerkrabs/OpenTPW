@@ -99,4 +99,18 @@ public class StaffClaimTests
 		var fresh = ParkSaveFile.Serialize( EconomyTestData.Park() );
 		StringAssert.DoesNotMatch( fresh, new System.Text.RegularExpressions.Regex( "MechanicCursor|ClaimTurn" ), "an unused cursor and claims are not written" );
 	}
+	[TestMethod]
+	public void AReleasedClaimLeavesNoTurnToTheSaveAndAPendingResumeTurnSurvivesOne()
+	{
+		var park = Park( out var rides, 1 );
+		var mechanic = EconomyTestData.HireBest( park, StaffType.Mechanic );
+		EconomyTestData.AdvanceToTurn( park, 10 );
+		park.Claim( rides[0], mechanic );
+		rides[0].MechanicId = 0; // the releases (a finished repair, a failed walk) clear the claim word and keep the turn
+		mechanic.ResumeClaimTurn = 7;
+		var restored = ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( park ) ) ), EconomyTestData.Settings(), EconomyTestData.Catalog() );
+		Assert.IsTrue( restored.TryGetObject( rides[0].Id, out var resumed ) );
+		Assert.AreEqual( (0, 0L), (resumed.MechanicId, resumed.ClaimTurn), "a released claim keeps no turn" );
+		Assert.AreEqual( 7L, restored.Staff.Members.Single().ResumeClaimTurn, "an original save's claim turn waits for the world that places the member" );
+	}
 }

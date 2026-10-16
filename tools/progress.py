@@ -29,7 +29,7 @@ from pathlib import Path
 FRAGMENTS = "docs/progress"
 HISTORY = "docs/PROGRESS.md"
 # The newest entry of the frozen history. New entries go into docs/progress/, so this stays the first heading.
-FROZEN_TOP = "## Interface reading round, part B (October 15, 2026)"
+FROZEN_TOP = "## Ride vehicles: engine voices, tour cars and the shared bump module (October 15, 2026)"
 # The history's note about the convention; it is dropped from the assembled log.
 NOTE = "> **New entries:**"
 MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August", "September", "October",

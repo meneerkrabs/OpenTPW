@@ -11,6 +11,35 @@ files remain outside that publication.
 > `python3 tools/progress.py` assembles both into the full log, newest first; the website's
 > [progress notes](https://opentpw.io/docs/PROGRESS.html) show that log.
 
+## Ride vehicles: engine voices, tour cars and the shared bump module (October 15, 2026)
+
+Vehicle effects and the bump rides' shared state now follow tp.exe:
+
+- **Engine voices** move with their vehicle every tick (`0x51C270`, place `x × 0.0033036`, `y × 0.0033036`) and take EventMap variable 10
+  = speed / 3 (`0x51BC40` → `0x6BBB80`), bound to pitch as min + v × range / 100 (`0x6BC170`; the shipped kart and bumper engines bind
+  selector 16, 17 in Fantasy). Break smoke sits on the sparks node (class `0x100`). Water boats' spray, engine voice and unload
+  particles now play: the runtime had subscribed to bump effects only for non-water rides (TRACK-025 retired).
+- **Tour cars** start their engine at `0x55A944` with parameter 80 docked or landed, 15 taking off, 60 broken and 30 otherwise, move the
+  voice every tick and stop it on removal; TOUR 9 plays FlySmoke and FlyFire, and the mend plays clip 10 and cat_rides `0xBB`; clips
+  retrigger only on an animation change and play from the car's own letter files (TOUR-004 retired, TOUR-008 narrowed).
+- **Vehicle heights** use the original's three sampler modes (`0x450EA0`: faces, terrain plus the model's header float `+0xA0`, the
+  collision mesh); vehicles never read the `.hmp`. Bumper cars stand on their ride's platform and the jungle wake is the original's
+  second instance behind the car (TRACK-031 retired, TRACK-001 narrowed).
+- **One bump module for every bump ride** (TRACK-019 narrowed): one frame counter (`0x877B5C`), a 256-vehicle pool stepped and collided
+  in pool order across rides (restitution from the other vehicle's controller, `0x546E52`), a 2048-object pool and a 1024-buoy budget.
+  Because those pools' overflow verdicts depend on the order the rides were built in, a resume restores the saved slots, verdicts and
+  buoy counts instead of replaying the checks, so a park near the limits loads as saved.
+- **Sound parameters**: one placeholder table per sentence (`0x6BBB80`, `0x6BBF00`, `0x6BC040`) serves the crowd, the vehicle engines, the
+  rain (code 8, `0x51E870`, which now also sets the rain's volume) and the park music (code 4, `0x51E79E`); a bound volume or pitch takes
+  its slot's value, 0 until a matching call, for sentences, one-shots and chains alike, so the kart and bumper stop sounds play at the
+  bottom of their pitch range; only a call with the event's own code sets the branching value (AUDIO-003 narrowed to the fixed-pitch flag,
+  the non-chain delay and reverb).
+
+No world or guest draws were added and the pinned run hash is unchanged; parks with a bump controller hash the frame counter and pool
+order. New optional, validated save fields: the tour car's `Emitter`, the track world's `FrameCount`/`TickRemainder`, per controller
+`ObjectSlots` and `BuoyCount` and per vehicle `ObjectAttraction`; a vehicle's `Slot` is now its pool slot (unique across the rides in a
+save that has the module clock), and older saves load.
+
 ## Guests walk with tp.exe's walk (October 15, 2026)
 
 Guests walking the park's cells now use the original walk, checked instruction by instruction in tp.exe and against the original
@@ -871,7 +900,7 @@ preview; original runtime fidelity and the complete offline scope remain open.
 - The Codex review of PR #64 closed three seams: the park door and the reopening after a repair followed the economy that an in-place `LoadPark` had discarded (they now subscribe through the persistent runtime and the gate is rebuilt), a ride with a bought upgrade kept taking guests while its wear stood still (it now closes until the upgrade is installed and then reopens, `0xdf928` start and end, read statically), and the docs no longer present the economy's breakdown as reaching guests: it does not, until the economy writes VAR_BREAKSTAT to the ride script. RIDE-WEAR.md drops its superseded 2-second wear estimate and the retired ECON-047 row.
 - The oracle now executes what a Mac staff member costs (finding F28, ECON-012, ECON-043): the monthly wage `0xf3364` debits PayMultiplier × BaseWage (a 32-bit product) at the month's end, and the dismissal routine `0xf33ec` charges the same wage once more; the hire path has no debit (the bank's Spend has sixteen direct callers, none on it, and `BaseCostPerStaff` / `CostPerQualityLevel` are never read). `ParkEconomy.Fire` now charges a month's wage (it was free: 506 of 511 oracle inputs differed), hiring stays free, and ECON-012 is retired.
 - The oracle now executes the Mac park rating `0xc7b24` and park value `0xc1d4c` (finding F29, ECON-027, ECON-026): objects count in the rating by the type's `Info.WhichUIType` (the add-ons are rides), the visitor term is the census of guests on cells of type 0, 1, 3, 9 and 10, and a staff member counts only with its byte `+3` clear; the park value is the cell points (2 per owned empty cell, ...) plus, per object that is not condemned, the costs of its levels times its state of repair / 100, not the scrap values. `ParkEconomy` follows the object parts (the old rules differed on 249 and 355 of about 520 oracle inputs); the census, the staff byte and the cell points stay open in ECON-026 and ECON-027.
-- [Fidelity register](https://opentpw.io/docs/FIDELITY-REGISTER.html): **326 original fidelity items** plus
+- [Fidelity register](FIDELITY-REGISTER.md): **326 original fidelity items** plus
   **24 online extension** IDs (350 total) remain open. CI checks explicit tags and register consistency; it finds no unmarked logic and proves no parity.
   Windows/Linux GPU/input/audio, original captures, coaster controllers, missing
   script effects, and further scenario acceptance remain release blockers.

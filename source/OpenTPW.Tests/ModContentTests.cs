@@ -95,8 +95,10 @@ public class ModContentTests
 
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "objects/zoom", 20010 ) ), "outside the declared range" );
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "objects/a", 20001 ), ObjectJson( "objects/b", 20001 ) ), "more than one object" );
-		AssertInvalid( ObjectsJson( 1000, 1009 ), "'idRange' must lie between" );
-		AssertInvalid( ObjectsJson( 20000, 30000 ), "'idRange' must lie between" );
+		AssertInvalid( ObjectsJson( 1000, 1009 ), "'idRange' 1000..1009 must lie within 5000..65535" );
+		AssertInvalid( ObjectsJson( 20000, 30000 ), "'idRange' 20000..30000 may hold at most 4096 ids" );
+		AssertInvalid( ObjectsJson( 65000, 65536 ), "must lie within 5000..65535" );
+		AssertInvalid( ObjectsJson( 20009, 20000 ), "'idRange' 20009..20000 must not end before it starts" );
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "../outside/zoom", 20001 ) ), "leaves the mod's folder" );
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "/abs/zoom", 20001 ) ), "leaves the mod's folder" );
 		AssertInvalid( ObjectsJson( 20000, 20009, ObjectJson( "objects/zoom.wad", 20001 ) ), ".wad extension" );

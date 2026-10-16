@@ -153,7 +153,8 @@ refused) adds object archives to the theme catalogs:
       "names": { "English": "Bumper Cars" } } ] }
 ```
 
-- `idRange`: the Info.Ids the mod reserves, between 10000 and 1000000000, at most 1000 of them. Every `infoId` lies in
+- `idRange`: the Info.Ids the mod reserves, between 5000 and 65535, at most 4096 of them (one rule for every mod, see
+  [Cross-edition objects](#cross-edition-objects-opentpwcross-edition-objects)). Every `infoId` lies in
   it and is used once. Layout records and saves join on the Info.Id, so a mod keeps an object's id stable across
   versions. The archive's own `Info.Id` is replaced by `infoId`. Two mods whose ranges overlap are refused.
 - `archive`: the archive's path without `.wad` (a plain folder works too), in the mod's folder, or, with `input`, in the
@@ -247,8 +248,9 @@ An official extension, **off by default**, that lets a data mod bring attraction
 Inc) into Theme Park World. Nothing of Theme Park Inc ships with OpenTPW: the player supplies the install as a mod
 input (`"inputs": [{ "id": "tpi", "kind": "original-data", "edition": "theme-park-inc" }]`), and a mod that needs the
 extension lists it under `dependencies` (a mod refuses to run while the extension is off). Because objects it brings
-change the park, the extension is marked as changing the simulation (`AffectsSimulation`), which later steps record in
-park saves. It is `[EXT:cross-edition-objects]`.
+change the park, the extension is marked as changing the simulation (`AffectsSimulation`): while it is on, park saves record
+it (id, version, no files) and a park saved with it loads only with it on, and one saved without it only with it off
+([Mods in park saves](#mods-in-park-saves)). It is `[EXT:cross-edition-objects]`.
 
 What the extension provides in the engine:
 
@@ -256,18 +258,18 @@ What the extension provides in the engine:
   distinct Theme Park Inc ids are also Theme Park World ids, and 145 of those name other objects (id 1100 is the Belly
   Bounce in one and the Bellows in the other). The original keeps a definition whose id is
   taken (it stays listed) but every lookup by id returns the first one in load order (RIDES-024), so a second object with
-  a taken id would be unreachable. A mod therefore reserves a range of ids and gives each archive an id from it, and the
-  engine refuses a claim outside the range, one already used by another object, or one claimed twice
-  (`CrossEditionObjects.CheckClaims`), one object at a time.
+  a taken id would be unreachable. A mod therefore reserves a range of ids in the `idRange` of its `objects.json` and gives
+  each archive an id from it; `objects.json` is refused when an id lies outside the range or is used twice, and `ModSet`
+  refuses two mods with overlapping ranges.
 
-  **One rule for every mod's id range**, whether or not it uses this extension (`CrossEditionObjects.RangeProblem`): the
-  range lies in 5000 to 65535 and holds at most 4096 ids. It lies above every original id (Theme Park World reaches 4605,
-  Theme Park Inc 4500) and inside 16 bits, the width of a placed object's Info.Id (`mId`) in the original park saves. The
-  range is declared once, in the `idRange` of the mod's `objects.json` (data content roots, in review as phase 5); the
-  manifest has no second declaration. Two mods with overlapping ranges are both refused, and an object list without an
-  `idRange` is refused, in `ModSet`. Phase 5 as first written used 10000 to 1000000000 and at most 1000 ids; when it
-  lands, `ModObjectsFile` takes its bounds from `CrossEditionObjects` (every range it accepts that ends below 65536 stays
-  valid; the 2^16 ceiling keeps a mod's ids representable in an original-format save).
+  **One rule for every mod's id range**, whether or not the mod uses this extension (`CrossEditionObjects.RangeProblem`,
+  applied by `ModObjectsFile`): the range lies in 5000 to 65535 and holds at most 4096 ids. It lies above every original id
+  (Theme Park World reaches 4605, Theme Park Inc 4500, both measured against the installs by tests), so no mod id can be
+  taken by an original object, and inside 16 bits, the width of a placed object's Info.Id (`mId`) in the original park saves,
+  so every mod object stays representable in an original-format save. The range is declared once, in `objects.json`; the
+  manifest has no second field. (The content roots first allowed 10000 to 1000000000 and at most 1000 ids; every range that
+  ended below 65536 stays valid.) Nothing in OpenTPW's saves or tables assumes ids below 5000: its tables are keyed by
+  the Info.Id as an integer, and the only fixed ids are the original ones.
 - **Sound banks per content root.** A Theme Park Inc ride script's `EVENT` ids belong to Theme Park Inc's own sound
   catalogues (its global `cat_rides` holds 114 events against Theme Park World's 25), so an object from a registered root
   (`ContentSoundRoots.Register`) looks its events up in that root: global categories in the root's `global/sound`, level
@@ -285,5 +287,6 @@ for Theme Park World's economy. Theme Park Inc's `Upgrades[n].RunningCost` has n
 ignored; its `Research.Group` values reach 6, and the research table already treats groups past `ResearchTech` as
 threshold 0, as the original's zero-filled block does.
 
-Loading the archives themselves needs the data content roots of the next step; until then the extension carries the rules
-above and nothing consumes them.
+Loading the archives themselves is the content roots' job (`objects.json` with an `input`); the sound banks of a root
+are registered by the code that opens the Theme Park Inc input, which does not exist yet, so `ContentSoundRoots` has no
+root to route to and every object keeps the running game's banks.

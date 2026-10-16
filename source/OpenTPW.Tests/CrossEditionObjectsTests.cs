@@ -80,10 +80,6 @@ public class CrossEditionObjectsTests
 		Assert.IsNotNull( CrossEditionObjects.RangeProblem( 1, 1_000_000_000 ) );
 		StringAssert.Contains( CrossEditionObjects.RangeProblem( 1100, 1200 )!, "5000..65535" );
 		StringAssert.Contains( CrossEditionObjects.RangeProblem( 7000, 12000 )!, "at most 4096 ids" );
-		Assert.IsTrue( new InfoIdRange( 20000, 20099 ).Overlaps( new InfoIdRange( 20099, 20199 ) ) );
-		Assert.IsFalse( new InfoIdRange( 20000, 20099 ).Overlaps( new InfoIdRange( 20100, 20199 ) ) );
-		Assert.IsTrue( new InfoIdRange( 20000, 20099 ).Contains( 20099 ) );
-		Assert.IsFalse( new InfoIdRange( 20000, 20099 ).Contains( 20100 ) );
 	}
 
 	private string Mod( string id, string extra )
@@ -97,6 +93,26 @@ public class CrossEditionObjectsTests
 	private static ModSet Resolve( IEnumerable<string> directories, params string[] enabled ) =>
 		ModSet.Resolve( directories.Select( directory => ModDiscovery.Discover( new[] { directory }, Array.Empty<string>(), null, null ).Single() ).ToList(),
 			new ModSettings { Enabled = enabled.ToDictionary( id => id, _ => true ) }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+
+	[TestMethod]
+	public void TheEnabledExtensionIsRecordedInParkSavesAndRequiredToLoadThem()
+	{
+		var extension = OfficialExtensions.CrossEditionObjects;
+		var off = ModSet.Defaults( OfficialExtensions.All );
+		Assert.IsNull( ParkResumeMods.Capture( off ), "off by default: a park saves exactly as before" );
+		var on = Resolve( Array.Empty<string>(), extension.Id );
+		var saved = ParkResumeMods.Capture( on );
+		Assert.AreEqual( new ParkModRecord( extension.Id, "1.0.0", ModSet.NoFilesSha256 ), saved!.Single() );
+		Assert.AreEqual( 0, ParkResumeMods.Unmet( saved, on ).Count );
+		StringAssert.Contains( ParkResumeMods.Unmet( saved, off ).Single(), "needs opentpw.cross-edition-objects 1.0.0" );
+		StringAssert.Contains( ParkResumeMods.Unmet( null, on ).Single(), "was saved without opentpw.cross-edition-objects" );
+		// a mod that needs the extension is recorded after it, in load order
+		var directory = Mod( "community.tpi-rides", """, "dependencies": [ { "id": "opentpw.cross-edition-objects" } ], "content": { "overrides": "data" }""" );
+		Directory.CreateDirectory( Path.Combine( directory, "data" ) );
+		File.WriteAllText( Path.Combine( directory, "data", "rides.sam" ), "x" );
+		var both = Resolve( new[] { directory }, extension.Id, "community.tpi-rides" );
+		CollectionAssert.AreEqual( new[] { extension.Id, "community.tpi-rides" }, ParkResumeMods.Capture( both )!.Select( record => record.Id ).ToArray() );
+	}
 
 	[TestMethod]
 	public void AModNeedingTheDisabledExtensionIsRefusedWithTheReason()
@@ -113,23 +129,20 @@ public class CrossEditionObjectsTests
 	}
 
 	[TestMethod]
-	public void ClaimsOutsideTheRangeOrAlreadyTakenAreRefusedOneByOne()
+	public void TheObjectsFileOfAModThatUsesTheExtensionFollowsTheOneRule()
 	{
-		var range = new InfoIdRange( 20000, 20099 );
-		var taken = new HashSet<int> { 1100, 20005 };
-		var refusals = CrossEditionObjects.CheckClaims( range, new[]
-		{
-			("/levels/science/rides/a", 20000), ("/levels/science/rides/b", 1100), ("/levels/science/rides/c", 20005),
-			("/levels/science/rides/d", 20000), ("/levels/science/rides/e", 20050),
-		}, taken );
-		Assert.AreEqual( 3, refusals.Count );
-		Assert.AreEqual( "/levels/science/rides/b", refusals[0].Archive );
-		StringAssert.Contains( refusals[0].Reason, "outside the mod's range 20000..20099", "the Theme Park Inc id 1100 is also a Theme Park World id" );
-		StringAssert.Contains( refusals[1].Reason, "already used by another object" );
-		StringAssert.Contains( refusals[2].Reason, "also claimed by /levels/science/rides/a" );
-		Assert.AreEqual( 0, CrossEditionObjects.CheckClaims( range, new[] { ("/a", 20001), ("/b", 20002) }, new HashSet<int>() ).Count );
-		var undeclared = CrossEditionObjects.CheckClaims( null, new[] { ("/a", 20001) }, new HashSet<int>() );
-		StringAssert.Contains( undeclared.Single().Reason, "declares no 'idRange'" );
+		static string Json( int first, int last, int id ) =>
+			$$"""{ "schema": 1, "idRange": { "first": {{first}}, "last": {{last}} }, "objects": [ { "archive": "levels/science/rides/x", "input": "tpi", "theme": "space", "category": "rides", "infoId": {{id}}, "names": { "English": "X" } } ] }""";
+		static ModObjectsFile Read( string json ) => ModObjectsFile.Parse( Encoding.UTF8.GetBytes( json ), new[] { "tpi" } );
+		Assert.AreEqual( 65535, Read( Json( 61440, 65535, 65535 ) ).LastId );
+		Assert.AreEqual( 5000, Read( Json( 5000, 5000, 5000 ) ).FirstId );
+		// the Theme Park Inc ids themselves (1100 is the Belly Bounce in Theme Park World), the old 10000..1e9 bounds and a missing range
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => Read( Json( 1100, 1100, 1100 ) ) ).Message, "must lie within 5000..65535" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => Read( Json( 70000, 70000, 70000 ) ) ).Message, "must lie within 5000..65535" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => Read( Json( 10000, 14096, 10000 ) ) ).Message, "at most 4096 ids" );
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => Read( """{ "schema": 1, "objects": [] }""" ) ).Message, "'idRange' is required" );
+		// an id outside the declared range, inside the allowed bounds
+		StringAssert.Contains( Assert.ThrowsException<InvalidDataException>( () => Read( Json( 20000, 20099, 1100 ) ) ).Message, "outside the declared range" );
 	}
 
 	// ---- Sound roots --------------------------------------------------------------------------

@@ -86,7 +86,7 @@ implementation against those inputs, not equivalence to an executed PC game.
   timestamp; a script created later starts at the clock's current value. The
   WAITANIM(_CH) deadlines use the same 32-bit clock word; WAIT, SETTIMER and the
   wake times count from the script's own creation, which only shifts their base.
-  The clock starts at 0 with the park's script world (RIDES-044): the PC clock is the app-lifetime scaled
+  The clock starts at 0 with the park's script world (`[EXT:park-clock-origin]`, from RIDES-044): the PC clock is the app-lifetime scaled
   timer 0x785970 (started once at 0x54DCF0, read by 0x402D70, set only by the save writer 0x4164C0 and loader
   0x415270, never reset for a new park), so a new park's first script sees the time since program start;
   `GETTIME` (PC handler `0x551F1E`) stores that clock unchanged and every shipped script uses it only as a deadline or in a difference (`RideClockCorpusTests`); the only visible effect of the origin is the 32-bit wrapping `WAITANIM_CH` sum inside a park's first 134 ms (RIDES-044).

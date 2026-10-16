@@ -84,7 +84,7 @@ WALKON (`0x00556F40`) stores its walker's slot in the ride's walk table: the ope
 whose number matches (class 0x80 for the head action 4), u4 one of class 0x800 (`0x0044B220`), both read live (`0x00556B90`). `RideVisitorBridge` keeps the slot per rider (`WalkSlots`, an optional
 saved part) and the ride runtime measures the model's dummies (`OriginalObjectRuntime.WalkNodeDistance`). The Star and Tweety Tours' slots lie 10 model units apart (the Cosmic Cruiser's
 10.03, the Tweety Tours' exactly 10), so both ride 1000 ms, as before (`TourAssetTests.TheTourWalkOffsSpanTheModelsSlotNodes`, `WalkOffTimingTests`). TOUR-007 retired. WALKON's own walk-on
-time (`ftol(distance between u1 and u2) x 100`, 0x00556F40) and the beam effect of action 2 at WALKOFF are not modelled: riders board at once.
+time (`ftol(distance between u1 and u2) x 100`, 0x00556F40) and the beam effect of action 2 at WALKOFF (`0x00521E60` with type 0x13, `0x005572EB`) are not modelled: riders board at once (TOUR-011).
 
 ## Pose sines (TOUR-008 narrowed)
 
@@ -144,8 +144,8 @@ the original finds through the track redirect or a type-3 thing, and objects who
 - Retired: TOUR-001 (the tick is 62 ms; the wall-clock catch-up, its 2 s clamp and the parity phase against the script loop are a determinism decision, `[EXT:tour-fixed-step]`), TOUR-009 (stale slot words kept and saved) and
   TOUR-010 (the Ready override on closing is gone, see Q3).
 - Reclassified: TOUR-006 is `[EXT:legacy-tour-save]`.
-- Narrowed: TOUR-002 (the original drops thrown-off riders: the script never releases them, so **thrown-off riders inflate the ride's rider count**, VAR_ONRIDE, for ever; OpenTPW hands them out through TOUR 4
-  and lowers it; the guest-side consequence of a boarded guest nobody releases is the guest owner's), TOUR-004 (all
+- Reclassified: TOUR-002 is `[EXT:tour-thrown-riders-released]` (formerly `APPROX:TOUR-002`: riders a severe breakdown threw off are handed out through TOUR 4, which lowers VAR_ONRIDE; the original's loop in `0x0055DA70` discards the id `0x0055D720` returns, so the script never releases them and **thrown-off riders inflate the ride's rider count**, VAR_ONRIDE, for ever; OpenTPW fixes that on purpose).
+- Narrowed: TOUR-004 (all
   triggers located, nothing played), TOUR-005 (implemented for the shipped maps), TOUR-008 (animations and
   shadow only).
 

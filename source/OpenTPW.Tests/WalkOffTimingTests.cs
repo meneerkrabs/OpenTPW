@@ -128,5 +128,11 @@ public class WalkOffTimingTests
 		Assert.AreEqual( 0, RideVisitorBridge.ValidateSnapshot( snapshot ).Count( error => error.Contains( "walk slot" ) ) );
 		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { WalkSlots = new[] { (2, 3, 4, 2) } } ).Any( error => error.Contains( "walk slot" ) ), "a slot of a guest that is not aboard is refused" );
 		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { WalkSlots = new[] { (1, 3, 4, 2), (1, 1, 2, 2) } } ).Any( error => error.Contains( "repeat" ) ) );
+		// the part survives the file codec, and a snapshot without it (a save from before the part) leaves no member in the JSON and loads with none
+		var round = ParkResumeJson.Deserialize<RideVisitorBridgeSnapshot>( ParkResumeJson.Serialize( snapshot ) );
+		CollectionAssert.AreEqual( snapshot.WalkSlots, round.WalkSlots, "the slots survive the JSON round trip" );
+		var none = snapshot with { WalkSlots = null };
+		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( none ) ).Contains( "WalkSlots" ), "an absent part writes no member" );
+		Assert.IsNull( ParkResumeJson.Deserialize<RideVisitorBridgeSnapshot>( ParkResumeJson.Serialize( none ) ).WalkSlots );
 	}
 }

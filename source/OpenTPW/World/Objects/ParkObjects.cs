@@ -177,11 +177,12 @@ public sealed class ParkObjects
 
 	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
 	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
-	private ObjectPlacement ComputePlacement( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool legacyBaseHeight = false ) =>
+	internal ObjectPlacement ComputePlacement( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool legacyBaseHeight = false ) =>
 		entry.IsFixedItem && !GameEditions.IsThemeParkInc
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
 			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin,
-				entry.IsFixedItem ? 0 : legacyBaseHeight ? GetLegacyBaseHeight( entry, anchorX, anchorY, rotation ) : GetBaseHeight( entry, anchorX, anchorY, rotation ) );
+				entry.IsFixedItem ? 0 : legacyBaseHeight ? GetLegacyBaseHeight( entry, anchorX, anchorY, rotation ) : GetBaseHeight( entry, anchorX, anchorY, rotation ),
+				legacyBaseHeight && !entry.IsFixedItem );
 
 	private OriginalObject Register( OriginalObject item )
 	{

@@ -8,7 +8,7 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The shipped scripts read the scheduler clock only through differences (inconclusive without OPENTPW_GAME_PATH), which is why the port's
-/// per-world clock origin (it starts at 0) and the original's app-lifetime clock (0x785970, never reset for a new park) behave alike (RIDES-044 retired).
+/// per-world clock origin (it starts at 0) and the original's app-lifetime clock (0x785970, never reset for a new park) behave alike (RIDES-044 narrowed to the WAITANIM_CH sum).
 /// </summary>
 [TestClass]
 public class RideClockCorpusTests

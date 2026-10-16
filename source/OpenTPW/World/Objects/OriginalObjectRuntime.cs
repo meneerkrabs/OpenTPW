@@ -252,7 +252,7 @@ public sealed partial class OriginalObjectRuntime
 		Tour?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
-		// [APPROX:RIDES-023] A completed cycle = VAR_RUNNING 1 → 0 — evidence needed: original ride-cycle/income accounting
+		// [EXT:ride-cycle-counter] CompletedCycles counts VAR_RUNNING 1 → 0 edges as OpenTPW's own diagnostic counter: nothing in the original counts ride cycles (it only reads VAR_RUNNING as a level), so there is no original behaviour to match
 		if ( wasRunning && !running )
 			CompletedCycles++;
 		wasRunning = running;

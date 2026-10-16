@@ -103,4 +103,19 @@ public class ObjectBaseHeightTests
 			}
 		}
 	}
+
+	[TestMethod]
+	public void AnObjectRestoredFromAnOlderSaveKeepsTheCellMeanAndIsSavedWithoutTheRule()
+	{
+		var entry = new ObjectCatalogEntry( "test", ObjectCategory.Ride, "test", new ObjectSettings( Array.Empty<ObjectSettingsFile>() ),
+			new ObjectShape( new[] { "**", "**" } ), "model", null, null, Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(),
+			Array.Empty<string>(), Array.Empty<string>(), new BaseFileSystem( System.IO.Path.GetTempPath() ), null );
+		var objects = new ParkObjects( null!, new VertexGrid( ( x, y ) => x == 10 && y == 20 ? 8 : 1 ) );
+		var current = objects.ComputePlacement( entry, 10, 20, 0 );
+		Assert.AreEqual( (4.5f, 1, false), (current.BaseHeight, ParkLayoutSnapshot.BaseHeightRuleOf( current ), current.LegacyBaseHeight), "the vertex rule: (8 + 1) / 2, saved with rule 1" );
+		var legacy = objects.ComputePlacement( entry, 10, 20, 0, legacyBaseHeight: true );
+		Assert.AreEqual( objects.GetLegacyBaseHeight( entry, 10, 20, 0 ), legacy.BaseHeight, "a save without the rule restores the cell mean" );
+		Assert.AreNotEqual( current.BaseHeight, legacy.BaseHeight, "the two rules differ on a slope, so the old height must be kept to restore at all" );
+		Assert.IsNull( ParkLayoutSnapshot.BaseHeightRuleOf( legacy ), "the next save of that object writes no rule, so it restores with the cell mean again instead of failing on the new rule's height" );
+	}
 }

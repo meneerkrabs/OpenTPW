@@ -7,8 +7,9 @@ namespace OpenTPW;
 /// position of grid corner (0, 0) and the engine height of the object's base. One cell is 10 MD2 units,
 /// <see cref="CellSize"/> engine units.
 /// </summary>
-public readonly record struct ObjectPlacement( int X, int Y, int Rotation, System.Numerics.Vector2 GridOrigin, float BaseHeight )
+public readonly record struct ObjectPlacement( int X, int Y, int Rotation, System.Numerics.Vector2 GridOrigin, float BaseHeight, bool LegacyBaseHeight = false )
 {
+	// LegacyBaseHeight: BaseHeight was restored from a save made before the vertex-midpoint rule (the mean ground height of the footprint's cells), so the next save writes no rule and still restores it.
 	// [EXT:md2-engine-scale] Engine units: 1 MD2 unit = 0.2 (presentation scale shared with the terrain; the original has no such game rule) — OpenTPW's presentation convention (formerly RIDES-026)
 	public const float ModelScale = 0.2f;
 	public const float CellSize = 10 * ModelScale;

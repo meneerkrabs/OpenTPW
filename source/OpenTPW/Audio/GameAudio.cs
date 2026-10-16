@@ -459,11 +459,12 @@ public static class GameAudio
 	/// Advances the park's world steps by the game timer's <paramref name="elapsedMilliseconds"/> (0 while paused) and runs the crowd update
 	/// (<see cref="SetCrowd"/>) once for every 32nd step, as the original's main loop does; the count is read only when an update falls due.
 	/// </summary>
-	public static void UpdateCrowd( double elapsedMilliseconds, Func<int> guestsNearCamera )
+	public static void UpdateCrowd( double elapsedMilliseconds, Func<int> guestsNearCamera, bool parkLost = false )
 	{
 		ArgumentNullException.ThrowIfNull( guestsNearCamera );
 		for ( var due = SoundCadence.Advance( elapsedMilliseconds ); due > 0; due-- )
-			SetCrowd( guestsNearCamera() );
+			// [BIN:TPW-EXE:0x0054F8BB crowd in a lost park] world state 4 (a park the banks closed) sends 0 instead of the count (0x0054F8B0 compares +0x1DA738 with 4, 0x0054F8BD zeroes eax), which stops the crowd sentence
+			SetCrowd( parkLost ? 0 : guestsNearCamera() );
 	}
 
 	public static void SetCrowd( int guestsNearCamera )
@@ -872,10 +873,11 @@ public static class GameAudio
 	/// halved and capped at 100 (<c>0x100C2344</c>), then caps it at 89 and uses 0 in world state 4.
 	/// </summary>
 	// [BIN:STP-PPC:0x101C2444 park turn] music parameter = min(min(guests in park / 2, 100), 89), or 0 when the world state is 4
-	public static int MusicParameter( int guestsInPark ) => Math.Min( Math.Min( Math.Max( 0, guestsInPark ) / 2, 100 ), MaximumMusicParameter );
+	// [BIN:TPW-EXE:0x0054F86B music in a lost park] the PC main loop caps the halved count at 0x59 (0x0054F851) and replaces it by 0 when the world state +0x1DA738 is 4 (0x0054F860, 0x0054F86D)
+	public static int MusicParameter( int guestsInPark, bool parkLost = false ) => parkLost ? 0 : Math.Min( Math.Min( Math.Max( 0, guestsInPark ) / 2, 100 ), MaximumMusicParameter );
 
 	/// <summary>Per frame: applies the option volumes, the music parameter, updates the listener and tops up the output.</summary>
-	public static void Update( int? guestsInPark = null )
+	public static void Update( int? guestsInPark = null, bool parkLost = false )
 	{
 		if ( events == null )
 			return;
@@ -884,7 +886,7 @@ public static class GameAudio
 		ApplyOptions( mixer, options );
 		if ( music != null && guestsInPark is { } guests )
 		{
-			var parameter = MusicParameter( guests );
+			var parameter = MusicParameter( guests, parkLost );
 			if ( parameter != music.Parameter )
 			{
 				// [BIN:TPW-EXE:0x0051E79E music parameter] the update sends the value with 0x51BC40(handle, 4, value); the shipped park music sounds bind no selector, so it only steers the branching

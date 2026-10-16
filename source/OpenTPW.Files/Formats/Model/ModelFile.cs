@@ -1,4 +1,4 @@
-﻿using System.Buffers.Binary;
+using System.Buffers.Binary;
 using System.Text;
 using Matrix4x4 = System.Numerics.Matrix4x4;
 

@@ -13,6 +13,17 @@ files remain outside that publication.
   `ModelPath.Facing` names the one known difference (before a record's first rotation key OpenTPW passes the rest rotation's up row where
   the original reads the node's current row).
 
+## The per-employee window and All Visitors from tp.exe's tables (October 15, 2026)
+
+- **The per-employee window** (`0x4b6080`, table `0x756f48`) opens from the staff list as the original's All Staff list does: the name as
+  title, days employed, wage, skill, happiness and energy bars and the status, refreshed every 4 s; dismiss (with the Confirmations
+  option's yes/no box), pick-up (`0x505c50`), the patrol toggle (`0x4b5b50`), the cycle arrows, all staff, locate and the tick; locate and Ctrl+S
+  open the staff locator panel on the employee (`0x4b5f07`, `0x481790`) (UI-098 retired, UI-092 narrowed).
+- **All Visitors** is built from table `0x7506c8` and its builder `0x493530`: six sortable columns (number, cash, time in park in hours or
+  days, rides, thought, happiness), a value refresh every 2 s and the park info, all staff and all attractions buttons (UI-907 narrowed).
+- **The hire window's balance** reads the last closed month (`0x49bdd0`), and the string table keeps whole records, so "%d hours/day/days"
+  (UITEXT 440–442) are no longer empty.
+
 ## Coaster trains and pylons from tp.exe (October 15, 2026)
 
 - **Trains** are laid out around their middle car, (n − 1) >> 1, from the last car forward, placed after each rating pass with the release

@@ -11,10 +11,10 @@ A pass over the economy approximations, read in tp.exe via REA:
 - **ECON-026 and ECON-030** (partly built, narrowed): the guest-census cache with analyser age tests (`CachedGuestCensus`,
   `CrowdPhaseTurn`), and `KartBestCrossings` / `TrackRideSections` for challenge types 15 and 21.
 - **ECON-058** (partly built, narrowed): the challenge time-short event (message 271) goes through the advisor and the HUD captions.
-- **User-approved EXT conversions:** ECON-054 is closed as `[EXT:headless-economy-dispatch]`; ECON-023 is closed as
-  `[EXT:headless-economy-breakdown]` plus `[EXT:ride-state-word]` (its routines were already read); ECON-022 is split, its headless
-  handyman dispatch being `[EXT:headless-economy-dispatch]`. The dispatch and the headless breakdown exist only in the test and tool economy
-  without a map; `[EXT:ride-state-word]` (the bridge's and the economy's halves of the ride state word, joined by the level) also applies to real parks.
+- **User-approved EXT conversions:** ECON-054 is closed as `[EXT:headless-economy-dispatch]`; the headless part of ECON-023 is
+  `[EXT:headless-economy-breakdown]` (its routines were already read); ECON-022 is split, its headless handyman dispatch being
+  `[EXT:headless-economy-dispatch]`. These three exist only in the test and tool economy without a map. ECON-023 stays open for the
+  split ride state word (the bridge's and the economy's halves, joined by the level), which real parks have too: by user decision it is not an EXT.
 - **ECON-017, ECON-059** narrowed.
 - **SAVE-005** text no longer cites the retired ECON-055.
 

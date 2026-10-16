@@ -90,7 +90,7 @@ public class CoasterSaveAssetTests
 			var miniature = new ParkResumeSaveFileTests.MiniaturePark();
 			for ( var tick = 0; tick < 1800; tick++ )
 				miniature.Step();
-			var guests = miniature.Simulation.CaptureSnapshot();
+			var guests = miniature.CaptureGuestsForUnstampedLayout();
 			// A coaster the jungle economy lists needs an economy instance; build the economy on the real info so
 			// the binding the validator demands can exist.
 			ParkEconomy economy;

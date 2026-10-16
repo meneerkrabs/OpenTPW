@@ -219,15 +219,15 @@ The saved guests are restored by the level's guest simulation (`GuestSimulation.
 
 Not imported and reported in `Evidence`: `mRandomSeed` (SAVE-001), the guests the guest simulation cannot restore (SAVE-002), the hiring
 pool's sub-types and on-pointer flags (SAVE-004), the challenge slots' loss counts and carried object (SAVE-005), the object table's researched
-flags (SAVE-007), the batch balance (SAVE-008; the loan offers' stored credit tests, the withdrawals flag,
-last balance and turn entered red are imported for the bankruptcy count), the staff HQ's picked-up id (SAVE-009; its force-strike word and trained byte are never set or read in play), the opaque blocks, world state, arrivals,
+flags (SAVE-007), the staff HQ's picked-up id (SAVE-009; its force-strike word and trained byte are never set or read in play), the opaque blocks, world state, arrivals,
 calendar session start, the advisor controller's presentation words and current record, its pending
 advice and history when no automatic advisor is attached, and the subsystem things without an
 OpenTPW counterpart (SAVE-010). Staff values
 outside OpenTPW's ranges (and states or targets a save of the original cannot hold) are adjusted and each adjustment is reported; an attraction
 with out-of-range values keeps the defaults and is listed. The ledger's category history starts
 empty: the save has none, and the month opens at the current balance: `mLastBalance` (87,787 in
-Easymode against 87,987) is the balance after the last debit, not a month opening (SAVE-008).
+Easymode against 87,987) is the balance after the last debit, not a month opening. The bank's batch word (a pending credit the month message pays
+in, 0x4D0370; 0 in every shipped save), the loan offers' stored credit tests, the withdrawals flag, last balance and turn entered red are imported.
 
 The eleven saves of the second fixture set (docs/TPWS-PAYLOAD.md) corrected the challenge layout.
 Easymode's challenges have no second object, staff type or end-only check, so they could not show

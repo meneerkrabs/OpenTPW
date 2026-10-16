@@ -89,6 +89,11 @@ public sealed class ParkEconomy : IParkEconomy
 	public int MonthsInRed { get; private set; }
 	/// <summary>The bank's <c>mWithdrawalsEnabled</c> (+0x114): when clear, a debit charges nothing (tp.exe <c>0x004D01F0</c>). Set in every shipped save.</summary>
 	public bool WithdrawalsEnabled { get; private set; } = true;
+	/// <summary>
+	/// The bank's <c>mBatchBalance</c> (+0x10): a pending credit that the next month message pays into the balance (tp.exe <c>0x004D0370</c>). Nothing in play raises it
+	/// (see <see cref="ParkLedger.IsIncome"/>), so it is 0 unless an original save carries one.
+	/// </summary>
+	public long BatchCredit { get; private set; }
 	/// <summary>The bank's <c>mLastBalance</c> (+0x11C): the balance after the last debit; credits leave it.</summary>
 	public long LastBalance { get; private set; }
 	/// <summary>The bank's turn-entered-red stamp (+0x120): the park turn of the debit that took the balance from 0 or more below 0.</summary>
@@ -1014,6 +1019,12 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void EndMonth( long nextMonthIndex )
 	{
+		// [BIN:TPW-EXE:0x004D0370 bank month] the month message first pays the batch word (+0x10, an unsigned credit below 1,000,000 by the routine's own assertion) into the balance, the money-in total (+0x1FC90) and the year's profit (+0x124), then zeroes it (0x4D0393..0x4D03DB), before any instalment
+		if ( BatchCredit != 0 )
+		{
+			Post( LedgerCategory.OtherIncome, BatchCredit );
+			BatchCredit = 0;
+		}
 		var wages = Staff.TotalMonthlyWages;
 		if ( wages > 0 )
 		{
@@ -2028,8 +2039,10 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>Restores the bank's withdrawals flag, balance after the last debit and turn-entered-red stamp (an original save's or OpenTPW's).</summary>
-	internal void RestoreBankWords( bool withdrawalsEnabled, long lastBalance, long turnEnteredRed )
+	internal void RestoreBankWords( bool withdrawalsEnabled, long lastBalance, long turnEnteredRed, long batchCredit = 0 )
 	{
+		ArgumentOutOfRangeException.ThrowIfNegative( batchCredit );
+		BatchCredit = batchCredit;
 		ArgumentOutOfRangeException.ThrowIfNegative( turnEnteredRed );
 		WithdrawalsEnabled = withdrawalsEnabled;
 		LastBalance = lastBalance;

@@ -51,6 +51,9 @@ public static class ParkSaveFile
 		public bool? WithdrawalsEnabled { get; init; }
 		/// <summary>The balance after the last debit (absent in older saves: the saved balance).</summary>
 		public long? LastBalance { get; init; }
+		/// <summary>The bank's pending batch credit (<see cref="ParkEconomy.BatchCredit"/>); absent in older saves and while 0.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
+		public long BatchCredit { get; init; }
 		/// <summary>The park turn the balance went below 0 (absent in older saves: counted back from <see cref="MonthsInRed"/>).</summary>
 		public long? TurnEnteredRed { get; init; }
 		/// <summary>
@@ -538,6 +541,7 @@ public static class ParkSaveFile
 			WithdrawalsEnabled = park.WithdrawalsEnabled,
 			LastBalance = park.LastBalance,
 			TurnEnteredRed = park.TurnEnteredRed,
+			BatchCredit = park.BatchCredit,
 			Litter = park.Litter.Snapshot().Select( cell => new LitterData { X = cell.X, Y = cell.Y, Type = (int)cell.Type, Collector = cell.Collector, ClaimTurn = cell.ClaimTurn } ).ToList(),
 			AnalyserCaches = new AnalyserCacheData
 			{
@@ -725,6 +729,7 @@ public static class ParkSaveFile
 		Require( data.Tick >= 0 && Enum.IsDefined( data.Speed ) && Enum.IsDefined( data.Mode ), "clock" );
 		Require( data.EntranceFee >= 0 && data.MonthsInRed >= 0 && data.LitterScaled >= 0 && data.TicketsSpent >= 0, "park values" );
 		Require( data.TurnEnteredRed is not { } enteredRed || enteredRed >= 0 && enteredRed <= ParkCalendar.Turn( data.Tick ), "turn entered red" );
+		Require( data.BatchCredit >= 0, "batch credit" );
 		var littered = new HashSet<(int, int)>();
 		foreach ( var cell in data.Litter )
 			Require( cell.X is >= 0 and < ParkLitter.MapSize && cell.Y is >= 0 and < ParkLitter.MapSize && cell.Type is >= 1 and <= (int)LitterType.Stinkbomb
@@ -880,7 +885,7 @@ public static class ParkSaveFile
 		}
 		// Older saves keep only the months in the red: the stamp is counted back so that the bank counts as many 30-day months
 		park.RestoreBankWords( data.WithdrawalsEnabled ?? true, data.LastBalance ?? data.Ledger.Balance,
-			data.TurnEnteredRed ?? LegacyTurnEnteredRed( ParkCalendar.Turn( data.Tick ), data.MonthsInRed, data.Ledger.Balance ) );
+			data.TurnEnteredRed ?? LegacyTurnEnteredRed( ParkCalendar.Turn( data.Tick ), data.MonthsInRed, data.Ledger.Balance ), data.BatchCredit );
 		park.Staff.Restore( data.Staff.Members.Select( member => new StaffMember
 		{
 			Id = member.Id,

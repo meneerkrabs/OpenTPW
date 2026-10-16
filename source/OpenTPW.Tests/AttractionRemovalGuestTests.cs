@@ -17,9 +17,9 @@ public class AttractionRemovalGuestTests
 	{
 		var rig = new QueueTests.Rig();
 		var queued = Enumerable.Range( 0, 3 ).Select( _ => rig.Send( 80 ) ).ToList();
-		rig.RunTurns( 120 );
-		Assert.AreEqual( GuestState.WaitingToBoard, queued[0].State );
-		Assert.IsTrue( queued.Skip( 1 ).All( guest => guest.State == GuestState.Queueing ) );
+		rig.RunTurns( 120 );   // each guest first walks the whole way to the back cell (WALK-004), in its own time, so the join order is not the send order
+		Assert.AreEqual( GuestState.WaitingToBoard, queued.Single( guest => guest.QueuePosition == 0 ).State );
+		Assert.IsTrue( queued.Where( guest => guest.QueuePosition != 0 ).All( guest => guest.State == GuestState.Queueing ) );
 		var walking = rig.Send( 80 );
 		var other = rig.Simulation.SpawnInPark( 5, 0 );
 		other.Happiness = 80;

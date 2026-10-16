@@ -119,13 +119,13 @@ public class PrankRemainderTests
 	}
 
 	[TestMethod]
-	public void WithoutADrawTheNearerLaneIsTaken()
+	public void WithoutADrawTheFirstGateCellWithARouteIsTaken()
 	{
 		var simulation = Simulation( GuestTests.CreateCross() );
 		var guest = simulation.SpawnInPark( 4, 5 );
 		IGuardGuests guards = simulation;
 		guards.Hold( guest.Id );
 		Assert.IsTrue( guards.Release( guest.Id, (4, 5) ) );
-		Assert.IsNull( guest.ExitSide );
+		Assert.AreEqual( 0, guest.ExitSide, "gate cell 0 (side A) is asked for first" );
 	}
 }

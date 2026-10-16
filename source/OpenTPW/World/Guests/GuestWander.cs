@@ -40,7 +40,8 @@ public static class GuestWander
 		areaBlocked = false;
 		var remaining = draw() % 5;
 		// [APPROX:GUEST-010] off the linked paths the original (0x4F9490, start cell without links) tries its own cell, then seven directions at distances 0..3 for a path cell a route reaches (centre point, 0x80), then five random cells within ±5; the search meets the own cell first, so a path cell without links gives its own centre, which is all OpenTPW models: a guest on a cell that is no path cell finds no destination, where the original walks the links of a linked cell of any type; a stranded guest is not marked (+0x198, a stamp of the global counter 0x4D8C50, animation 0x11, held while 0x4FA770 sees no newer region stamp), so it draws again on its next try — evidence needed: none (read); OpenTPW's routes start on path cells
-		if ( !grid.IsWalkable( start.X, start.Y ) )
+		// [BIN:TPW-EXE:0x004F9490 queue start] the link walk starts from any cell that has links, a queue cell (type 3) included: a guest the queue let go stands on its queue cell and wanders from there (QUEUE-010)
+		if ( !grid.IsWalkable( start.X, start.Y ) && !grid.IsQueue( start.X, start.Y ) )
 			return null;
 		if ( (grid.Cells.LinksAt( start.X, start.Y ) & AllLinks) == 0 )
 			return new Destination( start, CentreByte, CentreByte );
@@ -52,13 +53,17 @@ public static class GuestWander
 			var count = 0;
 			var outside = 0;
 			var links = grid.Cells.LinksAt( cell.X, cell.Y );
+			// [BIN:TPW-EXE:0x004F9490 candidates of a queue cell] on a queue cell (type 3, not the ride's entrance cell 9) the direction of its own queue link (0x00522850, toward the front) is removed (0x004F9718..0x004F97E0); a path cell removes its links to queue cells (0x00536320), a queue cell keeps them
+			var onQueue = grid.IsQueue( cell.X, cell.Y );
+			var queueLink = onQueue ? grid.Cells.QueueLinkAt( cell.X, cell.Y ) : 0;
 			for ( var index = 0; index < 4; index++ )
 			{
 				var direction = CandidateOrder[index];
 				var (dx, dy) = GuestPathGrid.Directions[direction];
 				// [APPROX:GUEST-010] a candidate is a link of the current cell to a path cell; the original keeps every link except to queue cells (removed on a path cell, 0x00536310 / 0x00536320), its own queue link's direction on a queue cell (0x00522850), cell type 10 (0x00536350) and, for staff, cells outside the patrol rectangle (0x00506ED0); OpenTPW's maps link path cells only to path cells (ParkPathBuilder, saves), and it has no type 10 cells and no wandering staff yet (ECON-022) — evidence needed: none for guests on path cells
 				// staff keep to their patrol rectangle (0x00506ED0 removes the candidates outside it)
-				var linked = (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( cell.X + dx, cell.Y + dy );
+				var linked = (links & GuestPathGrid.LinkValue( direction )) != 0 && (grid.IsWalkable( cell.X + dx, cell.Y + dy ) || onQueue && grid.IsQueue( cell.X + dx, cell.Y + dy ))
+					&& !(onQueue && queueLink == GuestPathGrid.LinkValue( direction ));
 				candidates[index] = linked && (inArea == null || inArea( cell.X + dx, cell.Y + dy )) ? direction : -1;
 				count += candidates[index] >= 0 ? 1 : 0;
 				outside += linked && candidates[index] < 0 ? 1 : 0;

@@ -296,4 +296,5 @@ VM-901 docs/PROGRESS.md
 VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
+WALK-004 docs/GUESTS.md
 WALK-009 docs/GUESTS.md

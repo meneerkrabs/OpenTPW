@@ -357,7 +357,8 @@ public partial class Level
 	/// (<see cref="EnterQueueTool"/>). False when the cell is not a queue cell of a HasQueue ride.
 	/// </summary>
 	// [DATA:UIHELPTEXT 444 "Left-click to edit this queue", 445 "Left-click to build the queue, click again to stop building / Click onto path to connect the queue to it"] [BIN:STP-PPC:0x139c64 park-view hover] queue cell → hover state 3 (PATH-plan §4.1)
-	// [APPROX:QUEUE-021] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool); tp.exe's park-view click 0x004879D0 (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the vertex list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580) — evidence needed: where mode 3 goes on laying after 0x00530120's list
+	// [EXT:queue-click-at-back-cell] a left click on a queue cell starts the queue tool at once at the ride's back cell (EnterQueueTool): an OpenTPW design choice, the first click is the whole edit gesture here
+	// [APPROX:QUEUE-021] tp.exe's park-view click 0x004879D0 (hover state 3: a type-3 cell with an owning ride) builds tool 0x14, whose enter 0x0046D5A0 moves the cursor to the clicked cell and calls SetMode(0x14, 1) (0x0046D5F6); the next cell click in 0x00524960 (mode 0x14, 0x005260F7) walks the queue from the entrance into the vertex list (0x00530120), runs the queue edit 0x004DE1F0 and enters mode 3 (0x0052F580); that first-click step is not ported — evidence needed: where mode 3 goes on laying after 0x00530120's list
 	public bool EditQueueAt( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null || QueueRideAt( Guests.Grid, Guests.Attractions, x, y ) is not { } ride )

@@ -107,6 +107,7 @@ ECON-015 docs/reverse/APPROX-TRACE.md
 ECON-016 docs/reverse/APPROX-TRACE.md
 ECON-018 docs/reverse/APPROX-TRACE.md
 ECON-019 docs/reverse/APPROX-TRACE.md
+ECON-020 docs/ECONOMY.md
 ECON-021 docs/reverse/APPROX-TRACE.md
 ECON-024 docs/reverse/APPROX-TRACE.md
 ECON-025 docs/reverse/APPROX-TRACE.md

@@ -49,6 +49,8 @@ def register_document() -> str:
     import importlib.util
     spec = importlib.util.spec_from_file_location('fidelity_register', REPO / 'tools' / 'fidelity_register.py')
     module = importlib.util.module_from_spec(spec)
+    # dataclasses resolve their module through sys.modules (Python < 3.13 fails otherwise)
+    sys.modules.setdefault(spec.name, module)
     spec.loader.exec_module(module)
     return module.render(module.collect(REPO))
 

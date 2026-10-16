@@ -145,7 +145,7 @@ public sealed class StaffRenderer : Entity
 		var atlas = sprites.Atlases[atlasIndex];
 		// the world-driven roles steer continuously; mechanics are moved one cell per second, so their steps are further apart
 		var moving = now - view.MovedAt < (member.Type == StaffType.Mechanic ? 1.3f : 0.6f);
-		if ( StaffSpriteRules.SelectClip( member, moving, atlas.Animations.Animations ) is not { } clip )
+		if ( StaffSpriteRules.SelectClip( member, moving, atlas.Animations.Performances, atlas.Animations.PerformanceCount ) is not { } clip )
 			return null;
 		var key = clip.Script << 8 | clip.Slot;
 		if ( view.ClipKey != key )

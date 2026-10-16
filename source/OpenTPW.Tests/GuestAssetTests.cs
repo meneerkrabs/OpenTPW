@@ -57,6 +57,7 @@ public class GuestAssetTests
 		var full = new List<string>();
 		var partialWithFpc = new List<string>();
 		var checkedSets = 0;
+		var entertainerBanks = 0;
 		foreach ( var directory in Directories( "/esprites" ) )
 		{
 			var files = FileSystem.GetFiles( directory ).Select( file => Path.GetFileName( file ) ).ToArray();
@@ -67,6 +68,16 @@ public class GuestAssetTests
 				using var stream = FileSystem.OpenRead( $"{directory}/{esp}" );
 				var animations = new SpriteAnimationFile( stream );
 				var name = $"{directory}/{stem}";
+				// The performance entries (0x540D90): exactly the entertainers' banks have one, program 0 on slot 4.
+				if ( directory.EndsWith( "/Entertainers", StringComparison.OrdinalIgnoreCase ) )
+				{
+					entertainerBanks++;
+					Assert.AreEqual( 1, animations.PerformanceCount, name );
+					Assert.AreEqual( (0, 4), (animations.Performances[0].Program, animations.Performances[0].Slot), name );
+					Assert.IsTrue( animations.Animations[4].FramesPerDirection > 1, $"{name}: the performance slot has frames" );
+				}
+				else
+					Assert.AreEqual( 0, animations.PerformanceCount, name );
 				if ( animations.FlagA != 0 )
 				{
 					full.Add( name );
@@ -85,6 +96,7 @@ public class GuestAssetTests
 		Assert.AreEqual( 27, full.Count, string.Join( ", ", full ) );
 		CollectionAssert.AreEquivalent( new[] { "SPR_EX", "SPR_SK" }, partialWithFpc.Select( name => name[(name.LastIndexOf( '/' ) + 1)..].ToUpperInvariant() ).ToArray() );
 		Assert.IsTrue( checkedSets >= 44, $"{checkedSets} sets" );
+		Assert.AreEqual( 12, entertainerBanks, "four themes, three entertainers each" );
 	}
 
 	private static IEnumerable<string> Directories( string root )

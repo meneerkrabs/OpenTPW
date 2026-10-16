@@ -111,24 +111,23 @@ public class StaffSpriteTests
 	}
 
 	[TestMethod]
-	public void EntertainersPerformWhatTheirBankHasAndStandWhenIdle()
+	public void EntertainersPerformTheirBanksEntryAndStandWhenIdle()
 	{
 		var entertainer = Member( StaffType.Entertainer );
 		Assert.AreEqual( StaffSpriteRules.Stand, StaffSpriteRules.SelectClip( entertainer, false ) );
 		entertainer.Job = StaffJob.Performing;
-		var bank = new[]
-		{
-			new SpriteAnimation( 0, 0, 1, 5 ), new SpriteAnimation( 1, 5, 8, 5 ), new SpriteAnimation( 2, 0, 0, 0 ), new SpriteAnimation( 3, 45, 1, 5 ),
-			new SpriteAnimation( 4, 50, 8, 5 ), new SpriteAnimation( 5, 90, 4, 5 ), new SpriteAnimation( 6, 110, 4, 5 ),
-		}.Concat( Enumerable.Range( 7, 13 ).Select( slot => new SpriteAnimation( slot, 0, 0, 0 ) ) ).ToArray();
-		var clip = StaffSpriteRules.SelectClip( entertainer, false, bank )!.Value;
-		Assert.AreEqual( 4, clip.Slot, "the one multi-frame performance slot of this bank" );
-		var rich = bank.ToArray();
-		rich[10] = new SpriteAnimation( 10, 130, 8, 5 );
-		var slots = Enumerable.Range( 0, 8 ).Select( id => StaffSpriteRules.Perform( id, rich ).Slot ).Distinct().OrderBy( slot => slot ).ToArray();
-		CollectionAssert.AreEqual( new[] { 4, 10 }, slots, "members pick among the bank's performances" );
-		Assert.AreEqual( StaffSpriteRules.Perform( 3, rich ), StaffSpriteRules.Perform( 3, rich ), "deterministic per member" );
-		Assert.AreEqual( StaffSpriteRules.Walk, StaffSpriteRules.SelectClip( entertainer, true, bank ) );
+		// Every shipped entertainer bank: one entry, 01 05 00 00 (program 0 on slot 4); tp.exe's script choice is 13 when n is 1.
+		var shipped = new[] { new SpritePerformance( 0, 4, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ), new SpritePerformance( -1, -1, 0, 0 ) };
+		var clip = StaffSpriteRules.SelectClip( entertainer, false, shipped, 1 )!.Value;
+		Assert.AreEqual( (13, 4, StaffPlayback.Loop), (clip.Script, clip.Slot, clip.Playback) );
+		Assert.IsTrue( Enumerable.Range( 0, 8 ).All( id => StaffSpriteRules.Perform( id, shipped, 1 ).Slot == 4 ), "every member plays the one entry" );
+		// A bank without entries performs slot 4 too.
+		Assert.AreEqual( 4, StaffSpriteRules.SelectClip( entertainer, false )!.Value.Slot );
+		// Several entries (none shipped): script 13 + (r mod (n - 1)), so the last entry is never played.
+		var four = new[] { new SpritePerformance( 0, 4, 0, 0 ), new SpritePerformance( 0, 10, 0, 0 ), new SpritePerformance( 0, 3, 0, 0 ), new SpritePerformance( 0, 11, 0, 0 ) };
+		var slots = Enumerable.Range( 0, 9 ).Select( id => StaffSpriteRules.Perform( id, four, 4 ).Slot ).Distinct().OrderBy( slot => slot ).ToArray();
+		CollectionAssert.AreEqual( new[] { 3, 4, 10 }, slots, "entries 0..2 of four" );
+		Assert.AreEqual( StaffSpriteRules.Walk, StaffSpriteRules.SelectClip( entertainer, true, shipped, 1 ) );
 	}
 
 	[TestMethod]

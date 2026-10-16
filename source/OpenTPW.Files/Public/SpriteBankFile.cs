@@ -168,6 +168,16 @@ public readonly record struct SpriteAnimation( int Slot, int FirstFrame, int Fra
 }
 
 /// <summary>
+/// One entertainer performance entry of an ESP file (bytes 0x14E–0x15D, four entries of four bytes): the sprite script program,
+/// the animation slot it plays, and the program's two parameters. Read as tp.exe's accessor 0x540C70 returns them.
+/// </summary>
+/// <param name="Program">The first byte minus 1: the program in the sprite script table 0x74F7C8 (program 0 in every shipped entry).</param>
+/// <param name="Slot">The second byte minus 1: the animation slot the program plays (the sprite's slot word +0xB4).</param>
+/// <param name="Intro">The third byte: the program's register 0x11 (Hallow SPR_DR has 2, every other entertainer 0).</param>
+/// <param name="Hold">The fourth byte: the program's register 0x12 (Hallow SPR_DR has 40, every other entertainer 0).</param>
+public readonly record struct SpritePerformance( int Program, int Slot, int Intro, int Hold );
+
+/// <summary>
 /// Sprite animation table (<c>.ESP</c>, 350 bytes): magic <c>ESP_FILE2.00</c>, a NUL-terminated bank
 /// name (<c>SPR_BE.TPS</c>), zero padding, two flag bytes at 0x10C, then from offset 0x10E twenty 4-byte slots
 /// (u16 first frame, u8 frames per direction, u8 directions). See docs/GUESTS.md.
@@ -193,10 +203,16 @@ public sealed class SpriteAnimationFile : BaseFormat
 	/// <summary>The bank the game opens with full sprite detail (<see cref="FlagA"/>): <c>.FPC</c> or <c>.TPC</c>.</summary>
 	public string BankExtension => FlagA != 0 ? ".FPC" : ".TPC";
 	/// <summary>
-	/// The 16 bytes after the 16 animation slots (entries 16–19 of the 4-byte grid). The loader 0x540D90 reads them as four separate bytes
-	/// per entry, not as animations; entry 16 is <c>01 05 00 00</c> in 11 files and <c>01 05 02 28</c> in one, the rest zero. Their use is unknown.
+	/// The 16 bytes after the 16 animation slots (entries 16–19 of the 4-byte grid): the four <see cref="Performances"/>, raw. The loader
+	/// 0x540D90 reads them as four separate bytes per entry, not as animations; entry 16 is <c>01 05 00 00</c> in 11 files and
+	/// <c>01 05 02 28</c> in one (Hallow SPR_DR), the rest zero, and those 12 files are the entertainers' banks.
 	/// </summary>
 	public byte[] ExtraSlotBytes { get; private set; } = Array.Empty<byte>();
+	/// <summary>The four performance entries, decoded whether present or not; the first <see cref="PerformanceCount"/> count.</summary>
+	// [BIN:TPW-EXE:0x00540D90 ESP performances] the loader reads file bytes 0x14E..0x15D one by one into +0x20E..+0x21D and counts the entries whose first byte is not zero into +0x20C (0x541FA0 returns it); 0x540C70 returns entry e as (byte0 − 1, byte1 − 1, byte2, byte3), and 0x475B80 runs program byte0 − 1 of the table 0x74F7C8 on slot byte1 − 1 with the frames per direction of that slot (0x540C60)
+	public IReadOnlyList<SpritePerformance> Performances { get; private set; } = Array.Empty<SpritePerformance>();
+	/// <summary>The entries whose first byte is not zero (the count the entertainer's search draws from).</summary>
+	public int PerformanceCount { get; private set; }
 	public IReadOnlyList<SpriteAnimation> Animations { get; private set; } = Array.Empty<SpriteAnimation>();
 
 	public SpriteAnimationFile( string path ) => ReadFromFile( path );
@@ -223,5 +239,14 @@ public sealed class SpriteAnimationFile : BaseFormat
 		}
 		Animations = slots;
 		ExtraSlotBytes = data.AsSpan( SlotOffset + 16 * 4, 16 ).ToArray();
+		var performances = new SpritePerformance[4];
+		for ( var entry = 0; entry < performances.Length; entry++ )
+		{
+			var bytes = ExtraSlotBytes.AsSpan( entry * 4, 4 );
+			performances[entry] = new SpritePerformance( bytes[0] - 1, bytes[1] - 1, bytes[2], bytes[3] );
+			if ( bytes[0] != 0 )
+				PerformanceCount++;
+		}
+		Performances = performances;
 	}
 }

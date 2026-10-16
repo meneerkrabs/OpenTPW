@@ -94,8 +94,14 @@ name (`SPR_BE.TPS`), zero padding, two flag bytes at `0x10C`, then 20 slots of
 `u16 firstFrame, u8 framesPerDirection, u8 directions` from `0x10E`. Frames are
 direction-major. Flag `0x10C` marks a full-detail FPC bank (above); flag `0x10D` is 1 for kid sets CH, KI,
 SA, SU and their heads, which look like girls; the loader 0x540D90 stores it and nothing in tp.exe reads it.
-Only the first 16 slots are animations: the loader reads the last four 4-byte entries as single bytes (slot 16 is
-`01 05 00 00` in 11 files and `01 05 02 28` in one; their use is unknown, `ExtraSlotBytes`).
+Only the first 16 slots are animations. The last four 4-byte entries (0x14E–0x15D) are the **performance entries**
+(`SpriteAnimationFile.Performances`): the loader 0x540D90 reads them as single bytes, counts those with a non-zero
+first byte (0x541FA0), and 0x540C70 returns entry e as program (byte 0 − 1, the sprite script table 0x74F7C8), slot
+(byte 1 − 1) and two program registers (bytes 2 and 3). Their only user is the entertainer's search 0x4D46D0, which
+starts a performance as script 13 + (r mod (n − 1)), or 13 for one entry (scripts 13–16 hold entries 0–3), and
+0x475B80 plays it. Exactly the twelve entertainer banks have one: `01 05 00 00` (program 0 on slot 4) in eleven and
+`01 05 02 28` in Hallow SPR_DR, so every entertainer performs slot 4 (GUEST-015 keeps the program's steps for SPR_DR's
+2 and 40).
 
 Kid slots (identical in all 8 sets; labels from viewing the frames, not traced):
 

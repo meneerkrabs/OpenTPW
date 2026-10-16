@@ -163,14 +163,14 @@ public class PostcardShortcutIngressTests
 			((UiTextField)composer.Find( "to" )!).Text = "friend";
 			composer.Elements.OfType<UiTextField>().Single( field => field.Id == "title" ).Text = "A park visit";
 			((UiTextField)composer.Find( "message" )!).Text = "Synthetic postcard";
-			((UiButton)composer.Find( "outbox" )!).Clicked!();
+			// the tick puts the card in the outbox while offline and closes the window (tp.exe 0x4a7fa4)
+			((UiButton)composer.Find( "ok" )!).Clicked!();
 			var cards = session.Folders.List( session.Folders.Outbox );
 			Assert.AreEqual( 1, cards.Count );
 			Assert.IsNull( cards[0].Error );
 			Assert.AreEqual( "Synthetic postcard", cards[0].Card!.Manifest.Text );
 			Assert.IsNull( session.Client, "The shortcut and local outbox do not initialize a network client." );
 			Assert.AreEqual( before, simulation.ComputeStateHash() );
-			((UiButton)composer.Find( "back" )!).Clicked!();
 			Assert.AreEqual( "hud", hud.Stack.Top!.Name );
 			GameEditions.Select( GameEdition.ThemeParkInc );
 			Assert.ThrowsException<NotSupportedException>( () => flow.ShowPostcard( hud.Stack ) );

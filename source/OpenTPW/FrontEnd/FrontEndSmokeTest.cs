@@ -1423,8 +1423,13 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			// The online game type's pause menu (STP-PPC 0x10197D90) offers no Save or Load during a visit.
 			Require( hud.Stack.Top!.Find( nameof( UIStrings.Save ) ) == null && hud.Stack.Top.Find( nameof( UIStrings.Load ) ) == null, "the visit pause menu has no save or load" );
 			Require( !Directory.EnumerateFiles( temporaryDirectory, "*.json", SearchOption.AllDirectories ).Except( visitBaselineFiles ).Any(), "a visit writes no save" );
+		} );
+		// the pause menu lays its lines out from their measured text on its first update (UiDialogs.TextMenu), so it is clicked once it has drawn
+		Wait( "visit pause menu", 2 );
+		Do( "visit pause menu exits", () =>
+		{
 			CaptureFrame( "read-only-visit.png" );
-			Click( hud.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
+			Click( flow.Hud!.Stack.Top!, nameof( UIStrings.ExitToLobby ) );
 		} );
 		Wait( "lobby after visit", 20 );
 		Do( "enter park again", () =>

@@ -86,7 +86,7 @@ public class AdvisorControllerTests
 			Assert.AreEqual( sample, table[responseId].Lip, $"response {responseId} LIP" );
 			Assert.AreEqual( local, table[responseId].Local, $"response {responseId} bank" );
 		}
-		Assert.AreEqual( 5, AdvisorTables.Messages.Length );
+		Assert.AreEqual( 8, AdvisorTables.Messages.Length, "five game-event messages and the three prank lines" );
 		Assert.AreEqual( 1, AdvisorTables.Messages.Single( item => item.MessageId == 323 ).Group, "PrebuiltPark is a tutorial-group message" );
 	}
 

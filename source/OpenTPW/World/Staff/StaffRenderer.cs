@@ -111,6 +111,24 @@ public sealed class StaffRenderer : Entity
 		return view is { Initialised: true };
 	}
 
+	/// <summary>
+	/// The hire window's figure of a role and variant <paramref name="elapsed"/> seconds after it appeared (<see cref="StaffSpriteRules.Portrait"/>);
+	/// null when the role has no bank loaded.
+	/// </summary>
+	internal UI.Original.UiSpriteFrame? PortraitFrame( StaffType type, int variantKey, float elapsed )
+	{
+		var atlasIndex = sprites.AtlasFor( type, variantKey );
+		if ( deleted || atlasIndex < 0 || atlasIndex >= textures.Count )
+			return null;
+		var atlas = sprites.Atlases[atlasIndex];
+		var animations = atlas.Animations.Animations;
+		var directions = StaffSpriteRules.PortraitSlot < animations.Count ? animations[StaffSpriteRules.PortraitSlot].Directions : 1;
+		var (slot, direction, mirror, step) = StaffSpriteRules.Portrait( elapsed, directions );
+		var frame = atlas.Frames[atlas.GetFrame( slot, direction, step % atlas.FramesPerDirection( slot ) )];
+		return new UI.Original.UiSpriteFrame( textures[atlasIndex].NativeTexture, atlas.Width, atlas.Height, frame.X, frame.Y, frame.Width, frame.Height,
+			frame.OriginX, frame.OriginY, mirror );
+	}
+
 	/// <summary>The atlas, slot and frame a member is drawn with: for the lifecycle checks and tests; null when the member is not drawn.</summary>
 	internal (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Describe( StaffMember member, SVector3 cameraRight, SVector3 cameraForward )
 	{

@@ -186,8 +186,10 @@ public class OriginalStaffImportTests
 		var mechanic = world.Park.Staff.AddImported( StaffType.Mechanic, 2, 0, 90, StaffState.Working, 0 );
 		(mechanic.CellX, mechanic.CellY) = (12.5f, 5.5f);
 		(mechanic.Job, mechanic.RideId, mechanic.JobStamp, mechanic.ResumeDestination) = (StaffJob.Repairing, world.Ride.Id, 3, (12 * 256 + 128, 5 * 256 + 128));
+		mechanic.ResumeClaimTurn = 1;
 		world.Turns( 1 );
 		Assert.AreEqual( mechanic.Id, world.Ride.MechanicId, "placing him takes back the ride's claim (mAssignedStaffMember)" );
+		Assert.AreEqual( (1L, null), (world.Ride.ClaimTurn, mechanic.ResumeClaimTurn), "with the turn the save recorded (+0x60)" );
 		Assert.IsNull( mechanic.ResumeDestination );
 		Assert.AreEqual( StaffJob.Repairing, mechanic.Job );
 		world.Turns( 4 );

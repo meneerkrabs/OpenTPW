@@ -23,6 +23,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	private bool presentationFailed;
 	private Level? level;
 	private ParkEconomyRuntime? park;
+	private GuestSimulation? guests;
 
 	private AutomaticAdvisor( AdvisorController controller ) : this( controller, StopwatchSource() ) { }
 
@@ -85,6 +86,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 		park = started.Park;
 		if ( park != null )
 			park.EventRaised += OnParkEvent;
+		guests = started.Guests;
+		if ( guests != null )
+			guests.Pranked += OnPrank;
 		// A park started from an original save takes its saved controller first; the main loop's events follow.
 		if ( started.Park?.Import is { } import && started.OriginalPark?.Save?.Advisor is { } saved )
 		{
@@ -102,6 +106,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		if ( park != null )
 			park.EventRaised -= OnParkEvent;
+		if ( guests != null )
+			guests.Pranked -= OnPrank;
+		guests = null;
 		// Help still pending or speaking belongs to the windows of this park, which close without reporting.
 		if ( level != null )
 			foreach ( var window in AdvisorUiHelp.Windows.Keys )
@@ -117,6 +124,20 @@ internal sealed class AutomaticAdvisor : IDisposable
 		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
 		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
+	}
+
+	/// <summary>
+	/// A prankster pranked: the prank message reaches the advisor at once (the bus delivers it as it is sent), which queues one of the three prank
+	/// lines by the prankster's id (<see cref="AdvisorTables.PrankAdvice"/>).
+	/// </summary>
+	// Approximation (GUEST-007, registered at GuestSimulation.Prank): the prank line is chosen by OpenTPW's guest id modulo 3 where the original takes the prankster's thing id (WALK-010), and the advice record's prankster id and cell words (+0x0, +0x4, 0x0059B590) are not kept, as for every advice OpenTPW queues — evidence needed: what reads those two words of a queued record
+	internal void OnPrank( Guest guest, GuestDecision.Prank prank )
+	{
+		if ( level == null )
+			return;
+		var message = AdvisorTables.PrankAdvice( guest.Id );
+		var admission = Controller.Advise( message, GameTick, GameType, TutorialEnabled );
+		Log.Trace( $"Advisor prank message from guest {guest.Id} ({prank}): advice {message} {(admission is { } result ? $"{result.Eligibility}{(result.Stored ? $" in slot {result.Slot}" : result.Acknowledged ? ", queue full" : "")}" : "not posted (game mode)")}." );
 	}
 
 	/// <summary>The open/close button or its shortcut was pressed: game event 3 (open) or 4 (close), whatever the park's state.</summary>

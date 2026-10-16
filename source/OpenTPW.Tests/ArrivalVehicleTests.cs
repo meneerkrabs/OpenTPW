@@ -225,6 +225,20 @@ public class ArrivalVehicleTests
 		Assert.IsTrue( errors.Any( error => error.Contains( "ArrivalVehicle 3" ) ), string.Join( "; ", errors ) );
 	}
 
+	[TestMethod]
+	public void AVehicleAtWorkThatIsNotInTheParkIsDroppedInsteadOfHoldingTheGroup()
+	{
+		var park = new Park();
+		park.Turns( 12 );
+		var snapshot = park.Simulation.CaptureSnapshot();
+		Assert.AreEqual( ArrivalVehicleKind.Bus, snapshot.ArrivalVehicle );
+		var restored = new Park();
+		restored.Simulation.RestoreSnapshot( snapshot );
+		Assert.IsFalse( restored.Vehicles.Placed[ArrivalVehicleKind.Bus], "the new park holds no bus object" );
+		restored.Turns( 1 );
+		Assert.IsTrue( restored.Vehicles.Created.Contains( ArrivalVehicleKind.Bus ), "the group places its vehicle again" );
+	}
+
 	/// <summary>
 	/// The shipped jungle bus (inconclusive without OPENTPW_GAME_PATH): placed on the first group, its bus.RSE waits 2 s, starts its
 	/// drive-in clip (Busm1), waits for it to end and 1 s more, and only then reports status 2; the first guest steps off at the next

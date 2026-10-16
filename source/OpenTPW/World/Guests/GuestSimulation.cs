@@ -494,6 +494,12 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		if ( arrivalVehicle < 0 || ArrivalVehicles is not { } host )
 			return -1;
+		// A save whose vehicle object is not in the park (hand-edited, or a level without it) would otherwise hold the group for good.
+		if ( !host.Exists( arrivalVehicle ) )
+		{
+			arrivalVehicle = -1;
+			return -1;
+		}
 		var status = host.GetVariable( arrivalVehicle, ArrivalVehicleKind.StatusVariable );
 		if ( status != 6 )
 			return status;

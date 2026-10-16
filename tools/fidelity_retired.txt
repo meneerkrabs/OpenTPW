@@ -186,6 +186,7 @@ QUEUE-001 docs/PROGRESS.md
 QUEUE-002 docs/PROGRESS.md
 QUEUE-006 docs/reverse/BOARD-plan.md
 QUEUE-007 docs/reverse/BOARD-plan.md
+QUEUE-008 docs/GUESTS.md
 QUEUE-009 docs/GUESTS.md
 QUEUE-011 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 QUEUE-016 docs/GUESTS.md

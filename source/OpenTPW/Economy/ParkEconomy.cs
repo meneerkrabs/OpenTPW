@@ -958,6 +958,9 @@ public sealed class ParkEconomy : IParkEconomy
 		_ => -1,
 	};
 
+	/// <summary>An online visit, the original's game type 1: a use wears no toilet and cleans a dirty one at once (<see cref="UseRelief"/>).</summary>
+	public bool OnlineVisit { get; set; }
+
 	/// <summary>The gauge below which a toilet is dirty and handymen clean it (the single 25.0 at 0x00700550).</summary>
 	public const int DirtyToiletGauge = 25;
 
@@ -970,6 +973,19 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) || !Catalog.TryGet( item.InfoId, out var info ) || !info.ProvidesRelief )
 			return false;
+		if ( OnlineVisit )
+		{
+			// [BIN:TPW-EXE:0x004E2478 toilet wear, game type 1] the branch for the online game type (SetGameType 1 at the online entries 0x4C0830 and 0x5E2700; the word 0xFB3B7C is the game-type object) wears nothing; a relief object whose gauge byte is below 25 is cleaned at once: row 6 off and row 1 on at its cell (0x4D8460, 0x4D8440), script variable 8 = 0 (0x55A0B0), gauge 100.0, the claim (+0x5E) and the call (+0x64) cleared (0x4E251F..0x4E252A)
+			if ( IsDirtyToilet( item ) )
+			{
+				SwapToiletEffect( item, RegionEffect.DirtyToilet, RegionEffect.CleanToilet );
+				WriteScript( item, RideVariables.VAR_WORN, 0 );
+				item.Repair = RideRepair.FullGauge;
+				item.MechanicId = 0;
+				item.MaintenanceRequested = false;
+			}
+			return false;
+		}
 		var wasDirty = (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
 		var gauge = (double)(toiletByte & 0xFF) * (double)-0.05f + (double)(float)item.Repair;
 		item.Repair = (float)(gauge > 100 ? 100 : gauge >= 0 ? gauge : 0);

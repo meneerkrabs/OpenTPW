@@ -13,7 +13,8 @@ public sealed partial class ParkHud
 {
 	// [BIN:TPW-EXE:0x755150 object window tables] the three tables share the window rectangle, the preview box (348,162), the stats frame (853,162) with 7 or 8 rows of a label (x 876..1273) and a value (x 1315..1550), the title box at y 74..153 and the buttons b_door (1430,784), b_erase (300,800), b_okay (1671,818), b_arup/b_ardown (1662,126/216) and b_allthings (1648,583); the ride table also has b_queue, b_ride it!, b_callmech and b_upgrade in the bottom row
 	// [DATA:video 4:00, 10:40, 23:40, 24:20, 77:09, 78:20] the windows of Belly Bounce, Tempel der Duisternis, Wilde Aap, Drankwinkel, Klein Toilet and IJswinkeltje have this layout (title in yellow, preview, seven rows, bottom row of round buttons, right column of arrows, list and tick); labels and values are white
-	// [APPROX:UI-024] b_move is not drawn (the move tool is not simulated); the preview is OpenTPW's orthographic icon; the settings controls are ParkHud.ObjectSettings
+	// [APPROX:UI-104] b_move is not drawn (control 0x3e2c: enabled by 0x52c2b0, its click 0x48cfa0 enters the move tool, mode 0x3b, with the object picked up; the move tool is not simulated)
+	// [APPROX:UI-024] the preview is OpenTPW's orthographic icon; the settings controls are ParkHud.ObjectSettings
 	/// <summary>What a row of the stats frame shows; the labels are UITEXT 17-23 for rides, 32-38 for shops and 41-48 for sideshows (<see cref="RowLabels"/>).</summary>
 	internal enum ObjectRowKind { None, Users, Age, Excitement, Reliability, Repair, Life, Scrap, Customers, CostOfGoods, Takings, Profit, Satisfaction, Happiness, Winners }
 
@@ -24,7 +25,6 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x4b1040 sideshow window labels] the label controls 0xa09c, 0xa095, 0xa09a, 0xa098, 0xa09b, 0xa097, 0xa0a1 and 0xa09f (rows 0-7) take UITEXT 0x29-0x30: customers last month, winners last month, takings last month, profit last month, excitement, customer satisfaction, scrap value, local happiness
 	// [BIN:TPW-EXE:0x4e1f20 winners gauge] the sideshow's row 1 gauge is 100 × the winners over the customers (0 without customers), the two summed over the 30-entry histories at +0x2bc and +0x1ac
 	// [BIN:TPW-EXE:0x4b01d0 shop window refresh] the customers, takings and profit rows are sums over the object's 30-day rings, the profit row the takings ring's sum less the costs ring's (0x4e1c70), not a calendar month (ECON-057)
-	// [APPROX:UI-024] the satisfaction and happiness gauges are not simulated and draw empty
 	private static readonly ObjectRowKind[] RideRows = { ObjectRowKind.Users, ObjectRowKind.Age, ObjectRowKind.Excitement, ObjectRowKind.Reliability, ObjectRowKind.Repair, ObjectRowKind.Life, ObjectRowKind.Scrap };
 	private static readonly ObjectRowKind[] ShopRows = { ObjectRowKind.Customers, ObjectRowKind.CostOfGoods, ObjectRowKind.Takings, ObjectRowKind.Profit, ObjectRowKind.Satisfaction, ObjectRowKind.Scrap, ObjectRowKind.Happiness };
 	private static readonly ObjectRowKind[] SideshowRows = { ObjectRowKind.Customers, ObjectRowKind.Winners, ObjectRowKind.Takings, ObjectRowKind.Profit, ObjectRowKind.Excitement, ObjectRowKind.Satisfaction, ObjectRowKind.Scrap, ObjectRowKind.Happiness };
@@ -52,8 +52,8 @@ public sealed partial class ParkHud
 		_ => ShopLabels
 	};
 
-	/// <summary>The sideshow's winners gauge, 0..1: <c>trunc(100 × winners / customers) / 100</c>, 0 without customers (<c>0x4e1f20</c>).</summary>
-	internal static float WinnersGauge( long winners, long customers ) => customers <= 0 ? 0f : Math.Clamp( winners * 100 / customers, 0, 100 ) / 100f;
+	/// <summary>The sideshow's winners gauge, 0..1: <c>trunc(100 × winners / customers)</c> as the window sets it, <c>(percent &lt;&lt; 10) / 100</c> of 1024 (<c>0x4b16c0</c>), 0 without customers (<c>0x4e1f20</c>).</summary>
+	internal static float WinnersGauge( long winners, long customers ) => customers <= 0 ? 0f : UiGauge.OfPercent( (int)Math.Clamp( winners * 100 / customers, 0, 100 ) );
 
 	/// <summary>One object window table with the nodes the HUD places its controls on, found once.</summary>
 	private sealed class ObjectWindowLayout
@@ -126,26 +126,30 @@ public sealed partial class ParkHud
 		var rows = new ObjectStat[kinds.Count];
 		var state = LiveState( item );
 		var economy = Status.EconomySource as ParkEconomy;
+		var window = WindowValues( item );
 		for ( var index = 0; index < rows.Length; index++ )
-			rows[index] = ObjectStatOf( item, kinds[index], state, economy, labels[index] );
+			rows[index] = ObjectStatOf( item, kinds[index], state, economy, labels[index], window );
 		return rows;
 	}
 
 	/// <summary>One stat of an object as its window shows it (the All Attractions list's bars use the same values).</summary>
-	private ObjectStat ObjectStatOf( OriginalObject item, ObjectRowKind kind, ParkObjectState? state, ParkEconomy? economy, UIStrings label = UIStrings.Blank )
+	private ObjectStat ObjectStatOf( OriginalObject item, ObjectRowKind kind, ParkObjectState? state, ParkEconomy? economy, UIStrings label = UIStrings.Blank, ObjectWindowSettings? window = null )
 	{
 		string Number( long value ) => value.ToString( System.Globalization.CultureInfo.InvariantCulture );
 		return kind switch
 		{
 			ObjectRowKind.None => new ObjectStat( UIStrings.Blank, null ),
 			// [DATA:video 15:20, 51:40 ride window] the gauges are red-to-green bars (UiGauge), not percentages; an unknown value draws the empty track
-			// [APPROX:UI-028] the fills: excitement is the authored UsageInfo.ExcitementLevel / 100, reliability is 1 - WearRate / 10 of the object's base level (as the buy window does), repair and remaining life are the live economy record's repair and life gauge (a version 2 visit uses the owner's published repair); the original reads the excitement and reliability from the slider values (0x4e0560, 0x4df640) and the other two from the floats at +0x44 and +0x48, which OpenTPW's economy fields do not map onto with certainty
-			ObjectRowKind.Excitement => new ObjectStat( label, null, item.Entry.Settings.Has( "UsageInfo.ExcitementLevel" ) ? Math.Clamp( item.Entry.Settings.GetInt( "UsageInfo.ExcitementLevel" ) / 100f, 0f, 1f ) : null, true ),
-			ObjectRowKind.Reliability => new ObjectStat( label, null, item.Entry.Upgrades.FirstOrDefault( upgrade => upgrade.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0f, 1f ) : null, true ),
-			ObjectRowKind.Repair => new ObjectStat( label, null, state?.Repair is { } liveRepair ? Math.Clamp( (float)liveRepair / 100f, 0f, 1f )
-				: level.PublishedObjectState( item )?.Repair is { } repair ? Math.Clamp( (float)repair / 100f, 0f, 1f ) : null, true ),
-			ObjectRowKind.Life => new ObjectStat( label, null, state?.LifeGauge is { } life ? Math.Clamp( (float)life / 100f, 0f, 1f ) : null, true ),
-			ObjectRowKind.Satisfaction or ObjectRowKind.Happiness => new ObjectStat( label, null, null, true ),
+			// [BIN:TPW-EXE:0x4ade40 ride window refresh] the four gauges take (byte value << 10) / 100: 0x3e16 the excitement routine 0x4e0560 and 0x3e18 the reliability routine 0x4df640, both called with the window's own slider values (+0x2c speed, +0x30 capacity, +0x34 duration), 0x3e19 the float at the object's +0x44 (the state of repair) and 0x3e17 the float at +0x48 (the second gauge, the remaining life), both truncated
+			ObjectRowKind.Excitement => new ObjectStat( label, null, ExcitementGauge( item, window ), true ),
+			ObjectRowKind.Reliability => new ObjectStat( label, null, ReliabilityGauge( item, window ), true ),
+			ObjectRowKind.Repair => new ObjectStat( label, null, state?.Repair is { } liveRepair ? UiGauge.OfPercent( RideBreakdownRules.GaugeByte( (float)liveRepair ) )
+				: level.PublishedObjectState( item )?.Repair is { } repair ? UiGauge.OfPercent( RideBreakdownRules.GaugeByte( (float)repair ) ) : null, true ),
+			ObjectRowKind.Life => new ObjectStat( label, null, state?.LifeGauge is { } life ? UiGauge.OfPercent( RideBreakdownRules.GaugeByte( (float)life ) ) : null, true ),
+			// [BIN:TPW-EXE:0x4b1914 shop and sideshow refresh] the local happiness gauge (0xc07c, 0xa09e) is 0x4cd880 of the object's cell with radius 1 × 1024 / 100
+			ObjectRowKind.Happiness => new ObjectStat( label, null, LocalHappinessGauge( item ), true ),
+			// [APPROX:UI-024] the customer satisfaction gauge (0xc079, 0xa094: 0x4e1e30 over the object's own 30-entry history at +0x3bc) is not simulated and draws empty
+			ObjectRowKind.Satisfaction => new ObjectStat( label, null, null, true ),
 			ObjectRowKind.Winners => new ObjectStat( label, null, state == null ? null : WinnersGauge( state.WinnersLast30Days, state.CustomersLast30Days ), true ),
 			ObjectRowKind.Users or ObjectRowKind.Customers => new ObjectStat( label, state == null ? null : Number( state.CustomersLast30Days ) ),
 			ObjectRowKind.Age => new ObjectStat( label, state == null || economy == null ? null
@@ -351,7 +355,7 @@ public sealed partial class ParkHud
 			if ( owner.StatOfRow( row ) is not { IsGauge: true } stat )
 				return;
 			var rect = ScreenRect( context.Canvas );
-			UiGauge.Draw( context.Batch, rect.Inflate( -rect.Height * 0.12f ), stat.Gauge );
+			UiGauge.Draw( context.Batch, UiGauge.BarRect( rect, context.Canvas ), stat.Gauge );
 		}
 	}
 

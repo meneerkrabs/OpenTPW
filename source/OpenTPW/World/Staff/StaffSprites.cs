@@ -219,7 +219,7 @@ public sealed class StaffSpriteSet
 		{
 			if ( StaffSpriteRules.Banks( type, level ) is not { } set )
 				continue;
-			var banks = GuestSpriteAtlas.LoadSets( set.Folder, ".FPC", $"staff-{type.ToString().ToLowerInvariant()}" );
+			var banks = GuestSpriteAtlas.LoadSets( set.Folder, $"staff-{type.ToString().ToLowerInvariant()}" );
 			ranges[(int)type] = (atlases.Count, banks.Count);
 			atlases.AddRange( banks );
 		}

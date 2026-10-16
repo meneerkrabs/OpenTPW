@@ -348,7 +348,11 @@ and the object catalog's cache key will include `ModSet.Digest`; an unmodded sav
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x4A4014649DF391DB`, schema 19: tp.exe's guest walk on top of the staff candidate draws, pinned on separate branches off
+  (`0x944788E41E278016`, schema 19: the ticket booth no longer reads the guest's purse (#207) on top of tp.exe's guest walk and the staff
+  candidate draws: the booth books the fee with the bank (tp.exe `0x004FFADE` → `0x004D0600`; the purse +0x1A0 is never touched), so the
+  guests' money and the world stream move. The booth change alone, off `0xD28386DACAD73241`, was `0x9AA9973FC2A6A5D6`, and on top of
+  the staff draws only `0x89123A798D58778F`. Before that:
+  `0x4A4014649DF391DB`, schema 19: tp.exe's guest walk on top of the staff candidate draws, pinned on separate branches off
   `0xD28386DACAD73241`. The walk alone was `0x0B7C79BA1B5AC12A`: guests walk the park with tp.exe's walk: the route search `0x511420`,
   the edge test `0x4d8750`, the step commit `0x510510`, avoid_walls `0x50e4a0` and the walk's progress `0x50fd40`, in tp.exe's
   fixed-point arithmetic (multiply rounding towards −∞ `0x50df70`, divide towards 0 `0x50e080`), and cell type changes stamp their
@@ -485,3 +489,11 @@ digests are unchanged); a run in which a script faults now hashes differently fr
 script's `TimeMilliseconds` stays put and the released riders change the guest digest.
 
 Coaster tool panel (October 15): the coaster track hash gained the cut (`CutAfter`, only while the circuit is cut open) and, for a node with a hand-set yaw or incline, those two values, so every hash of a coaster without hand edits and without a cut is unchanged. The hand edits, the cut, the stack swaps and the panel's money settlements are simulation-side state of the owner's own tool; the panel's pointer scale and picking are host input.
+
+Park signs round (October 16): sign paint masks are now shaped as tp.exe 0x5EBF10 shapes them (offset copy, erosion or dilation by
+the mask word, the separable Gaussian by the parameter), so the composed sign halves of every sign with paint changed: 144 left/right
+half hashes of the frozen sign baseline and the five signs pinned in `RidesRound2CorpusTests` were re-pinned deliberately (no sign
+line, text pixel count or `.sgn` hash moved). Sign pixels are presentation only and never enter the world hash, so the pinned fixed
+run is untouched. Catalogue signs now draw the info-record name (empty for an Info.Id outside tp.exe's table), also presentation only.
+The park's name (the gate's two sign lines) is saved in the world save's optional `ParkName` part, but it is not hashed: renaming the
+park changes no simulation state, and a save from before the part restores with the gate's default lines.

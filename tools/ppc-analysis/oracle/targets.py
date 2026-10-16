@@ -916,13 +916,13 @@ def arrival_plan(x: dict) -> int:
     """GUESTS.md "Arrivals" and GuestSimulation.ArrivalGroupSize: none while bankrupt; (int)(factor × (points +
     NewParkBonus)) / PointsPerVisitor (1 below 2) with factor 0.8 while the weather thing's +48 word (mCurrentDrops) is
     positive (drops are falling) and 1.2 otherwise, at least MinPeople, cut so guests + group stay within 1500, or 500 for an
-    online visit (GameType word 1), never below 0."""
+    online visit (GameType word 1), compared unsigned and not floored: above the limit the group is negative."""
     if x['world_mode'] == 4:
         return 0
     count = arrival_core(x, 0.8 if x['obj48'] > 0 else 1.2)
     limit = 500 if x['limit_mode'] == 1 else 1500
-    if x['guests'] + count > limit:
-        count = max(0, limit - x['guests'])
+    if (x['guests'] + count) & MASK32 > limit:
+        count = s32(limit - x['guests'])
     return count
 
 
@@ -1455,11 +1455,15 @@ def counts_plan(x: dict) -> dict:
 
 
 def counts_subset(x: dict) -> dict:
-    """What ParkEconomy.CountsForParkPoints tests (ARRIVAL-003): Info.IsChoosable (+46 bit 0x4), not broken down or
-    condemned (state 1 or 4) and open (+100). The entrance cell, the queue room, the coaster and the track word have no
-    C# state, so every input counts as if they held."""
-    return {'counts': int(bool(x['flags'] & 0x4) and s32(x['state']) not in (1, 4) and s32(x['open']) != 0),
-            'calls': None}  # no call trace: C# has no stubbed callees
+    """What ParkEconomy.CountsForParkPoints tests with the level's sync (ARRIVAL-003): Info.IsChoosable (+46 bit 0x4), not
+    broken down or condemned (state 1 or 4), open (+100), QueueHasRoom (a back-of-queue cell, real queue cells and fewer
+    listed guests than four per cell, compared as C# ints), a coaster (track type 3) only while its controller accepts guests
+    (the stubbed 0x45eac word) and a track word (+40) for track types 1 and 2."""
+    has_room = x['cell'] != 0 and x['cells'] & MASK32 > 0 and x['count'] & MASK32 < 4 * (x['cells'] & MASK32)
+    counts = bool(x['flags'] & 0x4) and s32(x['state']) not in (1, 4) and s32(x['open']) != 0 and has_room
+    counts = counts and not (s32(x['track']) == 3 and x['coaster'] & MASK32 == 0)
+    counts = counts and not (s32(x['track']) in (1, 2) and s32(x['thing40']) == 0)
+    return {'counts': int(counts), 'calls': None}  # no call trace: C# has no stubbed callees
 
 
 def counts_equal(original: dict, other: dict) -> bool:
@@ -5707,9 +5711,10 @@ COUNTS = Target('park-points-counts-test', 'Park points counts-test 0xdc834', 'G
                 [(0xDC834, 0xDC9D4), (0xDFE0C, 0xDFE34), (0xDFF18, 0xDFF2C), (0xE2FE4, 0xE3024)], counts_stubs,
                 counts_binary, counts_plan, counts_inputs, equal=counts_equal,
                 alternatives={'implemented-subset': counts_subset},
-                notes=['No C# hook: the entrance cell, the queue room and the coaster have no state in ParkEconomy; the '
-                       '"implemented-subset" reading is the Python mirror of ParkEconomy.CountsForParkPoints (ARRIVAL-003), '
-                       'whose mismatches are the conditions C# omits.',
+                notes=['No C# hook: the level syncs the counts-test conditions into ParkEconomy each tick; the '
+                       '"implemented-subset" reading is the Python mirror of ParkEconomy.CountsForParkPoints with that sync '
+                       '(ARRIVAL-003), whose mismatches are the 32-bit wrap of four times the queue cells, which C# ints do not '
+                       'reach.',
                        'Executed: 0xdc834, 0xdc988 (queue room), 0xdfe0c / 0xdfe20 (ride state 1 / 4), 0xdff18 (open word '
                        '+100 == 0), 0xe2fe4 (track type 3). Stubs: 0x118018 type record (+156 chosen), 0xdd3f4 back of queue '
                        '(writes the chosen cell), 0xdd118 listed guests (chosen), 0x45eac coaster controller (chosen word).',

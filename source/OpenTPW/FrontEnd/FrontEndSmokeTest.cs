@@ -263,6 +263,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			Require( flow.Lobby != null && flow.Lobby.IslandCount == 4 && flow.Lobby.PartCount > 4, "lobby scene has four islands and terrain" );
 			Require( flow.Menu != null && flow.Menu.Islands.Count == 4, "front-end menu lists four theme islands" );
+			// The jungle's butterflies (10 + 10) and the Halloween bats (50) spawn within the first frames.
+			Require( flow.Lobby!.FlyingMeshes is { } flyers && flyers.Groups.Count == 3 && flyers.Groups.Sum( group => group.Instances.Count ) == 70,
+				"the lobby flies its 70 bats and butterflies" );
+			Require( flow.Lobby.IslandClips.All( clip => clip is 1 or 2 ), "every island model plays its M1 or M2 clip" );
 			var capture = CaptureFrame( "frontend.png" );
 			// [BIN:TPW-EXE:0x757f60 lobby panel] the lobby has no title and no menu column: the panel, its four buttons and the island name; Escape opens the menu
 			Require( flow.Menu!.Main.Find( "logo" ) == null && flow.Menu.Main.Find( "title" ) == null && flow.Menu.Main.Find( "quit" ) == null, "the lobby has no logo, title or menu column" );

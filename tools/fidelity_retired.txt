@@ -140,3 +140,4 @@ UI-035 docs/reverse/PPC-review.md
 UI-088 docs/UI.md
 WALK-002 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
+RIDES-042 docs/OBJECTS.md

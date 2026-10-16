@@ -67,7 +67,7 @@ public class HudScreenShortcutTests
 	public void TheLocatorChordsActOverTheWindowWhosePersonTheyLocate()
 	{
 		Assert.IsTrue( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextStaff, false, "employee" ), "Ctrl+S locates the open employee window's employee (0x481790)" );
-		Assert.IsTrue( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextVisitor, false, "visitors" ), "Ctrl+V locates the visitor a row click chose" );
+		Assert.IsTrue( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextVisitor, false, "visitorInfo" ), "Ctrl+V locates the visitor the open visitor window shows (0x4817c0)" );
 		Assert.IsFalse( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextStaff, false, "visitors" ) );
 		Assert.IsFalse( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextVisitor, false, "pause" ), "the pause menu keeps the keys" );
 		Assert.IsTrue( ParkHud.ShortcutAllowed( HudScreenShortcut.LocateNextStaff, true, null ), "with no window open the park gate decides" );

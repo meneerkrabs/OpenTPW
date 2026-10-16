@@ -382,6 +382,44 @@ public static class OriginalLayoutTables
 		} ),
 	} );
 
+	/// <summary>[BIN:TPW-EXE:0x7575e0] layout table VisitorInfoWindow.</summary>
+	public static readonly LayoutTable VisitorInfoWindow = new( "VisitorInfoWindow", 0x7575E0, new LayoutNode[]
+	{
+		new( 1, 0x1u, 0x371Fu, 328, 130, 1720, 901, -1, -1, "window1", null, null, new LayoutNode[]
+		{
+			new( 2, 0x1u, 0xFFFFFFFEu, 1591, 714, 1674, 797, 1, -1, "b_okay", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x3720u, 1591, 234, 1674, 317, 98, -1, "b_arup", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x3721u, 1580, 322, 1663, 406, 97, -1, "b_ardown", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x3722u, 456, 267, 720, 531, -1, -1, "!frame", null, new[] { 477, 281, 704, 510 }, System.Array.Empty<LayoutNode>() ),
+			new( 1, 0x1u, 0x3723u, 745, 265, 1521, 709, -1, -1, "!frame", null, null, new LayoutNode[]
+			{
+				new( 1, 0x1u, 0x3724u, 1170, 282, 1498, 327, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x3725u, 778, 333, 1168, 378, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x3726u, 778, 384, 1168, 429, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x3727u, 778, 435, 1168, 480, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x3728u, 778, 487, 1168, 531, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x3729u, 778, 538, 1168, 583, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x372Au, 778, 589, 1168, 634, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x372Bu, 778, 640, 1168, 685, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x372Cu, 778, 282, 1168, 327, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x372Du, 1170, 333, 1498, 378, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x372Eu, 1170, 384, 1498, 429, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x372Fu, 1170, 435, 1498, 480, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x3730u, 1170, 487, 1498, 531, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x3731u, 1170, 538, 1498, 583, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 9, 0x1u, 0x3732u, 1170, 589, 1498, 634, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+				new( 1, 0x1u, 0x3733u, 1170, 640, 1498, 685, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0x3734u, 641, 720, 1352, 856, 95, -1, "Ethoughts3", null, new[] { 817, 760, 1314, 805 }, new LayoutNode[]
+			{
+				new( 6, 0x3u, 0x3735u, 676, 739, 780, 819, -1, -1, "ti_hungry", null, null, System.Array.Empty<LayoutNode>() ),
+			} ),
+			new( 1, 0x1u, 0x3736u, 749, 174, 1221, 253, -1, -1, null, null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x3737u, 1568, 411, 1670, 513, 99, -1, "b_locate", null, null, System.Array.Empty<LayoutNode>() ),
+			new( 2, 0x1u, 0x3738u, 1568, 518, 1670, 620, 100, -1, "b_kids", null, null, System.Array.Empty<LayoutNode>() ),
+		} ),
+	} );
+
 	/// <summary>[BIN:TPW-EXE:0x753c68] layout table PlayerScreen.</summary>
 	public static readonly LayoutTable PlayerScreen = new( "PlayerScreen", 0x753C68, new LayoutNode[]
 	{

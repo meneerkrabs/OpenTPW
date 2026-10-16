@@ -105,6 +105,7 @@ ECON-029 docs/reverse/APPROX-TRACE.md
 ECON-031 docs/reverse/APPROX-TRACE.md
 ECON-032 docs/reverse/APPROX-TRACE.md
 ECON-033 docs/reverse/APPROX-TRACE.md
+ECON-034 docs/reverse/APPROX-TRACE.md
 ECON-036 docs/reverse/APPROX-TRACE.md
 ECON-037 docs/reverse/APPROX-TRACE.md
 ECON-039 docs/PROGRESS.md

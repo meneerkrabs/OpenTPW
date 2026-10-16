@@ -34,7 +34,7 @@ public sealed class ParkCounters
 	public const string SideshowProfit = "profit:sideshow";
 }
 
-/// <summary>State of an offered or accepted challenge.</summary>
+/// <summary>State of an offered or accepted challenge; <c>Baseline</c> is the measure at acceptance of a count type, the running sum of the daily values of types 24, 25 and 27.</summary>
 public sealed record ActiveChallenge( int DefinitionIndex, long OfferedDay, bool Accepted, long StartDay, long DeadlineDay, long Baseline );
 
 /// <summary>
@@ -63,8 +63,7 @@ public enum GoldenTicketKind
 /// golden tickets. Data-driven: definitions, level order, prizes, target times/values/objects,
 /// follow-ups, <c>Independent</c>, <c>CheckAtEndOnly</c>, offer delays, declines to forfeit and every
 /// golden ticket threshold. The Easymode save stores the level's challenge list in exactly this order
-/// (docs/ECONOMY.md). <b>Approximations</b>: types 24, 25 and 27 compare the current value and some shop-sale
-/// details differ (ECON-034); declines count towards a forfeit (ECON-035); a follow-up does not keep the won
+/// (docs/ECONOMY.md). <b>Approximations</b>: declines count towards a forfeit (ECON-035); a follow-up does not keep the won
 /// part's object (ECON-055); types without a progress source (23, 26) never complete.
 /// </summary>
 public sealed class ParkObjectives
@@ -103,10 +102,18 @@ public sealed class ParkObjectives
 		long Sold( int shopType, int ingredient = -1 ) => ingredient >= 0
 			? counters[ParkCounters.Sold( shopType, ingredient )]
 			: Enumerable.Range( 0, 5 ).Sum( value => counters[ParkCounters.Sold( shopType, value )] );
+		// [BIN:TPW-EXE:0x4c9d80 staff happiness] the average over the staff things (model types 4-8, or the one type 0x4c9cc0 is given) of the truncated low byte of the happiness single (+0x44), an integer division, 0 without staff
 		int AverageHappiness( StaffType? type )
 		{
 			var members = staff.Members.Where( member => type == null || member.Type == type ).ToList();
-			return members.Count == 0 ? 0 : (int)members.Average( member => member.Happiness );
+			return members.Count == 0 ? 0 : members.Sum( member => StaffVitals.Byte( member.Happiness ) ) / members.Count;
+		}
+		// [BIN:TPW-EXE:0x4ca160 toilet cleanliness] over the relief things (type 3, flag +0x32 bit 0) the integer average of 100 minus the low byte of the gauge single (+0x44), 0 without a toilet; the daily message 0x4d2860 (type 24) adds 100 minus that
+		int ToiletCleanliness()
+		{
+			var toilets = objects.Where( item => catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief ).ToList();
+			var dirtiness = toilets.Count == 0 ? 0 : toilets.Sum( item => 100 - StaffVitals.Byte( (float)item.Repair ) ) / toilets.Count;
+			return 100 - dirtiness;
 		}
 		// [BIN:STP-PPC:0x100F41DC staff skill] skill = trunc(20 × (grade + training percentage / 100)) in single precision; grade 4 at 0 % is 80
 		long SkillPercent( StaffType type )
@@ -115,13 +122,15 @@ public sealed class ParkObjectives
 			return members.Count == 0 ? 0 : (long)members.Average( member => ParkStaff.StaffSkill( member ) );
 		}
 		// [BIN:TPW-EXE:0x4d1660 challenge check] types 1-8, 11-13, 16, 17, 20 and 22 compare an accumulated value (the system's +0x3dc) with TargetVal; types 9 and 10 are 100 × the guests with a balloon or a costume (0x4c9530 / 0x4c95d0) / the census (0x4c9130)
-		// [APPROX:ECON-034] the challenge types follow tp.exe's accumulator writers (0x4d27a0 adds to +0x3dc only for the accepted slot of that type and object): a paid shop sale adds 1 by ShopType and SpecialIngredient (0x4e16b0: ShopType 1 type 5; SpecialIngredient 1, 2, 3, 4 of ShopType 2 or 4 types 2, 1, 3, 4; ShopType 3 type 8, 5 type 7, 6 type 6), shops and sideshows add price minus cost of goods to 12 and 13 (0x4e16b0, 0x4e1920), an admission 1 to 11 (0x4c7520), a researched ride 1 to 16 (0x4d2860), a ride use 1 to 17, 20 and 22 (0x501db0), and 14, 18 and 19 read the coasters' counted sections; but OpenTPW counts every ShopType 4 sale as a drink (3) and the ingredient types in ShopType 2 only (the same on the shipped data), and compares the current value for 24, 25 and 27, where tp.exe adds the toilet cleanliness, the average staff happiness or that of the challenge's staff type (27; OpenTPW always reads the handymen) at every kind-11 message and compares the sum divided by TargetTime (0x4d2860, 0x4d1660) — evidence needed: the sender and rate of the kind-11 message (types 24, 25, 27)
+		// [BIN:TPW-EXE:0x4e16b0 shop sale] a paid sale adds 1 to a challenge type by the shop's ShopType (+0x164) and SpecialIngredient (+0x158): ShopType 1 type 5; 2 or 4 by the ingredient 1, 2, 3, 4 to types 2, 1, 3, 4 (the jump tables 0x4e18e4 / 0x4e18fc); 3 type 8; 5 type 7; 6 type 6; a ShopType 2 or 4 sale with another ingredient and other ShopTypes add nothing
+		// [BIN:TPW-EXE:0x4d27a0 challenge accumulator] an event is added to the system's value (+0x3dc) only while a challenge is accepted and only into a slot of the event's type whose TargetObj equals the event's object, which a shop sale sets to 0 (the shipped challenges of types 1-8 have TargetObj 0)
+		// [BIN:TPW-EXE:0x4d2860 daily challenge message] the day message 0xb (the one 0x4dd320 rolls the attraction rings on) adds to the accumulator, for the accepted slot of that type, 100 minus the toilet cleanliness 0x4ca160 (type 24), the average happiness of all staff 0x4c9d80 (25) or of the staff type of TargetStaffType 0x4c9cc0 (27, handyman model 5, mechanic 4, entertainer 6, guard 7, researcher 8); 0x4d1660 compares TargetVal with the sum divided by TargetTime (signed integer division), so these three are daily sums (AdvanceDay), not the current value
 		return definition.Type switch
 		{
-			1 => Sold( 2, 2 ),   // fries: food shop with salt
-			2 => Sold( 2, 1 ),   // burgers: food shop with fat
-			3 => Sold( 4 ),      // drinks
-			4 => Sold( 2, 4 ),   // ice creams: food shop with sugar
+			1 => Sold( 2, 2 ) + Sold( 4, 2 ),   // special ingredient 2 of a ShopType 2 or 4 shop (fries: food shop with salt)
+			2 => Sold( 2, 1 ) + Sold( 4, 1 ),   // ingredient 1 (burgers: food shop with fat)
+			3 => Sold( 2, 3 ) + Sold( 4, 3 ),   // ingredient 3 (drinks)
+			4 => Sold( 2, 4 ) + Sold( 4, 4 ),   // ingredient 4 (ice creams: food shop with sugar)
 			5 => Sold( 1 ),      // gifts
 			6 => Sold( 6 ),      // balloons sold (approximates "kids with balloons")
 			7 => Sold( 5 ),      // costumes
@@ -144,9 +153,10 @@ public sealed class ParkObjectives
 			18 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
 			19 => coasterSections?.Invoke( definition.TargetObject ) ?? 0,
 			21 => Built( definition.TargetObject ) > 0 ? counters[ParkCounters.Record( ParkRecordKind.KartSections, definition.TargetObject )] : 0,
-			24 => counters[ParkCounters.Record( ParkRecordKind.ToiletCleanlinessPercent, 0 )],
+			// the day's value of the three daily-average types (summed by AdvanceDay)
+			24 => ToiletCleanliness(),
 			25 => AverageHappiness( null ),
-			27 => AverageHappiness( StaffType.Handyman ),
+			27 => AverageHappiness( (StaffType)Math.Clamp( definition.TargetStaffType, 0, 4 ) ),
 			// [BIN:STP-PPC:0x100CE754 challenge type 28] passes when TargetVal <= the highest upgrade level byte (+0x4C, 0 = base) of the target rides (0x100C5740, -1 when none)
 			28 => objects.Where( item => item.InfoId == definition.TargetObject ).Select( item => (long)item.Level ).DefaultIfEmpty( -1 ).Max(),
 			29 => SkillPercent( (StaffType)Math.Clamp( definition.TargetStaffType, 0, 4 ) ),
@@ -157,6 +167,9 @@ public sealed class ParkObjectives
 			_ => 0
 		};
 	}
+
+	/// <summary>Types whose daily value (<see cref="Measure"/>) is added up from the acceptance and compared as the sum divided by TargetTime (0x4d2860, 0x4d1660).</summary>
+	public static bool IsDailyAverage( int type ) => type is 24 or 25 or 27;
 
 	/// <summary>Types measured as a change since acceptance rather than an absolute value.</summary>
 	public static bool IsCountSinceAcceptance( int type ) => type is >= 1 and <= 8 or 11 or 12 or 13 or 16 or 17 or 20 or 22;
@@ -183,7 +196,15 @@ public sealed class ParkObjectives
 		if ( !Current.Accepted )
 			yield break;
 		var definition = settings.Challenges[Current.DefinitionIndex];
-		var value = measure( definition ) - (IsCountSinceAcceptance( definition.Type ) ? Current.Baseline : 0);
+		long value;
+		if ( IsDailyAverage( definition.Type ) )
+		{
+			// the baseline of these types is the running sum of the daily values
+			Current = Current with { Baseline = Current.Baseline + measure( definition ) };
+			value = definition.TargetTime > 0 ? Current.Baseline / definition.TargetTime : 0;
+		}
+		else
+			value = measure( definition ) - (IsCountSinceAcceptance( definition.Type ) ? Current.Baseline : 0);
 		var reached = IsSupportedType( definition.Type ) && value >= Target( definition );
 		if ( reached && !definition.CheckAtEndOnly )
 		{
@@ -256,7 +277,7 @@ public sealed class ParkObjectives
 		if ( Current == null || Current.Accepted )
 			throw new InvalidOperationException( "No challenge is waiting to be accepted." );
 		var definition = settings.Challenges[Current.DefinitionIndex];
-		Current = Current with { Accepted = true, StartDay = day, DeadlineDay = day + definition.TargetTime, Baseline = baseline };
+		Current = Current with { Accepted = true, StartDay = day, DeadlineDay = day + definition.TargetTime, Baseline = IsDailyAverage( definition.Type ) ? 0 : baseline };
 	}
 
 	// [APPROX:ECON-035] a declined challenge counts towards DeclinesToForfeit and is finished when it reaches it; tp.exe's offer scans (0x4d2a70, 0x4d2b60) do skip a slot whose mChallengeDeclined (+0x28) is not below DeclinesToForfeit (0x7857cc), but its decline 0x4d2ec0 does not raise that count and no writer other than the slot initialisers (0x4d0f70, 0x4d1bd0) and the serializer was found, so in the original a declined challenge may be offered again without limit (offers waiting for an answer, the won mark and a declined follow-up's half prize are read and modelled: 0x4d1e90, 0x4d2df0, 0x4d2ec0, 0x4d2fb0) — evidence needed: a writer of the slot's mChallengeDeclined (+0x28) outside the challenge module 0x4d0000-0x4d6000

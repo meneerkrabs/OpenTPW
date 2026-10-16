@@ -2017,7 +2017,8 @@ public sealed class ParkEconomy : IParkEconomy
 		{
 			// The original accumulates the value from 0 at the offer; OpenTPW measures a count type against a baseline, so the baseline is set
 			// to give the saved value now
-			var baseline = ParkObjectives.IsCountSinceAcceptance( definition.Type ) ? MeasureChallenge( definition ) - value : 0;
+			// the daily-average types keep the system's accumulated value itself
+			var baseline = ParkObjectives.IsCountSinceAcceptance( definition.Type ) ? MeasureChallenge( definition ) - value : ParkObjectives.IsDailyAverage( definition.Type ) ? value : 0;
 			var start = deadlineDay - definition.TargetTime;
 			current = new ActiveChallenge( running, start, true, start, deadlineDay, baseline );
 		}

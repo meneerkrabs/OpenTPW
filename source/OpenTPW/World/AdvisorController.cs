@@ -75,6 +75,18 @@ internal static class AdvisorTables
 	/// <summary>The bound game-event messages and the help messages.</summary>
 	public static IEnumerable<AdvisorMessageDefinition> AllMessages => Messages.Concat( HelpMessages );
 
+	private static IReadOnlyList<AdvisorMessageDefinition>? unproduced;
+
+	/// <summary>
+	/// The other descriptors of the original's table (<see cref="AdvisorDescriptorTable"/>): messages nothing in OpenTPW produces yet (their score
+	/// callbacks are computations of the park's state, ADVISOR-009). They have no <see cref="AdvisorMessageDefinition.ScoreKey"/>; an original save's
+	/// pending advice and history of them are imported with their saved scores.
+	/// </summary>
+	public static IReadOnlyList<AdvisorMessageDefinition> UnproducedMessages => unproduced ??= AdvisorDescriptorTable.Rows
+		.Where( row => !AllMessages.Any( message => message.MessageId == row.MessageId ) )
+		.Select( row => new AdvisorMessageDefinition( row.MessageId, row.FirstResponseId, row.ResponseCount, row.Group, row.MaximumPendingDuplicates, string.Empty, row.GameMode ) )
+		.ToArray();
+
 	/// <summary>Whether a message's game-mode selector admits the game type (2 = Instant Action, else the full simulation).</summary>
 	// [BIN:TPW-EXE:0x0059C0A0 descriptor score] selector 2 always passes, 0 passes only while the game-mode global 0xFB3B7C is 0, 1 only while it is 2; any other state scores -1 and nothing is said
 	public static bool GameModeAccepts( byte selector, int gameType ) => selector switch
@@ -137,6 +149,18 @@ internal sealed class AdvisorBalance
 			groups[group] = (checked((uint)settings.GetInt( prefix + "MinTimeSameMessage" )), settings.GetInt( prefix + "SayOnlyOnce" ) != 0,
 				checked((uint)settings.GetInt( prefix + "DiscardAfterSlaps" )));
 		}
+		// The groups only the unproduced messages use are read when the file has them (the shipped one has groups 0 to 5 and 9); without a group's controls
+		// the messages of that group have no descriptor.
+		foreach ( var group in AdvisorTables.UnproducedMessages.Select( message => (int)message.Group ).Distinct().Where( group => !groups.ContainsKey( group ) ) )
+		{
+			var prefix = $"MessageGroups[{group}].";
+			const int missing = int.MinValue;
+			var minimum = settings.GetInt( prefix + "MinTimeSameMessage", missing, optional: true );
+			var once = settings.GetInt( prefix + "SayOnlyOnce", missing, optional: true );
+			var slaps = settings.GetInt( prefix + "DiscardAfterSlaps", missing, optional: true );
+			if ( minimum is not missing && once is not missing && slaps is not missing )
+				groups[group] = (checked((uint)minimum), once != 0, checked((uint)slaps));
+		}
 		return new AdvisorBalance
 		{
 			// [BIN:STP-PPC:0x10016F4C advisor balance] GeneralAdvisor.MinTimeAnyMessage +24, MinTimeSameMessage +28, MinScoreForConsideration +32
@@ -153,7 +177,7 @@ internal sealed class AdvisorBalance
 		};
 	}
 
-	public IEnumerable<AdvisorMessageDescriptor> Descriptors() => AdvisorTables.AllMessages.Select( message =>
+	public IEnumerable<AdvisorMessageDescriptor> Descriptors() => AdvisorTables.AllMessages.Concat( AdvisorTables.UnproducedMessages.Where( message => Groups.ContainsKey( message.Group ) ) ).Select( message =>
 	{
 		var group = Groups[message.Group];
 		return new AdvisorMessageDescriptor( message.MessageId, message.FirstResponseId, message.ResponseCount, message.Group,
@@ -260,7 +284,7 @@ internal sealed class AdvisorController
 
 	/// <summary>
 	/// Takes the pending records and per-message history of an original park save's advisor controller (model 11).
-	/// Free (invalid) records stay free; records and non-initial history of messages without a bound descriptor are
+	/// Free (invalid) records stay free; records and non-initial history of messages without a descriptor are
 	/// dropped and counted. Returns a report line for the log.
 	/// </summary>
 	// [BIN:STP-PPC:0x100082E0 advisor controller serializer] eight 21-byte pending records (0x1000BC10) from controller +20, then 351 16-byte history entries (tick, variant, played, slaps) from +224, indexed by message ID
@@ -304,8 +328,8 @@ internal sealed class AdvisorController
 		var lastTutorial = current.Valid && current.MessageId <= int.MaxValue && Queue.HasDescriptor( (int)current.MessageId ) && Queue.IsTutorial( (int)current.MessageId )
 			? new AdvisorPendingAdvice( (int)current.MessageId, current.Score, current.ResponseNo, current.OverrideOnlyOnce != 0 ) : null;
 		Queue.RestoreLastTutorial( lastTutorial );
-		// [APPROX:ADVISOR-022] An original save's pending advice and history of messages without a bound descriptor (only 0, 106, 128, 129 and 323 are bound) are dropped on import; OpenTPW's own park save stores the controller (ParkResumeSaveFile, AutomaticAdvisorSnapshot) — evidence needed: the remaining descriptor rows (table 0x76E300)
-		return $"[APPROX:ADVISOR-022] Advisor controller imported: {imported} pending advice, history of {history.Count} bound messages; dropped {dropped.Count} pending advice of unbound messages ({string.Join( ", ", dropped )}) and {droppedHistory} unbound history entries; last tutorial advice {(lastTutorial != null ? $"message {lastTutorial.MessageId} kept" : current.Valid ? $"message {current.MessageId} dropped (unbound or not a tutorial)" : "none")}; the imported records' thing, secondary and score-overridden fields are not kept ({string.Join( "; ", fields )}); the controller's other values are reported under SAVE-010.";
+		// [BIN:TPW-EXE:0x0076E300 descriptor table] the original's 351 descriptors (message = record index; filled by 0x5A0A50) are all bound (AdvisorDescriptorTable), so every message an original save can name keeps its pending advice and history; only an ID past the table, or a message of a group the settings file lacks, has no descriptor
+		return $"Advisor controller imported: {imported} pending advice, history of {history.Count} messages; dropped {dropped.Count} pending advice of messages without a descriptor ({string.Join( ", ", dropped )}) and {droppedHistory} history entries without one; last tutorial advice {(lastTutorial != null ? $"message {lastTutorial.MessageId} kept" : current.Valid ? $"message {current.MessageId} dropped (no descriptor or not a tutorial)" : "none")}; the imported records' thing, secondary and score-overridden fields are not kept ({string.Join( "; ", fields )}); the controller's other values are reported under SAVE-010.";
 	}
 
 	/// <summary>

@@ -205,7 +205,7 @@ the archived official pages):
   Flat rides have no traced seat motion in OpenTPW yet and cannot be ridden here.
   Visits and editable parks use the same `Level.EnterRideView` / `ExitRideView`
   state and `RideCameraMode`; the visit's object-panel button enters that view.
-  The original seat and mode details remain qualified by UI-093–095.
+  The original seat and mode details remain qualified by UI-094 and UI-095.
 - **Inspect**: an object's panel shows its published state of repair (never simulated
   values), and the park information window shows the park's **published statistics**
   read-only — rating, value, balance, visitors and the published in-game date — with a
@@ -378,6 +378,6 @@ Windows v2.0 executable.
 ## Retired ride-camera entry
 
 `APPROX:ONLINE-073` is retired: the separate visit-camera view now uses the shared
-camera approximation UI-094, with UI-093 and UI-095 covering entry and restoration.
+camera approximation UI-094, with UI-095 covering restoration.
 The original view details remain unresolved; sharing the implementation does not
 establish original runtime parity.

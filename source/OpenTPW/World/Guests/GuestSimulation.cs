@@ -453,23 +453,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( turnStarted )
 		{
 			UpdateNeedsTurn( guest );
-			// The leaving test itself runs in state 6 (UpdateDeciding). The closure clause only, for the states the state-6 test never sees: a closed park also pulls guests out of queues and drops reservations, or it
-			// would strand every guest whose ride holds admission (OpenTPW's rides do not close with the park, and a queued guest's happiness rarely sinks below the
-			// queue's leave level). Guests on a ride finish it and are sent home by the test above once they walk again.
-			// [APPROX:GUEST-011] OpenTPW pulls queued, called and boarding guests out at once when the park closes and sends them home with one big drop; tp.exe closes every openable object (0x519EF0 → 0x4DF300: open word +0x68 = 0), and a closed ride's update dismisses its queue head, one per update (0x4E1220 → 0x4E0450 → 0x5012F0: event 6, the medium drop, state 6, whose leaving gate takes the big drop at 0x4FEE87), a head the script already took rides (0x500870) and AdmitPerson 0x4E0900 refuses a called guest; a guest walking to a ride takes the big drop in state 10 (0x4FFEB9) and again in state 6, where OpenTPW takes it once — evidence needed: whether shops and stalls carry the openable flag 4 of +0x32
-			if ( Payments?.ParkClosed == true )
-			{
-				if ( guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding && FindAttraction( guest.AttractionId ) is { } closed )
-				{
-					LeaveQueue( guest, closed, GuestThought.None );
-					StartLeaving( guest );
-				}
-				else if ( guest.State == GuestState.GoingToRide )
-				{
-					guest.AttractionId = 0;
-					StartLeaving( guest );
-				}
-			}
+			// The leaving test itself runs in state 6 (UpdateDeciding). Closing the park pulls nobody out of a queue or a booking here.
+			// [BIN:TPW-EXE:0x00519EF0 park door closes the rides] the door closes every openable object (0x004DF300: open word 0, loading slot cleared; ParkGate.DoorMoved), and a closed ride's update dismisses its queue head, one per turn (RideVisitorBridge.HostStep, 0x004E1220 → 0x004E0450 → 0x005012F0), after which state 6 sends the guest home; a guest walking to a ride drops its target in state 10 (UpdateGoingToRide, 0x004FFEB9)
 			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
 			// [APPROX:GUEST-012] tp.exe's recall (0x500A50) also demands the guest's cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType); OpenTPW's imported grid writes only 0, 1 and 3 (ECON-050), so the test would pass everywhere, and OpenTPW stands in for it with the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane). The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc) — evidence needed: which cells the original's state-18 walk crosses before state 19 (0x500AD0) and their types
@@ -1330,7 +1315,10 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void UpdateGoingToRide( Guest guest, float dt )
 	{
 		if ( guest.HasWaypoint && !Move( guest ) )
+		{
+			DropRideTargetForClosedPark( guest );
 			return;
+		}
 		var attraction = FindAttraction( guest.AttractionId );
 		// [BIN:TPW-EXE:0x004FFBC0 walk to the queue] state 10 reads neither the ride's state nor its open word: a guest keeps walking to a ride closed or broken meanwhile, joins, and the ride sends it away from the queue head (RideVisitorBridge.HostStep)
 		if ( attraction == null || !attraction.AcceptsJoins )
@@ -1378,13 +1366,30 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		}
 		if ( Grid.TryStep( guest.CellX, guest.CellY, tx, ty, out var nx, out var ny ) )
+		{
 			SetCellWaypoint( guest, nx, ny );
+			DropRideTargetForClosedPark( guest );
+		}
 		else
 		{
 			Think( guest, GuestThought.Confused );
 			guest.AttractionId = 0;
 			guest.State = GuestState.DoingNothing;
 		}
+	}
+
+	/// <summary>
+	/// A guest still walking to its ride when the park is closed (state 10, once per park turn): "The park has closed underneath me", the big happiness drop,
+	/// the ride target dropped and state 6, whose leaving gate takes the big drop again and sends the guest home.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FFEB9 park closed underneath me] after the walk step 0x004FA2A0 returns "still walking" (neither 0 nor 2) the handler reads the closed word (0x0051A280, mParkClosed): closed gives the log line, 0x004FEA70(2) (PeepInfo.BigHappinessChange), target +0x1DC = 0 and SetState(6) (0x00501DB0); open counts a byte at +0x2C and calls 0x004FD570 every twelfth update (not modelled)
+	private void DropRideTargetForClosedPark( Guest guest )
+	{
+		if ( !turnStarted || Payments?.ParkClosed != true )
+			return;
+		guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.BigHappinessChange );
+		guest.AttractionId = 0;
+		guest.State = GuestState.DoingNothing;
 	}
 
 	// ---- Queues (docs/reverse/QUEUE-plan.md §4–6) ----------------------------------------------

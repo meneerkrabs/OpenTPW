@@ -177,6 +177,7 @@ PATH-009 docs/PROGRESS.md
 PATH-011 docs/PROGRESS.md
 PATH-012 docs/reverse/REVIEW-PATH.md
 PATH-014 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
+PATH-016 docs/PATHS.md
 PTCL-901 docs/PROGRESS.md
 PTCL-902 docs/PARTICLES.md
 PTCL-903 docs/PARTICLES.md

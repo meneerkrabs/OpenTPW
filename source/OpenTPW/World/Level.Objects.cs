@@ -564,7 +564,7 @@ public partial class Level
 	// [BIN:TPW-EXE:0x00534115 bridge ops] the refresh ops after the laid cell run 0x81 (the tile refresh 0x5365D0, RefreshTile) and 0x85 and 0x86, which act on a track cell of the second layer (0x53AD30 first) and so do nothing for a cell that holds none
 	// A cell nothing laid (an imported or restored park, Theme Park Inc) keeps the nearest walkable cell as the guests' entrance, which their route graph needs to be a path cell (QUEUE-003, WALK-005).
 	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
-		grid.IsWalkable( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
+		grid.IsWalkable( x, y ) || grid.IsQueue( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
 
 	public void RotateBuild() => BuildRotation = (BuildRotation + 90) % 360;
 

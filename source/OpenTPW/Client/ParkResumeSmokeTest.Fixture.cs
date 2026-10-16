@@ -58,6 +58,7 @@ internal sealed partial class ParkResumeSmokeTest
 		}
 		Require( level.RemoveQueueCell( lineB[^1].X, lineB[^1].Y ) >= 1, "edit the queue: remove its last cell again" );
 		Require( bridge.QueueCells.Count >= QueueLength, $"the edited queue keeps {QueueLength} cells" );
+		QueuePaths.TryConnect( level.Guests!.Grid, bridge );
 
 		Require( !ReferenceEquals( rideA, rideB ) && rideA.Visitors.AttractionId != bridge.AttractionId,
 			"the two copies of the ride are distinct attractions" );
@@ -183,6 +184,7 @@ internal sealed partial class ParkResumeSmokeTest
 		hud.Update( hudContext, new UiInput( endPoint, true, true, false, false, UiKeys.None ) );
 		hud.Update( hudContext, new UiInput( endPoint, false, false, true, false, UiKeys.None ) );
 		Require( !level.CellTool.IsActive, "clicking the queue's end again ends the queue tool" );
+		Require( QueuePaths.TryConnect( level.Guests!.Grid, placed!.Visitors ), "the queue's back is linked to the spine path" );
 		Require( placed!.Visitors.QueueCells.Count >= QueueLength, "the HUD clicks laid the ride's queue" );
 		return placed;
 	}
@@ -219,6 +221,10 @@ internal sealed partial class ParkResumeSmokeTest
 				continue;
 			var door = DoorAt( entry, cell.X, cell.Y, rotation );
 			var line = LineOut( door, QueueLength + 1 );
+			// the queue's back must touch the spine, as a player ends a queue line on a path cell: the placement no longer leaves a walkable entrance for guests to fall back on
+			var back = line[QueueLength - 1];
+			if ( requireOnScreen && !new[] { (0, -1), (1, 0), (0, 1), (-1, 0) }.Any( step => grid.IsWalkable( back.X + step.Item1, back.Y + step.Item2 ) ) )
+				continue;
 			if ( line.All( queueCell => level.Paths!.CheckCell( queueCell.X, queueCell.Y ) == CellBuildResult.Ok )
 				&& ( !requireOnScreen || line.All( queueCell => Clickable( queueCell, out _ ) ) ) )
 			{
@@ -385,7 +391,7 @@ internal sealed partial class ParkResumeSmokeTest
 		if ( populateTicks >= MaximumPopulateTicks )
 			Require( false, $"guests never reached the rich save state in {MaximumPopulateTicks} ticks: {DescribeGuests()}; queues "
 				+ string.Join( ", ", level.Objects.Objects.Where( item => item.Visitors.HasQueue )
-					.Select( item => $"{item.Entry.DisplayName}#{item.Visitors.AttractionId}: {item.Visitors.QueueLength} queued, open {item.Visitors.IsOpen}" ) ) );
+					.Select( item => $"{item.Entry.DisplayName}#{item.Visitors.AttractionId}: {item.Visitors.QueueLength} queued, open {item.Visitors.IsOpen}, join {item.Visitors.JoinCell}, cells {string.Join( ">", item.Visitors.QueueCells )}, entrance {item.Visitors.EntranceCell}" ) ) );
 	}
 
 	private bool RichMoment()

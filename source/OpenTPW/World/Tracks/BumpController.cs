@@ -7,7 +7,7 @@ namespace OpenTPW;
 /// −7, −9, −10: the grid start, the race, the finish and the kart effects) and bumper cars (types −1, −6, −11, −14: cars that wander an arena
 /// and hand their riders over when the session's countdown ends); the add-ons' vehicle hook (0x00548E80: the Space Racers Teleport hides a vehicle between its two tiles) is TRACK-008.
 /// </summary>
-// [APPROX:TRACK-019] the shared pools are allocated first-free as the original's, but their order after a park-resume restore of a save from before the shared pools follows the restore (controllers by attraction id), the module ticks where the first controller's ride advances (the rides placed before it run their script step first; the original ticks the module before every script), and the bumper cars' chase candidates and drop-in overlap test still read their own ride's cars
+// [APPROX:TRACK-019] the shared pools are allocated first-free as the original's, but their order after a park-resume restore of a save from before the shared pools follows the restore (controllers by attraction id), and a vehicle whose foreign object is rebuilt loses it where the original keeps a stale pointer; the module tick runs before every ride's script step as the original's substep does
 
 public sealed class BumpController
 {
@@ -823,6 +823,7 @@ public sealed class BumpController
 	/// launch then picks the next target: a random buoy of the ring, or, one time in four when the car is not parked or already wandering, the buoy after
 	/// its current one. The buoy countdown is 3, so a car changes its mind after three captures.
 	/// </summary>
+	// [BIN:TPW-EXE:0x0054A040 drop-in overlap] the overlap test walks the module's whole vehicle pool (0x877B68, 0xAC-byte records, live flag 1, 0x54A0D8..0x54A18F), not only the ride's own cars; the chase candidates (0x54A495) need the same controller (+0x9C compared with +0x9C) and are the ride's own
 	// [BIN:TPW-EXE:0x0054A040 relaunch bumper] first launch (flag 0x100000): up to 100 draws of (radius = rand % arena radius, angle = rand &amp; 0x1FF) around the station until no other vehicle overlaps, flag 0x4000 cleared, heading +0x50 = +0x54 = rand &amp; 0x1FF, +0xA4 = −1 (no wall-stuck retarget); the jungle bumper also gets flags 0x3000000 and a presentation object. Target: flag 8 set and rand &amp; 0xF ≤ 3 → the buoy after the current one, else buoy number rand % 8 counted from the head; flags (flags &amp; 0xFFFBFF89) | 0x10008 | 0x8000, countdown +0x8C = 3, flag 0x100000 cleared
 	private void RelaunchBumper( BumpVehicle vehicle )
 	{
@@ -837,7 +838,7 @@ public sealed class BumpController
 				var across = radius * BumpMath.Sine[angle];
 				vehicle.X = ((along + ((along >> 31) & 0xFF)) >> 8) + StationX;
 				vehicle.Y = StationY - ((across + ((across >> 31) & 0xFF)) >> 8);
-				if ( attempt == 1 || !vehicles.Any( other => other != vehicle && other.IsLive && BumpMath.Distance( other.X - vehicle.X, other.Y - vehicle.Y ) < other.Radius + vehicle.Radius ) )
+				if ( attempt == 1 || !module.LiveVehicles.Any( other => other != vehicle && BumpMath.Distance( other.X - vehicle.X, other.Y - vehicle.Y ) < other.Radius + vehicle.Radius ) )
 					break;
 			}
 			vehicle.Flags &= ~BumpVehicle.Steerable;

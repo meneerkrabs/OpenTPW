@@ -6,8 +6,8 @@ namespace OpenTPW;
 /// </summary>
 public static class AudioListener
 {
-	/// <summary>The fork's proposed minimum distance: a voice this close is at full gain.</summary>
-	// [LEAD:maexah/OpenTPW docs/exe/audio.md "The mixer's distance law"] the fork reports {2.0, range, 0.8} for QMixer; the locally available PC exe is packed, so this is not independently verified
+	/// <summary>The original's minimum distance (tp.exe stores 2.0 at <c>0x6C3BB9</c>): a voice this close is at full gain.</summary>
+	// [BIN:TPW-EXE:0x6C3B8A distance mapping] the minimum distance is the constant 2.0 (0x70a9c4) the mapping is built with; the law that uses it is read in QMixer.dll (below)
 	public const float MinimumDistance = 2f;
 
 	/// <summary>The far end the original hands its mixer for a range of 2 or less (tp.exe <c>0x6C3B8A</c> stores 2.1 there, so the far end is always beyond the minimum distance).</summary>

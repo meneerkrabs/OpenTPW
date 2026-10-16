@@ -469,7 +469,7 @@ Behaviour worth knowing:
   (0.2 engine units a unit) the field is a small near-field around the eye: streaks are 0.1 units
   long and 0.2 x that wide. The camera's 0.1 near plane clips the nearest 0.5 units of it, where the
   original's near plane is 0.1 units (`0x578be0`, AUDIO-904). The original's camera has a field of view of 90 degrees (`0x42a990` passes pi/2 to
-  `0x578be0`), OpenTPW's park camera 55.
+  `0x578be0`), OpenTPW's park camera 55 (UI-101).
 * Rain: grey `3 x max(0, int(12 x (6 - depth)))` (216 at the eye, 0 at depth 6), alpha 0x80 at the
   streak's trailing end and 0xFF at the leading end, only depth > 0 drawn. The render states come from tp.exe's
   decoder `0x567620`: rain and bolts `0x200D52` (source alpha over one, no depth writes), snow `0x556` (alpha blend,

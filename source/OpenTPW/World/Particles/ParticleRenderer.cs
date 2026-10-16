@@ -158,6 +158,8 @@ public sealed class ParticleRenderer : Entity
 		var eye = Camera.Position.GetSystemVector3();
 		// [APPROX:PTCL-909] the screen-space quads are drawn inside this world pass, so the HUD and the advisor's image draw over them; the original's pass 0x57C620 sits in the scene view render 0x576a00 after the object lists and the view's callback (+0x78) and before the weather (0x57FF60), and which later view or callback draws the HUD windows and the advisor's model is not read
 		// [BIN:TPW-EXE:0x57C620 draw order] one quad per particle in slot order 0..119, newest particle first, world and screen-space particles in the same loop, so the runs follow that order and the kinds interleave as the particles do
+		// The uniform block is the same for every run of a material in this frame, so it is written once per material, however often the kinds alternate.
+		var uniformsWritten = 0;
 		foreach ( var (kind, first, count) in runs )
 		{
 			var material = kind switch
@@ -165,7 +167,12 @@ public sealed class ParticleRenderer : Entity
 				0 => alphaMaterial, 1 => additiveMaterial, 2 => oneOneMaterial,
 				3 => screenAlphaMaterial, 4 => screenAdditiveMaterial, _ => screenOneOneMaterial
 			};
-			Draw( commandList, material!, eye, (first, count), screenSpace: kind >= 3 );
+			if ( (uniformsWritten & (1 << kind)) == 0 )
+			{
+				WriteUniforms( material!, eye, screenSpace: kind >= 3 );
+				uniformsWritten |= 1 << kind;
+			}
+			Draw( commandList, material!, (first, count) );
 		}
 	}
 
@@ -287,7 +294,7 @@ public sealed class ParticleRenderer : Entity
 		return new SVector3( red, green, blue + 256 * alpha );
 	}
 
-	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, SVector3 eye, (int First, int Count) range, bool screenSpace = false )
+	private static void WriteUniforms( Material<ObjectUniformBuffer> material, SVector3 eye, bool screenSpace )
 	{
 		material.Set( "ObjectUniformBuffer", new ObjectUniformBuffer
 		{
@@ -297,6 +304,10 @@ public sealed class ParticleRenderer : Entity
 			g_vCameraPos = eye,
 			g_flTime = Time.Now
 		} );
+	}
+
+	private static void Draw( CommandList commandList, Material<ObjectUniformBuffer> material, (int First, int Count) range )
+	{
 		commandList.SetPipeline( material.Pipeline );
 		var resourceSets = material.GetResourceSets();
 		for ( uint index = 0; index < resourceSets.Length; ++index )

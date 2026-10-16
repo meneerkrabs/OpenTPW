@@ -21,9 +21,13 @@ user's approval, the game's QMixer.dll for the mixer's distance law):
   fixed-volume flags are read.
 - **Design choices, approved by the user:** AUDIO-037 and MD2-902 are closed as extensions; AUDIO-009 (OpenTPW's extra "cannot build"
   sound, which the original never plays), AUDIO-901, AUDIO-904, PTCL-904 and PTCL-905 are split.
+- **Review additions:** GATEM4-001 (the use window W) and GATEM4-002 (closing ends use) are closed as `[EXT:m4-gate-use-window]` and
+  `[EXT:m4-gate-closing-ends-use]` (test-harness choices; the user approved them). New `UI-101`: the park camera's field of view is 55
+  where tp.exe's projection has 90 (`0x42A990` and `0x54E86F` hand 90 degrees to `0x578BE0`). The particle runs write their uniform
+  block once per material, and the blueprint ghosts' per-frame ripple updates one dynamic vertex buffer instead of allocating a model.
 
-The pinned run hash and saves are unchanged; weather and particle presentation keep their own streams. Verified with 4610 tests passing
-without game data, the full suite with it, and all five native smokes.
+The pinned run hash and saves are unchanged; weather and particle presentation keep their own streams. Verified with 4636 tests passing
+without game data, 5086 with it, and all five native smokes.
 
 Still open: the mixer's rolloff value and its azimuth stage (AUDIO-018, AUDIO-033, ADVISOR-012), the lightning ribbon's clip-space
 quads, per-particle depth writes and the alpha test, the advisor's lobby key panel, the remaining advisor message producers, the

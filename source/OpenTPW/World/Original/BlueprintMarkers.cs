@@ -159,6 +159,14 @@ public sealed class BlueprintMarkers : ModelEntity
 		if ( paused || shown.Length == 0 || !(deltaSeconds > 0) )
 			return;
 		phase = (phase + PhaseStep * Math.Min( deltaSeconds, 0.25f ) * AssumedFrameRate) % (MathF.PI * 2 * 64);
+		// Only the heights move with the phase: the cells are unchanged, so the model's own vertex buffer takes the new vertices
+		// instead of allocating a model and its buffers every frame.
+		if ( Model is { } model && model.HasDynamicVertices )
+		{
+			var (vertices, _) = BuildGeometry( field, shown, shownDirections, phase );
+			model.UpdateVertices( vertices );
+			return;
+		}
 		Rebuild();
 	}
 
@@ -170,7 +178,7 @@ public sealed class BlueprintMarkers : ModelEntity
 		if ( shown.Length > 0 )
 		{
 			var (vertices, indices) = BuildGeometry( field, shown, shownDirections, phase );
-			Model = new Model( vertices, indices, material );
+			Model = new Model( vertices, indices, material, dynamicVertices: true );
 		}
 		old?.ReleaseBuffers();
 	}

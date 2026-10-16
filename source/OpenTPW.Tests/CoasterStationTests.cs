@@ -116,6 +116,28 @@ public class CoasterStationTests
 		Assert.AreEqual( SVector3.Normalize( knots[2].Position - knots[1].Position ), knots[2].Direction, "S2 leaves along the platform whatever the first pylon (no next neighbour, 0x40000)" );
 	}
 
+	/// <summary>
+	/// The auto-bank pass of the knot pass (<c>0x430ed0</c>): S0 and S2, whose turn the tangent routine leaves at 0 (one neighbour is masked off), bank 0, but the
+	/// running speed estimate steps through them to their raw next node, so the first pylon banks with the speed after S0, S1 and S2.
+	/// </summary>
+	[TestMethod]
+	public void TheStationNodesBankZeroButTheSpeedEstimateRunsThroughThem()
+	{
+		var (builder, ride) = Finished();
+		var track = builder.Track;
+		var knots = track.BuildKnots( builder.Site );
+		Assert.AreEqual( (0f, 0f), (knots[0].Roll, knots[2].Roll), "S0 and S2 (0x431660 one-sided: turn 0)" );
+		var positions = track.Nodes.Select( node => track.NodePosition( builder.Site, node ) ).ToArray();
+		var definition = ride.Definition;
+		var speed = 0f;
+		for ( var index = 0; index < First; index++ )
+			speed = CoasterTrack.SpeedEstimate( definition, speed, definition.MinSpeed, positions[index].Y, positions[index + 1].Y );
+		var turn = CoasterTrack.TurnAngleXZ( positions[First - 1], positions[First], positions[First + 1] );
+		var expected = CoasterTrack.AutoBank( speed, turn, (positions[First - 1] - positions[First]).Length(), (positions[First + 1] - positions[First]).Length() );
+		Assert.AreNotEqual( 0f, expected, "the first pylon of the test circuit turns" );
+		Assert.AreEqual( expected, knots[First].Roll, 1e-6f, "the first pylon banks with the speed estimate after the three station nodes (0x431101)" );
+	}
+
 	[TestMethod]
 	public void NoPylonStacksOnAStationPylon()
 	{
@@ -159,7 +181,7 @@ public class CoasterStationTests
 		Assert.IsTrue( coordinates[0] < coordinates[1] && coordinates[1] < coordinates[2] && coordinates[2] < coordinates[3] );
 		Assert.AreEqual( (0f, coordinates[2]), ride.StationWindow );
 		Assert.IsTrue( coordinates[tail] >= samples.Count - 2 && coordinates[tail] < samples.Count - 1, $"the end knot's coordinate {coordinates[tail]} lies between the last sample before it and the closing sample ({samples.Count} samples)" );
-		Assert.AreEqual( 0f, ride.Trains[0].Position, "train 0 starts at the platform start" );
+		Assert.AreEqual( 0f, ride.CarCoordinate( ride.Trains[0], ride.Trains[0].Cars.Count - 1 ), 1e-4f, "train 0's last car starts at the platform start" );
 	}
 
 	[TestMethod]

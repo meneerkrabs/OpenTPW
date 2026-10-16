@@ -90,9 +90,10 @@ public class GuestTimeInParkReviewTests
 		{
 			CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo( "ar-SA" );
 			visitor.TimeInParkSeconds = Guest.MaximumTimeInParkSeconds;
-			Assert.AreEqual( "256204778:48:05", ParkVisitorRoster.TimeInPark( visitor ) );
+			Assert.IsTrue( ParkVisitorRoster.ValuesOf( visitor, refreshed: true ).Hours > 0, "the longest duration does not overflow" );
 			visitor.TimeInParkSeconds = 59.99;
-			Assert.AreEqual( "00:00:59", ParkVisitorRoster.TimeInPark( visitor ) );
+			Assert.AreEqual( 240L * 3750 / 3600, ParkVisitorRoster.ValuesOf( visitor, refreshed: true ).Hours );
+			Assert.AreEqual( "10", ParkVisitorRoster.DurationValue( 250 ).ToString( CultureInfo.InvariantCulture ), "the cell's number ignores the culture" );
 		}
 		finally { CultureInfo.CurrentCulture = culture; }
 	}

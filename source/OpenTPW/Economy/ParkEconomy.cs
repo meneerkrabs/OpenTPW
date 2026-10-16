@@ -312,6 +312,8 @@ public sealed class ParkEconomy : IParkEconomy
 			DoResearch();
 		// [BIN:TPW-EXE:0x004E0B90 object update] every live object thing runs its update each turn; the wear and the breakdown check inside it run when the turn counter is a multiple of 8
 		UpdateRides( turn );
+		// [BIN:TPW-EXE:0x0050B360 thing update] the challenge system is a thing (type 0x13) of the same loop, which a lost park no longer runs
+		UpdateChallenges( turn );
 	}
 
 	/// <summary>
@@ -1019,14 +1021,23 @@ public sealed class ParkEconomy : IParkEconomy
 	private void EndDay( long day )
 	{
 		// [BIN:TPW-EXE:0x0050B360 thing update] the challenge system's day (0x004D1E90) is its thing update (type 0x13), which a lost park no longer runs
-		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge, IsParkOpen, BestObjectOf ).ToList() : new();
-		foreach ( var (kind, index, amount, detail) in challenges )
+		// [BIN:TPW-EXE:0x004D2860 daily challenge message] the day message adds a running daily-average challenge's value to its sum
+		if ( Features.Challenges && !IsBankrupt )
+			Objectives.AccumulateDaily( MeasureChallenge );
+		Raise( ParkEventKind.DayEnded, Balance );
+	}
+
+	/// <summary>The challenge system's thing update, once per park turn (tp.exe <c>0x004D1E90</c>): the switch, the offers and a running challenge's check.</summary>
+	private void UpdateChallenges( long turn )
+	{
+		if ( !Features.Challenges )
+			return;
+		foreach ( var (kind, index, amount, detail) in Objectives.Update( turn * ParkCalendar.SecondsPerTurn, turn, MeasureChallenge, IsParkOpen, BestObjectOf ).ToList() )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
 				Post( LedgerCategory.OtherIncome, amount );
 			Raise( kind, amount, 0, index, detail );
 		}
-		Raise( ParkEventKind.DayEnded, Balance );
 	}
 
 	/// <summary>The object a passing check of type 14, 15 or 18 carries (ECON-055): the best coaster, or for the kart type the instance that reported the highest crossroads record.</summary>
@@ -1907,15 +1918,14 @@ public sealed class ParkEconomy : IParkEconomy
 	public void AcceptChallenge()
 	{
 		var definition = Objectives.CurrentDefinition ?? throw new InvalidOperationException( "No challenge is offered." );
-		var day = ParkCalendar.DayIndex( Tick );
-		Objectives.Accept( day, MeasureChallenge( definition ) );
+		Objectives.AcceptAt( ParkCalendar.Seconds( Tick ), MeasureChallenge( definition ) );
 		Raise( ParkEventKind.ChallengeAccepted, definition.Prize, 0, definition.Index );
 	}
 
 	public void DeclineChallenge()
 	{
 		var definition = Objectives.CurrentDefinition;
-		var index = Objectives.Decline( ParkCalendar.DayIndex( Tick ) );
+		var index = Objectives.DeclineAt( ParkCalendar.Seconds( Tick ) );
 		// [BIN:TPW-EXE:0x4d2ec0 challenge declined] a declined challenge whose mIndependent (+0x1d) is clear, a follow-up, credits half its prize (+0x14 / 2,
 		// truncated toward zero, 0x4d2f1d..0x4d2f33) through the bank credit 0x4d0190; an independent one pays nothing
 		var half = definition is { Independent: false } ? definition.Prize / 2 : 0;
@@ -2133,7 +2143,8 @@ public sealed class ParkEconomy : IParkEconomy
 	/// declined challenges, and a challenge that is running (accepted, with its deadline and the value it has reached) or offered and unanswered.
 	/// </summary>
 	internal void RestoreOriginalChallenges( long nextOfferDay, int nextListPosition, int? runningIndex, long deadlineDay, long value, int? offeredIndex,
-		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished, bool switchedOn = true, int actualThing = 0, IReadOnlyDictionary<int, int>? carriedThings = null )
+		IReadOnlyDictionary<int, int> declines, IEnumerable<int> finished, bool switchedOn = true, int actualThing = 0, IReadOnlyDictionary<int, int>? carriedThings = null,
+		long? nextOfferSeconds = null, long? deadlineSeconds = null )
 	{
 		// the carried object first: the baseline of a ride-use type counts that object's uses
 		Objectives.RestoreCarried( actualThing, carriedThings );
@@ -2144,12 +2155,13 @@ public sealed class ParkEconomy : IParkEconomy
 			// to give the saved value now
 			// the daily-average types keep the system's accumulated value itself
 			var baseline = ParkObjectives.IsCountSinceAcceptance( definition.Type ) ? MeasureChallenge( definition ) - value : ParkObjectives.IsDailyAverage( definition.Type ) ? value : 0;
-			var start = deadlineDay - definition.TargetTime;
-			current = new ActiveChallenge( running, start, true, start, deadlineDay, baseline );
+			var endSeconds = deadlineSeconds ?? deadlineDay * ParkCalendar.SecondsPerDay;
+			var start = (endSeconds - definition.TargetTime * ParkCalendar.SecondsPerDay) / ParkCalendar.SecondsPerDay;
+			current = new ActiveChallenge( running, start, true, start, endSeconds / ParkCalendar.SecondsPerDay, baseline, endSeconds );
 		}
 		else if ( offeredIndex is int offered && Settings.Challenges.ContainsKey( offered ) )
 			current = new ActiveChallenge( offered, ParkCalendar.DayIndex( Tick ), false, 0, 0, 0 );
-		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn, actualThing, carriedThings );
+		Objectives.Restore( nextOfferDay, nextListPosition, current, declines, finished, Objectives.GoldenTickets, switchedOn, actualThing, carriedThings, nextOfferSeconds );
 	}
 
 	/// <summary>Takes an original save's bank account: balance, admission fee, the year's profit and the bought loans.</summary>

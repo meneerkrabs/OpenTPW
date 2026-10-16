@@ -332,7 +332,8 @@ public class OriginalSaveImportTests
 			BinaryPrimitives.WriteInt32LittleEndian( body.AsSpan( Slot( 2, 37 ) ), 1 );
 		} );
 		var active = running.Objectives.Current!;
-		Assert.AreEqual( (level[1], true, 101L), (active.DefinitionIndex, active.Accepted, active.DeadlineDay), "the deadline passes at the first daily update after the stamp" );
+		Assert.AreEqual( (level[1], true, 100L), (active.DefinitionIndex, active.Accepted, active.DeadlineDay), "the deadline is the stamp itself, tested on every park turn" );
+		Assert.AreEqual( 100 * 86400L + 43200, active.EndSeconds, "the stamp's exact second (day 100 and a half)" );
 		var definition = settings.Challenges[level[1]];
 		if ( ParkObjectives.IsCountSinceAcceptance( definition.Type ) )
 			Assert.AreEqual( 7, running.Objectives.Measure( definition, running.Counters, running.Staff, running.Objects, running.GuestStatistics ) - active.Baseline, "the saved value is reached now" );
@@ -345,7 +346,8 @@ public class OriginalSaveImportTests
 
 		var idle = Import( 3, 200, 1, 0, 0, 0 );
 		Assert.IsNull( idle.Objectives.Current );
-		Assert.AreEqual( 201, idle.Objectives.NextOfferDay, "an idle system offers at the first daily update after the stamp" );
+		Assert.AreEqual( 200, idle.Objectives.NextOfferDay, "an idle system offers on the first park turn at or after the stamp" );
+		Assert.AreEqual( 200 * 86400L + 43200, idle.Objectives.NextOfferSeconds );
 	}
 
 	[TestMethod]

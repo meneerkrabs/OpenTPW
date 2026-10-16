@@ -556,7 +556,8 @@ public sealed class OriginalEconomyImport
 			evidence.Add( $"[APPROX:SAVE-005] Challenge state not imported: the save's {slots.Count} slots do not match the level's {level.Count} challenges; the first offer is due on day {economy.Objectives.NextOfferDay}." );
 			return;
 		}
-		long Day( long stamp ) => (stamp - calendarStart) / (OriginalEconomyImport.TimeStampUnitsPerSecond * ParkCalendar.SecondsPerDay);
+		long Seconds( long stamp ) => (stamp - calendarStart) / OriginalEconomyImport.TimeStampUnitsPerSecond;
+		long Day( long stamp ) => Seconds( stamp ) / ParkCalendar.SecondsPerDay;
 		var finished = slots.Select( ( slot, index ) => (slot, index) ).Where( entry => entry.slot.Won ).Select( entry => level[entry.index] ).ToList();
 		var declines = slots.Select( ( slot, index ) => (slot, index) ).Where( entry => entry.slot.Declined > 0 ).ToDictionary( entry => level[entry.index], entry => entry.slot.Declined );
 		var current = system.CurrentChallenge >= 0 && system.CurrentChallenge < slots.Count ? system.CurrentChallenge : -1;
@@ -564,15 +565,16 @@ public sealed class OriginalEconomyImport
 		long nextOffer = settings.ChallengeTiming.DaysUntilFirstChallenge;
 		int? running = null, offered = null;
 		long deadline = 0;
+		long? nextSeconds = null, deadlineSeconds = null;
 		string state;
 		if ( system.Switch1 == 0 )
 			state = $"not started: the first offer is due on park day {nextOffer}";
 		else if ( system.Switch2 != 0 && current >= 0 )
 		{
 			running = level[current];
-			// the deadline is passed at the first daily update after the stamp
-			deadline = Day( system.NextEventTime ) + 1;
-			nextOffer = deadline;
+			// [BIN:TPW-EXE:0x4d1e90 challenge update] the running challenge ends at the stamp itself (the accept stored the clock plus mTargetTime there), tested on every park turn
+			deadlineSeconds = nextSeconds = Seconds( system.NextEventTime );
+			deadline = nextOffer = deadlineSeconds.Value / ParkCalendar.SecondsPerDay;
 			state = $"challenge {running} running until day {deadline} with value {system.Value}";
 		}
 		else if ( system.Switch3 != 0 && current >= 0 )
@@ -582,14 +584,15 @@ public sealed class OriginalEconomyImport
 		}
 		else
 		{
-			// an idle system offers at the first daily update after the stamp
-			nextOffer = Day( system.NextEventTime ) + 1;
+			// an idle system offers on the first park turn at or after the stamp
+			nextSeconds = Seconds( system.NextEventTime );
+			nextOffer = nextSeconds.Value / ParkCalendar.SecondsPerDay;
 			state = $"the next offer is due on day {nextOffer}";
 		}
 		// [BIN:TPW-EXE:0x4d2fb0 challenge won] the carried object (+0x3e0) and the slots' ids (+0x2e) are thing ids of the saved park; an object the import restored keeps its id as its economy instance
 		int Carried( int thing ) => things.TryGetValue( thing, out var carriedState ) ? carriedState.Id : 0;
 		var carriedThings = slots.Select( ( slot, index ) => (Index: level[index], Thing: Carried( slot.FollowupThing )) ).Where( entry => entry.Thing != 0 ).ToDictionary( entry => entry.Index, entry => entry.Thing );
-		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished, system.Switch1 != 0, Carried( system.ActualThing ), carriedThings );
+		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished, system.Switch1 != 0, Carried( system.ActualThing ), carriedThings, nextSeconds, deadlineSeconds );
 		evidence.Add( $"Challenges imported: {state}; {finished.Count} won, {declines.Count} declined, carried object {(system.ActualThing == 0 ? "none" : Carried( system.ActualThing ) == 0 ? $"thing {system.ActualThing} (not an imported object)" : $"thing {system.ActualThing}")}." );
 		// [APPROX:SAVE-005] the loss counts (slot +0x24, which the loss 0x4d3140 raises and no reader of the challenge code, the offer scan 0x4d2a70 or the follow-up scan 0x4d2b60 tests) and the day an unanswered offer was made (slot +0x20) are not imported — evidence needed: a reader of the slot's +0x24 and +0x20 words outside the challenge system
 		evidence.Add( $"[APPROX:SAVE-005] Challenge values not imported: losses {string.Join( "/", slots.Select( slot => slot.Lost ) )}." );

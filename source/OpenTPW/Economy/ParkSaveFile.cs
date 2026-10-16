@@ -540,6 +540,9 @@ public static class ParkSaveFile
 	public sealed class ObjectivesData
 	{
 		public required long NextOfferDay { get; init; }
+		/// <summary>The exact park second of the next offer (<see cref="ParkObjectives.NextOfferSeconds"/>); absent in older saves, which take the start of <see cref="NextOfferDay"/>.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public long? NextOfferSeconds { get; init; }
 		public required int NextListPosition { get; init; }
 		public required ActiveChallenge? Current { get; init; }
 		public required Dictionary<int, int> Declines { get; init; }
@@ -701,6 +704,8 @@ public static class ParkSaveFile
 			Objectives = new ObjectivesData
 			{
 				NextOfferDay = park.Objectives.NextOfferDay,
+				// only a second that is not the start of its day needs the field; the others are NextOfferDay
+				NextOfferSeconds = park.Objectives.NextOfferSeconds % ParkCalendar.SecondsPerDay == 0 ? null : park.Objectives.NextOfferSeconds,
 				NextListPosition = park.Objectives.NextListPosition,
 				Current = park.Objectives.Current,
 				Declines = new Dictionary<int, int>( park.Objectives.Declines ),
@@ -1010,7 +1015,7 @@ public static class ParkSaveFile
 			park.Research.SetWorkload( workload );
 		park.Objectives.Restore( data.Objectives.NextOfferDay, data.Objectives.NextListPosition, data.Objectives.Current, data.Objectives.Declines, data.Objectives.Finished, data.Objectives.GoldenTickets,
 			data.Objectives.SwitchedOn ?? (data.Objectives.Current != null || ParkCalendar.DayIndex( data.Tick ) >= settings.ChallengeTiming.DaysUntilFirstChallenge),
-			data.Objectives.ActualThing, data.Objectives.CarriedThings );
+			data.Objectives.ActualThing, data.Objectives.CarriedThings, data.Objectives.NextOfferSeconds );
 		park.Counters.Restore( data.Counters );
 		park.MechanicCursor = data.MechanicCursor;
 		if ( data.PriceStatistics is { } statistics )

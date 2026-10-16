@@ -96,7 +96,7 @@ public sealed partial class ParkHud
 	/// <summary>The panel's horizontal offset from its table place at slide step <paramref name="step"/>: it starts a panel width and 50 units left of the arm's left edge.</summary>
 	// [BIN:TPW-EXE:0x4a165d arm panel start] the drawer places a new panel left of the arm: its left at the arm's left - the panel's width - 50 (0x4a1631); the slide then moves it a
 	// tenth of the travel each step
-	// [APPROX:UI-042] the slide ends at the table rectangle; the original's end is the HUD window's right + 50 with the panel centred on the arm (0x4a15d2-0x4a1650), and the HUD window's rectangle is not traced
+	// [APPROX:UI-042] the slide ends at the table rectangle; the original's positions come from the HUD arm window ([0x7cb2b8]) and the arm: the start is the arm's left less the HUD window's width and 50, centred on the arm with its top 50 above the HUD window's top (0x4a1613-0x4a1650, medium confidence), and the end position is not resolved
 	internal static float CameraPanelOffset( int step )
 	{
 		var table = CameraPanelTable.Root.Rect;

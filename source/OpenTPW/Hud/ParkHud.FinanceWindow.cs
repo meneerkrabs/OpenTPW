@@ -23,10 +23,11 @@ public sealed partial class ParkHud
 		(FinanceSeries.StaffCosts, UIStrings.GraphStaffCosts, "b_ltoggle8", Rect( 287, 759, 729, 830 )),
 	};
 
+	// [BIN:TPW-EXE:0x49aa30 graph series] the series are bits 0..7 of the selection word 0x751fa0 in the toggles' row order (controls 0x12277, 0x1227b, 0x12279, 0x12278, 0x1227c, 0x1227d, 0x1227a, 0x1227e at table 0x751dac sit on the rows bank balance, park value, money in, gate, shop, sideshow, money out, staff costs); the sampler reads the ledger series at +0x1f100, 0x1f350, 0x1fc90, 0x1fee0, 0x20130, 0x20380, 0x1f5a0 and 0x1f7f0 and draws each in its colour record from 0x499f30 (set through 0x47ddc0 and 0x5f73a0)
 	private static readonly RgbaByte[] FinanceColors =
 	{
-		new( 248, 218, 71, 255 ), new( 134, 235, 134, 255 ), new( 99, 204, 255, 255 ), new( 255, 155, 81, 255 ),
-		new( 214, 152, 255, 255 ), new( 255, 123, 193, 255 ), new( 255, 93, 93, 255 ), new( 208, 208, 208, 255 )
+		new( 255, 255, 0, 255 ), new( 255, 0, 255, 255 ), new( 255, 0, 0, 255 ), new( 0, 189, 236, 255 ),
+		new( 255, 144, 0, 255 ), new( 144, 211, 0, 255 ), new( 255, 117, 117, 255 ), new( 149, 88, 210, 255 )
 	};
 
 	private UiScreen? financeScreen;
@@ -72,20 +73,20 @@ public sealed partial class ParkHud
 	{
 		if ( !Enum.IsDefined( series ) )
 			return;
-		var wasSelected = financeVisible.Contains( series );
+		ApplyFinanceToggle( financeVisible, series );
+	}
+
+	/// <summary>Toggles <paramref name="series"/> in the selection as tp.exe's handler 0x49a2e0 does.</summary>
+	// [BIN:TPW-EXE:0x49a420 series toggles] selecting the bank balance or the park value clears the six cash-flow series (mask 0xfc, 0x49ab80) and keeps the other of the pair; selecting a cash-flow series clears the pair (mask 0x03); deselecting clears just that series
+	internal static void ApplyFinanceToggle( HashSet<FinanceSeries> visible, FinanceSeries series )
+	{
+		if ( visible.Remove( series ) )
+			return;
 		if ( series is FinanceSeries.BankBalance or FinanceSeries.ParkValue )
-			financeVisible.Clear();
+			visible.RemoveWhere( other => other is not (FinanceSeries.BankBalance or FinanceSeries.ParkValue) );
 		else
-		{
-			financeVisible.Remove( FinanceSeries.BankBalance );
-			financeVisible.Remove( FinanceSeries.ParkValue );
-		}
-		// [BIN:STP-PPC:0x101503b0] bank balance/park value exclude each other and all cash-flow series;
-		// a cash-flow selection clears that pair while the six cash-flow selections remain independent.
-		if ( !wasSelected )
-			financeVisible.Add( series );
-		else
-			financeVisible.Remove( series );
+			visible.RemoveWhere( other => other is FinanceSeries.BankBalance or FinanceSeries.ParkValue );
+		visible.Add( series );
 	}
 
 	/// <summary>Closed months plus the live current month, restricted to the selected period.</summary>
@@ -174,7 +175,8 @@ public sealed partial class ParkHud
 			var maximum = Math.Max( 0L, values.Max( series => series.Max() ) );
 			if ( minimum == maximum )
 				maximum = minimum + 1;
-			// [APPROX:UI-060] line colours, plot scaling and the default selected series are OpenTPW choices; original graph samples/style need a capture.
+			// [BIN:TPW-EXE:0x47fb30 graph scale] the scale runs from min(0, the lowest selected sample of the period) to max(0, the highest) in ten divisions (0x49a7b0, 0x49a8f0); the bank balance alone is the default (0x751fa0 = 1)
+			// [APPROX:UI-060] the line style (OpenTPW's 2-unit strokes, grid and point marks) is not read from the original's graph drawer 0x47fe90, and a flat range gets a one-unit scale where the original's behaviour is not read — evidence needed: the drawer 0x47fe90
 			for ( var line = 1; line < 4; line++ )
 				context.Batch.AddRectangle( new UiRect( plot.X, plot.Y + plot.Height * line / 4, plot.Width, Math.Max( 1, context.Canvas.Scale ) ), new RgbaByte( 75, 86, 125, 130 ) );
 			for ( var s = 0; s < selected.Length; s++ )

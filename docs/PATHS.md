@@ -73,7 +73,9 @@ Backspace over a path cell with no tool on uses the counted case (tp.exe
 when it was laid once (`ParkPathBuilder.RemoveOnce`). The original's key does
 nothing over a queue cell (it backtracks only a type-1 cell, tp.exe `0x40BE3C`);
 OpenTPW also removes a queue there, from the cell under the cursor to the queue's
-back with the remove tool's refund (`[EXT:queue-backtrack]`).
+back with the remove tool's refund (`[EXT:queue-backtrack]`). A queue cell that no ride's queue reaches
+(a stray piece, such as one an older save left) goes alone there and with the remove tool, refunding nothing,
+as the original's `ClearCell` clears one queue cell (tp.exe `0x5367A0`).
 
 ## Tool
 
@@ -151,7 +153,8 @@ queue link is +X or +Y, a bend takes the other bend for some queue links, and a 
 back takes the end piece: `queend`, `quebin1`, `quebin2`), and the refresh places that model of the theme's `queue`
 archive on the cell (`quedead`, `questra`, `quebnd1`, `quebnd2`, `queend`, `quebin1`, `quebin2`; tp.exe `0x522900`,
 `0x5229e0`) at the yaw 360 minus the row's rotation, as a one-cell object would be placed (`QueueModels`). The
-models are baked into the path layer (PATH-015).
+models are baked into the path layer (PATH-015), each vertex on the drawn ground under it and lifted a little as
+the path tiles are, so the plank floor shows over the grass and the posts follow a sloped cell.
 
 ## Headless API
 
@@ -174,7 +177,7 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
 | PATH-005 | PATH-REMOVE | the area clear (tool 0x3a, 0x52bdd0) is ported: the Clear Land row and the Clear key; objects are footprint cells here, and the writer of the cell flag 0x10 that keeps an object from the clear is untraced; the developer panel's one-click remove tool is OpenTPW's |
-| PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate); a level without a fence setup, a Theme Park Inc map and a read-only visit keep every cell over the terrain owned |
-| PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause opens a full-screen layer (0x47ed80 → 0x65dd7b) under its panel, whose effect on park clicks is untraced |
+| PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |
+| PATH-017 | PATH-PAUSE-WINDOW | the pause menu blocks tool clicks and the speed pause does not, as tp.exe's click gate (`0x48c8d0` reads the pause-menu object `0x7c2534`; `APPROX:PATH-013`, retired); the P key's full-screen layer (`0x47ed80` → `0x65dd7b`) under its panel is not drawn and whether it stops the park click route is not read | The window manager's hit test of the layer |
 | PATH-015 | QUEUE-MODELS | queue cells carry the theme's queue models as tp.exe places them (0x535dd0 class 2, 0x5229e0); baked at the cell's mean height, without their .hmp ground deformation, texture-frame animation (the fire0 torches) and quedead's load flag 0x100000 |
 | PATH-016 | PATH-INITIAL | InitialPath cells carry links 0x0F; tp.exe's map init (`0x536490`) links them with the link writer `0x5348d0` in mode 1, so links toward non-path neighbours may differ |

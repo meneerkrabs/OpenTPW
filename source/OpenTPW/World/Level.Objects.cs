@@ -141,8 +141,28 @@ public partial class Level
 	/// </summary>
 	private void RegisterObjectWithGuests( OriginalObject item )
 	{
-		if ( Guests != null )
-			RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation );
+		if ( Guests != null && RegisterWithGuests( item.Runtime, item.AccessPoints, Guests, item.Placement.Rotation ) )
+			item.Runtime.Visitors.QueueEdited += () => ReevaluateQueuedRide( item.Runtime );
+	}
+
+	/// <summary>
+	/// The queue re-evaluation after an edit of a ride's cells (tp.exe <c>0x004DE1F0</c>): a closed ride whose state is not 1, 2 or 4 (broken down, upgrading,
+	/// condemned), without a maintenance call, whose queue is connected (<c>0x004DE4A0</c>), a coaster that passes <c>0x00441970</c> and a kart or water ride
+	/// with a valid track (the track word <c>+0x2C</c>) is opened.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation] the ride is skipped when its open word +0x68 is set or its state +0x19C is 1 or 4, +0x64 (the call) is set, state 2, or 0x4DE4A0 reports the queue unconnected; a type-3 ride (coaster) must pass 0x441970 and a kind 1, 2 or 3 ride needs its track word +0x2C; then +0x68 = 1, the script variable 6 (VAR_RIDECLOSED) = 0 and SetState(0) (0x4E0E60); +0x5E is cleared on every path
+	// [APPROX:QUEUE-023] the model call 0x4547C0 on the type's table entry 0x7A4610 that the opening makes (the open sound is not among the traced effects) is not made
+	private void ReevaluateQueuedRide( OriginalObjectRuntime runtime )
+	{
+		if ( runtime.IsOpen || Gate?.MayOpen( runtime ) != true )
+			return;
+		// a HasQueue ride without queue cells has no back cell, which the original's connection test 0x004DE4A0 reports as not connected (ECON-049 takes it as connected)
+		if ( runtime.Visitors.HasQueue && (runtime.Visitors.QueueFrontCell is not { } front || Guests?.Grid.IsQueue( front.X, front.Y ) != true) )
+			return;
+		if ( runtime.Coaster is { AcceptsGuests: false } || runtime.Bump is { HasTrack: true, IsTrackValid: false } )
+			return;
+		runtime.Open();
+		SyncOpenState( runtime );
 	}
 
 	/// <summary>
@@ -366,6 +386,33 @@ public partial class Level
 		return EnterQueueTool( ride );
 	}
 
+	/// <summary>
+	/// Removes the queue cell at (x, y): with its owner (<see cref="QueueRideAt"/>) that cell and every cell behind it
+	/// (<see cref="QueuePaths.RemoveFrom"/>); a queue cell no ride's queue reaches (a stray piece, such as one an older save left)
+	/// goes alone. Returns the cells removed; <paramref name="owner"/> is the ride whose queue lost them, null for a stray cell.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005367A0 ClearCell queue case] the original clears a queue cell by itself, whatever ride owns it; OpenTPW's queue is the line its ride walks from the entrance, so an owned cell takes the cells behind it along and a stray cell, outside every such line, goes alone
+	internal static int RemoveQueueCellAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y, out RideVisitorBridge? owner )
+	{
+		owner = QueueRideAt( grid, attractions, x, y );
+		if ( owner == null && grid.IsQueue( x, y ) )
+		{
+			// The rides' queue lines are cached: walk them again before a cell counts as stray.
+			foreach ( var ride in attractions.OfType<RideVisitorBridge>().Where( item => item.HasQueue ) )
+			{
+				if ( ride.RecomputeQueue( grid ) )
+					ride.NotifyQueueEdited();
+			}
+			owner = QueueRideAt( grid, attractions, x, y );
+		}
+		if ( owner != null )
+			return QueuePaths.RemoveFrom( grid, owner, x, y );
+		if ( !grid.IsQueue( x, y ) )
+			return 0;
+		grid.ClearQueue( x, y );
+		return 1;
+	}
+
 	/// <summary>The HasQueue ride whose queue holds (x, y) (the owner of a queue cell), or null.</summary>
 	internal static RideVisitorBridge? QueueRideAt( GuestPathGrid grid, IEnumerable<IRideVisitorBridge> attractions, int x, int y )
 	{
@@ -551,17 +598,16 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Removes the queue cell at (x, y) and every cell behind it. Each removed cell refunds
-	/// <c>Costs.QueueCell</c> × the ride's scrap percentage / 100 (<see cref="ParkEconomy.RefundQueueCell"/>).
+	/// Removes the queue cell at (x, y) and every cell behind it (a stray queue cell alone, <see cref="RemoveQueueCellAt"/>). Each
+	/// removed cell of a ride's queue refunds <c>Costs.QueueCell</c> × the ride's scrap percentage / 100 (<see cref="ParkEconomy.RefundQueueCell"/>); a stray cell refunds nothing.
 	/// </summary>
 	public int RemoveQueueCell( int x, int y )
 	{
 		if ( IsReadOnlyVisit || Guests == null )
 			return 0;
-		var ride = QueueRideAt( Guests.Grid, Guests.Attractions, x, y );
+		var removed = RemoveQueueCellAt( Guests.Grid, Guests.Attractions, x, y, out var ride );
 		if ( ride == null )
-			return 0;
-		var removed = QueuePaths.RemoveFrom( Guests.Grid, ride, x, y );
+			return removed;
 		var owner = Objects.Objects.FirstOrDefault( item => item.Visitors == ride );
 		if ( Park != null && owner != null && GetEconomyInstance( owner ) is int instance )
 		{

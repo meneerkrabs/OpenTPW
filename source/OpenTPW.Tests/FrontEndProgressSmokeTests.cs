@@ -115,13 +115,32 @@ public class FrontEndProgressSmokeTests
 		StringAssert.Contains( error.Message, "progress failure dialog" );
 	}
 	[TestMethod]
-	public void NoncompletionStillUsesStrictOriginalFrameBudget()
+	public void ParkConstructionWaitIsOffTheFrameBudgetButBoundedInTime()
 	{
 		for ( var n = 0; n < 6; n++ ) Frame(); Building( true );
+		// Waiting for construction is not part of the frame budget: the run survives the former limit.
+		for ( var n = 0; n < 3200; n++ ) Frame();
+		Assert.IsTrue( Get<int>( smoke, "loadFrames" ) > 3000 );
+		var previous = FrontEndSmokeTest.LoadAllowance;
+		try
+		{
+			FrontEndSmokeTest.LoadAllowance = TimeSpan.Zero;
+			var error = Assert.ThrowsException<InvalidOperationException>( Frame );
+			StringAssert.Contains( error.Message, "s of wall-clock time" );
+			StringAssert.Contains( error.Message, "jungle park construction" );
+		}
+		finally { FrontEndSmokeTest.LoadAllowance = previous; }
+	}
+	[TestMethod]
+	public void NoncompletionOfAnotherStepStillUsesStrictFrameBudget()
+	{
+		for ( var n = 0; n < 6; n++ ) Frame(); Building( true );
+		Get<Queue<(string Name, Func<bool> Step)>>( smoke, "steps" ).Clear();
+		Get<Queue<(string Name, Func<bool> Step)>>( smoke, "steps" ).Enqueue( ("stuck step", () => false) );
 		while ( Get<int>( smoke, "frame" ) < 2999 ) Frame();
 		var error = Assert.ThrowsException<InvalidOperationException>( Frame );
 		StringAssert.Contains( error.Message, "finish within 3000 frames" );
-		StringAssert.Contains( error.Message, "jungle park construction" );
+		StringAssert.Contains( error.Message, "stuck step" );
 	}
 
 }

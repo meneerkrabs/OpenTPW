@@ -82,6 +82,7 @@ public class TrackSaveTests
 	public void CorruptedTrackDataIsRefusedWithAReason()
 	{
 		Rejects( WithTracks( part => part with { Cells = part.Cells.Append( part.Cells[0] ).ToList() } ), "saved twice" );
+		Rejects( WithTracks( part => part with { Controllers = part.Controllers.Select( controller => controller with { StationLayout = 7 } ).ToList() } ), "unknown station layout" );
 		Rejects( WithTracks( part => part with { Cells = part.Cells.Select( cell => cell.X == 4 && cell.Y == 3 ? cell with { X = 99 } : cell ).ToList() } ), "outside the cell map" );
 		Rejects( WithTracks( part => part with { Cells = part.Cells.Select( cell => cell.X == 4 && cell.Y == 2 ? cell with { Type = 77 } : cell ).ToList() } ), "no track type" );
 		Rejects( WithTracks( part => part with { Cells = part.Cells.Select( cell => cell.X == 4 && cell.Y == 2 ? cell with { Mask = 0x02 } : cell ).ToList() } ), "outside 0x55" );
@@ -211,7 +212,7 @@ public class TrackSaveTests
 	{
 		var cells = new ParkCellMap( 40, 40 );
 		var builder = new TrackBuilder( cells, TrackFamily.Water, () => null, new FlatGrid() );
-		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		var station = TrackStation.FromPlacement( 10, 9, 0 );
 		builder.PlaceStation( station );
 		var writer = new TrackLineWriter( builder );
 		writer.Commit( (14, 10), (14, 12) );
@@ -222,7 +223,7 @@ public class TrackSaveTests
 		var rng = 7u;
 		var controller = new BumpController( BumperTemplates.Get( -5 ), () => { rng = unchecked( rng * 1103515245u + 12345u ); return rng >> 4; }, world );
 		world.Add( controller );
-		var centre = TrackStation.Centre( station.First );
+		var centre = station.Reference;
 		controller.SetStation( centre.X, centre.Y, station.Heading );
 		controller.Rebuild( circuit );
 		controller.Open();
@@ -265,7 +266,7 @@ public class TrackSaveTests
 		// a save from before TRACK-010 dropped terrain water kept bridge flags and pieces on straights over water; the restore re-runs the bridge pass
 		var cells = new ParkCellMap( 40, 40 );
 		var builder = new TrackBuilder( cells, TrackFamily.Water, () => null, new FlatGrid() );
-		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		var station = TrackStation.FromPlacement( 10, 9, 0 );
 		builder.PlaceStation( station );
 		new TrackLineWriter( builder ).Commit( (14, 10), (20, 10) );
 		var saved = TrackSave.Capture( cells, new BumpWorld(), Array.Empty<(int, BumpController)>() )!;
@@ -370,7 +371,7 @@ public class TrackSaveTests
 	{
 		var cells = new ParkCellMap( 40, 40 );
 		var builder = new TrackBuilder( cells, TrackFamily.Water, () => null, new FlatGrid() );
-		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		var station = TrackStation.FromPlacement( 10, 9, 0 );
 		builder.PlaceStation( station );
 		var owner = builder.OwnerOf( station );
 		new TrackLineWriter( builder, owner: owner ).Commit( (14, 10), (14, 12) );

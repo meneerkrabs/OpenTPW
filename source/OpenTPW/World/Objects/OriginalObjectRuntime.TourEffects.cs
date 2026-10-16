@@ -56,7 +56,7 @@ public sealed partial class OriginalObjectRuntime
 				break;
 			case TourEffectKind.RepairSound:
 				TourEffectStats = TourEffectStats with { Sounds = TourEffectStats.Sounds + 1 };
-				GameAudio.PlayRseEvent( 5, (uint)effect.Id, TourSoundPlace( effect.X, effect.Y, effect.Z ) );
+				GameAudio.PlayRseEvent( 5, (uint)effect.Id, TourSoundPlace( effect.X, effect.Y, effect.Z ), SoundSource );
 				break;
 			case TourEffectKind.EmitterStart:
 				if ( tourEmitters.Remove( effect.Slot, out var replaced ) )

@@ -270,6 +270,7 @@ UI-023 docs/reverse/APPROX-TRACE.md
 UI-028 docs/UI.md
 UI-029 docs/reverse/APPROX-TRACE.md
 UI-030 docs/reverse/APPROX-TRACE.md
+UI-032 docs/UI.md
 UI-033 docs/reverse/APPROX-TRACE.md
 UI-035 docs/reverse/PPC-review.md
 UI-038 docs/PROGRESS.md

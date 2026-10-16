@@ -303,7 +303,7 @@ public sealed class UiLabel : UiElement
 			return;
 		}
 		// [BIN:TPW-EXE:0x6aec80 text wrap] the original's formatter wraps greedily: a line ends at the last break opportunity before the glyph that overflows, trailing spaces dropped, or before that glyph when the line has none
-		// [APPROX:UI-032] which glyphs the formatter flags as break opportunities (flag 0x10) and as spaces (flag 2), and whether the catalogue slots are multi-line text controls, are not read — evidence needed: the glyph flag table and the slots' control type
+		// [BIN:TPW-EXE:0x6aeab0 glyph class] only space and tab are break opportunities (0x10) and spaces (2); every text control lays out through 0x6ae930 -> 0x6aeb10, which splits at line feeds and wraps each line with 0x6aec80, so the catalogue slots wrap
 		// [EXT:fit-button-text] the small-font fallback for long labels: the original's control renderer 0x48f830 keeps its one slot font, and a translated label that overflowed its art would be unreadable
 		// Longer translations fall back to the small game font instead of overflowing the art.
 		if ( !Wrap && context.Measure( font, text ).Width > rect.Width )

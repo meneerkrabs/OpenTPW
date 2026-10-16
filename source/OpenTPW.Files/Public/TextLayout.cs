@@ -23,8 +23,8 @@ public sealed record TextLayoutResult( IReadOnlyList<TextLayoutGlyph> Glyphs, in
 /// placed at pen + offset X and line top + offset Y, and lines are <see cref="FontAtlas.LineHeight"/>
 /// apart. No kerning is applied because the BF4 files contain no pair-adjustment data.
 /// <c>\n</c>, <c>\r</c> and <c>\r\n</c> start a new line. With a positive maximum width, lines wrap
-/// greedily at spaces and overlong words break between characters; this wrapping policy is
-/// OpenTPW's, not verified against the original UI. Characters without a glyph render as the
+/// greedily at spaces and tabs and overlong words break between characters, as tp.exe's formatter
+/// 0x6aec80 does (its glyph classes, 0x6aeab0: space and tab 0x12 = break opportunity + space, LF 4, CR 0xc, everything else 1). Characters without a glyph render as the
 /// fallback glyph (<c>?</c> by default) and are reported in <see cref="TextLayoutResult.MissingCharacters"/>.
 /// Width/height describe advance and line boxes; ink can extend past them through negative or
 /// large offsets.
@@ -73,6 +73,9 @@ public static class TextLayout
 		return new TextLayoutResult( placed.AsReadOnly(), width, lines.Count * atlas.LineHeight, lines.Count, missing.AsReadOnly() );
 	}
 
+	// [BIN:TPW-EXE:0x6aeab0 glyph class] the original flags only space and tab (0x12) as break opportunities; a hyphen or any other character does not break
+	private static bool IsSpace( char character ) => character is ' ' or '\t';
+
 	private static IEnumerable<List<FontAtlasGlyph>> Wrap( List<FontAtlasGlyph> glyphs, int maximumWidth )
 	{
 		var line = new List<FontAtlasGlyph>();
@@ -80,15 +83,15 @@ public static class TextLayout
 		var index = 0;
 		while ( index < glyphs.Count )
 		{
-			if ( glyphs[index].Character == ' ' )
+			if ( IsSpace( glyphs[index].Character ) )
 			{
 				var spaceEnd = index;
 				var spaceWidth = 0;
-				while ( spaceEnd < glyphs.Count && glyphs[spaceEnd].Character == ' ' )
+				while ( spaceEnd < glyphs.Count && IsSpace( glyphs[spaceEnd].Character ) )
 					spaceWidth += glyphs[spaceEnd++].Advance;
 				var wordEnd = spaceEnd;
 				var wordWidth = 0;
-				while ( wordEnd < glyphs.Count && glyphs[wordEnd].Character != ' ' )
+				while ( wordEnd < glyphs.Count && !IsSpace( glyphs[wordEnd].Character ) )
 					wordWidth += glyphs[wordEnd++].Advance;
 				if ( line.Count > 0 && wordEnd > spaceEnd && lineWidth + spaceWidth + wordWidth > maximumWidth )
 				{

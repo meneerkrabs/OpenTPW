@@ -14,7 +14,7 @@ public class ManagementUiTests
 		var economy = Economy();
 		Assert.IsTrue( ParkHud.TrySetEntryPrice( economy, false, 35 ) );
 		economy.OpenPark();
-		Assert.IsTrue( economy.TryAdmitVisitor( 100, out var paid ) );
+		Assert.IsTrue( economy.TryAdmitVisitor( out var paid ) );
 		Assert.AreEqual( 35, paid );
 		Assert.AreEqual( 35L, economy.Ledger.CurrentMonth( 0, 0 )[LedgerCategory.GateTakings] );
 		Assert.IsFalse( ParkHud.TrySetEntryPrice( economy, true, 10 ) );

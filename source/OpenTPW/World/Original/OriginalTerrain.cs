@@ -218,6 +218,9 @@ public sealed class OriginalTerrain : Entity
 	/// One cell quad. <paramref name="rotation"/> is a path texture's clockwise turn (−Y to +X), applied through
 	/// <see cref="PathTiles.TextureCoordinates"/> (docs/PATHS.md, "Path textures"); ground quads keep their coordinates.
 	/// </summary>
+	private static readonly uint[] DiagonalTriangles = { 0, 2, 3, 3, 1, 0 };
+	private static readonly uint[] AntiDiagonalTriangles = { 0, 2, 1, 1, 2, 3 };
+
 	private static void AddCell( List<Vertex> vertices, List<uint> indices, ModelHeightfield field, int x, int y, int slot, int rotation, float lift )
 	{
 		var start = (uint)vertices.Count;
@@ -240,7 +243,8 @@ public sealed class OriginalTerrain : Entity
 				TexIndex = slot
 			} );
 		}
-		foreach ( var offset in new uint[] { 0, 2, 3, 3, 1, 0 } )
+		// The cell's own diagonal (ModelHeightfield.SplitsAlongAntiDiagonal), so the drawn ground matches the heights things stand on.
+		foreach ( var offset in field.SplitsAlongAntiDiagonal( x, y ) ? AntiDiagonalTriangles : DiagonalTriangles )
 			indices.Add( start + offset );
 	}
 

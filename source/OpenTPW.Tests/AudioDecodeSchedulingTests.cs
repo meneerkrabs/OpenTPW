@@ -145,7 +145,8 @@ public class AudioDecodeSchedulingTests
 		Assert.IsNotNull( first );
 		Assert.IsTrue( first.SampleFrames >= SoundEventSystem.CacheFrameLimit );
 		Assert.IsTrue( yields > 0 );
-		EqualAudio( Mp2Decoder.Decode( category.GetBank( sample.BankNumber )!.GetMpeg( sample.SampleNumber )! ), first );
+		var bank = category.GetBank( sample.BankNumber )!;
+		EqualAudio( Mp2Decoder.Decode( bank.GetMpeg( sample.SampleNumber )! ).TrimTo( bank.GetPlaybackBytes( sample.SampleNumber ) ), first );
 		var again = await system.DecodeSentenceAsync( category, sample, cooperative: true, yieldBatch: () => throw new AssertFailedException( "a cached music sample must not decode again" ) );
 		Assert.AreSame( first, again );
 		Assert.AreEqual( first.Samples.LongLength * sizeof( short ), system.RetainedSentenceBytes );

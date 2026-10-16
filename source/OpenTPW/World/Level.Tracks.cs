@@ -285,6 +285,27 @@ public partial class Level
 		if ( Guests == null || waterTracks == null )
 			throw new InvalidDataException( "The saved park has tracks, but this level has no track layer." );
 		TrackSave.RestoreCells( Guests.Grid.Cells, saved );
+		var module = Objects.ScriptWorld.Bumpers;
+		// a save of the shared module (it carries the module clock and every controller's object slots) is trusted: saved pool slots, verdicts and object slots
+		var shared = saved.FrameCount != null;
+		module.SharedSaveRestore = shared;
+		try
+		{
+			RestoreTrackControllers( saved, controllers, shared );
+		}
+		finally
+		{
+			module.SharedSaveRestore = false;
+		}
+		if ( controllers.Count - legacy.Count != saved.Controllers.Count )
+			throw new InvalidDataException( $"The save holds {saved.Controllers.Count} track controllers, but this park places {controllers.Count - legacy.Count} rides that need one." );
+		MigrateLegacyKarts( legacy );
+		TrackSave.RestoreModule( module, saved, saved.Controllers
+			.Select( entry => (controllers.First( item => item.Runtime.AttractionId == entry.AttractionId ).Runtime.Bump!, (IReadOnlyList<int>?)entry.ObjectSlots) ).ToList() );
+	}
+
+	private void RestoreTrackControllers( TrackWorldSaveData saved, List<OriginalObject> controllers, bool shared )
+	{
 		foreach ( var entry in saved.Controllers )
 		{
 			var station = controllers.FirstOrDefault( item => item.Runtime.AttractionId == entry.AttractionId )
@@ -297,12 +318,16 @@ public partial class Level
 				// a bumper ride has no circuit: the arena is rebuilt from the placement, the saved state goes straight in
 				if ( entry.Sections.Count != 0 )
 					throw new InvalidDataException( $"Attraction {entry.AttractionId} is a bumper ride but the save holds track sections for it." );
+				if ( shared )
+					bump.RestoreArena( entry.ObjectSlots is { Count: > 0 }, entry.BuoyCount );
 				bump.Restore( entry );
 				station.Runtime.ResumeBumpEffects();
 				continue;
 			}
-			var circuit = RewalkTrack( station ) ?? throw new InvalidDataException( $"Attraction {entry.AttractionId} has no track station." );
-			if ( circuit.IsValid != entry.IsTrackValid )
+			var circuit = (shared ? RewalkForRestore( station, entry ) : RewalkTrack( station ))
+				?? throw new InvalidDataException( $"Attraction {entry.AttractionId} has no track station." );
+			// a shared-module save may hold a ride the shared pools refused (saved invalid, walking valid): the restore keeps the refusal
+			if ( shared ? entry.IsTrackValid && !circuit.IsValid : circuit.IsValid != entry.IsTrackValid )
 				throw new InvalidDataException( $"Attraction {entry.AttractionId}'s circuit walks {(circuit.IsValid ? "valid" : "invalid")}, the save says {(entry.IsTrackValid ? "valid" : "invalid")}." );
 			var rebuilt = bump.Sections.Select( section => new TrackSectionSaveData( section.Kind, section.NoBuoy, section.X, section.Y, section.Segment ) ).ToList();
 			if ( !rebuilt.SequenceEqual( entry.Sections ) )
@@ -310,10 +335,16 @@ public partial class Level
 			bump.Restore( entry );
 			station.Runtime.ResumeBumpEffects();
 		}
-		if ( controllers.Count - legacy.Count != saved.Controllers.Count )
-			throw new InvalidDataException( $"The save holds {saved.Controllers.Count} track controllers, but this park places {controllers.Count - legacy.Count} rides that need one." );
-		MigrateLegacyKarts( legacy );
-		Objects.ScriptWorld.Bumpers.CosmeticState = saved.CosmeticState;
+	}
+
+	/// <summary>Walks a station's circuit for a restore of a shared-module save and rebuilds it with the saved verdict (<see cref="BumpController.RestoreCircuit"/>).</summary>
+	private TrackCircuit? RewalkForRestore( OriginalObject item, BumpControllerSaveData entry )
+	{
+		if ( waterTracks == null || !trackStations.TryGetValue( item, out var station ) || item.Runtime.Bump is not { } bump )
+			return null;
+		var circuit = TrackCircuitWalker.WalkAndRefresh( BuilderOf( item )!, station );
+		bump.RestoreCircuit( circuit, entry.IsTrackValid, entry.ObjectSlots?.Count ?? -1, entry.BuoyCount );
+		return circuit;
 	}
 
 	/// <summary>Lays the station tiles of kart rides that an older save carried without a controller and walks their (empty) circuit.</summary>

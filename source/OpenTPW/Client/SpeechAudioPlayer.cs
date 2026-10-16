@@ -77,7 +77,7 @@ internal sealed class SpeechAudioPlayer : IDisposable
 	internal static short[] ToStereo( Mp2Audio audio )
 	{
 		// [BIN:TPW-EXE:0x0051BFC0 sound start] the advisor's sample start gets three 0.0 floats (position)
-		// [APPROX:ADVISOR-012] Mono speech duplicated to both channels; the request is unpositioned (0x51BFC0 with 0,0,0, flat placeholder at (0,1,0) in the library, 0x6BC515–0x6BC52F) and the levels come from the mixer, outside tp.exe (AUDIO-018) — evidence needed: a capture
+		// [APPROX:ADVISOR-012] Mono speech duplicated to both channels; the request is unpositioned (0x51BFC0 with 0,0,0, a voice with voice flag 8 is placed at (0,1,0) in the library, 0x6BC515–0x6BC52F) and the levels come from QMixer's software stage (AUDIO-018), which centres a source at (0,1,0) only if the mixer's listener and the placeholder share a frame — not read
 		if ( audio.Channels == 2 )
 			return audio.Samples;
 		var stereo = new short[audio.Samples.Length * 2];

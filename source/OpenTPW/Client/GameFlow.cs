@@ -400,6 +400,8 @@ internal sealed partial class GameFlow : IDisposable
 				Advisor ??= AutomaticAdvisor.TryCreate();
 			advisorUnavailable = Advisor == null;
 			Advisor?.AttachLevel( level );
+			if ( Advisor != null )
+				Advisor.CaptionSink = Hud.PostAdvisorCaption;
 		}
 		if ( Advisor?.IsAttached != true && level.Park?.Import is { } import && level.OriginalPark?.Save?.Advisor is { } saved )
 		{
@@ -590,10 +592,11 @@ internal sealed partial class GameFlow : IDisposable
 			Level.SimulationTimeScale = parkBuild != null ? 0 : Hud.SimulationTimeScale;
 			Level.Update();
 			Advisor?.Update( Hud.Paused );
-			GameAudio.Update( Level.Guests?.GetStatistics().InPark );
+			var parkLost = Level.Park?.Economy.IsBankrupt == true;
+			GameAudio.Update( Level.Guests?.GetStatistics().InPark, parkLost );
 			// The game timer the steps follow stands still while the park is paused, as the advisor's clock does.
 			var crowdLevel = Level;
-			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ) );
+			GameAudio.UpdateCrowd( Hud.Paused ? 0 : Time.Delta * 1000.0, () => GuestsNearCamera( crowdLevel ), parkLost );
 			GameAudio.UpdateStaffVoices( Level.StaffWorld?.Snapshots ?? Array.Empty<StaffWorldSnapshot>(), Level.Park?.Economy.Turn ?? -1, Level.StaffWorld?.DrivesStaff == true );
 			if ( Level.StaffWorld != null )
 				GameAudio.PlayStaffVoices( Level.StaffWorld.TakeVoices() );

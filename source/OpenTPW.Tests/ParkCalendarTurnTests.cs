@@ -22,8 +22,17 @@ public class ParkCalendarTurnTests
 		Assert.AreEqual( 3750L, ParkCalendar.SecondsPerTurn );
 		// The 2000-01-01 00:00 calendar start the date conversion counts from.
 		Assert.AreEqual( new DateTime( 2000, 1, 1, 0, 0, 0, DateTimeKind.Unspecified ), ParkCalendar.Epoch );
-		// Turns are sampled from the fixed 60 Hz clock (APPROX:ECON-001).
+		// Turns are sampled from the fixed 60 Hz clock (EXT:fixed-60hz-clock).
 		Assert.AreEqual( FixedStepClock.TicksPerSecond, ParkCalendar.TicksPerSecond );
+	}
+
+	[TestMethod]
+	public void CatchUpCapNeverReachesTheOriginalsThreeTurnsPerFrameLimit()
+	{
+		// [EXT:fixed-catch-up-cap] the original runs at most three park turns a frame (0x54E360 case 10); OpenTPW's clock runs at most
+		// MaximumCatchUpTicks ticks a frame, which span at most two turns wherever the frame starts
+		for ( long tick = 0; tick < 5000; tick++ )
+			Assert.IsTrue( ParkCalendar.Turn( tick + FixedStepClock.MaximumCatchUpTicks ) - ParkCalendar.Turn( tick ) <= 2, $"tick {tick}" );
 	}
 
 	[DataTestMethod]

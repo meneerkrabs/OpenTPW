@@ -41,7 +41,7 @@ The gate runs 30 minutes of **normal-speed simulation time**: 30 × 60 s × 60 H
 all advance once per fixed tick, in the order `Level.Update` uses. The park
 calendar does not count real minutes. `ParkCalendar` (from the Mac binary:
 `BIN:STP-PPC:0x101C22E0` one park turn = 248 ms, `0x100E4394` 3,750 park-clock
-seconds per turn; sampling into 60 Hz ticks is `APPROX:ECON-001`) turns
+seconds per turn; sampling into 60 Hz ticks is `EXT:fixed-60hz-clock`) turns
 108,000 ticks into 7,258 park turns, about 315 park-clock days (Year 1, month 11,
 day 11). Thirty park-clock minutes would be less than one turn (about 15 ticks),
 which cannot exercise anything. Reading "in-game minutes" as simulation minutes is

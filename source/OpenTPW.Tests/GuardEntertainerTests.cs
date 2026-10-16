@@ -160,6 +160,59 @@ public class GuardEntertainerTests
 	}
 
 	[TestMethod]
+	public void TheNewestGuardWinsATieBecauseTheGuardListIsHeadInserted()
+	{
+		// [BIN:TPW-EXE:0x004D5DE0 guard list] a hired guard goes to the head of the guard list (0x00519AA0), which the choice 0x005099C0 walks from the head, the first of equal distances winning
+		var f = new Fixture();
+		var first = f.Hire( StaffType.Guard );
+		var second = f.Hire( StaffType.Guard );
+		f.Stand( first, 10, 5 );
+		f.Stand( second, 10, 5 );
+		var prankster = f.Guests.SpawnInPark( 12, 5 );
+		f.World.ReportPrank( f.Park, prankster.Id );
+		Assert.AreEqual( StaffJob.Chasing, second.Job, "hired last, first in the list" );
+		Assert.AreEqual( StaffJob.Idle, first.Job );
+	}
+
+	[TestMethod]
+	public void AMechanicSettingOffForABrokenRideAsksTheAdvisorForAdvice70()
+	{
+		// [BIN:TPW-EXE:0x004DA6A5 mechanic on the way] the advice is queued as the mechanic claims a ride nobody called him to and that is not being upgraded
+		var f = new Fixture();
+		var ride = f.Park.RegisterExisting( 1100 );
+		ride.Repair = 0;
+		ride.IsBrokenDown = true;
+		var world = new StaffWorldSimulation( f.Grid, () => f.Park.Staff.Members, id => id == ride.Id ? (14, 5) : null, (0, 5) ) { Guests = f.Guests };
+		f.Park.StaffWorld = world;
+		var called = new List<(int Ride, int Mechanic)>();
+		world.MechanicOnTheWay += ( rideId, mechanicId ) => called.Add( (rideId, mechanicId) );
+		var mechanic = EconomyTestData.HireBest( f.Park, StaffType.Mechanic );
+		world.Synchronize();
+		f.Turns( 100 );
+		Assert.IsTrue( called.Count > 0, "the mechanic set off for the broken ride" );
+		CollectionAssert.AreEqual( new[] { (ride.Id, mechanic.Id) }, called.Take( 1 ).ToArray(), "the first claim asks for the advice" );
+	}
+
+	[TestMethod]
+	public void AMechanicCalledToARideByThePlayerBringsNoAdviceBecauseTheCallWasTheAdvice()
+	{
+		// [BIN:TPW-EXE:0x004DA696 mechanic on the way] mRequestedService (0x004E03D0) set skips the advice
+		var f = new Fixture();
+		var ride = f.Park.RegisterExisting( 1100 );
+		ride.IsBrokenDown = true;
+		ride.MaintenanceRequested = true;
+		var world = new StaffWorldSimulation( f.Grid, () => f.Park.Staff.Members, id => id == ride.Id ? (14, 5) : null, (0, 5) ) { Guests = f.Guests };
+		f.Park.StaffWorld = world;
+		var called = 0;
+		world.MechanicOnTheWay += ( _, _ ) => called++;
+		EconomyTestData.HireBest( f.Park, StaffType.Mechanic );
+		world.Synchronize();
+		f.Turns( 300 );
+		Assert.AreEqual( 0, called );
+		Assert.IsFalse( ride.IsBrokenDown, "he did go to the ride and repair it" );
+	}
+
+	[TestMethod]
 	public void AGuardCatchesThePranksterCarriesItAndSetsItDownToLeave()
 	{
 		var f = new Fixture();

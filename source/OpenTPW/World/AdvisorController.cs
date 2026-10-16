@@ -44,7 +44,23 @@ internal static class AdvisorTables
 		new( 125, 302, 2, 0, 255, PrankScoreKeys[0] ),
 		new( 126, 304, 2, 0, 1, PrankScoreKeys[1] ),
 		new( 127, 306, 2, 0, 255, PrankScoreKeys[2] ),
+		// [BIN:TPW-EXE:0x0076E300 challenge descriptor] row 0x10F (271) of the Windows table: responses 523 to 525, group 0, one pending copy, game mode 0 (full simulation only), the score callback 0x5A0A30 (+0x62C of the Advisor.sam object, Challenge.Score: the Challenge group follows GTAmountVisitorsC in the descriptor records 0x739560, after PrebuiltPark.Score at +0x5F8); the challenge system posts it as the advice 0x10F of its short-time-left warning (0x4D21FD)
+		new( ChallengeTimeShortMessage, 523, 3, 0, 1, ChallengeScoreKey, 0 ),
+		// [BIN:TPW-EXE:0x0076E300 mechanic descriptor] row 0x46 (70) of the Windows table: responses 204 to 206, group 0, 255 pending copies, game mode 2, the score callback 0x59DC90 (+0x254 of the Advisor.sam object, RidesBreakdownMechanicOnIt.Score: the fourth key of the RidesBreakdown run whose first getter 0x59DC60 is message 66)
+		new( MechanicOnTheWayMessage, 204, 3, 0, 255, MechanicOnTheWayScoreKey ),
 	};
+
+	/// <summary>The advice of a mechanic on his way to a broken-down ride (0x46).</summary>
+	public const int MechanicOnTheWayMessage = 70;
+
+	/// <summary>The Advisor.sam key of the mechanic message's score; optional, a settings file without it leaves the message silent.</summary>
+	public const string MechanicOnTheWayScoreKey = "RidesBreakdownMechanicOnIt.Score";
+
+	/// <summary>The advice of a challenge's short-time-left warning (0x10F).</summary>
+	public const int ChallengeTimeShortMessage = 271;
+
+	/// <summary>The Advisor.sam key of the challenge messages' score; optional, a settings file without it leaves the warning silent.</summary>
+	public const string ChallengeScoreKey = "Challenge.Score";
 
 	/// <summary>The first of the three prank messages (0x7D).</summary>
 	public const int FirstPrankMessage = 125;
@@ -172,7 +188,7 @@ internal sealed class AdvisorBalance
 			// The help score is optional: a settings file without it leaves the help silent instead of disabling the advisor.
 			ContextHelpScore = settings.GetInt( AdvisorTables.ContextHelpScoreKey, 0, optional: true ),
 			Scores = AdvisorTables.AllMessages.Select( message => message.ScoreKey ).Distinct( StringComparer.OrdinalIgnoreCase )
-				.ToDictionary( key => key, key => key == AdvisorTables.HelpScoreKey || AdvisorTables.PrankScoreKeys.Contains( key, StringComparer.OrdinalIgnoreCase )
+				.ToDictionary( key => key, key => key == AdvisorTables.HelpScoreKey || key == AdvisorTables.ChallengeScoreKey || key == AdvisorTables.MechanicOnTheWayScoreKey || AdvisorTables.PrankScoreKeys.Contains( key, StringComparer.OrdinalIgnoreCase )
 					? settings.GetInt( key, 0, optional: true ) : settings.GetInt( key ), StringComparer.OrdinalIgnoreCase ),
 		};
 	}

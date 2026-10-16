@@ -62,7 +62,7 @@ public static class StaffVitals
 	/// <paramref name="noRestAreaHappinessHit"/> happiness (clamped) when a world draw's low four bits are 0, one turn in sixteen.
 	/// </summary>
 	// [BIN:STP-PPC:0x100F4A60 rest search] byte > RestLevel (signed) is the comfortable branch (speed tiers and thoughts only); otherwise 0x100F4C18 looks for a rest area (state 2, result 1) and, when none is found, a world draw with (draw & 15) == 0 lowers the happiness (0x100F4AD0..0x100F4B54)
-	// Approximation (ECON-014, registered at ParkEconomy.UpdateStaffVitals): the staff thoughts (tired, unhappy, happy) and the walking-speed tiers by energy of the comfortable branch have no counterpart; the walk to the rest area takes no time
+	// [EXT:headless-economy] this decision serves the headless economy only: a level's staff world has the thoughts (tired, unhappy, happy) and the walking-speed tiers of the comfortable branch (StaffWorldSimulation.Rest), and the walk to the rest area takes time there
 	public static bool SeekRest( StaffMember member, int restLevel, int noRestAreaHappinessHit, bool restAreaFound, Func<uint> worldDraw )
 	{
 		if ( Byte( member.Energy ) > restLevel )

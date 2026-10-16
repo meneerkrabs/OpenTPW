@@ -93,6 +93,7 @@ DET-010 docs/reverse/DET-plan.md
 DET-011 docs/reverse/DET-plan.md
 DET-012 docs/reverse/DET-plan.md
 DET-016 docs/DETERMINISM.md
+ECON-001 docs/ECONOMY.md
 ECON-002 docs/reverse/APPROX-TRACE.md
 ECON-003 docs/reverse/APPROX-TRACE.md
 ECON-004 docs/reverse/APPROX-TRACE.md
@@ -105,10 +106,12 @@ ECON-010 docs/reverse/APPROX-TRACE.md
 ECON-011 docs/reverse/APPROX-TRACE.md
 ECON-012 docs/reverse/APPROX-TRACE.md
 ECON-013 docs/reverse/APPROX-TRACE.md
+ECON-014 docs/ECONOMY.md
 ECON-015 docs/reverse/APPROX-TRACE.md
 ECON-016 docs/reverse/APPROX-TRACE.md
 ECON-018 docs/reverse/APPROX-TRACE.md
 ECON-019 docs/reverse/APPROX-TRACE.md
+ECON-020 docs/ECONOMY.md
 ECON-021 docs/reverse/APPROX-TRACE.md
 ECON-024 docs/reverse/APPROX-TRACE.md
 ECON-025 docs/reverse/APPROX-TRACE.md
@@ -134,6 +137,8 @@ ECON-046 docs/reverse/APPROX-TRACE.md
 ECON-047 docs/reverse/RIDE-WEAR.md
 ECON-048 docs/reverse/ORACLE.md
 ECON-052 docs/PROGRESS.md
+ECON-054 docs/ECONOMY.md
+ECON-055 docs/ECONOMY.md
 ECON-056 docs/progress/2026-10-16-economy-and-saves-sweep.md
 GATE-001 docs/M3-GATE.md
 GATE-002 docs/reverse/PATH-plan.md
@@ -298,8 +303,8 @@ UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md
 UI-065 docs/PROGRESS.md
-UI-080 docs/UI.md
 UI-066 docs/COMPATIBILITY.md
+UI-080 docs/UI.md
 UI-083 docs/PROGRESS.md
 UI-084 docs/PROGRESS.md
 UI-088 docs/UI.md

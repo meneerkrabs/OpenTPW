@@ -36,11 +36,11 @@ Options > OpenTPW > **Extensions and mods** (`UI/Original/Options/ModsScreen.cs`
 | Status | Meaning |
 | --- | --- |
 | On / Off | Switched on and accepted, or switched off. |
-| Incompatible | For another OpenTPW version or the other game edition. |
-| Missing input folder | An `inputs` folder is not chosen or no longer exists. |
-| Conflict | Another enabled mod overrides the same file and neither lists the other in `after`. |
+| Incompatible | For another OpenTPW version or the other game edition, or `objects` in a Theme Park Inc run. |
+| Missing input folder | An `inputs` folder is not chosen or no longer exists, or the `objects.json` reads from an input that is not a game Data folder. |
+| Conflict | Another enabled mod provides the same file or object archive, or reserves an overlapping `Info.Id` range, and neither lists the other in `after`. |
 | Needs another mod | A dependency is missing, off, refused or out of range, or is part of a cycle. |
-| Cannot be used | The folder has no valid manifest, is shadowed by the same id elsewhere, or its files cannot be read. |
+| Cannot be used | The folder has no valid manifest, is shadowed by the same id elsewhere, its files cannot be read, or its `objects.json` or string tables are invalid. |
 
 The statuses are not a second rule set: the screen resolves the real `ModSet` with the pending choices (away from the
 game's thread) and words the refusal it gets (`ModRefusal.Kind`). The details pane under the lists shows the selected

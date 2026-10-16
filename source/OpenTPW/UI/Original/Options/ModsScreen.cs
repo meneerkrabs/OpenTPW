@@ -45,7 +45,7 @@ public static class ModsScreen
 		// Resolved again at once and away from the game's thread (hashing a large mod takes a moment); until then enabled mods read "Checking...".
 		var resolved = services.Active();
 		var resolvedVersion = -1;
-		Task<(ModSet Set, int Version)>? resolution = null;
+		Task<(ModSet? Set, string? Error, int Version)>? resolution = null;
 		IReadOnlyList<ModRow> rows = ModRows.Build( discovered, pending, resolved, services.Extensions, current: false );
 		void Rebuild() => rows = ModRows.Build( discovered, pending, resolved, services.Extensions, resolvedVersion == version );
 		void Changed()
@@ -93,7 +93,7 @@ public static class ModsScreen
 			var list = screen.Add( new UiScrollList
 			{
 				Id = id,
-				Bounds = Rect( left, 330, right, 830 ),
+				Bounds = Rect( left, 330, right, 770 ),
 				Anchor = UiAnchor.Center,
 				RowHeight = 64,
 				Rows = () => source().Count == 0 ? new[] { empty() } : source().Select( row => row.Name + VersionText( row ) ).ToArray(),
@@ -162,7 +162,7 @@ public static class ModsScreen
 			Color = UiColors.OptionText,
 			Shadow = false,
 			Wrap = true,
-			Bounds = Rect( 57, 845, 1991, 1065 ),
+			Bounds = Rect( 57, 785, 1991, 1065 ),
 			Anchor = UiAnchor.Center
 		} );
 
@@ -345,26 +345,39 @@ public static class ModsScreen
 			}
 			if ( resolution is { IsCompleted: true } )
 			{
-				if ( resolution.IsCompletedSuccessfully )
-				{
-					resolved = resolution.Result.Set;
-					resolvedVersion = resolution.Result.Version;
-					Rebuild();
-				}
-				else
-				{
-					resolvedVersion = version;
-					status = resolution.Exception?.GetBaseException().Message ?? "";
-					Rebuild();
-				}
+				// Only the latest choice's result counts: an older one (the player changed a choice meanwhile) is dropped
+				// and its rows stay "Checking..." until the newer resolution lands.
+				var (set, error, forVersion) = resolution.Result;
 				resolution = null;
+				if ( forVersion == version )
+				{
+					if ( set != null )
+						resolved = set;
+					else
+						status = error ?? "";
+					resolvedVersion = forVersion;
+					Rebuild();
+				}
 			}
 			if ( resolution == null && resolvedVersion != version )
 			{
 				var settings = pending;
 				var target = version;
 				var found = discovered;
-				resolution = Task.Run( () => (ModSet.Resolve( found, settings, services.OpenTpwVersion, services.Edition(), services.Extensions ), target) );
+				var edition = services.Edition();
+				(ModSet? Set, string? Error, int Version) Resolve()
+				{
+					try
+					{
+						return (ModSet.Resolve( found, settings, services.OpenTpwVersion, edition, services.Extensions ), null, target);
+					}
+					catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidOperationException )
+					{
+						return (null, exception.Message, target);
+					}
+				}
+				// Without mod folders (always in the browser, which cannot rely on a thread pool) there is nothing to read or hash: resolve at once.
+				resolution = found.Count == 0 ? Task.FromResult( Resolve() ) : Task.Run( Resolve );
 			}
 			// Check a folder chosen earlier once (in the helper process) when its mod is shown.
 			if ( inspection == null && CurrentInput() is { } input && InputPath( input ) is { } path && !checks.ContainsKey( CheckKey( path, input ) ) )

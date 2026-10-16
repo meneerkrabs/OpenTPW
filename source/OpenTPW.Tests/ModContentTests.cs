@@ -190,9 +190,11 @@ public class ModContentTests
 		var overlap = Resolve( Enable( "community.one", "community.two" ), one, two );
 		Assert.AreEqual( 0, overlap.Mods.Count );
 		StringAssert.Contains( overlap.Refused[0].Reason, "overlap" );
+		Assert.IsTrue( overlap.Refused.All( refusal => refusal.Kind == ModRefusalKind.Conflict ), "the mods screen words an overlap as a conflict" );
 		var same = Resolve( Enable( "community.one", "community.three" ), one, three );
 		Assert.AreEqual( 0, same.Mods.Count );
 		StringAssert.Contains( same.Refused[0].Reason, "object archive" );
+		Assert.IsTrue( same.Refused.All( refusal => refusal.Kind == ModRefusalKind.Conflict ) );
 		var apart = Mod( "community.apart", ", \"content\": { \"objects\": \"objects.json\" }", ("objects.json", ObjectsJson( 40000, 40009, ObjectJson( "objects/zoom", 40001, category: "features" )) ) );
 		Assert.AreEqual( 2, Resolve( Enable( "community.one", "community.apart" ), one, apart ).Mods.Count, "the same name in another category is another archive" );
 	}

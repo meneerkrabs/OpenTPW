@@ -6,7 +6,8 @@ Phase 3 of the mod system (docs/MODS.md): Options > OpenTPW has an **Extensions 
 
 - **Rows and statuses.** The official extensions and the community mods found at startup each show name, version and a status:
   on, off, incompatible, missing input folder, conflict, needs another mod, or cannot be used. The status is the real
-  `ModSet.Resolve` result for the pending choices (`ModRefusal` now carries a `ModRefusalKind`), not a second rule set.
+  `ModSet.Resolve` result for the pending choices (`ModRefusal` now carries a `ModRefusalKind`, including the content-root refusals: overlapping id ranges and shared files or archives are conflicts, an `objects.json` input that is not chosen is a missing input), not a second rule set.
+  Resolution runs off the game thread; a result for an older choice is dropped.
 - **Details.** Author, version, description, content digest (once the mod is accepted), dependencies, folder and the refusal reason.
 - **Input folders.** A mod with an `original-data` input gets a folder row that reuses the Game files chooser and typed-path entry.
   The chosen folder is inspected out of process and judged by `GameEditions.Detect` (`HasKnownStandardSam` or folder structure);

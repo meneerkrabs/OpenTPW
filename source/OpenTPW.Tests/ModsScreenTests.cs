@@ -128,6 +128,53 @@ public class ModsScreenTests
 	}
 
 	[TestMethod]
+	public void RefusalsOfTheContentRootsShowAsTheirOwnStatus()
+	{
+		static string Objects( int first, int last ) =>
+			$$"""{ "schema": 1, "idRange": { "first": {{first}}, "last": {{last}} }, "objects": [] }""";
+		const string Content = ", \"content\": { \"objects\": \"objects.json\" }";
+		var one = Mod( "community.one", Content, ("objects.json", Objects( 20000, 20009 )) );
+		var two = Mod( "community.two", Content, ("objects.json", Objects( 20005, 20015 )) );
+		var bad = Mod( "community.bad", Content, ("objects.json", "{ not json") );
+		var discovered = Found( one, two, bad );
+		var settings = new ModSettings { Enabled = new Dictionary<string, bool> { ["community.one"] = true, ["community.two"] = true, ["community.bad"] = true } };
+		var set = ModSet.Resolve( discovered, settings, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
+		var rows = ModRows.Build( discovered, settings, set, OfficialExtensions.All ).Where( row => !row.IsExtension ).ToDictionary( row => row.Id );
+		Assert.AreEqual( ModRowStatus.Conflict, rows["community.one"].Status );
+		Assert.AreEqual( ModRowStatus.Conflict, rows["community.two"].Status );
+		Assert.AreEqual( ModRowStatus.Unusable, rows["community.bad"].Status );
+		Assert.IsNotNull( rows["community.bad"].Reason );
+
+		// Theme Park Inc does not use Theme Park World objects: incompatible, like a manifest for the other edition.
+		var inc = ModSet.Resolve( Found( one ), new ModSettings { Enabled = new Dictionary<string, bool> { ["community.one"] = true } }, null, GameEdition.ThemeParkInc, OfficialExtensions.All );
+		Assert.AreEqual( ModRefusalKind.Incompatible, inc.Refused.Single().Kind );
+	}
+
+	[TestMethod]
+	public void AResolutionOfAnOlderChoiceNeverShowsForTheNewerOne()
+	{
+		var plain = Mod( "community.plain", "", ("data/a.txt", "x") );
+		var stack = new UiScreenStack();
+		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), Services( plain ) );
+		stack.Push( screen );
+		var mods = (UiScrollList)screen.Find( "mods" )!;
+		mods.Select( 0 );
+		Click( screen, "modsOn" );
+		screen.Updating!( Context() );   // the resolution of "on" starts
+		Click( screen, "modsOn" );       // the player switches it off again before it lands
+		Pump( screen, () => Trailing( screen, "mods", 0 ) == Text( OpenTpwText.ModOff ) );
+		for ( var i = 0; i < 20; i++ )
+		{
+			Thread.Sleep( 5 );
+			screen.Updating!( Context() );
+			Assert.AreEqual( Text( OpenTpwText.ModOff ), Trailing( screen, "mods", 0 ), "a stale result must not flip the row" );
+		}
+		Click( screen, "modsOn" );
+		Pump( screen, () => Trailing( screen, "mods", 0 ) == Text( OpenTpwText.ModOn ) );
+		stack.Clear();
+	}
+
+	[TestMethod]
 	public void AChoiceNotYetResolvedIsPendingNotWrong()
 	{
 		var plain = Mod( "community.plain" );

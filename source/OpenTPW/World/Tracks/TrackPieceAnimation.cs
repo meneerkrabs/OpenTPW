@@ -177,6 +177,24 @@ public sealed class TrackPieceAnimations
 	/// <summary>Seconds of the clip shown at the clock: the time since the start, or up to the freeze.</summary>
 	public double Elapsed( Play play ) => Math.Max( 0, (play.Stop ?? Clock) - play.Start );
 
+	/// <summary>
+	/// Forgets the clips of tiles that no longer show the piece and rotation they were triggered on (a demolished or re-laid tile is a new instance without a
+	/// clip), so laying the same piece on the cell again does not bring an old clip back.
+	/// </summary>
+	public void Prune( TrackCellLayer layer )
+	{
+		ArgumentNullException.ThrowIfNull( layer );
+		var stale = plays.Where( pair =>
+		{
+			var cell = layer.Get( pair.Key.X, pair.Key.Y );
+			return !cell.IsOrigin || cell.Piece != pair.Value.Piece || cell.Rotation != pair.Value.Rotation;
+		} ).Select( pair => pair.Key ).ToList();
+		foreach ( var key in stale )
+			plays.Remove( key );
+		if ( stale.Count > 0 )
+			Version++;
+	}
+
 	public void Clear()
 	{
 		if ( plays.Count == 0 )

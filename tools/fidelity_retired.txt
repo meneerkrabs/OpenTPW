@@ -145,6 +145,8 @@ RIDES-041 docs/OBJECTS.md
 RIDES-042 docs/OBJECTS.md
 RIDES-043 docs/OBJECTS.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
+TRACK-006 docs/TRACKS.md
+TRACK-030 docs/TRACKS.md
 UI-001 docs/reverse/APPROX-TRACE.md
 UI-009 docs/reverse/APPROX-TRACE.md
 UI-010 docs/reverse/APPROX-TRACE.md

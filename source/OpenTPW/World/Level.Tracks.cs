@@ -203,6 +203,7 @@ public partial class Level
 	{
 		if ( trackRenderFailed || waterTracks == null )
 			return;
+		trackPieceAnimations.Prune( waterTracks.Tracks );
 		trackPieceAnimations.Advance( seconds );
 		try
 		{

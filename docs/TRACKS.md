@@ -124,11 +124,13 @@ valid when the walk arrives back at the start tile; no minimum length. The resul
 park points counts-test and guest boarding read. A re-walk (commit mode) also resets the controller: boats leave, the ride closes
 (`[TPW-EXE:0x545450]`).
 
-Messages: the walk posts no advisor or event message (TRACK-006 retired: `0x52A970` and the walk sites of the tool handler `0x524960` call no message builder `0x59B590`).
+Messages: the walk posts no advisor or event message (`APPROX:TRACK-006` retired: `0x52A970` and the walk sites of the tool handler `0x524960` call no message builder `0x59B590`).
 The ids once listed for it are tool help of the cell build tool: 0xCC (204) is posted by the kart and water tool for a click with no line start (`0x526D41`),
 which OpenTPW's tool never has (the placement presets the start at the station's exit, `0x52A1A0`; the original reaches it only when a line closes with exactly Ctrl
 held and no queue to follow, UI-031), and 0xB8 (184, the path tool's first click), 0xD6 (214, the third later click of the path or queue tool) and 0x151 (337,
 the end of the queue tool) belong to the path and queue tools (`0x5272F5`, `0x527351`, `0x527620`; their producers are open under ADVISOR-009).
+The tool handler's other direct calls of the message builder are tool help too (0xCD at `0x52644C`, in the cell-write path before the walk), and the tool-mode switch `0x52F580`
+posts the new mode's help (0xCB for mode 3); none follows a walk call site directly, so any help shown after a closed circuit would come from the mode switch, not from the walk (not traced).
 
 ## Sections, collision objects, buoys (Q2)
 
@@ -333,7 +335,7 @@ OpenTPW decisions with no original rule (`[EXT:name]` at the code sites):
 - `[EXT:kart-roll-convention]`: the absolute sign of a kart's roll (above).
 
 Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start heading), 016 (boat spray, engine voice, unload), 017 (crossing flag), 024 (bank clamp), 029 (chase, already ported).
-October 16: TRACK-006 retired as already matching (the walk posts no message, above); TRACK-018 narrowed (arm masks and water clips built).
+October 16: `APPROX:TRACK-006` retired as already matching (the walk posts no message, above); TRACK-018 narrowed (arm masks and water clips built).
 Retired as already matching: TRACK-013 (worn is read only by the kart exhaust branch, `0x5486FC`). Narrowed: TRACK-002, 005, 019, 026, 030 (texts in the register); TRACK-025 and 031 were retired in a later round (below).
 
 ## Add-ons (read, not built: TRACK-008)
@@ -509,7 +511,7 @@ only (`0x546280`); the riders' heads hang from the car's head dummy and the brea
 **Saves** (park-resume): the validator accepts a bumper session (durations up to 0x10000 ticks, the wall counter −1, the chase target). `OPENTPW_SMOKE_BUMPER=1` on both phases of the park-resume smoke buys and places the theme's
 bumper ride, saves with a session running and guests in the cars, restores through the menu load and matches the 600 continuation hashes. The digest holds the chase target and the drawn heading of bumper cars only.
 
-**Arena centre** (TRACK-030 retired with a code change): the ride placement `0x529E10` (`[TPW-EXE:0x529E10]`) takes the cursor cell `0x818C3C`, which is the build click's
+**Arena centre** (`APPROX:TRACK-030` retired with a code change): the ride placement `0x529E10` (`[TPW-EXE:0x529E10]`) takes the cursor cell `0x818C3C`, which is the build click's
 anchor (written at `0x528E12` from `0x528B44`, OpenTPW's placement anchor), adds the type's `Bumper.<Side>X/YAdjust` for the rotation (0° North at type +0xA4/+0xA8, 90° East,
 180° South, 270° West; the key table at `0x74541C` puts them after `WhichTrackType` +0x9C and `BumperType` +0xA0) and the fixed offset (+4, +1), (+1, −5), (−5, −2), (−2, +4),
 scales by 0xC00, and the arena builder `0x545890` adds 0x600 on both axes. `Level.BumperArenaCentre` computes exactly that. All four shipped bumper rides are 5 × 5 with

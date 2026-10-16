@@ -130,6 +130,23 @@ public class TrackPieceAnimationTests
 	}
 
 	[TestMethod]
+	public void ALaidAgainTileDoesNotBringItsOldClipBack()
+	{
+		var rig = new Rig();
+		rig.Lay( (14, 10), (16, 10) );
+		TrackCircuitWalker.WalkAndRefresh( rig.Builder, rig.Station );
+		var clips = new TrackPieceAnimations();
+		clips.Trigger( rig.Layer, 16, 10, play: true );
+		var piece = rig.Layer.Get( 16, 10 ).Piece;
+		Assert.IsTrue( rig.Builder.RemoveTile( 16, 10 ) );
+		clips.Prune( rig.Layer );
+		Assert.AreEqual( 0, clips.Count, "the demolished tile's clip is dropped" );
+		rig.Lay( (14, 10), (16, 10) );
+		Assert.AreEqual( piece, rig.Layer.Get( 16, 10 ).Piece );
+		Assert.IsNull( clips.At( rig.Layer, 16, 10 ), "the same piece on the same cell is a new instance with no clip" );
+	}
+
+	[TestMethod]
 	public void BumpSeventeenTriggersThePiecesOnlyWhenItsValueChanges()
 	{
 		var water = new BumpController( BumperTemplates.Get( -5 ), () => 0 );

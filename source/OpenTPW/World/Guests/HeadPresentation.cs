@@ -18,7 +18,7 @@ public readonly record struct HeadPlacement( bool Visible, System.Numerics.Vecto
 /// (MD2 axes, Y up, row vectors) and the camera position in the same world space.
 /// </summary>
 // [BIN:STP-PPC:0x1019B6F8 head draw] hide when the node has flag 0x8000 (frame -1); with flag 0x400 matrix rows 0 and 2 are negated; the position is exactly the node's world translation (no offset); the camera is expressed in the node's frame (general inverse, times the camera matrix), normalised, and binned to the nearest of 7 elevation rows (30 degree steps from the local +Y pole) by 8 azimuths (45 degree steps); frame = 8 * row + column with the column forced to 0 at rows 0 and 6; roll = atan2(-m10, m11) of the remaining rotation / 2 pi; scale property 0.685 (default 1.0); no animation
-// [APPROX:HEADS-004] the azimuth origin and sense of column 0 (local +X, towards +Z) and the reference of the roll (the node matrix in world axes, not the camera's) are not traced; how scale 1.0 maps to world units and the depth handling are untraced
+// [APPROX:HEADS-004] the reference of the roll (the original turns the sprite by the angle between the chosen frame's pre-rendered up direction and the view, 0x44B8xx-0x44B9xx with 0x46F150, 0x46FBB0 and 0x46F200; OpenTPW uses the node matrix in world axes) is not ported; how scale 1.0 maps to world units and the depth handling are untraced
 public static class HeadPresentation
 {
 	public const uint HiddenFlag = 0x8000;
@@ -28,6 +28,37 @@ public static class HeadPresentation
 	public const float HeadScale = 0.685f;
 	private const float RowStep = MathF.PI / 6;
 	private const float ColumnStep = MathF.PI / 4;
+
+	/// <summary>The unit direction of head art frame (row, column) in the node's frame (Y up): row r is r * 30 degrees from +Y towards +Z, column c turns it by c * 45 degrees about Y from +Z towards -X.</summary>
+	// [BIN:TPW-EXE:0x0044B510 head frame table] the draw routine (called per head node) starts at (0, 1, 0) and steps row by row with a 30 degree rotation of (y, z) (cos 30, sin 30 from the sine table at 2 * pi / 3 and pi / 6) and column by column with a 45 degree rotation of (x, z) (x' = 0.7071 * (x - z), z' = 0.7071 * (x + z), 8 steps), so direction (r, c) = (-sin(30 r) sin(45 c), cos(30 r), sin(30 r) cos(45 c)): column 0 faces local +Z and the azimuth atan2(z, x) grows by 45 degrees per column from 90 degrees
+	public static System.Numerics.Vector3 FrameDirection( int row, int column )
+	{
+		var elevation = row * RowStep;
+		var azimuth = column * ColumnStep;
+		return new System.Numerics.Vector3( -MathF.Sin( elevation ) * MathF.Sin( azimuth ), MathF.Cos( elevation ), MathF.Sin( elevation ) * MathF.Cos( azimuth ) );
+	}
+
+	/// <summary>The frame whose direction has the largest dot product with the camera direction in the node's frame (the first one on a tie; the first and last rows always use column 0).</summary>
+	// [BIN:TPW-EXE:0x0044B7B2 nearest frame] rows 0..6 by columns 0..7 are tried in that order and a frame replaces the best one only when its dot product is greater (the best starts at 0); rows 0 and 6 then take column 0 (0x44B81C)
+	public static (int Row, int Column) NearestDirection( System.Numerics.Vector3 local )
+	{
+		var best = 0f;
+		int bestRow = 0, bestColumn = 0;
+		for ( var row = 0; row < Rows; row++ )
+		{
+			for ( var column = 0; column < Columns; column++ )
+			{
+				var dot = System.Numerics.Vector3.Dot( local, FrameDirection( row, column ) );
+				if ( dot > best )
+				{
+					best = dot;
+					bestRow = row;
+					bestColumn = column;
+				}
+			}
+		}
+		return (bestRow, bestRow is 0 or Rows - 1 ? 0 : bestColumn);
+	}
 
 	/// <param name="nodeWorld">World matrix of the head node (row vectors, translation in the fourth row).</param>
 	/// <param name="nodeFlags">The node's type flags (<see cref="ModelNode.Type"/>).</param>
@@ -51,13 +82,7 @@ public static class HeadPresentation
 			if ( float.IsFinite( length ) && length > 0 )
 			{
 				local /= length;
-				var elevation = MathF.Acos( Math.Clamp( local.Y, -1f, 1f ) );
-				row = Math.Clamp( (int)MathF.Round( elevation / RowStep, MidpointRounding.AwayFromZero ), 0, Rows - 1 );
-				if ( row is not (0 or Rows - 1) )
-				{
-					var azimuth = MathF.Atan2( local.Z, local.X );
-					column = ((int)MathF.Round( azimuth / ColumnStep, MidpointRounding.AwayFromZero ) % Columns + Columns) % Columns;
-				}
+				(row, column) = NearestDirection( local );
 			}
 		}
 		// A uniform positive scale of the matrix does not change the angle.

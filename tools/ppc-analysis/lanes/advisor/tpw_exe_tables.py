@@ -8,6 +8,9 @@ advisor's tables live:
   0x598CA0. A selector is the dummy-attribute value of the mesh node to show (5 to 14 are the hats, the
   spatula and the bow tie of the global advisor), 0 shows no accessory, -1 the level's theme costume. Only
   responses with a nonzero selector are listed.
+* ``advisor-descriptors.toml``: all 351 descriptors of the same table (message, first response, response count,
+  group, pending duplicates, game-mode selector and the score callback address), which the save import binds so
+  that an original save's pending advice and history of every message are kept.
 * ``advisor-help-messages.toml``: the scored-message descriptors whose score callback is the context-help
   getter 0x59E8C0 (82 descriptors; the 81 whose first response is in the response table, 291 names the absent 551). The descriptor table
   (0x76E300, 351 records of 0x38 bytes) is zero in the file; a straight-line initializer (0x5A0A50 to
@@ -196,6 +199,29 @@ def render_help(rows: list[dict[str, int]]) -> str:
     return '\n'.join(lines) + '\n'
 
 
+def render_descriptors(table: dict[int, dict[str, int]]) -> str:
+    lines = [
+        '# Advisor message descriptors of Sim Theme Park World (Windows v2.0), for interoperability: all 351 records of the',
+        '# descriptor table at 0x76E300 of tp.exe',
+        f'# (SHA-256 {TPW_SHA}),',
+        '# as filled by its initializer at 0x5A0A50, by tools/ppc-analysis/lanes/advisor/tpw_exe_tables.py;',
+        '# see docs/LIPS.md ("Automatic advice").',
+        '#',
+        '# message: message ID (the record index); response: first response ID (response numbers are consecutive, count of them;',
+        '# 291 names response 551, which the response table does not have); group: message group; duplicates: pending duplicates',
+        '# allowed; mode: the descriptor\'s game-mode selector (0: full simulation only, 1: Instant Action only, 2: always);',
+        '# callback: the address of the score callback (a getter of an Advisor.sam score, 0x5D60C0 for a score of 0, or a computation).',
+        '',
+        'messages = [',
+    ]
+    for message in range(DESCRIPTOR_COUNT):
+        row = table[message]
+        lines.append(f'  {{ message = {message}, response = {row["first"]}, count = {row["count"]}, group = {row["group"]}, '
+                     f'duplicates = {row["duplicates"]}, mode = {row["mode"]}, callback = {row["callback"]:#x} }},')
+    lines.append(']')
+    return '\n'.join(lines) + '\n'
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('binary', type=Path)
@@ -211,6 +237,7 @@ def main() -> None:
     outputs = {
         'advisor-costumes.toml': render_costumes(costumes(image)),
         'advisor-help-messages.toml': render_help(help_messages(image)),
+        'advisor-descriptors.toml': render_descriptors(descriptors(image)),
     }
     directory = args.write or args.check
     for name, text in outputs.items():

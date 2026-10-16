@@ -287,4 +287,24 @@ public class ParkWeatherTests
 			Assert.IsFalse( space.Rain, $"space quality {quality}" );
 		}
 	}
+
+	[TestMethod]
+	public void DecemberReadsTheSeasonArraysCountSlotAsItsAverage()
+	{
+		// tp.exe 0x512e10: December is season row 4, one past the array; its average is the array's count slot (0x7854f4),
+		// which the .sam loader raises to the highest stored index + 1 (0x4017a0). Tolerance and chance are DaysOfWarning and
+		// DaysBetweenChanges; zero for both makes the roll return the average itself.
+		string Seasons( int count )
+		{
+			var text = "Weather.DaysOfWarning\t0\nWeather.DaysBetweenChanges\t0\n";
+			for ( var i = 0; i < count; i++ )
+				text += $"Seasons[{i}].AvgWeatherQuality\t{50 + i}\nSeasons[{i}].NormalTolerance\t0\nSeasons[{i}].ChanceForExceptionalWeather\t0\n";
+			return text;
+		}
+
+		var december = ParkCalendar.TickAtMonth( 11 );
+		Assert.AreEqual( 4, new ParkWeather( Keys( Seasons( 4 ) ), 1, 10, 10 ).Roll( december ), "four seasons stored (every shipped layer)" );
+		Assert.AreEqual( 3, new ParkWeather( Keys( Seasons( 3 ) ), 1, 10, 10 ).Roll( december ), "the count follows the stored indices" );
+		Assert.AreEqual( 52, new ParkWeather( Keys( Seasons( 4 ) ), 1, 10, 10 ).Roll( ParkCalendar.TickAtMonth( 6 ) ), "month 7 is season 2 (month / 3)" );
+	}
 }

@@ -209,7 +209,7 @@ public static class GameAudio
 		AudioApproximations.LogOnce();
 		var mixer = AudioMixer.Open();
 		AudioMixer.Current = mixer;
-		// Clock seed like the original's start-up seeding (tp.exe 0x72e09c, QueryPerformanceCounter); it only colours front-end sounds, since EnterPark reseeds from the park's world seed (AUDIO-037).
+		// Clock seed like the original's start-up seeding (tp.exe 0x72e09c, QueryPerformanceCounter); it only colours front-end sounds, since EnterPark reseeds from the park's world seed ([EXT:sound-chooser-seed]).
 		events = new SoundEventSystem( mixer, (uint)Environment.TickCount );
 		mixer.DuckingLevel = ReadDuckingLevel() / 100f;
 		// [BIN:STP-PPC:0x100BC6F0 sound manager] global categories registered at sound-manager offsets 12 (cat_ui), 20 (cat_speech), 0 (cat_ambient), 8 (cat_rides), 4 (cat_kids), 16 (cat_staff)
@@ -823,23 +823,36 @@ public static class GameAudio
 		return events.StartSentence( sound.Value.Category, eventId, AudioChannel.Effects, position: position );
 	}
 
+	// [BIN:STP-PPC:0x100B1F78 REPAIREFFECT show] the repair-start path calls the cat_kids submit family (0x100ACC24; the traced call selects event 75, families up to 90 by the object's repair level)
+	// [BIN:STP-PPC:0x100B1E60 REPAIREFFECT hide] hiding plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
+	// [BIN:TPW-EXE:0x55635f REPAIREFFECT 1] with more than five operands it calls 0x551320(band, 1, 1, x, y, z) at the object's position (0x556a80): the index (a + b) / 50 capped at 3 is 0 here, and the band is the word [[vm+0x1c]+0x14], the script's own variable slot 5 (the array [vm+0x1c] holds the script variables: the interpreter's variable operand 0x40000000 | n is stored at [vm+0x1c + 4n], 0x556408), which the standard ride scripts keep as VAR_ONRIDE; the family comes from it (0 silent, 1 -> 75, 2-3 and negative -> 79, 4-7 -> 83, >= 8 -> 87, all cat_kids 0x803a24; 0x551351-0x5514d8)
+	/// <summary>The <c>cat_kids</c> repair sound of a band at index 0 (<c>0x551320</c>), or <c>null</c> for the silent band 0.</summary>
+	public static uint? RepairStartEventForBand( int band ) => band switch
+	{
+		0 => null,
+		1 => RepairStartEvent,
+		< 4 => RepairStartEvent + 4,
+		< 8 => RepairStartEvent + 8,
+		_ => RepairStartEvent + 12,
+	};
+
 	/// <summary>
 	/// The sounds of a ride script's <c>REPAIREFFECT</c> instruction: showing the repair effect starts a repair sound of
 	/// <c>cat_kids</c>, hiding it plays two <c>cat_rides</c> sounds at the object's position.
 	/// </summary>
-	// [BIN:STP-PPC:0x100B1F78 REPAIREFFECT show] the repair-start path calls the cat_kids submit family (0x100ACC24; the traced call selects event 75, families up to 90 by the object's repair level)
-	// [BIN:STP-PPC:0x100B1E60 REPAIREFFECT hide] hiding plays cat_rides 111 and 211 (0x100B1EC0/0x100B1F00) at the object's position
-	// [BIN:TPW-EXE:0x55635f REPAIREFFECT 1] with more than five operands it calls 0x551320(band = [[vm+0x1c]+0x14], 1, 1, x, y, z) at the object's position (0x556a80): index (a + b) / 50 capped at 3 is 0 here, and the owner object's band word +0x14 picks the family (0 silent, 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87; 0x551351-0x5514f7)
-	// [APPROX:AUDIO-008] OpenTPW has no band word on its ride objects, so the show path uses band 1 (event 75); the field's meaning in the original is not traced
 	public static void PlayRepairEffect( int show ) => PlayRepairEffect( show, null );
 
 	/// <summary>The show sound (<c>cat_kids</c> 75) or the hide pair at a validated sound-space origin (the object's place; flat without one); returns submitted voices for owner cleanup.</summary>
-	internal static (AudioVoice? First, AudioVoice? Second) PlayRepairEffect( int show, Vector3? position )
+	internal static (AudioVoice? First, AudioVoice? Second) PlayRepairEffect( int show, Vector3? position, int band = 1 )
 	{
 		if ( events == null )
 			return (null, null);
 		if ( show != 0 )
-			return (position == null ? events.Play( Kids, RepairStartEvent, AudioChannel.Effects ) : events.PlayAt( Kids, RepairStartEvent, AudioChannel.Effects, position.Value ), null);
+		{
+			if ( RepairStartEventForBand( band ) is not { } start )
+				return (null, null);
+			return (position == null ? events.Play( Kids, start, AudioChannel.Effects ) : events.PlayAt( Kids, start, AudioChannel.Effects, position.Value ), null);
+		}
 		var first = position == null ? events.Play( Rides, RepairStopEvent, AudioChannel.Effects ) : events.PlayAt( Rides, RepairStopEvent, AudioChannel.Effects, position.Value );
 		try
 		{

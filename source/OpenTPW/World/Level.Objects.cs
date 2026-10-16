@@ -15,8 +15,19 @@ public partial class Level
 			if ( value != null )
 				StaffPlacement?.Cancel();
 			buildEntry = value;
+			// any other way of arming or leaving the build tool ends the Move tool (interface mode 0x3b); BeginMove sets the flag after it armed the entry
+			IsMoving = false;
 		}
 	}
+
+	/// <summary>
+	/// Whether the armed <see cref="BuildEntry"/> is the Move tool's (interface mode 0x3b: an object picked up from its window, placed again) rather than the build tool's (mode 4).
+	/// </summary>
+	// [BIN:TPW-EXE:0x5253d5 move placement] a click in mode 0x3b runs the same placement as mode 4 (0x528a70 at 0x525417: type 4 and the angle 0x52f1f0 gives, commit flag 1) and the same follow-ups (0x52fab0 queue option, the entrance, exit and queue sub-modes, the Ctrl test 0xc); the hover test 0x5234d0 does the same in mode 0x3b as in mode 4 (0x523940) but keeps no cash flag of its own: the purchase is the constructor's alone (0x4db4e2..0x4db4f6 charges the type's price +0x1b8 through 0x4d01f0 unless a golden-ticket type (+0xc4 above 0) is not yet bought, which 0x4d4ad0 pays by ticket), so a move costs the whole price again
+	public bool IsMoving { get; private set; }
+
+	/// <summary>Sets the build angle, as the Move tool's pick-up does with the picked-up object's own (<c>0x52f1b0(thing +0x10)</c>).</summary>
+	internal void SetBuildRotation( int rotation ) => BuildRotation = ((rotation % 360) + 360) % 360;
 	/// <summary>Rotation in degrees (0/90/180/270) for the next built object.</summary>
 	public int BuildRotation { get; private set; }
 	/// <summary>Clicking removes the object under the cursor.</summary>
@@ -796,6 +807,56 @@ public partial class Level
 
 	public void RotateBuild() => BuildRotation = (BuildRotation + 90) % 360;
 
+	/// <summary>
+	/// Whether the Move tool may pick <paramref name="item"/> up: always, except for a kart or water ride (type track word 1 or 2), whose first track tiles beside the station must each hold exactly one arm.
+	/// </summary>
+	// [BIN:TPW-EXE:0x52c2b0 move enabled test] the object window's refresh (0x4ad6df) enables b_move with this test: 1 unless the type's track word +0x9c is 1 or 2; then the track-layer cells at the thing's cell plus (4, 1), (1, -5), (-5, -2) or (-2, 4) (the station's exit tile, 0x52c2e8..0x52c35c) and plus (-2, 1), (1, 1), (1, -2) or (-2, -2) (its entry tile, 0x52c392..0x52c405) by the angle 0, 90, 180 or 270 must each answer 1 to 0x522790, the count of the set bits of the cell's connection byte (+0xC); the calls of 0x4d8c00 between them do not change the answer (its result is unused)
+	public bool CanMove( OriginalObject item )
+	{
+		var trackType = item.Entry.Settings.GetInt( "Bumper.WhichTrackType", 0 );
+		if ( trackType is not (1 or 2) || BuilderOf( item ) is not { } builder )
+			return true;
+		return MoveEnabled( trackType, item.Placement.X, item.Placement.Y, item.Placement.Rotation, ( x, y ) => System.Numerics.BitOperations.PopCount( builder.Tracks.Get( x, y ).Mask ) );
+	}
+
+	/// <summary>The enabled test of the Move tool for a type with track word <paramref name="trackType"/> placed at (<paramref name="x"/>, <paramref name="y"/>) turned <paramref name="rotation"/>: <paramref name="armsAt"/> gives a track cell's set connection bits.</summary>
+	internal static bool MoveEnabled( int trackType, int x, int y, int rotation, Func<int, int, int> armsAt )
+	{
+		if ( trackType is not (1 or 2) )
+			return true;
+		var ((exitX, exitY), (entryX, entryY)) = rotation switch
+		{
+			0 => ((4, 1), (-2, 1)),
+			90 => ((1, -5), (1, 1)),
+			180 => ((-5, -2), (1, -2)),
+			270 => ((-2, 4), (-2, -2)),
+			_ => ((0, 0), (0, 0))
+		};
+		return armsAt( x + exitX, y + exitY ) == 1 && armsAt( x + entryX, y + entryY ) == 1;
+	}
+
+	/// <summary>
+	/// The Move tool's pick-up (<c>0x48cfa0</c>): the object is demolished exactly as its window's erase button does (the same click handler 0x524960 in mode 0x33 runs the erase 0x527ee0, with its
+	/// scrap credit and its queue and track clearing), then the build tool arms the same type at the object's own angle in mode 0x3b. Nothing else of the object is kept: the state is the new
+	/// object's, and a cancel leaves the object gone.
+	/// </summary>
+	// [BIN:TPW-EXE:0x48cfa0 move pick-up] 0x48c940 holds the thing, 0x5276d0 takes its cell, a type with a footprint (+0x40) saves the queue's corner points (0x530120, 0x52fc30), mode 0x33 and the click 0x524960(cell, 0, 0) erase it (0x527ee0 with the last argument 0: the very call of the window's erase button 0x48cd10), 0x46c5a0(0x3b, type) builds the tool, 0x52f200(0x3b) sets the mode and 0x52f1b0 the angle (+0x10); 0x81b3ac and 0x81b14c are written and read nowhere, so the saved state is never restored
+	public bool BeginMove( OriginalObject item )
+	{
+		if ( IsReadOnlyVisit || item.IsDeleted || item.Entry.IsFixedItem || (PlacedRide != null && ReferenceEquals( item, PlacedRide )) || !CanMove( item ) )
+			return false;
+		var entry = item.Entry;
+		var rotation = item.Placement.Rotation;
+		if ( !RemoveAttraction( item ) )
+			return false;
+		IsRemovingObjects = false;
+		IsPlacing = false;
+		BuildEntry = entry;
+		IsMoving = true;
+		SetBuildRotation( rotation );
+		return true;
+	}
+
 	/// <summary>Returns the next built object to rotation 0, as leaving the build tool does.</summary>
 	// [BIN:TPW-EXE:0x52f3b6 leave build tool] leaving the tool through 0x52f200 (0x52f227: ebp = 0) stores 0 in the build angle (0x81d7a4)
 	public void ResetBuildRotation() => BuildRotation = 0;
@@ -889,7 +950,7 @@ public partial class Level
 		ParkObjectState? bought = null;
 		if ( Park != null )
 		{
-			var purchase = Park.Economy.TryBuild( entry.InfoId, out bought );
+			var purchase = Park.Economy.TryBuild( entry.InfoId, out bought, IsMoving );
 			if ( purchase != ParkEconomy.PurchaseResult.Ok )
 			{
 				LastActionMessage = $"Cannot build {entry.DisplayName}: {purchase}.";

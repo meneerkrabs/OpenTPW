@@ -126,4 +126,23 @@ public class SignRasterCorpusHashTests
 		Assert.AreEqual( baseline.Count, composed, "every baseline row composed" );
 		CollectionAssert.AreEqual( Array.Empty<string>(), mismatches, string.Join( "\n", mismatches ) );
 	}
+
+	/// <summary>
+	/// COMPAT-001: the glyph mask is the whole 256-row surface mask. The second line of the hallow ride 2103 reaches below the 128 rows
+	/// that are packed into the textures (46 texels at the time of writing); they are kept for the blur, morphology and relief and for the text pixel count.
+	/// </summary>
+	[TestMethod]
+	public void TheGlyphMaskKeepsTheRowsBelowThePackedTexture()
+	{
+		var entry = ObjectCatalog.Load( "hallow" ).Entries.Single( candidate => candidate.InfoId == 2103 );
+		var member = entry.FileSystem.GetFiles( entry.ArchivePath ).First( name => name.EndsWith( ".sgn", StringComparison.OrdinalIgnoreCase ) );
+		var sign = new SignFile( entry.FileSystem.ReadAllBytes( $"{entry.ArchivePath.TrimEnd( '/' )}/{Path.GetFileName( member )}" ) );
+		using var stream = File.OpenRead( Path.Combine( StringTableTests.OriginalDataDirectory(), "fonts.wad" ) );
+		var fonts = SignFontLibrary.Load( stream );
+		var (line1, line2) = ObjectSigns.Lines( entry );
+		var mask = SignSurfaceComposer.RenderMask( sign, fonts, new string?[] { line1, line2 }, 1, new List<string>() );
+		Assert.AreEqual( SignSurfaceComposer.Width * SignSurfaceComposer.SurfaceHeight, mask.Length );
+		var lower = mask.Skip( SignSurfaceComposer.Width * SignSurfaceComposer.Height ).Count( value => value != 0 );
+		Assert.IsTrue( lower > 0, "text rows below the packed 128 are part of the mask" );
+	}
 }

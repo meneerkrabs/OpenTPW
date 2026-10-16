@@ -237,6 +237,7 @@ public partial class Level
 	}
 
 	/// <summary>Starts the water track tool on a station: the line starts at the tile after the station's exit.</summary>
+	// [APPROX:TRACK-018] the original's track button (0x4af200: tool 0xE for karts, 0x13 for water) opens the edit sub-modes, which cut a closed circuit between two clicked tiles and continue an open one from its last tile (0x530830, 0x524960 at 0x526801 and 0x526B5E); this entry always starts a line at the station's exit
 	public bool EnterTrackTool( OriginalObject station )
 	{
 		if ( IsReadOnlyVisit || waterTracks == null || !trackStations.TryGetValue( station, out var layout ) )

@@ -1007,7 +1007,8 @@ public sealed partial class ParkHud
 				cells.Add( (cursor.X, cursor.Y, cursor.Result == CoasterPlaceResult.Ok ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
 		}
 		else if ( level.StaffPlacement is { IsActive: true, HoverValid: false, HoverCell: { } staffCell } )
-			// [APPROX:UI-099] the cell-sized ground quad of an invalid staff cell is the blueprint's red face; the staff tools' per-frame method 0x46c480 (slot +0x18 of the place tool 0x6fea40 and the carry tool 0x6fea70) queues a square dynamic face with 0x53c8d0 at (x - 5, 1.0, z - 5), face type 1 (queued only when [0x763c98] is set; its 10th argument is a per-face flag, not a texture index), when one of the cell tests 0x5363f0, 0x535db0(0x40), 0x536450 holds or none of 0x536390, 0x536310, 0x536320 does; the renderer (0x53da49) takes type 1's material from slot [+0x50] + 16 × type — evidence needed: the texture of that material
+			// [BIN:TPW-EXE:0x46c480 staff tool face] the staff tools' per-frame method 0x46c480 (slot +0x18 of the place tool 0x6fea40 and the carry tool 0x6fea70) queues a square dynamic face with 0x53c8d0 at (x - 5, 1.0, z - 5), face type 1, when one of the cell tests 0x5363f0, 0x535db0(0x40), 0x536450 holds or none of 0x536390, 0x536310, 0x536320 does (queued only when [0x763c98] is set)
+			// [BIN:TPW-EXE:0x53d9e0 dynamic face texture] the renderer takes a face's batch from slot [+0x50] + 16 × type and the textures from the table 0x763b38 (16-byte records, loaded from Data\Generic\Dynamic\Textures by 0x53d790): type 0 blue.tga, 1 red.tga, 2 orange.tga, 3 m_enter ..., so type 1 is the blueprint's red face (BlueprintMarker.Refused)
 			cells.Add( (staffCell.X, staffCell.Y, BlueprintMarker.Refused) );
 		else if ( level.BuyLandTool is { IsActive: true } landTool )
 		{

@@ -307,7 +307,7 @@ files per language (`english.txt`, `German.txt`, `Dutch.txt`, … also languages
 the game does not ship) with `NAME`, `SIGNA`, `SIGNB` sections; `DisplayName`
 uses the selected language, then English, then the `.sam` name (never fails; the original reads only
 the selected language file, 0x41F350, and falls back to the id table, which holds no bonus id except
-3301: RIDES-025).
+3301); the fallbacks are `[EXT:bonus-name-fallback]`.
 E.g. `_snake_1` (.sam "Snake") is "Slither" — a name the base OBJECT_NAMES
 already reserves at jungle index 22 — and "Rutschbahn" in German.
 
@@ -346,9 +346,8 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-014 | World/Objects/ParkObjects.cs | Base height = (lowest + highest) / 2 of the terrain vertex heights at the corners of the footprint's shape cells (`0x466D70`, cells with a non-zero type nibble, `0x469930`; the vertex is `ftol(lerp + 0.1)` of `0x454050`, equal to `ObjectFootprint.ToGrid` of the corner: `ObjectBaseHeightTests`). The original then blends the ground flat under the ride (`0x467030`, `0x57ACE0`), which is not modelled; a park-resume save from before the rule restores with the earlier cell mean (`BaseHeightRule` absent) | The blend; the instance words +0xF0/+0xF4 taken as the shape size; an instance height captured on a slope |
 | RIDES-018 | World/Objects/ParkObjects.cs:107 | Build rules: grid, MAP/save terrain, no overlap; no slope/path/land; Level enforces economy purchases | Original build checks |
 | RIDES-019 | World/Objects/ParkObjects.cs | Levels without a save get Gates and Lights at setup, as the original's world setup (0x5156A0); the bus, seaplane and Ferry are placed when the arrival update first sends them (0x51A2F0, see GUESTS.md "Arrivals"). End is not created: the original creates it through 0x516B00 from the lab's message handler 0x503D40 (message 0x11, from 0x50B550) when the last research item completes (`ParkResearch.IsAllResearched`): in game mode DAT_00fb3b7c 2 (or 0 with 0x5B0C40 true) it clears a flag (0x409CD0), posts the advisor message 0xA7 and creates End. A Theme Park Inc world without a prebuilt save keeps a Bus from setup | What DAT_00fb3b7c names and the advisor message 0xA7; how Theme Park Inc places its arrival vehicle |
-| RIDES-021 | World/Level.Objects.cs | The cursor ray picks the clicked cell on the Z = 0 plane. The anchor taken from that cell is the original's (`0x528B44`: the cell less (W/2, H/2), then the rotation's 5 × 5 window offsets), so the click is local (W/2, H/2) when each side is odd or at most 5 cells; the only shipped exception is space 3104 Orbiter (6 × 3: local (3, 1) at 0°, (2, 2) at 90°) | The original's mouse-to-cell pick: `0x524960` takes the cell as arguments from the replayed command (`0x4045B0`, commands 0x14 and 0x2D recorded at the top of `0x524960`), and none of the terrain-height callers (`0x4511A0` camera, `0x4F9E60`/`0x4FA470` guests, `0x452AE0`, `0x53DDD0`, `0x542010`) is the pick; its producer is not found |
+| RIDES-021 | World/Level.Objects.cs | The original's mouse-to-cell pick: `0x524960` takes the cell as arguments from the replayed command (`0x4045B0`, commands 0x14 and 0x2D recorded at the top of `0x524960`), and none of the terrain-height callers (`0x4511A0` camera, `0x4F9E60`/`0x4FA470` guests, `0x452AE0`, `0x53DDD0`, `0x542010`) is the pick; its producer is not found. The port picks on the Z = 0 plane (`[EXT:build-cursor-ground-plane]`); the anchor taken from the picked cell is the original's (`0x528B44`, see Shape, footprint and rotation) | The producer of the replayed pick commands |
 | RIDES-023 | World/Objects/OriginalObjectRuntime.cs:125 | Completed cycle = VAR_RUNNING 1 → 0 | Original cycle/income accounting |
-| RIDES-025 | World/Objects/ObjectCatalog.cs | Bonus name: selected language file, then English, then the .sam name. The original reads only `<selected language>.txt` (0x41F350) and falls back to the id table (empty for bonus ids except 3301); the English and .sam fallbacks are an OpenTPW extension for languages an archive lacks (third-party content) | None needed for the shipped archives (all 35 carry the four shipped languages) |
 
 | RIDES-028 | World/Level.Objects.cs | Non-walkable exit outside cells, and entrance outside cells without a queue path, use the nearest walkable path (a one-cell queue). The original placement `0x528A70` lays a queue cell at the entrance's outside cell and a path cell at the exit's (option `0x81B0CC` on; only an entrance path cell with it off) and refuses an outside cell off the map | The link ops 0x81/0x85/0x86 of the laid cells |
 | RIDES-031 | World/Objects/ObjectShape.cs | Shape symbols `@` (type 1; only in the Theme Park Inc road signs, "`*@*`" and "`*@@*`"), `Q` (3) and `#` (16) count as occupied here. The original placement `0x528A70` stamps `@` as a linked path cell inside the footprint (flags word 0x20, `0x529173`–`0x529208`), `Q` as a queue cell (type 3) and `#` like `+` (RIDES-011) | A path and queue cell model inside footprints; TPI placement of a sign over a path (`[EXT:tpi-viewer]`, docs/THEME-PARK-INC.md) |
@@ -372,10 +371,12 @@ Traced in tp.exe (`TPW-EXE`) and no longer approximations:
 - `APPROX:RIDES-043`: objects load in set mode (loader 0x461F10 strips header flag 4 unless the TrackMaster loader asks for it). The Add-mode remainder for TrackMaster coaster models moved to COAST-026.
 
 Reclassified as OpenTPW conventions (no original rule to recover): `[EXT:md2-engine-scale]` (formerly `APPROX:RIDES-026`, the 0.2 presentation scale),
+`[EXT:bonus-name-fallback]` (formerly `APPROX:RIDES-025`: a bonus object whose archive lacks the selected language takes the English name, then the `.sam` name; the original reads only the selected language file and the id table, `0x41F350`; third-party content only, all 35 shipped bonus archives carry the four languages),
+`[EXT:build-cursor-ground-plane]` (the Z = 0 plane pick that is part of `APPROX:RIDES-021`; the original's pick stays open, see the register),
 `[EXT:malformed-texture-coordinates]` (formerly `APPROX:RIDES-030`, non-finite texture coordinates drawn as (0, 0); the original passes raw floats to Direct3D) and
 `[EXT:trig-anim-speed-guard]` (formerly `APPROX:RIDES-038`: the corpus has 4 TRIGANIMSPEED uses, all literal 1800–4000, so the guard against 0 and negative speeds only meets malformed input).
 
-Narrowed: RIDES-011, 012, 019, 024, 025, 031, 033, 035 and 044 (rows above); RIDES-013, 015, 021, 023, 028, 032, 040 stay as they were.
+Narrowed: RIDES-011, 012, 019, 024, 031, 033, 035 and 044 (rows above); RIDES-013, 015, 021, 023, 028, 032, 040 stay as they were.
 
 ### Read round (tp.exe, October 15)
 

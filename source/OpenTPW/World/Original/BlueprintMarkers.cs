@@ -72,6 +72,9 @@ public sealed class BlueprintMarkers : ModelEntity
 		return new Texture( data, Size, Size, TextureFlags.Repeat );
 	}
 
+	/// <summary>A texture of the dynamic texture folder (<c>Data/Generic/Dynamic/Textures</c>) by name, <see cref="Texture.Missing"/> when absent.</summary>
+	internal static Texture LoadDynamicTexture( string name ) => LoadTexture( $"/generic/dynamic/textures/{name}.wct" );
+
 	private static Texture LoadTexture( string path )
 	{
 		if ( ResolveTexturePath( path ) is { } resolved )

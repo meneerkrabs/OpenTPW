@@ -360,7 +360,7 @@ public sealed class ParkObjects
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
 	/// Imported objects are opened (the saved open word is not imported, SAVE-006).
 	/// </summary>
-	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object takes its open word from the save (mCanLoad, SAVE-006 holds that this port opens every imported object)
+	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad), which this port does not import and opens every imported object instead (SAVE-006)
 	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
 
 	/// <summary><see cref="ImportOriginal"/> one object at a time: after each, the objects placed so far and the share of the records done.</summary>

@@ -145,6 +145,8 @@ public sealed partial class ParkHud
 			BeginPlacing( item );
 	}
 
+	// [BIN:TPW-EXE:0x4ab034 buy list price cell] a type with GoldenTicketCost above 0 that the profile did not buy with tickets (0x4d4b70) shows UITEXT 137 and the ticket cost negated (0x4ab050..0x4ab067)
+	// [APPROX:UI-105] every row shows its cash price, so such a type is listed under its own name and its cash price; the row's own buying flow is not traced
 	public string PriceText( BuildItem item ) =>
 		string.Format( CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], BuyPrice( item ) ).Replace( "  ", " " );
 
@@ -160,31 +162,37 @@ public sealed partial class ParkHud
 			return Array.Empty<BuyStat>();
 		var owned = NumberOwned( item ).ToString( CultureInfo.InvariantCulture );
 		// [DATA:UITEXT.str:125-133] the labels per category (rides list five values, as the five rows of frame 493)
-		float? Percent( int? value ) => value is { } known ? Math.Clamp( known / 100f, 0, 1 ) : null;
 		switch ( item.Category )
 		{
 			case BuildCategory.Rides:
-				var capacity = item.Entry?.InitialCapacity ?? 0;
-				// [BIN:TPW-EXE:0x4abb00 buy stats] on a selection the rides' row-1 gauge (0x1ee) is the type record's +0x13c and the row-3 gauge (0x1ef) its +0x1b0, both × 1024 / 100, and the
-				// capacity cell (0x1f2) its +0x19c as "%d"; the working-life gauge (0x1f0) is only set when the window is built, to 100 of the gauge's 1024 (0x4abae0), and keeps that for every ride
-				// [DATA:video 1:50 buy window] Levensduur shows a short red stub (about a tenth) and Betrouwbaarheid an even shorter one
-				// [APPROX:UI-046] excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10') and safe capacity Upgrades[0].InitCapacity: which catalogue values the record fields +0x13c, +0x1b0 and +0x19c hold is not traced — evidence needed: the type record's loader
-				float? reliability = item.Entry?.Upgrades.FirstOrDefault( level => level.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0, 1 ) : null;
-				return new[]
-				{
-					new BuyStat( RideOwned, owned, null ),
-					new BuyStat( RideExcitement, null, Percent( item.DefaultExcitement ) ),
-					new BuyStat( RideCapacity, capacity > 0 ? capacity.ToString( CultureInfo.InvariantCulture ) : null, null ),
-					new BuyStat( RideReliability, null, reliability ),
-					new BuyStat( RideLife, null, RideWorkingLifeGauge ),
-				};
+				return RideBuyStats( item, owned );
 			case BuildCategory.Shops:
 				return new[] { new BuyStat( ShopOwned, owned, null ) };
 			case BuildCategory.Sideshows:
-				return new[] { new BuyStat( SideshowOwned, owned, null ), new BuyStat( SideshowExcitement, null, Percent( item.DefaultExcitement ) ) };
+				return new[] { new BuyStat( SideshowOwned, owned, null ), new BuyStat( SideshowExcitement, null, item.DefaultExcitement is { } excitement ? UiGauge.OfPercent( excitement ) : null ) };
 			default:
 				return new[] { new BuyStat( FeatureOwned, owned, null ) };
 		}
+	}
+
+	/// <summary>The five stat rows of a ride in the buy window (<c>0x4abb00</c>): owned, excitement, safe capacity, reliability and working life.</summary>
+	internal static IReadOnlyList<BuyStat> RideBuyStats( BuildItem item, string owned )
+	{
+		// [BIN:TPW-EXE:0x4abb00 buy gauges] a gauge value is the record field × 1024 / 100 in integer steps (0x66d885 clamps it to 0..1024), not the exact share
+		float? Percent( int? value ) => value is { } known ? UiGauge.OfPercent( known ) : null;
+		var baseLevel = item.Entry?.Upgrades.FirstOrDefault( level => level.Level == 0 );
+		// [BIN:TPW-EXE:0x4abb00 buy stats] on a selection the rides' row-1 gauge (0x1ee) is the type record's +0x13c (UsageInfo.ExcitementLevel) and the row-3 gauge (0x1ef) its +0x1b0 (Upgrades[0].WearRate), both × 1024 / 100, and the
+		// capacity cell (0x1f2) its +0x19c (Upgrades[0].RedLineCapacity) as "%d"; the record offsets are the key table's (0x7456e8, 60-byte records: UsageInfo key 30 at +0x13c, the Upgrades keys 57..65 from +0x198 in steps of 4: InitCapacity, RedLineCapacity +0x19c, InitDuration, RedLineDuration, InitSpeed, RedLineSpeed +0x1ac, WearRate +0x1b0, QueueWaitTimeConstant, CostOfUpgrade +0x1b8)
+		// the working-life gauge (0x1f0) is only set when the window is built, to 100 of the gauge's 1024 (0x4abae0), and keeps that for every ride
+		// [DATA:video 1:50 buy window] Levensduur shows a short red stub (about a tenth) and Betrouwbaarheid an even shorter one: WearRate 5 is 51 of 1024, the working life 100
+		return new[]
+		{
+			new BuyStat( RideOwned, owned, null ),
+			new BuyStat( RideExcitement, null, Percent( item.DefaultExcitement ) ),
+			new BuyStat( RideCapacity, (baseLevel?.GetInt( "RedLineCapacity" ) ?? 0).ToString( CultureInfo.InvariantCulture ), null ),
+			new BuyStat( RideReliability, null, Percent( baseLevel?.GetInt( "WearRate" ) ) ),
+			new BuyStat( RideLife, null, RideWorkingLifeGauge ),
+		};
 	}
 
 	private UiScreen CreateBuyScreen()
@@ -315,8 +323,8 @@ public sealed partial class ParkHud
 			var gaugeRow = owner.buy.SelectedItem?.Category == BuildCategory.Rides ? row is 1 or 3 or 4 : row == 1;
 			if ( !gaugeRow )
 				return;
-			// [DATA:video 1:50 buy window] the type-9 value cells are red-to-green gradient gauges (UiGauge; the gradient is the UI-046 approximation)
-			UiGauge.Draw( context.Batch, rect.Inflate( -rect.Height * 0.2f ), stat.Gauge );
+			// [DATA:video 1:50 buy window] the type-9 value cells are red-to-green gradient gauges (UiGauge; the gradient colours are the UI-046 approximation); the bar fills the cell less 10 units top and bottom (0x4ab9dd)
+			UiGauge.Draw( context.Batch, UiGauge.BarRect( rect, context.Canvas ), stat.Gauge );
 		}
 	}
 

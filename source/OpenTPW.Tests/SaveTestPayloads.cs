@@ -408,6 +408,24 @@ internal static class SaveTestPayloads
 	/// <summary>The stored (byte-reversed) delimiter of <paramref name="tag"/>.</summary>
 	public static byte[] Stored( string tag ) => Encoding.ASCII.GetBytes( tag ).Reverse().ToArray();
 
+	/// <summary>The smallest valid body of a traced block (the readers of SaveBlockWidths): an empty script table, no particles, empty lists.</summary>
+	public static byte[] MinimalBlock( SaveBlock block )
+	{
+		static byte[] Words( params uint[] words ) => words.SelectMany( BitConverter.GetBytes ).ToArray();
+		return block switch
+		{
+			SaveBlock.Scripts => Words( SaveBlockWidths.ScriptsMagic, SaveBlockWidths.ScriptRecordBytes, 1, 0 ),
+			SaveBlock.Particles => Words( SaveBlockWidths.ParticlesMagic, 0 ),
+			SaveBlock.MessageCentre => new byte[4 + SaveBlockWidths.MessageLists * 4],
+			SaveBlock.TrackRides => Words( 1, 12, 12 ),
+			SaveBlock.FlyingRides => Words( SaveBlockWidths.FlyingMagic, 0 ),
+			SaveBlock.Rsse => Words( SaveBlockWidths.RsseMagic, 0, 0, 0, 0, 0, 0, 0, 0 ),
+			SaveBlock.Advisor => Words( SaveBlockWidths.AdvisorMagic, 0, 0 ),
+			SaveBlock.Sound => new byte[12],
+			_ => throw new ArgumentOutOfRangeException( nameof( block ), block, "No minimal body." ),
+		};
+	}
+
 	/// <summary>
 	/// A full payload: a 3-byte action recording, <paramref name="world"/>, then every other block (fixed-width blocks
 	/// at their widths, an empty Coasters block, <paramref name="rideSystem"/>; <paramref name="blocks"/> overrides), with
@@ -425,10 +443,10 @@ internal static class SaveTestPayloads
 			var content = blocks != null && blocks.TryGetValue( block, out var replaced ) ? replaced : block switch
 			{
 				SaveBlock.World => world,
-				SaveBlock.RideSystem => rideSystem ?? new byte[6],
+				SaveBlock.RideSystem => BitConverter.GetBytes( (uint)(rideSystem?.Length ?? 2) ).Concat( rideSystem ?? new byte[2] ).ToArray(),
 				SaveBlock.Coasters => new byte[] { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0 },
 				_ when SavePayloadLayout.FixedBlockBytes.TryGetValue( block, out var size ) => new byte[size],
-				_ => new byte[] { 0x10, (byte)block, 0x20 },
+				_ => MinimalBlock( block ),
 			};
 			output.Write( content );
 			output.Write( Stored( tag ) );

@@ -70,7 +70,10 @@ cleared on both sides (tp.exe `0x5367A0`), no refund. A `NoModify` cell that sti
 neighbours the flag is dropped and the cell is removed.
 Backspace over a path cell with no tool on uses the counted case (tp.exe
 `0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
-when it was laid once (`ParkPathBuilder.RemoveOnce`).
+when it was laid once (`ParkPathBuilder.RemoveOnce`). The original's key does
+nothing over a queue cell (it backtracks only a type-1 cell, tp.exe `0x40BE3C`);
+OpenTPW also removes a queue there, from the cell under the cursor to the queue's
+back with the remove tool's refund (`[EXT:queue-backtrack]`).
 
 ## Tool
 

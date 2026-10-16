@@ -570,6 +570,10 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var hud = flow.Hud!;
 			Require( !hud.ResearchWindowOpen && hud.Stack.Top == hud.Screen, "research exit returns to the HUD" );
+			// The buy list shows only researched items (the filler 0x4aaf70), so the flow researches the whole ride
+			// catalogue first; a locked item cannot be listed or clicked, as in the original.
+			var research = flow.Level!.Park!.Economy.Research;
+			research.Restore( research.Completed.Concat( hud.Catalog.GetItems( BuildCategory.Rides ).Select( item => (item.InfoId, 0) ) ).Distinct().ToArray(), research.ProgressEntries.ToArray(), research.Effort );
 			Click( hud.Screen, "buy" );
 		} );
 		Wait( "buy window opens", 3 );
@@ -577,7 +581,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		{
 			var hud = flow.Hud!;
 			Require( hud.BuyWindowOpen && hud.Stack.Top?.Name == "buy", "buy button opens the original buy window" );
-			Require( hud.Catalog is OriginalBuildCatalog && hud.BuyItems.Count > ParkHud.BuyVisibleRows, "the original ride catalogue spans more rows than the list shows" );
+			Require( hud.Catalog is OriginalBuildCatalog && hud.BuyItems.Count > 0, "the original ride catalogue lists the researched rides (the buy list filler 0x4aaf70 shows only available items)" );
 			var capture = CaptureFrame( "buy-window.png" );
 			VerifyText( capture, flow.Strings[UIStrings.BuyRide], "Buy Ride title" );
 			VerifyText( capture, flow.Strings[UIStrings.NameAttr], "Name column header" );

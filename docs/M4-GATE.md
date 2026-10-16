@@ -74,7 +74,7 @@ like `Level` and the M3 gate (OpenTPW's `Level` needs a GPU):
    an entrance must open onto a path cell (nearest the park entrance first, then the
    shortest exit snap), one without must touch a path cell. The purchase is
    `ParkEconomy.TryBuild`. Guest attractions are registered with
-   `Level.RegisterWithGuests` (a one-cell queue at the path, RIDES-028; queues are the
+   `Level.RegisterWithGuests` (a one-cell queue at the path, as the gates do not lay the cells outside an entrance, OBJECTS.md; queues are the
    M3 gate's subject) and linked to the guest payment bridge.
 6. **Run**, **stop**, **delete**: below. The tick follows `Level.Update`: the open
    state into the economy, guests, fixed items, the object, the economy.

@@ -95,8 +95,14 @@ public static class ParkLayoutSnapshot
 		public required short Placements { get; init; }
 		/// <summary>Cardinal link bits 1 (−Y), 4 (+X), 16 (+Y), 64 (−X) (map cell <c>+12</c>).</summary>
 		public required byte Links { get; init; }
-		/// <summary>The queue link toward the queue's predecessor (map cell <c>+13</c>): 0 or one cardinal bit, and only on a queue cell.</summary>
+		/// <summary>The queue link (map cell <c>+13</c>): 0 or one cardinal bit, toward a queue cell's predecessor or the way an entrance or exit cell opens, and only on those cells.</summary>
 		public required byte QueueLink { get; init; }
+		/// <summary>
+		/// The owner word (map cell <c>+0x10</c>, <see cref="ParkCellMap.OwnerAt"/>): 0 on a cell nothing owns and in saves made before the owner word existed, whose object cells then
+		/// take their owner again when the objects are placed back.
+		/// </summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+		public ushort Owner { get; init; }
 	}
 
 	/// <summary>
@@ -160,7 +166,7 @@ public static class ParkLayoutSnapshot
 				var queueLink = cells.QueueLinkAt( x, y );
 				if ( type == 0 && flags == 0 && placements == 0 && links == 0 && queueLink == 0 )
 					continue;
-				cellRecords.Add( new CellData { X = x, Y = y, Type = type, Flags = flags, Placements = placements, Links = links, QueueLink = queueLink } );
+				cellRecords.Add( new CellData { X = x, Y = y, Type = type, Flags = flags, Placements = placements, Links = links, QueueLink = queueLink, Owner = cells.OwnerAt( x, y ) } );
 			}
 		}
 		var objectRecords = new List<PlacedObjectData>( objects.Objects.Count );
@@ -309,8 +315,11 @@ public static class ParkLayoutSnapshot
 			Require( cell!.X >= 0 && cell.Y >= 0 && cell.X < cells.Width && cell.Y < cells.Height, $"cell ({cell.X}, {cell.Y}) is outside the map" );
 			Require( seen.Add( (cell.X, cell.Y) ), $"cell ({cell.X}, {cell.Y}) is recorded twice" );
 			Require( cell.QueueLink is 0 or 1 or 4 or 16 or 64, $"cell ({cell.X}, {cell.Y}) has queue link {cell.QueueLink}" );
-			Require( cell.QueueLink == 0 || cell.Type == (byte)ParkCellType.Queue, $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
+			Require( cell.QueueLink == 0 || ParkCellTypes.CarriesQueueLink( cell.Type ), $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
 			Require( cell.Placements >= 0, $"cell ({cell.X}, {cell.Y}) has placement count {cell.Placements}" );
+			Require( cell.Owner == 0 || cell.Type != 0, $"cell ({cell.X}, {cell.Y}) has owner word {cell.Owner} but is empty" );
+			// an owner word is the cell word y * 128 + x + 1 of a cell of the 128 x 128 array (0x4D0AF0 decodes it as cell - 1)
+			Require( cell.Owner <= 128 * 128, $"cell ({cell.X}, {cell.Y}) has owner word {cell.Owner} beyond the cell array" );
 			// with a land record the unowned flag lives in the record's bits, never in a cell record (see CaptureSnapshot)
 			Require( cells.Land == null || (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0,
 				$"cell ({cell.X}, {cell.Y}) carries the unowned flag beside a land record" );
@@ -375,10 +384,12 @@ public static class ParkLayoutSnapshot
 		{
 			cells.SetType( cell.X, cell.Y, cell.Type );
 			cells.SetLinks( cell.X, cell.Y, cell.Links );
-			if ( cell.Type == (byte)ParkCellType.Queue )
+			if ( ParkCellTypes.CarriesQueueLink( cell.Type ) )
 				cells.SetQueueLink( cell.X, cell.Y, cell.QueueLink );
 			cells.SetFlags( cell.X, cell.Y, (ParkCellFlags)cell.Flags );
 			cells.SetPlacementCount( cell.X, cell.Y, cell.Placements );
+			if ( cell.Owner != 0 )
+				cells.SetOwner( cell.X, cell.Y, cell.Owner );
 		}
 		if ( snapshot.Cells.Land is { } saved )
 		{

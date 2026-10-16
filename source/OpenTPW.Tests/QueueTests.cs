@@ -117,11 +117,9 @@ public class QueueTests
 		var ride = rig.Ride;
 		var grid = rig.Grid;
 		CollectionAssert.AreEqual( new[] { (2, 0) }, ride.QueueCells.ToArray(), "no queue cells yet: the path fallback is a one-cell queue" );
-		Assert.AreEqual( QueueBuildResult.NotAtQueueEnd, QueuePaths.TryExtend( grid, ride, 2, 4 ), "the first cell is the entrance's outside cell" );
 		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 5 ) );
 		Assert.AreEqual( GuestPathGrid.LinkValue( 2 ), grid.GetQueueLink( 2, 5 ), "the front cell links toward the ride entrance" );
 		Assert.IsNull( ride.JoinCell, "a queue that touches no path is not connected" );
-		Assert.AreEqual( QueueBuildResult.NotAtQueueEnd, QueuePaths.TryExtend( grid, ride, 3, 3 ) );
 		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 2, 4 ) );
 		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 3, 4 ) );
 		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( grid, ride, 3, 3 ) );
@@ -1541,21 +1539,13 @@ public class QueueTests
 	public void AStaleQueueIsRecomputedBeforeACellIsCharged()
 	{
 		var rig = new Rig();
-		var economy = EconomyTestData.Park();
-		var balance = economy.Balance;
 		// A path laid over the back cell (2, 1) shortens the queue; nothing has recomputed it yet.
 		rig.Grid.SetPath( 2, 1, true );
 		Assert.AreEqual( (2, 1), rig.Ride.QueueBackCell, "stale back cell" );
-		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.CheckExtend( rig.Grid, rig.Ride, 3, 1 ), "the stale queue accepts a neighbour of the old back cell" );
-		Assert.AreEqual( QueueBuildResult.NotAtQueueEnd, QueuePaths.TryExtend( rig.Grid, rig.Ride, 3, 1 ), "laying recomputes and refuses it" );
-
-		// Level.BuildQueueCell's order: recompute, check, charge, lay. The refused cell is not charged.
-		rig.Ride.RecomputeQueue( rig.Grid );
-		var check = QueuePaths.CheckExtend( rig.Grid, rig.Ride, 3, 1 );
-		if ( check == QueueBuildResult.Ok )
-			economy.TrySpendCell( CellPurchase.Queue );
-		Assert.AreEqual( QueueBuildResult.NotAtQueueEnd, check );
-		Assert.AreEqual( balance, economy.Balance );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.CheckExtend( rig.Grid, rig.Ride, 3, 1 ), "the cell is valid on its own, whatever the queue's back" );
+		Assert.AreEqual( QueueBuildResult.Ok, QueuePaths.TryExtend( rig.Grid, rig.Ride, 3, 1 ), "laying recomputes first: (3, 1) no longer touches the back, so it stands free" );
+		Assert.AreEqual( 0, rig.Grid.GetQueueLink( 3, 1 ), "a free-standing cell has no queue link" );
+		Assert.AreEqual( (2, 2), rig.Ride.QueueBackCell, "the recompute shortened the queue and the free cell joined nothing" );
 
 		// The level recomputes before it checks and charges, wherever the queue tool's body lives.
 		var root = new DirectoryInfo( AppContext.BaseDirectory );

@@ -1860,12 +1860,13 @@ public sealed class ParkEconomy : IParkEconomy
 			if ( Catalog.TryGet( item.InfoId, out var info ) )
 				Counters.Add( ParkCounters.Sold( info.ShopType, info.SpecialIngredient ), 1 );
 		}
-		// [APPROX:ECON-056] the cost booked for a shop sale is the shop's mCostOfGoods as it stands; the original books the value of 0x004E1B40, a float product of mCostOfGoods with terms of the quality byte (+0x18C) and the special-ingredient byte (+0x198) — evidence needed: the last combination step of 0x004E1B40 from a capture of a booked shop cost
-		Post( LedgerCategory.OtherCosts, item.CostOfGoods );
+		// [BIN:TPW-EXE:0x004FE1E0 shop use] a shop (WhichUIType 1) books 0x004E1B40's value (ShopGoodsCost: the cost of goods scaled by the quality and special-ingredient bytes) through 0x004E1920: the bank debit, the object's cost rings and the challenge types 12 and 13 all take the same number
+		var goods = Catalog.TryGet( item.InfoId, out var shopInfo ) ? ShopGoodsCost.Of( item.CostOfGoods, item.QualityOfGoods, item.IngredientAmount, shopInfo.SpecialIngredient ) : item.CostOfGoods;
+		Post( LedgerCategory.OtherCosts, goods );
 		item.CustomersThisMonth++;
-		item.CostsThisMonth += item.CostOfGoods;
-		item.TotalProfit += item.Price - item.CostOfGoods;
-		Counters.Add( ParkCounters.ShopProfit, item.Price - item.CostOfGoods );
+		item.CostsThisMonth += goods;
+		item.TotalProfit += item.Price - goods;
+		Counters.Add( ParkCounters.ShopProfit, item.Price - goods );
 		if ( item.Price != 0 )
 			Raise( ParkEventKind.GuestPaid, item.Price, item.Id, item.InfoId, nameof( LedgerCategory.ShopTakings ) );
 		return true;

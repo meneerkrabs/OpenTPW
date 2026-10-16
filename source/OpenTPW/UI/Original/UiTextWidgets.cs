@@ -121,6 +121,11 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	/// edge in authored units, header text). Rows then split on tabs and each piece lands at its column's offset.
 	/// </summary>
 	public IReadOnlyList<(float Offset, Func<string> Text)>? Columns { get; set; }
+	/// <summary>
+	/// A right-aligned second cell per row (the original's load list row has two cells, the park name left and the save date right,
+	/// 0x49f170); an empty text draws nothing. The first cell is narrowed by it.
+	/// </summary>
+	public Func<int, string>? Trailing { get; set; }
 	public int Selected { get; set; } = -1;
 	public Action<int>? SelectionChanged { get; set; }
 	public Action<int>? RowActivated { get; set; }
@@ -216,7 +221,16 @@ public sealed class UiScrollList : UiElement, IUiRowList
 				context.Batch.AddRectangle( row, new RgbaByte( 60, 90, 200, focused ? (byte)170 : (byte)110 ) );
 			var text = rows[first + index];
 			if ( Columns == null )
+			{
+				var trailing = Trailing?.Invoke( first + index ) ?? "";
+				if ( trailing.Length > 0 )
+				{
+					var trailingWidth = context.Measure( context.Fonts.Small, trailing ).Width + 2 * context.Canvas.TextScale;
+					context.DrawText( context.Fonts.Small, trailing, row, selected ? UiColors.Highlight : UiColors.Text, UiAlign.Right );
+					row = new UiRect( row.X, row.Y, Math.Max( 1, row.Width - trailingWidth ), row.Height );
+				}
 				context.DrawText( context.Fonts.Small, text, row, selected ? UiColors.Highlight : UiColors.Text );
+			}
 			else
 			{
 				// A tab-separated row: each piece is drawn at its column's offset.

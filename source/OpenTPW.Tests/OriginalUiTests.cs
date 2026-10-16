@@ -287,6 +287,25 @@ public class OriginalUiTests
 	}
 
 	[TestMethod]
+	public void LoadScreenShowsTheSaveDateAndTimeInTheOriginalsSecondCell()
+	{
+		// tp.exe 0x49ec80: UITEXT 0x1c0 (OpenTPW's 447: "" P16 "." P17 "." P18 "") takes day, month and year, then " %02d:%02d" hour and minute
+		var templates = Enumerable.Range( 0, 473 ).Select( _ => new StringTemplate( new[] { new StringTemplatePart( "x", -1 ) } ) ).ToArray();
+		templates[UiTextRecord.SaveDate] = new StringTemplate( new[]
+		{
+			new StringTemplatePart( "", -1 ), new StringTemplatePart( "", 16 ), new StringTemplatePart( ".", -1 ),
+			new StringTemplatePart( "", 17 ), new StringTemplatePart( ".", -1 ), new StringTemplatePart( "", 18 )
+		} );
+		var strings = new UiStringTable( "English", Enumerable.Range( 0, 473 ).Select( index => $"ui{index}" ).ToArray(), Enumerable.Range( 0, 589 ).Select( index => $"help{index}" ).ToArray(),
+			new[] { "Lost Kingdom", "Halloween World", "Wonder Land", "Space Zone" }, Enumerable.Range( 0, 374 ).Select( index => $"object{index}" ).ToArray(), uiTemplates: templates );
+		var entries = new[] { new ParkLoadEntry( "jungle", 0, false, "x.json", "Mine", new DateTime( 2026, 3, 5, 7, 9, 0 ) ), new ParkLoadEntry( "jungle", 0, true ) };
+		var screen = FrontEndMenu.CreateLoadScreen( new UiScreenStack(), strings, entries, _ => { } );
+		var list = (UiScrollList)screen.Find( "parks" )!;
+		Assert.AreEqual( "5.3.2026 07:09", list.Trailing!( 0 ) );
+		Assert.AreEqual( "", list.Trailing!( 1 ), "a shipped park or the sandbox has no file time" );
+	}
+
+	[TestMethod]
 	public void LoadScreenListsParksWithOriginalAndSupplementaryLabels()
 	{
 		var stack = new UiScreenStack();

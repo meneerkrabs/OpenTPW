@@ -3042,8 +3042,110 @@ WALK_STEERING_TARGET = Target(
            'walk field the step reads is compared after each set-up and step, with the walk step\'s result (0x4fa2a0).'],
     budget=2_000_000_000)
 
+# ============================================================================== (t) tp.exe TQI movie matrix 0x6710c0 and transform pass 0x67673c
+TQI_MATRIX = 0x6710C0          # cdecl (int *matrix, int quantiser): fills 64 dwords
+TQI_PASS = 0x67673C            # register call: esi = 8 input dwords, edi = output (8 dwords, stride 0x24); no shift
+TQI_RANGES = [(0x6710C0, 0x671192), (0x67673C, 0x67687B), (0x67A830, 0x67A860)]   # the matrix, the pass, _ftol
+TQI_PRESCALE = 0x705C88        # 64 dwords, Q13 AAN prescale
+TQI_WEIGHTS = 0x705D88         # 64 dwords, MPEG-1 intra matrix
+TQI_ODD = (0.5411961078643799, 1.3065630197525024, 0.3826834261417389)   # floats at 0xfbb59c, 0xfbb5a0, 0xfbb5a4
+
+
+def tqi_stubs(target: Target) -> dict:
+    return {}
+
+
+def tqi_matrix_binary(sb: Sandbox, q: int, log) -> list:
+    out = sb.alloc(256)
+    sb.call(TQI_MATRIX, (out, q))
+    return [s32(sb.read(out + 4 * i, 'I')) for i in range(64)]
+
+
+TQI_PRESCALE_VALUES = [8192, 5906, 6270, 6967, 8192, 10426, 15137, 29692, 5906, 4258, 4520, 5023, 5906, 7517, 10913, 21407,
+                       6270, 4520, 4799, 5332, 6270, 7980, 11585, 22725, 6967, 5023, 5332, 5925, 6967, 8867, 12873, 25251,
+                       8192, 5906, 6270, 6967, 8192, 10426, 15137, 29692, 10426, 7517, 7980, 8867, 10426, 13270, 19266, 37791,
+                       15137, 10913, 11585, 12873, 15137, 19266, 27969, 54864, 29692, 21407, 22725, 25251, 29692, 37791, 54864, 107619]
+TQI_WEIGHT_VALUES = [8, 16, 19, 22, 26, 27, 29, 34, 16, 16, 22, 24, 27, 29, 34, 37, 19, 22, 26, 27, 29, 34, 34, 38, 22, 22, 26, 27,
+                     29, 34, 37, 40, 22, 26, 27, 29, 32, 35, 40, 48, 26, 27, 29, 32, 35, 40, 48, 58, 26, 27, 29, 34, 38, 46, 56, 69,
+                     27, 29, 35, 38, 46, 56, 69, 83]
+
+
+def tqi_matrix_plan(q: int) -> list:
+    """TqiDecoder.BuildMatrix: S · trunc(W · (float)((107 − q) / 16) · 65536), low 16 bits rounded half up; 8 · S for q = 100; M[0] = 2^16."""
+    factor = struct.unpack('<f', struct.pack('<f', (107.0 - q) * 0.0625))[0]
+    out = []
+    for s_, w_ in zip(TQI_PRESCALE_VALUES, TQI_WEIGHT_VALUES):
+        weight = 0x80000 if q == 100 else int(w_ * factor * 65536.0)
+        out.append(s32((s_ * weight + 0x8000) >> 16))
+    out[0] = 0x10000
+    return out
+
+
+def tqi_matrix_inputs(rng: random.Random, n: int) -> list:
+    return list(range(0, 108))
+
+
+def tqi_pass_binary(sb: Sandbox, x: list, log) -> list:
+    source, out = sb.alloc(32), sb.alloc(0x120)
+    for i, value in enumerate(x):
+        sb.write(source + 4 * i, 'I', value & MASK32)
+    sb.call(TQI_PASS, regs={'esi': source, 'edi': out})
+    return [s32(sb.read(out + 0x24 * i, 'I')) for i in range(8)]
+
+
+def _tqi_round_even(value: float) -> int:
+    return s32(struct.unpack('<q', struct.pack('<d', value + 6755399441055744.0))[0])
+
+
+def _tqi_half_sqrt2(value: int) -> int:
+    return s32(((s32(value) * 0x5A82799A) >> 32) << 1)
+
+
+def tqi_pass_plan(x: list) -> list:
+    """TqiDecoder.Butterfly (with the first pass's zero shortcut): integer adds, doubled Q31 high dwords, the odd part in double precision."""
+    if not any(x[1:]):
+        return [x[0]] * 8
+    a_f, b_f, z_f = TQI_ODD
+    z13, z10, z11, z12 = s32(x[3] + x[5]), s32(x[5] - x[3]), s32(x[7] + x[1]), s32(x[1] - x[7])
+    t7 = s32(z13 + z11)
+    z5 = (float(z12) + z10) * z_f
+    a, b = _tqi_round_even(z10 * a_f + z5), _tqi_round_even(z12 * b_f - z5)
+    r11 = _tqi_half_sqrt2(z11 - z13)
+    p, q, w = s32(a + r11), s32(r11 + b), s32(b + t7)
+    t13, t10, t11 = s32(x[6] + x[2]), s32(x[4] + x[0]), s32(x[0] - x[4])
+    r = _tqi_half_sqrt2(x[2] - x[6])
+    e, plus, minus = s32(t13 + r), s32(r + t11), s32(t11 - r)
+    return [s32(e + t10 + w), s32(q + plus), s32(minus + p), s32(t10 - e + a), s32(t10 - e - a), s32(minus - p), s32(plus - q), s32(e + t10 - w)]
+
+
+def tqi_pass_inputs(rng: random.Random, n: int) -> list:
+    """Coefficient rows of the shipped range (|x| < 2^26), with the zero-shortcut rows; rows whose odd-part products end within 0.1
+    of a half are left out: Unicorn's x87 rounds those away from zero in about one case of twenty, which no IEEE precision does."""
+    out = [[0] * 8, [5 << 16] + [0] * 7, [-(3 << 16), 0, 0, 0, 0, 0, 0, 0]]
+    a_f, b_f, z_f = TQI_ODD
+    while len(out) < n:
+        x = [rng.randint(-(1 << 26), 1 << 26) if rng.random() < 0.6 else 0 for _ in range(8)]
+        z10, z12 = s32(x[5] - x[3]), s32(x[1] - x[7])
+        z5 = (float(z12) + z10) * z_f
+        if any(abs(abs(v - math.floor(v)) - 0.5) < 0.1 for v in (z10 * a_f + z5, z12 * b_f - z5)):
+            continue
+        out.append(x)
+    return out
+
+
+TQI_MATRIX_TARGET = Target(
+    'tpw-exe-tqi-matrix', 'tpw', 'tp.exe TQI dequantisation matrix 0x6710c0', 'TGQ-MOVIES.md (TqiDecoder.BuildMatrix)',
+    TQI_MATRIX, TQI_RANGES, tqi_stubs, tqi_matrix_binary, tqi_matrix_plan, tqi_matrix_inputs,
+    notes=['Every quantiser 0..107 (the header byte the decoder accepts); _ftol 0x67a830 runs in the sandbox.'])
+TQI_PASS_TARGET = Target(
+    'tpw-exe-tqi-transform-pass', 'tpw', 'tp.exe TQI transform pass 0x67673c', 'TGQ-MOVIES.md (TqiDecoder.Butterfly)',
+    TQI_PASS, TQI_RANGES, tqi_stubs, tqi_pass_binary, tqi_pass_plan, tqi_pass_inputs,
+    notes=['The first pass (the second, 0x676965, is the same butterfly without the zero shortcut and with sar 17 per output). '
+           'Whole movies were compared too: the decoder 0x6747d0 over 51 sampled frames of the nine movies matched TqiDecoder in '
+           'every sample but one, a half-way odd-part rounding Unicorn gets wrong (docs/TGQ-MOVIES.md).'])
+
 WALK_TARGETS = [WALK_EDGE_TARGET, WALK_COMMIT_TARGET, WALK_SEARCH_TARGET, WALK_AVOID_TARGET, WALK_STEERING_TARGET]
 
 TARGETS = [WORLD_RNG_TARGET, TPI_WORLD_RNG_TARGET, ARRIVAL_TARGET, LOAN_OFFERS_TARGET, LOAN_TERM_TARGET, LOAN_MONTH_TARGET, POINTS_TARGET,
            SCRAP_TARGET, QREEVAL_TARGET, COUNTS_TARGET, PRICE_TARGET, WEAR_TARGET, STATE6_TARGET, WANDER_TARGET, LITTER_TARGET, BIN_WALK_TARGET, REGION_TARGET, FINDER_TARGET, GUARD_TARGET,
-           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET] + COAST_TARGETS + WALK_TARGETS
+           TPI_ARRIVAL_TARGET, TPI_LOAN_OFFERS_TARGET, TPI_LOAN_TERM_TARGET, TPI_LOAN_MONTH_TARGET, TPI_POINTS_TARGET, TQI_MATRIX_TARGET, TQI_PASS_TARGET] + COAST_TARGETS + WALK_TARGETS

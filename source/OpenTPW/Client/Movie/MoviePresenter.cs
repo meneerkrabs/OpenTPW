@@ -3,7 +3,7 @@ using Veldrid;
 namespace OpenTPW;
 
 /// <summary>
-/// Uploads decoded movie frames to a GPU texture (CPU BT.601 full-range conversion to RGBA) and draws them
+/// Uploads decoded movie frames to a GPU texture (the original player's colour tables on the CPU, <see cref="TqiColour"/>) and draws them
 /// at the original's display aspect (letter/pillarboxed) with the fullscreen-triangle blit shader.
 /// </summary>
 internal sealed class MoviePresenter : IDisposable

@@ -282,20 +282,21 @@ public class TgqMovieFileTests
 		Assert.AreEqual( 16, frame.Width );
 		Assert.AreEqual( 256, frame.Y.Length );
 		Assert.AreEqual( 64, frame.Cb.Length );
-		Assert.IsTrue( frame.Cb.All( value => value == 128 ) );
-		Assert.IsTrue( frame.Cr.All( value => value == 50 ) );
-		// Single horizontal frequency-1 coefficients (level +1 and escaped +3) over DC 64. The expected rows are the
-		// offsets an external FFmpeg TQI oracle produces for these levels in the original movies.
-		int[] levelOne = { 2, 1, 1, 0, -1, -1, -2, -2 };
-		int[] levelThree = { 5, 4, 3, 1, -1, -3, -5, -6 };
+		// DC only: the predictor times 2^16, shifted right by 17 (tp.exe 0x6747D0): 7-bit samples, 64 the chroma zero.
+		Assert.IsTrue( frame.Cb.All( value => value == 64 ) );
+		Assert.IsTrue( frame.Cr.All( value => value == 25 ) );
+		// Single horizontal frequency-1 coefficients (level +1 and escaped +3) over DC 32 at quantiser 99: the matrix entry
+		// 47248 through tp.exe's butterfly (worked by hand from 0x67673C/0x676965; the oracle target pins the routine).
+		int[] levelOne = { 0, 0, 0, 0, -1, -1, -1, -1 };
+		int[] levelThree = { 2, 1, 1, 0, -1, -2, -2, -3 };
 		for ( var row = 0; row < 8; row++ )
 		{
 			for ( var column = 0; column < 8; column++ )
 			{
-				Assert.AreEqual( 100, frame.Y[row * 16 + column] );
-				Assert.AreEqual( 64, frame.Y[row * 16 + 8 + column] );
-				Assert.AreEqual( 64 + levelOne[column], frame.Y[(8 + row) * 16 + column], $"r{row} c{column}" );
-				Assert.AreEqual( 64 + levelThree[column], frame.Y[(8 + row) * 16 + 8 + column], $"r{row} c{column}" );
+				Assert.AreEqual( 50, frame.Y[row * 16 + column] );
+				Assert.AreEqual( 32, frame.Y[row * 16 + 8 + column] );
+				Assert.AreEqual( 32 + levelOne[column], frame.Y[(8 + row) * 16 + column], $"r{row} c{column}" );
+				Assert.AreEqual( 32 + levelThree[column], frame.Y[(8 + row) * 16 + 8 + column], $"r{row} c{column}" );
 			}
 		}
 		Assert.AreNotEqual( frame.Y[8 * 16], frame.Y[8 * 16 + 7] );
@@ -306,16 +307,19 @@ public class TgqMovieFileTests
 	[TestMethod]
 	public void ZigZagPlacesSecondCoefficientVertically()
 	{
-		// Y2: run 1 level 1 ("011" + sign) lands on scan index 2 = natural (row 1, column 0).
+		// Y2: run 1 level 1 ("011" + sign) lands on scan index 2 = natural (row 1, column 0); tp.exe stores it at the transposed
+		// position (row 0, column 1) and its two transposing passes give the natural vertical profile back.
 		var custom = new BitWriter()
-			.Put( "100" ).Put( "011" ).Put( "0" ).Put( "10" )
+			.Put( "111110" ).Put( 100, 7 ).Put( "011" ).Put( "0" ).Put( "10" )
 			.Put( "100" ).Put( "10" ).Put( "100" ).Put( "10" ).Put( "100" ).Put( "10" )
 			.Put( "00" ).Put( "10" ).Put( "00" ).Put( "10" );
 		var frame = TqiDecoder.Decode( Frame( custom ) );
 		for ( var row = 0; row < 8; row++ )
 			Assert.AreEqual( frame.Y[row * 16], frame.Y[row * 16 + 7] );
-		Assert.AreEqual( (byte)2, frame.Y[0] );
-		Assert.AreEqual( (byte)0, frame.Y[7 * 16] );
+		Assert.AreEqual( (byte)50, frame.Y[0] );
+		Assert.AreEqual( (byte)50, frame.Y[3 * 16] );
+		Assert.AreEqual( (byte)49, frame.Y[4 * 16] );
+		Assert.AreEqual( (byte)49, frame.Y[7 * 16] );
 	}
 
 	[DataTestMethod]
@@ -337,7 +341,7 @@ public class TgqMovieFileTests
 		Assert.ThrowsException<InvalidDataException>( () => TqiDecoder.Decode( Frame( SampleMacroblock( "000001" + "000000" + "00000000" + "01111111" + "10" ) ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => TqiDecoder.Decode( Frame( SampleMacroblock( "000001" + "000000" + "10000000" + "10000000" + "10" ) ) ) );
 		var extended = TqiDecoder.Decode( Frame( SampleMacroblock( "000001" + "000000" + "00000000" + "10000000" + "10" ) ) );
-		Assert.AreEqual( 255, extended.Y[8 * 16 + 8] );
+		Assert.AreEqual( 120, extended.Y[8 * 16 + 8] );
 		var truncated = Frame( SampleMacroblock() );
 		Assert.ThrowsException<InvalidDataException>( () => TqiDecoder.Decode( truncated.AsSpan( 0, truncated.Length - 4 ) ) );
 	}
@@ -361,10 +365,36 @@ public class TgqMovieFileTests
 	public void MovieDecodesFrameByIndex()
 	{
 		var movie = new TgqMovieFile( new MemoryStream( Movie() ) );
-		Assert.AreEqual( 100, movie.DecodeVideoFrame( 0 ).Y[0] );
+		Assert.AreEqual( 50, movie.DecodeVideoFrame( 0 ).Y[0] );
 		Assert.AreEqual( 99, movie.GetVideoFramePayload( 0 ).Span[4] );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => movie.DecodeVideoFrame( 1 ) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => movie.DecodeVideoFrame( -1 ) );
+	}
+
+	[TestMethod]
+	public void MatrixFollowsTheOriginalBuilder()
+	{
+		// tp.exe 0x6710C0 at the shipped quantiser 99 (read from the routine run in the x86 oracle, tpw-exe-tqi-matrix).
+		var matrix = TqiDecoder.BuildMatrix( 99 );
+		CollectionAssert.AreEqual( new[] { 65536, 47248, 59565, 76637, 106496, 140751, 219487, 504764, 47248, 34064 }, matrix.Take( 10 ).ToArray() );
+		// Quantiser 100 skips the weights: eight times the Q13 prescale; the first entry is always 2^16.
+		var flat = TqiDecoder.BuildMatrix( 100 );
+		Assert.AreEqual( 0x10000, flat[0] );
+		Assert.AreEqual( 5906 * 8, flat[1] );
+		Assert.AreEqual( 107619 * 8, flat[63] );
+	}
+
+	[DataTestMethod]
+	[DataRow( (byte)64, (byte)64, (byte)64, (byte)115, (byte)113, (byte)115 )]
+	[DataRow( (byte)0, (byte)64, (byte)64, (byte)0, (byte)0, (byte)0 )]
+	[DataRow( (byte)127, (byte)64, (byte)64, (byte)241, (byte)239, (byte)241 )]
+	[DataRow( (byte)64, (byte)64, (byte)127, (byte)255, (byte)25, (byte)115 )]
+	[DataRow( (byte)64, (byte)0, (byte)64, (byte)115, (byte)157, (byte)0 )]
+	public void ColourTablesFollowTheOriginalPlayer( byte y, byte cb, byte cr, byte red, byte green, byte blue )
+	{
+		// Worked from tp.exe 0x670350: fields 145 + Y' + r, 123 + Y' + g, 169 + Y' + b (Y' = y − 64), each channel 2n − 177, 2n − 133, 2n − 225.
+		// Neutral white stops at 241/239/241: the original never reaches full white.
+		Assert.AreEqual( (red, green, blue), TqiColour.Convert( y, cb, cr ) );
 	}
 
 	[TestMethod]
@@ -413,11 +443,11 @@ public class TgqMovieFileTests
 	}
 
 	[DataTestMethod]
-	[DataRow( "bf.tgq", 0, "FA16BDEC3FEBBCBED042110427C6E53FE48D338ED51D218FC2CFDD814633FF08" )]
-	[DataRow( "bf.tgq", 127, "7199C61776B43C297CD8219E9D8501E43C201BB46417BEA705A97EEFC1CC5993" )]
-	[DataRow( "bub.tgq", 0, "83FE6707DB6C43D97D195B1CB5347E7CCD92CFBBBB7DAC13FD5C303754C108F5" )]
-	[DataRow( "bub.tgq", 587, "1FD72A9EE1F98AE101B2CB1E0ED3CAADB014BF64BF5FC582BD9070F381A4E1F5" )]
-	[DataRow( "plan.tgq", 569, "7D9A9672F871C15CFC849644A55A850403875F5F6C7F130D48774C60E4A53031" )]
+	[DataRow( "bf.tgq", 0, "AD49F57F0436B8E67345865BBA896140CEBBFD7494A31C93E3396B7A63600D8F" )]
+	[DataRow( "bf.tgq", 127, "81FD09CD01A2D442C68DBF4367ABCEB9EE7C49550FF6720C57565CF988D72904" )]
+	[DataRow( "bub.tgq", 0, "2DAFCBC172A0D393B69D27AB1016BE34A775AE8171BC0B475342250662BD9223" )]
+	[DataRow( "bub.tgq", 587, "0B57596136931BD07EF0C5841CF5E510773FC33CF5411292EEC715756775ABC2" )]
+	[DataRow( "plan.tgq", 569, "58CA5C38FD4CCA74A124EB0C51A0AC6B26189898E5BF3D2871439FC45B4B4836" )]
 	public void OriginalMovieFramesMatchPinnedPlanarHashes( string name, int index, string yuvHash )
 	{
 		using var stream = File.OpenRead( Path.Combine( OriginalMovieDirectory(), name ) );

@@ -1,15 +1,16 @@
 # TGQ movies: decoding evidence and playback
 
-October 9, 2026. Status: CPU container/audio/video decoding for the nine local
+October 9, 2026; video decoding updated October 16, 2026. Status: CPU container/audio/video decoding for the nine local
 `Data/Movies/*.tgq` files, plus streaming playback (`--play-movie <name>`)
 with audio, A/V sync and GPU presentation, and the start-up movie sequence
 (`bf`, then a trailer by day of the month) before the front end. Audio PCM matches an external FFmpeg
-8.0.1 oracle bit-exactly (over the samples FFmpeg emits); video planes are
-**close but not bit-exact** (84–95 % identical samples, 56–61 dB). No in-game
+8.0.1 oracle bit-exactly (over the samples FFmpeg emits). Video is now **tp.exe's own decoder**: the
+dequantisation matrix, the transposed scan, the two transform passes and the colour tables of the PC
+movie player are reproduced, and the samples match the original routines run in the x86 oracle
+(see "The live PC decoder"). No in-game
 The triggers come from the Mac PowerPC build (see "Where the original plays
-movies"); the PC `.tgq` flow is assumed to match. The original player's colour
-conversion and end-of-movie behaviour are not verified. No dependency or movie
-data is added.
+movies"); the PC `.tgq` flow is assumed to match. The original player's end-of-movie behaviour is not
+verified. No dependency or movie data is added.
 
 Code: `source/OpenTPW.Files/Formats/Video/TgqMovieFile.cs`,
 `source/OpenTPW.Files/Formats/Video/TqiDecoder.cs`,
@@ -95,13 +96,17 @@ extension), end-of-block `10`, standard zigzag. The wiki claims a different
 run/level table; the standard MPEG-1 values are what match the oracle (PSNR
 ~55 dB versus ~21–40 dB for wrong scan variants during investigation).
 
-Dequantisation: `F[0] = dc × 8`, `F[i] = level × W[i] × (107.5 − q) × 0.625 / 8`
+Dequantisation (the reading before tp.exe's decoder was found; superseded by "The live PC decoder"):
+`F[0] = dc × 8`, `F[i] = level × W[i] × (107.5 − q) × 0.625 / 8`
 with `W` the MPEG-1 default intra matrix (wiki "base_table2"); in integer form
 `qscale = (215 − 2q) × 5` and `F[i] = level × W[i] × qscale / 128`. DC is in
 pixel units (no +128 offset). Every frame ends within its final 32-bit word
 with zero padding bits; the decoder requires that.
 
-### IDCT: integer variants measured against the oracle
+### IDCT: integer variants measured against the oracle (history)
+
+This section records the search before tp.exe's live decoder was read; the decoder no longer uses any of these
+variants. FFmpeg approximates the transform with its own integer constants, so it was a closeness measure only.
 
 Oracle: FFmpeg 8.0.1 `tqi`, `-pix_fmt yuv420p`, run locally only; no FFmpeg
 or other third-party decoder source was consulted or copied. Each candidate
@@ -158,14 +163,13 @@ nor transposed-AAN arithmetic with any tested precision, product rounding
 factorisation or rounding order. The synthetic test pins two of those oracle
 patterns.
 
-Colour: `TqiFrame.ToRgb24()` and the GPU path use full-range BT.601 with
-nearest-neighbour chroma. Supporting evidence (oracle planes, every fifth frame
-of `bf`/`plan`): luma clips at both ends (Y = 0: 0.46 %/0.87 %, Y = 255:
-0.43 %/0.73 %) and 1.1 %/2.2 % of luma is below 16, which limited-range video
-would not show. Chroma stays within 16–240 for > 99.9 % of samples. The
-original player's conversion is still **not verified** against captures.
+Colour (history): before the original's tables were read, `TqiFrame.ToRgb24()` and the GPU path used full-range
+BT.601 with nearest-neighbour chroma; "The live PC decoder" below describes the conversion now used.
 
 ### Original TQI decoder: static analysis of the PC executable
+
+(History: the `cseg` routines this section describes turned out to be unreachable; the movies use the `.text`
+decoder of "The live PC decoder" below.)
 
 Static reads only (`llvm-objdump`, byte reads, no execution) of the decrypted
 Sim Theme Park World v2.0 no-CD `tp.exe` that COMPLETION-PLAN.md allows for
@@ -281,15 +285,15 @@ Files:
 Decoded PCM (interleaved s16le) — `bf` `9f7b0e0d…647c8`, `bub` `bd5cf5a5…3255f`,
 `plan` `91839600…fadcf`; all nine are pinned in full in the tests.
 
-Decoded planes (Y‖Cb‖Cr, this decoder; not FFmpeg's bytes):
+Decoded planes (Y‖Cb‖Cr, the original decoder's 7-bit samples; not FFmpeg's bytes):
 
 | Frame | SHA-256 |
 | --- | --- |
-| `bf.tgq` #0 | `fa16bdec3febbcbed042110427c6e53fe48d338ed51d218fc2cfdd814633ff08` |
-| `bf.tgq` #127 | `7199c61776b43c297cd8219e9d8501e43c201bb46417bea705a97eefc1cc5993` |
-| `bub.tgq` #0 (identical first frame in the other 7 non-`bf` files) | `83fe6707db6c43d97d195b1cb5347e7ccd92cfbbbb7dac13fd5c303754c108f5` |
-| `bub.tgq` #587 | `1fd72a9ee1f98ae101b2cb1e0ed3caadb014bf64bf5fc582bd9070f381a4e1f5` |
-| `plan.tgq` #569 | `7d9a9672f871c15cfc849644a55a850403875f5f6c7f130d48774c60e4a53031` |
+| `bf.tgq` #0 | `ad49f57f0436b8e67345865bba896140cebbfd7494a31c93e3396b7a63600d8f` |
+| `bf.tgq` #127 | `81fd09cd01a2d442c68dbf4367abceb9ee7c49550ff6720c57565cf988d72904` |
+| `bub.tgq` #0 (identical first frame in the other 7 non-`bf` files) | `2dafcbc172a0d393b69d27ab1016be34a775ae8171bc0b475342250662bd9223` |
+| `bub.tgq` #587 | `0b57596136931bd07ef0c5841cf5e510773fc33cf5411292eec715756775abc2` |
+| `plan.tgq` #569 | `58ca5c38fd4cca74a124eb0c51a0ac6b26189898e5bf3d2871439fc45b4b4836` |
 
 ## Limits and strictness
 
@@ -382,7 +386,7 @@ and a hash of the presented planes (no window, GPU or audio device);
   of the last video frame and the end of the audio, holding the last frame:
   `plan.tgq` shows its final frame for ~12.9 s while its audio finishes. The
   original player's behaviour here is unknown.
-- **Presentation**: CPU BT.601 full-range conversion to RGBA, uploaded to a
+- **Presentation**: the original player's colour tables (`TqiColour`) on the CPU to RGBA, uploaded to a
   320×352 texture and drawn with the existing fullscreen-triangle blit shader
   into a centred viewport at the original's display aspect 640:352 (the 320×352
   frames are shown at twice their width, as the original's movie box does; see
@@ -537,31 +541,52 @@ A new static pass over the decrypted tp.exe found that the `cseg` routines descr
 go through `.text`: dispatcher 0x66E5F0 (`pIQT` and `UV2f` are frame type 4), header 0x670900 (quantiser =
 header byte 4; byte 7 bits 0 and 1 are flags, the second choosing the pixel writer), frame decode 0x670C20,
 matrix builder 0x6710C0, block decoder 0x6747D0, transform passes 0x67673C/0x676965, colour tables 0x670350.
-Reported, to be implemented and checked next:
+`TqiDecoder` and `TqiColour` now reproduce them:
 
-- Matrix (one for luma and chroma): for q ≠ 100, `M[k] = (S[k] · trunc(W[k] · (float)((107 − q) · 0.0625) ·
-  65536) + 0x8000) >> 16` with the Q13 AAN prescales `S` at 0x705C88 and the MPEG-1 intra matrix `W` at
-  0x705D88, then `M[0] = 65536` (q = 100: `M = 8 · S`). The AC gain is about 0.75 of FFmpeg's at q = 99.
-- The zigzag table 0xFBB5B0 is transposed while the weights are not, so 21 asymmetric weights differ from
-  MPEG/FFmpeg.
-- The odd part rounds with the 1.5 · 2⁵² trick (round half to even, needs 53/64-bit FPU precision); the second
-  pass shifts right by 17 with no bias, so samples are 7-bit, expanded by runtime colour tables.
+- **Matrix** (`TqiDecoder.BuildMatrix`, one for luma and chroma): for q ≠ 100,
+  `M[k] = (S[k] · trunc(W[k] · (float)((107 − q) · 0.0625) · 65536) + 0x8000) >> 16` with the Q13 AAN prescales `S`
+  at 0x705C88 and the MPEG-1 intra matrix `W` at 0x705D88 (`_ftol` 0x67A830 truncates); q = 100 gives `M = 8 · S`;
+  `M[0] = 2^16` always.
+- **Block decoder** (0x6747D0): the DC is the predictor times `M[0]`; each AC level is stored at the transposed scan
+  position `T[s]` (the table 0xFBB5B0, read from its end) and multiplied by `M[T[s]]`, plain 32-bit products. The
+  weights are not transposed with the scan, so 21 asymmetric weights apply to the transposed frequency.
+- **Transform**: the first pass (0x67673C) runs the AAN butterfly along each stored row, copies the first input to all
+  eight outputs when the other seven are zero, and writes its outputs down a column of a 9-wide buffer; the second
+  (0x676965) runs the same butterfly along those columns and shifts each output right by 17, without a bias. The two
+  transposes cancel the transposed scan, so the samples come out in natural order. The butterfly's √2/2 rotations are the
+  doubled high dwords of `x · 0x5A82799A`; its odd part is computed in the FPU, `a = z10 · 0.5411961 + z5`,
+  `b = z12 · 1.306563 − z5`, `z5 = (z10 + z12) · 0.3826834` (single-precision constants), each rounded half to even
+  by adding 1.5 · 2^52 and taking the low dword of the stored double.
+- **Samples** are 7-bit (0–127, chroma zero at 64). `TqiFrame.Y`/`Cb`/`Cr` hold them clamped to 0–127, which is what
+  the colour tables do for every value the decoder produces (341 of all samples fall below 0 and 2 above 127 over the
+  nine movies; the tables cover −192…319).
+- **Colour** (`TqiColour`, 0x670350 with the row writer 0x675D90 that every shipped frame uses: header byte 7 is 3):
+  a pixel's luma term `clamp(y − 64) · 0x800801 + 0x4883D8A9`, its Cb term `trunc(0.5 − x · 0.3441)` (green, bit 11) and
+  `trunc(0.5 + x · 1.772)` (blue, bit 0), and its Cr term `trunc(0.5 − x · 0.7141)` (green) and `trunc(0.5 + x · 1.402)`
+  (red, bit 23), with `x = c − 64 + 0.5`, add into three 9-bit fields; each field `n` gives the channel value
+  `clamp(brightness · (2n − base) / 100, 0, 255)` with bases 177 (red), 133 (green) and 225 (blue). The brightness is
+  the library's default 100 (the open writes it at 0x6701A2 unless its flags carry 0x100000). Neutral grey 64 becomes
+  (115, 113, 115) and the brightest neutral (241, 239, 241): the original never shows full white. No field leaves its
+  table over the 1,060,167,680 pixels of the nine movies (an underflowing field would read the next table in the
+  original). The values are the colour before the player packs it into the display surface (16-bit on the PC).
 
-So FFmpeg cannot serve as the bit-exactness reference; the next step reproduces these routines.
+**Verification.** The x86 oracle (docs/reverse/ORACLE.md, **X26**) runs the matrix builder for every quantiser and the
+first transform pass on 500 coefficient rows: both agree with the C# readings. Whole frames were compared too, outside
+the test suite: the original block decoder and writer (0x67519D with 0x6747D0) run per macroblock in the oracle's
+sandbox over 51 frames sampled from all nine movies (every 97th frame) matched `TqiDecoder` in every one of 8.6 million
+samples but one. That one is a half-way odd-part rounding: Unicorn's x87 rounds values whose fraction lies between
+about 0.45 and 0.5 away from zero in about one case of twenty, which no IEEE precision does; real hardware at 53-bit or
+64-bit precision gives the C# value there. The decoder follows 53-bit precision (the MSVC default); at 64-bit precision
+a double rounding of `a + 1.5 · 2^52` would differ in rare ties (30 of the odd-part roundings in six sampled `roll`
+frames), so the FPU precision the game runs movies at stays an assumption.
 
 ## Remaining gates
 
-Bit-exact IDCT: the original's kernel is located (see "Original IDCT") but its
-constants, matrix values and final clamp are not recoverable from the local
-data, so the FFmpeg-fitted integer AAN stays. The Mac build is not a source
-(see "Mac route"; its movies are Sorenson Video). Closing it needs the
-decrypted `IDCT_DAT`/`UVA_DATA` contents or a runtime capture of the PC
-executable (not done here), colour
-matrix/range against original-player captures, what the original does after
-the last frame (`plan.tgq` audio tail), whether the PC build uses the same
-logo-plus-day-trailer sequence and `.tgq` names (PC executable not analysed),
-and which user-facing setting, if any, controls the start-up flag. None of
-these are verified.
+The x87 precision control the game runs movies with (53-bit assumed, see above), the display surface's bit depth and
+the player's packing into it (OpenTPW shows the 8-bit channel values), the 0x100000 open flag that would replace the
+default brightness, what the original does after the last frame (`plan.tgq` audio tail), whether the PC build uses
+the same logo-plus-day-trailer sequence and `.tgq` names, and which user-facing setting, if any, controls the
+start-up flag. None of these are verified.
 
 ## Sources
 

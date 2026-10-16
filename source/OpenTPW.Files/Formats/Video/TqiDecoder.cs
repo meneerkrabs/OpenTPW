@@ -4,7 +4,10 @@ namespace OpenTPW;
 
 public readonly record struct TqiFrameHeader( int Width, int Height, byte Quantizer, int UnknownBytes );
 
-/// <summary>Decoded TQI picture: 8-bit planar 4:2:0 (Y full size, Cb/Cr half size in both axes).</summary>
+/// <summary>
+/// Decoded TQI picture: the original decoder's 7-bit planar 4:2:0 samples (Y full size, Cb/Cr half size in both axes; 0–127,
+/// 64 the chroma zero), clamped as its colour tables clamp them.
+/// </summary>
 public sealed class TqiFrame
 {
 	public int Width { get; }
@@ -22,10 +25,7 @@ public sealed class TqiFrame
 		Cr = cr;
 	}
 
-	/// <summary>
-	/// Converts to packed RGB24 using full-range BT.601 coefficients and nearest chroma sampling.
-	/// The original player's colour matrix/range is NOT verified; this conversion is a documented assumption.
-	/// </summary>
+	/// <summary>Converts to packed RGB24 with the original player's colour tables (<see cref="TqiColour"/>).</summary>
 	public byte[] ToRgb24()
 	{
 		var rgb = new byte[Width * Height * 3];
@@ -48,21 +48,58 @@ public sealed class TqiFrame
 		{
 			for ( var column = 0; column < Width; column++ )
 			{
-				var luma = (double)Y[row * Width + column];
 				var chroma = (row / 2) * chromaWidth + column / 2;
-				var blue = Cb[chroma] - 128.0;
-				var red = Cr[chroma] - 128.0;
+				var (red, green, blue) = TqiColour.Convert( Y[row * Width + column], Cb[chroma], Cr[chroma] );
 				var offset = (row * Width + column) * pixelBytes;
-				output[offset] = ClampByte( luma + 1.402 * red );
-				output[offset + 1] = ClampByte( luma - 0.344136 * blue - 0.714136 * red );
-				output[offset + 2] = ClampByte( luma + 1.772 * blue );
+				output[offset] = red;
+				output[offset + 1] = green;
+				output[offset + 2] = blue;
 				if ( pixelBytes == 4 )
 					output[offset + 3] = 255;
 			}
 		}
 	}
+}
 
-	private static byte ClampByte( double value ) => (byte)Math.Clamp( Math.Floor( value + 0.5 ), 0, 255 );
+/// <summary>
+/// The original movie player's colour conversion (tp.exe 0x670350, row writers 0x675D90 and its kin): three packed tables add
+/// a pixel's luma, blue-difference and red-difference terms into three 9-bit fields (blue at bit 0, green at bit 11, red at
+/// bit 23), and three channel tables turn each field n into an 8-bit value clamp(brightness · (2n − base) / 100), the brightness
+/// the library's default 100. The result is the colour before the player packs it into the display surface's bit depth.
+/// </summary>
+// [BIN:TPW-EXE:0x00670350 TQI colour tables] for i = −256…255 at index (i − 192) & 511 (the writers read 256 entries further on, so a sample v is i = v − 64): luma clamp(i, −64, 63) · 0x800801 + 0x4883D8A9; with x = clamp + 0.5 (fsub −0.5) the Cb entry (trunc(0.5 − x · 0.3441) & 511) << 11 | trunc(0.5 + x · 1.772) & 511 and the Cr entry ((trunc(0.5 − x · 0.7141) & 511) + (trunc(0.5 + x · 1.402) & 511) << 12) << 11 (_ftol 0x67A830 truncates); the channel tables run c = −177, −133, −225 upward in steps of 2 for 306, 262 and 354 entries
+// [BIN:TPW-EXE:0x006701A2 TQI brightness] the open sets the brightness word (+0x78) to 100 unless its flags carry 0x100000
+public static class TqiColour
+{
+	private static readonly uint[] LumaTerms = new uint[TqiDecoder.MaximumSample + 1];
+	private static readonly uint[] BlueTerms = new uint[TqiDecoder.MaximumSample + 1];
+	private static readonly uint[] RedTerms = new uint[TqiDecoder.MaximumSample + 1];
+
+	/// <summary>The original's default brightness (percent).</summary>
+	public const int Brightness = 100;
+
+	static TqiColour()
+	{
+		for ( var sample = 0; sample <= TqiDecoder.MaximumSample; sample++ )
+		{
+			var centred = sample - 64;
+			var x = centred + 0.5;
+			LumaTerms[sample] = unchecked((uint)(centred * 0x800801 + 0x4883D8A9));
+			BlueTerms[sample] = (Truncate( 0.5 - x * 0.3441 ) << 11) + Truncate( 0.5 - x * -1.772 );
+			RedTerms[sample] = (Truncate( 0.5 - x * 0.7141 ) + (Truncate( 0.5 - x * -1.402 ) << 12)) << 11;
+		}
+	}
+
+	private static uint Truncate( double value ) => (uint)(int)value & 0x1FF;
+
+	/// <summary>One pixel: 7-bit Y, Cb and Cr samples (0–127) to 8-bit red, green and blue.</summary>
+	public static (byte Red, byte Green, byte Blue) Convert( byte y, byte cb, byte cr )
+	{
+		var sum = unchecked(LumaTerms[y] + BlueTerms[cb] + RedTerms[cr]);
+		return (Channel( sum >> 23, -177 ), Channel( (sum >> 11) & 0x1FF, -133 ), Channel( sum & 0x1FF, -225 ));
+	}
+
+	private static byte Channel( uint field, int start ) => (byte)Math.Clamp( Brightness * (start + 2 * (int)field) / 100, 0, 255 );
 }
 
 /// <summary>
@@ -145,29 +182,34 @@ public static class TqiDecoder
 	private static readonly int[] LumaDcLookup = BuildDcLookup( LumaDcCodes );
 	private static readonly int[] ChromaDcLookup = BuildDcLookup( ChromaDcCodes );
 
-	// Integer AAN prescale: round(2^17 * s(u) * s(v)) with s(0) = 1/(2*sqrt 2) and s(k) = 1/(4*cos(k*pi/16)),
-	// natural order. Folding these into dequantisation leaves only the four rotations below for the transform.
-	private static readonly int[] AanScale =
+	// [BIN:TPW-EXE:0x00705C88 TQI prescale] the AAN prescale s(u)·s(v) in Q13 (s(0) = 1, s(k) = 1/(2·cos(k·π/16)) · √2…), natural order
+	private static readonly int[] PrescaleQ13 =
 	{
-		16384, 11812, 12540, 13933, 16384, 20853, 30274, 59384,
-		11812, 8516, 9041, 10045, 11812, 15034, 21826, 42813,
-		12540, 9041, 9598, 10664, 12540, 15960, 23170, 45451,
-		13933, 10045, 10664, 11849, 13933, 17734, 25746, 50502,
-		16384, 11812, 12540, 13933, 16384, 20853, 30274, 59384,
-		20853, 15034, 15960, 17734, 20853, 26541, 38531, 75581,
-		30274, 21826, 23170, 25746, 30274, 38531, 55938, 109727,
-		59384, 42813, 45451, 50502, 59384, 75581, 109727, 215238,
+		8192, 5906, 6270, 6967, 8192, 10426, 15137, 29692,
+		5906, 4258, 4520, 5023, 5906, 7517, 10913, 21407,
+		6270, 4520, 4799, 5332, 6270, 7980, 11585, 22725,
+		6967, 5023, 5332, 5925, 6967, 8867, 12873, 25251,
+		8192, 5906, 6270, 6967, 8192, 10426, 15137, 29692,
+		10426, 7517, 7980, 8867, 10426, 13270, 19266, 37791,
+		15137, 10913, 11585, 12873, 15137, 19266, 27969, 54864,
+		29692, 21407, 22725, 25251, 29692, 37791, 54864, 107619,
 	};
 
-	// Rotation constants of the AAN flowgraph in 12-bit fixed point: cos(pi/4), cos(pi/8) - cos(3pi/8),
-	// cos(pi/8) + cos(3pi/8), cos(3pi/8).
-	private const long A1 = 2896, A2 = 2217, A4 = 5352, A5 = 1567;
-	private const int ConstantBits = 12;
-	// Coefficients carry 6 fraction bits; the first (column) pass drops one, the row pass output keeps five.
-	private const int FractionBits = 6;
-	private const int FinalShift = FractionBits - 1;
-	// Empirical quarter-LSB rounding bias; it best matches the external oracle (see docs/TGQ-MOVIES.md).
-	private const int FinalBias = 1 << (FinalShift - 2);
+	// [BIN:TPW-EXE:0x00FBB5B0 TQI scan] the block decoder 0x6747D0 counts a byte from 63 down and stores coefficient 63 − n at
+	// table[n]: MPEG-1's zigzag transposed, while the weights it multiplies by are indexed by that same transposed position
+	private static readonly byte[] TransposedScan = ZigZag.Select( position => (byte)((position & 7) * 8 + (position >> 3)) ).ToArray();
+
+	// [BIN:TPW-EXE:0x00FBB598 TQI transform constants] √2/2 in Q31 (taken as the doubled high dword of a 32×32 product) and the odd
+	// part's three single-precision factors; 1.5 · 2^52 rounds a double to an integer, half to even, through its low dword
+	private const int HalfSqrt2Q31 = 0x5A82799A;
+	private const float OddFactorA = 0.5411961f;
+	private const float OddFactorB = 1.306563f;
+	private const float OddFactorZ = 0.3826834f;
+	private const double RoundingMagic = 6755399441055744.0;
+	/// <summary>The second pass shifts each sample right by 17 without a bias: the samples are 7-bit (0–127, 64 the chroma zero).</summary>
+	private const int SampleShift = 17;
+	/// <summary>The largest sample the colour tables distinguish; they clamp anything outside 0–127.</summary>
+	public const int MaximumSample = 127;
 
 	/// <summary>Number of run/level entries in the coefficient table (excluding end-of-block and escape).</summary>
 	public static int CoefficientTableEntries => CoefficientCodes.Length - 2;
@@ -190,17 +232,29 @@ public static class TqiDecoder
 
 	public static TqiFrame Decode( ReadOnlySpan<byte> payload )
 	{
+		var (header, y, cb, cr) = DecodeSamples( payload );
+		return new TqiFrame( header.Width, header.Height, Clamp( y ), Clamp( cb ), Clamp( cr ) );
+	}
+
+	/// <summary>
+	/// The original decoder's samples before its colour tables, unclamped (tp.exe frame decode 0x670C20, case 4): the matrix of
+	/// <see cref="BuildMatrix"/>, the block decoder 0x6747D0 and the two transform passes 0x67673C/0x676965, per 16×16 macroblock
+	/// four luma blocks (left to right, top to bottom) and one Cb and one Cr block.
+	/// </summary>
+	internal static (TqiFrameHeader Header, int[] Y, int[] Cb, int[] Cr) DecodeSamples( ReadOnlySpan<byte> payload )
+	{
 		var header = ReadHeader( payload );
 		var width = header.Width;
 		var height = header.Height;
-		var dequant = BuildDequantisation( header.Quantizer );
+		var matrix = BuildMatrix( header.Quantizer );
 
-		var y = new byte[width * height];
-		var cb = new byte[width * height / 4];
-		var cr = new byte[width * height / 4];
+		var y = new int[width * height];
+		var cb = new int[width * height / 4];
+		var cr = new int[width * height / 4];
 		var reader = new BitReader( payload[HeaderBytes..] );
 		var predictors = new int[3];
-		var coefficients = new long[64];
+		var coefficients = new int[64];
+		var samples = new int[64];
 		for ( var macroY = 0; macroY < height / 16; macroY++ )
 		{
 			for ( var macroX = 0; macroX < width / 16; macroX++ )
@@ -208,20 +262,22 @@ public static class TqiDecoder
 				for ( var block = 0; block < 6; block++ )
 				{
 					var component = block < 4 ? 0 : block - 3;
-					DecodeBlock( ref reader, component, ref predictors[component], dequant, coefficients );
-					InverseTransform( coefficients );
+					DecodeBlock( ref reader, component, ref predictors[component], matrix, coefficients );
+					InverseTransform( coefficients, samples );
 					if ( block < 4 )
-						Store( coefficients, y, width, macroX * 16 + (block & 1) * 8, macroY * 16 + (block >> 1) * 8 );
+						Store( samples, y, width, macroX * 16 + (block & 1) * 8, macroY * 16 + (block >> 1) * 8 );
 					else
-						Store( coefficients, block == 4 ? cb : cr, width / 2, macroX * 8, macroY * 8 );
+						Store( samples, block == 4 ? cb : cr, width / 2, macroX * 8, macroY * 8 );
 				}
 			}
 		}
 		reader.RequireZeroTail();
-		return new TqiFrame( width, height, y, cb, cr );
+		return (header, y, cb, cr);
 	}
 
-	private static void DecodeBlock( ref BitReader reader, int component, ref int predictor, ReadOnlySpan<long> dequant, Span<long> coefficients )
+	private static byte[] Clamp( int[] samples ) => samples.Select( sample => (byte)Math.Clamp( sample, 0, MaximumSample ) ).ToArray();
+
+	private static void DecodeBlock( ref BitReader reader, int component, ref int predictor, ReadOnlySpan<int> matrix, Span<int> coefficients )
 	{
 		coefficients.Clear();
 		var entry = (component == 0 ? LumaDcLookup : ChromaDcLookup)[reader.Peek( 8 )];
@@ -234,7 +290,9 @@ public static class TqiDecoder
 			var bits = reader.Read( size );
 			predictor += (bits >> (size - 1)) != 0 ? bits : bits - (1 << size) + 1;
 		}
-		coefficients[0] = (long)predictor << FractionBits;
+		// [BIN:TPW-EXE:0x006747D0 TQI block decoder] the DC is the predictor times the matrix's first entry (2^16), each AC level
+		// times the matrix entry at its transposed scan position, plain 32-bit products
+		coefficients[0] = unchecked(predictor * matrix[0]);
 		var position = 0;
 		while ( true )
 		{
@@ -274,90 +332,107 @@ public static class TqiDecoder
 			position += run + 1;
 			if ( position > 63 )
 				throw new InvalidDataException( "TQI block coefficients overflow 64 entries." );
-			var natural = ZigZag[position];
-			coefficients[natural] = level * dequant[natural];
+			var stored = TransposedScan[position];
+			coefficients[stored] = unchecked(level * matrix[stored]);
 		}
 	}
 
 	/// <summary>
-	/// Per-position dequantisation factors with the AAN prescale folded in, in units of 2^-6 pixel:
-	/// floor(AanScale * W * qscale / 2^18) where qscale = (215 - 2q) * 5, i.e. W * (107.5 - q) * 0.625 / 8.
+	/// The dequantisation matrix of a frame's quantiser q, the AAN prescale folded in (tp.exe 0x6710C0): for q = 100 eight times
+	/// the prescale; otherwise each MPEG-1 intra weight W times (float)((107 − q) / 16) times 2^16, truncated, then times the Q13
+	/// prescale with the product's low 16 bits rounded half up; the first entry is always 2^16. Indexed by the stored position.
 	/// </summary>
-	private static long[] BuildDequantisation( int quantizer )
+	// [BIN:TPW-EXE:0x006710C0 TQI matrix] (107.0 − q) · 0.0625 is stored as a float, W · f · 65536.0 goes through _ftol (truncation, 0x67A830), and imul/shr 16/adc rounds S · t; M[0] = 8192 · 8 · 2^16 / 2^16
+	internal static int[] BuildMatrix( int quantizer )
 	{
-		var qscale = (215L - 2 * quantizer) * 5;
-		var dequant = new long[64];
-		for ( var index = 1; index < 64; index++ )
-			dequant[index] = AanScale[index] * IntraMatrix[index] * qscale >> (24 - FractionBits);
-		return dequant;
+		var matrix = new int[64];
+		var factor = (float)((107.0 - quantizer) * 0.0625);
+		for ( var index = 0; index < 64; index++ )
+		{
+			long weight = quantizer == 100 ? 0x80000 : (long)((double)IntraMatrix[index] * factor * 65536.0);
+			matrix[index] = unchecked((int)((PrescaleQ13[index] * weight + 0x8000) >> 16));
+		}
+		matrix[0] = 0x10000;
+		return matrix;
 	}
 
 	/// <summary>
-	/// Integer 8x8 inverse DCT: the transposed Arai-Agui-Nakajima flowgraph (adjoint of the classic AAN forward
-	/// DCT), columns first with a one-bit floor shift between passes, floor products, then (x + 8) >> 5.
-	/// Selected empirically against an external oracle; it is closer than an exact float IDCT but not bit-exact.
+	/// The 8×8 inverse transform of tp.exe's two passes over the stored (transposed) coefficients: the first (0x67673C) runs along
+	/// each stored row, copies the first input to all eight outputs when the other seven are zero, and writes its outputs down a
+	/// column; the second (0x676965) runs along each of those columns and shifts every output right by 17. The two transposes
+	/// cancel the transposed scan, so the samples come out in natural order.
 	/// </summary>
-	private static void InverseTransform( Span<long> block )
+	private static void InverseTransform( ReadOnlySpan<int> coefficients, Span<int> samples )
 	{
-		for ( var column = 0; column < 8; column++ )
-			Transform1D( block, column, 8, 1 );
+		Span<int> columns = stackalloc int[64];
+		Span<int> outputs = stackalloc int[8];
 		for ( var row = 0; row < 8; row++ )
-			Transform1D( block, row * 8, 1, 0 );
+		{
+			var input = coefficients.Slice( row * 8, 8 );
+			if ( (input[1] | input[2] | input[3] | input[4] | input[5] | input[6] | input[7]) == 0 )
+				outputs.Fill( input[0] );
+			else
+				Butterfly( input, outputs );
+			for ( var index = 0; index < 8; index++ )
+				columns[index * 8 + row] = outputs[index];
+		}
+		for ( var line = 0; line < 8; line++ )
+		{
+			Butterfly( columns.Slice( line * 8, 8 ), outputs );
+			for ( var index = 0; index < 8; index++ )
+				samples[line * 8 + index] = outputs[index] >> SampleShift;
+		}
 	}
 
-	private static void Transform1D( Span<long> data, int start, int stride, int shift )
+	/// <summary>
+	/// One pass of tp.exe's AAN butterfly over x0…x7 (0x67673C, 0x676965): integer adds, the √2/2 rotations as doubled high dwords of
+	/// Q31 products, and the odd part's rotation in double precision, each result rounded half to even by the 1.5 · 2^52 trick.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0067677E TQI odd part] z10 = x5 − x3 and z12 = x1 − x7 are loaded with fild; a = z10 · 0.5411961 + (z10 + z12) · 0.3826834 and b = z12 · 1.306563 − (z10 + z12) · 0.3826834 are each rounded through fadd 1.5·2^52 and the low dword of an fstp double (the FPU in at least 53-bit precision)
+	private static void Butterfly( ReadOnlySpan<int> x, Span<int> output )
 	{
-		var d0 = data[start];
-		var d1 = data[start + stride];
-		var d2 = data[start + 2 * stride];
-		var d3 = data[start + 3 * stride];
-		var d4 = data[start + 4 * stride];
-		var d5 = data[start + 5 * stride];
-		var d6 = data[start + 6 * stride];
-		var d7 = data[start + 7 * stride];
+		unchecked
+		{
+			var z13 = x[3] + x[5];
+			var z10 = x[5] - x[3];
+			var z11 = x[7] + x[1];
+			var z12 = x[1] - x[7];
+			var t7 = z13 + z11;
+			var z5 = ((double)z12 + z10) * OddFactorZ;
+			var a = RoundHalfEven( z10 * (double)OddFactorA + z5 );
+			var b = RoundHalfEven( z12 * (double)OddFactorB - z5 );
+			var r11 = HalfSqrt2( z11 - z13 );
+			var p = a + r11;
+			var q = r11 + b;
+			var w = b + t7;
 
-		// Even part.
-		var sum04 = d0 + d4;
-		var difference04 = d0 - d4;
-		var rotated26 = Multiply( d2 - d6, A1 );
-		var sum26 = d2 + d6 + rotated26;
-		var even0 = sum04 + sum26;
-		var even3 = sum04 - sum26;
-		var even1 = difference04 + rotated26;
-		var even2 = difference04 - rotated26;
-
-		// Odd part.
-		var z13 = d5 + d3;
-		var z2 = d5 - d3;
-		var z11 = d1 + d7;
-		var z4 = d1 - d7;
-		var odd7 = z11 + z13;
-		var odd11 = Multiply( z11 - z13, A1 );
-		var z5 = Multiply( z2 + z4, A5 );
-		var odd10 = Multiply( z2, A2 ) + z5;
-		var odd12 = Multiply( z4, A4 ) - z5;
-		var tap4 = odd10;
-		var tap5 = odd10 + odd11;
-		var tap6 = odd11 + odd12;
-		var tap7 = odd12 + odd7;
-
-		data[start] = (even0 + tap7) >> shift;
-		data[start + stride] = (even1 + tap6) >> shift;
-		data[start + 2 * stride] = (even2 + tap5) >> shift;
-		data[start + 3 * stride] = (even3 + tap4) >> shift;
-		data[start + 4 * stride] = (even3 - tap4) >> shift;
-		data[start + 5 * stride] = (even2 - tap5) >> shift;
-		data[start + 6 * stride] = (even1 - tap6) >> shift;
-		data[start + 7 * stride] = (even0 - tap7) >> shift;
+			var t13 = x[6] + x[2];
+			var t10 = x[4] + x[0];
+			var t11 = x[0] - x[4];
+			var r = HalfSqrt2( x[2] - x[6] );
+			var e = t13 + r;
+			var plus = r + t11;
+			var minus = t11 - r;
+			output[0] = (e + t10) + w;
+			output[1] = q + plus;
+			output[2] = minus + p;
+			output[3] = (t10 - e) + a;
+			output[4] = (t10 - e) - a;
+			output[5] = minus - p;
+			output[6] = plus - q;
+			output[7] = (e + t10) - w;
+		}
 	}
 
-	private static long Multiply( long value, long constant ) => value * constant >> ConstantBits;
+	private static int HalfSqrt2( int value ) => unchecked((int)(((long)value * HalfSqrt2Q31) >> 32) << 1);
 
-	private static void Store( ReadOnlySpan<long> samples, byte[] plane, int stride, int left, int top )
+	private static int RoundHalfEven( double value ) => unchecked((int)BitConverter.DoubleToInt64Bits( value + RoundingMagic ));
+
+	private static void Store( ReadOnlySpan<int> samples, int[] plane, int stride, int left, int top )
 	{
 		for ( var row = 0; row < 8; row++ )
 			for ( var column = 0; column < 8; column++ )
-				plane[(top + row) * stride + left + column] = (byte)Math.Clamp( (samples[row * 8 + column] + FinalBias) >> FinalShift, 0, 255 );
+				plane[(top + row) * stride + left + column] = samples[row * 8 + column];
 	}
 
 	private static int[] BuildCoefficientLookup()

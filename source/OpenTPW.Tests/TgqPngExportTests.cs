@@ -24,6 +24,9 @@ public class TgqPngExportTests
 		var bytes = new byte[8 + payload.Length]; Encoding.ASCII.GetBytes( tag ).CopyTo( bytes, 0 );
 		BinaryPrimitives.WriteUInt32LittleEndian( bytes.AsSpan( 4 ), (uint)bytes.Length ); payload.CopyTo( bytes, 8 ); return bytes;
 	}
+	/// <summary>The bright frame's red: luma 50 (the 7-bit sample of DC 100) on neutral chroma through the original's colour tables.</summary>
+	private const byte BrightRed = 87;
+
 	private static byte[] Frame( bool bright, ushort height = 32, bool malformed = false )
 	{
 		var bits = "";
@@ -63,7 +66,7 @@ public class TgqPngExportTests
 	{
 		var input = Input( (ushort)height ); var original = File.ReadAllBytes( input ); var movie = new TgqMovieFile( new MemoryStream( original ) );
 		var expected = new byte[16 * height * 4]; movie.DecodeVideoFrame( index ).WriteRgba32( expected );
-		Assert.AreEqual( (byte)(index == 0 ? 0 : 100), expected[0] ); Assert.IsTrue( expected.Where( ( _, offset ) => offset % 4 == 3 ).All( value => value == 255 ) );
+		Assert.AreEqual( (byte)(index == 0 ? 0 : BrightRed), expected[0] ); Assert.IsTrue( expected.Where( ( _, offset ) => offset % 4 == 3 ).All( value => value == 255 ) );
 		var output = Path.Combine( root, "nested", "selected.png" ); Export( input, index, output );
 		var png = ImageResult.FromMemory( File.ReadAllBytes( output ), ColorComponents.RedGreenBlueAlpha );
 		Assert.AreEqual( (16, height), (png.Width, png.Height) ); CollectionAssert.AreEqual( expected, png.Data );
@@ -75,7 +78,7 @@ public class TgqPngExportTests
 		var input = Input( malformedFrame: 0 ); var movie = new TgqMovieFile( new MemoryStream( File.ReadAllBytes( input ) ) );
 		Assert.ThrowsException<InvalidDataException>( () => movie.DecodeVideoFrame( 0 ) ); Assert.ThrowsException<InvalidDataException>( () => movie.DecodeAudio() );
 		var output = Path.Combine( root, "selected.png" ); Export( input, 1, output );
-		var png = ImageResult.FromMemory( File.ReadAllBytes( output ), ColorComponents.RedGreenBlueAlpha ); Assert.AreEqual( (byte)100, png.Data[0] );
+		var png = ImageResult.FromMemory( File.ReadAllBytes( output ), ColorComponents.RedGreenBlueAlpha ); Assert.AreEqual( BrightRed, png.Data[0] );
 	}
 	[DataTestMethod]
 	[DataRow( -1 )]
@@ -118,7 +121,7 @@ public class TgqPngExportTests
 		var input = Input(); var output = Path.Combine( root, "cli.png" );
 		Game.Run( new[] { "--export-tgq-png", input, "1", output } );
 		var png = ImageResult.FromMemory( File.ReadAllBytes( output ), ColorComponents.RedGreenBlueAlpha );
-		Assert.AreEqual( (16, 32), (png.Width, png.Height) ); Assert.AreEqual( (byte)100, png.Data[0] );
+		Assert.AreEqual( (16, 32), (png.Width, png.Height) ); Assert.AreEqual( BrightRed, png.Data[0] );
 	}
 	[TestMethod]
 	public void BadCliArgumentsFailBeforeAnyOutput()
@@ -151,7 +154,7 @@ public class TgqPngExportTests
 		var output = Path.Combine( root, "video-last.png" );
 		Export( input, 1, output );
 		var png = ImageResult.FromMemory( File.ReadAllBytes( output ), ColorComponents.RedGreenBlueAlpha );
-		Assert.AreEqual( (byte)100, png.Data[0] );
+		Assert.AreEqual( BrightRed, png.Data[0] );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => Export( input, 2, Path.Combine( root, "absent", "audio-is-not-video.png" ) ) );
 		Assert.IsFalse( Directory.Exists( Path.Combine( root, "absent" ) ) );
 	}
@@ -199,7 +202,7 @@ public class TgqPngExportTests
 			Game.Run( new[] { "--export-tgq-png", input, "1", output, "--setup", "--game", Path.Combine( root, "no-assets" ), "--shader-hot-reload" } );
 			Assert.AreSame( beforeRender, Global.Render ); Assert.AreSame( beforeFiles, FileSystem );
 			Assert.IsFalse( Directory.Exists( config ) );
-			Assert.AreEqual( (byte)100, ImageResult.FromMemory( File.ReadAllBytes( output ), ColorComponents.RedGreenBlueAlpha ).Data[0] );
+			Assert.AreEqual( BrightRed, ImageResult.FromMemory( File.ReadAllBytes( output ), ColorComponents.RedGreenBlueAlpha ).Data[0] );
 		}
 		finally { Environment.SetEnvironmentVariable( "OPENTPW_CONFIG_DIR", beforeConfig ); }
 	}

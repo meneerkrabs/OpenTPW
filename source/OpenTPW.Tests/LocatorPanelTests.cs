@@ -123,10 +123,10 @@ public class LocatorPanelTests
 		hud.CloseLocator();
 		hud.OpenVisitorWindow();
 		((IUiRowList)hud.Stack.Top!.Find( "visitorList" )!).RowClicked( 1, true );
-		hud.SelectVisitor( 0 );
+		Assert.IsTrue( hud.VisitorInfoWindowOpen && !hud.VisitorWindowOpen, "a row click opens the visitor window, which gives the list way" );
 		hud.OpenVisitorLocator();
 		Assert.AreEqual( (LocatorMode.Visitor, 8, true), (hud.Locator.Mode, hud.Locator.ActorId, hud.Locator.RadioChosen),
-			"the key takes the visitor whose info a row click opened ([0x7c2658]), not the list's selection" );
+			"the key takes the visitor whose window a row click opened ([0x7c2658])" );
 		Assert.IsFalse( hud.VisitorWindowOpen );
 		hud.CloseLocator();
 		Assert.IsTrue( hud.SelectWorldVisitor( first ) );

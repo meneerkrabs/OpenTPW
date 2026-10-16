@@ -108,8 +108,6 @@ public sealed partial class ParkHud
 	}
 
 	private Guest? SelectedVisitor => visitorRows.FirstOrDefault( guest => guest.Id == selectedVisitorId );
-	/// <summary>The visitor whose info a left click on a row opened, while that visitor is still listed (the original's visitor info window and its thing [0x7c2658]).</summary>
-	private Guest? VisitorInfoGuest => visitorInfoId == 0 ? null : visitorRows.FirstOrDefault( guest => guest.Id == visitorInfoId );
 	private int VisitorMaxFirstRow => ParkAttractionRoster.MaxFirstRow( visitorRows.Count, VisitorVisibleRows );
 	private int VisitorRowIndex( int id )
 	{
@@ -182,13 +180,13 @@ public sealed partial class ParkHud
 	// [BIN:TPW-EXE:0x66563d list click, 0x4934c5 locate] a click of the other button selects the row and posts 0x402, which centres the camera on the visitor's cell (0x4867b0) and closes the window; Enter has no original counterpart ([EXT:overview-enter-locate], the keyboard analogue)
 	public bool LocateSelectedVisitor() => LocateVisitor( SelectedVisitor );
 
-	/// <summary>A left click on a row: selects the visitor and plays the click.</summary>
-	// [BIN:TPW-EXE:0x6655a2 list click] a click of button 0 selects the row and posts 0x400, which the window routes to the row's visitor's info panel (0x49351e → 0x4b79b0); [APPROX:UI-910] that per-visitor window (layout table 0x7575e0, refresh 0x4b72a0, buttons 0x3737 and 0x3738) is not ported: the row becomes the visitor Ctrl+V locates
-	// [BIN:TPW-EXE:0x634963 mouse button codes] button 0 is the primary (left) button: DirectInput's DIMOFS_BUTTON0..3 (dwOfs 0xc..0xf) become the codes 0xf0..0xf3 (0x63497c), 0x634420 swaps 0xf0 and 0xf1 back when Windows swaps the buttons (SwapMouseButton probe at 0x6342c3, byte +0x60), and 0x486ca1 turns 0xf0 into button 0 (WM_LBUTTONDOWN is button 0 in the window procedure 0x46b600 too)
+	/// <summary>A left click on a row: the per-visitor window opens on the visitor and gives way to this list.</summary>
+	// [BIN:TPW-EXE:0x6655a2 list click] a click of button 0 selects the row and posts 0x400, which the window routes to the row's visitor's info window (0x49351e → 0x4b79b0, ParkHud.VisitorInfoWindow.cs); that opener closes the open window, so the list gives way
+	// [BIN:TPW-EXE:0x634963 mouse button codes] button 0 is the primary (left) button: DirectInput's DIMOFS_BUTTON0..3 (dwOfs 0xc..0xf) become the codes 0xf0..0xf3 (0x63497c), 0x634420 swaps 0xf0 and 0xf1 back when Windows swaps the buttons (SwapMouseButton)
 	private void OpenSelectedVisitorInfo()
 	{
-		visitorInfoId = selectedVisitorId;
-		GameAudio.PlayVisitorClick();
+		if ( SelectedVisitor is { } guest )
+			OpenVisitorInfoWindow( guest );
 	}
 
 	/// <summary>Whether locating can run at all: the park camera over an original park's terrain.</summary>

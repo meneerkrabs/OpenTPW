@@ -15,10 +15,14 @@ public sealed class UiStringTable
 	private readonly string[] lenderNames;
 	private readonly string[] ingredientNames;
 	private readonly StringTemplate[] uiTemplates;
+	private readonly StringFile? kidStates;
+	private readonly string[] thoughtNames;
 
 	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null,
-		StringTemplate[]? uiTemplates = null, string[]? ingredientNames = null )
+		StringTemplate[]? uiTemplates = null, string[]? ingredientNames = null, StringFile? kidStates = null, string[]? thoughtNames = null )
 	{
+		this.kidStates = kidStates;
+		this.thoughtNames = thoughtNames ?? Array.Empty<string>();
 		Language = language;
 		this.uiText = uiText;
 		this.helpText = helpText;
@@ -34,7 +38,14 @@ public sealed class UiStringTable
 		var uiText = language.LoadStrings( "UITEXT.str" );
 		return new( language.Name, uiText.Entries, language.LoadStrings( "UIHELPTEXT.str" ).Entries,
 			language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries,
-			language.LoadStrings( "LOANNAMES.str" ).Entries, uiText.Templates, OptionalStrings( language, "INGREDIENT.str" ) );
+			language.LoadStrings( "LOANNAMES.str" ).Entries, uiText.Templates, OptionalStrings( language, "INGREDIENT.str" ),
+			OptionalFile( language, "KIDSTATES.str" ), OptionalStrings( language, "THOUGHTS.str" ) );
+	}
+
+	private static StringFile? OptionalFile( GameLanguage language, string name )
+	{
+		try { return language.LoadStrings( name ); }
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { return null; }
 	}
 
 	private static string[]? OptionalStrings( GameLanguage language, string name )
@@ -51,6 +62,16 @@ public sealed class UiStringTable
 	public string Lender( int index ) => Get( lenderNames, index );
 	/// <summary>INGREDIENT.str: "Amount of fat", "Amount of salt", "Amount of ice", "Amount of sugar" for <c>UsageInfo.SpecialIngredient</c> 1..4 at index 0..3.</summary>
 	public string Ingredient( int index ) => Get( ingredientNames, index );
+	/// <summary>THOUGHTS.str: the text of a visitor's thought, indexed by the thought id (<see cref="GuestThought"/>); empty for none.</summary>
+	public string Thought( int index ) => Get( thoughtNames, index );
+
+	/// <summary>
+	/// KIDSTATES.str: the status text of a visitor in the state <paramref name="state"/> (the state word +0x220); the "Using: " record (16) takes the name of the
+	/// attraction the visitor uses as its parameter.
+	/// </summary>
+	public string KidState( int state, string using_ = "" ) => kidStates == null || state < 0 || state >= kidStates.Entries.Length ? ""
+		: kidStates.Templates.Length > state ? kidStates.Templates[state].Fill( using_ ) : kidStates.Entries[state];
+
 	public string Extra( OpenTpwText key ) => SupplementaryStrings.Get( key, Language );
 
 	/// <summary>
@@ -87,6 +108,8 @@ public static class UiTextRecord
 	/// last-write time (0x49ec80 fills the tags 0x10, 0x11 and 0x12 from the SYSTEMTIME's day, month and year, 0x5fc660).
 	/// </summary>
 	public const int SaveDate = 447;
+	/// <summary>The golden-ticket price "%d gt" (tp.exe 0x1c7; parameter 23): the buy list's price cell of a row that costs tickets (0x490650).</summary>
+	public const int GoldenTicketPrice = 454;
 }
 
 /// <summary>

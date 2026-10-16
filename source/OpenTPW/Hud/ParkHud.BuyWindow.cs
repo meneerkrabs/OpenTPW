@@ -145,10 +145,17 @@ public sealed partial class ParkHud
 			BeginPlacing( item );
 	}
 
-	// [BIN:TPW-EXE:0x4ab034 buy list price cell] a type with GoldenTicketCost above 0 that the profile did not buy with tickets (0x4d4b70) shows UITEXT 137 and the ticket cost negated (0x4ab050..0x4ab067)
-	// [APPROX:UI-105] every row shows its cash price, so such a type is listed under its own name and its cash price; the row's own buying flow is not traced
-	public string PriceText( BuildItem item ) =>
-		string.Format( CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], BuyPrice( item ) ).Replace( "  ", " " );
+	/// <summary>The name a buy list row shows and sorts by: UITEXT 137 for a row that costs golden tickets, else the type's name.</summary>
+	// [BIN:TPW-EXE:0x4ab034 buy list row] a type with GoldenTicketCost (+0xc4) above 0 that 0x4d4b70 (the player's bought-with-tickets set) does not hold gets the name 0x485b00(0x89) = UITEXT 137 and the value -cost; any other row its type's name and its price (+4)
+	public string ListName( BuildItem item ) => !IsLandRow( item ) && Status.TicketCostOf( item ) != null ? strings[UIStrings.MysteryRide] : ItemName( item );
+
+	/// <summary>The price cell of a buy list row.</summary>
+	// [BIN:TPW-EXE:0x490650 buy price cell] a negative value (the ticket rows) is formatted with UITEXT 0x1c7 (OpenTPW 454, "%d gt") on its magnitude, a positive one with 0x1c1 "$ " (a magnitude above 0xeeeeeee uses the offset special cases 0x1c1/0x1c2 of the same routine)
+	public string PriceText( BuildItem item ) => BuyPrice( item ) < 0
+		? TicketPriceText( strings, -BuyPrice( item ) )
+		: string.Format( CultureInfo.InvariantCulture, "{0}{1:#,0}", strings[UIStrings.Dollar], BuyPrice( item ) ).Replace( "  ", " " );
+
+	internal static string TicketPriceText( UiStringTable strings, long tickets ) => strings.Format( UiTextRecord.GoldenTicketPrice, tickets.ToString( CultureInfo.InvariantCulture ) );
 
 	public int NumberOwned( BuildItem item ) => level.Objects.Objects.Count( owned => !owned.IsDeleted && owned.Entry.InfoId == item.InfoId );
 
@@ -443,7 +450,7 @@ public sealed partial class ParkHud
 					var origin = canvas.Map( new NVector2( left, BuyContent.Y + visible * BuyRowHeight ), Anchor );
 					return new UiRect( origin.X, origin.Y, (right - left) * canvas.Scale, BuyRowHeight * canvas.Scale );
 				}
-				context.DrawFittedText( context.Fonts.Label, owner.ItemName( item ), Cell( 0 ), color, UiAlign.Left );
+				context.DrawFittedText( context.Fonts.Label, owner.ListName( item ), Cell( 0 ), color, UiAlign.Left );
 				context.DrawFittedText( context.Fonts.Label, owner.PriceText( item ), Cell( 1 ), color, UiAlign.Right );
 				// [DATA:video 1:50 and 30:00 buy window] the third column (1673,1724) is a tick box per row: a green tick when the park owns at least one of the item, an empty box otherwise
 				UiTickBox.Draw( context.Batch, Cell( 2 ), owner.NumberOwned( item ) > 0 );

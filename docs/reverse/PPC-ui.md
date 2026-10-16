@@ -1070,7 +1070,7 @@ Relevant compatibility IDs:
 | COMPAT-004 | Gate and ride boards decode and alpha-blit. Compare gate-specific board/text placement with original-platform pixels. |
 | COMPAT-005 | Open: SGN scale integer is read separately from LOGFONT width; width-search proof does not assign the 85..141 field a unit or prove it is ignored. Trace its consumers. |
 | COMPAT-006 | Partial: identified Mac sign call reaches QuickDraw StdText/StdTxMeas; no Windows GDI pair-kerning conclusion follows. Inspect backend/font settings or obtain original-platform glyph-spacing oracle. |
-| COMPAT-007 | Open: trace saved park name and resource/object-name selection into both sign text inputs. |
+| COMPAT-007 | Retired: the gate's two lines start as its OBJECT_NAMES row (tp.exe `0x4DB6F9`), the ticket price window opens the rename dialog (`0x4990F0`, handler `0x4993E0`), the gate redraws from the lines and OpenTPW saves them in the world save. |
 | COMPAT-008 | Open: mesh/textured face render depth and offsets need engine consumer proof; arbitrary normal lift is not supported by text raster helper. |
 | COMPAT-009 | Partial replacement: two-times DIB dimensions and integer 2×2 mask averaging are proved; OS hinting/AA coverage and later sign filtering remain unverified. |
 | COMPAT-011 | Partial resource accessor identity only; missing string/empty currency fallback branch needs the original resource implementation, not current six-language success. |

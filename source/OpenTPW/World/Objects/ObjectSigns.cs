@@ -13,18 +13,36 @@ public sealed class ObjectSignImages
 		Diagnostics = diagnostics;
 	}
 
-	public string Line1 { get; }
-	public string Line2 { get; }
+	public string Line1 { get; private set; }
+	public string Line2 { get; private set; }
 	/// <summary>RGBA of the <c>sign1</c> texture (<see cref="SignSurfaceComposer.HalfWidth"/> x <see cref="SignSurfaceComposer.Height"/>).</summary>
-	public byte[] Left { get; }
+	public byte[] Left { get; private set; }
 	/// <summary>RGBA of the <c>sign2</c> texture.</summary>
-	public byte[] Right { get; }
+	public byte[] Right { get; private set; }
 	/// <summary>Nonzero text-mask pixels, independent of the board image.</summary>
-	public int TextPixelCount { get; }
-	public IReadOnlyList<string> Diagnostics { get; }
+	public int TextPixelCount { get; private set; }
+	public IReadOnlyList<string> Diagnostics { get; private set; }
 
 	private Texture? leftTexture;
 	private Texture? rightTexture;
+
+	/// <summary>
+	/// New text for images owned by one entity (the park gate's sign after a rename): the halves are replaced and GPU textures
+	/// made so far take the new pixels in place, so materials that bind them follow.
+	/// </summary>
+	internal void Replace( string line1, string line2, byte[] left, byte[] right, int textPixels, IReadOnlyList<string> diagnostics )
+	{
+		if ( left.Length != Left.Length || right.Length != Right.Length )
+			throw new ArgumentException( "Sign halves must keep their size." );
+		Line1 = line1;
+		Line2 = line2;
+		Left = left;
+		Right = right;
+		TextPixelCount = textPixels;
+		Diagnostics = diagnostics;
+		leftTexture?.Replace( left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
+		rightTexture?.Replace( right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
+	}
 
 	/// <summary>Releases the GPU textures made so far, for images owned by one entity (the park gate's own sign); type signs are shared and stay.</summary>
 	internal void ReleaseTextures()

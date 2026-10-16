@@ -350,7 +350,12 @@ public partial class Level : IDisposable
 				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Path;
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
 				OriginalTerrain.QueueLinkSource = cells.QueueLinkAt;
-				if ( resumeState != null || incLayout != null ) OriginalTerrain.RefreshPaths();
+				OriginalTerrain.PathVariantSource = PathVariants.IsSecond;
+				// [BIN:TPW-EXE:0x00536490 map init refresh] the world's set-up refreshes every cell in order, so each path cell's chooser rolls once at the start
+				for ( var y = 0; y < cells.Height; y++ )
+					for ( var x = 0; x < cells.Width; x++ )
+						RefreshTile( x, y );
+				OriginalTerrain.RefreshPaths();
 				renderedCellVersion = cells.Version;
 			}
 			if ( Park != null && Guests != null )

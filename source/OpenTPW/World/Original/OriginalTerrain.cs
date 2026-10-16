@@ -79,6 +79,8 @@ public sealed class OriginalTerrain : Entity
 	public Func<int, int, bool>? QueueSource { get; set; }
 	/// <summary>Queue predecessor links, so neighbouring independent queues do not visually join.</summary>
 	public Func<int, int, byte>? QueueLinkSource { get; set; }
+	/// <summary>Whether a path cell's straight or edge takes the second texture (the chooser's roll, <see cref="PathTileVariants"/>); null: the first.</summary>
+	public Func<int, int, bool>? PathVariantSource { get; set; }
 	public int SurfaceCellCount { get; private set; }
 	/// <summary>Path and queue cells in the path layer.</summary>
 	public int PathCellCount { get; private set; }
@@ -206,7 +208,7 @@ public sealed class OriginalTerrain : Entity
 		Park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath ) || Park.Save?.Cells[x, y].IsPath == true;
 
 	private PathTile ChoosePathTile( int x, int y ) =>
-		PathTiles.ForCell( x, y, Park.Heightfield.CellCountX, Park.Heightfield.CellCountZ, IsPath, Park.Save?.Cells );
+		PathTiles.ForCell( x, y, Park.Heightfield.CellCountX, Park.Heightfield.CellCountZ, IsPath, Park.Save?.Cells, PathVariantSource?.Invoke( x, y ) == true );
 
 	private static int AddSlot( List<Texture> slots, Texture texture )
 	{

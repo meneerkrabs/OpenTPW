@@ -59,18 +59,18 @@ public static class PathTiles
 	public static byte Turn( byte mask ) => (byte)((mask << 2) | (mask >> 6));
 
 	/// <summary>
-	/// The texture and turn for <paramref name="neighbours"/>. Straights and edges have two textures; the cell
-	/// position picks one so a rebuilt surface keeps its look.
+	/// The texture and turn for <paramref name="neighbours"/>. Straights and edges have two textures: <paramref name="second"/> picks the
+	/// second (19 for the straight, 20 for the edge), the chooser's roll (<see cref="PathTileVariants"/>).
 	/// </summary>
-	public static PathTile Choose( byte neighbours, int x, int y )
+	public static PathTile Choose( byte neighbours, bool second = false )
 	{
 		var tile = ByMask[Reduce( neighbours )];
-		// [APPROX:PATH-014] PATH-VARIANT: built straights and edges pick str1/str2 and edg1/edg2 by a hash of the cell (saved cells keep theirs); the original's chooser (tp.exe 0x535dd0) uses the second texture (2 becomes 19, 10 becomes 20) when byte 0x820ac0 is set (0x535fcc), and every call that reaches its end stores rand() & 1 there (CRT rand 0x67b5c0, store 0x53602c, seeded with GetTickCount at 0x54dddc), so each recomputation re-rolls from a shared clock-seeded generator and no per-cell rule exists — still open: nothing statically; the original choice is random per recomputation
-		var second = ((x * 73856093) ^ (y * 19349663)) & 1;
+		if ( !second )
+			return tile;
 		return tile.TextureIndex switch
 		{
-			2 when second == 1 => tile with { TextureIndex = StraightVariant },
-			10 when second == 1 => tile with { TextureIndex = EdgeVariant },
+			2 => tile with { TextureIndex = StraightVariant },
+			10 => tile with { TextureIndex = EdgeVariant },
 			_ => tile,
 		};
 	}
@@ -92,15 +92,15 @@ public static class PathTiles
 	/// The tile of path cell (<paramref name="x"/>, <paramref name="y"/>). A cell that was a path in the original save,
 	/// with the same path neighbours, keeps the saved texture and turn: the saved neighbour bits also count ride
 	/// entrances, which the cell map does not keep. Other cells, and a saved turn other than 0/90/180/270, follow
-	/// <see cref="Choose"/> (reported under SAVE-010).
+	/// <see cref="Choose"/> with the cell's roll <paramref name="second"/> (reported under SAVE-010).
 	/// </summary>
-	public static PathTile ForCell( int x, int y, int countX, int countY, Func<int, int, bool> isPath, SaveCellGrid? saved )
+	public static PathTile ForCell( int x, int y, int countX, int countY, Func<int, int, bool> isPath, SaveCellGrid? saved, bool second = false )
 	{
 		var neighbours = Neighbours( x, y, countX, countY, isPath );
 		if ( saved != null && saved[x, y].IsPath && Neighbours( x, y, countX, countY, ( nx, ny ) => saved[nx, ny].IsPath ) == neighbours
 			&& saved[x, y].PathRotation is 0 or 90 or 180 or 270 )
 			return new PathTile( saved[x, y].PathTexture, saved[x, y].PathRotation );
-		return Choose( neighbours, x, y );
+		return Choose( neighbours, second );
 	}
 
 	/// <summary>QueueTex's square, end, straight or corner, following predecessor/successor links and the back cell's join path.</summary>

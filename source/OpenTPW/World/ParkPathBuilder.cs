@@ -260,6 +260,10 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		{
 			foreach ( var (x, y) in written )
 				PathLinkWriter.LinkPath( Cells, x, y, Effects );
+			// [BIN:TPW-EXE:0x00527517 refresh pass] the last LayLine pass, 0x81, refreshes every cell of the line (SetCell case 0x81: the tile refresh 0x5365D0)
+			if ( Effects?.Refresh is { } refresh )
+				foreach ( var (x, y) in written )
+					refresh( x, y );
 		}
 		return new SegmentResult( end, built, charged, stoppedBy, endedOnExisting )
 		{

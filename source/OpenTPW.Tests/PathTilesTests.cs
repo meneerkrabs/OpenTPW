@@ -15,14 +15,14 @@ public class PathTilesTests
 		for ( var neighbours = 0; neighbours < 256; neighbours++ )
 		{
 			var mask = PathTiles.Reduce( (byte)neighbours );
-			var tile = PathTiles.Choose( mask, 0, 0 );
-			var turned = PathTiles.Choose( PathTiles.Turn( mask ), 0, 0 );
+			var tile = PathTiles.Choose( mask );
+			var turned = PathTiles.Choose( PathTiles.Turn( mask ) );
 			Assert.AreEqual( PathTiles.BaseTexture( tile.TextureIndex ), PathTiles.BaseTexture( turned.TextureIndex ), $"0x{mask:X2}" );
 			// Shapes that look the same after a turn (straights, crossings, square, centre) keep their smallest turn.
 			if ( PathTiles.Turn( mask ) != mask && PathTiles.Turn( PathTiles.Turn( mask ) ) != mask )
 				Assert.AreEqual( (tile.Rotation + 90) % 360, turned.Rotation, $"0x{mask:X2}" );
 		}
-		Assert.AreEqual( 15, Enumerable.Range( 0, 256 ).Select( mask => PathTiles.BaseTexture( PathTiles.Choose( (byte)mask, 0, 0 ).TextureIndex ) ).Distinct().Count() );
+		Assert.AreEqual( 15, Enumerable.Range( 0, 256 ).Select( mask => PathTiles.BaseTexture( PathTiles.Choose( (byte)mask ).TextureIndex ) ).Distinct().Count() );
 	}
 
 	[TestMethod]
@@ -30,19 +30,43 @@ public class PathTilesTests
 	{
 		Assert.AreEqual( 0x11, PathTiles.Reduce( 0x93 ), "+X−Y and −X−Y without +X/−X" );
 		Assert.AreEqual( 0x1F, PathTiles.Reduce( 0x9F ) );
-		Assert.AreEqual( new PathTile( 4, 180 ), PathTiles.Choose( 0x53, 0, 0 ), "the extra +X−Y bit of 0x53 does not change the T" );
-		Assert.AreEqual( new PathTile( 0, 0 ), PathTiles.Choose( 0xAA, 0, 0 ), "diagonals alone are no path" );
+		Assert.AreEqual( new PathTile( 4, 180 ), PathTiles.Choose( 0x53 ), "the extra +X−Y bit of 0x53 does not change the T" );
+		Assert.AreEqual( new PathTile( 0, 0 ), PathTiles.Choose( 0xAA ), "diagonals alone are no path" );
 	}
 
 	[TestMethod]
-	public void StraightsAndEdgesPickAVariantByCellAndKeepIt()
+	public void StraightsAndEdgesTakeTheChoosersRoll()
 	{
-		var picks = Enumerable.Range( 0, 64 ).Select( index => PathTiles.Choose( 0x11, index % 8, index / 8 ).TextureIndex ).ToArray();
-		CollectionAssert.IsSubsetOf( picks.Distinct().ToArray(), new[] { 2, PathTiles.StraightVariant } );
-		Assert.AreEqual( 2, picks.Distinct().Count() );
-		// Pinned picks: a change to the hash would change built paths that players already see.
-		CollectionAssert.AreEqual( new[] { 2, 19, 19, 2 }, new[] { (0, 0), (1, 0), (0, 1), (1, 1) }.Select( cell => PathTiles.Choose( 0x11, cell.Item1, cell.Item2 ).TextureIndex ).ToArray() );
-		CollectionAssert.IsSubsetOf( Enumerable.Range( 0, 16 ).Select( index => PathTiles.Choose( 0x1F, index, 1 ).TextureIndex ).Distinct().ToArray(), new[] { 10, PathTiles.EdgeVariant } );
+		Assert.AreEqual( 2, PathTiles.Choose( 0x11 ).TextureIndex );
+		Assert.AreEqual( PathTiles.StraightVariant, PathTiles.Choose( 0x11, second: true ).TextureIndex );
+		Assert.AreEqual( PathTiles.EdgeVariant, PathTiles.Choose( 0x1F, second: true ).TextureIndex );
+		Assert.AreEqual( 4, PathTiles.Choose( 0x15, second: true ).TextureIndex, "only the straight and the edge have a second texture" );
+	}
+
+	[TestMethod]
+	public void EachRecomputationTakesThePreviousRollAndRollsAgain()
+	{
+		// tp.exe 0x535DD0: the texture follows 0x820AC0, the roll the chooser's previous call stored, and every call stores a new one.
+		var variants = new PathTileVariants();
+		Assert.IsFalse( variants.IsSecond( 3, 3 ), "no roll before the first recomputation" );
+		var crt = 1u;
+		bool Next()
+		{
+			crt = unchecked( crt * 214013 + 2531011 );
+			return ((crt >> 16) & 0x7FFF & 1) != 0;
+		}
+		var previous = false;
+		for ( var call = 0; call < 40; call++ )
+		{
+			var cell = (call % 5, call / 5);
+			variants.Refresh( cell.Item1, cell.Item2 );
+			Assert.AreEqual( previous, variants.IsSecond( cell.Item1, cell.Item2 ), $"call {call}" );
+			previous = Next();
+		}
+		// A cell keeps its version until it is recomputed again.
+		var kept = variants.IsSecond( 0, 0 );
+		variants.Refresh( 9, 9 );
+		Assert.AreEqual( kept, variants.IsSecond( 0, 0 ) );
 	}
 
 	[TestMethod]
@@ -76,7 +100,7 @@ public class PathTilesTests
 		{
 			var cell = park.Cells[x, y];
 			var saved = new PathTile( cell.PathTexture, cell.PathRotation );
-			var chosen = PathTiles.Choose( (byte)cell.PathConnections, x, y );
+			var chosen = PathTiles.Choose( (byte)cell.PathConnections );
 			Assert.AreEqual( (PathTiles.BaseTexture( saved.TextureIndex ), saved.Rotation), (PathTiles.BaseTexture( chosen.TextureIndex ), chosen.Rotation), $"({x}, {y}) 0x{(byte)cell.PathConnections:X2}" );
 		}
 		CollectionAssert.AreEquivalent( new[] { 2, 3, 4, 5, 6, 7, 9, 10, 15, PathTiles.StraightVariant, PathTiles.EdgeVariant },

@@ -203,4 +203,16 @@ public class PathLinkWriterTests
 		Assert.AreEqual( 0x05, cells.LinksAt( 8, 9 ), "−Y linked, +X−Y and −X−Y cleared" );
 		Assert.AreEqual( 0x11, cells.LinksAt( 8, 8 ) );
 	}
+
+	[TestMethod]
+	public void TheCommitRefreshesEveryLineCellAfterTheLinkPass()
+	{
+		var cells = new ParkCellMap( 16, 16 );
+		var refreshed = new List<(int, int)>();
+		var builder = Builder( cells );
+		builder.Effects = new LinkEffects( ( x, y ) => refreshed.Add( (x, y) ) );
+		builder.BuildSegment( (2, 2), (4, 2) );
+		// The link pass refreshes each path neighbour it links (−Y, +X, +Y, −X), then pass 0x81 every cell of the line.
+		CollectionAssert.AreEqual( new[] { (3, 2), (4, 2), (2, 2), (3, 2), (2, 2), (3, 2), (4, 2) }, refreshed );
+	}
 }

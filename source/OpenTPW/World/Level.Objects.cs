@@ -213,6 +213,19 @@ public partial class Level
 
 	/// <summary>The headless path builder over the level's cell map (original levels; null in the generic sandbox).</summary>
 	public ParkPathBuilder? Paths { get; private set; }
+	/// <summary>The path tiles' texture rolls (presentation; <see cref="PathTileVariants"/>).</summary>
+	public PathTileVariants PathVariants { get; } = new();
+
+	/// <summary>
+	/// The tile refresh of a cell (tp.exe <c>0x5365D0</c>): its chooser runs, and with it the texture roll, for a path or queue cell; other
+	/// cells (type 0 here) skip the chooser.
+	/// </summary>
+	internal void RefreshTile( int x, int y )
+	{
+		if ( Guests?.Grid.Cells is { } cells && cells.TypeAt( x, y ) is ParkCellType.Path or ParkCellType.Queue )
+			PathVariants.Refresh( x, y );
+	}
+
 	/// <summary>The area clear tool (the bulldozer: Clear Land and the Clear key); null without paths or on a read-only visit.</summary>
 	public AreaClearTool? AreaClearTool { get; private set; }
 	/// <summary>The path and queue build tool the park view drives (PATH-plan §9.4).</summary>
@@ -240,7 +253,7 @@ public partial class Level
 			return;
 		Paths = new ParkPathBuilder( Guests.Grid.Cells, Guests.Grid, () => Park?.Economy, Objects.Grid, IsPathBlocked )
 		{
-			Effects = new LinkEffects( QueueNeighbour: ( x, y ) => GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) ) )
+			Effects = new LinkEffects( RefreshTile, ( x, y ) => GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) ) )
 		};
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Objects.FindAt( x, y ), RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell );
 	}
@@ -395,6 +408,9 @@ public partial class Level
 			return QueueBuildResult.Refused;
 		var result = BuildQueueCell( Guests.Grid, Park?.Economy, ride, x, y, IsQueueBlocked, out var message );
 		LastActionMessage = message;
+		// The queue line's refresh pass (0x81) runs the chooser for the laid cell.
+		if ( result == QueueBuildResult.Ok )
+			RefreshTile( x, y );
 		return result;
 	}
 

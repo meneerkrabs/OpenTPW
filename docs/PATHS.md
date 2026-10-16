@@ -136,7 +136,11 @@ original's tile chooser is tp.exe `0x535dd0` (49-row path table at `0x763138`, 1
 `OriginalTerrain` draws a cell with the saved texture and turn when it was a path in the save and still has
 the same path neighbours. The saved bits also count ride entrances, which the cell map does not keep.
 Other path cells, such as built ones or the neighbours of built ones, follow the rule from their path
-neighbours. For straights and edges, a hash of the cell picks between the two versions (PATH-014). Queue
+neighbours. For straights and edges the original's chooser (tp.exe `0x535dd0`) takes the second version
+when the roll its previous call stored is set, and every call stores a new `rand() & 1` (`0x53602c`): each
+recomputation of a cell's tile (the refresh `0x5365d0`: the world's set-up pass, the link writer's refreshes
+and the commit's refresh pass over the line) re-rolls. `PathTileVariants` keeps that rule with its own CRT-formula
+generator, a presentation stub: the original's is seeded from the clock and shared by the whole game. Queue
 cells use the separate `QueueTex` list and textures from the theme's `queue.wad`, rather than a normal path tile. Square, end, straight and corner artwork follows the queue's predecessor/successor links; independent queues that merely touch do not visually merge. The back cell connects to its walking-path join. These visual shape/rotation choices are derived from the decoded artwork and existing queue links, not a traced original rendering routine (PATH-015).
 
 ## Headless API
@@ -163,5 +167,4 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 | PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate) |
 | PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause opens a full-screen layer (0x47ed80 → 0x65dd7b) under its panel, whose effect on park clicks is untraced |
-| PATH-014 | PATH-VARIANT | built straights and edges pick `str1`/`str2` and `edg1`/`edg2` by a hash of the cell; the original rolls CRT `rand() & 1` on every recomputation (0x535dd0, 0x53602c) |
 | PATH-015 | QUEUE-TEXTURES | queue cells use `QueueTex` ground textures; the original places queue models (0x5229e0, `quedead`..`quebin2.md2`) and no `QueueTex` texture |

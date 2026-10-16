@@ -1,4 +1,8 @@
-"""Inventory explicit C# fidelity annotations and their existing declarations."""
+"""Inventory explicit C# fidelity annotations and their existing declarations.
+
+The register document (docs/FIDELITY-REGISTER.md) is a build artifact: --write generates it locally (and the
+website publishes it), --check validates the sources it is generated from. Retired and reserved IDs are kept in
+the committed tools/fidelity_retired.txt."""
 from __future__ import annotations
 
 import argparse
@@ -46,9 +50,10 @@ BIN_LABEL = re.compile(r"(%s):\S.*\Z" % "|".join(BINARIES))
 COMMENT = re.compile(r"^\s*//+\s?(.*)$")
 DECLARATION = re.compile(r'^\s*(?:new\s*)?\(\s*"([^"\n]+)"\s*,\s*"((?:[^"\\]|\\.)*)"')
 DOCUMENT = "docs/FIDELITY-REGISTER.md"
+RETIRED_LIST = "tools/fidelity_retired.txt"
+RETIRED_LINE = re.compile(r"^([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\s+(\S.*?)\s*$")
 RETIRED_HEADING = "## Retired and reserved IDs"
 DOC_ROW = re.compile(r"^\|\s*([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\s*\|")
-RETIRED_ENTRY = re.compile(r"^- `([^`]+)` \((.+)\)$")
 DOC_MENTION = re.compile(r"APPROX:([A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)*-\d{3})\b")
 
 
@@ -77,6 +82,8 @@ class Inventory:
     errors: list[str]
     register_count: int = len(REGISTERS)
     retired: dict[str, str] = field(default_factory=dict)
+    # Retired or reserved IDs found in docs that tools/fidelity_retired.txt does not record yet (--write adds them).
+    unrecorded: dict[str, str] = field(default_factory=dict)
 
     @property
     def unresolved(self) -> list[str]:
@@ -219,33 +226,63 @@ def collect(root: Path, registers: dict[str, str] | None = None,
         errors.append(f"{label}: annotation has no declaration in the configured registers")
     for label in sorted(declarations.keys() - tagged):
         errors.append(f"{label}: declaration has no source annotation")
-    retired = retired_ids(root, set(registers) | set(markdown_registers), declarations, errors)
-    return Inventory(sites, declarations, errors, len(registers), retired)
+    listed = read_retired(root, errors)
+    retired = retired_ids(root, set(registers) | set(markdown_registers), declarations, errors, listed)
+    unrecorded = {label: where for label, where in retired.items() if label not in listed}
+    return Inventory(sites, declarations, errors, len(registers), retired, unrecorded)
 
 
-def retired_ids(root: Path, prefixes: set[str], declarations: dict[str, Declaration], errors: list[str]) -> dict[str, str]:
+def read_retired(root: Path, errors: list[str]) -> dict[str, str]:
+    """The committed list of retired and reserved IDs (`ID where` lines; # comments and blank lines are skipped).
+
+    Order is not checked, so a union merge of two branches stays valid; --write rewrites the file sorted."""
+    listed: dict[str, str] = {}
+    path = root / RETIRED_LIST
+    if not path.is_file():
+        return listed
+    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = RETIRED_LINE.match(line)
+        if not match:
+            errors.append(f"{RETIRED_LIST}:{number}: expected `ID where`")
+        else:
+            listed.setdefault(match.group(1), match.group(2))
+    return listed
+
+
+def write_retired(root: Path, retired: dict[str, str]) -> None:
+    path = root / RETIRED_LIST
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    header = []
+    for line in lines:
+        if line.strip() and not line.lstrip().startswith("#"):
+            break
+        header.append(line)
+    if header and header[-1].strip():
+        header.append("")
+    body = [f"{label} {where}" for label, where in sorted(retired.items())]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(header + body) + "\n", encoding="utf-8")
+
+
+def retired_ids(root: Path, prefixes: set[str], declarations: dict[str, Declaration], errors: list[str],
+                listed: dict[str, str] | None = None) -> dict[str, str]:
     """IDs that a Markdown table row under docs keys, or docs prose cites as `APPROX:ID`, but no register declares
     (retired, or reserved by a plan; prose mentions since REVIEW-WALK-2 WV2-2).
 
-    The list in the generated document only grows: an ID listed there may not be declared again, so a new
-    approximation cannot take a number the docs already use with another meaning (REVIEW-ORACLE-2 OV2-1)."""
-    listed: dict[str, str] = {}
-    document = root / DOCUMENT
-    if document.is_file():
-        inside = False
-        for line in document.read_text(encoding="utf-8").splitlines():
-            if line.startswith("## "):
-                inside = line == RETIRED_HEADING
-            elif inside and (match := RETIRED_ENTRY.match(line)):
-                listed[match.group(1)] = match.group(2)
+    The committed list (tools/fidelity_retired.txt, formerly a section of the committed document) only grows: an ID
+    listed there may not be declared again, so a new approximation cannot take a number the docs already use with
+    another meaning (REVIEW-ORACLE-2 OV2-1)."""
+    listed = dict(listed or {})
     for label in sorted(listed.keys() & declarations.keys()):
-        errors.append(f"{label}: declared, but {DOCUMENT} lists it as retired or reserved ({listed[label]}); use a free ID")
+        errors.append(f"{label}: declared, but {RETIRED_LIST} lists it as retired or reserved ({listed[label]}); use a free ID")
     found: dict[str, str] = {}
     docs = root / "docs"
     for path in sorted(docs.rglob("*.md")) if docs.is_dir() else []:
         relative = path.relative_to(root).as_posix()
         if relative == DOCUMENT:
-            continue
+            continue  # the generated document, when one was written locally
         for line in path.read_text(encoding="utf-8").splitlines():
             match = DOC_ROW.match(line)
             labels = [match.group(1)] if match else []
@@ -280,15 +317,15 @@ def location(path: str, line: int) -> str:
 def render(data: Inventory) -> str:
     counts = Counter(s.kind for s in data.sites)
     extension_count = sum(d.scope == EXTENSION_SCOPE for d in data.declarations.values())
-    lines = ["# Fidelity register", "", "Generated by `tools/fidelity_register.py`; edit the source annotations or declarations, then regenerate.", "",
+    lines = ["# Fidelity register", "", "Generated by `tools/fidelity_register.py`; edit the source annotations or declarations, then regenerate. This document is a build artifact: it is not committed, and the website publishes the copy generated from `main`.", "",
              "The acceptance gate is **zero unresolved assumptions in required original behavior**. All APPROX IDs below remain unresolved while their labels exist. Tags describing developer-only behavior or presentation conventions also remain listed; this inventory does not judge their relevance or downgrade them.", "",
              "EXT labels identify deliberate extensions. DATA labels identify claimed original-data provenance. BIN labels cite the original executable logic a rule was traced to (`STP-PPC` = Mac PowerPC Sim Theme Park, `TPI-EXE` = Theme Park Inc Game.exe, `TPW-EXE` = Windows Sim Theme Park World v2.0 tp.exe; see docs/reverse/FINDINGS.md). None of these labels proves semantic correctness or cancels an APPROX label at the same site. Acceptance also requires evidence for required behavior, assets, inputs and outputs; a zero tag count alone cannot satisfy that gate.", "",
              "This is a tag inventory, not enforcement of all semantics. It does not detect unlabelled magic numbers, formulas, logic, omitted features or false provenance claims. It scans whole-line C# // and /// comments under source, excluding bin/obj; inline trailing comments, block comments and other languages are outside its scope. ID templates and runtime log string templates are not code-site annotations.", "",
              "```sh", "python3 tools/fidelity_register.py --write", "python3 tools/fidelity_register.py --check", "python3 -m unittest discover -s tools -p 'test_fidelity_register.py' -v", "```", "",
              f"Current inventory: **{len(data.unresolved)} unresolved unique APPROX IDs**, {counts['APPROX']} APPROX occurrences, {counts['EXT']} EXT occurrences, {counts['DATA']} DATA occurrences and {counts['BIN']} BIN occurrences.", "",
              f"Of these, {len(data.unresolved) - extension_count} IDs belong to the existing original-fidelity areas (required-behavior scope remains unadjudicated), and {extension_count} ONLINE IDs record uncertainty inside the allowed OpenTPW online extension. The extension scope does not hide, resolve or subtract those APPROX IDs from the total.", "",
-             "CI checks annotation/declaration consistency and document freshness only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.", "",
-             f"Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the {in_words(data.register_count)} configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also compares the complete regenerated document against this file.", "",
+             "CI checks annotation/declaration consistency only. It does not fail the build based on the unresolved count and does not establish the original-fidelity release gate.", "",
+             f"Repeated source occurrences of one ID are allowed and listed separately. Duplicate register declarations, malformed/missing ID syntax, unregistered IDs and declarations without source annotations fail the check. Register declarations are read from the {in_words(data.register_count)} configured C# registers (current one-entry-per-line tuple/new syntax) and the explicit three-column Approximation register table in docs/ONLINE.md; these are bounded lexical readers, not general C# or Markdown parsers. New registers must be explicitly configured. The check also requires every retired or reserved ID below to be recorded in `tools/fidelity_retired.txt`.", "",
              "| Area | Unique unresolved IDs | Source occurrences |", "| --- | ---: | ---: |"]
     grouped = Counter(label.rsplit("-", 1)[0] for label in data.unresolved)
     for area, count in sorted(grouped.items()):
@@ -307,8 +344,8 @@ def render(data: Inventory) -> str:
               "IDs that a table row in docs keys, or docs prose cites as `APPROX:ID`, but no register declares: retired "
               "approximations and IDs a plan reserves. "
               "Declaring one of them fails the check, so a new approximation cannot take a number the docs already use "
-              "with another meaning. `--write` keeps every listed ID; remove an entry by hand only when its docs agree "
-              "with the new declaration.", ""]
+              "with another meaning. The list is kept in `tools/fidelity_retired.txt`; `--write` records new entries and "
+              "keeps every listed ID. Remove an entry by hand only when its docs agree with the new declaration.", ""]
     lines += [f"- `{label}` ({where})" for label, where in data.retired.items()] or ["None."]
     for kind, title in [("APPROX", "Approximation sites"), ("EXT", "Extension sites"), ("DATA", "Data provenance sites"), ("BIN", "Binary evidence sites")]:
         lines += ["", f"## {title}", "", "| Label | Location | Source comment context |", "| --- | --- | --- |"]
@@ -321,24 +358,35 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--write", action="store_true", help="regenerate docs/FIDELITY-REGISTER.md")
-    mode.add_argument("--check", action="store_true", help="validate annotations, declarations and generated document")
+    mode.add_argument("--write", action="store_true",
+                      help=f"generate {DOCUMENT} (not committed) and record new retired IDs in {RETIRED_LIST}")
+    mode.add_argument("--check", action="store_true",
+                      help=f"validate annotations, declarations and the retired-ID list ({RETIRED_LIST}); writes nothing")
+    parser.add_argument("--output", type=Path, help=f"with --write: the document path (default: <root>/{DOCUMENT})")
     args = parser.parse_args()
+    if args.output and not args.write:
+        parser.error("--output needs --write")
     try:
         data = collect(args.root)
         if data.errors:
             parser.exit(1, "\n".join(data.errors) + "\n")
-        document = render(data)
-        target = args.root / DOCUMENT
         if args.check:
-            if not target.is_file() or target.read_text(encoding="utf-8") != document:
-                parser.exit(1, "Fidelity register is missing or stale; run --write.\n")
-            print(f"Fidelity register complete: {len(data.unresolved)} unresolved unique APPROX IDs.")
+            if data.unrecorded:
+                listed = "\n".join(f"{label}: retired or reserved ({where}) but not recorded in {RETIRED_LIST}"
+                                   for label, where in data.unrecorded.items())
+                parser.exit(1, listed + "\nRun --write and commit " + RETIRED_LIST + ".\n")
+            render(data)
+            print(f"Fidelity register sources consistent: {len(data.unresolved)} unresolved unique APPROX IDs.")
         elif args.write:
-            target.write_text(document, encoding="utf-8")
+            if data.unrecorded:
+                write_retired(args.root, data.retired)
+                print(f"Recorded {len(data.unrecorded)} retired or reserved ID(s) in {RETIRED_LIST}; commit it.")
+            target = args.output or args.root / DOCUMENT
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(render(data), encoding="utf-8")
             print(f"Wrote {target}: {len(data.unresolved)} unresolved unique APPROX IDs.")
         else:
-            print(document, end="")
+            print(render(data), end="")
     except OSError as error:
         parser.exit(1, f"fidelity register: {error}\n")
 

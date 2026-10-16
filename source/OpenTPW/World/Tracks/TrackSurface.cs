@@ -10,10 +10,10 @@ public readonly record struct BoatPose( float Height, float Pitch, float Roll );
 public readonly record struct KartPose( float Height, float Pitch, float Roll, float ShadowHeight );
 
 /// <summary>
-/// The surface a boat floats on (docs/TRACKS.md): the water faces of a track piece in tile-local model units (one cell is 10, a tile 20, z up), and the
-/// four-probe height of a boat above a surface function. The original samples four points at ± the vehicle radius along the facing and across it, takes the
-/// highest surface triangle under each point (else the terrain plus the object's base height), and uses the mean as the height, the front and back difference
-/// as the pitch and the right and left difference as the roll (<c>0x546280</c>).
+/// The surface a vehicle runs on over an object (docs/TRACKS.md): what the original's height sampler reads on a track piece, a station or a bumper ride in
+/// object-local model units (one cell is 10, a tile 20, z up), and the four-probe pose of a vehicle above a surface function. The original samples four points at
+/// ± the vehicle radius along the facing and across it and uses the mean as the height, the front and back difference as the pitch and the right and left
+/// difference as the roll (<c>0x546280</c>).
 /// </summary>
 public sealed class TrackSurface
 {
@@ -23,102 +23,151 @@ public sealed class TrackSurface
 	/// <summary>The water height of the station tiles (the water plane of the track pieces), in model units above the tile's ground.</summary>
 	public const float StationWaterHeight = 3.254f;
 
-	/// <summary>Model units one step of a height profile byte stands for (the kart floor 7 or 8 steps, the walls 14, a bridge deck 20 to 26).</summary>
-	public const float ProfileStep = 0.4f;
-	/// <summary>Model units per profile sample: 5 samples to a 10-unit cell.</summary>
-	public const float ProfileSample = 2f;
 	/// <summary>The hover height of the space and fantasy karts above the surface, in model units.</summary>
 	public const float HoverHeight = 1.6f;
 
 	private readonly Triangle[] triangles;
-	private readonly byte[]? profile;
-	private readonly int profileWidth;
-	private readonly int profileHeight;
+	/// <summary>The sampler's face groups in order (a surface dummy record's mesh each): their triangle range and whether the first covering face answers.</summary>
+	private readonly (int Start, int Count, bool FirstHit)[]? groups;
+	/// <summary>The terrain sampler's height above the ground (the model header's +0xA0), or null for a face surface.</summary>
+	private readonly float? terrainOffset;
+	/// <summary>Whether a point no face covers gives the instance's own height (0 above the base) instead of no surface (the +0x2C mesh sampler).</summary>
+	private readonly bool baseWhenUncovered;
 
 	public TrackSurface( IEnumerable<Triangle> triangles ) => this.triangles = triangles.ToArray();
 
-	private TrackSurface( byte[] profile, int width, int height )
+	/// <summary>The model header's +0xA0 that every face sample adds.</summary>
+	private readonly float faceOffset;
+
+	private TrackSurface( Triangle[] triangles, (int Start, int Count, bool FirstHit)[] groups, bool baseWhenUncovered, float faceOffset )
+	{
+		this.triangles = triangles;
+		this.groups = groups;
+		this.baseWhenUncovered = baseWhenUncovered;
+		this.faceOffset = faceOffset;
+	}
+
+	private TrackSurface( float terrainOffset )
 	{
 		triangles = Array.Empty<Triangle>();
-		this.profile = profile;
-		profileWidth = width;
-		profileHeight = height;
+		this.terrainOffset = terrainOffset;
 	}
 
-	public int TriangleCount => profile == null ? triangles.Length : profile.Count( sample => sample != 0 );
+	/// <summary>The sampler mode the original takes for this surface (tests and the docs).</summary>
+	public TrackSamplerMode Mode => terrainOffset != null ? TrackSamplerMode.Terrain : groups == null ? TrackSamplerMode.Faces : baseWhenUncovered ? TrackSamplerMode.InstanceMesh : TrackSamplerMode.SurfaceRecords;
+
+	/// <summary>The height above the ground of a terrain-sampled object, or null.</summary>
+	public float? TerrainOffset => terrainOffset;
 
 	/// <summary>
-	/// The surface of a kart piece from its height profile (<c>.hmp</c>): each sample is 2 model units wide (row = tile-local y, column = tile-local x) and stands
-	/// 0.4 units per step high; a zero sample is outside the piece and has no surface.
+	/// The surface the original's height sampler reads on an object it finds under a probe (a track piece, a station, a bumper ride): <c>0x00450EA0</c> chooses
+	/// the surface records (dummy records with type bit 2: their meshes' faces whose first word has bit 0x8000, the first covering face answering for a record with
+	/// bit 4, else the highest), the terrain plus the header's +0xA0 (header flag 0x80 or a nonzero +0xA0) or the instance's collision mesh.
 	/// </summary>
-	// [APPROX:TRACK-001] the kart surface is the piece's .hmp profile, which matches the mesh's top surface sample for sample (floor 7–8 steps = 2.8–3.2 units, walls 14, deck 20–26) in every checked piece; the original's surface is the mesh faces with bit 0x8000 (0x00546280, 0x004511A0), which the mesh reader does not expose
-	public static TrackSurface FromProfile( HmpFile file )
+	// [BIN:TPW-EXE:0x00450EA0 sampler mode] mode 2 when the instance's +0x28 block has bit 8 (0x00450F20 gathers the meshes of the dummy records with bit 2), else mode 1 when the model flags have 0x80 or the header float +0xA0 is nonzero, else mode 4 (the instance's +0x2C mesh)
+	// [BIN:TPW-EXE:0x004511A0 sample] mode 1: the terrain sampler 0x004527F0 (the landscape's corner heights over the cell's two triangles, not the .hmp) + model +0xA0; mode 2: 0x00451290(x, z, 0, 1); mode 4: 0x00451290(x, z, 1, 0); every mode adds +0xA0, and a NaN +0xA0 is reset to 0
+	// [BIN:TPW-EXE:0x00451290 face sampler] mode 4 samples the +0x2C mesh (first covering face; none: the instance height +0x44), mode 2 walks the dummy records with bit 2 (mesh = the header's first dummy mesh +0x46 plus the record index) and takes the highest covering face, returning at once for a record with bit 4; −100 when nothing covers
+	// [BIN:TPW-EXE:0x00451390 mesh faces] only faces whose first u16 has bit 0x8000 count; the height is the face plane's at the point (the normal at the low 15 bits, turned by the instance's 0/90/180/270 rotation)
+	// [APPROX:TRACK-001] the surface records are taken when a dummy record has bit 2 (the instance block's bit 8 that the original tests is not read; every shipped hill piece and the face-sampled stations carry such a record, and the flat pieces a nonzero +0xA0); the faces are baked with the full rest transforms (the original adds the node translations only), a face covers a point from either side (the original's edge test is one-sided) and the faces are read in record order; the instance mesh sampler (+0x2C, 0x0046A5A0) reads every 0x8000 face of the model
+	public static TrackSurface FromObject( ModelFile model )
 	{
-		ArgumentNullException.ThrowIfNull( file );
-		return new TrackSurface( file.Profile.ToArray(), file.ProfileWidth, file.ProfileHeight );
-	}
-
-	/// <summary>The profile surface of raw samples (row-major, <paramref name="width"/> columns), for tests.</summary>
-	public static TrackSurface FromSamples( byte[] samples, int width, int height ) => new( samples, width, height );
-
-	/// <summary>
-	/// The surface faces of a piece mesh: every face of a mesh part whose material is water (<c>wr_water…</c>, <c>wr_whirl</c>), baked with the rest transforms.
-	/// </summary>
-	// [APPROX:TRACK-001] the surface faces are the pieces' water meshes; the original takes the faces whose first u16 has bit 0x8000 (0x00546280), which OpenTPW's mesh reader does not expose — evidence needed: the face flag word of the MD2 faces and the surface object lookup
-	public static TrackSurface FromModel( ModelFile model )
-	{
+		ArgumentNullException.ThrowIfNull( model );
+		var records = new List<(int Mesh, bool FirstHit)>();
+		for ( var index = 0; index < model.DummyAttributes.Count; index++ )
+		{
+			var type = model.DummyAttributes[index].Type;
+			var mesh = model.Counts.Unknown46 + index;
+			if ( (type & 2) != 0 && mesh < model.Meshes.Count )
+				records.Add( (mesh, (type & 4) != 0) );
+		}
+		if ( records.Count == 0 && ((model.HeaderFlags & 0x80) != 0 || model.HeaderHeight != 0 && !float.IsNaN( model.HeaderHeight )) )
+			return new TrackSurface( Offset( model ) );
 		var rest = ModelAnimationPlayer.ComputeRestTransforms( model );
 		var found = new List<Triangle>();
-		foreach ( var mesh in model.Meshes )
+		var groups = new List<(int Start, int Count, bool FirstHit)>();
+		void Add( int meshIndex, bool firstHit )
 		{
-			if ( mesh.Indices.Length < 3 || mesh.Materials.Length == 0 )
-				continue;
+			var mesh = model.Meshes[meshIndex];
 			var node = mesh.NodeIndex >= 0 && mesh.NodeIndex < model.Nodes.Count ? mesh.NodeIndex : model.RootNodeIndex;
 			var bake = node >= 0 ? rest[node] : Matrix4x4.Identity;
 			V3 Position( uint index ) => ObjectAssets.ConvertAxes( V3.Transform( mesh.Vertices[(int)index].Position.GetSystemVector3(), bake ) );
-			for ( var corner = 0; corner + 2 < mesh.Indices.Length; corner += 3 )
+			var start = found.Count;
+			for ( var face = 0; face < mesh.FaceNormalIndices.Length && face * 3 + 2 < mesh.Indices.Length; face++ )
 			{
-				var material = mesh.Vertices[(int)mesh.Indices[corner]].TextureIndex;
-				if ( material >= mesh.Materials.Length || !IsWater( mesh.Materials[(int)material].Name ) )
+				if ( (mesh.FaceNormalIndices[face] & 0x8000) == 0 )
 					continue;
-				found.Add( new Triangle( Position( mesh.Indices[corner] ), Position( mesh.Indices[corner + 1] ), Position( mesh.Indices[corner + 2] ) ) );
+				found.Add( new Triangle( Position( mesh.Indices[face * 3] ), Position( mesh.Indices[face * 3 + 1] ), Position( mesh.Indices[face * 3 + 2] ) ) );
 			}
+			groups.Add( (start, found.Count - start, firstHit) );
 		}
-		return new TrackSurface( found );
+		if ( records.Count > 0 )
+		{
+			foreach ( var (mesh, firstHit) in records )
+				Add( mesh, firstHit );
+			return new TrackSurface( found.ToArray(), groups.ToArray(), baseWhenUncovered: false, Offset( model ) );
+		}
+		for ( var mesh = 0; mesh < model.Meshes.Count; mesh++ )
+			Add( mesh, true );
+		// the collision mesh answers with its first covering face, and with the instance's own height where none covers
+		return new TrackSurface( found.ToArray(), new[] { (0, found.Count, true) }, baseWhenUncovered: true, Offset( model ) );
 	}
 
-	private static bool IsWater( string name ) => name.Contains( "water", StringComparison.OrdinalIgnoreCase ) || name.Contains( "whirl", StringComparison.OrdinalIgnoreCase );
+	private static float Offset( ModelFile model ) => float.IsNaN( model.HeaderHeight ) ? 0 : model.HeaderHeight;
+
+	public int TriangleCount => triangles.Length;
 
 	/// <summary>The highest surface height under the tile-local point (<paramref name="x"/>, <paramref name="y"/>), or null when no triangle covers it.</summary>
 	public float? HeightAt( float x, float y )
 	{
-		if ( profile != null )
+		if ( terrainOffset is { } offset )
+			return offset;
+		if ( groups != null )
 		{
-			var column = (int)MathF.Floor( x / ProfileSample );
-			var row = (int)MathF.Floor( y / ProfileSample );
-			if ( column < 0 || row < 0 || column >= profileWidth || row >= profileHeight )
-				return null;
-			var sample = profile[row * profileWidth + column];
-			return sample == 0 ? null : sample * ProfileStep;
+			float? best = null;
+			foreach ( var (start, count, firstHit) in groups )
+			{
+				float? height = null;
+				for ( var index = start; index < start + count; index++ )
+				{
+					if ( Cover( triangles[index], x, y ) is not { } z )
+						continue;
+					if ( height == null || z > height )
+						height = z;
+					if ( firstHit )
+						break;
+				}
+				if ( height is { } found && (best == null || found > best) )
+				{
+					if ( firstHit )
+						return found + faceOffset;
+					best = found;
+				}
+			}
+			return best is { } top ? top + faceOffset : baseWhenUncovered ? faceOffset : null;
 		}
-		float? best = null;
+		float? highest = null;
 		foreach ( var triangle in triangles )
 		{
-			var (a, b, c) = (triangle.A, triangle.B, triangle.C);
-			var denominator = (b.Y - c.Y) * (a.X - c.X) + (c.X - b.X) * (a.Y - c.Y);
-			if ( MathF.Abs( denominator ) < 1e-9f )
-				continue;
-			var u = ((b.Y - c.Y) * (x - c.X) + (c.X - b.X) * (y - c.Y)) / denominator;
-			var v = ((c.Y - a.Y) * (x - c.X) + (a.X - c.X) * (y - c.Y)) / denominator;
-			var w = 1 - u - v;
-			const float edge = -1e-4f;
-			if ( u < edge || v < edge || w < edge )
-				continue;
-			var z = u * a.Z + v * b.Z + w * c.Z;
-			if ( best == null || z > best )
-				best = z;
+			if ( Cover( triangle, x, y ) is { } z && (highest == null || z > highest) )
+				highest = z;
 		}
-		return best;
+		return highest;
+	}
+
+	/// <summary>The height of <paramref name="triangle"/>'s plane at the point, or null when the triangle does not cover it.</summary>
+	private static float? Cover( Triangle triangle, float x, float y )
+	{
+		var (a, b, c) = (triangle.A, triangle.B, triangle.C);
+		var denominator = (b.Y - c.Y) * (a.X - c.X) + (c.X - b.X) * (a.Y - c.Y);
+		if ( MathF.Abs( denominator ) < 1e-9f )
+			return null;
+		var u = ((b.Y - c.Y) * (x - c.X) + (c.X - b.X) * (y - c.Y)) / denominator;
+		var v = ((c.Y - a.Y) * (x - c.X) + (a.X - c.X) * (y - c.Y)) / denominator;
+		var w = 1 - u - v;
+		const float edge = -1e-4f;
+		if ( u < edge || v < edge || w < edge )
+			return null;
+		return u * a.Z + v * b.Z + w * c.Z;
 	}
 
 	/// <summary>
@@ -164,4 +213,17 @@ public sealed class TrackSurface
 			roll += -yawRate / 13f * MathF.PI / 2;
 		return new KartPose( height, pitch, roll, mean );
 	}
+}
+
+/// <summary>The height sampler the original takes on an object (<c>0x00450EA0</c>), and OpenTPW's former surfaces.</summary>
+public enum TrackSamplerMode
+{
+	/// <summary>Mode 1: the terrain plus the model header's +0xA0.</summary>
+	Terrain,
+	/// <summary>Mode 2: the meshes of the dummy records with bit 2, their 0x8000 faces.</summary>
+	SurfaceRecords,
+	/// <summary>Mode 4: the instance's collision mesh (+0x2C), the instance height where no face covers.</summary>
+	InstanceMesh,
+	/// <summary>A plain list of triangles (tests).</summary>
+	Faces
 }

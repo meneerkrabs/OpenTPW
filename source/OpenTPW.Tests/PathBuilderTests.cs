@@ -344,7 +344,7 @@ public class PathBuilderTests
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
 		Assert.AreEqual( 61, simulation.Admissions, $"{simulation.Admissions}" );
-		Assert.AreEqual( 0x3DA1B84B16E7C9E0UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 0xBE56BB444866D576UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

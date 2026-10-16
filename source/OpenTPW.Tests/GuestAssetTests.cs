@@ -46,6 +46,55 @@ public class GuestAssetTests
 		CollectionAssert.AreEqual( new[] { 0, 0, 1, 0, 1, 1, 1, 0 }, kids.Select( kid => (int)kid.Animations.FlagB ).ToArray() );
 	}
 
+	/// <summary>
+	/// Every ESP's byte 0x10C picks its bank as the game does (0x5410D3): sets with 1 open their FPC, which each of them ships; the
+	/// others their TPC. Jungle SPR_EX and Space SPR_SK ship an FPC too but say 0, so their TPC is drawn. Every frame's two header
+	/// words (pixels per sprite unit, 0x5890E0) are 128.
+	/// </summary>
+	[TestMethod]
+	public void EveryEspChoosesTheBankTheGameOpens()
+	{
+		var full = new List<string>();
+		var partialWithFpc = new List<string>();
+		var checkedSets = 0;
+		foreach ( var directory in Directories( "/esprites" ) )
+		{
+			var files = FileSystem.GetFiles( directory ).Select( file => Path.GetFileName( file ) ).ToArray();
+			foreach ( var esp in files.Where( file => file.EndsWith( ".ESP", StringComparison.OrdinalIgnoreCase ) ) )
+			{
+				var stem = Path.GetFileNameWithoutExtension( esp );
+				bool Has( string extension ) => files.Any( file => string.Equals( file, stem + extension, StringComparison.OrdinalIgnoreCase ) );
+				using var stream = FileSystem.OpenRead( $"{directory}/{esp}" );
+				var animations = new SpriteAnimationFile( stream );
+				var name = $"{directory}/{stem}";
+				if ( animations.FlagA != 0 )
+				{
+					full.Add( name );
+					Assert.IsTrue( Has( ".FPC" ), name );
+				}
+				else if ( Has( ".FPC" ) )
+					partialWithFpc.Add( name );
+				if ( !Has( animations.BankExtension ) )
+					continue;
+				checkedSets++;
+				using var bank = FileSystem.OpenRead( $"{directory}/{stem}{animations.BankExtension}" );
+				Assert.IsTrue( new SpriteBankFile( bank ).Frames.All( frame => frame.UnknownA == 128 && frame.UnknownB == 128 ), name );
+				Assert.AreEqual( 16, animations.ExtraSlotBytes.Length );
+			}
+		}
+		Assert.AreEqual( 27, full.Count, string.Join( ", ", full ) );
+		CollectionAssert.AreEquivalent( new[] { "SPR_EX", "SPR_SK" }, partialWithFpc.Select( name => name[(name.LastIndexOf( '/' ) + 1)..].ToUpperInvariant() ).ToArray() );
+		Assert.IsTrue( checkedSets >= 44, $"{checkedSets} sets" );
+	}
+
+	private static IEnumerable<string> Directories( string root )
+	{
+		yield return root;
+		foreach ( var child in FileSystem.GetDirectories( root ) )
+			foreach ( var nested in Directories( child.StartsWith( '/' ) ? child : $"{root}/{Path.GetFileName( child )}" ) )
+				yield return nested;
+	}
+
 	[TestMethod]
 	public void ThemeBalanceFileGivesGuestSettings()
 	{

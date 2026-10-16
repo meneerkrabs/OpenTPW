@@ -89,6 +89,8 @@ public class RefpackTests
 			foreach ( var file in Members( archive.Root ).Where( file => file.Compressed ) )
 			{
 				AssertSame( archive.GetData( file.OffsetInArchive, file.SizeInArchive ), $"{path}: {file.Name}" );
+				// The directory's declared size is the decoded length (the original allocates exactly that much).
+				Assert.AreEqual( file.Size, new Refpack( archive.GetData( file.OffsetInArchive, file.SizeInArchive ) ).Decompress().LongLength, $"{path}: {file.Name}" );
 				compared++;
 			}
 		}

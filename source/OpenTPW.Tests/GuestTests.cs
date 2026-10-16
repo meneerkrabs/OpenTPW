@@ -397,18 +397,22 @@ public class GuestTests
 	}
 
 	[TestMethod]
-	public void GuestsWithoutAdmissionMoneyTurnBackAtTheTicketBooth()
+	public void TheBoothBooksTheFeeWithoutReadingTheGuestsPurse()
 	{
+		// tp.exe 0x004FF9D0: the paying verdict books the fee with the bank deposit 0x004D0600; the guest's cash +0x1A0 is neither tested nor debited.
 		var settings = CreateSettings();
 		settings.Types = new() { new GuestType( 50, 10, 30 ) };
 		settings.StartingCashVarPercent = 0;
 		var simulation = new GuestSimulation( CreateCross(), settings, 1 ) { ArrivalsEnabled = false };
+		var spent = 0L;
+		simulation.MoneySpent += ( _, amount, attraction ) => spent += attraction == 0 ? amount : 0;
 		var guest = simulation.SpawnArrival()!;
+		var purse = guest.Money;
+		Assert.IsTrue( purse < settings.AdmissionFee, "the guest's purse is short of the fee" );
 		Run( simulation, Array.Empty<ScriptedAttraction>(), 30 * 60 );
-		Assert.AreEqual( 0, simulation.Admissions );
-		Assert.AreEqual( GuestThought.Dissatisfied, guest.Thought, "thought 6, as the original's price refusals at the booth (0x004FFA44)" );
-		Assert.IsNull( simulation.Find( guest.Id ), "the guest went home" );
-		Assert.AreEqual( 1, simulation.Departed );
+		Assert.AreEqual( 1, simulation.Admissions );
+		Assert.AreEqual( settings.AdmissionFee, spent, "the fee is booked" );
+		Assert.AreEqual( purse, guest.Money, "the purse is untouched" );
 	}
 
 	[TestMethod]
@@ -776,7 +780,7 @@ public class GuestTests
 		public bool Closed;
 		public int AdmissionFee => 0;
 		public bool ParkClosed => Closed;
-		public bool TryPayAdmission( long guestMoney, out int feePaid ) { feePaid = 0; return !Closed; }
+		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; return true; }
 		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
 	}
 
@@ -902,7 +906,13 @@ public class GuestTests
 		Assert.AreEqual( 40, simulation.ArrivalGroupSize(), "an offline park is cut at 1500" );
 		simulation.OnlineVisit = true;
 		list.AddRange( Enumerable.Repeat<Guest>( null!, 120 ) );
-		Assert.AreEqual( 0, simulation.ArrivalGroupSize(), "600 guests: the group stops at 0 (ARRIVAL-004)" );
+		Assert.AreEqual( -100, simulation.ArrivalGroupSize(), "600 guests: 500 − 600, not floored (tp.exe 0x004CF6A6)" );
+		simulation.OnlineVisit = false;
+		settings.ArrivalMinPeople = -5;
+		simulation.ParkPoints = () => -100;
+		list.RemoveRange( 0, 600 );
+		// (int)(1.2 × (−100 + 20)) / 6 = −16, raised to MinPeople −5
+		Assert.AreEqual( 1500, simulation.ArrivalGroupSize(), "a negative group wraps the unsigned compare and is cut to 1500 − 0" );
 	}
 
 	[TestMethod]

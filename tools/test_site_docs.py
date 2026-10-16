@@ -203,6 +203,21 @@ class SiteDocsTests(unittest.TestCase):
         self.assertFalse((out / "reverse/EVIDENCE.html").exists())
         self.assertEqual(manual.read_text(encoding="utf-8"), "Hand-authored page")
 
+    def test_progress_log_is_assembled_and_fragments_are_not_pages(self) -> None:
+        self.write("docs/PROGRESS.md", "# Progress\n\n> **New entries:** see docs/progress/.\n\n## Old entry (October 1, 2026)\n\nOld text.\n")
+        self.write("docs/progress/2026-10-20-new-thing.md", "## New thing (October 20, 2026)\n\nSee [Start](../START.md#game-folder).\n")
+        out = self.repo / "website" / "docs"
+        warnings = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(warnings):
+            self.assertEqual(site_docs.build(str(self.repo), str(out)), 0)
+        self.assertEqual(warnings.getvalue(), "")
+        log = (out / "PROGRESS.html").read_text(encoding="utf-8")
+        self.assertLess(log.index("New thing"), log.index("Old entry"))
+        self.assertIn('href="START.html#game-folder"', log)
+        self.assertNotIn("New entries", log)
+        self.assertFalse((out / "progress").exists())
+        self.assertNotIn("docs/progress/2026-10-20-new-thing.md", site_docs.document_sources(self.repo))
+
     def test_actual_public_documentation_has_complete_internal_navigation(self) -> None:
         """Exercise the real corpus, including deeply nested tooling links."""
         repo = MODULE.resolve().parents[1]

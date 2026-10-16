@@ -65,6 +65,10 @@ public static class GameAudio
 {
 	/// <summary>The crowd sentence's parameter code (cat_kids 0x5B's event code).</summary>
 	public const byte CrowdParameterCode = 7;
+	/// <summary>The park music's parameter code (<c>0x51E790</c>: 0x51BC40(handle, 4, value)).</summary>
+	public const byte MusicParameterCode = 4;
+	/// <summary>The level rain voice's parameter code (<c>0x51E830</c>: 0x51BC40(handle, 8, level); cat_ambient 0x21's event code, its sounds bind it under the volume mask).</summary>
+	public const byte RainParameterCode = 8;
 	/// <summary>The park music event the original starts when a park opens (<c>0x100BC144</c>: event 2 of the level's music category).</summary>
 	public const uint ParkMusicEvent = 2;
 	/// <summary>The music parameter's cap (<c>0x101C2448</c>: values above 0x59 become 0x59).</summary>
@@ -516,7 +520,8 @@ public static class GameAudio
 			}
 			if ( rain != null )
 			{
-				rain.Parameter = parameter;
+				// [BIN:TPW-EXE:0x0051E870 rain level] the level (clamped to 0..100) goes to the voice with 0x51BC40(handle, 8, level): the event's code and the volume selector of its sounds, so the level also sets the rain's volume (the shipped sections span 1 to 2..5 percent)
+				rain.SetParameter( RainParameterCode, parameter );
 				rain.Resume();
 			}
 		}
@@ -533,6 +538,7 @@ public static class GameAudio
 	/// beside the level-driven voice of <see cref="SetRain"/>, which keeps following the drop count in every weather (snow included) until the drops reach 0.
 	/// </summary>
 	// [BIN:TPW-EXE:0x5131f0 weather mode setter] mode 0 (rain) submits cat_ambient 0x21 (0x51327c) with no parameter into the thing's +0x54 (mRainSoundHandle, saved); mode 1 (snow) and mode 2 (clear) stop it
+	// [BIN:TPW-EXE:0x006BC040 parameter query] with no parameter call its table still exists (the event's code 8 and the sounds' selector 8), so its sounds take their volume from a value of 0: the bottom of their range
 	// [BIN:TPW-EXE:0x512a7f level rain voice] the level-driven voice 0x51e830 (parameter 8) is fed every tick from the current drops * 100 / MaxRaindrops, also in snow
 	public static void SetWeatherRain( bool raining )
 	{
@@ -805,6 +811,19 @@ public static class GameAudio
 	}
 
 	/// <summary>
+	/// Starts a held RSE event voice that takes parameters and moves (a ride vehicle's engine): a sentence event runs as a sentence
+	/// (<see cref="SoundSentence.SetParameter"/>, <see cref="SoundSentence.MoveTo"/>); null when the event is missing or is not a repeating sentence (play those with <see cref="PlayRseEvent"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0051EEB0 sound-variable submit] the vehicle code resolves an EventMap variable to an event id (0x55A3E0) and submits it through 0x51BFC0, keeping the handle for the per-tick 0x51C270 (position) and 0x51BC40 (parameter) calls
+	public static SoundSentence? StartRseSentence( int type, uint eventId, Vector3 position )
+	{
+		var sound = FindRseEvent( type, eventId );
+		if ( sound == null || events == null || sound.Value.Event.Player is not (SoundEventPlayer.Sentence or SoundEventPlayer.BranchingSentence) )
+			return null;
+		return events.StartSentence( sound.Value.Category, eventId, AudioChannel.Effects, position: position );
+	}
+
+	/// <summary>
 	/// The sounds of a ride script's <c>REPAIREFFECT</c> instruction: showing the repair effect starts a repair sound of
 	/// <c>cat_kids</c>, hiding it plays two <c>cat_rides</c> sounds at the object's position.
 	/// </summary>
@@ -856,7 +875,8 @@ public static class GameAudio
 			var parameter = MusicParameter( guests );
 			if ( parameter != music.Parameter )
 			{
-				music.Parameter = parameter;
+				// [BIN:TPW-EXE:0x0051E79E music parameter] the update sends the value with 0x51BC40(handle, 4, value); the shipped park music sounds bind no selector, so it only steers the branching
+				music.SetParameter( MusicParameterCode, parameter );
 				music.Resume();
 			}
 		}

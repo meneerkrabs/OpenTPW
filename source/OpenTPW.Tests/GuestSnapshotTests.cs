@@ -265,6 +265,7 @@ public class GuestSnapshotTests
 			( "attraction reference not registered", WithGuest( boundIndex, guest => guest with { State = GuestState.GoingToRide, AttractionId = 42 } ) ),
 			( "queue references a missing guest", WithAttraction( snapshot.Attractions[0].AttractionId, attraction => attraction with { Queue = attraction.Queue.Append( 999 ).ToArray() } ) ),
 			( "called guest not in the queue", WithAttraction( snapshot.Attractions[0].AttractionId, attraction => attraction with { CalledGuest = snapshot.Guests[boundIndex].Id } ) ),
+			( "pending arrivals below the lowest cut remainder", snapshot with { PendingArrivals = 500 - 10239 - 1 } ),
 			( "attraction missing from the snapshot", snapshot with
 			{
 				Attractions = snapshot.Attractions.Take( 1 ).ToArray(),

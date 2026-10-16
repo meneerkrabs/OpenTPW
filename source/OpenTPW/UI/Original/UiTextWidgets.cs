@@ -22,15 +22,29 @@ public sealed class UiTextField : UiElement
 	public Action<string>? Changed { get; set; }
 	public override bool Focusable => Visible && Enabled;
 
-	/// <summary>Inserts typed characters, dropping control characters and anything past the limit.</summary>
+	/// <summary>
+	/// Inserts typed characters, dropping control characters, unpaired surrogates and anything past the limit (a surrogate pair
+	/// is inserted whole or not at all); a backspace removes a whole surrogate pair.
+	/// </summary>
 	public void Type( string typed, int backspaces )
 	{
 		var text = Text;
 		for ( var index = 0; index < backspaces && text.Length > 0; index++ )
-			text = text[..^1];
-		foreach ( var c in typed )
+			text = text.Length >= 2 && char.IsLowSurrogate( text[^1] ) && char.IsHighSurrogate( text[^2] ) ? text[..^2] : text[..^1];
+		for ( var at = 0; at < typed.Length; at++ )
 		{
-			if ( char.IsControl( c ) || text.Length >= MaximumLength )
+			var c = typed[at];
+			if ( char.IsHighSurrogate( c ) )
+			{
+				if ( at + 1 < typed.Length && char.IsLowSurrogate( typed[at + 1] ) )
+				{
+					if ( text.Length + 2 <= MaximumLength )
+						text += typed.Substring( at, 2 );
+					at++;
+				}
+				continue;
+			}
+			if ( char.IsLowSurrogate( c ) || char.IsControl( c ) || text.Length >= MaximumLength )
 				continue;
 			text += c;
 		}

@@ -347,7 +347,8 @@ internal sealed partial class ParkResumeSmokeTest
 		if ( totem != null )
 			Seed( totem, 3 );
 		// Wanderers spread along the actually-laid spine cells, so the park is not only commuters.
-		foreach ( var cell in spineCells.Where( ( _, index ) => index % Math.Max( 1, spineCells.Count / 4 ) == 0 ).Take( 4 ) )
+		// a ride placed over the spine takes its footprint cells (the placement clears a plain path under it), so only live path cells seed
+		foreach ( var cell in spineCells.Where( cell => level.Guests!.Grid.IsWalkable( cell.X, cell.Y ) ).Where( ( _, index ) => index % Math.Max( 1, spineCells.Count / 4 ) == 0 ).Take( 4 ) )
 			guests.SpawnInPark( cell.X, cell.Y );
 		Require( guests.Guests.Count >= 14, $"seed {guests.Guests.Count} guests around the rides, shops and paths" );
 	}

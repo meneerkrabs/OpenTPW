@@ -55,6 +55,53 @@ public sealed partial class ParkHud
 		}
 	}
 
+	// The help of the tools. A tool start in the original is SetMode (0x52F200), which withdraws the ten mode help messages whenever the mode changes and only
+	// then posts the new tool's help (0x486B00); a help the HUD wants posted is held until the frame's mode change has been reported, so the order survives the poll.
+	private readonly List<int> toolHelp = new();
+	private string? reportedMode;
+
+	/// <summary>Asks the advisor for the help message of a tool that just started or acted; it is posted after this frame's mode change is reported.</summary>
+	private void PostToolHelp( int message ) => toolHelp.Add( message );
+
+	/// <summary>
+	/// The interface mode as a key: which tool the park view runs, or "park". Two frames with different keys are a mode change (the original's SetMode with a new mode).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052F200 interface mode change] SetMode stores the new mode (0x81AE2C) after withdrawing the ten tool help messages when it differs from the stored one
+	internal string InterfaceMode()
+	{
+		if ( level.IsCoasterToolActive )
+			return "coaster";
+		if ( level.CellTool.IsActive )
+			return $"cell/{level.CellTool.Mode}";
+		if ( level.StaffPlacement is { IsActive: true } )
+			return "staffPlacement";
+		if ( level.PatrolTool is { IsActive: true } )
+			return "patrol";
+		if ( level.BuyLandTool is { IsActive: true } )
+			return "buyLand";
+		if ( level.AreaClearTool is { IsActive: true } )
+			return "areaClear";
+		if ( level.IsRemovingObjects )
+			return "remove";
+		if ( level.BuildEntry != null || level.IsPlacing )
+			return "build";
+		return "park";
+	}
+
+	/// <summary>Reports a change of the interface mode to the advisor, then posts the tool help asked for since the last frame.</summary>
+	private void ReportInterfaceMode()
+	{
+		var mode = InterfaceMode();
+		if ( reportedMode != null && reportedMode != mode )
+			host?.ModeChanged?.Invoke();
+		reportedMode = mode;
+		if ( toolHelp.Count == 0 )
+			return;
+		foreach ( var message in toolHelp )
+			host?.HelpPosted?.Invoke( message );
+		toolHelp.Clear();
+	}
+
 	private OriginalObject? objectHelpItem;
 	private string? objectHelpName;
 	private int objectHelpOpenings;

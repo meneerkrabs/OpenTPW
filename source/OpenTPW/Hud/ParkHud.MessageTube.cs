@@ -16,6 +16,9 @@ public sealed partial class ParkHud
 	// [APPROX:UI-025] pending tube messages are not saved with the park; the capacity of five is the most the video shows, where the original's tube has eight slots (0x59a940) and on overflow replaces its lowest-priority slot only for a message of higher priority (the per-type caps and priorities of the registry 0x76e300 are filled at run time and not read)
 	public const int MessageTubeCapacity = 5;
 
+	/// <summary>The advisor help the open message panel carries (0x11C, 284).</summary>
+	public const int MessagePanelHelp = 284;
+
 	// The tube sits left of the HUD panel above its top edge, in the BottomLeft-anchored authored coordinates of the main panel; read off the 720p frames (video 15:20 and 12:00).
 	private static readonly UiRect TubeBase = Rect( 69, 850, 157, 985 );
 	private const float TubeStep = 77f;
@@ -75,6 +78,8 @@ public sealed partial class ParkHud
 		openedActions = pendingActions![index];
 		pendingMessages.RemoveAt( index );
 		pendingActions.RemoveAt( index );
+		// [BIN:TPW-EXE:0x48D9C0 message selected] the tube item's left click (0x48E03B: sound 0xC0, then 0x48D9C0 unless it is the open one) stores the item as the panel's message and posts help 0x11C (284) through 0x486B00
+		host?.HelpPosted?.Invoke( MessagePanelHelp );
 		return true;
 	}
 
@@ -91,6 +96,9 @@ public sealed partial class ParkHud
 	/// <summary>Closes the panel (the red cross, or the bomb that deletes the opened message).</summary>
 	public void CloseMessagePanel()
 	{
+		// [BIN:TPW-EXE:0x48E4BF message panel close] the panel's close message 0x1001D8 (sent when the arm drawer puts it away, 0x4A25F0 with 0) withdraws help 0x11C through 0x486B40 (0x48E4D3) and clears the selected item
+		if ( openedMessage != null )
+			host?.HelpWithdrawn?.Invoke( MessagePanelHelp );
 		openedMessage = null;
 		openedActions = Array.Empty<GameMessageAction>();
 	}

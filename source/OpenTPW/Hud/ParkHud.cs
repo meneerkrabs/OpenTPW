@@ -37,6 +37,8 @@ public sealed class HudHost
 	public Action<int>? HelpPosted { get; init; }
 	/// <summary>The HUD withdraws an advisor help message it posted (0x486B40).</summary>
 	public Action<int>? HelpWithdrawn { get; init; }
+	/// <summary>The interface mode changed (a tool started or ended): the advisor withdraws the help of the tools (0x52F200).</summary>
+	public Action? ModeChanged { get; init; }
 	/// <summary>F1 was pressed in a HUD window that passes keys to the original's default window procedure; the advisor repeats the last tutorial advice.</summary>
 	public Action? HelpKeyPressed { get; init; }
 }
@@ -701,6 +703,7 @@ public sealed partial class ParkHud
 			consumed = true;
 		}
 		ReportScreens();
+		ReportInterfaceMode();
 		if ( Camera.Mode is ParkCameraMode camera )
 		{
 			camera.UiCapturesKeyboard = Input.TextEntryActive || Stack.Screens.Count > 1;

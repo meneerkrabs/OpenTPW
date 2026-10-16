@@ -443,6 +443,7 @@ internal sealed partial class GameFlow : IDisposable
 		WindowClosed = window => Advisor?.OnWindowClosed( window ),
 		HelpPosted = message => Advisor?.PostHelp( message ),
 		HelpWithdrawn = message => Advisor?.WithdrawHelp( message ),
+		ModeChanged = () => Advisor?.OnModeChanged(),
 		HelpKeyPressed = () => Advisor?.OnHelpKeyPressed(),
 	};
 

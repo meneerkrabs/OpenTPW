@@ -6,17 +6,59 @@ progress, and verified code to the fork. Git history records the published
 snapshots; original assets, native binaries, captures, and local agent runtime
 files remain outside that publication.
 
-## Park name and sign paint read in tp.exe (October 16, 2026)
+> **New entries:** since October 16, 2026 every pull request adds its entry as its own file,
+> `docs/progress/YYYY-MM-DD-<slug>.md`, and this file keeps the earlier entries as frozen history.
+> `python3 tools/progress.py` assembles both into the full log, newest first; the website's
+> [progress notes](https://opentpw.io/docs/PROGRESS.html) show that log.
 
-- **Rename the park** (COMPAT-007 retired): the gate's two lines (+0x3C8, +0x40A) start as the first and second OBJECT_NAMES text of the
-  gate's row (`0x4DB6F9`), so an English Lost Kingdom gate reads "LOST" / "Kingdom"; the ticket price window shows the joined name
-  (`0x4E2780`) and opens the rename dialog (`0x4990F0`, UITEXT 194, two fields of 14 characters), whose OK sets the lines and redraws the
-  sign (`0x4993E0`, `0x4682B0`). The world save gains an optional, validated `ParkName`; old saves load with the default lines.
-- **Ride signs show the info record's name** (COMPAT-016 retired): an id outside the name table gives an empty name, and the sign is
-  still composed without text (`0x4146B0`, `0x467A80`, `0x5ECB40`).
-- **Sign paint masks are shaped as the PC build does** (COMPAT-003 narrowed, `0x5EBF10`): offset copy, erode or dilate by the mask word,
-  then a truncating Gaussian blur along rows and columns (`0x5EA8A0`); two style-2 layers combine by the maximum of their shaped masks.
-  The sign baseline hashes are re-pinned.
+## Ride vehicles: engine voices, tour cars and the shared bump module (October 15, 2026)
+
+Vehicle effects and the bump rides' shared state now follow tp.exe:
+
+- **Engine voices** move with their vehicle every tick (`0x51C270`, place `x × 0.0033036`, `y × 0.0033036`) and take EventMap variable 10
+  = speed / 3 (`0x51BC40` → `0x6BBB80`), bound to pitch as min + v × range / 100 (`0x6BC170`; the shipped kart and bumper engines bind
+  selector 16, 17 in Fantasy). Break smoke sits on the sparks node (class `0x100`). Water boats' spray, engine voice and unload
+  particles now play: the runtime had subscribed to bump effects only for non-water rides (TRACK-025 retired).
+- **Tour cars** start their engine at `0x55A944` with parameter 80 docked or landed, 15 taking off, 60 broken and 30 otherwise, move the
+  voice every tick and stop it on removal; TOUR 9 plays FlySmoke and FlyFire, and the mend plays clip 10 and cat_rides `0xBB`; clips
+  retrigger only on an animation change and play from the car's own letter files (TOUR-004 retired, TOUR-008 narrowed).
+- **Vehicle heights** use the original's three sampler modes (`0x450EA0`: faces, terrain plus the model's header float `+0xA0`, the
+  collision mesh); vehicles never read the `.hmp`. Bumper cars stand on their ride's platform and the jungle wake is the original's
+  second instance behind the car (TRACK-031 retired, TRACK-001 narrowed).
+- **One bump module for every bump ride** (TRACK-019 narrowed): one frame counter (`0x877B5C`), a 256-vehicle pool stepped and collided
+  in pool order across rides (restitution from the other vehicle's controller, `0x546E52`), a 2048-object pool and a 1024-buoy budget.
+  Because those pools' overflow verdicts depend on the order the rides were built in, a resume restores the saved slots, verdicts and
+  buoy counts instead of replaying the checks, so a park near the limits loads as saved.
+- **Sound parameters**: one placeholder table per sentence (`0x6BBB80`, `0x6BBF00`, `0x6BC040`) serves the crowd, the vehicle engines, the
+  rain (code 8, `0x51E870`, which now also sets the rain's volume) and the park music (code 4, `0x51E79E`); a bound volume or pitch takes
+  its slot's value, 0 until a matching call, for sentences, one-shots and chains alike, so the kart and bumper stop sounds play at the
+  bottom of their pitch range; only a call with the event's own code sets the branching value (AUDIO-003 narrowed to the fixed-pitch flag,
+  the non-chain delay and reverb).
+
+No world or guest draws were added and the pinned run hash is unchanged; parks with a bump controller hash the frame counter and pool
+order. New optional, validated save fields: the tour car's `Emitter`, the track world's `FrameCount`/`TickRemainder`, per controller
+`ObjectSlots` and `BuoyCount` and per vehicle `ObjectAttraction`; a vehicle's `Slot` is now its pool slot (unique across the rides in a
+save that has the module clock), and older saves load.
+
+## Guests walk with tp.exe's walk (October 15, 2026)
+
+Guests walking the park's cells now use the original walk, checked instruction by instruction in tp.exe and against the original
+routines run in the repo's x86 oracle (finding X25 in docs/reverse/ORACLE.md: the edge test, step commit, route search, avoid_walls
+and 40 whole walks through the set-up and steering step agree on every pinned input; larger runs while porting, 12,700 edge, commit and
+search cases, 8,000 avoid_walls cases and about 22,000 whole-walk steps, agreed as well):
+
+- **Route search, edge test and step commit** (`0x511420`, `0x4d8750`, `0x510510`): a failed search makes the step return stuck (2, `+0xB8`),
+  which the arrival state treats as arrival and the litter state as a drop (GUEST-010).
+- **avoid_walls** (`0x50e4a0`) takes the position's cell, its corner blocks by quadrant and the ray test `0x50cc20` (WALK-002 retired);
+  the walk's progress is `ONE − (rem << 16) / +0xA0` over the whole route (`0x50fd40`, WALK-009 retired).
+- **Block stamps** (`0x4d8c60`): a cell type change stamps its block, and a walk searches again when its block's stamp moved (`0x50ed6c`).
+- **Walk mask**: guests walk with mask 0; the guard's set-down sets 1 (`0x4febab`) and the recall clears it (`0x500ab9`).
+- The walk uses tp.exe's fixed-point arithmetic: its multiply rounds towards −∞ (`0x50df70`) and its divide towards 0 (`0x50e080`).
+
+Queue walks, arrival lanes, staff and walks restored from older saves keep the earlier walk: OpenTPW's queue cells carry no `+0x0C`
+neighbour links yet (QUEUE-003), so WALK-004 to -008 are narrowed and GATE-006 and QUEUE-010 stay blocked. The saves gain optional
+fields (`OriginalWalk`, `Waypoints`, `Mask` on the walk; `BlockStamps`, `StampCounter` on the layout); older saves load with the
+earlier walk and unstamped blocks. The pinned run hash moves to `0x4A4014649DF391DB` with the staff candidate draws (the walk alone gave `0x0B7C79BA1B5AC12A`; docs/DETERMINISM.md).
 
 ## Interface reading round, part B (October 15, 2026)
 

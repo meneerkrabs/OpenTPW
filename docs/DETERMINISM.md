@@ -337,7 +337,12 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xDB1DDEE4817DE5B0`, schema 19: a staff candidate draws as tp.exe does (`0x507600`): the variant (`0x50761c` via `0x541f70`), a
+  (`0x4A4014649DF391DB`, schema 19: tp.exe's guest walk on top of the staff candidate draws, pinned on separate branches off
+  `0xD28386DACAD73241`. The walk alone was `0x0B7C79BA1B5AC12A`: guests walk the park with tp.exe's walk: the route search `0x511420`,
+  the edge test `0x4d8750`, the step commit `0x510510`, avoid_walls `0x50e4a0` and the walk's progress `0x50fd40`, in tp.exe's
+  fixed-point arithmetic (multiply rounding towards −∞ `0x50df70`, divide towards 0 `0x50e080`), and cell type changes stamp their
+  blocks (`0x4d8c60`), so the guests' positions and the world stream move. The staff draws alone were
+  `0xDB1DDEE4817DE5B0`, schema 19: a staff candidate draws as tp.exe does (`0x507600`): the variant (`0x50761c` via `0x541f70`), a
   discarded draw (`0x50762d`), the grade (`0x507638`), the name (`0x507580`, at most 15 draws while `0x5083f0` finds it on a pool
   candidate or a hired member) and then the timeout, so the world stream moves. Before that:
   `0xD28386DACAD73241`, schema 19: the guest's energy meter is tp.exe's field `+0x1B8` (0 at birth, changed only by `0x004FD970`), the

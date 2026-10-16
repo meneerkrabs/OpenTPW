@@ -148,6 +148,44 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
+	public void TheCreditTestComparesTheAmountWithTheNetWorthLessTheBoughtInstalments()
+	{
+		// [BIN:TPW-EXE:0x4d06b0 credit test] amount <= net worth (read with age 20) - sum((months - repaid) x monthly) over the bought offers
+		var park = EconomyTestData.Park( initialCash: 0 );
+		Assert.IsTrue( park.Settings.Loans.All( offer => park.IsLoanAvailable( offer.Index ) == offer.Amount < 10001 ), "the constructor 0x4cf7c0 stores amount < 10,001" );
+		park.Litter.Cells = new ParkCellMap( 128, 128 );
+		park.RefreshLoanOffers();
+		var worth = park.NetWorth( 20 );
+		Assert.AreEqual( 32768, worth );
+		CollectionAssert.AreEqual( park.Settings.Loans.Where( offer => offer.Amount <= worth ).Select( offer => offer.Index ).ToArray(), park.AvailableLoans.Select( offer => offer.Index ).ToArray() );
+		var bought = park.TakeLoan( 2 );
+		Assert.IsFalse( park.AvailableLoans.Any( offer => offer.Index == 2 ), "a bought offer is not listed" );
+		park.RefreshLoanOffers();
+		var owed = bought.Months * (int)bought.MonthlyRepayment;
+		CollectionAssert.AreEqual( park.Settings.Loans.Where( offer => offer.Index != 2 && offer.Amount <= worth - owed ).Select( offer => offer.Index ).ToArray(),
+			park.AvailableLoans.Select( offer => offer.Index ).ToArray(), "the bought loan's instalments still owed come off the net worth" );
+		// [BIN:TPW-EXE:0x4d0750 take loan] taking needs only the bought flag clear
+		var large = park.Settings.Loans.First( offer => !park.IsLoanAvailable( offer.Index ) && offer.Index != 2 );
+		Assert.AreEqual( large.Amount, park.TakeLoan( large.Index ).OriginalAmount, "an offer that failed the test can still be taken" );
+		Assert.ThrowsException<InvalidOperationException>( () => park.TakeLoan( large.Index ), "but not twice" );
+	}
+
+	[TestMethod]
+	public void TheStoredCreditTestsAreSavedAndAnOlderSaveStartsWithTheConstructors()
+	{
+		var park = EconomyTestData.Park();
+		park.Litter.Cells = new ParkCellMap( 128, 128 );
+		park.RefreshLoanOffers();
+		var data = ParkSaveFile.Capture( park );
+		CollectionAssert.AreEqual( park.AvailableLoans.Select( offer => offer.Index ).ToArray(), data.AvailableLoanOffers!.ToArray() );
+		var restored = ParkSaveFile.Restore( data, park.Settings, park.Catalog );
+		CollectionAssert.AreEqual( park.AvailableLoans.Select( offer => offer.Index ).ToArray(), restored.AvailableLoans.Select( offer => offer.Index ).ToArray() );
+		typeof( ParkSaveFile.Data ).GetProperty( nameof( ParkSaveFile.Data.AvailableLoanOffers ) )!.SetValue( data, null ); // a save written before the field
+		var older = ParkSaveFile.Restore( data, park.Settings, park.Catalog );
+		CollectionAssert.AreEqual( park.Settings.Loans.Where( offer => offer.Amount < 10001 ).Select( offer => offer.Index ).ToArray(), older.AvailableLoans.Select( offer => offer.Index ).ToArray() );
+	}
+
+	[TestMethod]
 	public void LoanRepaymentsFollowTheOriginalInstalment()
 	{
 		// ORACLE F12: M = trunc(P x pow(1 + APR/100, (N/12) x 0.5) / N); the five original PC saves store these eight values
@@ -175,7 +213,14 @@ public class ParkEconomyTests
 		Assert.AreEqual( 18000 - LoanMath.TotalPayable( 18000, 20, 24 ), park.Balance );
 		Assert.AreEqual( LoanMath.TotalPayable( 18000, 20, 24 ), park.Ledger.History.Sum( month => month[LedgerCategory.LoanPayments] ) );
 		Assert.AreEqual( 18000, park.Ledger.History.Sum( month => month.MoneyIn ), "the loan is money in" );
-		Assert.IsTrue( park.AvailableLoans.Any( offer => offer.Index == 2 ) );
+		// [BIN:TPW-EXE:0x4d0370 / 0x49fa00] the last instalment clears the bought flag; the Available tab lists the offer again when a list build's credit test passes
+		Assert.IsFalse( park.AvailableLoans.Any( offer => offer.Index == 2 ), "the 18,000 offer's stored test is the constructor's amount < 10,001" );
+		park.RefreshLoanOffers();
+		Assert.IsFalse( park.AvailableLoans.Any( offer => offer.Index == 2 ), "a headless park is worth nothing" );
+		park.Litter.Cells = new ParkCellMap( 128, 128 );
+		EconomyTestData.AdvanceToTurn( park, park.Turn + 4 * 21 );
+		park.RefreshLoanOffers();
+		Assert.IsTrue( park.AvailableLoans.Any( offer => offer.Index == 2 ), "16,384 owned empty cells are worth 32,768" );
 
 		var early = EconomyTestData.Park( initialCash: 30000 );
 		early.TakeLoan( 1 );
@@ -338,12 +383,17 @@ public class ParkEconomyTests
 		Assert.IsTrue( park.IsBankrupt, string.Join( ", ", counts ) );
 		Assert.AreEqual( 6, counts[^1], "more than 5" );
 		Assert.IsTrue( counts.Take( counts.Count - 1 ).All( count => count <= 5 ) );
-		CollectionAssert.AreEqual( new long[] { 3, 5 }, events.Where( item => item.Kind == ParkEventKind.BankruptcyWarning ).Select( item => item.Amount ).ToArray() );
-		Assert.IsFalse( park.IsParkOpen );
+		Assert.AreEqual( 0, events.Count( item => item.Kind == ParkEventKind.BankruptcyWarning ), "the bank's month compares the count only with 5 (0x4d0370): no warnings" );
+		Assert.IsTrue( park.IsParkOpen, "the lost park keeps its park-closed word (0x5168f0)" );
 		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.Bankrupt ) );
 		var tick = park.Tick;
-		park.AdvanceMonths( 1 );
-		Assert.AreEqual( tick, park.Tick );
+		var months = events.Count( item => item.Kind == ParkEventKind.MonthEnded );
+		park.AdvanceMonths( 2 );
+		Assert.IsTrue( park.Tick > tick, "the turn counter and the calendar go on in world state 4" );
+		Assert.AreEqual( months + 2, events.Count( item => item.Kind == ParkEventKind.MonthEnded ), "the bank's month goes on" );
+		Assert.AreEqual( 1, events.Count( item => item.Kind == ParkEventKind.Bankrupt ), "the handler acts once: the world is already in state 4 (0x4d02d0)" );
+		Assert.IsTrue( park.MonthsInRed > 5 );
+		Assert.AreEqual( 3, events.Count( item => item.Kind == ParkEventKind.BankruptcyMessage ), "the bank posts message 2 at every month end while the condition holds (0x4d0370)" );
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Bankrupt, park.TryBuild( 1100, out _ ) );
 
 		var recovered = EconomyTestData.Park( initialCash: 100 );
@@ -352,6 +402,45 @@ public class ParkEconomyTests
 		recovered.TakeLoan( 0 );
 		recovered.AdvanceMonths( 1 );
 		Assert.AreEqual( 0, recovered.MonthsInRed );
+	}
+
+	[TestMethod]
+	public void ALostParkStopsItsThingsButKeepsTheCalendarAndTheBank()
+	{
+		var park = EconomyTestData.Park( initialCash: 100 );
+		var events = new List<ParkEvent>();
+		park.EventRaised += events.Add;
+		var researcher = EconomyTestData.HireBest( park, StaffType.Researcher );
+		var ride = park.RegisterExisting( 1100 );
+		park.OpenPark();
+		while ( !park.IsBankrupt )
+			park.AdvanceMonths( 1 );
+		var energy = researcher.Energy;
+		var repair = ride.Repair;
+		var researched = park.Research.ProgressEntries.Sum( entry => entry.Points );
+		var wages = events.Count( item => item.Kind == ParkEventKind.WagesPaid );
+		park.AdvanceMonths( 1 );
+		Assert.AreEqual( energy, researcher.Energy, "the staff's thing update stops" );
+		Assert.AreEqual( researched, park.Research.ProgressEntries.Sum( entry => entry.Points ), "research comes from the researchers' thing update" );
+		Assert.AreEqual( repair, ride.Repair, "the ride update stops" );
+		Assert.AreEqual( wages + 1, events.Count( item => item.Kind == ParkEventKind.WagesPaid ), "the staff manager's month goes on" );
+	}
+
+	[TestMethod]
+	public void AWinningSequenceKeepsTheParkFromBankruptcy()
+	{
+		var park = EconomyTestData.Park( initialCash: 100 );
+		EconomyTestData.HireBest( park, StaffType.Researcher );
+		var winning = true;
+		park.WinningSequenceActive = () => winning;
+		park.AdvanceMonths( 1 );
+		while ( park.MonthsInRed < ParkEconomy.MonthsInRedForBankruptcy )
+			park.AdvanceMonths( 1 );
+		park.AdvanceMonths( 1 );
+		Assert.IsFalse( park.IsBankrupt, "0x516c00: the handler skips the message while the winning sequence's thing exists" );
+		winning = false;
+		park.AdvanceMonths( 1 );
+		Assert.IsTrue( park.IsBankrupt, "the next month's message type 2 is acted on" );
 	}
 
 	[TestMethod]

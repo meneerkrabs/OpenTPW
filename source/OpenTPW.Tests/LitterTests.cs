@@ -57,14 +57,35 @@ public class LitterTests
 			grid.SetPath( x, 0, true );
 		grid.SetQueue( 2, 1, 0 );
 		var litter = new ParkLitter();
-		Assert.IsNull( litter.Statistic, "no map attached: no share" );
+		Assert.IsNull( litter.StatisticAt( 0 ), "no map attached: no share" );
 		litter.Cells = grid.Cells;
 		litter.Drop( 3, 0, (LitterType)1 );
 		litter.Drop( 5, 0, (LitterType)1 );
-		Assert.AreEqual( new LitterStatistic( 11, 2 ), litter.Statistic );
-		Assert.IsFalse( StaffStrikeBoard.Grievance( StaffType.Handyman, new[] { new StaffVital( 100, 100 ) }, litter: litter.Statistic ), "2/11 is not above 0.2" );
+		Assert.AreEqual( new LitterStatistic( 11, 2 ), litter.StatisticAt( 0 ) );
+		Assert.IsFalse( StaffStrikeBoard.Grievance( StaffType.Handyman, new[] { new StaffVital( 100, 100 ) }, litter: litter.StatisticAt( 0 ) ), "2/11 is not above 0.2" );
 		litter.Drop( 7, 0, (LitterType)1 );
-		Assert.IsTrue( StaffStrikeBoard.Grievance( StaffType.Handyman, new[] { new StaffVital( 100, 100 ) }, litter: litter.Statistic ), "3/11 is (tp.exe 0x00509360)" );
+		// [BIN:TPW-EXE:0x4c8ba0 block litter] the strike reads the blocks with age 1: within (turn >> 2) - (stamp >> 2) <= 1 the counts stay
+		Assert.AreEqual( new LitterStatistic( 11, 2 ), litter.StatisticAt( 7 ), "7 turns on (quarter-turn age 1): the cached counts" );
+		Assert.IsTrue( StaffStrikeBoard.Grievance( StaffType.Handyman, new[] { new StaffVital( 100, 100 ) }, litter: litter.StatisticAt( 8 ) ), "at turn 8 (age 2) the blocks count again: 3/11 is above 0.2 (tp.exe 0x00509360)" );
+	}
+
+	[TestMethod]
+	public void TheThoughtReadsItsBlockWithAgeFour()
+	{
+		var grid = new GuestPathGrid( 12, 12 );
+		for ( var x = 0; x < 4; x++ )
+			grid.SetPath( x, 0, true );
+		var litter = new ParkLitter { Cells = grid.Cells };
+		var block = ParkLitter.BlockOf( 2, 0 );
+		Assert.AreEqual( 0, block );
+		Assert.AreEqual( 0, litter.LitteredInBlock( block, 4, 100 ) );
+		litter.Drop( 1, 0, (LitterType)1 );
+		Assert.AreEqual( 0, litter.LitteredInBlock( block, 4, 119 ), "(119 >> 2) - (100 >> 2) = 4: still served" );
+		Assert.AreEqual( 1, litter.LitteredInBlock( block, 4, 120 ), "age 5 counts again" );
+		Assert.AreEqual( 4, litter.PathCellsInBlock( block, 4, 120 ) );
+		litter.Restore( litter.Snapshot().ToList() );
+		litter.Remove( 1, 0 );
+		Assert.AreEqual( 0, litter.LitteredInBlock( block, 4, 121 ), "a load forgets the counts" );
 	}
 
 	private static (ParkEconomy Park, StaffMember Handyman) Sweeping()

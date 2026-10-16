@@ -189,6 +189,8 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 	/// </summary>
 	// The repair (0xdf4d4) and the other openers write the open word 1 and VAR_RIDECLOSED 0 together with SetState(0), so an opened ride has left state 1
 	public bool IsBrokenDown => brokenDown && (!isOpen() || vm == null || Get( RideVariables.VAR_RIDECLOSED ) != 0);
+	/// <summary>The ride update's state 1 (the state word the bridge keeps): entered when the update reads VAR_BROKEN in state 0, left when the ride opens again.</summary>
+	public bool InBrokenState => brokenDown;
 	private bool brokenDown;
 	/// <summary>The original's ride-failure predicate <c>0xdfe34</c> (ORACLE.md F15): a relief object whose wear gauge, truncated to a byte, is below 25.</summary>
 	public bool ReliefWornOut => QueueJoinRules.ReliefFailed( ProvidesRelief, (float)WearGauge );

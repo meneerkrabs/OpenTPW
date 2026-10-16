@@ -22,7 +22,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>Advisor.sam <c>StaffHireMechanics1.PoorerStateThan</c>: below this state of repair a ride is worn and gets a mechanic.</summary>
 	// [DATA:Advisor/Advisor.sam:StaffHireMechanics1.PoorerStateThan]
 	public const int WornStateOfRepair = 25;
-	/// <summary>Months in the red before bankruptcy (TAG_SYSTEM 123–127: warnings at 3 and 5, bankrupt after 6).</summary>
+	/// <summary>Months in the red before bankruptcy: the bank's month posts message type 2 once more than 5 have passed (TAG_SYSTEM 123–127 tell of six).</summary>
 	// [DATA:Language/*/TAG_SYSTEM.str:123-127 (six months in the red)]
 	public const int MonthsInRedForBankruptcy = 6;
 	/// <summary>The bank's month in the red: 30 days of park time (tp.exe <c>0x004D0370</c> divides by <c>0x1792F8648000</c>, 30 × 864e9 in 100 ns units).</summary>
@@ -31,6 +31,7 @@ public sealed class ParkEconomy : IParkEconomy
 	private readonly SortedDictionary<int, ParkObjectState> objects = new();
 	private readonly List<LoanAccount> loans = new();
 	private readonly HashSet<int> takenOffers = new();
+	private readonly Dictionary<int, bool> loanAvailable = new();
 	private readonly List<long> monthlyAdmissions = new();
 	private IParkGuestStatistics guestStatistics = NoGuestStatistics.Instance;
 
@@ -48,6 +49,9 @@ public sealed class ParkEconomy : IParkEconomy
 		EntranceFee = settings.InitialAdmissionFee;
 		Litter.Environment.Effects = RegionEffect.Load( settings.Standard );
 		Staff.CreateInitialPool( Random, 0 );
+		// [BIN:TPW-EXE:0x004CF7C0 bank constructor] each offer's stored test (+0x14) starts as amount (+0x18) < 10001 (unsigned)
+		foreach ( var offer in settings.Loans )
+			loanAvailable[offer.Index] = unchecked( (uint)(int)offer.Amount ) < 10001;
 	}
 
 	/// <summary>Loads the original settings and objects of <paramref name="theme"/> and starts a new park.</summary>
@@ -70,7 +74,17 @@ public sealed class ParkEconomy : IParkEconomy
 	public long Balance => Ledger.Balance;
 	public bool IsParkOpen { get; private set; }
 	public int EntranceFee { get; private set; }
+	/// <summary>
+	/// The world is in state 4, the lost park (tp.exe world <c>+0x1DA738</c>, written by <c>0x005168F0</c>): the bank's bankruptcy message put it there.
+	/// The per-turn thing updates stop (staff, rides, research, the challenge system; the host stops its guests and staff walks) while the turn counter,
+	/// the calendar, the bank's month, the staff pool and the golden-ticket checks go on.
+	/// </summary>
 	public bool IsBankrupt { get; private set; }
+	/// <summary>
+	/// Whether a winning sequence is showing (tp.exe <c>0x00516C00</c>: the word <c>0x7CF4F4</c>, the thing the research completion's
+	/// <c>StartWinningSequence</c> 0x00516B00 creates); the bank's handler does not make such a park bankrupt. OpenTPW has no winning sequence, so null answers no.
+	/// </summary>
+	public Func<bool>? WinningSequenceActive { get; set; }
 	/// <summary>Whole 30-day months since the park went into the red, as the last month end counted them (0 in the black).</summary>
 	public int MonthsInRed { get; private set; }
 	/// <summary>The bank's <c>mWithdrawalsEnabled</c> (+0x114): when clear, a debit charges nothing (tp.exe <c>0x004D01F0</c>). Set in every shipped save.</summary>
@@ -94,11 +108,40 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public event Action<ParkEvent>? EventRaised;
 
-	/// <summary>Loan offers that can still be taken; none in Instant Action (UIHELPTEXT 493).</summary>
+	/// <summary>
+	/// The offers the Available tab lists: not bought and passed at the last list build (<see cref="RefreshLoanOffers"/>); none in Instant Action (UIHELPTEXT 493).
+	/// </summary>
 	// [BIN:STP-PPC:0x10154AA0 loans window] the Available Loans window only opens outside game type 2 (Instant Action)
+	// [BIN:TPW-EXE:0x0049FA00 loan list] the Available tab lists an offer whose bought flag (+0x28) is clear and whose stored test (+0x14) passed; the Bought tab lists the bought ones
 	public IEnumerable<LoanOffer> AvailableLoans => !Features.Loans
 		? Enumerable.Empty<LoanOffer>()
-		: Settings.Loans.Where( offer => !takenOffers.Contains( offer.Index ) );
+		: Settings.Loans.Where( offer => !takenOffers.Contains( offer.Index ) && IsLoanAvailable( offer.Index ) );
+
+	/// <summary>An offer's stored credit test (bank offer <c>+0x14</c>), as the last list build or the save left it.</summary>
+	public bool IsLoanAvailable( int offerIndex ) => loanAvailable.TryGetValue( offerIndex, out var available ) && available;
+
+	/// <summary>
+	/// The loans dialog builds its list (it opens, a tab is selected): every offer's credit test runs and is stored (<see cref="PassesCreditTest"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x0049FA00 loan list] the list build calls 0x004D06B0 for each of the 8 offers; the dialog's open (0x0049FB30) and the tab buttons (0x004A06B0) build it
+	public void RefreshLoanOffers()
+	{
+		foreach ( var offer in Settings.Loans )
+			loanAvailable[offer.Index] = PassesCreditTest( offer );
+	}
+
+	/// <summary>
+	/// The bank's credit test (tp.exe <c>0x004D06B0</c>): the amount is at most the net worth (read with age 20) less the instalments the bought loans still owe
+	/// (their months left × the monthly repayment), in 32-bit words.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D06B0 credit test] remaining = sum over the bought offers (+0x28) of (months +0x20 − repaid +0x2C) × monthly +0x24; worth = 0x004C7DB0(20) × 1.0 truncated; the offer passes when amount (+0x18) <= worth − remaining (signed), stored at +0x14
+	public bool PassesCreditTest( LoanOffer offer )
+	{
+		var remaining = 0;
+		foreach ( var loan in loans )
+			remaining = unchecked( remaining + (loan.Months - loan.MonthsRepaid) * (int)loan.MonthlyRepayment );
+		return unchecked( (int)offer.Amount ) <= unchecked( NetWorth( 20 ) - remaining );
+	}
 
 	public bool TryGetObject( int instanceId, out ParkObjectState state ) => objects.TryGetValue( instanceId, out state! );
 
@@ -153,8 +196,8 @@ public sealed class ParkEconomy : IParkEconomy
 	public void Advance( long ticks )
 	{
 		ArgumentOutOfRangeException.ThrowIfNegative( ticks );
-		// A bankrupt park stops (ECON-030, EndMonth)
-		for ( long step = 0; step < ticks && !IsBankrupt; step++ )
+		// [BIN:TPW-EXE:0x004D7B20 world turn tail] a lost park (world state 4) keeps its turn counter, calendar and bank: only the thing loop of 0x00516380 stops
+		for ( long step = 0; step < ticks; step++ )
 		{
 			var previousTurn = ParkCalendar.Turn( Tick );
 			Tick++;
@@ -190,6 +233,30 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
+		// [BIN:TPW-EXE:0x00516380 world update] the thing loop (staff, rides, guests, the challenge system: 0x0050B360 by thing type) runs only while the world state (+0x1DA738) is not 4;
+		// the turn counter before it and the calendar, staff pool, bank and golden-ticket step after it (0x004D7B20) run in every state
+		if ( !IsBankrupt )
+			UpdateThings( turn );
+		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
+		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
+		var changes = ParkCalendar.Update( ref stored, turn );
+		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
+		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour; hour++ )
+			UpdateHour();
+		if ( changes.HasFlag( CalendarChange.Day ) )
+			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
+		if ( changes.HasFlag( CalendarChange.Month ) )
+			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
+		if ( changes.HasFlag( CalendarChange.Year ) )
+			Ledger.StartYear();
+		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
+		if ( RunsGoldenTicketCheck( turn, Mode ) )
+			CheckGoldenTickets();
+	}
+
+	/// <summary>The economy's part of the original's per-turn thing loop: staff, mechanics' jobs, research and the ride update.</summary>
+	private void UpdateThings( long turn )
+	{
 		UpdateStaffVitals();
 		// [BIN:STP-PPC:0x100D9E04 repair state] each staff update counts a mechanic's job timer down by one; the update that finds it zero completes the repair
 		foreach ( var member in Staff.Members )
@@ -206,7 +273,12 @@ public sealed class ParkEconomy : IParkEconomy
 			member.BusyTicks--;
 			if ( member.BusyTicks == 0 )
 			{
-				FinishJob( member );
+				if ( !FinishJob( member ) )
+				{
+					// the broken ride's fix animation still runs (its script's VAR_BROKEN): the next staff update looks again
+					member.BusyTicks = 1;
+					continue;
+				}
 				StrikeOrRest( member, HasRestArea );
 			}
 		}
@@ -217,24 +289,8 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100F0284 researcher update] each researcher not in an excluded state does research when the turn counter is a multiple of 20
 		if ( turn % ParkResearch.TurnsPerResearch == 0 )
 			DoResearch();
-		// [BIN:STP-PPC:0x100E077C ride update] each ride is updated when the turn counter is a multiple of 8
-		if ( turn % RideUpdateInterval == 0 )
-			UpdateRides( turn );
-		// [BIN:STP-PPC:0x100E3F0C calendar update] day, month and year events fire when the extracted date fields change from those of the previous turn (ParkCalendar.Update)
-		var stored = ParkCalendar.FieldsAtTurn( previousTurn );
-		var changes = ParkCalendar.Update( ref stored, turn );
-		var hourBefore = previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour;
-		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour && !IsBankrupt; hour++ )
-			UpdateHour();
-		if ( changes.HasFlag( CalendarChange.Day ) && !IsBankrupt )
-			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
-		if ( changes.HasFlag( CalendarChange.Month ) )
-			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
-		if ( changes.HasFlag( CalendarChange.Year ) )
-			Ledger.StartYear();
-		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
-		if ( RunsGoldenTicketCheck( turn, Mode ) )
-			CheckGoldenTickets();
+		// [BIN:TPW-EXE:0x004E0B90 object update] every live object thing runs its update each turn; the wear and the breakdown check inside it run when the turn counter is a multiple of 8
+		UpdateRides( turn );
 	}
 
 	/// <summary>
@@ -243,7 +299,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
 	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
 	/// </summary>
-	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines (tp.exe month gate 0x508E70, escalation 0x508F70, grievance 0x509360; the month message comes from the calendar update 0x4F8260 with no game-type test, and the age stamp 0x4F8800 counts floor(turn × 3750) seconds from world turn 0, both as here); without a staff world (a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the month gate skips a month while any guest is in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 in a census reused for up to 23 turns (0x4C7FA0); the handymen's litter share counts the live map (ECON-020); the forced-strike word (zero at creation 0x5089FE, written only by the save 0x508BB0) is not imported (SAVE-009) — evidence needed: none for the routines (read); the census needs the original cell types (ECON-050)
+	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines (tp.exe month gate 0x508E70, escalation 0x508F70, grievance 0x509360; the month message comes from the calendar update 0x4F8260 with no game-type test, and the age stamp 0x4F8800 counts floor(turn × 3750) seconds from world turn 0, both as here); without a staff world (a headless economy) they skip the state machine: walking members drain every turn, working means a job in progress, resting and striking need no walk, idle members are not told apart and the rest search runs every turn; the month gate counts the guests on a counted cell (types 0, 1, 3, 9, 10) at once, where the original reads the analyser's cached census (0x4C7FA0 with age 5: recounted when (turn >> 2) − (stamp >> 2) exceeds 5), which the crowd sound's read (0x4C81E0, age 0, every 32nd substep of the main loop 0x54E360) refreshes, so its count can be a few turns old; the handymen's litter share counts the live map (ECON-020); the forced-strike word (zero at creation 0x5089FE, written only by the save 0x508BB0) is not imported (SAVE-009) — evidence needed: the main loop's substep count at a level's first turn (the phase of the crowd sound's refresh), for the census cache
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -255,7 +311,7 @@ public sealed class ParkEconomy : IParkEconomy
 			// 0x00505FE0, 0x005061D0, 0x005056E0, 0x00506300); only the role's strike ends here, when a striker sees the park closed and empty.
 			if ( DrivenByWorld( member ) )
 			{
-				if ( member.State == StaffState.OnStrike && !IsParkOpen && guestStatistics.PeopleInPark == 0 )
+				if ( member.State == StaffState.OnStrike && !IsParkOpen && guestStatistics.GuestCensus == 0 )
 					Staff.Strikes.End( member.Type );
 				continue;
 			}
@@ -265,7 +321,8 @@ public sealed class ParkEconomy : IParkEconomy
 					continue;
 				case StaffState.OnStrike:
 					// [BIN:STP-PPC:0x100F3F64 strike turn] a striking member that sees the park closed and without guests (0x100C3684) ends its role's strike (0x100F40E8 / 0x100F8BD0); once the role's flag is clear it walks back to work
-					if ( !IsParkOpen && guestStatistics.PeopleInPark == 0 )
+					// [BIN:TPW-EXE:0x00506300 strike turn] the park-closed word (0x0051A280) and the uncached census 0x004C9130 (guests on a counted cell)
+					if ( !IsParkOpen && guestStatistics.GuestCensus == 0 )
 						Staff.Strikes.End( member.Type );
 					if ( !Staff.Strikes.IsActive( member.Type ) )
 						member.State = StaffState.Patrolling;
@@ -336,13 +393,19 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>A world mechanic finishes his job (tp.exe <c>0x004DF8F0</c>): the repair or the upgrade, as <see cref="FinishJob"/>.</summary>
-	internal void FinishMechanicJob( StaffMember member )
+	/// <returns>False while the broken ride's fix animation still runs (its script's VAR_BROKEN): the mechanic keeps the job and tries again.</returns>
+	internal bool FinishMechanicJob( StaffMember member )
 	{
 		member.AssignedInstanceId = member.RideId;
-		member.RideId = 0;
 		var state = member.State;
-		FinishJob( member );
+		if ( !FinishJob( member ) )
+		{
+			member.AssignedInstanceId = 0;
+			return false;
+		}
+		member.RideId = 0;
 		member.State = state;
+		return true;
 	}
 
 	/// <summary>The member's role is on strike (the strike flag 0x00509990).</summary>
@@ -489,13 +552,13 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>The staff manager's month-end consideration of each role's strike (ECON-014): <see cref="StaffStrikeBoard.ConsiderMonth"/> with the park's state.</summary>
 	// [BIN:TPW-EXE:0x004F8260 month message] the calendar update sends the month message (kind 12, 0x0040F500) to the staff manager (0x00508A30 → 0x00508E70) with no game-type test, so strikes are considered in every mode; the stamp (0x004F8800) is floor(turn × rate / 4) × 10^7 with the calendar's base added and taken off again, the park clock from world turn 0
-	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike word is never set (an original save's mForceStrike is not imported, SAVE-009), and the month gate takes the guests in the park by state for the cell census 0x004C7FA0
+	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike word is never set (an original save's mForceStrike is not imported, SAVE-009), and the month gate counts the census now where the original reads the analyser's cached count (0x004C7FA0 with age 5)
 	// [BIN:TPW-EXE:0x00509360 handyman grievance] the handymen's litter grievance: the analyser's littered cells (0x004C8180) over its path, queue and type-9 cells (0x004C8150), as singles, above 0.2 (ParkLitter.Statistic)
 	private void ConsiderStrikes()
 	{
 		var stamp = ParkCalendar.Seconds( Tick ) * StaffStrikeBoard.StampUnitsPerSecond;
-		var messages = Staff.Strikes.ConsiderMonth( Turn, forced: false, IsParkOpen, guestStatistics.PeopleInPark, stamp,
-			role => Staff.OfType( role ).Select( member => new StaffVital( member.Energy, member.Happiness ) ).ToList(), Litter.Statistic );
+		var messages = Staff.Strikes.ConsiderMonth( Turn, forced: false, IsParkOpen, guestStatistics.GuestCensus, stamp,
+			role => Staff.OfType( role ).Select( member => new StaffVital( member.Energy, member.Happiness ) ).ToList(), Litter.StatisticAt( Turn ) );
 		foreach ( var message in messages )
 			Raise( ParkEventKind.StaffStrikeMessage, (int)message.Kind, 0, (int)message.Role, $"TAG_SYSTEM {message.TagSystemIndex}" );
 	}
@@ -534,32 +597,79 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void UpdateHour()
 	{
+		// [BIN:TPW-EXE:0x005084F0 staff pool update] the staff manager's update runs from the world turn's tail (0x004D7B20), in every world state
 		Staff.UpdatePool( Random, Tick );
-		DispatchMechanics();
+		// the dispatch belongs to the mechanics' and rides' thing updates, which a lost park no longer runs
+		if ( !IsBankrupt )
+			DispatchMechanics();
 	}
 
 	/// <summary>
-	/// The original ride update (docs/reverse/RIDE-WEAR.md, ORACLE.md F27): every 8 turns each ride that is open and not broken down runs the
-	/// wear step, which acts on every 64th turn, and then the breakdown check.
+	/// The original object update (tp.exe <c>0x004E0B90</c>, docs/reverse/RIDE-WEAR.md, ORACLE.md F27) of every object guests may choose: every 8 turns one that
+	/// is open and not broken down runs the wear step, which acts on every 64th turn, and then the breakdown check; a relief object reports itself worn
+	/// below a state of repair of 25 every turn.
 	/// </summary>
 	private void UpdateRides( long turn )
 	{
-		foreach ( var item in objects.Values.Where( item => item.Kind == ParkObjectKind.Ride ).ToList() )
+		foreach ( var item in objects.Values )
 		{
-			// [BIN:STP-PPC:0x100E077C ride update] a ride in state 1 or 4 (broken down, condemned), a closed ride (open word +0x64 = 0, which state 2 clears too) and a ride on a turn that is not a multiple of 8 are not updated; a mechanic at work on a ride that is open and not broken (a repair of a worn ride) does not stop the update
-			// [APPROX:ECON-023] the ride's state is derived from the economy (breakdown flag, pending upgrade) and the script's VAR_BROKEN instead of a state word: an economy breakdown (a life or repair byte of 0, relief objects exempt) marks the ride broken down at once, where the original only writes VAR_BREAKSTAT = 1 (0x004E0CA5 / 0x004E0CFA) and leaves it in state 0 until the script sets VAR_BROKEN (state 1, or 4 with a life byte of 0: 0x004E14E0); a breakdown that only the script reports gets no mechanic, where the original's state 1 gets one (0x004DAA90) and the repair waits for VAR_BROKEN to clear (0x004DA830); VAR_WORN is not written (the wear step 0x004DF670 sets it below a repair byte of 20, the update for relief objects below 25 at 0x004E0D16); only rides are updated, where the original updates every choosable object (state 0 at 0x004DB4FB): the shipped toilets are choosable with WearRate 0, so only their use (0x004E2440, modelled) wears them; state 2 comes only from the upgrade request 0x004E0050 (buy handler 0x004AF480) — evidence needed: the ride scripts' handling of VAR_BREAKSTAT and VAR_WORN (.rse data)
+			// [BIN:TPW-EXE:0x004DB4FB object state] a thing whose type record is choosable (Info.IsChoosable, +0x32 bit 4) starts in state 0, any other in state 3, which the update skips
+			if ( !Catalog.TryGet( item.InfoId, out var info ) || !info.IsChoosable )
+				continue;
 			var state = ObjectState( item );
-			if ( !RideBreakdownRules.RunsWear( state, item.IsOpen && state != RideObjectStates.Upgrading, turn ) )
+			// [BIN:STP-PPC:0x100E077C ride update] a ride in state 1 or 4 (broken down, condemned), a closed ride (open word +0x64 = 0, which state 2 clears too) and a ride on a turn that is not a multiple of 8 are not updated; a mechanic at work on a ride that is open and not broken (a repair of a worn ride) does not stop the update
+			if ( RideBreakdownRules.SkipsUpdate( state ) )
 				continue;
-			if ( turn % WearInterval == 0 )
-				Wear( item );
-			// [BIN:STP-PPC:0x100E077C breakdown check] a ride that is not already broken down breaks down when its truncated life gauge or state of repair is 0; when only the state of repair is 0 the life gauge first loses 5 (clamped to 0..100); 0x100E09F4 then sets VAR_BREAKSTAT; there is no random roll
-			if ( !RideBreakdownRules.BreaksDown( false, 0, (float)item.LifeGauge, (float)item.Repair ) )
-				continue;
-			item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
-			item.IsBrokenDown = true;
-			Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
+			if ( RideBreakdownRules.RunsWear( state, item.IsOpen && state != RideObjectStates.Upgrading, turn ) )
+			{
+				if ( turn % WearInterval == 0 )
+					Wear( item );
+				// [BIN:STP-PPC:0x100E077C breakdown check] a ride that is not already broken down breaks down when its truncated life gauge or state of repair is 0; when only the state of repair is 0 the life gauge first loses 5 (clamped to 0..100); 0x100E09F4 then sets VAR_BREAKSTAT; there is no random roll
+				// [BIN:TPW-EXE:0x004E0B90 breakdown check] an object without the relief flag (+0x32 bit 1) whose life (+0x48) or repair (+0x44) byte is 0 and whose VAR_BREAKSTAT (script variable 4) is 0 writes VAR_BREAKSTAT = 1 ("Object %d requested breakdown"); its state stays 0 until the ride update reads the script's VAR_BROKEN (0x004E14E0)
+				if ( RideBreakdownRules.BreaksDown( info.ProvidesRelief, item.ScriptHosted ? item.ScriptBreakStat : 0, (float)item.LifeGauge, (float)item.Repair ) )
+				{
+					item.LifeGauge = RideBreakdownRules.LifeAfterBreakdown( (float)item.LifeGauge );
+					// [APPROX:ECON-023] an object a script runs breaks down as tp.exe's does (0x004E0B90 writes VAR_BREAKSTAT = 1, the script reports VAR_BROKEN, the ride update's state 1 from 0x004E14E0 calls a mechanic, whose repair writes VAR_BREAKSTAT = 0 and waits for VAR_BROKEN to clear, 0x004DA830, and 0x004DF8F0 clears VAR_WORN), but the state word is split between the visitor bridge (state 1) and the economy's broken flag, which the level joins on the rising edge of state 1, state 4 is told apart only by the economy's life gauge (QUEUE-019), and a headless economy without ride scripts breaks an object down at once and repairs it without the wait — evidence needed: none for the routines (read); one state word needs the bridge's and the economy's records merged
+					if ( item.ScriptHosted )
+						WriteScript( item, RideVariables.VAR_BREAKSTAT, 1 );
+					else
+						item.IsBrokenDown = true;
+					Raise( ParkEventKind.RideBrokeDown, 0, item.Id, item.InfoId );
+				}
+			}
+			// [BIN:TPW-EXE:0x004E0D16 relief worn] a relief object (+0x32 bit 1) whose repair byte is below 25 writes VAR_WORN = 1 (script variable 8) on every update
+			// (the write is skipped while the script already holds 1: the same value, no event per turn)
+			if ( info.ProvidesRelief && RideBreakdownRules.GaugeByte( (float)item.Repair ) < ReliefWornByte && item.ScriptWorn != 1 )
+				WriteScript( item, RideVariables.VAR_WORN, 1 );
 		}
+	}
+
+	/// <summary>A relief object reports itself worn (VAR_WORN) below this state of repair byte (tp.exe <c>0x004E0D16</c>: 25.0).</summary>
+	public const int ReliefWornByte = 25;
+	/// <summary>The wear step reports a ride worn (VAR_WORN) below this state of repair byte (tp.exe <c>0x004DF670</c>: 20.0).</summary>
+	public const int WornByte = 20;
+
+	/// <summary>Writes one of the object's script variables (the host applies <see cref="ParkEventKind.RideScriptVariable"/>); nothing for an object no script runs.</summary>
+	private void WriteScript( ParkObjectState item, RideVariables variable, int value )
+	{
+		if ( !item.ScriptHosted )
+			return;
+		if ( variable == RideVariables.VAR_BREAKSTAT )
+			item.ScriptBreakStat = value;
+		else if ( variable == RideVariables.VAR_WORN )
+			item.ScriptWorn = value;
+		Raise( ParkEventKind.RideScriptVariable, value, item.Id, (int)variable );
+	}
+
+	/// <summary>
+	/// The level saw the ride update enter state 1 (the script's VAR_BROKEN read in state 0, tp.exe <c>0x004E14E0</c>): the object is broken down and a mechanic
+	/// is sent (<c>0x004DAA90</c> looks for state 1). Only the rising edge of <paramref name="inBrokenState"/> breaks it down, so a repaired ride the level has not yet reopened stays repaired.
+	/// </summary>
+	internal void ObserveScriptState( ParkObjectState item, bool inBrokenState )
+	{
+		if ( inBrokenState && item.ScriptStateBroken == false )
+			item.IsBrokenDown = true;
+		item.ScriptStateBroken = inBrokenState;
 	}
 
 	/// <summary>
@@ -587,6 +697,9 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100DEC2C wear step] state of repair (+0x40) loses the wear and the life gauge (+0x44) 0.02 × the wear, each clamped to 0..100
 		item.Repair = Math.Clamp( item.Repair - wear, 0, 100 );
 		item.LifeGauge = Math.Clamp( item.LifeGauge - 0.02f * wear, 0, 100 );
+		// [BIN:TPW-EXE:0x004DF670 wear step] after the gauges, a repair byte below 20 writes VAR_WORN = 1 (script variable 8)
+		if ( RideBreakdownRules.GaugeByte( (float)item.Repair ) < WornByte )
+			WriteScript( item, RideVariables.VAR_WORN, 1 );
 		if ( before >= WornStateOfRepair && item.StateOfRepair < WornStateOfRepair )
 			Raise( ParkEventKind.RideWorn, item.StateOfRepair, item.Id, item.InfoId );
 	}
@@ -607,8 +720,17 @@ public sealed class ParkEconomy : IParkEconomy
 		return (speedTerm + riderTerm) * 0.5f * level.WearRate;
 	}
 
-	private void FinishJob( StaffMember member )
+	/// <returns>False when a mechanic's broken ride still plays its fix animation (the job goes on), else true.</returns>
+	private bool FinishJob( StaffMember member )
 	{
+		// [BIN:TPW-EXE:0x004DA830 repairing] at the end of the timer a ride in state 1 (0x004E0370) gets VAR_BREAKSTAT = 0 (0x004E03F0) and the repair waits while the script's VAR_BROKEN (variable 7) is above 0 (0x004E0410, "Ride has finished fix anim" once it is not)
+		if ( member.Type == StaffType.Mechanic && member.LitterCell == null && objects.TryGetValue( member.AssignedInstanceId, out var fixing )
+			&& fixing.ScriptHosted && ObjectState( fixing ) == RideObjectStates.BrokenDown && fixing.IsBrokenDown )
+		{
+			WriteScript( fixing, RideVariables.VAR_BREAKSTAT, 0 );
+			if ( fixing.ScriptBroken )
+				return false;
+		}
 		member.AwaitingJobArrival = false;
 		member.State = StaffState.Patrolling;
 		if ( member.LitterCell is { } litter )
@@ -617,12 +739,12 @@ public sealed class ParkEconomy : IParkEconomy
 			member.LitterCell = null;
 			if ( Litter.CollectorAt( litter.X, litter.Y ) == member.Id )
 				Litter.Remove( litter.X, litter.Y );
-			return;
+			return true;
 		}
 		if ( !objects.TryGetValue( member.AssignedInstanceId, out var item ) )
 		{
 			member.AssignedInstanceId = 0;
-			return;
+			return true;
 		}
 		member.AssignedInstanceId = 0;
 		item.MechanicId = 0;
@@ -635,10 +757,11 @@ public sealed class ParkEconomy : IParkEconomy
 			var called = item.MaintenanceRequested;
 			item.MaintenanceRequested = false;
 			Raise( ParkEventKind.ToiletCleaned, called ? 1 : 0, item.Id, item.InfoId );
-			return;
+			return true;
 		}
-		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the repair or the upgrade clears the call (+0x64 = 0) and the claim (+0x5E)
+		// [BIN:TPW-EXE:0x004DF8F0 repaired fully] the repair or the upgrade clears the call (+0x64 = 0) and the claim (+0x5E) and writes VAR_WORN = 0; a repair (not in state 2) also writes VAR_BREAKSTAT = 0
 		item.MaintenanceRequested = false;
+		WriteScript( item, RideVariables.VAR_WORN, 0 );
 		// 0xdef2c installs the upgrade only for a ride in state 2; a broken ride with a purchased upgrade is repaired first
 		if ( ObjectState( item ) == RideObjectStates.Upgrading )
 		{
@@ -661,8 +784,10 @@ public sealed class ParkEconomy : IParkEconomy
 			// [BIN:STP-PPC:0x100DEF2C repair] a repair sets the state of repair to 100.0 (the float at TOC -11016, ORACLE F27) and clears the worn flag; it does not restore the life gauge. It also opens the ride (the host reopens the ride on RideRepaired)
 			item.Repair = RideRepair.FullGauge;
 			item.IsBrokenDown = false;
+			WriteScript( item, RideVariables.VAR_BREAKSTAT, 0 );
 			Raise( ParkEventKind.RideRepaired, 0, item.Id, item.InfoId );
 		}
+		return true;
 	}
 
 	/// <summary>
@@ -796,7 +921,8 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void EndDay( long day )
 	{
-		var challenges = Features.Challenges ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
+		// [BIN:TPW-EXE:0x0050B360 thing update] the challenge system's day (0x004D1E90) is its thing update (type 0x13), which a lost park no longer runs
+		var challenges = Features.Challenges && !IsBankrupt ? Objectives.AdvanceDay( day + 1, MeasureChallenge ).ToList() : new();
 		foreach ( var (kind, index, amount, detail) in challenges )
 		{
 			if ( kind == ParkEventKind.ChallengeCompleted )
@@ -847,8 +973,7 @@ public sealed class ParkEconomy : IParkEconomy
 			{
 				loans.RemoveAt( position );
 				// [BIN:STP-PPC:0x100CC21C loan instalment] a fully repaid loan clears its bought flag; 0x100CC9E8 then offers it again when the credit test passes
-				// [BIN:TPW-EXE:0x4d0750 take loan] taking a loan only needs its bought flag (+0x28) clear: no credit test
-				// [APPROX:ECON-007] a repaid loan is offered again at once and every offer not taken is listed, without a credit test: the original clears the bought flag at the last instalment (0x4D0370) and lists an offer on the Available tab (0x49FA00) only when it is not bought and its stored test passed, amount ≤ net worth (0x4C7DB0, the park value with its cell points, ECON-026) − the remaining instalments of the bought loans (0x4D06B0), stored whenever the list is built (the dialog opens, a tab is selected); taking a loan needs only the bought flag clear (0x4D0750) — evidence needed: the net worth's cell points (ECON-026)
+				// [BIN:TPW-EXE:0x4d0370 bank month] the last instalment clears the bought flag (+0x28); the Available tab lists the offer again once a list build's credit test (0x4d06b0) passes
 				takenOffers.Remove( account.OfferIndex );
 				Raise( ParkEventKind.LoanRepaid, 0, 0, account.OfferIndex );
 			}
@@ -872,26 +997,37 @@ public sealed class ParkEconomy : IParkEconomy
 		}
 		// [BIN:TPW-EXE:0x4d0370 bank month] after the instalments, a park whose balance and mLastBalance are both below 0 counts the 30-day months since
 		// the turn-entered-red stamp; above 5 it posts message type 2 (0x0040F630, bus DAT_00788D3C), at every month end while it stays so
-		var previousMonthsInRed = MonthsInRed;
 		MonthsInRed = MonthsSinceEnteringRed();
 		if ( MonthsInRed >= MonthsInRedForBankruptcy )
 		{
-			IsBankrupt = true;
-			IsParkOpen = false;
-			Raise( ParkEventKind.Bankrupt, MonthsInRed );
+			Raise( ParkEventKind.BankruptcyMessage, MonthsInRed );
+			HandleBankruptcyMessage();
 		}
-		// [APPROX:ECON-030] message type 2 of the bank's month (posted at each month end while more than 5 thirty-day months have passed since the turn-entered-red stamp, tp.exe 0x4D0370) is taken as bankruptcy: the park closes and the simulation stops, and the TAG_SYSTEM warnings come when the count reaches 3 and 5; the original's bank handler (0x4D02D0) acts on it once, unless the word 0x7CF4F4 is set (0x516C00), by setting the world state to 4 (0x5168F0): the per-turn thing loop stops (0x516380) and the park script's variable 0 becomes 2 (0x519EF0); the park-closed word is not written, and the turn counter, the calendar and the monthly bank go on; the bank routine compares the count only with 5, so it gives no warnings — evidence needed: the producer of the TAG_SYSTEM warnings and the meaning of the word 0x7CF4F4
-		else if ( previousMonthsInRed < 5 && MonthsInRed >= 5 )
-			Raise( ParkEventKind.BankruptcyWarning, 5 );
-		else if ( previousMonthsInRed < 3 && MonthsInRed >= 3 )
-			Raise( ParkEventKind.BankruptcyWarning, 3 );
-		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, ParkValue );
+		// [BIN:TPW-EXE:0x004C7720 month sample] the analyser's month handler stores the net worth read with age 0 (0x004C79A7)
+		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
 		{
 			var year = Ledger.SummariseYear( nextMonthIndex / ParkCalendar.MonthsPerYear - 1 );
 			Raise( ParkEventKind.YearEnded, year?.Profit ?? 0, 0, 0, year == null ? "" : $"in ${year.MoneyIn}, out ${year.MoneyOut}, balance ${year.ClosingBalance}" );
 		}
+	}
+
+	/// <summary>
+	/// The bank's handler of its own message type 2 (tp.exe <c>0x004D02D0</c>): once, when the world is not yet in state 4 and no winning sequence
+	/// shows, the park is lost (<c>0x005168F0</c>). The park-closed word is not written; the host requests a breakdown of every attraction and gives the
+	/// gate its end-of-park command on <see cref="ParkEventKind.Bankrupt"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004D02D0 bank message] a type-19 message (CMsgEvent) with value 2 calls 0x005168F0 only while the world state (+0x1DA738) is not 4 and 0x00516C00 (a winning sequence's thing id at 0x7CF4F4) answers false
+	// [BIN:TPW-EXE:0x005168F0 park lost] world state = 4; every live thing of type 3 with flag +0x32 bit 4 gets VAR_BREAKSTAT = 1 (0x004E0DB0, "Object %d requested breakdown"); the door routine 0x00519EF0(0, 1) writes only the gate script's variable 0 = 2
+	// [BIN:TPW-EXE:0x004D0370 bank month] the routine compares the months in the red only with 5 (above it posts type 2 at 0x004D0557): it gives no warnings before
+	// [APPROX:ECON-030] the lost park follows the bank's handler and the world update, and the advisor plays its advice 106 for every bank message (game event 2, AutomaticAdvisor), but the HUD shows none of the TAG_SYSTEM 123–127 texts ("If you stay in the red for six months you will be made bankrupt", "the banks have closed your park"), whose producer is not traced; OpenTPW still refuses purchases, hiring and opening the park in state 4 where the original's interface answer is not traced, and the camera move and the sound state of 0x005168F0 (0x00481B50, 0x005408F0) are not modelled — evidence needed: the producer of the TAG_SYSTEM 123–127 messages and the interface's tests of world state 4
+	private void HandleBankruptcyMessage()
+	{
+		if ( IsBankrupt || WinningSequenceActive?.Invoke() == true )
+			return;
+		IsBankrupt = true;
+		Raise( ParkEventKind.Bankrupt, MonthsInRed );
 	}
 
 	/// <summary>Admissions of months dropped from the bounded history (keeps the monthly differences exact).</summary>
@@ -940,12 +1076,95 @@ public sealed class ParkEconomy : IParkEconomy
 	}
 
 	/// <summary>
-	/// Park value (UITEXT 163): the object part of the original's <c>0xc1d4c</c> (ORACLE.md F29): per object, unless it is condemned, the costs of its upgrade levels up to the
-	/// current one times its state of repair / 100. The original adds the map's cell points to it (2 per owned empty cell, 3 per path, 5 per queue, 50 per owned hoarding, ...).
+	/// Park value (UITEXT 163, the net worth): the cell points of the owned map cells (<see cref="ParkValueRules.CellPoints"/>) and per object, unless it is condemned,
+	/// the costs of its upgrade levels up to the current one times its state of repair / 100 (ORACLE.md F29). A headless economy without a cell map has the object part only.
 	/// </summary>
 	// [BIN:STP-PPC:0x100C1D4C park value] the thing loop adds sum(Upgrades[0..level].CostOfUpgrade) × byte(state of repair) / 100 for every object that is not in state 4; the 128 × 128 cell loop adds 1, 3, 5, 1, 1, 2 and 50 points by cell type (the predicates 0x10085174..0x10085418) for cells without the unowned flag 0x40; both executed by the oracle target park-value
-	// [APPROX:ECON-026] the map's cell points are not added: the original (0x004C7DB0) adds, for each cell without flag 0x40, 2 for type 0, 3 for type 1, 1 for types 2 and 10, 5 for type 3, 6 for type 9 and 50 when the cell's structure record (for a record of type 12 or 17, the record its link names) has type 11, 13, 16, 18 or 25 (a hoarding is 25); the ownership exists now (the park's land, ParkCellMap.Land), but OpenTPW's cell types are incomplete (objects, ride cells and terrain are not typed, ECON-050) and it has no structure records, so the park value is the object part only, which matches, without the scrap values, as in the original — evidence needed: the original cell types (ECON-050) and structure records
-	public long ParkValue => objects.Values.Sum( ObjectValue );
+	// [BIN:TPW-EXE:0x004C7DB0 net worth] the same sums in a 32-bit word; the result is cached (+0x1F0EC, stamp +0x1F0E8) and counted again only when the reader's age is below (turn >> 2) − (stamp >> 2): the month's history sample reads it with age 0, the loans' credit test with 20 (NetWorth)
+	public long ParkValue => ComputeNetWorth();
+
+	private bool netWorthCached;
+	private long netWorthStamp;
+	private int netWorthValue;
+
+	/// <summary>
+	/// The net worth as a reader of the analyser's cache sees it (tp.exe <c>0x004C7DB0</c>): the cached value while (turn >> 2) − (stamp >> 2) is at most
+	/// <paramref name="maximumAge"/> (unsigned), else counted again and stamped with the current turn. The cache is saved with the park (older saves count at the first read).
+	/// </summary>
+	public int NetWorth( uint maximumAge )
+	{
+		var age = unchecked( (uint)(Turn >> 2) - (uint)(netWorthStamp >> 2) );
+		if ( !netWorthCached || maximumAge < age )
+		{
+			netWorthValue = ComputeNetWorth();
+			netWorthStamp = Turn;
+			netWorthCached = true;
+		}
+		return netWorthValue;
+	}
+
+	/// <summary>The net worth cache (the park save), null until a read has counted it.</summary>
+	internal (int Value, long Stamp)? CachedNetWorth => netWorthCached ? (netWorthValue, netWorthStamp) : null;
+
+	/// <summary>Restores a saved net worth cache.</summary>
+	internal void RestoreNetWorthCache( int value, long stamp )
+	{
+		netWorthValue = value;
+		netWorthStamp = stamp;
+		netWorthCached = true;
+	}
+
+	private int ComputeNetWorth()
+	{
+		var total = CellPoints();
+		foreach ( var item in objects.Values )
+			total = unchecked( total + (int)ObjectValue( item ) );
+		return total;
+	}
+
+	private (ParkCellMap? Map, int Version, int TrackVersion, int Points) cellPoints;
+
+	/// <summary>The map part of the net worth; counted again only when the cell map changed (every cell write bumps its version), so a HUD read costs no map walk.</summary>
+	private int CellPoints()
+	{
+		if ( Litter.Cells is not { } cells )
+			return 0;
+		if ( ReferenceEquals( cellPoints.Map, cells ) && cellPoints.Version == cells.Version && cellPoints.TrackVersion == cells.Tracks.Version )
+			return cellPoints.Points;
+		var total = 0;
+		for ( var y = 0; y < cells.Height; y++ )
+		{
+			for ( var x = 0; x < cells.Width; x++ )
+			{
+				if ( (cells.FlagsAt( x, y ) & ParkCellFlags.Unowned) != 0 )
+					continue;
+				var (type, structure) = CellForValue( cells, x, y );
+				total = unchecked( total + ParkValueRules.CellPoints( type, structure ) );
+			}
+		}
+		cellPoints = (cells, cells.Version, cells.Tracks.Version, total);
+		return total;
+	}
+
+	/// <summary>
+	/// A cell's map type and whether its structure record counts 50, from OpenTPW's cell map: a track tile keeps its type in the map's type byte as well as in the track
+	/// layer (the original's structure records), so its map type is taken as the empty cell's 0.
+	/// </summary>
+	// [APPROX:ECON-026] the cell points follow tp.exe 0x004C7DB0 on OpenTPW's cell map and its land (the cells without the unowned flag 0x40: the level fence's enclosure, the strip at the gate and Buy Land's purchases, or an imported save's saved flags, PATH-007), but a track tile's map type is taken as 0 (OpenTPW keeps the track's type in the map's type byte as well as in the track layer, where the original's map cell keeps its own type under the structure record) and the fence's hoardings (structure type 25) are not counted, 50 each in the original, because OpenTPW keeps the fence as a ring of posts (ParkLand) without structure records; a map without the level's land (a level without a fence setup, a Theme Park Inc map, a read-only visit) counts every cell over the terrain as owned — evidence needed: the map cell's type under a laid track tile (tp.exe's track tool 0x0053B280 and its callers) and the hoarding structure records the fence setup writes (0x005323F0)
+	private static (byte Type, bool Structure) CellForValue( ParkCellMap cells, int x, int y )
+	{
+		var track = cells.Tracks.Get( x, y );
+		if ( track.IsEmpty )
+			return (cells.RawTypeAt( x, y ), false);
+		var record = track.Type;
+		if ( track.IsExtension && track.Parent >= 0 )
+		{
+			var (px, py) = cells.Tracks.CellOf( track.Parent );
+			record = cells.Tracks.Get( px, py ).Type;
+		}
+		var type = cells.RawTypeAt( x, y ) == track.Type ? (byte)0 : cells.RawTypeAt( x, y );
+		return (type, ParkValueRules.IsCountedStructure( record ));
+	}
 
 	/// <summary>One object's share of the park value (<see cref="ParkValueRules.ObjectValue"/>); condemned objects count for nothing.</summary>
 	private long ObjectValue( ParkObjectState item )
@@ -967,8 +1186,8 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		get
 		{
-			// [APPROX:ECON-027] the visitor term counts the guests in the park by state, where the original counts the guests standing on a cell of type 0, 1, 3, 9 or 10 (0x004CCEB0 with the cell test 0x004FA990, recounted at every rating, capped at 1000); ParkGate.GuestCensus has that test, but the imported cell types are incomplete (ECON-050), so the rating keeps the state count; the staff terms match (the byte +3 is set only by the deleter at 0x0050B8E9, which then marks the thing deleted at 0x0050B906, and a dismissal removes the member at once here too) — evidence needed: the original cell types (ECON-050)
-			var guests = Math.Min( guestStatistics.PeopleInPark, 1000 ) * 20 / 1000;
+			// [BIN:TPW-EXE:0x004CCEB0 park rating] the visitor term counts the guests on a cell of type 0, 1, 3, 9 or 10 now (the predicate 0x004FA990, no cache), capped at 1000; the staff terms count the members whose byte +3 is clear, which only the deleter sets (0x0050B8E9) before it marks the thing deleted (0x0050B906): a dismissal removes the member at once here too
+			var guests = Math.Min( guestStatistics.GuestCensus, 1000 ) * 20 / 1000;
 			// An object counts by the type's Info.WhichUIType: the shipped add-ons (the upgrades directory) declare 0 and count as rides, fixed items declare 4 and count for nothing.
 			int Count( int uiType, int minimumLevel = 0 ) => objects.Values.Count( item => Catalog.TryGet( item.InfoId, out var info ) && info.RatingType == uiType && item.Level >= minimumLevel );
 			var attractions = Math.Min( Count( 0 ) * 3 / 2, 20 )
@@ -1414,7 +1633,9 @@ public sealed class ParkEconomy : IParkEconomy
 
 	public LoanAccount TakeLoan( int offerIndex )
 	{
-		var offer = AvailableLoans.FirstOrDefault( item => item.Index == offerIndex ) ?? throw new InvalidOperationException( $"Loan offer {offerIndex} is not available." );
+		// [BIN:TPW-EXE:0x004D0750 take loan] taking a loan needs only its bought flag (+0x28) clear ("Applying for loan already bought"): the stored test only decides what the list shows
+		var offer = (Features.Loans ? Settings.Loans.FirstOrDefault( item => item.Index == offerIndex && !takenOffers.Contains( item.Index ) ) : null)
+			?? throw new InvalidOperationException( $"Loan offer {offerIndex} is not available." );
 		if ( IsBankrupt )
 			throw new InvalidOperationException( "A bankrupt park cannot borrow." );
 		var account = LoanMath.Open( offer );
@@ -1521,7 +1742,8 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>
 	/// The booth books the entrance fee with the bank (tp.exe <c>0x004D0600</c>) and never reads the guest's purse: no open test, which the
 	/// guests' walk to the booth makes instead (<see cref="GuestSimulation"/>, states 2 and 3), and no purse test. False only when the park is
-	/// bankrupt: there the original's thing loop has stopped, so no guest reaches the booth at all (ECON-030), where OpenTPW's guests keep updating.
+	/// bankrupt: there the original's thing loop has stopped, so no guest reaches the booth at all (ECON-030); the level stops its guests in world
+	/// state 4 as well (Level.Simulation), and the refusal also holds for an economy run without a level.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004D0600 admission] the booth's paying verdict calls the bank deposit with the bank thing (0x004FFAE5): the fee (bank +0x118) goes to the balance, money in (+0x1FC90), the year's takings (+0x124) and the gate row (+0x1FEE0), and 0x004C7520 counts the admission; it reads no park-closed state and nothing reads the guest's purse
 	// [BIN:TPW-EXE:0x00516380 park turn walk] the per-turn thing loop is skipped while the world state +0x1DA738 is 4, which the bank's bankruptcy message sets (0x005168F0, ECON-030): no booth guest pays after bankruptcy
@@ -1629,6 +1851,16 @@ public sealed class ParkEconomy : IParkEconomy
 	// ---------------------------------------------------------------- save support
 
 	internal IReadOnlyCollection<int> TakenOffers => takenOffers;
+	/// <summary>The offers whose stored credit test passed (for the park save).</summary>
+	internal IEnumerable<int> AvailableOfferIndices => loanAvailable.Where( pair => pair.Value ).Select( pair => pair.Key ).OrderBy( index => index );
+
+	/// <summary>Restores the offers' stored credit tests (a park save's or an original save's); offers not listed failed it.</summary>
+	internal void RestoreLoanAvailability( IEnumerable<int> availableOffers )
+	{
+		var available = availableOffers.ToHashSet();
+		foreach ( var offer in Settings.Loans )
+			loanAvailable[offer.Index] = available.Contains( offer.Index );
+	}
 
 	internal void RestoreTicketItems( IEnumerable<int> items )
 	{

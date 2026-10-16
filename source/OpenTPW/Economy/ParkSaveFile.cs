@@ -66,9 +66,17 @@ public static class ParkSaveFile
 		public required int NextObjectId { get; init; }
 		public required long DroppedAdmissions { get; init; }
 		public required LedgerData Ledger { get; init; }
+		/// <summary>
+		/// The analyser's caches (the net worth and the 4 × 4 blocks' litter and path counts with their stamps), so a resumed park reads the same
+		/// stale counts as the uninterrupted run; absent in older saves: every cache counts again at its first read. Not part of the run hash.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public AnalyserCacheData? AnalyserCaches { get; init; }
 		public required List<ObjectData> Objects { get; init; }
 		public required List<LoanData> Loans { get; init; }
 		public required List<int> TakenLoanOffers { get; init; }
+		/// <summary>The offers whose stored credit test passed (tp.exe bank offer +0x14); absent in older saves: the new park's test, amount &lt;= 10,000.</summary>
+		public List<int>? AvailableLoanOffers { get; init; }
 		public required List<long> MonthlyAdmissions { get; init; }
 		public required StaffData Staff { get; init; }
 		public required ResearchData Research { get; init; }
@@ -138,6 +146,12 @@ public static class ParkSaveFile
 		/// <summary>Ride life gauge; absent in older saves, which then start at 100.</summary>
 		public double? LifeGauge { get; init; }
 		public required bool IsBrokenDown { get; init; }
+		/// <summary>
+		/// The ride update's state 1 as the level last saw it (<see cref="ParkObjectState.ScriptStateBroken"/>), so the first observation after a load counts no
+		/// second breakdown; absent in older saves and for objects no level observed: the first observation then only records the state.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public bool? ScriptStateBroken { get; init; }
 		public required int MechanicId { get; init; }
 		/// <summary>The player's call for a mechanic (<c>mRequestedService</c>); absent: none.</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
@@ -383,6 +397,30 @@ public static class ParkSaveFile
 		}
 	}
 
+	/// <summary>The analyser's caches (<see cref="ParkEconomy.NetWorth"/>, <see cref="ParkLitter.LitteredInBlock"/>, <see cref="ParkLitter.PathCellsInBlock"/>): only the valid entries.</summary>
+	public sealed class AnalyserCacheData
+	{
+		/// <summary>The cached net worth; absent when no read has counted it yet.</summary>
+		public CachedCount? NetWorth { get; init; }
+		public List<CachedBlock> LitteredBlocks { get; init; } = new();
+		public List<CachedBlock> PathBlocks { get; init; } = new();
+	}
+
+	public sealed class CachedCount
+	{
+		public required int Value { get; init; }
+		/// <summary>The park turn the value was counted at.</summary>
+		public required long Stamp { get; init; }
+	}
+
+	public sealed class CachedBlock
+	{
+		/// <summary>The analyser block, 0..1023 ((y / 4) × 32 + x / 4).</summary>
+		public required int Block { get; init; }
+		public required int Count { get; init; }
+		public required long Stamp { get; init; }
+	}
+
 	public sealed class LitterData
 	{
 		public required int X { get; init; }
@@ -440,6 +478,12 @@ public static class ParkSaveFile
 			LastBalance = park.LastBalance,
 			TurnEnteredRed = park.TurnEnteredRed,
 			Litter = park.Litter.Snapshot().Select( cell => new LitterData { X = cell.X, Y = cell.Y, Type = (int)cell.Type, Collector = cell.Collector, ClaimTurn = cell.ClaimTurn } ).ToList(),
+			AnalyserCaches = new AnalyserCacheData
+			{
+				NetWorth = park.CachedNetWorth is { } worth ? new CachedCount { Value = worth.Value, Stamp = worth.Stamp } : null,
+				LitteredBlocks = park.Litter.LitteredBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList(),
+				PathBlocks = park.Litter.PathBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList()
+			},
 			TicketsSpent = park.TicketsSpent,
 			TicketItems = park.TicketItems.Order().ToList(),
 			NextObjectId = park.NextObjectId,
@@ -482,6 +526,7 @@ public static class ParkSaveFile
 				Repair = item.Repair,
 				LifeGauge = item.LifeGauge,
 				IsBrokenDown = item.IsBrokenDown,
+				ScriptStateBroken = item.ScriptStateBroken,
 				MechanicId = item.MechanicId,
 				MaintenanceRequested = item.MaintenanceRequested,
 				FireworksSpent = item.FireworksSpent,
@@ -500,6 +545,7 @@ public static class ParkSaveFile
 				RemainingBalance = loan.RemainingBalance
 			} ).ToList(),
 			TakenLoanOffers = park.TakenOffers.OrderBy( index => index ).ToList(),
+			AvailableLoanOffers = park.AvailableOfferIndices.ToList(),
 			MonthlyAdmissions = park.MonthlyAdmissions.ToList(),
 			Staff = new StaffData
 			{
@@ -671,6 +717,14 @@ public static class ParkSaveFile
 			Require( strikes.Levels.Count == StaffStrikeBoard.Roles && strikes.Active.Count == StaffStrikeBoard.Roles && strikes.LastConsidered.Count == StaffStrikeBoard.Roles
 				&& strikes.Levels.All( level => level is >= 0 and <= 4 ), "staff strikes" );
 		Require( (data.Research.Workload == null || data.Research.Workload is >= 0 and <= 100) && (data.Research.Current == null || data.Research.Current.All( entry => entry.Length == 3 && Enum.IsDefined( (ResearchCategory)entry[0] ) )) && data.Research.Effort.Count == 5 && data.Research.Completed.All( key => key.Length == 2 ) && data.Research.Progress.All( entry => entry.Length == 3 && entry[2] >= 0 ), "research" );
+		Require( data.AvailableLoanOffers == null || data.AvailableLoanOffers.Distinct().Count() == data.AvailableLoanOffers.Count && data.AvailableLoanOffers.All( index => index >= 0 ), "available loan offers" );
+		if ( data.AnalyserCaches is { } caches )
+		{
+			Require( caches.NetWorth is null || caches.NetWorth.Stamp >= 0, "net worth cache" );
+			foreach ( var blocks in new[] { caches.LitteredBlocks, caches.PathBlocks } )
+				Require( blocks != null && blocks.All( entry => entry != null && entry.Block is >= 0 and < ParkLitter.BlockCount && entry.Count is >= 0 and <= ParkLitter.BlockSize * ParkLitter.BlockSize && entry.Stamp >= 0 )
+					&& blocks.Select( entry => entry.Block ).Distinct().Count() == blocks.Count, "analyser block caches" );
+		}
 		foreach ( var loan in data.Loans )
 			Require( loan.MonthsRemaining > 0 && loan.MonthsRemaining <= loan.Months && loan.MonthlyRepayment >= 0 && (loan.RemainingBalance is null or >= 0) && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
 	}
@@ -711,6 +765,7 @@ public static class ParkSaveFile
 				Repair = item.Repair ?? item.StateOfRepair,
 				LifeGauge = item.LifeGauge ?? 100,
 				IsBrokenDown = item.IsBrokenDown,
+				ScriptStateBroken = item.ScriptStateBroken,
 				MechanicId = item.MechanicId,
 				MaintenanceRequested = item.MaintenanceRequested,
 				FireworksSpent = item.FireworksSpent,
@@ -726,6 +781,18 @@ public static class ParkSaveFile
 				TotalProfit = item.Statistics[8]
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
+		if ( data.AnalyserCaches is { } caches )
+		{
+			if ( caches.NetWorth is { } worth )
+				park.RestoreNetWorthCache( worth.Value, worth.Stamp );
+			park.Litter.RestoreBlockCaches( caches.LitteredBlocks.Select( entry => (entry.Block, entry.Count, entry.Stamp) ), caches.PathBlocks.Select( entry => (entry.Block, entry.Count, entry.Stamp) ) );
+		}
+		if ( data.AvailableLoanOffers != null )
+		{
+			if ( data.AvailableLoanOffers.Where( index => settings.Loans.All( offer => offer.Index != index ) ).Select( index => (int?)index ).FirstOrDefault() is int unknown )
+				throw new InvalidDataException( $"Park save is inconsistent: available loan offer {unknown} is not one of the {settings.Theme} loan offers." );
+			park.RestoreLoanAvailability( data.AvailableLoanOffers );
+		}
 		// Older saves keep only the months in the red: the stamp is counted back so that the bank counts as many 30-day months
 		park.RestoreBankWords( data.WithdrawalsEnabled ?? true, data.LastBalance ?? data.Ledger.Balance,
 			data.TurnEnteredRed ?? LegacyTurnEnteredRed( ParkCalendar.Turn( data.Tick ), data.MonthsInRed, data.Ledger.Balance ) );

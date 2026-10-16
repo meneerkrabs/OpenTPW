@@ -432,12 +432,13 @@ public static class ServerProgram
 			// The payload is validated as a park payload too (format, version, sizes, digest over its layout):
 			// clients check on visit, but a publish is the last place to refuse a package no client could enter.
 			MinimalParkPayload.FromSnapshot( package.ToSnapshot() );
-			// [APPROX:ONLINE-023] the original showed swear words in park names as asterisks (FAQ, S2), so the name is
-			// masked, not refused; the description keeps the refusal (an OpenTPW moderation choice). The original masked at
+			// [EXT:online-park-name-masking] the original showed swear words in park names as asterisks (FAQ, S2), so the
+			// name is masked, not refused; the description keeps the refusal (an OpenTPW moderation choice). OpenTPW masks
+			// once on the server at publish, so every client sees the same name. Not reproduced: the original masked at
 			// display on the client: the city lobby's park label (tp.exe 0x4B8850), the park details (0x4C0AE0), Find Parks
 			// (0x4BFC70) and the other-parks chart (0x4C1E40) pass the name through the filter 0x5D3230 when the filter flag
 			// (0x5B09B0, byte +0x25) is set, with the swears.txt and alloweds.txt of Data\Language\<language> loaded by
-			// 0x5AFD70 / 0x5D3140; OpenTPW masks once on the server — evidence needed: what sets the filter flag
+			// 0x5AFD70 / 0x5D3140; still unknown: what sets the filter flag
 			package = package with { Manifest = package.Manifest with { Park = package.Manifest.Park with { Name = filter.Apply( package.Manifest.Park.Name ) } } };
 			RequireClean( filter, package.Manifest.Park.Description, "Park description" );
 			var city = int.TryParse( context.Request.Query["city"], out var cityId ) ? cityId : 0;

@@ -417,7 +417,8 @@ public class ParkResumeCatalogValidationTests
 				Economy = ParkSaveFile.Capture( economy, new WorldRandomState( seed.Value, (uint)guests.RandomState, 42u ) ),
 				Layout = layout,
 				Guests = guests,
-				Scripts = scripts,
+				// the park has one world generator: the script world carries the guests' (this rig builds them apart)
+				Scripts = scripts with { RandomState = guests.RandomState, WorldGenerator = guests.WorldGenerator },
 				Runtimes = new List<ParkResumeRuntime>
 				{
 					new( first.Script!.ScriptId, first.CaptureSnapshot() ),

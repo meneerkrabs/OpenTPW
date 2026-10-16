@@ -256,7 +256,7 @@ public class PrototypeRideSaveAssetTests
 				NextAttractionId = 2
 			},
 			Guests = guests,
-			Scripts = scripts with { NextAttractionId = 2 },
+			Scripts = scripts with { NextAttractionId = 2, RandomState = guests.RandomState, WorldGenerator = guests.WorldGenerator },
 			Runtimes = new List<ParkResumeRuntime>(),
 			EconomyBindings = new List<ParkResumeEconomyBinding>(),
 			Clock = new FixedStepClockSnapshot( 1800, 0, 0 ),

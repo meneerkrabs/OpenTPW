@@ -268,7 +268,8 @@ public class GuestAssetTests
 		vm[RideVariables.VAR_RIDECLOSED] = 0;
 		bridge.Attach( vm, () => vm[RideVariables.VAR_RIDECLOSED] == 0 );
 		simulation.Register( bridge );
-		foreach ( var cell in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
+		// sixteen guests on the paths round the entrance (eight cells, two each): which of them choose the ride at once follows the world generator's draws, and a full load of six needs a crowd
+		foreach ( var cell in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21), (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
 			simulation.SpawnInPark( cell.Item1, cell.Item2 );
 		var runs = new List<(double At, int Riders)>();
 		var running = false;

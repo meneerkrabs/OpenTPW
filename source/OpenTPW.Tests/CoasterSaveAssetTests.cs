@@ -144,7 +144,8 @@ public class CoasterSaveAssetTests
 					NextAttractionId = 3
 				},
 				Guests = guests,
-				Scripts = scripts,
+				// the park has one world generator: the script world carries the guests' (this rig builds them apart)
+				Scripts = scripts with { RandomState = guests.RandomState, WorldGenerator = guests.WorldGenerator },
 				Runtimes = new List<ParkResumeRuntime> { new( First.Script!.ScriptId, First.CaptureSnapshot() ), new( Second.Script!.ScriptId, Second.CaptureSnapshot() ) },
 				EconomyBindings = bindings,
 				Clock = new FixedStepClockSnapshot( 2700, 0, 0 ),

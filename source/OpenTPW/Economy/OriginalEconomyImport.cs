@@ -160,11 +160,13 @@ public sealed class OriginalEconomyImport
 		economy.ImportOriginalBank( account.Balance, account.AdmissionFee, account.ProfitThisYear, bought );
 		evidence.Add( $"Bank imported: balance {account.Balance}, admission fee {account.AdmissionFee}, profit this year {account.ProfitThisYear}, {bought.Count} bought loans." );
 		// [BIN:TPW-EXE:0x4cf920 bank serializer] mWithdrawalsEnabled (+0x114), mLastBalance (+0x11C) and the turn-entered-red stamp (+0x120) are bank words of the save; the debit 0x4d01f0 and the month 0x4d0370 read them
-		economy.RestoreBankWords( account.WithdrawalsEnabled, account.LastBalance, account.TurnEnteredRed );
+		economy.RestoreBankWords( account.WithdrawalsEnabled, account.LastBalance, account.TurnEnteredRed, account.BatchBalance );
 		evidence.Add( $"Bank words imported: withdrawals {(account.WithdrawalsEnabled ? "enabled" : "disabled")}, last balance {account.LastBalance}, turn entered red {account.TurnEnteredRed}{(account.Balance < 0 && account.LastBalance < 0 ? $" ({economy.MonthsSinceEnteringRed()} months in the red)" : "")}." );
 		// [BIN:TPW-EXE:0x4d0850 loan payoff] a bought loan's outstanding amount is its monthly repayment (+0x24) times the months not yet repaid (+0x20 − +0x2C), compared unsigned with the balance (0x4d0898)
-		// [APPROX:SAVE-008] the batch balance is not imported: in tp.exe the batch word +0x10 is a pending credit that the bank's month message adds to the balance, the money-in total and the year's profit and then zeroes (0x4D0393..0x4D03DB); the loan offers' stored credit tests (Available, +0x14) are imported, the constructor having started each as amount at most 10,000 (0x4CF84B). The ledger month opens at the current balance; the bank keeps no month-opening word, mLastBalance being the balance after the last debit, instalment or payoff (0x4D0228, 0x4D08E1) — evidence needed: a save with a non-zero batch word
-		evidence.Add( $"[APPROX:SAVE-008] Not imported: batch balance {account.BatchBalance}; the month opens at the current balance {account.Balance}." );
+		// [BIN:TPW-EXE:0x4d0370 bank month] the batch word (+0x10) is a pending credit: the bank's month message adds it to the balance, the money-in total and the year's profit and zeroes it (0x4D0393..0x4D03DB), so it is kept and paid at the next month end; the constructor (0x4CF7C0) starts it at 0, and the bank keeps no month-opening word (mLastBalance is the balance after the last debit, instalment or payoff, 0x4D0228, 0x4D08E1), so the ledger month opens at the current balance
+		if ( account.BatchBalance < 0 )
+			throw new InvalidDataException( $"Save bank batch balance {account.BatchBalance} is negative." );
+		evidence.Add( $"Bank batch credit imported: {account.BatchBalance}{(account.BatchBalance == 0 ? "" : " (paid into the balance at the next month end)")}; the month opens at the current balance {account.Balance}." );
 		// [BIN:TPW-EXE:0x4d06b0 credit test] each offer's +0x14 is the stored result of the last list build's credit test (the constructor 0x4cf7c0 starts it as amount < 10001); the Available tab lists the offers not bought whose test passed
 		var available = bank.Loans.Where( loan => loan.Available ).Select( loan => loan.Index ).ToArray();
 		economy.RestoreLoanAvailability( available );
@@ -550,9 +552,9 @@ public sealed class OriginalEconomyImport
 			nextOffer = Day( system.NextEventTime ) + 1;
 			state = $"the next offer is due on day {nextOffer}";
 		}
-		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished );
+		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished, system.Switch1 != 0 );
 		evidence.Add( $"Challenges imported: {state}; {finished.Count} won, {declines.Count} declined." );
-		// [APPROX:SAVE-005] the loss counts, the follow-up's carried object (mActualThing and the slots' mThingIdForFollowup, ECON-055) and the day an unanswered offer was made are not imported, and the first offer does not wait for an open park (0x4c9050) — evidence needed: what reads the loss counts and how the follow-up types read the carried object
+		// [APPROX:SAVE-005] the loss counts, the follow-up's carried object (mActualThing and the slots' mThingIdForFollowup, ECON-055) and the day an unanswered offer was made are not imported — evidence needed: what reads the loss counts and how the follow-up types read the carried object
 		evidence.Add( $"[APPROX:SAVE-005] Challenge values not imported: losses {string.Join( "/", slots.Select( slot => slot.Lost ) )}, ActualThing {system.ActualThing}, follow-up things {string.Join( "/", slots.Select( slot => slot.FollowupThing ) )}." );
 	}
 

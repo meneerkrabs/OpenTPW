@@ -106,8 +106,14 @@ public sealed class BalanceSettings
 			Role( StaffType.Guard, "Guards", "Guard" ),
 			Role( StaffType.Researcher, "Researchers", "Researcher" )
 		};
-		Costs = new CellCosts( standard.GetInt( "Costs.QueueCell" ), standard.GetInt( "Costs.PathCell" ), standard.GetInt( "Costs.KartTrackCell" ),
-			standard.GetInt( "Costs.WaterTrackCell" ), standard.GetInt( "Costs.MapCell" ) );
+		int NonNegative( string key )
+		{
+			var value = standard.GetInt( key );
+			return value >= 0 ? value : throw new InvalidDataException( $"Balance problem: invalid -ve value specified ({key} {value})" );
+		}
+		// [BIN:TPW-EXE:0x00401D7C balance parser] Costs.* are type-5 balance keys: the parser tests the parsed value and a negative one (jl 0x40260D) reports 'Balance problem: invalid -ve value specified', which fails the balance load, so the level never starts with a negative cell cost
+		Costs = new CellCosts( NonNegative( "Costs.QueueCell" ), NonNegative( "Costs.PathCell" ), NonNegative( "Costs.KartTrackCell" ),
+			NonNegative( "Costs.WaterTrackCell" ), NonNegative( "Costs.MapCell" ) );
 		EntryFee = new EntryFeePerception( standard.GetInt( "PeepInfo.ExcitementToCostDivisor" ), standard.GetInt( "PeepInfo.MinimumEntryFee" ),
 			standard.GetDouble( "PeepInfo.CheapPriceMultiplier" ), standard.GetDouble( "PeepInfo.AveragePriceMultiplier" ), standard.GetDouble( "PeepInfo.ExpensivePriceMultiplier" ) );
 		GoldenTickets = new GoldenTicketSettings( standard.GetInt( "GoldenTicketLocal.Visitors" ), standard.GetInt( "GoldenTicketLocal.PeopleInPark" ),

@@ -36,7 +36,8 @@ internal sealed partial class SandboxSmokeTest
 			if ( CoasterBuilder.StationEnds( entry!.Shape, candidate.X, candidate.Y, 0 ) is not { } ends )
 				continue;
 			var cells = SmokeCircuit.Select( offset => (ends.Depart.X + offset.X, ends.Depart.Y + offset.Y) ).Append( ends.Return ).ToArray();
-			if ( cells.All( cell => level.Objects.FindAt( cell.Item1, cell.Item2 ) == null && level.Objects.Grid.CheckTerrain( cell.Item1, cell.Item2 ) == OriginalPlacementResult.Allowed && Clickable( cell, out _ ) ) )
+			if ( cells.All( cell => level.Objects.FindAt( cell.Item1, cell.Item2 ) == null && level.Objects.Grid.CheckTerrain( cell.Item1, cell.Item2 ) == OriginalPlacementResult.Allowed
+				&& !level.Guests!.Grid.Cells.FlagsAt( cell.Item1, cell.Item2 ).HasFlag( ParkCellFlags.Unowned ) && Clickable( cell, out _ ) ) )
 				anchor = candidate;
 		}
 		Require( anchor != null, "find an on-screen site for a coaster and its circuit" );

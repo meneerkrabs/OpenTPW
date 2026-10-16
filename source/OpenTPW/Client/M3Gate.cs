@@ -714,7 +714,7 @@ internal sealed class M3GateRun
 		var evidence = new JsonObject
 		{
 			["queueCellCost"] = cellCost,
-			["builtBy"] = "Level.BuildQueueCell (the queue tool's per-cell code: QueuePaths.CheckExtend + ParkEconomy.TrySpendCell(Queue) + QueuePaths.TryExtend); the HUD click route itself is not exercised (no HUD without a GPU)"
+			["builtBy"] = "Level.BuildQueueCell (the queue tool's per-cell code: QueuePaths.CheckExtend + ParkEconomy.TrySpendCell(Queue) + QueuePaths.TryExtend), then QueuePaths.TryConnect (the line ending on the path, code 8); the HUD click route itself is not exercised (no HUD without a GPU)"
 		};
 		var problems = new List<string>();
 		if ( ride == null || !ride.Entry.HasQueue || queueRoute == null )
@@ -739,6 +739,9 @@ internal sealed class M3GateRun
 			}
 			laid++;
 		}
+		// The player ends the queue line on the path beside the back (the validator's code 8), which links the queue to it.
+		var connected = laid == queueRoute.Count && QueuePaths.TryConnect( grid, bridge );
+		evidence["connected"] = connected;
 		var charged = balance - economy.Balance;
 		var expectedLength = Math.Min( (long)bridge.QueueLimit, RideVisitorBridge.PositionsPerCell * queueRoute.Count );
 		var join = bridge.JoinCell;
@@ -759,6 +762,8 @@ internal sealed class M3GateRun
 		evidence["lastMessage"] = message;
 		if ( laid != queueRoute.Count )
 			problems.Add( $"{laid} of {queueRoute.Count} cells laid" );
+		else if ( !connected )
+			problems.Add( "the queue's back has no path to connect to" );
 		if ( charged != (long)queueRoute.Count * cellCost )
 			problems.Add( $"charged {charged}, expected {queueRoute.Count} x {cellCost}" );
 		if ( bridge.QueueSizeInCells != queueRoute.Count || !bridge.QueueCells.SequenceEqual( queueRoute ) )

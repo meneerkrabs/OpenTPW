@@ -370,9 +370,10 @@ Traced in the binary but not triggered yet:
   chase, catch, performance or per-turn research action to hang them on.
 * `cat_ui` 139 is the sound of a queue joining a path, not a path-tool link-end. Its first source plays now: the queue tool's
   commit when the line ends on a path cell, money on (`0x100711CC`, tp.exe `0x527587`; the validator `0x84154` returns code
-  8 for that line, which is also no longer treated as a refusal). Its second source is not played yet: a laid path cell
-  linking to a neighbouring queue cell whose link points back (`0x10082D6C`, tp.exe `0x5348D0`), because OpenTPW's path
-  linking has no queue-link check (PATH-004, AUDIO-023). The count-classed removal sounds `cat_ui` 141–144 and 150–153
+  8 for that line, which is also no longer treated as a refusal). Its second source plays too: the link writer (tp.exe
+  `0x5348D0`, `PathLinkWriter`) reports a laid path cell beside a queue cell whose link byte points back at it (a path laid
+  over the queue's join cell, or over the queue's end), and the sound plays at (10x, 0, 10x): tp.exe takes both coordinates
+  from the cell's x (`0x5348E0`). The count-classed removal sounds `cat_ui` 141–144 and 150–153
   (`0x10075618`, `0x100748A0`) are demolish sounds, not path-tool sounds.
 * `cat_ui` 95 is the "backtrack" key command (Backspace, `0x10112430`, tp.exe `0x40BDA0`), and it plays now: with no tool on and
   a path cell under the cursor it plays at that cell, then that cell loses one placement (ClearCell's counted path case,
@@ -596,7 +597,6 @@ implemented yet.
 | AUDIO-008 | The repair family comes from the owner object's word `+0x14` (band 1 -> 75, 2-3 -> 79, 4-7 -> 83, >= 8 -> 87, 0 silent; `0x55635f`/`0x551320`); OpenTPW uses band 1 (75) and plays it at the object as the original does | The band word's meaning and source |
 | AUDIO-009 | A rejected placement ("Cannot build") plays the error feedback 0x1D; the traced 0x1D callers are buy and hire money and limit checks (tp.exe `0x4879d0`, `0x4ac590`, `0x4af500`), no placement-tool site was found | The object-placement refusal cases of the build tool's 0x35-way tool switch (`0x524acd`) |
 | AUDIO-018 | The positioned voice's pan is constant-power by bearing, not the original's pan law (inside QMixer) | QMixer.dll (a separate binary) or a capture |
-| AUDIO-023 | The link-end sound (`cat_ui` 139) is not played; no undo sound is traced | The link-end condition; the Backspace handler |
 | AUDIO-025 | December's average is the storage of the unnamed type-0 `.sam` schema record after `Seasons` (`0x741d80`), taken as 4; the season is the FILETIME date's month / 3 (`0x4f8770`, wMonth 1-12, so December is row 4) and the word (`0x7854f4`) is in .bss with no code reference; its tolerance and chance are confirmed | The generic `.sam` loader's type-0 case (if it stores nothing the average would be 0, not 4) |
 | AUDIO-037 | The sound chooser is seeded from the clock at start-up (as the original) but a park reseeds it from its world seed at entry and saves it with the park, so headless runs and tests start from a known state (not a replay guarantee with sound on); the original's chooser is clock-seeded and unsaved | None (a deliberate determinism choice) |
 | AUDIO-900 | The rain is one camera-following wrapping drop field of straight falling streaks, its count the simulated current drops, its parallax the original's absolute `-0.1 x camera position` (`0x57efd0`), its states decoded (`0x567620`: rain and bolts `0x200D52`, snow `0x556`, alpha test at 0x10/255); the 0.3 factor under camera modes `0x790ab0 & 0x16` and the 1/16384 quantisation are not reproduced | Which views set the camera-mode bits `0x16` |

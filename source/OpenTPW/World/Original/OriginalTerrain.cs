@@ -6,8 +6,8 @@ namespace OpenTPW;
 /// Renders an imported original level: the base.MD2 terrain meshes (node transforms composed up the
 /// hierarchy), the heightfield surface with its per-cell ground texture slot, and the paths as a blended
 /// layer on that ground. Each path cell takes the theme's PathTex shape and turn for its neighbours
-/// (<see cref="PathTiles"/>; cells unchanged since the original save keep the saved ones); queues use the
-/// separate QueueTex list and queue archive. The layer follows <see cref="PathSource"/> and <see cref="QueueSource"/> (the level's cell
+/// (<see cref="PathTiles"/>; cells unchanged since the original save keep the saved ones); queue cells carry the theme's
+/// queue models (<see cref="QueueModels"/>) on their ground. The layer follows <see cref="PathSource"/> and <see cref="QueueSource"/> (the level's cell
 /// map) after <see cref="RefreshPaths"/>. Placed objects are drawn with their original models by
 /// <see cref="ParkObjects"/>, not as footprint markers.
 /// </summary>
@@ -75,12 +75,14 @@ public sealed class OriginalTerrain : Entity
 	public OriginalPark Park { get; }
 	/// <summary>Path cells; null: the MAP InitialPath and save path cells.</summary>
 	public Func<int, int, bool>? PathSource { get; set; }
-	/// <summary>Queue cells, drawn with the theme's QueueTex textures; null: none.</summary>
+	/// <summary>Queue cells, drawn with the theme's queue models instead of a path tile; null: none.</summary>
 	public Func<int, int, bool>? QueueSource { get; set; }
-	/// <summary>Queue predecessor links, so neighbouring independent queues do not visually join.</summary>
-	public Func<int, int, byte>? QueueLinkSource { get; set; }
+	/// <summary>The queue model of a queue cell (<see cref="QueueModels.Choose"/>); null: queue cells are left as ground.</summary>
+	public Func<int, int, QueueModelTile?>? QueueModelSource { get; set; }
+	/// <summary>Whether a path cell's straight or edge takes the second texture (the chooser's roll, <see cref="PathTileVariants"/>); null: the first.</summary>
+	public Func<int, int, bool>? PathVariantSource { get; set; }
 	public int SurfaceCellCount { get; private set; }
-	/// <summary>Path and queue cells in the path layer.</summary>
+	/// <summary>Path cells in the path layer.</summary>
 	public int PathCellCount { get; private set; }
 	private Dictionary<string, Texture>? heightfieldTextures;
 	private readonly List<ModelEntity> pathParts = new();
@@ -138,55 +140,46 @@ public sealed class OriginalTerrain : Entity
 		BuildPaths( textures );
 	}
 
-	/// <summary>The path layer: one quad per path or queue cell, batched by at most 16 PathTex textures.</summary>
+	/// <summary>The path layer: one quad per path cell, batched by at most 16 PathTex textures, and each queue cell's queue model.</summary>
 	private void BuildPaths( Dictionary<string, Texture> textures )
 	{
 		var field = Park.Heightfield;
 		var pathNames = ReadTextureNames( "PathTex" );
-		var queueNames = ReadTextureNames( "QueueTex" );
-		var cells = new Dictionary<(bool Queue, int Index), List<(int X, int Y, int Rotation)>>();
+		var cells = new Dictionary<int, List<(int X, int Y, int Rotation)>>();
+		var queues = new List<(int X, int Y, QueueModelTile Tile)>();
 		for ( var y = 0; y < field.CellCountZ; y++ )
 		{
 			for ( var x = 0; x < field.CellCountX; x++ )
 			{
 				if ( field.GetCellTextureSlot( x, y ) < 0 )
 					continue;
-				PathTile tile;
-				var queue = false;
-				if ( IsPath( x, y ) )
-					tile = ChoosePathTile( x, y );
-				else if ( QueueSource?.Invoke( x, y ) == true )
+				if ( QueueSource?.Invoke( x, y ) == true )
 				{
-					queue = true;
-					tile = PathTiles.ForQueueCell( x, y, field.CellCountX, field.CellCountZ, QueueSource, QueueLinkSource, IsPath );
-				}
-				else
+					// The ground under a queue model keeps its terrain texture: the refresh gives it no path tile (0x5365D0).
+					if ( QueueModelSource?.Invoke( x, y ) is { } queueTile )
+						queues.Add( (x, y, queueTile) );
 					continue;
-				var names = queue ? queueNames : pathNames;
-				if ( !names.ContainsKey( tile.TextureIndex ) )
+				}
+				if ( !IsPath( x, y ) )
+					continue;
+				var tile = ChoosePathTile( x, y );
+				if ( !pathNames.ContainsKey( tile.TextureIndex ) )
 					tile = new PathTile( 0, tile.Rotation );
-				// Hallow and Space omit the isolated square (que4); keep a queue floor rather than showing a missing texture.
-				if ( queue && tile.TextureIndex == 0 && names.TryGetValue( 0, out var square ) && names.ContainsKey( 2 )
-					&& FindTexture( $"/levels/{Park.LevelName}/queue", Park.LevelName, square, "textures", ListFiles ) == null )
-					tile = new PathTile( 2, tile.Rotation );
-				var key = (queue, tile.TextureIndex);
-				if ( !cells.TryGetValue( key, out var list ) )
-					cells.Add( key, list = new() );
+				if ( !cells.TryGetValue( tile.TextureIndex, out var list ) )
+					cells.Add( tile.TextureIndex, list = new() );
 				list.Add( (x, y, tile.Rotation) );
 			}
 		}
 		PathCellCount = cells.Values.Sum( list => list.Count );
 		// Lifted a little along the cell so the blended layer never fights the ground for depth.
 		var lift = 0.01f * field.CellSizeX;
-		foreach ( var batch in cells.Keys.OrderBy( tile => tile.Queue ).ThenBy( tile => tile.Index ).Chunk( MaximumTextureSlots ) )
+		foreach ( var batch in PathTiles.Batches( cells.Keys, MaximumTextureSlots, pathNames.ContainsKey ) )
 		{
-			var slots = batch.Select( tile => (tile.Queue ? queueNames : pathNames).TryGetValue( tile.Index, out var name )
-				? LoadTexture( textures, name, tile.Queue ? "textures" : "pathtex", tile.Queue ? $"/levels/{Park.LevelName}/queue" : null )
-				: Texture.Missing ).ToList();
+			var slots = batch.Select( index => pathNames.TryGetValue( index, out var name ) ? LoadTexture( textures, name, "pathtex" ) : Texture.Missing ).ToList();
 			var vertices = new List<Vertex>();
 			var indices = new List<uint>();
 			for ( var slot = 0; slot < batch.Length; slot++ )
-				foreach ( var (x, y, rotation) in cells[batch[slot]] )
+				foreach ( var (x, y, rotation) in cells.GetValueOrDefault( batch[slot] ) ?? new() )
 					AddCell( vertices, indices, field, x, y, slot, rotation, lift );
 			var key = string.Join( ',', batch );
 			if ( !pathMaterials.TryGetValue( key, out var material ) )
@@ -200,13 +193,108 @@ public sealed class OriginalTerrain : Entity
 			}
 			pathParts.Add( AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"paths {pathParts.Count}" ) );
 		}
+		BuildQueueModels( textures, queues );
+	}
+
+	/// <summary>Queue cells drawn with a queue model.</summary>
+	public int QueueModelCount { get; private set; }
+
+	/// <summary>
+	/// The queue models of the queue cells (<see cref="QueueModels"/>), baked into static batches: each instance stands on its cell turned by
+	/// its yaw as a placed object of one cell would be (<see cref="ObjectPlacement.CellRotation"/>), at the cell's mean ground height.
+	/// </summary>
+	// [APPROX:PATH-015] the queue models are baked at the cell's mean corner height and drawn without the ground deformation of their .hmp files (as objects, RIDES-014) and without the animation of their texture frames (the fire0 torches of queend and quebin1/2) and of the load flag 0x100000 of the two quedead entries — evidence needed: the .hmp deformation and the model loader's flag 0x100000 (0x4629D0)
+	private void BuildQueueModels( Dictionary<string, Texture> textures, List<(int X, int Y, QueueModelTile Tile)> queues )
+	{
+		QueueModelCount = 0;
+		if ( queues.Count == 0 )
+			return;
+		var field = Park.Heightfield;
+		var directory = $"/levels/{Park.LevelName}/queue";
+		var batchTextures = new List<string>();
+		var batchVertices = new List<Vertex>();
+		var batchIndices = new List<uint>();
+		foreach ( var group in queues.Where( queue => queue.Tile.Model >= 0 && queue.Tile.Model < QueueModels.Names.Count ).GroupBy( queue => queue.Tile.Model ).OrderBy( group => group.Key ) )
+		{
+			ModelFile model;
+			try
+			{
+				model = ObjectAssets.LoadModel( $"{directory}/{QueueModels.Names[group.Key]}.md2" );
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or UnauthorizedAccessException )
+			{
+				missingTextures.Add( $"{QueueModels.Names[group.Key]}.md2" );
+				continue;
+			}
+			foreach ( var (x, y, tile) in group )
+			{
+				var height = (field.GetCornerHeight( x, y ) + field.GetCornerHeight( x + 1, y ) + field.GetCornerHeight( x, y + 1 ) + field.GetCornerHeight( x + 1, y + 1 )) / 4;
+				var turn = ObjectPlacement.CellRotation( tile.Yaw );
+				foreach ( var mesh in model.Meshes )
+				{
+					if ( ObjectAssets.GetUnrenderableReason( mesh ) != null || mesh.Normals.Length != mesh.Vertices.Length || mesh.TexCoords.Length < mesh.Vertices.Length )
+						continue;
+					var names = mesh.Materials.Select( material => material.Name ).ToArray();
+					if ( batchTextures.Union( names, StringComparer.OrdinalIgnoreCase ).Count() > MaximumTextureSlots )
+						FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
+					var slotOfMaterial = names.Select( name =>
+					{
+						var slot = batchTextures.FindIndex( existing => string.Equals( existing, name, StringComparison.OrdinalIgnoreCase ) );
+						if ( slot < 0 )
+						{
+							batchTextures.Add( name );
+							slot = batchTextures.Count - 1;
+						}
+						return slot;
+					} ).ToArray();
+					var world = GetWorldMatrix( model, mesh.NodeIndex );
+					var first = (uint)batchVertices.Count;
+					for ( var index = 0; index < mesh.Vertices.Length; index++ )
+					{
+						var source = mesh.Vertices[index];
+						// Model space (Y up) → the cell's ground axes, turned within the cell → park model space at the cell → engine.
+						var local = System.Numerics.Vector3.Transform( ObjectAssets.ConvertAxes( System.Numerics.Vector3.Transform( source.Position.GetSystemVector3(), world ) ), turn );
+						var normal = System.Numerics.Vector3.TransformNormal( ObjectAssets.ConvertAxes( System.Numerics.Vector3.TransformNormal( mesh.Normals[index].GetSystemVector3(), world ) ), turn );
+						var materialIndex = (int)Math.Min( source.TextureIndex, (uint)mesh.Materials.Length - 1 );
+						batchVertices.Add( new Vertex
+						{
+							Position = OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x * field.CellSizeX + local.X, height + local.Z, y * field.CellSizeZ + local.Y ) ),
+							Normal = normal.LengthSquared() > 0 ? System.Numerics.Vector3.Normalize( normal ) : System.Numerics.Vector3.UnitZ,
+							TexCoords = mesh.TexCoords[index],
+							TexIndex = slotOfMaterial[materialIndex],
+							MatFlags = mesh.Materials[materialIndex].Flags
+						} );
+					}
+					foreach ( var index in mesh.Indices )
+						batchIndices.Add( first + index );
+				}
+				QueueModelCount++;
+			}
+		}
+		FlushQueueBatch( textures, directory, batchTextures, batchVertices, batchIndices );
+	}
+
+	private void FlushQueueBatch( Dictionary<string, Texture> textures, string directory, List<string> names, List<Vertex> vertices, List<uint> indices )
+	{
+		if ( vertices.Count > 0 )
+		{
+			var slots = new Texture[MaximumTextureSlots];
+			for ( var index = 0; index < slots.Length; index++ )
+				slots[index] = index < names.Count ? LoadTexture( textures, names[index], "textures", directory ) : slots[0];
+			var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
+			material.Set( "Color", slots );
+			pathParts.Add( AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), $"queue models {pathParts.Count}" ) );
+		}
+		names.Clear();
+		vertices.Clear();
+		indices.Clear();
 	}
 
 	private bool IsPath( int x, int y ) => PathSource?.Invoke( x, y ) ??
 		Park.Map.GetFlagsAt( x, y ).HasFlag( MapCellFlags.InitialPath ) || Park.Save?.Cells[x, y].IsPath == true;
 
 	private PathTile ChoosePathTile( int x, int y ) =>
-		PathTiles.ForCell( x, y, Park.Heightfield.CellCountX, Park.Heightfield.CellCountZ, IsPath, Park.Save?.Cells );
+		PathTiles.ForCell( x, y, Park.Heightfield.CellCountX, Park.Heightfield.CellCountZ, IsPath, Park.Save?.Cells, PathVariantSource?.Invoke( x, y ) == true );
 
 	private static int AddSlot( List<Texture> slots, Texture texture )
 	{
@@ -347,8 +435,6 @@ public sealed class OriginalTerrain : Entity
 
 	/// <summary>The "PathTex" list of a theme texture correspondence table (.tct): index to texture name.</summary>
 	internal static IReadOnlyDictionary<int, string> ReadPathTextureNames( string table ) => ReadTextureNames( table, "PathTex" );
-
-	internal static IReadOnlyDictionary<int, string> ReadQueueTextureNames( string table ) => ReadTextureNames( table, "QueueTex" );
 
 	private static IReadOnlyDictionary<int, string> ReadTextureNames( string table, string listName )
 	{

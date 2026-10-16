@@ -79,7 +79,7 @@ remaining copies are listed under "Divergences from the player's build flow". If
    the direction of lane A's last step. It is laid with PATH-I's player-facing builder,
    `ParkPathBuilder.BuildSegment(start, end)`: the line is snapped and straight, every
    cell goes through the path rules (owned land, `CanChangeCellType`, no path over a
-   queue cell (`PATH-008`), objects, the terrain rule, money), and `Costs.PathCell`
+   queue cell other than a queue end, objects, the terrain rule, money), and `Costs.PathCell`
    ($20) is posted to OtherCosts per new cell. The builder is constructed like
    `Level`'s: the shared cell map, the guests' walk grid, the park economy, the object
    build grid, and the gate's object footprints as the blocked test. The walkway's last

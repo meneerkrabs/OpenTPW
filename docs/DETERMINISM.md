@@ -356,7 +356,7 @@ and the object catalog's cache key will include `ModSet.Digest`; an unmodded sav
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0xA2FAA54FEB56DA05`, schema 19: the bank's stored credit test (`0x4D06B0`, run when the loans dialog opens or a tab is selected)
+  (`0x09894103FAFB8D45`, schema 19: tp.exe's path links, queue cells and queue walk (PATH-004, QUEUE-006, QUEUE-003) on top of the loan offers, the ticket booth, tp.exe's guest walk and the staff candidate draws (`0xA2FAA54FEB56DA05`; main's pin after the staff walks, #229, left it unchanged). The synthetic park's queue now carries the links the queue tool writes (the link writer `0x5348D0` from the commit link pass `0x52744E`: the front toward the entrance, each cell to the one before it, the back to the path cell it ends on, with the cells' queue links `+0x0D`), and guests reach the back of the queue by the original's queue walk and edge test (`0x4D8750`) over those links instead of OpenTPW's earlier search, so the guests' positions, the joins and the world stream move; no save field is added. Before that, `0xA2FAA54FEB56DA05`, schema 19: the bank's stored credit test (`0x4D06B0`, run when the loans dialog opens or a tab is selected)
   decides which offers the Available tab lists, and the park save gains the optional `AvailableLoanOffers` field, so the hashed save
   text moves, on top of the ticket booth, tp.exe's guest walk and the staff candidate draws (`0x944788E41E278016`). The loan-offer field
   on the walk and the staff draws only was `0x650CEA6712B82D88`, on the staff draws only `0x0C9F0042AD44A3E3`. Before that,

@@ -100,21 +100,26 @@ public sealed class GuestPathGrid
 	/// Makes (x, y) a queue cell whose link points toward <see cref="Directions"/>[<paramref name="towards"/>]
 	/// (its predecessor, i.e. toward the ride entrance). A path cell stops being walkable.
 	/// </summary>
+	// [BIN:TPW-EXE:0x005346D0 SetCellType] type 3 over a type-1 cell first clears the path (0x5367A0(0, 0) under the flag 0x81D7A8, which lets a NoModify cell go), unlinking every bit of it on both sides; the queue's own links come from the line's link pass (QueuePaths)
 	public void SetQueue( int x, int y, int towards )
 	{
 		if ( !InBounds( x, y ) )
 			throw new ArgumentOutOfRangeException( nameof( x ) );
+		if ( Cells.TypeAt( x, y ) is ParkCellType.Path or ParkCellType.Queue )
+			PathLinkWriter.Unlink( Cells, x, y, cardinalOnly: Cells.TypeAt( x, y ) == ParkCellType.Queue );
 		Cells.SetType( x, y, ParkCellType.Queue );
 		Cells.SetLinks( x, y, 0 );
 		Cells.SetQueueLink( x, y, LinkValue( towards ) );
 		Invalidate();
 	}
 
-	/// <summary>Removes a queue cell (the cell becomes plain ground).</summary>
+	/// <summary>Removes a queue cell (the cell becomes plain ground), unlinking its cardinal links on both sides.</summary>
+	// [BIN:TPW-EXE:0x005367A0 cell clear] the queue case (types 3, 9) clears each of the bits 1, 4, 16, 64 set in +0x0C on both sides before the cell is typed 0
 	public void ClearQueue( int x, int y )
 	{
 		if ( !IsQueue( x, y ) )
 			return;
+		PathLinkWriter.Unlink( Cells, x, y, cardinalOnly: true );
 		Cells.SetType( x, y, ParkCellType.Empty );
 		Invalidate();
 	}

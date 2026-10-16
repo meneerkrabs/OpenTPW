@@ -144,6 +144,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			// The harness owns the update path flow.Update normally drives; the camera still needs its per-frame
 			// update for the view/projection the world pass draws with (the visit smoke test drives it the same way).
 			Camera.Update();
+			// The level's frame update also redraws the path layer after a cell edit; the built park's queue models are parts of it.
+			level?.RefreshRenderedCells();
 			if ( pendingCapture is { } capture && frame >= captureAtFrame )
 			{
 				pendingCapture = null;

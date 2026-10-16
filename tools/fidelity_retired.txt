@@ -27,6 +27,7 @@ AUDIO-015 docs/PROGRESS.md
 AUDIO-017 docs/AUDIO.md
 AUDIO-019 docs/AUDIO.md
 AUDIO-022 docs/AUDIO.md
+AUDIO-023 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 AUDIO-026 docs/AUDIO.md
 AUDIO-027 docs/AUDIO.md
 AUDIO-029 docs/PROGRESS.md
@@ -143,16 +144,21 @@ ONLINE-023 docs/ONLINE.md
 ONLINE-024 docs/ONLINE.md
 ONLINE-073 docs/ONLINE.md
 ONLINE-076 docs/ONLINE.md
+PATH-001 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PATH-003 docs/PROGRESS.md
+PATH-004 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
+PATH-008 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PATH-009 docs/PROGRESS.md
 PATH-011 docs/PROGRESS.md
 PATH-012 docs/reverse/REVIEW-PATH.md
+PATH-014 docs/progress/2026-10-16-path-links-queue-cells-and-the-original-queue-walk.md
 PTCL-901 docs/PROGRESS.md
 PTCL-902 docs/PARTICLES.md
 PTCL-903 docs/PARTICLES.md
 PTCL-907 docs/PARTICLES.md
 QUEUE-001 docs/PROGRESS.md
 QUEUE-002 docs/PROGRESS.md
+QUEUE-006 docs/reverse/BOARD-plan.md
 QUEUE-007 docs/reverse/BOARD-plan.md
 QUEUE-009 docs/GUESTS.md
 QUEUE-011 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
@@ -230,6 +236,7 @@ UI-045 docs/PROGRESS.md
 UI-048 docs/PROGRESS.md
 UI-049 docs/PROGRESS.md
 UI-062 docs/PROGRESS.md
+UI-063 docs/progress/2026-10-16-interface-round-c.md
 UI-065 docs/PROGRESS.md
 UI-083 docs/PROGRESS.md
 UI-084 docs/PROGRESS.md

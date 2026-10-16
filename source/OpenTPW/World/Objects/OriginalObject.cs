@@ -23,20 +23,26 @@ public readonly record struct ObjectPlacement( int X, int Y, int Rotation, Syste
 	{
 		get
 		{
-			var rotation = Rotation switch
-			{
-				0 => Matrix4x4.Identity,
-				90 => new Matrix4x4( 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 10, 0, 1 ),
-				180 => new Matrix4x4( -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 10, 10, 0, 1 ),
-				270 => new Matrix4x4( 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1 ),
-				_ => throw new ArgumentOutOfRangeException( nameof( Rotation ), "Rotations are multiples of 90 degrees." )
-			};
+			var rotation = CellRotation( Rotation );
 			return rotation
 				* Matrix4x4.CreateTranslation( X * 10, Y * 10, 0 )
 				* Matrix4x4.CreateScale( ModelScale )
 				* Matrix4x4.CreateTranslation( GridOrigin.X, GridOrigin.Y, BaseHeight );
 		}
 	}
+
+	/// <summary>
+	/// The rigid turn of a model by <paramref name="rotation"/> degrees (0, 90, 180, 270) in model units with the ground in XY, about the
+	/// first cell (0..10, 0..10) so that cell maps onto itself (<see cref="ObjectFootprint.ToGrid(int,int,int,System.Numerics.Vector2)"/>).
+	/// </summary>
+	public static Matrix4x4 CellRotation( int rotation ) => rotation switch
+	{
+		0 => Matrix4x4.Identity,
+		90 => new Matrix4x4( 0, -1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 0, 10, 0, 1 ),
+		180 => new Matrix4x4( -1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 10, 10, 0, 1 ),
+		270 => new Matrix4x4( 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1, 0, 10, 0, 0, 1 ),
+		_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+	};
 
 	/// <summary>Swaps MD2 Y (up) and Z on both sides of a node matrix, matching <see cref="ObjectAssets.ConvertAxes"/>.</summary>
 	public static Matrix4x4 SwapAxes( Matrix4x4 node )

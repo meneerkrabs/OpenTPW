@@ -51,6 +51,8 @@ public class QueueTests
 			Ride.Attach( Script, () => Open );
 			if ( queueCells > 0 )
 				Assert.AreEqual( queueCells, QueuePaths.TryExtend( Grid, Ride, Enumerable.Range( 0, queueCells ).Select( index => (2, 5 - index) ) ) );
+				// The queue line ends on the path beside the back (code 8), which connects the queue.
+				QueuePaths.TryConnect( Grid, Ride );
 			var settings = GuestTests.CreateSettings();
 			configure?.Invoke( settings );
 			Simulation = new GuestSimulation( Grid, settings, 7 ) { ArrivalsEnabled = false };
@@ -130,6 +132,17 @@ public class QueueTests
 		CollectionAssert.AreEqual( new[] { (2, 5), (2, 4), (3, 4), (3, 3), (3, 2), (3, 1) }, ride.QueueCells.ToArray() );
 		Assert.AreEqual( (3, 1), ride.QueueBackCell );
 		Assert.AreEqual( 6, ride.QueueSizeInCells );
+		Assert.IsNull( ride.JoinCell, "a back cell touching a path is not connected to it" );
+		// The link bytes the queue line's link pass writes: the front toward the entrance, each cell and the one before it both ways.
+		Assert.AreEqual( 0x10 | 0x01, grid.Cells.LinksAt( 2, 5 ) );
+		Assert.AreEqual( 0x10 | 0x04, grid.Cells.LinksAt( 2, 4 ) );
+		Assert.AreEqual( 0x10, grid.Cells.LinksAt( 3, 1 ), "the back links only to the cell before it" );
+		Assert.AreEqual( 0x00, grid.Cells.LinksAt( 1, 4 ), "the stray queue cell is linked to nothing" );
+		// A queue line ending on the path (code 8) links the path and the back cell: the queue is connected.
+		Assert.AreEqual( QueueBuildResult.Connected, QueuePaths.TryExtend( grid, ride, 3, 0 ) );
+		Assert.AreEqual( 0x11, grid.Cells.LinksAt( 3, 1 ) );
+		Assert.AreEqual( 0x10, grid.Cells.LinksAt( 3, 0 ) & 0x10 );
+		Assert.AreEqual( 6, ride.QueueSizeInCells, "connecting lays nothing" );
 		Assert.AreEqual( (3, 0), ride.JoinCell, "guests step onto the back cell from the path" );
 		Assert.AreEqual( 24, ride.QueueRoom );
 		Assert.AreEqual( 21, ride.MaximumQueueLength, "min(4 × cells, the limit trunc(130 × 5 / 30) = 21)" );

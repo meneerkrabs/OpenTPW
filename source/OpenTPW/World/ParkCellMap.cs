@@ -136,7 +136,11 @@ public sealed class ParkCellMap
 				if ( inside && save != null && save.Cells[x, y].IsPath )
 					cells.SetPath( x, y, GuestPathGrid.ToCellLinks( GuestPathGrid.ToLinks( save.Cells[x, y].PathConnections ) ) );
 				else if ( initial )
+				{
+					// [BIN:TPW-EXE:0x00536490 map init] an InitialPath cell (attribute bit 0x08) is linked by the link writer 0x5348D0 called with mode 1 (0x53653B)
+					// [APPROX:PATH-016] OpenTPW gives every InitialPath cell the links 0x0F toward all four neighbours, where the writer's mode 1 decides per neighbour — evidence needed: the cell types the map init's cell loop (one caller of 0x536490 is 0x4D7EA0) has written when each InitialPath cell's call runs, so that PathLinkWriter.LinkPath (the ported 0x5348D0 mode 1) can replace the 0x0F links
 					cells.SetPath( x, y, GuestPathGrid.ToCellLinks( 0x0F ) );
+				}
 				var (type, flags) = MapStartCell( map.GetCellAt( x, y ), inside );
 				// the init's 0x40 over the terrain is the land's to set (ParkLand.ApplyToNewPark) or an imported save's to restore (ImportLand)
 				// [APPROX:PATH-007] a map that gets no land (a level without a fence setup, a Theme Park Inc map, a read-only visit) keeps its cells over the terrain owned

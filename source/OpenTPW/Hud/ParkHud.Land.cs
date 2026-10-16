@@ -25,17 +25,22 @@ public sealed partial class ParkHud
 	public long BuyPrice( BuildItem item ) => !IsLandRow( item ) ? Status.PriceOf( item ) ?? item.Cost
 		: item.InfoId == BuyLandRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.Land ) ?? 0) : 0;
 
-	/// <summary>Whether a buy list row can be used now: Buy Land with a land model, never Clear Land, else the catalogue's availability.</summary>
-	// [APPROX:PATH-005] Clear Land (row -2) starts the area clear tool 0x3a (0x46c580(0x3a)), the two-click rectangle bulldozer 0x52bdd0 that removes objects wholly inside it and type-1 path cells; OpenTPW lists the row but keeps it disabled (its one-click remove tool stands in) — evidence needed: the tool's port (0x52bdd0, 0x424ec0)
+	/// <summary>Whether a buy list row can be used now: Buy Land with a land model, Clear Land with the area clear tool, else the catalogue's availability.</summary>
 	public bool IsBuyAvailable( BuildItem item ) => !IsLandRow( item ) ? Status.IsAvailable( item )
-		: item.InfoId == BuyLandRow.InfoId && level.BuyLandTool != null && !level.IsReadOnlyVisit;
+		: !level.IsReadOnlyVisit && (item.InfoId == BuyLandRow.InfoId ? level.BuyLandTool != null : level.AreaClearTool != null);
 
-	/// <summary>Starts a land row's tool: Buy Land arms the land tool and closes the window; Clear Land is refused.</summary>
-	// [BIN:TPW-EXE:0x4ac851 buy list land tool] the buy button on row -1 builds the tool object 0x46c580(0x39), the Buy Land mouse mode; row -2 builds 0x46c580(0x3a)
+	/// <summary>Starts a land row's tool: Buy Land arms the land tool, Clear Land the area clear tool; either closes the window.</summary>
+	// [BIN:TPW-EXE:0x4ac851 buy list land tool] the buy button on row -1 builds the tool object 0x46c580(0x39), the Buy Land mouse mode; row -2 builds 0x46c580(0x3a), the area clear
 	private void BeginLandTool( BuildItem item )
 	{
 		if ( RejectReadOnlyAction() )
 			return;
+		if ( item.InfoId == ClearLandRow.InfoId && IsBuyAvailable( item ) )
+		{
+			BeginAreaClear();
+			CloseBuyWindow();
+			return;
+		}
 		if ( !IsBuyAvailable( item ) || level.BuyLandTool is not { } tool )
 		{
 			PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
@@ -74,6 +79,37 @@ public sealed partial class ParkHud
 			PostMessage( strings.Extra( OpenTpwText.CannotBuyLand ) );
 			GameAudio.PlayUi( GameAudio.ErrorEvent );
 		}
+		return toolPress = true;
+	}
+
+	/// <summary>Starts the area clear tool (the Clear Land row and the Clear key) after ending the other park tools.</summary>
+	private void BeginAreaClear()
+	{
+		if ( level.AreaClearTool is not { } tool || level.IsReadOnlyVisit )
+			return;
+		level.EndBuildTools();
+		level.StaffPlacement?.Cancel();
+		LeaveBuildTool();
+		tool.Begin();
+	}
+
+	/// <summary>The area clear tool's HUD side: the hovered cell, right click leaves, a left click stores a corner or clears the rectangle.</summary>
+	private bool UpdateAreaClearTool( UiInput input, bool inPark )
+	{
+		if ( level.AreaClearTool is not { IsActive: true } tool )
+			return false;
+		if ( input.RightPressed && inPark && GameOptions.Current.RmbCancel )
+		{
+			tool.Cancel();
+			return toolPress = true;
+		}
+		if ( inPark )
+			tool.Hover( cursorX, cursorY );
+		else
+			tool.Hover( null, null );
+		if ( !inPark || !input.LeftPressed )
+			return false;
+		tool.Click( cursorX, cursorY );
 		return toolPress = true;
 	}
 }

@@ -54,8 +54,9 @@ The grid holds the original's types: the world init types the cells without terr
 ## Approximations
 
 - `ECON-049`: the reopen guard (`0xde654`) is executed in the oracle and follows the original's state test, including the maintenance flag (the ride
-  panel's call for a mechanic); the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`) is not modelled, so the door and the open button
-  open a ride whose queue back has lost its path, which the original's guard (`0x004DF290`) refuses.
+  panel's call for a mechanic) and the back-of-queue path test (`0xdd744`, PC `FUN_004de4a0`: the back queue cell's link byte must differ
+  from its queue link, so a queue whose back has lost its path stays closed); a ride on OpenTPW's one-cell queue and an object without a
+  queue are taken as connected, because OpenTPW's ride entrance cells keep no link byte.
 - `ECON-050`: a removed object empties the cells it typed; the original's removal path to its cells is not traced, and the placement's other cell
   writes (the link to the path in front of an entrance) are not modelled.
 - `GUEST-011`: a paid visitor walks in without waiting for the entrance gate's script variable 1, which the original's

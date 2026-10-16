@@ -62,8 +62,17 @@ public static class ObjectAccessCells
 			else
 				LayPath( cells, outside.X, outside.Y, effects );
 		}
-		if ( hasQueue && exit is { } leave )
-			LayPath( cells, leave.OutsideX, leave.OutsideY, effects );
+		if ( exit is { } leave )
+		{
+			if ( hasQueue )
+				LayPath( cells, leave.OutsideX, leave.OutsideY, effects );
+			// [BIN:TPW-EXE:0x005292A7 exit cell link] the footprint loop links a path cell already in front of an exit (0x4D97E0 along its queue link, then 0x5348D0 in mode 1: 0x5292BE..0x529208's twin at 0x5293D8..0x5293FE), which is all an exit gets when the queue option is off
+			else if ( cells.InBounds( leave.OutsideX, leave.OutsideY ) && cells.RawTypeAt( leave.OutsideX, leave.OutsideY ) == (byte)ParkCellType.Path )
+			{
+				PathLinkWriter.LinkPath( cells, leave.OutsideX, leave.OutsideY, effects );
+				effects?.Refresh?.Invoke( leave.OutsideX, leave.OutsideY );
+			}
+		}
 	}
 
 	/// <summary>The link bit of the cell one step away: 1 (−Y), 4 (+X), 16 (+Y), 64 (−X).</summary>

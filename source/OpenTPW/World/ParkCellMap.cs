@@ -313,7 +313,7 @@ public sealed class ParkCellMap
 	// [BIN:TPW-EXE:0x00529138 footprint owner] the commit then stores the new object's cell word as the cell's owner (0x539210, +0x10) and clears the track layer's bridge bits (0x53A530(0xF)); Easymode's saved cells carry y × 128 + x + 1 of the object's anchor on every cell of its footprint (all 67 object cells of the Jungle park)
 	// [BIN:TPW-EXE:0x00529173 '@' footprint cell] on commit a type-1 shape cell gets the flag word 0x20 (0x53A510, 0x529182), the path link writer in mode 1 (0x5348D0, 0x529198) and, for each cardinal link it then has to a path cell, the same writer on that neighbour (0x5291C5..0x5291DD, the loop over 1, 4, 16, 64 by 0x4D8C20)
 	// [BIN:TPW-EXE:0x0052950D '+' and '#' footprint cell] on commit the flag word of the cell and of the second-layer cell at the same coordinates is set to 0x10 (0x53A510(0x10) twice, 0x52950D..0x52951C); the 'Q' cell (3) takes the generic stamp only
-	// [BIN:TPW-EXE:0x005293B3 entrance and exit cells] on commit an entrance or exit cell's queue link +0xD is the symbol's direction byte turned by the build rotation (0x4D8C20, 0x5227E0: 0x5293B3..0x5293C3, 0x5292A7..0x5292B2) and the cell in front of it (the entrance's opposite way, the exit's own) is linked by the path link writer when it is a path cell (0x4D97E0, 0x5348D0 at 0x5293FE and 0x529411..); Easymode's saved entrance and exit cells carry these bytes
+	// [BIN:TPW-EXE:0x005293B3 entrance and exit cells] on commit an entrance or exit cell's queue link +0xD is the symbol's direction byte turned by the build rotation (0x4D8C20, 0x5227E0: 0x5293B3..0x5293C3, 0x5292A7..0x5292B2); Easymode's saved entrance and exit cells carry these bytes (the path cell in front of them is linked by ObjectAccessCells.Lay)
 	public void WriteFootprint( IEnumerable<(int X, int Y, ObjectShapeCell Cell)> footprint, ushort owner = 0, int rotation = 0 )
 	{
 		foreach ( var (x, y, cell) in footprint )
@@ -354,17 +354,8 @@ public sealed class ParkCellMap
 						Tracks.Set( x, y, track with { Flags = TrackCell.FlagAddOn } );
 					break;
 				case ObjectShapeSymbols.TypeEntrance or ObjectShapeSymbols.TypeExit when fresh && cell.Direction != 0:
-					// The cell's queue link is the symbol's direction byte turned by the build rotation; a path cell already in front of it is linked.
-					var bit = ObjectFootprint.RotateDirectionByte( cell.Direction, rotation );
-					SetQueueLink( x, y, bit );
-					var outward = cell.CellType == ObjectShapeSymbols.TypeEntrance ? PathLinkWriter.Opposite( bit ) : bit;
-					var outwardDirection = GuestPathGrid.LinkDirection( outward );
-					if ( outwardDirection >= 0 )
-					{
-						var (ox, oy) = (x + GuestPathGrid.Directions[outwardDirection].DX, y + GuestPathGrid.Directions[outwardDirection].DY);
-						if ( InBounds( ox, oy ) && RawTypeAt( ox, oy ) == (byte)ParkCellType.Path )
-							PathLinkWriter.LinkPath( this, ox, oy );
-					}
+					// The cell's queue link is the symbol's direction byte turned by the build rotation.
+					SetQueueLink( x, y, ObjectFootprint.RotateDirectionByte( cell.Direction, rotation ) );
 					break;
 			}
 		}

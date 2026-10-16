@@ -26,8 +26,10 @@ public sealed class OriginalEconomyImport
 
 	private readonly List<string> evidence;
 
-	private OriginalEconomyImport( SaveEconomyRecords records, bool parkClosed, int objects, int fixedItems, int staff, List<string> evidence )
+	private OriginalEconomyImport( SaveEconomyRecords records, bool parkClosed, int objects, int fixedItems, int staff, List<string> evidence,
+		IReadOnlyDictionary<int, int> attractionInstances )
 	{
+		AttractionInstances = attractionInstances;
 		Records = records;
 		ParkClosed = parkClosed;
 		ImportedObjects = objects;
@@ -44,6 +46,8 @@ public sealed class OriginalEconomyImport
 	public int ImportedFixedItems { get; }
 	public int ImportedStaff { get; }
 	public IReadOnlyList<string> Evidence => evidence;
+	/// <summary>The economy object id of each imported attraction thing, by its thing id (the save's references to attractions name them so).</summary>
+	public IReadOnlyDictionary<int, int> AttractionInstances { get; }
 
 	/// <summary>Adds the outcome of a later import step (the automatic advisor's controller import) to <see cref="Evidence"/>.</summary>
 	public void Report( string line )
@@ -79,7 +83,7 @@ public sealed class OriginalEconomyImport
 		// [BIN:STP-PPC:0x10106708 world reader] mParkClosed is restored with the world variables (0 = open)
 		var closed = world.Variables.ParkClosed != 0;
 		evidence.Add( $"Park {(closed ? "closed" : "open")} (mParkClosed {world.Variables.ParkClosed}), {world.Variables.NumberOfVisitorsToDate} visitors to date (not imported)." );
-		return new OriginalEconomyImport( save.Economy, closed, objects, fixedItems, staff, evidence );
+		return new OriginalEconomyImport( save.Economy, closed, objects, fixedItems, staff, evidence, things.ToDictionary( pair => pair.Key, pair => pair.Value.Id ) );
 	}
 
 	private static void ImportTurn( ParkEconomy economy, SaveWorld world, List<string> evidence )
@@ -238,6 +242,8 @@ public sealed class OriginalEconomyImport
 		var imported = 0;
 		var adjusted = new List<string>();
 		var jobs = new List<string>();
+		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
+		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
 		foreach ( var saved in save.Staff )
 		{
 			var type = saved.Model switch
@@ -282,7 +288,7 @@ public sealed class OriginalEconomyImport
 			// [BIN:TPW-EXE:0x005054D0 staff state setter] +0x200 is the turn an idle spell started (0 after any state but a patrol), which the idle states compare with IdleDuration[grade]
 			member.IdleStamp = staff.TimeStartedIdling;
 			ImportPatrolArea( saved, member, adjusted );
-			ImportJob( economy, saved, member, things, jobs );
+			ImportJob( economy, saved, member, things, chaseable, jobs );
 			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407)
 			var person = saved.Person;
 			member.ResumeDestination = (person.AccurateDestX, person.AccurateDestY);
@@ -404,7 +410,7 @@ public sealed class OriginalEconomyImport
 	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
 	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
 	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
-	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, List<string> evidence )
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlySet<int> chaseable, List<string> evidence )
 	{
 		var word = saved.Staff.State;
 		var what = $"{saved.Model} thing {saved.Id}";
@@ -443,9 +449,14 @@ public sealed class OriginalEconomyImport
 				evidence.Add( $"[APPROX:SAVE-010] {what} litter job (state {word}, cell id {saved.RoleTarget}) imported idle: the saved litter is not imported." );
 				job = StaffJob.Idle;
 				break;
+			case StaffJob.Chasing when chaseable.Contains( saved.RoleTarget ):
+				// the guest keeps its thing id as its guest id (GuestSimulation.ImportOriginal); the chase timer is +0x214
+				member.TargetGuestId = saved.RoleTarget;
+				member.JobStamp = saved.RoleTimer;
+				break;
 			case StaffJob.Chasing or StaffJob.Escorting:
-				// [APPROX:SAVE-002] a guard chasing or escorting a guest (states 16 and 18) is imported idle: the saved guests are not imported, so mPerp names no guest
-				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported." );
+				// [APPROX:SAVE-002] a guard escorting a guest (state 18) is imported idle, as is one chasing a guest the import does not restore: a held guest (state 17) is not imported
+				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park." );
 				job = StaffJob.Idle;
 				break;
 			case StaffJob.Performing or StaffJob.Researching:
@@ -466,7 +477,7 @@ public sealed class OriginalEconomyImport
 		member.Job = job;
 		member.State = ParkStaff.DisplayState( (uint)job );
 		if ( dropped == null && job != StaffJob.Idle )
-			evidence.Add( $"{what} job imported: state {word} ({job}){(member.RideId != 0 ? $", ride object {member.RideId}" : "")}{(member.ToiletId != 0 ? $", toilet object {member.ToiletId}" : "")}{(member.RestAreaId != 0 ? $", rest area object {member.RestAreaId}" : "")}{(member.JobStamp != 0 ? $", timer {member.JobStamp}" : "")}." );
+			evidence.Add( $"{what} job imported: state {word} ({job}){(member.RideId != 0 ? $", ride object {member.RideId}" : "")}{(member.ToiletId != 0 ? $", toilet object {member.ToiletId}" : "")}{(member.RestAreaId != 0 ? $", rest area object {member.RestAreaId}" : "")}{(member.TargetGuestId != 0 ? $", guest {member.TargetGuestId}" : "")}{(member.JobStamp != 0 ? $", timer {member.JobStamp}" : "")}." );
 	}
 
 	/// <summary>
@@ -583,8 +594,8 @@ public sealed class OriginalEconomyImport
 
 	private static void ReportNotImported( OriginalParkImport save, List<string> evidence )
 	{
-		// [APPROX:SAVE-002] the saved guests (model 1) are not imported; OpenTPW's guest simulation starts with its own arrivals, and a guard chasing or escorting a saved guest is imported idle — evidence needed: decoded person/guest fields and an OpenTPW guest save target
-		evidence.Add( $"[APPROX:SAVE-002] {save.GuestCount} saved guests are not imported." );
+		// the guests are restored by the level's guest simulation (GuestSimulation.ImportOriginal), which reports its outcome through Report
+		evidence.Add( $"{save.GuestCount} saved guests ({string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) )}) are imported by the guest simulation when a level attaches it." );
 		// [APPROX:SAVE-010] the opaque blocks (scripts, particles, messages, clock words, cadence, track/flying rides, RSSE, camera, coasters, advisor presentation, sound, cheats, advisor scoring, UI), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival variables and arrival bytes, the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; of the cell map only path cells, occupancy, MAP attributes and each path cell's texture and turn are read (so a handyman walking to or sweeping litter is imported idle), and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours); object scripts restart from their archives — evidence needed: decoded block layouts and the original's post-load reconstruction
 		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.ParkAnalyser, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}." );
 		var variables = save.World.Variables;

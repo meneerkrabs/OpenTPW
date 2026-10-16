@@ -241,6 +241,97 @@ internal static class SaveTestPayloads
 		return stream.ToArray();
 	}
 
+	/// <summary>The guest fields of a synthetic guest body (tp.exe guest serializer 0x004FB530 order).</summary>
+	public sealed record GuestFields
+	{
+		public (ushort X, ushort Y) Position { get; init; } = (5 * 256 + 128, 5 * 256 + 128);
+		public (ushort X, ushort Y)? Destination { get; init; }
+		public ushort BaseSpeed { get; init; } = 100;
+		public uint EspSprite { get; init; }
+		public uint PreviousSpeed { get; init; } = 0x3F800000;
+		public uint BalloonScript { get; init; }
+		public int Cash { get; init; } = 500;
+		public int ExitLevel { get; init; } = 90;
+		public float Happiness { get; init; } = 50;
+		public float Hunger { get; init; } = 20;
+		public float Litter { get; init; } = 5;
+		public float Thirst { get; init; } = 30;
+		public float Meter1B8 { get; init; }
+		public float Toilet { get; init; } = 10;
+		public float Illness { get; init; } = 2;
+		public ushort MajorDest { get; init; }
+		public uint NumRides { get; init; }
+		public byte PersonType { get; init; } = 1;
+		public byte PrankeryIndex { get; init; }
+		public ushort[] PreviousRides { get; init; } = new ushort[4];
+		public ushort[] PreviousTemporaryRides { get; init; } = new ushort[4];
+		public uint QueueMoveDelay { get; init; }
+		public int BalloonLife { get; init; }
+		public uint State { get; init; } = 6;
+		public uint TimeOfLastSpotAnim { get; init; }
+		public uint TimeStartedIdling { get; init; }
+		public uint PaidAdmission { get; init; } = 1;
+	}
+
+	/// <summary>A guest body (525 bytes): the person block, then the guest fields in the serializer's order.</summary>
+	public static byte[] Guest( GuestFields fields )
+	{
+		using var stream = new MemoryStream();
+		using var writer = new BinaryWriter( stream );
+		var person = new byte[SaveThingChain.PersonBytes];
+		BinaryPrimitives.WriteUInt16LittleEndian( person, fields.Position.X );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 2 ), fields.Position.Y );
+		var (destX, destY) = fields.Destination ?? fields.Position;
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 20 ), destX );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 22 ), destY );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 26 ), fields.BaseSpeed );
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 29 ), fields.EspSprite );
+		// the navigation block (177 bytes) follows mLastRecordedMapId at 33; mPreviousSpeed comes after it
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
+		writer.Write( person );
+		writer.Write( 0u ); // mArrivalDate
+		writer.Write( 0u ); // mArrivalIndex
+		writer.Write( fields.BalloonScript );
+		writer.Write( 0u ); // mBeenAdmitted
+		writer.Write( fields.Cash );
+		writer.Write( fields.ExitLevel );
+		writer.Write( fields.Happiness );
+		writer.Write( fields.Hunger );
+		writer.Write( 0u );
+		writer.Write( 0u );
+		writer.Write( fields.Litter );
+		writer.Write( fields.MajorDest );
+		writer.Write( fields.NumRides );
+		writer.Write( 0u );
+		writer.Write( 0u );
+		writer.Write( 0u );
+		writer.Write( fields.PaidAdmission );
+		writer.Write( 0u );
+		writer.Write( fields.PersonType );
+		writer.Write( fields.PrankeryIndex );
+		for ( var slot = 0; slot < 4; slot++ )
+		{
+			writer.Write( fields.PreviousRides[slot] );
+			writer.Write( fields.PreviousTemporaryRides[slot] );
+		}
+		writer.Write( (ushort)0 );
+		writer.Write( (ushort)0 );
+		writer.Write( fields.QueueMoveDelay );
+		writer.Write( (byte)0 );
+		writer.Write( fields.BalloonLife );
+		writer.Write( (ushort)0 );
+		writer.Write( 6u ); // mSavedState
+		writer.Write( fields.State );
+		writer.Write( fields.Thirst );
+		writer.Write( fields.TimeOfLastSpotAnim );
+		writer.Write( fields.TimeStartedIdling );
+		writer.Write( fields.Meter1B8 );
+		writer.Write( fields.Toilet );
+		writer.Write( fields.Illness );
+		writer.Flush();
+		return stream.ToArray();
+	}
+
 	/// <summary>A zero body of a fixed-width model.</summary>
 	public static byte[] Fixed( SaveThingModel model ) => new byte[SaveThingChain.FixedBodyBytes[model]];
 

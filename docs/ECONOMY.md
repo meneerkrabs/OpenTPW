@@ -209,7 +209,9 @@ A park started from a shipped save (Instant Action, or the reference start) runs
 | Staff pool | staff hiring pool before the calendar (tp.exe `0x507850`) | `Staff.Candidates`: role, name index, grade, leaving on the first turn past 4 × its timeout from its stamp; the next refill past 4 × `TimeBetweenStaffUpdates` turns from the pool's stamp (`0x5084f0`) | Traced; sub-types and on-pointer flag SAVE-004 (the per-role counts and stop-producing flags are recomputed by the census `0x508000` before every read) |
 | Staff HQ | staff HQ (model 9, `0x508bb0`) | training budgets (handyman, mechanic, entertainer, guard, researcher, `0x50c800`), strike levels, active flags and last-considered turns | Traced; picked-up id SAVE-009 (the force strike is never set in play, the trained byte never read) |
 
-Not imported and reported in `Evidence`: `mRandomSeed` (SAVE-001), guests (SAVE-002), the hiring
+The saved guests are restored by the level's guest simulation (`GuestSimulation.ImportOriginal`, docs/TPWS-PAYLOAD.md): those on their way in or out and those walking, deciding, going to a bin or a ride or leaving in the park keep their thing id, type, cash, meters, exit counter, prankery flag, balloon, costume, histories and walk speed and walk on to their saved destination; queued, boarding, riding and held guests are not imported (SAVE-002).
+
+Not imported and reported in `Evidence`: `mRandomSeed` (SAVE-001), the guests the guest simulation cannot restore (SAVE-002), the hiring
 pool's sub-types and on-pointer flags (SAVE-004), the challenge slots' loss counts and carried object (SAVE-005), the object table's researched
 flags (SAVE-007), the batch balance and the loan offers' Available flags (SAVE-008; the withdrawals flag,
 last balance and turn entered red are imported for the bankruptcy count), the staff HQ's picked-up id (SAVE-009; its force-strike word and trained byte are never set or read in play), the opaque blocks, world state, arrivals,

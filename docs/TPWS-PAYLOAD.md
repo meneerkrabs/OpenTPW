@@ -156,9 +156,10 @@ Typed readers (`SaveThingRecords.cs`): `SaveAttraction` (model 3), `SaveStaff`
 (4–8: base, the person block, the 105-byte staff suffix, role suffix and its next
 ID), `SaveStaffHq` (9), `SaveAdvisorController` (11: eight 21-byte pending
 records, three raw words, 351 history entries, the current record),
-`SaveResearchLab` (14, records raw), `SaveBank` (16) and `SaveChallengeSystem`
-(19). Guests (1), mechanic HQ (10), tag system (12), park analyser (13), weather
-(15) and UI receiver (17) are walked by width and not decoded.
+`SaveResearchLab` (14, records raw), `SaveBank` (16), `SaveChallengeSystem`
+(19) and `SaveGuest` (1, `SaveGuests.cs`). The mechanic HQ (10), tag system (12),
+park analyser (13), weather (15) and UI receiver (17) are walked by width and not
+decoded.
 
 ### Person and staff (`SavePerson`, `SaveStaff`)
 
@@ -185,6 +186,21 @@ handyman `mTargetLitterCell` 2, `mTimeStartedCleaning` 4, `mToiletToClean` 2; en
 staff patrol (state 1) or idle (the guard, since turn 752), their patrol rectangles are the
 whole map (researcher), (47, 18)–(48, 25) (entertainer) and (39, 21)–(56, 28), and they were
 hired on turns 15 and 648.
+
+### Guests (`SaveGuest`)
+
+After the person block a guest holds the 135 bytes of tp.exe's guest serializer `0x4fb530`, in
+its order: `mArrivalDate`, `mArrivalIndex`, `mBalloonScript` (+0x210), `mBeenAdmitted`, `mCash`
+(+0x1a0), `mExitLevel` (+0x1bc), the happiness (+0x19c) and hunger (+0x1a8) bytes, `mLastPosX`/`Y`,
+the litter byte (+0x1b4), `mMajorDest` (2, +0x1dc), the ride, shop, sideshow and win counts,
+`mPaidAdmission`, `mParkOpeningWaitingTime` (+0x200), `mPersonType` (1), `mPrankeryIndex` (1), four
+interleaved `mPreviousRides[i]`/`mPreviousTemporaryRides[i]` pairs (2 + 2), `mQNext`, `mQPrev` (2
+each), `mQueueMoveDelay` (4), `mQueuePos` (1), `mRemainingBalloonLife` (4), `mSavedMajorDest` (2),
+`mSavedState`, `mState` (4 each), the thirst byte (+0x1a4), `mTimeOfLastSpotAnim` (+0x208),
+`mTimeStartedIdling` (+0x1fc), and the bytes of +0x1b8, toilet (+0x1ac) and illness (+0x1b0). The
+seven meters are written as their truncated low byte. Easymode's 13 guests are all on their way
+in: 5 going to the ticket booth (state 2), 1 paid and waiting for the gate (3) and 7 entering the
+park (5), each with 300–750 cash, happiness 50 and one a balloon prankster (102).
 
 ### Cell grid (verified structure)
 

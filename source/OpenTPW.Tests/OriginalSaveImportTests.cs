@@ -176,9 +176,10 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "hired 2,430,000 park seconds after FunnyTimeStart = turn 648" );
 		Assert.AreEqual( 1, import.ImportedStaff );
 		Assert.IsFalse( import.ParkClosed );
-		foreach ( var id in new[] { "SAVE-001", "SAVE-002", "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-008", "SAVE-010" } )
+		foreach ( var id in new[] { "SAVE-001", "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-008", "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) ), "the dropped generator state is named" );
+		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "0 saved guests", StringComparison.Ordinal ) && line.Contains( "imported by the guest simulation" ) ) );
 		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "adjusted on import" ) ), "in-range staff values are imported unchanged" );
 		AssertReportsUnimportedValues( import );
 

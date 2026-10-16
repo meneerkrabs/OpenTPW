@@ -302,8 +302,8 @@ public sealed class ParkObjectives
 			+ (IsSupportedType( definition.Type ) ? "" : " [progress not measurable yet]");
 	}
 
-	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets.</summary>
-	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions, long droppedAdmissions = 0, long parkSeconds = long.MaxValue )
+	/// <summary>Golden ticket check (every 100 park turns in Full Simulation, <see cref="ParkEconomy.RunsGoldenTicketCheck"/>); returns newly won tickets. <paramref name="coveredCells"/> is the big park's cell count (<see cref="ParkEconomy.CoveredCells"/>); null without a cell map.</summary>
+	public IReadOnlyList<GoldenTicketKind> CheckGoldenTickets( ParkCounters counters, IParkGuestStatistics guests, ParkResearch research, long profitThisYear, IReadOnlyList<long> monthlyAdmissions, long droppedAdmissions = 0, long parkSeconds = long.MaxValue, long? coveredCells = null )
 	{
 		var won = new List<GoldenTicketKind>();
 		if ( !settings.CanEarnTickets )
@@ -335,8 +335,9 @@ public sealed class ParkObjectives
 		Check( GoldenTicketKind.CoasterHeight, MaxRecord( ParkRecordKind.CoasterHeight ) > rules.CoasterHeight );
 		Check( GoldenTicketKind.GokartExcitement, MaxRecord( ParkRecordKind.GokartExcitement ) > rules.GokartExcitement );
 		Check( GoldenTicketKind.WaterLength, MaxRecord( ParkRecordKind.WaterLength ) > rules.WaterLength );
-		// [APPROX:ECON-038] the big park and camera tickets compare OpenTPW records (CellsOwned with MinCellsOwned, CellsCoveredByCameras >= MinCellsCovered) that no game code reports yet, and OpenTPW also awards an all-land ticket; tp.exe's big park (global index 3, 0x4d4e50) needs more than GoldenTicketGlobal.MinCellsCovered (0x7857bc, the fifth global key of the table 0x73fc70; MinCellsOwned, 0x7857b8, is never read) cells of type 4, 9, 10 or 21 or under an object (0x4cd7f0), its camera ticket is the secret one (0x4d4a00) won only when exactly 100 % of the cells not of type 2, 7 or 30 have a nonzero coverage short (+6 of the 10-byte cell array, 0x4cd720), and it never awards an all-land ticket (0x5afb00 and 0x4d5870 have the single caller 0x4d4a00, with index 0) — evidence needed: the writer of the cell coverage short (+6) and the original cell types in OpenTPW's cell map (ECON-050)
-		Check( GoldenTicketKind.BigPark, MaxRecord( ParkRecordKind.CellsOwned ) > rules.MinCellsOwned );
+		// [BIN:TPW-EXE:0x004D4E50 global golden tickets] the four global tickets are tested in index order against the GoldenTicketGlobal words (0x7857AC, B0, B4, BC), each strictly greater: coaster height, go-kart excitement, water length and, index 3, the big park, whose count (0x004CD7F0) goes over all 128 x 128 cells of type 9, 10, 4 or 21 or under a structure of 0x005363F0 and is compared with GoldenTicketGlobal.MinCellsCovered (0x7857BC, the fifth key of the table 0x73FC70); MinCellsOwned (0x7857B8) is never read
+		Check( GoldenTicketKind.BigPark, coveredCells > rules.MinCellsCovered );
+		// [APPROX:ECON-038] the camera ticket compares an OpenTPW record (CellsCoveredByCameras >= MinCellsCovered) that no game code reports yet, and OpenTPW also awards an all-land ticket; tp.exe's camera ticket is the secret one (0x4d4a00), won only when exactly 100 % of the cells not of type 2, 7 or 30 have a nonzero coverage short (+6 of the 10-byte cell array, 0x4cd720), and it never awards an all-land ticket (0x5afb00 and 0x4d5870 have the single caller 0x4d4a00, with index 0) — evidence needed: the writer of the cell coverage short (+6)
 		Check( GoldenTicketKind.CamerasEverywhere, MaxRecord( ParkRecordKind.CellsCoveredByCameras ) >= rules.MinCellsCovered );
 		Check( GoldenTicketKind.AllLandOwned, MaxRecord( ParkRecordKind.OwnsAllLand ) > 0 );
 		return won;

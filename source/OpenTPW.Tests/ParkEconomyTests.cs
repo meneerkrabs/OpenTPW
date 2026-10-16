@@ -1192,7 +1192,7 @@ public class ParkEconomyTests
 	}
 
 	private static bool TicketWon( GoldenTicketKind kind, int visitors = 0, int people = 0, float average = 0, long profit = 0, long recentVisitors = 0,
-		ParkRecordKind? record = null, long recordValue = 0 )
+		ParkRecordKind? record = null, long recordValue = 0, long? coveredCells = null )
 	{
 		var park = EconomyTestData.Park();
 		park.Counters.Add( ParkCounters.Admissions, visitors + recentVisitors );
@@ -1200,7 +1200,7 @@ public class ParkEconomyTests
 			park.Counters.Max( ParkCounters.Record( kindOfRecord, 0 ), recordValue );
 		// seven closed months (RecentVisitorMonths 6 needs the seventh close back); the recent visitors came after the first close
 		var months = new long[] { visitors, 0, 0, 0, 0, 0, recentVisitors };
-		return park.Objectives.CheckGoldenTickets( park.Counters, new StatGuests( people, average ), park.Research, profit, months ).Contains( kind );
+		return park.Objectives.CheckGoldenTickets( park.Counters, new StatGuests( people, average ), park.Research, profit, months, coveredCells: coveredCells ).Contains( kind );
 	}
 
 	[TestMethod]
@@ -1224,8 +1224,11 @@ public class ParkEconomyTests
 		Assert.IsTrue( TicketWon( GoldenTicketKind.GokartExcitement, record: ParkRecordKind.GokartExcitement, recordValue: 91 ) );
 		Assert.IsFalse( TicketWon( GoldenTicketKind.WaterLength, record: ParkRecordKind.WaterLength, recordValue: 50 ) );
 		Assert.IsTrue( TicketWon( GoldenTicketKind.WaterLength, record: ParkRecordKind.WaterLength, recordValue: 51 ) );
-		Assert.IsFalse( TicketWon( GoldenTicketKind.BigPark, record: ParkRecordKind.CellsOwned, recordValue: 3000 ) );
-		Assert.IsTrue( TicketWon( GoldenTicketKind.BigPark, record: ParkRecordKind.CellsOwned, recordValue: 3001 ) );
+		// the big park (0x4d4e50): the covered cells (0x4cd7f0) above MinCellsCovered (2000), not MinCellsOwned
+		Assert.IsFalse( TicketWon( GoldenTicketKind.BigPark, coveredCells: 2000 ) );
+		Assert.IsTrue( TicketWon( GoldenTicketKind.BigPark, coveredCells: 2001 ) );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.BigPark, record: ParkRecordKind.CellsOwned, recordValue: 3001 ), "the owned-cells record is not read" );
+		Assert.IsFalse( TicketWon( GoldenTicketKind.BigPark ), "no cell map" );
 	}
 
 	[DataTestMethod]

@@ -668,7 +668,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void CheckGoldenTickets()
 	{
-		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ) ) )
+		foreach ( var ticket in Objectives.CheckGoldenTickets( Counters, guestStatistics, Research, Ledger.ProfitThisYear, monthlyAdmissions, DroppedAdmissions, ParkCalendar.Seconds( Tick ), CoveredCells() ) )
 			Raise( ParkEventKind.GoldenTicketWon, (int)ticket, 0, 0, ticket.ToString() );
 	}
 
@@ -1233,6 +1233,27 @@ public sealed class ParkEconomy : IParkEconomy
 			}
 		}
 		cellPoints = (cells, cells.Version, cells.Tracks.Version, total);
+		return total;
+	}
+
+	/// <summary>
+	/// The big park ticket's count (tp.exe <c>0x004CD7F0</c>): the cells, owned or not, whose type is 4, 9, 10 or 21 or that lie under a counted structure; null without a cell map.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004CD7F0 covered cells] the loop over x and y from 127 down to 0 counts a cell when 0x00536340 (type 9), 0x00536350 (10), 0x00536380 (4), 0x005363F0 (the structure test of the net worth, ECON-026) or 0x005363E0 (type 21) answers
+	internal long? CoveredCells()
+	{
+		if ( Litter.Cells is not { } cells )
+			return null;
+		var total = 0L;
+		for ( var y = 0; y < cells.Height; y++ )
+		{
+			for ( var x = 0; x < cells.Width; x++ )
+			{
+				var (type, structure) = CellForValue( cells, x, y );
+				if ( structure || type is 4 or 9 or 10 or 21 )
+					total++;
+			}
+		}
 		return total;
 	}
 

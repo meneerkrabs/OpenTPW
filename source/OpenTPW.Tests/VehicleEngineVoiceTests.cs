@@ -171,8 +171,27 @@ public class VehicleEngineVoiceTests
 		Assert.AreEqual( step, mixer.Voices.Last().PitchStep );
 		Assert.AreEqual( seed, system.Seed, "nothing is evaluated again" );
 		Assert.IsNull( sentence.ParameterValue( SoundParameterTable.KindPitch ) );
-		Assert.AreEqual( 30, sentence.Parameter, "the value is still the branching parameter" );
+		Assert.AreEqual( 0, sentence.Parameter, "only a call with the event's code (slot 0) sets the branching value (0x6BE5E0 reads table +4)" );
+		sentence.SetParameter( 0x100, 0x1C8 );
+		Assert.AreEqual( 0xC8, sentence.Parameter, "code 0x100 is the event's code 0 as a byte, and the value is stored as a byte" );
 		sentence.Stop();
+	}
+
+	[TestMethod]
+	public void AOneShotWithASelectorReadsItsBoundPitchFromItsTableWithoutADraw()
+	{
+		// every placeholder class sets up its table (0x6BBF60) and queries it (0x6BC040): a one-shot of a pitch-bound sound with no parameter call reads 0,
+		// so the kart and bumper stop sounds (EventMap slot 1, e.g. hallow 0xA6 pitch 0..100, fantasy 0x87 -24..36) play at the bottom of their range
+		var category = Category( 0, 0, EngineSound() );
+		var seed = system.Seed;
+		Assert.AreEqual( -24, system.Play( category, 5, AudioChannel.Effects )!.PitchStep );
+		Assert.AreEqual( -24, system.PlayAt( category, 5, AudioChannel.Effects, new Vector3( 1, 0, 1 ) )!.PitchStep );
+		Assert.AreEqual( -24, system.PlayAtWhenDecoded( category, 5, AudioChannel.Effects, new Vector3( 1, 0, 1 ) )!.Pitch );
+		Assert.AreEqual( seed, system.Seed, "one sound, one sample, a fixed volume and a bound pitch: nothing is drawn" );
+		// the same sound without a selector draws its pitch
+		var unbound = Category( 0, 0, EngineSound( selector: 0, firstMask: 0 ) );
+		system.Play( unbound, 5, AudioChannel.Effects );
+		Assert.AreNotEqual( seed, system.Seed, "an unbound pitch draws" );
 	}
 
 	// ---- the vehicle side -----------------------------------------------------------------------------
@@ -265,6 +284,27 @@ public class VehicleEngineVoiceTests
 		if ( string.IsNullOrWhiteSpace( path ) || !Directory.Exists( path ) )
 			return null;
 		return Directory.EnumerateDirectories( path ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? path;
+	}
+
+	/// <summary>The shipped stop sounds are pitch-bound one-shots: with no parameter call their table's slot reads 0, so they play at the bottom of their range.</summary>
+	[TestMethod]
+	public void TheShippedStopSoundsPlayAtTheBottomOfTheirPitchRange()
+	{
+		var data = DataDirectory();
+		if ( data == null || !File.Exists( Path.Combine( data, "levels", "Standard.sam" ) ) )
+			Assert.Inconclusive( "OPENTPW_GAME_PATH is not set." );
+		FileSystem = new BaseFileSystem( data );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		foreach ( var (theme, id, step) in new[] { ("hallow", 0xA6u, 0), ("space", 0xA8u, 0), ("fantasy", 0x87u, -24) } )
+		{
+			var rides = SoundCategory.TryLoad( FileSystem, $"/levels/{theme}/Sound", "cat_rides" )!;
+			var soundEvent = rides.Catalog.Find( id )!;
+			Assert.AreEqual( SoundEventPlayer.OneShot, soundEvent.Player, $"{theme} 0x{id:X}" );
+			var sound = soundEvent.Sounds[0];
+			var seed = system.Seed;
+			Assert.AreEqual( step, system.Pitch( sound, SoundParameterTable.ForPlayback( soundEvent, sound ) ), $"{theme} 0x{id:X}" );
+			Assert.AreEqual( seed, system.Seed, "the bound pitch takes no draw" );
+		}
 	}
 
 	/// <summary>

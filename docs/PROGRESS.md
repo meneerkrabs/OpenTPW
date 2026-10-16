@@ -26,7 +26,9 @@ Vehicle effects and the bump rides' shared state now follow tp.exe:
   buoy counts instead of replaying the checks, so a park near the limits loads as saved.
 - **Sound parameters**: one placeholder table per sentence (`0x6BBB80`, `0x6BBF00`, `0x6BC040`) serves the crowd, the vehicle engines, the
   rain (code 8, `0x51E870`, which now also sets the rain's volume) and the park music (code 4, `0x51E79E`); a bound volume or pitch takes
-  its slot's value, 0 until a matching call, and one-shot playbacks still draw (AUDIO-003 narrowed).
+  its slot's value, 0 until a matching call, for sentences, one-shots and chains alike, so the kart and bumper stop sounds play at the
+  bottom of their pitch range; only a call with the event's own code sets the branching value (AUDIO-003 narrowed to the fixed-pitch flag,
+  the non-chain delay and reverb).
 
 No world or guest draws were added and the pinned run hash is unchanged; parks with a bump controller hash the frame counter and pool
 order. New optional, validated save fields: the tour car's `Emitter`, the track world's `FrameCount`/`TickRemainder`, per controller

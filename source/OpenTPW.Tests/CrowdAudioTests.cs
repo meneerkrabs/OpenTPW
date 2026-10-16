@@ -33,6 +33,8 @@ public class CrowdAudioTests
 		Directory.CreateDirectory( Path.Combine( directory, "synthetic", "sound" ) );
 		var catalog = AudioTests.CreateCatalog();
 		BinaryPrimitives.WriteUInt32LittleEndian( catalog.AsSpan( 72, 4 ), GameAudio.CrowdEvent );
+		// the shipped crowd event's code (+0x12) is 7: the code its parameter call carries, and the value the branch picker reads
+		BinaryPrimitives.WriteUInt16LittleEndian( catalog.AsSpan( 90, 2 ), GameAudio.CrowdParameterCode );
 		File.WriteAllBytes( Path.Combine( directory, "synthetic", "sound", "cat_kidsSFX.map" ), catalog );
 		File.WriteAllBytes( Path.Combine( directory, "synthetic", "sound", "cat_kidsBANK.map" ), new byte[28] );
 		FileSystem = new BaseFileSystem( directory );
@@ -111,8 +113,13 @@ public class CrowdAudioTests
 			sequence[index] = (sentence.CurrentSound, sentence.CurrentSample);
 			beforeMix?.Invoke();
 			var audible = false;
-			while ( !voice.IsFinished )
+			// bounded: the voice's frames at the slowest pitch step (ratio > 1/2) plus slack; an overrun fails instead of hanging
+			var limit = (long)voice.Frames * AudioMixer.OutputRate / voice.SampleRate * 2 / 8 + 64;
+			for ( var chunk = 0; !voice.IsFinished; chunk++ )
+			{
+				Assert.IsTrue( chunk < limit, $"segment {index} did not end within {limit} chunks of 8 frames" );
 				audible |= mixer.Mix( 8 ).Any( value => value != 0 );
+			}
 			Assert.IsTrue( audible, "the selected sample reaches decoded PCM" );
 		}
 		return sequence;

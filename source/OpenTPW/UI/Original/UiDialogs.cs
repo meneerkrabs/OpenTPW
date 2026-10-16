@@ -104,16 +104,19 @@ public static class UiDialogs
 	}
 
 	/// <summary>
-	/// A frameless menu of large text lines in a centred column: no window, no title, each line cyan and white while focused, the screen dimmed behind it.
+	/// A frameless menu of large text lines: no window, no title, each line cyan and white while focused, the screen dimmed behind it.
+	/// Each line's box is its measured text in the menu font, centred, the lines stacked from the top 5 units apart.
 	/// </summary>
 	/// <param name="back">Escape and the right click.</param>
-	// [DATA:video 27:42-27:47, 27:59-28:03] the pause menus have no window frame and no title; their lines are spaced at about 11 % of the screen height
-	// [APPROX:UI-013] the lines' rectangles (a 169-unit pitch, an 1100-unit width) are read off the video; the original sizes each line from its measured text (0x48c150 → 0x492f60: pixel width + 1, height + 5, centred, 5 units apart from y 10) and its vertical placement is untraced
+	// [DATA:video 27:42-27:47, 27:59-28:03] the pause menus have no window frame and no title
+	// [BIN:TPW-EXE:0x48c150 pause menu lines] the builder adds each line through 0x492f60(top, text, id, font slot 0, 128, 128, 128): the first at top 10 and each next at the
+	// previous line's bottom + 5 (0x48c240); 0x492f60 measures the text in the slot's font (0x4929f0) and makes the line (text width + 1) x 2048 / screen width wide and
+	// (text height + 5) x 1536 / screen height high, centred in its parent, the full-canvas lolight window (0,0)-(2047,1535) of 0x492e80
+	// [APPROX:UI-013] the line height follows OpenTPW's menu font, which is not the original's bank pick (UI-002), and its text layout box stands in for the measure 0x4929f0;
+	// the online state's top of 0 (FUN_005b6450) is not followed, and the focused line's ramp from dark grey to white (0x48b220, 0x20 a tick) is drawn as plain white
 	public static UiScreen TextMenu( string name, IReadOnlyList<(string Id, Func<string> Text, Action Clicked, bool Enabled)> items, Action back, string? focus = null )
 	{
-		var screen = new UiScreen( name );
-		const float pitch = 169f, width = 1100f;
-		var top = (UiCanvas.VirtualHeight - items.Count * pitch) / 2;
+		var screen = new TextMenuScreen( name );
 		for ( var index = 0; index < items.Count; index++ )
 		{
 			var item = items[index];
@@ -121,15 +124,55 @@ public static class UiDialogs
 			{
 				Id = item.Id,
 				Text = item.Text,
+				Font = fonts => fonts.Menu,
 				Clicked = item.Clicked,
 				Enabled = item.Enabled,
-				Bounds = new UiRect( (UiCanvas.VirtualWidth - width) / 2, top + index * pitch + 8, width, pitch - 16 ),
+				Bounds = new UiRect( (UiCanvas.VirtualWidth - TextMenuFallbackWidth) / 2, TextMenuTop + index * (TextMenuFallbackHeight + TextMenuGap),
+					TextMenuFallbackWidth, TextMenuFallbackHeight ),
 				Anchor = UiAnchor.Center
 			} );
 		}
 		screen.Back = back;
 		screen.Focus( screen.FocusableElements.FirstOrDefault( element => element.Id == focus ) ?? screen.FocusableElements.FirstOrDefault() );
 		return screen;
+	}
+
+	/// <summary>The top of the first menu line and the gap between lines, in canvas units (0x48c150).</summary>
+	public const float TextMenuTop = 10, TextMenuGap = 5;
+	// the boxes before the first layout with a context (no font measured yet)
+	private const float TextMenuFallbackWidth = 1100, TextMenuFallbackHeight = 169;
+
+	/// <summary>
+	/// The canvas boxes of menu lines whose texts measure <paramref name="textPixels"/> font pixels, drawn at <paramref name="textScale"/> screen pixels per
+	/// font pixel on a canvas of <paramref name="canvasScale"/> screen pixels per unit: (width + 1) and (height + 5) font pixels, centred, from the top 10 units down, 5 apart.
+	/// </summary>
+	public static UiRect[] TextMenuLines( IReadOnlyList<(int Width, int Height)> textPixels, int textScale, float canvasScale )
+	{
+		var lines = new UiRect[textPixels.Count];
+		var top = TextMenuTop;
+		for ( var index = 0; index < lines.Length; index++ )
+		{
+			var width = (textPixels[index].Width + 1) * textScale / canvasScale;
+			var height = (textPixels[index].Height + 5) * textScale / canvasScale;
+			lines[index] = new UiRect( (UiCanvas.VirtualWidth - width) / 2, top, width, height );
+			top += height + TextMenuGap;
+		}
+		return lines;
+	}
+
+	private sealed class TextMenuScreen( string name ) : UiScreen( name )
+	{
+		public override bool Update( UiContext context, UiInput input )
+		{
+			if ( !context.HasFonts )
+				return base.Update( context, input );
+			var items = Elements.OfType<UiMenuItem>().ToArray();
+			var sizes = items.Select( item => context.Layout( item.Font( context.Fonts ), item.Text() ) ).Select( layout => (layout.Width, layout.Height) ).ToArray();
+			var lines = TextMenuLines( sizes, context.Canvas.TextScale, context.Canvas.Scale );
+			for ( var index = 0; index < items.Length; index++ )
+				items[index].Bounds = lines[index];
+			return base.Update( context, input );
+		}
 	}
 
 	/// <summary>Splits a message into its caption (the first line, when more lines follow) and its body.</summary>

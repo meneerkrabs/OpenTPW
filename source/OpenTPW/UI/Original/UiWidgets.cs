@@ -21,6 +21,8 @@ public sealed class UiContext
 	private UiFonts fonts;
 	/// <summary>Fonts of the tier that suits the current canvas.</summary>
 	public UiFonts Fonts => fonts.Tier == Canvas.FontTier ? fonts : fonts = fonts.WithTier( Canvas.FontTier );
+	/// <summary>False for a context made without fonts (tests that only route input).</summary>
+	public bool HasFonts => fonts is not null;
 	public UiModels Models { get; }
 	public UiBatch Batch { get; } = new();
 	public UiCanvas Canvas { get; set; } = new( 1280, 720 );

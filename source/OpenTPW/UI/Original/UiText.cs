@@ -201,7 +201,8 @@ public static class UiColors
 	public static readonly RgbaByte Title = new( 255, 214, 64, 255 );
 	public static readonly RgbaByte Value = new( 150, 255, 120, 255 );
 	/// <summary>The pause menu's text lines: cyan, white while focused (video 27:42).</summary>
-	public static readonly RgbaByte MenuItem = new( 0, 173, 218, 255 );
+	// [BIN:TPW-EXE:0x48b2b9 pause line colour] the line procedure 0x48b2a0 gives a line the colour (0, 175, 190, 255) on message 0x11 and again when it loses the focus (0x48b220)
+	public static readonly RgbaByte MenuItem = new( 0, 175, 190, 255 );
 	public static readonly RgbaByte MenuItemFocused = new( 255, 255, 255, 255 );
 	/// <summary>Red text of costs (the hire window's mini balance rows, video 12:00).</summary>
 	public static readonly RgbaByte Negative = new( 255, 40, 40, 255 );

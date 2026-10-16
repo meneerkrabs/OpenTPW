@@ -127,6 +127,9 @@ public class StaffWindowTests
 		economy.Staff.Members[0].SetPatrolArea( (1, 1), (3, 3) );
 		Assert.AreEqual( "help87", screen.Find( "patrol" )!.CurrentHelp, "and to clear one the employee has" );
 		Assert.AreEqual( table.Control( 0x520 ).Rect, screen.Find( "title" )!.Bounds, "the name is the title" );
+		Assert.IsInstanceOfType( screen.Find( "portraitFigure" ), typeof( UiSpriteFigure ), "the portrait frame plays the employee's figure (0x4b5330), not the role name" );
+		Assert.AreEqual( table.Control( 0x511 ).Rect, screen.Find( "portraitFigure" )!.Bounds );
+		Assert.IsNull( screen.Find( "portraitText" ) );
 		Assert.AreEqual( table.Control( 0x51B ).Rect, screen.Find( "employedFor" )!.Bounds );
 		Assert.AreEqual( table.Control( 0x513 ).Rect, screen.Find( "happinessBar" )!.Bounds, "happygrad bar beside the Happiness label" );
 		Assert.AreEqual( table.Control( 0x514 ).Rect, screen.Find( "skillBar" )!.Bounds );
@@ -384,5 +387,13 @@ public class VisitorsWindowTests
 		hud.OpenVisitorWindow();
 		hud.Stack.Top!.Find( "exit" )!.Activate();
 		Assert.IsFalse( hud.VisitorWindowOpen, "the tick (-2) closes it" );
+	}
+
+	[TestMethod]
+	public void TheHireListSharesTheBuyListsRowPitch()
+	{
+		// the hire list's row factory 0x49bbb0 is the buy list's 0x4ad240 formula on the same font slot 7
+		Assert.AreEqual( ParkHud.BuyRowHeight, ParkHud.StaffRowHeight );
+		Assert.AreEqual( 11, ParkHud.StaffVisibleRows, "(bottom - top) / pitch whole rows (0x663786)" );
 	}
 }

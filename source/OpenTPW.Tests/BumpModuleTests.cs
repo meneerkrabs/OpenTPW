@@ -249,7 +249,7 @@ public class BumpModuleTests
 	private static (TrackStation Station, TrackCircuit Circuit) WaterLoop()
 	{
 		var builder = new TrackBuilder( new ParkCellMap( 40, 40 ), TrackFamily.Water, () => null, new FlatGrid() );
-		var station = TrackStation.FromPlacement( 10, 10, 0 );
+		var station = TrackStation.FromPlacement( 10, 9, 0 );
 		builder.PlaceStation( station );
 		var writer = new TrackLineWriter( builder );
 		writer.Commit( (14, 10), (14, 12) );
@@ -261,7 +261,7 @@ public class BumpModuleTests
 	private static BumpController Water( BumpWorld world, TrackStation station )
 	{
 		var controller = new BumpController( BumperTemplates.Get( -5 ), () => 0u, world );
-		var centre = TrackStation.Centre( station.First );
+		var centre = station.Reference;
 		controller.SetStation( centre.X, centre.Y, station.Heading );
 		return controller;
 	}

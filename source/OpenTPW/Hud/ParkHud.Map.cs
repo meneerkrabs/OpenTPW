@@ -85,11 +85,48 @@ public sealed partial class ParkHud
 
 	public void PanMap( int x, int y )
 	{
-		// [APPROX:UI-103] the original's map view also scrolls on every drawn frame while the pointer is in the outer 1 per cent of the canvas, by (pointer - 0.99) x 250 or (0.01 - pointer) x 250 map units (0x5f1130, message 0x1e); not built
 		// [BIN:TPW-EXE:0x5f35b0 map pan] the pan buttons and arrow keys move the view centre by one map unit (cell) whatever the zoom,
 		// clamped to 0..dimension-1.
+		PanMap( (float)x, y );
+	}
+
+	private void PanMap( float x, float y )
+	{
 		var (width, height) = MapDimensions();
 		mapView = mapView.PanBy( x, y, width, height );
+	}
+
+	// [EXT:frame-driven-at-60hz] the original steps the edge scroll once per drawn frame (message 0x1e); OpenTPW takes the elapsed time as that many 60 Hz reference frames
+	private readonly ReferenceFrameClock mapEdgeClock = new( 0.25f );
+
+	/// <summary>
+	/// The view centre's move, in map cells (x right, y down on the map), of one reference frame with the pointer at (<paramref name="x"/>, <paramref name="y"/>)
+	/// as shares of the window (0..1): zero in the inner 98 per cent, else 250 cells per unit of the pointer's depth into the outer 1 per cent.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5f1130 map edge scroll] on every message 0x1e, while the scroll option 0x78d910 is Pushscroll (0; the options toggle 0x4a385a sets it to 1 for Right button), the map view reads its pointer (messages 0x10001 and 0x10003, X over 2048 and Y over 1536, clamped to 0..1) and calls 0x5f35b0 with direction 0 (x less) by (0.01 - X) x 250 below 0.01, 1 (x more) by (X - 0.99) x 250 above 0.99, 2 (the up button's, y more) by (0.01 - Y) x 250 below 0.01 and 3 (down) by (Y - 0.99) x 250 above 0.99; 0x5f35b0 clamps the centre to 0..size-1
+	internal static (float X, float Y) MapEdgeStep( float x, float y )
+	{
+		static float Axis( float share )
+		{
+			share = Math.Clamp( share, 0f, 1f );
+			return share < 0.01f ? -(0.01f - share) * 250f : share > 0.99f ? (share - 0.99f) * 250f : 0f;
+		}
+		return (Axis( x ), Axis( y ));
+	}
+
+	/// <summary>The view after <paramref name="frames"/> reference frames of edge scroll with the pointer at <paramref name="pointer"/> in a window of <paramref name="width"/> x <paramref name="height"/>; unchanged unless the scroll option is Pushscroll and the pointer is inside.</summary>
+	internal static MapViewState EdgeScrolled( MapViewState view, int frames, NVector2 pointer, float width, float height, ScrollMode scroll, int mapWidth, int mapHeight )
+	{
+		if ( scroll != ScrollMode.Pushscroll || frames <= 0 || width <= 0 || height <= 0 || pointer.X < 0 || pointer.Y < 0 || pointer.X >= width || pointer.Y >= height )
+			return view;
+		var (x, y) = MapEdgeStep( pointer.X / width, pointer.Y / height );
+		return x == 0 && y == 0 ? view : view.PanBy( x * frames, y * frames, mapWidth, mapHeight );
+	}
+
+	private void StepMapEdgeScroll( NVector2 pointer, float width, float height, float deltaSeconds, ScrollMode scroll )
+	{
+		var (mapWidth, mapHeight) = MapDimensions();
+		mapView = EdgeScrolled( mapView, mapEdgeClock.Advance( deltaSeconds ), pointer, width, height, scroll, mapWidth, mapHeight );
 	}
 
 	private (int Width, int Height) MapDimensions()
@@ -183,6 +220,7 @@ public sealed partial class ParkHud
 	{
 		public override bool Update( UiContext context, UiInput input )
 		{
+			owner.StepMapEdgeScroll( input.Mouse, context.Canvas.Width, context.Canvas.Height, context.Delta, GameOptions.Current.Scroll );
 			foreach ( var id in new[] { "visitors", "happiness" } )
 				if ( Find( id ) is UiButton button ) button.Enabled = owner.level.Guests != null;
 			foreach ( var id in new[] { "handymen", "mechanics", "entertainers", "guards" } )
@@ -300,7 +338,7 @@ internal readonly record struct MapViewState( float Zoom, NVector2 Cell )
 
 	public MapViewState ZoomBy( float step ) => this with { Zoom = Math.Clamp( Zoom + step, MinZoom, MaxZoom ) };
 
-	public MapViewState PanBy( int x, int y, int width, int height )
+	public MapViewState PanBy( float x, float y, int width, int height )
 	{
 		var cell = Centre( width, height ) + new NVector2( x, y );
 		return this with { Cell = NVector2.Clamp( cell, NVector2.Zero, new NVector2( Math.Max( 0, width - 1 ), Math.Max( 0, height - 1 ) ) ) };

@@ -410,6 +410,10 @@ public sealed class UiImageElement : UiElement
 	}
 }
 
+/// <summary>The timer of a repeating button: after <see cref="Delay"/> held it calls <see cref="Start"/>, then <see cref="Tick"/> every time more than <see cref="Interval"/> has passed.</summary>
+// [BIN:TPW-EXE:0x668dd9 button hold timer] the per-frame message 0x1e of a pressed button with style bit 0x20 (+0x48): state +0x15a 1 waits until now - +0x144 >= +0x13c (the delay), then sets state 2 and posts 0x10009 to the parent; state 2 posts 0x10008 each time now - +0x144 > +0x140 (the interval); both only while the button's pressed bit (+0x138 & 2) is set, and they restart +0x144; the press 0x668ecf sets state 1 and +0x144, the release 0x668eff clears the state and the click (0x100) follows only when it was not 2
+public sealed record UiButtonRepeat( float Delay, float Interval, Action Start, Action Tick );
+
 /// <summary>
 /// Button. With <see cref="Model"/> it draws the original state frames (0 normal, 1 disabled,
 /// 2 highlighted, 5 down); otherwise a text button on the original purple button art.
@@ -429,6 +433,15 @@ public sealed class UiButton : UiElement
 	public Func<string>? Text { get; set; }
 	public Func<UiFonts, FontAtlas> Font { get; set; } = fonts => fonts.Menu;
 	public Action? Clicked { get; set; }
+	/// <summary>
+	/// The hold-repeat of a button created with the repeat attribute (0x20 of its table attributes, 0x21 for the variable box's b_minus and b_plus): null for a plain button.
+	/// <see cref="UiScreen"/> runs it while the button is held (<see cref="UiButtonRepeat"/>).
+	/// </summary>
+	public UiButtonRepeat? Repeat { get; set; }
+	/// <summary>The hold state of a repeating button (the original's byte +0x15a): 0 idle, 1 pressed and waiting for the delay, 2 repeating.</summary>
+	internal int HoldState { get; set; }
+	/// <summary>The time of the press, then of the last start or tick, in seconds of <see cref="UiContext.Time"/> (the original's +0x144).</summary>
+	internal float HoldTime { get; set; }
 	/// <summary>Left/right keys on the focused button (e.g. turn the lobby to the next island).</summary>
 	public Action<int>? Adjusted { get; set; }
 	/// <summary>The mouse wheel over the button also calls <see cref="Adjusted"/> (OpenTPW page cycle buttons); off elsewhere, so the wheel over a lobby button does not turn the island.</summary>

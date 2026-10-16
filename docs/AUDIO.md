@@ -474,7 +474,8 @@ Behaviour worth knowing:
   for the chips flagged at device init (`0x566840`).
 * Snow: one triangle a flake, half-size 0.1, its apex at the top middle of atlas quadrant `index & 3` and its base
   at the quadrant's lower corners, full white, x and y spread by `1 + depth/8`, jittering by
-  `((rand & 31) - 16) / 2048` on every axis each frame (`0x57f490`). The original's other mode swirls flakes along
+  `((rand & 31) - 16) / 2048` on every axis each drawn frame (`0x57f490`; `[EXT:frame-driven-at-60hz]`: OpenTPW redraws the jitter, and the bolts' flicker,
+  once per 60 Hz reference frame). The original's other mode swirls flakes along
   a closed 128-point spline under engine flag `0x8bcbc8` bit `0x100`, which nothing in tp.exe sets, so the PC
   draws only the jitter version; the flake's z + 0.1 and fourth word z + 0.1501 are not reproduced (AUDIO-901).
 * Bolts: from the strike's top (x, 300, z) straight down to original y = 0 (not the terrain; the

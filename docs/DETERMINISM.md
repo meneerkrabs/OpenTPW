@@ -337,14 +337,18 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x89123A798D58778F`, schema 19: the ticket booth no longer reads the guest's purse (#207) on top of the staff candidate draws (#210): the
-  booth books the fee with the bank (tp.exe `0x004FFADE` → `0x004D0600`; the purse +0x1A0 is never touched) and a staff candidate
-  draws in tp.exe's order (`0x507600`), so the guests' money and the world stream move. Before that, on two sibling branches off
-  `0xD28386DACAD73241`: `0x9AA9973FC2A6A5D6`, schema 19: the ticket booth books the fee with the bank and no longer takes it from
-  the guest's purse (tp.exe `0x004FFADE` → `0x004D0600`; the purse +0x1A0 is never touched), so the guests' money and the world
-  stream move; and `0xDB1DDEE4817DE5B0`, schema 19: a staff candidate draws as tp.exe does (`0x507600`): the variant (`0x50761c`
-  via `0x541f70`), a discarded draw (`0x50762d`), the grade (`0x507638`), the name (`0x507580`, at most 15 draws while `0x5083f0`
-  finds it on a pool candidate or a hired member) and then the timeout, so the world stream moves. Before that:
+  (`0x944788E41E278016`, schema 19: the ticket booth no longer reads the guest's purse (#207) on top of tp.exe's guest walk and the staff
+  candidate draws: the booth books the fee with the bank (tp.exe `0x004FFADE` → `0x004D0600`; the purse +0x1A0 is never touched), so the
+  guests' money and the world stream move. The booth change alone, off `0xD28386DACAD73241`, was `0x9AA9973FC2A6A5D6`, and on top of
+  the staff draws only `0x89123A798D58778F`. Before that:
+  `0x4A4014649DF391DB`, schema 19: tp.exe's guest walk on top of the staff candidate draws, pinned on separate branches off
+  `0xD28386DACAD73241`. The walk alone was `0x0B7C79BA1B5AC12A`: guests walk the park with tp.exe's walk: the route search `0x511420`,
+  the edge test `0x4d8750`, the step commit `0x510510`, avoid_walls `0x50e4a0` and the walk's progress `0x50fd40`, in tp.exe's
+  fixed-point arithmetic (multiply rounding towards −∞ `0x50df70`, divide towards 0 `0x50e080`), and cell type changes stamp their
+  blocks (`0x4d8c60`), so the guests' positions and the world stream move. The staff draws alone were
+  `0xDB1DDEE4817DE5B0`, schema 19: a staff candidate draws as tp.exe does (`0x507600`): the variant (`0x50761c` via `0x541f70`), a
+  discarded draw (`0x50762d`), the grade (`0x507638`), the name (`0x507580`, at most 15 draws while `0x5083f0` finds it on a pool
+  candidate or a hired member) and then the timeout, so the world stream moves. Before that:
   `0xD28386DACAD73241`, schema 19: the guest's energy meter is tp.exe's field `+0x1B8` (0 at birth, changed only by `0x004FD970`), the
   attraction choice walks the objects newest first, a full queue costs no happiness and the use routine `0x004FE1E0` applies its
   remaining terms, so the guests and the world stream move. Before that:

@@ -437,7 +437,8 @@ see Rendering.
 ### Walking
 
 Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WALK-I;
-`GuestNavigation`, `GuestSpeed`). There is no global walk speed and no energy factor.
+`GuestNavigation`, `GuestSpeed`) and, for the walk itself, from tp.exe (`WalkSearch`,
+`WalkEdges`, `GuestNavigation.Navigate`). There is no global walk speed and no energy factor.
 
 - **Speed** (§4). Each guest draws a base speed (`+192`) from {60, 80, 100, 120, 140}
   with the guest stream at creation. Once per park turn (248 ms), before its state
@@ -452,27 +453,56 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
   The speed setter (`0xffe38`) gives the max speed max(655, trunc(min(s, 2) · 0.2 ·
   65536)) and the max force with 0.4, in 16.16 cells per turn: 0.48 cell/s at s = 0.6,
   0.81 cell/s at s = 1 and 1.61 cell/s at s = 2.
-- **Steering** (§3, §5–§7). Positions and velocities are 16.16 fixed point. On the
-  tick that starts a park turn, a walking guest takes one step: avoid_walls (0.9; the
-  first edge of +x, −x, +y, −y that pushes), follow_path (0.5) and separation (0.1),
-  each truncated to the max force, summed and
-  truncated, added to the velocity, which is truncated to the max speed. The position
-  is committed only when the new cell is walkable for the walk. A new destination
-  keeps the velocity. Routes start with the guest's own cell; waypoints are cell
-  centres, passed at octile < 0.4 cell; the last segment arrives at octile < 0.32 cell
-  of the exact destination, with the desired speed min(max speed, d / 2). Arrival is
-  tested before the step moves. A routing failure arrives at once. Six non-improving
-  steps among the last 15 reroute.
+- **Steering** (§3, §5–§7; tp.exe `0x50f3b0`). Positions and velocities are 16.16 fixed point. On the
+  tick that starts a park turn, a walking guest takes one step: avoid_walls (0.9),
+  follow_path (0.5) and separation (0.1), each truncated to the max force, summed and
+  truncated, added to the velocity, which is truncated to the max speed. A new
+  destination keeps the velocity. On the park's cells this is tp.exe's walk
+  (`GuestNavigation.Navigate`), checked against the original routines in the x86 oracle
+  ([ORACLE.md](reverse/ORACLE.md) X25):
+  - **Route.** Every destination (SetDest `0x510100` → set-up `0x50f8e0`) searches from
+    the guest's cell (`WalkSearch`, `0x511420`): a four-connected line towards the
+    goal; at a blocked edge two boundary tracers (one turning each way) follow the wall
+    until one may leave it towards the goal; shortcuts over up to four waypoints
+    (`0x5110d0`) and a refinement (`0x5108a0`). The waypoints are cell centres after the
+    start, the goal last; five are buffered, and passing the fifth searches again
+    (`0x50efce`). A failed search leaves the walk arrived and stuck (`+0xb8`): the walk
+    step returns 2, which states 7 and 9 treat as the original does.
+  - **Cells.** Walls, commits and searches ask the edge test `0x4d8750` (`WalkEdges`)
+    with the walk mask (`+0xb4`, guest `+0x188`: 0 in the park, 1 after a guard's
+    set-down, cleared by the recall): path to path is always open whatever the links,
+    queue boundaries need the target's link back, mask 1 also opens steps from a path
+    cell to ground. A step commits through `0x510510`: one cell at most, a diagonal
+    through either L-shaped route; a refused step adds a history bit.
+  - **Walls.** avoid_walls (`0x50e4a0`) takes the position's cell: the first edge in the
+    direction of motion that the probe penetrates pushes back with twice the
+    penetration; else the corner of the motion's quadrant whose diagonal cell is cut
+    off pushes where the velocity's ray meets the circle of the radius around it
+    (`0x50cc20`).
+  - **Progress.** ONE − trunc(remaining × ONE / route length) (`0x50fd40`), the length
+    taken over the whole route at every set-up; a step that does not raise it adds a
+    history bit, and six bits among the last 15 search again from the current cell.
+    Waypoints are passed at octile < 0.4 cell; the last one arrives at octile < 0.32
+    cell of the exact destination, with the desired speed min(max speed, d / 2).
+  - **Changed ground.** A cell type change stamps its 16 × 16-cell block
+    (`ParkCellMap.BlockStamp`, `0x4d8c60`); a walk whose block's stamp is above its own
+    searches again (`0x50ed6c`).
+  - The arithmetic is tp.exe's: FixMul rounds towards −∞ (`0x50df70`), FixDiv towards 0
+    (`0x50e080`).
+  Queue walks, the arrival lanes and walks restored from older saves keep OpenTPW's
+  route walk (WALK-006, WALK-008): the route's cells are the walkable ones,
+  avoid_walls has its edge branch only, and the Mac's rounding applies.
 - **Separation** (`0xfd778`, `0x10087c`, `0xfd5f4`). Off on the last segment within
   ONE + radius of its waypoint; else every guest in the 3 × 3 cells around the walker
   (rows from the top) whose 1/256-cell position lies within 0.4 cell pushes it away by
   FixDiv(offset, octile(offset)), at most five of them.
-- **Geometry.** Sub-cell destination bytes are byte / 256 of a cell. Path walks go one
-  path cell at a time to the guest's offset point in it; lane walks (bus stop to
-  entrance) have no walls. Queue walks follow the queue cells; the cell ahead of the
-  destination and the cell behind the start are walkable too. The stand point is in
-  the ride's entrance cell at trunc(255 × `EntryCellStandPos`) after rotating it with
-  the object (`0xde1d8`): (0.5, 0.5) gives (127, 127).
+- **Geometry.** Sub-cell destination bytes are byte / 256 of a cell. Walks to a ride and
+  out of the park go one path cell at a time to the guest's offset point in it
+  (WALK-004); lane walks (bus stop to entrance) have no walls. Queue walks follow the
+  queue cells; the cell ahead of the destination and the cell behind the start are
+  walkable too. The stand point is in the ride's entrance cell at trunc(255 ×
+  `EntryCellStandPos`) after rotating it with the object (`0xde1d8`): (0.5, 0.5) gives
+  (127, 127).
 - **Presentation.** The drawn position and walk distance interpolate between the last
   two steps over a turn (`Guest.DrawX`, `DrawY`, `DrawDistanceWalked`); they are not
   simulation state.
@@ -483,15 +513,15 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
 | WALK-001 | The boost `+196` comes from the Sugar ingredient only, with the ride build's amount 50 (tp.exe `0x4db3b3`; +3 per visit, `0x4fe5f8`); the original's per-object amount is set by a 0..100 slider that only ingredient shops show (`0x4b06d2`, `0x4b0950`), written by `0x4b0aa0`/`0x4b0ae0` and saved as `mAmountOfSpecialIngredient` (`0x4db7d0`) | Nothing statically; OpenTPW has no slider and does not keep the saved amount |
-| WALK-002 | avoid_walls (tp.exe `0x50e4a0`) models its edge branch (the first pushing edge of +x, −x, +y, −y) with the probe's cell; the original uses the position's cell (`0x50e4eb`) and, when no edge pushes, one corner block for the motion quadrant (`0x50e75e`, `0x50e8b3`, `0x50ea07`, `0x50eb5e`, ray test `0x50cc20`) | A port of the corner branch (it needs the edge test of WALK-005) |
 | WALK-003 | Separation's neighbours are the guests outside rides and shops in OpenTPW's per-turn rebuilt cell lists (guest order, movers appended); the original (tp.exe `0x5102f0`) walks per-cell thing lists head-inserted on cell entry (`0x50b6a0` via `0x4d91f0`), keeps class-1 guests in any state and also staff (classes 4–8) and the online avatar (class 18); the position (`+4/+6` = navigation position >> 8, `0x4fa2a0`) matches | Where the thing position of a guest on a ride, held by a guard or leaving lies |
-| WALK-004 | Routes are OpenTPW's cell sequences from the guest's own cell, refilled five waypoints at a time from the stored route; the reroute prepends the current cell to the rest. The original searches again at every SetDest, refill (`0x50efce`) and stuck reroute (`0x50ee79`) through `0x50f8e0` → `0x511420` (search `0x511470`, refinement `0x5108a0`) and ends the walk when a search fails (`0x50f945`) | A port of the search `0x511470` and refinement `0x5108a0` |
-| WALK-005 | A cell is walkable when it is on the current walk (its route and extra open cells); path cells beside the route are walls. The original commits a step through `0x510510` (one cell at most, diagonals through either L-shaped route) and the edge test `0x4d8750` with the walk mask `+0xb4`: path-to-path is always open, queue boundaries need the target's link back | A port of `0x4d8750` on `ParkCellMap` and the mask writers |
-| WALK-006 | A queue walk may also enter the queue cell ahead of its destination and the one behind its start, and no other cell off its route; the original's edge test `0x4d8750` opens a path, queue or queue-end neighbour whose link points back, or a type-`0x1e` walkway when the mask is not 2 | The same port as WALK-005, on the queue links |
-| WALK-007 | No map-edit reroute: the original stamps the changed cell's 16 × 16 block (`0x4d8c60`) and follow_path compares the stamp with `+72` every step (`0x50ed6c`), searching again (`0x50f8e0` mode 1); a failed search sets `+184` and ends the walk as arrived | Block stamps in OpenTPW's cell map |
-| WALK-008 | Guests on the arrival lanes walk off the path grid: no wall force, every position committed; the original walks them through the same route search, commit `0x510510` and edge test `0x4d8750` over lane cells typed `0x1e` or path by map init `0x536490` | The same port as WALK-005 for the lanes |
-| WALK-009 | The progress history compares raw remaining distances in the five-waypoint window and skips the first step after route setup; the original compares ONE − trunc(remaining × ONE / `+160`) (`0x50fd40`) with `+172` (`0x50f5c7`, ≤), `+160` being the full route's length from the position, and resets `+172` and the history at setup and every refill (`0x50f8e0`) | The `+160` length and the resets ported (the refill timing is WALK-004) |
+| WALK-004 | The walks to a ride (state 10) and out of the park (state 18) set a destination one path cell at a time (`Grid.TryStep` over the links, each a fresh search); tp.exe's states set one destination for the whole walk (state 10 `0x4ffbc0` → `0x4fa5f0`, the gate's crossing cell `0x4d86d0`) and its search string-pulls the route. The search, set-up, refill and reroutes are ported | The destinations of states 10 and 18 |
+| WALK-005 | The edge test `0x4d8750` (`WalkEdges`) reads only the cell map: no object on a target cell blocks (`0x5363f0`, `0x53ad20`), no ride thing decides a mask-2 step into a type-9 cell (`0x42a440`, `0x4dd4e0`), the underground link byte `+0x22` is not kept, and the types are those OpenTPW's tools write (map init `0x536490`'s 2, 5, 7 and `0x1e` are not, WALK-008) | Object and thing references in the cell map |
+| WALK-006 | Queue walks (states 12, 13), the arrival lanes (WALK-008) and walks restored from older saves keep OpenTPW's route walk: the route's cells (and a queue walk's next queue cells) are walkable, avoid_walls has its edge branch only, refills come from the stored route, progress compares raw remaining distances, the Mac's rounding applies. tp.exe walks the queue with its search and edge test (a queue cell opens into a neighbour whose `+0x0c` link points back) | The queue tool's `+0x0c` neighbour links (QUEUE-003) and the ride entrance cells' type |
+| WALK-007 | Route walks restored from older saves end without a replan when a grid edit takes a cell or link of their route, and the queue recompute's own stamp of its back cell (`0x4de1f0`) is not made; the block stamps of every cell type change (`0x4d8c60`) and the walk's comparison (`0x50ed6c`) are ported | The `0x4de1f0` stamp |
+| WALK-008 | Guests on the arrival lanes walk off the path grid: no wall force, every position committed; the original walks them through the same route search, commit `0x510510` and edge test `0x4d8750` over lane cells typed `0x1e` or path by map init `0x536490`, which OpenTPW's cell map does not type (outside the park: 7, or `0x1e` and 2 by the MAP attributes `0x80` and 2) | The lane cells' types in the cell map |
 | WALK-010 | The needs phase that gates the toilet term compares the park turn with OpenTPW's guest id; the original compares it with the thing id (`0x501676`) from one pool of 10239 slots shared by every thing kind (`0x516270`, last-in first-out reuse) | A shared thing pool with the construction and destroy order of every thing kind |
+
+Retired: `APPROX:WALK-002` (avoid_walls' corner blocks and the position's cell: tp.exe `0x50e4a0` with the ray test `0x50cc20`, ported for walks on the park's cells). `APPROX:WALK-009` (the progress measure `0x50fd40` over the whole route's length, reset at every set-up `0x50f8e0`).
 
 An isolated [GuestOriginalRules helper](../tools/ppc-analysis/lanes/guests/rules/README.md)
 and 23 synthetic regression cases preserve selected Feral arithmetic: four

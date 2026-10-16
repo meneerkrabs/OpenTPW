@@ -13,12 +13,32 @@ re-read):
 
 - **The booth books the fee with the bank** (`0x4ffade` → `0x4d0600`): the guest's purse (`+0x1A0`) is never touched, as in the original
   (ARRIVAL-007 retired); the booth refuses an admission only at a bankrupt park, a closed one stopping visitors on their walk to it
-  (next entry). The determinism hash moved to `0x9AA9973FC2A6A5D6`, and with the staff candidate draws below to `0x89123A798D58778F`.
+  (next entry). The determinism hash moved to `0x9AA9973FC2A6A5D6`, and with the staff candidate draws and the guest walk to `0x944788E41E278016` (docs/DETERMINISM.md).
 - **Arrival groups** keep a negative remainder after the cut (`0x4cf6e5`), which every reader treats as 0 (ARRIVAL-004 retired), and a
   guest the booth sends to wait reruns the verdict N + 1 turns later (`0x4ffa72`, `0x4ffb01`; ARRIVAL-006 narrowed).
 - **The counts-test's track terms** apply to the park points that size the arrival groups (`0x4dd9ad` → `0x441970`; ARRIVAL-003 narrowed).
 - SAVE-930 is OpenTPW's own layout checkpoint (`[EXT:tpi-layout-checkpoint]`); thirteen arrival and save items are narrowed, among them
   the bus, seaplane or ferry by group size (`0x4cf48c`) and the coaster save block (`0x437300`, `0x437b60`).
+
+## Guests walk with tp.exe's walk (October 15, 2026)
+
+Guests walking the park's cells now use the original walk, checked instruction by instruction in tp.exe and against the original
+routines run in the repo's x86 oracle (finding X25 in docs/reverse/ORACLE.md: the edge test, step commit, route search, avoid_walls
+and 40 whole walks through the set-up and steering step agree on every pinned input; larger runs while porting, 12,700 edge, commit and
+search cases, 8,000 avoid_walls cases and about 22,000 whole-walk steps, agreed as well):
+
+- **Route search, edge test and step commit** (`0x511420`, `0x4d8750`, `0x510510`): a failed search makes the step return stuck (2, `+0xB8`),
+  which the arrival state treats as arrival and the litter state as a drop (GUEST-010).
+- **avoid_walls** (`0x50e4a0`) takes the position's cell, its corner blocks by quadrant and the ray test `0x50cc20` (WALK-002 retired);
+  the walk's progress is `ONE − (rem << 16) / +0xA0` over the whole route (`0x50fd40`, WALK-009 retired).
+- **Block stamps** (`0x4d8c60`): a cell type change stamps its block, and a walk searches again when its block's stamp moved (`0x50ed6c`).
+- **Walk mask**: guests walk with mask 0; the guard's set-down sets 1 (`0x4febab`) and the recall clears it (`0x500ab9`).
+- The walk uses tp.exe's fixed-point arithmetic: its multiply rounds towards −∞ (`0x50df70`) and its divide towards 0 (`0x50e080`).
+
+Queue walks, arrival lanes, staff and walks restored from older saves keep the earlier walk: OpenTPW's queue cells carry no `+0x0C`
+neighbour links yet (QUEUE-003), so WALK-004 to -008 are narrowed and GATE-006 and QUEUE-010 stay blocked. The saves gain optional
+fields (`OriginalWalk`, `Waypoints`, `Mask` on the walk; `BlockStamps`, `StampCounter` on the layout); older saves load with the
+earlier walk and unstamped blocks. The pinned run hash moves to `0x4A4014649DF391DB` with the staff candidate draws (the walk alone gave `0x0B7C79BA1B5AC12A`; docs/DETERMINISM.md).
 
 ## Interface reading round, part B (October 15, 2026)
 

@@ -52,7 +52,7 @@ public readonly record struct SavePayloadBlock( SaveBlock Block, string Tag, int
 /// four bytes with the block's tag and aborts with "The SAD_&lt;module&gt; module did not load the same number of bytes that it
 /// saved" otherwise; a delimiter's bytes inside a block are data. The empty Coasters block ends after its 16 bytes.</item>
 /// <item>Only the World block (its control manager and macro AI are not traced; the thing chain closes it, see
-/// <see cref="SaveWorld"/>) and a Coasters block with a coaster (its trains and cars depend on the coaster type, SAVE-920)
+/// <see cref="SaveWorld"/>) and a Coasters block with a coaster (its trains and cars depend on the coaster type's train and car counts)
 /// are located by their delimiter's bytes. The payload must split into the blocks in exactly one way under these rules: a copy
 /// of such a delimiter's bytes inside the block or a later one that forms a second valid split is rejected, even though the
 /// count-based original loader would accept the save (SAVE-011). A payload with more than

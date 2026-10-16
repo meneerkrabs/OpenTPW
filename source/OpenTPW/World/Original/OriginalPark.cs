@@ -82,7 +82,7 @@ public sealed class OriginalPark
 			using var stream = FileSystem.OpenRead( $"{saveDirectory}/{Path.GetFileName( savePath )}" );
 			using var reader = new SaveReader( stream );
 			var payload = reader.ReadFile();
-			save = tpiPrebuilt ? OriginalParkImport.ImportThemeParkInc( payload, map ) : OriginalParkImport.Import( payload, map );
+			save = tpiPrebuilt ? OriginalParkImport.ImportThemeParkInc( payload, map ) : OriginalParkImport.Import( payload, map, infoId => CoasterTrainLayout( levelName, infoId ) );
 			foreach ( var item in save.PlacedObjects.Select( item => item.Record ).Concat( save.FixedItems ).Concat( save.UnresolvedObjects ) )
 			{
 				// [DATA:PreBuilt/prebuilt.TPWS:SYSG] Five science scene records have no archive and use the sentinel cell (0, 0).
@@ -94,6 +94,20 @@ public sealed class OriginalPark
 			}
 		}
 		yield return new OriginalPark( levelName, map, model, lake, save, catalog );
+	}
+
+	/// <summary>
+	/// The train layout of the coaster ride <paramref name="infoId"/> for the original save's Coasters block: the train slots (<c>sCoasterType.uiMaxTrains</c>, type +0x2E8)
+	/// and the cars of a train (<c>sTrainType.uiMaxCars</c>, type +0x2F4) the loader 0x437B60 loops over. Null for an object that is no track ride. The object catalogue is read
+	/// only when a save holds a coaster.
+	/// </summary>
+	private static SaveCoasterTrainLayout? CoasterTrainLayout( string levelName, int infoId )
+	{
+		var entry = ObjectCatalog.Load( levelName ).Find( infoId );
+		if ( entry?.SharedSettings == null )
+			return null;
+		var definition = CoasterDefinition.FromEntry( entry );
+		return new SaveCoasterTrainLayout( definition.MaxTrains, definition.CarCount );
 	}
 
 	/// <summary>Reads Info.Id and Info.Name from every object archive's .sam under the level.</summary>

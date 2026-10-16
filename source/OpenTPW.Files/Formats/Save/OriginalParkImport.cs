@@ -102,10 +102,11 @@ public sealed class OriginalParkImport
 	/// <summary>Guard before constructing runtime objects from an original TPW park. Structural inspection remains
 	/// available, but nonempty original controllers cannot safely be resumed until station joins and train data are decoded.
 	/// Theme Park Inc has a separate viewer/import contract and is not inferred through this guard.</summary>
+	// [APPROX:SAVE-920] a park whose Coasters block lists a coaster is refused: the block is decoded (headers, sections, trains and cars) but no runtime coaster is rebuilt from it, where tp.exe's loader 0x437B60 restores each controller, its track nodes and links, its trains and cars — evidence needed: a Theme Park World save with a built coaster and the restore of a CoasterRide from the decoded block
 	public void RequireSupportedCoasterRuntime()
 	{
 		if ( CoasterBlock is { Count: > 0 } )
-			throw new InvalidDataException( "Original TPW coaster runtime import is unsupported: controller-to-station identity, flag remapping and train/car/passenger data are not qualified. Use the structural CoasterBlock and CoasterSections for inspection." );
+			throw new InvalidDataException( "Original TPW coaster runtime import is unsupported: the saved controller, its track sections and its trains are decoded, but no runtime track, controller or train is rebuilt from them. Use the structural CoasterBlock and CoasterSections for inspection." );
 	}
 
 	public bool IsOccupiedByObject( int x, int y )
@@ -165,7 +166,13 @@ public sealed class OriginalParkImport
 	/// close at the World delimiter, the save's cell attributes differ from the map (wrong level), a placed object's
 	/// footprint is outside the grid or not marked occupied, or the Coasters block does not follow its traced contract.
 	/// </summary>
-	public static OriginalParkImport Import( ReadOnlyMemory<byte> payload, MapFile map )
+	/// <param name="coasterTrains">
+	/// The coaster type's train layout (<see cref="SaveCoasterTrainLayout"/>) by the station's Info.Id. The saved coasters' train payloads span the type's train slots and
+	/// cars, which the file does not carry (tp.exe 0x437B60 reads them from the live type): with it the Coasters block's trains are decoded and a block of more than
+	/// one coaster reads; without it only a single coaster's trains stay raw. A coaster's station is the saved attraction whose mesh instance id equals the header's
+	/// controller +0x10.
+	/// </param>
+	public static OriginalParkImport Import( ReadOnlyMemory<byte> payload, MapFile map, Func<int, SaveCoasterTrainLayout?>? coasterTrains = null )
 	{
 		ArgumentNullException.ThrowIfNull( map );
 		var layout = SavePayloadLayout.Parse( payload.Span );
@@ -220,9 +227,15 @@ public sealed class OriginalParkImport
 		var lab = world.Variables.ResearchLab == 0 ? null : SaveResearchLab.Read( span, world.Find( world.Variables.ResearchLab )!.Value );
 		// The coaster block's reader is as strict as the rest of the import: a block that does not follow the traced
 		// contract refuses the save instead of importing a guessed track.
-		var coasters = SaveCoasterBlock.Parse( span, layout, map.CellCountX, map.CellCountY );
+		var attractions = SaveAttractionList.Parse( span, world );
+		Func<ushort, SaveCoasterTrainLayout?>? trainLayouts = coasterTrains == null ? null : station =>
+		{
+			var matches = attractions.Where( attraction => attraction.MeshInstanceId == station ).Take( 2 ).ToList();
+			return matches.Count == 1 ? coasterTrains( matches[0].InfoId ) : null;
+		};
+		var coasters = SaveCoasterBlock.Parse( span, layout, map.CellCountX, map.CellCountY, trainLayouts );
 		return new OriginalParkImport( map, layout, world, paths.AsReadOnly(), placed.AsReadOnly(), fixedItems.AsReadOnly(), unresolved.AsReadOnly(),
-			SaveAttractionList.Parse( span, world ), SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters );
+			attractions, SaveEconomyRecords.Parse( span, world ), staff.AsReadOnly(), guests.AsReadOnly(), hq, advisor, lab, coasters );
 	}
 
 	/// <summary>

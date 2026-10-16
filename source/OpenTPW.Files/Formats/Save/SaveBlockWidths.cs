@@ -23,7 +23,7 @@ namespace OpenTPW;
 /// advisor scoring <c>0x59c860</c> 4; UI <c>0x481680</c> (the last block): <c>u32 count, count × 0x21c</c>.</item>
 /// </list>
 /// The World block (its control manager and macro AI widths are not traced) and a Coasters block with a coaster (its trains
-/// and cars depend on the coaster type, SAVE-920) have no width here; <see cref="TryMeasure"/> returns false for them.
+/// and cars depend on the coaster type's train and car counts) have no width here; <see cref="TryMeasure"/> returns false for them.
 /// </summary>
 public static class SaveBlockWidths
 {

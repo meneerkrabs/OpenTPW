@@ -77,7 +77,7 @@ TPWS-PAYLOAD.md and reverse/SAVE-plan.md (`SavePayloadLayout`, `SaveWorld`,
 `OriginalParkImport`). The Coasters block (between the stored `EMAK`/`SAOC`
 delimiters) has a bounded structural reader (`SaveCoasterBlock`; TPWS-PAYLOAD.md
 "Coasters block"): header, auxiliary links, sections and links are typed, the
-train payload stays raw, nothing is imported and nothing is written. A park
+train slots decode once the coaster type's counts are known, nothing is imported and nothing is written. A park
 started from the shipped save imports its turn,
 bank, objects, staff and advisor controller (`OriginalEconomyImport`; values not
 imported are reported as SAVE-001 to SAVE-010 and SAVE-920 to SAVE-923); the

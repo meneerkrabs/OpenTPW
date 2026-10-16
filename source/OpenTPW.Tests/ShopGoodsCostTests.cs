@@ -35,6 +35,16 @@ public class ShopGoodsCostTests
 	}
 
 	[TestMethod]
+	public void TheProductIsRoundedToASingleAtEveryStep()
+	{
+		// ECON-059: the x87 holds a 24-bit significand: 200 x 1.005 (quality 51) rounds up to 201 before the truncation (a double gives 200.99999998 -> 200)
+		Assert.AreEqual( 201, ShopGoodsCost.Of( 200, 51, 50, 2 ) );
+		Assert.AreEqual( 439, ShopGoodsCost.Of( 333, 77, 13, 1 ) );
+		// a cost beyond 2^29 needs more than a double's 53 bits for the exact product: checked against an exact rational model
+		Assert.AreEqual( 1005000000, ShopGoodsCost.Of( 1_000_000_007, 51, 50, 2 ) );
+	}
+
+	[TestMethod]
 	public void ASaleBooksTheScaledCostEverywhere()
 	{
 		var park = EconomyTestData.Park();

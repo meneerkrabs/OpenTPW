@@ -106,7 +106,7 @@ public sealed class ParkObjectives
 		long Sold( int shopType, int ingredient = -1 ) => ingredient >= 0
 			? counters[ParkCounters.Sold( shopType, ingredient )]
 			: Enumerable.Range( 0, 5 ).Sum( value => counters[ParkCounters.Sold( shopType, value )] );
-		// [BIN:TPW-EXE:0x4c9d80 staff happiness] the average over the staff things (model types 4-8, or the one type 0x4c9cc0 is given) of the truncated low byte of the happiness single (+0x44), an integer division, 0 without staff
+		// [BIN:TPW-EXE:0x4c9d80 staff happiness] the average over the staff things (model types 4-8, or the one type 0x4c9cc0 is given) of the truncated low byte of the happiness single (+0x1F8), an integer division, 0 without staff
 		int AverageHappiness( StaffType? type )
 		{
 			var members = staff.Members.Where( member => type == null || member.Type == type ).ToList();
@@ -186,6 +186,7 @@ public sealed class ParkObjectives
 	// [BIN:TPW-EXE:0x4d3140 challenge lost] a lost challenge only counts a loss (slot +0x24, 0x4d1ae0, for which no reader is found): its completed byte (+0x2c) stays clear, so the offer scan 0x4d2a70 can offer it again, without limit; the next offer waits DaysAfterCompletedChallenge as after a win
 	// [BIN:TPW-EXE:0x4d1e90 challenge day] nothing is offered, checked or timed out while an offer waits for its answer (+0x3da, set by 0x4d2a70 / 0x4d2b60), which only
 	// the accept 0x4d2df0 (accepted +0x3d9, the deadline from mTargetTime) or the decline 0x4d2ec0 clears
+	// [APPROX:ECON-058] an accepted challenge is evaluated once a day, and an idle system offers at the first day end after its next event time; the original's update 0x4d1e90 tests a running challenge on the park turns whose low two bits (+0x1da70c, 0x4d1f99) are not 0 and on the others only posts the progress message 0x4d3390 (tag 0x160) — evidence needed: what the message 0x160 feeds and the thing update's rate
 	public IEnumerable<(ParkEventKind Kind, int Index, long Amount, string Detail)> AdvanceDay( long day, Func<ChallengeDefinition, long> measure, bool parkOpen = true )
 	{
 		if ( Current == null )

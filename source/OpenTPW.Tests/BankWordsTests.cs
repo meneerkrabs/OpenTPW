@@ -86,6 +86,17 @@ public class BankWordsTests
 	}
 
 	[TestMethod]
+	public void ANegativeBatchCreditInASaveIsRefused()
+	{
+		var park = EconomyTestData.Park( initialCash: 5000 );
+		park.RestoreBankWords( true, park.Balance, 0, 5 );
+		var node = JsonNode.Parse( ParkSaveFile.Serialize( park ) )!;
+		node["BatchCredit"] = -1;
+		var json = System.Text.Encoding.UTF8.GetBytes( node.ToJsonString() );
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Restore( ParkSaveFile.Deserialize( json ), park.Settings, park.Catalog ) );
+	}
+
+	[TestMethod]
 	public void WithWithdrawalsOffADebitChargesNothingAndAnInstalmentRaisesTheProfit()
 	{
 		var park = EconomyTestData.Park( initialCash: 300000 );

@@ -18,10 +18,14 @@ A sweep over the economy and save approximations, read in tp.exe via REA:
 - **The big park ticket** (ECON-038 narrowed) counts more than `MinCellsCovered` cells of type 4, 9, 10 or 21 or under a counted
   structure, owned or not (`0x4d4e50`, `0x4cd7f0`); ECON-017 drops a stale claim about group 0.
 
-The pinned run hash is unchanged (default shop quality and ingredient give the plain cost). Two optional save fields (`BatchCredit`,
-`Objectives.SwitchedOn`, inferred for older saves) keep older saves loading. Verified with 4591 tests passing without game data, 5039 with
+- **The clock** (ECON-001 split): the deterministic fixed 60 Hz clock sampled into 248 ms park turns is an OpenTPW design choice (`EXT:fixed-60hz-clock`);
+  ECON-001 keeps only the original's 31 ms substeps with their backlog catch-up under load.
+
+The shop's arithmetic rounds to a single after every x87 step (ECON-059: the precision DDSCL_FPUSETUP gives, the simulation thread's own control
+word is not read); the pinned run hash is unchanged (default shop quality and ingredient give the plain cost in every precision). Two optional save fields (`BatchCredit`,
+`Objectives.SwitchedOn`, inferred for older saves) keep older saves loading. Verified with 4593 tests passing without game data, 5041 with
 it, and all five native smokes.
 
-Still open: the challenge check's per-update gate (`0x4d1e90`, `(turn & 3) == 0`), the carried object `mActualThing` (`+0x3e0`) that
+Still open: the challenge check's per-update gate (`0x4d1e90`, `(turn & 3) == 0`, now ECON-058), the carried object `mActualThing` (`+0x3e0`) that
 filters every accumulated event, the attraction history rings (layout read: `0x4e1c70` and its readers), the fence structure records,
 the TAG_SYSTEM 123–127 producer, removal cell writes and the larger save blocks (SAVE-004, 006, 007, 009–011, 920–923).

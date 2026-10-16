@@ -268,7 +268,8 @@ public class GuestAssetTests
 		vm[RideVariables.VAR_RIDECLOSED] = 0;
 		bridge.Attach( vm, () => vm[RideVariables.VAR_RIDECLOSED] == 0 );
 		simulation.Register( bridge );
-		foreach ( var cell in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
+		// twelve guests instead of eight: each now walks the whole way to the back cell (WALK-004), which moves who decides when, and eight left the ride short of a full load in seed 99
+		foreach ( var cell in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21), (44, 21), (45, 21), (46, 21), (47, 21) } )
 			simulation.SpawnInPark( cell.Item1, cell.Item2 );
 		var runs = new List<(double At, int Riders)>();
 		var running = false;

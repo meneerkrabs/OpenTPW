@@ -1139,7 +1139,9 @@ internal sealed class M3GateRun
 				{
 					var target = guests.Attractions.FirstOrDefault( attraction => attraction.AttractionId == guest.AttractionId );
 					var join = target?.JoinCell ?? target?.EntranceCell;
-					var reachable = join is { } cell && grid.Distance( guest.Cell.X, guest.Cell.Y, cell.X, cell.Y ) >= 0;
+					// state 10 walks the whole way to the back cell (WALK-004): a guest already on one of the ride's queue cells has reached its goal
+					// A guest standing on a queue cell (a refused joiner on the back cell, or one the queue let go, QUEUE-010) walks off it by the original search; the path network has no queue cells to measure from.
+					var reachable = grid.IsQueue( guest.Cell.X, guest.Cell.Y ) || join is { } cell && grid.Distance( guest.Cell.X, guest.Cell.Y, cell.X, cell.Y ) >= 0;
 					if ( !reachable )
 					{
 						if ( track.UnreachableSince < 0 )

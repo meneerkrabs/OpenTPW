@@ -449,6 +449,9 @@ public sealed class GuestNavigation
 	/// <summary>The cell of a 16.16 position as the original takes it (<c>0x5104B0</c>: the high halves).</summary>
 	private static (int X, int Y) CellByte( int x, int y ) => ((x >> 16) & 0xFF, (y >> 16) & 0xFF);
 
+	/// <summary><see cref="CellByte"/> for callers outside the walk (a route test that does not set the walk).</summary>
+	public static (int X, int Y) CellByteOf( int x, int y ) => CellByte( x, y );
+
 	/// <summary>
 	/// SetDest (tp.exe <c>0x510100</c>): a walk to the 16.16 point (<paramref name="targetX"/>, <paramref name="targetY"/>) from the
 	/// walker's cell, searched on <paramref name="map"/> with <see cref="Mask"/> (<see cref="WalkSearch"/>). False when the search

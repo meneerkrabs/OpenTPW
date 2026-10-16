@@ -60,6 +60,12 @@ public class QueueTests
 			Script.Advance( Tick );
 		}
 
+		/// <summary>
+		/// The guests in the order they stand in the queue. Every guest walks the whole way to the back cell on its own (WALK-004), pushed apart by its neighbours, so the
+		/// order in which a batch joins is not the order it was sent in.
+		/// </summary>
+		public static List<Guest> InQueueOrder( IEnumerable<Guest> guests ) => guests.OrderBy( guest => guest.QueuePosition < 0 ? int.MaxValue : guest.QueuePosition ).ToList();
+
 		/// <summary>Stops admission: the ride runs and does not run continuously.</summary>
 		public void HoldAdmission() => Script[RideVariables.VAR_RUNNING] = 1;
 
@@ -428,7 +434,8 @@ public class QueueTests
 		var rig = new Rig { KeepNeedsEmpty = true };
 		Assert.IsTrue( Enumerable.Range( 100, rig.Ride.QueueRoom ).All( rig.Ride.TryJoinQueue ), "the room is full" );
 		var guest = rig.Send();
-		rig.RunTurns( 2 );
+		for ( var turns = 0; guest.State == GuestState.GoingToRide && turns < 60; turns++ )
+			rig.RunTurns( 1 );   // the guest first walks to the back cell (WALK-004)
 		Assert.AreEqual( GuestState.DoingNothing, guest.State );
 		Assert.AreEqual( GuestThought.None, guest.Thought, "no thought" );
 		Assert.AreEqual( 60f, guest.Happiness, "no happiness change" );
@@ -439,7 +446,8 @@ public class QueueTests
 		Assert.IsTrue( Enumerable.Range( 100, (int)shop.Ride.QueueLimit ).All( shop.Ride.TryJoinQueue ), "the queue is at its limit" );
 		Assert.IsTrue( shop.Ride.QueueLength < shop.Ride.QueueRoom, "with room to spare" );
 		var turned = shop.Send();
-		shop.RunTurns( 2 );
+		for ( var turns = 0; turned.State == GuestState.GoingToRide && turns < 60; turns++ )
+			shop.RunTurns( 1 );
 		Assert.AreEqual( GuestState.DoingNothing, turned.State );
 		Assert.AreEqual( GuestThought.QueueTooLong, turned.Thought, "thought 16" );
 		Assert.AreEqual( 60f, turned.Happiness, "no happiness change" );
@@ -456,6 +464,7 @@ public class QueueTests
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		var visited = new HashSet<(int, int)>();
 		rig.RunTurns( 120, () => visited.UnionWith( guests.Where( guest => guest.IsInQueue && rig.Grid.IsQueue( guest.Cell.X, guest.Cell.Y ) ).Select( guest => guest.Cell ) ) );
+		guests = Rig.InQueueOrder( guests );
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", guests.Select( guest => guest.State ) ) );
 		CollectionAssert.AreEqual( Enumerable.Range( 0, 6 ).ToArray(), guests.Select( guest => guest.QueuePosition ).ToArray() );
 		// Positions 0..3 stand in the front cell, 4 and 5 in the second cell; everyone walked in over the back cells.
@@ -531,6 +540,7 @@ public class QueueTests
 		rig.HoldAdmission();
 		var queued = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		queued = Rig.InQueueOrder( queued );
 		Assert.IsTrue( queued.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", queued.Select( guest => guest.State ) ) );
 		Assert.AreEqual( 3, rig.Ride.QueueLength );
 		var happiness = queued.Select( guest => guest.Happiness ).ToList();
@@ -653,6 +663,7 @@ public class QueueTests
 		rig.HoldAdmission();
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
 		var waiting = guests[5];
 		Assert.IsTrue( waiting.QueueMoveDelay > 1 );
@@ -669,6 +680,7 @@ public class QueueTests
 		rig.HoldAdmission();
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
 		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 6 }, guests.Select( guest => guest.QueueMoveDelay ).ToArray(), "trunc(1.2 × position)" );
 
@@ -716,7 +728,7 @@ public class QueueTests
 		Assert.IsTrue( calm.All( guest => rig.Simulation.ParkTurn - guest.QueueStandingSinceTurn > GuestSimulation.BoredomTurns ),
 			"standing far longer than the dead +508 + 100 test" );
 		Assert.IsTrue( interludes > 0, "happy guests idle in interludes and return to the queue" );
-		Assert.IsTrue( calm.Concat( happy ).All( guest => rig.Simulation.QueueWaitTurns( guest ) >= 1990 ) );
+		Assert.IsTrue( calm.Concat( happy ).All( guest => rig.Simulation.QueueWaitTurns( guest ) >= 1980 ) );
 	}
 
 	[TestMethod]
@@ -773,6 +785,7 @@ public class QueueTests
 			guest.BaseSpeed = 140;
 			rig.KeepNeedsEmpty = exit != GuestThought.NeedToilet;
 			rig.RunTurns( exit == GuestThought.QueueTooLong ? 120 : 20 );
+			guest = Rig.InQueueOrder( guests )[^1];   // the last guest to join has the highest place
 			Assert.IsTrue( guest.IsInQueue, $"{exit}: queued before the exit" );
 			// A smaller QueueWaitTimeConstant lowers the limit to its floor of 4, below the last guest's position 5 (QueueLimitFollowsTheTracedFormula).
 			if ( exit == GuestThought.QueueTooLong )
@@ -898,6 +911,7 @@ public class QueueTests
 		rig.HoldAdmission();
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", guests.Select( guest => guest.State ) ) );
 		var before = guests.Select( guest => (guest.QueuePosition, guest.Cell, guest.Navigation.X, guest.Navigation.Y) ).ToList();
 		// five cells cut to two: room 8, the six guests stay
@@ -938,6 +952,7 @@ public class QueueTests
 		rig.HoldAdmission();
 		var guests = Enumerable.Range( 0, 10 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
 		// Shorten the queue to two cells: room 8, positions 8 and 9 stood on the removed third cell.
 		Assert.AreEqual( 3, QueuePaths.RemoveFrom( rig.Grid, rig.Ride, 2, 3 ) );
@@ -961,6 +976,7 @@ public class QueueTests
 		rig.HoldAdmission();
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
 		var before = guests.Select( guest => (guest.Happiness, guest.Thought) ).ToList();
 		var medium = rig.Simulation.Settings.MediumHappinessChange;
@@ -1000,6 +1016,7 @@ public class QueueTests
 			rig.HoldAdmission();
 			var guests = Enumerable.Range( 0, 8 ).Select( _ => rig.Send() ).ToList();
 			rig.RunTurns( 120 );
+			guests = Rig.InQueueOrder( guests );
 			Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ), string.Join( ", ", guests.Select( guest => guest.State ) ) );
 			rig.Ride.LifeGauge = life;
 			var places = guests.Select( guest => guest.QueuePosition ).ToList();
@@ -1063,6 +1080,7 @@ public class QueueTests
 		rig.HoldAdmission();
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		rig.Open = false;
 		rig.Script[RideVariables.VAR_BROKEN] = 1;
 		rig.RunTurns( 1 );
@@ -1082,6 +1100,7 @@ public class QueueTests
 		rig.HoldAdmission();
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
 		var before = guests.Select( guest => (guest.Happiness, guest.Thought) ).ToList();
 		var medium = rig.Simulation.Settings.MediumHappinessChange;
@@ -1102,7 +1121,7 @@ public class QueueTests
 
 		// A guest already walking to the ride when it closed joins and is sent away from the head.
 		var late = rig.Send();
-		rig.RunTurns( 3 );
+		rig.RunTurns( 30 );   // it first walks to the back cell (WALK-004)
 		Assert.AreEqual( guests.Count + 1, rig.Ride.Dismissed, "the joiner was dismissed from the head" );
 		Assert.IsFalse( late.IsInQueue );
 	}
@@ -1119,6 +1138,7 @@ public class QueueTests
 		rig.Ride.Attach( rig.Script, () => rig.Open, () => takes );
 		var guests = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		Assert.IsTrue( guests.All( guest => guest.State == GuestState.Queueing ) );
 		takes = false;
 		Assert.IsTrue( rig.Ride.TrackRefusesGuests );
@@ -1172,6 +1192,7 @@ public class QueueTests
 		rig.HoldAdmission();
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		rig.Script[RideVariables.VAR_BROKEN] = 1;
 		rig.RunTurns( 2 );
 		rig.Script[RideVariables.VAR_BROKEN] = 0;
@@ -1470,6 +1491,7 @@ public class QueueTests
 		var guests = Enumerable.Range( 0, 6 ).Select( _ => rig.Send() ).ToList();
 		// The idle script never takes the called guest: the head waits to be taken (state 14), the others queue.
 		rig.RunTurns( 120 );
+		guests = Rig.InQueueOrder( guests );
 		Assert.AreEqual( GuestState.WaitingToBoard, guests[0].State );
 		Assert.IsTrue( guests.Skip( 1 ).All( guest => guest.State == GuestState.Queueing ) );
 		Assert.IsTrue( guests.All( guest => guest.QueuePosition >= 0 && guest.QueueJoinTurn >= 0 ) );

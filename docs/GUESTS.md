@@ -527,8 +527,8 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
   ONE + radius of its waypoint; else every guest in the 3 × 3 cells around the walker
   (rows from the top) whose 1/256-cell position lies within 0.4 cell pushes it away by
   FixDiv(offset, octile(offset)), at most five of them.
-- **Geometry.** Sub-cell destination bytes are byte / 256 of a cell. Walks to a ride and
-  out of the park go one path cell at a time to the guest's offset point in it
+- **Geometry.** Sub-cell destination bytes are byte / 256 of a cell. A walk to a ride is
+  one route to the centre of the ride's back cell; the walk out of the park goes one path cell at a time to the guest's offset point in it
   (WALK-004); lane walks (bus stop to entrance) have no walls. Queue walks follow the
   queue cells; the cell ahead of the destination and the cell behind the start are
   walkable too. The stand point is in the ride's entrance cell at trunc(255 ×
@@ -544,7 +544,7 @@ Traced from the Feral Mac binary ([WALK-plan.md](reverse/WALK-plan.md) §11, WAL
 | ID | OpenTPW choice | Evidence needed |
 | --- | --- | --- |
 | WALK-003 | Separation's neighbours are the guests outside rides and shops in OpenTPW's per-turn rebuilt cell lists (guest order, movers appended); the original (tp.exe `0x5102f0`) walks per-cell thing lists head-inserted on cell entry (`0x50b6a0` via `0x4d91f0`), keeps class-1 guests in any state and also staff (classes 4–8) and the online avatar (class 18); the position (`+4/+6` = navigation position >> 8, `0x4fa2a0`) matches | Where the thing position of a guest on a ride, held by a guard or leaving lies |
-| WALK-004 | The walks to a ride (state 10) and out of the park (state 18) set a destination one path cell at a time (`Grid.TryStep` over the links, each a fresh search); tp.exe's states set one destination for the whole walk (state 10 `0x4ffbc0` → `0x4fa5f0`, the gate's crossing cell `0x4d86d0`) and its search string-pulls the route. The search, set-up, refill and reroutes are ported | The destinations of states 10 and 18 |
+| WALK-004 | The walk out of the park (state 18) sets a destination one path cell at a time (`Grid.TryStep` over the links, each a fresh search); tp.exe's state 6 requests one route to the gate's crossing cell (`0x4d86d0`, through `0x4fa530`) and the guest walks it whole. The walk to a ride (state 10) is built: one route request to the back-of-queue cell (`0x4fcb10`) and the walk stepped to its end (`0x4ffbc0`); the search, set-up, refill and reroutes are ported | The gate walk's recall and set-down (`0x500a50`, `0x4feb50`) |
 | WALK-005 | The edge test `0x4d8750` (`WalkEdges`) reads only the cell map: no object on a target cell blocks (`0x5363f0`, `0x53ad20`), no ride thing decides a mask-2 step into a type-9 cell (`0x42a440`, `0x4dd4e0`), the underground link byte `+0x22` is not kept, and the types are those OpenTPW's tools write (map init `0x536490`'s 2, 5, 7 and `0x1e` are not, WALK-008) | Object and thing references in the cell map |
 | WALK-006 | The walk into the ride's entrance cell (state 13's last walk), the arrival lanes (WALK-008) and walks restored from older saves keep OpenTPW's route walk: the route's cells are walkable, avoid_walls has its edge branch only, refills come from the stored route, progress compares raw remaining distances, the Mac's rounding applies. Queue walks run tp.exe's search and edge test; its step into the entrance cell (type 9) opens through that cell's `+0x0c` link, which OpenTPW's untyped ride cells lack | The ride entrance cells' type and link byte |
 | WALK-007 | Route walks restored from older saves end without a replan when a grid edit takes a cell or link of their route, and the queue recompute's own stamp of its back cell (`0x4de1f0`) is not made; the block stamps of every cell type change (`0x4d8c60`) and the walk's comparison (`0x50ed6c`) are ported | The `0x4de1f0` stamp |

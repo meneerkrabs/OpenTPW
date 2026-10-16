@@ -43,6 +43,17 @@ public class ParticleKeyResolverTests
 	}
 
 	[TestMethod]
+	public void TheTourWalkSelectorFindsAClass800NodeAndNothingElse()
+	{
+		// tp.exe 0x5571A0 looks its nodes up with the class 0x800 through the same resolver 0x556b90 (the EVENT keys are class 0x100)
+		var walk = Geometry( flags: 0x830 );
+		var found = new ParticleKeyResolver( walk ).Resolve( 7, ParticleKeyResolver.WalkSelector, new ObjectAnimator( walk ).NodeTransforms, Placement() );
+		Assert.AreEqual( ParticleKeyStatus.Resolved, found.Status );
+		Assert.AreEqual( ParticleKeyStatus.MissingKey, new ParticleKeyResolver( Geometry() ).Resolve( 7, ParticleKeyResolver.WalkSelector,
+			new ObjectAnimator( Geometry() ).NodeTransforms, Placement() ).Status );
+	}
+
+	[TestMethod]
 	public void NodeFlagReversesDirectionAndScalingDoesNotBecomeVelocityMagnitude()
 	{
 		var model = Geometry( nodeType: 0x600 );

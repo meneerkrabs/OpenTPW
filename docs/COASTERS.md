@@ -174,7 +174,8 @@ placed once on the release. Backspace waits for a drag; a drag let go while the 
 - **Cursor link** (COAST-035, `0x435d50`, `0x43f4e0`): the cursor node is the original's model-less spare node, drawn without a pylon; the
   link into it is drawn in a copy of the invalid cross section (the first section: no PC `coaster.sam` sets `uiInvalidCrossSection`)
   with every edge in `blue.tga`, or `red.tga` when the validator refuses the cell (the marker textures the loader appends after the
-  coaster's own, `0x42f390`).
+  coaster's own, `0x42f390`). A hovered chain start (the closing target) takes the node flag `0x800000`, or `0x804000` when the closing link is refused (`0x4360c4`), and the marker
+  textures draw that node's own tag pairs (`0x43f4e0` with both nodes the same); the rebuild `0x43eb70` draws no link into the start. `0x4360c0` also sets `0x200000` on the ends and their neighbours; its reader is not traced.
 
 ## Running
 

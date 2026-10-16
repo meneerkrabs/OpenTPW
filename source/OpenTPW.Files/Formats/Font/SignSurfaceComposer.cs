@@ -6,7 +6,8 @@ public static class SignSurfaceComposer
 	// [EXT:sign-face-alpha-blend] the transparent faces are drawn with the engine's object material (alpha test below 0.1, alpha blend, no depth sorting), an OpenTPW design choice that needs no per-texture state word
 	// [APPROX:COMPAT-032] tp.exe derives a textured face's state from its texture's alpha type (0x590C40: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque, all with depth writes) — evidence needed: the alpha type of the generated sign texture and a distant capture
 	// [EXT:sign-text-mask-width] the 512-wide text raster is reduced to a 256-wide mask, an OpenTPW design choice
-	// [APPROX:COMPAT-001] the lower half of the native 512x512 DIB is not reproduced; original GPU UV orientation and lower DIB rows still require a pixel oracle.
+	// [BIN:TPW-EXE:0x5ECB40 sign pack] the PC composes 256x256 and packs only the top 128 rows into the two 128x128 textures
+	// [APPROX:COMPAT-001] the rows below 128 are cropped here but still feed the blur, morphology and relief neighbours at the seam natively (0x5EA510, 0x5EA6D0, 0x5EA8A0, 0x5EB8A0); the reduction of the 512-wide text DIB to the mask (0x5EAB70) is not read; original GPU UV orientation still requires a pixel oracle.
 	public const int Width = 256;
 	public const int Height = 128;
 	public const int HalfWidth = Width / 2;
@@ -16,7 +17,8 @@ public static class SignSurfaceComposer
 	/// <summary>Composes ARGB sign layers, then returns top-down RGBA for the two model textures.</summary>
 	// [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows.
 	// [EXT:sign-coverage-precision] glyph coverage comes from OpenTPW's rasterizer instead of GDI masks and the blur sums in double precision (OpenTPW design choices)
-	// [APPROX:COMPAT-003] relief strips taller than their source are upsampled by nearest rows; paint-mask shaping (SignMaskShaping), relief samples and material arithmetic follow the identified native path.
+	// [EXT:sign-relief-upsample] the strip resampler is tp.exe 0x5E80D0 (matched by DescimateStrip), which has no upsampling branch (a requested height above the strip divides by zero at 0x5E8364), so a strip shorter than the glyph rows is upsampled by nearest rows: an OpenTPW choice for a case the original does not define and where matching it would divide by zero
+	// [APPROX:COMPAT-003] the blur kernels run in x87 extended precision natively (0x5EA8A0) and the relief reads unclamped neighbours (0x5EB8A0), which this port approximates; paint-mask shaping (SignMaskShaping) and the material arithmetic follow the identified native path.
 	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, SignPaint? firstPaintOverride = null )
 	{
 		ArgumentNullException.ThrowIfNull( sign );
@@ -33,7 +35,7 @@ public static class SignSurfaceComposer
 		var surface = new byte[Width * Height * 4];
 		if ( sign.ExtraImage is { } board )
 		{
-			// [APPROX:COMPAT-018] wavelet pixels and GPU row orientation follow the decoded native container but await independent original-platform pixel parity. The PC reader's BILZ chunk tag is compared at 0x6193D0 (tp.exe, the inflate step); the inverse transform and colour conversion after it are not located in tp.exe (none of the filter constants is stored as a float or double).
+			// [APPROX:COMPAT-018] GPU row orientation follows the decoded native container but awaits independent original-platform pixel parity. The PC reader's BILZ chunk tag is compared at 0x6193D0 (the inflate step); the inverse transform after it is read (D4 coefficients computed at start-up 0x591600..0x591690, 1-D inverse 0x592C50, YCbCr conversion 0x5935A0 in SignWaveletDecoder.ColourByte); open: the header scale position in 0x592E60, the alpha conversion and the x87 precision control at the conversion
 			var pixels = board.IsWavelet ? SignWaveletDecoder.Decode( board ) : board.Payload;
 			if ( board.Width != Width || board.Height != Height || board.BytesPerPixel != 4 || pixels.Length != surface.Length )
 				throw new InvalidDataException( "Sign board dimensions or pixel format do not match the native destination." );
@@ -228,7 +230,7 @@ public static class SignSurfaceComposer
 		if ( extent <= 0 ) return;
 		var materialStrip = DescimateStrip( strip, extent );
 		if ( extent > strip.Height )
-			diagnostics.Add( "COMPAT-003: relief source upsampling uses nearest rows; native descimate upsampling is not established." );
+			diagnostics.Add( "COMPAT-003: relief source upsampling uses nearest rows; the native resampler (0x5E80D0) has no upsampling branch." );
 		var material = effect.Material;
 		var p = effect.Parameters;
 		var radians = 0.01745329238474369f;
@@ -275,7 +277,8 @@ public static class SignSurfaceComposer
 	}
 
 	/// <summary>The identified two-pass bucket average; unchanged width makes its horizontal pass an identity.</summary>
-	// [BIN:STP-PPC:0x1003F338 Bitmap::descimate] fixed-point buckets and integer channel averages; upsampling remains outside the proved branch.
+	// [BIN:STP-PPC:0x1003F338 Bitmap::descimate] fixed-point buckets and integer channel averages
+	// [BIN:TPW-EXE:0x5E80D0 strip resampler] the PC twin: step = ((src << 16) + 0x8000) / dst, a horizontal then a vertical bucket average ((sum & 0xFFFF) / count); a destination taller than the source gives a zero count and the division at 0x5E8364 faults, so the upsampling below is OpenTPW's
 	public static byte[] DescimateStrip( SignBitmap strip, int height )
 	{
 		if ( height <= 0 || strip.Width <= 0 || strip.Height <= 0 || strip.BytesPerPixel != 4 || strip.Payload.Length != strip.Width * strip.Height * 4 )

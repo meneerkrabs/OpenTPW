@@ -56,9 +56,10 @@ public static class SignWaveletDecoder
 			var redDifference = cr[chromaIndex];
 			var offset = (row * bitmap.Width + column) * 4;
 			result[offset] = ClampByte( a[row * side + column] );
-			result[offset + 1] = ClampByte( luma + 1.402f * redDifference );
-			result[offset + 2] = ClampByte( luma - 0.344136f * blueDifference - 0.714136f * redDifference );
-			result[offset + 3] = ClampByte( luma + 1.772f * blueDifference );
+			// [BIN:TPW-EXE:0x5935A0 YCbCr to RGB] R = Y + 1.402 Cr, G = Y - 0.344136 Cb - 0.714136 Cr, B = Y + 1.772 Cb (float32 constants)
+			result[offset + 1] = ColourByte( luma + 1.402f * redDifference );
+			result[offset + 2] = ColourByte( luma - 0.344136f * blueDifference - 0.714136f * redDifference );
+			result[offset + 3] = ColourByte( luma + 1.772f * blueDifference );
 		}
 		return result;
 	}
@@ -145,6 +146,18 @@ public static class SignWaveletDecoder
 	}
 
 	private static byte ClampByte( float value ) => (byte)Math.Clamp( value, 0, 255 );
+
+	/// <summary>
+	/// A colour byte as the PC converter forms it: the sum plus 12583040.0 (1.5 x 2^23 + 128) is stored as a float32, which rounds it to a whole number (ties to even), and its low 9 bits
+	/// index a table of clamp(index - 128); a sum outside -128..383 wraps through those 9 bits.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5935A0 colour magic number] fadd with 0x4B400080, fstp dword, mov eax, [mem], and eax, 0x1FF, then the byte at 0xC27008 + eax; the table fill (0x5916C0) is clamp(i - 0x80, 0, 255) for i = 0..511
+	// [APPROX:COMPAT-018] the x87 precision control at that point (24 or 64 bit mantissa) decides whether the chroma term and the sum round separately or once, which moves a result by one level on a few pixels; the alpha channel's conversion is not read
+	internal static byte ColourByte( float value )
+	{
+		var rounded = (int)MathF.Round( Math.Clamp( value, -4194304f, 4194304f ), MidpointRounding.ToEven );
+		return (byte)Math.Clamp( ((rounded + 128) & 0x1FF) - 128, 0, 255 );
+	}
 
 	private readonly record struct D4( float Scale )
 	{

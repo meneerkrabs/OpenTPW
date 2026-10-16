@@ -27,7 +27,7 @@ public class WalkOffTimingTests
 	}
 
 	/// <summary>Runs a ride whose script walks a guest on with the slot nodes 3 and 4 (action 2) and walks it off at once; returns the milliseconds from boarding to the release.</summary>
-	private static (double Walk, RideVisitorBridge Bridge) Walk( Func<int, int, int, float?>? distance, int fallback, int guests = 1 )
+	private static (double Walk, RideVisitorBridge Bridge) Walk( Func<int, int, int, float?>? distance, int fallback, int guests = 1, Action<int>? effect = null, int action = 2 )
 	{
 		var on = V( (int)RideVariables.VAR_LETMEON );
 		var off = V( (int)RideVariables.VAR_LETMEOFF );
@@ -37,14 +37,14 @@ public class WalkOffTimingTests
 			.I( Opcode.TEST, on )
 			.I( Opcode.BRANCH_Z, "release" )
 			.I( Opcode.COPY, temp, on )
-			.I( Opcode.WALKON, on, 1, 2, 3, 4, 2, 1 )
+			.I( Opcode.WALKON, on, 1, 2, 3, 4, action, 1 )
 			.I( Opcode.COPY, on, 0 )
 			.I( Opcode.WALKOFF, temp )
 			.Label( "release" )
 			.I( Opcode.WALKGET, off )
 			.I( Opcode.ENDSLICE )
 			.I( Opcode.BRANCH, "loop" );
-		var bridge = new RideVisitorBridge( 5, "Walk", RideVisitorKind.Shop, 1, 0, 10 ) { WalkOffMilliseconds = fallback, WalkNodeDistance = distance };
+		var bridge = new RideVisitorBridge( 5, "Walk", RideVisitorKind.Shop, 1, 0, 10 ) { WalkOffMilliseconds = fallback, WalkNodeDistance = distance, WalkOffEffect = effect };
 		var vm = new RideVM( new RideScriptFile( new MemoryStream( asm.Build( GuestTests.ShopVariables ) ) ), new RideVMOptions { Effects = new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ), Seed = 1 } );
 		bridge.Attach( vm, () => true );
 		var host = new Host { Clock = () => vm.TimeMilliseconds };
@@ -59,6 +59,18 @@ public class WalkOffTimingTests
 		var boarded = host.Events.First( item => item.Event == "board 1" ).Time;
 		var released = host.Events.First( item => item.Event == "release 1" ).Time;
 		return (released - boarded, bridge);
+	}
+
+	[TestMethod]
+	public void AWalkOffWithWalkAction2CreatesItsEffectAtTheStartNodeOnce()
+	{
+		// tp.exe 0x5572EB: only walk action 2 creates effect 0x13, at the slot's start node (operand u3)
+		var started = new List<int>();
+		Walk( ( _, _, _ ) => 10f, 1000, effect: started.Add );
+		CollectionAssert.AreEqual( new[] { 3 }, started );
+		var other = new List<int>();
+		Walk( ( _, _, _ ) => 10f, 1000, effect: other.Add, action: 4 );
+		Assert.AreEqual( 0, other.Count, "the head action creates no effect" );
 	}
 
 	[TestMethod]

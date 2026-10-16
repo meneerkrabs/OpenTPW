@@ -91,7 +91,7 @@ public class OriginalAttractionImportTests
 	}
 
 	[TestMethod]
-	public void TheShippedJungleSavesOperatingWordsLeaveEveryRideRuntimeUnchanged()
+	public void TheShippedJungleSavesOperatingWordsLeaveEveryAttractionRuntimeUnchanged()
 	{
 		var dataPath = OriginalParkImportTests.OriginalDataPath();
 		if ( !File.Exists( Path.Combine( dataPath, "levels", "Standard.sam" ) ) )

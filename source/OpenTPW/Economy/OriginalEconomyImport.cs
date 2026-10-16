@@ -554,7 +554,8 @@ public sealed class OriginalEconomyImport
 		var matches = slots.Count == level.Count && slots.Select( ( slot, index ) => settings.Challenges.TryGetValue( level[index], out var definition ) && definition.Type == slot.Type ).All( match => match );
 		if ( !matches )
 		{
-			evidence.Add( $"[APPROX:SAVE-005] Challenge state not imported: the save's {slots.Count} slots do not match the level's {level.Count} challenges; the first offer is due on day {economy.Objectives.NextOfferDay}." );
+			// [APPROX:SAVE-005] a save whose slots do not match the level's challenges keeps the new park's challenge state, where the original loads the 20 slots as saved (their own definitions included) — evidence needed: challenge definitions taken from the saved slots instead of the level's settings
+			evidence.Add( $"[APPROX:SAVE-005] Challenge state not imported: the save's {slots.Count} slots do not match the level's {level.Count} challenges (the original loads whatever the slots hold); the first offer is due on day {economy.Objectives.NextOfferDay}." );
 			return;
 		}
 		// a stamp before the calendar start (or a wild one) is cut to the range a park save accepts
@@ -596,8 +597,8 @@ public sealed class OriginalEconomyImport
 		var carriedThings = slots.Select( ( slot, index ) => (Index: level[index], Thing: Carried( slot.FollowupThing )) ).Where( entry => entry.Thing != 0 ).ToDictionary( entry => entry.Index, entry => entry.Thing );
 		economy.RestoreOriginalChallenges( nextOffer, nextPosition, running, deadline, system.Value, offered, declines, finished, system.Switch1 != 0, Carried( system.ActualThing ), carriedThings, nextSeconds, deadlineSeconds );
 		evidence.Add( $"Challenges imported: {state}; {finished.Count} won, {declines.Count} declined, carried object {(system.ActualThing == 0 ? "none" : Carried( system.ActualThing ) == 0 ? $"thing {system.ActualThing} (not an imported object)" : $"thing {system.ActualThing}")}." );
-		// [APPROX:SAVE-005] the loss counts (slot +0x24, which the loss 0x4d3140 raises and no reader of the challenge code, the offer scan 0x4d2a70 or the follow-up scan 0x4d2b60 tests) and the day an unanswered offer was made (slot +0x20) are not imported — evidence needed: a reader of the slot's +0x24 and +0x20 words outside the challenge system
-		evidence.Add( $"[APPROX:SAVE-005] Challenge values not imported: losses {string.Join( "/", slots.Select( slot => slot.Lost ) )}." );
+		// [BIN:TPW-EXE:0x4d1ae0 challenge loss] a slot's loss count (+0x24) is raised by the loss 0x4d3140 → 0x4d1ae0 and read only by the save serializer (0x4d12b7) and loader (0x4d159b); the offered word (+0x20) is zeroed by the constructor (0x4d0f76) and the clear (0x4d1bf3), never written again in play and read only by the serializer and loader; neither feeds the offer scan 0x4d2a70 (used, not won, declined below the limit, independent), the follow-up scan 0x4d2b60 or the win 0x4d2fb0, so there is nothing for an import to change
+		evidence.Add( $"Challenge loss counts {string.Join( "/", slots.Select( slot => slot.Lost ) )} and offered words {string.Join( "/", slots.Select( slot => slot.Offered ) )} read, not kept: no challenge code reads them (0x4d1ae0)." );
 	}
 
 	/// <summary>

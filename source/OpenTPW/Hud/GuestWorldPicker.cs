@@ -6,7 +6,7 @@ using NVector4 = System.Numerics.Vector4;
 namespace OpenTPW.Hud;
 
 /// <summary>CPU hit test against the current renderer's camera-facing sprite rectangle.</summary>
-// [APPROX:UI-930] rectangle hits choose the nearest projected depth, then lowest guest id; transparent pixels and terrain/object occlusion are not tested — evidence needed: original visitor picking geometry and occlusion policy
+// [APPROX:UI-930] rectangle hits choose the nearest projected depth, then lowest guest id; transparent pixels and terrain/object occlusion are not tested — evidence needed: the original picks in the render pass (the pick block 0x7b05a8 is opened and closed around the draws by 0x46c100/0x46c110 in the frame routine 0x54e2f7, and the thing under the pointer lands in 0x7b05ac); the render-pass hit test itself (what it tests, its occlusion) and the Shift/Ctrl precedence of the hover handler 0x486d90 are not read
 internal static class GuestWorldPicker
 {
 	internal static bool TryHit(NVector3 feet, GuestAtlasFrame frame, bool mirror, Matrix4x4 view,

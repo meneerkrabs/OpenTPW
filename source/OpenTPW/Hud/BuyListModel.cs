@@ -111,33 +111,3 @@ public sealed class BuyListModel
 		Select( Math.Max( 0, SelectedIndex ) );
 	}
 }
-
-/// <summary>
-/// The balance change shown beside the balance (Mac HUD table control 48): the sum of the balance changes within
-/// <see cref="Seconds"/> of the last one.
-/// </summary>
-// [APPROX:UI-047] the change text stays 4 s after the last balance change and sums the changes within that time — evidence needed: capture of the original cash trend display
-public sealed class CashChangeTracker
-{
-	public const float Seconds = 4f;
-	private long last;
-	private float remaining;
-	private long sum;
-
-	public CashChangeTracker( long balance ) => last = balance;
-
-	/// <summary>The change currently shown; 0 when none.</summary>
-	public long Change => remaining > 0 ? sum : 0;
-
-	public void Update( long balance, float elapsed )
-	{
-		if ( balance != last )
-		{
-			sum = (remaining > 0 ? sum : 0) + (balance - last);
-			last = balance;
-			remaining = Seconds;
-		}
-		else if ( remaining > 0 )
-			remaining = Math.Max( 0, remaining - elapsed );
-	}
-}

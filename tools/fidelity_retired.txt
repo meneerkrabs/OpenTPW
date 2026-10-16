@@ -128,6 +128,7 @@ GATE-005 docs/M3-GATE.md
 GUEST-001 docs/PROGRESS.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
+HEADS-001 docs/GUESTS.md
 HEADS-002 docs/PROGRESS.md
 HEADS-003 docs/PROGRESS.md
 HEADS-005 docs/GUESTS.md
@@ -204,6 +205,7 @@ RIDES-039 docs/reverse/REVIEW-ANIM-2.md
 RIDES-041 docs/OBJECTS.md
 RIDES-042 docs/OBJECTS.md
 RIDES-043 docs/OBJECTS.md
+SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 TOUR-001 docs/PROGRESS.md
@@ -252,6 +254,7 @@ UI-043 docs/PROGRESS.md
 UI-045 docs/PROGRESS.md
 UI-048 docs/PROGRESS.md
 UI-049 docs/PROGRESS.md
+UI-061 docs/UI.md
 UI-062 docs/PROGRESS.md
 UI-063 docs/progress/2026-10-16-interface-round-c.md
 UI-065 docs/PROGRESS.md
@@ -260,13 +263,16 @@ UI-084 docs/PROGRESS.md
 UI-088 docs/UI.md
 UI-089 docs/PROGRESS.md
 UI-090 docs/PROGRESS.md
+UI-093 docs/PROGRESS.md
 UI-097 docs/PROGRESS.md
 UI-098 docs/PROGRESS.md
+UI-099 docs/STAFF-PLACEMENT.md
 UI-902 docs/PROGRESS.md
 UI-903 docs/PROGRESS.md
 UI-906 docs/PROGRESS.md
 UI-908 docs/PROGRESS.md
 UI-920 docs/PROGRESS.md
+UI-940 docs/UI.md
 VM-900 docs/PROGRESS.md
 VM-901 docs/PROGRESS.md
 VM-902 docs/DETERMINISM.md

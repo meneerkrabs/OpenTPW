@@ -31,19 +31,6 @@ public static class GuestThoughts
 	public const float MessyShare = 0.2f;
 
 	/// <summary>
-	/// The draw that decides whether the needs phase picks a thought: a SplitMix64 hash of the guest and the park turn, so the pick needs no saved
-	/// stream and leaves the guests' own stream as it was.
-	/// </summary>
-	// Approximation (GUEST-006, registered at GuestSimulation.UpdateNeedsTurn): the original takes a draw of its shared world generator (0x00516330); OpenTPW's streams differ from it anyway (DET-014)
-	public static uint PickDraw( int guestId, uint turn )
-	{
-		var z = ((ulong)(uint)guestId << 32 | turn) + 0x9E3779B97F4A7C15UL;
-		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
-		z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
-		return (uint)((z ^ (z >> 31)) >> 33);
-	}
-
-	/// <summary>
 	/// The thought the needs phase picks from the guest's meters (each taken as a byte) and the littered share of its block, or null to keep the
 	/// thought it has.
 	/// </summary>

@@ -418,9 +418,14 @@ public class WalkSearchTests
 	public void SavesWithAProgressAboveOneOrBufferedWaypointsOffTheRouteAreRejected()
 	{
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
-		for ( var tick = 0; tick < 60 * 60 && !simulation.Guests.Any( guest => guest.Navigation.Original && guest.HasWaypoint ); tick++ )
-			simulation.Tick( GuestSnapshotTests.Tick );
 		var snapshot = simulation.CaptureSnapshot();
+		for ( var tick = 0; tick < 60 * 60 && !(snapshot.Guests.Any( guest => guest.Navigation.OriginalWalk != null ) && snapshot.Guests.Any( guest => guest.Navigation.OriginalWalk == null && !guest.Navigation.OffGrid )); tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			if ( tick % 5 == 0 )
+				snapshot = simulation.CaptureSnapshot();
+		}
+		snapshot = simulation.CaptureSnapshot();
 		Assert.IsTrue( simulation.ValidateSnapshot( snapshot ).IsValid );
 		GuestSimulationSnapshot With( Func<GuestNavigationSnapshot, GuestNavigationSnapshot?> change ) => snapshot with
 		{

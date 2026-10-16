@@ -1,3 +1,5 @@
+using OpenTPW.UI.Original;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -24,12 +26,18 @@ public readonly record struct WeatherForecastSample(
 /// shows, the transient lines when the weather changes, and the messages posted at those moments. This is the
 /// testable, GPU-free half — <see cref="WeatherForecastPresenter"/> draws it. The original's forecast message
 /// handler is not traced, so the wording, cadence and surface are OpenTPW approximations (AUDIO-905..907); no
-/// weather text exists in the shipped string tables to copy.
+/// weather text exists in the shipped string tables to copy, so the lines are OpenTPW's own, worded in the
+/// selected language (<see cref="SupplementaryStrings"/>).
 /// </summary>
 // [EXT:forecast-wording] the forecast's kind text classifies the pending quality by the converter's bands only — the apply-time snow/rain coin flip has not happened, so both bands read "snow or rain", and the lightning band composes "thunderstorms"; the wording is OpenTPW's — evidence needed: the original's forecast message handler and its text
 // [EXT:forecast-cadence] one message is posted when a forecast appears and one when it applies, plus one transient current-weather line on attach (a park entered or loaded with weather on screen); a park resumed mid-warning announces the pending forecast once, and the transient line shows for ChangedLineSeconds of simulation time — evidence needed: the original's forecast message cadence
 public sealed class WeatherForecastState
 {
+	private readonly Func<string> language;
+
+	/// <param name="language">The language the lines are worded in when they are made (<see cref="SupplementaryStrings"/>); English when null.</param>
+	public WeatherForecastState( Func<string>? language = null ) => this.language = language ?? (() => GameLanguage.DefaultLanguage);
+
 	/// <summary>How long the transient changed/current line stays on screen, in seconds of simulation time.</summary>
 	public const float ChangedLineSeconds = 6f;
 
@@ -72,24 +80,26 @@ public sealed class WeatherForecastState
 			// A park entered or loaded with weather on screen says so once; a dry, quiet park stays silent.
 			attached = true;
 			if ( !IsQuiet( sample.CurrentBands ) )
-				ShowTransient( $"The weather: {KindText( sample.CurrentBands )}." );
+				ShowTransient( Text( OpenTpwText.WeatherNow, KindText( sample.CurrentBands ) ) );
 		}
 
 		string? countdown = null;
 		if ( sample.ForecastQuality is int quality )
 		{
 			var due = Math.Max( 0, sample.ForecastApplyDay - sample.Day );
-			countdown = $"Forecast: {KindText( sample.ForecastBands )} {DueText( due )}.";
+			var kind = KindText( sample.ForecastBands );
+			var when = DueText( due );
+			countdown = Text( OpenTpwText.WeatherForecastLine, kind, when );
 			if ( announced != (sample.ForecastApplyDay, quality) )
 			{
 				announced = (sample.ForecastApplyDay, quality);
-				announcements.Add( $"Weather forecast: {KindText( sample.ForecastBands )} {DueText( due )}." );
+				announcements.Add( Text( OpenTpwText.WeatherForecastMessage, kind, when ) );
 			}
 		}
 		else if ( announced is not null )
 		{
 			announced = null;
-			ShowTransient( $"The weather has changed: {KindText( sample.CurrentBands )}." );
+			ShowTransient( Text( OpenTpwText.WeatherChanged, KindText( sample.CurrentBands ) ) );
 			announcements.Add( flashText! );
 		}
 
@@ -118,24 +128,29 @@ public sealed class WeatherForecastState
 	/// and dry weather.
 	/// </summary>
 	// [EXT:forecast-wording] the kind wording is OpenTPW's; no weather text exists in the shipped Language tables (searched) — evidence needed: the original's forecast message handler
-	internal static string KindText( WeatherQualityBands bands )
+	internal string KindText( WeatherQualityBands bands ) => Text( KindKey( bands ) );
+
+	internal static OpenTpwText KindKey( WeatherQualityBands bands )
 	{
 		if ( bands.Lightning )
-			return bands.Snow || bands.Rain ? "thunderstorms" : "thunder and lightning";
+			return bands.Snow || bands.Rain ? OpenTpwText.WeatherThunderstorms : OpenTpwText.WeatherThunderAndLightning;
 		if ( bands.Snow && bands.Rain )
-			return "snow or rain";
+			return OpenTpwText.WeatherSnowOrRain;
 		if ( bands.Snow )
-			return "snow";
+			return OpenTpwText.WeatherSnow;
 		if ( bands.Rain )
-			return "rain";
-		return "dry weather";
+			return OpenTpwText.WeatherRain;
+		return OpenTpwText.WeatherDry;
 	}
 
 	/// <summary>When a due day reads: today, tomorrow, or "in N days".</summary>
-	internal static string DueText( long daysLeft ) => daysLeft switch
+	internal string DueText( long daysLeft ) => daysLeft switch
 	{
-		0 => "today",
-		1 => "tomorrow",
-		_ => $"in {daysLeft} days",
+		0 => Text( OpenTpwText.WeatherToday ),
+		1 => Text( OpenTpwText.WeatherTomorrow ),
+		_ => Text( OpenTpwText.WeatherInDays, daysLeft ),
 	};
+
+	private string Text( OpenTpwText key, params object[] arguments ) =>
+		string.Format( System.Globalization.CultureInfo.InvariantCulture, SupplementaryStrings.Get( key, language() ), arguments );
 }

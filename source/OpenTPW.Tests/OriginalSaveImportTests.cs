@@ -179,9 +179,11 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "hired 2,430,000 park seconds after FunnyTimeStart = turn 648" );
 		Assert.AreEqual( 1, import.ImportedStaff );
 		Assert.IsFalse( import.ParkClosed );
-		foreach ( var id in new[] { "SAVE-001", "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-010" } )
+		foreach ( var id in new[] { "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
-		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) ), "the dropped generator state is named" );
+		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) && line.Contains( "imported" ) ), "the generator state is named as imported" );
+		Assert.AreEqual( 0x3F416BBAu, economy.World.State, "the save's mRandomSeed is the world generator's state (tp.exe 0x00516330, saved raw by 0x00517123)" );
+		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "[APPROX:SAVE-001]" ) ), "SAVE-001 is retired" );
 		Assert.IsTrue( import.Evidence.Any( line => line.StartsWith( "0 saved guests", StringComparison.Ordinal ) && line.Contains( "imported by the guest simulation" ) ) );
 		Assert.IsFalse( import.Evidence.Any( line => line.Contains( "adjusted on import" ) ), "in-range staff values are imported unchanged" );
 		AssertReportsUnimportedValues( import );

@@ -98,10 +98,12 @@ public class ParkResumeSaveFileTests
 		var guests = park.Simulation.CaptureSnapshot();
 		Assert.IsTrue( guests.Guests.Length >= 4, "the fixture park holds guests to save" );
 
-		var scripts = new RideScriptWorld().CaptureSnapshot() with { NextAttractionId = 2 };
+		var scriptWorld = new RideScriptWorld();
+		scriptWorld.AttachWorld( park.Simulation.World );   // one world generator for the whole park
+		var scripts = scriptWorld.CaptureSnapshot() with { NextAttractionId = 2 };
 		var economy = EconomyTestData.Park();
 		var instance = economy.RegisterExisting( 1100 );
-		var world = new WorldRandomState( WorldSeed.Default.Value, guests.RandomState, scripts.RandomState, 42u );
+		var world = new WorldRandomState( WorldSeed.Default.Value, (uint)guests.RandomState, 42u );
 		var seed = WorldSeed.Default;
 		var objects = new ParkObjects( null!, new SandboxParkGrid(), seed );
 		var layout = ParkLayoutSnapshot.CaptureSnapshot( park.Grid.Cells, objects ) with

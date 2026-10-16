@@ -137,7 +137,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				textureSwitch = TexturePackSwitch.Begin( name, new List<string>(), smokePacks );
 				Require( textureSwitch != null, "the live park texture switch starts" );
 			} );
-			steps.Enqueue( ($"park head pack '{name}' completes", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+			WaitForLoad( $"park head pack '{name}' completes", () => { textureSwitch!.Pump(); return textureSwitch.Finished; } );
 			Wait( $"park head pack '{name}' deletion frames", 3 );
 			Do( $"park head pack '{name}' releases old atlases", () =>
 			{
@@ -209,7 +209,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		// The switch runs in the background with a progress line at the top; capture it while it is still running.
 		Wait( "texture switch progress frames", 2 );
 		Do( "texture switch progress", () => { if ( !textureSwitch!.Finished ) CaptureFrame( "texture-switch-progress.png" ); } );
-		steps.Enqueue( ("texture pack loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		WaitForLoad( "texture pack loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; } );
 		Wait( "texture pack frames", 3 );
 		Do( "texture pack on verified", () =>
 		{
@@ -221,7 +221,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			textureSwitch = TexturePackSwitch.Begin( "", diagnostics, packs );
 			Require( textureSwitch != null, "switching back starts" );
 		} );
-		steps.Enqueue( ("texture pack unloads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; }) );
+		WaitForLoad( "texture pack unloads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; } );
 		Wait( "texture pack off frames", 3 );
 		Do( "texture pack off verified", () =>
 		{
@@ -247,7 +247,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 					textureSwitch = TexturePackSwitch.Begin( pack, new List<string>(), realPacks );
 					Require( textureSwitch != null, "the real pack switch starts" );
 				} );
-				steps.Enqueue( ($"real pack {name} loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; } ) );
+				WaitForLoad( $"real pack {name} loads", () => { textureSwitch!.Pump(); return textureSwitch.Finished; } );
 				Do( $"real pack {name} done", () => Log.Trace( $"Texture pack switch to '{(pack.Length == 0 ? "original" : pack)}': {textureSwitch!.Total} textures in {timer.Elapsed.TotalSeconds:F1} s over {frame - frames} frames; working set {memoryBefore / 1048576} -> {System.Diagnostics.Process.GetCurrentProcess().WorkingSet64 / 1048576} MB." ) );
 			}
 		}
@@ -1491,12 +1491,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Click( flow.Menu.Stack.Top!, "ok" );
 		} );
 		// the lobby's enter sequence (turn, gate, zoom under the fade) plays before the park loads
-		var parkFrames = 0;
-		steps.Enqueue( ("Instant Action park loads", () =>
-		{
-			Require( ++parkFrames < 3000, "the Instant Action park starts after the enter sequence" );
-			return flow.Level != null && flow.Hud != null && flow.Lobby == null;
-		}) );
+		WaitForLoad( "Instant Action park loads", () => flow.Level != null && flow.Hud != null && flow.Lobby == null );
 		Wait( "Instant Action park settles", 40 );
 		Do( "Instant Action start", PlayInstantAction );
 	}
@@ -1534,7 +1529,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		Log.Trace( $"Instant Action jungle: {level.Park.Import!.ImportedObjects} seed objects, {economy.Staff.Members.Count} staff, research advanced {start} -> {economy.Date}; loans, research effort and upgrades refused." );
 		Device.WaitForIdle();
 		completed = true;
-		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({speechFrames} of them waiting for advisor speech), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
+		Log.Trace( $"Native front-end smoke test passed in {GameLanguage.Current.Name} at {Screen.PixelSize.X}x{Screen.PixelSize.Y} px, UI scale {Context.Canvas.TextScale}: {frame} frames ({speechFrames} of them waiting for advisor speech, {loadFrames} for asynchronous loading), lobby + menu readback, mouse/keyboard navigation, options cancel, original jungle via game mode, HUD money/date readback, finance/loans/research window captures and title readback, two distinct catalogue objects bought exactly once through the park economy, info arm, economy pause, sale, overlap refusal, open/close, Escape out of the queue tool, pause menu, exit to lobby, read-only visit build/open/delete/save guards, Instant Action return and Load Park reference start, Instant Action seed with imported bank, turn and staff, research and gates. Overview windows: visitors listed, scrolled, sorted and located; attractions listed, selected, activated and a fixture sold; the developer prototype listed once, activated and removed through its own seam with the selection healed; the window keys V and B pressed through Input.Pressed; the visit's attractions listed, sorted and its delete refused." );
 		GameFlow.Quit();
 	}
 
@@ -1554,6 +1549,11 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private int stepState;
 	// Frames spent waiting for real-time advisor speech; they do not count against MaximumFrames.
 	private int speechFrames;
+	// Frames spent waiting for asynchronous loading (park, texture packs); they do not count against MaximumFrames either.
+	private int loadFrames;
+	private System.Diagnostics.Stopwatch? loadWait;
+	/// <summary>Wall-clock allowance of one asynchronous load wait; settable so the budget itself can be tested.</summary>
+	internal static TimeSpan LoadAllowance { get; set; } = TimeSpan.FromSeconds( 180 );
 	private System.Diagnostics.Stopwatch? speechWait;
 	private TimeSpan speechAllowance;
 	// Room beyond the clip's remaining length for the audio queue to drain and the frame that notices it.
@@ -1587,6 +1587,26 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 		return false;
 	}) );
 
+	/// <summary>
+	/// Waits for asynchronous loading to finish. Loads run on worker threads, so the frames they take depend on the
+	/// machine's load (the smokes are paced at 60 Hz, which makes a frame budget a wall-clock budget). Those frames
+	/// are left out of the frame budget, which bounds the test's own progress; the wait gets its own time allowance.
+	/// </summary>
+	private void WaitForLoad( string name, Func<bool> done ) => steps.Enqueue( (name, () =>
+	{
+		if ( done() )
+		{
+			if ( loadWait != null )
+				Log.Trace( $"Front-end smoke: '{name}' finished after {loadWait.Elapsed.TotalSeconds:F2} s of waiting." );
+			loadWait = null;
+			return true;
+		}
+		loadWait ??= System.Diagnostics.Stopwatch.StartNew();
+		Require( loadWait.Elapsed < LoadAllowance, $"'{name}' finishes within {LoadAllowance.TotalSeconds:F0} s of wall-clock time (still loading after {loadWait.Elapsed.TotalSeconds:F1} s and {loadFrames} frames)" );
+		loadFrames++;
+		return false;
+	}) );
+
 	private void Wait( string name, int frames ) => steps.Enqueue( (name, () =>
 	{
 		if ( waitUntil == 0 )
@@ -1602,7 +1622,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	public void Update()
 	{
 		++frame;
-		Require( frame - speechFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
+		Require( frame - speechFrames - loadFrames < MaximumFrames, $"finish within {MaximumFrames} frames (stuck at '{(steps.Count > 0 ? steps.Peek().Name : "end")}')" );
 		while ( steps.Count > 0 && steps.Peek().Step() )
 		{
 			steps.Dequeue();

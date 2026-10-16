@@ -185,6 +185,7 @@ internal sealed partial class GameFlow : IDisposable
 			ContinueAutomatic = entry => RequestAutomaticContinue( createdMenu!, entry ),
 			ContinuePark = entry => QueueProgressLevel( entry.Park.Level, () => ContinuePark( entry ) ),
 			Quit = RequestProgressQuit,
+			StartEnterParkEffect = StartEnterParkEffect,
 			CreateOptions = CreateOptions,
 			IslandSelected = island =>
 			{
@@ -202,6 +203,20 @@ internal sealed partial class GameFlow : IDisposable
 			Menu.SelectLevel( selectLevel );
 		Camera.SetCameraMode<LobbyCameraMode>();
 		Log.Trace( $"Front end: lobby with {Lobby.IslandCount} islands ({Lobby.PartCount} draw batches)." );
+	}
+
+	private ParticleRenderer? enterParkEffect;
+
+	/// <summary>The screen-space draws of the enter-park effect's last frame (smoke instrumentation); 0 when none runs.</summary>
+	internal int EnterParkEffectDraws => enterParkEffect != null && Entity.All.Contains( enterParkEffect ) ? enterParkEffect.DrawnScreenParticles : 0;
+
+	/// <summary>Starts the enter-park routine's screen-space particle effect over the lobby's key panel; it lives until the lobby is torn down (a park load).</summary>
+	internal void StartEnterParkEffect()
+	{
+		enterParkEffect?.Delete();
+		enterParkEffect = ParticleRendererModule.CreateScreenRenderer();
+		if ( enterParkEffect != null )
+			LobbyEnterEffect.Start( new ParticleSystemPool( enterParkEffect.Particles ), instantAction: false );
 	}
 
 	public UiScreen CreateOptions( UiScreenStack stack, Action closed ) => OptionsScreen.Create( stack, Strings, new OptionsServices
@@ -902,6 +917,13 @@ internal sealed partial class GameFlow : IDisposable
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		if ( Level != null )
 		{
+			// The park's backdrop: the level's fog colour (what the original's viewport clear and the sky's haze blend with), then the sky over it.
+			// [BIN:TPW-EXE:0x4080e0 fog colour] the level load copies ThemeEngine.FogColour into the fog colour [0x8bd47c]; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses it when render flags & 0x4002000, else black
+			// [APPROX:UI-107] the clear is always the fog colour, since the park's render flags (0x4002000 bits of [0x8bcbc8]) are not traced; the sky is Level.DrawSky (World/Sky.cs)
+			backgroundBatch.Clear();
+			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.BackdropColour );
+			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
+			Level.DrawSky();
 			Level.Render();
 			Advisor?.Render();
 		}

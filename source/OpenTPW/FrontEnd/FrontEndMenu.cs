@@ -23,6 +23,8 @@ public sealed class FrontEndActions
 	public Action<ParkContinueEntry>? ContinuePark { get; init; }
 	internal Func<string, AutomaticParkContinueEntry?> AutomaticEntry { get; init; } = _ => null;
 	internal Action<AutomaticParkContinueEntry>? ContinueAutomatic { get; init; }
+	/// <summary>Starts the screen-space particle effect the enter-park routine places over the lobby's key panel (not called in Instant Action).</summary>
+	public Action StartEnterParkEffect { get; init; } = () => { };
 	public Action Quit { get; init; } = () => { };
 	public Func<UiScreenStack, Action, UiScreen>? CreateOptions { get; init; }
 	/// <summary>Called when the selected island changes (moves the lobby camera).</summary>

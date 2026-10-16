@@ -961,6 +961,7 @@ public partial class Level : IDisposable
 		trackRenderers.Clear();
 		tourRenderer?.Dispose();
 		tourRenderer = null;
+		DisposeSky();
 		DetachOverlay();
 		TextOverlay?.Dispose();
 	}

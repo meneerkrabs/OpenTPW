@@ -114,8 +114,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 		guests = null;
 		// Help still pending or speaking belongs to the windows of this park, which close without reporting.
 		if ( level != null )
-			foreach ( var window in AdvisorUiHelp.Windows.Keys )
-				Controller.Withdraw( AdvisorUiHelp.Windows[window], AdvisorClock );
+			foreach ( var message in AdvisorUiHelp.AllWindowMessages )
+				Controller.Withdraw( message, AdvisorClock );
 		park = null;
 		level = null;
 		presentation?.Kill();
@@ -162,7 +162,9 @@ internal sealed class AutomaticAdvisor : IDisposable
 	{
 		if ( level == null )
 			return;
-		OnModeChanged();
+		// the object window builders (0x4AF980, 0x4B0E30, 0x4B2430) only build the window and post its help; whether the window creator 0x48CEA0 changes the interface mode is not read, so the tools' help stays
+		if ( !window.StartsWith( ObjectInfoHelp.Prefix, StringComparison.Ordinal ) )
+			OnModeChanged();
 		if ( AdvisorUiHelp.MessageFor( window ) is { } message )
 			PostHelp( message, $"window {window}" );
 	}
@@ -183,7 +185,7 @@ internal sealed class AutomaticAdvisor : IDisposable
 	// [BIN:TPW-EXE:0x00486B40 unadvise] the window close handlers withdraw their message through 0x486B40 → 0x59AA70
 	public void OnWindowClosed( string window )
 	{
-		if ( AdvisorUiHelp.MessageFor( window ) is { } message )
+		foreach ( var message in AdvisorUiHelp.WithdrawnWith( window ) )
 			WithdrawHelp( message, $"window {window}" );
 	}
 

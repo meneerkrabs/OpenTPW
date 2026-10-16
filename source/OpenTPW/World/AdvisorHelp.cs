@@ -120,7 +120,15 @@ internal static class AdvisorUiHelp
 	public static bool RepeatsTutorialOnHelpKey( string? window ) => window != null && Windows.ContainsKey( window );
 
 	/// <summary>The help message of the HUD window named <paramref name="window"/>, or null when it has none.</summary>
-	public static int? MessageFor( string window ) => Windows.TryGetValue( window, out var message ) ? message : null;
+	public static int? MessageFor( string window ) =>
+		Windows.TryGetValue( window, out var message ) ? message : ObjectInfoHelp.TryParse( window, out var posted, out _ ) ? posted : null;
+
+	/// <summary>The messages a closing window withdraws: its own, and for a ride window the one it did not post as well.</summary>
+	public static IReadOnlyList<int> WithdrawnWith( string window ) =>
+		ObjectInfoHelp.TryParse( window, out _, out var withdrawn ) ? withdrawn : MessageFor( window ) is { } message ? new[] { message } : Array.Empty<int>();
+
+	/// <summary>Every message some window posts (the ones a park that ends withdraws).</summary>
+	public static IEnumerable<int> AllWindowMessages => Windows.Values.Concat( ObjectInfoHelp.Messages ).Distinct();
 
 	/// <summary>
 	/// The ten help messages the original withdraws whenever the interface mode changes (0x52F200, 0x52F580): the help of the tools
@@ -128,4 +136,66 @@ internal static class AdvisorUiHelp
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052F200 interface mode change] when the new mode differs from the old one, 0x59AA70 is called for 0xB8, 0xCB, 0xD6, 0xCD, 0xC9, 0xCE, 0xC1, 0x159, 0x15A and 0x151 (184, 203, 214, 205, 201, 206, 193, 345, 346, 337); the new mode 3 then posts 0xCB (203)
 	public static readonly IReadOnlyList<int> ModeHelpMessages = new[] { 184, 203, 214, 205, 201, 206, 193, 345, 346, 337 };
+}
+
+/// <summary>The kinds of object window the original opens for a placed object (one layout table each).</summary>
+internal enum ObjectInfoKind { Ride, Shop, Sideshow }
+
+/// <summary>
+/// The help of the object windows. The original opens one of three windows for a placed object, by its layout table, and each builder posts its
+/// message as it opens: the ride window the repair message 297 when the truncated state of repair is 1 to 20 and the ride message 207 otherwise,
+/// the shop window 209 and the sideshow window 208; the close handlers withdraw them (a ride window both of its two). The HUD reports such a
+/// window under a name that carries the kind, that choice and the opening, so every object shown anew is a new window.
+/// </summary>
+// [BIN:TPW-EXE:0x004AF980 ride window builder] after building the window of layout table 0x755150 it takes the truncated float at the object's +0x44 (the state of repair); a low byte of 1 to 0x14 posts 0x129 (297) at 0x4AF9C8, anything else 0xCF (207) at 0x4AF9DA; the close handler withdraws 0x129 and then 0xCF (0x4AF6B7, 0x4AF6C4)
+// [BIN:TPW-EXE:0x004B0E30 shop window builder] the window of layout table 0x755908 posts 0xD1 (209) at 0x4B0E5C; its close handler withdraws it (0x4B0BE3)
+// [BIN:TPW-EXE:0x004B2430 sideshow window builder] the window of layout table 0x755E80 posts 0xD0 (208) at 0x4B245C; its close handler withdraws it (0x4B2203)
+// [BIN:TPW-EXE:0x00486900 thing window dispatcher] the object's window is chosen by its kind: 0x4AF980 (calls at 0x4869CB and 0x4869F1), 0x4B0E30 (0x486A01) or 0x4B2430 (0x486A11)
+internal static class ObjectInfoHelp
+{
+	public const string Prefix = "objectInfo/";
+	public const int RideMessage = 207, RideRepairMessage = 297, ShopMessage = 209, SideshowMessage = 208;
+
+	/// <summary>The messages any object window posts.</summary>
+	public static readonly IReadOnlyList<int> Messages = new[] { RideMessage, RideRepairMessage, ShopMessage, SideshowMessage };
+
+	/// <summary>Whether the truncated state of repair posts the repair message: the low byte of the integer is 1 to 20.</summary>
+	public static bool IsLowRepair( double? repair )
+	{
+		if ( repair is not { } value || !double.IsFinite( value ) )
+			return false;
+		var low = (byte)(int)Math.Truncate( value );
+		return low is >= 1 and <= 20;
+	}
+
+	/// <summary>The window name for the <paramref name="opening"/>th object window shown; <paramref name="repair"/> matters for a ride only.</summary>
+	public static string WindowName( ObjectInfoKind kind, double? repair, int opening ) =>
+		$"{Prefix}{kind}{(kind == ObjectInfoKind.Ride && IsLowRepair( repair ) ? "/repair" : "")}/{opening.ToString( CultureInfo.InvariantCulture )}";
+
+	/// <summary>Reads a window name made by <see cref="WindowName"/>: the message it posts and the messages its close withdraws.</summary>
+	public static bool TryParse( string window, out int posted, out IReadOnlyList<int> withdrawn )
+	{
+		posted = 0;
+		withdrawn = Array.Empty<int>();
+		if ( !window.StartsWith( Prefix, StringComparison.Ordinal ) )
+			return false;
+		var parts = window[Prefix.Length..].Split( '/' );
+		if ( parts.Length is < 2 or > 3 || !Enum.TryParse<ObjectInfoKind>( parts[0], out var kind ) )
+			return false;
+		switch ( kind )
+		{
+			case ObjectInfoKind.Ride:
+				posted = parts.Length == 3 && parts[1] == "repair" ? RideRepairMessage : RideMessage;
+				withdrawn = new[] { RideRepairMessage, RideMessage };
+				return true;
+			case ObjectInfoKind.Shop:
+				posted = ShopMessage;
+				withdrawn = new[] { ShopMessage };
+				return true;
+			default:
+				posted = SideshowMessage;
+				withdrawn = new[] { SideshowMessage };
+				return true;
+		}
+	}
 }

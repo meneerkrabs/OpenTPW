@@ -146,6 +146,17 @@ public class Md2ModelFileTests
 		return data;
 	}
 
+	/// <summary>The member with cell (1, 0)'s word replaced (found by its current value 0x1B0042).</summary>
+	private static byte[] Patched( byte[] data, ModelHeightfield field, uint word )
+	{
+		var copy = (byte[])data.Clone();
+		var bytes = BitConverter.GetBytes( field.GetCellWord( 1, 0 ) );
+		var at = copy.AsSpan().IndexOf( bytes );
+		Assert.IsTrue( at > 0 );
+		W32( copy, at, word );
+		return copy;
+	}
+
 	[TestMethod]
 	public void DecodesSyntheticTerrainHeightfieldBlock()
 	{
@@ -161,6 +172,18 @@ public class Md2ModelFileTests
 		Assert.IsFalse( field.IsHole( 1, 0 ) );
 		Assert.AreEqual( 0x1B0042u, field.GetCellWord( 1, 0 ) );
 		Assert.AreEqual( (-1, 0x1B), (field.GetCellTextureSlot( 0, 0 ), field.GetCellTextureSlot( 1, 0 )) );
+		// Bit 0x4 clear: the cell's triangles meet along (1, 0)–(2, 1); heights follow the triangle the point is in (0x452560).
+		var (h00, h10, h01, h11) = (field.GetCornerHeight( 1, 0 ), field.GetCornerHeight( 2, 0 ), field.GetCornerHeight( 1, 1 ), field.GetCornerHeight( 2, 1 ));
+		Assert.IsFalse( field.SplitsAlongAntiDiagonal( 1, 0 ) );
+		Assert.AreEqual( h00, field.GetHeight( 1, 0 ) );
+		Assert.AreEqual( h11, field.GetHeight( 2, 1 ), 1e-4f );
+		Assert.AreEqual( h00 + 0.75f * (h10 - h00) + 0.25f * (h11 - h10), field.GetHeight( 1.75f, 0.25f ), 1e-4f );
+		Assert.AreEqual( h00 + 0.25f * (h11 - h01) + 0.75f * (h01 - h00), field.GetHeight( 1.25f, 0.75f ), 1e-4f );
+		var turned = CreateGeometryWithHeightfield( out _ );
+		var anti = Read( Patched( turned, field, 0x1B0044 ) ).Heightfield!;
+		Assert.IsTrue( anti.SplitsAlongAntiDiagonal( 1, 0 ) );
+		Assert.AreEqual( h00 + 0.25f * (h10 - h00) + 0.25f * (h01 - h00), anti.GetHeight( 1.25f, 0.25f ), 1e-4f );
+		Assert.AreEqual( h01 + 0.75f * (h11 - h01) - 0.25f * (h11 - h10), anti.GetHeight( 1.75f, 0.75f ), 1e-4f );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => field.GetCornerHeight( 3, 0 ) );
 		Assert.ThrowsException<ArgumentOutOfRangeException>( () => field.GetCellWord( 0, 1 ) );
 

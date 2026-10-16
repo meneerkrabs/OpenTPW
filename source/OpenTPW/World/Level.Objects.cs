@@ -101,6 +101,20 @@ public partial class Level
 			return;
 		Guests.Bins = LitterBins;
 		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
+		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint, tp.exe 0x00528A70); a visit, a Theme Park Inc layout and
+		// Theme Park Inc itself (whose placement is not traced) keep the cells they were given
+		var typesFootprints = !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
+		if ( typesFootprints )
+		{
+			var cells = Guests.Grid.Cells;
+			foreach ( var item in Objects.Objects )
+				cells.WriteFootprint( item.Cells );
+		}
+		if ( typesFootprints )
+		{
+			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells );
+			Objects.ObjectRemoved += item => Guests?.Grid.Cells.ClearFootprint( item.Cells );
+		}
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );
 		Objects.ObjectPlaced += RegisterObjectWithGuests;
@@ -469,7 +483,7 @@ public partial class Level
 		Objects.Grid.CheckTerrain( x, y ) != OriginalPlacementResult.Allowed || Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y )
 		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ));
 
-	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell — evidence needed: original queue-path building/joining rules
+	// [APPROX:RIDES-028] A non-walkable outside cell (queue area) is replaced by the nearest walkable path cell. The original placement 0x528A70 lays the access cells itself: on commit with 0x52FAB0 true (option 0x81B0CC, default 1 at 0x52F139, and 0x8187F8 clear) the entrance's outside cell becomes a queue cell linked to the entrance (0x5297BD–0x529890) and the exit's outside cell a path cell linked to its path neighbours (0x529A58–0x529B1A); with it false the entrance's outside cell becomes a path cell and the exit gets none; an outside cell off the map refuses the placement (0x529744, 0x5299E2), and validation runs ops 0x204/0x201 on it — evidence needed: the cell ops 0x81/0x85/0x86 that link the laid cells, and a model of the laid cells' cost
 	private static (int X, int Y)? WalkableNear( GuestPathGrid grid, int x, int y ) =>
 		grid.IsWalkable( x, y ) ? (x, y) : FindRideEntrance( grid, x, y, x, y );
 
@@ -521,11 +535,11 @@ public partial class Level
 	}
 
 	/// <summary>
-	/// Builds <paramref name="entry"/> with its footprint centred on cell (x, y). In original levels the park
+	/// Builds <paramref name="entry"/> with its footprint centred on cell (x, y) (<see cref="GetCentredAnchor(ObjectShape, int, int, int)"/>). In original levels the park
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] Built footprint is centred on the clicked cell; the cursor ray hits the Z = 0 plane — evidence needed: original build cursor behaviour
+	// [APPROX:RIDES-021] the cursor ray hits the Z = 0 plane to pick the clicked cell; the original's mouse-to-cell picking (the cell the build tool hands to 0x528A70) is not traced — evidence needed: the build tool's cursor pick (0x524960 → 0x528A70)
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )
@@ -562,10 +576,35 @@ public partial class Level
 	}
 
 	/// <summary>Anchor that centres the footprint on cell (x, y).</summary>
-	public static (int X, int Y) GetCentredAnchor( ObjectCatalogEntry entry, int x, int y, int rotation )
+	public static (int X, int Y) GetCentredAnchor( ObjectCatalogEntry entry, int x, int y, int rotation ) => GetCentredAnchor( entry.Shape, x, y, rotation );
+
+	/// <summary>
+	/// The anchor (the grid cell of local (0, 0)) the original placement takes for a build click on cell (x, y): the cell less half the
+	/// shape (truncated), then the rotation's offsets inside a 5 × 5 window, so the clicked cell is local (W/2, H/2) in every rotation
+	/// when each side is odd or at most 5 cells. A wider even side moves with the rotation: the only shipped case, space 3104 Orbiter (6 × 3),
+	/// is clicked on local (3, 1) at rotation 0 and (2, 2) at 90.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00528B44 build click anchor] the clicked cell less (W/2, H/2) (signed halves, 0x528B0F–0x528B68), with a = (5 − W)/2 and b = (5 − H)/2 truncated toward zero (0x528B31–0x528B4D): rotation 0 keeps it, 90 adds (b − a, 4 − a − b), 180 adds (4 − 2a, 4 − 2b), 270 adds (4 − a − b, a − b) (0x528D88–0x528E12); the other branch (0x81AF7C set) is dead, its only store writes 0 (0x52F074)
+	public static (int X, int Y) GetCentredAnchor( ObjectShape shape, int x, int y, int rotation )
 	{
-		var (minX, minY, maxX, maxY) = ObjectFootprint.GetBounds( entry.Shape, 0, 0, rotation );
-		return ObjectFootprint.AnchorForBounds( entry.Shape, x - (maxX - minX) / 2, y - (maxY - minY) / 2, rotation );
+		ArgumentNullException.ThrowIfNull( shape );
+		int left = x - shape.Width / 2, bottom = y - shape.Height / 2;
+		int a = (5 - shape.Width) / 2, b = (5 - shape.Height) / 2;
+		return rotation switch
+		{
+			0 => (left, bottom),
+			90 => (left + b - a, bottom + 4 - a - b),
+			180 => (left + 4 - 2 * a, bottom + 4 - 2 * b),
+			270 => (left + 4 - a - b, bottom + a - b),
+			_ => throw new ArgumentOutOfRangeException( nameof( rotation ), "Rotations are multiples of 90 degrees." )
+		};
+	}
+
+	/// <summary>The build click that places <paramref name="entry"/> at anchor (x, y): the inverse of <see cref="GetCentredAnchor(ObjectShape, int, int, int)"/>, a translation per rotation.</summary>
+	public static (int X, int Y) GetClickCell( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	{
+		var offset = GetCentredAnchor( entry.Shape, 0, 0, rotation );
+		return (anchorX - offset.X, anchorY - offset.Y);
 	}
 
 	/// <summary>Build rule for <paramref name="entry"/> centred on cell (x, y), without buying it.</summary>
@@ -739,6 +778,11 @@ public partial class Level
 			state.IsOpen = item.IsOpen;
 			// VAR_BROKEN (script variable 7) is what the original's ride update reads to set ride state 1 or 4 (0xe1864), which the park points counts-test rejects.
 			state.ScriptBroken = item.Runtime.GetVariable( RideVariables.VAR_BROKEN ) != 0;
+			// the breakdown goes through the script: the economy writes VAR_BREAKSTAT, the script reports VAR_BROKEN and the ride update's state 1 breaks the object down (ECON-023)
+			state.ScriptHosted = item.Runtime.Script != null;
+			state.ScriptBreakStat = item.Runtime.GetVariable( RideVariables.VAR_BREAKSTAT );
+			state.ScriptWorn = item.Runtime.GetVariable( RideVariables.VAR_WORN );
+			Park.Economy.ObserveScriptState( state, item.Visitors.InBrokenState );
 			// a kart or water ride's circuit walk writes the attraction's track word (+0x2C on the PC), which the counts-test reads (docs/TRACKS.md)
 			state.TrackValid = item.Runtime.Bump?.IsTrackValid ?? true;
 			// a coaster counts only while its controller accepts guests (0x00441970); without a controller the original's lookup fails
@@ -748,6 +792,10 @@ public partial class Level
 				state.QueueHasRoom = QueueJoinRules.QueueCountsForParkPoints( item.Visitors, guests.Grid );
 			// The join gate reads the live sideshow words (0xdff70) and the wear gauge ride +64 (0xdfe34); both live in the economy.
 			item.Visitors.Sideshow = new SideshowTerms( state.CostOfGoods, state.Price, state.ChanceOfLosingPercent );
+			// the shop sale reads the amount of the special ingredient of the ride (0x4fe5f8, +0x198)
+			item.Visitors.IngredientAmount = state.IngredientAmount;
+			// the balloon's life reads the shop's quality of goods (0x004FE615, +0x18C)
+			item.Visitors.QualityOfGoods = state.QualityOfGoods;
 			item.Visitors.WearGauge = state.Repair;
 			// the attraction score's "new ride" test reads the object's own age in days (0xdc520)
 			item.Visitors.AgeDays = Park.Economy.ObjectAgeDays( state );

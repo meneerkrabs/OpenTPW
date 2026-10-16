@@ -19,7 +19,7 @@ public readonly record struct SaveTimestamp( int Year, int Month, int Day, int H
 /// saves as whole numbers 0–255. <see cref="TotalCosts"/>/<see cref="TotalTakings"/> are read as signed 32-bit
 /// values; their sign convention is unverified. Kept raw (meaning not traced): the timestamp's two trailing words,
 /// <c>mFlags</c>, the script/track handles, the 24 bytes from <c>mTopLeft</c> to <c>mUpgradeParent</c>, the six history
-/// buffers, <c>mPersonBeingLoaded</c>, <c>mAmountOfSpecialIngredient</c>, <c>mRequestedService</c>,
+/// buffers, <c>mPersonBeingLoaded</c>, <c>mRequestedService</c>,
 /// <c>mTimeMarkedForMaintenance</c> and <c>mUpgradeBalloonSprite</c>; <see cref="State"/> is the raw state enum.
 /// </summary>
 public readonly record struct SaveAttraction(
@@ -29,6 +29,9 @@ public readonly record struct SaveAttraction(
 	uint CustomerCount, uint WalkAwayCount, int TotalCosts, int TotalTakings, float Gauge48, float LifeGauge, float StateOfRepair,
 	int UpgradeLevel, int Length )
 {
+	/// <summary><c>mAmountOfSpecialIngredient</c> (ride <c>+0x198</c>), the signed word after <c>mPricePerUse</c>; the original loader takes it unclamped (tp.exe <c>0x4dcdc1</c>).</summary>
+	public int AmountOfSpecialIngredient { get; init; }
+
 	public const int NameCharacters = 33;
 	/// <summary>History buffers hold at most this many entries (head and count are bounded by it).</summary>
 	public const int MaximumRingEntries = 31;
@@ -88,7 +91,8 @@ public readonly record struct SaveAttraction(
 		var price = reader.U32();
 		if ( price > MaximumPricePerUse )
 			throw new InvalidDataException( $"Save attraction thing {id} has price {price}; the original loader allows 0–{MaximumPricePerUse}." );
-		reader.Skip( 4 );
+		// [BIN:TPW-EXE:0x4dcdc1 attraction loader] mAmountOfSpecialIngredient (+0x198) follows mPricePerUse (+0x194, clamped to 0..500) as a 4-byte word read without a clamp, then mQueueSizeInCells (+0x40)
+		var ingredient = reader.I32();
 		var queueCells = reader.U32();
 		if ( queueCells > ushort.MaxValue )
 			throw new InvalidDataException( $"Save attraction thing {id} has {queueCells} queue cells." );
@@ -106,7 +110,7 @@ public readonly record struct SaveAttraction(
 			throw new InvalidDataException( $"Save attraction thing {id} has upgrade level {level}." );
 		return new SaveAttraction( offset, id, thingBase, infoId, (int)angle, timestamp, meshInstance, Text( line1 ), Text( line2 ),
 			(int)state, capacity, duration, speed, costOfGoods, quality, chance, (int)price, (int)queueCells, customers, walkAways,
-			costs, takings, gauge48, lifeGauge, repair, level, reader.Position - offset );
+			costs, takings, gauge48, lifeGauge, repair, level, reader.Position - offset ) { AmountOfSpecialIngredient = ingredient };
 	}
 
 	/// <summary>History buffer: u32 head, u32 count, u8 flag, u32 first, then <c>count</c> u32 entries.</summary>

@@ -95,6 +95,7 @@ public sealed partial class ParkHud
 		Stack.Push( hud );
 		Build();
 		HookStaffStrikeMessages();
+		HookChallengeMessages();
 	}
 
 	public UiScreenStack Stack { get; } = new();
@@ -239,7 +240,7 @@ public sealed partial class ParkHud
 		// [DATA:video 15:20] the message tube (red, left of the HUD) with its icons, and the buttons of the green slide-out panel: the bomb deletes the opened message, the red cross closes the panel
 		hud.Add( new MessageTubeList( this ) { Id = "messageTube", Help = strings.Extra( OpenTpwText.MessageTubeHelp ), Bounds = TubeBase, Anchor = UiAnchor.BottomLeft } );
 		// [BIN:TPW-EXE:0x7501a0 message panel] mb_erase at (486,1325)-(589,1428) deletes the opened message; the two action buttons above it (486,1218) and (486,1110) take the art of their action's kind (mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline: ParkHud.MessageTube.cs)
-		// [APPROX:UI-025] no OpenTPW message carries an action yet (the strike messages are plain text), so the action buttons stay hidden; which original message types use which mb_ model is not traced
+		// [APPROX:UI-025] only the challenge offers carry actions (mb_accept, mb_decline: ParkHud.ChallengeMessages.cs); the action buttons stay hidden for every other message, and which other original message types use which mb_ model is not traced
 		hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
 		{
@@ -308,6 +309,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x4af8b4 ride erase] b_erase (control 0x3e2b) deletes the ride (0x48cd10), asking first (UITEXT 0x18c) when the Confirmations option [0x78d90f] is on
 		BuildObjectWindow();
 		AddShopPriceButton();
+		BuildObjectSettingControls();
 		AddRideUpgradeButton();
 		AddCallStaffButton();
 		hud.DrawOverlay = context => { DrawFeedback( context ); DrawRideStatic( context ); };
@@ -656,6 +658,7 @@ public sealed partial class ParkHud
 		ApplyObjectLayout();
 		if ( selectedObject is not { IsDeleted: false } && InfoArmOpen )
 			InfoArmOpen = false;
+		SyncObjectSettings();
 
 		if ( hud.Find( "openRide" ) is UiButton openButton )
 		{
@@ -963,7 +966,7 @@ public sealed partial class ParkHud
 	// [BIN:STP-PPC:0x100866B8 SetCell ghost] LayLine(mode | 0x100) gives each previewed cell a BlueprintMesh face: blue (0) when the chooser 0x100895D8 accepts it, red (1) when it refuses it (money included)
 	// [BIN:STP-PPC:0x10080C50 cell ghost] the same blue or red faces for the cells of other build modes, checked by 0x10084154
 	// [BIN:TPW-EXE:0x0053C8D0 blueprint AddFace] the PC twins: AddFace 0x53C8D0 (face records at 0x820B00 + i * 0xA0, callers 0x46C480, 0x4FA030, 0x532FC0 and 0x5370E0), the ghost routine 0x5370E0 (called from 0x52BA50 and 0x53AAC0) whose chooser 0x539760 returns 1 for the refused branch 0x537A1B, 0 for the default texture and otherwise that texture, and 0x532FC0 (called from 0x452D30, 0x5286A0, 0x528A70 and 0x536100); the chooser walks neighbouring cell types (0x536340–0x536380, type 0x15)
-	// [APPROX:BLUEPRINT-003] a line marks every cell up to the refused one, existing cells blue; a footprint is blue when the build rule and the purchase allow it, red otherwise — evidence needed: chooser 0x539760's result for existing path cells and the footprint caller among the 0x532FC0 callers (Mac 0x10075618)
+	// [APPROX:BLUEPRINT-003] a line marks every cell up to the refused one, existing cells blue; a footprint is blue when the build rule and the purchase allow it, red otherwise. PC: LayLine 0x536100 previews every cell of the line, as the ghost SetCell 0x532FC0 returns 1 for allowed (0x53391D) and refused (0x534009) cells, and the validator 0x535670 refuses every later cell (param 0) once its flag 0x816D50 is set (0x5358A0; reset at 0x527C52 and 0x5247AA); the footprint caller is the object placement 0x528A70 in ghost mode: row 0 of the shape gets SetCell(0x104, 6 = m_front, build direction) (0x52967E), every other cell SetCell(0x104, 0) (0x52969C), red where refused, and the outside cells of the access points get m_enter (3, op 0x104, 0x52989A) or m_inout (7, op 0x118, 0x5299AE, when option 0x81B0CC lays no queue) and m_exit (4, op 0x118, 0x529B1C), none drawn here — evidence needed: the validator's result for existing path cells (0x535670 after 0x5358B5)
 	private void UpdateBlueprint( bool inPark )
 	{
 		if ( level.Blueprint is not { } blueprint )

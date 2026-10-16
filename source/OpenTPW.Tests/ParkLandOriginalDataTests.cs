@@ -71,7 +71,7 @@ public class ParkLandOriginalDataTests
 		var park = OriginalPark.Load( "jungle" );
 		var save = park.Save!;
 		var setup = Setup( "jungle" );
-		var computed = ParkCellMap.FromOriginal( park.Map, null, setup );
+		var computed = ParkCellMap.FromOriginal( park.Map, null, setup, park.Heightfield );
 		int both = 0, onlyComputed = 0, onlySaved = 0;
 		for ( var y = 0; y < 128; y++ )
 		{
@@ -110,6 +110,12 @@ public class ParkLandOriginalDataTests
 		imported.Land.ApplyToNewPark( fresh );
 		var equal = Enumerable.Range( 0, 128 * 128 ).Count( index => Owned( fresh, index % 128, index / 128 ) == Owned( imported, index % 128, index / 128 ) );
 		Assert.AreEqual( 128 * 128, equal, "cells whose ownership the fill model reproduces" );
+
+		// the world init's typing (0x536490: the cells without terrain unowned) under the same fence owns the same cells, flags and types together
+		var typed = ParkCellMap.FromOriginal( park.Map, null, park.Heightfield );
+		imported.Land.ApplyToNewPark( typed );
+		Assert.AreEqual( 128 * 128, Enumerable.Range( 0, 128 * 128 ).Count( index => Owned( typed, index % 128, index / 128 ) == ((save.Cells[index % 128, index / 128].MapFlags & 0x40) == 0) ),
+			"the typed map under the save's fence owns the saved land" );
 	}
 
 	/// <summary>The types 7 and 0x1e the Buy Land fence may not run along, from the MAP bits and the heightfield's holes, against the Easymode save's own map types.</summary>

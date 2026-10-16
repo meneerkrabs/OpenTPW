@@ -213,6 +213,10 @@ internal sealed partial class ParkResumeSmokeTest
 		{
 			if ( level.CheckFreeObject( entry, cell.X, cell.Y, rotation ) != OriginalPlacementResult.Allowed || ( requireOnScreen && !Clickable( cell, out _ ) ) )
 				continue;
+			// a ride may now stand on plain path (the placement clears it), which would cut the spine this fixture's queues join: keep off it
+			var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, rotation );
+			if ( ObjectFootprint.GetCells( entry.Shape, anchor.X, anchor.Y, rotation ).Any( part => grid.IsWalkable( part.X, part.Y ) || grid.IsQueue( part.X, part.Y ) ) )
+				continue;
 			var door = DoorAt( entry, cell.X, cell.Y, rotation );
 			var line = LineOut( door, QueueLength + 1 );
 			if ( line.All( queueCell => level.Paths!.CheckCell( queueCell.X, queueCell.Y ) == CellBuildResult.Ok )

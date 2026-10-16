@@ -96,6 +96,7 @@ public static class QueuePaths
 		else
 			PathLinkWriter.LinkQueueStep( grid.Cells, x, y, x - back.X, y - back.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
 		ride.RecomputeQueue( grid );
+		ride.NotifyQueueEdited();
 		return QueueBuildResult.Ok;
 	}
 
@@ -133,13 +134,14 @@ public static class QueuePaths
 	/// </summary>
 	// [BIN:TPW-EXE:0x0052744E queue line ending on a path] the type pass refuses the last cell (queue over path is not allowed there, 0x535600), but the link pass 0x80 still runs on it with the mode of the last type written (3): mode 3 links the path cell to the queue cell before it (0x53538C); the pass 0x82 then gives the path cell a queue link +0x0D toward it, which no reader of a type-1 cell uses (0x4D8750 and 0x5348D0 read it for types 9 and 10, 0x535DD0 and 0x4DE670 for type 3), and pass 0x83 its owner word
 	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation] once the queue is connected (0x4DE4A0) a closed ride whose state +0x19C is not 1, 2 or 4 is opened (+0x68 = 1, message 0x4E0E60)
-	// [APPROX:QUEUE-023] connecting a queue does not open the ride; OpenTPW leaves the open state to the player and the economy — the callers of 0x4DE1F0 are the queue tool's cell click 0x524960, the placement 0x528A70, 0x52FE50, the cell type setter 0x5346D0 and the cell clear 0x5367A0, so the original re-evaluates (and may open) the ride after every edit of its cells — evidence needed: none for the rule; OpenTPW has no queue-edit hook on cell writes that could open a ride
+	// [BIN:TPW-EXE:0x004DE1F0 re-evaluation callers] 0x4DE1F0 runs after the queue tool's cell click 0x524960, the placement 0x528A70, 0x52FE50, the cell type setter 0x5346D0 and the cell clear 0x5367A0: every queue edit raises RideVisitorBridge.QueueEdited, and the level opens a closed ride that passes the original's tests (Level.ReevaluateQueuedRide)
 	public static bool Connect( GuestPathGrid grid, RideVisitorBridge ride, (int X, int Y) before, (int X, int Y) path )
 	{
 		if ( !grid.IsWalkable( path.X, path.Y ) || GuestPathGrid.DirectionBetween( before.X, before.Y, path.X, path.Y ) < 0 )
 			return false;
 		PathLinkWriter.LinkQueueStep( grid.Cells, path.X, path.Y, path.X - before.X, path.Y - before.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
 		ride.RecomputeQueue( grid );
+		ride.NotifyQueueEdited();
 		return true;
 	}
 
@@ -215,6 +217,7 @@ public static class QueuePaths
 		foreach ( var cell in removed )
 			grid.ClearQueue( cell.X, cell.Y );
 		ride.RecomputeQueue( grid );
+		ride.NotifyQueueEdited();
 		return removed.Length;
 	}
 }

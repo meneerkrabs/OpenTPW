@@ -629,6 +629,12 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return true;
 	}
 
+	/// <summary>Raised after an edit of this ride's queue cells (tp.exe's re-evaluation 0x004DE1F0), once the queue is recomputed.</summary>
+	public event Action? QueueEdited;
+
+	/// <summary>Reports a queue edit to the level (<see cref="QueueEdited"/>).</summary>
+	internal void NotifyQueueEdited() => QueueEdited?.Invoke();
+
 	/// <summary>The queue cell behind (x, y): a neighbour of type 3 whose link points back at (x, y) (<c>0xdda18</c>).</summary>
 	// [BIN:TPW-EXE:0x004DE670 queue predecessor] the neighbours are tried −Y (its link 16), +Y (link 1), +X (link 64), −X (link 4), through the run-time table 0x007CDBA0 (entries 0, 1, 5, 6); the first queue cell (type 3, not 9) whose link points back is taken
 	private static readonly int[] PredecessorOrder = { 0, 2, 1, 3 };   // Directions indices: −Y, +Y, +X, −X

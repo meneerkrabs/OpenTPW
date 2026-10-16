@@ -1530,8 +1530,8 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueTargetIndex = index;
 		guest.QueueTargetX = target.X / (float)Fixed16.One;
 		guest.QueueTargetY = target.Y / (float)Fixed16.One;
-		// A queue walk stays a route walk along these cells (GuestNavigation.SetDestination, WALK-006)
-		SetDestination( guest, target, route, alsoOpen, alongCells: true );
+		// [BIN:TPW-EXE:0x004D8750 queue walk] a queue walk is the search and edge-test walk of every guest (Navigate): the edge test opens a step between queue cells, and between the join path and the back cell, through the link bytes the queue tool wrote (QueuePaths); the walk into the ride's entrance cell stays a route walk (WALK-006)
+		SetDestination( guest, target, route, alsoOpen, alongCells: toEntrance );
 	}
 
 	/// <summary>The ride's entrance cell: the front queue cell's neighbour towards the ride.</summary>

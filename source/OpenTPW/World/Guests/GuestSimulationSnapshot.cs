@@ -198,11 +198,12 @@ public sealed record GuestNavigationSnapshot
 					&& !Waypoints.AsSpan( 0, Count ).SequenceEqual( Route.AsSpan( Cursor, Count ) ) )
 					yield return $"guest {guestId} buffered waypoints do not match its route from cursor {Cursor}";
 			}
-			if ( PreviousRemaining < -1 )
-				yield return $"guest {guestId} previous remaining distance {PreviousRemaining} is negative";
 		}
 		else
 		{
+			// An original walk buffers the search's waypoints, not its bookkeeping route: its route cursor stays 0.
+			if ( Cursor != 0 )
+				yield return $"guest {guestId} navigation cursor {Cursor} is set on an original walk";
 			if ( Waypoints == null )
 				yield return $"guest {guestId} original walk does not carry its waypoint slots";
 			if ( walk.PathCount is < 0 or > 0xFC || Count != Math.Min( walk.PathCount, GuestNavigation.BufferedWaypoints ) )
@@ -216,6 +217,8 @@ public sealed record GuestNavigationSnapshot
 			if ( OffGrid )
 				yield return $"guest {guestId} walks off the grid with an original walk";
 		}
+		if ( PreviousRemaining < -1 )
+			yield return $"guest {guestId} previous remaining distance {PreviousRemaining} is negative";
 		if ( Mask is < 0 or > 2 )
 			yield return $"guest {guestId} walk mask {Mask} is not 0, 1 or 2";
 		if ( Waypoints != null )

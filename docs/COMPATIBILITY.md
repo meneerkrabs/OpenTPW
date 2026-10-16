@@ -225,6 +225,45 @@ applies only when the fix is enabled and the hash matches, in memory, never on d
   mappings that round-trip through `MBToUni.dat` are used. Every codepage character and
   every string of all 21 tables round-trips in all six languages.
 
+## Frame-driven timing (`[EXT:frame-driven-at-60hz]`)
+
+tp.exe's main loop (`0x54e360`) has no frame limiter: it calls no `Sleep` and no timer wait. `GetTickCount` only drives the fixed 31 ms
+simulation substeps (`0x54f4c4`, a catch-up of at most 2 s in a park and 500 ms in the lobby, `0x54e768`); after them it draws one frame, and
+the UI sends message `0x1e` to every window once per drawn frame (`0x48a580` → `0x658f6c` → `0x658f97`, which also recurses over the child windows
+through `0x658d9f`). Whatever the original steps from `0x1e`, or from the per-frame lobby update (`0x5d5c50`, at `0x54e73a`), therefore ran at the
+speed of the PC's frame rate. PCGamingWiki's page for Theme Park World reports that the game "runs too fast and becomes unplayable" at high frame
+rates and advises limiting the frame rate to 60 FPS. OpenTPW steps each frame-driven original behaviour at a fixed 60 Hz reference rate
+(`ReferenceFrameClock`), whatever its own frame rate; this is presentation only, so it never moves the determinism pin. This replaces the
+guessed rates of `APPROX:UI-066` (research fluids, 30 ticks a second) and `APPROX:UI-940` (lobby effects, 30 ticks a second), both retired, and
+the fixed-step part of `APPROX:UI-941` (the islands stepped at 30 a second while the flyers ran per frame).
+
+What steps per rendered frame in tp.exe, and what OpenTPW does (READ at instruction level unless noted):
+
+| Behaviour | tp.exe | OpenTPW |
+| --- | --- | --- |
+| Research fluids (64-frame bubbling, fill and drain) | window proc `0x4a9fc0`, message `0x1e`: position += 2 × speed (16.16) | `ResearchFluid.StepFrames` at 60 Hz (built) |
+| Lobby island effects: sky ease, rain count, lightning, island one-shots | islands component vf2 `0x5e0470` (vtable `0x7034b0`, slot 2), called by `0x5d5c50` once per drawn frame; the 31 ms substep of the lobby (`0x54e789`) runs only `0x520130` | `LobbyEffects` at 60 Hz (built) |
+| Lobby flying meshes and island clip picks | flying-mesh vf2 `0x5da3a0`, then `0x5e0470` → `0x5e11d0`, in registration order, one frame | `LobbyScene.StepFrame` per reference frame, flyers before islands (built); clips and wings animate by real time |
+| Lobby camera: spin, glide shares 0.1 and 0.2, enter sequence, fade eighth | `0x5e0470` (state machine `0x5e0490`), `0x5e1210`, `0x5d8cf2`, step = frame ms (at most 500) × 0.01 | `LobbyCameraMode` per reference frame (built) |
+| Rain and snow: per-flake jitter and the bolts' flicker | `CRain` draw `0x57f490`, redrawn on every draw, paused or not | redrawn per reference frame (built); the scroll and bolt age stay by real time |
+| Park camera: mouse rotation | `0x42a760` message `0x1e` while the middle-button mode bit `0x790aac & 2` is set: yaw += (X × 2048 / width − 1024) / 2048 per frame (up to ±0.5 rad a frame) | not built: the host camera is OpenTPW's own tuning, by real time (needs an ID, see the report) |
+| Pause-menu line hover ramp | `0x48b2a0` → `0x48b220`: message `0x10001` (read as the pointer entering) starts eight frames from grey 0x21 to white in steps of 0x20, then idle; `0x10002` (leaving) restores (0, 175, 190) | not built: the line turns white at once (needs an ID) |
+| HUD balance text and sign | `0x4a0db0`: every third message `0x1e` calls `0x4a0ab0`, which redraws only when the balance changed | live every frame, up to 50 ms earlier at 60 Hz (noted, not built) |
+| Edge scroll of the view built by `0x5f0b40` (from `0x4a0840`) | `0x5f1130` / `0x5f18d0`: (pointer − 0.99) × 250 and (0.01 − pointer) × 250 view units a frame in the 1 % edge band (`0x5f35b0`) | not built (owner window not identified) |
+| Online globe | `0x5d5c50` → `0x5dc860` once per frame (not a Ghidra function; called through a vtable) | continuous time at 30 ticks a second (`[EXT:online-globe-tick]`), unchanged |
+| 3-frame delay before a deferred action | `0x4a9350`: `0x7cc150` counts down once per frame from 3 (set at `0x4a9413`), then `0x4a9180` runs | not needed: no blocking step to hide |
+
+Message `0x1e` handlers that only re-read state, so any frame rate gives the same result: research effort gauge `0x4a96b0`, HUD counters `0x4a0e30`
+(`0x4a0fb0`), locator `0x4b3790`, employee window `0x4b5cb0`, text refresh `0x4bc660`, chat poll `0x4c56e0` → `0x4c4bb0` and the list forwarding
+`0x665c35` → `0x6650d4`.
+
+Not frame-driven (real time or substep, nothing to match): the timer list polled by `0x6622d2` / `0x661fe5` (elapsed milliseconds with catch-up: the arm drawer
+`0x4a14f0`, 20 ms steps), scripted window moves `0x65e9a4` (through the default window proc `0x65f6d1` → `0x65c357`) and press timers `0x668dd9` (milliseconds), the preview-object windows
+`0x4af600`, `0x4b0b30`, `0x4b2150`, `0x497640` and `0x4b7720` (message `0x1e` → `0x4864f0` / `0x486610` → `0x468e50`, whose turn is per millisecond), the park camera `0x42b1c0` (frame milliseconds clamped
+to 1..200), scrolling textures `0x435a30` and thing animation clocks `0x557ab0` (clock reads), the render interpolation fractions `0x519060`, `0x55ce60`,
+`0x518f90` (time since the last substep), and every simulation step on the 31 ms substep
+(`0x520130`, `0x546c80`, `0x5516b0`, `0x55abf0`, `0x475360`, `0x516380`, `0x55a470`, `0x55ab50`).
+
 ## Tests
 
 `TrueTypeFontTests` (synthetic fonts: metrics, cmap, kerning, exact coverage, non-zero

@@ -97,6 +97,12 @@ public static class ParkLayoutSnapshot
 		public required byte Links { get; init; }
 		/// <summary>The queue link toward the queue's predecessor (map cell <c>+13</c>): 0 or one cardinal bit, and only on a queue cell.</summary>
 		public required byte QueueLink { get; init; }
+		/// <summary>
+		/// The owner word (map cell <c>+0x10</c>, <see cref="ParkCellMap.OwnerAt"/>): 0 on a cell nothing owns and in saves made before the owner word existed, whose object cells then
+		/// take their owner again when the objects are placed back.
+		/// </summary>
+		[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+		public ushort Owner { get; init; }
 	}
 
 	/// <summary>
@@ -151,7 +157,7 @@ public static class ParkLayoutSnapshot
 				var queueLink = cells.QueueLinkAt( x, y );
 				if ( type == 0 && flags == 0 && placements == 0 && links == 0 && queueLink == 0 )
 					continue;
-				cellRecords.Add( new CellData { X = x, Y = y, Type = type, Flags = flags, Placements = placements, Links = links, QueueLink = queueLink } );
+				cellRecords.Add( new CellData { X = x, Y = y, Type = type, Flags = flags, Placements = placements, Links = links, QueueLink = queueLink, Owner = cells.OwnerAt( x, y ) } );
 			}
 		}
 		var objectRecords = new List<PlacedObjectData>( objects.Objects.Count );
@@ -300,6 +306,7 @@ public static class ParkLayoutSnapshot
 			Require( cell.QueueLink is 0 or 1 or 4 or 16 or 64, $"cell ({cell.X}, {cell.Y}) has queue link {cell.QueueLink}" );
 			Require( cell.QueueLink == 0 || cell.Type == (byte)ParkCellType.Queue, $"cell ({cell.X}, {cell.Y}) has a queue link but type {cell.Type}" );
 			Require( cell.Placements >= 0, $"cell ({cell.X}, {cell.Y}) has placement count {cell.Placements}" );
+			Require( cell.Owner == 0 || cell.Type != 0, $"cell ({cell.X}, {cell.Y}) has owner word {cell.Owner} but is empty" );
 			// with a land record the unowned flag lives in the record's bits, never in a cell record (see CaptureSnapshot)
 			Require( cells.Land == null || (cell.Flags & (ushort)ParkCellFlags.Unowned) == 0,
 				$"cell ({cell.X}, {cell.Y}) carries the unowned flag beside a land record" );
@@ -368,6 +375,8 @@ public static class ParkLayoutSnapshot
 				cells.SetQueueLink( cell.X, cell.Y, cell.QueueLink );
 			cells.SetFlags( cell.X, cell.Y, (ParkCellFlags)cell.Flags );
 			cells.SetPlacementCount( cell.X, cell.Y, cell.Placements );
+			if ( cell.Owner != 0 )
+				cells.SetOwner( cell.X, cell.Y, cell.Owner );
 		}
 		if ( snapshot.Cells.Land is { } saved )
 		{

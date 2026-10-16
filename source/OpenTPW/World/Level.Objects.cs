@@ -97,6 +97,13 @@ public partial class Level
 			+ (skipped == null ? "" : $"; skipped (not in the local catalog): {skipped}") + "." );
 	}
 
+	/// <summary>Whether the placed objects type their footprint cells in the guest grid (not in a visit, a Theme Park Inc layout or Theme Park Inc itself).</summary>
+	// [APPROX:RIDES-031] a Theme Park Inc world keeps the cells its layout was given and types none of its footprints, so the road signs' '@' cells ("*@*", "*@@*") are plain occupied cells; tp.exe's commit stamps '@' as a type-1 NoModify path cell linked to its path neighbours (0x529173–0x529208) and 'Q' as a queue cell (0x529119), which ParkCellMap.WriteFootprint does for Theme Park World (whose shapes have neither) — evidence needed: Theme Park Inc's own placement (its executable), which is not traced
+	private bool TypesFootprints => !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
+
+	/// <summary>The owner word the placement stores on an object's cells: the cell word of its anchor (<see cref="ParkCellMap.OwnerAt"/>).</summary>
+	internal static ushort OwnerWord( OriginalObject item ) => ParkCellMap.CellWord( item.Placement.X, item.Placement.Y );
+
 	/// <summary>Every placed object that guests may choose becomes a live attraction; new and removed objects follow.</summary>
 	private void ConnectObjectsToGuests()
 	{
@@ -106,16 +113,16 @@ public partial class Level
 		Guests.LitterBinned += ( _, bin ) => TriggerBin( bin );
 		// The placed objects type their footprint cells (4, 9, 10: ParkCellMap.WriteFootprint, tp.exe 0x00528A70); a visit, a Theme Park Inc layout and
 		// Theme Park Inc itself (whose placement is not traced) keep the cells they were given
-		var typesFootprints = !IsReadOnlyVisit && incLayoutCells == null && !GameEditions.IsThemeParkInc;
+		var typesFootprints = TypesFootprints;
 		if ( typesFootprints )
 		{
 			var cells = Guests.Grid.Cells;
 			foreach ( var item in Objects.Objects )
-				cells.WriteFootprint( item.Cells );
+				cells.WriteFootprint( item.Cells, OwnerWord( item ) );
 		}
 		if ( typesFootprints )
 		{
-			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells );
+			Objects.ObjectPlaced += item => Guests?.Grid.Cells.WriteFootprint( item.Cells, OwnerWord( item ) );
 			Objects.ObjectRemoved += item => Guests?.Grid.Cells.ClearFootprint( item.Cells );
 		}
 		foreach ( var item in Objects.Objects )
@@ -283,7 +290,7 @@ public partial class Level
 					GameAudio.PlayUiAt( GameAudio.QueueJoinEvent, GameAudio.QueueNeighbourSoundPosition( x, y ) );
 			} )
 		};
-		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( ( x, y ) => Objects.FindAt( x, y ), RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell );
+		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
 	}
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do.

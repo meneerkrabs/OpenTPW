@@ -35,6 +35,8 @@ public readonly struct SaveCell
 	public const int PathRotationOffset = 21;
 	/// <summary>The map cell's <c>mFlags</c> (u16): 0x40 unowned land, 0x20 fixed (docs/reverse/PPC-formats.md, cell grid).</summary>
 	public const int MapFlagsOffset = 2;
+	/// <summary>The map cell's <c>mParentID</c> (u16, the cell's owner word <c>+0x10</c>): for an object's cells the object's anchor cell word, y × 128 + x + 1; for a queue cell the ride's.</summary>
+	public const int ParentIdOffset = 11;
 	/// <summary>The map cell's <c>mType</c> (u32): 1 path, 2 water, 7 no terrain, 0x1e fixed walkway, ...</summary>
 	public const int MapTypeOffset = 25;
 	/// <summary>The structure (track) cell's <c>mType</c> (u32): 0x19 for a hoarding (park fence post).</summary>
@@ -78,6 +80,9 @@ public readonly struct SaveCell
 	// [BIN:TPW-EXE:0x4d0b30 cell base serializer] each cell record writes mDirection (+0xd), mFlags (+0xe, 2 bytes), mMeshInstance, mNeighbours, mOverlapCounter, mParentID, mTileData, mType (+8, 4 bytes) and mHoardingNeighbours (+0x22) in that order, once for the map cell (record +1) and once for the structure cell (record +53)
 	/// <summary>The map cell's flags (TPW records): 0x40 marks land the park does not own.</summary>
 	public ushort MapFlags => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( MapFlagsOffset, 2 ) );
+
+	/// <summary>The map cell's owner word <c>+0x10</c> (TPW records): 0 for a cell nothing owns.</summary>
+	public ushort MapParentId => BinaryPrimitives.ReadUInt16LittleEndian( Record.Span.Slice( ParentIdOffset, 2 ) );
 
 	/// <summary>The map cell's type (TPW records).</summary>
 	public uint MapType => BinaryPrimitives.ReadUInt32LittleEndian( Record.Span.Slice( MapTypeOffset, 4 ) );

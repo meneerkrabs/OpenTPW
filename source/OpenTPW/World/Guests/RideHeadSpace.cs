@@ -20,9 +20,10 @@ public sealed class RideHeadSpace
 
 	private readonly int[] nodes;
 	private readonly int[] visitors;
-	// An owned seeded .NET-compatible generator whose full state the park-resume snapshot stores (ScriptRandomTests
-	// proves its draws equal a seeded System.Random's).
-	private readonly ScriptRandom random;
+	// A park's head space draws its slot from the world generator (the delegate, the script world's shared stream, which the park saves); a head space made with a seed owns a seeded
+	// .NET-compatible generator whose full state the park-resume snapshot stores (ScriptRandomTests proves its draws equal a seeded System.Random's): the test seam and standalone use.
+	private readonly ScriptRandom? random;
+	private readonly Func<uint>? worldDraw;
 
 	private RideHeadSpace( int[] nodes, int seed )
 	{
@@ -31,8 +32,18 @@ public sealed class RideHeadSpace
 		random = new ScriptRandom( seed );
 	}
 
+	private RideHeadSpace( int[] nodes, Func<uint> worldDraw )
+	{
+		this.nodes = nodes;
+		visitors = new int[nodes.Length];
+		this.worldDraw = worldDraw;
+	}
+
 	/// <summary>A head space with the given node for each slot (test seam; <see cref="Create"/> reads the model).</summary>
 	internal static RideHeadSpace Of( int[] nodes, int seed ) => new( (int[])nodes.Clone(), seed );
+
+	/// <summary>A head space with the given node for each slot that draws its slots from the world generator.</summary>
+	internal static RideHeadSpace Of( int[] nodes, Func<uint> worldDraw ) => new( (int[])nodes.Clone(), worldDraw );
 
 	/// <summary>Length of the slot table (the run of head ids from 1).</summary>
 	public int Count => visitors.Length;
@@ -42,8 +53,12 @@ public sealed class RideHeadSpace
 	/// ADDHEAD does nothing). <paramref name="seed"/> drives the slot draw; the original draws from its global generator.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00554CB5 ADDHEAD slot draw] the PC loop draws labs(world() >>> 1) % [+0x4C] from the global world generator 0x516330 until it finds a free slot (0x554CAF–0x554CCB)
-	// [APPROX:HEADS-001] the slot draw uses the original's formula, labs(worldRand() >>> 1) % length (tp.exe 0x554CB5), on a stream seeded per ride instead of the shared world generator 0x516330 (s * 1664525 + 1013904223, rotated right by 13, absolute value), which is not ported (DET-013)
-	public static RideHeadSpace? Create( ModelFile model, int seed )
+	public static RideHeadSpace? Create( ModelFile model, int seed ) => Create( model, seed, null );
+
+	/// <summary>The head space of <paramref name="model"/> whose slot draw is the world generator's (<paramref name="worldDraw"/>), as the original's ADDHEAD takes it.</summary>
+	public static RideHeadSpace? Create( ModelFile model, Func<uint> worldDraw ) => Create( model, 0, worldDraw );
+
+	private static RideHeadSpace? Create( ModelFile model, int seed, Func<uint>? worldDraw )
 	{
 		ArgumentNullException.ThrowIfNull( model );
 		var nodes = new List<int>();
@@ -54,7 +69,7 @@ public sealed class RideHeadSpace
 				break;
 			nodes.Add( node );
 		}
-		return nodes.Count == 0 ? null : new RideHeadSpace( nodes.ToArray(), seed );
+		return nodes.Count == 0 ? null : worldDraw != null ? new RideHeadSpace( nodes.ToArray(), worldDraw ) : new RideHeadSpace( nodes.ToArray(), seed );
 	}
 
 	/// <summary>The lookup found no record for a head id (the original's -1).</summary>
@@ -121,10 +136,13 @@ public sealed class RideHeadSpace
 		return slot;
 	}
 
-	/// <summary>labs(worldRand() >> 1) % length over this ride's stream: a signed 32-bit value from two draws.</summary>
+	/// <summary>labs(worldRand() >>> 1) % length: one draw of the world generator (a seeded head space makes a signed 32-bit value from two draws of its own generator).</summary>
 	private int DrawSlot()
 	{
-		var raw = unchecked( (int)(((uint)random.Next( 1 << 16 ) << 16) | (uint)random.Next( 1 << 16 )) );
+		if ( worldDraw != null )
+			// [BIN:TPW-EXE:0x00554CB5 ADDHEAD slot draw] shr eax, 1; abs; idiv [+0x4C]; the result of the signed remainder indexes the table (the remainder of a non-negative value)
+			return (int)((worldDraw() >> 1) % (uint)visitors.Length);
+		var raw = unchecked( (int)(((uint)random!.Next( 1 << 16 ) << 16) | (uint)random.Next( 1 << 16 )) );
 		return (int)(Math.Abs( (long)(raw >> 1) ) % visitors.Length);
 	}
 
@@ -151,7 +169,7 @@ public sealed class RideHeadSpace
 	public RideHeadSpaceSnapshot CaptureSnapshot() => new()
 	{
 		Visitors = (int[])visitors.Clone(),
-		RandomState = random.CaptureState()
+		RandomState = random?.CaptureState()
 	};
 
 	/// <summary>
@@ -165,6 +183,9 @@ public sealed class RideHeadSpace
 		if ( snapshot.Visitors.Length != visitors.Length )
 			throw new InvalidDataException( $"head space has {visitors.Length} slots, the snapshot stores {snapshot.Visitors.Length}." );
 		Array.Copy( snapshot.Visitors, visitors, visitors.Length );
-		random.RestoreState( snapshot.RandomState );
+		// a snapshot of a world-generator head space holds no generator of its own; one of a seeded head space carries its state. An older snapshot's own generator is dropped
+		// by a head space of the world generator (its slots now come from the shared stream, which the world restores).
+		if ( snapshot.RandomState != null && random != null )
+			random.RestoreState( snapshot.RandomState );
 	}
 }

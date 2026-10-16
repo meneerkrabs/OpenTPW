@@ -77,8 +77,15 @@ public sealed record RideVMSnapshot
 	public required ulong ScriptIdentityHash { get; init; }
 	/// <summary>The constructor seed (drawn from the world stream or explicit); hashed by the canonical state.</summary>
 	public required int Seed { get; init; }
-	/// <summary>Full explicit generator state; the seed alone does not continue the draw sequence.</summary>
-	public required ScriptRandomState RandomState { get; init; }
+	/// <summary>Full explicit generator state of a script with its own seed; the seed alone does not continue the draw sequence. Null exactly when <see cref="UsesWorldRandom"/>.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public ScriptRandomState? RandomState { get; init; }
+	/// <summary>
+	/// True for a script created without an explicit seed: its RAND and FINDSCRIPTRAND draw from the world generator (tp.exe 0x00516330), shared by the whole
+	/// park, and it has no generator state of its own (<see cref="Seed"/> is 0). Absent in older snapshots, whose scripts all carry their own seeded generator.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public bool UsesWorldRandom { get; init; }
 	public required long RandomDraws { get; init; }
 	public required RideVMState State { get; init; }
 	/// <summary>Non-null exactly while <see cref="State"/> is <see cref="RideVMState.Faulted"/>.</summary>
@@ -130,7 +137,7 @@ public sealed record RideVMSnapshot
 	{
 		if ( SchemaVersion != CurrentSchemaVersion )
 			throw new InvalidDataException( $"RideVM snapshot schema version {SchemaVersion} is not {CurrentSchemaVersion}." );
-		if ( CallStack == null || Variables == null || RandomState == null || UnimplementedEffects == null )
+		if ( CallStack == null || Variables == null || (RandomState == null && !UsesWorldRandom) || UnimplementedEffects == null )
 			throw new InvalidDataException( $"Script {ScriptId} snapshot carries a null array (call stack, variables, RNG state or effect record)." );
 		if ( ScriptId < 1 )
 			throw new InvalidDataException( $"Script id {ScriptId} is not positive." );
@@ -181,7 +188,9 @@ public sealed record RideVMSnapshot
 			throw new InvalidDataException( $"Script {ScriptId} WAIT4ANIM deadline {Wait4AnimDeadline} is not finite and non-negative." );
 		if ( ExecutedInstructions < 0 || SliceCount < 0 || RandomDraws < 0 )
 			throw new InvalidDataException( $"Script {ScriptId} counters are negative." );
-		RandomState.Validate();
+		if ( UsesWorldRandom && (RandomState != null || Seed != 0) )
+			throw new InvalidDataException( $"Script {ScriptId} draws from the world generator and carries its own seed {Seed} or generator state." );
+		RandomState?.Validate();
 		foreach ( var (opcode, count) in UnimplementedEffects )
 		{
 			if ( !Enum.IsDefined( opcode ) )
@@ -203,8 +212,11 @@ public sealed record RideScriptWorldSnapshot
 	public const int CurrentSchemaVersion = 1;
 
 	public int SchemaVersion { get; init; } = CurrentSchemaVersion;
-	/// <summary>SplitMix64 state of the seed stream for scripts created without an explicit seed.</summary>
+	/// <summary>The world generator's state (<see cref="RideScriptWorld.RandomState"/>); in older snapshots the SplitMix64 seed stream of scripts without an explicit seed.</summary>
 	public required ulong RandomState { get; init; }
+	/// <summary>Non-null in a snapshot written with the world generator: its state (equal to <see cref="RandomState"/>); older snapshots leave the generator as built.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public uint? WorldGenerator { get; init; }
 	/// <summary>
 	/// The coaster controllers' shared boarding generator (<see cref="CoasterRandom.State"/>), captured with or
 	/// without coasters so the stream never restarts; the controllers themselves are not part of this slice (a world

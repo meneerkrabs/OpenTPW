@@ -115,10 +115,10 @@ public class StaffPlacementTests
 		var candidate = f.Park.Staff.Candidates.First();
 		f.Placement.BeginHire( candidate.Id );
 		EconomyTestData.AdvanceToTurn( f.Park, f.Park.Turn + 5 );
-		f.Park.Staff.UpdatePool( f.Park.Random, candidate.ExpiresTick + 1 );
+		f.Park.Staff.UpdatePool( f.Park.World, candidate.ExpiresTick + 1 );
 		Assert.IsTrue( f.Park.Staff.Candidates.Any( item => item.Id == candidate.Id ), "the pending candidate survives its expiry" );
 		f.Placement.Cancel();
-		f.Park.Staff.UpdatePool( f.Park.Random, candidate.ExpiresTick + 1 + f.Park.Staff.UpdateInterval );
+		f.Park.Staff.UpdatePool( f.Park.World, candidate.ExpiresTick + 1 + f.Park.Staff.UpdateInterval );
 		Assert.IsTrue( f.Park.Staff.Candidates.All( item => item.Id != candidate.Id ), "after the cancel it expires as any other" );
 	}
 

@@ -80,7 +80,7 @@ delimiters) has a bounded structural reader (`SaveCoasterBlock`; TPWS-PAYLOAD.md
 train payload stays raw, nothing is imported and nothing is written. A park
 started from the shipped save imports its turn,
 bank, objects, staff and advisor controller (`OriginalEconomyImport`; values not
-imported are reported as SAVE-001 to SAVE-010 and SAVE-920 to SAVE-923); the
+imported are reported as SAVE-002 to SAVE-010 and SAVE-920 to SAVE-923); the
 other blocks stay opaque.
 The split finds the delimiters of blocks whose width is not traced by their
 bytes, so a payload that splits in more than one way, or holds one delimiter's

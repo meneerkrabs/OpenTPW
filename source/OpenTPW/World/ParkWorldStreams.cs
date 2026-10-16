@@ -7,9 +7,20 @@ namespace OpenTPW;
 /// </summary>
 public sealed record ParkWorldStreams( WorldSeed Seed, ParkEconomyRuntime? Park, GuestSimulation? Guests, RideScriptWorld Scripts, SoundEventSystem? Sound )
 {
-	/// <summary>The random streams besides the economy's, for the park save.</summary>
-	public WorldRandomState CaptureRandomState() => new( Seed.Value, Guests?.RandomState ?? Seed.GuestStream,
-		Scripts.RandomState, Sound?.Seed ?? Seed.SoundStream );
+	/// <summary>The park's one world generator (the economy's when there is one, else the guests', else the scripts') and the sound seed, for the park save.</summary>
+	public WorldRng Generator => Park?.Economy.World ?? Guests?.World ?? Scripts.World;
+
+	/// <summary>Makes the guests and the scripts draw from <see cref="Generator"/> (the original has one generator for everything); returns this.</summary>
+	public ParkWorldStreams LinkGenerator()
+	{
+		var generator = Generator;
+		Guests?.AttachWorld( generator );
+		Scripts.AttachWorld( generator );
+		return this;
+	}
+
+	/// <summary>The world generator and the sound seed, for the park save.</summary>
+	public WorldRandomState CaptureRandomState() => new( Seed.Value, Generator.State, Sound?.Seed ?? Seed.SoundStream );
 
 	/// <summary>Continues the streams of a park save.</summary>
 	public void RestoreRandomState( WorldRandomState state )
@@ -17,8 +28,7 @@ public sealed record ParkWorldStreams( WorldSeed Seed, ParkEconomyRuntime? Park,
 		ArgumentNullException.ThrowIfNull( state );
 		if ( state.Seed != Seed.Value )
 			Log.Warning( $"The park save was made with world seed {state.Seed}, not this level's {Seed}; its streams continue under this level's seed." );
-		Guests?.RestoreRandomState( state.GuestRandom );
-		Scripts.RestoreRandomState( state.ScriptRandom );
+		Generator.Restore( state.Generator );
 		Sound?.Reseed( state.SoundSeed );
 	}
 
@@ -39,12 +49,16 @@ public sealed record ParkWorldStreams( WorldSeed Seed, ParkEconomyRuntime? Park,
 		Park.Save( path, CaptureRandomState() );
 	}
 
-	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (the legacy economy-only save, [EXT:legacy-economy-save]).</summary>
+	/// <summary>Loads an OpenTPW park save: the economy and, when the save has them, the random streams. Guests and object scripts keep running (the legacy economy-only save, [EXT:legacy-economy-save]). The loaded economy holds its own generator object; guests and scripts are attached to it.</summary>
 	public void LoadPark( string path )
 	{
 		if ( Park == null )
 			throw new InvalidOperationException( "Only original levels have a park economy to load." );
-		if ( Park.Load( path ) is { } world )
+		var world = Park.Load( path );
+		// the loaded economy has its own generator object: the guests and the scripts draw from it from now on, one stream as before the load
+		Guests?.AttachWorld( Park.Economy.World );
+		Scripts.AttachWorld( Park.Economy.World );
+		if ( world is not null )
 			RestoreRandomState( world );
 	}
 }

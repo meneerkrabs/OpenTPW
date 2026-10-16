@@ -204,4 +204,42 @@ public class ResearcherRestTests
 		Assert.AreEqual( (0, StaffJob.Idle), (researcher.RestAreaId, researcher.Job) );
 		ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( f.Park ) ) ), f.Park.Settings, f.Park.Catalog );
 	}
+
+	[TestMethod]
+	public void SellingTheStaffRoomHeRestsInSendsHimToTheNearestOtherOne()
+	{
+		var f = new Fixture();
+		var near = f.BuildStaffRoom( (12, 6), (12, 5) );
+		var far = f.BuildStaffRoom( (15, 10), (10, 10) );
+		var researcher = f.Hire( StaffType.Researcher );
+		f.Turns( 2 );
+		researcher.Energy = 1;
+		for ( var turn = 0; turn < 300 && researcher.Job != StaffJob.Resting; turn++ )
+			f.Turns( 1 );
+		Assert.AreEqual( (StaffJob.Resting, near), (researcher.Job, researcher.RestAreaId) );
+		f.Park.Sell( near );
+		f.Rests.RemoveAll( site => site.Id == near );
+		// tp.exe 0x00504C70: the rest ends (0x00506D10, state 0) and the finder's other room becomes +0x208 with a route to it; the state stays 0
+		Assert.AreEqual( (StaffJob.Idle, far), (researcher.Job, researcher.RestAreaId) );
+		Assert.AreEqual( 0, researcher.IdleStamp, "state 0 after state 3 stamps 0, so his next update searches" );
+		ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( ParkSaveFile.Serialize( f.Park ) ) ), f.Park.Settings, f.Park.Catalog );
+		f.Turns( 300, () => { } );
+		Assert.IsTrue( researcher.Energy > 1, "his next search takes him to the other room to rest" );
+	}
+
+	[TestMethod]
+	public void SellingTheStaffRoomHeWalksToStopsHimWithoutAnother()
+	{
+		var f = new Fixture();
+		var near = f.BuildStaffRoom( (12, 6), (12, 5) );
+		f.BuildStaffRoom( (15, 10), (10, 10) );
+		var researcher = f.Hire( StaffType.Researcher );
+		f.Turns( 2 );
+		researcher.Energy = 1;
+		for ( var turn = 0; turn < 300 && researcher.Job != StaffJob.ToRestArea; turn++ )
+			f.Turns( 1 );
+		Assert.AreEqual( (StaffJob.ToRestArea, near), (researcher.Job, researcher.RestAreaId) );
+		f.Park.Sell( near );
+		Assert.AreEqual( (StaffJob.Idle, 0), (researcher.Job, researcher.RestAreaId), "state 2: +0x208 = 0 and state 0, no new room" );
+	}
 }

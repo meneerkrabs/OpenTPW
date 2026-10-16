@@ -212,10 +212,11 @@ public sealed class ObjectCatalog
 		("upgrades", ObjectCategory.Upgrade, "Upgrades.sam")
 	};
 
+	private static readonly ObjectCategory[] OriginalScanOrder = { ObjectCategory.Ride, ObjectCategory.Feature, ObjectCategory.Upgrade, ObjectCategory.Shop, ObjectCategory.Sideshow };
+
 	// Keyed by the file system instance, not its root: entries keep the instance they were read from, and
 	// a replaced FileSystem (setup, tests) with the same root must not hand out entries of the old one.
 	private static readonly ConditionalWeakTable<BaseFileSystem, Dictionary<string, ObjectCatalog>> cache = new();
-	private static readonly Regex BonusArchive = new( @"^(?<stem>_.+)_(?<number>\d+)$", RegexOptions.CultureInvariant );
 	private static string? bonusDataRoot;
 	private static bool bonusFromEnvironment = true;
 
@@ -278,7 +279,15 @@ public sealed class ObjectCatalog
 	{
 		Theme = theme;
 		Entries = entries;
-		byId = entries.ToDictionary( entry => entry.InfoId );
+		// [BIN:TPW-EXE:0x00412E90 definition by id] the id lookup scans the definition list from the start and returns the first whose
+		// id word matches (one-entry cache at +0x730/+0x734; 0x00412EF0 likewise), so a later definition with a taken Info.Id stays loaded
+		// but every lookup by id finds the first one in load order
+		// [BIN:TPW-EXE:0x00413140 category scan order] the categories are scanned Rides, Features, Upgrades, Shops, Sideshow (0x00747B24, 0x00747B94,
+		// 0x00747B74, 0x00747B80, 0x00747B88), so a taken id resolves across categories in that order
+		byId = new Dictionary<int, ObjectCatalogEntry>();
+		foreach ( var entry in entries.OrderBy( entry => Array.IndexOf( OriginalScanOrder, entry.Category ) ) )
+			if ( !byId.TryAdd( entry.InfoId, entry ) )
+				Log?.Warning( $"{entry.ArchivePath} reuses Info.Id {entry.InfoId}; lookups by that id find {byId[entry.InfoId].ArchivePath}." );
 	}
 
 	public string Theme { get; }
@@ -317,23 +326,8 @@ public sealed class ObjectCatalog
 			yield break;
 		}
 		var entries = new List<ObjectCatalogEntry>();
-		foreach ( var _ in LoadEntries( theme, fileSystem, null, easy, entries ) )
+		foreach ( var _ in LoadEntries( theme, fileSystem, OpenBonusFileSystem(), easy, entries ) )
 			yield return null;
-		var bonus = OpenBonusFileSystem();
-		if ( bonus != null )
-		{
-			var bonusEntries = new List<ObjectCatalogEntry>();
-			foreach ( var _ in LoadEntries( theme, bonus, fileSystem, easy, bonusEntries ) )
-				yield return null;
-			foreach ( var entry in bonusEntries )
-			{
-				// [APPROX:RIDES-024] Bonus archives merge into the theme catalog; the original dedupes by archive name (0x41ede0 → 0x424cf0, _stricmp) and loads Info.Id duplicates too, its id lookups (0x412e90/0x412ef0) taking the first definition in directory order, while this port skips the later bonus entry with a taken Info.Id — evidence needed: the directory order of the original's category walk (FindFirstFile) and how a _name_N archive finds its _name.sam (the loader asks for "<name>.sam" through the name at def+0x18 from 0x41ec30)
-				if ( entries.Any( existing => existing.InfoId == entry.InfoId ) )
-					Log?.Warning( $"Bonus object {entry.ArchivePath} reuses Info.Id {entry.InfoId}; it is skipped." );
-				else
-					entries.Add( entry );
-			}
-		}
 		ObjectCatalog catalog;
 		lock ( cache )
 		{
@@ -350,32 +344,47 @@ public sealed class ObjectCatalog
 	}
 
 	/// <summary>
-	/// Reads the archives of <paramref name="fileSystem"/> into <paramref name="entries"/>, one archive per step. Category defaults
-	/// (Rides.sam, ...) always come from <paramref name="defaultsFileSystem"/> (the game data) when given: bonus archives are made
-	/// to be dropped next to them. Directory names are matched case-insensitively.
+	/// Reads the archives of <paramref name="fileSystem"/> and, when given, the bonus archives of <paramref name="bonusFileSystem"/>
+	/// into <paramref name="entries"/>, one archive per step. Bonus archives are made to be dropped next to the game's own, so each
+	/// category directory is read as one directory: both sets in one name order, the category defaults (Rides.sam, ...) always from
+	/// the game data. Directory names are matched case-insensitively.
 	/// </summary>
-	private static IEnumerable<bool> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? defaultsFileSystem, bool easy, List<ObjectCatalogEntry> entries )
+	// [BIN:TPW-EXE:0x00413930 archive scan] each found archive becomes an archive object named by 0x0041EC30 (see ArchiveKey); one whose
+	// name equals a listed archive's (0x0041EDE0 over the list at +0x4C, _stricmp 0x00424CF0) is destroyed unread, any other is listed
+	// (0x0041EAA0) and then loaded (0x00413C10), so the first archive of a name in scan order wins; definitions with a taken Info.Id
+	// load too (see the constructor)
+	private static IEnumerable<bool> LoadEntries( string theme, BaseFileSystem fileSystem, BaseFileSystem? bonusFileSystem, bool easy, List<ObjectCatalogEntry> entries )
 	{
-		var defaultsSource = defaultsFileSystem ?? fileSystem;
 		foreach ( var (directory, category, defaultsName) in CategoryDirectories )
 		{
-			var categoryPath = FindDirectory( fileSystem, "/levels", theme ) is { } themePath ? FindDirectory( fileSystem, themePath, directory ) : null;
-			if ( categoryPath == null )
+			// Each category object keeps its own archive list (0x00413930 runs once per category, 0x00413140).
+			var listed = new HashSet<string>( StringComparer.OrdinalIgnoreCase );
+			var categoryPath = CategoryPath( fileSystem, theme, directory );
+			var bonusPath = bonusFileSystem == null ? null : CategoryPath( bonusFileSystem, theme, directory );
+			if ( categoryPath == null && bonusPath == null )
 				continue;
-			var defaultsDirectory = defaultsFileSystem == null ? categoryPath : $"/levels/{theme}/{directory}";
-			var defaults = defaultsSource.DirectoryExists( defaultsDirectory )
-				? defaultsSource.GetFiles( defaultsDirectory ).Select( file => Relative( defaultsSource, file ) )
+			var defaultsDirectory = categoryPath ?? $"/levels/{theme}/{directory}";
+			var defaults = fileSystem.DirectoryExists( defaultsDirectory )
+				? fileSystem.GetFiles( defaultsDirectory ).Select( file => Relative( fileSystem, file ) )
 					.FirstOrDefault( file => string.Equals( Path.GetFileName( file ), defaultsName, StringComparison.OrdinalIgnoreCase ) )
 				: null;
-			var defaultLayer = defaults == null ? null : ObjectSettingsFile.Load( defaultsSource, defaults );
-			foreach ( var archive in fileSystem.GetDirectories( categoryPath ).Select( file => Relative( fileSystem, file ) ).OrderBy( path => path, StringComparer.OrdinalIgnoreCase ) )
+			var defaultLayer = defaults == null ? null : ObjectSettingsFile.Load( fileSystem, defaults );
+			var archives = Archives( fileSystem, categoryPath, false ).Concat( Archives( bonusFileSystem, bonusPath, true ) )
+				.OrderBy( archive => Path.GetFileName( archive.Path ), StringComparer.OrdinalIgnoreCase ).ThenBy( archive => archive.Bonus );
+			foreach ( var (archive, source, bonus) in archives )
 			{
+				if ( !listed.Add( ArchiveKey( Path.GetFileName( archive ) ) ) )
+				{
+					Log?.Warning( $"Object archive {archive} is skipped: an archive named {ArchiveKey( Path.GetFileName( archive ) )} is already loaded." );
+					yield return true;
+					continue;
+				}
 				ObjectCatalogEntry? entry = null;
 				try
 				{
-					entry = LoadEntry( theme, category, archive, defaultLayer, fileSystem, easy );
+					entry = LoadEntry( theme, category, archive, defaultLayer, source, easy );
 				}
-				catch ( Exception exception ) when ( defaultsFileSystem != null && exception is InvalidDataException or IOException )
+				catch ( Exception exception ) when ( bonus && exception is InvalidDataException or IOException )
 				{
 					// A broken bonus archive must not take the game's own catalog down.
 					Log?.Warning( $"Bonus object archive {archive} is skipped: {exception.Message}" );
@@ -385,9 +394,31 @@ public sealed class ObjectCatalog
 				yield return true;
 			}
 		}
-		var duplicate = entries.GroupBy( entry => entry.InfoId ).FirstOrDefault( group => group.Count() > 1 );
-		if ( duplicate != null )
-			throw new InvalidDataException( $"Info.Id {duplicate.Key} is declared by several {theme} archives." );
+	}
+
+	private static string? CategoryPath( BaseFileSystem fileSystem, string theme, string directory ) =>
+		FindDirectory( fileSystem, "/levels", theme ) is { } themePath ? FindDirectory( fileSystem, themePath, directory ) : null;
+
+	private static IEnumerable<(string Path, BaseFileSystem Source, bool Bonus)> Archives( BaseFileSystem? fileSystem, string? categoryPath, bool bonus ) =>
+		fileSystem == null || categoryPath == null ? []
+			: fileSystem.GetDirectories( categoryPath ).Select( file => (Relative( fileSystem, file ), fileSystem, bonus) );
+
+	/// <summary>
+	/// The name the original gives an object archive (tp.exe <c>0x0041EC30</c>): the file name without <c>.wad</c>; a name with exactly
+	/// two underscores loses everything from the second one (<c>_snake_3</c> is <c>_snake</c>, the name its members use), and then a
+	/// leading lower-case <c>p</c>. Archives of one name load once.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00424D30 extension strip] a name ending in ".wad" (0x007479A0 through 0x0078BB08, compared with _stricmp 0x0067DF40) loses it
+	// [BIN:TPW-EXE:0x0041EB90 bonus name] first = find('_'), last = rfind('_'); unless first == last or another '_' lies between them the name becomes Left(last), and a Left(1) equal to "p" (0x0074C778, case-sensitive 0x005F7980) is dropped
+	internal static string ArchiveKey( string fileName )
+	{
+		var name = fileName.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) ? fileName[..^4] : fileName;
+		var first = name.IndexOf( '_' );
+		var last = name.LastIndexOf( '_' );
+		if ( first == last || name.IndexOf( '_', first + 1 ) != last )
+			return name;
+		name = name[..last];
+		return name.StartsWith( 'p' ) ? name[1..] : name;
 	}
 
 	private static string? FindDirectory( BaseFileSystem fileSystem, string parent, string name )
@@ -405,15 +436,13 @@ public sealed class ObjectCatalog
 	private static ObjectCatalogEntry? LoadEntry( string theme, ObjectCategory category, string archive, ObjectSettingsFile? defaults, BaseFileSystem fileSystem, bool easy )
 	{
 		var files = fileSystem.GetFiles( archive ).Select( file => Relative( fileSystem, file ) ).ToArray();
-		var name = Path.GetFileName( archive );
-		// Official bonus archives are named _name_N (N = bonus number); their members use _name.
+		// Official bonus archives are named _name_N (N = bonus number); their members use _name, the archive's name (ArchiveKey).
+		var archiveName = Path.GetFileName( archive );
+		var name = ArchiveKey( archiveName );
 		int? bonusNumber = null;
-		var bonusMatch = BonusArchive.Match( name );
-		if ( bonusMatch.Success && !files.Any( file => string.Equals( Path.GetFileNameWithoutExtension( file ), name, StringComparison.OrdinalIgnoreCase ) && file.EndsWith( ".md2", StringComparison.OrdinalIgnoreCase ) ) )
-		{
-			bonusNumber = int.Parse( bonusMatch.Groups["number"].Value, CultureInfo.InvariantCulture );
-			name = bonusMatch.Groups["stem"].Value;
-		}
+		var suffix = archiveName[(archiveName.LastIndexOf( '_' ) + 1)..];
+		if ( name != archiveName && suffix.Length > 0 && suffix.All( char.IsAsciiDigit ) )
+			bonusNumber = int.Parse( suffix, CultureInfo.InvariantCulture );
 		ObjectSettingsFile? main = null;
 		string? mainFile = null;
 		var shared = new List<ObjectSettingsFile>();

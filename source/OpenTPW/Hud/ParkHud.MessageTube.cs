@@ -69,7 +69,7 @@ public sealed partial class ParkHud
 		if ( InfoArmOpen )
 			SetInfoArm( false );
 		// the message panel and the camera panel share one slot: opening a message puts the camera panel away
-		CameraPanelOpen = false;
+		CloseCameraPanel();
 		openedMessage = pendingMessages[index];
 		openedActions = pendingActions![index];
 		pendingMessages.RemoveAt( index );

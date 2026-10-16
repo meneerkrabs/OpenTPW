@@ -254,8 +254,10 @@ public sealed class ParkObjectState
 	/// each tick by the level and the M3/M4 gate loops; it is not saved, so it is true until the first sync after a load or a purchase.
 	/// </summary>
 	public bool QueueHasRoom { get; set; } = true;
-	/// <summary>Employee repairing or upgrading the object, 0 when none.</summary>
+	/// <summary>Employee repairing or upgrading the object, 0 when none: the original's claim word <c>+0x5E</c> (a mechanic, or a handyman for a toilet).</summary>
 	public int MechanicId { get; set; }
+	/// <summary>The park turn the claim was taken (<c>+0x60</c>, <see cref="ParkEconomy.Claim"/>); a claim lapses 100 turns on once its claimant no longer targets the object.</summary>
+	public long ClaimTurn { get; set; }
 	/// <summary>
 	/// The player called a mechanic (a handyman for a toilet) to the object: the original's <c>mRequestedService</c> (<c>+0x64</c> on the PC). It closes a ride
 	/// until the repair clears it (<see cref="ParkEconomy.RequestMaintenance"/>).
@@ -281,4 +283,16 @@ public sealed class ParkObjectState
 	public long WinnersLastMonth { get; set; }
 	public long TotalProfit { get; set; }
 	public long ProfitLastMonth => TakingsLastMonth - CostsLastMonth;
+	/// <summary>
+	/// Guests that refused the object's price at its stand point and walked away, since it was built: the original's <c>mNumWalkAways</c>
+	/// (<c>+0x1A4</c>), which the refusal raises (<see cref="ParkEconomy.RecordWalkAway"/>) and only the object constructor clears.
+	/// </summary>
+	public long WalkAways { get; set; }
+	/// <summary>Guests that walked away from the object's price today (<c>+0x230</c>), rolled into <see cref="WalkAwayDays"/> at the day's end.</summary>
+	public long WalkAwaysToday { get; set; }
+	/// <summary>
+	/// The walk-aways of the last days, oldest first, at most <see cref="ParkEconomy.WalkAwayHistoryDays"/> (the ring at <c>+0x234</c>, head
+	/// <c>+0x2AC</c>, size <c>+0x2B0</c> = 30, full flag <c>+0x2B4</c>).
+	/// </summary>
+	public List<long> WalkAwayDays { get; init; } = new();
 }

@@ -14,6 +14,9 @@ namespace OpenTPW.Tests;
 [DoNotParallelize]
 public class PostcardShortcutReviewTests
 {
+	[TestInitialize]
+	public void Setup() => Log ??= new();
+
 	private static void Set( object target, string name, object value ) => target.GetType().GetField( name, BindingFlags.Instance | BindingFlags.NonPublic )!.SetValue( target, value );
 	private static UiContext Context()
 	{

@@ -39,6 +39,7 @@ public class LoadChooserScrollTests
 	[DataRow( 1 )]
 	[DataRow( 8 )]
 	[DataRow( 9 )]
+	[DataRow( 13 )]
 	[DataRow( 17 )]
 	public void TheViewportDoesNotLimitTheSuppliedEntryCount( int count )
 	{
@@ -47,7 +48,8 @@ public class LoadChooserScrollTests
 		var screen = FrontEndMenu.CreateLoadScreen( new UiScreenStack(), OriginalUiTests.FakeStrings(), entries, loaded.Add );
 		var list = (UiScrollList)screen.Find( "parks" )!;
 		Assert.AreEqual( count, list.Rows().Count );
-		Assert.AreEqual( 8, list.VisibleRows );
+		// tp.exe's load list (table 0x7523f0, content 229..733) at the shared slot-7 row pitch: (733 - 229) / 41.4 = 12 rows
+		Assert.AreEqual( 12, list.VisibleRows );
 		if ( count == 0 )
 		{
 			Assert.IsNotNull( screen.Find( "empty" ) );
@@ -143,7 +145,7 @@ public class LoadChooserScrollTests
 		var screen = FrontEndMenu.CreateLoadScreen( stack, OriginalUiTests.FakeStrings( "French" ), Entries( 17 ), loaded.Add );
 		stack.Push( screen );
 		((UiScrollList)screen.Find( "parks" )!).Select( 16 );
-		Assert.AreEqual( "Retour", ((UiButton)screen.Find( "back" )!).Text!() );
+		Assert.AreEqual( "b_exit", ((UiButton)screen.Find( "back" )!).Model );
 		Assert.AreEqual( "ui202", ((UiButton)screen.Find( "loadSelected" )!).Text!() );
 		stack.Update( Context(), UiInput.Click( screen.Find( "back" )!.ScreenRect( Context().Canvas ).Center ) );
 		Assert.AreSame( parent, stack.Top );

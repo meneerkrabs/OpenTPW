@@ -436,7 +436,7 @@ Coasters block (`SaveCoasterBlock`; a block that breaks its traced contract refu
 exposes it as `CoasterBlock`, with `ObjectsAt`/`AttractionsAt` cell joins for consumers; no coaster
 state is imported. Imported: park turn
 and date, bank balance, admission fee, annual profit and bought loans, each
-object's price, cost of goods, upgrade level, state of repair and life gauge
+object's price, cost of goods, upgrade level, state of repair, life gauge and walk-away count
 (also for objects whose footprint is unverified), staff (type, grade, training percentage, happiness, state, hire time), the park
 open flag, and the advisor's pending advice and history of bound messages. Every
 value read but not imported is reported with its SAVE approximation (SAVE-001 to
@@ -444,8 +444,8 @@ SAVE-010 in the fidelity register): the world generator state, guests, staff
 names/jobs/positions/energy/idle ticks/role suffixes, the hiring pool, the
 challenge system's timing, switch bytes, Value and ActualThing, each
 attraction's state, chance of winning, third gauge, totals, name lines,
-operating capacity/duration/speed, quality of goods, queue size, customer and
-walk-away counts, time stamp and mesh instance ID, research, unmapped bank
+operating capacity/duration/speed, quality of goods, queue size, customer
+count, time stamp and mesh instance ID, research, unmapped bank
 words and the loan offers' Available flags, the staff HQ's training budgets,
 strike words, strike levels and trained byte, the world state,
 arrival variables and bytes, the calendar session start, the advisor

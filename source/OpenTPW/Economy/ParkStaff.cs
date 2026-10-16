@@ -147,6 +147,8 @@ public sealed class StaffMember
 	/// places the member; null otherwise.
 	/// </summary>
 	public (int X, int Y)? ResumeDestination { get; set; }
+	/// <summary>The turn an original save's claim of this member's ride or toilet was made (<c>+0x60</c>); the world that places him takes the claim again with it. Not saved: a member placed later claims at the current turn.</summary>
+	public long? ResumeClaimTurn { get; set; }
 }
 
 /// <summary>A job applicant in the hiring pool; leaves the pool at <see cref="ExpiresTick"/>.</summary>

@@ -177,6 +177,23 @@ passed since the last group emptied. A unit is four park turns (`(turn >> 2)`, a
 shipped 150 is about two and a half minutes. The timer starts unset, so a park loaded at a later turn (an
 original save) gets its first group at once, while a new park waits one interval.
 
+**The arrival vehicle.** The group comes by bus, seaplane or Ferry, the level's own fixed items run by their
+level scripts (`bus.RSE`, `seaplane.RSE`, `Ferry.RSE`). The arrival update (tp.exe `0x4cf3e0`, once per world
+turn, at the end of `0x516380`) talks to the vehicle at work through two script variables, 0 (the trigger) and
+1 (the status), as `GuestSimulation.ArrivalVehicles` does. A group that starts with no vehicle at work sends
+one by size (`0x51a2f0`): a bus up to 35 guests, a seaplane up to 60, a Ferry above. A vehicle the park
+already holds gets its trigger set; a new one is placed then (not at world setup) with status 1; a kind the
+level lacks falls back to the Ferry, then the seaplane, then the bus. While the vehicle reports status 2 (at
+its stop) one guest steps off per world turn; the turn that finds the group empty restarts the timer and sets
+the trigger, and the vehicle drives off. Status 6 (gone) releases it (`0x51a690` writes 0 back). Guests
+waiting to go home call a vehicle when none is at work (size 0: one world draw picks the kind, `0x51a34b`;
+OpenTPW draws it from the economy stream, DET-014) and keep it at status 4 until the last has boarded
+(`0x500bd0`). The time to the stop is the script's: the jungle bus waits 2 s, plays its drive-in clip
+`Busm1` for the time its trigger reports (the clip's 7,333 ms less 300) and waits 1 s more, so its first guest steps off about 10 s after
+the group starts. A park without any vehicle definition (the original stops with a fatal error) steps its
+guests off from the turn after the group starts, and its leaving guests go after 3 s. What still differs
+around the stop is ARRIVAL-001: the original first walks a leaving guest to the vehicle's own stop cells.
+
 The group size is `(int)(0.8 × (park points + NewParkBonus)) / PointsPerVisitor` (`PointsPerVisitor` below 2
 divides by 1), at least `MinPeople`, cut so that the guests in the park plus the group stay within 1,500;
 a bankrupt park gets none. With the shipped 20 and 6 a new park gets 2 guests per group. The PowerPC oracle
@@ -245,7 +262,7 @@ home (21) → removed.
 
 | Item | OpenTPW choice |
 | --- | --- |
-| Arrival step-off | One guest steps off per park turn from the turn after the group starts, lanes A/B alternating, as the original's arrival update does once its arrival vehicle reports script variable 1 = 2 at the stop (tp.exe `0x4cf3e0`, run once per world turn). The vehicle (a bus up to 35 guests, a seaplane up to 60, a Ferry above, `0x4cf48c`) is not modelled, so its level script's drive to the stop takes no time (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
+| Arrival step-off | One guest steps off per park turn while the arrival vehicle reports status 2 at its stop, lanes A/B alternating (tp.exe `0x4cf3e0`, [Arrivals](#arrivals)); leaving guests wait at the lane's first cell and board at status 4 (ARRIVAL-001); OpenTPW also caps the simulation at 1,000 guests |
 | Needs | traced ([below](#needs-and-starting-values)); the energy meter is tp.exe's unnamed float +0x1B8: 0 at creation, a completed use takes the type's `FatigueEffect` off it (`0x4fd970`, clamped to 0..100; 5 in the shipped data, so it stays 0), and only the save reads it; thoughts as in tp.exe ([Thoughts](#thoughts)) |
 | Starting happiness | 50 of 100 (traced, [below](#needs-and-starting-values)) |
 | Decision | traced ([below](#deciding-and-wandering)): once per park turn in state 6; the original's score (oracle F24, [below](#attraction-choice)) picks the best attraction of at least 10 at most every 30 turns, otherwise the guest walks one to five cells to a wander destination (state 7). The litter step and pranks are modelled ([litter](#litter), [pranks](#pranks)); the presentation turns are not (GUEST-010) |
@@ -362,15 +379,19 @@ Traced and executed (x86 findings X18 and X22, [ORACLE.md](reverse/ORACLE.md) se
 guests in 100 (5 in the shipped balance) are pranksters, of one of three kinds by their id: stinkbombs, litter or balloons. In state 6 a prankster whose
 happiness byte is below 15 pranks when its flag beats a draw modulo 101: a stinkbomb on its cell (`StinkbombLikelihood` percent of the time, 25),
 litter on its cell, or another guest's balloon burst (the first other guest on the cell holding one; without a victim there is no prank). A stinkbomb
-plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. The advisor's prank lines are not modelled yet (GUEST-007).
+plays `cat_kids` 207 at the prankster. Each prank cheers the prankster up by 1. The prank message reaches the advisor and the staff HQ at once
+(the bus `0x40fb10` delivers it as it is sent). The advisor queues one of its three prank lines (advice 0x7D, 0x7E or 0x7F, responses 302–307,
+scored by `PrankSbomb.Score`, `PrankLitter.Score` and `PrankBalloon.Score`), chosen not by the prank but by the message's kind word, which the
+prank step fills with the prankster's id modulo 3 (tp.exe `0x4ff2f8`, `0x59b060`).
 
 A prank calls the guards (tp.exe `0x508a30`, WANDER-plan.md §4), but only on a cell with security: a guard spreads `RegionFX[3]` (security 10,
 radius 3) where he stands, so a prankster within three cells of a guard is seen. Then the free guard (idle or patrolling) **nearest the staff HQ**
 is sent, and the HQ always sits at map cell (0, 0), so the guard nearest the map's corner goes, however far he is from the prankster. He walks
 to the prankster (cat_staff 136) and chases it for `GuardConstsPerGrade.WorkDuration` turns (10 to 75 by grade), re-routing when he arrives where
 it no longer is. On its cell he catches it if it is deciding, wandering, taking litter to a bin or walking to a ride (cat_staff 137): he carries it,
-out of sight, to the ticket booth (in OpenTPW the park entrance, as the booth lies off the paths) and sets it down there (cat_kids 128), and it
-heads for the exit. Like any leaving guest it is recalled on its next turn while its exit counter and happiness are above 0 and the park is
+out of sight, to the ticket booth (in OpenTPW the park entrance, as the booth lies off the paths) and sets it down there at the cell's centre
+(cat_kids 128). A world draw's bit 0 picks the side it leaves by (`0x4feb50`, `0x4d86d0`): it heads for that side's exit, and is removed when
+that side is out of reach. Like any leaving guest it is recalled on its next turn while its exit counter and happiness are above 0 and the park is
 open (the leaving handler `0x500a50`), so the guard's escort sends home only a guest that wanted to go anyway. A carried guest whose guard is dismissed or abandons the escort is removed from the park, as in the original.
 
 Vomit and stinkbombs spread their `RegionFX` row around their cell while they lie: every cell within the row's square radius gets the row's
@@ -726,6 +747,12 @@ numbers, as the original does (`fctiwz`): "> 80" means at least 81.
 Every exit of state 11, like the queue edit's and the price refusal's, ends in the dismissal
 (tp.exe `0x5004aa` → `0x5012f0`): after its thought the guest loses `PeepInfo.MediumHappinessChange`
 (`0x4fea70` with 1); the dismissal's guest event 6 and its sound are not modelled (QUEUE-005).
+A guest called forward to a shop or sideshow with a price tests it at the stand point (`0x4fde50`) and records its view of the price,
+paid or refused, in the park's perception statistics (`0x4c74b0`: 20 rings of 50 values; categories 1–4 by the shop's special
+ingredient, 6 and 7 by its balloon or costume, 9 for a sideshow; min(100, (W + 5) × 10 − price × 10) as an unsigned word). A guest
+that refuses raises the ride's walk-away counts (`0x4e1670`: `mNumWalkAways`, saved and imported, and the day's count, which the day
+message rolls into a ring of 30 days, `0x4dd320`). Only the advisor's conditions read the statistics and the day ring; the guest's
+event records (`0x50c100`) feed only its debug dump (`0x4faa60`).
 
 **Breakdown** (ORACLE.md F15). While `VAR_BROKEN ≠ 0` the ride dismisses its queue head first,
 one guest per park turn: the ride update (`0xe0a8c`, executed in the oracle for its states 1, 2

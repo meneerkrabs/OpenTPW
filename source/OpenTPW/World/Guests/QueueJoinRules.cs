@@ -49,6 +49,29 @@ public static class QueueJoinRules
 	}
 
 	/// <summary>
+	/// The perception statistics the price test records (tp.exe <c>0x004FDE50</c> through <c>0x004C74B0</c>; ORACLE.md X16), paid or refused, for a
+	/// price above 0: min(100, (W + 5) × 10 − price × 10) as an unsigned word, W the <paramref name="willingness"/>. A shop records it in the
+	/// category of its special ingredient (1..4) and in 6 for a balloon or 7 for a costume (its appearance effect); a sideshow in 9.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FE046 price statistics] kind +0x4AC 1: the switch on type +0x158 (jump table 0x004FE184) (1..4 record in that category), then +0x15C 1 records in 6 and 2 in 7; kind 2 records in 9; each value (W + 5) × 10 − price × 10 compared unsigned with 100 (from it 100), recorded through 0x004C74B0 on the park (0x00519510); executed by the x86 oracle target tpw-exe-price-test
+	public static (int Category, int Value)[] PriceStatistics( in PriceTerms terms, uint willingness, int specialIngredient, int appearanceEffect )
+	{
+		var price = unchecked( (uint)terms.Price );
+		if ( price == 0 )
+			return [];
+		var perceived = unchecked( (willingness + 5) * 10 - price * 10 );
+		var value = perceived > 99 ? 100 : (int)perceived;
+		if ( terms.IsSideshow )
+			return [(9, value)];
+		var shop = new List<(int, int)>( 2 );
+		if ( specialIngredient is >= 1 and <= 4 )
+			shop.Add( (specialIngredient, value) );
+		if ( appearanceEffect is 1 or 2 )
+			shop.Add( (appearanceEffect + 5, value) );
+		return shop.ToArray();
+	}
+
+	/// <summary>
 	/// The queue part of the park points counts-test (tp.exe <c>0x004DD920</c>, ORACLE.md X15): the attraction has real queue cells
 	/// (<c>0x004DE130</c> walks them from the front cell at the entrance; OpenTPW's one-cell fallback on a path cell does not count)
 	/// and its queue list is shorter than 4 × those cells (<c>0x004DDF50</c> with guest 0 returns the list's length).

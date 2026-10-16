@@ -33,6 +33,10 @@ public sealed class HudHost
 	public Action<string>? WindowOpened { get; init; }
 	/// <summary>A screen other than the HUD closed; the advisor withdraws the window's help message.</summary>
 	public Action<string>? WindowClosed { get; init; }
+	/// <summary>The HUD posts an advisor help message (0x486B00) that belongs to no screen, such as the camera panel's.</summary>
+	public Action<int>? HelpPosted { get; init; }
+	/// <summary>The HUD withdraws an advisor help message it posted (0x486B40).</summary>
+	public Action<int>? HelpWithdrawn { get; init; }
 	/// <summary>F1 was pressed in a HUD window that passes keys to the original's default window procedure; the advisor repeats the last tutorial advice.</summary>
 	public Action? HelpKeyPressed { get; init; }
 }
@@ -280,8 +284,7 @@ public sealed partial class ParkHud
 		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
 		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
 		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, OpenMapWindow );
-		// [BIN:TPW-EXE:0x498bb0 camera button] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 (table 0x751720) with camcorder mode (99, help 479; key C, 0x40c5c0 → 0x481a10, which builds a park-view mode object 0x46cff0) and send a postcard (100, help 480; Ctrl+P, 0x40c4c0 → 0x481500 → 0x4a9380, which also pauses the game) and starts sound 0x131; the button's help is 474
-		// [APPROX:UI-042] the panel's sound 0x131 is not played; ParkHud.CameraPanel.cs
+		// [BIN:TPW-EXE:0x498bb0 camera button] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 (table 0x751720) with camcorder mode (99, help 479; key C, 0x40c5c0 → 0x481a10, which builds a park-view mode object 0x46cff0) and send a postcard (100, help 480; Ctrl+P, 0x40c4c0 → 0x481500 → 0x4a9380, which also pauses the game) and posts advisor help 0x131 (ParkHud.CameraPanel.cs); the button's help is 474
 		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), 474, ToggleCameraPanel );
 		BuildCameraPanel();
 		BuildLocatorPanels();
@@ -676,7 +679,7 @@ public sealed partial class ParkHud
 		UpdateRideUpgradeButton( input );
 		UpdateCallStaffButton();
 		TrackCashChange( context.Delta );
-		UpdateCameraPanel();
+		UpdateCameraPanel( context.Delta );
 		UpdateMessageTube( context.Delta );
 		UpdateLocatorPanels();
 		SampleHappiness( context.Delta );

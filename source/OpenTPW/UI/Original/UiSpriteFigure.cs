@@ -1,0 +1,48 @@
+using Veldrid;
+using NVector2 = System.Numerics.Vector2;
+
+namespace OpenTPW.UI.Original;
+
+/// <summary>
+/// One sprite frame for a <see cref="UiSpriteFigure"/>: the atlas texture, the frame's rectangle in it (pixels), its hotspot offset (the frame's
+/// top-left corner relative to the figure's feet, pixels) and whether it is drawn mirrored.
+/// </summary>
+public readonly record struct UiSpriteFrame( Veldrid.Texture Texture, int AtlasWidth, int AtlasHeight, int X, int Y, int Width, int Height, int OriginX, int OriginY, bool Mirror );
+
+/// <summary>
+/// A sprite figure standing in a control's rectangle: its feet at the rectangle's horizontal centre, a quarter of the rectangle's height above its
+/// bottom edge, each sprite pixel <see cref="CanvasUnitsPerPixel"/> canvas units wide.
+/// </summary>
+// [BIN:TPW-EXE:0x0049BA00 hire figure position] x = ((right − left) / 2 − 0x3F8 + left) / 1024 and y = ((bottom − top) / 4 − bottom + 0x300) / 768 of the control's canvas rectangle: its centre, a quarter of its height above the bottom
+public sealed class UiSpriteFigure : UiElement
+{
+	/// <summary>The frame to draw now; null draws nothing.</summary>
+	public Func<UiSpriteFrame?> Frame { get; init; } = () => null;
+
+	/// <summary>Canvas units per sprite pixel (the canvas is 2048 units wide).</summary>
+	public float CanvasUnitsPerPixel { get; init; } = 3.2f;
+
+	/// <summary>Where the figure's feet stand in <paramref name="rect"/>, in the rectangle's own units.</summary>
+	public static NVector2 Feet( UiRect rect ) => new( rect.X + rect.Width / 2, rect.Bottom - rect.Height / 4 );
+
+	/// <summary>The screen rectangle and texture coordinates of <paramref name="frame"/> with its feet at <paramref name="feet"/>, <paramref name="pixel"/> screen units per sprite pixel.</summary>
+	public static (UiRect Rect, NVector2 Uv0, NVector2 Uv1) Layout( UiSpriteFrame frame, NVector2 feet, float pixel )
+	{
+		var left = frame.Mirror ? -(frame.OriginX + frame.Width) : frame.OriginX;
+		var rect = new UiRect( feet.X + left * pixel, feet.Y + frame.OriginY * pixel, frame.Width * pixel, frame.Height * pixel );
+		var u0 = frame.X / (float)frame.AtlasWidth;
+		var u1 = (frame.X + frame.Width) / (float)frame.AtlasWidth;
+		if ( frame.Mirror )
+			(u0, u1) = (u1, u0);
+		return (rect, new NVector2( u0, frame.Y / (float)frame.AtlasHeight ), new NVector2( u1, (frame.Y + frame.Height) / (float)frame.AtlasHeight ));
+	}
+
+	public override void Draw( UiContext context, bool focused, bool pressed )
+	{
+		if ( Frame() is not { } frame || Bounds.Width <= 0 )
+			return;
+		var rect = ScreenRect( context.Canvas );
+		var (quad, uv0, uv1) = Layout( frame, Feet( rect ), CanvasUnitsPerPixel * rect.Width / Bounds.Width );
+		context.Batch.AddQuad( UiTexture.Of( frame.Texture ), quad, uv0, uv1, RgbaByte.White );
+	}
+}

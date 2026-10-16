@@ -267,13 +267,13 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
 - `PTCL-908`: wired are EVENT 1/2, ADDOBJ and ADDOBJ_EXT 1/2 (`0x5520E8`: ADDOBJ with a control operand), their kept
   effects following the key node on every object pass (`0x55189D`: the node position truncated to whole units through
   `0x51FE30`, a type-2 effect turned through `0x51FD90`), a negative key at the footprint box middle (`0x556B90`/`0x466B70`),
-  the advisor's screen effects (docs/LIPS.md "Screen effects") and the per-type object effects (below). Not wired: a type-2
+  the advisor's screen effects (docs/LIPS.md "Screen effects"), the stinkbomb litter's effect 50 (`ParkLitterEffects`: started at the sprite's position times 1024 when the litter is placed, `0x4D95BD`, ended when it is swept, `0x4D9620`; litter restored from a save starts none) and the per-type object effects (below). Not wired: a type-2
   effect with a negative key (`0x556B90` leaves its direction unset); a fixed item, which has no box in OpenTPW, starts a
   negative-key effect at the world origin; the scoped effects (bit `0x8000`: the type record's `+0x4E0 + 4n`, `0x4145D0`,
   four template ids `0x414420` loads into free pool slots (`0x51FA20`) from files of the type's archive whose names give the
   slot, released by `0x51FA80`; the archive and the names are not read); the further dispatches after the build and
   upgrade effects (`0x51C640`, `0x51BFC0`), and the other engine callers of `0x521E60`/`0x521930` (UI pool group 2
-  `0x5ED920`, beams 19/15 `0x549C60`/`0x54AC70`/`0x546280`/`0x54AE50`, `0x557334`/`0x557f0e`, stink 50 `0x4D93B0`,
+  `0x5ED920`, beams 19/15 `0x549C60`/`0x54AC70`/`0x546280`/`0x54AE50`, `0x557334`/`0x557f0e`,
   smoke 2 `0x544C80`, splash 96 `0x547F50`, fly smoke and fire 39/40 `0x55DBA3`/`0x55DC22`, thing effects `0x4FA470`,
   `0x486B90`, `0x48DE1A`, `0x4B8EE0`, `0x550E00`, `0x5571A0`, `0x557D80`, `0x55DA70`).
 

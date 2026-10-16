@@ -2583,7 +2583,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			Think( guest, GuestThought.Dissatisfied );
 		}
 		else
+		{
 			ApplyVisit( guest, ride );
+			// [BIN:TPW-EXE:0x004FDA1B use satisfaction] after the use routine 0x004FE1E0 the change 3 × ((u8)trunc(happiness) - (u8)trunc(the happiness at joining the queue)) goes to the object's running average (0x004E1E00)
+			Payments?.UseSatisfaction( ride, ((int)guest.Happiness & 0xFF) * 3 - ((int)guest.QueueJoinHappiness & 0xFF) * 3 );
+		}
 		// [BIN:TPW-EXE:0x00501FD3 state 15 entry] after the use routine (0x005015F4, 0x004FD970) the state-15 entry gives a guest with balloon life its balloon back, except at a balloon shop, whose use routine has just made one
 		if ( guest.BalloonLife > 0 && ride.AppearanceEffect != GuestAppearance.Balloon )
 			guest.HasBalloon = true;

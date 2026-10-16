@@ -814,7 +814,7 @@ internal sealed partial class GameFlow : IDisposable
 			return;
 		if ( backdrop == Backdrop.Globe )
 		{
-			// [APPROX:UI-018] while the globe is up the lobby scene is not stepped, so its flyers and island clips hold still; whether the original's flying-mesh system and islands keep running behind the globe is not traced
+			// [APPROX:UI-018] while the globe is up the lobby scene is not stepped, so its flyers and island clips hold still; the original's lobby update 0x5d5c50 has no globe branch (the main state stays 2, 0x54e6c7), so its flying-mesh system and islands probably keep running behind the globe; whether the lobby scene is drawn then is not traced
 			lobbyEffects.StepGlobe( Time.Delta );
 			return;
 		}

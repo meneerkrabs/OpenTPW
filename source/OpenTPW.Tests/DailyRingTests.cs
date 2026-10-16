@@ -12,6 +12,43 @@ namespace OpenTPW.Tests;
 public class DailyRingTests
 {
 	[TestMethod]
+	public void TheVisitAverageTakesTheFirstValueAndHalvesLaterOnesTowardZero()
+	{
+		var ring = new DailyRing();
+		ring.Average( 9 );
+		Assert.AreEqual( 9, ring.Today, "a running value of 0 takes the value (0x004E1E00)" );
+		ring.Average( 4 );
+		Assert.AreEqual( 6, ring.Today, "(9 + 4) / 2, truncated" );
+		ring.Today = -3;
+		ring.Average( 0 );
+		Assert.AreEqual( -1, ring.Today, "the sign correction rounds toward zero: (-3 + 0) / 2" );
+		ring.Today = 0;
+		ring.Average( 0 );
+		ring.Average( 8 );
+		Assert.AreEqual( 8, ring.Today, "a first value of 0 leaves the next one to be taken whole" );
+	}
+
+	[TestMethod]
+	public void TheSatisfactionIsFiftyPlusTheTruncatedMeanOfTheSignedEntries()
+	{
+		var ring = new DailyRing();
+		Assert.AreEqual( 50, ring.Satisfaction, "no entries give 0x32 (0x004E1E30)" );
+		foreach ( var change in new[] { 9, -4, 0 } )
+		{
+			ring.Today = change;
+			ring.Roll();
+		}
+		Assert.AreEqual( 51, ring.Satisfaction, "the mean 5 / 3 = 1.67 truncates to 1" );
+		var negative = new DailyRing();
+		foreach ( var change in new[] { -9, 3, 0 } )
+		{
+			negative.Today = change;
+			negative.Roll();
+		}
+		Assert.AreEqual( 48, negative.Satisfaction, "-6 / 3 = -2" );
+	}
+
+	[TestMethod]
 	public void ARingStartsEmptyAndTakesOneDayPerRoll()
 	{
 		var ring = new DailyRing();

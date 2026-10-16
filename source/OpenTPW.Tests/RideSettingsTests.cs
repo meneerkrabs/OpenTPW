@@ -114,6 +114,32 @@ public class RideSettingsTests
 	}
 
 	[TestMethod]
+	public void AnOriginalSavesOperatingWordsAreTakenRawWhereTheyDifferFromTheTier()
+	{
+		// the loader stores mOperatingSpeed/Capacity/Duration straight into +0x58/+0x5d/+0x5c (0x4dcc6c..0x4dccb8): no clamp, so a capacity above the type's maximum stays
+		var ride = new OriginalObjectRuntime( Entry( "Info.DurationUnit 1\n" ), seed: 1 );
+		var taken = ride.RestoreOriginalSettingWords( 85, 14, 45 );
+		CollectionAssert.AreEqual( new[] { "speed 85", "capacity 14", "duration 45" }, taken.ToArray() );
+		Assert.AreEqual( new RideSettingWords( 85, 14, 45 ), ride.Settings );
+		Assert.AreEqual( (85, 14, 45), (ride.Script!.SpeedBias, ride.GetVariable( RideVariables.VAR_CAPACITY ), ride.GetVariable( RideVariables.VAR_DURATION )) );
+		Assert.IsTrue( ride.HasSettingWords );
+		var snapshot = ride.CaptureSnapshot();
+		Assert.AreEqual( (85, 14, 45), (snapshot.RideSpeed, snapshot.RideCapacity, snapshot.RideDuration), "the park-resume save keeps what was imported" );
+	}
+
+	[TestMethod]
+	public void AnOriginalSavesOperatingWordsEqualToTheTierOrZeroChangeNothing()
+	{
+		var ride = new OriginalObjectRuntime( Entry(), seed: 1 );
+		Assert.AreEqual( 0, ride.RestoreOriginalSettingWords( 60, 5, 30 ).Count, "the shipped saves hold the tier's Init values" );
+		Assert.AreEqual( 0, ride.RestoreOriginalSettingWords( 0, 0, 0 ).Count, "0 is the unset word: the constructor writes a word only from an Init value above 0" );
+		Assert.IsFalse( ride.HasSettingWords );
+		Assert.AreEqual( new RideSettingWords( 60, 5, 30 ), ride.Settings );
+		var wide = ride.RestoreOriginalSettingWords( 60, 256 + 7, 30 );
+		CollectionAssert.AreEqual( new[] { "capacity 7" }, wide.ToArray(), "only the low byte is stored" );
+	}
+
+	[TestMethod]
 	public void TheSettingWordsSurviveTheParkResumeSnapshot()
 	{
 		var entry = Entry( "Info.DurationUnit 1\n" );

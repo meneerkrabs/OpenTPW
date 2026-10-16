@@ -179,7 +179,7 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( ParkCalendar.TickOfTurn( 648 ), researcher.HiredTick, "hired 2,430,000 park seconds after FunnyTimeStart = turn 648" );
 		Assert.AreEqual( 1, import.ImportedStaff );
 		Assert.IsFalse( import.ParkClosed );
-		foreach ( var id in new[] { "SAVE-004", "SAVE-005", "SAVE-006", "SAVE-007", "SAVE-010" } )
+		foreach ( var id in new[] { "SAVE-004", "SAVE-006", "SAVE-007", "SAVE-010" } )
 			Assert.IsTrue( import.Evidence.Any( line => line.Contains( $"[APPROX:{id}]" ) ), $"{id} is reported" );
 		Assert.IsTrue( import.Evidence.Any( line => line.Contains( "0x3F416BBA" ) && line.Contains( "imported" ) ), "the generator state is named as imported" );
 		Assert.AreEqual( 0x3F416BBAu, economy.World.State, "the save's mRandomSeed is the world generator's state (tp.exe 0x00516330, saved raw by 0x00517123)" );
@@ -211,15 +211,15 @@ public class OriginalSaveImportTests
 		StringAssert.Contains( Line( "Bank batch credit imported:" ), "the month opens at the current balance" );
 		StringAssert.Contains( Line( "Bank words imported:" ), "withdrawals enabled, last balance " );
 		StringAssert.Contains( Line( "Loan offers' stored credit tests imported:" ), "the Available tab lists " );
-		var challenges = Line( "[APPROX:SAVE-005]" );
-		foreach ( var value in new[] { "losses " } )
-			StringAssert.Contains( challenges, value );
+		var challenges = Line( "Challenge loss counts " );
+		StringAssert.Contains( challenges, "offered words " );
+		StringAssert.Contains( challenges, "no challenge code reads them" );
 		StringAssert.Contains( Line( "Challenges imported:" ), "not started" );
 		var attractions = import.Evidence.Where( line => line.StartsWith( "[APPROX:SAVE-006] Attraction thing ", StringComparison.Ordinal ) ).ToArray();
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
 		{
-			foreach ( var value in new[] { "operating capacity ", "duration ", "speed ", "open word ", "name \"",
+			foreach ( var value in new[] { "open word ", "name \"",
 				"claim by thing ", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}

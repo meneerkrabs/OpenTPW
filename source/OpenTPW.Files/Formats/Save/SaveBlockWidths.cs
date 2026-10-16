@@ -22,8 +22,8 @@ namespace OpenTPW;
 /// <c>u32 on, u32, u32 n, n bytes</c> and, when on, a chunk of three words, a length word L and L - 4 bytes; cheats <c>0x405570</c> 2;
 /// advisor scoring <c>0x59c860</c> 4; UI <c>0x481680</c> (the last block): <c>u32 count, count × 0x21c</c>.</item>
 /// </list>
-/// The World block (its control manager and macro AI widths are not traced) and a Coasters block with a coaster (its trains
-/// and cars depend on the coaster type's train and car counts) have no width here; <see cref="TryMeasure"/> returns false for them.
+/// A Coasters block with a coaster (its trains and cars depend on the coaster type's train and car counts) has no width here, and the World block is measured
+/// by <see cref="TryMeasureWorld"/> (its control manager, macro AI, map cells and thing list are fixed-width or self-closing); <see cref="TryMeasure"/> returns false for both.
 /// </summary>
 public static class SaveBlockWidths
 {
@@ -43,6 +43,50 @@ public static class SaveBlockWidths
 	public const uint AdvisorMagic = 0x5f564441;
 	public const int UiRecordBytes = 0x21c;
 	public const int TrackChunkHeaderBytes = 12;
+
+	/// <summary>The cells of the World's map: the loader's loop runs a fixed 0x4000 times (128 × 128).</summary>
+	public const int WorldCells = 0x4000;
+	/// <summary>A map cell's status byte and the records its bits 0, 1 and 2 add: the map cell (52 bytes), the track cell (31) and the effects record (10).</summary>
+	public const int CellStatusBytes = 1, MapCellBytes = 52, TrackCellBytes = 31, EffectsCellBytes = 10;
+
+	/// <summary>
+	/// The width of a World block that starts at <paramref name="offset"/>, from the World loader's own readers; false (nothing consumed) when the bytes do not read as one,
+	/// which is where the original would run past the save or fail a sanity check.
+	/// </summary>
+	/// <remarks>
+	/// <c>0x5179C0</c> reads the 64 bytes of variables, then the control manager <c>0x4D3AA0</c> (150 records of 32 bytes, a count and a key: 4806), the macro AI
+	/// <c>0x4D7A70</c> (the hiring pool <c>0x507850</c> 670, the calendar <c>0x4F7F30</c> 28 and the arrival state <c>0x4CF050</c> 18) and the map <c>0x4D7EA0</c>: for each of
+	/// 0x4000 cells a status byte, then the map cell <c>0x4D8DD0</c> (the 29-byte base <c>0x4D0B30</c> and 23 bytes of litter fields) when bit 0 is set, the track cell
+	/// <c>0x50C200</c> (the base and a 2-byte segment number) when bit 1 is set and the effects record <c>0x502490</c> (five words) when bit 2 is set; the thing list follows and closes itself.
+	/// </remarks>
+	// [BIN:TPW-EXE:0x5179C0 World loader] variables, 0x4D3AA0, 0x4D7A70 (0x507850, 0x4F7F30, 0x4CF050), 0x4D7EA0 (status byte, 0x4D8DD0, 0x50C200, 0x502490 per cell), "Used Thing Head" and the things; a status byte's other bits are not read
+	public static bool TryMeasureWorld( ReadOnlySpan<byte> payload, int offset, out int width )
+	{
+		width = 0;
+		try
+		{
+			var position = checked( offset + SaveWorldVariables.Bytes + SaveObjectControls.Bytes + SaveStaffPool.Bytes + SaveCalendar.Bytes + SaveWorld.ArrivalBytes );
+			for ( var cell = 0; cell < WorldCells; cell++ )
+			{
+				if ( position >= payload.Length )
+					return false;
+				var status = payload[position];
+				position += CellStatusBytes + ((status & 1) != 0 ? MapCellBytes : 0) + ((status & 2) != 0 ? TrackCellBytes : 0) + ((status & 4) != 0 ? EffectsCellBytes : 0);
+			}
+			if ( position > payload.Length )
+				return false;
+			width = SaveThingChain.End( payload, position ) - offset;
+			return true;
+		}
+		catch ( InvalidDataException )
+		{
+			return false;
+		}
+		catch ( OverflowException )
+		{
+			return false;
+		}
+	}
 
 	/// <summary>Whether the block's width follows from its bytes alone (World and a Coasters block with a coaster do not).</summary>
 	public static bool IsTraced( SaveBlock block ) => block is not (SaveBlock.World or SaveBlock.Coasters or SaveBlock.ActionRecording);

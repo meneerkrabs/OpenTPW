@@ -99,7 +99,8 @@ public readonly struct SaveCell
 /// The per-cell grid (map writer 0xd6c90) inside the World block of a decoded TPWI/TPWS payload. Each record is
 /// 84 bytes: a type byte (3 or 7 observed), opaque fields, the MAP attribute byte at +46 and the
 /// bytes FF FF at +82; type bit 0x04 appends a 10-byte extension. Records are stored X-fastest.
-/// The control manager and macro-AI widths before the grid are not pinned, so the grid start is located structurally: exactly
+/// The grid starts where the World loader's readers put it (<see cref="SaveBlockWidths.TryMeasureWorld"/>: the variables, the control manager and the macro AI have
+/// fixed widths); a World block that does not read that way (synthetic payloads) has its start located structurally: exactly
 /// one offset in the search range must begin a run of exactly <c>countX * countY</c> valid records.
 /// </summary>
 public sealed class SaveCellGrid
@@ -144,6 +145,33 @@ public sealed class SaveCellGrid
 	/// </summary>
 	public static SaveCellGrid Parse( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY )
 		=> Parse( payload, searchStart, searchEnd, countX, countY, SaveCell.RecordBytes );
+
+	/// <summary>
+	/// Parses the grid that starts exactly at <paramref name="start"/> (the offset the World loader's readers put it at, <see cref="SaveBlockWidths.TryMeasureWorld"/>): the
+	/// <c>countX * countY</c> records must follow one another from there. Throws when they do not.
+	/// </summary>
+	public static SaveCellGrid ParseAt( ReadOnlyMemory<byte> payload, int start, int end, int countX, int countY )
+	{
+		if ( countX <= 0 || countY <= 0 || countX > MapFile.MaximumDimension || countY > MapFile.MaximumDimension || (long)countX * countY > MapFile.MaximumCells )
+			throw new ArgumentOutOfRangeException( nameof( countX ), "Grid dimensions must match a valid MAP." );
+		if ( end < 0 || end > payload.Length )
+			throw new ArgumentOutOfRangeException( nameof( end ) );
+		if ( start < 0 || start > end )
+			throw new InvalidDataException( $"Save cell grid would start at offset {start}, outside the World block that ends at {end}." );
+		var data = payload.Span[..end];
+		var required = countX * countY;
+		var result = new SaveCell[required];
+		var position = start;
+		for ( var index = 0; index < required; index++ )
+		{
+			var length = RecordLength( data, position, SaveCell.RecordBytes );
+			if ( length == 0 )
+				throw new InvalidDataException( $"Save cell grid record {index} at offset {position} is not a cell record." );
+			result[index] = new SaveCell( payload.Slice( position, length ), SaveCell.RecordBytes );
+			position += length;
+		}
+		return new SaveCellGrid( countX, countY, start, position, result );
+	}
 
 	/// <summary>Parses the observed Theme Park Inc profile: 88-byte cells, a ten-byte type-7 extension, and FF FF at +86.</summary>
 	public static SaveCellGrid ParseThemeParkInc( ReadOnlyMemory<byte> payload, int searchStart, int searchEnd, int countX, int countY )

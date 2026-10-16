@@ -50,6 +50,9 @@ internal sealed partial class ParkResumeSmokeTest
 		var lineB = LineOut( doorB, QueueLength + 1 );
 		foreach ( var cell in lineB )
 		{
+			// the placement lays the queue cell outside the entrance itself (ObjectAccessCells), so the line starts on it
+			if ( level.Guests!.Grid.IsQueue( cell.X, cell.Y ) && bridge.QueueCells.Contains( cell ) )
+				continue;
 			Require( level.BuildQueueCell( bridge, cell.X, cell.Y ) == QueueBuildResult.Ok, $"build the second copy's queue cell {(cell.X, cell.Y)}" );
 			Require( level.Guests!.Grid.IsQueue( cell.X, cell.Y ), $"the built queue cell {(cell.X, cell.Y)} is a queue cell" );
 		}

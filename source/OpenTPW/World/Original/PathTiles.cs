@@ -59,20 +59,51 @@ public static class PathTiles
 	public static byte Turn( byte mask ) => (byte)((mask << 2) | (mask >> 6));
 
 	/// <summary>
-	/// The texture and turn for <paramref name="neighbours"/>. Straights and edges have two textures; the cell
-	/// position picks one so a rebuilt surface keeps its look.
+	/// The texture and turn for <paramref name="neighbours"/>. Straights and edges have two textures: <paramref name="second"/> picks the
+	/// second (19 for the straight, 20 for the edge), the chooser's roll (<see cref="PathTileVariants"/>).
 	/// </summary>
-	public static PathTile Choose( byte neighbours, int x, int y )
+	public static PathTile Choose( byte neighbours, bool second = false )
 	{
 		var tile = ByMask[Reduce( neighbours )];
-		// [APPROX:PATH-014] PATH-VARIANT: built straights and edges pick str1/str2 and edg1/edg2 by a hash of the cell (saved cells keep theirs); the original's chooser (tp.exe 0x535dd0) uses the second texture (2 becomes 19, 10 becomes 20) when byte 0x820ac0 is set (0x535fcc), and every call that reaches its end stores rand() & 1 there (CRT rand 0x67b5c0, store 0x53602c, seeded with GetTickCount at 0x54dddc), so each recomputation re-rolls from a shared clock-seeded generator and no per-cell rule exists — still open: nothing statically; the original choice is random per recomputation
-		var second = ((x * 73856093) ^ (y * 19349663)) & 1;
+		if ( !second )
+			return tile;
 		return tile.TextureIndex switch
 		{
-			2 when second == 1 => tile with { TextureIndex = StraightVariant },
-			10 when second == 1 => tile with { TextureIndex = EdgeVariant },
+			2 => tile with { TextureIndex = StraightVariant },
+			10 => tile with { TextureIndex = EdgeVariant },
 			_ => tile,
 		};
+	}
+
+	/// <summary>
+	/// The path layer's texture batches of at most <paramref name="capacity"/> slots for the used <paramref name="textures"/>: a straight or
+	/// edge texture always shares its batch with its second texture (when the theme has it), whichever of the two the cells use, so the
+	/// layer's batches depend on the tile shapes and not on the presentation roll (<see cref="PathTileVariants"/>), which a restored park
+	/// rolls afresh.
+	/// </summary>
+	public static IReadOnlyList<int[]> Batches( IEnumerable<int> textures, int capacity, Func<int, bool> hasTexture )
+	{
+		static int Base( int texture ) => texture switch { StraightVariant => 2, EdgeVariant => 10, _ => texture };
+		var groups = textures.Select( Base ).Distinct().Order().Select( first =>
+		{
+			var variant = first switch { 2 => StraightVariant, 10 => EdgeVariant, _ => -1 };
+			return variant >= 0 && hasTexture( variant ) && hasTexture( first ) ? new[] { first, variant }
+				: variant >= 0 && hasTexture( variant ) ? new[] { variant } : new[] { first };
+		} );
+		var batches = new List<int[]>();
+		var current = new List<int>();
+		foreach ( var group in groups )
+		{
+			if ( current.Count + group.Length > capacity )
+			{
+				batches.Add( current.ToArray() );
+				current.Clear();
+			}
+			current.AddRange( group );
+		}
+		if ( current.Count > 0 )
+			batches.Add( current.ToArray() );
+		return batches;
 	}
 
 	/// <summary>The eight path neighbours of a cell as a mask; cells outside the <paramref name="countX"/> × <paramref name="countY"/> map are no path.</summary>
@@ -92,54 +123,15 @@ public static class PathTiles
 	/// The tile of path cell (<paramref name="x"/>, <paramref name="y"/>). A cell that was a path in the original save,
 	/// with the same path neighbours, keeps the saved texture and turn: the saved neighbour bits also count ride
 	/// entrances, which the cell map does not keep. Other cells, and a saved turn other than 0/90/180/270, follow
-	/// <see cref="Choose"/> (reported under SAVE-010).
+	/// <see cref="Choose"/> with the cell's roll <paramref name="second"/> (reported under SAVE-010).
 	/// </summary>
-	public static PathTile ForCell( int x, int y, int countX, int countY, Func<int, int, bool> isPath, SaveCellGrid? saved )
+	public static PathTile ForCell( int x, int y, int countX, int countY, Func<int, int, bool> isPath, SaveCellGrid? saved, bool second = false )
 	{
 		var neighbours = Neighbours( x, y, countX, countY, isPath );
 		if ( saved != null && saved[x, y].IsPath && Neighbours( x, y, countX, countY, ( nx, ny ) => saved[nx, ny].IsPath ) == neighbours
 			&& saved[x, y].PathRotation is 0 or 90 or 180 or 270 )
 			return new PathTile( saved[x, y].PathTexture, saved[x, y].PathRotation );
-		return Choose( neighbours, x, y );
-	}
-
-	/// <summary>QueueTex's square, end, straight or corner, following predecessor/successor links and the back cell's join path.</summary>
-	public static PathTile ForQueueCell( int x, int y, int countX, int countY, Func<int, int, bool> isQueue,
-		Func<int, int, byte>? queueLink, Func<int, int, bool> isPath )
-	{
-		var mask = queueLink?.Invoke( x, y ) & 0x55 ?? 0;
-		var hasSuccessor = false;
-		for ( var direction = 0; direction < 4; direction++ )
-		{
-			var (dx, dy) = GuestPathGrid.Directions[direction];
-			var (nx, ny) = (x + dx, y + dy);
-			if ( (uint)nx >= (uint)countX || (uint)ny >= (uint)countY || !isQueue( nx, ny ) ) continue;
-			if ( queueLink == null || queueLink( nx, ny ) == GuestPathGrid.LinkValue( (direction + 2) & 3 ) )
-			{
-				mask |= GuestPathGrid.LinkValue( direction );
-				hasSuccessor = true;
-			}
-		}
-		if ( !hasSuccessor )
-			for ( var direction = 0; direction < 4; direction++ )
-			{
-				var (dx, dy) = GuestPathGrid.Directions[direction];
-				var (nx, ny) = (x + dx, y + dy);
-				if ( (uint)nx < (uint)countX && (uint)ny < (uint)countY && isPath( nx, ny ) )
-				{
-					mask |= GuestPathGrid.LinkValue( direction );
-					break;
-				}
-			}
-		// [APPROX:PATH-015] QUEUE-TEXTURES: queue cells are drawn with QueueTex ground textures whose shape and turn follow decoded artwork and queue links; the original applies no QueueTex texture: its tile refresh 0x5365d0 sends a queue cell's class-2 result of the chooser 0x535dd0 (table 0x7630b0) to 0x5229e0, which places one of the queue models loaded by 0x522900 (quedead, questra, quebnd2, quebnd1, queend, quebin1, quebin2 .md2) turned by 360 minus the rotation, and gives the ground only the sentinel (0, 8, 0); OpenTPW does not draw these models — still open: the queue models are not drawn; the ground under them (flags 0x101) and the model yaw convention
-		for ( var quarter = 0; quarter < 4; quarter++ )
-		{
-			if ( mask == 0x01 ) return new PathTile( 1, quarter * 90 );
-			if ( mask == 0x11 ) return new PathTile( 2, quarter * 90 );
-			if ( mask == 0x05 ) return new PathTile( 3, quarter * 90 );
-			mask = Turn( Turn( Turn( (byte)mask ) ) );
-		}
-		return new PathTile( 0, 0 );
+		return Choose( neighbours, second );
 	}
 
 	/// <summary>

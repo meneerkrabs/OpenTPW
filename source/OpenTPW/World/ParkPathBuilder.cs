@@ -12,7 +12,7 @@ public enum CellBuildResult
 	NotOwned,
 	/// <summary>Refused by <c>CanChangeCellType</c>, or covered by an object, a fixed item or the prototype ride.</summary>
 	Occupied,
-	/// <summary>Path over a queue cell.</summary>
+	/// <summary>Path over a queue cell that is not a queue end (a queue end is turned into a path cell).</summary>
 	QueueCell,
 	/// <summary>The object terrain rule refuses the cell (water, blocked, entrance area, hole, the save's occupied cells).</summary>
 	Terrain,
@@ -139,6 +139,19 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	public CellBuildResult CheckCell( int x, int y ) => Validate( x, y, ParkCellType.Path, lastCell: false );
 
 	/// <summary>
+	/// A queue end (the validator's code 8): a queue cell with exactly one set link bit, whose neighbour along it is a queue cell
+	/// too: the back of a queue not connected to a path. A path can be built over it, which turns it into a path cell.
+	/// </summary>
+	public static bool IsQueueEnd( ParkCellMap cells, int x, int y )
+	{
+		if ( cells.TypeAt( x, y ) != ParkCellType.Queue || PathLinkWriter.LinkCount( cells, x, y ) != 1 )
+			return false;
+		var bit = System.Numerics.BitOperations.TrailingZeroCount( cells.LinksAt( x, y ) );
+		var (dx, dy) = PathTiles.Offsets[bit];
+		return cells.RawTypeAt( x + dx, y + dy ) == (byte)ParkCellType.Queue;
+	}
+
+	/// <summary>
 	/// The per-cell rules of PATH-plan §9.2 in order, without writing: bounds, owned land, <c>CanChangeCellType</c>,
 	/// path over queue, objects, the terrain rule and money (balance − cost ≥ 0).
 	/// </summary>
@@ -159,12 +172,10 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		// [BIN:STP-PPC:0x10084864 placement validator] path over path returns 0 (allowed); SetCellType 0x10082AC4 then only bumps the placement counter
 		if ( old == (byte)type )
 			return CellBuildResult.Existing;
-		if ( type == ParkCellType.Path && old == (byte)ParkCellType.Queue )
-		{
-			// [BIN:STP-PPC:0x100849A4 placement validator] path over a queue cell: code 8 for a queue end (one link, linked neighbour also a queue), else refused
-			// [APPROX:PATH-008] PATH-CODE8: path over any queue cell is refused; the original's validator returns code 8 for a queue end (one link whose neighbour is a queue; tp.exe 0x535670 at 0x535d00), and code 8 is not a refusal: the start check (0x527280) and the ghost accept it, and the commit's SetCellType (0x5346d0; rule 0x535600 allows type 1 over type 3) turns the queue end into a charged path cell; OpenTPW has no queue-to-path conversion — still open: the queue-to-path conversion of a queue end and its ride-queue update are not ported
+		// [BIN:STP-PPC:0x100849A4 placement validator] path over a queue cell: code 8 for a queue end (one link, linked neighbour also a queue), else refused
+		// [BIN:TPW-EXE:0x00535CE0 path over a queue end] a type-3 cell with one set link bit (0x522790) whose neighbour along it (0x4D97E0) is type 3 returns 8 (0x535D06), which the start check (0x527280) and the ghost accept; any other queue cell is refused (0x535D12: 0x816D50 set, 1); the commit's SetCellType (rule 0x535600 allows type 1 over 3) then types it 1 and charges the path cost (WritePath)
+		if ( type == ParkCellType.Path && old == (byte)ParkCellType.Queue && !IsQueueEnd( Cells, x, y ) )
 			return CellBuildResult.QueueCell;
-		}
 		if ( isOccupied?.Invoke( x, y ) == true )
 			return CellBuildResult.Occupied;
 		// [APPROX:PATH-006] PATH-SLOPE: no slope or height test, as in the original (tp.exe LayLine 0x536100, SetCell 0x532fc0 reads heights only for the ghost, validator 0x535670 has no float operation, SetCellType 0x5346d0); the object terrain rule OpenTPW applies (water, blocked, entrance area, fixed walkway, holes) stands in for the original's cell types: map init 0x536490 types only hole cells (2, 0x1e, 7, refused by type) and leaves every other non-InitialPath cell type 0, whose unowned flag 0x40 the land now sets (PATH-007) — still open: the original cell types the terrain stand-in replaces
@@ -199,11 +210,16 @@ public sealed class ParkPathBuilder : ICellLineWriter
 
 	SegmentResult ICellLineWriter.Commit( (int X, int Y) start, (int X, int Y) end ) => BuildSegment( start, end );
 
+	/// <summary>The path mode's start check: <see cref="CheckCell"/> accepts the cell (a new cell, an existing path or a queue end).</summary>
+	// [BIN:TPW-EXE:0x0052727B start check] 0x535670(1, 0) on the clicked cell: only 1 refuses; path over path (0 or 0xB) and a queue end (8) start a line
+	bool ICellLineWriter.CanStart( (int X, int Y) cell ) => CheckCell( cell.X, cell.Y ) is CellBuildResult.Ok or CellBuildResult.Existing;
+
 	private SegmentResult Run( (int X, int Y) start, (int X, int Y) end, bool write )
 	{
 		var line = LayLine( start, end );
 		var built = new List<(int X, int Y)>();
 		var existing = new List<(int X, int Y)>();
+		var written = new List<(int X, int Y)>();
 		long charged = 0;
 		var stoppedBy = CellBuildResult.Ok;
 		(int X, int Y)? stoppedAt = null;
@@ -217,6 +233,7 @@ public sealed class ParkPathBuilder : ICellLineWriter
 			if ( check == CellBuildResult.Existing )
 			{
 				existing.Add( (x, y) );
+				written.Add( (x, y) );
 				if ( write )
 					BumpPlacement( x, y );
 				continue;
@@ -235,7 +252,18 @@ public sealed class ParkPathBuilder : ICellLineWriter
 				break;
 			}
 			built.Add( (x, y) );
+			written.Add( (x, y) );
 			charged += cost;
+		}
+		// [BIN:TPW-EXE:0x0052744E link pass] the commit runs LayLine once per pass (0x527403..0x527517): the type pass (SetCellType for every cell), then pass 0x80, whose SetCell case calls the link writer 0x5348D0 with the mode of the last type written (0x816D64) and the refresh flag 1 for every cell of the line, so each cell links to neighbours the whole line has already typed; the ghost gate (0x524A63) lets only lines without a refused cell commit, so in the tool the link pass covers every cell, as here the cells the type pass reached
+		if ( write )
+		{
+			foreach ( var (x, y) in written )
+				PathLinkWriter.LinkPath( Cells, x, y, Effects );
+			// [BIN:TPW-EXE:0x00527517 refresh pass] the last LayLine pass, 0x81, refreshes every cell of the line (SetCell case 0x81: the tile refresh 0x5365D0)
+			if ( Effects?.Refresh is { } refresh )
+				foreach ( var (x, y) in written )
+					refresh( x, y );
 		}
 		return new SegmentResult( end, built, charged, stoppedBy, endedOnExisting )
 		{
@@ -246,10 +274,13 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		};
 	}
 
+	/// <summary>The link writer's tile refreshes and queue-neighbour sound (the level's presentation), or none (headless).</summary>
+	public LinkEffects? Effects { get; set; }
+
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] the same nonzero type again: the signed placement counter (+32) goes up by one, no charge
 	private void BumpPlacement( int x, int y ) => Cells.SetPlacementCount( x, y, (short)Math.Min( short.MaxValue, Cells.PlacementCountAt( x, y ) + 1 ) );
 
-	/// <summary><c>SetCellType(cell, 1)</c> for a validated cell: type, links, then the spend.</summary>
+	/// <summary><c>SetCellType(cell, 1)</c> for a validated cell: the type, then the spend; the links follow in the commit's link pass.</summary>
 	// [BIN:STP-PPC:0x10082AC4 SetCellType] store the type at +8 and update the map, then Spend (0x100CBFDC) the path cost
 	private bool WritePath( int x, int y )
 	{
@@ -257,28 +288,11 @@ public sealed class ParkPathBuilder : ICellLineWriter
 		// [BIN:STP-PPC:0x10082BC8 SetCellType money test] the 32-bit balance − cost test before the store (ParkEconomy.CanSpendCell, the test TrySpendCell repeats)
 		if ( park != null && !park.CanSpendCell( CellPurchase.Path ) )
 			return false;
+		// [BIN:TPW-EXE:0x005346D0 SetCellType] type 1 over a type-3 cell (a queue end, code 8) passes rule 0x535600 and is charged the path cost (0x52FB20) like any path cell; the cell keeps its link byte, and the ride owning it (owner word +0x10, a type-4/9/10 cell) gets its queue edit 0x4DE1F0 at once, which OpenTPW's guests run with their queue recompute on this map edit
 		Cells.SetType( x, y, ParkCellType.Path );
-		Link( x, y );
 		// [BIN:TPW-EXE:0x534879 path Spend] SetCellType spends the path cost through 0x4D01F0, which adds it to the park's total costs (+0x1F5A0); the finance and hire panels show other costs as total costs minus staff costs (0x49BDD0, [0x7CA300]), so path spending is an other cost, as OpenTPW's OtherCosts within MoneyOut minus StaffCosts
 		park?.TrySpendCell( CellPurchase.Path );
 		return true;
-	}
-
-	/// <summary>Links a new path cell and each cardinal path neighbour to each other.</summary>
-	// [APPROX:PATH-004] PATH-CONNECT: the path-to-path links are traced and match (tp.exe 0x5348d0 mode 1: each cardinal neighbour of type 1 gets the back bit and the new cell the forward bit, 0x534976..0x534fb4, directions from the vectors set up at 0x4d9a60); not modelled: the OR into existing link bytes (OpenTPW replaces the cell's own), links to type-9/10 neighbours gated by their +0xd link, the diagonal bits 2/8/0x20/0x80 and their clean-up beside type-3/9 links (0x53518b), the type-3 to type-1 conversion at entry (0x534906) and the queue-neighbour refresh with cat_ui 139 (AUDIO-023) — still open: the type-9/10 links, diagonal bits, OR write and type-3 conversion of 0x5348d0 are not ported
-	private void Link( int x, int y )
-	{
-		byte links = 0;
-		for ( var direction = 0; direction < 4; direction++ )
-		{
-			var (dx, dy) = GuestPathGrid.Directions[direction];
-			if ( Cells.TypeAt( x + dx, y + dy ) != ParkCellType.Path )
-				continue;
-			links |= GuestPathGrid.LinkValue( direction );
-			var back = GuestPathGrid.LinkValue( (direction + 2) & 3 );
-			Cells.SetLinks( x + dx, y + dy, (byte)(Cells.LinksAt( x + dx, y + dy ) | back) );
-		}
-		Cells.SetLinks( x, y, links );
 	}
 
 	// ---- Removal ----------------------------------------------------------------------------------
@@ -287,8 +301,8 @@ public sealed class ParkPathBuilder : ICellLineWriter
 	/// <c>ClearCell</c>'s path case with a = b = 0 (forced): clears the cell and both sides of its links. A NoModify
 	/// cell is kept unless it has no neighbours (then the flag is dropped first). Nothing is refunded.
 	/// </summary>
-	// [BIN:STP-PPC:0x100859B4 ClearCell] path case: NOMODIFY keeps the cell unless it has no neighbours ("Removing path cell with no neighbours but NOMODIFY set"); a = b = 0 sets the counter to −1; each cardinal link is cleared on both sides; no Earn (no refund)
-	// [APPROX:PATH-005] PATH-REMOVE: the forced path removal (a = b = 0, NoModify respected, no refund) is the original's area clear (tool mode 0x3a from the Delete key handler 0x40c5e0: two clicks span a rectangle and 0x52bdd0 calls ClearCell 0x5367a0(0, 0) on every type-1 cell, 0x52c11f), which Remove matches; OpenTPW's remove tool is one click that clears an object, else a queue cell, else a path cell, while the original's rectangle removes only objects wholly inside it and type-1 path cells and leaves queue and type-10 cells — still open: the two-click rectangle of tool 0x3a (0x52bdd0) is not ported
+	// [BIN:STP-PPC:0x100859B4 ClearCell] path case: NOMODIFY keeps the cell unless it has no neighbours ("Removing path cell with no neighbours but NOMODIFY set"); a = b = 0 sets the counter to −1; no Earn (no refund); [BIN:TPW-EXE:0x005367A0 cell clear] every bit of the cell's link byte, diagonals included, is cleared on both sides (PathLinkWriter.Unlink)
+	// [BIN:TPW-EXE:0x0052C11F area clear] the area clear (tool 0x3A, AreaClearTool) calls ClearCell 0x5367A0(0, 0) on every type-1 cell of its rectangle: this forced removal
 	public CellBuildResult Remove( int x, int y ) => Clear( x, y, forced: true );
 
 	/// <summary>
@@ -318,21 +332,12 @@ public sealed class ParkPathBuilder : ICellLineWriter
 				return CellBuildResult.Existing;
 			}
 		}
-		for ( var direction = 0; direction < 4; direction++ )
-		{
-			var (dx, dy) = GuestPathGrid.Directions[direction];
-			if ( !Cells.InBounds( x + dx, y + dy ) )
-				continue;
-			var back = GuestPathGrid.LinkValue( (direction + 2) & 3 );
-			var neighbour = Cells.LinksAt( x + dx, y + dy );
-			if ( (neighbour & back) != 0 )
-				Cells.SetLinks( x + dx, y + dy, (byte)(neighbour & ~back) );
-		}
+		PathLinkWriter.Unlink( Cells, x, y, cardinalOnly: false, Effects );
 		Cells.SetType( x, y, ParkCellType.Empty );
 		return CellBuildResult.Ok;
 	}
 
-	/// <summary>A linked cardinal path or queue neighbour. <c>0x6e110</c> counts every set bit of the link byte instead; the two differ only for links toward non-path cells, such as the 0x0F links of imported InitialPath cells (REVIEW-PATH N3; the link writer is tp.exe 0x5348D0, PATH-004).</summary>
+	/// <summary>A linked cardinal path or queue neighbour. <c>0x6e110</c> counts every set bit of the link byte instead; the two differ only for links toward non-path cells, such as the 0x0F links of imported InitialPath cells (REVIEW-PATH N3; tp.exe 0x522790 counts all eight bits as well).</summary>
 	private bool HasPathNeighbours( int x, int y )
 	{
 		for ( var direction = 0; direction < 4; direction++ )

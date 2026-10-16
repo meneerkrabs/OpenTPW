@@ -109,6 +109,7 @@ public class BumperCarAssetTests
 		var simulation = new GuestSimulation( grid, settings, 21 ) { ArrivalsEnabled = false };
 		simulation.Register( ride );
 		Assert.AreEqual( 4, QueuePaths.TryExtend( grid, ride, queue ), "the queue is built" );
+		QueuePaths.TryConnect( grid, ride );
 		var guests = Enumerable.Range( 0, count ).Select( _ => simulation.SpawnInPark( site.Path.X, site.Path.Y ) ).ToList();
 		foreach ( var guest in guests )
 		{

@@ -97,6 +97,7 @@ public class GuestSnapshotValidationReviewTests
 		var script = GuestSnapshotTests.IdleScript( new VisitorRideScriptEffects( bridge, UnimplementedRideScriptEffects.Instance ) );
 		bridge.Attach( script, () => true );
 		Assert.AreEqual( 5, QueuePaths.TryExtend( grid, bridge, Enumerable.Range( 0, 5 ).Select( index => (2, 5 - index) ) ) );
+		QueuePaths.TryConnect( grid, bridge );
 		Assert.AreEqual( 20, bridge.MaximumQueueLength, "the live room of five cells is twenty guests" );
 		foreach ( var guest in Enumerable.Range( 1, 20 ) )
 			Assert.IsTrue( bridge.TryJoinQueue( guest ), $"guest {guest} joined while there was room" );

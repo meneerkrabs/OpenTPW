@@ -103,7 +103,11 @@ public class UiScreen
 		lastMouse = input.Mouse;
 		var consumed = hit != null;
 		if ( input.LeftPressed )
+		{
 			pressed = hit;
+			if ( pressed is { Enabled: true } and IUiDragStart start && input.Mouse.X >= 0 )
+				start.DragStart( canvas, input.Mouse );
+		}
 		// A slider follows the mouse while it is held, wherever the pointer has drifted to.
 		if ( pressed is { Enabled: true } and IUiDragTarget drag && input.Mouse.X >= 0 && (input.LeftDown || input.LeftPressed || input.LeftReleased) )
 			drag.DragTo( canvas, input.Mouse );

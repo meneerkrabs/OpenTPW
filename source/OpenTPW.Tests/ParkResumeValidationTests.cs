@@ -111,6 +111,29 @@ public class ParkResumeValidationTests
 	}
 
 	[TestMethod]
+	public void AWalkStampAboveTheLayoutsStampCounterIsRejected()
+	{
+		var snapshot = ParkResumeSaveFileTests.Envelope();
+		var index = Array.FindIndex( snapshot.Guests.Guests, guest => !guest.Navigation.OffGrid );
+		Assert.IsTrue( index >= 0, "the envelope has a guest on the paths" );
+		var counter = snapshot.Layout.Cells.StampCounter;
+		GuestSimulationSnapshot WithStamp( int stamp ) => snapshot.Guests with
+		{
+			Guests = snapshot.Guests.Guests.Select( ( guest, at ) => at != index ? guest : guest with
+			{
+				Navigation = guest.Navigation with
+				{
+					Count = 1, Index = 0, Route = [guest.Navigation.Route.FirstOrDefault( (guest.CellX, guest.CellY) )], Cursor = 0,
+					Waypoints = Enumerable.Repeat( (guest.CellX, guest.CellY), GuestNavigation.BufferedWaypoints ).ToArray(),
+					OriginalWalk = new OriginalWalkSnapshot { Stuck = false, Stamp = stamp, PathCount = 1, Total = 0, Ahead = 0, Beyond = 0, Progress = 0 }
+				}
+			} ).ToArray()
+		};
+		ParkResumeSaveFile.ValidateShape( snapshot with { Guests = WithStamp( counter ) } );
+		Rejects( snapshot with { Guests = WithStamp( counter + 1 ) }, "above the layout's stamp counter" );
+	}
+
+	[TestMethod]
 	public void ShapeValidationRejectsInconsistentGuestSnapshots()
 	{
 		var snapshot = ParkResumeSaveFileTests.Envelope();
@@ -361,7 +384,7 @@ public class ParkResumeCatalogValidationTests
 			var miniature = new ParkResumeSaveFileTests.MiniaturePark();
 			for ( var tick = 0; tick < 1800; tick++ )
 				miniature.Step();
-			var guests = miniature.Simulation.CaptureSnapshot();
+			var guests = miniature.CaptureGuestsForUnstampedLayout();
 			var scripts = world.CaptureSnapshot();
 			var layout = ParkLayoutSnapshot.CaptureSnapshot( ParkCellMap.FromOriginal( park.Map, park.Save ), objects ) with
 			{

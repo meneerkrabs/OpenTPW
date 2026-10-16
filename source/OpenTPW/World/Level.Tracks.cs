@@ -88,9 +88,11 @@ public partial class Level
 
 	private void OnTrackStationRemoved( OriginalObject item )
 	{
+		if ( waterTracks == null )
+			return;
 		if ( waterPieceHandlers.Remove( item, out var handler ) && item.Runtime.Bump is { } bump )
 			bump.WaterPiecesTriggered -= handler;
-		if ( waterTracks == null || !trackStations.Remove( item, out var station ) )
+		if ( !trackStations.Remove( item, out var station ) )
 			return;
 		if ( TrackToolStation == item )
 			CellTool.Cancel();
@@ -187,9 +189,9 @@ public partial class Level
 	/// <summary>Updates the track renderers (one per track family): tile instances after a layer change, vehicles at their positions, piece clips <paramref name="seconds"/> on.</summary>
 	private void UpdateTrackRendering( double seconds = 0 )
 	{
-		trackPieceAnimations.Advance( seconds );
 		if ( trackRenderFailed || waterTracks == null )
 			return;
+		trackPieceAnimations.Advance( seconds );
 		try
 		{
 			foreach ( var family in TrackFamilies )

@@ -112,6 +112,9 @@ public class StaffWindowTests
 		economy.Staff.Members[0].SetPatrolArea( (1, 1), (3, 3) );
 		Assert.AreEqual( "help87", screen.Find( "patrol" )!.CurrentHelp, "and to clear one the employee has" );
 		Assert.AreEqual( table.Control( 0x520 ).Rect, screen.Find( "title" )!.Bounds, "the name is the title" );
+		Assert.IsInstanceOfType( screen.Find( "portraitFigure" ), typeof( UiSpriteFigure ), "the portrait frame plays the employee's figure (0x4b5330), not the role name" );
+		Assert.AreEqual( table.Control( 0x511 ).Rect, screen.Find( "portraitFigure" )!.Bounds );
+		Assert.IsNull( screen.Find( "portraitText" ) );
 		Assert.AreEqual( table.Control( 0x51B ).Rect, screen.Find( "employedFor" )!.Bounds );
 		Assert.AreEqual( table.Control( 0x513 ).Rect, screen.Find( "happinessBar" )!.Bounds, "happygrad bar beside the Happiness label" );
 		Assert.AreEqual( table.Control( 0x514 ).Rect, screen.Find( "skillBar" )!.Bounds );

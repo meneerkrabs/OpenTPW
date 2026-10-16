@@ -63,7 +63,7 @@ public enum GoldenTicketKind
 /// golden tickets. Data-driven: definitions, level order, prizes, target times/values/objects,
 /// follow-ups, <c>Independent</c>, <c>CheckAtEndOnly</c>, offer delays, declines to forfeit and every
 /// golden ticket threshold. The Easymode save stores the level's challenge list in exactly this order
-/// (docs/ECONOMY.md). <b>Approximations</b>: declines count towards a forfeit (ECON-035); a follow-up does not keep the won
+/// (docs/ECONOMY.md). <b>Approximations</b>: a follow-up does not keep the won
 /// part's object (ECON-055); types without a progress source (23, 26) never complete.
 /// </summary>
 public sealed class ParkObjectives
@@ -242,7 +242,7 @@ public sealed class ParkObjectives
 			// mChallengeDeclined (+0x28) below DeclinesToForfeit; only the type is compared, not the object (0x4d2bc0..0x4d2bd8)
 			// [APPROX:ECON-055] the satisfying object a won challenge carries into its follow-up is not modelled: the checks of types 14, 15 and 18 store the best object's thing id in the slot (+0x2e, 0x4d1660), the win 0x4d2fb0 copies it to the challenge system's filter (+0x3e0) and into the follow-up slot, and while the filter is set the accumulator 0x4d27a0 adds only events of that one object (its parameter B, the object index: ride uses of types 17, 20 and 22, 0x501db0); OpenTPW counts the follow-up's uses of every object of its TargetObject type — evidence needed: none (read); OpenTPW keeps no per-object use counts
 			followup = settings.ChallengesInThisLevel.Select( index => settings.Challenges[index] )
-				.FirstOrDefault( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) );
+				.FirstOrDefault( item => item.Type == definition.FollowupType && !finished.Contains( item.Index ) && !IsForfeited( item.Index ) );
 		}
 		finished.Add( (followup ?? definition).Index );
 		Current = null;
@@ -255,6 +255,9 @@ public sealed class ParkObjectives
 		}
 	}
 
+	/// <summary>The slot's saved declined count has reached DeclinesToForfeit: only a loaded save can hold one (0x4d2a70, 0x4d2b60).</summary>
+	private bool IsForfeited( int index ) => declines.GetValueOrDefault( index ) >= settings.ChallengeTiming.DeclinesToForfeit;
+
 	private bool TryPickNext( out int index )
 	{
 		var list = settings.ChallengesInThisLevel;
@@ -262,7 +265,7 @@ public sealed class ParkObjectives
 		{
 			var position = (NextListPosition + step) % list.Count;
 			var candidate = list[position];
-			if ( finished.Contains( candidate ) || !settings.Challenges[candidate].Independent )
+			if ( finished.Contains( candidate ) || !settings.Challenges[candidate].Independent || IsForfeited( candidate ) )
 				continue;
 			NextListPosition = (position + 1) % list.Count;
 			index = candidate;
@@ -280,15 +283,13 @@ public sealed class ParkObjectives
 		Current = Current with { Accepted = true, StartDay = day, DeadlineDay = day + definition.TargetTime, Baseline = IsDailyAverage( definition.Type ) ? 0 : baseline };
 	}
 
-	// [APPROX:ECON-035] a declined challenge counts towards DeclinesToForfeit and is finished when it reaches it; tp.exe's offer scans (0x4d2a70, 0x4d2b60) do skip a slot whose mChallengeDeclined (+0x28) is not below DeclinesToForfeit (0x7857cc), but its decline 0x4d2ec0 does not raise that count and no writer other than the slot initialisers (0x4d0f70, 0x4d1bd0) and the serializer was found, so in the original a declined challenge may be offered again without limit (offers waiting for an answer, the won mark and a declined follow-up's half prize are read and modelled: 0x4d1e90, 0x4d2df0, 0x4d2ec0, 0x4d2fb0) — evidence needed: a writer of the slot's mChallengeDeclined (+0x28) outside the challenge module 0x4d0000-0x4d6000
+	// [BIN:TPW-EXE:0x4d2ec0 challenge declined] the decline answers a waiting offer only: it clears the waiting and running flags, pays half the prize of a follow-up (ParkEconomy.DeclineChallenge) and sets the next event time from DaysAfterDeclinedChallenge; it never raises the slot's mChallengeDeclined (+0x28)
+	// [BIN:TPW-EXE:0x4d2a70 challenge offer scan] a slot is offered only while that count is below Challenges.DeclinesToForfeit (0x7857cc, compared at 0x4d2ae5 and by the follow-up scan 0x4d2bcd). The only writers of +0x28 are the slot initialisers (0x4d0f7c, 0x4d1bf9) and the serializer (0x4d2320): the challenge system's only users outside its own module are the accept/decline handler 0x48e0f0 (0x4d2df0 / 0x4d2ec0) and the accumulator callers 0x4e16b0, 0x4e1920 and 0x501db0 (the callers of its getter 0x519610), so a declined challenge is offered again without limit and the count only matters when a save holds one
 	public int Decline( long day )
 	{
 		if ( Current == null || Current.Accepted )
 			throw new InvalidOperationException( "No challenge is waiting to be declined." );
 		var index = Current.DefinitionIndex;
-		declines[index] = declines.GetValueOrDefault( index ) + 1;
-		if ( declines[index] >= settings.ChallengeTiming.DeclinesToForfeit )
-			finished.Add( index );
 		Current = null;
 		NextOfferDay = day + settings.ChallengeTiming.DaysAfterDeclinedChallenge;
 		return index;

@@ -82,7 +82,7 @@ public class HudVideoRoundTests
 		var index = declined.Objectives.Current!.DefinitionIndex;
 		hud.ChallengeActions( () => declined )[1].Clicked();
 		Assert.IsNull( declined.Objectives.Current, "Decline calls the decline (0x4d2ec0)" );
-		Assert.AreEqual( 1, declined.Objectives.Declines[index] );
+		Assert.IsFalse( declined.Objectives.Declines.ContainsKey( index ), "the decline never raises the slot's declined count (0x4d2ec0)" );
 	}
 
 	[TestMethod]

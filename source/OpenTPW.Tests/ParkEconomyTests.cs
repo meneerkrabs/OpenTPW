@@ -1062,7 +1062,7 @@ public class ParkEconomyTests
 	}
 
 	[TestMethod]
-	public void ChallengesAreOfferedCompletedFollowedUpAndForfeited()
+	public void ChallengesAreOfferedCompletedAndFollowedUp()
 	{
 		var park = EconomyTestData.Park();
 		var events = new List<ParkEvent>();
@@ -1097,8 +1097,8 @@ public class ParkEconomyTests
 		park.AdvanceDays( 270 );
 		Assert.AreEqual( 1, park.Objectives.Current!.DefinitionIndex );
 		park.DeclineChallenge();
-		Assert.IsTrue( park.Objectives.Finished.Contains( 1 ), "second decline forfeits" );
-		CollectionAssert.AreEquivalent( new[] { 1, 8 }, park.Objectives.Finished.ToArray(), "0x4d2fb0 marked the follow-up 8 won, not the chain head 7" );
+		Assert.IsFalse( park.Objectives.Finished.Contains( 1 ), "a second decline does not forfeit: the original's decline never raises the count (0x4d2ec0)" );
+		CollectionAssert.AreEquivalent( new[] { 8 }, park.Objectives.Finished.ToArray(), "0x4d2fb0 marked the follow-up 8 won, not the chain head 7" );
 		park.AdvanceDays( 600 );
 		Assert.AreEqual( 7, park.Objectives.Current!.DefinitionIndex, "the won chain head stays open and is offered again" );
 

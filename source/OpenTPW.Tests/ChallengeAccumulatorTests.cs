@@ -112,4 +112,22 @@ public class ChallengeAccumulatorTests
 		park.RestoreOriginalChallenges( 600, 1, 9, 600, 1234, null, new System.Collections.Generic.Dictionary<int, int>(), System.Array.Empty<int>() );
 		Assert.AreEqual( 1234, park.Objectives.Current!.Baseline );
 	}
+
+	[TestMethod]
+	public void ASavedDeclinedCountAtTheLimitSkipsTheSlotAndPlayNeverRaisesIt()
+	{
+		// 0x4d2a70 / 0x4d2b60 skip a slot whose declined count is not below DeclinesToForfeit (2); the decline 0x4d2ec0 never raises it
+		var objectives = Objectives( 25, 50, 60 );
+		Assert.AreEqual( 9, objectives.AdvanceDay( 540, _ => 0 ).Single().Index );
+		for ( var offer = 0; offer < 4; offer++ )
+		{
+			objectives.Decline( 540 + offer );
+			Assert.AreEqual( 0, objectives.Declines.Count );
+			var next = objectives.AdvanceDay( 540 + offer + 300, _ => 0 ).Single();
+			Assert.AreEqual( ParkEventKind.ChallengeOffered, next.Kind );
+		}
+		var restored = Objectives( 25, 50, 60 );
+		restored.Restore( 540, 0, null, new System.Collections.Generic.Dictionary<int, int> { [9] = 2 }, System.Array.Empty<int>(), System.Array.Empty<GoldenTicketKind>() );
+		Assert.AreEqual( 0, restored.AdvanceDay( 600, _ => 0 ).Count( item => item.Index == 9 ), "a saved count at the limit is skipped" );
+	}
 }

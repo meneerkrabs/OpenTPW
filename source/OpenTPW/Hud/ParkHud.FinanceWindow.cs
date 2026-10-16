@@ -176,7 +176,7 @@ public sealed partial class ParkHud
 			if ( minimum == maximum )
 				maximum = minimum + 1;
 			// [BIN:TPW-EXE:0x47fb30 graph scale] the scale runs from min(0, the lowest selected sample of the period) to max(0, the highest) in ten divisions (0x49a7b0, 0x49a8f0); the bank balance alone is the default (0x751fa0 = 1)
-			// [APPROX:UI-060] the line style (OpenTPW's 2-unit strokes, grid and point marks) is not read from the original's graph drawer 0x47fe90, and an empty or flat range gets a one-unit scale where the original's behaviour is not read
+			// [APPROX:UI-060] the line style (OpenTPW's 2-unit strokes, grid and point marks) is not read from the original's graph drawer 0x47fe90, and a flat range gets a one-unit scale where the original's behaviour is not read — evidence needed: the drawer 0x47fe90
 			for ( var line = 1; line < 4; line++ )
 				context.Batch.AddRectangle( new UiRect( plot.X, plot.Y + plot.Height * line / 4, plot.Width, Math.Max( 1, context.Canvas.Scale ) ), new RgbaByte( 75, 86, 125, 130 ) );
 			for ( var s = 0; s < selected.Length; s++ )

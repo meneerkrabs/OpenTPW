@@ -191,7 +191,7 @@ public sealed partial class ParkHud
 	/// </summary>
 	// [BIN:TPW-EXE:0x4a0cdd HUD cash refresh] control 48 shows the number the active tool keeps in 0x81af4c (read by 0x52fbc0) and is hidden, cost -10000, or reset to the unset marker -999 when no tool is active: only the mode objects whose type (vtable +0x24) is 3, 4 or 8 (8 while 0x79c658 bit 0 is set, 0x447990) show it; type 3 is the tool-mode object 0x6fe9e0 that every build tool runs in; it is no sum of balance changes
 	// [DATA:video 2:05, 74:00-76:00] "$ 2500" while the blueprint of a 2500 ride is held, "$ 150" in the path tool, "$ 10000" for the coaster station and "$ 70" to "$ 130" per track segment; absent outside the build tools even when the balance changes
-	// [APPROX:UI-047] type 3 is the tool-mode object (vtable 0x6fe9e0) of every build tool; type 8 is the coaster panel's mode object (vtable 0x6feaa0, 0x46cfc0, made by 0x497bc0 when a panel button is pressed), which shows the cost only while bit 0 of 0x79c658 is set (0x447990, set at 0x441a5d), a sub-state OpenTPW does not track, so the coaster tool shows its cost in every sub-mode; no mode-object class returns 4 (the classes 0x6fe980-0x6fead0 return 7, 3, 1, 5, 6, 8, 9; 5 and 6 are the staff place and carry tools, which show nothing) — evidence needed: what bit 0 of 0x79c658 stands for
+	// [APPROX:UI-047] type 3 is the tool-mode object (vtable 0x6fe9e0) of every build tool; type 8 is the coaster panel's mode object (vtable 0x6feaa0, 0x46cfc0, made by 0x497bc0 when a panel button is pressed), which shows the cost only while bit 0 of 0x79c658 is set (0x447990, set at 0x441a5d), a placement-in-progress state (set at 0x441a5d when (flags & 0x3f) is 0, cleared by the second action of 0x441a00) OpenTPW does not track for the coaster tool, so it shows its cost in every sub-mode; no mode-object class returns 4 (the classes 0x6fe980-0x6fead0 return 7, 3, 1, 5, 6, 8, 9; 5 and 6 are the staff place and carry tools, which show nothing) — evidence needed: what bit 0 of 0x79c658 stands for
 	public long? BuildActionCost
 	{
 		get
@@ -249,7 +249,7 @@ public sealed partial class ParkHud
 		// [DATA:video 15:20] the message tube (red, left of the HUD) with its icons, and the buttons of the green slide-out panel: the bomb deletes the opened message, the red cross closes the panel
 		hud.Add( new MessageTubeList( this ) { Id = "messageTube", Help = strings.Extra( OpenTpwText.MessageTubeHelp ), Bounds = TubeBase, Anchor = UiAnchor.BottomLeft } );
 		// [BIN:TPW-EXE:0x7501a0 message panel] mb_erase at (486,1325)-(589,1428) deletes the opened message; the two action buttons above it (486,1218) and (486,1110) take the art of their action's kind (mb_locate, mb_callmech, mb_resrch, mb_buy, mb_accept, mb_decline: ParkHud.MessageTube.cs)
-		// [APPROX:UI-025] only the challenge offers carry actions (mb_accept, mb_decline: ParkHud.ChallengeMessages.cs); the action buttons stay hidden for every other message, and which other original message types use which mb_ model is not traced
+		// [APPROX:UI-025] only the challenge offers carry actions (mb_accept, mb_decline: ParkHud.ChallengeMessages.cs); the action buttons stay hidden for every other message, and the original's other action kinds (0x48e610: mb_locate, mb_buy, b_loan, mb_resrch, b_pkinfo, b_staffcost, mb_callmech, b_entry) have no OpenTPW message that posts them
 		hud.Add( new UiButton { Id = "messageDelete", Model = "mb_erase", Clicked = CloseMessagePanel, Bounds = OriginalLayoutTables.MessagePanel.Model( "mb_erase" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		for ( var slot = 0; slot < MessageActionIds.Length; slot++ )
 		{
@@ -261,7 +261,7 @@ public sealed partial class ParkHud
 		hud.Add( new UiButton { Id = "messageClose", Model = "b_retract", Help = strings.Help( OriginalLayoutTables.HudArm.Model( "b_retract" ).Help ), Clicked = CloseArmPanel, Bounds = OriginalLayoutTables.HudArm.Model( "b_retract" ).Rect, Anchor = UiAnchor.BottomLeft, Visible = false } );
 		hud.Add( new UiModelImage { Id = "gauge", Model = "gauge", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 477 ) } );
 		// The gauge model is the empty dish (one 'thoughts2'-textured quad): the value is drawn over it.
-		// [APPROX:UI-901] the fill is a rising coloured bar in the dish (the original draws the value another way); colour red→yellow→green — evidence needed: capture of the original gauge
+		// [APPROX:UI-901] the fill is a rising coloured bar in the dish (the original draws the value another way); colour red→yellow→green (the original's type-9 gauge, setter 0x66d885, keeps 0 to 1024 and notifies its listener models with message 8) — evidence needed: the listener models' message-8 handler
 		hud.Add( new HappinessGaugeFill( this ) { Id = "gaugeFill", Bounds = new UiRect( 66.6f, 1080.4f, 96.6f, 264.2f ), Anchor = UiAnchor.BottomLeft } );
 		hud.Add( new UiModelImage { Id = "dateDisplay", Model = "date", Bounds = new UiRect( 152.6f, 1043.6f, 251.7f, 77.5f ), Anchor = UiAnchor.BottomLeft, Help = strings.Help( 478 ) } );
 		// [DATA:Mac main HUD table 0x4ab38:32,47] date text region (182,1061,383,1103) in black (font slot 3); the cash text
@@ -274,7 +274,7 @@ public sealed partial class ParkHud
 		// [DATA:Mac main HUD table 0x4ab38:50,48,49,51-55] cash extras: i_dollar left of the balance, the change text (yellow) with green_up, golden key and ticket counters
 		// [DATA:video 15:20, 73:21] the trend arrow beside the cash is red and points down after spending
 		// [BIN:TPW-EXE:0x004a0c18 HUD balance refresh] 0x4a0ab0 sets i_dollar (control 0x32) to frame 1 for a negative balance and 0 otherwise, beside the balance's absolute value
-		// [APPROX:UI-051] the ticket count is the park's available tickets, where the original shows the player's earned tickets less the spent count (0x5af5d0) — evidence needed: the in-park ticket spend reaching the player ledger
+		// [APPROX:UI-051] the ticket count is the park's available tickets, where the original shows the player's earned tickets less the spent count (0x5af5d0) (the purchase check 0x4d4ad0 → 0x5af740 adds the cost to the player's spent count +0x1c, which the park's own spent count does not reach) — evidence needed: routing the park's ticket purchases into the player ledger
 		economyElements.Add( hud.Add( new UiModelImage { Id = "dollar", Model = "i_dollar", Frame = () => Status.Money < 0 ? 1 : 0, Bounds = Rect( 37, 58, 242, 262 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiLabel { Id = "cashChange", Text = () => CashChangeText, Font = fonts => fonts.Balance, Color = UiColors.Highlight, Align = UiAlign.Right, Fit = true, Bounds = Rect( 458, 273, 720, 363 ), Anchor = UiAnchor.TopLeft } ) );
 		economyElements.Add( hud.Add( new UiModelImage { Id = "cashTrend", Model = "green_up", Frame = () => CashTrendFrame, Bounds = Rect( 728, 109, 831, 211 ), Anchor = UiAnchor.TopLeft } ) );
@@ -430,7 +430,7 @@ public sealed partial class ParkHud
 	}
 
 	// [BIN:TPW-EXE:0x5253b8 placement dispatcher] a placement without an entrance keeps the build tool armed when the click held exactly Ctrl (modifier mask 0xc), else the tool returns to mode 0 (0x52f580); a ride with an entrance continues into the entrance, exit and queue sub-modes (0x52fab0 / 0x52faf0, 0x52f580(3,0)), whose last click does the same Ctrl test. Level.PlaceObject owns purchase/guest linkage and its removal handler owns scrap credits
-	// [APPROX:UI-031] the coaster and water-track tools (whose original sub-modes are not traced) end the build tool whatever the modifier, and the Ctrl tests at 0x5259e2/0x5259f4 (another exit path that keeps the tool on exactly Ctrl and otherwise leaves it and resets the angle) are not mapped to an OpenTPW action — evidence needed: those sub-modes' continuation and what 0x52fab0 tests
+	// [APPROX:UI-031] the coaster and water-track tools (whose original sub-modes are not traced) end the build tool whatever the modifier, and the Ctrl tests at 0x5259e2/0x5259f4 (another exit path that keeps the tool on exactly Ctrl and otherwise leaves it and resets the angle) (Ctrl alone, the builder 0x46b420) are only partly mapped: an entrance-bearing item (0x52fab0, sub-record +0x40) resets the angle to 0x80 and, with the record flag +0x29c = 1, ends the tool whatever the modifier — evidence needed: the coaster sub-mode's continuation and what +0x29c = 1 stands for
 	private void OnObjectPlaced( OriginalObject item )
 	{
 		if ( pendingItem?.Entry != item.Entry )

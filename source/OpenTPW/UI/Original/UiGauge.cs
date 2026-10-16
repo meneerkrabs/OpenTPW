@@ -80,7 +80,7 @@ public sealed class UiGaugeBar : UiElement
 }
 
 /// <summary>The small tick box of the buy list's third column: an empty box, or a box with a green tick.</summary>
-// [APPROX:UI-050] the box and the tick are drawn with rectangles and thick strokes in the colours of the video frames (buy window 1:50: a dark blue box outline, a green tick); the original's art for the box is not identified
+// [APPROX:UI-050] the box and the tick are drawn with rectangles and thick strokes in the colours of the video frames (buy window 1:50: a dark blue box outline, a green tick); the original's row cell (0x4ad340) sets the model i_boxtick (0x755144) and a state 1 owned, 2 first three of a category, 0 otherwise (0x4aaf70), but the frame each state draws is not read
 public static class UiTickBox
 {
 	private static readonly RgbaByte Outline = new( 40, 130, 190, 255 );

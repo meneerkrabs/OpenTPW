@@ -1480,7 +1480,14 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Menu!.Stack.Top?.Name == "gameMode" && flow.Menu.Stack.Top.Find( "joy" ) is { Visible: true }, "the Instant Action toggle latches and shows e_joy" );
 			Click( flow.Menu.Stack.Top!, "ok" );
 		} );
-		Wait( "Instant Action park loads", 40 );
+		// the lobby's enter sequence (turn, gate, zoom under the fade) plays before the park loads
+		var parkFrames = 0;
+		steps.Enqueue( ("Instant Action park loads", () =>
+		{
+			Require( ++parkFrames < 3000, "the Instant Action park starts after the enter sequence" );
+			return flow.Level != null && flow.Hud != null && flow.Lobby == null;
+		}) );
+		Wait( "Instant Action park settles", 40 );
 		Do( "Instant Action start", PlayInstantAction );
 	}
 

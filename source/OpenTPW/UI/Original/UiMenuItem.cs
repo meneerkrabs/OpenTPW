@@ -32,7 +32,7 @@ public sealed class UiMenuItem : UiElement
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		// [BIN:TPW-EXE:0x48b2a0 pause line hover] message 0x10001 (the pointer enters) / 0x10002 (leaves) set the line's ramp slot to +1 / -1 and the tick message 0x1e, sent once per
-		// drawn frame, steps it (0x48b220); OpenTPW's focus stands for the pointer and the tick runs at the 60 Hz reference ([EXT:frame-driven-at-60hz])
+		// drawn frame, steps it (0x48b220); [EXT:pause-menu-hover-focus] OpenTPW's focus stands for the pointer entering (the user-approved design choice; no original behaviour left to match) and the tick runs at the 60 Hz reference ([EXT:frame-driven-at-60hz])
 		var hot = Enabled && (focused || pressed);
 		if ( hot != wasFocused )
 		{

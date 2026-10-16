@@ -25,3 +25,6 @@ A third pass over the interface approximations, read in tp.exe via REA:
 Determinism: the fixed-run pin moved `0xDB3EA9A7AF384B5B` -> `0x8C18F758DEC43F9E` (main after #261) because the economy state now
 holds the satisfaction rings' values (`docs/DETERMINISM.md`). The branch alone had moved `0x205523C08061A05D` -> `0xAEB43E01FFE5FEE0`.
 No draws were added to the world or guest random streams.
+
+Split off UI-013 (user-approved): the pause-menu line's hover ramp driven by OpenTPW's pointer focus is now
+`[EXT:pause-menu-hover-focus]`; UI-013 stays open for the measure `0x4929f0` and the online state's top of the menu lines.

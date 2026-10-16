@@ -66,10 +66,10 @@ public class CompatibilityTests
 	public void MapsFilteringMipmapsAndExtensionsToRenderQuality()
 	{
 		var detail = new OriginalDetailSettings();
-		Assert.AreEqual( new RenderQuality( TextureFilterMode.Point, 1, false, 1 ), GraphicsPresets.ToRenderQuality( detail, 16, 1 ) );
+		Assert.AreEqual( new RenderQuality( TextureFilterMode.Point, 1, false, 1, 0 ), GraphicsPresets.ToRenderQuality( detail, 16, 1 ) );
 		Assert.AreEqual( TextureFilterMode.Bilinear, GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 1 }, 16, 1 ).Filter );
-		Assert.AreEqual( new RenderQuality( TextureFilterMode.Trilinear, 1, true, 1 ), GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 2, Mipmap = 1 }, 16, 1 ) );
-		Assert.AreEqual( new RenderQuality( TextureFilterMode.Anisotropic, 8, false, 4 ), GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 3 }, 8, 9 ) );
+		Assert.AreEqual( new RenderQuality( TextureFilterMode.Trilinear, 1, true, 1, 0 ), GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 2, Mipmap = 1 }, 16, 1 ) );
+		Assert.AreEqual( new RenderQuality( TextureFilterMode.Anisotropic, 8, false, 4, 0 ), GraphicsPresets.ToRenderQuality( detail with { TextureFiltering = 3 }, 8, 9 ) );
 		var enhanced = GraphicsPresets.Enhance( detail with { NumKids = 2, ParticleDensity = 1500 }, simulationOptions: false );
 		Assert.AreEqual( (3, 3, 8, 4), (enhanced.TextureFiltering, enhanced.FirstPersonViewDistance, enhanced.CoasterSmoothness, enhanced.SkyQuality) );
 		Assert.AreEqual( (2, 1500), (enhanced.NumKids, enhanced.ParticleDensity), "simulation options stay original without the fix" );
@@ -100,7 +100,7 @@ public class CompatibilityTests
 		CollectionAssert.AreEqual( new[] { GraphicsPreset.Low, GraphicsPreset.High, GraphicsPreset.Enhanced, GraphicsPreset.Custom }, service.Presets.ToArray() );
 		StringAssert.Contains( string.Join( "\n", service.Diagnostics ), "/med.sam is missing" );
 		Assert.AreEqual( GraphicsPreset.High, service.Current.Preset, "default preset" );
-		Assert.AreEqual( new RenderQuality( TextureFilterMode.Trilinear, 1, true, 1 ), service.Effective );
+		Assert.AreEqual( new RenderQuality( TextureFilterMode.Trilinear, 1, true, 1, 0 ), service.Effective );
 		Assert.AreEqual( 0, service.SimulationDeviations().Count );
 
 		service.Apply( service.Current with { Preset = GraphicsPreset.Enhanced } );
@@ -118,7 +118,7 @@ public class CompatibilityTests
 		Assert.AreEqual( 3, service.Detail.NumKids );
 		flags = CompatibilityFlags.Original;
 		Assert.AreEqual( 2, service.Detail.NumKids, "custom simulation values fall back to the original High values" );
-		Assert.AreEqual( new RenderQuality( TextureFilterMode.Bilinear, 1, false, 1.5f ), service.Effective );
+		Assert.AreEqual( new RenderQuality( TextureFilterMode.Bilinear, 1, false, 1.5f, 0 ), service.Effective );
 		Directory.Delete( directory, true );
 	}
 

@@ -162,7 +162,7 @@ Original values ([DATA:Data/low.sam, med.sam, high.sam]):
 | PROCEDURALTEXTURING | 0 | 2 | 2 | 3 | not applied |
 | PROCEDURALTEXTURECACHE | 0 | 1 | 1 | 1 | not applied |
 | ANIMATINGTEXTURES | 0 | 1 | 1 | 1 | **applied** to the object texture-frame tracks (0 = each slot shows its first frame, tp.exe `0x57A420`) |
-| SKYQUALITY (layers) | 1 | 2 | 4 | 4 | not applied |
+| SKYQUALITY (layers) | 1 | 2 | 4 | 4 | **applied** to the sky's scrolling cloud layers (0 draws no sky) |
 | SKYDETAIL / SKYSHADOW | 0/0 | 1/0 | 1/0 | 1/0 | not applied |
 | MESHSHADOW / SPRITESHADOW | 0/0 | 0/1 | 1/2 | 1/3 | not applied |
 | TRIPLEBUFFER | 0 | 0 | 1 | 1 | swapchain-managed |

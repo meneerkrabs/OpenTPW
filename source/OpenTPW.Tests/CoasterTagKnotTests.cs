@@ -77,6 +77,56 @@ public class CoasterTagKnotTests
 		Assert.IsTrue( Vector3.Distance( expected, actual ) <= tolerance, $"{message}: expected {expected}, got {actual}" );
 
 	/// <summary>
+	/// The mesh builder (<c>0x43eb70</c>) loops only while a next node exists, so the link of an open chain ends at its last node's first knot and the last node's
+	/// own tag pairs are never drawn: the bare station (S2 In-Out) and a chain ending at a posed cursor have no stub past it.
+	/// </summary>
+	[TestMethod]
+	public void AnOpenChainEndsAtTheLastNodesFirstKnot()
+	{
+		var (builder, _, _) = NewCoaster();
+		var track = builder.Track;
+		var bare = track.BuildPreviewChain( null, 40, false );
+		Assert.IsNotNull( bare, "the bare station is an open chain" );
+		builder.Height = 40;
+		Assert.AreEqual( CoasterPlaceResult.Ok, builder.Place( Depart.X + CoasterTests.Circuit[0].X, Depart.Y + CoasterTests.Circuit[0].Y ) );
+		var cursor = track.BuildPreviewChain( (Depart.X - 4, Depart.Y + 8), 40, false );
+		Assert.IsNotNull( cursor );
+		foreach ( var open in new[] { bare!.Value, cursor!.Value } )
+		{
+			var pass = track.BuildKnotPass( builder.Site, open.Chain, writeBanks: false );
+			var last = open.Chain.Count - 1;
+			var spans = CoasterRenderer.ChainSpans( open.Chain, pass, open.Closed );
+			Assert.AreEqual( 1, spans.Count );
+			Assert.AreEqual( pass.FirstKnot[last], spans[0].To, "no stub past the last node's first knot" );
+			Assert.AreEqual( pass.FirstKnot[0], spans[0].From );
+		}
+	}
+
+	/// <summary>
+	/// The sample of the closing pair (no next node, <c>0x440c10</c>: <c>local_a0 = 0</c>) has roll 0, and the knot coordinates (<c>0x4410e0</c> projection of the rest
+	/// onto the curve direction) stay finite and increase along the track.
+	/// </summary>
+	[TestMethod]
+	public void TheClosingSampleHasRollZeroAndTheKnotCoordinatesIncrease()
+	{
+		var (builder, ride, _) = NewCoaster();
+		BuildCircuit( builder );
+		var knots = builder.Track.BuildKnotPass( builder.Site, writeBanks: false ).Knots;
+		var sampling = new HermiteCoasterCurve().Sample( knots, ride.Definition.Curviness );
+		var samples = sampling.Samples;
+		Assert.IsTrue( samples.Length > 4 );
+		var coordinates = sampling.KnotCoordinates;
+		for ( var index = 1; index < coordinates.Length; index++ )
+		{
+			Assert.IsTrue( float.IsFinite( coordinates[index] ), $"knot {index}: finite" );
+			Assert.IsTrue( coordinates[index] >= coordinates[index - 1], $"knot {index}: not before the previous knot" );
+		}
+		var closing = samples.Count( sample => sample.Knot == coordinates.Length - 1 );
+		Assert.IsTrue( closing >= 1, "the closing pair is sampled" );
+		Assert.AreEqual( 0f, samples.First( sample => sample.Knot == coordinates.Length - 1 ).Bank, "the closing sample's roll is 0" );
+	}
+
+	/// <summary>
 	/// A posed pylon's knots are its tags (<c>0x430ed0</c>, <c>0x4321c0</c>): three knots per pylon node from the table's In, Centre and Out tags, the centre on the
 	/// node's position, the others along the tag's forward row, every one running along that row; a pylon-less node stays one knot, and the station end node's knot
 	/// is S0's posed track dummy (<c>0x435570</c>).

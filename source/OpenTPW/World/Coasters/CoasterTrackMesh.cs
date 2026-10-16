@@ -41,6 +41,8 @@ public sealed class CoasterTrackMesh
 	/// <summary>Track length in world units.</summary>
 	public float Length { get; private set; }
 	public int TriangleCount => Indices.Count / 3;
+	/// <summary>The triangle parity flag after the last edge: the next chain of one rebuild starts with it (0x7923e4 is reset once per rebuild, 0x43eb70).</summary>
+	public bool EndParity { get; private set; }
 
 	/// <summary>
 	/// The right and up axes of a slice (original axes, Y up): the right axis (cos yaw, 0, −sin yaw) and the up axis (sin yaw·sin pitch, cos pitch,
@@ -62,18 +64,18 @@ public sealed class CoasterTrackMesh
 	/// <paramref name="marker"/> gives the marker variant of a pair (its node and the node its end knot belongs to: the same node inside a pylon), null for the
 	/// normal section. A closed chain joins its last slice to the first.
 	/// </summary>
-	public static CoasterTrackMesh Build( CoasterCrossSections sections, IReadOnlyList<CoasterSlice> slices, bool closed, IReadOnlyCollection<int>? winch = null, Func<int, int, int?>? marker = null )
+	public static CoasterTrackMesh Build( CoasterCrossSections sections, IReadOnlyList<CoasterSlice> slices, bool closed, IReadOnlyCollection<int>? winch = null, Func<int, int, int?>? marker = null, bool startParity = false )
 	{
 		ArgumentNullException.ThrowIfNull( sections );
 		ArgumentNullException.ThrowIfNull( slices );
-		var mesh = new CoasterTrackMesh();
+		var mesh = new CoasterTrackMesh { EndParity = startParity };
 		if ( sections.IsEmpty || slices.Count < 2 )
 			return mesh;
 		var count = slices.Count;
 		var segments = closed ? count : count - 1;
 		var textureCount = Math.Max( 1, sections.Textures.Count );
 		var v = 0f;
-		var parity = false;
+		var parity = startParity;
 		(int Section, int Marker)? ringIdentity = null;
 		var previous = new Dictionary<(int Point, int Texture), uint>();
 		var current = new Dictionary<(int Point, int Texture), uint>();
@@ -129,6 +131,7 @@ public sealed class CoasterTrackMesh
 			mesh.Segments++;
 			v = vb;
 		}
+		mesh.EndParity = parity;
 		return mesh;
 	}
 

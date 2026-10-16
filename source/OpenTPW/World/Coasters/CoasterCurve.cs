@@ -296,7 +296,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var next = NextKnot( pair );
 			return Bezier( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, t );
 		}
-		void Emit( int pair, float t, SVector3 position )
+		void Emit( int pair, float t, SVector3 position, bool closingSample = false )
 		{
 			// [BIN:STP-PPC:0x10045320 sample before its pair] while the sample's t is below 0 its record moves to the previous knot pair (when the +20 link is not null) and t grows by 1 regardless (0x10045320..0x1004535C)
 			while ( t < 0 )
@@ -308,8 +308,9 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			var next = NextKnot( pair );
 			var tangent = Derivative( knots[pair].Position, controls[pair].Forward, controls[next].Back, knots[next].Position, Math.Clamp( t, 0f, 1f ) );
 			var (yaw, pitch) = Orientation( tangent );
-			// [APPROX:COAST-017] the roll is interpolated between the knots' rolls instead of the original's slice roll (0x43e6b0): the second rail's roll about the slice tangent plus the lerp of the two nodes' tag rolls (+0xe4); a non-loop knot's second rail is the knot + (0, 1, 0), a loop node's 2 × its tag's up row (pylon, 0x430ed0) or (−sin a, 0, −cos a) (pylon-less, 0x43137c..0x4313e6) — the knot pass keeps the tag rolls on the knots (CoasterKnot.TagRoll) but builds no second rail
-			var roll = knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
+			// [BIN:TPW-EXE:0x440c10 closing sample roll] the sample taken on the closing pair (no next node, 0x440c10 line `local_a0 = 0` before 0x43e590) gets roll 0, whatever the rolls of the end node and S1 are
+			// [APPROX:COAST-017] every other sample's roll is interpolated between the knots' rolls instead of the original's: the second rail's roll about the slice tangent (0x440c10 → 0x46f230) of a non-loop knot's second rail knot + (0, 1, 0), a loop node's 2 × its tag's up row (pylon, 0x430ed0) or (−sin a, 0, −cos a) (pylon-less, 0x43137c..0x4313e6) — the knot pass keeps the tag rolls on the knots (CoasterKnot.TagRoll, read by tests only: the sampler does not use it) but builds no second rail
+			var roll = closingSample ? 0f : knots[pair].Roll + (knots[next].Roll - knots[pair].Roll) * Math.Clamp( t, 0f, 1f );
 			samples.Add( new CoasterSample
 			{
 				Position = position,
@@ -325,7 +326,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 
 		// [BIN:STP-PPC:0x10044FF4 sampler] from t = 0 (sample 0 = the first knot) walk t in steps of 0.05, sum the chord lengths, place a sample on the current chord where the sum reaches 3.0 (fraction (3 − sum before)/d), restart the sum and realign t to the next multiple of 0.05
 		// [BIN:TPW-EXE:0x440c10 closing pair] the walk covers every pair of the node list; at the end node (no next node) the closing pair runs from the last knot to the second node's first knot (head +0x64), emits ONE sample (t may pass 1: no pair follows, 0x4416f0), then the count n is the number of samples written, the last sample is copied into slot n (0x441783) and n grows by one when n ≤ trunc(c) + (frac(c) ≠ 0) with c the coordinate of the end knot (ctl +0xa8, 0x4417a0..0x4417d5)
-		// [BIN:TPW-EXE:0x440c10 knot coordinate] a knot's coordinate is the index of the last sample before it plus (the distance walked since that sample + the distance from the last walked point to the knot) / spacing (0x4410e0..), the first knot's is 0; the station window and the swing's fade read the coordinates of S2 and the end node
+		// [BIN:TPW-EXE:0x440c10 knot coordinate] a knot's coordinate is the index of the last sample before it plus (the distance walked since that sample + the length of the projected rest from the last walked point to the knot, 0x4410e0) / spacing, the first knot's is 0; the station window and the swing's fade read the coordinates of S2 and the end node
 		// [BIN:TPW-EXE:0x441783 slot n copy] the copy of the last sample in slot n (the car point of the last sample reads it, 0x4409b0) is the controller's Slot(n): the point after the last sample is the last sample itself (CoasterRide.SampleAt); the growth of n is applied literally and cannot happen here, the end knot's coordinate lying less than one sample past the last one before it
 		var pair = 0;
 		var previousPoint = Point( 0, 0 );
@@ -351,7 +352,7 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 				distance = 0;
 				var stepNow = ParameterStep - tPrevious % ParameterStep;
 				t = tPrevious + stepNow;
-				Emit( pair, tPrevious, previousPoint );
+				Emit( pair, tPrevious, previousPoint, closing );
 				// The closing pair gets one sample; then the walk ends.
 				if ( closing )
 					break;
@@ -365,7 +366,18 @@ public sealed class HermiteCoasterCurve : ICoasterCurve
 			if ( t > 1f && !closing )
 			{
 				// The pair's end knot lies on the sample list after the last sample, by the distance walked since it plus the rest of the pair.
-				coordinates[pair + 1] = samples.Count - 1 + (distance + SVector3.Distance( knots[pair + 1].Position, previousPoint )) / Spacing;
+				// [BIN:TPW-EXE:0x4410e0 knot projection] the rest (knot − last walked point) is scaled by the cosine between its direction and the direction from the last walked point to the new pair's curve point at the new t (t − 1), unless the rest's normalised x is NaN (_isnan 0x67b410, a zero rest)
+				var rest = knots[pair + 1].Position - previousPoint;
+				var restLength = rest.Length();
+				if ( restLength > 0 )
+				{
+					var toCurve = Point( pair + 1, t - 1f ) - previousPoint;
+					var curveLength = toCurve.Length();
+					// a zero direction gives the original a NaN cosine (and a NaN coordinate); the rest is kept unscaled then
+					if ( curveLength > 0 )
+						rest *= SVector3.Dot( rest / restLength, toCurve / curveLength );
+				}
+				coordinates[pair + 1] = samples.Count - 1 + (rest.Length() + distance) / Spacing;
 				pair++;
 				tPrevious -= 1f;
 				t -= 1f;

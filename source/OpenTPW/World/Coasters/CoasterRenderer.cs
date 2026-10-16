@@ -25,6 +25,26 @@ internal sealed class CoasterHeadSources : IHeadSourceProvider
 // [APPROX:COAST-026] self-illuminated textures (asTextureData bIsSelfIlluminating, texture flag 4) and the marker textures (flags 7) are lit by the scene light like the rest: the shader has no unlit path and its browser build cannot be regenerated here; another reader of the stored scroll rate (texture +0xc) outside the controller tick is not excluded — evidence needed: a scan of the generic texture library for readers of texture +0xc; the coaster MD2 models' Add-mode UV animation (the add paths of 0x471860) is not modelled, the pylons' vertex and position keys are added (CoasterPylonRig)
 public sealed class CoasterRenderer : Entity
 {
+	/// <summary>The knot ranges (first knot, last knot, closed) the mesh builder draws as separate chains.</summary>
+	internal static List<(int From, int To, bool Closed)> ChainSpans( IReadOnlyList<CoasterNode> chain, CoasterKnotPass pass, bool closed )
+	{
+		var spans = new List<(int, int, bool)>();
+		var start = 0;
+		for ( var index = 0; index < chain.Count; index++ )
+		{
+			var last = index == chain.Count - 1;
+			var cutEnd = (chain[index].Flags & CoasterNodeFlags.CutEnd) != 0;
+			if ( !last && (closed || !cutEnd) )
+				continue;
+			// [BIN:TPW-EXE:0x43eb70 chain end] the mesh builder's loop runs only while a next node exists: the link ends at the last node's first knot, its own tag pairs are never drawn
+			var end = last || (cutEnd && !closed) ? pass.FirstKnot[index] : pass.LastKnot( index );
+			if ( index - start >= 1 )
+				spans.Add( (pass.FirstKnot[start], end, closed && start == 0 && last) );
+			start = index + 1;
+		}
+		return spans;
+	}
+
 	/// <summary>
 	/// The scroll phase after a frame (<c>0x435adf..0x435b20</c>): the accumulator gains P·Δt and wraps above 1. A breakdown (power factor 0) stops the scroll.
 	/// </summary>
@@ -243,9 +263,13 @@ public sealed class CoasterRenderer : Entity
 
 		// ---- Track and pylons ----------------------------------------------------------------------
 
+		// [BIN:TPW-EXE:0x43eb70 parity] the triangle parity flag 0x7923e4 is reset once per rebuild and carries across the chains a cut circuit is drawn in
+		private bool meshParity;
+
 		private void Rebuild( CoasterPreview? preview )
 		{
 			ClearStatic();
+			meshParity = false;
 			var track = Ride.Track;
 			var definition = Ride.Definition;
 			IReadOnlyList<CoasterNode>? chain;
@@ -277,18 +301,8 @@ public sealed class CoasterRenderer : Entity
 			var matrix = owner.ToEngine();
 			// A circuit the demolish button cut open is two chains: the nodes before the cut and the nodes after it (the cut ends are marked, 0x446740), each drawn on its own.
 			// [BIN:TPW-EXE:0x43ef02 cut end] the mesh builder stops drawing at a node with 0x10000 (neither its own knot pairs nor its link) and starts again at one with 0x20000 (0x43ef0d)
-			var start = 0;
-			for ( var index = 0; index < chain.Count; index++ )
-			{
-				var last = index == chain.Count - 1;
-				var cutEnd = (chain[index].Flags & CoasterNodeFlags.CutEnd) != 0;
-				if ( !last && (closed || !cutEnd) )
-					continue;
-				var end = cutEnd && !closed ? pass.FirstKnot[index] : pass.LastKnot( index );
-				if ( index - start >= 1 )
-					BuildChain( knots[pass.FirstKnot[start]..(end + 1)], definition.Curviness, closed && start == 0 && last, Marker, matrix );
-				start = index + 1;
-			}
+			foreach ( var (first, final, isClosed) in CoasterRenderer.ChainSpans( chain, pass, closed ) )
+				BuildChain( knots[first..(final + 1)], definition.Curviness, isClosed, Marker, matrix );
 			BuildPylons( chain, pass, matrix );
 		}
 
@@ -300,7 +314,8 @@ public sealed class CoasterRenderer : Entity
 		{
 			var sections = assets.Sections;
 			// The slices of a finished track end on the station end node, which stands on S0's track dummy: the mesh needs no wrap segment.
-			var mesh = CoasterTrackMesh.Build( sections, slices, closed: false, winch, marker );
+			var mesh = CoasterTrackMesh.Build( sections, slices, closed: false, winch, marker, meshParity );
+			meshParity = mesh.EndParity;
 			trackTriangles += mesh.TriangleCount;
 			if ( mesh.TriangleCount == 0 )
 				return;

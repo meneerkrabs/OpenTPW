@@ -53,8 +53,8 @@ pylon (the tangent routine `0x431660` drops the previous neighbour on `0x80000` 
 S0 → S1 and S1 → S2 are ordinary links of the collision pass.
 
 A station whose dummies lie below the StdPylon's h0 (Ghosta Coasta 2.04 against 4, Scatty Batty 3.5 against 5, Candy Coaster 7.09
-against 10, Escape Velocity 12.04 against 30) stands on pylons raised to h0, so S0 and S2 sit above the middle knot; the original's
-pose of that pylon was not traced for it (COAST-029). A station placed without its model (a headless test) takes the
+against 10) stands on pylons raised to h0, so S0 and S2 sit above the middle knot: the original's knot pass clamps the height
+parameter to [0, 1] and writes it back (`0x430ca0`) and stands the node at ground + h0 + t(h1 − h0) (`0x430ed0`). A station placed without its model (a headless test) takes the
 same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-station-frame]`).
 
 - **Pylons.** A click places a pylon at the tool's height (the last pylon's height; the
@@ -204,10 +204,27 @@ or friction (on the sample the train stood on at the start of the step), the flo
 a car's half-sample point is on a chain-lift section, else the minimum speed,
 both times the power factor) and the cap. A hop takes `d / ((v + v')/2)`
 seconds, and the last hop of a step is partial; its end speed is capped but not
-floored, so a new train, which starts at rest, builds up speed over several frames. Below speed 2 the speed decays by 0.95 per hop,
-and below 0.01 it is 0. The hops run on OpenTPW's fixed 60 Hz simulation step
-instead of the original's per-frame elapsed time, which keeps runs reproducible
-(COAST-022).
+floored, so a train at rest builds up speed over several frames. Below speed 2 the speed decays by 0.95 per hop,
+and below 0.01 it is 0. The trains of a frame hop one at a time from a queue (`0x43ced8`): the train with the most of the frame's
+time left hops next, a full hop puts it back before the first train with no more time left, a partial hop takes it out. The hops run
+on OpenTPW's fixed 60 Hz simulation step instead of the original's per-frame elapsed time, which keeps runs reproducible
+(`[EXT:coaster-fixed-step]`; the original's frame coupling is the proposed DET-003 that DET-I2 registers with the substep
+scheduler, docs/reverse/DET-plan.md §2.2 and §4.6).
+
+**The train.** A train's position is its middle car's, car `(n − 1) >> 1` (train `+0x2c`); every other car stands its offset ahead or
+behind (`0x43bc20`): the car types' extents (`0x430130`: the model's header bounds around its root node plus `fFrontDistanceAdd` and
+`fRearDistanceAdd`) give three pair distances (`0x42fad0`: front type's rear + centre type's front, centre rear + centre front, rear type's
+front + centre rear), and going forward from the middle car each car adds the pair its own index selects (front for car 0, rear for the last
+car, centre otherwise), going back each car subtracts it. The hop measures its distance on the middle car, the braking blend on car 0, and the
+train's span is car 0's offset and front extent to the last car's offset and rear extent. Only the cars of the centre type seat
+(`0x43ba90`): a train's capacity, by default its head sockets (the dummy records with flag `0x80` of each car's model, summed over the cars,
+definition `+0x2f8`), is split over them; the caterpillar's head and tail carry none. `COAST 6` bounds a request by 0, the fleet's sockets and
+one train's sockets, and 0 stands for the train's sockets. The admission ring holds one train's sockets, the leaving ring twice the fleet's.
+After every rating pass (`0x43c450`) the trains are placed again (`0x43c1f0`): train 0 keeps its last car where it stood (on a new track
+where it last ran, since the idle train slot keeps its cars' coordinates), each next train's last car stands where the walk over the rated
+sample speeds from the previous one's reaches `uiTrainReleaseRate`, a train's cars are laid out from the last car forward, and its speed is the
+mean rated speed under its cars. Trains below a new count keep their riders, the ones past it give theirs to the leaving ring. Without the car
+models (a definition from settings alone) every car type is 3.5 units each side of its pivot with four sockets (`[EXT:coaster-car-fallback]`).
 
 **Trains never stop.** The motion tick has no zero-speed branch (`0x43ce20`): in the station a train's speed blends toward the
 chain-lift floor and stays there. The controller tick (`0x435a30`) runs the motion in the built, open and closed states
@@ -251,8 +268,8 @@ demolish button, whose cut sets state 1 (see "The tool panel").
 tests it. In mode 64 the station step (`0x43b8b0`) is skipped, so a train on the platform does not unload until
 the power is back (an arriving train unloads open or closed; boarding is state 4 only). `COAST 6` takes
 `min(max(request, 0), definition +0x318, first train definition +8)`: the lower bound is the literal 0 on the PC where
-the Mac reading takes a global (documented difference, OpenTPW follows the PC); the two upper bounds are not applied
-(the seat sockets are not read). `COAST 8` makes the ride script's speed bias (script +0xC0, 50 at creation,
+the Mac reading takes a global (documented difference, OpenTPW follows the PC); the upper bounds are the fleet's and one train's head
+sockets. `COAST 8` makes the ride script's speed bias (script +0xC0, 50 at creation,
 `0x558c3c`) the speed setting through `0x43b2b0`/`0x43c3d0`, so the speed cap is `lerp(maxAtMin, maxAtMax, 0.5)`
 instead of the constructor's setting 60; the loop calls the setter every pass, and the bias changes only when an upgrade completes (it then becomes that level's `InitSpeed` when above 0, 0x4DF8F0).
 A suspended coaster's roll is the swing of pass `0x43c450` (`0x43c76c..0x43ca45`): the force plus gravity rotated into
@@ -325,24 +342,32 @@ The coaster is drawn the way the original builds it (traced in tp.exe: the rebui
   node. OpenTPW draws the curve (an open chain: the end knots take the direction toward or away from their neighbour,
   chord 1.0) through the placed nodes and a ghost pylon at the cursor with the tool's height; a closed but unfinished
   circuit ends in the station end node. An invalid link is flat red.
-- **Pylons.** `StdPylon.MD2`/`LoopPylon.MD2` with the loft clip `<name>L` (adds a vertex animation to the pylon mesh and
-  a 0 to 80 or 90 position key to the track tag and stack-height dummies, played in "add" mode, which only the TrackMaster
-  loader asks for) and the rotate clip `<name>R` (turns the pylon about the cell centre; the parameter is the knot yaw
-  over 2π). The pylon stretches until its track tag stands at the node height; outside the loft range it is scaled or sinks.
+- **Pylons.** `StdPylon.MD2`/`LoopPylon.MD2` with five clips played in "add" mode, which only the TrackMaster loader asks for
+  (`0x430ca0`; a position or vertex key is added, a rotation key multiplied into the node, `0x470d10`): the loft clip `<name>L`
+  (a vertex animation of the pylon mesh and a 0 to 80 or 90 position key on the track tag and stack-height dummies) at the node's
+  height parameter clamped to [0, 1], so outside the loft range the pylon stops at the loft's end; the rotate clip `<name>R`
+  (`R1`) at the yaw over 2π; the incline clip `<name>I` at the pitch over 2π and the bank clip `<name>B` at the bank over 2π
+  (wrapped into [−½, ½)), both centred on ½; and a loop pylon's `<name>R2` at its loop rotate parameter. Each value goes through
+  the pylon control's map `f…AnimMultiplier`/`Add` and the caps `f…AnimStartCap`/`EndCap` (defaults 1, 0, 0, 1; the PC sets
+  `fInclineAnimMultiplier` 4.5, 3 or −3 and `fBankAnimMultiplier` −1 or −4.5). The yaw and pitch are the node tangent's
+  (`0x43e590`) unless set by hand, the bank the auto-bank or the hand-set one. Every mesh of the model is drawn, the ground tile
+  too.
 - **Cars.** The `asCarTypes` meshes, front, centre and rear by `sTrainType`. A car's pivot is its root node; its front
-  and rear extents come from the model bounds plus `fFrontDistanceAdd`/`fRearDistanceAdd` and give the spacing; it stands
-  on the interpolated sample with roll, pitch and yaw of that point and `fYOffset` along its up axis.
+  and rear extents come from the model's header bounds plus `fFrontDistanceAdd`/`fRearDistanceAdd`, the train's pair distances
+  space the cars around its middle car (see "The train"), and a car stands on the curve itself at its coordinate (`0x43c0a0`:
+  the knot pair whose knot coordinates enclose it, at t = (c − c₀)/(c₁ − c₀)) with the roll, pitch and yaw of that point and
+  `fYOffset` along its up axis; the model's +Z runs along the track (`0x43d8f0`).
 - **Debug.** In a Debug build `--debug-coaster built|open [--debug-coaster-id N] [--debug-coaster-height H]` with
   `--load-original-level` builds a small coaster for captures (`--capture-world`): finished with trains, or open after
   four pylons with the cursor on the fifth cell.
 
 Evidence found but not used: `uiInvalidCrossSection` and the node flags 0x800000/0x804000 mark the invalid presentation.
-Used since the register round 2 (a model whose track dummy is missing or does not move with the loft clip, the loop pylon of coaster 3180 with h0 = h1 = 9.47, keeps the settings' heights; the original applies them as they come): the pylon loft heights, the track dummy's height at loft 0 and 1 (15.56 and 95.56 for the Gorilla Thrilla pylon): they are the
+Used since the register round 2 (a model whose track dummy is missing or does not move with the loft clip keeps the settings' heights, which no PC model needs since the clips turn the nodes relatively; the original applies them as they come): the pylon loft heights, the track dummy's height at loft 0 and 1 (15.56 and 95.56 for the Gorilla Thrilla pylon): they are the
 node heights h0 and h1, read when the coaster's definition is built from its catalogue entry
 (`CoasterDefinition.FromCatalogEntry`; a definition built from settings alone keeps fMinHeight and fMaxHeight). The model's attribute
-records name the track dummy (record `0x800000`, a dummy number counted from 1 over the model's dummy nodes) and the stack dummy
-(record `0x100000`); for the Skull coaster's standard pylon that is `TrackHeightDummy` (30 to 120), not the `TrackCentreDummy`
-a name search finds.
+records name the track dummy (the node of the first record with `0x800000`: record i belongs to the node stored as header `+0x46` + i,
+`0x44ab90`) and the stack dummy (record `0x100000`); for the Skull coaster's standard pylon that is its `TrackCentreDummy` (10 to 100,
+the dummy its loft, incline and bank clips move) with the stack dummy `TrackHeightDummy` 20 above it.
 
 ## Tests
 
@@ -404,8 +429,10 @@ a name search finds.
 
 ## Approximation register
 
-`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: sixteen open
-IDs. COAST-012 (the controller states and the tool's entry and exit) and COAST-019 (the sampler's closing pair) were retired by the
+`CoasterApproximations` lists every `[APPROX:COAST-NNN]` tag: fourteen open
+IDs. COAST-022 (the train layout, the hop queue and the placement by the release time) and COAST-023 (the seat types, COAST 6's bounds
+and the ring sizes) were retired by the coaster train round of October 15 (`[EXT:coaster-fixed-step]`, `[EXT:coaster-car-fallback]` and
+`[EXT:coaster-full-ring]` are its deliberate differences). COAST-012 (the controller states and the tool's entry and exit) and COAST-019 (the sampler's closing pair) were retired by the
 three-node station round of October 15, which narrowed COAST-004 (the platform links are ordinary links now) and COAST-029 (to the
 stations below the pylon's h0 and the middle knot's height adjust) and took the station clauses out of COAST-014, 015, 024 and 030
 (`[EXT:coaster-state-clear]` is the one deliberate difference of the states). COAST-013 (the sickness has no guest consumer) was retired by the register round of October 14 and COAST-007
@@ -414,9 +441,8 @@ sine table) were retired by round 2; COAST-025 (own-format save), COAST-027 (gen
 spent) became extensions (`[EXT:coaster-own-save]`, `[EXT:coaster-rng-seed]`, `[EXT:coaster-ledger]`) and COAST-016 the extension
 `[EXT:coaster-completion-click]` (APPROX:COAST-007, APPROX:COAST-016, APPROX:COAST-018, APPROX:COAST-025, APPROX:COAST-027 and
 APPROX:COAST-031 no longer exist). The IDs below 15 are the unknowns of COAST-plan §10 that are still open, narrowed to what
-the PC executable did not settle. COAST-015..019 are the new unknowns of §10.1, COAST-022..030 are rules OpenTPW
-chose while implementing the plan, now narrowed (COAST-022's 60 Hz step is a determinism decision; the dispatch, the headway and the
-collision exchange of COAST-022/023 are the original's). COAST-032 is the arithmetic precision of the knot chord, the node tangent,
+the PC executable did not settle. COAST-015..019 are the new unknowns of §10.1, COAST-024..030 are rules OpenTPW
+chose while implementing the plan, now narrowed. COAST-032 is the arithmetic precision of the knot chord, the node tangent,
 the knot-control norms and the swing, where the original uses x87 steps with extended intermediates. COAST-020 (cost rates) and COAST-021 (force
 term) were resolved by the COAST-V review and are traced now. The generated
 table is in [FIDELITY-REGISTER.md](FIDELITY-REGISTER.md).
@@ -426,8 +452,8 @@ picking by cell, the area's occupancy test, the guessed clip angles of the hand-
 are built as a translucent ribbon; the original's renderer for the flags is not found) and the cut-end flags of COAST-030.
 
 The presentation is traced but still approximated in places: COAST-026 (track mesh details), COAST-033 (pylons),
-COAST-034 (cars) and COAST-035 (the build cursor's ribbon). Rider heads are not seated in the cars yet (the head renderer
-takes providers of head sources; a coaster provider reading the cars' seat sockets, `CoasterCarRig.Seats`, is the
-next step). The ride camera
+COAST-034 (cars) and COAST-035 (the build cursor's ribbon). A rider's head hangs from its car's socket of its index in the
+car's seated list (`0x43b600` → `0x44b410`: socket j is the node of the car model's (j + 1)-th attribute record with flag `0x80`,
+`CoasterCarRig.Seats`). The ride camera
 is not implemented. `CoasterRide.TryGetRideView` gives the front car's pose
 (COAST-011).

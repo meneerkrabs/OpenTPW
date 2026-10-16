@@ -142,7 +142,9 @@ public class HandymanTests
 		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, f.Park.TryBuild( 1402, out var toilet ) );
 		toilet!.Repair = 10;
 		f.Toilets.Add( new ToiletSite( toilet.Id, (2, 6), (2, 5) ) );
-		f.Turns( 1 );
+		// his first search comes once his grade's idle time has passed
+		for ( var turn = 0; turn < 50 && f.Handyman.ToiletId == 0; turn++ )
+			f.Turns( 1 );
 		Assert.AreEqual( toilet.Id, f.Handyman.ToiletId );
 		f.Park.Sell( toilet.Id );
 		Assert.AreEqual( 0, f.Handyman.ToiletId );
@@ -150,7 +152,8 @@ public class HandymanTests
 		var json = ParkSaveFile.Serialize( f.Park );
 		ParkSaveFile.Restore( ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( json ) ), f.Park.Settings, f.Park.Catalog );
 		var patrolled = false;
-		f.Turns( 30, () => patrolled |= f.Handyman.Job == StaffJob.Patrol );
+		// the next search comes once his grade's idle time (at most 40 turns here) has passed
+		f.Turns( 60, () => patrolled |= f.Handyman.Job == StaffJob.Patrol );
 		Assert.IsTrue( patrolled, "the next search finds nothing and patrols" );
 	}
 

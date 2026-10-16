@@ -160,6 +160,69 @@ public class StringTableTests
 		}
 	}
 
+	/// <summary>A one-record BFST table from raw chunks (header byte, 24-bit field, payload), each padded to four bytes.</summary>
+	private static byte[] CreateChunkedTable( params (byte Type, int Field, byte[] Payload)[] chunks )
+	{
+		var body = new List<byte>();
+		foreach ( var (type, field, payload) in chunks )
+		{
+			body.Add( type );
+			body.Add( (byte)field );
+			body.Add( (byte)(field >> 8) );
+			body.Add( (byte)(field >> 16) );
+			body.AddRange( payload );
+			while ( body.Count % 4 != 0 )
+				body.Add( 0 );
+		}
+		var data = new byte[16 + body.Count];
+		Encoding.ASCII.GetBytes( "BFST" ).CopyTo( data, 0 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 8 ), 1 );
+		BinaryPrimitives.WriteInt32LittleEndian( data.AsSpan( 12 ), 4 );
+		body.CopyTo( data, 16 );
+		return data;
+	}
+
+	[TestMethod]
+	public void ParameterChunksFillTheRecordsTemplate()
+	{
+		const string characters = " adsy";
+		var table = new BFMUReader( new MemoryStream( CreateCharacterTable( characters ) ) );
+		// tp.exe's "%d days" record: an empty text run, a parameter of type 8, the text " days", the end chunk
+		var days = new StringFile( new MemoryStream( CreateChunkedTable( (1, 0, Array.Empty<byte>()), (2, 8, Array.Empty<byte>()),
+			(1, 5, Encode( characters, " days" )), (0, 0, Array.Empty<byte>()) ) ), table );
+		Assert.AreEqual( "", days[0], "the entry keeps its first text run" );
+		Assert.AreEqual( 1, days.Templates[0].ParameterCount );
+		Assert.AreEqual( 8, days.Templates[0].Parts[1].ParameterType );
+		Assert.AreEqual( "12 days", days.Templates[0].Fill( "12" ) );
+		Assert.AreEqual( " days", days.Templates[0].Fill(), "a missing value fills nothing" );
+		var plain = new StringFile( new MemoryStream( CreateStringTable( Encode( characters, "sad" ) ) ), table );
+		Assert.AreEqual( "sad", plain.Templates[0].Fill( "x" ), "a record without parameters is its text" );
+		var strings = new OpenTPW.UI.Original.UiStringTable( "English", new[] { "", "Cash " }, System.Array.Empty<string>(), System.Array.Empty<string>(),
+			System.Array.Empty<string>(), uiTemplates: new[] { days.Templates[0], plain.Templates[0] } );
+		Assert.AreEqual( "3 days", strings.Format( 0, "3" ) );
+		Assert.AreEqual( "Cash 3", new OpenTPW.UI.Original.UiStringTable( "English", new[] { "", "Cash " }, System.Array.Empty<string>(), System.Array.Empty<string>(),
+			System.Array.Empty<string>() ).Format( 1, "3" ), "a table without records appends the value" );
+	}
+
+	[TestMethod]
+	public void TheOriginalEnglishDurationRecordsFormat()
+	{
+		var directory = Path.Combine( OriginalDataDirectory(), "Language", "English" );
+		if ( !Directory.Exists( directory ) )
+			Assert.Inconclusive( "The installed English language folder is missing." );
+		var table = new BFMUReader( new MemoryStream( File.ReadAllBytes( Path.Combine( directory, "MBToUni.dat" ) ) ) );
+		var strings = new StringFile( new MemoryStream( File.ReadAllBytes( Path.Combine( directory, "UITEXT.str" ) ) ), table );
+		if ( strings.Entries.Length == GameLanguage.UiTextEntries + 1 )
+			strings.RemoveEntryAt( GameLanguage.UiTextEditionExtraEntry );
+		Assert.AreEqual( strings.Entries.Length, strings.Templates.Length );
+		Assert.AreEqual( "7 hours", strings.Templates[OpenTPW.UI.Original.UiTextRecord.Hours].Fill( "7" ) );
+		Assert.AreEqual( "1 day", strings.Templates[OpenTPW.UI.Original.UiTextRecord.Day].Fill( "1" ) );
+		Assert.AreEqual( "3 days", strings.Templates[OpenTPW.UI.Original.UiTextRecord.Days].Fill( "3" ) );
+		Assert.AreEqual( "Cash  $ 25", strings.Templates[(int)UIStrings.CashDollar].Fill( "25" ) );
+		for ( var index = 0; index < strings.Entries.Length; index++ )
+			Assert.IsTrue( strings.Templates[index].Fill().StartsWith( strings[index], StringComparison.Ordinal ), $"record {index} starts with its entry" );
+	}
+
 	internal static string OriginalDataDirectory()
 	{
 		var gamePath = Environment.GetEnvironmentVariable( "OPENTPW_GAME_PATH" );

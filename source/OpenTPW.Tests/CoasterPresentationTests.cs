@@ -201,20 +201,44 @@ public class CoasterPresentationTests
 
 	// ---- Pylons and cars ------------------------------------------------------------------------------
 
+	/// <summary>The clip fractions of the pose routine (<c>0x430ed0</c>, <c>0x430ca0</c>) with a coaster's clip maps.</summary>
 	[TestMethod]
-	public void APylonReachesTheNodeHeightByLoftScaleOrSinking()
+	public void APylonsClipFractionsFollowThePoseRoutine()
 	{
-		// Gorilla Thrilla's StdPylon: the tag stands 15.56 above the base at loft 0 and 95.56 at loft 1.
-		var (loft, scale, offset) = CoasterPylonRig.FitHeight( 15.558f, 95.558f, 55.558f );
-		Assert.AreEqual( 0.5f, loft, 1e-4f );
-		Assert.AreEqual( (1f, 0f), (scale, offset) );
-		var (lowLoft, lowScale, lowOffset) = CoasterPylonRig.FitHeight( 15.558f, 95.558f, 10f );
-		Assert.AreEqual( (0f, 1f), (lowLoft, lowScale), "below the loft the pylon sinks" );
-		Assert.AreEqual( -5.558f, lowOffset, 1e-3f );
-		var (topLoft, topScale, topOffset) = CoasterPylonRig.FitHeight( 15.558f, 95.558f, 100f );
-		Assert.AreEqual( (1f, 0f), (topLoft, topOffset) );
-		Assert.AreEqual( 100f / 95.558f, topScale, 1e-5f, "above the loft the pylon is stretched about its base" );
-		Assert.AreEqual( 15.558f, CoasterPylonRig.FitHeight( 15.558f, 95.558f, 15.558f ).Loft * 80f + 15.558f, 1e-3f );
+		var settings = CoasterTests.PcSettings();
+		settings["asPylonControls[0].fInclineAnimMultiplier"] = "4.5";
+		settings["asPylonControls[0].fBankAnimMultiplier"] = "-4.5";
+		var control = CoasterDefinition.FromValues( settings ).StandardPylon;
+		Assert.AreEqual( new CoasterClipMap( 0, 1, 4.5f, 0 ), control.InclineMap );
+		Assert.AreEqual( new CoasterClipMap( 0, 1, -4.5f, 0 ), control.BankMap );
+		Assert.AreEqual( CoasterClipMap.Identity, control.RotateMap, "the other maps keep the defaults 0, 1, 1, 0 (0x42ff1a)" );
+		var map = new CoasterClipMap( 0.2f, 0.1f, 1, 0 );
+		Assert.AreEqual( 0.1f, map.Fraction( 0.05f ), "the start cap is applied first, the end cap last" );
+
+		var (loft, rotate, incline, bank, loopTilt) = CoasterPylonRig.Fractions( control, new CoasterPylonPose( 1.4f, -MathF.PI / 2, 0.2f, 0.3f, 1.25f ) );
+		Assert.AreEqual( 1f, loft, "the height parameter is clamped to [0, 1]" );
+		Assert.AreEqual( 0.75f, rotate, 1e-6f, "frac(yaw / 2π), plus 1 when negative" );
+		Assert.AreEqual( 0.2f * 0.15915494f * 4.5f + 0.5f, incline, 1e-6f, "pitch / 2π through the map, centred on 0.5" );
+		Assert.AreEqual( 0.5f - 0.3f * 0.15915494f * 4.5f, bank, 1e-5f );
+		Assert.AreEqual( 0.25f, loopTilt, 1e-6f, "the loop rotate parameter wrapped into [0, 1)" );
+		Assert.AreEqual( 0f, CoasterPylonRig.Fractions( control, new CoasterPylonPose( 0, Bank: 2f ) ).Bank, "a bank far past the map's range stops at its start cap" );
+	}
+
+	/// <summary>A suspended coaster's pylon stands on the outside of a turn (node flag 0x10000000, 0x431660): its rotate clip takes the yaw half a turn on.</summary>
+	[TestMethod]
+	public void ASuspendedCoastersPylonTurnsToTheOutsideOfItsCurve()
+	{
+		var previous = new SVector3( 0, 0, -10 );
+		var position = SVector3.Zero;
+		var right = new SVector3( 10, 0, 10 );
+		var left = new SVector3( -10, 0, 10 );
+		Assert.IsTrue( CoasterTrack.PylonTurnedBack( previous, position, right, -0.999f, false, suspended: true, loopNode: false ), "b.x·a.z − b.z·a.x = 10·(−10) − 10·0 < 0" );
+		Assert.IsFalse( CoasterTrack.PylonTurnedBack( previous, position, left, -0.999f, false, suspended: true, loopNode: false ), "the other turn clears it" );
+		Assert.IsFalse( CoasterTrack.PylonTurnedBack( previous, position, right, -0.999f, false, suspended: false, loopNode: false ), "only a suspended coaster (definition flag 8)" );
+		Assert.IsFalse( CoasterTrack.PylonTurnedBack( previous, position, right, -0.999f, false, suspended: true, loopNode: true ), "not on a node with flag 0x40" );
+		Assert.IsFalse( CoasterTrack.PylonTurnedBack( previous, position, new SVector3( 0, 0, 10 ), -0.999f, false, suspended: true, loopNode: false ), "not on a straight" );
+		Assert.IsFalse( CoasterTrack.PylonTurnedBack( previous, position, right, -0.999f, true, suspended: true, loopNode: false ), "not on a loop pylon" );
+		Assert.AreEqual( 0.75f, CoasterPylonRig.Fractions( null, new CoasterPylonPose( 0, MathF.PI / 2, TurnedBack: true ) ).Rotate, 1e-6f, "frac(¼ + ½)" );
 	}
 
 	[TestMethod]
@@ -240,10 +264,8 @@ public class CoasterPresentationTests
 	}
 
 	[TestMethod]
-	public void CarsAreSpacedByTheirExtentsAndTheTrainTypesFollowFrontCentreRear()
+	public void TheTrainTypesFollowFrontCentreRear()
 	{
-		var offsets = CoasterCarRig.CarOffsets( new[] { (4f, 5f), (3f, 3f), (2f, 6f) } );
-		CollectionAssert.AreEqual( new[] { 0f, 8f, 13f }, offsets );
 		var types = CoasterCarTypes.FromValues( new Dictionary<string, string>
 		{
 			["asCarTypes[0].pcMeshFilename"] = "\"head\"", ["asCarTypes[0].fFrontDistanceAdd"] = "0.5", ["asCarTypes[0].fYOffset"] = "-1",

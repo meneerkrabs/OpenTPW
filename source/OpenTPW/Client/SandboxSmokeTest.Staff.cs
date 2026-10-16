@@ -109,15 +109,17 @@ internal sealed partial class SandboxSmokeTest
 			}
 			case 3:
 			{
-				// pick up through the employee view's button
+				// pick up through the per-employee window's button, opened from the employee view's row
 				hud.OpenStaffWindow();
 				hud.FilterStaff( StaffType.Handyman );
 				hud.ShowEmployedStaff( true );
 				var index = hud.StaffItems.ToList().FindIndex( member => ReferenceEquals( member, smokeHandyman ) );
 				Require( index >= 0, "the employee view lists the placed handyman" );
 				hud.SelectStaff( index );
-				Require( hud.CanPickUpSelectedStaff, "the pick-up button is enabled for a placed handyman" );
-				Require( hud.PickUpSelectedStaff() && !hud.StaffWindowOpen, "the pick-up button closes the window" );
+				Require( hud.OpenSelectedEmployee() && hud.EmployeeWindowOpen && !hud.StaffWindowOpen && ReferenceEquals( hud.Employee, smokeHandyman ),
+					"the employee's row opens the per-employee window in place of the staff window" );
+				Require( hud.CanPickUpEmployee, "the pick-up button is enabled for a placed handyman" );
+				Require( hud.PickUpEmployee() && !hud.EmployeeWindowOpen, "the pick-up button closes the window" );
 				Require( placement.Kind == StaffToolKind.Carry && ReferenceEquals( placement.Carried, smokeHandyman ) && smokeHandyman!.State == StaffState.PickedUp, "the pick-up starts the Carry tool" );
 				staffStage = 4;
 				staffStageFrame = frame;

@@ -49,7 +49,7 @@ range validation is a separate input/display failure: at the supported bound it
 can refuse a tick even though the gameplay digest excludes the counter. Hash
 equality alone does not establish that display metadata passes its range checks.
 
-The original keeps no visitor counter but an arrival stamp (+0x1D4 = the world turn) that only the guest constructor writes (tp.exe `0x4fafdb`, at the bus drop-off), so its time also covers the road crossing and the booth and does not stop on the road home; the seconds per world turn remain untraced (`GUEST-920`). The original visitors list's "Time In Park" column shows whole hours (ticks → seconds / 36e9); OpenTPW's detail row (`[EXT:overview-detail-rows]`) shows HH:MM:SS instead.
+The original keeps no visitor counter but an arrival stamp (+0x1D4 = the world turn) that only the guest constructor writes (tp.exe `0x4fafdb`, at the bus drop-off), so its time also covers the road crossing and the booth and does not stop on the road home; the seconds per world turn remain untraced (`GUEST-920`). The original visitors list's "Time In Park" column (tp.exe `0x49326c`) shows whole hours of the turns since the stamp in whole 4-turn steps (a new row a quarter of them until the 2 s refresh, `0x493800`), as "N hours" up to a day and "N day"/"N days" above (`0x490ff0`); OpenTPW's column does the same with the simulated seconds over the 248 ms turn standing in for the turns (`GUEST-920`).
 `GuestTimeInParkTests` verifies admission/refusal, seeded guests, pause/speed,
 known/unknown codec continuation, both validators, invalid/overflow rejection,
 the live UI model and hash exclusion using synthetic fixtures only. No original
@@ -537,7 +537,8 @@ the approximation table above still describe the running OpenTPW simulation.
 In original levels `Level` attaches the park economy (`ParkEconomyRuntime.AttachGuests`,
 docs/ECONOMY.md): `GuestSimulation.Payments` (`IGuestPayments`, implemented by
 `GuestEconomyBridge`) charges admission through `ParkEconomy.TryAdmitVisitor` — the economy's
-entrance fee and open/closed state decide, and refused guests turn back at the booth — shop and
+entrance fee decides, refused guests turn back at the booth, and a closed park turns guests home as they
+reach the booth or once they have paid (docs/GATES.md) — shop and
 sideshow visits through `TryBuy`/`PlaySideshow`, and ride visits are counted with
 `RecordRideUse`. The bridge also supplies `IParkGuestStatistics` (people in park, happiness).
 Without `Payments` (unit tests) the `.sam` fee and `IRideVisitorBridge.Price` apply and nothing is booked.

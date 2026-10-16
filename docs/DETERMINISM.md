@@ -169,7 +169,7 @@ arrival timer's start turn and group flag instead of its countdown, version 11 t
 | `thing_table_digest` | guests in id order (every field the tick reads, including navigation and timers), including each guest's walk speed and steering state and its queue fields, the queue edge detectors, then attractions with queue cells, the queue list, admission state and counters, riders, limbo and bounce lists (each bounce slot with its deadline and start) | yes (order is id order, not the original's newest first) |
 | (cell map) | `ParkCellMap` of the guest grid: every non-empty cell in row order with its type, flags, placement counter, links and queue link (paths built by the path tool included) | yes (extra, after the thing table) |
 | `script_table_digest` | the script world's scheduler clock, then every live script in id order: id, name, parent, state, PC, flags, call stack, variables, clock origin, clock, wake time, timers, WAIT4ANIM deadline, LOOPANIM and TRIGWAITANIM tokens, instruction and slice counts, seed and RNG call count; for a root object script also its animator channels (AnimID, variant, loop, speed, start, ended, tick, deferred clip) and clock | yes |
-| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, net track money, time, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
+| (coasters) | `RideScriptWorld.Coasters`: the coaster generator, then every coaster in creation order: station ends, closed and complete flags, nodes (cell, height, t, pylon kind, stack index, station end, flags, bank, loop rotate, the exact position of the middle station node), controller state (initialised, the state 1/2/4/8, ride mode, speed setting, seats, speed cap, the lead car coordinate a reopened track keeps for the next train placement, net track money, time, braking start, station window, self-intersection count), samples (flags, height, roll, speed), rating, winch sections, trains (position, speed, train flags, boarding span, the riders of the lap and the guests seated at the station per car), the admission ring and the riders waiting to leave | yes (extra, after the script digest) |
 | (tracks) | the track layer after the cell map (every track cell: type, mask, link, flags, piece, parent, rotation, overlap, segment) and `RideScriptWorld.Bumpers`: the cosmetic LCG, then every controller (type, laps, performance, phase, state, validity, tick count and clock, station, sections, waiting and leaving guests, every boat's slot, flags, position, velocity, heading, spin, target buoy, laps and rider count) — both only while a track or controller exists, so every park without one keeps its earlier digests and the schema stays 14 (TRACKS.md); bumper cars add the chase target and the drawn heading and yaw to their boats' fields (the same conditional extension: only while a controller exists, no schema bump, as for the water and kart fields); boats draw their aiming jitter from the script stream (`RideScriptWorld.NextWorldDraw`, DET-013) | yes (extra, after the coasters) |
 | `economy_digest` | the park save's economy part as canonical JSON (sorted keys) | yes |
 | `input_log_cursor` | no input log | **missing** |
@@ -260,6 +260,22 @@ from the knot coordinates. A save of the two-node shape is migrated on load: the
 onto S0, the circuit is sampled again and the riders wait to leave because the train placement of the new sampling is another one; its hash is
 recomputed in the new shape.
 
+Coaster trains (October 15, 2026): the coaster hash content changed again, in the values it holds rather than its shape. A train's position is
+now its reference car's, the middle car (n − 1) >> 1 (tp.exe train `+0x74`, `0x43baef`), with every other car at its offset from the car types'
+extents (`0x43bc20`), where it was the front car's with the cars 7 units apart; a placed train's last car stands the release time ahead of the
+train before it (`0x43c1f0`) instead of at an even share of the lap, and it starts at the mean rated speed under its cars (`0x43cbda`); the hops of
+a frame run in the remaining-budget queue of `0x43ced8` instead of train order, and the half-sample point after the last sample reads the last
+sample (slot n, `0x441783`) instead of sample 0, so the positions, speeds and flags of a running coaster move differently. The seats are split
+over the centre-type cars only (`0x43ba90`), so riders land in other cars, and the capacity (`COAST 6`) starts at and is bounded by one train's
+head sockets (`0x436a61`, `0x43b330`). The auto bank runs its speed estimate through the station end nodes (`0x4310c8`), so the node banks and
+the sample rolls of a banking coaster change. The controller adds the lead car coordinate (where train 0's last car stood when the trains were
+taken off, the start of the next placement), and a ride whose trains are taken off now drops the braking start and the station window with its
+samples (the next rating rewrites both before a train runs), so a reopened coaster that is saved and resumed hashes as the one that kept running.
+Any park with a coaster therefore hashes differently from before; the synthetic parks of the suite have none. No pinned golden or resume hash in
+the suite depended on a coaster's content (the Determinism, PathBuilder, PathAsset and park-resume tests pass with their pins unchanged), so none
+had to be re-pinned; the coaster tests assert relations (the release walk, the hop queue order, the round trip of the lead car coordinate). A save
+from before the car layout holds the front car's coordinate and no reference car; it is moved back to the reference car on load.
+
 Rides register round 2 (October 14): upgrade completion now sets the script speed bias to the new level's `InitSpeed` when
 above 0 (tp.exe 0x4DF8F0; `OriginalObjectRuntime.TryApplyCatalogueTierDefaults` with `completion`, called from
 `Level.ApplyCompletedCatalogueTier` only; a resume or import still seeds the tier without touching the bias, since the saved VM
@@ -321,10 +337,14 @@ the same seed as well.
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x0B7C79BA1B5AC12A`, schema 19: guests walk the park with tp.exe's walk: the route search `0x511420`, the edge test `0x4d8750`,
-  the step commit `0x510510`, avoid_walls `0x50e4a0` and the walk's progress `0x50fd40`, in tp.exe's fixed-point arithmetic (multiply
-  rounding towards −∞ `0x50df70`, divide towards 0 `0x50e080`), and cell type changes stamp their blocks (`0x4d8c60`), so the guests'
-  positions and the world stream move. Before that: `0x667465443A92B7CB`, the block stamps alone. Before that:
+  (`0x4A4014649DF391DB`, schema 19: tp.exe's guest walk on top of the staff candidate draws, pinned on separate branches off
+  `0xD28386DACAD73241`. The walk alone was `0x0B7C79BA1B5AC12A`: guests walk the park with tp.exe's walk: the route search `0x511420`,
+  the edge test `0x4d8750`, the step commit `0x510510`, avoid_walls `0x50e4a0` and the walk's progress `0x50fd40`, in tp.exe's
+  fixed-point arithmetic (multiply rounding towards −∞ `0x50df70`, divide towards 0 `0x50e080`), and cell type changes stamp their
+  blocks (`0x4d8c60`), so the guests' positions and the world stream move. The staff draws alone were
+  `0xDB1DDEE4817DE5B0`, schema 19: a staff candidate draws as tp.exe does (`0x507600`): the variant (`0x50761c` via `0x541f70`), a
+  discarded draw (`0x50762d`), the grade (`0x507638`), the name (`0x507580`, at most 15 draws while `0x5083f0` finds it on a pool
+  candidate or a hired member) and then the timeout, so the world stream moves. Before that:
   `0xD28386DACAD73241`, schema 19: the guest's energy meter is tp.exe's field `+0x1B8` (0 at birth, changed only by `0x004FD970`), the
   attraction choice walks the objects newest first, a full queue costs no happiness and the use routine `0x004FE1E0` applies its
   remaining terms, so the guests and the world stream move. Before that:

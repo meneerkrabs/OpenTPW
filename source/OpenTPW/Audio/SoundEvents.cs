@@ -689,6 +689,30 @@ public sealed class SoundSentence
 	public byte? ParameterCode { get; set; }
 	public int CurrentSound => soundIndex;
 	internal int CurrentSample => lastSample;
+	/// <summary>The playing voice of the current segment (null between segments).</summary>
+	internal AudioVoice? Voice => voice;
+
+	/// <summary>
+	/// The library's parameter call: stores <paramref name="value"/> under <paramref name="code"/>, and when the code is one of the
+	/// current sound's bound slots (1-3), re-evaluates the playing segment's volume and pitch at once.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6bbb80 SetParameter] the code is compared with the four slot codes of the placeholder's table (+0x4C) and the byte value stored in each match; a match in slot 1-3, with placeholder flag 0x4000 clear, calls vf+0x34 (0x6bbbe0)
+	// [BIN:TPW-EXE:0x6bbf60 placeholder setup] slot 0 holds the event's code (event record +0x12), slots 1 and 2 the current sound's selectors +0x16 and +0x1A truncated to bytes and slot 3 is 0 (0x6bbf00, run again whenever the sentence moves to another sound, 0x6bc8d7); the volume query 0x6bc040 reads slot 1 under mask +0x18 and slot 2 under mask +0x1C
+	// [BIN:TPW-EXE:0x6bbbe0 re-evaluate] with a sample playing (+0x24) it recomputes the volume (0x6bc090) unless the fixed-volume flag 0x400 (set only by vf+0x30, 0x6b7130) is set, and always redraws the pitch (0x6bc170), and sends both to the mixer; OpenTPW sets no fixed volume on a sentence and never suspends one (the 0x4000 flag marks a sample stopped by the options' sound switches, 0x6bc760), so neither flag applies
+	public void SetParameter( byte code, int value )
+	{
+		ParameterCode = code;
+		Parameter = value;
+		if ( voice is not { IsFinished: false } playing || !BindsSlot( soundEvent.Sounds[soundIndex], code ) )
+			return;
+		var sound = soundEvent.Sounds[soundIndex];
+		playing.Gain = system.Volume( sound, code, value ) / 100f;
+		playing.SetPitch( system.Pitch( sound ) );
+	}
+
+	/// <summary>Whether <paramref name="code"/> is in slot 1, 2 or 3 of a sound: its selectors +0x16 and +0x1A (low bytes), or slot 3's 0.</summary>
+	internal static bool BindsSlot( SoundEntry sound, byte code ) =>
+		code == 0 || sound.Raw.Length >= 28 && (code == sound.Raw[22] || code == sound.Raw[26]);
 	public bool IsPlaying => voice is { IsFinished: false };
 	public bool IsStopped { get; private set; }
 	public SoundEvent Event => soundEvent;
@@ -757,8 +781,7 @@ public sealed class SoundSentence
 			return true;
 		soundIndex = sound;
 		lastSample = sample;
-		// [BIN:TPW-EXE:0x6bbb80 SetParameter] the original updates the matching slot and, for a slot index >= 1 with placeholder flag 0x4000 clear, calls vf+0x34 (0x6bbbe0), which re-evaluates the playing sample's volume (0x6bc090) and pitch (0x6bc170)
-		// [APPROX:AUDIO-036] OpenTPW evaluates density-controlled crowd gain when a segment starts, not on a parameter change inside a playing segment; which slot carries the crowd's parameter 7 is not read
+		// [BIN:TPW-EXE:0x6bc410 sample start] a new segment evaluates its volume (0x6bc090) with the values the slot table holds; a later parameter change re-evaluates it (SetParameter)
 		var gain = system.Volume( soundEvent.Sounds[sound], ParameterCode, Parameter ) / 100f;
 		voice = Position is { } place ? system.Mixer.Play( audio, channel, gain, place, Range ) : system.Mixer.Play( audio, channel, gain );
 		voice.SetPitch( system.Pitch( soundEvent.Sounds[sound] ) );

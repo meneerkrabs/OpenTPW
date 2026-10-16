@@ -15,16 +15,20 @@ public sealed class BuyListModel
 	private readonly IBuildCatalog catalog;
 	private readonly Func<BuildItem, string> name;
 	private readonly Func<BuildItem, long> price;
+	private readonly Func<BuildCategory, IEnumerable<BuildItem>>? extraRows;
 	private IReadOnlyList<BuildItem>? items;
 
 	private readonly ListSortMemory memory;
 
 	/// <param name="memory">The session's remembered sort of this list (a fresh one starts by name ascending).</param>
-	public BuyListModel( IBuildCatalog catalog, Func<BuildItem, string> name, Func<BuildItem, long> price, ListSortMemory? memory = null )
+	/// <param name="extraRows">Rows a category lists besides its catalogue items (the Miscellaneous list's Buy Land and Clear Land).</param>
+	public BuyListModel( IBuildCatalog catalog, Func<BuildItem, string> name, Func<BuildItem, long> price, ListSortMemory? memory = null,
+		Func<BuildCategory, IEnumerable<BuildItem>>? extraRows = null )
 	{
 		this.catalog = catalog;
 		this.name = name;
 		this.price = price;
+		this.extraRows = extraRows;
 		this.memory = memory ?? new ListSortMemory();
 		Sort = this.memory.BuyColumn;
 		SortDescending = this.memory.BuyDescending;
@@ -46,7 +50,7 @@ public sealed class BuyListModel
 
 	private IReadOnlyList<BuildItem> Sorted()
 	{
-		var all = catalog.GetItems( Category );
+		var all = catalog.GetItems( Category ).Concat( extraRows?.Invoke( Category ) ?? Enumerable.Empty<BuildItem>() );
 		// [BIN:STP-PPC:0x10178768 list insert] the buy list (504, attribute 0x91 with the sorted-insert bit 0x10) inserts each row before the first row whose name is greater (wcscmp, 0x10178654); its sort word starts at 1 (column 0, the name, ascending), so equal names keep catalogue order
 		var sorted = Sort == BuySortColumn.Name
 			? all.OrderBy( name, StringComparer.Ordinal )

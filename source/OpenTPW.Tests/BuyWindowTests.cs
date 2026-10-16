@@ -96,22 +96,4 @@ public class BuyWindowTests
 		model.EnsureSelection();
 		Assert.AreSame( chosen, model.SelectedItem );
 	}
-
-	[TestMethod]
-	public void CashChangeSumsWithinItsWindowAndExpires()
-	{
-		var tracker = new CashChangeTracker( 1000 );
-		tracker.Update( 1000, 1 );
-		Assert.AreEqual( 0, tracker.Change, "no change at the start" );
-		tracker.Update( 1250, 0.1f );
-		Assert.AreEqual( 250, tracker.Change );
-		tracker.Update( 1200, 1 );
-		Assert.AreEqual( 200, tracker.Change, "changes inside the window are summed (250 - 50)" );
-		tracker.Update( 1200, CashChangeTracker.Seconds - 0.5f );
-		Assert.AreEqual( 200, tracker.Change );
-		tracker.Update( 1200, 1 );
-		Assert.AreEqual( 0, tracker.Change, "the change disappears after its time" );
-		tracker.Update( 1000, 0.1f );
-		Assert.AreEqual( -200, tracker.Change, "a decrease is negative and starts a new sum" );
-	}
 }

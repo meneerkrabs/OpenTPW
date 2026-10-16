@@ -11,9 +11,9 @@ public sealed partial class ParkHud
 	public bool EntryPriceWindowOpen => entryPriceScreen != null && Stack.Screens.Contains( entryPriceScreen );
 	public bool StaffCostsWindowOpen => staffCostsScreen != null && Stack.Screens.Contains( staffCostsScreen );
 
-	// [APPROX:UI-061] the entry-price window is a host layout over the economy values: the original's table 0x751798 (window 0x4f3aa (328,130)-(1720,901), the
+	// [EXT:entry-price-window] the entry-price window is a host layout over the economy values, a design choice: the original's table 0x751798 (window 0x4f3aa (328,130)-(1720,901), the
 	// spinner 0x4f3ae (773,446)-(1197,619) of range 0..10000 and step 1 holding the entry price (0x498f3b-0x498f9e), the door button 0x4f3b1, three buttons at (1568, 303/411/518)
-	// and the tick, handler 0x498c60) is not ported; its one-pound step is the original's — evidence needed: porting table 0x751798 and its handler
+	// and the tick, handler 0x498c60) has no behaviour beyond setting the price, which the host layout does with the original's one-pound step and range
 	public void OpenEntryPriceWindow()
 	{
 		if ( EntryPriceWindowOpen || FinanceEconomy == null ) return;

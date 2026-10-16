@@ -105,10 +105,9 @@ public sealed partial class GuestSimulation
 			guest.SmoothedSpeed = float.IsFinite( smoothed ) && smoothed >= 0 ? smoothed : 0;
 			guest.QueueMoveDelay = (int)Math.Min( save.QueueMoveDelay, int.MaxValue );
 			guest.RidesTaken = (int)Math.Min( save.NumRides, int.MaxValue );
-			// [BIN:TPW-EXE:0x004f8b10 person serializer] the saved counters are the guest's +0x1c4, +0x1c8, +0x1cc and +0x1d0
-			guest.RidesRidden = (int)Math.Min( save.NumRides, int.MaxValue );
-			guest.PurchasesMade = (int)Math.Min( save.NumShops, int.MaxValue );
-			guest.SideshowsPlayed = (int)Math.Min( save.NumSideshows, int.MaxValue );
+			// [BIN:TPW-EXE:0x4FB530 guest serializer] mNumShops (+0x1C8), mNumSideshows (+0x1CC) and mNumSideshowsWon (+0x1D0) follow mNumRides as saved
+			guest.ShopsVisited = (int)Math.Min( save.NumShops, int.MaxValue );
+			guest.SideshowsVisited = (int)Math.Min( save.NumSideshows, int.MaxValue );
 			guest.SideshowsWon = (int)Math.Min( save.NumSideshowsWon, int.MaxValue );
 			for ( var slot = 0; slot < Guest.HistorySlots; slot++ )
 			{
@@ -148,10 +147,10 @@ public sealed partial class GuestSimulation
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
-		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one waiting at the booth (4) waits OpenTPW's booth time rather than its saved wait (+0x200), a paid guest waiting for the gate (3) walks in at once (GUEST-011), an arriving or departing guest walks OpenTPW's nearest arrival lane from where it stands, a turn stamp before the save's turn counts from the import, and the arrival date and index, the admission flags, the shop, sideshow and win counts, the event ring and the queue links are not imported — evidence needed: an OpenTPW queue and rider restore for original guests, the booth's and gate's waits in OpenTPW's arrival model
+		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one waiting at the booth (4) waits OpenTPW's booth time rather than its saved wait (+0x200), a paid guest waiting for the gate (3) walks in at once (GUEST-011), an arriving or departing guest walks OpenTPW's nearest arrival lane from where it stands, a turn stamp before the save's turn counts from the import, and the arrival date and index, the admission flags, the event ring and the queue links are not imported — evidence needed: an OpenTPW queue and rider restore for original guests, the booth's and gate's waits in OpenTPW's arrival model
 		if ( dropped.Count > 0 )
 			evidence.Add( $"[APPROX:SAVE-002] Guests not imported: {string.Join( ", ", dropped )}." );
-		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: arrival dates {string.Join( "/", saved.Select( item => item.ArrivalDate ) )}, waits {string.Join( "/", saved.Select( item => item.ParkOpeningWaitingTime ) )}, paid {string.Join( "/", saved.Select( item => item.PaidAdmission ) )}, shop/sideshow/win counts {string.Join( "/", saved.Select( item => $"{item.NumShops}-{item.NumSideshows}-{item.NumSideshowsWon}" ) )}, queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );
+		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: arrival dates {string.Join( "/", saved.Select( item => item.ArrivalDate ) )}, waits {string.Join( "/", saved.Select( item => item.ParkOpeningWaitingTime ) )}, paid {string.Join( "/", saved.Select( item => item.PaidAdmission ) )}, queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );
 		return evidence;
 	}
 

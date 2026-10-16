@@ -55,11 +55,12 @@ public sealed record GuestSnapshot
 	public double? TimeInParkSeconds { get; init; }
 	public required float SecondsSinceRide { get; init; }
 	public required int RidesTaken { get; init; }
-	/// <summary>The rides, shops, sideshows and won sideshows counters (guest +0x1c4, +0x1c8, +0x1cc, +0x1d0). Absent in older saves: the rides take <see cref="RidesTaken"/>, the others start at 0.</summary>
-	public int? RidesRidden { get; init; }
-	public int? PurchasesMade { get; init; }
-	public int? SideshowsPlayed { get; init; }
-	public int? SideshowsWon { get; init; }
+	/// <summary>The shops visited. Absent in older saves (0).</summary>
+	public int ShopsVisited { get; init; }
+	/// <summary>The sideshows played, won or lost. Absent in older saves (0).</summary>
+	public int SideshowsVisited { get; init; }
+	/// <summary>The sideshows won. Absent in older saves (0).</summary>
+	public int SideshowsWon { get; init; }
 	public required GuestThought Thought { get; init; }
 	/// <summary>The thought the bubble shows (None: no bubble). Absent before schema 7.</summary>
 	public GuestThought BubbleThought { get; init; }
@@ -84,6 +85,10 @@ public sealed record GuestSnapshot
 	public required int QueueMoveDelay { get; init; }
 	public required bool QueueCalled { get; init; }
 	public required long QueueStandingSinceTurn { get; init; }
+	/// <summary>The count of state 10's periodic call (<see cref="Guest.RideWalkCount"/>). Absent in older saves, which restart it at 0.</summary>
+	public int RideWalkCount { get; init; }
+	/// <summary>The park turns left of the booth's wait (<see cref="Guest.BoothWait"/>). Absent in older saves, which hold none.</summary>
+	public int BoothWait { get; init; }
 	public required long InterludeTurn { get; init; }
 	public required bool InQueueInterlude { get; init; }
 	/// <summary>The state-6 activity (the original's state 8), <see cref="GuestActivity.None"/> when there is none. Absent in saves

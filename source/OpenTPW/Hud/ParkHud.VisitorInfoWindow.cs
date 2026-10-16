@@ -78,7 +78,7 @@ public sealed partial class ParkHud
 			visitorInfoTitleNumber = guest.Id;
 		var values = ParkVisitorRoster.ValuesOf( guest, refreshed: true );
 		var status = strings.KidState( (int)guest.State, guest.State == GuestState.Using ? AttractionNameOf( guest.AttractionId ) : "" );
-		visitorInfoShown = new VisitorInfoValues( guest.Money, values.Hours, guest.RidesRidden, guest.PurchasesMade, guest.SideshowsPlayed, guest.SideshowsWon,
+		visitorInfoShown = new VisitorInfoValues( guest.Money, values.Hours, guest.RidesTaken, guest.ShopsVisited, guest.SideshowsVisited, guest.SideshowsWon,
 			values.HappinessGauge, status, strings.Thought( (int)guest.Thought ), guest.Thought == GuestThought.None ? -1 : (int)guest.Thought - 1 );
 	}
 

@@ -11,7 +11,7 @@ namespace OpenTPW.Hud;
 // [BIN:TPW-EXE:0x004b6080 employee window] the opener stores the member, builds table 0x756f48 through 0x48cea0 (handler 0x4b5cb0, frames 0x511 and 0x512) and
 // posts help 0xc0; 0x48cea0 first closes the window that is open (0x485b40), so the All Staff list (0x496088, its row message 0x400) gives way to it
 // [BIN:TPW-EXE:0x00486920 thing info] a click on a staff thing (types 4-8) opens this window too; OpenTPW opens it from the staff list (no staff click in the park)
-// [APPROX:UI-092] the portrait frame (0x511) shows the role's name where the original plays a live figure of the employee (0x4b5330: 0x486530 with the frame's figure id + 1 at speed 8.0); a click on the title does not rename the employee (0x48d2e0, help 85); the help 0xd4 the window posts while the employee has a patrol area (0x4b5ab0) is not posted; the arrows cycle the economy's member list, which stands for the thing list (0x7cf56c, newest first) — evidence needed: drawing the figure, porting the rename dialog, and the thing-list order of staff loaded from a save
+// [APPROX:UI-092] the portrait frame (0x511) plays the employee's figure like the hire window's (UI-082 for its pixel size); the original's frame phase is the figure id + 1 of a record field (+0xE0) OpenTPW has no counterpart for; a click on the title does not rename the employee (0x48d2e0, help 85); the help 0xd4 the window posts while the employee has a patrol area (0x4b5ab0) is not posted; the arrows cycle the economy's member list, which stands for the thing list (0x7cf56c, newest first) — evidence needed: the rename (the title message 0x10006 is forwarded to a vtable slot +0x38 of the object 0x65e705(0) returns, not identified; 0x48d2e0 itself holds no rename dialog) and the thing-list order of staff loaded from a save
 public sealed partial class ParkHud
 {
 	private static LayoutTable EmployeeTable => OriginalLayoutTables.EmployeeWindow;
@@ -192,7 +192,20 @@ public sealed partial class ParkHud
 		return true;
 	}
 
-	private string EmployeeRole => Employee is { } member ? StaffRole( member.Type ) : "";
+	private (StaffType Type, int Variant)? employeePortraitKey;
+	private float employeePortraitStart;
+
+	/// <summary>The figure in the employee window's portrait frame: the employee's role and variant walking on the spot, restarting when another employee is shown.</summary>
+	private UiSpriteFrame? EmployeePortraitFrame()
+	{
+		(StaffType Type, int Variant)? key = Employee is { } member ? (member.Type, StaffSpriteRules.VariantKey( member.NameIndex, member.Id )) : null;
+		if ( key != employeePortraitKey )
+		{
+			employeePortraitKey = key;
+			employeePortraitStart = Time.Now;
+		}
+		return key is { } chosen ? level.StaffRenderer?.PortraitFrame( chosen.Type, chosen.Variant, Time.Now - employeePortraitStart ) : null;
+	}
 
 	private UiScreen CreateEmployeeScreen()
 	{
@@ -203,9 +216,8 @@ public sealed partial class ParkHud
 		var stats = table.Control( 0x512 );
 		screen.Add( new UiModelImage { Id = "portraitFrame", Model = portrait.Model!, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
 		screen.Add( new UiModelImage { Id = "statsFrame", Model = stats.Model!, Bounds = stats.Rect, Anchor = UiAnchor.Center } );
-		// [APPROX:UI-092] the portrait frame shows the role's name, not the live figure
-		screen.Add( new UiLabel { Id = "portraitText", Text = () => EmployeeRole, Font = fonts => fonts.Label, Color = UiColors.Text, Align = UiAlign.Center, Fit = true,
-			Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
+		// [BIN:TPW-EXE:0x4b5330 employee figure] the portrait frame plays the employee's figure (0x486530 with the frame's figure id + 1 at speed 8.0, the hire window's recipe 0x49ba00): feet at the frame's centre, a quarter of its height above the bottom
+		screen.Add( new UiSpriteFigure { Id = "portraitFigure", Frame = EmployeePortraitFrame, Bounds = portrait.Rect, Anchor = UiAnchor.Center } );
 		var title = table.Control( 0x520 );
 		screen.Add( new UiLabel { Id = "title", Text = () => Employee is { } member ? StaffName( member ) : "", Help = strings.Help( title.Help ), Font = fonts => fonts.Title,
 			Color = UiColors.Title, Align = UiAlign.Center, Fit = true, Bounds = title.Rect, Anchor = UiAnchor.Center } );

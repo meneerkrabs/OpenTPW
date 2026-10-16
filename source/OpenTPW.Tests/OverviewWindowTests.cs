@@ -17,7 +17,7 @@ public class OverviewWindowTests
 {
 	private static Guest At( int id, GuestState state = GuestState.WalkingAround, float happiness = 50, int money = 20, int rides = 0, GuestThought thought = GuestThought.None )
 	{
-		var guest = new Guest( id, 0 ) { State = state, Happiness = happiness, Money = money, RidesTaken = rides, RidesRidden = rides, Thought = thought };
+		var guest = new Guest( id, 0 ) { State = state, Happiness = happiness, Money = money, RidesTaken = rides, Thought = thought };
 		guest.Navigation.X = id * Fixed16.One;
 		guest.Navigation.Y = id * Fixed16.One;
 		return guest;

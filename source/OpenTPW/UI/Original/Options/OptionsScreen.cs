@@ -164,7 +164,7 @@ public static class OptionsScreen
 	};
 
 	/// <summary>Adds the original page pieces (panels, dark labels in one shared size, toggles, sliders) to a screen.</summary>
-	private sealed class PageBuilder
+	internal sealed class PageBuilder
 	{
 		private readonly UiScreen screen;
 		public PageBuilder( UiScreen screen ) => this.screen = screen;
@@ -567,6 +567,15 @@ public static class OptionsScreen
 			Text = () => strings.Extra( OpenTpwText.GameFiles ),
 			Clicked = () => stack.Push( GameFilesScreen.Create( stack, strings ) ),
 			Bounds = Rect( 1331, 1330, 1730, 1434 ),
+			Anchor = UiAnchor.Center
+		} );
+		// [EXT:mods-ui] Extensions and mods, beside Game files (the browser lists the official extensions only; it has no folder chooser)
+		screen.Add( new UiButton
+		{
+			Id = "mods",
+			Text = () => strings.Extra( OpenTpwText.ModsPage ),
+			Clicked = () => stack.Push( ModsScreen.Create( stack, strings ) ),
+			Bounds = Rect( 925, 1330, 1324, 1434 ),
 			Anchor = UiAnchor.Center
 		} );
 		screen.Add( new UiModelImage { Id = "buttonsPanel", Model = "!f_plain", Bounds = Rect( 1742, 1321, 1947, 1443 ), Anchor = UiAnchor.Center } );

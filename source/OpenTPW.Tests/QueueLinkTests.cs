@@ -78,6 +78,24 @@ public class QueueLinkTests
 	}
 
 	[TestMethod]
+	public void EveryQueueEditRaisesTheReevaluationOfTheRide()
+	{
+		// tp.exe 0x004DE1F0 runs after each edit of the ride's cells; the level opens a closed, connected ride from it (QUEUE-023)
+		var (grid, ride) = Park();
+		var edits = 0;
+		ride.QueueEdited += () => edits++;
+		Assert.AreEqual( 5, QueuePaths.TryExtend( grid, ride, Enumerable.Range( 0, 5 ).Select( index => (2, 5 - index) ) ), "five queue cells, each an edit" );
+		Assert.AreEqual( 5, edits );
+		Assert.IsFalse( ParkGate.QueueConnected( grid, ride ), "not connected yet: the level opens nothing" );
+		Assert.AreEqual( QueueBuildResult.Connected, QueuePaths.TryExtend( grid, ride, 2, 0 ) );
+		Assert.AreEqual( 6, edits, "ending on the path connects the queue, an edit as well" );
+		Assert.IsTrue( ParkGate.QueueConnected( grid, ride ), "connected: the level opens a closed ride now" );
+		var before = edits;
+		Assert.IsTrue( QueuePaths.RemoveFrom( grid, ride, 2, 4 ) > 0 );
+		Assert.AreEqual( before + 1, edits, "a cell clear is an edit too" );
+	}
+
+	[TestMethod]
 	public void TheBackOfQueueLinkTestFollowsTheConnection()
 	{
 		var (grid, ride) = Park();

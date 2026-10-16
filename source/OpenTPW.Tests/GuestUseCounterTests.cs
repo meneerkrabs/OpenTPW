@@ -29,8 +29,7 @@ public class GuestUseCounterTests
 		Use( simulation, guest, RideVisitorKind.Ride );
 		Use( simulation, guest, RideVisitorKind.Shop );
 		Use( simulation, guest, RideVisitorKind.Facility );
-		Assert.AreEqual( (2, 1, 0, 0), (guest.RidesRidden, guest.PurchasesMade, guest.SideshowsPlayed, guest.SideshowsWon) );
-		Assert.AreEqual( 4, guest.RidesTaken, "RidesTaken keeps counting every use" );
+		Assert.AreEqual( (2, 1, 0, 0), (guest.RidesTaken, guest.ShopsVisited, guest.SideshowsVisited, guest.SideshowsWon) );
 	}
 
 	[TestMethod]
@@ -39,24 +38,24 @@ public class GuestUseCounterTests
 		var (simulation, guest) = Setup();
 		Use( simulation, guest, RideVisitorKind.Sideshow, won: true );
 		Use( simulation, guest, RideVisitorKind.Sideshow, won: false );
-		Assert.AreEqual( (0, 0, 2, 1), (guest.RidesRidden, guest.PurchasesMade, guest.SideshowsPlayed, guest.SideshowsWon),
+		Assert.AreEqual( (0, 0, 2, 1), (guest.RidesTaken, guest.ShopsVisited, guest.SideshowsVisited, guest.SideshowsWon),
 			"a lost play (win byte +0x1f1 of 0) skips the use routine that counts the win (0x4fe816)" );
 	}
 
 	[TestMethod]
-	public void TheCountersSurviveASnapshotAndOldSnapshotsStandInTheRides()
+	public void TheCountersSurviveASnapshotAndOldSnapshotsHoldNone()
 	{
 		var (simulation, guest) = Setup();
 		Use( simulation, guest, RideVisitorKind.Ride );
 		Use( simulation, guest, RideVisitorKind.Shop );
 		var snapshot = simulation.CaptureSnapshot();
 		var saved = snapshot.Guests.Single( item => item.Id == guest.Id );
-		Assert.AreEqual( (1, 1, 0, 0), (saved.RidesRidden, saved.PurchasesMade, saved.SideshowsPlayed, saved.SideshowsWon) );
+		Assert.AreEqual( (1, 1, 0, 0), (saved.RidesTaken, saved.ShopsVisited, saved.SideshowsVisited, saved.SideshowsWon) );
 
-		var legacy = snapshot with { Guests = snapshot.Guests.Select( item => item with { RidesRidden = null, PurchasesMade = null, SideshowsPlayed = null, SideshowsWon = null } ).ToArray() };
+		var legacy = snapshot with { Guests = snapshot.Guests.Select( item => item with { ShopsVisited = 0, SideshowsVisited = 0, SideshowsWon = 0 } ).ToArray() };
 		var restored = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 1 ) { ArrivalsEnabled = false };
 		restored.RestoreSnapshot( legacy );
 		var old = restored.Guests.Single( item => item.Id == guest.Id );
-		Assert.AreEqual( (2, 0, 0, 0), (old.RidesRidden, old.PurchasesMade, old.SideshowsPlayed, old.SideshowsWon), "an old save has only RidesTaken: it stands in for the rides" );
+		Assert.AreEqual( (1, 0, 0, 0), (old.RidesTaken, old.ShopsVisited, old.SideshowsVisited, old.SideshowsWon), "an old save holds no shop, sideshow or win counts" );
 	}
 }

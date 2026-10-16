@@ -208,7 +208,7 @@ internal static class ParkVisitorRoster
 	/// </summary>
 	// [BIN:TPW-EXE:0x00493800 row add] and [BIN:TPW-EXE:0x0049326c rows refresh] the hours are (turn − stamp +0x1d4, 0x4fd950) >> 2, shifted back << 2 by the refresh only,
 	// times the clock rate 15000 / 4 seconds a turn (0x4f8730, × 10^7) over 36,000,000,000 (one hour, 0x67c320)
-	public static VisitorRowValues ValuesOf( Guest guest, bool refreshed ) => new( guest.Id, guest.Money, Hours( guest, refreshed ), guest.RidesRidden,
+	public static VisitorRowValues ValuesOf( Guest guest, bool refreshed ) => new( guest.Id, guest.Money, Hours( guest, refreshed ), guest.RidesTaken,
 		guest.Thought == GuestThought.None ? -1 : (int)guest.Thought - 1, (((int)guest.Happiness & 0xff) << 10) / 100 );
 
 	/// <summary>The hours of the time-in-park cell from the park turns since admission.</summary>

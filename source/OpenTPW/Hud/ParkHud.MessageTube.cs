@@ -13,7 +13,7 @@ public sealed partial class ParkHud
 	/// <summary>How many messages the tube holds; the oldest goes when a sixth arrives.</summary>
 	// [DATA:video 15:20, 51:40, 76:03] up to about five icons are stacked in the tube at once
 	// [EXT:message-tube-art] the red tube body is drawn as rectangles and the white icons as discs, the growth per message (77 units) read off the video, instead of the original's tube art
-	// [APPROX:UI-025] pending tube messages are not saved with the park; the capacity of five is the most the video shows, not a traced limit; the original's message queue and its overflow rule are not traced
+	// [APPROX:UI-025] pending tube messages are not saved with the park; the capacity of five is the most the video shows, where the original's tube has eight slots (0x59a940) and on overflow replaces its lowest-priority slot only for a message of higher priority (the per-type caps and priorities of the registry 0x76e300 are filled at run time and not read)
 	public const int MessageTubeCapacity = 5;
 
 	// The tube sits left of the HUD panel above its top edge, in the BottomLeft-anchored authored coordinates of the main panel; read off the 720p frames (video 15:20 and 12:00).

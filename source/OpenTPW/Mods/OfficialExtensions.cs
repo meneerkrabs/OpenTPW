@@ -30,8 +30,17 @@ public static class OfficialExtensions
 	/// </summary>
 	public static IOpenTpwExtension Online { get; } = new OpenTpwExtension( "opentpw.online", "OpenTPW online", new ModVersion( 1, 0, 0 ), DefaultEnabled: true, AffectsSimulation: false );
 
+	/// <summary>
+	/// The cross-edition objects extension (docs/MODS.md, Cross-edition objects): the engine support a data mod needs to
+	/// bring attractions of another original game (Theme Park Inc) into Theme Park World. It ships nothing of Theme Park Inc: the
+	/// player supplies that install as a mod input. Off by default because it changes the simulation as soon as such a mod
+	/// places an object.
+	/// </summary>
+	// [EXT:cross-edition-objects] OpenTPW's own extension; neither original game loads another game's objects
+	public static IOpenTpwExtension CrossEditionObjects { get; } = new OpenTpwExtension( "opentpw.cross-edition-objects", "Cross-edition objects", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

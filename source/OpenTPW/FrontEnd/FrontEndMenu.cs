@@ -226,12 +226,12 @@ public sealed partial class FrontEndMenu
 	// rows show (0x663718); the list has no header sort (attribute 0x81) and keeps the save enumeration's order (0x49ec80); a row's activation (message 0x400) loads it and b_exit
 	// closes the dialog (0x49e880)
 	// [BIN:TPW-EXE:0x49ec80 save list rows] each row is the park name and the save file's local last-write date (UITEXT 0x1c0 = OpenTPW's 447 with day, month, year, 0x5fc660) plus " %02d:%02d" hour and minute, in a second right-aligned cell (0x49f170)
-	// [APPROX:UI-044] the rows take the buy list's measured pitch
 	/// <summary>" (requires mod X)" after a save's name when the mods it was saved with are not all active, else nothing; the entry stays listed.</summary>
 	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
 	internal static string RequiresSuffix( UiStringTable strings, string? requires ) =>
 		requires == null ? "" : " (" + string.Format( strings.Extra( OpenTpwText.RequiresMod ), requires ) + ")";
 
+	// [EXT:list-row-pitch] the rows take the buy list's fixed pitch, a design choice (see ParkHud.BuyRowHeight)
 	public static UiScreen CreateLoadScreen( UiScreenStack stack, UiStringTable strings, IReadOnlyList<ParkLoadEntry> entries, Action<ParkLoadEntry> load )
 	{
 		var screen = new LoadChooserScreen();

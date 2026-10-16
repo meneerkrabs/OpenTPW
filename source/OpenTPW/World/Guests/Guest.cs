@@ -135,15 +135,13 @@ public sealed class Guest
 	/// <summary>Own-format/display duration bound; no original timing limit is inferred.</summary>
 	public static double MaximumTimeInParkSeconds => TimeSpan.MaxValue.TotalSeconds;
 	public float SecondsSinceRide { get; internal set; }
+	/// <summary>The rides ridden (guest <c>+0x1C4</c>): only an attraction of kind <c>Info.WhichUIType</c> 0 counts (the use routine 0x4FD970 sorts a finished visit by the type's <c>+0x4AC</c>).</summary>
 	public int RidesTaken { get; internal set; }
-	/// <summary>
-	/// The uses of rides (guest <c>+0x1c4</c>, the "Rides ridden" cell), shops (<c>+0x1c8</c>, "Purchases made") and sideshows (<c>+0x1cc</c>, "Sideshows played") and the won
-	/// plays (<c>+0x1d0</c>, "Sideshows won"): display counters that no rule reads. <see cref="RidesTaken"/> counts every kind of use.
-	/// </summary>
-	// [BIN:TPW-EXE:0x004fd970 use counters] a completed use adds one to +0x1c4, +0x1c8 or +0x1cc by the used type's kind (+0x4ac 0, 1 or 2), won or lost; the use routine 0x4fe1e0 adds one to +0x1d0 for a sideshow that was not lost (0x4fe816); the constructor zeroes all four (0x4faf43)
-	public int RidesRidden { get; internal set; }
-	public int PurchasesMade { get; internal set; }
-	public int SideshowsPlayed { get; internal set; }
+	/// <summary>The shops visited (guest <c>+0x1C8</c>, kind 1), shown by the visitor info window (<c>0x4B72A0</c>, control 0x372F+).</summary>
+	public int ShopsVisited { get; internal set; }
+	/// <summary>The sideshows played (guest <c>+0x1CC</c>, kind 2), won or lost.</summary>
+	public int SideshowsVisited { get; internal set; }
+	/// <summary>The sideshows won (guest <c>+0x1D0</c>), counted where the use routine's won-sideshow tail runs (<c>0x4FE816</c>).</summary>
 	public int SideshowsWon { get; internal set; }
 	public GuestThought Thought { get; internal set; }
 	/// <summary>
@@ -157,6 +155,10 @@ public sealed class Guest
 	public bool? SideshowWon { get; internal set; }
 	/// <summary>Attraction the guest is heading to, queueing for or riding (0 = none).</summary>
 	public int AttractionId { get; internal set; }
+	/// <summary>The byte at +0x2C that state 10 counts while the guest walks to a ride with the park open; every twelfth count the minor decision runs (tp.exe 0x004FFEF2).</summary>
+	public int RideWalkCount { get; internal set; }
+	/// <summary>Park turns an expensive verdict still holds the guest at the booth (+0x200, tp.exe 0x004FF9D0): one is counted per turn, the verdict runs again as the last reaches 0.</summary>
+	public int BoothWait { get; internal set; }
 	public int LastAttractionId { get; internal set; }
 	/// <summary>The attractions the guest used last, newest first (guest <c>+480..+486</c>); the score divides by 5, 4, 3 or 2 for the first match. 0 = empty slot.</summary>
 	public int[] UsedHistory { get; } = new int[HistorySlots];

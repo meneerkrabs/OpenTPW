@@ -660,9 +660,7 @@ internal static class ParkResumeSaveFile
 			}
 			Require( guest.TimeInParkSeconds is not { } elapsed || (double.IsFinite( elapsed ) && elapsed >= 0 && elapsed <= Guest.MaximumTimeInParkSeconds),
 				$"guest {guest.Id} time in park is negative, not finite or exceeds the supported duration" );
-			Require( guest.Money >= 0 && guest.RidesTaken >= 0, $"guest {guest.Id} holds negative money or rides" );
-			Require( (guest.RidesRidden ?? 0) >= 0 && (guest.PurchasesMade ?? 0) >= 0 && (guest.SideshowsPlayed ?? 0) >= 0 && (guest.SideshowsWon ?? 0) >= 0,
-				$"guest {guest.Id} holds a negative use counter" );
+			Require( guest.Money >= 0 && guest.RidesTaken >= 0 && guest.ShopsVisited >= 0 && guest.SideshowsVisited >= 0 && guest.SideshowsWon >= 0, $"guest {guest.Id} holds negative money or counts" );
 			Require( float.IsFinite( guest.Hunger ) && float.IsFinite( guest.Thirst ) && float.IsFinite( guest.Toilet )
 				&& float.IsFinite( guest.Energy ) && float.IsFinite( guest.Happiness ) && float.IsFinite( guest.Nausea )
 				&& float.IsFinite( guest.QueueJoinHappiness ) && float.IsFinite( guest.SecondsSinceRide )
@@ -835,6 +833,7 @@ internal static class ParkResumeSaveFile
 				$"track controller {controller.AttractionId} names no collision-object slots, or a slot another object of the module holds" );
 			Require( controller.BuoyCount is null or >= 0 and <= BumpWorld.BuoyPool && (!shared || controller.BuoyCount != null),
 				$"track controller {controller.AttractionId} holds no or a bad buoy count" );
+			Require( controller.StationLayout is 0 or 1, $"track controller {controller.AttractionId} has the unknown station layout {controller.StationLayout}" );
 			var slots = new HashSet<int>();
 			// the engine voice belongs to one bumper car at most: the first carrying car of a running ride (never to a kart; every boat holds one)
 			var engines = controller.Vehicles.Where( car => car.Engine ).ToList();

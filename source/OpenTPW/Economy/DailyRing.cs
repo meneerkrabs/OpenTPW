@@ -21,6 +21,14 @@ public sealed class DailyRing
 	/// <summary>Today's running value, which the day message moves into the ring.</summary>
 	public int Today { get; set; }
 
+	/// <summary>Averages a visit's value into today's running value (the satisfaction ring): the first value of the day is taken as it is, later ones average with it.</summary>
+	// [BIN:TPW-EXE:0x004E1E00 visit average] a running value of 0 takes the value, otherwise it becomes (running + value) halved toward zero (the CDQ/SUB/SAR rounding), so a day's average is weighted to the latest visits and a first value of 0 leaves the next one to be taken whole
+	public void Average( int value ) => Today = Today == 0 ? value : (int)((long)Today + value) / 2;
+
+	/// <summary>The customer satisfaction of the entries the ring holds: 50 plus the integer mean of its signed entries (50 without any).</summary>
+	// [BIN:TPW-EXE:0x004E1E30 satisfaction gauge] the newest min(count, 30) entries (head, then back, wrapping once the ring has wrapped) are added as signed integers in a double, divided by that count and truncated, plus 0x32; no entries give 0x32
+	public int Satisfaction => Count <= 0 ? 50 : (int)((double)SignedTotal / Count) + 50;
+
 	/// <summary>The number of days the ring holds: 30 once wrapped, else the head plus one.</summary>
 	public int Count => Wrapped ? Size : Head + 1;
 

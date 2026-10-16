@@ -831,6 +831,33 @@ public class GuestTests
 		Assert.IsTrue( guest.ExitLevel < before && guest.ExitLevel >= before - ridden / 4 - 1, $"{before} -> {guest.ExitLevel} after {ridden} turns" );
 	}
 
+	private sealed class SatisfactionPayments : IGuestPayments
+	{
+		public readonly List<int> Changes = new();
+		public int AdmissionFee => 0;
+		public bool TryPayAdmission( out int feePaid ) { feePaid = 0; return true; }
+		public bool TryPayVisit( IRideVisitorBridge attraction, long guestMoney, out int pricePaid ) { pricePaid = 0; return true; }
+		public void UseSatisfaction( IRideVisitorBridge attraction, int change ) => Changes.Add( change );
+	}
+
+	[TestMethod]
+	public void AFinishedUseReportsThreeTimesTheGuestsHappinessChange()
+	{
+		// tp.exe 0x004FD970: 3 x ((u8)happiness after the use - (u8)happiness at joining the queue) goes to the object's satisfaction average (0x004E1E00)
+		var ride = CreateShop( 1, (10, 9), excitement: 70 );
+		var settings = CreateSettings();
+		settings.Types = new() { new GuestType( 70, 300, 1000 ) };
+		var payments = new SatisfactionPayments();
+		var simulation = new GuestSimulation( CreateCross(), settings, 5 ) { ArrivalsEnabled = false, Payments = payments };
+		simulation.Register( ride.Bridge );
+		var guest = simulation.SpawnInPark( 6, 5 );
+		for ( var tick = 0; tick < 40 * 60 && guest.RidesTaken == 0; tick++ )
+			Run( simulation, new[] { ride }, 1 );
+		Assert.AreEqual( 1, guest.RidesTaken );
+		Assert.AreEqual( 1, payments.Changes.Count );
+		Assert.AreEqual( 3 * (((int)guest.Happiness & 0xFF) - ((int)guest.QueueJoinHappiness & 0xFF)), payments.Changes[0] );
+	}
+
 	[TestMethod]
 	public void ArrivalGroupsFollowTheOriginalRule()
 	{

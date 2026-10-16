@@ -1110,7 +1110,7 @@ public sealed class ParkEconomy : IParkEconomy
 		foreach ( var item in objects.Values )
 		{
 			// [EXT:ring-month-sums] the calendar-month sums roll here as before the rings, kept for saves written without them (see ParkSaveFile.RingAt); the original has only the rings
-			// [APPROX:ECON-057] an attraction's six daily 30-day rings follow tp.exe (costs +0xF8, takings +0x70, customers +0x1A8, walk-aways +0x230, winners +0x2B8 and the visits' averaged happiness change +0x340: the constructor 0x004DB090 starts each at head -1, size 30; the day message 0x004DD320 rolls them; the windows and lists sum them over their counts, 0x004E1C70, 0x00495C20, 0x004B01D0, 0x004B16C0, 0x004955E0, 0x00493CD0), but the happiness-change ring has no writer (the use routine 0x004FD970 averages the visit's change into it, 0x004E1E00; OpenTPW's guests keep no per-visit change, UI-024), the walk-aways stay a list beside the ring type and the customers row's second number (the text variables 0x19 and 0x1A of its UITEXT) is not formatted — evidence needed: the per-visit happiness change a guest takes from an attraction (0x004FD970 with the guest's mood) and the UITEXT 32 and 41 templates
+			// [APPROX:ECON-057] an attraction's six daily 30-day rings follow tp.exe (costs +0xF8, takings +0x70, customers +0x1A8, walk-aways +0x230, winners +0x2B8 and the visits' averaged happiness change +0x340: the constructor 0x004DB090 starts each at head -1, size 30; the day message 0x004DD320 rolls them; the windows and lists sum them over their counts, 0x004E1C70, 0x00495C20, 0x004B01D0, 0x004B16C0, 0x004955E0, 0x00493CD0), the happiness-change ring is written as the use routine 0x004FD970 does (3 x the guest's happiness byte change since joining the queue, averaged in by 0x004E1E00; a won sideshow's tail is GUEST-005), the walk-aways stay a list beside the ring type and the customers row's second number (the text variables 0x19 and 0x1A of its UITEXT) is not formatted — evidence needed: the UITEXT 32 and 41 templates
 			item.CustomersLastMonth = item.CustomersThisMonth;
 			item.TakingsLastMonth = item.TakingsThisMonth;
 			item.CostsLastMonth = item.CostsThisMonth;
@@ -2052,6 +2052,14 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( objects.TryGetValue( instanceId, out var item ) )
 			item.TimesUsed++;
+	}
+
+	/// <summary>A use ended with a guest happiness change (tp.exe <c>0x004FD970</c> → <c>0x004E1E00</c>): the object's satisfaction average of today takes it.</summary>
+	// [BIN:TPW-EXE:0x004FDA85 use satisfaction] after the use routine the change is 3 × ((u8)trunc(happiness at +0x19c) - (u8)trunc(the happiness kept when the guest joined the queue, +0x20c)); a lost sideshow skips it
+	public void RecordUseSatisfaction( int instanceId, int change )
+	{
+		if ( objects.TryGetValue( instanceId, out var item ) )
+			item.SatisfactionRing.Average( change );
 	}
 
 	/// <summary>Days of walk-aways an object keeps (the ring <c>+0x234</c> the object constructor sizes to 30).</summary>

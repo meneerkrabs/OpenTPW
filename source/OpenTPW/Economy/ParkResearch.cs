@@ -14,13 +14,14 @@ public sealed record ResearchItem( int InfoId, int Level, ResearchCategory Categ
 /// effort share × <c>Research.StartingWorkLoad</c> / 100 points to every category's current item; a
 /// category's highest open group rises while the percentage of researched items in its open groups
 /// reaches the next <c>ResearchTech</c> threshold; each category researches the first open item in table order.
-/// <b>Approximations</b>: the table is in info-id order; Instant Action research runs at one grade-2 researcher's ability without staff;
+/// <b>Approximations</b>: Instant Action research runs at one grade-2 researcher's ability without staff;
 /// progress is kept in thousandths of a point. Researcher <c>WorkDuration</c> is not used.
 /// </summary>
 public sealed class ParkResearch
 {
 	public const int PointScale = 1000;
 	private readonly BalanceSettings settings;
+	private readonly IEconomyObjectCatalog catalog;
 	private readonly List<ResearchItem> items;
 	private readonly HashSet<(int InfoId, int Level)> completed = new();
 	private readonly Dictionary<(int InfoId, int Level), long> progress = new();
@@ -38,31 +39,34 @@ public sealed class ParkResearch
 	public ParkResearch( BalanceSettings settings, IEconomyObjectCatalog catalog )
 	{
 		this.settings = settings;
+		this.catalog = catalog;
 		effort = settings.ResearchEffort.ToArray();
 		Workload = Math.Clamp( settings.ResearchStartingWorkLoad, 0, 100 );
 		items = new List<ResearchItem>();
-		foreach ( var info in catalog.Objects.OrderBy( info => info.InfoId ) )
+		// [BIN:TPW-EXE:0x00413140 category scan order] the object definitions are loaded Rides, Features, Upgrades, Shops, Sideshow, each directory in archive-name order, and the lab's fill
+		// 0x005031A0 walks that list (0x00412E60, 0x00412E70) without sorting: the shipped Jungle lab holds 1140, 1150, 1108, 1180, 1109, 1113, 1110, 1160 (rides), 1414, 1429, 1424, ... (features), 1202, 1212, 1206 (shops), 1304, 1307
+		foreach ( var info in catalog.Objects.Select( ( info, position ) => (Info: info, Position: position) ).OrderBy( entry => ScanRank( entry.Info.Kind ) ).ThenBy( entry => entry.Position ).Select( entry => entry.Info ) )
 		{
 			if ( !info.IsBuyable || info.Upgrades.Count == 0 )
 				continue;
 			// [BIN:TPW-EXE:0x005031A0 research table fill] an object's base project takes its own Research.Category (+0x17C) and Research.Group (+0x178), add-ons included
-			// (every shipped add-on declares category 4 and group 0); a category-4 project is selectable once the object its AddOn.UpgradesId names (+0x284) is researched (0x005034F0; its second test for a target with a golden-ticket cost is ECON-017)
+			// (every shipped add-on declares category 4 and group 0); a category-4 project is selectable once the object its AddOn.UpgradesId names (+0x284) is researched (0x005034F0, with its golden-ticket test below)
 			var category = info.ResearchCategory;
-			items.Add( new ResearchItem( info.InfoId, 0, category, info.ResearchGroup, info.Upgrades[0].CostOfResearch, category == ResearchCategory.Upgrade ? info.AddOnTargetId : 0 ) );
+			var baseItem = new ResearchItem( info.InfoId, 0, category, info.ResearchGroup, info.Upgrades[0].CostOfResearch, category == ResearchCategory.Upgrade ? info.AddOnTargetId : 0 );
+			items.Add( baseItem );
+			TableOf( category ).Add( baseItem );
 			// [BIN:TPW-EXE:0x00504580 upgrade level project] an object whose own category is not 4 gets its next level's project in category 4, group 0, once the level below is
 			// researched (levels 1 and 2; a level without research cost is researched at once); on the shipped data only rides have such levels
 			if ( category == ResearchCategory.Upgrade )
 				continue;
 			for ( var level = 1; level < Math.Min( info.Upgrades.Count, 3 ); level++ )
 				items.Add( new ResearchItem( info.InfoId, level, ResearchCategory.Upgrade, 0, info.Upgrades[level].CostOfResearch, info.InfoId ) );
+			// [BIN:TPW-EXE:0x005031C5 research table fill] a base without research cost is researched at once and its next level's project joins the table at this point of the walk (0x00504580)
+			if ( baseItem.Cost == 0 )
+				AppendNextLevel( baseItem );
 		}
 		foreach ( var item in items )
-		{
 			itemKeys.Add( (item.InfoId, item.Level) );
-			if ( !byCategory.TryGetValue( item.Category, out var list ) )
-				byCategory[item.Category] = list = new List<ResearchItem>();
-			list.Add( item );
-		}
 		// [BIN:TPW-EXE:0x005031E5 research table fill] the fill 0x005031A0 (from the lab's start 0x00502D60) marks a choosable type (+0x508 = 0, Info.WhichUIType below 4)
 		// researched (its control record +0x10 = 1, 0x0050320A) only when Upgrades[0].CostOfResearch (+0x180) is 0, with no group, category or add-on target test;
 		// every other type, group 0 included ("0 = Available initially" in the category files), becomes a lab project; the only other writer of the flag is the
@@ -72,7 +76,75 @@ public sealed class ParkResearch
 		RebuildGroupStats();
 		OpenGroups();
 		PropagateFreeItems();
+		initialUpgradeTable = TableOf( ResearchCategory.Upgrade ).ToList();
 	}
+
+	private List<ResearchItem> initialUpgradeTable = new();
+
+	private List<ResearchItem> TableOf( ResearchCategory category )
+	{
+		if ( !byCategory.TryGetValue( category, out var list ) )
+			byCategory[category] = list = new List<ResearchItem>();
+		return list;
+	}
+
+	/// <summary>
+	/// Appends the project of the next level above a researched <paramref name="item"/> of an object that is no add-on to the end of the category-4 table: the first level above it
+	/// with a research cost; a free level in between is researched at once (<see cref="PropagateFreeItems"/>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x00504580 upgrade level project] an object whose own category is not 4 takes its next level above the researched one (+0x14) that has a research cost (+0x180 + 0x40 × level) as a new project (category 4, group 0, the cost, no progress); levels without a cost are marked researched on the way; the lab's completion handler 0x00503D40 calls it at 0x00503D8C, the table fill at its end
+	private void AppendNextLevel( ResearchItem item )
+	{
+		if ( !catalog.TryGet( item.InfoId, out var info ) || info.ResearchCategory == ResearchCategory.Upgrade )
+			return;
+		for ( var next = item.Level + 1; next < Math.Min( info.Upgrades.Count, 3 ); next++ )
+		{
+			if ( info.Upgrades[next].CostOfResearch <= 0 )
+				continue;
+			var project = items.FirstOrDefault( entry => entry.InfoId == item.InfoId && entry.Level == next );
+			var table = TableOf( ResearchCategory.Upgrade );
+			if ( project != null && !table.Contains( project ) )
+				table.Add( project );
+			return;
+		}
+	}
+
+	/// <summary>The category-4 table in order: the add-on projects and the level projects as they were appended (saved and restored with the lab).</summary>
+	internal IReadOnlyList<(int InfoId, int Level)> UpgradeTable => TableOf( ResearchCategory.Upgrade ).Select( item => (item.InfoId, item.Level) ).ToList();
+
+	/// <summary>
+	/// The table to save: null while it is the one a restore rebuilds without it (a new park's, plus the level projects of the completed projects in scan order), so a park save
+	/// carries the order only once the completions have made it differ.
+	/// </summary>
+	internal IReadOnlyList<(int InfoId, int Level)>? UpgradeTableToSave
+	{
+		get
+		{
+			var expected = initialUpgradeTable.ToList();
+			var current = TableOf( ResearchCategory.Upgrade );
+			var saved = current.ToList();
+			current.Clear();
+			current.AddRange( expected );
+			foreach ( var item in items.Where( item => completed.Contains( (item.InfoId, item.Level) ) ).ToList() )
+				AppendNextLevel( item );
+			var rebuilt = current.Select( item => (item.InfoId, item.Level) ).ToList();
+			current.Clear();
+			current.AddRange( saved );
+			var actual = saved.Select( item => (item.InfoId, item.Level) ).ToList();
+			return rebuilt.SequenceEqual( actual ) ? null : actual;
+		}
+	}
+
+	/// <summary>The position of a directory in the original's object scan (Rides, Features, Upgrades, Shops, Sideshow).</summary>
+	private static int ScanRank( ParkObjectKind kind ) => kind switch
+	{
+		ParkObjectKind.Ride => 0,
+		ParkObjectKind.Feature => 1,
+		ParkObjectKind.Upgrade => 2,
+		ParkObjectKind.Shop => 3,
+		ParkObjectKind.Sideshow => 4,
+		_ => 5
+	};
 
 	/// <summary>The lab's work load percentage (<c>Research.StartingWorkLoad</c>, 0–100).</summary>
 	public int Workload { get; private set; }
@@ -114,6 +186,7 @@ public sealed class ParkResearch
 			return;
 		var stats = groupStats[(item.Category, item.Group)];
 		groupStats[(item.Category, item.Group)] = (stats.Count, stats.Done + 1);
+		AppendNextLevel( item );
 	}
 
 	// [BIN:STP-PPC:0x100F15B4 research group opener] with h the category's highest open group, the items of groups <= h are counted; while done × 100 / count (unsigned) reaches ResearchTech[h + 1].PercentageForThisTech and h <= 6, h rises by one
@@ -150,7 +223,7 @@ public sealed class ParkResearch
 
 	/// <summary>The item a category is currently researching, or null when nothing is researchable.</summary>
 	// [BIN:STP-PPC:0x100F0EF0 research cursor] each category researches the first item in table order whose group is open and which is not yet researched; cost is never compared
-	// [APPROX:ECON-017] a new park's research table is in info-id order, where the original fills it in its object loader's order (0x5031A0 over 0x412E60 / 0x412E70, no sort on that path); the cursor steps with the arrows (0x4AA0C0 → 0x5034F0 / 0x5036A0) and moves on after a completed project (0x4AAEC0) to the next eligible project in table order with wrap, as the original's picker does, but the original appends an object's next level project to the end of the table only when the level below completes (0x503D40 → 0x504580 at 0x503D8C), where OpenTPW lists every level right after its base project, so after a level completes the two cursors can land on different projects; the picker's second test for an add-on whose target has a golden-ticket cost (+0xC4 > 0 → 0x4D4B70 over the set at 0xF7C58C) is not modelled; the shipped Jungle lab lists its projects in another order (rides 1140, 1150, 1108, …; features 1414 before 1400), which an imported park follows for its current projects only — evidence needed: the enumeration order of the object loader 0x413930 / 0x413C10, and what the set at 0xF7C58C holds
+	// [APPROX:ECON-017] a new park's research table follows the original's object scan (Rides, Features, Upgrades, Shops, Sideshow, each directory in archive-name order: 0x413140, then the fill 0x5031A0 over 0x412E60 / 0x412E70 with no sort; the shipped Jungle Easymode lab's order matches), a level project joins the category-4 table at its end when the level below completes (0x503D40 → 0x504580 at 0x503D8C, or at the base's turn in the fill when the base is free), the cursor steps and moves on as the original's picker does (0x4AA0C0 → 0x5034F0 / 0x5036A0, 0x4AAEC0) and its add-on test holds a target with a golden-ticket cost to the ticket set (0x4D4B70 over 0x5AF780), but OpenTPW lists a project for every buyable object with research levels, where the fill skips a type whose word +0x508 is set (1 when the type's model load 0x4629D0 gave 0, 0x414305): the shipped Easymode lab holds 24 projects and none for the coasters 1185 and 1190, Sun God 1106 and seven of the features that OpenTPW lists — evidence needed: why those types have no model result in that game, and so which projects a normal game's lab holds
 	// Host UI selection below retains the native default cursor; correspondence with native player selection remains unverified.
 	public ResearchItem? Current( ResearchCategory category )
 	{
@@ -182,13 +255,23 @@ public sealed class ParkResearch
 	}
 
 	private bool IsSelectable( ResearchItem item ) =>
-		!completed.Contains( (item.InfoId, item.Level) ) && IsGroupOpen( item.Category, item.Group ) && PrerequisiteMet( item );
+		!completed.Contains( (item.InfoId, item.Level) ) && IsGroupOpen( item.Category, item.Group ) && PrerequisiteMet( item )
+		&& (item.Category != ResearchCategory.Upgrade || TableOf( ResearchCategory.Upgrade ).Contains( item ));
+
+	/// <summary>Whether the player owns an object bought with golden tickets (the profile's set, tp.exe <c>0x004D4B70</c> over <c>0x00F7C58C</c>); null: every one.</summary>
+	internal Func<int, bool>? OwnsTicketItem { get; set; }
 
 	private bool PrerequisiteMet( ResearchItem item )
 	{
 		if ( item.Level > 0 )
 			return IsAvailable( item.InfoId, item.Level - 1 );
-		return item.RequiresInfoId == 0 || IsAvailable( item.RequiresInfoId );
+		if ( item.RequiresInfoId == 0 )
+			return true;
+		if ( !IsAvailable( item.RequiresInfoId ) )
+			return false;
+		// [BIN:TPW-EXE:0x005034F0 add-on picker] a category-4 project is eligible when the object its AddOn.UpgradesId names (+0x284, else the project's own id) is researched and, when that
+		// object has a golden-ticket cost (+0xC4 above 0), the player's set of ticket-bought items (0x005AF780 through 0x004D4B70) holds it
+		return !(catalog.TryGet( item.RequiresInfoId, out var target ) && target.GoldenTicketCost > 0 && OwnsTicketItem?.Invoke( item.RequiresInfoId ) == false);
 	}
 
 	/// <summary>Whether a researcher in this state does research (the original skips states 3, 4 and 5 of 0x100F4170).</summary>
@@ -283,7 +366,8 @@ public sealed class ParkResearch
 		return true;
 	}
 
-	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort, IEnumerable<(ResearchCategory Category, int InfoId, int Level)>? restoredCurrent = null )
+	internal void Restore( IEnumerable<(int InfoId, int Level)> restoredCompleted, IEnumerable<((int InfoId, int Level) Key, long Points)> restoredProgress, IReadOnlyList<int> restoredEffort, IEnumerable<(ResearchCategory Category, int InfoId, int Level)>? restoredCurrent = null,
+		IReadOnlyList<(int InfoId, int Level)>? upgradeOrder = null )
 	{
 		selected.Clear();
 		completed.Clear();
@@ -293,6 +377,7 @@ public sealed class ParkResearch
 				throw new InvalidDataException( $"Saved research refers to unknown item {key.InfoId} level {key.Level}." );
 			completed.Add( key );
 		}
+		RestoreUpgradeTable( upgradeOrder );
 		RebuildGroupStats();
 		Array.Clear( highestGroup );
 		OpenGroups();
@@ -307,6 +392,31 @@ public sealed class ParkResearch
 			if ( item == null || !IsSelectable( item ) || !selected.TryAdd( category, item ) )
 				throw new InvalidDataException( $"Saved research cursor refers to an invalid project {infoId} level {level}." );
 		}
+	}
+
+	/// <summary>
+	/// Puts the category-4 table back: in the saved order when there is one (a lab's saved projects, a park save's field), else the table a new park starts with plus the level projects the
+	/// completed projects append, in scan order (the order of completion is not kept in older saves).
+	/// </summary>
+	private void RestoreUpgradeTable( IReadOnlyList<(int InfoId, int Level)>? upgradeOrder )
+	{
+		var table = TableOf( ResearchCategory.Upgrade );
+		table.Clear();
+		if ( upgradeOrder != null )
+		{
+			foreach ( var key in upgradeOrder )
+			{
+				var project = items.FirstOrDefault( entry => entry.InfoId == key.InfoId && entry.Level == key.Level && entry.Category == ResearchCategory.Upgrade );
+				if ( project == null )
+					throw new InvalidDataException( $"Saved research table refers to unknown category-4 project {key.InfoId} level {key.Level}." );
+				if ( !table.Contains( project ) )
+					table.Add( project );
+			}
+			return;
+		}
+		table.AddRange( initialUpgradeTable );
+		foreach ( var item in items.Where( item => completed.Contains( (item.InfoId, item.Level) ) ).ToList() )
+			AppendNextLevel( item );
 	}
 
 	internal IEnumerable<(ResearchCategory Category, int InfoId, int Level)> CurrentEntries =>

@@ -395,7 +395,11 @@ and the object catalog's cache key will include `ModSet.Digest`; an unmodded sav
 - sound draws do not change the hash, and a run with a sound chooser hashes like
   a headless one;
 - a pinned hash of a fixed run, checked in every test process
-  (`0x7AED41D19433D4B2`, schema 20: the world generator (DET-013 to DET-015). Guests, staff, the economy's staff pool and the scripts draw from the original's one
+  (`0xC92A25B3D77EAE17`, schema 20: the attractions' six 30-day daily rings (ECON-057) join the economy digest through the park save's optional `Rings` field, written once a ring holds
+  a running value or a day: the synthetic park's shop and its sales make today's customers, takings and costs non-zero, so the digest changes; the hash without the
+  ring field is the previous pin `0x7AED41D19433D4B2`, so no simulated behaviour moved. The challenge system's exact times (`NextOfferSeconds`, `DeadlineSeconds`), the carried object and the
+  challenge update on every park turn (ECON-055, ECON-058) add optional save fields that are written only when they differ from the defaults. Before that,
+  `0x7AED41D19433D4B2`, schema 20: the world generator (DET-013 to DET-015). Guests, staff, the economy's staff pool and the scripts draw from the original's one
   generator (`0x516330`), so `world_rng_state` is one state where there were three; a guest is created with the original's draw order (base speed, the eight starting
   values, the reseed with its id `0x4FB19E`, the sprite variant and, for an arrival, the entrance side and sideways byte), so its speed, offsets, lane and every draw
   after it move, and the staff pool, the scripts' RAND and the bump and tour rides move with the shared stream; placed objects' scripts draw from the generator

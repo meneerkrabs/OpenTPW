@@ -774,14 +774,14 @@ public sealed partial class ParkHud
 			if ( lastLevelMessage.StartsWith( "Cannot build", StringComparison.Ordinal ) )
 			{
 				// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
-				// [APPROX:AUDIO-009] the traced 0x1D callers are buy and hire money and limit checks (tp.exe 0x4879d0, 0x4ac590, 0x4af500); no placement-tool site was found (the build tool's click handler 0x52496e plays only cat_ui 0xAF), and the object-placement refusal cases of its tool switch were not enumerated
+				// [APPROX:AUDIO-009] tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0: a cost above the money; the helper 0x486ae0, whose only caller is the hire window 0x4af480) and the build tools' code (0x524960-0x535100) plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90, so a refused placement plays nothing in the original: this feedback is an OpenTPW addition (EXT candidate)
 				PostMessage( strings.Extra( OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}
 
 		// [BIN:TPW-EXE:0x485780 UI message hook] a 0x100 (activated) message plays cat_ui event 0x1F, or 0xBD when the control's construction style (+0x48) has bit 0x10 (0x4857cb)
-		// [APPROX:AUDIO-004] which original controls are created with style bit 0x10 is not traced, so the view always plays 0x1F
+		// [APPROX:AUDIO-004] the controls created with style bit 0x10 are the list row templates and the table builder's type 3 controls (docs/AUDIO.md); which of them are activated and map to OpenTPW controls is not read, so the view always plays 0x1F
 		if ( !overUi && !consumed && input.LeftPressed )
 			GameAudio.PlayUi( ParkViewClickEvent );
 

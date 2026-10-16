@@ -21,7 +21,7 @@ namespace OpenTPW;
 // [BIN:STP-PPC:0x101033cc-0x101034c4 lightning] while the lightning band holds, the countdown falls by LightningCountdownSpeed each turn and a strike resets it to rand % LightningCountdownFrom; the bolt count resets outside the band
 // [BIN:STP-PPC:0x10103438-0x1010346c thunder] a strike sets the thunder countdown to max(0, ThunderStartsThisFarAway − bolts) + rand % ThunderRandomiser when it is idle (bolts fired this period, before the strike)
 // [BIN:STP-PPC:0x101034c8-0x10103518 thunder at the top] the thunder plays at the last bolt's top (x, 300, z) when its countdown ends
-// [APPROX:AUDIO-025] December is row 4 of the season roll (season = the FILETIME date's month / 3, tp.exe 0x4f8770: wMonth 1-12, Mac 0x101037D4): its tolerance and chance are DaysOfWarning (+0x4B8) and DaysBetweenChanges (+0x4BC), confirmed; its average is the word at +0x4B4 between the Seasons array and DaysOfWarning (tp.exe 0x7854f4, .bss, no code reference), which only the .sam loader can write — 4 stands for it
+// [BIN:TPW-EXE:0x512e10 December's season row] December is row 4 of the season roll (season = the FILETIME date's month / 3, tp.exe 0x4f8770: wMonth 1-12, Mac 0x101037D4): its tolerance and chance are DaysOfWarning (+0x4B8) and DaysBetweenChanges (+0x4BC), and its average is the word at 0x7854f4 right after the Seasons array, which is the array's count slot: the .sam loader zeroes it (0x4013e0) and raises it to the highest stored element index + 1 on every value it stores (0x4017a0), so it holds the number of seasons present in the files (4 in every shipped Standard and Online_Standard layer)
 // [BIN:TPW-EXE:0x51295c weather roll and apply] everything runs on game-clock timestamps (0x4f8690; the unit is 10^7 per second, 0x4f8770), not day indices: a roll happens when now >= lastChanged (+0x10) + max(0, DaysBetweenChanges - DaysOfWarning) days and no forecast is pending (flag +0x2c); the forecast handler (0x5127a0) stores the pending time now + DaysOfWarning days (+0x20), the quality (+0x28), the flag and mLastForecasted; the apply (now >= +0x20, unless mOverridden +0x64) runs the converter 0x512f00, which sets the quality and lastChanged = now (0x512f5b), and the same tick falls through to the roll test
 // [BIN:TPW-EXE:0x511f70 weather constructor] quality = the season's roll (0x512e10), lastChanged = 0, drops, target and lightning 0, wind 90/0.5; the converter 0x512f00 is not called, so the constructed quality has no effect (no rain or snow) and, because lastChanged is 0, the first update rolls a forecast at once, applied DaysOfWarning days later
 // [BIN:TPW-EXE:0x4f8690 weather clock] "now" is the calendar's FILETIME base plus floor(rate +0x1c (15000) x world turn +0x1da70c / 4) x 10^7 (0x4f8690 -> 0x5fc530), whole seconds that change only with the park turn, which is ParkCalendar.Seconds (turn x 3750); lastChanged = 0 (the year 1601) lies before every such time, so the first update rolls at once, as the first step does here
@@ -367,7 +367,7 @@ public sealed class ParkWeather
 	}
 
 	/// <summary>The season's roll (<c>sub_1037d4</c>): exceptional weather with the season's chance, otherwise the season's average and tolerance.</summary>
-	private int Roll( long tick )
+	internal int Roll( long tick )
 	{
 		var month = ParkCalendar.ToDate( tick ).Month;
 		var season = month / 3;
@@ -380,8 +380,8 @@ public sealed class ParkWeather
 		}
 		else
 		{
-			// [APPROX:AUDIO-025] December reads past the table (the fork's reading of the Mac row)
-			average = settings.Averages.Count;
+			// [BIN:TPW-EXE:0x512e10 December's row] one row past the table: the average is the array's count slot (0x7854f4)
+			average = settings.SeasonCount;
 			tolerance = settings.DaysOfWarning;
 			chance = settings.DaysBetweenChanges;
 		}
@@ -459,7 +459,7 @@ public sealed class ParkWeather
 	/// <summary>The weather keys the sim reads, with the shipped values where a layer does not set them.</summary>
 	private sealed record WeatherSettings(
 		IReadOnlyList<int> Averages, IReadOnlyList<int> Tolerances, IReadOnlyList<int> Chances,
-		int DaysOfWarning, int DaysBetweenChanges, int SpeedOfChange,
+		int SeasonCount, int DaysOfWarning, int DaysBetweenChanges, int SpeedOfChange,
 		int SnowLow, int SnowHigh, int RainLow, int RainHigh, int LightningLow, int LightningHigh,
 		int LightningCountdownSpeed, int LightningCountdownFrom, int ThunderStartsThisFarAway, int ThunderRandomiser, int MaxRaindrops, int LightningTime )
 	{
@@ -479,7 +479,11 @@ public sealed class ParkWeather
 				tolerances[season] = standard.GetInt( $"Seasons[{season}].NormalTolerance", DefaultTolerances[season], optional: true );
 				chances[season] = standard.GetInt( $"Seasons[{season}].ChanceForExceptionalWeather", DefaultChances[season], optional: true );
 			}
-			return new WeatherSettings( averages, tolerances, chances,
+			// The array's count slot is the highest stored index + 1 over every Seasons[i] key (0x4017a0); the shipped layers all store 4 seasons.
+			var stored = new[] { "AvgWeatherQuality", "NormalTolerance", "ChanceForExceptionalWeather" }
+				.SelectMany( suffix => standard.GetIndices( "Seasons", suffix ) ).DefaultIfEmpty( -1 ).Max();
+			var seasonCount = stored >= 0 ? stored + 1 : DefaultAverages.Length;
+			return new WeatherSettings( averages, tolerances, chances, seasonCount,
 				standard.GetInt( "Weather.DaysOfWarning", 4, optional: true ),
 				standard.GetInt( "Weather.DaysBetweenChanges", 7, optional: true ),
 				standard.GetInt( "Weather.SpeedOfChange", 20, optional: true ),

@@ -438,7 +438,7 @@ public sealed class UiButton : UiElement
 		if ( !Enabled )
 			return;
 		// [BIN:TPW-EXE:0x485780 UI message hook] a global hook, installed once by the UI init 0x489ca0 (via 0x6590ea, stored at 0xfaa5fc) and never removed, is called by the dispatchers 0x658d9f and 0x658e42 for every control message before the control's own procedure (unless the control's destroyed byte +4 is set); for message 0x100 on any control it plays cat_ui 0x1F (0xBD when the control's style word +0x48 has bit 0x10, 0x4857cb), so every activated button plays it, front end included
-		// [APPROX:AUDIO-004] 0xBD plays for a control whose construction style (+0x48, tp.exe 0x65bcad arg 2) has bit 0x10; which original controls are created with it is not traced, so no OpenTPW control plays it
+		// [APPROX:AUDIO-004] 0xBD plays for a control whose construction style (+0x48, tp.exe 0x65bcad arg 2) has bit 0x10; the creation sites with that bit are the list row templates (0x4938c0, 0x4944d0, 0x496cea, 0x4b4c70) and the table builder's type 3 controls (0x6604a1-0x661144), the traced button sites use styles 0, 1 and 0x21; which of them are activated and map to OpenTPW controls is not read, so no OpenTPW control plays it
 		GameAudio.PlayUi( GameAudio.ClickEvent );
 		Clicked?.Invoke();
 	}

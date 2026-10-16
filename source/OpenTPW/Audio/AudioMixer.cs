@@ -108,7 +108,7 @@ public sealed class AudioVoice
 		{
 			var (distanceGain, pan) = AudioListener.Placement( place, Range );
 			// [EXT:inaudible-loop-advance] inaudible positioned voices advance silently; loops remain available when the listener returns, without recreating the event
-			// [APPROX:AUDIO-018] constant-power pan by the source's bearing against the listener — the original's pan law (QSound's processing) is not read
+			// [APPROX:AUDIO-018] constant-power pan by the source's bearing against the listener — [BIN:QMIXER-DLL:0x18009dc0 channel parameters] the mixer derives distance, azimuth and elevation from the position (0x18009f32, 0x18009f49); the stage that turns the azimuth into left/right levels was not found
 			var angle = (pan + 1) * MathF.PI / 4;
 			leftScale = distanceGain * MathF.Cos( angle );
 			rightScale = distanceGain * MathF.Sin( angle );
@@ -128,7 +128,7 @@ public sealed class AudioVoice
 			float left, right;
 			if ( channels == 1 )
 			{
-				// [APPROX:ADVISOR-012] Mono samples are duplicated to both channels; the original submits the advisor's speech unpositioned (0x51BFC0 with 0,0,0) and the library places flat sounds at (0,1,0) (0x6BC51D), the left/right levels come from QMixer (AUDIO-018) — evidence needed: QMixer or a capture
+				// [APPROX:ADVISOR-012] Mono samples are duplicated to both channels; the original submits the advisor's speech unpositioned (0x51BFC0 with 0,0,0) and the library places flat sounds at (0,1,0) (0x6BC51D), the left/right levels come from the mixer (AUDIO-018); QSWaveMixConfigureChannel splits the mode word into 0x7f000000 and 0xff0000 parts (QMixer.dll 0x180012f8-0x18001316) and what a flat voice's mode does there is not read — evidence needed: that stage or a capture
 				left = right = samples[index] + (samples[next] - samples[index]) * fraction;
 			}
 			else

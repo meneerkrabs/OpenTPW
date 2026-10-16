@@ -47,6 +47,21 @@ public class StaffWindowTests
 	}
 
 	[TestMethod]
+	public void TheTrendArrowShowsWhetherTheLastClosedMonthLostMoney()
+	{
+		// [BIN:TPW-EXE:0x4a0e30 date refresh] frame 1 when the newest money-out sample exceeds the newest money-in sample; empty rings tie, so the frame is 0
+		var economy = EconomyTestData.Park();
+		var hud = Hud( economy );
+		Assert.AreEqual( 0, hud.CashTrendFrame, "before the first month closes both rings are empty" );
+		var mechanic = EconomyTestData.HireBest( economy, StaffType.Mechanic );
+		economy.AdvanceMonths( 1 );
+		var closed = economy.Ledger.History[^1];
+		Assert.IsTrue( closed.MoneyOut > closed.MoneyIn, "a month with only a wage spent more than it took" );
+		Assert.AreEqual( 1, hud.CashTrendFrame );
+		Assert.IsNotNull( mechanic );
+	}
+
+	[TestMethod]
 	public void TheHireBalanceIsTakenWhenTheWindowOpens()
 	{
 		var economy = EconomyTestData.Park();
@@ -313,6 +328,35 @@ public class VisitorsWindowTests
 		hud.Stack.Top!.Find( "headerCash" )!.Activate();
 		CollectionAssert.AreEqual( new[] { 1, 3, 2 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "the same column reverses" );
 		Assert.AreEqual( (1, true), hud.VisitorSort );
+	}
+
+	[TestMethod]
+	public void TheRefreshKeepsTheRowOrderUntilAHeaderPress()
+	{
+		// [BIN:TPW-EXE:0x00493230 refresh] timer 0x80083 rewrites the cells in place (0x6644ea) and never sorts; only a header press (0x665a44) does
+		var guests = new[] { Visitor( 1, money: 90 ), Visitor( 2, money: 10 ), Visitor( 3, money: 50 ) };
+		var hud = Hud( guests );
+		hud.OpenVisitorWindow();
+		hud.Stack.Top!.Find( "headerCash" )!.Activate();
+		CollectionAssert.AreEqual( new[] { 2, 3, 1 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray() );
+		guests[0].Money = 1;
+		hud.Stack.Top!.Update( Context( 2.1f ), UiInput.Idle( System.Numerics.Vector2.Zero ) );
+		CollectionAssert.AreEqual( new[] { 2, 3, 1 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "the refresh took the new cash but kept the order" );
+		hud.Stack.Top!.Find( "headerCash" )!.Activate();
+		CollectionAssert.AreEqual( new[] { 3, 2, 1 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "a header press sorts the list again by the new values (the same column reverses)" );
+	}
+
+	[TestMethod]
+	public void ANewRowGoesBeforeTheFirstRowItSortsStrictlyBefore()
+	{
+		// [BIN:TPW-EXE:0x0066403b sorted row insert, 0x00663edc compare] ties go after the equal rows, a row sorting before the head becomes the head
+		var order = new System.Collections.Generic.List<int> { 1, 2, 3 };
+		var values = new System.Collections.Generic.Dictionary<int, int> { [1] = 10, [2] = 20, [3] = 20, [4] = 20, [5] = 5, [6] = 99 };
+		var rows = ListRowOrder.Keep( order, new[] { 1, 2, 3, 4, 5, 6 }, id => id, ( added, row ) => values[added] < values[row] );
+		CollectionAssert.AreEqual( new[] { 5, 1, 2, 3, 4, 6 }, rows.ToArray() );
+		var descending = new System.Collections.Generic.List<int> { 3, 2, 1 };
+		rows = ListRowOrder.Keep( descending, new[] { 1, 2, 3, 4, 5, 6 }, id => id, ( added, row ) => values[row] < values[added] );
+		CollectionAssert.AreEqual( new[] { 6, 3, 2, 4, 1, 5 }, rows.ToArray() );
 	}
 
 	[TestMethod]

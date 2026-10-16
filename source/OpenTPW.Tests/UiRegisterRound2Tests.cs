@@ -78,6 +78,19 @@ public class UiRegisterRound2Tests
 	}
 
 	[TestMethod]
+	public void ThePostcardAndTheDeleteConfirmationsPauseThePark()
+	{
+		// [BIN:TPW-EXE:0x4a9380 postcard] pauses at 0x4a93d7; [BIN:TPW-EXE:0x48cd10 delete confirmation] is the message box 0x47f020, which pauses at 0x47f26c
+		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 2f, new[] { "hud", ParkHud.PostcardScreen } ) );
+		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 2f, new[] { "hud", "confirmDelete" } ) );
+		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 2f, new[] { "hud", "attractions", "confirmDeleteAttraction" } ) );
+		Assert.AreEqual( 2f, ParkHud.TimeScaleFor( 2f, new[] { "hud", "loanConfirm" } ), "the loan box is not mapped to a 0x47f020 call site" );
+		// the pause follows the open screens each frame and holds no state, so closing, Escape, a removed screen or a new park always resume the speed setting
+		Assert.AreEqual( 2f, ParkHud.TimeScaleFor( 2f, new[] { "hud" } ) );
+		Assert.AreEqual( 0f, ParkHud.TimeScaleFor( 0f, new[] { "hud", ParkHud.PostcardScreen } ), "the paused speed setting stays paused" );
+	}
+
+	[TestMethod]
 	public void TheResearchEffortSliderTruncatesButOtherSlidersRound()
 	{
 		var effort = new UiSlider { Track = new UiRect( 0, 0, 1067, 67 ), KnobSize = new System.Numerics.Vector2( 67, 67 ), Steps = () => 101, Truncates = true };

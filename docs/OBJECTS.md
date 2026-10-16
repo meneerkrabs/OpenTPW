@@ -317,12 +317,32 @@ parses and renders into parts, every animation binds, every script runs 30 s
 without faults. The native smoke test also builds the first bonus ride when the
 bonus root is set (observed: Dizzy Dinos animating).
 
+## Build rules (tp.exe's validator)
+
+The build tool's hover (`0x5234D0`) and click (`0x524960`) run the placement `0x528A70` over the footprint;
+each cell goes through cell op `0x204` (`0x532FC0`) into the validator `0x535670` with the cell type the
+footprint symbol asks for (4 for an occupied cell). For an object the validator refuses a cell flagged
+NoModify (0x20) or unowned (0x40), a fence post or track piece on the second layer (types 0x19, 0xB, 0xD,
+0x10, 0x12), a queue and any other non-empty type, and the build when the pending cost exceeds the balance
+(`0x52FBC0`, unless `0x785A2C`); it allows an empty cell, a path cell without NoModify (`0x535D21`, the
+commit then clears the path, `0x534549`) and an object cell whose owner has a lower **overwrite priority**:
+the hover loads the placed type's `Info.OverwritePriority` (type record +0x54, schema `0x745020`) into
+`0x818C10`, the validator the owner's into `0x818C14` and compares them (`0x535D66`). On commit cell op 0x87
+demolishes every such owner whole (`0x527EE0`, crediting its scrap value) before the new footprint is
+written. The path and queue tools use the same comparison with `0x818C10` = 2 and 3, so they may replace
+scenery. In the shipped catalogues rides, shops and sideshows have priority 5, small scenery (bushes,
+flowers, tiny rocks, speakers) 1 and the other features 0.
+
+OpenTPW follows the overwrite priority for objects (`ParkObjects.Check`, `TryPlace`) and refuses track,
+path and queue cells by their cell type (`Level`'s `IsReserved`); objects on path cells, the outside cells'
+path rule and paths or queues over scenery are still open (RIDES-018).
+
 ## Remaining gates
 
 Path parameters and the draw-path reader of texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
 TOUR controllers, kart controllers and track building (karts, water ride jumps and
 tunnels; Splish Splash runs its BUMP controller on a built circuit, [TRACKS.md](TRACKS.md)); visitor simulation behind the bridge; `.hmp` ground deformation;
-original build rules and costs; animation tick rate; the placement meaning of the cell types 1, 3, 11 and 16
+the open build rules above (RIDES-018); animation tick rate; the placement meaning of the cell types 1, 3, 11 and 16
 (`@`, `Q`, `+`, `#`); the object-list update route (RIDES-032).
 
 Open point, not registered and not implemented (found in RIDES round 2): in Instant Action (game type 2) the
@@ -345,7 +365,7 @@ Original-data values are tagged `// [DATA:<file>:<field>]`.
 | RIDES-011 | World/Objects/ObjectShape.cs | `+` is an overlay cell over the parent ride's track, the track ends `<` `>` station connections. The original placement `0x528A70` stamps `+`, `#` and the ends as occupied type 4 (`0x5290C7`–`0x5290EE`), checks `+` with cell op 0x10B and `#` with 0x110 and on commit writes the flags word 0x10 on the cell and its second-layer cell (`0x52950D`); an end with a direction needs the cell beyond it and on commit makes it type 0x15 (`0x5295F7`) | What cell ops 0x10B/0x110 require and what type 0x15 is |
 | RIDES-014 | World/Objects/ParkObjects.cs:153 | Base height = mean footprint ground height | `.hmp` format, captures on slopes |
 | RIDES-015 | World/Objects/ParkObjects.cs | Imported and built objects start open. The original constructor `0x4DB090` opens a built object, then closes one whose type has `Info.HasQueue` (def+0x40; `0x4DB712`–`0x4DB779`: open word 0, VAR_RIDECLOSED 1), so built rides with a queue start closed | TPWS ride state (save loader `0x415270`) |
-| RIDES-018 | World/Objects/ParkObjects.cs:113 | Build rules: grid, the original's map-start cell types (holes refused; `Blocked` surface cells buildable, as in tp.exe), save paths/objects, no overlap, owned land; no slope test (none in tp.exe either); Level enforces economy purchases | The object branches of tp.exe's validator 0x535670 (ride cells, entrance/exit cells, cost) |
+| RIDES-018 | World/Objects/ParkObjects.cs:120 | Build rules: grid, the original's map-start cell types (holes refused; `Blocked` surface cells buildable, as in tp.exe), save paths/objects, overlap by `Info.OverwritePriority` (a lower-priority object gives way and is demolished, as in tp.exe), owned land; no slope test (none in tp.exe either); Level enforces economy purchases | Objects on plain path cells (tp.exe allows them and clears the path), the entrance/exit outside cells' path rule, and paths and queues over scenery |
 | RIDES-019 | World/Objects/ParkObjects.cs | Levels without a save get Gates and Lights at setup, as the original's world setup (0x5156A0); the bus, seaplane and Ferry are placed when the arrival update first sends them (0x51A2F0, see GUESTS.md "Arrivals"). End is not created: the original creates it through 0x516B00 from the message handler 0x503D40 (message type 0x11). A Theme Park Inc world without a prebuilt save keeps a Bus from setup | What sends the End message; how Theme Park Inc places its arrival vehicle |
 | RIDES-021 | World/Level.Objects.cs | The cursor ray picks the clicked cell on the Z = 0 plane. The anchor taken from that cell is the original's (`0x528B44`: the cell less (W/2, H/2), then the rotation's 5 × 5 window offsets), so the click is local (W/2, H/2) when each side is odd or at most 5 cells; the only shipped exception is space 3104 Orbiter (6 × 3: local (3, 1) at 0°, (2, 2) at 90°) | The original's mouse-to-cell pick (`0x524960` → `0x528A70`) |
 | RIDES-023 | World/Objects/OriginalObjectRuntime.cs:125 | Completed cycle = VAR_RUNNING 1 → 0 | Original cycle/income accounting |

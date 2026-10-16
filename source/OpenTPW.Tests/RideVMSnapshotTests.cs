@@ -211,7 +211,7 @@ public class RideVMSnapshotTests
 		restored.RestoreSnapshot( snapshot, new Dictionary<int, RideVM> { [firstId] = candidate } );
 		Assert.AreEqual( snapshot.RandomState, restored.RandomState, "the restore drew nothing from the seed stream" );
 		Assert.AreEqual( world.NextAttractionId, restored.NextAttractionId );
-		Assert.AreEqual( world.NextScriptSeed(), restored.NextScriptSeed(), "the seed stream continues identically" );
+		Assert.AreEqual( world.World.NextWord(), restored.World.NextWord(), "the world generator continues identically" );
 		Assert.AreEqual( world.AllocateAttractionId(), restored.AllocateAttractionId() );
 
 		var nextOriginal = CreateRoot( Idle(), world, seed: null, "next.rse", null );

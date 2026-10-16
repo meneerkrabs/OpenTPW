@@ -21,7 +21,7 @@ it came from; only one carry runs at a time (a new pick-up drops the previous me
 
 Valid cell: inside the map, not unowned, type grass, path, queue or queue end, under no placed object or the prototype ride (GUEST-013: tp.exe `0x46cc40` also
 refuses a cell whose track record is a walkable track kind, and refuses object footprints by cell type rather than by occupancy). An invalid click
-does nothing and the tool stays. The cursor is `Input.CursorTypes.Carry` (the original's cursor 9; UI-100), an invalid hovered cell shows the blueprint's red
+does nothing and the tool stays. The cursor is `Input.CursorTypes.Carry` (the original's cursor 9; `[EXT:software-pointers]`), an invalid hovered cell shows the blueprint's red
 ground marker (UI-099).
 
 ## Saves

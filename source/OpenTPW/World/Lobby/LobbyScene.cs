@@ -11,7 +11,7 @@ namespace OpenTPW;
 /// hierarchy (parent-relative, docs/MD2-MODELS.md); MD2 (x, y-up, z) maps to engine (x, z, y-up).
 /// The island models play their own clips (<c>M1</c>/<c>M2</c>) and the flying meshes follow <see cref="LobbyFlyingMeshes"/>; rain and lightning come from LobbyEffects and the weather renderer.
 /// </summary>
-// [APPROX:UI-018] the gates stay closed: their opening and closing clips belong to the enter sequence (0x5e06e4, 0x5e136a), which is not built
+// [APPROX:UI-018] the enter sequence is not built, so the gates stay closed: tp.exe's enter (0x5e1e30, state 1) turns the camera to the island angle + π at 0.05 × step per frame, opens the gate with M1 (0x5e06e4) and zooms in under a black fade (state 2) until the radius is below 8 (0x5e1e50 starts the park); leaving early closes it with M2 (0x5e1350, 0x5e1890, 0x5e2360, 0x5e2660)
 public sealed class LobbyScene : OriginalModelScene
 {
 	private const string TerrainDirectory = "/lobby/terrain";

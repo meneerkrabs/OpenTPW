@@ -1323,12 +1323,14 @@ public sealed class ParkEconomy : IParkEconomy
 	/// A cell's map type and whether its structure record counts 50, from OpenTPW's cell map: a track tile keeps its type in the map's type byte as well as in the track
 	/// layer (the original's structure records), so its map type is taken as the empty cell's 0.
 	/// </summary>
-	// [APPROX:ECON-026] the cell points follow tp.exe 0x004C7DB0 on OpenTPW's cell map and its land (the cells without the unowned flag 0x40: the level fence's enclosure, the strip at the gate and Buy Land's purchases, or an imported save's saved flags, PATH-007), but a track tile's map type is taken as 0 (OpenTPW keeps the track's type in the map's type byte as well as in the track layer, where the original's map cell keeps its own type under the structure record) and the fence's hoardings (structure type 25) are not counted, 50 each in the original, because OpenTPW keeps the fence as a ring of posts (ParkLand) without structure records; a map without the level's land (a level without a fence setup, a Theme Park Inc map, a read-only visit) counts every cell over the terrain as owned — evidence needed: the map cell's type under a laid track tile (tp.exe's track tool 0x0053B280 and its callers) and the hoarding structure records the fence setup writes (0x005323F0)
+	// [APPROX:ECON-026] the cell points follow tp.exe 0x004C7DB0 on OpenTPW's cell map and its land (the cells without the unowned flag 0x40: the level fence's enclosure, the strip at the gate and Buy Land's purchases, or an imported save's saved flags, PATH-007), but a track tile's map type is taken as 0 (OpenTPW keeps the track's type in the map's type byte as well as in the track layer, where the original's map cell keeps its own type under the structure record) and the fence's hoardings (structure type 25) count 50 each on the owned post cells of the land's ring, one cell per post, where the original lays them with the track tool (0x005323F0 → 0x00524960 in mode 0x19, the positions from the level's Hoardings.sam) and their footprint is not read; a map without the level's land (a level without a fence setup, a Theme Park Inc map, a read-only visit) counts every cell over the terrain as owned — evidence needed: the map cell's type under a laid track tile (tp.exe's track tool 0x0053B280 and its callers) and the footprint of a hoarding piece (the cells that carry its structure record)
 	private static (byte Type, bool Structure) CellForValue( ParkCellMap cells, int x, int y )
 	{
 		var track = cells.Tracks.Get( x, y );
+		// [BIN:TPW-EXE:0x005323F0 park fence] the fence setup lays the level's Hoardings.sam clicks with the track tool in mode 0x19 (0x00524960), each post a structure record of type 25, which the net worth
+		// counts 50 for through 0x005363F0; the land keeps the posts as a ring (ParkLand), so a post cell is a structure cell here
 		if ( track.IsEmpty )
-			return (cells.RawTypeAt( x, y ), false);
+			return (cells.RawTypeAt( x, y ), cells.Land?.IsPost( x, y ) == true);
 		var record = track.Type;
 		if ( track.IsExtension && track.Parent >= 0 )
 		{

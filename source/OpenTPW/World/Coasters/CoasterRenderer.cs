@@ -193,6 +193,10 @@ public sealed class CoasterRenderer : Entity
 		public required int Car { get; init; }
 		/// <summary>The car-to-world matrix of the last update (original axes).</summary>
 		public Matrix4x4 World { get; set; } = Matrix4x4.Identity;
+		/// <summary>The controller time the car's wheel clip started at (set on the first update).</summary>
+		public double? StartSeconds { get; set; }
+		/// <summary>The models of the parts whose texture coordinates follow the car's own wheel clip (null for the shared ones), released with the car.</summary>
+		public Model?[]? OwnModels { get; set; }
 	}
 
 	/// <summary>
@@ -449,6 +453,11 @@ public sealed class CoasterRenderer : Entity
 			{
 				foreach ( var part in car.Parts )
 					part.Delete();
+				foreach ( var own in car.OwnModels ?? Array.Empty<Model?>() )
+				{
+					own?.ReleaseBuffers();
+					own?.Material.ReleaseOwnedResources();
+				}
 			}
 			cars.Clear();
 			carTriangles = 0;
@@ -472,12 +481,16 @@ public sealed class CoasterRenderer : Entity
 						continue;
 					var carModels = assets.GetCarModels( rig );
 					var parts = new ModelEntity[carModels.Length];
+					Model?[]? own = null;
 					for ( var part = 0; part < parts.Length; part++ )
 					{
-						parts[part] = new ModelEntity { Model = carModels[part], Name = "coaster car" };
+						// a part whose texture coordinates follow the car's wheel clip has a model of its own: every car turns its wheels at its own speed
+						if ( rig.AnimatesUv( part ) )
+							(own ??= new Model?[parts.Length])[part] = assets.CreateOwnPartModel( rig, part );
+						parts[part] = new ModelEntity { Model = own?[part] ?? carModels[part], Name = "coaster car" };
 						carTriangles += rig.Parts[part].Indices.Length / 3;
 					}
-					cars.Add( new CarInstance { Rig = rig, Parts = parts, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
+					cars.Add( new CarInstance { Rig = rig, Parts = parts, OwnModels = own, YOffset = typeIndex < types.Types.Count ? types.Types[typeIndex].YOffset : 0, Train = train, Car = car } );
 				}
 			}
 		}
@@ -499,9 +512,23 @@ public sealed class CoasterRenderer : Entity
 				car.World = CoasterCarRig.Matrix( pose, car.YOffset );
 				var transform = ObjectPlacement.SwapAxes( car.World ) * engine;
 				var position = new SVector3( transform.M41, transform.M42, transform.M43 );
-				foreach ( var part in car.Parts )
+				// [BIN:TPW-EXE:0x43ce20 wheel clip] a car of a non-bend type plays its model's clip at the type's factor × the train's speed: the parts of animated nodes follow it
+				Matrix4x4[]? wheels = null;
+				if ( car.Rig.WheelClip is { } clip )
 				{
-					part.TransformOverride = transform;
+					car.StartSeconds ??= Ride.TimeSeconds;
+					var tick = CoasterCarRig.WheelTick( (Ride.TimeSeconds - car.StartSeconds.Value) * 1000.0, Ride.Trains[car.Train].Speed, clip.Duration );
+					wheels = car.Rig.WheelPartMatrices( tick );
+					for ( var partIndex = 0; partIndex < car.Parts.Length; partIndex++ )
+					{
+						if ( car.OwnModels?[partIndex] is { } own && car.Rig.WheelVertices( partIndex, tick ) is { } vertices )
+							own.UpdateVertices( vertices );
+					}
+				}
+				for ( var partIndex = 0; partIndex < car.Parts.Length; partIndex++ )
+				{
+					var part = car.Parts[partIndex];
+					part.TransformOverride = wheels == null ? transform : ObjectPlacement.SwapAxes( wheels[partIndex] * car.World ) * engine;
 					part.Position = position;
 				}
 			}

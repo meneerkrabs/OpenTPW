@@ -75,6 +75,50 @@ public class CoasterPresentationAssetTests
 		Assert.AreEqual( 12, count );
 	}
 
+	/// <summary>
+	/// A non-bend car type plays its model's animation id 5 (the member <c>&lt;model&gt;m</c>: the mine cart's <c>cartm</c> and the Candy coaster's <c>carm</c>) at the type's factor times the train's speed;
+	/// the bend cars of the two flumes (the Croc and Maggot cars) do not, and the coasters whose archive has no such member have none.
+	/// </summary>
+	[TestMethod]
+	public void NonBendCarsPlayTheirWheelClipAtTheTrainsSpeed()
+	{
+		var withClip = new[] { 1180, 2180, 4190 };
+		foreach ( var entry in PcCoasters() )
+		{
+			var definition = CoasterDefinition.FromCatalogEntry( entry );
+			using var assets = new CoasterAssets( entry, definition );
+			var rig = assets.GetCar( definition.CarTypes.CentreIndex )!;
+			var bend = definition.CarTypes.Types[definition.CarTypes.CentreIndex].Bend;
+			Assert.AreEqual( entry.InfoId is 1185 or 2185, bend, $"{entry.InfoId}: the flumes' cars bend" );
+			Assert.AreEqual( withClip.Contains( entry.InfoId ), rig.WheelClip != null, $"{entry.InfoId}: the wheel clip" );
+			if ( rig.WheelClip is not { } clip )
+				continue;
+			// the PC clips animate the wheel meshes' texture coordinates (UV tracks, no node tracks): four wheel parts move their UV, the body keeps its own
+			var wheels = Enumerable.Range( 0, rig.Parts.Count ).Where( rig.AnimatesUv ).ToList();
+			Assert.AreEqual( 4, wheels.Count, $"{entry.InfoId}: four wheels" );
+			Assert.IsTrue( wheels.All( index => rig.Parts[index].MeshName.StartsWith( "mc_wheel", StringComparison.OrdinalIgnoreCase ) ), $"{entry.InfoId}: the wheels" );
+			Assert.IsTrue( rig.WheelPartMatrices( 3 ).All( matrix => matrix == System.Numerics.Matrix4x4.Identity ), $"{entry.InfoId}: no node moves" );
+			foreach ( var wheel in wheels )
+			{
+				var start = rig.WheelVertices( wheel, 0 )!;
+				var turned = rig.WheelVertices( wheel, clip.Duration / 2f )!;
+				Assert.AreEqual( rig.Parts[wheel].Vertices.Length, turned.Length );
+				Assert.IsTrue( Enumerable.Range( 0, turned.Length ).Any( corner => turned[corner].TexCoords != start[corner].TexCoords ), $"{entry.InfoId}: wheel {wheel} turns" );
+				Assert.IsTrue( Enumerable.Range( 0, turned.Length ).All( corner => turned[corner].Position == rig.Parts[wheel].Vertices[corner].Position ), $"{entry.InfoId}: only the coordinates move" );
+			}
+		}
+	}
+
+	/// <summary>The clip frame is the milliseconds since the start times speed (0.1 × the train's) times 0.03, wrapped into the clip.</summary>
+	[TestMethod]
+	public void TheWheelFrameIsTheElapsedTimeTimesTheScaledTrainSpeed()
+	{
+		Assert.AreEqual( 0f, CoasterCarRig.WheelTick( 5000, 0f, 20 ), "a train at rest holds the first frame" );
+		Assert.AreEqual( 1000 * (0.1f * 10f) * 0.03f % 20, CoasterCarRig.WheelTick( 1000, 10f, 20 ), 1e-4f, "one second at speed 10: 30 × 0.1 × 10 = 30 ticks, wrapped" );
+		Assert.AreEqual( 2000 * (0.1f * 4f) * 0.03f, CoasterCarRig.WheelTick( 2000, 4f, 90 ), 1e-4f );
+		Assert.AreEqual( 0f, CoasterCarRig.WheelTick( 100, 5f, 0 ), "no clip, no frame" );
+	}
+
 	/// <summary>The two flume sections: climbing is the dry section, flat track the wet one, both with the same points.</summary>
 	[TestMethod]
 	public void TheFlumesPickTheDrySectionWhenClimbing()

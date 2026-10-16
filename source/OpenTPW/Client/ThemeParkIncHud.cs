@@ -43,8 +43,9 @@ public sealed class ThemeParkIncHud
 	private int cursorY = -1;
 	/// <summary>Set by a press the path/queue tool used, so its release does not select an object.</summary>
 	private bool toolPress;
-	/// <summary>The refused path click's press latch: its sound plays at the release (GameAudio.PathRefusedEvent).</summary>
-	private readonly PathRefusalClick refusalClick = new();
+	/// <summary>The refused path click's press latch: its sound plays at the release (GameAudio.PathRefusedEvent); created on first use.</summary>
+	private PathRefusalClick? refusalClickState;
+	private PathRefusalClick refusalClick => refusalClickState ??= new();
 	private OriginalObject? selectedObject;
 	private bool retiredByLayoutLoad;
 

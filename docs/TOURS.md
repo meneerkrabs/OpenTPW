@@ -75,7 +75,7 @@ parts: a save without them restores with zero stale words. No schema version mov
 
 ## Not done
 
-Sounds and effects (TOUR-004), the car animations and shadow (TOUR-008), the pad's live-instance read and rotation identity (TOUR-003), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
+A shadow under the cars and the angle table's sines (TOUR-008: whether the original draws a shadow is not read), the pad's live-instance read and rotation identity (TOUR-003), the walk-off duration (TOUR-007), the mesh-derived and thing-owned ground (TOUR-005); see the register.
 
 ## Drawing
 
@@ -94,6 +94,23 @@ The pose is the original's draw pass `[BIN:TPW-EXE:0x0055CE60]` (`TourPose`):
 - Heads: TOUR 3 (`0x0055D830`) hangs rider i (0-based) on head node `((random + i + 1) mod heads) + 1`, with `random` the car's own random word (`+0xD8`, drawn at creation and saved) and `heads` the
   count of consecutively numbered head nodes of the car mesh (`+0xDC`, counted at `0x0055AA2D`); more riders than nodes share nodes. `TourPose.HeadNode` is a presentation function of that word:
   it draws nothing, so the simulation's random stream is untouched.
+
+## Sounds, effects and animations (TOUR-004 retired, TOUR-008 narrowed)
+
+The controller raises `TourEffect`s (`TourController.Effect`, presentation only: no world draw) and `OriginalObjectRuntime` plays them:
+
+- **Engine voice.** A new car starts the EventMap's variable 0 event in the level `cat_rides` at its place (`0x0055A944`, through `0x51EEB0`; the place is x / 300, height / 300, z / 300 in
+  sound units, truncated toward zero). Every state then sets its parameter (code = the EventMap's variable 10, `0x55A3E0`) through `0x51BC40`: 80 docked (`0x55B09F`) and on touchdown (`0x55BBF5`),
+  15 taking off (`0x55B65B`), 60 when broken else 30 for the cruising states and the descent (`0x55ACE4`/`0x55AD11` and the matching pairs). At the end of every car's tick the voice moves to the car
+  (`0x55C20A`); removing the car stops it (`0x0055CDA0`, `0x51C2C0`). The voice is a sentence with the placeholder's parameter table, as the karts' (docs/TRACKS.md, "Engine voice").
+- **Clips.** `0x0055AA80` triggers the car mesh's clip on channel 0 only when (animation, channel, loops) changes; creation resets the last trigger to −1 (`0x0055A8D9`), so the creation's
+  animation 0 always plays. The animations are 0 created, 3 landed, 4 taking off (loops), 5 flying (loops), 6 descending, 9 flying broken (loops), 10 repaired. `TourRenderer` plays them from the car
+  mesh's own letter members (`Bird.md2`: `BirdC` 0, `BirdL` 3, `BirdS` 4, `BirdM` 5, `BirdE` 6, `BirdB` 9, `BirdR` 10) with an `ObjectAnimator` per car instance, advanced by the world step; the
+  birds flap by vertex tracks (each car moves its own copy of the mesh), the riders' heads and the smoke follow the animated nodes. `TourCar.AnimationSerial` counts the triggers (presentation, not saved).
+- **TOUR 9.** Worn (2) replaces the first car's emitter by particle 39 (`P_EFFECT_FlySmoke`) created at the car's raw module coordinates taken as particle units (`0x0055DB95`, unlike 3 and 4);
+  broken (3, 4) by particle 40 (`P_EFFECT_FlyFire`) at the car's place, `(x << 10) / 300` (`0x0055DBD8`); mended (1) on a broken car triggers clip 10, plays the global `cat_rides` sound 0xBB at the car
+  (`0x0055DB2B`) and destroys the emitter (`0x0055DB6B`). Every draw moves a live car's emitter to its node class 0x100 number 1 (`0x0055CE60`, `0x51FE30`). The emitter is saved with the car
+  (`TourCarSaveData.Emitter`, optional, 0, 39 or 40; not hashed) and restarted on resume, with the engine voices.
 
 ## Object ground (TOUR-005)
 

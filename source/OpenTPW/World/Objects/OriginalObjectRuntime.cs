@@ -468,9 +468,10 @@ public sealed partial class OriginalObjectRuntime
 	private static QueueParameters QueueParametersFor( ObjectCatalogEntry entry, ObjectUpgradeLevel? level )
 	{
 		var settings = entry.Settings;
-		static int Clamp( int value, int minimum, int maximum ) => maximum >= minimum && maximum > 0 ? Math.Clamp( value, minimum, maximum ) : value;
-		var capacity = Clamp( level?.GetInt( "InitCapacity" ) ?? 0, settings.GetInt( "UsageInfo.MinCapacity" ), settings.GetInt( "UsageInfo.MaxCapacity" ) );
-		var duration = Clamp( level?.GetInt( "InitDuration" ) ?? 0, settings.GetInt( "UsageInfo.MinDuration" ), settings.GetInt( "UsageInfo.MaxDuration" ) );
+		// the CAPACITY (+0x5d) and DURATION (+0x5c) words as ride init writes them with script variables 2 and 3 (0x4db54f, 0x4db565): the setters' clamps, only for a value above 0; 0 otherwise
+		var initCapacity = level?.GetInt( "InitCapacity" ) ?? 0;
+		var capacity = initCapacity > 0 ? ClampCapacity( settings, initCapacity ) : 0;
+		var duration = ClampInitDuration( settings, level?.GetInt( "InitDuration" ) ?? 0 ) ?? 0;
 		var initSpeed = level?.GetInt( "InitSpeed" ) ?? 0;
 		var trackType = settings.GetInt( "Bumper.WhichTrackType" );
 		return new QueueParameters( entry.HasQueue, settings.GetBool( "Info.RunsContinuously" ), trackType is 2 or 3,

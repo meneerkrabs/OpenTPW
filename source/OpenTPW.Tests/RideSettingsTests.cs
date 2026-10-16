@@ -145,6 +145,27 @@ public class RideSettingsTests
 		candidate.RestoreSnapshot( snapshot );
 		Assert.AreEqual( new RideSettingWords( 60, 5, 30 ), candidate.Settings );
 		Assert.ThrowsException<InvalidDataException>( () => (snapshot with { RideCapacity = 256 }).ValidateSnapshot() );
-		Assert.ThrowsException<InvalidDataException>( () => (snapshot with { RideSpeed = -1 }).ValidateSnapshot() );
+		( snapshot with { RideSpeed = -1 } ).ValidateSnapshot();
+	}
+
+	[TestMethod]
+	public void AFullDwordSpeedWordSurvivesTheSnapshot()
+	{
+		var entry = Entry();
+		var world = new RideScriptWorld();
+		var source = new OriginalObjectRuntime( entry, world, seed: 7 );
+		source.SetSpeed( 70000 );
+		var snapshot = source.CaptureSnapshot();
+		Assert.AreEqual( 70000, snapshot.RideSpeed, "ride +0x58 is a dword; only the script's bias word +0xc0 is a short" );
+		var json = System.Text.Json.JsonSerializer.Serialize( snapshot );
+		var back = System.Text.Json.JsonSerializer.Deserialize<OriginalObjectRuntimeSnapshot>( json )!;
+		back.ValidateSnapshot();
+		var scripts = world.CaptureSnapshot();
+		var restoredWorld = new RideScriptWorld();
+		var candidate = OriginalObjectRuntime.CreateForRestore( entry, restoredWorld, 7, source.IsOpen, back.AttractionId );
+		candidate.RestoreSnapshot( back );
+		restoredWorld.RestoreSnapshot( scripts, new Dictionary<int, RideVM> { { source.Script!.ScriptId, candidate.Script! } } );
+		Assert.AreEqual( 70000, candidate.Settings.Speed );
+		Assert.AreEqual( unchecked( (short)70000 ), candidate.Script!.SpeedBias );
 	}
 }

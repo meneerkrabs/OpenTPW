@@ -96,7 +96,7 @@ public sealed partial class OriginalObjectRuntime
 	/// <summary>Publishes the catalogue tier's queue parameters with the ride words a setter wrote.</summary>
 	private void PublishSettingWords()
 	{
-		var basis = catalogueParameters ?? Visitors.Parameters;
+		var basis = catalogueParameters ?? constructorParameters;
 		liveParameters = !HasSettingWords ? null
 			: basis with { Speed = speedWord ?? basis.Speed, Capacity = capacityWord ?? basis.Capacity, Duration = durationWord ?? basis.Duration };
 		Visitors.Parameters = liveParameters ?? basis;

@@ -3,6 +3,8 @@ namespace OpenTPW;
 public sealed partial class OriginalObjectRuntime
 {
 	private QueueParameters? catalogueParameters;
+	// the constructor's queue parameters, the basis the ride words fall back on
+	private QueueParameters constructorParameters = QueueParameters.Default;
 	private int catalogueFallbackCapacity;
 	private bool catalogueInitialized;
 	/// <summary>Derived catalogue metadata; operating VM state remains separate.</summary>
@@ -10,6 +12,7 @@ public sealed partial class OriginalObjectRuntime
 
 	private void RememberCatalogueDefaults()
 	{
+		constructorParameters = Visitors.Parameters;
 		catalogueParameters = Visitors.Parameters;
 		catalogueFallbackCapacity = Visitors.Capacity;
 	}

@@ -111,8 +111,9 @@ public sealed record OriginalObjectRuntimeSnapshot
 			throw new InvalidDataException( "runtime snapshot has a negative scream-chain count." );
 		if ( ParticleObjects != null && ( ParticleObjects.Count > MaximumParticleObjects || ParticleObjects.Any( record => record == null || record.Handle == 0 ) ) )
 			throw new InvalidDataException( "runtime snapshot has too many or malformed particle object records." );
-		if ( RideSpeed is < 0 or > short.MaxValue || RideCapacity is < 0 or > byte.MaxValue || RideDuration is < 0 or > byte.MaxValue )
-			throw new InvalidDataException( "runtime snapshot has a ride setting word outside its range (speed 0..32767, capacity and duration 0..255)." );
+		// the SPEED word +0x58 is a full dword (any int; only the script's bias word +0xc0 is a short), CAPACITY and DURATION are bytes
+		if ( RideCapacity is < 0 or > byte.MaxValue || RideDuration is < 0 or > byte.MaxValue )
+			throw new InvalidDataException( "runtime snapshot has a ride capacity or duration word outside 0..255." );
 		if ( StoppedScriptFault != null && ( !Stopped || !HasScript ) )
 			throw new InvalidDataException( "runtime snapshot carries a stopped script fault without a stopped scripted runtime." );
 	}

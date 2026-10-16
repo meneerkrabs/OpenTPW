@@ -219,6 +219,10 @@ public sealed class UiContext
 		return true;
 	}
 
+	/// <summary>Whether every named texture of model <paramref name="name"/> frame <paramref name="frame"/> resolves (a missing one would draw as untextured white).</summary>
+	public bool FrameTexturesResolve( string name, int frame ) =>
+		Models.Get( name ) is { } model && model.GetFrame( frame ).Parts.All( part => part.TextureName.Length == 0 || ResolveTexture( part.TextureName ) != null );
+
 	/// <summary>Authored canvas rectangle of a model frame placed where the original file put it.</summary>
 	public UiRect AuthoredRect( string name, int frame = 0, UiRect fallback = default )
 	{
@@ -416,6 +420,8 @@ public sealed class UiButton : UiElement
 	public const int DisabledFrame = 1;
 	public const int HighlightFrame = 2;
 	public const int DownFrame = 5;
+	/// <summary>The grey a disabled button takes when its model has no usable disable frame (the purple text buttons' disabled grey).</summary>
+	public static readonly RgbaByte DisabledTint = new( 160, 160, 160, 255 );
 	/// <summary>Share of each purple_button half outside its bar (16 of 64 texture rows); the bar is centred in the button.</summary>
 	public const float PurpleBarGap = 0.25f;
 
@@ -428,7 +434,7 @@ public sealed class UiButton : UiElement
 	/// <summary>The mouse wheel over the button also calls <see cref="Adjusted"/> (OpenTPW page cycle buttons); off elsewhere, so the wheel over a lobby button does not turn the island.</summary>
 	public bool WheelAdjusts { get; set; }
 	public Func<bool>? Selected { get; set; }
-	/// <summary>Keeps the normal frame while focused, for a model whose highlight texture the game files lack (b_callmech's b_callmechg).</summary>
+	/// <summary>Keeps the normal frame while focused.</summary>
 	public bool KeepNormalFrameWhenFocused { get; set; }
 	public UiAlign Align { get; set; } = UiAlign.Center;
 	public override bool Focusable => Visible && Enabled;
@@ -449,7 +455,17 @@ public sealed class UiButton : UiElement
 	{
 		var rect = ScreenRect( context.Canvas );
 		var frame = !Enabled ? DisabledFrame : pressed || Selected?.Invoke() == true ? DownFrame : focused && !KeepNormalFrameWhenFocused ? HighlightFrame : NormalFrame;
-		if ( Model != null && context.DrawModel( Model, frame, rect ) )
+		RgbaByte? tint = null;
+		// [EXT:missing-state-texture] a state frame whose texture ui.wad lacks (the disable frames of b_callmech, b_callhandy and b_upgrade name b_callmechg, b_callhandyg
+		// and b_upgradeg) draws the normal frame instead of untextured white, greyed when disabled; the original's mesh texture binder 0x46EAD0 (which the UI model loaders 0x488D20,
+		// 0x488EE0 and 0x489060 call) logs "Could not load texture" and binds entry 0 of the texture table (+0x4C) instead — evidence needed: which texture that entry holds at run time
+		if ( Model != null && frame != NormalFrame && !context.FrameTexturesResolve( Model, frame ) )
+		{
+			if ( frame == DisabledFrame )
+				tint = DisabledTint;
+			frame = NormalFrame;
+		}
+		if ( Model != null && context.DrawModel( Model, frame, rect, tint ) )
 		{
 			if ( Text != null )
 				context.DrawFittedText( Font( context.Fonts ), Text(), rect, focused ? UiColors.Highlight : UiColors.Text, Align );

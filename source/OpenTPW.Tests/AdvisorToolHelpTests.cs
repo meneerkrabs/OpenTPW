@@ -378,4 +378,34 @@ public class AdvisorToolHelpTests
 		typeof( ParkHud ).GetMethod( "ReportInterfaceMode", Private )!.Invoke( hud, null );
 		CollectionAssert.AreEqual( new[] { "post 193" }, events, "0x4B5B50 posts 0xC1 once the tool is set (the first frame only records the mode)" );
 	}
+
+	// ---- The locator panels ----------------------------------------------------------------------------------
+
+	[TestMethod]
+	public void TheLocatorPanelsPostTheirHelpAndTheCloseWithdrawsBoth()
+	{
+		var hud = NewEmployeeHud( out var events, out _, StaffType.Guard );
+		hud.OpenStaffLocator();
+		CollectionAssert.AreEqual( new[] { "post 198" }, events, "0x4b3f60 without an actor posts 0xC6" );
+		events.Clear();
+		hud.OpenVisitorLocator();
+		CollectionAssert.AreEqual( new[] { "post 287" }, events, "0x4b4280 posts 0x11F" );
+		events.Clear();
+		hud.CloseLocator();
+		CollectionAssert.AreEqual( new[] { "withdraw 287", "withdraw 198" }, events, "the close message withdraws 0x11F and then 0xC6" );
+		events.Clear();
+		hud.CloseLocator();
+		Assert.AreEqual( 0, events.Count, "a closed panel withdraws nothing" );
+	}
+
+	[TestMethod]
+	public void TheStaffLocatorOfAnEmployeeWindowStillPostsTheStaffHelp()
+	{
+		var hud = NewEmployeeHud( out var events, out var economy, StaffType.Guard );
+		Assert.IsTrue( hud.OpenEmployeeWindow( economy.Staff.Members[0] ) );
+		events.Clear();
+		hud.OpenStaffLocator();
+		Assert.AreEqual( 3, hud.Locator.Role );
+		CollectionAssert.AreEqual( new[] { "post 198" }, events );
+	}
 }

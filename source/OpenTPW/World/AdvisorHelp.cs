@@ -244,9 +244,12 @@ internal static class AdvisorToolHelp
 	/// <summary>The help a chosen buy item posts: 201 for a ride (<c>Info.WhichUIType</c> 0) while the park has no ride, else 206.</summary>
 	public static int BuildStart( int whichUiType, bool anyRidePlaced ) => whichUiType == 0 && !anyRidePlaced ? FirstRide : Placement;
 
+	// [BIN:TPW-EXE:0x004B3F60 locator open] the staff locator posts 0xC6 (198), the visitor locator (0x4B3F60 with a visitor, 0x4B4280) 0x11F (287); the panel's close message 0x1001D8 withdraws both
+	public const int StaffLocator = 198, VisitorLocator = 287;
+
 	// [BIN:TPW-EXE:0x004B5B50 patrol toggle] setting an area closes the employee window and posts 0xC1 (193); [BIN:TPW-EXE:0x004B5AB0 employee refresh] a refresh with an own area posts 0xD4 (212)
 	public const int PatrolTool = 193, PatrolAreaSet = 212;
 
 	/// <summary>Every message a tool or panel posts, for the withdrawal when a park ends.</summary>
-	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool, FirstRide, Placement, ClearLandTool, BuyLandTool, PatrolTool, PatrolAreaSet } );
+	public static IEnumerable<int> All => CoasterPanelMessages.Concat( new[] { CoasterToolClick, PathStart, PathLaterClick, QueueEnd, QueueTool, FirstRide, Placement, ClearLandTool, BuyLandTool, PatrolTool, PatrolAreaSet, StaffLocator, VisitorLocator } );
 }

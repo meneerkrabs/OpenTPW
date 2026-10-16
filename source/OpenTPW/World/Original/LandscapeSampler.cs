@@ -13,7 +13,7 @@ public static class LandscapeSampler
 	/// The cell's runtime flag 0x800, set when the landscape is loaded (0x4504C0 at 0x45075D): the cell's two corner normals (the cross products of the unit edge
 	/// vectors from corner (x, z) and from corner (x+1, z+1)) have a dot product below 0.9999. A cell without it is sampled as one plane.
 	/// </summary>
-	// [BIN:TPW-EXE:0x004504C0 landscape load] edges (10, b − a, 0) and (0, c − a, 10) from the first corner, (−10, c − d, 0) and (0, b − d, −10) from the last, each normalised; the cross products are not
+	// [BIN:TPW-EXE:0x004504C0 landscape load] edges (10, b − a, 0) and (0, c − a, 10) from the first corner, (−10, c − d, 0) and (0, b − d, −10) from the last, each normalised; the dot product of the two cross products is compared with the single-precision constant 0.9999 (0x6FE39C, 0.99989998...)
 	public static bool IsNonPlanar( float a, float b, float c, float d )
 	{
 		static (float X, float Y, float Z) Cross( (float X, float Y, float Z) first, (float X, float Y, float Z) second ) =>
@@ -29,7 +29,7 @@ public static class LandscapeSampler
 		var lastZ = Unit( 0, b - d, -CellUnits );
 		var first = Cross( firstZ, firstX );
 		var last = Cross( lastZ, lastX );
-		return (double)first.X * last.X + (double)last.Z * first.Z + (double)last.Y * first.Y < 0.9999;
+		return (double)first.X * last.X + (double)last.Z * first.Z + (double)last.Y * first.Y < (double)0.9999f;
 	}
 
 	/// <summary>The height at the fractions (<paramref name="fx"/>, <paramref name="fz"/>) of a cell with corner heights a = (x, z), b = (x+1, z), c = (x, z+1), d = (x+1, z+1) (0x4527F0).</summary>

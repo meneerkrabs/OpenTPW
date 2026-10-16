@@ -118,6 +118,7 @@ ECON-045 docs/reverse/APPROX-TRACE.md
 ECON-046 docs/reverse/APPROX-TRACE.md
 ECON-047 docs/reverse/RIDE-WEAR.md
 ECON-048 docs/reverse/ORACLE.md
+ECON-056 docs/progress/2026-10-16-economy-and-saves-sweep.md
 GATE-001 docs/M3-GATE.md
 GATE-002 docs/reverse/PATH-plan.md
 GATE-003 docs/reverse/BOARD-plan.md
@@ -202,6 +203,7 @@ RIDES-041 docs/OBJECTS.md
 RIDES-042 docs/OBJECTS.md
 RIDES-043 docs/OBJECTS.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
+SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 TOUR-001 docs/PROGRESS.md
 TOUR-004 docs/PROGRESS.md
 TOUR-009 docs/PROGRESS.md

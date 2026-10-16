@@ -891,9 +891,6 @@ internal sealed partial class GameFlow : IDisposable
 		}
 	}
 
-	/// <summary>The park's backdrop colour: the fog colour the original clears to (<see cref="LobbyEffects.ClearColour"/>), behind everything the park draws.</summary>
-	internal static RgbaByte ParkBackdropColour => new( LobbyEffects.ClearColour.R, LobbyEffects.ClearColour.G, LobbyEffects.ClearColour.B, 255 );
-
 	/// <summary>World pass (internal render size): the level, or the lobby sky and 3D scene.</summary>
 	public void Render()
 	{
@@ -902,13 +899,13 @@ internal sealed partial class GameFlow : IDisposable
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
 		if ( Level != null )
 		{
-			// The park's backdrop: the original clears the world pass to the scene's fog colour (0x44DDFF), so the sky shows wherever no
-			// terrain or object covers it; the low video camera looks over the horizon, and a black clear (the old behaviour) made the sky black.
-			// [BIN:TPW-EXE:0x5d8b50 fog colour] [0x8bd47c] = 0xFF44DDFF; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses the fog colour when render flags & 0x4002000, else black
-			// [APPROX:UI-107] only the clear colour is drawn: the engine sky's layers (sky_cyl.tga cylinder, sky.tga clouds, moon.tga, the SkyObjects billboards; strings at 0x768d81-0x768da1, draw 0x5860d0) are not, and the park's own fog colour is taken as the lobby's
+			// The park's backdrop: the level's fog colour (what the original's viewport clear and the sky's haze blend with), then the sky over it.
+			// [BIN:TPW-EXE:0x4080e0 fog colour] the level load copies ThemeEngine.FogColour into the fog colour [0x8bd47c]; [BIN:TPW-EXE:0x5737aa clear] the viewport clear uses it when render flags & 0x4002000, else black
+			// [APPROX:UI-107] the clear is always the fog colour, since the park's render flags (0x4002000 bits of [0x8bcbc8]) are not traced; the sky is Level.DrawSky (World/Sky.cs)
 			backgroundBatch.Clear();
-			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), ParkBackdropColour );
+			backgroundBatch.AddRectangle( new UiRect( 0, 0, framebuffer.Width, framebuffer.Height ), Level.BackdropColour );
 			backgroundRenderer.Draw( global::Global.Render.CommandList, backgroundBatch, framebuffer.Width, framebuffer.Height );
+			Level.DrawSky();
 			Level.Render();
 			Advisor?.Render();
 		}

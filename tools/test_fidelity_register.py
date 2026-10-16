@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from fidelity_register import (CLOSED_AREAS, DOCUMENT, REGISTERS, RETIRED_LIST, Inventory, annotations, collect, in_words,
-                               render, write_retired)
+                               prose_retired, render, write_retired)
 
 
 class FidelityRegisterTests(unittest.TestCase):
@@ -232,6 +232,53 @@ var text = "[APPROX:TEST-002] runtime string";
             register.write_text('("TEST-001", "rule"),\n("TEST-004", "another meaning"),\n')
             errors = collect(root, config).errors
             self.assertTrue(any(e.startswith(f'TEST-004: declared, but {RETIRED_LIST} lists it as retired') for e in errors), errors)
+
+    def test_ids_retired_in_plain_prose_are_recorded(self):
+        # docs/TRACKS.md retired TRACK-009 and others in plain words ("TRACK-009 retired October 14"), so the list had no
+        # TRACK entries and a retired number could have been declared again.
+        self.assertEqual(prose_retired('direction (TRACK-009 retired October 14). The path tool'), ['TRACK-009'])
+        self.assertEqual(prose_retired('heading 0 (TRACK-012 and TRACK-023 retired: the record is zeroed)'),
+                         ['TRACK-012', 'TRACK-023'])
+        self.assertEqual(prose_retired('UI-001, 038, 040 and 902 are retired'), ['UI-001', 'UI-038', 'UI-040', 'UI-902'])
+        self.assertEqual(prose_retired('COAST-020/021 are retired; `ONLINE-073` is retired'),
+                         ['COAST-020', 'COAST-021', 'ONLINE-073'])
+        self.assertEqual(prose_retired('ADVISOR-027 (the cut-off slap, TRACK-040 and its 100 frames) was retired'),
+                         ['ADVISOR-027'])
+        self.assertEqual(prose_retired('Retired with a code change: TRACK-009 (snap), 011 (tick), 012 and 023 (start '
+                                       'heading). Narrowed: TRACK-002, 005.'),
+                         ['TRACK-009', 'TRACK-011', 'TRACK-012', 'TRACK-023'])
+        self.assertEqual(prose_retired('Also retired: RIDES-017 (filler)'), ['RIDES-017'])
+        # A hedge word counts only right before the list, not across punctuation.
+        self.assertEqual(prose_retired('rolls a forecast at once (AUDIO-027 is retired).'), ['AUDIO-027'])
+        # Only a list that "retired" directly follows or precedes counts.
+        for line in ('TRACK-001 narrowed, TRACK-031 retired', 'COAST-004 and 029 narrowed, COAST-014 retired'):
+            self.assertEqual(len(prose_retired(line)), 1, line)
+        for line in ("RIDES-029, 030 and 039 collided with main's retired IDs", 'TRACK-005 is not retired',
+                     'TRACK-005 will be retired', 'ECON-046 is a retired ID with another meaning',
+                     'Speech ducking (AUDIO-001) is retired', 'Not retired: TRACK-007', 'Retired or not: TRACK-007',
+                     'Also not yet retired: TRACK-007', 'TRACK-005 and 2026 retired', 'xTRACK-005 retired',
+                     'Retired: the TRACK-007 rule', 'TRACK-005 retiredness', 'Retired: TRACK-009A',
+                     'Retired only if tests pass: TRACK-003', 'TRACK-005 (not) retired', 'Is TRACK-009 retired?',
+                     'TRACK-009 retired?', 'Neither TRACK-002 nor TRACK-003 retired'):
+            self.assertEqual(prose_retired(line), [], line)
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'source').mkdir()
+            (root / 'docs').mkdir()
+            code = root / 'source/test.cs'
+            register = root / 'source/register.cs'
+            code.write_text('// [APPROX:TEST-001] one\n')
+            register.write_text('("TEST-001", "rule"),\n')
+            (root / 'docs/TRACKS.md').write_text('TEST-001 narrowed, TEST-002 and 003 retired (OTHER-004 retired).\n')
+            config = {'TEST': 'source/register.cs'}
+            data = collect(root, config)
+            self.assertEqual(data.errors, [])
+            self.assertEqual(data.retired, {'TEST-002': 'docs/TRACKS.md', 'TEST-003': 'docs/TRACKS.md'})
+            write_retired(root, data.retired)
+            code.write_text('// [APPROX:TEST-001] one\n// [APPROX:TEST-003] another meaning\n')
+            register.write_text('("TEST-001", "rule"),\n("TEST-003", "another meaning"),\n')
+            errors = collect(root, config).errors
+            self.assertTrue(any(e.startswith(f'TEST-003: declared, but {RETIRED_LIST} lists it as retired') for e in errors), errors)
 
     def test_register_count_sentence_follows_the_configuration(self):
         # Review WV-10: a merge that adds a register to REGISTERS must not leave a stale count in the document.

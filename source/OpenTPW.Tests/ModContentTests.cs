@@ -338,6 +338,33 @@ public class ModContentTests
 	}
 
 	[TestMethod]
+	public void MalformedArchivesOfAModAreSkippedAndTheCatalogStillLoads()
+	{
+		var directory = Mod( "community.broken", ", \"content\": { \"objects\": \"objects.json\" }",
+			("objects.json", ObjectsJson( 20000, 20009, ObjectJson( "objects/garbage", 20001 ), ObjectJson( "objects/short", 20002 ), ObjectJson( "objects/empty", 20003 ) )) );
+		Directory.CreateDirectory( Path.Combine( directory, "objects" ) );
+		File.WriteAllBytes( Path.Combine( directory, "objects", "garbage.wad" ), Enumerable.Range( 0, 4096 ).Select( i => (byte)(i * 31 + 7) ).ToArray() );
+		File.WriteAllBytes( Path.Combine( directory, "objects", "short.wad" ), new byte[] { 0x41, 0x47 } );
+		File.WriteAllBytes( Path.Combine( directory, "objects", "empty.wad" ), Array.Empty<byte>() );
+		var warnings = new List<string>();
+		var previousLog = Log;
+		Log = new Logger();
+		Logger.LogDelegate capture = ( severity, text ) => { if ( severity == Logger.Level.Warning ) warnings.Add( text ); };
+		Logger.OnLog += capture;
+		try
+		{
+			using ( ModContentRoots.Use( Resolve( Enable( "community.broken" ), directory ), FileSystem ) )
+				Assert.AreEqual( 1, ObjectCatalog.Load( "jungle" ).Entries.Count, "only the game's ride is listed" );
+		}
+		finally
+		{
+			Logger.OnLog -= capture;
+			Log = previousLog;
+		}
+		Assert.IsTrue( warnings.Count( warning => warning.Contains( "community.broken" ) && warning.Contains( "skipped" ) ) >= 3, string.Join( "\n", warnings ) );
+	}
+
+	[TestMethod]
 	public void NoModsInstallNothing()
 	{
 		var plain = ObjectCatalog.Load( "jungle" );

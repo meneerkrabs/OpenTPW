@@ -452,7 +452,8 @@ public sealed class ObjectCatalog
 				{
 					entry = LoadEntry( theme, category, archive, defaultLayer, root.FileSystem, easy, root, definition );
 				}
-				catch ( Exception exception ) when ( exception is InvalidDataException or IOException or UnauthorizedAccessException or ArgumentException )
+				// a mod's archive is untrusted: whatever its parsers throw, the object is skipped and the catalog still loads
+				catch ( Exception exception ) when ( exception is not OutOfMemoryException )
 				{
 					Log?.Warning( $"Mod {root.ModId} object {definition.Archive} is skipped: {exception.Message}" );
 				}
@@ -466,8 +467,18 @@ public sealed class ObjectCatalog
 	}
 
 	/// <summary>The archive of a mod's object in its root's file system ('/' path without extension), case-corrected, or null when there is none.</summary>
-	private static string? ResolveModArchive( CatalogContentRoot root, ModObjectDefinition definition ) =>
-		DataRoots.ResolveIn( root.Directory, definition.Archive ) is { } corrected ? "/" + corrected : null;
+	private static string? ResolveModArchive( CatalogContentRoot root, ModObjectDefinition definition )
+	{
+		try
+		{
+			return DataRoots.ResolveIn( root.Directory, definition.Archive ) is { } corrected ? "/" + corrected : null;
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+		{
+			Log?.Warning( $"Mod {root.ModId} object {definition.Archive} cannot be looked up: {exception.Message}" );
+			return null;
+		}
+	}
 
 	private static string? CategoryPath( BaseFileSystem fileSystem, string theme, string directory ) =>
 		FindDirectory( fileSystem, "/levels", theme ) is { } themePath ? FindDirectory( fileSystem, themePath, directory ) : null;

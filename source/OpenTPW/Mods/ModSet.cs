@@ -299,7 +299,7 @@ public sealed class ModSet
 			{
 				if ( !FoldKey( path ).StartsWith( prefix, StringComparison.Ordinal ) )
 					continue;
-				var parts = path[strings.Length..].TrimStart( '/' ).Split( '/' );
+				var parts = FoldKey( path )[prefix.Length..].Split( '/' );
 				if ( parts.Length != 2 || !parts[1].EndsWith( ".str", StringComparison.OrdinalIgnoreCase ) || parts[1].Length <= 4 )
 					return $"'{path}' is not a string table: files below '{strings}' must be <Language>/<NAME>.str";
 			}

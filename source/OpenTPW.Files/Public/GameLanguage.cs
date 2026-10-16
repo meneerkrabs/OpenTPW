@@ -166,11 +166,42 @@ public sealed class GameLanguage
 	/// </summary>
 	public StringFile LoadStrings( string fileName, bool asStored = false )
 	{
-		using var stream = StringOverride?.Invoke( Name, fileName ) ?? OpenRead( fileName );
-		var strings = new StringFile( stream, CharacterTable );
+		var strings = LoadModStrings( fileName ) ?? LoadOwnStrings( fileName );
 		if ( !asStored && string.Equals( fileName, "UITEXT.str", StringComparison.OrdinalIgnoreCase ) && strings.Entries.Length == UiTextEntries + 1 )
 			strings.RemoveEntryAt( UiTextEditionExtraEntry );
 		return strings;
+	}
+
+	private StringFile LoadOwnStrings( string fileName )
+	{
+		using var stream = OpenRead( fileName );
+		return new StringFile( stream, CharacterTable );
+	}
+
+	// [EXT:mods] A mod's table is used only when it parses and has as many entries as the language's own: the interface indexes the
+	// tables by position, so a short or broken table would crash it, and a mod is untrusted data. Otherwise the game's table stays.
+	private StringFile? LoadModStrings( string fileName )
+	{
+		if ( StringOverride == null )
+			return null;
+		try
+		{
+			using var stream = StringOverride( Name, fileName );
+			if ( stream == null )
+				return null;
+			var replacement = new StringFile( stream, CharacterTable );
+			StringFile? own = null;
+			try { own = LoadOwnStrings( fileName ); }
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException ) { } // no table of the game's to compare with
+			if ( own == null || replacement.Entries.Length >= own.Entries.Length )
+				return replacement;
+			Log?.Warning( $"Mod string table {Name}/{fileName} is ignored: it has {replacement.Entries.Length} entries, the game's has {own.Entries.Length}." );
+		}
+		catch ( Exception exception ) when ( exception is InvalidDataException or IOException or ArgumentException or OverflowException or IndexOutOfRangeException )
+		{
+			Log?.Warning( $"Mod string table {Name}/{fileName} is ignored: {exception.Message}" );
+		}
+		return null;
 	}
 
 	public FontFile LoadFont( string fileName )

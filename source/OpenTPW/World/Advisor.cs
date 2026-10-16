@@ -36,7 +36,7 @@ internal sealed class Advisor : IDisposable
 	/// <summary>Every unproven advisor/lip-sync rule (docs/LIPS.md "Approximation register"); logged once when an advisor is created.</summary>
 	internal static readonly (string Id, string Rule)[] Approximations =
 	{
-		("ADVISOR-005", "light colour 0.6, shared test.shader ambient/fog; the original lights each vertex (0x574660 -> 0x5741B0: ambient + the sum over directional lights of colour x max(0, -L.N), clamped per channel, alpha 0xFF, masked by the renderer colour +0x2C) with the advisor's directional light (constructor 0x429A60, type 2 at +0x50) of colour 1.0 (0x429BA0); the ambient during the advisor pass (default 0.15 grey, 0x573FD0) and its fog state are not read"),
+		("ADVISOR-005", "the advisor is lit like the original (advisor.shader: ambient 0.15 grey, 0x573FD0, plus the directional light of colour 1.0, 0x429BA0, per vertex, clamped; 0x574660 -> 0x5741B0), with the ambient of an ordinary park; the ambient and fog state of the lobby and other frontend screens (environment states 0x5D8B50/0x5D8D70/0x5DCFE0) and whether the original fogs the advisor model are not read, so no fog is drawn"),
 		("ADVISOR-006", "the clips' node tracks, blink toggles, accessory selectors, vertex tracks (antennae, hands, eyes) and the level advisors' texture-coordinate tracks are drawn; the blink toggles set the mesh-node bit (mesh record +0, toggled at 0x472E75/0x472401), which hides that mesh in the original's draw walk (0x57A5E3); a clip the archive lacks leaves the bind pose"),
 		("ADVISOR-009", "--advisor-say plays global clips by number and starts them at its first rendered frame; the controller says the five bound game-event messages and the help messages of the HUD windows with a traced message (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price); the other window and tool-start help messages and the 135 computed score producers (descriptor table 0x76E300) are not bound"),
 		("ADVISOR-012", "mono speech duplicated to both channels; the original submits it unpositioned (0x51BFC0 with 0,0,0) and the library places flat sounds at (0,1,0) (0x6BC51D); the left/right levels come from QMixer, outside tp.exe (AUDIO-018)"),
@@ -602,9 +602,10 @@ internal sealed class Advisor : IDisposable
 				g_mModel = model,
 				g_mView = Matrix4x4.Identity,
 				g_mProj = Matrix4x4.Identity,
-				// [APPROX:ADVISOR-005] Light colour 0.6, test.shader ambient 0.4 and fog; the original lights each vertex (0x574660 -> 0x5741B0): ambient + the sum over directional lights of colour x max(0, -L.N), clamped per channel, with the advisor's light colour 1.0 (0x429BA0, a directional light built by 0x429A60, type 2 at +0x50) — evidence needed: the ambient the advisor pass sees (default 0.15 grey at 0x573FD0; other writers 0x457F18, 0x458426, 0x45861C, 0x5D8C3B, 0x5D8D7B, 0x5D923B) and its fog state
+				// [BIN:TPW-EXE:0x00429BA0 advisor setup] the advisor's directional light has colour 1.0 (advisor.shader lights each vertex like 0x574660 -> 0x5741B0 with the default ambient 0.15 grey, 0x573FD0)
+				// [APPROX:ADVISOR-005] the ambient and fog state of the advisor pass in the lobby and the other frontend screens (the environment states 0x5D8B50/0x5D8D70/0x5DCFE0 write the ambient 0x879DD8 and fog source; an ordinary park keeps the 0.15 default, every writer of 0x879DDC listed) and whether a fog is applied to the advisor model at all are not read; none is drawn
 				g_vLightPos = LightPosition,
-				g_vLightColor = new System.Numerics.Vector3( 0.6f ),
+				g_vLightColor = System.Numerics.Vector3.One,
 				g_vCameraPos = System.Numerics.Vector3.Zero,
 				g_flTime = Time.Now,
 			} );

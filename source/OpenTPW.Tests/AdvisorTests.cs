@@ -22,6 +22,21 @@ public class AdvisorTests
 	}
 
 	[TestMethod]
+	public void AdvisorShaderLightsEachVertexWithTheOriginalAmbientAndLightColour()
+	{
+		// 0x573FD0 default ambient 0.15 grey, 0x5741B0 per-vertex ambient + colour x max(0, -L.N) clamped per channel; the advisor's light colour is 1.0 (0x429BA0).
+		var directory = new DirectoryInfo( AppContext.BaseDirectory );
+		while ( directory != null && !(File.Exists( Path.Combine( directory.FullName, "content", "shaders", "advisor.shader" ) ) && Directory.Exists( Path.Combine( directory.FullName, "source" ) )) )
+			directory = directory.Parent;
+		Assert.IsNotNull( directory, "The repository checkout must be available for this test." );
+		var source = File.ReadAllText( Path.Combine( directory.FullName, "content", "shaders", "advisor.shader" ) );
+		StringAssert.Contains( source, "vs_out.vLight = clamp(vec3(0.15) + max(dot(N, L), 0.0) * g_oUbo.g_vLightColor, 0.0, 1.0);" );
+		Assert.IsFalse( source.Contains( "fog", StringComparison.OrdinalIgnoreCase ), "the fog of the advisor pass is not read, so none is drawn" );
+		var advisor = File.ReadAllText( Path.Combine( directory.FullName, "source", "OpenTPW", "World", "Advisor.cs" ) );
+		StringAssert.Contains( advisor, "g_vLightColor = System.Numerics.Vector3.One," );
+	}
+
+	[TestMethod]
 	public void AdvisorTransformMatchesTheOriginalAt4By3()
 	{
 		// Composed model point → clip space of the whole 640×480 screen (box clip × box half side + centre).

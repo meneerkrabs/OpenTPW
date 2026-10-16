@@ -102,6 +102,7 @@ public sealed partial class ParkHud
 
 	private void UpdateMessageTube( float delta )
 	{
+		KeepChallengeOfferPosted( level?.Park?.Economy );
 		var target = openedMessage != null && !InfoArmOpen ? 1f : 0f;
 		messageSlide = target > messageSlide ? Math.Min( target, messageSlide + delta * 4f ) : Math.Max( target, messageSlide - delta * 4f );
 		var fullyOut = messageSlide >= 1f;

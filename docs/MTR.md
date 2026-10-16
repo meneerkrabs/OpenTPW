@@ -143,13 +143,17 @@ The Mac file-extension list around `SimThemePark.data` offset ≈2,006,300 (`.fp
 has no `.mtr` (checked in an earlier pass, not re-run here).
 
 **Conclusion:** no evidence of use; MTR is treated as unused unless contrary evidence appears.
-This is not proof of non-use: a loader that builds names from a non-literal table, or the
-encrypted PC code, is outside what these searches can see.
+
+**Decrypted PC executable (October 16, 2026).** The decrypted `tp.exe` (SHA-256 `5472f97b…`, code and data
+readable) has 0 occurrences of `.mtr` (ASCII or UTF-16) and 0 of the magic in either byte order, including as a
+code immediate; its engine extension table (`.txt .md2 .tps .tpc .fps .fpc .ffn .lan .tgq .tga .adt .wad .emt
+.map .sdt .TPWS .TPWI .LAYS .INTS`) and WAD scan filters (`*.md2 *.ESP *.tga *.emt`) have no `.mtr`. This
+closes the encrypted-code caveat. No consumer of MTR files was found in either build; a name built at
+runtime from non-literal parts remains the only, unsupported, way one could be read.
 
 ## Remaining gates
 
-- Whether the game ever opens MTR at all: closed as "no evidence of use" by the static search
-  above. Reopen only if a runtime file-access observation or a decoded PC loader shows a read.
+- Whether the game ever opens MTR at all: no consumer found in either build, including the decrypted tp.exe (above).
 - What `s` and `M7` mean: without a runtime consumer they stay raw and unresolved. No further work is planned.
 
 Banner rendering belongs to the MD2 renderer and needs no MTR data.

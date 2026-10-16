@@ -146,6 +146,25 @@ public sealed class ParkGate
 		}
 	}
 
+	/// <summary>The gate's command of the end-of-park sequence ([DATA:gates.RSE VAR_COMMAND] 2).</summary>
+	public const int EndOfParkCommand = 2;
+
+	/// <summary>
+	/// The park is lost (tp.exe <c>0x005168F0</c>, ECON-030): every attraction is asked to break down (its script's <c>VAR_BREAKSTAT</c> becomes 1, the request
+	/// <c>0x004E0DB0</c>) and the gate gets the end-of-park command (<c>0x00519EF0</c> with its second argument set). Nothing is closed and the park-closed
+	/// word keeps its value.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005168F0 park lost] the thing walk calls 0x004E0DB0 (0x0055A0B0(script, 4, 1): variable 4, VAR_BREAKSTAT) for each live thing of type 3 with +0x32 bit 4, then 0x00519EF0(0, 1)
+	// [BIN:TPW-EXE:0x00519EF0 door routine] with the second argument set it only writes 2 to the gate script's variable 0 (0x0055A0B0(script, 0, 2)) and returns
+	public void ParkLost()
+	{
+		foreach ( var item in Attractions )
+			if ( item.Script != null )
+				item.SetVariable( nameof( RideVariables.VAR_BREAKSTAT ), 1 );
+		if ( Gate is { Script: not null } gate )
+			gate.SetVariable( CommandVariable, EndOfParkCommand );
+	}
+
 	/// <summary>
 	/// The deferred closure retry (Mac <c>0x10536c</c> / PC <c>FUN_00516380</c>): every 30 park turns (7.44 s of scaled time),
 	/// a closed park whose gate still stands open commands the gate shut once the guest census is zero
@@ -178,12 +197,17 @@ public sealed class ParkGate
 	}
 
 	/// <summary>
-	/// Guests standing on the imported grid's counted cell types (type provenance is incomplete, ECON-050):
+	/// Guests standing on the grid's counted cell types:
 	/// type 0, 1, 3, 9 or 10 (Mac <c>0xc3684</c>). Preserved approach-road and outside types do not count; a rider
 	/// counts at their stored cell (not because they are riding), and a guest that has left is not a
 	/// thing on the map at all.
 	/// </summary>
-	public int GuestCensus => guests?.Guests.Count( guest => guest.State != GuestState.Gone && Counts( guest ) ) ?? 0;
+	public int GuestCensus => guests == null ? 0 : CountCensus( guests );
+
+	/// <summary>The guests of <paramref name="guests"/> standing on a counted cell (<see cref="GuestCensus"/>).</summary>
+	// [BIN:TPW-EXE:0x004C9130 census] every thing of type 1 (a guest) on a cell the predicate 0x004FA990 accepts (types 1, 3, 9, 10 and 0) counts; 0x004CCEB0 (the rating) and 0x004C7FA0 (the cached count) walk the same way
+	public static int CountCensus( GuestSimulation guests ) =>
+		guests.Guests.Count( guest => guest.State != GuestState.Gone && CountsCellOf( guests.Grid.Cells, guest.Cell.X, guest.Cell.Y ) );
 
 	/// <summary>
 	/// Live staff standing outside the counted cell types (the retry's blocker scan: thing kinds 4–8 with
@@ -194,14 +218,14 @@ public sealed class ParkGate
 		? 0
 		: staff().Count( member => member.CellX is { } x && member.CellY is { } y && !CountsCellOf( x, y ) );
 
-	internal bool Counts( Guest guest ) => CountsCellOf( guest.Cell.X, guest.Cell.Y );
+	internal bool Counts( Guest guest ) => CountsCellOf( guests!.Grid.Cells, guest.Cell.X, guest.Cell.Y );
 
 	/// <summary>Whether the cell at a guest's or staff member's position has a census-counted type.</summary>
-	// [BIN:STP-PPC:0xc3684 cell predicates 0x85190–0x85258] types 0, 1, 3, 9 and 10 count; OpenTPW only writes 0, 1 and 3 today.
-	// [APPROX:ECON-050] the imported guest grid types only empty (0), path (1), queue (3) and track cells; the original's world init (0x0052F050 → 0x00536490) types every cell from its MAP byte (cell +0x26) and bit 0 of the base.md2 heightfield tile flags (0x00450420): with the bit set or off the terrain 2 (MAP 0x02), 30 (MAP 0x80) or 7, else 1 (MAP 0x08) or 0, and object placement writes footprint types; here such cells read 0, so the gate census counts a guest standing on one and the staff blocker ignores a staff member there — evidence needed: the base.md2 tile-flag bit 0 per cell and the object footprint types in OpenTPW's cell map
-	private bool CountsCellOf( float cellX, float cellY )
+	// [BIN:STP-PPC:0xc3684 cell predicates 0x85190–0x85258] types 0, 1, 3, 9 and 10 count; the grid holds the world init's and the placements' types (ParkCellMap.MapStartCell, WriteFootprint)
+	private bool CountsCellOf( float cellX, float cellY ) => CountsCellOf( guests!.Grid.Cells, cellX, cellY );
+
+	private static bool CountsCellOf( ParkCellMap cells, float cellX, float cellY )
 	{
-		var cells = guests!.Grid.Cells;
 		if ( !float.IsFinite( cellX ) || !float.IsFinite( cellY ) || cellX < 0 || cellY < 0 || cellX >= cells.Width || cellY >= cells.Height )
 			return false;
 		return CountsCellType( cells.RawTypeAt( (int)MathF.Floor( cellX ), (int)MathF.Floor( cellY ) ) );

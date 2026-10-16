@@ -23,12 +23,12 @@ public static class ChatSystemKeys
 /// <summary>
 /// Chat rooms over WebSockets: the lobby ("Online World") and one room per published park.
 /// Commands follow the original CHAT_COMMANDS.str list; responses are CHAT_COMMANDS.str indices.
-/// [APPROX:ONLINE-005] Command semantics are inferred from the command words, response strings and
-/// the weachatr.dll export names (Say, Tell, ParkShout, Page, Locate, Goto, AFK, Earmuffs, Ignore,
-/// Blackmark, AddBuddy/RemoveBuddy, SetHearingRange) — evidence needed: the original chat server
-/// behaviour. Notably: say/emote reach the whole room (no positions, so "hearing" has no effect),
-/// shout/eshout reach the room, wshout/ushout every room, "mark" (blackmark) files a moderation
-/// report instead of muting automatically.
+/// [EXT:online-chat-command-semantics] OpenTPW's chat server gives the commands meanings that fit their
+/// command words, response strings and the weachatr.dll export names (Say, Tell, ParkShout, Page, Locate,
+/// Goto, AFK, Earmuffs, Ignore, Blackmark, AddBuddy/RemoveBuddy, SetHearingRange): say/emote reach the
+/// whole room (no positions, so "hearing" has no effect), shout/eshout reach the room, wshout/ushout every
+/// room, and "mark" (blackmark) files a moderation report instead of muting automatically. The original
+/// chat server is not among the available files, so its behaviour is not reproduced.
 /// </summary>
 public sealed class ChatHub
 {
@@ -314,8 +314,9 @@ public sealed class ChatHub
 	/// Tells the player's online buddies that they entered a park (docs/reverse/ONLINE-SOURCES.md S5), wherever those
 	/// buddies are — "another park or the park you are in" in the original's words.
 	/// </summary>
-	// [APPROX:ONLINE-024] the original notification's string is not recovered; CHAT_COMMANDS 111-113 ("Your buddy ")
-	// have empty English suffixes, so the client shows OpenTPW's own sentence for this system key
+	// [EXT:online-buddy-enters-text] the client shows OpenTPW's own sentence for this system key: the original
+	// notification's string is not recovered (CHAT_COMMANDS 111-113, "Your buddy ", have empty English suffixes and
+	// no enter-the-park variant)
 	private void NotifyBuddiesOfEntry( ChatSession session )
 	{
 		var room = RoomName( session.Room );
@@ -569,7 +570,8 @@ public sealed class ChatHub
 				else if ( target == null )
 					Send( session, ChatEvent.ForNotice( ChatNotice.NoSuchPlayer, name ) );
 				else if ( session.Room != ChatProtocol.LobbyRoom && target.Room != session.Room )
-					// [APPROX:ONLINE-006] A visitor inside a park must leave it first (CHAT_COMMANDS 127) — evidence needed.
+					// [EXT:online-goto-leave-park] the server refuses a goto into another park from inside a park with
+					// CHAT_COMMANDS 127, whose text the original has; where the original enforced it is not reproduced.
 					Send( session, ChatEvent.ForNotice( ChatNotice.LeaveParkToGoTo, target.Name ) );
 				else
 				{

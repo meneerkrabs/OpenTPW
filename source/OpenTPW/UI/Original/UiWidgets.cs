@@ -507,6 +507,11 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 {
 	public const string KnobModel = "b_scroller";
 
+	/// <summary>The ball's model: <see cref="KnobModel"/>, or the table's own thumb child (the object windows use <c>b_scrollera</c>).</summary>
+	public string Knob { get; set; } = KnobModel;
+	/// <summary>The slider control's own model drawn under the ball over <see cref="UiElement.Bounds"/> (the object windows' <c>slider_w</c>, <c>slider_n</c>, <c>slider_q</c>); none when null.</summary>
+	public string? TrackModel { get; set; }
+
 	/// <summary>Authored track the ball runs along.</summary>
 	public UiRect Track { get; set; }
 	/// <summary>Authored size of the ball.</summary>
@@ -574,9 +579,11 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
+		if ( TrackModel != null )
+			context.DrawModel( TrackModel, 0, ScreenRect( context.Canvas ) );
 		var knob = KnobRect( Value() );
 		var rect = context.Canvas.Map( knob, Anchor );
-		if ( !context.DrawModel( KnobModel, 0, rect ) )
+		if ( !context.DrawModel( Knob, 0, rect ) )
 			context.Batch.AddRectangle( rect, UiColors.Value );
 	}
 }

@@ -88,6 +88,16 @@ tests do not require them. An asset-test skip is not a compatibility pass.
 The workflow builds/tests all three host OSes, but does not qualify GPU rendering
 or full gameplay and does not download proprietary game files.
 
+## Extensions and mods
+
+| Option | Meaning |
+| --- | --- |
+| `--disable-extension <id>` | Switches an official extension (such as `opentpw.online`) or an installed mod off for this run; repeatable. An unknown id is an error. |
+| `--mod-dir <folder>` | Adds one mod folder (with its `opentpw-mod.json`) ahead of the installed mods; repeatable. |
+| `OPENTPW_MOD_DIRS` | Mod folders separated by the platform's path separator (`:` or `;`), after `--mod-dir`. |
+
+The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Changes apply at the next start.
+
 ## Diagnostic model inspection
 
 ```sh

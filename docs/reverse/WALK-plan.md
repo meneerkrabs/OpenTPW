@@ -273,7 +273,7 @@ Goal: replace `WalkSpeedCellsPerSecond` and the 0.7 factor with the traced model
 
 1. **Per-guest speed state.** `BaseSpeed` (u16, from {60, 80, 100, 120, 140} by `random.Next(5)` at
    creation), `ToiletBonus` (25 while Toilet > 80, recomputed each update), `Boost` (u16, ×99/100
-   truncated per update; increments stay `[APPROX:WALK-001]` until `0xeb0f4` is traced), and
+   truncated per update; increments were WALK-001 until `0xeb0f4` was traced), and
    `SmoothedSpeed` (float, 0 at creation). Each park turn, before the state logic, set
    `SmoothedSpeed = (3·SmoothedSpeed + sum/100)·0.25`. Then `MaxSpeed = max(655, trunc(min(s, 2)·0.2·65536))`
    and `MaxForce = max(655, trunc(min(s, 2)·0.4·65536))`.
@@ -335,7 +335,7 @@ This applies to BOARD-plan §8 and does not need WALK-I.
   per-cell thing lists are not.
 - The route search `0x101c64` beyond its route-store points, and the `+164/+168` bookkeeping. The
   enumeration uses the segment-sum form of the remaining distance.
-- The `+194` writer at `0x1a95fc` (the `+196` boost increments are traced: ORACLE.md F20, WALK-001 keeps the amount's shop screen). These only add
+- The `+194` writer at `0x1a95fc` (the `+196` boost increments are traced: ORACLE.md F20, the amount's shop screen is traced too, WALK-001 retired). These only add
   speed.
 - Whether the state-11 handler also steps (W5 allows 2·`+28` of drift either way).
 - The cadence (BOARD A2) and real-clock jitter (A1).

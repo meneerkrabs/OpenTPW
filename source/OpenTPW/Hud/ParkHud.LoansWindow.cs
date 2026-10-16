@@ -106,9 +106,10 @@ public sealed partial class ParkHud
 		loanFirstRow = 0;
 		selectedLoan = LoanRows().Count > 0 ? 0 : -1;
 	}
-
+	// [BIN:TPW-EXE:0x004A06B0 loan tabs] the dialog's open and each tab button build the list again, which runs every offer's credit test (0x0049FA00 → 0x004D06B0)
 	private void SelectLoanTab( bool outstanding )
 	{
+		LoansEconomy?.RefreshLoanOffers();
 		outstandingLoans = outstanding;
 		FillLoanList();
 	}
@@ -141,7 +142,7 @@ public sealed partial class ParkHud
 		loanSummary = LoansEconomy is { } economy ? LoanSummaryOf( economy ) : default;
 		loanSortColumn = 0;
 		loanSortDescending = false;
-		FillLoanList();
+		SelectLoanTab( outstandingLoans );
 		Stack.Push( loansScreen );
 		loansScreen.Focus( loansScreen.Find( "loanList" ) );
 		UpdateLoanScrollVisibility();

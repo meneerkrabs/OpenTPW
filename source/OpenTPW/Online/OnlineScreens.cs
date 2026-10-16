@@ -139,8 +139,8 @@ public sealed class OnlineScreens
 	// [BIN:TPW-EXE:0x4B9A70 city labels] window 93200 (1477,90)-(2048,511) holds the name label 93201 (1477,90)-(2048,240), font slot 5,
 	// and the parks label 93202 (1627,275)-(2048,395), font slot 8, both white and centred both ways; 0x4B9980 sets them from the
 	// hovered city (its name, and UITEXT 0x1CE with its park count) and clears both when none is hovered
-	// [APPROX:ONLINE-010] the labels are drawn without the hilight model their table entries bind with command 1 — evidence needed:
-	// whether a label draws that model (highlight.MD2) behind its text
+	// [EXT:online-globe-city-labels] the labels are drawn as plain text, without the hilight model their table entries bind with
+	// command 1; whether the original drew that model (highlight.MD2) behind a label's text is not known and not reproduced
 	private void AddCityLabels( OnlineGlobeScreen screen, Func<string>? idle )
 	{
 		screen.Add( new UiLabel { Id = "city", Font = fonts => fonts.Title, Color = UiColors.Text, Align = UiAlign.Center, Bounds = Region( 1477, 90, 2048, 240 ), Anchor = UiAnchor.TopRight,
@@ -652,8 +652,9 @@ public sealed class OnlineScreens
 				() => chartPosition.ToString( System.Globalization.CultureInfo.InvariantCulture )),
 			(482, () => OnlineStrings.Ui( OnlineStrings.NumberOfVotes, "Number of Votes" ), () => park.Votes.ToString( System.Globalization.CultureInfo.InvariantCulture )),
 			(532, () => OnlineStrings.Ui( OnlineStrings.NumberOfVisits, "Number of visits" ), () => park.Visits.ToString( System.Globalization.CultureInfo.InvariantCulture )),
-			// [APPROX:ONLINE-020] the original's last row showed the Instant action mode flag, which the package does
-			// not record; OpenTPW shows the players currently in the park's chat room (UITEXT 273)
+			// [EXT:online-park-details-players] OpenTPW's last row shows the players currently in the park's chat room
+			// (UITEXT 273); the original's last row showed the Instant action mode flag (UITEXT 282), which the package
+			// does not record
 			(582, () => OnlineStrings.Ui( OnlineStrings.PlayersAtThePark, "Players at the park" ), () => park.PlayersAtPark.ToString( System.Globalization.CultureInfo.InvariantCulture )),
 		};
 		foreach ( var row in rows )
@@ -754,8 +755,9 @@ public sealed class OnlineScreens
 	// [BIN:TPW-EXE:0x5DD910 publish globe] its activation builds the worldlob table with argument 1 (0x4C4FB0), which hides the satellites
 	// (90119), Find Parks (90115) and back to the lobby (90112), leaving zoom and the four arrows, and shows the city labels (0x4B9A70);
 	// the Mac twin (CLBScreenComponentPublishGlobe vf7, 0x10092F30) passes 1 to its builder 0x101B9068 too
-	// [APPROX:ONLINE-017] UITEXT 419 ("Choose the city to publish in") shows in the name label while no city is hovered — evidence needed:
-	// where the original showed UITEXT 419 (neither tp.exe nor the Mac publish globe code loads id 419 as an immediate)
+	// [EXT:online-publish-globe-prompt] UITEXT 419 ("Choose the city to publish in") shows in the name label while no city is
+	// hovered; where the original showed UITEXT 419 is not known and not reproduced (neither tp.exe nor the Mac publish globe
+	// code loads id 419 as an immediate)
 	private void ShowPublishGlobe()
 	{
 		var screen = new OnlineGlobeScreen( host.Globe, "publishGlobe" );
@@ -872,9 +874,9 @@ public sealed class OnlineScreens
 		var message = Field( "message", 0x5DA3, 0xFF, () => OnlineStrings.Ui( OnlineStrings.MessageText, "Message text" ) );
 		var title = Field( "title", 0x5DA4, Math.Min( 0x5F, Postcard.MaximumTitleLength ), () => OnlineStrings.Ui( OnlineStrings.MessageTitle, "Message title" ) );
 		var to = Field( "to", 0x5DA5, 0x1FF, () => OnlineStrings.Ui( OnlineStrings.EmailAddresses, "Email address(es)" ) );
-		// The original attached a photo of the park the card is sent from (manual p. 51/67); OpenTPW attaches the
-		// park's map view. [APPROX:ONLINE-022] the camcorder snapshot is not reproduced, and no park reference is
-		// attached because the live level has no package identity.
+		// The original attached a photo of the park the card is sent from (manual p. 51/67). [EXT:online-postcard-photo]
+		// OpenTPW attaches the park's generated map view: the camcorder snapshot (content and encoding not decoded) is not
+		// reproduced, and no park reference is attached because the live level has no package identity.
 		byte[]? ParkImage()
 		{
 			var level = host.Level();
@@ -1105,23 +1107,24 @@ public sealed class OnlineScreens
 	/// positions in the chat park view. The top action bar (data:0x50d1a, six buttons at their authored places)
 	/// carries the manual's chat actions.
 	/// </summary>
-	// [APPROX:ONLINE-021] the buttons do not carry the original's actions: tp.exe's list handler 0x4BE820 gives 799016
+	// [EXT:online-chat-action-bar] the six buttons are a fixed top bar (vote, earmuffs, postcards, goto, page, locate) and the
+	// list buttons are buddy, ignore and blackmark, which covers every chat action the manual names. Not reproduced: the
+	// original's assignment, where tp.exe's list handler 0x4BE820 gives 799016
 	// (346,1357) earmuffs on/off by its toggle state (command 0xC, 0x4EBEE0/0x4EBEF0), 799017 (187,1357) vote (command
 	// 0x15, 0x4EB300, then disables itself) and 799018 (29,1357) the shared handler 0x4A9380; the six-button table
 	// 6024-6031 (data:0x50D1A, tp.exe 0x758CD8) is not a top bar but the popup a name in the list opens (event 0x402,
 	// 0x4BE290, placed at the cursor by 0x4BF370) when bit 0 of its list flags is set: 6026 blackmark (command 0xE),
 	// 6027 goto (0x13), 6028 ignore on/off (0xD), 6029 remove buddy (0xF), 6030 locate (0x14), 6031 page (0x11)
 	// (dispatch 0x4BEDE0); otherwise the four-button popup 12290 (data:0x50E56, tp.exe 0x758E18) opens: 12292
-	// blackmark, 12293 goto, 12294 ignore on/off, 12295 add buddy; here the six are a fixed top bar (vote, earmuffs,
-	// postcards, goto, page, locate) and the list buttons buddy, ignore, blackmark — evidence needed: what 0x4A9380
-	// does (also control 100's handler in 0x498AD0) and what bit 0 of a list entry's flags marks
+	// blackmark, 12293 goto, 12294 ignore on/off, 12295 add buddy; still unknown: what 0x4A9380 does (also control
+	// 100's handler in 0x498AD0) and what bit 0 of a list entry's flags marks
 	public void ShowChat()
 	{
 		if ( Session.Chat == null && Session.IsLoggedIn )
 			Guard( Session.ConnectChat );
 		var screen = new UiScreen( "chat" );
-		// The park view over which the original drew its chat overlay; [APPROX:ONLINE-019] the original chat park was
-		// a three-dimensional park, whose scene is not decoded.
+		// The park view over which the original drew its chat overlay; [EXT:online-chat-park-view] the original chat park
+		// was a three-dimensional park, whose scene is not decoded, so OpenTPW shows it from above.
 		var view = screen.Add( new UiChatParkView( Session ) { Id = "park", Bounds = new UiRect( 543, 30, 1462, 1120 ), Anchor = UiAnchor.TopLeft } );
 		// The two tabs of the people panel: the park's players and the online buddies.
 		var buddies = false;

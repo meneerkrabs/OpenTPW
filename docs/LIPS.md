@@ -301,6 +301,20 @@ and corrupted words per layer, shelf coefficients against the published curves,
 per-channel filtering, mid-stream emphasis change rejection, and the corpus
 inventory).
 
+### Playback length (entry +32)
+
+Every SDT entry header's u32 at +32 is the length the game plays, in bytes of 16-bit PCM (all channels).
+tp.exe's MPEG sound object (constructor 0x6C82C0) copies it when type byte +27 has bit 0x04 (the type
+is a bit field: 0x20 MPEG, 0x10 another codec, 0x04 length present, 0x01 stereo; 36/37 = 0x24/0x25), and
+its fill routine 0x6C83C0 delivers at most that many decoded bytes before the end/loop handler, so the
+decoder's tail is never heard. +26 is the bit depth (16 plays 16-bit, anything else 8-bit, 0x6C6F40).
+All 5,674 entries (Data and the three language folders) have the bit, and a length of whole sample frames
+no longer than the decoded audio: about one frame plus the encoder delay shorter (Layer I mono 558–991
+samples, Layer II mono mostly 672–1,824, stereo 725–1,729; 212 Layer II entries are cut much earlier).
+`SdtEntryHeader.PlaybackBytes` and `Mp2Audio.TrimTo` apply it: sound events and advisor speech play exactly
+that length (sp_001: 92,320 of 93,312 decoded samples). The decoder and `--export-sdt-wav` keep the full
+decoded PCM.
+
 ## Advisor runtime slice
 
 `--advisor-say N` (1–637) takes `global/Speech/speechHD.SDT` and `lips.wad` from the
@@ -340,8 +354,8 @@ advisors add texture-coordinate tracks and one clip with path parameters
 built by `AdvisorSequences` (see "Sequences and timing" below) and played (see "Clip timeline"), vertex and texture-coordinate tracks included. The clips' node lists set node bit
 0x10 on the hats, spatula and bow tie, the hidden set of the base model. That bit is the clip-toggled word of the mesh-node record
 (+0, set at `0x472E75`, cleared at `0x472401`); the mesh draw's own bit 0x10 (`0x57A797`) is a different word, a render-node deferral
-marker (the draw defers a node of a model with flag 0x200000 to the list at `0x8BB220` and the drain `0x579C80` sets and clears it), so it
-does not answer which draw reads the toggled bit (RIDES-042). The fixed-sequence entries also carry accessory bits `0x7F0000`, stored at
+marker (the draw defers a node of a model with flag 0x200000 to the list at `0x8BB220` and the drain `0x579C80` sets and clears it); the
+toggled bit is read by the model draw walk `0x57A530`, which skips a node's own mesh when its word has any of 0x8210 (`0x57A5E3`). The fixed-sequence entries also carry accessory bits `0x7F0000`, stored at
 `0xF79660`, which the selector `0x598CA0` tests before it shows or hides nodes by dummy attribute (`0x429F60`, `0x429EE0`); see "Costumes".
 `Advisorm13` (330 ticks) is the only clip with tracks on all five mouth meshes, the
 likeliest original source of the mouth-shape choice.
@@ -486,11 +500,11 @@ October 14, 2026, from the decrypted Windows `tp.exe` (`[BIN:TPW-EXE:...]` citat
 - **Events 2/3/4.** Bankruptcy (event 2, `0x4D0370` at the bank's month-end message type 0xC via `0x4D02D0`): balance < 0 (`0x4D04DE`),
   previous balance (+0x11C) < 0 (`0x4D04E4`–`0x4D04EC`) and `__alldiv(0x4F88B0(world+0x2A0, turn entered red +0x120), 2.592·10^13) ≥ 6`
   (`0x4D053B`–`0x4D054F`) post event 2 through `0x40F630(2)` every month while it holds; the turn entered red (+0x120) is set when the balance
-  first goes below zero (`0x4D041A`–`0x4D0432`); it does not close the park. `0x4F88B0` itself is unread. Events 3/4 are posted by the
+  first goes below zero (`0x4D041A`–`0x4D0432`); it does not close the park. `0x4F88B0` gives the park time since the stamp: the unsigned 32-bit turn difference × the calendar rate (15000) / 4 × 10^7, in 100 ns units. Events 3/4 are posted by the
   door routine `0x519EF0` on every press of the open/close button (control `0x4F3B1`) and of the Ctrl-O/Ctrl-C shortcuts (`0x40C410` calls
   it), also when the park is already in that state (event 3 at `0x51A033`, event 4 at `0x51A1C6`, both reached from either state). OpenTPW
   raises 3/4 the same way, from the HUD's door button and shortcuts (`HudHost.ParkDoorPressed` → `AutomaticAdvisor.OnParkDoorPressed`),
-  not from the economy's open/close transition; event 2 still comes from the economy's six-month bankruptcy (ADVISOR-020).
+  not from the economy's open/close transition. Event 2 comes from the economy's month end the same way (`ParkEventKind.BankruptcyMessage`, every month while the condition holds); the bank's own handler of the message loses the park once (ECON-030).
 
 On macOS arm64 (Metal) `--smoke-test --advisor-say 1` passed: 4.25 s wall time for
 4.23 s of speech, mouth sequence Aah > Normal > Aah > Normal, and 491 changed
@@ -517,7 +531,7 @@ model `OriginalAdvisorScoreQueue` and keeps all 31 of its cases as
 | 10 then 0 | Every original-level start (main loop `0x101C2108`/`0x101C2174`) | 10: resets each history's variant, played flag and slaps; the saved tick stays | — |
 | 0 | Level start | 0 (`Welcome.Score`) | 1 → **level** bank sample 1, `Speech/lips/sp_001.LIP` |
 | 0, game type 2 | Level start in Instant Action (the game-type global, TOC −30136, is the one the player selector `0x1013781C` sets to 2) | 323 (`PrebuiltPark.Score`, tutorial group 1) | 587 → global 606 |
-| 2 | `ParkEconomy` bankruptcy (ADVISOR-020) | 106 (`Bankrupted.Score`) | 274/275 → global 424/425 |
+| 2 | `ParkEconomy`'s bank month (`BankruptcyMessage`), every month end more than five months in the red | 106 (`Bankrupted.Score`) | 274/275 → global 424/425 |
 | 3 | Every press of the open button or Ctrl-O (`ParkHud`), also when the park is already open | 128 (`ParkNowOpen.Score`) | 308/309 → global 342/343 |
 | 4 | Every press of the close button or Ctrl-C (`ParkHud`), also when the park is already closed | 129 (`ParkNowClosed.Score`) | 310/311 → global 344/345 |
 
@@ -551,8 +565,7 @@ Contextual help ("Contextual help" below) adds 81 help messages and eight HUD wi
 score producers and the
 background score scan, research/staff/prank/ride/challenge messages, slaps, the tool-start help and the recovered
 `OriginalAdvisorLipDriver` timing (it needs the original pause-aware advisor
-clock, which OpenTPW does not reconstruct). The bankruptcy producer uses the economy's six-month bankruptcy; the original's monthly guard
-is traced but needs `0x4F88B0` and an economy field for the turn entered red (ADVISOR-020). Read-only visits of
+clock, which OpenTPW does not reconstruct). The bankruptcy producer is the bank's monthly guard (`0x4D0370`, `ParkEventKind.BankruptcyMessage`). Read-only visits of
 shared parks (online extension) and the generic sandbox (`--sandbox`, plain
 `--smoke-test`, sandbox saves) have no automatic advisor.
 
@@ -649,7 +662,6 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-009 | `source/OpenTPW/World/Advisor.cs` | `--advisor-say` plays global clips by number and starts them at its first rendered frame; responses follow the traced global/level selector; the controller says messages 0, 106, 128, 129, 323 and the help messages of eight HUD windows (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price) | The other 73 help messages (windows OpenTPW lacks, tool starts, `SetMode` 3 → 203) and the 135 computed score producers (table `0x76E300`) |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs` | Mono speech duplicated to both stereo channels; the original submits it unpositioned (`0x51BFC0` with 0,0,0) and the library places flat sounds at (0,1,0) (`0x6BC51D`) | QMixer (outside tp.exe, AUDIO-018) or a capture |
 | ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Controller clock starts at 0 for a new park and an original-save import, one controller update per frame; it stands still while the pause menu is open. The original saves the clock as the second word of the `SSEM` (MESS) block (writer `0x402E00`, snapshot `0x402E60`, reader `0x402E30`) and its load sets the clock to it (`0x415140` → `0x402E80` → `0x403160`); it stands still whenever `0x4092A0` pauses: on app deactivation (`0x46B600`, WM_ACTIVATEAPP) and in message boxes (`0x47F020`) | Reading the saved word in the import; which screen each of the pause callers `0x48C87E`, `0x49EFBA`, `0x49F29F`, `0x4A3A6C`, `0x4A93D7`, `0x5F0B7F` is |
-| ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Event 2 comes from the economy's bankruptcy (six months in the red), not the monthly guard of `0x4D0370` (balance and previous balance < 0 and the red-time term ≥ 6); events 3/4 are raised on every open/close button press as in `0x519EF0` | `0x4F88B0` and an economy field for the turn entered red (ParkEconomy belongs to the economy work) |
 | ADVISOR-022 | `source/OpenTPW/World/AdvisorController.cs` | On an original save import, pending advice and history of messages without a bound descriptor (all but 0, 106, 128, 129, 323 and the 81 help messages) are dropped (reported); OpenTPW's own park save stores the controller | The remaining descriptor rows (table `0x76E300`) |
 | ADVISOR-025 | `source/OpenTPW/World/AdvisorSequence.cs` | A fixed sequence's timer (sequences 28 and 29) plays `cat_ui` `0xC6` when the advisor clock reaches it; its particle `0x521E60` (87, 90000, 0, 7000) is not started (template 87 is screen-space, which the particle renderer does not draw) and `0x4B9340` (the HUD golden-ticket/key counter) has no counter to refresh | The screen-space particle draw path and its coordinate mapping; the HUD counter (UI-051) |
 | ADVISOR-026 | `source/OpenTPW/World/AdvisorCostumes.cs` | The level advisors' props (Ticket, MAP, Ticket2, Mutant Eye) follow the clips' node lists and blink toggles carried from clip to clip (`AdvisorAccessories.SequenceHiddenNodes`); the accessory bit `0x10000` hides the costume, the bug head and the mouth, and the key clip's bit `0x40000` plays `cat_ui` `0xC5`; the screen-space effects of the bits `0x20000`-`0x200000` (UI particle pool `0x5ED5A0`, `0x5ED660`, `0x5ED700`) are not started, and the node state is rebuilt at every response while the original keeps the bits on the model instance | The screen-space particle draw path; whether anything resets the node bits between responses (clip 19 hides the body) |

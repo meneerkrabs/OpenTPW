@@ -511,7 +511,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			// [BIN:TPW-EXE:0x00501919 thought pick] outside states 16 and 17 and on a park cell (0x004FA990), a world draw modulo 10 of 0 runs the pick 0x004FC8A0
 			if ( GuestThoughts.PickDraw( guest.Id, turn ) % GuestThoughts.PickOdds == 0
-				&& GuestThoughts.Pick( guest.Hunger, guest.Thirst, guest.Toilet, guest.Nausea, guest.Happiness, MessyShare( guest ) ) is { } thought )
+				&& GuestThoughts.Pick( guest.Hunger, guest.Thirst, guest.Toilet, guest.Nausea, guest.Happiness, () => MessyShare( guest ) ) is { } thought )
 				Think( guest, thought );
 			// [BIN:TPW-EXE:0x00501932 balloon life] then +0x214 loses 1 when it is above 0, and at 0 the balloon goes (0x004FE950)
 			if ( guest.BalloonLife > 0 && --guest.BalloonLife == 0 )
@@ -1237,20 +1237,16 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>The share of littered path cells in the guest's 4 × 4 analyser block (tp.exe <c>0x004C8BA0</c> over <c>0x004C8AE0</c>).</summary>
 	// [BIN:TPW-EXE:0x004C8AE0 block census] the block of the guest's cell (0x004C7B70: 32 × 32 blocks of 4 × 4 cells) counts its littered cells and its cells of type 1, 3 or 9 (0x00536310, 0x00536320); the ratio is a single division
-	// Approximation (ECON-020, registered at ParkLitter.Drop): the counts are live where the analyser caches them for a few turns
+	// [BIN:TPW-EXE:0x004FC8A0 thought pick] the block's counts are read through the analyser's caches with age 4 (0x004C8BA0(4), then 0x004C8AE0(4))
 	private float MessyShare( Guest guest )
 	{
-		if ( Litter is not { } litter || Grid.Cells is not { } cells )
+		if ( Litter is not { } litter || Grid.Cells is null || (uint)guest.CellX >= ParkLitter.MapSize || (uint)guest.CellY >= ParkLitter.MapSize )
 			return 0f;
-		int x0 = guest.CellX & ~3, y0 = guest.CellY & ~3, littered = 0, paths = 0;
-		for ( var x = x0; x < x0 + 4; x++ )
-			for ( var y = y0; y < y0 + 4; y++ )
-			{
-				if ( litter.TypeAt( x, y ) != LitterType.None )
-					littered++;
-				if ( cells.RawTypeAt( x, y ) is 1 or 3 or 9 )
-					paths++;
-			}
+		var block = ParkLitter.BlockOf( guest.CellX, guest.CellY );
+		// the analyser stamps its caches with the world turn, the clock the strike reads them with too (the economy's, ArrivalClock)
+		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
+		var littered = litter.LitteredInBlock( block, 4, turn );
+		var paths = litter.PathCellsInBlock( block, 4, turn );
 		return paths == 0 ? (littered == 0 ? 0f : float.PositiveInfinity) : (float)littered / paths;
 	}
 
@@ -2058,7 +2054,7 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 				guest.Boost = GuestSpeed.RaiseBoost( guest.Boost, ride.SpecialIngredient, amount );
 				break;
 		}
-		ApplyAppearance( guest, ride.AppearanceEffect );
+		ApplyAppearance( guest, ride.AppearanceEffect, ride.QualityOfGoods );
 		if ( ride.ProvidesRelief )
 		{
 			// [BIN:TPW-EXE:0x004FE1E0 relief visit] for an object with the relief flag: the toilet wears by the guest's toilet meter as a byte (0x004E2440), the meter goes to 0, and an illness byte above 90 goes to 0 as well
@@ -2088,14 +2084,15 @@ public sealed class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// quality of goods (<see cref="GuestAppearance.BalloonLife"/>); a costume shop takes back the costume the guest wears or puts one on.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FE615 appearance effect] type +0x15C: 1 creates the balloon model (+0x210, sprite set 10) and sets +0x214 to the balloon life, guest event 12; 2 with +0x24 == 2 ("Customer returning a costume") sets +0x24 to 0 and the sprite bank +0x20 back, otherwise +0x24 = 2, the costume bank and guest event 11; another value logs "Balance file error"
-	// [APPROX:ECON-044] the shop's quality of goods stays at the build's 50 (0x004DB389, ride +0x18C) because OpenTPW has no quality slider (UI-024), where the original's shop panel sets it to 50 × the slider level (panel apply 0x004B0AA0, apply-all 0x004B0AE0), so a balloon always lives 127 needs phases; the balloon model's world reseed (0x00516370, DET-014) is not followed and the guest events 11 and 12 (0x0050C100, a 32-entry ring in the guest) are not recorded; a balloon's life counts down, and the challenge percentages count, while the guest is in the park by its state and on the grid rather than on a cell of type 0, 1, 3, 9 or 10 (0x004FA990, as ECON-027) — evidence needed: none for the rules (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0); the reader of the guest event ring is untraced
-	private static void ApplyAppearance( Guest guest, int effect )
+	// [BIN:TPW-EXE:0x004FE615 balloon life] the balloon's life is BalloonLife of the shop's own quality of goods (+0x18C: 50 at build, 0x004DB389; 50 × the shop window's quality step, 0x004B0AA0, 0x004B0AE0), mirrored from ParkObjectState.QualityOfGoods
+	// [APPROX:ECON-044] the balloon model's world reseed (0x00516370, DET-014) is not followed and the guest events 11 and 12 (0x0050C100, a 32-entry ring in the guest) are not recorded; a balloon's life counts down, and the challenge percentages count, while the guest is in the park by its state and on the grid rather than on a cell of type 0, 1, 3, 9 or 10 (0x004FA990, as ECON-027) — evidence needed: none for the rules (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0); the reader of the guest event ring is untraced
+	private static void ApplyAppearance( Guest guest, int effect, int qualityOfGoods )
 	{
 		switch ( effect )
 		{
 			case GuestAppearance.Balloon:
 				guest.HasBalloon = true;
-				guest.BalloonLife = GuestAppearance.BalloonLife( GuestAppearance.BuiltQualityOfGoods );
+				guest.BalloonLife = GuestAppearance.BalloonLife( qualityOfGoods );
 				break;
 			case GuestAppearance.Costume:
 				guest.InCostume = !guest.InCostume;

@@ -130,7 +130,8 @@ public partial class Level : IDisposable
 	private ParkResumeSnapshot? resumeState;
 	// Developer tools only (--sandbox); players use the original-style online screens (OnlineScreens).
 	private OnlinePanel? onlinePanel;
-	private OnlineFolders onlineFolders = null!;
+	/// <summary>The developer online panel's folder; null while the online extension is off (no panel then).</summary>
+	private OnlineFolders? onlineFolders;
 
 	/// <param name="start">How a writable original level starts; ignored for the sandbox and for read-only visits (which load the shipped save and run no economy).</param>
 	private static readonly List<WeakReference<Level>> created = new();
@@ -681,7 +682,8 @@ public partial class Level : IDisposable
 		Hud = new();
 
 		parkLayout = new ParkLayout( this );
-		onlineFolders = folders ?? OnlineFolders.FromEnvironment();
+		// [EXT:extension-online-gate] the online folder and the developer online panel exist only while the online extension is on
+		onlineFolders = FeatureGates.Online ? folders ?? OnlineFolders.FromEnvironment() : null;
 		TextOverlay = new SandboxTextOverlay();
 		// BF4 UI draws at output size after the world blit, not through the world upscaler.
 		global::Global.Render.OnOverlayRender += DrawTextOverlay;
@@ -707,7 +709,7 @@ public partial class Level : IDisposable
 		Camera.Update();
 		if ( ShowDeveloperPanels && !HidesInterface )
 			parkLayout.Draw();
-		if ( ShowDeveloperPanels && !HidesInterface )
+		if ( ShowDeveloperPanels && !HidesInterface && onlineFolders != null )
 		{
 			onlinePanel ??= new OnlinePanel( this, onlineFolders );
 			onlinePanel.Draw();

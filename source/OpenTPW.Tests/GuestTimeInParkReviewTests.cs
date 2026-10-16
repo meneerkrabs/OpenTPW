@@ -26,10 +26,11 @@ public class GuestTimeInParkReviewTests
 			foreach ( var (guest, state, reversed, elapsed) in before )
 			{
 				if ( elapsed == null ) continue;
-				if ( reversed || state is GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone )
+				if ( reversed || state is GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome or GuestState.Gone )
 				{
 					Assert.AreEqual( elapsed, guest.TimeInParkSeconds );
-					sawHomeLane |= reversed;
+					// the road home: OpenTPW's reversed lane, or the cell-map walk from the gate (states 19 to 21)
+					sawHomeLane |= reversed || state is GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome;
 				}
 				else
 				{

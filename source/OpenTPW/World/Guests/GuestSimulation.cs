@@ -450,7 +450,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
 	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
 	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
-	// [APPROX:ARRIVAL-001] leaving guests wait at their lane's first cell and board at status 4 one per stop cell and turn, where the original walks them to the vehicle's stop cells at status 1 to 3 (0x00500BD0, 0x0051AAD0) and boards the head of each cell's thing list; the pick-up test asks for any guest in state 21, not the head things of the four stop cells (0x0051A9D0); this update runs before the turn's guest updates, the original's after its thing sweep — evidence needed: what cell 0x004D8650 returns for each level (the stop walk also needs the original walk, WALK-008)
+	// [APPROX:ARRIVAL-001] a guest whose stop cell no route reaches or that was refused at the booth keeps OpenTPW's lane walk, where it waits at its lane's first cell and boards at status 4, one per stop cell and turn in update order; this update runs before the turn's guest updates, the original's after its thing sweep, and a cell's thing list is OpenTPW's occupant list (WALK-003) — evidence needed: the lanes' cells in the map (WALK-008)
 	private void UpdateArrivalVehicle()
 	{
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
@@ -480,7 +480,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					break;
 			}
 		}
-		if ( guests.Any( guest => guest.State == GuestState.WaitingToGoHome ) )
+		if ( LeavingGuestWaits() )
 		{
 			var status = ReadArrivalVehicle();
 			if ( status is -1 or 0 || status == 2 && pendingArrivals == 0 )
@@ -489,6 +489,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		else if ( ReadArrivalVehicle() == 4 )
 			DispatchArrivalVehicle( 0 );
 	}
+
+	/// <summary>Puts <paramref name="kind"/> at work without a dispatch (tests).</summary>
+	internal void RestoreArrivalVehicleForTest( int kind ) => arrivalVehicle = kind;
 
 	/// <summary>The status of the vehicle at work (script variable 1), -1 for none; a vehicle that reports 6 (gone) is released.</summary>
 	// [BIN:TPW-EXE:0x0051A690 vehicle status] no vehicle at work (+0x1DA72A 0) reads -1; else the script's variable 1 (0x0055A390); 6 writes 0 to it
@@ -587,7 +590,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public bool IsOnParkCell( Guest guest ) => InPark( guest ) && guest.OnGrid;
 
 	private bool InPark( Guest guest ) => guest.State is not (GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
-		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone);
+		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome or GuestState.Gone);
 
 	private bool CountsParkTime( Guest guest ) => InPark( guest ) && !guest.LaneReversed;
 
@@ -599,6 +602,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// is destroyed (0x0050B780)
 	private void UpdateWaitingToGoHome( Guest guest, float dt )
 	{
+		if ( guest.Lane == null )
+		{
+			UpdateWaitingAtStop( guest, dt );
+			return;
+		}
 		if ( ArrivalVehicles == null )
 		{
 			guest.StateTimer -= dt;
@@ -718,8 +726,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			case GuestState.CrossingRoadToPark:
 			case GuestState.GoingToTicketBooth:
 			case GuestState.EnteringPark:
-			case GuestState.CrossingRoadHome:
 				UpdateLane( guest, dt );
+				break;
+			case GuestState.CrossingRoadHome:
+				if ( guest.Lane != null )
+					UpdateLane( guest, dt );
+				else
+					UpdateAtGate( guest );
+				break;
+			case GuestState.WalkingToVehicle:
+				UpdateWalkToVehicle( guest );
 				break;
 			case GuestState.LeavingPark:
 				if ( guest.Lane != null )
@@ -1119,6 +1135,156 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.LaneIndex = guest.Lane!.Length - 1;
 		guest.State = GuestState.EnteringPark;
 		SetLaneWaypoint( guest );
+	}
+
+	/// <summary>
+	/// The four cells around the arrival vehicle's stop (tp.exe <c>0x0051A9D0</c>, <c>0x00500AD0</c>, <c>0x00500BD0</c>): the stop cell <c>0x004D8650(0)</c> (the level's BusStopA cell),
+	/// its +X neighbour, and the two cells two rows up from them; the bus uses the first two and the seaplane and the Ferry the last two. Null when the level has no bus stop A.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500AD0 stop cells] 0x004D8650(0) is cell (0x007855AC, 0x007855B0), FixedItemInfo.BusStopA; the four cells are that id, id + 1, id − 0x100 and id − 0xFF (two rows up, 128 cells a row)
+	private (int X, int Y)[]? StopCells()
+	{
+		if ( ValidLane( Settings.ArrivalLaneA ) is not { } lane )
+			return null;
+		var (x, y) = lane[0];
+		return Grid.InBounds( x, y ) && Grid.InBounds( x + 1, y - 2 ) ? [(x, y), (x + 1, y), (x, y - 2), (x + 1, y - 2)] : null;
+	}
+
+	/// <summary>Whether the arrival vehicle at work is the seaplane or the Ferry (tp.exe <c>0x0051AAD0</c>: a vehicle at work that is not the bus).</summary>
+	// [BIN:TPW-EXE:0x0051AAD0 non-bus vehicle] 1 when the vehicle at work (+0x1DA72A) is set and differs from the bus's handle (+0x1DA72C)
+	private bool NonBusVehicleAtWork() => arrivalVehicle >= 0 && arrivalVehicle != ArrivalVehicleKind.Bus;
+
+	/// <summary>
+	/// Whether state 19 lets a leaving guest walk to the stop (tp.exe <c>0x0051A760</c>, taken as nonzero): not while the bus is at status 3, 1 or 2 (arriving or unloading);
+	/// any other vehicle, no vehicle, or a bus in another status lets it. A level whose arrival group minimum is above 9 skips the status 1 and 2 tests.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0051A760 stop walk gate] returns 1 for no vehicle at work and for a vehicle other than the bus; with the bus: status 3 returns 0, Arrival.MinPeople (+0x2D0) above 9 returns 1, then status 1 and status 2 return 0, any other status 1; each read is 0x0055A390 on the vehicle's script and a status 6 releases the vehicle (-1)
+	private bool StopWalkAllowed()
+	{
+		if ( ArrivalVehicles == null || arrivalVehicle < 0 || arrivalVehicle != ArrivalVehicleKind.Bus )
+			return true;
+		if ( ReadArrivalVehicle() == 3 )
+			return false;
+		if ( Settings.ArrivalMinPeople > 9 )
+			return true;
+		var status = ReadArrivalVehicle();
+		if ( status == 1 )
+			return false;
+		return ReadArrivalVehicle() != 2;
+	}
+
+	/// <summary>A route request to a random point of <paramref name="cell"/> (the two sub-cell bytes are world draws in tp.exe, <c>0x00516330</c>); false when the walk search fails.</summary>
+	// Determinism (DET-014): the draws of the stop walk (0x00500AD0, 0x00500BD0: the cell pick and two bytes) come from the guest stream, as the other guest handlers' draws do; the original takes them from the world generator 0x00516330
+	private bool RouteToStopPoint( Guest guest, (int X, int Y) cell )
+	{
+		var byteX = (int)(random.NextWord() & 0xFF);
+		var byteY = (int)(random.NextWord() & 0xFF);
+		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
+		var found = guest.Navigation.Navigate( Grid.Cells, x, y );
+		guest.HasWaypoint = true;
+		return found;
+	}
+
+	/// <summary>
+	/// State 19 (tp.exe <c>0x00500AD0</c>), at the gate's crossing cell: once the arrival vehicle lets a leaving guest walk (<see cref="StopWalkAllowed"/>) it picks one of the four stop
+	/// cells with a world draw, a random point in it with two more, asks for a route there and walks it (state 20). Where no route reaches the stop cell the guest takes OpenTPW's lane home.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500AD0 state 19] 0x0051A760 nonzero: the cell local_8[draw & 3] (the stop cell, its +X neighbour and the two cells two rows up), the point's bytes from two more draws, 0x004FA5F0 and SetState(0x14); the route request's result is not read
+	// [APPROX:ARRIVAL-001] a stop cell no route reaches (a lane OpenTPW's map does not type, WALK-008) is not walked to: the guest takes OpenTPW's lane home from the gate, where the original's walk stays stuck in state 20 — evidence needed: none (read)
+	private void UpdateAtGate( Guest guest )
+	{
+		if ( !turnStarted || !StopWalkAllowed() )
+			return;
+		var cells = StopCells();
+		if ( cells == null )
+		{
+			guest.State = GuestState.Gone;
+			return;
+		}
+		var cell = cells[(int)(random.NextWord() & 3)];
+		if ( RouteToStopPoint( guest, cell ) )
+		{
+			guest.State = GuestState.WalkingToVehicle;
+			return;
+		}
+		guest.HasWaypoint = false;
+		var lane = ValidLane( guest.ExitSide == 1 ? Settings.ArrivalLaneB : Settings.ArrivalLaneA ) ?? ValidLane( Settings.ArrivalLaneA ) ?? ValidLane( Settings.ArrivalLaneB );
+		if ( lane == null )
+		{
+			guest.State = GuestState.Gone;
+			return;
+		}
+		StartLeavingLane( guest, lane, 2 );
+	}
+
+	/// <summary>State 20 (tp.exe <c>0x005019F0</c> case 0x14): one step of the walk to the stop; arriving is state 21; a stuck walk stays where it is.</summary>
+	// [BIN:TPW-EXE:0x005019F0 state 20] the walk step 0x004FA2A0: 0 sets the heading (0x7FF when the vehicle at work is not the bus, 0x400 otherwise) and SetState(0x15); 2 logs "Got stuck walking around outside" and stays
+	private void UpdateWalkToVehicle( Guest guest )
+	{
+		if ( !guest.HasWaypoint )
+		{
+			guest.State = GuestState.WaitingToGoHome;
+			return;
+		}
+		if ( MoveAlongStep( guest ) == WalkResult.Arrived )
+		{
+			guest.State = GuestState.WaitingToGoHome;
+			guest.StateTimer = WaitForBusSeconds;
+		}
+	}
+
+	/// <summary>
+	/// State 21 on the cell map (tp.exe <c>0x00500BD0</c>): at vehicle status 4 the guest that heads its cell's thing list boards (and is gone); at status 1 to 3 a guest that
+	/// does not stand on one of the vehicle kind's two stop cells picks one and walks to a random point of it (state 20). Without the park's vehicles the guest goes after
+	/// <see cref="WaitForBusSeconds"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500BD0 state 21] status 4: the head thing of the guest's cell (0x004CD4E0, the cell's list at +0x24) is this guest: event 0x13 and 0x0050B780; status 1, 2 or 3: on the bus's stop cells (0x0051AAD0 = 0) local_8[0] or [1], else [2] or [3] it returns, else a draw picks one of the two, two more draws give the point, 0x004FA5F0 and SetState(0x14)
+	private void UpdateWaitingAtStop( Guest guest, float dt )
+	{
+		if ( ArrivalVehicles == null )
+		{
+			guest.StateTimer -= dt;
+			if ( guest.StateTimer <= 0 )
+				guest.State = GuestState.Gone;
+			return;
+		}
+		if ( !turnStarted )
+			return;
+		var status = ReadArrivalVehicle();
+		var here = guest.Navigation.Cell;
+		if ( status == 4 )
+		{
+			if ( occupants.TryGetValue( here, out var list ) && list.Count > 0 && list[^1] == guest )
+				guest.State = GuestState.Gone;
+			return;
+		}
+		if ( status is not (1 or 2 or 3) || StopCells() is not { } cells )
+			return;
+		var offset = NonBusVehicleAtWork() ? 2 : 0;
+		if ( here == cells[offset] || here == cells[offset + 1] )
+			return;
+		var cell = cells[(int)(random.NextWord() & 1) + offset];
+		RouteToStopPoint( guest, cell );
+		guest.State = GuestState.WalkingToVehicle;
+	}
+
+	/// <summary>Whether a leaving guest waits at the stop (tp.exe <c>0x0051A9D0</c>): the head thing of one of the four stop cells is a guest in state 21; a guest on OpenTPW's lane home waits too.</summary>
+	// [BIN:TPW-EXE:0x0051A9D0 pick-up test] for the four cells of 0x00500AD0 the head of the cell's thing list (+0x2B8 + id × 0x44) must be a guest (type byte 1) in state 0x15
+	private bool LeavingGuestWaits()
+	{
+		foreach ( var guest in guests )
+		{
+			if ( guest.State == GuestState.WaitingToGoHome && guest.Lane != null )
+				return true;
+		}
+		if ( StopCells() is not { } cells )
+			return false;
+		foreach ( var cell in cells )
+		{
+			if ( occupants.TryGetValue( cell, out var list ) && list.Count > 0 && list[^1] is { State: GuestState.WaitingToGoHome, Lane: null } )
+				return true;
+		}
+		return false;
 	}
 
 	// [APPROX:GUEST-012] a guest that walks a lane (the booth refusal, whose state 18 walks to a crossing cell with the counter zeroed, 0x4FF9D0, and the walk after the gate, states 19 to 21) takes OpenTPW's lane walk, which never recalls — evidence needed: the lanes' cells in the map (ARRIVAL-001, WALK-008)
@@ -2183,7 +2349,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		{
 			if ( GateCell( side ) is { } gate && gate == cell && ValidLane( side == 0 ? Settings.ArrivalLaneA : Settings.ArrivalLaneB ) is { } lane )
 			{
-				StartLeavingLane( guest, lane, 2 );
+				if ( StopCells() == null )
+				{
+					StartLeavingLane( guest, lane, 2 );
+					return;
+				}
+				// [BIN:TPW-EXE:0x00500A50 arrival at the gate] the walk's arrival is state 19 (0x00501DB0(0x13)), which waits for the arrival vehicle (0x00500AD0) before the guest walks to the stop cells
+				guest.ExitSide = side;
+				guest.State = GuestState.CrossingRoadHome;
 				return;
 			}
 		}
@@ -2419,7 +2592,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				case GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding: queueing++; break;
 				case GuestState.Using: onRides++; break;
 				case GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth or GuestState.AtTicketBooth: arriving++; break;
-				case GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome: leaving++; break;
+				case GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome: leaving++; break;
 			}
 			if ( (int)guest.Thought is > 0 and < 18 )
 				thoughts[(int)guest.Thought]++;
@@ -2894,8 +3067,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>Per-guest structure that needs the park's grid: arrival lane shape and position, cells, navigation buffers.</summary>
 	private void ValidateGuestStructure( GuestSnapshot guest, Action<string> error )
 	{
+		// a guest at the gate or waiting for the vehicle on the cell map (states 19 and 21 without a lane, WALK-008) is on the grid like a walker in state 20
 		var onLane = guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
-			or GuestState.AtTicketBooth or GuestState.EnteringPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome;
+			or GuestState.AtTicketBooth or GuestState.EnteringPark || guest.State is GuestState.CrossingRoadHome or GuestState.WaitingToGoHome && guest.Lane != null;
 		if ( onLane )
 		{
 			if ( guest.Lane == null || guest.Lane.Length < 2 )

@@ -164,7 +164,7 @@ public sealed class GuestNavigation
 	public int Progress;
 
 	/// <summary>Walking off the path grid (the arrival lanes): no walls and every position is accepted.</summary>
-	// [APPROX:WALK-008] guests on the arrival lanes walk off the path grid, with no wall force and every position committed; the original walks them like every guest (route search 0x50f8e0, commit 0x510510 and edge test 0x4d8750 with the walk mask), the lane cells being type 0x1e or path from map init 0x536490, so only map-edge, entrance-building, water, ride and queue cells could push or refuse them — still open: OpenTPW's cell map does not type the lane cells (map init 0x536490 gives the cells outside the park type 7, or 0x1e and 2 by their MAP attributes 0x80 and 2), so the lanes cannot be walked through WalkEdges and WalkSearch
+	// [APPROX:WALK-008] guests arriving on the arrival lanes, and guests whose map leaves a lane or stop cell untyped, walk off the path grid, with no wall force and every position committed; the original walks every guest through the route search 0x50f8e0, the commit 0x510510 and the edge test 0x4d8750 with the walk mask — still open: the arriving walk (states 0 to 5, 0x4ff520, 0x4ff730, 0x4ff7f0, 0x4ffb20); a leaving guest walks the map from the gate to the stop cells where the lane is typed
 	public bool OffGrid;
 	public int Reroutes;
 

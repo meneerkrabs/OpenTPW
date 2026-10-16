@@ -149,12 +149,13 @@ public class WholeWalkTests
 		for ( var x = 0; x < 25; x++ )
 			grid.SetPath( x, 10, true );
 		var settings = GuestTests.CreateSettings();
-		settings.ArrivalLaneA = new[] { (5, 4), (5, 6), (5, 8), (5, 9), (5, 10) };
-		settings.ArrivalLaneB = new[] { (18, 4), (18, 6), (18, 8), (18, 9), (18, 10) };
+		settings.ArrivalLaneA = new[] { (5, 3), (5, 5), (5, 8), (5, 9), (5, 10) };
+		settings.ArrivalLaneB = new[] { (18, 3), (18, 5), (18, 8), (18, 9), (18, 10) };
 		if ( laneCellsAreWalkways )
 		{
-			foreach ( var lane in new[] { settings.ArrivalLaneA, settings.ArrivalLaneB } )
-				foreach ( var (x, y) in lane.Take( 4 ) )
+			// the walkways the level's map types 0x1E: two cells wide from the bus stop row down to the booth, so the bus stop's neighbour and the cells two rows up are walkable too
+			foreach ( var x in new[] { 5, 6, 18, 19 } )
+				for ( var y = 1; y <= 9; y++ )
 					grid.Cells.SetType( x, y, ParkCellTypes.FixedWalkway );
 		}
 		return (new GuestSimulation( grid, settings, 11 ) { ArrivalsEnabled = false }, grid);
@@ -177,16 +178,17 @@ public class WholeWalkTests
 		guest.ExitLevel = 0;
 		var target = (guest.Navigation.TargetX, guest.Navigation.TargetY);
 		var seen = new HashSet<(int, int)>();
-		for ( var tick = 0; tick < 4000 && guest.Lane == null && guest.State == GuestState.LeavingPark; tick++ )
+		for ( var tick = 0; tick < 4000 && guest.State == GuestState.LeavingPark; tick++ )
 		{
 			simulation.Tick( GuestSnapshotTests.Tick );
-			if ( guest.Lane == null )
+			if ( guest.State == GuestState.LeavingPark )
 				Assert.AreEqual( target, (guest.Navigation.TargetX, guest.Navigation.TargetY), "no destination is set on the way" );
 			seen.Add( guest.Navigation.Cell );
 		}
-		Assert.IsNotNull( guest.Lane, "it reached the gate and took the lane" );
-		Assert.AreEqual( (18, 10), guest.Lane![^1], "side B's lane" );
-		Assert.IsTrue( seen.Contains( (18, 9) ) || seen.Contains( (18, 8) ), "it walked the walkway cells" );
+		Assert.AreEqual( GuestState.CrossingRoadHome, guest.State, "it reached the gate: state 19 on the cell map" );
+		Assert.AreEqual( (18, 8), guest.Navigation.Cell, "side B's crossing cell" );
+		Assert.IsNull( guest.Lane, "the lane home is OpenTPW's stand-in for states 19 to 21, which the map walk replaces" );
+		Assert.IsTrue( seen.Contains( (18, 9) ), "it walked the walkway cells" );
 		Assert.IsTrue( grid.Cells.RawTypeAt( 18, 9 ) == ParkCellTypes.FixedWalkway );
 	}
 

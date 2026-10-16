@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace OpenTPW;
 
 /// <summary>
@@ -111,6 +113,15 @@ internal sealed record ParkResumeSnapshot
 	/// original's PART/PTCL save block: no particles are saved, screen-space emitters are killed on load; it is not part of the world hash).
 	/// </summary>
 	public ParticleSystemState? Particles { get; init; }
+	/// <summary>
+	/// The extensions and mods that change the simulation and were active when the park was saved (id, version, content digest;
+	/// docs/MODS.md), or null when none was: the field is then left out of the file, so a park saved without such a mod is
+	/// byte-identical to one from before mods existed. Loading needs the same mods; presentation-only mods are never recorded.
+	/// Builds from before this field reject a save that has it (the codec refuses unknown fields), as intended.
+	/// </summary>
+	// [EXT:mods] OpenTPW's own mod system; the original game had no mods
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public IReadOnlyList<ParkModRecord>? Mods { get; init; }
 	/// <summary>
 	/// SHA-256 manifest of the assets the park depends on: canonical expected-asset identifier → 64 lowercase hex
 	/// characters. Computed from verified catalog/game-data paths at load; a saved path is never read back.

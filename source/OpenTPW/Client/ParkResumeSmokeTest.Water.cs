@@ -51,6 +51,8 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( centre != null, "find a free site for a water ride and its circuit near the spine" );
 		var ride = level.PlaceObject( entry, centre!.Value.X, centre.Value.Y, 0 );
 		Require( ride?.Runtime.Bump != null, "buy and place the water ride with its controller" );
+		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
+		ride!.Open();
 		var station = level.TrackStations[ride!];
 		Require( level.EnterTrackTool( ride ), "the water track tool starts" );
 		foreach ( var offset in new (int X, int Y)[] { (4, 4), (-2, 4), (-2, 0) } )

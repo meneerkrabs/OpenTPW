@@ -411,12 +411,12 @@ Traced in the binary but not triggered yet:
 ## Lobby effects
 
 The front end's island effects follow the original's islands update (`CLBScreenComponentIslands::vf2`, `0x10094474`),
-stepped by `LobbyEffects` 30 times a second (`[EXT:lobby-fixed-step]`; the original runs once per rendered frame):
+stepped by `LobbyEffects` at the 60 Hz reference rate (`[EXT:frame-driven-at-60hz]`, `APPROX:UI-940` is retired; the original runs once per rendered frame, `0x5d5c50` → `0x5e0470`):
 
 * **The nearest island** to the camera drives everything, not the selected one.
 * **The lobby's own generator** (state × 0x19660D + 0x3C6EF35F, `0x100904A8`; tp.exe rotates the step right by 13 bits
   and stores and returns the rotated value, `0x5E0F4B`), seeded once from the clock (`0x1008CDBC`). The flying meshes draw from it too (`LobbyFlyingMeshes`); the camera
-  wander that also does is not built, so the rhythm of strikes and one-shots differs (UI-941).
+  wander that also does is not built, so the rhythm of strikes and one-shots differs (UI-941; the flyers and the islands step in the original's order and at the same frame rate).
 * **Lightning** (only hallow: `LIGHTNING 63`): a draw with `(draw & LIGHTNING) == 1` strikes; four draws place the top
   within ±50 of the island at height 500 and the bottom within ±10 of it at height 0; the bolt lives 500 ms, the screen
   flashes white for one frame and `cat_globallobbysfx` 1 plays flat at once (`0x10095124`, `0x10095310`). The bolt is
@@ -477,7 +477,8 @@ Behaviour worth knowing:
   for the chips flagged at device init (`0x566840`).
 * Snow: one triangle a flake, half-size 0.1, its apex at the top middle of atlas quadrant `index & 3` and its base
   at the quadrant's lower corners, full white, x and y spread by `1 + depth/8`, jittering by
-  `((rand & 31) - 16) / 2048` on every axis each frame (`0x57f490`). The original's other mode swirls flakes along
+  `((rand & 31) - 16) / 2048` on every axis each drawn frame (`0x57f490`; `[EXT:frame-driven-at-60hz]`: OpenTPW redraws the jitter, and the bolts' flicker,
+  once per 60 Hz reference frame). The original's other mode swirls flakes along
   a closed 128-point spline under engine flag `0x8bcbc8` bit `0x100`, which nothing in tp.exe sets, so the PC
   draws only the jitter version. The flake's vertices are homogeneous clip coordinates (x, y, z + 0.1, w = z + 0.1501), so OpenTPW
   moves the flake's depth by 0.1501 for its screen position; the depth-buffer value is not reproduced (`[EXT:snow-depth-value]`, AUDIO-901).

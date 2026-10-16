@@ -166,11 +166,11 @@ class Arithmetic(unittest.TestCase):
 
     def test_head_not_ready_bound_after_walk_i(self):
         # WALK-I (WALK-plan section 15) replaced the walk term: two queue walks over N cells, N x C + 2 x w2 with the
-        # enumerated per-cell term C = 9 and w2 = 15, plus the same 3 + 22 + 1. The traced floor is inside C: one cell at
-        # 0.118 cell per update takes 8.47 updates.
+        # enumerated per-cell term C and w2 = 15, plus the same 3 + 22 + 1. C was 9 at WALK-I and is 27 since the original walk
+        # (GATE-006 re-enumerated over 0x510100); the traced floor stays inside C: one cell at 0.118 cell per update takes 8.47 updates.
         def bound(cells_n):
-            return max(1, cells_n) * 9 + 2 * 15 + 3 + 22 + 1
-        self.assertEqual((281, 65), (bound(25), bound(1)))
+            return max(1, cells_n) * 27 + 2 * 15 + 3 + 22 + 1
+        self.assertEqual((731, 83), (bound(25), bound(1)))
         self.assertEqual(9, math.ceil(65536 / int(0.59 * 0.2 * 65536)))
 
 
@@ -184,7 +184,7 @@ class StaticRound4(unittest.TestCase):
         self.assertNotIn('WalkSpeedCellsPerSecond', gate)
         self.assertNotIn('TiredWalkFactor', gate)
         self.assertIn('var walkTurns = cells * QueueCellWalkTurns + 2 * MoveUpWalkTurns;', gate)
-        self.assertIn('internal const long QueueCellWalkTurns = 9;', gate)
+        self.assertIn('internal const long QueueCellWalkTurns = 27;', gate)
 
     def test_walk_scope_failure_leaves_waits_unjudged(self):
         gate = v1.show(v1.GATE, SUBJECT)

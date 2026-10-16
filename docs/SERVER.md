@@ -77,7 +77,9 @@ only after deploying a build that includes it; it does not attest older releases
   through `localhost:2019`. To apply a changed Caddyfile, run `docker compose restart caddy`.
   Docker keeps at most 3 × 10 MB of each container's output.
 - `opentpw-update.timer`: every night, pull the image and restart if it changed. `latest`
-  follows releases; CI publishes it for every `v*` tag (and `main` for every push to main).
+  follows releases; CI publishes it for every `v*` tag (and `main` for every push to main). Those
+  images carry the AOT browser page; a pull request's check builds the image with
+  `--build-arg WEB_AOT=false` (the interpreter page) to save the AOT compile's six minutes.
 - `opentpw-deploy.path`: runs the same update as soon as a release asks for it (below).
 - `opentpw-backup.timer`: every night, a copy of the data folder in `/var/backups/opentpw`,
   kept for seven days. It is on the same disk; download it now and then, or turn on Hetzner's

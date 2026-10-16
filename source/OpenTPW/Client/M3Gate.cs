@@ -1139,7 +1139,9 @@ internal sealed class M3GateRun
 				{
 					var target = guests.Attractions.FirstOrDefault( attraction => attraction.AttractionId == guest.AttractionId );
 					var join = target?.JoinCell ?? target?.EntranceCell;
-					var reachable = join is { } cell && grid.Distance( guest.Cell.X, guest.Cell.Y, cell.X, cell.Y ) >= 0;
+					// state 10 walks the whole way to the back cell (WALK-004): a guest already on one of the ride's queue cells has reached its goal
+					// A guest standing on a queue cell (a refused joiner on the back cell, or one the queue let go, QUEUE-010) walks off it by the original search; the path network has no queue cells to measure from.
+					var reachable = grid.IsQueue( guest.Cell.X, guest.Cell.Y ) || join is { } cell && grid.Distance( guest.Cell.X, guest.Cell.Y, cell.X, cell.Y ) >= 0;
 					if ( !reachable )
 					{
 						if ( track.UnreachableSince < 0 )
@@ -1238,13 +1240,13 @@ internal sealed class M3GateRun
 	/// (<see cref="QueueWalkTurns"/>). Each head is also held to its own remaining walk where that is smaller
 	/// (<see cref="HeadNotReadyLimit"/>).
 	/// </summary>
-	// [APPROX:GATE-006] the walk term N x C + 2 x w2 rests on C = 9 from a bounded enumeration of OpenTPW's own port of the traced steering (WALK-002..WALK-009), not on a proof for the original; it is looser than the retired GATE-005 check (owner decision 2026-10-10) — evidence needed: the corner branches, edge flags and route search of the original traced, then C re-derived
+	// [APPROX:GATE-006] the walk term N x C + 2 x w2 rests on C = 27 from a bounded enumeration of tp.exe's walk as OpenTPW ports it (WALK-002, WALK-003, WALK-009), not on a proof for the original; it is looser than the retired GATE-005 check (owner decision 2026-10-10) — evidence needed: the corner branches, edge flags and route search of the original traced, then C re-derived
 	internal static (long Turns, string Derivation) HeadNotReadyBound( int queueCells )
 	{
 		var cells = Math.Max( 1, queueCells );
 		var walkTurns = cells * QueueCellWalkTurns + 2 * MoveUpWalkTurns;
 		var turns = walkTurns + HeadWaitTurns;
-		return (turns, FormattableString.Invariant( $"[APPROX:GATE-006] two queue walks over {cells} cells: {cells} x C {QueueCellWalkTurns} + 2 x w2 {MoveUpWalkTurns} = {walkTurns} turns (enumeration of OpenTPW's port of the traced steering, s >= 0.59) + move-up wait {MoveUpWaitTurns} + {HeadInterludes} interludes x {GuestSimulation.InterludeTurns + 1} + 1 update order = {turns} turns; a head's own remaining walk replaces the walk term where smaller" ));
+		return (turns, FormattableString.Invariant( $"[APPROX:GATE-006] two queue walks over {cells} cells: {cells} x C {QueueCellWalkTurns} + 2 x w2 {MoveUpWalkTurns} = {walkTurns} turns (enumeration of tp.exe's walk as ported, s >= 0.59) + move-up wait {MoveUpWaitTurns} + {HeadInterludes} interludes x {GuestSimulation.InterludeTurns + 1} + 1 update order = {turns} turns; a head's own remaining walk replaces the walk term where smaller" ));
 	}
 
 	/// <summary>The move-up wait at gap ≤ 2: trunc(1.2 × 2) turns, then the move on the next update.</summary>
@@ -1340,18 +1342,19 @@ internal sealed class M3GateRun
 
 	/// <summary>
 	/// C: updates per queue cell crossed in one queue walk. One walk along the queue that crosses k cells and ends at a
-	/// slot takes at most k × C + w₂ updates (<see cref="QueueWalkTurns"/>): the bounded enumeration of OpenTPW's
-	/// steering (<see cref="GuestNavigation"/>, the traced step of WALK-plan §3–§7) in
-	/// <c>WalkTests.QueueWalkTermFullEnumeration</c> (docs/reverse/WALK-plan.md §15; the reduced grid runs in every test
-	/// pass as <c>WalkTests.QueueWalkTermIsDerivedByEnumeration</c>): routes of 0–4 crossings
-	/// with every turn sequence and front direction, long straight and cornered routes up to 25 crossings, starts anywhere
-	/// in the start cell, stale velocities up to the max speed, slots on both depth axes, separation off and at its
-	/// maximum against the walk, s from 0.59 to 2.0. At s ≥ 0.59 the max speed is ≥ 7,733 (0.118 cell per update), so a
-	/// straight cell takes 65,536 / 7,733 = 8.47 updates at full speed; the enumeration's slope is 8.4–8.5, hence 9.
+	/// slot takes at most k × C + w₂ updates (<see cref="QueueWalkTurns"/>). C = 27 is the bounded enumeration of tp.exe's
+	/// own walk (whole-walk destination 0x510100, search 0x511420, edge test 0x4D8750, the steering of
+	/// <see cref="GuestNavigation"/>) in <c>WalkTests.QueueWalkTermFullEnumerationOriginal</c> (OPENTPW_WALK_DERIVE=1; the
+	/// reduced grid runs in every test pass as <c>WalkTests.QueueWalkTermHoldsOverTheOriginalWalk</c>): routes of 0–4
+	/// crossings with every turn sequence, long straight and cornered routes up to 25 crossings, starts anywhere in the
+	/// start cell, stale velocities up to the max speed, slots on both depth axes, separation off and at its maximum
+	/// against the walk, s from 0.59 to 2.0. The worst walks are the short cornered ones that the original reroutes around
+	/// a neighbour's cell (3 crossings 93 updates, 4 crossings 118: about 26 per cell); long straight queues stay near 14
+	/// per cell (25 crossings 358). Under the first enumeration over OpenTPW's former per-cell search C was 9.
 	/// Holds under W2 (the guest is at least 15 updates old).
 	/// </summary>
-	// [APPROX:GATE-006] C = 9 comes from enumerating OpenTPW's port, including WALK-002 (corner branches), WALK-003 (separation neighbours, at most the max force against the walk in the enumeration), WALK-004 (routes) and the walkability rule WALK-005/006; it bounds OpenTPW's walk, and the original's only as far as those match — evidence needed: those parts traced, then C re-derived
-	internal const long QueueCellWalkTurns = 9;
+	// [APPROX:GATE-006] C = 27 bounds tp.exe's walk as OpenTPW ports it, an enumeration and not a proof: the corner branches of avoid_walls (WALK-002) and the neighbour query order of the separation (WALK-003) are not matched to the instruction, and the enumeration puts the neighbours' cells as the only blockers — evidence needed: those traced, then C re-derived
+	internal const long QueueCellWalkTurns = 27;
 
 	/// <summary>One queue walk crossing <paramref name="cells"/> cells to a slot: k × C + w₂ updates.</summary>
 	internal static long QueueWalkTurns( int cells ) => Math.Max( 0, cells ) * QueueCellWalkTurns + MoveUpWalkTurns;
@@ -1379,7 +1382,7 @@ internal sealed class M3GateRun
 	/// at most the largest index among the walk's cells (the join cell counts as N).</item>
 	/// </list>
 	/// </summary>
-	// [APPROX:GATE-006] each walk is charged k x C + w2 from its own start, the enumerated per-walk term (OpenTPW's port, not a proof for the original) — evidence needed: as for C
+	// [APPROX:GATE-006] each walk is charged k x C + w2 from its own start, the enumerated per-walk term (tp.exe's walk as ported, not a proof) — evidence needed: as for C
 	internal static long HeadRemainingWalkTurns( Guest head, IRideVisitorBridge ride )
 	{
 		var cells = ride.QueueCells;

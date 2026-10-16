@@ -216,7 +216,7 @@ Still approximations:
 | ID | What |
 | --- | --- |
 | ECON-023 | The ride's state word is split between the visitor bridge (states 1 and 4, told apart by the life gauge the level mirrors into it) and the economy's broken flag, which the level joins on the rising edge of the bridge's state; a headless economy without ride scripts breaks an object down at once and repairs it without the wait. |
-| ECON-049 | The back-of-queue link test of the reopening guard (`0x4DE4A0`) is not modelled: OpenTPW keeps no connection bits for queue cells. |
+| ECON-049 | The back-of-queue link test of the reopening guard runs only for rides with real queue cells (entrance cells keep no link byte). |
 
 Not in OpenTPW yet:
 

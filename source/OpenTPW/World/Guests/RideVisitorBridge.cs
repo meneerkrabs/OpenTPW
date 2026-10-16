@@ -625,18 +625,24 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 		return null;
 	}
 
-	// [APPROX:QUEUE-003] guests walk to OpenTPW's join cell, the back cell's first walkable 4-neighbour in Directions order (−Y, +X, +Y, −X, the links 1, 4, 16, 64) with no connection test, and join from there; with none the ride cannot be joined. In tp.exe the state-10 join (0x004FFBC0) needs the guest's own cell to be the back queue cell (0x004DE110 → 0x004DE130, else "The back of the queue has moved"), and the first neighbour in that order whose bit is set in the back cell's connection byte +0x0C (0x00522770) and which is a path cell (type 1, 0x00536310) is used only for the axis of the back cell's fourth place (0x004DE840; none: the log "No path attached to end of queue" and the cell's own link +0x0D). OpenTPW keeps no connection bits for queue cells (QUEUE-012..014) — evidence needed: the queue tool's writes of +0x0C and +0x0D, and the route (0x004FA5F0) that walks a guest onto a queue cell
+	/// <summary>
+	/// The path cell attached to the back of the queue (<c>0x4DE840</c>'s cell): the first cardinal neighbour, in the order −Y, +X, +Y, −X,
+	/// whose bit is set in the back cell's link byte and which is a path cell; the back cell itself when the queue is the one-cell fallback
+	/// on a path; null when the queue is not connected to a path.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DE840 attached path] 0x4DEA2F..0x4DEA57: for the bits 1, 4, 16, 64 of the back cell's +0x0C (0x522770) the neighbour along it (0x4D97E0) is taken when it is type 1 (0x536310); none logs "No path attached to end of queue"
+	// [APPROX:QUEUE-003] guests walk to the join cell, the path cell attached to the back of the queue, and join from it; tp.exe's state-10 join (0x004FFBC0) needs the guest's own cell to be the back queue cell (0x004DE110 → 0x004DE130, else "The back of the queue has moved"), reached by the walk's edge test 0x4D8750 through the back cell's link, and uses the attached path cell only for the back cell's fourth place; OpenTPW's ride entrance cell keeps no link byte (its cells are not typed map cells, WALK-005), so the ride keeps its front in QueueFrontCell where tp.exe reads it from the entrance cell's bit (0x4DE040) — evidence needed: the route that walks a guest onto a queue cell (0x004FA5F0) on OpenTPW's walk (WALK-006)
 	private (int X, int Y)? FindJoinCell( GuestPathGrid grid )
 	{
 		var back = queueCells[^1];
 		if ( grid.IsWalkable( back.X, back.Y ) )
 			return back;
+		var links = grid.Cells.LinksAt( back.X, back.Y );
 		for ( var direction = 0; direction < 4; direction++ )
 		{
 			var (dx, dy) = GuestPathGrid.Directions[direction];
-			var cell = (back.X + dx, back.Y + dy);
-			if ( grid.IsWalkable( cell.Item1, cell.Item2 ) && !queueCells.Contains( cell ) )
-				return cell;
+			if ( (links & GuestPathGrid.LinkValue( direction )) != 0 && grid.IsWalkable( back.X + dx, back.Y + dy ) )
+				return (back.X + dx, back.Y + dy);
 		}
 		return null;
 	}

@@ -16,6 +16,8 @@ public sealed class UiTextField : UiElement
 	public float TextInset { get; set; }
 	/// <summary>Background model frame; null draws the plain help-box colour.</summary>
 	public string? Model { get; set; }
+	/// <summary>Text shown, dimmed, while the field is empty (the original's prompt texts); never part of <see cref="Text"/>.</summary>
+	public string? Placeholder { get; set; }
 	/// <summary>Called with Enter.</summary>
 	public Action? Submitted { get; set; }
 	/// <summary>Called whenever the text changes.</summary>
@@ -62,13 +64,14 @@ public sealed class UiTextField : UiElement
 		// [EXT:ONLINE-UI] text field art and caret are OpenTPW's; the original field template is not decoded
 		if ( Model == null || !context.DrawModel( Model, 0, rect, focused ? new RgbaByte( 255, 255, 220, 255 ) : null ) )
 			context.Batch.AddRectangle( rect, focused ? new RgbaByte( 40, 50, 110, 220 ) : UiColors.HelpBackground );
-		var shown = Password ? new string( '*', Text.Length ) : Text;
+		var prompt = Text.Length == 0 && Placeholder is { Length: > 0 };
+		var shown = prompt ? Placeholder! : Password ? new string( '*', Text.Length ) : Text;
 		// The caret blinks twice a second while the field has the focus.
 		if ( focused && Enabled && (int)(context.Time * 2) % 2 == 0 )
 			shown += "_";
 		var scale = rect.Height / Bounds.Height;
 		var inset = MathF.Max( rect.Height * 0.25f, TextInset * scale );
-		context.DrawText( context.Fonts.Label, shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled ? UiColors.Value : UiColors.Disabled );
+		context.DrawText( context.Fonts.Label, shown, new UiRect( rect.X + inset, rect.Y, rect.Width - inset - rect.Height * 0.25f, rect.Height ), Enabled && !prompt ? UiColors.Value : UiColors.Disabled );
 	}
 }
 
@@ -125,6 +128,12 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public bool ClicksOnActivate { get; set; } = true;
 	/// <summary>Whether new rows keep the view at the bottom (chat).</summary>
 	public bool FollowEnd { get; set; }
+	/// <summary>Whether the list draws its own background (off when an original frame model is drawn behind it).</summary>
+	public bool Background { get; set; } = true;
+	/// <summary>Whether the list draws its thin position bar (off when an original scroller stands beside it).</summary>
+	public bool PositionBar { get; set; } = true;
+	/// <summary>The first visible row.</summary>
+	public int FirstRow => Math.Clamp( first, 0, Math.Max( 0, Rows().Count - VisibleRows ) );
 	public override bool Focusable => Visible && Enabled;
 	/// <summary>Up/Down keep moving the focus between elements; Left/Right change the selection.</summary>
 	public bool ArrowsSelect => false;
@@ -179,7 +188,7 @@ public sealed class UiScrollList : UiElement, IUiRowList
 	public override void Draw( UiContext context, bool focused, bool pressed )
 	{
 		var rect = ScreenRect( context.Canvas );
-		if ( Model == null || !context.DrawModel( Model, 0, rect ) )
+		if ( Background && (Model == null || !context.DrawModel( Model, 0, rect )) )
 			context.Batch.AddRectangle( rect, UiColors.HelpBackground );
 		var rows = Rows();
 		if ( FollowEnd && following && Selected < 0 )
@@ -221,7 +230,7 @@ public sealed class UiScrollList : UiElement, IUiRowList
 			}
 		}
 		// A thin position bar when not all rows fit.
-		if ( rows.Count > VisibleRows )
+		if ( PositionBar && rows.Count > VisibleRows )
 		{
 			var track = new UiRect( rect.Right - margin * 0.6f, rect.Y + margin, margin * 0.3f, rect.Height - margin * 2 );
 			var thumb = track.Height * VisibleRows / rows.Count;

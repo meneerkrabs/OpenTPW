@@ -103,7 +103,7 @@ public class PathBuilderTests
 			Assert.AreEqual( CellBuildResult.Occupied, builder.CheckCell( 2, 2 ), $"type {type}" );
 		}
 		rig.Cells.SetType( 2, 2, ParkCellType.Empty );
-		// 4. Path over a queue cell (CanChangeCellType allows it, the validator refuses: PATH-008).
+		// 4. Path over a queue cell that is not a queue end (CanChangeCellType allows it, the validator refuses).
 		rig.Grid.SetQueue( 3, 3, 0 );
 		Assert.AreEqual( CellBuildResult.QueueCell, builder.CheckCell( 3, 3 ) );
 		// 5. Object footprints and fixed items.
@@ -727,11 +727,85 @@ public class PathBuilderTests
 	}
 
 	[TestMethod]
+	public void TheEnteringClickSetsTheStartWhenTheCellPasses()
+	{
+		var rig = new Rig();
+		var tool = new CellBuildTool();
+		tool.Enter( rig.Builder, null );
+		Assert.IsTrue( tool.IsActive );
+		Assert.IsNull( tool.Start, "SetMode sets the start to −1" );
+		Assert.AreEqual( 0, tool.Vertices.Count );
+		tool.Hover( (3, 3) );
+		Assert.IsNull( tool.Click( (3, 3) ), "the first click lays nothing" );
+		Assert.AreEqual( (3, 3), tool.Start );
+		CollectionAssert.AreEqual( new[] { (3, 3) }, tool.Vertices.ToArray() );
+		Assert.AreEqual( ParkCellType.Empty, rig.Cells.TypeAt( 3, 3 ) );
+		var line = tool.Click( (6, 3) );
+		Assert.IsNotNull( line );
+		Assert.AreEqual( 4, line!.Built.Count, "the next click lays the line from that start" );
+	}
+
+	[TestMethod]
+	public void ARefusedEnteringClickEndsTheToolAgain()
+	{
+		var rig = new Rig();
+		rig.Objects.Add( (3, 3) );
+		var tool = new CellBuildTool();
+		var ended = 0;
+		tool.Ended += () => ended++;
+		tool.Enter( rig.Builder, null );
+		tool.Hover( (3, 3) );
+		var refused = tool.Click( (3, 3) );
+		Assert.IsNotNull( refused );
+		Assert.IsTrue( refused!.GhostRefused );
+		Assert.AreEqual( CellBuildResult.Occupied, refused.StoppedBy );
+		Assert.IsFalse( tool.IsActive, "the refused single-cell ghost ends the tool (0x524A63)" );
+		Assert.AreEqual( 1, ended );
+	}
+
+	/// <summary>A writer whose ghost always passes but whose start check refuses chosen cells.</summary>
+	private sealed class StartCheckWriter : ICellLineWriter
+	{
+		public HashSet<(int, int)> Refused { get; } = new();
+		public CellToolMode Mode => CellToolMode.Path;
+		public SegmentResult Preview( (int X, int Y) start, (int X, int Y) cursor ) =>
+			new( cursor, Array.Empty<(int X, int Y)>(), 0, CellBuildResult.Ok, false ) { Start = start, Line = ParkPathBuilder.LayLine( start, cursor ) };
+		public SegmentResult Commit( (int X, int Y) start, (int X, int Y) end ) => Preview( start, end );
+		public void Undo( SegmentResult segment ) { }
+		public bool CanStart( (int X, int Y) cell ) => !Refused.Contains( cell );
+	}
+
+	[TestMethod]
+	public void AStartCheckRefusalLeavesTheToolOnWithoutAStart()
+	{
+		var writer = new StartCheckWriter();
+		writer.Refused.Add( (2, 2) );
+		var tool = new CellBuildTool();
+		tool.Enter( writer, null );
+		Assert.IsNull( tool.Click( (2, 2) ) );
+		Assert.IsTrue( tool.IsActive, "0x52765B: the tool stays on" );
+		Assert.IsNull( tool.Start );
+		Assert.IsNull( tool.Click( (4, 2) ) );
+		Assert.AreEqual( (4, 2), tool.Start, "a later click without a start sets it" );
+	}
+
+	[TestMethod]
+	public void AnExistingPathCanStartALine()
+	{
+		var rig = new Rig();
+		rig.Builder.BuildSegment( (1, 1), (3, 1) );
+		var tool = new CellBuildTool();
+		tool.Enter( rig.Builder, null );
+		tool.Click( (2, 1) );
+		Assert.AreEqual( (2, 1), tool.Start, "path over path (0 or 0xB) starts a line" );
+	}
+
+	[TestMethod]
 	public void PathRegisterHasThePlanUnknowns()
 	{
 		var names = PathApproximations.Entries.Select( entry => entry.Rule.Split( ':' )[0] ).ToArray();
-		// PATH-UNDO (002), PATH-ENDFLAG (003), PATH-FREE (009), PATH-LEDGER (010), PATH-CANCEL (011) and PATH-ENDREFUSE (012) are retired: traced in tp.exe and matched.
-		CollectionAssert.AreEqual( new[] { "PATH-ENTER", "PATH-CONNECT", "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-CODE8", "PATH-PAUSE", "PATH-VARIANT", "QUEUE-TEXTURES" }, names );
-		CollectionAssert.AreEqual( new[] { 1, 4, 5, 6, 7, 8, 13, 14, 15 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
+		// PATH-ENTER (001), PATH-UNDO (002), PATH-ENDFLAG (003), PATH-CONNECT (004), PATH-CODE8 (008), PATH-FREE (009), PATH-LEDGER (010), PATH-CANCEL (011), PATH-ENDREFUSE (012) and PATH-VARIANT (014) are retired: traced in tp.exe and matched.
+		CollectionAssert.AreEqual( new[] { "PATH-REMOVE", "PATH-SLOPE", "PATH-LAND", "PATH-PAUSE", "QUEUE-MODELS", "PATH-INITIAL" }, names );
+		CollectionAssert.AreEqual( new[] { 5, 6, 7, 13, 15, 16 }.Select( index => $"PATH-{index:000}" ).ToArray(), PathApproximations.Entries.Select( entry => entry.Id ).ToArray() );
 	}
 }

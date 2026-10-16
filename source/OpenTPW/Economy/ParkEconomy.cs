@@ -244,6 +244,8 @@ public sealed class ParkEconomy : IParkEconomy
 		for ( var hour = hourBefore + 1; hour <= turn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerHour; hour++ )
 			UpdateHour();
 		if ( changes.HasFlag( CalendarChange.Day ) )
+			EndObjectDay();
+		if ( changes.HasFlag( CalendarChange.Day ) )
 			EndDay( previousTurn * ParkCalendar.SecondsPerTurn / ParkCalendar.SecondsPerDay );
 		if ( changes.HasFlag( CalendarChange.Month ) )
 			EndMonth( (stored.Year - ParkCalendar.Epoch.Year) * ParkCalendar.MonthsPerYear + stored.Month );
@@ -379,9 +381,85 @@ public sealed class ParkEconomy : IParkEconomy
 		return true;
 	}
 
-	/// <summary>The rides in object order that need a mechanic and are claimed by nobody or by <paramref name="mechanic"/>, with their cells' ids.</summary>
-	internal IEnumerable<ParkObjectState> RidesNeedingMechanic( int mechanic ) =>
-		objects.Values.OrderBy( item => item.Id ).Where( item => NeedsMechanic( item.Id ) && (item.MechanicId == 0 || item.MechanicId == mechanic) );
+	/// <summary>Park turns a claim holds after it was taken before it can lapse (tp.exe <c>0x004E0220</c>).</summary>
+	public const int ClaimLapseTurns = 100;
+
+	/// <summary>A world member claims the object (tp.exe <c>0x004E01F0</c>): the claim word takes his id and the claim turn the current turn.</summary>
+	// [BIN:TPW-EXE:0x004E01F0 claim] +0x5E = the claimant's id, +0x60 = game +0x1DA70C (the turn)
+	internal void Claim( ParkObjectState item, StaffMember member )
+	{
+		item.MechanicId = member.Id;
+		item.ClaimTurn = Turn;
+	}
+
+	/// <summary>
+	/// The object's claimant (tp.exe <c>0x004E0220</c>), 0 for none. A claim taken more than <see cref="ClaimLapseTurns"/> turns ago lapses here,
+	/// unless its claimant still targets the object: a mechanic's ride (<c>+0x218</c>) or a handyman's toilet (<c>+0x21A</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E0220 claimant] +0x5E zero: none; the turn above +0x60 + 100 (unsigned) and the claimant's 0x00506580 false (type 4: +0x218 is the object, type 5: +0x21A is, other types "Invalid call" and false): "Ride: removing staff member", +0x5E = 0 and +0x60 = 0
+	internal int Claimant( ParkObjectState item )
+	{
+		if ( item.MechanicId == 0 )
+			return 0;
+		if ( unchecked( (uint)Turn ) > unchecked( (uint)(item.ClaimTurn + ClaimLapseTurns) ) )
+		{
+			var claimant = Staff.Members.FirstOrDefault( member => member.Id == item.MechanicId );
+			var targets = claimant?.Type switch
+			{
+				StaffType.Mechanic => claimant.RideId == item.Id,
+				StaffType.Handyman => claimant.ToiletId == item.Id,
+				_ => false
+			};
+			if ( !targets )
+			{
+				item.MechanicId = 0;
+				item.ClaimTurn = 0;
+				return 0;
+			}
+		}
+		return item.MechanicId;
+	}
+
+	/// <summary>The mechanic HQ's cursor into the object list (<see cref="FindRideForMechanic"/>): the object a search last started at, 0 for none.</summary>
+	public int MechanicCursor { get; internal set; }
+
+	/// <summary>
+	/// The mechanics' ride finder (tp.exe <c>0x004DAA90</c>): one cursor on the mechanic HQ walks the object list (newest first) round from the
+	/// object after the previous search's start, once; it takes the nearest object, by squared distance between <paramref name="cellOf"/>'s cells,
+	/// that needs a mechanic and whose claim is free or <paramref name="mechanic"/>'s, the first met on a tie. A search whose previous start was the
+	/// list's last object finds nothing, and the next one starts at the head.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DAA90 ride finder] the HQ word +0xC: when nonzero and found in the list (game +0x1DA746, next +0xC) it moves to that object's next (0 past the end), else it takes the head; start = it; 0 returns none; then each object: the cursor moves to its next (the head past the end), the object passes on state 1 (0x004E0370), mRequestedService on a non-toilet (0x004E03D0, flag +0x32 bit 0) or state 2 (0x004E03E0), with its claim (0x004E0220) free or the mechanic's; d = dx² + dy² of the cell bytes, strictly smaller replaces from 0xFFFFFFFF; until the cursor is back at the start
+	internal ParkObjectState? FindRideForMechanic( StaffMember mechanic, (int X, int Y) cell, Func<int, (int X, int Y)?> cellOf )
+	{
+		var list = objects.Keys.OrderByDescending( id => id ).ToList();
+		int Next( int id ) => list.IndexOf( id ) is var index and >= 0 && index + 1 < list.Count ? list[index + 1] : 0;
+		var cursor = MechanicCursor;
+		cursor = cursor != 0 && list.Contains( cursor ) ? Next( cursor ) : list.Count > 0 ? list[0] : 0;
+		MechanicCursor = cursor;
+		if ( cursor == 0 )
+			return null;
+		var start = cursor;
+		ParkObjectState? best = null;
+		var bestDistance = uint.MaxValue;
+		do
+		{
+			var current = objects[cursor];
+			cursor = Next( cursor );
+			if ( cursor == 0 )
+				cursor = list[0];
+			if ( !NeedsMechanic( current.Id ) || Claimant( current ) is not 0 && current.MechanicId != mechanic.Id || cellOf( current.Id ) is not { } at )
+				continue;
+			var dx = at.X - cell.X;
+			var dy = at.Y - cell.Y;
+			var distance = (uint)(dx * dx + dy * dy);
+			if ( distance < bestDistance )
+				(best, bestDistance) = (current, distance);
+		}
+		while ( cursor != start );
+		MechanicCursor = cursor;
+		return best;
+	}
 
 	/// <summary>The repair or upgrade time a mechanic sets on arrival (tp.exe <c>0x004DA370</c> state 13, <see cref="RepairTimer"/>).</summary>
 	internal long MechanicWorkTime( StaffMember member, int instanceId )
@@ -506,9 +584,9 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>A toilet's gauge byte is below <see cref="DirtyToiletGauge"/> (tp.exe <c>0x004E0390</c>).</summary>
 	internal static bool IsDirtyToilet( ParkObjectState item ) => (QueueJoinRules.Truncate( (float)item.Repair ) & 0xFF) < DirtyToiletGauge;
 
-	/// <summary>The relief objects (toilets), in object order.</summary>
+	/// <summary>The relief objects (toilets) in the original object list's order: newest first (ids descending, 0x00519D80 pushes each new object at the head).</summary>
 	internal IEnumerable<ParkObjectState> Toilets() =>
-		objects.Values.Where( item => Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief ).OrderBy( item => item.Id );
+		objects.Values.Where( item => Catalog.TryGet( item.InfoId, out var info ) && info.ProvidesRelief ).OrderByDescending( item => item.Id );
 
 	/// <summary>The end of a handyman's clean (tp.exe <c>0x004DFD80</c>): the gauge is back at 100, the claim and the request clear.</summary>
 	internal void FinishToiletClean( StaffMember member )
@@ -1409,6 +1487,7 @@ public sealed class ParkEconomy : IParkEconomy
 	/// <summary>Ends the jobs on a removed object: a mechanic's timed job, and a world handyman's walk to the toilet or its clean (he searches again).</summary>
 	private void ReleaseJobsOn( int instanceId )
 	{
+		StaffWorld?.ObjectRemoved( this, instanceId );
 		foreach ( var member in Staff.Members )
 		{
 			if ( member.AssignedInstanceId == instanceId )
@@ -1431,7 +1510,7 @@ public sealed class ParkEconomy : IParkEconomy
 			}
 			if ( member.RestAreaId == instanceId )
 			{
-				// the rest area went: a walk to it or a rest in it ends; the original's removal message 10 (0x004DD0A0, handled by 0x00504C70) also ends both and sends a resting member on to the nearest other rest area, which is not modelled (ECON-022)
+				// the rest area went: a walk to it or a rest in it ends (a world's members heard the removal message first, StaffWorldSimulation.ObjectRemoved)
 				member.RestAreaId = 0;
 				if ( member.Job is StaffJob.ToRestArea or StaffJob.Resting )
 				{
@@ -1840,6 +1919,39 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( objects.TryGetValue( instanceId, out var item ) )
 			item.TimesUsed++;
 	}
+
+	/// <summary>Days of walk-aways an object keeps (the ring <c>+0x234</c> the object constructor sizes to 30).</summary>
+	// [BIN:TPW-EXE:0x004DB090 object constructor] the ring heads +0x224/+0x2AC take -1 and the sizes +0x228/+0x2B0 take 0x1E, the full flags +0x22C/+0x2B4 0 (0x004DB187..0x004DB1AB)
+	public const int WalkAwayHistoryDays = 30;
+
+	/// <summary>
+	/// A guest refused the object's price at its stand point and walked away (tp.exe <c>0x004E1670</c>): <see cref="ParkObjectState.WalkAways"/>
+	/// and <see cref="ParkObjectState.WalkAwaysToday"/> each rise by one.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E1670 walk-away] +0x1A4 (mNumWalkAways, serializer key at 0x0075B508) += 1 and the day count +0x230 += 1; the state-13 refusal (0x0050077F) is its only caller
+	public void RecordWalkAway( int instanceId )
+	{
+		if ( !objects.TryGetValue( instanceId, out var item ) )
+			return;
+		item.WalkAways++;
+		item.WalkAwaysToday++;
+	}
+
+	/// <summary>The day's end for the objects (tp.exe <c>0x004DD320</c> on the day message): today's walk-aways move into the history, which keeps the last 30 days.</summary>
+	// [BIN:TPW-EXE:0x004DD320 object day message] on message 0xB (the calendar update 0x004F8260 sends it when the day changes, 0x0040F4C0; 0xC at a new month) each of the object's six rings takes its day count: +0x2AC = head + 1, wrapping to 0 with the full flag set at the size; the ring entry = +0x230, then +0x230 = 0
+	private void EndObjectDay()
+	{
+		foreach ( var item in objects.Values )
+		{
+			item.WalkAwayDays.Add( item.WalkAwaysToday );
+			if ( item.WalkAwayDays.Count > WalkAwayHistoryDays )
+				item.WalkAwayDays.RemoveAt( 0 );
+			item.WalkAwaysToday = 0;
+		}
+	}
+
+	/// <summary>The park's perception statistics (<see cref="ParkPriceStatistics"/>), which the price test at a stand point records.</summary>
+	public ParkPriceStatistics PriceStatistics { get; } = new();
 
 	public void ReportRecord( ParkRecordKind kind, int instanceId, long value )
 	{

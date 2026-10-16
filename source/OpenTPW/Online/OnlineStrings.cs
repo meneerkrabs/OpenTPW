@@ -27,6 +27,9 @@ public static class OnlineStrings
 	public const int SendPostcard = 207;
 	public const int MessageTitle = 208;
 	public const int MessageText = 209;
+	public const int EmailAddresses = 210;
+	public const int InvalidEmailAddresses = 213;
+	public const int PostcardTitle = 215;
 	public const int PostcardGreeting = 216;
 	public const int ParkName = 218;
 	public const int Description = 219;

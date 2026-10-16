@@ -25,6 +25,7 @@ public partial class Level : IDisposable
 				StaffPlacement?.Cancel();
 				PatrolTool?.Cancel();
 				BuyLandTool?.Cancel();
+				AreaClearTool?.Cancel();
 			}
 			isPlacing = value;
 		}
@@ -88,6 +89,15 @@ public partial class Level : IDisposable
 	}
 	private bool wasMouseDown;
 	private int renderedCellVersion;
+
+	/// <summary>Rebuilds the path layer (path tiles and queue models) when the cell map changed since it was last drawn; every frame's update runs it.</summary>
+	internal void RefreshRenderedCells()
+	{
+		if ( OriginalTerrain == null || Guests == null || Guests.Grid.Cells.Version == renderedCellVersion )
+			return;
+		renderedCellVersion = Guests.Grid.Cells.Version;
+		OriginalTerrain.RefreshPaths();
+	}
 	/// <summary>Set each frame by the original HUD when the pointer is over it, so HUD clicks do not build.</summary>
 	public bool UiCapturesMouse { get; set; }
 	/// <summary>Simulation speed from the HUD speed control (0 = paused).</summary>
@@ -383,8 +393,13 @@ public partial class Level : IDisposable
 				var cells = Guests.Grid.Cells;
 				OriginalTerrain.PathSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Path;
 				OriginalTerrain.QueueSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue;
-				OriginalTerrain.QueueLinkSource = cells.QueueLinkAt;
-				if ( resumeState != null || incLayout != null ) OriginalTerrain.RefreshPaths();
+				OriginalTerrain.QueueModelSource = ( x, y ) => cells.TypeAt( x, y ) == ParkCellType.Queue ? QueueModels.Choose( cells, x, y ) : null;
+				OriginalTerrain.PathVariantSource = PathVariants.IsSecond;
+				// [BIN:TPW-EXE:0x00536490 map init refresh] the world's set-up refreshes every cell in order, so each path cell's chooser rolls once at the start
+				for ( var y = 0; y < cells.Height; y++ )
+					for ( var x = 0; x < cells.Width; x++ )
+						RefreshTile( x, y );
+				OriginalTerrain.RefreshPaths();
 				renderedCellVersion = cells.Version;
 			}
 			if ( Park != null && Guests != null )
@@ -717,11 +732,7 @@ public partial class Level : IDisposable
 		}
 		UpdateWorldInput( Input.Mouse.Left, UiCapturesMouse || ImGuiNET.ImGui.GetIO().WantCaptureMouse,
 			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
-		if ( OriginalTerrain != null && Guests != null && Guests.Grid.Cells.Version != renderedCellVersion )
-		{
-			renderedCellVersion = Guests.Grid.Cells.Version;
-			OriginalTerrain.RefreshPaths();
-		}
+		RefreshRenderedCells();
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();
@@ -887,6 +898,7 @@ public partial class Level : IDisposable
 		// the patrol tool's employee id belongs to the replaced economy
 		PatrolTool?.Cancel();
 		BuyLandTool?.Cancel();
+		AreaClearTool?.Cancel();
 		AttachStaffWorld();
 		AttachCoasterChallenges();
 		// The gate holds the economy it was built over; the load replaced it.

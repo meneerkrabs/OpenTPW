@@ -54,6 +54,8 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x5323c1 land cash pointer] the Buy Land validator's money refusal sets 0x816d5c, which the pointer switch 0x52f950 turns into the cash pointer (20)
 		if ( level.BuyLandTool is { IsActive: true } landTool )
 			return OriginalPointers.TypeOf( OriginalPointers.ForTool( 0x39, cash: landTool.HoverTooDear ) ?? 2 );
+		if ( level.AreaClearTool is { IsActive: true } )
+			return OriginalPointers.TypeOf( OriginalPointers.ForTool( 0x3A ) ?? 2 );
 		// the tool mode of the original: 4 places a blueprint, the cell tool's own mode is the cell type it writes (path 1, queue 3, kart track 11, water track 16)
 		var mode = level.BuildEntry != null ? 4 : level.CellTool.IsActive ? (int)level.CellTool.Mode : level.IsCoasterToolActive ? 11 : 0;
 		var pointer = OriginalPointers.ForTool( mode, noPlace: level.BuildEntry != null && placementRefused );

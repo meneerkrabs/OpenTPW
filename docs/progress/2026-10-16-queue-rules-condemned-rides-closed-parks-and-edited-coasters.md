@@ -22,4 +22,4 @@ set); older saves load as state 1. Verified with 4453 tests passing without game
 
 Still open: a guest whose cell left the queue still leaves Confused, Angry is chosen by guest id rather than thing id (WALK-010), event 6
 (a debug-only ring) and the dismissal sound; the entrance gate's variable 1 at the booth (`0x51A290`), AdmitPerson's refusal at a closed
-ride (`0x4E0900`), whether shops carry the openable flag, and state 10's twelfth-update call to `0x4FD570`.
+ride (`0x4E0900`), whether shops carry the openable flag, and state 10's twelfth-update call to `0x4FD570` (now GUEST-018: with the park open the handler counts `+0x2C` and calls it every twelfth update).

@@ -15,7 +15,9 @@ public enum QueueBuildResult
 	Blocked,
 	TooLong,
 	/// <summary>Refused by the level (read-only visit, no money).</summary>
-	Refused
+	Refused,
+	/// <summary>The cell is a path cell beside the back of the queue: the queue was linked to it (a queue line ending on a path, code 8) and nothing was laid.</summary>
+	Connected
 }
 
 /// <summary>
@@ -61,23 +63,116 @@ public static class QueuePaths
 		return GuestPathGrid.DirectionBetween( x, y, back.X, back.Y ) >= 0 ? QueueBuildResult.Ok : QueueBuildResult.NotAtQueueEnd;
 	}
 
-	/// <summary>Lays (x, y) as the next queue cell of <paramref name="ride"/> and recomputes the queue.</summary>
+	/// <summary>
+	/// Lays (x, y) as the next queue cell of <paramref name="ride"/>, links it (the line's link pass) and recomputes the queue; a path
+	/// cell beside the back of an existing queue is linked to the back instead (<see cref="QueueBuildResult.Connected"/>, nothing laid).
+	/// </summary>
 	public static QueueBuildResult TryExtend( GuestPathGrid grid, RideVisitorBridge ride, int x, int y, Func<int, int, bool>? isBlocked = null )
 	{
 		ride.RecomputeQueue( grid );
+		if ( grid.IsWalkable( x, y ) && HasQueueCells( grid, ride ) && GuestPathGrid.DirectionBetween( ride.QueueBackCell.X, ride.QueueBackCell.Y, x, y ) >= 0 )
+			return Connect( grid, ride, ride.QueueBackCell, (x, y) ) ? QueueBuildResult.Connected : QueueBuildResult.Blocked;
 		var result = CheckExtend( grid, ride, x, y, isBlocked );
 		if ( result != QueueBuildResult.Ok )
 			return result;
-		var front = ride.QueueFrontCell!.Value;
-		var towards = grid.IsQueue( front.X, front.Y )
-			? GuestPathGrid.DirectionBetween( x, y, ride.QueueBackCell.X, ride.QueueBackCell.Y )
-			: ride.QueueEntranceDirection;
+		var first = !HasQueueCells( grid, ride );
+		var back = ride.QueueBackCell;
+		var towards = first ? ride.QueueEntranceDirection : GuestPathGrid.DirectionBetween( x, y, back.X, back.Y );
 		grid.SetQueue( x, y, towards );
+		if ( first )
+			LinkFront( grid.Cells, x, y, ride.QueueEntranceDirection );
+		else
+			PathLinkWriter.LinkQueueStep( grid.Cells, x, y, x - back.X, y - back.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
 		ride.RecomputeQueue( grid );
 		return QueueBuildResult.Ok;
 	}
 
-	/// <summary>Lays a run of cells in order; stops at the first refusal. Returns the number laid.</summary>
+	/// <summary>Whether the ride's queue has real queue cells (its front is a queue cell), not only the one-cell fallback.</summary>
+	private static bool HasQueueCells( GuestPathGrid grid, RideVisitorBridge ride ) =>
+		ride.QueueFrontCell is { } front && grid.IsQueue( front.X, front.Y );
+
+	/// <summary>
+	/// The owner test of the link writer's mode 3 (the cell's owner word <c>+0x10</c> is the tool's ride or 0): OpenTPW keeps no owner
+	/// word; a queue cell belongs to the ride whose queue walk reaches it, and the cells a line meets are the ride's own (the validator
+	/// refuses another ride's queue cell, <c>0x5359C6</c>).
+	/// </summary>
+	private static Func<int, int, bool> OwnedBy( RideVisitorBridge ride )
+	{
+		var cells = ride.QueueCells;
+		return ( x, y ) => cells.Contains( (x, y) );
+	}
+
+	/// <summary>
+	/// The first cell of a ride's queue links toward the ride's entrance: the link writer's first-cell scan, which links the line's
+	/// first cell to a neighbour that is the ride's entrance cell and whose queue link points at it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0053522D first queue cell] for the line's first cell (0x820AA4) each cardinal neighbour that is the ride's entrance cell (ride +0x36) and whose queue link +0x0D points back is linked both ways (0x53525A..0x535366); the ride finds its front cell through the entrance cell's +0x0C bit (0x4DE040, order 1, 16, 64, 4)
+	// OpenTPW's ride cells are not typed map cells (WALK-005): only the front cell's bit toward the entrance is written, and the ride keeps its front in QueueFrontCell rather than reading the entrance cell's bit (QUEUE-003)
+	private static void LinkFront( ParkCellMap cells, int x, int y, int entranceDirection )
+	{
+		if ( entranceDirection is >= 0 and < 4 )
+			cells.SetLinks( x, y, (byte)(cells.LinksAt( x, y ) | GuestPathGrid.LinkValue( entranceDirection )) );
+	}
+
+	/// <summary>
+	/// A queue line of <paramref name="ride"/> ending on the path cell <paramref name="path"/> after the queue cell <paramref name="before"/>
+	/// (the validator's code 8): the link writer's mode 3 links the two when the queue cell has room, and clears the path cell's diagonals beside
+	/// the queue. False when <paramref name="path"/> is not a path cell beside <paramref name="before"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0052744E queue line ending on a path] the type pass refuses the last cell (queue over path is not allowed there, 0x535600), but the link pass 0x80 still runs on it with the mode of the last type written (3): mode 3 links the path cell to the queue cell before it (0x53538C); the pass 0x82 then gives the path cell a queue link +0x0D toward it, which no reader of a type-1 cell uses (0x4D8750 and 0x5348D0 read it for types 9 and 10, 0x535DD0 and 0x4DE670 for type 3), and pass 0x83 its owner word
+	// [BIN:TPW-EXE:0x004DE1F0 queue re-evaluation] once the queue is connected (0x4DE4A0) a closed ride whose state +0x19C is not 1, 2 or 4 is opened (+0x68 = 1, message 0x4E0E60)
+	// [APPROX:QUEUE-023] connecting a queue does not open the ride; OpenTPW leaves the open state to the player and the economy — the callers of 0x4DE1F0 are the queue tool's cell click 0x524960, the placement 0x528A70, 0x52FE50, the cell type setter 0x5346D0 and the cell clear 0x5367A0, so the original re-evaluates (and may open) the ride after every edit of its cells — evidence needed: none for the rule; OpenTPW has no queue-edit hook on cell writes that could open a ride
+	public static bool Connect( GuestPathGrid grid, RideVisitorBridge ride, (int X, int Y) before, (int X, int Y) path )
+	{
+		if ( !grid.IsWalkable( path.X, path.Y ) || GuestPathGrid.DirectionBetween( before.X, before.Y, path.X, path.Y ) < 0 )
+			return false;
+		PathLinkWriter.LinkQueueStep( grid.Cells, path.X, path.Y, path.X - before.X, path.Y - before.Y, (byte)ParkCellType.Queue, OwnedBy( ride ) );
+		ride.RecomputeQueue( grid );
+		return true;
+	}
+
+	/// <summary>
+	/// Links the back of <paramref name="ride"/>'s queue to its first adjacent path cell in the order −Y, +X, +Y, −X, as the queue tool does
+	/// when the player ends a queue line on that cell (OpenTPW's headless builders and the rebuild of older saves). False when there is none.
+	/// </summary>
+	public static bool TryConnect( GuestPathGrid grid, RideVisitorBridge ride )
+	{
+		ride.RecomputeQueue( grid );
+		if ( !HasQueueCells( grid, ride ) )
+			return false;
+		var back = ride.QueueBackCell;
+		for ( var direction = 0; direction < 4; direction++ )
+		{
+			var (dx, dy) = GuestPathGrid.Directions[direction];
+			if ( grid.IsWalkable( back.X + dx, back.Y + dy ) )
+				return Connect( grid, ride, back, (back.X + dx, back.Y + dy) );
+		}
+		return false;
+	}
+
+	/// <summary>
+	/// A queue from a save made before queue cells were linked (every one of its cells has an empty link byte) gets the links the queue
+	/// tool would have written: the front toward the entrance, each cell to the one before it, and the back to the cell OpenTPW used to
+	/// join from (<see cref="TryConnect"/>), so the loaded queue is joined as it was. Returns true when it wrote links.
+	/// </summary>
+	public static bool RebuildMissingLinks( GuestPathGrid grid, RideVisitorBridge ride )
+	{
+		ride.RecomputeQueue( grid );
+		if ( !HasQueueCells( grid, ride ) )
+			return false;
+		var cells = ride.QueueCells;
+		if ( cells.Any( cell => grid.Cells.LinksAt( cell.X, cell.Y ) != 0 ) )
+			return false;
+		LinkFront( grid.Cells, cells[0].X, cells[0].Y, ride.QueueEntranceDirection );
+		var owned = OwnedBy( ride );
+		for ( var index = 1; index < cells.Count; index++ )
+			PathLinkWriter.LinkQueueStep( grid.Cells, cells[index].X, cells[index].Y, cells[index].X - cells[index - 1].X, cells[index].Y - cells[index - 1].Y,
+				(byte)ParkCellType.Queue, owned );
+		TryConnect( grid, ride );
+		return true;
+	}
+
+	/// <summary>Lays a run of cells in order; stops at the first refusal or at a path cell the queue is connected to. Returns the number laid.</summary>
 	public static int TryExtend( GuestPathGrid grid, RideVisitorBridge ride, IEnumerable<(int X, int Y)> cells, Func<int, int, bool>? isBlocked = null )
 	{
 		var count = 0;

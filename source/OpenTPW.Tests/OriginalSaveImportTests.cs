@@ -172,6 +172,7 @@ public class OriginalSaveImportTests
 		var stamp = attraction.Timestamp;
 		Assert.AreEqual( ParkCalendar.TickAtSeconds( (long)(new DateTime( stamp.Year, stamp.Month, stamp.Day, stamp.Hour, stamp.Minute, stamp.Second ) - ParkCalendar.Epoch).TotalSeconds ), bouncy.BuiltTick, "the saved time stamp is the build time" );
 		Assert.AreEqual( attraction.CustomerCount, (uint)bouncy.TimesUsed, "the saved customer count is the use count: an imported used object never refunds the unused 100 %" );
+		Assert.AreEqual( attraction.WalkAwayCount, (uint)bouncy.WalkAways, "mNumWalkAways is the walk-away count" );
 
 		var researcher = economy.Staff.Members.Single();
 		Assert.AreEqual( (StaffType.Researcher, 2, 0, 97, StaffState.Patrolling), (researcher.Type, researcher.Grade, researcher.TrainingPoints, researcher.Happiness, researcher.State) );
@@ -220,7 +221,7 @@ public class OriginalSaveImportTests
 				"claim by thing ", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}
-		StringAssert.Contains( Line( "Attraction walk-away counts " ), "need no import" );
+		StringAssert.Contains( Line( "Attraction walk-away counts " ), "imported" );
 		StringAssert.Contains( Line( "Staff jobs-done counts " ), "need no import" );
 		var hq = Line( "[APPROX:SAVE-009]" );
 		foreach ( var value in new[] { "force strike ", "picked up ", "trained " } )

@@ -28,15 +28,18 @@ Per cell, in this order (`ParkPathBuilder.Validate`):
 2. `Unowned` refuses (`NotOwned`);
 3. `CanChangeCellType` (empty, path, or queue under its own rules), else `Occupied`;
 4. path over path is `Existing`: free, the placement counter goes up;
-5. path over a queue cell is refused (`QueueCell`, PATH-008);
+5. path over a queue cell is refused (`QueueCell`), except over a queue end: a
+   queue cell with one link bit, toward another queue cell (the unconnected back
+   of a queue; tp.exe's code 8, `0x535D06`), which the write turns into a path
+   cell charged as one; it keeps its link to the queue, so the queue's new back is
+   connected to it, and the ride's queue is recomputed with the next map edit;
 6. objects, fixed items and the sandbox Totem refuse (`Occupied`);
 7. the object terrain rule must allow the cell; the save's own path cells count
    as buildable (`Terrain`, PATH-006);
 8. money: balance − cost ≥ 0 (`NotEnoughMoney`); the preview tests the pending
    line cost.
 
-Writing a cell stores the type, links it to every cardinal path neighbour on
-both sides (PATH-004) and spends `Costs.PathCell` (20 in `Standard.sam`) as
+Writing a cell stores the type and spends `Costs.PathCell` (20 in `Standard.sam`) as
 other costs (tp.exe `0x534879`: Spend adds it to the total costs, shown as
 total costs minus staff costs). There is no batch purchase. A played park always
 pays: the original's debit skips only while the layout replay of a visited online park
@@ -44,9 +47,26 @@ runs (bank `mWithdrawalsEnabled`, tp.exe `0x404140`), and only a builder without
 economy is free here. A refused cell stops the line; earlier cells stay built and
 charged.
 
-Removal is `ClearCell`'s forced path case (the original's area-clear tool,
-tp.exe `0x52bdd0`): links cleared on both sides, no refund. A `NoModify` cell that still has linked neighbours stays; without
-neighbours the flag is dropped and the cell is removed (PATH-005).
+The commit then runs its link pass, as the original does (tp.exe `0x52744E`): every
+cell of the line goes through the link writer (`PathLinkWriter`, tp.exe `0x5348D0`
+mode 1), which ORs bits into the link byte (map cell `+0x0C`): each cardinal path
+neighbour on both sides, a type-10 or type-9 neighbour by its queue link, the
+diagonal bits 2, 8, 0x20 and 0x80 toward diagonal path cells whose two sides are
+paths (and on a neighbour toward this cell's side neighbours, unless the corner
+beyond is a queue), and no link to a queue cell; a link to a queue cell clears the
+two diagonals beside it. A queue cell under the writer becomes a path cell and keeps
+its links. A queue neighbour that links back is refreshed and plays `cat_ui` 139.
+
+The area clear tool (`AreaClearTool`, tp.exe tool mode 0x3a: the buy window's
+Clear Land row and the Clear key, Delete by default) takes two clicks: the first
+stores a corner, the second clears the rectangle and ends the tool (tp.exe
+`0x525da3`). Row by row, each object met is demolished when its runs of cells
+along the row and the column through that cell end inside the rectangle and none
+of the scanned cells (the first cell past each run included) has the cell flag
+0x10; then every path cell in the rectangle is removed. Queue cells stay
+(tp.exe `0x52bdd0`). Removal is `ClearCell`'s forced path case (tp.exe `0x52c11f`): every bit of the cell's link byte, diagonals included, is
+cleared on both sides (tp.exe `0x5367A0`), no refund. A `NoModify` cell that still has linked neighbours stays; without
+neighbours the flag is dropped and the cell is removed.
 Backspace over a path cell with no tool on uses the counted case (tp.exe
 `0x40BE8B`, `ClearCell(0, 1)`): the cell loses one placement and goes only
 when it was laid once (`ParkPathBuilder.RemoveOnce`).
@@ -75,8 +95,12 @@ In the park view the hover help is 441 over an empty owned cell, 442 over a
 path and 444 over a queue; inside the tools it is 443 and 445. A left click on a
 queue cell (444, "Left-click to edit this queue") starts the queue tool for the
 HasQueue ride that owns it, at that queue's back cell (QUEUE-021). A left click on
-an empty owned cell or a path cell starts the path tool (PATH-001; there is no
-menu button). After a HasQueue ride is placed, the queue tool starts at the
+an empty owned cell or a path cell enters the path tool without a start (tp.exe
+`0x4879d0`, SetMode(1) `0x52f200`; there is no menu button), and the same click
+is the tool's first click: a refused single-cell ghost ends the tool again (with
+the refused click's sound), otherwise the start check (`0x535670(1, 0)`) makes the
+cell the start, or leaves the tool on without one when it refuses the cell; a
+later click without a start does the same. After a HasQueue ride is placed, the queue tool starts at the
 entrance's outside cell and lays QUEUE-I's queue cells through the same tool.
 The remove tool clears an object, else a queue cell, else a path cell. Built
 path and queue cells are drawn as described in [Path textures](#path-textures).
@@ -112,8 +136,18 @@ original's tile chooser is tp.exe `0x535dd0` (49-row path table at `0x763138`, 1
 `OriginalTerrain` draws a cell with the saved texture and turn when it was a path in the save and still has
 the same path neighbours. The saved bits also count ride entrances, which the cell map does not keep.
 Other path cells, such as built ones or the neighbours of built ones, follow the rule from their path
-neighbours. For straights and edges, a hash of the cell picks between the two versions (PATH-014). Queue
-cells use the separate `QueueTex` list and textures from the theme's `queue.wad`, rather than a normal path tile. Square, end, straight and corner artwork follows the queue's predecessor/successor links; independent queues that merely touch do not visually merge. The back cell connects to its walking-path join. These visual shape/rotation choices are derived from the decoded artwork and existing queue links, not a traced original rendering routine (PATH-015).
+neighbours. For straights and edges the original's chooser (tp.exe `0x535dd0`) takes the second version
+when the roll its previous call stored is set, and every call stores a new `rand() & 1` (`0x53602c`): each
+recomputation of a cell's tile (the refresh `0x5365d0`: the world's set-up pass, the link writer's refreshes
+and the commit's refresh pass over the line) re-rolls. `PathTileVariants` keeps that rule with its own CRT-formula
+generator, a presentation stub: the original's is seeded from the clock and shared by the whole game. Queue
+cells get no path tile: the chooser gives a queue cell a class-2 result from its link byte (`+0x0C`, the 11-row
+table `0x7630b0`: a dead end, a straight, a bend, turned by the row; a straight turns half way round unless its
+queue link is +X or +Y, a bend takes the other bend for some queue links, and a cell linked to a path that links
+back takes the end piece: `queend`, `quebin1`, `quebin2`), and the refresh places that model of the theme's `queue`
+archive on the cell (`quedead`, `questra`, `quebnd1`, `quebnd2`, `queend`, `quebin1`, `quebin2`; tp.exe `0x522900`,
+`0x5229e0`) at the yaw 360 minus the row's rotation, as a one-cell object would be placed (`QueueModels`). The
+models are baked into the path layer (PATH-015).
 
 ## Headless API
 
@@ -135,12 +169,9 @@ and `Level.RemovePathCell(x, y)` wrap it with the read-only visit check.
 
 | ID | Plan name | Interim behaviour |
 | --- | --- | --- |
-| PATH-001 | PATH-ENTER | a click on an object-less cell or a path starts the tool (tp.exe 0x4879d0, SetMode(1) 0x52f200); the original enters even when the start check 0x535670(1, 0) refuses the cell (then without a start), OpenTPW does not enter |
-| PATH-004 | PATH-CONNECT | path-to-path links match tp.exe 0x5348d0; its type-9/10 links, diagonal bits, OR write and type-3 conversion are not ported |
-| PATH-005 | PATH-REMOVE | forced removal (a = b = 0) matches the original's area clear (tool 0x3a, 0x52bdd0); OpenTPW removes one clicked cell, the original a rectangle of type-1 cells and whole objects |
+| PATH-005 | PATH-REMOVE | the area clear (tool 0x3a, 0x52bdd0) is ported: the Clear Land row and the Clear key; objects are footprint cells here, and the writer of the cell flag 0x10 that keeps an object from the clear is untraced; the developer panel's one-click remove tool is OpenTPW's |
 | PATH-006 | PATH-SLOPE | no slope limit, as in the original; the object terrain rule stands in for the original's hole types |
 | PATH-007 | PATH-LAND | the land (`ParkLand`: the Hoardings.sam fence from the gate posts, an imported save's own flags and fence, Buy Land) follows the original, except that the fence fill's cell outcome is modelled instead of its scan (0x5311c0), the fence of level flag 0x79d86c bit 0x400 is not laid and a purchase in front of the gate is refused (the original's validator accepts some; its ring walk `0x52ba50` then likely keeps the old ring and drops the new hoardings, charging for no land, or may not terminate); a level without a fence setup, a Theme Park Inc map and a read-only visit keep every cell over the terrain owned |
-| PATH-008 | PATH-CODE8 | path over a queue cell is refused; the original turns a queue end (validator code 8, 0x535d00) into a path cell |
 | PATH-013 | PATH-PAUSE | the pause menu blocks tool clicks (as tp.exe 0x48c8d0); the speed pause does not; the original's P pause opens a full-screen layer (0x47ed80 → 0x65dd7b) under its panel, whose effect on park clicks is untraced |
-| PATH-014 | PATH-VARIANT | built straights and edges pick `str1`/`str2` and `edg1`/`edg2` by a hash of the cell; the original rolls CRT `rand() & 1` on every recomputation (0x535dd0, 0x53602c) |
-| PATH-015 | QUEUE-TEXTURES | queue cells use `QueueTex` ground textures; the original places queue models (0x5229e0, `quedead`..`quebin2.md2`) and no `QueueTex` texture |
+| PATH-015 | QUEUE-MODELS | queue cells carry the theme's queue models as tp.exe places them (0x535dd0 class 2, 0x5229e0); baked at the cell's mean height, without their .hmp ground deformation, texture-frame animation (the fire0 torches) and quedead's load flag 0x100000 |
+| PATH-016 | PATH-INITIAL | InitialPath cells carry links 0x0F; tp.exe's map init (`0x536490`) links them with the link writer `0x5348d0` in mode 1, so links toward non-path neighbours may differ |

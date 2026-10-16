@@ -33,6 +33,10 @@ public sealed class HudHost
 	public Action<string>? WindowOpened { get; init; }
 	/// <summary>A screen other than the HUD closed; the advisor withdraws the window's help message.</summary>
 	public Action<string>? WindowClosed { get; init; }
+	/// <summary>The HUD posts an advisor help message (0x486B00) that belongs to no screen, such as the camera panel's.</summary>
+	public Action<int>? HelpPosted { get; init; }
+	/// <summary>The HUD withdraws an advisor help message it posted (0x486B40).</summary>
+	public Action<int>? HelpWithdrawn { get; init; }
 	/// <summary>F1 was pressed in a HUD window that passes keys to the original's default window procedure; the advisor repeats the last tutorial advice.</summary>
 	public Action? HelpKeyPressed { get; init; }
 }
@@ -280,8 +284,7 @@ public sealed partial class ParkHud
 		PanelButton( "finance", "b_money", Rect( 156, 1241, 274, 1360 ), 471, OpenFinanceWindow );
 		PanelButton( "research", "b_resrch", Rect( 274, 1254, 392, 1372 ), 472, OpenResearchWindow );
 		PanelButton( "map", "b_map", Rect( 81, 1340, 200, 1458 ), 473, OpenMapWindow );
-		// [BIN:TPW-EXE:0x498bb0 camera button] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 (table 0x751720) with camcorder mode (99, help 479; key C, 0x40c5c0 → 0x481a10, which builds a park-view mode object 0x46cff0) and send a postcard (100, help 480; Ctrl+P, 0x40c4c0 → 0x481500 → 0x4a9380, which also pauses the game) and starts sound 0x131; the button's help is 474
-		// [APPROX:UI-042] the panel's sound 0x131 is not played; ParkHud.CameraPanel.cs
+		// [BIN:TPW-EXE:0x498bb0 camera button] the original (HUD case 0x27, 0x498bb0/0x498bd0) opens slide-out panel 33 (table 0x751720) with camcorder mode (99, help 479; key C, 0x40c5c0 → 0x481a10, which builds a park-view mode object 0x46cff0) and send a postcard (100, help 480; Ctrl+P, 0x40c4c0 → 0x481500 → 0x4a9380, which also pauses the game) and posts advisor help 0x131 (ParkHud.CameraPanel.cs); the button's help is 474
 		PanelButton( "camera", "b_camera", Rect( 202, 1355, 320, 1474 ), 474, ToggleCameraPanel );
 		BuildCameraPanel();
 		BuildLocatorPanels();
@@ -339,6 +342,8 @@ public sealed partial class ParkHud
 				patrolTool.Cancel();
 			else if ( level.BuyLandTool is { IsActive: true } landTool )
 				landTool.Cancel();
+			else if ( level.AreaClearTool is { IsActive: true } clearTool )
+				clearTool.Cancel();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
 			else if ( pendingItem != null || level.BuildEntry != null )
@@ -410,6 +415,7 @@ public sealed partial class ParkHud
 		level.StaffPlacement?.Cancel();
 		level.PatrolTool?.Cancel();
 		level.BuyLandTool?.Cancel();
+		level.AreaClearTool?.Cancel();
 		pendingItem = item;
 		level.BuildEntry = entry;
 		level.IsRemovingObjects = false;
@@ -676,7 +682,7 @@ public sealed partial class ParkHud
 		UpdateRideUpgradeButton( input );
 		UpdateCallStaffButton();
 		TrackCashChange( context.Delta );
-		UpdateCameraPanel();
+		UpdateCameraPanel( context.Delta );
 		UpdateMessageTube( context.Delta );
 		UpdateLocatorPanels();
 		SampleHappiness( context.Delta );
@@ -714,6 +720,9 @@ public sealed partial class ParkHud
 
 		// Ride It (E) rides the selected ride; Escape, the C key, the eject button and a right click (RMB cancel on, after two seconds) leave the ride view, and E again does too.
 		// [EXT:ride-view-key] E rides the selected ride as the object window's b_ride it! button does
+		// [BIN:TPW-EXE:0x0040C5E0 Clear key] the key builds the area clear tool 0x46C580(0x3A)
+		if ( shortcutsAllowed && !IsRiding && Input.Pressed( InputButton.Clear ) && level.AreaClearTool != null && !level.IsReadOnlyVisit )
+			BeginAreaClear();
 		if ( shortcutsAllowed && !IsRiding && Input.Pressed( InputButton.RideView ) && selectedObject is { IsDeleted: false } rideObject )
 			level.EnterRideView( rideObject );
 		// only a ride view that was already open at the start of the frame can be left by a key: the E that boarded it must not also leave it
@@ -783,10 +792,10 @@ public sealed partial class ParkHud
 			cursorX = cursorY = -1;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
 		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured.Value ) || UpdatePatrolTool( input, inPark && !mouseCaptured.Value )
-			|| UpdateBuyLandTool( input, inPark && !mouseCaptured.Value ));
+			|| UpdateBuyLandTool( input, inPark && !mouseCaptured.Value ) || UpdateAreaClearTool( input, inPark && !mouseCaptured.Value ));
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
 			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true }
-			|| level.BuyLandTool is { IsActive: true } );
+			|| level.BuyLandTool is { IsActive: true } || level.AreaClearTool is { IsActive: true } );
 		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( context, input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
 		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
 		if ( inPark && !rideOwnsInput && !paused && input.RightPressed && GameOptions.Current.RmbCancel && level.BuildEntry != null && !toolClick )
@@ -797,7 +806,7 @@ public sealed partial class ParkHud
 		UpdateBlueprint( inPark && !rideOwnsInput );
 		// [APPROX:UI-027] Select by occupied grid cell; original cursor picking is not verified.
 		if ( inPark && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
-			&& level.BuyLandTool is not { IsActive: true } && input.LeftReleased && !toolPress )
+			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
 		if ( input.LeftReleased )
 		{
@@ -887,7 +896,8 @@ public sealed partial class ParkHud
 		// [APPROX:PATH-013] PATH-PAUSE: while the pause menu is shown the park takes no tool clicks, as in the original (tp.exe gate 0x48c8d0 reads the pause-menu object 0x7c2534 +0xc; the park click handler 0x4879d0 returns before the tool dispatch); OpenTPW's speed pause keeps the tool live; the original's pause key P (0x40bf70 → 0x409350(1)) also toggles a window (0x48a720 → 0x4a27f0 → 0x47ed80): a full-screen layer (0x65dd7b(1, 1, 1, 0, 0, 0x7ff, 0x5ff), the 'lolight' backdrop) under the panel 5094 (174,500)-(1874,900) of table 0x752e00, and the park click handler 0x4879d0 does not read the pause flag 0x786b84 — still open: whether that full-screen layer stops the click route to 0x4879d0 (the routine that calls it at 0x488768 is not a defined procedure)
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
-			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true } )
+			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }
+			|| level.AreaClearTool is { IsActive: true } )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );
@@ -906,8 +916,18 @@ public sealed partial class ParkHud
 				return toolPress = true;
 			}
 			// A left click on an empty owned cell or on a path cell starts the path tool there (help 441/442).
-			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY ) )
+			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY, out var refused ) )
 				return false;
+			// The entering click is the tool's first click: a refused cell ends the tool at once, and the refused click sounds at the release (PathRefusalClick).
+			if ( refused != null )
+			{
+				refusalClick.Press();
+				refusalClick.Refused( cursorX, cursorY );
+				PostMessage( strings.Extra( refused.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
+				return toolPress = true;
+			}
+			// [BIN:TPW-EXE:0x005271B7 lay click] every path or queue click past the refused-ghost test plays cat_ui 101 (0x65) before its start or line, the first click included
+			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 			PostMessage( strings.Help( 443 ) );
 			tool.Hover( (cursorX, cursorY) );
 			return toolPress = true;
@@ -989,6 +1009,12 @@ public sealed partial class ParkHud
 			var marker = landTool.HoverRefused ? BlueprintMarker.Refused : BlueprintMarker.Allowed;
 			foreach ( var (x, y) in landTool.PreviewEdge() )
 				cells.Add( (x, y, marker) );
+		}
+		else if ( level.AreaClearTool is { IsActive: true } clearTool )
+		{
+			// [APPROX:BLUEPRINT-003] the area clear's ghost is the blueprint's cells along the rectangle's four edges (or the hovered cell before the first click), all blue: the preview lays the edges with LayLine(0x13a), whose validator answers 0xd and never refuses
+			foreach ( var (x, y) in clearTool.PreviewEdge() )
+				cells.Add( (x, y, BlueprintMarker.Allowed) );
 		}
 		else if ( level.PatrolTool is { IsActive: true } patrol )
 		{

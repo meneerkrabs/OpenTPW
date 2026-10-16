@@ -448,8 +448,18 @@ public sealed class ThemeParkIncHud
 				tool.Hover( (cursorX, cursorY) );
 				return toolPress = true;
 			}
-			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY ) )
+			if ( tool.HoverHelpId( level.Paths, cursorX, cursorY ) is not (441 or 442) || !level.EnterPathTool( cursorX, cursorY, out var refused ) )
 				return false;
+			// The entering click is the tool's first click: a refused cell ends the tool at once, and the refused click sounds at the release (PathRefusalClick).
+			if ( refused != null )
+			{
+				refusalClick.Press();
+				refusalClick.Refused( cursorX, cursorY );
+				PostMessage( strings.Extra( refused.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );
+				return toolPress = true;
+			}
+			// [BIN:TPW-EXE:0x005271B7 lay click] every path or queue click past the refused-ghost test plays cat_ui 101 (0x65) before its start or line, the first click included
+			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 			PostMessage( strings.Help( 443 ) );
 			tool.Hover( (cursorX, cursorY) );
 			return toolPress = true;

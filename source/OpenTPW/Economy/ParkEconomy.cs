@@ -252,6 +252,7 @@ public sealed class ParkEconomy : IParkEconomy
 
 	private void AdvanceTurn( long previousTurn, long turn )
 	{
+		crowdPhaseTurn ??= previousTurn;
 		// [BIN:TPW-EXE:0x00516380 world update] the thing loop (staff, rides, guests, the challenge system: 0x0050B360 by thing type) runs only while the world state (+0x1DA738) is not 4;
 		// the turn counter before it and the calendar, staff pool, bank and golden-ticket step after it (0x004D7B20) run in every state
 		if ( !IsBankrupt )
@@ -273,7 +274,14 @@ public sealed class ParkEconomy : IParkEconomy
 		// [BIN:STP-PPC:0x100D67F0 world update] after the calendar update (whose messages the bank, the staff and the other listeners handle at once) the golden-ticket checks (0x100D31D0, 0x100D34C0, 0x100D35B4) run when the turn counter is a multiple of 100, and only in Full Simulation (game type 0)
 		if ( RunsGoldenTicketCheck( turn, Mode ) )
 			CheckGoldenTickets();
+		// [BIN:TPW-EXE:0x0054F82D crowd read] after the substep that ran the world update, when the step counter 0x00877D34 (0 when the loop starts, +1 per 31 ms substep, a park turn every 8th) has its low five bits clear,
+		// i.e. after every fourth turn counted from the turn the counter started at, the main loop reads the crowd (0x004C81E0 → 0x004C7FA0 with age 0): the cached census is counted again whenever (turn >> 2) moved
+		if ( (turn - crowdPhaseTurn.Value) % CrowdReadTurns == 0 )
+			CachedGuestCensus( 0 );
 	}
+
+	/// <summary>The park turns between the main loop's crowd reads: 32 substeps of 31 ms, four turns.</summary>
+	public const int CrowdReadTurns = 4;
 
 	/// <summary>The economy's part of the original's per-turn thing loop: staff, mechanics' jobs, research and the ride update.</summary>
 	private void UpdateThings( long turn )
@@ -322,7 +330,9 @@ public sealed class ParkEconomy : IParkEconomy
 	/// goes on strike when its role does, otherwise a walking one loses the moving rate and, with the energy at the rest level, goes to rest
 	/// (when a rest area exists) or loses happiness one turn in sixteen (when none does).
 	/// </summary>
-	// [APPROX:ECON-014] staff vitals and strikes follow the traced routines (tp.exe month gate 0x508E70, escalation 0x508F70, grievance 0x509360; the month message comes from the calendar update 0x4F8260 with no game-type test, and the age stamp 0x4F8800 counts floor(turn × 3750) seconds from world turn 0, both as here); the month gate counts the guests on a counted cell (types 0, 1, 3, 9, 10) at once, where the original reads the analyser's cached census (0x4C7FA0 with age 5: recounted when (turn >> 2) − (stamp >> 2) exceeds 5), which the crowd sound's read (0x4C81E0, age 0, every 32nd substep of the main loop 0x54E360) refreshes, so its count can be a few turns old; the handymen's litter share counts the live map (ECON-020); the forced-strike word (zero at creation 0x5089FE, written only by the save 0x508BB0) is not imported (SAVE-009) — evidence needed: which main-loop iterations run the world update (0x0054F7BB → 0x00516380) against the iteration counter 0x00877D34 (reset to 0 at the loop's start, 0x0054EDB0; +1 per iteration, 0x0054F4D3; the crowd read of 0x004C81E0 runs when its low five bits are 0, 0x0054F82D), for the phase of the census cache's refresh
+	// [BIN:TPW-EXE:0x00508E70 month gate] staff vitals and strikes follow the traced routines: the month gate 0x00508E70, the escalation 0x00508F70 and the grievance 0x00509360; the month message comes from the calendar update 0x004F8260 with no game-type test, and the age stamp 0x004F8800 counts floor(turn × 3750) seconds from world turn 0
+	// [BIN:TPW-EXE:0x004C7FA0 cached census] the gate counts the guests through the analyser's cached census with age 5 (CachedGuestCensus), which the main loop's crowd read refreshes with age 0 after every fourth turn counted from the turn the step counter 0x00877D34 started at (0x0054F82D, 0x004C81E0)
+	// [BIN:TPW-EXE:0x005089C0 forced strike] the forced-strike word is 0 from the constructor and written only by the save loader 0x00508BB0, so the gate sees 0 in play as here (SAVE-009)
 	private void UpdateStaffVitals()
 	{
 		if ( Staff.Members.Count == 0 )
@@ -652,12 +662,11 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>The staff manager's month-end consideration of each role's strike (ECON-014): <see cref="StaffStrikeBoard.ConsiderMonth"/> with the park's state.</summary>
 	// [BIN:TPW-EXE:0x004F8260 month message] the calendar update sends the month message (kind 12, 0x0040F500) to the staff manager (0x00508A30 → 0x00508E70) with no game-type test, so strikes are considered in every mode; the stamp (0x004F8800) is floor(turn × rate / 4) × 10^7 with the calendar's base added and taken off again, the park clock from world turn 0
-	// Approximation (ECON-014, registered at UpdateStaffVitals): the forced-strike word is never set (an original save's mForceStrike is not imported, SAVE-009), and the month gate counts the census now where the original reads the analyser's cached count (0x004C7FA0 with age 5)
 	// [BIN:TPW-EXE:0x00509360 handyman grievance] the handymen's litter grievance: the analyser's littered cells (0x004C8180) over its path, queue and type-9 cells (0x004C8150), as singles, above 0.2 (ParkLitter.Statistic)
 	private void ConsiderStrikes()
 	{
 		var stamp = ParkCalendar.Seconds( Tick ) * StaffStrikeBoard.StampUnitsPerSecond;
-		var messages = Staff.Strikes.ConsiderMonth( Turn, forced: false, IsParkOpen, guestStatistics.GuestCensus, stamp,
+		var messages = Staff.Strikes.ConsiderMonth( Turn, forced: false, IsParkOpen, CachedGuestCensus( 5 ), stamp,
 			role => Staff.OfType( role ).Select( member => new StaffVital( member.Energy, member.Happiness ) ).ToList(), Litter.StatisticAt( Turn ) );
 		foreach ( var message in messages )
 			Raise( ParkEventKind.StaffStrikeMessage, (int)message.Kind, 0, (int)message.Role, $"TAG_SYSTEM {message.TagSystemIndex}" );
@@ -1133,6 +1142,8 @@ public sealed class ParkEconomy : IParkEconomy
 			HandleBankruptcyMessage();
 		}
 		// [BIN:TPW-EXE:0x004C7720 month sample] the analyser's month handler stores the net worth read with age 0 (0x004C79A7)
+		// [BIN:TPW-EXE:0x004C7720 month sample] the same handler reads the cached census with age 0 first (0x004C78C1); the month message goes to the things in id order (the listener tree walked by 0x0040FB10, dispatching through 0x0050B550) and the world constructor 0x005156A0 creates the staff manager (type 9) before the analyser (type 13), so the gate above has already read its count
+		CachedGuestCensus( 0 );
 		var closed = Ledger.CloseMonth( nextMonthIndex, ParkRating, NetWorth( 0 ) );
 		Raise( ParkEventKind.MonthEnded, closed.ClosingBalance, 0, 0, $"in ${closed.MoneyIn}, out ${closed.MoneyOut}" );
 		if ( nextMonthIndex % ParkCalendar.MonthsPerYear == 0 )
@@ -1242,6 +1253,48 @@ public sealed class ParkEconomy : IParkEconomy
 		netWorthStamp = stamp;
 		netWorthCached = true;
 	}
+
+	private bool censusCached;
+	private long censusStamp;
+	private int censusValue;
+	private long? crowdPhaseTurn;
+
+	/// <summary>
+	/// The guests on a counted cell as a reader of the analyser's cache sees them (tp.exe <c>0x004C7FA0</c>): the cached count while (turn >> 2) − (stamp >> 2)
+	/// is at most <paramref name="maximumAge"/> (unsigned), else counted again (<see cref="IParkGuestStatistics.GuestCensus"/>) and stamped with the current turn.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004C7FA0 cached census] valid flag +0x1F0C0, count +0x1F0BC, stamp +0x1F0B8 (0x0041A960 stores the turn, 0x0041A990 answers (turn >> 2) − (stamp >> 2)): counted again when the flag is clear or the age is above the reader's; the counted guests are the things of type 1 on a cell the predicate 0x004FA990 accepts
+	// [BIN:TPW-EXE:0x004C58C0 analyser constructor] the cache starts invalid with stamp 0
+	// [BIN:TPW-EXE:0x00508E70 month gate] the staff manager reads it with age 5, the arrival target (0x004CF5B0) with 20 (0x14), the month sample (0x004C7720, 0x004C78C1) and the crowd sound (0x004C81E0) with 0
+	internal int CachedGuestCensus( uint maximumAge )
+	{
+		var age = unchecked( (uint)(Turn >> 2) - (uint)(censusStamp >> 2) );
+		if ( !censusCached || maximumAge < age )
+		{
+			censusValue = guestStatistics.GuestCensus;
+			censusStamp = Turn;
+			censusCached = true;
+		}
+		return censusValue;
+	}
+
+	/// <summary>The census cache (the park save), null until a read has counted it.</summary>
+	internal (int Value, long Stamp)? CachedCensus => censusCached ? (censusValue, censusStamp) : null;
+
+	/// <summary>The park turn the main loop's step counter started from (0x00877D34 = 0), which times the crowd reads; null until the first turn runs.</summary>
+	internal long? CrowdPhaseTurn => crowdPhaseTurn;
+
+	/// <summary>Restores a saved census cache and the crowd read's phase.</summary>
+	internal void RestoreCensusCache( int value, long stamp, long? phaseTurn )
+	{
+		censusValue = value;
+		censusStamp = stamp;
+		censusCached = true;
+		crowdPhaseTurn = phaseTurn;
+	}
+
+	/// <summary>Restores only the crowd read's phase (a save without a census cache).</summary>
+	internal void RestoreCrowdPhase( long? phaseTurn ) => crowdPhaseTurn = phaseTurn;
 
 	private int ComputeNetWorth()
 	{

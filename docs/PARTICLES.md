@@ -272,10 +272,12 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
   negative-key effect at the world origin; the scoped effects (bit `0x8000`: the type record's `+0x4E0 + 4n`, `0x4145D0`,
   four template ids `0x414420` loads into free pool slots (`0x51FA20`) from files of the type's archive whose names give the
   slot, released by `0x51FA80`; the archive and the names are not read); the further dispatches after the build and
-  upgrade effects (`0x51C640`, `0x51BFC0`), and the other engine callers of `0x521E60`/`0x521930` (UI pool group 2
+  upgrade effects (`0x51C640`, `0x51BFC0`), and the other engine callers of `0x521E60`/`0x521930` (the lobby's enter-park routine `0x4B8FD0` is wired, below; UI pool group 2
   `0x5ED920`, beams 19/15 `0x549C60`/`0x54AC70`/`0x546280`/`0x54AE50`, `0x557334`/`0x557f0e`, stink 50 `0x4D93B0`,
   smoke 2 `0x544C80`, splash 96 `0x547F50`, fly smoke and fire 39/40 `0x55DBA3`/`0x55DC22`, thing effects `0x4FA470`,
   `0x486B90`, `0x48DE1A`, `0x4B8EE0`, `0x550E00`, `0x5571A0`, `0x557D80`, `0x55DA70`).
+
+**The lobby's enter-park effect.** The enter-park routine (`0x4B8FD0`, called through the lobby's vtable slot `0x702F04` from `0x5E1E30`) starts the screen-space template `0x62` (`LobbyEnterEffect`) with `0x521E60(0x62, 50000, 0, z)`, where z is the centre row of the key panel control `0x1E0EA` (rows 170..437 of the 1536-row canvas: `(437 - 170) >> 1 + 170 = 303`) times 75000 / `0x600`, 14794: the horizontal centre of the screen and screen y -613/1024, over the panel, before it plays `cat_globallobbysfx` 4. Game mode 2 (Instant Action) skips the whole block, the sound included. The pool is global in the original and drawn by whichever scene is up; OpenTPW gives the lobby its own `ParticleRenderer` (`ParticleRendererModule.CreateScreenRenderer`, the pool of the park's renderer without a level) that `GameFlow` starts at the tick of the game-mode dialog and that is deleted with the lobby's entities when the park loads (the original's post-load pass `0x5200B0` kills screen-space emitters). The template runs 61 ticks of 31 ms (about 1.9 s) and draws 898 sprites on the shipped file; it takes its random draws from the particle pool's own stream (`0x80CEE0`), never the world's.
 
 Differences that are not registered because the data cannot reach them: the ring emitter (+0xE, tp.exe `0x5224F0`),
 the hold word (+2) and the ground bounce (+0x76) are ported or skipped without a shipped template using them; a low-detail

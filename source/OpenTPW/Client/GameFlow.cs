@@ -185,6 +185,7 @@ internal sealed partial class GameFlow : IDisposable
 			ContinueAutomatic = entry => RequestAutomaticContinue( createdMenu!, entry ),
 			ContinuePark = entry => QueueProgressLevel( entry.Park.Level, () => ContinuePark( entry ) ),
 			Quit = RequestProgressQuit,
+			StartEnterParkEffect = StartEnterParkEffect,
 			CreateOptions = CreateOptions,
 			IslandSelected = island =>
 			{
@@ -202,6 +203,20 @@ internal sealed partial class GameFlow : IDisposable
 			Menu.SelectLevel( selectLevel );
 		Camera.SetCameraMode<LobbyCameraMode>();
 		Log.Trace( $"Front end: lobby with {Lobby.IslandCount} islands ({Lobby.PartCount} draw batches)." );
+	}
+
+	private ParticleRenderer? enterParkEffect;
+
+	/// <summary>The screen-space draws of the enter-park effect's last frame (smoke instrumentation); 0 when none runs.</summary>
+	internal int EnterParkEffectDraws => enterParkEffect != null && Entity.All.Contains( enterParkEffect ) ? enterParkEffect.DrawnScreenParticles : 0;
+
+	/// <summary>Starts the enter-park routine's screen-space particle effect over the lobby's key panel; it lives until the lobby is torn down (a park load).</summary>
+	internal void StartEnterParkEffect()
+	{
+		enterParkEffect?.Delete();
+		enterParkEffect = ParticleRendererModule.CreateScreenRenderer();
+		if ( enterParkEffect != null )
+			LobbyEnterEffect.Start( new ParticleSystemPool( enterParkEffect.Particles ), instantAction: false );
 	}
 
 	public UiScreen CreateOptions( UiScreenStack stack, Action closed ) => OptionsScreen.Create( stack, Strings, new OptionsServices

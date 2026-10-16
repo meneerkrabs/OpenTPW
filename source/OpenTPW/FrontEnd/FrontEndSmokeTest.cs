@@ -305,6 +305,15 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Lobby!.GateClips.Any( clip => clip == 2 ), "a cancelled enter closes the opened gate with M2" );
 		} );
 		Wait( "lobby fade clears", 60 );
+		// [BIN:TPW-EXE:0x4b8fd0 enter park] the enter-park routine starts the screen-space particle effect 0x62 over the key panel; the smoke starts it directly (the park start would tear the lobby down)
+		Do( "enter-park effect", () => flow.StartEnterParkEffect() );
+		var effectFrames = 0;
+		steps.Enqueue( ("enter-park effect draws", () =>
+		{
+			Require( ++effectFrames < 200, "the enter-park effect draws screen-space particles over the lobby" );
+			return flow.EnterParkEffectDraws > 0;
+		}) );
+		Do( "enter-park effect shown", () => CaptureFrame( "lobby-enter-effect.png" ) );
 		Do( "click next island", () => Click( flow.Menu!.Main, "nextIsland" ) );
 		Wait( "island changes", 3 );
 		Do( "island selected", () =>

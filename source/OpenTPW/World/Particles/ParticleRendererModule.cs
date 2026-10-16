@@ -177,6 +177,34 @@ internal static class ParticleRendererModule
 		return null;
 	}
 
+	private static bool screenHostUnavailable;
+
+	/// <summary>
+	/// A particle host for the front end's screen-space effects: its own pool (the pool is global in the original, drawn by whichever scene is up),
+	/// advanced from the frame time and deleted with the other entities when the lobby is torn down. Null when the template file or the sprites
+	/// are missing (the effect is presentation only).
+	/// </summary>
+	// [BIN:TPW-EXE:0x5200B0 post-load pass] a park load kills the pool's screen-space emitters, so a front-end screen effect ends with the lobby
+	internal static ParticleRenderer? CreateScreenRenderer()
+	{
+		if ( global::Global.Render == null || screenHostUnavailable )
+			return null;
+		try
+		{
+			var templates = new ParticleTemplateFile( "/Particle/Tp2.plb" );
+			var atlas = ParticleSpriteAtlas.Load();
+			if ( atlas != null )
+				return new ParticleRenderer( new ParticleSystem( templates.Templates, ParticleSystem.OptionsDensity( IGraphicsSettings.Instance ), effectors: templates.EffectorTemplates ), atlas,
+					position => position, () => false );
+		}
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException or InvalidDataException or NullReferenceException )
+		{
+			Log.Warning( $"The particle templates are not available ({exception.Message}); the lobby's screen effect is not drawn." );
+		}
+		screenHostUnavailable = true;
+		return null;
+	}
+
 	/// <summary>An original position (Y up) in engine space: through the heightfield's centring when the level has one, else scaled only.</summary>
 	internal static SVector3 ToEngine( Level level, SVector3 position ) =>
 		level.OriginalPark?.Heightfield is { } field

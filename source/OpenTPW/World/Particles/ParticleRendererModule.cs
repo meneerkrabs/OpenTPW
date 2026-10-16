@@ -19,6 +19,7 @@ internal static class ParticleRendererModule
 		OriginalObjectRuntime.ParticleStarter = Start;
 		OriginalObjectRuntime.ParticleKiller = Kill;
 		OriginalObjectRuntime.ParticleAlive = IsAlive;
+		OriginalObjectRuntime.ParticleFollower = Follow;
 		Level.ParticlesCaptured = Capture;
 		Level.ParticlesResumed = Resume;
 	}
@@ -99,6 +100,34 @@ internal static class ParticleRendererModule
 		emitter.System.Move( emitter.Handle, ToNative( emitter.Level, engine ) );
 
 	internal static void KillEmitter( EmitterRef emitter ) => emitter.System.Kill( emitter.Handle );
+
+	/// <summary>Moves a kept ADDOBJ effect to its key: the position truncated to whole original units, times 1024; a type-2 effect also turns.</summary>
+	// [BIN:TPW-EXE:0x55190F ADDOBJ follow position] ftol of each matrix float (chop), shifted left by 10: whole units only; [BIN:TPW-EXE:0x5519D8] the type-2 direction times 1024 through ftol
+	private static void Follow( int handle, ParticleFollow follow )
+	{
+		if ( Level.Current is not { } level || RendererOf( level ) is not { } renderer )
+			return;
+		var position = (0, 0, 0);
+		if ( !follow.AtWorldOrigin )
+		{
+			var original = ToOriginal( level, follow.EnginePosition );
+			position = (WholeUnits( original.X ) << 10, WholeUnits( original.Y ) << 10, WholeUnits( original.Z ) << 10);
+		}
+		renderer.Particles.Move( handle, position );
+		if ( follow.EngineUnitDirection is { } unit )
+			renderer.Particles.SetDirection( handle, ToNativeDirection( unit ) );
+		else if ( follow.Directed )
+			renderer.Particles.SetDirection( handle, (0, 0, (int)ParticleKeyResolver.NativeDirectionMultiplier) );
+	}
+
+	/// <summary>A coordinate truncated to whole units; a value within 1/1024 of a whole unit counts as that unit, as OpenTPW's engine round trip leaves whole values a few ulps short.</summary>
+	// [EXT:sound-unit-round-trip] the same tolerance as the EVENT sounds' whole units (OriginalObjectRuntime.WholeUnits)
+	internal static int WholeUnits( float value )
+	{
+		var clamped = Math.Clamp( value, -1e6f, 1e6f );
+		var nearest = MathF.Round( clamped );
+		return (int)(MathF.Abs( clamped - nearest ) < 1f / 1024f ? nearest : MathF.Truncate( clamped ));
+	}
 
 	private static void Kill( int handle )
 	{

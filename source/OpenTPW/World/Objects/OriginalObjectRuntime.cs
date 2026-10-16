@@ -215,6 +215,8 @@ public sealed partial class OriginalObjectRuntime
 			Bump.SetPerformance( ScriptPerformance );
 			Bump.Advance( deltaSeconds );
 		}
+		// the object pass then moves the kept ADDOBJ effects to their keys ([BIN:TPW-EXE:0x55189D ADDOBJ follow])
+		FollowParticleObjects();
 		Tour?.Advance( deltaSeconds );
 		Animator.Advance( deltaSeconds );
 		var running = GetVariable( RideVariables.VAR_RUNNING ) != 0;
@@ -689,8 +691,8 @@ public sealed class OriginalObjectEffects : IRideScriptEffects, IRideAnimationQu
 			GameAudio.SingleScream( call.Argument( 0 ), (short)call.Argument( 1 ), ride.ReadFootprintMiddle(), call.VM.SpeedBias );
 			return UnimplementedRideScriptEffects.Instance.Perform( call );
 		}
-		// ADDOBJ type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
-		if ( call.Opcode == Opcode.ADDOBJ )
+		// ADDOBJ and ADDOBJ_EXT type 1/2 start particle effects that KILLOBJ ends (docs/PARTICLES.md); the other object types stay unimplemented effects
+		if ( call.Opcode is Opcode.ADDOBJ or Opcode.ADDOBJ_EXT )
 		{
 			ride.ObserveParticleObject(call);
 			return UnimplementedRideScriptEffects.Instance.Perform( call );

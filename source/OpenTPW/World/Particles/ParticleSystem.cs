@@ -305,6 +305,19 @@ public sealed partial class ParticleSystem
 		return true;
 	}
 
+	/// <summary>Turns a live emitter's particle velocity to a native direction (1024 = unit), times the template's directed speed; false for a dead handle.</summary>
+	// [BIN:TPW-EXE:0x51FD90 emitter direction] the handle is checked, then E+0x38/+0x3C/+0x40 = (d * E+0xB0 + (sign & 0x3FF)) >> 10, as the type-2 create does
+	public bool SetDirection( int handle, (int X, int Y, int Z) direction )
+	{
+		if ( Resolve( handle ) is not { } emitter )
+			return false;
+		var speed = emitter.Template.DirectedSpeed;
+		emitter.BaseX = Trunc1024( unchecked( direction.X * speed ) );
+		emitter.BaseY = Trunc1024( unchecked( direction.Y * speed ) );
+		emitter.BaseZ = Trunc1024( unchecked( direction.Z * speed ) );
+		return true;
+	}
+
 	public bool IsAlive( int handle ) => Resolve( handle ) != null;
 
 	/// <summary>The template id of every live emitter, in slot order (diagnostics and tests).</summary>

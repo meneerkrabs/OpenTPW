@@ -234,6 +234,85 @@ public class ParticleEventRequestTests
 		finally { OriginalObjectRuntime.ParticleStarter = previousStarter; OriginalObjectRuntime.ParticleKiller = previousKiller; }
 	}
 	[TestMethod]
+	public void AddObjExtStartsWithItsControlOperandAndIsKeptUnderItsSlot()
+	{
+		var started = new List<ParticleEventRequest>(); var killed = new List<int>(); var next = 0x10000;
+		var previousStarter = OriginalObjectRuntime.ParticleStarter; var previousKiller = OriginalObjectRuntime.ParticleKiller;
+		OriginalObjectRuntime.ParticleStarter = request => { started.Add(request); return next++; }; OriginalObjectRuntime.ParticleKiller = killed.Add;
+		try
+		{
+			var placed = Placed();
+			// [BIN:TPW-EXE:0x5520E8] ADDOBJ_EXT type key effect control slot: the control operand replaces ADDOBJ's 1000
+			Run(placed.Runtime, a => a.I(Opcode.ADDOBJ_EXT, 1, 7, 43, 500, 5).I(Opcode.ADDOBJ_EXT, 2, 7, 44, 1000, 6).I(Opcode.ADDOBJ_EXT, 3, 7, 46, 500, 5));
+			CollectionAssert.AreEqual(new[] { (1, 43, 500), (2, 44, 1000) }, started.Select(r => (r.Type, r.EffectId, r.Control)).ToArray(), "type 3 is a sound record");
+			Run(placed.Runtime, a => a.I(Opcode.KILLOBJ, 5));
+			CollectionAssert.AreEqual(new[] { 0x10000 }, killed);
+			Assert.AreEqual(2, placed.Runtime.CaptureSnapshot().ParticleObjects!.Single().Type, "the slot-6 record keeps its type for the follow");
+		}
+		finally { OriginalObjectRuntime.ParticleStarter = previousStarter; OriginalObjectRuntime.ParticleKiller = previousKiller; }
+	}
+
+	[TestMethod]
+	public void ANegativeKeyStartsTheEffectAtTheFootprintMiddleAndATypeTwoOneStartsNothing()
+	{
+		var placed = Placed();
+		var received = new List<ParticleEventRequest>(); Action<ParticleEventRequest> handler = received.Add; OriginalObjectRuntime.ParticleRequested += handler;
+		try
+		{
+			// [BIN:TPW-EXE:0x556B90] key < 0: the box middle at the base height (0x466B70)
+			Emit(placed.Runtime, 1, key: -1);
+			var attempt = placed.Runtime.LastParticleEventAttempt!.Value;
+			Assert.AreEqual(ParticleEventPreparationStatus.Prepared, attempt.Status);
+			Assert.AreEqual(placed.FootprintMiddle(), attempt.Request!.Value.EnginePosition);
+			Assert.IsFalse(attempt.Request.Value.AtWorldOrigin);
+			// the direction output stays unset for a negative key, so a directed effect is refused
+			Emit(placed.Runtime, 2, key: -1);
+			Assert.AreEqual(ParticleEventPreparationStatus.UnresolvedKey, placed.Runtime.LastParticleEventAttempt!.Value.Status);
+			Assert.AreEqual(1, received.Count);
+		}
+		finally { OriginalObjectRuntime.ParticleRequested -= handler; }
+	}
+
+	[TestMethod]
+	public void EverySimulationPassMovesAKeptEffectToItsKeyAndTurnsADirectedOne()
+	{
+		var followed = new List<(int Handle, ParticleFollow Follow)>(); var next = 0x10000;
+		var previousStarter = OriginalObjectRuntime.ParticleStarter; var previousFollower = OriginalObjectRuntime.ParticleFollower; var previousAlive = OriginalObjectRuntime.ParticleAlive;
+		OriginalObjectRuntime.ParticleStarter = request => next++; OriginalObjectRuntime.ParticleFollower = (handle, follow) => followed.Add((handle, follow)); OriginalObjectRuntime.ParticleAlive = _ => true;
+		try
+		{
+			var placed = Placed();
+			Run(placed.Runtime, a => a.I(Opcode.ADDOBJ, 1, 7, 43, 5).I(Opcode.ADDOBJ, 2, 7, 44, 6));
+			Emit(placed.Runtime, 1);
+			var pose = placed.Runtime.LastParticleEventAttempt!.Value.Request!.Value.EnginePosition;
+			// [BIN:TPW-EXE:0x55189D] every pass of the object loop moves the type 1 and 2 records with a key (0x51FE30), and turns type 2 (0x51FD90)
+			placed.Runtime.Simulate(FixedStepClock.TickDuration);
+			Assert.AreEqual(2, followed.Count);
+			Assert.AreEqual((0x10000, pose), (followed[0].Handle, followed[0].Follow.EnginePosition));
+			Assert.IsNull(followed[0].Follow.EngineUnitDirection);
+			Assert.AreEqual(0x10001, followed[1].Handle);
+			Assert.IsNotNull(followed[1].Follow.EngineUnitDirection, "type 2 follows the key's direction too");
+			// a negative key's record does not follow (the walk tests the key +0x10 >= 0)
+			Run(placed.Runtime, a => a.I(Opcode.ADDOBJ, 1, 0xFFFF, 43, 7));
+			followed.Clear();
+			placed.Runtime.Simulate(FixedStepClock.TickDuration);
+			Assert.AreEqual(2, followed.Count);
+			Assert.AreEqual(1, placed.Runtime.CaptureSnapshot().ParticleObjects!.Count(record => record.Key < 0));
+		}
+		finally { OriginalObjectRuntime.ParticleStarter = previousStarter; OriginalObjectRuntime.ParticleFollower = previousFollower; OriginalObjectRuntime.ParticleAlive = previousAlive; }
+	}
+
+	[TestMethod]
+	public void AParticleRecordFromAnOlderSaveLoadsWithoutAFollowAndABadTypeIsRefused()
+	{
+		var placed = Placed();
+		var saved = placed.Runtime.CaptureSnapshot() with { ParticleObjects = new[] { new ParticleObjectRecord { Slot = 1, Handle = 0x10000 } } };
+		saved.ValidateSnapshot();
+		Assert.AreEqual(0, saved.ParticleObjects![0].Type, "a record without a type is not moved");
+		Assert.ThrowsException<InvalidDataException>(() => (saved with { ParticleObjects = new[] { new ParticleObjectRecord { Slot = 1, Handle = 0x10000, Type = 3 } } }).ValidateSnapshot());
+	}
+
+	[TestMethod]
 	public void AKeyEntryWithoutAMatrixStartsTheEffectAtTheWorldOrigin()
 	{
 		var bytes = File.ReadAllBytes(Path.Combine(root, "model.MD2")); BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0x1b0), 0x100); File.WriteAllBytes(Path.Combine(root, "origin.MD2"), bytes);

@@ -183,7 +183,11 @@ frozen engine position, unit direction for type 2; see PARTICLE-KEYS.md) for RSE
 type 1/2 (`type key effect slot`, `0x551F5F`) through `OriginalObjectRuntime.ParticleStarter`, which returns the pool
 handle (any non-zero value counts, a generation from 0x8000 included): the runtime keeps it under the slot operand,
 drops records whose emitter ended, and `KILLOBJ slot` ends every record of the slot with the pool's
-life -2 (`0x5522C5` -> `0x51FF70`; no death effect). `ParticleRendererModule` (module initialiser, like the weather)
+life -2 (`0x5522C5` -> `0x51FF70`; no death effect). `ADDOBJ_EXT` (`type key effect control slot`, `0x5520E8`) is the
+same with its control operand. Each `Simulate` then moves the kept effects with a key of 0 or more to the key node
+(`ParticleFollower`: the position truncated to whole units, `<< 10`; a type-2 effect turned to the node's direction,
+`0x51FD90`), as the object pass `0x5516B0` does on every run. A negative key starts the effect at the footprint box middle
+at the base height (`0x556B90` -> `0x466B70`, the EVENT sounds' anchor). `ParticleRendererModule` (module initialiser, like the weather)
 converts the engine pose to native units, inverting the placement (0.2 engine units per original unit, the park
 heightfield's centring, engine Z-up to original Y-up) and truncating `world * 1024` as the original's `_ftol` does
 (`APPROX:PTCL-906`), and calls `Create` or, for type 2, `CreateDirected` with the direction as `unit * 1024`; a control
@@ -212,7 +216,7 @@ the live effectors and the free lists' order, no particles and no templates; the
 counts, ranges and generations; `Level.CaptureResumeSnapshot` captures it through the renderer module and
 `RestoreResumeSimulation` rebuilds the renderer and restores the pool (`Level.ParticlesCaptured` / `ParticlesResumed`).
 It is presentation: it is not in the world hash, so the hash schema and `DETERMINISM.md`'s conditional extension rule do
-not apply, and the envelope version is unchanged. The runtime snapshot also keeps the object's `ADDOBJ` records (slot and handle; the pool's generations and counters
+not apply, and the envelope version is unchanged. The runtime snapshot also keeps the object's `ADDOBJ` records (slot, handle, and the optional type and key the follow needs, absent in older saves, whose records then stay where they are; the pool's generations and counters
 restore exactly), so a resumed effect can still be ended by its `KILLOBJ`. `ValidateState` bounds the emitters' lives,
 rate bytes, control, cap and counters; a saved pool the template file cannot rebuild is dropped with a warning instead of
 failing the resume.
@@ -260,14 +264,18 @@ density, spawn, emitter and particle updates, handles and slots), `APPROX:PTCL-9
 - `PTCL-905`: one batch per particle in the original against OpenTPW's three blend batches; the per-particle state
   words are decoded (depth writes, opaque untextured particles), the order across batches is not read.
 - `PTCL-906`: the pose conversion inverts OpenTPW's placement.
-- `PTCL-908`: wired are EVENT 1/2, ADDOBJ 1/2 and the per-type object effects (below). Not wired: ADDOBJ following the
-  key node afterwards (`0x5516B0` updates it each run with the node position truncated to whole units), ADDOBJ_EXT
-  (no VM handler), the negative-key box centre (`0x556B90`/`0x466B70`), the scoped effects (record `+0x4E0`), the further
-  dispatches after the build and upgrade effects (`0x51C640`, `0x51BFC0`), and the other engine callers of
-  `0x521E60`/`0x521930` (UI pools `0x5ED5A0`, key `0x599880`, beams 19/15 `0x549C60`/`0x54AC70`/`0x546280`/`0x54AE50`,
-  `0x557334`/`0x557f0e`, stink 50 `0x4D93B0`, smoke 2 `0x544C80`, splash 96 `0x547F50`, fly smoke and fire 39/40
-  `0x55DBA3`/`0x55DC22`, thing effects `0x4FA470`, `0x486B90`, `0x48DE1A`, `0x4B8EE0`, `0x550E00`, `0x5571A0`,
-  `0x557D80`, `0x55DA70`).
+- `PTCL-908`: wired are EVENT 1/2, ADDOBJ and ADDOBJ_EXT 1/2 (`0x5520E8`: ADDOBJ with a control operand), their kept
+  effects following the key node on every object pass (`0x55189D`: the node position truncated to whole units through
+  `0x51FE30`, a type-2 effect turned through `0x51FD90`), a negative key at the footprint box middle (`0x556B90`/`0x466B70`),
+  the advisor's screen effects (docs/LIPS.md "Screen effects") and the per-type object effects (below). Not wired: a type-2
+  effect with a negative key (`0x556B90` leaves its direction unset); a fixed item, which has no box in OpenTPW, starts a
+  negative-key effect at the world origin; the scoped effects (bit `0x8000`: the type record's `+0x4E0 + 4n`, `0x4145D0`,
+  four template ids `0x414420` loads into free pool slots (`0x51FA20`) from files of the type's archive whose names give the
+  slot, released by `0x51FA80`; the archive and the names are not read); the further dispatches after the build and
+  upgrade effects (`0x51C640`, `0x51BFC0`), and the other engine callers of `0x521E60`/`0x521930` (UI pool group 2
+  `0x5ED920`, beams 19/15 `0x549C60`/`0x54AC70`/`0x546280`/`0x54AE50`, `0x557334`/`0x557f0e`, stink 50 `0x4D93B0`,
+  smoke 2 `0x544C80`, splash 96 `0x547F50`, fly smoke and fire 39/40 `0x55DBA3`/`0x55DC22`, thing effects `0x4FA470`,
+  `0x486B90`, `0x48DE1A`, `0x4B8EE0`, `0x550E00`, `0x5571A0`, `0x557D80`, `0x55DA70`).
 
 Differences that are not registered because the data cannot reach them: the ring emitter (+0xE, tp.exe `0x5224F0`),
 the hold word (+2) and the ground bounce (+0x76) are ported or skipped without a shipped template using them; a low-detail

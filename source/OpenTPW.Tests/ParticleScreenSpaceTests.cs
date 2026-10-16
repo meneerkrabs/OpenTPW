@@ -62,3 +62,39 @@ public class ParticleScreenSpaceTests
 		Assert.IsTrue( sprites.Any( sprite => !sprite.ScreenSpace ) );
 	}
 }
+
+/// <summary>The ADDOBJ follow's pool side: tp.exe's emitter direction 0x51FD90 and the whole-unit position of 0x55190F.</summary>
+[TestClass]
+public class ParticleFollowTests
+{
+	[TestInitialize]
+	public void Init() => Log = new();
+
+	[TestMethod]
+	public void SetDirectionTurnsTheEmitterLikeADirectedCreate()
+	{
+		// [BIN:TPW-EXE:0x51FD90] E+0x38.. = (d * E+0xB0 + (sign & 0x3FF)) >> 10, as 0x521930 sets them
+		var template = ParticleSystemTests.Template( ParticleSystemTests.Life( 20 ), ParticleSystemTests.Rates( 1, 1, 1, 1 ), ParticleSystemTests.Cap( 50 ), ParticleSystemTests.ParticleLife( 20 ), (0xB0, 4, 300) );
+		var directed = ParticleSystemTests.New( ParticleSystemTests.Pool( (5, template) ) );
+		var turned = ParticleSystemTests.New( ParticleSystemTests.Pool( (5, template) ) );
+		directed.CreateDirected( 5, (0, 0, 0), (0, -1000, 300) );
+		var handle = turned.Create( 5, (0, 0, 0) );
+		Assert.IsTrue( turned.SetDirection( handle, (0, -1000, 300) ) );
+		ParticleSystemTests.Run( directed, 6 );
+		ParticleSystemTests.Run( turned, 6 );
+		var a = new List<ParticleSprite>(); var b = new List<ParticleSprite>();
+		directed.Snapshot( a ); turned.Snapshot( b );
+		Assert.IsTrue( a.Count > 0 );
+		CollectionAssert.AreEqual( a.Select( sprite => (sprite.X, sprite.Y, sprite.Z) ).ToArray(), b.Select( sprite => (sprite.X, sprite.Y, sprite.Z) ).ToArray() );
+		Assert.IsFalse( turned.SetDirection( 0, (0, 1024, 0) ), "a dead handle" );
+	}
+
+	[TestMethod]
+	public void TheFollowPositionIsTruncatedToWholeUnits()
+	{
+		// [BIN:TPW-EXE:0x55190F] ftol (chop) of each float, then << 10
+		Assert.AreEqual( 3, ParticleRendererModule.WholeUnits( 3.9f ) );
+		Assert.AreEqual( -2, ParticleRendererModule.WholeUnits( -2.5f ) );
+		Assert.AreEqual( 47, ParticleRendererModule.WholeUnits( 46.999996f ), "OpenTPW's engine round trip leaves whole units a few ulps short" );
+	}
+}

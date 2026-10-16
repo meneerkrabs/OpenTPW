@@ -411,6 +411,7 @@ public partial class Level : IDisposable
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
 			ImportOriginalGuests();
+			ImportOriginalRideSettings();
 			SetupStaff();
 			SetupParkGate();
 		}

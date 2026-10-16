@@ -219,7 +219,7 @@ public class OriginalSaveImportTests
 		Assert.AreNotEqual( 0, attractions.Length );
 		foreach ( var line in attractions )
 		{
-			foreach ( var value in new[] { "operating capacity ", "duration ", "speed ", "open word ", "name \"",
+			foreach ( var value in new[] { "open word ", "name \"",
 				"claim by thing ", "queue size ", "first ", "back ", "called ", "mesh instance ", "flags 0x" } )
 				StringAssert.Contains( line, value );
 		}

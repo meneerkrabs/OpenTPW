@@ -465,7 +465,7 @@ SAVE-010 in the fidelity register): guests, staff
 names/jobs/positions/energy/idle ticks/role suffixes, the hiring pool, the
 challenge system's timing, switch bytes, Value and ActualThing, each
 attraction's state, chance of winning, third gauge, totals, name lines,
-operating capacity/duration/speed, quality of goods, queue size, customer
+quality of goods, queue size, customer
 count, time stamp and mesh instance ID, research, unmapped bank
 words and the loan offers' Available flags, the staff HQ's training budgets,
 strike words, strike levels and trained byte, the world state,

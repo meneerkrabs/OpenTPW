@@ -33,6 +33,21 @@ order. New optional, validated save fields: the tour car's `Emitter`, the track 
 `ObjectSlots` and `BuoyCount` and per vehicle `ObjectAttraction`; a vehicle's `Slot` is now its pool slot (unique across the rides in a
 save that has the module clock), and older saves load.
 
+## Interface reading round, part B (October 15, 2026)
+
+Twenty-two more interface approximations were read again in tp.exe:
+
+- **The buy window** hides its scroll bar while nothing scrolls (`0x664495`, as the video shows with four rides; UI-049 retired) and its
+  working-life gauge keeps its fixed 100/1024 (`0x4abae0`).
+- **The park map** draws its overlay cells on the original's grid, one pixel left of and above the art's terrain (`0x5f23dc`; UI-085
+  retired), and opens with only the rides layer.
+- **Placing staff** posts the advisor's help 309 (`0x49b9dd`, withdrawn by the Place tool at `0x46c8d4`; UI-097 retired) instead of
+  OpenTPW's own hint line.
+- **Training budgets** step by 25 within 0..10000 with each row's grade gauge (`0x4b27d7`, `0x4c9c00`), and **the research workload
+  knob** maps to the original's workload of 70..100 (`0x4aacce`, `0x4a985b`).
+- The left mouse button is button 0 (`0x634963`), so UI-910 keeps only the per-visitor window `0x4b79b0`, which is not ported;
+  13 interface items are narrowed.
+
 ## Online, economy and path reading round (October 15, 2026)
 
 Nineteen approximations were read again in tp.exe:

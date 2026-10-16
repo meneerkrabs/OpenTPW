@@ -103,6 +103,22 @@ public sealed partial class ParkHud
 		buy.EnsureSelection();
 		Stack.Push( buyScreen );
 		buyScreen.Focus( buyScreen.Find( "buyList" ) );
+		UpdateBuyScrollVisibility( buyScreen );
+	}
+
+	/// <summary>Whether the list's scroll bar and its arrows show: only while the list has more rows than fit.</summary>
+	// [BIN:TPW-EXE:0x664495 list scroller] with more items than visible rows the scroller is shown and gets the range 0 .. count - visible and the first row as its value; otherwise it is hidden (0x65d9dd(0)) with the range 0..0
+	// [DATA:video 1:50 buy window] four rides and no scroll bar, track or arrows; at 17:20 the longer features list shows them
+	public static bool BuyScrollShown( int maxFirstRow ) => maxFirstRow > 0;
+
+	private static readonly string[] BuyScrollIds = { "buyScroll", "scrollUp", "scrollDown" };
+
+	private void UpdateBuyScrollVisibility( UiScreen screen )
+	{
+		var shown = BuyScrollShown( BuyMaxFirstRow );
+		foreach ( var id in BuyScrollIds )
+			if ( screen.Find( id ) is { } element )
+				element.Visible = shown;
 	}
 
 	public void CloseBuyWindow()
@@ -134,6 +150,9 @@ public sealed partial class ParkHud
 
 	public int NumberOwned( BuildItem item ) => level.Objects.Objects.Count( owned => !owned.IsDeleted && owned.Entry.InfoId == item.InfoId );
 
+	/// <summary>The buy window's working-life gauge: the value 100 of 1024 it gets when the window is built (tp.exe 0x4abae0) and keeps.</summary>
+	public const float RideWorkingLifeGauge = 100 / 1024f;
+
 	/// <summary>Stat rows of <paramref name="item"/> for its category: the UITEXT labels 125-129 (rides), 130 (shops), 131-132 (sideshows), 133 (features).</summary>
 	public IReadOnlyList<BuyStat> BuyStats( BuildItem? item )
 	{
@@ -146,7 +165,10 @@ public sealed partial class ParkHud
 		{
 			case BuildCategory.Rides:
 				var capacity = item.Entry?.InitialCapacity ?? 0;
-				// [APPROX:UI-046] gauge rows: excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10'), working life has no catalogue value and stays empty; safe capacity is Upgrades[0].InitCapacity — evidence needed: capture of the original buy window
+				// [BIN:TPW-EXE:0x4abb00 buy stats] on a selection the rides' row-1 gauge (0x1ee) is the type record's +0x13c and the row-3 gauge (0x1ef) its +0x1b0, both × 1024 / 100, and the
+				// capacity cell (0x1f2) its +0x19c as "%d"; the working-life gauge (0x1f0) is only set when the window is built, to 100 of the gauge's 1024 (0x4abae0), and keeps that for every ride
+				// [DATA:video 1:50 buy window] Levensduur shows a short red stub (about a tenth) and Betrouwbaarheid an even shorter one
+				// [APPROX:UI-046] excitement is UsageInfo.ExcitementLevel as a share of 100, reliability is 1 - Upgrades[0].WearRate / 10 (wear rate is 'out of 10') and safe capacity Upgrades[0].InitCapacity: which catalogue values the record fields +0x13c, +0x1b0 and +0x19c hold is not traced — evidence needed: the type record's loader
 				float? reliability = item.Entry?.Upgrades.FirstOrDefault( level => level.Level == 0 ) is { } baseLevel ? Math.Clamp( 1 - baseLevel.GetInt( "WearRate" ) / 10f, 0, 1 ) : null;
 				return new[]
 				{
@@ -154,7 +176,7 @@ public sealed partial class ParkHud
 					new BuyStat( RideExcitement, null, Percent( item.DefaultExcitement ) ),
 					new BuyStat( RideCapacity, capacity > 0 ? capacity.ToString( CultureInfo.InvariantCulture ) : null, null ),
 					new BuyStat( RideReliability, null, reliability ),
-					new BuyStat( RideLife, null, null ),
+					new BuyStat( RideLife, null, RideWorkingLifeGauge ),
 				};
 			case BuildCategory.Shops:
 				return new[] { new BuyStat( ShopOwned, owned, null ) };
@@ -233,6 +255,7 @@ public sealed partial class ParkHud
 		screen.Add( new UiButton { Id = "allAttractions", Model = AllAttractionsModel, Help = strings[UIStrings.AllRides],
 			Clicked = OpenAttractionsWindow, Bounds = Rect( 1866, 458, 1968, 577 ), Anchor = UiAnchor.Center } );
 		screen.Back = CloseBuyWindow;
+		screen.Updating = _ => UpdateBuyScrollVisibility( screen );
 		return screen;
 	}
 
@@ -322,6 +345,16 @@ public sealed partial class ParkHud
 		}
 	}
 
+	/// <summary>The scroll ball's authored rectangle for the first visible row <paramref name="firstRow"/> of <paramref name="maxFirstRow"/>.</summary>
+	// [BIN:TPW-EXE:0x66b088 slider ball] a vertical slider puts its ball (child 3) at top + (min - value) × (height - ball height) / (min - max) in integer table units, so with
+	// the list's range 0 .. count - visible (0x664495) the ball's top runs from the track's top for the first row to a ball height above its bottom for the last
+	internal static UiRect BuyScrollKnobRect( int firstRow, int maxFirstRow )
+	{
+		var travel = (int)BuyScrollTrack.Height - (int)BuyScrollKnob.Height;
+		var top = (int)BuyScrollTrack.Y + (maxFirstRow == 0 ? 0 : travel * firstRow / maxFirstRow);
+		return new UiRect( BuyScrollKnob.X, top, BuyScrollKnob.Width, BuyScrollKnob.Height );
+	}
+
 	/// <summary>The vertical scroll bar: the <c>!slider</c> track with the <c>b_scroller</c> ball; dragging or clicking sets the first visible row.</summary>
 	private sealed class BuyScrollBar : UiElement, IUiDragTarget
 	{
@@ -330,14 +363,7 @@ public sealed partial class ParkHud
 		public override bool Focusable => Visible && Enabled;
 
 		/// <summary>Authored ball rectangle for the current first row: its top runs from the track's top to a ball above the track's bottom.</summary>
-		// [APPROX:UI-049] ball travel: top at the track top for the first row, a ball height above the track bottom for the last — evidence needed: capture of the original scroll bar ends
-		public UiRect KnobRect()
-		{
-			var travel = BuyScrollTrack.Height - BuyScrollKnob.Height;
-			var max = owner.BuyMaxFirstRow;
-			var top = BuyScrollTrack.Y + (max == 0 ? 0 : travel * owner.buy.FirstRow / max);
-			return new UiRect( BuyScrollKnob.X, top, BuyScrollKnob.Width, BuyScrollKnob.Height );
-		}
+		public UiRect KnobRect() => BuyScrollKnobRect( owner.buy.FirstRow, owner.BuyMaxFirstRow );
 
 		public void DragTo( UiCanvas canvas, NVector2 point )
 		{

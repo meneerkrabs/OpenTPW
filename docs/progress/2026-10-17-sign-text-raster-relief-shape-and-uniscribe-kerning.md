@@ -2,7 +2,7 @@
 
 - **COMPAT-006 retired (usp10.dll, now allowed for static analysis):** the shipped Uniscribe places a Latin run by summing per-glyph
   advances from its width cache (`ScriptPlace` `0x6510CEDE`, the generic routine `0x65113458`, the cache `0x6510F241`) and never asks
-  for a `kern` table (`GetFontData` has two call sites, `maxp` and `OS/2`; no `kern` tag, no `GetKerningPairs` import). Sign text is not
+  for a `kern` table (`GetFontData` has six call sites, for `JSTF`, `maxp`, `cmap`, `OS/2`, `GSUB` and `GSUB`/`GPOS`/`GDEF`, none for `kern`; no `kern` tag, no `GetKerningPairs` import). Sign text is not
   pair-kerned, as OpenTPW draws it. The register tool learns the `BIN:USP10-DLL` label. A later Windows copy of Uniscribe is not among
   the files and is not read.
 - **COMPAT-001 retired (`0x5EAB70`, `0x5ECB40`):** the sign line is drawn on an 8-bit gray DIB twice the mask's size and reduced by a

@@ -16,6 +16,8 @@ namespace OpenTPW;
 // [APPROX:AUDIO-034] when no link covers the parameter the original (0x6c3e00) writes 0x7f into the root's parameter byte, sets the root flag 0x40 (the root's tick 0x6bdae0 does nothing while flags & 0x50 is set) and drops the half-made child; what clears 0x40 and starts the walk again (OpenTPW resumes when the parameter is set) and whether the forced 0x7f is visible to the script's next parameter call are not read
 public sealed class SoundChain
 {
+	/// <summary>The creation order among all voices (see <see cref="SoundEventSystem.ComparePoolOrder"/>).</summary>
+	internal long Serial { get; } = VoiceOrder.Next();
 	private readonly SoundEventSystem system;
 	private readonly SoundCategory category;
 	private readonly SoundEvent soundEvent;

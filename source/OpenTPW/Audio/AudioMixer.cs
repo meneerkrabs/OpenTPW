@@ -41,6 +41,8 @@ public sealed class AudioVoice
 		Frames = samples.Length / channels;
 	}
 
+	/// <summary>The creation order among all voices of the sound system, newest highest (the voice pool breaks equal ranks by it).</summary>
+	internal long Serial { get; set; } = VoiceOrder.Next();
 	public AudioChannel Channel { get; }
 	public int SampleRate { get; }
 	/// <summary>The playback frequency in Hz: the sample's rate, or after <see cref="SetPitch"/> the rate the original hands its mixer.</summary>
@@ -304,4 +306,11 @@ public sealed class AudioMixer : IDisposable
 	}
 
 	public void Dispose() => output?.Dispose();
+}
+
+/// <summary>A process-wide creation counter for the sound voices (presentation only: not part of the world state or of any save).</summary>
+internal static class VoiceOrder
+{
+	private static long last;
+	internal static long Next() => Interlocked.Increment( ref last );
 }

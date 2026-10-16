@@ -152,7 +152,7 @@ public sealed class SoundEventSystem
 	// [BIN:TPW-EXE:0x6b8d60 type-3 handler] the message looks the sample handle up in the manager's slot table (0x8c bytes each, 0x6bab50) and runs 0x6b7e60 -> 0x6bb7c0 on the slot: stop the wave (vf+0x2c), release it, clear the slot's playing bit; the same message and handler serve the muted-group case (0x6bc760), which also clears the voice's handle at +0x24, and 0x6ba390 runs 0x6bb7c0 over every slot to stop all
 	// [BIN:TPW-EXE:0x6bbe90 voice flags from the event] the event's flag 0x200 becomes voice flag 8 (any distance), 0x8 becomes 6 (loops, with 0x4 clear of the expiry test), 0x4 becomes 2
 	// [DATA:global/sound,levels/*/Sound cat_*SFX.map] 0x200 is set on the crowd sentence (kids 91), music, speech and most UI events, never on a chain, a scream, a ride or staff sound
-	// [APPROX:AUDIO-038] looping voices are not stopped: the range test also reaches them in the original, but nothing read restarts a looped sample after the listener returns, and tp.exe's waterfall evidently resumes, so the restart path is unknown
+	// [APPROX:AUDIO-038] looping voices are not stopped: the range test also reaches them in the original, which stops the sample and keeps the voice's handle at +0x24 (0x6bca70 does not clear it, only the muted-group case 0x6bc760 does), but nothing read restarts a looped sample after the listener returns, and tp.exe's waterfall evidently resumes, so the restart path is unknown
 	private void StopVoicesOutOfRange()
 	{
 		foreach ( var (voice, _, flags) in oneShots )
@@ -201,16 +201,29 @@ public sealed class SoundEventSystem
 	internal static bool Admitted( Vector3? position, float range, ushort flags ) => (flags & AnyDistanceFlag) != 0 || Audible( position, range );
 
 	private readonly List<(AudioVoice Voice, uint Priority, ushort Flags)> oneShots = new();
-	private readonly List<(object Voice, uint Rank)> poolCandidates = new();
+	private readonly List<(object Voice, uint Rank, long Serial)> poolCandidates = new();
 	private readonly HashSet<SoundChain> pooledChains = new();
-	private static readonly Comparison<(object Voice, uint Rank)> ByRankDescending = ( a, b ) => b.Rank.CompareTo( a.Rank );
+
+	/// <summary>
+	/// The pool order of two voices: the higher rank first, and among equal ranks the newer voice first.
+	/// </summary>
+	// [BIN:TPW-EXE:0x6b6a80 voice list insert] a new voice is linked at the head of the manager's voice list (head +0x24, next +0x34, previous +0x38), so the tick 0x6b62b0 meets the newest voice first
+	// [BIN:TPW-EXE:0x6b6bc0 pool admission] each voice is slotted into the descending array before the first slot whose rank (the dword at +0x20) is strictly lower, the last slot's voice is pushed out; an equal rank therefore stays behind the voice already slotted, which is the newer one
+	internal static int ComparePoolOrder( uint rankA, long serialA, uint rankB, long serialB )
+	{
+		var byRank = rankB.CompareTo( rankA );
+		return byRank != 0 ? byRank : serialB.CompareTo( serialA );
+	}
+
+	private static readonly Comparison<(object Voice, uint Rank, long Serial)> ByRankThenNewest = ( a, b ) => ComparePoolOrder( a.Rank, a.Serial, b.Rank, b.Serial );
 
 	/// <summary>
 	/// Collects the held chains among the <see cref="VoicePool"/> highest-ranked audible voices this tick. A chain outside them, or out of the listener's range,
 	/// starts no new child; the children it already started play out.
 	/// </summary>
 	// [BIN:TPW-EXE:0x6b62b0 sound manager tick] only the voices in the pool of 12 are ticked; the pool is rebuilt every tick (0x6b6ba0), a voice is admitted (0x6b6bc0) only while audible (0x6bca10: the listener within the voice's range, the map sound's float +34, over the ground) and ranked by the dword priority:distance of 0x6bb9f0; a held chain's next child, its first included, is made in its tick (0x6bdae0 → 0x6bdb50 → 0x6bdbb0)
-	// [APPROX:AUDIO-038] the pool ranks the held chains with the running sentences, placed sounds and one-shots started through this system; a voice with the any-distance flag is admitted whatever its distance (0x6bca44); among equal ranks the original keeps the voice met first in its voice list (0x6b6bc0 compares strictly) and the list's insertion order is not read, while the sort here leaves equal ranks in no defined order
+	// [BIN:TPW-EXE:0x6bca44 any-distance admission] a voice with the any-distance flag is admitted whatever its distance
+	// [BIN:TPW-EXE:0x6b6bc0 equal ranks] among equal ranks the newer voice keeps its slot (ComparePoolOrder); the original's pool also holds the children a chain makes (their own voices) and every voice of its manager, which this system does not rank
 	private void SelectPooledChains()
 	{
 		pooledChains.Clear();
@@ -219,17 +232,19 @@ public sealed class SoundEventSystem
 		poolCandidates.Clear();
 		foreach ( var sentence in sentences )
 			if ( !sentence.IsStopped && Admitted( sentence.Position, sentence.Range, sentence.Event.Flags ) )
-				poolCandidates.Add( (sentence, PoolRank( sentence.Event.Priority, sentence.Position )) );
+				poolCandidates.Add( (sentence, PoolRank( sentence.Event.Priority, sentence.Position ), sentence.Serial) );
 		foreach ( var placement in placements )
 			if ( Admitted( placement.Position, placement.Range, placement.Flags ) )
-				poolCandidates.Add( (placement, PoolRank( placement.Priority, placement.Position )) );
+				poolCandidates.Add( (placement, PoolRank( placement.Priority, placement.Position ), placement.Serial) );
 		foreach ( var (voice, priority, flags) in oneShots )
 			if ( !voice.IsFinished && Admitted( voice.Position, voice.Range, flags ) )
-				poolCandidates.Add( (voice, PoolRank( priority, voice.Position )) );
+				poolCandidates.Add( (voice, PoolRank( priority, voice.Position ), voice.Serial) );
 		foreach ( var chain in chains )
 			if ( !chain.IsStopped && Admitted( chain.Position, chain.Range, chain.Event.Flags ) )
-				poolCandidates.Add( (chain, PoolRank( chain.Event.Priority, chain.Position )) );
-		poolCandidates.Sort( ByRankDescending );
+				poolCandidates.Add( (chain, PoolRank( chain.Event.Priority, chain.Position ), chain.Serial) );
+		// [BIN:TPW-EXE:0x6b6ba0 pool reset] the pool is cleared every tick with its admission threshold (+0x48) at 0, and 0x6b6bc0 rejects a rank that is not above the threshold, so a voice of rank 0 (priority 0 and past the distance scale) never enters
+		poolCandidates.RemoveAll( candidate => candidate.Rank == 0 );
+		poolCandidates.Sort( ByRankThenNewest );
 		for ( var index = 0; index < Math.Min( VoicePool, poolCandidates.Count ); index++ )
 			if ( poolCandidates[index].Voice is SoundChain chain )
 				pooledChains.Add( chain );
@@ -644,6 +659,8 @@ public sealed class SoundEventSystem
 /// <summary>A positioned sound that starts once its sample is decoded (<see cref="SoundEventSystem.PlayAtWhenDecoded"/>); it can be stopped before.</summary>
 public sealed class PlacedSound
 {
+	/// <summary>The creation order among all voices (see <see cref="SoundEventSystem.ComparePoolOrder"/>).</summary>
+	internal long Serial { get; } = VoiceOrder.Next();
 	private readonly AudioMixer mixer;
 	private readonly AudioChannel channel;
 	private readonly float volume;
@@ -687,6 +704,7 @@ public sealed class PlacedSound
 		else if ( decoding.IsCompletedSuccessfully && decoding.Result is { } audio )
 		{
 			Voice = mixer.Play( audio, channel, volume, position, range );
+			Voice.Serial = Serial;
 			Voice.SetPitch( Pitch );
 			Voice.Loops = loops;
 		}
@@ -702,6 +720,8 @@ public sealed class PlacedSound
 
 public sealed class SoundSentence
 {
+	/// <summary>The creation order among all voices (see <see cref="SoundEventSystem.ComparePoolOrder"/>).</summary>
+	internal long Serial { get; } = VoiceOrder.Next();
 	private readonly SoundEventSystem system;
 	private readonly SoundCategory category;
 	private readonly SoundEvent soundEvent;

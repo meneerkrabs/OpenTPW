@@ -13,8 +13,9 @@ public sealed class UiStringTable
 	private readonly string[] themeNames;
 	private readonly string[] objectNames;
 	private readonly string[] lenderNames;
+	private readonly string[] ingredientNames;
 
-	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null )
+	public UiStringTable( string language, string[] uiText, string[] helpText, string[] themeNames, string[] objectNames, string[]? lenderNames = null, string[]? ingredientNames = null )
 	{
 		Language = language;
 		this.uiText = uiText;
@@ -22,12 +23,19 @@ public sealed class UiStringTable
 		this.themeNames = themeNames;
 		this.objectNames = objectNames;
 		this.lenderNames = lenderNames ?? Array.Empty<string>();
+		this.ingredientNames = ingredientNames ?? Array.Empty<string>();
 	}
 
 	public static UiStringTable Load( GameLanguage language ) => new( language.Name,
 		language.LoadStrings( "UITEXT.str" ).Entries, language.LoadStrings( "UIHELPTEXT.str" ).Entries,
 		language.LoadStrings( "THEMENAMES.str" ).Entries, language.LoadStrings( "OBJECT_NAMES.str" ).Entries,
-		language.LoadStrings( "LOANNAMES.str" ).Entries );
+		language.LoadStrings( "LOANNAMES.str" ).Entries, OptionalStrings( language, "INGREDIENT.str" ) );
+
+	private static string[]? OptionalStrings( GameLanguage language, string name )
+	{
+		try { return language.LoadStrings( name ).Entries; }
+		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { return null; }
+	}
 
 	public string Language { get; }
 	public string this[UIStrings id] => Get( uiText, (int)id );
@@ -35,6 +43,8 @@ public sealed class UiStringTable
 	public string Theme( int index ) => Get( themeNames, index );
 	public string Object( int index ) => Get( objectNames, index );
 	public string Lender( int index ) => Get( lenderNames, index );
+	/// <summary>INGREDIENT.str: "Amount of fat", "Amount of salt", "Amount of ice", "Amount of sugar" for <c>UsageInfo.SpecialIngredient</c> 1..4 at index 0..3.</summary>
+	public string Ingredient( int index ) => Get( ingredientNames, index );
 	public string Extra( OpenTpwText key ) => SupplementaryStrings.Get( key, Language );
 
 	/// <summary>A UITEXT entry without the leading space the original uses for option values.</summary>

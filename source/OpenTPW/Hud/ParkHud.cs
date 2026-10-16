@@ -303,6 +303,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x4af8b4 ride erase] b_erase (control 0x3e2b) deletes the ride (0x48cd10), asking first (UITEXT 0x18c) when the Confirmations option [0x78d90f] is on
 		BuildObjectWindow();
 		AddShopPriceButton();
+		BuildObjectSettingControls();
 		AddRideUpgradeButton();
 		AddCallStaffButton();
 		hud.DrawOverlay = context => { DrawFeedback( context ); DrawRideStatic( context ); };
@@ -651,6 +652,7 @@ public sealed partial class ParkHud
 		ApplyObjectLayout();
 		if ( selectedObject is not { IsDeleted: false } && InfoArmOpen )
 			InfoArmOpen = false;
+		SyncObjectSettings();
 
 		if ( hud.Find( "openRide" ) is UiButton openButton )
 		{

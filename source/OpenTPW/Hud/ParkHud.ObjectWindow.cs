@@ -13,7 +13,7 @@ public sealed partial class ParkHud
 {
 	// [BIN:TPW-EXE:0x755150 object window tables] the three tables share the window rectangle, the preview box (348,162), the stats frame (853,162) with 7 or 8 rows of a label (x 876..1273) and a value (x 1315..1550), the title box at y 74..153 and the buttons b_door (1430,784), b_erase (300,800), b_okay (1671,818), b_arup/b_ardown (1662,126/216) and b_allthings (1648,583); the ride table also has b_queue, b_ride it!, b_callmech and b_upgrade in the bottom row
 	// [DATA:video 4:00, 10:40, 23:40, 24:20, 77:09, 78:20] the windows of Belly Bounce, Tempel der Duisternis, Wilde Aap, Drankwinkel, Klein Toilet and IJswinkeltje have this layout (title in yellow, preview, seven rows, bottom row of round buttons, right column of arrows, list and tick); labels and values are white
-	// [APPROX:UI-024] the sliders (speed, capacity, duration, price, quality, sugar, salt, ice, fat, chance of winning) and b_move are not drawn (ride settings and the move tool are not simulated), apply-all copies only the price; the preview is OpenTPW's orthographic icon
+	// [APPROX:UI-024] b_move is not drawn (the move tool is not simulated); the preview is OpenTPW's orthographic icon; the settings controls are ParkHud.ObjectSettings
 	/// <summary>What a row of the stats frame shows; the labels are UITEXT 17-23 for rides, 32-38 for shops and 41-48 for sideshows (<see cref="RowLabels"/>).</summary>
 	internal enum ObjectRowKind { None, Users, Age, Excitement, Reliability, Repair, Life, Scrap, Customers, CostOfGoods, Takings, Profit, Satisfaction, Happiness, Winners }
 
@@ -76,7 +76,6 @@ public sealed partial class ParkHud
 		public LayoutNode? Queue { get; init; }
 		public LayoutNode? Track { get; init; }
 		public LayoutNode? ApplyAll { get; init; }
-		public UiRect? PriceSlot { get; init; }
 
 		/// <summary>The table the original opens for an object of <paramref name="category"/>: rides, sideshows, and the shop table for every other object.</summary>
 		public static ObjectWindowLayout For( int category ) => Of( category switch
@@ -97,16 +96,13 @@ public sealed partial class ParkHud
 			var values = stats.Children.Where( node => node.Rect.X >= 1000 ).OrderBy( node => node.Rect.Y ).ToArray();
 			if ( labels.Length != values.Length )
 				throw new InvalidOperationException( $"Layout table {table.Name} has {labels.Length} labels and {values.Length} values." );
-			// [EXT:shop-price-editor] the price editor takes the place of the table's price slider (shop 0xc086, sideshow 0xa090)
-			var slot = table.All.FirstOrDefault( node => node.Type is 3 or 12 && node.Rect.X == 753 );
 			return cache[table] = new ObjectWindowLayout
 			{
 				Table = table, Stats = stats, Preview = preview, Title = title, Rows = labels.Zip( values ).ToArray(),
 				Door = table.TryModel( "b_door" ), Erase = table.TryModel( "b_erase" ), Okay = table.TryModel( "b_okay" ), Previous = table.TryModel( "b_arup" ),
 				Next = table.TryModel( "b_ardown" ), List = table.TryModel( "b_allthings" ), RideIt = table.TryModel( "b_ride it!" ),
 				// a toilet's call button (shops have none of their own) uses the ride table's slot
-				CallMech = table.TryModel( "b_callmech" ) ?? OriginalLayoutTables.RideWindow.Model( "b_callmech" ), Upgrade = table.TryModel( "b_upgrade" ), Queue = table.TryModel( "b_queue" ), Track = table.TryModel( "b_track" ), ApplyAll = table.TryModel( "b_applyall" ),
-				PriceSlot = slot == null ? null : UiRect.FromCenter( slot.Rect.Center, 340, 150 )
+				CallMech = table.TryModel( "b_callmech" ) ?? OriginalLayoutTables.RideWindow.Model( "b_callmech" ), Upgrade = table.TryModel( "b_upgrade" ), Queue = table.TryModel( "b_queue" ), Track = table.TryModel( "b_track" ), ApplyAll = table.TryModel( "b_applyall" )
 			};
 		}
 	}
@@ -212,7 +208,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x755150 b_queue, b_track, b_applyall] the ride window's queue button (help 9) lets the player edit the ride's queue, its track button (help 10) the track; the shop and sideshow windows' apply-all button (help 536, 537) copies the window's settings to every object of the type
 		objQueue = Info( new UiButton { Id = "editQueue", Model = "b_queue", Clicked = EditQueue } );
 		objTrack = Info( new UiButton { Id = "editTrack", Model = "b_track", Clicked = EditTrack } );
-		objApplyAll = Info( new UiButton { Id = "applyAll", Model = "b_applyall", Clicked = ApplyPriceToAll } );
+		objApplyAll = Info( new UiButton { Id = "applyAll", Model = "b_applyall", Clicked = ApplySettingsToAll } );
 		objRideIt = Info( new UiButton { Id = "rideView", Model = "b_ride it!", Clicked = () => { if ( IsRiding ) StopRide(); else StartRide( selectedObject ); } } );
 	}
 
@@ -244,21 +240,6 @@ public sealed partial class ParkHud
 		var entered = item.Runtime.Coaster != null ? level.EnterCoasterTool( item ) : level.EnterTrackTool( item );
 		if ( entered )
 			PostMessage( item.Runtime.Coaster != null ? strings.Help( 0x125 ) : TrackToolHelp );
-	}
-
-	/// <summary>Copies the selected shop's or sideshow's price to every placed object of the same type.</summary>
-	// [APPROX:UI-024] the original's apply-all copies all of the window's settings (the sliders as well); OpenTPW's window has only the price
-	private void ApplyPriceToAll()
-	{
-		if ( selectedObject is not { IsDeleted: false } owner || !TryPriceTarget( owner, out var economy, out var state ) || RejectReadOnlyAction() )
-			return;
-		foreach ( var other in level.Objects.Objects )
-		{
-			if ( other.IsDeleted || ReferenceEquals( other, owner ) || other.Entry.InfoId != owner.Entry.InfoId || level.GetEconomyInstance( other ) is not int instance
-				|| !economy.TryGetObject( instance, out var target ) || target.InfoId != state.InfoId )
-				continue;
-			economy.SetPrices( target.Id, state.Price );
-		}
 	}
 
 	/// <summary>Moves the selection to the next (<paramref name="direction"/> 1) or previous placed object of the selected one's category, wrapping around.</summary>
@@ -324,11 +305,6 @@ public sealed partial class ParkHud
 			Place( objApplyAll, layout.ApplyAll, HelpOf( layout.ApplyAll?.Help ?? -1 ) );
 			Place( callStaffButton, layout.CallMech, HelpOf( layout.CallMech?.Help ?? -1 ) );
 			Place( rideUpgradeButton, layout.Upgrade, HelpOf( layout.Upgrade?.Help ?? -1 ) );
-			if ( shopPriceButton != null && layout.PriceSlot is { } slot )
-			{
-				shopPriceButton.Bounds = slot;
-				shopPriceButton.Anchor = UiAnchor.Center;
-			}
 			for ( var row = 0; row < ObjectWindowRows; row++ )
 			{
 				var present = row < layout.Rows.Length;
@@ -354,6 +330,7 @@ public sealed partial class ParkHud
 			if ( objValues[row] != null ) objValues[row]!.Visible = false;
 			if ( objGauges[row] != null ) objGauges[row]!.Visible = false;
 		}
+		ApplyObjectSettingLayout( layout );
 	}
 
 	/// <summary>The red-to-green gauge of a window row; rows whose stat is text draw nothing.</summary>

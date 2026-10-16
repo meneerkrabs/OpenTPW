@@ -989,13 +989,13 @@ quick succession: with the decay of at least one point per turn a boost stays un
 takes tens of turns. (Used every single turn the boost would settle near 1,485, which is why the wrap is not formally excluded, but no guest can do that.)
 No other writer of `+196` exists in the code (a scan of every `sth` to that offset).
 
-*Not traced.* The shop screen that sets `+404` (and the range it allows), and the amount saved as `mAmountOfSpecialIngredient` (no OpenTPW field). Fat, Salt and Ice
+*Since traced (PC).* The shop window's ingredient slider (0..100, tp.exe `0x4b06d2`, shown for ingredients 1..4 by `0x4b0950`) sets the amount through the window's apply `0x4b0aa0` (apply-all `0x4b0ae0`); OpenTPW keeps it in the economy record, saves it and imports `mAmountOfSpecialIngredient` (`0x4dcdc1`). Fat, Salt and Ice
 change toilet and thirst in the original but not in OpenTPW (the visit still resets the satisfied needs to 0, GUESTS.md); they are a separate gap (the need effects of
 `0xeaaf8`, `+324..+340`), not part of WALK-001.
 
 **Fixed in C#** (before -> after: the boost stayed 0 in every game; now `ApplyVisit` adds `GuestSpeed.RaiseBoost( boost, ingredient, amount )` when a guest leaves an
 object; `RideVisitorBridge.SpecialIngredient` comes from `UsageInfo.SpecialIngredient` through `OriginalObjectRuntime.CreateVisitorBridge`, the amount is the build default
-50 (`[APPROX:WALK-001]` keeps the missing shop screen and save field). `walk-boost` C# 521/521; the factor 6 -> 5 mutation is detected. The determinism hash does not change: its
+50 (the shop window's slider and the save field have since been added, WALK-001 retired). `walk-boost` C# 521/521; the factor 6 -> 5 mutation is detected. The determinism hash does not change: its
 scenes have no Sugar shop.
 
 **F21, the sale refund (ECON-025, `ParkEconomy.ScrapValue`; fixed in C#).** The sale `0xdbfa8` calls the getter `0xe25e8` at `0xdc05c`

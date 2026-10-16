@@ -259,6 +259,14 @@ Automated runs are silent: `--smoke-test`, any `--capture-*` option and `--park-
 device (the game runs on its wall clock exactly as without a sound card), so smokes and captures make no sound on a
 developer machine. Add `--smoke-audio` to hear one. `--silent` or `OPENTPW_SILENT=1` silences any run.
 
+Automated runs are also offscreen: `--smoke-test`, `--tpi-smoke-test` and `--park-resume-smoke` create the window hidden, never show
+it and render into an offscreen framebuffer (a colour texture of the size the window would have had; the logical size and
+`OPENTPW_TEST_PIXEL_SCALE` apply as usual) instead of the swapchain, paced at 60 frames per second (`--no-vsync` unpaces it). No window appears, no focus is taken, and a locked screen does
+not matter. `--offscreen` or `OPENTPW_OFFSCREEN=1` does the same for any run; `OPENTPW_OFFSCREEN=0` (or `--no-offscreen`) keeps the
+visible window, which the OS-level fullscreen check needs: an offscreen window has no OS fullscreen state, so the sandbox smoke's
+fullscreen toggle then verifies the logical window size only and logs that the OS transition was skipped. Every offscreen run logs
+`Offscreen mode: window hidden ...` at start-up. Normal game runs stay visible.
+
 A normal start (the front end, no `--smoke-test`) first plays the original's
 start-up movies: `bf`, then a trailer chosen by the day of the month, at the
 Movie volume of Game Options (its mute toggle silences them). Esc, Space or a mouse button skips. Use
@@ -325,7 +333,7 @@ in the selected language; add `--language German --language-data <dir>` to check
 another one) must match its CPU composite in readback; its crop is `artifacts/native-smoke-text.png`.
 The smoke test ignores the user display settings (defaults plus command-line options)
 and also reads back the final output after world scaling and the BF4 UI
-(`artifacts/native-smoke-output.png`): it checks swapchain, world-target and output
+(`artifacts/native-smoke-output.png`): it checks present-target (swapchain, or the offscreen framebuffer), world-target and output
 sizes, exact BF4 text at the active UI scale, that picking returns the Totem cell and a
 neighbouring cell, and runtime render-scale, window-size, unconfirmed-revert and
 fullscreen-toggle changes without growing GPU resources. Combine it with the display

@@ -448,7 +448,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
 	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
 	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
-	// [APPROX:ARRIVAL-001] leaving guests wait at their lane's first cell and board at status 4 one per stop cell and turn, where the original walks them to the vehicle's stop cells at status 1 to 3 (0x00500BD0, 0x0051AAD0) and boards the head of each cell's thing list; the pick-up test asks for any guest in state 21, not the head things of the four stop cells (0x0051A9D0); this update runs before the turn's guest updates, the original's after its thing sweep — evidence needed: what cell 0x004D8650 returns for each level (the stop walk also needs the original walk, WALK-008)
+	// [APPROX:ARRIVAL-001] a guest whose stop cell no route reaches or that was refused at the booth keeps OpenTPW's lane walk, where it waits at its lane's first cell and boards at status 4, one per stop cell and turn in update order; this update runs before the turn's guest updates, the original's after its thing sweep, and a cell's thing list is OpenTPW's occupant list (WALK-003) — evidence needed: the lanes' cells in the map (WALK-008)
 	private void UpdateArrivalVehicle()
 	{
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
@@ -478,7 +478,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 					break;
 			}
 		}
-		if ( guests.Any( guest => guest.State == GuestState.WaitingToGoHome ) )
+		if ( LeavingGuestWaits() )
 		{
 			var status = ReadArrivalVehicle();
 			if ( status is -1 or 0 || status == 2 && pendingArrivals == 0 )
@@ -487,6 +487,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		else if ( ReadArrivalVehicle() == 4 )
 			DispatchArrivalVehicle( 0 );
 	}
+
+	/// <summary>Puts <paramref name="kind"/> at work without a dispatch (tests).</summary>
+	internal void RestoreArrivalVehicleForTest( int kind ) => arrivalVehicle = kind;
 
 	/// <summary>The status of the vehicle at work (script variable 1), -1 for none; a vehicle that reports 6 (gone) is released.</summary>
 	// [BIN:TPW-EXE:0x0051A690 vehicle status] no vehicle at work (+0x1DA72A 0) reads -1; else the script's variable 1 (0x0055A390); 6 writes 0 to it
@@ -581,11 +584,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	public bool IsInPark( Guest guest ) => InPark( guest );
 
 	/// <summary>Whether the guest stands on a park cell: in the park and on the grid (not on the leaving lanes).</summary>
-	// Approximation (ECON-044, registered at ApplyAppearance): the original's park-cell test (0x004FA990, cell types 0, 1, 3, 9 and 10) is a guest in the park by its state that stands on the grid
+	// Approximation (a guest event ring is not kept, [EXT:guest-event-ring]): the original's park-cell test (0x004FA990, cell types 0, 1, 3, 9 and 10) is a guest in the park by its state that stands on the grid
 	public bool IsOnParkCell( Guest guest ) => InPark( guest ) && guest.OnGrid;
 
 	private bool InPark( Guest guest ) => guest.State is not (GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
-		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome or GuestState.Gone);
+		or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome or GuestState.Gone);
 
 	private bool CountsParkTime( Guest guest ) => InPark( guest ) && !guest.LaneReversed;
 
@@ -597,6 +600,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// is destroyed (0x0050B780)
 	private void UpdateWaitingToGoHome( Guest guest, float dt )
 	{
+		if ( guest.Lane == null )
+		{
+			UpdateWaitingAtStop( guest, dt );
+			return;
+		}
 		if ( ArrivalVehicles == null )
 		{
 			guest.StateTimer -= dt;
@@ -622,8 +630,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPW-EXE:0x00519EF0 park door closes the rides] the door closes every openable object (0x004DF300: open word 0, loading slot cleared; ParkGate.DoorMoved), and a closed ride's update dismisses its queue head, one per turn (RideVisitorBridge.HostStep, 0x004E1220 → 0x004E0450 → 0x005012F0), after which state 6 sends the guest home; a guest walking to a ride drops its target in state 10 (UpdateGoingToRide, 0x004FFEB9)
 			// The state-18 recall (0xedc98): the leaving handler's opening test sends a guest whose counter is above 0, happiness byte nonzero and park
 			// open back to deciding, so a closed-park dismissal unwinds when the park reopens. The three leaving causes all fail it in the same turn.
-			// [APPROX:GUEST-012] tp.exe's recall (0x500A50) also demands the guest's cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType); OpenTPW's imported grid writes only 0, 1 and 3 (ECON-050), so the test would pass everywhere, and OpenTPW stands in for it with the state boundary: only a guest still walking the paths to the exit (no lane yet) recalls, and the recall ends at the road (CrossingRoadHome or a lane). The booth refusal also enters LeavingPark on a lane and is exempt, like the original's zeroed counter (0xecacc) — evidence needed: which cells the original's state-18 walk crosses before state 19 (0x500AD0) and their types
-			if ( guest.State == GuestState.LeavingPark && guest.Lane == null && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false ) )
+			// [BIN:TPW-EXE:0x00500A50 recall cell test] the recall also demands the guest's own cell pass 0x4FA990 (cell types 0, 1, 3, 9 and 10, 0x536310..0x536390, the set of ParkGate.CountsCellType): the walk out of the park crosses the gate's walkway cells (type 0x1E, 7 outside the terrain) and a guest on one cannot change its mind; the lane walk after the gate (OpenTPW's stand-in for states 19 to 21, ARRIVAL-001) is no state 18 and never recalls, like the booth refusal that enters it with a zeroed counter (0xecacc)
+			if ( guest.State == GuestState.LeavingPark && guest.Lane == null && GuestLifecycle.ShouldRecall( guest.Happiness, guest.ExitLevel, Payments?.ParkClosed ?? false )
+				&& Grid.Cells.RawTypeAt( guest.Navigation.Cell.X, guest.Navigation.Cell.Y ) is 0 or 1 or 3 or 9 or 10 )
 			{
 				// [BIN:TPW-EXE:0x00500AB9 recall clears the walk mask] guest +0x188 (walk +0xB4) = 0 before state 6
 				guest.Navigation.Mask = 0;
@@ -715,8 +724,16 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			case GuestState.CrossingRoadToPark:
 			case GuestState.GoingToTicketBooth:
 			case GuestState.EnteringPark:
-			case GuestState.CrossingRoadHome:
 				UpdateLane( guest, dt );
+				break;
+			case GuestState.CrossingRoadHome:
+				if ( guest.Lane != null )
+					UpdateLane( guest, dt );
+				else
+					UpdateAtGate( guest );
+				break;
+			case GuestState.WalkingToVehicle:
+				UpdateWalkToVehicle( guest );
 				break;
 			case GuestState.LeavingPark:
 				if ( guest.Lane != null )
@@ -797,11 +814,11 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>
 	/// The guard sets the guest down on <paramref name="cell"/> (tp.exe <c>0x004FEB50</c>): the guest stands at the cell's centre and leaves the park
-	/// (state 18) by the way out <paramref name="side"/> drew when it is in reach; otherwise it is removed. True when it walks out. Without a drawn
-	/// side the nearer reachable lane is taken.
+	/// (state 18) towards the gate cell <paramref name="side"/> drew when a route reaches it; otherwise it is removed. True when it walks out. Without a drawn
+	/// side the first gate cell with a route is taken.
 	/// </summary>
 	// [BIN:TPW-EXE:0x004FEB50 guard sets a guest down] the guest at the cell's centre (0x004FA930 with the bytes 0x80, 0x80), its model back (0x004D4140), cat_kids 128 at it, +0x188 = 1, a route (0x004FA530) to the one gate cell a world draw's bit 0 picks (0x004D86D0: 0 CrossingParkSideA, 1 CrossingParkSideB's X with side A's Y): state 18 ("<Humph>"); no route destroys it (0x0050B780)
-	// Approximation (GUEST-007, registered at Prank): the drawn side's walk out reaches its arrival lane's park entrance and leaves along the lane, the leaving walk of every guest in OpenTPW (GUEST-010, WALK-004), where the original routes to the gate cell itself
+	// Approximation (GUEST-007, registered at Prank): from the gate cell OpenTPW's lane walk takes the guest on to the bus stop (ARRIVAL-001), where the original walks it to the arrival vehicle's stop cells (states 19 to 21)
 	bool IGuardGuests.Release( int guestId, (int X, int Y) cell, int? side )
 	{
 		if ( Find( guestId ) is not { } guest )
@@ -815,10 +832,17 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		UpdatePresentation( guest );
 		// [BIN:TPW-EXE:0x004FEBAB set-down walk mask] guest +0x188 (walk +0xB4) = 1: the walk out may leave the paths (WalkEdges.Blocked)
 		navigation.Mask = 1;
-		var lanes = side is { } drawn ? new[] { ValidLane( (drawn & 1) == 0 ? Settings.ArrivalLaneA : Settings.ArrivalLaneB ) }
-			: new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
-		var reachable = lanes.Any( lane => lane != null && Grid.Distance( cell.X, cell.Y, lane[^1].X, lane[^1].Y ) >= 0 );
-		guest.ExitSide = side is { } chosen ? chosen & 1 : null;
+		// [BIN:TPW-EXE:0x004FEB50 set-down route] one route request (0x004FA530) to the one gate cell the draw's bit 0 picks (0x004D86D0); a route sets state 18, none destroys the guest
+		var reachable = false;
+		foreach ( var candidate in side is { } drawn ? new[] { drawn & 1 } : new[] { 0, 1 } )
+		{
+			if ( GateCell( candidate ) is { } gate && RouteToCell( guest, gate ) )
+			{
+				guest.ExitSide = candidate;
+				reachable = true;
+				break;
+			}
+		}
 		// The leaving handler's recall (0x00500A50) applies to it like any leaving guest: with its exit counter and happiness byte above 0, the
 		// park open and its cell a path, it decides again on its next turn (and clears +0x188), so a guard sends home only a guest that wants to go.
 		guest.State = reachable ? GuestState.LeavingPark : GuestState.Gone;
@@ -864,14 +888,32 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// arrived at its destination, or stuck (a route search of the walk failed, <see cref="WalkResult.Stuck"/>, which
 	/// <see cref="GuestNavigation.Stuck"/> keeps until the next destination); the destination is then done.
 	/// </summary>
-	private bool Move( Guest guest )
+	private bool Move( Guest guest ) => MoveStep( guest ) != WalkResult.Walking;
+
+	/// <summary>The walk step with its result (<see cref="WalkResult"/>): still walking until the turn starts; any other result ends the walk.</summary>
+	private WalkResult MoveStep( Guest guest )
 	{
 		if ( !turnStarted )
-			return false;
-		if ( Step( guest ) == WalkResult.Walking )
-			return false;
-		guest.HasWaypoint = false;
-		return true;
+			return WalkResult.Walking;
+		var result = Step( guest );
+		if ( result != WalkResult.Walking )
+			guest.HasWaypoint = false;
+		return result;
+	}
+
+	/// <summary>
+	/// A route request to a cell's centre (tp.exe <c>0x004FA530</c>: the bytes 0x80, 0x80, then SetDest <c>0x00510100</c>): the walk of the whole way, searched
+	/// on the cell map from the guest's cell with its walk mask. False when the search fails; the walk then stands arrived and stuck
+	/// (<see cref="GuestNavigation.Stuck"/>), as the original leaves it.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FA530 route to a cell] the cell id minus 1 gives the cell bytes with the sub-cell byte 0x80 (bit 15 of x cleared), the walk's stamp wait +0x198 (0x004FA770, never set by OpenTPW's guests) is passed, then 0x00510100 with the position bytes << 8; its result is the search's success
+	private bool RouteToCell( Guest guest, (int X, int Y) cell )
+	{
+		var navigation = guest.Navigation;
+		var (x, y) = GuestNavigation.BytePoint( cell, GuestWander.CentreByte, GuestWander.CentreByte );
+		var found = navigation.Navigate( Grid.Cells, x, y );
+		guest.HasWaypoint = true;
+		return found;
 	}
 
 	private WalkResult Step( Guest guest )
@@ -907,7 +949,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// separation's neighbours for the stepping guest (<c>0x10087c</c>): the guests standing in the 3 × 3 cells around its
 	/// cell, rows from the top and each row from the left, cells outside the map skipped (<c>0xd70d8</c>).
 	/// </summary>
-	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone) in OpenTPW's cell lists, rebuilt every park turn in guest order with movers appended; the original (tp.exe query 0x5102f0, Mac 0x10087c) walks per-cell thing lists that are head-inserted when a thing enters a cell (0x50b6a0 via 0x4d91f0) and never rebuilt, keeps class-1 guests whatever their state, and also keeps staff (classes 4-8) and the online avatar (class 18); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
+	// [APPROX:WALK-003] separation's neighbours are the guests outside rides and shops (not Using, HeldByGuard or Gone); the original's query (tp.exe 0x5102f0, Mac 0x10087c) visits each cell's things in the order they were head-inserted when they entered it (0x50b6a0 via 0x4d91f0), keeps class-1 guests whatever their state, and also keeps staff (classes 4-8) and the online avatar (class 18); the neighbour position (thing +4/+6 = navigation position >> 8, written by 0x4fa2a0) matches OpenTPW's — still open: where the thing position of a guest on a ride, held or leaving lies
 	private (int X, int Y) SeparationForStep( GuestNavigation self )
 	{
 		neighbours.Clear();
@@ -929,6 +971,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>Files every guest under its cell, in list order.</summary>
+	// [EXT:guest-cell-lists] OpenTPW keeps its per-cell guest lists as a structure it rebuilds every park turn (guest order, movers appended), where the original's per-cell thing lists are persistent and head-inserted: a data-structure choice with no original behaviour to match (which things the lists hold and their query order are WALK-003)
 	private void RebuildOccupants()
 	{
 		foreach ( var list in occupants.Values )
@@ -960,7 +1003,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <paramref name="alsoOpen"/> are bookkeeping for the M3 gate; off the grid (the arrival lanes) and for a queue walk
 	/// (<paramref name="alongCells"/>) the guest walks the cells themselves.
 	/// </summary>
-	private void SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool alongCells = false )
+	private bool SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool alongCells = false )
 	{
 		var navigation = guest.Navigation;
 		var route = new List<(int X, int Y)>( cells.Count + 1 ) { navigation.Cell };
@@ -969,24 +1012,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( route[^1] != cell )
 				route.Add( cell );
 		}
+		var found = true;
 		if ( navigation.OffGrid || alongCells )
 			navigation.SetDestination( target.X, target.Y, route, alsoOpen );
 		else
-			navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
+			found = navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
 		guest.HasWaypoint = true;
-	}
-
-	/// <summary>The next path cell: a destination at the guest's offset point in it, routed through the current cell.</summary>
-	// [APPROX:WALK-004] the walks to a ride (state 10) and out of the park (state 18) set a destination one path cell at a time (Grid.TryStep over the cell links, each a fresh search from the guest's cell), where tp.exe's states set one destination for the whole walk (state 10 0x4ffbc0 through 0x4fa5f0, the leaving gate's crossing cell 0x4d86d0) and its search (0x511420) string-pulls the route; the search, the set-up 0x50f8e0, the refill by a new search (0x50efce) and both reroutes are ported (WalkSearch, GuestNavigation.Navigate) — still open: the destinations states 10 and 18 set
-	private void SetCellWaypoint( Guest guest, int x, int y )
-	{
-		var current = (guest.CellX, guest.CellY);
-		guest.PreviousCellX = guest.CellX;
-		guest.PreviousCellY = guest.CellY;
-		guest.CellX = x;
-		guest.CellY = y;
-		var (bx, by) = OffsetBytes( guest );
-		SetDestination( guest, GuestNavigation.BytePoint( (x, y), bx, by ), [current, (x, y)] );
+		return found;
 	}
 
 	private void SetLaneWaypoint( Guest guest )
@@ -1104,6 +1136,160 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		SetLaneWaypoint( guest );
 	}
 
+	/// <summary>
+	/// The four cells around the arrival vehicle's stop (tp.exe <c>0x0051A9D0</c>, <c>0x00500AD0</c>, <c>0x00500BD0</c>): the stop cell <c>0x004D8650(0)</c> (the level's BusStopA cell),
+	/// its +X neighbour, and the two cells two rows up from them; the bus uses the first two and the seaplane and the Ferry the last two. Null when the level has no bus stop A.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500AD0 stop cells] 0x004D8650(0) is cell (0x007855AC, 0x007855B0), FixedItemInfo.BusStopA; the four cells are that id, id + 1, id − 0x100 and id − 0xFF (two rows up, 128 cells a row)
+	private (int X, int Y)[]? StopCells()
+	{
+		if ( ValidLane( Settings.ArrivalLaneA ) is not { } lane )
+			return null;
+		var (x, y) = lane[0];
+		return Grid.InBounds( x, y ) && Grid.InBounds( x + 1, y - 2 ) ? [(x, y), (x + 1, y), (x, y - 2), (x + 1, y - 2)] : null;
+	}
+
+	/// <summary>Whether the arrival vehicle at work is the seaplane or the Ferry (tp.exe <c>0x0051AAD0</c>: a vehicle at work that is not the bus).</summary>
+	// [BIN:TPW-EXE:0x0051AAD0 non-bus vehicle] 1 when the vehicle at work (+0x1DA72A) is set and differs from the bus's handle (+0x1DA72C)
+	private bool NonBusVehicleAtWork() => arrivalVehicle >= 0 && arrivalVehicle != ArrivalVehicleKind.Bus;
+
+	/// <summary>
+	/// Whether state 19 lets a leaving guest walk to the stop (tp.exe <c>0x0051A760</c>, taken as nonzero): not while the bus is at status 3, 1 or 2 (arriving or unloading);
+	/// any other vehicle, no vehicle, or a bus in another status lets it. A level whose arrival group minimum is above 9 skips the status 1 and 2 tests.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0051A760 stop walk gate] returns 1 for no vehicle at work and for a vehicle other than the bus; with the bus: status 3 returns 0, Arrival.MinPeople (+0x2D0) above 9 returns 1, then status 1 and status 2 return 0, any other status 1; each read is 0x0055A390 on the vehicle's script and a status 6 releases the vehicle (-1)
+	private bool StopWalkAllowed()
+	{
+		if ( ArrivalVehicles == null || arrivalVehicle < 0 || arrivalVehicle != ArrivalVehicleKind.Bus )
+			return true;
+		if ( ReadArrivalVehicle() == 3 )
+			return false;
+		if ( Settings.ArrivalMinPeople > 9 )
+			return true;
+		var status = ReadArrivalVehicle();
+		if ( status == 1 )
+			return false;
+		return ReadArrivalVehicle() != 2;
+	}
+
+	/// <summary>A route request to a random point of <paramref name="cell"/> (the two sub-cell bytes are world draws in tp.exe, <c>0x00516330</c>); false when the walk search fails.</summary>
+	// [BIN:TPW-EXE:0x00500BD0 stop walk draws] the cell pick and the two sub-cell bytes (0x00500AD0, 0x00500BD0) are world draws (0x00516330), taken here from the park's one world generator (WorldRng) in the original's order: the pick, then x, then y
+	private bool RouteToStopPoint( Guest guest, (int X, int Y) cell )
+	{
+		var byteX = (int)(random.NextWord() & 0xFF);
+		var byteY = (int)(random.NextWord() & 0xFF);
+		var (x, y) = GuestNavigation.BytePoint( cell, byteX, byteY );
+		var found = guest.Navigation.Navigate( Grid.Cells, x, y );
+		guest.HasWaypoint = true;
+		return found;
+	}
+
+	/// <summary>
+	/// State 19 (tp.exe <c>0x00500AD0</c>), at the gate's crossing cell: once the arrival vehicle lets a leaving guest walk (<see cref="StopWalkAllowed"/>) it picks one of the four stop
+	/// cells with a world draw, a random point in it with two more, asks for a route there and walks it (state 20). Where no route reaches the stop cell the guest takes OpenTPW's lane home.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500AD0 state 19] 0x0051A760 nonzero: the cell local_8[draw & 3] (the stop cell, its +X neighbour and the two cells two rows up), the point's bytes from two more draws, 0x004FA5F0 and SetState(0x14); the route request's result is not read
+	// [APPROX:ARRIVAL-001] a stop cell no route reaches (a lane OpenTPW's map does not type, WALK-008) is not walked to: the guest takes OpenTPW's lane home from the gate, where the original's walk stays stuck in state 20 — evidence needed: none (read)
+	private void UpdateAtGate( Guest guest )
+	{
+		if ( !turnStarted || !StopWalkAllowed() )
+			return;
+		var cells = StopCells();
+		if ( cells == null )
+		{
+			guest.State = GuestState.Gone;
+			return;
+		}
+		var cell = cells[(int)(random.NextWord() & 3)];
+		if ( RouteToStopPoint( guest, cell ) )
+		{
+			guest.State = GuestState.WalkingToVehicle;
+			return;
+		}
+		guest.HasWaypoint = false;
+		var lane = ValidLane( guest.ExitSide == 1 ? Settings.ArrivalLaneB : Settings.ArrivalLaneA ) ?? ValidLane( Settings.ArrivalLaneA ) ?? ValidLane( Settings.ArrivalLaneB );
+		if ( lane == null )
+		{
+			guest.State = GuestState.Gone;
+			return;
+		}
+		StartLeavingLane( guest, lane, 2 );
+	}
+
+	/// <summary>State 20 (tp.exe <c>0x005019F0</c> case 0x14): one step of the walk to the stop; arriving is state 21; a stuck walk stays where it is.</summary>
+	// [BIN:TPW-EXE:0x005019F0 state 20] the walk step 0x004FA2A0: 0 sets the heading (0x7FF when the vehicle at work is not the bus, 0x400 otherwise) and SetState(0x15); 2 logs "Got stuck walking around outside" and stays
+	private void UpdateWalkToVehicle( Guest guest )
+	{
+		if ( !guest.HasWaypoint )
+		{
+			guest.State = GuestState.WaitingToGoHome;
+			return;
+		}
+		var result = MoveAlongStep( guest );
+		if ( result == WalkResult.Arrived )
+		{
+			guest.State = GuestState.WaitingToGoHome;
+			guest.StateTimer = WaitForBusSeconds;
+		}
+		else if ( result == WalkResult.Stuck )
+			guest.HasWaypoint = true;   // the original logs and stays in state 20 (0x005019F0 case 0x14); the walk keeps reporting stuck
+	}
+
+	/// <summary>
+	/// State 21 on the cell map (tp.exe <c>0x00500BD0</c>): at vehicle status 4 the guest that heads its cell's thing list boards (and is gone); at status 1 to 3 a guest that
+	/// does not stand on one of the vehicle kind's two stop cells picks one and walks to a random point of it (state 20). Without the park's vehicles the guest goes after
+	/// <see cref="WaitForBusSeconds"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500BD0 state 21] status 4: the head thing of the guest's cell (0x004CD4E0, the cell's list at +0x24) is this guest: event 0x13 and 0x0050B780; status 1, 2 or 3: on the bus's stop cells (0x0051AAD0 = 0) local_8[0] or [1], else [2] or [3] it returns, else a draw picks one of the two, two more draws give the point, 0x004FA5F0 and SetState(0x14)
+	private void UpdateWaitingAtStop( Guest guest, float dt )
+	{
+		if ( ArrivalVehicles == null )
+		{
+			guest.StateTimer -= dt;
+			if ( guest.StateTimer <= 0 )
+				guest.State = GuestState.Gone;
+			return;
+		}
+		if ( !turnStarted )
+			return;
+		var status = ReadArrivalVehicle();
+		var here = guest.Navigation.Cell;
+		if ( status == 4 )
+		{
+			if ( occupants.TryGetValue( here, out var list ) && list.Count > 0 && list[^1] == guest )
+				guest.State = GuestState.Gone;
+			return;
+		}
+		if ( status is not (1 or 2 or 3) || StopCells() is not { } cells )
+			return;
+		var offset = NonBusVehicleAtWork() ? 2 : 0;
+		if ( here == cells[offset] || here == cells[offset + 1] )
+			return;
+		var cell = cells[(int)(random.NextWord() & 1) + offset];
+		RouteToStopPoint( guest, cell );
+		guest.State = GuestState.WalkingToVehicle;
+	}
+
+	/// <summary>Whether a leaving guest waits at the stop (tp.exe <c>0x0051A9D0</c>): the head thing of one of the four stop cells is a guest in state 21; a guest on OpenTPW's lane home waits too.</summary>
+	// [BIN:TPW-EXE:0x0051A9D0 pick-up test] for the four cells of 0x00500AD0 the head of the cell's thing list (+0x2B8 + id × 0x44) must be a guest (type byte 1) in state 0x15
+	private bool LeavingGuestWaits()
+	{
+		foreach ( var guest in guests )
+		{
+			if ( guest.State == GuestState.WaitingToGoHome && guest.Lane != null )
+				return true;
+		}
+		if ( StopCells() is not { } cells )
+			return false;
+		foreach ( var cell in cells )
+		{
+			if ( occupants.TryGetValue( cell, out var list ) && list.Count > 0 && list[^1] is { State: GuestState.WaitingToGoHome, Lane: null } )
+				return true;
+		}
+		return false;
+	}
+
+	// [APPROX:GUEST-012] a guest that walks a lane (the booth refusal, whose state 18 walks to a crossing cell with the counter zeroed, 0x4FF9D0, and the walk after the gate, states 19 to 21) takes OpenTPW's lane walk, which never recalls — evidence needed: the lanes' cells in the map (ARRIVAL-001, WALK-008)
 	private void StartLeavingLane( Guest guest, (int X, int Y)[] lane, int fromIndex )
 	{
 		guest.ExitSide = null;
@@ -1133,8 +1319,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		}
 		IRideVisitorBridge? choice = null;
+		var draw = random.NextWord();
 		var input = new GuestDecision.Input( turn, (uint)guest.InterludeTurn, (uint)guest.QueueStandingSinceTurn, guest.Happiness, guest.Nausea, guest.Litter,
-			guest.ExitLevel, Payments?.ParkClosed ?? false, random.NextWord(), guest.PrankFlag, Settings.StinkbombLikelihood );
+			guest.ExitLevel, Payments?.ParkClosed ?? false, draw, guest.PrankFlag, Settings.StinkbombLikelihood );
 		var outcome = GuestDecision.Decide( input, () =>
 		{
 			if ( SeekBin( guest ) )
@@ -1145,7 +1332,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}, () =>
 		{
 			guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.BigHappinessChange );
-			if ( !HasWayOut( guest ) )
+			if ( !RouteToGate( guest, draw ) )
 				return false;
 			guest.State = GuestState.LeavingPark;
 			return true;
@@ -1185,19 +1372,44 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>
-	/// True when a path leads from the guest's cell to the end of an arrival lane, the way out <see cref="UpdateLeaving"/> takes. A park
-	/// without arrival lanes has no modelled gate: its guests leave and vanish, as <see cref="UpdateLeaving"/> handles it.
+	/// The gate's crossing cell <paramref name="index"/> (tp.exe <c>0x004D86D0</c>: 0 is <c>CrossingParkSideA</c>, 1 is side B's X on side A's Y), the cell a guest
+	/// on its way out of the park walks to; null when the level has no arrival lane for it.
 	/// </summary>
-	private bool HasWayOut( Guest guest )
+	// [BIN:TPW-EXE:0x004D86D0 gate crossing cell] FixedItemInfo.CrossingParkSide at 0x007855CC/0x007855D0 (side A) and 0x007855D4 (side B's x); both cells take the row of side A (0x007855D0): the cell id is y × 128 + x + 1
+	private (int X, int Y)? GateCell( int index )
 	{
-		var lanes = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
-		if ( lanes.All( lane => lane == null ) )
-			return true;
-		foreach ( var lane in lanes )
+		var a = ValidLane( Settings.ArrivalLaneA );
+		var b = ValidLane( Settings.ArrivalLaneB );
+		if ( index == 0 )
+			return a is { Length: > 2 } ? a[2] : null;
+		return b is { Length: > 2 } ? (b[2].X, (a is { Length: > 2 } ? a[2] : b[2]).Y) : null;
+	}
+
+	/// <summary>
+	/// The leaving gate's route (state 6, tp.exe <c>0x004FEC90</c>): one route request to each of the gate's two crossing cells, the order picked by the bit 0 of the
+	/// state's draw, first with the guest's walk mask and then (a second pass) with the mask 1 that lets a walker leave the paths; the first route found is the walk of
+	/// state 18. None found leaves the mask 0 and the guest in state 6. A level without a gate crossing keeps OpenTPW's way out: the guest leaves and is removed.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004FEE87 leaving gate route] 0x004D86D0(0) and (1) packed in two words, swapped when the draw is odd; two passes of two route requests 0x004FA530 (the cell's centre 0x80, 0x80), the walk mask +0x188 set to 1 after the first pass and back to 0 when no route was found; a route sets state 18
+	internal bool RouteToGate( Guest guest, uint draw )
+	{
+		if ( GateCell( 0 ) == null && GateCell( 1 ) == null )
+			return ValidLane( Settings.ArrivalLaneA ) == null && ValidLane( Settings.ArrivalLaneB ) == null;
+		var navigation = guest.Navigation;
+		for ( var pass = 0; pass < 2; pass++ )
 		{
-			if ( lane != null && Grid.Distance( guest.CellX, guest.CellY, lane[^1].X, lane[^1].Y ) >= 0 )
-				return true;
+			for ( var attempt = 0; attempt < 2; attempt++ )
+			{
+				var side = (int)((draw & 1) ^ (uint)attempt);
+				if ( GateCell( side ) is { } gate && RouteToCell( guest, gate ) )
+				{
+					guest.ExitSide = side;
+					return true;
+				}
+			}
+			navigation.Mask = 1;
 		}
+		navigation.Mask = 0;
 		return false;
 	}
 
@@ -1230,16 +1442,19 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// +5/+7), which the next wander starts from and litter falls on; arriving within reach of a point near a cell's edge can leave it in the
 	/// cell before.
 	/// </summary>
-	private bool MoveAlong( Guest guest )
+	private bool MoveAlong( Guest guest ) => MoveAlongStep( guest ) != WalkResult.Walking;
+
+	/// <summary><see cref="MoveAlong"/> with the walk step's result. A path or queue cell is a cell the guest stands on.</summary>
+	private WalkResult MoveAlongStep( Guest guest )
 	{
-		var arrived = Move( guest );
+		var result = MoveStep( guest );
 		var cell = guest.Navigation.Cell;
-		if ( cell != (guest.CellX, guest.CellY) && Grid.IsWalkable( cell.X, cell.Y ) )
+		if ( cell != (guest.CellX, guest.CellY) && (Grid.IsWalkable( cell.X, cell.Y ) || Grid.IsQueue( cell.X, cell.Y )) )
 		{
 			(guest.PreviousCellX, guest.PreviousCellY) = (guest.CellX, guest.CellY);
 			(guest.CellX, guest.CellY) = cell;
 		}
-		return arrived;
+		return result;
 	}
 
 	/// <summary>
@@ -1301,7 +1516,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A prank of an unhappy prankster (state 6, tp.exe <c>0x004FF0F5</c>): a stinkbomb or litter on its own cell, or a balloon burst; a prank raises
 	/// <see cref="Pranked"/> (the original's prank message to the advisor and the guards) and adds 1 to the prankster's happiness.
 	/// </summary>
-	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; the prank line is chosen by OpenTPW's guest id where the original takes the prankster's thing id (WALK-010), and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's park entrance and out along the arrival lane (GUEST-010, WALK-004) where the original routes to the side's gate cell (0x4D86D0) — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
+	// [APPROX:GUEST-007] PRANKS: the prank step (0x4FF0F5, x86 X18), its outcomes, the guard reply (0x508A30), the guard's set-down at the cell's centre with the side its world draw picks (0x4FEB50) and the advisor's prank lines (0x59B060: advice 0x7D, 0x7E or 0x7F by the message's kind word, the prankster's id modulo 3) match, the bus delivers the prank message at once (0x40FB10) and event 15 feeds only the debug dump 0x4FAA60; a balloon prankster's victim is the first balloon-holding other guest in OpenTPW's guest order, where the cell's thing list is head-inserted on every cell change (0x50B6A0, 0x4D91F0) so the original takes the one that entered last; the prank line is chosen by OpenTPW's guest id where the original takes the prankster's thing id (WALK-010), and the queued advice keeps neither the prankster's id nor its cell (record words +0x0 and +0x4, 0x59B590); a set-down guest walks to its side's gate cell (0x4D86D0, the original's route) and on along OpenTPW's arrival lane (ARRIVAL-001), where the original's states 19 to 21 walk it to the arrival vehicle's stop cells — evidence needed: which guest states are on the cell thing lists, and what reads a queued advice record's id and cell words
 	private bool Prank( Guest guest, GuestDecision.Prank prank, LitterType type )
 	{
 		if ( prank == GuestDecision.Prank.Balloon )
@@ -1355,6 +1570,33 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 	}
 
+	/// <summary>
+	/// Sets down the guests that stand on <paramref name="cells"/> after those stopped being path (an object built over a path, whose placement
+	/// clears it): each walking guest on such a cell is put on the nearest path cell, its walk ended, and goes on in its state as after a broken
+	/// walk (<see cref="EndBrokenWalks"/>). Returns the number of guests moved.
+	/// </summary>
+	// Approximation (RIDES-018, registered at ParkObjects.Check): guests on a path cell an object's placement clears are set down on the nearest path cell; tp.exe's placement (0x528A70) and ClearCell (0x5367A0) write cells and the block stamp (0x4D8C60, through SetCellType 0x5346D0), which reroutes walking things, and what a guest standing inside the new footprint does next is not traced
+	public int SetDownOffCells( IReadOnlySet<(int X, int Y)> cells )
+	{
+		var moved = 0;
+		foreach ( var guest in guests )
+		{
+			if ( !guest.OnGrid || guest.Navigation.OffGrid
+				|| guest.State is not (GuestState.DoingNothing or GuestState.WalkingAround or GuestState.ThrowingAwayLitter or GuestState.GoingToRide
+					or GuestState.LeavingPark or GuestState.ExitingRide) )
+				continue;
+			// The cell it stands on, and the cell a one-cell step is heading for (CellX/CellY move ahead with SetCellWaypoint).
+			var here = guest.Navigation.Cell;
+			if ( !(cells.Contains( here ) && !Grid.IsWalkable( here.X, here.Y )) && !(cells.Contains( guest.Cell ) && !Grid.IsWalkable( guest.CellX, guest.CellY )) )
+				continue;
+			if ( (Grid.IsWalkable( here.X, here.Y ) ? here : Grid.FindNearestWalkable( here.X, here.Y )) is not { } cell )
+				continue;
+			PlaceOnGrid( guest, cell.X, cell.Y );
+			moved++;
+		}
+		return moved;
+	}
+
 	/// <summary>True when the route from the guest's cell on is still path cells, each linked to the next (a wander route is a shortest path, so no cell repeats).</summary>
 	private bool RouteAheadHolds( GuestNavigation navigation )
 	{
@@ -1378,10 +1620,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var start = (X: guest.CellX, Y: guest.CellY);
 		if ( GuestWander.Pick( Grid, start, () => random.NextWord() ) is not { } destination )
 			return false;
+		// [BIN:TPW-EXE:0x004F9490 wander route] the picked destination is a SetDest (0x00510100), whose search decides success; a failed search leaves the walk stuck (the route cells below are the M3 gate's bookkeeping)
 		var route = Grid.FindPath( start.X, start.Y, destination.Cell.X, destination.Cell.Y );
-		if ( route.Count == 0 )
-			return false;
 		SetDestination( guest, GuestNavigation.BytePoint( destination.Cell, destination.ByteX, destination.ByteY ), route );
+		if ( guest.Navigation.Stuck )
+		{
+			guest.HasWaypoint = false;
+			return false;
+		}
 		return true;
 	}
 
@@ -1433,7 +1679,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:STP-PPC:0x100E9164 attraction score] executed by the PowerPC oracle (attraction-score, 578 inputs; C# agrees)
 	// [BIN:STP-PPC:0x100E9388 cell modifier] the environment record's component 4 (+8) at the back-of-queue cell divides the distance match; only the fireworks' RegionFX row 7 writes it (Attraction 10 in the shipped Standard.sam; tp.exe 0x004DB48C), so it is 0 everywhere else
-	// [APPROX:GUEST-002] the back-of-queue cell is the original's (tp.exe 0x4DE130, recomputed after each queue edit 0x4DE1F0), but the queue count is OpenTPW's whole queue list where 0x4DDF50 stops after the first listed guest outside the queue states (0x502430: 11..14, or 8 with the saved state +0x224 in 11..14) and counts it; a back cell with no join cell is scored 0 here, and ChooseAttraction routes to the join cell where 0x4FCB10 routes to the back cell itself (0x4FA530) — evidence needed: whether a listed guest can leave states 11..14, and whether a route to an unconnected back cell fails
+	// [APPROX:GUEST-002] the back-of-queue cell is the original's (tp.exe 0x4DE130, recomputed after each queue edit 0x4DE1F0), but the queue count is OpenTPW's whole queue list where 0x4DDF50 stops after the first listed guest outside the queue states (0x502430: 11..14, or 8 with the saved state +0x224 in 11..14) and counts it; a back cell with no join cell is scored 0 here, where 0x4FCB10 scores it and its route request to the back cell (0x4FA530, RouteToCell) then fails on the edge test — evidence needed: whether a listed guest can leave states 11..14
 	public uint ScoreAttraction( Guest guest, IRideVisitorBridge attraction )
 	{
 		if ( attraction.JoinCell == null )
@@ -1458,16 +1704,17 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x004DD920 counts-test room] the candidate's queue list count (0x004DDF50 with id 0) must be below 4 × its cells (+0x40, from the back-of-queue walk 0x004DE130); the coaster test 0x00441970 and the kart/water track word +0x2C are applied through IsOpen (CoasterRide.AcceptsGuests, BumpController.IsTrackValid; the edited-coaster exclusion is COAST-024)
 	// [BIN:TPW-EXE:0x004FCB10 choice loop] no price or money test in the choice: a candidate needs flag +0x32 bit 4, a back-of-queue cell, a score above 9 that beats the best (ties on an odd turn), the counts-test 0x004DD920 and a route; the price is tested when the guest is called forward (0x004FDE50)
 	// [BIN:TPW-EXE:0x4ff419 major decision] once the turn is above +0x1FC + 30 the choice 0x4fcb10 runs; with no target the guest logs event 1, thinks 4, loses the small step (0x4fea70(0)) and is stamped; nothing in it tests time since a ride, and no instruction reads PeepTypes' BoredomThreshold (0x7850EC + 12 × type has no reference; excitement 0x7850E4 and cash 0x7850E8 have)
-	private IRideVisitorBridge? ChooseAttraction( Guest guest )
+	private IRideVisitorBridge? ChooseAttraction( Guest guest, bool setWalk = true )
 	{
 		IEnumerable<AttractionChoice.Candidate> Candidates()
 		{
 			foreach ( var attraction in NewestFirst() )
 			{
 				var canJoin = attraction.JoinCell != null;
+				// [BIN:TPW-EXE:0x004FCB10 choice route] the route request 0x004FA530 to the ride's back-of-queue cell (0x004DE110) is made for every candidate that passes the counts-test and would win, and its walk stays set: the winner is the last candidate whose route was found, and a candidate whose route fails after it leaves the walk stuck (the original's SetDest failure state); the walk then runs all the way to the back cell (state 10, WALK-004)
 				yield return new AttractionChoice.Candidate( attraction.AttractionId, true, canJoin, canJoin ? ScoreAttraction( guest, attraction ) : 0,
 					() => attraction.IsOpen && !attraction.IsBrokenDown && attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells
-						&& attraction.JoinCell is { } join && Grid.Distance( guest.CellX, guest.CellY, join.X, join.Y ) >= 0 );
+						&& (setWalk ? RouteToCell( guest, attraction.QueueCells[^1] ) : CanRouteTo( guest, attraction.QueueCells[^1] )) );
 			}
 		}
 		var id = AttractionChoice.Pick( Candidates(), ParkTurn );
@@ -1483,7 +1730,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	}
 
 	/// <summary>The major decision's choice for <paramref name="guest"/> on the current park turn, without changing the guest (tests).</summary>
-	internal IRideVisitorBridge? PeekChoice( Guest guest ) => ChooseAttraction( guest );
+	internal IRideVisitorBridge? PeekChoice( Guest guest ) => ChooseAttraction( guest, setWalk: false );
+
+	/// <summary>The major decision's choice with its route request, as state 6 makes it: the walk to the chosen ride's back cell is set (tests).</summary>
+	internal IRideVisitorBridge? Choose( Guest guest ) => ChooseAttraction( guest );
+
+	/// <summary>Whether the walk search from the guest's cell reaches <paramref name="cell"/> (the route request of <see cref="RouteToCell"/> without setting the walk).</summary>
+	private bool CanRouteTo( Guest guest, (int X, int Y) cell ) =>
+		WalkSearch.Find( Grid.Cells, GuestNavigation.CellByteOf( guest.Navigation.X, guest.Navigation.Y ), (cell.X & 0xFF, cell.Y & 0xFF), guest.Navigation.Mask, new List<(int X, int Y)>() );
 
 	private IRideVisitorBridge? FindAttraction( int id )
 	{
@@ -1495,10 +1749,22 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	private void UpdateGoingToRide( Guest guest, float dt )
 	{
-		if ( guest.HasWaypoint && !Move( guest ) )
+		if ( guest.HasWaypoint )
 		{
-			DropRideTargetForClosedPark( guest );
-			return;
+			var result = MoveAlongStep( guest );
+			if ( result == WalkResult.Walking )
+			{
+				DropRideTargetForClosedPark( guest );
+				return;
+			}
+			if ( result == WalkResult.Stuck )
+			{
+				// [BIN:TPW-EXE:0x004FFBC0 stuck on the way] the walk step answers 2: "The person has become stuck on the way", event 3, the big happiness change (0x004FEA70(2)), the target +0x1DC cleared and state 6
+				guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.BigHappinessChange );
+				guest.AttractionId = 0;
+				guest.State = GuestState.DoingNothing;
+				return;
+			}
 		}
 		var attraction = FindAttraction( guest.AttractionId );
 		// [BIN:TPW-EXE:0x004FFBC0 walk to the queue] state 10 reads neither the ride's state nor its open word: a guest keeps walking to a ride closed or broken meanwhile, joins, and the ride sends it away from the queue head (RideVisitorBridge.HostStep)
@@ -1508,55 +1774,44 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.State = GuestState.DoingNothing;
 			return;
 		}
-		if ( attraction.JoinCell is not { } join )
+		// [BIN:TPW-EXE:0x004FFBC0 arrival at the back cell] the walk is one request to the back-of-queue cell (0x004FCB10); on arrival the guest's own cell must be that back cell (0x004DE110), else "The back of the queue has moved while I was walking": the back cell is asked for again (0x004DE110, 0x004FA530) and a route keeps the guest walking in state 10, none sends it to state 6 (event 0x16, no thought; the target stays, GUEST-004)
+		var back = attraction.QueueCells[^1];
+		if ( guest.Navigation.Cell != back )
 		{
-			Think( guest, GuestThought.Confused );
-			guest.AttractionId = 0;
-			guest.State = GuestState.DoingNothing;
-			return;
-		}
-		var (tx, ty) = join;
-		if ( guest.CellX == tx && guest.CellY == ty )
-		{
-			var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
-			var result = attraction.JoinQueue( guest.Id, type.PreferredExcitement );
-			if ( result == QueueJoinResult.Joined )
-			{
-				BeginQueue( guest, attraction );
+			if ( RouteToCell( guest, back ) )
 				return;
-			}
-			// [BIN:TPW-EXE:0x004FFCD7 join refusal] too exciting: 15, not exciting enough: 12, a queue too long: 16 (0x004FFD7E); none of the join's refusals changes happiness (0x004FFBC0 calls 0x004FEA70 only when the walk is stuck or the park closed)
-			// [BIN:TPW-EXE:0x004FFC4F full queue room] the room test 0x004DDA20 (count below 4 × cells) fails: event 0x15 and state 6 only (0x004FFE0A → 0x004FFE54), no thought, no happiness change and no history push
-			if ( result != QueueJoinResult.NoRoom )
-				Think( guest, result switch
-				{
-					QueueJoinResult.TooExciting => GuestThought.Scared,
-					QueueJoinResult.NotExcitingEnough => GuestThought.Bored,
-					_ => GuestThought.QueueTooLong
-				} );
-			// [BIN:STP-PPC:0x100ECE18 refusal history] the queue-too-long path (0xece18) and both excitement refusals (0xecf3c) push the target's id into the temporary history (0xea290) before clearing the target
-			// [APPROX:GUEST-004] the full-room refusal keeps the target +0x1DC in tp.exe (the jump past 0x004FFEDA), which OpenTPW clears; the state-6 handler cannot tell (its only read, 0x004FF437, follows the choice 0x004FCB10, which clears the word first at 0x004FCB21), but the object-removal message handler 0x004FB360 still matches a stale target and costs the guest SmallHappinessChange (0x004FE980(0)) with a reset to state 6, which OpenTPW's removal (GuestSimulation.Unregister) cannot do for a cleared target — evidence needed: none (read)
-			if ( result is QueueJoinResult.QueueTooLong or QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
-				PushHistory( guest.TemporaryHistory, attraction.AttractionId );
-			// [BIN:TPW-EXE:0x004FFCF6 excitement refusal] the refusal clears the target and the decision stamp +0x1FC, so the next major decision is not held back 30 turns
-			if ( result is QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
-				guest.QueueStandingSinceTurn = 0;
-			guest.LastAttractionId = attraction.AttractionId;
 			guest.AttractionId = 0;
 			guest.State = GuestState.DoingNothing;
 			return;
 		}
-		if ( Grid.TryStep( guest.CellX, guest.CellY, tx, ty, out var nx, out var ny ) )
+		(guest.PreviousCellX, guest.PreviousCellY) = (guest.CellX, guest.CellY);
+		(guest.CellX, guest.CellY) = back;
+		var type = Settings.Types[Math.Min( guest.Type, Settings.Types.Count - 1 )];
+		var result2 = attraction.JoinQueue( guest.Id, type.PreferredExcitement );
+		if ( result2 == QueueJoinResult.Joined )
 		{
-			SetCellWaypoint( guest, nx, ny );
-			DropRideTargetForClosedPark( guest );
+			BeginQueue( guest, attraction );
+			return;
 		}
-		else
-		{
-			Think( guest, GuestThought.Confused );
-			guest.AttractionId = 0;
-			guest.State = GuestState.DoingNothing;
-		}
+		// [BIN:TPW-EXE:0x004FFCD7 join refusal] too exciting: 15, not exciting enough: 12, a queue too long: 16 (0x004FFD7E); none of the join's refusals changes happiness (0x004FFBC0 calls 0x004FEA70 only when the walk is stuck or the park closed)
+		// [BIN:TPW-EXE:0x004FFC4F full queue room] the room test 0x004DDA20 (count below 4 × cells) fails: event 0x15 and state 6 only (0x004FFE0A → 0x004FFE54), no thought, no happiness change and no history push
+		if ( result2 != QueueJoinResult.NoRoom )
+			Think( guest, result2 switch
+			{
+				QueueJoinResult.TooExciting => GuestThought.Scared,
+				QueueJoinResult.NotExcitingEnough => GuestThought.Bored,
+				_ => GuestThought.QueueTooLong
+			} );
+		// [BIN:STP-PPC:0x100ECE18 refusal history] the queue-too-long path (0xece18) and both excitement refusals (0xecf3c) push the target's id into the temporary history (0xea290) before clearing the target
+		// [APPROX:GUEST-004] the full-room refusal keeps the target +0x1DC in tp.exe (the jump past 0x004FFEDA), which OpenTPW clears; the state-6 handler cannot tell (its only read, 0x004FF437, follows the choice 0x004FCB10, which clears the word first at 0x004FCB21), but the object-removal message handler 0x004FB360 still matches a stale target and costs the guest SmallHappinessChange (0x004FE980(0)) with a reset to state 6, which OpenTPW's removal (GuestSimulation.Unregister) cannot do for a cleared target — evidence needed: none (read)
+		if ( result2 is QueueJoinResult.QueueTooLong or QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
+			PushHistory( guest.TemporaryHistory, attraction.AttractionId );
+		// [BIN:TPW-EXE:0x004FFCF6 excitement refusal] the refusal clears the target and the decision stamp +0x1FC, so the next major decision is not held back 30 turns
+		if ( result2 is QueueJoinResult.NotExcitingEnough or QueueJoinResult.TooExciting )
+			guest.QueueStandingSinceTurn = 0;
+		guest.LastAttractionId = attraction.AttractionId;
+		guest.AttractionId = 0;
+		guest.State = GuestState.DoingNothing;
 	}
 
 	/// <summary>
@@ -1615,19 +1870,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			if ( position < 0 || position >= room )
 			{
 				// [BIN:TPW-EXE:0x00501496 queue edited] before the dismissal a guest whose thing id is a multiple of 3 thinks 13 (Angry); the others think nothing
+				// [APPROX:QUEUE-005] a guest sent away thinks Angry by OpenTPW's guest id modulo 3 rather than its thing id (word at thing +0, 0x00501496), and its dismissal (0x005012f0) neither records event 6 with the ride id in the guest's event ring (0x0050C100 with ECX = guest + 0x30; the ring feeds only the debug dump 0x004FAA60, GUEST-005) nor plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D); its medium happiness drop is applied — evidence needed: the thing-id numbering (WALK-010)
 				DismissFromQueue( guest, attraction, guest.Id % 3 == 0 ? GuestThought.Angry : GuestThought.None );
 				continue;
 			}
 			if ( guest.State == GuestState.Boarding )
 				continue;   // a boarding guest keeps its walk to the stand point
 			var index = IndexOfCell( cells, guest.CellX, guest.CellY );
-			var onJoinCell = attraction.JoinCell is { } join && join == (guest.CellX, guest.CellY);
-			// [APPROX:QUEUE-005] the original changes nothing for a guest that stays (0x00501390 only logs) and state 11 (0x004FFFF0) later re-routes a guest whose place changed through 0x00501160 and the generic route 0x004FA5F0, from wherever it stands; OpenTPW's queue walk cannot route a guest standing off the queue back, so a guest whose cell left the queue leaves (Confused) at once. A leaving guest thinks Angry (thought 13) for one guest in three (id % 3 = 0, 0x00501496) by OpenTPW's guest id rather than the thing id (the word at thing +0, 0x0050B350), and its dismissal 0x005012F0 neither records event 6 with the ride id in the guest's event ring (0x0050C100 with ECX = guest + 0x30; the ring feeds only the debug dump 0x004FAA60, GUEST-005) nor plays the sound [0x00803A24] when the thing id's low three bits are 0 (0x0050133D); its medium happiness drop is applied — evidence needed: whether the generic route reaches a queue place from a cell off the queue, and the thing-id numbering (WALK-010)
-			if ( index < 0 && !onJoinCell )
-			{
-				DismissFromQueue( guest, attraction, GuestThought.Confused );
-				continue;
-			}
+			// [BIN:TPW-EXE:0x00501160 queue place route] a guest whose cell left the queue is not sent away here: it keeps its place and, when its place changed, state 11 routes it to the new slot from wherever it stands with the generic search (MoveToQueuePosition); the dismissal comes only if that search fails
 			guest.QueueCellIndex = index < 0 ? cells.Count : index;
 		}
 	}
@@ -1664,13 +1914,18 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var position = attraction.GetQueuePosition( guest.Id );
 		if ( position < 0 )
 		{
-			// the move-up's failure in 0x004FFFF0 ("Couldn't get to my intended queue position") leaves through the dismissal too
-			DismissFromQueue( guest, attraction, GuestThought.Confused );
+			// a guest missing from the list cannot occur in the original (0x004DDF50 asserts, "Problem with a queue"); OpenTPW sends it away like state 11's lookup does
+			DismissFromQueue( guest, attraction, GuestThought.None );
 			return;
 		}
 		guest.QueuePosition = position;
 		var (index, x, y) = QueueSlotPoint( attraction, position, NextLateral() );
-		SetQueueDestination( guest, attraction, index, (x, y), toEntrance: false );
+		// [BIN:TPW-EXE:0x00501160 queue place route] the generic route request 0x004FA5F0 from wherever the guest stands to the place's slot: a route sets state 12; none leaves "Couldn't get to my intended queue position" (move-up, 0x004FFFF0) or "Couldn't get to my place" (the join, 0x004FFBC0) through the dismissal with no thought, 0x005004AA
+		if ( !SetQueueDestination( guest, attraction, index, (x, y), toEntrance: false ) )
+		{
+			DismissFromQueue( guest, attraction, GuestThought.None );
+			return;
+		}
 		guest.State = GuestState.MovingUpQueue;
 	}
 
@@ -1678,7 +1933,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A queue walk (states 12 and 13): from the guest's cell along the queue cells to cell <paramref name="index"/>,
 	/// then into the ride's entrance cell for the stand point (<paramref name="toEntrance"/>).
 	/// </summary>
-	private void SetQueueDestination( Guest guest, IRideVisitorBridge attraction, int index, (int X, int Y) target, bool toEntrance )
+	private bool SetQueueDestination( Guest guest, IRideVisitorBridge attraction, int index, (int X, int Y) target, bool toEntrance )
 	{
 		var cells = attraction.QueueCells;
 		var route = new List<(int X, int Y)>();
@@ -1714,7 +1969,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueTargetX = target.X / (float)Fixed16.One;
 		guest.QueueTargetY = target.Y / (float)Fixed16.One;
 		// [BIN:TPW-EXE:0x004D8750 queue walk] a queue walk is the search and edge-test walk of every guest (Navigate): the edge test opens a step between queue cells, and between the join path and the back cell, through the link bytes the queue tool wrote (QueuePaths); the walk into the ride's entrance cell stays a route walk (WALK-006)
-		SetDestination( guest, target, route, alsoOpen, alongCells: toEntrance );
+		return SetDestination( guest, target, route, alsoOpen, alongCells: toEntrance );
 	}
 
 	/// <summary>The ride's entrance cell: the front queue cell's neighbour towards the ride.</summary>
@@ -2039,8 +2294,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		LeaveQueue( guest, attraction, GuestThought.None );
 	}
 
-	/// <summary>The guest leaves the queue without riding and steps back onto the path at the join cell.</summary>
-	// [APPROX:QUEUE-010] a guest leaving a queue is placed on the queue's join path cell at once; in tp.exe every state-11 exit (0x005004AA: unlink 0x004DDD20, dismissal 0x005012F0, SetState(6)) and the queue-edit exit write no position, so the guest stays on its queue cell in state 6 until the state-6 handler 0x004FEC90 starts its next walk from there — evidence needed: the state-6 handler's walk from a queue cell and the route it takes
+	/// <summary>The guest leaves the queue without riding: state 6 where it stood.</summary>
+	// [BIN:TPW-EXE:0x005004AA queue exit position] every state-11 exit (0x005004AA: unlink 0x004DDD20, dismissal 0x005012F0, SetState(6)) and the queue-edit exit write no position: the guest stays where it stood, in state 6, until the decision handler 0x004FEC90 starts its next walk from there (a route search from a queue cell, or a wander along the cell's links minus its own queue link)
+	// [APPROX:QUEUE-010] a guest that leaves from the ride's entrance cell (the stand point of a price refusal or a dismissed head, where OpenTPW's untyped ride cells have no links to walk off by, WALK-005) is placed on the queue's front cell instead of standing there
 	private void LeaveQueue( Guest guest, IRideVisitorBridge attraction, GuestThought thought )
 	{
 		attraction.LeaveQueue( guest.Id );
@@ -2048,6 +2304,29 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( thought != GuestThought.None )
 			Think( guest, thought );
 		guest.LastAttractionId = attraction.AttractionId;
+		StandAfterQueue( guest, attraction );
+	}
+
+	/// <summary>State 6 on the cell the guest stands on; a guest on the ride's entrance cell steps back onto the front cell of the queue (QUEUE-010).</summary>
+	private void StandAfterQueue( Guest guest, IRideVisitorBridge attraction )
+	{
+		guest.AttractionId = 0;
+		var cell = guest.Navigation.Cell;
+		if ( Grid.IsWalkable( cell.X, cell.Y ) || Grid.IsQueue( cell.X, cell.Y ) )
+		{
+			if ( cell != (guest.CellX, guest.CellY) )
+				(guest.PreviousCellX, guest.PreviousCellY, guest.CellX, guest.CellY) = (guest.CellX, guest.CellY, cell.X, cell.Y);
+			guest.HasWaypoint = false;
+			guest.State = GuestState.DoingNothing;
+			return;
+		}
+		var front = attraction.QueueCells[0];
+		if ( Grid.IsQueue( front.X, front.Y ) || Grid.IsWalkable( front.X, front.Y ) )
+		{
+			PlaceOnGrid( guest, front.X, front.Y );
+			guest.State = GuestState.DoingNothing;
+			return;
+		}
 		ReturnToPath( guest, JoinCellOf( attraction ) );
 	}
 
@@ -2066,39 +2345,55 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.InQueueInterlude = false;
 	}
 
+	/// <summary>
+	/// State 18 (<c>0x00500A50</c>), the walk out of the park to the gate's crossing cell: one step per park turn; arriving there starts the way along the arrival lane
+	/// (the original's states 19 to 21), and a walk that ends stuck is given up ("I'm stuck in the park": mask 0, state 6). The recall of a guest that wants to stay
+	/// runs before this in <see cref="UpdateGuest"/>.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00500A50 state 18] the recall test (counter above 0, happiness byte nonzero, park open and the guest's cell of type 0, 1, 3, 9 or 10, 0x004FA990) clears the mask and returns to state 6 ("Make up your mind"); else the walk step 0x004FA2A0: arrived is state 19, stuck is "I'm stuck in the park, even though ..." with the mask cleared and state 6
 	private void UpdateLeaving( Guest guest, float dt )
 	{
-		if ( guest.HasWaypoint && !Move( guest ) )
-			return;
-		var lanes = new[] { ValidLane( Settings.ArrivalLaneA ), ValidLane( Settings.ArrivalLaneB ) };
-		// a guest a guard set down leaves by the side its set-down drew while that side stays in reach
-		if ( guest.ExitSide is { } side && lanes[side] is { } drawn && Grid.Distance( guest.CellX, guest.CellY, drawn[^1].X, drawn[^1].Y ) >= 0 )
-			lanes = [drawn];
-		(int X, int Y)[]? bestLane = null;
-		var bestDistance = int.MaxValue;
-		foreach ( var lane in lanes )
+		if ( ValidLane( Settings.ArrivalLaneA ) == null && ValidLane( Settings.ArrivalLaneB ) == null )
 		{
-			if ( lane == null )
-				continue;
-			var distance = Grid.Distance( guest.CellX, guest.CellY, lane[^1].X, lane[^1].Y );
-			if ( distance >= 0 && distance < bestDistance )
+			guest.State = GuestState.Gone; // a level without an arrival lane has no modelled gate: the guest leaves and vanishes
+			return;
+		}
+		if ( guest.HasWaypoint )
+		{
+			var result = MoveAlongStep( guest );
+			if ( result == WalkResult.Walking )
+				return;
+			if ( result == WalkResult.Stuck )
 			{
-				bestDistance = distance;
-				bestLane = lane;
+				guest.Navigation.Mask = 0;
+				guest.ExitSide = null;
+				guest.State = GuestState.DoingNothing;
+				return;
 			}
 		}
-		if ( bestLane == null )
+		// Arrived: on a gate cell the way along the lane starts (the first crossing cell is where the lane's walk begins); anywhere else (a walk restored from an older save,
+		// whose per-cell steps ended on the way) the route to the gate is asked for again, nearer side first.
+		var cell = guest.Navigation.Cell;
+		for ( var side = 0; side < 2; side++ )
 		{
-			guest.State = GuestState.Gone; // no way out: the original would eject; documented simplification
-			return;
+			if ( GateCell( side ) is { } gate && gate == cell && ValidLane( side == 0 ? Settings.ArrivalLaneA : Settings.ArrivalLaneB ) is { } lane )
+			{
+				if ( StopCells() == null )
+				{
+					StartLeavingLane( guest, lane, 2 );
+					return;
+				}
+				// [BIN:TPW-EXE:0x00500A50 arrival at the gate] the walk's arrival is state 19 (0x00501DB0(0x13)), which waits for the arrival vehicle (0x00500AD0) before the guest walks to the stop cells
+				guest.ExitSide = side;
+				guest.State = GuestState.CrossingRoadHome;
+				return;
+			}
 		}
-		if ( bestDistance == 0 )
-		{
-			StartLeavingLane( guest, bestLane, bestLane.Length - 1 );
+		if ( RouteToGate( guest, (uint)(guest.ExitSide ?? (int)(ParkTurn & 1)) ) )
 			return;
-		}
-		if ( Grid.TryStep( guest.CellX, guest.CellY, bestLane[^1].X, bestLane[^1].Y, out var nx, out var ny ) )
-			SetCellWaypoint( guest, nx, ny );
+		guest.Navigation.Mask = 0;
+		guest.ExitSide = null;
+		guest.State = GuestState.DoingNothing;
 	}
 
 	private void ReturnToPath( Guest guest, (int X, int Y) cell )
@@ -2196,7 +2491,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		guest.Happiness = Math.Max( 0, guest.Happiness - Settings.MediumHappinessChange );
 		ClearQueueState( guest );
-		ReturnToPath( guest, JoinCellOf( ride ) );
+		StandAfterQueue( guest, ride );
 	}
 
 	void IRideVisitorHost.OnVisitorTurnedAway( IRideVisitorBridge ride, int guestId )
@@ -2205,7 +2500,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			return;
 		ClearQueueState( guest );
 		Think( guest, GuestThought.Dissatisfied );
-		ReturnToPath( guest, JoinCellOf( ride ) );
+		StandAfterQueue( guest, ride );
 	}
 
 	/// <summary>
@@ -2288,7 +2583,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:TPW-EXE:0x004FE615 appearance effect] type +0x15C: 1 creates the balloon model (+0x210, sprite set 10) and sets +0x214 to the balloon life, guest event 12; 2 with +0x24 == 2 ("Customer returning a costume") sets +0x24 to 0 and the sprite bank +0x20 back, otherwise +0x24 = 2, the costume bank and guest event 11; another value logs "Balance file error"
 	// [BIN:TPW-EXE:0x004FE615 balloon life] the balloon's life is BalloonLife of the shop's own quality of goods (+0x18C: 50 at build, 0x004DB389; 50 × the shop window's quality step, 0x004B0AA0, 0x004B0AE0), mirrored from ParkObjectState.QualityOfGoods
 	// [BIN:TPW-EXE:0x004FE6FC balloon variant draw] a balloon reseeds the world generator with the guest's thing id (0x00516370) and draws the model's sprite set (0x00541F70 with category 10) and colour (0x00541FD0); returning a costume reseeds the same way (0x004FE6A1) and draws the guest's own bank (category 0), putting one on draws the costume bank (category 2, 0x004FE652) without a reseed
-	// [APPROX:ECON-044] the guest events 11 and 12 (0x0050C100, a 32-entry ring in the guest) are not recorded; a balloon's life counts down, and the challenge percentages count, while the guest is in the park by its state and on the grid rather than on a cell of type 0, 1, 3, 9 or 10 (0x004FA990, as ECON-027) — evidence needed: none for the rules (read, tp.exe 0x004FE1E0, 0x00501650, 0x00501DB0); the reader of the guest event ring is untraced
+	// [EXT:guest-event-ring] the guest events 11 and 12 are not recorded in the original's 32-entry event ring (0x0050C100, the guest's thing at +0x30): its only reader is the guest destructor's debug dump (0x004FB330 → 0x004F8AE0 → 0x004FAA60 through the getter 0x0050C190, log level 2), so it has no gameplay effect to match and OpenTPW keeps no ring
 	private void ApplyAppearance( Guest guest, int effect, int qualityOfGoods )
 	{
 		switch ( effect )
@@ -2333,7 +2628,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				case GuestState.Queueing or GuestState.MovingUpQueue or GuestState.WaitingToBoard or GuestState.Boarding: queueing++; break;
 				case GuestState.Using: onRides++; break;
 				case GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth or GuestState.AtTicketBooth: arriving++; break;
-				case GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome: leaving++; break;
+				case GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome: leaving++; break;
 			}
 			if ( (int)guest.Thought is > 0 and < 18 )
 				thoughts[(int)guest.Thought]++;
@@ -2809,8 +3104,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>Per-guest structure that needs the park's grid: arrival lane shape and position, cells, navigation buffers.</summary>
 	private void ValidateGuestStructure( GuestSnapshot guest, Action<string> error )
 	{
+		// a guest at the gate or waiting for the vehicle on the cell map (states 19 and 21 without a lane, WALK-008) is on the grid like a walker in state 20
 		var onLane = guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
-			or GuestState.AtTicketBooth or GuestState.EnteringPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome;
+			or GuestState.AtTicketBooth or GuestState.EnteringPark || guest.State is GuestState.CrossingRoadHome or GuestState.WaitingToGoHome && guest.Lane != null;
 		if ( onLane )
 		{
 			if ( guest.Lane == null || guest.Lane.Length < 2 )

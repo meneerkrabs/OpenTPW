@@ -702,6 +702,20 @@ public class ParticleSystemPortTests
 	}
 
 	[TestMethod]
+	public void QuadsAreDrawnInTheOriginalsOrderAndOnlyNeighboursOfOneKindMerge()
+	{
+		// [BIN:TPW-EXE:0x57C620] one primitive per particle in slot order, world and screen-space particles in one loop: alpha, alpha, one-plus-one, alpha again, a screen-space alpha
+		var runs = new List<(int Kind, int First, int Count)>();
+		var first = 0;
+		foreach ( var (batch, screen) in new[] { (0, false), (0, false), (2, false), (0, false), (0, true), (0, true) } )
+		{
+			ParticleRenderer.AddToRuns( runs, ParticleRenderer.KindOf( batch, screen ), first, 6 );
+			first += 6;
+		}
+		CollectionAssert.AreEqual( new[] { (0, 0, 12), (2, 12, 6), (0, 18, 6), (3, 24, 12) }, runs, "a later alpha quad does not jump ahead of the one-plus-one quad between them" );
+	}
+
+	[TestMethod]
 	public void RenderFlagsPickTheBlendForUntexturedParticlesToo()
 	{
 		Assert.AreEqual( 1, ParticleRenderer.BatchIndexOf( 0x2004 ) );

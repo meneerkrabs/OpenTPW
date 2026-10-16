@@ -279,6 +279,9 @@ namespace Veldrid.Sdl2
 			*height = (int)metrics[1];
 		}
 
+		/// <summary>The canvas is always shown (there are no offscreen browser runs).</summary>
+		public static SDL_WindowFlags SDL_GetWindowFlags( SDL_Window window ) => SDL_WindowFlags.Shown;
+
 		public static int SDL_ShowCursor( int toggle )
 		{
 			if ( toggle >= 0 )

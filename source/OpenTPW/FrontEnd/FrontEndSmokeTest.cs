@@ -886,6 +886,9 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			var cash = level.Park!.Economy.Balance;
 			secondObject = level.PlaceObject( secondItem.Entry!, site.X, site.Y, level.BuildRotation );
 			Require( secondObject != null && cash - level.Park.Economy.Balance == secondItem.Cost, "the second catalogue object is charged exactly once" );
+			// a built ride with a queue starts closed (RIDES-015, 0x4DB712); the door below then closes an open ride
+			Require( secondObject!.IsOpen == !secondItem.Entry!.HasQueue, "the built ride starts closed exactly when its type has a queue" );
+			secondObject.Open();
 			var instance = level.GetEconomyInstance( secondObject! );
 			Require( instance != null && level.Park.Economy.TryGetObject( instance.Value, out var bought ) && bought.TotalSpent == secondItem.Cost, "the second object links to its paid economy record" );
 			var after = level.Park.Economy.Balance;
@@ -912,6 +915,8 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			thirdObject = level.PlaceObject( item.Entry!, site.X, site.Y, level.BuildRotation );
 			thirdAttractionId = thirdObject!.Runtime.AttractionId;
 			Require( thirdObject != null, "a third catalogue object is placed for the attractions window" );
+			// a built ride with a queue starts closed (RIDES-015, 0x4DB712); the attractions window shows the working fixture, so it is opened as the player would
+			thirdObject.Open();
 			Log.Trace( $"Front-end smoke: placed {flow.Hud.ItemName( item )} as the attractions-window fixture." );
 		} );
 		Do( "attractions window opens", () =>

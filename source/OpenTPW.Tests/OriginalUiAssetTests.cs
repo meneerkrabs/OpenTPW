@@ -99,6 +99,23 @@ public class OriginalUiAssetTests
 		}
 	}
 
+	/// <summary>
+	/// The state frames whose texture ui.wad lacks: the disable frames of the call and upgrade buttons, which UiButton draws as the
+	/// normal frame greyed instead of untextured white ([EXT:missing-state-texture]), and the pressed frames of the unused b_loantog.
+	/// </summary>
+	[TestMethod]
+	public void OnlyTheCallUpgradeAndLoanToggleStateFramesNameMissingTextures()
+	{
+		bool Resolves( UiModel model, int frame ) => model.GetFrame( frame ).Parts.All( part => part.TextureName.Length == 0 || UiImages.Resolve( part.TextureName ) != null );
+		// models whose normal frame draws from /ui/textures, with a state frame that does not
+		var missing = new UiModels().Assets.Where( model => Resolves( model, 0 ) )
+			.SelectMany( model => Enumerable.Range( 1, Math.Max( 0, model.Frames.Count - 1 ) ).Where( frame => !Resolves( model, frame ) ).Select( frame => $"{model.Name}:{frame}" ) )
+			.OrderBy( item => item, StringComparer.Ordinal ).ToArray();
+		Console.WriteLine( string.Join( ", ", missing ) );
+		// b_loantog (no OpenTPW control draws it) also lacks the art of its three pressed frames
+		CollectionAssert.AreEqual( new[] { "b_callhandy:1", "b_callmech:1", "b_loantog:3", "b_loantog:4", "b_loantog:5", "b_upgrade:1" }, missing );
+	}
+
 	[TestMethod]
 	public void EveryOriginalModelHasItsStoredRootDrawingKey()
 	{

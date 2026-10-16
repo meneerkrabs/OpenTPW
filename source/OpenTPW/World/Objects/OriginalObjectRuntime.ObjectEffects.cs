@@ -2,8 +2,8 @@ using NVector3 = System.Numerics.Vector3;
 
 namespace OpenTPW;
 
-/// <summary>An object's footprint as the original's box reader 0x466B70 gives it: the middle (engine space, at the base height) and the size in cells.</summary>
-internal readonly record struct ParticleFootprint( NVector3 EngineMiddle, int WidthCells, int DepthCells );
+/// <summary>An object's footprint as the original's box reader 0x466B70 gives it: the middle (engine space, at the base height), the size in cells and the height of the object's box in original units (the model's bounding box).</summary>
+internal readonly record struct ParticleFootprint( NVector3 EngineMiddle, int WidthCells, int DepthCells, float Height = 0f );
 
 /// <summary>The per-type particle effects an object starts at its footprint: the build, demolish, repair and upgrade effects of its category <c>.sam</c>.</summary>
 public enum ObjectParticleEffect
@@ -40,7 +40,7 @@ public sealed partial class OriginalObjectRuntime
 	// [BIN:TPW-EXE:0x5590f7 destroy] the kill 0x559060 (from the object's removal 0x4dd0a0, flags 7 while no park loads or clears, 0 in mode 2, 4 otherwise) reads +0x64 and runs the same creation only when the flag 0x2 is set (0x559102), before the script is torn down
 	// [BIN:TPW-EXE:0x55A100 upgrade] reads +0x6C and runs the same creation and sizing (then a further dispatch 0x51BFC0 that is not traced); called from 0x4df8f0 when a repair job on a ride in upgrade mode (+0x19C == 2) finishes and its level is raised
 	// [APPROX:PTCL-908] the removal's mode 2 (global +0x1da738, no effect) is not modelled, and an object without a footprint box starts nothing here although 0x559060 creates the effect anyway
-	// [APPROX:PTCL-908] the box's height (the original's +0x1C/+0x28 of the footprint record, not traced) is taken as zero, so the volume has no vertical spread of its own
+	// [BIN:TPW-EXE:0x558f53-0x558fac box sizing] the volume is sized with 0x520030 from the box 0x466B70 reads: (x1 - x0) x 512 and (z1 - z0) x 512 on the floor, and the box's y1 - y0 x 256 in the vertical, where y0 and y1 are the record's +0x1C and +0x28 (0x466B70 adds the object's base height to both, so it cancels); 0x451640 copies the record's six box floats (+0x18..+0x2C) into the model header's +0x80, the bounding box OpenTPW's ModelFile reads as BoundsMin and BoundsMax
 	internal int StartObjectEffect( ObjectParticleEffect effect )
 	{
 		var id = ParticleEffectId( effect );
@@ -51,8 +51,9 @@ public sealed partial class OriginalObjectRuntime
 		return handle is 0 or -1 ? 0 : handle;
 	}
 
-	/// <summary>The volume extent the original sets after creating: the footprint's width and depth in original units times 512 (the pool halves them), height 0.</summary>
-	internal static (int X, int Y, int Z) ExtentOf( ParticleFootprint footprint ) => ((int)(footprint.WidthCells * 10f * 512f), 0, (int)(footprint.DepthCells * 10f * 512f));
+	/// <summary>The volume extent the original sets after creating: the footprint's width and depth in original units times 512 (the pool halves them) and the box's height times 256.</summary>
+	internal static (int X, int Y, int Z) ExtentOf( ParticleFootprint footprint ) =>
+		((int)(footprint.WidthCells * 10f * 512f), float.IsFinite( footprint.Height ) ? (int)(Math.Max( 0f, footprint.Height ) * 256f) : 0, (int)(footprint.DepthCells * 10f * 512f));
 
 	/// <summary>
 	/// REPAIREFFECT: a non-zero value starts the type's repair effect at the footprint and keeps its handle; zero ends it (life -2) and forgets it.

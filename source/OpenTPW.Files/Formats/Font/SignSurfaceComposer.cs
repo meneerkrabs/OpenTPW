@@ -17,7 +17,8 @@ public static class SignSurfaceComposer
 	/// <summary>Composes ARGB sign layers, then returns top-down RGBA for the two model textures.</summary>
 	// [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows.
 	// [EXT:sign-coverage-precision] glyph coverage comes from OpenTPW's rasterizer instead of GDI masks and the blur sums in double precision (OpenTPW design choices)
-	// [APPROX:COMPAT-003] the strip resampler is tp.exe 0x5E80D0 (matched by DescimateStrip), which has no upsampling branch (a requested height above the strip divides by zero at 0x5E8364): the nearest-row upsampling is OpenTPW's own; the blur kernels run in x87 extended precision natively (0x5EA8A0) and the relief reads unclamped neighbours (0x5EB8A0), which this port approximates; paint-mask shaping (SignMaskShaping) and the material arithmetic follow the identified native path.
+	// [EXT:sign-relief-upsample] the strip resampler is tp.exe 0x5E80D0 (matched by DescimateStrip), which has no upsampling branch (a requested height above the strip divides by zero at 0x5E8364), so a strip shorter than the glyph rows is upsampled by nearest rows: an OpenTPW choice for a case the original does not define and where matching it would divide by zero
+	// [APPROX:COMPAT-003] the blur kernels run in x87 extended precision natively (0x5EA8A0) and the relief reads unclamped neighbours (0x5EB8A0), which this port approximates; paint-mask shaping (SignMaskShaping) and the material arithmetic follow the identified native path.
 	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, SignPaint? firstPaintOverride = null )
 	{
 		ArgumentNullException.ThrowIfNull( sign );

@@ -41,7 +41,8 @@ internal sealed partial class SandboxSmokeTest
 		}
 		Require( anchor != null, "find an on-screen site for a coaster and its circuit" );
 		var economy = level.Park?.Economy;
-		var station = level.PlaceObject( entry!, anchor!.Value.X + 1, anchor.Value.Y + 1, 0 ) is { } bought && bought.Placement.X == anchor.Value.X ? bought : null;
+		var click = Level.GetClickCell( entry!, anchor!.Value.X, anchor.Value.Y, 0 );
+		var station = level.PlaceObject( entry!, click.X, click.Y, 0 ) is { } bought && bought.Placement.X == anchor.Value.X ? bought : null;
 		// Without the coaster researched the station is placed without a purchase; the track is still charged.
 		station ??= level.Objects.TryPlace( entry!, anchor.Value.X, anchor.Value.Y, 0, out _ );
 		Require( station?.Runtime.Coaster is not null, "place a coaster station with its controller" );

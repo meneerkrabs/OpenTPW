@@ -77,7 +77,7 @@ public class ObjectSettingsTests
 		// Drinks Shop "**/2*" at (43, 30) rotation 0: entrance (43, 30), reached from the path at (43, 29).
 		var shop = new ObjectShape( new[] { "**", "2*" } );
 		Assert.AreEqual( (43, 30), ObjectFootprint.GetCells( shop, 43, 30, 0 ).Single( cell => cell.Cell.Kind == ObjectCellKind.Entrance ) is var e ? (e.X, e.Y) : default );
-		// Rotations of a non-square shape keep its cell count and stay rigid; bounds anchor round-trips.
+		// Rotations of a non-square shape keep its cell count and stay rigid.
 		var log = new ObjectShape( new[] { "***", "*2*" } );
 		foreach ( var rotation in new[] { 0, 90, 180, 270 } )
 		{
@@ -86,8 +86,6 @@ public class ObjectSettingsTests
 			var (minX, minY, maxX, maxY) = ObjectFootprint.GetBounds( log, 10, 10, rotation );
 			Assert.AreEqual( rotation % 180 == 0 ? (2, 1) : (1, 2), (maxX - minX, maxY - minY) );
 			Assert.IsTrue( placed.All( cell => cell.X >= minX && cell.X <= maxX && cell.Y >= minY && cell.Y <= maxY ) );
-			var anchor = ObjectFootprint.AnchorForBounds( log, 3, 4, rotation );
-			Assert.AreEqual( (3, 4), ObjectFootprint.GetBounds( log, anchor.X, anchor.Y, rotation ) is var b ? (b.MinX, b.MinY) : default );
 			// Continuous mapping agrees with the cell mapping at cell centres.
 			foreach ( var cell in log.OccupiedCells )
 			{

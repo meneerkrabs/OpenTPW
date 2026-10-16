@@ -14,8 +14,8 @@ public enum SignTextAlignment
 /// <summary>
 /// CPU layout and rasterization of one line of sign text with a <see cref="TrueTypeFont"/>, following
 /// GDI conventions: a negative LOGFONT height is the em height,
-/// advance widths come from <c>hmtx</c>; pair kerning from <c>kern</c> is opt-in (the original's sign text goes through
-/// Uniscribe, which exposes no kerning call; [APPROX:COMPAT-006]). Characters without a glyph
+/// advance widths come from <c>hmtx</c>; pair kerning from <c>kern</c> is opt-in and off for signs (the original's sign text goes through
+/// Uniscribe, which never reads the kern table; [BIN:USP10-DLL:0x6510CEDE ScriptPlace]). Characters without a glyph
 /// use glyph 0 (.notdef), as GDI substitutes the default character, and are reported.
 /// </summary>
 public static class SignTextLayout

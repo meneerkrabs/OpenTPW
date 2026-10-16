@@ -1549,10 +1549,10 @@ public sealed class ParkEconomy : IParkEconomy
 	/// Buys and registers an object. Requires research, <c>UsageInfo.GoldenTicketCost</c> golden tickets
 	/// (spent) and, as an <b>approximation</b> of the original rule, a balance covering the cost.
 	/// </summary>
-	public PurchaseResult TryBuild( int infoId, out ParkObjectState? built )
+	public PurchaseResult TryBuild( int infoId, out ParkObjectState? built, bool moving = false )
 	{
 		built = null;
-		var check = CheckBuild( infoId );
+		var check = CheckBuild( infoId, moving );
 		if ( check != PurchaseResult.Ok )
 			return check;
 		Catalog.TryGet( infoId, out var info );
@@ -1570,16 +1570,19 @@ public sealed class ParkEconomy : IParkEconomy
 		return PurchaseResult.Ok;
 	}
 
-	/// <summary>The purchase rules of <see cref="TryBuild"/> without buying (the build tool's ghost uses it).</summary>
-	public PurchaseResult CheckBuild( int infoId )
+	/// <summary>
+	/// The purchase rules of <see cref="TryBuild"/> without buying (the build tool's ghost uses it). The Move tool (<paramref name="moving"/>) places a type the park already holds, so it asks
+	/// for neither the buy list's availability, research nor the balance test of the build tool's hover: the constructor 0x4db090 charges the price and nothing else, and the debit 0x4d01f0 does not test the balance.
+	/// </summary>
+	public PurchaseResult CheckBuild( int infoId, bool moving = false )
 	{
 		if ( IsBankrupt )
 			return PurchaseResult.Bankrupt;
 		if ( !Catalog.TryGet( infoId, out var info ) )
 			return PurchaseResult.UnknownObject;
-		if ( !info.IsBuyable )
+		if ( !moving && !info.IsBuyable )
 			return PurchaseResult.NotBuyable;
-		if ( !Research.IsAvailable( infoId ) )
+		if ( !moving && !Research.IsAvailable( infoId ) )
 			return PurchaseResult.NotResearched;
 		if ( info.Kind == ParkObjectKind.Upgrade && !objects.Values.Any( item => item.InfoId == info.AddOnTargetId ) )
 			return PurchaseResult.MissingTargetRide;
@@ -1587,7 +1590,8 @@ public sealed class ParkEconomy : IParkEconomy
 		if ( payWithTickets && info.GoldenTicketCost > GoldenTicketsAvailable )
 			return PurchaseResult.NotEnoughGoldenTickets;
 		// [BIN:TPW-EXE:0x5234d0 purchase gate] a cash-priced object (GoldenTicketCost +0xc4 below 1, or already bought) is refused when its price (+0x1b8) is greater than the bank balance (+0xc), equal allowed (0x523658; the placement validator 0x535670 repeats it at 0x535927); the test is skipped only in layout replay (0x785a2c, set by 0x404140), and the debit 0x4d01f0 does not test the balance
-		if ( !payWithTickets && info.PurchaseCost > Balance )
+		// [BIN:TPW-EXE:0x523940 move hover] the Move tool's hover (mode 0x3b) stores the price (0x52fb90) but has no balance compare, no cash flag and no golden-ticket test, and neither the click (0x5253d5) nor the debit does: a move is never refused for cash
+		if ( !moving && !payWithTickets && info.PurchaseCost > Balance )
 			return PurchaseResult.NotEnoughMoney;
 		return PurchaseResult.Ok;
 	}

@@ -1060,7 +1060,7 @@ public sealed partial class ParkHud
 			var rotation = level.BuildRotation;
 			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, rotation );
 			var allowed = level.CheckObject( entry, cursorX, cursorY, rotation ) == OriginalPlacementResult.Allowed
-				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId ) == ParkEconomy.PurchaseResult.Ok);
+				&& (level.Park == null || level.Park.Economy.CheckBuild( entry.InfoId, level.IsMoving ) == ParkEconomy.PurchaseResult.Ok);
 			placementRefused = !allowed;
 			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, rotation, allowed );
 			cells.AddRange( footprint.Cells );

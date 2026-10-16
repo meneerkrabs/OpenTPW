@@ -1731,7 +1731,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 	private static (int X, int Y) FindObjectSite( Level level, ObjectCatalogEntry entry ) =>
 		Enumerable.Range( 0, level.Objects.Grid.Width * level.Objects.Grid.Height )
 			.Select( index => (X: index % level.Objects.Grid.Width, Y: index / level.Objects.Grid.Width) )
-			.First( cell => level.CheckObject( entry, cell.X, cell.Y, level.BuildRotation ) == OriginalPlacementResult.Allowed );
+			.First( cell => level.CheckFreeObject( entry, cell.X, cell.Y, level.BuildRotation ) == OriginalPlacementResult.Allowed );
 
 	/// <summary>
 	/// Places the developer prototype Totem at the first buildable cell centre: <see cref="Level.PlaceRide"/>

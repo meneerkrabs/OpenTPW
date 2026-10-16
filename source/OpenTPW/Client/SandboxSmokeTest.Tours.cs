@@ -141,7 +141,7 @@ internal sealed partial class SandboxSmokeTest
 		{
 			var cell = (X: index % grid.Width, Y: index / grid.Width);
 			var anchor = Level.GetCentredAnchor( entry, cell.X, cell.Y, 0 );
-			if ( level.Objects.Check( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
+			if ( level.Objects.CheckFree( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed || !OnScreen( cell ) )
 				continue;
 			var cells = Enumerable.Range( anchor.X - 1, 7 ).SelectMany( x => Enumerable.Range( anchor.Y - 1, 7 ).Select( y => (X: x, Y: y) ) );
 			if ( cells.All( item => Free( item.X, item.Y ) ) && Level.ResolveVisitorCells( ObjectFootprint.GetAccessPoints( entry.Shape, anchor.X, anchor.Y, 0 ), level.Guests!.Grid ) != null )

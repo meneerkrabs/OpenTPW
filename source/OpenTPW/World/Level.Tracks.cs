@@ -260,7 +260,7 @@ public partial class Level
 			.OrderBy( cell => Math.Abs( cell.X - near.X ) + Math.Abs( cell.Y - near.Y ) ).ThenBy( cell => cell.Y ).ThenBy( cell => cell.X ) )
 		{
 			var anchor = GetCentredAnchor( entry, cell.X, cell.Y, 0 );
-			if ( Objects.Check( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed
+			if ( Objects.CheckFree( entry, anchor.X, anchor.Y, 0 ) != OriginalPlacementResult.Allowed
 				|| !Enumerable.Range( anchor.X - 2, 9 ).All( x => Enumerable.Range( anchor.Y - 1, 8 ).All( y => Free( x, y ) ) ) )
 				continue;
 			var station = PlaceObject( entry, cell.X, cell.Y, 0 ) ?? Objects.TryPlace( entry, anchor.X, anchor.Y, 0, out _ );

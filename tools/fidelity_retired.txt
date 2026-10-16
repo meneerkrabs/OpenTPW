@@ -128,6 +128,7 @@ GATE-005 docs/M3-GATE.md
 GUEST-001 docs/PROGRESS.md
 GUEST-008 docs/PROGRESS.md
 GUEST-009 docs/PROGRESS.md
+HEADS-001 docs/GUESTS.md
 HEADS-002 docs/PROGRESS.md
 HEADS-003 docs/PROGRESS.md
 HEADS-005 docs/GUESTS.md
@@ -203,6 +204,7 @@ RIDES-039 docs/reverse/REVIEW-ANIM-2.md
 RIDES-041 docs/OBJECTS.md
 RIDES-042 docs/OBJECTS.md
 RIDES-043 docs/OBJECTS.md
+SAVE-001 docs/DETERMINISM.md
 SAVE-003 docs/reverse/REVIEW-SAVE-2.md
 SAVE-008 docs/progress/2026-10-16-economy-and-saves-sweep.md
 TOUR-001 docs/PROGRESS.md
@@ -225,9 +227,12 @@ TRACK-029 docs/PROGRESS.md
 TRACK-030 docs/TRACKS.md
 TRACK-031 docs/PROGRESS.md
 UI-001 docs/reverse/APPROX-TRACE.md
+UI-002 docs/UI.md
+UI-005 docs/UI.md
 UI-009 docs/reverse/APPROX-TRACE.md
 UI-010 docs/reverse/APPROX-TRACE.md
 UI-011 docs/reverse/APPROX-TRACE.md
+UI-012 docs/UI.md
 UI-014 docs/reverse/APPROX-TRACE.md
 UI-015 docs/reverse/APPROX-TRACE.md
 UI-016 docs/reverse/APPROX-TRACE.md

@@ -12,11 +12,12 @@ public sealed record RideHeadSpaceSnapshot
 	public int SchemaVersion { get; init; } = CurrentSchemaVersion;
 	/// <summary>Visitor per slot (slot n = head id n + 1), 0 = free; length <see cref="RideHeadSpace.Count"/>.</summary>
 	public required int[] Visitors { get; init; }
-	/// <summary>Full explicit state of the slot draw's generator (a seed alone cannot continue it).</summary>
-	public required ScriptRandomState RandomState { get; init; }
+	/// <summary>Full explicit state of the slot draw's own generator (a seed alone cannot continue it). Null for a head space that draws from the world generator, which the world saves.</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public ScriptRandomState? RandomState { get; init; }
 
 	/// <summary>Deep copy.</summary>
-	public RideHeadSpaceSnapshot DeepCopy() => new() { Visitors = (int[])Visitors.Clone(), RandomState = RandomState.DeepCopy() };
+	public RideHeadSpaceSnapshot DeepCopy() => new() { Visitors = (int[])Visitors.Clone(), RandomState = RandomState?.DeepCopy() };
 
 	/// <summary>Pure structural validation; throws <see cref="InvalidDataException"/> on any violation.</summary>
 	public void ValidateSnapshot()
@@ -27,6 +28,6 @@ public sealed record RideHeadSpaceSnapshot
 			throw new InvalidDataException( $"head-space slot table has {Visitors.Length} slots, above any corpus model." );
 		if ( Visitors.Any( visitor => visitor < 0 ) )
 			throw new InvalidDataException( "head-space slot table holds a negative visitor." );
-		RandomState.Validate();
+		RandomState?.Validate();
 	}
 }

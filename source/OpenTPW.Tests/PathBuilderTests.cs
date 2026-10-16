@@ -327,6 +327,7 @@ public class PathBuilderTests
 	/// moved it again (61 → 62). Guests stepping off once per park turn instead of every 0.4 s (tp.exe 0x004CF3E0, ARRIVAL-001)
 	/// moved it to 60. The original state machine of a guest in the park (state 6 deciding once per park turn, state 7 walking to a
 	/// wander destination; docs/reverse/WANDER-plan.md, GUEST-010) changed the hash; the admissions stay 60. The guests' litter meter joined the hash (WANDER-plan §6). The prankery flag joined it next (pranksters in the Jungle's balance, WANDER-plan §7), then the balloon life, balloon and costume (only the hashed fields), then the original's thoughts (the pick of the needs phase; rides and shops set none), then the booth's verdict on the fee (tp.exe 0x004FF5B0), whose draw shifts the guest stream (60 → 62 admissions), and the end of the invented boredom loss, then the guests' meter +0x1B8 (Energy) starting at 0 and moving only by a use's FatigueEffect (GUEST-008).
+	/// The guests' draws moved onto the original's one world generator (DET-013 to DET-015): it is reseeded with the guest's id at its creation and a new arrival takes its entrance from the creation draw, so the guests' offsets, lanes and walks move (61 → 60 admissions).
 	/// </summary>
 	[TestMethod]
 	public void OwnershipFlipKeepsGuestPathingIdentical()
@@ -334,9 +335,9 @@ public class PathBuilderTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), 5 );
 		for ( var tick = 0; tick < 120 * 60; tick++ )
 			simulation.Tick( Tick );
-		// the guests walk whole walks to the ride (0x4FFBC0 -> 0x510100) and the leaving walk, so admissions and the run moved from 61 / 0xBE56BB444866D576
-		Assert.AreEqual( 63, simulation.Admissions, $"{simulation.Admissions}" );
-		Assert.AreEqual( 0x26FD3689A54F5F1CUL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
+		Assert.AreEqual( 60, simulation.Admissions, $"{simulation.Admissions}" );
+		// the guests walk whole walks to the ride (0x4FFBC0 -> 0x510100) and out of the park, which moves the run's hash (admissions stay 60) from 0x4AFCF82F0A7796C1
+		Assert.AreEqual( 0xD2F05F91D6567215UL, simulation.ComputeStateHash(), $"0x{simulation.ComputeStateHash():X16}" );
 	}
 
 	[TestMethod]

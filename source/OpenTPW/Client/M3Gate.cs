@@ -244,7 +244,6 @@ internal sealed class M3GateRun
 	private readonly List<(OriginalObjectRuntime Runtime, int Instance)> economyLinks = new();
 	private readonly HashSet<(int X, int Y)> occupied = new();
 	private readonly RideScriptWorld world = new();
-	private int nextSeed = 1;
 	private long setupBalance;
 	private long setupCost;
 	private readonly List<GuestTrack> departedTracks = new();
@@ -304,6 +303,7 @@ internal sealed class M3GateRun
 		var openingBalance = economy.Balance;
 		BuildEntrance();
 		runtime.AttachGuests( guests );
+		world.AttachWorld( economy.World );
 		// a new park starts closed (tp.exe 0x51562d); the gate run opens it as the player's door button would (0x519ef0)
 		runtime.Economy.OpenPark();
 		ConnectFixedItemsToEconomy();
@@ -324,7 +324,7 @@ internal sealed class M3GateRun
 	{
 		// [DATA:levels/<theme>/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes]
 		foreach ( var entry in catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ) )
-			fixedItems.Add( new OriginalObjectRuntime( entry, world, nextSeed++, open: true ) );
+			fixedItems.Add( new OriginalObjectRuntime( entry, world, seed: null, open: true ) );
 		var lane = guests.Settings.ArrivalLaneA ?? guests.Settings.ArrivalLaneB;
 		var valid = lane is { Length: >= 2 } && grid.IsWalkable( lane[^1].X, lane[^1].Y );
 		entranceCell = valid ? lane![^1] : (-1, -1);
@@ -499,7 +499,7 @@ internal sealed class M3GateRun
 				break;
 			foreach ( var cell in ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation ) )
 				occupied.Add( (cell.X, cell.Y) );
-			var item = new OriginalObjectRuntime( entry, world, nextSeed++, open: true );
+			var item = new OriginalObjectRuntime( entry, world, seed: null, open: true );
 			var points = ObjectFootprint.GetAccessPoints( entry.Shape, anchorX, anchorY, rotation ).ToArray();
 			var registered = Level.RegisterWithGuests( item, points, guests, rotation );
 			runtime.Guests!.Link( item.Visitors.AttractionId, bought!.Id );
@@ -2009,7 +2009,7 @@ internal sealed class M3GateRun
 		}
 		Add( economy.Tick );
 		Add( economy.Balance );
-		Add( (long)economy.Random.State );
+		Add( (long)economy.World.State );
 		Add( economy.Litter.Count );
 		Add( economy.Staff.Members.Count );
 		foreach ( var category in Enum.GetValues<LedgerCategory>() )

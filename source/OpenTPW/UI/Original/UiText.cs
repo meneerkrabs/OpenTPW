@@ -82,6 +82,11 @@ public static class UiTextRecord
 	public const int Day = 441;
 	/// <summary>"%d days" (tp.exe 0x1bb).</summary>
 	public const int Days = 442;
+	/// <summary>
+	/// The save date record "%d.%d.%d" (tp.exe 0x1c0): its parameters 16, 17 and 18 take the day, month and year of the save file's local
+	/// last-write time (0x49ec80 fills the tags 0x10, 0x11 and 0x12 from the SYSTEMTIME's day, month and year, 0x5fc660).
+	/// </summary>
+	public const int SaveDate = 447;
 }
 
 /// <summary>
@@ -100,7 +105,7 @@ public sealed class UiFonts
 	{
 		this.load = load;
 		Tier = tier;
-		// [APPROX:UI-002] which shipped font serves which role per tier: the original's controls name a bank slot (0x485a70: menu lines 0, HUD cash 1, HUD date 3, window labels 6, list rows 7) whose fonts differ per bank (docs/UI.md); OpenTPW's Label and Small roles do not follow slot 6 — evidence needed: captures of the original's window text at each mode
+		// [EXT:ui-font-tier-by-scale] which shipped font serves which role per tier is OpenTPW's choice: the original's controls name a bank slot (0x485a70: menu lines 0, HUD cash 1, HUD date 3, window labels 6, list rows 7) whose fonts differ per bank (docs/UI.md), and OpenTPW has no mode-to-bank rule at its output sizes
 		var (title, menu, label, small, cash, heading) = tier switch
 		{
 			UiFontTier.Small => ("TITLESMALL", "MENUSMALL", "GAME10AA", "GAME8AA", "GAMEBOLD10", "SESHSMALL"),
@@ -113,12 +118,12 @@ public sealed class UiFonts
 		Small = Load( small );
 		Cash = Load( cash );
 		Heading = Load( heading );
-		// [APPROX:UI-002] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1; the original's banks 0-3 hold CASHSMALL/CASHMED/CASHBIG/CASHBIG, 0x419710)
+		// [EXT:ui-font-tier-by-scale] the shipped CASHSMALL/CASHMED/CASHBIG fonts for the bank balance (the HUD builder's cash font slot 1; the original's banks 0-3 hold CASHSMALL/CASHMED/CASHBIG/CASHBIG, 0x419710)
 		var balance = tier switch { UiFontTier.Small => "CASHSMALL", UiFontTier.Big => "CASHBIG", _ => "CASHMED" };
 		try { Balance = Load( balance ); }
 		catch ( Exception exception ) when ( exception is IOException or InvalidDataException or KeyNotFoundException ) { Balance = Cash; }
 		// [DATA:Mac UI font table (docs/reverse/PPC-ui.md):slot 3 DATETINY/DATESMALL/DATEMED/DATEBIG] the HUD date font, one per
-		// bank ([APPROX:UI-002] for the tier→bank pairing). Only official Patch 2 and the Mac version ship these files
+		// bank ([EXT:ui-font-tier-by-scale] for the tier→bank pairing). Only official Patch 2 and the Mac version ship these files
 		// (docs/PATCH-2.md); the 1999 data falls back to Small, which in the Medium tier is the same file as DATESMALL.
 		var date = tier switch { UiFontTier.Small => "DATETINY", UiFontTier.Big => "DATEMED", _ => "DATESMALL" };
 		try { Date = Load( date ); }
@@ -202,13 +207,15 @@ public sealed class UiFonts
 
 /// <summary>Colours used by the original-style screens (OpenTPW choices, see docs/UI.md).</summary>
 // [BIN:TPW-EXE:0x65c5d5 text control colour] the original gives each text control an RGBA colour (renderer +0x48, kept as ARGB at +0x78, 0x48fd07) and renders its glyphs white (0x48fa96) unless the control keeps the font's own colours (+0xdd); the buy list rows are (255,255,255,255) (0x4ad340)
-// [APPROX:UI-006] the other UI text/backdrop colours are read off 720p video frames (+-15 per channel) — evidence needed: the colour each screen passes to 0x65c5d5, the backdrop colours
+// [APPROX:UI-006] the other UI text/backdrop colours (values, highlight, disabled, costs, backdrops) are read off 720p video frames (+-15 per channel); the title colour is exact — evidence needed: which screen each remaining 0x65c5d5 call colours (about a hundred sites), the backdrop colours
 public static class UiColors
 {
 	public static readonly RgbaByte Text = new( 255, 255, 255, 255 );
 	public static readonly RgbaByte Highlight = new( 255, 230, 70, 255 );
 	public static readonly RgbaByte Disabled = new( 140, 140, 160, 255 );
-	public static readonly RgbaByte Title = new( 255, 214, 64, 255 );
+	/// <summary>The window title colour.</summary>
+	// [BIN:TPW-EXE:0x492d20 title colour] the shared title colour setter gives a title control (font slot 5 or the like) the colour (234, 239, 102, 255) = 0xea, 0xef, 0x66 (0x492d35); its fifteen callers are the window and lobby builders (0x485d20, 0x48d2e0, 0x48d370, 0x499060, 0x4990f0, 0x4a6580, 0x4a6e40, 0x4a8140, 0x4ae560, 0x4b6110, 0x4b8520 the lobby island name, 0x4ba200, 0x4ba980, 0x4bb070, 0x4c0ae0)
+	public static readonly RgbaByte Title = new( 234, 239, 102, 255 );
 	public static readonly RgbaByte Value = new( 150, 255, 120, 255 );
 	/// <summary>The pause menu's text lines: cyan, white while focused (video 27:42).</summary>
 	// [BIN:TPW-EXE:0x48b2b9 pause line colour] the line procedure 0x48b2a0 gives a line the colour (0, 175, 190, 255) on message 0x11 and again when it loses the focus (0x48b220)

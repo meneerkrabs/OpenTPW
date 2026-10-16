@@ -282,6 +282,29 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			VerifyText( capture, flow.Strings[UIStrings.Options], "Options line" );
 			flow.Menu.Stack.Pop();
 		} );
+		// [BIN:TPW-EXE:0x5e0490 enter sequence] the lobby's enter turns the camera, opens the selected island's gate with M1 and zooms in; cancelled here before it reaches the park
+		Do( "lobby enter", () =>
+		{
+			var camera = (LobbyCameraMode)Camera.Mode;
+			Require( flow.Lobby!.GateClips.All( clip => clip == 0 ), "the gates start closed" );
+			flow.BeginLobbyEnter( flow.Menu!.Selected.Level );
+			Require( camera.Entering && flow.LobbyEntering, "the enter sequence starts" );
+		} );
+		var enterFrames = 0;
+		steps.Enqueue( ("lobby enter turns", () =>
+		{
+			Require( ++enterFrames < 2000, "the enter's turn finishes" );
+			return ((LobbyCameraMode)Camera.Mode).Phase == LobbyCameraMode.EnterPhase.Zoom;
+		}) );
+		Do( "lobby enter zooms", () =>
+		{
+			var camera = (LobbyCameraMode)Camera.Mode;
+			Require( flow.Lobby!.GateClips.Any( clip => clip == 1 ), "the selected island's gate plays its M1 clip" );
+			flow.CancelLobbyEnter();
+			Require( !flow.LobbyEntering, "a cancelled enter resumes the lobby" );
+			Require( flow.Lobby!.GateClips.Any( clip => clip == 2 ), "a cancelled enter closes the opened gate with M2" );
+		} );
+		Wait( "lobby fade clears", 60 );
 		Do( "click next island", () => Click( flow.Menu!.Main, "nextIsland" ) );
 		Wait( "island changes", 3 );
 		Do( "island selected", () =>
@@ -1036,7 +1059,7 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 				"enumeration preserves the prototype object identity" );
 			// A different object can carry the same id in a different script world: removal must check ownership.
 			var foreign = new OriginalObject( reviewedPrototype!.Entry, reviewedPrototype.Placement,
-				new RideScriptWorld(), seed: null, open: false, attractionId: prototypeAttractionId );
+				new RideScriptWorld(), seed: null, open: false, attractionId: prototypeAttractionId, seedScript: true );
 			try
 			{
 				var balance = level.Park!.Economy.Balance;
@@ -1458,7 +1481,14 @@ internal sealed partial class FrontEndSmokeTest : IDisposable
 			Require( flow.Menu!.Stack.Top?.Name == "gameMode" && flow.Menu.Stack.Top.Find( "joy" ) is { Visible: true }, "the Instant Action toggle latches and shows e_joy" );
 			Click( flow.Menu.Stack.Top!, "ok" );
 		} );
-		Wait( "Instant Action park loads", 40 );
+		// the lobby's enter sequence (turn, gate, zoom under the fade) plays before the park loads
+		var parkFrames = 0;
+		steps.Enqueue( ("Instant Action park loads", () =>
+		{
+			Require( ++parkFrames < 3000, "the Instant Action park starts after the enter sequence" );
+			return flow.Level != null && flow.Hud != null && flow.Lobby == null;
+		}) );
+		Wait( "Instant Action park settles", 40 );
 		Do( "Instant Action start", PlayInstantAction );
 	}
 

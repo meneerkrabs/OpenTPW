@@ -123,7 +123,6 @@ public partial class Level
 		if ( !GameEditions.IsThemeParkInc && ArrivalVehicles.Available( Objects.Catalog ) )
 		{
 			Guests.ArrivalVehicles = new ArrivalVehicles( Objects );
-			Guests.WorldDraw = () => Park is { } park ? (uint)(park.Economy.Random.NextUInt64() >> 33) : 0u;
 		}
 	}
 

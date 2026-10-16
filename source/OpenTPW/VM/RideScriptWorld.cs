@@ -3,7 +3,7 @@ namespace OpenTPW;
 /// <summary>
 /// The set of live scripts that can see each other through FINDSCRIPTRAND, GETREMOTEVAR and SETREMOTEVAR.
 /// Script IDs are positive; 0 means "no script". One world belongs to one park: it also allocates the park's
-/// attraction ids and seeds scripts that are created without an explicit seed, so its
+/// attraction ids and holds the world generator the scripts without an explicit seed draw from, so its
 /// allocations and random streams do not depend on what else ran earlier in the process. Host civil-time queries
 /// are external inputs and require the same supplied samples for reproducible continuation.
 /// </summary>
@@ -13,6 +13,7 @@ public sealed class RideScriptWorld
 	private readonly Func<DateTime>? civilTime;
 	private int nextId = 1;
 	private int nextAttractionId = 1;
+	private WorldRng world;
 
 	/// <param name="seed">Start state of the seed stream for scripts without an explicit seed (<see cref="WorldSeed.ScriptStream"/>).</param>
 	/// <summary>
@@ -32,7 +33,7 @@ public sealed class RideScriptWorld
 	/// <param name="clock">Host-local civil time for each executed query; null selects the system host clock. Unavailable on TPI worlds.</param>
 	public RideScriptWorld( ulong seed, Func<DateTime>? clock )
 	{
-		RandomState = seed;
+		world = new WorldRng( WorldRng.StateFromSeed( seed ) );
 		Coasters = new CoasterWorld( seed );
 		Bumpers = new BumpWorld();
 		Tours = new TourWorld();
@@ -58,11 +59,33 @@ public sealed class RideScriptWorld
 	/// <summary>The park's tour-ride controllers (the flying-car module).</summary>
 	public TourWorld Tours { get; }
 
-	/// <summary>A draw of the world generator for the bump rides' aiming jitter (the original's 0x516330), from the park's seeded stream.</summary>
-	internal uint NextWorldDraw() => (uint)NextScriptSeed();
+	/// <summary>
+	/// The world generator (tp.exe <c>0x00516330</c>) the scripts without an explicit seed draw their RAND and FINDSCRIPTRAND from, and the bump, tour and
+	/// head-space draws take theirs from: the park's one stream, shared with the guests, the staff and the economy (<see cref="AttachWorld"/>).
+	/// </summary>
+	// [APPROX:DET-013] the scripts', rides' and heads' draws are the world generator's, with the original's projections, but taken in OpenTPW's update order, not the original's substep scheduler and newest-first thing sweep
+	public WorldRng World => world;
 
-	/// <summary>SplitMix64 state of the seed stream (saved with the park; see <see cref="WorldRandomState"/>).</summary>
-	public ulong RandomState { get; private set; }
+	/// <summary>Makes <paramref name="generator"/> this world's generator (the level's shared one); its state is not touched.</summary>
+	public void AttachWorld( WorldRng generator ) => world = generator ?? throw new ArgumentNullException( nameof( generator ) );
+
+	/// <summary>A draw of the world generator for the bump rides' aiming jitter and the tour rides (the original's 0x516330).</summary>
+	internal uint NextWorldDraw() => world.NextWord();
+
+	/// <summary>The world generator's state (saved with the park; see <see cref="WorldRandomState"/>).</summary>
+	public ulong RandomState => world.State;
+
+	/// <summary>
+	/// RAND (tp.exe <c>0x0055398A</c>): the draw shifted right by one, reduced by the signed remainder of the operand taken as an int16 plus one, as an absolute value.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0055398A RAND] shr eax, 1; abs (cdq xor sub); movsx ecx, di; inc ecx; idiv; abs of the remainder; an operand of −1 divides by zero (a hardware fault in the original)
+	internal int ScriptRand( int maximumInclusive )
+	{
+		var divisor = (short)maximumInclusive + 1;
+		if ( divisor == 0 )
+			throw new RideScriptException( $"RAND maximum {maximumInclusive} as an int16 is -1: the original divides by zero" );
+		return Math.Abs( (int)(world.NextWord() >> 1) % divisor );
+	}
 
 	/// <summary>The next attraction id of this park (guests and the economy key attractions by it).</summary>
 	public int NextAttractionId => nextAttractionId;
@@ -77,18 +100,7 @@ public sealed class RideScriptWorld
 
 	internal void ObserveClock( double milliseconds ) => ClockMilliseconds = Math.Max( ClockMilliseconds, milliseconds );
 
-	internal void RestoreRandomState( ulong state ) => RandomState = state;
-
-	/// <summary>Seed for a script created without one.</summary>
-	// [BIN:STP-PPC:0x100B07E4 RSE RAND] RAND draws from the world LCG (0x10105328 on the world at TOC −0x7580): (|s| >> 1) mod (bound + 1); FINDSCRIPTRAND (0x100B1B8C) picks match (|s| >> 1) mod count, drawing only when there is a match
-	// [APPROX:DET-013] scripts without an explicit seed get a per-VM generator of the .NET-seed-compatible ScriptRandom class (draws exactly like a seeded System.Random; ScriptRandomTests proves it), seeded from the park's SplitMix64 stream, instead of the traced world-LCG draws — evidence needed: none; implementation waits for the DET-I2 port of the shared world generator (docs/reverse/DET-plan.md §4.3)
-	internal int NextScriptSeed()
-	{
-		var z = RandomState += 0x9E3779B97F4A7C15UL;
-		z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
-		z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
-		return (int)(z ^ (z >> 31));
-	}
+	internal void RestoreRandomState( uint state ) => world.Restore( state );
 
 	internal int Register( RideVM vm )
 	{
@@ -113,22 +125,26 @@ public sealed class RideScriptWorld
 	internal void AdoptAttractionId( int id ) => nextAttractionId = Math.Max( nextAttractionId, id + 1 );
 
 	/// <summary>Restores the allocator frontiers (holes below them included), the shared clock and the seed-stream states.</summary>
-	internal void RestoreCounters( int nextScriptId, int nextAttractionIdValue, double clockMilliseconds, ulong randomState, uint coasterRandomState )
+	internal void RestoreCounters( int nextScriptId, int nextAttractionIdValue, double clockMilliseconds, uint? worldGenerator, uint coasterRandomState )
 	{
 		nextId = nextScriptId;
 		nextAttractionId = nextAttractionIdValue;
 		ClockMilliseconds = clockMilliseconds;
-		RandomState = randomState;
+		if ( worldGenerator is { } generator )
+			world.Restore( generator );
 		Coasters.Random.Restore( coasterRandomState );
 	}
 
 	public RideVM? Find( int scriptId ) => scripts.TryGetValue( scriptId, out var vm ) ? vm : null;
 
-	/// <summary>Picks a random live script whose NAME equals <paramref name="name"/>; returns its ID or 0.</summary>
-	internal int FindRandom( string name, ScriptRandom random )
+	/// <summary>Picks a random live script whose NAME equals <paramref name="name"/>; returns its ID or 0. A caller without its own generator draws from the world's.</summary>
+	// [BIN:TPW-EXE:0x005560CB FINDSCRIPTRAND] a draw only when a script matches: the draw shifted right by one, as an absolute value, modulo the match count, plus one (the 1-based index into the matches)
+	internal int FindRandom( string name, ScriptRandom? random )
 	{
 		var matches = scripts.Values.Where( x => x.State != RideVMState.Faulted && string.Equals( x.ScriptName, name, StringComparison.Ordinal ) ).OrderBy( x => x.ScriptId ).ToArray();
-		return matches.Length == 0 ? 0 : matches[random.Next( matches.Length )].ScriptId;
+		if ( matches.Length == 0 )
+			return 0;
+		return matches[random != null ? random.Next( matches.Length ) : (int)((world.NextWord() >> 1) % (uint)matches.Length)].ScriptId;
 	}
 
 	// ---- Park-resume snapshot ----
@@ -144,6 +160,7 @@ public sealed class RideScriptWorld
 		return new RideScriptWorldSnapshot
 		{
 			RandomState = RandomState,
+			WorldGenerator = world.State,
 			CoasterRandomState = Coasters.Random.State,
 			ClockMilliseconds = ClockMilliseconds,
 			NextScriptId = nextId,
@@ -242,7 +259,7 @@ public sealed class RideScriptWorld
 					Effects = parent.Options.Effects,
 					World = this,
 					ResolveScript = parent.Options.ResolveScript,
-					Seed = saved.Seed,
+					Seed = saved.UsesWorldRandom ? null : saved.Seed,
 					SourceName = $"{parent.SourceName} > {saved.ScriptFileName}"
 				};
 				var child = new RideVM( files[saved.ScriptId], childOptions, parent );
@@ -282,7 +299,7 @@ public sealed class RideScriptWorld
 		}
 
 		// Pass 3 — the world counters, then the post-condition: exactly the saved scripts stay registered.
-		RestoreCounters( snapshot.NextScriptId, snapshot.NextAttractionId, snapshot.ClockMilliseconds, snapshot.RandomState, snapshot.CoasterRandomState );
+		RestoreCounters( snapshot.NextScriptId, snapshot.NextAttractionId, snapshot.ClockMilliseconds, snapshot.WorldGenerator, snapshot.CoasterRandomState );
 		var live = scripts.Values.Select( vm => vm.ScriptId ).OrderBy( id => id ).ToArray();
 		var savedIds = snapshot.Scripts.Select( script => script.ScriptId ).OrderBy( id => id ).ToArray();
 		if ( !live.SequenceEqual( savedIds ) )
@@ -297,8 +314,7 @@ public sealed class RideScriptWorld
 			throw new InvalidDataException( $"root script {saved.ScriptId} candidate '{candidate.SourceName}' does not match the saved script identity." );
 		if ( candidate.SourceName != saved.SourceName )
 			throw new InvalidDataException( $"root script {saved.ScriptId} candidate source '{candidate.SourceName}' does not match the snapshot's '{saved.SourceName}'." );
-		if ( candidate.Seed != saved.Seed )
-			throw new InvalidDataException( $"root script {saved.ScriptId} candidate seed {candidate.Seed} does not match the saved seed {saved.Seed}." );
+		// the seed is not compared: the restore adopts the snapshot's way of drawing (its own seeded generator, or the world generator), whatever the candidate was built with
 		if ( candidate.SliceBudget != saved.SliceBudget )
 			throw new InvalidDataException( $"root script {saved.ScriptId} candidate slice budget {candidate.SliceBudget} does not match the snapshot's {saved.SliceBudget}." );
 		if ( candidate.Variables.Length != saved.Variables.Length )

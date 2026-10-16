@@ -45,8 +45,7 @@ public sealed record ScriptRandomState
 /// bounds, and every change to this class must keep that test passing. The park-resume slice stores
 /// this state explicitly; a seed plus a replay count is not a state snapshot.
 /// </summary>
-// [APPROX:DET-013] scripts without an explicit seed get a per-VM generator of this class, seeded from the park's
-// SplitMix64 stream, instead of the traced world-LCG draws — evidence needed: none; implementation waits for the DET-I2 port of the shared world generator (docs/reverse/DET-plan.md §4.3)
+// Only a script created with an explicit seed (RideVMOptions.Seed: tests, standalone scripts, older saves) owns one of these; a park's scripts draw from the world generator (WorldRng).
 public sealed class ScriptRandom
 {
 	private const int MBIG = int.MaxValue;

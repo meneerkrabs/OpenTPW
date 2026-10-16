@@ -211,12 +211,8 @@ internal sealed class M4GateRun
 		public SegmentResult? Segment;
 		public long PathCharged;
 		public long Ticks;
-		private int nextSeed = 1;
 
 		public ParkEconomy Economy => Runtime.Economy;
-
-		/// <summary>Object script seeds as <see cref="ParkObjects"/> derives them from the world seed.</summary>
-		public int NextSeed() => nextSeed++ ^ Seed.ObjectScriptKey;
 
 		public bool IsBlocked( int x, int y ) => Occupied.Contains( (x, y) ) || Grid.IsWalkable( x, y ) || Grid.IsQueue( x, y );
 
@@ -262,8 +258,9 @@ internal sealed class M4GateRun
 		};
 		// [DATA:levels/<theme>/terrain/base.map:InitialPath] [DATA:Standard.sam:FixedItemInfo lanes]
 		foreach ( var entry in catalog.Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" or "Bus" ) )
-			scene.FixedItems.Add( new OriginalObjectRuntime( entry, scene.World, scene.NextSeed(), open: true ) );
+			scene.FixedItems.Add( new OriginalObjectRuntime( entry, scene.World, seed: null, open: true ) );
 		runtime.AttachGuests( scene.Guests );
+		scene.World.AttachWorld( runtime.Economy.World );
 		// a new park starts closed (tp.exe 0x51562d); the gate run opens it as the player's door button would (0x519ef0)
 		runtime.Economy.OpenPark();
 		foreach ( var item in scene.FixedItems.Where( item => scene.Economy.Catalog.TryGet( item.Entry.InfoId, out _ ) ) )
@@ -510,7 +507,7 @@ internal sealed class M4GateRun
 		try
 		{
 			scene = CreateScene( park, settings, catalog, savePath, arrivals: entry.IsChoosable && entry.ScriptPath != null );
-			runtime = new OriginalObjectRuntime( entry, scene.World, scene.NextSeed(), open: true );
+			runtime = new OriginalObjectRuntime( entry, scene.World, seed: null, open: true );
 			attraction = runtime.IsAttraction;
 			var load = new JsonObject
 			{
@@ -789,7 +786,7 @@ internal sealed class M4GateRun
 		try
 		{
 			var scene = CreateScene( park, settings, catalog, savePath, arrivals: false );
-			var runtime = new OriginalObjectRuntime( entry, scene.World, scene.NextSeed(), open: true );
+			var runtime = new OriginalObjectRuntime( entry, scene.World, seed: null, open: true );
 			var (build, placement) = Build( scene, entry, runtime );
 			evidence["station"] = build.Detail;
 			if ( placement == null )

@@ -195,6 +195,60 @@ public class StopWalkTests
 		Assert.IsFalse( simulation.Guests.Contains( guest ) );
 	}
 
+	[TestMethod]
+	public void AWalkThatIsStuckOnTheWayToTheStopStaysInState20()
+	{
+		// 0x005019F0 case 0x14: the walk step's answer 2 logs "Got stuck walking around outside" and leaves the guest in state 20; it does not go on to state 21
+		var (simulation, grid, vehicles) = Rig();
+		var guest = AtTheGate( simulation );
+		Turns( simulation, 2 );
+		for ( var turn = 0; turn < 400 && guest.State == GuestState.WalkingToVehicle; turn++ )
+			Turns( simulation, 1 );
+		Assert.AreEqual( GuestState.WaitingToGoHome, guest.State );
+		// the guest waits on one of the four cells; ask for the vehicle kind whose cells are the other pair and wall the rows between
+		var onUpperPair = guest.Navigation.Cell.Y == 1;
+		var kind = onUpperPair ? ArrivalVehicleKind.Bus : ArrivalVehicleKind.Ferry;
+		foreach ( var x in new[] { 5, 6 } )
+			foreach ( var y in onUpperPair ? new[] { 2, 3 } : new[] { 1, 2 } )
+				grid.Cells.SetType( x, y, ParkCellTypes.NoTerrain );
+		simulation.RestoreArrivalVehicleForTest( kind );
+		vehicles.Placed[kind] = true;
+		vehicles.Variables[kind][ArrivalVehicleKind.StatusVariable] = 2;
+		Turns( simulation, 2 );
+		Assert.AreEqual( GuestState.WalkingToVehicle, guest.State, "the vehicle's cells are off the guest's cells: it asks for a route there" );
+		Turns( simulation, 60 );
+		Assert.AreEqual( GuestState.WalkingToVehicle, guest.State, "no route: it stays stuck in state 20" );
+		Assert.IsTrue( guest.HasWaypoint );
+	}
+
+	[TestMethod]
+	public void GuestsOnTheWayToTheVehicleSurviveASaveAndLoad()
+	{
+		// state 20 is a guest state a save can hold; the states 19 and 21 on the cell map carry no lane and are valid too
+		var (simulation, _, _) = Rig();
+		var guest = AtTheGate( simulation );
+		var gate = simulation.CaptureSnapshot();
+		Assert.IsTrue( simulation.ValidateSnapshot( gate ).IsValid, string.Join( "; ", simulation.ValidateSnapshot( gate ).Errors ) );
+		Turns( simulation, 2 );
+		Assert.AreEqual( GuestState.WalkingToVehicle, guest.State );
+		var walking = simulation.CaptureSnapshot();
+		Assert.AreEqual( GuestState.WalkingToVehicle, walking.Guests.Single().State );
+		Assert.IsTrue( simulation.ValidateSnapshot( walking ).IsValid, string.Join( "; ", simulation.ValidateSnapshot( walking ).Errors ) );
+		Turns( simulation, 4 );
+		var (restored, _, _) = Rig();
+		restored.RestoreSnapshot( walking );
+		Assert.AreEqual( GuestState.WalkingToVehicle, restored.Guests.Single().State );
+		Assert.IsTrue( restored.Guests.Single().HasWaypoint, "the walk in progress is kept" );
+		Turns( restored, 4 );
+		Assert.AreEqual( guest.Navigation.X, restored.Guests.Single().Navigation.X, "the restored walk goes on exactly as the live one" );
+		Assert.AreEqual( guest.Navigation.Y, restored.Guests.Single().Navigation.Y );
+		for ( var turn = 0; turn < 400 && restored.Guests.Single().State == GuestState.WalkingToVehicle; turn++ )
+			Turns( restored, 1 );
+		Assert.AreEqual( GuestState.WaitingToGoHome, restored.Guests.Single().State );
+		var waiting = restored.CaptureSnapshot();
+		Assert.IsTrue( restored.ValidateSnapshot( waiting ).IsValid, string.Join( "; ", restored.ValidateSnapshot( waiting ).Errors ) );
+	}
+
 	// ---- original data ---------------------------------------------------------------------------------------------
 
 	private BaseFileSystem? originalFileSystem;

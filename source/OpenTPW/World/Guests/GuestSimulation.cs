@@ -1227,11 +1227,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			guest.State = GuestState.WaitingToGoHome;
 			return;
 		}
-		if ( MoveAlongStep( guest ) == WalkResult.Arrived )
+		var result = MoveAlongStep( guest );
+		if ( result == WalkResult.Arrived )
 		{
 			guest.State = GuestState.WaitingToGoHome;
 			guest.StateTimer = WaitForBusSeconds;
 		}
+		else if ( result == WalkResult.Stuck )
+			guest.HasWaypoint = true;   // the original logs and stays in state 20 (0x005019F0 case 0x14); the walk keeps reporting stuck
 	}
 
 	/// <summary>

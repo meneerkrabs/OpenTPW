@@ -74,22 +74,29 @@ WAD contains a kid/peep/visitor model (all 312 WADs listed). The sprites live in
 **`.FPC` / `.TPC` sprite bank** (little-endian): `u16 3, u16 3, u32 frameCount,
 u32 0`, then 255 palette entries of 4 bytes **B, G, R, A** (alpha varies: anti-
 aliased edges), then per frame: `u32 dataSize, u16 width, u16 height, u16 128,
-u16 128` (meaning unknown), `i32 originX, i32 originY` (offset of the frame's
+u16 128` (pixels per sprite unit across and down: the placement 0x5890E0 spans the quad from
+`originX / A · scale` to `(width + originX) / A · scale`, likewise down with B; 128 in every frame),
+`i32 originX, i32 originY` (offset of the frame's
 top-left corner from the hotspot; for walking kids the hotspot is at the feet),
 then `height` RLE rows. Each row is a length byte followed by control bytes:
 a signed control `c < 0` repeats the next byte `−c` times, `c > 0` copies `c`
 literal bytes. Pixel index 0 is transparent; index `n ≥ 1` is palette entry
-`n − 1`. Every row decodes to exactly `width` pixels and every bank ends exactly
+`n − 1` (tp.exe's loader 0x587DB0 reads the `u32 0` as palette entry 0 of 256, so index n is entry n there;
+the first u16 is the format, 3 = paletted, and the second is ignored). Every row decodes to exactly `width` pixels and every bank ends exactly
 after its last frame (121/121 members). `.FPC` frames are slightly larger than
-`.TPC` (kids: up to 37×45 vs 36×43); OpenTPW draws `.FPC`. Which detail level the
-original picks when is unknown.
+`.TPC` (kids: up to 37×45 vs 36×43). The ESP chooses (tp.exe 0x5410D3): `.fpc` when its byte 0x10C and
+the sprite-detail flag are both set, else `.tpc`. The detail flag is set to 1 at start-up (0x54E688), so the
+PC draws the FPC of every set with 0x10C = 1 (27 sets, each shipping one) and the TPC of the others; Jungle
+SPR_EX and Space SPR_SK ship an FPC the game never opens. OpenTPW follows this
+(`SpriteAnimationFile.BankExtension`); before October 16 it drew Space's costume set SPR_SK from its FPC.
 
 **`.ESP` animation table** (350 bytes): magic `ESP_FILE2.00`, NUL-terminated bank
 name (`SPR_BE.TPS`), zero padding, two flag bytes at `0x10C`, then 20 slots of
 `u16 firstFrame, u8 framesPerDirection, u8 directions` from `0x10E`. Frames are
-direction-major. Flag `0x10C` is 1 for every walking character; flag `0x10D` is 1
-for kid sets CH, KI, SA, SU and their heads, which look like girls (visual
-inspection only; meaning unverified).
+direction-major. Flag `0x10C` marks a full-detail FPC bank (above); flag `0x10D` is 1 for kid sets CH, KI,
+SA, SU and their heads, which look like girls; the loader 0x540D90 stores it and nothing in tp.exe reads it.
+Only the first 16 slots are animations: the loader reads the last four 4-byte entries as single bytes (slot 16 is
+`01 05 00 00` in 11 files and `01 05 02 28` in one; their use is unknown, `ExtraSlotBytes`).
 
 Kid slots (identical in all 8 sets; labels from viewing the frames, not traced):
 

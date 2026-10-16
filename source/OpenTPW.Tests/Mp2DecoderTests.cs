@@ -355,10 +355,55 @@ public class Mp2DecoderTests
 			Assert.AreEqual( 22050, audio.SampleRate, clip.Name );
 			Assert.AreEqual( 1, audio.Channels, clip.Name );
 			Assert.IsTrue( audio.TrailingBytes <= 1, clip.Name );
+			// The game plays the header's length (tp.exe 0x6C82C0/0x6C83C0): never past the decoded PCM, which ends at least
+			// one Layer II frame later (encoder delay and padding).
+			var played = clip.PlaybackBytes!.Value;
+			Assert.IsTrue( played <= audio.Samples.Length * 2 && audio.Samples.Length * 2 - played >= 2 * 576, $"{clip.Name}: {played} of {audio.Samples.Length * 2}" );
+			Assert.AreEqual( played / 2, audio.TrimTo( played ).Samples.Length, clip.Name );
 			decoded++;
 		}
 		Assert.AreEqual( 640, decoded );
 		CollectionAssert.AreEqual( new[] { "z_error.mp2" }, layerOne );
+	}
+
+	[TestMethod]
+	public void EveryOriginalSdtEntryGivesItsPlaybackLength()
+	{
+		var entries = 0;
+		var violations = new List<string>();
+		foreach ( var path in Directory.EnumerateFiles( DataDirectory(), "*", SearchOption.AllDirectories ).Where( file => file.EndsWith( ".sdt", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			var bank = new SoundBank( File.ReadAllBytes( path ) );
+			for ( var number = 1u; number <= bank.Count; number++ )
+			{
+				if ( bank.GetMpeg( number ) is not { } mpeg )
+					continue;
+				entries++;
+				var channels = Mp2Decoder.TryReadFrameFormat( mpeg, out _, out var frameChannels ) ? frameChannels : 0;
+				// Type bit 0x04 marks the length; it is whole 16-bit sample frames.
+				if ( bank.GetPlaybackBytes( number ) is not { } bytes || channels == 0 || bytes % (2 * channels) != 0 )
+					violations.Add( $"{Path.GetFileName( path )} #{number}: {bank.GetPlaybackBytes( number )} bytes, {channels} channels" );
+			}
+		}
+		CollectionAssert.AreEqual( Array.Empty<string>(), violations );
+		// The 47 banks below Data/ (the language folders beside it hold 1,935 more entries with the same header rule).
+		Assert.AreEqual( 3739, entries );
+	}
+
+	[TestMethod]
+	public void TrimToKeepsWholeSampleFramesAndNeverLengthens()
+	{
+		var stereo = new Mp2Audio( 22050, 2, new short[] { 1, 2, 3, 4, 5, 6 }, 1, 0 );
+		CollectionAssert.AreEqual( new short[] { 1, 2 }, stereo.TrimTo( 6 ).Samples );
+		CollectionAssert.AreEqual( new short[] { 1, 2, 3, 4 }, stereo.TrimTo( 8 ).Samples );
+		Assert.AreSame( stereo, stereo.TrimTo( 100 ) );
+		Assert.AreSame( stereo, stereo.TrimTo( null ) );
+		var header = new byte[40];
+		header[0x1B] = 0x24;
+		BitConverter.GetBytes( 1234 ).CopyTo( header, 0x20 );
+		Assert.AreEqual( 1234, SdtEntryHeader.PlaybackBytes( header ) );
+		header[0x1B] = 0x20;
+		Assert.IsNull( SdtEntryHeader.PlaybackBytes( header ) );
 	}
 
 	[TestMethod]

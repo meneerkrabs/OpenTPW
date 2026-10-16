@@ -52,3 +52,15 @@ longer mounts. Valid large archive construction still requires its initial buffe
 arbitrary resource cap, decompression policy, path-name policy or general reload
 transaction was introduced. A reopened read (`GetData` on a path-backed archive) checks the
 requested range before it reserves the member's buffer.
+
+## Declared decompressed size (tp.exe, October 16, 2026)
+
+A directory entry's u32 at +0x18 is the member's decompressed size. tp.exe's tree builder (0x637690)
+reports it as a compressed member's size (a raw member's is its data length), and opening a Refpack
+member (0x61A800 → 0x638B20) allocates exactly that many bytes for the decoder 0x641F10, which takes no
+capacity and checks nothing; its return value (the header's 24-bit size) is discarded. A larger real
+output would overflow that buffer and a smaller one leave its tail unset; neither happens in the corpus:
+in all 6,804 Refpack members of the 315 archives the declared size, the Refpack header size and the
+decoded length agree, and the 8,501 raw members declare 0 (`RefpackTests` checks every compressed member).
+`WadArchiveFile.Size` and `GetFileSize` report the declared size without decompressing. Compression type 1
+fails to open and type 2 is a second codec (0x638C90 → 0x5F81D0) that no shipped member uses.

@@ -278,7 +278,8 @@ public class GuestSnapshotJsonContinuationTests
 		bool Occupied( GuestSnapshotTests.Rig rig ) => rig.Rides.All( ride => ride.Bridge.CaptureSnapshot().Limbo.Length > 0 )
 			&& rig.Rides.Sum( ride => ride.Bridge.Riders.Count ) >= 3
 			&& rig.Rides.Any( ride => ride.Bridge.CaptureSnapshot().Bounce.Any( slot => slot.Guest != 0 ) );
-		tick = GuestSnapshotTests.RunUntil( park, Occupied, tick, 40000 );
+		// The original walk (WALK-004) reaches the three-way coincidence at tick 46,575 of this harness.
+		tick = GuestSnapshotTests.RunUntil( park, Occupied, tick, 60000 );
 		Assert.IsTrue( Occupied( park ), $"the harness reached rides with limbo and bounce occupancy (tick {tick})" );
 		foreach ( var (bridge, _) in park.Rides )
 			Assert.IsTrue( bridge.CaptureSnapshot().Limbo.Length > 0, $"{bridge.Name} holds limbo guests at the save" );

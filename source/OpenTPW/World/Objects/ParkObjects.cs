@@ -11,6 +11,8 @@ public interface IParkGrid
 	OriginalPlacementResult CheckTerrain( int x, int y );
 	/// <summary>Engine height of the ground at a cell (mean of its corners).</summary>
 	float GetCellHeight( int x, int y );
+	/// <summary>Engine height of the ground at grid corner (x, y), the original's terrain vertex; a grid without corner heights gives the height of the cell there.</summary>
+	float GetCornerHeight( int x, int y ) => GetCellHeight( x, y );
 }
 
 /// <summary>The generic sandbox: the 32×32 tile park of <see cref="ParkPlacement"/>, flat at height 0.</summary>
@@ -68,6 +70,14 @@ public sealed class OriginalParkGrid : IParkGrid
 	}
 
 	public float GetCellHeight( int x, int y ) => OriginalParkPlacement.GetCellCenter( park.Heightfield, x, y ).Z;
+
+	public float GetCornerHeight( int x, int y )
+	{
+		var field = park.Heightfield;
+		x = Math.Clamp( x, 0, field.CellCountX );
+		y = Math.Clamp( y, 0, field.CellCountZ );
+		return OriginalParkPlacement.ToEngine( field, new System.Numerics.Vector3( x * field.CellSizeX, field.GetCornerHeight( x, y ), y * field.CellSizeZ ) ).Z;
+	}
 }
 
 /// <summary>How a host's live cell holds a path for the object build rule (<see cref="ParkObjects.PathAt"/>).</summary>
@@ -335,16 +345,17 @@ public sealed class ParkObjects
 	/// Add it applies no build rules and charges nothing; the seed allocator itself is restored separately with
 	/// <see cref="RestoreSeedAllocator"/> so objects placed after the load continue the saved seed sequence.
 	/// </summary>
-	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId ) =>
-		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation ), ScriptWorld, seed, open, attractionId, seedScript: false ) );
+	internal OriginalObject AddRestored( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool open, int seed, int attractionId, bool legacyBaseHeight = false ) =>
+		Register( new OriginalObject( entry, ComputePlacement( entry, anchorX, anchorY, rotation, legacyBaseHeight ), ScriptWorld, seed, open, attractionId, seedScript: false ) );
 
 	// [DATA:Easymode.TPWI:SYSG X/Y/rotation] [DATA:<fixed item>.MD2:park-space coordinates]
 	// [DATA:PreBuilt/prebuilt.TPWS:SYSG X/Y/rotation] TPI fixed models use local coordinates and their saved anchor.
-	private ObjectPlacement ComputePlacement( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) =>
+	internal ObjectPlacement ComputePlacement( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation, bool legacyBaseHeight = false ) =>
 		entry.IsFixedItem && !GameEditions.IsThemeParkInc
 			? new ObjectPlacement( 0, 0, 0, Grid.Origin, 0 )
 			: new ObjectPlacement( anchorX, anchorY, rotation, Grid.Origin,
-				entry.IsFixedItem ? 0 : GetBaseHeight( entry, anchorX, anchorY, rotation ) );
+				entry.IsFixedItem ? 0 : legacyBaseHeight ? GetLegacyBaseHeight( entry, anchorX, anchorY, rotation ) : GetBaseHeight( entry, anchorX, anchorY, rotation ),
+				legacyBaseHeight && !entry.IsFixedItem );
 
 	private OriginalObject Register( OriginalObject item )
 	{
@@ -382,11 +393,33 @@ public sealed class ParkObjects
 	}
 
 	/// <summary>
-	/// Base height: the mean ground height under the footprint. Rides flatten their ground in the original
-	/// (<c>Info.DontDeformBase</c>, per-archive <c>.hmp</c> files not decoded), so this is an approximation.
+	/// Base height of an object: the midpoint of the lowest and the highest terrain vertex under its footprint. The vertices are the four corners of every shape cell whose cell type has a
+	/// non-zero low nibble (so <c>#</c>, type 16, adds none), at the anchor and rotation; the object's ground blend under the ride is not modelled (RIDES-014).
 	/// </summary>
-	// [APPROX:RIDES-014] Object base height = mean ground height of its footprint cells (.hmp ground deformation not decoded) — evidence needed: .hmp format, captures on slopes
-	public float GetBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
+	// [BIN:TPW-EXE:0x00466D70 base height] the creator 0x463060 (flags 0x32f, bit 8, shape pointer def+0x18) calls 0x466D70, which samples the four corners of each shape cell (entries 8 bytes, low nibble of the first byte non-zero, 0x469930) through 0x454050 and returns (lowest + highest vertex height) x 0.5 (0x466E60..0x466F70); the vertex of a corner is ftol(lerp + 0.1) of the unrotated shape position turned about the anchor, which is exactly ObjectFootprint.ToGrid of the corner (box origin 0x466F90)
+	// [APPROX:RIDES-014] the object's base height is that midpoint of the footprint's terrain vertices; the original then blends the ground under the ride flat (0x467030, 0x57ACE0), which is not modelled, and the instance words +0xF0/+0xF4 it takes as the shape size are taken to be the shape's width and height — evidence needed: the blend, and a capture of an instance height on a slope
+	public float GetBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation ) => GetBaseHeight( entry.Shape, Grid, anchorX, anchorY, rotation );
+
+	/// <summary><see cref="GetBaseHeight(ObjectCatalogEntry,int,int,int)"/> for a shape on a grid.</summary>
+	internal static float GetBaseHeight( ObjectShape shape, IParkGrid grid, int anchorX, int anchorY, int rotation )
+	{
+		var lowest = float.PositiveInfinity;
+		var highest = float.NegativeInfinity;
+		foreach ( var cell in shape.Cells.Where( cell => (cell.CellType & 0xF) != 0 ) )
+		{
+			for ( var corner = 0; corner < 4; corner++ )
+			{
+				var point = ObjectFootprint.ToGrid( anchorX, anchorY, rotation, new System.Numerics.Vector2( cell.U + (corner & 1), cell.V + (corner >> 1) ) );
+				var height = grid.GetCornerHeight( (int)MathF.Round( point.X ), (int)MathF.Round( point.Y ) );
+				lowest = Math.Min( lowest, height );
+				highest = Math.Max( highest, height );
+			}
+		}
+		return float.IsInfinity( lowest ) ? 0 : (lowest + highest) * 0.5f;
+	}
+
+	/// <summary>The earlier rule, the mean ground height of the footprint's cells: only a park-resume save made before the vertex rule keeps it (<see cref="ParkLayoutSnapshot"/>).</summary>
+	internal float GetLegacyBaseHeight( ObjectCatalogEntry entry, int anchorX, int anchorY, int rotation )
 	{
 		var heights = ObjectFootprint.GetCells( entry.Shape, anchorX, anchorY, rotation )
 			.Where( cell => cell.X >= 0 && cell.Y >= 0 && cell.X < Grid.Width && cell.Y < Grid.Height )
@@ -452,9 +485,9 @@ public sealed class ParkObjects
 	/// <summary>
 	/// Replaces the Easymode markers with the real objects: every SYSG placed record at its saved anchor and
 	/// rotation (unresolved non-square rotations use the catalog shape), and the fixed items in park space.
-	/// Imported objects are opened: the save's ride state is not decoded.
+	/// Imported objects are opened (the saved open word is not imported, SAVE-006).
 	/// </summary>
-	// [APPROX:RIDES-015] Imported objects start open (saved ride state not decoded); built objects open too, while the original's object constructor 0x4DB090 sets the open word +0x68 = 1 (0x4DB3B9) and then, for a type with Info.HasQueue (def+0x40, flag 8 at 0x4DB420), logs "Object %d Closing", clears the open word and writes VAR_RIDECLOSED = 1 (0x4DB712–0x4DB779), so a built ride with a queue starts closed — evidence needed: the TPWS ride-state fields (save loader 0x415270)
+	// [BIN:TPW-EXE:0x004DB712 built ride closes] a built object opens in the constructor (open word +0x68 = 1, 0x4DB3B9) and closes again when its type has Info.HasQueue (Level.BuiltObjectStartsOpen); an imported object is not built: its open word comes from the save in the original (mCanLoad), which this port does not import and opens every imported object instead (SAVE-006)
 	public int ImportOriginal( OriginalParkImport save ) => ImportOriginalSteps( save ).LastOrDefault().Placed;
 
 	/// <summary><see cref="ImportOriginal"/> one object at a time: after each, the objects placed so far and the share of the records done.</summary>
@@ -484,7 +517,7 @@ public sealed class ParkObjects
 	/// </summary>
 	// [BIN:TPW-EXE:0x005156A0 world setup fixed items] world setup creates the definitions named "gates" (wide literal 0x762448) and "lights" (0x762454) through 0x4db090 (case-insensitive compare 0x67b140); a missing definition logs "Could not find the gates feature" or the LIGHTSNAME message; a loaded save then restores the handles (writer 0x517076)
 	// [BIN:TPW-EXE:0x0051A2F0 vehicle on demand] the bus, seaplane and Ferry are created by the vehicle dispatch the first time each is sent (0x004DB090 at 0x0051A57E), never at setup
-	// [APPROX:RIDES-019] End (0x762464) is not created: the original creates it through 0x516b00, called from the message handler 0x503d40 (message type 0x11, from 0x50b550), not at setup; Theme Park Inc worlds without a prebuilt save keep a Bus from setup — evidence needed: what sends the End message, and how Theme Park Inc places its arrival vehicle
+	// [APPROX:RIDES-019] End (0x762464) is not created: the original creates it through 0x516b00 from the lab's message handler 0x503d40 (message type 0x11, dispatched by 0x50b550), which runs when a research item completes (0x504630) and, once every research item is complete (the loop over the 0x145c items at +0x18, stride 0x14: progress +4 not below cost +0, 0x503e00), in the game modes DAT_00fb3b7c 2 (or 0 with 0x5b0c40 true) clears a flag (0x409cd0), posts the advisor message 0xa7 (0x59b590, 0x59a940) and creates End; Theme Park Inc worlds without a prebuilt save keep a Bus from setup — evidence needed: what DAT_00fb3b7c names and what the advisor message 0xa7 is, and how Theme Park Inc places its arrival vehicle (no TPI executable in scope)
 	public int AddDefaultFixedItems() => AddDefaultFixedItemSteps().LastOrDefault().Placed;
 
 	/// <summary><see cref="AddDefaultFixedItems"/> one object at a time, as <see cref="ImportOriginalSteps"/>.</summary>

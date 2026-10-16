@@ -692,7 +692,7 @@ internal static class ParkResumeSaveFile
 			Require( InBounds( navigation.TargetX >> 16, navigation.TargetY >> 16 ),
 				$"guest {guest.Id} navigation target ({navigation.TargetX >> 16}, {navigation.TargetY >> 16}) is outside the cell map" );
 			var onLane = guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
-				or GuestState.AtTicketBooth or GuestState.EnteringPark or GuestState.CrossingRoadHome or GuestState.WaitingToGoHome;
+				or GuestState.AtTicketBooth or GuestState.EnteringPark || guest.State is GuestState.CrossingRoadHome or GuestState.WaitingToGoHome && guest.Lane != null;
 			if ( onLane )
 			{
 				Require( guest.Lane != null && guest.Lane.Length >= 2,

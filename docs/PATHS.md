@@ -95,7 +95,7 @@ the speed pause does not stop it (PATH-013).
 In the park view the hover help is 441 over an empty owned cell, 442 over a
 path and 444 over a queue; inside the tools it is 443 and 445. A left click on a
 queue cell (444, "Left-click to edit this queue") starts the queue tool for the
-HasQueue ride that owns it, at that queue's back cell (QUEUE-021). A left click on
+HasQueue ride that owns it, at that queue's back cell (`[EXT:queue-click-at-back-cell]`, an OpenTPW design choice; the original's first click enters tool 0x14, QUEUE-021). A left click on
 an empty owned cell or a path cell enters the path tool without a start (tp.exe
 `0x4879d0`, SetMode(1) `0x52f200`; there is no menu button), and the same click
 is the tool's first click: a refused single-cell ghost ends the tool again (with

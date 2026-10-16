@@ -104,15 +104,38 @@ public sealed class LobbyScene : OriginalModelScene
 	private readonly Dictionary<string, (ModelFile? Model, ModelAnimation? Clip)> flyerAssets = new( StringComparer.OrdinalIgnoreCase );
 
 	/// <summary>
-	/// One lobby frame of <paramref name="seconds"/>: the flying meshes take a lobby step (the frame's milliseconds, at most
-	/// 500, × 0.01) and every flyer's model follows its instance and plays its wing cycle.
+	/// One lobby frame of <paramref name="seconds"/>: <see cref="StepFrame"/>, then <see cref="Animate"/> for the same time.
 	/// </summary>
 	public void Step( float seconds )
+	{
+		StepFrame( seconds );
+		Animate( seconds );
+	}
+
+	/// <summary>
+	/// The frame-driven part of a lobby frame of <paramref name="seconds"/>: the flying meshes take a lobby step (the frame's milliseconds, at most
+	/// 500, x 0.01) and every island model whose clip has run out picks its next one. The game flow calls it once per reference frame
+	/// (<see cref="ReferenceFrameClock"/>), as the original runs both once per rendered frame.
+	/// </summary>
+	// [BIN:TPW-EXE:0x5d5c50 lobby frame] the lobby steps its subsystems once per rendered frame in registration order: the flying-mesh system (vf2 0x5da3a0) and the islands component (vf2 0x5e0470, vtable 0x702cb0, slot 2 at 0x702cb8, which also picks the island clips, 0x5e11d0), both in the same frame
+	// [EXT:frame-driven-at-60hz] the original steps these once per rendered frame; OpenTPW steps them at the 60 Hz reference, so the flyers and the island clips step as often as the effects and the camera (docs/COMPATIBILITY.md "Frame-driven timing")
+	public void StepFrame( float seconds )
 	{
 		if ( !float.IsFinite( seconds ) || seconds < 0 )
 			return;
 		var step = Math.Clamp( seconds * 1000f, 0f, LobbyCameraMode.MaximumStepMilliseconds ) * LobbyCameraMode.StepPerMillisecond;
 		FlyingMeshes?.Step( step );
+		PickIslandClips();
+	}
+
+	/// <summary>
+	/// The time-driven part of a lobby frame: every flyer's model follows its instance and plays its wing cycle, and the island and gate models
+	/// advance their clips by <paramref name="seconds"/> of real time (the original samples a clip by the clock when it draws).
+	/// </summary>
+	public void Animate( float seconds )
+	{
+		if ( !float.IsFinite( seconds ) || seconds < 0 )
+			return;
 		foreach ( var group in FlyingMeshes?.Groups ?? Array.Empty<LobbyFlyingMeshes.Group>() )
 		{
 			if ( !flyerModels.TryGetValue( group, out var models ) )
@@ -126,7 +149,11 @@ public sealed class LobbyScene : OriginalModelScene
 				flyer.Advance( seconds );
 			}
 		}
-		StepIslands( seconds );
+		foreach ( var model in IslandModels )
+		{
+			model.Isle?.Advance( seconds );
+			model.Gate?.Advance( seconds );
+		}
 	}
 
 	/// <summary>
@@ -150,11 +177,10 @@ public sealed class LobbyScene : OriginalModelScene
 		? clip.EndsWith( "2", StringComparison.Ordinal ) ? 2 : 1 : 0 ).ToList();
 
 	/// <summary>
-	/// Every island model whose clip has (almost) run out starts <c>M1</c> or <c>M2</c> at random, once; the island and
-	/// gate models then take the frame.
+	/// Every island model whose clip has (almost) run out starts <c>M1</c> or <c>M2</c> at random, once.
 	/// </summary>
-	// [BIN:TPW-EXE:0x5e11d0 island clips] at the end of the islands update every island model whose channel 0 has under 1 ms left (0x5d8440 → 0x473f50) plays AnimID 5 sub rand() & 1, not looping (0x5d83f0(sub, 0)): M1 or M2
-	private void StepIslands( float seconds )
+	// [BIN:TPW-EXE:0x5e11d0 island clips] at the end of the islands update every island model whose channel 0 has under 1 ms left (0x5d8440 -> 0x473f50) plays AnimID 5 sub rand() & 1, not looping (0x5d83f0(sub, 0)): M1 or M2
+	private void PickIslandClips()
 	{
 		foreach ( var model in IslandModels )
 		{
@@ -164,8 +190,6 @@ public sealed class LobbyScene : OriginalModelScene
 				var clip = model.IsleClips[sub];
 				isle.Animator.Trigger( 0, clip, $"{model.Island.IslandModel}M{sub + 1}", animationId: 5, variant: sub, loop: false, speed: 1f );
 			}
-			model.Isle?.Advance( seconds );
-			model.Gate?.Advance( seconds );
 		}
 	}
 

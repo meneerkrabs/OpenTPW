@@ -784,7 +784,7 @@ public static class ObjectNames
 /// </summary>
 public static class BonusNames
 {
-	// [APPROX:RIDES-025] The original reads only <selected language>.txt (0x41f350, language buffer 0xf7f230) from the bonus archive and falls back to the OBJECT_NAMES id table (empty for bonus ids except 3301) with no English or .sam fallback; this port also tries English and then the .sam Info.Name for a language the archive lacks (OpenTPW extension for third-party content; all 35 shipped bonus archives carry the four shipped languages)
+	// [EXT:bonus-name-fallback] third-party bonus content may lack the selected language, so a missing language file falls back to English and then to the .sam Info.Name where the original reads only <selected language>.txt (0x41f350, language buffer 0xf7f230) and the OBJECT_NAMES id table (empty for bonus ids except 3301); an archive never loses its display name, and all 35 shipped bonus archives carry the four shipped languages, so no shipped name differs
 	public static string? Read( ObjectCatalogEntry entry, string? language = null )
 	{
 		language ??= GameLanguage.IsSelected ? GameLanguage.Current.Name : GameLanguage.DefaultLanguage;

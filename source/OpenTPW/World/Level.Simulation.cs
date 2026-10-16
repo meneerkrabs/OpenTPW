@@ -6,7 +6,10 @@ public partial class Level
 	internal void AdvanceSimulation( double elapsedSeconds ) => simulationClock.Advance( elapsedSeconds, deltaTime =>
 	{
 		SyncObjectEconomy();
-		Guests?.Tick( deltaTime );
+		// [BIN:TPW-EXE:0x00516380 world update] a lost park (world state 4, ParkEconomy.IsBankrupt) runs no thing updates: the guests and the staff walks stop, the ride scripts (the RSSE tick) go on
+		var lost = Park?.Economy.IsBankrupt == true;
+		if ( !lost )
+			Guests?.Tick( deltaTime );
 		PlacedRide?.Simulate( deltaTime );
 		Objects.Simulate( deltaTime );
 		Park?.FixedTick();
@@ -17,7 +20,8 @@ public partial class Level
 		}
 		// The deferred gate-close retry follows the thing sweep (Mac 0x10536c).
 		Gate?.Tick();
-		StaffWorld?.Tick( deltaTime );
+		if ( !lost )
+			StaffWorld?.Tick( deltaTime );
 		UpdateTrackRendering();
 		UpdateTourRendering( deltaTime );
 	} );

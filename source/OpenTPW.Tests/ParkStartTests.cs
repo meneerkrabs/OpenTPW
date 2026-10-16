@@ -58,7 +58,7 @@ public class ParkStartTests
 		Assert.AreEqual( ParkEconomy.PurchaseResult.NotAvailableInInstantAction, instant.TryBuyUpgrade( instant.RegisterExisting( 1100 ).Id ) );
 
 		var full = EconomyTestData.Park();
-		Assert.IsTrue( full.AvailableLoans.Any() );
+		Assert.AreEqual( 0, full.TakeLoan( 0 ).OfferIndex, "a full-simulation park can borrow (0x4d0750 needs only the offer not bought)" );
 		full.SetResearchEffort( ResearchCategory.Ride, 0 );
 		Assert.AreEqual( 0, full.Research.Effort[(int)ResearchCategory.Ride] );
 	}

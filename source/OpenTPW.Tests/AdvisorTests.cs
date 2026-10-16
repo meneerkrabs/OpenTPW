@@ -84,8 +84,9 @@ public class AdvisorTests
 		// Traced rules leave the register; their numbers are not reused.
 		// 11 (a deliberate extension), 16 (the fixed rows) and 18 (the model hides at the end of the last clip) left in the MISC round of October 14;
 		// 7 (no face test before the submit's transform) and 10 (the game's mouth runs on the advisor clock; the tools' audio clock is an extension) in the read-audio round;
-		// 27 (the slap on cut-off and the F1 replay) in the advisor presentation round.
-		var retired = new[] { 1, 2, 3, 4, 7, 8, 10, 11, 13, 14, 15, 16, 18, 19, 21, 23, 24, 27 };
+		// 27 (the slap on cut-off and the F1 replay) in the advisor presentation round;
+		// 20 (event 2 is the bank's monthly message, 0x4D0370) in the economy rules round.
+		var retired = new[] { 1, 2, 3, 4, 7, 8, 10, 11, 13, 14, 15, 16, 18, 19, 20, 21, 23, 24, 27 };
 		CollectionAssert.AreEqual( Enumerable.Range( 1, 27 ).Except( retired ).Select( index => $"ADVISOR-{index:000}" ).ToArray(), Advisor.Approximations.Select( entry => entry.Id ).ToArray() );
 	}
 

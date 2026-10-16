@@ -47,12 +47,11 @@ public sealed class OnlineGlobeScreen : UiScreen
 			var x = input.Mouse.X / canvas.Width;
 			var y = input.Mouse.Y / canvas.Height;
 			float Edge( float value ) => value < EdgeMargin ? -1 : value > 1 - EdgeMargin ? 1 : 0;
-			// [APPROX:ONLINE-012] edge steering starts once the cursor has moved on this screen, so a cursor resting in a corner
-			// when the screen opens does not spin the globe; the original has no such gate: 0x005DC860 reads the position of the
-			// online front end's last mouse move (0x005D5DD0, event 0x10003), which is the canvas centre (0x400, 0x300, set by
-			// 0x005D5770) until the first move after the front end starts, so it steers from the first frame once the mouse has
-			// moved anywhere in the online screens — evidence needed: an OpenTPW home for the front end's move history across the
-			// online screens
+			// [EXT:online-globe-edge-gate] edge steering starts once the cursor has moved on this screen, so a cursor resting in a
+			// corner when the screen opens does not spin the globe. Not reproduced: the original has no such gate: 0x005DC860 reads
+			// the position of the online front end's last mouse move (0x005D5DD0, event 0x10003), which is the canvas centre (0x400,
+			// 0x300, set by 0x005D5770) until the first move after the front end starts, so it steers from the first frame once the
+			// mouse has moved anywhere in the online screens; OpenTPW keeps no move history across the online screens
 			firstMouse ??= input.Mouse;
 			mouseMoved |= NVector2.DistanceSquared( firstMouse.Value, input.Mouse ) > 4;
 			// [BIN:TPW-EXE:0x005DC860 globe steering mode] the Scroll option (0x78D910, options control 0x1D4C7) picks the steering:

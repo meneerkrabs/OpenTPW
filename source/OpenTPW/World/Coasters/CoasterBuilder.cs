@@ -28,6 +28,9 @@ public sealed class CoasterBuilder
 	public CoasterSite Site { get; }
 	public CoasterTrack Track => Ride.Track;
 	public ParkEconomy? Economy => economy();
+
+	/// <summary>The ride's upgrade level (the thing's level byte +0x50), or null when no park economy tracks the station (the generic sandbox and tests).</summary>
+	public int? UpgradeLevel => Economy is { } park && economyInstance() is int id && park.TryGetObject( id, out var state ) ? state.Level : null;
 	private bool loopMode;
 	private int loopPylonsLeft;
 

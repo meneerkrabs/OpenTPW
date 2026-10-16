@@ -79,8 +79,8 @@ public sealed partial class ParkHud
 		{
 			var element = coasterPanelElements[index];
 			var spec = CoasterButtons[index];
-			// the loop button is not on a coaster without a loop pylon (the original hides it on the mine coaster)
-			element.Visible = panel != null && (spec.Button != CoasterToolButton.Loop || panel.Builder.Ride.Definition.HasLoopPylon);
+			// the loop button is hidden below ride level 1 (0x49880F) and on a coaster without a loop pylon
+			element.Visible = panel != null && (spec.Button != CoasterToolButton.Loop || panel.LoopUnlocked);
 			element.Enabled = panel != null && panel.IsEnabled( spec.Button );
 		}
 	}

@@ -833,4 +833,26 @@ public class CoasterPanelTests
 		var plain = builder.Track.BuildPreviewChain( (28, 24), 40, false, false );
 		Assert.AreEqual( CoasterNodeFlags.None, plain!.Value.Chain.Single( node => (node.Flags & CoasterNodeFlags.Cursor) != 0 ).Flags & (CoasterNodeFlags.Loop | CoasterNodeFlags.LoopFirst) );
 	}
+
+	/// <summary>COAST-028: the loop button needs the ride's level byte (thing +0x50) to be at least 1 (tp.exe 0x4980D6, hidden by 0x49880F); a station without an economy is unlocked.</summary>
+	[TestMethod]
+	public void TheLoopButtonNeedsTheRideToBeUpgraded()
+	{
+		var economy = EconomyTestData.Park( initialCash: 50000 );
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( 1100, out var state ) );
+		var ride = new CoasterRide( CoasterDefinition.FromValues( CoasterTests.PcSettings() ), new CoasterWorld( 1 ), "Test Coaster" );
+		var builder = new CoasterBuilder( ride, new CoasterSite( 64, 64 ), () => economy, () => state!.Id );
+		CoasterTests.PlaceStation( builder, (20, 20) );
+		var panel = new CoasterToolPanel( builder );
+		Assert.IsTrue( builder.Ride.Definition.HasLoopPylon );
+		Assert.AreEqual( 0, builder.UpgradeLevel );
+		Assert.IsFalse( panel.LoopUnlocked );
+		Assert.AreEqual( CoasterToolButton.None, panel.EnabledMask & CoasterToolButton.Loop, "level 0 hides the loop button" );
+		state!.Level = 1;
+		Assert.IsTrue( panel.LoopUnlocked );
+		Assert.AreEqual( CoasterToolButton.Loop, panel.EnabledMask & CoasterToolButton.Loop );
+		var (sandbox, _) = NewCoaster();
+		Assert.IsNull( sandbox.UpgradeLevel );
+		Assert.IsTrue( new CoasterToolPanel( sandbox ).LoopUnlocked, "no economy, no level gate" );
+	}
 }

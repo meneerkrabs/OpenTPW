@@ -59,7 +59,7 @@ parameter to [0, 1] and writes it back (`0x430ca0`) and stands the node at groun
 same frame from its cells (`CoasterStationLayout.FromCells`, `[EXT:coaster-station-frame]`).
 
 - **Pylons.** A click places a pylon at the tool's height (the last pylon's height; the
-  panel's loop button switches to loop pylons on coasters that have them). The height is clamped to `[max(fMinHeight, h0), fMaxHeight]`,
+  panel's loop button switches to loop pylons on coasters that have them and are upgraded to level 1: the panel enables the button only when the ride's level byte is at least 1, `0x4980D6`, and hides it at level 0, `0x49880F`). The height is clamped to `[max(fMinHeight, h0), fMaxHeight]`,
   never refused. `h0` and `h1` are the heights of the pylon model's track dummy at the two
   loft poses (the dummy the model's attribute record `0x800000` names), so the node height is
   `h0 + t(h1 − h0)` (`0x430590`, `0x433280`). A pylon stacked on another stands the pylon's stack

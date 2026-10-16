@@ -116,7 +116,8 @@ class HashRound2(unittest.TestCase):
         # 0x86B5046D497B900C (round 1's pin); d620fb7 with schema 1 and the two empty sound fields restored
         # gives 0xB55E94284EBFE91B (89f2db9's pin); d620fb7's own pin was 0x0D8B481BB19391DC (schema 2).
         # Later schema bumps re-pin deliberately; the test pin and the documented current pin must agree.
-        pin = re.search(r'Assert\.AreEqual\( 0x([0-9A-F]{16})UL, park\.Hash', self.test_text)
+        pin = (re.search(r'Assert\.AreEqual\( 0x([0-9A-F]{16})UL, park\.Hash', self.test_text)
+               or re.search(r'const ulong FixedRunHash = 0x([0-9A-F]{16})UL;', self.test_text))
         self.assertIsNotNone(pin)
         schema = re.search(r'public const int SchemaVersion = (\d+);', self.hash_text).group(1)
         doc = read(REPO / 'docs' / 'DETERMINISM.md')

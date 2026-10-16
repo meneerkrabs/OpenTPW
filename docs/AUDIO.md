@@ -379,7 +379,7 @@ Traced in the binary but not triggered yet:
 * The visitor click (`cat_kids` 129, flat) plays whenever a visitor's details open: the status panel's open routine
   (`0x1010B808`, tp.exe `0x4B79B0`) plays it unconditionally, for a click on a visitor in the park, a roster row's
   activation, the map's visitor markers and the selection strip. OpenTPW plays it for the park click and the roster
-  activation; it has no separate status panel (UI-910) and no map markers or strip yet.
+  activation; it has no separate status panel and no map markers or strip yet.
 * Entertainers and guards in a level play their work sounds from their state machines: `cat_staff` 135 at the end of a
   performance (tp.exe `0x4D4810`), 136 when a guard sets off after a prankster (`0x4D6260`) and 137 when he catches it
   (`0x4D6790`), and `cat_kids` 128 when he sets the guest down (`0x4FEB50`). A researcher at work plays `cat_staff` 138 on one draw in sixteen
@@ -424,7 +424,7 @@ stepped by `LobbyEffects` 30 times a second (UI-940; the original runs once per 
   colour whose runtime values are not read (UI-018).
 * **The globe** (`0x100923A8`) sets the rain to 0 and the sky target to (243, 203, 191) and starts its music
   (`cat_globallobbysfx` 2) and ambience (3), stopped when it closes; OpenTPW stops the lobby's own music meanwhile (UI-942).
-* **Entering a park** (`0x10183CC0`) plays `cat_globallobbysfx` 4 flat; the original skips it for game type 2 (UI-942).
+* **Entering a park** (`0x10183CC0`, PC `0x4b8fd0`) plays `cat_globallobbysfx` 4 flat; the original skips it for game type 2. The PC routine also plays global sound 0x62 there, which OpenTPW does not (UI-942).
 
 ## Weather visuals
 

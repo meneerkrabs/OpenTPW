@@ -123,6 +123,16 @@ public class OriginalObject : Entity
 						engine += new System.Numerics.Vector3( OriginalParkPlacement.GetOrigin( field ), 0 );
 					return GameAudio.SoundPosition( engine );
 				} );
+			// the vehicles' voices and emitters are placed in the park grid's frame (the karts' and boats' section units, the tour cars' module units)
+			Runtime.SetVehicleOrigin(
+				() =>
+				{
+					var grid = new System.Numerics.Vector3( Placement.GridOrigin, 0 );
+					if ( Level?.OriginalPark?.Heightfield is { } field )
+						grid += new System.Numerics.Vector3( OriginalParkPlacement.GetOrigin( field ), 0 );
+					return GameAudio.SoundPosition( grid );
+				},
+				() => Placement.GridOrigin );
 			Runtime.SetTourStation( ComputeTourStation );
 			BuildModels();
 			UpdateTransforms();

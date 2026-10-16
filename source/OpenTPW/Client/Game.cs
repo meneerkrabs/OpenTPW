@@ -148,6 +148,9 @@ internal static class Game
 		// Compatibility: --cd-data overlay, media diagnostics, profile/fixes, graphics preset (docs/COMPATIBILITY.md)
 		CompatibilityStartup.Initialize( args, dataDirectory );
 
+		// [EXT:mods] Extensions and data-only mods (docs/MODS.md): resolved once here; mods.json changes apply at the next start.
+		OpenTPW.Mods.ModStartup.Initialize( args, Log.Trace, Log.Warning );
+
 		// Official bonus objects (docs/OBJECTS.md): --bonus-data, else OPENTPW_BONUS_DATA, else the saved bonus folder, else <config>/bonus.
 		var bonusSettings = SetupSettings.Load( SetupSettings.GetDefaultPath() );
 		var bonusRoot = BonusContent.ResolveRoot( GetOption( args, "--bonus-data", "the extracted official bonus content directory" ),
@@ -237,8 +240,10 @@ internal static class Game
 			return;
 		}
 
-		var onlineFolders = OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) );
-		if ( OnlineCommands.Run( args, Settings.Default.GamePath, onlineFolders, Console.WriteLine ) )
+		// [EXT:extension-online-gate] with opentpw.online disabled the online command-line tools refuse and no online folder is set up
+		FeatureGates.RefuseOnlineCommandLine( args );
+		var onlineFolders = FeatureGates.Online ? OnlineFolders.FromEnvironment( GetOption( args, "--online-dir", "an online folder outside the original installation" ) ) : null;
+		if ( onlineFolders != null && OnlineCommands.Run( args, Settings.Default.GamePath, onlineFolders, Console.WriteLine ) )
 			return;
 
 		//

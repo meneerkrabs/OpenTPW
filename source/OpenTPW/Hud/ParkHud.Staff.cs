@@ -200,7 +200,8 @@ public sealed partial class ParkHud
 		SetStaffFirstRow( staffFirstRow );
 	}
 
-	private string StaffName( StaffMember member ) => StaffName( member.Type, member.NameIndex, member.Id );
+	// [BIN:TPW-EXE:0x00504DE0 staff serializer] a member's name is the inline mName[i] (+0x1A0) of the staff thing; a member from an original save keeps the saved one
+	private string StaffName( StaffMember member ) => member.Name ?? StaffName( member.Type, member.NameIndex, member.Id );
 	private string CandidateName( StaffCandidate candidate ) => StaffName( candidate.Type, candidate.NameIndex, candidate.Id );
 	private string StaffName( StaffType type, int nameIndex, int id )
 	{

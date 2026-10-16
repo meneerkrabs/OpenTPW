@@ -227,7 +227,8 @@ per visit, with the download it enters the park from, as the original client sen
 MarkParkVisited message once per park entry. Each accepted report counts one visit, within the limits below;
 the player pages count one Platinum Ticket per counted visit (every visit earned the park's
 owner tickets in the original, voted or not). An owner's visits to their own park do not count,
-and one visitor counts at most once per day per park (ONLINE-076). The
+and one visitor counts at most once per UTC day per park, an OpenTPW guard against farming
+tickets (`EXT:online-visit-count-guard`; the original's guard is not recovered). The
 distinct-visitor list stays separate for the "visited before" flag, and voting
 (`POST /api/v1/parks/{id}/votes`) is its own action with its own limits.
 

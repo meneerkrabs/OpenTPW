@@ -66,9 +66,17 @@ public static class ParkSaveFile
 		public required int NextObjectId { get; init; }
 		public required long DroppedAdmissions { get; init; }
 		public required LedgerData Ledger { get; init; }
+		/// <summary>
+		/// The analyser's caches (the net worth and the 4 × 4 blocks' litter and path counts with their stamps), so a resumed park reads the same
+		/// stale counts as the uninterrupted run; absent in older saves: every cache counts again at its first read. Not part of the run hash.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public AnalyserCacheData? AnalyserCaches { get; init; }
 		public required List<ObjectData> Objects { get; init; }
 		public required List<LoanData> Loans { get; init; }
 		public required List<int> TakenLoanOffers { get; init; }
+		/// <summary>The offers whose stored credit test passed (tp.exe bank offer +0x14); absent in older saves: the new park's test, amount &lt;= 10,000.</summary>
+		public List<int>? AvailableLoanOffers { get; init; }
 		public required List<long> MonthlyAdmissions { get; init; }
 		public required StaffData Staff { get; init; }
 		public required ResearchData Research { get; init; }
@@ -131,6 +139,12 @@ public static class ParkSaveFile
 		public required int Price { get; init; }
 		public required int CostOfGoods { get; init; }
 		public required int ChanceOfLosingPercent { get; init; }
+		/// <summary>A shop's quality of goods; absent while it is the build's 50 (and in older saves, which then use 50).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? QualityOfGoods { get; init; }
+		/// <summary>The amount of the special ingredient (<c>mAmountOfSpecialIngredient</c>); absent while it is the build's 50 (and in older saves, which then use 50).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? IngredientAmount { get; init; }
 		public required bool IsOpen { get; init; }
 		public required int StateOfRepair { get; init; }
 		/// <summary>Exact state of repair; absent in older saves, which then use <see cref="StateOfRepair"/>.</summary>
@@ -138,6 +152,12 @@ public static class ParkSaveFile
 		/// <summary>Ride life gauge; absent in older saves, which then start at 100.</summary>
 		public double? LifeGauge { get; init; }
 		public required bool IsBrokenDown { get; init; }
+		/// <summary>
+		/// The ride update's state 1 as the level last saw it (<see cref="ParkObjectState.ScriptStateBroken"/>), so the first observation after a load counts no
+		/// second breakdown; absent in older saves and for objects no level observed: the first observation then only records the state.
+		/// </summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public bool? ScriptStateBroken { get; init; }
 		public required int MechanicId { get; init; }
 		/// <summary>The turn the claim was taken; absent in older saves and while 0 (an older claim then lapses on the first look, as one taken at turn 0).</summary>
 		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingDefault )]
@@ -220,6 +240,12 @@ public static class ParkSaveFile
 		public required int Id { get; init; }
 		public required StaffType Type { get; init; }
 		public required int NameIndex { get; init; }
+		/// <summary>A name kept from an original save (<see cref="StaffMember.Name"/>); absent for a member named by its name index.</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public string? Name { get; init; }
+		/// <summary>The point (1/256 cell, x and y) an original-save member still walks on to once a world places it (absent: none).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int[]? ResumeDestination { get; init; }
 		public required int Grade { get; init; }
 		public required int TrainingPoints { get; init; }
 		public required long HiredTick { get; init; }
@@ -429,6 +455,30 @@ public static class ParkSaveFile
 		}
 	}
 
+	/// <summary>The analyser's caches (<see cref="ParkEconomy.NetWorth"/>, <see cref="ParkLitter.LitteredInBlock"/>, <see cref="ParkLitter.PathCellsInBlock"/>): only the valid entries.</summary>
+	public sealed class AnalyserCacheData
+	{
+		/// <summary>The cached net worth; absent when no read has counted it yet.</summary>
+		public CachedCount? NetWorth { get; init; }
+		public List<CachedBlock> LitteredBlocks { get; init; } = new();
+		public List<CachedBlock> PathBlocks { get; init; } = new();
+	}
+
+	public sealed class CachedCount
+	{
+		public required int Value { get; init; }
+		/// <summary>The park turn the value was counted at.</summary>
+		public required long Stamp { get; init; }
+	}
+
+	public sealed class CachedBlock
+	{
+		/// <summary>The analyser block, 0..1023 ((y / 4) × 32 + x / 4).</summary>
+		public required int Block { get; init; }
+		public required int Count { get; init; }
+		public required long Stamp { get; init; }
+	}
+
 	public sealed class LitterData
 	{
 		public required int X { get; init; }
@@ -486,6 +536,12 @@ public static class ParkSaveFile
 			LastBalance = park.LastBalance,
 			TurnEnteredRed = park.TurnEnteredRed,
 			Litter = park.Litter.Snapshot().Select( cell => new LitterData { X = cell.X, Y = cell.Y, Type = (int)cell.Type, Collector = cell.Collector, ClaimTurn = cell.ClaimTurn } ).ToList(),
+			AnalyserCaches = new AnalyserCacheData
+			{
+				NetWorth = park.CachedNetWorth is { } worth ? new CachedCount { Value = worth.Value, Stamp = worth.Stamp } : null,
+				LitteredBlocks = park.Litter.LitteredBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList(),
+				PathBlocks = park.Litter.PathBlockCache.Select( entry => new CachedBlock { Block = entry.Block, Count = entry.Count, Stamp = entry.Stamp } ).ToList()
+			},
 			TicketsSpent = park.TicketsSpent,
 			TicketItems = park.TicketItems.Order().ToList(),
 			NextObjectId = park.NextObjectId,
@@ -521,11 +577,14 @@ public static class ParkSaveFile
 				Price = item.Price,
 				CostOfGoods = item.CostOfGoods,
 				ChanceOfLosingPercent = item.ChanceOfLosingPercent,
+				QualityOfGoods = item.QualityOfGoods == GuestAppearance.BuiltQualityOfGoods ? null : item.QualityOfGoods,
+				IngredientAmount = item.IngredientAmount == GuestSpeed.DefaultIngredientAmount ? null : item.IngredientAmount,
 				IsOpen = item.IsOpen,
 				StateOfRepair = item.StateOfRepair,
 				Repair = item.Repair,
 				LifeGauge = item.LifeGauge,
 				IsBrokenDown = item.IsBrokenDown,
+				ScriptStateBroken = item.ScriptStateBroken,
 				MechanicId = item.MechanicId,
 				ClaimTurn = item.ClaimTurn,
 				MaintenanceRequested = item.MaintenanceRequested,
@@ -548,6 +607,7 @@ public static class ParkSaveFile
 				RemainingBalance = loan.RemainingBalance
 			} ).ToList(),
 			TakenLoanOffers = park.TakenOffers.OrderBy( index => index ).ToList(),
+			AvailableLoanOffers = park.AvailableOfferIndices.ToList(),
 			MonthlyAdmissions = park.MonthlyAdmissions.ToList(),
 			Staff = new StaffData
 			{
@@ -556,6 +616,8 @@ public static class ParkSaveFile
 					Id = member.Id,
 					Type = member.Type,
 					NameIndex = member.NameIndex,
+					Name = member.Name,
+					ResumeDestination = member.ResumeDestination is { } resume ? new[] { resume.X, resume.Y } : null,
 					Grade = member.Grade,
 					TrainingPoints = member.TrainingPoints,
 					HiredTick = member.HiredTick,
@@ -679,6 +741,8 @@ public static class ParkSaveFile
 			Require( !item.UpgradeCostDue || item.PendingLevel > item.Level, $"object {item.Id} upgrade cost" );
 			Require( item.BuiltTick <= data.Tick && item.Price >= 0 && item.CostOfGoods >= 0 && item.ChanceOfLosingPercent is >= 0 and <= 100, $"object {item.Id} values" );
 			Require( item.Repair is null || (double.IsFinite( item.Repair.Value ) && item.Repair.Value is >= 0 and <= 100 && (int)item.Repair.Value == item.StateOfRepair), $"object {item.Id} repair" );
+			// the quality setter keeps a byte (0x4e2190); the ingredient amount is a raw word, as the original loader reads it (0x4dcdc1)
+			Require( item.QualityOfGoods is null or >= 0 and <= 255, $"object {item.Id} quality of goods" );
 			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
 			Require( item.ClaimTurn >= 0 && item.ClaimTurn <= ParkCalendar.Turn( data.Tick ) && (item.ClaimTurn == 0 || item.MechanicId != 0), $"object {item.Id} claim turn" );
 			Require( item.WalkAways >= 0 && item.WalkAwaysToday >= 0 && item.WalkAwaysToday <= item.WalkAways
@@ -690,6 +754,8 @@ public static class ParkSaveFile
 			Require( member.Id > 0 && member.Id < data.Staff.NextId && staffIds.Add( member.Id ), $"staff id {member.Id}" );
 			Require( Enum.IsDefined( member.Type ) && member.Grade is >= 0 and < BalanceSettings.GradeCount && member.TrainingPoints is >= 0 and < ParkStaff.TrainingPointsPerGrade, $"staff {member.Id}" );
 			Require( member.Happiness is >= 0f and <= StaffVitals.Maximum && member.Energy is >= 0f and <= StaffVitals.Maximum, $"staff {member.Id} vitals" );
+			Require( member.Name is null || (member.Name.Length is > 0 and <= StaffMember.MaximumNameLength && !member.Name.Contains( '\0' )), $"staff {member.Id} name" );
+			Require( member.ResumeDestination is null || member.ResumeDestination is [>= 0 and < ParkLitter.MapSize * 256, >= 0 and < ParkLitter.MapSize * 256], $"staff {member.Id} resume destination" );
 			Require( (member.BusyTurns is null) != (member.BusyTicks is null) && (member.BusyTurns ?? member.BusyTicks!.Value) >= 0 && (member.AssignedInstanceId == 0 || ids.Contains( member.AssignedInstanceId )), $"staff {member.Id} job" );
 			Require( member.WorldState is not { } world || (StaffWorldData.Fits( member.Type, world.Job ) && world.PatrolArea is { Length: 4 } area
 				&& area[0] is >= 0 and < ParkLitter.MapSize && area[2] >= area[0] && area[2] < ParkLitter.MapSize && area[1] is >= 0 and < ParkLitter.MapSize
@@ -726,6 +792,14 @@ public static class ParkSaveFile
 		Require( data.MechanicCursor >= 0, "mechanic cursor" );
 		Require( data.PriceStatistics is null || data.PriceStatistics.All( ring => ring?.Values is not null )
 			&& ParkPriceStatistics.IsValid( data.PriceStatistics.Select( ring => new PriceStatisticRing( ring.Category, ring.Head, ring.Full, ring.Values ) ).ToList() ), "price statistics" );
+		Require( data.AvailableLoanOffers == null || data.AvailableLoanOffers.Distinct().Count() == data.AvailableLoanOffers.Count && data.AvailableLoanOffers.All( index => index >= 0 ), "available loan offers" );
+		if ( data.AnalyserCaches is { } caches )
+		{
+			Require( caches.NetWorth is null || caches.NetWorth.Stamp >= 0, "net worth cache" );
+			foreach ( var blocks in new[] { caches.LitteredBlocks, caches.PathBlocks } )
+				Require( blocks != null && blocks.All( entry => entry != null && entry.Block is >= 0 and < ParkLitter.BlockCount && entry.Count is >= 0 and <= ParkLitter.BlockSize * ParkLitter.BlockSize && entry.Stamp >= 0 )
+					&& blocks.Select( entry => entry.Block ).Distinct().Count() == blocks.Count, "analyser block caches" );
+		}
 		foreach ( var loan in data.Loans )
 			Require( loan.MonthsRemaining > 0 && loan.MonthsRemaining <= loan.Months && loan.MonthlyRepayment >= 0 && (loan.RemainingBalance is null or >= 0) && data.TakenLoanOffers.Contains( loan.OfferIndex ), $"loan {loan.OfferIndex}" );
 	}
@@ -760,10 +834,13 @@ public static class ParkSaveFile
 				Price = item.Price,
 				CostOfGoods = item.CostOfGoods,
 				ChanceOfLosingPercent = item.ChanceOfLosingPercent,
+				QualityOfGoods = item.QualityOfGoods ?? GuestAppearance.BuiltQualityOfGoods,
+				IngredientAmount = item.IngredientAmount ?? GuestSpeed.DefaultIngredientAmount,
 				IsOpen = item.IsOpen,
 				Repair = item.Repair ?? item.StateOfRepair,
 				LifeGauge = item.LifeGauge ?? 100,
 				IsBrokenDown = item.IsBrokenDown,
+				ScriptStateBroken = item.ScriptStateBroken,
 				MechanicId = item.MechanicId,
 				ClaimTurn = item.ClaimTurn,
 				MaintenanceRequested = item.MaintenanceRequested,
@@ -783,6 +860,18 @@ public static class ParkSaveFile
 				WalkAwayDays = item.WalkAwayDays?.ToList() ?? new()
 			} ),
 			data.Loans.Select( loan => loan.ToAccount() ).ToList(), data.TakenLoanOffers, data.MonthlyAdmissions );
+		if ( data.AnalyserCaches is { } caches )
+		{
+			if ( caches.NetWorth is { } worth )
+				park.RestoreNetWorthCache( worth.Value, worth.Stamp );
+			park.Litter.RestoreBlockCaches( caches.LitteredBlocks.Select( entry => (entry.Block, entry.Count, entry.Stamp) ), caches.PathBlocks.Select( entry => (entry.Block, entry.Count, entry.Stamp) ) );
+		}
+		if ( data.AvailableLoanOffers != null )
+		{
+			if ( data.AvailableLoanOffers.Where( index => settings.Loans.All( offer => offer.Index != index ) ).Select( index => (int?)index ).FirstOrDefault() is int unknown )
+				throw new InvalidDataException( $"Park save is inconsistent: available loan offer {unknown} is not one of the {settings.Theme} loan offers." );
+			park.RestoreLoanAvailability( data.AvailableLoanOffers );
+		}
 		// Older saves keep only the months in the red: the stamp is counted back so that the bank counts as many 30-day months
 		park.RestoreBankWords( data.WithdrawalsEnabled ?? true, data.LastBalance ?? data.Ledger.Balance,
 			data.TurnEnteredRed ?? LegacyTurnEnteredRed( ParkCalendar.Turn( data.Tick ), data.MonthsInRed, data.Ledger.Balance ) );
@@ -791,6 +880,8 @@ public static class ParkSaveFile
 			Id = member.Id,
 			Type = member.Type,
 			NameIndex = member.NameIndex,
+			Name = member.Name,
+			ResumeDestination = member.ResumeDestination is [var resumeX, var resumeY] ? (resumeX, resumeY) : null,
 			Grade = member.Grade,
 			TrainingPoints = member.TrainingPoints,
 			HiredTick = member.HiredTick,

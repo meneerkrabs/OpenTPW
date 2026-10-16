@@ -388,8 +388,8 @@ the helm). Responses of model 1 draw the level's `Advisor_<XXX>.MD2`; the other 
 hat, 47 security, 48 handyman, 8 kiosk, 34 ticket, 58 research, 32 bowler, 18 fast food, 129 theme costume, 159 none (help text, and the
 welcome-like level responses). A fixed sequence's accessory bit `0x10000` (the clips 19 and 20 of sequences 17 and 29) hides the costume,
 the bug head (`0xF79698`, the mesh `0x44B2E0` finds by the name "bug head") and the mouth (the mouth update `0x599B09`-`0x599BDE` shows
-none); the bits `0x20000`–`0x200000` start screen-space effects of the UI particle pool, which are not ported (ADVISOR-026), and `0x40000`
-alone also plays `cat_ui` `0xC5` (`0x598F1C`). The node bits live on the model instance: a clip start sets the bit of its listed nodes only, so
+none); the bits `0x20000`–`0x200000` arrange screen-space ticket effects in effect group 0 (`0x598EAA`), and `0x40000`
+alone also plays `cat_ui` `0xC5` (`0x598F1C`); see "Screen effects" below. The node bits live on the model instance: a clip start sets the bit of its listed nodes only, so
 a prop a clip toggles on stays shown in the next clip: the ticket advice (sequence 29: clips 17, 18, 19, 20) shows Ticket2 from tick 38 of
 clip 18, and the close-up clip 19 lists (hides) the body, eyes, hands and mouths, keeps the ticket and hides it at tick 39
 (`AdvisorAccessories.SequenceHiddenNodes` rebuilds that state from the clip starts and toggles of the sequence). `AdvisorAccessories`, tested without a GPU
@@ -472,9 +472,11 @@ October 14, 2026, from the decrypted Windows `tp.exe` (`[BIN:TPW-EXE:...]` citat
   sum of 0 with a nonzero budget falls back to the generator with the same budget, so 28 is generated (and keeps its timer), and so is
   any row whose clips are missing from the archives: clips 16–20 exist only in the level advisors. The span is then the same sum + 1000
   + the length of clip 15. When the advisor clock reaches the timer (`0x599991`) the update calls the particle effect `0x521E60` (87,
-  90000, 0, 7000), plays sound `0xC6` (global `cat_ui`, flat) and calls `0x4B9340`; OpenTPW plays the sound once per response (the
-  deadline minus the clock as a signed 32-bit difference, not positive), while the particle (template 87, screen-space) and the HUD
-  counter refresh are not ported (ADVISOR-025). Without any clip archive every length is 0 and
+  90000, 0, 7000), plays sound `0xC6` (global `cat_ui`, flat) and calls `0x4B9340`; OpenTPW starts the Key effect (template 87,
+  screen-space: the top right of the screen) and plays the sound once per response (the deadline minus the clock as a signed
+  32-bit difference, not positive). `0x4B9340` refreshes the lobby's key panel and returns at once while that window
+  (`0x7CC4B4`, created by `0x4B8CA0` from the lobby) does not exist, so in the park it does nothing; OpenTPW's lobby has no key
+  panel (ADVISOR-025). Without any clip archive every length is 0 and
   the original returns 1000; OpenTPW keeps speech + 200 + 300 + 1000 for such a partial install (`[EXT:advisor-no-clips]`).
 - **Shown.** The model is shown when any animation other than 12 starts (`0x4732A0` → `0x45BD30`). "Kill advisor"
   (`0x429D60`: animation 12 with the immediate flag, then unlink) hides it at once; it is called by the stop path `0x5996D0` (six
@@ -500,11 +502,11 @@ October 14, 2026, from the decrypted Windows `tp.exe` (`[BIN:TPW-EXE:...]` citat
 - **Events 2/3/4.** Bankruptcy (event 2, `0x4D0370` at the bank's month-end message type 0xC via `0x4D02D0`): balance < 0 (`0x4D04DE`),
   previous balance (+0x11C) < 0 (`0x4D04E4`–`0x4D04EC`) and `__alldiv(0x4F88B0(world+0x2A0, turn entered red +0x120), 2.592·10^13) ≥ 6`
   (`0x4D053B`–`0x4D054F`) post event 2 through `0x40F630(2)` every month while it holds; the turn entered red (+0x120) is set when the balance
-  first goes below zero (`0x4D041A`–`0x4D0432`); it does not close the park. `0x4F88B0` itself is unread. Events 3/4 are posted by the
+  first goes below zero (`0x4D041A`–`0x4D0432`); it does not close the park. `0x4F88B0` gives the park time since the stamp: the unsigned 32-bit turn difference × the calendar rate (15000) / 4 × 10^7, in 100 ns units. Events 3/4 are posted by the
   door routine `0x519EF0` on every press of the open/close button (control `0x4F3B1`) and of the Ctrl-O/Ctrl-C shortcuts (`0x40C410` calls
   it), also when the park is already in that state (event 3 at `0x51A033`, event 4 at `0x51A1C6`, both reached from either state). OpenTPW
   raises 3/4 the same way, from the HUD's door button and shortcuts (`HudHost.ParkDoorPressed` → `AutomaticAdvisor.OnParkDoorPressed`),
-  not from the economy's open/close transition; event 2 still comes from the economy's six-month bankruptcy (ADVISOR-020).
+  not from the economy's open/close transition. Event 2 comes from the economy's month end the same way (`ParkEventKind.BankruptcyMessage`, every month while the condition holds); the bank's own handler of the message loses the park once (ECON-030).
 
 On macOS arm64 (Metal) `--smoke-test --advisor-say 1` passed: 4.25 s wall time for
 4.23 s of speech, mouth sequence Aah > Normal > Aah > Normal, and 491 changed
@@ -531,7 +533,7 @@ model `OriginalAdvisorScoreQueue` and keeps all 31 of its cases as
 | 10 then 0 | Every original-level start (main loop `0x101C2108`/`0x101C2174`) | 10: resets each history's variant, played flag and slaps; the saved tick stays | — |
 | 0 | Level start | 0 (`Welcome.Score`) | 1 → **level** bank sample 1, `Speech/lips/sp_001.LIP` |
 | 0, game type 2 | Level start in Instant Action (the game-type global, TOC −30136, is the one the player selector `0x1013781C` sets to 2) | 323 (`PrebuiltPark.Score`, tutorial group 1) | 587 → global 606 |
-| 2 | `ParkEconomy` bankruptcy (ADVISOR-020) | 106 (`Bankrupted.Score`) | 274/275 → global 424/425 |
+| 2 | `ParkEconomy`'s bank month (`BankruptcyMessage`), every month end more than five months in the red | 106 (`Bankrupted.Score`) | 274/275 → global 424/425 |
 | 3 | Every press of the open button or Ctrl-O (`ParkHud`), also when the park is already open | 128 (`ParkNowOpen.Score`) | 308/309 → global 342/343 |
 | 4 | Every press of the close button or Ctrl-C (`ParkHud`), also when the park is already closed | 129 (`ParkNowClosed.Score`) | 310/311 → global 344/345 |
 | prank message (type 0xE) | A prankster's prank (`GuestSimulation.Pranked`; the bus `0x40fb10` delivers it at once). The message's kind word is the prankster's id modulo 3 (tp.exe `0x4ff2f8`), not the prank | 125, 126 or 127 for kind 0, 1, 2 (`PrankSbomb.Score`, `PrankLitter.Score`, `PrankBalloon.Score`, optional in the file; `0x59b060`) | 302/303, 304/305, 306/307 → global 336–341 |
@@ -566,8 +568,7 @@ Contextual help ("Contextual help" below) adds 81 help messages and eight HUD wi
 score producers and the
 background score scan, research/staff/prank/ride/challenge messages, slaps, the tool-start help and the recovered
 `OriginalAdvisorLipDriver` timing (it needs the original pause-aware advisor
-clock, which OpenTPW does not reconstruct). The bankruptcy producer uses the economy's six-month bankruptcy; the original's monthly guard
-is traced but needs `0x4F88B0` and an economy field for the turn entered red (ADVISOR-020). Read-only visits of
+clock, which OpenTPW does not reconstruct). The bankruptcy producer is the bank's monthly guard (`0x4D0370`, `ParkEventKind.BankruptcyMessage`). Read-only visits of
 shared parks (online extension) and the generic sandbox (`--sandbox`, plain
 `--smoke-test`, sandbox saves) have no automatic advisor.
 
@@ -650,6 +651,28 @@ verification totals are recorded in [PROGRESS.md](PROGRESS.md).
   312 WADs (13,394 members): no LIP-shaped data outside `.LIP` members.
 - `7z l` of `TPWORLD.ISO` (2,989 entries): 20 `.LIP` loose files and 5 `lips.WAD`.
 
+## Screen effects
+
+The ticket and key advice draws screen-space particles (`ParticleScreenSpace`, `AdvisorEffectGroups`). A template with byte
+`+5` set is a screen-space one: its native x and z place it on the screen and its y is ignored. The draw list (`0x51F01A`)
+turns the emitter-scaled position into `((px - 0xC35) << 4) / 49` and `((pz << 4) - 0x927C) / 37` (integer, truncating), so
+native (50000, 37500) is the screen centre and one screen unit is about 50000 native x or 37500 native z; the quad builder
+(`0x57C620`, flag `0x40000`) uses that / 1024 as the vertex position without the view transform, in the screen space the
+advisor is drawn in (−1..1, x right, y down), with the half-height (size >> 6) / 2048 and the quad turned about its centre in
+1/256-turn steps (`0x591430`). Every shipped screen-space template (Button, GoldenTicket, GoldenTicket2, Key, Key2, the message
+tags, KeySparkle, KeyPuff, CongratSparkle, Test2D) has z 0 and blend flags `0x2004`; OpenTPW draws them without depth.
+
+The advisor keeps three effect groups of up to five emitters (`0xF86900`, 0x44 bytes each). `0x5ED5A0` sizes a group (new
+emitters start at the native origin, surplus ones end), `0x5ED660` moves its centre from the last target (or jumps) to a
+point over a time on the advisor clock, `0x5ED700` sets its orbit radii and turns, and every frame `0x5ED770` places emitter
+i of n at the angle `frac(i / n + t * turns) * 512` of the 512-entry table: (cx + rx sin, cy − ry cos), the centre following t
+unclamped and the radii t clamped to 1. A fixed sequence's clip start applies its accessory bits to group 0 (`0x598EAA`, with the
+response active): `0x20000` one GoldenTicket jumping to (0.34, 0.62) with radii (0.01, 0.2), one turn; `0x40000` two
+GoldenTicket2 moving to the centre with radii (0.6, 0.4), two turns, and `cat_ui` `0xC5`; `0x80000` three GoldenTicket2, three
+turns; `0x100000` two fresh GoldenTickets flying to (0.8, −0.8) as the radii shrink to 0; `0x200000` none; each move lasts the
+started clip's table length. The response's start, its end (speech done and the clip sum passed, `0x59992D`) and the kill
+empty group 0. The sequence timer adds the Key effect at (90000, 0, 7000), screen (0.8, −0.8).
+
 ## Approximation register
 
 Every rule below is tagged `// [APPROX:<id>]` at the listed site. `Advisor` logs each one
@@ -664,14 +687,13 @@ table fit). The smoke-test thresholds are test-harness checks, not game rules.
 | ADVISOR-009 | `source/OpenTPW/World/Advisor.cs` | `--advisor-say` plays global clips by number and starts them at its first rendered frame; responses follow the traced global/level selector; the controller says messages 0, 106, 128, 129, 323 and the help messages of eight HUD windows (buy, hire staff, all attractions, loans, finance, park information, all visitors, ticket price) | The other 73 help messages (windows OpenTPW lacks, tool starts, `SetMode` 3 → 203) and the 135 computed score producers (table `0x76E300`) |
 | ADVISOR-012 | `source/OpenTPW/Client/SpeechAudioPlayer.cs` | Mono speech duplicated to both stereo channels; the original submits it unpositioned (`0x51BFC0` with 0,0,0) and the library places flat sounds at (0,1,0) (`0x6BC51D`) | QMixer (outside tp.exe, AUDIO-018) or a capture |
 | ADVISOR-017 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Controller clock starts at 0 for a new park and an original-save import, one controller update per frame; it stands still while the pause menu is open. The original saves the clock as the second word of the `SSEM` (MESS) block (writer `0x402E00`, snapshot `0x402E60`, reader `0x402E30`) and its load sets the clock to it (`0x415140` → `0x402E80` → `0x403160`); it stands still whenever `0x4092A0` pauses: on app deactivation (`0x46B600`, WM_ACTIVATEAPP) and in message boxes (`0x47F020`) | Reading the saved word in the import; which screen each of the pause callers `0x48C87E`, `0x49EFBA`, `0x49F29F`, `0x4A3A6C`, `0x4A93D7`, `0x5F0B7F` is |
-| ADVISOR-020 | `source/OpenTPW/Client/AutomaticAdvisor.cs` | Event 2 comes from the economy's bankruptcy (six months in the red), not the monthly guard of `0x4D0370` (balance and previous balance < 0 and the red-time term ≥ 6); events 3/4 are raised on every open/close button press as in `0x519EF0` | `0x4F88B0` and an economy field for the turn entered red (ParkEconomy belongs to the economy work) |
 | ADVISOR-022 | `source/OpenTPW/World/AdvisorController.cs` | On an original save import, pending advice and history of messages without a bound descriptor (all but 0, 106, 128, 129, 323 and the 81 help messages) are dropped (reported); OpenTPW's own park save stores the controller | The remaining descriptor rows (table `0x76E300`) |
-| ADVISOR-025 | `source/OpenTPW/World/AdvisorSequence.cs` | A fixed sequence's timer (sequences 28 and 29) plays `cat_ui` `0xC6` when the advisor clock reaches it; its particle `0x521E60` (87, 90000, 0, 7000) is not started (template 87 is screen-space, which the particle renderer does not draw) and `0x4B9340` (the HUD golden-ticket/key counter) has no counter to refresh | The screen-space particle draw path and its coordinate mapping; the HUD counter (UI-051) |
-| ADVISOR-026 | `source/OpenTPW/World/AdvisorCostumes.cs` | The level advisors' props (Ticket, MAP, Ticket2, Mutant Eye) follow the clips' node lists and blink toggles carried from clip to clip (`AdvisorAccessories.SequenceHiddenNodes`); the accessory bit `0x10000` hides the costume, the bug head and the mouth, and the key clip's bit `0x40000` plays `cat_ui` `0xC5`; the screen-space effects of the bits `0x20000`-`0x200000` (UI particle pool `0x5ED5A0`, `0x5ED660`, `0x5ED700`) are not started, and the node state is rebuilt at every response while the original keeps the bits on the model instance | The screen-space particle draw path; whether anything resets the node bits between responses (clip 19 hides the body) |
+| ADVISOR-025 | `source/OpenTPW/World/AdvisorSequence.cs` | A fixed sequence's timer (sequences 28 and 29) starts the screen-space Key effect (87 at native (90000, 0, 7000)) and plays `cat_ui` `0xC6`; its call `0x4B9340` refreshes only the lobby's key panel (window `0x7CC4B4`), which OpenTPW's lobby lacks; screen-space particles are drawn in the world pass, under the HUD and the advisor image | Whether the lobby says sequences 28 and 29; the order of the original's particle pass against the HUD and the advisor |
+| ADVISOR-026 | `source/OpenTPW/World/AdvisorCostumes.cs` | The level advisors' props (Ticket, MAP, Ticket2, Mutant Eye) follow the clips' node lists and blink toggles carried from clip to clip (`AdvisorAccessories.SequenceHiddenNodes`); the accessory bit `0x10000` hides the costume, the bug head and the mouth, and the key clip's bit `0x40000` plays `cat_ui` `0xC5`; the bits `0x20000`-`0x200000` arrange the screen-space tickets of effect group 0 (`0x5ED5A0`-`0x5ED770`, in single precision); the node state is rebuilt at every response while the original keeps the bits on the model instance | The node bits of a freshly loaded model and whether anything resets them between responses (clip 19 hides the body); the x87 precision control during the advisor update |
 
 Retired October 14, 2026 (traced in tp.exe, citations at the sites): ADVISOR-008 (audio start), ADVISOR-013 (talking
 flag), ADVISOR-014 (synthesis window), ADVISOR-019 (balance fields +0x18/+0x1C are not read), ADVISOR-016 (the ten fixed
-rows of table `0x76DC18`; the unported timer effect is ADVISOR-025) and ADVISOR-018 (the sampler hides the model at the end of the
+rows of table `0x76DC18`; the timer effect's lobby refresh is ADVISOR-025) and ADVISOR-018 (the sampler hides the model at the end of the
 last clip). ADVISOR-027 (the cut-off slap, the last tutorial record and its F1 replay) retired on October 15, 2026. ADVISOR-002 (costumes) and ADVISOR-023 (the −1..1 screen space, confirmed by the video: the body centre at 0.80 of the
 frame in both axes, `[EXT-EVIDENCE:video tpw-nl 1:50]`) retired on October 14, 2026 (video round). ADVISOR-011 is an extension (`[EXT:advisor-no-device-speech]`), as is ADVISOR-024 (`[EXT:advisor-aspect]`).
 

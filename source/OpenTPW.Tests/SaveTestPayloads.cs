@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -24,6 +25,12 @@ internal static class SaveTestPayloads
 		public string Line1 { get; init; } = "Belly";
 		public string Line2 { get; init; } = "Bounce";
 		public uint State { get; init; }
+		public ushort AssignedStaff { get; init; }
+		public uint CanLoad { get; init; } = 1;
+		public uint RequestedService { get; init; }
+		public uint MarkedTurn { get; init; }
+		/// <summary>The running value of every ring (mTemp).</summary>
+		public int RingToday { get; init; }
 		public uint RingCount { get; init; } = 30;
 		public byte RingFlag { get; init; } = 1;
 		public uint Customers { get; init; } = 7;
@@ -35,6 +42,7 @@ internal static class SaveTestPayloads
 		public int Quality { get; init; } = 50;
 		public int Chance { get; init; } = 100;
 		public uint Price { get; init; } = 20;
+		public int IngredientAmount { get; init; } = 50;
 		public uint QueueCells { get; init; } = 4;
 		public float Gauge48 { get; init; } = 100f;
 		public float LifeGauge { get; init; } = 97f;
@@ -65,13 +73,17 @@ internal static class SaveTestPayloads
 		}
 		writer.Write( new byte[8] );
 		writer.Write( fields.State );
-		writer.Write( new byte[24] );
+		writer.Write( new byte[6] );
+		writer.Write( fields.AssignedStaff );
+		writer.Write( (ushort)0 );
+		writer.Write( fields.CanLoad );
+		writer.Write( new byte[10] );
 		void Ring()
 		{
 			writer.Write( 1u );
 			writer.Write( fields.RingCount );
 			writer.Write( fields.RingFlag );
-			writer.Write( 0u );
+			writer.Write( fields.RingToday );
 			writer.Write( new byte[(int)Math.Min( fields.RingCount, 64 ) * 4] );
 		}
 		Ring();
@@ -90,12 +102,13 @@ internal static class SaveTestPayloads
 		writer.Write( fields.Quality );
 		writer.Write( fields.Chance );
 		writer.Write( fields.Price );
-		writer.Write( 0u );
+		writer.Write( fields.IngredientAmount );
 		writer.Write( fields.QueueCells );
 		writer.Write( fields.Gauge48 );
 		writer.Write( fields.LifeGauge );
 		writer.Write( fields.Repair );
-		writer.Write( new byte[8] );
+		writer.Write( fields.RequestedService );
+		writer.Write( fields.MarkedTurn );
 		writer.Write( fields.Costs );
 		writer.Write( fields.Takings );
 		writer.Write( 0u );
@@ -190,28 +203,132 @@ internal static class SaveTestPayloads
 		return stream.ToArray();
 	}
 
-	/// <summary>Staff body for <paramref name="model"/>: base, opaque person bytes, the staff suffix and a role suffix ending in <paramref name="roleNext"/>.</summary>
+	/// <summary>
+	/// Staff body for <paramref name="model"/>: base, person bytes (zero but for the base position and the walk's accurate destination), the staff suffix and a role
+	/// suffix (<paramref name="role"/>, zero when null) ending in <paramref name="roleNext"/>.
+	/// </summary>
 	public static byte[] Staff( SaveThingModel model, int grade = 2, float happiness = 97, string name = "Nicholas Ricks", uint state = 1, byte percentage = 0,
-		long hired = 125_935_884_000_000_000, ushort roleNext = 0 )
+		long hired = 125_935_884_000_000_000, ushort roleNext = 0, ushort patrolLow = 1, ushort patrolHigh = 0x4000, ushort restArea = 0, uint idle = 0, uint jobsDone = 0,
+		byte[]? role = null, (ushort X, ushort Y) position = default, (ushort X, ushort Y)? destination = null )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
-		writer.Write( new byte[SaveThingChain.PersonBytes] );
+		var person = new byte[SaveThingChain.PersonBytes];
+		BinaryPrimitives.WriteUInt16LittleEndian( person, position.X );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 2 ), position.Y );
+		var (destX, destY) = destination ?? position;
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 20 ), destX );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 22 ), destY );
+		writer.Write( person );
 		writer.Write( grade );
 		writer.Write( happiness );
-		writer.Write( 0u );
+		writer.Write( jobsDone );
 		for ( var index = 0; index < 33; index++ )
 			writer.Write( (ushort)(index < name.Length ? name[index] : 0) );
-		writer.Write( 0x40000001u );
+		writer.Write( patrolLow );
+		writer.Write( patrolHigh );
 		writer.Write( percentage );
-		writer.Write( (ushort)0 );
+		writer.Write( restArea );
 		writer.Write( state );
-		writer.Write( 0u );
+		writer.Write( idle );
 		writer.Write( hired );
 		writer.Write( 93f );
 		var size = SaveThingChain.FixedBodyBytes[model];
-		writer.Write( new byte[size - (int)stream.Length - 2] );
+		var suffix = new byte[size - (int)stream.Length - 2];
+		role?.CopyTo( suffix, 0 );
+		writer.Write( suffix );
 		writer.Write( roleNext );
+		writer.Flush();
+		return stream.ToArray();
+	}
+
+	/// <summary>The guest fields of a synthetic guest body (tp.exe guest serializer 0x004FB530 order).</summary>
+	public sealed record GuestFields
+	{
+		public (ushort X, ushort Y) Position { get; init; } = (5 * 256 + 128, 5 * 256 + 128);
+		public (ushort X, ushort Y)? Destination { get; init; }
+		public ushort BaseSpeed { get; init; } = 100;
+		public uint EspSprite { get; init; }
+		public uint PreviousSpeed { get; init; } = 0x3F800000;
+		public uint BalloonScript { get; init; }
+		public int Cash { get; init; } = 500;
+		public int ExitLevel { get; init; } = 90;
+		public float Happiness { get; init; } = 50;
+		public float Hunger { get; init; } = 20;
+		public float Litter { get; init; } = 5;
+		public float Thirst { get; init; } = 30;
+		public float Meter1B8 { get; init; }
+		public float Toilet { get; init; } = 10;
+		public float Illness { get; init; } = 2;
+		public ushort MajorDest { get; init; }
+		public uint NumRides { get; init; }
+		public byte PersonType { get; init; } = 1;
+		public byte PrankeryIndex { get; init; }
+		public ushort[] PreviousRides { get; init; } = new ushort[4];
+		public ushort[] PreviousTemporaryRides { get; init; } = new ushort[4];
+		public uint QueueMoveDelay { get; init; }
+		public int BalloonLife { get; init; }
+		public uint State { get; init; } = 6;
+		public uint TimeOfLastSpotAnim { get; init; }
+		public uint TimeStartedIdling { get; init; }
+		public uint PaidAdmission { get; init; } = 1;
+	}
+
+	/// <summary>A guest body (525 bytes): the person block, then the guest fields in the serializer's order.</summary>
+	public static byte[] Guest( GuestFields fields )
+	{
+		using var stream = new MemoryStream();
+		using var writer = new BinaryWriter( stream );
+		var person = new byte[SaveThingChain.PersonBytes];
+		BinaryPrimitives.WriteUInt16LittleEndian( person, fields.Position.X );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 2 ), fields.Position.Y );
+		var (destX, destY) = fields.Destination ?? fields.Position;
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 20 ), destX );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 22 ), destY );
+		BinaryPrimitives.WriteUInt16LittleEndian( person.AsSpan( 26 ), fields.BaseSpeed );
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 29 ), fields.EspSprite );
+		// the navigation block (177 bytes) follows mLastRecordedMapId at 33; mPreviousSpeed comes after it
+		BinaryPrimitives.WriteUInt32LittleEndian( person.AsSpan( 35 + 177 ), fields.PreviousSpeed );
+		writer.Write( person );
+		writer.Write( 0u ); // mArrivalDate
+		writer.Write( 0u ); // mArrivalIndex
+		writer.Write( fields.BalloonScript );
+		writer.Write( 0u ); // mBeenAdmitted
+		writer.Write( fields.Cash );
+		writer.Write( fields.ExitLevel );
+		writer.Write( fields.Happiness );
+		writer.Write( fields.Hunger );
+		writer.Write( 0u );
+		writer.Write( 0u );
+		writer.Write( fields.Litter );
+		writer.Write( fields.MajorDest );
+		writer.Write( fields.NumRides );
+		writer.Write( 0u );
+		writer.Write( 0u );
+		writer.Write( 0u );
+		writer.Write( fields.PaidAdmission );
+		writer.Write( 0u );
+		writer.Write( fields.PersonType );
+		writer.Write( fields.PrankeryIndex );
+		for ( var slot = 0; slot < 4; slot++ )
+		{
+			writer.Write( fields.PreviousRides[slot] );
+			writer.Write( fields.PreviousTemporaryRides[slot] );
+		}
+		writer.Write( (ushort)0 );
+		writer.Write( (ushort)0 );
+		writer.Write( fields.QueueMoveDelay );
+		writer.Write( (byte)0 );
+		writer.Write( fields.BalloonLife );
+		writer.Write( (ushort)0 );
+		writer.Write( 6u ); // mSavedState
+		writer.Write( fields.State );
+		writer.Write( fields.Thirst );
+		writer.Write( fields.TimeOfLastSpotAnim );
+		writer.Write( fields.TimeStartedIdling );
+		writer.Write( fields.Meter1B8 );
+		writer.Write( fields.Toilet );
+		writer.Write( fields.Illness );
 		writer.Flush();
 		return stream.ToArray();
 	}
@@ -324,7 +441,7 @@ internal static class SaveTestPayloads
 	public static List<(uint Id, uint Model, byte[] Body)> ParkThings() => new()
 	{
 		(30, (uint)SaveThingModel.Researcher, Staff( SaveThingModel.Researcher )),
-		(12, (uint)SaveThingModel.Attraction, Attraction( new AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90 } )),
+		(12, (uint)SaveThingModel.Attraction, Attraction( new AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, IngredientAmount = 80, Quality = 100, Chance = 30 } )),
 		(10, (uint)SaveThingModel.ChallengeSystem, ChallengeSystem( new[] { (3, 60, 30, 5000), (9, 60, 15, 3000) } )),
 		(9, (uint)SaveThingModel.UIMsgReceiver, Fixed( SaveThingModel.UIMsgReceiver )),
 		(8, (uint)SaveThingModel.Bank, Bank()),

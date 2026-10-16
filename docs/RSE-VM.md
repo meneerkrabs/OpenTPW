@@ -321,10 +321,10 @@ like the original's null-object path its first WAITANIM gets 0 ms and waits
 The script speed is `0.5 + SPEED / 100` (0x551769) with SPEED the ride's speed bias: ride init writes
 `Upgrades[0].InitSpeed` when above 0 (0x4DB51C..0x4DB54C), children copy the parent's (0x551888), the default is 50,
 and upgrade completion (0x4DF8F0) writes the new level's `InitSpeed` when above 0, in the same routine that sets capacity from
-+0x198 and duration from +0x1A0 (`OriginalObjectRuntime.TryApplyCatalogueTierDefaults` with `completion`; CAP and DUR stay
-authored, QUEUE-011). A completed upgrade therefore changes the speed of every later `WAIT`, animation trigger and wait
-of that ride's scripts. Ride-settings speed changes (UI command 0x4AF440 → ride SetSpeed 0x4DD6E0) are not modelled
-(RIDES-033 narrowed): OpenTPW has no ride speed control. A TRIGANIMSPEED operand of 0 or below faults
++0x198 and duration from +0x1A0 (`OriginalObjectRuntime.TryApplyCatalogueTierDefaults` with `completion`, each only when
+above 0). A completed upgrade therefore changes the speed of every later `WAIT`, animation trigger and wait
+of that ride's scripts. The ride window's speed slider sets it too: its apply (0x4AF440, run when the window closes or steps) calls the ride's
+SetSpeed 0x4DD6E0 (`OriginalObjectRuntime.ApplyRideWindow`). A TRIGANIMSPEED operand of 0 or below faults
 (`[EXT:trig-anim-speed-guard]`, formerly RIDES-038: the corpus has four uses, all literal 1800 to 4000).
 
 ## Sandbox Totem
@@ -450,7 +450,7 @@ handler attributes diverge.
 | 6 | `ENDSLICE` | 396 | implemented | name; corpus: sits in idle loops (`ENDSLICE; TEST VAR_RIDECLOSED; BRANCH_NZ`), so it yields until the next slice; flags survive it |
 | 7 | `GETTIME` | 172 | implemented | STP-PPC 0xaf6d8: the shared scheduler clock's 32-bit millisecond word, stored unchanged (no creation timestamp subtracted) |
 | 8 | `ADDOBJ` | 644 | hooked | docs (`type parameter id slot`) |
-| 9 | `ADDOBJ_EXT` | 0 | unknown | no corpus use; not implemented (executing it faults the script) |
+| 9 | `ADDOBJ_EXT` | 0 | hooked | TPW-EXE 0x5520E8 (`type key effect control slot`): ADDOBJ with the control operand; no corpus use |
 | 10 | `KILLOBJ` | 235 | hooked | docs (`slot`); does not touch flags (`ADD VAR_COUNT 0xFFFF; KILLOBJ 200; BRANCH_PV`) |
 | 11 | `FADEOBJ` | 113 | hooked | docs (`slot`) |
 | 12 | `SETOBJPARAM` | 20 | hooked | docs (`slot parameter value`) |

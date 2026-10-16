@@ -12,7 +12,8 @@ namespace OpenTPW;
 /// <item>The bank: balance, admission fee, the year's profit and bought loans.</item>
 /// <item>Placed objects (also those whose footprint is unverified) and fixed items, registered without charge, with
 /// their attraction's price, cost of goods, upgrade level, state of repair and life gauge.</item>
-/// <item>Staff (models 4–8) with grade, training percentage, happiness, state and hire time.</item>
+/// <item>Staff (models 4–8) with grade, training percentage, happiness, energy, name, hire time, idle stamp, patrol rectangle, job and its
+/// target, and the destination their walk goes on to.</item>
 /// </list>
 /// Every value that is read but not imported is listed in <see cref="Evidence"/> with its SAVE approximation. The
 /// saved advisor controller's pending advice and history are imported later by the automatic advisor, which adds its
@@ -25,8 +26,10 @@ public sealed class OriginalEconomyImport
 
 	private readonly List<string> evidence;
 
-	private OriginalEconomyImport( SaveEconomyRecords records, bool parkClosed, int objects, int fixedItems, int staff, List<string> evidence )
+	private OriginalEconomyImport( SaveEconomyRecords records, bool parkClosed, int objects, int fixedItems, int staff, List<string> evidence,
+		IReadOnlyDictionary<int, int> attractionInstances )
 	{
+		AttractionInstances = attractionInstances;
 		Records = records;
 		ParkClosed = parkClosed;
 		ImportedObjects = objects;
@@ -43,6 +46,8 @@ public sealed class OriginalEconomyImport
 	public int ImportedFixedItems { get; }
 	public int ImportedStaff { get; }
 	public IReadOnlyList<string> Evidence => evidence;
+	/// <summary>The economy object id of each imported attraction thing, by its thing id (the save's references to attractions name them so).</summary>
+	public IReadOnlyDictionary<int, int> AttractionInstances { get; }
 
 	/// <summary>Adds the outcome of a later import step (the automatic advisor's controller import) to <see cref="Evidence"/>.</summary>
 	public void Report( string line )
@@ -72,13 +77,13 @@ public sealed class OriginalEconomyImport
 		ImportBank( economy, save.Economy.BankAccount, evidence );
 		if ( save.ResearchLab is { } lab )
 			ImportResearch( economy, lab, evidence );
-		var (objects, fixedItems) = ImportObjects( economy, save, evidence );
-		var staff = ImportStaff( economy, save, evidence );
+		var (objects, fixedItems, things) = ImportObjects( economy, save, evidence );
+		var staff = ImportStaff( economy, save, things, evidence );
 		ReportNotImported( save, evidence );
 		// [BIN:STP-PPC:0x10106708 world reader] mParkClosed is restored with the world variables (0 = open)
 		var closed = world.Variables.ParkClosed != 0;
 		evidence.Add( $"Park {(closed ? "closed" : "open")} (mParkClosed {world.Variables.ParkClosed}), {world.Variables.NumberOfVisitorsToDate} visitors to date (not imported)." );
-		return new OriginalEconomyImport( save.Economy, closed, objects, fixedItems, staff, evidence );
+		return new OriginalEconomyImport( save.Economy, closed, objects, fixedItems, staff, evidence, things.ToDictionary( pair => pair.Key, pair => pair.Value.Id ) );
 	}
 
 	private static void ImportTurn( ParkEconomy economy, SaveWorld world, List<string> evidence )
@@ -157,12 +162,12 @@ public sealed class OriginalEconomyImport
 		economy.RestoreBankWords( account.WithdrawalsEnabled, account.LastBalance, account.TurnEnteredRed );
 		evidence.Add( $"Bank words imported: withdrawals {(account.WithdrawalsEnabled ? "enabled" : "disabled")}, last balance {account.LastBalance}, turn entered red {account.TurnEnteredRed}{(account.Balance < 0 && account.LastBalance < 0 ? $" ({economy.MonthsSinceEnteringRed()} months in the red)" : "")}." );
 		// [BIN:TPW-EXE:0x4d0850 loan payoff] a bought loan's outstanding amount is its monthly repayment (+0x24) times the months not yet repaid (+0x20 − +0x2C), compared unsigned with the balance (0x4d0898)
-		// [APPROX:SAVE-008] the batch balance (+0x10, a pending credit the month message folds into the balance, 0x4d0393) and the loan offers' Available flags (amount at most 10,000 at construction, 0x4cf84b) are not imported (OpenTPW offers every offer not taken); the ledger month opens at the current balance, the bank having no month-opening word (mLastBalance is the balance after the last debit, instalment or payoff) — evidence needed: the writer of the offers' Available flags after construction and the offer list that reads them
+		// [APPROX:SAVE-008] the batch balance is not imported: in tp.exe the batch word +0x10 is a pending credit that the bank's month message adds to the balance, the money-in total and the year's profit and then zeroes (0x4D0393..0x4D03DB); the loan offers' stored credit tests (Available, +0x14) are imported, the constructor having started each as amount at most 10,000 (0x4CF84B). The ledger month opens at the current balance; the bank keeps no month-opening word, mLastBalance being the balance after the last debit, instalment or payoff (0x4D0228, 0x4D08E1) — evidence needed: a save with a non-zero batch word
 		evidence.Add( $"[APPROX:SAVE-008] Not imported: batch balance {account.BatchBalance}; the month opens at the current balance {account.Balance}." );
-		// Available is neither the inverse of Bought nor of the taken offers (docs/reverse/PPC-economy.md), and OpenTPW offers every offer not taken
+		// [BIN:TPW-EXE:0x4d06b0 credit test] each offer's +0x14 is the stored result of the last list build's credit test (the constructor 0x4cf7c0 starts it as amount < 10001); the Available tab lists the offers not bought whose test passed
 		var available = bank.Loans.Where( loan => loan.Available ).Select( loan => loan.Index ).ToArray();
-		var offered = economy.AvailableLoans.Select( offer => offer.Index ).ToArray();
-		evidence.Add( $"[APPROX:SAVE-008] Loan offers' Available flags not imported: the save marks {(available.Length == 0 ? "no offer" : $"{(available.Length == 1 ? "offer" : "offers")} {string.Join( ", ", available )}")} available ({string.Join( ", ", bank.Loans.Select( loan => $"{loan.Index}:{(loan.Available ? 1 : 0)}" ) )}); OpenTPW offers {(offered.Length == 0 ? "none" : string.Join( ", ", offered ))}{(offered.SequenceEqual( available ) ? ", the same" : "")}." );
+		economy.RestoreLoanAvailability( available );
+		evidence.Add( $"Loan offers' stored credit tests imported: {(available.Length == 0 ? "no offer passed" : $"{(available.Length == 1 ? "offer" : "offers")} {string.Join( ", ", available )} passed")}; the Available tab lists {string.Join( ", ", economy.AvailableLoans.Select( offer => offer.Index ).DefaultIfEmpty( -1 ).Select( index => index < 0 ? "none" : index.ToString() ) )} until the dialog tests them again." );
 	}
 
 	/// <summary>The park tick of a saved attraction time stamp (a calendar date and time of the park clock); null when it is not a date.</summary>
@@ -179,17 +184,21 @@ public sealed class OriginalEconomyImport
 		}
 	}
 
-	private static (int Objects, int FixedItems) ImportObjects( ParkEconomy economy, OriginalParkImport save, List<string> evidence )
+	/// <summary>Registers the save's objects; returns the counts and the economy object of each matched attraction thing id.</summary>
+	private static (int Objects, int FixedItems, Dictionary<int, ParkObjectState> Things) ImportObjects( ParkEconomy economy, OriginalParkImport save, List<string> evidence )
 	{
+		var things = new Dictionary<int, ParkObjectState>();
 		var objects = 0;
 		var fixedItems = 0;
 		var unmatched = 0;
 		var notImported = new List<string>();
+		var adjusted = new List<string>();
 		// The order matches ParkObjects.ImportOriginal (placed, unverified footprints, fixed items), which Level.ConnectObjectsToEconomy pairs by Info.Id
 		foreach ( var record in save.PlacedObjects.Select( item => item.Record ).Concat( save.UnresolvedObjects ).Concat( save.FixedItems ) )
 		{
 			var matched = save.FindAttraction( record );
 			// [BIN:STP-PPC:0x100DAD90 object purchase] thing +20 is the clock's stamp at the purchase; the saved attraction time stamp is taken as it, and the saved customer count as the use word +412 (raised with the history record at +420 when a guest leaves, 0x100EAA00 → 0x100E1B44), so an imported used or old object never gets the unused first-30-days scrap refund
+			// [BIN:TPW-EXE:0x004DC89E attraction loader stamp] on the PC the saved date-time is the stamp at +0x18 and the count mNumCustomers (+0x1A0) that the scrap rule 0x004E2290 reads
 			var state = economy.RegisterExisting( record.InfoId, matched is { } stamped ? SavedBuildTick( stamped.Timestamp ) : null, matched is { } counted ? counted.CustomerCount : 0 );
 			if ( record.IsFixedItem )
 				fixedItems++;
@@ -202,7 +211,9 @@ public sealed class OriginalEconomyImport
 			}
 			// [BIN:TPW-EXE:0x004DC12B walk-away load] the attraction loader reads mNumWalkAways (key 0x0075B508) into +0x1A4, the count the refusal raises (0x004E1670)
 			state.WalkAways = attraction.WalkAwayCount;
+			things.TryAdd( attraction.Id, state );
 			// [BIN:STP-PPC:0x100DAF04 attraction serializer] mPricePerUse, mCostOfGoods, mUpgradeLevel and the gauges at +0x40 (state of repair) and +0x44 (life gauge)
+			// [BIN:TPW-EXE:0x004DB7D0 attraction serializer] the PC loader puts the three floats at +0x4C, +0x48 (life gauge) and +0x44 (state of repair) and clamps mPricePerUse to 0–500
 			if ( attraction.UpgradeLevel <= 2 && attraction.StateOfRepair <= 100 && attraction.LifeGauge <= 100 && attraction.CostOfGoods >= 0 )
 			{
 				state.Price = attraction.PricePerUse;
@@ -210,28 +221,38 @@ public sealed class OriginalEconomyImport
 				state.Level = attraction.UpgradeLevel;
 				state.Repair = attraction.StateOfRepair;
 				state.LifeGauge = attraction.LifeGauge;
+				// [BIN:TPW-EXE:0x4dcdc1 attraction loader] mAmountOfSpecialIngredient is loaded into +0x198 as saved
+				state.IngredientAmount = attraction.AmountOfSpecialIngredient;
+				// [BIN:TPW-EXE:0x4dcd29 attraction loader] mQualityOfGoods (+0x18C) and mChanceOfWinning (+0x190) are 4-byte words read without a clamp; the quality getter 0x4e2180 and the win test 0x4e26e2 read their low bytes, the win byte being 100 − the chance of losing (0x4db3a1)
+				state.QualityOfGoods = attraction.QualityOfGoods & 0xFF;
+				// a win byte of 99 and up always wins (R mod 100 <= byte), as a chance of losing of 0 does
+				state.ChanceOfLosingPercent = Math.Clamp( 100 - (attraction.ChanceOfWinning & 0xFF), 0, 100 );
+				ImportAttractionState( economy, attraction, state, adjusted );
 			}
 			else
 				notImported.Add( $"{record.InfoId} (level {attraction.UpgradeLevel}, repair {attraction.StateOfRepair}, life {attraction.LifeGauge}, cost of goods {attraction.CostOfGoods})" );
 		}
-		evidence.Add( $"Registered {objects} placed objects ({save.UnresolvedObjects.Count} with an unverified footprint{(save.UnresolvedObjects.Count == 0 ? "" : $": {string.Join( ", ", save.UnresolvedObjects.Select( item => $"{item.InfoId} at ({item.X}, {item.Y}) {item.Width}x{item.Height} turned {item.Rotation}" ) )}")}) and {fixedItems} fixed items without charge; {objects + fixedItems - unmatched - notImported.Count} took their attraction's price, cost of goods, upgrade level, state of repair and life gauge." );
+		evidence.Add( $"Registered {objects} placed objects ({save.UnresolvedObjects.Count} with an unverified footprint{(save.UnresolvedObjects.Count == 0 ? "" : $": {string.Join( ", ", save.UnresolvedObjects.Select( item => $"{item.InfoId} at ({item.X}, {item.Y}) {item.Width}x{item.Height} turned {item.Rotation}" ) )}")}) and {fixedItems} fixed items without charge; {objects + fixedItems - unmatched - notImported.Count} took their attraction's price, cost of goods, upgrade level, state of repair, life gauge, amount of the special ingredient, quality of goods, chance of winning, state, total profit and maintenance call." );
 		if ( unmatched != 0 || notImported.Count != 0 )
 			evidence.Add( $"{unmatched} objects have no matching attraction thing; outside OpenTPW's ranges and kept at their defaults: {string.Join( ", ", notImported )}." );
-		// [APPROX:SAVE-006] an attraction's saved state enum, chance of winning, third gauge, histories, totals, name lines, operating capacity, duration and speed, quality of goods, queue size and mesh instance ID are not imported (the walk-away count mNumWalkAways is) (the customer count is taken as the use word +412 and the time stamp as the build time +20, unverified) (open/broken state comes from its script, the queue from the laid queue cells); in tp.exe a saved state 1, 2 or 4 persists (0x4E0E00 re-derives only state 0) and the win byte is 100 minus the losing chance (0x4DB39A) — evidence needed: readers of the histories and operating fields and OpenTPW counterparts of the count fields
-		evidence.Add( $"[APPROX:SAVE-006] Not imported for {save.Attractions.Count} attraction things: state ({string.Join( ", ", save.Attractions.Select( item => item.State ).Distinct().Order() )}), chance of winning, third gauge, histories, totals, name lines, operating capacity, duration and speed, quality of goods, queue size, mesh instance ID (the walk-away count is imported as mNumWalkAways; the customer count is the use count and the time stamp the build time, evidence needed: that the save's time stamp is thing +20 and its customer count +412)." );
+		foreach ( var line in adjusted )
+			evidence.Add( $"Attraction value adjusted on import: {line}." );
+		// [BIN:TPW-EXE:0x004DC12B walk-away load] the loader reads mNumWalkAways (+0x1A4) back with the other fields, so it is imported (ImportObjects); 0x004E1670 raises it (from 0x005006B0) and nothing else reads the field
+		evidence.Add( $"Attraction walk-away counts {string.Join( "/", save.Attractions.Select( item => item.WalkAwayCount ) )} imported (mNumWalkAways, +0x1A4)." );
+		// [APPROX:SAVE-006] an attraction's operating capacity, duration and speed (OpenTPW's rides keep their tier's Init values, as the shipped saves do), a closed open word of a working attraction (mCanLoad, the park door opens it), the six daily 30-day rings (OpenTPW keeps this and last month and, apart, a 30-day ring of walk-aways that starts empty at the import, ECON-057), its sign lines (OpenTPW names no attraction), the third gauge (+0x4C, no reader found in the attraction code) and a staff claim no imported job holds (an imported job's claim is taken again with its saved turn, 0x004E01F0; any other claim is dropped, and a claim lapses 100 turns after its turn unless its claimant still targets the object, 0x004E0220, ECON-022) are not imported; the raw links (mesh instance, script and track handles, flags, footprint, entrance and exit cells, upgrade parent and balloon sprite) are rebuilt by the placement, and the queue (its cells, ends and called guest) from the laid queue cells — evidence needed: a ride-settings and quality control with a save target, the readers of the daily rings and of +0x4C
 		foreach ( var item in save.Attractions )
-		{
-			var stamp = item.Timestamp;
-			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: state {item.State}, chance of winning {item.ChanceOfWinning}, third gauge {item.Gauge48}, total costs {item.TotalCosts}, total takings {item.TotalTakings}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, quality of goods {item.QualityOfGoods}, queue size {item.QueueSizeInCells} cells, customers {item.CustomerCount}, time stamp {stamp.Year:D4}-{stamp.Month:D2}-{stamp.Day:D2} {stamp.Hour:D2}:{stamp.Minute:D2}:{stamp.Second:D2}, mesh instance {item.MeshInstanceId}." );
-		}
-		return (objects, fixedItems);
+			evidence.Add( $"[APPROX:SAVE-006] Attraction thing {item.Id} (Info.Id {item.InfoId}) values not imported: operating capacity {item.OperatingCapacity}, duration {item.OperatingDuration}, speed {item.OperatingSpeed}, open word {item.CanLoad}, third gauge {item.Gauge48}, name \"{item.NameLine1}\"/\"{item.NameLine2}\", daily rings {string.Join( "/", item.Histories.Select( ring => ring.Current ) )} (today), claim by thing {item.AssignedStaffMember} on turn {item.TimeMarkedForMaintenance}, queue size {item.QueueSizeInCells} cells, first {item.FirstInQueue}, back {item.BackOfQueue}, called {item.PersonBeingLoaded}, mesh instance {item.MeshInstanceId}, flags 0x{item.Flags:X4}." );
+		return (objects, fixedItems, things);
 	}
 
-	private static int ImportStaff( ParkEconomy economy, OriginalParkImport save, List<string> evidence )
+	private static int ImportStaff( ParkEconomy economy, OriginalParkImport save, IReadOnlyDictionary<int, ParkObjectState> things, List<string> evidence )
 	{
 		var start = save.World.Calendar.FunnyTimeStart;
 		var imported = 0;
 		var adjusted = new List<string>();
+		var jobs = new List<string>();
+		// a guard chases a guest the guest import restores in the park (states 6–10, GuestSimulation.ImportsOriginalState)
+		var chaseable = save.Guests.Where( guest => guest.State is >= 6 and <= 10 ).Select( guest => guest.Id ).ToHashSet();
 		foreach ( var saved in save.Staff )
 		{
 			var type = saved.Model switch
@@ -243,22 +264,20 @@ public sealed class OriginalEconomyImport
 				_ => StaffType.Researcher,
 			};
 			var staff = saved.Staff;
-			// [BIN:STP-PPC:0x100F2C28 staff serializer] grade (+484), percentage through the grade (+488), happiness and energy written as whole-number floats, hired time stamp
+			// [BIN:TPW-EXE:0x00504DE0 staff serializer] grade (+0x1E4), percentage through the grade (+0x1E8), happiness (+0x1F8) and energy (+0x1FC) written as their truncated low byte, the hire stamp (+0x1F0)
+			// [BIN:TPW-EXE:0x004F8690 game clock] the constructor's hire stamp (0x00504BC4) is the clock FunnyTimeStart + rate × mGameTick / 4 seconds, a whole park turn, which the employee window counts days from (0x00505B70)
 			var hired = 0L;
 			var seconds = (staff.HiredTimestamp - start) / TimeStampUnitsPerSecond;
 			if ( staff.HiredTimestamp >= start && seconds / ParkCalendar.SecondsPerTurn <= ParkCalendar.Turn( economy.Tick ) )
 			{
 				hired = ParkCalendar.TickOfTurn( seconds / ParkCalendar.SecondsPerTurn );
-				// OpenTPW's hire tick is a whole turn, so the time stamp is rounded down to the turn it falls in
+				// the original's clock only stamps whole turns, so a stamp inside a turn comes from a modified save; it is taken at that turn's start
 				var rest = staff.HiredTimestamp - start - seconds / ParkCalendar.SecondsPerTurn * ParkCalendar.SecondsPerTurn * TimeStampUnitsPerSecond;
 				if ( rest != 0 )
 					adjusted.Add( $"{saved.Model} thing {saved.Id} hired time stamp {staff.HiredTimestamp} lies {rest / (double)TimeStampUnitsPerSecond} park seconds into turn {seconds / ParkCalendar.SecondsPerTurn}, imported as hired at that turn's start" );
 			}
 			else
 				adjusted.Add( $"{saved.Model} thing {saved.Id} hired time stamp {staff.HiredTimestamp} lies outside the park's calendar (start {start}, turn {ParkCalendar.Turn( economy.Tick )}), imported as hired at tick 0" );
-			// [BIN:TPW-EXE:0x504de0 staff serializer] the saved state is the member's own state word +0x19c (the StaffJob values), which 0x5064f0 maps to the display state
-			// [APPROX:SAVE-003] saved staff are imported with the display state of their saved state word but no job (the word's target, ride, toilet or rest area is not restored), their inline name replaced by name index 0, their hire time stamp rounded down to its park turn and no patrol region, rest area, idle tick or jobs-done count — evidence needed: the units of the patrol corners +0x20a/+0x20c and whether a saved rest-area id names the reloaded object
-			var state = ParkStaff.DisplayState( staff.State );
 			// [BIN:STP-PPC:0x100F3D8C staff rest] happiness and energy are singles clamped to [0, 100] by every rest, idle and work update
 			var happiness = Math.Clamp( staff.Happiness, 0f, 100f );
 			if ( happiness != staff.Happiness )
@@ -270,21 +289,37 @@ public sealed class OriginalEconomyImport
 			var points = Math.Min( staff.GradePercentage, ParkStaff.TrainingPointsPerGrade - 1 );
 			if ( points != staff.GradePercentage )
 				adjusted.Add( $"{saved.Model} thing {saved.Id} grade percentage {staff.GradePercentage} imported as {points} (OpenTPW promotes at {ParkStaff.TrainingPointsPerGrade})" );
-			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, state, hired, energy );
+			var name = staff.Name.Length is > 0 and <= StaffMember.MaximumNameLength ? staff.Name : null;
+			var member = economy.Staff.AddImported( type, staff.Grade, points, happiness, StaffState.Idle, hired, energy, name );
 			// [DATA:SaveThingBase] exact base position is in 1/256-cell units, including the sub-cell offset.
 			member.CellX = saved.Base.X / 256f;
 			member.CellY = saved.Base.Y / 256f;
+			// [BIN:TPW-EXE:0x005054D0 staff state setter] +0x200 is the turn an idle spell started (0 after any state but a patrol), which the idle states compare with IdleDuration[grade]
+			member.IdleStamp = staff.TimeStartedIdling;
+			ImportPatrolArea( saved, member, adjusted );
+			ImportJob( economy, saved, member, things, save.Attractions, chaseable, jobs );
+			// [BIN:TPW-EXE:0x004F8B10 person serializer] the loader routes the person again to mAccurateDestX/Y (+0x18/+0x1A, 1/256 cell) once it is read (0x004FA5F0 at 0x004F9407);
+			// the walk speeds are the person's mBaseSpeed (+0xC0), mPurposeSpeed (+0xC2, the bonus a walk to a job or a chase takes) and mPreviousSpeed (+0xC8)
+			var person = saved.Person;
+			if ( person.AccurateDestX < ParkLitter.MapSize * 256 && person.AccurateDestY < ParkLitter.MapSize * 256 )
+				member.ResumeDestination = (person.AccurateDestX, person.AccurateDestY);
+			else
+				adjusted.Add( $"{saved.Model} thing {saved.Id} walk destination ({person.AccurateDestX}, {person.AccurateDestY}) lies outside the map, not walked to" );
+			if ( GuestSpeed.BaseSpeeds.Contains( person.BaseSpeed ) )
+				member.BaseSpeed = person.BaseSpeed;
+			member.SpeedBonus = person.PurposeSpeed <= byte.MaxValue ? person.PurposeSpeed : 0;
+			var smoothed = BitConverter.Int32BitsToSingle( unchecked( (int)person.PreviousSpeed ) );
+			member.SmoothedSpeed = float.IsFinite( smoothed ) && smoothed >= 0 ? smoothed : 0;
 			imported++;
 		}
 		evidence.Add( $"Imported {imported} staff ({string.Join( ", ", save.Staff.Select( item => $"{item.Model} grade {item.Staff.Grade}" ) )})." );
 		foreach ( var adjustment in adjusted )
-			evidence.Add( $"[APPROX:SAVE-003] Adjusted on import: {adjustment}." );
+			evidence.Add( $"Staff value adjusted on import: {adjustment}." );
+		foreach ( var job in jobs )
+			evidence.Add( job );
+		// [BIN:TPW-EXE:0x00504BDC staff constructor] mJobsDone (+0x204) is set to 0 here and otherwise touched only by the serializer (0x00504EFC, 0x005052ED): nothing reads it, so it needs no import
 		if ( imported != 0 )
-		{
-			evidence.Add( $"[APPROX:SAVE-003] Staff states {string.Join( ", ", save.Staff.Select( item => item.Staff.State ) )} read in STAFFSTATES order; inline names ({string.Join( ", ", save.Staff.Select( item => item.Staff.Name ) )}), jobs, patrol regions, rest areas, idle ticks, role suffixes are not imported." );
-			foreach ( var saved in save.Staff )
-				evidence.Add( $"[APPROX:SAVE-003] {saved.Model} thing {saved.Id} values not imported: jobs 0x{saved.Staff.Jobs:X8}, patrol region {saved.Staff.PatrolRegion}, rest area {saved.Staff.RestAreaId}, idle tick {saved.Staff.IdleTick}, role bytes {Convert.ToHexString( saved.RoleBytes )}, role next ID {saved.RoleNextId}." );
-		}
+			evidence.Add( $"Staff jobs-done counts {string.Join( "/", save.Staff.Select( item => item.Staff.JobsDone ) )} need no import (nothing reads mJobsDone)." );
 		if ( save.StaffHq is { } hq )
 		{
 			// [BIN:TPW-EXE:0x50c800 training split] budget word k serves the role of thing model 5, 4, 6, 7 and 8 for k = 0..4 (handyman, mechanic, entertainer, guard, researcher: StaffType's order), shared by its role's headcount at month end
@@ -323,6 +358,148 @@ public sealed class OriginalEconomyImport
 		else
 			evidence.Add( $"[APPROX:SAVE-004] The save's hiring pool does not read before the calendar ({save.World.OpaqueMacroAiLength} macro-AI bytes); {economy.Staff.Candidates.Count} candidates were drawn." );
 		return imported;
+	}
+
+	/// <summary>
+	/// An attraction's state word, total profit and maintenance call. State 1 (broken down) and 4 (condemned: its life gauge
+	/// truncated to 0) break the object down; 2 (an upgrade requested, 0x004E0050) waits for a mechanic to install the next level, whose cost is
+	/// debited then; 0 is a working choosable object and 3 one that is not choosable (the constructor's SetState at 0x004DB4FB). The total profit is takings − costs (0x004E1C60). A state that does not fit the type is
+	/// reported and the object kept working.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004E0E60 attraction SetState] states 0 and 3 only store the word; 1, 2 and 4 close the object (open word +0x68 = 0, called guest cleared, script variable 6 = 1, the queue dismissed by 0x004E0450) first; any other value logs "Unknown state in CObject::SetState"
+	// [BIN:TPW-EXE:0x004E16B0 takings] a payment adds to mTotalTakings (+0x180) and today's takings (+0x70); [BIN:TPW-EXE:0x004E1920 costs] a cost to mTotalCosts (+0x184) and today's costs (+0xF8)
+	// [BIN:TPW-EXE:0x004E2290 scrap value] the scrap rule reads the stamp at +0x18 (the loader's date-time, 0x004DC89E) against the clock and mNumCustomers (+0x1A0, raised by 0x004E1690 at every visit's end 0x004FD970)
+	private static void ImportAttractionState( ParkEconomy economy, SaveAttraction attraction, ParkObjectState state, List<string> adjusted )
+	{
+		var what = $"attraction thing {attraction.Id} (Info.Id {attraction.InfoId})";
+		economy.Catalog.TryGet( attraction.InfoId, out var info );
+		state.TotalProfit = (long)attraction.TotalTakings - attraction.TotalCosts;
+		state.MaintenanceRequested = attraction.RequestedService != 0;
+		var choosable = info?.IsChoosable ?? false;
+		switch ( attraction.State )
+		{
+			case 0 when choosable:
+			case 3 when !choosable:
+				break;
+			case 1 or 4 when choosable:
+				state.IsBrokenDown = true;
+				// OpenTPW tells state 4 from 1 by the life gauge's byte (ParkEconomy.ObjectState), as the ride update 0x004E14E0 sets it
+				if ( (attraction.State == 4) != (RideBreakdownRules.GaugeByte( attraction.LifeGauge ) == 0) )
+					adjusted.Add( $"{what} state {attraction.State} with life gauge {attraction.LifeGauge} is imported broken down; OpenTPW reads it as state {ParkEconomy.ObjectState( state )}" );
+				break;
+			case 2 when choosable && info!.Upgrades.Count > state.Level + 1:
+				state.PendingLevel = state.Level + 1;
+				state.UpgradeCostDue = true;
+				break;
+			default:
+				adjusted.Add( $"{what} state {attraction.State} does not fit a {(choosable ? "choosable" : "not choosable")} type{(attraction.State == 2 ? " with a next level" : "")}, imported working" );
+				break;
+		}
+	}
+
+	/// <summary>
+	/// The patrol rectangle: the corner cell ids <c>mPatrolRegionBL</c>/<c>mPatrolRegionTR</c>, which the patrol tool stores with the smaller x and y first
+	/// and the clear sets to 1 and 0x4000 (the whole map). Corners that are no cell or out of order are imported as the whole map and reported.
+	/// </summary>
+	// [BIN:TPW-EXE:0x00506ED0 patrol area test] a cell id is y × 128 + x + 1: the test compares (id − 1) &amp; 0x7F and (id − 1) >> 7 with both corners'
+	private static void ImportPatrolArea( SaveStaff saved, StaffMember member, List<string> adjusted )
+	{
+		var staff = saved.Staff;
+		if ( SaveStaffRecord.CellOf( staff.PatrolRegionBottomLeft ) is { } low && SaveStaffRecord.CellOf( staff.PatrolRegionTopRight ) is { } high
+			&& low.X <= high.X && low.Y <= high.Y && high.X < ParkLitter.MapSize && high.Y < ParkLitter.MapSize )
+			member.PatrolArea = (low.X, low.Y, high.X, high.Y);
+		else
+			adjusted.Add( $"{saved.Model} thing {saved.Id} patrol corners {staff.PatrolRegionBottomLeft}/{staff.PatrolRegionTopRight} are no ordered pair of map cells, imported as the whole map" );
+	}
+
+	/// <summary>
+	/// The member's own state word (+0x19C) and what it works on: a mechanic's ride (<c>mObjectToRepair</c>) and repair timer (<c>mDurationOfRepair</c>), a
+	/// handyman's toilet (<c>mToiletToClean</c>) and cleaning start, an entertainer's or researcher's work start, a guard's chase timer, and the rest area
+	/// (<c>mRestArea</c>) of a member walking to or resting in one. Thing ids name the reloaded attraction things. A word that is no state of the role, or
+	/// whose target is not imported, is imported as idle (state 0, which searches on its first update) and reported.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004DA110 mechanic serializer] mDurationOfRepair (+0x214) and mObjectToRepair (+0x218) after the staff suffix; the work state 13 counts +0x214 down (0x004DA830)
+	// [BIN:TPW-EXE:0x004D6D60 handyman serializer] mTargetLitterCell (+0x218), mTimeStartedCleaning (+0x214), mToiletToClean (+0x21A); the clean state 11 ends once the turn passes +0x214 + WorkDuration (0x004D73C0)
+	// [BIN:TPW-EXE:0x004D4460 entertainer serializer] mTimeStartedEntertaining (+0x214); [BIN:TPW-EXE:0x00502760 researcher serializer] mTimeStartedResearching (+0x214)
+	// [BIN:TPW-EXE:0x004D6000 guard serializer] mPerp (+0x212), mProsecutionTimestamp (+0x214, the chase timer the state setter 0x004D65D0 sets)
+	// [BIN:TPW-EXE:0x00506D10 rest end] mRestArea (+0x208) names the rest area only while the member walks to it (state 2) or rests in it (state 3): the rest's end clears it
+	private static void ImportJob( ParkEconomy economy, SaveStaff saved, StaffMember member, IReadOnlyDictionary<int, ParkObjectState> things, IReadOnlyList<SaveAttraction> attractions, IReadOnlySet<int> chaseable, List<string> evidence )
+	{
+		var word = saved.Staff.State;
+		var what = $"{saved.Model} thing {saved.Id}";
+		if ( word > byte.MaxValue || !ParkSaveFile.StaffWorldData.Fits( member.Type, (StaffJob)word ) )
+		{
+			evidence.Add( $"Staff value adjusted on import: {what} state word {word} is no state of a {member.Type}, imported idle." );
+			word = 0;
+		}
+		var job = (StaffJob)word;
+		ParkObjectState? Thing( ushort id ) => id != 0 && things.TryGetValue( id, out var item ) ? item : null;
+		// [BIN:TPW-EXE:0x004E01F0 claim] an attraction names its claimant (+0x5E) and the turn the claim was made (+0x60); the world that places the member takes the claim again with that turn when the target names him
+		// (a turn after the save's own clock is taken as now), so it lapses 100 turns after it was made unless he still targets the object (0x004E0220)
+		void NoteClaim( ushort thingId )
+		{
+			if ( attractions.FirstOrDefault( entry => entry.Id == thingId ) is { } held && held.AssignedStaffMember == saved.Id )
+				member.ResumeClaimTurn = Math.Min( held.TimeMarkedForMaintenance, ParkCalendar.Turn( economy.Tick ) );
+		}
+		string? dropped = null;
+		switch ( job )
+		{
+			case StaffJob.ToRide or StaffJob.Repairing:
+				if ( Thing( saved.RoleTarget ) is { } ride )
+				{
+					member.RideId = ride.Id;
+					NoteClaim( saved.RoleTarget );
+					if ( job == StaffJob.Repairing )
+						member.JobStamp = saved.RoleTimer;
+				}
+				else
+					dropped = $"its object to repair, thing {saved.RoleTarget}, is no imported attraction";
+				break;
+			case StaffJob.ToToilet or StaffJob.Cleaning:
+				if ( Thing( saved.RoleToilet ) is { } toilet && economy.Catalog.TryGet( toilet.InfoId, out var info ) && info.ProvidesRelief )
+				{
+					member.ToiletId = toilet.Id;
+					NoteClaim( saved.RoleToilet );
+					if ( job == StaffJob.Cleaning )
+						member.JobStamp = saved.RoleTimer;
+				}
+				else
+					dropped = $"its toilet, thing {saved.RoleToilet}, is no imported relief object";
+				break;
+			case StaffJob.ToLitter or StaffJob.Sweeping:
+				// [APPROX:SAVE-010] a handyman walking to or sweeping litter (states 8 and 9) is imported idle: the cell grid's litter is not decoded, so his target cell has no litter to claim
+				evidence.Add( $"[APPROX:SAVE-010] {what} litter job (state {word}, cell id {saved.RoleTarget}) imported idle: the saved litter is not imported." );
+				job = StaffJob.Idle;
+				break;
+			case StaffJob.Chasing when chaseable.Contains( saved.RoleTarget ):
+				// the guest keeps its thing id as its guest id (GuestSimulation.ImportOriginal); the chase timer is +0x214
+				member.TargetGuestId = saved.RoleTarget;
+				member.JobStamp = saved.RoleTimer;
+				break;
+			case StaffJob.Chasing or StaffJob.Escorting:
+				// [APPROX:SAVE-002] a guard escorting a guest (state 18) is imported idle, as is one chasing a guest the import does not restore: a held guest (state 17) is not imported
+				evidence.Add( $"[APPROX:SAVE-002] {what} guard job (state {word}, perpetrator thing {saved.RoleTarget}) imported idle: the guest is not imported in the park." );
+				job = StaffJob.Idle;
+				break;
+			case StaffJob.Performing or StaffJob.Researching:
+				member.JobStamp = saved.RoleTimer;
+				break;
+			case StaffJob.ToRestArea or StaffJob.Resting:
+				if ( Thing( saved.Staff.RestAreaId ) is { } rest && economy.IsRestArea( rest.Id ) )
+					member.RestAreaId = rest.Id;
+				else
+					dropped = $"its rest area, thing {saved.Staff.RestAreaId}, is no imported rest area";
+				break;
+		}
+		if ( dropped != null )
+		{
+			evidence.Add( $"Staff value adjusted on import: {what} state {word} imported idle, {dropped}." );
+			job = StaffJob.Idle;
+		}
+		member.Job = job;
+		member.State = ParkStaff.DisplayState( (uint)job );
+		if ( dropped == null && job != StaffJob.Idle )
+			evidence.Add( $"{what} job imported: state {word} ({job}){(member.RideId != 0 ? $", ride object {member.RideId}" : "")}{(member.ToiletId != 0 ? $", toilet object {member.ToiletId}" : "")}{(member.RestAreaId != 0 ? $", rest area object {member.RestAreaId}" : "")}{(member.TargetGuestId != 0 ? $", guest {member.TargetGuestId}" : "")}{(member.JobStamp != 0 ? $", timer {member.JobStamp}" : "")}." );
 	}
 
 	/// <summary>
@@ -439,9 +616,10 @@ public sealed class OriginalEconomyImport
 
 	private static void ReportNotImported( OriginalParkImport save, List<string> evidence )
 	{
-		// [APPROX:SAVE-002] the saved guests (model 1) are not imported; OpenTPW's guest simulation starts with its own arrivals — evidence needed: decoded person/guest fields and an OpenTPW guest save target
-		evidence.Add( $"[APPROX:SAVE-002] {save.GuestCount} saved guests are not imported." );
-		// [APPROX:SAVE-010] the opaque blocks (scripts, particles, messages, clock words, cadence, track/flying rides, RSSE, camera, coasters, advisor presentation, sound, cheats, advisor scoring, UI), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival variables and arrival bytes, the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; of the cell map only path cells, occupancy, MAP attributes and each path cell's texture and turn are read, and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours); object scripts restart from their archives, where the original's RSSE loader (tp.exe 0x5597A0: header RSSE, then per script its 0xF4-byte record and saved buffers, then its OBJ list) restores every script's saved state — evidence needed: decoded block layouts and the original's post-load reconstruction
+		// the guests are restored by the level's guest simulation (GuestSimulation.ImportOriginal), which reports its outcome through Report
+		var byState = string.Join( ", ", save.Guests.GroupBy( guest => guest.State ).OrderBy( group => group.Key ).Select( group => $"{group.Count()} in state {group.Key}" ) );
+		evidence.Add( $"{save.GuestCount} saved guests{(byState.Length == 0 ? "" : $" ({byState})")} are imported by the guest simulation when a level attaches it." );
+		// [APPROX:SAVE-010] the opaque blocks (scripts, particles, messages, clock words, cadence, track/flying rides, RSSE, camera, coasters, advisor presentation, sound, cheats, advisor scoring, UI), the weather, park analyser, tag system, mechanic HQ and UI message receiver things, the world state, arrival variables and arrival bytes, the calendar session start and the advisor controller's time signature, sound, three raw words, mRequestedLastTutorial and mMessagePlaying are not imported (its current record is imported as the last tutorial advice when an automatic advisor attaches), nor are its pending advice and history when no automatic advisor is attached; of the cell map only path cells, occupancy, MAP attributes and each path cell's texture and turn are read (so a handyman walking to or sweeping litter is imported idle), and a saved path tile is drawn only while the cell's path neighbours equal the saved ones and its turn is 0/90/180/270 (otherwise the tile is chosen from the neighbours); object scripts restart from their archives, where the original's RSSE loader (tp.exe 0x5597A0: header RSSE, then per script its 0xF4-byte record and saved buffers, then its OBJ list) restores every script's saved state — evidence needed: decoded block layouts and the original's post-load reconstruction
 		evidence.Add( $"[APPROX:SAVE-010] Not imported: {string.Join( ", ", save.Layout.Blocks.Where( block => block.Block is not (SaveBlock.ActionRecording or SaveBlock.World or SaveBlock.RideSystem) ).Select( block => $"{block.Block} {block.Length} bytes" ) )}; {Things( save.World, SaveThingModel.Weather, SaveThingModel.ParkAnalyser, SaveThingModel.TagSystem, SaveThingModel.MechanicHq, SaveThingModel.UIMsgReceiver )}." );
 		var variables = save.World.Variables;
 		evidence.Add( $"[APPROX:SAVE-010] World values not imported: world state {variables.WorldState}, arrival vehicle sizes {variables.ArrivalVehicleSize1}/{variables.ArrivalVehicleSize2}/{variables.ArrivalVehicleSize3}, current arrival vehicle thing {variables.CurrentArrivalVehicle}, arrival bytes {Convert.ToHexString( save.World.Arrivals )}, calendar session start {save.World.Calendar.SessionStart}." );

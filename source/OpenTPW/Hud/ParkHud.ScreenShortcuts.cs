@@ -239,7 +239,7 @@ public sealed partial class ParkHud
 			Camera.Mode is not ParkCameraMode || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects ||
 			level.CellTool.IsActive || level.IsCoasterToolActive )
 			return false;
-		if ( !GameEditions.Capabilities.Sharing || host.OpenPostcard == null )
+		if ( !FeatureGates.Sharing || host.OpenPostcard == null )
 		{
 			PostMessage( strings.Extra( OpenTpwText.NotAvailable ) );
 			return false;

@@ -728,4 +728,23 @@ public class CoasterPanelTests
 		panel.Hover( 24, 20 );
 		Assert.IsNull( panel.Cursor, "other buttons show no cursor" );
 	}
+
+	/// <summary>COAST-035: a hovered cell whose corner lies more than 300 units from the last node leaves the cursor where it was (tp.exe 0x435e2a).</summary>
+	[TestMethod]
+	public void TheCursorStaysWithinThreeHundredUnitsOfTheLastNode()
+	{
+		var (builder, _) = NewCoaster();
+		builder.Height = 40;
+		var panel = new CoasterToolPanel( builder );
+		panel.Hover( 24, 20 );
+		var before = panel.Cursor;
+		Assert.IsNotNull( before );
+		var last = builder.Track.NodePosition( builder.Site, builder.Track.Nodes[builder.Track.LastIndex] );
+		var far = ((int)(last.X / 10) + 31, (int)(last.Z / 10));
+		Assert.IsFalse( CoasterToolPanel.WithinReach( last, far.Item1, far.Item2 ) );
+		panel.Hover( far.Item1, far.Item2 );
+		Assert.AreEqual( before, panel.Cursor, "an out-of-reach cell keeps the last cursor" );
+		Assert.IsTrue( CoasterToolPanel.WithinReach( new System.Numerics.Vector3( 205, 0, 205 ), 50, 20 ), "(500 − 205)² + (200 − 205)² = 87050" );
+		Assert.IsFalse( CoasterToolPanel.WithinReach( new System.Numerics.Vector3( 205, 0, 205 ), 51, 20 ), "(510 − 205)² = 93025" );
+	}
 }

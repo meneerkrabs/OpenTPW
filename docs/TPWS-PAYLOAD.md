@@ -153,12 +153,54 @@ advisor controller, tag system, park analyser, research lab, weather, bank, UI
 message receiver and challenge system.
 
 Typed readers (`SaveThingRecords.cs`): `SaveAttraction` (model 3), `SaveStaff`
-(4–8: base, raw person bytes, the 105-byte staff suffix, role suffix and its next
+(4–8: base, the person block, the 105-byte staff suffix, role suffix and its next
 ID), `SaveStaffHq` (9), `SaveAdvisorController` (11: eight 21-byte pending
 records, three raw words, 351 history entries, the current record),
-`SaveResearchLab` (14, records raw), `SaveBank` (16) and `SaveChallengeSystem`
-(19). Guests (1), mechanic HQ (10), tag system (12), park analyser (13), weather
-(15) and UI receiver (17) are walked by width and not decoded.
+`SaveResearchLab` (14, records raw), `SaveBank` (16), `SaveChallengeSystem`
+(19) and `SaveGuest` (1, `SaveGuests.cs`). The mechanic HQ (10), tag system (12),
+park analyser (13), weather (15) and UI receiver (17) are walked by width and not
+decoded.
+
+### Person and staff (`SavePerson`, `SaveStaff`)
+
+The person block (390 bytes) is tp.exe's person serializer `0x4f8b10`: the base thing
+(`0x50b090`), the sprite (`0x4d3ee0`: `mSpriteScript`, `mNextAnim`, `mNextServiceInterval`),
+`mAccurateDestX`/`Y` (2 + 2, 1/256 cell), `mAdjustorSpeed`, `mBaseSpeed` (2 + 2), `mCount` (1),
+`mESPSprite` (4, the sprite category: 2 is a costume), `mLastRecordedMapId` (2), the 177-byte
+navigation state (`0x50d150`, kept raw), `mPreviousSpeed`, `mPreviousX`, `mPreviousY`,
+`mStrandedTime` (4 each), `mPurposeSpeed` (2), `mSetDestSuccessfully`, `mSpriteAngle`, `mSpriteID`,
+`mSpriteUnderRideCtrl` (4 each), and the thought block (`0x50bad0`: `mActionHistIndex`, 32 ×
+`mEventHistory[i]`, `mLastThought`, `mThoughtScript`, `mTimeBubbleShown`). Once it has read the
+person the loader routes it again to its accurate destination (`0x4fa5f0` at `0x4f9407`; a
+failure only logs "Couldn't renav to my accurate dest").
+
+The staff suffix (`0x504de0`) holds `mCurrentPayGrade`, the happiness byte, `mJobsDone` (set
+to 0 by the constructor and otherwise only serialized), the 33-unit inline `mName`, the
+patrol corners `mPatrolRegionBL`/`TR` (cell ids y × 128 + x + 1, the area test `0x506ed0`),
+`mPercentageThroughGrade`, `mRestArea` (a thing id), `mState` (the member's own state word
++0x19c), `mTimeStartedIdling` (a park turn), `mTimeHired` (the clock's whole-turn stamp) and
+the energy byte. The role suffixes are: mechanic `mDurationOfRepair` 4, `mObjectToRepair` 2;
+handyman `mTargetLitterCell` 2, `mTimeStartedCleaning` 4, `mToiletToClean` 2; entertainer
+`mTimeStartedEntertaining` 4; guard `mPerp` 2, `mProsecutionTimestamp` 4; researcher
+`mTimeStartedResearching` 4; each followed by the role list's `mNext` 2. In Easymode the five
+staff patrol (state 1) or idle (the guard, since turn 752), their patrol rectangles are the
+whole map (researcher), (47, 18)–(48, 25) (entertainer) and (39, 21)–(56, 28), and they were
+hired on turns 15 and 648.
+
+### Guests (`SaveGuest`)
+
+After the person block a guest holds the 135 bytes of tp.exe's guest serializer `0x4fb530`, in
+its order: `mArrivalDate`, `mArrivalIndex`, `mBalloonScript` (+0x210), `mBeenAdmitted`, `mCash`
+(+0x1a0), `mExitLevel` (+0x1bc), the happiness (+0x19c) and hunger (+0x1a8) bytes, `mLastPosX`/`Y`,
+the litter byte (+0x1b4), `mMajorDest` (2, +0x1dc), the ride, shop, sideshow and win counts,
+`mPaidAdmission`, `mParkOpeningWaitingTime` (+0x200), `mPersonType` (1), `mPrankeryIndex` (1), four
+interleaved `mPreviousRides[i]`/`mPreviousTemporaryRides[i]` pairs (2 + 2), `mQNext`, `mQPrev` (2
+each), `mQueueMoveDelay` (4), `mQueuePos` (1), `mRemainingBalloonLife` (4), `mSavedMajorDest` (2),
+`mSavedState`, `mState` (4 each), the thirst byte (+0x1a4), `mTimeOfLastSpotAnim` (+0x208),
+`mTimeStartedIdling` (+0x1fc), and the bytes of +0x1b8, toilet (+0x1ac) and illness (+0x1b0). The
+seven meters are written as their truncated low byte. Easymode's 13 guests are all on their way
+in: 5 going to the ticket booth (state 2), 1 paid and waiting for the gate (3) and 7 entering the
+park (5), each with 300–750 cash, happiness 50 and one a balloon prankster (102).
 
 ### Cell grid (verified structure)
 
@@ -212,12 +254,12 @@ and bus. Its body is 1,091 bytes while the history buffers hold 30 entries:
 | 8 × 4 | `tv[t]`: game-time stamp year, month, day, hour, minute, second, two opaque values |
 | 4 + 2 | `MeshInstanceID` (110–125 in Easymode), `mFlags` |
 | 33 × (2 + 2) | `mNameA[i]`, `mNameB[i]` interleaved: the two UTF-16 sign lines ("Belly"/"Bounce", gates "LOST"/"Kingdom") |
-| 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` |
-| 24 | `mTopLeft`, `mEntryPos`, `mNext`, `mAssignedStaffMember`, `mBackOfQueue` (u16), `mCanLoad` (u32), `mExitPos`, `mFirstInQ` (u16), `mIsTrackRideValid` (u32), `mUpgradeParent` (u16) |
-| 6 history buffers | each `u32` head, `u32` count, `u8` flag, `u32` first, then count × `u32`; `mNumCustomers` follows the second buffer and `mNumWalkAways` the third |
+| 4 × 3 | `mRideScriptHandle`, `mTrackRideHandle`, `mState` (+0x19c: 0 working, 1 broken down, 2 upgrade requested, 3 not choosable, 4 condemned; SetState `0x4e0e60` closes the object for 1, 2 and 4) |
+| 24 | `mTopLeft`, `mEntryPos`, `mNext`, `mAssignedStaffMember` (+0x5e, the claiming staff thing), `mBackOfQueue` (u16), `mCanLoad` (u32, the open word +0x68), `mExitPos`, `mFirstInQ` (u16), `mIsTrackRideValid` (u32), `mUpgradeParent` (u16) |
+| 6 history buffers | each `u32` `mCurrentEntry`, `u32` `mNumEntries`, `u8` `mWrappedAround`, `u32` `mTemp` (today's running value), then count × `u32`; `mNumCustomers` (+0x1a0) follows the second buffer and `mNumWalkAways` (+0x1a4) the third. The rings are, in order, the daily costs (+0xf8), takings (+0x70), customers (+0x1a8), walk-aways (+0x230), visits (+0x2b8) and the visits' averaged happiness change (+0x340); the day message 0xb rolls each into its ring (`0x4dd320`) |
 | 1 + 1 + 4 + 2 | `mOperatingCapacity`, `mOperatingDuration`, `mOperatingSpeed`, `mPersonBeingLoaded` |
 | 6 × 4 | `mCostOfGoods`, `mQualityOfGoods`, `mChanceOfWinning`, `mPricePerUse` (the loader clamps it to 0–500), `mAmountOfSpecialIngredient`, `mQueueSizeInCells` |
-| 3 × 4 | three `float32` gauges, read into object offsets +0x48, +0x44, +0x40. +0x40 is the state of repair and +0x44 the life gauge of the wear and breakdown code. The original writes each as a whole number 0–255 |
+| 3 × 4 | three `float32` gauges, read into object offsets +0x48, +0x44, +0x40 on the Mac and +0x4c, +0x48, +0x44 on the PC (`0x4db7d0`): the third gauge, the life gauge and the state of repair of the wear and breakdown code. The original writes each as a whole number 0–255 |
 | 4 × 5 + 1 | `mRequestedService`, `mTimeMarkedForMaintenance`, `mTotalCosts`, `mTotalTakings`, `mUpgradeBalloonSprite`, `mUpgradeLevel` (u8) |
 
 `SaveAttraction.Read` parses the body completely and rejects it outside these bounds: non-zero Info.Id;

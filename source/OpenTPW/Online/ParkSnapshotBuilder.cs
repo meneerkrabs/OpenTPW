@@ -50,7 +50,7 @@ public static class ParkSnapshotBuilder
 				? ToRecord( item )
 				: new ParkObjectRecord( item.InfoId, 0, 0, item.Width, item.Height, 0, true ) ) );
 		}
-		var cells = SharedParkLayout.CaptureCells( ParkCellMap.FromOriginal( park.Map, save ) );
+		var cells = SharedParkLayout.CaptureCells( ParkCellMap.FromOriginal( park.Map, save, park.Heightfield ) );
 		var payload = LayoutPayload( park, cells, objects, Array.Empty<CoasterTrackRecord>(), null, null );
 		return payload.ToSnapshot( RequiredContent( park.LevelName, payload.Objects.Select( item => item.InfoId ), park.Catalog ) );
 	}

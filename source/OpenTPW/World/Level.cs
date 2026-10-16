@@ -130,7 +130,8 @@ public partial class Level : IDisposable
 	private ParkResumeSnapshot? resumeState;
 	// Developer tools only (--sandbox); players use the original-style online screens (OnlineScreens).
 	private OnlinePanel? onlinePanel;
-	private OnlineFolders onlineFolders = null!;
+	/// <summary>The developer online panel's folder; null while the online extension is off (no panel then).</summary>
+	private OnlineFolders? onlineFolders;
 
 	/// <param name="start">How a writable original level starts; ignored for the sandbox and for read-only visits (which load the shipped save and run no economy).</param>
 	private static readonly List<WeakReference<Level>> created = new();
@@ -393,6 +394,7 @@ public partial class Level : IDisposable
 				Guests.WeatherDropsFalling = () => Weather is { CurrentDrops: > 0 };
 			using var connectProfile = LoadProfile.Measure( "staff-gate-economy" );
 			ConnectObjectsToEconomy();
+			ImportOriginalGuests();
 			SetupStaff();
 			SetupParkGate();
 		}
@@ -408,7 +410,7 @@ public partial class Level : IDisposable
 			: resumeState != null ? new GuestPathGrid( ParkLayoutSnapshot.RestoreCellMap( resumeState.Layout, land == null ? null : cells => cells.SetUpLand( land, park.Save ) ) )
 			: visitLayout?.Cells != null
 			? new GuestPathGrid( SharedParkLayout.BuildCellMap( park.Map.CellCountX, park.Map.CellCountY, visitLayout.Cells ) )
-			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land ) );
+			: new GuestPathGrid( ParkCellMap.FromOriginal( park.Map, park.Save, land, park.Heightfield ) );
 		BuyLandTool = grid.Cells.Land != null && !IsReadOnlyVisit
 			? new BuyLandTool( () => Guests?.Grid.Cells, () => Park?.Economy, ( x, y ) => ParkLand.IsBarrier( park.Map, park.Heightfield, x, y ) )
 			: null;
@@ -480,6 +482,10 @@ public partial class Level : IDisposable
 		{
 			if ( item.Kind is ParkEventKind.ParkOpened or ParkEventKind.ParkClosed )
 				Gate?.DoorMoved( item.Kind == ParkEventKind.ParkClosed );
+			else if ( item.Kind == ParkEventKind.Bankrupt )
+				Gate?.ParkLost();
+			else if ( item.Kind == ParkEventKind.RideScriptVariable && Enum.IsDefined( (RideVariables)item.InfoId ) )
+				AttractionRuntimeOf( item.InstanceId )?.SetVariable( ((RideVariables)item.InfoId).ToString(), (int)item.Amount );
 			else if ( item.Kind == ParkEventKind.RideRepaired )
 				OpenAfterRepair( item.InstanceId );
 			else if ( item.Kind is ParkEventKind.UpgradeBought or ParkEventKind.MaintenanceRequested )
@@ -579,6 +585,7 @@ public partial class Level : IDisposable
 		SyncOpenState( runtime );
 	}
 
+	// [BIN:TPW-EXE:0x4df8f0 reopen tail] after a repair or an upgrade the ride opens (+0x68 = 1, script variable 6 = 0) whether or not its guard holds (it then logs "Opening non openable ride" five times), and a coaster (track type 3) failing 0x441970 closes again (+0x68 = 0, variable 6 = 1)
 	private void OpenAfterRepair( int instance )
 	{
 		if ( AttractionRuntimeOf( instance ) is not { } runtime )
@@ -676,7 +683,8 @@ public partial class Level : IDisposable
 		Hud = new();
 
 		parkLayout = new ParkLayout( this );
-		onlineFolders = folders ?? OnlineFolders.FromEnvironment();
+		// [EXT:extension-online-gate] the online folder and the developer online panel exist only while the online extension is on
+		onlineFolders = FeatureGates.Online ? folders ?? OnlineFolders.FromEnvironment() : null;
 		TextOverlay = new SandboxTextOverlay();
 		// BF4 UI draws at output size after the world blit, not through the world upscaler.
 		global::Global.Render.OnOverlayRender += DrawTextOverlay;
@@ -702,7 +710,7 @@ public partial class Level : IDisposable
 		Camera.Update();
 		if ( ShowDeveloperPanels && !HidesInterface )
 			parkLayout.Draw();
-		if ( ShowDeveloperPanels && !HidesInterface )
+		if ( ShowDeveloperPanels && !HidesInterface && onlineFolders != null )
 		{
 			onlinePanel ??= new OnlinePanel( this, onlineFolders );
 			onlinePanel.Draw();

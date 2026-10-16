@@ -36,7 +36,7 @@ public sealed partial class StaffWorldSimulation
 	public IGuardGuests? Guests { get; set; }
 
 	// [BIN:TPW-EXE:0x004D73C0 handyman update] once per park turn after the pre-update 0x004D7060 (the speed 0x004FA870 and, while idle, a litter scan every IdleDuration turns): 0 idle until the turn passes +0x200 + IdleDuration[grade] (0x00785330 + 16 × grade); 1 patrol: one walk step, the walk drain while walking (0x005066A0), the job search on arrival or stuck; 8 to litter (0x004D7580); 9 sweep (0x004D76A0); 10 to a toilet (0x004D7790); 11 clean until the turn passes +0x214 + WorkDuration[grade] (0x004DFD80, 0x004DF390); every other state runs the generic staff handler
-	// [APPROX:ECON-022] all staff in a level walk and work as the original's state machines (WANDER-plan §4, StaffWorldSimulation) on the guests' walk (the route search, the steering step 0x004FA2A0 → 0x0050F3B0 with avoid_walls, follow_path and separation, the walk mask +0x188), with the shared walks to a rest area and to the strike area; a striker walks out along arrival lane A (OpenTPW's path grid ends at the park entrance) and is not sent after a prankster until he is back on the paths; separation meets a cell's guests in OpenTPW's cell lists and then the staff on it in member order, where the original walks the cell's head-inserted thing list (0x0050B6A0); the stranded stamp the wander sets (+0x198, 0x004FA670) and SetDest's quick failure while the cells around stay unchanged (0x004FA770) are not kept, as for the guests; a toilet's, bin's or rest area's access cell is its join or entrance cell or first path neighbour; a repair does not wait for a still-broken ride's fix animation (0x004DA830, 0x004E0410); an entertainer's performance has no animation (the original draws one, 0x004D46D0) and the guests do not turn to watch; the guard list runs in hire order, where the original's (game +0x1DA744, next +0x210) is head-inserted at hire (0x004D5DE0 → 0x00519AA0), so the newest guard wins a tie; a picked-up entertainer's or guard's row stays on the cell he was lifted from; a guard carries a caught guest to the park entrance when the ticket booth is no path cell, where the original routes only to the booth gate cell, twice (0x004D6790 → 0x004D8610), and otherwise sets the guest down (0x004FEB50); the mechanics' advice 0x46 (on the way to a ride) is not posted (0x004DA672); a headless economy without a world keeps its own handyman dispatch: the first unclaimed littered cell in the finder's order, park-wide, else the dirtiest toilet, timed from the dispatch — evidence needed: the +0x36 access-cell writer, the guests' reaction to a performance and the animation counts (0x00541FA0 and the fix animations)
+	// [APPROX:ECON-022] all staff in a level walk and work as the original's state machines (WANDER-plan §4, StaffWorldSimulation) on the guests' walk (the route search, the steering step 0x004FA2A0 → 0x0050F3B0 with avoid_walls, follow_path and separation, the walk mask +0x188), with the shared walks to a rest area and to the strike area; a striker walks out along arrival lane A (OpenTPW's path grid ends at the park entrance) and is not sent after a prankster until he is back on the paths; separation meets a cell's guests in OpenTPW's cell lists and then the staff on it in member order, where the original walks the cell's head-inserted thing list (0x0050B6A0); the stranded stamp the wander sets (+0x198, 0x004FA670) and SetDest's quick failure while the cells around stay unchanged (0x004FA770) are not kept, as for the guests; a toilet's, bin's or rest area's access cell is its join or entrance cell or first path neighbour; an entertainer's performance has no animation (the original draws one, 0x004D46D0) and the guests do not turn to watch; the guard list runs in hire order, where the original's (game +0x1DA744, next +0x210) is head-inserted at hire (0x004D5DE0 → 0x00519AA0), so the newest guard wins a tie; a picked-up entertainer's or guard's row stays on the cell he was lifted from; a guard carries a caught guest to the park entrance when the ticket booth is no path cell, where the original routes only to the booth gate cell, twice (0x004D6790 → 0x004D8610), and otherwise sets the guest down (0x004FEB50); the mechanics' advice 0x46 (on the way to a ride) is not posted (0x004DA672); a headless economy without a world keeps its own handyman dispatch: the first unclaimed littered cell in the finder's order, park-wide, else the dirtiest toilet, timed from the dispatch — evidence needed: the +0x36 access-cell writer, the guests' reaction to a performance and the animation counts (0x00541FA0 and the fix animations)
 	// [BIN:TPW-EXE:0x0050B360 staff update] each staff thing in list order: the type's pre-update, then its state handler (4 mechanic 0x00505490 / 0x004DA490, 5 handyman 0x004D7060 / 0x004D73C0, 6 entertainer 0x004D4660 / 0x004D4810, 7 guard 0x004D6360 / 0x004D6410, 8 researcher 0x00502960 / 0x005029F0)
 	public void UpdateStaff( ParkEconomy economy, long turn )
 	{
@@ -44,6 +44,9 @@ public sealed partial class StaffWorldSimulation
 		if ( voices.Count > MaxQueuedVoices )
 			voices.RemoveRange( 0, voices.Count - MaxQueuedVoices );
 		Synchronize();
+		// members loaded from an original save walk on to their saved destination and take back the claims of their jobs before any member updates
+		foreach ( var member in economy.Staff.Members.Where( member => member.ResumeDestination != null && member.Navigation == null && economy.DrivenByWorld( member ) ).ToList() )
+			Resume( economy, member );
 		foreach ( var member in economy.Staff.Members.Where( economy.DrivenByWorld ).ToList() )
 		{
 			var placed = member.Navigation == null;
@@ -113,6 +116,40 @@ public sealed partial class StaffWorldSimulation
 			member.CellY = navigation.Y / (float)Fixed16.One;
 		}
 		CountRestingStaff( economy );
+	}
+
+	/// <summary>
+	/// Places a member loaded from an original save: its walk goes on to the saved destination (<see cref="StaffMember.ResumeDestination"/>) and its job
+	/// claims the ride or toilet it works on again (the attraction's <c>mAssignedStaffMember</c>, +0x5E). A destination no route reaches leaves the member
+	/// where it stands, as the original's loader does when it cannot route again ("Couldn't renav to my accurate dest", <c>0x004F9407</c>).
+	/// </summary>
+	// [BIN:TPW-EXE:0x004F8B10 person serializer] after the person is read, 0x004FA5F0 routes it to (mAccurateDestX, mAccurateDestY) and only logs a failure
+	private void Resume( ParkEconomy economy, StaffMember member )
+	{
+		var destination = member.ResumeDestination!.Value;
+		member.ResumeDestination = null;
+		// the loaded member keeps its saved base speed; Place sets a new member's
+		var baseSpeed = member.BaseSpeed;
+		if ( !Place( member ) )
+			return;
+		member.BaseSpeed = baseSpeed;
+		var cell = (destination.X >> 8, destination.Y >> 8);
+		if ( grid.InBounds( cell.Item1, cell.Item2 ) )
+			Route( member, cell, destination.X & 0xFF, destination.Y & 0xFF );
+		var claimed = member.Job switch
+		{
+			StaffJob.ToRide or StaffJob.Repairing => member.RideId,
+			StaffJob.ToToilet or StaffJob.Cleaning => member.ToiletId,
+			_ => 0
+		};
+		// the claim is taken again with the turn the save recorded (0x004E01F0), the current turn when it recorded none
+		if ( claimed != 0 && economy.TryGetObject( claimed, out var item ) && item.MechanicId == 0 )
+		{
+			economy.Claim( item, member );
+			if ( member.ResumeClaimTurn is { } claimTurn )
+				item.ClaimTurn = claimTurn;
+		}
+		member.ResumeClaimTurn = null;
 	}
 
 	/// <summary>The type's search, run when a member is set down or ends a rest (0x00506D10 dispatches by type: 5 0x004D7100, 6 0x004D46D0, 7 0x004D63D0, 8 0x00502C70).</summary>

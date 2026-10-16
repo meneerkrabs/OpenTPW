@@ -121,8 +121,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 	private void OnParkEvent( ParkEvent item )
 	{
 		// [BIN:TPW-EXE:0x004D0370 bankruptcy event] at the bank's month-end message (type 0xC via 0x4D02D0): balance < 0, previous balance (+0x11C) < 0 and __alldiv(0x4F88B0(world+0x2A0, turn entered red +0x120), 0x1792F8648000 = 2.592e13) >= 6 (0x4D053B–0x4D054F) post event 2 every month while that holds, through 0x40F630(2); the turn entered red is set when the balance first goes below zero (0x4D041A–0x4D0432); it does not close the park
-		// [APPROX:ADVISOR-020] The economy's bankruptcy (six months in the red) stands in for the original's event 2 producer, which posts it every month the red-time condition holds — evidence needed: 0x4F88B0's term and an economy field for the turn entered red (ParkEconomy belongs to the economy work)
-		if ( item.Kind == ParkEventKind.Bankrupt )
+		// [BIN:TPW-EXE:0x004F88B0 park time] the term is (park turn − stamp) as an unsigned 32-bit count × the calendar rate (+0x1C of world+0x2A0, 15000) / 4 × 10^7, the park time in 100 ns units; 0x004D04D9–0x004D04F2 take 0 months unless the balance (+0xC) and mLastBalance (+0x11C) are both below 0 (ParkEconomy.MonthsSinceEnteringRed, raised as ParkEventKind.BankruptcyMessage)
+		if ( item.Kind == ParkEventKind.BankruptcyMessage )
 			Raise( AdvisorGameEvent.Bankrupted );
 	}
 

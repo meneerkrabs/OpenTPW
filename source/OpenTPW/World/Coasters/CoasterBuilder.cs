@@ -109,7 +109,7 @@ public sealed class CoasterBuilder
 		var result = Check( x, y );
 		if ( result is CoasterPlaceResult.OutsideMap or CoasterPlaceResult.NotEditable or CoasterPlaceResult.NoLoopPylon )
 			return result;
-		// [BIN:TPW-EXE:0x435020 place debit] the PC coaster click path (0x524960 → 0x4419b0 → 0x435020) reads the balance (0x6ad810) and ignores it, then debits ftol(cost) through 0x4d01f0 when money is on (0x785a2c == 0): there is no balance comparison on the path, so nothing here refuses a pylon for money
+		// [BIN:TPW-EXE:0x435020 place debit] the PC coaster click path (0x524960 → 0x4419b0 → 0x435020) reads the balance (0x6ad810) and ignores it, then debits ftol(cost) through 0x4d01f0 unless a layout replays (0x785a2c, the replay word set by 0x404140, always 0 here; "money off" is the bank's withdrawals flag +0x114 inside 0x4d01f0): there is no balance comparison on the path, so nothing here refuses a pylon for money
 		Spend( CoasterTrack.Truncate( PreviewCost( x, y ) ), force: true );
 		var secondOfPair = LoopMode && loopPylonsLeft == 1;
 		Track.Append( Ride.World, Ride, x, y, Height, LoopMode, secondOfPair );

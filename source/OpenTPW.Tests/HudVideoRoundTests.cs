@@ -60,6 +60,62 @@ public class HudVideoRoundTests
 	}
 
 	[TestMethod]
+	public void AChallengeOffersAcceptAndDeclineThatAnswerTheWaitingOffer()
+	{
+		var hud = Hud();
+		var park = EconomyTestData.Park();
+		park.AdvanceDays( 541 );
+		Assert.IsNotNull( park.Objectives.Current, "the first offer waits for its answer" );
+		var actions = hud.ChallengeActions( () => park );
+		CollectionAssert.AreEqual( new[] { GameMessageKind.Accept, GameMessageKind.Decline }, actions.Select( action => action.Kind ).ToArray() );
+		hud.PostGameMessage( "offer", actions );
+		Assert.IsTrue( hud.OpenPendingMessage( 0 ) );
+		hud.OpenedActions[0].Clicked();
+		Assert.IsTrue( park.Objectives.Current!.Accepted, "Accept calls the accept (0x4d2df0)" );
+		Assert.IsNull( hud.OpenedMessage, "the answered message closes" );
+		// [BIN:TPW-EXE:0x4d2df0 / 0x4d2ec0] both do nothing unless an offer waits: a second press is ignored
+		Assert.IsFalse( hud.AnswerChallenge( park, accept: false ) );
+		Assert.IsTrue( park.Objectives.Current!.Accepted );
+
+		var declined = EconomyTestData.Park();
+		declined.AdvanceDays( 541 );
+		var index = declined.Objectives.Current!.DefinitionIndex;
+		hud.ChallengeActions( () => declined )[1].Clicked();
+		Assert.IsNull( declined.Objectives.Current, "Decline calls the decline (0x4d2ec0)" );
+		Assert.AreEqual( 1, declined.Objectives.Declines[index] );
+	}
+
+	[TestMethod]
+	public void AnUnansweredOfferWhoseMessageIsGoneIsPostedAgain()
+	{
+		var hud = Hud();
+		var park = EconomyTestData.Park();
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "nothing waits yet" );
+		park.AdvanceDays( 541 );
+		Assert.IsNotNull( park.Objectives.Current );
+		// a loaded park: the tube is empty but the offer waits
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		Assert.AreEqual( 1, hud.PendingMessages.Count );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "once is enough while it is in the tube" );
+		// deleted unread
+		Assert.IsTrue( hud.DeletePendingMessage( 0 ) );
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		// opened, then closed without an answer
+		Assert.IsTrue( hud.OpenPendingMessage( 0 ) );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "the open panel holds it" );
+		hud.CloseMessagePanel();
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		// pushed out of a full tube
+		for ( var index = 0; index < ParkHud.MessageTubeCapacity; index++ )
+			hud.PostGameMessage( $"m{index}" );
+		Assert.IsTrue( hud.KeepChallengeOfferPosted( park ) );
+		Assert.IsTrue( hud.OpenPendingMessage( hud.PendingMessages.Count - 1 ) );
+		hud.OpenedActions[0].Clicked();
+		Assert.IsTrue( park.Objectives.Current!.Accepted );
+		Assert.IsFalse( hud.KeepChallengeOfferPosted( park ), "an answered offer is not posted again" );
+	}
+
+	[TestMethod]
 	public void AMessageStaysInTheTubeUntilItIsHandled()
 	{
 		var hud = Hud();

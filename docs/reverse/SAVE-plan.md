@@ -223,7 +223,7 @@ Import order follows dependencies, not file order:
 | 7 | model 14 | `Research.Completed/Progress/Effort` | layout proven, value mapping open → **APPROX** |
 | 8 | model 19 | `Objectives` (current challenge, next offer time, declines) | slots decoded; next-offer time unit and decline mapping open |
 | 9 | `mGameTick`, calendar, `mRandomSeed` | `Tick`, calendar, `RandomState` | DET-005: only the seed transfer is a qualified checkpoint; the other streams are reconstructed |
-| 10 | model 1 | guests | **no OpenTPW save target exists** (`ParkSaveFile` has no guest list); import must add one or regenerate guests → **APPROX** either way |
+| 10 | model 1 | guests | restored into the guest simulation (`GuestSimulation.ImportOriginal`), whose own save target is the resume snapshot; queued, boarding, riding and held guests stay **APPROX** (SAVE-002) |
 | 11 | model 11 | advisor pending/history | target exists in `AdvisorScoreQueue`; import is the ADVISOR-022 fix; `0xCD` records must be treated as invalid, not as messages |
 | 12 | Scripts, RSSE, Particles, Clock words, Sound, Camera | — | not importable; recreate from object scripts at load (**APPROX**, matches the original reader's own post-load reconstruction only where traced) |
 

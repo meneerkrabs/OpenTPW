@@ -80,6 +80,15 @@ public class OriginalObject : Entity
 	private readonly List<(Model Model, int MeshIndex, Vertex[] Vertices, int Version)> vertexParts = new();
 	/// <summary>Texture slots a clip of this object animates with texture-frame tracks, with their render bindings.</summary>
 	private readonly List<FrameTextures> frameTextures = new();
+	private bool texturesAnimating = true;
+
+	/// <summary>Whether the detail option ANIMATINGTEXTURES lets the texture-frame tracks show: Low turns it off, Medium, High and the extended preset keep it on.</summary>
+	// [BIN:TPW-EXE:0x0044D9CD render flag 0x40] the option record 4 (ANIMATINGTEXTURES, value 0 or 1; the records are 0x3C bytes from TEXTUREQUALITY at 0x744300, their values the words from 0x785874) clears (0) or sets (1) bit 0x40 of the render flags 0x8BD550
+	private static bool TextureAnimationEnabled => IGraphicsSettings.Instance is not { } settings || settings.GetPresetValues( settings.Current.Preset ) is not { } detail || detail.AnimatingTextures != 0;
+
+	/// <summary>The frame a texture slot shows: its track's frame while texture animation is on, else frame 0.</summary>
+	// [BIN:TPW-EXE:0x0057A420 slot texture bind] each model texture slot binds frames[flags 0x40 of 0x8BD550 ? slot word +2 : 0] (0x00575F90), the slot's current frame that the clip update writes (0x00470C90)
+	internal static int TextureFrameToShow( int frame, bool animating ) => animating ? frame : 0;
 	private int textureFrameVersion = -1;
 	private bool deleted;
 	private int hiddenVersion = -1;
@@ -394,12 +403,14 @@ public class OriginalObject : Entity
 			return;
 		var animator = Runtime.Animator;
 		var version = animator.TextureFrameVersion;
-		if ( version == textureFrameVersion )
+		var animating = TextureAnimationEnabled;
+		if ( version == textureFrameVersion && animating == texturesAnimating )
 			return;
 		textureFrameVersion = version;
+		texturesAnimating = animating;
 		foreach ( var frames in frameTextures )
 		{
-			var frame = animator.GetTextureFrame( frames.Slot );
+			var frame = TextureFrameToShow( animator.GetTextureFrame( frames.Slot ), animating );
 			if ( frame == frames.Shown )
 				continue;
 			frames.Shown = frame;

@@ -192,6 +192,7 @@ RIDES-029 docs/reverse/APPROX-TRACE.md
 RIDES-030 docs/OBJECTS.md
 RIDES-033 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 RIDES-034 docs/PROGRESS.md
+RIDES-035 docs/MD2-MODELS.md
 RIDES-036 docs/OBJECTS.md
 RIDES-037 docs/PROGRESS.md
 RIDES-038 docs/OBJECTS.md

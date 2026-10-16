@@ -122,6 +122,12 @@ public static class ParkSaveFile
 		public required int Price { get; init; }
 		public required int CostOfGoods { get; init; }
 		public required int ChanceOfLosingPercent { get; init; }
+		/// <summary>A shop's quality of goods; absent while it is the build's 50 (and in older saves, which then use 50).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? QualityOfGoods { get; init; }
+		/// <summary>The amount of the special ingredient (<c>mAmountOfSpecialIngredient</c>); absent while it is the build's 50 (and in older saves, which then use 50).</summary>
+		[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+		public int? IngredientAmount { get; init; }
 		public required bool IsOpen { get; init; }
 		public required int StateOfRepair { get; init; }
 		/// <summary>Exact state of repair; absent in older saves, which then use <see cref="StateOfRepair"/>.</summary>
@@ -465,6 +471,8 @@ public static class ParkSaveFile
 				Price = item.Price,
 				CostOfGoods = item.CostOfGoods,
 				ChanceOfLosingPercent = item.ChanceOfLosingPercent,
+				QualityOfGoods = item.QualityOfGoods == GuestAppearance.BuiltQualityOfGoods ? null : item.QualityOfGoods,
+				IngredientAmount = item.IngredientAmount == GuestSpeed.DefaultIngredientAmount ? null : item.IngredientAmount,
 				IsOpen = item.IsOpen,
 				StateOfRepair = item.StateOfRepair,
 				Repair = item.Repair,
@@ -615,6 +623,8 @@ public static class ParkSaveFile
 			Require( item.Level is >= 0 and <= 2 && item.PendingLevel is >= 0 and <= 2 && item.StateOfRepair is >= 0 and <= 100 && item.Statistics.Length == 9, $"object {item.Id}" );
 			Require( item.BuiltTick <= data.Tick && item.Price >= 0 && item.CostOfGoods >= 0 && item.ChanceOfLosingPercent is >= 0 and <= 100, $"object {item.Id} values" );
 			Require( item.Repair is null || (double.IsFinite( item.Repair.Value ) && item.Repair.Value is >= 0 and <= 100 && (int)item.Repair.Value == item.StateOfRepair), $"object {item.Id} repair" );
+			// the quality setter keeps a byte (0x4e2190); the ingredient amount is a raw word, as the original loader reads it (0x4dcdc1)
+			Require( item.QualityOfGoods is null or >= 0 and <= 255, $"object {item.Id} quality of goods" );
 			Require( item.LifeGauge is null || (double.IsFinite( item.LifeGauge.Value ) && item.LifeGauge.Value is >= 0 and <= 100), $"object {item.Id} life gauge" );
 		}
 		var staffIds = new HashSet<int>();
@@ -689,6 +699,8 @@ public static class ParkSaveFile
 				Price = item.Price,
 				CostOfGoods = item.CostOfGoods,
 				ChanceOfLosingPercent = item.ChanceOfLosingPercent,
+				QualityOfGoods = item.QualityOfGoods ?? GuestAppearance.BuiltQualityOfGoods,
+				IngredientAmount = item.IngredientAmount ?? GuestSpeed.DefaultIngredientAmount,
 				IsOpen = item.IsOpen,
 				Repair = item.Repair ?? item.StateOfRepair,
 				LifeGauge = item.LifeGauge ?? 100,

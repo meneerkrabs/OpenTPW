@@ -103,6 +103,14 @@ public class UpgradeCatalogueDefaultsTests
 			"InitSpeed and InitDuration 0 write nothing: the player's speed stays; DUR is the script's own 77" );
 		Assert.AreEqual( 15, w.One.Runtime.Settings.Duration, "the DUR word keeps the player's setting" );
 	}
+	/// <summary>WALK-001: the shop sale reads the object's amount of the special ingredient, which the level mirrors from its economy record each tick.</summary>
+	[TestMethod]
+	public void TheLevelMirrorsTheEconomyRecordsIngredientAmountToTheBridge()
+	{
+		var w = World(); Assert.AreEqual( GuestSpeed.DefaultIngredientAmount, w.One.Visitors.IngredientAmount );
+		w.State.IngredientAmount = 80; Call( w.Level, "SyncObjectEconomy" ); Assert.AreEqual( 80, w.One.Visitors.IngredientAmount );
+		Assert.AreEqual( GuestSpeed.DefaultIngredientAmount, w.Two.Visitors.IngredientAmount, "only the record's own object" );
+	}
 	/// <summary>The completion's common entry (0x4df8f0) sets the state of repair to 100.0 before its upgrade branch.</summary>
 	[TestMethod]
 	public void AnUpgradeCompletionRestoresTheStateOfRepair()

@@ -35,6 +35,7 @@ internal static class SaveTestPayloads
 		public int Quality { get; init; } = 50;
 		public int Chance { get; init; } = 100;
 		public uint Price { get; init; } = 20;
+		public int IngredientAmount { get; init; } = 50;
 		public uint QueueCells { get; init; } = 4;
 		public float Gauge48 { get; init; } = 100f;
 		public float LifeGauge { get; init; } = 97f;
@@ -90,7 +91,7 @@ internal static class SaveTestPayloads
 		writer.Write( fields.Quality );
 		writer.Write( fields.Chance );
 		writer.Write( fields.Price );
-		writer.Write( 0u );
+		writer.Write( fields.IngredientAmount );
 		writer.Write( fields.QueueCells );
 		writer.Write( fields.Gauge48 );
 		writer.Write( fields.LifeGauge );
@@ -324,7 +325,7 @@ internal static class SaveTestPayloads
 	public static List<(uint Id, uint Model, byte[] Body)> ParkThings() => new()
 	{
 		(30, (uint)SaveThingModel.Researcher, Staff( SaveThingModel.Researcher )),
-		(12, (uint)SaveThingModel.Attraction, Attraction( new AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90 } )),
+		(12, (uint)SaveThingModel.Attraction, Attraction( new AttractionFields { PositionX = 1 * 256 + 128, PositionY = 1 * 256 + 128, Angle = 0, Price = 30, Level = 0, Repair = 80, LifeGauge = 90, IngredientAmount = 80 } )),
 		(10, (uint)SaveThingModel.ChallengeSystem, ChallengeSystem( new[] { (3, 60, 30, 5000), (9, 60, 15, 3000) } )),
 		(9, (uint)SaveThingModel.UIMsgReceiver, Fixed( SaveThingModel.UIMsgReceiver )),
 		(8, (uint)SaveThingModel.Bank, Bank()),

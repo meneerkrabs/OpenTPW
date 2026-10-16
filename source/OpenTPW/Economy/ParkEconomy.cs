@@ -1005,6 +1005,22 @@ public sealed class ParkEconomy : IParkEconomy
 			item.ChanceOfLosingPercent = Math.Clamp( chanceOfLosingPercent.Value, 0, 100 );
 	}
 
+	/// <summary>
+	/// The shop window's settings (<c>0x4b0aa0</c>): the amount of the special ingredient (<c>0x4e21e0</c> stores the word at <c>+0x198</c>) and the
+	/// quality of goods (<c>0x4e2190</c> stores its low byte at <c>+0x18C</c>); null leaves a value as it is.
+	/// </summary>
+	// [BIN:TPW-EXE:0x4e2190 SetQualityOfGoods] ride +0x18c = the argument & 0xff; [BIN:TPW-EXE:0x4e21e0 SetAmountOfSpecialIngredient] ride +0x198 = the argument (no clamp)
+	public void SetShopSettings( int instanceId, int? qualityOfGoods = null, int? ingredientAmount = null )
+	{
+		var item = RequireObject( instanceId );
+		if ( item.Kind != ParkObjectKind.Shop )
+			throw new InvalidOperationException( "Only shops have a quality of goods and an ingredient amount." );
+		if ( qualityOfGoods != null )
+			item.QualityOfGoods = qualityOfGoods.Value & 0xFF;
+		if ( ingredientAmount != null )
+			item.IngredientAmount = ingredientAmount.Value;
+	}
+
 	private ParkObjectState RequireObject( int instanceId ) =>
 		objects.TryGetValue( instanceId, out var item ) ? item : throw new InvalidOperationException( $"No park object {instanceId}." );
 

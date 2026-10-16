@@ -166,6 +166,7 @@ public class OriginalSaveImportTests
 		Assert.AreEqual( (1, 1), (import.ImportedObjects, import.ImportedFixedItems) );
 		var bouncy = economy.Objects.Single( item => item.InfoId == 1100 );
 		Assert.AreEqual( (30, 12, 0, 80.0, 90.0), (bouncy.Price, bouncy.CostOfGoods, bouncy.Level, bouncy.Repair, bouncy.LifeGauge) );
+		Assert.AreEqual( 80, bouncy.IngredientAmount, "mAmountOfSpecialIngredient is imported as saved (tp.exe 0x4dcdc1)" );
 		var attraction = save.Attractions.Single( item => item.InfoId == 1100 );
 		var stamp = attraction.Timestamp;
 		Assert.AreEqual( ParkCalendar.TickAtSeconds( (long)(new DateTime( stamp.Year, stamp.Month, stamp.Day, stamp.Hour, stamp.Minute, stamp.Second ) - ParkCalendar.Epoch).TotalSeconds ), bouncy.BuiltTick, "the saved time stamp is the build time" );

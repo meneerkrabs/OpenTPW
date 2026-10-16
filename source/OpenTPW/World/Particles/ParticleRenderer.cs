@@ -14,11 +14,11 @@ namespace OpenTPW;
 // [BIN:STP-PPC:engine_shared 0x1ACC8 particle draw] over the emitter slots, culled by bounding box; a camera-facing quad of half-size size/1024 times the sprite scale, rotated by the spin
 // [BIN:STP-PPC:engine_shared 0x1ACC8 blend] untextured: SRC_ALPHA, ONE_MINUS_SRC_ALPHA; render flags 0x2004: SRC_ALPHA, ONE; flags 0x4: ONE, ONE; otherwise the sprite's own alpha blend
 // [BIN:TPW-EXE:0x57C620 draw driver] one quad per particle in slot order 0..119, newest particle first, each with its own blend state; the render flags apply to untextured particles too
-// [APPROX:PTCL-905] OpenTPW groups the quads into three blend batches (alpha, source-alpha-over-one, one-plus-one), each in emitter slot order, depth-tested without depth writes and unsorted; the original submits one batch per particle in that order (0x565F90), whose state word (decoder 0x567620) keeps depth writes on unless flags 0x4000 add 0x800, draws an untextured particle opaque (0x1256) when its alpha byte is 0 or >= 0xF0 and by alpha with an alpha test at 0x10/255 (0x556) otherwise, and whose triangles are depth-sorted within the batch when the state lacks 0x1000/0x2000 (0x565590 -> 0x565490); the order across batches is not read
+// [APPROX:PTCL-905] OpenTPW draws the quads in the original's order (0x565F90: slots ascending, newest particle first) as runs of one blend, depth-tested without depth writes and with no alpha test; the original gives every particle its own state word (decoder 0x567620): depth writes unless flags 0x4000 add 0x800, an untextured particle opaque (0x1256) when its alpha byte is 0 or >= 0xF0 and by alpha with an alpha test at 0x10/255 (0x556) otherwise, 0x200522 / 0x200552 for the add blends with that alpha test, MAGFILTER point for flags 0x20000, and its two triangles depth-sorted when the state lacks 0x1000/0x2000 (0x565590 -> 0x565490); the particle shader has no alpha test and the materials no depth-writing or opaque variant
 public sealed class ParticleRenderer : Entity
 {
 	private const int VerticesPerQuad = 6;
-	/// <summary>The width factor of an untextured particle; the original multiplies by the projection's aspect (tp.exe DAT_008BCBCC, value untraced).</summary>
+	/// <summary>The width factor of an untextured world particle: the original's clip-space factor DAT_008BCBCC (display height / width, 0x582EB0) is the square of an aspect-correct projection.</summary>
 	private const float UntexturedWidthFactor = 1f;
 	/// <summary>Cull margin around an emitter's particle bounds, in 1/64 original units (a particle's own size).</summary>
 	private const int CullMargin = 16 * 64;
@@ -38,8 +38,8 @@ public sealed class ParticleRenderer : Entity
 	private readonly List<ParticleEmitterBounds> bounds = new();
 	private readonly HashSet<int> visibleEmitters = new();
 	private readonly Vertex[] vertices;
-	// three blend batches of world particles, then the same three of screen-space particles
-	private readonly (int First, int Count)[] ranges = new (int First, int Count)[6];
+	// consecutive quads of one kind (blend and world or screen-space), in the original's draw order: slots ascending, newest particle first
+	private readonly List<(int Kind, int First, int Count)> runs = new();
 	private Texture? atlasTexture;
 	private Material<ObjectUniformBuffer>? alphaMaterial;
 	private Material<ObjectUniformBuffer>? additiveMaterial;
@@ -130,22 +130,21 @@ public sealed class ParticleRenderer : Entity
 		var target = global::Global.Render.MultisampledFramebuffer;
 		var screenAspect = target.Width > 0 ? (float)target.Height / target.Width : 1f;
 		var vertexCount = 0;
-		for ( var rangeIndex = 0; rangeIndex < ranges.Length; rangeIndex++ )
+		runs.Clear();
+		foreach ( var sprite in sprites )
 		{
-			var batch = (Batch)(rangeIndex % 3);
-			var screenSpace = rangeIndex >= 3;
+			var batch = BatchOf( sprite );
+			var screenSpace = sprite.ScreenSpace;
+			// screen-space emitters have no world bounds to cull by (the original leaves their bounds empty)
+			if ( !screenSpace && !visibleEmitters.Contains( sprite.Emitter ) )
+				continue;
+			if ( vertexCount + VerticesPerQuad > vertices.Length )
+				break;
 			var first = vertexCount;
-			foreach ( var sprite in sprites )
-			{
-				// screen-space emitters have no world bounds to cull by (the original leaves their bounds empty)
-				if ( BatchOf( sprite ) != batch || sprite.ScreenSpace != screenSpace || !screenSpace && !visibleEmitters.Contains( sprite.Emitter ) )
-					continue;
-				if ( vertexCount + VerticesPerQuad > vertices.Length )
-					break;
-				if ( screenSpace ? AddScreenQuad( sprite, batch, screenAspect, ref vertexCount ) : AddQuad( sprite, batch, right, up, ref vertexCount ) )
-					DrawnParticles++;
-			}
-			ranges[rangeIndex] = (first, vertexCount - first);
+			if ( !(screenSpace ? AddScreenQuad( sprite, batch, screenAspect, ref vertexCount ) : AddQuad( sprite, batch, right, up, ref vertexCount )) )
+				continue;
+			DrawnParticles++;
+			AddToRuns( runs, KindOf( batch, screenSpace ), first, vertexCount - first );
 		}
 		if ( vertexCount == 0 )
 			return;
@@ -156,23 +155,37 @@ public sealed class ParticleRenderer : Entity
 		commandList.UpdateBuffer( vertexBuffer, 0, ref vertices[0], (uint)vertexCount * stride );
 		commandList.SetVertexBuffer( 0, vertexBuffer );
 		var eye = Camera.Position.GetSystemVector3();
-		if ( ranges[0].Count > 0 )
-			Draw( commandList, alphaMaterial!, eye, ranges[0] );
-		if ( ranges[1].Count > 0 )
-			Draw( commandList, additiveMaterial!, eye, ranges[1] );
-		if ( ranges[2].Count > 0 )
-			Draw( commandList, oneOneMaterial!, eye, ranges[2] );
-		// [APPROX:PTCL-909] the screen-space batches are part of this world pass, so the HUD and the advisor's image draw over them; the original's frame position of that draw list is not read
-		if ( ranges[3].Count > 0 )
-			Draw( commandList, screenAlphaMaterial!, eye, ranges[3], screenSpace: true );
-		if ( ranges[4].Count > 0 )
-			Draw( commandList, screenAdditiveMaterial!, eye, ranges[4], screenSpace: true );
-		if ( ranges[5].Count > 0 )
-			Draw( commandList, screenOneOneMaterial!, eye, ranges[5], screenSpace: true );
+		// [APPROX:PTCL-909] the screen-space quads are drawn inside this world pass, so the HUD and the advisor's image draw over them; the original's pass 0x57C620 sits in the scene view render 0x576a00 after the object lists and the view's callback (+0x78) and before the weather (0x57FF60), and which later view or callback draws the HUD windows and the advisor's model is not read
+		// [BIN:TPW-EXE:0x57C620 draw order] one quad per particle in slot order 0..119, newest particle first, world and screen-space particles in the same loop, so the runs follow that order and the kinds interleave as the particles do
+		foreach ( var (kind, first, count) in runs )
+		{
+			var material = kind switch
+			{
+				0 => alphaMaterial, 1 => additiveMaterial, 2 => oneOneMaterial,
+				3 => screenAlphaMaterial, 4 => screenAdditiveMaterial, _ => screenOneOneMaterial
+			};
+			Draw( commandList, material!, eye, (first, count), screenSpace: kind >= 3 );
+		}
+	}
+
+	/// <summary>The run kind of a quad: its blend batch, plus 3 for a screen-space particle.</summary>
+	internal static int KindOf( int batch, bool screenSpace ) => batch + (screenSpace ? 3 : 0);
+	private static int KindOf( Batch batch, bool screenSpace ) => KindOf( (int)batch, screenSpace );
+
+	/// <summary>
+	/// Appends a quad's vertices to the draw order: the original submits one primitive per particle in that order, so OpenTPW keeps the
+	/// order and merges only a neighbour that shares the state.
+	/// </summary>
+	internal static void AddToRuns( List<(int Kind, int First, int Count)> runs, int kind, int first, int count )
+	{
+		if ( runs.Count > 0 && runs[^1].Kind == kind && runs[^1].First + runs[^1].Count == first )
+			runs[^1] = (kind, runs[^1].First, runs[^1].Count + count);
+		else
+			runs.Add( (kind, first, count) );
 	}
 
 	/// <summary>The screen-space draw count of the last frame (tests and smokes).</summary>
-	public int DrawnScreenParticles => (ranges[3].Count + ranges[4].Count + ranges[5].Count) / VerticesPerQuad;
+	public int DrawnScreenParticles => runs.Where( run => run.Kind >= 3 ).Sum( run => run.Count ) / VerticesPerQuad;
 
 	/// <summary>False when all eight corners of the emitter's particle bounds lie outside one frustum plane.</summary>
 	private bool InView( ParticleEmitterBounds emitter, System.Numerics.Matrix4x4 viewProjection )
@@ -205,7 +218,8 @@ public sealed class ParticleRenderer : Entity
 			return false;
 		var centre = originalToEngine( new SVector3( sprite.X, sprite.Y, sprite.Z ) / 64f );
 		// [BIN:TPW-EXE:0x57C6B8 sprite size] half-height = (size << 1) * (1/1024) * 0.5 = size / 1024 original units for every particle; only the width gets a factor
-		// [APPROX:PTCL-904] the width factor is the frame record's float +8 (textured) or DAT_008BCBCC (untextured) in the original; DAT_008BCBCC is the display's height / width (0x582EB0), which an aspect-correct projection may already apply, and the frame record's float +8 is not read, so a sprite uses its frame's pixel aspect and an untextured quad 1
+		// [BIN:TPW-EXE:0x588660 frame aspect] the frame record's float +8 is the frame's width / height (the shorts at +0xC and +0xE), the factor a textured quad's half-width takes; an untextured quad takes DAT_008BCBCC, the display's height / width (0x582EB0)
+		// [APPROX:PTCL-904] the original adds the half-extents in clip space after its world-to-clip transform (0x57C6xx: x +- half-width, y +- half-height, w untouched), so a textured quad is (width / height) x (display width / height) on the screen unless something rescales the +8 after the load (nothing found), and its world size is the half-height / cos(fov / 2) under the original's 90 degree camera; OpenTPW places the half-height in world units under its own 55 degree camera with the frame's pixel aspect, and an untextured quad 1
 		var (halfWidth, halfHeight) = HalfExtents( sprite.Size, scale, sprite.FrameCount, found.Width, found.Height );
 		if ( !(halfWidth > 0 && halfHeight > 0) )
 			return false;
@@ -230,7 +244,7 @@ public sealed class ParticleRenderer : Entity
 	/// A screen-space particle's quad, its vertices in clip space (drawn without the camera). The width gets the frame's pixel aspect times the
 	/// target's height / width, so a square frame stays square on the screen.
 	/// </summary>
-	// [APPROX:PTCL-904] the width factor of a screen-space quad is the frame record's float +8 (textured) or DAT_008BCBCC (untextured) in the original; OpenTPW uses the frame's pixel aspect times the target's height / width, which keeps a frame's pixels square
+	// [APPROX:PTCL-904] a screen-space quad's half-width is the half-height times the frame's width / height (textured) or times DAT_008BCBCC, height / width (untextured) in the original, added in clip space with w = 1 (flag 0x40000); OpenTPW takes the frame's aspect times the target's height / width for a textured one, which keeps a frame's pixels square where the original's has no height / width factor
 	private bool AddScreenQuad( in ParticleSprite sprite, Batch batch, float screenAspect, ref int vertexCount )
 	{
 		var frame = sprite.FrameCount == 0 ? atlas.White : atlas.Find( sprite.SpriteCode, sprite.Frame );

@@ -57,6 +57,8 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( centre != null, "find a free site for a tour ride near the spine" );
 		var ride = level.PlaceObject( entry, centre!.Value.X, centre.Value.Y, 0 );
 		Require( ride != null && ride.Runtime.UsesTour, "buy and place the tour ride" );
+		// a built ride with a queue starts closed (RIDES-015, 0x4DB712): the fixture opens it as the player would
+		ride!.Open();
 		Log.Trace( $"Park-resume fixture: tour ride {entry.DisplayName} #{ride!.Visitors.AttractionId} at {centre.Value}." );
 	}
 

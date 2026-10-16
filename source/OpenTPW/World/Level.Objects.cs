@@ -620,7 +620,8 @@ public partial class Level
 	/// economy must allow the purchase (research, golden tickets, money; ParkEconomy.TryBuild) and charges
 	/// <c>Upgrades[0].CostOfUpgrade</c>; the generic sandbox has no economy and builds for free.
 	/// </summary>
-	// [APPROX:RIDES-021] the cursor ray hits the Z = 0 plane to pick the clicked cell; the original's mouse-to-cell picking (the cell the build tool hands to 0x528A70) is not traced — evidence needed: the build tool's cursor pick (0x524960 → 0x528A70)
+	// [EXT:build-cursor-ground-plane] the cursor ray hits the Z = 0 plane to pick the clicked cell: OpenTPW unprojects the mouse through its own camera and has no terrain pick, so there is no original pick to match and the plane is resolution- and platform-independent
+	// [APPROX:RIDES-021] the original's mouse-to-cell pick is not found: the build tool 0x524960 takes the cell from the replayed command (0x4045B0, commands 0x14 and 0x2D) and none of the terrain-height callers (0x4511A0, 0x4F9E60, 0x4FA470, 0x452AE0, 0x53DDD0, 0x542010) is the pick — evidence needed: the producer of those commands
 	public OriginalObject? PlaceObject( ObjectCatalogEntry entry, int x, int y, int rotation )
 	{
 		if ( IsReadOnlyVisit )
@@ -645,7 +646,8 @@ public partial class Level
 				return null;
 			}
 		}
-		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _ )!;
+		// [BIN:TPW-EXE:0x004DB712 built ride closes] the constructor opens the object (open word +0x68 = 1, 0x4DB3B9) and then, for a type with Info.HasQueue (flag 8 at 0x4DB420), logs "Object %d Closing", clears the open word and writes VAR_RIDECLOSED = 1 (script variable 6, 0x55A070/0x55A0B0), so a built ride with a queue waits closed until the player opens it
+		var placed = Objects.TryPlace( entry, anchor.X, anchor.Y, rotation, out _, open: BuiltObjectStartsOpen( entry ) )!;
 		// [BIN:TPW-EXE:0x558e7c build effect] the type's CreateParticleEffect starts when the new object's script attaches, not when a park loads
 		placed.Runtime.StartObjectEffect( ObjectParticleEffect.Create );
 		if ( bought != null )
@@ -655,6 +657,9 @@ public partial class Level
 			: $"Built {entry.DisplayName} (sandbox: no economy, not charged); it runs its original script.";
 		return placed;
 	}
+
+	/// <summary>Whether a newly built object starts open: the constructor opens it and then closes one whose type has a queue (<c>Info.HasQueue</c>, 0x004DB712).</summary>
+	internal static bool BuiltObjectStartsOpen( ObjectCatalogEntry entry ) => !entry.HasQueue;
 
 	/// <summary>Anchor that centres the footprint on cell (x, y).</summary>
 	public static (int X, int Y) GetCentredAnchor( ObjectCatalogEntry entry, int x, int y, int rotation ) => GetCentredAnchor( entry.Shape, x, y, rotation );

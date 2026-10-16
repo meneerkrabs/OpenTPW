@@ -173,13 +173,13 @@ public sealed class OriginalTerrain : Entity
 		PathCellCount = cells.Values.Sum( list => list.Count );
 		// Lifted a little along the cell so the blended layer never fights the ground for depth.
 		var lift = 0.01f * field.CellSizeX;
-		foreach ( var batch in cells.Keys.Order().Chunk( MaximumTextureSlots ) )
+		foreach ( var batch in PathTiles.Batches( cells.Keys, MaximumTextureSlots, pathNames.ContainsKey ) )
 		{
 			var slots = batch.Select( index => pathNames.TryGetValue( index, out var name ) ? LoadTexture( textures, name, "pathtex" ) : Texture.Missing ).ToList();
 			var vertices = new List<Vertex>();
 			var indices = new List<uint>();
 			for ( var slot = 0; slot < batch.Length; slot++ )
-				foreach ( var (x, y, rotation) in cells[batch[slot]] )
+				foreach ( var (x, y, rotation) in cells.GetValueOrDefault( batch[slot] ) ?? new() )
 					AddCell( vertices, indices, field, x, y, slot, rotation, lift );
 			var key = string.Join( ',', batch );
 			if ( !pathMaterials.TryGetValue( key, out var material ) )

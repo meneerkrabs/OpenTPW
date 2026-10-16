@@ -118,4 +118,19 @@ public class PathTilesTests
 		var tile = PathTiles.ForCell( endX, endY, map.CellCountX, map.CellCountY, ( nx, ny ) => extended.Contains( (nx, ny) ), park.Cells );
 		Assert.AreEqual( (4, 0), (tile.TextureIndex, tile.Rotation), "a straight north–south cell with a new east neighbour becomes a T open to −Y, +X and +Y" );
 	}
+
+	[TestMethod]
+	public void LayerBatchesDoNotDependOnTheRoll()
+	{
+		bool All( int texture ) => texture is >= 0 and <= 20;
+		var first = PathTiles.Batches( Enumerable.Range( 0, 16 ), 16, All );
+		var rolled = PathTiles.Batches( Enumerable.Range( 0, 16 ).Append( PathTiles.StraightVariant ).Append( PathTiles.EdgeVariant ), 16, All );
+		var onlySecond = PathTiles.Batches( Enumerable.Range( 0, 16 ).Where( texture => texture is not 2 and not 10 ).Append( PathTiles.StraightVariant ).Append( PathTiles.EdgeVariant ), 16, All );
+		Assert.AreEqual( 2, first.Count );
+		CollectionAssert.AreEqual( first.SelectMany( batch => batch ).ToArray(), rolled.SelectMany( batch => batch ).ToArray() );
+		CollectionAssert.AreEqual( first.Select( batch => batch.Length ).ToArray(), onlySecond.Select( batch => batch.Length ).ToArray() );
+		foreach ( var batch in first )
+			Assert.AreEqual( batch.Contains( 2 ), batch.Contains( PathTiles.StraightVariant ), "a straight shares its batch with its second texture" );
+		Assert.IsTrue( first.All( batch => batch.Length <= 16 ) );
+	}
 }

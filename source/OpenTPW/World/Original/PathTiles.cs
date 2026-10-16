@@ -75,6 +75,37 @@ public static class PathTiles
 		};
 	}
 
+	/// <summary>
+	/// The path layer's texture batches of at most <paramref name="capacity"/> slots for the used <paramref name="textures"/>: a straight or
+	/// edge texture always shares its batch with its second texture (when the theme has it), whichever of the two the cells use, so the
+	/// layer's batches depend on the tile shapes and not on the presentation roll (<see cref="PathTileVariants"/>), which a restored park
+	/// rolls afresh.
+	/// </summary>
+	public static IReadOnlyList<int[]> Batches( IEnumerable<int> textures, int capacity, Func<int, bool> hasTexture )
+	{
+		static int Base( int texture ) => texture switch { StraightVariant => 2, EdgeVariant => 10, _ => texture };
+		var groups = textures.Select( Base ).Distinct().Order().Select( first =>
+		{
+			var variant = first switch { 2 => StraightVariant, 10 => EdgeVariant, _ => -1 };
+			return variant >= 0 && hasTexture( variant ) && hasTexture( first ) ? new[] { first, variant }
+				: variant >= 0 && hasTexture( variant ) ? new[] { variant } : new[] { first };
+		} );
+		var batches = new List<int[]>();
+		var current = new List<int>();
+		foreach ( var group in groups )
+		{
+			if ( current.Count + group.Length > capacity )
+			{
+				batches.Add( current.ToArray() );
+				current.Clear();
+			}
+			current.AddRange( group );
+		}
+		if ( current.Count > 0 )
+			batches.Add( current.ToArray() );
+		return batches;
+	}
+
 	/// <summary>The eight path neighbours of a cell as a mask; cells outside the <paramref name="countX"/> × <paramref name="countY"/> map are no path.</summary>
 	public static byte Neighbours( int x, int y, int countX, int countY, Func<int, int, bool> isPath )
 	{

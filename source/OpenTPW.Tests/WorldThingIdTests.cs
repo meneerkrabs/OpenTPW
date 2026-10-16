@@ -73,6 +73,22 @@ public class WorldThingIdTests
 		Assert.AreEqual( 13, pool.NextId );
 	}
 
+	/// <summary>The shipped jungle catalog's default fixed items come as Gates then Lights (the order <c>AddDefaultFixedItems</c> places them in), so they are things 11 and 12 behind the world's ten singletons, as the shipped save lists them (Info.Id 1601, 1603).</summary>
+	[TestMethod]
+	public void TheJungleCatalogsGatesComeBeforeItsLights()
+	{
+		var previous = ObjectCatalogCorpusTests.UseOriginalData( out var saved );
+		if ( previous == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH for the shipped jungle objects." );
+		try
+		{
+			ObjectCatalog.BonusDataRoot = null;
+			var entries = ObjectCatalog.Load( "jungle" ).Entries.Where( entry => entry.IsFixedItem && entry.SettingsName is "Gates" or "Lights" ).Select( entry => entry.InfoId ).ToArray();
+			CollectionAssert.AreEqual( new[] { 1601, 1603 }, entries );
+		}
+		finally { FileSystem = saved; }
+	}
+
 	[TestMethod]
 	public void ARemovedObjectsSlotIsFreedAtTheTurnsEndAndTakenByTheNextObject()
 	{

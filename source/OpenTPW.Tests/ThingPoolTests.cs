@@ -180,6 +180,9 @@ public class ThingPoolTests
 		var byId = chain.ToDictionary( thing => thing.Id, thing => thing.Model );
 		CollectionAssert.AreEqual( ThingPool.WorldSetupModels.ToArray(), Enumerable.Range( 1, 10 ).Select( id => byId[id] ).ToArray(), "things 1 to 10 are the world's singletons in the constructor order of 0x5156A0" );
 		Assert.AreEqual( (SaveThingModel.Attraction, SaveThingModel.Attraction), (byId[11], byId[12]), "the gates and the lights" );
+		var attractions = SaveAttractionList.Parse( payload, world ).ToDictionary( attraction => attraction.Id );
+		Assert.AreEqual( (1601, 1603), (attractions[11].InfoId, attractions[12].InfoId), "Gates (Info.Id 1601) is thing 11 and Lights (1603) thing 12, the order of the world setup 0x5156A0" );
+		Assert.AreEqual( 1600, attractions[15].InfoId, "the bus, built when it was first sent, came after objects 13 and 14" );
 		Assert.AreEqual( chain.Select( thing => thing.Id ).First(), chain.Max( thing => thing.Id ), "the chain's head is the thing built last" );
 		var pool = new ThingPool();
 		pool.Restore( chain.Select( thing => new ThingSlot( thing.Id, thing.Model ) ) );

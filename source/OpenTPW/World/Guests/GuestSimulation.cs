@@ -316,7 +316,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	/// <summary>Spawns a guest at a bus stop; it crosses the road, pays at the ticket booth and enters.</summary>
 	// [BIN:TPW-EXE:0x004FB201 arrival entrance] a guest whose cell is not a path cell (0x004FA990 false, every guest of the arrival vehicle) takes two draws after its reseed: R & 1 picks the entrance cell (0x004D8710: the cell at world words 0x007855DC or 0x007855E4 with the row 0x007855E0) and the low byte of R is the sideways point in the cell (0x004FB21C), the other byte is 0xC8; 0x004FA5F0 stores both as the position (+0x18, +0x1A)
-	// [APPROX:DET-014] the two entrance cells are the first cells of the settings' lanes A and B (Arrival.Lane), whose link to the world words 0x007855DC..0x007855E4 is not read; the lane the guest then walks is the one its entrance starts
+	// [APPROX:DET-014] the entrance cell a creation takes is the first cell of the settings' lane A or B (the bus stop), where tp.exe's 0x004D8710 reads the bus-side crossing cell (FixedItemInfo.CrossingBSSideAPosX or BPosX with APosY: 0x007855DC, 0x007855E4, 0x007855E0, the lane's second cell); the lane the guest then walks is the one its entrance starts
 	public Guest? SpawnArrival()
 	{
 		var a = ValidLane( Settings.ArrivalLaneA );

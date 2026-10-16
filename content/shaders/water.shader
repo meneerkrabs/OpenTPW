@@ -11,6 +11,8 @@ common {
     vec3 g_vCameraPos;
 
     float g_fTime;
+    float g_flViewDistanceScale;
+    vec3 g_vFogColor;
   } g_oUbo;
 }
 
@@ -58,6 +60,6 @@ fragment {
     fogFactor = clamp( fogFactor, 0, 1 );
     
     // Mix with fog
-    fragColor.xyz = mix(fragColor.xyz, vec3( 0.301, 0.84, 1 ), fogFactor);
+    fragColor.xyz = mix(fragColor.xyz, g_oUbo.g_vFogColor, fogFactor);
   }
 }

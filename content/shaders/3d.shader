@@ -9,6 +9,9 @@ common {
     vec3 g_vLightPos;
     vec3 g_vLightColor;
     vec3 g_vCameraPos;
+    float g_flTime;
+    float g_flViewDistanceScale;
+    vec3 g_vFogColor;
   } g_oUbo;
 }
 
@@ -64,14 +67,13 @@ fragment {
     vec4 vColor = texture( sampler2D( Color, s_Color ), vs_out.vTexCoords ) * 0.75;
     vColor.z *= 1.25;
 
-    vec3 fogColor = vec3( 0.28, 0.88, 1.0 );
     float fogStart = 80.0;
     float fogEnd = 200.0;
 
     float fogAmount = clamp( ( length( vs_out.vPositionVs ) - fogStart ) / ( fogEnd - fogStart ), 0.0, 1.0 );
 
     fragColor = vec4( vLambert + vAmbient, 1.0 ) * vColor;
-    fragColor = mix( fragColor, vec4( fogColor, 1.0 ), fogAmount );
+    fragColor = mix( fragColor, vec4( g_oUbo.g_vFogColor, 1.0 ), fogAmount );
 
     if ( fragColor.w < 0.1 )
       discard;

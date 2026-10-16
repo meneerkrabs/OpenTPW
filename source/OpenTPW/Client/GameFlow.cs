@@ -912,6 +912,9 @@ internal sealed partial class GameFlow : IDisposable
 		backgroundRenderer.BeginFrame();
 		overlayRenderer.BeginFrame();
 		var framebuffer = global::Global.Render.MultisampledFramebuffer;
+		// The engine fog every fogged shader blends into: the level's fog colour in a park, the lobby's clear colour otherwise (RenderFog).
+		// [BIN:TPW-EXE:0x4080e0 fog colour] [0x8bd47c] is the one colour of the viewport clear, the sky's haze and the distant vertices
+		RenderFog.WorldColour = RenderFog.ColourOf( Level?.BackdropColour ?? RenderFog.LobbyColour );
 		if ( Level != null )
 		{
 			// The park's backdrop: the level's fog colour (what the original's viewport clear and the sky's haze blend with), then the sky over it.

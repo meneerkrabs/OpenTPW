@@ -117,7 +117,7 @@ public static class M3Gate
 	/// ticks of the 60 Hz <see cref="FixedStepClock"/> that drives guests, scripts and the economy (one economy
 	/// tick per fixed tick at <see cref="GameSpeed.Normal"/>).
 	/// </summary>
-	// [EXT:m3-gate-minute] the M3 gate's "in-game minute" is OpenTPW's harness unit: 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute; the original has no gate and paces play by scaled real time (OpenTPW samples its 60 Hz ticks into park turns, ECON-001)
+	// [EXT:m3-gate-minute] the M3 gate's "in-game minute" is OpenTPW's harness unit: 60 s of normal-speed simulation (3,600 fixed 60 Hz ticks), not a park-clock minute; the original has no gate and paces play by scaled real time (OpenTPW samples its 60 Hz ticks into park turns, EXT:fixed-60hz-clock)
 	// [BIN:TPW-EXE:0x0054F668 park turn cadence] the main loop 0x0054E360 adds 31 ms per substep (0x0054F4C4) and runs a park turn when the substep counter 0x00877D34 & 7 == 0, one turn per 248 ms
 	// [BIN:TPW-EXE:0x004F8260 park date] the date is the start plus turn × [calendar +0x1C] / 4 seconds (__allmul, __alldiv, × 10,000,000), and the constructor 0x004F7E80 sets the rate to 15,000 (0x004F7EA9), so one turn is 3,750 park-clock seconds
 	public static long TicksForMinutes( double minutes ) => (long)Math.Round( minutes * 60 * FixedStepClock.TicksPerSecond );
@@ -132,7 +132,7 @@ public static class M3Gate
 		["parkClockSecondsPerTurn"] = ParkCalendar.SecondsPerTurn,
 		["parkClockDays"] = ParkCalendar.DayIndex( ticks ),
 		["parkDateAtEnd"] = ParkCalendar.ToDate( ticks ).ToString(),
-		["sources"] = "EXT:m3-gate-minute; ParkCalendar (BIN:TPW-EXE:0x0054F668 turn every 8th 31 ms substep, 0x004F8260 3,750 s per turn; Mac BIN:STP-PPC:0x101C22E0, 0x100E4394); APPROX:ECON-001 (60 Hz ticks sampled into turns)"
+		["sources"] = "EXT:m3-gate-minute; ParkCalendar (BIN:TPW-EXE:0x0054F668 turn every 8th 31 ms substep, 0x004F8260 3,750 s per turn; Mac BIN:STP-PPC:0x101C22E0, 0x100E4394); EXT:fixed-60hz-clock (60 Hz ticks sampled into turns)"
 	};
 
 	public static M3GateReport Run( M3GateOptions options )

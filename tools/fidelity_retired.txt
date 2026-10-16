@@ -90,6 +90,7 @@ DET-010 docs/reverse/DET-plan.md
 DET-011 docs/reverse/DET-plan.md
 DET-012 docs/reverse/DET-plan.md
 DET-016 docs/DETERMINISM.md
+ECON-001 docs/ECONOMY.md
 ECON-002 docs/reverse/APPROX-TRACE.md
 ECON-003 docs/reverse/APPROX-TRACE.md
 ECON-004 docs/reverse/APPROX-TRACE.md

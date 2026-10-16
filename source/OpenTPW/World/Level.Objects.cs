@@ -142,7 +142,13 @@ public partial class Level
 				if ( layingAccessCells && Guests?.Grid.Cells is { } laid && (Park == null || Park.Economy.Balance >= 0) )
 					ObjectAccessCells.Lay( laid, item.AccessPoints, OwnerWord( item ), item.Entry.HasQueue, new LinkEffects( RefreshTile ) );
 			};
-			Objects.ObjectRemoved += item => Guests?.Grid.Cells.ClearFootprint( item.Cells );
+			Objects.ObjectRemoved += item =>
+			{
+				if ( Guests?.Grid.Cells is not { } removed )
+					return;
+				removed.ClearFootprint( item.Cells );
+				ObjectAccessCells.ClearQueue( removed, OwnerWord( item ) );
+			};
 		}
 		foreach ( var item in Objects.Objects )
 			RegisterObjectWithGuests( item );

@@ -73,7 +73,11 @@ public class ObjectAccessCellsTests
 				AccessCells = ObjectAccessCells.CellsToCheck
 			};
 			Objects.ObjectPlaced += item => Cells.WriteFootprint( item.Cells, Level.OwnerWord( item ), item.Placement.Rotation );
-			Objects.ObjectRemoved += item => Cells.ClearFootprint( item.Cells );
+			Objects.ObjectRemoved += item =>
+			{
+				Cells.ClearFootprint( item.Cells );
+				ObjectAccessCells.ClearQueue( Cells, Level.OwnerWord( item ) );
+			};
 			Objects.ObjectPlaced += item =>
 			{
 				if ( Laying )
@@ -289,5 +293,31 @@ public class ObjectAccessCellsTests
 		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( station, 1, 10, 0 ) );
 		// rotated by 90 the ends open towards ±Y
 		Assert.AreEqual( OriginalPlacementResult.OutsideTerrain, rig.Objects.Check( station, 10, ParkPlacement.TileCount - 1, 90 ) );
+	}
+
+	[TestMethod]
+	public void DemolishingARideClearsItsQueueSoItCanBeRebuiltOnTheSameSite()
+	{
+		var ride = Entry( 1100, 5, true, "*2S" );
+		var rig = new Rig( ride );
+		var item = rig.Place( ride, 4, 5 )!;
+		// the queue tool lays two more cells out of the laid one, as the owner word marks them
+		var cells = rig.Cells;
+		foreach ( var x in new[] { 4, 3 } )
+		{
+			cells.SetType( x, 4, ParkCellType.Queue );
+			cells.SetOwner( x, 4, Level.OwnerWord( item ) );
+		}
+		cells.SetType( 10, 10, ParkCellType.Queue );
+		cells.SetOwner( 10, 10, ParkCellMap.CellWord( 20, 20 ) );
+		Assert.AreEqual( OriginalPlacementResult.Occupied, rig.Objects.Check( ride, 4, 5, 0 ), "the laid queue cell and the footprint are in the way" );
+		rig.Objects.Remove( item );
+		Assert.AreEqual( 0, cells.RawTypeAt( 5, 4 ), "the laid queue cell goes with the ride" );
+		Assert.AreEqual( 0, cells.RawTypeAt( 4, 4 ) | cells.RawTypeAt( 3, 4 ) );
+		Assert.AreEqual( (byte)ParkCellType.Queue, cells.RawTypeAt( 10, 10 ), "another ride's queue stays" );
+		Assert.AreEqual( (byte)ParkCellType.Path, cells.RawTypeAt( 6, 6 ), "the path stub outside the exit stays" );
+		Assert.AreEqual( OriginalPlacementResult.Allowed, rig.Objects.Check( ride, 4, 5, 0 ), "the freed site can be built on again" );
+		Assert.IsNotNull( rig.Place( ride, 4, 5 ) );
+		Assert.AreEqual( (byte)ParkCellType.Queue, cells.RawTypeAt( 5, 4 ) );
 	}
 }

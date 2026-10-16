@@ -75,6 +75,29 @@ public static class ObjectAccessCells
 		}
 	}
 
+	/// <summary>
+	/// Clears the queue of a ride that has been demolished: every queue cell carrying its owner word, the cell laid outside the entrance and the cells the queue tool laid after it,
+	/// each unlinked from its neighbours. The path stubs laid outside an exit or a shop's entrance stay, as paths do.
+	/// </summary>
+	// [BIN:STP-PPC:0x100748A0 ride demolition] the demolition replays the queue tool from the ride's entrance to clear its queue (the PC twin 0x527EE0 runs the replays with 0x81B46C set); a queue cell laid by the placement is NoModify, which a rebuild at the same site could not stand on, so the clear takes it as well — the cell writes of the original's demolition are otherwise not traced (ECON-050)
+	public static void ClearQueue( ParkCellMap cells, ushort owner )
+	{
+		ArgumentNullException.ThrowIfNull( cells );
+		if ( owner == 0 )
+			return;
+		for ( var y = 0; y < cells.Height; y++ )
+		{
+			for ( var x = 0; x < cells.Width; x++ )
+			{
+				if ( cells.RawTypeAt( x, y ) != (byte)ParkCellType.Queue || cells.OwnerAt( x, y ) != owner )
+					continue;
+				PathLinkWriter.Unlink( cells, x, y, cardinalOnly: true );
+				cells.SetFlags( x, y, cells.FlagsAt( x, y ) & ~ParkCellFlags.NoModify );
+				cells.SetType( x, y, ParkCellType.Empty );
+			}
+		}
+	}
+
 	/// <summary>The link bit of the cell one step away: 1 (−Y), 4 (+X), 16 (+Y), 64 (−X).</summary>
 	private static byte LinkBit( int dx, int dy ) => (dx, dy) switch
 	{

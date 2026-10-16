@@ -54,7 +54,6 @@ Each mod folder holds `opentpw-mod.json`:
 | `dependencies` | no | Up to 32 mods or extensions this mod needs, each with an optional version range (default `*`). |
 | `after` | no | Mods this one is ordered after when both are enabled; also lets its overrides win over theirs. |
 | `inputs` | no | Up to 16 folders the player supplies; `kind` is `original-data` (another original game's install). |
-| `infoIds` | no | `{ "first": N, "last": M }`: the `Info.Id`s the mod reserves for objects from another original game (5000 to 65535, at most 4096). A mod that depends on `opentpw.cross-edition-objects` and sets `content.objects` must declare it. |
 | `content` | no | Mod-relative paths: `overrides` (a folder of files that replace game files), `objects` (object definitions), `strings` (a folder of text). |
 
 Parsing is strict, like the online documents (`StrictJson`): unknown or duplicate fields, comments, trailing commas
@@ -126,8 +125,7 @@ At startup, right after the compatibility settings, OpenTPW resolves the run's s
    every input has an existing folder.
 2. Every dependency must be installed, enabled and within its range; a refused mod refuses the mods that need it.
 3. Two enabled mods whose `overrides` folders hold the same file (compared without case) are **both refused** unless
-   one lists the other in `after`. There is no silent "last one wins". Two mods whose `infoIds` ranges overlap are
-   both refused the same way.
+   one lists the other in `after`. There is no silent "last one wins".
 4. Dependency and `after` cycles refuse the mods involved.
 5. The rest is ordered: dependencies (and `after`) first, then official before community, then the player's `order`,
    then the ordinal id.
@@ -185,10 +183,18 @@ What the extension provides in the engine:
   distinct Theme Park Inc ids are also Theme Park World ids, and 145 of those name other objects (id 1100 is the Belly
   Bounce in one and the Bellows in the other). The original keeps a definition whose id is
   taken (it stays listed) but every lookup by id returns the first one in load order (RIDES-024), so a second object with
-  a taken id would be unreachable. A mod therefore declares a range in `infoIds` and gives each archive an id from it;
-  the engine refuses a claim outside the range, one already used by another object, or one claimed twice
-  (`CrossEditionObjects.CheckClaims`), one object at a time. The range lies above every original id (Theme Park World
-  reaches 4605, Theme Park Inc 4500) and within 16 bits, the width of an attraction id in the original park saves.
+  a taken id would be unreachable. A mod therefore reserves a range of ids and gives each archive an id from it, and the
+  engine refuses a claim outside the range, one already used by another object, or one claimed twice
+  (`CrossEditionObjects.CheckClaims`), one object at a time.
+
+  **One rule for every mod's id range**, whether or not it uses this extension (`CrossEditionObjects.RangeProblem`): the
+  range lies in 5000 to 65535 and holds at most 4096 ids. It lies above every original id (Theme Park World reaches 4605,
+  Theme Park Inc 4500) and inside 16 bits, the width of a placed object's Info.Id (`mId`) in the original park saves. The
+  range is declared once, in the `idRange` of the mod's `objects.json` (data content roots, in review as phase 5); the
+  manifest has no second declaration. Two mods with overlapping ranges are both refused, and an object list without an
+  `idRange` is refused, in `ModSet`. Phase 5 as first written used 10000 to 1000000000 and at most 1000 ids; when it
+  lands, `ModObjectsFile` takes its bounds from `CrossEditionObjects` (every range it accepts that ends below 65536 stays
+  valid; the 2^16 ceiling keeps a mod's ids representable in an original-format save).
 - **Sound banks per content root.** A Theme Park Inc ride script's `EVENT` ids belong to Theme Park Inc's own sound
   catalogues (its global `cat_rides` holds 114 events against Theme Park World's 25), so an object from a registered root
   (`ContentSoundRoots.Register`) looks its events up in that root: global categories in the root's `global/sound`, level

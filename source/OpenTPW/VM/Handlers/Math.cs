@@ -57,7 +57,7 @@ public static partial class OpcodeHandlers
 		}
 
 		// [BIN:TPW-EXE:0x553eb9 MULT] interpreter case 48 (RSSE jump table 0x5567d8 + 48 × 4): the destination word first, then operands a and b (a variable when the top byte is 0x40, else the sign-extended low 16 bits), result = a × b by imul (32-bit wrap), written to the flag word +0x48 and, through the shared tail 0x555b48, to the destination when it is a variable (a literal destination keeps only the flags)
-		// [BIN:TPI-EXE:0x6a9108 MULT] Theme Park Inc's case 48 (jump table 0x6ab5f0) reads the same three operands in the same order, takes variables (top byte 0x40) or sign-extended 16-bit literals alike, multiplies with imul (0x6a919f) and leaves through the shared flag-and-destination tail 0x6a75ab, as tp.exe's case does (0x553f73 into 0x555b48)
+		// [BIN:TPI-EXE:0x6a9108 MULT] Theme Park Inc's case 48 (jump table 0x6ab5f0) reads the same three operands in the same order, takes variables (top byte 0x40) or sign-extended 16-bit literals alike, multiplies with imul (0x6a9194 for a variable second factor, 0x6a919f for a literal) and leaves through the shared flag-and-destination tail 0x6a75ab, as tp.exe's case does (0x553f73 into 0x555b48)
 		[OpcodeHandler( Opcode.MULT, RideOpcodeStatus.Implemented, "TPW-EXE 0x553eb9: dest-first, a × b by imul (32-bit wrap), result in the flag word and a variable destination; Theme Park Inc corpus: `MULT VAR_TIMER VAR_TIMEOUT VAR_SCALE`" )]
 		public static void Multiply( RideVM vm, Operand dest, Operand valueA, Operand valueB )
 		{

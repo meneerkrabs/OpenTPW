@@ -120,7 +120,6 @@ public sealed class ModSet
 				}
 			}
 			changed |= RefuseConflicts( nodes, refused );
-			changed |= RefuseIdRangeConflicts( nodes, refused );
 			order = Sort( nodes, settings, out var cyclic );
 			foreach ( var node in cyclic )
 				changed |= Refuse( node, "is part of, or needs a mod in, a dependency or 'after' cycle", refused );
@@ -213,9 +212,6 @@ public sealed class ModSet
 			return $"needs OpenTPW {manifest.OpenTpw}, not {version}";
 		if ( manifest.Edition is { } wanted && wanted != edition )
 			return $"is for {ModManifest.EditionToken( wanted )}, not {ModManifest.EditionToken( edition )}";
-		// [EXT:cross-edition-objects] a mod that lists objects for the extension must say which Info.Ids they take
-		if ( manifest.InfoIds == null && manifest.Content.Objects != null && manifest.Dependencies.Any( dependency => dependency.Id == OfficialExtensions.CrossEditionObjects.Id ) )
-			return $"lists objects for {OfficialExtensions.CrossEditionObjects.Id} but declares no 'infoIds' range";
 		foreach ( var input in manifest.Inputs )
 		{
 			if ( !settings.Inputs.TryGetValue( manifest.Id, out var inputs ) || !inputs.TryGetValue( input.Id, out var path ) )
@@ -258,30 +254,6 @@ public sealed class ModSet
 					reasons.TryAdd( a, $"overrides '{path}' like {b.Id}, and neither declares the other in 'after'" );
 					reasons.TryAdd( b, $"overrides '{path}' like {a.Id}, and neither declares the other in 'after'" );
 				}
-		var changed = false;
-		foreach ( var (node, reason) in reasons.OrderBy( pair => pair.Key.Id, StringComparer.Ordinal ) )
-			changed |= Refuse( node, reason, refused );
-		return changed;
-	}
-
-	/// <summary>
-	/// Two enabled mods whose reserved <c>Info.Id</c> ranges overlap (<see cref="CrossEditionObjects"/>): both are refused, like two
-	/// mods that override one file, so an object never silently loses its id to the other mod.
-	/// </summary>
-	// [EXT:cross-edition-objects] OpenTPW's own id policy
-	private static bool RefuseIdRangeConflicts( Dictionary<string, Node> nodes, List<ModRefusal> refused )
-	{
-		var ranged = nodes.Values.Where( node => node.Enabled && node.Manifest?.InfoIds != null ).OrderBy( node => node.Id, StringComparer.Ordinal ).ToList();
-		var reasons = new Dictionary<Node, string>();
-		for ( var first = 0; first < ranged.Count; first++ )
-			for ( var second = first + 1; second < ranged.Count; second++ )
-			{
-				var (a, b) = (ranged[first], ranged[second]);
-				if ( !a.Manifest!.InfoIds!.Value.Overlaps( b.Manifest!.InfoIds!.Value ) )
-					continue;
-				reasons.TryAdd( a, $"reserves the Info.Ids {a.Manifest.InfoIds} like {b.Id} ({b.Manifest.InfoIds})" );
-				reasons.TryAdd( b, $"reserves the Info.Ids {b.Manifest.InfoIds} like {a.Id} ({a.Manifest.InfoIds})" );
-			}
 		var changed = false;
 		foreach ( var (node, reason) in reasons.OrderBy( pair => pair.Key.Id, StringComparer.Ordinal ) )
 			changed |= Refuse( node, reason, refused );

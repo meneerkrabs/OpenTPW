@@ -32,18 +32,8 @@ public class CrossEditionObjectsTests
 		Directory.Delete( root, true );
 	}
 
-	private static byte[] Parse( string json ) => Encoding.UTF8.GetBytes( json );
-
 	private static string Manifest( string id, string extra ) =>
 		$$"""{ "schema": 1, "id": "{{id}}", "name": "Test {{id}}", "version": "1.0.0", "category": "community"{{extra}} }""";
-
-	private static ModManifest Read( string id, string extra ) => ModManifest.Parse( Parse( Manifest( id, extra ) ) );
-
-	private static void AssertInvalid( string extra, string expected )
-	{
-		var exception = Assert.ThrowsException<InvalidDataException>( () => Read( "community.tpi-rides", extra ) );
-		StringAssert.Contains( exception.Message, expected );
-	}
 
 	// ---- The extension ------------------------------------------------------------------------
 
@@ -70,20 +60,16 @@ public class CrossEditionObjectsTests
 	// ---- Info.Id ranges -----------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheManifestReadsTheReservedRange()
+	public void TheReservableIdsSitAboveEveryTableIdOfTheGame()
 	{
-		var manifest = Read( "community.tpi-rides", """, "infoIds": { "first": 20000, "last": 20999 }""" );
-		Assert.AreEqual( new InfoIdRange( 20000, 20999 ), manifest.InfoIds );
-		Assert.IsTrue( manifest.InfoIds!.Value.Contains( 20999 ) );
-		Assert.IsFalse( manifest.InfoIds!.Value.Contains( 21000 ) );
-		Assert.IsNull( Read( "community.plain", "" ).InfoIds );
-		Assert.AreEqual( "20000..20999", manifest.InfoIds.ToString() );
+		Assert.IsTrue( ObjectNameTable.InfoIds().Max() < CrossEditionObjects.FirstReservableId, "the object name table lists ids up to 4605" );
+		Assert.IsTrue( PrototypeRide.InfoId < CrossEditionObjects.FirstReservableId );
 	}
 
 	[TestMethod]
 	public void TheRangeMustSitAboveEveryOriginalIdAndInsideSixteenBits()
 	{
-		// Theme Park World's ids reach 4605 and Theme Park Inc's 4500; a park save holds an attraction id in 16 bits.
+		// Theme Park World's ids reach 4605 and Theme Park Inc's 4500; the original park saves hold a placed object's Info.Id in 16 bits.
 		Assert.IsNotNull( CrossEditionObjects.RangeProblem( 4999, 5100 ) );
 		Assert.IsNull( CrossEditionObjects.RangeProblem( 5000, 5100 ) );
 		Assert.IsNull( CrossEditionObjects.RangeProblem( 65000, 65535 ) );
@@ -91,30 +77,13 @@ public class CrossEditionObjectsTests
 		Assert.IsNotNull( CrossEditionObjects.RangeProblem( 6000, 5999 ) );
 		Assert.IsNull( CrossEditionObjects.RangeProblem( 10000, 10000 + CrossEditionObjects.MaximumRangeSize - 1 ) );
 		Assert.IsNotNull( CrossEditionObjects.RangeProblem( 10000, 10000 + CrossEditionObjects.MaximumRangeSize ) );
-		AssertInvalid( """, "infoIds": { "first": 1100, "last": 1200 }""", "'infoIds' 1100..1200 must lie within 5000..65535" );
-		AssertInvalid( """, "infoIds": { "first": 7000, "last": 6000 }""", "must not end before it starts" );
-		AssertInvalid( """, "infoIds": { "first": 7000, "last": 70000 }""", "must lie within" );
-		AssertInvalid( """, "infoIds": { "first": 7000, "last": 12000 }""", "at most 4096 ids" );
-		AssertInvalid( """, "infoIds": { "first": 7000 }""", "needs 'first' and 'last'" );
-		AssertInvalid( """, "infoIds": { "first": 7000, "last": 7100, "extra": 1 }""", "extra" );
-	}
-
-	[TestMethod]
-	public void AModThatListsObjectsForTheExtensionMustReserveIds()
-	{
-		const string depends = """, "dependencies": [ { "id": "opentpw.cross-edition-objects" } ], "content": { "objects": "objects.json" }""";
-		var without = Mod( "community.tpi-rides", depends );
-		var refused = Resolve( new[] { without }, "community.tpi-rides", "opentpw.cross-edition-objects" );
-		Assert.AreEqual( 0, refused.Mods.Count );
-		StringAssert.Contains( refused.Refused.Single().Reason, "declares no 'infoIds' range" );
-		var with = Mod( "community.tpi-rides-ranged", depends + """, "infoIds": { "first": 20000, "last": 20099 }""" );
-		Assert.AreEqual( 1, Resolve( new[] { with }, "community.tpi-rides-ranged", "opentpw.cross-edition-objects" ).Mods.Count );
-		// the rule is only for mods that use the extension: another mod's object list is the content roots' business
-		var other = Mod( "community.other", """, "content": { "objects": "objects.json" }""" );
-		Assert.AreEqual( 1, Resolve( new[] { other }, "community.other" ).Mods.Count );
-		// the extension without any object list needs no range
-		var input = Mod( "community.input", """, "dependencies": [ { "id": "opentpw.cross-edition-objects" } ]""" );
-		Assert.AreEqual( 1, Resolve( new[] { input }, "community.input", "opentpw.cross-edition-objects" ).Mods.Count );
+		Assert.IsNotNull( CrossEditionObjects.RangeProblem( 1, 1_000_000_000 ) );
+		StringAssert.Contains( CrossEditionObjects.RangeProblem( 1100, 1200 )!, "5000..65535" );
+		StringAssert.Contains( CrossEditionObjects.RangeProblem( 7000, 12000 )!, "at most 4096 ids" );
+		Assert.IsTrue( new InfoIdRange( 20000, 20099 ).Overlaps( new InfoIdRange( 20099, 20199 ) ) );
+		Assert.IsFalse( new InfoIdRange( 20000, 20099 ).Overlaps( new InfoIdRange( 20100, 20199 ) ) );
+		Assert.IsTrue( new InfoIdRange( 20000, 20099 ).Contains( 20099 ) );
+		Assert.IsFalse( new InfoIdRange( 20000, 20099 ).Contains( 20100 ) );
 	}
 
 	private string Mod( string id, string extra )
@@ -128,22 +97,6 @@ public class CrossEditionObjectsTests
 	private static ModSet Resolve( IEnumerable<string> directories, params string[] enabled ) =>
 		ModSet.Resolve( directories.Select( directory => ModDiscovery.Discover( new[] { directory }, Array.Empty<string>(), null, null ).Single() ).ToList(),
 			new ModSettings { Enabled = enabled.ToDictionary( id => id, _ => true ) }, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
-
-	[TestMethod]
-	public void ModsWithOverlappingRangesAreBothRefused()
-	{
-		var first = Mod( "community.first", """, "infoIds": { "first": 20000, "last": 20099 }""" );
-		var second = Mod( "community.second", """, "infoIds": { "first": 20099, "last": 20199 }""" );
-		var third = Mod( "community.third", """, "infoIds": { "first": 20200, "last": 20299 }""" );
-		var set = Resolve( new[] { first, second, third }, "community.first", "community.second", "community.third" );
-		CollectionAssert.AreEqual( new[] { "community.third" }, set.Mods.Select( mod => mod.Id ).ToArray(), "a third mod outside both ranges still runs" );
-		Assert.AreEqual( 2, set.Refused.Count );
-		StringAssert.Contains( set.Refused.Single( refusal => refusal.Id == "community.first" ).Reason, "reserves the Info.Ids 20000..20099 like community.second (20099..20199)" );
-		StringAssert.Contains( set.Refused.Single( refusal => refusal.Id == "community.second" ).Reason, "like community.first" );
-		var disjoint = Resolve( new[] { first, third }, "community.first", "community.third" );
-		Assert.AreEqual( 2, disjoint.Mods.Count );
-		Assert.AreEqual( 0, disjoint.Refused.Count );
-	}
 
 	[TestMethod]
 	public void AModNeedingTheDisabledExtensionIsRefusedWithTheReason()
@@ -176,7 +129,7 @@ public class CrossEditionObjectsTests
 		StringAssert.Contains( refusals[2].Reason, "also claimed by /levels/science/rides/a" );
 		Assert.AreEqual( 0, CrossEditionObjects.CheckClaims( range, new[] { ("/a", 20001), ("/b", 20002) }, new HashSet<int>() ).Count );
 		var undeclared = CrossEditionObjects.CheckClaims( null, new[] { ("/a", 20001) }, new HashSet<int>() );
-		StringAssert.Contains( undeclared.Single().Reason, "declares no 'infoIds' range" );
+		StringAssert.Contains( undeclared.Single().Reason, "declares no 'idRange'" );
 	}
 
 	// ---- Sound roots --------------------------------------------------------------------------
@@ -277,5 +230,25 @@ public class CrossEditionObjectsTests
 			for ( var bank = 1; bank <= rides!.BankNames.Count; bank++ )
 				Assert.IsNotNull( rides.GetBank( bank ), $"{theme} cat_rides bank {bank} resolves in the Theme Park Inc root" );
 		}
+	}
+
+	[TestMethod]
+	public void EveryThemeParkIncInfoIdSitsBelowTheReservableRange()
+	{
+		var path = Environment.GetEnvironmentVariable( "OPENTPW_TPI_PATH" );
+		if ( string.IsNullOrWhiteSpace( path ) || !Directory.Exists( path ) )
+			Assert.Inconclusive( "Set OPENTPW_TPI_PATH to a Theme Park Inc installation or its Data folder." );
+		var data = Directory.EnumerateDirectories( path ).FirstOrDefault( directory => string.Equals( Path.GetFileName( directory ), "data", StringComparison.OrdinalIgnoreCase ) ) ?? path;
+		var fileSystem = new BaseFileSystem( data );
+		fileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		var ids = new HashSet<int>();
+		foreach ( var theme in fileSystem.GetDirectories( "/levels" ) )
+			foreach ( var category in fileSystem.GetDirectories( fileSystem.GetRelativePath( fileSystem.GetAbsolutePath( theme ) ) ) )
+				foreach ( var archive in fileSystem.GetDirectories( fileSystem.GetRelativePath( fileSystem.GetAbsolutePath( category ) ) ) )
+					foreach ( var file in fileSystem.GetFiles( fileSystem.GetRelativePath( fileSystem.GetAbsolutePath( archive ) ) ).Where( file => file.EndsWith( ".sam", StringComparison.OrdinalIgnoreCase ) ) )
+						if ( ObjectSettingsFile.Load( fileSystem, fileSystem.GetRelativePath( fileSystem.GetAbsolutePath( file ) ) ).Values.TryGetValue( "Info.Id", out var text ) )
+							ids.Add( int.Parse( text, System.Globalization.CultureInfo.InvariantCulture ) );
+		Assert.IsTrue( ids.Count > 150, $"{ids.Count} distinct Theme Park Inc Info.Ids" );
+		Assert.IsTrue( ids.Max() < CrossEditionObjects.FirstReservableId, $"the highest Theme Park Inc Info.Id is {ids.Max()}" );
 	}
 }

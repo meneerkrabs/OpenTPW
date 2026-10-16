@@ -17,4 +17,4 @@ failed once that was fixed. One fix is in game code; the others bring smoke expe
   opened its first economy build but not the rebuild after the scrap check, so Crazy Ape, the jungle's only built ADDHEAD ride, never took
   riders and the isolated rider-head readback found no candidate.
 
-The pinned run hash is unchanged. Verified with the full test run (5402 passed, 113 skipped) and the jungle native smoke (5075 frames, passed).
+The pinned run hash is unchanged. Verified with the full test run (5423 passed, 113 skipped) and the jungle native smoke (5075 frames, passed).

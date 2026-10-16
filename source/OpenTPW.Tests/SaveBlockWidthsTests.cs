@@ -191,4 +191,55 @@ public class SaveBlockWidthsTests
 			}
 		}
 	}
+	/// <summary>A World block that reads as the original's: variables, control manager, macro AI, 0x4000 status-byte cells and a thing list of one mechanic HQ.</summary>
+	private static byte[] StructuredWorld( Func<int, byte> status, int fillerFrom = int.MaxValue )
+	{
+		using var output = new MemoryStream();
+		output.Write( SaveTestPayloads.ParkVariables() );
+		output.Write( new byte[SaveObjectControls.Bytes + SaveStaffPool.Bytes + SaveCalendar.Bytes + SaveWorld.ArrivalBytes] );
+		for ( var cell = 0; cell < SaveBlockWidths.WorldCells; cell++ )
+		{
+			var bits = status( cell );
+			output.WriteByte( bits );
+			var body = ((bits & 1) != 0 ? SaveBlockWidths.MapCellBytes : 0) + ((bits & 2) != 0 ? SaveBlockWidths.TrackCellBytes : 0) + ((bits & 4) != 0 ? SaveBlockWidths.EffectsCellBytes : 0);
+			// the copies of the WRLD delimiter's bytes the old delimiter search counted
+			var filler = cell >= fillerFrom && body >= 4 ? SaveTestPayloads.Stored( "WRLD" ) : new byte[4];
+			output.Write( filler.Concat( new byte[Math.Max( 0, body - 4 )] ).Take( body ).ToArray() );
+		}
+		output.Write( SaveTestPayloads.Things( new[] { (1u, (uint)SaveThingModel.MechanicHq, new byte[SaveThingChain.FixedBodyBytes[SaveThingModel.MechanicHq]]) } ) );
+		return output.ToArray();
+	}
+
+	[TestMethod]
+	public void TheWorldIsItsVariablesControlManagerMacroAiStatusByteCellsAndThingList()
+	{
+		var world = StructuredWorld( cell => (byte)(cell % 8) );
+		var block = Join( world, new byte[] { 0xAA, 0xBB, 0xCC, 0xDD } );
+		Assert.IsTrue( SaveBlockWidths.TryMeasureWorld( block, 0, out var width ) );
+		Assert.AreEqual( world.Length, width, "a cell is 1 + 52 (bit 0) + 31 (bit 1) + 10 (bit 2) bytes: status 3 and 7 are the 84- and 94-byte records of the shipped saves" );
+		Assert.AreEqual( 64 + 4806 + 670 + 28 + 18, SaveWorldVariables.Bytes + SaveObjectControls.Bytes + SaveStaffPool.Bytes + SaveCalendar.Bytes + SaveWorld.ArrivalBytes );
+		Assert.AreEqual( (84, 94), (1 + SaveBlockWidths.MapCellBytes + SaveBlockWidths.TrackCellBytes, 1 + SaveBlockWidths.MapCellBytes + SaveBlockWidths.TrackCellBytes + SaveBlockWidths.EffectsCellBytes) );
+		Assert.IsFalse( SaveBlockWidths.TryMeasureWorld( world[..^3], 0, out _ ), "a truncated thing list does not read" );
+		Assert.IsFalse( SaveBlockWidths.TryMeasureWorld( world[..1000], 0, out _ ) );
+	}
+
+	[TestMethod]
+	public void AWorldThatReadsAsTheOriginalsHasNoDelimiterSearchOrOccurrenceLimit()
+	{
+		var world = StructuredWorld( cell => 3, fillerFrom: 100 );
+		var payload = SaveTestPayloads.Payload( world );
+		var layout = SavePayloadLayout.Parse( payload );
+		Assert.AreEqual( world.Length, layout[SaveBlock.World].Length, "more than MaximumDelimiterOccurrences copies of the WRLD bytes inside the cells are data" );
+		Assert.IsTrue( SaveBlockWidths.WorldCells - 100 > SavePayloadLayout.MaximumDelimiterOccurrences );
+	}
+
+	[TestMethod]
+	public void OriginalJungleEasymodeWorldIsMeasuredToItsDelimiter()
+	{
+		var payload = OriginalParkImportTests.ReadEasymodePayload();
+		var layout = SavePayloadLayout.Parse( payload );
+		var block = layout[SaveBlock.World];
+		Assert.IsTrue( SaveBlockWidths.TryMeasureWorld( payload, block.Offset, out var width ) );
+		Assert.AreEqual( block.Length, width );
+	}
 }

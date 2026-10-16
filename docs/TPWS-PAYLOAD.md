@@ -114,9 +114,11 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
   (`'ADV_'`, two counted buffers), Sound `0x51c400` (the settings, and with sound on a chunk the loader skips by its
   length word), Cheat 2 (`0x405570`), AdvisorScoring 4 (`0x59c860`) and UI `0x481680` (`u32 count`, count x `0x21c`).
   The Jungle Easymode save's seventeen widths all agree with these readers. An empty Coasters block is exactly its
-  16-byte count and globals. Only the World block (its control manager and macro AI are not traced; its thing list closes
-  at the delimiter, below) and a Coasters block with a coaster (its trains and cars depend on the coaster type's counts)
-  are located by their delimiter's bytes, and the payload must split in exactly one way there; a copy of those delimiters
+  16-byte count and globals. The World block is the loader's own readers
+  (`SaveBlockWidths.TryMeasureWorld`: the 64 variable bytes, the control manager 4,806, the macro AI 670 + 28 + 18, 0x4000
+  status-byte cells of 1 + 52 / 31 / 10 bytes by status bits 0 / 1 / 2, and the self-closing thing list) and agrees with the Jungle
+  Easymode save to the byte. Only a Coasters block with a coaster (its trains and cars depend on the coaster type's counts) and a World block that does
+  not read that way (a synthetic payload) are located by their delimiter's bytes, and the payload must split in exactly one way there; a copy of those delimiters
   that forms a second valid split throws, as does a payload holding one of them more than 256 times, although the
   count-based original loader accepts those cases (SAVE-011). A missing or out-of-order delimiter, a block that does not
   read as its block and a block not followed by its tag throw as well;
@@ -213,10 +215,11 @@ attribute byte at +46**, and `FF FF` at +82/+83. Type bit 0x04 (value 7) appends
 10-byte extension after `FF FF` (all 250 type-7 records, and only they, are 94
 bytes). Records are X-fastest: record `k` is game cell (`k % 128`, `k / 128`).
 
-`SaveCellGrid` locates the grid structurally because the control manager and
-macro-AI widths before it are not pinned: exactly one offset in the World block
+`SaveCellGrid` takes the grid at the offset the World loader's readers put it, 5,522
+bytes after the variables (the control manager 4,806 and the macro AI 670 + 28 + 18, tp.exe `0x5179C0`); a World
+that does not read that way has its start located structurally: exactly one offset in the World block
 after its variables must begin a run of exactly width × height valid records
-(validity = type 3/7 and `FF FF` at +82), within 16 MiB. In Easymode that run
+(validity = type 3/7 and `FF FF` at +82), within 16 MiB. In Easymode the run
 starts at 6,765 and ends exactly where `Used Thing Head` (42) begins. PPC-formats.md
 names the record fields (status byte, map/track/region-effect sub-records).
 
@@ -531,7 +534,7 @@ RideSystem, attraction and economy readers over the second fixture set
 - The meaning of the coaster header's track flags and controller words and of the train words
   `+0x38`, `+0x64`, `+0x68` (SAVE-920 to SAVE-923); the train layout is decoded from the loader and the saver but
   no Theme Park World save with a coaster exists to check it on real bytes.
-- The control manager and macro AI before the calendar, the guest, analyser and weather bodies, record
+- The control manager and the macro AI before the calendar (their widths are traced, their bodies are not), the guest, analyser and weather bodies, record
   fields marked raw above, the extension data, RideSystem record bodies/lengths, RSSE object bodies and every
   other block.
 - Saves with known ride wear to confirm the attraction gauges against the original wear rule.

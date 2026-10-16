@@ -15,7 +15,7 @@ The ride, shop and sideshow windows, read in tp.exe via REA:
 - **The ride view camera** (UI-094 narrowed): the look rotation signs are tp.exe's (`0x46f350`, `0x46f650`), and the pointer reference is
   the full-screen park window (`0x489f50`).
 
-The pinned run hash and saves are unchanged. Verified with 4685 tests passing without game data, 5135 with it, and all five native smokes.
+The pinned run hash and saves are unchanged. Verified with 4833 tests passing without game data (569 skipped), 5292 with it (110 skipped), and all five native smokes.
 
 New register IDs split out of the open parts: UI-104 (the Move tool, mode `0x3b`), UI-105 (the golden-ticket rows of the buy list) and UI-106
 (the gauge art `ridestatbar.wct` decoding without the red end; the video-read colours stay UI-046). The customer and winner histories are covered by

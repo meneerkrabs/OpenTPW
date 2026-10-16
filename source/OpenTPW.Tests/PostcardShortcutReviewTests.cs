@@ -102,7 +102,12 @@ public class PostcardShortcutReviewTests
 			Input.UpdateButtons();
 			hud.Update( Context(), UiInput.Click( mouse ), false, false, false );
 			Assert.IsFalse( hud.VisitorWindowOpen );
-			hud.Update( Context(), press, false, false, false );
+			// [BIN:TPW-EXE:0x487013 hover mode 7] a visitor press needs Shift alone (or the visitor locator panel out)
+			using ( Input.InjectKeyDown( Key.ShiftLeft ) )
+			{
+				Input.UpdateButtons();
+				hud.Update( Context(), press, false, false, false );
+			}
 			Assert.IsTrue( hud.VisitorWindowOpen, "A new ordinary visitor click must work after the consumed release." );
 			Assert.AreEqual( guest.Id, hud.SelectedVisitorId );
 		}
@@ -110,7 +115,7 @@ public class PostcardShortcutReviewTests
 		{
 			Camera.Mode = previousCamera; Camera.ViewMatrix = previousView; Camera.ProjMatrix = previousProjection;
 			GameEditions.Select( previousEdition ); Input.Keyboard = previousKeyboard;
-			Input.KeysDown = previousDown; Input.LastKeysDown = previousLast; Input.TextEntryActive = previousText;
+			Input.KeysDown = previousDown; Input.LastKeysDown = previousLast; Input.TextEntryActive = previousText; Input.UpdateButtons();
 		}
 	}
 }

@@ -99,6 +99,8 @@ public interface IUiRowList
 public interface IUiDragTarget
 {
 	void DragTo( UiCanvas canvas, System.Numerics.Vector2 point );
+	/// <summary>The left button went down on this element (before the first <see cref="DragTo"/> of the press).</summary>
+	void DragBegin( UiCanvas canvas, System.Numerics.Vector2 point ) { }
 }
 
 /// <summary>

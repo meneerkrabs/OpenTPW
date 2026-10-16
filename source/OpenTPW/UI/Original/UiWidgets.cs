@@ -563,7 +563,7 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 	/// </summary>
 	// [BIN:TPW-EXE:0x66b088 slider thumb] the original's slider class (vtable 0x705b20) places the thumb at track left + (value - min) × (track width - thumb width) / (max - min) in integer units; the options page's sliders are 0..100 (0x4a455a)
 	// [EXT:options-slider-steps] OpenTPW's option sliders step through its own graphics presets and 11 volume steps and take the nearest step; the original's are 0..100 with the change handler 0x4a2e90 mapping the value to a resolution index (v × 2) / 100 and a quality index (k × v) / 100 (k 2, or 1 when [0x78d8d8] is 0)
-	// [APPROX:UI-036] a click or drag takes the nearest step where the original truncates a drag (0x66af19) and moves one page toward a track click (0x66b8aa), and leaves the knob where it was dragged (0x4a2e90) — evidence needed: the knob's position after a drag for the 0..100 volume sliders
+	// [APPROX:UI-036] the options page's sliders take the nearest step of their own presets ([EXT:options-slider-steps]) and snap the knob to the value, where the original (0x4a2e90) leaves the knob where it was dragged; the original-class sliders (Truncates: research effort, object settings) truncate a drag, grab the thumb at an offset and page on a track click
 	public UiRect KnobRect( int value )
 	{
 		var steps = Math.Max( 2, Steps() );
@@ -584,7 +584,56 @@ public sealed class UiSlider : UiElement, IUiDragTarget
 		return Math.Clamp( Truncates ? (int)MathF.Floor( fraction * (steps - 1) + 1e-4f ) : (int)MathF.Round( fraction * (steps - 1) ), 0, steps - 1 );
 	}
 
-	void IUiDragTarget.DragTo( UiCanvas canvas, NVector2 point ) => SetFromMouse( canvas, point );
+	// the press of an original-class slider (Truncates): on the thumb it grabs it (the thumb keeps the offset of the grab), on the track it moves one page toward the click
+	private enum PressMode { None, Grab, Page }
+	private PressMode pressMode;
+	private float grabOffset;
+
+	/// <summary>Value change of a click on the track beside the thumb (the original's page, +0x148, default 1 from 0x66adc9).</summary>
+	public int Page { get; set; } = 1;
+
+	private float AuthoredX( UiCanvas canvas, NVector2 point )
+	{
+		var rect = ScreenRect( canvas );
+		return Bounds.X + (point.X - rect.X) / rect.Width * Bounds.Width;
+	}
+
+	void IUiDragTarget.DragBegin( UiCanvas canvas, NVector2 point )
+	{
+		pressMode = PressMode.None;
+		if ( !Truncates || !Enabled || ScreenRect( canvas ).Width <= 0 )
+			return;
+		var x = AuthoredX( canvas, point );
+		var knob = KnobRect( Value() );
+		// [BIN:TPW-EXE:0x66b8aa slider track click] a click off the thumb is compared with the thumb's far edge (horizontal: its right edge) and calls the page move 0x66b088 (mode 2 or 3, +-0x148),
+		// inverted for a slider whose step +0x144 is positive (the default): left of the thumb lowers the value, right of it raises it; 0x66b088 clamps to the range and posts 0x800 when the value changed
+		if ( x >= knob.X && x <= knob.Right )
+		{
+			pressMode = PressMode.Grab;
+			grabOffset = x - (knob.X + knob.Width / 2);
+		}
+		else
+		{
+			pressMode = PressMode.Page;
+			var steps = Math.Max( 2, Steps() );
+			Set( Math.Clamp( Value() + (x < knob.Right ? -Page : Page), 0, steps - 1 ) );
+		}
+	}
+
+	void IUiDragTarget.DragTo( UiCanvas canvas, NVector2 point )
+	{
+		if ( pressMode == PressMode.Page )
+			return;
+		if ( pressMode == PressMode.Grab )
+		{
+			if ( !Enabled || ScreenRect( canvas ).Width <= 0 )
+				return;
+			// [BIN:TPW-EXE:0x66af19 slider drag] the thumb follows the pointer at the grabbed offset; the value is read from the thumb's left edge
+			Set( ValueAt( AuthoredX( canvas, point ) - grabOffset ) );
+			return;
+		}
+		SetFromMouse( canvas, point );
+	}
 
 	/// <summary>Sets the value from a mouse position in framebuffer pixels.</summary>
 	public void SetFromMouse( UiCanvas canvas, NVector2 point )

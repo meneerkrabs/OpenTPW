@@ -40,7 +40,7 @@ public sealed partial class ParkHud
 	private Dictionary<StaffType, string[]>? staffNames;
 	private string[]? staffTypes;
 	private string[]? staffStates;
-	// [APPROX:UI-080] ten equal staff rows fill the table's 470-unit content area; wheel movement is one row — evidence needed: original staff-list capture.
+	// [APPROX:UI-080] ten equal staff rows fill the table's 470-unit content area and the wheel moves one row; the original list class takes its pitch from the font's text height (0x663718: 0x65d865 into +0x170) and shows (bottom - top) / pitch rows (0x663786), and the video's list (12:00) has a pitch of about 19 px at 720p, about 40 units — evidence needed: the staff list font's text height and the wheel step
 	public const int StaffVisibleRows = 10;
 	public const float StaffRowHeight = 470f / StaffVisibleRows;
 
@@ -138,8 +138,8 @@ public sealed partial class ParkHud
 	/// Hires the still-available selected applicant: the window closes and the Place tool starts with the applicant still in the pool; the employee
 	/// exists only after a click on a valid cell (docs/STAFF-PLACEMENT.md). Without a park view the economy hires at once.
 	/// </summary>
-	// [BIN:TPW-EXE:0x507bf0 hire] the hire creates no object, it builds the place tool; [BIN:TPW-EXE:0x49b9dd hire handler] the handler posts advisor message 0x135 and closes the window
-	// [APPROX:UI-097] the advisor message 0x135 (309, "place your new staff member") is not posted: its descriptor row exists (table 0x76E300 of 56-byte rows built by 0x5a0a50; row 309 at 0x772698: all game modes, group 1, first response 0x239 = 569 = speech sample 587, one response, one pending duplicate) but its score callback 0x59e8c0 returns field +0x328 of the Advisor.sam balance object (0xfb3540), whose key is unidentified, so OpenTPW's advisor table (scored messages only) cannot hold it; the hint is an OpenTPW line of the message area, shown when the tool starts, and the queue cannot withdraw advice — evidence needed: the Advisor.sam key behind balance field +0x328 and the advice withdrawal
+	// [BIN:TPW-EXE:0x507bf0 hire] the hire creates no object, it builds the place tool; [BIN:TPW-EXE:0x49b9dd hire help] the handler closes the window (0x658d9f, message 4) and then posts advisor message 0x135
+	// [BIN:TPW-EXE:0x46c890 place tool end] the advisor help 0x135 (309) is posted after the window closes and withdrawn when the Place tool ends (ParkHud.StaffPlacementHelp); no message-area line
 	public bool HireSelectedStaff()
 	{
 		if ( showingEmployedStaff || RejectReadOnlyAction() || Status.EconomySource is not ParkEconomy economy || economy.IsBankrupt )
@@ -152,7 +152,6 @@ public sealed partial class ParkHud
 			if ( !placement.BeginHire( candidate.Id ) )
 				return false;
 			level.EndBuildTools();
-			PostMessage( strings.Extra( OpenTpwText.PlaceStaff ) );
 			CloseStaffWindow();
 		}
 		else
@@ -292,7 +291,7 @@ public sealed partial class ParkHud
 
 	/// <summary>The hire window's skill gauge (control 9346) as a share of the full bar: the candidate's skill byte over 5.</summary>
 	// [BIN:TPW-EXE:0x49b8c3 skill gauge] the gauge is set to the skill byte (candidate +8) × 1024 / 5 (0x49b8e2..0x49b8f5), so the byte 5 fills the bar
-	// [APPROX:UI-081] the byte is taken as the grade + 1 (the cheapest candidate's bar is about a fifth full in the video, 12:00); the field's writer is not traced
+	// [APPROX:UI-081] the field is the grade (0x507600 writes +8 = AvgGradeOf* + R % 3 - 1, stored as 4 when above 4), so the original's value is Grade × 1024 / 5 of the gauge's 0..1024 range (0x66d885) and a grade-0 candidate's value is 0; the bar keeps (Grade + 1) / 5 because the video's cheapest ($60) candidate shows about a fifth (12:00), which only the gauge models' drawing of the value can explain (UI-046)
 	public static float? SkillGauge( StaffCandidate? candidate ) => candidate == null ? null : Math.Clamp( (candidate.Grade + 1) / 5f, 0f, 1f );
 
 	private string SelectedName => showingEmployedStaff

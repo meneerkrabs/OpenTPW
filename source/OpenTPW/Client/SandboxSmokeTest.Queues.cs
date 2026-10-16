@@ -22,7 +22,15 @@ internal sealed partial class SandboxSmokeTest
 			return;
 		var canvas = hudContext.Canvas;
 		var viewport = new System.Numerics.Vector2( canvas.Width, canvas.Height );
-		bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point ) =>
+		bool Clickable( (int X, int Y) cell, out System.Numerics.Vector2 point )
+		{
+			point = default;
+			// the guest grid is larger than the terrain of some levels: a cell off the heightfield has no screen point
+			if ( cell.X < 0 || cell.Y < 0 || cell.X >= level.Objects.Grid.Width || cell.Y >= level.Objects.Grid.Height )
+				return false;
+			return ClickableCell( cell, out point );
+		}
+		bool ClickableCell( (int X, int Y) cell, out System.Numerics.Vector2 point ) =>
 			level.TryProjectCell( cell.X, cell.Y, viewport, out point )
 			&& point.X > canvas.Width * 0.25f && point.X < canvas.Width * 0.75f && point.Y > canvas.Height * 0.15f && point.Y < canvas.Height * 0.65f
 			&& !hud.Stack.Covers( canvas, point )

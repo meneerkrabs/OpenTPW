@@ -57,7 +57,11 @@ The park's cell map now follows tp.exe's placement commit (`0x528A70`), read via
 **Determinism and saves.** The pinned hash is unchanged: the owner words are derived state and are not hashed, and the merge with main's whole walks did not move
 the pin (main's `0x205523C08061A05D` after #244; `DeterminismTests` passes unchanged with and without game data). Saves keep the optional `Owner`; old saves load.
 
-**Verification.** NUMBERS_PLACEHOLDER
+**Verification.** 4934 tests pass without game data (579 skipped) and 5400 with it (113 skipped), after merging main through #261; the fidelity register
+(`--write`, `--check`: 191 unresolved unique IDs), `tools/progress.py --check` and the evidence checks (`run_evidence_checks.py`) pass; the five native smokes pass offscreen
+(front end, sandbox, the plain smoke and the park-resume capture and restore). The `--load-original-level jungle --smoke-test` mode, which the smoke script does not run, reaches the new
+queue steps (removing the laid queue front, the entrance fallback, rebuilding, a free-standing cell) and passes them, then fails in the staff phase on a cell off the heightfield, in code this branch does not
+touch.
 
 **Still open (new IDs needed)**
 

@@ -47,10 +47,13 @@ public partial class Level
 			else
 				catalog = loaded;
 		}
-		// Objects keep off built path and queue cells; imported path cells are refused by the terrain rule as before.
+		// Objects keep off built path, queue and track cells; imported path cells are refused by the terrain rule as before. Object cells
+		// (types 4, 9 and 10) are left to ParkObjects, which lets a higher overwrite priority replace their owner.
+		// [BIN:TPW-EXE:0x535BB3 track cells] for an object cell (type 4) the validator refuses a second-layer track cell (0x53AD30: types 0xB, 0xD, 0x10, 0x12, 0x19; the extensions 0xC and 0x11 through their head, 0x535811) and any other map type but 0, 1 and the object types (0x535C4C..0x535D5D)
 		Objects = new ParkObjects( catalog!, grid, Seed )
 		{
-			IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.IsQueue( x, y ) == true || Guests?.Grid.IsWalkable( x, y ) == true,
+			IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type
+				&& type is not (0 or ParkCellTypes.Object or ParkCellTypes.Entrance or ParkCellTypes.Exit),
 			IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned )
 		};
 		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes, for every removal but a park load or clear

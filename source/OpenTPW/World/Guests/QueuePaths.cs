@@ -27,9 +27,9 @@ public enum QueueBuildResult
 /// </summary>
 public static class QueuePaths
 {
-	/// <summary>Most cells one queue may have: 4 × 25 = 100 positions.</summary>
-	// [APPROX:QUEUE-013] maximum queue length 25 cells (100 positions); tp.exe's queue-cell setter 0x005346D0, the cell validator 0x00535670 and the line layer 0x00536100 compare no cell count, and the back-of-queue walk 0x004DE130 stops only after 1,000 cells ("GetBackOfQueue() crashed!"); a HasQueue ride's limit is its QueueWaitTimeConstant formula (Belly Bounce 21), so the cap only shortens queues of rides whose limit exceeds 100 — evidence needed: the rest of the tool's cell handler (0x00524960, 0x00532FC0)
-	public const int MaximumCells = 25;
+	/// <summary>Most cells one queue may have: the bound of the original's back-of-queue walk.</summary>
+	// [BIN:TPW-EXE:0x004DE130 back of queue] the original compares no cell count anywhere in the queue tool (the click 0x524960, the setter 0x5346D0, the validator 0x535670 and the line layer 0x536100 test none); only the back-of-queue walk stops after 1,000 cells and logs "GetBackOfQueue() crashed!", so a queue can be that long and no longer
+	public const int MaximumCells = 1000;
 
 	/// <summary>Checks whether (x, y) can be the next cell of <paramref name="ride"/>'s queue (no writes).</summary>
 	// [APPROX:QUEUE-014] Queue lines start on the entrance's outside cell and lay empty cells that each touch the current back cell, where tp.exe's queue tool lays straight segments along the dominant axis (0x536100, ported) from a start the player clicks (SetMode 0x52f200 clears it), each cell validated by 0x535670: an empty cell is accepted, a path cell is replaced unless its flag 0x20 (NoModify) is set, a path cell on the line's last cell is code 8, the connection (ported), an object cell is refused, a queue cell of another ride (owner word +0x10 against the tool's ride, 0x818698) is refused and the tool's own passed; the commit 0x532fc0 then types the cell (0x5346D0, which clears a path first), links it (pass 0x80, the link writer in mode 3), gives it the queue link toward the previous cell (pass 0x82) and the tool's ride as owner word (pass 0x83); OpenTPW keeps no owner word (a queue cell belongs to the ride whose chain reaches it) and lays no queue over a path cell, and a queue line must start on the front cell and touch the back cell — evidence needed: the validator's object-cell branch (0x818C10 and 0x818C14), the rest of the commit 0x532fc0 and the refund of the cell clear 0x5367A0, which reads the owner word

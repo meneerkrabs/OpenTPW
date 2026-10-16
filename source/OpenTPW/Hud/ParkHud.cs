@@ -973,7 +973,7 @@ public sealed partial class ParkHud
 			GameAudio.PlayPathToolSound( GameAudio.PathLayEvent );
 		if ( result is { Completed: false } )
 		{
-			// a commit stopped only by OpenTPW's own queue cap is not one of the original's refusals (QUEUE-013)
+			// a commit stopped only by the back-of-queue walk's bound is not one of the original's refusals
 			if ( !result.StoppedByOwnLimit )
 				refusalClick.Refused( cursorX, cursorY );
 			PostMessage( strings.Extra( result.StoppedBy == CellBuildResult.NotEnoughMoney ? OpenTpwText.NotEnoughMoney : OpenTpwText.CannotBuildHere ) );

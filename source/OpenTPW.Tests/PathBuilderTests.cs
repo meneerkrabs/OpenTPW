@@ -672,14 +672,13 @@ public class PathBuilderTests
 		(grid, ride) = QueueRig( 40 );
 		tool.Enter( QueueWriter( grid, ride ), (2, 1) );
 		ghost = tool.Hover( (2, 35) )!;
-		Assert.AreEqual( QueuePaths.MaximumCells, ghost.Built.Count );
-		Assert.IsFalse( ghost.Completed, "the cell past the limit is refused" );
-		Assert.IsTrue( ghost.StoppedByOwnLimit, "by OpenTPW's own cap (QUEUE-013), which the original does not have" );
-		// so the click is not a refused-ghost click: it commits up to the cap
+		Assert.AreEqual( 35, ghost.Built.Count, "the original tests no cell count: the whole line is laid (QUEUE-013 retired)" );
+		Assert.IsTrue( ghost.Completed );
+		Assert.IsFalse( ghost.StoppedByOwnLimit );
 		var commit = tool.Click( (2, 35) )!;
 		Assert.IsFalse( commit.GhostRefused );
 		CollectionAssert.AreEqual( ghost.Built.ToArray(), commit.Built.ToArray() );
-		Assert.AreEqual( QueuePaths.MaximumCells, ride.QueueSizeInCells );
+		Assert.AreEqual( 35, ride.QueueSizeInCells );
 
 		// Money: the ghost charges the pending cells as the commit spends them, one by one.
 		(grid, ride) = QueueRig( 12 );

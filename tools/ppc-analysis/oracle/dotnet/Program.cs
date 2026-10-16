@@ -174,7 +174,7 @@ static JsonNode? GuestIngredientBoost( JsonObject a )
 // GuestSimulation.ArrivalGroupSize (0xcb4e8) on a fresh simulation. World mode 4 halts arrivals; the counted guests fill
 // the guest list (a field) through reflection (only its count is read). The weather thing's +48 word (mCurrentDrops, game +0x1da724)
 // is passed as the drops-falling flag (word > 0 selects the factor 0.8, F9). The GameType mode word 1 (limit_mode) is passed as OnlineVisit
-// (the 500 cut; ARRIVAL-002 assumes a visit is GameType 1).
+// (the 500 cut; tp.exe 0x4c0830 sets GameType 1 for a visit).
 static JsonNode? ArrivalGroup( JsonObject a )
 {
 	var settings = new GuestSettings

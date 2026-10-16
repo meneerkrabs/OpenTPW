@@ -10,13 +10,17 @@ public class LobbyEffectsTests
 	private static LobbyIslandInfo Island( string level, (byte, byte, byte) sky, bool rainy = false, int lightning = 0 ) =>
 		new( 0, level, level, "island", "gate", level, 0, 0, sky, System.Array.Empty<string>(), rainy, lightning );
 
+	/// <summary>One draw of tp.exe's lobby generator from <paramref name="state"/>: the LCG step rotated right by 13 bits.</summary>
+	internal static uint NextDraw( uint state ) => System.Numerics.BitOperations.RotateRight( unchecked(state * 0x19660Du + 0x3C6EF35Fu), 13 );
+
 	[TestMethod]
-	public void TheGeneratorReturnsTheFullLcgState()
+	public void TheGeneratorReturnsTheLcgStepRotatedRightByThirteenAndKeepsIt()
 	{
 		var effects = new LobbyEffects( 1 );
-		Assert.AreEqual( unchecked(1u * 0x19660Du + 0x3C6EF35Fu), effects.Draw() );
-		var next = unchecked((1u * 0x19660Du + 0x3C6EF35Fu) * 0x19660Du + 0x3C6EF35Fu);
-		Assert.AreEqual( next, effects.Draw() );
+		var first = unchecked(1u * 0x19660Du + 0x3C6EF35Fu);
+		Assert.AreEqual( (first >> 13) | (first << 19), effects.Draw() );
+		var second = unchecked(((first >> 13) | (first << 19)) * 0x19660Du + 0x3C6EF35Fu);
+		Assert.AreEqual( (second >> 13) | (second << 19), effects.Draw(), "the rotated value is the next step's state" );
 	}
 
 	[TestMethod]
@@ -29,26 +33,53 @@ public class LobbyEffectsTests
 	}
 
 	[TestMethod]
-	public void TheSkyEasesASixteenthOfTheWayEachTick()
+	public void TheSkyStartsBlackAndShowsTheFogColourWhileItEqualsItsTarget()
 	{
 		var effects = new LobbyEffects( 7 );
-		var dry = Island( "jungle", (0, 0, 0) );
-		effects.Step( LobbyEffects.TickSeconds, new[] { new LobbyEffects.Island( dry, 0, 0 ) }, 0, 0 );
-		Assert.IsTrue( effects.HasSky );
-		Assert.AreEqual( ((byte)0, (byte)0, (byte)0), effects.Sky, "the first target is taken at once" );
-		var bright = Island( "fantasy", (160, 160, 160) );
-		effects.Step( LobbyEffects.TickSeconds, new[] { new LobbyEffects.Island( bright, 0, 0 ) }, 0, 0 );
-		Assert.AreEqual( ((byte)10, (byte)10, (byte)10), effects.Sky, "1/16 of 160" );
+		Assert.AreEqual( LobbyEffects.ClearColour, effects.Sky, "before any tick the grid keeps the fog colour" );
+		Assert.AreEqual( ((byte)0x44, (byte)0xDD, (byte)0xFF), LobbyEffects.ClearColour );
+		var black = Island( "jungle", (0, 0, 0) );
+		effects.Step( LobbyEffects.TickSeconds, new[] { new LobbyEffects.Island( black, 0, 0 ) }, 0, 0 );
+		Assert.AreEqual( LobbyEffects.ClearColour, effects.Sky, "the colour starts black, so a black target is already reached" );
+	}
+
+	[TestMethod]
+	public void TheSkyEasesASixteenthOfTheWayWithTheRedChannelTowardTheBlueTarget()
+	{
+		var effects = new LobbyEffects( 7 );
+		var jungle = new LobbyEffects.Island( Island( "jungle", (243, 203, 191) ), 0, 0 );
+		effects.Step( LobbyEffects.TickSeconds, new[] { jungle }, 0, 0 );
+		// From black: (191 << 16) >> 4 = 191 × 4096 → 11; (203 << 16) >> 4 → 12.
+		Assert.AreEqual( ((byte)11, (byte)12, (byte)11), effects.Sky, "red moves toward the blue target" );
+		for ( var tick = 0; tick < 400; tick++ )
+			effects.Step( LobbyEffects.TickSeconds, new[] { jungle }, 0, 0 );
+		Assert.AreEqual( ((byte)190, (byte)202, (byte)190), effects.Sky, "the shift stops 15/65536 short, and red settles at the blue value" );
+		var space = new LobbyEffects.Island( Island( "space", (125, 8, 8) ), 0, 0 );
+		effects.Step( LobbyEffects.TickSeconds, new[] { space }, 0, 0 );
+		// Down from 190.99…: the arithmetic shift rounds toward minus infinity.
+		Assert.IsTrue( effects.Sky.R < 190 && effects.Sky.R == effects.Sky.B, $"red and blue fall together toward 8: {effects.Sky}" );
 		effects.StepGlobe( 1f );
 		Assert.AreEqual( 0, effects.RainDrops );
-		Assert.AreNotEqual( effects.Sky, ((byte)10, (byte)10, (byte)10), "the globe eases toward its own sky" );
+	}
+
+	[TestMethod]
+	public void TheSkyShiftRoundsTowardMinusInfinity()
+	{
+		var effects = new LobbyEffects( 7 );
+		var white = new LobbyEffects.Island( Island( "fantasy", (255, 255, 255) ), 0, 0 );
+		for ( var tick = 0; tick < 400; tick++ )
+			effects.Step( LobbyEffects.TickSeconds, new[] { white }, 0, 0 );
+		var black = new LobbyEffects.Island( Island( "hallow", (0, 0, 0) ), 0, 0 );
+		for ( var tick = 0; tick < 2000; tick++ )
+			effects.Step( LobbyEffects.TickSeconds, new[] { black }, 0, 0 );
+		Assert.AreEqual( LobbyEffects.ClearColour, effects.Sky, "going down, sar 4 keeps stepping by at least −1 until the target is reached exactly" );
 	}
 
 	[TestMethod]
 	public void ALightningIslandStrikesWhenTheDrawMatchesAndPlacesTheBoltAroundIt()
 	{
-		// A seed whose first draw has (state & 63) == 1: hallow's LIGHTNING 63 strikes on the first tick.
-		var seed = Enumerable.Range( 0, 100000 ).Select( value => (uint)value ).First( value => (unchecked(value * 0x19660Du + 0x3C6EF35Fu) & 63) == 1 );
+		// A seed whose first draw has (draw & 63) == 1: hallow's LIGHTNING 63 strikes on the first tick.
+		var seed = Enumerable.Range( 0, 100000 ).Select( value => (uint)value ).First( value => (NextDraw( value ) & 63) == 1 );
 		var effects = new LobbyEffects( seed );
 		var hallow = new LobbyEffects.Island( Island( "hallow", (4, 44, 12), rainy: true, lightning: 63 ), 400, 300 );
 		var (thunders, _) = effects.Step( LobbyEffects.TickSeconds, new[] { hallow }, 400, 370 );
@@ -67,7 +98,7 @@ public class LobbyEffectsTests
 	[TestMethod]
 	public void TheWeatherRendererReadsTheLobbyStrikesInOriginalAxes()
 	{
-		var seed = Enumerable.Range( 0, 100000 ).Select( value => (uint)value ).First( value => (unchecked(value * 0x19660Du + 0x3C6EF35Fu) & 63) == 1 );
+		var seed = Enumerable.Range( 0, 100000 ).Select( value => (uint)value ).First( value => (NextDraw( value ) & 63) == 1 );
 		var effects = new LobbyEffects( seed );
 		var source = new LobbyWeatherSource( effects );
 		var hallow = new LobbyEffects.Island( Island( "hallow", (4, 44, 12), rainy: true, lightning: 63 ), 400, 300 );

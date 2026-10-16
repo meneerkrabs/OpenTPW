@@ -8,8 +8,9 @@ namespace OpenTPW;
 /// 144 pixels). Only the sign faces are drawn (the gate model itself belongs to the object renderer);
 /// they sit where the original gate's sign is because the gate archive sets
 /// <c>Info.DontApplyOffset 1</c>, i.e. its MD2 coordinates are level coordinates.
-/// The park name defaults to the theme name from <c>THEMENAMES.str</c> (the original lets the player
-/// rename the park; that state lives in saves owned by the economy slice).
+/// The park name is the gate's two sign lines (<see cref="ParkNameLines"/>): the gate's OBJECT_NAMES row when the park
+/// starts, the player's two fields after a rename (the ticket price window's park name), and the saved lines when a park
+/// is resumed.
 /// </summary>
 public sealed class OriginalGateSign : Entity
 {
@@ -21,27 +22,56 @@ public sealed class OriginalGateSign : Entity
 	private readonly ModelEntity part;
 	private readonly Model model;
 
-	private OriginalGateSign( Model model, ObjectSignImages images, string parkName, int textPixels, SignTextSlot slot, string archivePath )
+	private OriginalGateSign( Model model, ObjectSignImages images, ParkNameLines lines, int textPixels, SignTextSlot slot, string archivePath, SignFile sign )
 	{
 		this.model = model;
+		this.sign = sign;
 		part = new ModelEntity { Model = model, Name = "gate sign" };
 		Images = images;
-		ParkName = parkName;
+		Lines = lines;
 		TextPixelCount = textPixels;
 		Slot = slot;
 		ArchivePath = archivePath;
 	}
 
-	public string ParkName { get; }
+	private readonly SignFile sign;
+
+	/// <summary>The park name's two lines as the gate holds them.</summary>
+	public ParkNameLines Lines { get; private set; }
+	/// <summary>The park name on one line (<see cref="ParkNameLines.DisplayName"/>).</summary>
+	public string ParkName => Lines.DisplayName;
 	public ObjectSignImages Images { get; }
-	public int TextPixelCount { get; }
+	public int TextPixelCount { get; private set; }
 	public SignTextSlot Slot { get; }
 	public string ArchivePath { get; }
 
-	/// <summary>The default park name of a level: its THEMENAMES.str entry, else the level name.</summary>
+	/// <summary>
+	/// The lines a level's gate starts with: the gate's OBJECT_NAMES row in the current language (<see cref="ParkNameLines.Default"/>),
+	/// else the theme name split at its middle space.
+	/// </summary>
+	public static ParkNameLines DefaultLines( string levelName, int gateInfoId )
+	{
+		if ( GameEditions.Current == GameEdition.ThemeParkWorld )
+		{
+			try
+			{
+				if ( ParkNameLines.Default( gateInfoId, GameLanguage.Current.LoadStrings( ObjectNames.FileName ).Entries ) is { } lines )
+					return lines;
+			}
+			catch ( Exception exception ) when ( exception is IOException or InvalidDataException or InvalidOperationException )
+			{
+				Log.Warning( $"Park name: {ObjectNames.FileName} unavailable ({exception.Message}); using the theme name." );
+			}
+		}
+		// [EXT:park-name-fallback] without the gate's OBJECT_NAMES row (Theme Park Inc, a gate id outside tp.exe's table, missing language files) the theme name stands in, split at its middle space; no original rule applies
+		var (line1, line2) = SignCanvas.SplitAtMiddleSpace( DefaultParkName( levelName ) );
+		var fallback = new ParkNameLines( BonusNames.Truncate( line1 ), BonusNames.Truncate( line2 ) );
+		return fallback.IsValid ? fallback : new ParkNameLines( "", "" );
+	}
+
+	/// <summary>The theme name of a level: its THEMENAMES.str entry, else the level name (the fallback park name).</summary>
 	public static string DefaultParkName( string levelName )
 	{
-		// [APPROX:COMPAT-007] the theme name is the default park name; the original stores two editable lines (the rename dialog's two fields) that the gate draws and saves, and OpenTPW has no rename — evidence needed: the save field of the two lines.
 		// [DATA:THEMENAMES.str:entries 0..3] Lost Kingdom, Halloween World, Wonder Land, Space Zone.
 		var index = ThemeLevels.ToList().FindIndex( level => string.Equals( level, levelName, StringComparison.OrdinalIgnoreCase ) );
 		try
@@ -58,7 +88,9 @@ public sealed class OriginalGateSign : Entity
 	}
 
 	/// <summary>Builds the sign, or returns null (with a logged reason) when the gate data is missing.</summary>
-	public static OriginalGateSign? TryCreate( OriginalPark park, SettingsFile global, string? parkName = null )
+	/// <param name="lines">The park name's lines; null for the gate's default (<see cref="DefaultLines"/>).</param>
+	/// <param name="reloaded">The lines come from a saved park: the sign is drawn as the rebuild after loading draws it (<see cref="ParkNameLines.ReloadedSignLines"/>).</param>
+	public static OriginalGateSign? TryCreate( OriginalPark park, SettingsFile global, ParkNameLines? lines = null, bool reloaded = false )
 	{
 		// [DATA:levels/<level>/global.sam:ParkName.GateObjectId]
 		if ( !int.TryParse( global["ParkName.GateObjectId"], out var gateId ) || !park.Catalog.TryGetValue( gateId, out var gate ) )
@@ -85,19 +117,37 @@ public sealed class OriginalGateSign : Entity
 			Log.Warning( $"Gate sign: {gate.ArchivePath}/{modelMember} has no sign1/sign2 faces." );
 			return null;
 		}
-		parkName ??= DefaultParkName( park.LevelName );
+		lines ??= DefaultLines( park.LevelName, gateId );
 		// [APPROX:COMPAT-004] the gate is composed from its decoded board with the park name as two lines; gate pixels (board placement, relief strength) are compared with a 720p capture only
-		// The original gate shows the park name on two lines ("Verloren" over "Koninkrijk") and edits them as two fields; the default theme names are all two words, so the split at the middle space is the stored pair
+		// [BIN:TPW-EXE:0x004629D0 object builder] a sign built from the catalogue is the info-record name split at the middle space (0x467A80); for the four shipped gates (rows of one-word texts) that is exactly the pair of lines the placed gate gets (0x4DB6F9), so the lines are drawn as they are
 		// The stored paint is not overridden: in gates.sgn it is a 60 % black shadow offset by (-1, 1) under dark relief stone text, which is what the video shows (the former cream-paint and upward-normal decision gate-paint-legibility, COMPAT-031, is contradicted by the video)
-		var (line1, line2) = SignCanvas.SplitAtMiddleSpace( parkName );
+		var (line1, line2) = reloaded ? lines.ReloadedSignLines : (lines.Line1, lines.Line2);
 		var (left, right, diagnostics, textPixels) = SignTextRenderer.Shared.ComposeSign( sign, new[] { line1, line2 }, default );
 		foreach ( var diagnostic in diagnostics )
 			Log.Warning( $"Gate sign: {diagnostic}" );
 		var images = new ObjectSignImages( line1, line2, left, right, textPixels, diagnostics );
 		var model = new Model( vertices.ToArray(), indices.ToArray(), SignTextRenderer.CreateMaterial( images.LeftTexture, images.RightTexture ) );
 		var slot = sign.Slots[0];
-		Log.Trace( $"Gate sign: \"{parkName}\" in {slot.FontFileName} ('{slot.FaceName}', {slot.EmHeightPixels}px em) on {indices.Count / 3} sign faces of {gate.ArchivePath}/{modelMember}." );
-		return new OriginalGateSign( model, images, parkName, textPixels, slot, gate.ArchivePath );
+		Log.Trace( $"Gate sign: \"{lines.DisplayName}\" in {slot.FontFileName} ('{slot.FaceName}', {slot.EmHeightPixels}px em) on {indices.Count / 3} sign faces of {gate.ArchivePath}/{modelMember}." );
+		return new OriginalGateSign( model, images, lines, textPixels, slot, gate.ArchivePath, sign );
+	}
+
+	/// <summary>
+	/// Gives the gate new lines and redraws its sign with them as they are (the rename dialog's OK). The sign's textures keep
+	/// their identity, so the gate model and these faces show the new name at once.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004993E0 park rename OK] the two fields are stored as the gate's lines (0x4E2950, 0x4E2A50) and the gate's sign is redrawn from the two fields (0x4682B0 -> 0x467A80 with explicit lines, no split)
+	public void Rename( ParkNameLines lines )
+	{
+		ArgumentNullException.ThrowIfNull( lines );
+		if ( !lines.IsValid )
+			throw new ArgumentException( "The park name lines are not valid.", nameof( lines ) );
+		var (left, right, diagnostics, textPixels) = SignTextRenderer.Shared.ComposeSign( sign, new[] { lines.Line1, lines.Line2 }, default );
+		foreach ( var diagnostic in diagnostics )
+			Log.Warning( $"Gate sign: {diagnostic}" );
+		Images.Replace( lines.Line1, lines.Line2, left, right, textPixels, diagnostics );
+		Lines = lines;
+		TextPixelCount = textPixels;
 	}
 
 	private static void AppendSignFaces( OriginalPark park, ModelFile model, ModelFile.Mesh mesh, List<Vertex> vertices, List<uint> indices )

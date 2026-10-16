@@ -13,18 +13,36 @@ public sealed class ObjectSignImages
 		Diagnostics = diagnostics;
 	}
 
-	public string Line1 { get; }
-	public string Line2 { get; }
+	public string Line1 { get; private set; }
+	public string Line2 { get; private set; }
 	/// <summary>RGBA of the <c>sign1</c> texture (<see cref="SignSurfaceComposer.HalfWidth"/> x <see cref="SignSurfaceComposer.Height"/>).</summary>
-	public byte[] Left { get; }
+	public byte[] Left { get; private set; }
 	/// <summary>RGBA of the <c>sign2</c> texture.</summary>
-	public byte[] Right { get; }
+	public byte[] Right { get; private set; }
 	/// <summary>Nonzero text-mask pixels, independent of the board image.</summary>
-	public int TextPixelCount { get; }
-	public IReadOnlyList<string> Diagnostics { get; }
+	public int TextPixelCount { get; private set; }
+	public IReadOnlyList<string> Diagnostics { get; private set; }
 
 	private Texture? leftTexture;
 	private Texture? rightTexture;
+
+	/// <summary>
+	/// New text for images owned by one entity (the park gate's sign after a rename): the halves are replaced and GPU textures
+	/// made so far take the new pixels in place, so materials that bind them follow.
+	/// </summary>
+	internal void Replace( string line1, string line2, byte[] left, byte[] right, int textPixels, IReadOnlyList<string> diagnostics )
+	{
+		if ( left.Length != Left.Length || right.Length != Right.Length )
+			throw new ArgumentException( "Sign halves must keep their size." );
+		Line1 = line1;
+		Line2 = line2;
+		Left = left;
+		Right = right;
+		TextPixelCount = textPixels;
+		Diagnostics = diagnostics;
+		leftTexture?.Replace( left, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
+		rightTexture?.Replace( right, SignSurfaceComposer.HalfWidth, SignSurfaceComposer.Height );
+	}
 
 	/// <summary>Releases the GPU textures made so far, for images owned by one entity (the park gate's own sign); type signs are shared and stay.</summary>
 	internal void ReleaseTextures()
@@ -60,30 +78,30 @@ public static class ObjectSigns
 	public static bool IsSignSlot( string textureName ) => SlotOf( textureName ) >= 0;
 
 	/// <summary>
-	/// The two lines of an object's sign. The name is the object's display name in the current language (the
-	/// OBJECT_NAMES entries joined by a space, as the build list shows it). Bonus objects whose language file gives
-	/// <c>SIGNA</c>/<c>SIGNB</c> use those two lines.
+	/// The two lines of an object's sign. The name is the object's info-record name (<see cref="ObjectCatalogEntry.SignName"/>:
+	/// the OBJECT_NAMES entries joined by a space, as the build list shows it, or empty for an id outside the original's
+	/// table), else its display name. Bonus objects whose language file gives <c>SIGNA</c>/<c>SIGNB</c> use those two lines.
 	/// </summary>
 	// [BIN:STP-PPC:0x1018E254 sign text builder] one name string is split at its middle space (SignCanvas.SplitAtMiddleSpace); a caller may instead pass the two lines (text slot 0 and 1) explicitly
 	// [BIN:STP-PPC:0x1011A08C object name builder] the name string (info record +0x70C) is the first OBJECT_NAMES text, a space, then the second ("%ls%ls%ls"); an entry ending in '-' is joined to the next without space or dash
 	// [BIN:STP-PPC:0x101598C4 object sign call] for objects built from the catalogue the sign text is that name string of the object's info record (no explicit text passed)
-	// [APPROX:COMPAT-016] the display name stands for the info record's name string (the localized type name of the catalogue entry, not the instance name; a PC v2.0 video shows it for a prebuilt ride too): the join of the two OBJECT_NAMES entries of the executable's Info.Id table 0x7488D8 (0x4146B0, reached through 0x412FB0 at 0x414126 when no object text file NAME is loaded); for an id outside the table the .sam name is shown where 0x4146B0 formats an empty name (two empty parts, empty separator 0x786DE4, "%s%s%s") and what the sign generator 0x467A80 draws then is not read
+	// [BIN:TPW-EXE:0x004629D0 object builder] without explicit text the sign text is the info record's name at +0x410 (0x412F50), filled at 0x414126 by 0x412FB0 from the object text file's NAME or else 0x4146B0 over the table 0x7488D8, which gives an empty name for an id outside the table
+	// [BIN:TPW-EXE:0x00467A80 sign generator] a non-null name is split at the space nearest its middle (searched outward, alternating sides); an empty name has no space, so line 1 is the empty name and line 2 empty, and the sign is still generated (0x5ECB40) with both glyph masks cleared by 0x5EAB70
 	public static (string Line1, string Line2) Lines( ObjectCatalogEntry entry )
 	{
 		if ( entry.IsBonus && BonusNames.ReadSignLines( entry ) is { } explicitLines )
 			return explicitLines;
-		return SignCanvas.SplitAtMiddleSpace( entry.DisplayName.Trim() );
+		return SignCanvas.SplitAtMiddleSpace( (entry.SignName ?? entry.DisplayName).Trim() );
 	}
 
 	/// <summary>
-	/// The CPU-composed sign of an object (cached per archive and text), or null when the object has no <c>.sgn</c> or no
-	/// text. Drawing problems (missing glyphs or fonts) are logged once, not thrown.
+	/// The CPU-composed sign of an object (cached per archive and text), or null when the object has no <c>.sgn</c>. A sign
+	/// with two empty lines is composed too (its board alone). Drawing problems (missing glyphs or fonts) are logged once, not thrown.
 	/// </summary>
 	public static ObjectSignImages? Get( ObjectCatalogEntry entry )
 	{
+		// Two empty lines still compose: the original draws the board and the paint and effect layers of empty masks (0x467A80 only skips a null name).
 		var (line1, line2) = Lines( entry );
-		if ( line1.Length == 0 && line2.Length == 0 )
-			return null;
 		var key = $"{entry.FileSystem.GetAbsolutePath( entry.ArchivePath )}\0{line1}\0{line2}";
 		lock ( cache )
 		{

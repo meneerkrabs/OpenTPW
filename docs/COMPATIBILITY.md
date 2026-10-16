@@ -77,6 +77,13 @@ Formats and evidence:
   overlay's normals converted to engine axes like its positions (model X, Y, Z become X, Z, Y) the
   gate's front face is dark stone with grey-blue relief letters and a black shadow, as in the video;
   the back of the gate shows no text in a capture from behind.
+  The park name is the gate's two sign lines (`ParkNameLines`), as tp.exe keeps them on the
+  placed gate: they start as the first and second OBJECT_NAMES text of the gate's Info.Id row
+  (`0x4DB6F9`; jungle "LOST" / "Kingdom", Dutch "Verloren" / "Koninkrijk"), the park name button
+  of the entry price window opens the rename dialog with two 14-character fields (`0x4990F0`),
+  OK stores them and redraws the gate (`0x4993E0`), and the world save carries them in its
+  optional `ParkName` part (at most 32 characters a line, no control characters; older saves
+  start with the default lines and draw them as the rebuild after loading does, `0x468500`).
   The composed halves are straight alpha: the layers blend into a surface that started at ARGB 0, so
   partial-alpha texels held colour already scaled by their alpha, which the engine's alpha blend
   would scale again (dark fringes, a shadow far too dark); the colour is divided back and
@@ -104,7 +111,9 @@ Formats and evidence:
   renderer (`OriginalObject`) binds the rendered halves to the `sign1`/`sign2` slots, and
   the buy-window preview (`PreviewIcon`) draws the same textures. The gate binds its
   composed park-name halves to the fixed model and its raised sign faces. The name is the
-  current language's display name (approximation COMPAT-016); characters outside a font's
+  object's info-record name in the current language (`SignName`: the OBJECT_NAMES entries of
+  its Info.Id row, empty for an id outside tp.exe's table `0x7488D8`, which composes the
+  board alone, as `0x467A80` does); characters outside a font's
   cmap are drawn as .notdef with a diagnostic. The native compositor still layers the
   material effects for the three signs (`hallow/c_scat`, `fantasy/jelly`, `space/zob`)
   whose paint styles are both zero.
@@ -233,12 +242,11 @@ against loose files: `OPENTPW_TPWFNT_PATH=<tpwfnt folder>`.
 | --- | --- | --- | --- |
 | COMPAT-001 | Sign text | Ride signs use two 128x128 destinations and a 512-wide text raster reduced to a 256-wide mask; the lower half of the native 512x512 DIB is not reproduced. Orientation (upright, unmirrored) and half order (sign1 left, sign2 right) match a PC v2.0 video | a capture showing the lower DIB rows |
 | COMPAT-002 | Sign text | lfWidth applied as a horizontal scale with the Win32 rule (average character width = lfWidth) and fractional advances; the width search itself is traced (`0x100A9F9C`: no margin, height unchanged, bisection over lfWidth) | captures of long names (Mac GDI width rounding) |
-| COMPAT-003 | Sign text | Ride signs apply paint RGBA, material strips and coefficients with native integer layer blending, and offset each paint mask by the record's offsets (Wilde Aap's drop shadow, the shadow under the gate text); mask growth and blur (mask word +4, parameter +8, `0xa9178`, Azteekse Tekens' outline), GDI coverage, source-height resampling and float rounding remain approximate. The video confirms strips, shadows and outlines, not their shape | `0xa9178` mask shaping; a capture where the sign fonts load |
+| COMPAT-003 | Sign text | Ride signs apply paint RGBA, material strips and coefficients with native integer layer blending, and shape each paint mask as `0x5EBF10` does: offset copy, erosion or dilation by the mask word (+4), separable Gaussian by the parameter (+8) (Wilde Aap's drop shadow, the gate's shadow, Azteekse Tekens' outline). GDI glyph coverage, the nearest-row upsampling of relief strips taller than their source and the x87 precision of the blur's sums remain approximate | the strip resampler's upsampling branch; the x87 precision-control state while signs are composed; a capture where the sign fonts load |
 | COMPAT-004 | Sign text | The gate is composed from its decoded board with the park name as two lines and the stored paint (a 60 % black shadow under dark relief stone text, as in the video); board placement and relief strength are compared with a 720p capture only | native-resolution gate capture |
 | COMPAT-006 | Sign text | No pair kerning: tp.exe has no TextOut/DrawText/ExtTextOut imports, sign text goes through Uniscribe (`0x5EAB70`: ScriptStringAnalyse flag 0x80, ScriptStringGetLogicalWidths, the percent scaling, a second ScriptStringAnalyse with the game's advance array `0xF85F00`, ScriptStringOut) and no kerning API is called | whether usp10's natural widths include kerning |
-| COMPAT-007 | Sign text | The theme name is the default park name; the original stores the name as two editable lines (the rename dialog's two fields) that the gate draws and saves; OpenTPW has no rename or saved name | save field of the two lines |
+| COMPAT-007 | Sign text | The park name is the gate's two sign lines: default from the gate's OBJECT_NAMES row (`0x4DB6F9`), renamed in the entry price window's dialog (`0x4990F0`, OK `0x4993E0`), saved in the world save. Gate lines of original saves are not imported, and the OK handler's copies to the online park record (`0x409410`, `0x5B0940`/`0x5B0970`) and its secret name ("Kevin the" / "Cosmic Cow", `0x4053C0`) are not built | the gate-line field of original saves; what `0x5B0940`/`0x5B0970` and `0x4053C0` drive |
 | COMPAT-009 | Sign text | 16 sub-scanline unhinted linear coverage instead of GDI ANTIALIASED_QUALITY | captures of original sign text |
-| COMPAT-016 | Sign text | Ride sign text = the localized type name of the catalogue entry (OBJECT_NAMES entries bound by English name, else the .sam name), split at the middle space; confirmed by a PC v2.0 video, also for a prebuilt ride whose instance name differs. The original's name for an id outside table `0x7488D8` is empty (`0x4146B0`: two empty parts and an empty separator, reached through `0x412FB0` when no object text file NAME is loaded) | what the sign generator `0x467A80` draws for an empty name |
 | COMPAT-018 | Sign text | Ride boards are decoded and alpha-blitted; exact wavelet pixels, GPU row orientation and original-platform appearance are not yet certified | native bitmap pixel oracle and ride-sign capture |
 | COMPAT-032 | Sign text | Transparent sign faces use the engine's object material (alpha test below 0.1, alpha blend, no depth sorting); thin letters can erode at low mips and blended edges depend on draw order. The original's face state follows the texture's alpha type (`0x590C40`: blend with an alpha test at 0xF0/255 or 0x10/255, additive, or opaque; depth writes on; decoder `0x567620`) | the generated sign texture's alpha type; a distant capture |
 | COMPAT-010 | Graphics | TEXTUREFILTERING 0/1/2 → Veldrid point / linear+point-mip / linear+linear-mip; MIPMAP 0 → mip 0 only. tp.exe: option `[0x785898]` 0 → engine flag 0x20000 (MAGFILTER point), 1 → 0x40000 (MIPFILTER none), 2/3 → the device's mip mode; 0x400000 → wrap + linear MINFILTER, else clamp + point (`0x44D8F0`, `0x567620`) | that `[0x785898]` is TEXTUREFILTERING; the path from the engine flags into the state word |
@@ -257,7 +265,7 @@ font-size fit loop); `SignTextLayout.ScaledAdvance` applies it (the original's i
 reproduced, COMPAT-002; at 100 percent the advance is left as it is). The baseline hashes of the 71 of 75 composed signs whose percent is not 100 were re-pinned for it.
 COMPAT-017's calls are traced: the object text's NAME/SIGNA/SIGNB are parsed at `0x413600`, SIGNA/SIGNB are copied into each placed
 object as two 32-character lines (`0x413020`/`0x4130B0` at `0x4DB6F9`/`0x4DB70D`), and the sign rebuild `0x468500` (types with flag 0x8000000)
-reads line 1 through `0x4E2860`, which strips a trailing "--", and line 2 through `0x4E2920`; `BonusNames` now does both.
+reads line 1 through `0x4E2860`, which drops the last dash of a trailing "--" (it terminates the copy at length - 1), and line 2 through `0x4E2920`; `BonusNames` now does both.
 October 14, 2026, second round (tp.exe and Theme Park Inc data): COMPAT-017 is retired with a code change. The sign lines come from
 the selected language's file only (no English fallback); a file without SIGNA or SIGNB shows "MISSING STRING", which the original sets
 for NAME, SIGNA, SIGNB and +0x500 before it parses (`0x413600`, `0x41360D`–`0x41361D`); without a language file the definition's text
@@ -281,9 +289,9 @@ COMPAT-008 and COMPAT-013 are OpenTPW design decisions: `[EXT:gate-sign-depth-li
 ## Not done
 
 - Ride signs now compose optional decoded boards, native-order paint and relief layers,
-  and two 128x128 destinations. GDI text coverage, nonzero mask morphology, Gaussian
-  filtering and original-platform pixel parity remain open (COMPAT-001, COMPAT-003,
-  COMPAT-016, COMPAT-018).
+  and two 128x128 destinations, with paint masks shaped as tp.exe does (offset, morphology,
+  Gaussian). GDI text coverage, the x87 precision of the blur and original-platform pixel
+  parity remain open (COMPAT-001, COMPAT-003, COMPAT-018).
 - Most detail options have no renderer feature to drive (table above).
 - The overlay does not merge directory listings; `GameLanguage` keeps its own language overlay.
 - Only TPW (not TPI/Sim Theme Park) data was examined.

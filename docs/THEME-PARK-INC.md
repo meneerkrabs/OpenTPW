@@ -109,7 +109,7 @@ zoom); the sandbox developer panels are off. On top of that the slice adds:
 (headless composition of the build rules, a placed object's original script, free path laying and
 guest arrivals; `OPENTPW_TPI_PATH`). None of it compares with the original game.
 
-**Layout checkpoints** (SAVE-930) are separate from continuation and native park saves. The experimental
+**Layout checkpoints** (an OpenTPW extension, `EXT:tpi-layout-checkpoint`) are separate from continuation and native park saves. The experimental
 pause menu can save the built layout and explicitly confirm loading it as a new session. Typed cells,
 objects, open flags, IDs and creation seeds persist; guests, script progress, clock and audio restart.
 Prototype/coaster layouts are refused. Trusted asset checks and staged candidate construction preserve

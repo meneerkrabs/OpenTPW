@@ -13,7 +13,7 @@ public static class SignSurfaceComposer
 
 	/// <summary>Composes ARGB sign layers, then returns top-down RGBA for the two model textures.</summary>
 	// [BIN:STP-PPC:0x100AC21C..0x100AC6B0] clear, optional board alphablt, style-2 paint, ordered style-1 paint/effects, split the top 128 rows.
-	// [APPROX:COMPAT-003] OpenTPW coverage and paint masks that are offset but neither grown nor blurred replace native GDI, morphology and Gaussian masks; relief samples and material arithmetic follow the identified native path.
+	// [APPROX:COMPAT-003] OpenTPW glyph coverage stands in for the native GDI masks and relief strips taller than their source are upsampled by nearest rows; paint-mask shaping (SignMaskShaping), relief samples and material arithmetic follow the identified native path.
 	public static (byte[] Left, byte[] Right, int TextPixelCount) Compose( SignFile sign, SignFontLibrary fonts, IReadOnlyList<string?> lines, ICollection<string> diagnostics, SignPaint? firstPaintOverride = null )
 	{
 		ArgumentNullException.ThrowIfNull( sign );
@@ -46,29 +46,35 @@ public static class SignSurfaceComposer
 			textPixels += masks[slot].Count( value => value != 0 );
 		}
 		if ( textPixels != 0 )
-			diagnostics.Add( "COMPAT-003: original GDI coverage, mask morphology, Gaussian filtering and exact PowerPC float rounding remain unverified." );
+			diagnostics.Add( "COMPAT-003: original GDI glyph coverage and the x87 precision of the paint-mask blur remain unverified." );
+
+		// [BIN:TPW-EXE:0x005ECC69..0x005ECCC0 paint masks] each slot whose selector is nonzero gets its paint mask shaped from its glyph mask by its own paint record (0x5EBF10); a zero selector leaves an empty paint mask
+		var paintMasks = new byte[masks.Length][];
+		for ( var slot = 0; slot < masks.Length; slot++ )
+			paintMasks[slot] = sign.Effects[slot].Style != 0 && (slot == 0 ? firstPaintOverride ?? sign.Paints[slot] : sign.Paints[slot]) is { } record
+				? SignMaskShaping.Shape( masks[slot], Width, Height, record ) : new byte[Width * Height];
 
 		// [BIN:STP-PPC:0x100AC25C..0x100AC49C] style 2 is drawn before either relief effect;
-		// two style-2 masks combine by maximum and take paint zero's RGBA.
+		// [BIN:TPW-EXE:0x005ECD8C..0x005ECDCE two style-2 masks] the two shaped paint masks are combined by maximum (copy 0x5E77C0, max 0x5E7EF0) and coloured with paint zero's RGBA
 		if ( sign.Effects[0].Style == 2 && sign.Effects[1].Style == 2 )
 		{
 			var combined = new byte[Width * Height];
 			for ( var i = 0; i < combined.Length; i++ )
-				combined[i] = Math.Max( masks[0][i], masks[1][i] );
+				combined[i] = Math.Max( paintMasks[0][i], paintMasks[1][i] );
 			Paint( surface, combined, firstPaintOverride ?? sign.Paints[0] );
 		}
 		else
 		{
 			for ( var slot = 0; slot < masks.Length; slot++ )
 				if ( sign.Effects[slot].Style == 2 )
-					Paint( surface, masks[slot], slot == 0 ? firstPaintOverride ?? sign.Paints[slot] : sign.Paints[slot] );
+					Paint( surface, paintMasks[slot], slot == 0 ? firstPaintOverride ?? sign.Paints[slot] : sign.Paints[slot] );
 		}
 
 		for ( var step = 0; step < masks.Length; step++ )
 		{
 			var slot = sign.HeaderFlag == 0 ? step : masks.Length - step - 1;
 			if ( sign.Effects[slot].Style == 1 )
-				Paint( surface, masks[slot], slot == 0 ? firstPaintOverride ?? sign.Paints[slot] : sign.Paints[slot] );
+				Paint( surface, paintMasks[slot], slot == 0 ? firstPaintOverride ?? sign.Paints[slot] : sign.Paints[slot] );
 			Effect( surface, masks[slot], sign.SourceImages[slot], sign.Effects[slot], diagnostics );
 		}
 
@@ -184,11 +190,10 @@ public static class SignSurfaceComposer
 	}
 
 	// [BIN:STP-PPC:0xAB634->0xA9178] the paint record's offsets (+12/+16) are applied against the bitmap's width and height; they move the paint mask before it is coloured, which makes the drop shadow of Wilde Aap (offset 6, 6) and the shadow under the gate text (offset -1, 1); the effect layers keep the unshifted mask (PC v2.0 video)
-	// [APPROX:COMPAT-003] the record's mask word (+4) and parameter (+8) shape the paint mask (growth and blur, the outline of Azteekse Tekens); they are not applied
+	// [BIN:TPW-EXE:0x005E7F60 colour blit] the shaped paint mask (SignMaskShaping, 0x5EBF10) is coloured: alpha (mask * A) >> 8 kept as the maximum, each channel lerped towards (C * A) >> 8
 	private static void Paint( byte[] destination, byte[] mask, SignPaint? paint )
 	{
 		if ( paint == null ) return;
-		mask = Shift( mask, paint.OffsetX, paint.OffsetY );
 		for ( var i = 0; i < mask.Length; i++ )
 		{
 			var alpha = mask[i] * paint.A >> 8;
@@ -201,15 +206,7 @@ public static class SignSurfaceComposer
 	}
 
 	/// <summary>The mask translated by (dx, dy) pixels (right and down are positive); pixels moved off the surface are lost, the uncovered edge is empty.</summary>
-	internal static byte[] Shift( byte[] mask, int dx, int dy )
-	{
-		if ( dx == 0 && dy == 0 ) return mask;
-		var shifted = new byte[mask.Length];
-		for ( var y = Math.Max( 0, dy ); y < Math.Min( Height, Height + dy ); y++ )
-		for ( var x = Math.Max( 0, dx ); x < Math.Min( Width, Width + dx ); x++ )
-			shifted[y * Width + x] = mask[(y - dy) * Width + x - dx];
-		return shifted;
-	}
+	internal static byte[] Shift( byte[] mask, int dx, int dy ) => dx == 0 && dy == 0 ? mask : SignMaskShaping.Shift( mask, Width, Height, dx, dy );
 
 	private static void Effect( byte[] destination, byte[] mask, SignBitmap strip, SignEffect effect, ICollection<string> diagnostics )
 	{

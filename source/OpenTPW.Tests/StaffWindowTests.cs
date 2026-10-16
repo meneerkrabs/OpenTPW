@@ -340,8 +340,7 @@ public class VisitorsWindowTests
 		hud.Stack.Top!.Update( Context( 2.1f ), UiInput.Idle( System.Numerics.Vector2.Zero ) );
 		CollectionAssert.AreEqual( new[] { 2, 3, 1 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "the refresh took the new cash but kept the order" );
 		hud.Stack.Top!.Find( "headerCash" )!.Activate();
-		hud.Stack.Top!.Find( "headerCash" )!.Activate();
-		CollectionAssert.AreEqual( new[] { 3, 2, 1 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "a header press sorts the list again (descending)" );
+		CollectionAssert.AreEqual( new[] { 3, 2, 1 }, hud.VisitorItems.Select( guest => guest.Id ).ToArray(), "a header press sorts the list again by the new values (the same column reverses)" );
 	}
 
 	[TestMethod]

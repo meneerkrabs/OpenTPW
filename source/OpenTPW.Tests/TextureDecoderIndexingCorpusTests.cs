@@ -41,7 +41,7 @@ public class TextureDecoderIndexingCorpusTests
 		new( "levels/fantasy/terrain.wad", "textures/Ftest03.wct", 128, 128, "8DD5D897A157ABF313950E25B090183CC42F29C8047395302B09E3910FB18F76" ),
 		new( "levels/hallow/queue.wad", "textures/jpa_que1.wct", 128, 128, "1E9CC1D25D8E9EF0A139D4CFCC45DA02428A6123E1DFA19496B7E834E33299C9" ),
 		new( "levels/space/queue.wad", "textures/jpa_que1.wct", 128, 128, "21D9F9F3BE8338C600F60F7EC5A9CF9EBFCF6F2BB6BC5103B67129EF17FB98CD" ),
-		new( "levels/space/rides/scentro.wad", "textures/Sp_Botplate1b.wct", 127, 128, "48442550AFAD0E1AEA085C09857CB3CAA35D82CE3F3F1E1FB9287023092972F3" ),
+		new( "levels/space/rides/scentro.wad", "textures/Sp_Botplate1b.wct", 127, 128, "F3F94915E7C37818C9EF9C221570FB85C443A0032ECB53F7484D2854A387D28E" ), // re-recorded when the chroma planes took each other's header scale (the only pinned texture whose two scales differ)
 		new( "global/advisor.wad", "textures/Gold_Ticket.wct", 128, 128, "B70DA0C7D427ADC78BE18BC91F080C7B886A511411461DA26BCA5E3C082D47C6" ),
 	};
 

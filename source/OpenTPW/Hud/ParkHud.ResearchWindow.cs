@@ -176,6 +176,8 @@ public sealed partial class ParkHud
 				Bounds = cells.Value, Anchor = UiAnchor.Center } );
 			screen.Add( new ResearchFluidCell( this, category ) { Id = $"fluid{index}",
 				Bounds = cells.Fluid, Anchor = UiAnchor.Center } );
+			// [BIN:TPW-EXE:0x0035299c research panel control table (file offset)] each category parent control holds a second model child besides the fluid: the pipe (root name "pipe", res_pipe.md2), a rect 1497..1804 wide and 119 tall that starts 17 units below the panel's top (row 0: y 175..294); it frames the fluid with the orange end caps the original's tube shows (720p video 34:30) and is drawn over the fluid
+			Model( $"pipe{index}", "pipe", new UiRect( 1497, panel.Y + 17, 1804 - 1497, 119 ) );
 			Model( $"effortTrack{index}", "effortslidea", slider );
 			// [BIN:TPW-EXE:0x4aa6bd effort sliders] SetRange(0,100) on the generic slider class: integer value 0..100, a drag position is truncated (0x66afc9), the ball runs linearly across the table's slider rectangle
 			screen.Add( new UiSlider { Id = $"effort{index}", Track = cells.Track,

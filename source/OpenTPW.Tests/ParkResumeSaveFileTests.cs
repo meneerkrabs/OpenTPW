@@ -34,6 +34,21 @@ public class ParkResumeSaveFileTests
 		public readonly GuestSimulation Simulation;
 		private readonly RideVM script;
 
+		/// <summary>
+		/// The guests' snapshot for a fixture whose layout is another, unstamped map: the walks' stamps (raised by this park's own path
+		/// edits) are rebased to 0, as a walk set up on that map would hold, so the save's walk stamps stay within its layout's counter.
+		/// </summary>
+		public GuestSimulationSnapshot CaptureGuestsForUnstampedLayout()
+		{
+			var snapshot = Simulation.CaptureSnapshot();
+			return snapshot with
+			{
+				Guests = snapshot.Guests.Select( guest => guest.Navigation.OriginalWalk is { } walk
+					? guest with { Navigation = guest.Navigation with { OriginalWalk = walk with { Stamp = 0 } } }
+					: guest ).ToArray()
+			};
+		}
+
 		public MiniaturePark()
 		{
 			for ( var x = 0; x < 20; x++ )

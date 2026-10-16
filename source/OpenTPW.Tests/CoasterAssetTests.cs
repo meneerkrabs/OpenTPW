@@ -304,12 +304,25 @@ public class CoasterAssetTests
 		if ( deleteWhileRiding )
 		{
 			// Run until guests are on board or seated and others are admitted or queued, then take the coaster away mid-ride.
+			// Whether one of the eight is still on its way when a train fills depends on the guests' decision and wander draws
+			// (seven of them are refused at the join cell on the first turn and choose again later), so once two ride and
+			// nobody waits, one late guest is sent to the entrance to queue behind them.
 			var cut = false;
+			Guest? late = null;
+			bool Waiting( Guest guest ) => guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.GoingToRide;
 			for ( var tick = 0; tick < 240 * 60 && !cut; tick++ )
 			{
 				guests.Tick( Tick );
 				runtime.Simulate( Tick );
-				cut = ride.RidersOnBoard >= 2 && (ride.AdmissionCount > 0 || spawned.Any( guest => guest.State is GuestState.Queueing or GuestState.MovingUpQueue or GuestState.GoingToRide ));
+				if ( late == null && ride.RidersOnBoard >= 2 && ride.AdmissionCount == 0 && !spawned.Any( Waiting ) )
+				{
+					late = guests.SpawnInPark( entrance.X, entrance.Y );
+					late.AttractionId = runtime.Visitors.AttractionId;
+					late.State = GuestState.GoingToRide;
+					spawned = spawned.Append( late ).ToArray();
+					continue;
+				}
+				cut = ride.RidersOnBoard >= 2 && (ride.AdmissionCount > 0 || spawned.Any( Waiting ));
 			}
 			Assert.IsTrue( cut, "guests were riding while others waited" );
 			Assert.IsTrue( spawned.Any( guest => guest.State == GuestState.Using ), "a guest is using the coaster" );

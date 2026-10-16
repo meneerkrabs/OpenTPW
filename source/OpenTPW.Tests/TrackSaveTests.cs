@@ -167,7 +167,12 @@ public class TrackSaveTests
 		Assert.IsTrue( builder.RemoveTile( 6, 6 ) );
 		var removed = new StateHasher();
 		untouched.AddCanonicalState( removed );
-		Assert.AreEqual( empty.Value, removed.Value );
+		// the tile's type writes stamped their block (the walk's changed-ground reroute, WALK-007): compare with a map stamped alike
+		var stamped = new ParkCellMap( 20, 20 );
+		stamped.RestoreBlockStamps( untouched.StampCounter, untouched.CaptureBlockStamps() );
+		var reference = new StateHasher();
+		stamped.AddCanonicalState( reference );
+		Assert.AreEqual( reference.Value, removed.Value );
 		Assert.AreEqual( 0, untouched.Tracks.Count );
 		// the world hash reads the controllers only when one exists
 		var scripts = new RideScriptWorld( 5 );

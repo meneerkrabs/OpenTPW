@@ -319,6 +319,12 @@ internal sealed class M3GateRun
 		BuildQueue();
 		PlaceObject( "shop", entry => entry.Category == ObjectCategory.Shop && OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).Satisfies != GuestNeeds.None );
 		PlaceObject( "toilet", entry => OriginalObjectRuntime.CreateVisitorBridge( entry, 1 ).Satisfies.HasFlag( GuestNeeds.Toilet ) );
+		// the gate registers its objects without a placement, so it lays the cell a called guest's search walks into (state 13) as a build lays an entrance
+		foreach ( var item in placed )
+		{
+			var stand = GuestSimulation.StandCellOf( item.Runtime.Visitors );
+			ObjectAccessCells.LayStandCell( grid.Cells, stand.X, stand.Y );
+		}
 		HireStaff();
 		FinishPathRow();
 		setupBalance = economy.Balance;

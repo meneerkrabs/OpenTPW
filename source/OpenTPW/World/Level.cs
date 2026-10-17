@@ -691,6 +691,9 @@ public partial class Level : IDisposable
 		ride.Visitors.ExitCell = entrance.Value;
 		ride.Visitors.HasCells = true;
 		Guests.Register( ride.Visitors );
+		// [EXT:developer-prototype] the prototype has no placement that lays access cells, so the cell a called guest's search walks into (state 13) is laid here the way a build lays an entrance
+		var (standX, standY) = GuestSimulation.StandCellOf( ride.Visitors );
+		ObjectAccessCells.LayStandCell( Guests.Grid.Cells, standX, standY );
 		LinkPrototypeToEconomy( ride );
 		Log.Trace( $"{ride.Name}: guests queue and exit at path cell {entrance.Value} (nearest path cell; the prototype has no catalog entrance)." );
 	}

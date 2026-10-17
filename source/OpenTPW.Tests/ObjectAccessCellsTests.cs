@@ -322,4 +322,69 @@ public class ObjectAccessCellsTests
 		Assert.IsNotNull( rig.Place( ride, 4, 5 ) );
 		Assert.AreEqual( (byte)ParkCellType.Queue, cells.RawTypeAt( 5, 4 ) );
 	}
+
+	/// <summary>The cells of an old OpenTPW save: the same park with every entrance and exit cell's link byte (map cell +0x0C) zero, the queue link and the outside cells as they were saved.</summary>
+	private static ParkCellMap OldSave( Rig rig, params OriginalObject[] items )
+	{
+		var snapshot = ParkLayoutSnapshot.CaptureSnapshot( rig.Cells, rig.Objects );
+		var access = items.SelectMany( item => item.Cells ).Where( cell => cell.Cell.CellType is ObjectShapeSymbols.TypeEntrance or ObjectShapeSymbols.TypeExit ).Select( cell => (cell.X, cell.Y) ).ToHashSet();
+		var stripped = snapshot with { Cells = snapshot.Cells with { Cells = snapshot.Cells.Cells.Select( cell => access.Contains( (cell.X, cell.Y) ) ? cell with { Links = 0 } : cell ).ToList() } };
+		var old = ParkLayoutSnapshot.RestoreCellMap( stripped );
+		foreach ( var (x, y) in access )
+			Assert.AreEqual( 0, old.LinksAt( x, y ), $"the old save holds no link byte on ({x}, {y})" );
+		return old;
+	}
+
+	private static byte[] Links( ParkCellMap cells ) => Enumerable.Range( 0, cells.Width * cells.Height ).Select( index => cells.LinksAt( index % cells.Width, index / cells.Width ) ).ToArray();
+
+	[TestMethod]
+	public void TheLinkBytesAnOldSaveLacksAreLaidAsAPlacementLaysThem()
+	{
+		var ride = Entry( 1100, 5, true, "*2S" );
+		var shop = Entry( 1203, 5, false, "*2S" );
+		var rig = new Rig( ride, shop );
+		var rideItem = rig.Place( ride, 4, 5 )!;
+		var shopItem = rig.Place( shop, 10, 12 )!;
+		var placed = Links( rig.Cells );
+		Assert.IsTrue( new[] { (5, 5), (6, 5), (11, 12) }.All( cell => rig.Cells.LinksAt( cell.Item1, cell.Item2 ) != 0 ), "a placement lays the byte on the queue ride's entrance and exit and the shop's entrance (a shop's exit gets no outside cell)" );
+
+		var old = OldSave( rig, rideItem, shopItem );
+		var events = new List<(int, int)>();
+		var repaired = 0;
+		foreach ( var item in new[] { rideItem, shopItem } )
+			repaired += ObjectAccessCells.RepairMissingLinks( old, item.AccessPoints, item.Entry.HasQueue, new LinkEffects( ( x, y ) => events.Add( (x, y) ) ) );
+		Assert.AreEqual( 3, repaired );
+		CollectionAssert.AreEqual( placed, Links( old ), "after the repair every link byte equals what a fresh placement lays" );
+		Assert.IsTrue( events.Count > 0, "the repair refreshes tiles as the placement does" );
+	}
+
+	[TestMethod]
+	public void ACellThatHoldsALinkByteIsLeftAlone()
+	{
+		var ride = Entry( 1100, 5, true, "*2S" );
+		var rig = new Rig( ride );
+		var item = rig.Place( ride, 4, 5 )!;
+		var before = Links( rig.Cells );
+		var version = rig.Cells.Version;
+		Assert.AreEqual( 0, ObjectAccessCells.RepairMissingLinks( rig.Cells, item.AccessPoints, item.Entry.HasQueue ) );
+		CollectionAssert.AreEqual( before, Links( rig.Cells ) );
+		Assert.AreEqual( version, rig.Cells.Version, "a save that already holds the bytes is not written to" );
+
+		var old = OldSave( rig, item );
+		Assert.AreEqual( 2, ObjectAccessCells.RepairMissingLinks( old, item.AccessPoints, item.Entry.HasQueue ) );
+		Assert.AreEqual( 0, ObjectAccessCells.RepairMissingLinks( old, item.AccessPoints, item.Entry.HasQueue ), "a second repair finds nothing missing" );
+	}
+
+	[TestMethod]
+	public void AnOutsideCellThePlayerRemovedLeavesTheEntranceUnlinked()
+	{
+		var ride = Entry( 1100, 5, true, "*2S" );
+		var rig = new Rig( ride );
+		var item = rig.Place( ride, 4, 5 )!;
+		var old = OldSave( rig, item );
+		old.SetType( 5, 4, ParkCellType.Empty );
+		old.SetLinks( 5, 4, 0 );
+		Assert.AreEqual( 1, ObjectAccessCells.RepairMissingLinks( old, item.AccessPoints, item.Entry.HasQueue ), "only the exit, whose outside path cell is still there" );
+		Assert.AreEqual( 0, old.LinksAt( 5, 5 ), "no queue cell outside the entrance to link to" );
+	}
 }

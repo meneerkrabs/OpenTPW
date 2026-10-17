@@ -77,7 +77,7 @@ public static class GuestReport
 	internal static GuestMetricsSnapshot RunLevel( string level, ulong seed, GuestReportOptions options )
 	{
 		var metrics = new GuestMetrics( options.Metrics ) { AutoBeginAtTick = TicksForDays( options.WarmupDays ) };
-		var gate = new M3GateOptions { Level = level, Seed = new WorldSeed( seed ).GuestStream, WorldSeed = new WorldSeed( seed ), DeterminismProbe = false, ArrivalTimeBetween = options.LevelArrivalTimeBetween, GuestObserver = metrics };
+		var gate = new M3GateOptions { Level = level, Seed = new WorldSeed( seed ).GuestStream, WorldSeed = new WorldSeed( seed ), DeterminismProbe = false, SweptTurns = true, ArrivalTimeBetween = options.LevelArrivalTimeBetween, GuestObserver = metrics };
 		var run = M3GateRun.Execute( gate, TicksForDays( options.WarmupDays + options.MeasuredDays ) );
 		metrics.Attach( run.Simulation );
 		return metrics.EndWindow();

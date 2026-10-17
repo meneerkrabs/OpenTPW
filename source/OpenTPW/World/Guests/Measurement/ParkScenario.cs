@@ -28,7 +28,7 @@ public sealed class ScenarioAttraction
 }
 
 /// <summary>
-/// A reusable headless park for guest measurement (docs/SMARTER-GUESTS.md "Measurement"), with no game data and no economy: one street of 40 path cells from the gate, three
+/// A reusable headless park for guest measurement (docs/SMARTER-GUESTS.md "Measurement"), with no game data and no economy (its park turns are swept the way the game's are): one street of 40 path cells from the gate, three
 /// branches off it, and on them two identical rides, a thrill ride and a calm ride, a cheap and a dear shop, and a toilet at the far end. Every attraction takes one guest at a time through
 /// the corpus shop protocol (<see cref="ScenarioScripts"/>), so the rides differ in excitement and ride time, the shops in price, and the paths in length: the rides and shops stand
 /// within a few cells of the gate, the toilet at the end of a long walk. Guests arrive in groups
@@ -53,6 +53,12 @@ public sealed class ParkScenario
 		Grid = BuildGrid();
 		Settings = CreateSettings( options );
 		Guests = new GuestSimulation( Grid, Settings, seed.GuestStream );
+		// the park's one thing pool as Level builds it: the world's ten singletons, then the gate and the lights (things 1 to 12), so the first guest is thing 13
+		Things = new ThingPool();
+		Things.AllocateWorldSetup();
+		Things.Allocate( SaveThingModel.Attraction );
+		Things.Allocate( SaveThingModel.Attraction );
+		Guests.AttachThings( Things );
 		Scripts = new RideScriptWorld( seed.ScriptStream );
 		AddAttraction( "twin-a", RideVisitorKind.Ride, (10, 1), 60, 6000, GuestNeeds.None, 0 );
 		AddAttraction( "twin-b", RideVisitorKind.Ride, (10, 9), 60, 6000, GuestNeeds.None, 0 );
@@ -68,6 +74,8 @@ public sealed class ParkScenario
 	public GuestPathGrid Grid { get; }
 	public GuestSettings Settings { get; }
 	public GuestSimulation Guests { get; }
+	/// <summary>The park's thing pool, which the guests take their ids from and the park turn's sweep walks.</summary>
+	public ThingPool Things { get; }
 	public RideScriptWorld Scripts { get; }
 	public IReadOnlyList<ScenarioAttraction> Attractions => attractions;
 	/// <summary>Fixed ticks run so far.</summary>
@@ -112,14 +120,35 @@ public sealed class ParkScenario
 		attractions.Add( new ScenarioAttraction( bridge, script, role ) );
 	}
 
-	/// <summary>Runs <paramref name="ticks"/> fixed ticks: the guests, then each attraction's host step and script, as the park loop does.</summary>
+	/// <summary>
+	/// Runs <paramref name="ticks"/> fixed ticks in the order of <c>Level.AdvanceSimulation</c> (and <c>DeterminismTests.SyntheticPark.Run</c>): the tick that starts a park turn
+	/// runs the substep's ride scripts, then the turn's thing sweep over the pool newest first (the guests, the attractions' admission), the turn's destroys and the arrival update;
+	/// the ticks between turns update the guests first and free nothing. The scenario has no economy, so the turns are the guests' own, as in a level whose economy is aligned to them.
+	/// </summary>
 	public void Run( long ticks )
 	{
 		for ( long tick = 0; tick < ticks; tick++ )
 		{
-			Guests.Tick( (float)Tick );
+			var swept = Guests.NextTickStartsTurn;
+			if ( swept )
+				Guests.BeginSweepTick( (float)Tick );
+			else
+				Guests.Tick( (float)Tick );
 			foreach ( var attraction in attractions )
+			{
+				attraction.Bridge.DefersAdmission = swept;
 				attraction.Step( Tick );
+			}
+			if ( !swept )
+				continue;
+			foreach ( var slot in Things.Capture() )
+				if ( !Things.IsQueued( slot.Id ) )
+					Guests.SweepGuest( slot.Id );
+			Guests.FinishSweep();
+			foreach ( var attraction in attractions )
+				attraction.Bridge.UpdateAdmission();
+			Things.DestroyQueued();
+			Guests.UpdateTurnEndArrivals();
 		}
 	}
 

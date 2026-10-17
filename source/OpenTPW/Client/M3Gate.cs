@@ -36,6 +36,11 @@ public sealed record M3GateOptions
 	public Func<ObjectCatalogEntry, bool>? AttractionFilter { get; init; }
 	/// <summary>The park's world seed (every random stream); null keeps the economy's default seed, so only <see cref="Seed"/> moves the guests' stream as before. The guest report sets it to vary the whole park.</summary>
 	public WorldSeed? WorldSeed { get; init; }
+	/// <summary>
+	/// Runs the park turns as the game does (<c>Level.AdvanceSimulation</c>): the guests take their ids from a thing pool, and the tick that starts a turn runs the ride scripts and then the
+	/// turn's thing sweep. The gate's own invariants keep their plain loop (false); the guest report sets it so it measures the guests as the game runs them.
+	/// </summary>
+	public bool SweptTurns { get; init; }
 	/// <summary>A passive measurement view set on the run's guests before the first tick (the guest report, docs/SMARTER-GUESTS.md); null for the gate's own runs.</summary>
 	public IGuestObserver? GuestObserver { get; init; }
 }
@@ -254,6 +259,7 @@ internal sealed class M3GateRun
 	private readonly List<(OriginalObjectRuntime Runtime, int Instance)> economyLinks = new();
 	private readonly HashSet<(int X, int Y)> occupied = new();
 	private readonly RideScriptWorld world = new();
+	private readonly ThingPool things = new();
 	private long setupBalance;
 	private long setupCost;
 	private readonly List<GuestTrack> departedTracks = new();
@@ -312,6 +318,14 @@ internal sealed class M3GateRun
 		if ( options.ArrivalTimeBetween is int interval )
 			guestSettings.ArrivalTimeBetween = interval;
 		guests = new GuestSimulation( grid, guestSettings, options.Seed ) { Observer = options.GuestObserver };
+		if ( options.SweptTurns )
+		{
+			// the park's one thing pool as Level builds it: the world's ten singletons, then the gate and the lights, so the first guest is thing 13
+			things.AllocateWorldSetup();
+			things.Allocate( SaveThingModel.Attraction );
+			things.Allocate( SaveThingModel.Attraction );
+			guests.AttachThings( things );
+		}
 		var openingBalance = economy.Balance;
 		BuildEntrance();
 		runtime.AttachGuests( guests );
@@ -910,6 +924,63 @@ internal sealed class M3GateRun
 		public long MaxStandWalk, MaxMoveUpWalk, StandWalks, MoveUpWalks, StallsOutsideScope;
 	}
 
+	/// <summary>
+	/// One fixed tick. The gate's plain order: the guests, the object scripts, the economy. With <see cref="M3GateOptions.SweptTurns"/> the order of <c>Level.AdvanceSimulation</c> and
+	/// <c>DeterminismTests.SyntheticPark.Run</c>: a tick that starts a park turn of the guests and of the economy runs the substep's scripts and then the economy's turn, whose thing sweep
+	/// (<see cref="GateSweep"/>) updates the guests newest first, the economy's things, the objects' admission, the turn's destroys and the arrivals.
+	/// </summary>
+	private void StepTick()
+	{
+		if ( !options.SweptTurns )
+		{
+			guests.Tick( Tick );
+			foreach ( var item in fixedItems )
+				item.Simulate( Tick );
+			foreach ( var item in placed )
+				item.Runtime.Simulate( Tick );
+			runtime.FixedTick();
+			return;
+		}
+		var swept = guests.NextTickStartsTurn && economy.NextTickStartsTurn;
+		if ( swept )
+			guests.BeginSweepTick( Tick );
+		else
+			guests.Tick( Tick );
+		foreach ( var item in fixedItems )
+			item.Simulate( Tick );
+		foreach ( var item in placed )
+		{
+			item.Runtime.Visitors.DefersAdmission = swept;
+			item.Runtime.Simulate( Tick );
+		}
+		economy.ThingSweep = swept ? new GateSweep( this ) : null;
+		try
+		{
+			runtime.FixedTick();
+		}
+		finally
+		{
+			economy.ThingSweep = null;
+		}
+	}
+
+	/// <summary>The park turn of Level's sweep with what the gate's park holds: the guests by the pool's list, the economy's own things, the objects' admission and the turn's end.</summary>
+	private sealed class GateSweep( M3GateRun run ) : IThingSweep
+	{
+		public void Run( ParkEconomy economy, long turn, bool lost )
+		{
+			foreach ( var slot in run.things.Capture() )
+				if ( !run.things.IsQueued( slot.Id ) )
+					run.guests.SweepGuest( slot.Id );
+			run.guests.FinishSweep();
+			economy.UpdateThings( turn );
+			foreach ( var item in run.placed )
+				item.Runtime.Visitors.UpdateAdmission();
+			run.things.DestroyQueued();
+			run.guests.UpdateTurnEndArrivals();
+		}
+	}
+
 	private void Simulate( long ticks )
 	{
 		var tracks = new Dictionary<int, GuestTrack>();
@@ -1057,12 +1128,7 @@ internal sealed class M3GateRun
 					item.Visitors.WearGauge = state.Repair;   // the worn-toilet exit reads the gauge the relief visits wear, as Level does
 				}
 			}
-			guests.Tick( Tick );
-			foreach ( var item in fixedItems )
-				item.Simulate( Tick );
-			foreach ( var item in placed )
-				item.Runtime.Simulate( Tick );
-			runtime.FixedTick();
+			StepTick();
 
 			// Time: strictly increasing simulation clocks; the park calendar advances in whole turns (non-decreasing).
 			var guestTime = guests.TimeSeconds;

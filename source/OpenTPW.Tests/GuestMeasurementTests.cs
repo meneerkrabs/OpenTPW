@@ -11,7 +11,7 @@ namespace OpenTPW.Tests;
 public class GuestMeasurementTests
 {
 	/// <summary>The guests' state hash of <see cref="ScenarioRun"/>, pinned like the other determinism pins: a change moves the baseline of docs/SMARTER-GUESTS.md.</summary>
-	private const ulong ScenarioFixedRunHash = 0x95193F691A46902EUL;
+	private const ulong ScenarioFixedRunHash = 0xEB32FB89F86B1110UL;
 
 	private static ParkScenario ScenarioRun( ulong seed, IGuestObserver? observer = null, int ticks = 6000 )
 	{

@@ -79,7 +79,7 @@ scale is recorded for completeness.
 
 ## Baseline
 
-Re-measured after the substep scheduler and swept park turn (#312) and the walk changes arrived on main: every number below is unchanged, because the scenario and the level parks are driven by plain `GuestSimulation.Tick` loops, not the host's thing sweep. The report does not exercise the sweep; the pinned fixed runs in `DeterminismTests` do, and they hold with the observer on.
+The runs go through the game's turn order, not plain `Tick` loops: the tick that starts a park turn runs the substep's ride scripts and then the turn's thing sweep over the thing pool newest first (the guests, the attractions' admission), the turn's destroys and the arrival update, as `Level.AdvanceSimulation` and `DeterminismTests.SyntheticPark.Run` do (`BeginSweepTick`, `SweepGuest`, `FinishSweep`, `UpdateTurnEndArrivals`). `ParkScenario.Run` and the level parks (`M3GateOptions.SweptTurns`, which only the report sets, so the gate keeps its own loop) both use it. The scenario has no economy, so its turns are the guests' own; the level parks' economy turns are aligned to them. Measured on plain loops first, the baseline differed slightly (for example the scenario's guest-time happiness was 48.8 and its boarded share 55.1%).
 
 Original policy, release build, 8 seeds per scenario. Reproduce with `--guest-scale extended`. The same seeds reproduce these numbers exactly; σ is the sample standard deviation over
 the 8 seeds, so it is the seed-to-seed variation a rule has to beat.
@@ -88,75 +88,71 @@ the 8 seeds, so it is the seed-to-seed variation a rule has to beat.
 
 | Metric (key) | Mean | σ | Min | Max | 2σ band |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Admissions in the window (`admissions`) | 64 | 0 | 64 | 64 | ±1.28 |
-| Queue attempts (`queue.attempts`) | 341 | 19.676 | 300 | 363 | ±39.352 |
-| Boarded / attempts (`queue.boarded.rate`) | 0.551 | 0.027 | 0.515 | 0.584 | ±0.055 |
-| Abandoned / attempts (`queue.abandoned.rate`) | 0.023 | 0.005 | 0.015 | 0.028 | ±0.01 |
-| Rejected / attempts (`queue.rejected.rate`) | 0.405 | 0.025 | 0.376 | 0.441 | ±0.051 |
-| Unfinished / attempts (`queue.unfinished.rate`) | 0.021 | 0.005 | 0.017 | 0.03 | ±0.01 |
-| Wait p50, turns (boarded only) (`queue.wait.p50`) | 16.625 | 2.774 | 12 | 20 | ±5.548 |
-| Wait p90 (`queue.wait.p90`) | 82.5 | 8.992 | 67 | 94 | ±17.984 |
-| Wait p99 (`queue.wait.p99`) | 116.5 | 3.295 | 112 | 121 | ±6.59 |
-| Happiness, guest-time weighted (`happiness.guestTime`) | 48.84 | 2.065 | 44.553 | 51.403 | ±4.13 |
-| Happiness of the guests still inside (`happiness.survivors`) | 50.738 | 2.436 | 47.649 | 53.976 | ±4.873 |
-| Departures per admission (`departures.perAdmission`) | 0.588 | 0.045 | 0.547 | 0.672 | ±0.09 |
-| Departures: happiness byte 0 (`departures.happinessZero`) | 33.25 | 3.808 | 27 | 38 | ±7.616 |
-| Departures: exit counter 0 (`departures.exitCounterZero`) | 4.5 | 2.619 | 1 | 9 | ±5.237 |
+| Admissions in the window (`admissions`) | 63.75 | 0.463 | 63 | 64 | ±1.275 |
+| Queue attempts (`queue.attempts`) | 328.75 | 17.645 | 297 | 353 | ±35.291 |
+| Boarded / attempts (`queue.boarded.rate`) | 0.557 | 0.041 | 0.5 | 0.616 | ±0.082 |
+| Abandoned / attempts (`queue.abandoned.rate`) | 0.027 | 0.008 | 0.019 | 0.039 | ±0.017 |
+| Rejected / attempts (`queue.rejected.rate`) | 0.396 | 0.033 | 0.343 | 0.439 | ±0.067 |
+| Unfinished / attempts (`queue.unfinished.rate`) | 0.019 | 0.006 | 0.009 | 0.027 | ±0.011 |
+| Wait p50, turns (boarded only) (`queue.wait.p50`) | 16.125 | 4.357 | 11 | 24 | ±8.714 |
+| Wait p90 (`queue.wait.p90`) | 83.75 | 10.539 | 66 | 97 | ±21.078 |
+| Wait p99 (`queue.wait.p99`) | 121 | 8.928 | 112 | 142 | ±17.857 |
+| Happiness, guest-time weighted (`happiness.guestTime`) | 47.825 | 3.338 | 42.877 | 51.099 | ±6.676 |
+| Happiness of the guests still inside (`happiness.survivors`) | 46.513 | 6.548 | 38.957 | 55.658 | ±13.095 |
+| Departures per admission (`departures.perAdmission`) | 0.576 | 0.042 | 0.5 | 0.609 | ±0.084 |
+| Departures: happiness byte 0 (`departures.happinessZero`) | 31.75 | 4.234 | 26 | 37 | ±8.468 |
+| Departures: exit counter 0 (`departures.exitCounterZero`) | 5.125 | 2.949 | 2 | 10 | ±5.898 |
 | Departures: park closed (`departures.parkClosed`) | 0 | 0 | 0 | 0 | ±0 |
-| Use Gini over the rides (`use.giniRides`) | 0.223 | 0.031 | 0.185 | 0.289 | ±0.063 |
-| Use Gini over all attractions (`use.giniAll`) | 0.311 | 0.03 | 0.255 | 0.345 | ±0.06 |
-| Revenue per admitted guest (`revenue.perAdmittedGuest`) | 84.551 | 7.87 | 73.438 | 97.5 | ±15.74 |
-| Guests with no choice for over 50 turns (`guests.stuck`) | 1.625 | 1.188 | 0 | 3 | ±2.375 |
-| Guests in the park (mean) (`guests.meanInPark`) | 32.831 | 1.047 | 30.511 | 33.678 | ±2.094 |
+| Use Gini over the rides (`use.giniRides`) | 0.219 | 0.037 | 0.158 | 0.259 | ±0.074 |
+| Use Gini over all attractions (`use.giniAll`) | 0.309 | 0.028 | 0.264 | 0.336 | ±0.056 |
+| Revenue per admitted guest (`revenue.perAdmittedGuest`) | 81.962 | 12.856 | 67.656 | 97.969 | ±25.713 |
+| Guests with no choice for over 50 turns (`guests.stuck`) | 0.625 | 0.916 | 0 | 2 | ±1.832 |
+| Guests in the park (mean) (`guests.meanInPark`) | 32.235 | 1.939 | 30.007 | 35.037 | ±3.877 |
 
-Outcome mix over the 8 seeds: rejected `Full` 101, `Price` 729, `TooBoring` 94, `TooScary` 182; abandoned `Unhappy` 61, `NeedToilet` 2. About 55% of the attempts board, 40% are rejected
-(most of them the dear shop's price at the stand point), 2% abandon and 2% are unfinished when the window closes. About 0.6 guests depart per admission in the window, mostly by the
-happiness byte reaching 0 (the exit counter fires only for a guest that is in the right state when it passes 0, see `GuestLifecycle`). Guests wait a median of 17 turns and a p99 of 117
-turns; no wait is capped, because no queue time limit is reachable in tp.exe.
+Outcome mix over the 8 seeds: rejected `Full` 66, `Price` 718, `TooBoring` 80, `TooScary` 179; abandoned `NeedToilet` 3, `Unhappy` 69. About 56% of the attempts board, 40% are rejected (most of them the dear shop's price at the stand point), 3% abandon and 2% are unfinished when the window closes. About 0.6 guests depart per admission in the window, mostly by the happiness byte reaching 0 (the exit counter fires only for a guest that is in the right state when it passes 0, see `GuestLifecycle`). Guests wait a median of 16 turns and a p99 of 121 turns; no wait is capped, because no queue time limit is reachable in tp.exe.
 
 ### Level parks, extended scale (mean ± σ over 8 seeds)
 
 | Metric | Jungle | Halloween | Fantasy | Space |
 | --- | ---: | ---: | ---: | ---: |
-| Queue attempts | 870.125 ± 38.387 | 159.75 ± 10.138 | 386.125 ± 31.434 | 576.875 ± 34.943 |
-| Boarded / attempts | 0.207 ± 0.009 | 0.696 ± 0.042 | 0.435 ± 0.027 | 0.369 ± 0.019 |
-| Abandoned / attempts | 0.015 ± 0.003 | 0.01 ± 0.008 | 0.034 ± 0.005 | 0.049 ± 0.008 |
-| Rejected / attempts | 0.778 ± 0.009 | 0.293 ± 0.047 | 0.531 ± 0.022 | 0.583 ± 0.024 |
-| Wait p50 (turns) | 40.375 ± 0.518 | 17.125 ± 2.295 | 34.875 ± 1.126 | 41.875 ± 1.246 |
-| Wait p90 | 540.5 ± 34.949 | 165.75 ± 2.605 | 599.25 ± 86.373 | 485 ± 14.432 |
-| Wait p99 | 649.5 ± 38.781 | 177 ± 2.828 | 1096 ± 51.399 | 525.75 ± 16.585 |
-| Happiness, guest-time weighted | 52.436 ± 1.29 | 38.063 ± 1.118 | 49.418 ± 0.581 | 47.596 ± 0.709 |
-| Departures per admission | 0.286 ± 0.011 | 0.502 ± 0.059 | 0.364 ± 0.016 | 0.365 ± 0.027 |
-| Departures: happiness byte 0 | 29.125 ± 3.682 | 19.875 ± 3.944 | 23.875 ± 2.232 | 48 ± 4 |
-| Departures: exit counter 0 | 17.25 ± 3.37 | 12.25 ± 2.605 | 11.625 ± 3.998 | 11.5 ± 1.69 |
-| Revenue per admitted guest | 42.859 ± 0.111 | 59.615 ± 1.955 | 57.471 ± 2.797 | 42.344 ± 0.498 |
-| Guests with no choice > 50 turns | 68.75 ± 4.367 | 58 ± 3.251 | 70.625 ± 5.829 | 61.375 ± 5.181 |
-| Guests in the park (mean) | 107.826 ± 1.111 | 35.467 ± 1.056 | 86.894 ± 4.092 | 102.582 ± 0.459 |
+| Queue attempts | 831 ± 21.159 | 158 ± 13.342 | 379.375 ± 41.255 | 534 ± 23.845 |
+| Boarded / attempts | 0.219 ± 0.008 | 0.712 ± 0.04 | 0.433 ± 0.019 | 0.398 ± 0.018 |
+| Abandoned / attempts | 0.011 ± 0.003 | 0.011 ± 0.009 | 0.034 ± 0.007 | 0.04 ± 0.008 |
+| Rejected / attempts | 0.769 ± 0.008 | 0.278 ± 0.046 | 0.533 ± 0.023 | 0.563 ± 0.021 |
+| Wait p50 (turns) | 39.875 ± 1.246 | 18.25 ± 2.866 | 33.875 ± 2.1 | 41.375 ± 0.744 |
+| Wait p90 | 563.25 ± 26.37 | 165.5 ± 3.891 | 559.25 ± 62.858 | 493.625 ± 25.551 |
+| Wait p99 | 653 ± 16.336 | 177.25 ± 1.035 | 1048 ± 31.2 | 538 ± 29.301 |
+| Happiness, guest-time weighted | 52.837 ± 0.767 | 38.07 ± 0.688 | 48.73 ± 0.617 | 48.83 ± 1.09 |
+| Departures per admission | 0.27 ± 0.028 | 0.494 ± 0.065 | 0.329 ± 0.034 | 0.344 ± 0.028 |
+| Departures: happiness byte 0 | 26.75 ± 1.753 | 20.75 ± 3.694 | 24.75 ± 1.669 | 42.625 ± 3.292 |
+| Departures: exit counter 0 | 15.5 ± 4.276 | 10.5 ± 2.563 | 9.75 ± 3.284 | 10.75 ± 3.808 |
+| Revenue per admitted guest | 43.621 ± 0.39 | 60.466 ± 2.388 | 52.62 ± 1.5 | 43.065 ± 0.314 |
+| Guests with no choice > 50 turns | 69.875 ± 5.055 | 58.75 ± 1.581 | 71.625 ± 6.346 | 64.5 ± 4.14 |
+| Guests in the park (mean) | 103.71 ± 1.539 | 36.718 ± 1.01 | 85.07 ± 4.791 | 98.831 ± 1.972 |
 
-Outcome mix (all seeds): Jungle rejected `Full` 1106, `QueueLimit` 4088, `RideClosed` 225, abandoned `Unhappy` 101, `NeedToilet` 2; Halloween `Full` 342, `RideClosed` 36, `Unhappy` 13;
-Fantasy `Full` 1353, `RideClosed` 291, `Unhappy` 105; Space `Full` 866, `QueueLimit` 1511, `RideClosed` 318, `Unhappy` 223. With a single ride a park saturates: most attempts are
+Outcome mix (all seeds): Jungle rejected `Full` 1001, `QueueLimit` 3891, `RideClosed` 222, abandoned `NeedToilet` 1, `Unhappy` 75; Halloween rejected `Full` 315, `RideClosed` 40, abandoned `Unhappy` 13; Fantasy rejected `Full` 1317, `RideClosed` 307, abandoned `NeedToilet` 4, `Unhappy` 99; Space rejected `Full` 804, `QueueLimit` 1283, `RideClosed` 320, abandoned `Unhappy` 169. With a single ride a park saturates: most attempts are
 rejected, waits reach hundreds of turns and a large share of the guests find no choice for a long time. That is the headroom the later phases are measured against.
 
 ### park-scenario, plan scale (2 + 10 days)
 
 | Metric | Mean | σ |
 | --- | ---: | ---: |
-| Queue attempts | 5.125 | 1.727 |
-| Boarded / attempts | 0.54 | 0.242 |
-| Rejected / attempts | 0.255 | 0.163 |
-| Wait p90 (turns) | 12.5 | 9.134 |
-| Happiness, guest-time weighted | 47.964 | 2.472 |
+| Queue attempts | 6 | 0.756 |
+| Boarded / attempts | 0.543 | 0.239 |
+| Rejected / attempts | 0.317 | 0.244 |
+| Wait p90 (turns) | 18.125 | 17.217 |
+| Happiness, guest-time weighted | 49.234 | 2.753 |
 | Departures: happiness byte 0 | 0 | 0 |
-| Use Gini over the rides | 0.448 | 0.317 |
-| Revenue per admitted guest | 29.688 | 10.994 |
+| Use Gini over the rides | 0.562 | 0.086 |
+| Revenue per admitted guest | 20.469 | 1.326 |
 
 Too few events for thresholds: `queue.attempts` is about 5 and there are no departures.
 
 ### Cost of the instrumentation
 
-CPU and allocation per tick over the extended window (release build, Apple silicon, machine under heavy load, so about ±20% noise): observer off about 1.5 µs and 586 B per tick (the
-production path: one null test per event), observer on 1.3 to 1.9 µs and the same 587 B; the two sides are indistinguishable. The default path was also compared with the commit before
-this change on a 41,160-tick scenario run (the best of eight runs in each of five alternating process pairs): 1.182 µs per tick before, 1.194 µs after (+1%, inside the noise), and the
+CPU and allocation per tick over the extended window (release build, Apple silicon, machine under heavy load, so about ±20% noise): observer off about 1.4 µs and 579 B per tick (the
+production path: one null test per event), observer on 1.3 to 1.9 µs and the same 580 B; the two sides are indistinguishable. The default path was also compared with the commit before
+this change on a 41,160-tick run of the earlier plain-tick scenario loop (the best of eight runs in each of five alternating process pairs): 1.182 µs per tick before, 1.194 µs after (+1%, inside the noise), and the
 guests' state hash is identical. The allocation per tick is the simulation's own; the observer adds none on the default path. Compare CPU only as a ratio on one machine, from the
 `performance` block of one report.
 

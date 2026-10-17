@@ -37,8 +37,8 @@ public enum ThemeParkIncAttractionRing
 	DailyVeryUnhappyGuests = 8,
 	/// <summary>Guests who turned the attraction down: the guest's own refusal, a refused price at a category-2 attraction, or the failed chance of a special effect.</summary>
 	DailyDeclinedGuests = 9,
-	/// <summary>Guests whose special-ingredient check of the attraction failed (the ingredient amount plus a random 0 to 7 plus the info word was below 30).</summary>
-	DailyFailedIngredientChecks = 10,
+	/// <summary>Guests for whom the check of the attraction's hunger or thirst effect failed: the effect (info +0x204 HungerEffect or +0x200 ThirstEffect) plus a random 0 to 7 plus the ingredient byte (+0x98) was below 30, which costs the guest score; a pass raises the guest's satisfied meters by 35.</summary>
+	DailyNeedChecksFailed = 10,
 	/// <summary>Guests who found the price cheap (below <c>PcOfGoodPriceIsCheap</c> percent of the fair value) and could pay it.</summary>
 	DailyCheapPriceGuests = 11,
 	/// <summary>Guests who refused the price (above the fair value or more than their money).</summary>
@@ -78,7 +78,7 @@ public sealed partial record ThemeParkIncAttraction
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyUnhappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x3b8, "0x6136bb: score not below 0xa01b28 and below 0xa01b24" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyVeryUnhappyGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x440, "0x613651: score below 0xa01b28" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyDeclinedGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x4c8, "0x611eeb (the guest's choice), 0x612488 (price refused, info category 2), 0x612fb9 and 0x613164 (failed chance of a special effect)" ),
-		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyFailedIngredientChecks, ThemeParkIncHistoryPeriod.Day, 30, 0x550, "0x612b5b and 0x612c3d in 0x612740: info word + random(0..7) + the ingredient byte (+0x98) below 30" ),
+		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyNeedChecksFailed, ThemeParkIncHistoryPeriod.Day, 30, 0x550, "0x612b5b and 0x612c3d in 0x612740: HungerEffect (info +0x204) or ThirstEffect (+0x200) + random(0..7) + the ingredient byte (+0x98) below 30" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyCheapPriceGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x5d8, "0x61245d in the guest's price test 0x6120c0: price below the 0xa01b18 percent of the fair value, the guest can pay" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.DailyExpensivePriceGuests, ThemeParkIncHistoryPeriod.Day, 30, 0x660, "0x612473 in 0x6120c0: price above the fair value or above the guest's money (+0x1c0); the test then returns 1" ),
 		new ThemeParkIncAttractionRingInfo( ThemeParkIncAttractionRing.MonthlyTakings, ThemeParkIncHistoryPeriod.Month, 144, 0x6e8, "0x5e5de0 (with the daily ring)" ),

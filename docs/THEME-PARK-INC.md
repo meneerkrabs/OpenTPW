@@ -369,7 +369,7 @@ and sends message 11 (a new day) or 12 (a new month); the attraction's handlers 
 | 4 | daily rated visits | `0x5e61d0`, after the guest's happiness change |
 | 5 to 8 | daily very happy, happy, unhappy and very unhappy guests | `0x612740`: the visit's score against four thresholds (`0xa01b1c` and `0xa01b20` above, `0xa01b24` and `0xa01b28` below); the first two send thought 5, the others thought 6 |
 | 9 | daily declined guests | the guest's own refusal, a refused price at an info category 2 attraction, the failed chance of a special effect |
-| 10 | daily failed ingredient checks | `0x612b5b`, `0x612c3d` |
+| 10 | daily failed need checks | `0x612b5b`, `0x612c3d` |
 | 11 | daily cheap-price guests | `0x6120c0`: the price below `PcOfGoodPriceIsCheap` (`0xa01b18`) percent of the fair value |
 | 12 | daily expensive-price guests | `0x6120c0`: the price above the fair value or the guest's money |
 | 13 | monthly takings | with ring 0 |

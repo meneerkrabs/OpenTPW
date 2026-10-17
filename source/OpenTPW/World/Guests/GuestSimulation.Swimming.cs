@@ -316,7 +316,10 @@ public sealed partial class GuestSimulation
 	}
 
 	/// <summary>Empties the registry (guests still in an activity then leave the water on their next turn).</summary>
-	public void ClearPoolActivities() => poolActivities.Clear();
+	internal void ClearPoolActivities() => poolActivities.Clear();
+
+	/// <summary>The placed pool extras (<see cref="PoolExtras"/>), supplied by the level; null in a simulation without objects.</summary>
+	public Func<IReadOnlyList<PoolExtraSite>>? PoolExtraSites { get; set; }
 
 	/// <summary>The changing room a guest in a swim session started at, or null.</summary>
 	internal IRideVisitorBridge? SwimRoomOf( Guest guest ) => FindAttraction( guest.AttractionId );
@@ -405,14 +408,45 @@ public sealed partial class GuestSimulation
 		guest.PoolActivityTurns = 0;
 		(guest.PoolActivityX, guest.PoolActivityY) = PoolSwimRegion.Centre( (offer.X, offer.Y) );
 		if ( activity.Start( this, guest, offer, ref stream ) )
+		{
+			poolActivityVersion++;
 			return true;
+		}
 		guest.State = previous;
 		ClearPoolActivity( guest );
 		return false;
 	}
 
-	private static void ClearPoolActivity( Guest guest )
+	/// <summary>Counts every change of who does which activity at which target and seat (a start, an end, a restore); <see cref="PoolOccupancy"/> is rebuilt only when it moved.</summary>
+	private int poolActivityVersion;
+	private int poolOccupancyVersion = -1;
+	private readonly HashSet<(string Id, int Target)> poolTargetsTaken = new();
+	private readonly HashSet<(string Id, int Target, int X, int Y)> poolSeatsTaken = new();
+
+	/// <summary>
+	/// Whether a guest does the activity at the target (when <paramref name="seat"/> is given, on that seat cell). Exact at every moment: it is rebuilt from the guests whenever one starts or ends an activity.
+	/// A seat is the cell of <see cref="Guest.PoolActivityX"/>, <see cref="Guest.PoolActivityY"/> as <see cref="IPoolActivity.Start"/> left it: an activity that books seats keeps that point for the whole activity.
+	/// </summary>
+	public bool IsPoolActivityTaken( string id, int target, (int X, int Y)? seat = null )
 	{
+		if ( poolOccupancyVersion != poolActivityVersion )
+		{
+			poolOccupancyVersion = poolActivityVersion;
+			poolTargetsTaken.Clear();
+			poolSeatsTaken.Clear();
+			foreach ( var guest in guests )
+				if ( guest.State == GuestState.PoolActivity && guest.PoolActivityId is { } activity )
+				{
+					poolTargetsTaken.Add( (activity, guest.PoolActivityTarget) );
+					poolSeatsTaken.Add( (activity, guest.PoolActivityTarget, guest.PoolActivityX >> 16, guest.PoolActivityY >> 16) );
+				}
+		}
+		return seat is { } cell ? poolSeatsTaken.Contains( (id, target, cell.X, cell.Y) ) : poolTargetsTaken.Contains( (id, target) );
+	}
+
+	private void ClearPoolActivity( Guest guest )
+	{
+		poolActivityVersion++;
 		guest.PoolActivityId = null;
 		guest.PoolActivityTarget = guest.PoolActivityPhase = guest.PoolActivityTurns = 0;
 		guest.PoolActivityX = guest.PoolActivityY = 0;

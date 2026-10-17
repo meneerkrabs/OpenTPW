@@ -34,7 +34,9 @@ public enum PoolBuildResult
 	/// <summary>[EXT:pools-slides] The cell is the splash cell of a built slide or a pool-side cell of a slide tower: the slide stands on that water.</summary>
 	SlideWater,
 	/// <summary>[EXT:pools-slides] The slide tool refused the cell; <see cref="PoolTool.LastSlideRefusal"/> says why.</summary>
-	SlideRefused
+	SlideRefused,
+	/// <summary>[EXT:pools-extras] Erasing a pool cell beside a ladder, board, lounger, lamp or underwater light: the extra needs its water.</summary>
+	ExtraNeedsWater
 }
 
 /// <summary>One drag of the pool tool: the cells it wrote, the money, and its first refusal.</summary>

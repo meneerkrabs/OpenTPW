@@ -1,0 +1,23 @@
+#
+#	OpenTPW swimming pools: a diving board on a straight pool edge: swimmers climb it, walk out and dive
+#	Every number marked "OpenTPW's own value" is a choice of this extension, not a value of the original game.
+#
+Info.Id			65000		placeholder: objects.json replaces it with the object's own id
+Info.Name		"Diving Board"
+Info.IsChoosable	0		guests never choose a pool extra from the park: swimmers meet it in the pool (docs/POOLS.md, "Activities")
+Info.HasQueue		0
+Info.WhichUIType	3		a feature (the build menu's Features tab)
+
+# The footprint: the object's back (the top of the shape, +Y of the model) is the pool side. No entrance and no exit: nobody walks in.
+Info.Shape
+---
+*
+---
+
+# OpenTPW's own key: which pool extra this is (1 ladder, 2 diving board, 3 shower, 4 sun lounger, 5 pool lamp, 6 underwater light; docs/POOLS.md, "Extras")
+Pools.Extra	2
+
+Upgrades[0].CostOfUpgrade		250		OpenTPW's own value
+Upgrades[0].CostOfResearch		0		An object without research cost starts researched
+Research.Group		0
+Info.PreviewAnimNum		0

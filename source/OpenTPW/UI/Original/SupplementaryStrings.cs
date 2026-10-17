@@ -143,6 +143,8 @@ public enum OpenTpwText
 	PoolSlideTowerFacesAway,
 	PoolSlideWaterNeeded,
 	PoolChangingRoomNeedsPool,
+	PoolExtraNeedsEdge,
+	PoolExtraNeedsWater,
 	WeatherThunderstorms,
 	WeatherThunderAndLightning,
 	WeatherSnowOrRain,
@@ -504,6 +506,8 @@ public static class SupplementaryStrings
 		[OpenTpwText.PoolStateChanging] = new[] { "Changing", "Skifter tøj", "Kleedt zich om", "Se change", "Zieht sich um", "옷을 갈아입는 중", "Przebiera się", "Cambiándose", "Byter om" },
 		[OpenTpwText.PoolSwimmersInWater] = new[] { "Swimmers are in the water here", "Der er svømmere i vandet her", "Er zwemmers in het water hier", "Des nageurs sont dans l'eau ici", "Hier sind Schwimmer im Wasser", "이곳 물속에 수영하는 사람이 있습니다", "W wodzie są pływacy", "Hay nadadores en el agua aquí", "Det finns simmare i vattnet här" },
 		[OpenTpwText.PoolChangingRoomNeedsWater] = new[] { "A changing room needs this pool water", "Et omklædningsrum har brug for dette poolvand", "Een kleedkamer heeft dit zwembadwater nodig", "Un vestiaire a besoin de cette eau de piscine", "Eine Umkleide braucht dieses Poolwasser", "탈의실에 이 수영장 물이 필요합니다", "Przebieralnia potrzebuje tej wody basenowej", "Un vestuario necesita esta agua de piscina", "Ett omklädningsrum behöver det här poolvattnet" },
+		[OpenTpwText.PoolExtraNeedsEdge] = new[] { "A pool object needs a straight pool edge (a shower needs a changing room, a lounger or lamp needs water beside it)", "Et poolobjekt kræver en lige poolkant (et brusebad kræver et omklædningsrum, en liggestol eller lampe kræver vand ved siden af)", "Een zwembadobject heeft een rechte zwembadrand nodig (een douche een kleedkamer, een ligbed of lamp water ernaast)", "Un objet de piscine exige un bord droit (une douche un vestiaire, une chaise longue ou une lampe de l'eau à côté)", "Ein Poolobjekt braucht einen geraden Poolrand (eine Dusche eine Umkleide, eine Liege oder Lampe Wasser daneben)", "수영장 물건에는 곧은 수영장 가장자리가 필요합니다 (샤워기는 탈의실, 선베드와 조명은 옆에 물이 필요)", "Obiekt basenowy wymaga prostej krawędzi basenu (prysznic przebieralni, leżak lub lampa wody obok)", "Un objeto de piscina necesita un borde recto (una ducha un vestuario, una tumbona o lámpara agua al lado)", "Ett poolobjekt behöver en rak poolkant (en dusch ett omklädningsrum, en solstol eller lampa vatten bredvid)" },
+		[OpenTpwText.PoolExtraNeedsWater] = new[] { "A pool object needs this pool water", "Et poolobjekt har brug for dette poolvand", "Een zwembadobject heeft dit zwembadwater nodig", "Un objet de piscine a besoin de cette eau de piscine", "Ein Poolobjekt braucht dieses Poolwasser", "수영장 물건에 이 수영장 물이 필요합니다", "Obiekt basenowy potrzebuje tej wody basenowej", "Un objeto de piscina necesita esta agua de piscina", "Ett poolobjekt behöver det här poolvattnet" },
 		// [EXT:pools-slides] a splash cell with riders on it, or the foot of a tower's stairs with guests on them, cannot be erased
 		[OpenTpwText.PoolSlideRiders] = new[] { "A slide has guests on it here", "En vandrutsjebane har gæster på sig her", "Er zijn gasten op een glijbaan hier", "Des clients sont sur un toboggan ici", "Hier sind Gäste auf einer Rutsche", "여기 물 미끄럼틀에 손님이 있습니다", "Na zjeżdżalni są tu goście", "Hay clientes en un tobogán aquí", "Det finns gäster på en rutschkana här" },
 		// [EXT:pools-slides] the slide row, the tool's hints and the refusals of the slide tool

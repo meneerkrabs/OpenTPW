@@ -404,7 +404,7 @@ public class PoolsContentTests
 	{
 		var project = Path.Combine( RepositoryFolder(), "..", "..", "source", "OpenTPW.Web", "OpenTPW.Web.csproj" );
 		var embed = System.Xml.Linq.XDocument.Load( project ).Descendants( "EmbeddedResource" ).Single( item => ( (string?)item.Attribute( "Include" ) ?? "" ).Contains( "content/pools" ) );
-		Assert.AreEqual( "../../content/pools/esprites/**/*", (string?)embed.Attribute( "Exclude" ), "the 2x guest sets (about 9 MB) stay out of the browser build: the guests keep the game's art there" );
+		Assert.AreEqual( "../../content/pools/esprites/**/*", (string?)embed.Attribute( "Exclude" ), "the 2x sets (about 9 MB) stay out of the startup assembly: the page fetches them on demand (PoolSpriteDelivery)" );
 	}
 
 	private static bool HasPixel( GuestSpriteAtlas set, GuestAtlasFrame frame )
@@ -422,8 +422,8 @@ public class PoolsContentTests
 		var folder = PoolContent.Directory!;
 		var files = Directory.EnumerateFiles( folder, "*", SearchOption.AllDirectories ).ToArray();
 		var sprites = files.Where( file => file.Replace( '\\', '/' ).Contains( "/esprites/" ) ).ToArray();
-		Assert.IsTrue( files.Except( sprites ).Sum( file => new FileInfo( file ).Length ) < 1_500_000, "the objects (what the browser build embeds) stay small" );
-		Assert.IsTrue( sprites.Sum( file => new FileInfo( file ).Length ) < 9_500_000, "the 2x sprite sets (desktop only) have a budget too: the kids ship only the slots that are drawn" );
+		Assert.IsTrue( files.Except( sprites ).Sum( file => new FileInfo( file ).Length ) < 1_500_000, "the objects and the sprite manifest (what the browser build embeds) stay small" );
+		Assert.IsTrue( sprites.Sum( file => new FileInfo( file ).Length ) < 9_500_000, "the 2x sprite sets (shipped on the desktop, fetched on demand in the browser) have a budget too: the kids ship only the slots that are drawn" );
 		Assert.IsFalse( files.Any( file => file.EndsWith( ".wad", StringComparison.OrdinalIgnoreCase ) || file.EndsWith( ".wct", StringComparison.OrdinalIgnoreCase ) ), "no original archive or texture format file" );
 		Assert.IsTrue( files.All( file => Path.GetFileName( file ).Length <= 24 ) );
 		// the swim sets carry no full-detail bank: only the .TPC is read (docs/CONTENT-KIT.md)

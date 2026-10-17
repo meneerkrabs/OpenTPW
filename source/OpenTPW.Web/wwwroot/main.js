@@ -26,7 +26,7 @@ status.textContent = 'Ready.';
 // before the game starts (music muted, a frame cap). Only on a loopback address, where the harness serves the page: a link to the public page
 // cannot use them to write into a player's saved files. Without ?perf nothing here runs.
 const perfQuery = new URLSearchParams(location.search);
-const perfSeedPaths = new Set(['/save/opentpw-options.json', '/config/display.json', '/config/mods.json']);
+const perfSeedPaths = new Set(['/save/opentpw-options.json', '/config/display.json']);
 const loopback = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
 const perf = loopback && perfQuery.get('perf') === '1' ? {
 	program,
@@ -600,15 +600,17 @@ if (served) {
 // The pools extension's sprite sets (docs/POOLS.md, "Browser delivery"): fetched in the background once the game runs and its extensions are known,
 // never blocking the menu. A park that loads first keeps the fallbacks; the swimmers pick their sets up mid-level.
 async function fetchPoolSprites() {
+	// Whatever ends the fetch without every file, the game is told once, so it stops waiting for the sets (Program.PoolSpritesFailed).
+	let complete = false;
 	try {
 		if (!program.PoolsEnabled()) return;
 		const manifest = program.PoolSpriteManifest();
-		if (!manifest) return;
-		const files = planSprites(parseManifest(manifest), { pools: true, guestArt: program.PoolGuestArtEnabled() });
-		if (files.length && !await fetchSprites({ files, store: (path, bytes) => gameRunning && program.AddPoolSpriteFile(path, bytes) }))
-			program.PoolSpritesFailed();
+		const files = manifest ? planSprites(parseManifest(manifest), { pools: true, guestArt: program.PoolGuestArtEnabled() }) : [];
+		complete = files.length > 0 && await fetchSprites({ files, active: () => gameRunning, store: (path, bytes) => gameRunning && program.AddPoolSpriteFile(path, bytes) });
 	} catch (error) {
 		console.warn('Pools sprites unavailable; swimmers and land guests keep their fallbacks:', error?.message ?? error);
+	}
+	if (!complete && gameRunning) {
 		try { program.PoolSpritesFailed(); } catch { /* the game is gone */ }
 	}
 }

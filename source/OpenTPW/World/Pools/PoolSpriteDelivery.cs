@@ -31,14 +31,20 @@ public static class PoolSpriteDelivery
 
 	private static readonly object gate = new();
 	private static HashSet<string> failed = new( StringComparer.Ordinal );
-	private static readonly HashSet<string> logged = new( StringComparer.Ordinal );
+	private static readonly HashSet<(string Group, string Fallback, bool Failed)> loggedLines = new();
 
 	/// <summary>The folder the files are stored in, or null without pools content.</summary>
 	public static string? SpriteDirectory => PoolContent.Directory is { } folder ? System.IO.Path.Combine( folder, "esprites" ) : null;
 
-	/// <summary>The manifest text of the pools content, or null when it is not there.</summary>
+	/// <summary>
+	/// The manifest text of the pools content, or null when it is not there. A build that embeds it (the browser) reads the embedded resource itself, never the copy in the in-memory file system, which
+	/// other page calls can write to; the desktop reads the file next to the program.
+	/// </summary>
 	public static string? ManifestText()
 	{
+		using ( var stream = typeof( PoolSpriteDelivery ).Assembly.GetManifestResourceStream( "content/pools/" + ManifestFileName ) )
+			if ( stream != null )
+				return new StreamReader( stream ).ReadToEnd();
 		var file = PoolContent.Directory is { } folder ? System.IO.Path.Combine( folder, ManifestFileName ) : null;
 		return file != null && File.Exists( file ) ? File.ReadAllText( file ) : null;
 	}
@@ -162,7 +168,13 @@ public static class PoolSpriteDelivery
 	}
 
 	/// <summary>Whether a group is not complete yet but may still arrive: files are delivered, the fetch has not given up and it is not finished.</summary>
-	public static bool IsPending( string group ) => Delivered && !IsComplete( group ) && !( failed.Contains( group ) );
+	public static bool IsPending( string group )
+	{
+		if ( !Delivered )
+			return false;
+		lock ( gate )
+			return !failed.Contains( group ) && Group( group ).Any() && !IsComplete( group );
+	}
 
 	/// <summary>Forgets the stored files, the failures and the logged notes (a new start of the runtime, tests).</summary>
 	internal static void Reset()
@@ -170,7 +182,7 @@ public static class PoolSpriteDelivery
 		lock ( gate )
 		{
 			failed = new HashSet<string>( StringComparer.Ordinal );
-			logged.Clear();
+			loggedLines.Clear();
 			stored.Clear();
 			manifest = null;
 		}
@@ -183,11 +195,12 @@ public static class PoolSpriteDelivery
 	{
 		if ( IsComplete( group ) )
 			return true;
-		var message = $"Pools: the {group} sprite sets are not downloaded yet ({(failed.Contains( group ) ? "the download failed" : "still downloading")}); {fallback}.";
 		lock ( gate )
 		{
-			if ( logged.Add( message ) )
-				Log?.Trace( message );
+			// the line is built only the first time (this runs every frame while swimmers wait for their sets)
+			var didFail = failed.Contains( group );
+			if ( loggedLines.Add( (group, fallback, didFail) ) )
+				Log?.Trace( $"Pools: the {group} sprite sets are not downloaded yet ({(didFail ? "the download failed" : "still downloading")}); {fallback}." );
 		}
 		return false;
 	}

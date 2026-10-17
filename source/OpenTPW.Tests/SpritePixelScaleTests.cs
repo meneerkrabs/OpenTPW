@@ -43,6 +43,27 @@ public class SpritePixelScaleTests
 	}
 
 	[TestMethod]
+	public void AMultiFrameAnimationHasOneLiftSoItsBodyDoesNotJump()
+	{
+		// the dive slot of a shipped set: the frames hang 43, 13, 38 and 46 rows below the hotspot; each frame is 100 x 90 pixels at 2x
+		var rows = new[] { 43, 13, 38, 46 };
+		var frames = rows.Select( below => new GuestAtlasFrame( 0, 0, 100, 90, -50, below - 90, 256, 256 ) ).ToArray();
+		var lift = GuestRenderer.AnchorLift( PoolSwimSlots.BottomAnchored, PoolSwimSlots.Dive, frames );
+		Assert.AreEqual( 46 * GuestRenderer.UnitsPerPixel * 0.5f, lift, 1e-6f, "the largest rows-below-hotspot of the animation" );
+		foreach ( var frame in frames )
+		{
+			var (_, _, _, bottom) = frame.Extents( mirror: false, GuestRenderer.UnitsPerPixel );
+			Assert.IsTrue( bottom + lift >= -1e-6f, "no frame sinks below the point" );
+		}
+		// the single-frame lifts differ (this was the pop), the animation's is the maximum of them
+		var single = frames.Select( frame => GuestRenderer.AnchorLift( PoolSwimSlots.BottomAnchored, PoolSwimSlots.Dive, frame ) ).ToArray();
+		Assert.IsTrue( single.Distinct().Count() > 1 );
+		Assert.AreEqual( single.Max(), lift );
+		Assert.AreEqual( 0f, GuestRenderer.AnchorLift( PoolSwimSlots.BottomAnchored, PoolSwimSlots.Crawl, frames ), "a slot that is not anchored" );
+		Assert.AreEqual( 0f, GuestRenderer.AnchorLift( PoolSwimSlots.BottomAnchored, PoolSwimSlots.Dive, Array.Empty<GuestAtlasFrame>() ) );
+	}
+
+	[TestMethod]
 	public void FramesWith128PixelsPerUnitMakeTheFixedScaleQuadBitForBit()
 	{
 		var random = new Random( 17 );

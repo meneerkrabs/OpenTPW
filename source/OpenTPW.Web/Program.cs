@@ -68,7 +68,9 @@ public static partial class Program
 	[JSExport]
 	public static void AddFile( string relativePath, byte[] contents )
 	{
-		var path = Path.Combine( GameRoot, relativePath.TrimStart( '/' ) );
+		var path = Path.GetFullPath( Path.Combine( GameRoot, relativePath.TrimStart( '/' ) ) );
+		if ( !path.StartsWith( GameRoot + "/", StringComparison.Ordinal ) )
+			throw new ArgumentException( $"'{relativePath}' is outside the game folder." );
 		Directory.CreateDirectory( Path.GetDirectoryName( path )! );
 		File.WriteAllBytes( path, contents );
 		// A theme folder copied while the game runs: the game data's remembered lookups may name it missing.

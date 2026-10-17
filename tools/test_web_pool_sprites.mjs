@@ -86,3 +86,36 @@ test('the concurrency stays between one and four', async () => {
 	for (const concurrency of [0, 5, 1.5])
 		await assert.rejects(fetchSprites({ files, concurrency, fetcher: async () => response(new Uint8Array(4)), store: async () => true }));
 });
+
+function streamed(chunks, headers = new Map()) {
+	let cancelled = false, index = 0;
+	return {
+		cancelled: () => cancelled,
+		response: { ok: true, status: 200, headers, body: { getReader: () => ({
+			read: async () => index < chunks.length ? { value: chunks[index++], done: false } : { value: undefined, done: true },
+			cancel: async () => { cancelled = true; }, releaseLock() {},
+		}) }, arrayBuffer: async () => { throw new Error('the whole body must not be read at once'); } },
+	};
+}
+
+test('a streamed body is read in chunks and stored when it has exactly the pinned size', async () => {
+	const stored = [];
+	const { response } = streamed([new Uint8Array([1, 2]), new Uint8Array([3, 4])]);
+	assert.equal(await fetchSprites({ files: [file('Swim/A.ESP', 4)], fetcher: async () => response, store: async (path, bytes) => { stored.push([...bytes]); return true; } }), true);
+	assert.deepEqual(stored, [[1, 2, 3, 4]]);
+});
+
+test('a body past the pinned size is cancelled at once, never held whole', async () => {
+	const body = streamed([new Uint8Array(3), new Uint8Array(3), new Uint8Array(1000)]);
+	let reports = 0;
+	assert.equal(await fetchSprites({ files: [file('Swim/A.ESP', 4)], fetcher: async () => body.response, store: async () => true, failed: () => reports++ }), false);
+	assert.equal(body.cancelled(), true);
+	assert.equal(reports, 1);
+});
+
+test('a refused file after the game has stopped is not reported', async () => {
+	let reports = 0, running = true;
+	const ok = await fetchSprites({ files, concurrency: 1, active: () => running, fetcher: async () => response(new Uint8Array(4)), store: async () => { running = false; return false; }, failed: () => reports++ });
+	assert.equal(ok, false);
+	assert.equal(reports, 0);
+});

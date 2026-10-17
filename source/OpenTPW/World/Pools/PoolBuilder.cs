@@ -154,8 +154,12 @@ public sealed class PoolBuilder
 		Cells.SetType( x, y, ParkCellType.PoolWater );
 		park?.TrySpendCell( CellPurchase.Pool );
 		LastCharged = before - (park?.Balance ?? 0);
+		Painted?.Invoke();
 		return PoolBuildResult.Ok;
 	}
+
+	/// <summary>Raised after a cell has been painted (the level starts decoding the swim sprites on the first one).</summary>
+	public event Action? Painted;
 
 	/// <summary>Erases one pool cell back to an empty cell and refunds its price.</summary>
 	public PoolBuildResult Erase( int x, int y )

@@ -186,4 +186,39 @@ public class PoolSpriteDeliveryTests
 		Assert.IsTrue( PoolSpriteDelivery.IsComplete( PoolSpriteDelivery.SwimGroup ) );
 		Assert.AreEqual( 8, PoolSwimSprites.Load().Count );
 	}
+
+	[TestMethod]
+	public void TheSwimmerRendererWaitsForTheSetsAndIsMadeTheFrameTheyAreComplete()
+	{
+		var swim = Shipped().Where( item => item.Entry.Path.StartsWith( "Swim/" ) ).ToArray();
+		bool Pending() => PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup );
+		Assert.AreEqual( Level.SwimSpriteStep.Wait, Level.NextSwimSpriteStep( false, false, true, Pending() ), "nothing downloaded" );
+		foreach ( var (entry, bytes) in swim.Take( swim.Length - 1 ) )
+			PoolSpriteDelivery.Store( entry.Path, bytes );
+		Assert.AreEqual( Level.SwimSpriteStep.Wait, Level.NextSwimSpriteStep( false, false, true, Pending() ), "one file missing" );
+		Assert.AreEqual( Level.SwimSpriteStep.Done, Level.NextSwimSpriteStep( false, false, false, Pending() ), "no water yet: nothing to draw" );
+		PoolSpriteDelivery.Store( swim[^1].Entry.Path, swim[^1].Bytes );
+		Assert.AreEqual( Level.SwimSpriteStep.Create, Level.NextSwimSpriteStep( false, false, true, Pending() ), "complete: made now" );
+		Assert.AreEqual( Level.SwimSpriteStep.Done, Level.NextSwimSpriteStep( true, true, true, Pending() ), "once" );
+		Assert.AreEqual( 8, PoolSwimSprites.Load().Count );
+	}
+
+	[TestMethod]
+	public void AFailedDownloadOrAnEmptyManifestIsNotWaitedFor()
+	{
+		PoolSpriteDelivery.MarkFailed( PoolSpriteDelivery.SwimGroup );
+		Assert.AreEqual( Level.SwimSpriteStep.Create, Level.NextSwimSpriteStep( false, false, true, PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ) ), "failed: the one warning, then the kid sprite" );
+		PoolSpriteDelivery.Reset();
+		File.WriteAllText( Path.Combine( work, PoolSpriteDelivery.ManifestFileName ), "{\"format\":1,\"files\":[]}" );
+		Assert.IsFalse( PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ), "no manifest entries: nothing will arrive, so nothing is pending" );
+	}
+
+	[TestMethod]
+	public void TheServerMapsEveryExtensionOfTheManifestSoItServesTheFiles()
+	{
+		var extensions = PoolSpriteDelivery.Manifest.Select( entry => Path.GetExtension( entry.Path ).ToLowerInvariant() ).Distinct();
+		foreach ( var extension in extensions )
+			CollectionAssert.Contains( OpenTPW.Server.WebClient.PoolSpriteExtensions, extension, $"WebClient serves no unknown file types: {extension} needs a mapping" );
+		Assert.IsFalse( new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider().TryGetContentType( "x.esp", out _ ), "the default map does not know them" );
+	}
 }

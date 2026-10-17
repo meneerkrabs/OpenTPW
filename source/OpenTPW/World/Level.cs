@@ -491,10 +491,11 @@ public partial class Level : IDisposable
 		var headSprites = poolGuestSprites?.Heads ?? GuestSpriteAtlas.LoadKidHeads();
 		if ( poolGuestSprites != null )
 			sprites = poolGuestSprites.Kids;
-		// [EXT:pools-swim] the swim sets are decoded now, on a worker, so that the first pool cell does not stall a frame (the renderer is made then, after the water)
-		swimSpriteSets = FeatureGates.Pools ? PoolSwimSprites.Load() : null;
-		if ( swimSpriteSets != null )
-			System.Threading.Tasks.Task.Run( () => { foreach ( var atlas in swimSpriteSets ) _ = atlas.Pixels; } );
+		// [EXT:pools-swim] the swim sets (64 MiB decoded) are decoded on a worker only for a park that has pool water already; any other park starts that when its first pool cell is painted (PreloadSwimSprites)
+		swimSpriteSets = null;
+		swimSpritesPreloaded = false;
+		if ( grid.Cells.CountOf( ParkCellType.PoolWater ) > 0 )
+			PreloadSwimSprites();
 		// A guest in costume is drawn with the theme's costume set (sprite category 2, tp.exe 0x004FE65E: +0x20 from 0x00541F70(2)), its head on a ride with the costume heads where the theme has them
 		var costumes = GuestSpriteAtlas.LoadCostumes( park.LevelName );
 		var costumeHeads = GuestSpriteAtlas.LoadCostumeHeads( park.LevelName );

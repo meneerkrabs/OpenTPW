@@ -34,11 +34,40 @@ export function planSprites(files, { pools, guestArt }) {
 	return [...(guestArt ? group('Generic') : []), ...group('Swim')];
 }
 
+/** Reads a body of exactly `size` bytes; the stream is cancelled the moment it passes `size`, so a wrong or endless body is never held whole. */
+async function readBounded(response, size, name) {
+	if (!response.body?.getReader) {
+		// No streaming (an old browser, a test double): the length is checked after the read.
+		const bytes = new Uint8Array(await response.arrayBuffer());
+		if (bytes.length !== size) throw new Error(`${name}: unexpected size`);
+		return bytes;
+	}
+	const reader = response.body.getReader(), bytes = new Uint8Array(size);
+	let length = 0;
+	try {
+		for (;;) {
+			const { value, done } = await reader.read();
+			if (done) break;
+			if (length + value.byteLength > size) throw new Error(`${name}: larger than expected`);
+			bytes.set(value, length);
+			length += value.byteLength;
+		}
+	} catch (error) {
+		await reader.cancel().catch(() => {});
+		throw error;
+	} finally {
+		reader.releaseLock();
+	}
+	if (length !== size) throw new Error(`${name}: unexpected size`);
+	return bytes;
+}
+
 /**
  * Fetches the planned files with bounded concurrency. Resolves true when every file was stored, false after the first failure (the rest are
- * not fetched and nothing is retried); `failed` is called once with the reason.
+ * not fetched and nothing is retried); `failed` is called once with the reason. `active` says whether the game still runs: once it has
+ * stopped, a refused file is not a failure to report.
  */
-export async function fetchSprites({ files, store, fetcher = globalThis.fetch, base = spriteFolder, concurrency = 3, failed = error => console.warn('Pools sprites unavailable; swimmers and land guests keep their fallbacks:', error?.message ?? error) }) {
+export async function fetchSprites({ files, store, active = () => true, fetcher = globalThis.fetch, base = spriteFolder, concurrency = 3, failed = error => console.warn('Pools sprites unavailable; swimmers and land guests keep their fallbacks:', error?.message ?? error) }) {
 	if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4)
 		throw new Error('The sprite download concurrency must be between one and four.');
 	const queue = [...files];
@@ -53,17 +82,18 @@ export async function fetchSprites({ files, store, fetcher = globalThis.fetch, b
 				if (!response.ok)
 					throw new Error(`${file.path}: HTTP ${response.status}`);
 				const declared = response.headers?.get?.('content-length');
-				if (declared != null && Number(declared) !== file.size && !response.headers.get('content-encoding'))
+				if (declared != null && Number(declared) > file.size && !response.headers.get('content-encoding'))
 					throw new Error(`${file.path}: unexpected size`);
-				const bytes = new Uint8Array(await response.arrayBuffer());
-				if (bytes.length !== file.size)
-					throw new Error(`${file.path}: unexpected size`);
-				if (await store(file.path, bytes) !== true)
+				const bytes = await readBounded(response, file.size, file.path);
+				if (!active()) { stopped = true; return; }
+				if (await store(file.path, bytes) !== true) {
+					if (!active()) { stopped = true; return; }
 					throw new Error(`${file.path}: rejected by the integrity check`);
+				}
 			} catch (error) {
 				if (!stopped) {
 					stopped = true;
-					failed(error);
+					if (active()) failed(error);
 				}
 			}
 		}

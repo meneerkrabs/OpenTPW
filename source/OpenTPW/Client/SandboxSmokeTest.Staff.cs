@@ -15,14 +15,58 @@ internal sealed partial class SandboxSmokeTest
 	private System.Numerics.Vector2 staffPointA, staffPointB;
 	private StaffMember? smokeHandyman;
 	private byte[]? staffVisiblePixels;
+	private int staffProbe, staffCandidateId, staffEmployed;
+	private readonly List<(float X, float Y)> staffDangleSeen = new();
+
+	/// <summary>Three pointer positions a few pixels apart (inside one cell or across two): the dangling sprite has to follow each one, not stay at a cell centre.</summary>
+	private System.Numerics.Vector2 StaffProbePoint( System.Numerics.Vector2 origin, int index ) => origin + index switch
+	{
+		0 => System.Numerics.Vector2.Zero,
+		1 => new System.Numerics.Vector2( 14, 0 ),
+		_ => new System.Numerics.Vector2( 14, -9 )
+	};
+
+	/// <summary>
+	/// One probe of the sprite-follows-the-pointer check: the pointer sits at the probe point for a few frames; then the sprite has to hang at the ground point under it
+	/// and the hire window must not cover the park. False while the probe is still waiting; true when all probes have passed.
+	/// </summary>
+	private bool ProbeDangle( System.Numerics.Vector2 origin, System.Numerics.Vector2 viewport, StaffRenderer renderer, string tool )
+	{
+		if ( frame < staffStageFrame + 3 )
+		{
+			injectInput?.Invoke( UiInput.Idle( StaffProbePoint( origin, staffProbe ) ) );
+			return false;
+		}
+		var point = StaffProbePoint( origin, staffProbe );
+		Require( renderer.DrewDangling && renderer.DangleAt != null, $"the {tool} tool draws the dangling sprite at probe {staffProbe}" );
+		var at = renderer.DangleAt!.Value;
+		Require( level.TryGetGroundCell( point, viewport, out var wantX, out var wantY ), "the probe point hits the ground" );
+		Require( Math.Abs( at.X - wantX ) < 0.02f && Math.Abs( at.Y - wantY ) < 0.02f, $"the {tool} sprite hangs at the pointer's ground point ({at} vs {(wantX, wantY)}), not at a cell centre" );
+		Require( !hud!.StaffWindowOpen && !hud.EmployeeWindowOpen && hud.Stack.Screens.Count == 1, $"no hire or employee window covers the park while the {tool} tool runs" );
+		// [EXT:debug-hud] OPENTPW_STAFF_CAPTURE=1 also saves the world with the interface for each probe (artifacts/native-smoke-staff-<tool>-<probe>.png), for the visual check of the fix
+		if ( Environment.GetEnvironmentVariable( "OPENTPW_STAFF_CAPTURE" ) == "1" )
+			CaptureOutputFrame( $"staff-{tool.ToLowerInvariant()}-{staffProbe}.png" );
+		staffDangleSeen.Add( at );
+		staffProbe++;
+		staffStageFrame = frame;
+		if ( staffProbe < 3 )
+		{
+			injectInput?.Invoke( UiInput.Idle( StaffProbePoint( origin, staffProbe ) ) );
+			return false;
+		}
+		Require( staffDangleSeen.Distinct().Count() == 3, $"the {tool} sprite moved with the pointer on every probe, not snapped to one spot" );
+		staffDangleSeen.Clear();
+		staffProbe = 0;
+		return true;
+	}
 
 	private readonly Action<UiInput>? injectInput;
 
-	private bool StaffPhaseSettled => hud == null || hudContext == null || level.StaffPlacement == null || level.StaffRenderer == null || staffStage >= 7;
+	private bool StaffPhaseSettled => hud == null || hudContext == null || level.StaffPlacement == null || level.StaffRenderer == null || staffStage >= 20;
 
 	private void UpdateStaffPhase()
 	{
-		if ( staffStage >= 7 || hud == null || hudContext == null || level.StaffPlacement is not { } placement || level.StaffRenderer is not { } renderer
+		if ( staffStage >= 20 || hud == null || hudContext == null || level.StaffPlacement is not { } placement || level.StaffRenderer is not { } renderer
 			|| level.Park == null || level.Guests == null || (staffStage == 0 && frame < 8) )
 			return;
 		var economy = level.Park.Economy;
@@ -60,15 +104,28 @@ internal sealed partial class SandboxSmokeTest
 				hud.ShowEmployedStaff( false );
 				Require( hud.StaffCandidates.Count > 0, "the staff pool offers a handyman" );
 				hud.SelectStaff( 0 );
-				var candidateId = hud.SelectedCandidateId;
-				var employed = economy.Staff.Members.Count;
+				var candidateId = staffCandidateId = hud.SelectedCandidateId;
+				var employed = staffEmployed = economy.Staff.Members.Count;
 				Require( hud.HireSelectedStaff() && !hud.StaffWindowOpen, "the hire closes the staff window" );
 				Require( placement.Kind == StaffToolKind.Place && economy.Staff.Members.Count == employed
 					&& economy.Staff.Candidates.Any( item => item.Id == candidateId ), "a hire starts the Place tool and employs nobody yet" );
 				hud.Update( hudContext, UiInput.Idle( staffPointA ) );
 				Require( placement.HoverCell == staffCellA && placement.HoverValid, "the Place tool follows the hovered cell" );
+				// before the click: the hired handyman hangs at the pointer (probes), and nothing covers the park
+				staffStage = 8;
+				staffStageFrame = frame;
+				staffProbe = 0;
+				injectInput?.Invoke( UiInput.Idle( staffPointA ) );
+				break;
+			}
+			case 8:
+			{
+				if ( !ProbeDangle( staffPointA, viewport, renderer, "Place" ) )
+					return;
+				hud.Update( hudContext, UiInput.Idle( staffPointA ) );
 				Press( staffPointA );
-				Require( !placement.IsActive && economy.Staff.Members.Count == employed + 1, "a click on a valid cell hires and places" );
+				var candidateId = staffCandidateId;
+				Require( !placement.IsActive && economy.Staff.Members.Count == staffEmployed + 1, "a click on a valid cell hires and places" );
 				smokeHandyman = economy.Staff.Members.Single( member => member.Id == candidateId );
 				Require( smokeHandyman.Type == StaffType.Handyman && StaffPlacementRules.CellOf( smokeHandyman ) == staffCellA && smokeHandyman.CellX == staffCellA.X + 0.5f, "the handyman stands on the cell centre" );
 				staffStage = 1;
@@ -133,6 +190,22 @@ internal sealed partial class SandboxSmokeTest
 					return;
 				Require( renderer.DrewDangling, "the Carry tool draws the dangling sprite" );
 				Require( placement.HoverCell == staffCellB && placement.HoverValid, "the Carry tool follows the hovered cell" );
+				staffStage = 9;
+				staffStageFrame = frame;
+				staffProbe = 0;
+				break;
+			case 9:
+				if ( !ProbeDangle( staffPointB, viewport, renderer, "Carry" ) )
+					return;
+				injectInput?.Invoke( UiInput.Idle( staffPointB ) );
+				staffStage = 10;
+				staffStageFrame = frame;
+				break;
+			case 10:
+				// back over the drop cell for the click
+				injectInput?.Invoke( UiInput.Idle( staffPointB ) );
+				if ( frame < staffStageFrame + 3 )
+					return;
 				staffStage = 5;
 				break;
 			case 5:
@@ -149,7 +222,7 @@ internal sealed partial class SandboxSmokeTest
 				Require( renderer.DrawnStaff > 0 && !renderer.DrewDangling, "the dropped handyman is drawn again and the dangling sprite is gone" );
 				economy.Fire( smokeHandyman!.Id );
 				Log.Trace( $"HUD staff pick-up: handyman {smokeHandyman.Id} carried and dropped on {staffCellB}; dangling sprite drawn while carried." );
-				staffStage = 7;
+				staffStage = 20;
 				break;
 		}
 	}

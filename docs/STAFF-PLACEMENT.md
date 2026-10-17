@@ -31,11 +31,12 @@ original save) is put back to Idle by `StaffPlacement.Reconcile`.
 
 ## Drawing
 
+The hire and carry tools draw their figure every frame at the exact ground point under the mouse, 5 units up (0x46c480 reads the mouse's world point 0x7a1c90 through 0x45d610 and draws the tool's sprite with 0x475480), also while the pointer is over the HUD; OpenTPW hangs the person's standing frame facing the player there (`GUEST-021`: the original's sprite is script 6, 5, 4, 7 or 8 of the sprite set 0x74ed98, created by 0x46c730, whose art is not decoded). The hire window closes with the hire (0x49b9dd) and the pick-up button closes the employee window, so no window covers the park while a tool runs.
+
 Staff are sprites (`esprites.wad`), not MD2 models: Generic\Handymen `SPR_HA`; Generic\Mechanics `SPR_FA`, `SPR_OM`; Generic\Guards `SPR_GU`;
 Generic\Researchers `SPR_RE`; entertainers per theme (Jungle DI, EX, NA; Fantasy FL, GN, LA; Hallow DR, FK, HU; Space MO, SM, SP). The bank is
 the candidate's drawn variant (`0x541f70`), or for a member without one `(NameIndex + Id)` modulo the folder's banks (GUEST-014).
 Clips are the scripts of the table 0x75a418 decoded in `StaffScripts` (`StaffAnimation.cs`): stand slot 0, walk slot 1 (the patrol walk shows each frame twice), run slot 2, work slot 4 (the sweep shows
-each of 4 frames twice, repair is an 8-frame loop, research loops 4 frames and four steps of frame 0), strike slot 5 (4 frames and six steps of frame 0, looping), the dangling cursor
-sprite slot 6 frames 0-3, the guard's catch then carry slots 7 and 8. Resting members have no sprite. Entertainer performances play the bank's performance program (intro and hold: GUEST-015). The sprite clock is
+each of 4 frames twice, repair is an 8-frame loop, research loops 4 frames and four steps of frame 0), strike slot 5 (4 frames and six steps of frame 0, looping), slot 6 frames 0-3 (2 x 2 pixel placeholders in every bank but SPR_EX, so no figure), the guard's catch then carry slots 7 and 8. Resting members have no sprite. Entertainer performances play the bank's performance program (intro and hold: GUEST-015). The sprite clock is
 `SpritePlayer` (0x475360): one step per rendered frame past the due time, 62 ms at creation, and a walking member's interval is 62 over its speed (doubled for the walk, 0x4FA2A0): 20 steps a cell walking, 10 running; the moving test and the position smoothing are GUEST-016. `StaffRenderer` draws one quad per member in one draw call with the
 guests' sprite shader and atlas loading and allocates nothing per frame once the members are known.

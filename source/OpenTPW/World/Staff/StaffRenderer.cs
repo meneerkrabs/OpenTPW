@@ -8,7 +8,7 @@ namespace OpenTPW;
 /// <summary>
 /// Draws every placed staff member as a camera-facing quad of its original sprite (<c>esprites.wad</c>, tp.exe body sprite 0x4d4140), the way
 /// <see cref="GuestRenderer"/> draws the kids: one draw call, one dynamic vertex buffer, the same sprite shader and atlas loading, the hotspot on the terrain.
-/// A member in the player's hand is not drawn; the tool's dangling sprite (slot 6, frames 0-3 looping) hangs over the hovered cell instead.
+/// A member in the player's hand is not drawn; the tool's dangling sprite (slot 6, frames 0-3 looping) hangs at the pointer's ground point instead.
 /// Nothing is allocated per frame once the members have been seen.
 /// </summary>
 public sealed class StaffRenderer : Entity
@@ -50,6 +50,8 @@ public sealed class StaffRenderer : Entity
 	public int DrawnStaff { get; private set; }
 	/// <summary>Whether the last frame drew the tool's dangling sprite.</summary>
 	public bool DrewDangling { get; private set; }
+	/// <summary>Where the last frame hung the tool's dangling sprite, in cell units; null when it was not drawn.</summary>
+	internal (float X, float Y)? DangleAt { get; private set; }
 
 	/// <summary>The atlas textures, material and independently owned shader used by native lifecycle checks.</summary>
 	internal IReadOnlyList<Asset> OwnedAssets => textures.Cast<Asset>().Concat( material == null ? Array.Empty<Asset>() : new Asset[] { material, material.Shader } ).ToArray();
@@ -215,10 +217,15 @@ public sealed class StaffRenderer : Entity
 		}
 	}
 
+	/// <summary>Where the tool's sprite hangs this frame in cell units: the exact pointer ground point, else the hovered cell's centre; null when neither is known.</summary>
+	internal static (float X, float Y)? DanglePoint( StaffPlacement placement ) =>
+		placement.Cursor ?? (placement.HoverCell is { } cell ? (cell.X + 0.5f, cell.Y + 0.5f) : null);
+
 	protected override void OnRender()
 	{
 		DrawnStaff = 0;
 		DrewDangling = false;
+		DangleAt = null;
 		if ( !Visible || material == null || deleted )
 			return;
 		var list = members();
@@ -248,15 +255,16 @@ public sealed class StaffRenderer : Entity
 		}
 		if ( ++frames % 256 == 0 && views.Count > list.Count )
 			Prune( list );
-		if ( placement.HoverCell is { } cell && placement.ToolType is { } toolType
+		if ( DanglePoint( placement ) is var (danglingX, danglingY) && placement.ToolType is { } toolType
 			&& sprites.AtlasFor( toolType, placement.ToolVariantKey ) is var atlasIndex and >= 0 && atlasIndex < textures.Count )
 		{
 			var atlas = sprites.Atlases[atlasIndex];
-			var (slot, step) = StaffSpriteRules.Resolve( StaffSpriteRules.Dangle, now, atlas.Animations.Animations );
-			// the cursor sprite faces the player: sprite direction 4
+			// [APPROX:GUEST-021] the person hangs at the pointer as the standing figure facing the player (sprite direction 4): the tool's sprite is script 6, 5, 4, 7 or 8 of the sprite set at 0x74ed98 by role (0x46c730), not the bank's slot 6, which is a 2 x 2 pixel placeholder in every shipped staff bank but SPR_EX (the old dangling frame drew nothing visible)
+			var (slot, step) = StaffSpriteRules.Resolve( StaffSpriteRules.Stand, now, atlas.Animations.Animations );
 			var frameIndex = atlas.GetFrame( slot, 4, step );
-			AddSprite( ref count, atlasIndex, frameIndex, false, GuestRenderer.CellToEngine( field, cell.X + 0.5f, cell.Y + 0.5f, DangleLift ), right, up, forward );
+			AddSprite( ref count, atlasIndex, frameIndex, false, GuestRenderer.CellToEngine( field, danglingX, danglingY, DangleLift ), right, up, forward );
 			DrewDangling = true;
+			DangleAt = (danglingX, danglingY);
 		}
 		if ( count == 0 )
 			return;

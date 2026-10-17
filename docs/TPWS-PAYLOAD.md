@@ -443,6 +443,8 @@ plausibility bounds (ECON-045) are gone. The spending history is not in the save
 
 ## Importer (`OriginalParkImport`, `OriginalEconomyImport`)
 
+What the import skips or only partly rebuilds, thing by thing with its constructor and covering ID, is inventoried in [SAVE-THINGS.md](SAVE-THINGS.md); the slots of the things it does not rebuild stay used.
+
 `OriginalParkImport.Import` takes the decoded payload and the level `base.map`.
 It splits the blocks, parses the World block (rejecting any cell attribute that
 differs from the map: wrong level), reads the RideSystem records (rejecting any

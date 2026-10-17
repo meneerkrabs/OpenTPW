@@ -467,6 +467,13 @@ public sealed partial class ParkHud
 			PostMessage( strings.Help( 0x125 ) );
 			return;
 		}
+		// [EXT:pools-slides] a placed slide tower enters the slide mode of the pool tool: the player lays the track from the tower down into the pool
+		if ( PoolSlideTowers.IsSlideTower( item.Entry ) && level.EnterSlideTool( item ) )
+		{
+			level.ResetBuildRotation();
+			PostMessage( strings.Extra( OpenTpwText.PoolSlideHint ) );
+			return;
+		}
 		// a placed water ride enters the water track tool (tool mode 16) at its station; the queue tool follows once the circuit is valid (Level.RewalkTrack)
 		if ( item.Runtime.Bump != null && level.EnterTrackTool( item ) )
 		{
@@ -798,7 +805,9 @@ public sealed partial class ParkHud
 				// [EXT:cannot-build-sound] a refused placement ('Cannot build') plays the error feedback 0x1D with OpenTPW's own message text: tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480), so the original plays nothing for a refused placement; the feedback is an OpenTPW addition
 				// [APPROX:AUDIO-009] within the build tools' code (0x524960-0x535100, which plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90) no refusal sound exists, and none of the 82 call sites of the sound entry 0x51bfc0 lies between 0x535100 and 0x5471cd, where the refusal stages 0x535670 and 0x536100 are; the callees of those stages were not each traced for a sound
 				// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
-				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolChangingRoomNeedsPool
+				// [EXT:pools-slides] a slide tower refused for want of a pool says so in its own words, turned away from the pool beside it in others
+				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal )
+					? (pendingItem?.Entry is { } refused && PoolSlideTowers.IsSlideTower( refused ) ? (level.LastRefusalTowerFacesAway ? OpenTpwText.PoolSlideTowerFacesAway : OpenTpwText.PoolSlideTowerNeedsPool) : OpenTpwText.PoolChangingRoomNeedsPool)
 					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolWater )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolAttractionNeedsPool
 					: lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPoolEdge )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolExtraNeedsEdge : OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );

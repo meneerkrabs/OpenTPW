@@ -333,7 +333,7 @@ public partial class Level
 	/// </summary>
 	internal void ConfigureObjectHooks()
 	{
-		Objects.IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type );
+		Objects.IsReserved = ( x, y ) => IsReservedByPrototype( x, y ) || Guests?.Grid.Cells.RawTypeAt( x, y ) is { } type && ReservesCell( type ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 		Objects.IsUnowned = ( x, y ) => Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned );
 		Objects.PathAt = ( x, y ) => Guests?.Grid.Cells is { } cells ? ObjectPathAt( cells, x, y ) : null;
 		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
@@ -348,7 +348,8 @@ public partial class Level
 		};
 		Objects.ObjectPlaced += _ => poolExtraSites = null;
 		Objects.ObjectRemoved += _ => poolExtraSites = null;
-		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) ?? PoolExtras.PlacementRule( entry, Guests?.Grid.Cells, Objects, x, y, rotation )
+		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) ?? PoolSlideTowers.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) // [EXT:pools-slides] a slide tower needs pool water beside its far side
+			?? PoolExtras.PlacementRule( entry, Guests?.Grid.Cells, Objects, x, y, rotation )
 			// [EXT:pools-attractions] a rope swing, jets, wave machine or spa needs pool water on its water side
 			?? PoolAttractions.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation );
 	}
@@ -428,6 +429,9 @@ public partial class Level
 		foreach ( var item in Objects.Objects )
 			if ( !item.IsDeleted && item.Visitors.IsChangingRoom && item.Visitors.PoolAccessCandidates.Contains( (x, y) ) )
 				return PoolBuildResult.ChangingRoomAccess;
+		// [EXT:pools-slides] a built slide keeps its splash cell and its tower's pool-side cells, and guests on it their cells
+		if ( SlideEraseBlock( x, y ) is { } slideBlock )
+			return slideBlock;
 		// [EXT:pools-extras] the water a ladder, board, lounger, lamp or light stands beside stays
 		if ( PoolExtras.NeedsWater( PoolExtras.Sites( Objects ), x, y ) )
 			return PoolBuildResult.ExtraNeedsWater;
@@ -439,6 +443,9 @@ public partial class Level
 				return PoolBuildResult.Swimmers;
 		return null;
 	}
+
+	/// <summary>[EXT:pools-slides] Whether the last refused placement was a slide tower beside a pool on the wrong side (the HUD's wording).</summary>
+	public bool LastRefusalTowerFacesAway { get; private set; }
 
 	/// <summary>[EXT:pools-tool] The headless pool builder over the level's cell map (original levels, not a read-only visit); null otherwise (docs/POOLS.md).</summary>
 	public PoolBuilder? PoolBuilder { get; private set; }
@@ -461,6 +468,9 @@ public partial class Level
 				return;
 			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
+		// [EXT:pools-slides] the slides are drawn with the pool, before the swimmers and the riders (entities draw in the order they are made)
+		if ( PoolSlideRenderer == null && PoolSlides != null && PoolRenderer != null )
+			PoolSlideRenderer = new PoolSlideRenderer( PoolSlides, SlideSite, Guests.Grid.Cells, Objects.Grid.Origin, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded at level setup
 		// the sets are looked for once per level: a missing or broken folder is one warning, not a scan every frame
 		switch ( NextSwimSpriteStep( SwimmerRenderer != null, swimSpritesTried, PoolRenderer != null, PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ) ) )
@@ -531,12 +541,15 @@ public partial class Level
 		}
 		return new GuestRenderer( guests, park.Heightfield, swim )
 		{
-			Draws = guest => guest.IsSwimming || guest.InPoolActivity,
+			// [EXT:pools-slides] a rider inside a closed tube is not drawn (presentation only)
+			Draws = guest => (guest.IsSwimming || guest.InPoolActivity) && !PoolSlideActivity.IsInsideTube( guests, guest ),
 			SwimSlotFallback = true,
 			BottomAnchoredSlots = PoolSwimSlots.BottomAnchored,
 			SlotChooser = guest => guest.InPoolActivity
 				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
 				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
+			// [EXT:pools-slides] a rider lying in a flume is drawn pulled towards the camera by the trough's depth, so the curved bed does not cut its lower body (presentation only)
+			DepthPullChooser = guest => PoolSlideActivity.DepthPull( guests, guest ),
 			FeetChooser = guest =>
 			{
 				var feet = GuestRenderer.CellToEngine( park.Heightfield, guest.DrawX, guest.DrawY );
@@ -610,12 +623,13 @@ public partial class Level
 			PoolTool = new PoolTool( PoolBuilder );
 			PoolBuilder.Painted += PreloadSwimSprites;
 		}
+		SetupPoolSlides();
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
 	}
 
 	// Objects, fixed items (the gate and entrance included) and the sandbox Totem block paths like their original cell types do; an object of a lower
 	// overwrite priority than the path's gives way instead (ParkPathBuilder.ObjectGivesWay).
-	private bool IsPathBlocked( int x, int y ) => Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y );
+	private bool IsPathBlocked( int x, int y ) => Objects.FindAt( x, y ) != null || IsReservedByPrototype( x, y ) || (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 
 	/// <summary>How the cell map holds a path for the object build rule: none, a plain path (cleared by the placement) or a NoModify one (refused).</summary>
 	internal static ObjectPathCell? ObjectPathAt( ParkCellMap cells, int x, int y )
@@ -1030,7 +1044,9 @@ public partial class Level
 	// [BIN:TPW-EXE:0x5357c7 placement validator] a cell with flag 0x40 is refused for a queue as for a path or an object
 	private bool IsQueueBlocked( int x, int y ) =>
 		!QueueTerrainAllows( x, y ) || (Objects.FindAt( x, y ) != null && !QueueGivesWay( x, y )) || IsReservedByPrototype( x, y )
-		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ));
+		|| (Guests?.Grid.Cells is { } cells && cells.InBounds( x, y ) && cells.FlagsAt( x, y ).HasFlag( ParkCellFlags.Unowned ))
+		// [EXT:pools-slides] a slide's track keeps its land cells for its pylons
+		|| (Guests != null && PoolSlides?.ReservesLand( x, y, Guests.Grid.Cells ) == true);
 
 	/// <summary>The terrain rule for a queue cell; its path cells (the save's and the map start's) are the live cell map's to judge, as for objects.</summary>
 	private bool QueueTerrainAllows( int x, int y ) => Objects.Grid.CheckTerrain( x, y ) switch
@@ -1189,6 +1205,9 @@ public partial class Level
 		var result = Objects.Check( entry, anchor.X, anchor.Y, rotation );
 		if ( result != OriginalPlacementResult.Allowed )
 		{
+			// [EXT:pools-slides] a slide tower turned away from the pool beside it gets its own message
+			LastRefusalTowerFacesAway = result == OriginalPlacementResult.NeedsPool && PoolSlideTowers.IsSlideTower( entry ) && Guests?.Grid.Cells is { } placeCells
+				&& PoolSlideTowers.WaterBesideOtherSide( entry.Shape, placeCells, anchor.X, anchor.Y, rotation );
 			LastActionMessage = $"Cannot build {entry.DisplayName} here: {result}.";
 			return null;
 		}

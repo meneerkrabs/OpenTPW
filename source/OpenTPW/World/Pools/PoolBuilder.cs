@@ -29,6 +29,12 @@ public enum PoolBuildResult
 	Swimmers,
 	/// <summary>[EXT:pools-changing-room] Erasing a pool cell beside the back of a changing room: the room needs its pool.</summary>
 	ChangingRoomAccess,
+	/// <summary>[EXT:pools-slides] The cell is the splash cell of a slide with riders on it, or the foot of a tower's stairs with guests on them.</summary>
+	SlideRiders,
+	/// <summary>[EXT:pools-slides] The cell is the splash cell of a built slide or a pool-side cell of a slide tower: the slide stands on that water.</summary>
+	SlideWater,
+	/// <summary>[EXT:pools-slides] The slide tool refused the cell; <see cref="PoolTool.LastSlideRefusal"/> says why.</summary>
+	SlideRefused,
 	/// <summary>[EXT:pools-extras] Erasing a pool cell beside a ladder, board, lounger, lamp or underwater light: the extra needs its water.</summary>
 	ExtraNeedsWater,
 	/// <summary>[EXT:pools-attractions] Erasing the last pool cell on the water side of a rope swing, jets, wave machine or spa: the attraction needs its pool.</summary>

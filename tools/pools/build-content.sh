@@ -4,6 +4,8 @@
 #   1. Blender builds the changing room cabin for each theme      tools/blender/opentpw_changing_room.py   -> <work>/glb/<theme>.glb
 #   2. opentpw-kit object turns each glb into an object archive   tools/pools/cabin.sam, cabin.rse        -> content/pools/objects/<theme>/cabin/
 #   2b. the pool extras (ladder, diving board, shower, lounger, lamp, underwater light) the same way    tools/blender/opentpw_pool_extras.py, tools/pools/extra-*.sam, extra.rse -> content/pools/objects/<theme>/<extra>/
+#   2b. Blender builds the water slide towers (flume and tube)    tools/blender/opentpw_slide_tower.py     -> <work>/towers/<theme>-<profile>.glb, then the kit
+#                                                                tools/pools/slide-tower-<profile>.sam, slide-tower.rse -> content/pools/objects/<theme>/<profile>tower/
 #   3. Blender renders the eight TPW kid sets at 2x               tools/blender/opentpw_guest_sprites.py   -> <work>/guests/tpw/{Pool,Kids,Kidsheads}/<SET>/
 #                 (the swimwear table of 14 slots, the clothes sets and the heads)
 #   4. pack_sprite_sets.py packs them with opentpw-kit sprites    tools/pools/pack_sprite_sets.py          -> content/pools/esprites/Swim/SPR_xx.ESP/.TPC
@@ -57,6 +59,17 @@ for theme in "${themes[@]}"; do
 	for extra in ladder board shower lounger lamp light; do
 		kit object --glb "$work/extras/$theme-$extra.glb" --name "$extra" --out "content/pools/objects/$theme/$extra" \
 			--sam "tools/pools/extra-$extra.sam" --script tools/pools/extra.rse --force
+	done
+done
+
+echo "== 2b. water slide towers"
+rm -rf "$work/towers"
+"$blender" -b --factory-startup --python tools/blender/opentpw_slide_tower.py -- --out "$work/towers" --preview "$work/previews" > "$work/towers.log" 2>&1 \
+	|| { tail -30 "$work/towers.log"; exit 1; }
+for theme in "${themes[@]}"; do
+	for profile in flume tube; do
+		kit object --glb "$work/towers/$theme-$profile.glb" --name "${profile}tower" --out "content/pools/objects/$theme/${profile}tower" \
+			--sam "tools/pools/slide-tower-$profile.sam" --script tools/pools/slide-tower.rse --force
 	done
 done
 

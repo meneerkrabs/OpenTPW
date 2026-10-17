@@ -487,6 +487,9 @@ internal static class Game
 			// [EXT:debug-pool] --debug-pool-lead N: the frames between painting the pool and the capture (default 59), so a capture can show swimmers after they have swum for a while (docs/POOLS.md)
 			var poolLead = GetOption( args, "--debug-pool-lead", "frames between the pool and the capture" ) is { } leadText && int.TryParse( leadText, out var parsedLead ) && parsedLead > 59 ? parsedLead : 59;
 			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > poolLead + 1 ? poolParsed - poolLead : 40;
+			// [EXT:debug-pool] --debug-pool-at N builds the pool (and what follows it) at frame N instead of the lead before the capture, so swimmers and riders have time to act
+			if ( GetOption( args, "--debug-pool-at", "a frame count" ) is { } poolAtText && int.TryParse( poolAtText, out var poolAt ) && poolAt > 0 )
+				poolFrame = poolAt;
 			Render.PostUpdate += PaintDebugPool;
 			void PaintDebugPool()
 			{
@@ -529,6 +532,9 @@ internal static class Game
 							// [EXT:debug-attractions] smoke-only: --debug-attractions ropeswing,jets,wavemachine,spa (or all) places those objects beside the pool through the level's own placement (docs/POOLS.md)
 							if ( GetOption( args, "--debug-attractions", "kinds: ropeswing,jets,wavemachine,spa or all" ) is { } attractionKinds )
 								Log.Trace( $"--debug-attractions: placed {string.Join( ", ", level.BuildPoolAttractionsBeside( shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), attractionKinds ).Select( placed => $"{placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y}/{placed.Placement.Rotation}" ) )}." );
+							// [EXT:debug-slide] smoke-only: --debug-slide flume|tube builds a slide tower beside the pool and lays a valid slide from it into the water (docs/POOLS.md, "Water slides")
+							if ( GetOption( args, "--debug-slide", "flume or tube" ) is { } slideText )
+								PlaceDebugSlide( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), slideText );
 							return;
 						}
 				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );
@@ -1094,6 +1100,26 @@ internal static class Game
 		Log.Trace( $"--debug-swimmers: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation}; {started} of {swimmers} guests swim." );
 		if ( started == 0 )
 			Log.Warning( $"--debug-swimmers: no guest swims: changing room {placed.Visitors.IsChangingRoom}, pool-side cells {string.Join( " ", placed.Visitors.PoolAccessCandidates )}, access {level.Guests.PoolAccessOf( placed.Visitors )}, region {level.Guests.SwimRegionOf( placed.Visitors )?.Cells.Count}, park closed {level.Park?.Economy.IsParkOpen == false}, registered {placed.Visitors.HasCells}." );
+	}
+
+	/// <summary>[EXT:debug-slide] Builds a slide tower of the profile beside the pool cells <paramref name="pool"/> and its slide (<see cref="Level.BuildSlideBeside"/>); the swimmers then take it like any guest.</summary>
+	private static void PlaceDebugSlide( Level level, IReadOnlyList<(int X, int Y)> pool, string profile )
+	{
+		var kind = string.Equals( profile, "tube", StringComparison.OrdinalIgnoreCase ) ? PoolSlideProfile.Tube : PoolSlideProfile.Flume;
+		if ( level.BuildSlideBeside( pool, kind ) is not { } placed )
+		{
+			Log.Warning( "--debug-slide: no slide could be built beside the pool (the opentpw.pools extension must be on, the theme must list the tower, and a valid route into the pool must exist)." );
+			return;
+		}
+		var slide = level.PoolSlides?.Find( PoolSlide.KeyOf( placed.Placement.X, placed.Placement.Y ) );
+		Log.Trace( $"--debug-slide: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation} with a slide of {slide?.Pieces.Count} pieces (complete {slide?.IsComplete}, slope {slide?.SlopePermille})." );
+		// the engine point halfway along the track and the pool's side of it, for --capture-camera
+		if ( slide is { IsComplete: true } )
+		{
+			var origin = level.Objects.Grid.Origin;
+			var mid = slide.PointAt( slide.Length / 2 );
+			Log.Trace( FormattableString.Invariant( $"--debug-slide: the middle of the track is at engine {origin.X + mid.X / 1024f * ObjectPlacement.CellSize:0.#},{origin.Y + mid.Y / 1024f * ObjectPlacement.CellSize:0.#}; the splash at engine {origin.X + (slide.LandingPoint!.Value.X / 1024f) * ObjectPlacement.CellSize:0.#},{origin.Y + (slide.LandingPoint!.Value.Y / 1024f) * ObjectPlacement.CellSize:0.#}." ) );
+		}
 	}
 
 	/// <summary>

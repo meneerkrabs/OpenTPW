@@ -10,7 +10,7 @@ namespace OpenTPW.Hud;
 internal static class GuestWorldPicker
 {
 	internal static bool TryHit(NVector3 feet, GuestAtlasFrame frame, bool mirror, Matrix4x4 view,
-		Matrix4x4 projection, NVector2 viewport, NVector2 mouse, out float depth)
+		Matrix4x4 projection, NVector2 viewport, NVector2 mouse, out float depth, float rotation = 0f)
 	{
 		depth = 0;
 		if (!float.IsFinite(viewport.X) || !float.IsFinite(viewport.Y) || viewport.X <= 0 || viewport.Y <= 0 ||
@@ -26,7 +26,9 @@ internal static class GuestWorldPicker
 		var max = new NVector2(float.NegativeInfinity);
 		for (var corner = 0; corner < 4; corner++)
 		{
-			var point = feet + right * ((corner & 1) == 0 ? x0 : x1) + up * ((corner & 2) == 0 ? top : bottom);
+			var (cx, cy) = ((corner & 1) == 0 ? x0 : x1, (corner & 2) == 0 ? top : bottom);
+			var (sin, cos) = MathF.SinCos( rotation );
+			var point = feet + right * (cx * cos + cy * sin) + up * (-cx * sin + cy * cos);
 			var clip = NVector4.Transform(new NVector4(point, 1), transform);
 			if (!float.IsFinite(clip.W) || clip.W <= 0)
 				return false;

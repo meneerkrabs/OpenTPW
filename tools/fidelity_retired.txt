@@ -20,6 +20,7 @@ ADVISOR-019 docs/LIPS.md
 ADVISOR-020 docs/progress/2026-10-15-economy-rules-bankruptcy-challenges-cell-types-net-worth-and.md
 ADVISOR-022 docs/LIPS.md
 ADVISOR-023 docs/PROGRESS.md
+ADVISOR-026 docs/LIPS.md
 ADVISOR-027 docs/LIPS.md
 ARRIVAL-002 docs/GUESTS.md
 ARRIVAL-004 docs/progress/2026-10-15-arrival-and-save-rules-settled-against-tp-exe.md
@@ -343,6 +344,6 @@ VM-902 docs/DETERMINISM.md
 WALK-001 docs/progress/2026-10-16-ride-shop-and-sideshow-settings.md
 WALK-002 docs/GUESTS.md
 WALK-004 docs/GUESTS.md
+WALK-006 docs/GUESTS.md
 WALK-008 docs/GUESTS.md
 WALK-009 docs/GUESTS.md
-WALK-006 docs/GUESTS.md

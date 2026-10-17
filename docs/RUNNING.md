@@ -100,8 +100,8 @@ or full gameplay and does not download proprietary game files.
 
 The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Changes apply at the next start.
 
-`OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the example Theme Park Inc rides mod
-([MODS.md](MODS.md#making-a-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
+`OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the shipped Theme Park Inc rides mod (`opentpw.tpi-rides`)
+([MODS.md](MODS.md#the-shipped-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
 
 ## Diagnostic model inspection
 
@@ -194,9 +194,11 @@ charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-
 the simulation. `--capture-world out.png --capture-frames 300` writes a screenshot. The folder must
 hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted as below); it is
 detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.
-Theme Park Inc data given to any other start (no `--load-original-level`, a Theme Park World level,
-`--sandbox`, `--front-end`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
-`--visit-park`) is refused with a message that points here. Current desktop packages can use the explicit world command above. The new desktop edition
+Without a world (`--front-end`, or no mode option at all) the same data opens the slice's
+[Personnel File start screen](THEME-PARK-INC.md#theme-park-inc-front-end): Enter Game starts science, and a zone
+chooser offers Polar Zone and Arabian Nights. Theme Park Inc data given to any other start (a Theme Park World level,
+`--sandbox`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
+`--visit-park`, `--front-end` together with a world) is refused with a message that points here. Current desktop packages can use the explicit world command above. The new desktop edition
 chooser is reviewed in PR #146 for a future release; the browser already offers explicit experimental
 TPI world selection. See the [static TPI launch guide](https://opentpw.io/theme-park-inc.html) for
 build availability, setup steps and limitations. Adding
@@ -213,8 +215,10 @@ mkdir tpinc-data && unshield -d tpinc-data x '/Volumes/THEMEPARKINC/data1.cab'
 ```
 
 The files land in per-component folders; `tpinc-data/Data` is the folder the viewer needs (point
-`--game-path` at `tpinc-data`, or at the folder that holds `Data`). The language string tables are
-separate folders (`_Support_<Language>_String_Tables`) that the viewer does not use.
+`--game-path` at `tpinc-data`, or at the folder that holds `Data`). `Data/Language` holds the five languages of the CD
+(Dutch, English, French, German, Swedish): `--language Dutch` (or `OPENTPW_LANGUAGE`, or the saved choice) shows the slice's
+interface and its object names in that language ([LANGUAGES.md](LANGUAGES.md#theme-park-inc)). The separate folders
+`_Support_<Language>_String_Tables` hold only the installer's own strings and are not read.
 
 ## Read-only Theme Park Inc texture inspection
 

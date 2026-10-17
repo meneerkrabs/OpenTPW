@@ -178,8 +178,9 @@ public partial class Level : IDisposable
 		}
 	}
 
-	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null )
-		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null, overFrames: false ) { }
+	/// <param name="playerSave">The decoded payload of a player's own original save of this level (<c>--original-save</c>): the park starts from it instead of the shipped Easymode save, with Full Simulation rules and the balance the save was made with.</param>
+	public Level( string levelName, bool loadOriginalLevel = false, ParkVisitInfo? visit = null, OnlineFolders? onlineFolders = null, ParkStartKind start = ParkStartKind.OriginalSaveReference, WorldSeed? seed = null, ReadOnlyMemory<byte>? playerSave = null )
+		: this( levelName, loadOriginalLevel, visit, onlineFolders, start, seed, null, null, overFrames: false, playerSave: playerSave ) { }
 
 	internal Level( ParkResumeSnapshot snapshot, ParkEconomy economy, OnlineFolders? onlineFolders = null )
 		: this( snapshot.Theme, true, null, onlineFolders, snapshot.StartKind, new WorldSeed( snapshot.Seed ), snapshot, economy, overFrames: false ) { }
@@ -193,8 +194,9 @@ public partial class Level : IDisposable
 		new( levelName, loadOriginalLevel, visit, onlineFolders, start, null, null, null, overFrames: true );
 
 	private Level( string levelName, bool loadOriginalLevel, ParkVisitInfo? visit, OnlineFolders? onlineFolders,
-		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null )
+		ParkStartKind start, WorldSeed? seed, ParkResumeSnapshot? resume, ParkEconomy? resumedEconomy, bool overFrames, ThemeParkIncLayoutCheckpoint? checkpoint = null, ReadOnlyMemory<byte>? playerSave = null )
 	{
+		playerSavePayload = playerSave;
 		if (checkpoint != null && !GameEditions.IsThemeParkInc)
 			throw new NotSupportedException("TPI layout checkpoints require Theme Park Inc data.");
 		incLayout = checkpoint;
@@ -218,6 +220,7 @@ public partial class Level : IDisposable
 	}
 
 	private IEnumerator<float>? construction;
+	private readonly ReadOnlyMemory<byte>? playerSavePayload;
 
 	/// <summary>How far the construction has come, from 0 to 1 (a rough share of the work, for a progress bar).</summary>
 	internal float ConstructionProgress { get; private set; }
@@ -246,7 +249,8 @@ public partial class Level : IDisposable
 			using ( LoadProfile.Measure( "original-park" ) )
 			{
 				var parts = 0;
-				foreach ( var loaded in OriginalPark.LoadSteps( LevelName, readShippedSave: incLayout == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )) ) )
+				foreach ( var loaded in OriginalPark.LoadSteps( LevelName, readShippedSave: incLayout == null && resume == null && (IsReadOnlyVisit || ParkStart.ReadsShippedSave( start )),
+					savePayload: incLayout == null && resume == null && !IsReadOnlyVisit ? playerSavePayload : null ) )
 				{
 					if ( loaded == null )
 						yield return Math.Min( 0.14f, 0.004f * ++parts );
@@ -263,7 +267,7 @@ public partial class Level : IDisposable
 			using ( LoadProfile.Measure( "economy" ) )
 			{
 				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
-					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
+					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed, playerSave: playerSavePayload != null )
 						: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
 				else if ( !IsReadOnlyVisit && GameEditions.IsThemeParkInc && GameEditions.Capabilities.Money && resume == null )
 					Park = ParkEconomyRuntime.ForThemeParkIncLevel( OriginalPark, Seed );
@@ -444,6 +448,7 @@ public partial class Level : IDisposable
 				litterEffects = new ParkLitterEffects( Park.Economy.Litter, ParticleRendererModule.AdvisorPool );
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();
+			ImportOriginalScripts();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
 				ReleaseUnimportedThings();
 			if ( GameEditions.Capabilities.Staff )

@@ -75,7 +75,7 @@ chooser and a script made with a seed.
 
 What is still unlike the original, and recorded in DET-013 to DET-015: the guest and staff sites with no counterpart here
 (the arrival lane picks of later states, the gate wait, the won sideshow's tail, the staff constructors' draws), the
-scripts of an imported original save (their ids and pass phase, below), scripts created with an explicit seed (tests and
+scripts of an imported original save (their saved run state, below), scripts created with an explicit seed (tests and
 older saves), and the weather, which keeps its own stream (`[EXT:weather-stream]`). The advisor takes no draw: its pick is
 sequential for every message (below).
 
@@ -101,9 +101,12 @@ The 60 Hz tick (`EXT:fixed-60hz-clock`) derives its substep from the park's own 
 end is at or past *n* × 31 ms (`tick × 1000 / 1860`), so at most one substep ends in a tick and the turn counter is the substep
 counter divided by eight, exactly. The script clock (`GETTIME`, WAIT) gains 31 ms per substep, slice or not. Script ids are the
 creation order from 1 (`0x558C0D`: the next-id word `0x8791A8` starts at 1 and is never reused), which OpenTPW's creation order
-matches for a park built in OpenTPW; the script pass counter (`0x8791A4`) restarts at 0 when a level loads and the original's save
-does not hold it, where OpenTPW's park save carries it (`RideScriptWorldSnapshot.PassCounter`, optional: an older save and an
-original save start it at 0) so that a resumed park continues exactly; it joins the canonical hash once a pass has run. What
+matches for a park built in OpenTPW; the script pass counter (`0x8791A4`) restarts at 0 when a level starts, and the RSSE block of an
+original save holds it (the header is written and read raw over `0x8791A0`, writer `0x559350`, loader `0x5597A0`), as OpenTPW's park save does
+(`RideScriptWorldSnapshot.PassCounter`, optional: an older OpenTPW save starts it at 0), so that a resumed park continues exactly; it joins the canonical hash once a pass has run.
+An imported original save's scripts take the saved ids, the saved next id and that pass counter (`SavedScriptImport`): the loader links every record at the list's
+head, so after a load the pass walks the saved scripts in reverse of the file's order (the writer walks the list head first: the corpus' `2, 1` of a new park is walked `1, 2`,
+and a park saved after a load lists `9, 8, 7, 1, 2`), which `RideScriptWorld.ListOrder` keeps explicitly. What
 the host does between substeps (the ride visitor protocol's host step, the coasters, the animators) stays per tick.
 
 The advisor controller's update (thing type 11, `0x59A550`) has one draw of the world generator, in the mode-3 branch of its
@@ -636,7 +639,7 @@ mirrors the level (ten singletons, gates and lights first). Saves: guest snapsho
 
 | ID | Rule |
 | --- | --- |
-| DET-013 | scripts, bump and tour rides and rider heads draw from the one world generator with the original's projections, a park turn takes its draws in the original's thing-sweep order and the substep scheduler (script pass newest first, one slice per eight passes, tour cars on even substeps, bump module every substep) is ported; but a script created with an explicit seed (tests, older saves) keeps a private generator, the script ids and pass phase of an imported original save are OpenTPW's creation order (the saved ids and script states are not imported), and the host's visitor step, the coasters, the animators and the effects system 0x520130 stay per 60 Hz tick |
+| DET-013 | scripts, bump and tour rides and rider heads draw from the one world generator with the original's projections, a park turn takes its draws in the original's thing-sweep order and the substep scheduler (script pass newest first, one slice per eight passes, tour cars on even substeps, bump module every substep) is ported; but a script created with an explicit seed (tests, older saves) keeps a private generator, an imported original save's scripts take its ids, list order and pass counter but restart their programs (the saved program counters, stacks, variables and waits are not imported), and the host's visitor step, the coasters, the animators and the effects system 0x520130 stay per 60 Hz tick |
 | DET-014 | guests draw from the world generator in the original's creation order and at the traced sites and reseed with their thing id (a slot of the park's thing pool, WALK-010), but take the entrance from lanes A and B and have no counterpart for the later arrival-lane picks, the gate wait and the sideshow tail |
 | DET-015 | the economy's staff pool and the staff walks draw from the world generator, but hired staff have no constructor draws, and the weather keeps its own stream ([EXT:weather-stream]); the advisor draws nothing (its pick is sequential in every row, retired from this entry) |
 

@@ -1297,6 +1297,21 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// An original save's RSSE block gives the imported objects' scripts their saved ids, list order and pass counter (<see cref="ParkObjects.ImportOriginalScripts"/>, DET-013): the
+	/// one slice per eight passes then falls on the passes the saved park ran it on. Only a park started from an original save does this; a resumed park restores its own scripts.
+	/// </summary>
+	private void ImportOriginalScripts()
+	{
+		if ( resumeState != null || OriginalPark?.Save is not { Rsse: { } rsse } )
+			return;
+		foreach ( var line in Objects.ImportOriginalScripts( rsse ) )
+		{
+			Park?.Import?.Report( line );
+			Log.Trace( $"Park script import: {line}" );
+		}
+	}
+
+	/// <summary>
 	/// An original save's operating words (speed, capacity and duration, SAVE-006) become the linked ride runtimes' words where they differ from the tier's values. Only a park started
 	/// from the shipped save does this; a resumed park restores its own words (<see cref="OriginalObjectRuntimeSnapshot"/>).
 	/// </summary>

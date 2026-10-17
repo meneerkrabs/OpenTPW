@@ -341,7 +341,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-swim] The pinned hash of <see cref="RunFixedParkWithPoolsAndAChangingRoom"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsChangingRoomFixedRunHash = 0xB5B033AE20AD9BA0UL;
+	internal const ulong PoolsChangingRoomFixedRunHash = 0x230377B82462A0E2UL;
 
 	[TestMethod]
 	public void FixedRunWithAPoolAndAChangingRoomIsTheSameInEveryProcessAndGuestsSwim()
@@ -390,7 +390,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-extras] The pinned hash of <see cref="RunFixedParkWithPoolExtras"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolExtrasFixedRunHash = 0x0C35A6A0F10D914EUL;
+	internal const ulong PoolExtrasFixedRunHash = 0x821603608FB118BAUL;
 
 	[TestMethod]
 	public void FixedRunWithPoolExtrasIsTheSameInEveryProcessAndGuestsUseThem()
@@ -460,7 +460,7 @@ public class DeterminismTests
 	}
 
 	/// <summary>[EXT:pools-attractions] The pinned hash of <see cref="RunFixedParkWithWaterAttractions"/> (docs/DETERMINISM.md, "Pools").</summary>
-	internal const ulong PoolsAttractionsFixedRunHash = 0x79EEF3026A22FE72UL;
+	internal const ulong PoolsAttractionsFixedRunHash = 0xFB099B8666EE23D2UL;
 
 	[TestMethod]
 	public void FixedRunWithWaterAttractionsIsTheSameInEveryProcessAndSwimmersUseThem()

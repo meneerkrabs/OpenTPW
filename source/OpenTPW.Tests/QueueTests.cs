@@ -28,14 +28,15 @@ public class QueueTests
 	/// </summary>
 	internal sealed class Rig
 	{
-		public readonly GuestPathGrid Grid = new( 12, 12 );
+		public readonly GuestPathGrid Grid;
 		public readonly RideVisitorBridge Ride;
 		public readonly RideVM Script;
 		public readonly GuestSimulation Simulation;
 		public bool Open = true;
 
-		public Rig( int queueCells = 5, QueueParameters? parameters = null, GuestNeeds satisfies = GuestNeeds.None, int capacity = 5, bool takesGuests = false, int excitement = 55, Action<GuestSettings>? configure = null, RideVisitorKind? kind = null )
+		public Rig( int queueCells = 5, QueueParameters? parameters = null, GuestNeeds satisfies = GuestNeeds.None, int capacity = 5, bool takesGuests = false, int excitement = 55, Action<GuestSettings>? configure = null, RideVisitorKind? kind = null, int gridSize = 12 )
 		{
+			Grid = new( gridSize, gridSize );
 			for ( var x = 0; x < 10; x++ )
 				Grid.SetPath( x, 0, true );
 			Ride = new RideVisitorBridge( RideId, "Queue ride", kind ?? (satisfies == GuestNeeds.None ? RideVisitorKind.Ride : RideVisitorKind.Facility), capacity, excitement, 30, satisfies )

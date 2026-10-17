@@ -88,6 +88,12 @@ public interface IPoolActivity
 	/// </summary>
 	int StartOfferPercent => 0;
 
+	/// <summary>
+	/// Whether the guest, in this activity, is a body in the water this turn: free swimmers steer clear of it and keep <see cref="PoolSwimSettings.MinimumDistance"/> from it (docs/POOLS.md, "Activities"). True while it floats,
+	/// stands under a jet, swims to something or splashes down; false on the deck, a ladder, a board, a platform or a lounger. Default false. Pure: it reads the guest's saved fields only.
+	/// </summary>
+	bool InWater( GuestSimulation simulation, Guest guest ) => false;
+
 	/// <summary>Ends it at once (the pool or the target is gone, the room is demolished, the park closes): the activity lets go of what it holds; the host ends the session.</summary>
 	void Abort( GuestSimulation simulation, Guest guest );
 }

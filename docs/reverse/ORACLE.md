@@ -441,7 +441,7 @@ counterexample: deadline = now = 31000, start 1000. The original keeps the guest
 releases it. BOARD-plan §5 itself agrees with the original on all 506 inputs, so BOARD-I can
 take the plan as written. **Fixed in ORACLE-F:** each bounce slot keeps its start time, and
 `RideVisitorBridge.TakeUnbounced` releases the first slot with `deadline < now` inside the 200 ms
-window (32-bit whole-millisecond times, C remainder); FORCEUNBOUNCE still takes the first slot.
+window (32-bit whole-millisecond times, C remainder); FORCEUNBOUNCE still takes the first slot. (Corrected October 17, 2026 from tp.exe: FORCEUNBOUNCE `0x00555842` drops only the deadline compare of UNBOUNCE `0x005557A3`; the 200 ms window of each second still gates it, `RideVisitorBridge.TakeUnbounced`.)
 Before → after: C# 326 → 0 (now on 508 inputs, two of them with start > now).
 **WALK-F2 (REVIEW-ORACLE-2 OV2-6):** BOUNCE (`0xadf40`) fills the first free slot of the
 header's bounce-size table and stores nothing when the table is full; UNBOUNCE clears a slot in

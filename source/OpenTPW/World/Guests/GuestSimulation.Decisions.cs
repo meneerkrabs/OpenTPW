@@ -4,7 +4,7 @@ namespace OpenTPW;
 public sealed partial class GuestSimulation
 {
 	/// <summary>What every decision may read besides its own views: the settings, the park turn and the weather.</summary>
-	private DecisionContext ContextNow() => new( Settings, ParkTurn, WeatherDropsFalling?.Invoke() ?? false, SmarterGuests?.ParkSeed ?? Seed );
+	private DecisionContext ContextNow() => new( Settings, ParkTurn, WeatherDropsFalling?.Invoke() ?? false, SmarterGuests?.ParkSeed ?? Seed, Grid.CountX, Grid.CountY );
 
 	/// <summary>The error for a policy result the host cannot act on: it names the policy, and nothing of the result is used.</summary>
 	private InvalidOperationException PolicyError( string what ) => new( $"The guest decision policy {decisions.GetType().Name} {what}." );

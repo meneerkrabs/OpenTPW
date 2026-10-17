@@ -138,13 +138,18 @@ public class WalkOffTimingTests
 		var snapshot = bridge.CaptureSnapshot();
 		CollectionAssert.AreEqual( new[] { (1, 3, 4, 2) }, snapshot.WalkSlots, "the aboard walker's slot is saved" );
 		Assert.AreEqual( 0, RideVisitorBridge.ValidateSnapshot( snapshot ).Count( error => error.Contains( "walk slot" ) ) );
-		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { WalkSlots = new[] { (2, 3, 4, 2) } } ).Any( error => error.Contains( "walk slot" ) ), "a slot of a guest that is not aboard is refused" );
-		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { WalkSlots = new[] { (1, 3, 4, 2), (1, 1, 2, 2) } } ).Any( error => error.Contains( "repeat" ) ) );
+		// a save from before the walk table (no table member) is checked through its two older parts
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { WalkTable = null, WalkSlots = new[] { (2, 3, 4, 2) } } ).Any( error => error.Contains( "walk slot" ) ), "a slot of a guest that is not aboard is refused" );
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { WalkTable = null, WalkSlots = new[] { (1, 3, 4, 2), (1, 1, 2, 2) } } ).Any( error => error.Contains( "repeat" ) ) );
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { WalkTable = new[] { snapshot.WalkTable![0] with { Guest = 2 } } } ).Any( error => error.Contains( "walk table guest 2" ) ), "a table entry of a guest that is not aboard is refused" );
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { WalkTable = new[] { snapshot.WalkTable![0], snapshot.WalkTable[0] } } ).Any( error => error.Contains( "twice" ) ) );
+		Assert.IsTrue( RideVisitorBridge.ValidateSnapshot( snapshot with { WalkTable = new[] { snapshot.WalkTable![0] with { State = 5 } } } ).Any( error => error.Contains( "state 5" ) ) );
 		// the part survives the file codec, and a snapshot without it (a save from before the part) leaves no member in the JSON and loads with none
 		var round = ParkResumeJson.Deserialize<RideVisitorBridgeSnapshot>( ParkResumeJson.Serialize( snapshot ) );
 		CollectionAssert.AreEqual( snapshot.WalkSlots, round.WalkSlots, "the slots survive the JSON round trip" );
-		var none = snapshot with { WalkSlots = null };
-		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( none ) ).Contains( "WalkSlots" ), "an absent part writes no member" );
+		CollectionAssert.AreEqual( snapshot.WalkTable, round.WalkTable, "the table survives the JSON round trip" );
+		var none = snapshot with { WalkSlots = null, WalkTable = null };
+		Assert.IsFalse( System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( none ) ).Contains( "WalkSlots" ) || System.Text.Encoding.UTF8.GetString( ParkResumeJson.Serialize( none ) ).Contains( "WalkTable" ), "an absent part writes no member" );
 		Assert.IsNull( ParkResumeJson.Deserialize<RideVisitorBridgeSnapshot>( ParkResumeJson.Serialize( none ) ).WalkSlots );
 	}
 }

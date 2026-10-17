@@ -269,6 +269,36 @@ public class AudioIntegrationTests
 		finally { first.Stop(); second.Stop(); }
 	}
 
+	[TestMethod]
+	public void ScreamLevelSetsTheHeldChainsParameterAndNothingWithoutOne()
+	{
+		// [BIN:TPW-EXE:0x555FDA SCREAMLEVEL] 0x551290(handle, level, speed word) sets the held voice's parameter to clamp((level + speed) / 2, 0, 100); without a handle nothing happens
+		var entry = ObjectCatalog.Load( "jungle" ).Entries.Single( item => item.ScriptPath?.EndsWith( "Totem.RSE", StringComparison.OrdinalIgnoreCase ) == true );
+		var ride = new OriginalObjectRuntime( entry, seed: 1 );
+		try
+		{
+			void Effect( Opcode opcode, params int[] values ) => ride.Script!.Effect( opcode,
+				values.Select( value => new Operand( ride.Script!, new RideScriptOperand( RideScriptOperandKind.Literal, (ushort)value ), -1 ) ).ToArray() );
+			SoundChain? Held() => (SoundChain?)typeof( OriginalObjectEffects ).GetField( "screamChain", BindingFlags.NonPublic | BindingFlags.Instance )!.GetValue( ride.Script!.Effects );
+			Effect( Opcode.SCREAMLEVEL, 100 );
+			Assert.IsNull( Held(), "no handle: nothing to set" );
+			Effect( Opcode.STARTSCREAM, 2, 50 );
+			var chain = Held()!;
+			var speed = ride.Script!.SpeedBias;
+			Assert.AreEqual( Math.Clamp( (50 + speed) / 2, 0, 100 ), chain.Parameter, "STARTSCREAM's parameter" );
+			Effect( Opcode.SCREAMLEVEL, 100 );
+			Assert.AreEqual( Math.Clamp( (100 + speed) / 2, 0, 100 ), chain.Parameter );
+			Effect( Opcode.SCREAMLEVEL, 10 );
+			Assert.AreEqual( Math.Clamp( (10 + speed) / 2, 0, 100 ), chain.Parameter );
+			Assert.AreEqual( (10, speed), (((OriginalObjectEffects)ride.Script!.Effects).HeldScreamLevel, ((OriginalObjectEffects)ride.Script!.Effects).HeldScreamSpeed), "the held scream keeps its level for a park resume" );
+			Effect( Opcode.STOPSCREAM );
+			Effect( Opcode.SCREAMLEVEL, 100 );
+			Assert.IsTrue( chain.IsStopped );
+			Assert.AreEqual( Math.Clamp( (10 + speed) / 2, 0, 100 ), chain.Parameter, "a stopped chain keeps its last parameter" );
+		}
+		finally { ride.Stop(); }
+	}
+
 	[DataTestMethod]
 	[DataRow( 0, true )]
 	[DataRow( 1, true )]

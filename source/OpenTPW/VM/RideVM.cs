@@ -81,6 +81,10 @@ public sealed class RideVM
 	private readonly Dictionary<Opcode, int> unimplementedEffects = new();
 	private bool yieldRequested;
 	private double timerEndMilliseconds;
+	// [BIN:TPW-EXE:0x555B72 WALKST_FLOAT] script +0x80 (the start on the 32-bit clock), +0x84 (the duration in ms, 0 = not floating) and the two words at +0x88 and +0x8A; all zero at creation
+	private uint walkFloatStart;
+	private int walkFloatDuration;
+	private int walkFloatWords;
 
 	public RideScriptFile Script { get; }
 	public string SourceName { get; }
@@ -359,6 +363,13 @@ public sealed class RideVM
 		Fault( message );
 	}
 
+	/// <summary>END: the program counter becomes -10000 and the script ends without a fault.</summary>
+	internal void EndScript()
+	{
+		ProgramCounter = -10000;
+		State = RideVMState.Halted;
+	}
+
 	/// <summary>Stops this script and its children and removes them from the world.</summary>
 	public void Stop()
 	{
@@ -418,6 +429,9 @@ public sealed class RideVM
 			ClockOriginMilliseconds = ClockOriginMilliseconds,
 			WakeTimeMilliseconds = WakeTimeMilliseconds,
 			TimerEndMilliseconds = timerEndMilliseconds,
+			WalkFloatStart = walkFloatStart == 0 ? null : (int)walkFloatStart,
+			WalkFloatDuration = walkFloatDuration == 0 ? null : walkFloatDuration,
+			WalkFloatWords = walkFloatWords == 0 ? null : walkFloatWords,
 			Wait4AnimDeadline = Wait4AnimDeadline,
 			LoopAnimationToken = LoopAnimationToken,
 			TriggerWaitToken = TriggerWaitToken,
@@ -478,6 +492,9 @@ public sealed class RideVM
 		ClockOriginMilliseconds = snapshot.ClockOriginMilliseconds;
 		WakeTimeMilliseconds = snapshot.WakeTimeMilliseconds;
 		timerEndMilliseconds = snapshot.TimerEndMilliseconds;
+		walkFloatStart = unchecked( (uint)(snapshot.WalkFloatStart ?? 0) );
+		walkFloatDuration = snapshot.WalkFloatDuration ?? 0;
+		walkFloatWords = snapshot.WalkFloatWords ?? 0;
 		Wait4AnimDeadline = snapshot.Wait4AnimDeadline;
 		LoopAnimationToken = snapshot.LoopAnimationToken;
 		TriggerWaitToken = snapshot.TriggerWaitToken;
@@ -725,6 +742,43 @@ public sealed class RideVM
 
 	internal void SetTimer( int milliseconds ) => timerEndMilliseconds = TimeMilliseconds + milliseconds;
 
+	/// <summary>The float state (script +0x80 start, +0x84 duration, +0x88 and +0x8A words) for tests and snapshots.</summary>
+	public (uint Start, int Duration, int Words) WalkFloat => (walkFloatStart, walkFloatDuration, walkFloatWords);
+
+	/// <summary>
+	/// WALKST_FLOAT (<c>0x555B72</c> → 0x557160): the start is the clock now, the duration the first operand times 1000 as a wrapping 32-bit product, the two words the low 16 bits of the other operands.
+	/// </summary>
+	internal void StartWalkFloat( int seconds, int first, int second )
+	{
+		walkFloatStart = ClockMilliseconds32;
+		walkFloatDuration = unchecked( seconds * 1000 );
+		walkFloatWords = (first & 0xFFFF) | ((second & 0xFFFF) << 16);
+	}
+
+	/// <summary>
+	/// The duration word WALKFLOATSTAT reads (<c>0x555BD8</c>). The original's frame update (0x00557D80, last block) clears it once the clock is unsigned-past start + duration (<c>jae</c> at 0x558075); the VM applies that here, when the script looks.
+	/// </summary>
+	internal int WalkFloatDurationNow()
+	{
+		if ( walkFloatDuration != 0 && unchecked( walkFloatStart + (uint)walkFloatDuration ) < ClockMilliseconds32 )
+			walkFloatDuration = 0;
+		return walkFloatDuration;
+	}
+
+	/// <summary>
+	/// WALKFLOATSTOP (<c>0x555C11</c>): with a duration set, the share of it spent so far in thousandths (the 32-bit product of the clock difference and 1000, divided unsigned by the duration) moves the start back from now by that share
+	/// and the duration becomes 1000, so the float settles over the thousandths that were left; with none set it does nothing.
+	/// </summary>
+	internal void StopWalkFloat()
+	{
+		if ( WalkFloatDurationNow() == 0 )
+			return;
+		var now = ClockMilliseconds32;
+		var spent = unchecked( now * 1000u - walkFloatStart * 1000u ) / (uint)walkFloatDuration;
+		walkFloatDuration = 1000;
+		walkFloatStart = unchecked( now - spent );
+	}
+
 	internal int TimerRemaining => (int)Math.Max( 0, Math.Ceiling( timerEndMilliseconds - TimeMilliseconds ) );
 
 	/// <summary>Script speed at the creation bias 50: 0.5 + 50 / 100.</summary>
@@ -815,6 +869,13 @@ public sealed class RideVM
 		}
 		if ( TurboByte != 0 )
 			hash.Add( TurboByte );
+		// the float state only for a script that has started a float (ZeroG), so every other script keeps its digest
+		if ( walkFloatDuration != 0 || walkFloatStart != 0 || walkFloatWords != 0 )
+		{
+			hash.Add( walkFloatStart );
+			hash.Add( walkFloatDuration );
+			hash.Add( walkFloatWords );
+		}
 		hash.Add( Variables.Length );
 		foreach ( var value in Variables )
 			hash.Add( value );

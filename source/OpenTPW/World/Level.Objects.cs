@@ -480,6 +480,7 @@ public partial class Level
 		return new GuestRenderer( guests, park.Heightfield, swim )
 		{
 			Draws = guest => guest.IsSwimming || guest.InPoolActivity,
+			SwimSlotFallback = true,
 			SlotChooser = guest => guest.InPoolActivity
 				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
 				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),

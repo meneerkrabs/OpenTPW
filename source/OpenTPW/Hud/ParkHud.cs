@@ -898,7 +898,7 @@ public sealed partial class ParkHud
 	/// The staff tools' HUD side (hire placement and carrying): the cursor, the hovered cell, right click leaves, a left click on a valid cell completes it.
 	/// A click on an invalid cell does nothing and the tool stays; the park view's other clicks (guest selection, the path tool) wait while it runs.
 	/// </summary>
-	// [EXT:software-pointers] the original loads its cursors from Data/ui/cursors/*.ani with LoadCursorFromFileA (0x489639, IAT 0x6fd314) into a cursor object (0x661935): OS animated cursors drawn at the pointer hot spot (a software cursor path, "bwcursor", also exists); OpenTPW has no .ani loader, so the tools' cursor 9 (c_carry.ani) is the closest cursor it has, Input.CursorTypes.Carry (Ccar.tga), (the platforms cannot load animated Windows cursors); the dangling sprite itself hangs at the exact mouse ground point, as the original's (0x46c480)
+	// [EXT:software-pointers] the original loads its cursors from Data/ui/cursors/*.ani with LoadCursorFromFileA (0x489639, IAT 0x6fd314) into a cursor object (0x661935): OS animated cursors drawn at the pointer hot spot (a software cursor path, "bwcursor", also exists); OpenTPW has no .ani loader (the platforms cannot load animated Windows cursors), so the tools' cursor 9 (c_carry.ani) is the closest cursor it has, Input.CursorTypes.Carry (Ccar.tga); the person in hand still hangs at the exact mouse ground point, as in the original (0x46c480)
 	private bool UpdateStaffTool( UiInput input, bool inPark, NVector2 viewport )
 	{
 		var tool = level.StaffPlacement;

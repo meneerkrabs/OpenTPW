@@ -16,11 +16,25 @@ public sealed class PoolTool
 	private readonly List<(int X, int Y)> pending = new();
 	private long pendingMoney;
 	private (int X, int Y)? last;
+	private (int X, int Y)? slideTower;
 
 	public PoolTool( PoolBuilder builder )
 	{
 		this.builder = builder ?? throw new ArgumentNullException( nameof( builder ) );
 	}
+
+	/// <summary>[EXT:pools-slides] The slides the tool lays in its slide mode; set by the level.</summary>
+	public PoolSlideWorld? Slides { get; set; }
+	/// <summary>True in the slide mode (<see cref="BeginSlide"/>): presses lay the pieces of the tower's slide, one cell at a time.</summary>
+	public bool IsSlide => IsActive && slideTower != null;
+	/// <summary>The anchor of the tower whose slide the tool lays.</summary>
+	public (int X, int Y)? SlideTower => slideTower;
+	/// <summary>Why the slide mode refused the hovered cell (null when it would take it or outside the slide mode).</summary>
+	public PoolSlideResult? HoverSlideResult { get; private set; }
+	/// <summary>The first slide refusal of the stroke in progress or of the last one.</summary>
+	public PoolSlideResult? LastSlideRefusal { get; private set; }
+	/// <summary>True after the slide mode ended because the slide was finished (a splash piece over the pool).</summary>
+	public bool SlideCompleted { get; private set; }
 
 	/// <summary><see cref="CellToolMode.Pool"/> while the tool is on, else <see cref="CellToolMode.None"/>.</summary>
 	public CellToolMode Mode => IsActive ? CellToolMode.Pool : CellToolMode.None;
@@ -49,10 +63,32 @@ public sealed class PoolTool
 			return false;
 		IsActive = true;
 		IsErasing = erase;
+		slideTower = null;
+		SlideCompleted = false;
 		last = null;
 		pending.Clear();
 		pendingMoney = 0;
 		LastRefusal = null;
+		return true;
+	}
+
+	/// <summary>
+	/// [EXT:pools-slides] Turns the tool on in the slide mode for the slide of the tower anchored at (<paramref name="towerX"/>, <paramref name="towerY"/>): each cell pressed or dragged over becomes the next
+	/// piece of the track (the first one a start cell of the tower, a pool cell ending it with the splash piece). False when the extension is off, the park has no slides or the slide is complete.
+	/// </summary>
+	public bool BeginSlide( int towerX, int towerY )
+	{
+		if ( !FeatureGates.Pools || Slides == null || Slides.TowerAt( towerX, towerY ) == null || Slides.Find( PoolSlide.KeyOf( towerX, towerY ) ) is { IsComplete: true } )
+			return false;
+		IsActive = true;
+		IsErasing = false;
+		slideTower = (towerX, towerY);
+		SlideCompleted = false;
+		last = null;
+		pending.Clear();
+		pendingMoney = 0;
+		LastRefusal = null;
+		LastSlideRefusal = null;
 		return true;
 	}
 
@@ -62,6 +98,15 @@ public sealed class PoolTool
 		if ( !IsActive )
 			return;
 		HoverCell = (x, y);
+		if ( slideTower is { } tower && Slides != null )
+		{
+			var slide = Slides.Check( tower.X, tower.Y, x, y );
+			HoverSlideResult = slide == PoolSlideResult.Ok ? null : slide;
+			HoverResult = Map( slide );
+			if ( last != null )
+				Drag( x, y );
+			return;
+		}
 		HoverResult = IsErasing ? builder.CheckErase( x, y ) : builder.Check( x, y );
 		if ( last != null )
 			Drag( x, y );
@@ -87,6 +132,7 @@ public sealed class PoolTool
 		pending.Clear();
 		pendingMoney = 0;
 		LastRefusal = null;
+		LastSlideRefusal = null;
 		return Write( x, y );
 	}
 
@@ -110,6 +156,21 @@ public sealed class PoolTool
 			return null;
 		var cells = pending.ToArray();
 		pending.Clear();
+		// [EXT:pools-slides] a finished slide ends the slide mode
+		if ( slideTower is { } laid && Slides?.Find( PoolSlide.KeyOf( laid.X, laid.Y ) ) is { IsComplete: true } )
+		{
+			var money = pendingMoney;
+			pendingMoney = 0;
+			LastStroke = new PoolStroke( false, cells, money, 0, LastRefusal );
+			SlideCompleted = true;
+			IsActive = false;
+			slideTower = null;
+			HoverCell = null;
+			HoverResult = null;
+			strokes.Clear();
+			Ended?.Invoke();
+			return LastStroke;
+		}
 		var stroke = new PoolStroke( IsErasing, cells, IsErasing ? 0 : pendingMoney, IsErasing ? -pendingMoney : 0, LastRefusal );
 		pendingMoney = 0;
 		strokes.Add( stroke );
@@ -125,6 +186,12 @@ public sealed class PoolTool
 	/// </summary>
 	public bool Undo()
 	{
+		// [EXT:pools-slides] in the slide mode Backspace takes back the last piece
+		if ( slideTower is { } tower )
+		{
+			last = null;
+			return Slides?.RemoveLastPiece( tower.X, tower.Y ) == true;
+		}
 		if ( strokes.Count == 0 )
 			return false;
 		var stroke = strokes[^1];
@@ -145,14 +212,39 @@ public sealed class PoolTool
 		Release();
 		IsActive = false;
 		IsErasing = false;
+		slideTower = null;
 		HoverCell = null;
 		HoverResult = null;
+		HoverSlideResult = null;
 		strokes.Clear();
 		Ended?.Invoke();
 	}
 
+	/// <summary>The build result the HUD's cursor and markers read for a slide result.</summary>
+	private static PoolBuildResult Map( PoolSlideResult result ) => result switch
+	{
+		PoolSlideResult.Ok => PoolBuildResult.Ok,
+		PoolSlideResult.NotEnoughMoney => PoolBuildResult.NotEnoughMoney,
+		PoolSlideResult.ExtensionOff => PoolBuildResult.ExtensionOff,
+		_ => PoolBuildResult.SlideRefused
+	};
+
 	private PoolBuildResult Write( int x, int y )
 	{
+		if ( slideTower is { } tower && Slides != null )
+		{
+			var slide = Slides.AddCell( tower.X, tower.Y, x, y );
+			if ( slide == PoolSlideResult.Ok )
+			{
+				pending.Add( (x, y) );
+				pendingMoney += Slides.LastCharged;
+				return PoolBuildResult.Ok;
+			}
+			var mapped = Map( slide );
+			LastRefusal ??= ((x, y), mapped);
+			LastSlideRefusal ??= slide;
+			return mapped;
+		}
 		var result = IsErasing ? builder.Erase( x, y ) : builder.Paint( x, y );
 		if ( result == PoolBuildResult.Ok )
 		{

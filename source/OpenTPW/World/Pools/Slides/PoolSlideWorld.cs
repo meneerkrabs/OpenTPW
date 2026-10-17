@@ -107,7 +107,7 @@ public sealed class PoolSlideWorld
 	/// <summary>The water surface over a pool cell, engine units, or null.</summary>
 	public float? WaterLevelAt( int x, int y ) => site()?.WaterLevel( x, y );
 
-	private PoolSlideTower? TowerAt( int x, int y ) => towers( PoolSlide.KeyOf( x, y ) );
+	public PoolSlideTower? TowerAt( int x, int y ) => towers( PoolSlide.KeyOf( x, y ) );
 
 	/// <summary>
 	/// Adds the piece for a cell: the first cell of a slide must be one of the tower's start cells, every later cell is the one beside the end of the track, not behind it. The previous piece
@@ -129,7 +129,16 @@ public sealed class PoolSlideWorld
 		return PoolSlideResult.Ok;
 	}
 
-	/// <summary>Whether <see cref="AddCell"/> would accept the cell, with the slide it would make.</summary>
+	/// <summary>What <see cref="AddCell"/> would answer for the cell, the money included, without writing anything.</summary>
+	public PoolSlideResult Check( int towerX, int towerY, int x, int y )
+	{
+		var plan = Plan( towerX, towerY, x, y, out _ );
+		if ( plan == PoolSlideResult.Ok && economy() is { } park && !park.CanPreviewLine( park.CellCost( CellPurchase.SlidePiece ) ) )
+			return PoolSlideResult.NotEnoughMoney;
+		return plan;
+	}
+
+	/// <summary>Whether <see cref="AddCell"/> would accept the cell, with the slide it would make (the money not asked).</summary>
 	public PoolSlideResult Plan( int towerX, int towerY, int x, int y, out PoolSlide? candidate )
 	{
 		candidate = null;

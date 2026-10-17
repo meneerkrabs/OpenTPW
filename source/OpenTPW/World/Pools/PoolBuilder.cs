@@ -30,7 +30,9 @@ public enum PoolBuildResult
 	/// <summary>[EXT:pools-changing-room] Erasing a pool cell beside the back of a changing room: the room needs its pool.</summary>
 	ChangingRoomAccess,
 	/// <summary>[EXT:pools-slides] The cell is the splash cell of a slide with riders on it, or the foot of a tower's stairs with guests on them.</summary>
-	SlideRiders
+	SlideRiders,
+	/// <summary>[EXT:pools-slides] The slide tool refused the cell; <see cref="PoolTool.LastSlideRefusal"/> says why.</summary>
+	SlideRefused
 }
 
 /// <summary>One drag of the pool tool: the cells it wrote, the money, and its first refusal.</summary>

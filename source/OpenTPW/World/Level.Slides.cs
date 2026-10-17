@@ -21,11 +21,26 @@ public partial class Level
 			return;
 		PoolSlides = new PoolSlideWorld( SlideSite, id => slideTowers.GetValueOrDefault( id ), () => Park?.Economy );
 		Guests.PoolSlides = PoolSlides;
+		if ( PoolTool != null )
+			PoolTool.Slides = PoolSlides;
 		foreach ( var item in Objects.Objects )
 			RegisterSlideTower( item );
 		Objects.ObjectPlaced += RegisterSlideTower;
 		Objects.ObjectRemoved += UnregisterSlideTower;
 	}
+
+	/// <summary>[EXT:pools-slides] Starts the slide mode of the pool tool for the tower's slide (after ending the other tools); false when the extension is off or the slide is already finished.</summary>
+	internal bool EnterSlideTool( OriginalObject tower )
+	{
+		if ( PoolTool == null || PoolSlides == null || !PoolSlideTowers.IsSlideTower( tower.Entry ) )
+			return false;
+		EndBuildTools();
+		return PoolTool.BeginSlide( tower.Placement.X, tower.Placement.Y );
+	}
+
+	/// <summary>[EXT:pools-slides] The first placed slide tower whose slide is not finished (no track yet, or an open end), in placement order, or null.</summary>
+	internal OriginalObject? NextUnfinishedSlideTower() => PoolSlides == null ? null : Objects.Objects.FirstOrDefault( item => !item.IsDeleted && PoolSlideTowers.IsSlideTower( item.Entry )
+		&& slideTowers.ContainsKey( PoolSlide.KeyOf( item.Placement.X, item.Placement.Y ) ) && PoolSlides.Find( PoolSlide.KeyOf( item.Placement.X, item.Placement.Y ) ) is not { IsComplete: true } );
 
 	private void RegisterSlideTower( OriginalObject item )
 	{

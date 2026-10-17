@@ -465,6 +465,13 @@ public sealed partial class ParkHud
 			PostMessage( strings.Help( 0x125 ) );
 			return;
 		}
+		// [EXT:pools-slides] a placed slide tower enters the slide mode of the pool tool: the player lays the track from the tower down into the pool
+		if ( PoolSlideTowers.IsSlideTower( item.Entry ) && level.EnterSlideTool( item ) )
+		{
+			level.ResetBuildRotation();
+			PostMessage( strings.Extra( OpenTpwText.PoolSlideHint ) );
+			return;
+		}
 		// a placed water ride enters the water track tool (tool mode 16) at its station; the queue tool follows once the circuit is valid (Level.RewalkTrack)
 		if ( item.Runtime.Bump != null && level.EnterTrackTool( item ) )
 		{

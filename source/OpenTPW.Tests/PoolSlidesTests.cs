@@ -406,6 +406,99 @@ public class PoolSlidesTests
 		Assert.IsNotNull( good );
 	}
 
+	// ---- The tool -----------------------------------------------------------------------------------------------------
+
+	private static PoolTool ToolFor( ParkCellMap cells, PoolSlideWorld world ) => new( new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) ) ) { Slides = world };
+
+	[TestMethod]
+	public void TheSlideModeOfThePoolToolLaysTheTrackByPressingAndDraggingAndEndsWithTheSplash()
+	{
+		using var scope = PoolsOn();
+		var (cells, tower) = Fixture();
+		var world = World( cells, tower );
+		var tool = ToolFor( cells, world );
+		var ended = 0;
+		tool.Ended += () => ended++;
+		Assert.IsFalse( tool.BeginSlide( 30, 30 ), "no tower there" );
+		Assert.IsTrue( tool.BeginSlide( 8, 12 ) );
+		Assert.IsTrue( tool.IsActive && tool.IsSlide && !tool.IsErasing );
+		tool.Hover( 8, 11 );
+		Assert.AreEqual( PoolBuildResult.Ok, tool.HoverResult, "a start cell" );
+		tool.Hover( 5, 5 );
+		Assert.AreEqual( PoolBuildResult.SlideRefused, tool.HoverResult );
+		Assert.AreEqual( PoolSlideResult.BadStart, tool.HoverSlideResult );
+		// press on the first cell, drag along the track to the pool: a line of cells, each the next piece
+		Assert.AreEqual( PoolBuildResult.Ok, tool.Press( 8, 11 ) );
+		tool.Hover( 8, 9 );
+		tool.Hover( 11, 9 );
+		Assert.AreEqual( 6, world.Find( tower.Id )!.Pieces.Count, "the drag laid the cells it crossed" );
+		tool.Hover( 11, 10 );
+		var stroke = tool.Release();
+		Assert.IsNotNull( stroke );
+		Assert.AreEqual( 7, stroke!.Cells.Count );
+		Assert.IsTrue( tool.SlideCompleted && !tool.IsActive, "a finished slide ends the slide mode" );
+		Assert.AreEqual( 1, ended );
+		Assert.IsTrue( world.Find( tower.Id )!.IsComplete );
+		Assert.IsFalse( tool.BeginSlide( 8, 12 ), "a finished slide is not laid again" );
+	}
+
+	[TestMethod]
+	public void TheSlideModeRefusesWithAReasonTakesBackAPieceAtATimeAndCancelsCleanly()
+	{
+		using var scope = PoolsOn();
+		var (cells, tower) = Fixture();
+		var world = World( cells, tower );
+		var tool = ToolFor( cells, world );
+		Assert.IsTrue( tool.BeginSlide( 8, 12 ) );
+		tool.Press( 8, 11 );
+		tool.Release();
+		Assert.AreEqual( PoolBuildResult.SlideRefused, tool.Press( 20, 20 ) );
+		Assert.AreEqual( PoolSlideResult.NotNext, tool.LastSlideRefusal, "a cell away from the end" );
+		Assert.AreEqual( ((20, 20), PoolBuildResult.SlideRefused), tool.LastRefusal );
+		tool.Release();
+		// a short run into the pool is too steep: refused with the reason, the track stays as it is
+		var steep = ToolFor( cells, World( cells, tower ) );
+		Assert.IsTrue( steep.BeginSlide( 8, 12 ) );
+		steep.Press( 8, 14 );
+		steep.Hover( 9, 14 );
+		steep.Hover( 10, 14 );
+		steep.Release();
+		Assert.AreEqual( PoolSlideResult.TooSteep, steep.LastSlideRefusal );
+		Assert.IsTrue( steep.IsActive, "the tool stays on" );
+		Assert.IsTrue( steep.Slides!.Find( tower.Id )!.Pieces.Count == 2 );
+		Assert.IsTrue( steep.Undo() );
+		Assert.AreEqual( 1, steep.Slides.Find( tower.Id )!.Pieces.Count, "Backspace takes back a piece" );
+		Assert.IsTrue( steep.Undo() );
+		Assert.IsNull( steep.Slides.Find( tower.Id ), "the last piece takes the slide away" );
+		Assert.IsFalse( steep.Undo() );
+		steep.Cancel();
+		Assert.IsFalse( steep.IsActive || steep.IsSlide );
+		// the paint and erase modes are untouched
+		Assert.IsTrue( steep.Begin( erase: false ) );
+		Assert.IsFalse( steep.IsSlide );
+	}
+
+	[TestMethod]
+	public void TheSlideModeNeedsTheExtensionAndMoney()
+	{
+		var (cells, tower) = Fixture();
+		var world = World( cells, tower );
+		var tool = ToolFor( cells, world );
+		Assert.IsFalse( tool.BeginSlide( 8, 12 ), "the extension is off" );
+		using var scope = PoolsOn();
+		var poor = EconomyTestData.Park( initialCash: 100 );
+		var broke = new PoolSlideWorld( () => Site( cells ), id => id == tower.Id ? tower : null, () => poor );
+		var second = ToolFor( cells, broke );
+		Assert.IsTrue( second.BeginSlide( 8, 12 ) );
+		second.Hover( 8, 11 );
+		Assert.AreEqual( PoolBuildResult.Ok, second.HoverResult );
+		second.Press( 8, 11 );
+		second.Release();
+		second.Hover( 8, 10 );
+		Assert.AreEqual( PoolBuildResult.NotEnoughMoney, second.HoverResult, "10 left, a piece costs 90" );
+		Assert.AreEqual( PoolBuildResult.NotEnoughMoney, second.Press( 8, 10 ) );
+	}
+
 	private static ulong CellDigest( ParkCellMap cells )
 	{
 		var hash = new StateHasher();

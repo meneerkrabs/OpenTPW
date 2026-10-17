@@ -297,6 +297,9 @@ public sealed record OriginalWalkSnapshot
 	public required int Progress { get; init; }
 }
 
+/// <summary>One used entry of a script's walk table (<see cref="RideVisitorBridgeSnapshot.WalkTable"/>).</summary>
+public sealed record WalkEntrySnapshot( int Slot, int Guest, int Via, int Target, int From, int To, int Mode, int Extra, int State, double Began, double Ends );
+
 /// <summary>
 /// Queue and rider bookkeeping of one <see cref="RideVisitorBridge"/>: the guest-id linked list front first, the
 /// script-held guests and their timers. The script, the open delegate and the placement's cells metadata are owned by
@@ -318,6 +321,12 @@ public sealed record RideVisitorBridgeSnapshot
 	/// <summary>The slot nodes and walk action of each rider that WALKON put on a tour ride or with the head action 4 and WALKOFF has not taken off yet (guest, start node, end node, action); null when there are none.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public (int Guest, int From, int To, int Mode)[]? WalkSlots { get; init; }
+	/// <summary>
+	/// The script's walk table entry by entry (WALKON, WALKOFF, WALKGET): the table slot, the rider, the walk-on nodes, WALKOFF's nodes, the walk action, the last operand, the state (1 walking on, 2 on board,
+	/// 3 walking off, 4 ready) and the script times of the state's start and end; null when no entry is in use. A save written before it restores its entries from <see cref="WalkingOff"/> and <see cref="WalkSlots"/>.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public WalkEntrySnapshot[]? WalkTable { get; init; }
 	/// <summary>Always empty in a new snapshot: HOP pops the script's own heap (RideVM), not a bridge set. Kept for saves written before; whatever an old save stores here is validated and ignored.</summary>
 	public required int[] Hopped { get; init; }
 	/// <summary>True in a snapshot written after HUSH/HOP and the limbo table moved into the script VM. A snapshot without it (older save) has its riders, hopped set and limbo list migrated into the restored script on load.</summary>

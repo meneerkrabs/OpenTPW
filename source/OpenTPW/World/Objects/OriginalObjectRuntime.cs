@@ -95,11 +95,14 @@ public sealed partial class OriginalObjectRuntime
 			Visitors.Attach( Script, () => !stopped && IsOpen, () => (Coaster?.AcceptsGuests ?? true) && (Bump?.IsTrackValid ?? true),
 				() => !(Coaster?.AcceptsGuests ?? true) || Bump is { IsWater: false, IsTrackValid: false } );
 			// [BIN:TPW-EXE:0x005571A0 WALKOFF] the walk takes ftol(the distance between the walker's two slot nodes) x 100 ms (100 ms for 0): the slot's start node (u3, class 0x800, or 0x80 for the head action 4) and end node (u4, class 0x800) are looked up in the ride model (0x0044B220: the first dummy whose class mask matches and whose number equals) and measured at the time of the WALKOFF (0x00556B90 reads the live node); the Star and Tweety Tours slots span 10 model units (1000 ms)
+			// [BIN:TPW-EXE:0x00556F40 WALKON] the walk-on's nodes are looked up in the ride model the same way (the first node of class 0x800, the second of class 0x80 for the head action 4, else 0x800), for every object that walks riders
+			Visitors.WalkNodeDistance = WalkNodeDistance;
+			Visitors.WalkNodeClassDistance = WalkNodeDistance;
 			if ( UsesTour )
 			{
 				Visitors.WalkOffMilliseconds = 1000;
-				Visitors.WalkNodeDistance = WalkNodeDistance;
 				Visitors.WalkOffEffect = StartWalkOffEffect;
+				Visitors.WalkOnEffect = StartWalkOffEffect;
 			}
 		}
 	}
@@ -126,10 +129,13 @@ public sealed partial class OriginalObjectRuntime
 	/// The distance in model units between a WALKON slot's two nodes at the current pose: the start node of class 0x80 (the head action 4) or 0x800 and the end node of class 0x800, each the first
 	/// dummy of the model whose class mask matches and whose number equals (0x0044B220); null when either is missing.
 	/// </summary>
-	internal float? WalkNodeDistance( int action, int fromNumber, int toNumber )
+	internal float? WalkNodeDistance( int action, int fromNumber, int toNumber ) => WalkNodeDistance( action == 4 ? 0x80 : 0x800, fromNumber, 0x800, toNumber );
+
+	/// <summary>The distance between the first dummy of class <paramref name="fromMask"/> numbered <paramref name="fromNumber"/> and the first of class <paramref name="toMask"/> numbered <paramref name="toNumber"/> at the current pose; null when either is missing.</summary>
+	internal float? WalkNodeDistance( int fromMask, int fromNumber, int toMask, int toNumber )
 	{
-		var from = FindDummyNode( action == 4 ? 0x80 : 0x800, fromNumber );
-		var to = FindDummyNode( 0x800, toNumber );
+		var from = FindDummyNode( fromMask, fromNumber );
+		var to = FindDummyNode( toMask, toNumber );
 		if ( from == null || to == null )
 			return null;
 		var transforms = Animator.NodeTransforms;

@@ -81,13 +81,17 @@ public static class ContentKitCli
 		          --script is an RSE text source; without it the built-in placeholder pool script is assembled.
 
 		  mod     --out <dir> (--manifest <file> | --id <id> --name <text> [--version 1.0.0] [--author <text>] [--description <text>])
-		          (--objects <file> | --id-first <n> --id-last <n> --object <spec> [--object <spec> ...]) [--force]
-		          Lays out a mod folder: opentpw-mod.json and objects.json, and with src=<dir> in an object spec a copy of
-		          the built object folder. A spec is comma-separated key=value pairs:
-		          archive=objects/pool,theme=jungle,category=sideshow,id=20001,name=Pool[,name.German=Becken][,src=<dir>]
+		          [--overrides <folder>] [--objects <file> | --id-first <n> --id-last <n> --object <spec> [--object <spec> ...]] [--force]
+		          Lays out a mod folder: opentpw-mod.json, objects.json (when there are objects) and, with src=<dir> in an object
+		          spec, a copy of the built object folder; --overrides names the folder of replacement game files. A spec is
+		          comma-separated key=value pairs:
+		          archive=objects/pool,theme=jungle,category=rides,id=20001,name=Pool[,name.German=Becken][,src=<dir>]
 
-		  sprites --frames <dir> --name SPR_XX --out <dir> [--hotspot x,y] [--slot A=1 --slot B=2 --slot C=4] [--force]
-		          Wraps the swimmer frames <slot>_d<direction>_f<frame>.png into SPR_XX.ESP, .TPC and .FPC.
+		  sprites --frames <set folder> [--frames <set folder> ...] [--name SPR_XX]
+		          (--out <dir> | --mod <mod dir> --folder <folder below esprites/, e.g. Generic/Kids> [--overrides data]) [--force]
+		          Packs each set folder (slot<NN>_d<d>_f<f>.png frames and a set.json with the name, the detail and kid flags, the slots'
+		          directions and frames and every frame's origin) into NAME.ESP, .TPC and, at full detail, .FPC. With --mod the files go to
+		          <mod>/<overrides>/esprites/<folder>/, where the mod's content.overrides makes the game read them instead of its own.
 		""";
 
 	public static int Run( string[] args, TextWriter output, TextWriter error )
@@ -122,7 +126,7 @@ public static class ContentKitCli
 			error.WriteLine( Usage );
 			return 2;
 		}
-		catch ( Exception exception ) when ( exception is InvalidDataException or InvalidOperationException or IOException or ArgumentException or RideScriptAssemblyException or UnauthorizedAccessException or FormatException )
+		catch ( Exception exception ) when ( exception is InvalidDataException or InvalidOperationException or IOException or ArgumentException or RideScriptAssemblyException or UnauthorizedAccessException or FormatException or System.Text.Json.JsonException or KeyNotFoundException )
 		{
 			error.WriteLine( $"error: {exception.Message}" );
 			return 1;

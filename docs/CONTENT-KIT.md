@@ -182,21 +182,41 @@ opentpw-kit mod --out mymod --id community.pool --name "Pool" [--version 1.0.0] 
 opentpw-kit mod --out mymod --manifest manifest.json --objects objects.json
 ```
 
-Writes `opentpw-mod.json` and `objects.json` ([MODS.md](MODS.md#manifest)) and, for an object spec with `src=`, a copy of that built folder at `archive` in the mod. The documents are
+Writes `opentpw-mod.json` and `objects.json` ([MODS.md](MODS.md#manifest)) and, for an object spec with `src=`, a copy of that built folder at `archive` in the mod. `--overrides data/` sets the manifest's
+`content.overrides` (the folder of replacement game files, which `sprites --mod` fills); a mod may have objects, overrides or both, and no `objects.json` is written without objects. The documents are
 checked with the game's rules before the folder exists: id and version shapes, the Info.Id range (5000 to 65535, at most 4096 ids), ids inside it and unique, themes, categories, archive paths that stay in
 the folder, names. The game's own strict loaders remain the authority; the tests load the output with them.
 
-**`sprites`**: swimmer frames into a sprite set.
+**`sprites`**: complete sprite sets, packed from a folder of frames and a `set.json`.
 
 ```sh
-opentpw-kit sprites --frames /tmp/swimart/TPW/BE --name SPR_BE --out mymod/sprites [--hotspot 32,27] [--slot A=1 --slot B=2 --slot C=4]
+opentpw-kit sprites --frames art/SPR_BE --mod mymod --folder Generic/Kids          # into the mod's overrides tree
+opentpw-kit sprites --frames art/SPR_BE --frames art/SPR_CH --out /tmp/sprites     # or flat into a folder
 ```
 
-Frames are named `<slot>_d<direction>_f<frame>.png` as `tools/blender/opentpw_swim_sprites.py` (branch `content/swim-sprites`) writes them: slot letters A (front crawl, 8 frames), B (breaststroke, 8) and C (treading
-water, 4), directions 0 to 4. `SpriteSetBuilder` writes `SPR_XX.ESP`, `.TPC` and `.FPC` ([GUESTS.md](GUESTS.md#guest-graphics-sprites-not-models)). The letters go to the animation slots A → 1, B → 2, C → 4: the original kid sets have 8 × 5
-frame slots at 1 (walking) and 2 (running) and 4 × 5 slots at 4, 6, 11 and 12, so the crawl and the breaststroke take the two 8-frame slots and treading water the first 4-frame one. This is the kit's own choice
-(nothing in the game plays these slots as swimming; an extension picks them up by number); the other slots stay empty, so the set is not a drop-in replacement for a kid set. The hotspot defaults to
-(32, 27) for the 64 × 48 frames of the Theme Park World sets and (40, 36) for the 80 × 64 frames of the Theme Park Inc sets; other sizes need `--hotspot`.
+A set folder holds `slot<NN>_d<direction>_f<frame>.png` (RGBA; NN is the animation slot 0 to 15, directions and frames count from 0) and `set.json`:
+
+```json
+{ "name": "SPR_BE", "detailFlag": 1, "kidFlag": 0,
+  "slots": { "0": { "directions": 5, "framesPerDirection": 1 }, "1": { "directions": 5, "framesPerDirection": 8 } },
+  "defaultOrigin": { "originX": -24, "originY": -52 },
+  "frames": { "slot01_d0_f0": { "originX": -25, "originY": -53 } },
+  "performances": [ { "program": 0, "slot": 4, "intro": 0, "hold": 0 } ] }
+```
+
+`name` is the set's stem (1 to 7 letters, digits or underscores, such as `SPR_BE`; `--name` may supply it when the file does not). `detailFlag` is ESP byte 0x10C: 1 writes `.FPC` and `.TPC` with the same content, as every shipped
+full-detail set ships both, 0 only the `.TPC`, as the head sets do (default 1); `kidFlag` is byte 0x10D (default 0). `slots` lists every slot the set has, with its directions (the shipped kid sets have 5, the head sets 7;
+0 means a slot without directions, as in the balloons and thoughts, whose files are `d0` only) and frames per direction; slots keep their numbers and frames are stored slot by slot, direction-major, as the
+shipped sets are. `originX`/`originY` are the offset of the frame's top-left corner from the hotspot (`SpriteFrame.OriginX`/`OriginY`; negative when the hotspot lies inside the frame), per frame under `frames` (the key is the
+file name without `.png`) with `defaultOrigin` for the rest. `performances` are the entertainer entries (`SpriteSetBuilder.SetPerformance`). Head sets (`Kidsheads`, 7 elevation rows) use the same format with one slot. The whole set shares one
+255-entry palette (exact up to 255 colours, median cut beyond), as `SpriteSetBuilder` does ([GUESTS.md](GUESTS.md#guest-graphics-sprites-not-models)). Every missing or surplus frame, an undeclared slot, a frame without an origin and every unknown
+field is an error that names the file; an unrelated `.png` is ignored with a warning.
+
+With `--mod <dir> --folder <F>` the files go to `<dir>/<overrides>/esprites/<F>/` (`--overrides`, default `data`): with the mod's `content.overrides` (`"data/"`, set by `mod --overrides data/`) the game then reads them in place of the game's own
+at the data path `/esprites/<F>/<NAME>.ESP` and so on ([MODS.md](MODS.md#overrides)). `GuestSpriteAtlas` reads `/esprites/Generic/Kids`, `Generic/Kidsheads`, `<Theme>/Costumes`, `<Theme>/Costumeheads`, `Generic/Balloons` and
+`Generic/Thoughts`; the folders of `esprites.wad` are `Generic/{Kids, Kidsheads, Balloons, Thoughts, Mechanics, Handymen, Guards, Researchers, Litter, Particles, SpecialFX}`, `{Jungle, Hallow, Space, Fantasy}/{Costumes, Entertainers}` and
+`{Jungle, Space}/Costumeheads`; `--folder` takes any of them in any case and writes the casing of the archive (another folder is allowed with a warning). The command warns when the mod's manifest does not name the overrides folder. A set that
+replaces a shipped one needs the same file names; sets that the game does not already list in the folder (new names) are not found by the loaders, which list the game's own directory.
 
 ### The built-in settings and script
 
@@ -234,7 +254,7 @@ checked); and a sideshow-category object has no headless park test (the gate pla
 - Whether tp.exe itself accepts an authored MD2 (the planned layout, the default words of [MD2-MODELS.md](MD2-MODELS.md#writing-and-authoring)), an authored ESP/FPC set or an assembled RSE: the original was not run.
 - The TGA variants tp.exe's loader takes beyond the ones the shipped files use (the writer produces exactly those), and non-power-of-two textures.
 - The handedness and V conventions are derived from OpenTPW's renderer and the original data, not compared with a capture of the original game.
-- The animation slot choice of `sprites`, the sample settings' values (price, capacity, research, `Info.RideTypeStringIndex`), and the placeholder script's timing are the kit's own.
+- The sample settings' values (price, capacity, research, `Info.RideTypeStringIndex`), and the placeholder script's timing are the kit's own.
 - glTF features beyond the reader's list (animation, skins) are refused, so there are no animated models yet.
 
 ## Tests
@@ -242,4 +262,4 @@ checked); and a sideshow-category object has no headless park test (the gate pla
 - `GltfSceneTests`: hand-built files for the reader's fields, transforms and each refusal; with Blender installed, `ReadsTheBlenderSamplePool` also runs the sample script.
 - `GltfModelConverterTests`: the conventions (position mirror, V flip, winding and face normals, the engine-frame reading of a plain, a rotated and a nested quad), hierarchy, materials, extras, heads, textures and every refusal.
 - `TgaWriterTests`: the variant, stb read-back and the 155-file corpus identity. `Md2ConventionCorpusTests`: the sign-face evidence above.
-- `ContentKitTests`: the three commands, their errors, and the end-to-end flow above.
+- `ContentKitTests`: the three commands, their errors, the sprite sets (a kid-set folder through the readers and `GuestSpriteAtlas`, head and balloon sets, an override into the real `esprites.wad`) and the end-to-end flow above.

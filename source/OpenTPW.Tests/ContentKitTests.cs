@@ -260,63 +260,252 @@ public class ContentKitTests
 		Assert.IsFalse( Directory.Exists( Path2( "refused" ) ) );
 	}
 
-	[TestMethod]
-	public void TheSpritesCommandWrapsSwimmerFramesIntoASpriteSet()
+	// ---- Sprite sets ---------------------------------------------------------------------------------------------------
+
+	/// <summary>One slot of a synthetic set folder: its number, directions (0: none) and frames per direction.</summary>
+	private sealed record SlotSpec( int Slot, int Directions, int FramesPerDirection );
+
+	/// <summary>
+	/// Writes a set folder: <c>slotNN_dD_fF.png</c> frames of 8 x 6 pixels with two colours of their own (and one transparent pixel), so a set stays under the palette's 255 entries and is stored exactly and a <c>set.json</c> with the given flags, an origin per frame
+	/// (<c>-index</c> in X, <c>-2 * index</c> in Y) and the given extra JSON members. Returns the frames' RGBA pixels by file stem.
+	/// </summary>
+	private Dictionary<string, byte[]> WriteSetFolder( string folder, string name, SlotSpec[] slots, int detail = 1, int kid = 0, string extra = "", bool origins = true )
 	{
-		var frames = Path2( "frames" );
-		Directory.CreateDirectory( frames );
-		var counts = new Dictionary<char, int> { ['A'] = 8, ['B'] = 8, ['C'] = 4 };
-		var shade = 0;
-		foreach (var (slot, count) in counts)
-			for ( var direction = 0; direction < 5; direction++ )
-				for ( var frame = 0; frame < count; frame++ )
+		Directory.CreateDirectory( folder );
+		var pixelsByStem = new Dictionary<string, byte[]>();
+		var originJson = new List<string>();
+		var index = 0;
+		foreach ( var slot in slots )
+			for ( var direction = 0; direction < Math.Max( slot.Directions, 1 ); direction++ )
+				for ( var frame = 0; frame < slot.FramesPerDirection; frame++ )
 				{
-					var pixels = new byte[64 * 48 * 4];
-					for ( var index = 0; index < pixels.Length; index += 4 )
-						(pixels[index], pixels[index + 1], pixels[index + 2], pixels[index + 3]) = ((byte)(shade % 250), (byte)(slot * 3), (byte)(direction * 40), (index / 4 % 7 == 0) ? (byte)0 : (byte)255);
-					shade++;
-					using var stream = File.Create( System.IO.Path.Combine( frames, $"{slot}_d{direction}_f{frame}.png" ) );
-					PngWriter.Write( stream, pixels, 64, 48 );
+					var stem = $"slot{slot.Slot:00}_d{direction}_f{frame}";
+					var pixels = new byte[8 * 6 * 4];
+					for ( var pixel = 0; pixel < 48; pixel++ )
+						(pixels[pixel * 4], pixels[pixel * 4 + 1], pixels[pixel * 4 + 2], pixels[pixel * 4 + 3]) = ((byte)(10 + index), (byte)(pixel % 2 == 0 ? 20 : 120), (byte)(30 + slot.Slot * 5), pixel == 0 ? (byte)0 : (byte)255);
+					using ( var stream = File.Create( System.IO.Path.Combine( folder, stem + ".png" ) ) )
+						PngWriter.Write( stream, pixels, 8, 6 );
+					pixelsByStem[stem] = pixels;
+					originJson.Add( $"\"{stem}\": {{ \"originX\": {-index}, \"originY\": {-2 * index} }}" );
+					index++;
 				}
-		var result = Run( "sprites", "--frames", frames, "--name", "SPR_SW", "--out", Path2( "sprites" ) );
-		Assert.AreEqual( 0, result.Code, result.Error );
-		CollectionAssert.AreEquivalent( new[] { "SPR_SW.ESP", "SPR_SW.FPC", "SPR_SW.TPC" }, Directory.EnumerateFiles( Path2( "sprites" ) ).Select( System.IO.Path.GetFileName ).ToArray() );
-
-		var esp = new SpriteAnimationFile( new MemoryStream( File.ReadAllBytes( Path2( "sprites", "SPR_SW.ESP" ) ) ) );
-		// A -> slot 1 (8 frames, 5 directions), B -> slot 2, C -> slot 4; the others stay empty
-		Assert.AreEqual( new SpriteAnimation( 1, 0, 8, 5 ), esp.Animations[1] );
-		Assert.AreEqual( new SpriteAnimation( 2, 40, 8, 5 ), esp.Animations[2] );
-		Assert.AreEqual( new SpriteAnimation( 4, 80, 4, 5 ), esp.Animations[4] );
-		Assert.IsTrue( esp.Animations.Where( animation => animation.Slot is not (1 or 2 or 4) ).All( animation => animation.IsEmpty ) );
-		var bank = new SpriteBankFile( new MemoryStream( File.ReadAllBytes( Path2( "sprites", "SPR_SW.FPC" ) ) ) );
-		Assert.AreEqual( 100, bank.Frames.Count );
-		// the 64 x 48 canvas has its hotspot at (32, 27): the frame's left/top edge lies at -32/-27 from it
-		Assert.IsTrue( bank.Frames.All( frame => (frame.Width, frame.Height, frame.OriginX, frame.OriginY) == (64, 48, -32, -27) ) );
-		// frame (slot A, direction 2, frame 3) is sprite 2 * 8 + 3 and keeps its pixels' transparency
-		var decoded = new byte[64 * 48 * 4];
-		bank.DecodeRgba( bank.Frames[2 * 8 + 3], decoded, 64 * 4, 0, 0 );
-		Assert.AreEqual( 0, decoded[3], "pixel 0 is transparent" );
-		Assert.AreEqual( 255, decoded[4 * 1 + 3], "pixel 1 is opaque" );
-
-		// another slot map, a frame size without a default hotspot, and a gap in the frames
-		Assert.AreEqual( 0, Run( "sprites", "--frames", frames, "--name", "SPR_S2", "--out", Path2( "s2" ), "--slot", "A=3", "--slot", "B=5", "--slot", "C=6" ).Code );
-		File.Delete( System.IO.Path.Combine( frames, "C_d1_f2.png" ) );
-		var gap = Run( "sprites", "--frames", frames, "--name", "SPR_S3", "--out", Path2( "s3" ) );
-		Assert.AreEqual( 1, gap.Code );
-		StringAssert.Contains( gap.Error, "frames 0..3" );
+		var slotJson = string.Join( ", ", slots.Select( slot => $"\"{slot.Slot}\": {{ \"directions\": {slot.Directions}, \"framesPerDirection\": {slot.FramesPerDirection} }}" ) );
+		File.WriteAllText( System.IO.Path.Combine( folder, "set.json" ), $"{{ \"name\": \"{name}\", \"detailFlag\": {detail}, \"kidFlag\": {kid}, \"slots\": {{ {slotJson} }}"
+			+ (origins ? $", \"frames\": {{ {string.Join( ", ", originJson )} }}" : "") + extra + " }" );
+		return pixelsByStem;
 	}
 
 	[TestMethod]
-	public void SpriteFramesOfAnotherSizeNeedAHotspot()
+	public void TheSpritesCommandPacksASetFolderIntoFilesTheReadersAndTheGuestAtlasLoad()
 	{
-		var frames = Path2( "odd" );
-		Directory.CreateDirectory( frames );
-		using ( var stream = File.Create( System.IO.Path.Combine( frames, "A_d0_f0.png" ) ) )
-			PngWriter.Write( stream, new byte[10 * 10 * 4], 10, 10 );
-		var missing = Run( "sprites", "--frames", frames, "--name", "SPR_O", "--out", Path2( "o" ) );
-		Assert.AreEqual( 1, missing.Code );
-		StringAssert.Contains( missing.Error, "--hotspot" );
-		Assert.AreEqual( 0, Run( "sprites", "--frames", frames, "--name", "SPR_O", "--out", Path2( "o" ), "--hotspot", "5,9" ).Code );
+		var folder = Path2( "kidset" );
+		var slots = new[] { new SlotSpec( 0, 5, 1 ), new SlotSpec( 1, 5, 2 ), new SlotSpec( 14, 5, 2 ) };
+		var pixels = WriteSetFolder( folder, "SPR_QQ", slots, detail: 1, kid: 1 );
+		var result = Run( "sprites", "--frames", folder, "--out", Path2( "packed" ) );
+		Assert.AreEqual( 0, result.Code, result.Error );
+		CollectionAssert.AreEquivalent( new[] { "SPR_QQ.ESP", "SPR_QQ.FPC", "SPR_QQ.TPC" }, Directory.EnumerateFiles( Path2( "packed" ) ).Select( System.IO.Path.GetFileName ).ToArray() );
+
+		var esp = new SpriteAnimationFile( new MemoryStream( File.ReadAllBytes( Path2( "packed", "SPR_QQ.ESP" ) ) ) );
+		Assert.AreEqual( ".FPC", esp.BankExtension, "detailFlag 1: the game opens the FPC" );
+		Assert.AreEqual( (byte)1, esp.FlagB, "kidFlag" );
+		// slots keep their numbers; frames are stored slot by slot, direction-major
+		Assert.AreEqual( new SpriteAnimation( 0, 0, 1, 5 ), esp.Animations[0] );
+		Assert.AreEqual( new SpriteAnimation( 1, 5, 2, 5 ), esp.Animations[1] );
+		Assert.AreEqual( new SpriteAnimation( 14, 15, 2, 5 ), esp.Animations[14] );
+		Assert.IsTrue( esp.Animations.Where( animation => animation.Slot is not (0 or 1 or 14) ).All( animation => animation.IsEmpty ) );
+		var bank = new SpriteBankFile( new MemoryStream( File.ReadAllBytes( Path2( "packed", "SPR_QQ.FPC" ) ) ) );
+		CollectionAssert.AreEqual( File.ReadAllBytes( Path2( "packed", "SPR_QQ.FPC" ) ), File.ReadAllBytes( Path2( "packed", "SPR_QQ.TPC" ) ) );
+		Assert.AreEqual( 25, bank.Frames.Count );
+		// the frame at index 7 is slot 1 direction 1 frame 0: its origin and pixels come from the folder
+		var seventh = bank.Frames[esp.Animations[1].GetFrame( 1, 0 )];
+		Assert.AreEqual( (8, 6, -7, -14), (seventh.Width, seventh.Height, seventh.OriginX, seventh.OriginY), "the 8th frame of the set (5 stand frames, then slot 1 direction 0): (-7, -14)" );
+		var decoded = new byte[8 * 6 * 4];
+		bank.DecodeRgba( seventh, decoded, 8 * 4, 0, 0 );
+		var expected = (byte[])pixels["slot01_d1_f0"].Clone();
+		expected.AsSpan( 0, 4 ).Clear(); // a fully transparent pixel is the bank's transparent index, colourless
+		CollectionAssert.AreEqual( expected, decoded );
+
+		// the guest atlas reads the folder like a shipped kid set
+		var previous = FileSystem;
+		try
+		{
+			FileSystem = new BaseFileSystem( Path2( "packed", ".." ) );
+			var atlas = GuestSpriteAtlas.LoadSets( "/packed", "kids" ).Single();
+			Assert.AreEqual( "SPR_QQ", atlas.Name );
+			Assert.AreEqual( 25, atlas.Frames.Length );
+			Assert.AreEqual( 2, atlas.FramesPerDirection( GuestSpriteAtlas.WalkSlot ) );
+			Assert.AreEqual( 1, atlas.FramesPerDirection( GuestSpriteAtlas.StandSlot ) );
+			Assert.AreEqual( esp.Animations[1].GetFrame( 3, 1 ), atlas.GetFrame( GuestSpriteAtlas.WalkSlot, 3, 1 ) );
+			Assert.AreEqual( 0, atlas.GetFrame( GuestSpriteAtlas.RunSlot, 0, 0 ), "an empty slot falls back to standing" );
+			var frame = atlas.Frames[esp.Animations[14].GetFrame( 4, 1 )];
+			Assert.AreEqual( (8, 6), (frame.Width, frame.Height) );
+			Assert.AreEqual( (-(15 + 9), -2 * (15 + 9)), (frame.OriginX, frame.OriginY), "slot 14 starts at frame number 15; direction 4 frame 1 is its 9th" );
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
+	}
+
+	[TestMethod]
+	public void AHeadSetWithoutFullDetailWritesNoFpcAndASlotWithoutDirectionsIsAllowed()
+	{
+		// the head sets ship an ESP and a TPC only: 7 elevations in one slot; the balloons have no directions
+		var heads = Path2( "heads" );
+		WriteSetFolder( heads, "SPR_HD", new[] { new SlotSpec( 0, 7, 2 ) }, detail: 0, origins: false, extra: ", \"defaultOrigin\": { \"originX\": -4, \"originY\": -6 }" );
+		var balloons = Path2( "balloons" );
+		WriteSetFolder( balloons, "SPR_BL", new[] { new SlotSpec( 0, 0, 2 ), new SlotSpec( 1, 0, 2 ) }, detail: 0 );
+		var result = Run( "sprites", "--frames", heads, "--frames", balloons, "--out", Path2( "heads-out" ) );
+		Assert.AreEqual( 0, result.Code, result.Error );
+		CollectionAssert.AreEquivalent( new[] { "SPR_HD.ESP", "SPR_HD.TPC", "SPR_BL.ESP", "SPR_BL.TPC" }, Directory.EnumerateFiles( Path2( "heads-out" ) ).Select( System.IO.Path.GetFileName ).ToArray() );
+
+		var esp = new SpriteAnimationFile( new MemoryStream( File.ReadAllBytes( Path2( "heads-out", "SPR_HD.ESP" ) ) ) );
+		Assert.AreEqual( ".TPC", esp.BankExtension );
+		Assert.AreEqual( new SpriteAnimation( 0, 0, 2, 7 ), esp.Animations[0] );
+		var bank = new SpriteBankFile( new MemoryStream( File.ReadAllBytes( Path2( "heads-out", "SPR_HD.TPC" ) ) ) );
+		Assert.AreEqual( 14, bank.Frames.Count );
+		Assert.IsTrue( bank.Frames.All( frame => (frame.OriginX, frame.OriginY) == (-4, -6) ), "the default origin serves frames without an entry" );
+		var balloon = new SpriteAnimationFile( new MemoryStream( File.ReadAllBytes( Path2( "heads-out", "SPR_BL.ESP" ) ) ) );
+		Assert.AreEqual( 0, balloon.Animations[0].Directions, "no directions" );
+		Assert.AreEqual( 2, balloon.Animations[0].FramesPerDirection );
+		Assert.AreEqual( 2, balloon.Animations[1].GetFrame( 0, 0 ), "the second slot follows the first slot's two frames" );
+
+		var previous = FileSystem;
+		try
+		{
+			FileSystem = new BaseFileSystem( Path2( "heads-out", ".." ) );
+			var atlases = GuestSpriteAtlas.LoadSets( "/heads-out", "kidsheads" );
+			CollectionAssert.AreEqual( new[] { "SPR_BL", "SPR_HD" }, atlases.Select( atlas => atlas.Name ).ToArray() );
+			Assert.AreEqual( 14, atlases.Single( atlas => atlas.Name == "SPR_HD" ).Frames.Length );
+		}
+		finally
+		{
+			FileSystem = previous;
+		}
+	}
+
+	[TestMethod]
+	public void SpriteSetsGoIntoAModsOverridesAndTheGuestAtlasReadsThemInsteadOfTheGamesOwn()
+	{
+		var folder = Path2( "be" );
+		WriteSetFolder( folder, "SPR_BE", new[] { new SlotSpec( 0, 5, 1 ), new SlotSpec( 1, 5, 8 ) } );
+		// the mod first (its manifest names the overrides folder), then the set into it, with the folder in any case
+		Assert.AreEqual( 0, Run( "mod", "--out", Path2( "spritemod" ), "--id", "community.sprites", "--name", "Sprites", "--overrides", "data/" ).Code );
+		var result = Run( "sprites", "--frames", folder, "--mod", Path2( "spritemod" ), "--folder", "generic/kids" );
+		Assert.AreEqual( 0, result.Code, result.Error );
+		Assert.IsFalse( result.Output.Contains( "warning" ), result.Output );
+		foreach ( var extension in new[] { "ESP", "FPC", "TPC" } )
+			Assert.IsTrue( File.Exists( Path2( "spritemod", "data", "esprites", "Generic", "Kids", $"SPR_BE.{extension}" ) ), extension );
+		StringAssert.Contains( File.ReadAllText( Path2( "spritemod", "opentpw-mod.json" ) ), "\"overrides\": \"data/\"" );
+		Assert.IsFalse( File.Exists( Path2( "spritemod", "objects.json" ) ), "a mod with only overrides has no objects.json" );
+		Assert.IsFalse( File.ReadAllText( Path2( "spritemod", "opentpw-mod.json" ) ).Contains( "objects" ) );
+
+		// the game's own folder (stand-in files here; the originals sit in esprites.wad), overridden by the mod through the real mod pipeline
+		var game = Path2( "spritegame" );
+		var kids = System.IO.Path.Combine( game, "esprites", "Generic", "Kids" );
+		Directory.CreateDirectory( kids );
+		foreach ( var extension in new[] { "ESP", "FPC", "TPC" } )
+			File.WriteAllBytes( System.IO.Path.Combine( kids, $"SPR_BE.{extension}" ), new byte[] { 1 } );
+		FileSystem = new BaseFileSystem( game );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		var set = ModSet.Resolve( ModDiscovery.Discover( new[] { Path2( "spritemod" ) }, Array.Empty<string>(), null, null ).ToList(),
+			new ModSettings { Enabled = new Dictionary<string, bool> { ["community.sprites"] = true } }, null, GameEdition.ThemeParkWorld, new[] { Core } );
+		Assert.AreEqual( 1, set.Mods.Count, string.Join( "; ", set.Refused.Select( refusal => refusal.Reason ) ) );
+		using ( ModContentRoots.Use( set, FileSystem ) )
+		{
+			var atlas = GuestSpriteAtlas.LoadKids().Single();
+			Assert.AreEqual( "SPR_BE", atlas.Name );
+			Assert.AreEqual( 5 + 40, atlas.Frames.Length );
+			Assert.AreEqual( 8, atlas.FramesPerDirection( GuestSpriteAtlas.WalkSlot ) );
+		}
+		Assert.AreEqual( 1, FileSystem.ReadAllBytes( "/esprites/Generic/Kids/SPR_BE.ESP" ).Length, "outside the scope the game's own file is read again" );
+	}
+
+	/// <summary>The same through the real <c>esprites.wad</c>: the mod's SPR_BE replaces the archive's kid set of that name and the other kid sets stay the game's own. Needs <c>OPENTPW_GAME_PATH</c>.</summary>
+	[TestMethod]
+	public void ASpriteSetOverrideReplacesAShippedKidSetInTheRealArchive()
+	{
+		var data = OriginalParkImportTests.OriginalDataPath();
+		FileSystem = new BaseFileSystem( data );
+		FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+		var original = GuestSpriteAtlas.LoadKids();
+		Assert.AreEqual( 8, original.Count, "the shipped game has eight kid sets" );
+		var shipped = original.Single( atlas => atlas.Name == "SPR_BE" );
+		Assert.AreEqual( 175, shipped.Frames.Length );
+
+		var folder = Path2( "be-real" );
+		WriteSetFolder( folder, "SPR_BE", new[] { new SlotSpec( 0, 5, 1 ), new SlotSpec( 1, 5, 8 ) } );
+		Assert.AreEqual( 0, Run( "mod", "--out", Path2( "realmod" ), "--id", "community.sprites", "--name", "Sprites", "--overrides", "data/" ).Code );
+		Assert.AreEqual( 0, Run( "sprites", "--frames", folder, "--mod", Path2( "realmod" ), "--folder", "Generic/Kids" ).Code );
+		var set = ModSet.Resolve( ModDiscovery.Discover( new[] { Path2( "realmod" ) }, Array.Empty<string>(), null, null ).ToList(),
+			new ModSettings { Enabled = new Dictionary<string, bool> { ["community.sprites"] = true } }, null, GameEdition.ThemeParkWorld, new[] { Core } );
+		Assert.AreEqual( 1, set.Mods.Count, string.Join( "; ", set.Refused.Select( refusal => refusal.Reason ) ) );
+		using ( ModContentRoots.Use( set, FileSystem ) )
+		{
+			var replaced = GuestSpriteAtlas.LoadKids();
+			Assert.AreEqual( 8, replaced.Count );
+			Assert.AreEqual( 45, replaced.Single( atlas => atlas.Name == "SPR_BE" ).Frames.Length, "the mod's set replaced the shipped one" );
+			foreach ( var atlas in replaced.Where( atlas => atlas.Name != "SPR_BE" ) )
+				Assert.AreEqual( original.Single( other => other.Name == atlas.Name ).Frames.Length, atlas.Frames.Length, atlas.Name );
+		}
+		Assert.AreEqual( 175, GuestSpriteAtlas.LoadKids().Single( atlas => atlas.Name == "SPR_BE" ).Frames.Length, "outside the scope the game's own set is back" );
+	}
+
+	[TestMethod]
+	public void TheSpritesCommandReportsEveryProblemOfASetFolder()
+	{
+		string Pack( string folder ) => Run( "sprites", "--frames", folder, "--out", Path2( "never" ) ).Error;
+		var slots = new[] { new SlotSpec( 1, 2, 2 ) };
+
+		var missing = Path2( "missing" );
+		WriteSetFolder( missing, "SPR_MI", slots );
+		File.Delete( System.IO.Path.Combine( missing, "slot01_d1_f1.png" ) );
+		StringAssert.Contains( Pack( missing ), "slot01_d1_f1.png" );
+
+		var undeclared = Path2( "undeclared" );
+		WriteSetFolder( undeclared, "SPR_UN", slots );
+		File.Copy( System.IO.Path.Combine( undeclared, "slot01_d0_f0.png" ), System.IO.Path.Combine( undeclared, "slot03_d0_f0.png" ) );
+		StringAssert.Contains( Pack( undeclared ), "slot 3" );
+
+		var outside = Path2( "outside" );
+		WriteSetFolder( outside, "SPR_OU", slots );
+		File.Copy( System.IO.Path.Combine( outside, "slot01_d0_f0.png" ), System.IO.Path.Combine( outside, "slot01_d0_f2.png" ) );
+		StringAssert.Contains( Pack( outside ), "lies outside" );
+
+		var noOrigin = Path2( "noorigin" );
+		WriteSetFolder( noOrigin, "SPR_NO", slots, origins: false );
+		StringAssert.Contains( Pack( noOrigin ), "no origin" );
+
+		var unknown = Path2( "unknown" );
+		WriteSetFolder( unknown, "SPR_UK", slots, extra: ", \"colour\": 1" );
+		StringAssert.Contains( Pack( unknown ), "unknown field 'colour'" );
+
+		var badSlot = Path2( "badslot" );
+		WriteSetFolder( badSlot, "SPR_BS", new[] { new SlotSpec( 16, 1, 1 ) } );
+		StringAssert.Contains( Pack( badSlot ), "0 to 15" );
+
+		var badName = Path2( "badname" );
+		WriteSetFolder( badName, "SPRITE_TOO_LONG", slots );
+		StringAssert.Contains( Pack( badName ), "1 to 7" );
+
+		Assert.AreEqual( 1, Run( "sprites", "--frames", Path2( "nowhere" ), "--out", Path2( "never" ) ).Code );
+		StringAssert.Contains( Run( "sprites", "--frames", Path2( "nowhere" ), "--out", Path2( "never" ) ).Error, "does not exist" );
+		Assert.IsFalse( Directory.Exists( Path2( "never" ) ) );
+
+		// usage: exactly one destination, --mod needs --folder
+		var good = Path2( "good" );
+		WriteSetFolder( good, "SPR_GD", slots );
+		Assert.AreEqual( 2, Run( "sprites", "--frames", good ).Code );
+		Assert.AreEqual( 2, Run( "sprites", "--frames", good, "--out", Path2( "o" ), "--mod", Path2( "m" ), "--folder", "Generic/Kids" ).Code );
+		Assert.AreEqual( 2, Run( "sprites", "--frames", good, "--mod", Path2( "m" ) ).Code );
+		Assert.AreEqual( 1, Run( "sprites", "--frames", good, "--mod", Path2( "m" ), "--folder", "../Kids" ).Code );
+
+		// a mod whose manifest does not name the overrides folder, and a folder the game never reads, are warnings
+		Assert.AreEqual( 0, Run( "mod", "--out", Path2( "plainmod" ), "--id", "community.plain", "--name", "Plain", "--overrides", "other" ).Code );
+		var warned = Run( "sprites", "--frames", good, "--mod", Path2( "plainmod" ), "--folder", "Generic/Strange" );
+		Assert.AreEqual( 0, warned.Code, warned.Error );
+		StringAssert.Contains( warned.Output, "warning: 'Generic/Strange' is not a folder" );
+		StringAssert.Contains( warned.Output, "content.overrides" );
 	}
 
 	[TestMethod]

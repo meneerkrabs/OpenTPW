@@ -9,7 +9,7 @@ namespace OpenTPW.ContentKit;
 public sealed record ModObjectSpec( string Archive, string Theme, string Category, int InfoId, IReadOnlyDictionary<string, string> Names, string? Source = null );
 
 /// <summary>The manifest fields <c>mod</c> can write (docs/MODS.md, "Manifest").</summary>
-public sealed record ModManifestSpec( string Id, string Name, string Version = "1.0.0", string? Author = null, string? Description = null );
+public sealed record ModManifestSpec( string Id, string Name, string Version = "1.0.0", string? Author = null, string? Description = null, string? Overrides = null );
 
 /// <summary>
 /// Lays out a data-only mod folder (docs/MODS.md): <c>opentpw-mod.json</c>, <c>objects.json</c> and the object archives. The documents are validated here with the
@@ -28,8 +28,8 @@ public static class ModBuilder
 	private static readonly Regex VersionPattern = new( @"\A\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?\z", RegexOptions.CultureInvariant );
 	private static readonly JsonWriterOptions WriterOptions = new() { Indented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
-	/// <summary>The manifest of a new mod: <c>content.objects</c> is always <c>objects.json</c>.</summary>
-	public static string RenderManifest( ModManifestSpec spec )
+	/// <summary>The manifest of a new mod: <c>content.objects</c> is <c>objects.json</c> when the mod lists objects, <c>content.overrides</c> the folder of replacement game files.</summary>
+	public static string RenderManifest( ModManifestSpec spec, bool hasObjects = true )
 	{
 		CheckManifest( spec.Id, spec.Name, spec.Version );
 		using var stream = new MemoryStream();
@@ -50,15 +50,27 @@ public static class ModBuilder
 				writer.WriteString( "description", spec.Description );
 			}
 			writer.WriteStartObject( "content" );
-			writer.WriteString( "objects", ObjectsFileName );
+			if ( spec.Overrides != null )
+				writer.WriteString( "overrides", NormalizeOverridesPath( spec.Overrides ) + "/" );
+			if ( hasObjects )
+				writer.WriteString( "objects", ObjectsFileName );
 			writer.WriteEndObject();
 			writer.WriteEndObject();
 		}
 		return Encoding.UTF8.GetString( stream.ToArray() ) + "\n";
 	}
 
+	/// <summary>A mod-relative folder of replacement game files in the one form the kit writes: '/' separators, no leading or trailing slash (the manifest gets it with a trailing slash).</summary>
+	public static string NormalizeOverridesPath( string path )
+	{
+		var normalised = path.Replace( '\\', '/' ).Trim( '/' );
+		if ( normalised.Length == 0 || normalised.Contains( ':' ) || normalised.Split( '/' ).Any( segment => segment.Length == 0 || segment is "." or ".." || segment.EndsWith( '.' ) || segment.EndsWith( ' ' ) ) )
+			throw new InvalidDataException( $"The overrides folder '{path}' must be a relative path inside the mod without '..', empty segments or ':'." );
+		return normalised;
+	}
+
 	/// <summary>Checks a manifest the caller wrote and returns it with <c>content.objects</c> set to <c>objects.json</c> when it names no objects file.</summary>
-	public static string CompleteManifest( string json )
+	public static string CompleteManifest( string json, bool hasObjects = true )
 	{
 		using var document = JsonDocument.Parse( json, new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Disallow } );
 		var root = document.RootElement;
@@ -81,7 +93,7 @@ public static class ModBuilder
 				if ( !ContentFields.Contains( property.Name ) )
 					throw new InvalidDataException( $"{ManifestFileName}: unknown content field '{property.Name}'." );
 			}
-			if ( content.TryGetProperty( "objects", out var objects ) && objects.GetString() != ObjectsFileName )
+			if ( hasObjects && content.TryGetProperty( "objects", out var objects ) && objects.GetString() != ObjectsFileName )
 				throw new InvalidDataException( $"{ManifestFileName}: 'content.objects' must be \"{ObjectsFileName}\" for this command (it writes that file)." );
 		}
 		using var stream = new MemoryStream();
@@ -99,7 +111,10 @@ public static class ModBuilder
 				foreach ( var property in existing.EnumerateObject().Where( property => property.Name != "objects" ) )
 					property.WriteTo( writer );
 			}
-			writer.WriteString( "objects", ObjectsFileName );
+			if ( hasObjects )
+				writer.WriteString( "objects", ObjectsFileName );
+			else if ( root.TryGetProperty( "content", out var kept ) && kept.TryGetProperty( "objects", out var named ) )
+				writer.WriteString( "objects", named.GetString() );
 			writer.WriteEndObject();
 			writer.WriteEndObject();
 		}
@@ -231,9 +246,11 @@ public static class ModBuilder
 		}
 	}
 
-	public static CommandResult Build( string outDirectory, string manifestJson, string objectsJson, IReadOnlyList<ModObjectSpec> sources, bool force )
+	public static CommandResult Build( string outDirectory, string manifestJson, string? objectsJson, IReadOnlyList<ModObjectSpec> sources, bool force )
 	{
-		var files = new List<(string Path, byte[] Bytes)> { (ManifestFileName, Encoding.UTF8.GetBytes( manifestJson )), (ObjectsFileName, Encoding.UTF8.GetBytes( objectsJson )) };
+		var files = new List<(string Path, byte[] Bytes)> { (ManifestFileName, Encoding.UTF8.GetBytes( manifestJson )) };
+		if ( objectsJson != null )
+			files.Add( (ObjectsFileName, Encoding.UTF8.GetBytes( objectsJson )) );
 		foreach ( var item in sources.Where( item => item.Source != null ) )
 		{
 			var root = Path.GetFullPath( item.Source! );
@@ -254,25 +271,32 @@ public static class ModCommand
 	{
 		var outDirectory = options.Require( "out" );
 		var force = options.Has( "force" );
+		var overrides = options.Optional( "overrides" );
+		var specs = options.Many( "object" ).Select( ParseObject ).ToList();
+		var objectsPath = options.Optional( "objects" );
+		var hasObjects = objectsPath != null || specs.Count > 0;
+		if ( !hasObjects && overrides == null && !options.Has( "manifest" ) )
+			throw new UsageException( "Give objects (--objects <file> or --object <spec>) or --overrides <folder>: a mod without content does nothing." );
 
 		string manifest;
 		if ( options.Optional( "manifest" ) is { } manifestPath )
-			manifest = ModBuilder.CompleteManifest( File.ReadAllText( manifestPath ) );
+		{
+			if ( overrides != null )
+				throw new UsageException( "--overrides sets the manifest's content.overrides; with --manifest write it in your file." );
+			manifest = ModBuilder.CompleteManifest( File.ReadAllText( manifestPath ), hasObjects );
+		}
 		else
-			manifest = ModBuilder.RenderManifest( new ModManifestSpec( options.Require( "id" ), options.Require( "name" ), options.Optional( "version" ) ?? "1.0.0", options.Optional( "author" ), options.Optional( "description" ) ) );
+			manifest = ModBuilder.RenderManifest( new ModManifestSpec( options.Require( "id" ), options.Require( "name" ), options.Optional( "version" ) ?? "1.0.0", options.Optional( "author" ), options.Optional( "description" ), overrides ), hasObjects );
 
-		var specs = options.Many( "object" ).Select( ParseObject ).ToList();
-		string objects;
-		if ( options.Optional( "objects" ) is { } objectsPath )
+		string? objects = null;
+		if ( objectsPath != null )
 		{
 			if ( specs.Count > 0 || options.Has( "id-first" ) || options.Has( "id-last" ) )
 				throw new UsageException( "--objects replaces --object, --id-first and --id-last." );
 			objects = ModBuilder.CheckObjects( File.ReadAllText( objectsPath ) );
 		}
-		else
+		else if ( specs.Count > 0 )
 		{
-			if ( specs.Count == 0 )
-				throw new UsageException( "Give --objects <file> or at least one --object <spec>." );
 			var first = int.Parse( options.Require( "id-first" ), System.Globalization.CultureInfo.InvariantCulture );
 			var last = int.Parse( options.Require( "id-last" ), System.Globalization.CultureInfo.InvariantCulture );
 			objects = ModBuilder.RenderObjects( first, last, specs );

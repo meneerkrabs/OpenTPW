@@ -6,4 +6,5 @@ The official extension `opentpw.pools` ([POOLS.md](../POOLS.md)) is now on by de
 - **Determinism**: nothing moves. A park without pool cells or a changing room saves with no `Mods` field and the same bytes with the extension on or off; `FixedRunHash`, `PoolsFixedRunHash`, `PoolsChangingRoomFixedRunHash` and every other pin are unchanged, research tables are unchanged (`"research": false`).
 - **Theme Park Inc**: the pools UI is unavailable in a Theme Park Inc run even with the extension on (`FeatureGates.Pools` is false there; the pools objects are not added to its catalog), because styles, changing rooms, swim sprites and layout were made for Theme Park World only.
 - **Browser**: `content/pools` is embedded and the defaults apply, so pools is on there too; sprite delivery is unchanged.
+- Pool extras (P3) are gated by the same switch, so they follow the default and the Theme Park Inc rule.
 - Docs: MODS.md, POOLS.md, RUNNING.md, DETERMINISM.md. Tests: `PoolsTests` (default on, old config, explicit off, Theme Park Inc).

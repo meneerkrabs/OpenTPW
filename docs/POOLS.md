@@ -35,7 +35,7 @@ explicitly has `"opentpw.pools": false` and stays off. The browser's `/config/mo
 no case where an untouched old default "off" is stored, so no migration is needed.) A park without pool cells or a changing room saves and loads the same bytes with the extension on or off, so switching on changes no existing park.
 
 **Theme Park Inc.** The pools UI is unavailable in a Theme Park Inc run (`GameEditions.IsThemeParkInc`) even with the extension on: `FeatureGates.Pools` is false there, so there is no pool row in the buy list, no pool tool, no render holes, no
-changing room and no swimmers, and `PoolContent.CatalogRoot` adds no objects to the Theme Park Inc catalog. The reason is that the styles (`PoolStyles` knows the four Theme Park World themes; a Theme Park Inc world would get `Generic`), the changing rooms (`objects.json` lists only the four Theme Park World themes), the
+changing room, no pool extras and no swimmers, and `PoolContent.CatalogRoot` adds no objects to the Theme Park Inc catalog. The reason is that the styles (`PoolStyles` knows the four Theme Park World themes; a Theme Park Inc world would get `Generic`), the changing rooms and extras (`objects.json` lists only the four Theme Park World themes), the
 guest sprite sets (the eight Theme Park World kid sets) and the park layout were made and checked for Theme Park World only; Theme Park Inc is an experimental slice (docs/THEME-PARK-INC.md). It is covered by
 `PoolsTests.ThePoolsUiIsUnavailableInThemeParkIncRunsEvenWithTheExtensionOn`. Pools for Theme Park Inc can be added later with styles and rooms of its own.
 

@@ -175,7 +175,7 @@ public class ModsInBrowserTests
 		// pools is on by default, so its own content root (the changing rooms, embedded in the browser build) is the only root
 		Assert.IsTrue( ObjectCatalog.ContentRoots.All( contentRoot => contentRoot.ModId == OfficialExtensions.Pools.Id ) );
 		Assert.IsTrue( set.IsEnabled( OfficialExtensions.Pools.Id ), "pools is on in the browser with no saved choice" );
-		Assert.AreEqual( 4, ObjectCatalog.ContentRoots.Sum( contentRoot => contentRoot.Objects.Count ), "the four changing rooms are in the catalogs" );
+		Assert.IsTrue( ObjectCatalog.ContentRoots.Sum( contentRoot => contentRoot.Objects.Count ) >= 4, "the pools objects (changing rooms and extras) are in the catalogs" );
 	}
 
 	[TestMethod]

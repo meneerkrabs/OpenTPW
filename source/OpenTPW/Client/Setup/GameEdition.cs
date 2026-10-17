@@ -22,8 +22,31 @@ public enum GameEditionEvidence
 	Structure
 }
 
+/// <summary>How the language a CD was made for was recognised (<see cref="GameEditions.DetectCdLanguage"/>).</summary>
+public enum GameLanguageEvidence
+{
+	/// <summary>No language recognised (an installed game, or a CD with several or no language marks).</summary>
+	None,
+	/// <summary>The only <c>Autorun/&lt;language&gt;.tre</c> besides <c>autorun.tre</c> and <c>general.tre</c> (<c>spanish.tre</c>, <c>Korean.tre</c>) names a language that has a folder in <c>Data/Language</c>.</summary>
+	AutorunTre,
+	/// <summary>A <c>&lt;Language&gt;</c> folder beside <c>Data</c> (the installer, banner meshes and word filter) with its own <c>Data/Language/&lt;language&gt;</c>.</summary>
+	LanguageFolder,
+	/// <summary>The only non-English Windows locale file (<c>0000040c.016</c>, named by locale identifier) beside <c>Data</c>.</summary>
+	LocaleFile
+}
+
 /// <summary>The edition of a data folder and the evidence for it.</summary>
-public sealed record GameEditionReport( GameEdition Edition, GameEditionEvidence Evidence );
+public sealed record GameEditionReport( GameEdition Edition, GameEditionEvidence Evidence )
+{
+	/// <summary>The language the CD this folder belongs to was made for (Spanish, Korean, Polish, ...), or null for an installed game and for CDs that carry several languages.</summary>
+	public string? CdLanguage { get; init; }
+
+	/// <summary>What named <see cref="CdLanguage"/>.</summary>
+	public GameLanguageEvidence CdLanguageEvidence { get; init; }
+
+	/// <summary>Every language the folder's locale files (<c>0000040c.016</c>, named by Windows locale identifier) name, in identifier order.</summary>
+	public IReadOnlyList<string> LocaleLanguages { get; init; } = Array.Empty<string>();
+}
 
 /// <summary>
 /// What OpenTPW runs for an edition's park, as one explicit policy instead of scattered edition checks: Theme Park
@@ -33,8 +56,17 @@ public sealed record GameEditionReport( GameEdition Edition, GameEditionEvidence
 /// </summary>
 public sealed record EditionCapabilities
 {
-	/// <summary>The park economy (money, calendar, research, staff wages): needs the Theme Park World balance keys.</summary>
-	public required bool Economy { get; init; }
+	/// <summary>
+	/// The park's money: cash, bank and loans, the calendar, build, path, queue and track charges, scrap refunds, running costs and
+	/// bankruptcy. Needs only the balance keys Theme Park Inc's own data carries (<see cref="BalanceSettings.ForThemeParkInc"/>).
+	/// </summary>
+	public required bool Money { get; init; }
+	/// <summary>Research (the lab, researchers and the research table): needs the Theme Park World research keys.</summary>
+	public required bool Research { get; init; }
+	/// <summary>Challenges, golden tickets and the Theme Park World objective system.</summary>
+	public required bool Challenges { get; init; }
+	/// <summary>The whole Theme Park World park economy: money, staff, research and challenges together.</summary>
+	public bool Economy => Money && Staff && Research && Challenges;
 	/// <summary>The original Theme Park World HUD (its <c>ui.wad</c> panels, buy window, advisor arm).</summary>
 	public required bool OriginalHud { get; init; }
 	/// <summary>The edition-appropriate basic HUD of the experimental slice (OpenTPW text UI, no original panel art).</summary>
@@ -43,7 +75,7 @@ public sealed record EditionCapabilities
 	public required bool Building { get; init; }
 	/// <summary>Guests walk, queue and ride under the ported Theme Park World guest rules.</summary>
 	public required bool Guests { get; init; }
-	/// <summary>Staff world and staffing (wages, rest, training): needs the economy.</summary>
+	/// <summary>Staff world and staffing (wages, rest, training, maintenance): needs the Theme Park World staff keys.</summary>
 	public required bool Staff { get; init; }
 	/// <summary>The automatic advisor (its <c>Advisor.sam</c> differs in Theme Park Inc).</summary>
 	public required bool Advisor { get; init; }
@@ -59,7 +91,9 @@ public sealed record EditionCapabilities
 	/// <summary>The reference capabilities: everything OpenTPW implements, for Theme Park World.</summary>
 	public static EditionCapabilities ForThemeParkWorld() => new()
 	{
-		Economy = true,
+		Money = true,
+		Research = true,
+		Challenges = true,
 		OriginalHud = true,
 		ExperimentalHud = false,
 		Building = true,
@@ -74,14 +108,16 @@ public sealed record EditionCapabilities
 
 	/// <summary>
 	/// The experimental Theme Park Inc slice: worlds load and can be built in and walked by guests, but no system whose
-	/// Theme Park Inc rules or data OpenTPW has not traced runs. The economy is off because Theme Park Inc's
-	/// <c>Standard.sam</c> lacks 89 of the balance keys the Theme Park World economy reads (measured October 13, 2026);
-	/// the original HUD, front end, advisor and every save, progress and sharing format stay refused.
+	/// Theme Park Inc rules or data OpenTPW has not traced runs. Only the money runs (docs/THEME-PARK-INC.md, "Economy"):
+	/// Theme Park Inc's <c>Standard.sam</c> lacks 86 of the balance keys the Theme Park World economy reads (measured October 17, 2026),
+	/// so staff, research and challenges stay refused, as do the original HUD, front end, advisor and every save, progress and sharing format.
 	/// </summary>
 	// [EXT:tpi-capability-gates] the slice's capability gates are OpenTPW's honest limits (a scope decision), not traced Theme Park Inc behaviour
 	public static EditionCapabilities ForThemeParkIncSlice() => new()
 	{
-		Economy = false,
+		Money = true,
+		Research = false,
+		Challenges = false,
 		OriginalHud = false,
 		ExperimentalHud = true,
 		Building = true,
@@ -91,8 +127,9 @@ public sealed record EditionCapabilities
 		FrontEnd = false,
 		ParkSaves = false,
 		Sharing = false,
-		ExperimentalNote = "experimental Theme Park Inc slice: no economy, staff, advisor, missions, Global Master Save, "
-			+ "COS files, park saves or sharing, and no Theme Park Inc interface; building is free; "
+		ExperimentalNote = "experimental Theme Park Inc slice: money only (cash, loans, build and running costs, calendar); "
+			+ "no staff, research, challenges, advisor, missions, Global Master Save, "
+			+ "COS files, park saves or sharing, and no Theme Park Inc interface; "
 			+ "none of it is checked against the original game"
 	};
 }
@@ -137,7 +174,10 @@ public static class GameEditions
 		return Convert.ToHexString( SHA256.HashData( input ) ).Equals( StandardSamSha256, StringComparison.Ordinal );
 	}
 
-	/// <summary>Classifies a game <c>Data</c> folder. IO errors count as "not Theme Park Inc".</summary>
+	/// <summary>
+	/// Classifies a game <c>Data</c> folder. IO errors count as "not Theme Park Inc". For Theme Park World the report also
+	/// names the language of a single-language CD (<see cref="DetectCdLanguage"/>: the Spanish CD, the Korean Slim Pack CD, the Polish CD).
+	/// </summary>
 	public static GameEditionReport Detect( string dataDirectory )
 	{
 		try
@@ -149,11 +189,65 @@ public static class GameEditions
 				&& ThemeParkInc.Any( theme => GameLanguage.FindEntry( levels, theme, true ) != null )
 				&& !ThemeParkWorld.Any( theme => GameLanguage.FindEntry( levels, theme, true ) != null ) )
 				return new( GameEdition.ThemeParkInc, GameEditionEvidence.Structure );
+			var (language, evidence, locales) = DetectCdLanguage( dataDirectory );
+			return new( GameEdition.ThemeParkWorld, GameEditionEvidence.None ) { CdLanguage = language, CdLanguageEvidence = evidence, LocaleLanguages = locales };
 		}
 		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
 		{
 		}
 		return new( GameEdition.ThemeParkWorld, GameEditionEvidence.None );
+	}
+
+	/// <summary>
+	/// Windows locale identifiers of the <c>0000XXXX.016</c>/<c>.256</c> locale files on the CDs (the installer's language marks). The
+	/// Korean Slim Pack CD carries 0404 and 1004 (Chinese) next to 0412 (Korean) and five European locales, so these files only name which
+	/// languages the installer knows, not the CD's own.
+	/// </summary>
+	private static readonly Dictionary<int, string> LocaleIdentifiers = new()
+	{
+		[0x0404] = "Chinese (Traditional)", [0x1004] = "Chinese (Simplified)", [0x0406] = "Danish", [0x0407] = "German", [0x0409] = "English",
+		[0x0809] = "English", [0x040A] = "Spanish", [0x0C0A] = "Spanish", [0x040C] = "French", [0x0410] = "Italian", [0x0412] = "Korean",
+		[0x0413] = "Dutch", [0x0415] = "Polish", [0x041D] = "Swedish"
+	};
+
+	/// <summary>
+	/// The language a single-language CD (or a game folder copied from one) was made for, with what named it. The Spanish and
+	/// Korean CDs have a complete <c>Data</c> folder whose <c>Language</c> holds English next to their own language, so the
+	/// language comes from beside <c>Data</c>: first the one <c>Autorun/&lt;language&gt;.tre</c> besides <c>autorun.tre</c> and
+	/// <c>general.tre</c>, then a <c>&lt;Language&gt;</c> folder (<c>Spanish</c>, <c>Korean</c>) that matches a <c>Data/Language</c> folder, then
+	/// a single non-English locale file. Also returns the languages the locale files name. An installed game, the European CD
+	/// (its languages are <c>&lt;Lang&gt;/data</c> overlays) and a folder without such marks return none.
+	/// </summary>
+	public static (string? Language, GameLanguageEvidence Evidence, IReadOnlyList<string> Locales) DetectCdLanguage( string dataDirectory )
+	{
+		var root = Path.GetDirectoryName( Path.TrimEndingDirectorySeparator( Path.GetFullPath( dataDirectory ) ) );
+		if ( root == null || !Directory.Exists( root ) )
+			return (null, GameLanguageEvidence.None, Array.Empty<string>());
+		var installed = GameLanguage.FindEntry( dataDirectory, "Language", true ) is { } languageRoot
+			? Directory.EnumerateDirectories( languageRoot ).Select( directory => GameLanguage.CanonicalName( Path.GetFileName( directory ) ) )
+				.Where( name => !string.Equals( name, GameLanguage.DefaultLanguage, StringComparison.OrdinalIgnoreCase ) ).ToArray()
+			: Array.Empty<string>();
+
+		var locales = Directory.EnumerateFiles( root )
+			.Select( path => Path.GetFileName( path ) )
+			.Select( name => name.Length == 12 && name.StartsWith( "0000", StringComparison.Ordinal ) && name[8] == '.' && name[9..] is "016" or "256" && int.TryParse( name.AsSpan( 4, 4 ), System.Globalization.NumberStyles.HexNumber, null, out var id ) ? id : -1 )
+			.Where( LocaleIdentifiers.ContainsKey ).Distinct().Order().Select( id => LocaleIdentifiers[id] ).Distinct().ToArray();
+
+		if ( GameLanguage.FindEntry( root, "Autorun", true ) is { } autorun )
+		{
+			var tre = Directory.EnumerateFiles( autorun, "*.tre" ).Select( path => Path.GetFileNameWithoutExtension( path ) )
+				.Where( name => !name.Equals( "autorun", StringComparison.OrdinalIgnoreCase ) && !name.Equals( "general", StringComparison.OrdinalIgnoreCase ) )
+				.Select( GameLanguage.CanonicalName ).Where( name => installed.Contains( name, StringComparer.OrdinalIgnoreCase ) ).Distinct().ToArray();
+			if ( tre.Length == 1 )
+				return (tre[0], GameLanguageEvidence.AutorunTre, locales);
+		}
+		var folders = installed.Where( name => GameLanguage.FindEntry( root, name, true ) != null ).ToArray();
+		if ( folders.Length == 1 )
+			return (folders[0], GameLanguageEvidence.LanguageFolder, locales);
+		var single = locales.Where( name => installed.Contains( name, StringComparer.OrdinalIgnoreCase ) ).ToArray();
+		if ( single.Length == 1 && locales.Count( name => name != "English" ) == 1 )
+			return (single[0], GameLanguageEvidence.LocaleFile, locales);
+		return (null, GameLanguageEvidence.None, locales);
 	}
 
 	/// <summary>The Theme Park Inc worlds the experimental slice may load.</summary>
@@ -189,6 +283,6 @@ public static class GameEditions
 
 	/// <summary>One line for the start-up log: what the slice is and that it is not checked against the original game.</summary>
 	// [EXT:tpi-capability-gates] the slice's stated limits are OpenTPW's honest capability gates (a scope decision), not traced Theme Park Inc behaviour
-	public static string SliceNotice => "experimental Theme Park Inc slice: world, building and guests only; "
-		+ "no economy, staff, advisor, missions, Global Master Save, COS or Theme Park Inc interface; original behaviour is not verified.";
+	public static string SliceNotice => "experimental Theme Park Inc slice: world, building, guests and money only; "
+		+ "no staff, research, challenges, advisor, missions, Global Master Save, COS or Theme Park Inc interface; original behaviour is not verified.";
 }

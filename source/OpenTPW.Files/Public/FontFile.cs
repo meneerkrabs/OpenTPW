@@ -7,7 +7,7 @@ public sealed record FontGlyph( char Character, int Width, int Height, sbyte Off
 public sealed class FontFile : BaseFormat
 {
 	public const int MaximumFileBytes = 16 * 1024 * 1024;
-	public const int MaximumGlyphs = 4096;
+	public const int MaximumGlyphs = 20000;
 	public const int MaximumGlyphPixels = 1024 * 1024;
 	public const int MaximumTotalPixels = 16 * 1024 * 1024;
 	public byte HeaderWidthHint { get; private set; }

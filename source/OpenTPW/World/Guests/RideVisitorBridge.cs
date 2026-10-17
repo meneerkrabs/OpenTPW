@@ -902,6 +902,30 @@ public sealed class RideVisitorBridge : IRideVisitorBridge
 			Release( off );
 		}
 
+		if ( DefersAdmission )
+			return;
+		UpdateAdmission();
+	}
+
+	/// <summary>
+	/// True while the host runs the ride update of a park turn from the thing sweep (<see cref="UpdateAdmission"/>): <see cref="HostStep"/> then does the per-tick protocol only. Not saved;
+	/// the host sets it for the ticks that start a swept turn.
+	/// </summary>
+	public bool DefersAdmission { get; set; }
+
+	/// <summary>
+	/// The ride update of a park turn (tp.exe 0x004E0E00, called from the thing sweep after the object's wear and breakdown update 0x004E0B90): once per turn it dismisses the head of a
+	/// closed or broken ride's queue and runs the admission. <see cref="HostStep"/> calls it itself unless <see cref="DefersAdmission"/>.
+	/// </summary>
+	public void UpdateAdmission()
+	{
+		if ( vm == null )
+			return;
+		if ( vm.State != RideVMState.Running && vm.State != RideVMState.Waiting )
+		{
+			ReleaseAll();
+			return;
+		}
 		// [BIN:TPW-EXE:0x00516380 park turn walk] the park update runs once per park turn (the main loop calls it when its 31 ms substep counter & 7 == 0, 0x0054F668) and dispatches every live-list thing whose pointer is set and whose byte +3 is 0 (0x005163F0..0x005163F7, no type, state or id test; the whole walk is skipped while world mode +0x1DA738 is 4, the turn still counting, 0x00516395, DET-plan §2.1) to 0x0050B360: a ride (type 3) runs 0x004E0B90, then the state dispatch 0x004E0E00, whose state 0 runs the admission 0x004E1220 once (0x004E14E0); a guest (type 1) runs 0x00501650, then 0x005019F0, whose state 11 is 0x004FFFF0; OpenTPW's lastAdmissionTurn and LastQueueUpdateTurn guards give the same once-per-turn cadence
 		var turn = Host?.ParkTurn ?? -1;
 		if ( turn >= 0 && turn == lastAdmissionTurn )

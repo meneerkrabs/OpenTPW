@@ -205,8 +205,9 @@ public sealed class SignFile
 			ReadString( data, offset + 360, 32 ) );
 		if ( faceName.Length == 0 || !string.Equals( faceName, logFont.FaceName, StringComparison.Ordinal ) )
 			throw new InvalidDataException( $"Sign text slot {index} face '{faceName}' does not match its LOGFONT face '{logFont.FaceName}'." );
-		if ( !fileName.EndsWith( ".ttf", StringComparison.OrdinalIgnoreCase ) )
-			throw new InvalidDataException( $"Sign text slot {index} font file '{fileName}' is not a .TTF name." );
+		// The Korean CD's signs all name its Hangul font, the TrueType collection gulim.ttc, instead of a .TTF.
+		if ( !fileName.EndsWith( ".ttf", StringComparison.OrdinalIgnoreCase ) && !fileName.EndsWith( ".ttc", StringComparison.OrdinalIgnoreCase ) )
+			throw new InvalidDataException( $"Sign text slot {index} font file '{fileName}' is not a .TTF or .TTC name." );
 		var effects = new uint[11];
 		for ( var i = 0; i < effects.Length; i++ )
 			effects[i] = U32( data, offset + 392 + i * 4 );

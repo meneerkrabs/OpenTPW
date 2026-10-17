@@ -100,10 +100,26 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		ownsThings = false;
 	}
 	public IReadOnlyList<Guest> Guests => guests;
+	/// <summary>True when the guests take their ids from a host's thing pool (<see cref="AttachThings"/>), so the host's thing sweep can visit them.</summary>
+	public bool SharesThings => !ownsThings;
 	public IReadOnlyList<IRideVisitorBridge> Attractions => attractions;
 	public long TickCount { get; private set; }
-	/// <summary>The park turn (248 ms of the fixed clock, <see cref="ParkCalendar.Turn"/>); queue waits and delays count these.</summary>
-	public long ParkTurn => ParkCalendar.Turn( TickCount );
+	/// <summary>The park turn (248 ms of the fixed clock, <see cref="ParkCalendar.Turn"/>), counted from the guests' own start; queue waits and delays count these.</summary>
+	public long ParkTurn => ParkCalendar.Turn( TickCount + turnPhase ) - ParkCalendar.Turn( turnPhase );
+
+	// the ticks the economy's clock was ahead of the guests' when the host aligned them: an economy that starts at an original save's turn has run that many ticks before the first guest tick
+	private long turnPhase;
+
+	/// <summary>
+	/// Puts the guests' turn boundaries on the economy's: the guests' tick count started at 0 where an economy that begins at an original save's turn started at that turn's tick, so the two
+	/// clocks cut the ticks into turns at different places (a tick apart in two of five turns) and one park turn could not be swept as a whole. The guests' <see cref="ParkTurn"/> still counts
+	/// from their own start. Nothing changes while both start together.
+	/// </summary>
+	public void AlignTurns( long economyTick )
+	{
+		if ( economyTick >= TickCount )
+			turnPhase = economyTick - TickCount;
+	}
 	public double TimeSeconds { get; private set; }
 	public bool ArrivalsEnabled { get; set; } = true;
 	/// <summary>
@@ -135,6 +151,14 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:STP-PPC:0x100CB564 arrival factor] 0x1083c8 returns the thing at ThingArray[u16 game+0x1DA724] (mWeather, created at 0x104a7c with the weather constructor 0x10298c, stored at 0x104a98 and saved by 0x105d3c as "mWeather"); 0xcb568 reads its +48 word, mCurrentDrops (serialised by 0x102b1c); positive selects 0.8f
 	// [BIN:STP-PPC:0x10103300-0x10103348 drop ramp] the only writers of +48 are the constructor (0x102aa0, zero), the ramp toward mTargetDrops (+52) and the rain stop (0x103d08, zero), so the word is positive exactly while drops are falling
 	public Func<bool>? WeatherDropsFalling { get; set; }
+	/// <summary>
+	/// Theme Park Inc's weather state for the group size: 1 heatwave, 2 rain, 3 storm, 4 snow, anything else (or null) none. The original reads the
+	/// weather thing's word +0x70. OpenTPW runs no Theme Park Inc weather, so nothing sets this and the factor is always the plain 100 percent.
+	/// </summary>
+	// [BIN:TPI-EXE:0x005BCDDE weather state] the weather thing's word +0x70 minus 1, when it is at most 3, indexes a jump table (0x005BCF08) whose first entry 0x005BCE06 loads the heatwave word 0x00A02250 (the others, in order, rain 0x00A02244, storm 0x00A02248, snow 0x00A0224C; ORACLE.md X7); any other value takes 100.0f
+	public Func<int>? ArrivalWeatherState { get; set; }
+	/// <summary>Index into <see cref="GuestSettings.ArrivalWeatherPercentages"/> (rain, storm, snow, heatwave) of weather states 1 to 4 (heatwave, rain, storm, snow).</summary>
+	private static readonly int[] WeatherStateIndex = { 3, 0, 1, 2 };
 	/// <summary>The original's limit on guests in the park when a group's size is set.</summary>
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] a group is cut so the guests already counted plus the group stay at most 1500 (0x5DC)
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] executed by the PowerPC oracle (docs/reverse/ORACLE.md F9): the 500 cut applies when the GameType word (data:0x53d98) is 1, i.e. online parks only; offline parks use 1500
@@ -369,6 +393,28 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 
 	public void Tick( float deltaSeconds )
 	{
+		BeginTick( deltaSeconds );
+		UpdateArrivals( deltaSeconds );
+		if ( turnStarted )
+		{
+			RebuildOccupants();
+		}
+		// [APPROX:DET-014] without a host thing sweep (a simulation of its own, the ticks between park turns) the guests' draws interleave in this list order, not the original's newest-first thing sweep (DET-013), and the draws of the won sideshow's tail (0x004FE8D9) and the balloon model's recreation (0x0050205F) are not taken
+		for ( var index = 0; index < guests.Count; index++ )
+			UpdateGuest( guests[index], deltaSeconds );
+		for ( var index = guests.Count - 1; index >= 0; index-- )
+		{
+			if ( guests[index].State != GuestState.Gone )
+				continue;
+			RemoveGone( guests[index] );
+		}
+		if ( ownsThings )
+			things.DestroyQueued();
+	}
+
+	/// <summary>The start of every tick: the checks, the tick counters, the turn flag and the queue sync.</summary>
+	private void BeginTick( float deltaSeconds )
+	{
 		if ( !float.IsFinite( deltaSeconds ) || deltaSeconds < 0 || deltaSeconds > Guest.MaximumTimeInParkSeconds )
 			throw new ArgumentOutOfRangeException( nameof( deltaSeconds ) );
 		// Preflight the display counter before mutating the simulation, rather than wrapping or inventing a duration.
@@ -378,29 +424,65 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		TickCount++;
 		TimeSeconds += deltaSeconds;
 		staffOnMap = StaffOnMapView?.Invoke().ToArray();
-		turnStarted = ParkCalendar.Turn( TickCount ) != ParkCalendar.Turn( TickCount - 1 );
+		turnStarted = ParkCalendar.Turn( TickCount + turnPhase ) != ParkCalendar.Turn( TickCount - 1 + turnPhase );
 		SyncQueues();
-		UpdateArrivals( deltaSeconds );
-		if ( turnStarted )
-		{
-			RebuildOccupants();
-		}
-		// [APPROX:DET-014] the guests' draws interleave in this id order, not the original's newest-first thing sweep after the vehicle update (DET-013), and the draws of the won sideshow's tail (0x004FE8D9) and the balloon model's recreation (0x0050205F) are not taken
-		for ( var index = 0; index < guests.Count; index++ )
-			UpdateGuest( guests[index], deltaSeconds );
-		for ( var index = guests.Count - 1; index >= 0; index-- )
-		{
-			if ( guests[index].State != GuestState.Gone )
-				continue;
-			// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
-			things.QueueDestroy( guests[index].Id );
-			byId.Remove( guests[index].Id );
-			guests.RemoveAt( index );
-			Departed++;
-		}
-		if ( ownsThings )
-			things.DestroyQueued();
 	}
+
+	/// <summary>A gone guest leaves the simulation: it asks for its destruction and its slot is freed at the park turn's end.</summary>
+	private void RemoveGone( Guest guest )
+	{
+		// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
+		things.QueueDestroy( guest.Id );
+		byId.Remove( guest.Id );
+		guests.Remove( guest );
+		Departed++;
+	}
+
+	/// <summary>True when the next <see cref="Tick"/> starts a park turn.</summary>
+	public bool NextTickStartsTurn => ParkCalendar.Turn( TickCount + 1 + turnPhase ) != ParkCalendar.Turn( TickCount + turnPhase );
+
+	private readonly HashSet<int> sweptGuests = new();
+	private float sweepDelta;
+
+	/// <summary>
+	/// The start of a tick that begins a park turn the host sweeps thing by thing: everything <see cref="Tick"/> does except the arrival update, the guests' updates and their removal,
+	/// which the host calls (<see cref="SweepGuest"/>, <see cref="FinishSweep"/>, <see cref="UpdateTurnEndArrivals"/>) at the places the original's turn takes them.
+	/// </summary>
+	public void BeginSweepTick( float deltaSeconds )
+	{
+		if ( !NextTickStartsTurn )
+			throw new InvalidOperationException( "A swept tick starts a park turn." );
+		BeginTick( deltaSeconds );
+		RebuildOccupants();
+		sweptGuests.Clear();
+		sweepDelta = deltaSeconds;
+	}
+
+	/// <summary>
+	/// One guest's update in the thing sweep (0x00501650, then 0x005019F0 for the thing); a guest that leaves asks for its destruction at once, as the original's does in its own update.
+	/// False for an id that is no guest in the park.
+	/// </summary>
+	public bool SweepGuest( int id )
+	{
+		if ( !byId.TryGetValue( id, out var guest ) || !sweptGuests.Add( id ) )
+			return false;
+		UpdateGuest( guest, sweepDelta );
+		if ( guest.State == GuestState.Gone )
+			RemoveGone( guest );
+		return true;
+	}
+
+	/// <summary>Updates the guests the sweep did not reach (one outside the pool's list, a headless scene's), in list order, then forgets the sweep.</summary>
+	public void FinishSweep()
+	{
+		foreach ( var guest in guests.ToArray() )
+			if ( !things.IsQueued( guest.Id ) )
+				SweepGuest( guest.Id );
+		sweptGuests.Clear();
+	}
+
+	/// <summary>The arrival update at the world turn's tail (0x004CF3E0 through 0x004D7B20, after the destroys of the turn): a group starts, a guest steps off the vehicle.</summary>
+	public void UpdateTurnEndArrivals() => UpdateArrivals( sweepDelta );
 
 	/// <summary>
 	/// The original's arrivals: when more than <see cref="GuestSettings.ArrivalTimeBetween"/> timer units (four park turns each)
@@ -456,7 +538,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// restarts the timer (0x0041A960), clears the active byte and dispatches with 0; the status 6 branch (0x004CF475) is unreachable, 0x0051A690 turning 6 into -1
 	// [BIN:TPW-EXE:0x004CF4B6 pick-up] then, when a leaving guest waits at the stop (0x0051A9D0), status -1 or 0, or 2 with the group exactly 0 (test at
 	// 0x004CF4E1), dispatches with 0; with none waiting, status 4 does
-	// [APPROX:ARRIVAL-001] a cell's thing list is OpenTPW's occupant list (WALK-003); this update runs before the turn's guest updates, the original's after its thing sweep (the end of 0x516380); an imported original save starts with no vehicle at work — evidence needed: the saved word +0x1DA72A and the places the world variables keep the vehicle handles
+	// [APPROX:ARRIVAL-001] a cell's thing list is OpenTPW's occupant list (WALK-003); a swept turn runs this update after the thing sweep and the turn's destroys, as the original does (the end of 0x516380, Level.RunThingSweep); an imported original save starts with no vehicle at work — evidence needed: the saved word +0x1DA72A and the places the world variables keep the vehicle handles
 	private void UpdateArrivalVehicle()
 	{
 		var turn = ArrivalClock?.Invoke() ?? ParkTurn;
@@ -579,8 +661,22 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( ArrivalsHalted?.Invoke() == true )
 			return 0;
 		var perVisitor = Settings.ArrivalPointsPerVisitor < 2 ? 1 : Settings.ArrivalPointsPerVisitor;
-		var factor = WeatherDropsFalling?.Invoke() == true ? 0.8f : 1.2f;
-		var count = (int)(factor * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
+		int count;
+		if ( Settings.ArrivalWeatherPercentages is { } percentages )
+		{
+			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (the oracle's X7 agrees on 532 of 532 inputs read at 53 bits); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
+			// [APPROX:ARRIVAL-008] OpenTPW runs no Theme Park Inc weather (its weather thing's state word +0x70 is not traced), so the percentage is always 100 and the rain, storm, snow and heatwave modifiers never apply; the routine's other exit (a mode object answering 3, 0x005BCD7A) has no OpenTPW counterpart — evidence needed: the weather thing's states and what sets mode 3
+			var state = ArrivalWeatherState?.Invoke() ?? 0;
+			double percent = state is >= 1 and <= 4 ? percentages[WeatherStateIndex[state - 1]] : 100.0;
+			var points = unchecked( Settings.ArrivalNewParkBonus + (ParkPoints?.Invoke() ?? 0) );
+			var scaled = (double)points * (percent * (double)0.01f) / perVisitor;
+			count = Math.Abs( scaled ) < 2147483648.0 ? (int)scaled : int.MinValue;
+		}
+		else
+		{
+			var factor = WeatherDropsFalling?.Invoke() == true ? 0.8f : 1.2f;
+			count = (int)(factor * (float)((ParkPoints?.Invoke() ?? 0) + Settings.ArrivalNewParkBonus)) / perVisitor;
+		}
 		count = Math.Max( count, Settings.ArrivalMinPeople );
 		var limit = OnlineVisit ? OnlineArrivalParkLimit : ArrivalParkLimit;
 		if ( (uint)(guests.Count + count) > (uint)limit )   // compared unsigned (jbe at 0x004CF690 and 0x004CF6EE)
@@ -1016,10 +1112,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// <summary>
 	/// Starts a walk to <paramref name="target"/>. On the park's cells this is the original's SetDest (<see cref="GuestNavigation.Navigate"/>:
 	/// a route search from the guest's cell with its walk mask), and <paramref name="cells"/> (from the guest's own cell on) and
-	/// <paramref name="alsoOpen"/> are bookkeeping for the M3 gate; off the grid (the arrival lanes) and for a queue walk
-	/// (<paramref name="alongCells"/>) the guest walks the cells themselves.
+	/// <paramref name="alsoOpen"/> are bookkeeping for the M3 gate; off the grid (a guest of an old save's arrival lane) the guest walks the cells themselves.
 	/// </summary>
-	private bool SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool alongCells = false )
+	private bool SetDestination( Guest guest, (int X, int Y) target, List<(int X, int Y)> cells, List<(int X, int Y)>? alsoOpen = null, bool routeWalkIfRefused = false )
 	{
 		var navigation = guest.Navigation;
 		var route = new List<(int X, int Y)>( cells.Count + 1 ) { navigation.Cell };
@@ -1029,10 +1124,18 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				route.Add( cell );
 		}
 		var found = true;
-		if ( navigation.OffGrid || alongCells )
+		if ( navigation.OffGrid )
 			navigation.SetDestination( target.X, target.Y, route, alsoOpen );
 		else
+		{
 			found = navigation.Navigate( Grid.Cells, target.X, target.Y, route, alsoOpen );
+			// [APPROX:WALK-006] a refused search keeps the route walk of the ride's cells for the last walk into the entrance cell (see UpdateStanding): only the entrance cells of a park resumed from a save made before the import took the saved link byte refuse it
+			if ( !found && routeWalkIfRefused )
+			{
+				navigation.SetDestination( target.X, target.Y, route, alsoOpen );
+				found = true;
+			}
+		}
 		guest.HasWaypoint = true;
 		return found;
 	}
@@ -2136,14 +2239,20 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		guest.QueueTargetIndex = index;
 		guest.QueueTargetX = target.X / (float)Fixed16.One;
 		guest.QueueTargetY = target.Y / (float)Fixed16.One;
-		// [BIN:TPW-EXE:0x004D8750 queue walk] a queue walk is the search and edge-test walk of every guest (Navigate): the edge test opens a step between queue cells, and between the join path and the back cell, through the link bytes the queue tool wrote (QueuePaths); the walk into the ride's entrance cell stays a route walk (WALK-006)
-		return SetDestination( guest, target, route, alsoOpen, alongCells: toEntrance );
+		// [BIN:TPW-EXE:0x004D8750 queue walk] a queue walk is the search and edge-test walk of every guest (Navigate): the edge test opens a step between queue cells, and between the join path and the back cell, through the link bytes the queue tool wrote (QueuePaths); the last walk into the ride's entrance cell is the same walk (the stand point, state 13)
+		return SetDestination( guest, target, route, alsoOpen, routeWalkIfRefused: toEntrance );
 	}
 
 	/// <summary>The ride's entrance cell: the front queue cell's neighbour towards the ride.</summary>
-	private static (int X, int Y) EntranceCellOf( IRideVisitorBridge attraction )
+	private static (int X, int Y) EntranceCellOf( IRideVisitorBridge attraction ) => StandCellOf( attraction );
+
+	/// <summary>The cell a called guest's stand point lies in (the ride's entrance cell; the fallback front cell itself once the queue's outside cell was removed).</summary>
+	internal static (int X, int Y) StandCellOf( IRideVisitorBridge attraction )
 	{
 		var front = attraction.QueueCells[0];
+		// [EXT:removable-access-cells] a queue whose outside cell was removed falls back to the nearest path cell as its one-cell front (RideVisitorBridge.RecomputeQueue): guests stand in that path cell itself, where the original's entrance cell (type 9, always the object's own cell, 0x4DE040) is never edited away
+		if ( attraction.QueueFrontCell is { } outside && front != outside )
+			return front;
 		var (dx, dy) = GuestPathGrid.Directions[attraction.DirectionTowardsFront( 0 )];
 		return (front.X + dx, front.Y + dy);
 	}
@@ -2349,6 +2458,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		if ( guest.QueuePosition == 0 && guest.QueueCalled && attraction.CalledGuest == guest.Id )
 		{
 			guest.QueueCalled = false;
+			// [BIN:TPW-EXE:0x004FFFF0 called forward] the call (flag +0x1F8, the ride's called guest 0x004E0AA0) asks the generic route 0x004FA5F0 to the stand point 0x004DEDF0(0) (the entry cell +0x36 of the ride); a route makes state 13 ("being loaded to ride"), none logs "the player has removed the path from under me and I can no longer get into object" and releases the called slot (0x004E0AC0), unlinks the guest (0x004DDD20) and dismisses it (0x005012F0) through the exit 0x005004AA, with no thought
+			// where the search cannot enter the entrance cell (a park resumed from a save made before the import took the saved link byte holds none on it toward the path outside, so the edge test 0x4D8750 refuses the step) the guest keeps OpenTPW's route walk into it instead of the original's dismissal (WALK-006, SetDestination)
 			SetQueueDestination( guest, attraction, 0, StandPoint( attraction ), toEntrance: true );
 			guest.State = GuestState.Boarding;
 			return;

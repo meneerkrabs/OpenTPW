@@ -36,7 +36,6 @@ internal sealed class UiRenderer : IDisposable
 		shader = ShaderCompiler.CompileShader( Path.GetFullPath( "content/shaders/ui-batch.shader", AppContext.BaseDirectory ) );
 		resourceLayout = Device.ResourceFactory.CreateResourceLayout( shader.Reflection.ResourceLayouts.Single() );
 		TexturePackSwitch.PackChanged += ReloadImages;
-		TexturePackSwitch.FilesAvailable += ReloadImages;
 		pipeline = Device.ResourceFactory.CreateGraphicsPipeline( new GraphicsPipelineDescription(
 			BlendStateDescription.SingleAlphaBlend,
 			DepthStencilStateDescription.Disabled,
@@ -205,7 +204,6 @@ internal sealed class UiRenderer : IDisposable
 	public void Dispose()
 	{
 		TexturePackSwitch.PackChanged -= ReloadImages;
-		TexturePackSwitch.FilesAvailable -= ReloadImages;
 		foreach ( var set in renderedSets.Values )
 			set.Dispose();
 		renderedSets.Clear();

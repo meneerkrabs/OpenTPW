@@ -155,6 +155,7 @@ public sealed class PredecodedUiArtTests
 	{
 		var root = Path.Combine( Path.GetTempPath(), "opentpw-predecoded-find-" + Guid.NewGuid().ToString( "N" ) );
 		var previousShipped = TexturePack.ShippedDirectory;
+		var previousOverride = Environment.GetEnvironmentVariable( "OPENTPW_TEXTURE_PACK" );
 		try
 		{
 			var shipped = Path.Combine( root, "shipped", "textures" );
@@ -174,19 +175,19 @@ public sealed class PredecodedUiArtTests
 			File.WriteAllBytes( sibling, new byte[1] );
 			TexturePack.Activate( "", new List<string>(), enhancedInterface: false );
 			Assert.IsNull( TexturePack.Find( "/ui/textures/b_buy.wct" ) );
-			// An active default pack keeps its precedence: the pack PNG wins over the shipped sibling.
+			// An OPENTPW_TEXTURE_PACK override keeps its precedence: the pack PNG wins over the shipped sibling.
 			TexturePack.Activate( "", new List<string>() );
-			var packs = Path.Combine( root, "packs" );
-			var pack = Path.Combine( packs, TexturePack.DefaultName );
+			var pack = Path.Combine( root, "packs", "override" );
 			Directory.CreateDirectory( Path.Combine( pack, "textures", "ui", "textures" ) );
-			File.WriteAllText( Path.Combine( pack, "pack.json" ), "{\"Format\":1}" );
 			var packed = Path.Combine( pack, "textures", "ui", "textures", "b_buy.wct.png" );
 			File.WriteAllBytes( packed, new byte[1] );
-			TexturePack.Activate( TexturePack.DefaultName, new List<string>(), packs, packs );
+			Environment.SetEnvironmentVariable( "OPENTPW_TEXTURE_PACK", Path.Combine( pack, "textures" ) );
+			TexturePack.Activate( "", new List<string>() );
 			Assert.AreEqual( Path.GetFullPath( packed ), Path.GetFullPath( TexturePack.Find( "/ui/textures/b_buy.wct" )! ) );
 		}
 		finally
 		{
+			Environment.SetEnvironmentVariable( "OPENTPW_TEXTURE_PACK", previousOverride );
 			TexturePack.ShippedDirectory = previousShipped;
 			TexturePack.Activate( "", new List<string>() );
 			Directory.Delete( root, true );

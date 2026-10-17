@@ -67,7 +67,6 @@ public sealed class StaffRenderer : Entity
 		material = new Material<ObjectUniformBuffer>( "content/shaders/sprite.shader" );
 		material.Set( "Color", slots );
 		TexturePackSwitch.PackChanged += ReloadAtlases;
-		TexturePackSwitch.FilesAvailable += ReloadAtlases;
 	}
 
 	private void ReloadAtlases() => ReloadAtlases( null );
@@ -139,7 +138,7 @@ public sealed class StaffRenderer : Entity
 
 	private (int Atlas, int Frame, bool Mirror, StaffClip Clip)? Select( StaffMember member, MemberView view, float now, SVector3 cameraRight, SVector3 cameraForward )
 	{
-		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.VariantKey( member.NameIndex, member.Id ) );
+		var atlasIndex = sprites.AtlasFor( member.Type, StaffSpriteRules.KeyOf( member ) );
 		if ( atlasIndex < 0 || atlasIndex >= textures.Count )
 			return null;
 		var atlas = sprites.Atlases[atlasIndex];
@@ -316,7 +315,6 @@ public sealed class StaffRenderer : Entity
 	{
 		deleted = true;
 		TexturePackSwitch.PackChanged -= ReloadAtlases;
-		TexturePackSwitch.FilesAvailable -= ReloadAtlases;
 		var ownedTextures = textures.ToArray();
 		textures.Clear();
 		foreach ( var texture in ownedTextures )

@@ -232,7 +232,7 @@ public class ModsScreenTests
 		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), Services() );
 		stack.Push( screen );
 		var rows = ((UiScrollList)screen.Find( "extensions" )!).Rows();
-		CollectionAssert.AreEqual( new[] { "OpenTPW online  1.0.0", "Cross-edition objects  1.0.0", Text( OpenTpwText.ExtensionGuestInsightsName ) + "  1.0.0", "Pools  1.0.0", Text( OpenTpwText.ExtensionPoolGuestArtName ) + "  1.0.0" }, rows.ToArray() );
+		CollectionAssert.AreEqual( new[] { "OpenTPW online  1.0.0", "Cross-edition objects  1.0.0", Text( OpenTpwText.ExtensionGuestInsightsName ) + "  1.0.0", "Pools  1.0.0", Text( OpenTpwText.ExtensionPoolGuestArtName ) + "  1.0.0", Text( OpenTpwText.ExtensionRestoredAdviceName ) + "  1.0.0" }, rows.ToArray() );
 		stack.Clear();
 	}
 
@@ -304,7 +304,7 @@ public class ModsScreenTests
 	public void TheGuestExtensionStringsExistInAllNineLanguages()
 	{
 		foreach ( var key in new[] { OpenTpwText.ExtensionSmarterGuestsName, OpenTpwText.ExtensionSmarterGuestsDescription, OpenTpwText.ExtensionGuestInsightsName, OpenTpwText.ExtensionGuestInsightsDescription,
-			OpenTpwText.RefusalsTitle, OpenTpwText.RefusalTooExpensive, OpenTpwText.RefusalQueueTooLong, OpenTpwText.RefusalTooScary, OpenTpwText.RefusalTooBoring, OpenTpwText.RefusalRideUnavailable } )
+			OpenTpwText.ExtensionRestoredAdviceName, OpenTpwText.ExtensionRestoredAdviceDescription, OpenTpwText.RefusalsTitle, OpenTpwText.RefusalTooExpensive, OpenTpwText.RefusalQueueTooLong, OpenTpwText.RefusalTooScary, OpenTpwText.RefusalTooBoring, OpenTpwText.RefusalRideUnavailable } )
 		{
 			var texts = SupplementaryStrings.SupportedLanguages.Select( language => SupplementaryStrings.Get( key, language ) ).ToList();
 			Assert.AreEqual( 9, texts.Count, $"{key}: nine languages" );

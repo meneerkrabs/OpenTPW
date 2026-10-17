@@ -90,8 +90,7 @@ public static class OptionsScreen
 	public static string TexturePackLabel( UiStringTable strings, string pack ) => pack.ToLowerInvariant() switch
 	{
 		"" => strings.Extra( OpenTpwText.TexturePackOriginal ),
-		"clarity-enhanced" => strings.Extra( OpenTpwText.TexturePackClarity ),
-		"enhanced" => strings.Extra( OpenTpwText.TexturePackClean ),
+		"enhanced" => strings.Extra( OpenTpwText.TexturePackEnhanced ),
 		"detailed" => strings.Extra( OpenTpwText.TexturePackDetailed ),
 		_ => pack
 	};
@@ -507,11 +506,11 @@ public static class OptionsScreen
 		Row( "uiScale", () => Prefix( OpenTpwText.UiScale ) + UiScaleLabel( strings, state.Display.UiScale ),
 			() => Enumerable.Range( 0, display.MaximumUiScale + 1 ).Select( scale => Prefix( OpenTpwText.UiScale ) + UiScaleLabel( strings, scale ) ),
 			direction => state.Display = state.Display with { UiScale = ((state.Display.UiScale + direction) % (display.MaximumUiScale + 1) + display.MaximumUiScale + 1) % (display.MaximumUiScale + 1) } );
-		// [EXT:texture-pack] Original, Clarity, the legacy Enhanced choice, then every other usable pack.
+		// [EXT:texture-pack] Original, Enhanced, then every other usable pack.
 		IReadOnlyList<string> PackChoices()
 		{
-			// Both enhanced choices fall back to shipped interface art when their world pack is unavailable.
-			var choices = new List<string> { "", TexturePack.DefaultName, TexturePack.EnhancedName };
+			// Enhanced falls back to shipped interface art when its world pack is unavailable.
+			var choices = new List<string> { "", TexturePack.EnhancedName };
 			choices.AddRange( services.TexturePacks.Where( pack => !choices.Contains( pack, StringComparer.OrdinalIgnoreCase ) ) );
 			// A configured pack that is no longer installed can still be switched away from.
 			if ( state.TexturePack.Length > 0 && !choices.Contains( state.TexturePack, StringComparer.OrdinalIgnoreCase ) )

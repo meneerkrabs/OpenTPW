@@ -273,8 +273,8 @@ public sealed record GraphicsSettings
 	public float ViewDistanceScale { get; init; } = 1;
 	/// <summary>
 	/// [EXT:texture-pack] Texture choice (docs/TEXTURE-PACKS.md): empty = original textures (the startup default);
-	/// <c>clarity-enhanced</c> is the Enhanced option. Packs are resolved from local config, then bundled content. Missing replacements
-	/// use the shipped HD interface art or original world textures. Stored as <c>"TexturePack"</c>.
+	/// <c>enhanced</c> is the Enhanced option. Packs are resolved from local config, then bundled content. Missing replacements
+	/// use the shipped HD interface art or original world textures. The retired <c>clarity-enhanced</c> choice reads as Original. Stored as <c>"TexturePack"</c>.
 	/// </summary>
 	[JsonPropertyName( "TexturePack" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public string? TexturePackName { get; init; }
@@ -284,6 +284,10 @@ public sealed record GraphicsSettings
 	/// <summary>Legacy boolean of earlier versions: <c>true</c> reads as <c>"enhanced"</c> (<see cref="Validate"/>); never written.</summary>
 	[JsonPropertyName( "EnhancedTextures" ), JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public bool? EnhancedTextures { get; init; }
+
+	/// <summary>Set by <see cref="Validate"/> when a retired pack choice was replaced, so <see cref="Load"/> can save the migrated file once.</summary>
+	[JsonIgnore]
+	public bool MigratedRetiredPack { get; init; }
 
 	public static GraphicsSettings Default { get; } = new() { TexturePackName = "", EnhancedInterface = true };
 
@@ -311,6 +315,13 @@ public sealed record GraphicsSettings
 		if ( result.TexturePackName == null )
 			result = result with { TexturePackName = result.EnhancedTextures == true ? TexturePack.EnhancedName : "" };
 		result = result with { EnhancedTextures = null };
+		// The Clarity pack was removed (October 17, 2026). Its saved choice reads as Original world textures; the interface choice
+		// inferred above is kept, so a Clarity player keeps the shipped HD HUD. Load() saves the migrated file.
+		if ( string.Equals( result.TexturePackName, TexturePack.RetiredClarityName, StringComparison.OrdinalIgnoreCase ) )
+		{
+			diagnostics.Add( $"The '{TexturePack.RetiredClarityName}' texture pack was removed; using the original world textures." );
+			result = result with { TexturePackName = "", MigratedRetiredPack = true };
+		}
 		if ( result.TexturePackName!.Length > 0 && !TexturePack.IsValidName( result.TexturePackName ) )
 		{
 			diagnostics.Add( $"Texture pack name '{result.TexturePackName}' is not a plain directory name; using the original textures." );
@@ -365,9 +376,19 @@ public sealed record GraphicsSettings
 			return Default;
 		try
 		{
-			return FromJson( File.ReadAllText( path ), diagnostics );
+			var loaded = FromJson( File.ReadAllText( path ), diagnostics );
+			if ( loaded.MigratedRetiredPack )
+			{
+				loaded = loaded with { MigratedRetiredPack = false };
+				try { loaded.Save( path ); }
+				catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
+				{
+					diagnostics.Add( $"The migrated graphics settings could not be saved ({exception.Message})." );
+				}
+			}
+			return loaded;
 		}
-		catch ( IOException exception )
+		catch ( Exception exception ) when ( exception is IOException or UnauthorizedAccessException )
 		{
 			diagnostics.Add( $"Graphics settings could not be read ({exception.Message}); using defaults." );
 			return Default;

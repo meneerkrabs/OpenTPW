@@ -16,6 +16,8 @@ public sealed class OnlineHost
 	public Action<ParkVisitInfo>? Visit { get; init; }
 	/// <summary>The online globe behind the Online World screen; null where it is not shown (in a park).</summary>
 	public Func<GlobeScene?> Globe { get; init; } = () => null;
+	/// <summary>[EXT:restored-advice-online] Tells the advisor that a screen opened (the message of <see cref="RestoredAdvice"/>: 328 publish, 329 park details, 331 other parks, 332 find parks, 333 outbox, 334 world); null where there is no advisor.</summary>
+	public Action<int>? Advise { get; init; }
 }
 
 /// <summary>
@@ -64,6 +66,7 @@ public sealed class OnlineScreens
 	// [DATA:Mac UI table data:0x523f0] root 90111 worldlob (9,620,510,1531); buttons b_findprk 90115 (49,731,202,885) help 435, b_bck2lob 90112 (49,898,202,1051) help 431, b_zoom 90118 (41,1070,143,1173) help 428/429, b_lobup 90117 (182,1077,336,1231) help 426, b_lobleft 90114 (61,1201,214,1355) help 424, b_lobright 90116 (307,1201,460,1355) help 425, b_lobdown 90113 (184,1327,337,1481) help 427; i_sat 90120–90124 help 423
 	public void ShowWorld()
 	{
+		host.Advise?.Invoke( RestoredAdvice.WorldHelp );
 		var screen = new OnlineGlobeScreen( host.Globe );
 		screen.CityClicked = ShowCityLobby;
 		var (find, zoom) = AddGlobePanel( screen, stack.Pop, ShowFindParks );
@@ -565,6 +568,7 @@ public sealed class OnlineScreens
 
 	public void ShowFindParks( int? cityId )
 	{
+		host.Advise?.Invoke( RestoredAdvice.FindPlayerHelp );
 		var screen = new UiScreen( "findParks" );
 		var window = new UiRect( 108, 30, 1832, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
@@ -632,6 +636,7 @@ public sealed class OnlineScreens
 	/// </summary>
 	public void ShowParkDetails( ParkSummary park, int chartPosition )
 	{
+		host.Advise?.Invoke( RestoredAdvice.ParkDetailsHelp );
 		var screen = new UiScreen( "parkDetails" );
 		// One details dialog at a time: selecting another row replaces it.
 		stack.RemoveWhere( other => other.Name == "parkDetails" );
@@ -699,6 +704,7 @@ public sealed class OnlineScreens
 	/// </summary>
 	public void ShowOtherParks( CityInfo city )
 	{
+		host.Advise?.Invoke( RestoredAdvice.OtherParksHelp );
 		var screen = new UiScreen( "otherParks" );
 		var window = new UiRect( 248, 30, 1552, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );
@@ -743,6 +749,7 @@ public sealed class OnlineScreens
 	{
 		if ( host.Level() == null )
 			return;
+		host.Advise?.Invoke( RestoredAdvice.PublishHelp );
 		if ( Session.Client == null )
 		{
 			ShowPublishForm( null );
@@ -952,6 +959,7 @@ public sealed class OnlineScreens
 	/// </summary>
 	public void ShowOutbox()
 	{
+		host.Advise?.Invoke( RestoredAdvice.OutboxHelp );
 		var screen = new UiScreen( "outbox" );
 		var window = new UiRect( 186, 30, 1832, 977 );
 		screen.Add( new UiModelImage { Id = "window", Model = "w_big", Bounds = window, Anchor = UiAnchor.Center } );

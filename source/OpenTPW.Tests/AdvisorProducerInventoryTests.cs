@@ -28,11 +28,11 @@ public class AdvisorProducerInventoryTests
 
 	private static readonly Regex TagRow = new( @"^\s*\{ tag = ""(\w+)"", ready = (true|false), state = ""([^""]*)"" \},?\s*$", RegexOptions.CultureInvariant );
 	private static readonly Regex MessageRow = new(
-		@"^\s*\{ message = (\d+), kind = ""([^""]*)"", batch = ""([^""]*)"", status = ""([^""]*)"", producer = ""([^""]*)"", score = ""([^""]*)"", inputs = ""([^""]*)"", formula = ""([^""]*)"", captions = \[([\d, ]*)\], orphans = \[([\d, ]*)\], sample = (-?\d+), local = (true|false) \},?\s*$",
+		@"^\s*\{ message = (\d+), kind = ""([^""]*)"", batch = ""([^""]*)"", status = ""([^""]*)"", producer = ""([^""]*)"", score = ""([^""]*)"", inputs = ""([^""]*)"", formula = ""([^""]*)"", captions = \[([\d, ]*)\], orphans = \[([\d, ]*)\], sample = (-?\d+), local = (true|false)(?:, restored = ""(\w+)"")? \},?\s*$",
 		RegexOptions.CultureInvariant );
 
 	private sealed record Tag( string Name, bool Ready, string State );
-	private sealed record Producer( int Message, string Kind, string Batch, string Status, string Producer_, string Score, string[] Inputs, string Formula, int[] Captions, int[] Orphans, int Sample, bool Local );
+	private sealed record Producer( int Message, string Kind, string Batch, string Status, string Producer_, string Score, string[] Inputs, string Formula, int[] Captions, int[] Orphans, int Sample, bool Local, string? Restored );
 
 	private static string Shipped( string relative )
 	{
@@ -80,7 +80,7 @@ public class AdvisorProducerInventoryTests
 				var g = row.Groups;
 				messages.Add( new Producer( int.Parse( g[1].Value, CultureInfo.InvariantCulture ), g[2].Value, g[3].Value, g[4].Value, g[5].Value, g[6].Value,
 					g[7].Value.Split( ',', StringSplitOptions.RemoveEmptyEntries ), g[8].Value, Numbers( g[9].Value ), Numbers( g[10].Value ),
-					int.Parse( g[11].Value, CultureInfo.InvariantCulture ), g[12].Value == "true" ) );
+					int.Parse( g[11].Value, CultureInfo.InvariantCulture ), g[12].Value == "true", g[13].Success ? g[13].Value : null ) );
 				continue;
 			}
 			throw new InvalidDataException( $"Advisor producers line {lineNumber} is not a tag or message row." );
@@ -144,6 +144,26 @@ public class AdvisorProducerInventoryTests
 			Assert.AreEqual( response.Sample, row.Sample, $"message {row.Message}" );
 			Assert.AreEqual( response.Local, row.Local, $"message {row.Message}" );
 		}
+	}
+
+	[TestMethod]
+	public void RestoredRowsAreTheExtensionsCatalogAndKeepTheirOriginalStatus()
+	{
+		var (_, messages) = Inventory();
+		var restored = messages.Where( row => row.Restored != null ).ToDictionary( row => row.Message );
+		CollectionAssert.AreEquivalent( RestoredAdvice.Entries.Select( entry => entry.MessageId ).ToArray(), restored.Keys.ToArray(), "the rows marked restored are the catalog's" );
+		foreach ( var entry in RestoredAdvice.Entries )
+		{
+			var row = restored[entry.MessageId];
+			var id = $"message {entry.MessageId}";
+			Assert.AreEqual( entry.Topic, row.Restored, id );
+			// the original's status is untouched: tp.exe never says these (no producer), whatever the extension does
+			Assert.AreEqual( "none", row.Status, $"{id} keeps the original's status" );
+			Assert.AreEqual( entry.Trigger == RestoredTrigger.Scan ? "scan-zero" : "unused", row.Kind, id );
+			if ( row.Score.Length > 0 && entry.ScoreKey != null && entry.Trigger != RestoredTrigger.Scan )
+				CollectionAssert.Contains( row.Score.Split( ',' ), entry.ScoreKey, $"{id}: the key of the row's own getter" );
+		}
+		Assert.AreEqual( 351, messages.Count, "the inventory still covers every descriptor" );
 	}
 
 	[TestMethod]

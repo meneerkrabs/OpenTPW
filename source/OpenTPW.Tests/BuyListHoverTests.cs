@@ -67,6 +67,7 @@ public class BuyListHoverTests
 	public void HoveringARowSelectsItAndTheStatsFrameFollowsAtOnce()
 	{
 		var (hud, screen, list, context, _) = Build( 6 );
+		screen.Update( context, UiInput.Idle( new Vector2( 5, 5 ) ) );
 		screen.Update( context, UiInput.Idle( Row( context, list, 3 ) ) );
 		Assert.AreEqual( 3, hud.SelectedBuyIndex, "the pointer selects the row under it" );
 		Assert.AreEqual( "r04", hud.SelectedBuyItem!.Id, "the stats frame reads the selection, so it follows at once" );
@@ -99,6 +100,7 @@ public class BuyListHoverTests
 	public void LeavingTheListOrHoveringBelowTheLastRowKeepsTheSelection()
 	{
 		var (hud, screen, list, context, _) = Build( 4 );
+		screen.Update( context, UiInput.Idle( new Vector2( 5, 5 ) ) );
 		screen.Update( context, UiInput.Idle( Row( context, list, 2 ) ) );
 		Assert.AreEqual( 2, hud.SelectedBuyIndex );
 		screen.Update( context, UiInput.Idle( Row( context, list, 7 ) ) );
@@ -114,6 +116,7 @@ public class BuyListHoverTests
 	{
 		var (hud, screen, list, context, _) = Build( 15 );
 		var pointer = Row( context, list, 9 );
+		screen.Update( context, UiInput.Idle( new Vector2( 5, 5 ) ) );
 		screen.Update( context, UiInput.Idle( pointer ) );
 		Assert.AreEqual( 9, hud.SelectedBuyIndex );
 		screen.Update( context, UiInput.Idle( pointer ) with { Pressed = UiKeys.Down } );
@@ -121,8 +124,10 @@ public class BuyListHoverTests
 		Assert.AreEqual( 11, hud.SelectedBuyIndex, "the keys move the selection, and the rows that scroll under the pointer do not take it back" );
 		screen.Update( context, UiInput.Idle( pointer ) );
 		Assert.AreEqual( 11, hud.SelectedBuyIndex );
+		screen.Update( context, UiInput.Idle( pointer + new Vector2( 1, 0 ) ) );
+		Assert.AreEqual( hud.BuyFirstRow + 9, hud.SelectedBuyIndex, "any pointer move, also within the same row, selects the row under it again" );
 		screen.Update( context, UiInput.Idle( Row( context, list, 4 ) ) );
-		Assert.AreEqual( hud.BuyFirstRow + 4, hud.SelectedBuyIndex, "moving to another row selects it again" );
+		Assert.AreEqual( hud.BuyFirstRow + 4, hud.SelectedBuyIndex, "moving to another row selects it" );
 	}
 
 	[TestMethod]
@@ -155,6 +160,7 @@ public class BuyListHoverTests
 		var context = new UiContext( OriginalUiTests.FakeStrings(), null!, new UiModels( name => throw new System.IO.FileNotFoundException( name ) ) ) { Canvas = new UiCanvas( 1024, 768 ) };
 		var content = list.ScreenRect( context.Canvas );
 		var second = new Vector2( content.X + 20, content.Y + 1.5f * ParkHud.BuyRowHeight * context.Canvas.Scale );
+		screen.Update( context, UiInput.Idle( new Vector2( 5, 5 ) ) );
 		screen.Update( context, UiInput.Idle( second ) );
 		Assert.AreEqual( 1, rows.Selected, "the pointer selects the loan row under it" );
 		screen.Update( context, UiInput.Idle( new Vector2( 5, 5 ) ) );

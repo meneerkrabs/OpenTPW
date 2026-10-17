@@ -446,19 +446,14 @@ public sealed partial class ParkHud
 		public override void Activate() => owner.BuySelected();
 
 		public bool HoverSelects => true;
-		private int hoveredSlot = -1;
 
-		/// <summary>The pointer moved onto the row <paramref name="index"/> (-1: off the rows).</summary>
+		/// <summary>The pointer is over the row <paramref name="index"/> (-1: off the rows); a pointer move onto a row selects it.</summary>
 		// [BIN:TPW-EXE:0x6656a0 list hover] the list has attribute 0x91, which includes 0x80: every pointer move over the list (messages 0x10001 and 0x10003, 0x665c35) selects the row under it (0x66552e → 0x66525c: the row index is (y - top) / row height; a row past the last one leaves the selection, as attribute 0x100 is not set), the same selection as a click or an arrow key, so the stats frame follows at once and the preview after 500 ms
 		// [BIN:TPW-EXE:0x665c35 list leave] the list handles no message for the pointer leaving (0x10002 goes to the base control, 0x65f6d1, which only informs the pointer manager), so the selection stays on the last hovered row
-		// the screen reports the row under the pointer every frame, not a pointer move: a row counts as newly hovered when the pointer's row slot changes, so the arrow keys and the wheel (which scroll the rows under a resting pointer) keep their selection until the pointer moves to another slot
-		// note: a pointer that moves within the same row after an arrow key does not select that row again, as the original's per-move message would (no pointer-move events reach the list here)
-		public void Hover( int index )
+		// [BIN:TPW-EXE:0x658840 pointer move] the messages are sent only when the pointer position changes (UiScreen), so the arrow keys and the wheel keep their selection under a resting pointer, and any pointer move, also within the same row, selects the row under it again
+		public void Hover( int index, bool pointerMoved )
 		{
-			var slot = index < 0 ? -1 : index - owner.buy.FirstRow;
-			var moved = slot != hoveredSlot;
-			hoveredSlot = slot;
-			if ( moved && index >= 0 )
+			if ( pointerMoved && index >= 0 )
 				owner.SelectBuyItem( index );
 		}
 

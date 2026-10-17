@@ -181,7 +181,9 @@ public static class GameEditions
 	private static readonly string[] FrontEndStartOptions =
 	{
 		"--front-end", "--game-path", "--language", "--language-data", "--cd-data", "--bonus-data", "--mute", "--silent", "--no-intro", "--no-advisor",
-		"--no-vsync", "--offscreen", "--no-offscreen", "--frame-stats", "--no-determinism"
+		"--no-autorun", "--no-vsync", "--offscreen", "--no-offscreen", "--frame-stats", "--no-determinism",
+		// the display options of DisplaySettings.ApplyCommandLine
+		"--resolution", "--windowed", "--fullscreen", "--fullscreen-exclusive", "--upscale", "--render-scale", "--ui-scale"
 	};
 
 	/// <summary>True when <paramref name="args"/> start the Personnel File: no world and no option outside <see cref="FrontEndStartOptions"/>.</summary>

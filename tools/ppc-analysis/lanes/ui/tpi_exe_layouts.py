@@ -2,8 +2,8 @@
 
 Theme Park Inc (Sim Coaster) is built on the same window builder as Theme Park World: its layout tables are the same
 embedded command streams (grammar in ``tpw_exe_layouts``: commands 0 to 18, command word reader, rectangle reader).
-The grammar was checked by reading all 86 layout tables of the executable with it (every stream ends exactly where
-the next table starts). The executable is the no-CD ``Game.exe`` (SHA-256 below); the retail one is SafeDisc
+The grammar was checked once, by hand, by reading all 86 layout tables of the executable with it (every stream ended exactly where
+the next table starts); that scan is not part of this script, whose ``--check`` reproduces only the two tables below. The executable is the no-CD ``Game.exe`` (SHA-256 below); the retail one is SafeDisc
 encrypted, so its tables are not readable statically.
 
 Phase 1 of the Theme Park Inc front end needs two tables:

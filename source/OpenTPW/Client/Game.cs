@@ -812,11 +812,11 @@ internal static class Game
 			if ( !string.IsNullOrWhiteSpace( selection.Path ) )
 			{
 				var check = InstallationDiscovery.InspectAsync( selection.Path, GameEdition.ThemeParkInc ).GetAwaiter().GetResult();
-				if ( check.Reports.FirstOrDefault() is { } report && selection.AcceptInspection( selection.Revision, report ) && selection.CanStart )
+				if ( check.Reports.FirstOrDefault() is { } report && selection.AcceptInspection( selection.Revision, report ) && selection.CanLaunch( args ) )
 				{
 					args = selection.LaunchArguments( args );
 					Settings.Default.GamePath = selection.Path;
-					Log?.Trace( $"Game folder: {selection.Path} (saved Theme Park Inc world {selection.World})." );
+					Log?.Trace( $"Game folder: {selection.Path} (saved Theme Park Inc {(args.Contains( "--front-end" ) ? "install, Personnel File" : $"world {selection.World}")})." );
 					return args;
 				}
 			}

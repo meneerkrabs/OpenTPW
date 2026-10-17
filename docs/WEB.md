@@ -106,8 +106,8 @@ dotnet run --project tools/AssemblySurface -- path/to/OpenTPW.dll Veldrid
 The setup screen also offers an explicit **experimental Theme Park Inc** start in Arabian,
 Science or Water. Choose the extracted installation folder containing `Data`, then choose
 the theme before importing or pressing Play. That theme's complete browser-supported file
-set is copied at startup. (The desktop build opens a Personnel File start screen instead of asking for the
-zone up front, see [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-front-end); the browser keeps
+set is copied at startup. (The desktop build can open a Personnel File start screen instead of asking for the
+zone: with `--front-end`, or a plain start with an explicit Theme Park Inc folder; the setup wizard still asks for a zone. See [THEME-PARK-INC.md](THEME-PARK-INC.md#theme-park-inc-front-end); the browser keeps
 this up-front choice in phase 1, because the on-demand copy of a zone's files chosen later is
 built for Theme Park World's lobby only.) The existing edition detector checks its identity or structure,
 and an edition/theme mismatch refuses before renderer creation. Before deferral,

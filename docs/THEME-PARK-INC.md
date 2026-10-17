@@ -208,8 +208,8 @@ Theme Park Inc's `ui.wad` has 1,462 members, 172 MD2 models with unique root-nam
 Its `UITEXT.str` has 994 records with ids unlike Theme Park World's (`UIStrings` does not apply; `ThemeParkIncText` names the ids used, read with `UiStringTable.Entry`),
 `UIHELPTEXT.str` 367 records.
 
-**What phase 1 builds.** `tools/ppc-analysis/lanes/ui/tpi_exe_layouts.py` (the same stream grammar as `tpw_exe_layouts.py`, checked by reading all 86 layout tables of the
-executable) writes `ThemeParkIncLayoutTables` (`UI/Original/ThemeParkIncLayoutTables.cs`: rectangles, ids, help ids and model names only, no game data) for the two tables above.
+**What phase 1 builds.** `tools/ppc-analysis/lanes/ui/tpi_exe_layouts.py` (the same stream grammar as `tpw_exe_layouts.py`; a one-off manual scan parsed all 86 layout tables of the
+executable, which the script's `--check` does not repeat: it reproduces the two tables) writes `ThemeParkIncLayoutTables` (`UI/Original/ThemeParkIncLayoutTables.cs`: rectangles, ids, help ids and model names only, no game data) for the two tables above.
 `FrontEnd/ThemeParkIncFrontEnd.cs` draws the Personnel File from Theme Park Inc's `ui.wad` models at those rectangles with its strings and the PERSONNELFILE fonts
 (`[EXT:tpi-front-end-phase1]`), over a flat dark backdrop (no 3D intro world, no sound, no start-up movies):
 

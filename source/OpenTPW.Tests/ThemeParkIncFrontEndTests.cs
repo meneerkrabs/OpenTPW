@@ -32,8 +32,7 @@ public class ThemeParkIncFrontEndTests
 	}
 
 	/// <summary>The texture directory listing is cached for the process; another test's data folder must not leak into this one's (or the reverse).</summary>
-	private static void ResetTextureListings() =>
-		((System.Collections.IDictionary)typeof( UiImages ).GetField( "listings", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static )!.GetValue( null )!).Clear();
+	private static void ResetTextureListings() => UiImages.ResetListings();
 
 	private string UseTpiData()
 	{
@@ -140,7 +139,9 @@ public class ThemeParkIncFrontEndTests
 	public void AStartWithoutAWorldOpensThePersonnelFileOnlyForPlainOptions()
 	{
 		GameEditions.Select( GameEdition.ThemeParkInc );
-		foreach ( var accepted in new[] { Array.Empty<string>(), new[] { "--front-end" }, new[] { "--game-path", "x", "--silent", "--mute", "--no-intro" }, new[] { "--front-end", "--language", "Dutch" } } )
+		foreach ( var accepted in new[] { Array.Empty<string>(), new[] { "--front-end" }, new[] { "--game-path", "x", "--silent", "--mute", "--no-intro" }, new[] { "--front-end", "--language", "Dutch" },
+			new[] { "--front-end", "--windowed", "--resolution", "1280x720", "--upscale", "linear", "--render-scale", "67", "--ui-scale", "2", "--no-autorun" },
+			new[] { "--front-end", "--fullscreen" }, new[] { "--front-end", "--fullscreen-exclusive" } } )
 			Assert.IsNull( GameEditions.ViewerRefusal( accepted ), string.Join( " ", accepted ) );
 		foreach ( var refused in new[]
 		{
@@ -203,7 +204,7 @@ public class ThemeParkIncFrontEndTests
 		var calls = new Calls();
 		var frontEnd = new ThemeParkIncFrontEnd( OriginalUiTests.FakeStrings(), calls.Host );
 		var context = FakeContext( OriginalUiTests.FakeStrings() );
-		foreach ( var id in new[] { "loadGame", "deletePlayer", "designKit", "nameOk", "slot1", "slot2", "slot3", "slot4" } )
+		foreach ( var id in new[] { "loadGame", "deletePlayer", "designKit", "nameOk", "slot2", "slot3", "slot4" } )
 		{
 			var button = (UiButton)Element( frontEnd, id );
 			Assert.IsFalse( button.Enabled, id );
@@ -212,7 +213,14 @@ public class ThemeParkIncFrontEndTests
 		}
 		Assert.AreEqual( 0, calls.Worlds.Count + calls.Quits );
 		Assert.AreEqual( 1, frontEnd.Stack.Screens.Count, "no dialog opened" );
-		Assert.IsTrue( ((UiButton)Element( frontEnd, "slot1" )).Selected!(), "the one OpenTPW player is the shown slot" );
+		Click( frontEnd, context, "slot1" );
+		var slot = (UiButton)Element( frontEnd, "slot1" );
+		Assert.IsTrue( slot.Selected!(), "the one OpenTPW player is the shown slot" );
+		// the frame that is drawn: the selected player's slot shows its down frame, the free ones the disabled frame, and neither can be activated
+		Assert.AreEqual( UiButton.DownFrame, slot.StateFrame( focused: false, pressed: false ) );
+		Assert.AreEqual( UiButton.DownFrame, slot.StateFrame( focused: true, pressed: false ), "no hover highlight on an inert slot" );
+		Assert.AreEqual( UiButton.DisabledFrame, ((UiButton)Element( frontEnd, "slot2" )).StateFrame( focused: false, pressed: false ) );
+		Assert.AreNotEqual( slot, frontEnd.Screen.Focused );
 	}
 
 	[TestMethod]

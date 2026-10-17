@@ -132,7 +132,9 @@ public sealed class ThemeParkIncFrontEnd
 				Text = () => Text( ThemeParkIncText.NewPlayer ),
 				Font = SmallFont,
 				Selected = () => slot == 0,
-				Enabled = false,
+				// the one player's slot shows its selected (down) frame without being clickable; the free slots show the disabled frame
+				Inert = slot == 0,
+				Enabled = slot == 0,
 				Bounds = table.Control( tabs[index] ).Rect,
 				Anchor = UiAnchor.Center
 			} );

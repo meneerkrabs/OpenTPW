@@ -122,7 +122,6 @@ internal sealed class AdvisorEffectGroups
 	/// <summary>Places every emitter of every nonempty group for advisor-clock time <paramref name="now"/>.</summary>
 	// [BIN:TPW-EXE:0x5ED770 group update] t = (clock - start) / length; the centre is from + (to - from) * t (t not clamped), the radii from + (to - from) * min(t, 1); emitter i of n sits at angle a = ftol(frac(i / n + t * spin) * 512) of the 512-entry table (0x5428A0 / 0x5428C0: table << 2, times 1/1024): (cx + rx sin a, cy - ry cos a), moved (0x51FE30) to native (ftol((x + 1) * 50000), 0, ftol((y + 1) * 37500))
 	// [BIN:TPW-EXE:0x00563914 DirectDraw set-up] SetCooperativeLevel flags 0x851 (full screen) and 0x808 (0x563B7A, windowed) carry DDSCL_FPUSETUP (0x800) and not FPUPRESERVE (0x1000), so the x87 runs in single precision after the set-up; the arithmetic below is single precision
-	// [APPROX:ADVISOR-026] see the register: the node bits the original keeps on the model instance between responses are not carried here
 	public void Update( int now )
 	{
 		foreach ( var state in groups )

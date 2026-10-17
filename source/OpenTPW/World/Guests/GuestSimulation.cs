@@ -3,7 +3,7 @@ using OpenTPW.Mods;
 namespace OpenTPW;
 
 /// <summary>Counts for overlays, logs and tests.</summary>
-public readonly record struct GuestStatistics( int InPark, int Walking, int Queueing, int OnRides, int Arriving, int Leaving, float AverageHappiness, GuestThought CommonThought, long Admissions );
+public readonly record struct GuestStatistics( int InPark, int Walking, int Queueing, int OnRides, int Arriving, int Leaving, float AverageHappiness, long Admissions );
 
 /// <summary>
 /// Park visitors on the fixed simulation tick: arrival from the bus stops through the ticket booth
@@ -83,6 +83,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		ScriptMods = (this.decisions as ScriptGuestDecisions)?.Runtime;
 		if ( this.decisions.UsesExtensionState )
 			SmarterGuests = new SmarterGuestsState( seed );
+		// [EXT:guest-insights] the gate is read here, once
+		if ( FeatureGates.GuestInsights )
+			Observer = RefusalCounters = new GuestRefusalCounters();
 	}
 
 	/// <summary>
@@ -232,7 +235,38 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// A passive measurement view (<see cref="IGuestObserver"/>), null by default. It is not part of the simulation: never saved, never hashed, and it must not draw from the
 	/// world generator or change a guest.
 	/// </summary>
-	public IGuestObserver? Observer { get; set; }
+	public IGuestObserver? Observer
+	{
+		get => observer;
+		// [EXT:guest-insights] with the extension on, the refusal counters keep the slot's first place and a measurement collector shares it
+		set
+		{
+			if ( ReferenceEquals( value, observer ) )
+				return;
+			observer = RefusalCounters == null ? value
+				: value == null || ReferenceEquals( value, RefusalCounters ) ? RefusalCounters
+				: value is GuestObserverChain chain && ReferenceEquals( chain.First, RefusalCounters ) ? chain
+				: new GuestObserverChain( RefusalCounters, value );
+		}
+	}
+
+	/// <summary>Takes the refusal counters off the observer slot, leaving any collector there (the guest report's timing runs, so its figures do not include the extension's counters).</summary>
+	internal void DisableRefusalCounters()
+	{
+		var counters = RefusalCounters;
+		if ( counters == null )
+			return;
+		RefusalCounters = null;
+		observer = ReferenceEquals( observer, counters ) ? null : observer is GuestObserverChain chain && ReferenceEquals( chain.First, counters ) ? chain.Second : observer;
+	}
+
+	private IGuestObserver? observer;
+
+	/// <summary>
+	/// The refusal-reason counters of the <c>opentpw.guest-insights</c> extension, or null while it is off. The gate is read once, when the simulation is built; the counters are a passive
+	/// observer (never saved, never hashed, no draw) that a loaded park starts again from zero.
+	/// </summary>
+	public GuestRefusalCounters? RefusalCounters { get; private set; }
 	public int Departed { get; private set; }
 	/// <summary>Raised when a guest pays (guest, amount, attraction id or 0 for admission).</summary>
 	public event Action<Guest, int, int>? MoneySpent;
@@ -3043,7 +3077,6 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	{
 		int inPark = 0, walking = 0, queueing = 0, onRides = 0, arriving = 0, leaving = 0;
 		var happiness = 0f;
-		Span<int> thoughts = stackalloc int[18];
 		foreach ( var guest in guests )
 		{
 			if ( InPark( guest ) ) { inPark++; happiness += guest.Happiness; }
@@ -3055,15 +3088,17 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				case GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth or GuestState.WaitingAtBooth or GuestState.AtTicketBooth: arriving++; break;
 				case GuestState.LeavingPark or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome: leaving++; break;
 			}
-			if ( (int)guest.Thought is > 0 and < 18 )
-				thoughts[(int)guest.Thought]++;
 		}
-		var common = 0;
-		for ( var index = 1; index < thoughts.Length; index++ )
-			if ( thoughts[index] > thoughts[common] )
-				common = index;
-		return new GuestStatistics( inPark, walking, queueing, onRides, arriving, leaving, inPark == 0 ? 0 : happiness / inPark, (GuestThought)common, Admissions );
+		return new GuestStatistics( inPark, walking, queueing, onRides, arriving, leaving, inPark == 0 ? 0 : happiness / inPark, Admissions );
 	}
+
+	/// <summary>
+	/// The park information window's Top 3 Thoughts now: the thought ids of the guests standing on a park cell, ranked as the original ranks them (<see cref="TopThoughtRanking"/>).
+	/// A read of the guests only: no draw, no write.
+	/// </summary>
+	// [BIN:TPW-EXE:0x004C8430 top three thoughts] every thing of type 1 on a cell the predicate 0x004FA990 accepts counts, whatever its state: a guest in the booth queue or on the road home stands on a non-park cell and does not
+	public TopThoughts GetTopThoughts() =>
+		TopThoughtRanking.Rank( guests.Where( guest => guest.State != GuestState.Gone && IsOnParkCell( guest ) ).Select( guest => (int)guest.Thought ) );
 
 	// ---- Snapshots (park save/load) ------------------------------------------------------------
 

@@ -223,16 +223,35 @@ public class ModsScreenTests
 	// ---- Screen ----------------------------------------------------------------------------------
 
 	[TestMethod]
-	public void TheGuestExtensionsAreNotOfferedToPlayersYet()
+	public void OnlyGuestInsightsIsOfferedToPlayersOfTheGuestExtensions()
 	{
-		Assert.IsFalse( OfficialExtensions.SmarterGuests.PlayerSelectable );
-		Assert.IsFalse( OfficialExtensions.GuestInsights.PlayerSelectable );
+		Assert.IsFalse( OfficialExtensions.SmarterGuests.PlayerSelectable, "no real rule yet: a no-op version would lock saves to it" );
+		Assert.IsTrue( OfficialExtensions.GuestInsights.PlayerSelectable, "it only reads the park, so no save is locked" );
 		Assert.IsTrue( OfficialExtensions.Online.PlayerSelectable && OfficialExtensions.CrossEditionObjects.PlayerSelectable );
 		var stack = new UiScreenStack();
 		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), Services() );
 		stack.Push( screen );
 		var rows = ((UiScrollList)screen.Find( "extensions" )!).Rows();
-		CollectionAssert.AreEqual( new[] { "OpenTPW online  1.0.0", "Cross-edition objects  1.0.0" }, rows.ToArray() );
+		CollectionAssert.AreEqual( new[] { "OpenTPW online  1.0.0", "Cross-edition objects  1.0.0", Text( OpenTpwText.ExtensionGuestInsightsName ) + "  1.0.0" }, rows.ToArray() );
+		stack.Clear();
+	}
+
+	[TestMethod]
+	public void TheModsScreenListsGuestInsightsWithItsDescriptionAndNoSimulationFlag()
+	{
+		var stack = new UiScreenStack();
+		var screen = ModsScreen.Create( stack, OriginalUiTests.FakeStrings(), Services() );
+		stack.Push( screen );
+		var extensions = (UiScrollList)screen.Find( "extensions" )!;
+		var index = Array.FindIndex( extensions.Rows().ToArray(), row => row.StartsWith( Text( OpenTpwText.ExtensionGuestInsightsName ), StringComparison.Ordinal ) );
+		Assert.IsTrue( index >= 0, "the mods screen lists opentpw.guest-insights" );
+		extensions.Select( index );
+		Pump( screen );
+		var details = Label( screen, "details" );
+		StringAssert.Contains( details, "opentpw.guest-insights" );
+		StringAssert.Contains( details, Text( OpenTpwText.ExtensionGuestInsightsDescription ) );
+		StringAssert.Contains( details, Text( OpenTpwText.ModLeavesSimulation ) );
+		StringAssert.Contains( Text( OpenTpwText.ExtensionGuestInsightsDescription ), "park information window" );
 		stack.Clear();
 	}
 
@@ -265,16 +284,16 @@ public class ModsScreenTests
 	}
 
 	[TestMethod]
-	public void SettingsAndTheCommandLineCannotSwitchOnAnExtensionThatIsNotSelectable()
+	public void SettingsAndTheCommandLineCannotSwitchOnTheSmarterExtensionWhileItIsNotSelectable()
 	{
 		var diagnostics = new List<string>();
 		var settings = ModStartup.WithCommandLine( ModSettings.Default.WithEnabled( "opentpw.guest-insights", true ), Array.Empty<DiscoveredMod>(), new[] { "opentpw.smarter-guests" }, Array.Empty<string>() );
 		Assert.IsTrue( settings.IsEnabled( "opentpw.smarter-guests", false ), "the request itself is a valid id" );
 		var set = ModStartup.Resolve( Array.Empty<DiscoveredMod>(), settings, Array.Empty<string>(), diagnostics );
 		Assert.IsFalse( set.IsEnabled( "opentpw.smarter-guests" ) );
-		Assert.IsFalse( set.IsEnabled( "opentpw.guest-insights" ) );
+		Assert.IsTrue( set.IsEnabled( "opentpw.guest-insights" ), "the insights are selectable, so mods.json may switch them on" );
 		Assert.IsTrue( diagnostics.Any( line => line.Contains( "opentpw.smarter-guests" ) && line.Contains( "ignored" ) ), string.Join( "; ", diagnostics ) );
-		Assert.IsTrue( diagnostics.Any( line => line.Contains( "opentpw.guest-insights" ) && line.Contains( "ignored" ) ) );
+		Assert.IsFalse( diagnostics.Any( line => line.Contains( "opentpw.guest-insights" ) && line.Contains( "ignored" ) ) );
 		Assert.IsFalse( FeatureGates.SmarterGuests );
 		// tests and development code still switch them on directly
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
@@ -284,7 +303,8 @@ public class ModsScreenTests
 	[TestMethod]
 	public void TheGuestExtensionStringsExistInAllNineLanguages()
 	{
-		foreach ( var key in new[] { OpenTpwText.ExtensionSmarterGuestsName, OpenTpwText.ExtensionSmarterGuestsDescription, OpenTpwText.ExtensionGuestInsightsName, OpenTpwText.ExtensionGuestInsightsDescription } )
+		foreach ( var key in new[] { OpenTpwText.ExtensionSmarterGuestsName, OpenTpwText.ExtensionSmarterGuestsDescription, OpenTpwText.ExtensionGuestInsightsName, OpenTpwText.ExtensionGuestInsightsDescription,
+			OpenTpwText.RefusalsTitle, OpenTpwText.RefusalTooExpensive, OpenTpwText.RefusalQueueTooLong, OpenTpwText.RefusalTooScary, OpenTpwText.RefusalTooBoring, OpenTpwText.RefusalRideUnavailable } )
 		{
 			var texts = SupplementaryStrings.SupportedLanguages.Select( language => SupplementaryStrings.Get( key, language ) ).ToList();
 			Assert.AreEqual( 9, texts.Count, $"{key}: nine languages" );

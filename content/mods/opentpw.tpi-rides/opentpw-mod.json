@@ -1,0 +1,7 @@
+{ "schema": 1, "id": "opentpw.tpi-rides", "name": "Theme Park Inc rides", "version": "1.0.0", "category": "official",
+  "edition": "theme-park-world",
+  "author": "OpenTPW",
+  "description": "Brings the attractions of your own Theme Park Inc install into the Theme Park World parks. Needs the Cross-edition objects extension and your Theme Park Inc Data folder; nothing of Theme Park Inc is shipped.",
+  "dependencies": [ { "id": "opentpw.cross-edition-objects", "version": ">=1.0.0" } ],
+  "inputs": [ { "id": "tpi", "kind": "original-data", "edition": "theme-park-inc" } ],
+  "content": { "objects": "objects.json" } }

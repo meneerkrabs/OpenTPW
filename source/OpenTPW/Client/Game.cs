@@ -510,7 +510,7 @@ internal static class Game
 				var searchY = poolCamera != null ? poolCamera[1] : park.Target.Y;
 				if ( level.PoolBuilder is not { } builder || !level.TryGetGridCell( searchX, searchY, out var cellX, out var cellY ) )
 				{
-					Log.Warning( "--debug-pool: the opentpw.pools extension is off (use --enable-mod opentpw.pools) or the camera target is off the grid." );
+					Log.Warning( "--debug-pool: the opentpw.pools extension is off (it is on by default; check mods.json and --disable-extension), this is a Theme Park Inc run, or the camera target is off the grid." );
 					return;
 				}
 				// [EXT:debug-pool] --debug-pool-offset dx,dy moves the place the shape is looked for from the camera target by whole cells (so a capture can frame a changing room beside the pool)

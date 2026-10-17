@@ -1,6 +1,6 @@
 # Pools (`opentpw.pools`)
 
-An official extension (docs/MODS.md), **off by default**, in which the player paints **pool water cells** of any size and shape on the park grid. It is modelled on the
+An official extension (docs/MODS.md), **on by default** (switch it off on the Extensions and mods screen), in which the player paints **pool water cells** of any size and shape on the park grid. It is modelled on the
 pool tiles of Roller Coaster Tycoon 3 Soaked! (ideas only; no asset of that game or of Theme Park World is used or shipped). The original Theme Park World has no pools: everything
 here is OpenTPW's own and carries `[EXT:pools-*]` labels in the code and in this page.
 
@@ -30,8 +30,21 @@ entrance, guests choose it like an attraction, change, swim freely through the c
 
 ## The extension and the save rule
 
-`opentpw.pools` is registered in `OfficialExtensions` with `DefaultEnabled: false` and `AffectsSimulation: true`; the gate is `FeatureGates.Pools`, read the way
-`FeatureGates.CrossEditionObjects` is. Turn it on in `mods.json` (`"opentpw.pools": true`), on the Extensions and mods screen, or for one run with `--enable-mod opentpw.pools`.
+`opentpw.pools` is registered in `OfficialExtensions` with `DefaultEnabled: true` and `AffectsSimulation: true`; the gate is `FeatureGates.Pools`, read the way
+`FeatureGates.CrossEditionObjects` is. It is **on by default** (since October 17, 2026). Turn it off in `mods.json` (`"opentpw.pools": false`), on the Extensions and mods screen, or for one run with `--disable-extension opentpw.pools`.
+`--enable-mod opentpw.pools` still works and changes nothing now.
+
+**Existing `mods.json` files.** The file stores only the choices a player made (`ModSettings.Enabled` holds an entry per toggled mod or extension, and `IsEnabled` falls back to the extension's default for an id without an entry; the Extensions and mods screen
+writes the loaded entries plus the toggles, never the untouched defaults). So a player who never touched the pools toggle has no `opentpw.pools` entry and gets the extension **on** after the update, and a player who switched it off
+explicitly has `"opentpw.pools": false` and stays off. The browser's `/config/mods.json` has the same format and the same behaviour. A player who once switched it **on** has `true`, which is the new default too. (There is
+no case where an untouched old default "off" is stored, so no migration is needed.) A park without pool cells or a changing room saves and loads the same bytes with the extension on or off, so switching on changes no existing park.
+
+**Theme Park Inc.** The pools UI is unavailable in a Theme Park Inc run (`GameEditions.IsThemeParkInc`) even with the extension on: `FeatureGates.Pools` is false there, so there is no pool row in the buy list, no pool tool, no render holes, no
+changing room, no pool extras and no swimmers, and `PoolContent.CatalogRoot` adds no objects to the Theme Park Inc catalog. The reason is that the styles (`PoolStyles` knows the four Theme Park World themes; a Theme Park Inc world would get `Generic`), the changing rooms and extras (`objects.json` lists only the four Theme Park World themes), the
+guest sprite sets (the eight Theme Park World kid sets) and the park layout were made and checked for Theme Park World only; Theme Park Inc is an experimental slice (docs/THEME-PARK-INC.md). It is covered by
+`PoolsTests.ThePoolsUiIsUnavailableInThemeParkIncRunsEvenWithTheExtensionOn`. Pools for Theme Park Inc can be added later with styles and rooms of its own.
+
+**Browser.** The browser build embeds `content/pools` (objects, changing rooms, swim sprites) and resolves the extensions from the default set plus `/config/mods.json`, so pools is on there by default too.
 
 **A save records the extension only when the park actually has pool cells.** `AffectsSimulation: true` alone would tag every save of every park once the extension is on
 (`ModSet.SimulationMods`), so the extension is one of `ParkResumeMods.UsedOnlyExtensionIds`: `ParkResumeMods.Capture(active, inUse)` leaves it out unless `inUse` names it, and
@@ -179,7 +192,7 @@ cell, which together show straight edges, inner and outer corners and an isolate
 prints the shape's engine centre, which `--capture-camera` can aim at:
 
 ```sh
-bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle --enable-mod opentpw.pools \
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle \
   --debug-pool default --silent --capture-world pool.png --capture-frames 300 --capture-camera 28.2,-38.6,45,-90
 ```
 
@@ -308,14 +321,14 @@ is used or committed; [CONTENT-KIT.md](CONTENT-KIT.md) describes the tools.
 random points. `--debug-pool-offset dx,dy` moves the place the pool shape is searched from the camera target by whole cells, to frame the room:
 
 ```sh
-bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle --enable-mod opentpw.pools \
+bash scripts/run.sh --game-path '/path/to/Theme Park World' --load-original-level jungle \
   --debug-pool default --debug-swimmers 8 --debug-pool-offset 3,0 --silent --capture-world pool.png --capture-frames 400 --capture-camera -29.5,-50.6,45,-90
 ```
 
 First on-screen check (October 17, 2026; all four parks, eight swimmers each, camera `x,y,45,-90` and `x,y,45,-150`; 3024 x 1686 captures, shown at 1600 wide): the swimmers swim in all directions with different strokes (arms out of the water, the foam ring, the lower body tinted), keep inside the coping, and the
 cabin stands beside the pool with its themed textures. The images are `reports/pools-p2-<theme>-top.png` and `-angle.png` and a short clip `reports/pools-p2-swimming.gif` (`--capture-sequence 40,4`). The art was judged on these captures only, not against a capture of the original game (which has no pools).
 
-The save roundtrip in the middle of a swim is also checked natively: `OPENTPW_SMOKE_POOLS=1 bash scripts/run.sh ... --enable-mod opentpw.pools --park-resume-smoke capture ...` then `restore` (`ParkResumeSmokeTest.Pools.cs`) paints a pool, builds a room, puts three guests in the water at the save, and the restore phase finds the room and the swimmers
+The save roundtrip in the middle of a swim is also checked natively: `OPENTPW_SMOKE_POOLS=1 bash scripts/run.sh ... --park-resume-smoke capture ...` then `restore` (`ParkResumeSmokeTest.Pools.cs`) paints a pool, builds a room, puts three guests in the water at the save, and the restore phase finds the room and the swimmers
 in the water of the 24-cell pool and continues with the capture phase's canonical hashes.
 
 ### Tests

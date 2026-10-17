@@ -40,6 +40,7 @@ public class ModsInBrowserTests
 		BrowserModInputs.Reset();
 		OpenTpwExtensions.Activate( ModSet.Defaults( OfficialExtensions.All ) );
 		ModContentRoots.Activate( ModSet.Defaults( OfficialExtensions.All ), _ => { } );
+		ObjectCatalog.SetContentRoots( Array.Empty<CatalogContentRoot>() ); // the default set's pools root must not leak into the other tests, which expect the base catalog
 		Directory.Delete( root, true );
 	}
 
@@ -171,7 +172,10 @@ public class ModsInBrowserTests
 		Assert.AreEqual( 0, set.Mods.Count );
 		Assert.IsTrue( ModStartup.Discovered.Any( mod => mod.Id == TpiRidesFixture.Id && mod.IsValid && mod.Source == ModSource.Program ) );
 		Assert.IsFalse( set.IsEnabled( OfficialExtensions.CrossEditionObjects.Id ) );
-		Assert.AreEqual( 0, ObjectCatalog.ContentRoots.Count );
+		// pools is on by default, so its own content root (the changing rooms, embedded in the browser build) is the only root
+		Assert.IsTrue( ObjectCatalog.ContentRoots.All( contentRoot => contentRoot.ModId == OfficialExtensions.Pools.Id ) );
+		Assert.IsTrue( set.IsEnabled( OfficialExtensions.Pools.Id ), "pools is on in the browser with no saved choice" );
+		Assert.IsTrue( ObjectCatalog.ContentRoots.Sum( contentRoot => contentRoot.Objects.Count ) >= 4, "the pools objects (changing rooms and extras) are in the catalogs" );
 	}
 
 	[TestMethod]
@@ -198,7 +202,7 @@ public class ModsInBrowserTests
 		Assert.IsTrue( BrowserModInputs.IsLocked, "an active mod reads the tree: it cannot be replaced while the game runs" );
 		Assert.ThrowsException<InvalidOperationException>( () => BrowserModInputs.Begin( "theme-park-inc" ) );
 		Assert.ThrowsException<InvalidOperationException>( () => BrowserModInputs.AddFile( "theme-park-inc", "Data/x", new byte[] { 1 } ) );
-		Assert.AreEqual( 183, ObjectCatalog.ContentRoots.Sum( contentRoot => contentRoot.Objects.Count ), "the shipped objects reach the catalogs" );
+		Assert.AreEqual( 183, ObjectCatalog.ContentRoots.Where( contentRoot => contentRoot.ModId != OfficialExtensions.Pools.Id ).Sum( contentRoot => contentRoot.Objects.Count ), "the shipped objects reach the catalogs" );
 	}
 
 	// ---- The Extensions and mods screen --------------------------------------------------------------

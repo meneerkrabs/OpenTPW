@@ -51,6 +51,21 @@ public sealed partial class OriginalObjectRuntime
 		return handle is 0 or -1 ? 0 : handle;
 	}
 
+	/// <summary>The global <c>cat_rides</c> event an installed upgrade plays at the object (tp.exe <c>0x55a2e5</c>).</summary>
+	public const uint UpgradeSoundEvent = 0xB8;
+
+	/// <summary>
+	/// The sound of an installed upgrade: global <c>cat_rides</c> 0xB8 at the footprint's middle at the base height, truncated to whole units, whenever the type names an upgrade
+	/// particle effect and the footprint box exists (the same two tests the effect's start passes). Presentation only: no draw, no state.
+	/// </summary>
+	// [BIN:TPW-EXE:0x55a2e5 upgrade sound] 0x55a100 (from 0x4df8f0 when the upgrade is installed) returns early for a type whose +0x6C effect is 0 (0x55a199) or without the footprint box (0x466b70, 0x55a1bf); after the effect it submits the global cat_rides (0x803a28) event 0xB8 through 0x51bfc0 at ftol((x0 + x1) * 0.5), ftol(the root node's +0x44 height), ftol((z0 + z1) * 0.5) (0x55a1c5-0x55a2d7): the footprint middle of 0x556d42
+	internal AudioVoice? PlayUpgradeSound()
+	{
+		if ( stopped || ParticleEffectId( ObjectParticleEffect.Upgrade ) <= 0 || ReadFootprintMiddle() is not { } middle )
+			return null;
+		return GameAudio.PlayRseEvent( 5, UpgradeSoundEvent, WholeUnits( middle ), SoundSource );
+	}
+
 	/// <summary>The volume extent the original sets after creating: the footprint's width and depth in original units times 512 (the pool halves them) and the box's height times 256.</summary>
 	internal static (int X, int Y, int Z) ExtentOf( ParticleFootprint footprint ) =>
 		((int)(footprint.WidthCells * 10f * 512f), float.IsFinite( footprint.Height ) ? (int)(Math.Max( 0f, footprint.Height ) * 256f) : 0, (int)(footprint.DepthCells * 10f * 512f));

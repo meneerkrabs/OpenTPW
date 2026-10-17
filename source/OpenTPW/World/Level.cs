@@ -642,6 +642,8 @@ public partial class Level : IDisposable
 				ApplyCompletedCatalogueTier( item.InstanceId );
 				// [BIN:TPW-EXE:0x55A100 upgrade effect] the type's UpgradeParticleEffect starts when the upgrade is installed (0x4df8f0)
 				AttractionRuntimeOf( item.InstanceId )?.StartObjectEffect( ObjectParticleEffect.Upgrade );
+				// [BIN:TPW-EXE:0x55A2E5 upgrade sound] the same routine then plays the global cat_rides event 0xB8 at the footprint middle
+				AttractionRuntimeOf( item.InstanceId )?.PlayUpgradeSound();
 				HangUpgradeBalloon( item.InstanceId, (int)item.Amount );
 				OpenAfterRepair( item.InstanceId );
 			}

@@ -13,15 +13,16 @@ public class AudioSpatialTests
 	public void ResetListener() => AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );
 
 	[TestMethod]
-	public void PositionedPcmHasBalancedCentreAndNonInvertedSideChannels()
+	public void PositionedMonoPcmFollowsTheDirectSoundPanOfTheSoftwareStage()
 	{
 		AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );
 		foreach ( var (position, left, right) in new[]
 		{
-			(new Vector3( 0, 0, 1 ), (short)707, (short)707),
-			(new Vector3( -1, 0, 0 ), (short)1000, (short)0),
-			(new Vector3( 1, 0, 0 ), (short)0, (short)1000),
-			(Vector3.Zero, (short)707, (short)707)
+			// [BIN:QMIXER-DLL:0x18005830 volume and pan] the louder channel keeps the level and the other is 10^(-|pan| / 2000) of it: 90 degrees is a pan of 4000, so 0.01
+			(new Vector3( 0, 0, 1 ), (short)1000, (short)1000),
+			(new Vector3( -1, 0, 0 ), (short)1000, (short)10),
+			(new Vector3( 1, 0, 0 ), (short)10, (short)1000),
+			(Vector3.Zero, (short)1000, (short)1000)
 		} )
 		{
 			using var mixer = new AudioMixer( null );
@@ -51,7 +52,7 @@ public class AudioSpatialTests
 		CollectionAssert.AreEqual( new short[6], mixer.Mix( 3 ) );
 		Assert.IsFalse( loop.IsFinished, "a inaudible loop remains available when the listener returns" );
 		AudioListener.Update( Vector3.Zero, new Vector3( 0, 0, 1 ) );
-		CollectionAssert.AreEqual( new short[] { 2828, 2828, 707, 707 }, mixer.Mix( 2 ), "phase advances while virtualized and then wraps" );
+		CollectionAssert.AreEqual( new short[] { 4000, 4000, 1000, 1000 }, mixer.Mix( 2 ), "phase advances while virtualized and then wraps" );
 		loop.Stop();
 		CollectionAssert.AreEqual( new short[2], mixer.Mix( 1 ) );
 	}

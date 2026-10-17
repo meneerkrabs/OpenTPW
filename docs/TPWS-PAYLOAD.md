@@ -491,8 +491,11 @@ active and free lists partition the 120 emitter slots and the 20 effector slots,
 - Inferred: an effector slot stores no template id, so the id is matched on template bytes (group, mode, jitter, strength) that the tick does not write by direct displacement (writes through a base register were not checked); no match or several is refused. No corpus save has a live effector, so this is unexercised on real data.
 - Conditional or capped: `VolumeExtent` is null when it equals the runtime template's; `TickCounter` is capped at `int.MaxValue`; a block with `ListProblems` is refused.
 
-The corpus test restores every save's pool into `ParticleSystem`, captures it back and compares every carried field (the post-load pass `0x5200B0` is the only difference, applied to the expectation). The park import does not call the conversion, and the sprite-script
-records have no runtime counterpart: both are decoded, not applied (SAVE-013, `[EXT:original-engine-state-dumps]`).
+The corpus test restores every save's pool into `ParticleSystem`, captures it back and compares every carried field (the post-load pass `0x5200B0` is the only difference, applied to the expectation). A level that starts from an original save restores the pool into its particle system
+(`Level.ImportOriginalParticles`): the post-load pass `0x5200B0` hides the screen-space emitters (the saved `Button` sparkles are dead on the first frame) and leaves the
+world emitters (Jungle's `WaterFall`). The sprite scripts of the Scripts block belong to the saved people and litter, not to scenery: the corpus' park saves hold exactly one record per saved guest
+(four guests waiting at the gate in the Hallow, Jungle and Space saves, one walking guest in Fantasy) whose entry point `0x5A` is program 3 of the person-script table `0x75A418` (`0x4D4140` creates it, the staff drop `0x505EA0` sets it): a loop of three threaded-code instructions that
+sets a frame and jumps back; litter (`0x4D93B0`) has its own programs `0x74F050` to `0x74F168` and the cell's `mLitterScript` points at its slot. The records are decoded and not applied (SAVE-013): OpenTPW animates its guests from their state and its litter from the cell.
 
 ## RSSE block (`SaveRsseBlock`)
 
@@ -678,7 +681,7 @@ strike words, strike levels and trained byte, the world state,
 arrival variables and bytes, the calendar session start, the advisor
 controller's presentation words and current record, the weather, park analyser,
 tag system, mechanic HQ and UI receiver things. The raw dumps of the original's own engine structures (the Scripts, RSSE, Particles, Sound, message-centre, Track ride and Flying ride blocks) are
-not restored: OpenTPW's engines restart from the archives (`[EXT:original-engine-state-dumps]`, formerly part of SAVE-010). Staff
+not restored: OpenTPW's engines restart from the archives (`[EXT:original-engine-state-dumps]`, formerly part of SAVE-010); the exceptions are the Particles pool (restored, SAVE-013) and the RSSE block's script ids, list order, next id and pass counter (applied to the imported objects' scripts, `SavedScriptImport`; the scripts restart their programs). Staff
 values outside OpenTPW's ranges (happiness outside the traced 0–100, a 100 %
 training percentage, a state without a STAFFSTATES entry, a hire time outside
 the calendar or inside a park turn, which is rounded down to the turn) are adjusted and each adjustment is reported; an attraction whose

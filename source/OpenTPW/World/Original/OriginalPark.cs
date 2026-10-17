@@ -43,13 +43,14 @@ public sealed class OriginalPark
 	public string DescribeObject( int infoId ) => Catalog.TryGetValue( infoId, out var info ) ? info.Name : $"Info.Id {infoId}";
 
 	/// <param name="readShippedSave">False starts the level without its shipped save (a new Full Simulation park, <see cref="ParkStart.ReadsShippedSave"/>).</param>
-	public static OriginalPark Load( string levelName, bool readShippedSave = true ) => LoadSteps( levelName, readShippedSave ).Last()!;
+	/// <param name="savePayload">The decoded payload of a player's original park save of this level (an <c>autosave.TPWS</c> or a named park, <c>restart.INTS</c>) to start from instead of the level's shipped <c>Easymode.TPWI</c>.</param>
+	public static OriginalPark Load( string levelName, bool readShippedSave = true, ReadOnlyMemory<byte>? savePayload = null ) => LoadSteps( levelName, readShippedSave, savePayload ).Last()!;
 
 	/// <summary>
 	/// <see cref="Load"/> in steps, for a park built over frames (docs/BROWSER-PERFORMANCE.md): null after each part of the work,
 	/// then the park.
 	/// </summary>
-	internal static IEnumerable<OriginalPark?> LoadSteps( string levelName, bool readShippedSave = true )
+	internal static IEnumerable<OriginalPark?> LoadSteps( string levelName, bool readShippedSave = true, ReadOnlyMemory<byte>? savePayload = null )
 	{
 		if ( string.IsNullOrWhiteSpace( levelName ) || levelName.IndexOfAny( new[] { '/', '\\', '.' } ) >= 0 )
 			throw new ArgumentException( "Original level names are plain directory names such as 'jungle'.", nameof( levelName ) );
@@ -74,6 +75,20 @@ public sealed class OriginalPark
 		var savePath = !readShippedSave || (GameEditions.IsThemeParkInc && !tpiPrebuilt) || !FileSystem.DirectoryExists( saveDirectory )
 			? null : FileSystem.GetFiles( saveDirectory )
 				.FirstOrDefault( path => string.Equals( Path.GetFileName( path ), saveName, StringComparison.OrdinalIgnoreCase ) );
+		// a player's own save of a Theme Park World level replaces the shipped one (Theme Park World only: the Theme Park Inc viewer has its prebuilt save)
+		if ( savePayload is { } playerPayload && !GameEditions.IsThemeParkInc )
+		{
+			yield return null;
+			using var playerProfile = LoadProfile.Measure( "player-save" );
+			var playerSave = ImportOriginalSave( levelName, playerPayload, map );
+			foreach ( var item in playerSave.PlacedObjects.Select( item => item.Record ).Concat( playerSave.FixedItems ).Concat( playerSave.UnresolvedObjects ) )
+			{
+				if ( !catalog.ContainsKey( item.InfoId ) )
+					throw new InvalidDataException( $"Original save object {item.Index} has Info.Id {item.InfoId}, which no {levelName} object archive declares." );
+			}
+			yield return new OriginalPark( levelName, map, model, lake, playerSave, catalog );
+			yield break;
+		}
 		// [BIN:STP-PPC:0x10137600 player save setup] the level's easymode park is copied into a player's saves only for Instant Action players (0x1013741C passes the mode flag)
 		if ( savePath != null )
 		{

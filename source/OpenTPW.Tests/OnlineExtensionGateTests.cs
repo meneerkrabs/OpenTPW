@@ -150,6 +150,9 @@ public class OnlineExtensionGateTests
 	{
 		// no OPENTPW_MOD_DIRS and no program folder: independent of the developer's own mods
 		using var scope = OpenTpwExtensions.Use( OpenTpwExtensions.Active );
+		// startup installs the content roots of the active set (the default set's pools root among them); leave the catalog as it was
+		var previousRoots = ObjectCatalog.ContentRoots;
+		using var restoreRoots = new Restore( () => ObjectCatalog.SetContentRoots( previousRoots ) );
 		var traces = new List<string>();
 		var set = ModStartup.Initialize( new[] { "--smoke-test", "--disable-extension", "opentpw.online" }, traces.Add, message => Assert.Fail( message ), null, null );
 		Assert.IsFalse( set.IsEnabled( "opentpw.online" ) );
@@ -157,5 +160,10 @@ public class OnlineExtensionGateTests
 		Assert.IsFalse( FeatureGates.Online );
 		StringAssert.Contains( traces.Single(), "opentpw.online" );
 		Assert.ThrowsException<ArgumentException>( () => ModStartup.Initialize( new[] { "--smoke-test", "--disable-extension", "opentpw.offline" }, _ => { }, _ => { }, null, null ) );
+	}
+
+	private sealed class Restore( Action action ) : IDisposable
+	{
+		public void Dispose() => action();
 	}
 }

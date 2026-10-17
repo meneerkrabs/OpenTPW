@@ -328,8 +328,8 @@ public sealed partial class ParkHud
 	private UiSpriteFrame? PortraitFrame()
 	{
 		(StaffType Type, int Variant)? key = showingEmployedStaff
-			? SelectedStaff is { } member ? (member.Type, StaffSpriteRules.VariantKey( member.NameIndex, member.Id )) : null
-			: SelectedCandidate is { } candidate ? (candidate.Type, StaffSpriteRules.VariantKey( candidate.NameIndex, candidate.Id )) : null;
+			? SelectedStaff is { } member ? (member.Type, StaffSpriteRules.KeyOf( member )) : null
+			: SelectedCandidate is { } candidate ? (candidate.Type, StaffSpriteRules.KeyOf( candidate )) : null;
 		if ( key != portraitKey )
 		{
 			portraitKey = key;

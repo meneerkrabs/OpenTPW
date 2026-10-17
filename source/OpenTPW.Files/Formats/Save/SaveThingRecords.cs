@@ -33,6 +33,10 @@ public readonly record struct SaveAttraction(
 	public const int NameCharacters = 33;
 	/// <summary>History buffers hold at most this many entries (head and count are bounded by it).</summary>
 	public const int MaximumRingEntries = 31;
+	/// <summary><c>mCurrentEntry</c> of a ring nothing has been written to yet (tp.exe <c>0x51ADE0</c>).</summary>
+	public const int EmptyRingHead = -1;
+	/// <summary><c>mNumEntries</c> of every ring the constructor makes.</summary>
+	public const int InitialRingEntries = 30;
 	/// <summary>The original loader clamps <c>mPricePerUse</c> to 0–500.</summary>
 	public const int MaximumPricePerUse = 500;
 	public const int MaximumUpgradeLevel = 3;
@@ -156,16 +160,18 @@ public readonly record struct SaveAttraction(
 	/// <summary>History ring (0x004CED70 / 0x004CEE50): u32 <c>mCurrentEntry</c>, u32 <c>mNumEntries</c>, u8 <c>mWrappedAround</c>, u32 <c>mTemp</c>, then <c>count</c> u32 <c>mData[i]</c>.</summary>
 	private static SaveAttractionHistory ReadHistory( ref SaveFieldReader reader, int id )
 	{
-		var head = reader.U32();
+		var head = reader.I32();
 		var count = reader.U32();
 		var flag = reader.U8();
 		var current = reader.I32();
-		if ( head > MaximumRingEntries || count > MaximumRingEntries || flag > 1 )
+		// [BIN:TPW-EXE:0x51ADE0 history constructor] a new ring has mCurrentEntry 0xFFFFFFFF, 30 entries and no wrap; that empty ring is the only head below 0 (the loader 0x4E2C10 reads it unchecked)
+		var empty = head == EmptyRingHead && count == InitialRingEntries && flag == 0;
+		if ( head is < 0 && !empty || head > MaximumRingEntries || count > MaximumRingEntries || flag > 1 )
 			throw new InvalidDataException( $"Save attraction thing {id} has a history buffer with head {head}, count {count}, flag {flag}." );
 		var data = new int[count];
 		for ( var index = 0; index < data.Length; index++ )
 			data[index] = reader.I32();
-		return new SaveAttractionHistory( (int)head, flag != 0, current, data );
+		return new SaveAttractionHistory( head, flag != 0, current, data );
 	}
 
 	private static bool IsGauge( float value ) => float.IsFinite( value ) && value >= 0f && value <= MaximumGauge;

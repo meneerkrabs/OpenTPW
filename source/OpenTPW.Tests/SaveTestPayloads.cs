@@ -33,6 +33,8 @@ internal static class SaveTestPayloads
 		public int RingToday { get; init; }
 		/// <summary>Every saved slot of every ring.</summary>
 		public int RingEntry { get; init; }
+		/// <summary>The slot every ring last wrote (mCurrentEntry); -1 is a ring nothing has been written to.</summary>
+		public int RingHead { get; init; } = 1;
 		public uint RingCount { get; init; } = 30;
 		public byte RingFlag { get; init; } = 1;
 		public uint Customers { get; init; } = 7;
@@ -82,7 +84,7 @@ internal static class SaveTestPayloads
 		writer.Write( new byte[10] );
 		void Ring()
 		{
-			writer.Write( 1u );
+			writer.Write( fields.RingHead );
 			writer.Write( fields.RingCount );
 			writer.Write( fields.RingFlag );
 			writer.Write( fields.RingToday );
@@ -367,11 +369,11 @@ internal static class SaveTestPayloads
 	}
 
 	/// <summary>Calendar (FunnyTimeStart 2000-01-01, rate 15000, month cache 1, day 2) and 18 arrival bytes.</summary>
-	public static byte[] CalendarAndArrivals( int rate = 15_000, int month = 1, int day = 2 )
+	public static byte[] CalendarAndArrivals( int rate = 15_000, int month = 1, int day = 2, long funnyTimeStart = 125_911_584_000_000_000L )
 	{
 		using var stream = new MemoryStream();
 		using var writer = new BinaryWriter( stream );
-		writer.Write( 125_911_584_000_000_000L );
+		writer.Write( funnyTimeStart );
 		writer.Write( 125_850_128_932_900_000L );
 		writer.Write( month );
 		writer.Write( day );

@@ -93,7 +93,7 @@ internal sealed partial class ParkResumeSmokeTest
 		var slide = slides!.Slides.Single();
 		Require( slide.IsComplete && slides.IsUsable( slide ) && slides.TowerOf( slide ) != null, "the slide is complete and usable over its tower" );
 		var riders = level.Guests.Guests.Where( guest => guest.InPoolActivity && guest.PoolActivityId == PoolSlideActivity.ActivityId ).ToList();
-		Require( riders.Count >= 1 && riders.All( guest => guest.PoolActivityTarget == slide.Id ), "the resumed park holds the guest(s) on its slide" );
+		Require( riders.Count >= 1 && riders.All( guest => guest.PoolActivityTarget == slides.TowerOf( slide )!.ThingId ), "the resumed park holds the guest(s) on its slide" );
 		Log.Trace( $"Park-resume restore: the slide of {slide.Pieces.Count} pieces came back with {riders.Count} guest(s) on it (phases {string.Join( ",", riders.Select( guest => guest.PoolActivityPhase ) )})." );
 	}
 }

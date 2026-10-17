@@ -29,11 +29,11 @@ public class DeterminismTests
 		private readonly RideVM shopScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
-			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream );
+			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream ) { Observer = observer };
 			// the park's one thing pool as Level builds it: the world's ten singletons, then the gates and the lights (things 1 to 12), so the first guest is thing 13 (WALK-010)
 			Things = new ThingPool();
 			Things.AllocateWorldSetup();
@@ -259,9 +259,9 @@ public class DeterminismTests
 	}
 
 	/// <summary>The hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run, for tests that repeat it under other conditions.</summary>
-	internal static ulong RunFixedPark()
+	internal static ulong RunFixedPark( IGuestObserver? observer = null )
 	{
-		var park = new SyntheticPark( WorldSeed.Default );
+		var park = new SyntheticPark( WorldSeed.Default, observer );
 		park.Run( PinnedRunTicks );
 		return park.Hash;
 	}

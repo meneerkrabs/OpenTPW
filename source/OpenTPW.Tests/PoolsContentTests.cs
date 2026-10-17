@@ -173,7 +173,8 @@ public class PoolsContentTests
 			// the footprint: 2 x 2 cells, and the cabin stands on the ground
 			var composed = model.Meshes.SelectMany( mesh => mesh.Vertices.Select( vertex => System.Numerics.Vector3.Transform( vertex.Position.GetSystemVector3(), WorldOf( model, mesh.NodeIndex ) ) ) ).ToArray();
 			Assert.IsTrue( composed.All( p => p.X >= -0.01f && p.X <= 20.01f && p.Z >= -0.01f && p.Z <= 20.01f && p.Y >= -0.01f && p.Y < 20f ), $"{theme}: the cabin stands on its 2 x 2 cells" );
-			Assert.IsTrue( composed.Min( p => p.X ) < 1.5f && composed.Max( p => p.X ) > 18.5f && composed.Min( p => p.Z ) < 1.5f && composed.Max( p => p.Z ) > 18.5f, $"{theme}: and fills them" );
+			Assert.IsTrue( composed.Min( p => p.X ) < 2f && composed.Max( p => p.X ) > 18f && composed.Max( p => p.Z ) > 19.9f, $"{theme}: the roof and the pool-side door frame still reach the footprint" );
+			AssertWalkableSidesKeepAGap( model, theme + " cabin" );
 			Assert.AreEqual( 0, RideHeadSpace.Create( model, seed: 1 )?.Count ?? 0, "no head records: a guest inside is not drawn" );
 
 			using var scriptStream = entry.FileSystem.OpenRead( entry.ScriptPath! );
@@ -189,6 +190,99 @@ public class PoolsContentTests
 					released = step;
 			}
 			Assert.IsTrue( released is > 150 and < 400, $"{theme}: the cabin releases its guest after the changing time ({released} steps of 1/60 s)" );
+		}
+	}
+
+	/// <summary>Where the model's surface cuts the horizontal plane at this height: the smallest and largest X and Z of the intersections of the triangle edges with it, or null when nothing reaches that high.</summary>
+	internal static (float MinX, float MaxX, float MinZ, float MaxZ)? SliceAt( ModelFile model, float height )
+	{
+		float minX = float.MaxValue, maxX = float.MinValue, minZ = float.MaxValue, maxZ = float.MinValue;
+		var any = false;
+		foreach ( var mesh in model.Meshes )
+		{
+			var world = WorldOf( model, mesh.NodeIndex );
+			var points = mesh.Vertices.Select( vertex => System.Numerics.Vector3.Transform( vertex.Position.GetSystemVector3(), world ) ).ToArray();
+			for ( var corner = 0; corner + 2 < mesh.Indices.Length; corner += 3 )
+			{
+				for ( var edge = 0; edge < 3; edge++ )
+				{
+					var a = points[mesh.Indices[corner + edge]];
+					var b = points[mesh.Indices[corner + (edge + 1) % 3]];
+					if ( (a.Y - height) * (b.Y - height) > 0 || a.Y == b.Y )
+						continue;
+					var p = a + (b - a) * ((height - a.Y) / (b.Y - a.Y));
+					any = true;
+					minX = Math.Min( minX, p.X ); maxX = Math.Max( maxX, p.X ); minZ = Math.Min( minZ, p.Z ); maxZ = Math.Max( maxZ, p.Z );
+				}
+			}
+		}
+		return any ? (minX, maxX, minZ, maxZ) : null;
+	}
+
+	/// <summary>
+	/// [EXT:pools-model-inset] The walls of a footprint-filling model stand clear of the cell edge on the sides a path can run along (the entrance side at Z = 0 and both flanks; the pool side at Z = 20 is the water side and
+	/// may reach the edge), at the height of a walker's sprite and above it up to the eaves. A walker is a camera-facing sprite at the depth of its feet and may come to 0.2 cell from the edge of a path cell, so a
+	/// wall flush with the edge cuts it. Measured on the game's own shops and sideshows (docs/POOLS.md, "Model inset"): at 2 units above the ground every side of every one stands at least 0.5 units inside its footprint,
+	/// the 10th percentile of the sides is 1.0 (sideshows) to 2.2 (shops), the median 2.3 (sideshows) to 4.4 (shops); the gap here is 1.0 on the entrance side (the door frame) and 1.4 or more on the flanks.
+	/// </summary>
+	private static void AssertWalkableSidesKeepAGap( ModelFile model, string what )
+	{
+		foreach ( var height in new[] { 1f, 2f, 3f, 4f, 6f } )
+		{
+			var slice = SliceAt( model, height );
+			Assert.IsNotNull( slice, $"{what}: something stands {height} units above the ground" );
+			var (minX, maxX, minZ, _) = slice!.Value;
+			Assert.IsTrue( minX >= 1.0f && 20f - maxX >= 1.0f && minZ >= 1.0f, $"{what}: at {height} units the model stands X {minX:F1}..{maxX:F1} and from Z {minZ:F1}; the flanks and the entrance side keep at least 1 unit from the footprint's edge" );
+		}
+	}
+
+	/// <summary>The measurement behind the pools' wall gap (docs/POOLS.md, "Model inset"): the game's own shops and sideshows stand clear of their footprint's edge at a walker's height, on every side.</summary>
+	[TestMethod]
+	public void TheOriginalShopsAndSideshowsKeepAtLeastHalfAUnitFromTheFootprintAtWalkerHeight()
+	{
+		if ( ObjectCatalogCorpusTests.UseOriginalData( out _ ) == null )
+			Assert.Inconclusive( "Set OPENTPW_GAME_PATH to the original game." );
+		ObjectCatalog.BonusDataRoot = null;
+		var checkedObjects = 0;
+		var shortest = float.MaxValue;
+		foreach ( var theme in ObjectCatalog.Themes )
+		{
+			foreach ( var entry in ObjectCatalog.Load( theme ).Entries.Where( entry => entry.Category is ObjectCategory.Shop or ObjectCategory.Sideshow ) )
+			{
+				var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+				if ( model.Kind != ModelFileKind.Geometry || model.Meshes.Count == 0 )
+					continue;
+				var slice = SliceAt( model, 2f );
+				if ( slice == null )
+					continue;
+				var (minX, maxX, minZ, maxZ) = slice.Value;
+				var width = entry.Shape.Width * 10f;
+				var depth = entry.Shape.Height * 10f;
+				var gap = Math.Min( Math.Min( minX, width - maxX ), Math.Min( minZ, depth - maxZ ) );
+				shortest = Math.Min( shortest, gap );
+				checkedObjects++;
+			}
+		}
+		Assert.IsTrue( checkedObjects >= 40, $"{checkedObjects} shops and sideshows measured" );
+		Assert.IsTrue( shortest >= 0.4f, $"the tightest shop or sideshow side at 2 units above the ground is {shortest:F1} units inside its footprint" );
+	}
+
+	[TestMethod]
+	public void EachSlideTowersFlightAndPostsKeepTheSamePathSideGap()
+	{
+		using var scope = Enabled( true, FileSystem );
+		for ( var index = 0; index < Themes.Length; index++ )
+		{
+			var theme = Themes[index];
+			foreach ( var (id, kind) in new[] { (65100 + index, "flume"), (65104 + index, "tube") } )
+			{
+				var entry = ObjectCatalog.Load( theme ).Get( id );
+				var model = ObjectAssets.LoadModel( entry.FileSystem, entry.ModelPath );
+				AssertWalkableSidesKeepAGap( model, $"{theme} {kind} tower" );
+				var top = SliceAt( model, 24.5f );
+				Assert.IsNotNull( top, $"{theme} {kind}: the platform stands 25 units up" );
+				Assert.IsTrue( top!.Value.MinX < 0.1f && top.Value.MaxX > 19.9f && top.Value.MaxZ > 19.9f, "the platform still reaches the whole footprint" );
+			}
 		}
 	}
 

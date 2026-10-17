@@ -230,6 +230,19 @@ whose back, opposite the entrance, touches the pool. It is a facility like a toi
 - **Info.Ids.** OpenTPW reserves 65000 to 65535 (pool extras 65000 to 65099, water slides 65100 to 65199, water attractions 65200 to 65299, changing rooms 65500 to 65519, the rest spare) (`PoolContent.FirstReservedId`, `LastReservedId`; inside the 5000 to 65535 range of the object ids) for the objects of the pools extension; the four themes' rooms are 65500 (jungle), 65501 (hallow),
   65502 (space) and 65503 (fantasy).
 
+### Model inset (`[EXT:pools-model-inset]`)
+
+A walker (guest or staff member) is a camera-facing sprite drawn at the depth of its feet, and the steering (`avoid_walls`, radius 0.2 cell = 2 units) lets it come to 2 units from the edge of a path cell. A wall that reaches the edge of its footprint therefore cuts the
+sprite of whoever walks along it, most of all a tall staff costume. The pools' first models filled their footprint on every side (the cabin's walls were half a unit inside, its door frames and corner posts 0.0 to 0.3, and the slide towers' flight and posts 0.0), which is what clipped. The original buildings do not:
+measured with `ObjectCatalog` / `ObjectAssets.LoadModel` on the game's own models (each triangle edge cut by the plane 2 units above the ground, the nodes' transforms applied, the extent compared with the footprint of 10 units a cell), the 32 shops and 17 sideshows stand
+**0.5 units (the tightest sideshow side) to 0.9 (the tightest shop side) or more inside their footprint on every side**; the 10th percentile of the sides is 1.0 (sideshows) to 2.2 (shops) and the median 2.3 (sideshows) to 4.4 (shops); per building the tightest side has a median of 1.5 (sideshows) to 3.5 (shops). The ground slab
+of an original (the plane near 0) does fill its footprint, and a few trees, rocks and the fries stall overhang by up to 0.8, none of them a building with walls. `PoolsContentTests.TheOriginalShopsAndSideshowsKeepAtLeastHalfAUnitFromTheFootprintAtWalkerHeight` pins the shop and sideshow measurement (it needs the game data).
+
+The pool models now keep that gap on the sides a path can run along, and only there: the **changing room**'s entrance wall stands 1.6 units inside (1.1 at the door frame), its flank walls 1.6 (corner posts 1.4), the roof overhangs them by 0.6 (1.0 inside the footprint), and a 0.15 high apron slab covers the whole footprint; its
+pool side stays 0.5 inside (the door frame reaches the edge), since that side is the water. The **slide towers**' flight and posts stand 1.5 inside on the entrance side and both flanks; the platform and rails, 24 units up and far above a sprite, still reach the whole footprint (the track attaches there), and the stairs' side, facing the pool, is flush.
+The pool extras (1.0 or more on their sides, the water side excepted) and the water attractions (0.7 or more above their base slab, which fills the footprint like an original's ground slab) already kept a gap and are unchanged. `PoolsContentTests` pin the cabin and the towers at 1 unit or more on the entrance side and the flanks at 1, 2, 3, 4 and 6 units above the ground.
+The sprite projection itself is not touched here; how much of the clipping is the model's gap and how much the sprite's width and orientation is judged in a native capture.
+
 ### Choosing to swim
 
 The changing room is an attraction for the normal attraction choice, so **no new decision point and no change of `IGuestDecisions`** was needed. A guest scores it with the one score of every attraction (`ScoreAttraction`: distance, queue length, excitement against its

@@ -5,7 +5,7 @@ namespace OpenTPW;
 /// The park's substep pass counter (<c>0x877D34</c>, raised before the substep's work, saved with the park) is <c>tick * 1000 / 1860</c> of the park's own tick count, so the turn's substep is the one whose counter is a multiple of
 /// eight and the turn counter is the pass counter divided by eight (<see cref="ParkCalendar.Turn"/>).
 /// </summary>
-// [BIN:TPW-EXE:0x54F4D3 substep counter] inc [0x877D34] at the start of each substep body; 0x54F5D7 tests its bit 0 for the tour cars, 0x54F668 its low three bits for the park turn
+// [BIN:TPW-EXE:0x54F4D3 substep counter] inc [0x877D34] at the start of each substep, before the pause test (a paused substep in the original still counts; OpenTPW's clock does not run while paused); 0x54F5D7 tests its bit 0 for the tour cars, 0x54F668 its low three bits for the park turn
 // [BIN:TPW-EXE:0x54F4D4 substep gate] the substep body runs unless the park is paused (flag 0x7A1A8C bit 0, with 0x7A1A14 bit 8 forcing it): a paused park runs no scripts, bump module, tour cars or turn
 // [EXT:fixed-60hz-clock] a 60 Hz tick is 16.667 ms, so at most one 31 ms substep ends in a tick; the substep runs in the tick that crosses its time and the 1.86 ticks between substeps run nothing of the original's
 internal readonly record struct SimulationSubstep( bool Running, bool Due, long Pass, long ClockUnits )

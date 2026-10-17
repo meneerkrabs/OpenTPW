@@ -447,9 +447,12 @@ public partial class Level : IDisposable
 			if ( Park != null )
 			{
 				litterEffects = new ParkLitterEffects( Park.Economy.Litter, ParticleRendererModule.AdvisorPool );
-				// the economy that owns the litter is replaced by a load, so the renderer asks for it again every frame
-				LitterRenderer = new LitterRenderer( OriginalPark!.Heightfield, () => Park?.Economy.Litter, GuestSpriteAtlas.LoadLitter() );
-				UpgradeBalloons = new UpgradeBalloonRenderer( OriginalPark.Heightfield, GuestSpriteAtlas.LoadSpecialEffects() );
+				if ( OriginalPark != null )
+				{
+					// the economy that owns the litter is replaced by a load, so the renderer asks for it again every frame
+					LitterRenderer = new LitterRenderer( OriginalPark.Heightfield, () => Park?.Economy.Litter, GuestSpriteAtlas.LoadLitter() );
+					UpgradeBalloons = new UpgradeBalloonRenderer( OriginalPark.Heightfield, GuestSpriteAtlas.LoadSpecialEffects() );
+				}
 			}
 			ImportOriginalGuests();
 			ImportOriginalRideSettings();

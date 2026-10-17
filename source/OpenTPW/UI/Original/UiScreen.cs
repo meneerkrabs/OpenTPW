@@ -122,6 +122,8 @@ public class UiScreen
 			drag.DragTo( canvas, input.Mouse );
 		if ( input.LeftReleased )
 		{
+			if ( pressed is { Enabled: true } and IUiDragTarget ended && input.Mouse.X >= 0 )
+				ended.DragEnd( canvas, input.Mouse );
 			// [BIN:TPW-EXE:0x65f6d1 click rule] a release is a click only within 500 ms of its press and without the pointer straying more than 6 px (UiInputSource)
 			// a button whose hold began repeating gives no click when it is let go (0x668eff: the click needs the state not to be 2)
 			var repeating = pressed is UiButton { HoldState: 2 };

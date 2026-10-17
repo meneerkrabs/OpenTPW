@@ -95,6 +95,31 @@ public class ObjectParticleEffectTests
 	}
 
 	[TestMethod]
+	public void AnInstalledUpgradePlaysTheGlobalRidesSoundAtTheFootprintMiddle()
+	{
+		// [BIN:TPW-EXE:0x55a2e5 upgrade sound] 0x55a100 submits the global cat_rides (0x803a28) event 0xB8 at the truncated footprint middle, after the upgrade effect
+		using var probe = new AudioTriggerProbe();
+		var placed = Placed( Entry( RideKeys, "***", "***" ) );
+		var middle = placed.Runtime.ReadFootprintMiddle()!.Value;
+		placed.Runtime.PlayUpgradeSound();
+		var (category, id, position) = probe.Fired.Single();
+		Assert.AreEqual( ("cat_rides", 0xB8u), (category, id) );
+		Assert.AreEqual( new Vector3( (int)middle.X, (int)middle.Y, (int)middle.Z ), position, "whole units, truncated toward zero" );
+	}
+
+	[TestMethod]
+	public void AnUpgradeWithoutAnEffectOrAFootprintIsSilent()
+	{
+		using var probe = new AudioTriggerProbe();
+		Placed( Entry( "Info.CreateParticleEffect 79\n", "***" ) ).Runtime.PlayUpgradeSound();
+		Assert.AreEqual( 0, probe.Fired.Count, "the type names no upgrade effect: 0x55a100 returns before the sound" );
+		var fixedItem = new OriginalObject( Entry( RideKeys, "***" ), new ObjectPlacement( 3, 4, 0, new N.Vector2( -7, 11 ), 9 ) );
+		fixedItem.Runtime.SetEventAnchors( () => null, _ => default );
+		fixedItem.Runtime.PlayUpgradeSound();
+		Assert.AreEqual( 0, probe.Fired.Count, "no footprint box: 0x466b70 fails and the routine returns" );
+	}
+
+	[TestMethod]
 	public void ARotatedFootprintSwapsItsExtent()
 	{
 		var entry = Entry( RideKeys, "***", "***" );

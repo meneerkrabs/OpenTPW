@@ -352,6 +352,22 @@ internal sealed partial class GameFlow : IDisposable
 		return EnterLevel( level, levelName, original, visit );
 	}
 
+	/// <summary>
+	/// Plays the guests' voices and the stinkbomb at the guest's place. Every route into a park attaches it, a resumed park included: the voices draw from the sound seed,
+	/// which a park save carries, so a resumed park must draw exactly as the park it continues.
+	/// </summary>
+	private static void AttachGuestSounds( Level level )
+	{
+		if ( level.Guests == null )
+			return;
+		level.Guests.Voiced += ( guest, eventId ) => GameAudio.PlayGuestVoice( eventId, new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+		level.Guests.Pranked += ( guest, prank ) =>
+		{
+			if ( prank == GuestDecision.Prank.Stinkbomb )
+				GameAudio.PlayStinkbomb( new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
+		};
+	}
+
 	/// <summary>The rest of <see cref="StartLevel"/> once its level is built and current: park audio, HUD and advisor.</summary>
 	private Level EnterLevel( Level level, string levelName, bool original, ParkVisitInfo? visit )
 	{
@@ -360,14 +376,7 @@ internal sealed partial class GameFlow : IDisposable
 			using ( LoadProfile.Measure( "enter-park-audio" ) )
 				GameAudio.EnterPark( levelName, level.Seed.SoundStream );
 		StartKind = level.Park?.Start.Kind;
-		if ( level.Guests != null )
-			level.Guests.Voiced += ( guest, eventId ) => GameAudio.PlayGuestVoice( eventId, new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
-		if ( level.Guests != null )
-			level.Guests.Pranked += ( guest, prank ) =>
-			{
-				if ( prank == GuestDecision.Prank.Stinkbomb )
-					GameAudio.PlayStinkbomb( new Vector3( guest.X * 10, 0, guest.Y * 10 ) );
-			};
+		AttachGuestSounds( level );
 		// [EXT:tpi-viewer] the edition capability policy runs the experimental Theme Park Inc slice: the shared world,
 		// build and guest systems under the experimental HUD, without the reference game's economy, HUD or advisor.
 		if ( level.IsThemeParkIncSlice )
@@ -1031,8 +1040,13 @@ internal sealed partial class GameFlow : IDisposable
 	{
 		if ( !FeatureGates.Sharing )
 			throw new NotSupportedException( FeatureGates.Online ? "Postcards are unavailable for this edition's experimental slice." : FeatureGates.OnlineDisabledMessage + "." );
+		// [BIN:TPW-EXE:0x4a9380 postcard] the postcard button (100 of the camera panel, 0x498ad0) and Ctrl+P (0x481500) run 0x4a9380, which plays cat_ui 0x95 flat before it builds the composer
+		GameAudio.PlayUi( PostcardEvent );
 		CreateOnlineScreens( stack ).ShowSendPostcard();
 	}
+
+	/// <summary>The <c>cat_ui</c> sound the postcard composer opens with (0x95).</summary>
+	public const uint PostcardEvent = 0x95;
 
 	private UI.OnlineScreens CreateOnlineScreens( UiScreenStack stack ) => new( stack, Strings, Context.Models, new UI.OnlineHost
 	{

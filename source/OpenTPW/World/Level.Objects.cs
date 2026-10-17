@@ -69,6 +69,12 @@ public partial class Level
 		PrepareThings();
 		// [BIN:TPW-EXE:0x5590f7 demolish effect] the type's DestroyParticleEffect starts at the footprint before the script goes, for every removal but a park load or clear
 		Objects.ObjectRemoving += item => item.Runtime.StartObjectEffect( ObjectParticleEffect.Destroy );
+		// [EXT:pools-extras] a swimmer in an activity at an erased or demolished extra leaves the session at once (the activity lets go first)
+		Objects.ObjectRemoving += item =>
+		{
+			if ( PoolExtras.KindOf( item.Entry ) != PoolExtraKind.None )
+				Guests?.AbortPoolActivitiesOf( item.ThingId );
+		};
 		Objects.ObjectRemoved += item =>
 		{
 			if ( ReferenceEquals( RideView?.Ride, item ) )
@@ -330,7 +336,8 @@ public partial class Level
 		Objects.ClearPath = ( x, y ) => Paths?.Remove( x, y );
 		Objects.PathRuleAllows = ( x, y ) => Paths?.CheckPathRule( x, y ) is { } rule ? rule is CellBuildResult.Ok or CellBuildResult.Existing : null;
 		// [EXT:pools-changing-room] a changing room needs pool water beside its back
-		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation );
+		// [EXT:pools-extras] and a pool extra needs its spot beside the water (or the room)
+		Objects.PlacementRule = ( entry, x, y, rotation ) => PoolChangingRooms.PlacementRule( entry, Guests?.Grid.Cells, x, y, rotation ) ?? PoolExtras.PlacementRule( entry, Guests?.Grid.Cells, Objects, x, y, rotation );
 	}
 
 	/// <summary>Whether a cell of this type keeps objects off it: any type but empty ground, a path and the object, entrance and exit types ([EXT:pools-cell-type]: pool water is one).</summary>
@@ -368,6 +375,36 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// [EXT:debug-pool] Smoke-only (<c>--debug-extras</c>): builds one of each pool extra of the theme through the level's own placement (charged, with its rule) at the first anchor and rotation, within
+	/// four cells of <paramref name="pool"/>, that the rules allow, in the order ladder, diving board, shower, lounger, lamp, underwater light. Returns what was placed.
+	/// </summary>
+	internal List<OriginalObject> BuildPoolExtrasBeside( IReadOnlyList<(int X, int Y)> pool )
+	{
+		var placed = new List<OriginalObject>();
+		if ( pool.Count == 0 )
+			return placed;
+		RegisterPoolActivities();
+		var (minX, maxX, minY, maxY) = (pool.Min( cell => cell.X ) - 4, pool.Max( cell => cell.X ) + 4, pool.Min( cell => cell.Y ) - 4, pool.Max( cell => cell.Y ) + 4);
+		foreach ( var kind in new[] { PoolExtraKind.Ladder, PoolExtraKind.DivingBoard, PoolExtraKind.Shower, PoolExtraKind.Lounger, PoolExtraKind.Lamp, PoolExtraKind.UnderwaterLight } )
+		{
+			var entry = Objects.Catalog.Entries.FirstOrDefault( item => PoolExtras.KindOf( item ) == kind );
+			if ( entry == null )
+				continue;
+			var done = false;
+			for ( var y = minY; y <= maxY && !done; y++ )
+				for ( var x = minX; x <= maxX && !done; x++ )
+					foreach ( var rotation in new[] { 0, 90, 180, 270 } )
+						if ( CheckObject( entry, x, y, rotation ) == OriginalPlacementResult.Allowed && PlaceObject( entry, x, y, rotation ) is { } item )
+						{
+							placed.Add( item );
+							done = true;
+							break;
+						}
+		}
+		return placed;
+	}
+
+	/// <summary>
 	/// [EXT:pools-swim] Why a pool cell cannot be erased: a swimmer is in it, or it lies beside the back of a changing room (the room needs its pool, and a save that holds a changing room
 	/// records the extension only while it has pool cells). Null when it can go.
 	/// </summary>
@@ -378,6 +415,9 @@ public partial class Level
 		foreach ( var item in Objects.Objects )
 			if ( !item.IsDeleted && item.Visitors.IsChangingRoom && item.Visitors.PoolAccessCandidates.Contains( (x, y) ) )
 				return PoolBuildResult.ChangingRoomAccess;
+		// [EXT:pools-extras] the water a ladder, board, lounger, lamp or light stands beside stays
+		if ( PoolExtras.NeedsWater( PoolExtras.Sites( Objects ), x, y ) )
+			return PoolBuildResult.ExtraNeedsWater;
 		return null;
 	}
 
@@ -403,17 +443,34 @@ public partial class Level
 			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
 		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded beside the kid sets
+		RegisterPoolActivities();
+		if ( SwimmerRenderer == null && PoolRenderer != null )
+			SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
+	}
+
+	/// <summary>[EXT:pools-activities] Registers the pool activities with the simulation and lets it read the placed extras (once; while the extension is on).</summary>
+	internal void RegisterPoolActivities()
+	{
+		if ( Guests == null || !FeatureGates.Pools )
+			return;
+		// [EXT:pools-extras] the swim session reads the placed extras through the level's objects, rebuilt once per park turn
+		Guests.PoolExtraSites ??= () =>
+		{
+			if ( poolExtraSitesTurn != Guests.ParkTurn || poolExtraSites == null )
+				(poolExtraSites, poolExtraSitesTurn) = (PoolExtras.Sites( Objects ), Guests.ParkTurn);
+			return poolExtraSites;
+		};
 		if ( !poolActivitiesRegistered )
 		{
 			poolActivitiesRegistered = true;
 			foreach ( var activity in PoolActivityRegistry.Create() )
 				Guests.RegisterPoolActivity( activity );
 		}
-		if ( SwimmerRenderer == null && PoolRenderer != null )
-			SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
 	}
 
 	private bool poolActivitiesRegistered;
+	private List<PoolExtraSite>? poolExtraSites;
+	private long poolExtraSitesTurn = -1;
 
 	private GuestRenderer? CreateSwimmerRenderer( GuestSimulation guests, OriginalPark park )
 	{

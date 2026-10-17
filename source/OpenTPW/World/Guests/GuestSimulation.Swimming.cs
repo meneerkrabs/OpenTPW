@@ -303,6 +303,12 @@ public sealed partial class GuestSimulation
 	/// <summary>Empties the registry (guests still in an activity then leave the water on their next turn).</summary>
 	public void ClearPoolActivities() => poolActivities.Clear();
 
+	/// <summary>The placed pool extras (<see cref="PoolExtras"/>), supplied by the level; null in a simulation without objects.</summary>
+	public Func<IReadOnlyList<PoolExtraSite>>? PoolExtraSites { get; set; }
+
+	/// <summary>The changing room a guest in a swim session started at, or null.</summary>
+	internal IRideVisitorBridge? SwimRoomOf( Guest guest ) => FindAttraction( guest.AttractionId );
+
 	/// <summary>The registered activity with this id, or null.</summary>
 	public IPoolActivity? PoolActivityById( string? id ) => id == null ? null : poolActivities.FirstOrDefault( activity => activity.Id == id );
 
@@ -350,6 +356,19 @@ public sealed partial class GuestSimulation
 	/// </summary>
 	public float PoolFeetHeight( Guest guest, float defaultHeight ) =>
 		guest.State == GuestState.PoolActivity && PoolActivityOf( guest )?.FeetHeight( this, guest, defaultHeight ) is { } height ? height : defaultHeight;
+
+	/// <summary>
+	/// [EXT:debug-pool] Smoke-only (<c>--debug-extras</c>): puts a swimmer into the activity at once if the activity has an offer for it (so a capture shows the activity without waiting for the cadence).
+	/// </summary>
+	internal bool DebugStartActivity( Guest guest, string id )
+	{
+		if ( !guest.IsSwimming || PoolActivityById( id ) is not { } activity || SwimRoomOf( guest ) is not { } room || SwimRegionOf( room ) is not { } region || activity.Offer( this, guest, region ) is not { } offer )
+			return false;
+		var stream = guest.SwimRandom;
+		var started = BeginPoolActivity( guest, activity, offer, ref stream );
+		guest.SwimRandom = stream;
+		return started;
+	}
 
 	/// <summary>Whether a guest is in a pool activity in the cell (the pool tool does not erase water under it).</summary>
 	public bool IsPoolActivityIn( int x, int y ) => guests.Any( guest => guest.State == GuestState.PoolActivity && guest.CellX == x && guest.CellY == y );

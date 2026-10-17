@@ -305,7 +305,7 @@ An **activity** is something a swimmer does during its session besides swimming:
 
 **The registry** is `GuestSimulation.PoolActivities` (ordered by id; `RegisterPoolActivity`); `Level.RefreshPools` fills it from `PoolActivityRegistry.Create()` while the extension is on. A simulation with an empty registry behaves exactly as before.
 
-**The cadence.** Each turn of the water phase (`Swimming`, at least 24 turns left of the swim), the host asks every registered activity for an offer (`Offer` is pure). **With no offer nothing is drawn.** With offers, one draw of the swimmer's own stream decides (one in 45 turns on average, `PoolActivitySettings.OfferIntervalTurns`) and a second picks which offer; then `Start` is called with the stream. An activity whose `StartOfferPercent` is above 0 (the shower) is offered at the start of the session only: as the swim begins the host draws once per such activity that has an offer, and the guest does it with that chance before entering the water. A declined `Start` leaves the guest swimming.
+**The cadence.** Each turn of the water phase (`Swimming`, at least 24 turns left of the swim), the host asks every registered activity for an offer (`Offer` is pure). **With no offer nothing is drawn.** With offers, one draw of the swimmer's own stream decides (one in 90 turns on average, `PoolActivitySettings.OfferIntervalTurns`) and a second picks which offer; then `Start` is called with the stream. An activity whose `StartOfferPercent` is above 0 (the shower) is offered at the start of the session only: as the swim begins the host draws once per such activity that has an offer, and the guest does it with that chance before entering the water. A declined `Start` leaves the guest swimming.
 
 **A turn of the activity** (`Update`): `Continue` goes on; `BackInWater` puts the guest back to `Swimming` (the host sets it at the pool-side cell if the activity left it outside the water); `EndSession` sends it to climb out like a finished swim. The swim's remaining turns do not run down during an activity, so an activity must bound itself. `PlacePoolGuest` and `MovePoolGuest` set or step the guest's position for an activity.
 
@@ -316,6 +316,44 @@ An **activity** is something a swimmer does during its session besides swimming:
 **Sprites.** The swimwear slots are `PoolSwimSlots` (0 stand, 1 walk, 2 run, 3 ladder, 4 dive, 5 lying, 6 shower, 7 sliding, 8 to 10 the strokes, 11 splash-down, 12 sitting, 13 ring, 14 rope swing); the activity chooses the slot (`IPoolActivity.SpriteSlot`, default: treading water). Slots a set has no art for yet fall back to what the set has.
 
 **Tests.** `PoolsActivityHostTests` proves the host with a test-only fake activity: offer, start, continue, back in the water, end of session, declined start, the shower-like start offer, no draws and no hash change with an empty registry or an activity that offers nothing, the aborts (demolish, pool erased, park closed, target erased, unknown id), a save in the middle of an activity, the validator and the hash.
+
+## Extras (phase P3, `[EXT:pools-extras]`)
+
+Six objects of the pools extension, one set per theme (Info.Ids 65000 to 65035: a theme takes a block of ten, 65000 jungle, 65010 hallow, 65020 space, 65030 fantasy, in the order ladder, diving board, shower, lounger, lamp, underwater light). They are features in the build menu's Features tab with the .sam key `Pools.Extra n` (`PoolExtras`), **no entrance and no exit** (nobody walks in), and `Info.IsChoosable 0` so the park's guests never choose them: swimmers meet them in the pool, as activities (above). They cost 50 (ladder), 250 (board), 80 (shower), 100 (lounger), 30 (lamp) and 120 (light), OpenTPW's own values.
+
+**Deck.** There is no new deck cell type. The "deck" of a pool is ordinary empty owned ground beside the water, which every extra takes with its own paving slab (the slab is part of the object's model, so the ground under it needs no cell type and reads as deck). That keeps the cell map, the save and every pin as they are; a real walkable deck cell (guests walking around a pool on tiles) belongs with the later "pool deck" item below.
+
+**Orientation.** The back of the object (the top row of `Info.Shape`, +Y of the model, as the changing room's) is the water side; the rotation turns it. A land cell and its water cell lie in a line, which the placement rules and the activities share (`PoolExtras.WaterDirection`).
+
+| Object | Footprint | Placement rule (`PoolExtras.PlacementRule`, refused as "needs a straight pool edge") | Activity |
+| --- | --- | --- | --- |
+| Ladder | 1 x 1 | the water cell behind it and the two beside that one (along the edge) hold water: a straight edge, not a corner | `extra.ladder` |
+| Diving board | 1 x 1, the board reaches 1.4 cells over the water | the same, for two water cells out (a pool at least 2 cells deep from the edge) | `extra.board` |
+| Shower | 1 x 1 | a changing room beside it (4-neighbour of the room's footprint) | `extra.shower` |
+| Sun lounger | 2 x 1, two seats | water beside any cell of the footprint | `extra.lounger` |
+| Pool lamp | 1 x 1 | water beside it | none (decoration) |
+| Underwater light | 1 x 1, a glow disc over the first water cell | a straight edge, as the ladder | none (decoration) |
+
+The water beside a ladder, board, lounger, lamp or light cannot be erased (`PoolBuildResult.ExtraNeedsWater`: "A pool object needs this pool water", and the second cell out of a board), so a save that holds an extra always holds its pool; the shower holds none, its changing room does. Removing or demolishing an extra aborts its activities at once (`AbortPoolActivitiesOf`).
+
+**The activities.** All four share the host's rules (one swimmer per ladder, board or shower, one per seat; offered only when the swimmer has a straight line of free water to the foot of the extra; integer 16.16 motion; draws only from the swimmer's stream). The swimmer stays in state 25 and the activity keeps its step in the low bits of `PoolActivityPhase` (the direction to the water in the rest).
+
+| Activity | Steps (sprite slot) | Numbers |
+| --- | --- | --- |
+| Ladder | swim to the edge (crawl 8), climb (3), stand on the deck (0), walk to the rim (1), jump in (4), splash (11), back in the water | stand 5 to 10 turns (1.25 to 2.5 s); happiness +2 |
+| Diving board | swim to the foot (8), climb the steps (3), walk out (1), pause at the end (0), dive (4) into the middle of the second water cell, splash (11), back in the water; the drawn feet follow the climb and fall (`FeetHeight`, up to 1.32 engine units) | pause 3 turns, splash 4; happiness +6 |
+| Shower | offered at the **start of the session** (60 percent) when a free shower lies within 4 cells of the room's pool-side cell: walk from the pool-side cell (1), shower (6), walk back, back in the water | 12 to 20 turns (3 to 5 s); happiness +2 |
+| Sun lounger | swim to the seat's water side (8), climb (3), lie (5) 60 to 120 turns (15 to 30 s), then 60 percent walk to the rim, jump in (4), splash (11) and swim on, 40 percent end the session (the guest is put back at the room's steps and climbs out; the lie ends by teleport, cosmetic) | happiness +5 |
+
+Speeds (16.16 cells a turn, `PoolExtraSettings`): swimming to the edge 0.12, walking 0.10, climbing 0.07, jumping 0.20, diving 0.22. The host offers one in 90 turns on average while any activity has an offer (`PoolActivitySettings.OfferIntervalTurns`; at least 24 turns of the swim left), so a swimmer of 40 to 70 seconds takes about two offers.
+
+**Not done.** The brief's "swimmers climb out by the ladder" and "use it to reach the board" are done as the ladder's own climb-out and jump back in and the board's own steps: the swim session still ends at the changing room's pool-side cell, and the board has its own tower, so no swimmer ends its session on a ladder (and a lounger's end of session is a teleport to the steps). Without a ladder, a swimmer simply climbs out at the steps; the optional cosmetic "haul out / jump in with a splash" at a plain edge was not made. A particle splash on landing was not added (the splash is the swim sprite slot 11, still the treading-water art until the hi-res sets land).
+
+**Content.** `tools/blender/opentpw_pool_extras.py` builds the six objects for each theme (themed textures from the changing room's generators, 32 x 32 each so the browser build stays small) and `tools/pools/build-content.sh` turns them into `content/pools/objects/<theme>/<extra>` with `tools/pools/extra-*.sam` and `extra.rse` (an inert script). `objects.json` is append-only: the 24 entries follow the four rooms.
+
+**Checking it on screen.** `--debug-extras` (with `--debug-pool` and `--debug-swimmers`) builds one of each extra through the level's own placement beside the painted pool and sends the first swimmers straight into a ladder, a board, a lounger and a shower (`Level.BuildPoolExtrasBeside`, `GuestSimulation.DebugStartActivity`). `--debug-sim-minutes 0.14` runs the simulation until the activities are under way before the capture. The images are `reports/pools-p3-<theme>-extras.png`; the swimmers on the deck are drawn with the treading-water slot until the swimwear sprites arrive, so the activities read as heads behind the ladder.
+
+**Tests.** `PoolsExtrasTests`: the 24 objects (ids, shapes, no guest choice, models and textures load, stay inside their cells), the placement rules, the erase guard, each activity's steps, positions, slots, durations and happiness, two seats and no shared seat, no draw without a placed extra, a save in the middle of the ladder, the board and the lounger. `DeterminismTests.FixedRunWithPoolExtrasIsTheSameInEveryProcessAndGuestsUseThem` is the pin.
 
 ## Saves and determinism
 
@@ -328,9 +366,9 @@ The extension's version stays 1.0.0: phase P1 was not released, a P1 park holds 
 
 - **Swimwear on the deck:** guests walk the path in their normal sprites; only the swimmers have swim sprites (the changing room hides the change). The sprites of the standing, walking and sitting swimwear guests, and the swimmers for the Theme Park Inc sets and the costume sets (a costumed guest swims in its kid set), are not made.
 - **A swim-appeal term** (warmer months more, rain less) and any new decision point for `IGuestDecisions`: not needed for P2, nothing was added.
-- **Diving, climbing out at ladders,** the wave machine and the rest of the extras: P3 and later. Swimmers enter and leave only at the room's pool-side cell.
+- **Climbing out at ladders:** swimmers still enter and leave the session only at the room's pool-side cell (the extras are [Extras](#extras-phase-p3-extpools-extras)); the wave machine and the rest: P5.
 - **Water quality, lifeguards and a handyman for the pool:** not done.
-- **Pool objects and extras** (ladders, diving boards, showers, loungers, lamps, lifeguard chair, wave machine, spa): P3.
+- **Pool objects:** the lifeguard chair, wave machine and spa are not done (the rest are the [extras](#extras-phase-p3-extpools-extras)).
 - **Water slides** on the track system, and attractions that end in a pool: P4 and P5.
 - Depth levels (each cell has one depth), diagonal or curved edges (the tiling is square), digging the terrain, a pool-deck cell type, pool water on the Theme Park Inc layout, exporting parks with pools as packages.
 - Name and description rows for the Extensions and mods screen are not translated: the screen shows the extension's English name.

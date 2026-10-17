@@ -87,7 +87,7 @@ public interface IPoolActivity
 public static class PoolActivitySettings
 {
 	/// <summary>On average one offer is taken every this many park turns while an offer exists (a draw of the swimmer's own stream each turn, only while one exists).</summary>
-	public const int OfferIntervalTurns = 45;
+	public const int OfferIntervalTurns = 90;
 	/// <summary>No offer is taken when the swim has fewer turns left than this, so the session does not end in the middle of a ladder.</summary>
 	public const int OfferMinimumTurns = 24;
 }
@@ -121,6 +121,10 @@ public static class PoolActivityRegistry
 	/// <summary>The built-in activities. Each phase of the pools work adds its own to this list; a registry holding none changes nothing.</summary>
 	public static IEnumerable<IPoolActivity> Create()
 	{
-		yield break;
+		// [EXT:pools-extras] P3: the pool extras' activities
+		yield return new LadderActivity();
+		yield return new DivingBoardActivity();
+		yield return new ShowerActivity();
+		yield return new LoungerActivity();
 	}
 }

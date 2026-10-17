@@ -532,7 +532,7 @@ internal static class Game
 							// [EXT:debug-swimmers] smoke-only: --debug-swimmers N builds a changing room beside the pool (through the level's own placement, which charges it and needs the pool at its back) and
 							// puts N guests into the water at once, so a capture shows swimmers (docs/POOLS.md)
 							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, out var swimmerCount ) )
-								PlaceDebugChangingRoom( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), swimmerCount );
+								PlaceDebugChangingRoom( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), swimmerCount, args.Contains( "--debug-extras" ) );
 							return;
 						}
 				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );
@@ -1073,7 +1073,7 @@ internal static class Game
 	}
 
 	/// <summary>[EXT:debug-swimmers] Builds a changing room beside the pool cells <paramref name="pool"/> (<see cref="Level.BuildChangingRoomBeside"/>) and starts <paramref name="swimmers"/> guests in its water.</summary>
-	private static void PlaceDebugChangingRoom( Level level, IReadOnlyList<(int X, int Y)> pool, int swimmers )
+	private static void PlaceDebugChangingRoom( Level level, IReadOnlyList<(int X, int Y)> pool, int swimmers, bool extras = false )
 	{
 		if ( level.BuildChangingRoomBeside( pool ) is not { } placed || level.Guests == null )
 		{
@@ -1082,7 +1082,19 @@ internal static class Game
 		}
 		// a closed park lets nobody swim (and sends swimmers out of the water): the capture's park door is opened as the player's button would
 		level.Park?.Economy.OpenPark();
+		// [EXT:debug-pool] --debug-extras: one of each pool extra beside the pool (the shower needs the room first)
+		if ( extras )
+			foreach ( var extra in level.BuildPoolExtrasBeside( pool ) )
+				Log.Trace( $"--debug-extras: built the {extra.Entry.DisplayName} at {extra.Placement.X},{extra.Placement.Y} rotation {extra.Placement.Rotation}." );
 		var started = level.Guests.DebugStartSwimmers( placed.Visitors, swimmers );
+		if ( extras )
+		{
+			// the first swimmers go straight into a ladder, a board, a lounger and a shower, so a capture shows each
+			var ids = new[] { "extra.ladder", "extra.board", "extra.lounger", "extra.shower", "extra.lounger", "extra.ladder" };
+			var picked = level.Guests.Guests.Where( guest => guest.IsSwimming ).Take( ids.Length ).ToArray();
+			for ( var index = 0; index < picked.Length; index++ )
+				Log.Trace( $"--debug-extras: guest {picked[index].Id} {ids[index]}: {level.Guests.DebugStartActivity( picked[index], ids[index] )}." );
+		}
 		Log.Trace( $"--debug-swimmers: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation}; {started} of {swimmers} guests swim." );
 		if ( started == 0 )
 			Log.Warning( $"--debug-swimmers: no guest swims: changing room {placed.Visitors.IsChangingRoom}, pool-side cells {string.Join( " ", placed.Visitors.PoolAccessCandidates )}, access {level.Guests.PoolAccessOf( placed.Visitors )}, region {level.Guests.SwimRegionOf( placed.Visitors )?.Cells.Count}, park closed {level.Park?.Economy.IsParkOpen == false}, registered {placed.Visitors.HasCells}." );

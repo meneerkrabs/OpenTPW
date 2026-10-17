@@ -14,7 +14,7 @@ public static class PoolExtraSettings
 	public const int JumpSpeed = 13107;
 	/// <summary>The diver's fall from the end of the board: 0.22 cell a turn.</summary>
 	public const int DiveSpeed = 14418;
-	/// <summary>Where a swimmer meets a straight edge to climb out: 0.92 cell from the middle of the land cell, in the free water (0.37 cell from the rim) of the water cell beyond it.</summary>
+	/// <summary>Where a swimmer meets a straight edge to climb out: 0.92 cell from the middle of the land cell, in the free water (0.42 cell from the rim) of the water cell beyond it.</summary>
 	public const int EntryDistance = 60293;
 	/// <summary>The rim of the pool: half a cell from the middle of the land cell.</summary>
 	public const int RimDistance = Fixed16.One / 2;
@@ -93,17 +93,35 @@ internal static class PoolExtraMotion
 
 	public static PoolExtraSite? SiteOf( GuestSimulation simulation, int thingId ) => simulation.PoolExtraSites?.Invoke().FirstOrDefault( site => site.ThingId == thingId );
 
-	/// <summary>Whether another guest does the activity at the target (and, when given, at the seat's cell).</summary>
-	public static bool Taken( GuestSimulation simulation, string id, int target, (int X, int Y)? seat = null ) =>
-		simulation.Guests.Any( other => other.State == GuestState.PoolActivity && other.PoolActivityId == id && other.PoolActivityTarget == target
-			&& (seat == null || (other.PoolActivityX >> 16, other.PoolActivityY >> 16) == seat) );
+	/// <summary>Whether another guest does the activity at the target (and, when given, at the seat's cell): the host's exact occupancy, rebuilt only when a guest starts or ends an activity.</summary>
+	public static bool Taken( GuestSimulation simulation, string id, int target, (int X, int Y)? seat = null ) => simulation.IsPoolActivityTaken( id, target, seat );
 
 	public static void Face( Guest guest, (int X, int Y) side ) => (guest.HeadingX, guest.HeadingY) = (side.X, side.Y);
 
 	public static int DirectionIndex( (int X, int Y) side ) => Array.IndexOf( PoolExtras.Directions, side );
 
+	/// <summary>Cells away from a point (16.16) as a fraction of a distance, clamped to 0..1.</summary>
+	public static float Fraction( Guest guest, (int X, int Y) point, int total ) => Math.Clamp( Fixed16.Length( point.X - guest.Navigation.X, point.Y - guest.Navigation.Y ) / (float)total, 0f, 1f );
+
+	/// <summary>The drawn feet of a ladder or lounger climb: the water at the edge (0, 5), rising to the deck while climbing (1), on the deck (2, 3 and the lounger's lie), falling to the water with the jump (4).</summary>
+	public static float? EdgeFeet( Guest guest, PoolFeetHeights heights )
+	{
+		var land = Land( guest );
+		switch ( StepOf( guest ) )
+		{
+			case 0 or 5:
+				return heights.Water;
+			case 1:
+				return heights.Water + (heights.Deck - heights.Water) * (1f - Fraction( guest, land, PoolExtraSettings.EntryDistance ));
+			case 4:
+				return heights.Water + (heights.Deck - heights.Water) * Fraction( guest, Entry( land, WaterSide( guest ) ), PoolExtraSettings.EntryDistance - PoolExtraSettings.RimDistance );
+			default:
+				return heights.Deck;
+		}
+	}
+
 	/// <summary>The common ending: the guest steps from the rim back into the water in the same place it climbed out.</summary>
-	public static PoolActivityStep ReEnter( GuestSimulation simulation, Guest guest, ref uint random, int step, float happiness )
+	public static PoolActivityStep ReEnter( GuestSimulation simulation, Guest guest, int step, float happiness )
 	{
 		var land = Land( guest );
 		var side = WaterSide( guest );
@@ -177,7 +195,7 @@ public sealed class LadderActivity : IPoolActivity
 					PoolExtraMotion.SetStep( guest, 3 );
 				return PoolActivityStep.Continue;
 			default:
-				return PoolExtraMotion.ReEnter( simulation, guest, ref random, PoolExtraMotion.StepOf( guest ), PoolExtraSettings.LadderHappiness );
+				return PoolExtraMotion.ReEnter( simulation, guest, PoolExtraMotion.StepOf( guest ), PoolExtraSettings.LadderHappiness );
 		}
 	}
 
@@ -187,6 +205,9 @@ public sealed class LadderActivity : IPoolActivity
 	{
 		0 => PoolSwimSlots.Crawl, 1 => PoolSwimSlots.LadderClimb, 2 => PoolSwimSlots.Stand, 3 => PoolSwimSlots.Walk, 4 => PoolSwimSlots.Dive, _ => PoolSwimSlots.SplashDown
 	};
+
+	/// <summary>The feet rise from the water surface to the deck while climbing, stay on the deck, and fall back to the water with the jump.</summary>
+	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => PoolExtraMotion.EdgeFeet( guest, heights );
 }
 
 /// <summary>
@@ -243,7 +264,6 @@ public sealed class DivingBoardActivity : IPoolActivity
 					PoolExtraMotion.SetStep( guest, 4 );
 				break;
 			case 4:
-				guest.PoolActivityTurns++;
 				if ( PoolExtraMotion.StepToward( simulation, guest, PoolExtraMotion.Along( land, side, PoolExtraSettings.BoardLanding ), PoolExtraSettings.DiveSpeed ) )
 					PoolExtraMotion.SetStep( guest, 5, PoolExtraSettings.SplashTurns );
 				break;
@@ -265,18 +285,20 @@ public sealed class DivingBoardActivity : IPoolActivity
 		0 => PoolSwimSlots.Crawl, 1 => PoolSwimSlots.LadderClimb, 2 => PoolSwimSlots.Walk, 3 => PoolSwimSlots.Stand, 4 => PoolSwimSlots.Dive, _ => PoolSwimSlots.SplashDown
 	};
 
-	/// <summary>The feet rise with the steps, stay at the board's height while walking out, and fall with the dive; the splash is at the water.</summary>
-	public float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight )
+	/// <summary>The feet rise from the water to the board with the steps, stay at the board's height (the deck plus <see cref="PoolExtraSettings.BoardLift"/>) while walking out, and fall to the water with the dive.</summary>
+	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights )
 	{
+		var top = heights.Deck + PoolExtraSettings.BoardLift;
+		var land = PoolExtraMotion.Land( guest );
 		switch ( PoolExtraMotion.StepOf( guest ) )
 		{
 			case 1:
-				var remaining = Fixed16.Length( guest.PoolActivityX - guest.Navigation.X, guest.PoolActivityY - guest.Navigation.Y ) / (float)PoolExtraSettings.EntryDistance;
-				return defaultHeight + PoolExtraSettings.BoardLift * Math.Clamp( 1f - remaining, 0f, 1f );
+				return heights.Water + (top - heights.Water) * (1f - PoolExtraMotion.Fraction( guest, land, PoolExtraSettings.EntryDistance ));
 			case 2 or 3:
-				return defaultHeight + PoolExtraSettings.BoardLift;
+				return top;
 			case 4:
-				return defaultHeight + PoolExtraSettings.BoardLift * Math.Clamp( 1f - guest.PoolActivityTurns / 3f, 0f, 1f );
+				// the fall follows the dive's way from the end of the board to the landing (about two turns), not a turn count
+				return heights.Water + (top - heights.Water) * PoolExtraMotion.Fraction( guest, PoolExtraMotion.Along( land, PoolExtraMotion.WaterSide( guest ), PoolExtraSettings.BoardLanding ), PoolExtraSettings.BoardLanding - PoolExtraSettings.BoardEnd );
 			default:
 				return null;
 		}
@@ -398,7 +420,7 @@ public sealed class LoungerActivity : IPoolActivity
 				guest.Happiness = MeterMath.Add( guest.Happiness, PoolExtraSettings.LoungerHappiness );
 				return PoolActivityStep.EndSession;
 			default:
-				return PoolExtraMotion.ReEnter( simulation, guest, ref random, step, PoolExtraSettings.LoungerHappiness );
+				return PoolExtraMotion.ReEnter( simulation, guest, step, PoolExtraSettings.LoungerHappiness );
 		}
 	}
 
@@ -408,4 +430,7 @@ public sealed class LoungerActivity : IPoolActivity
 	{
 		0 => PoolSwimSlots.Crawl, 1 => PoolSwimSlots.LadderClimb, 2 => PoolSwimSlots.Lying, 3 => PoolSwimSlots.Walk, 4 => PoolSwimSlots.Dive, _ => PoolSwimSlots.SplashDown
 	};
+
+	/// <summary>As the ladder's: from the water up to the deck, lying on it, and back down with the jump.</summary>
+	public float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => PoolExtraMotion.EdgeFeet( guest, heights );
 }

@@ -87,7 +87,7 @@ public static class PoolExtras
 		{
 			PoolExtraKind.Ladder or PoolExtraKind.UnderwaterLight => footprint.Length > 0 && StraightEdge( cells, footprint[0], WaterDirection( rotation ) ),
 			PoolExtraKind.DivingBoard => footprint.Length > 0 && StraightEdge( cells, footprint[0], WaterDirection( rotation ), 2 ),
-			PoolExtraKind.Shower => objects != null && footprint.Any( cell => Directions.Any( d => objects.FindAt( cell.X + d.X, cell.Y + d.Y ) is { IsDeleted: false } other && other.Visitors.IsChangingRoom ) ),
+			PoolExtraKind.Shower => objects != null && objects.Objects.Any( other => !other.IsDeleted && other.Visitors.IsChangingRoom && other.Cells.Any( room => footprint.Any( cell => Math.Abs( cell.X - room.X ) + Math.Abs( cell.Y - room.Y ) == 1 ) ) ),
 			_ => footprint.Any( cell => WaterSides( cells, cell, 0 ).Any() )
 		};
 		return ok ? null : OriginalPlacementResult.NeedsPoolEdge;

@@ -12,8 +12,9 @@ internal sealed partial class GameFlow
 			level.SaveSandbox();
 			return;
 		}
+		// [BIN:TPW-EXE:0x48b6a0 pause menu commands] the Save command (command 2, case 0x48B7AD of the handler 0x48B6A0) closes the menu and opens the save screen (0x49F280) with no speech test, and the speech stop 0x51C0E0 has only the callers 0x5994E0 and 0x5996D0 (neither on a save), so a response being spoken goes on and is not part of the file
 		var snapshot = level.CaptureResumeSnapshot( Advisor?.IsAttached == true ? Advisor : null, level.LevelName,
-			savedUtc: DateTimeOffset.UtcNow );
+			savedUtc: DateTimeOffset.UtcNow, advisorMaySpeak: true );
 		ParkResumeSaveFile.Save( SaveFileSystem.GetAbsolutePath( $"opentpw-{level.LevelName}-world.json" ), snapshot );
 		Log.Trace( $"Saved {level.LevelName} park: {snapshot.Layout.Objects.Count} objects, {snapshot.Guests.Guests.Length} guests." );
 	}

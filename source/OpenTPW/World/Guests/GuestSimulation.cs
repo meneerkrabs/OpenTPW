@@ -801,6 +801,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		return Grid.InBounds( x, y ) && Grid.Cells.RawTypeAt( x, y ) is 0 or 1 or 3 or 9 or 10;
 	}
 
+	/// <summary>
+	/// [EXT:pools-swim] Whether a guest is counted as standing in the park for the statistics that count by cell (the thoughts ranking, the balloon and costume shares): on a park cell, or in a swim session,
+	/// whose water is no park cell type. The thought pick and the leaving recall keep <see cref="IsOnParkCell"/>: a swimmer neither thinks nor leaves.
+	/// </summary>
+	public bool IsCountedInPark( Guest guest ) => guest.InSwimSession || IsOnParkCell( guest );
+
 	private bool InPark( Guest guest ) => guest.State is not (GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth
 		or GuestState.WaitingAtBooth or GuestState.AtTicketBooth or GuestState.CrossingRoadHome or GuestState.WalkingToVehicle or GuestState.WaitingToGoHome or GuestState.Gone);
 
@@ -3166,7 +3172,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	// [BIN:TPW-EXE:0x004C8430 top three thoughts] every thing of type 1 on a cell the predicate 0x004FA990 accepts counts, whatever its state: a guest in the booth queue or on the road home stands on a non-park cell and does not
 	public TopThoughts GetTopThoughts() =>
-		TopThoughtRanking.Rank( guests.Where( guest => guest.State != GuestState.Gone && IsOnParkCell( guest ) ).Select( guest => (int)guest.Thought ) );
+		TopThoughtRanking.Rank( guests.Where( guest => guest.State != GuestState.Gone && IsCountedInPark( guest ) ).Select( guest => (int)guest.Thought ) );
 
 	// ---- Snapshots (park save/load) ------------------------------------------------------------
 
@@ -3597,16 +3603,31 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Error( $"Guest {guest.Id} is in state {guest.State} without a changing room." );
 			if ( guest.SwimHeading is < 0 or >= PoolSwimSettings.Headings || guest.SwimStroke is < 0 or >= PoolSwimSettings.Strokes || guest.SwimTurns < 0 )
 				Error( $"Guest {guest.Id} swim heading {guest.SwimHeading}, stroke {guest.SwimStroke} or turns {guest.SwimTurns} is out of range." );
+			// each state's turn count is bounded by what the session can set: a swim by its longest, the climb out by its limit, the change by its duration; every state still has at least one turn to go
+			if ( swimming )
+			{
+				var maximumTurns = guest.State switch
+				{
+					// swim turns are frozen during an activity (state 25), so it holds the swim's own range
+					GuestState.Swimming or GuestState.PoolActivity => PoolSwimSettings.MinimumTurns + PoolSwimSettings.ExtraTurns - 1,
+					GuestState.ClimbingOut => ClimbOutLimitTurns,
+					_ => PoolSwimSettings.ChangeOutTurns
+				};
+				if ( guest.SwimTurns < 1 || guest.SwimTurns > maximumTurns )
+					Error( $"Guest {guest.Id} in state {guest.State} has {guest.SwimTurns} swim turns left, outside 1..{maximumTurns}." );
+				if ( guest.AttractionId != 0 && FindAttraction( guest.AttractionId ) is { IsChangingRoom: false } )
+					Error( $"Guest {guest.Id} is in state {guest.State} at attraction {guest.AttractionId}, which is not a changing room." );
+			}
 			if ( !swimming && (guest.SwimHeading != 0 || guest.SwimTurns != 0 || guest.SwimStroke != 0 || guest.SwimHasGoal || guest.SwimRandom != 0 || guest.SwimGoalX != 0 || guest.SwimGoalY != 0) )
 				Error( $"Guest {guest.Id} holds swim fields outside a swim session (state {guest.State})." );
 			if ( swimming && guest.SwimHasGoal && (!Grid.InBounds( guest.SwimGoalX >> 16, guest.SwimGoalY >> 16 )) )
 				Error( $"Guest {guest.Id} swim goal ({guest.SwimGoalX >> 16}, {guest.SwimGoalY >> 16}) is outside the map." );
-			// [EXT:pools-activities] an activity is held in state 25 only; the registry need not hold its id (a save made with the extension on restores with it off, and the guest then leaves the water)
+			// [EXT:pools-activities] an activity is held in state 25 only; the registry need not hold its id (an activity this build does not register: the guest then ends its session on the room's exit at its next turn)
 			if ( guest.State == GuestState.PoolActivity )
 			{
 				if ( string.IsNullOrEmpty( guest.PoolActivityId ) )
 					Error( $"Guest {guest.Id} is in a pool activity without its id." );
-				if ( guest.PoolActivityPhase < 0 || guest.PoolActivityTurns < 0 || !Grid.InBounds( guest.PoolActivityX >> 16, guest.PoolActivityY >> 16 ) )
+				if ( guest.PoolActivityPhase < 0 || guest.PoolActivityTurns < 0 || guest.PoolActivityTurns > PoolActivitySettings.MaximumTurns || !Grid.InBounds( guest.PoolActivityX >> 16, guest.PoolActivityY >> 16 ) )
 					Error( $"Guest {guest.Id} pool activity phase {guest.PoolActivityPhase}, turns {guest.PoolActivityTurns} or point ({guest.PoolActivityX >> 16}, {guest.PoolActivityY >> 16}) is out of range." );
 			}
 			else if ( guest.PoolActivityId != null || guest.PoolActivityTarget != 0 || guest.PoolActivityPhase != 0 || guest.PoolActivityTurns != 0 || guest.PoolActivityX != 0 || guest.PoolActivityY != 0 )
@@ -3761,6 +3782,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	/// </summary>
 	public void RestoreSnapshot( GuestSimulationSnapshot snapshot )
 	{
+		poolActivityVersion++;
 		var validation = ValidateSnapshot( snapshot );
 		if ( !validation.IsValid )
 			throw new InvalidDataException( "The guest snapshot does not restore: " + string.Join( " ", validation.Errors ) );

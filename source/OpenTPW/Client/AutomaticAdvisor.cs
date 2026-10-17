@@ -19,6 +19,8 @@ internal sealed class AutomaticAdvisor : IDisposable
 	// The slap's one-of-three choice: a local presentation stub (the original's CRT rand()), never a world or guest stream.
 	private readonly Func<int> slapDraw;
 	private readonly Action<uint> playSlap;
+	// Tests substitute how a speech is ended (they control the speech state); null kills the presentation.
+	private readonly Action? endSpeech;
 	private Advisor? presentation;
 	private bool presentationFailed;
 	private Level? level;
@@ -38,9 +40,11 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// <param name="speechActive">The speech state (tests substitute a controllable one for the presentation); null reads the presentation.</param>
 	/// <param name="slapDraw">The draw that picks the cut-off slap (tests supply a fixed one); null uses a local unseeded generator.</param>
 	/// <param name="playSlap">Plays the slap's sound id (tests record it); null plays it through <see cref="GameAudio.PlaySpeechEffect"/>.</param>
-	internal AutomaticAdvisor( AdvisorController controller, Func<long> milliseconds, Func<bool>? speechActive = null, Func<int>? slapDraw = null, Action<uint>? playSlap = null )
+	/// <param name="endSpeech">Ends an active speech (tests flip their speech state); null kills the presentation.</param>
+	internal AutomaticAdvisor( AdvisorController controller, Func<long> milliseconds, Func<bool>? speechActive = null, Func<int>? slapDraw = null, Action<uint>? playSlap = null, Action? endSpeech = null )
 	{
 		Controller = controller;
+		this.endSpeech = endSpeech;
 		clock = new PausableClock( milliseconds );
 		this.speechActive = speechActive;
 		var random = slapDraw == null ? new Random() : null;
@@ -412,6 +416,19 @@ internal sealed class AutomaticAdvisor : IDisposable
 	public Veldrid.Texture? Image { get; private set; }
 
 	/// <summary>
+	/// Ends the response being spoken, silently (no slap), because the park is being left: a checkpoint of the park cannot hold the speech
+	/// (<see cref="CaptureSnapshot"/> refuses it), and the speech would end with the park anyway.
+	/// </summary>
+	// [BIN:TPW-EXE:0x005996D0 stop path] the stop path (run by the loader 0x414D40, the restart state 0xE of 0x54E360 and the level exit 0x4A9380) stops the speech (0x51C0E0) and kills the advisor (0x429D60) without the slap that the cut-off path 0x5994E0 plays
+	// [BIN:TPW-EXE:0x0048B9EF pause exit] Exit To Lobby (command 6, case 0x48B9EF of the handler 0x48B6A0) asks no question: it stores request 2 (0x5508B0) and the park state machine 0x54E360 saves (state 0xB, 0x5AC610) and tears down (state 0xC, which releases the sound handles through 0x51EDA0) whatever the advisor is saying
+	internal void EndSpeechForExit()
+	{
+		if ( !IsSpeechActive )
+			return;
+		if ( endSpeech != null ) endSpeech(); else presentation?.Kill();
+	}
+
+	/// <summary>
 	/// Whether a response is being spoken right now. Active speech cannot be captured in this scope — the
 	/// presentation (<see cref="Advisor"/>) is render/playback state without a snapshot seam — so a park
 	/// save is refused while speech is active (<see cref="CaptureSnapshot"/> fails explicitly) instead of
@@ -433,9 +450,10 @@ internal sealed class AutomaticAdvisor : IDisposable
 	/// The advisor's state for a park save; fails explicitly while a playback attempt is outstanding or a
 	/// response is being spoken (the speech itself has no snapshot seam, so it cannot continue after a load).
 	/// </summary>
-	public AutomaticAdvisorSnapshot CaptureSnapshot()
+	/// <param name="whileSpeaking">A manual save: the speech goes on playing and is not saved (the original's Save neither waits for it nor stops it; a loaded park starts silent).</param>
+	public AutomaticAdvisorSnapshot CaptureSnapshot( bool whileSpeaking = false )
 	{
-		if ( IsSpeechActive )
+		if ( IsSpeechActive && !whileSpeaking )
 			throw new InvalidOperationException( "Cannot capture the automatic advisor while a response is being spoken: the presentation's speech has no snapshot seam, so it cannot continue after a load." );
 		return new AutomaticAdvisorSnapshot( Controller.CaptureSnapshot(), AdvisorClock, SpeechWasActive: false );
 	}

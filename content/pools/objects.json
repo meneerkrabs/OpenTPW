@@ -1,4 +1,4 @@
-{ "schema": 1, "idRange": { "first": 65000, "last": 65535 }, "objects": [
+{ "schema": 1, "research": false, "idRange": { "first": 65000, "last": 65535 }, "objects": [
   { "archive": "objects/jungle/cabin", "theme": "jungle", "category": "features", "infoId": 65500, "names": { "English": "Changing Room", "Dutch": "Kleedkamer", "German": "Umkleide", "French": "Vestiaire", "Spanish": "Vestuario", "Danish": "Omklaedning", "Swedish": "Omklaedningsrum", "Polish": "Przebieralnia", "Korean": "탈의실" } },
   { "archive": "objects/hallow/cabin", "theme": "hallow", "category": "features", "infoId": 65501, "names": { "English": "Changing Room", "Dutch": "Kleedkamer", "German": "Umkleide", "French": "Vestiaire", "Spanish": "Vestuario", "Danish": "Omklaedning", "Swedish": "Omklaedningsrum", "Polish": "Przebieralnia", "Korean": "탈의실" } },
   { "archive": "objects/space/cabin", "theme": "space", "category": "features", "infoId": 65502, "names": { "English": "Changing Room", "Dutch": "Kleedkamer", "German": "Umkleide", "French": "Vestiaire", "Spanish": "Vestuario", "Danish": "Omklaedning", "Swedish": "Omklaedningsrum", "Polish": "Przebieralnia", "Korean": "탈의실" } },

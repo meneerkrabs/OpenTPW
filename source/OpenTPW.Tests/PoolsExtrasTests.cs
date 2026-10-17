@@ -258,23 +258,45 @@ public class PoolsExtrasTests
 	{
 		var rig = ExtrasRig( Site( 302, PoolExtraKind.DivingBoard, 90, (4, 5) ) );
 		var guest = rig.Send();
-		var heights = new List<float>();
+		
 		rig.Until( () => guest.State == GuestState.Swimming, 400 );
-		var board = rig.Simulation.PoolActivities.Single( activity => activity.Id == "extra.board" );
 		var (steps, cells, slots, _) = Trace( rig, guest, "extra.board", limit: 3000 );
 		CollectionAssert.AreEqual( new[] { 0, 1, 2, 3, 4, 5 }, steps );
 		Assert.IsTrue( cells.Contains( (4, 5) ) && cells.Contains( (6, 5) ), "from the tower over the water to the landing" );
 		CollectionAssert.AreEqual( new[] { PoolSwimSlots.Crawl, PoolSwimSlots.LadderClimb, PoolSwimSlots.Walk, PoolSwimSlots.Stand, PoolSwimSlots.Dive, PoolSwimSlots.SplashDown }, slots.Distinct().ToArray() );
 		Assert.AreEqual( GuestState.Swimming, guest.State );
-		// the drawn height: raised on the steps and the board, falling with the dive, the default elsewhere
-		(guest.State, guest.PoolActivityId, guest.PoolActivityPhase, guest.PoolActivityTurns) = (GuestState.PoolActivity, "extra.board", 2, 0);
-		Assert.AreEqual( 3f + PoolExtraSettings.BoardLift, rig.Simulation.PoolFeetHeight( guest, 3f ), 0.001f, "on the board" );
-		guest.PoolActivityPhase = 4;
-		guest.PoolActivityTurns = 3;
-		Assert.AreEqual( 3f, rig.Simulation.PoolFeetHeight( guest, 3f ), 0.001f, "at the end of the dive" );
-		guest.PoolActivityPhase = 5;
-		Assert.AreEqual( 3f, rig.Simulation.PoolFeetHeight( guest, 3f ), "the splash is at the water" );
-		Assert.IsNotNull( board );
+		// the drawn height, with the water at 2, the deck at 3.5 and the default 3: from the water up the steps, on the board at the deck plus the lift, falling to the water with the dive
+		var feet = new PoolFeetHeights( 3f, 2f, 3.5f );
+		var top = 3.5f + PoolExtraSettings.BoardLift;
+		const int One = 65536;
+		(guest.State, guest.PoolActivityId, guest.PoolActivityPhase) = (GuestState.PoolActivity, "extra.board", 2);
+		(guest.PoolActivityX, guest.PoolActivityY) = (4 * One + One / 2, 5 * One + One / 2);
+		Assert.AreEqual( top, rig.Simulation.PoolFeetHeight( guest, feet ), 0.001f, "on the board" );
+		guest.PoolActivityPhase = 1;
+		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2 + PoolExtraSettings.EntryDistance, 5 * One + One / 2 );
+		Assert.AreEqual( 2f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "at the foot of the steps it is at the water" );
+		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2, 5 * One + One / 2 );
+		Assert.AreEqual( top, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "at the top of the steps it is at the board" );
+		guest.PoolActivityPhase = 4 | (1 << 4);
+		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2 + PoolExtraSettings.BoardEnd, 5 * One + One / 2 );
+		Assert.AreEqual( top, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "the dive starts at the board's height" );
+		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2 + PoolExtraSettings.BoardLanding, 5 * One + One / 2 );
+		Assert.AreEqual( 2f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "and ends at the water" );
+		guest.PoolActivityPhase = 5 | (1 << 4);
+		Assert.AreEqual( 3f, rig.Simulation.PoolFeetHeight( guest, feet ), "the splash is at the default (the water)" );
+		// the ladder interpolates between the same two heights
+		guest.PoolActivityId = "extra.ladder";
+		guest.PoolActivityPhase = 1 | (1 << 4);
+		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2 + PoolExtraSettings.EntryDistance, 5 * One + One / 2 );
+		Assert.AreEqual( 2f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "the ladder starts at the water" );
+		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2, 5 * One + One / 2 );
+		Assert.AreEqual( 3.5f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "and reaches the deck" );
+		guest.PoolActivityPhase = 2 | (1 << 4);
+		Assert.AreEqual( 3.5f, rig.Simulation.PoolFeetHeight( guest, feet ), "standing on the deck" );
+		guest.PoolActivityPhase = 4 | (1 << 4);
+		rig.Simulation.PlacePoolGuest( guest, 4 * One + One / 2 + PoolExtraSettings.EntryDistance, 5 * One + One / 2 );
+		Assert.AreEqual( 2f, rig.Simulation.PoolFeetHeight( guest, feet ), 0.05f, "the jump ends in the water" );
+		(guest.State, guest.PoolActivityId, guest.PoolActivityPhase, guest.PoolActivityX, guest.PoolActivityY) = (GuestState.Swimming, null, 0, 0, 0);
 	}
 
 	[TestMethod]
@@ -317,29 +339,54 @@ public class PoolsExtrasTests
 	[TestMethod]
 	public void ALoungerHasTwoSeatsAndAGuestLiesOnOneThenGoesBackInOrEndsItsSession()
 	{
-		var rig = ExtrasRig( Site( 304, PoolExtraKind.Lounger, 90, (4, 5), (4, 6) ) );
-		var guests = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
-		var seatsAtOnce = 0;
-		var lying = new HashSet<int>();
+		var site = Site( 304, PoolExtraKind.Lounger, 90, (4, 5), (4, 6) );
+		var backInWater = 0;
+		var ended = 0;
+		var bothAtOnce = false;
 		var seatCells = new HashSet<(int X, int Y)>();
-		var swum = new HashSet<int>();
-		rig.Until( () =>
+		// a few batches of swimmers (each run is deterministic): the end of a lie is a 60 / 40 draw, so both outcomes are seen across them
+		for ( var batch = 0; batch < 6 && (backInWater == 0 || ended == 0); batch++ )
 		{
-			foreach ( var guest in guests.Where( guest => guest.InSwimSession ) )
-				swum.Add( guest.Id );
-			var onLounger = rig.Simulation.Guests.Where( guest => guest.PoolActivityId == "extra.lounger" ).ToList();
-			Assert.IsTrue( onLounger.Count <= 2, "two seats" );
-			Assert.AreEqual( onLounger.Count, onLounger.Select( guest => (guest.PoolActivityX, guest.PoolActivityY) ).Distinct().Count(), "no two guests share a seat" );
-			seatsAtOnce = Math.Max( seatsAtOnce, onLounger.Count );
-			foreach ( var guest in onLounger.Where( guest => rig.Simulation.PoolActivityOf( guest )!.SpriteSlot( guest ) == PoolSwimSlots.Lying ) )
+			var rig = ExtrasRig( site );
+			var guests = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
+			var swum = new HashSet<int>();
+			var forced = false;
+			var onLounger = new Dictionary<int, bool>();
+			rig.Until( () =>
 			{
-				lying.Add( guest.Id );
-				seatCells.Add( guest.Navigation.Cell );
-			}
-			return swum.Count == guests.Count && guests.All( guest => !guest.InSwimSession );
-		}, 6000 );
-		Assert.IsTrue( lying.Count >= 1, "somebody lay down" );
-		Assert.IsTrue( seatCells.All( cell => cell is (4, 5) or (4, 6) ), $"on a seat: {string.Join( ", ", seatCells )}" );
+				foreach ( var guest in guests.Where( guest => guest.InSwimSession ) )
+					swum.Add( guest.Id );
+				// two swimmers at once: send the first two to the lounger as soon as both swim
+				if ( !forced && guests.Count( guest => guest.State == GuestState.Swimming ) >= 2 )
+				{
+					forced = true;
+					foreach ( var guest in guests.Where( guest => guest.State == GuestState.Swimming ).Take( 2 ) )
+						Assert.IsTrue( rig.Simulation.DebugStartActivity( guest, "extra.lounger" ) );
+					bothAtOnce |= guests.Count( guest => guest.PoolActivityId == "extra.lounger" ) == 2;
+					Assert.AreEqual( 2, guests.Select( guest => (guest.PoolActivityX, guest.PoolActivityY) ).Distinct().Count( seat => guests.Any( g => g.PoolActivityId == "extra.lounger" && (g.PoolActivityX, g.PoolActivityY) == seat ) ), "on two different seats" );
+				}
+				foreach ( var guest in guests )
+				{
+					var doing = guest.PoolActivityId == "extra.lounger";
+					if ( doing && rig.Simulation.PoolActivityOf( guest )!.SpriteSlot( guest ) == PoolSwimSlots.Lying )
+						seatCells.Add( guest.Navigation.Cell );
+					if ( onLounger.TryGetValue( guest.Id, out var was ) && was && !doing )
+					{
+						// the lounger let go of it: back in the water, or out of the session (climbing out)
+						if ( guest.State == GuestState.Swimming )
+							backInWater++;
+						else if ( guest.State == GuestState.ClimbingOut )
+							ended++;
+					}
+					onLounger[guest.Id] = doing;
+				}
+				Assert.IsTrue( guests.Count( guest => guest.PoolActivityId == "extra.lounger" ) <= 2, "two seats" );
+				return swum.Count == guests.Count && guests.All( guest => !guest.InSwimSession );
+			}, 6000 );
+		}
+		Assert.IsTrue( bothAtOnce, "two guests lay on the lounger at once" );
+		Assert.IsTrue( seatCells.IsSubsetOf( new[] { (4, 5), (4, 6) } ) && seatCells.Count == 2, $"on both seats: {string.Join( ", ", seatCells )}" );
+		Assert.IsTrue( backInWater > 0 && ended > 0, $"both outcomes: {backInWater} back in the water, {ended} ended their session" );
 	}
 
 	[TestMethod]

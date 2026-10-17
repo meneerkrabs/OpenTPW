@@ -15,7 +15,7 @@ public enum PoolActivityStep
 /// [EXT:pools-activities] Something that acts on the free swimmers of a pool each park turn without being offered: the push of a wave machine, the spray of a jet. A registered
 /// <see cref="IPoolActivity"/> may implement it too. The host calls <see cref="Ambient"/> once per park turn for each swimmer in state 22 (<see cref="GuestState.Swimming"/>) that took no
 /// offer that turn, before its stroke. It must not draw from any random stream: its effects are deterministic from the turn and the swimmer's cell (and it keeps no per-guest state of its own;
-/// what it changes lives in the guest's saved fields).
+/// what it changes lives in the guest's saved fields). It must not move the guest: it runs before the stroke, which starts from where the guest is.
 /// </summary>
 // [EXT:pools-activities] OpenTPW's own extension point; the original game has no pools
 public interface IPoolAmbient
@@ -25,10 +25,18 @@ public interface IPoolAmbient
 }
 
 /// <summary>
-/// One usable instance of an activity offered to a swimmer: the attraction or object that provides it (0 for none, such as a spot of water), and the cell
+/// One usable instance of an activity offered to a swimmer: the thing id (<c>OriginalObject.ThingId</c>) of the object that provides it, for every activity (0 for none, such as a river or a spot of water), and the cell
 /// where the swimmer leaves the water for it (or does it).
 /// </summary>
 public readonly record struct PoolActivityOffer( int TargetId, int X, int Y );
+
+/// <summary>
+/// The reference heights (engine units) of a swimmer's point for <see cref="IPoolActivity.FeetHeight"/>.
+/// </summary>
+/// <param name="Default">The default feet height: the water surface on a pool cell, otherwise the terrain.</param>
+/// <param name="Water">The water surface of the guest's pool region, or <paramref name="Default"/> when it has none.</param>
+/// <param name="Deck">The rim or deck (terrain) height at the guest's point.</param>
+public readonly record struct PoolFeetHeights( float Default, float Water, float Deck );
 
 /// <summary>
 /// [EXT:pools-activities] Something a swimmer does during its swim session besides swimming (docs/POOLS.md, "Activities"): a pool extra (ladder, diving board,
@@ -62,15 +70,16 @@ public interface IPoolActivity
 	PoolActivityStep Update( GuestSimulation simulation, Guest guest, ref uint random );
 
 	/// <summary>
-	/// The sprite slot (<see cref="PoolSwimSlots"/>) the guest is drawn with this turn. Defaults to treading water, the nearest existing slot until the art for the activity lands.
+	/// The sprite slot (<see cref="PoolSwimSlots"/>) the guest is drawn with this turn. Defaults to treading water, which every swim set has art for; a slot a set has no art for is drawn as tread water, then breaststroke, then crawl (<see cref="GuestSpriteAtlas.UsableSlot"/>).
 	/// </summary>
 	int SpriteSlot( Guest guest ) => PoolSwimSlots.TreadWater;
 
 	/// <summary>
-	/// The engine height of the guest's feet this frame, or null for the default. The default, passed in as <paramref name="defaultHeight"/>, is the water surface on a pool cell, otherwise the terrain.
-	/// Presentation only: it is never read by the simulation. A slide returns its track height; a ladder, a board or a swing returns <paramref name="defaultHeight"/> plus its lift.
+	/// The engine height of the guest's feet this frame, or null for the default (<see cref="PoolFeetHeights.Default"/>: the water surface on a pool cell, otherwise the terrain). The reference heights of the guest's
+	/// point are in <paramref name="heights"/>. Presentation only: it is never read by the simulation. A slide returns its track height; a ladder interpolates between <see cref="PoolFeetHeights.Water"/> and
+	/// <see cref="PoolFeetHeights.Deck"/>, a board or a swing returns <see cref="PoolFeetHeights.Deck"/> or <see cref="PoolFeetHeights.Default"/> plus its lift.
 	/// </summary>
-	float? FeetHeight( GuestSimulation simulation, Guest guest, float defaultHeight ) => null;
+	float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => null;
 
 	/// <summary>
 	/// 0 for an activity offered during the swim (the host's cadence, <see cref="PoolActivitySettings.OfferIntervalTurns"/>), or 1..100: the percent chance that the guest does it as the swim starts, before it
@@ -90,9 +99,11 @@ public static class PoolActivitySettings
 	public const int OfferIntervalTurns = 90;
 	/// <summary>No offer is taken when the swim has fewer turns left than this, so the session does not end in the middle of a ladder.</summary>
 	public const int OfferMinimumTurns = 24;
+	/// <summary>The most park turns an activity may count in <see cref="Guest.PoolActivityTurns"/>: the validator refuses a save above it, so an activity stays below it (it keeps its own phases short).</summary>
+	public const int MaximumTurns = 2400;
 }
 
-/// <summary>The sprite slots of the swimwear sets (docs/POOLS.md, "Swimwear slots"). Slots without art in a set fall back to the nearest existing slot in the renderer.</summary>
+/// <summary>The sprite slots of the swimwear sets (docs/POOLS.md, "Swimwear slots"). A slot without art in a set is drawn as tread water, then breaststroke, then crawl in the swimmers' renderer.</summary>
 // [EXT:pools-render] OpenTPW's own swimmer art; the original game has no pools
 public static class PoolSwimSlots
 {

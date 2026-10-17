@@ -65,8 +65,62 @@ public class PoolsLevelTests
 	[TestMethod]
 	public void RealCapturesWithoutPoolCellsAreByteIdenticalWithTheExtensionOnAndOff()
 	{
+		// the park's asset manifest as the real catalogue builds it with the extension's content roots in place: it lists the changing rooms' files, which a park without a room does not save
+		var poolsAssets = PoolsManifest();
+		Assert.IsTrue( poolsAssets.Keys.Any( key => key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) ), "the manifest lists the extension's files" );
+		var savedAssets = assets;
+		assets = new Dictionary<string, string>( savedAssets.Concat( poolsAssets.Where( pair => pair.Key.StartsWith( "mod:opentpw.pools:", StringComparison.Ordinal ) ) ) );
+		try
+		{
+			RealCapturesWithoutPoolCellsAreByteIdentical();
+		}
+		finally
+		{
+			assets = savedAssets;
+		}
+	}
+
+	/// <summary>The asset manifest of a stand-in jungle game folder with the pools content roots on.</summary>
+	private static IReadOnlyDictionary<string, string> PoolsManifest()
+	{
+		var folder = Directory.CreateTempSubdirectory( "opentpw-pools-level-" ).FullName;
+		var previous = FileSystem;
+		try
+		{
+			var totem = Path.Combine( folder, "game", "levels", "jungle", "rides", "totem" );
+			Directory.CreateDirectory( totem );
+			File.WriteAllText( Path.Combine( totem, "totem.sam" ), "Info.Id\t1110\nInfo.Name\t\"Inca Totem\"\nInfo.WhichUIType\t0\nUpgrades[0].CostOfUpgrade\t100\n" );
+			File.WriteAllBytes( Path.Combine( totem, "totem.MD2" ), Array.Empty<byte>() );
+			FileSystem = new BaseFileSystem( Path.Combine( folder, "game" ) );
+			FileSystem.RegisterArchiveHandler<WadArchive>( ".wad" );
+			PoolContent.DirectoryOverride = RepositoryPoolsFolder();
+			using var scope = ModContentRoots.Use( PoolsTests.PoolsSet( true ), FileSystem );
+			return ParkResumeAssetManifest.Capture( ObjectCatalog.Load( "jungle" ), "jungle", easy: false );
+		}
+		finally
+		{
+			PoolContent.DirectoryOverride = null;
+			FileSystem = previous;
+			Directory.Delete( folder, true );
+		}
+	}
+
+	private static string RepositoryPoolsFolder()
+	{
+		for ( var directory = new DirectoryInfo( AppContext.BaseDirectory ); directory != null; directory = directory.Parent )
+		{
+			var candidate = Path.Combine( directory.FullName, "content", "pools" );
+			if ( File.Exists( Path.Combine( candidate, "objects.json" ) ) )
+				return candidate;
+		}
+		throw new FileNotFoundException( "content/pools not found above the test binaries." );
+	}
+
+	private void RealCapturesWithoutPoolCellsAreByteIdentical()
+	{
 		var off = With( false, () => ParkResumeSaveFile.Serialize( Capture() ) );
 		var on = With( true, () => ParkResumeSaveFile.Serialize( Capture() ) );
+		Assert.IsFalse( Encoding.UTF8.GetString( on ).Contains( "mod:opentpw.pools", StringComparison.Ordinal ), "none of the extension's files are in the saved manifest" );
 		CollectionAssert.AreEqual( off, on, "a park with no pool cell saves the same bytes with the extension on or off" );
 		Assert.IsFalse( Encoding.UTF8.GetString( on ).Contains( "opentpw.pools", StringComparison.Ordinal ) );
 		Assert.IsNull( With( true, () => Capture().Mods ) );
@@ -120,6 +174,64 @@ public class PoolsLevelTests
 			StringAssert.Contains( exception.Message, "cannot be exported" );
 			level.PoolBuilder.Erase( 14, 14 );
 			Assert.IsNull( ParkSharing.ModsRefusal( level ), "erased again: shareable again" );
+			return 0;
+		} );
+	}
+
+	// ---- The swim session in the level ---------------------------------------------------------------------------------
+
+	/// <summary>Makes the fixture's placed object a changing room whose pool-side cell is (12, 12) in a pool of 3 x 3 cells, registered with the guests like any placed object.</summary>
+	private void MakeChangingRoom()
+	{
+		Assert.AreEqual( 9, With( true, () => level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (12, 12), (14, 14) ) ) ).Cells.Count );
+		one.Visitors.IsChangingRoom = true;
+		one.Visitors.PoolAccessCandidates = new[] { (12, 12) };
+	}
+
+	[TestMethod]
+	public void TheLevelsPoolEraseGuardsHoldTheWaterUnderASwimmerAndBesideTheChangingRoomsBack()
+	{
+		MakeChangingRoom();
+		With( true, () =>
+		{
+			var access = level.PoolEraseBlock( 12, 12 );
+			Assert.AreEqual( PoolBuildResult.ChangingRoomAccess, access, "the cell beside the back of a changing room" );
+			Assert.AreEqual( PoolBuildResult.ChangingRoomAccess, level.PoolBuilder!.Erase( 12, 12 ) );
+			Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( 12, 12 ), "the water stayed" );
+			Assert.IsNull( level.PoolEraseBlock( 14, 14 ), "control: a cell with nobody in it and no room beside it" );
+			Assert.AreEqual( 1, level.Guests!.DebugStartSwimmers( one.Visitors, 1 ), "a guest swims in the pool" );
+			var swimmer = level.Guests.Guests.Single( guest => guest.IsSwimming );
+			var under = swimmer.Cell;
+			Assert.AreEqual( PoolBuildResult.Swimmers, level.PoolEraseBlock( under.X, under.Y ), "the water under a swimmer" );
+			Assert.AreEqual( PoolBuildResult.Swimmers, level.PoolBuilder.CheckErase( under.X, under.Y ) );
+			Assert.AreEqual( PoolBuildResult.Swimmers, level.PoolBuilder.Erase( under.X, under.Y ) );
+			Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( under.X, under.Y ), "the water stayed" );
+			var away = Enumerable.Range( 12, 3 ).SelectMany( x => Enumerable.Range( 12, 3 ).Select( y => (X: x, Y: y) ) ).First( cell => cell != under && cell != (12, 12) );
+			Assert.AreEqual( PoolBuildResult.Ok, level.PoolBuilder.Erase( away.X, away.Y ), "a cell with nobody in it goes" );
+			return 0;
+		} );
+	}
+
+	[TestMethod]
+	public void DemolishingAChangingRoomThroughTheLevelStartsNoSwimForTheGuestsChangingInside()
+	{
+		MakeChangingRoom();
+		With( true, () =>
+		{
+			level.Guests!.Grid.SetPath( 6, 6, true );
+			var guest = level.Guests.SpawnInPark( 6, 6 );
+			guest.AttractionId = one.Visitors.AttractionId;
+			guest.State = GuestState.Using;
+			one.Visitors.RestoreSnapshot( one.Visitors.CaptureSnapshot() with { OnRide = new[] { guest.Id }, BoardedTotal = 1 } );
+			var swimmer = level.Guests.Guests.Count( other => other.InSwimSession );
+			var random = level.Guests.CaptureSnapshot().RandomState;
+			// the real path: ParkObjects.Remove -> OriginalObject.Delete (OnDelete -> Runtime.Stop -> ReleaseAll) -> ObjectRemoved -> GuestSimulation.Unregister
+			Assert.IsTrue( level.Objects.Remove( one ) );
+			Assert.AreEqual( swimmer, level.Guests.Guests.Count( other => other.InSwimSession ), "no swim started for the guest that was changing" );
+			Assert.IsFalse( guest.InSwimSession );
+			Assert.AreEqual( GuestState.ExitingRide, guest.State, "it stepped out like a rider of any attraction" );
+			Assert.AreEqual( 0, guest.AttractionId );
+			Assert.AreEqual( random, level.Guests.CaptureSnapshot().RandomState, "and the world generator was not drawn for one" );
 			return 0;
 		} );
 	}
@@ -237,5 +349,88 @@ public class PoolsLevelTests
 		var hash = level.ComputeStateHash();
 		_ = PoolRenderHoles.IsHole( Cells, 3, 12, true );
 		Assert.AreEqual( hash, level.ComputeStateHash(), "asking changes no state" );
+	}
+
+	// ---- The pool extras through the level ---------------------------------------------------------------------
+
+	private ObjectCatalogEntry ExtraEntry( int id, PoolExtraKind kind, params string[] shape )
+	{
+		var settings = new ObjectSettings( new[] { new ObjectSettingsFile( $"Info.Id {id}\nInfo.Name Extra{id}\nInfo.WhichUIType 3\nInfo.OverwritePriority 0\nPools.Extra {(int)kind}\n", $"extra{id}.sam" ) } );
+		return new ObjectCatalogEntry( "jungle", ObjectCategory.Feature, "/extra", settings, new ObjectShape( shape ), "/model.MD2", null, "/script.RSE",
+			Array.Empty<string>(), Array.Empty<ObjectAnimationFile>(), Array.Empty<string>(), Array.Empty<string>(), one.Entry.FileSystem, null );
+	}
+
+	[TestMethod]
+	public void RealExtrasThroughTheLevelAreOfferedAbortedWhenErasedKeepTheirWaterAndSaveMidActivity()
+	{
+		With( true, () =>
+		{
+			// a pool of 4 x 3 cells (x 4 to 7, y 1 to 3) whose steps are (4, 2), and the room `one` at (1, 1) with its pool-side cell there
+			Assert.AreEqual( 12, level.PoolBuilder!.PaintCells( PoolBuilder.Rectangle( (4, 1), (7, 3) ) ).Cells.Count );
+			one.Visitors.IsChangingRoom = true;
+			one.Visitors.PoolAccessCandidates = new[] { (4, 2) };
+			level.RegisterPoolActivities();
+			Call( level, "PrepareThings" );
+			CollectionAssert.AreEquivalent( new[] { "extra.board", "extra.ladder", "extra.lounger", "extra.shower" }, level.Guests!.PoolActivities.Select( activity => activity.Id ).ToArray(), "registered when the level's guests are made" );
+			var (ladderEntry, showerEntry, loungerEntry) = (ExtraEntry( 66001, PoolExtraKind.Ladder, "*" ), ExtraEntry( 66003, PoolExtraKind.Shower, "*" ), ExtraEntry( 66004, PoolExtraKind.Lounger, "**" ));
+			// placement through the level's own hooks
+			Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, level.Objects.Check( ladderEntry, 3, 1, 90 ), "the water cell beyond is a corner of the pool" );
+			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( ladderEntry, 3, 2, 90 ), "a straight edge" );
+			Assert.AreEqual( OriginalPlacementResult.NeedsPoolEdge, level.Objects.Check( showerEntry, 6, 6, 0 ), "no changing room beside it" );
+			Assert.AreEqual( OriginalPlacementResult.Allowed, level.Objects.Check( showerEntry, 2, 1, 0 ), "beside the changing room" );
+			var ladder = level.Objects.TryPlace( ladderEntry, 3, 2, 90, out _ );
+			var shower = level.Objects.TryPlace( showerEntry, 2, 1, 0, out _ );
+			var lounger = level.Objects.TryPlace( loungerEntry, 5, 4, 180, out _ );
+			Assert.IsTrue( ladder != null && shower != null && lounger != null, "all three were built" );
+			Assert.IsTrue( ladder!.ThingId != 0 && shower!.ThingId != 0 && lounger!.ThingId != 0 && new[] { ladder.ThingId, shower.ThingId, lounger.ThingId }.Distinct().Count() == 3 );
+			var sites = level.Guests.PoolExtraSites!();
+			CollectionAssert.AreEquivalent( new[] { PoolExtraKind.Ladder, PoolExtraKind.Shower, PoolExtraKind.Lounger }, sites.Select( site => site.Kind ).ToArray() );
+			// the water an extra needs cannot be erased
+			Assert.AreEqual( PoolBuildResult.ExtraNeedsWater, level.PoolEraseBlock( 5, 3 ), "beside the lounger" );
+			Assert.AreEqual( PoolBuildResult.ExtraNeedsWater, level.PoolBuilder.Erase( 5, 3 ) );
+			Assert.AreEqual( ParkCellTypes.PoolWater, Cells.RawTypeAt( 5, 3 ), "the water stayed" );
+			Assert.IsNull( level.PoolEraseBlock( 7, 3 ), "control: a corner of the pool no extra stands beside" );
+			// a swimmer takes the ladder; erasing it mid-activity aborts the swimmer's activity at once and it leaves the session
+			Assert.AreEqual( 1, level.Guests.DebugStartSwimmers( one.Visitors, 1 ) );
+			var swimmer = level.Guests.Guests.Single( guest => guest.IsSwimming );
+			Assert.IsTrue( level.Guests.DebugStartActivity( swimmer, "extra.ladder" ) );
+			Assert.AreEqual( ladder.ThingId, swimmer.PoolActivityTarget, "the target is the thing id of the object that provides the activity" );
+			Assert.AreEqual( PoolBuildResult.Swimmers, level.PoolEraseBlock( swimmer.Cell.X, swimmer.Cell.Y ), "the water under a guest in an activity too" );
+			Assert.IsTrue( level.Objects.Remove( ladder ) );
+			Assert.IsFalse( swimmer.InPoolActivity, "aborted with the object" );
+			Assert.IsFalse( swimmer.InSwimSession, "and its session ended" );
+			// the extras list is read again after a removal: a removed shower is not offered
+			Assert.IsTrue( level.Guests.PoolExtraSites!().Any( site => site.Kind == PoolExtraKind.Shower ) );
+			Assert.IsTrue( level.Objects.Remove( shower ) );
+			Assert.IsFalse( level.Guests.PoolExtraSites!().Any( site => site.Kind == PoolExtraKind.Shower ), "no ghost shower in the same turn" );
+			Assert.IsFalse( level.Guests.PoolExtraSites!().Any( site => site.Kind == PoolExtraKind.Ladder ) );
+			// a shower placed again, a swimmer in it and a save in the middle: the restore hashes the same and goes on the same
+			var again = level.Objects.TryPlace( showerEntry, 2, 1, 0, out _ );
+			Assert.IsNotNull( again );
+			Assert.AreEqual( 1, level.Guests.DebugStartSwimmers( one.Visitors, 1 ) );
+			var showerer = level.Guests.Guests.Last( guest => guest.IsSwimming );
+			Assert.IsTrue( level.Guests.DebugStartActivity( showerer, "extra.shower" ) );
+			for ( var tick = 0; tick < 60 * 6 && ((showerer.PoolActivityPhase & 15) != 1 || showerer.PoolActivityTurns < 2); tick++ )
+				level.Guests.Tick( 1f / FixedStepClock.TicksPerSecond );
+			Assert.AreEqual( 1, showerer.PoolActivityPhase & 15, "under the shower" );
+			var snapshot = ParkResumeJson.Deserialize<GuestSimulationSnapshot>( ParkResumeJson.Serialize( level.Guests.CaptureSnapshot() ) );
+			var hasher = new StateHasher();
+			level.Guests.AddCanonicalState( hasher );
+			var before = hasher.Value;
+			for ( var tick = 0; tick < 60 * 3; tick++ )
+				level.Guests.Tick( 1f / FixedStepClock.TicksPerSecond );
+			var later = new StateHasher();
+			level.Guests.AddCanonicalState( later );
+			level.Guests.RestoreSnapshot( snapshot );
+			var restored = new StateHasher();
+			level.Guests.AddCanonicalState( restored );
+			Assert.AreEqual( before, restored.Value, "the restore hashes as the save" );
+			for ( var tick = 0; tick < 60 * 3; tick++ )
+				level.Guests.Tick( 1f / FixedStepClock.TicksPerSecond );
+			var again2 = new StateHasher();
+			level.Guests.AddCanonicalState( again2 );
+			Assert.AreEqual( later.Value, again2.Value, "and goes on exactly as the running game did" );
+			return 0;
+		} );
 	}
 }

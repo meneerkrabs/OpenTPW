@@ -103,14 +103,16 @@ the TrackRides block, `KOLC`'s word is VanillaTime, `RYLF` holds RSSE, `SAOC`'s
 - splits the payload at the 17 delimiters in writer order. Every block but two ends exactly where its tp.exe
   reader stops (`SaveBlockWidths`; the loader `0x415270` runs each reader and then compares the next four bytes with the
   block's tag, `0x415371` and the following checks), so a delimiter's bytes inside a block are data:
-  Scripts `0x475730` (`u32 'SCPT'`, `u32 0x118`, `u32 n`, n slot words and `0x118` bytes for each nonzero slot 1 to n-1),
-  Particles `0x51f7a0` (`u32 'PCLT'`, `u32 on`, then `0x9e68` and `0x8b60` byte tables and a counted tail),
+  Scripts `0x475730` (`u32 'SCPT'`, `u32 0x118`, `u32 n`, n slot words and `0x118` bytes for each nonzero slot 1 to n-1; another magic or record size makes the original
+  report "Restore scripts FAILED" and fail the whole load, so `SaveBlockWidths` rejects it),
+  Particles `0x51f7a0` (`u32 'PCLT'`, `u32 on`, then `0x9e68` and `0x8b60` byte tables and a counted tail; a table size other than these fails the original load and is
+  rejected; the pool length `c` of the tail is always 0 in a save the game writes, because the game's save call `0x41661B` writes `c = 0`, but the loader would read `c` bytes),
   message centre `0x40fd60` (a word and 29 counted `u16` lists), Clock 8 (`0x402e30`), VanillaTime 4 (`0x403260`),
   GameSystem 36 (`0x5506e0`), RideSystem `0x4647a0` (`u32` length and that many bytes), TrackRides `0x543560` (a chunk
   whose container header `u32 1, u32, u32 size` carries the width; the close `0x544290` seeks to its start plus the size,
   and the sub-chunk sizes must add up to it), FlyingRides `0x55e020` (`'FLY_'`, an on word, a counted slot table, ten
   words and one block per nonzero slot), RSSE `0x5597a0` (`'RSSE'`, a counted header, five words, a record count and size,
-  then per record its struct, nine counted buffers and an `'OBJ '` list), Camera 40 (`0x42cec0`), Advisor `0x599d00`
+  then per record its struct, eight counted buffers, the folder string and an `'OBJ '` list; see "RSSE block" below), Camera 40 (`0x42cec0`), Advisor `0x599d00`
   (`'ADV_'`, two counted buffers), Sound `0x51c400` (the settings, and with sound on a chunk the loader skips by its
   length word), Cheat 2 (`0x405570`), AdvisorScoring 4 (`0x59c860`) and UI `0x481680` (`u32 count`, count x `0x21c`).
   The Jungle Easymode save's seventeen widths all agree with these readers. An empty Coasters block is exactly its
@@ -173,12 +175,18 @@ The person block (390 bytes) is tp.exe's person serializer `0x4f8b10`: the base 
 (`0x50b090`), the sprite (`0x4d3ee0`: `mSpriteScript`, `mNextAnim`, `mNextServiceInterval`),
 `mAccurateDestX`/`Y` (2 + 2, 1/256 cell), `mAdjustorSpeed`, `mBaseSpeed` (2 + 2), `mCount` (1),
 `mESPSprite` (4, the sprite category: 2 is a costume), `mLastRecordedMapId` (2), the 177-byte
-navigation state (`0x50d150`, kept raw), `mPreviousSpeed`, `mPreviousX`, `mPreviousY`,
+navigation state (`0x50d150`, decoded, see "Navigation state" below), `mPreviousSpeed`, `mPreviousX`, `mPreviousY`,
 `mStrandedTime` (4 each), `mPurposeSpeed` (2), `mSetDestSuccessfully`, `mSpriteAngle`, `mSpriteID`,
 `mSpriteUnderRideCtrl` (4 each), and the thought block (`0x50bad0`: `mActionHistIndex`, 32 ×
 `mEventHistory[i]`, `mLastThought`, `mThoughtScript`, `mTimeBubbleShown`). Once it has read the
 person the loader routes it again to its accurate destination (`0x4fa5f0` at `0x4f9407`; a
 failure only logs "Couldn't renav to my accurate dest").
+
+Navigation state (177 bytes, reader `0x50D150`, `SaveNavigation`; every value 16.16 fixed point in cells unless noted), in order: force 8 (x, y), formation_pos 8, local_xaxis 8, local_yaxis 8, mass 4,
+max_force 4, max_speed 4, mCantReachDest 4 (int), nav_mode 4 (int), path_buffer_count 4 (int), path_count 4 (int), path_finished 1 (byte), path_last_progress 4, path_stuck_buffer 4, path_subpath_dist 4,
+path_tail_dist 4, path_target_pos 8, path_timestamp 4 (int), path_total_count 4 (int), path_total_dist 4, pos 8, radius 4, five times (subpath_buffer[i] 8, subpath_dist[i] 4) = 60, vel 8. Verified on
+every guest and staff member of the Easymode save and the corpus saves: `pos` equals the thing position within 1/256 cell, `radius` is 0.2 and `mass` 1.0; unused sub-path distances hold `0xCDCDCDCD`.
+`SavePerson.Navigation` keeps the raw bytes and `SavePerson.NavigationState` decodes them.
 
 The staff suffix (`0x504de0`) holds `mCurrentPayGrade`, the happiness byte, `mJobsDone` (set
 to 0 by the constructor and otherwise only serialized), the 33-unit inline `mName`, the
@@ -323,11 +331,37 @@ records share the leading layout with kind 826 and index 0: Info.Ids
 Info.Ids are not in the level object archives; the kind filter skips them and
 nothing about them is imported.
 
-The RSSE block (before the `RSSE` delimiter, earlier read as "`RYLF`") starts with its own `RSSE` and a header containing the value 14, followed by 14 length-prefixed object
-names and `data\levels\jungle\...` archive paths (Traffic Lights ×2, Fountain,
-Small Toilet ×3, Staff Room, Security Camera ×2, Litter Bin, Coconut Kiosk, Jungle
-Spray Sideshow, Bouncy Dino, Gates), each ending `OBJ ` plus raw heap pointers and
-script-VM-like values. They match the RideSystem list but are not decoded.
+## RSSE block (`SaveRsseBlock`)
+
+The RSSE block (writer `0x559350`, loader `0x5597A0`; before the `RSSE` delimiter, earlier read as "`RYLF`") is the script system: `'RSSE'`, `u32 0x14` and a 20-byte
+header (the globals at `0x8791A0`: an initialised flag, the tick counter, the next script id, the record count and the raw list-head pointer), five `'PAD_'` words
+(`0x5F444150`, discarded by the loader), `u32` record count and `u32 0xF4` record size. Each record is the 0xF4-byte script struct, eight length-prefixed buffers, the script
+folder and an object list:
+
+| Buffer | Stored length word |
+|---|---|
+| code | byte length (a whole number of words) |
+| stack, variables, string blob, node table | byte length (the stack and variables are whole words; the node table is 4 x the node count) |
+| limbo table | byte length (8-byte entries) |
+| bounce table | byte length (16-byte entries) |
+| walk table | an entry **count** (32-byte entries) |
+
+then the folder as `u32` length and NUL-terminated text (for example `data\levels\jungle\Rides\bouncy\`), and the object list `'OBJ '`, `u32` count, `u32 0x1C`, count x 0x1C bytes
+(+8 type, +0x0C runtime handle, +0x10 key, +0x14 model node, +0x18 slot; the first two words are kept as read).
+
+Script struct fields (offsets, named as the loader's log strings and the save/load order give them): +8 script id; +0x0C / +0x10 / +0x14 child, parent and sound script id; +0x18..+0x38 nine buffer
+pointers (raw process addresses); +0x3C program counter; +0x40 stack pointer; +0x48 result/flag register; +0x4C node count; +0x50 code word count; +0x54 stack size; +0x58 limbo size;
++0x60 limbo entries in use; +0x64 bounce size; +0x6C `i16` bounce count; +0x6E `i16` bounce base; +0x70 bounce node; +0x74 NAME; +0x7C walk size; +0x80 / +0x84 WALKFLOAT words;
++0x8C variable count; +0x90 string bytes; +0x94 time slice (50); +0x98 yield word; +0xA0 WAIT deadline; +0xA4 / +0xA8 / +0xBC animation-wait words; +0xAC `u16` thing id; +0xB0 object-list head;
++0xB8 TURBO byte; +0xB9 DIPMUSIC byte; +0xC0 `i16` speed; +0xC4 timer; +0xC8 mesh instance; +0xD0 scream; +0xD4 sound emitter handle; +0xD8 reverb; +0xDC / +0xDE SPARK; +0xE0 COAST;
++0xE4 `u16` animation speed; +0xE6 `i16` BUMP. `SaveRsseRecord` names these and keeps the raw struct (the +0x88 word `0x03E803E8` and the other unnamed words stay raw).
+
+Verification on the shipped Jungle `Easymode.TPWI`: the walk consumes exactly 10,856 bytes with 14 records (script ids 15 to 1 without 5; the header's record count is 14 and its next script id 0x10).
+Every record's code words and string blob are byte-identical to the matching ride's `.RSE` member in the level archive (the folder gives the archive: `Rides\bouncy\` is
+`levels/jungle/rides/bouncy.wad`), and its stack, variable, limbo, bounce and walk sizes (struct and buffers) equal that member's header (the buffers in the units above). Each record's thing id (+0xAC)
+is an attraction thing whose mesh instance equals the record's mesh instance (+0xC8). The same holds for the eleven other original saves of the corpus test (four themes, `.TPWS` and the initial `.INTS`
+saves: 5 records in each park save and 2 in each `.INTS`, consumed to the byte). The block is read strictly: a wrong magic, header length, record size, object-list tag or object size, a folder that is not one NUL-terminated string, a code buffer that is not whole words
+and any truncation are rejected. `SaveBlockWidths` keeps the width of a block without the `'RSSE'` magic at the tag alone (unverified against the loader); the park import then fails on the typed reader.
 
 ## Coasters block (`SaveCoasterBlock`)
 
@@ -535,7 +569,6 @@ RideSystem, attraction and economy readers over the second fixture set
   `+0x38`, `+0x64`, `+0x68` (SAVE-920 to SAVE-923); the train layout is decoded from the loader and the saver but
   no Theme Park World save with a coaster exists to check it on real bytes.
 - The control manager and the macro AI before the calendar (their widths are traced, their bodies are not), the guest, analyser and weather bodies, record
-  fields marked raw above, the extension data, RideSystem record bodies/lengths, RSSE object bodies and every
-  other block.
+  fields marked raw above, the extension data, RideSystem record bodies/lengths and the meaning of the unnamed RSSE struct words.
 - Saves with known ride wear to confirm the attraction gauges against the original wear rule.
 - Money/time/guest state needs known-state reference saves before import.

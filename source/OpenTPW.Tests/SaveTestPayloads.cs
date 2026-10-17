@@ -423,7 +423,7 @@ internal static class SaveTestPayloads
 			SaveBlock.MessageCentre => new byte[4 + SaveBlockWidths.MessageLists * 4],
 			SaveBlock.TrackRides => Words( 1, 12, 12 ),
 			SaveBlock.FlyingRides => Words( SaveBlockWidths.FlyingMagic, 0 ),
-			SaveBlock.Rsse => Words( SaveBlockWidths.RsseMagic, 0, 0, 0, 0, 0, 0, 0, 0 ),
+			SaveBlock.Rsse => Words( SaveBlockWidths.RsseMagic, 0x14, 1, 0, 0x10, 0, 0, 0x5F444150, 0x5F444150, 0x5F444150, 0x5F444150, 0x5F444150, 0, SaveRsseBlock.RecordBytes ),
 			SaveBlock.Advisor => Words( SaveBlockWidths.AdvisorMagic, 0, 0 ),
 			SaveBlock.Sound => new byte[12],
 			_ => throw new ArgumentOutOfRangeException( nameof( block ), block, "No minimal body." ),

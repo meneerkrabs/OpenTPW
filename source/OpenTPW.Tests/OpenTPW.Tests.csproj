@@ -18,6 +18,7 @@
     <ProjectReference Include="..\OpenTPW\OpenTPW.csproj" />
     <ProjectReference Include="..\OpenTPW.Online\OpenTPW.Online.csproj" />
     <ProjectReference Include="..\OpenTPW.Server\OpenTPW.Server.csproj" />
+    <ProjectReference Include="..\OpenTPW.ContentKit\OpenTPW.ContentKit.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -9,11 +9,17 @@ public static partial class OpcodeHandlers
 	/// </summary>
 	public static class Visitors
 	{
-		[OpcodeHandler( Opcode.HUSH, RideOpcodeStatus.Hooked, "unknown upstream; corpus input (`HUSH VAR_LETMEON` before boarding)" )]
-		public static void Hush( RideVM vm, Operand visitor ) => vm.Effect( Opcode.HUSH, new[] { visitor } );
+		[OpcodeHandler( Opcode.HUSH, RideOpcodeStatus.Implemented, "TPW-EXE 0x553D25: not a visitor operation; appends the resolved value to the script's heap (header stack size, up from index 0) and sets the flags; a full heap does nothing" )]
+		public static void Hush( RideVM vm, Operand value ) => vm.HeapPush( value.Value );
 
-		[OpcodeHandler( Opcode.HOP, RideOpcodeStatus.Hooked, "unknown upstream; corpus output (`HOP VAR_TEMP2; WALKOFF VAR_TEMP2`)" )]
-		public static void Hop( RideVM vm, Operand dest ) => dest.Value = vm.Effect( Opcode.HOP, new[] { dest } );
+		[OpcodeHandler( Opcode.HOP, RideOpcodeStatus.Implemented, "TPW-EXE 0x553DAA: pops the newest heap value (LIFO) into the flags and a variable destination; an empty heap does nothing (`HUSH VAR_LETMEON … HOP VAR_TEMP2; WALKOFF VAR_TEMP2`)" )]
+		public static void Hop( RideVM vm, Operand dest )
+		{
+			if ( !vm.HeapPop( out var value ) )
+				return;
+			vm.SetFlags( value );
+			dest.Value = value;
+		}
 
 		[OpcodeHandler( Opcode.ADDHEAD, RideOpcodeStatus.Hooked, "docs (`visitor`)" )]
 		public static void AddHead( RideVM vm, Operand visitor ) => vm.Effect( Opcode.ADDHEAD, new[] { visitor } );
@@ -21,20 +27,31 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.DELHEAD, RideOpcodeStatus.Hooked, "docs (`visitor`)" )]
 		public static void DelHead( RideVM vm, Operand visitor ) => vm.Effect( Opcode.DELHEAD, new[] { visitor } );
 
-		[OpcodeHandler( Opcode.LIMBO, RideOpcodeStatus.Hooked, "docs (`visitor unknown`)" )]
-		public static void Limbo( RideVM vm, Operand visitor, Operand unknown ) => vm.Effect( Opcode.LIMBO, new[] { visitor, unknown } );
+		[OpcodeHandler( Opcode.LIMBO, RideOpcodeStatus.Implemented, "TPW-EXE 0x554DE5 (`value seconds`): the first free slot of the script's limbo table (header limbo size) takes the value and expiry now + seconds * 1000; result 1 (flags), 0 when the table is full" )]
+		public static void Limbo( RideVM vm, Operand value, Operand seconds ) => vm.SetFlags( vm.Limbo( value.Value, seconds.Value ) );
 
-		[OpcodeHandler( Opcode.UNLIMBO, RideOpcodeStatus.Hooked, "docs say input; corpus output + flags (`UNLIMBO VAR_LETMEOFF; BRANCH_Z`)" )]
-		public static void Unlimbo( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.UNLIMBO, dest, dest );
+		[OpcodeHandler( Opcode.UNLIMBO, RideOpcodeStatus.Implemented, "TPW-EXE 0x554EF0: releases the first occupied slot whose expiry is strictly past into the flags and a variable destination, else 0 (`UNLIMBO VAR_LETMEOFF; BRANCH_Z`)" )]
+		public static void Unlimbo( RideVM vm, Operand dest ) => WriteResult( vm, dest, vm.Unlimbo() );
 
-		[OpcodeHandler( Opcode.FORCEUNLIMBO, RideOpcodeStatus.Hooked, "docs say input; corpus output + flags (`FORCEUNLIMBO VAR_LETMEOFF; BRANCH_NZ loop`)" )]
-		public static void ForceUnlimbo( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.FORCEUNLIMBO, dest, dest );
+		[OpcodeHandler( Opcode.FORCEUNLIMBO, RideOpcodeStatus.Implemented, "TPW-EXE 0x554F74: variable destination only (anything else does nothing at all); releases the first occupied slot whatever its expiry, else 0 (`FORCEUNLIMBO VAR_LETMEOFF; BRANCH_NZ loop`)" )]
+		public static void ForceUnlimbo( RideVM vm, Operand dest )
+		{
+			if ( dest.IsVariable )
+				WriteResult( vm, dest, vm.ForceUnlimbo() );
+		}
 
-		[OpcodeHandler( Opcode.INLIMBO, RideOpcodeStatus.Hooked, "unknown upstream; corpus `INLIMBO 0; BRANCH_Z` → dest + flags" )]
-		public static void InLimbo( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.INLIMBO, dest, dest );
+		[OpcodeHandler( Opcode.INLIMBO, RideOpcodeStatus.Implemented, "TPW-EXE 0x555012: the occupied slot count into the flags and the destination (`INLIMBO 0; BRANCH_Z`)" )]
+		public static void InLimbo( RideVM vm, Operand dest ) => WriteResult( vm, dest, vm.LimboOccupied );
 
-		[OpcodeHandler( Opcode.LIMBOSPACE, RideOpcodeStatus.Hooked, "unknown upstream; corpus `LIMBOSPACE 0; BRANCH_Z full` → dest + flags" )]
-		public static void LimboSpace( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.LIMBOSPACE, dest, dest );
+		[OpcodeHandler( Opcode.LIMBOSPACE, RideOpcodeStatus.Implemented, "TPW-EXE 0x555045: limbo size minus the occupied count into the flags and the destination (`LIMBOSPACE 0; BRANCH_Z full`)" )]
+		public static void LimboSpace( RideVM vm, Operand dest ) => WriteResult( vm, dest, vm.LimboFree );
+
+		// [BIN:TPW-EXE:0x555939 result tail] the result register (flags) takes the value and a variable destination is written; a literal destination only sets the flags
+		private static void WriteResult( RideVM vm, Operand dest, int value )
+		{
+			vm.SetFlags( value );
+			dest.Value = value;
+		}
 
 		[OpcodeHandler( Opcode.BOUNCESETNODE, RideOpcodeStatus.Hooked, "unknown upstream; passed through" )]
 		public static void BounceSetNode( RideVM vm, Operand node ) => vm.Effect( Opcode.BOUNCESETNODE, new[] { node } );

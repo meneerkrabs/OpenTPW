@@ -55,8 +55,8 @@ public static partial class OpcodeHandlers
 		[OpcodeHandler( Opcode.SPARK, RideOpcodeStatus.Hooked, "unknown upstream; 1 corpus use (Plasma); passed through" )]
 		public static void Spark( RideVM vm, Operand a, Operand b, Operand c, Operand d ) => vm.Effect( Opcode.SPARK, new[] { a, b, c, d } );
 
-		[OpcodeHandler( Opcode.TURBO, RideOpcodeStatus.Hooked, "docs (`value` 0..1, meaning unknown)" )]
-		public static void Turbo( RideVM vm, Operand value ) => vm.Effect( Opcode.TURBO, new[] { value } );
+		[OpcodeHandler( Opcode.TURBO, RideOpcodeStatus.Implemented, "TPW-EXE 0x5542B9: stores the low byte of the raw operand word in the script's TURBO byte (a variable operand stores its index byte); nothing else" )]
+		public static void Turbo( RideVM vm, Operand value ) => vm.TurboByte = value.Raw & 0xFF;
 
 		[OpcodeHandler( Opcode.HOUR, RideOpcodeStatus.Hooked, "host-local civil hour: tp.exe 0x5566AC calls time/localtime and stores tm_hour in the result register; a variable operand receives it, a literal only sets the flags; the TPW runtime samples host time (PPC-clock.md)" )]
 		public static void Hour( RideVM vm, Operand dest ) => EffectResult( vm, Opcode.HOUR, dest, dest );

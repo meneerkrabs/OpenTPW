@@ -68,7 +68,7 @@ public interface IRideVisitorHost
 {
 	/// <summary>The attraction called the front guest forward (ride <c>+104</c> = guest; the guest walks to the stand point).</summary>
 	void OnVisitorOffered( IRideVisitorBridge ride, int guestId );
-	/// <summary>The script took the guest (HUSH/WALKON/LIMBO/BOUNCE, or it cleared VAR_LETMEON).</summary>
+	/// <summary>The script took the guest (WALKON/BOUNCE, or it consumed VAR_LETMEON).</summary>
 	void OnVisitorBoarded( IRideVisitorBridge ride, int guestId );
 	/// <summary>The script released the guest at the exit (VAR_LETMEOFF = guest id), or the ride was removed.</summary>
 	void OnVisitorReleased( IRideVisitorBridge ride, int guestId );

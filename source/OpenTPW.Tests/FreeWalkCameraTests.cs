@@ -65,15 +65,15 @@ public class FreeWalkCameraTests
 		var previous=Camera.Mode; var edition=GameEditions.Current;
 		try {
 			GameEditions.Select(GameEdition.ThemeParkWorld); var hud=Fixture(out var level);
-			var park=new ParkCameraMode(); park.SetPose(new Vector3(2,3,0),23,45); park.CycleView(); Camera.Mode=park;
-			var p=park.Position; var r=park.Rotation; var v=park.View;
+			var park=new ParkCameraMode(); park.SetPose(new Vector3(2,3,0),23,45); Camera.Mode=park;
+			var p=park.Position; var r=park.Rotation; var v=park.Height;
 			Assert.IsTrue(level.EnterFreeWalk(Vector3.Zero)); var walk=level.FreeWalk; Assert.AreSame(walk,Camera.Mode);
 			Assert.IsFalse(level.EnterFreeWalk(Vector3.Zero));
 			// Existing ride-exit chain restores the exact camera saved by EnterRideView.
 			var ride=(PrototypeRide)RuntimeHelpers.GetUninitializedObject(typeof(PrototypeRide)); Set(level,"<PlacedRide>k__BackingField",ride);
 			Assert.IsTrue(level.EnterRideView(ride)); Assert.AreSame(level.RideView,Camera.Mode);
 			level.ExitRideView(); Assert.AreSame(walk,Camera.Mode);
-			level.ExitFreeWalk(); Assert.AreSame(park,Camera.Mode); Assert.AreEqual(p,park.Position); Assert.AreEqual(r,park.Rotation); Assert.AreEqual(v,park.View);
+			level.ExitFreeWalk(); Assert.AreSame(park,Camera.Mode); Assert.AreEqual(p,park.Position); Assert.AreEqual(r,park.Rotation); Assert.AreEqual(v,park.Height);
 			Assert.IsTrue(level.EnterFreeWalk(Vector3.Zero)); level.ExitFreeWalk(); Assert.IsNull(level.FreeWalk); Assert.AreSame(park,Camera.Mode);
 			Assert.IsTrue(level.EnterFreeWalk(Vector3.Zero)); var replacement=new ParkCameraMode(); Camera.Mode=replacement; level.ExitFreeWalk(); Assert.AreSame(replacement,Camera.Mode);
 			Assert.IsTrue(level.EnterFreeWalk(Vector3.Zero)); Assert.IsTrue(level.EnterRideView(ride)); var newer=new ParkCameraMode(); Camera.Mode=newer; level.ExitFreeWalk(); Assert.AreSame(newer,Camera.Mode,"A retired ride/walk owner cannot overwrite a newer camera.");

@@ -88,6 +88,7 @@ public class SaveGuestBodyTests
 	public void EveryGuestBodyOfEverySaveIsConsumedExactly()
 	{
 		var guests = 0;
+		var skipped = new List<string>();
 		foreach ( var (name, payload) in Saves() )
 		{
 			SaveWorld world;
@@ -97,7 +98,8 @@ public class SaveGuestBodyTests
 			}
 			catch ( InvalidDataException )
 			{
-				continue; // a Theme Park Inc or restart save the World reader does not take
+				skipped.Add( name ); // a restart .INTS save the World reader does not take
+				continue;
 			}
 			foreach ( var thing in world.OfModel( SaveThingModel.Guest ) )
 			{
@@ -109,9 +111,13 @@ public class SaveGuestBodyTests
 				Assert.AreEqual( 32, guest.Person.ThoughtEvents.Count, where );
 				// every saved guest is still in its arrival phase or leaving: unnumbered, unqueued, never admitted, no balloon position
 				Assert.IsFalse( guest.InQueueChain || guest.Admitted, $"{where} is queued or admitted" );
+				Assert.AreEqual( (0u, 0u, 0u, 0u), (guest.ArrivalIndex, guest.LastPosX, guest.LastPosY, guest.SavedState - 6), where );
 				guests++;
 			}
 		}
+		Assert.IsFalse( skipped.Any( name => name.EndsWith( ".TPWS", StringComparison.OrdinalIgnoreCase ) ), $"skipped: {string.Join( ", ", skipped )}" );
 		Assert.IsTrue( guests >= 13, $"Easymode alone holds 13 guests; read {guests}" );
+		if ( !string.IsNullOrWhiteSpace( Environment.GetEnvironmentVariable( "OPENTPW_TPWS_SAVES" ) ) )
+			Assert.AreEqual( 35, guests, "Easymode's 13 plus the 22 of the seven private .TPWS saves" );
 	}
 }

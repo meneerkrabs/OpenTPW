@@ -10,7 +10,7 @@ namespace OpenTPW;
 /// <c>+0x1E0</c>/<c>+0x1E8</c> the ride histories, <c>+0x1F0</c> person type, <c>+0x1F1</c> queue position, <c>+0x1F4</c> queue move delay, <c>+0x1F8</c> been admitted, <c>+0x1FC</c> idle stamp,
 /// <c>+0x200</c> opening wait, <c>+0x204</c> paid admission, <c>+0x208</c> spot animation stamp, <c>+0x210</c> balloon script, <c>+0x214</c> balloon life, <c>+0x218</c>/<c>+0x21C</c> last position,
 /// <c>+0x220</c> state, <c>+0x224</c> saved state, <c>+0x228</c>/<c>+0x22A</c> queue next/previous. The guest constructor <c>0x4FAEC0</c> zeroes the links, admission flag, destinations and last position
-/// and sets state and saved state to the same value (6 in every saved guest).
+/// and stores the constant 6 into both state and saved state.
 /// </summary>
 public sealed record SaveGuest( int Id, SavePerson Person )
 {
@@ -49,7 +49,7 @@ public sealed record SaveGuest( int Id, SavePerson Person )
 	public ushort SavedMajorDest { get; init; }
 	/// <summary><c>mSavedState</c> (+0x224): the state to resume after a spot animation. <c>0x4FC800</c> copies the current state here, stamps <see cref="TimeOfLastSpotAnim"/> with the world tick and enters state 8 (<c>0x501DB0</c>).</summary>
 	public uint SavedState { get; init; }
-	/// <summary><c>mState</c> (+0x220): 0 to 21, the states of the guest state setter <c>0x501DB0</c> (it rejects anything above 0x15).</summary>
+	/// <summary><c>mState</c> (+0x220): 0 to 21, the states of the guest state setter <c>0x501DB0</c> (all 52 call sites pass at most 0x15; the setter stores the value at 0x501DBF before its <c>ja</c> at 0x501DC5, so it does not itself guard the range).</summary>
 	public uint State { get; init; }
 	public float Thirst { get; init; }
 	public uint TimeOfLastSpotAnim { get; init; }
@@ -61,7 +61,7 @@ public sealed record SaveGuest( int Id, SavePerson Person )
 	public const int GuestBytes = 135;
 	public const int HistorySlots = 4;
 	public const float MaximumNeed = 255f;
-	/// <summary>The highest state the guest state setter <c>0x501DB0</c> accepts (<c>cmp eax, 0x15; ja</c>).</summary>
+	/// <summary>The highest state the guest state setter <c>0x501DB0</c> is called with (all 52 call sites pass at most 0x15; the setter does not guard it, it stores before its <c>cmp eax, 0x15; ja</c>). Verified against this tp.exe build only. One refused guest aborts the whole park import.</summary>
 	public const uint MaximumState = 21;
 
 	/// <summary>The admission flag (<see cref="BeenAdmitted"/>) as a boolean.</summary>
@@ -98,9 +98,9 @@ public sealed record SaveGuest( int Id, SavePerson Person )
 		if ( reader.Position != thing.End )
 			throw new InvalidDataException( $"Save guest thing {thing.Id} body is {thing.BodyLength} bytes; the guest serializer reads {reader.Position - thing.BodyOffset}." );
 		if ( guest.State > MaximumState || guest.SavedState > MaximumState )
-			throw new InvalidDataException( $"Save guest thing {thing.Id} has state {guest.State} and saved state {guest.SavedState}; the state setter 0x501DB0 takes 0 to {MaximumState}." );
+			throw new InvalidDataException( $"Save guest thing {thing.Id} has state {guest.State} and saved state {guest.SavedState}; every caller of the state setter 0x501DB0 passes 0 to {MaximumState}." );
 		if ( guest.BeenAdmitted > 1 )
-			throw new InvalidDataException( $"Save guest thing {thing.Id} has an admission flag of {guest.BeenAdmitted}; 0x5012B0 and 0x5012F0 write only 1 and 0." );
+			throw new InvalidDataException( $"Save guest thing {thing.Id} has an admission flag of {guest.BeenAdmitted}; the admission flag is only written as 1 (0x5012B0, 0x5012DF) or 0 (0x4FAF6F, 0x4FB181, 0x50007A, 0x501372)." );
 		foreach ( var need in new[] { guest.Happiness, guest.Hunger, guest.Litter, guest.Thirst, guest.Meter1B8, guest.Toilet, guest.Illness } )
 			if ( !float.IsFinite( need ) || need < 0f || need > MaximumNeed )
 				throw new InvalidDataException( $"Save guest thing {thing.Id} has a need {need} outside 0–{MaximumNeed}." );

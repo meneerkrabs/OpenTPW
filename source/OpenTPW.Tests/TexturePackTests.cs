@@ -96,18 +96,18 @@ public class TexturePackTests
 		{
 			var local = Path.Combine( root, "config", "texture-packs" );
 			var bundled = Path.Combine( root, "app", "content", "texture-packs" );
-			var bundle = FixturePack( bundled, TexturePack.DefaultName, "levels/jungle/textures/grass.wct" );
+			var bundle = FixturePack( bundled, TexturePack.EnhancedName, "levels/jungle/textures/grass.wct" );
 			var diagnostics = new List<string>();
-			TexturePack.Activate( TexturePack.DefaultName, diagnostics, local, bundled );
+			TexturePack.Activate( TexturePack.EnhancedName, diagnostics, local, bundled );
 			Assert.AreEqual( Path.Combine( bundle, "textures" ), TexturePack.Directory, "the bundle needs no config copy" );
 			Assert.AreEqual( Path.Combine( bundle, "textures", "levels/jungle/textures/grass.wct.png" ), TexturePack.Find( "/levels/jungle/textures/GRASS.wct" ) );
 			Assert.AreEqual( 0, diagnostics.Count );
 
-			var custom = FixturePack( local, TexturePack.DefaultName, "levels/jungle/textures/grass.wct" );
-			TexturePack.Activate( TexturePack.DefaultName, diagnostics, local, bundled );
+			var custom = FixturePack( local, TexturePack.EnhancedName, "levels/jungle/textures/grass.wct" );
+			TexturePack.Activate( TexturePack.EnhancedName, diagnostics, local, bundled );
 			Assert.AreEqual( Path.Combine( custom, "textures" ), TexturePack.Directory, "a player's same-name pack wins" );
 			File.WriteAllText( Path.Combine( custom, "pack.json" ), "{\"Format\":99}" );
-			TexturePack.Activate( TexturePack.DefaultName, diagnostics, local, bundled );
+			TexturePack.Activate( TexturePack.EnhancedName, diagnostics, local, bundled );
 			Assert.AreEqual( Path.Combine( bundle, "textures" ), TexturePack.Directory, "an obsolete local manifest falls back to the valid bundle" );
 			StringAssert.Contains( diagnostics.Single(), "expected 1" );
 		}
@@ -118,7 +118,7 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
-	public void ClarityInterfaceArtWinsAndMissingReplacementsFallBack()
+	public void ShippedInterfaceArtComesFirstAndMissingPacksFallBack()
 	{
 		var root = TemporaryDirectory();
 		var previous = TexturePack.ShippedDirectory;
@@ -126,21 +126,23 @@ public class TexturePackTests
 		{
 			var local = Path.Combine( root, "config" );
 			var bundled = Path.Combine( root, "bundled" );
-			var pack = FixturePack( bundled, TexturePack.DefaultName, "ui/textures/b_buy.wct" );
+			var pack = FixturePack( bundled, TexturePack.EnhancedName, "ui/textures/b_buy.wct", "levels/jungle/textures/grass.wct" );
 			var hero = FixturePack( root, "hero", "ui/textures/b_buy.wct", "ui/textures/b_info.wct" );
 			TexturePack.ShippedDirectory = Path.Combine( hero, "textures" );
-			TexturePack.Activate( TexturePack.DefaultName, new List<string>(), local, bundled );
-			Assert.AreEqual( Path.Combine( pack, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "ui/textures/b_buy.wct" ), "Clarity's own UI stays visible" );
-			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_info.wct.png" ), TexturePack.Find( "ui/textures/b_info.wct" ), "missing UI falls back to the shipped icon" );
-			Assert.IsNull( TexturePack.Find( "levels/jungle/textures/grass.wct" ), "missing world textures stay original" );
+			TexturePack.Activate( TexturePack.EnhancedName, new List<string>(), local, bundled );
+			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "ui/textures/b_buy.wct" ), "shipped hero art comes before the pack's interface art" );
+			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_info.wct.png" ), TexturePack.Find( "ui/textures/b_info.wct" ) );
+			Assert.AreEqual( Path.Combine( pack, "textures", "levels/jungle/textures/grass.wct.png" ), TexturePack.Find( "levels/jungle/textures/grass.wct" ) );
 
 			Directory.Delete( pack, recursive: true );
-			var diagnostics = new List<string>();
-			TexturePack.Activate( TexturePack.DefaultName, diagnostics, local, bundled );
+			TexturePack.Activate( TexturePack.EnhancedName, new List<string>(), local, bundled );
 			Assert.IsNull( TexturePack.Directory );
-			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "ui/textures/b_buy.wct" ), "a missing default pack keeps the shipped interface art" );
+			Assert.AreEqual( Path.Combine( hero, "textures", "ui/textures/b_buy.wct.png" ), TexturePack.Find( "ui/textures/b_buy.wct" ), "a missing pack keeps the shipped interface art" );
+			Assert.IsNull( TexturePack.Find( "levels/jungle/textures/grass.wct" ), "missing world textures stay original" );
+			var diagnostics = new List<string>();
+			TexturePack.Activate( "detailed", diagnostics, local, bundled );
 			StringAssert.Contains( diagnostics.Single(), "original world textures" );
-			TexturePack.Activate( "../clarity-enhanced", new List<string>(), local, bundled, enhancedInterface: false );
+			TexturePack.Activate( "../enhanced", new List<string>(), local, bundled, enhancedInterface: false );
 			Assert.IsFalse( TexturePack.Enhanced, "invalid names cannot activate fallback art" );
 			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ) );
 			TexturePack.Activate( "", new List<string>(), local, bundled, enhancedInterface: false );
@@ -154,6 +156,41 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
+	public void SavedClarityChoiceMigratesToOriginalAndIsSavedOnce()
+	{
+		var root = TemporaryDirectory();
+		try
+		{
+			var path = Path.Combine( root, "graphics.json" );
+			File.WriteAllText( path, "{\"TexturePack\":\"Clarity-Enhanced\",\"Preset\":\"High\"}" );
+			var diagnostics = new List<string>();
+			var loaded = GraphicsSettings.Load( path, diagnostics );
+			Assert.AreEqual( "", loaded.TexturePackName, "the removed pack reads as Original world textures" );
+			Assert.AreEqual( true, loaded.EnhancedInterface, "the interface choice a Clarity player had is kept" );
+			Assert.AreEqual( GraphicsPreset.High, loaded.Preset );
+			StringAssert.Contains( diagnostics.Single(), "was removed" );
+			StringAssert.Contains( File.ReadAllText( path ), "\"TexturePack\": \"\"", "the migrated choice is written back" );
+
+			diagnostics.Clear();
+			Assert.AreEqual( "", GraphicsSettings.Load( path, diagnostics ).TexturePackName );
+			Assert.AreEqual( 0, diagnostics.Count, "the migration is logged once, not on every start" );
+
+			var explicitHud = GraphicsSettings.FromJson( "{\"TexturePack\":\"clarity-enhanced\",\"EnhancedInterface\":false}", new List<string>() );
+			Assert.AreEqual( "", explicitHud.TexturePackName );
+			Assert.AreEqual( false, explicitHud.EnhancedInterface, "an explicit Original HUD stays" );
+
+			TexturePack.Activate( loaded.TexturePackName, new List<string>(), root, root );
+			Assert.IsFalse( TexturePack.Enhanced );
+			Assert.IsNull( TexturePack.Directory );
+		}
+		finally
+		{
+			TexturePack.Activate( "", new List<string>() );
+			Directory.Delete( root, recursive: true );
+		}
+	}
+
+	[TestMethod]
 	public void InstalledPacksIncludeBundlesWithoutDuplicatesOrInvalidManifests()
 	{
 		var root = TemporaryDirectory();
@@ -161,15 +198,16 @@ public class TexturePackTests
 		{
 			var local = Path.Combine( root, "local" );
 			var bundled = Path.Combine( root, "bundled" );
-			FixturePack( bundled, TexturePack.DefaultName );
-			CollectionAssert.AreEqual( new[] { TexturePack.DefaultName }, TexturePack.InstalledPacks( local, bundled ).ToArray(), "a missing config root must not hide the bundle" );
-			foreach ( var name in new[] { "enhanced", "detailed", "alpha", TexturePack.DefaultName } )
+			FixturePack( bundled, TexturePack.EnhancedName );
+			CollectionAssert.AreEqual( new[] { TexturePack.EnhancedName }, TexturePack.InstalledPacks( local, bundled ).ToArray(), "a missing config root must not hide the bundle" );
+			// A player-local copy of the removed Clarity pack is listed like any other pack, without special handling.
+			foreach ( var name in new[] { "detailed", "alpha", TexturePack.RetiredClarityName } )
 				FixturePack( local, name );
 			FixturePack( bundled, "enhanced" );
 			var invalid = FixturePack( bundled, "invalid" );
 			File.WriteAllText( Path.Combine( invalid, "pack.json" ), "not JSON" );
 			FixturePack( bundled, ".hidden" );
-			CollectionAssert.AreEqual( new[] { TexturePack.DefaultName, "enhanced", "detailed", "alpha" }, TexturePack.InstalledPacks( local, bundled ).ToArray() );
+			CollectionAssert.AreEqual( new[] { "enhanced", "detailed", "alpha", TexturePack.RetiredClarityName }, TexturePack.InstalledPacks( local, bundled ).ToArray() );
 		}
 		finally
 		{
@@ -189,7 +227,7 @@ public class TexturePackTests
 			var hero = FixturePack( root, "hero", "ui/textures/b_buy.wct" );
 			TexturePack.ShippedDirectory = Path.Combine( hero, "textures" );
 			Environment.SetEnvironmentVariable( "OPENTPW_TEXTURE_PACK", Path.Combine( pack, "textures" ) );
-			foreach ( var choice in new[] { "", TexturePack.DefaultName, "enhanced" } )
+			foreach ( var choice in new[] { "", TexturePack.EnhancedName, "detailed" } )
 			{
 				TexturePack.Activate( choice, new List<string>(), root, Path.Combine( root, "missing" ) );
 				Assert.AreEqual( Path.Combine( pack, "textures" ), TexturePack.Directory );
@@ -210,7 +248,7 @@ public class TexturePackTests
 		var diagnostics = new List<string>();
 		Assert.AreEqual( "", GraphicsSettings.Default.TexturePackName );
 		Assert.AreEqual( "", GraphicsSettings.Load( Path.Combine( Path.GetTempPath(), Guid.NewGuid().ToString( "N" ), "absent.json" ), diagnostics ).TexturePackName );
-		foreach ( var choice in new[] { "", "enhanced", "detailed", "mine", "clarity-enhanced" } )
+		foreach ( var choice in new[] { "", "enhanced", "detailed", "mine" } )
 		{
 			var settings = GraphicsSettings.FromJson( $"{{\"TexturePack\":\"{choice}\",\"EnhancedTextures\":false}}", diagnostics );
 			Assert.AreEqual( choice, settings.TexturePackName );
@@ -231,7 +269,7 @@ public class TexturePackTests
 		{
 			Display = new StubDisplaySettings( DisplaySettings.Default ), Options = new GameOptions(),
 			Languages = new[] { "English" }, CurrentLanguage = "English", Graphics = graphics,
-			TexturePacks = new[] { TexturePack.DefaultName },
+			TexturePacks = new[] { TexturePack.EnhancedName },
 			BeginTexturePackSwitch = name => { requested.Add( name ); return null; }
 		}, () => { } );
 		stack.Push( screen );
@@ -272,14 +310,14 @@ public class TexturePackTests
 	}
 
 	[TestMethod]
-	public void ClarityWorldCanKeepTheOriginalInterfaceAndSwitchingWorldPreservesIt()
+	public void EnhancedWorldCanKeepTheOriginalInterfaceAndSwitchingWorldPreservesIt()
 	{
 		var root = TemporaryDirectory();
 		try
 		{
-			var pack = FixturePack( root, TexturePack.DefaultName, "ui/textures/b_buy.wct", "levels/jungle/textures/grass.wct" );
-			TexturePack.Activate( TexturePack.DefaultName, new List<string>(), root, Path.Combine( root, "missing-bundle" ), enhancedInterface: false );
-			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original interface excludes both Clarity's UI and hero art" );
+			var pack = FixturePack( root, TexturePack.EnhancedName, "ui/textures/b_buy.wct", "levels/jungle/textures/grass.wct" );
+			TexturePack.Activate( TexturePack.EnhancedName, new List<string>(), root, Path.Combine( root, "missing-bundle" ), enhancedInterface: false );
+			Assert.IsNull( TexturePack.Find( "ui/textures/b_buy.wct" ), "Original interface excludes both the pack's UI and hero art" );
 			Assert.AreEqual( Path.Combine( pack, "textures", "levels/jungle/textures/grass.wct.png" ), TexturePack.Find( "levels/jungle/textures/grass.wct" ) );
 			var original = TexturePackSwitch.Begin( "", new List<string>(), root )!;
 			Assert.IsFalse( TexturePack.EnhancedInterface, "changing only world textures preserves the HUD choice" );
@@ -302,10 +340,10 @@ public class TexturePackTests
 	[DataRow( "{\"EnhancedTextures\":true}", true )]
 	[DataRow( "{\"TexturePack\":\"\"}", false )]
 	[DataRow( "{\"TexturePack\":\"enhanced\"}", true )]
-	[DataRow( "{\"TexturePack\":\"clarity-enhanced\",\"EnhancedTextures\":false}", true )]
+	[DataRow( "{\"TexturePack\":\"detailed\",\"EnhancedTextures\":false}", true )]
 	[DataRow( "{\"TexturePack\":\"\",\"EnhancedInterface\":true}", true )]
 	[DataRow( "{\"EnhancedTextures\":false,\"EnhancedInterface\":true}", true )]
-	[DataRow( "{\"TexturePack\":\"clarity-enhanced\",\"EnhancedInterface\":false}", false )]
+	[DataRow( "{\"TexturePack\":\"detailed\",\"EnhancedInterface\":false}", false )]
 	[DataRow( "{\"EnhancedInterface\":false}", false )]
 	public void InterfaceChoicePreservesOldOriginalIntentAndExplicitNewChoices( string json, bool expected )
 	{
@@ -319,7 +357,7 @@ public class TexturePackTests
 	[TestMethod]
 	public void HudOptionsApplyLocallyWithoutRequestingAWorldPackAndCancelDiscardsEdits()
 	{
-		foreach ( var world in new[] { "", TexturePack.DefaultName } )
+		foreach ( var world in new[] { "", TexturePack.EnhancedName } )
 		{
 			var graphics = new GraphicsSettingsService( _ => null, GraphicsSettings.Default with { TexturePackName = world }, null, () => CompatibilityFlags.Original );
 			var worlds = new List<string>();
@@ -715,9 +753,7 @@ public class TexturePackTests
 		var (row, value) = Row( stack, screen );
 		Assert.AreEqual( " Original", value() );
 		row.Activate();
-		Assert.AreEqual( " Enhanced (Clarity)", value(), "the preferred enhanced choice is always offered" );
-		row.Activate();
-		Assert.AreEqual( " Enhanced (legacy)", value(), "the earlier choice stays available without a local pack" );
+		Assert.AreEqual( " Enhanced", value(), "Enhanced is always offered, even without a local pack" );
 		row.Activate();
 		Assert.AreEqual( " Original", value() );
 
@@ -728,13 +764,12 @@ public class TexturePackTests
 		(row, value) = Row( stack, screen );
 		Assert.AreEqual( " Original", value() );
 		var seen = new List<string>();
-		for ( var step = 0; step < 5; step++ )
+		for ( var step = 0; step < 4; step++ )
 		{
 			row.Activate();
 			seen.Add( value() );
 		}
-		CollectionAssert.AreEqual( new[] { " Enhanced (Clarity)", " Enhanced (legacy)", " Detailed", " mine", " Original" }, seen, "Original, Clarity, Enhanced, Detailed, custom packs, back to Original" );
-		row.Activate();
+		CollectionAssert.AreEqual( new[] { " Enhanced", " Detailed", " mine", " Original" }, seen, "Original, Enhanced, Detailed, custom packs, back to Original" );
 		row.Activate();
 		row.Activate();
 		Assert.AreEqual( " Detailed", value() );
@@ -792,7 +827,7 @@ public class TexturePackTests
 		Row( saved, savedMain ).Button.Activate();
 		saved.Pop();
 		savedMain.Find( "ok" )!.Activate();
-		Assert.AreEqual( "clarity-enhanced", graphics.Current.TexturePackName );
+		Assert.AreEqual( "enhanced", graphics.Current.TexturePackName );
 		Assert.AreEqual( 0, saved.Screens.Count );
 	}
 

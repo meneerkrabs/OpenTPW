@@ -21,34 +21,36 @@ public partial class ModelFile : BaseFormat
 	private const int MaximumNodeNameBytes = 256;
 	private static readonly int[] AnimationTrailerPointerWords = { 8, 9, 10, 11, 12, 14, 15 };
 
-	public ModelFileKind Kind { get; private set; }
-	public uint VersionMajor { get; private set; }
-	public uint VersionMinor { get; private set; }
-	public string SourceName { get; private set; } = "";
-	public uint HeaderFlags { get; private set; }
+	public ModelFileKind Kind { get; internal set; }
+	public uint VersionMajor { get; internal set; }
+	public uint VersionMinor { get; internal set; }
+	public string SourceName { get; internal set; } = "";
+	public uint HeaderFlags { get; internal set; }
+	/// <summary>The header words of unknown meaning (0x0C, 0x10, 0x14, 0x2C, the u16 at 0x34), kept for <see cref="ModelFileWriter"/>.</summary>
+	public ModelHeaderOpaque HeaderOpaque { get; internal set; } = ModelHeaderOpaque.Default;
 	/// <summary>
 	/// The header float at +0xA0: the height above the terrain the original's height sampler adds for an object it samples as terrain (the flat track pieces' floor,
 	/// a bumper ride's platform; tp.exe 0x004511A0), 0 for most models.
 	/// </summary>
 	// [BIN:TPW-EXE:0x00450EA0 sampler mode] the loaded header's float +0xA0 (model +0xA0) selects the terrain sampler when nonzero; 0x004511A0 adds it to every sample and resets a NaN to 0
-	public float HeaderHeight { get; private set; }
+	public float HeaderHeight { get; internal set; }
 	/// <summary>
 	/// <see cref="HeaderFlags"/> bit that makes the Feral Mac record sampler add vertex keys and
 	/// translations instead of setting them. The ride loader calls it "relative animation" and strips
 	/// it unless the ride's flag word allows it (docs/reverse/PPC-formats.md).
 	/// </summary>
 	public const uint RelativeAnimationFlag = 0x4;
-	public ModelHeaderCounts Counts { get; private set; } = null!;
-	public Vector3 BoundsMin { get; private set; }
-	public Vector3 BoundsMax { get; private set; }
-	public IReadOnlyList<ModelTexture> Textures { get; private set; } = Array.Empty<ModelTexture>();
-	public IReadOnlyList<ModelNode> Nodes { get; private set; } = Array.Empty<ModelNode>();
-	public int RootNodeIndex { get; private set; } = -1;
-	public IReadOnlyList<ModelDummyAttribute> DummyAttributes { get; private set; } = Array.Empty<ModelDummyAttribute>();
+	public ModelHeaderCounts Counts { get; internal set; } = null!;
+	public Vector3 BoundsMin { get; internal set; }
+	public Vector3 BoundsMax { get; internal set; }
+	public IReadOnlyList<ModelTexture> Textures { get; internal set; } = Array.Empty<ModelTexture>();
+	public IReadOnlyList<ModelNode> Nodes { get; internal set; } = Array.Empty<ModelNode>();
+	public int RootNodeIndex { get; internal set; } = -1;
+	public IReadOnlyList<ModelDummyAttribute> DummyAttributes { get; internal set; } = Array.Empty<ModelDummyAttribute>();
 	/// <summary>The raw 16-byte path records counted by the u16 at 0x40 and located by the u32 at 0xAC (<see cref="Paths"/>).</summary>
-	public IReadOnlyList<byte[]> ExtraRecords { get; private set; } = Array.Empty<byte[]>();
+	public IReadOnlyList<byte[]> ExtraRecords { get; internal set; } = Array.Empty<byte[]>();
 	/// <summary>The paths of the 0xAC table, in record order; a type-0x208 dummy selects one with its stored index's high 16 bits.</summary>
-	public IReadOnlyList<ModelPath> Paths { get; private set; } = Array.Empty<ModelPath>();
+	public IReadOnlyList<ModelPath> Paths { get; internal set; } = Array.Empty<ModelPath>();
 
 	/// <summary>The path a node follows (its parent is a path dummy, type bit 0x8), or null.</summary>
 	public ModelPath? GetPathOf( int node )
@@ -60,22 +62,56 @@ public partial class ModelFile : BaseFormat
 		return index < Paths.Count ? Paths[index] : null;
 	}
 	/// <summary>Block pointer at 0x6C (only observed in terrain base models); 0 when absent.</summary>
-	public uint UnknownBlockOffset { get; private set; }
+	public uint UnknownBlockOffset { get; internal set; }
 	/// <summary>Terrain heightfield decoded from the 0x6C block; null when the pointer is 0. See docs/MAP.md.</summary>
-	public ModelHeightfield? Heightfield { get; private set; }
+	public ModelHeightfield? Heightfield { get; internal set; }
 	public ModelAnimationTrailer? Animation { get; private set; }
 	/// <summary>Decoded position/rotation/scale tracks of an animation member.</summary>
 	public ModelAnimation? Clip { get; private set; }
-	public List<Mesh> Meshes { get; private set; } = new();
+	public List<Mesh> Meshes { get; internal set; } = new();
 
-	public ModelFile( Stream stream )
+	private readonly bool captureLayout;
+	// Layout pieces gathered while reading (only kept with captureLayout).
+	private byte[]? headerBytes;
+	private int fileLength;
+	private uint[] nodeNameOffsets = Array.Empty<uint>();
+	private readonly List<ModelMeshLayout> meshLayouts = new();
+	private uint[] attributeData = Array.Empty<uint>();
+	private uint[] attributeVectors = Array.Empty<uint>();
+
+	/// <summary>
+	/// The file layout (region offsets, record links and the bytes between structures), kept only when the model was read with
+	/// <c>captureLayout: true</c>; <see cref="ModelFileWriter"/> then reproduces the member byte for byte. Null otherwise: the writer plans a layout.
+	/// </summary>
+	public ModelLayout? Layout { get; private set; }
+
+	/// <summary>An empty model for <see cref="ModelBuilder"/>; every collection is filled by the caller before it is written.</summary>
+	internal ModelFile()
 	{
+		VersionMajor = SupportedVersionMajor;
+		VersionMinor = SupportedVersionMinor;
+		Kind = ModelFileKind.Geometry;
+	}
+
+	public ModelFile( Stream stream ) : this( stream, false )
+	{
+	}
+
+	/// <param name="captureLayout">Keep <see cref="Layout"/> so that <see cref="ModelFileWriter"/> can reproduce the member byte for byte.</param>
+	public ModelFile( Stream stream, bool captureLayout )
+	{
+		this.captureLayout = captureLayout;
 		using var profile = LoadProfile.Measure( "model-parse" );
 		ReadFromStream( stream );
 	}
 
-	public ModelFile( string path )
+	public ModelFile( string path ) : this( path, false )
 	{
+	}
+
+	public ModelFile( string path, bool captureLayout )
+	{
+		this.captureLayout = captureLayout;
 		using var profile = LoadProfile.Measure( "model-parse" );
 		ReadFromFile( path );
 	}
@@ -97,6 +133,8 @@ public partial class ModelFile : BaseFormat
 		public uint VertCnt { get; set; }
 		public uint MaterialOffset { get; set; }
 		public uint FaceOffset { get; set; }
+		/// <summary>File offset of this mesh's normal run (corner normals, then face normals).</summary>
+		public uint NormalOffset { get; set; }
 		public uint FaceCount { get; set; }
 		public uint VertexCount { get; set; }
 		/// <summary>Number of corners (position/UV/normal combinations).</summary>
@@ -182,10 +220,13 @@ public partial class ModelFile : BaseFormat
 		if ( VersionMajor != SupportedVersionMajor || VersionMinor != SupportedVersionMinor )
 			throw new NotSupportedException( $"Unsupported MD2 version {VersionMajor}.{VersionMinor}." );
 
+		headerBytes = captureLayout ? data.AsSpan( 0, HeaderBytes ).ToArray() : null;
+		fileLength = data.Length;
 		var nameBytes = data.AsSpan( 0x18, 20 );
 		var nameLength = nameBytes.IndexOf( (byte)0 );
 		SourceName = Encoding.Latin1.GetString( nameLength < 0 ? nameBytes : nameBytes[..nameLength] );
 		HeaderFlags = U32( data, 0x30 );
+		HeaderOpaque = new ModelHeaderOpaque( U32( data, 0x0C ), U32( data, 0x10 ), U32( data, 0x14 ), U16( data, 0x34 ), U32( data, 0x2C ) );
 		HeaderHeight = BinaryPrimitives.ReadSingleLittleEndian( data.AsSpan( 0xA0 ) );
 		Counts = new ModelHeaderCounts( U16( data, 0x36 ), U16( data, 0x38 ), U16( data, 0x3A ), U16( data, 0x3C ), U16( data, 0x3E ),
 			U16( data, 0x40 ), U16( data, 0x42 ), U16( data, 0x44 ), U16( data, 0x46 ), U16( data, 0x48 ), U16( data, 0x4A ) );
@@ -264,13 +305,39 @@ public partial class ModelFile : BaseFormat
 		ReadMeshes( data, offsets, nodeRecords, textures, flagTable );
 
 		var attributes = new ModelDummyAttribute[counts.DummyAttributeCount];
+		attributeData = new uint[attributes.Length];
+		attributeVectors = new uint[attributes.Length];
 		if ( attributes.Length > 0 )
 		{
 			Require( data, offsets[11], attributes.Length * 20L, "dummy attribute table" );
 			for ( var index = 0; index < attributes.Length; index++ )
 			{
 				var record = (int)offsets[11] + index * 20;
-				attributes[index] = new ModelDummyAttribute( U32( data, record ), U32( data, record + 4 ), data.AsSpan( record + 8, 12 ).ToArray() );
+				var reserved = data.AsSpan( record + 8, 12 ).ToArray();
+				var type = U32( data, record );
+				var dataOffset = U32( data, record + 12 );
+				attributeData[index] = 0;
+				attributeVectors[index] = 0;
+				ModelAttributeData? block = null;
+				// A flag 0x40 record points at its 16-byte block; a pointer that does not hit the file stays in Reserved raw.
+				if ( (type & ModelDummyAttribute.DataFlag) != 0 && dataOffset >= HeaderBytes && dataOffset <= data.Length - 16L )
+				{
+					var word = U32( data, (int)dataOffset );
+					System.Numerics.Vector3? position = null;
+					// the high 16 bits of the block's word are the distance back to a position entry (x, y, z, 0)
+					var distance = word >> 16;
+					if ( distance != 0 && distance <= dataOffset - HeaderBytes && dataOffset - distance + 16L <= data.Length && U32( data, (int)(dataOffset - distance) + 12 ) == 0 )
+					{
+						var at = (int)(dataOffset - distance);
+						position = new System.Numerics.Vector3( F32( data, at ), F32( data, at + 4 ), F32( data, at + 8 ) );
+						attributeVectors[index] = dataOffset - distance;
+						word &= 0xFFFF;
+					}
+					block = new ModelAttributeData( word, F32( data, (int)dataOffset + 4 ), F32( data, (int)dataOffset + 8 ), F32( data, (int)dataOffset + 12 ), position );
+					attributeData[index] = dataOffset;
+					Array.Clear( reserved, 4, 4 );
+				}
+				attributes[index] = new ModelDummyAttribute( type, U32( data, record + 4 ), reserved, block );
 			}
 		}
 		DummyAttributes = attributes;
@@ -314,6 +381,8 @@ public partial class ModelFile : BaseFormat
 		Paths = paths;
 		if ( UnknownBlockOffset != 0 )
 			Heightfield = ReadHeightfield( data, UnknownBlockOffset );
+		if ( captureLayout )
+			Layout = ModelFileWriter.CaptureLayout( this, data, offsets, headerBytes!, fileLength, nodeNameOffsets, meshLayouts, attributeData, attributeVectors );
 	}
 
 	private static ModelHeightfield ReadHeightfield( byte[] data, uint offset )
@@ -390,14 +459,16 @@ public partial class ModelFile : BaseFormat
 		var siblings = new int[nodeCount];
 		var children = new int[nodeCount];
 		var nodes = new ModelNode[nodeCount];
+		var nameOffsets = new uint[nodeCount];
 		for ( var index = 0; index < nodeCount; index++ )
 		{
 			var record = nodeRecords[index];
+			nameOffsets[index] = U32( data, record + 84 );
 			parents[index] = Resolve( U32( data, record + 4 ), "parent", index );
 			siblings[index] = Resolve( U32( data, record + 8 ), "sibling", index );
 			children[index] = Resolve( U32( data, record + 12 ), "child", index );
 			nodes[index] = new ModelNode( index, U32( data, record ), U32( data, record + 80 ), ReadCString( data, U32( data, record + 84 ) ),
-				parents[index], index < meshCount ? index : -1, ReadMatrix( data, record + 16 ) );
+				parents[index], index < meshCount ? index : -1, ReadMatrix( data, record + 16 ), children[index], siblings[index] );
 		}
 
 		if ( !byOffset.TryGetValue( offsets[10], out var root ) )
@@ -430,6 +501,7 @@ public partial class ModelFile : BaseFormat
 
 		RootNodeIndex = root;
 		Nodes = nodes;
+		nodeNameOffsets = nameOffsets;
 	}
 
 	private void ReadMeshes( byte[] data, uint[] offsets, int[] nodeRecords, ModelTexture[] textures, uint flagTable )
@@ -469,6 +541,7 @@ public partial class ModelFile : BaseFormat
 			materials += materialCount;
 			faces += faceCount;
 			normals += cornerCount + faceCount;
+			meshLayouts.Add( new ModelMeshLayout( vertexOffset, normalOffset, uvOffset, materialOffset, faceOffset, orderOffset ) );
 			// These totals only grow: once a header count is exceeded, later meshes cannot repair it.
 			// Refuse before repeated aliased spans reserve another mesh's decoded arrays.
 			if ( vertexBlocks > counts.VertexBlockCount || uvBlocks > counts.UvBlockCount || materials > counts.MaterialCount
@@ -570,6 +643,7 @@ public partial class ModelFile : BaseFormat
 				VertexOffset = vertexOffset,
 				MaterialOffset = materialOffset,
 				FaceOffset = faceOffset,
+				NormalOffset = normalOffset,
 				FaceCount = faceCount,
 				VertexCount = vertexCount,
 				VertexOrderLen = cornerCount,

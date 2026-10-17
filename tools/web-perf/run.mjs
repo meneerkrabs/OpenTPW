@@ -119,6 +119,46 @@ class Page {
 		return ok;
 	}
 
+	/**
+	 * Starts Full Simulation on the game mode screen by what the game shows rather than by counting presses: Full Simulation, the
+	 * tick, and the new-progress consent (a profile without a progress file asks for it once, its first choice starts the
+	 * progress) are each clicked once per visit of their screen, until the park of `level` has its HUD. Returns the time of the park.
+	 * A progress failure dialog ends it with an error; the Continue screen of an island with an automatic checkpoint is answered with New park.
+	 */
+	async enterFullSimulation(level, timeoutMs = 300000) {
+		// Leaving a park writes its automatic checkpoint, so entering the island again offers it: [Continue automatic, New park, Back], and the harness only
+		// ever starts new parks (it never saves by hand, so no Continue saved line shifts the choices).
+		const steps = { gameMode: ['fullSimulation', 'ok'], newProgress: ['choice0'], themeStart: ['choice1'] };
+		const begin = Date.now();
+		let screen = null, done = 0;
+		for (;;) {
+			const state = await this.state().catch(() => null);
+			if (state?.hud && state.level === level)
+				return Date.now() - begin;
+			const shown = state?.hudScreen === 'progressFailed' ? 'progressFailed' : state?.menu;
+			if (shown === 'progressFailed')
+				throw new Error(`Starting ${level} ended in the progress failure dialog; state ${JSON.stringify(state)}`);
+			if (shown !== screen) {
+				screen = shown;
+				done = 0;
+			}
+			const order = steps[shown];
+			if (order && done < order.length) {
+				// A screen can show its element only after its first frame; a missing one is retried on the next poll.
+				if (await this.eval(`opentpwPerf.program.PerfClick(${JSON.stringify(order[done])})`).catch(() => false)) {
+					done++;
+					await this.nextFrame();
+				}
+			}
+			const stopped = await this.eval("document.getElementById('status')?.textContent ?? ''").catch(() => '');
+			if (/stopped|could not start/i.test(stopped))
+				throw new Error(`The game stopped while starting ${level}: ${stopped}`);
+			if (Date.now() - begin > timeoutMs)
+				throw new Error(`Timed out after ${timeoutMs / 1000} s starting ${level}; last state ${JSON.stringify(state)}`);
+			await sleep(100);
+		}
+	}
+
 	async metrics() { return this.send('Performance.getMetrics'); }
 
 	async memory() {
@@ -193,10 +233,10 @@ const scenarios = {
 		if (state.island !== 'jungle')
 			throw new Error(`The lobby shows ${state.island}, not the jungle island`);
 		await page.call('PerfClick', 'enterPark');
-		await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
+		await page.waitFor('the game mode menu', current => current.menu === 'gameMode' || current.menu === 'themeStart', 10000);
 		// The load profile covers the click, the construction and the first seconds after (textures that load lazily).
 		await page.eval('opentpwPerf.program.PerfProfile(true)');
-		const cold = await page.action('the Jungle park', () => page.call('PerfClick', 'fullSimulation'),
+		const cold = await page.action('the Jungle park', () => page.enterFullSimulation('jungle'),
 			current => current.hud && current.level === 'jungle', { timeoutMs: 300000, settleMs: 5000,
 				onReady: async () => ({
 					profile: JSON.parse(await page.eval('opentpwPerf.program.PerfLoadProfile()')),
@@ -260,19 +300,21 @@ const scenarios = {
 		const lobbyMs = Date.now() - click;
 		await sleep(2000);
 		await page.call('PerfClick', 'enterPark');
-		await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
+		await page.waitFor('the game mode menu', current => current.menu === 'gameMode' || current.menu === 'themeStart', 10000);
 		const park = Date.now();
-		await page.call('PerfClick', 'fullSimulation');
+		// The consent for new progress is answered on the way if the kept profile asks for it.
+		const entering = page.enterFullSimulation('jungle', 120000).catch(error => error);
 		for (;;) {
-			const state = await page.state().catch(() => null);
-			if (state?.hud && state.level === 'jungle')
+			const outcome = await Promise.race([entering, sleep(100).then(() => null)]);
+			if (outcome instanceof Error)
+				throw outcome;
+			if (typeof outcome === 'number')
 				break;
 			const asked = await page.eval("!document.getElementById('setup').hidden && /choose your Theme Park World folder/i.test(document.getElementById('status').textContent)").catch(() => false);
 			if (asked)
 				throw new Error('Jungle asked for the folder: its files were not kept');
-			if (Date.now() - park > 120000)
+			if (Date.now() - park > 125000)
 				throw new Error('Jungle did not open from the kept files within 120 s');
-			await sleep(100);
 		}
 		return { kept: keptText, playShownMs, firstFrameMs, lobbyMs, jungleReadyMs: Date.now() - park };
 	},
@@ -302,15 +344,20 @@ const scenarios = {
 		const toLobby = async () => {
 			await page.call('PerfOpenPauseMenu');
 			await page.waitFor('the pause menu', current => current.hudScreen === 'pause', 10000);
+			// The pause menu lays its lines out from their measured text on its first frames: a click before that misses them
+			for (let frame = 0; frame < 3; frame++)
+				await page.nextFrame();
 			await page.call('PerfClick', 'ExitToLobby');
-			await page.waitFor('the lobby', current => current.menu === 'lobby' && !current.hud, 60000);
+			// A checkpoint that cannot be written shows its failure dialog instead of leaving: say so rather than time out
+			const left = await page.waitFor('the lobby', current => (current.menu === 'lobby' && !current.hud) || current.hudScreen === 'automaticFailed', 60000);
+			if (left.hudScreen === 'automaticFailed')
+				throw new Error(`Exit To Lobby ended in the automatic checkpoint failure dialog; state ${JSON.stringify(left)}`);
 			await sleep(2000);
 		};
 		const enterPark = async island => {
 			await page.call('PerfClick', 'enterPark');
-			await page.waitFor('the game mode menu', current => current.menu === 'gameMode', 10000);
-			await page.call('PerfClick', 'fullSimulation');
-			await page.waitFor(`the ${island} park`, current => current.hud && current.level === island, 300000);
+			await page.waitFor('the game mode menu', current => current.menu === 'gameMode' || current.menu === 'themeStart', 10000);
+			await page.enterFullSimulation(island);
 			await sleep(3000);
 		};
 		await page.eval('opentpwPerf.program.PerfTrackTextureOrigins(true)');
@@ -319,12 +366,32 @@ const scenarios = {
 		await record('lobby');
 		await page.call('PerfClick', 'nextIsland');
 		const other = (await page.waitFor('the next island', current => current.island && current.island !== 'jungle', 10000)).island;
-		await enterPark(other);
-		await record(other);
+		let second = other;
+		try {
+			await enterPark(other);
+		} catch (error) {
+			// A fresh profile has not earned the keys of the next island (Full Simulation asks for them): leave the dialog and the
+			// game mode screen, and Jungle is the second park instead, so the switch through the lobby is still measured.
+			if (!/progress failure dialog/.test(error.message))
+				throw error;
+			await page.call('PerfClick', 'choice0');
+			await page.waitFor('the game mode menu', current => current.menu === 'gameMode' && current.hudScreen == null, 10000);
+			await page.nextFrame();
+			await page.call('PerfKey', 'Back');
+			await page.waitFor('the lobby', current => current.menu === 'lobby', 10000);
+			await page.nextFrame();
+			await page.call('PerfKey', 'Left');
+			await page.waitFor('the jungle island', current => current.island === 'jungle', 10000);
+			second = 'jungle (next island locked)';
+			await enterPark('jungle');
+		}
+		await record(second);
 		await toLobby();
 		await record('lobby again');
-		await page.call('PerfKey', 'Left');
-		await page.waitFor('the jungle island', current => current.island === 'jungle', 10000);
+		if (second === other) {
+			await page.call('PerfKey', 'Left');
+			await page.waitFor('the jungle island', current => current.island === 'jungle', 10000);
+		}
 		await enterPark('jungle');
 		await record('jungle again');
 		return { steps };

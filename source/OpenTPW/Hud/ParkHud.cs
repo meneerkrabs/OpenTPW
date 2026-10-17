@@ -356,6 +356,8 @@ public sealed partial class ParkHud
 				landTool.Cancel();
 			else if ( level.AreaClearTool is { IsActive: true } clearTool )
 				clearTool.Cancel();
+			else if ( level.PoolTool is { IsActive: true } poolTool )
+				poolTool.Cancel();
 			else if ( level.CellTool.IsActive )
 				level.CellTool.Cancel();
 			else if ( pendingItem != null || level.BuildEntry != null )
@@ -428,6 +430,7 @@ public sealed partial class ParkHud
 		level.PatrolTool?.Cancel();
 		level.BuyLandTool?.Cancel();
 		level.AreaClearTool?.Cancel();
+		level.PoolTool?.Cancel();
 		pendingItem = item;
 		level.BuildEntry = entry;
 		level.IsRemovingObjects = false;
@@ -792,7 +795,8 @@ public sealed partial class ParkHud
 				// [BIN:STP-PPC:0x10139A40 error feedback] a rejected action plays cat_ui event 0x1D (called from the buy window at 0x10163AFC/0x10163BFC and the checkbox dialog at 0x1013B7A4)
 				// [EXT:cannot-build-sound] a refused placement ('Cannot build') plays the error feedback 0x1D with OpenTPW's own message text: tp.exe plays 0x1D at exactly two sites (0x487b51 in the park click handler 0x4879d0, a cost above the money, and the helper 0x486ae0, whose only caller is the hire window 0x4af480), so the original plays nothing for a refused placement; the feedback is an OpenTPW addition
 				// [APPROX:AUDIO-009] within the build tools' code (0x524960-0x535100, which plays only 0xAF, 0x65, 0xCE, 0x8B, 0x97-0x99 and 0x90) no refusal sound exists, and none of the 82 call sites of the sound entry 0x51bfc0 lies between 0x535100 and 0x5471cd, where the refusal stages 0x535670 and 0x536100 are; the callees of those stages were not each traced for a sound
-				PostMessage( strings.Extra( OpenTpwText.CannotBuildHere ) );
+				// [EXT:pools-changing-room] a changing room that is refused for want of a pool says so
+				PostMessage( strings.Extra( lastLevelMessage.EndsWith( $": {nameof( OriginalPlacementResult.NeedsPool )}.", StringComparison.Ordinal ) ? OpenTpwText.PoolChangingRoomNeedsPool : OpenTpwText.CannotBuildHere ) );
 				GameAudio.PlayUi( GameAudio.ErrorEvent );
 			}
 		}
@@ -809,10 +813,11 @@ public sealed partial class ParkHud
 			cursorX = cursorY = -1;
 		// Also consume the exit frame: leaving a ride must not activate an armed tool on that same click.
 		var staffToolClick = !rideOwnsInput && (UpdateStaffTool( input, inPark && !mouseCaptured.Value ) || UpdatePatrolTool( input, inPark && !mouseCaptured.Value )
-			|| UpdateBuyLandTool( input, inPark && !mouseCaptured.Value ) || UpdateAreaClearTool( input, inPark && !mouseCaptured.Value ));
+			|| UpdateBuyLandTool( input, inPark && !mouseCaptured.Value ) || UpdateAreaClearTool( input, inPark && !mouseCaptured.Value )
+			|| UpdatePoolTool( context, input, inPark && !mouseCaptured.Value ));
 		var visitorClick = TrySelectWorldVisitor( input, new NVector2( context.Canvas.Width, context.Canvas.Height ),
 			paused || overUi || consumed || rideOwnsInput || mouseCaptured.Value || keyboardCaptured.Value || textCaptured.Value || staffToolClick || level.StaffPlacement is { IsActive: true } || level.PatrolTool is { IsActive: true }
-			|| level.BuyLandTool is { IsActive: true } || level.AreaClearTool is { IsActive: true } );
+			|| level.BuyLandTool is { IsActive: true } || level.AreaClearTool is { IsActive: true } || level.PoolTool is { IsActive: true } );
 		var toolClick = staffToolClick || visitorClick || rideOwnsInput || UpdateCoasterTool( context, input, inPark, paused ) || UpdateCellTool( context, input, inPark, paused );
 		// A right click leaves a build tool that Ctrl kept armed (and one still waiting for its first click).
 		if ( inPark && !rideOwnsInput && !paused && input.RightPressed && GameOptions.Current.RmbCancel && level.BuildEntry != null && !toolClick )
@@ -824,7 +829,7 @@ public sealed partial class ParkHud
 		// [BIN:TPW-EXE:0x487013 hover modes] with Shift alone, or with the visitor locator panel out, the hover handler picks visitors only (IsVisitorPickState) and no object mode is set
 		// [APPROX:UI-027] the object is the one occupying the cell of the cursor's terrain hit; the original picks a ride, shop or other object by its model's pick sprite (the sprite pass 0x5890e0, the thing in the 3 x 3 cells round the hovered cell 0x532bd0, the window 0x4b6080) — evidence needed: which instances carry a pickable sprite and its size and offset
 		if ( inPark && !IsVisitorPickState( Locator.Mode, Input.ModifierMaskDown ) && level.BuildEntry == null && !level.IsPlacing && !level.CellTool.IsActive && !level.IsCoasterToolActive && level.StaffPlacement is not { IsActive: true } && level.PatrolTool is not { IsActive: true }
-			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && input.LeftReleased && !toolPress )
+			&& level.BuyLandTool is not { IsActive: true } && level.AreaClearTool is not { IsActive: true } && level.PoolTool is not { IsActive: true } && input.LeftReleased && !toolPress )
 			SelectObject( level.Objects.FindAt( cursorX, cursorY ) );
 		if ( input.LeftReleased )
 		{
@@ -916,7 +921,7 @@ public sealed partial class ParkHud
 		// The remove tool owns the park click while it is on (Level.RemoveAt clears paths and queues too).
 		if ( paused || level.BuildEntry != null || level.IsPlacing || level.IsRemovingObjects || level.IsCoasterToolActive
 			|| level.PatrolTool is { IsActive: true } || level.StaffPlacement is { IsActive: true } || level.BuyLandTool is { IsActive: true }
-			|| level.AreaClearTool is { IsActive: true } )
+			|| level.AreaClearTool is { IsActive: true } || level.PoolTool is { IsActive: true } )
 			return false;
 		if ( inPark && tool.HoverHelpId( level.Paths, cursorX, cursorY ) is int help )
 			context.HoverHelp = strings.Help( help );
@@ -1050,6 +1055,11 @@ public sealed partial class ParkHud
 				cells.Add( (x, y, BlueprintMarker.Allowed) );
 			if ( patrol.FirstCorner == null && patrol.HoverCell is { } corner )
 				cells.Add( (corner.X, corner.Y, BlueprintMarker.Allowed) );
+		}
+		else if ( level.PoolTool is { IsActive: true, HoverCell: { } poolCell, HoverResult: { } poolResult } )
+		{
+			// [EXT:pools-tool] the pool tool marks the cell under the pointer: blue where it can be painted (or erased), red where it is refused
+			cells.Add( (poolCell.X, poolCell.Y, poolResult is PoolBuildResult.Ok or PoolBuildResult.Existing ? BlueprintMarker.Allowed : BlueprintMarker.Refused) );
 		}
 		else if ( level.CellTool.IsActive && level.CellTool.Ghost is { } ghost )
 		{

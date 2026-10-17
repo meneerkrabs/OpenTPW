@@ -102,9 +102,49 @@ public sealed class OriginalTerrain : Entity
 				ScheduleDispose( model );
 		}
 		pathParts.Clear();
+		RefreshHoles();
 		BuildPaths( heightfieldTextures );
 	}
 	public int TerrainMeshCount { get; private set; }
+
+	/// <summary>
+	/// [EXT:pools-render] Cells the terrain renderer leaves out of the ground mesh as render-only holes (the level: the pool cells, while the <c>opentpw.pools</c> extension is on), so a pool can be
+	/// drawn into the ground. Only the drawn mesh follows it: height lookups, placement, the cell map and every other part of the simulation never read it. Null: none.
+	/// </summary>
+	public Func<int, int, bool>? RenderHoleSource { get; set; }
+
+	/// <summary>The cells of the ground mesh: every cell with a texture slot, less the render-only holes (<paramref name="renderHole"/>), with the model's texture slot.</summary>
+	internal static IEnumerable<(int X, int Y, int ModelSlot)> HeightfieldCells( ModelHeightfield field, Func<int, int, bool>? renderHole )
+	{
+		for ( var y = 0; y < field.CellCountZ; y++ )
+		{
+			for ( var x = 0; x < field.CellCountX; x++ )
+			{
+				var modelSlot = field.GetCellTextureSlot( x, y );
+				if ( modelSlot < 0 || renderHole?.Invoke( x, y ) == true )
+					continue;
+				yield return (x, y, modelSlot);
+			}
+		}
+	}
+
+	private ModelEntity? heightfieldPart;
+	private Material? heightfieldMaterial;
+	private Dictionary<int, int>? heightfieldSlotIndices;
+	private ulong heightfieldHoleSignature;
+
+	private ulong HoleSignature()
+	{
+		var hash = 14695981039346656037UL;
+		if ( RenderHoleSource is not { } hole )
+			return hash;
+		var field = Park.Heightfield;
+		for ( var y = 0; y < field.CellCountZ; y++ )
+			for ( var x = 0; x < field.CellCountX; x++ )
+				if ( hole( x, y ) )
+					hash = (hash ^ (uint)(y * 4096 + x)) * 1099511628211UL;
+		return hash;
+	}
 
 	private void BuildHeightfield( Dictionary<string, Texture> textures )
 	{
@@ -112,32 +152,51 @@ public sealed class OriginalTerrain : Entity
 		var field = Park.Heightfield;
 		var slots = new List<Texture>();
 		var slotIndices = new Dictionary<int, int>();
-		var vertices = new List<Vertex>();
-		var indices = new List<uint>();
-		for ( var y = 0; y < field.CellCountZ; y++ )
+		// the texture slots are assigned over every cell, holes included, so rebuilding the mesh for another set of render holes keeps the one material
+		foreach ( var (_, _, modelSlot) in HeightfieldCells( field, null ) )
 		{
-			for ( var x = 0; x < field.CellCountX; x++ )
-			{
-				var modelSlot = field.GetCellTextureSlot( x, y );
-				if ( modelSlot < 0 )
-					continue;
-				if ( !slotIndices.TryGetValue( modelSlot, out var slot ) )
-				{
-					if ( slots.Count >= MaximumTextureSlots || modelSlot >= Park.TerrainModel.Textures.Count )
-						throw new InvalidDataException( "The original heightfield uses more ground textures than the renderer supports." );
-					slot = AddSlot( slots, LoadTexture( textures, Park.TerrainModel.Textures[modelSlot].FrameNames[0] ) );
-					slotIndices.Add( modelSlot, slot );
-				}
-				AddCell( vertices, indices, field, x, y, slot, PathTiles.Identity, 0 );
-			}
+			if ( slotIndices.ContainsKey( modelSlot ) )
+				continue;
+			if ( slots.Count >= MaximumTextureSlots || modelSlot >= Park.TerrainModel.Textures.Count )
+				throw new InvalidDataException( "The original heightfield uses more ground textures than the renderer supports." );
+			slotIndices.Add( modelSlot, AddSlot( slots, LoadTexture( textures, Park.TerrainModel.Textures[modelSlot].FrameNames[0] ) ) );
 		}
-		SurfaceCellCount = vertices.Count / 4;
 		var material = new Material<ObjectUniformBuffer>( "content/shaders/test.shader" );
 		while ( slots.Count < MaximumTextureSlots )
 			slots.Add( slots[0] );
 		material.Set( "Color", slots.ToArray() );
-		AddPart( new Model( vertices.ToArray(), indices.ToArray(), material ), "heightfield" );
+		heightfieldMaterial = material;
+		heightfieldSlotIndices = slotIndices;
+		SurfaceCellCount = HeightfieldCells( field, null ).Count();
+		heightfieldHoleSignature = HoleSignature();
+		heightfieldPart = AddPart( BuildHeightfieldModel( material, slotIndices ), "heightfield" );
 		BuildPaths( textures );
+	}
+
+	private Model BuildHeightfieldModel( Material material, Dictionary<int, int> slotIndices )
+	{
+		var vertices = new List<Vertex>();
+		var indices = new List<uint>();
+		foreach ( var (x, y, modelSlot) in HeightfieldCells( Park.Heightfield, RenderHoleSource ) )
+			AddCell( vertices, indices, Park.Heightfield, x, y, slotIndices[modelSlot], PathTiles.Identity, 0 );
+		return new Model( vertices.ToArray(), indices.ToArray(), material );
+	}
+
+	/// <summary>[EXT:pools-render] Rebuilds the ground mesh when the render-only holes changed since it was last built.</summary>
+	public void RefreshHoles()
+	{
+		if ( heightfieldPart == null || heightfieldMaterial == null || heightfieldSlotIndices == null )
+			return;
+		var signature = HoleSignature();
+		if ( signature == heightfieldHoleSignature )
+			return;
+		heightfieldHoleSignature = signature;
+		var old = heightfieldPart;
+		parts.Remove( old );
+		old.Delete();
+		if ( old.Model is { } oldModel && models.Remove( oldModel ) )
+			ScheduleDispose( oldModel );
+		heightfieldPart = AddPart( BuildHeightfieldModel( heightfieldMaterial, heightfieldSlotIndices ), "heightfield" );
 	}
 
 	/// <summary>The path layer: one quad per path cell, batched by at most 16 PathTex textures, and each queue cell's queue model.</summary>

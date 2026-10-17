@@ -95,6 +95,17 @@ internal static class Game
 			TpiMissionInspection.Run( args[missionIndex + 1] );
 			return;
 		}
+		// Headless guest measurement (docs/SMARTER-GUESTS.md): the synthetic scenario needs no game data, so it runs before the data is set up; level parks run after (below).
+		if ( args.Contains( "--guest-compare" ) )
+		{
+			Environment.ExitCode = GuestReportCompare.RunCommand( args );
+			return;
+		}
+		if ( args.Contains( "--guest-report" ) && !GuestReport.WantsLevels( args ) )
+		{
+			Environment.ExitCode = GuestReport.RunCommand( args );
+			return;
+		}
 		var pathIndex = Array.IndexOf( args, "--game-path" );
 		string? commandLinePath = null;
 		if ( pathIndex >= 0 )
@@ -234,6 +245,12 @@ internal static class Game
 			Environment.ExitCode = M3Gate.RunCommand( args );
 			return;
 		}
+		// Headless guest report with level parks (docs/SMARTER-GUESTS.md): no window, renderer or audio.
+		if ( args.Contains( "--guest-report" ) )
+		{
+			Environment.ExitCode = GuestReport.RunCommand( args );
+			return;
+		}
 		// Headless M4 attraction/script gate (docs/M4-GATE.md): no window, renderer or audio.
 		if ( args.Contains( "--m4-gate" ) )
 		{
@@ -266,6 +283,9 @@ internal static class Game
 		if ( visit != null )
 			Log.Trace( ParkSharing.Describe( visit ) );
 		Render = DisplayStartup.CreateRenderer( args );
+		// [EXT:script-mods] the crash marker was written at startup; it is removed after 15 seconds of frames (docs/SCRIPT-MODS.md)
+		if ( OpenTPW.Mods.ScriptSafeMode.Current is { } scriptStartMarker )
+			Render.OnUpdate += scriptStartMarker.Update;
 		if ( movieName != null )
 		{
 			MovieCommands.Play( dataDirectory, movieName, !args.Contains( "--mute" ), args.Contains( "--smoke-test" ) );
@@ -316,10 +336,11 @@ internal static class Game
 		if ( sliceSmoke && !GameEditions.IsThemeParkInc )
 			throw new ArgumentException( "--tpi-smoke-test drives the experimental Theme Park Inc slice: start it with --load-original-level and Theme Park Inc data (docs/THEME-PARK-INC.md)." );
 		// [EXT:autorun] The CD's launcher window comes first when its Autorun folder is available (docs/AUTORUN.md).
-		var autorun = startsFrontEnd && capturePath == null ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
+		var autorun = startsFrontEnd && capturePath == null && !GameEditions.IsThemeParkInc ? CreateAutorun( args, bonusSettings, dataDirectory ) : null;
 		// The original plays its start-up movies before the front end on every start (docs/TGQ-MOVIES.md); after
 		// the launcher's Play when it is shown. Smoke tests, --capture-world and --no-intro / OPENTPW_NO_INTRO go straight to the front end.
-		var playIntro = IntroPlaylist.ShouldPlay( startsFrontEnd, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
+		// [EXT:tpi-front-end-phase1] the Theme Park Inc Personnel File plays no start-up movies yet
+		var playIntro = !GameEditions.IsThemeParkInc && IntroPlaylist.ShouldPlay( startsFrontEnd, smoke, args, Environment.GetEnvironmentVariable( "OPENTPW_NO_INTRO" ) );
 		Func<IDisposable>? startIntro = playIntro ? () => StartIntro( flow, args, dataDirectory ) : null;
 		if ( autorun == null && !playIntro )
 		{
@@ -462,6 +483,61 @@ internal static class Game
 				}
 			}
 		}
+		// [EXT:debug-pool] smoke-only: once the original level is up and the opentpw.pools extension is on, paints pool cells through the pool tool's own builder
+		// (Level.PoolBuilder.PaintCells, charged as the tool does) at the first place near the camera target (--capture-camera's when given) where every cell of the shape can be painted, so a
+		// capture shows the water and the edges (docs/POOLS.md). The shape is rectangles "x,y,w,h" relative to that place, separated by ';' (default a 6 x 4 basin
+		// plus an L arm and a single cell, which covers straight edges, inner and outer corners and an isolated cell).
+		var debugPool = GetOption( args, "--debug-pool", "pool rectangles x,y,w,h;... relative to the camera target" );
+		if ( debugPool != null )
+		{
+			var shapeText = debugPool.Length > 0 && debugPool != "default" ? debugPool : "0,0,6,4;6,2,3,6;11,0,1,1";
+			var rectangles = shapeText.Split( ';' ).Select( part => part.Split( ',' ).Select( int.Parse ).ToArray() ).ToArray();
+			var shape = rectangles.SelectMany( r => Enumerable.Range( 0, r[2] ).SelectMany( dx => Enumerable.Range( 0, r[3] ).Select( dy => (X: r[0] + dx, Y: r[1] + dy) ) ) ).Distinct().ToArray();
+			var poolCamera = GetOption( args, "--capture-camera", "x,y,height,yaw" )?.Split( ',' ).Select( value => float.Parse( value, System.Globalization.CultureInfo.InvariantCulture ) ).ToArray();
+			var poolFrames = 0;
+			var poolFrame = GetOption( args, "--capture-frames", "a frame count" ) is { } poolFrameText && int.TryParse( poolFrameText, out var poolParsed ) && poolParsed > 60 ? poolParsed - 59 : 40;
+			Render.PostUpdate += PaintDebugPool;
+			void PaintDebugPool()
+			{
+				if ( flow.Level is not { OriginalPark: not null } level || Camera.Mode is not ParkCameraMode park || ++poolFrames < poolFrame )
+					return;
+				Render.PostUpdate -= PaintDebugPool;
+				// the held capture camera's target when one is given (the live camera may still be moving at this frame), else the park camera's
+				var searchX = poolCamera != null ? poolCamera[0] : park.Target.X;
+				var searchY = poolCamera != null ? poolCamera[1] : park.Target.Y;
+				if ( level.PoolBuilder is not { } builder || !level.TryGetGridCell( searchX, searchY, out var cellX, out var cellY ) )
+				{
+					Log.Warning( "--debug-pool: the opentpw.pools extension is off (use --enable-mod opentpw.pools) or the camera target is off the grid." );
+					return;
+				}
+				// [EXT:debug-pool] --debug-pool-offset dx,dy moves the place the shape is looked for from the camera target by whole cells (so a capture can frame a changing room beside the pool)
+				if ( GetOption( args, "--debug-pool-offset", "dx,dy cells" )?.Split( ',' ) is { Length: 2 } offsetParts && int.TryParse( offsetParts[0], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var offsetX ) && int.TryParse( offsetParts[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var offsetY ) )
+					(cellX, cellY) = (cellX + offsetX, cellY + offsetY);
+				for ( var radius = 0; radius < 40; radius++ )
+					for ( var dx = -radius; dx <= radius; dx++ )
+						for ( var dy = -radius; dy <= radius; dy++ )
+						{
+							if ( Math.Max( Math.Abs( dx ), Math.Abs( dy ) ) != radius )
+								continue;
+							// the shape is centred on the search cell
+							var originX = cellX + dx - (int)MathF.Round( (float)shape.Average( cell => cell.X ) );
+							var originY = cellY + dy - (int)MathF.Round( (float)shape.Average( cell => cell.Y ) );
+							if ( !shape.All( cell => builder.Check( originX + cell.X, originY + cell.Y ) == PoolBuildResult.Ok ) )
+								continue;
+							var stroke = builder.PaintCells( shape.Select( cell => (originX + cell.X, originY + cell.Y) ) );
+							var grid = level.Objects.Grid.Origin;
+							var centreX = grid.X + (originX + shape.Average( cell => cell.X ) + 0.5f) * ObjectPlacement.CellSize;
+							var centreY = grid.Y + (originY + shape.Average( cell => cell.Y ) + 0.5f) * ObjectPlacement.CellSize;
+							Log.Trace( FormattableString.Invariant( $"--debug-pool: painted {stroke.Cells.Count} cells at {originX},{originY} (engine centre {centreX:0.#},{centreY:0.#}), charged {stroke.Charged}, refusal {stroke.FirstRefusal?.Reason.ToString() ?? "none"}." ) );
+							// [EXT:debug-swimmers] smoke-only: --debug-swimmers N builds a changing room beside the pool (through the level's own placement, which charges it and needs the pool at its back) and
+							// puts N guests into the water at once, so a capture shows swimmers (docs/POOLS.md)
+							if ( GetOption( args, "--debug-swimmers", "guests to put into the pool" ) is { } swimText && int.TryParse( swimText, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var swimmerCount ) )
+								PlaceDebugChangingRoom( level, shape.Select( cell => (X: originX + cell.X, Y: originY + cell.Y) ).ToArray(), swimmerCount );
+							return;
+						}
+				Log.Warning( "--debug-pool: no place near the camera target takes the whole shape." );
+			}
+		}
 		// [EXT:debug-sim-minutes] smoke-only: once the original level is up, runs its fixed-step simulation (guests, ride scripts, economy) for that many park minutes
 		// as fast as it goes and prints the scream statistics (docs/AUDIO.md "Scream diagnostics"); use it with --capture-world, which ends the run afterwards.
 		var debugSim = GetOption( args, "--debug-sim-minutes", "park minutes to simulate for the audio diagnostics" );
@@ -591,6 +667,13 @@ internal static class Game
 			if ( startIntro != null )
 			{
 				using var intro = startIntro();
+				Render.Run();
+				return;
+			}
+			if ( GameEditions.IsThemeParkInc )
+			{
+				// [EXT:tpi-front-end-phase1] a Theme Park Inc start without a world opens its Personnel File (docs/THEME-PARK-INC.md)
+				flow.ShowThemeParkIncFrontEnd();
 				Render.Run();
 				return;
 			}
@@ -804,11 +887,11 @@ internal static class Game
 			if ( !string.IsNullOrWhiteSpace( selection.Path ) )
 			{
 				var check = InstallationDiscovery.InspectAsync( selection.Path, GameEdition.ThemeParkInc ).GetAwaiter().GetResult();
-				if ( check.Reports.FirstOrDefault() is { } report && selection.AcceptInspection( selection.Revision, report ) && selection.CanStart )
+				if ( check.Reports.FirstOrDefault() is { } report && selection.AcceptInspection( selection.Revision, report ) && selection.CanLaunch( args ) )
 				{
 					args = selection.LaunchArguments( args );
 					Settings.Default.GamePath = selection.Path;
-					Log?.Trace( $"Game folder: {selection.Path} (saved Theme Park Inc world {selection.World})." );
+					Log?.Trace( $"Game folder: {selection.Path} (saved Theme Park Inc {(args.Contains( "--front-end" ) ? "install, Personnel File" : $"world {selection.World}")})." );
 					return args;
 				}
 			}
@@ -985,8 +1068,24 @@ internal static class Game
 		if ( GameEditions.ViewerRefusal( args ) is { } refusal )
 			throw new ArgumentException( refusal );
 		var level = GetOption( args, "--load-original-level", "a Theme Park Inc world such as 'arabian'" );
-		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental slice for '{level}'. "
+		Log.Warning( $"Theme Park Inc data detected ({(edition.Evidence == GameEditionEvidence.StandardSamHash ? "retail Standard.sam" : "folder structure")}): experimental slice {(level == null ? "front end (the Personnel File)" : $"for '{level}'")}. "
 			+ GameEditions.SliceNotice );
+	}
+
+	/// <summary>[EXT:debug-swimmers] Builds a changing room beside the pool cells <paramref name="pool"/> (<see cref="Level.BuildChangingRoomBeside"/>) and starts <paramref name="swimmers"/> guests in its water.</summary>
+	private static void PlaceDebugChangingRoom( Level level, IReadOnlyList<(int X, int Y)> pool, int swimmers )
+	{
+		if ( level.BuildChangingRoomBeside( pool ) is not { } placed || level.Guests == null )
+		{
+			Log.Warning( "--debug-swimmers: no changing room could be built beside the pool (the opentpw.pools extension must be on, and the theme must list one)." );
+			return;
+		}
+		// a closed park lets nobody swim (and sends swimmers out of the water): the capture's park door is opened as the player's button would
+		level.Park?.Economy.OpenPark();
+		var started = level.Guests.DebugStartSwimmers( placed.Visitors, swimmers );
+		Log.Trace( $"--debug-swimmers: built the {placed.Entry.DisplayName} at {placed.Placement.X},{placed.Placement.Y} rotation {placed.Placement.Rotation}; {started} of {swimmers} guests swim." );
+		if ( started == 0 )
+			Log.Warning( $"--debug-swimmers: no guest swims: changing room {placed.Visitors.IsChangingRoom}, pool-side cells {string.Join( " ", placed.Visitors.PoolAccessCandidates )}, access {level.Guests.PoolAccessOf( placed.Visitors )}, region {level.Guests.SwimRegionOf( placed.Visitors )?.Cells.Count}, park closed {level.Park?.Economy.IsParkOpen == false}, registered {placed.Visitors.HasCells}." );
 	}
 
 	private static string? GetOption( string[] args, string name, string description )

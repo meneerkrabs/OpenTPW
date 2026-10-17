@@ -43,6 +43,11 @@ INITIALIZER_END = 0x5A86FB
 PUSHES = (0x53, 0x55, 0x56, 0x57)
 POPS = (0x5B, 0x5D, 0x5E, 0x5F)
 HELP_SCORE_CALLBACK = 0x59E8C0
+# the response pick of the advisor update 0x59A550 switches on the descriptor's word +0x2C (read by 0x59C490): 0 and 1 step the
+# previous response up (wrapping or stopping at the count), 2 steps it up (0x59A796), 3 draws the world generator (0x59A7AC, 0x516330).
+# Every shipped row holds 2, so the advisor takes no draw (docs/DETERMINISM.md "The substep scheduler").
+SELECTION_MODE_WORD = 11
+SEQUENTIAL_SELECTION = 2
 NO_CAPTION = 0x17F
 TAG_TABLE = 0x75ECA8
 TAG_RECORD = 32
@@ -142,6 +147,9 @@ def descriptors(image: Image) -> dict[int, dict[str, int]]:
             value = stores.get(base + index * 4)
             if value is not None:
                 words[index] = value
+        if words[SELECTION_MODE_WORD] != SEQUENTIAL_SELECTION:
+            raise ValueError(f'descriptor {message} has selection mode {words[SELECTION_MODE_WORD]}, not the sequential {SEQUENTIAL_SELECTION}: '
+                             'the advisor pick (0x59A550 case 3) would draw the world generator')
         result[message] = {'skip_scan': words[0], 'id': words[1], 'group': words[2], 'mode': words[3], 'callback': words[4],
                            'duplicates': words[8] & 0xFF, 'first': words[9], 'count': words[10]}
     return result

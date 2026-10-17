@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Native smokes with the example Theme Park Inc rides mod (docs/MODS.md, "Making a Theme Park Inc rides mod"):
+# Native smokes with the Theme Park Inc rides mod OpenTPW ships (docs/MODS.md, "The shipped Theme Park Inc rides mod"):
 # the sandbox smoke builds the mod's rides, shop and bin through the park economy, and the park-resume smoke
 # saves and restores a Jungle park whose rides are the mod's Turban Bounce. Nothing of Theme Park Inc is copied:
-# the mod is two small files written to a temporary folder, and the install is read where it is.
+# the mod is two small files of the game's own content folder, and the install is read where it is.
 #
 # Usage: OPENTPW_TPI_PATH='/path/to/Theme Park Inc' scripts/smoke-tpi-rides.sh ['/path/to/Theme Park World']
 # (the game path may also come from OPENTPW_GAME_PATH). Run it where a window can open, not while the screen is locked.
@@ -17,23 +17,10 @@ if [[ -z "$game" || -z "$tpi" ]]; then
 fi
 work="$(mktemp -d "${TMPDIR:-/tmp}/opentpw-tpi-smoke-XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-mod="$work/community.tpi-rides"
-mkdir -p "$mod" "$work/config" "$work/evidence"
-cat > "$mod/opentpw-mod.json" <<'JSON'
-{ "schema": 1, "id": "community.tpi-rides", "name": "Theme Park Inc rides", "version": "1.0.0", "category": "community",
-  "edition": "theme-park-world",
-  "dependencies": [ { "id": "opentpw.cross-edition-objects", "version": ">=1.0.0" } ],
-  "inputs": [ { "id": "tpi", "kind": "original-data", "edition": "theme-park-inc" } ],
-  "content": { "objects": "objects.json" } }
-JSON
-cat > "$mod/objects.json" <<'JSON'
-{ "schema": 1, "idRange": { "first": 40000, "last": 40099 }, "objects": [
-  { "archive": "levels/arabian/rides/tbounce", "input": "tpi", "theme": "jungle", "category": "rides", "infoId": 40001, "names": { "English": "Turban Bounce", "German": "Turban-Huepfer" } },
-  { "archive": "levels/science/rides/robot", "input": "tpi", "theme": "space", "category": "rides", "infoId": 40002, "names": { "English": "Giant Robot Swing" } },
-  { "archive": "levels/science/Facilities/litbin", "input": "tpi", "theme": "space", "category": "features", "infoId": 40003, "names": { "English": "Science Litter Bin" } },
-  { "archive": "levels/arabian/shops/drinks", "input": "tpi", "theme": "jungle", "category": "shops", "infoId": 40004, "names": { "English": "Desert Drinks" } } ] }
-JSON
-mod_options=(--mod-dir "$mod" --enable-mod opentpw.cross-edition-objects --enable-mod community.tpi-rides --mod-input "community.tpi-rides:tpi=$tpi")
+mkdir -p "$work/config" "$work/evidence"
+# The mod is the one OpenTPW ships (content/mods/opentpw.tpi-rides, found beside the program like in a release); the run switches
+# it and its extension on and chooses the install as its input, changing nothing on disk.
+mod_options=(--enable-mod opentpw.cross-edition-objects --enable-mod opentpw.tpi-rides --mod-input "opentpw.tpi-rides:tpi=$tpi")
 # A private configuration folder, like a developer's smoke runs: copies of the small settings files (not mods.json, whose choices the
 # command line below replaces) and links to the large art folders, so the runs never write the real configuration.
 source_config="${OPENTPW_SMOKE_CONFIG_SOURCE:-$HOME/Library/Application Support/OpenTPW}"

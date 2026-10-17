@@ -1,0 +1,5 @@
+{ "schema": 1, "id": "opentpw.example.patient-guests", "name": "Patient guests (example)", "version": "1.0.0", "category": "official",
+  "author": "OpenTPW",
+  "description": "An example script mod: happy guests also join a ride that is a little too exciting or not exciting enough, and guests give up a queue after a very long wait. It keeps two counters in its saved state. Off by default.",
+  "scriptApi": ">=1.0.0 <2.0.0",
+  "content": { "scripts": { "files": [ "scripts/patient-guests.tps" ], "hooks": { "leaveQueue": "leaveQueue", "joinQueue": "joinQueue" } } } }

@@ -15,10 +15,15 @@ public interface IOpenTpwExtension
 	bool DefaultEnabled { get; }
 	/// <summary>Whether the extension changes the park simulation; such extensions are recorded in park saves (a later phase).</summary>
 	bool AffectsSimulation { get; }
+	/// <summary>
+	/// Whether a player can switch the extension on (the Extensions and mods screen lists it; <c>mods.json</c> and <c>--enable-mod</c> are honoured). An extension that is registered but not selectable
+	/// exists for tests and development (<see cref="OpenTpwExtensions.Use"/>) until its first real feature ships, so no save gets locked to a version that does nothing.
+	/// </summary>
+	bool PlayerSelectable => true;
 }
 
 /// <summary>A compiled-in extension described by its fields.</summary>
-public sealed record OpenTpwExtension( string Id, string Name, ModVersion Version, bool DefaultEnabled, bool AffectsSimulation ) : IOpenTpwExtension;
+public sealed record OpenTpwExtension( string Id, string Name, ModVersion Version, bool DefaultEnabled, bool AffectsSimulation, bool PlayerSelectable = true ) : IOpenTpwExtension;
 
 /// <summary>Every official extension compiled into this build (docs/MODS.md).</summary>
 // [EXT:mods] OpenTPW's own extension registry; the original game had none
@@ -39,8 +44,32 @@ public static class OfficialExtensions
 	// [EXT:cross-edition-objects] OpenTPW's own extension; neither original game loads another game's objects
 	public static IOpenTpwExtension CrossEditionObjects { get; } = new OpenTpwExtension( "opentpw.cross-edition-objects", "Cross-edition objects", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
 
+	/// <summary>
+	/// The pools extension (docs/POOLS.md): the player paints pool water cells of any size and shape, which are drawn with an animated surface and
+	/// auto-joined edges, cost money per cell and are saved. Off by default because it adds a cell type to the park simulation. A park save records
+	/// the extension only while the park has pool cells or a changing room, so a park without either saves byte-identically whether the extension is on or off
+	/// (<c>ParkResumeMods.UsedOnlyExtensionIds</c>).
+	/// </summary>
+	// [EXT:pools-extension] OpenTPW's own extension; the original game has no pools
+	public static IOpenTpwExtension Pools { get; } = new OpenTpwExtension( "opentpw.pools", "Pools", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true );
+
+	/// <summary>
+	/// The guest insights extension (docs/SMARTER-GUESTS.md): the refusal-reason counters (too expensive, queue too long, too scary, too boring, ride broken or closed) in the park information window (phase 1).
+	/// It only reads the simulation (<see cref="GuestRefusalCounters"/>, a passive observer), so it is not recorded in park saves and a player may switch it on freely
+	/// (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
+	/// </summary>
+	// [EXT:guest-insights] OpenTPW's own extension; the original game has no such counters
+	public static IOpenTpwExtension GuestInsights { get; } = new OpenTpwExtension( "opentpw.guest-insights", "Guest insights", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: false, PlayerSelectable: true );
+
+	/// <summary>
+	/// The smarter guests extension (docs/SMARTER-GUESTS.md): guests that decide better, through the pure decision layer (<see cref="IGuestDecisions"/>). Off by default; it changes the simulation,
+	/// so park saves record it, and its version is the algorithm identity: every behaviour-changing release bumps it, and a park of another version is refused. Version 1.0.0 was the seam and the guests' identity only; 1.1.0 adds value for money (phase 2: price in the shop and sideshow choice, the booth weighing the fee against the park's worth, a price sensitivity trait); 1.2.0 adds spreading (phase 3: an expected-wait queue term for every attraction from a persisted throughput estimate, a stable per-guest preference per attraction instance and hysteresis between rides). Players cannot switch it on yet: it becomes selectable once the rule set (phases 2 to 6) is complete, so a save does not break with every phase (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
+	/// </summary>
+	// [EXT:smarter-guests] OpenTPW's own extension; the original game's guests are the faithful default
+	public static IOpenTpwExtension SmarterGuests { get; } = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 2, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
+
 	/// <summary>All official extensions, in declaration order.</summary>
-	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects };
+	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools };
 
 	public static IOpenTpwExtension? Find( string id ) => All.FirstOrDefault( extension => extension.Id == id );
 }

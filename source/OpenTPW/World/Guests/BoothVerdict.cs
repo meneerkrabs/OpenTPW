@@ -45,9 +45,11 @@ public static class BoothVerdict
 	/// and a lower fee is cheap up to <c>CheapPriceMultiplier</c> × GP and fair above it.
 	/// </summary>
 	// [BIN:TPW-EXE:0x4ff5b0 booth verdict] GP = S (0x4c8240) / (N + R % ((N >> 1) + 1)) + base, logged as "GP: %d, AF: %d" with AF the fee (bank +0x118); base < GP or base < AF selects the float bands k1 = +0x48, k2 = +0x4C, k3 = +0x44 of the settings at 0x785040
-	public static BoothVerdictKind Decide( uint points, uint fee, uint draw, GuestSettings settings )
+	public static BoothVerdictKind Decide( uint points, uint fee, uint draw, GuestSettings settings ) => Decide( ParkValue( points, draw, settings ), fee, settings );
+
+	/// <summary>The verdict for a park value already worked out (<see cref="ParkValue"/>, or a policy's adjustment of it): the same bands as <see cref="Decide(uint, uint, uint, GuestSettings)"/>.</summary>
+	public static BoothVerdictKind Decide( uint value, uint fee, GuestSettings settings )
 	{
-		var value = ParkValue( points, draw, settings );
 		var minimum = (uint)Math.Max( 0, settings.MinimumEntryFee );
 		if ( value <= minimum && fee <= minimum )
 			return BoothVerdictKind.Fair;

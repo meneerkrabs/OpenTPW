@@ -97,6 +97,28 @@ public sealed record GuestSnapshot
 	public int VisitorNumber { get; init; }
 	/// <summary>The stranded mark (<see cref="Guest.StrandedMark"/>). Absent in older saves, which hold none.</summary>
 	public int StrandedMark { get; init; }
+
+	// [EXT:pools-swim] the swim session (docs/POOLS.md); every field is absent (zero) outside it and in saves made before the pools extension, which restore with no swimmers
+	/// <summary>The swimmer's heading, 0..63 (<see cref="Guest.SwimHeading"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int SwimHeading { get; init; }
+	/// <summary>The park turns left of the swim or of the changing back (<see cref="Guest.SwimTurns"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int SwimTurns { get; init; }
+	/// <summary>The stroke, 0..2 (<see cref="Guest.SwimStroke"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int SwimStroke { get; init; }
+	/// <summary>The swimmer's goal in 16.16 cells (<see cref="Guest.SwimGoalX"/>, <see cref="Guest.SwimGoalY"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int SwimGoalX { get; init; }
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public int SwimGoalY { get; init; }
+	/// <summary>Whether the swimmer has a goal (<see cref="Guest.SwimHasGoal"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public bool SwimHasGoal { get; init; }
+	/// <summary>The swimmer's own random stream (<see cref="Guest.SwimRandom"/>).</summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault )]
+	public uint SwimRandom { get; init; }
 	public required long InterludeTurn { get; init; }
 	public required bool InQueueInterlude { get; init; }
 	/// <summary>The state-6 activity (the original's state 8), <see cref="GuestActivity.None"/> when there is none. Absent in saves
@@ -293,7 +315,7 @@ public sealed record RideVisitorBridgeSnapshot
 	/// <summary>The script times at which each walking-off guest may be handed out, parallel to <see cref="WalkingOff"/>; null for a ride whose WALKOFF completes at once (every ride but the tour rides).</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public double[]? WalkingOffReady { get; init; }
-	/// <summary>The slot nodes and walk action of each rider that WALKON put on a tour ride and WALKOFF has not taken off yet (guest, start node, end node, action); null when there are none.</summary>
+	/// <summary>The slot nodes and walk action of each rider that WALKON put on a tour ride or with the head action 4 and WALKOFF has not taken off yet (guest, start node, end node, action); null when there are none.</summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public (int Guest, int From, int To, int Mode)[]? WalkSlots { get; init; }
 	/// <summary>Always empty in a new snapshot: HOP pops the script's own heap (RideVM), not a bridge set. Kept for saves written before; whatever an old save stores here is validated and ignored.</summary>

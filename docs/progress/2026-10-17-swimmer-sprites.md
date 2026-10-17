@@ -1,0 +1,17 @@
+## Swimmer sprites for the swimming-pool mod, generated from code (October 17, 2026)
+
+- **What.** `tools/blender/opentpw_kid.py` (a parametric low-poly kid, mum, dad, granny and grandpa, one preset per original guest sprite set: the eight TPW kid sets and the eight TPI sets BD, GB, GK, KB, FA, MO, GM, GR) and `tools/blender/opentpw_swim_sprites.py` (front crawl, breaststroke and treading water, five directions, with a water-line tint, foam ring and splash droplets). All art is original and made from code; the original sprites were only used to match proportions and colours, and nothing derived from them is committed.
+- **Calibration.** `opentpw_kid_calibrate.py` renders the standing kid in the original's sprite cell and compares it with the original standing frames. Camera and lighting constants per edition (TPW 32 degrees, TPI 42 degrees) are in the script and in `docs/CONTENT-KIT.md`; standing heights are within 3 pixels of the originals.
+- **Not done.** Packing into ESP/TPC banks (the sprite-set writer is separate); the generated PNGs are not committed.
+- **Polish pass.** Procedural hair, fabric and skin detail, a key/fill/rim light rig with a contrast and saturation grade tuned against the originals' pixel statistics, raised swimmers with a lighter underwater tint, lengthened limbs and exaggerated strokes with more splash, per-character details for the TPI adults (belly, moustache and stubble, bun and lipstick, perm and glasses, sideburns and bald top) and a taller KB cap. `opentpw_swim_compare.py` builds the before/after sheet.
+- **Third pass.** Painted look instead of plastic (diffuse materials, procedural painted albedo in one shared texture space, ambient occlusion, warm shadows, mild sharpen), smooth capsule limbs with joint balls and analytic normals (no more rings), per-set palette quantisation of the frames (median cut, 255 colours) with the true-colour frames kept alongside, wet hair and a higher, more rolled crawl so the back, shoulders and recovering arms read from directions 0 and 1, and `--verify` (crawl roll and head turn on all 16 sets, arm visibility masks). Heights are unchanged within 1 px (KI 33 to 32).
+
+**Proportions** (after review):
+- smaller eyes, set higher, so the forehead shows under the hair;
+- a smaller kid head;
+- a longer torso and longer legs for kids and adults;
+- shorter spikes on the spiky-haired boys.
+
+Standing heights stay within 3 px of the originals; the tables are in CONTENT-KIT.md.
+- **Full guest sets.** `opentpw_guest_sprites.py` renders replacement sets for every guest of both editions (TPW kids; TPI kids, parents, grandparents): clothed outfits (`CLOTHES`, a preset switch), every original animation slot with its original number, frame count and directions (poses in `opentpw_guest_anims.py`), the swim slots 8 to 10, and the 7 x 8 rider head sets, as quantised PNGs plus a `set.json` with hotspot origins for the packer. Frames are rendered at the full-detail (FPC) scale, 1.25 times the TPC reference scale. A throwaway check packed all 32 sets with `SpriteSetBuilder` and read them back (slot tables match the originals). Shipping path: `data/esprites/Generic/<Folder>/SPR_xx.*` in a mod's `overrides`.
+- **Review fixes.** Camera elevations re-measured (TPW 27, TPI 25 degrees, scale adjusted), walk and run now start at contact with the originals' foot spread, longer kid legs and smaller heads (head ratio 0.35 against the original's 0.32), FA/GR reworked, head hotspot of the TPI sets 6 px lower, TPI heads re-rendered.

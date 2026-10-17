@@ -166,6 +166,11 @@ public sealed class ParkObjects
 	/// occupancy rules do not apply to it and this one does. Null: they are ordinary object cells.
 	/// </summary>
 	public Func<int, int, bool>? AddOnCellRule { get; set; }
+	/// <summary>
+	/// [EXT:pools-changing-room] An extra placement rule of the host, asked last with the entry, anchor and rotation: a refusal it answers is the placement's result, null has no opinion
+	/// (the level: a changing room needs pool water beside it, <see cref="PoolChangingRooms.PlacementRule"/>).
+	/// </summary>
+	public Func<ObjectCatalogEntry, int, int, int, OriginalPlacementResult?>? PlacementRule { get; set; }
 	public event Action<OriginalObject>? ObjectPlaced;
 	public event Action<OriginalObject>? ObjectRemoved;
 
@@ -202,6 +207,8 @@ public sealed class ParkObjects
 		}
 		if ( result == OriginalPlacementResult.Allowed )
 			result = CheckAccessCells( entry, anchorX, anchorY, rotation, overwritten );
+		if ( result == OriginalPlacementResult.Allowed && PlacementRule?.Invoke( entry, anchorX, anchorY, rotation ) is { } refused )
+			result = refused;
 		if ( result == OriginalPlacementResult.Allowed )
 			plan = new ObjectPlacementPlan( overwritten, paths );
 		return result;
@@ -546,6 +553,25 @@ public sealed class ParkObjects
 		ScriptWorld.Bumpers.AdvanceModule( deltaSeconds );
 		foreach ( var item in objects )
 			item.Simulate( deltaSeconds );
+	}
+
+	/// <summary>
+	/// One fixed tick of the original's substep scheduler (tp.exe main loop <c>0x0054F4BF</c>, <see cref="SimulationSubstep"/>): in a substep that is due the bump module ticks (0x54F55F), then the script pass runs every
+	/// script newest first on its own cadence (0x54F56B, 0x5516B0); the objects' own ticks follow, the tour cars among them on even substeps (0x54F5D7). A paused park runs none of it.
+	/// </summary>
+	internal void Simulate( double deltaSeconds, SimulationSubstep substep, OriginalObject? prototype = null )
+	{
+		ScriptWorld.Bumpers.HostDriven = true;
+		if ( substep.Due )
+		{
+			ScriptWorld.Bumpers.StepSubstep();
+			ScriptWorld.RunPass( SimulationSubstep.Milliseconds );
+		}
+		if ( substep.Running )
+			ScriptWorld.Bumpers.PresentAt( substep.SecondsSinceModuleStep );
+		prototype?.Simulate( deltaSeconds, substep );
+		foreach ( var item in objects )
+			item.Simulate( deltaSeconds, substep );
 	}
 
 	/// <summary>

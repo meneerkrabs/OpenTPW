@@ -198,7 +198,7 @@ public sealed class ParkGate
 
 	/// <summary>
 	/// Guests standing on the grid's counted cell types:
-	/// type 0, 1, 3, 9 or 10 (Mac <c>0xc3684</c>). Preserved approach-road and outside types do not count; a rider
+	/// type 0, 1, 3, 9 or 10 (Mac <c>0xc3684</c>); [EXT:pools-swim] a guest in a swim session (swimming in the water, climbing out, changing back) counts too, though the pool water is no counted type. Preserved approach-road and outside types do not count; a rider
 	/// counts at their stored cell (not because they are riding), and a guest that has left is not a
 	/// thing on the map at all.
 	/// </summary>
@@ -207,7 +207,7 @@ public sealed class ParkGate
 	/// <summary>The guests of <paramref name="guests"/> standing on a counted cell (<see cref="GuestCensus"/>).</summary>
 	// [BIN:TPW-EXE:0x004C9130 census] every thing of type 1 (a guest) on a cell the predicate 0x004FA990 accepts (types 1, 3, 9, 10 and 0) counts; 0x004CCEB0 (the rating) and 0x004C7FA0 (the cached count) walk the same way
 	public static int CountCensus( GuestSimulation guests ) =>
-		guests.Guests.Count( guest => guest.State != GuestState.Gone && CountsCellOf( guests.Grid.Cells, guest.Cell.X, guest.Cell.Y ) );
+		guests.Guests.Count( guest => guest.State != GuestState.Gone && (guest.InSwimSession || CountsCellOf( guests.Grid.Cells, guest.Cell.X, guest.Cell.Y )) );
 
 	/// <summary>
 	/// Live staff standing outside the counted cell types (the retry's blocker scan: thing kinds 4–8 with
@@ -218,7 +218,7 @@ public sealed class ParkGate
 		? 0
 		: staff().Count( member => member.CellX is { } x && member.CellY is { } y && !CountsCellOf( x, y ) );
 
-	internal bool Counts( Guest guest ) => CountsCellOf( guests!.Grid.Cells, guest.Cell.X, guest.Cell.Y );
+	internal bool Counts( Guest guest ) => guest.InSwimSession || CountsCellOf( guests!.Grid.Cells, guest.Cell.X, guest.Cell.Y );
 
 	/// <summary>Whether the cell at a guest's or staff member's position has a census-counted type.</summary>
 	// [BIN:STP-PPC:0xc3684 cell predicates 0x85190–0x85258] types 0, 1, 3, 9 and 10 count; the grid holds the world init's and the placements' types (ParkCellMap.MapStartCell, WriteFootprint)

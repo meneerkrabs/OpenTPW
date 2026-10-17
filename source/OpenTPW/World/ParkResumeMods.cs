@@ -22,14 +22,52 @@ internal static class ParkResumeMods
 	/// <summary>Upper bound for the recorded mods of one save (defensive; a run has a handful).</summary>
 	public const int MaximumRecords = 256;
 
-	/// <summary>The records of the simulation-changing mods in <paramref name="active"/> in load order, or null when it has none.</summary>
-	public static IReadOnlyList<ParkModRecord>? Capture( ModSet active )
+	/// <summary>
+	/// [EXT:pools-extension] The extensions a save records only while the park actually uses them: <c>opentpw.pools</c>, recorded when the park has pool cells or a changing room. A park
+	/// that does not use one saves byte-identically whether it is on or off, and loads whether it is on or off (docs/POOLS.md, docs/MODS.md).
+	/// </summary>
+	public static IReadOnlySet<string> UsedOnlyExtensionIds { get; } = new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id };
+
+	/// <summary>
+	/// The records of the simulation-changing mods in <paramref name="active"/> in load order, or null when it has none. A used-only extension
+	/// (<see cref="UsedOnlyExtensionIds"/>) is left out unless its id is in <paramref name="inUse"/>.
+	/// </summary>
+	public static IReadOnlyList<ParkModRecord>? Capture( ModSet active, IReadOnlySet<string>? inUse = null )
 	{
 		ArgumentNullException.ThrowIfNull( active );
-		if ( active.SimulationMods.Count == 0 )
+		var recorded = active.SimulationMods.Where( mod => !UsedOnlyExtensionIds.Contains( mod.Id ) || inUse?.Contains( mod.Id ) == true ).ToArray();
+		if ( recorded.Length == 0 )
 			return null;
-		return active.SimulationMods.Select( mod => new ParkModRecord( mod.Id, mod.Version.ToString(), mod.ContentSha256 ) ).ToArray();
+		return recorded.Select( mod => new ParkModRecord( mod.Id, mod.Version.ToString(), mod.ContentSha256 ) ).ToArray();
 	}
+
+	/// <summary>
+	/// [EXT:pools-extension] The used-only extensions a park uses: <c>opentpw.pools</c> when <paramref name="cells"/> holds a pool cell, or when the park holds one of the extension's own objects
+	/// (<paramref name="poolsObjects"/>: a changing room, whose asset keys name the extension and whose swimmers the save holds).
+	/// </summary>
+	public static IReadOnlySet<string> InUse( ParkCellMap? cells, bool poolsObjects = false ) =>
+		poolsObjects || (cells != null && cells.CountOf( ParkCellType.PoolWater ) > 0) ? new HashSet<string>( StringComparer.Ordinal ) { OfficialExtensions.Pools.Id } : new HashSet<string>( StringComparer.Ordinal );
+
+	/// <summary>
+	/// [EXT:pools-extension] The asset manifest as a save holds it: the catalog lists every object of the extension (<c>mod:opentpw.pools:</c> keys) whenever the extension is on, but a save holds, and a load requires,
+	/// only the keys of the extension objects the park has PLACED (<paramref name="placedPoolsObjects"/>: the changing rooms; none for a park of pool cells only). A park without any is the same bytes with the
+	/// extension on or off and loads with it on or off; an extension object that is not placed is ignored in both directions, so adding objects to the extension (more changing rooms, extras, slides) never
+	/// invalidates an older save. A placed object keeps the exact-hash check: changing its files changes the saves that place it.
+	/// </summary>
+	public static IReadOnlyDictionary<string, string> AssetsForUse( IReadOnlyDictionary<string, string> assets, IEnumerable<ObjectCatalogEntry> placedPoolsObjects )
+	{
+		ArgumentNullException.ThrowIfNull( assets );
+		ArgumentNullException.ThrowIfNull( placedPoolsObjects );
+		var prefix = ContentRoot.Mod( OfficialExtensions.Pools.Id ).KeyPrefix;
+		if ( !assets.Keys.Any( key => key.StartsWith( prefix, StringComparison.Ordinal ) ) )
+			return assets;
+		var placed = placedPoolsObjects.Where( IsPoolsObject ).Select( entry => entry.Root.KeyPrefix + entry.ArchivePath.TrimEnd( '/' ) + "/" ).Distinct( StringComparer.Ordinal ).ToArray();
+		return assets.Where( pair => !pair.Key.StartsWith( prefix, StringComparison.Ordinal ) || placed.Any( archive => pair.Key.StartsWith( archive, StringComparison.Ordinal ) ) )
+			.ToDictionary( pair => pair.Key, pair => pair.Value, StringComparer.Ordinal );
+	}
+
+	/// <summary>[EXT:pools-extension] Whether a placed object is one of the pools extension's own (a changing room).</summary>
+	public static bool IsPoolsObject( ObjectCatalogEntry entry ) => entry.ModId == OfficialExtensions.Pools.Id;
 
 	/// <summary>
 	/// The recorded mods' own consistency, with no active set: a bounded count, valid and distinct ids, versions and
@@ -85,7 +123,8 @@ internal static class ParkResumeMods
 		{
 			recordedIds.Add( record.Id );
 			if ( !active.IsEnabled( record.Id ) )
-				reasons.Add( $"needs {record.Id} {record.Version}" );
+				reasons.Add( $"needs {record.Id} {record.Version}"
+					+ (active.Refused.Any( refusal => refusal.Id == record.Id && refusal.Kind == ModRefusalKind.SafeMode ) ? ", which is off in safe mode (script mods are off for this run; start again without --safe-mode)" : "" ) );
 			else if ( !current.TryGetValue( record.Id, out var mod ) )
 				// enabled, but now judged presentation-only: its files changed
 				reasons.Add( $"needs {record.Id} {record.Version} with the content it was saved with" );
@@ -94,10 +133,12 @@ internal static class ParkResumeMods
 			else if ( mod.ContentSha256 != record.ContentSha256 )
 				reasons.Add( $"needs {record.Id} {record.Version} with the content it was saved with (its files changed)" );
 		}
+		// a used-only extension that is on but not recorded is fine: the save has no use of it (a save that does use it must record it: ParkResumeSaveFile.ValidateShape refuses pool cells without the record)
 		foreach ( var mod in active.SimulationMods )
-			if ( !recordedIds.Contains( mod.Id ) )
+			if ( !recordedIds.Contains( mod.Id ) && !UsedOnlyExtensionIds.Contains( mod.Id ) )
 				reasons.Add( $"was saved without {mod.Id} {mod.Version}, which changes the simulation; turn it off to load this park" );
-		if ( reasons.Count == 0 && saved != null && !saved.Select( record => record.Id ).SequenceEqual( active.SimulationMods.Select( mod => mod.Id ), StringComparer.Ordinal ) )
+		var expectedOrder = active.SimulationMods.Where( mod => !UsedOnlyExtensionIds.Contains( mod.Id ) || recordedIds.Contains( mod.Id ) ).Select( mod => mod.Id );
+		if ( reasons.Count == 0 && saved != null && !saved.Select( record => record.Id ).SequenceEqual( expectedOrder, StringComparer.Ordinal ) )
 			reasons.Add( $"needs its mods in the order {string.Join( ", ", saved.Select( record => record.Id ) )}" );
 		return reasons;
 	}

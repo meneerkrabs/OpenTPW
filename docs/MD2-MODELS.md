@@ -449,7 +449,7 @@ in the material's native texture binding, reads different GPU pixels, and
 checks held selections allocate zero bytes and reuse their resource sets.
 It also checks object deletion retires the owned materials. This is binding
 and texture-readback evidence, not a framebuffer comparison or original-game
-parity. On macOS invoke the public test method from a temporary `net10.0`
+parity. On macOS invoke the public test method from a temporary `net11.0`
 console harness referencing `OpenTPW.Tests.csproj`, on the main thread, with
 `OPENTPW_TEXTURE_FRAME_GPU=1` and `OPENTPW_GAME_PATH` set; MSTest's pool thread
 cannot create a Cocoa window. Native SDL2, cimgui and veldrid-spirv libraries
@@ -492,6 +492,109 @@ track totals (6,549 records, 3,475 with TRS data, 785 Bézier + 431 linear
 position tracks, 8,703 position keys, 26,233 rotation keys, 12,451 eased, 2,832
 scale keys), play every name-paired animation (1,275; bounded count 1,237) and
 the Totem samples; they are inconclusive without `OPENTPW_GAME_PATH`, not passes.
+
+## Writing and authoring
+
+October 17, 2026. `ModelFileWriter` (`source/OpenTPW.Files/Formats/Model/`) writes a version 221.203 **geometry** member and
+`ModelBuilder` builds one from scratch. **Animation members (`ModelAnimation.cs`, the separate `*m1.MD2`-style members) are out of
+scope**: the writer refuses them (`NotSupportedException`); only static models are written. 207.201 and 24.23 members are not written
+either (the reader refuses them too).
+
+**What is written.** Every field the reader keeps is written from the `ModelFile`: the header counts (always recomputed from the
+content, `Unknown46` from `Counts`), flags, source name, bounds, header height (+0xA0); texture flag words, slot words, frame names;
+every node record (type, links, matrix, stored index, name); every mesh (position blocks, corner table, normals, face records,
+material records, texture-coordinate blocks, mesh bounds); the attribute records with their 12 reserved bytes; the path records and
+points; the terrain heightfield block; the **attribute data blocks** (below). The words of unknown meaning in the header (0x0C, 0x10, 0x14,
+the u16 at 0x34, 0x2C; `ModelFile.HeaderOpaque`) and each node's first-child / next-sibling links (`ModelNode.FirstChildIndex`,
+`NextSiblingIndex`; 200 original chains are not in node index order) are kept in the model, so a planned layout keeps them too. Bytes
+the writer has no field for are written as zero: the padding of position and texture-coordinate blocks (zero in all 4,141 and 3,425
+original padded slots), the mesh record words +116, +144, +152..159 (zero in all 4,914 meshes), the flag record word +4 and slot record
+bytes +4..9 (zero in all 7,282 slots), and the zero padding after names. With a captured layout any non-zero byte there is kept as a
+gap (below) instead of being lost.
+
+**Attribute data blocks.** An attribute record with type flag 0x40 (0xF1, 0x400F1, 0x100400F1, 0x41071, ...) has the pointer to a 16-byte
+block in its word +12 (bytes 4..7 of `ModelDummyAttribute.Reserved`): all 248 records with the flag have a non-zero pointer, none of the
+2,204 without it do, in 28 members, and every target is distinct; the blocks form one array of 16-byte entries that ends exactly at the
+attribute table. A block is a `u32` word and three floats that look like a roughly unit-length direction (`ModelAttributeData`; meaning
+unverified, values kept raw). The **high 16 bits of the word are the byte distance back to a second 16-byte entry** `f32 x, f32 y, f32 z, 0`
+(a position; 126 of the 248 records have one, 122 have 0 in the high bits; all 126 entries have a zero fourth word, lie in an array that
+precedes the block array and never overlap anything else), which is what the first version of this writer mistook for "unreferenced gap
+bytes" in 12 members (the other entries are zero and were invisible). The low 16 bits (0x16..0x1F, 0x2A..0x2D, 0x37..0x147, ...) are not
+understood and kept. The reader decodes the block and the position (`ModelAttributeData.Position`; the pointer bytes of `Reserved` and
+the high bits of the word are then zero in the model), and the writer places the position array and the block array and writes the
+pointers and distances in captured and planned layouts alike. The words +8 and
++16 of an attribute record (`Reserved` bytes 0..3 and 8..11; non-zero in 128 records without a block, values like 0x1, 0x10, 0x40) stay raw.
+
+**What is copied raw.** `ModelLayout` (kept by `new ModelFile( stream, captureLayout: true )`; an ordinary read keeps none, so
+existing consumers pay nothing) holds the 0xB8-byte header as read (including the source-name bytes while the name is unchanged),
+every region offset, the per-mesh offsets, each node's name offset, each attribute data block's offset, and the **gaps**: non-zero
+bytes that no field accounts for. The gap mechanism is a last resort that keeps the roundtrip exact for data the reader does not
+understand, and it is reported (`ModelLayout.Gaps`). **No original member needs it any more**: the first version of this writer found 28
+members with non-zero runs of 16 to 933 bytes and called them unreferenced, but they were the attribute data blocks above (248
+pointers); with those decoded all 838 members have zero gaps (`Md2WriterCorpusTests` asserts it). The writer finds gaps by writing the
+model with the captured offsets and marking exactly the bytes it wrote (nothing is marked as a block), so a field the reader dropped
+shows up as a gap or a roundtrip mismatch. The layout also records the sizes it was captured for (`ModelLayout.Shape`): if the model
+changes shape (an appended position, a renamed node of another length) the writer plans a fresh layout instead of overlapping the
+neighbouring arrays.
+
+**Proven by roundtrip** (`Md2WriterCorpusTests`, needs `OPENTPW_GAME_PATH`): all 838 version 221.203 geometry members of the 312 local
+WADs (2,118 MD2 members; the 1,278 animation members and the two version 207 members are not written) are written back **byte for byte**
+from their captured layout, with no member that cannot be made identical and no member that needs gap bytes. The same test class reads
+every member without a layout, writes it with a **planned** layout (the one authored models get) and reads it back: all 838 equal the
+original in every field the reader keeps (header words, counts, nodes with matrices and sibling order, textures, positions, corners,
+UVs, normals, faces, materials, attributes with their data blocks compared by content, paths, heightfields); only offsets and padding
+differ.
+
+**Planned layout** (no captured layout): header, texture flags, frame names, slot records, then (16-byte aligned) positions, normals,
+(8-byte aligned) materials, faces, corner tables, (16-byte aligned) texture coordinates, node names, terrain block, path points,
+attribute data blocks, attributes, path records, then the mesh and dummy tables, each mesh's arrays in mesh order. This follows the order the corpus shows
+(e.g. `gates.MD2`: flags, names, slots, positions, normals, materials, faces, corners, texture coordinates, names, attributes, mesh
+table, dummy table); the original's region order varies (eight orders in the corpus) and its alignment rules are not verified beyond
+that, so the planned layout is *a* valid layout, not the exporter's. Regions that are absent get offset 0 (no dummies, attributes,
+terrain block or paths), as in the corpus.
+
+**Authoring API** (`ModelBuilder`, `ModelNodeBuilder`, `ModelMeshBuilder`, `ModelMaterialBuilder`): nodes with a hierarchy and
+parent-relative row-vector transforms (exactly one root; meshes are written before dummies, each group in insertion order); mesh nodes
+with materials, each material with its own corners (position, normal, texture coordinate) and triangles, so a corner belongs to one
+material and its range is contiguous; equal positions share one stored position; the face normal is `cross(p1 - p0, p2 - p0)`
+normalised and its index is `corners + face` (the corpus rule for 4,714 of 4,914 meshes). A material names a texture by file name
+(with or without `.tga`/`.wct`, at most 15 characters, printable ASCII); the model stores `<name>.tga` in a texture slot, which
+`ObjectAssets.TextureDirectories` resolves to `<archive>/textures/<name>.wct|.tga`. `wrap: true` sets slot flags 0x10 and 0x20 (wrap
+U and V), else the texture clamps (see "Texture slots" above); a name used with both wraps gets two slots. `SelfLit = true` on a material sets material word +0xC bit 0x1 (`ModelBuilder.SelfLitMaterialFlag`, the constant-colour, unlit mode of "Texture slots" above; default false); the glTF converter sets it from the material extra `opentpw_self_lit` ([CONTENT-KIT.md](CONTENT-KIT.md#converter-conventions)). **Head records**: a node's
+`AddHead( id, type, data )` makes an attribute record whose type has flag 0x80 (default 0xB1) and whose value is the
+head id. A type with flag 0x40 (0xF1 and others) needs the 16-byte data block of unknown meaning, which has no safe default, so
+`AddHead` demands it as `ModelAttributeData` for those types and refuses it for 0xB1; the plain default 0xB1 has no block (487 corpus
+records); ids must be unique and run from 1 (the ride script counts from 1 until the lookup fails). Record `i` belongs to node
+`Unknown46 + i` (docs/GUESTS.md "Riders' heads"), so the table starts at the first dummy (or an earlier head node) and spans every node
+up to the last head node; the nodes in between get a plain record. `RideHeadSpace.NodeForHead` finds the ids on their nodes in the
+tests, and a ride script's ADDHEAD can hang guest heads on them.
+
+**Unverified defaults** (meaning unknown; the most common corpus value, none checked against the original loader or a game run):
+
+| Field | Default | Corpus basis |
+| --- | --- | --- |
+| Header flags (0x30) | 1 | 517 of 838 members |
+| Header words 0x0C / 0x10 | 1142 / 281 | the commonest pair (61 members) |
+| Header word 0x14 | 939121370 | a 1999 Unix time; every value is nearly unique |
+| Header word 0x2C | file length - 11 | 0 to 29 bytes below the length; 11 is the commonest (79 members) |
+| Header u16 at 0x34 | 0 | all 838 (the u32 at 0x34 also holds the texture count at 0x36, so it is never 0) |
+| Source name | empty | 92 differ from the member name |
+| Header height (0xA0) | 0 | 755 of 838 |
+| Mesh node type | 0x1 | 4,578 of 4,914 meshes |
+| Dummy node type | 0x200 | 2,545 of 2,606 dummies |
+| Stored node index | the node index | all nodes except three path dummies |
+| Texture slot word 0 | 0 | 7,162 of 7,282 slots (the other 120 hold 1) |
+| Texture slot flags | 0x1, wrap 0x31 | 3,543 slots with 0x1, 953 with 0x31 |
+| Material word `a`, padding word | 0 | 12,031 of 12,951 materials have padding 0; 920 have 1 (meaning unknown) |
+| Plain attribute record | type 0x1, value 0 | 122 corpus records (115 on mesh nodes) |
+| `Unknown46` without heads | 0xFFFF | all 493 members without attributes |
+| Mesh bounds | min/max of the mesh positions | equal in 1,735 of 4,909 meshes (the others differ, unexplained) |
+| Header bounds | box of the composed hierarchy | within 2 % of the extent in 146 of 173 non-UI models (see "Node transform space") |
+| Layout | planned, see above | not the original's |
+
+An authored model reads back through `ModelFile` and loads through the object CPU path (`ObjectAssets.LoadModel`, `ConvertMesh`,
+`ResolveTexture`, a mod's `objects.json`; `Md2ModelBuilderObjectPathTests`). Whether tp.exe itself accepts a planned layout, the
+default words or a texture-less mesh has not been tried: the original game is not run in this work.
 
 ## Older versions: 207.201 and 24.23
 

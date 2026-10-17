@@ -86,7 +86,8 @@ public static class GuestWander
 			var second = draw();
 			var x = (int)(first % 11) - 5 + start.X;
 			var y = (int)(second % 11) - 5 + start.Y;
-			if ( x >= 0 && y >= 0 && x < 128 && y < 128 && grid.InBounds( x, y ) && route( (x, y) ) )
+			// [EXT:pools-cell-type] the draws stay as they are; a candidate in the water is skipped (docs/POOLS.md)
+			if ( x >= 0 && y >= 0 && x < 128 && y < 128 && grid.InBounds( x, y ) && grid.Cells.RawTypeAt( x, y ) != ParkCellTypes.PoolWater && route( (x, y) ) )
 				return true;
 		}
 		return false;

@@ -5,7 +5,7 @@ Original legally obtained game assets are required and must not be committed.
 
 ## macOS / Linux
 
-Install the pinned .NET 10 SDK (`global.json`). Apple Silicon uses native arm64 with Metal when
+Install the pinned .NET 11 SDK (`global.json`). Apple Silicon uses native arm64 with Metal when
 the matching libraries are available; see MACOS-NATIVE.md for reproduction.
 The launcher falls back to an Intel/Rosetta bootstrap when those files are absent.
 Linux currently uses Vulkan and needs a working Vulkan driver. Windows uses
@@ -100,8 +100,8 @@ or full gameplay and does not download proprietary game files.
 
 The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Changes apply at the next start.
 
-`OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the example Theme Park Inc rides mod
-([MODS.md](MODS.md#making-a-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
+`OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the shipped Theme Park Inc rides mod (`opentpw.tpi-rides`)
+([MODS.md](MODS.md#the-shipped-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
 
 ## Diagnostic model inspection
 
@@ -143,7 +143,7 @@ the smoke also checks that guests fill and leave the Totem and ride imported obj
 ## Headless M3 gameplay-loop gate
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m3-gate --minutes 30 --report m3-gate.json
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m3-gate --minutes 30 --report m3-gate.json
 ```
 
 Builds a fixed minimal Jungle park without a window or GPU (entrance, paths laid with the path builder,
@@ -152,10 +152,23 @@ and a handyman), runs 30 simulated minutes as fast as possible and prints one pa
 invariant. Exit code: 1 when any row fails, 2 when no row fails but at least
 one is unresolved, 0 only when every row passes. M3 is accepted only at exit code 0. See [M3-GATE.md](M3-GATE.md).
 
+## Headless guest report
+
+```sh
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --guest-report [--guest-scale plan|extended] [--guest-report-json guests.json]
+```
+
+Measures the guests' behaviour passively (docs/SMARTER-GUESTS.md): eight fixed seeds of the synthetic park scenario and, when `OPENTPW_GAME_PATH` or `--game-path` is set, the four
+themes' level parks, each with a warm-up and a measured window in in-game days. It prints a short table (outcome mix of the queue attempts, waits over boarded attempts, cohort
+happiness, departures by predicate, the use Gini, revenue per guest, stuck guests, CPU and allocation per tick) and writes the stable JSON report. It opens no window and changes no
+simulation state. `--guest-seeds`, `--guest-warmup-days`, `--guest-days`, `--guest-levels`, `--guest-level-seeds`, `--guest-arrivals` and `--guest-no-perf` set the scale. See
+[SMARTER-GUESTS.md](SMARTER-GUESTS.md). `--guest-extension smarter-guests` (with `--guest-report`: build the run with the extension on, so `--guest-compare` can set it against the default), `--guest-mod folder|id` (with `--guest-report`: switch a mod on for the run, a mod folder or the id of a mod shipped with OpenTPW such as `opentpw.example.patient-guests`; repeatable; the table and the JSON then list each script mod's calls, steps and failures), `--guest-compare baseline.json candidate.json [--guest-targets metric,metric]` compares two reports
+in standard errors of the seed spread and exits 1 on a regression or a target that did not improve.
+
 ## Headless M4 attraction and script gate
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m4-gate --report m4-gate.json
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m4-gate --report m4-gate.json
 ```
 
 Classifies every catalog object of the four themes, takes each supported one through load, build, run,
@@ -194,9 +207,11 @@ charged at Theme Park Inc's own prices (the money runs; see [the economy](THEME-
 the simulation. `--capture-world out.png --capture-frames 300` writes a screenshot. The folder must
 hold Theme Park Inc's `Data` folder (an installation, or the cabinets extracted as below); it is
 detected by its retail `levels/Standard.sam` or by `Ver.txt` beside the Theme Park Inc theme folders.
-Theme Park Inc data given to any other start (no `--load-original-level`, a Theme Park World level,
-`--sandbox`, `--front-end`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
-`--visit-park`) is refused with a message that points here. Current desktop packages can use the explicit world command above. The new desktop edition
+Without a world (`--front-end`, or no mode option at all) the same data opens the slice's
+[Personnel File start screen](THEME-PARK-INC.md#theme-park-inc-front-end): Enter Game starts science, and a zone
+chooser offers Polar Zone and Arabian Nights. Theme Park Inc data given to any other start (a Theme Park World level,
+`--sandbox`, `--smoke-test`, `--park-resume-smoke`, `--export-park`, `--import-park`,
+`--visit-park`, `--front-end` together with a world) is refused with a message that points here. Current desktop packages can use the explicit world command above. The new desktop edition
 chooser is reviewed in PR #146 for a future release; the browser already offers explicit experimental
 TPI world selection. See the [static TPI launch guide](https://opentpw.io/theme-park-inc.html) for
 build availability, setup steps and limitations. Adding
@@ -221,7 +236,7 @@ interface and its object names in that language ([LANGUAGES.md](LANGUAGES.md#the
 ## Read-only Theme Park Inc texture inspection
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --inspect-fsh '/path/to/TPI/Data/ui.wad!stexture/tb_camera.fsh'
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --inspect-fsh '/path/to/TPI/Data/ui.wad!stexture/tb_camera.fsh'
 ```
 
 Takes a loose `.fsh` path or `archive.wad!member/path`. Prints the image size,
@@ -246,7 +261,7 @@ import or proof of all original TPWS layouts. See SAVE-CONTAINER.md for evidence
 Export a single decoded TGQ video frame without game assets, a window or audio:
 
 ```sh
-dotnet source/OpenTPW/bin/Release/net10.0/OpenTPW.dll --export-tgq-png /path/movie.tgq 1 /path/new.png
+dotnet source/OpenTPW/bin/Release/net11.0/OpenTPW.dll --export-tgq-png /path/movie.tgq 1 /path/new.png
 ```
 
 The index is zero-based among video frames. The PNG uses the encoded dimensions
@@ -302,6 +317,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--frame-stats` | Logs frames per second, average/p99/max frame time, CPU use, allocation rate and garbage collections every 5 seconds. |
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
+| `--debug-pool [x,y,w,h;...]` | With the `opentpw.pools` extension (`--enable-mod opentpw.pools`): paints pool cells near the camera target once the level is up, for captures ([POOLS.md](POOLS.md#checking-it-on-screen)). |
 | `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
 | `--debug-guest-looks` | For captures: gives every second guest a balloon and every third a costume as they appear, and keeps a thought bubble over every fourth (`[EXT:debug-guest-looks]`, docs/GUESTS.md "Rendering"). |
 | `--capture-interface` | With `--capture-world`: writes the composed output (world plus the original-style interface, no ImGui) instead of the world alone. |
@@ -411,7 +427,7 @@ dotnet publish source/OpenTPW/OpenTPW.csproj -c Release -r win-x64 --self-contai
 dotnet publish source/OpenTPW/OpenTPW.csproj -c Release -r linux-x64 --self-contained false -o artifacts/publish/linux-x64
 ```
 
-These packages require a matching .NET 10 runtime and legally obtained external
+These packages require a matching .NET 11 runtime and legally obtained external
 game assets. Build the arm64 dependency before publishing that RID. Successful
 cross-publication is not successful execution on the target platform.
 Current verification and remaining release blockers are recorded in PROGRESS.md.

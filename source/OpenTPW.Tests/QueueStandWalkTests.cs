@@ -7,12 +7,12 @@ namespace OpenTPW.Tests;
 
 /// <summary>
 /// The called guest's last walk, into the ride's entrance cell for the stand point (state 13, tp.exe 0x004FFFF0 asks the route 0x004FA5F0 to the entry cell 0x004DEDF0), is the search and
-/// edge-test walk of every other guest where the cell map lets it in, and a queue edit that takes the front cells leaves the guests that walk or wait there handled (WALK-006, QUEUE-015).
+/// edge-test walk of every other guest where the cell map lets it in, and a queue edit that takes the front cells leaves the guests that walk or wait there handled (WALK-006 retired, QUEUE-015).
 /// </summary>
 [TestClass]
 public class QueueStandWalkTests
 {
-	/// <summary>The entrance cell as a placement lays it: type 9 with a link and a queue link toward the front queue cell (ObjectAccessCells.Lay).</summary>
+	/// <summary>The entrance cell as a placement lays it: type 9 with a link and a queue link toward the front queue cell (ObjectAccessCells.Lay); the rig lays it already.</summary>
 	private static void LayEntrance( QueueTests.Rig rig )
 	{
 		var cells = rig.Grid.Cells;
@@ -43,14 +43,48 @@ public class QueueStandWalkTests
 	}
 
 	[TestMethod]
-	public void AnEntranceCellTheEdgeTestRefusesKeepsTheRouteWalk()
+	public void AnEntranceCellTheEdgeTestRefusesDismissesTheCalledGuestAsTheOriginalDoes()
 	{
-		// a park resumed from a save made before the import took the saved link byte has none on the entrance cell, so the search cannot enter it (WALK-006): the guest still walks in and boards
+		// without a link byte on the entrance cell the search cannot enter it; tp.exe 0x004FFFF0 logs "the player has removed the path from under me", releases the called slot, unlinks and dismisses the guest (WALK-006 retired)
 		var rig = new QueueTests.Rig( takesGuests: true, capacity: 1, parameters: new QueueParameters( true, false, false, 600, 60, 60, 1, 30 ) );
+		rig.Grid.Cells.SetLinks( 2, 6, 0 );
 		var guests = Enumerable.Range( 0, 2 ).Select( _ => rig.Send() ).ToList();
-		var routeWalks = 0;
-		rig.RunTurns( 600, () => { routeWalks += guests.Count( guest => guest.State == GuestState.Boarding && guest.HasWaypoint && !guest.Navigation.Original ); } );
-		Assert.IsTrue( routeWalks > 0, "the called guest walked the route into the entrance cell" );
+		var queued = new HashSet<int>();
+		rig.RunTurns( 600, () =>
+		{
+			foreach ( var guest in guests.Where( guest => guest.IsInQueue ) )
+				queued.Add( guest.Id );
+			Assert.IsFalse( guests.Any( guest => guest.State == GuestState.Boarding && guest.HasWaypoint && !guest.Navigation.Original ), "no route walk into the entrance cell any more" );
+			Assert.IsFalse( guests.Any( guest => guest.State == GuestState.Boarding ), "the refused search makes no state 13" );
+		} );
+		Assert.IsTrue( queued.Count >= 1, "a guest queued and was called" );
+		Assert.IsTrue( guests.All( guest => guest.RidesTaken == 0 ), string.Join( ", ", guests.Select( guest => $"{guest.State} {guest.RidesTaken}" ) ) );
+		Assert.IsTrue( guests.Any( guest => guest.LastAttractionId == rig.Ride.AttractionId ), "the called guest was dismissed from the ride's queue" );
+		Assert.AreEqual( 0, rig.Ride.CalledGuest, "the called slot was released" );
+	}
+
+	[TestMethod]
+	public void AnEntranceCellRepairedAtLoadLetsACalledGuestWalkInThroughTheSearch()
+	{
+		// the old save's entrance cell holds its queue link and no link byte; the load's repair lays the byte the placement would ([EXT:legacy-save-access-links])
+		var rig = new QueueTests.Rig( takesGuests: true, capacity: 1, parameters: new QueueParameters( true, false, false, 600, 60, 60, 1, 30 ) );
+		var cells = rig.Grid.Cells;
+		cells.SetLinks( 2, 6, 0 );
+		Assert.AreEqual( 0, cells.LinksAt( 2, 6 ) );
+		var points = new[] { new ObjectAccessPoint( ObjectCellKind.Entrance, 2, 6, 2, 5 ) };
+		Assert.AreEqual( 1, ObjectAccessCells.RepairMissingLinks( cells, points, hasQueue: true ) );
+		Assert.AreEqual( GuestPathGrid.LinkValue( 0 ), cells.LinksAt( 2, 6 ), "the byte a placement lays toward the queue cell outside" );
+		var guests = Enumerable.Range( 0, 3 ).Select( _ => rig.Send() ).ToList();
+		var walked = new HashSet<int>();
+		rig.RunTurns( 600, () =>
+		{
+			foreach ( var guest in guests.Where( guest => guest.State == GuestState.Boarding && guest.HasWaypoint ) )
+			{
+				Assert.IsTrue( guest.Navigation.Original, "the walk into the entrance cell is the search and edge-test walk" );
+				walked.Add( guest.Id );
+			}
+		} );
+		Assert.IsTrue( walked.Count >= 1, "a guest was called and walked into the entrance cell" );
 		Assert.IsTrue( guests.All( guest => guest.RidesTaken >= 1 ), string.Join( ", ", guests.Select( guest => $"{guest.State} {guest.RidesTaken}" ) ) );
 	}
 

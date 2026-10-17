@@ -129,6 +129,23 @@ internal sealed record ParkResumeSnapshot
 	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
 	public IReadOnlyList<ParkModRecord>? Mods { get; init; }
 	/// <summary>
+	/// The <c>opentpw.smarter-guests</c> extension's own park state (seed, birth-id counter and each guest's birth id), or null when the extension was off: the field is then left out of the file, so
+	/// a park saved without the extension is byte-identical to one from before it existed. The guest snapshot above stays untouched. Builds from before this field reject a save that has it (the
+	/// codec refuses unknown fields), as intended; the save also records the extension in <see cref="Mods"/>, which loading needs active in the same version.
+	/// </summary>
+	// [EXT:smarter-guests] OpenTPW's own extension; the original game has no such state
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public SmarterGuestsSaveData? SmarterGuests { get; init; }
+	/// <summary>
+	/// The enabled script mods' own state, keyed by mod id (the <c>state</c> text, the failure counters, the disabled flag and the script behaviour and API versions), or null when no script mod was
+	/// enabled: the field is then left out of the file, so a park saved without one is byte-identical to one from before script mods existed. Script mods need the guests' identity state, so a park
+	/// with this section also carries <see cref="SmarterGuests"/> (without the smarter-guests extension's rules or record). Builds from before this field reject a save that has it (the codec refuses
+	/// unknown fields), as intended; the save also records the mods in <see cref="Mods"/>, which loading needs active with the same content, and the interpreter in the same behaviour version.
+	/// </summary>
+	// [EXT:script-mods] OpenTPW's own scripted mods (TPW Script); the original game had no such state
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public ScriptModsSaveData? ScriptMods { get; init; }
+	/// <summary>
 	/// SHA-256 manifest of the assets the park depends on: canonical expected-asset identifier → 64 lowercase hex
 	/// characters. Computed from verified catalog/game-data paths at load; a saved path is never read back.
 	/// </summary>

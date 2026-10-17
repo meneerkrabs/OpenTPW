@@ -66,6 +66,7 @@ public class PrototypeRideSaveAssetTests
 			Totem.Visitors.EntranceCell = Totem.Visitors.ExitCell = (39, 21);
 			Totem.Visitors.HasCells = true;
 			Simulation.Register( Totem.Visitors );
+			GuestTests.LayStandCell( Grid, Totem.Visitors );
 			foreach ( var (x, y) in new[] { (39, 22), (39, 23), (40, 21), (41, 21), (39, 24), (42, 21), (39, 25), (43, 21) } )
 				Simulation.SpawnInPark( x, y );
 			for ( var tick = 0; tick < ticks; tick++ )
@@ -103,6 +104,7 @@ public class PrototypeRideSaveAssetTests
 		Assert.AreEqual( 0, gaps.Count, $"no restore gap: {string.Join( "; ", gaps )}" );
 		var candidateGuests = new GuestSimulation( GuestPathGrid.FromOriginal( rig.Park.Map, rig.Park.Save ), rig.Settings, 99 ) { ArrivalsEnabled = false };
 		Assert.IsTrue( PrototypeRideSave.RestoreGuestCells( part, candidate.Visitors, candidateGuests ), "the saved cells register the bridge" );
+		GuestTests.LayStandCell( candidateGuests.Grid, candidate.Visitors );
 		Assert.AreEqual( ((39, 21)), (candidate.Visitors.EntranceCell.X, candidate.Visitors.EntranceCell.Y), "the bridge queues at the saved cell" );
 		candidateWorld.RestoreSnapshot( scripts, new Dictionary<int, RideVM> { [part.RootScriptId] = candidate.Script! } );
 		candidateGuests.RestoreSnapshot( guests );

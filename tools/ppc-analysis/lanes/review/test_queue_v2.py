@@ -146,6 +146,13 @@ class Source(unittest.TestCase):
         self.assertIn('ObjectCatalog.LoadSteps( theme, easy )', level)
         construct = level[level.index('new ParkObjects( catalog!, grid'):]
         construct = construct[:construct.index('};')]
+        # the object hooks moved into ConfigureObjectHooks (called right after the construction, and by tests that assemble a Level) and the
+        # cell-type reservation into ReservesCell, so both are part of what the construction sets up
+        hooks = level[level.index('internal void ConfigureObjectHooks()'):]
+        construct += hooks[:hooks.index('\n\t}\n')]
+        reserves = level[level.index('internal static bool ReservesCell( byte type )'):]
+        construct += reserves[:reserves.index('\n')]
+        self.assertIn('ConfigureObjectHooks();', level[level.index('new ParkObjects( catalog!, grid'):])
         self.assertIn('grid, Seed )', construct)
         self.assertIn('IsReservedByPrototype( x, y )', construct)
         # c213e81's queue-cell reservation is now part of the cell-type reservation (queue and track cells; tp.exe 0x535670); path cells

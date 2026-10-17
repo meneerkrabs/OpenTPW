@@ -58,7 +58,7 @@ original lobby, build a park with the original objects and run it with guests, s
   (x64, x86, ARM64), macOS (Apple silicon) and Linux (x64, ARM64). Unpack and start OpenTPW; on the
   first start it asks for your game folder. Follow the [installation guide](https://opentpw.io/install.html)
   for your platform ([releases](https://opentpw.io/docs/RELEASES.html), [setup](https://opentpw.io/docs/SETUP.html)).
-- **From source:** install the .NET 10 SDK pinned in `global.json`, then
+- **From source:** install the .NET 11 SDK pinned in `global.json`, then
 
   ```sh
   bash scripts/run.sh --game-path '/path/to/Theme Park World'

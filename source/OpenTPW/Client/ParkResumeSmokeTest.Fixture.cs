@@ -32,11 +32,12 @@ internal sealed partial class ParkResumeSmokeTest
 		Require( laid >= SpineLength, $"lay at least {SpineLength} fresh path cells (laid {laid})" );
 
 		// One ride from the HUD build menu, as a player would: the cheapest available HasQueue ride.
-		// [EXT:mods] the mod variant takes the build menu's cheapest ride that a mod brings (OPENTPW_SMOKE_MODS=1), whose copies, queues and save are then the mod's
+		// [EXT:mods] the mod variant takes the shipped Theme Park Inc mod's Turban Bounce (a flat ride with a queue), else the build menu's cheapest ride that a mod brings (OPENTPW_SMOKE_MODS=1), whose copies, queues and save are then the mod's
 		var item = hud.Catalog.GetItems( BuildCategory.Rides )
 			.Where( candidate => candidate.Entry is { HasQueue: true } && ( !ModVariant || candidate.Entry.ModId != null ) && hud.Status.IsAvailable( candidate )
 				&& (hud.Status.PriceOf( candidate ) ?? candidate.Cost) <= hud.Status.Money )
-			.OrderBy( candidate => hud.Status.PriceOf( candidate ) ?? candidate.Cost ).FirstOrDefault();
+			.OrderBy( candidate => ModVariant && string.Equals( candidate.Entry!.ArchiveName, "tbounce", StringComparison.OrdinalIgnoreCase ) ? 0 : 1 )
+			.ThenBy( candidate => hud.Status.PriceOf( candidate ) ?? candidate.Cost ).FirstOrDefault();
 		Require( item?.Entry != null, ModVariant ? "find an available, affordable HasQueue ride that a mod brings in the build menu (enable the mod, its extension and its input: scripts/smoke-tpi-rides.sh)" : "find an available, affordable HasQueue ride in the build menu" );
 		Require( !ModVariant || ParkResumeMods.Capture( OpenTPW.Mods.OpenTpwExtensions.Active ) != null, "a park with a mod's ride records the mod that brings it" );
 		var entry = item!.Entry!;
@@ -135,6 +136,9 @@ internal sealed partial class ParkResumeSmokeTest
 		// The bumper variant's bought bumper ride (OPENTPW_SMOKE_BUMPER=1, ParkResumeSmokeTest.Bumper.cs).
 		if ( BumperVariant )
 			PlaceBumperFixture( spineEnd );
+		// The pools variant's pool, changing room and swimmers (OPENTPW_SMOKE_POOLS=1, ParkResumeSmokeTest.Pools.cs).
+		if ( PoolsVariant )
+			PlacePoolsFixture( spineEnd );
 
 		// Staff for the staff world to travel.
 		foreach ( var type in new[] { StaffType.Mechanic, StaffType.Entertainer } )
@@ -385,7 +389,7 @@ internal sealed partial class ParkResumeSmokeTest
 	{
 		for ( var step = 0; step < PopulateAdvancesPerFrame; step++ )
 		{
-			if ( RichMoment() && WaterReady() && BumperReady() && TourReady() )
+			if ( RichMoment() && WaterReady() && BumperReady() && TourReady() && PoolsReady() )
 			{
 				Log.Trace( $"Park-resume populate: rich state after {populateTicks} ticks ({DescribeGuests()})." );
 				stage = Stage.Save;

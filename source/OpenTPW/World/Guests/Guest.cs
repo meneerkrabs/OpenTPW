@@ -39,6 +39,18 @@ public enum GuestState : byte
 	/// <summary>Walking to the arrival vehicle's stop cells over the cell map (original state 20).</summary>
 	WalkingToVehicle = 20,
 	WaitingToGoHome = 21,
+	/// <summary>
+	/// Swimming in the pool complex of a changing room (OpenTPW's own state, 22; not a KIDSTATES entry): a sub-cell position and heading in the water, drawn with the swim sprites, for a bounded
+	/// session (<see cref="PoolSwimSettings"/>, docs/POOLS.md). The guest names the changing room as its attraction.
+	/// </summary>
+	// [EXT:pools-swim] OpenTPW's own guest state; the original game has no pools
+	Swimming = 22,
+	/// <summary>Swimming back to the changing room's pool-side cell at the end of the session (OpenTPW's own state, 23); still drawn in the water.</summary>
+	// [EXT:pools-swim] OpenTPW's own guest state; the original game has no pools
+	ClimbingOut = 23,
+	/// <summary>Changing back inside the changing room, out of sight like a guest on a ride (OpenTPW's own state, 24); it then steps out on the changing room's path-side exit.</summary>
+	// [EXT:pools-swim] OpenTPW's own guest state; the original game has no pools
+	ChangingOut = 24,
 	/// <summary>Not a KIDSTATES entry: removed from the simulation at the end of the tick.</summary>
 	Gone = 255
 }
@@ -94,7 +106,24 @@ public sealed class Guest
 	public float DistanceWalked { get; internal set; }
 	/// <summary>Presentation counterpart of <see cref="DistanceWalked"/>, interpolated like <see cref="DrawX"/>.</summary>
 	public float DrawDistanceWalked { get; internal set; }
-	public bool IsVisible => State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.Gone);
+	public bool IsVisible => State is not (GuestState.Using or GuestState.HeldByGuard or GuestState.ChangingOut or GuestState.Gone);
+	/// <summary>[EXT:pools-swim] In the water: swimming, or on the way back to the changing room's pool-side cell.</summary>
+	public bool IsSwimming => State is GuestState.Swimming or GuestState.ClimbingOut;
+	/// <summary>[EXT:pools-swim] Part of a swim session (the water or the changing back): such a guest names a changing room as its attraction and has no path cell.</summary>
+	public bool InSwimSession => State is GuestState.Swimming or GuestState.ClimbingOut or GuestState.ChangingOut;
+	// [EXT:pools-swim] the swim session (docs/POOLS.md); all zero outside it
+	/// <summary>The swimmer's heading, 0..63 (see <see cref="PoolSwimming.Direction"/>).</summary>
+	public int SwimHeading { get; internal set; }
+	/// <summary>Park turns left of the swim (state 22) or of the changing back (state 24).</summary>
+	public int SwimTurns { get; internal set; }
+	/// <summary>The stroke: 0 front crawl, 1 breaststroke, 2 treading water (sprite slots 8, 9, 10).</summary>
+	public int SwimStroke { get; internal set; }
+	/// <summary>The swimmer's goal point in 16.16 cells; <see cref="SwimHasGoal"/> tells whether it has one.</summary>
+	public int SwimGoalX { get; internal set; }
+	public int SwimGoalY { get; internal set; }
+	public bool SwimHasGoal { get; internal set; }
+	/// <summary>The swimmer's own random stream (xorshift32), seeded by one draw of the world generator when the swim starts.</summary>
+	public uint SwimRandom { get; internal set; }
 
 	public float Hunger { get; internal set; }
 	public float Thirst { get; internal set; }
@@ -168,6 +197,12 @@ public sealed class Guest
 	public bool Paid { get; internal set; }
 	/// <summary>The visitor number (guest <c>+0x1D8</c>): the park's visitor count at the guest's arrival at the entrance (<c>0x004FFB20</c>, <c>0x0051AAF0</c>), 0 until then ("New Visitor").</summary>
 	public int VisitorNumber { get; internal set; }
+	/// <summary>
+	/// The smarter-guests extension's birth id (docs/SMARTER-GUESTS.md): given at creation, before any booth decision, so traits can depend on it; 0 while the guest has none (the extension is
+	/// off, or the guest predates it and its first tick has not run). Never saved in the guest snapshot (<see cref="SmarterGuestsSave"/> keeps it) and never in the guest state hash.
+	/// </summary>
+	// [EXT:smarter-guests] OpenTPW's own identity for the extension; the original guest has only its thing id
+	public ulong BirthId { get; internal set; }
 	/// <summary>The stranded mark (tp.exe <c>+0x198</c>): the cell map's stamp counter raised by one when the wander found no way on, 0 for none; the guest does not search again until a cell edit near it stamps a block above it.</summary>
 	public int StrandedMark { get; internal set; }
 	public int LastAttractionId { get; internal set; }

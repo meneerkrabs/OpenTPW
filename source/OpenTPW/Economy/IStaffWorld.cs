@@ -9,6 +9,18 @@ public interface IStaffWorld
 {
 	/// <summary>One park turn of every member the world drives, in member order.</summary>
 	void UpdateStaff( ParkEconomy economy, long turn );
+
+	/// <summary>
+	/// What comes before the members' updates of a turn that the host sweeps thing by thing (<see cref="IThingSweep"/>): the world's own bookkeeping and the members an original save
+	/// resumes. <see cref="UpdateStaff"/> is this, every member's <see cref="UpdateStaffMember"/> in member order, and <see cref="EndStaffTurn"/>.
+	/// </summary>
+	void BeginStaffTurn( ParkEconomy economy, long turn ) { }
+
+	/// <summary>One member's update of a turn the host sweeps thing by thing (nothing for a member the world does not drive).</summary>
+	void UpdateStaffMember( ParkEconomy economy, StaffMember member, long turn ) { }
+
+	/// <summary>What follows the members' updates of a swept turn.</summary>
+	void EndStaffTurn( ParkEconomy economy, long turn ) { }
 	/// <summary>An object was sold or removed (the removal message 10 every staff member hears); the economy's own release runs after it.</summary>
 	void ObjectRemoved( ParkEconomy economy, int instanceId ) { }
 }

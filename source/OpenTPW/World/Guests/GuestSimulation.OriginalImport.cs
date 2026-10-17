@@ -145,6 +145,9 @@ public sealed partial class GuestSimulation
 			var navigation = guest.Navigation;
 			(navigation.X, navigation.Y) = (position.X << 8, position.Y << 8);
 			navigation.SetDestination( navigation.X, navigation.Y, [] );
+			// [EXT:smarter-guests] an imported guest of a running extension gets its id at once; before the first tick the extension's first tick gives it
+			if ( SmarterGuests is { Bootstrapped: true } smarter )
+				guest.BirthId = smarter.AllocateBirthId();
 			guests.Add( guest );
 			byId.Add( guest.Id, guest );
 			if ( inPark )
@@ -164,7 +167,7 @@ public sealed partial class GuestSimulation
 		evidence.Add( $"Guests imported: {guests.Count} of {saved.Count} ({(states.Count == 0 ? "none" : string.Join( ", ", states ))}, saved state → state)." );
 		foreach ( var line in adjusted )
 			evidence.Add( $"Guest value adjusted on import: {line}." );
-		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one at the booth (4) that was not yet weighed waits OpenTPW's booth time (ARRIVAL-006), a turn stamp before the save's turn counts from the import, and the admission flags, the event ring and the queue links are not imported — evidence needed: an OpenTPW queue and rider restore for original guests
+		// [APPROX:SAVE-002] a saved guest in a queue or boarding (states 11–14), leaving a ride (15), using an attraction (16) or held by a guard (17) is not imported, nor is a park guest off the paths (a guard chasing one gives the chase up); an imported guest in an activity (state 8) decides again at once, one at the booth (4) that was not yet weighed waits OpenTPW's booth time (ARRIVAL-006), a turn stamp before the save's turn counts from the import, and the admission flag (mBeenAdmitted, set by OnAdmittance 0x5012B0 and cleared by the dismissal 0x5012F0, which also clears the queue links), the 32-slot event ring (AddEvent 0x50C100) and the queue links (mQNext, mQPrev) are not imported — evidence needed: an OpenTPW queue and rider restore for original guests
 		if ( dropped.Count > 0 )
 			evidence.Add( $"[APPROX:SAVE-002] Guests not imported: {string.Join( ", ", dropped )}." );
 		evidence.Add( $"[APPROX:SAVE-002] Guest values not imported: queue links {string.Join( "/", saved.Select( item => $"{item.QPrev}-{item.QNext}@{item.QueuePos}" ) )}, saved states {string.Join( "/", saved.Select( item => item.SavedState ) )}." );

@@ -24,6 +24,25 @@ public class SpritePixelScaleTests
 	}
 
 	[TestMethod]
+	public void ABottomAnchoredSlotSitsTheFramesBottomEdgeOnThePoint()
+	{
+		// a torso-centred swim frame at 2x: 100 x 80 pixels, the hotspot 45 rows below the top (originY -45), so 35 rows of the body hang below it
+		var frame = new GuestAtlasFrame( 0, 0, 100, 80, -50, -45, 256, 256 );
+		var lift = GuestRenderer.AnchorLift( PoolSwimSlots.BottomAnchored, PoolSwimSlots.Sliding, frame );
+		Assert.AreEqual( 35 * GuestRenderer.UnitsPerPixel * 0.5f, lift, 1e-6f );
+		var (_, _, top, bottom) = frame.Extents( mirror: false, GuestRenderer.UnitsPerPixel );
+		Assert.AreEqual( 0f, bottom + lift, 1e-6f, "the bottom edge is on the point" );
+		Assert.AreEqual( 80 * GuestRenderer.UnitsPerPixel * 0.5f, top + lift, 1e-6f, "the whole frame is above it" );
+		// the strokes keep their water-line hotspot, standing its feet, and a renderer without the set (the kids) lifts nothing
+		Assert.AreEqual( 0f, GuestRenderer.AnchorLift( PoolSwimSlots.BottomAnchored, PoolSwimSlots.Crawl, frame ) );
+		Assert.AreEqual( 0f, GuestRenderer.AnchorLift( PoolSwimSlots.BottomAnchored, PoolSwimSlots.Stand, frame ) );
+		Assert.AreEqual( 0f, GuestRenderer.AnchorLift( null, PoolSwimSlots.Sliding, frame ) );
+		// a frame whose hotspot is already at or below its bottom edge (the feet) is not lowered
+		Assert.AreEqual( 0f, GuestRenderer.AnchorLift( PoolSwimSlots.BottomAnchored, PoolSwimSlots.LadderClimb, new GuestAtlasFrame( 0, 0, 40, 60, -20, -60 ) ) );
+		CollectionAssert.AreEquivalent( new[] { 3, 4, 5, 7, 14 }, PoolSwimSlots.BottomAnchored.ToArray() );
+	}
+
+	[TestMethod]
 	public void FramesWith128PixelsPerUnitMakeTheFixedScaleQuadBitForBit()
 	{
 		var random = new Random( 17 );

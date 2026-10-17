@@ -77,7 +77,8 @@ public interface IPoolActivity
 	/// <summary>
 	/// The engine height of the guest's feet this frame, or null for the default (<see cref="PoolFeetHeights.Default"/>: the water surface on a pool cell, otherwise the terrain). The reference heights of the guest's
 	/// point are in <paramref name="heights"/>. Presentation only: it is never read by the simulation. A slide returns its track height; a ladder interpolates between <see cref="PoolFeetHeights.Water"/> and
-	/// <see cref="PoolFeetHeights.Deck"/>, a board or a swing returns <see cref="PoolFeetHeights.Deck"/> or <see cref="PoolFeetHeights.Default"/> plus its lift.
+	/// <see cref="PoolFeetHeights.Deck"/>, a board or a swing returns <see cref="PoolFeetHeights.Deck"/> or <see cref="PoolFeetHeights.Default"/> plus its lift. It is where the body rests whatever the slot:
+	/// the renderer draws the slots whose hotspot is the torso (<see cref="PoolSwimSlots.BottomAnchored"/>) with their bottom edge at it, the others with their hotspot.
 	/// </summary>
 	float? FeetHeight( GuestSimulation simulation, Guest guest, PoolFeetHeights heights ) => null;
 
@@ -146,6 +147,13 @@ public static class PoolSwimSlots
 
 	/// <summary>Frames per direction of each slot in the shipped sets (0 for the empty ones).</summary>
 	public static readonly IReadOnlyList<int> FramesPerDirection = new[] { 1, 8, 0, 4, 4, 2, 4, 2, 8, 8, 4, 4, 2, 4, 4, 0 };
+
+	/// <summary>
+	/// The slots whose hotspot is the centre of the torso out of the water (the ladder, the dive, lying, sliding and the rope swing): the swimmers' renderer draws them with their bottom edge at the guest's
+	/// point (<see cref="GuestRenderer.BottomAnchoredSlots"/>), so <see cref="IPoolActivity.FeetHeight"/> always gives where the body rests. The strokes, the splash, the spa and the ring keep their water-line
+	/// hotspot, and standing, walking and the shower their feet.
+	/// </summary>
+	public static readonly IReadOnlySet<int> BottomAnchored = new HashSet<int> { LadderClimb, Dive, Lying, Sliding, RopeSwing };
 }
 
 /// <summary>The activities a park's swim sessions offer (<see cref="GuestSimulation.PoolActivities"/>); Level registers these while the pools extension is on.</summary>

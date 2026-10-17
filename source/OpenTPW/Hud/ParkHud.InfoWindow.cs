@@ -4,12 +4,6 @@ namespace OpenTPW.Hud;
 
 public sealed partial class ParkHud
 {
-	public void CycleCameraView()
-	{
-		if ( Camera.Mode is ParkCameraMode camera )
-			camera.CycleView();
-	}
-
 	/// <summary>A live park summary using existing simulation values; a read-only visit shows the published statistics.</summary>
 	// [EXT:park-summary] functional host summary; original information-screen layout remains unqualified
 	public void OpenParkInfoWindow()

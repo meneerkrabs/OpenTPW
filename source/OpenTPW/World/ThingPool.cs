@@ -7,9 +7,9 @@ public readonly record struct ThingSlot( int Id, SaveThingModel Model );
 public sealed record ThingSlotData( int Id, int Model );
 
 /// <summary>
-/// What a park-resume save keeps of the thing pool: the used list newest first (the original's save keeps the chain from its head, with each thing's id and model) and
-/// the head of the free list in its exact order. The original's load rebuilds the free list ascending (0x00518D43); OpenTPW's own save keeps the order the live pool had, so a
-/// resumed park hands out the ids a continuing one would.
+/// What a park-resume save keeps of the thing pool: the used list newest first (the original's save keeps the chain from its head, with each thing's id and model), the
+/// head of the free list in its exact order, the destroy requests that wait and the placeholder slots. The original's load rebuilds the free list ascending (0x00518D43); OpenTPW's own
+/// save keeps the order the live pool had, so a resumed park hands out the ids a continuing one would.
 /// </summary>
 public sealed record ThingPoolSnapshot
 {
@@ -23,6 +23,12 @@ public sealed record ThingPoolSnapshot
 	/// </summary>
 	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
 	public IReadOnlyList<int>? Pending { get; init; }
+	/// <summary>
+	/// The used slots that hold a placeholder: a thing an imported original save lists and OpenTPW does not rebuild. The slot stays used, so later things take the ids the original would
+	/// hand out, and no OpenTPW thing names it. Absent when none is held.
+	/// </summary>
+	[System.Text.Json.Serialization.JsonIgnore( Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull )]
+	public IReadOnlyList<int>? Held { get; init; }
 }
 
 /// <summary>
@@ -35,7 +41,8 @@ public sealed record ThingPoolSnapshot
 /// The pool also keeps the used list newest first (the original's walk order of the thing sweep, 0x516380), which a save stores as the chain's head and each
 /// thing's link and which a load restores.
 /// </remarks>
-// [APPROX:WALK-010] thing ids are slots of one pool for every kind of thing, taken in the order the park builds them (see WalkApproximations): what the original builds that OpenTPW does not takes no slot, the destroy requests of a turn come in OpenTPW's update order, the guests' histories hold the script world's attraction ids, and OpenTPW's own save keeps the free list's order where the original's load rebuilds it ascending
+// [APPROX:WALK-010] thing ids are slots of one pool for every kind of thing, taken in the order the park builds them (see WalkApproximations): what the original builds that OpenTPW does not takes no slot (an imported save's unbuilt things hold a placeholder slot, see Hold), the destroy requests of a turn come in OpenTPW's update order, and the guests' histories hold the script world's attraction ids
+// [EXT:resume-exact-thing-pool] OpenTPW's own park-resume save keeps the free list's exact order, the pending destroy requests and the placeholder slots (ThingPoolSnapshot), where the original's load rebuilds the free list ascending (0x518D43): a resumed park then continues exactly as the live one would have, which the original's save format cannot do, and an original save is imported with the original's own rebuild
 // [BIN:TPW-EXE:0x00515F30 pool init] 10239 slots of 0x14 bytes from 0x7CFB90 (slot 0 is the empty sentinel), each slot's id its index, chained into the free list in ascending order (slot 1 first, 0x515F5B..0x515F75; the last id is 0x27FF = 10239, 0x515F8F); the used list (head 0x7CF56C) is empty
 // [BIN:TPW-EXE:0x00516270 allocate] the free list's head is taken (0x516271), a full pool logs "FATAL ERROR - Thing Array is full!" and gives id 0 (0x516279..0x516290); the slot becomes the new head of the used list (its older link +8 the old head, 0x5162BB..0x5162D4) and the id is the slot's index (0x5162FA)
 // [BIN:TPW-EXE:0x00516200 free] the slot leaves the used list (0x516216..0x516238) and becomes the new head of the free list (0x51624B..0x516254): the next allocation takes the slot freed last
@@ -53,6 +60,7 @@ public sealed class ThingPool
 	private readonly int[] newer = new int[Capacity + 1];
 	private readonly int[] nextFree = new int[Capacity + 1];
 	private readonly bool[] queued = new bool[Capacity + 1];
+	private readonly bool[] held = new bool[Capacity + 1];
 	private readonly List<int> destroyQueue = new();
 	private int freeHead;
 	private int usedHead;
@@ -69,10 +77,37 @@ public sealed class ThingPool
 	/// <summary>The number of destroy requests waiting for the end of the turn.</summary>
 	public int QueuedCount => destroyQueue.Count;
 
+	/// <summary>The number of placeholder slots (<see cref="Hold"/>).</summary>
+	public int HeldCount => held.Count( flag => flag );
+
 	/// <summary>The head of the used list: the thing allocated last, 0 when none.</summary>
 	public int Newest => usedHead;
 
 	public bool IsUsed( int id ) => id is >= 1 and <= Capacity && used[id];
+
+	/// <summary>Whether a used slot holds a placeholder (<see cref="Hold"/>).</summary>
+	public bool IsHeld( int id ) => id is >= 1 and <= Capacity && held[id];
+
+	/// <summary>The placeholder slots in ascending order.</summary>
+	public IEnumerable<int> HeldIds()
+	{
+		for ( var id = 1; id <= Capacity; id++ )
+			if ( held[id] )
+				yield return id;
+	}
+
+	/// <summary>
+	/// Keeps a used slot for a thing of an imported original save that OpenTPW does not rebuild: the original still has that thing, so its id is not handed out again and later things
+	/// get the ids the original gives them. The slot keeps its place in the used list and its model; nothing in OpenTPW names it, and it is never destroyed by a request. False for a slot
+	/// that is not in use.
+	/// </summary>
+	public bool Hold( int id )
+	{
+		if ( !IsUsed( id ) )
+			return false;
+		held[id] = true;
+		return true;
+	}
 
 	/// <summary>The model of a used slot; throws for a free or out-of-range one.</summary>
 	public SaveThingModel ModelOf( int id ) => IsUsed( id ) ? model[id] : throw new ArgumentOutOfRangeException( nameof( id ), $"Thing {id} is not in use." );
@@ -109,11 +144,11 @@ public sealed class ThingPool
 
 	/// <summary>
 	/// Asks for a thing's destruction: it stays in use until <see cref="DestroyQueued"/> runs at the turn's end. Asking again for the same thing, or for a free
-	/// slot, changes nothing.
+	/// slot or a placeholder, changes nothing.
 	/// </summary>
 	public void QueueDestroy( int id )
 	{
-		if ( !IsUsed( id ) || queued[id] )
+		if ( !IsUsed( id ) || held[id] || queued[id] )
 			return;
 		queued[id] = true;
 		destroyQueue.Add( id );
@@ -143,6 +178,7 @@ public sealed class ThingPool
 			return false;
 		Unlink( id );
 		used[id] = false;
+		held[id] = false;
 		model[id] = 0;
 		nextFree[id] = freeHead;
 		freeHead = id;
@@ -207,6 +243,7 @@ public sealed class ThingPool
 		Array.Clear( older );
 		Array.Clear( newer );
 		Array.Clear( queued );
+		Array.Clear( held );
 		destroyQueue.Clear();
 		usedHead = 0;
 		usedCount = 0;
@@ -251,11 +288,12 @@ public sealed class ThingPool
 		{
 			Used = UsedNewestFirst().Select( slot => new ThingSlotData( slot.Id, (int)slot.Model ) ).ToArray(),
 			FreeFirst = free.Take( tail ).ToArray(),
-			Pending = destroyQueue.Count == 0 ? null : destroyQueue.ToArray()
+			Pending = destroyQueue.Count == 0 ? null : destroyQueue.ToArray(),
+			Held = HeldCount == 0 ? null : HeldIds().ToArray()
 		};
 	}
 
-	/// <summary>The problems that stop <paramref name="snapshot"/> from restoring (an id outside the pool or repeated, an unknown model, a free id that is in use); empty when it restores.</summary>
+	/// <summary>The problems that stop <paramref name="snapshot"/> from restoring (an id outside the pool or repeated, an unknown model, a free id that is in use, a placeholder or a waiting destroy that is not a used slot); empty when it restores.</summary>
 	public static IReadOnlyList<string> Problems( ThingPoolSnapshot? snapshot )
 	{
 		var problems = new List<string>();
@@ -294,6 +332,16 @@ public sealed class ThingPool
 			else if ( !pending.Add( id ) )
 				problems.Add( $"thing id {id} waits for its destruction twice" );
 		}
+		var placeholders = new HashSet<int>();
+		foreach ( var id in snapshot.Held ?? Array.Empty<int>() )
+		{
+			if ( !used.Contains( id ) )
+				problems.Add( $"thing id {id} is a placeholder but is not in use" );
+			else if ( !placeholders.Add( id ) )
+				problems.Add( $"thing id {id} is a placeholder twice" );
+			else if ( pending.Contains( id ) )
+				problems.Add( $"thing id {id} is a placeholder and waits for its destruction" );
+		}
 		return problems;
 	}
 
@@ -314,6 +362,8 @@ public sealed class ThingPool
 				nextFree[order[index]] = index + 1 < order.Count ? order[index + 1] : 0;
 			freeHead = order[0];
 		}
+		foreach ( var id in snapshot.Held ?? Array.Empty<int>() )
+			Hold( id );
 		foreach ( var id in snapshot.Pending ?? Array.Empty<int>() )
 			QueueDestroy( id );
 	}

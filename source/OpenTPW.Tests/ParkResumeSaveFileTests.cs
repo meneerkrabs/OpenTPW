@@ -54,8 +54,9 @@ public class ParkResumeSaveFileTests
 			for ( var x = 0; x < 20; x++ )
 				Grid.SetPath( x, 0, true );
 			var settings = GuestTests.CreateSettings();
-			settings.ArrivalLaneA = new[] { (0, 3), (2, 3), (5, 3), (8, 3), (10, 0) };
-			settings.ArrivalLaneB = new[] { (19, 3), (17, 3), (14, 3), (12, 3), (9, 0) };
+			// the lanes run along row 8, clear of the ride's queue column (x = 2)
+			settings.ArrivalLaneA = new[] { (0, 8), (4, 8), (6, 8), (8, 8), (10, 0) };
+			settings.ArrivalLaneB = new[] { (19, 8), (15, 8), (13, 8), (12, 8), (9, 0) };
 			settings.ArrivalTimeBetween = 2;
 			settings.AdmissionFee = 5;
 			settings.ExitLevelSeconds = 45;
@@ -90,7 +91,7 @@ public class ParkResumeSaveFileTests
 
 	/// <summary>A complete valid envelope around a miniature park (see the class comment); the mutation base line.
 	/// Longer runs (more ticks) put guests further into the park, for fixtures that need settled in-park state.</summary>
-	internal static ParkResumeSnapshot Envelope( int ticks = 1800 )
+	internal static ParkResumeSnapshot Envelope( int ticks = 3000 )
 	{
 		var park = new MiniaturePark();
 		for ( var tick = 0; tick < ticks; tick++ )
@@ -206,7 +207,7 @@ public class ParkResumeSaveFileTests
 		Assert.AreEqual( ( snapshot.Format, snapshot.Version, snapshot.Theme, snapshot.StartKind, snapshot.Seed, snapshot.DisplayName, snapshot.SavedUtc, snapshot.SoundSeed ),
 			(restored.Format, restored.Version, restored.Theme, restored.StartKind, restored.Seed, restored.DisplayName, restored.SavedUtc, restored.SoundSeed) );
 
-		// Tuple arrays (lanes, routes, queue cells) and float caches survive as values, not as dropped or
+		// Tuple arrays (routes, queue cells) and float caches survive as values, not as dropped or
 		// re-ordered content: compare the restored guest list against the original, guest by guest.
 		Assert.AreEqual( snapshot.Guests.Guests.Length, restored.Guests.Guests.Length );
 		for ( var index = 0; index < snapshot.Guests.Guests.Length; index++ )
@@ -214,13 +215,10 @@ public class ParkResumeSaveFileTests
 			var (expected, actual) = (snapshot.Guests.Guests[index], restored.Guests.Guests[index]);
 			CollectionAssert.AreEqual( expected.Navigation.Route, actual.Navigation.Route, $"guest {expected.Id}'s route" );
 			CollectionAssert.AreEqual( expected.Navigation.AlsoOpen, actual.Navigation.AlsoOpen, $"guest {expected.Id}'s extra open cells" );
-			if ( expected.Lane != null )
-			{
-				Assert.IsNotNull( actual.Lane, $"guest {expected.Id}'s arrival lane survives" );
-				CollectionAssert.AreEqual( expected.Lane, actual.Lane!, $"guest {expected.Id}'s lane" );
-			}
+			Assert.IsNull( actual.Lane, $"guest {expected.Id} walks the cell map, not a lane" );
 		}
-		Assert.IsTrue( snapshot.Guests.Guests.Any( guest => guest.Lane != null ), "the fixture park holds a guest on an arrival lane" );
+		Assert.IsTrue( snapshot.Guests.Guests.Any( guest => guest.State is GuestState.CrossingRoad or GuestState.CrossingRoadToPark or GuestState.GoingToTicketBooth or GuestState.WaitingAtBooth
+			or GuestState.AtTicketBooth or GuestState.EnteringPark ), "the fixture park holds a guest on the arrival walk" );
 		Assert.IsTrue( snapshot.Guests.Guests.Any( guest => guest.Navigation.Route.Length > 1 ), "the fixture park holds a guest mid-route" );
 
 		var expectedBridge = snapshot.Guests.Attractions[0];

@@ -163,8 +163,8 @@ public sealed class GuestNavigation
 	/// <summary><c>+0xAC</c>: the progress after the last step (<see cref="ProgressValue"/>).</summary>
 	public int Progress;
 
-	/// <summary>Walking off the path grid (the arrival lanes): no walls and every position is accepted.</summary>
-	// [APPROX:WALK-008] guests arriving on the arrival lanes, and guests whose map leaves a lane or stop cell untyped, walk off the path grid, with no wall force and every position committed; the original walks every guest through the route search 0x50f8e0, the commit 0x510510 and the edge test 0x4d8750 with the walk mask — still open: the arriving walk (states 0 to 5, read: 0x4ff520 picks the side, the ticket booth cell 0x4d8610 and one route from the bus stop, 0x4ff730 walks it to the booth, 0x4ff7f0 lets a paid guest on to the entrance cell 0x4d8690 as the head of its cell's list, 0x4ffb20 walks it in); a leaving guest walks the map from the gate to the stop cells where the lane is typed
+	/// <summary>Walking off the path grid (the staff's road legs, ECON-022): no walls and every position is accepted.</summary>
+	// Approximation (ECON-022, registered at StaffWorldSimulation.UpdateStaff): the staff's road legs outside the park, where the paths end, are walked off the path grid (no wall force, every position committed); no guest walks off the grid, the arrival chain being the original's walk over the cell map
 	public bool OffGrid;
 	public int Reroutes;
 
@@ -312,7 +312,7 @@ public sealed class GuestNavigation
 	/// Returns the walk step's result: true when the guest has arrived, tested on the position at the start of the step
 	/// (the step still moves).
 	/// </summary>
-	// [APPROX:WALK-006] the walk into the ride's entrance cell (state 13's last walk, to the stand point), the arrival lanes' walks (WALK-008) and walks restored from saves made before the original walk keep OpenTPW's route walk: the route's cells (and the queue's next cells ahead and behind) are the walkable ones, avoid_walls has its edge branch only (with the probe's cell), refills come from the stored route, the stuck reroute prepends the current cell to the rest, progress compares raw remaining distances in the five-waypoint window, and the Mac's rounding FixMul/FixDiv apply; in the original every walk is the search and edge-test walk of Navigate, the step from the front queue cell into the ride's entrance cell (type 9) being open through that cell's +0x0C link, which OpenTPW's untyped ride cells do not carry (WALK-005) — still open: the ride entrance cells' type and link byte in OpenTPW's cell map
+	// [EXT:legacy-save-route-walk] the route walk survives only for a guest off the grid and for a walk restored from an OpenTPW save made before the original walk: the route's cells (and the queue's next cells ahead and behind) are the walkable ones, avoid_walls has its edge branch only (with the probe's cell), refills come from the stored route, the stuck reroute prepends the current cell to the rest, progress compares raw remaining distances in the five-waypoint window, and the Mac's rounding FixMul/FixDiv apply; every walk the game starts is the search and edge-test walk of Navigate
 	public bool Step( int maxSpeed, int maxForce, Func<int, int, bool> isOpen, Func<GuestNavigation, (int X, int Y)>? separation = null )
 	{
 		// avoid_walls (0xfdc70): probe = position + velocity; a blocked edge of the probe cell in the direction of motion

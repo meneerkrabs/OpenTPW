@@ -106,8 +106,9 @@ public class GuestTimeInParkReviewTests
 		economy.ClosePark();
 		rig.Simulation.Payments = new GuestEconomyBridge( () => economy, rig.Simulation );
 		var guest = rig.Simulation.SpawnArrival()!;
-		for ( var tick = 0; tick < 20000 && !guest.LaneReversed; tick++ ) rig.Step();
-		Assert.IsTrue( guest.LaneReversed );
+		// the closed park holds the guest at the booth in state 3 for 200 to 349 turns (0x004FF7F0), then sends it home (state 18)
+		for ( var tick = 0; tick < 40000 && guest.State != GuestState.LeavingPark; tick++ ) rig.Step();
+		Assert.AreEqual( GuestState.LeavingPark, guest.State );
 		Assert.AreEqual( 0L, rig.Simulation.Admissions );
 		Assert.IsTrue( guest.TimeInParkSeconds > 0, "the counter is the creation stamp's, not the admission's" );
 	}

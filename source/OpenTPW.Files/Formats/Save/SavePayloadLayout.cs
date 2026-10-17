@@ -58,7 +58,8 @@ public readonly record struct SavePayloadBlock( SaveBlock Block, string Tag, int
 /// of such a delimiter's bytes inside the block or a later one that forms a second valid split is rejected, even though the
 /// count-based original loader would accept the save (SAVE-011). A payload with more than
 /// <see cref="MaximumDelimiterOccurrences"/> copies of one of these delimiters is rejected too.</item>
-/// <item>UI is everything after the AdvisorScoring delimiter.</item>
+/// <item>UI is everything after the AdvisorScoring delimiter (empty under <see cref="SavePayloadProfile.ThemeParkInc"/>, whose block widths and World block differ:
+/// see <see cref="Parse(ReadOnlySpan{byte}, SavePayloadProfile)"/>).</item>
 /// </list>
 /// </summary>
 public sealed class SavePayloadLayout
@@ -98,14 +99,18 @@ public sealed class SavePayloadLayout
 
 	private readonly SavePayloadBlock[] blocks;
 
-	private SavePayloadLayout( int payloadLength, bool loadedPublishedPark, SavePayloadBlock[] blocks )
+	private SavePayloadLayout( int payloadLength, bool loadedPublishedPark, SavePayloadBlock[] blocks, SavePayloadProfile profile )
 	{
+		Profile = profile;
 		PayloadLength = payloadLength;
 		LoadedPublishedPark = loadedPublishedPark;
 		this.blocks = blocks;
 	}
 
 	public int PayloadLength { get; }
+
+	/// <summary>The block readers the payload was split with.</summary>
+	public SavePayloadProfile Profile { get; }
 
 	/// <summary>The action recording's <c>mLoadedPublishedPark</c> word (0 or 1).</summary>
 	public bool LoadedPublishedPark { get; }
@@ -124,7 +129,14 @@ public sealed class SavePayloadLayout
 		return Parse( reader.ReadFile() );
 	}
 
-	public static SavePayloadLayout Parse( ReadOnlySpan<byte> payload )
+	public static SavePayloadLayout Parse( ReadOnlySpan<byte> payload ) => Parse( payload, SavePayloadProfile.ThemeParkWorld );
+
+	/// <summary>
+	/// Splits <paramref name="payload"/> with one game's block readers. Theme Park Inc (<see cref="SavePayloadProfile.ThemeParkInc"/>) differs in the World block
+	/// (<see cref="ThemeParkIncSaveWorld.TryMeasure"/>, which must read exactly: there is no delimiter search for it), the message centre (45 lists), the camera (48 bytes)
+	/// and the UI block (empty, so nothing may follow the AdvisorScoring delimiter); only a Coasters block with a coaster is still located by its delimiter.
+	/// </summary>
+	public static SavePayloadLayout Parse( ReadOnlySpan<byte> payload, SavePayloadProfile profile )
 	{
 		if ( payload.Length > MaximumPayloadBytes )
 			throw new InvalidDataException( $"Save payload exceeds the {MaximumPayloadBytes}-byte limit." );
@@ -137,12 +149,14 @@ public sealed class SavePayloadLayout
 		if ( recording > (uint)(payload.Length - ActionRecordingHeaderBytes) )
 			throw new InvalidDataException( $"Save action recording claims {recording} bytes; only {payload.Length - ActionRecordingHeaderBytes} remain." );
 		var start = ActionRecordingHeaderBytes + (int)recording;
+		if ( profile == SavePayloadProfile.ThemeParkInc && TracedEnd( payload, SaveBlock.World, start, profile ) < 0 )
+			throw new InvalidDataException( "Save World block does not read as the Theme Park Inc World block followed by its WRLD delimiter." );
 		// [APPROX:SAVE-011] a Coasters block with a coaster, and a World block that does not read as the original's (a synthetic payload), are located by their delimiter's bytes: a payload that splits in more than one way there, or holds the COAS (or such a World's WRLD) delimiter's bytes more than MaximumDelimiterOccurrences times, is rejected, while tp.exe's loader 0x415270 runs each block's reader and then compares the next 4 bytes with its tag (0x415371), never searching — evidence needed: the coaster type's train slot and car counts (SAVE-920) for a layout that knows the park's coaster types
-		var search = new DelimiterSearch( payload, start );
+		var search = new DelimiterSearch( payload, start, profile );
 		var splits = search.Count( 0, start );
 		if ( splits == 0 )
 		{
-			Diagnose( payload, start );
+			Diagnose( payload, start, profile );
 			throw new InvalidDataException( "Save payload does not split into its writer-order blocks." );
 		}
 		var result = new SavePayloadBlock[Delimiters.Count + 2];
@@ -162,47 +176,15 @@ public sealed class SavePayloadLayout
 			result[(int)block] = new SavePayloadBlock( block, tag, position, ends[0] - position, ends[0] );
 			position = ends[0] + DelimiterBytes;
 		}
+		// [BIN:TPI-EXE:0x4f8630 UI writer] a bare ret, and the loader reads nothing: a Theme Park Inc save has no UI bytes
+		if ( profile == SavePayloadProfile.ThemeParkInc && position != payload.Length )
+			throw new InvalidDataException( $"Theme Park Inc save has {payload.Length - position} bytes after the ADSC delimiter; its UI block is empty." );
 		result[^1] = new SavePayloadBlock( SaveBlock.UI, "", position, payload.Length - position, -1 );
-		return new SavePayloadLayout( payload.Length, published != 0, result );
+		return new SavePayloadLayout( payload.Length, published != 0, result, profile );
 	}
 
-	/// <summary>
-	/// Splits the observed Theme Park Inc prebuilt payload by its unique writer-order delimiters.
-	/// Its Camera block is 48 bytes, so the Theme Park World fixed-width parser does not apply.
-	/// </summary>
-	public static SavePayloadLayout ParseThemeParkInc( ReadOnlySpan<byte> payload )
-	{
-		if ( payload.Length > MaximumPayloadBytes )
-			throw new InvalidDataException( $"Save payload exceeds the {MaximumPayloadBytes}-byte limit." );
-		if ( payload.Length < ActionRecordingHeaderBytes )
-			throw new InvalidDataException( "Theme Park Inc save is truncated inside the action recording header." );
-		var published = BinaryPrimitives.ReadUInt32LittleEndian( payload );
-		if ( published > 1 )
-			throw new InvalidDataException( "Theme Park Inc save has a non-boolean published-park flag." );
-		var recording = BinaryPrimitives.ReadUInt32LittleEndian( payload[4..] );
-		if ( recording > (uint)(payload.Length - ActionRecordingHeaderBytes) )
-			throw new InvalidDataException( "Theme Park Inc action recording extends past the payload." );
-		var position = ActionRecordingHeaderBytes + (int)recording;
-		var blocks = new SavePayloadBlock[Delimiters.Count + 2];
-		blocks[0] = new SavePayloadBlock( SaveBlock.ActionRecording, "", 0, position, -1 );
-		Span<byte> stored = stackalloc byte[DelimiterBytes];
-		foreach ( var (block, tag) in Delimiters )
-		{
-			Stored( tag, stored );
-			var relativeEnd = payload[position..].IndexOf( stored );
-			if ( relativeEnd < 0 )
-				throw new InvalidDataException( $"Theme Park Inc save is missing the {tag} delimiter." );
-			var end = position + relativeEnd;
-			if ( payload[(end + DelimiterBytes)..].IndexOf( stored ) >= 0 )
-				throw new InvalidDataException( $"Theme Park Inc save has more than one {tag} delimiter candidate." );
-			if ( block == SaveBlock.Camera && relativeEnd != 48 )
-				throw new InvalidDataException( $"Theme Park Inc Camera block is {relativeEnd} bytes; the observed prebuilt profile has 48." );
-			blocks[(int)block] = new SavePayloadBlock( block, tag, position, relativeEnd, end );
-			position = end + DelimiterBytes;
-		}
-		blocks[^1] = new SavePayloadBlock( SaveBlock.UI, "", position, payload.Length - position, -1 );
-		return new SavePayloadLayout( payload.Length, published != 0, blocks );
-	}
+	/// <summary>Splits a Theme Park Inc payload (<see cref="SavePayloadProfile.ThemeParkInc"/>).</summary>
+	public static SavePayloadLayout ParseThemeParkInc( ReadOnlySpan<byte> payload ) => Parse( payload, SavePayloadProfile.ThemeParkInc );
 
 	/// <summary>Whether a delimiter-located block of <paramref name="length"/> bytes at <paramref name="offset"/> meets its traced width rules.</summary>
 	private static string? WidthError( ReadOnlySpan<byte> payload, SaveBlock block, int offset, int length )
@@ -222,17 +204,20 @@ public sealed class SavePayloadLayout
 	/// </summary>
 	private const string WorldTag = "WRLD";
 
-	private static int TracedEnd( ReadOnlySpan<byte> payload, SaveBlock block, int offset )
+	private static int TracedEnd( ReadOnlySpan<byte> payload, SaveBlock block, int offset, SavePayloadProfile profile )
 	{
 		if ( block == SaveBlock.World )
-			return SaveBlockWidths.TryMeasureWorld( payload, offset, out var worldWidth ) && TagAt( payload, WorldTag, offset + worldWidth ) ? offset + worldWidth : -1;
+		{
+			var measured = profile == SavePayloadProfile.ThemeParkInc ? ThemeParkIncSaveWorld.TryMeasure( payload, offset, out var worldWidth ) : SaveBlockWidths.TryMeasureWorld( payload, offset, out worldWidth );
+			return measured && TagAt( payload, WorldTag, offset + worldWidth ) ? offset + worldWidth : -1;
+		}
 		if ( block == SaveBlock.Coasters )
 		{
 			if ( payload.Length - offset < EmptyCoastersBytes )
 				throw new InvalidDataException( $"Save Coasters block is {payload.Length - offset} bytes; its count and globals alone take {EmptyCoastersBytes}." );
 			return BinaryPrimitives.ReadUInt32LittleEndian( payload[offset..] ) == 0 ? offset + EmptyCoastersBytes : -1;
 		}
-		return SaveBlockWidths.IsTraced( block ) && SaveBlockWidths.TryMeasure( payload, block, offset, out var width ) ? offset + width : -1;
+		return SaveBlockWidths.IsTraced( block ) && SaveBlockWidths.TryMeasure( payload, block, offset, out var width, profile ) ? offset + width : -1;
 	}
 
 	private static bool TagAt( ReadOnlySpan<byte> payload, string tag, int offset )
@@ -247,7 +232,7 @@ public sealed class SavePayloadLayout
 	/// traced block that does not read as its block or is not followed by its delimiter, or (for the delimiter-located blocks) the first
 	/// occurrence that breaks a width rule.
 	/// </summary>
-	private static void Diagnose( ReadOnlySpan<byte> payload, int position )
+	private static void Diagnose( ReadOnlySpan<byte> payload, int position, SavePayloadProfile profile )
 	{
 		Span<byte> stored = stackalloc byte[DelimiterBytes];
 		foreach ( var (block, tag) in Delimiters )
@@ -258,7 +243,7 @@ public sealed class SavePayloadLayout
 				throw new InvalidDataException( payload[..position].IndexOf( stored ) >= 0
 					? $"Save payload delimiter {tag} ({block}) is out of writer order."
 					: $"Save payload is missing the {tag} delimiter of the {block} block." );
-			var end = TracedEnd( payload, block, position );
+			var end = TracedEnd( payload, block, position, profile );
 			if ( end >= 0 && block != SaveBlock.Coasters )
 			{
 				if ( !TagAt( payload, tag, end ) )
@@ -289,16 +274,18 @@ public sealed class SavePayloadLayout
 		private readonly ReadOnlySpan<byte> payload;
 		private readonly List<int>[] occurrences = new List<int>[Delimiters.Count];
 		private readonly Dictionary<(int, int), int> counts = new();
+		private readonly SavePayloadProfile profile;
 
-		public DelimiterSearch( ReadOnlySpan<byte> payload, int start )
+		public DelimiterSearch( ReadOnlySpan<byte> payload, int start, SavePayloadProfile profile )
 		{
 			this.payload = payload;
+			this.profile = profile;
 			Span<byte> stored = stackalloc byte[DelimiterBytes];
 			for ( var index = 0; index < Delimiters.Count; index++ )
 			{
 				occurrences[index] = new List<int>();
 				// Only the delimiter-located blocks search for their delimiter: a World block that reads as the original's does not.
-				if ( Delimiters[index].Block is not (SaveBlock.World or SaveBlock.Coasters) || Delimiters[index].Block == SaveBlock.World && TracedEnd( payload, SaveBlock.World, start ) >= 0 )
+				if ( Delimiters[index].Block is not (SaveBlock.World or SaveBlock.Coasters) || Delimiters[index].Block == SaveBlock.World && TracedEnd( payload, SaveBlock.World, start, profile ) >= 0 )
 					continue;
 				Stored( Delimiters[index].Tag, stored );
 				for ( var position = start; position + DelimiterBytes <= payload.Length; )
@@ -322,7 +309,7 @@ public sealed class SavePayloadLayout
 			int traced;
 			try
 			{
-				traced = TracedEnd( payload, block, offset );
+				traced = TracedEnd( payload, block, offset, profile );
 			}
 			catch ( InvalidDataException )
 			{

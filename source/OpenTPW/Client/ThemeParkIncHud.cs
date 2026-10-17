@@ -18,9 +18,9 @@ public sealed class ThemeParkIncHudHost
 /// <summary>
 /// The experimental Theme Park Inc slice's HUD: an OpenTPW text interface over the shared build, path and guest
 /// systems. Theme Park Inc's own interface is not traced (its <c>ui.wad</c> panels are not Theme Park World's), so
-/// nothing here imitates it: the state line names the experiment, the build list offers the world's catalog free
-/// (no economy runs), and every button is an OpenTPW control. Building, path and queue interaction follows the
-/// traced Theme Park World tools (docs/PATHS.md) because they are what the slice runs.
+/// nothing here imitates it: the state line names the experiment, the money line shows the park's cash and date,
+/// the build list offers the world's catalog at the prices of its own data, and every button is an OpenTPW control.
+/// Building, path and queue interaction follows the traced Theme Park World tools (docs/PATHS.md) because they are what the slice runs.
 /// </summary>
 // [EXT:tpi-text-hud] the whole HUD is an OpenTPW text interface (an OpenTPW design decision for the experimental slice); no original Theme Park Inc interface behaviour is claimed
 public sealed class ThemeParkIncHud
@@ -58,14 +58,15 @@ public sealed class ThemeParkIncHud
 		hud = new UiScreen( "tpiHud" ) { Modal = false };
 		Stack.Push( hud );
 		AddLabel( "guests", () => $"Guests in park: {level.Guests?.GetStatistics().InPark ?? 0}", new UiRect( 24, 196, 900, 60 ) );
+		AddLabel( "money", MoneyText, new UiRect( 960, 196, 1000, 60 ) );
 		AddLabel( "selection", () => SelectedText, new UiRect( 24, 256, 1300, 60 ) );
 		AddLabel( "message", () => messages.Count > 0 ? messages[0].Text : "", new UiRect( 24, 316, 1300, 120 ) );
 		BuildTopLine();
 		BuildWindow();
-		removeButton = ToolButton( "remove", () => "Remove", "Click park objects, queues or paths to remove them (no refund: no economy runs)",
+		removeButton = ToolButton( "remove", () => "Remove", "Click park objects, queues or paths to remove them (objects refund their scrap value)",
 			() => { level.IsRemovingObjects = !level.IsRemovingObjects; if ( level.IsRemovingObjects ) DisarmBuild(); }, 1 );
 		removeButton.Selected = () => level.IsRemovingObjects;
-		ToolButton( "build", () => "Build…", "Open the world's object catalogue (free; nothing is charged)", ToggleBuildWindow, 0 );
+		ToolButton( "build", () => "Build…", "Open the world's object catalogue (each object costs its purchase price)", ToggleBuildWindow, 0 );
 		ToolButton( "rotate", () => "Rotate", "Turn the next built object by 90 degrees", () => level.RotateBuild(), 2 );
 		ToolButton( "cancel", () => "Cancel", "Put away the build item, remove tool, path and queue tools", DisarmAll, 3 );
 		ToolButton( "speed", SpeedText, "Simulation speed: paused, normal, fast, fastest", CycleSpeed, 4 );
@@ -99,7 +100,7 @@ public sealed class ThemeParkIncHud
 			return;
 		armedEntry = null;
 		level.BuildEntry = null;
-		// The placed object is free ([EXT:tpi-free-builds]); the queue tool follows as in the Theme Park World place flow.
+		// The purchase was charged by Level.PlaceObject (Theme Park Inc's own prices); the queue tool follows as in the Theme Park World place flow.
 		PostMessage( string.Format( strings.Extra( OpenTpwText.Built ), ItemNameOf( item.Entry ) ) );
 		if ( item.Entry.HasQueue && item.Runtime.IsAttraction && item.Visitors.HasCells && level.EnterQueueTool( item.Visitors ) )
 			PostMessage( strings.Extra( OpenTpwText.LayQueue ) );
@@ -149,7 +150,7 @@ public sealed class ThemeParkIncHud
 		hud.Add( new UiLabel
 		{
 			Id = "buildTitle",
-			Text = () => $"Build {category} — free (no Theme Park Inc economy runs)",
+			Text = () => $"Build {category} — price from the park's data",
 			Font = fonts => fonts.Heading,
 			Color = UiColors.Title,
 			Visible = false,
@@ -234,8 +235,18 @@ public sealed class ThemeParkIncHud
 
 	private string ItemText( BuildItem item )
 	{
-		// [EXT:tpi-free-builds] builds are free because the slice runs no economy (an OpenTPW scope decision); no original Theme Park Inc price is claimed
-		return $"{(item.Entry != null ? ItemNameOf( item.Entry ) : item.Id)} — free";
+		var name = item.Entry != null ? ItemNameOf( item.Entry ) : item.Id;
+		// the price is Upgrades[0].CostOfUpgrade of the object's own settings (docs/THEME-PARK-INC.md, "Economy"); an object the economy does not list is not charged
+		return item.Entry != null && level.Park?.Economy.Catalog.TryGet( item.Entry.InfoId, out var info ) == true ? $"{name} — ${info.PurchaseCost:N0}" : $"{name} — not priced";
+	}
+
+	/// <summary>The money line: cash, the park's date and the entrance fee (the park's own clock; docs/THEME-PARK-INC.md).</summary>
+	private string MoneyText()
+	{
+		if ( level.Park?.Economy is not { } economy )
+			return "";
+		var state = economy.IsBankrupt ? " — BANKRUPT" : economy.Balance < 0 ? " — in the red" : "";
+		return $"Cash ${economy.Balance:N0}{state} — {economy.Date} — entrance ${economy.EntranceFee}";
 	}
 
 	private string SelectedText => selectedObject is not { IsDeleted: false } item ? "" : $"Selected: {item.Entry.DisplayName}{(item.Entry.IsFixedItem ? " (fixed item)" : "")}";
@@ -277,7 +288,8 @@ public sealed class ThemeParkIncHud
 		armedEntry = entry;
 		level.IsRemovingObjects = false;
 		CloseBuildWindow();
-		PostMessage( $"{ItemNameOf( entry )}: click the park to place it (free); the Rotate button turns it, Esc puts it away." );
+		var price = level.Park?.Economy.Catalog.TryGet( entry.InfoId, out var info ) == true ? $" (${info.PurchaseCost:N0})" : "";
+		PostMessage( $"{ItemNameOf( entry )}: click the park to place it{price}; the Rotate button turns it, Esc puts it away." );
 	}
 
 	private void DisarmBuild()
@@ -508,7 +520,7 @@ public sealed class ThemeParkIncHud
 		}
 		else if ( inPark && level.BuildEntry is { } entry && cursorX >= 0 )
 		{
-			// No economy runs: the footprint's own terrain and occupancy check decides the colour.
+			// the footprint's own terrain and occupancy check decides the colour (the purchase is checked when the click places it)
 			var allowed = level.CheckObject( entry, cursorX, cursorY, level.BuildRotation ) == OriginalPlacementResult.Allowed;
 			var anchor = Level.GetCentredAnchor( entry, cursorX, cursorY, level.BuildRotation );
 			var footprint = BlueprintGhosts.Footprint( entry.Shape, anchor.X, anchor.Y, level.BuildRotation, allowed );

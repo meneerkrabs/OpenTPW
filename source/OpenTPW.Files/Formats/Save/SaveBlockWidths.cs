@@ -2,13 +2,22 @@ using System.Buffers.Binary;
 
 namespace OpenTPW;
 
+/// <summary>Which game's block readers a payload is split with (<see cref="SavePayloadLayout.Parse(ReadOnlySpan{byte}, SavePayloadProfile)"/>).</summary>
+public enum SavePayloadProfile
+{
+	/// <summary>Theme Park World / tp.exe (Mac and PC): the rules in <see cref="SaveBlockWidths"/>.</summary>
+	ThemeParkWorld,
+	/// <summary>Theme Park Inc / Game.exe: the same 17 delimiters; 45 message lists, a 48-byte camera, an empty UI block and its own World block (<see cref="ThemeParkIncSaveWorld"/>).</summary>
+	ThemeParkInc
+}
+
 /// <summary>
 /// The serialized width of each framed block of a decoded TPWS/TPWI payload, read from tp.exe's own block readers
 /// (the loader <c>0x415270</c> runs one reader per block and then compares the next four bytes with the block's tag,
 /// <c>0x415371</c> and its eighteen successors, so a block's width is whatever its reader consumes).
 /// <list type="bullet">
-/// <item>Scripts <c>0x475730</c>: <c>u32 'SCPT', u32 0x118, u32 n, n × u32 slot</c>, then <c>0x118</c> bytes for each nonzero slot 1..n-1.</item>
-/// <item>Particles <c>0x51f7a0</c>: <c>u32 'PCLT', u32 on</c> and, when on, <c>u32 0x9e68 + 0x9e68 bytes, u32 0x8b60 + 0x8b60 bytes, u32 c + c bytes</c>.</item>
+/// <item>Scripts <c>0x475730</c>: <c>u32 'SCPT', u32 0x118, u32 n, n × u32 slot</c>, then <c>0x118</c> bytes for each nonzero slot 1..n-1; another magic or record size fails the original load ("Restore scripts FAILED") and is rejected here.</item>
+/// <item>Particles <c>0x51f7a0</c>: <c>u32 'PCLT', u32 on</c> and, when on, <c>u32 0x9e68 + 0x9e68 bytes, u32 0x8b60 + 0x8b60 bytes, u32 c + c bytes</c> (a different table size fails the original load and is rejected here; the game's save call <c>0x41661B</c> always writes c = 0).</item>
 /// <item>Message centre <c>0x40fd60</c>: <c>u32</c>, then 29 lists of <c>u32 count, count × u16</c>.</item>
 /// <item>Clock <c>0x402e30</c> 8, vanilla time <c>0x403260</c> 4, game system <c>0x5506e0</c> 36 (nine words).</item>
 /// <item>RideSystem <c>0x4647a0</c>: <c>u32 length</c> and that many bytes.</item>
@@ -16,8 +25,8 @@ namespace OpenTPW;
 /// close <c>0x544290</c> seeks to the chunk start plus that size.</item>
 /// <item>Flying rides <c>0x55e020</c>: <c>u32 'FLY_', u32 on</c> and, when on, <c>u32 n, n bytes</c> (the slot array), ten words and, for each
 /// nonzero slot 1..98 of the array, as many bytes as the tenth word (the last of the ten) says.</item>
-/// <item>RSSE <c>0x5597a0</c>: <c>u32 'RSSE', u32 n, n bytes</c>, five words, <c>u32 records, u32 record size</c>, then per record the fixed
-/// struct, nine counted buffers (the seventh in units of 32 bytes) and an <c>'OBJ '</c> list (<c>u32 count, u32 size, count × size</c>).</item>
+/// <item>RSSE <c>0x5597a0</c>: <c>u32 'RSSE', u32 0x14, 20 bytes</c>, five words, <c>u32 records, u32 0xF4</c>, then per record the fixed
+/// struct, eight counted buffers (the seventh in units of 32 bytes), the folder string and an <c>'OBJ '</c> list (<c>u32 count, u32 0x1C, count × 0x1C</c>); see <see cref="SaveRsseBlock"/>.</item>
 /// <item>Camera <c>0x42cec0</c> 40; Advisor <c>0x599d00</c>: <c>u32 'ADV_', u32 n, n bytes, u32 m, m bytes</c>; Sound <c>0x51c400</c>:
 /// <c>u32 on, u32, u32 n, n bytes</c> and, when on, a chunk of three words, a length word L and L - 4 bytes; cheats <c>0x405570</c> 2;
 /// advisor scoring <c>0x59c860</c> 4; UI <c>0x481680</c> (the last block): <c>u32 count, count × 0x21c</c>.</item>
@@ -27,6 +36,13 @@ namespace OpenTPW;
 /// </summary>
 public static class SaveBlockWidths
 {
+	/// <summary>Theme Park Inc's message centre keeps 45 lists where Theme Park World's keeps 29 (reader 0x437140 against 0x40fd60).</summary>
+	// [BIN:TPI-EXE:0x437140 message centre loader] u32, then 45 lists of u32 count and count u16 entries; the prebuilt's block is 476 bytes
+	public const int ThemeParkIncMessageLists = 45;
+	/// <summary>Theme Park Inc's camera adds gf_SavedRideXRotation and gf_SavedRideYRotation to the 40 bytes.</summary>
+	// [BIN:TPI-EXE:0x46a150 camera loader] 40 bytes plus two floats
+	public const int ThemeParkIncCameraBytes = 48;
+
 	public const uint ScriptsMagic = 0x53435054;
 	public const int ScriptRecordBytes = 0x118;
 	public const uint ParticlesMagic = 0x5054434c;
@@ -96,7 +112,14 @@ public static class SaveBlockWidths
 	/// Throws <see cref="InvalidDataException"/> when the bytes do not read as the block (the original loader would report the
 	/// SAD_ error, or run past the end of the save).
 	/// </summary>
-	public static bool TryMeasure( ReadOnlySpan<byte> payload, SaveBlock block, int offset, out int width )
+	public static bool TryMeasure( ReadOnlySpan<byte> payload, SaveBlock block, int offset, out int width ) =>
+		TryMeasure( payload, block, offset, out width, SavePayloadProfile.ThemeParkWorld );
+
+	/// <summary>
+	/// <see cref="TryMeasure(ReadOnlySpan{byte}, SaveBlock, int, out int)"/> under one game's reader rules: the Theme Park Inc profile has 45 message-centre lists, a 48-byte camera and an
+	/// empty UI block (its writer 0x4f8630 is a bare <c>ret</c> and its loader reads nothing); the other blocks read as in tp.exe.
+	/// </summary>
+	public static bool TryMeasure( ReadOnlySpan<byte> payload, SaveBlock block, int offset, out int width, SavePayloadProfile profile )
 	{
 		width = 0;
 		if ( offset < 0 || offset > payload.Length )
@@ -107,12 +130,9 @@ public static class SaveBlockWidths
 			case SaveBlock.Scripts:
 				var scriptMagic = reader.U32();
 				var scriptSize = reader.U32();
+				// [BIN:TPW-EXE:0x475730 Scripts loader] without 'SCPT' and the 0x118 record size the original reports "Restore scripts FAILED" and the whole load fails
 				if ( scriptMagic != ScriptsMagic || scriptSize != ScriptRecordBytes )
-				{
-					// The loader reads the two words, finds no script table and keeps its defaults.
-					width = reader.Taken;
-					return true;
-				}
+					throw new InvalidDataException( $"Save Scripts block does not start with 'SCPT' and a record size of {ScriptRecordBytes} (magic 0x{scriptMagic:X8}, size {scriptSize}); the original fails with \"Restore scripts FAILED\"." );
 				var scripts = reader.U32();
 				var slots = reader.Take( checked((long)scripts * 4) );
 				var present = 0;
@@ -122,20 +142,23 @@ public static class SaveBlockWidths
 				reader.Take( (long)present * ScriptRecordBytes );
 				break;
 			case SaveBlock.Particles:
+				// [BIN:TPW-EXE:0x51F7A0 Particles loader] a table whose stored size is not 0x9E68 / 0x8B60 fails the original load; the pool length c is 0 in every save the game writes (call 0x41661B)
 				if ( reader.U32() == ParticlesMagic && reader.U32() != 0 )
 				{
-					if ( reader.U32() != ParticleHeaderBytes )
-						break;
+					var headerSize = reader.U32();
+					if ( headerSize != ParticleHeaderBytes )
+						throw new InvalidDataException( $"Save Particles block stores a {headerSize}-byte globals table; the original loader requires {ParticleHeaderBytes}." );
 					reader.Take( ParticleHeaderBytes );
-					if ( reader.U32() != ParticleFieldBytes )
-						break;
+					var fieldSize = reader.U32();
+					if ( fieldSize != ParticleFieldBytes )
+						throw new InvalidDataException( $"Save Particles block stores a {fieldSize}-byte table; the original loader requires {ParticleFieldBytes}." );
 					reader.Take( ParticleFieldBytes );
 					reader.Take( reader.U32() );
 				}
 				break;
 			case SaveBlock.MessageCentre:
 				reader.U32();
-				for ( var list = 0; list < MessageLists; list++ )
+				for ( var list = 0; list < (profile == SavePayloadProfile.ThemeParkInc ? ThemeParkIncMessageLists : MessageLists); list++ )
 					reader.Take( reader.U32() * 2L );
 				break;
 			case SaveBlock.Clock:
@@ -195,27 +218,13 @@ public static class SaveBlockWidths
 				}
 				break;
 			case SaveBlock.Rsse:
+				// A block without the magic is not read further (width of the tag alone, unverified against the loader); a block with it must read as <see cref="SaveRsseBlock"/>.
 				if ( reader.U32() != RsseMagic )
 					break;
-				reader.Take( reader.U32() );
-				for ( var word = 0; word < 5; word++ )
-					reader.U32();
-				var records = reader.U32();
-				var recordBytes = reader.U32();
-				for ( uint record = 0; record < records; record++ )
-				{
-					reader.Take( recordBytes );
-					for ( var buffer = 0; buffer < 9; buffer++ )
-						reader.Take( reader.U32() * (buffer == 6 ? 32L : 1L) );
-					if ( reader.U32() != RsseObjectsMagic )
-						throw new InvalidDataException( $"Save {block} record {record} has no 'OBJ ' object list." );
-					var objects = reader.U32();
-					var objectBytes = reader.U32();
-					reader.Take( objects * (long)objectBytes );
-				}
-				break;
+				width = SaveRsseBlock.Parse( payload, offset ).Length;
+				return true;
 			case SaveBlock.Camera:
-				reader.Take( 40 );
+				reader.Take( profile == SavePayloadProfile.ThemeParkInc ? ThemeParkIncCameraBytes : 40 );
 				break;
 			case SaveBlock.Advisor:
 				if ( reader.U32() == AdvisorMagic )
@@ -247,7 +256,8 @@ public static class SaveBlockWidths
 				reader.Take( AdvisorScoringBytes );
 				break;
 			case SaveBlock.UI:
-				reader.Take( reader.U32() * (long)UiRecordBytes );
+				if ( profile != SavePayloadProfile.ThemeParkInc )
+					reader.Take( reader.U32() * (long)UiRecordBytes );
 				break;
 			default:
 				return false;

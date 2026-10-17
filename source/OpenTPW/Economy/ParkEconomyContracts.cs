@@ -76,7 +76,11 @@ public enum ParkEventKind
 	/// </summary>
 	ResearchGroupOpened,
 	/// <summary>A completion left no item unresearched (the lab's check, tp.exe <c>0x00503D40</c>).</summary>
-	ResearchAllDone
+	ResearchAllDone,
+	/// <summary>A global golden ticket moved to this park from another park that held it with a lower record (tp.exe <c>0x005AF940</c> result 4): <see cref="ParkEvent.Amount"/> the <see cref="GoldenTicketKind"/>; the advisor says its moved-award advice.</summary>
+	GlobalTicketMoved,
+	/// <summary>Theme Park Inc's monthly running costs were debited (<see cref="ParkEvent.Amount"/> the total, <see cref="ParkEvent.InfoId"/> the objects charged).</summary>
+	RunningCostsPaid
 }
 
 /// <summary>

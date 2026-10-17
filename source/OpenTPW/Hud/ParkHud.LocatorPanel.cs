@@ -356,7 +356,10 @@ public sealed partial class ParkHud
 			if ( actor == 0 )
 				return "";
 			if ( Locator.StripRole == LocatorModel.VisitorRole )
-				return actor > 0 ? strings[UIStrings.VisitorCount] + actor.ToString( System.Globalization.CultureInfo.InvariantCulture ) : strings[UIStrings.NewVisitor];
+			{
+				var number = actor > 0 ? level.Guests?.Guests.FirstOrDefault( guest => guest.Id == actor )?.VisitorNumber ?? 0 : 0;
+				return number > 0 ? strings[UIStrings.VisitorCount] + number.ToString( System.Globalization.CultureInfo.InvariantCulture ) : strings[UIStrings.NewVisitor];
+			}
 			return (Status.EconomySource as ParkEconomy)?.Staff.Members.FirstOrDefault( member => member.Id == actor ) is { } member ? StaffName( member ) : "";
 		}
 	}

@@ -145,7 +145,7 @@ public sealed class GuestRenderer : Entity
 			slot = GuestSpriteAtlas.WalkSlot;
 			step = (int)(guest.DrawDistanceWalked * WalkFramesPerCell);
 		}
-		else if ( guest.State is GuestState.Queueing or GuestState.WaitingToBoard or GuestState.AtTicketBooth or GuestState.WaitingToGoHome )
+		else if ( guest.State is GuestState.Queueing or GuestState.WaitingToBoard or GuestState.WaitingAtBooth or GuestState.AtTicketBooth or GuestState.WaitingToGoHome )
 		{
 			slot = GuestSpriteAtlas.WaitSlot;
 			step = (int)(simulation.TimeSeconds * 2 + guest.Id) ;

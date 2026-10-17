@@ -190,11 +190,20 @@ public class ArrivalVehicleTests
 	{
 		var park = new Park();
 		park.Simulation.ArrivalsEnabled = true;
-		var first = park.Simulation.SpawnArrival()!;
-		var second = park.Simulation.SpawnArrival()!;
-		var third = park.Simulation.SpawnArrival()!;
-		foreach ( var guest in new[] { first, second, third } )
+		// three guests stand on the bus's two stop cells of lane A's bus stop (the cell (1, 2) and its +X neighbour), two on the first
+		var stops = new[] { (1, 2), (1, 2), (2, 2) };
+		var waiting = new List<Guest>();
+		foreach ( var cell in stops )
+		{
+			var guest = park.Simulation.SpawnInPark( 10, 0 );
+			(guest.Navigation.X, guest.Navigation.Y) = GuestNavigation.BytePoint( cell, 100, 100 );
+			(guest.CellX, guest.CellY) = cell;
 			guest.State = GuestState.WaitingToGoHome;
+			guest.HasWaypoint = false;
+			waiting.Add( guest );
+		}
+		var (first, second, third) = (waiting[0], waiting[1], waiting[2]);
+		park.Turns( 1 );   // the cells' guest lists are rebuilt at the start of the turn, after the arrival update has read the old ones
 		park.NextVehicleIs( ArrivalVehicleKind.Ferry );
 		park.Turns( 1 );
 		CollectionAssert.AreEqual( new[] { ArrivalVehicleKind.Ferry }, park.Vehicles.Created, "a waiting guest and no vehicle at work: size 0, a world draw mod 3" );
@@ -203,9 +212,9 @@ public class ArrivalVehicleTests
 
 		park.Vehicles.SetStatus( ArrivalVehicleKind.Ferry, 4 );
 		park.Turns( 1 );
-		// Each guest's lane came from its entrance draw (R & 1, 0x004FB201): one guest per stop cell, that is per lane in use, boards each turn.
-		var lanesInUse = new[] { first, second, third }.Select( guest => guest.Lane ).Distinct().Count();
-		Assert.AreEqual( 3 - lanesInUse, park.Simulation.Guests.Count, "status 4: one guest per stop cell boards" );
+		// 0x00500BD0: the guest that heads its cell's list boards, so one per stop cell and turn
+		var cellsInUse = stops.Distinct().Count();
+		Assert.AreEqual( 3 - cellsInUse, park.Simulation.Guests.Count, "status 4: one guest per stop cell boards" );
 		if ( park.Simulation.Guests.Count > 0 )
 			Assert.AreEqual( 0, park.Vehicles.Trigger( ArrivalVehicleKind.Ferry ), "a guest still waits: the vehicle is held" );
 		for ( var turn = 0; turn < 3 && park.Simulation.Guests.Count > 0; turn++ )

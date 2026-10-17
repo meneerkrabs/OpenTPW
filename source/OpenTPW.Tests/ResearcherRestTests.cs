@@ -167,14 +167,12 @@ public class ResearcherRestTests
 	public void WithoutLaneAAStrikerTakesLaneB()
 	{
 		var f = new Fixture();
-		for ( var x = 16; x < 20; x++ )
-			f.Grid.SetPath( x, 5, true );
 		f.Guests.Settings.ArrivalLaneA = null;
 		var handyman = f.Hire( StaffType.Handyman );
 		f.Turns( 3 );
 		f.Strike( StaffType.Handyman, true );
 		var passed = false;
-		f.Turns( 300, () => passed |= handyman.Navigation!.OffGrid && handyman.Navigation.Cell == (17, 2) );
+		f.Turns( 300, () => passed |= handyman.Navigation!.OffGrid && handyman.Navigation.Cell == (6, 3) );
 		Assert.AreEqual( StaffJob.Striking, handyman.Job );
 		Assert.IsTrue( passed, "out past lane B's park-side crossing" );
 	}

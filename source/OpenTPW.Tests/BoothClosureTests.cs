@@ -62,7 +62,21 @@ public class BoothClosureTests
 		for ( var tick = 0; tick < 30 * 60 && waiting.State == GuestState.AtTicketBooth; tick++ )
 			simulation.Tick( GuestSnapshotTests.Tick );
 		Assert.IsTrue( gate.Paid > paid, "the booth books the fee without reading the closed word (0x4ff9d0, 0x4d0600)" );
+		Assert.AreEqual( GuestState.WaitingAtBooth, waiting.State, "the paid guest stands at the booth in state 3" );
+		Assert.IsTrue( waiting.Paid );
+		// 0x004FF7F0: the wait SetState(3) drew (200 + R % 150 turns) counts down one per update before the way home
+		var wait = waiting.BoothWait;
+		Assert.IsTrue( wait is >= 200 and <= 349, $"the gate wait {wait}" );
+		var turns = 0;
+		for ( var tick = 0; tick < 150 * 60 && waiting.State == GuestState.WaitingAtBooth; tick++ )
+		{
+			simulation.Tick( GuestSnapshotTests.Tick );
+			if ( simulation.TickCount % 15 == 1 )
+				turns++;
+		}
+		Assert.IsTrue( turns >= wait - 2 && turns <= wait + 2, $"the guest waited {turns} turns for a wait of {wait}" );
 		Assert.IsTrue( waiting.State is GuestState.LeavingPark or GuestState.CrossingRoadHome, $"a paid guest at a closed park goes home ({waiting.State})" );
+		Assert.AreEqual( 0, waiting.ExitLevel, "state 18 with the exit counter zeroed: no recall" );
 		Assert.IsTrue( waiting.TimeInParkSeconds is not null, "the admission was taken" );
 	}
 	[TestMethod]
@@ -81,7 +95,7 @@ public class BoothClosureTests
 		}
 		Assert.IsNotNull( waiting );
 		open = false;
-		for ( var tick = 0; tick < 30 * 60 && waiting.State == GuestState.AtTicketBooth; tick++ )
+		for ( var tick = 0; tick < 150 * 60 && waiting.State is GuestState.AtTicketBooth or GuestState.WaitingAtBooth; tick++ )
 			simulation.Tick( GuestSnapshotTests.Tick );
 		Assert.IsTrue( waiting.State is GuestState.LeavingPark or GuestState.CrossingRoadHome, $"a paid guest at a shut gate goes home ({waiting.State})" );
 	}

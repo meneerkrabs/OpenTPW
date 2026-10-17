@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace OpenTPW.Tests;
 
 /// <summary>
-/// The leaving guests' last walk (ARRIVAL-001, WALK-008 for the way out): at the gate's crossing cell (state 19, tp.exe <c>0x00500AD0</c>) a guest waits until the arrival vehicle lets it
+/// The leaving guests' last walk (ARRIVAL-001): at the gate's crossing cell (state 19, tp.exe <c>0x00500AD0</c>) a guest waits until the arrival vehicle lets it
 /// walk, picks one of the four cells around the stop with world draws and walks there over the cell map (state 20), then waits (state 21, <c>0x00500BD0</c>) and boards when the
 /// vehicle reports status 4 and it heads its cell's thing list.
 /// </summary>
@@ -162,18 +162,20 @@ public class StopWalkTests
 	}
 
 	[TestMethod]
-	public void AStopCellNoRouteReachesTakesOpenTPWsLaneHome()
+	public void AStopCellNoRouteReachesLeavesTheWalkStuckInStateTwenty()
 	{
-		// a lane whose cells the map leaves untyped (the stop cells are no walkway) keeps OpenTPW's off-grid lane walk (ARRIVAL-001, WALK-008)
+		// 0x00500AD0 does not read the route request's result and 0x005019F0 logs "Got stuck walking around outside" and stays in state 20: the guest takes no other way home
 		var (simulation, grid, _) = Rig();
 		for ( var y = 1; y <= 7; y++ )
 			foreach ( var x in new[] { 5, 6 } )
 				grid.Cells.SetType( x, y, ParkCellTypes.NoTerrain );
 		var guest = AtTheGate( simulation );
 		Turns( simulation, 3 );
-		Assert.IsNotNull( guest.Lane, "no route to the stop: the lane home" );
-		Assert.IsTrue( guest.LaneReversed );
-		Assert.AreEqual( 5, guest.Lane![0].X );
+		Assert.AreEqual( GuestState.WalkingToVehicle, guest.State, "no route to the stop: the walk stays in state 20" );
+		Assert.IsTrue( guest.Navigation.Stuck );
+		Turns( simulation, 40 );
+		Assert.AreEqual( GuestState.WalkingToVehicle, guest.State );
+		Assert.IsNull( guest.Lane );
 	}
 
 	[TestMethod]

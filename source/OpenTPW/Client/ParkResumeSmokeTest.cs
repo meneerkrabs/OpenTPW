@@ -63,6 +63,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 	/// <summary>The capture phase's evidence — the restore phase's oracle.</summary>
 	private SmokeEvidence? capture;
 	private SmokeSample boundarySample = new() { Tick = -1 };
+	/// <summary>The capture phase's park right after its start (the state Restart Park must return to).</summary>
+	private SmokeSample? startSample;
 	private IReadOnlyDictionary<string, string>? verifiedAssets;
 	/// <summary>The Totem's identity as this phase's save holds it (set at save time; the restore phase reads it before its post-load removal).</summary>
 	private SmokePrototype? savedPrototype;
@@ -113,6 +115,8 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			Require( level.Park != null && level.Guests != null && level.Paths != null && level.OriginalPark != null, "start a writable original Jungle park in full-simulation mode" );
 			Require( level.PlacedRide == null && level.Coasters.Count == 0, "the full-simulation park starts without prototype rides or coasters" );
 			Require( level.Guests.Grid.WalkableCount > 0, "the fresh park starts with its initial walkable entrance path" );
+			// the restart snapshot was taken inside StartLevel, before anything below changes the park
+			startSample = CaptureSample( 0 );
 			// a new park starts closed (tp.exe 0x0051562D); open it as the player's door button would before the fixture seeds guests
 			level.Park.Economy.OpenPark();
 			themeText = level.LevelName;
@@ -623,7 +627,7 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			BoardingOrWaiting = InState( GuestState.Boarding, GuestState.WaitingToBoard ),
 			Riding = InState( GuestState.Using ),
 			ExitingRide = InState( GuestState.ExitingRide ),
-			LeavingOrArriving = InState( GuestState.CrossingRoad, GuestState.CrossingRoadToPark, GuestState.GoingToTicketBooth, GuestState.AtTicketBooth,
+			LeavingOrArriving = InState( GuestState.CrossingRoad, GuestState.CrossingRoadToPark, GuestState.GoingToTicketBooth, GuestState.WaitingAtBooth, GuestState.AtTicketBooth,
 				GuestState.EnteringPark, GuestState.CrossingRoadHome, GuestState.WaitingToGoHome, GuestState.LeavingPark ),
 			Admissions = snapshot.Guests.Admissions,
 			Departed = snapshot.Guests.Departed,
@@ -755,9 +759,27 @@ internal sealed partial class ParkResumeSmokeTest : IDisposable
 			var problems = VerifyEvidencePair( capture!, Evidence( completed: true, failure: null ) );
 			Require( problems.Count == 0, $"the evidence pair verifies ({problems.Count} problems; first: {problems.FirstOrDefault() ?? "none"})" );
 		}
+		VerifyRestart();
 		Log.Trace( summary );
 		stage = Stage.Done;
 		Render.Window.SdlWindow.Close();
+	}
+
+	/// <summary>
+	/// Restart Park reloads the snapshot taken when the park started (capture phase) or was loaded (restore phase), not the
+	/// state it has reached since (tp.exe 0x54f3f7 writes it, 0x550359 reloads it).
+	/// </summary>
+	private void VerifyRestart()
+	{
+		var expected = restoring ? boundarySample : startSample!;
+		var before = level;
+		Require( File.Exists( SaveFileSystem.GetAbsolutePath( GameFlow.RestartSnapshotFileName( level.LevelName ) ) ), "the park start or load wrote the restart snapshot file" );
+		flow.RestartCurrentPark( before );
+		Require( flow.Level != null && !ReferenceEquals( flow.Level, before ), "Restart Park rebuilt the park from its snapshot" );
+		level = flow.Level!;
+		var restarted = CaptureSample( 0 );
+		Require( restarted.FullTypedSha256 == expected.FullTypedSha256,
+			$"Restart Park returned to the {( restoring ? "loaded" : "start" )} state (state sha {restarted.FullTypedSha256[..12]}, expected {expected.FullTypedSha256[..12]})" );
 	}
 
 	private void Fail( Exception error )

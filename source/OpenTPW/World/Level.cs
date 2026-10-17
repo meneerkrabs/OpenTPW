@@ -132,7 +132,7 @@ public partial class Level : IDisposable
 	/// </summary>
 	public ParkVisitInfo? Visit { get; }
 	public bool IsReadOnlyVisit => Visit != null;
-	/// <summary>True while this level runs the experimental Theme Park Inc slice: no economy, HUD or advisor of the reference game.</summary>
+	/// <summary>True while this level runs the experimental Theme Park Inc slice: only the money economy (no staff, research or challenges), no HUD or advisor of the reference game.</summary>
 	public bool IsThemeParkIncSlice => GameEditions.IsThemeParkInc && OriginalPark != null;
 	/// <summary>The version 2 layout a visit applies instead of the shipped level import; null for version 1 packages and own parks.</summary>
 	private readonly OpenTPW.Online.Packages.MinimalParkPayload? visitLayout;
@@ -239,13 +239,16 @@ public partial class Level : IDisposable
 			if ( resume != null && (resume.Layout.Cells.Width != OriginalPark.Map.CellCountX || resume.Layout.Cells.Height != OriginalPark.Map.CellCountY) )
 				throw new InvalidDataException( "The saved cell map dimensions do not match the original terrain." );
 			yield return 0.15f;
-			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 89 of the
-			// balance keys it reads, so its worlds run without one and building stays free (docs/THEME-PARK-INC.md).
+			// [EXT:tpi-viewer] the edition capability policy decides the economy: Theme Park Inc's Standard.sam lacks 86 of the
+			// balance keys the Theme Park World economy reads, so its worlds run the money only (Theme Park Inc's own keys: cash, loans, costs,
+			// the calendar, running costs) and not the staff, research or challenges (docs/THEME-PARK-INC.md, "Economy").
 			using ( LoadProfile.Measure( "economy" ) )
 			{
 				if ( !IsReadOnlyVisit && GameEditions.Capabilities.Economy )
 					Park = resume == null ? ParkEconomyRuntime.ForOriginalLevel( OriginalPark, start, Seed )
 						: ParkEconomyRuntime.ForResume( resumedEconomy ?? throw new InvalidDataException( "The resumed economy is missing." ), start );
+				else if ( !IsReadOnlyVisit && GameEditions.IsThemeParkInc && GameEditions.Capabilities.Money && resume == null )
+					Park = ParkEconomyRuntime.ForThemeParkIncLevel( OriginalPark, Seed );
 			}
 			yield return 0.2f;
 		}
@@ -423,8 +426,11 @@ public partial class Level : IDisposable
 			ImportOriginalRideSettings();
 			if ( resumeState == null && !GameEditions.IsThemeParkInc && OriginalPark.Save != null && visitLayout == null )
 				ReleaseUnimportedThings();
-			SetupStaff();
-			SetupParkGate();
+			if ( GameEditions.Capabilities.Staff )
+				SetupStaff();
+			// [EXT:tpi-park-open] the Theme Park Inc park runs no gate commands: its gate script is not traced, so the economy neither drives nor closes the park door
+			if ( !GameEditions.IsThemeParkInc )
+				SetupParkGate();
 		}
 	}
 

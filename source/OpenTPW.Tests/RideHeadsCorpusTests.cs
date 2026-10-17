@@ -123,6 +123,25 @@ public class RideHeadsCorpusTests
 	}
 
 	/// <summary>
+	/// The walk action operand (the sixth) of every WALKON in the shipped root scripts: 1, 2, 4, 5 and 6 occur, always as a literal. Only 4 reaches the head hang in tp.exe (the walk update 0x00557D80 state 1 and WALKOFF 0x005571A0 test it; the other callers of the hang 0x0044B410 are ADDHEAD, the car and the tour paths), so 5 and 6 (stalls, sprays, Devils Disc, Zero G) draw no head.
+	/// </summary>
+	[TestMethod]
+	public void WalkOnActionsOfTheShippedScriptsArePinned()
+	{
+		var counts = new SortedDictionary<string, int>();
+		foreach ( var (_, entry, _, _, _, _) in Scripted() )
+		{
+			var script = new RideScriptFile( entry.FileSystem.OpenRead( entry.ScriptPath! ) );
+			foreach ( var instruction in script.Instructions.Where( x => x.Opcode == (ushort)Opcode.WALKON ) )
+			{
+				var key = instruction.Operands.Count > 5 && instruction.Operands[5].Kind == RideScriptOperandKind.Literal ? instruction.Operands[5].Value.ToString() : "non-literal";
+				counts[key] = counts.GetValueOrDefault( key ) + 1;
+			}
+		}
+		CollectionAssert.AreEqual( new[] { "1=20", "2=2", "4=5", "5=5", "6=15" }, counts.Select( x => $"{x.Key}={x.Value}" ).ToArray() );
+	}
+
+	/// <summary>
 	/// The shipped scripts of the five head-action rides, run with real riders: heads go up on the ride's head nodes (they were missing, the riders vanished on board)
 	/// and come down again when the ride unloads.
 	/// </summary>
@@ -152,6 +171,65 @@ public class RideHeadsCorpusTests
 			Assert.IsTrue( maximumHung > 0, $"{name}: a rider's head was hung ({visitors.BoardedTotal} boarded)" );
 			Assert.IsTrue( hungAtEnd <= maximumHung );
 			runtime.Stop();
+		}
+	}
+
+	/// <summary>
+	/// A park saved while riders sit on a head-action ride and loaded again keeps their heads (the head table and the walk slots are saved), and the loaded ride takes them down at
+	/// WALKOFF exactly as the uninterrupted one does. A snapshot without the walk slots (an older save) loads too: its riders keep the heads they had and the ride unloads them.
+	/// </summary>
+	[TestMethod]
+	public void HeadsAndWalkSlotsSurviveASaveInTheMiddleOfTheRide()
+	{
+		foreach ( var (theme, name) in new[] { ("hallow", "The Firepit"), ("jungle", "Inca Totem"), ("jungle", "Aztec Mayhem"), ("space", "Hover Bot Havoc"), ("space", "Rock 'n Roll") } )
+		{
+			var entry = ObjectCatalog.Load( theme ).Entries.Single( x => x.DisplayName == name );
+			var world = new RideScriptWorld();
+			var runtime = new OriginalObjectRuntime( entry, world, seed: 3, open: true );
+			for ( var guest = 1; guest <= 12; guest++ )
+				runtime.Visitors.TryJoinQueue( guest );
+			var saveTick = -1;
+			for ( var tick = 0; tick < 240 * 60 && saveTick < 0; tick++ )
+			{
+				runtime.Simulate( 1f / FixedStepClock.TicksPerSecond );
+				if ( runtime.Visitors.HungHeads().Count() >= Math.Min( 3, runtime.Visitors.Heads!.Count ) )
+					saveTick = tick;
+			}
+			Assert.IsTrue( saveTick >= 0, $"{name}: riders sat on the ride" );
+			var snapshot = runtime.CaptureSnapshot();
+			var worldSnapshot = world.CaptureSnapshot();
+			// a ride outside a park has no queue cells of its own; a saved park always has them
+			var visitorSnapshot = runtime.Visitors.CaptureSnapshot() with { QueueCells = new[] { (X: 3, Y: 4) } };
+			Assert.IsNotNull( visitorSnapshot.WalkSlots, $"{name}: the walk slots are saved" );
+
+			var restored = new RideScriptWorld();
+			var candidate = OriginalObjectRuntime.CreateForRestore( entry, restored, seed: 3, open: true, attractionId: snapshot.AttractionId );
+			var gaps = candidate.RestoreSnapshot( snapshot );
+			Assert.AreEqual( 0, gaps.Count, string.Join( "; ", gaps ) );
+			restored.RestoreSnapshot( worldSnapshot, new Dictionary<int, RideVM> { [runtime.Script!.ScriptId] = candidate.Script! } );
+			candidate.Visitors.RestoreSnapshot( visitorSnapshot );
+			CollectionAssert.AreEquivalent( runtime.Visitors.HungHeads().ToArray(), candidate.Visitors.HungHeads().ToArray(), $"{name}: heads after loading" );
+
+			for ( var tick = 0; tick < 120 * 60; tick++ )
+			{
+				runtime.Simulate( 1f / FixedStepClock.TicksPerSecond );
+				candidate.Simulate( 1f / FixedStepClock.TicksPerSecond );
+				CollectionAssert.AreEquivalent( runtime.Visitors.HungHeads().ToArray(), candidate.Visitors.HungHeads().ToArray(), $"{name}: heads at tick {tick} after loading" );
+			}
+
+			// An older save has no walk slots (the head table is saved with the ride): it must load, and its riders' heads still go down when they leave (Release clears a leaving rider's head).
+			var legacyWorld = new RideScriptWorld();
+			var legacy = OriginalObjectRuntime.CreateForRestore( entry, legacyWorld, seed: 3, open: true, attractionId: snapshot.AttractionId );
+			Assert.AreEqual( 0, legacy.RestoreSnapshot( snapshot ).Count, $"{name}: the ride of a save without walk slots loads" );
+			legacyWorld.RestoreSnapshot( worldSnapshot, new Dictionary<int, RideVM> { [runtime.Script!.ScriptId] = legacy.Script! } );
+			legacy.Visitors.RestoreSnapshot( visitorSnapshot with { WalkSlots = null } );
+			for ( var tick = 0; tick < 120 * 60; tick++ )
+				legacy.Simulate( 1f / FixedStepClock.TicksPerSecond );
+			Assert.AreNotEqual( RideVMState.Faulted, legacy.Script!.State, $"{name}: {legacy.Script.FaultMessage}" );
+			Assert.AreEqual( 0, legacy.Visitors.HungHeads().Count(), $"{name}: the heads of a save without walk slots are down again after the ride unloads" );
+			runtime.Stop();
+			candidate.Stop();
+			legacy.Stop();
 		}
 	}
 

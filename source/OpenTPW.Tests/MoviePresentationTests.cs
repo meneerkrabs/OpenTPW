@@ -52,6 +52,37 @@ public class MoviePresentationTests
 		Assert.AreEqual( 0f, options.MovieGain );
 	}
 
+	[DataTestMethod]
+	[DataRow( 640, 480, 0, 64, 640, 352 )]
+	[DataRow( 160, 120, 0, 16, 160, 88 )]
+	[DataRow( 400, 300, 0, 40, 400, 220 )]
+	[DataRow( 1024, 768, 0, 102, 1024, 563 )]
+	[DataRow( 1280, 1024, 0, 136, 1280, 750 )]
+	[DataRow( 1600, 1200, 0, 160, 1600, 880 )]
+	public void OriginalBoxIsTheScreenWidthBy352Over480AtTheTopSixtyFourOver480( int screenWidth, int screenHeight, int x, int y, int width, int height )
+	{
+		Assert.AreEqual( (x, y, width, height), MoviePresenter.OriginalBox( screenWidth, screenHeight ) );
+	}
+
+	[DataTestMethod]
+	[DataRow( 160, 120 )]
+	[DataRow( 320, 240 )]
+	[DataRow( 400, 300 )]
+	[DataRow( 512, 384 )]
+	[DataRow( 800, 600 )]
+	[DataRow( 1024, 768 )]
+	[DataRow( 1600, 1200 )]
+	public void LetterboxedPictureEqualsTheOriginalBoxOnEveryFourByThreeMode( int screenWidth, int screenHeight )
+	{
+		// The original only ran fixed 4:3 modes (and 1280 x 1024), where stretching to the screen width keeps the 640:352 aspect.
+		var original = MoviePresenter.OriginalBox( screenWidth, screenHeight );
+		var fitted = MoviePresenter.Fit( 320, 352, screenWidth, screenHeight, MoviePresenter.OriginalDisplayAspect );
+		Assert.AreEqual( original.X, fitted.X );
+		Assert.IsTrue( Math.Abs( original.Y - fitted.Y ) <= 1, $"y {original.Y} vs {fitted.Y}" );
+		Assert.AreEqual( original.Width, fitted.Width );
+		Assert.IsTrue( Math.Abs( original.Height - fitted.Height ) <= 1, $"height {original.Height} vs {fitted.Height}" );
+	}
+
 	[TestMethod]
 	public void PackingRoundsEvenColumnsAndTruncatesOddColumns()
 	{

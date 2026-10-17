@@ -41,11 +41,19 @@ internal sealed class MoviePresenter : IDisposable
 	/// <summary>
 	/// Width : height of the displayed picture. The original draws every movie into a rectangle of the screen width
 	/// by 352/480 of its height, which is 640 x 352 on a 640 x 480 screen; the 320 x 352 TGQ frames are therefore
-	/// shown at twice their width, with non-square pixels ([BIN:STP-PPC:0x1009B1DC movie box], docs/TGQ-MOVIES.md).
+	/// shown at twice their width, with non-square pixels ([BIN:TPW-EXE:0x51b010 movie box], docs/TGQ-MOVIES.md; the Mac twin is 0x1009B1DC).
 	/// </summary>
 	// [EXT:movie-letterbox] the original ran fixed 4:3 modes; OpenTPW runs any window size and letterboxes the 640:352 picture inside it
 	// instead of stretching it to the window width (design decision).
 	public const double OriginalDisplayAspect = 640d / 352;
+
+	/// <summary>
+	/// The rectangle the PC player puts a movie into on a screen of the given size: the full width, a height of 352/480 of the
+	/// screen and a top edge at 64/480 of it (integer divisions), so 640 x 352 at y 64 on a 640 x 480 screen.
+	/// </summary>
+	// [BIN:TPW-EXE:0x54df20 movie box] the logo and trailer callers pass y = screen height * 64 / 480 (0x88888889 multiply, shift 8) and x = 0 to the movie start 0x51b010, which sizes the picture as the screen width (0x7a1968) by height * 0x160 / 0x1E0 (0x51b0ed, 0x51b0fc); the screen sizes are the eight modes of 0x449f38
+	public static (int X, int Y, int Width, int Height) OriginalBox( int screenWidth, int screenHeight ) =>
+		(0, (int)((uint)screenHeight * 64 / 480), screenWidth, (int)((uint)screenHeight * 0x160 / 0x1E0));
 
 	public int Width { get; }
 	public int Height { get; }

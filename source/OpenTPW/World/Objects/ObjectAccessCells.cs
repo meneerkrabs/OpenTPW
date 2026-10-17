@@ -66,11 +66,11 @@ public static class ObjectAccessCells
 	/// For a harness that registers a ride without a placement (the M3 gate, test rigs): lays the cell a called guest's search walks into (state 13) the way a placement lays an
 	/// entrance, type 9 beside the ride's queue cell or its path cell with the link and queue link <see cref="Lay"/> writes. A cell that holds a type already is left as it is.
 	/// </summary>
-	public static void LayStandCell( ParkCellMap cells, int x, int y )
+	public static bool LayStandCell( ParkCellMap cells, int x, int y )
 	{
 		ArgumentNullException.ThrowIfNull( cells );
 		if ( !cells.InBounds( x, y ) || cells.RawTypeAt( x, y ) != 0 )
-			return;
+			return false;
 		int? queue = null, path = null;
 		for ( var direction = 0; direction < 4; direction++ )
 		{
@@ -83,7 +83,7 @@ public static class ObjectAccessCells
 				path ??= direction;
 		}
 		if ( queue is null && path is null )
-			return;
+			return false;
 		cells.SetType( x, y, ParkCellTypes.Entrance );
 		if ( queue is { } toQueue )
 		{
@@ -95,6 +95,20 @@ public static class ObjectAccessCells
 			cells.SetQueueLink( x, y, PathLinkWriter.Opposite( GuestPathGrid.LinkValue( toPath ) ) );
 			PathLinkWriter.LinkPath( cells, x + GuestPathGrid.Directions[toPath].DX, y + GuestPathGrid.Directions[toPath].DY );
 		}
+		return true;
+	}
+
+	/// <summary>
+	/// Takes back the cell <see cref="LayStandCell"/> laid (a harness ride that goes away): an entrance cell no object owns is unlinked from its neighbours and emptied, as the cell clear
+	/// does (0x5367A0). A cell an object's placement laid (it holds an owner word) is left alone.
+	/// </summary>
+	public static void ClearStandCell( ParkCellMap cells, int x, int y )
+	{
+		ArgumentNullException.ThrowIfNull( cells );
+		if ( !cells.InBounds( x, y ) || cells.RawTypeAt( x, y ) != ParkCellTypes.Entrance || cells.OwnerAt( x, y ) != 0 )
+			return;
+		PathLinkWriter.Unlink( cells, x, y, cardinalOnly: true );
+		cells.SetType( x, y, ParkCellType.Empty );
 	}
 
 	/// <summary>The entrance cell takes the link bit toward its outside cell and the same queue link (0x522700, 0x5227E0); returns that bit.</summary>

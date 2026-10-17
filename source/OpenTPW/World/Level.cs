@@ -855,6 +855,12 @@ public partial class Level : IDisposable
 		PlacedRide?.Delete();
 		if ( PlacedRide != null )
 		{
+			// the cell its registration laid for the called guests' walk goes with it
+			if ( Guests != null && PlacedRide.Visitors.HasCells )
+			{
+				var (standX, standY) = GuestSimulation.StandCellOf( PlacedRide.Visitors );
+				ObjectAccessCells.ClearStandCell( Guests.Grid.Cells, standX, standY );
+			}
 			Guests?.Unregister( PlacedRide.Visitors );
 			RemovePrototypeFromEconomy( PlacedRide );
 		}

@@ -469,5 +469,41 @@ public class ObjectAccessCellsTests
 		Assert.AreEqual( 1, guest.RidesTaken, $"the guest rode ({guest.State})" );
 	}
 
+	[TestMethod]
+	public void TheStandCellOfAHarnessRideIsLaidAsAPlacementLaysItAndTakenBackWhole()
+	{
+		var queue = new Rig( Entry( 1100, 5, true, "*2S" ) );
+		var path = new Rig( Entry( 1203, 5, false, "*2S" ) );
+		// the cell a placement lays beside a queue cell (a queue ride) and beside a path cell (a shop) is what the stand cell takes
+		foreach ( var (rig, hasQueue) in new[] { (queue, true), (path, false) } )
+		{
+			var entry = rig.Catalog.Entries.Single();
+			var placed = rig.Place( entry, 4, 5 )!;
+			var expectedLinks = rig.Cells.LinksAt( 5, 5 );
+			var expectedQueueLink = rig.Cells.QueueLinkAt( 5, 5 );
+			var outside = placed.AccessPoints.Single( point => point.Kind == ObjectCellKind.Entrance );
+			rig.Cells.SetType( 5, 5, ParkCellType.Empty );
+			rig.Cells.SetLinks( 5, 5, 0 );
+			var before = Links( rig.Cells );
+			var beforeTypes = Enumerable.Range( 0, rig.Cells.Width * rig.Cells.Height ).Select( index => rig.Cells.RawTypeAt( index % rig.Cells.Width, index / rig.Cells.Width ) ).ToArray();
+			Assert.IsTrue( ObjectAccessCells.LayStandCell( rig.Cells, 5, 5 ), hasQueue ? "beside the queue cell" : "beside the path cell" );
+			Assert.AreEqual( ParkCellTypes.Entrance, rig.Cells.RawTypeAt( 5, 5 ) );
+			if ( hasQueue )
+			{
+				Assert.AreEqual( expectedLinks, rig.Cells.LinksAt( 5, 5 ), "the link byte a placement lays toward the queue cell" );
+				Assert.AreEqual( expectedQueueLink, rig.Cells.QueueLinkAt( 5, 5 ) );
+			}
+			Assert.IsFalse( ObjectAccessCells.LayStandCell( rig.Cells, 5, 5 ), "a typed cell is left as it is" );
+			ObjectAccessCells.ClearStandCell( rig.Cells, 5, 5 );
+			Assert.AreEqual( 0, rig.Cells.RawTypeAt( 5, 5 ) );
+			Assert.AreEqual( 0, rig.Cells.LinksAt( 5, 4 ) & 0x10, "the cell outside loses its link to the cleared cell, as the cell clear unlinks (0x5367A0)" );
+			var after = Links( rig.Cells );
+			before[4 * rig.Cells.Width + 5] = (byte)(before[4 * rig.Cells.Width + 5] & ~0x10);
+			CollectionAssert.AreEqual( before, after, "taking the cell back unlinks only its neighbour" );
+			CollectionAssert.AreEqual( beforeTypes, Enumerable.Range( 0, rig.Cells.Width * rig.Cells.Height ).Select( index => rig.Cells.RawTypeAt( index % rig.Cells.Width, index / rig.Cells.Width ) ).ToArray() );
+			Assert.IsNotNull( outside );
+		}
+	}
+
 	private sealed record LevelResumed( Level Level, ParkCellMap Cells, GuestSimulation Simulation, ParkObjects Objects );
 }

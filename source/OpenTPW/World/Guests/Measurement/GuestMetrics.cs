@@ -38,6 +38,12 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 	double? GuestTimeHappiness, double? SurvivorHappiness, IReadOnlyList<CohortMetrics> Cohorts, DepartureMetrics Departures, IReadOnlyList<AttractionUse> Attractions,
 	double GiniRides, double GiniAll, double GiniRidesPerCapacity, long NoChoiceEvents, long StuckGuests, double GuestSeconds, double MeanGuestsInPark, long Ticks )
 {
+	/// <summary>
+	/// Guest time per ride boarding: the guest-seconds of the window over the boardings of rides in it (NaN with none). The pooled form of "time between a guest's boardings": a wait cut bought with refusals shows
+	/// here as more guest time per ride, which the queue waits (taken over the boardings that happened) cannot show.
+	/// </summary>
+	public double GuestSecondsPerRideBoarding => Attractions.Where( use => use.Kind == nameof( RideVisitorKind.Ride ) ).Sum( use => use.Uses ) is var boardings and > 0 ? GuestSeconds / boardings : double.NaN;
+
 	/// <summary>The numbers the report compares across seeds and runs, in a fixed order.</summary>
 	public IReadOnlyList<(string Name, double Value)> Headline()
 	{
@@ -66,6 +72,7 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 			("departures.parkClosed.perAdmission", Admissions == 0 ? 0 : (double)Departures.ParkClosed / Admissions),
 			("use.giniRides", GiniRides),
 			("use.giniRidesPerCapacity", GiniRidesPerCapacity),
+			("use.guestSecondsPerRide", GuestSecondsPerRideBoarding),
 			("use.giniAll", GiniAll),
 			("revenue.perAdmittedGuest", RevenuePerAdmittedGuest),
 			("guests.stuck", StuckGuests),
@@ -143,6 +150,7 @@ public sealed record GuestMetricsSnapshot( long Admissions, double RevenueTotal,
 				["giniRides"] = N( GiniRides ),
 				["giniAll"] = N( GiniAll ),
 				["giniRidesPerCapacity"] = N( GiniRidesPerCapacity ),
+				["guestSecondsPerRide"] = N( GuestSecondsPerRideBoarding ),
 				["attractions"] = new JsonArray( Attractions.Select( use => (JsonNode)new JsonObject
 				{
 					["id"] = use.AttractionId,

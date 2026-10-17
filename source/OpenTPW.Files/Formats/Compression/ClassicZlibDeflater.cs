@@ -1,3 +1,20 @@
+// This file is a C# port of the deflate compressor of zlib 1.1.3 (deflate.c: deflate_slow, longest_match, fill_window; trees.c: the block coder),
+// written from zlib's public source and algorithm description. It contains no disassembly and no bytes of any game executable. zlib is
+// Copyright (C) 1995-1998 Jean-loup Gailly and Mark Adler, and is distributed under the zlib license:
+//
+//   This software is provided 'as-is', without any express or implied warranty. In no event will the authors be held liable for any damages
+//   arising from the use of this software.
+//
+//   Permission is granted to anyone to use this software for any purpose, including commercial applications, and to alter it and redistribute
+//   it freely, subject to the following restrictions:
+//
+//   1. The origin of this software must not be misrepresented; you must not claim that you wrote the original software. If you use this
+//      software in a product, an acknowledgment in the product documentation would be appreciated but is not required.
+//   2. Altered source versions must be plainly marked as such, and must not be misrepresented as being the original software.
+//   3. This notice may not be removed or altered from any source distribution.
+//
+// This version is altered: it is a managed port restricted to the one configuration the original game uses (level 6, windowBits 15, memLevel 9).
+
 namespace OpenTPW;
 
 /// <summary>

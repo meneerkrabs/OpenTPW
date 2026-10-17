@@ -295,8 +295,8 @@ public class DeterminismTests
 	internal const ulong FixedRunHash = 0xA91A607272718E93UL;
 
 	/// <summary>
-	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): the policy still delegates to the original, so everything but the extension's own state (its seed,
-	/// counter and birth ids, which join the world hash only while it is on) is the off run's. A deliberate change of the extension's state or of its policy changes this value.
+	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): the smarter rules (1.1.0) never act in this run, whose one drinks shop is cheap enough that no guest is refused, so everything but the extension's own state (its seed,
+	/// counter and birth ids, which join the world hash only while it is on) is the off run's and the value did not move from 1.0.0. The scenario's pin (GuestMeasurementTests) is where the rules act. A deliberate change of the extension's state or of a rule that acts here changes this value.
 	/// </summary>
 	internal const ulong SmarterGuestsFixedRunHash = 0xCB2F2ECD287ED83FUL;
 
@@ -372,7 +372,7 @@ public class DeterminismTests
 		Assert.IsTrue( on.Guests.ScriptMods!.Stats().Single().Calls > 50 );
 	}
 
-	/// <summary>With the delegating policy the guests and the economy are the off run's, tick for tick; only the world hash differs, by the extension's state.</summary>
+	/// <summary>In the synthetic park the shipped rules never act, so the guests and the economy are the off run's, tick for tick; only the world hash differs, by the extension's state.</summary>
 	[TestMethod]
 	public void SmarterGuestsOnWithTheDelegatingPolicyLeavesEveryGuestVisibleValueAsItWasOff()
 	{

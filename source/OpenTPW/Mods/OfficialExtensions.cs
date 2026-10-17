@@ -63,11 +63,10 @@ public static class OfficialExtensions
 
 	/// <summary>
 	/// The smarter guests extension (docs/SMARTER-GUESTS.md): guests that decide better, through the pure decision layer (<see cref="IGuestDecisions"/>). Off by default; it changes the simulation,
-	/// so park saves record it, and its version is the algorithm identity: every behaviour-changing release bumps it, and a park of another version is refused. Version 1.0.0 has the seam and
-	/// the guests' identity only: the guests still behave as the original, so players cannot switch it on until the first real rule ships in phase 2 (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
+	/// so park saves record it, and its version is the algorithm identity: every behaviour-changing release bumps it, and a park of another version is refused. Version 1.0.0 was the seam and the guests' identity only; 1.1.0 adds value for money (phase 2: price in the shop and sideshow choice, a memory of price refusals, the booth weighing the fee against the park's worth, a price sensitivity trait). Players cannot switch it on yet: it becomes selectable once the rule set (phases 2 to 6) is complete, so a save does not break with every phase (<see cref="IOpenTpwExtension.PlayerSelectable"/>).
 	/// </summary>
 	// [EXT:smarter-guests] OpenTPW's own extension; the original game's guests are the faithful default
-	public static IOpenTpwExtension SmarterGuests { get; } = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 0, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
+	public static IOpenTpwExtension SmarterGuests { get; } = new OpenTpwExtension( "opentpw.smarter-guests", "Smarter guests", new ModVersion( 1, 1, 0 ), DefaultEnabled: false, AffectsSimulation: true, PlayerSelectable: false );
 
 	/// <summary>All official extensions, in declaration order.</summary>
 	public static IReadOnlyList<IOpenTpwExtension> All { get; } = new[] { Online, CrossEditionObjects, SmarterGuests, GuestInsights, Pools };

@@ -531,6 +531,8 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void RemoveGone( Guest guest )
 	{
 		Observer?.Departed( guest );
+		// [EXT:smarter-guests-value] a departing guest's run of price-emptied decisions goes with it, so the bookkeeping is bounded by the guests in the park
+		SmarterGuests?.Stalls.Reset( guest.BirthId );
 		// [BIN:TPW-EXE:0x0050B780 destroy request] a leaving guest asks for its destruction (0x0050B780 → 0x00516310); the id is freed at the park turn's end (0x00516641)
 		things.QueueDestroy( guest.Id );
 		byId.Remove( guest.Id );
@@ -1249,7 +1251,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	private void PayAdmission( Guest guest )
 	{
 		// the verdict's draw is the host's, taken first; the decision layer weighs the fee (BoothVerdict.Decide in the original)
-		var verdict = decisions.DecideBooth( ContextNow(), ViewOf( guest ), new BoothView( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord() ) ).Verdict;
+		var verdict = decisions.DecideBooth( ContextNow(), ViewOf( guest ), new BoothView( (uint)Math.Max( 0, ParkPoints?.Invoke() ?? 0 ), (uint)Math.Max( 0, AdmissionFee ), random.NextWord(), OpenAttractionCount() ) ).Verdict;
 		if ( !Enum.IsDefined( verdict ) )
 			throw PolicyError( $"returned the booth verdict {(int)verdict}" );
 		if ( verdict == BoothVerdictKind.FarTooExpensive )
@@ -1503,9 +1505,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				Observer?.Decided( guest, true );
 				guest.AttractionId = choice!.AttractionId;
 				guest.State = GuestState.GoingToRide;
+				SmarterGuests?.Stalls.Reset( guest.BirthId );
 				break;
 			case GuestDecision.Outcome.CantDecide:
 				Observer?.Decided( guest, false );
+				if ( choiceEmptiedByPrice && PriceStalled( guest, draw ) )
+					break;
 				StartActivity( guest, GuestActivity.CantDecide );
 				guest.Happiness = MeterMath.Add( guest.Happiness, -Settings.SmallHappinessChange );
 				guest.QueueStandingSinceTurn = turn;
@@ -1517,6 +1522,30 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 				guest.QueueStandingSinceTurn = turn;
 				break;
 		}
+	}
+
+	/// <summary>
+	/// A price-emptied decision (the choice found nothing and the price rule turned away a stand the guest wanted): counts the run in the extension's state and asks the policy whether the guest goes home
+	/// (<see cref="IGuestDecisions.DecidePriceStall"/>). A guest that goes home takes the leaving test's way: the walk to the gate (with the decision's own draw), state 19, the policy's thought. True when it left;
+	/// otherwise the decision ends as any other "can't decide".
+	/// </summary>
+	// [EXT:smarter-guests-value] the original's price-refused guest loses happiness until it leaves; the smarter guest that the price rule keeps from every stand leaves with the same thought after a few such decisions
+	private bool PriceStalled( Guest guest, uint draw )
+	{
+		if ( SmarterGuests is not { } smarter )
+			return false;
+		var run = smarter.Stalls.Increment( guest.BirthId );
+		var decision = decisions.DecidePriceStall( ContextNow(), ViewOf( guest ), run );
+		if ( !Enum.IsDefined( decision.Thought ) )
+			throw PolicyError( $"returned the thought {(int)decision.Thought} for a price stall" );
+		if ( !decision.GoHome || !RouteToGate( guest, draw ) )
+			return false;
+		smarter.Stalls.Reset( guest.BirthId );
+		guest.State = GuestState.LeavingPark;
+		if ( decision.Thought != GuestThought.None )
+			Think( guest, decision.Thought );
+		Observer?.Leaving( guest, DepartureCause.None );
+		return true;
 	}
 
 	/// <summary>A staff member standing on the map, as the guests' state 6 sees it (the original's staff list, newest first).</summary>
@@ -2026,6 +2055,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		var view = ViewOf( guest );
 		uint best = 0;
 		var chosen = 0;
+		choiceEmptiedByPrice = false;
 		// the whole loop is one decision: a policy that meters work (the script mods) treats its candidates as a unit
 		decisions.BeginDecision();
 		try
@@ -2035,7 +2065,12 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// an attraction without a back-of-queue cell is never a candidate
 			if ( attraction.JoinCell == null )
 				continue;
-			var score = decisions.ScoreAttraction( context, view, ViewOf( attraction, guest ) );
+			var candidate = ViewOf( attraction, guest );
+			var score = decisions.ScoreAttraction( context, view, candidate );
+			// [EXT:smarter-guests-value] a candidate the price rule turned away that the guest could otherwise have chosen: if nothing is chosen, the decision was emptied by price
+			if ( decisions.UsesValueForMoney && score < AttractionScore.CandidateFloor && attraction.IsOpen && !attraction.IsBrokenDown
+				&& attraction.QueueLength < RideVisitorBridge.PositionsPerCell * attraction.QueueSizeInCells && decisions.PriceTurnedAway( context, view, candidate ) )
+				choiceEmptiedByPrice = true;
 			if ( !decisions.BeatsInMajorDecision( context, view, score, best ) )
 				continue;
 			// [BIN:TPW-EXE:0x004FCB10 choice route] the route request 0x004FA530 to the ride's back-of-queue cell (0x004DE110) is made for every candidate that passes the counts-test and would win, and its walk stays set: the winner is the last candidate whose route was found, and a candidate whose route fails after it leaves the walk stuck (the original's SetDest failure state); the walk then runs all the way to the back cell (state 10, WALK-004)
@@ -2051,6 +2086,9 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		}
 		return chosen == 0 ? null : FindAttraction( chosen );
 	}
+
+	/// <summary>Set by the last <see cref="ChooseAttraction"/>: a candidate was left out on price (<see cref="IGuestDecisions.PriceTurnedAway"/>); with no choice, the decision was price-emptied.</summary>
+	private bool choiceEmptiedByPrice;
 
 	/// <summary>The attractions in the order the original's choice loop meets them: newest first.</summary>
 	// [BIN:TPW-EXE:0x004FCB10 thing list order] the choice walks the object list from its head (game +0x1DA746) through each thing's next word +0xC; 0x00519D80, called only by the object constructor 0x004DB090, pushes each new object at the head, and the save 0x00516C80 and the load 0x005179C0 keep the head word, so the newest object comes first; attraction ids are allocated in placement order

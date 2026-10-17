@@ -36,6 +36,12 @@ internal sealed class ScriptGuestDecisions : IGuestDecisions
 	/// <summary>Script mods need the birth ids (and the park seed) that the guest identity state gives; the base policy may need it too.</summary>
 	public bool UsesExtensionState => true;
 
+	public bool UsesValueForMoney => inner.UsesValueForMoney;
+
+	public bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.PriceTurnedAway( context, guest, attraction );
+
+	public PriceStallDecision DecidePriceStall( in DecisionContext context, in GuestView guest, int consecutive ) => inner.DecidePriceStall( context, guest, consecutive );
+
 	public void BeginTick()
 	{
 		inner.BeginTick();

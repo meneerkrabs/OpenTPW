@@ -24,7 +24,7 @@ public class SmarterGuestsTests
 	// ---- The extensions -----------------------------------------------------------------------
 
 	[TestMethod]
-	public void BothExtensionsAreRegisteredOffByDefaultAndAtVersionOne()
+	public void BothExtensionsAreRegisteredOffByDefaultAndTheSmarterOneIsAtVersion110()
 	{
 		var smarter = OfficialExtensions.SmarterGuests;
 		var insights = OfficialExtensions.GuestInsights;
@@ -34,7 +34,7 @@ public class SmarterGuestsTests
 		Assert.IsFalse( insights.AffectsSimulation, "the insights only read the park" );
 		Assert.IsFalse( smarter.DefaultEnabled );
 		Assert.IsFalse( insights.DefaultEnabled );
-		Assert.AreEqual( new ModVersion( 1, 0, 0 ), smarter.Version, "the version is the algorithm identity" );
+		Assert.AreEqual( new ModVersion( 1, 1, 0 ), smarter.Version, "the version is the algorithm identity" );
 		Assert.AreEqual( new ModVersion( 1, 0, 0 ), insights.Version );
 		CollectionAssert.IsSubsetOf( new[] { smarter, insights }, OfficialExtensions.All.ToArray() );
 		Assert.AreSame( smarter, OfficialExtensions.Find( smarter.Id ) );
@@ -68,7 +68,7 @@ public class SmarterGuestsTests
 			Enabled = OfficialExtensions.All.ToDictionary( extension => extension.Id, _ => true )
 		}, null, GameEdition.ThemeParkWorld, OfficialExtensions.All );
 		var records = ParkResumeMods.Capture( everything )!;
-		Assert.IsTrue( records.Contains( new ParkModRecord( "opentpw.smarter-guests", "1.0.0", ModSet.NoFilesSha256 ) ) );
+		Assert.IsTrue( records.Contains( new ParkModRecord( "opentpw.smarter-guests", "1.1.0", ModSet.NoFilesSha256 ) ) );
 		Assert.IsFalse( records.Any( record => record.Id == "opentpw.guest-insights" ), "a presentation-only extension is never recorded" );
 		Assert.IsNull( ParkResumeMods.Capture( ModSet.Defaults( OfficialExtensions.All ) ), "off by default: no record, so the save keeps its bytes" );
 	}
@@ -76,17 +76,17 @@ public class SmarterGuestsTests
 	[TestMethod]
 	public void AParkRefusesAMismatchedSmarterGuestsSet()
 	{
-		var record = new ParkModRecord( "opentpw.smarter-guests", "1.0.0", ModSet.NoFilesSha256 );
+		var record = new ParkModRecord( "opentpw.smarter-guests", "1.1.0", ModSet.NoFilesSha256 );
 		var off = ModSet.Defaults( OfficialExtensions.All );
 		var on = On();
 		ParkResumeMods.Require( [record], on );
 		ParkResumeMods.Require( null, off );
 		var missing = Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( [record], off ) );
-		StringAssert.Contains( missing.Message, "needs opentpw.smarter-guests 1.0.0" );
+		StringAssert.Contains( missing.Message, "needs opentpw.smarter-guests 1.1.0" );
 		var extra = Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( null, on ) );
-		StringAssert.Contains( extra.Message, "was saved without opentpw.smarter-guests 1.0.0" );
+		StringAssert.Contains( extra.Message, "was saved without opentpw.smarter-guests 1.1.0" );
 		var older = Assert.ThrowsException<InvalidDataException>( () => ParkResumeMods.Require( [record with { Version = "0.9.0" }], on ) );
-		StringAssert.Contains( older.Message, "needs opentpw.smarter-guests 0.9.0, not 1.0.0" );
+		StringAssert.Contains( older.Message, "needs opentpw.smarter-guests 0.9.0, not 1.1.0" );
 	}
 
 	// ---- The seam -----------------------------------------------------------------------------
@@ -140,9 +140,12 @@ public class SmarterGuestsTests
 	}
 
 	/// <summary>A policy that delegates every call to another one; the test policies override what they watch or change.</summary>
-	private class DelegatingDecisions( IGuestDecisions inner ) : IGuestDecisions
+	internal class DelegatingDecisions( IGuestDecisions inner ) : IGuestDecisions
 	{
-		public bool UsesExtensionState => inner.UsesExtensionState;
+		public virtual bool UsesExtensionState => inner.UsesExtensionState;
+		public virtual bool UsesValueForMoney => inner.UsesValueForMoney;
+		public virtual bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.PriceTurnedAway( context, guest, attraction );
+		public virtual PriceStallDecision DecidePriceStall( in DecisionContext context, in GuestView guest, int consecutive ) => inner.DecidePriceStall( context, guest, consecutive );
 		public virtual BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth ) => inner.DecideBooth( context, guest, booth );
 		public virtual uint ScoreAttraction( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => inner.ScoreAttraction( context, guest, attraction );
 		public virtual bool BeatsInMajorDecision( in DecisionContext context, in GuestView guest, uint score, uint best ) => inner.BeatsInMajorDecision( context, guest, score, best );
@@ -248,15 +251,17 @@ public class SmarterGuestsTests
 	}
 
 	[TestMethod]
-	public void TheSmarterPolicyDelegatesEveryCallInThisVersion()
+	public void TheSmarterPolicyDelegatesEverythingButTheBoothAndThePricedScore()
 	{
 		var settings = GuestTests.CreateSettings();
 		var context = new DecisionContext( settings, 12, true );
 		var view = new GuestView( 7, 3, 1, 40, 80, 20, 10, 0, 100, 3, 3, new int[4], new int[4] );
 		var smarter = new SmarterGuestDecisions();
 		var original = OriginalGuestDecisions.Instance;
-		var booth = new BoothView( 500, 80, 11 );
+		// no open ride or sideshow is the booth's 100 percent, so the verdict is the original's; an unpriced attraction scores as the original scores it
+		var booth = new BoothView( 500, 80, 11, 0 );
 		Assert.AreEqual( original.DecideBooth( context, view, booth ), smarter.DecideBooth( context, view, booth ) );
+		Assert.AreEqual( original.ScoreAttraction( context, view, default ), smarter.ScoreAttraction( context, view, default ) );
 		var admission = new AdmissionView( default, 50, 46, 3, 100 );
 		Assert.AreEqual( original.DecideAdmission( context, view, admission ), smarter.DecideAdmission( context, view, admission ) );
 		var proposal = new GuestWander.Destination( (1, 2), 30, 40 );
@@ -268,6 +273,8 @@ public class SmarterGuestsTests
 			Assert.AreEqual( original.BeatsInMajorDecision( context, view, score, best ), smarter.BeatsInMajorDecision( context, view, score, best ) );
 			Assert.AreEqual( original.BeatsInMinorDecision( context, view, score, best ), smarter.BeatsInMinorDecision( context, view, score, best ) );
 		}
+		Assert.IsTrue( smarter.UsesValueForMoney );
+		Assert.IsFalse( ((IGuestDecisions)original).UsesValueForMoney );
 	}
 
 	[TestMethod]
@@ -420,7 +427,7 @@ public class SmarterGuestsTests
 	// ---- Birth ids and traits -----------------------------------------------------------------
 
 	/// <summary>A fresh scenario (under the active set) restored from <paramref name="from"/>'s thing pool and guest snapshot, as a resumed park is.</summary>
-	private static ParkScenario Fresh( ParkScenario from )
+	internal static ParkScenario Fresh( ParkScenario from )
 	{
 		var fresh = new ParkScenario( from.Seed );
 		fresh.Things.RestoreSnapshot( from.Things.CaptureSnapshot() );
@@ -428,10 +435,17 @@ public class SmarterGuestsTests
 		return fresh;
 	}
 
+	/// <summary>The identity half of the extension and nothing else: the guest identity state, with the original's decisions. What version 1.0.0 of the extension was.</summary>
+	internal sealed class IdentityOnlyDecisions : DelegatingDecisions
+	{
+		public IdentityOnlyDecisions() : base( OriginalGuestDecisions.Instance ) { }
+		public override bool UsesExtensionState => true;
+	}
+
+	/// <summary>A scenario run with the guest identity state and the original decisions, so its guests are the off run's (the tests of the state, the section and the hash use it).</summary>
 	private static ParkScenario OnScenario( ulong seed, long ticks )
 	{
-		using var scope = OpenTpwExtensions.Use( On() );
-		var park = new ParkScenario( new WorldSeed( seed ) );
+		var park = new ParkScenario( new WorldSeed( seed ), decisions: new IdentityOnlyDecisions() );
 		park.Run( ticks );
 		return park;
 	}
@@ -443,7 +457,7 @@ public class SmarterGuestsTests
 		var park = new ParkScenario( new WorldSeed( 1 ) );
 		var seen = new HashSet<ulong>();
 		var perTick = 0;
-		for ( var tick = 0; tick < 9000; tick++ )
+		for ( var tick = 0; tick < 24000; tick++ )
 		{
 			park.Run( 1 );
 			foreach ( var guest in park.Guests.Guests )
@@ -595,7 +609,7 @@ public class SmarterGuestsTests
 	[TestMethod]
 	public void TheSectionIsValidatedAgainstItsGuestsAndTheRecordedMods()
 	{
-		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.0.0", ModSet.NoFilesSha256 ) };
+		var record = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.1.0", ModSet.NoFilesSha256 ) };
 		SmarterGuestsSaveData Section( ulong next, bool bootstrapped, params (int, ulong)[] births ) =>
 			new() { ParkSeed = 5, NextBirthId = next, Bootstrapped = bootstrapped, Births = births.Select( item => new SmarterGuestBirth( item.Item1, item.Item2 ) ).ToArray() };
 		string? Problem( SmarterGuestsSaveData? section, params int[] guests ) => SmarterGuestsSave.ShapeProblem( section, guests, record );
@@ -629,7 +643,7 @@ public class SmarterGuestsTests
 			ParkSeed = 42, NextBirthId = (ulong)ids.Length + 1, Bootstrapped = true,
 			Births = ids.OrderBy( id => id ).Select( ( id, index ) => new SmarterGuestBirth( id, (ulong)index + 1 ) ).ToArray()
 		};
-		var mods = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.0.0", ModSet.NoFilesSha256 ) };
+		var mods = new[] { new ParkModRecord( "opentpw.smarter-guests", "1.1.0", ModSet.NoFilesSha256 ) };
 		var with = plain with { SmarterGuests = section, Mods = mods };
 		var restored = ParkResumeSaveFile.Deserialize( ParkResumeSaveFile.Serialize( with ) );
 		Assert.AreEqual( 42UL, restored.SmarterGuests!.ParkSeed );
@@ -648,7 +662,7 @@ public class SmarterGuestsTests
 		var plain = ParkResumeSaveFileTests.Envelope();
 		var ids = plain.Guests.Guests.Select( guest => guest.Id ).ToArray();
 		var section = new SmarterGuestsSaveData { ParkSeed = 1, NextBirthId = 1, Bootstrapped = false, Births = Array.Empty<SmarterGuestBirth>() };
-		var bytes = ParkResumeSaveFile.Serialize( plain with { SmarterGuests = section, Mods = [new ParkModRecord( "opentpw.smarter-guests", "1.0.0", ModSet.NoFilesSha256 )] } );
+		var bytes = ParkResumeSaveFile.Serialize( plain with { SmarterGuests = section, Mods = [new ParkModRecord( "opentpw.smarter-guests", "1.1.0", ModSet.NoFilesSha256 )] } );
 		var json = JsonNode.Parse( Encoding.UTF8.GetString( bytes ) )!.AsObject();
 		json.Remove( "SmarterGuests" );
 		json["SomethingFromTheFuture"] = 1;
@@ -692,23 +706,28 @@ public class SmarterGuestsTests
 
 	// ---- The report ---------------------------------------------------------------------------
 
+	/// <summary>
+	/// The compare test of the value-for-money rule (docs/SMARTER-GUESTS.md, phase 2) at a small scale: the report with the extension on shows far fewer price rejections than the default, beyond 3 standard errors,
+	/// without losing happiness, revenue per admitted guest or admissions beyond 3 standard errors, and says which extension set it ran. (The wait and stuck-guest metrics move too: see the page's results.)
+	/// </summary>
 	[TestMethod]
-	public void TheReportRunsWithTheExtensionOnAndTheDelegatingPolicyShowsNoDifference()
+	public void TheReportWithTheExtensionOnShowsFewerPriceRejectionsAndNoLossOfHappinessRevenueOrAdmissions()
 	{
-		var options = new GuestReportOptions { Seeds = new ulong[] { 1, 2 }, WarmupDays = 1, MeasuredDays = 4, Performance = false };
+		var options = new GuestReportOptions { Seeds = new ulong[] { 1, 2, 3, 4 }, WarmupDays = 10, MeasuredDays = 30, Performance = false };
 		var off = GuestReport.ToJsonObject( GuestReport.Run( options ) );
 		var on = GuestReport.ToJsonObject( GuestReport.Run( options with { Extensions = GuestReport.ResolveExtensions( new[] { "smarter-guests" } ) } ) );
 		Assert.IsFalse( FeatureGates.SmarterGuests, "the extension is off again after the run" );
 		Assert.AreEqual( 0, off["extensions"]!.AsArray().Count );
 		Assert.AreEqual( "opentpw.smarter-guests", (string)on["extensions"]![0]! );
-		var hashes = ( JsonNode report ) => report["scenarios"]![0]!["seeds"]!.AsArray().Select( seed => (string)seed!["stateHash"]! ).ToArray();
-		CollectionAssert.AreEqual( hashes( off ), hashes( on ), "every seed ends in the same guest state" );
-		var result = GuestReportCompare.Compare( off, on, Array.Empty<string>() );
-		Assert.IsFalse( result.Failed );
-		Assert.IsTrue( result.Rows.Count > 10 );
-		Assert.IsTrue( result.Rows.All( row => row.Verdict is "same" or "undefined" ), string.Join( ", ", result.Rows.Where( row => row.Verdict is not ("same" or "undefined") ).Select( row => $"{row.Metric}: {row.Verdict}" ) ) );
-		Assert.IsTrue( result.Rows.All( row => row.Baseline == row.Candidate ), "the metrics are identical, not merely within the band" );
+		var result = GuestReportCompare.Compare( off, on, ["queue.rejected.price.rate"] );
 		StringAssert.Contains( result.Notes, "extensions: baseline none, candidate opentpw.smarter-guests" );
+		var scenario = result.Rows.Where( row => row.Scenario == "park-scenario" ).ToDictionary( row => row.Metric );
+		Assert.AreEqual( "improved", scenario["queue.rejected.price.rate"].Verdict, $"{scenario["queue.rejected.price.rate"]}" );
+		Assert.IsTrue( scenario["queue.rejected.price.rate"].Candidate < scenario["queue.rejected.price.rate"].Baseline / 4, "far fewer price rejections" );
+		foreach ( var metric in new[] { "happiness.guestTime", "revenue.perAdmittedGuest", "admissions" } )
+			Assert.AreNotEqual( "regressed", scenario[metric].Verdict, $"{metric}: {scenario[metric]}" );
+		Assert.IsTrue( scenario["happiness.guestTime"].Candidate >= scenario["happiness.guestTime"].Baseline, "guests are not less happy" );
+		Assert.AreEqual( 0, scenario["queue.superseded"].Candidate, "no attempt ends without a report" );
 		StringAssert.Contains( GuestReport.ToTable( GuestReport.Run( options with { Seeds = new ulong[] { 1 }, Extensions = new[] { "opentpw.smarter-guests" } } ) ), "Extensions on: opentpw.smarter-guests" );
 	}
 
@@ -733,9 +752,16 @@ public class SmarterGuestsTests
 		var tick = GuestSnapshotTests.RunUntil( park, rig => rig.Simulation.TickCount >= 4200, 0, 4201 );
 		tick = GuestSnapshotTests.RunUntil( park, GuestSnapshotTests.RichMoment, tick, 9000 );
 		Assert.IsTrue( GuestSnapshotTests.RichMoment( park ) );
+		// the value-for-money runs travel with the section: two guests have a run of price-emptied decisions (it ends when a guest chooses something or leaves)
+		var counting = park.Simulation.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.BirthId ).Take( 2 ).ToArray();
+		Assert.AreEqual( 2, counting.Length );
+		park.Simulation.SmarterGuests!.Stalls.Increment( counting[0].BirthId );
+		park.Simulation.SmarterGuests.Stalls.Increment( counting[0].BirthId );
+		park.Simulation.SmarterGuests.Stalls.Increment( counting[1].BirthId );
 		var snapshot = park.Simulation.CaptureSnapshot();
 		var section = ParkResumeJson.Deserialize<SmarterGuestsSaveData>( ParkResumeJson.Serialize( SmarterGuestsSave.Capture( park.Simulation )! ) );
 		Assert.IsTrue( section.Births.Count > 3 );
+		Assert.AreEqual( 2, section.Stalls!.Count, "the runs are in the section" );
 
 		var resumed = new GuestSnapshotTests.Rig();
 		resumed.Simulation.RestoreSnapshot( snapshot );
@@ -756,6 +782,7 @@ public class SmarterGuestsTests
 			Assert.AreEqual( Hash( park ), Hash( resumed ), $"the parks diverged at tick {tick}" );
 		}
 		Assert.AreEqual( park.Simulation.SmarterGuests!.NextBirthId, resumed.Simulation.SmarterGuests!.NextBirthId );
+		CollectionAssert.AreEqual( park.Simulation.SmarterGuests.Stalls.Entries.ToArray(), resumed.Simulation.SmarterGuests.Stalls.Entries.ToArray(), "the runs continued the same" );
 		Assert.IsTrue( park.Simulation.SmarterGuests.NextBirthId > section.NextBirthId, "guests were born after the save point" );
 	}
 

@@ -44,16 +44,30 @@ public sealed partial class GuestSimulation
 	/// </summary>
 	public IEnumerable<Guest> SwimmersOf( int attractionId ) => guests.Where( guest => guest.InSwimSession && guest.AttractionId == attractionId );
 
+	/// <summary>[EXT:pools-swim] How many swimmers (swimming or climbing out) are in the water of <paramref name="region"/>, whichever changing room they came from.</summary>
+	private int SwimmerCountIn( PoolSwimRegion region )
+	{
+		var count = 0;
+		foreach ( var guest in guests )
+			if ( guest.IsSwimming && region.Contains( guest.CellX, guest.CellY ) )
+				count++;
+		return count;
+	}
+
 	/// <summary>[EXT:pools-swim] Whether a swimmer's position lies in the cell (the pool tool does not erase water under swimmers).</summary>
 	public bool IsSwimmerIn( int x, int y ) => guests.Any( guest => guest.IsSwimming && guest.CellX == x && guest.CellY == y );
 
 	/// <summary>
-	/// A guest was released from a changing room: it steps into the water at the pool-side cell and swims. False when it cannot (not a changing room, the park is closed, or no pool beside it):
-	/// the guest then walks on like any other released guest. One draw of the world generator seeds the swimmer's own random stream; nothing else of the session touches the world generator.
+	/// A guest was released from a changing room: it steps into the water at the pool-side cell and swims. False when it cannot (not a changing room, the room is being demolished or has stopped,
+	/// the park is closed, no pool beside it, or the water is full, <see cref="PoolSwimRegion.Capacity"/>): the guest then walks on like any other released guest. One draw of the world generator seeds the swimmer's own random stream; nothing else of the session touches the world generator.
 	/// </summary>
 	private bool BeginSwim( Guest guest, IRideVisitorBridge ride )
 	{
-		if ( !ride.IsChangingRoom || Payments?.ParkClosed == true || SwimRegionOf( ride ) is not { } region )
+		// a room that is being demolished (or whose script stopped) releases its guests the way any attraction does: they step out on its exit, no swim starts
+		if ( !ride.IsChangingRoom || ride.IsStopped || Payments?.ParkClosed == true || SwimRegionOf( ride ) is not { } region )
+			return false;
+		// a full pool takes nobody more: the guest leaves the room the normal way, as from a ride (no draw is taken)
+		if ( SwimmerCountIn( region ) >= region.Capacity )
 			return false;
 		var stream = random.NextWord();
 		var swimmer = stream == 0 ? 1u : stream;
@@ -224,6 +238,8 @@ public sealed partial class GuestSimulation
 	{
 		ClearSwim( guest );
 		guest.IsMoving = false;
+		// leave the swim state first: the cell lists (Occupy) leave a swimmer out, and the guest is a walker again from the cell it is placed on
+		guest.State = GuestState.DoingNothing;
 		ReturnToPath( guest, ride?.ExitCell ?? (guest.CellX, guest.CellY) );
 		// a guest with balloon life gets its balloon back on stepping out, as it does when it leaves a ride (the swim put it away, like a ride does)
 		if ( guest.BalloonLife > 0 )
@@ -257,7 +273,6 @@ public sealed partial class GuestSimulation
 		SetSwimCell( guest );
 		SetSwimHeading( guest );
 		(guest.StepFromX, guest.StepFromY, guest.StepFromDistance, guest.StepTick) = (fromX, fromY, fromDistance, TickCount);
-		guest.IsMoving = moved;
 		if ( moved )
 		{
 			var dx = guest.X - fromX;

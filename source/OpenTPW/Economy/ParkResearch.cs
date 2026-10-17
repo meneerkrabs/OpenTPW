@@ -47,7 +47,7 @@ public sealed class ParkResearch
 		// 0x005031A0 walks that list (0x00412E60, 0x00412E70) without sorting: the shipped Jungle lab holds 1140, 1150, 1108, 1180, 1109, 1113, 1110, 1160 (rides), 1414, 1429, 1424, ... (features), 1202, 1212, 1206 (shops), 1304, 1307
 		foreach ( var info in catalog.Objects.Select( ( info, position ) => (Info: info, Position: position) ).OrderBy( entry => ScanRank( entry.Info.Kind ) ).ThenBy( entry => entry.Position ).Select( entry => entry.Info ) )
 		{
-			if ( !info.IsBuyable || info.Upgrades.Count == 0 )
+			if ( !info.IsBuyable || info.Upgrades.Count == 0 || info.NotResearched )
 				continue;
 			// [BIN:TPW-EXE:0x005031A0 research table fill] an object's base project takes its own Research.Category (+0x17C) and Research.Group (+0x178), add-ons included
 			// (every shipped add-on declares category 4 and group 0); a category-4 project is selectable once the object its AddOn.UpgradesId names (+0x284) is researched (0x005034F0, with its golden-ticket test below)

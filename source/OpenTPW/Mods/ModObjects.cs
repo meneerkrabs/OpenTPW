@@ -12,7 +12,8 @@ namespace OpenTPW.Mods;
 /// <param name="Category">The category directory the object is listed under.</param>
 /// <param name="InfoId">The Info.Id the object has in the catalog, from the mod's declared range; the archive's own .sam value is replaced.</param>
 /// <param name="Names">The object's name per language (<c>English</c>, ...); the selected language, then English, else the .sam name.</param>
-public sealed record ModObjectDefinition( string Archive, string? Input, string Theme, ObjectCategory Category, int InfoId, IReadOnlyDictionary<string, string> Names );
+/// <param name="Research">False when the file declared <c>"research": false</c>: the object is never a research project, so it is available from the start while its mod is active (default true).</param>
+public sealed record ModObjectDefinition( string Archive, string? Input, string Theme, ObjectCategory Category, int InfoId, IReadOnlyDictionary<string, string> Names, bool Research = true );
 
 /// <summary>
 /// A parsed and validated <c>objects.json</c>: the range of Info.Ids the mod reserves and its object definitions. Parsing is
@@ -59,6 +60,7 @@ public sealed record ModObjectsFile
 		// [EXT:cross-edition-objects] the one id rule of every mod's range: above the original ids, inside the 16-bit Info.Id of original saves
 		if ( CrossEditionObjects.RangeProblem( first, last ) is { } problem )
 			throw Invalid( $"'idRange' {first}..{last} {problem}" );
+		var research = document.Research ?? true;
 		var items = document.Objects ?? throw Invalid( "'objects' is required" );
 		if ( items.Count > MaximumObjects )
 			throw Invalid( $"'objects' has more than {MaximumObjects} entries" );
@@ -88,7 +90,7 @@ public sealed record ModObjectsFile
 				throw Invalid( $"infoId {infoId} is used by more than one object" );
 			if ( !archives.Add( $"{theme}/{categoryName}/{ObjectCatalog.ArchiveKey( Path.GetFileName( archive ) )}" ) )
 				throw Invalid( $"theme {theme} lists two {categoryName} archives named '{ObjectCatalog.ArchiveKey( Path.GetFileName( archive ) )}'" );
-			objects.Add( new ModObjectDefinition( archive, item.Input, theme, category, infoId, Names( item.Names, archive ) ) );
+			objects.Add( new ModObjectDefinition( archive, item.Input, theme, category, infoId, Names( item.Names, archive ), research ) );
 		}
 		return new ModObjectsFile { FirstId = first, LastId = last, Objects = objects };
 	}
@@ -118,6 +120,7 @@ public sealed record ModObjectsFile
 	private sealed class Document
 	{
 		public int Schema { get; init; }
+		public bool? Research { get; init; }
 		public RangeDocument? IdRange { get; init; }
 		public List<ObjectDocument?>? Objects { get; init; }
 	}

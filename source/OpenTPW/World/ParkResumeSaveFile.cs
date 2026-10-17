@@ -217,17 +217,32 @@ internal static class ParkResumeSaveFile
 				$"the prototype's economy object {prototypeInstance} has Info.Id {prototypeObject.InfoId}, which the {settings.Theme} economy catalogue does not know" );
 		}
 		Require( currentAssetHashes != null && currentAssetHashes.Count > 0, "the current asset manifest is empty" );
-		// [EXT:pools-save] the extension's own objects are in a save's manifest only when the save records the extension (ParkResumeMods.AssetsForUse)
-		currentAssetHashes = ParkResumeMods.AssetsForUse( currentAssetHashes!, snapshot.Mods?.Any( mod => mod.Id == OfficialExtensions.Pools.Id ) == true );
-		foreach ( var (key, saved) in snapshot.AssetHashes )
+		RequireAssets( snapshot, catalog, currentAssetHashes! );
+	}
+
+	/// <summary>
+	/// The asset manifest's exact key and digest agreement. [EXT:pools-save] The pools extension's keys count only for the extension objects the save places (<see cref="ParkResumeMods.AssetsForUse"/>), in
+	/// both directions: an unplaced object of the extension, in the park's assets or in the save, is ignored, so adding objects to the extension never invalidates an older save, while a placed object keeps the exact-hash check.
+	/// </summary>
+	internal static void RequireAssets( ParkResumeSnapshot snapshot, ObjectCatalog catalog, IReadOnlyDictionary<string, string> currentAssetHashes )
+	{
+		void require( bool condition, string message )
 		{
-			Require( currentAssetHashes!.TryGetValue( key, out var current ),
-				$"the save expects asset '{key}', which the park's assets do not provide" );
-			Require( string.Equals( saved, current, StringComparison.Ordinal ),
-				$"asset '{key}' hashes to '{current}', not the saved '{saved}'" );
+			if ( !condition )
+				throw new InvalidDataException( $"World save is inconsistent: {message}." );
 		}
-		foreach ( var key in currentAssetHashes!.Keys )
-			Require( snapshot.AssetHashes.ContainsKey( key ),
+		var placed = snapshot.Layout.Objects.Select( record => catalog.Find( record.InfoId ) ).OfType<ObjectCatalogEntry>().ToArray();
+		var park = ParkResumeMods.AssetsForUse( currentAssetHashes, placed );
+		var saved = ParkResumeMods.AssetsForUse( snapshot.AssetHashes, placed );
+		foreach ( var (key, hash) in saved )
+		{
+			require( park.TryGetValue( key, out var current ),
+				$"the save expects asset '{key}', which the park's assets do not provide" );
+			require( string.Equals( hash, current, StringComparison.Ordinal ),
+				$"asset '{key}' hashes to '{current}', not the saved '{hash}'" );
+		}
+		foreach ( var key in park.Keys )
+			require( saved.ContainsKey( key ),
 				$"the park provides asset '{key}', which the save does not expect" );
 	}
 

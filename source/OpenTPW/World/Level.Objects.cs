@@ -369,7 +369,7 @@ public partial class Level
 
 	/// <summary>
 	/// [EXT:pools-swim] Why a pool cell cannot be erased: a swimmer is in it, or it lies beside the back of a changing room (the room needs its pool, and a save that holds a changing room
-	/// records the extension only while it has pool cells). Null when it can go.
+	/// records the extension). Null when it can go.
 	/// </summary>
 	internal PoolBuildResult? PoolEraseBlock( int x, int y )
 	{
@@ -403,15 +403,25 @@ public partial class Level
 			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
 		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded beside the kid sets
-		if ( SwimmerRenderer == null && PoolRenderer != null )
+		// the sets are looked for once per level: a missing or broken folder is one warning, not a scan every frame
+		if ( SwimmerRenderer == null && PoolRenderer != null && !swimSpritesTried )
+		{
+			swimSpritesTried = true;
 			SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
+		}
 	}
+
+	private bool swimSpritesTried;
 
 	private GuestRenderer? CreateSwimmerRenderer( GuestSimulation guests, OriginalPark park )
 	{
 		var swim = PoolSwimSprites.Load();
 		if ( swim.Count == 0 )
+		{
+			// without swim sprites the swimmers are drawn by the normal guest renderer with their kid sprite (Level.cs: Draws), standing in the water
+			Log.Warning( $"No swim sprite sets found in '{PoolSwimSprites.Directory}': swimmers are drawn with the normal guest sprites." );
 			return null;
+		}
 		return new GuestRenderer( guests, park.Heightfield, swim )
 		{
 			Draws = guest => guest.IsSwimming,

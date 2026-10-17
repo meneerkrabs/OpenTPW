@@ -14,10 +14,14 @@ public static class PoolSwimSettings
 	public const int ChangeOutTurns = 12;
 	/// <summary>The happiness a finished swim adds (meter 0..100), on the turn the guest steps into the changing room.</summary>
 	public const float HappinessGain = 12f;
-	/// <summary>The swim speed is the guest's base speed (60, 80, 100, 120 or 140) times this, in 16.16 cells per park turn: 0.08 to 0.19 cells a turn, 0.3 to 0.8 cells a second.</summary>
+	/// <summary>The swim speed is the guest's base speed (60, 80, 100, 120 or 140) times this, in 16.16 cells per park turn: 0.08 to 0.19 cells a turn, 0.33 to 0.78 cells a second.</summary>
 	public const int SpeedPerBaseSpeed = 90;
 	/// <summary>How far from the rim a swimmer's centre stays: the rim is a quarter of a cell and the body takes 0.12 more (16.16).</summary>
 	public const int Margin = (int)(0.37 * Fixed16.One);
+	/// <summary>Swimmers a pool takes per water cell of its region; a guest released from a changing room while the water is full leaves the room on foot, as from a ride.</summary>
+	public const int SwimmersPerWaterCell = 2;
+	/// <summary>The capacity of the smallest pools: a region of one or two cells still takes this many swimmers.</summary>
+	public const int MinimumCapacity = 4;
 	/// <summary>Swimmers closer than this steer away from each other (16.16 cells).</summary>
 	public const int AvoidRadius = Fixed16.One / 2;
 	/// <summary>Swimmers never move closer to each other than this (16.16 cells); a move that increases the distance is always allowed.</summary>
@@ -58,6 +62,8 @@ public sealed class PoolSwimRegion
 	public (int X, int Y) Access { get; }
 	/// <summary>The cells of the region, row by row.</summary>
 	public IReadOnlyList<(int X, int Y)> Cells => cells;
+	/// <summary>The most swimmers the water holds at once: <see cref="PoolSwimSettings.SwimmersPerWaterCell"/> a cell, at least <see cref="PoolSwimSettings.MinimumCapacity"/>.</summary>
+	public int Capacity => Math.Max( PoolSwimSettings.MinimumCapacity, cells.Length * PoolSwimSettings.SwimmersPerWaterCell );
 
 	/// <summary>The region of the pool cells connected to <paramref name="access"/>, or null when it is not a pool cell.</summary>
 	public static PoolSwimRegion? Build( ParkCellMap map, (int X, int Y) access )

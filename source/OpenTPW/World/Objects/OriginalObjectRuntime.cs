@@ -287,6 +287,7 @@ public sealed partial class OriginalObjectRuntime
 		eventSoundSpace = null;
 		ClearParticleRequests();
 		effects.StopSounds();
+		Visitors.IsStopped = true;
 		Visitors.ReleaseAll();
 		if ( Coaster != null )
 		{
@@ -399,6 +400,7 @@ public sealed partial class OriginalObjectRuntime
 			// snapshot does not contain it), the visitors and animator are cleared.
 			stopped = true;
 			effects.StopSounds();
+			Visitors.IsStopped = true;
 			Visitors.ReleaseAll();
 			if ( Coaster != null )
 			{

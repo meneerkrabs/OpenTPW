@@ -730,16 +730,21 @@ class Stage:
 	pass
 
 
-def setup_scene(canvas, origin, edition="TPW", detail="fpc"):
+def setup_scene(canvas, origin, edition="TPW", detail="fpc", scale=1):
 	"""Configures render settings, lights and an orthographic camera. ``canvas`` is the sprite size in pixels and
-	``origin`` the pixel (from the top left) where the world origin lands."""
+	``origin`` the pixel (from the top left) where the world origin lands, both at 1x; ``scale`` renders at that many times the pixel
+	size (canvas, origin and pixels per Blender unit all scaled, so the picture is the same size in the world with ``scale`` times the
+	pixels in each direction; the sprite bank then needs pixels-per-unit 128 * ``scale``)."""
+	canvas = (canvas[0] * scale, canvas[1] * scale)
+	origin = (origin[0] * scale, origin[1] * scale)
 	scene = bpy.context.scene
 	for o in list(bpy.data.objects):   # the factory startup scene's cube, light and camera
 		bpy.data.objects.remove(o, do_unlink=True)
 	st = Stage()
 	st.scene, st.canvas, st.origin = scene, canvas, origin
 	st.elevation = EDITIONS[edition]["elevation"]
-	st.ppu = EDITIONS[edition]["ppu" if detail == "fpc" else "ppu_tpc"]
+	st.scale = scale
+	st.ppu = EDITIONS[edition]["ppu" if detail == "fpc" else "ppu_tpc"] * scale
 	for engine in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
 		try:
 			scene.render.engine = engine

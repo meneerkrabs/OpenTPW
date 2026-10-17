@@ -170,8 +170,9 @@ public class WorldRngTests
 		var mirror = new WorldRng( world.World.State );
 		finder.Advance( Tick );
 		Assert.AreEqual( 0, finder.Variables[0], "no script is named Nothing" );
-		var ids = named.Select( script => script.ScriptId ).OrderBy( id => id ).ToArray();
-		Assert.AreEqual( ids[(int)((mirror.NextWord() >> 1) % 3)], finder.Variables[1], "the drawn index into the three matches" );
+		// the count and the pick both walk the script list from its head (0x5560E2 and 0x556150: the highest id first in a park's list)
+		var ids = named.Select( script => script.ScriptId ).OrderByDescending( id => id ).ToArray();
+		Assert.AreEqual( ids[(int)((mirror.NextWord() >> 1) % 3)], finder.Variables[1], "the drawn index into the three matches, counted from the head of the list" );
 		Assert.AreEqual( mirror.State, world.World.State, "the miss drew nothing, the hit one word" );
 	}
 

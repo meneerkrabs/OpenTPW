@@ -461,15 +461,28 @@ public partial class Level
 				return;
 			PoolRenderer = new PoolRenderer( Guests.Grid.Cells, Objects.Grid, PoolStyles.ForTheme( OriginalPark.LevelName ) );
 		}
-		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded beside the kid sets
+		// [EXT:pools-swim] the swimmers are drawn after the water (entities draw in the order they are made), with the swim sprites loaded at level setup
 		// the sets are looked for once per level: a missing or broken folder is one warning, not a scan every frame
-		if ( SwimmerRenderer == null && PoolRenderer != null && !swimSpritesTried )
+		switch ( NextSwimSpriteStep( SwimmerRenderer != null, swimSpritesTried, PoolRenderer != null, PoolSpriteDelivery.IsPending( PoolSpriteDelivery.SwimGroup ) ) )
 		{
-			swimSpritesTried = true;
-			SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
+			case SwimSpriteStep.Wait:
+				// browser: the swim sets are still being downloaded, so the swimmers use the kid sprite for now and the renderer is made the frame the last file is in (or the one failed line of CreateSwimmerRenderer)
+				PoolSpriteDelivery.Ready( PoolSpriteDelivery.SwimGroup, "swimmers use the kid sprite until they arrive" );
+				break;
+			case SwimSpriteStep.Create:
+				swimSpritesTried = true;
+				SwimmerRenderer = CreateSwimmerRenderer( Guests, OriginalPark );
+				break;
 		}
 		RefreshPoolEffects();
 	}
+
+	/// <summary>What <see cref="RefreshPools"/> does about the swimmers' renderer this frame.</summary>
+	internal enum SwimSpriteStep { Done, Wait, Create }
+
+	/// <summary>The renderer is made once, after the water exists and once the swim sets are not pending any more (complete, failed or never delivered); until then the swimmers use the kid sprite.</summary>
+	internal static SwimSpriteStep NextSwimSpriteStep( bool hasSwimmerRenderer, bool tried, bool hasPoolRenderer, bool setsPending )
+		=> hasSwimmerRenderer || tried || !hasPoolRenderer ? SwimSpriteStep.Done : setsPending ? SwimSpriteStep.Wait : SwimSpriteStep.Create;
 
 	/// <summary>[EXT:pools-activities] Registers the pool activities with the simulation while the extension is on and lets it read the placed extras; called once when the level's guests are made, so no path runs with an empty registry.</summary>
 	internal void RegisterPoolActivities()
@@ -488,12 +501,28 @@ public partial class Level
 	}
 
 	private bool swimSpritesTried;
+	private bool swimSpritesPreloaded;
+	/// <summary>[EXT:pools-swim] The swim sets decoded ahead on a worker (desktop only; null until <see cref="PreloadSwimSprites"/> ran).</summary>
+	private List<GuestSpriteAtlas>? swimSpriteSets;
+
+	/// <summary>
+	/// [EXT:pools-swim] Loads the swim sets and decodes them on a worker so that the first pool frame does not stall: at level setup for a park with pool water, else when the first pool cell is painted. Once per level; with the
+	/// extension off, or in the browser (<see cref="PoolSpriteDelivery.Delivered"/>: single-threaded, and the files may not be there yet) it does nothing, and the swimmer renderer loads and decodes when it is created.
+	/// </summary>
+	internal void PreloadSwimSprites()
+	{
+		if ( swimSpritesPreloaded || !FeatureGates.Pools || PoolSpriteDelivery.Delivered )
+			return;
+		swimSpritesPreloaded = true;
+		var sets = swimSpriteSets = PoolSwimSprites.Load();
+		System.Threading.Tasks.Task.Run( () => { foreach ( var atlas in sets ) _ = atlas.Pixels; } );
+	}
 	private List<PoolExtraSite>? poolExtraSites;
 	private long poolExtraSitesTurn = -1;
 
 	private GuestRenderer? CreateSwimmerRenderer( GuestSimulation guests, OriginalPark park )
 	{
-		var swim = PoolSwimSprites.Load();
+		var swim = swimSpriteSets is { Count: > 0 } ? swimSpriteSets : PoolSwimSprites.Load();
 		if ( swim.Count == 0 )
 		{
 			// without swim sprites the swimmers are drawn by the normal guest renderer with their kid sprite (Level.cs: Draws), standing in the water
@@ -504,6 +533,7 @@ public partial class Level
 		{
 			Draws = guest => guest.IsSwimming || guest.InPoolActivity,
 			SwimSlotFallback = true,
+			BottomAnchoredSlots = PoolSwimSlots.BottomAnchored,
 			SlotChooser = guest => guest.InPoolActivity
 				? (guests.PoolActivityOf( guest )?.SpriteSlot( guest ) ?? PoolSwimSlots.TreadWater, (int)(guests.TimeSeconds * 6) + guest.Id)
 				: (PoolSwimming.SpriteSlot( guest.SwimStroke ), (int)(guests.TimeSeconds * (guest.SwimStroke == 2 ? 3 : 6)) + guest.Id),
@@ -578,6 +608,7 @@ public partial class Level
 		{
 			PoolBuilder = new PoolBuilder( Guests.Grid.Cells, () => Park?.Economy, Objects.Grid, IsPathBlocked, IsStoodOn, PoolEraseBlock );
 			PoolTool = new PoolTool( PoolBuilder );
+			PoolBuilder.Painted += PreloadSwimSprites;
 		}
 		AreaClearTool = IsReadOnlyVisit ? null : new AreaClearTool( RemoveObjectAt, () => Guests?.Grid.Cells, RemovePathCell, TypesFootprints ? null : ( x, y ) => Objects.FindAt( x, y ) );
 	}
@@ -1385,6 +1416,33 @@ public partial class Level
 	}
 
 	/// <summary>
+	/// An original save's RSSE block gives the imported objects' scripts their saved ids, list order and pass counter (<see cref="ParkObjects.ImportOriginalScripts"/>, DET-013): the
+	/// one slice per eight passes then falls on the passes the saved park ran it on. Only a park started from an original save does this; a resumed park restores its own scripts.
+	/// </summary>
+	private void ImportOriginalScripts()
+	{
+		if ( resumeState != null || OriginalPark?.Save is not { Rsse: { } rsse } )
+			return;
+		foreach ( var line in Objects.ImportOriginalScripts( rsse ) )
+		{
+			Park?.Import?.Report( line );
+			Log.Trace( $"Park script import: {line}" );
+		}
+	}
+
+	/// <summary>
+	/// An original save's Particles block gives the level's particle pool its saved emitters and effectors, generator and counters (SAVE-013, tp.exe loader 0x51F7A0). Only a park started from an
+	/// original save does this; a resumed park restores its own pool.
+	/// </summary>
+	private void ImportOriginalParticles()
+	{
+		if ( resumeState != null || OriginalPark?.Save is not { Particles: { On: true } block } )
+			return;
+		ParticlesImported?.Invoke( this, block );
+		Park?.Import?.Report( $"Particles imported: {block.ActiveEmitterOrder.Count} emitters and {block.ActiveEffectorOrder.Count} effectors restored with the saved generator and counters; the post-load pass hides the screen-space ones (0x5200B0)." );
+	}
+
+	/// <summary>
 	/// An original save's operating words (speed, capacity and duration, SAVE-006) become the linked ride runtimes' words where they differ from the tier's values. Only a park started
 	/// from the shipped save does this; a resumed park restores its own words (<see cref="OriginalObjectRuntimeSnapshot"/>).
 	/// </summary>
@@ -1398,6 +1456,13 @@ public partial class Level
 			if ( !import.AttractionInstances.TryGetValue( attraction.Id, out var instance ) || !runtimes.TryGetValue( instance, out var runtime ) )
 				continue;
 			var taken = runtime.RestoreOriginalSettingWords( attraction.OperatingSpeed, attraction.OperatingCapacity, attraction.OperatingDuration );
+			// [BIN:TPW-EXE:0x004E0E60 SetState] the open word (mCanLoad, +0x68) is cleared by states 1, 2 and 4 (their import closes the ride already) and by the player's close or a maintenance call; an idle attraction saved with it clear stays closed until the door opens the park
+			if ( Park!.Economy.TryGetObject( instance, out var objectState ) && RideOpening.ClosedByImportedOpenWord( attraction.CanLoad, ParkEconomy.ObjectState( objectState ) ) && runtime.IsOpen )
+			{
+				runtime.Close();
+				SyncOpenState( runtime );
+				taken = taken.Concat( new[] { "closed (the saved open word is 0)" } ).ToList();
+			}
 			if ( taken.Count == 0 )
 				continue;
 			var line = $"Ride settings imported for attraction thing {attraction.Id} (Info.Id {attraction.InfoId}): {string.Join( ", ", taken )}.";

@@ -27,11 +27,20 @@ public class ParkResumeAssetManifestTests
 	{
 		previousFileSystem = FileSystem;
 		ObjectCatalog.BonusDataRoot = null;
+		// the manifest of the base game: the default extension set now includes pools, whose objects are no part of it (a save holds the pool files only for the objects the park places)
+		poolsOff = OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( false ) );
+		previousRoots = ObjectCatalog.ContentRoots;
+		ObjectCatalog.SetContentRoots( Array.Empty<CatalogContentRoot>() );
 	}
+
+	private IDisposable? poolsOff;
+	private IReadOnlyList<CatalogContentRoot> previousRoots = Array.Empty<CatalogContentRoot>();
 
 	[TestCleanup]
 	public void Cleanup()
 	{
+		ObjectCatalog.SetContentRoots( previousRoots );
+		poolsOff?.Dispose();
 		FileSystem = previousFileSystem!;
 		ObjectCatalog.BonusDataRoot = null;
 		foreach ( var root in tempRoots )

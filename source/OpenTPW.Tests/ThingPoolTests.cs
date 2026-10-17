@@ -212,4 +212,71 @@ public class ThingPoolTests
 		Assert.IsTrue( ThingPool.Problems( snapshot with { Pending = new[] { 9 } } ).Count > 0, "a request for a free slot" );
 		Assert.IsTrue( ThingPool.Problems( snapshot with { Pending = new[] { 2, 2 } } ).Count > 0, "a request made twice" );
 	}
+
+	// ---- Placeholder slots of an imported original save ---------------------------------------------------
+
+	/// <summary>A thing of an imported original save that OpenTPW does not rebuild keeps its slot: the free list and the next id stay what the original's load made them.</summary>
+	[TestMethod]
+	public void AHeldSlotStaysUsedSoTheFreeListKeepsTheOriginalsLoadOrder()
+	{
+		var chain = new[] { (9, SaveThingModel.Guest), (8, SaveThingModel.Guest), (5, SaveThingModel.Attraction), (4, SaveThingModel.Guest), (1, SaveThingModel.StaffHq) };
+		var original = new ThingPool();
+		original.Restore( chain.Select( entry => new ThingSlot( entry.Item1, entry.Item2 ) ) );
+		var pool = new ThingPool();
+		pool.Restore( chain.Select( entry => new ThingSlot( entry.Item1, entry.Item2 ) ) );
+		Assert.IsTrue( pool.Hold( 8 ) );
+		Assert.IsTrue( pool.Hold( 5 ) );
+		Assert.IsFalse( pool.Hold( 6 ), "a free slot cannot be held" );
+		Assert.IsTrue( pool.IsUsed( 8 ) && pool.IsHeld( 8 ) && !pool.IsHeld( 9 ) );
+		Assert.AreEqual( 2, pool.HeldCount );
+		CollectionAssert.AreEqual( new[] { 5, 8 }, pool.HeldIds().ToArray() );
+		Assert.AreEqual( SaveThingModel.Guest, pool.ModelOf( 8 ), "the slot keeps the saved model" );
+		Assert.AreEqual( original.Count, pool.Count );
+		CollectionAssert.AreEqual( original.UsedNewestFirst().ToArray(), pool.UsedNewestFirst().ToArray(), "the used list keeps its place" );
+		CollectionAssert.AreEqual( original.FreeInOrder().Take( 10 ).ToArray(), pool.FreeInOrder().Take( 10 ).ToArray() );
+		Assert.AreEqual( original.Allocate( SaveThingModel.Guest ), pool.Allocate( SaveThingModel.Guest ), "the next thing built gets the id the original gives" );
+	}
+
+	[TestMethod]
+	public void AHeldSlotIsNeverDestroyedByARequestAndReleasingItClearsTheHold()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 4; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		pool.Hold( 2 );
+		pool.QueueDestroy( 2 );
+		pool.QueueDestroy( 3 );
+		Assert.AreEqual( 1, pool.QueuedCount, "a request for a placeholder changes nothing" );
+		CollectionAssert.AreEqual( new[] { 3 }, pool.DestroyQueued().ToArray() );
+		Assert.IsTrue( pool.IsUsed( 2 ) );
+		Assert.IsTrue( pool.Release( 2 ) );
+		Assert.IsFalse( pool.IsHeld( 2 ) );
+		Assert.AreEqual( 2, pool.Allocate( SaveThingModel.Attraction ), "a released slot is an ordinary free one again" );
+		Assert.IsFalse( pool.IsHeld( 2 ) );
+		pool.Hold( 1 );
+		pool.Clear();
+		Assert.AreEqual( 0, pool.HeldCount );
+	}
+
+	[TestMethod]
+	public void ASnapshotKeepsThePlaceholderSlots()
+	{
+		var pool = new ThingPool();
+		for ( var count = 0; count < 5; count++ )
+			pool.Allocate( SaveThingModel.Guest );
+		pool.Hold( 4 );
+		pool.Hold( 2 );
+		var snapshot = pool.CaptureSnapshot();
+		CollectionAssert.AreEqual( new[] { 2, 4 }, snapshot.Held!.ToArray() );
+		Assert.IsNull( new ThingPool().CaptureSnapshot().Held, "a pool with no placeholder writes none" );
+		var json = System.Text.Json.JsonSerializer.Serialize( snapshot );
+		var restored = new ThingPool();
+		restored.RestoreSnapshot( System.Text.Json.JsonSerializer.Deserialize<ThingPoolSnapshot>( json )! );
+		CollectionAssert.AreEqual( new[] { 2, 4 }, restored.HeldIds().ToArray() );
+		CollectionAssert.AreEqual( pool.FreeInOrder().Take( 4 ).ToArray(), restored.FreeInOrder().Take( 4 ).ToArray() );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Held = new[] { 9 } } ).Count > 0, "a placeholder for a free slot" );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Held = new[] { 2, 2 } } ).Count > 0, "a placeholder twice" );
+		Assert.IsTrue( ThingPool.Problems( snapshot with { Pending = new[] { 2 } } ).Count > 0, "a placeholder that waits for its destruction" );
+		Assert.AreEqual( 0, ThingPool.Problems( new ThingPoolSnapshot { Used = snapshot.Used } ).Count, "a save from before the placeholders has none" );
+	}
 }

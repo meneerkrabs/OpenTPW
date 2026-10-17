@@ -61,7 +61,7 @@ TPWS and an INTS for each theme.
 These checks ran with the earlier leading-tag marker reader ("prefix" = action
 recording + World block, "SYSG" = RideSystem block). The writer-order block
 split and the thing-chain walk have not been run on this set yet.
-| Attraction records | 5 in each TPWS, one per fixed item (Bus, Seaplane, Ferry, Traffic Lights and the *601 park object), 2 in each INTS (the gates and the lights); all three gauges are 100 in all 35 records |
+| Attraction records | 5 in each TPWS, one per fixed item (Bus, Seaplane, Ferry, Traffic Lights and the *601 park object); an INTS holds two attraction things (Gates, Lights), which decode once the initial calendar and empty history ring are accepted (docs/SAVE-THINGS.md, "The restart saves"); all three gauges are 100 in all 35 records |
 | Economy | Bank prefix, 8 loan offers equal to the theme's `LoanInfo`, and the full challenge list of `ChallengesInThisLevel` (8–10 records); see docs/ECONOMY.md for the corrected challenge layout |
 
 Initial state of the INTS saves (an unplayed park): the macro-AI calendar is the constructor's (`0x4F7E80`: start 2000-01-01, month cache 0,
@@ -418,8 +418,10 @@ track, controller or train state is reconstructed. The separate TPI viewer is un
   save with a coaster was found under the available `game-assets` tree (the Patch2 Easymode
   copy is the same empty boundary). The private eleven-save set is described in the prior
   [second fixture set](#second-fixture-set) report, but its location was not available and
-  `OPENTPW_TPWS_SAVES` was unset for this slice; its coaster content was not reverified. The
-  nonempty shape is therefore **not** proven on Theme Park World bytes.
+  `OPENTPW_TPWS_SAVES` was unset for this slice. Rechecked on 2026-10-17 with the folder set: all eleven
+  saves hold the empty boundary (count 0, globals 0, 0, 1) and the empty TrackRides (44 bytes) and FlyingRides (452 bytes)
+  blocks, so none holds a coaster, a train, a car or a track ride. The nonempty shape is therefore **not** proven on
+  Theme Park World bytes.
 - **Theme Park Inc cross-check (sibling game, separate semantics):** the Theme Park Inc prebuilt
   save's Coasters block (1,226 bytes between the same delimiters) parses under this contract exactly:
   count 1, globals 1, 0, 2; header power factor 1.0, one section, zero riders; one section record
@@ -447,6 +449,8 @@ through the chain by `SaveEconomyRecords`; the former structure search and its
 plausibility bounds (ECON-045) are gone. The spending history is not in the save.
 
 ## Importer (`OriginalParkImport`, `OriginalEconomyImport`)
+
+What the import skips or only partly rebuilds, thing by thing with its constructor and covering ID, is inventoried in [SAVE-THINGS.md](SAVE-THINGS.md); the slots of the things it does not rebuild stay used.
 
 `OriginalParkImport.Import` takes the decoded payload and the level `base.map`.
 It splits the blocks, parses the World block (rejecting any cell attribute that

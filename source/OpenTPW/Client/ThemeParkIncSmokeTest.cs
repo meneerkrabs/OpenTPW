@@ -43,6 +43,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 	private System.Numerics.Vector2 sitePoint;
 	private System.Numerics.Vector2 endPoint;
 	private int objectsBefore;
+	private long cashBeforePlace;
 	private (int X, int Y)[] pausedCells = Array.Empty<(int, int)>();
 	private int resumedAt;
 
@@ -115,6 +116,7 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 		} );
 		Do( "place through the world click", () =>
 		{
+			cashBeforePlace = Level.Park!.Economy.Balance;
 			var viewport = Viewport;
 			Level.UpdateWorldInput( false, false, sitePoint, viewport );
 			Level.UpdateWorldInput( true, false, sitePoint, viewport );
@@ -126,7 +128,8 @@ internal sealed class ThemeParkIncSmokeTest : IDisposable
 			Require( placed?.Entry == armedEntry && Level.Objects.Objects.Count == objectsBefore + 1, "the world click places the armed item" );
 			Require( Level.LastActionMessage.StartsWith( "Built", StringComparison.Ordinal ) && Hud.Messages.Any( message => message.StartsWith( "Built", StringComparison.Ordinal ) ),
 				"the level and the HUD both report the build" );
-			Require( Level.Park is { } park && park.Economy.Balance < park.Economy.Settings.InitialCash, "the purchase was charged: the cash fell below the initial cash" );
+			Require( Level.Park is { } park && park.Economy.Catalog.TryGet( armedEntry!.InfoId, out var priced ) && priced.PurchaseCost > 0
+				&& cashBeforePlace - park.Economy.Balance == priced.PurchaseCost, $"Level.PlaceObject debited exactly the purchase price once ({cashBeforePlace} -> {Level.Park?.Economy.Balance})" );
 			queueToolOn = armedEntry!.HasQueue;
 			if ( queueToolOn )
 				Require( Level.CellTool.IsActive && Level.CellTool.Mode == CellToolMode.Queue && Level.CellTool.Start == (entrance.OutsideX, entrance.OutsideY),

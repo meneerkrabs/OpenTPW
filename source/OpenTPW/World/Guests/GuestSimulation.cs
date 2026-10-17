@@ -136,11 +136,13 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 	// [BIN:STP-PPC:0x10103300-0x10103348 drop ramp] the only writers of +48 are the constructor (0x102aa0, zero), the ramp toward mTargetDrops (+52) and the rain stop (0x103d08, zero), so the word is positive exactly while drops are falling
 	public Func<bool>? WeatherDropsFalling { get; set; }
 	/// <summary>
-	/// Theme Park Inc's weather state for the group size: 1 rain, 2 storm, 3 snow, 4 heatwave, anything else (or null) none. The original reads the
+	/// Theme Park Inc's weather state for the group size: 1 heatwave, 2 rain, 3 storm, 4 snow, anything else (or null) none. The original reads the
 	/// weather thing's word +0x70. OpenTPW runs no Theme Park Inc weather, so nothing sets this and the factor is always the plain 100 percent.
 	/// </summary>
-	// [BIN:TPI-EXE:0x005BCDDE weather state] the weather thing's word +0x70 minus 1, when it is at most 3, picks the percentage word for rain, storm, snow or heatwave; any other value takes 100.0f
+	// [BIN:TPI-EXE:0x005BCDDE weather state] the weather thing's word +0x70 minus 1, when it is at most 3, indexes a jump table (0x005BCF08) whose first entry 0x005BCE06 loads the heatwave word 0x00A02250 (the others, in order, rain 0x00A02244, storm 0x00A02248, snow 0x00A0224C; ORACLE.md X7); any other value takes 100.0f
 	public Func<int>? ArrivalWeatherState { get; set; }
+	/// <summary>Index into <see cref="GuestSettings.ArrivalWeatherPercentages"/> (rain, storm, snow, heatwave) of weather states 1 to 4 (heatwave, rain, storm, snow).</summary>
+	private static readonly int[] WeatherStateIndex = { 3, 0, 1, 2 };
 	/// <summary>The original's limit on guests in the park when a group's size is set.</summary>
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] a group is cut so the guests already counted plus the group stay at most 1500 (0x5DC)
 	// [BIN:STP-PPC:0x100CB4E8 arrival group] executed by the PowerPC oracle (docs/reverse/ORACLE.md F9): the 500 cut applies when the GameType word (data:0x53d98) is 1, i.e. online parks only; offline parks use 1500
@@ -591,7 +593,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 			// [BIN:TPI-EXE:0x005BCD60 arrival group] Theme Park Inc's group: 0 in world state 4; else ftol( weather percentage (rain, storm, snow or heatwave by the weather thing's state, else 100.0) x 0.01f x (NewParkBonus + park points) / PointsPerVisitor ), the factor and the divide in floating point (the oracle's X7 agrees on 532 of 532 inputs read at 53 bits); then at least MinPeople and the same cut as tp.exe's (500 online, else 1500)
 			// [APPROX:ARRIVAL-008] OpenTPW runs no Theme Park Inc weather (its weather thing's state word +0x70 is not traced), so the percentage is always 100 and the rain, storm, snow and heatwave modifiers never apply; the routine's other exit (a mode object answering 3, 0x005BCD7A) has no OpenTPW counterpart — evidence needed: the weather thing's states and what sets mode 3
 			var state = ArrivalWeatherState?.Invoke() ?? 0;
-			double percent = state is >= 1 and <= 4 ? percentages[state - 1] : 100.0;
+			double percent = state is >= 1 and <= 4 ? percentages[WeatherStateIndex[state - 1]] : 100.0;
 			var points = unchecked( Settings.ArrivalNewParkBonus + (ParkPoints?.Invoke() ?? 0) );
 			var scaled = (double)points * (percent * (double)0.01f) / perVisitor;
 			count = Math.Abs( scaled ) < 2147483648.0 ? (int)scaled : int.MinValue;

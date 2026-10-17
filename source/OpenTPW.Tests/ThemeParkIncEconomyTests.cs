@@ -170,6 +170,9 @@ public class ThemeParkIncEconomyTests
 		economy.AdvanceMonths( 2 );
 		Assert.AreEqual( start - 2 * (60 + 15), economy.Balance, "each object pays its Upgrades[0].RunningCost every month" );
 		Assert.AreEqual( 60L, first!.CostsLastMonth, "the cost enters the object's statistic" );
+		Assert.AreEqual( -120L, first.TotalProfit, "two months of running costs are in the object's total profit" );
+		Assert.AreEqual( -30L, second!.TotalProfit );
+		Assert.IsTrue( first.ProfitLast30Days <= -60 && second.ProfitLast30Days <= -15, "and in the 30-day profit through the cost ring" );
 		first.Level = 1;
 		Assert.AreEqual( 40L, economy.RunningCost( first ), "the current level's value" );
 		first.IsBrokenDown = true;
@@ -180,6 +183,27 @@ public class ThemeParkIncEconomyTests
 		economy.AdvanceMonths( 1 );
 		Assert.AreEqual( before - 15, economy.Balance, "only the other object pays" );
 		Assert.AreEqual( 15L, economy.RunningCost( second! ) );
+	}
+
+	[TestMethod]
+	public void AParkWithoutStaffWearsNoToiletAndDropsNoLitter()
+	{
+		var toilet = Ride( 1, 100, 5 ) with { ProvidesRelief = true };
+		var economy = Economy( toilet );
+		economy.TryBuild( 1, out var state );
+		for ( var month = 0; month < 24; month++ )
+		{
+			for ( var use = 0; use < 400; use++ )
+				Assert.IsFalse( economy.UseRelief( state!.Id, 255 ), "a use never turns the toilet dirty" );
+			economy.AdvanceMonths( 1 );
+		}
+		Assert.AreEqual( RideRepair.FullGauge, state!.Repair, "after two years of heavy use the gauge is full: nobody could clean it, so nothing wears it" );
+		Assert.IsFalse( ParkEconomy.IsDirtyToilet( state ) );
+		var wearing = TpwEconomy( toilet );
+		wearing.TryBuild( 1, out var worn );
+		for ( var use = 0; use < 400; use++ )
+			wearing.UseRelief( worn!.Id, 255 );
+		Assert.IsTrue( ParkEconomy.IsDirtyToilet( worn! ), "Theme Park World's rule still wears the toilet" );
 	}
 
 	[TestMethod]
@@ -265,13 +289,13 @@ public class ThemeParkIncEconomyTests
 		var simulation = new GuestSimulation( GuestTests.CreateCross(), settings, 1 ) { ParkPoints = () => points, ArrivalsHalted = () => halted, ArrivalWeatherState = () => weather };
 		Assert.AreEqual( 20, simulation.ArrivalGroupSize(), "100 percent x 0.01f x (20 + 500) / 25 = 20.8 truncated; Theme Park World's 1.2 would give 24" );
 		weather = 1;
-		Assert.AreEqual( 18, simulation.ArrivalGroupSize(), "rain 90 percent" );
+		Assert.AreEqual( 24, simulation.ArrivalGroupSize(), "state 1 is the heatwave, 120 percent (ORACLE.md X7; the jump table's first entry loads 0xA02250)" );
 		weather = 2;
-		Assert.AreEqual( 16, simulation.ArrivalGroupSize(), "storm 80 percent" );
+		Assert.AreEqual( 18, simulation.ArrivalGroupSize(), "state 2 rain, 90 percent" );
 		weather = 3;
-		Assert.AreEqual( 15, simulation.ArrivalGroupSize(), "snow 75 percent" );
+		Assert.AreEqual( 16, simulation.ArrivalGroupSize(), "state 3 storm, 80 percent" );
 		weather = 4;
-		Assert.AreEqual( 24, simulation.ArrivalGroupSize(), "heatwave 120 percent" );
+		Assert.AreEqual( 15, simulation.ArrivalGroupSize(), "state 4 snow, 75 percent" );
 		weather = 9;
 		Assert.AreEqual( 20, simulation.ArrivalGroupSize(), "any other state takes the plain 100.0" );
 		weather = 0;

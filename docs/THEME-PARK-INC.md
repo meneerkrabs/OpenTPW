@@ -211,14 +211,14 @@ The object catalogue adds the keys only Theme Park Inc's type record has: `Info.
 | arrival group | `0x5BCD60` (words `0x00A02240`..`0x00A02250`) | `0x4CF5B0` | `GuestSimulation.ArrivalGroupSize` with `Arrival.*PercentageModifier`, single-precision 0.01 (oracle X7); no Theme Park Inc weather runs, so the percentage is always 100 (ARRIVAL-008) |
 
 **What runs.** Starting cash and admission fee; the build, path, queue and kart/water track charges (a refused purchase says why); scrap refunds when an object
-is removed; the loans; the bankruptcy after six months in the red (the arrival stops, building is refused); the calendar and the monthly cost rings of each
-object; the monthly running costs; the entry-fee judgement and the arrival rule above. The HUD's money line shows the cash, the park date and the entrance
+is removed; the loans; the bankruptcy after six months in the red (the arrival stops, building is refused); the calendar and each
+object's cost statistics (the month's costs, the 30-day cost ring and the total profit, which the running cost enters; Theme Park Inc's are monthly rings, ECON-060); the monthly running costs; the entry-fee judgement and the arrival rule above. The HUD's money line shows the cash, the park date and the entrance
 fee, the build list shows each object's price and a placed object's refusal (not enough money) is the level's message. The Theme Park Inc park opens at the start
 (`[EXT:tpi-park-open]`): the slice has no gate control, its gate script is not traced, so the economy neither drives nor closes the park door. The prebuilt
 science save's objects register uncharged, like an imported park's; its own economy is not restored. A layout checkpoint saves the layout only: the cash, calendar and
 loans start fresh in the new session, like the guests.
 
-**What stays refused.** Staff (no pool, no wages, no mechanics, handymen or entertainers), so the rides neither wear nor break down (`[EXT:tpi-money-only]`) and no
+**What stays refused.** Staff (no pool, no wages, no mechanics, handymen or entertainers), so the rides neither wear nor break down (`[EXT:tpi-money-only]`), a toilet use wears no gauge and no litter is dropped, because no handyman would ever clean it (`[EXT:tpi-no-maintenance-wear]`), and no
 upgrade is installed; research (the whole catalogue is on offer, `[EXT:tpi-no-research]`); challenges, golden tickets and the missions; the shares game; Theme Park Inc's
 weather; the advisor; every save format. Rides carry `UsageInfo.InitPricePerUse` (20) and `Info.ExpectedPrice` (25) in Theme Park Inc's data, but the guests pay
 nothing for a ride, as in Theme Park World (ECON-062). Coaster track charges use the Theme Park World coaster cost model over Theme Park Inc's object settings and are

@@ -121,6 +121,7 @@ public sealed class ParkEconomyRuntime
 	public static ParkEconomyRuntime ForThemeParkIncLevel( OriginalPark park, WorldSeed? seed = null )
 	{
 		ArgumentNullException.ThrowIfNull( park );
+		EconomyApproximations.LogOnce();
 		var settings = BalanceSettings.LoadThemeParkInc( park.LevelName );
 		var catalog = EconomyObjectCatalog.Load( park.LevelName, easy: false );
 		var economy = new ParkEconomy( settings, catalog, ParkGameMode.FullSimulation, (seed ?? WorldSeed.Default).EconomyStream, EconomyRules.ThemeParkIncMoney );
@@ -212,7 +213,8 @@ public sealed class ParkEconomyRuntime
 	private void AttachLitter( GuestSimulation guests )
 	{
 		Economy.Litter.Cells = guests.Grid.Cells;
-		Economy.Litter.Disabled = guests.OnlineVisit;
+		// [EXT:tpi-no-maintenance-wear] a park without staff drops no litter either: no handyman would ever sweep it
+		Economy.Litter.Disabled = guests.OnlineVisit || !Economy.Rules.Staff;
 		Economy.OnlineVisit = guests.OnlineVisit;
 	}
 }

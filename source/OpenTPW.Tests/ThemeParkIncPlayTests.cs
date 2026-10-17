@@ -373,6 +373,41 @@ public class ThemeParkIncPlayTests
 	}
 
 	[TestMethod]
+	public void ThePlacementFlowDebitsThePriceExactlyOnceAndALongRunDropsNoLitter()
+	{
+		UseTpiData();
+		var park = new SlicePark( "science", arrivalTimeBetween: 2, withMoney: true );
+		var runtime = park.Money!;
+		var economy = runtime.Economy;
+		runtime.AttachGuests( park.Guests );
+		Assert.IsTrue( economy.IsParkOpen, "the Theme Park Inc park opens when its guests attach" );
+		// the sequence of Level.PlaceObject: the placement rules, one TryBuild, the placement, then the link to the bought record (the link charges nothing)
+		var entry = park.Catalog.Buildable
+			.Where( candidate => candidate.HasQueue && candidate.ScriptPath != null && economy.Catalog.TryGet( candidate.InfoId, out var priced ) && priced.PurchaseCost is > 0 and <= 20000 )
+			.OrderBy( candidate => candidate.InfoId ).First();
+		economy.Catalog.TryGet( entry.InfoId, out var info );
+		var placed = PlaceBesidePath( park, entry, out _, out _ );
+		Assert.IsNotNull( placed );
+		var before = economy.Balance;
+		Assert.AreEqual( ParkEconomy.PurchaseResult.Ok, economy.TryBuild( entry.InfoId, out var bought ) );
+		runtime.LinkAttraction( placed!.Visitors, entry.InfoId );
+		Assert.AreEqual( before - info.PurchaseCost, economy.Balance, "exactly one debit of the purchase price, linking included" );
+		Assert.AreEqual( info.PurchaseCost, bought!.TotalSpent );
+		// a long run of guests: no litter drops, as no handyman would ever sweep it (Facilities, the toilets' directory, is not in the slice's catalogue; the toilet wear is a synthetic test)
+		var cashAfterBuilds = economy.Balance;
+		for ( var step = 0; step < 15 * 60 * FixedStepClock.TicksPerSecond; step++ )
+		{
+			park.Step( FixedStepClock.TickDuration );
+			runtime.FixedTick();
+		}
+		Assert.IsTrue( park.Guests.GetStatistics().InPark > 0, "guests came" );
+		Assert.IsFalse( economy.Objects.Any( item => ParkEconomy.IsDirtyToilet( item ) && economy.Catalog.TryGet( item.InfoId, out var relief ) && relief.ProvidesRelief ), "no toilet is dirty" );
+		Assert.AreEqual( 0, economy.LitterItems, "no litter drops" );
+		Assert.IsFalse( economy.IsBankrupt );
+		Assert.IsTrue( economy.Balance > cashAfterBuilds - 100000, "the run only earned and paid running costs" );
+	}
+
+	[TestMethod]
 	public void TheMoneyRulesRefuseStaffResearchAndLand()
 	{
 		UseTpiData();

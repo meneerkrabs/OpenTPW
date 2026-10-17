@@ -1014,6 +1014,9 @@ public sealed class ParkEconomy : IParkEconomy
 	{
 		if ( !objects.TryGetValue( instanceId, out var item ) || !Catalog.TryGet( item.InfoId, out var info ) || !info.ProvidesRelief )
 			return false;
+		// [EXT:tpi-no-maintenance-wear] without staff nobody cleans a toilet (the handymen are refused), so a use wears none: the gauge stays full and the toilet stays usable (see also the ride wear in UpdateThings and the litter in ParkEconomyRuntime.AttachLitter)
+		if ( !Rules.Staff )
+			return false;
 		if ( OnlineVisit )
 		{
 			// [BIN:TPW-EXE:0x004E2478 toilet wear, game type 1] the branch for the online game type (SetGameType 1 at the online entries 0x4C0830 and 0x5E2700; the word 0xFB3B7C is the game-type object) wears nothing; a relief object whose gauge byte is below 25 is cleaned at once: row 6 off and row 1 on at its cell (0x4D8460, 0x4D8440), script variable 8 = 0 (0x55A0B0), gauge 100.0, the claim (+0x5E) and the call (+0x64) cleared (0x4E251F..0x4E252A)
@@ -1211,10 +1214,10 @@ public sealed class ParkEconomy : IParkEconomy
 
 	/// <summary>
 	/// Theme Park Inc's monthly running costs: every object is charged its current level's <c>Upgrades[n].RunningCost</c>, nothing in ride state 1 (broken down) or 4
-	/// (condemned). Theme Park World has no such cost. Each object is one debit that also enters its monthly cost statistic.
+	/// (condemned). Theme Park World has no such cost. Each object is one debit that also enters its cost statistics (the month's cost, the 30-day cost ring and the total profit).
 	/// </summary>
 	// [BIN:TPI-EXE:0x005DEFFF monthly object cost] the object's month message (type 0xC) takes 0 in state 1 or 4, else the type record's running cost (thing +0x84, the current level's Upgrades[n].RunningCost) plus the amount its statistics block accumulated (+0x938), writes the sum into the cost rings (+0xDD8, +0xB88), rolls them, and debits the bank (0x5C07B0, the twin of tp.exe 0x4D01F0), adding the sum to the game's money-out word (+0x20F28)
-	// [APPROX:ECON-060] only the running cost is charged: the accumulator +0x938 the statistics block adds to it is not traced (what writes it, and whether the cost of goods and prizes OpenTPW books at once (TryBuy, PlaySideshow) are debited there at the month's end instead), and the order of this debit against the bank's own month handler (the batch credit, the loan instalments) is not read, so it runs after the wages' place and before the loans — evidence needed: the writers of the statistics word +0x938 and the listener order of the month message
+	// [APPROX:ECON-060] only the running cost is charged: the accumulator +0x938 the statistics block adds to it is not traced (what writes it, and whether the cost of goods and prizes OpenTPW books at once (TryBuy, PlaySideshow) are debited there at the month's end instead), and Theme Park Inc's statistics are monthly rings (+0xB88 costs, +0x1028 profit, rolled by the same message) where OpenTPW's are the daily 30-day rings of Theme Park World (ECON-057), so the cost enters today's slot of the daily ring, and the order of this debit against the bank's own month handler (the batch credit, the loan instalments) is not read, so it runs after the wages' place and before the loans — evidence needed: the writers of the statistics word +0x938 and the listener order of the month message
 	private void PayRunningCosts()
 	{
 		if ( !Rules.ThemeParkInc )
@@ -1228,6 +1231,9 @@ public sealed class ParkEconomy : IParkEconomy
 				continue;
 			Post( LedgerCategory.OtherCosts, cost );
 			item.CostsThisMonth += cost;
+			// the month message also writes the sum into the object's cost statistics and its profit (0x5DF070..0x5DF0A4: costs +0xB88, profit = takings +0x6E8 - costs)
+			item.CostsRing.Today += unchecked( (int)cost );
+			item.TotalProfit -= cost;
 			total += cost;
 			charged++;
 		}

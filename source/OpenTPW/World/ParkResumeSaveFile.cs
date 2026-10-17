@@ -130,7 +130,7 @@ internal static class ParkResumeSaveFile
 			if ( !condition )
 				throw new InvalidDataException( $"World save is inconsistent: {message}." );
 		}
-		ParkLayoutSnapshot.ValidateSnapshot( snapshot.Layout, catalog );
+		ParkLayoutSnapshot.ValidateSnapshot( snapshot.Layout, catalog, activeMods );
 		Require( string.Equals( catalog.Theme, snapshot.Theme, StringComparison.OrdinalIgnoreCase ),
 			$"the object catalog is for theme '{catalog.Theme}', not the saved '{snapshot.Theme}'" );
 		Require( string.Equals( settings.Theme, snapshot.Theme, StringComparison.OrdinalIgnoreCase ) && settings.IsEasy == snapshot.Economy.Easy,
@@ -283,6 +283,10 @@ internal static class ParkResumeSaveFile
 		// [EXT:mods] the recorded mods: bounded, valid ids and digests, and every mod: asset key names a recorded mod
 		if ( ParkResumeMods.ShapeProblem( snapshot.Mods, snapshot.AssetHashes ) is { } modProblem )
 			Require( false, modProblem );
+		// [EXT:pools-save] a park with pool cells records the pools extension (a park without them does not), so a save cannot hide them from the mod check
+		if ( snapshot.Layout?.Cells?.Cells?.Any( cell => cell?.Type == ParkCellTypes.PoolWater ) == true
+			&& snapshot.Mods?.Any( mod => mod?.Id == OfficialExtensions.Pools.Id ) != true )
+			Require( false, $"the layout has pool cells but the save does not record {OfficialExtensions.Pools.Id}" );
 		// [EXT:smarter-guests] the extension's section: present exactly when the extension is recorded, with ids that fit the guests the save holds
 		if ( SmarterGuestsSave.ShapeProblem( snapshot.SmarterGuests, snapshot.Guests?.Guests?.Select( guest => guest.Id ), snapshot.Mods, snapshot.ScriptMods != null ) is { } smarterProblem )
 			Require( false, smarterProblem );

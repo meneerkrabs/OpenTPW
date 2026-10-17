@@ -53,6 +53,8 @@ public sealed class ParkScenario
 		Grid = BuildGrid();
 		Settings = CreateSettings( options );
 		Guests = new GuestSimulation( Grid, Settings, seed.GuestStream, decisions );
+		if ( options.ParkPoints != 0 )
+			Guests.ParkPoints = () => options.ParkPoints;
 		// the park's one thing pool as Level builds it: the world's ten singletons, then the gate and the lights (things 1 to 12), so the first guest is thing 13
 		Things = new ThingPool();
 		Things.AllocateWorldSetup();
@@ -175,6 +177,8 @@ public sealed record ParkScenarioOptions
 	/// <summary>The price of the cheap and the dear shop, as the price test's words.</summary>
 	public int CheapPrice { get; init; } = 30;
 	public int DearPrice { get; init; } = 220;
+	/// <summary>The park's attraction points (its rating) for the booth and the arrivals; 0, the default, is a park with no rating (the report's scenario). A variant with a rating exercises the smarter booth.</summary>
+	public int ParkPoints { get; init; }
 }
 
 /// <summary>The visitor script every scenario attraction runs: take a guest (VAR_LETMEON), hold it for the ride time, hand it back (VAR_LETMEOFF), the corpus shop protocol.</summary>

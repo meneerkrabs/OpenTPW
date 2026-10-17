@@ -17,8 +17,8 @@ public sealed record GltfPrimitive( NumericsVector3[] Positions, NumericsVector3
 
 public sealed record GltfMesh( string Name, IReadOnlyList<GltfPrimitive> Primitives );
 
-/// <summary>A material's base colour texture (image index or -1) and its <c>extras</c>.</summary>
-public sealed record GltfMaterial( string Name, int Image, IReadOnlyDictionary<string, JsonElement> Extras );
+/// <summary>A material's base colour texture (image index or -1), its <c>extras</c> and whether the file marks it double-sided (the glTF default is false).</summary>
+public sealed record GltfMaterial( string Name, int Image, IReadOnlyDictionary<string, JsonElement> Extras, bool DoubleSided = false );
 
 /// <summary>An embedded image: its name, MIME type and encoded bytes (PNG or JPEG, as the exporter wrote them).</summary>
 public sealed record GltfImage( string Name, string MimeType, byte[] Data );
@@ -154,7 +154,8 @@ public sealed class GltfScene
 				if ( image < 0 || image >= imageCount )
 					throw new InvalidDataException( $"glTF material {index} names image {image}, which does not exist." );
 			}
-			return new GltfMaterial( Name( material, $"material{index}" ), image, Extras( material ) );
+			var doubleSided = material.TryGetProperty( "doubleSided", out var sided ) && sided.ValueKind == JsonValueKind.True;
+			return new GltfMaterial( Name( material, $"material{index}" ), image, Extras( material ), doubleSided );
 		}
 
 		private GltfMesh ReadMesh( JsonElement mesh, int index, int materialCount )

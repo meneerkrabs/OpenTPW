@@ -31,11 +31,13 @@ public class DeterminismTests
 		private readonly RideVM shopScript;
 		private readonly List<RideVM> dice = new();
 
-		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null )
+		public SyntheticPark( WorldSeed seed, IGuestObserver? observer = null, Action<ParkCellMap>? prepareCells = null )
 		{
 			Seed = seed;
 			Economy = EconomyTestData.Park( seed: seed.EconomyStream );
 			Guests = new GuestSimulation( GuestTests.CreateCross(), GuestTests.CreateSettings(), seed.GuestStream ) { Observer = observer };
+			// [EXT:pools-save] a fixture that lays cells of its own before the first tick (the pool pin)
+			prepareCells?.Invoke( Guests.Grid.Cells );
 			// the park's one thing pool as Level builds it: the world's ten singletons, then the gates and the lights (things 1 to 12), so the first guest is thing 13 (WALK-010)
 			Things = new ThingPool();
 			Things.AllocateWorldSetup();
@@ -269,12 +271,32 @@ public class DeterminismTests
 		return park.Hash;
 	}
 
+	/// <summary>
+	/// [EXT:pools-save] The fixed run of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/> on a cross park that also has pool cells, painted through the pool builder with
+	/// the extension on: a 4 x 2 block and a 3 x 3 block clear of the paths and the shop (docs/POOLS.md, docs/DETERMINISM.md).
+	/// </summary>
+	internal static ulong RunFixedParkWithPools()
+	{
+		using var scope = OpenTPW.Mods.OpenTpwExtensions.Use( PoolsTests.PoolsSet( true ) );
+		var park = new SyntheticPark( WorldSeed.Default, null, cells =>
+		{
+			var builder = new PoolBuilder( cells, () => null, new PoolsTests.FlatGrid( cells.Width, cells.Height ) );
+			Assert.IsTrue( builder.PaintCells( PoolBuilder.Rectangle( (12, 7), (15, 8) ).Concat( PoolBuilder.Rectangle( (2, 1), (4, 3) ) ) ).Completed );
+			Assert.AreEqual( 17, cells.CountOf( ParkCellType.PoolWater ) );
+		} );
+		park.Run( PinnedRunTicks );
+		return park.Hash;
+	}
+
+	/// <summary>[EXT:pools-save] The pinned hash of <see cref="RunFixedParkWithPools"/> (docs/DETERMINISM.md, "Pools").</summary>
+	internal const ulong PoolsFixedRunHash = 0x4EEF5812C3D8023DUL;
+
 	/// <summary>The pinned hash of <see cref="HashOfAFixedRunIsTheSameInEveryProcess"/>'s run (docs/DETERMINISM.md).</summary>
 	internal const ulong FixedRunHash = 0xA91A607272718E93UL;
 
 	/// <summary>
-	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): the policy still delegates to the original, so everything but the extension's own state (its seed,
-	/// counter and birth ids, which join the world hash only while it is on) is the off run's. A deliberate change of the extension's state or of its policy changes this value.
+	/// The pinned hash of the same run with <c>opentpw.smarter-guests</c> on (docs/SMARTER-GUESTS.md): the smarter rules (1.1.0) never act in this run, whose one drinks shop is cheap enough that no guest is refused, so everything but the extension's own state (its seed,
+	/// counter and birth ids, which join the world hash only while it is on) is the off run's and the value did not move from 1.0.0. The scenario's pin (GuestMeasurementTests) is where the rules act. A deliberate change of the extension's state or of a rule that acts here changes this value.
 	/// </summary>
 	internal const ulong SmarterGuestsFixedRunHash = 0xCB2F2ECD287ED83FUL;
 
@@ -350,7 +372,7 @@ public class DeterminismTests
 		Assert.IsTrue( on.Guests.ScriptMods!.Stats().Single().Calls > 50 );
 	}
 
-	/// <summary>With the delegating policy the guests and the economy are the off run's, tick for tick; only the world hash differs, by the extension's state.</summary>
+	/// <summary>In the synthetic park the shipped rules never act, so the guests and the economy are the off run's, tick for tick; only the world hash differs, by the extension's state.</summary>
 	[TestMethod]
 	public void SmarterGuestsOnWithTheDelegatingPolicyLeavesEveryGuestVisibleValueAsItWasOff()
 	{

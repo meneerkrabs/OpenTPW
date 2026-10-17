@@ -56,6 +56,9 @@ public sealed partial class ParkHud
 			return OriginalPointers.TypeOf( OriginalPointers.ForTool( 0x39, cash: landTool.HoverTooDear ) ?? 2 );
 		if ( level.AreaClearTool is { IsActive: true } )
 			return OriginalPointers.TypeOf( OriginalPointers.ForTool( 0x3A ) ?? 2 );
+		// [EXT:pools-tool] the pool tool draws the path tool's pointer, and the cash pointer when the cell under it cannot be paid for; the original has no pool pointer
+		if ( level.PoolTool is { IsActive: true } poolTool )
+			return OriginalPointers.TypeOf( OriginalPointers.ForTool( 1, cash: poolTool.HoverResult == PoolBuildResult.NotEnoughMoney ) ?? 2 );
 		// the tool mode of the original: 4 places a blueprint, the cell tool's own mode is the cell type it writes (path 1, queue 3, kart track 11, water track 16)
 		var mode = level.BuildEntry != null ? (level.IsMoving ? MoveToolMode : 4) : level.CellTool.IsActive ? (int)level.CellTool.Mode : level.IsCoasterToolActive ? 11 : 0;
 		var pointer = OriginalPointers.ForTool( mode, noPlace: level.BuildEntry != null && placementRefused, cash: CashPointerShown( mode ) );

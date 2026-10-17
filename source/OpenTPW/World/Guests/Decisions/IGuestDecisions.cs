@@ -17,6 +17,14 @@ public interface IGuestDecisions
 	bool UsesExtensionState => false;
 
 	/// <summary>
+	/// The policy weighs prices (docs/SMARTER-GUESTS.md, phase 2): the host then fills <see cref="AttractionView.Price"/>, <see cref="AttractionView.Willingness"/> and
+	/// counts the open rides and sideshows into <see cref="BoothView.OpenAttractions"/>, tracks the guest's run of price-emptied decisions in the extension's state and asks <see cref="PriceTurnedAway"/> and
+	/// <see cref="DecidePriceStall"/>. A policy that
+	/// ignores prices leaves it false and the host does none of this, so the original path does no extra work. A policy that wraps another forwards it.
+	/// </summary>
+	bool UsesValueForMoney => false;
+
+	/// <summary>
 	/// The host calls this at the start of every simulation tick (<see cref="GuestSimulation.Tick"/> and the swept tick), before any decision of the tick. The faithful and the smarter policy
 	/// hold no state and ignore it; a policy that meters work per tick (the script policy's step budget) starts its tick here. A policy that wraps another forwards it.
 	/// </summary>
@@ -30,6 +38,18 @@ public interface IGuestDecisions
 
 	/// <summary>The end of the candidate loop opened by <see cref="BeginDecision"/>.</summary>
 	void EndDecision() { }
+
+	/// <summary>
+	/// Whether the policy left this candidate out of a major decision because of its price although the guest would otherwise have chosen it (additive, phase 2; the host asks only a policy that
+	/// <see cref="UsesValueForMoney"/>, for a candidate that scored below the choice floor and is open, working and has room). The host counts a decision that found nothing and had such a candidate.
+	/// </summary>
+	bool PriceTurnedAway( in DecisionContext context, in GuestView guest, in AttractionView attraction ) => false;
+
+	/// <summary>
+	/// After a major decision that price emptied, with the number of such decisions in a row (additive, phase 2): whether the guest goes home. The host walks it to the gate with the thought, and resets
+	/// the count when a guest chooses something or goes home. The default keeps the guest in the park.
+	/// </summary>
+	PriceStallDecision DecidePriceStall( in DecisionContext context, in GuestView guest, int consecutive ) => PriceStallDecision.Stay;
 
 	/// <summary>The booth's verdict on the entrance fee (tp.exe <c>0x004FF9D0</c>); the host draws the verdict's word first and the expensive wait afterwards.</summary>
 	BoothDecision DecideBooth( in DecisionContext context, in GuestView guest, in BoothView booth );

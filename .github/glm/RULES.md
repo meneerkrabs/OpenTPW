@@ -1,6 +1,6 @@
 # Rules for GLM grunt-work runs
 
-You are working on OpenTPW, an offline reimplementation of Theme Park World in C# (.NET 10).
+You are working on OpenTPW, an offline reimplementation of Theme Park World in C# (.NET 11).
 This run is unattended on a GitHub runner without game data. Follow these rules exactly.
 
 ## Scope

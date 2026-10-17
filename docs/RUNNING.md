@@ -5,7 +5,7 @@ Original legally obtained game assets are required and must not be committed.
 
 ## macOS / Linux
 
-Install the pinned .NET 10 SDK (`global.json`). Apple Silicon uses native arm64 with Metal when
+Install the pinned .NET 11 SDK (`global.json`). Apple Silicon uses native arm64 with Metal when
 the matching libraries are available; see MACOS-NATIVE.md for reproduction.
 The launcher falls back to an Intel/Rosetta bootstrap when those files are absent.
 Linux currently uses Vulkan and needs a working Vulkan driver. Windows uses
@@ -143,7 +143,7 @@ the smoke also checks that guests fill and leave the Totem and ride imported obj
 ## Headless M3 gameplay-loop gate
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m3-gate --minutes 30 --report m3-gate.json
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m3-gate --minutes 30 --report m3-gate.json
 ```
 
 Builds a fixed minimal Jungle park without a window or GPU (entrance, paths laid with the path builder,
@@ -155,7 +155,7 @@ one is unresolved, 0 only when every row passes. M3 is accepted only at exit cod
 ## Headless guest report
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --guest-report [--guest-scale plan|extended] [--guest-report-json guests.json]
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --guest-report [--guest-scale plan|extended] [--guest-report-json guests.json]
 ```
 
 Measures the guests' behaviour passively (docs/SMARTER-GUESTS.md): eight fixed seeds of the synthetic park scenario and, when `OPENTPW_GAME_PATH` or `--game-path` is set, the four
@@ -168,7 +168,7 @@ in standard errors of the seed spread and exits 1 on a regression or a target th
 ## Headless M4 attraction and script gate
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m4-gate --report m4-gate.json
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --game-path '/path/to/Theme Park World' --m4-gate --report m4-gate.json
 ```
 
 Classifies every catalog object of the four themes, takes each supported one through load, build, run,
@@ -236,7 +236,7 @@ interface and its object names in that language ([LANGUAGES.md](LANGUAGES.md#the
 ## Read-only Theme Park Inc texture inspection
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --inspect-fsh '/path/to/TPI/Data/ui.wad!stexture/tb_camera.fsh'
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --inspect-fsh '/path/to/TPI/Data/ui.wad!stexture/tb_camera.fsh'
 ```
 
 Takes a loose `.fsh` path or `archive.wad!member/path`. Prints the image size,
@@ -261,7 +261,7 @@ import or proof of all original TPWS layouts. See SAVE-CONTAINER.md for evidence
 Export a single decoded TGQ video frame without game assets, a window or audio:
 
 ```sh
-dotnet source/OpenTPW/bin/Release/net10.0/OpenTPW.dll --export-tgq-png /path/movie.tgq 1 /path/new.png
+dotnet source/OpenTPW/bin/Release/net11.0/OpenTPW.dll --export-tgq-png /path/movie.tgq 1 /path/new.png
 ```
 
 The index is zero-based among video frames. The PNG uses the encoded dimensions
@@ -317,6 +317,7 @@ bash scripts/run.sh --game-path '/path/to/Theme Park World' --fullscreen --upsca
 | `--frame-stats` | Logs frames per second, average/p99/max frame time, CPU use, allocation rate and garbage collections every 5 seconds. |
 | `--save-display-settings` | Also stores these values as the user's display settings. |
 | `--export-ps2 <ps2 DATA dir> <out dir>` | Lists the PS2 version's archives and exports its textures as PNG for viewing (PS2.md). |
+| `--debug-pool [x,y,w,h;...]` | With the `opentpw.pools` extension (`--enable-mod opentpw.pools`): paints pool cells near the camera target once the level is up, for captures ([POOLS.md](POOLS.md#checking-it-on-screen)). |
 | `--capture-world <file.png>` | After `--capture-frames N` frames (default 240) writes the 3D world without interface at its render size and exits; for screenshots and comparisons. |
 | `--debug-guest-looks` | For captures: gives every second guest a balloon and every third a costume as they appear, and keeps a thought bubble over every fourth (`[EXT:debug-guest-looks]`, docs/GUESTS.md "Rendering"). |
 | `--capture-interface` | With `--capture-world`: writes the composed output (world plus the original-style interface, no ImGui) instead of the world alone. |
@@ -426,7 +427,7 @@ dotnet publish source/OpenTPW/OpenTPW.csproj -c Release -r win-x64 --self-contai
 dotnet publish source/OpenTPW/OpenTPW.csproj -c Release -r linux-x64 --self-contained false -o artifacts/publish/linux-x64
 ```
 
-These packages require a matching .NET 10 runtime and legally obtained external
+These packages require a matching .NET 11 runtime and legally obtained external
 game assets. Build the arm64 dependency before publishing that RID. Successful
 cross-publication is not successful execution on the target platform.
 Current verification and remaining release blockers are recorded in PROGRESS.md.

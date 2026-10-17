@@ -32,15 +32,34 @@ public readonly record struct GuestView( int Id, ulong BirthId, int Type, float 
 /// <param name="BackCell">The back-of-queue cell the guest would walk to (the last queue cell).</param>
 /// <param name="CellModifier">Component 4 of the environment record at <see cref="BackCell"/> (the fireworks' region effect), 0 elsewhere.</param>
 /// <param name="SameTypeAsLastUsed">The attraction the guest used last still exists and is of this one's type.</param>
+/// <param name="Price">
+/// What the guest would pay at the stand: the live price of a shop or sideshow (<see cref="PriceTerms"/>), 0 for a ride, toilet or free stand. Filled by the host only for a policy that asks for it
+/// (<see cref="IGuestDecisions.UsesValueForMoney"/>), else 0.
+/// </param>
+/// <param name="Willingness">
+/// What this guest is willing to pay for it right now (<see cref="QueueJoinRules.WillingnessToPay"/> with the guest's meters: the stand-point test's own word, computed without recording any statistic). 0 when
+/// <paramref name="Price"/> is 0 or the host was not asked.
+/// </param>
 public readonly record struct AttractionView( int Id, int TypeId, RideVisitorKind Kind, bool HasJoinCell, (int X, int Y) BackCell, (int X, int Y) EntranceCell, int CellModifier,
 	int QueueLength, int QueueSizeInCells, uint QueueLimit, int LiveExcitement, int StaticExcitementLevel, int ThirstEffect, int HungerEffect, bool ProvidesRelief, uint AgeDays,
-	bool IsIndoors, int GoldenTicketCost, int UpgradeCost, bool IsOpen, bool IsBrokenDown, bool SameTypeAsLastUsed );
+	bool IsIndoors, int GoldenTicketCost, int UpgradeCost, bool IsOpen, bool IsBrokenDown, bool SameTypeAsLastUsed, int Price = 0, uint Willingness = 0 );
 
-/// <summary>The booth's facts: the park points, the entrance fee and the draw the host took for the verdict (the park's generator is the host's).</summary>
-public readonly record struct BoothView( uint ParkPoints, uint Fee, uint Draw );
+/// <summary>
+/// The booth's facts: the park points (the park's rating), the entrance fee, the draw the host took for the verdict (the park's generator is the host's) and, for a policy that asks for it
+/// (<see cref="IGuestDecisions.UsesValueForMoney"/>), the number of rides and sideshows that are open and not broken (shops and toilets are not variety).
+/// </summary>
+public readonly record struct BoothView( uint ParkPoints, uint Fee, uint Draw, int OpenAttractions = 0 );
 
 /// <summary>The booth's verdict on the entrance fee.</summary>
 public readonly record struct BoothDecision( BoothVerdictKind Verdict );
+
+/// <summary>
+/// A guest's verdict after a decision that its price rule emptied (<see cref="IGuestDecisions.DecidePriceStall"/>): stay in the park, or go home with a thought (the host walks it to the gate and thinks the thought).
+/// </summary>
+public readonly record struct PriceStallDecision( bool GoHome, GuestThought Thought = GuestThought.None )
+{
+	public static PriceStallDecision Stay => default;
+}
 
 /// <summary>
 /// The facts of a join at the back of a queue after the host's physical checks (open, not listed, room): the type's excitement word, the host's join difference, the queue's count and its

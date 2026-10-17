@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using OpenTPW.Mods;
 
 namespace OpenTPW;
@@ -16,6 +17,12 @@ internal sealed record SmarterGuestsSaveData
 	public required bool Bootstrapped { get; init; }
 	/// <summary>One entry per guest that has an id, in guest-id order.</summary>
 	public required IReadOnlyList<SmarterGuestBirth> Births { get; init; }
+	/// <summary>
+	/// The value-for-money rule's runs of price-emptied decisions (<see cref="PriceStalls"/>), in birth-id order; absent from the file while there are none, which keeps the section of a park without any
+	/// (and every script-mod-only park) as it was.
+	/// </summary>
+	[JsonIgnore( Condition = JsonIgnoreCondition.WhenWritingNull )]
+	public IReadOnlyList<PriceStall>? Stalls { get; init; }
 }
 
 /// <summary>
@@ -39,7 +46,8 @@ internal static class SmarterGuestsSave
 			ParkSeed = state.ParkSeed,
 			NextBirthId = state.NextBirthId,
 			Bootstrapped = state.Bootstrapped,
-			Births = guests.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.Id ).Select( guest => new SmarterGuestBirth( guest.Id, guest.BirthId ) ).ToArray()
+			Births = guests.Guests.Where( guest => guest.BirthId != 0 ).OrderBy( guest => guest.Id ).Select( guest => new SmarterGuestBirth( guest.Id, guest.BirthId ) ).ToArray(),
+			Stalls = state.Stalls.Count == 0 ? null : state.Stalls.Entries.ToArray()
 		};
 	}
 
@@ -84,6 +92,28 @@ internal static class SmarterGuestsSave
 		}
 		if ( section.Bootstrapped && seenGuests.Count != holders.Count )
 			return $"the extension has run, but only {seenGuests.Count} of {holders.Count} guests have a birth id";
+		return StallsProblem( section.Stalls, seenIds );
+	}
+
+	/// <summary>
+	/// The price stalls' consistency: runs of guests the section gives a birth id (<paramref name="births"/>), strictly ascending by birth id (so each guest once), each below
+	/// from 1 to <see cref="PriceStalls.MaximumRun"/>.
+	/// </summary>
+	private static string? StallsProblem( IReadOnlyList<PriceStall>? stalls, HashSet<ulong> births )
+	{
+		if ( stalls == null )
+			return null;
+		ulong? previous = null;
+		foreach ( var entry in stalls )
+		{
+			if ( !births.Contains( entry.BirthId ) )
+				return $"the price stalls name birth id {entry.BirthId}, whom the section does not hold";
+			if ( entry.Count < 1 || entry.Count > PriceStalls.MaximumRun )
+				return $"birth id {entry.BirthId} has a run of {entry.Count} price-emptied decisions, outside 1..{PriceStalls.MaximumRun}";
+			if ( previous is { } last && entry.BirthId <= last )
+				return "the price stalls are not in strictly ascending birth id order";
+			previous = entry.BirthId;
+		}
 		return null;
 	}
 
@@ -106,5 +136,7 @@ internal static class SmarterGuestsSave
 		foreach ( var birth in section.Births )
 			byId[birth.GuestId].BirthId = birth.BirthId;
 		state.Restore( section.ParkSeed, section.NextBirthId, section.Bootstrapped );
+		if ( section.Stalls is { Count: > 0 } stalls )
+			state.Stalls.Load( stalls );
 	}
 }

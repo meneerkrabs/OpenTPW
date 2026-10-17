@@ -16,17 +16,22 @@ public sealed partial class ParkHud
 	/// <summary>The rows a category lists besides its catalogue items.</summary>
 	// [BIN:TPW-EXE:0x4ab12f buy list land rows] the build list of category 3 always appends a row with UITEXT 0x86 'Buy Land', id -1 and the value of the word 0x78560c (Costs.MapCell), then one with UITEXT 0x87 'Clear Land', id -2 and the value 0
 	private static IEnumerable<BuildItem> LandRows( BuildCategory category ) =>
-		category == BuildCategory.Features ? new[] { BuyLandRow, ClearLandRow } : Enumerable.Empty<BuildItem>();
+		category != BuildCategory.Features ? Enumerable.Empty<BuildItem>()
+			// [EXT:pools-ui] the pool rows follow the land rows while the opentpw.pools extension is on (ParkHud.Pools.cs)
+			: FeatureGates.Pools ? new[] { BuyLandRow, ClearLandRow, PoolPaintRow, PoolEraseRow } : new[] { BuyLandRow, ClearLandRow };
 
 	private string? LandRowName( BuildItem item ) => !IsLandRow( item ) ? null
+		: IsPoolRow( item ) ? PoolRowName( item )
 		: item.InfoId == BuyLandRow.InfoId ? strings[UIStrings.BuyLand] : strings[UIStrings.ClearLand];
 
 	/// <summary>The value a buy list row shows and sorts by: a land row's own value, else the object's price.</summary>
 	public long BuyPrice( BuildItem item ) => !IsLandRow( item ) ? (Status.TicketCostOf( item ) is { } tickets ? -tickets : Status.PriceOf( item ) ?? item.Cost)
+		: IsPoolRow( item ) ? PoolRowPrice( item )
 		: item.InfoId == BuyLandRow.InfoId ? (level.Park?.Economy.CellCost( CellPurchase.Land ) ?? 0) : 0;
 
 	/// <summary>Whether a buy list row can be used now: Buy Land with a land model, Clear Land with the area clear tool, else the catalogue's availability.</summary>
 	public bool IsBuyAvailable( BuildItem item ) => !IsLandRow( item ) ? Status.IsAvailable( item )
+		: IsPoolRow( item ) ? IsPoolRowAvailable()
 		: !level.IsReadOnlyVisit && (item.InfoId == BuyLandRow.InfoId ? level.BuyLandTool != null : level.AreaClearTool != null);
 
 	/// <summary>Starts a land row's tool: Buy Land arms the land tool, Clear Land the area clear tool; either closes the window.</summary>
@@ -35,6 +40,11 @@ public sealed partial class ParkHud
 	{
 		if ( RejectReadOnlyAction() )
 			return;
+		if ( IsPoolRow( item ) )
+		{
+			BeginPoolTool( item );
+			return;
+		}
 		if ( item.InfoId == ClearLandRow.InfoId && IsBuyAvailable( item ) )
 		{
 			BeginAreaClear();

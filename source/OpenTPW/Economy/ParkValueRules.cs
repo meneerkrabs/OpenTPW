@@ -26,6 +26,9 @@ public static class ParkValueRules
 			points += 1;
 		if ( type == 0 )
 			points += 2;
+		// [EXT:pools-value] pool water is worth what the land under it was: 2, as for an empty cell (a pool cell would otherwise score 0 and lower the park value, docs/POOLS.md)
+		if ( type == ParkCellTypes.PoolWater )
+			points += 2;
 		return structure ? points + 50 : points;
 	}
 

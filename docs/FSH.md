@@ -143,7 +143,7 @@ RGBA pixels.
 Inspection (no game path needed):
 
 ```sh
-dotnet source/OpenTPW/bin/Debug/net10.0/OpenTPW.dll --inspect-fsh '/path/to/TPI/Data/levels/water/rides/snowtrac.wad!stexture/icewall1.fsh'
+dotnet source/OpenTPW/bin/Debug/net11.0/OpenTPW.dll --inspect-fsh '/path/to/TPI/Data/levels/water/rides/snowtrac.wad!stexture/icewall1.fsh'
 ```
 
 A plain path reads a loose file; `archive.wad!member/path` reads a WAD member

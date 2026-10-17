@@ -448,7 +448,7 @@ simulation-changing mod is active, because a park package records none yet.
 The smarter-guests extension (`opentpw.smarter-guests`, [SMARTER-GUESTS.md](SMARTER-GUESTS.md)) keeps its own state (park seed, birth-id counter, each guest's birth id) apart from the guest snapshot and
 from `GuestSimulation.ComputeStateHash`; it joins `WorldStateHash` only while the extension is on, so the off-path hash and `SchemaVersion` (21) do not change, and it is saved in the optional
 `ParkResumeSnapshot.SmarterGuests` section (null and omitted while off). The gate is read once when the guest simulation is built. With the delegating policy of version 1.0.0 the guests and
-the `WorldRng` stream equal the off run's tick for tick; `DeterminismTests.SmarterGuestsFixedRunHash` pins the on run's world hash.
+the `WorldRng` stream equal the off run's tick for tick; `DeterminismTests.SmarterGuestsFixedRunHash` pins the on run's world hash. Version 1.1.0 (value for money) gives the policy its first rules and the state a count of consecutive price-emptied decisions per guest (`PriceStalls`, saved as `Stalls` in the section in birth-id order, and hashed only while it holds an entry). `SmarterGuestsFixedRunHash` did **not** move: the synthetic park's one drinks shop is cheap enough that no guest is ever refused at its stand, so the rules never act in that run, and an on run still equals the off run guest for guest (the test that says so stays, now over an identity-only policy where it needs the original's decisions). The rules show in `GuestMeasurementTests`' `ScenarioSmarterFixedRunHash` (0x5680EC44DBB01974, the `ParkScenario` run of 12,000 ticks with the extension on), which differs from the off pin because the scenario's dear shop turns guests away. The script-mod pins run over the original policy (no smarter extension) and are unchanged. A deliberate change of a rule constant changes the scenario pin and bumps the extension's version.
 
 Script mods ([SCRIPT-MODS.md](SCRIPT-MODS.md)) keep their `state`, failure counters and disabled flag in the optional `ParkResumeSnapshot.ScriptMods` section (null and omitted while no script mod is on) and join `WorldStateHash`
 only while one is on, so the off-path hash and `SchemaVersion` (21) do not change; the section needs the guests' identity state (the `SmarterGuests` section, shared) and the behaviour and API versions it was saved under, and a
@@ -466,6 +466,22 @@ The object catalog's cache key includes `ModSet.Digest`, so a catalog is never s
 `ModSaveTests.EmptyOnlineOnlyAndPresentationOnlyModSetsKeepThePinnedDigests` runs the fixed run and the guest pathing under an
 empty set, with only the online extension toggled and with a presentation-only mod, and checks the same digests and no
 record; the M4 gate and browser digests read the same code paths and are checked by the smokes.
+
+## Pools
+
+The `opentpw.pools` extension ([POOLS.md](POOLS.md), `[EXT:pools-save]`) adds the pool water cell type (`ParkCellTypes.PoolWater`, 0x40). Pool cells are ordinary non-empty cells of the cell map, so they join
+the canonical hash through `ParkCellMap.AddCanonicalState` with no schema change (the schema stays 21), and a park without any keeps every pin: `PoolsTests.TogglingThePoolsExtensionKeepsEveryExistingPinWithoutPoolCells`
+runs the pinned fixed run (`FixedRunHash`) and the guest-pathing run with the extension on and off (asserting the gate really differs) and gets the same digests. The extension is recorded in a park save **only while the park
+has pool cells** (`ParkResumeMods.UsedOnlyExtensionIds`); a park without them saves with no `Mods` field and the same bytes whether the extension is on or off (`PoolsLevelTests.RealCapturesWithoutPoolCellsAreByteIdenticalWithTheExtensionOnAndOff`,
+two real `Level.CaptureResumeSnapshot` captures).
+
+Guest code does read pool cells, in two places, and neither changes anything in a park without them: `WalkEdges.Blocked` blocks every step onto a pool cell for every walk mask, and `GuestWander.OffPath` skips a random
+candidate in the water (its draws are unchanged). A pool cell also scores 2 park-value points, like empty land (`ParkValueRules.CellPoints`). Pool *drawing* (the render-only holes of the ground mesh, the meshes) is
+presentation and reads nothing the simulation hashes.
+
+A new pin covers a park with pools: `DeterminismTests.PoolsFixedRunHash` = `0x4EEF5812C3D8023D`, the fixed synthetic run (the same park, shop, scripts and 14,400 ticks as `FixedRunHash`) on a cross park that also has
+a 4 x 2 and a 3 x 3 block of pool cells (17 cells) painted through `PoolBuilder` before the first tick. It differs from `FixedRunHash` because the pool cells and the block stamps their writes leave are part of the
+digest and because the walks keep out of the water (the first versions of the pin, `0x51B905DC5CF06BC6` and `0xC53F22BFFA12A843`, were taken before walkers that leave the paths were kept out of pool cells and before main's substep scheduler re-pin, which moves the run underneath); no random draw is added or removed.
 
 ## Tests
 

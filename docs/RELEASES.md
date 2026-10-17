@@ -2,7 +2,7 @@
 
 `.github/workflows/release.yml` publishes self-contained builds (no .NET install
 needed) for six runtimes on every `v*` tag, and attaches them to a GitHub
-release. Versions with a suffix, or the preview checkbox, are pre-releases. Original game files are never part of a release: start the game with
+release. Versions with a suffix, or the preview checkbox, are pre-releases. The bundled runtime is the one that ships with the SDK pinned in `global.json` (.NET 11 RC2 until the pin moves to the GA SDK). Original game files are never part of a release: start the game with
 `--game-path` pointing at an installed Theme Park World (see the [running guide](RUNNING.md)).
 
 | Runtime | Archive | Graphics | Notes |
@@ -14,7 +14,7 @@ release. Versions with a suffix, or the preview checkbox, are pre-releases. Orig
 | `linux-x64` | tar.gz | Vulkan | needs system SDL2 and a Vulkan driver |
 | `linux-arm64` | tar.gz | Vulkan | needs system SDL2 and a Vulkan driver |
 
-`linux-x86` is not built: .NET (8 and 10 alike) has no 32-bit x86 Linux runtime, so
+`linux-x86` is not built: .NET (8, 10 and 11 alike) has no 32-bit x86 Linux runtime, so
 `dotnet publish -r linux-x86` cannot succeed. Intel macOS (`osx-x64`) is not in the
 list either.
 

@@ -25,9 +25,41 @@ public sealed partial class GuestSimulation
 		var sameType = guest.UsedHistory[0] != 0 && FindAttraction( guest.UsedHistory[0] ) is { } last && last.TypeId == attraction.TypeId;
 		var back = attraction.QueueCells[^1];
 		var modifier = Litter?.Environment.At( back.X, back.Y ).Attraction ?? 0;
-		return new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, true, back, attraction.EntranceCell, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
+		var view = new AttractionView( attraction.AttractionId, attraction.TypeId, attraction.Kind, true, back, attraction.EntranceCell, modifier, attraction.QueueLength, attraction.QueueSizeInCells,
 			attraction.QueueLimit, attraction.LiveExcitement, attraction.StaticExcitementLevel, attraction.ThirstEffect, attraction.HungerEffect, attraction.ProvidesRelief, attraction.AgeDays,
 			attraction.IsIndoors, attraction.GoldenTicketCost, attraction.UpgradeCost, attraction.IsOpen, attraction.IsBrokenDown, sameType );
+		return decisions.UsesValueForMoney ? WithPrice( view, attraction, guest ) : view;
+	}
+
+	/// <summary>
+	/// <paramref name="view"/> with what the value-for-money rule reads (docs/SMARTER-GUESTS.md, phase 2): for a shop or sideshow with a price, the price, the guest's willingness to pay right now (the stand-point
+	/// test's word, <see cref="QueueJoinRules.WillingnessToPay"/>, computed here without recording a statistic: <see cref="TooExpensive"/> stays the only place that does)  Rides and free stands carry nothing.
+	/// </summary>
+	// [EXT:smarter-guests-value] host-computed facts for the policy; the stand-point test and its statistics are unchanged
+	private AttractionView WithPrice( AttractionView view, IRideVisitorBridge attraction, Guest guest )
+	{
+		if ( attraction.Kind is not (RideVisitorKind.Shop or RideVisitorKind.Sideshow) )
+			return view;
+		var terms = PriceTermsOf( attraction );
+		if ( terms.Price == 0 )
+			return view;
+		var willingness = QueueJoinRules.WillingnessToPay( terms, guest.Happiness, guest.Thirst, guest.Hunger, guest.Nausea );
+		return view with { Price = terms.Price, Willingness = willingness };
+	}
+
+	/// <summary>
+	/// The rides and sideshows that are open, not broken and have a join cell: the park's variety as the smarter booth counts it (shops and toilets are services, not draws). Zero without asking (the original
+	/// ignores it), and zero for a park with none open, which the booth rule reads as its least favourable 85 percent.
+	/// </summary>
+	private int OpenAttractionCount()
+	{
+		if ( !decisions.UsesValueForMoney )
+			return 0;
+		var count = 0;
+		foreach ( var attraction in attractions )
+			if ( attraction.Kind is RideVisitorKind.Ride or RideVisitorKind.Sideshow && attraction.JoinCell != null && attraction.IsOpen && !attraction.IsBrokenDown )
+				count++;
+		return count;
 	}
 
 	/// <summary>

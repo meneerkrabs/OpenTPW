@@ -28,6 +28,12 @@ public sealed class SmarterGuestsState
 	/// </summary>
 	public bool Bootstrapped { get; private set; }
 
+	/// <summary>
+	/// The runs of price-emptied decisions of the value-for-money rule (<see cref="PriceStalls"/>): empty unless the smarter rules run. The host writes and reads it; it is saved in the extension's section and
+	/// joins the world hash only while it holds an entry, so a park that only has the guest identity (script mods) hashes as it did.
+	/// </summary>
+	public PriceStalls Stalls { get; } = new();
+
 	/// <summary>Gives the next birth id. A counter at its limit is refused, never wrapped: ids are never reused, so a wrap would give two guests one personality.</summary>
 	public ulong AllocateBirthId()
 	{
@@ -56,6 +62,8 @@ public sealed class SmarterGuestsState
 		ParkSeed = parkSeed;
 		NextBirthId = nextBirthId;
 		Bootstrapped = bootstrapped;
+		// a restore from a section loads the runs afterwards (SmarterGuestsSave.Restore); any other restore starts without any
+		Stalls.Clear();
 	}
 
 	/// <summary>
@@ -81,7 +89,10 @@ public sealed class SmarterGuestsState
 		return value ^ (value >> 31);
 	}
 
-	/// <summary>The extension's part of <see cref="WorldStateHash"/>: the seed, the counter, the first-tick flag and the guests' ids in id order.</summary>
+	/// <summary>Mixed into the hash before the price stalls (the ASCII "PSTL").</summary>
+	internal const long StallsHashMarker = 0x5053544CL;
+
+	/// <summary>The extension's part of <see cref="WorldStateHash"/>: the seed, the counter, the first-tick flag, the guests' ids in id order and, while there are any, the runs of price-emptied decisions in birth-id order.</summary>
 	internal void AddCanonicalState( StateHasher hash, IReadOnlyList<Guest> guests )
 	{
 		hash.Add( HashMarker );
@@ -94,6 +105,15 @@ public sealed class SmarterGuestsState
 		{
 			hash.Add( guest.Id );
 			hash.Add( guest.BirthId );
+		}
+		if ( Stalls.Count == 0 )
+			return;
+		hash.Add( StallsHashMarker );
+		hash.Add( Stalls.Count );
+		foreach ( var entry in Stalls.Entries )
+		{
+			hash.Add( entry.BirthId );
+			hash.Add( entry.Count );
 		}
 	}
 }

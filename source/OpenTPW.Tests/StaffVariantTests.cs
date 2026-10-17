@@ -33,6 +33,18 @@ public class StaffVariantTests
 	}
 
 	[TestMethod]
+	public void ASaveWithANegativeStaffVariantIsRefused()
+	{
+		var park = EconomyTestData.Park();
+		var hired = EconomyTestData.HireBest( park, StaffType.Mechanic );
+		var json = ParkSaveFile.Serialize( park );
+		var pattern = new System.Text.RegularExpressions.Regex( "\"Variant\":\\s*" + hired.Variant + "(?=\\D)" );
+		Assert.IsTrue( pattern.IsMatch( json ), "the member's variant is saved" );
+		var broken = pattern.Replace( json, "\"Variant\": -3" );
+		Assert.ThrowsException<InvalidDataException>( () => ParkSaveFile.Deserialize( Encoding.UTF8.GetBytes( broken ) ) );
+	}
+
+	[TestMethod]
 	public void ACandidateOrMemberWithoutAVariantDerivesItsBankFromItsNameAndId()
 	{
 		var candidate = new StaffCandidate( 7, StaffType.Guard, 3, 1, 0 );

@@ -356,8 +356,7 @@ nearest path cell (`GuestSimulation.SetDownOffCells`). Still open (RIDES-018): t
 ## Remaining gates
 
 Path parameters and the draw-path reader of texture frames; EVENT objects/particles (their sounds play, [AUDIO.md](AUDIO.md));
-TOUR controllers, kart controllers and track building (karts, water ride jumps and
-tunnels; Splish Splash runs its BUMP controller on a built circuit, [TRACKS.md](TRACKS.md)); visitor simulation behind the bridge; `.hmp` ground deformation;
+water ride and kart jumps and tunnels (the track tool and the BUMP controllers of the water rides and go-karts are built, [TRACKS.md](TRACKS.md)); the tour controllers are described in [TOURS.md](TOURS.md); visitor simulation behind the bridge; `.hmp` ground deformation;
 the open build rules above (RIDES-018); animation tick rate; the coaster module's cell marker 0x15 beyond a track end (RIDES-011); the object-list update route (RIDES-032).
 
 ## The cells outside an entrance and an exit (RIDES-028 retired)

@@ -110,6 +110,25 @@ You supply the models; OpenTPW ships and downloads none of them.
   CC-BY-4.0, credit required, from the Phhofm/models releases (https://github.com/Phhofm/models).
   Fixed 1x3x256x256 float32 RGB input in 0..1.
 
+## Make your first local pack
+
+OpenTPW ships no world-texture pack, so a pack is something you build from your own installation (desktop only; the browser has no local packs).
+
+1. Download `realesrgan-ncnn-vulkan` for your platform and unpack it with its `models` folder next to the executable.
+2. For a quick trial that takes minutes instead of hours, build only one world: add `--texture-pack-subtree levels/jungle` to the command below. Without it the whole game is upscaled.
+3. Run the builder from the OpenTPW folder (the `scripts/run.sh` / `scripts/run.ps1` wrapper starts the same game with the options you pass):
+
+   ```sh
+   bash scripts/run.sh --game-path '/path/to/Theme Park World' --build-texture-pack \
+     --upscaler /path/to/realesrgan-ncnn-vulkan --texture-pack-subtree levels/jungle
+   ```
+
+   The pack is written to `<config>/texture-packs/enhanced` (`--texture-pack-name <name>` changes the name).
+4. Start OpenTPW, open Game Options > OpenTPW and choose the pack under **Enhanced textures** (Original, Enhanced, Detailed, then other packs). The textures swap in the background; no restart is needed.
+5. To go back, choose Original again.
+
+The sections below explain the options, the optional pre-pass and the two variants.
+
 ## Building a pack
 
 The local builder makes a pack on the player's machine from their own installation. Its default

@@ -9,7 +9,7 @@ its `.fsh` textures ([FSH.md](FSH.md)), and since October 13, 2026 an experiment
 and walks guests through them under an explicit capability policy; since October 17, 2026 it also runs the
 [money](#theme-park-inc-economy-money-only) of Theme Park Inc's own balance keys.
 
-For installation and launch steps, use the [static Theme Park Inc guide](https://opentpw.io/theme-park-inc.html), which distinguishes current release/browser starts from the upcoming desktop edition chooser.
+For installation and launch steps, use the [static Theme Park Inc guide](https://opentpw.io/theme-park-inc.html), which covers the desktop edition chooser, the explicit command and the browser starts.
 
 ## Sources
 

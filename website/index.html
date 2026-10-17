@@ -30,6 +30,7 @@
 			<a href="install.html">Install</a>
 			<a href="theme-park-inc.html">Theme Park Inc</a>
 			<a href="docs/index.html">Docs</a>
+			<a href="docs/MODS.html">Mods</a>
 			<a href="https://github.com/meneerkrabs/OpenTPW">GitHub</a>
 		</nav>
 	</div>
@@ -77,7 +78,7 @@
 			</div>
 			<div class="feature-text">
 				<h3>Build roller coasters</h3>
-				<p>Place pylons from the station, raise them with the mouse wheel and close the circuit. Track shape, cost, rating and train motion follow the original code. The track itself is still drawn as a plain band, and go-karts and water rides are not done yet.</p>
+				<p>Place pylons from the station, raise them with the mouse wheel and close the circuit. Track shape, cost, rating, the drawn track and train motion follow the original code. Go-kart tracks and water rides are built with their own track tool; their jumps and tunnels are not done yet.</p>
 			</div>
 		</article>
 
@@ -113,7 +114,7 @@
 			<li><img src="images/world-space.webp" alt="Space Zone: the entrance on purple alien ground" width="800" height="450" loading="lazy"><span class="label sky">Space Zone</span></li>
 			<li><img src="images/world-halloween.webp" alt="Halloween World: the entrance on grey, misty ground" width="800" height="450" loading="lazy"><span class="label yellow">Halloween World</span></li>
 		</ul>
-		<p class="caption light">Rendered by OpenTPW from the original game data, with the optional enhanced texture pack.</p>
+		<p class="caption light">Rendered by OpenTPW from the original game data.</p>
 	</div>
 	<svg class="wave" viewBox="0 0 1440 80" preserveAspectRatio="none" aria-hidden="true"><path d="M0 40 C120 10 240 70 360 40 S600 10 720 40 960 70 1080 40 1320 10 1440 40 V80 H0Z"/></svg>
 </section>
@@ -161,21 +162,23 @@
 					<li>Run a park with guests, staff, money, loans, research, objectives, golden tickets and keys, and save it and resume it later (the app and the browser). <a href="docs/PARK-SAVES.html">Details</a></li>
 					<li>Build your own roller coaster: pylons, closed circuits, original cost, rating and train motion. <a href="docs/COASTERS.html">Details</a></li>
 					<li>Hear the advisor, the park music and most ride, crowd and interface sounds, and play the game in nine languages at any resolution. <a href="docs/AUDIO.html">Details</a></li>
+					<li>Build swimming pools with changing rooms, slides, spas, a lazy river and swimming guests: the pools extension is on by default, with its own models, textures and guest animations (switch it off under Options, OpenTPW, Extensions and mods). <a href="docs/POOLS.html">Details</a></li>
+					<li>Change the game with mods: data mods, sandboxed TPW Script mods for guest decisions (desktop), the official extensions and local texture packs you build from your own copy. <a href="docs/MODS.html">Details</a></li>
 					<li>Go online: publish and visit parks, vote, send postcards and chat, on the official server or your own. <a href="docs/ONLINE.html">Details</a></li>
 				</ul>
 			</div>
 			<div class="status-card todo">
 				<h3>You cannot yet</h3>
 				<ul>
-					<li>Build go-kart tracks or water rides; the coaster track is still drawn as a plain band.</li>
-					<li>Load an original save game completely: guests and research are not imported yet. <a href="docs/TPWS-PAYLOAD.html">Details</a></li>
+					<li>Add jumps and tunnels to go-kart tracks and water rides (you can build those tracks and the rides run), or see the riders&#x27; heads on coaster and tour cars.</li>
+					<li>Load an original save game completely: its staff, guests (except those queueing, boarding or riding) and research load, but the random state and some script, particle and sound blocks do not. <a href="docs/TPWS-PAYLOAD.html">Details</a></li>
 					<li>Hear every sound: weather, positioned ride effects and some staff sounds are missing or not yet verified.</li>
 					<li>See other players or share a park together: a shared park is a snapshot, visits are read-only. <a href="docs/ONLINE.html">Details</a></li>
 					<li>Rely on the original&#x27;s exact numbers everywhere: some rules still use a documented approximation. <a href="docs/FIDELITY-REGISTER.html">Details</a></li>
 				</ul>
 			</div>
 		</div>
-		<p class="note-later"><strong>Later:</strong> Full Theme Park Inc / Sim Coaster support is a later goal. The experimental building-and-guests slice can already start with your own files in the browser or through the desktop world command. Campaign, economy, staff, advisor and native park saves remain unavailable. The new desktop edition chooser is a reviewed PR for a future release. <a href="docs/THEME-PARK-INC.html">Details</a></p>
+		<p class="note-later"><strong>Later:</strong> Full Theme Park Inc / Sim Coaster support is a later goal. The experimental building-and-guests slice can already start with your own files in the browser or through the desktop world command. Campaign, economy, staff, advisor and native park saves remain unavailable. The desktop edition chooser (--setup) is part of the releases since v0.8.0. <a href="docs/THEME-PARK-INC.html">Details</a></p>
 		<!-- site-status:end -->
 		<div id="live-status" class="live">
 			<h3>Live from the repository</h3>

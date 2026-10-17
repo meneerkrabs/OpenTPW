@@ -39,6 +39,26 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 
 Changes to `mods.json` apply at the next start; nothing is swapped while the game runs.
 
+## Defaults of the official extensions
+
+| Extension | On by default | Selectable | Changes the simulation | What it is |
+| --- | --- | --- | --- | --- |
+| `opentpw.online` | yes | yes | no | [Online play](ONLINE.md); no network request until the player acts |
+| `opentpw.pools` | **yes** | yes | yes (recorded in a save only while the park has pool cells or a changing room) | [Swimming pools](POOLS.md); not in a Theme Park Inc run |
+| `opentpw.pools-guest-art` | yes | yes | no | OpenTPW's own 2x kid and head sprites for land guests while pools is on; switch it off for the original guests |
+| `opentpw.restored-advice` | yes | yes | no | advisor lines in the shipped data that the original never plays |
+| `opentpw.guest-insights` | no | yes | no | refusal counters in the park information window |
+| `opentpw.cross-edition-objects` | no | yes | yes | engine support for mods that bring Theme Park Inc attractions into Theme Park World |
+| `opentpw.smarter-guests` | no | **no, not yet** | yes | guests that decide better; selectable once its rule set is complete |
+
+Mods are off until switched on. Switch an extension off (or a mod on) for one run with `--disable-extension <id>` and `--enable-mod <id>`, or
+permanently on the Extensions and mods screen or in `mods.json` ([below](#settings-modsjson)).
+
+## Quick start: your first data mod
+
+The [modding guide](MODDING-GUIDE.md) walks through a first mod: the folder layout, a minimal manifest, where to put the folder on
+Windows, macOS and Linux, switching it on, a data override and a script.
+
 ## The Extensions and mods screen
 
 Options > OpenTPW > **Extensions and mods** (`UI/Original/Options/ModsScreen.cs`, `[EXT:mods-ui]`) is the in-game way to edit
@@ -69,7 +89,7 @@ Standard.sam)", "This folder holds Theme Park World data, not Theme Park Inc", "
 the wrong edition is not saved. Saved folders go to `inputs` in `mods.json`.
 
 **OK** writes `mods.json` (only when a choice changed) and shows a restart notice; **Cancel** and Escape discard the edits.
-Nothing is applied while the game runs. The texts are in the nine languages (`OpenTpwText`, `SupplementaryStrings`). In the
+Nothing is applied while the game runs. The screen's own texts are in the nine languages (`OpenTpwText`, `SupplementaryStrings`). The name and description of four extensions (smarter guests, guest insights, pool guest art, restored advice) are translated too; the other extensions (online, cross-edition objects, pools) and every mod show the name and description from their code or manifest, which are English. In the
 browser build the community list holds the mods shipped with the page, and an input is the copy of your own game files that the
 page keeps in the browser: **Change...** opens the browser's folder dialog (a typed path or **Remove** would mean nothing there), and
 the copy is replaced only before a mod reads it (see [Mods in the browser](WEB.md#mods-in-the-browser)).
@@ -80,7 +100,7 @@ Each mod folder holds `opentpw-mod.json`:
 
 ```json
 { "schema": 1, "id": "community.tpi-rides", "name": "Theme Park Inc rides", "version": "1.0.0",
-  "category": "community", "openTpw": ">=0.9.0 <0.10.0", "edition": "theme-park-world",
+  "category": "community", "openTpw": ">=0.8.0", "edition": "theme-park-world",
   "author": "Ann", "description": "Optional, up to 1000 characters.",
   "dependencies": [{ "id": "opentpw.cross-edition-objects", "version": ">=1.0.0" }],
   "after": ["community.other-rides"],
@@ -113,9 +133,11 @@ mod's folder (no `..`, no absolute paths, no drive letters or `:`, no empty or `
 ### Version ranges
 
 A range is one or more space-separated comparators that must all hold: `>=`, `>`, `<=`, `<` and `=` followed by a
-version (a bare version means `=`), or `*` alone for any version. For example `>=0.9.0 <0.10.0`.
+version (a bare version means `=`), or `*` alone for any version. For example `>=0.8.0 <1.0.0`.
 
-Release builds check `openTpw` against their version. A development build without a version (the SDK default
+Release builds check `openTpw` against their version (`ModStartup.OpenTpwVersion`, the assembly's informational version, for example `0.8.13`):
+a mod whose range does not contain it is refused as incompatible. Use a range that includes the releases you tested, such as `>=0.8.0`;
+a range that starts above the current release refuses the mod on every build released so far. A development build without a version (the SDK default
 1.0.0) does not check `openTpw` ranges.
 
 ## Discovery

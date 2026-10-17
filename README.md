@@ -53,11 +53,11 @@ original lobby, build a park with the original objects and run it with guests, s
   developer panels are desktop-only for now ([web build](https://opentpw.io/docs/WEB.html)).
   First attraction/shop previews now load substantially faster through bounded LZSS
   copies and reused preview assets; first-use pauses remain ([measurements](https://opentpw.io/docs/BROWSER-PERFORMANCE.html)).
-- **Download:** [pre-release builds](https://github.com/meneerkrabs/OpenTPW/releases) for Windows
+- **Download:** [stable releases](https://github.com/meneerkrabs/OpenTPW/releases), published automatically every hour from a green `main`, for Windows
   (x64, x86, ARM64), macOS (Apple silicon) and Linux (x64, ARM64). Unpack and start OpenTPW; on the
   first start it asks for your game folder. Follow the [installation guide](https://opentpw.io/install.html)
   for your platform ([releases](https://opentpw.io/docs/RELEASES.html), [setup](https://opentpw.io/docs/SETUP.html)).
-- **From source:** install the .NET 11 SDK pinned in `global.json`, then
+- **From source:** install the .NET 11 SDK pinned in `global.json` (currently a release candidate, 11.0.100 RC2), then
 
   ```sh
   bash scripts/run.sh --game-path '/path/to/Theme Park World'
@@ -76,8 +76,8 @@ What works today, with your own original game data:
   Options screen (OpenTPW's own settings sit on a separate page) and the in-game HUD, built from the
   original models, fonts and strings, with bundled Enhanced interface art enabled by default
   ([UI](https://opentpw.io/docs/UI.html)).
-- **Languages:** English, Danish, Dutch, French, German and Swedish, and every European language on
-  your CD once you choose its folder ([languages](https://opentpw.io/docs/LANGUAGES.html)).
+- **Languages:** nine: English, Danish, Dutch, French, German, Korean, Polish, Spanish and Swedish, and the
+  language of your CD once you choose its folder ([languages](https://opentpw.io/docs/LANGUAGES.html)).
 - **Parks:** the four worlds with their original terrain; all 274 original objects can be built
   and run their original ride scripts and animations, and the official bonus objects can be added;
   players build their own roller coasters ([objects](https://opentpw.io/docs/OBJECTS.html), [ride scripts](https://opentpw.io/docs/RSE-VM.html),
@@ -126,10 +126,13 @@ What works today, with your own original game data:
   Original/Enhanced toggle. You can build an optional world-texture pack from your own copy on the
   desktop and switch to it in the options without a restart
   ([texture packs](https://opentpw.io/docs/TEXTURE-PACKS.html)). OpenTPW distributes no texture pack.
+- **Extensions and mods:** OpenTPW's own additions (online play, swimming pools, restored advisor lines)
+  are official extensions you can switch off, and data mods, sandboxed script mods and local texture
+  packs change the game without code ([below](#extensions-and-mods)).
 - **Extras:** viewing and exporting the PlayStation 2 disc data (`--export-ps2`, [PS2](https://opentpw.io/docs/PS2.html)).
 
-Not done yet: the jumps and tunnels of the water and go-kart rides (the water rides and the go-karts of all four themes build, run and save their original tracks,
-[phases 1 and 2](https://opentpw.io/docs/TRACKS.html)), rider heads on coaster and tour cars, tour-car sounds (the four tour rides board, fly and release riders, [tours](https://opentpw.io/docs/TOURS.html)), the particle effects of the other
+Not done yet: the jumps and tunnels of the water and go-kart rides (the water rides and the go-karts have a track tool, run their original controllers and save their tracks;
+Splish Splash and the Dino Karts are checked end to end, the other themes use the same tables and kits, [tracks](https://opentpw.io/docs/TRACKS.html)), rider heads on coaster and tour cars, tour-car sounds (the four tour rides board, fly and release riders, [tours](https://opentpw.io/docs/TOURS.html)), the particle effects of the other
 callers (ride smoke, litter; RSE EVENT types 1 and 2 are drawn, [particles](https://opentpw.io/docs/PARTICLES.html)),
 additional staff actions (the guards' chase and escort, entertainer shows) and their sounds, the path tool's link-end and undo sounds, and the exact original rules in places where
 OpenTPW still uses a documented approximation. The
@@ -157,7 +160,7 @@ certifies other editions or original-runtime parity.
 | Models ([.MD2](https://opentpw.gu3.me/formats/m3d2.html)) | ✅ | 2,116/2,118 WAD members (the two 207.201 members and the two loose 24.23 arrows are refused by the original loader too); all 1,278 animation members: position/rotation/scale, quantised vertex groups, the 12-byte pose block, texture-coordinate and texture-frame tracks, node-flag toggles, path parameters and the models' paths (Bézier, linear, Catmull-Rom) | — (slot bits 0x10/0x20 mean wrap, the rest clamp; 0x1/0x2 have no reader; [models](https://opentpw.io/docs/MD2-MODELS.html)) | The terrain's texture turn and mirror and the per-mesh culling boxes are not drawn; PC equivalence and rendering fidelity are unverified |
 | Map Data ([.MAP](https://opentpw.gu3.me/formats/map.html)) | ✅ | All five TP2M terrain grids: grid mapping and every cell bit the game reads, as tp.exe's loader reads them (bit 0x04, the five header words and jungle `terrain.map` are never used by it); the sound-catalogue MAPs are a separate, decoded format | — | — |
 | Ride Scripts ([.RSE](https://opentpw.gu3.me/formats/rsse.html)) | ⚠️ | All 308 scripts; all 84 used opcodes known with their operand counts | Operand meaning of the 51 opcodes that route to effect hooks is inferred ([VM](https://opentpw.io/docs/RSE-VM.html)) | The game systems behind those hooks |
-| Save Files ([.TPWS](https://opentpw.gu3.me/formats/tpws-ints-lays.html)) | ⚠️ | The TPWI container's 19 writer-order blocks; cell grid, placed objects, park turn and date, bank, staff and advisor state | Guests, research, RNG state and the script/particle/sound blocks (SAVE-001–010); one fixture only ([payload](https://opentpw.io/docs/TPWS-PAYLOAD.html), [inventory](https://opentpw.io/docs/reverse/SAVE-plan.html)) | Original-format saves are read, never written; OpenTPW saves [its own format](https://opentpw.io/docs/PARK-SAVES.html) |
+| Save Files ([.TPWS](https://opentpw.gu3.me/formats/tpws-ints-lays.html)) | ⚠️ | The TPWI container's 19 writer-order blocks; cell grid, placed objects, park turn and date, bank, staff, guests, research and advisor state | Guests that are queued, boarding or riding, RNG state and the script/particle/sound blocks (SAVE-001–010) ([payload](https://opentpw.io/docs/TPWS-PAYLOAD.html), [inventory](https://opentpw.io/docs/reverse/SAVE-plan.html)) | Original-format saves are read, never written; OpenTPW saves [its own format](https://opentpw.io/docs/PARK-SAVES.html) |
 | Banner mesh companions ([.MTR](https://opentpw.gu3.me/formats/mtr.html)) | ⚠️ | Topology and the nine matrices of all 11 files | The scale `s`/`M7` offset: no reader of MTR files was found in either build of the game ([companions](https://opentpw.io/docs/MTR.html)) | — (unused by the original) |
 | Video ([.TQI/.TGQ](https://opentpw.gu3.me/formats/tqi.html)) | ✅ | All nine movies; audio bit-exact; video through the PC game's own decoder (dequantisation matrix, transposed scan, transform passes, 7-bit samples and colour tables), matching the original routines run in the x86 oracle | — ([movies](https://opentpw.io/docs/TGQ-MOVIES.html)) | Game trigger points; `--play-movie` plays them |
 | Theme Park Inc textures (.FSH, EA `SHPI`) | ⚠️ | All 7,283 `.fsh` files/WAD members to RGBA (`--inspect-fsh`) | Transparency of opaque 24-bit palettes is approximated ([FSH](https://opentpw.io/docs/FSH.html)) | — |
@@ -178,6 +181,17 @@ OpenTPW has two kinds of add-ons, both switched on and off on **Options > OpenTP
 
 - **Official extensions** are OpenTPW features that live in this repository and can be switched off. They are
   OpenTPW's own, not original behaviour, and are labelled `[EXT]` in the code. Online play, the restored advisor lines and pools are on by default.
+
+  | Extension | Default | What it does |
+  |---|---|---|
+  | `opentpw.online` | on | Online play ([online](https://opentpw.io/docs/ONLINE.html)); it makes no network request until you act. |
+  | `opentpw.pools` | **on** | Swimming pools: paint pool water, build changing rooms, extras (ladders, diving boards, showers, loungers, lamps, underwater lights), water slide towers and water attractions (rope swing, water jets, wave machine, small and large spa), a lazy river, and guests who swim in their own swimwear animations. Not in a Theme Park Inc run ([pools](https://opentpw.io/docs/POOLS.html)). |
+  | `opentpw.pools-guest-art` | on | With pools on, land guests are drawn with OpenTPW's own 2x kid and head sprites; switch it off for the original guests. Presentation only. |
+  | `opentpw.restored-advice` | on | Advisor lines that exist in the game's data but that the original program never plays. |
+  | `opentpw.guest-insights` | off | Counts why guests refuse rides and shops in the park information window. |
+  | `opentpw.cross-edition-objects` | off | The engine support for a mod that brings Theme Park Inc attractions into Theme Park World (the shipped mod `opentpw.tpi-rides` is off too). |
+  | `opentpw.smarter-guests` | not selectable yet | Guests that decide better; it becomes selectable once its rule set is complete. |
+
 - **Community mods** are folders with an `opentpw-mod.json` manifest, off until you switch them on. A mod can replace
   game files (overrides), replace string tables (strings), add objects and carry scripts.
 

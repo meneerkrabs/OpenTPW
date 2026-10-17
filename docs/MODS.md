@@ -287,9 +287,9 @@ without pool cells saves, loads and exports identically with it on or off ([POOL
 
 ## Smarter guests and guest insights (`opentpw.smarter-guests`, `opentpw.guest-insights`)
 
-Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement), both at version 1.0.0. **Players cannot switch them on yet**:
-neither has a real feature, and a no-op version would lock saves to it. They are registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or `--enable-mod` for them is ignored with a log line, until
-the first real rule ships (phase 2 for smarter guests, phase 1 for guest insights).
+Two official extensions for the park visitors ([SMARTER-GUESTS.md](SMARTER-GUESTS.md) has the plan, the architecture and the measurement), both at version 1.0.0. **Guest insights can be switched on** (it has its first
+feature, phase 1); **smarter guests cannot yet**: it has no real rule, and a no-op version would lock saves to it. It is registered for tests and development, hidden from the Extensions and mods screen, and a `mods.json` entry or
+`--enable-mod` for it is ignored with a log line, until the first real rule ships (phase 2).
 
 - **`opentpw.smarter-guests`** changes the simulation (`AffectsSimulation`), so a park saved with it records it (id, version, no files) and loads only with it on, in the same version; a park saved without it
   loads only with it off. **The extension's version is the algorithm identity**: every release that changes how guests decide bumps it, and a park saved by another version is refused with
@@ -297,8 +297,11 @@ the first real rule ships (phase 2 for smarter guests, phase 1 for guest insight
   a birth id for every guest and its own park state, saved in an optional `SmarterGuests` section of the park save. A build from before that section refuses such a save. Switching it needs a
   restart like every extension, and a save made without it is refused while it is on.
   `FeatureGates.SmarterGuests` is read once when the guest simulation is built. `[EXT:smarter-guests]`.
-- **`opentpw.guest-insights`** only reads the park (`AffectsSimulation` false): refusal reasons and a complaints summary in the park windows, in a later phase. It is never recorded in saves, so
-  it can be switched freely. `[EXT:guest-insights]`.
+- **`opentpw.guest-insights`** only reads the park (`AffectsSimulation` false) and is listed on the Extensions and mods screen (`PlayerSelectable`). Switched on, the park information window gains a column of
+  **refusal-reason counters** in the place of the original's line-graph toggles: how many times guests turned an attraction down because it was too expensive (the price refusal at a shop or sideshow stand), the queue was too long
+  (full, or at its limit), it was too scary, too boring, or the ride was broken or closed (a queue head sent away). The counters are a passive observer of the guest simulation (`GuestRefusalCounters`), start at zero for
+  every park built or loaded, are never saved, never hashed and take no random draw, so saves, pins and replays are byte for byte those of the extension being off. Never recorded in saves, so it can be switched freely
+  (with a restart like every extension). The complaints summary is still to come. `[EXT:guest-insights]`.
 
 Their names and descriptions exist in the nine interface languages for the screen. Switching either on or off changes none of the pinned digests of the off path
 (`DeterminismTests`); with smarter guests on, `DeterminismTests.SmarterGuestsFixedRunHash` pins the world hash, which then includes the extension's state.

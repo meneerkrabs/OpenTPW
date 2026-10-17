@@ -1,7 +1,8 @@
 # Original offline container decoding
 
-Evidence date: October 9, 2026. This is bounded **read-only container decoding**,
-not original park import, original save writing or a claim of playable TPWS support.
+Evidence date: October 9, 2026. This began as bounded **read-only container decoding**
+and is not a claim of playable TPWS support; later slices added the park import and, on
+October 17, 2026, a byte-exact writer (see "Writing original-format saves" in TPWS-PAYLOAD.md).
 No original executable has been run. Edition/locale/patch remain unidentified.
 
 ## Evidence and supported envelope
@@ -119,10 +120,10 @@ reader and then checks the block's tag (`0x415270`); only that one (and a World 
 payload) is found by its delimiter's bytes, so a payload that splits in more than one way there, or holds its delimiter's bytes more than 256 times, is rejected although the original loader would
 read it (SAVE-011).
 The four local `scape.omp` files start with `OBJ_`; this is not evidence that they
-are terrain tile grids. No save writer exists: original saves are never written,
-because round-trip evidence is missing and Easymode alone holds 18,288
-uninitialized `0xCD` bytes, so byte equality cannot be the criterion
-(SAVE-plan §8.3).
+are terrain tile grids. Original saves can be written: `SaveContainerWriter` and
+`OriginalSavePayload` reproduce all eleven corpus saves and the shipped Easymode byte for
+byte (the 18,288 uninitialised `0xCD` bytes of Easymode sit in raw runs and are carried;
+TPWS-PAYLOAD.md, "Writing original-format saves"). Theme Park Inc containers are not written.
 
 The upstream format document is readable through the GitHub contents API
 (`opentpw-docs` `src/formats/tpws-ints-lays.md`). It agrees with the container

@@ -687,6 +687,54 @@ defaults and is listed. The saved advisor's pending advice and history are
 dropped, with an evidence line, when no automatic advisor is attached.
 Path styles, queues, extension data and object models are not imported.
 
+## Writing original-format saves (`SaveContainerWriter`, `OriginalSavePayload`, `OriginalParkExport`)
+
+An original-format save can be written now, byte for byte. Nothing here runs the original game or holds a save's bytes: the proof is a read-then-write round trip over the eleven private saves and the
+shipped Jungle `Easymode.TPWI`.
+
+**Compression.** The game's BILZ writer (vtable method `0x619280`, reached from the save function `0x414920` through `0x5F8050`) calls `deflateInit2(-1, Z_DEFLATED, 15, 9, 0)` and one
+`deflate(Z_FINISH)` of zlib 1.1.3 (the version string at `0x7780F0`) and stores `'BILZ'`, the payload length, the chunk length (the compressed length plus the 0x1C header), 15, 9, 0, 0. The stock
+`ZLibStream` is another zlib and emits other bytes, so `ClassicZlibDeflater` ports the algorithm (level 6 lazy matching, a 64K hash, 32K symbol blocks; `deflate_slow`, `longest_match`, `trees.c`).
+`ClassicZlibDeflaterTests` pins its output hashes against the reference encoder over deterministic inputs (matches across window slides, runs, incompressible blocks), and every corpus
+file's compressed stream is reproduced exactly.
+
+**Container.** `SaveContainerWriter` is the twin of the save function `0x414920` and the header writer `0x415F50`: magic (the static 500 at `0x6FD928`; the shipped TPWI keeps 400), the language byte
+(the chain of name compares at `0x415F88..0x416048`: English 0, Spanish 1, Italian 2, Swedish 3, German 4, French 5, Japanese 6, anything else 0), a zeroed 0x500-byte buffer with the banner copied
+from the language table at `0x78A464`, a zeroed 0x100-byte buffer with the 8-word required-content bitmap at `0x802080`, `htonl(0x01221985)` and the online flag, then the BILZ chunk. The banner is the
+only text of the file the original takes from its own tables; the writer takes it from its caller (`SaveContainerFields.Of` copies it from an existing container, the original's English notice is not
+repeated in the repository).
+
+**Payload.** `OriginalSavePayload` holds the 19 blocks as models whose fields are exactly what each loader reads, in the loader's order, and `Write` emits them in the order of the payload writer
+`0x4164C0` with its 17 delimiters (the constants at `0x6FD8B8..0x6FD8F8`, read from the executable and found equal to `SavePayloadLayout.Delimiters`, each stored byte-reversed). The original's block
+routines are single serializers run with the writer's stream (the World writer `0x516C80` calls `0x4D3AA0`, `0x4D7A70` and `0x4D7EA0` and the per-model serializers, the same routines the loader
+`0x5179C0` calls), so the loader's field order is the writer's; the 26 labelled variables, `Used Thing Head`, `Used Thing Next` and `thingmodel` were checked in the World writer's own label calls.
+Typed: the action recording, the World variables, staff pool, calendar, arrivals, map cell sizes and thing chain, the Scripts slot table, the Particles on flag and counted tables, the message centre's
+29 lists, the clock, vanilla-time and game-system words, the flying-rides slot array and bodies, the RSSE header, padding words, records, buffers and `'OBJ '` lists, the camera words, the coasters'
+counts, the advisor and sound framing and the cheat, advisor-scoring and UI words. Kept as raw runs, because the original copies them as one dump or no OpenTPW reader decodes their fields: the
+control manager's 150 records, each map cell's records, every thing body except the bank (`SaveBank.ToBody` is the bank serializer `0x4CF920`), the RideSystem frame, the track-rides chunk, the coaster
+chunks, the particle tables, the RSSE structs and the sound chunk.
+
+**Round trip.** `OriginalSaveWriterCorpusTests` reads each of the eleven saves (seven named parks and autosaves, four `restart.INTS`) and the shipped Easymode into the models, writes them again and
+compares the payload and the whole container: identical bytes in all twelve (Easymode's 18,288 uninitialised `0xCD` bytes included, because they sit in raw runs). Synthetic tests
+(`OriginalSaveWriterTests`) cover the writer without any original data: the block order and delimiters, the container fields and BILZ header, strictness (a broken thing chain, a nonzero script slot
+without a record, a block with bytes its loader does not read).
+
+**Export of an OpenTPW park.** `OriginalParkExport` writes the economy back into a *template*, an original save of the same level (the shipped Jungle Easymode, a park the player loaded or a
+`restart.INTS`): the park turn (`mGameTick`), the open flag (`mParkClosed`), the world generator state (`mRandomSeed`), the calendar caches, the bank account words and loans and the object controls'
+first-purchase turns replace the template's; every other byte is the template's. Importing each of the twelve originals into an economy and exporting it onto its own bytes reproduces the file
+exactly except for the first-purchase stamps: the import stamps the saved turn into a type whose control word was 0 (the original's own stamp when the first saved object of the type is built,
+`0x4DB690`), so the original writes the same value on its next save; the four `restart.INTS` come back unchanged. The exported payload goes back through the loader's split (each block's reader and
+tag) and both importers and yields the same economy (`OriginalParkExportTests`).
+
+What OpenTPW cannot export yet, so the template's version stays: placed objects and their attraction things (a new object needs its attraction body, its RideSystem scene record with the object
+model's node and control counts, the cells' parent, mesh-instance and footprint fields and a thing id), built paths (a path cell differs from a plain one in the direction, flag, neighbour, texture,
+rotation and type fields; the rule that sets each is not traced), staff, guests, the research lab's projects and the object controls' researched bytes, the advisor controller, weather and the engine
+blocks. A park without a template cannot be exported: the four `restart.INTS` show what a new park holds, and of its 12 things the analyser (73,536 bytes), the advisor controller (5,838), the
+tag system, the message receiver and both HQs are identical in all four themes, while the object controls, the map cells, the attractions, the challenges, the bank, the weather, the research lab,
+the particles, the RSSE, the RideSystem, the flying rides, the advisor block and the sound chunk depend on the theme, and the message centre's lists and the track-rides build stamp are
+executable constants. Building them from the level's data would be the from-scratch writer; it needs the analyser's, advisor controller's and research lab's constructors and the object
+models' node counts first.
+
 ## Tests
 
 `SavePayloadLayoutTests`: synthetic payloads in writer order (blocks tile the
@@ -738,6 +786,7 @@ RideSystem, attraction and economy readers over the second fixture set
 
 ## Remaining gates
 
+- A from-scratch original-format park (no template): the constructors of the park analyser, advisor controller, research lab, attractions and ride-system scene records (see "Writing original-format saves"); exporting placed objects, built paths, staff and guests.
 - An online (LAYS) save; LAYS payloads are unsupported.
 - A non-empty TPWS: the second fixture set has no placed objects, extension records or
   extra paths, so those readers are still proven on Easymode alone. A Theme Park World

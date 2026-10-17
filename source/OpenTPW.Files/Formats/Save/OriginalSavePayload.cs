@@ -245,6 +245,7 @@ public sealed class OriginalSavePayload
 	}
 
 	/// <summary>Writes the payload in the original writer's order (<c>0x4164C0</c>): each block followed by its byte-reversed delimiter, the first and last without one.</summary>
+	// [BIN:TPW-EXE:0x4164C0 payload writer] the block routines in call order: 0x403780 (action recording), 0x516C80 (World), 0x475650 (Scripts), 0x51F680 (Particles), 0x40FC80 (message centre), 0x402E00 (clock), 0x403220 (vanilla time), 0x550520 (game system), 0x464140 (RideSystem), 0x5428E0 (track rides), 0x55DE70 (flying rides), 0x559350 (RSSE), 0x42CDC0 (camera), 0x437300 (coasters), 0x599C30 (advisor), 0x51C350 (sound), 0x4053B0 (cheats), 0x59BEA0 (advisor scoring), 0x4816A0 (UI); after every block but the first and the last a 4-byte stream write of the delimiter constants at 0x6FD8B8 (DLRW), 0x6FD8BC (CSPS), 0x6FD8C0 (TRAP), 0x6FD8C4 (SSEM), 0x6FD8D8 (KOLC), 0x6FD8DC (TNAV), 0x6FD8E0 (SYSG), 0x6FD8E4 (SYSR), 0x6FD8C8 (KART), 0x6FD8CC (RYLF), 0x6FD8D0 (ESSR), 0x6FD8D4 (EMAK), 0x6FD8E8 (SAOC), 0x6FD8F0 (SVDA), 0x6FD8EC (NUOS), 0x6FD8F4 (STHC), 0x6FD8F8 (CSDA), each stored as the byte-reversed tag
 	public byte[] Write()
 	{
 		var writer = new SaveByteWriter();
@@ -310,7 +311,7 @@ public sealed class OriginalSavePayload
 		writer.Bytes( ActionRecording.Recording );
 	}
 
-	// [BIN:TPW-EXE:0x516C80 World writer] the 26 labelled variables (version .. mFirstObject), then 0x4D3AA0, 0x4D7A70 (0x507850, 0x4F7F30, 0x4CF050), 0x4D7EA0, "Used Thing Head" and per thing "Used Thing Next", "thingmodel" and the model's serializer
+	// [BIN:TPW-EXE:0x516C80 World writer] 26 labelled u32/u16 writes from the log labels at 0x748744 (version) and 0x7629FC..0x76286C (mArrivalVehicle_Size1 .. mFirstObject), then the serializers 0x4D3AA0 (control manager), 0x4D7A70 (macro AI: 0x507850, 0x4F7F30, 0x4CF050) and 0x4D7EA0 (map), then the labels "Used Thing Head" (0x7627E4), "Used Thing Next" (0x7627D4) and "thingmodel" (0x7627C8) and one serializer call per model. The block routines are single serializers the loader 0x5179C0 calls at the same addresses (0x5181E7 for the control manager), run with the writer's stream, so the loader's field order, read from the loader, is the writer's
 	private void WriteWorld( SaveByteWriter writer )
 	{
 		WriteVariables( writer, World.Variables );

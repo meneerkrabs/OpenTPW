@@ -119,6 +119,9 @@ public partial class Level : IDisposable
 	public bool UiCapturesMouse { get; set; }
 	/// <summary>Simulation speed from the HUD speed control (0 = paused).</summary>
 	public float SimulationTimeScale { get; set; } = 1f;
+
+	/// <summary>The scene's rate-scaled clock (<see cref="OpenTPW.SceneClock"/>): the sky and the coasters' scrolling textures read it, so they follow the game speed and the pause.</summary>
+	internal SceneClock SceneClock { get; } = new();
 	/// <summary>Shows the ImGui developer panel and the sandbox BF4 text panel (off when the original HUD runs alone).</summary>
 	public bool ShowDeveloperPanels { get; set; } = true;
 	private readonly FixedStepClock simulationClock = new();
@@ -808,6 +811,7 @@ public partial class Level : IDisposable
 			Input.Mouse.Position, new Vector2( Screen.Size.X, Screen.Size.Y ), Input.ModifierMaskDown );
 		RefreshRenderedCells();
 		RefreshPools();
+		SceneClock.Advance( Time.Delta * SimulationTimeScale );
 		AdvanceSimulation( Time.Delta * SimulationTimeScale );
 		foreach ( var entity in Entity.All.ToArray() )
 			entity.Update();

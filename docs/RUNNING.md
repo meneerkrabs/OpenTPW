@@ -100,8 +100,8 @@ or full gameplay and does not download proprietary game files.
 
 The choices themselves live in `<config>/mods.json`; see [MODS.md](MODS.md). Changes apply at the next start.
 
-`OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the example Theme Park Inc rides mod
-([MODS.md](MODS.md#making-a-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
+`OPENTPW_TPI_PATH=/path/to/Theme\ Park\ Inc bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` runs the native smokes with the shipped Theme Park Inc rides mod (`opentpw.tpi-rides`)
+([MODS.md](MODS.md#the-shipped-theme-park-inc-rides-mod)); it needs a window, so not while the screen is locked.
 
 ## Diagnostic model inspection
 

@@ -22,9 +22,12 @@ In code the system is called `OpenTPW.Mods` / "extensions"; `OpenTPW.ModKit` is 
 - park saves record the mods that change the simulation and refuse a mismatched set (below);
 - the **Extensions and mods screen** (below) edits `mods.json`;
 - **content roots** are live on the desktop: an enabled mod's `overrides`, `strings` and `objects` change what the game
-  reads (see [Content](#content)). The browser build has no files-based mods, so nothing changes there;
+  reads (see [Content](#content)). The browser build runs the same data mods shipped with the page (see
+  [Mods in the browser](WEB.md#mods-in-the-browser));
 - **Theme Park Inc attractions in Theme Park World** work end to end through a data mod and the cross-edition objects
-  extension: they are listed, priced, researched, bought, placed, run and saved (see
+  extension: they are listed, priced, researched, bought, placed, run and saved. OpenTPW ships that mod itself,
+  `opentpw.tpi-rides`, off by default, on the desktop and in the browser (see
+  [The shipped Theme Park Inc rides mod](#the-shipped-theme-park-inc-rides-mod); to write your own, see
   [Making a Theme Park Inc rides mod](#making-a-theme-park-inc-rides-mod)).
 
 Changes to `mods.json` apply at the next start; nothing is swapped while the game runs.
@@ -59,8 +62,10 @@ Standard.sam)", "This folder holds Theme Park World data, not Theme Park Inc", "
 the wrong edition is not saved. Saved folders go to `inputs` in `mods.json`.
 
 **OK** writes `mods.json` (only when a choice changed) and shows a restart notice; **Cancel** and Escape discard the edits.
-Nothing is applied while the game runs. The texts are in the six languages (`OpenTpwText`, `SupplementaryStrings`). The
-browser build has no mod folders, so the community list is empty there and the screen lists the official extensions only.
+Nothing is applied while the game runs. The texts are in the six languages (`OpenTpwText`, `SupplementaryStrings`). In the
+browser build the community list holds the mods shipped with the page, and an input is the copy of your own game files that the
+page keeps in the browser: **Change...** opens the browser's folder dialog (a typed path or **Remove** would mean nothing there), and
+the copy is replaced only before a mod reads it (see [Mods in the browser](WEB.md#mods-in-the-browser)).
 
 ## Manifest
 
@@ -113,7 +118,9 @@ shadowed:
 3. `<config>/mods/<id>/`, where `<config>` is the configuration folder (`OPENTPW_CONFIG_DIR`, see
    [SETUP.md](SETUP.md));
 4. `<program>/content/mods/<id>/`: data-only content shipped with OpenTPW (the only place `opentpw.` ids may come
-   from).
+   from). The repository's `content/mods/` folder is copied to the build output and to every release like the rest of `content/`
+   (`OpenTPW.csproj`), and embedded in the browser build (`OpenTPW.Web.csproj`). A mod there is listed in the screen like any other and is
+   **off by default**.
 
 In the last two places the folder must be named after the mod's id. A folder named on the command line or in
 `OPENTPW_MOD_DIRS` whose path cannot be used is reported as a refused entry.
@@ -126,12 +133,14 @@ normalization (such as `Foo.txt` and `foo.txt`), refuse the mod. Content paths m
 hold: a component ending in `.` or a space, or a device name such as `CON`, `NUL`, `COM1` or `LPT1` (with or without
 an extension).
 
-The browser build has the official extensions only. Community mods there will come later as zips imported into the
+The browser build discovers the program folder only: the mods shipped with the page are embedded and written below it at start
+(`content/mods/<id>/`, like the other content). It has no folders for community mods; those would come later as zips imported into the
 page's private file storage.
 
 ## Settings: `mods.json`
 
-The choices live in `<config>/mods.json` (in the browser `/config/mods.json`, which the page keeps):
+The choices live in `<config>/mods.json` (in the browser `/config/mods.json`, which the page mirrors into the browser's IndexedDB and
+puts back before the game starts):
 
 ```json
 {
@@ -331,7 +340,33 @@ Theme Park Inc data (`ModContentRoots`) as a sound root, as a root of shared tex
 section describes; an input folder that is not Theme Park Inc data gets a warning and no sound root, and with the extension off no
 input is registered, so every object keeps the running game's banks.
 
+## The shipped Theme Park Inc rides mod
+
+OpenTPW ships the rides mod of the next section as ready-made content: `content/mods/opentpw.tpi-rides/` holds the manifest and the
+`objects.json`, two text files of about 30 KB with no Theme Park Inc bytes. It is a data mod with an `opentpw.` id (reserved for content
+shipped with OpenTPW, found in the program folder only), depends on the cross-edition objects extension and asks for one `original-data`
+input, `tpi`, with `"edition": "theme-park-inc"`. Nothing is on by default: not the extension, not the mod.
+
+- **What it lists.** 183 objects, joined to the Theme Park World theme of their world (arabian to the jungle park, science to space, water to
+  fantasy), by their own category: every archive of the install's `rides`, `shops`, `sideshow`, `features` and `upgrades` folders that the
+  parks can load (182 of the 217; the other 35 are the skipped names described below), and the science litter bin of the `Facilities` folder. Ids
+  run from 40001 inside the reserved range 40000 to 40499; the first four (Turban Bounce, Giant Robot Swing, the litter bin and Desert Drinks)
+  keep their ids, and a new archive takes the next free one. The English names are "Turban Bounce" and its three siblings, and "<World> <archive
+  name>" for the rest (for example "Arabian apcoast"): they are derived from the install's own file names, never copied from its text.
+- **Where it comes from.** The tests read these files themselves (`TpiRidesFixture`), so the shipped mod and the tests cannot drift.
+  `TpiRidesShippedModTests` compares the list with the archives your install really loads, and with `OPENTPW_WRITE_TPI_RIDES=1` rewrites
+  `objects.json` from it (existing ids stay, new archives are appended). Run it with `OPENTPW_GAME_PATH` and `OPENTPW_TPI_PATH` set.
+- **Turning it on, desktop.** Open Options > OpenTPW > **Extensions and mods**, switch on *Cross-edition objects* and *Theme Park Inc rides*,
+  choose your Theme Park Inc install (or its `Data` folder) as the input (the screen checks it), press OK and restart; or for one run:
+  `--enable-mod opentpw.cross-edition-objects --enable-mod opentpw.tpi-rides --mod-input 'opentpw.tpi-rides:tpi=/games/Theme Park Inc'`.
+  Start a Theme Park World park: the objects are in the buy lists of their theme, after the game's own.
+- **Turning it on, browser.** Choose your Theme Park Inc folder on the setup page (*Theme Park Inc files for mods*) before or after the Theme
+  Park World folder, then switch the extension and the mod on in the same screen and reload. Only the files the mod reads are copied (about 77
+  MB of the install's 400 MB) and they stay in the browser's storage. Details and limits: [WEB.md](WEB.md#mods-in-the-browser).
+
 ## Making a Theme Park Inc rides mod
+
+The mod above is made this way; a mod of your own works the same, with a `community.` id.
 
 A mod that brings Theme Park Inc attractions into Theme Park World is two small text files. It copies nothing: the player's own
 Theme Park Inc install is the mod's input and the archives are read where they are.
@@ -413,11 +448,13 @@ sound-driven synchronisation of TPI scripts with its engine events, and the TPI 
 
 ### Checking a TPI rides mod
 
-- Tests (`source/OpenTPW.Tests/TpiRidesWiringTests.cs`, always; `TpiRidesEndToEndTests.cs`, over the real install): the example mod is
-  generated at test time (`TpiRidesFixture`, no Theme Park Inc bytes) and checked with `OPENTPW_TPI_PATH` (an install or its `Data`
-  folder) next to `OPENTPW_GAME_PATH`: catalogue, economy, buy list, textures, sound routes, a placed object's script (the litter bin runs
-  `WAITABS`), the M3 gate's guests boarding a Theme Park Inc ride in the jungle and in the space park, and the save records. Without the
-  variables they are inconclusive.
-- Native smokes: `OPENTPW_TPI_PATH=... bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` writes the example mod to a temporary
-  folder and runs the sandbox smoke (it builds the mod's objects), and the park-resume smoke pair with `OPENTPW_SMOKE_MODS=1`, whose
+- Tests (`source/OpenTPW.Tests/TpiRidesWiringTests.cs`, `TpiRidesShippedModTests.cs` and `ModsInBrowserTests.cs`, always;
+  `TpiRidesEndToEndTests.cs` and the install comparison of `TpiRidesShippedModTests`, over the real install): the shipped mod
+  (`content/mods/opentpw.tpi-rides`, copied beside the test binaries, no Theme Park Inc bytes) is checked with `OPENTPW_TPI_PATH` (an install
+  or its `Data` folder) next to `OPENTPW_GAME_PATH`: it is discovered as program content and off by default, every object it lists loads into its
+  theme, and then catalogue, economy, buy list, textures, sound routes, a placed object's script (the litter bin runs `WAITABS`), the M3
+  gate's guests boarding a Theme Park Inc ride in the jungle and in the space park, and the save records. Without the variables they are
+  inconclusive.
+- Native smokes: `OPENTPW_TPI_PATH=... bash scripts/smoke-tpi-rides.sh '/path/to/Theme Park World'` switches the shipped mod and its
+  extension on for the sandbox smoke (it builds the mod's objects), and the park-resume smoke pair with `OPENTPW_SMOKE_MODS=1`, whose
   fixture park is built from the mod's Turban Bounce through the HUD build menu and queue tool, saved and restored.

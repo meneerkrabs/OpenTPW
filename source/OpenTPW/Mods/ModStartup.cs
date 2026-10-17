@@ -19,7 +19,7 @@ public static class ModStartup
 
 	/// <summary>
 	/// The mod folders found at startup, valid or not: the Extensions and mods screen lists them ([EXT:mods-ui]). Like the
-	/// resolved set it does not change until the next start, and the browser build has none.
+	/// resolved set it does not change until the next start. The browser lists the mods shipped with the page (<see cref="InitializeBrowser(Action{string}, Action{string})"/>).
 	/// </summary>
 	public static IReadOnlyList<DiscoveredMod> Discovered { get; private set; } = Array.Empty<DiscoveredMod>();
 

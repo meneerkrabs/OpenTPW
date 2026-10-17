@@ -569,7 +569,7 @@ public static class OptionsScreen
 			Bounds = Rect( 1331, 1330, 1730, 1434 ),
 			Anchor = UiAnchor.Center
 		} );
-		// [EXT:mods-ui] Extensions and mods, beside Game files (the browser lists the official extensions only; it has no folder chooser)
+		// [EXT:mods-ui] Extensions and mods, beside Game files (the browser lists the data mods shipped with the page; its mod inputs are chosen with the page's folder dialog)
 		screen.Add( new UiButton
 		{
 			Id = "mods",

@@ -267,6 +267,48 @@ public class MtrFileTests
 		Console.WriteLine( $"{checkedFiles} MTR files match their paired MD2 topology and node matrix." );
 	}
 
+	/// <summary>
+	/// What the data itself shows about the scale <c>s</c> and the M7 offset (docs/MTR.md "Scale and M7"). Observed relations only:
+	/// nothing in either executable reads an MTR file, so no runtime meaning is claimed.
+	/// </summary>
+	[TestMethod]
+	public void OriginalIsoMtrScaleIsBakedIntoPairedMd2Geometry()
+	{
+		var directory = Environment.GetEnvironmentVariable( "OPENTPW_MTR_PATH" );
+		if ( string.IsNullOrWhiteSpace( directory ) || !Directory.Exists( directory ) )
+			Assert.Inconclusive( "Set OPENTPW_MTR_PATH to a directory with .mtr files (and their sibling .MD2 files) extracted from the original ISO." );
+		var depthChecked = 0;
+		var pivotChecked = 0;
+		foreach ( var file in Directory.EnumerateFiles( directory!, "*", SearchOption.AllDirectories ).Where( file => Path.GetExtension( file ).Equals( ".mtr", StringComparison.OrdinalIgnoreCase ) ) )
+		{
+			var md2Path = Directory.EnumerateFiles( Path.GetDirectoryName( file )! ).FirstOrDefault( candidate => string.Equals( Path.GetFileName( candidate ), Path.GetFileNameWithoutExtension( file ) + ".MD2", StringComparison.OrdinalIgnoreCase ) );
+			if ( md2Path == null )
+				continue;
+			var mtr = new MtrFile( new MemoryStream( File.ReadAllBytes( file ) ) );
+			var mesh = new ModelFile( new MemoryStream( File.ReadAllBytes( md2Path ) ) ).Meshes[0];
+			var scale = mtr.Matrices[5].M11;
+			var minimum = new Vector3( mesh.Positions.Min( p => p.X ), mesh.Positions.Min( p => p.Y ), mesh.Positions.Min( p => p.Z ) );
+			var maximum = new Vector3( mesh.Positions.Max( p => p.X ), mesh.Positions.Max( p => p.Y ), mesh.Positions.Max( p => p.Z ) );
+			// s is already applied to the MD2 vertices: the bankrupt and paused slabs are exactly 30 * s thick in mesh-local Y
+			// (the unscaled authoring depth was 30; congrats has s = 1 and a text-dependent 30 - 30.75 depth).
+			if ( !file.Contains( "congrats", StringComparison.OrdinalIgnoreCase ) )
+			{
+				Assert.AreEqual( 30f * scale, maximum.Y - minimum.Y, 2e-3f, file );
+				depthChecked++;
+			}
+			// M7 is not a function of the final MD2: where the node translation is the canonical (999.735, ...) one its X offset
+			// divided by s is the mesh-local X centre, elsewhere (German bankrupt, all congrats, Danish/German paused) it is not.
+			if ( Math.Abs( mtr.Matrices[0].Translation.X - 999.735f ) < 1e-2f )
+			{
+				Assert.AreEqual( (minimum.X + maximum.X) / 2, mtr.Matrices[7].Translation.X / scale, 2e-3f, file );
+				pivotChecked++;
+			}
+		}
+		if ( depthChecked == 0 )
+			Assert.Inconclusive( "OPENTPW_MTR_PATH contains no bankrupt/paused .mtr file with a sibling .MD2." );
+		Console.WriteLine( $"{depthChecked} depth relations and {pivotChecked} M7 X-centre relations hold." );
+	}
+
 	private static void AssertNearlyEqual( Matrix4x4 expected, Matrix4x4 actual, string message )
 	{
 		for ( var row = 0; row < 4; row++ )

@@ -22,6 +22,9 @@ internal enum AdvisorGameEvent
 /// <param name="FixedScore">The score of a callback that returns a constant (the original's <c>mov eax, imm</c> callbacks), else null: the score is the Advisor.sam value of <paramref name="ScoreKey"/>.</param>
 internal readonly record struct AdvisorMessageDefinition( int MessageId, int FirstResponseId, int ResponseCount, byte Group, byte MaximumPendingDuplicates, string ScoreKey, byte GameMode = 2, int? FixedScore = null );
 
+/// <summary>What one scan update did: the row it scored, and the advice it queued with the queue's verdict (both null when nothing passed).</summary>
+internal readonly record struct AdvisorScanOutcome( int ScoredRow, AdvisorPendingAdvice? Posted, AdvisorQueueAdmission? Admission );
+
 /// <summary>
 /// The rows of the original 351-record descriptor table reached by the wired game events
 /// (docs/reverse/PPC-advisor.md, "Actual CMsgEvent producers"). Only these rows are bound; every
@@ -89,8 +92,8 @@ internal static class AdvisorTables
 		.Select( message => new AdvisorMessageDefinition( message.MessageId, message.FirstResponseId, message.ResponseCount, message.Group, message.MaximumPendingDuplicates, HelpScoreKey, message.GameMode ) )
 		.ToArray();
 
-	/// <summary>The bound game-event messages, the help messages and the advice game code posts with a getter score.</summary>
-	public static IEnumerable<AdvisorMessageDefinition> AllMessages => Messages.Concat( HelpMessages ).Concat( EventMessages );
+	/// <summary>The bound game-event messages, the help messages, the advice game code posts with a getter score and the messages the scan produces.</summary>
+	public static IEnumerable<AdvisorMessageDefinition> AllMessages => Messages.Concat( HelpMessages ).Concat( EventMessages ).Concat( ScanMessages );
 
 	/// <summary>The first of the 25 staff messages (33 + 5 × kind + the role's position), the <see cref="StrikeMessage"/> TAG_SYSTEM index less 5.</summary>
 	public const int FirstStaffMessage = 33;
@@ -101,6 +104,12 @@ internal static class AdvisorTables
 
 	private static readonly string[] StaffMessageFamilies = { "StaffUnhappy", "StaffVeryUnhappy", "StaffStriking", "StaffHappier", "StrikeEndBad" };
 	private static readonly string[] StaffMessageRoles = { "Mechanics", "Handymen", "Guards", "Entertainers", "Researchers" };
+
+	/// <summary>The messages a global golden ticket moving to this park says (0xEA-0xED: coaster height, go-kart excitement, water length, big park); they belong to group 2.</summary>
+	public static readonly IReadOnlyList<int> AwardMovedMessages = new[] { 234, 235, 236, 237 };
+
+	/// <summary>The Advisor.sam key of the score of those four messages.</summary>
+	public const string AwardMovedScoreKey = "AwardMoved.Score";
 
 	/// <summary>
 	/// The advice game code posts, with the score key of its callback (or the constant it returns): each callback is a getter of one Advisor.sam score, at the object's
@@ -130,8 +139,27 @@ internal static class AdvisorTables
 		rows.Add( (135, "NewResearchGroupSideshow.Score", null) );
 		rows.Add( (136, "NewResearchGroupFeature.Score", null) );
 		rows.Add( (167, "", 0x2710) );
+		// [BIN:TPW-EXE:0x004D5270 global ticket moved] the four rows 0xEA-0xED share the callback 0x59E8B0, the word at +0x324 of the Advisor.sam object, AwardMoved.Score, which sits just before HelpMessage.Score at +0x328; AutomaticAdvisor.GlobalTicketMovedMessage posts them as a global ticket moves to this park
+		foreach ( var message in AwardMovedMessages )
+			rows.Add( (message, AwardMovedScoreKey, null) );
 		return rows;
 	}
+
+	/// <summary>
+	/// The messages the background scan (<see cref="AdvisorScan"/>) produces, with the key of the flat score their ported callback returns. They are defined here so the
+	/// queue knows their descriptors; the scan posts them, nothing else does.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059E8D0 money callbacks] 100 returns +0x334 (WealthHigh.Score), 101 +0x33C (WealthHighRepayLoan.Score), 102 +0x340 (TakeLoan.Score), 103 +0x344 (InTheRedSixMonths.Score), 104 +0x348 (InTheRedThreeMonths.Score), 105 +0x34C (InTheRedMonthLeft.Score) and 107 +0x35C (WagesHigh.Score)
+	public static readonly IReadOnlyList<(int MessageId, string ScoreKey, int? FixedScore)> ScanScoreKeys = new (int, string, int?)[]
+	{
+		(100, "WealthHigh.Score", null),
+		(101, "WealthHighRepayLoan.Score", null),
+		(102, "TakeLoan.Score", null),
+		(103, "InTheRedSixMonths.Score", null),
+		(104, "InTheRedThreeMonths.Score", null),
+		(105, "InTheRedMonthLeft.Score", null),
+		(107, "WagesHigh.Score", null),
+	};
 
 	private static IReadOnlyList<AdvisorMessageDefinition>? events;
 
@@ -140,8 +168,13 @@ internal static class AdvisorTables
 
 	private static IReadOnlyList<AdvisorMessageDefinition> BuildEventMessages()
 	{
+		return Definitions( EventScoreKeys );
+	}
+
+	private static AdvisorMessageDefinition[] Definitions( IEnumerable<(int MessageId, string ScoreKey, int? FixedScore)> keys )
+	{
 		var rows = AdvisorDescriptorTable.Rows;
-		return EventScoreKeys.Where( entry => entry.MessageId < rows.Count )
+		return keys.Where( entry => entry.MessageId < rows.Count )
 			.Select( entry =>
 			{
 				var row = rows[entry.MessageId];
@@ -149,6 +182,11 @@ internal static class AdvisorTables
 			} )
 			.ToArray();
 	}
+
+	private static IReadOnlyList<AdvisorMessageDefinition>? scanned;
+
+	/// <summary>The definitions of <see cref="ScanScoreKeys"/>: the messages the background scan posts, with the controls of their descriptors.</summary>
+	public static IReadOnlyList<AdvisorMessageDefinition> ScanMessages => scanned ??= Definitions( ScanScoreKeys );
 
 	private static IReadOnlyList<AdvisorMessageDefinition>? unproduced;
 
@@ -217,7 +255,8 @@ internal sealed class AdvisorBalance
 			throw new InvalidDataException( $"{source} is {bytes.Length} bytes; advisor settings are limited to {MaximumBytes}." );
 		var settings = new SamSettings( new[] { SamDocument.Parse( Encoding.Latin1.GetString( bytes ), source ) } );
 		var groups = new Dictionary<int, (uint, bool, uint)>();
-		foreach ( var group in AdvisorTables.AllMessages.Select( message => (int)message.Group ).Distinct() )
+		// the global-ticket messages' group is read when the file has it, like the unproduced messages' (the shipped file has it)
+		foreach ( var group in AdvisorTables.AllMessages.Where( message => !AdvisorTables.AwardMovedMessages.Contains( message.MessageId ) ).Select( message => (int)message.Group ).Distinct() )
 		{
 			// [BIN:STP-PPC:0x10016F4C advisor balance] MessageGroups[g] fields at +36/+40/+44 + 12g
 			var prefix = $"MessageGroups[{group}].";
@@ -226,7 +265,7 @@ internal sealed class AdvisorBalance
 		}
 		// The groups only the unproduced messages use are read when the file has them (the shipped one has groups 0 to 5 and 9); without a group's controls
 		// the messages of that group have no descriptor.
-		foreach ( var group in AdvisorTables.UnproducedMessages.Select( message => (int)message.Group ).Distinct().Where( group => !groups.ContainsKey( group ) ) )
+		foreach ( var group in AdvisorTables.UnproducedMessages.Concat( AdvisorTables.EventMessages.Where( message => AdvisorTables.AwardMovedMessages.Contains( message.MessageId ) ) ).Select( message => (int)message.Group ).Distinct().Where( group => !groups.ContainsKey( group ) ) )
 		{
 			var prefix = $"MessageGroups[{group}].";
 			const int missing = int.MinValue;
@@ -246,14 +285,29 @@ internal sealed class AdvisorBalance
 			Groups = groups,
 			// The help score is optional: a settings file without it leaves the help silent instead of disabling the advisor.
 			ContextHelpScore = settings.GetInt( AdvisorTables.ContextHelpScoreKey, 0, optional: true ),
+			ScanParameters = ReadScanParameters( settings ),
 			Scores = AdvisorTables.AllMessages.Where( message => message.FixedScore == null ).Select( message => message.ScoreKey ).Distinct( StringComparer.OrdinalIgnoreCase )
 				.ToDictionary( key => key, key => key == AdvisorTables.HelpScoreKey || key == AdvisorTables.ChallengeScoreKey || key == AdvisorTables.MechanicOnTheWayScoreKey || AdvisorTables.PrankScoreKeys.Contains( key, StringComparer.OrdinalIgnoreCase )
-					|| AdvisorTables.EventScoreKeys.Any( entry => string.Equals( entry.ScoreKey, key, StringComparison.OrdinalIgnoreCase ) )
+					|| AdvisorTables.EventScoreKeys.Concat( AdvisorTables.ScanScoreKeys ).Any( entry => string.Equals( entry.ScoreKey, key, StringComparison.OrdinalIgnoreCase ) )
 					? settings.GetInt( key, 0, optional: true ) : settings.GetInt( key ), StringComparer.OrdinalIgnoreCase ),
 		};
 	}
 
-	public IEnumerable<AdvisorMessageDescriptor> Descriptors() => AdvisorTables.AllMessages.Concat( AdvisorTables.UnproducedMessages.Where( message => Groups.ContainsKey( message.Group ) ) ).Select( message =>
+	/// <summary>The thresholds the ported scan callbacks read besides their scores (<see cref="AdvisorScan.ParameterKeys"/>); a key the file lacks is absent and leaves its callback silent.</summary>
+	public IReadOnlyDictionary<string, double> ScanParameters { get; init; } = new Dictionary<string, double>( StringComparer.OrdinalIgnoreCase );
+
+	// [BIN:TPW-EXE:0x0072E124 advisor.sam schema] WealthHigh.MoreMoneyThan (+0x330) and WagesHigh.AverageOverMonths (+0x358) are words; WealthHighRepayLoan.Margin (+0x338) and WagesHigh.WagesTimesHigherThanIncome (+0x354) are singles (the callbacks load them with fmul dword), so a value like 1.2 is read as a 32-bit float
+	private static Dictionary<string, double> ReadScanParameters( SamSettings settings )
+	{
+		var values = new Dictionary<string, double>( StringComparer.OrdinalIgnoreCase );
+		foreach ( var key in AdvisorScan.IntegerParameterKeys.Where( settings.Contains ) )
+			values[key] = settings.GetInt( key );
+		foreach ( var key in AdvisorScan.FloatParameterKeys.Where( settings.Contains ) )
+			values[key] = (float)settings.GetDouble( key );
+		return values;
+	}
+
+	public IEnumerable<AdvisorMessageDescriptor> Descriptors() => AdvisorTables.AllMessages.Concat( AdvisorTables.UnproducedMessages ).Where( message => Groups.ContainsKey( message.Group ) ).Select( message =>
 	{
 		var group = Groups[message.Group];
 		return new AdvisorMessageDescriptor( message.MessageId, message.FirstResponseId, message.ResponseCount, message.Group,
@@ -276,11 +330,17 @@ internal sealed class AdvisorBalance
 /// </summary>
 internal sealed class AdvisorController
 {
-	public AdvisorController( AdvisorBalance balance )
+	/// <param name="balance">The advisor's settings.</param>
+	/// <param name="scanCallbacks">The score callbacks the scan runs (tests substitute their own); null uses the ported ones (<see cref="AdvisorScanCallbacks.Implemented"/>).</param>
+	public AdvisorController( AdvisorBalance balance, IReadOnlyDictionary<uint, AdvisorScoreCallback>? scanCallbacks = null )
 	{
 		Balance = balance ?? throw new ArgumentNullException( nameof( balance ) );
 		Queue = new AdvisorScoreQueue( balance.Descriptors(), new Dictionary<int, AdvisorMessageHistory>(), balance.MinimumScore );
+		Scan = new AdvisorScan( AdvisorDescriptorTable.Rows, scanCallbacks ?? AdvisorScanCallbacks.Implemented );
 	}
+
+	/// <summary>The background scan and its cursor (the controller's only state besides the queue).</summary>
+	public AdvisorScan Scan { get; }
 
 	public AdvisorBalance Balance { get; }
 	public AdvisorScoreQueue Queue { get; }
@@ -307,9 +367,31 @@ internal sealed class AdvisorController
 	public AdvisorQueueAdmission? Advise( int messageId, uint liveGameTick, int gameType, bool tutorialEnabled )
 	{
 		var definition = AdvisorTables.AllMessages.FirstOrDefault( message => message.MessageId == messageId );
+		if ( definition.ScoreKey != null && !Queue.HasDescriptor( messageId ) )
+		{
+			Log.Trace( $"Advisor advice {messageId} not posted: the settings file has no controls for its group {definition.Group}." );
+			return null;
+		}
 		if ( definition.ScoreKey == null || !AdvisorTables.GameModeAccepts( definition.GameMode, gameType ) )
 			return null;
 		return Queue.Enqueue( new AdvisorPendingAdvice( messageId, Balance.ScoreOf( messageId ) ), liveGameTick, tutorialEnabled );
+	}
+
+	/// <summary>
+	/// One advisor update's scan (<c>0x0059A550</c> calling <c>0x0059C680</c> with a count of 1): scores the next scanned descriptor from the park state and, when the
+	/// score is above <c>MinScoreForConsideration</c>, builds the record with that score and queues it. <paramref name="money"/> is null without a park.
+	/// </summary>
+	// [BIN:TPW-EXE:0x0059A58B scan and post] the result row is scored again (0x59BF20: the same callback on the same state), only a score above the object's +0x20 (MinScoreForConsideration, 0xFB3560, signed) builds a record (0x59B590) and queues it (0x59A940)
+	public AdvisorScanOutcome ScanOnce( IAdvisorMoneyState? money, uint liveGameTick, int gameType, bool tutorialEnabled )
+	{
+		var context = new AdvisorScanContext( Balance, money );
+		var result = Scan.Step( context, gameType, ( messageId, score ) =>
+			Queue.HasDescriptor( messageId ) && Queue.Eligibility( new AdvisorPendingAdvice( messageId, score ), liveGameTick, tutorialEnabled ) == AdvisorEligibility.Eligible );
+		// the original has no test for "no message" here: with a minimum below -1 the -1 of the empty result would be queued; the empty result is not posted (the shipped minimum is 25)
+		if ( result.MessageId == AdvisorScan.NoMessage || result.Score <= Queue.MinimumScore )
+			return new AdvisorScanOutcome( result.ScoredRow, null, null );
+		var admission = Queue.Enqueue( new AdvisorPendingAdvice( result.MessageId, result.Score ), liveGameTick, tutorialEnabled );
+		return new AdvisorScanOutcome( result.ScoredRow, new AdvisorPendingAdvice( result.MessageId, result.Score ), admission );
 	}
 
 	/// <summary>
@@ -339,15 +421,19 @@ internal sealed class AdvisorController
 	/// The controller's own-format state for a park save: its queue's pending records, history and action
 	/// reservation (an <see cref="ImportOriginal"/> import takes this path too).
 	/// </summary>
-	internal sealed record AdvisorControllerSnapshot( AdvisorQueueSnapshot Queue );
+	/// <param name="Queue">The queue's pending records, history and reservation.</param>
+	/// <param name="ScanCursor">The background scan's cursor; a snapshot from before the scan existed restores it at 0.</param>
+	internal sealed record AdvisorControllerSnapshot( AdvisorQueueSnapshot Queue, int ScanCursor = 0 );
 
 	/// <summary>The controller's state for a park save; fails explicitly while a playback attempt is outstanding.</summary>
-	public AdvisorControllerSnapshot CaptureSnapshot() => new( Queue.CaptureSnapshot() );
+	public AdvisorControllerSnapshot CaptureSnapshot() => new( Queue.CaptureSnapshot(), Scan.Cursor );
 
 	/// <summary>Checks a snapshot against this controller's bound messages without touching it.</summary>
 	public void ValidateSnapshot( AdvisorControllerSnapshot snapshot )
 	{
 		ArgumentNullException.ThrowIfNull( snapshot );
+		if ( snapshot.ScanCursor is < 0 or > AdvisorScan.DescriptorCount )
+			throw new InvalidDataException( $"Advisor controller snapshot is inconsistent: the scan cursor {snapshot.ScanCursor} is outside 0 to {AdvisorScan.DescriptorCount}." );
 		Queue.ValidateSnapshot( snapshot.Queue );
 	}
 
@@ -360,6 +446,7 @@ internal sealed class AdvisorController
 	{
 		ValidateSnapshot( snapshot );
 		Queue.RestoreSnapshot( snapshot.Queue );
+		Scan.RestoreCursor( snapshot.ScanCursor );
 	}
 
 	/// <summary>

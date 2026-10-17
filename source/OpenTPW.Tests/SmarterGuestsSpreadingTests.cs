@@ -742,7 +742,7 @@ public class SmarterGuestsSpreadingTests
 		var park = RunWithEstimates( out var section );
 		var ids = park.Guests.Guests.Select( guest => guest.Id );
 		var problem = SmarterGuestsSave.ShapeProblem( section with { Throughputs = [section.Throughputs![0] with { AttractionId = 424242 }] },
-			ids, [new ParkModRecord( "opentpw.smarter-guests", "1.2.0", ModSet.NoFilesSha256 )], false, park.Guests.Attractions.Select( attraction => attraction.AttractionId ) );
+			ids, [new ParkModRecord( "opentpw.smarter-guests", "1.3.0", ModSet.NoFilesSha256 )], false, park.Guests.Attractions.Select( attraction => attraction.AttractionId ) );
 		StringAssert.Contains( problem!, "424242" );
 	}
 

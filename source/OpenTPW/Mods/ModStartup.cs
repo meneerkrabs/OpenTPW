@@ -58,7 +58,18 @@ public static class ModStartup
 			smokeTest ? null : configDirectory, programDirectory );
 		settings = WithCommandLine( settings, discovered, Values( args, EnableModOption, "an extension or mod id such as opentpw.cross-edition-objects" ),
 			Values( args, ModInputOption, "<mod id>:<input id>=<folder>" ) );
-		var set = Resolve( discovered, settings, Values( args, DisableExtensionOption, "an extension or mod id such as opentpw.online" ), diagnostics );
+		var disabledIds = Values( args, DisableExtensionOption, "an extension or mod id such as opentpw.online" );
+		// [EXT:script-mods] --safe-mode or a marker of an unfinished start switches the script mods off for this run; otherwise the marker is
+		// written now, before any script is read or compiled (the manifests are known, docs/SCRIPT-MODS.md)
+		var scriptMods = discovered.Any( mod => mod.IsValid && mod.Manifest!.Content.Scripts != null && !disabledIds.Contains( mod.Id ) && settings.IsEnabled( mod.Id, false ) );
+		var safeMode = ScriptSafeMode.Enter( args, configDirectory, smokeTest, scriptMods );
+		if ( ScriptSafeMode.Reason is { } reason )
+			warning( reason );
+		ScriptSafeMode.Begin( scriptMods, configDirectory, smokeTest );
+		var set = Resolve( discovered, settings, disabledIds, diagnostics, safeMode );
+		// nothing with scripts survived the checks (refused, missing inputs): there is nothing to guard
+		if ( !set.Mods.Any( mod => mod.Scripts != null ) )
+			ScriptSafeMode.Current?.Clear();
 		Report( set, diagnostics, trace, warning );
 		OpenTpwExtensions.Activate( set );
 		Discovered = discovered;
@@ -102,6 +113,7 @@ public static class ModStartup
 	/// <summary><see cref="InitializeBrowser(Action{string}, Action{string})"/> with an explicit program folder and settings file (tests).</summary>
 	internal static ModSet InitializeBrowser( Action<string> trace, Action<string> warning, string programDirectory, string settingsPath )
 	{
+		// [EXT:script-mods] no safe mode here: the browser has no marker file or community mods, and its one script mod is shipped off by default
 		var diagnostics = new List<string>();
 		var discovered = ModDiscovery.Discover( Array.Empty<string>(), Array.Empty<string>(), null, programDirectory );
 		var settings = BrowserModInputs.WithDefaults( ModSettings.Load( settingsPath, diagnostics ), discovered );
@@ -116,7 +128,7 @@ public static class ModStartup
 	}
 
 	/// <summary>Resolves against this build's extensions; an unknown <c>--disable-extension</c> id is an error.</summary>
-	public static ModSet Resolve( IReadOnlyList<DiscoveredMod> discovered, ModSettings settings, IReadOnlyList<string> disabled, ICollection<string> diagnostics )
+	public static ModSet Resolve( IReadOnlyList<DiscoveredMod> discovered, ModSettings settings, IReadOnlyList<string> disabled, ICollection<string> diagnostics, bool scriptModsOff = false )
 	{
 		foreach ( var id in disabled )
 			if ( OfficialExtensions.Find( id ) == null && !discovered.Any( mod => mod.Id == id ) )
@@ -124,7 +136,7 @@ public static class ModStartup
 		foreach ( var id in settings.Enabled.Where( pair => pair.Value ).Select( pair => pair.Key ) )
 			if ( OfficialExtensions.Find( id ) == null && !discovered.Any( mod => mod.Id == id ) )
 				diagnostics.Add( $"Mod settings enable '{id}', which is not installed." );
-		return ModSet.Resolve( discovered, settings, OpenTpwVersion(), GameEditions.Current, OfficialExtensions.All, disabled );
+		return ModSet.Resolve( discovered, settings, OpenTpwVersion(), GameEditions.Current, OfficialExtensions.All, disabled, scriptModsOff );
 	}
 
 	private static void Report( ModSet set, IEnumerable<string> diagnostics, Action<string> trace, Action<string> warning )

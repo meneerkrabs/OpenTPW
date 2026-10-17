@@ -9,6 +9,24 @@ public static class ScriptLimits
 	/// <summary>Version of the interpreter semantics and of every limit below. Bump on any change to either.</summary>
 	public const int BehaviourVersion = 1;
 
+	/// <summary>
+	/// Version of the hook API a mod's <c>scriptApi</c> range is checked against (docs/SCRIPT-MODS.md): the hook names, their parameters and
+	/// the views they receive. Mods target the API, not the interpreter; bump the major version on any incompatible change to a hook.
+	/// </summary>
+	public const string ScriptApiVersion = "1.0.0";
+
+	/// <summary>The hooks of API v1 with the number of parameters each hook function takes. Hooks are inert until phase 4 wires them in.</summary>
+	public static readonly IReadOnlyDictionary<string, int> HookParameters = new Dictionary<string, int>( StringComparer.Ordinal )
+	{
+		["scoreAttraction"] = 3,
+		["joinQueue"] = 3,
+		["leaveQueue"] = 3,
+		["wanderGoal"] = 2,
+	};
+
+	/// <summary>The hooks of API v1 that only change what the player sees or reads, never the simulation. None exist in v1.</summary>
+	public static readonly IReadOnlySet<string> UiOnlyHooks = new HashSet<string>( StringComparer.Ordinal );
+
 	// Static limits, checked while parsing.
 	public const int MaxSourceBytes = 64 * 1024;
 	public const int MaxTokens = 20_000;

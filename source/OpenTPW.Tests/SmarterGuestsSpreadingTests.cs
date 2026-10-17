@@ -37,7 +37,7 @@ public class SmarterGuestsSpreadingTests
 		Assert.AreEqual( RideThroughputs.DefaultServiceTurns * 256L, RideThroughputs.ColdStartInterval256( 1, RideVisitorKind.Shop ), "a shop is quicker than a ride" );
 		Assert.AreEqual( RideThroughputs.ColdStartInterval256( 1 ), RideThroughputs.ColdStartInterval256( 0 ), "a capacity below 1 reads as 1" );
 		Assert.AreEqual( RideThroughputs.ColdStartInterval256( 1 ), RideThroughputs.ColdStartInterval256( -3 ) );
-		Assert.AreEqual( RideThroughputs.MinimumInterval256, RideThroughputs.ColdStartInterval256( 100_000 ), "never below one turn: zero throughput cannot be asked for in reverse either" );
+		Assert.AreEqual( RideThroughputs.MinimumInterval256, RideThroughputs.ColdStartInterval256( 100_000 ), "never below a quarter turn: zero throughput cannot be asked for in reverse either" );
 		var estimates = new RideThroughputs();
 		Assert.AreEqual( RideThroughputs.ColdStartInterval256( 3 ), estimates.IntervalFor( 9, RideVisitorKind.Ride, 3, 40, 100, 5 ), "an attraction nobody has boarded yet reads as the cold start" );
 		Assert.AreEqual( 0, estimates.Count, "reading creates no entry" );
@@ -50,7 +50,7 @@ public class SmarterGuestsSpreadingTests
 		var prior = RideThroughputs.ColdStartInterval256( 1 );
 		estimates.Boarded( 4, RideVisitorKind.Ride, 1, 40, 100, queueLengthAfter: 3 );
 		Assert.IsTrue( estimates.TryGet( 4, out var first ) );
-		Assert.AreEqual( new RideThroughput( 4, 1, 40, prior, 0, 100, true ), first, "no gap yet: the cold start stays and the gap starts" );
+		Assert.AreEqual( new RideThroughput( 4, 1, 40, prior, 0, 100, 100, true ), first, "no gap yet: the cold start stays and the gap starts" );
 		estimates.Boarded( 4, RideVisitorKind.Ride, 1, 40, 110, queueLengthAfter: 2 );
 		estimates.TryGet( 4, out var second );
 		Assert.AreEqual( 1, second.Samples );
@@ -63,7 +63,7 @@ public class SmarterGuestsSpreadingTests
 		Assert.IsFalse( third.Demand, "nobody was left in the queue: the next gap says nothing about the ride" );
 		estimates.Boarded( 4, RideVisitorKind.Ride, 1, 40, 500, queueLengthAfter: 1 );
 		estimates.TryGet( 4, out var fourth );
-		Assert.AreEqual( third with { LastBoardTurn = 500, Demand = true }, fourth, "a gap without demand is the arrival rate, not the throughput: it is not folded in" );
+		Assert.AreEqual( third with { LastBoardTurn = 500, ClockTurn = 500, Demand = true }, fourth, "a gap without demand is the arrival rate, not the throughput: it is not folded in" );
 	}
 
 	[TestMethod]
@@ -98,7 +98,7 @@ public class SmarterGuestsSpreadingTests
 			estimates.Boarded( 1, RideVisitorKind.Ride, 1, 0, turn += 3, 5 );
 		estimates.TryGet( 1, out var saturated );
 		Assert.AreEqual( RideThroughputs.MaximumSamples, saturated.Samples );
-		Assert.IsTrue( saturated.Interval256 >= RideThroughputs.MinimumInterval256, "never below one turn" );
+		Assert.IsTrue( saturated.Interval256 >= RideThroughputs.MinimumInterval256, "never below a quarter turn" );
 		estimates.Boarded( 1, RideVisitorKind.Ride, 1, 0, turn + 1, 5 );
 		estimates.Boarded( 1, RideVisitorKind.Ride, 1, 0, turn + 1, 5 );
 		estimates.TryGet( 1, out var sameTurn );
@@ -115,11 +115,11 @@ public class SmarterGuestsSpreadingTests
 		estimates.TryGet( 6, out var before );
 		Assert.IsTrue( before.Demand );
 		// open and working with a queue: nothing changes
-		estimates.Observe( 6, RideVisitorKind.Ride, 2, 40, working: true, queueLength: 4 );
+		estimates.Observe( 6, RideVisitorKind.Ride, 2, 40, working: true, queueLength: 4, turn: 111 );
 		estimates.TryGet( 6, out var unchanged );
 		Assert.AreEqual( before, unchanged );
 		// closed or broken: the flag goes, the average stays
-		estimates.Observe( 6, RideVisitorKind.Ride, 2, 40, working: false, queueLength: 4 );
+		estimates.Observe( 6, RideVisitorKind.Ride, 2, 40, working: false, queueLength: 4, turn: 112 );
 		estimates.TryGet( 6, out var closed );
 		Assert.AreEqual( before with { Demand = false }, closed );
 		estimates.Boarded( 6, RideVisitorKind.Ride, 2, 40, 900, 3 );
@@ -128,12 +128,75 @@ public class SmarterGuestsSpreadingTests
 		Assert.AreEqual( closed.Samples, reopened.Samples );
 		Assert.IsTrue( reopened.Demand );
 		// an empty queue at the turn start ends the gap as well
-		estimates.Observe( 6, RideVisitorKind.Ride, 2, 40, working: true, queueLength: 0 );
+		estimates.Observe( 6, RideVisitorKind.Ride, 2, 40, working: true, queueLength: 0, turn: 901 );
 		estimates.TryGet( 6, out var idle );
 		Assert.IsFalse( idle.Demand );
-		// an attraction without an estimate is not created by looking at it
-		estimates.Observe( 77, RideVisitorKind.Ride, 2, 40, true, 3 );
-		Assert.AreEqual( 1, estimates.Count );
+		// a queue forming again starts the silence clock at that turn, and the first boarding after it is a wait, not a gap
+		estimates.Observe( 6, RideVisitorKind.Ride, 2, 40, working: true, queueLength: 2, turn: 950 );
+		estimates.TryGet( 6, out var forming );
+		Assert.AreEqual( idle with { Demand = true, ClockTurn = 950 }, forming );
+		estimates.Boarded( 6, RideVisitorKind.Ride, 2, 40, 960, 1 );
+		estimates.TryGet( 6, out var first );
+		Assert.AreEqual( idle.Interval256, first.Interval256, "the first boarding after a queue formed measures the wait" );
+		Assert.AreEqual( idle.Samples, first.Samples );
+	}
+
+	[TestMethod]
+	public void ARepairedRideWithGuestsStillQueuedWhoseHeadNeverBoardsIsReadAsStalled()
+	{
+		var estimates = new RideThroughputs();
+		estimates.Boarded( 6, RideVisitorKind.Ride, 1, 40, 100, 3 );
+		for ( var turn = 101; turn < 110; turn++ )
+			estimates.Observe( 6, RideVisitorKind.Ride, 1, 40, working: true, queueLength: 3, turn: turn );
+		estimates.TryGet( 6, out var running );
+		var interval = running.Interval256;
+		// breakdown with the queue still there, then the repair at turn 300: demand is back (queue and working) with a clock at 300
+		estimates.Observe( 6, RideVisitorKind.Ride, 1, 40, working: false, queueLength: 3, turn: 200 );
+		estimates.Observe( 6, RideVisitorKind.Ride, 1, 40, working: true, queueLength: 3, turn: 300 );
+		estimates.TryGet( 6, out var repaired );
+		Assert.IsTrue( repaired.Demand );
+		Assert.AreEqual( 300L, repaired.ClockTurn );
+		Assert.AreEqual( 100L, repaired.LastBoardTurn );
+		Assert.AreEqual( interval, estimates.IntervalFor( 6, RideVisitorKind.Ride, 1, 40, 301, 3 ), "just repaired: the average" );
+		// nobody boards for 200 turns although guests wait: the silence is the estimate
+		Assert.AreEqual( 200 * 256L, estimates.IntervalFor( 6, RideVisitorKind.Ride, 1, 40, 500, 3 ) );
+		Assert.AreEqual( interval, estimates.IntervalFor( 6, RideVisitorKind.Ride, 1, 40, 500, 0 ), "an empty queue is idle, not stalled" );
+	}
+
+	[TestMethod]
+	public void ARideThatNeverBoardsAnybodyGetsAnEntryWhenItsQueueFormsAndIsReadAsStalled()
+	{
+		var estimates = new RideThroughputs();
+		estimates.Observe( 12, RideVisitorKind.Ride, 1, 40, working: true, queueLength: 0, turn: 10 );
+		estimates.Observe( 12, RideVisitorKind.Ride, 1, 40, working: false, queueLength: 5, turn: 10 );
+		Assert.AreEqual( 0, estimates.Count, "no queue, or not working: no entry" );
+		estimates.Observe( 12, RideVisitorKind.Ride, 1, 40, working: true, queueLength: 2, turn: 20 );
+		Assert.IsTrue( estimates.TryGet( 12, out var born ) );
+		Assert.AreEqual( new RideThroughput( 12, 1, 40, RideThroughputs.ColdStartInterval256( 1 ), 0, -1, 20, true ), born );
+		Assert.AreEqual( RideThroughputs.ColdStartInterval256( 1 ), estimates.IntervalFor( 12, RideVisitorKind.Ride, 1, 40, 60, 2 ), "inside two nominal cycles: the cold start" );
+		Assert.AreEqual( 500 * 256L, estimates.IntervalFor( 12, RideVisitorKind.Ride, 1, 40, 520, 2 ), "500 turns of silence with guests waiting" );
+		// a second observation of the same queue changes nothing
+		estimates.Observe( 12, RideVisitorKind.Ride, 1, 40, working: true, queueLength: 3, turn: 30 );
+		estimates.TryGet( 12, out var again );
+		Assert.AreEqual( born, again );
+	}
+
+	[TestMethod]
+	public void TwoBoardingsInOneParkTurnAreAGapOfZeroAndTakeTheAverageTowardsTheMinimum()
+	{
+		var estimates = new RideThroughputs();
+		estimates.Boarded( 3, RideVisitorKind.Ride, 4, 40, 100, 6 );
+		var steady = 0L;
+		for ( var board = 0; board < 12; board++ )
+		{
+			estimates.Boarded( 3, RideVisitorKind.Ride, 4, 40, 100, 6 );
+			estimates.TryGet( 3, out var now );
+			Assert.IsTrue( now.Interval256 < (board == 0 ? RideThroughputs.ColdStartInterval256( 4 ) : steady), "each same-turn boarding lowers the average" );
+			steady = now.Interval256;
+		}
+		estimates.TryGet( 3, out var end );
+		Assert.AreEqual( 12, end.Samples );
+		Assert.IsTrue( end.Interval256 >= RideThroughputs.MinimumInterval256 );
 	}
 
 	[TestMethod]
@@ -147,15 +210,15 @@ public class SmarterGuestsSpreadingTests
 		// the policy never reads the old average for the new ride, even before the turn-start look
 		Assert.AreEqual( RideThroughputs.ColdStartInterval256( 4 ), estimates.IntervalFor( 3, RideVisitorKind.Ride, 4, 40, 200, 5 ) );
 		Assert.AreEqual( RideThroughputs.ColdStartInterval256( 2 ), estimates.IntervalFor( 3, RideVisitorKind.Ride, 2, 60, 200, 5 ), "a faster ride restarts too" );
-		estimates.Observe( 3, RideVisitorKind.Ride, 4, 40, true, 5 );
+		estimates.Observe( 3, RideVisitorKind.Ride, 4, 40, true, 5, 210 );
 		estimates.TryGet( 3, out var restarted );
-		Assert.AreEqual( new RideThroughput( 3, 4, 40, RideThroughputs.ColdStartInterval256( 4 ), 0, -1, false ), restarted );
+		Assert.AreEqual( new RideThroughput( 3, 4, 40, RideThroughputs.ColdStartInterval256( 4 ), 0, -1, 210, true ), restarted, "restarted at the cold start of the new capacity; the queue starts a new silence clock" );
 		// a boarding after an upgrade restarts as well
 		for ( var board = 0; board < 6; board++ )
 			estimates.Boarded( 3, RideVisitorKind.Ride, 4, 40, 300 + board * 3, 5 );
 		estimates.Boarded( 3, RideVisitorKind.Ride, 5, 40, 400, 5 );
 		estimates.TryGet( 3, out var again );
-		Assert.AreEqual( new RideThroughput( 3, 5, 40, RideThroughputs.ColdStartInterval256( 5 ), 0, 400, true ), again );
+		Assert.AreEqual( new RideThroughput( 3, 5, 40, RideThroughputs.ColdStartInterval256( 5 ), 0, 400, 400, true ), again );
 	}
 
 	[TestMethod]
@@ -167,18 +230,18 @@ public class SmarterGuestsSpreadingTests
 		Assert.AreEqual( 1, zero.Capacity, "a capacity of 0 is stored as 1" );
 		Assert.AreEqual( RideThroughputs.ColdStartInterval256( 1 ), estimates.IntervalFor( 8, RideVisitorKind.Ride, 0, 0, 10, 2 ) );
 		// the average says 10 turns per guest; with guests waiting and no boarding for far longer than two cycles, the silence is the estimate
-		var entry = new RideThroughput( 8, 1, 0, 10 * 256, 12, 100, true );
+		var entry = new RideThroughput( 8, 1, 0, 10 * 256, 12, 100, 100, true );
 		Assert.AreEqual( 10 * 256L, RideThroughputs.EffectiveInterval256( entry, 105, 3 ), "inside a cycle: the average" );
 		Assert.AreEqual( 10 * 256L, RideThroughputs.EffectiveInterval256( entry, 120, 3 ), "exactly two cycles: still the average" );
 		Assert.AreEqual( 50 * 256L, RideThroughputs.EffectiveInterval256( entry, 150, 3 ), "50 turns of silence with guests waiting" );
 		Assert.AreEqual( 10 * 256L, RideThroughputs.EffectiveInterval256( entry, 150, 0 ), "nobody waits: the ride is not stalled, it is idle" );
 		Assert.AreEqual( 10 * 256L, RideThroughputs.EffectiveInterval256( entry with { Demand = false }, 150, 3 ), "after a closure the silence is not the ride's" );
 		Assert.AreEqual( RideThroughputs.MaximumInterval256, RideThroughputs.EffectiveInterval256( entry, 1_000_000, 3 ), "capped" );
-		var wide = new RideThroughput( 8, 4, 0, 5 * 256, 12, 100, true );
+		var wide = new RideThroughput( 8, 4, 0, 5 * 256, 12, 100, 100, true );
 		Assert.AreEqual( 5 * 256L, RideThroughputs.EffectiveInterval256( wide, 130, 3 ), "a ride of four: 30 turns is inside two cycles of 20" );
 		Assert.AreEqual( 40 * 256L, RideThroughputs.EffectiveInterval256( wide, 100 + 160, 3 ), "160 turns of silence over a cycle of four guests is 40 turns per guest" );
 		// a corrupt interval is clamped on the way out
-		Assert.AreEqual( RideThroughputs.MinimumInterval256, RideThroughputs.EffectiveInterval256( entry with { Interval256 = 0 }, 101, 1 ) );
+		Assert.AreEqual( RideThroughputs.MinimumInterval256, RideThroughputs.EffectiveInterval256( entry with { Interval256 = 0 }, 100, 1 ) );
 	}
 
 	[TestMethod]
@@ -282,13 +345,65 @@ public class SmarterGuestsSpreadingTests
 				var smart = smarter.ScoreAttraction( context, guest, view );
 				if ( originalScore >= AttractionScore.CandidateFloor && raw * 94 / 100 < AttractionScore.CandidateFloor )
 				{
-					Assert.AreEqual( AttractionScore.CandidateFloor, smart, $"excitement {excitement}, column {column}: the original scores {originalScore}, the wait alone {raw}" );
+					Assert.IsTrue( smart is >= AttractionScore.CandidateFloor and <= AttractionScore.CandidateFloor + 1, $"{smart}: excitement {excitement}, column {column}: the original scores {originalScore}, the wait alone {raw}" );
 					protectedCases++;
 				}
-				if ( originalScore < AttractionScore.CandidateFloor )
-					Assert.IsTrue( smart < AttractionScore.CandidateFloor || raw >= AttractionScore.CandidateFloor, $"excitement {excitement}, column {column}: a ride the original skips is not lifted by the floor" );
+				var admissible = AttractionScore.ExcitementMatch( Settings.Types[guest.Type].PreferredExcitement, excitement ) > 10;
+				if ( originalScore < AttractionScore.CandidateFloor && !admissible )
+					Assert.IsTrue( smart < AttractionScore.CandidateFloor || raw >= AttractionScore.CandidateFloor, $"excitement {excitement}, column {column}: a ride the original skips and the gate would refuse is not lifted by the floor" );
 			}
 		Assert.IsTrue( protectedCases > 0, "the sweep reached the floor protection" );
+	}
+
+	[TestMethod]
+	public void TheCandidatesKeptAtTheFloorKeepTheOrderOfTheirOwnScores()
+	{
+		var smarter = new SmarterGuestDecisions();
+		var context = new DecisionContext( Settings, 12, false, 3 );
+		var guest = Guest();
+		// the same far ride with a growing expected wait: the lifted score never rises with the wait, and reaches the floor only
+		uint? previous = null;
+		var distinct = new HashSet<uint>();
+		foreach ( var reservations in new[] { 0, 1, 2, 4, 8, 16, 40, 100 } )
+		{
+			var view = Ride( queue: 2, reservations: reservations, interval: 20 * 256 ) with { BackCell = (40, 4), EntranceCell = (40, 5) };
+			var score = smarter.ScoreAttraction( context, guest, view );
+			distinct.Add( score );
+			Assert.IsTrue( previous == null || score <= previous, $"{score} after {previous}" );
+			previous = score;
+		}
+		Assert.IsTrue( distinct.Count >= 2, "a longer wait still ranks lower after the floor" );
+	}
+
+	[TestMethod]
+	public void AnUnusedRideTheGuestWouldBeAdmittedToIsKeptAtTheFloorWhereTheOriginalScoresItBelow()
+	{
+		var smarter = new SmarterGuestDecisions();
+		var context = new DecisionContext( Settings, 12, false, 3 );
+		var found = 0;
+		foreach ( var column in new[] { 20, 30, 40, 60 } )
+			foreach ( var excitement in new[] { 40, 55, 70, 85 } )
+			{
+				var view = Ride( id: 9, queue: 1, interval: 20 * 256 ) with { LiveExcitement = excitement, BackCell = (column, 4), EntranceCell = (column, 5) };
+				var guest = Guest();
+				var type = Settings.Types[guest.Type];
+				var admissible = AttractionScore.ExcitementMatch( type.PreferredExcitement, excitement ) > 10;
+				var original = OriginalGuestDecisions.Instance.ScoreAttraction( context, guest, view );
+				if ( original >= AttractionScore.CandidateFloor )
+					continue;
+				var fresh = smarter.ScoreAttraction( context, guest, view );
+				Assert.AreEqual( admissible, fresh >= AttractionScore.CandidateFloor, $"column {column}, excitement {excitement}: original {original}, smarter {fresh}" );
+				if ( admissible )
+				{
+					found++;
+					var used = guest with { UsedHistory = Array.AsReadOnly( new[] { 0, 9, 0, 0 } ) };
+					Assert.IsTrue( smarter.ScoreAttraction( context, used, view ) < AttractionScore.CandidateFloor, "a ride it used lately is not lifted" );
+					var temporary = guest with { TemporaryHistory = Array.AsReadOnly( new[] { 9, 0, 0, 0 } ) };
+					Assert.IsTrue( smarter.ScoreAttraction( context, temporary, view ) < AttractionScore.CandidateFloor, "nor one it turned away from" );
+					Assert.IsTrue( smarter.ScoreAttraction( context, guest, view with { SameTypeAsLastUsed = true } ) < AttractionScore.CandidateFloor, "nor one of the type it used last" );
+				}
+			}
+		Assert.IsTrue( found > 0, "the sweep reached the fallback" );
 	}
 
 	// ---- The preference -----------------------------------------------------------------------
@@ -475,6 +590,26 @@ public class SmarterGuestsSpreadingTests
 	}
 
 	[TestMethod]
+	public void AChangeOfTheLiveCapacityFromTheRideSettingsRestartsTheEstimate()
+	{
+		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
+		var park = new ParkScenario( new WorldSeed( 1 ) );
+		park.Run( 12_000 );
+		var estimates = park.Guests.SmarterGuests!.Throughputs;
+		var ride = park.Attractions.First( item => item.Bridge.Kind == RideVisitorKind.Ride && estimates.TryGet( item.Bridge.AttractionId, out var entry ) && entry.Samples > 0 );
+		Assert.AreEqual( ride.Bridge.Capacity, ride.Bridge.LiveCapacity, "no settings change yet" );
+		estimates.TryGet( ride.Bridge.AttractionId, out var learned );
+		Assert.AreEqual( ride.Bridge.LiveCapacity, learned.Capacity );
+		// the ride settings change the script's capacity variable only (OriginalObjectRuntime.RideSettings), not the catalogue capacity
+		ride.Script[RideVariables.VAR_CAPACITY] = ride.Bridge.LiveCapacity + 2;
+		Assert.AreNotEqual( ride.Bridge.Capacity, ride.Bridge.LiveCapacity );
+		park.Run( 40 );
+		estimates.TryGet( ride.Bridge.AttractionId, out var restarted );
+		Assert.AreEqual( ride.Bridge.LiveCapacity, restarted.Capacity );
+		Assert.IsTrue( restarted.Samples < learned.Samples, "the average restarted at the cold start of the new capacity" );
+	}
+
+	[TestMethod]
 	public void ARemovedAttractionTakesItsEstimateWithIt()
 	{
 		using var scope = OpenTpwExtensions.Use( SmarterGuestsTests.On() );
@@ -584,8 +719,9 @@ public class SmarterGuestsSpreadingTests
 		StringAssert.Contains( Problem( good[0] with { Samples = -1 } )!, "samples" );
 		StringAssert.Contains( Problem( good[0] with { Samples = RideThroughputs.MaximumSamples + 1 } )!, "samples" );
 		StringAssert.Contains( Problem( good[0] with { LastBoardTurn = -2 } )!, "below -1" );
-		StringAssert.Contains( Problem( good[0] with { LastBoardTurn = -1, Demand = true } )!, "demand without a boarding" );
-		Assert.IsNull( Problem( good[0] with { LastBoardTurn = -1, Demand = false } ) );
+		StringAssert.Contains( Problem( good[0] with { ClockTurn = -1, LastBoardTurn = -1, Demand = true } )!, "without a silence clock" );
+		StringAssert.Contains( Problem( good[0] with { LastBoardTurn = 50, ClockTurn = 40 } )!, "before its last boarding" );
+		Assert.IsNull( Problem( good[0] with { LastBoardTurn = -1, ClockTurn = -1, Demand = false } ) );
 		// without the park's attraction list the check cannot name unknown attractions, but the shape rules still apply
 		Assert.IsNull( SmarterGuestsSave.SectionProblem( section with { Throughputs = [good[0] with { AttractionId = 987654 }] }, ids ), "an unknown attraction is only refused when the list is known" );
 		var restoreInto = new ParkScenario( park.Seed, decisions: new SmarterGuestDecisions() );
@@ -593,7 +729,7 @@ public class SmarterGuestsSpreadingTests
 		restoreInto.Guests.RestoreSnapshot( park.Guests.CaptureSnapshot() );
 		var bad = Assert.ThrowsException<InvalidDataException>( () => SmarterGuestsSave.Restore( restoreInto.Guests, section with { Throughputs = [good[0] with { Capacity = 0 }] } ) );
 		StringAssert.Contains( bad.Message, "inconsistent" );
-		var future = Assert.ThrowsException<InvalidDataException>( () => SmarterGuestsSave.Restore( restoreInto.Guests, section with { Throughputs = [good[0] with { LastBoardTurn = restoreInto.Guests.ParkTurn + 5 }] } ) );
+		var future = Assert.ThrowsException<InvalidDataException>( () => SmarterGuestsSave.Restore( restoreInto.Guests, section with { Throughputs = [good[0] with { LastBoardTurn = restoreInto.Guests.ParkTurn + 5, ClockTurn = restoreInto.Guests.ParkTurn + 5 }] } ) );
 		StringAssert.Contains( future.Message, "after the park's turn" );
 		Assert.AreEqual( 0, restoreInto.Guests.SmarterGuests!.Throughputs.Count, "a refused section changes nothing in the estimates" );
 		var withExtra = Encoding.UTF8.GetString( ParkResumeJson.Serialize( section ) ).Replace( "\"Samples\"", "\"Extra\":1,\"Samples\"" );

@@ -86,13 +86,16 @@ public static class SmarterGuestsRules
 	/// <summary>The least margin of the hysteresis, in score points, so a small score does not switch on a one-point difference.</summary>
 	public const int HysteresisMinimumPoints = 2;
 
-	/// <summary>
-	/// The expected wait of a guest who joins now, in 1/256 park turn: the guests ahead of it (the queue plus the guests walking to the attraction) and itself, each taking the attraction's observed time per guest
-	/// (<see cref="AttractionView.TurnsPerGuest256"/>, i.e. divided by its throughput). Null when the view has no estimate (0).
-	/// </summary>
+	/// <summary>A candidate kept at the choice floor ranks as the floor plus its own score over this: 0 to 1 for a score below 10.</summary>
+	public const uint FloorOrderDivisor = 5;
+
 	/// <summary>The guests ahead beyond which the expected wait no longer grows: far above any queue limit.</summary>
 	public const long MaximumGuestsAhead = 100_000;
 
+	/// <summary>
+	/// The expected wait of a guest who joins now, in 1/256 park turn: the guests ahead of it (the queue plus the guests walking to the attraction), each taking the attraction's observed time per guest
+	/// (<see cref="AttractionView.TurnsPerGuest256"/>, i.e. divided by its throughput). The guest itself is not counted: an empty attraction with nobody on the way is a wait of 0. Null when the view has no estimate (0).
+	/// </summary>
 	public static long? ExpectedWait256( in AttractionView attraction )
 	{
 		if ( attraction.TurnsPerGuest256 <= 0 )

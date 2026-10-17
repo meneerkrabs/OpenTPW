@@ -2061,6 +2061,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		choiceEmptiedByPrice = false;
 		// the whole loop is one decision: a policy that meters work (the script mods) treats its candidates as a unit
 		decisions.BeginDecision();
+		BeginReservations();
 		try
 		{
 		foreach ( var attraction in NewestFirst() )
@@ -2086,6 +2087,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		finally
 		{
 			decisions.EndDecision();
+			EndReservations();
 		}
 		return chosen == 0 ? null : FindAttraction( chosen );
 	}
@@ -2257,6 +2259,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		uint bestScore = 0;
 		var keeps = false;
 		decisions.BeginDecision();
+		BeginReservations();
 		try
 		{
 		for ( var x = guest.CellX - 2; x < guest.CellX + 2; x++ )
@@ -2290,6 +2293,7 @@ public sealed partial class GuestSimulation : IRideVisitorHost, IGuardGuests
 		finally
 		{
 			decisions.EndDecision();
+			EndReservations();
 		}
 		if ( best == null || keeps )
 			return;

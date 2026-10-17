@@ -10,8 +10,9 @@ namespace OpenTPW;
 /// <param name="Interval256">The average interval between two boardings, in 1/256 turn.</param>
 /// <param name="Samples">How many intervals the average holds (saturating at <see cref="RideThroughputs.MaximumSamples"/>).</param>
 /// <param name="LastBoardTurn">The park turn of the latest boarding, −1 for none.</param>
-/// <param name="Demand">The attraction has had a queue, was open and working since <paramref name="LastBoardTurn"/>, so the next boarding's gap measures its throughput rather than the guests' arrival rate.</param>
-public readonly record struct RideThroughput( int AttractionId, int Capacity, int Speed, long Interval256, int Samples, long LastBoardTurn, bool Demand );
+/// <param name="ClockTurn">The park turn the silence clock started: the latest boarding, or the turn the attraction was first seen open, working and with a queue since then, whichever is later; −1 before either.</param>
+/// <param name="Demand">The attraction has had a queue, was open and working since <paramref name="ClockTurn"/>, so the silence since then is the attraction's, and (when the clock was started by a boarding) the next boarding's gap measures its throughput rather than the guests' arrival rate.</param>
+public readonly record struct RideThroughput( int AttractionId, int Capacity, int Speed, long Interval256, int Samples, long LastBoardTurn, long ClockTurn, bool Demand );
 
 /// <summary>
 /// The persisted throughput estimates of the smarter-guests policy, one per attraction instance that has boarded a guest since it was placed, in attraction-id order. The host feeds it from the boardings it
@@ -23,10 +24,10 @@ public readonly record struct RideThroughput( int AttractionId, int Capacity, in
 /// <list type="bullet">
 /// <item><b>Cold start</b>: an attraction without an estimate is read as <see cref="ColdStartInterval256"/>: <see cref="DefaultCycleTurns"/> (a ride) or <see cref="DefaultServiceTurns"/> (a shop, sideshow or toilet) divided by its catalogue capacity.</item>
 /// <item><b>Average</b>: each measured gap is folded in with weight 1/(samples + 2), at most 1/<see cref="MaximumWeightDivisor"/>, so the cold-start value counts as one sample and a long history moves slowly.</item>
-/// <item><b>Closure and breakdown</b>: a closed or broken attraction, or one with an empty queue at the turn start, loses its <c>Demand</c> flag: the next boarding starts a new gap instead of folding in the downtime or the idle time.</item>
+/// <item><b>Demand follows the queue</b>: at each park turn start an attraction that is open and working with a queue gets an entry (cold start) if it has none, and a silence clock and the <c>Demand</c> flag if it did not have them; a closed or broken attraction, or one with an empty queue, loses the flag. So a repaired ride whose head never boards, or a ride that never boards anybody, is read as stalled. The clock starts at the first turn of demand and its first boarding is not folded in as a gap (it measures the wait, not the service); only gaps that start at a boarding are.</item>
 /// <item><b>Upgrade</b>: a changed capacity or speed restarts the estimate at the cold-start value for the new capacity.</item>
-/// <item><b>Stall</b>: an attraction that has not boarded anybody for more than two nominal cycles while guests wait is read as the gap since its last boarding (<see cref="EffectiveInterval256"/>).</item>
-/// <item><b>Zero throughput</b>: an interval below one turn or a capacity below 1 cannot be stored (the interval is clamped to <see cref="MinimumInterval256"/>); a view without an estimate (interval 0) is read by the policy as "unknown" and falls back to the original's queue term.</item>
+/// <item><b>Stall</b>: an attraction that has not boarded anybody for more than two nominal cycles while guests wait is read as the silence since its clock started (<see cref="EffectiveInterval256"/>).</item>
+/// <item><b>Zero throughput</b>: an interval below a quarter turn or a capacity below 1 cannot be stored (the interval is clamped to <see cref="MinimumInterval256"/>); a view without an estimate (interval 0) is read by the policy as "unknown" and falls back to the original's queue term.</item>
 /// </list>
 /// </remarks>
 // [EXT:smarter-guests-spread] OpenTPW's own bookkeeping; the original guests keep none
@@ -38,8 +39,8 @@ public sealed class RideThroughputs
 	/// <summary>The cycle a shop, sideshow or toilet is assumed to have until it has been measured, in park turns.</summary>
 	public const int DefaultServiceTurns = 12;
 
-	/// <summary>The shortest interval an estimate can hold: one park turn.</summary>
-	public const long MinimumInterval256 = 256;
+	/// <summary>The shortest interval an estimate can hold: a quarter of a park turn (guests of one batch can board several to a turn).</summary>
+	public const long MinimumInterval256 = 64;
 
 	/// <summary>The longest gap folded into an average, in park turns (a day is 23 turns; a ride that waits longer than this has not been running).</summary>
 	public const long MaximumGapTurns = 1200;
@@ -91,7 +92,7 @@ public sealed class RideThroughputs
 		return false;
 	}
 
-	/// <summary>The cold-start interval of an attraction of this capacity: <see cref="DefaultCycleTurns"/> over the capacity (below 1 reads as 1), never below <see cref="MinimumInterval256"/>.</summary>
+	/// <summary>The cold-start interval of an attraction of this capacity: the default cycle over the capacity (below 1 reads as 1), never below <see cref="MinimumInterval256"/>.</summary>
 	public static long ColdStartInterval256( int capacity, RideVisitorKind kind = RideVisitorKind.Ride ) =>
 		Math.Max( MinimumInterval256, (kind == RideVisitorKind.Ride ? DefaultCycleTurns : DefaultServiceTurns) * 256L / Math.Max( 1, capacity ) );
 
@@ -108,13 +109,13 @@ public sealed class RideThroughputs
 		return EffectiveInterval256( entry, turn, queueLength );
 	}
 
-	/// <summary>The estimate of <paramref name="entry"/>, or the gap since its last boarding when it has stalled with guests waiting.</summary>
+	/// <summary>The estimate of <paramref name="entry"/>, or the silence since its clock started when it has stalled with guests waiting.</summary>
 	public static long EffectiveInterval256( in RideThroughput entry, long turn, int queueLength )
 	{
 		var interval = Math.Clamp( entry.Interval256, MinimumInterval256, MaximumInterval256 );
-		if ( !entry.Demand || queueLength <= 0 || entry.LastBoardTurn < 0 || turn <= entry.LastBoardTurn )
+		if ( !entry.Demand || queueLength <= 0 || entry.ClockTurn < 0 || turn <= entry.ClockTurn )
 			return interval;
-		var since = Math.Min( turn - entry.LastBoardTurn, MaximumGapTurns ) * 256L;
+		var since = Math.Min( turn - entry.ClockTurn, MaximumGapTurns ) * 256L;
 		// per guest: a gap of `since` with a whole cycle of `capacity` guests in it is `since / capacity` per guest; it only matters when it exceeds the nominal cycle by far
 		if ( since <= interval * entry.Capacity * StallCycles )
 			return interval;
@@ -133,15 +134,16 @@ public sealed class RideThroughputs
 		var entry = found ? entries[index] : default;
 		if ( !found || entry.Capacity != capacity || entry.Speed != speed )
 			// cold start, or an upgrade: the average restarts at the catalogue value for the new capacity
-			entry = new RideThroughput( attractionId, capacity, speed, ColdStartInterval256( capacity, kind ), 0, -1, false );
-		if ( entry.Demand && entry.LastBoardTurn >= 0 && turn > entry.LastBoardTurn )
+			entry = new RideThroughput( attractionId, capacity, speed, ColdStartInterval256( capacity, kind ), 0, -1, -1, false );
+		// a gap counts when the attraction had demand throughout and it started at a boarding; two boardings in one park turn are a gap of 0, which the average takes down to the minimum interval
+		if ( entry.Demand && entry.LastBoardTurn >= 0 && entry.ClockTurn == entry.LastBoardTurn && turn >= entry.LastBoardTurn )
 		{
 			var gap = Math.Min( turn - entry.LastBoardTurn, MaximumGapTurns ) * 256L;
 			var divisor = Math.Min( entry.Samples + 2, MaximumWeightDivisor );
 			var interval = entry.Interval256 + (gap - entry.Interval256) / divisor;
 			entry = entry with { Interval256 = Math.Clamp( interval, MinimumInterval256, MaximumInterval256 ), Samples = Math.Min( MaximumSamples, entry.Samples + 1 ) };
 		}
-		entry = entry with { LastBoardTurn = turn, Demand = queueLengthAfter > 0 };
+		entry = entry with { LastBoardTurn = turn, ClockTurn = turn, Demand = queueLengthAfter > 0 };
 		if ( found )
 			entries[index] = entry;
 		else
@@ -149,22 +151,29 @@ public sealed class RideThroughputs
 	}
 
 	/// <summary>
-	/// The turn-start look at an attraction that has an estimate: a closed or broken one, or one with an empty queue, loses its demand flag, so the next boarding starts a new gap. An upgrade (a changed capacity
-	/// or speed) restarts the estimate here as well, so the policy never reads a stale one.
+	/// The turn-start look at an attraction (docs/SMARTER-GUESTS.md): demand follows the queue. An attraction that is open and working with a queue and has no demand flag gets one, with its silence clock started at
+	/// <paramref name="turn"/> (an attraction without an entry gets one at the cold start, so a ride that never boards anybody is read as stalled too); a closed or broken one, or one with an empty queue, loses the flag, so
+	/// the next boarding starts a new gap. An upgrade (a changed capacity or speed) restarts the estimate here as well, so the policy never reads a stale one.
 	/// </summary>
-	public void Observe( int attractionId, RideVisitorKind kind, int capacity, int speed, bool working, int queueLength )
+	public void Observe( int attractionId, RideVisitorKind kind, int capacity, int speed, bool working, int queueLength, long turn )
 	{
+		capacity = Math.Max( 1, capacity );
 		var index = LowerBound( attractionId );
-		if ( index >= entries.Count || entries[index].AttractionId != attractionId )
+		var found = index < entries.Count && entries[index].AttractionId == attractionId;
+		var wanted = working && queueLength > 0;
+		if ( !found && !wanted )
 			return;
-		var entry = entries[index];
-		if ( entry.Capacity != Math.Max( 1, capacity ) || entry.Speed != speed )
-		{
-			entries[index] = new RideThroughput( attractionId, Math.Max( 1, capacity ), speed, ColdStartInterval256( capacity, kind ), 0, -1, false );
-			return;
-		}
-		if ( entry.Demand && (!working || queueLength <= 0) )
-			entries[index] = entry with { Demand = false };
+		var entry = found ? entries[index] : new RideThroughput( attractionId, capacity, speed, ColdStartInterval256( capacity, kind ), 0, -1, -1, false );
+		if ( found && (entry.Capacity != capacity || entry.Speed != speed) )
+			entry = new RideThroughput( attractionId, capacity, speed, ColdStartInterval256( capacity, kind ), 0, -1, -1, false );
+		if ( wanted && !entry.Demand )
+			entry = entry with { Demand = true, ClockTurn = turn };
+		else if ( !wanted && entry.Demand )
+			entry = entry with { Demand = false };
+		if ( found )
+			entries[index] = entry;
+		else
+			entries.Insert( index, entry );
 	}
 
 	/// <summary>Forgets the attraction's estimate (it was removed; ids are not reused, but the bookkeeping stays bounded by the attractions in the park).</summary>

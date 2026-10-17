@@ -135,6 +135,7 @@ public sealed class SmarterGuestsState
 			hash.Add( entry.Interval256 );
 			hash.Add( entry.Samples );
 			hash.Add( entry.LastBoardTurn );
+			hash.Add( entry.ClockTurn );
 			hash.Add( entry.Demand );
 		}
 	}

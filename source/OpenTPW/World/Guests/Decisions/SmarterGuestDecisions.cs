@@ -47,10 +47,21 @@ public sealed class SmarterGuestDecisions : IGuestDecisions
 		var score = AttractionScore.Compute( input, context.Settings.DecisionWeights, context.Settings.DecisionVariables );
 		if ( score != 0 )
 			score = SmarterGuestsRules.ApplyPreference( score, SmarterGuestsRules.PreferencePercent( context.Trait( guest, SmarterGuestsRules.PreferenceTrait ), attraction.Id ) );
-		// a long expected wait lowers the score but never takes a candidate the original would have chosen below the choice floor: giving up on a queue is the patience rule's job (phase 4), not the choice's
-		if ( score < AttractionScore.CandidateFloor && OriginalGuestDecisions.Instance.ScoreAttraction( context, guest, attraction ) >= AttractionScore.CandidateFloor )
-			return AttractionScore.CandidateFloor;
+		// a long expected wait lowers the score but never takes a candidate the original would have chosen below the choice floor: giving up on a queue is the patience rule's job (phase 4), not the choice's.
+		// The same floor keeps a ride the guest has not used lately and would be admitted to (the guest "has nothing to do" otherwise). Among the candidates kept at the floor the order of their own scores stays:
+		// floor + score / 5, so the wait and the preference still rank them (and a genuine score of 10 is never ranked below one that was lifted by more than a point)
+		if ( score < AttractionScore.CandidateFloor && (OriginalGuestDecisions.Instance.ScoreAttraction( context, guest, attraction ) >= AttractionScore.CandidateFloor || IsUnusedAdmissibleRide( context, guest, attraction )) )
+			return AttractionScore.CandidateFloor + score / SmarterGuestsRules.FloorOrderDivisor;
 		return score;
+	}
+
+	/// <summary>A ride that is in neither of the guest's histories, is not of the type it used last and whose excitement the admission gate would let it through to.</summary>
+	private static bool IsUnusedAdmissibleRide( in DecisionContext context, in GuestView guest, in AttractionView attraction )
+	{
+		if ( attraction.Kind != RideVisitorKind.Ride || attraction.SameTypeAsLastUsed || guest.UsedHistory.Contains( attraction.Id ) || guest.TemporaryHistory.Contains( attraction.Id ) )
+			return false;
+		var type = context.Settings.Types[Math.Min( guest.Type, context.Settings.Types.Count - 1 )];
+		return AttractionScore.ExcitementMatch( type.PreferredExcitement, attraction.LiveExcitement ) > 10;
 	}
 
 	/// <summary>A walking guest keeps a ride it is heading for unless the best ride in reach beats it by the hysteresis margin; a shop, toilet or sideshow on the way stays an impulse stop, as in the original.</summary>

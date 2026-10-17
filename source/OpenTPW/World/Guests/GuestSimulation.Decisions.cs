@@ -42,29 +42,58 @@ public sealed partial class GuestSimulation
 	{
 		if ( SmarterGuests is not { } smarter )
 			return view;
-		var reservations = 0;
-		foreach ( var other in guests )
-			if ( other.State == GuestState.GoingToRide && other.AttractionId == attraction.AttractionId && !ReferenceEquals( other, guest ) )
-				reservations++;
-		var interval = smarter.Throughputs.IntervalFor( attraction.AttractionId, attraction.Kind, attraction.Capacity, attraction.Speed, ParkTurn, attraction.QueueLength );
+		var reservations = ReservationsOf( attraction.AttractionId, guest );
+		var interval = smarter.Throughputs.IntervalFor( attraction.AttractionId, attraction.Kind, attraction.LiveCapacity, attraction.Speed, ParkTurn, attraction.QueueLength );
 		return view with { Reservations = reservations, TurnsPerGuest256 = interval };
+	}
+
+	/// <summary>The walkers per attraction, counted once at the start of a decision (<see cref="BeginReservations"/>); null outside one.</summary>
+	private Dictionary<int, int>? reservationCounts;
+
+	/// <summary>
+	/// Counts, once, the guests walking to each attraction, for the candidates of the decision that follows (<see cref="EndReservations"/> ends it). The candidate loops change no guest's state or target, so the count is
+	/// exactly the one a scan per candidate would give, without the scan (one pass over the guests per decision instead of one per candidate view).
+	/// </summary>
+	private void BeginReservations()
+	{
+		if ( !decisions.UsesSpreading || reservationCounts != null )
+			return;
+		reservationCounts = new Dictionary<int, int>();
+		foreach ( var other in guests )
+			if ( other.State == GuestState.GoingToRide )
+				reservationCounts[other.AttractionId] = reservationCounts.GetValueOrDefault( other.AttractionId ) + 1;
+	}
+
+	private void EndReservations() => reservationCounts = null;
+
+	/// <summary>The guests other than <paramref name="guest"/> walking to the attraction: from the decision's count, else a scan of the guests.</summary>
+	private int ReservationsOf( int attractionId, Guest guest )
+	{
+		var self = guest.State == GuestState.GoingToRide && guest.AttractionId == attractionId ? 1 : 0;
+		if ( reservationCounts != null )
+			return reservationCounts.GetValueOrDefault( attractionId ) - self;
+		var count = 0;
+		foreach ( var other in guests )
+			if ( other.State == GuestState.GoingToRide && other.AttractionId == attractionId && !ReferenceEquals( other, guest ) )
+				count++;
+		return count;
 	}
 
 	/// <summary>A guest boarded <paramref name="ride"/>: folds the gap since its previous boarding into its throughput estimate (<see cref="RideThroughputs.Boarded"/>).</summary>
 	// [EXT:smarter-guests-spread] the ride bridge reports every boarding, in the host's deterministic order, so the estimate is a function of the simulation's own events
 	private void NoteBoarding( IRideVisitorBridge ride ) =>
-		SmarterGuests?.Throughputs.Boarded( ride.AttractionId, ride.Kind, ride.Capacity, ride.Speed, ParkTurn, ride.QueueLength );
+		SmarterGuests?.Throughputs.Boarded( ride.AttractionId, ride.Kind, ride.LiveCapacity, ride.Speed, ParkTurn, ride.QueueLength );
 
 	/// <summary>
-	/// The turn-start look at the attractions that have an estimate: one that is closed, broken or has nobody waiting loses its demand flag, and one whose capacity or speed changed (an upgrade) restarts
-	/// (<see cref="RideThroughputs.Observe"/>).
+	/// The turn-start look at the attractions: demand follows the queue (an open, working attraction with a queue gets an entry and a silence clock; a closed, broken or empty one loses its demand flag) and an
+	/// upgrade (a changed live capacity or speed) restarts the estimate (<see cref="RideThroughputs.Observe"/>).
 	/// </summary>
 	private void ObserveThroughputs()
 	{
-		if ( SmarterGuests is not { } smarter || smarter.Throughputs.Count == 0 )
+		if ( SmarterGuests is not { } smarter )
 			return;
 		foreach ( var attraction in attractions )
-			smarter.Throughputs.Observe( attraction.AttractionId, attraction.Kind, attraction.Capacity, attraction.Speed, attraction.IsOpen && !attraction.IsBrokenDown, attraction.QueueLength );
+			smarter.Throughputs.Observe( attraction.AttractionId, attraction.Kind, attraction.LiveCapacity, attraction.Speed, attraction.IsOpen && !attraction.IsBrokenDown, attraction.QueueLength, ParkTurn );
 	}
 
 	/// <summary>

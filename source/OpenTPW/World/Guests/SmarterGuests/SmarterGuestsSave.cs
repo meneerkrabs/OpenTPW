@@ -131,8 +131,10 @@ internal static class SmarterGuestsSave
 				return $"attraction {entry.AttractionId} has {entry.Samples} throughput samples, outside 0..{RideThroughputs.MaximumSamples}";
 			if ( entry.LastBoardTurn < -1 )
 				return $"attraction {entry.AttractionId} has a last boarding turn of {entry.LastBoardTurn}, below -1";
-			if ( entry.Demand && entry.LastBoardTurn < 0 )
-				return $"attraction {entry.AttractionId} has demand without a boarding";
+			if ( entry.ClockTurn < entry.LastBoardTurn )
+				return $"attraction {entry.AttractionId} has a silence clock at turn {entry.ClockTurn}, before its last boarding {entry.LastBoardTurn}";
+			if ( entry.Demand && entry.ClockTurn < 0 )
+				return $"attraction {entry.AttractionId} has demand without a silence clock";
 		}
 		return null;
 	}
@@ -172,8 +174,9 @@ internal static class SmarterGuestsSave
 			throw new InvalidDataException( $"The saved park has guest identity state ({ExtensionId} or script mods), but neither is active." );
 		if ( SectionProblem( section, guests.Guests.Select( guest => guest.Id ), guests.Attractions.Select( attraction => attraction.AttractionId ) ) is { } problem )
 			throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: {problem}." );
-		if ( section.Throughputs?.FirstOrDefault( entry => entry.LastBoardTurn > guests.ParkTurn ) is { LastBoardTurn: > 0 } later )
-			throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: attraction {later.AttractionId} boarded on turn {later.LastBoardTurn}, after the park's turn {guests.ParkTurn}." );
+		foreach ( var entry in section.Throughputs ?? [] )
+			if ( Math.Max( entry.LastBoardTurn, entry.ClockTurn ) > guests.ParkTurn )
+				throw new InvalidDataException( $"The saved smarter-guests state is inconsistent: attraction {entry.AttractionId} has a turn {Math.Max( entry.LastBoardTurn, entry.ClockTurn )}, after the park's turn {guests.ParkTurn}." );
 		foreach ( var guest in guests.Guests )
 			guest.BirthId = 0;
 		var byId = guests.Guests.ToDictionary( guest => guest.Id );

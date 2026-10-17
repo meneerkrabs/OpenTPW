@@ -1,6 +1,7 @@
 # RSE VM: executing original ride scripts
 
-October 9, 2026; updated October 14, 2026 (WAITABS deadline, MIN/SEC, child head tables). Status: **every opcode
+October 9, 2026; updated October 14, 2026 (WAITABS deadline, MIN/SEC, child head tables) and October 17, 2026 (the hooked opcodes' operands, flags
+and time base read from tp.exe, [below](#hooked-opcodes-the-operands-as-the-handlers-read-them)). Status: **every opcode
 used by the 308 original scripts has a VM handler**, and all scripts that can be
 started run in the VM without faults. The two opcodes only Theme Park Inc
 scripts contain — `WAITABS` (45) and `MULT` (48) — also have handlers now
@@ -25,11 +26,11 @@ Code: `source/OpenTPW/VM/` (`RideVM`, `Operand`, `Instruction`, `RideOpcodes`,
 | Unknown (no handler) | 0 | 0 |
 | **Corpus total** | **84** | **11,915** |
 
-Of the 22 named opcodes the TPW corpus never uses, 10 have handlers: 4 from the
+Of the 22 named opcodes the TPW corpus never uses, 11 have handlers: 4 from the
 upstream docs alone (`SETVARINPARENT`, `YEAR`, `MONTH`, `DAY`),
 `WAITABS`/`MULT` for the Theme Park Inc corpus
-([below](#theme-park-inc-gap-opcodes)) and `PUSH`, `POP`, `SETLV` and `DBGMSG`,
-read from tp.exe ([below](#original-interpreter-internals)); the other 12 (the ride
+([below](#theme-park-inc-gap-opcodes)) and `PUSH`, `POP`, `SETLV`, `DBGMSG` and `END`,
+read from tp.exe ([below](#original-interpreter-internals)); the other 11 (the ride
 lights, `EVENT_EXT`, `GETCUSTPTCLCODE` and others) stay unknown and fault the
 script if executed. Operand counts of every handler equal the upstream signature
 counts and the corpus counts (`CRIT_UNLOCK`: 0).
@@ -71,7 +72,9 @@ implementation against those inputs, not equivalence to an executed PC game.
   mapping of that diagnostic stop, not a recovered original state enum.
 - Flags: Zero = result 0, Sign = result negative. COPY updates them from the
   copied value; WAIT, ENDSLICE and KILLOBJ preserve them. `BRANCH_PV` is
-  **strictly** positive (Sign and Zero clear).
+  **strictly** positive (Sign and Zero clear). The flag word (`+0x48`) is also written, as the handlers do (`0x554B0F` tail, `0x552972`, `0x555780`), by GETTIME (the clock), the trigger
+  family TRIGANIM, TRIGANIMSPEED, TRIGANIM_CH, TRIGWAITANIM and TRIGWAITANIM_CH (the adjusted out value, at least 300), BOUNCE (1, or 0 with a full table), UNBOUNCE and FORCEUNBOUNCE (the visitor
+  handed back), the cross-script variable opcodes (the value; GETREMOTEVAR and FINDSCRIPTRAND clear it first) and the other opcodes the table below marks as setting them.
 - Scheduling: in a park the substep scheduler runs the scripts (`RideScriptWorld.RunPass`, one pass per 31 ms substep of the
   park's tick count, DETERMINISM.md "The substep scheduler"): every script's clock gains 31 ms, newest script first, and a script
   runs a slice only when `(id xor pass counter) & 7 == 0` or its TURBO byte is nonzero (tp.exe `0x5516E1`), so an ordinary script
@@ -82,11 +85,16 @@ implementation against those inputs, not equivalence to an executed PC game.
   instruction outside a critical section; `CRIT_LOCK` stops the counting,
   `CRIT_UNLOCK` and `ENDSLICE` zero the counter, a wait ends the slice. The
   budget is what lets busy loops such as Totem's passenger loop
-  (`TEST`/`BRANCH` for 10 s, no ENDSLICE) yield. A slice that stays locked for
+  (`TEST`/`BRANCH` for 10 s, no ENDSLICE) yield. The critical flag `0x87919C` is referenced six times in the whole image (a byte scan of tp.exe): cleared by the two routines that reset the script system's globals (`0x551651`, `0x559836`) and at every slice start (`0x551703`), read once, by the slice loop (`0x551725`), and written by CRIT_LOCK and CRIT_UNLOCK (`0x551D46`, `0x551D5B`), so
+  nothing else in the program sees it; a shipped script can even wait inside a lock (bumper.RSE: the wait ends the slice and the next slice starts with the flag clear). A slice that stays locked for
   100,000 instructions faults (`[EXT:crit-slice-guard]`: the original would hang).
-- Time unit is the millisecond (**inferred**: `WAIT 500…5300` around ride
-  animations, `GETTIME; ADD VAR_STARTNOW 10000` passenger time-outs, animation
-  durations fed into `WAIT`). Waits resume on the first slice at or after the
+- Time unit is the millisecond, read from tp.exe. Every time opcode reads one clock, the global timer `0x785970` (`GETTIME` `0x551F1E`, `WAIT` `0x553783`, `WAITABS`, `SETTIMER` `0x55641B`,
+  `GETTIMER` `0x55644D`, `LIMBO`, `BOUNCE`, `WALKON`, the animation waits): `0x402D70` returns the timer's base plus its offset (`0x4031E0`, `0x402F10`), the base is the elapsed
+  performance-counter ticks divided by the counter's ticks per millisecond (`0x5F5E80` stores frequency / 1000, `0x5F5F10` divides the difference by it; without a counter the
+  millisecond tick count `0x6FD3EC` stands in) multiplied by the timer's scale (`0x4033A0`, accumulated as a double and truncated; `0x403340` steps the scale between two limits).
+  So `WAIT 500` is 500 timer milliseconds divided by the script speed (`ftol(operand / speed)` at `0x5537F7`), `SETTIMER` and `GETTIMER` are milliseconds with no speed division (`0x55643A`),
+  and `LIMBO` and `BOUNCE` count seconds times 1000. The shipped operands fit: `WAIT 500…5300` around ride animations, `GETTIME; ADD VAR_STARTNOW 10000` passenger time-outs, animation durations fed into `WAIT`.
+  Waits resume on the first slice at or after the
   wake time: in a park the slice of an ordinary script comes every 248 ms (the scheduler above), a standalone VM's every 1/60 s tick. `GETTIME` reads the park's shared
   scheduler clock (`RideScriptWorld.ClockMilliseconds`), as the original reads
   `0x10e844` on the global r30 (0xaf55c, 0xaf6d8) without subtracting a creation
@@ -279,6 +287,32 @@ or success responses. Original controller systems remain unimplemented.
 
 Only the root script has a head table: on the PC the init (0x558D2B) stores the thing id and, when it is 0, skips the head-id lookup and the table allocation, and SPAWNCHILD (0x555081) and SPAWNSOUND (0x5551AB) create their script with thing id 0 and copy the parent's thing id (+0xAC) only afterwards (0x555168), so ADDHEAD (0x554C89) and DELHEAD (0x554D6F) exit on the NULL table in child and sound scripts. OpenTPW does the same (`RideVisitorBridge.HeadTableFor`; HEADS-005 retired, October 14, 2026): a child's head opcode does nothing, there is no per-child table to save, and the canonical state is unchanged (none of the 46 associated child/sound scripts in the shipped four-theme catalog uses a head opcode, so no pinned hash moved). See the full inventory and pixel proof in GUESTS.md.
 
+## Hooked opcodes: the operands as the handlers read them
+
+October 17, 2026. Read from tp.exe: the jump table `0x5567D8` holds one handler per opcode (the interpreter `0x551CB0` fetches the opcode word, each handler fetches its operands in place).
+**R** is an operand the handler resolves through `0x5573A0` (a variable's value, or the literal sign-extended from 16 bits); **W** is a raw word the handler tests or stores itself (a destination it
+writes only when the word is a variable, `0x40000000` tag; a string operand is tag `0x10000000`). The flag word `+0x48` is what the branches test. The generated table below names the handler of every opcode; the
+corpus constraints are `RideOperandCorpusTests`.
+
+| Family | Opcodes (handler) | Operands | What the handler does |
+| --- | --- | --- | --- |
+| Objects and sounds by key | ADDOBJ (`0x551F5F`), ADDOBJ_EXT (`0x5520E8`), EVENT (`0x552615`), EVENT_EXT (`0x552707`, no handler here) | `type key id slot` R R R R; EXT forms `type key id control (slot)` | The dispatcher `0x5573D0(script, type, key, id, control)` (control 1000 unless an EXT form gives it): types 1-2 particle effects (PARTICLES.md), 3-9 sounds of the category the type names (AUDIO.md), 10 the object type's own list (`0x557686`, no shipped script); a type outside 1-10 logs. Key -1 (a negative key) is the footprint middle, a number a model dummy. ADDOBJ keeps a 0x1C-byte record on the list at +0xB0 (type, handle, key, node of class 0x100 for types 1-2 and 0x200 above, slot) and frees it when the handle is 0 |
+| Ending a record | KILLOBJ (`0x5522C5`), FADEOBJ (`0x5523D0`), SETOBJPARAM (`0x5524D9`) | `slot` R; `slot param value` R R R | Every record with the slot: KILLOBJ ends types 1-2 with `0x51FF70(handle, -2)` and 3-10 with `0x51C2C0`, FADEOBJ types 3-10 with `0x51C300`, both free the record; SETOBJPARAM calls `0x51BC40(handle, param, value)` for types 3-10 and keeps the new handle. None sets flags |
+| Animation | TRIGANIM `0x552875`, WAITANIM `0x5529BC`, LOOPANIM `0x552B2F`, TRIGWAITANIM `0x552C1A`, GETANIM `0x552DB4`, TRIGANIMSPEED `0x552E3A`, FLUSHANIM(_CH) `0x552861`/`0x553000`, TRIGANIM_CH `0x55306E`, WAITANIM_CH `0x55320A`, LOOPANIM_CH `0x553399`, TRIGWAITANIM_CH `0x553494`, GETANIM_CH `0x5536AE`, WAIT4ANIM `0x5538EB` | `anim variant` R R (+ `out` W for TRIG*, + `channel` R for the _CH forms, + `speed` R for TRIGANIMSPEED); GETANIM(_CH) `dest` W (+ channel R) | The Mac-read arithmetic (below) with the PC operand kinds; the trigger family also puts its out value in the flag word |
+| Visitors, walks | WALKON `0x555963`, WALKOFF `0x555B0C`, WALKGET `0x555B34` | `visitor u1 u2 u3 u4 action u5` R x7; `visitor` R; `dest` W | The script's walk table (TOURS.md): first free entry of the header walk size, states 1-4, WALKGET hands out the first entry in state 4. The shipped WALKON operands: the rider a variable, `action` 1, 2, 4, 5 or 6 (only 2 and 4 act), `u5` always 1 (bit 0: the body's height from the nodes) |
+| Visitors, bounce and float | BOUNCESETNODE `0x5555D9`, BOUNCESETBASE `0x555618`, BOUNCE `0x555674`, UNBOUNCE `0x5557A3`, FORCEUNBOUNCE `0x555842`, BOUNCING `0x555910`; WALKST_FLOAT `0x555B72`, WALKFLOATSTAT `0x555BD8`, WALKFLOATSTOP `0x555C11` | `node` W; `base` W; `visitor seconds` R R; `dest` W x3; `seconds a b` R R R; `dest` W | The script's own bounce table (16-byte entries at +0x28: visitor, node, deadline, start) and float words (+0x80, +0x84, +0x88, +0x8A); UNBOUNCE and FORCEUNBOUNCE release only inside the first 200 ms of a second since the bounce, UNBOUNCE also needs the deadline below the clock; the node and base words only feed the render pass |
+| Heads | ADDHEAD `0x554C3E`, DELHEAD `0x554D26` | `visitor` R | The script's head table (+0x30): a random free entry (world generator `0x516330`), the head dummy (class 0x80, number entry + 1), `0x44B410` hangs and `0x44B4C0` takes down; child and sound scripts have no table |
+| Screams and atmosphere | STARTSCREAM `0x555E5E`, STOPSCREAM `0x555EF7`, SINGLESCREAM `0x555F1B`, SCREAMLEVEL `0x555FDA`, REPAIREFFECT `0x5562A6`, SETREVERB `0x55649C`, DIPMUSIC `0x5564C0`, SPARK `0x5564ED` | `band level` R R; none; `band level` R R; `level` R; `on` R; `level` R; `on` R; `a b c d` R x4 | Scream handle at +0xD0 (`0x551130`, `0x551290`, `0x551320`, `0x551560`; the band is the script's own rider count, `level` 10 to 100, -1 for a one-shot that picks by band alone); REPAIREFFECT switches the type's repair effect (`0x556DE0`) and plays events 111 and 211 for a non-zero value, the band one-shot for 0; SETREVERB stores a word (+0xD8); DIPMUSIC writes the global duck request (`0x51E710`); SPARK only logs |
+| Controllers | TOUR `0x5542FE`, BUMP `0x5546F5`, COAST `0x554A5A` | `command` W (the raw word, a literal) and `parameter` | Commands 1-18, 1-17 and 1-8 through the tables `0x5569D0`, `0x556A18` and `0x556A5C` (other words log). The 43 shapes (resolved or raw parameter, a variable destination written or required, flags written or kept) equal the Mac-static roles: TOUR 6, 7 and 13 and BUMP 15 log and do nothing |
+| Time | WAIT `0x553783`, WAITABS `0x553828`, SETTIMER `0x55641B`, GETTIMER `0x55644D`, GETTIME `0x551F1E`, LIMBO `0x554DE5` | `ms` R; `ms` R; `ms` R; `dest` W; `dest` W; `value seconds` R R | One clock in milliseconds ([above](#execution-model)); WAIT divides by the script speed, the others do not |
+
+What the shipped corpus does with them is pinned in `RideOperandCorpusTests`: the object types it uses are 1 to 9 (EVENT 1 to 6), SETOBJPARAM is always slot 1, parameter 20, value 0 or 75, the trigger out operand is a variable or the
+literal 0, the query destinations are variables (or literal 0 / 10000 where only the flags matter), BOUNCE always passes VAR_LETMEON and VAR_DURATION, REPAIREFFECT is 0 or 1, SETREVERB 0 to 10 (0, 1, 3, 8, 9 occur),
+DIPMUSIC only 1 (End.RSE and Gates.RSE), SCREAMLEVEL 10 to 100, the scream band a variable (VAR_ONRIDE in 81 of 86 uses) and SPARK has one use.
+
+Still unread or not modelled: the object type's own list (type 10, `0x557686`), what reads the SETREVERB word (+0xD8), the ride lights (`0x555C7A`..`0x555D9A`), EVENT_EXT, GETCUSTPTCLCODE, the sound service's use of the
+duck request (DIPMUSIC: `0x51BDC4`..`0x51BE9B` sets one channel volume to 0 while it is non-zero; not built), and the walking body's drawing (TOUR-011).
+
 ## Corpus run (`RideVMCorpusTests`)
 
 Roots are the 263 scripts not started by another script; 44 are children (28
@@ -462,7 +496,7 @@ The unit tests are `RideVMInternalsTests`.
 
 ## Not original behaviour yet
 
-- The millisecond unit of WAIT is not original; the slice cadence is (the park's
+- The millisecond unit of the time opcodes and the slice cadence are the original's (the unit from the timer `0x785970`, the cadence from the park's
   substep scheduler, above); a standalone VM without a park runs a slice per
   `Advance` call. The slice budget, the critical
   flag, HUSH/HOP, JSR/RETURN/PUSH/POP, the limbo table and TURBO's byte are
@@ -482,11 +516,10 @@ The unit tests are `RideVMInternalsTests`.
   is unsupported, not a positioned sound loop. No objects/particles, no ride-type
   controllers (TOUR/BUMP/COAST), no light opcodes. TPW YEAR/MONTH/DAY/HOUR/MIN/SEC
   sample host civil time (an unsaved external input, `[EXT:vm-host-time]`); they do not read the park calendar.
-- What the engine does with `EventMap.rse` variables, how the host is meant to
-  feed `VAR_LETMEON`/`VAR_LETMEOFF`, and the `0xFFFF` second operand of EVENT
-  are unknown.
-- Child scripts get their own clock and RAND stream; whether the original
-  shares them is unknown.
+- What the engine does with `EventMap.rse` variables is still unread; the host protocol of `VAR_LETMEON`/`VAR_LETMEOFF` is [GUESTS.md](GUESTS.md)'s; the `0xFFFF` second operand of EVENT is the key -1,
+  the footprint middle (`0x556B90`, [above](#hooked-opcodes-the-operands-as-the-handlers-read-them)).
+- Child scripts in the original share the one timer (every time opcode reads `0x785970`) and draw RAND and FINDSCRIPTRAND from the world generator (`0x516330`); in a park OpenTPW's children share the park's
+  scheduler clock and the world generator too (DET-013), a standalone VM keeps its own seed.
 
 ## Original-binary evidence
 

@@ -60,7 +60,7 @@ yet; the accompanying TGA files make every texture viewable without it.
 - Ride sign text is baked per language into `<ride>/textures/sign_{eng,fre,ger,jpn,jap}.ssh` instead of
   being drawn with TrueType fonts at run time: 509 files, nearly all 128x64, type 0x85 (some 0x84).
   The PAL executable `SLES_500.32` holds the selector strings `sign_ENG/FRE/GER/ITA/SPA/DUT/SWE/JPN`
-  (file offsets 0x261510..0x261580). The 234 files under `sign/` (233 of them 16x128) are not text: they
+  (file offsets 0x261510..0x261580). The 118 `.ssh` files under `sign/` (117 of them 16x128, each with a `.tga` copy) are not text: they
   are material and paint strips, the counterpart of the PC relief strips. One exception,
   `FANTASY/Rides/acorn/Sign/acorn1_fre.ssh`, is a 256x128 baked French sign. The baked art is authored
   separately from the PC runtime compositor (different fonts and layout, half the resolution, a lossy GM
